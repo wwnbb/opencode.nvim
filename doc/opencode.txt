@@ -1,0 +1,78 @@
+opencode.nvim - Neovim frontend for OpenCode AI coding agent
+
+================================================================================
+CONTENTS                                                    *opencode-contents*
+
+1. Introduction ........................................... |opencode-intro|
+2. Installation ........................................... |opencode-install|
+3. Configuration .......................................... |opencode-config|
+4. Commands ............................................... |opencode-commands|
+5. API .................................................... |opencode-api|
+6. License ................................................ |opencode-license|
+
+================================================================================
+1. INTRODUCTION                                                *opencode-intro*
+
+OpenCode.nvim provides a native Neovim experience for interacting with
+OpenCode, the open source AI coding agent.
+
+Features:
+- Chat interface with markdown rendering
+- Diff viewer for accumulated changes
+- Lualine integration
+- Command palette
+- Permission handling
+
+================================================================================
+2. INSTALLATION                                              *opencode-install*
+
+Using lazy.nvim: >
+  {
+    "wwnbb/opencode.nvim",
+    dependencies = {
+      "nvim-lua/plenary.nvim",
+      "MunifTanjim/nui.nvim",
+    },
+    config = function()
+      require("opencode").setup()
+    end,
+  }
+<
+
+================================================================================
+3. CONFIGURATION                                              *opencode-config*
+
+Basic setup: >
+  require("opencode").setup({
+    server = {
+      host = "localhost",
+      port = 9099,
+    },
+  })
+<
+
+================================================================================
+4. COMMANDS                                                  *opencode-commands*
+
+|:OpenCode|          Open chat window
+|:OpenCodeToggle|    Toggle chat window
+|:OpenCodeClose|     Close chat window
+
+================================================================================
+5. API                                                            *opencode-api*
+
+Lua API functions: >
+  local opencode = require("opencode")
+  
+  opencode.setup(opts)      -- Configure plugin
+  opencode.toggle()         -- Toggle chat
+  opencode.open()           -- Open chat
+  opencode.close()          -- Close chat
+<
+
+================================================================================
+6. LICENSE                                                    *opencode-license*
+
+MIT License - See LICENSE file for details
+
+ vim:tw=78:ts=8:ft=help:norl:
