@@ -25,7 +25,7 @@ end
 function M.store_reasoning(message_id, text)
 	reasoning_store[message_id] = {
 		text = text or "",
-		last_updated = vim.loop.now(),
+		last_updated = vim.uv.now(),
 	}
 end
 
@@ -168,15 +168,9 @@ function M.get_config()
 	return vim.deepcopy(get_config())
 end
 
--- Throttled update check
+-- Throttled update check (disabled - always returns true for live updates)
 function M.should_update()
-	local config = get_config()
-	local throttle_ms = config.throttle_ms or 100
-	local now = vim.loop.now()
-	if now - last_update < throttle_ms then
-		return false
-	end
-	last_update = now
+	-- Throttling disabled for live updates
 	return true
 end
 

@@ -73,15 +73,47 @@ function M.setup(opts)
 	M.state = state
 
 	-- Setup lualine component if configured
-	if M._config.lualine and M._config.lualine.enabled ~= false then
-		local lualine_ok, lualine = pcall(require, "opencode.components.lualine")
-		if lualine_ok then
-			lualine.setup(M._config.lualine)
-			M.lualine = lualine
-		end
-	end
+  if M._config.lualine and M._config.lualine.enabled ~= false then
+    local lualine_ok, lualine = pcall(require, "opencode.components.lualine")
+    if lualine_ok then
+      lualine.setup(M._config.lualine)
+      M.lualine = lualine
+    end
+  end
 
-	vim.notify("OpenCode.nvim v" .. M.version .. " loaded", vim.log.levels.INFO)
+  -- Setup command palette (registers default commands)
+  local palette_ok, palette = pcall(require, "opencode.ui.palette")
+  if palette_ok and type(palette.setup) == "function" then
+    pcall(function()
+      palette.setup()
+      M.palette = palette
+    end)
+  else
+    if not palette_ok then
+      vim.notify("Failed to load command palette: " .. tostring(palette), vim.log.levels.WARN)
+    end
+  end
+
+  -- Apply keymaps from user config (overrides plugin defaults)
+  local km = M._config.keymaps or {}
+  local map_opts = { noremap = true, silent = true }
+  vim.keymap.set("n", km.toggle or "<leader>oo", function()
+    require("opencode").toggle()
+  end, vim.tbl_extend("force", map_opts, { desc = "Toggle OpenCode" }))
+
+  vim.keymap.set("n", km.command_palette or "<leader>op", function()
+    require("opencode").command_palette()
+  end, vim.tbl_extend("force", map_opts, { desc = "OpenCode command palette" }))
+
+  vim.keymap.set("n", km.show_diff or "<leader>od", function()
+    require("opencode").show_diff()
+  end, vim.tbl_extend("force", map_opts, { desc = "Show OpenCode diff" }))
+
+  vim.keymap.set("n", km.abort or "<leader>ox", function()
+    require("opencode").abort()
+  end, vim.tbl_extend("force", map_opts, { desc = "Abort OpenCode request" }))
+
+  vim.notify("OpenCode.nvim v" .. M.version .. " loaded", vim.log.levels.INFO)
 end
 
 --- Toggle chat window

@@ -140,6 +140,27 @@ M.defaults = {
     auto_focus = true,
   },
 
+  -- Command Palette
+  palette = {
+    width = 70,
+    height = 20,
+    border = "rounded",
+    frecency = true,
+    show_keybinds = true,
+    show_icons = true,
+    categories = {
+      "session",
+      "model",
+      "agent",
+      "actions",
+      "mcp",
+      "navigation",
+      "system",
+    },
+    frecency_file = vim.fn.stdpath("data") .. "/opencode_palette_frecency.json",
+    max_frecency_entries = 100,
+  },
+
   -- Keymaps
   keymaps = {
     toggle = "<leader>oo",

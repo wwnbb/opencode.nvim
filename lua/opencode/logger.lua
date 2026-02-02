@@ -33,11 +33,11 @@ function M.add(level, message, data)
     time_raw = os.time(),
   }
 
-  table.insert(logs, 1, entry)
+  table.insert(logs, entry)
 
-  -- Trim to max size
+  -- Trim to max size (remove oldest entries from the beginning)
   if #logs > max_logs then
-    table.remove(logs)
+    table.remove(logs, 1)
   end
 
   -- Notify log viewer of new entry if visible
