@@ -92,9 +92,17 @@ Last Updated: 2026-02-02
   - File: `lua/opencode/ui/palette.lua`
   - Est: 4 hours
 
-- [~] **Task 16**: Question Tool Implementation
+- [x] **Task 16**: Question Tool Implementation
   - Files: `lua/opencode/question/state.lua`, `lua/opencode/ui/question_widget.lua`, `lua/opencode/ui/chat.lua` (modify), `lua/opencode/client/init.lua` (modify), `lua/opencode/events.lua` (modify), `lua/opencode/config.lua` (modify)
-  - Status: Core infrastructure and UI widget implemented
+  - Features:
+    - Question state management with selection tracking
+    - Inline chat widget rendering with highlights
+    - Keyboard navigation (1-9, ↑↓/j/k, Tab, Space)
+    - Single and multi-select support
+    - Custom input with 'c' key
+    - Answer submission and rejection
+    - Debug logging support
+  - Status: Complete
   - Est: 3 hours
 
 - [ ] **Task 17**: Permission Handling Dialogs
@@ -127,7 +135,7 @@ Last Updated: 2026-02-02
 
 ## Progress Summary
 
-- **Completed**: 14/22 tasks (64%)
+- **Completed**: 15/22 tasks (68%)
 - **Current Phase**: Phase 4 [IN PROGRESS]
 - **Next Task**: Task 15 (Command Palette UI)
 - **Total Est. Remaining**: ~17 hours
@@ -136,7 +144,7 @@ Last Updated: 2026-02-02
 
 ## Recent Changes
 
-- 2026-02-02: Task 16 in progress - Question tool implementation (state, widget, events, client API)
+- 2026-02-02: Task 16 complete - Question tool with inline display, keyboard nav, custom input, multi-select
 - 2026-02-02: Task 14 complete - Interactive thinking/reasoning display with real-time updates
 - 2026-02-02: Task 13 complete - Lualine component implementation
 - 2026-02-01: Task 12 complete - Accept/reject with event emission
