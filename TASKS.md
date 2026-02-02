@@ -92,11 +92,16 @@ Last Updated: 2026-02-02
   - File: `lua/opencode/ui/palette.lua`
   - Est: 4 hours
 
-- [ ] **Task 16**: Permission Handling Dialogs
+- [~] **Task 16**: Question Tool Implementation
+  - Files: `lua/opencode/question/state.lua`, `lua/opencode/ui/question_widget.lua`, `lua/opencode/ui/chat.lua` (modify), `lua/opencode/client/init.lua` (modify), `lua/opencode/events.lua` (modify), `lua/opencode/config.lua` (modify)
+  - Status: Core infrastructure and UI widget implemented
+  - Est: 3 hours
+
+- [ ] **Task 17**: Permission Handling Dialogs
   - File: `lua/opencode/ui/permission.lua`
   - Est: 3 hours
 
-- [ ] **Task 17**: Actions (Session/Model/Agent/MCP)
+- [ ] **Task 18**: Actions (Session/Model/Agent/MCP)
   - Files: `lua/opencode/actions/*.lua`
   - Est: 4 hours
 
@@ -122,7 +127,7 @@ Last Updated: 2026-02-02
 
 ## Progress Summary
 
-- **Completed**: 14/21 tasks (67%)
+- **Completed**: 14/22 tasks (64%)
 - **Current Phase**: Phase 4 [IN PROGRESS]
 - **Next Task**: Task 15 (Command Palette UI)
 - **Total Est. Remaining**: ~17 hours
@@ -131,6 +136,7 @@ Last Updated: 2026-02-02
 
 ## Recent Changes
 
+- 2026-02-02: Task 16 in progress - Question tool implementation (state, widget, events, client API)
 - 2026-02-02: Task 14 complete - Interactive thinking/reasoning display with real-time updates
 - 2026-02-02: Task 13 complete - Lualine component implementation
 - 2026-02-01: Task 12 complete - Accept/reject with event emission

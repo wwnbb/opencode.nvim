@@ -126,6 +126,20 @@ M.defaults = {
     height = 15, -- for top/bottom splits
   },
 
+  -- Question tool
+  question = {
+    enabled = true,
+    icon_pending = "💭",
+    icon_answered = "✓",
+    icon_rejected = "✗",
+    highlight_header = "Title",
+    highlight_selected = "CursorLine",
+    highlight_option = "Normal",
+    max_height = 10,
+    show_keymap_hint = true,
+    auto_focus = true,
+  },
+
   -- Keymaps
   keymaps = {
     toggle = "<leader>oo",
