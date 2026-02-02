@@ -196,15 +196,8 @@ local function setup_event_listeners(client)
 		end
 	end)
 
-	-- File edit events
-	client.on_event("file.edited", function(data)
-		if data and data.file then
-			-- Will be handled by artifact module
-			vim.schedule(function()
-				vim.notify("File edited: " .. data.file, vim.log.levels.INFO)
-			end)
-		end
-	end)
+	-- File edit events are handled by events.lua edit handler
+	-- which integrates with changes module and diff viewer
 end
 
 -- Connect to running server

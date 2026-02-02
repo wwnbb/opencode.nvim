@@ -44,8 +44,18 @@ end, {
 	desc = "Restart OpenCode server",
 })
 
+vim.api.nvim_create_user_command("OpenCodeLog", function()
+	require("opencode.ui.log_viewer").toggle()
+end, {
+	desc = "Toggle OpenCode log viewer",
+})
+
 -- Setup default keymaps (user can override in setup())
 -- These will be replaced when user calls setup()
 vim.keymap.set("n", "<leader>oo", function()
 	require("opencode").toggle()
 end, { desc = "Toggle OpenCode", noremap = true, silent = true })
+
+vim.keymap.set("n", "<leader>ol", function()
+	require("opencode.ui.log_viewer").toggle()
+end, { desc = "Toggle OpenCode logs", noremap = true, silent = true })

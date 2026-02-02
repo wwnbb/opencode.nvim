@@ -212,6 +212,7 @@ function M.setup_sse_bridge()
 		["session.diff"] = "session_diff",
 		["file.edited"] = "edit",
 		["permission.requested"] = "permission",
+		["permission.asked"] = "permission", -- Server sends permission.asked
 		["status.streaming"] = "stream_start",
 		["status.idle"] = "stream_end",
 		["server.connected"] = "server_connected",
@@ -238,11 +239,15 @@ function M.setup_chat_handlers()
 	-- Track message parts for streaming assembly
 	local message_parts = {}
 
-	-- Handle message.updated - update chat with assistant message info
-	M.on("message_updated", function(data)
+	-- Handle message.created - just log, don't add (message_updated handles creation)
+	M.on("message", function(data)
 		vim.schedule(function()
+			local logger = require("opencode.logger")
+			logger.debug("message (created) received", { data = data })
+
 			local info = data.info
 			if not info then
+				logger.debug("message (created): NO INFO")
 				return
 			end
 
@@ -251,13 +256,75 @@ function M.setup_chat_handlers()
 				return
 			end
 
-			-- Update status based on message state
+			-- Note: We don't add messages here - message_updated is the primary handler
+			-- This avoids race conditions between message.created and message.updated
+			logger.debug("message (created): ignoring, waiting for message_updated", {
+				role = info.role,
+				id = info.id,
+			})
+		end)
+	end)
+
+	-- Handle message.updated - add or update message
+	-- This is the PRIMARY way messages get added to the chat (like the TUI)
+	M.on("message_updated", function(data)
+		vim.schedule(function()
+			local logger = require("opencode.logger")
+			logger.debug("message_updated received", { data = data })
+
+			local info = data.info
+			if not info then
+				logger.debug("message_updated: NO INFO")
+				return
+			end
+
+			local current_session = state.get_session()
+			if not current_session.id or info.sessionID ~= current_session.id then
+				logger.debug("message_updated: WRONG SESSION", {
+					expected = current_session.id,
+					received = info.sessionID,
+				})
+				return
+			end
+
+			-- Handle assistant messages (user messages are added locally, ignore from server)
 			if info.role == "assistant" then
+				local chat_ok, chat = pcall(require, "opencode.ui.chat")
+				if not chat_ok then
+					return
+				end
+
+				-- Check if message already exists
+				local messages = chat.get_messages()
+				local found = false
+				for _, msg in ipairs(messages) do
+					if msg.id == info.id then
+						found = true
+						break
+					end
+				end
+
+				if not found then
+					-- Add new assistant message (content comes via message_part_updated)
+					chat.add_message("assistant", "", {
+						id = info.id,
+						timestamp = os.time(),
+					})
+					logger.debug("Added assistant message", { id = info.id:sub(1, 10) })
+				end
+
+				-- Update status based on message state
 				if info.time and info.time.completed then
 					state.set_status("idle")
 				else
 					state.set_status("streaming")
 				end
+			elseif info.role == "user" then
+				-- Ignore user messages from server - they are added locally when sent
+				logger.debug("message_updated: ignoring user message from server", { id = info.id })
+				return
+			else
+				logger.debug("message_updated: non-assistant role", { role = info.role })
 			end
 		end)
 	end)
@@ -265,8 +332,12 @@ function M.setup_chat_handlers()
 	-- Handle message.part.updated - update chat with streaming content
 	M.on("message_part_updated", function(data)
 		vim.schedule(function()
+			local logger = require("opencode.logger")
+			logger.debug("message_part_updated", { data = data })
+
 			local part = data.part
 			if not part then
+				logger.debug("message_part_updated: NO PART")
 				return
 			end
 
@@ -281,38 +352,95 @@ function M.setup_chat_handlers()
 			message_parts[msg_id] = message_parts[msg_id] or {}
 
 			if part.type == "text" then
-				-- Update or add text part
+				-- Update or add text part (only for assistant messages)
 				message_parts[msg_id][part.id] = part.text
 
-				-- Assemble full text from all parts
+				-- Assemble full text from all text parts only
 				local full_text = ""
-				for _, text in pairs(message_parts[msg_id]) do
-					if type(text) == "string" then
-						full_text = full_text .. text
+				for _, content in pairs(message_parts[msg_id]) do
+					if type(content) == "string" then
+						full_text = full_text .. content
 					end
 				end
 
-				-- Update chat UI
+				-- Update chat UI only if this is an assistant message
 				local chat_ok, chat = pcall(require, "opencode.ui.chat")
 				if chat_ok and chat.update_assistant_message then
-					chat.update_assistant_message(msg_id, full_text)
+					-- Verify this is an assistant message before updating
+					local messages = chat.get_messages()
+					local is_assistant = false
+					for _, msg in ipairs(messages) do
+						if msg.id == msg_id and msg.role == "assistant" then
+							is_assistant = true
+							break
+						end
+					end
+					if is_assistant then
+						chat.update_assistant_message(msg_id, full_text)
+					end
+				end
+			elseif part.type == "reasoning" then
+				-- Handle reasoning/thinking part updates
+				local logger = require("opencode.logger")
+
+				logger.debug("Reasoning part update", {
+					part_id = part.id,
+					message_id = msg_id,
+					text_length = part.text and #part.text or 0,
+				})
+
+				-- Store reasoning text
+				message_parts[msg_id][part.id] = {
+					type = "reasoning",
+					text = part.text or "",
+				}
+
+				-- Assemble all reasoning content
+				local reasoning_text = ""
+				for _, content in pairs(message_parts[msg_id]) do
+					if type(content) == "table" and content.type == "reasoning" then
+						reasoning_text = reasoning_text .. content.text
+					end
+				end
+
+				-- Emit reasoning update event
+				M.emit("reasoning_update", {
+					message_id = msg_id,
+					part_id = part.id,
+					text = part.text,
+					full_reasoning = reasoning_text,
+				})
+
+				-- Update chat UI with reasoning
+				local chat_ok, chat = pcall(require, "opencode.ui.chat")
+				if chat_ok and chat.update_reasoning then
+					chat.update_reasoning(msg_id, reasoning_text)
 				end
 			elseif part.type == "tool" then
 				-- Handle tool call updates
-				local chat_ok, chat = pcall(require, "opencode.ui.chat")
-				if chat_ok then
-					local tool_state = part.state
-					if tool_state then
-						M.emit("tool_update", {
-							message_id = msg_id,
-							tool_name = part.tool,
-							call_id = part.callID,
-							status = tool_state.status,
-							input = tool_state.input,
-							output = tool_state.status == "completed" and tool_state.output or nil,
-							error = tool_state.status == "error" and tool_state.error or nil,
-						})
+				local logger = require("opencode.logger")
+
+				logger.debug("Tool call update", {
+					tool = part.tool,
+					status = part.state and part.state.status,
+					part = part,
+				})
+
+				local tool_state = part.state
+				if tool_state then
+					if tool_state.input then
+						logger.debug("Tool input", { input = tool_state.input })
 					end
+
+					M.emit("tool_update", {
+						message_id = msg_id,
+						tool_name = part.tool,
+						call_id = part.callID,
+						status = tool_state.status,
+						input = tool_state.input,
+						output = tool_state.status == "completed" and tool_state.output or nil,
+						error = tool_state.status == "error" and tool_state.error or nil,
+					})
 				end
 			end
 		end)
@@ -337,6 +465,305 @@ function M.setup_chat_handlers()
 	-- Clear message parts cache on session change
 	M.on("session_change", function()
 		message_parts = {}
+	end)
+
+	-- Handle tool updates - specifically edit_file tools to show approval widget
+	M.on("tool_update", function(data)
+		vim.schedule(function()
+			if not data then
+				return
+			end
+
+			local tool_name = data.tool_name or ""
+			local status = data.status or ""
+
+			local logger = require("opencode.logger")
+			logger.debug("tool_update event", {
+				tool = tool_name,
+				status = status,
+				data = data,
+			})
+
+			-- Check if this is an edit tool that needs approval
+			local is_edit_tool = tool_name == "edit_file"
+				or tool_name == "Edit"
+				or tool_name == "edit"
+				or tool_name == "write_file"
+				or tool_name == "Write"
+				or tool_name == "apply_patch"
+				or tool_name:match("edit")
+				or tool_name:match("Edit")
+				or tool_name:match("patch")
+
+			-- Show diff for edit tools that are pending or running (before completion)
+			-- Status might be: pending, running, completed, error
+			local needs_approval = status == "pending" or status == "running" or status == ""
+
+			if is_edit_tool and needs_approval then
+				logger.info("Edit tool detected, showing diff", { tool = tool_name })
+				-- Tool is pending approval - try to extract file info and show diff
+				local input = data.input
+
+				if type(input) == "string" then
+					-- Try to parse JSON input
+					local ok, parsed = pcall(vim.json.decode, input)
+					if ok then
+						input = parsed
+					end
+				end
+
+				if type(input) == "table" then
+					local filepath = input.file_path or input.filepath or input.path or input.file
+					local new_content = input.new_string or input.content or input.modified or ""
+					local old_string = input.old_string or ""
+
+					if filepath then
+						-- Read original content
+						local original_content = ""
+						if vim.fn.filereadable(filepath) == 1 then
+							local file = io.open(filepath, "r")
+							if file then
+								original_content = file:read("*all")
+								file:close()
+							end
+						end
+
+						-- If old_string/new_string pattern (patch-style), reconstruct content
+						local modified_content = new_content
+						if old_string ~= "" and new_content ~= "" then
+							-- This is a replacement operation
+							modified_content = original_content:gsub(vim.pesc(old_string), new_content, 1)
+						elseif new_content == "" and input.new_string then
+							modified_content = original_content:gsub(vim.pesc(old_string), input.new_string, 1)
+						end
+
+						if modified_content ~= "" and modified_content ~= original_content then
+							-- Add to changes and show diff viewer
+							local changes = require("opencode.artifact.changes")
+							local change_id = changes.add_change(filepath, original_content, modified_content, {
+								metadata = {
+									source = "tool_call",
+									tool_name = tool_name,
+									call_id = data.call_id,
+									message_id = data.message_id,
+								},
+							})
+
+							if change_id then
+								local diff = require("opencode.ui.diff")
+								diff.show(change_id)
+							end
+						end
+					end
+				end
+			end
+		end)
+	end)
+
+	-- Handle permission requests from server
+	M.on("permission", function(data)
+		vim.schedule(function()
+			if not data then
+				return
+			end
+
+			local logger = require("opencode.logger")
+			logger.debug("Permission event received", { data = data })
+
+			-- Show permission notification
+			local permission_type = data.permission or data.type
+			local pattern = data.pattern or data.path or data.file or "unknown"
+
+			-- For edit permissions, extract file data and show diff viewer
+			if permission_type == "edit" then
+				local permission_id = data.id or data.requestID or ("perm_" .. os.time())
+
+				-- Extract file data from metadata
+				local metadata = data.metadata or {}
+				local files = metadata.files or {}
+
+				logger.debug("Permission request", {
+					id = permission_id,
+					files_count = #files,
+				})
+
+				-- If we have file change data, show the diff viewer for ALL files
+				if #files > 0 then
+					local changes = require("opencode.artifact.changes")
+					local change_ids = {}
+
+					-- Process each file in the permission request
+					for i, file_data in ipairs(files) do
+						local filepath = file_data.file or file_data.path or file_data.filepath or file_data.filePath
+						local original_content = file_data.before or ""
+						local modified_content = file_data.after or ""
+
+						-- Skip if no filepath
+						if not filepath then
+							logger.debug("File missing filepath", { index = i })
+							goto continue_file
+						end
+
+						-- Ensure filepath is absolute
+						if not filepath:match("^/") then
+							filepath = "/" .. filepath
+						end
+
+						logger.debug("Processing file", {
+							index = i,
+							filepath = filepath,
+							before_length = #original_content,
+							after_length = #modified_content,
+						})
+
+						-- Add change to the changes module
+						local change_id = changes.add_change(filepath, original_content, modified_content, {
+							metadata = {
+								source = "permission",
+								permission_id = permission_id,
+								diff = metadata.diff,
+								file_index = i,
+								total_files = #files,
+							},
+						})
+
+						if change_id then
+							table.insert(change_ids, change_id)
+						end
+
+						::continue_file::
+					end
+
+					-- Store pending permission for approval callback (with all change IDs)
+					if #change_ids > 0 then
+						M._pending_permission = {
+							id = permission_id,
+							change_ids = change_ids,
+							current_index = 1,
+							type = permission_type,
+							pattern = pattern,
+							data = data,
+						}
+
+						logger.debug("Stored permission", {
+							id = permission_id,
+							changes_count = #change_ids,
+						})
+
+						-- Show the first diff viewer for approval
+						local diff = require("opencode.ui.diff")
+						diff.show(change_ids[1])
+					else
+						vim.notify("Failed to create any change records", vim.log.levels.ERROR)
+					end
+				else
+					-- No file data, just show notification
+					vim.notify(
+						string.format("OpenCode wants to edit: %s (no diff data available)", pattern),
+						vim.log.levels.WARN
+					)
+				end
+			elseif permission_type == "bash" then
+				vim.notify(string.format("OpenCode wants to run command: %s", pattern), vim.log.levels.WARN)
+			else
+				vim.notify(
+					string.format("Permission request: %s for %s", permission_type, pattern),
+					vim.log.levels.INFO
+				)
+			end
+		end)
+	end)
+
+	-- Handle file edit events - show approval widget with diff viewer
+	M.on("edit", function(data)
+		vim.schedule(function()
+			if not data then
+				return
+			end
+
+			local filepath = data.file or data.filepath
+			local original_content = data.original or data.original_content or ""
+			local modified_content = data.modified or data.modified_content or data.content or ""
+
+			if not filepath then
+				vim.notify("Edit event missing filepath", vim.log.levels.WARN)
+				return
+			end
+
+			-- If no original content provided, try to read from file
+			if original_content == "" and vim.fn.filereadable(filepath) == 1 then
+				local file = io.open(filepath, "r")
+				if file then
+					original_content = file:read("*all")
+					file:close()
+				end
+			end
+
+			-- If no modified content, nothing to show
+			if modified_content == "" then
+				vim.notify("File edited: " .. filepath, vim.log.levels.INFO)
+				return
+			end
+
+			-- Add change to the changes module
+			local changes = require("opencode.artifact.changes")
+			local change_id = changes.add_change(filepath, original_content, modified_content, {
+				metadata = {
+					source = "server",
+					session_id = data.sessionID,
+				},
+			})
+
+			if change_id then
+				-- Show the diff viewer for approval
+				local diff = require("opencode.ui.diff")
+				diff.show(change_id)
+			else
+				vim.notify("Failed to create change record for: " .. filepath, vim.log.levels.ERROR)
+			end
+		end)
+	end)
+
+	-- Handle session.diff events (alternative edit format)
+	M.on("session_diff", function(data)
+		vim.schedule(function()
+			if not data then
+				return
+			end
+
+			-- session.diff may contain multiple file changes
+			local diffs = data.diffs or { data }
+
+			for _, diff_data in ipairs(diffs) do
+				local filepath = diff_data.file or diff_data.filepath
+				local original = diff_data.original or ""
+				local modified = diff_data.modified or diff_data.content or ""
+
+				if filepath and modified ~= "" then
+					-- Read original if not provided
+					if original == "" and vim.fn.filereadable(filepath) == 1 then
+						local file = io.open(filepath, "r")
+						if file then
+							original = file:read("*all")
+							file:close()
+						end
+					end
+
+					local changes = require("opencode.artifact.changes")
+					local change_id = changes.add_change(filepath, original, modified, {
+						metadata = {
+							source = "session_diff",
+							session_id = data.sessionID,
+						},
+					})
+
+					if change_id then
+						local diff_ui = require("opencode.ui.diff")
+						diff_ui.show(change_id)
+					end
+				end
+			end
+		end)
 	end)
 end
 

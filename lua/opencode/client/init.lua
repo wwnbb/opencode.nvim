@@ -125,16 +125,16 @@ function M.revert_message(session_id, message_id, opts, callback)
 end
 
 -- Respond to permission request
----@param session_id string
----@param permission_id string
----@param response string
----@param opts? table { remember? }
+-- reply: "once" (approve this time), "always" (approve and remember), "reject" (deny)
+---@param permission_id string The permission request ID (e.g., "per_xxx")
+---@param reply string "once" | "always" | "reject"
+---@param opts? table { message? string } Optional rejection message
 ---@param callback function(err, success)
-function M.respond_permission(session_id, permission_id, response, opts, callback)
+function M.respond_permission(permission_id, reply, opts, callback)
 	opts = opts or {}
 	http.post(
-		"/session/" .. session_id .. "/permissions/" .. permission_id,
-		vim.tbl_deep_extend("force", opts, { response = response }),
+		"/permission/" .. permission_id .. "/reply",
+		{ reply = reply, message = opts.message },
 		callback
 	)
 end

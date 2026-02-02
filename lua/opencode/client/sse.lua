@@ -86,11 +86,22 @@ local function process_buffer()
 
 		local event = parse_sse_event(event_data)
 		if event.data then
+			-- DEBUG: Log all SSE events
+			vim.schedule(function()
+				vim.notify(string.format("[SSE] Event: %s", event.event), vim.log.levels.DEBUG)
+			end)
+
 			-- Parse JSON data
 			local ok, parsed = pcall(vim.json.decode, event.data)
 			if ok and parsed then
+				vim.schedule(function()
+					vim.notify(string.format("[SSE] Parsed %s successfully", event.event), vim.log.levels.DEBUG)
+				end)
 				M.emit(event.event, parsed, event.id)
 			else
+				vim.schedule(function()
+					vim.notify(string.format("[SSE] JSON parse FAILED for %s: %s", event.event, tostring(parsed)), vim.log.levels.DEBUG)
+				end)
 				-- Emit raw data if JSON parsing fails
 				M.emit(event.event, event.data, event.id)
 			end

@@ -1,0 +1,44 @@
+[
+  {
+    "content": "Research OpenCode TUI thinking implementation",
+    "status": "completed",
+    "priority": "high",
+    "id": "1"
+  },
+  {
+    "content": "Add reasoning part handling to SSE event system",
+    "status": "completed",
+    "priority": "high",
+    "id": "2"
+  },
+  {
+    "content": "Create thinking display module with collapsible UI",
+    "status": "completed",
+    "priority": "high",
+    "id": "3"
+  },
+  {
+    "content": "Integrate thinking display into chat.lua message rendering",
+    "status": "completed",
+    "priority": "high",
+    "id": "4"
+  },
+  {
+    "content": "Add configuration options for thinking display",
+    "status": "completed",
+    "priority": "medium",
+    "id": "5"
+  },
+  {
+    "content": "Update TASKS.md with thinking feature",
+    "status": "completed",
+    "priority": "low",
+    "id": "6"
+  },
+  {
+    "content": "Test thinking display with live OpenCode server",
+    "status": "pending",
+    "priority": "high",
+    "id": "7"
+  }
+]

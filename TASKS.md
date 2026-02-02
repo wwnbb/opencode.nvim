@@ -1,6 +1,6 @@
 # OpenCode.nvim Task Tracking
 
-Last Updated: 2026-02-01
+Last Updated: 2026-02-02
 
 ## Legend
 - [x] Completed
@@ -53,37 +53,50 @@ Last Updated: 2026-02-01
 
 ---
 
-## Phase 3: Diff System [~]
+## Phase 3: Diff System [COMPLETE]
 
 - [x] **Task 10**: Edit Tracking State
   - File: `lua/opencode/artifact/changes.lua`
   - Status: Implemented with hunks, backups, and status tracking
 
-- [~] **Task 11**: Diff Viewer UI
+- [x] **Task 11**: Diff Viewer UI
   - Files: `lua/opencode/ui/diff.lua`, `lua/opencode/ui/float.lua`
-  - Est: 5 hours
+  - Status: Implemented with side-by-side/horizontal layouts, hunk navigation, syntax highlighting
 
-- [ ] **Task 12**: Accept/Reject Functionality
-  - Modify: `lua/opencode/artifact/changes.lua`, `lua/opencode/ui/diff.lua`
-  - Est: 3 hours
+- [x] **Task 12**: Accept/Reject Functionality
+  - Status: Implemented with event emission for UI updates
 
 ---
 
-## Phase 4: Integration [TODO]
+## Phase 4: Integration [~]
 
-- [ ] **Task 13**: Lualine Component
+---
+
+## Phase 4: Integration [~]
+
+- [x] **Task 13**: Lualine Component
   - File: `lua/opencode/components/lualine.lua`
   - Est: 2 hours
 
-- [ ] **Task 14**: Command Palette UI
+- [x] **Task 14**: Interactive Thinking Display
+  - Files: `lua/opencode/ui/thinking.lua`, `lua/opencode/events.lua`, `lua/opencode/ui/chat.lua`
+  - Features:
+    - Real-time reasoning content display from message parts
+    - Topic extraction from bold text (**Topic**)
+    - Throttled updates for performance
+    - Configurable max height and truncation
+    - Visual styling with icons and highlights
+  - Est: 3 hours
+
+- [ ] **Task 15**: Command Palette UI
   - File: `lua/opencode/ui/palette.lua`
   - Est: 4 hours
 
-- [ ] **Task 15**: Permission Handling Dialogs
+- [ ] **Task 16**: Permission Handling Dialogs
   - File: `lua/opencode/ui/permission.lua`
   - Est: 3 hours
 
-- [ ] **Task 16**: Actions (Session/Model/Agent/MCP)
+- [ ] **Task 17**: Actions (Session/Model/Agent/MCP)
   - Files: `lua/opencode/actions/*.lua`
   - Est: 4 hours
 
@@ -91,17 +104,17 @@ Last Updated: 2026-02-01
 
 ## Phase 5: Polish [TODO]
 
-- [ ] **Task 17**: Telescope Integration
+- [ ] **Task 18**: Telescope Integration
   - Est: 2 hours
 
-- [ ] **Task 18**: nvim-notify Integration
+- [ ] **Task 19**: nvim-notify Integration
   - Est: 1 hour
 
-- [ ] **Task 19**: Health Check Module
+- [ ] **Task 20**: Health Check Module
   - File: `lua/opencode/health.lua`
   - Est: 2 hours
 
-- [ ] **Task 20**: Documentation
+- [ ] **Task 21**: Documentation
   - File: `doc/opencode.txt`
   - Est: 3 hours
 
@@ -109,15 +122,19 @@ Last Updated: 2026-02-01
 
 ## Progress Summary
 
-- **Completed**: 10/20 tasks (50%)
-- **Current Phase**: Phase 3 [IN PROGRESS]
-- **Next Task**: Task 11 (Diff Viewer UI)
-- **Total Est. Remaining**: ~23 hours
+- **Completed**: 14/21 tasks (67%)
+- **Current Phase**: Phase 4 [IN PROGRESS]
+- **Next Task**: Task 15 (Command Palette UI)
+- **Total Est. Remaining**: ~17 hours
 
 ---
 
 ## Recent Changes
 
+- 2026-02-02: Task 14 complete - Interactive thinking/reasoning display with real-time updates
+- 2026-02-02: Task 13 complete - Lualine component implementation
+- 2026-02-01: Task 12 complete - Accept/reject with event emission
+- 2026-02-01: Task 11 complete - Diff viewer UI with side-by-side layouts
 - 2026-02-01: Fixed <C-CR> to <C-g> for send (terminal compatibility)
 - 2026-02-01: Task 10 complete - Edit tracking with hunks and backups
 - 2026-02-01: Task 9 complete - Context attachment module
