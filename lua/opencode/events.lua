@@ -213,6 +213,9 @@ function M.setup_sse_bridge()
 		["file.edited"] = "edit",
 		["permission.requested"] = "permission",
 		["permission.asked"] = "permission", -- Server sends permission.asked
+		["question.asked"] = "question_asked",
+		["question.replied"] = "question_replied",
+		["question.rejected"] = "question_rejected",
 		["status.streaming"] = "stream_start",
 		["status.idle"] = "stream_end",
 		["server.connected"] = "server_connected",
@@ -767,6 +770,113 @@ function M.setup_chat_handlers()
 	end)
 end
 
+-- Setup question event handlers
+function M.setup_question_handlers()
+	local state = require("opencode.state")
+	local question_state = require("opencode.question.state")
+
+	-- Handle question.asked - store question and trigger UI update
+	M.on("question_asked", function(data)
+		vim.schedule(function()
+			if not data then
+				return
+			end
+
+			local logger = require("opencode.logger")
+			logger.debug("Question asked event received", { data = data })
+
+			local request_id = data.requestID
+			local session_id = data.sessionID
+			local questions = data.questions
+
+			if not request_id or not questions then
+				logger.warn("Invalid question data", { data = data })
+				return
+			end
+
+			-- Check session match
+			local current_session = state.get_session()
+			if session_id and session_id ~= current_session.id then
+				logger.debug("Question for different session, ignoring", {
+					expected = current_session.id,
+					received = session_id,
+				})
+				return
+			end
+
+			-- Store question state
+			question_state.add_question(request_id, session_id or current_session.id, questions)
+
+			-- Add to chat as a special message
+			local chat_ok, chat = pcall(require, "opencode.ui.chat")
+			if chat_ok and chat.add_question_message then
+				chat.add_question_message(request_id, questions, "pending")
+			end
+
+			logger.info("Question added", { request_id = request_id:sub(1, 10), count = #questions })
+		end)
+	end)
+
+	-- Handle question.replied - mark as answered
+	M.on("question_replied", function(data)
+		vim.schedule(function()
+			if not data then
+				return
+			end
+
+			local logger = require("opencode.logger")
+			local request_id = data.requestID
+
+			if not request_id then
+				return
+			end
+
+			-- Mark as answered
+			question_state.mark_answered(request_id, data.answers)
+
+			-- Update chat UI
+			local chat_ok, chat = pcall(require, "opencode.ui.chat")
+			if chat_ok and chat.update_question_status then
+				chat.update_question_status(request_id, "answered", data.answers)
+			end
+
+			logger.debug("Question answered", { request_id = request_id:sub(1, 10) })
+		end)
+	end)
+
+	-- Handle question.rejected - mark as rejected
+	M.on("question_rejected", function(data)
+		vim.schedule(function()
+			if not data then
+				return
+			end
+
+			local logger = require("opencode.logger")
+			local request_id = data.requestID
+
+			if not request_id then
+				return
+			end
+
+			-- Mark as rejected
+			question_state.mark_rejected(request_id)
+
+			-- Update chat UI
+			local chat_ok, chat = pcall(require, "opencode.ui.chat")
+			if chat_ok and chat.update_question_status then
+				chat.update_question_status(request_id, "rejected")
+			end
+
+			logger.debug("Question rejected", { request_id = request_id:sub(1, 10) })
+		end)
+	end)
+
+	-- Clear questions on session change
+	M.on("session_change", function()
+		question_state.clear_all()
+	end)
+end
+
 -- Initialize event system with bridges
 function M.setup()
 	-- Setup bridges to other systems
@@ -783,6 +893,11 @@ function M.setup()
 	local ok3, err3 = pcall(M.setup_chat_handlers)
 	if not ok3 then
 		vim.notify("Failed to setup chat handlers: " .. tostring(err3), vim.log.levels.WARN)
+	end
+
+	local ok4, err4 = pcall(M.setup_question_handlers)
+	if not ok4 then
+		vim.notify("Failed to setup question handlers: " .. tostring(err4), vim.log.levels.WARN)
 	end
 end
 

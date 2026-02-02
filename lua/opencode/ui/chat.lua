@@ -19,7 +19,11 @@ local state = {
 	visible = false,
 	messages = {},
 	config = nil,
+	questions = {}, -- Track question positions: { [request_id] = { start_line, end_line } }
 }
+
+local question_widget = require("opencode.ui.question_widget")
+local question_state = require("opencode.question.state")
 
 -- Default configuration
 local defaults = {
@@ -117,6 +121,46 @@ local function setup_buffer(bufnr)
 	vim.keymap.set("n", "?", function()
 		M.show_help()
 	end, opts)
+
+	-- Question navigation (only active when on question lines)
+	vim.keymap.set("n", "j", function()
+		M.handle_question_navigation("down")
+	end, opts)
+
+	vim.keymap.set("n", "k", function()
+		M.handle_question_navigation("up")
+	end, opts)
+
+	vim.keymap.set("n", "<Down>", function()
+		M.handle_question_navigation("down")
+	end, opts)
+
+	vim.keymap.set("n", "<Up>", function()
+		M.handle_question_navigation("up")
+	end, opts)
+
+	vim.keymap.set("n", "<CR>", function()
+		M.handle_question_confirm()
+	end, opts)
+
+	vim.keymap.set("n", "<Esc>", function()
+		M.handle_question_cancel()
+	end, opts)
+
+	vim.keymap.set("n", "<Tab>", function()
+		M.handle_question_next_tab()
+	end, opts)
+
+	vim.keymap.set("n", "<S-Tab>", function()
+		M.handle_question_prev_tab()
+	end, opts)
+
+	-- Number keys for quick selection (1-9)
+	for i = 1, 9 do
+		vim.keymap.set("n", tostring(i), function()
+			M.handle_question_number_select(i)
+		end, opts)
+	end
 end
 
 -- Create chat buffer
@@ -150,6 +194,14 @@ function M.show_help()
 		" <CR>       - Toggle details",
 		" gd         - Go to file",
 		" gD         - View diff",
+		"",
+		" Question Tool:",
+		" 1-9        - Select option by number",
+		" ↑/↓ j/k    - Navigate options",
+		" <CR>       - Confirm selection",
+		" <Esc>      - Cancel question",
+		" <Tab>      - Next question tab",
+		" <S-Tab>    - Previous question tab",
 		"",
 		" Press any key to close",
 	}
@@ -784,6 +836,329 @@ function M.clear_streaming_state()
 	streaming_message.id = nil
 	streaming_message.content = ""
 	streaming_message.line_start = nil
+end
+
+-- Add a question message to the chat
+---@param request_id string
+---@param questions table
+---@param status "pending" | "answered" | "rejected"
+function M.add_question_message(request_id, questions, status)
+	if not state.bufnr or not vim.api.nvim_buf_is_valid(state.bufnr) then
+		return
+	end
+
+	local qstate = question_state.get_question(request_id)
+	if not qstate then
+		return
+	end
+
+	-- Get formatted lines
+	local lines, highlights, _ = question_widget.get_lines_for_question(request_id, { questions = questions }, qstate, status)
+
+	-- Remember where this question starts
+	local line_count = vim.api.nvim_buf_line_count(state.bufnr)
+	local start_line = line_count
+
+	-- Insert into buffer
+	vim.bo[state.bufnr].modifiable = true
+	vim.api.nvim_buf_set_lines(state.bufnr, line_count, line_count, false, lines)
+
+	-- Apply highlights
+	for _, hl in ipairs(highlights) do
+		vim.api.nvim_buf_add_highlight(state.bufnr, -1, hl.hl_group, start_line + hl.line, hl.col_start, hl.col_end)
+	end
+
+	vim.bo[state.bufnr].modifiable = false
+
+	-- Track question position
+	state.questions[request_id] = {
+		start_line = start_line,
+		end_line = start_line + #lines - 1,
+		status = status,
+	}
+
+	-- Store question data in a special message entry
+	table.insert(state.messages, {
+		role = "system",
+		type = "question",
+		request_id = request_id,
+		questions = questions,
+		status = status,
+		timestamp = os.time(),
+		id = "question_" .. request_id,
+	})
+
+	-- Auto-scroll to show the question
+	if state.visible and state.winid and vim.api.nvim_win_is_valid(state.winid) then
+		vim.api.nvim_win_set_cursor(state.winid, { start_line + #lines, 0 })
+	end
+end
+
+-- Update question status and re-render
+---@param request_id string
+---@param status "answered" | "rejected"
+---@param answers? table
+function M.update_question_status(request_id, status, answers)
+	if not state.bufnr or not vim.api.nvim_buf_is_valid(state.bufnr) then
+		return
+	end
+
+	local pos = state.questions[request_id]
+	if not pos then
+		return
+	end
+
+	-- Find the message entry
+	local msg_idx = nil
+	for i, msg in ipairs(state.messages) do
+		if msg.type == "question" and msg.request_id == request_id then
+			msg_idx = i
+			msg.status = status
+			msg.answers = answers
+			break
+		end
+	end
+
+	if not msg_idx then
+		return
+	end
+
+	-- Get new lines based on status
+	local lines, highlights
+	local questions = state.messages[msg_idx].questions
+
+	if status == "answered" then
+		lines, highlights = question_widget.get_answered_lines(request_id, { questions = questions }, answers)
+	else
+		lines, highlights = question_widget.get_rejected_lines(request_id, { questions = questions })
+	end
+
+	-- Replace old lines
+	vim.bo[state.bufnr].modifiable = true
+	vim.api.nvim_buf_set_lines(state.bufnr, pos.start_line, pos.end_line + 1, false, lines)
+
+	-- Apply highlights
+	for _, hl in ipairs(highlights) do
+		vim.api.nvim_buf_add_highlight(state.bufnr, -1, hl.hl_group, pos.start_line + hl.line, hl.col_start, hl.col_end)
+	end
+
+	vim.bo[state.bufnr].modifiable = false
+
+	-- Update position tracking
+	state.questions[request_id].end_line = pos.start_line + #lines - 1
+	state.questions[request_id].status = status
+end
+
+-- Get question at cursor position
+---@return string|nil request_id
+---@return table|nil question_state
+function M.get_question_at_cursor()
+	if not state.winid or not vim.api.nvim_win_is_valid(state.winid) then
+		return nil, nil
+	end
+
+	local cursor = vim.api.nvim_win_get_cursor(state.winid)
+	local cursor_line = cursor[1] - 1 -- 0-based
+
+	for request_id, pos in pairs(state.questions) do
+		if cursor_line >= pos.start_line and cursor_line <= pos.end_line and pos.status == "pending" then
+			return request_id, question_state.get_question(request_id)
+		end
+	end
+
+	return nil, nil
+end
+
+-- Handle question navigation (j/k or arrows)
+---@param direction "up" | "down"
+function M.handle_question_navigation(direction)
+	local request_id, qstate = M.get_question_at_cursor()
+
+	if not request_id then
+		-- Not on a question, use default navigation
+		local key = direction == "up" and "k" or "j"
+		vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes(key, true, false, true), "n", false)
+		return
+	end
+
+	-- Move selection
+	question_state.move_selection(request_id, direction)
+
+	-- Re-render the question
+	M.rerender_question(request_id)
+end
+
+-- Handle number key selection (1-9)
+---@param number number
+function M.handle_question_number_select(number)
+	local request_id, qstate = M.get_question_at_cursor()
+
+	if not request_id then
+		-- Not on a question, pass through
+		vim.api.nvim_feedkeys(tostring(number), "n", false)
+		return
+	end
+
+	-- Select option by number
+	question_state.select_option(request_id, number)
+
+	-- Re-render
+	M.rerender_question(request_id)
+end
+
+-- Handle question confirmation (Enter)
+function M.handle_question_confirm()
+	local request_id, qstate = M.get_question_at_cursor()
+
+	if not request_id then
+		-- Not on a question, use default Enter
+		vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<CR>", true, false, true), "n", false)
+		return
+	end
+
+	-- Get answers
+	local answers = question_state.get_answers(request_id)
+
+	-- Submit to server
+	local client = require("opencode.client")
+	local current_session = require("opencode.state").get_session()
+
+	client.reply_to_question(current_session.id, request_id, answers, function(err, success)
+		vim.schedule(function()
+			if err then
+				vim.notify("Failed to submit answer: " .. tostring(err), vim.log.levels.ERROR)
+				return
+			end
+
+			-- Mark as answered locally
+			question_state.mark_answered(request_id, answers)
+			M.update_question_status(request_id, "answered", answers)
+		end)
+	end)
+end
+
+-- Handle question cancel (Esc)
+function M.handle_question_cancel()
+	local request_id, qstate = M.get_question_at_cursor()
+
+	if not request_id then
+		-- Not on a question, use default Esc
+		vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<Esc>", true, false, true), "n", false)
+		return
+	end
+
+	-- Reject on server
+	local client = require("opencode.client")
+	local current_session = require("opencode.state").get_session()
+
+	client.reject_question(current_session.id, request_id, function(err, success)
+		vim.schedule(function()
+			if err then
+				vim.notify("Failed to cancel question: " .. tostring(err), vim.log.levels.ERROR)
+				return
+			end
+
+			-- Mark as rejected locally
+			question_state.mark_rejected(request_id)
+			M.update_question_status(request_id, "rejected")
+		end)
+	end)
+end
+
+-- Handle next tab (Tab)
+function M.handle_question_next_tab()
+	local request_id, qstate = M.get_question_at_cursor()
+
+	if not request_id then
+		-- Not on a question, pass through
+		vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<Tab>", true, false, true), "n", false)
+		return
+	end
+
+	local next_tab = qstate.current_tab + 1
+	if next_tab > #qstate.questions then
+		next_tab = 1
+	end
+
+	question_state.set_tab(request_id, next_tab)
+	M.rerender_question(request_id)
+end
+
+-- Handle previous tab (Shift+Tab)
+function M.handle_question_prev_tab()
+	local request_id, qstate = M.get_question_at_cursor()
+
+	if not request_id then
+		-- Not on a question, pass through
+		vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<S-Tab>", true, false, true), "n", false)
+		return
+	end
+
+	local prev_tab = qstate.current_tab - 1
+	if prev_tab < 1 then
+		prev_tab = #qstate.questions
+	end
+
+	question_state.set_tab(request_id, prev_tab)
+	M.rerender_question(request_id)
+end
+
+-- Re-render a question in place
+---@param request_id string
+function M.rerender_question(request_id)
+	if not state.bufnr or not vim.api.nvim_buf_is_valid(state.bufnr) then
+		return
+	end
+
+	local pos = state.questions[request_id]
+	if not pos then
+		return
+	end
+
+	local qstate = question_state.get_question(request_id)
+	if not qstate then
+		return
+	end
+
+	-- Find the message entry to get questions data
+	local questions = nil
+	for _, msg in ipairs(state.messages) do
+		if msg.type == "question" and msg.request_id == request_id then
+			questions = msg.questions
+			break
+		end
+	end
+
+	if not questions then
+		return
+	end
+
+	-- Get new lines
+	local lines, highlights, _ = question_widget.get_lines_for_question(
+		request_id,
+		{ questions = questions },
+		qstate,
+		qstate.status
+	)
+
+	-- Replace lines
+	vim.bo[state.bufnr].modifiable = true
+	vim.api.nvim_buf_set_lines(state.bufnr, pos.start_line, pos.end_line + 1, false, lines)
+
+	-- Apply highlights
+	for _, hl in ipairs(highlights) do
+		vim.api.nvim_buf_add_highlight(state.bufnr, -1, hl.hl_group, pos.start_line + hl.line, hl.col_start, hl.col_end)
+	end
+
+	vim.bo[state.bufnr].modifiable = false
+
+	-- Update position
+	state.questions[request_id].end_line = pos.start_line + #lines - 1
+end
+
+-- Clear all question tracking (e.g., on session change)
+function M.clear_questions()
+	state.questions = {}
 end
 
 return M

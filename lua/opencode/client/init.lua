@@ -139,6 +139,31 @@ function M.respond_permission(permission_id, reply, opts, callback)
 	)
 end
 
+-- Reply to a question with selected answers
+---@param session_id string Session ID
+---@param request_id string Question request ID
+---@param answers table Array of answer arrays, e.g., {{"README.md"}, {"option2"}}
+---@param callback function(err, success)
+function M.reply_to_question(session_id, request_id, answers, callback)
+	http.post(
+		"/sessions/" .. session_id .. "/question/" .. request_id .. "/reply",
+		{ answers = answers },
+		callback
+	)
+end
+
+-- Reject/cancel a question request
+---@param session_id string Session ID
+---@param request_id string Question request ID
+---@param callback function(err, success)
+function M.reject_question(session_id, request_id, callback)
+	http.post(
+		"/sessions/" .. session_id .. "/question/" .. request_id .. "/reject",
+		{},
+		callback
+	)
+end
+
 -- Get list of providers
 ---@param callback function(err, providers)
 function M.list_providers(callback)
