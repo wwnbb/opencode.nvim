@@ -72,6 +72,15 @@ function M.setup(opts)
 	-- Expose state module
 	M.state = state
 
+	-- Setup lualine component if configured
+	if M._config.lualine and M._config.lualine.enabled ~= false then
+		local lualine_ok, lualine = pcall(require, "opencode.components.lualine")
+		if lualine_ok then
+			lualine.setup(M._config.lualine)
+			M.lualine = lualine
+		end
+	end
+
 	vim.notify("OpenCode.nvim v" .. M.version .. " loaded", vim.log.levels.INFO)
 end
 
@@ -260,6 +269,24 @@ function M.disconnect()
 	lifecycle.disconnect()
 end
 
+--- Get current OpenCode status
+---@return table Status information
+function M.get_status()
+	return state.get_status_summary()
+end
+
+--- Check if connected to OpenCode server
+---@return boolean
+function M.is_connected()
+	return lifecycle and lifecycle.is_connected() or false
+end
+
+--- Check if currently streaming
+---@return boolean
+function M.is_streaming()
+	return state.get_status() == "streaming"
+end
+
 --- Ensure connected (for lazy init)
 ---@param callback function Called when connected
 function M.ensure_connected(callback)
@@ -314,6 +341,85 @@ function M.emit(event_type, data)
 		return
 	end
 	events.emit(event_type, data)
+end
+
+-- UI Components
+
+--- Open command palette
+function M.command_palette()
+	if not lifecycle then
+		vim.notify("OpenCode not initialized", vim.log.levels.ERROR)
+		return
+	end
+
+	lifecycle.ensure_connected(function()
+		local palette = require("opencode.ui.palette")
+		palette.show()
+	end)
+end
+
+--- Show diff viewer
+function M.show_diff()
+	local diff = require("opencode.ui.diff")
+	local changes = require("opencode.artifact.changes")
+	local all_changes = changes.get_all()
+
+	if #all_changes == 0 then
+		vim.notify("No pending changes to show", vim.log.levels.INFO)
+		return
+	end
+
+	-- Show the first pending change
+	for _, change in ipairs(all_changes) do
+		if change.status == "pending" then
+			diff.show(change.id)
+			return
+		end
+	end
+
+	vim.notify("No pending changes to show", vim.log.levels.INFO)
+end
+
+--- Abort current request
+function M.abort()
+	local client = require("opencode.client")
+	client.abort()
+	state.set_status("idle")
+	vim.notify("Request aborted", vim.log.levels.INFO)
+end
+
+--- Toggle log viewer window
+function M.toggle_logs()
+	local viewer = require("opencode.ui.log_viewer")
+	viewer.toggle()
+end
+
+--- Open log viewer window
+function M.open_logs()
+	local viewer = require("opencode.ui.log_viewer")
+	viewer.open()
+end
+
+--- Close log viewer window
+function M.close_logs()
+	local viewer = require("opencode.ui.log_viewer")
+	viewer.close()
+end
+
+--- Clear all logs
+function M.clear_logs()
+	local logger = require("opencode.logger")
+	logger.clear()
+	vim.notify("OpenCode logs cleared", vim.log.levels.INFO)
+end
+
+-- Lualine component (for direct use in lualine setup)
+M.lualine_component = function()
+	local lualine_ok, lualine = pcall(require, "opencode.components.lualine")
+	if not lualine_ok then
+		return ""
+	end
+	return lualine.component()
 end
 
 -- Expose config for other modules

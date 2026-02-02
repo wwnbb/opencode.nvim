@@ -1,0 +1,405 @@
+-- opencode.nvim - Log Viewer UI module
+-- Split window for viewing plugin logs
+
+local M = {}
+
+-- State
+local state = {
+	bufnr = nil,
+	winid = nil,
+	visible = false,
+	auto_scroll = true,
+	config = nil,
+}
+
+-- Default configuration
+local defaults = {
+	position = "bottom", -- "bottom" | "top" | "left" | "right"
+	width = 80, -- for left/right splits
+	height = 15, -- for top/bottom splits
+	level_highlights = {
+		DEBUG = "Comment",
+		INFO = "Normal",
+		WARN = "WarningMsg",
+		ERROR = "ErrorMsg",
+	},
+}
+
+-- Get merged config
+local function get_config()
+	if state.config then
+		return state.config
+	end
+
+	-- Try to get config from main module
+	local ok, config_module = pcall(require, "opencode.config")
+	if ok and config_module.defaults and config_module.defaults.logs then
+		return vim.tbl_deep_extend("force", defaults, config_module.defaults.logs)
+	end
+
+	return defaults
+end
+
+-- Setup buffer options
+local function setup_buffer(bufnr)
+	vim.bo[bufnr].buftype = "nofile"
+	vim.bo[bufnr].bufhidden = "hide"
+	vim.bo[bufnr].swapfile = false
+	vim.bo[bufnr].filetype = "opencode_logs"
+	vim.bo[bufnr].modifiable = false
+
+	-- Buffer-local keymaps
+	local opts = { buffer = bufnr, noremap = true, silent = true }
+
+	-- Close
+	vim.keymap.set("n", "q", function()
+		M.close()
+	end, opts)
+
+	vim.keymap.set("n", "<Esc>", function()
+		M.close()
+	end, opts)
+
+	-- Scroll
+	vim.keymap.set("n", "<C-u>", "<C-u>", opts)
+	vim.keymap.set("n", "<C-d>", "<C-d>", opts)
+	vim.keymap.set("n", "gg", "gg", opts)
+	vim.keymap.set("n", "G", "G", opts)
+
+	-- Clear logs
+	vim.keymap.set("n", "C", function()
+		M.clear_logs()
+	end, opts)
+
+	-- Toggle auto-scroll
+	vim.keymap.set("n", "a", function()
+		M.toggle_auto_scroll()
+	end, opts)
+
+	-- Refresh
+	vim.keymap.set("n", "r", function()
+		M.refresh()
+	end, opts)
+
+	-- Help
+	vim.keymap.set("n", "?", function()
+		M.show_help()
+	end, opts)
+end
+
+-- Create buffer
+local function create_buffer()
+	if state.bufnr and vim.api.nvim_buf_is_valid(state.bufnr) then
+		return state.bufnr
+	end
+
+	state.bufnr = vim.api.nvim_create_buf(false, true)
+	setup_buffer(state.bufnr)
+	return state.bufnr
+end
+
+-- Format log entry for display
+local function format_entry(entry, cfg)
+	local lines = {}
+	local highlights = {}
+
+	-- Header line with timestamp and level
+	local level_indicator = string.format("[%s]", entry.level)
+	local header = string.format("%s %s %s", entry.timestamp, level_indicator, entry.message)
+	table.insert(lines, header)
+
+	-- Highlight for the level
+	local hl_group = cfg.level_highlights[entry.level] or "Normal"
+	table.insert(highlights, {
+		line = 0,
+		col_start = 9, -- After timestamp
+		col_end = 9 + #level_indicator,
+		hl_group = hl_group,
+	})
+
+	-- Data if present
+	if entry.data then
+		local data_str = vim.inspect(entry.data)
+		-- Get window width for wrapping
+		local win_width = state.winid and vim.api.nvim_win_get_width(state.winid) or 80
+		local max_line_length = win_width - 4
+		local indent = "  "
+
+		for line in data_str:gmatch("[^\n]+") do
+			if #line > max_line_length then
+				-- Truncate long lines
+				table.insert(lines, indent .. line:sub(1, max_line_length - 3) .. "...")
+			else
+				table.insert(lines, indent .. line)
+			end
+		end
+	end
+
+	-- Empty line separator
+	table.insert(lines, "")
+
+	return lines, highlights
+end
+
+-- Open log viewer in a split
+function M.open(opts)
+	opts = opts or {}
+
+	if state.visible then
+		if state.winid and vim.api.nvim_win_is_valid(state.winid) then
+			vim.api.nvim_set_current_win(state.winid)
+		end
+		return
+	end
+
+	-- Merge config with any provided options
+	local cfg = get_config()
+	if opts.position then
+		cfg.position = opts.position
+	end
+	if opts.width then
+		cfg.width = opts.width
+	end
+	if opts.height then
+		cfg.height = opts.height
+	end
+	state.config = cfg
+
+	create_buffer()
+
+	-- Determine split command based on position
+	local split_cmd
+	if cfg.position == "bottom" then
+		split_cmd = string.format("botright %dsplit", cfg.height)
+	elseif cfg.position == "top" then
+		split_cmd = string.format("topleft %dsplit", cfg.height)
+	elseif cfg.position == "left" then
+		split_cmd = string.format("topleft %dvsplit", cfg.width)
+	else -- right
+		split_cmd = string.format("botright %dvsplit", cfg.width)
+	end
+
+	-- Create split window
+	vim.cmd(split_cmd)
+	state.winid = vim.api.nvim_get_current_win()
+	vim.api.nvim_win_set_buf(state.winid, state.bufnr)
+
+	-- Set window options
+	if cfg.position == "left" or cfg.position == "right" then
+		vim.wo[state.winid].winfixwidth = true
+		vim.api.nvim_win_set_width(state.winid, cfg.width)
+	else
+		vim.wo[state.winid].winfixheight = true
+		vim.api.nvim_win_set_height(state.winid, cfg.height)
+	end
+
+	-- Mark as scratch buffer
+	vim.bo[state.bufnr].bufhidden = "hide"
+
+	state.visible = true
+
+	-- Initial render
+	M.refresh()
+
+	-- Auto-scroll to bottom
+	if state.auto_scroll and state.winid then
+		local buf_lines = vim.api.nvim_buf_line_count(state.bufnr)
+		vim.api.nvim_win_set_cursor(state.winid, { buf_lines, 0 })
+	end
+end
+
+-- Close log viewer
+function M.close()
+	if not state.visible then
+		return
+	end
+
+	if state.winid and vim.api.nvim_win_is_valid(state.winid) then
+		vim.api.nvim_win_close(state.winid, true)
+	end
+
+	state.visible = false
+	state.winid = nil
+end
+
+-- Toggle visibility
+function M.toggle(opts)
+	if state.visible then
+		M.close()
+	else
+		M.open(opts)
+	end
+end
+
+-- Check if visible
+function M.is_visible()
+	return state.visible and state.winid and vim.api.nvim_win_is_valid(state.winid)
+end
+
+-- Refresh all logs
+function M.refresh()
+	if not state.bufnr or not vim.api.nvim_buf_is_valid(state.bufnr) then
+		return
+	end
+
+	local logger = require("opencode.logger")
+	local logs = logger.get_logs()
+	local cfg = get_config()
+
+	local all_lines = {}
+	local all_highlights = {}
+	local current_line = 0
+
+	-- Header
+	local header_text = string.format(" OpenCode Logs (%d entries) ", #logs)
+	table.insert(all_lines, header_text)
+	table.insert(all_highlights, { line = 0, col_start = 0, col_end = #header_text, hl_group = "Title" })
+
+	-- Get window width for separator
+	local win_width = state.winid and vim.api.nvim_win_get_width(state.winid) or 80
+	table.insert(all_lines, string.rep("═", win_width - 2))
+	table.insert(all_lines, "")
+	current_line = 3
+
+	-- Auto-scroll indicator
+	if state.auto_scroll then
+		table.insert(all_lines, " [Auto-scroll ON - press 'a' to toggle] ")
+	else
+		table.insert(all_lines, " [Auto-scroll OFF - press 'a' to toggle] ")
+	end
+	table.insert(all_highlights, { line = current_line, col_start = 0, col_end = 40, hl_group = "Comment" })
+	table.insert(all_lines, "")
+	current_line = current_line + 2
+
+	-- Each log entry
+	for _, entry in ipairs(logs) do
+		local lines, highlights = format_entry(entry, cfg)
+
+		for _, line in ipairs(lines) do
+			table.insert(all_lines, line)
+		end
+
+		for _, hl in ipairs(highlights) do
+			hl.line = current_line + hl.line
+			table.insert(all_highlights, hl)
+		end
+
+		current_line = current_line + #lines
+	end
+
+	-- Render to buffer
+	vim.bo[state.bufnr].modifiable = true
+	vim.api.nvim_buf_set_lines(state.bufnr, 0, -1, false, all_lines)
+
+	-- Apply highlights
+	for _, hl in ipairs(all_highlights) do
+		vim.api.nvim_buf_add_highlight(state.bufnr, -1, hl.hl_group, hl.line, hl.col_start, hl.col_end)
+	end
+
+	vim.bo[state.bufnr].modifiable = false
+
+	-- Auto-scroll to bottom if enabled and user is at bottom
+	if state.auto_scroll and state.visible and state.winid and vim.api.nvim_win_is_valid(state.winid) then
+		local cursor = vim.api.nvim_win_get_cursor(state.winid)
+		local win_height = vim.api.nvim_win_get_height(state.winid)
+		local buf_lines = vim.api.nvim_buf_line_count(state.bufnr)
+
+		-- Only scroll if user is already at bottom (or auto_scroll was just enabled)
+		if cursor[1] >= buf_lines - win_height - 1 then
+			vim.api.nvim_win_set_cursor(state.winid, { buf_lines, 0 })
+		end
+	end
+end
+
+-- Render a single entry (for live updates)
+function M.render_entry(entry)
+	if not state.bufnr or not vim.api.nvim_buf_is_valid(state.bufnr) then
+		return
+	end
+
+	-- Just do a full refresh for simplicity and consistency
+	M.refresh()
+end
+
+-- Clear logs
+function M.clear_logs()
+	local logger = require("opencode.logger")
+	logger.clear()
+	M.refresh()
+	vim.notify("Logs cleared", vim.log.levels.INFO)
+end
+
+-- Toggle auto-scroll
+function M.toggle_auto_scroll()
+	state.auto_scroll = not state.auto_scroll
+	M.refresh()
+	vim.notify(string.format("Auto-scroll %s", state.auto_scroll and "enabled" or "disabled"), vim.log.levels.INFO)
+end
+
+-- Show help
+function M.show_help()
+	local lines = {
+		" Log Viewer Keymaps ",
+		"",
+		" q / <Esc>  - Close viewer",
+		" <C-u>      - Scroll up",
+		" <C-d>      - Scroll down",
+		" gg         - Go to top",
+		" G          - Go to bottom",
+		" C          - Clear all logs",
+		" a          - Toggle auto-scroll",
+		" r          - Refresh",
+		" ?          - Show this help",
+		"",
+		" Press any key to close",
+	}
+
+	local width = 35
+	local height = #lines
+	local ui_list = vim.api.nvim_list_uis()
+	local ui = ui_list and ui_list[1] or { width = 80, height = 24 }
+	local row = math.floor((ui.height - height) / 2)
+	local col = math.floor((ui.width - width) / 2)
+
+	local Popup = require("nui.popup")
+	local popup = Popup({
+		enter = true,
+		focusable = true,
+		border = {
+			style = "rounded",
+			text = { top = " Help ", top_align = "center" },
+		},
+		position = { row = row, col = col },
+		size = { width = width, height = height },
+	})
+
+	popup:mount()
+	vim.api.nvim_buf_set_lines(popup.bufnr, 0, -1, false, lines)
+	vim.bo[popup.bufnr].modifiable = false
+
+	-- Close on any key
+	local close_keys = { "q", "<Esc>", "<CR>", "<Space>" }
+	for _, key in ipairs(close_keys) do
+		vim.keymap.set("n", key, function()
+			popup:unmount()
+		end, { buffer = popup.bufnr, noremap = true, silent = true })
+	end
+
+	for i = 32, 126 do
+		local char = string.char(i)
+		if not char:match("[qQ]") then
+			pcall(function()
+				vim.keymap.set("n", char, function()
+					popup:unmount()
+				end, { buffer = popup.bufnr, noremap = true, silent = true, nowait = true })
+			end)
+		end
+	end
+end
+
+-- Setup with user config
+function M.setup(opts)
+	state.config = vim.tbl_deep_extend("force", defaults, opts or {})
+end
+
+return M

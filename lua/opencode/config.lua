@@ -74,6 +74,17 @@ M.defaults = {
     auto_expand_errors = true,
   },
 
+  -- Thinking/reasoning display
+  thinking = {
+    enabled = true,
+    max_height = 15,
+    truncate = true,
+    icon = "💭",
+    highlight = "Comment",
+    header_highlight = "Title",
+    throttle_ms = 100,
+  },
+
   -- Context attachment
   context = {
     max_attachments = 10,
@@ -106,6 +117,13 @@ M.defaults = {
       "%.yml$",
       "%.json$",
     },
+  },
+
+  -- Log viewer
+  logs = {
+    position = "bottom", -- "bottom" | "top" | "left" | "right"
+    width = 80, -- for left/right splits
+    height = 15, -- for top/bottom splits
   },
 
   -- Keymaps

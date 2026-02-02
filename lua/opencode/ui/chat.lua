@@ -9,6 +9,7 @@ local event = require("nui.utils.autocmd").event
 local input = require("opencode.ui.input")
 local markdown = require("opencode.ui.markdown")
 local tools = require("opencode.ui.tools")
+local thinking = require("opencode.ui.thinking")
 
 -- State
 local state = {
@@ -365,10 +366,19 @@ function M.render_message(message)
 	local lines = {}
 	local highlights = {}
 
-	-- Message header
+	-- Skip rendering empty assistant messages (no content and no reasoning)
+	if message.role == "assistant" and 
+	   (not message.content or message.content == "") and 
+	   (not message.reasoning or message.reasoning == "") then
+		return
+	end
+
+	-- Message header with ID for debugging
 	local role_display = message.role == "user" and "You" or (message.role == "assistant" and "Assistant" or "System")
 	local time_str = os.date("%H:%M", message.timestamp)
-	table.insert(lines, string.format("%s %s%s", role_display, string.rep(" ", 60 - #role_display - #time_str), time_str))
+	local id_short = message.id and message.id:sub(1, 6) or "??????"
+	local header_text = string.format("%s [%s] %s%s", role_display, id_short, string.rep(" ", 50 - #role_display - #time_str - #id_short - 3), time_str)
+	table.insert(lines, header_text)
 	table.insert(highlights, {
 		line = #lines - 1,
 		col_start = 0,
@@ -378,6 +388,23 @@ function M.render_message(message)
 
 	-- Separator line
 	table.insert(lines, string.rep("─", 60))
+
+	-- Render reasoning/thinking content if available
+	if message.reasoning and message.reasoning ~= "" and thinking.is_enabled() then
+		local reasoning_lines = thinking.format_reasoning(message.reasoning)
+		local reasoning_start = #lines
+
+		for _, line in ipairs(reasoning_lines) do
+			table.insert(lines, line)
+		end
+
+		-- Apply thinking highlights after content is inserted
+		vim.schedule(function()
+			if state.bufnr and vim.api.nvim_buf_is_valid(state.bufnr) then
+				thinking.apply_highlights(state.bufnr, line_count + reasoning_start, #reasoning_lines)
+			end
+		end)
+	end
 
 	-- Message content with markdown rendering
 	local use_markdown = markdown.has_markdown(message.content)
@@ -479,37 +506,64 @@ function M.render()
 	for _, message in ipairs(state.messages) do
 		local role_display = message.role == "user" and "You" or (message.role == "assistant" and "Assistant" or "System")
 		local time_str = os.date("%H:%M", message.timestamp)
-		table.insert(lines, string.format("%s %s%s", role_display, string.rep(" ", 60 - #role_display - #time_str), time_str))
-		table.insert(highlights, {
-			line = #lines - 1,
-			col_start = 0,
-			col_end = #role_display,
-			hl_group = message.role == "user" and "Identifier" or "Constant",
-		})
+		local id_short = message.id and message.id:sub(1, 6) or "??????"
 
-		table.insert(lines, string.rep("─", 60))
+		-- Skip empty assistant messages (no content and no reasoning)
+		local has_content = message.content and message.content ~= ""
+		local has_reasoning = message.reasoning and message.reasoning ~= ""
+		local should_render = message.role ~= "assistant" or has_content or has_reasoning
 
-		-- Message content with markdown rendering
-		local use_markdown = markdown.has_markdown(message.content)
-		local content_start = #lines
-		if use_markdown then
-			local md_lines, md_highlights = markdown.render_to_lines(markdown.parse(message.content))
-			for _, line in ipairs(md_lines) do
-				table.insert(lines, line)
+		if should_render then
+			local header_text = string.format("%s [%s] %s%s", role_display, id_short, string.rep(" ", 50 - #role_display - #time_str - #id_short - 3), time_str)
+			table.insert(lines, header_text)
+			table.insert(highlights, {
+				line = #lines - 1,
+				col_start = 0,
+				col_end = #role_display,
+				hl_group = message.role == "user" and "Identifier" or "Constant",
+			})
+
+			table.insert(lines, string.rep("─", 60))
+
+			-- Render reasoning/thinking content if available
+			if message.reasoning and message.reasoning ~= "" and thinking.is_enabled() then
+				local reasoning_lines = thinking.format_reasoning(message.reasoning)
+				local reasoning_start = #lines
+
+				for _, line in ipairs(reasoning_lines) do
+					table.insert(lines, line)
+				end
+
+				-- Schedule highlight application
+				vim.schedule(function()
+					if state.bufnr and vim.api.nvim_buf_is_valid(state.bufnr) then
+						thinking.apply_highlights(state.bufnr, reasoning_start, #reasoning_lines)
+					end
+				end)
 			end
-			for _, hl in ipairs(md_highlights) do
-				hl.line = content_start + hl.line
-				table.insert(highlights, hl)
+
+			-- Message content with markdown rendering
+			local use_markdown = markdown.has_markdown(message.content)
+			local content_start = #lines
+			if use_markdown then
+				local md_lines, md_highlights = markdown.render_to_lines(markdown.parse(message.content))
+				for _, line in ipairs(md_lines) do
+					table.insert(lines, line)
+				end
+				for _, hl in ipairs(md_highlights) do
+					hl.line = content_start + hl.line
+					table.insert(highlights, hl)
+				end
+			else
+				-- Plain text
+				local content_lines = vim.split(message.content, "\n", { plain = true })
+				for _, line in ipairs(content_lines) do
+					table.insert(lines, line)
+				end
 			end
-		else
-			-- Plain text
-			local content_lines = vim.split(message.content, "\n", { plain = true })
-			for _, line in ipairs(content_lines) do
-				table.insert(lines, line)
-			end
+
+			table.insert(lines, "")
 		end
-
-		table.insert(lines, "")
 	end
 
 	-- Initial state message
@@ -683,6 +737,45 @@ function M.update_assistant_message(message_id, content)
 	if state.visible and state.winid and vim.api.nvim_win_is_valid(state.winid) then
 		local buf_lines = vim.api.nvim_buf_line_count(state.bufnr)
 		vim.api.nvim_win_set_cursor(state.winid, { buf_lines, 0 })
+	end
+end
+
+-- Update reasoning content for a message (handles streaming reasoning parts)
+---@param message_id string Message ID
+---@param reasoning_text string Current reasoning content
+function M.update_reasoning(message_id, reasoning_text)
+	if not thinking.is_enabled() then
+		return
+	end
+
+	-- Store reasoning in the thinking module
+	thinking.store_reasoning(message_id, reasoning_text)
+
+	-- Update the message in state
+	for _, msg in ipairs(state.messages) do
+		if msg.id == message_id then
+			msg.reasoning = reasoning_text
+			break
+		end
+	end
+
+	-- Throttle UI updates to avoid excessive re-rendering
+	if not thinking.should_update() then
+		return
+	end
+
+	-- Re-render the buffer to show updated reasoning
+	if state.bufnr and vim.api.nvim_buf_is_valid(state.bufnr) then
+		vim.bo[state.bufnr].modifiable = true
+		vim.api.nvim_buf_set_lines(state.bufnr, 0, -1, false, {})
+		M.render()
+		vim.bo[state.bufnr].modifiable = false
+
+		-- Auto-scroll to bottom if visible
+		if state.visible and state.winid and vim.api.nvim_win_is_valid(state.winid) then
+			local buf_lines = vim.api.nvim_buf_line_count(state.bufnr)
+			vim.api.nvim_win_set_cursor(state.winid, { buf_lines, 0 })
+		end
 	end
 end
 

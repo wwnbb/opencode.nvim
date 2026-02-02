@@ -41,6 +41,18 @@ M.STATUS = {
 	CONFLICT = "conflict",
 }
 
+-- Emit change update event
+local function emit_change_event(event_type, change_id, data)
+	vim.schedule(function()
+		vim.api.nvim_exec_autocmds("User", {
+			pattern = "OpenCodeChanges" .. event_type,
+			data = vim.tbl_extend("force", {
+				change_id = change_id,
+			}, data or {}),
+		})
+	end)
+end
+
 -- Generate unique change ID
 local function generate_id()
 	local id = string.format("change_%d_%d", os.time(), state.next_id)
@@ -277,22 +289,46 @@ function M.accept(id, opts)
 		return false, "Confirmation required"
 	end
 
+	-- Debug logging
+	vim.schedule(function()
+		vim.notify(string.format("[DEBUG] Writing file: %s (content length: %d)", 
+			change.filepath, #change.modified_content), vim.log.levels.INFO)
+	end)
+
 	-- Apply change
 	local ok, err = pcall(function()
 		local file = io.open(change.filepath, "w")
 		if not file then
-			error("Cannot open file for writing")
+			error("Cannot open file for writing: " .. change.filepath)
 		end
 		file:write(change.modified_content)
 		file:close()
+		vim.schedule(function()
+			vim.notify("[DEBUG] File written successfully", vim.log.levels.INFO)
+		end)
 	end)
 
 	if not ok then
 		M.update_status(id, M.STATUS.FAILED, { message = err })
+		vim.schedule(function()
+			vim.notify("[DEBUG] Failed to write file: " .. tostring(err), vim.log.levels.ERROR)
+		end)
 		return false, err
 	end
 
+	-- Reload buffer if file is open
+	vim.schedule(function()
+		local bufnr = vim.fn.bufnr(change.filepath)
+		if bufnr ~= -1 then
+			vim.api.nvim_buf_call(bufnr, function()
+				vim.cmd("checktime")
+			end)
+			vim.notify("[DEBUG] Buffer reloaded for: " .. change.filepath, vim.log.levels.INFO)
+		end
+	end)
+
 	M.update_status(id, M.STATUS.APPLIED)
+	emit_change_event("Accepted", id, { status = M.STATUS.APPLIED })
 	return true
 end
 
@@ -317,7 +353,11 @@ end
 
 -- Reject a change
 function M.reject(id)
-	return M.update_status(id, M.STATUS.REJECTED)
+	local ok = M.update_status(id, M.STATUS.REJECTED)
+	if ok then
+		emit_change_event("Rejected", id, { status = M.STATUS.REJECTED })
+	end
+	return ok
 end
 
 -- Reject specific hunk
