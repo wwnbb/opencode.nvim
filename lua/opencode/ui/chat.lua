@@ -161,6 +161,16 @@ local function setup_buffer(bufnr)
 			M.handle_question_number_select(i)
 		end, opts)
 	end
+
+	-- Custom input key
+	vim.keymap.set("n", "c", function()
+		M.handle_question_custom_input()
+	end, opts)
+
+	-- Toggle multi-select (Space)
+	vim.keymap.set("n", "<Space>", function()
+		M.handle_question_toggle()
+	end, opts)
 end
 
 -- Create chat buffer
@@ -198,6 +208,8 @@ function M.show_help()
 		" Question Tool:",
 		" 1-9        - Select option by number",
 		" ↑/↓ j/k    - Navigate options",
+		" Space      - Toggle multi-select",
+		" c          - Custom input",
 		" <CR>       - Confirm selection",
 		" <Esc>      - Cancel question",
 		" <Tab>      - Next question tab",
@@ -1103,6 +1115,82 @@ function M.handle_question_prev_tab()
 	M.rerender_question(request_id)
 end
 
+-- Handle custom input (c key)
+function M.handle_question_custom_input()
+	local request_id, qstate = M.get_question_at_cursor()
+
+	if not request_id then
+		-- Not on a question, pass through 'c' key
+		vim.api.nvim_feedkeys("c", "n", false)
+		return
+	end
+
+	local current_tab = qstate.current_tab
+	local question = qstate.questions[current_tab]
+
+	-- Check if custom input is allowed
+	if not question.allow_custom and not question.allowCustom then
+		vim.notify("Custom input not allowed for this question", vim.log.levels.WARN)
+		return
+	end
+
+	-- Show input prompt
+	local input = require("opencode.ui.input")
+	input.show({
+		on_send = function(text)
+			if text and text ~= "" then
+				-- Store custom input
+				question_state.set_custom_input(request_id, current_tab, text)
+
+				-- Clear any other selections for single-select questions
+				if question.type ~= "multi" then
+					question_state.update_selection(request_id, current_tab, {})
+				end
+
+				-- Re-render to show the custom input
+				M.rerender_question(request_id)
+
+				-- Return focus to chat
+				M.focus()
+			end
+		end,
+		on_cancel = function()
+			-- Return focus to chat
+			M.focus()
+		end,
+	})
+end
+
+-- Handle multi-select toggle (Space key)
+function M.handle_question_toggle()
+	local request_id, qstate = M.get_question_at_cursor()
+
+	if not request_id then
+		-- Not on a question, use default Space behavior
+		vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<Space>", true, false, true), "n", false)
+		return
+	end
+
+	local current_tab = qstate.current_tab
+	local question = qstate.questions[current_tab]
+
+	-- Only works for multi-select questions
+	if question.type ~= "multi" then
+		vim.notify("Use 1-9 to select an option (Space is for multi-select only)", vim.log.levels.INFO)
+		return
+	end
+
+	-- Get current selection
+	local current_selection = question_state.get_current_selection(request_id)
+	local current_idx = current_selection and current_selection[1] or 1
+
+	-- Toggle current option
+	question_state.toggle_multi_select(request_id, current_idx)
+
+	-- Re-render
+	M.rerender_question(request_id)
+end
+
 -- Re-render a question in place
 ---@param request_id string
 function M.rerender_question(request_id)
@@ -1159,6 +1247,35 @@ end
 -- Clear all question tracking (e.g., on session change)
 function M.clear_questions()
 	state.questions = {}
+end
+
+-- Debug function to log question state
+function M.debug_questions()
+	local logger = require("opencode.logger")
+	local all_questions = question_state.get_all_active()
+
+	logger.info("Active questions", {
+		count = question_state.get_question_count(),
+		active = #all_questions,
+		tracked = vim.tbl_count(state.questions),
+	})
+
+	for request_id, pos in pairs(state.questions) do
+		local qstate = question_state.get_question(request_id)
+		if qstate then
+			logger.debug("Question details", {
+				request_id = request_id:sub(1, 10),
+				status = qstate.status,
+				current_tab = qstate.current_tab,
+				question_count = #qstate.questions,
+				selections = qstate.selections,
+				start_line = pos.start_line,
+				end_line = pos.end_line,
+			})
+		end
+	end
+
+	vim.notify(string.format("Debug: %d active questions logged", #all_questions), vim.log.levels.INFO)
 end
 
 return M

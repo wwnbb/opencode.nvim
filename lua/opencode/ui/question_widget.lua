@@ -160,7 +160,8 @@ function M.get_lines_for_question(request_id, question_data, selection_state, st
 		end
 
 		-- Custom input option (if enabled)
-		if current_question.allow_custom then
+		local allow_custom = current_question.allow_custom or current_question.allowCustom
+		if allow_custom then
 			local custom_selected = selections.custom_input and selections.custom_input ~= ""
 			local custom_indicator = custom_selected and icons.selected or icons.unselected
 			local custom_text = selections.custom_input or ""
@@ -194,6 +195,11 @@ function M.get_lines_for_question(request_id, question_data, selection_state, st
 			table.insert(hint_parts, "1-" .. math.min(option_count, 9) .. " select")
 		end
 		table.insert(hint_parts, "↑↓ navigate")
+
+		if allow_custom then
+			table.insert(hint_parts, "c custom")
+		end
+
 		table.insert(hint_parts, "Enter confirm")
 		table.insert(hint_parts, "Esc cancel")
 
