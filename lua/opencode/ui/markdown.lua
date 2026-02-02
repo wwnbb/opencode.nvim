@@ -310,6 +310,9 @@ end
 
 -- Check if text contains markdown
 function M.has_markdown(text)
+	if not text or text == "" then
+		return false
+	end
 	return text:match("```") or
 		text:match("#%s") or
 		text:match("`[^`]+`") or

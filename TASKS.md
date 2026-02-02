@@ -88,8 +88,16 @@ Last Updated: 2026-02-02
     - Visual styling with icons and highlights
   - Est: 3 hours
 
-- [ ] **Task 15**: Command Palette UI
+- [x] **Task 15**: Command Palette UI
   - File: `lua/opencode/ui/palette.lua`
+  - Features:
+    - Fuzzy search with frecency sorting (persisted usage tracking)
+    - Category-based organization (Session, Model, Agent, Actions, MCP, Files, Navigation, System)
+    - Configurable width, height, border, and display options
+    - 20+ commands: New/Switch/Fork/Delete/Archive Session, Switch Model/Provider, Switch Agent/Mode, Abort/Clear/Compact/Revert/Toggle/Diff, MCP Servers/Tools/Refresh, View Changed Files, Navigation, System controls
+    - Keybind hints and nerd font icons
+    - Integration with float.lua for selection menus
+  - Status: Complete
   - Est: 4 hours
 
 - [x] **Task 16**: Question Tool Implementation
@@ -135,15 +143,16 @@ Last Updated: 2026-02-02
 
 ## Progress Summary
 
-- **Completed**: 15/22 tasks (68%)
+- **Completed**: 16/22 tasks (73%)
 - **Current Phase**: Phase 4 [IN PROGRESS]
-- **Next Task**: Task 15 (Command Palette UI)
-- **Total Est. Remaining**: ~17 hours
+- **Next Task**: Task 17 (Permission Handling Dialogs)
+- **Total Est. Remaining**: ~13 hours
 
 ---
 
 ## Recent Changes
 
+- 2026-02-02: Task 15 complete - Command palette with frecency tracking, 20+ commands, category organization
 - 2026-02-02: Task 16 complete - Question tool with inline display, keyboard nav, custom input, multi-select
 - 2026-02-02: Task 14 complete - Interactive thinking/reasoning display with real-time updates
 - 2026-02-02: Task 13 complete - Lualine component implementation

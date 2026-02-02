@@ -73,7 +73,7 @@ function M.emit(event_type, data)
 	table.insert(event_history, 1, {
 		type = event_type,
 		data = data,
-		time = vim.loop.now(),
+		time = vim.uv.now(),
 	})
 
 	-- Trim history
@@ -223,14 +223,22 @@ function M.setup_sse_bridge()
 		["error"] = "error",
 	}
 
+	local logger = require("opencode.logger")
+
 	for sse_event, local_event in pairs(sse_to_local) do
 		client.on_event(sse_event, function(data)
+			-- Log all SSE events
+			logger.debug("SSE event: " .. sse_event, { data = data })
 			M.emit(local_event, data)
 		end)
 	end
 
-	-- Also emit raw SSE events for advanced use
+	-- Also emit raw SSE events for advanced use and log them
 	client.on_event("*", function(event_type, data)
+		-- Skip heartbeat noise
+		if event_type ~= "server.heartbeat" then
+			logger.info("SSE raw: " .. tostring(event_type), { data = data })
+		end
 		M.emit("sse_" .. event_type, data)
 	end)
 end
@@ -366,21 +374,10 @@ function M.setup_chat_handlers()
 					end
 				end
 
-				-- Update chat UI only if this is an assistant message
+				-- Update chat UI - update_assistant_message will create the message if it doesn't exist
 				local chat_ok, chat = pcall(require, "opencode.ui.chat")
 				if chat_ok and chat.update_assistant_message then
-					-- Verify this is an assistant message before updating
-					local messages = chat.get_messages()
-					local is_assistant = false
-					for _, msg in ipairs(messages) do
-						if msg.id == msg_id and msg.role == "assistant" then
-							is_assistant = true
-							break
-						end
-					end
-					if is_assistant then
-						chat.update_assistant_message(msg_id, full_text)
-					end
+					chat.update_assistant_message(msg_id, full_text)
 				end
 			elseif part.type == "reasoning" then
 				-- Handle reasoning/thinking part updates
@@ -444,6 +441,12 @@ function M.setup_chat_handlers()
 						output = tool_state.status == "completed" and tool_state.output or nil,
 						error = tool_state.status == "error" and tool_state.error or nil,
 					})
+
+					-- Update tool activity in chat UI
+					local chat_ok, chat = pcall(require, "opencode.ui.chat")
+					if chat_ok and chat.update_tool_activity then
+						chat.update_tool_activity(msg_id, part.tool, tool_state.status, tool_state.input)
+					end
 				end
 			end
 		end)
@@ -785,12 +788,12 @@ function M.setup_question_handlers()
 			local logger = require("opencode.logger")
 			logger.debug("Question asked event received", { data = data })
 
-			local request_id = data.requestID
+			local request_id = data.requestID or data.id
 			local session_id = data.sessionID
 			local questions = data.questions
 
 			if not request_id or not questions then
-				logger.warn("Invalid question data", { data = data })
+				logger.warn("Invalid question data", { data = data, request_id = request_id, has_questions = questions ~= nil })
 				return
 			end
 

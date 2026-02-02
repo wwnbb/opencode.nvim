@@ -10,6 +10,8 @@ local state = {
 	visible = false,
 	auto_scroll = true,
 	config = nil,
+	folded = {}, -- Track folded entries by index: { [entry_index] = true }
+	entry_lines = {}, -- Map line numbers to entry indices for fold toggling
 }
 
 -- Default configuration
@@ -85,6 +87,36 @@ local function setup_buffer(bufnr)
 	vim.keymap.set("n", "?", function()
 		M.show_help()
 	end, opts)
+
+	-- Toggle fold on current line
+	vim.keymap.set("n", "<CR>", function()
+		M.toggle_fold_at_cursor()
+	end, opts)
+
+	vim.keymap.set("n", "o", function()
+		M.toggle_fold_at_cursor()
+	end, opts)
+
+	vim.keymap.set("n", "<Tab>", function()
+		M.toggle_fold_at_cursor()
+	end, opts)
+
+	-- Fold all / Unfold all
+	vim.keymap.set("n", "zM", function()
+		M.fold_all()
+	end, opts)
+
+	vim.keymap.set("n", "zR", function()
+		M.unfold_all()
+	end, opts)
+
+	vim.keymap.set("n", "f", function()
+		M.fold_all()
+	end, opts)
+
+	vim.keymap.set("n", "F", function()
+		M.unfold_all()
+	end, opts)
 end
 
 -- Create buffer
@@ -99,38 +131,78 @@ local function create_buffer()
 end
 
 -- Format log entry for display
-local function format_entry(entry, cfg)
+---@param entry table Log entry
+---@param cfg table Config
+---@param entry_index number Index of entry for fold tracking
+---@param is_folded boolean Whether this entry is folded
+local function format_entry(entry, cfg, entry_index, is_folded)
 	local lines = {}
 	local highlights = {}
 
+	-- Fold indicator
+	local fold_icon = ""
+	if entry.data then
+		fold_icon = is_folded and "▶ " or "▼ "
+	else
+		fold_icon = "  "
+	end
+
 	-- Header line with timestamp and level
 	local level_indicator = string.format("[%s]", entry.level)
-	local header = string.format("%s %s %s", entry.timestamp, level_indicator, entry.message)
+	local header = string.format("%s%s %s %s", fold_icon, entry.timestamp, level_indicator, entry.message)
 	table.insert(lines, header)
+
+	-- Highlight for the fold icon
+	if entry.data then
+		table.insert(highlights, {
+			line = 0,
+			col_start = 0,
+			col_end = #fold_icon,
+			hl_group = "Special",
+		})
+	end
 
 	-- Highlight for the level
 	local hl_group = cfg.level_highlights[entry.level] or "Normal"
 	table.insert(highlights, {
 		line = 0,
-		col_start = 9, -- After timestamp
-		col_end = 9 + #level_indicator,
+		col_start = #fold_icon + 9, -- After fold icon and timestamp
+		col_end = #fold_icon + 9 + #level_indicator,
 		hl_group = hl_group,
 	})
 
-	-- Data if present
+	-- Data if present and not folded
 	if entry.data then
-		local data_str = vim.inspect(entry.data)
-		-- Get window width for wrapping
-		local win_width = state.winid and vim.api.nvim_win_get_width(state.winid) or 80
-		local max_line_length = win_width - 4
-		local indent = "  "
+		if is_folded then
+			-- Show collapsed preview
+			local data_str = vim.inspect(entry.data)
+			local first_line = data_str:match("^[^\n]+") or "{...}"
+			local preview = "  " .. first_line:sub(1, 60)
+			if #first_line > 60 then
+				preview = preview .. "..."
+			end
+			table.insert(lines, preview)
+			table.insert(highlights, {
+				line = 1,
+				col_start = 0,
+				col_end = #preview,
+				hl_group = "Comment",
+			})
+		else
+			-- Show full data
+			local data_str = vim.inspect(entry.data)
+			-- Get window width for wrapping
+			local win_width = state.winid and vim.api.nvim_win_get_width(state.winid) or 80
+			local max_line_length = win_width - 4
+			local indent = "  "
 
-		for line in data_str:gmatch("[^\n]+") do
-			if #line > max_line_length then
-				-- Truncate long lines
-				table.insert(lines, indent .. line:sub(1, max_line_length - 3) .. "...")
-			else
-				table.insert(lines, indent .. line)
+			for line in data_str:gmatch("[^\n]+") do
+				if #line > max_line_length then
+					-- Truncate long lines
+					table.insert(lines, indent .. line:sub(1, max_line_length - 3) .. "...")
+				else
+					table.insert(lines, indent .. line)
+				end
 			end
 		end
 	end
@@ -271,9 +343,16 @@ function M.refresh()
 	table.insert(all_lines, "")
 	current_line = current_line + 2
 
+	-- Clear line-to-entry mapping
+	state.entry_lines = {}
+
 	-- Each log entry
-	for _, entry in ipairs(logs) do
-		local lines, highlights = format_entry(entry, cfg)
+	for entry_index, entry in ipairs(logs) do
+		local is_folded = state.folded[entry_index] == true
+		local lines, highlights = format_entry(entry, cfg, entry_index, is_folded)
+
+		-- Map the header line to this entry index for fold toggling
+		state.entry_lines[current_line + 1] = entry_index -- +1 because nvim lines are 1-indexed
 
 		for _, line in ipairs(lines) do
 			table.insert(all_lines, line)
@@ -298,17 +377,14 @@ function M.refresh()
 
 	vim.bo[state.bufnr].modifiable = false
 
-	-- Auto-scroll to bottom if enabled and user is at bottom
+	-- Auto-scroll to bottom if enabled
 	if state.auto_scroll and state.visible and state.winid and vim.api.nvim_win_is_valid(state.winid) then
-		local cursor = vim.api.nvim_win_get_cursor(state.winid)
-		local win_height = vim.api.nvim_win_get_height(state.winid)
 		local buf_lines = vim.api.nvim_buf_line_count(state.bufnr)
-
-		-- Only scroll if user is already at bottom (or auto_scroll was just enabled)
-		if cursor[1] >= buf_lines - win_height - 1 then
-			vim.api.nvim_win_set_cursor(state.winid, { buf_lines, 0 })
-		end
+		vim.api.nvim_win_set_cursor(state.winid, { buf_lines, 0 })
 	end
+
+	-- Force redraw to show updates immediately
+	vim.cmd("redraw")
 end
 
 -- Render a single entry (for live updates)
@@ -336,6 +412,48 @@ function M.toggle_auto_scroll()
 	vim.notify(string.format("Auto-scroll %s", state.auto_scroll and "enabled" or "disabled"), vim.log.levels.INFO)
 end
 
+-- Toggle fold at cursor position
+function M.toggle_fold_at_cursor()
+	if not state.winid or not vim.api.nvim_win_is_valid(state.winid) then
+		return
+	end
+
+	local cursor = vim.api.nvim_win_get_cursor(state.winid)
+	local line_num = cursor[1]
+
+	-- Find the entry index for this line (search backwards to find header line)
+	local entry_index = nil
+	for l = line_num, 1, -1 do
+		if state.entry_lines[l] then
+			entry_index = state.entry_lines[l]
+			break
+		end
+	end
+
+	if entry_index then
+		state.folded[entry_index] = not state.folded[entry_index]
+		M.refresh()
+	end
+end
+
+-- Fold all entries
+function M.fold_all()
+	local logger = require("opencode.logger")
+	local logs = logger.get_logs()
+	for i = 1, #logs do
+		if logs[i].data then -- Only fold entries with data
+			state.folded[i] = true
+		end
+	end
+	M.refresh()
+end
+
+-- Unfold all entries
+function M.unfold_all()
+	state.folded = {}
+	M.refresh()
+end
+
 -- Show help
 function M.show_help()
 	local lines = {
@@ -351,10 +469,15 @@ function M.show_help()
 		" r          - Refresh",
 		" ?          - Show this help",
 		"",
+		" Folding:",
+		" <CR>/o/Tab - Toggle fold at cursor",
+		" f / zM     - Fold all",
+		" F / zR     - Unfold all",
+		"",
 		" Press any key to close",
 	}
 
-	local width = 35
+	local width = 38
 	local height = #lines
 	local ui_list = vim.api.nvim_list_uis()
 	local ui = ui_list and ui_list[1] or { width = 80, height = 24 }

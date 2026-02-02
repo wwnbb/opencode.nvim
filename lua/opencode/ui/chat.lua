@@ -122,6 +122,12 @@ local function setup_buffer(bufnr)
 		M.show_help()
 	end, opts)
 
+	-- Command palette
+	vim.keymap.set("n", "<C-p>", function()
+		local palette = require("opencode.ui.palette")
+		palette.show()
+	end, { buffer = bufnr, noremap = true, silent = true, desc = "Open command palette" })
+
 	-- Question navigation (only active when on question lines)
 	vim.keymap.set("n", "j", function()
 		M.handle_question_navigation("down")
@@ -180,13 +186,14 @@ local function create_buffer()
 	return bufnr
 end
 
-	-- Show help popup
+-- Show help popup
 function M.show_help()
 	local lines = {
 		" Chat Buffer Keymaps ",
 		"",
 		" q          - Close chat",
 		" i          - Focus input",
+		" <C-p>      - Command palette",
 		" <C-u>      - Scroll up",
 		" <C-d>      - Scroll down",
 		" gg         - Go to top",
@@ -431,9 +438,11 @@ function M.render_message(message)
 	local highlights = {}
 
 	-- Skip rendering empty assistant messages (no content and no reasoning)
-	if message.role == "assistant" and 
-	   (not message.content or message.content == "") and 
-	   (not message.reasoning or message.reasoning == "") then
+	if
+		message.role == "assistant"
+		and (not message.content or message.content == "")
+		and (not message.reasoning or message.reasoning == "")
+	then
 		return
 	end
 
@@ -441,7 +450,13 @@ function M.render_message(message)
 	local role_display = message.role == "user" and "You" or (message.role == "assistant" and "Assistant" or "System")
 	local time_str = os.date("%H:%M", message.timestamp)
 	local id_short = message.id and message.id:sub(1, 6) or "??????"
-	local header_text = string.format("%s [%s] %s%s", role_display, id_short, string.rep(" ", 50 - #role_display - #time_str - #id_short - 3), time_str)
+	local header_text = string.format(
+		"%s [%s] %s%s",
+		role_display,
+		id_short,
+		string.rep(" ", 50 - #role_display - #time_str - #id_short - 3),
+		time_str
+	)
 	table.insert(lines, header_text)
 	table.insert(highlights, {
 		line = #lines - 1,
@@ -568,7 +583,13 @@ function M.render()
 
 	-- Render all messages
 	for _, message in ipairs(state.messages) do
-		local role_display = message.role == "user" and "You" or (message.role == "assistant" and "Assistant" or "System")
+		-- Skip question type messages (rendered separately by question widget)
+		if message.type == "question" then
+			goto continue_message
+		end
+
+		local role_display = message.role == "user" and "You"
+			or (message.role == "assistant" and "Assistant" or "System")
 		local time_str = os.date("%H:%M", message.timestamp)
 		local id_short = message.id and message.id:sub(1, 6) or "??????"
 
@@ -578,7 +599,13 @@ function M.render()
 		local should_render = message.role ~= "assistant" or has_content or has_reasoning
 
 		if should_render then
-			local header_text = string.format("%s [%s] %s%s", role_display, id_short, string.rep(" ", 50 - #role_display - #time_str - #id_short - 3), time_str)
+			local header_text = string.format(
+				"%s [%s] %s%s",
+				role_display,
+				id_short,
+				string.rep(" ", 50 - #role_display - #time_str - #id_short - 3),
+				time_str
+			)
 			table.insert(lines, header_text)
 			table.insert(highlights, {
 				line = #lines - 1,
@@ -606,11 +633,37 @@ function M.render()
 				end)
 			end
 
+			-- Render tool activity if present
+			if message.tool_activity and next(message.tool_activity) then
+				local tool_start = #lines
+				table.insert(lines, "🔧 Tools:")
+				table.insert(highlights, {
+					line = tool_start,
+					col_start = 0,
+					col_end = 10,
+					hl_group = "Special",
+				})
+				for tool_name, tool_info in pairs(message.tool_activity) do
+					local tool_line = string.format("  %s %s [%s]", tool_info.icon, tool_name, tool_info.status)
+					table.insert(lines, tool_line)
+					table.insert(highlights, {
+						line = #lines - 1,
+						col_start = 0,
+						col_end = #tool_line,
+						hl_group = tool_info.status == "completed" and "DiagnosticOk"
+							or tool_info.status == "error" and "DiagnosticError"
+							or "DiagnosticInfo",
+					})
+				end
+				table.insert(lines, "")
+			end
+
 			-- Message content with markdown rendering
-			local use_markdown = markdown.has_markdown(message.content)
+			local content = message.content or ""
+			local use_markdown = markdown.has_markdown(content)
 			local content_start = #lines
 			if use_markdown then
-				local md_lines, md_highlights = markdown.render_to_lines(markdown.parse(message.content))
+				local md_lines, md_highlights = markdown.render_to_lines(markdown.parse(content))
 				for _, line in ipairs(md_lines) do
 					table.insert(lines, line)
 				end
@@ -620,7 +673,7 @@ function M.render()
 				end
 			else
 				-- Plain text
-				local content_lines = vim.split(message.content, "\n", { plain = true })
+				local content_lines = vim.split(content, "\n", { plain = true })
 				for _, line in ipairs(content_lines) do
 					table.insert(lines, line)
 				end
@@ -628,6 +681,8 @@ function M.render()
 
 			table.insert(lines, "")
 		end
+
+		::continue_message::
 	end
 
 	-- Initial state message
@@ -635,8 +690,12 @@ function M.render()
 		table.insert(lines, " Welcome to OpenCode!")
 		table.insert(highlights, { line = #lines - 1, col_start = 0, col_end = 22, hl_group = "Comment" })
 		table.insert(lines, "")
-		table.insert(lines, " Press 'i' to start typing or '?' for help.")
-		table.insert(highlights, { line = #lines - 1, col_start = 0, col_end = 42, hl_group = "Comment" })
+		table.insert(lines, " Press 'i' to focus input")
+		table.insert(highlights, { line = #lines - 1, col_start = 0, col_end = 25, hl_group = "Comment" })
+		table.insert(lines, " Press '<C-p>' for command palette")
+		table.insert(highlights, { line = #lines - 1, col_start = 0, col_end = 33, hl_group = "Comment" })
+		table.insert(lines, " Press '?' for help")
+		table.insert(highlights, { line = #lines - 1, col_start = 0, col_end = 18, hl_group = "Comment" })
 		table.insert(lines, "")
 	end
 
@@ -733,6 +792,67 @@ function M.update_tool_call(message_id, tool_index, status, result)
 	return false
 end
 
+-- Track active tool calls per message
+local active_tools = {}
+
+-- Update tool activity for a message (shows what the LLM is doing)
+---@param message_id string Message ID
+---@param tool_name string Tool name
+---@param status string Status (pending, running, completed, error)
+---@param input? table Optional input data
+function M.update_tool_activity(message_id, tool_name, status, input)
+	if not state.bufnr or not vim.api.nvim_buf_is_valid(state.bufnr) then
+		return
+	end
+
+	-- Initialize tool tracking for this message
+	active_tools[message_id] = active_tools[message_id] or {}
+
+	-- Format tool display
+	local status_icon = ({
+		pending = "⏳",
+		running = "🔄",
+		completed = "✅",
+		error = "❌",
+	})[status] or "❓"
+
+	-- Store tool state
+	active_tools[message_id][tool_name] = {
+		status = status,
+		icon = status_icon,
+		input = input,
+		timestamp = os.time(),
+	}
+
+	-- Update the message's tool_activity field
+	for _, msg in ipairs(state.messages) do
+		if msg.id == message_id then
+			msg.tool_activity = active_tools[message_id]
+			break
+		end
+	end
+
+	-- Re-render the buffer to show tool activity
+	vim.bo[state.bufnr].modifiable = true
+	vim.api.nvim_buf_set_lines(state.bufnr, 0, -1, false, {})
+	M.render()
+	vim.bo[state.bufnr].modifiable = false
+
+	-- Auto-scroll to bottom if visible
+	if state.visible and state.winid and vim.api.nvim_win_is_valid(state.winid) then
+		local buf_lines = vim.api.nvim_buf_line_count(state.bufnr)
+		vim.api.nvim_win_set_cursor(state.winid, { buf_lines, 0 })
+	end
+
+	-- Force redraw to show updates immediately
+	vim.cmd("redraw")
+end
+
+-- Clear tool activity for a message
+function M.clear_tool_activity(message_id)
+	active_tools[message_id] = nil
+end
+
 -- Track streaming assistant message
 local streaming_message = {
 	id = nil,
@@ -802,6 +922,9 @@ function M.update_assistant_message(message_id, content)
 		local buf_lines = vim.api.nvim_buf_line_count(state.bufnr)
 		vim.api.nvim_win_set_cursor(state.winid, { buf_lines, 0 })
 	end
+
+	-- Force redraw to show updates immediately
+	vim.cmd("redraw")
 end
 
 -- Update reasoning content for a message (handles streaming reasoning parts)
@@ -815,12 +938,26 @@ function M.update_reasoning(message_id, reasoning_text)
 	-- Store reasoning in the thinking module
 	thinking.store_reasoning(message_id, reasoning_text)
 
-	-- Update the message in state
+	-- Find or create the message in state
+	local found = false
 	for _, msg in ipairs(state.messages) do
 		if msg.id == message_id then
 			msg.reasoning = reasoning_text
+			found = true
 			break
 		end
+	end
+
+	-- If message doesn't exist yet, create it with reasoning
+	if not found then
+		local message = {
+			role = "assistant",
+			content = "",
+			reasoning = reasoning_text,
+			timestamp = os.time(),
+			id = message_id,
+		}
+		table.insert(state.messages, message)
 	end
 
 	-- Throttle UI updates to avoid excessive re-rendering
@@ -840,6 +977,9 @@ function M.update_reasoning(message_id, reasoning_text)
 			local buf_lines = vim.api.nvim_buf_line_count(state.bufnr)
 			vim.api.nvim_win_set_cursor(state.winid, { buf_lines, 0 })
 		end
+
+		-- Force redraw to show updates immediately
+		vim.cmd("redraw")
 	end
 end
 
@@ -865,7 +1005,8 @@ function M.add_question_message(request_id, questions, status)
 	end
 
 	-- Get formatted lines
-	local lines, highlights, _ = question_widget.get_lines_for_question(request_id, { questions = questions }, qstate, status)
+	local lines, highlights, _ =
+		question_widget.get_lines_for_question(request_id, { questions = questions }, qstate, status)
 
 	-- Remember where this question starts
 	local line_count = vim.api.nvim_buf_line_count(state.bufnr)
@@ -1038,7 +1179,7 @@ function M.handle_question_confirm()
 	client.reply_to_question(current_session.id, request_id, answers, function(err, success)
 		vim.schedule(function()
 			if err then
-				vim.notify("Failed to submit answer: " .. tostring(err), vim.log.levels.ERROR)
+				vim.notify("Failed to submit answer: " .. vim.inspect(err), vim.log.levels.ERROR)
 				return
 			end
 
@@ -1222,12 +1363,8 @@ function M.rerender_question(request_id)
 	end
 
 	-- Get new lines
-	local lines, highlights, _ = question_widget.get_lines_for_question(
-		request_id,
-		{ questions = questions },
-		qstate,
-		qstate.status
-	)
+	local lines, highlights, _ =
+		question_widget.get_lines_for_question(request_id, { questions = questions }, qstate, qstate.status)
 
 	-- Replace lines
 	vim.bo[state.bufnr].modifiable = true

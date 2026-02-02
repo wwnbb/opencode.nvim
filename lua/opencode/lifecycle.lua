@@ -108,7 +108,7 @@ local function spawn_server(callback)
 	end, 100)
 
 	-- Wait for server to be ready
-	local start_time = vim.loop.now()
+	local start_time = vim.uv.now()
 	local check_interval = M.opts.health_check_interval
 	local timeout = M.opts.startup_timeout
 
@@ -123,7 +123,7 @@ local function spawn_server(callback)
 				return
 			end
 
-			local elapsed = vim.loop.now() - start_time
+			local elapsed = vim.uv.now() - start_time
 			if elapsed >= timeout then
 				state.set_connection("error")
 				vim.schedule(function()

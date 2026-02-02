@@ -50,11 +50,21 @@ end, {
 	desc = "Toggle OpenCode log viewer",
 })
 
+vim.api.nvim_create_user_command("OpenCodePalette", function()
+	require("opencode").command_palette()
+end, {
+	desc = "Open OpenCode command palette",
+})
+
 -- Setup default keymaps (user can override in setup())
 -- These will be replaced when user calls setup()
 vim.keymap.set("n", "<leader>oo", function()
 	require("opencode").toggle()
 end, { desc = "Toggle OpenCode", noremap = true, silent = true })
+
+vim.keymap.set("n", "<leader>op", function()
+	require("opencode").command_palette()
+end, { desc = "OpenCode command palette", noremap = true, silent = true })
 
 vim.keymap.set("n", "<leader>ol", function()
 	require("opencode.ui.log_viewer").toggle()

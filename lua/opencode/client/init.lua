@@ -140,25 +140,27 @@ function M.respond_permission(permission_id, reply, opts, callback)
 end
 
 -- Reply to a question with selected answers
----@param session_id string Session ID
+-- API endpoint: /question/:requestID/reply
+---@param session_id string Session ID (unused, kept for API compatibility)
 ---@param request_id string Question request ID
----@param answers table Array of answer arrays, e.g., {{"README.md"}, {"option2"}}
+---@param answers table Array of answer arrays, e.g., {{"label1"}, {"label2"}}
 ---@param callback function(err, success)
 function M.reply_to_question(session_id, request_id, answers, callback)
 	http.post(
-		"/sessions/" .. session_id .. "/question/" .. request_id .. "/reply",
+		"/question/" .. request_id .. "/reply",
 		{ answers = answers },
 		callback
 	)
 end
 
 -- Reject/cancel a question request
----@param session_id string Session ID
+-- API endpoint: /question/:requestID/reject
+---@param session_id string Session ID (unused, kept for API compatibility)
 ---@param request_id string Question request ID
 ---@param callback function(err, success)
 function M.reject_question(session_id, request_id, callback)
 	http.post(
-		"/sessions/" .. session_id .. "/question/" .. request_id .. "/reject",
+		"/question/" .. request_id .. "/reject",
 		{},
 		callback
 	)
@@ -174,6 +176,38 @@ end
 ---@param callback function(err, auth_methods)
 function M.get_provider_auth(callback)
 	http.get("/provider/auth", callback)
+end
+
+-- Set provider auth (API key)
+---@param provider_id string
+---@param auth table { type: "api", key: string }
+---@param callback function(err, success)
+function M.set_provider_auth(provider_id, auth, callback)
+	http.put("/auth/" .. provider_id, auth, callback)
+end
+
+-- Remove provider auth (disconnect provider)
+---@param provider_id string
+---@param callback function(err, success)
+function M.remove_provider_auth(provider_id, callback)
+	http.delete("/auth/" .. provider_id, callback)
+end
+
+-- OAuth authorize - initiate OAuth flow
+---@param provider_id string
+---@param method number Auth method index
+---@param callback function(err, authorization)
+function M.oauth_authorize(provider_id, method, callback)
+	http.post("/provider/" .. provider_id .. "/oauth/authorize", { method = method }, callback)
+end
+
+-- OAuth callback - complete OAuth flow
+---@param provider_id string
+---@param method number Auth method index
+---@param code? string OAuth authorization code (for code flow)
+---@param callback function(err, success)
+function M.oauth_callback(provider_id, method, code, callback)
+	http.post("/provider/" .. provider_id .. "/oauth/callback", { method = method, code = code }, callback)
 end
 
 -- Get config
@@ -216,6 +250,97 @@ end
 ---@param callback function(err, mcp_status)
 function M.get_mcp_status(callback)
 	http.get("/mcp", callback)
+end
+
+-- Get LSP status
+---@param callback function(err, lsp_status)
+function M.get_lsp_status(callback)
+	http.get("/lsp", callback)
+end
+
+-- Get formatter status
+---@param callback function(err, formatter_status)
+function M.get_formatter_status(callback)
+	http.get("/formatter", callback)
+end
+
+-- Get full server status (version, MCP servers, LSP servers, formatters, plugins)
+-- Fetches from multiple endpoints and combines the results
+---@param callback function(err, status)
+function M.get_status(callback)
+	local results = {
+		version = nil,
+		mcp = nil,
+		lsp = nil,
+		formatters = nil,
+		plugins = nil,
+	}
+	local pending = 4 -- health, mcp, lsp, formatter, config
+	local errors = {}
+
+	local function check_done()
+		pending = pending - 1
+		if pending == 0 then
+			-- Return combined results (ignore individual errors if we got some data)
+			local has_data = results.version or results.mcp or results.lsp or results.formatters or results.plugins
+			if has_data then
+				callback(nil, results)
+			else
+				callback({ message = "Failed to fetch status: " .. table.concat(errors, ", ") }, nil)
+			end
+		end
+	end
+
+	-- Fetch health for version
+	http.health(function(err, data)
+		if not err and data then
+			results.version = data.version
+		else
+			table.insert(errors, "health")
+		end
+		check_done()
+	end)
+
+	-- Fetch MCP status
+	http.get("/mcp", function(err, data)
+		if not err and data then
+			results.mcp = data
+		else
+			table.insert(errors, "mcp")
+		end
+		check_done()
+	end)
+
+	-- Fetch LSP status
+	http.get("/lsp", function(err, data)
+		if not err and data then
+			results.lsp = data
+		else
+			table.insert(errors, "lsp")
+		end
+		check_done()
+	end)
+
+	-- Fetch formatter status
+	http.get("/formatter", function(err, data)
+		if not err and data then
+			results.formatters = data
+		else
+			table.insert(errors, "formatter")
+		end
+		check_done()
+	end)
+
+	-- Fetch config for plugins
+	pending = pending + 1
+	http.get("/global/config", function(err, data)
+		if not err and data and data.plugin then
+			results.plugins = data.plugin
+		else
+			table.insert(errors, "config")
+		end
+		check_done()
+	end)
 end
 
 -- Execute slash command
