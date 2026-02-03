@@ -629,6 +629,12 @@ function M._connect_provider_with_method(provider, method, method_index)
 	local state = require("opencode.state")
 	local float = require("opencode.ui.float")
 
+	-- Ensure we're focused on the chat window before showing input
+	local chat = require("opencode.ui.chat")
+	if chat.focus then
+		chat.focus()
+	end
+
 	if method.type == "api" then
 		-- API key authentication - prompt for key
 		float.create_input_popup({
@@ -733,6 +739,12 @@ function M._show_provider_models(provider)
 	local state = require("opencode.state")
 	local float = require("opencode.ui.float")
 
+	-- Ensure we're focused on the chat window
+	local chat = require("opencode.ui.chat")
+	if chat.focus then
+		chat.focus()
+	end
+
 	-- Refresh provider list to get updated models
 	client.list_providers(function(err, response)
 		vim.schedule(function()
@@ -790,24 +802,35 @@ function M._show_oauth_auto_dialog(opts)
 	local Popup = require("nui.popup")
 	local event = require("nui.utils.autocmd").event
 
+	-- Ensure we're focused on the chat window
+	local chat = require("opencode.ui.chat")
+	if chat.focus then
+		chat.focus()
+	end
+
 	local provider = opts.provider
 	local method = opts.method
 	local method_index = opts.method_index
 	local authorization = opts.authorization
 	local device_code = opts.device_code
 
-	-- Calculate popup size relative to current window
+	-- Get the chat window for positioning
+	local target_win = vim.api.nvim_get_current_win()
+
+	-- Calculate popup size relative to chat window
+	-- Account for border (2 chars total width for border)
 	local width = 55
 	local height = 10
 
-	local win_width = vim.api.nvim_win_get_width(0)
-	local win_height = vim.api.nvim_win_get_height(0)
+	local win_width = vim.api.nvim_win_get_width(target_win)
+	local win_height = vim.api.nvim_win_get_height(target_win)
+	local total_width = width + 2 -- border adds 2 to total width
 	local row = math.floor((win_height - height) / 2)
-	local col = math.floor((win_width - width) / 2)
+	local col = math.max(0, math.floor((win_width - total_width) / 2))
 
-	-- Create popup relative to current window
+	-- Create popup relative to chat window
 	local popup = Popup({
-		relative = "win",
+		relative = { type = "win", winid = target_win },
 		enter = true,
 		focusable = true,
 		border = {

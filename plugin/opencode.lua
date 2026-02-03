@@ -44,6 +44,12 @@ end, {
 	desc = "Restart OpenCode server",
 })
 
+vim.api.nvim_create_user_command("OpenCodeAbort", function()
+	require("opencode").abort()
+end, {
+	desc = "Abort/stop current generation",
+})
+
 vim.api.nvim_create_user_command("OpenCodeLog", function()
 	require("opencode.ui.log_viewer").toggle()
 end, {

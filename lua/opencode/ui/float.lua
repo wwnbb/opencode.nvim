@@ -208,6 +208,24 @@ function M.create_menu(items, on_select, opts)
 	return popup
 end
 
+-- Helper to get the OpenCode chat window ID
+local function get_chat_winid()
+	-- Try to get the chat window from the chat module
+	local ok, chat = pcall(require, "opencode.ui.chat")
+	if ok and chat.get_bufnr then
+		local bufnr = chat.get_bufnr()
+		if bufnr then
+			-- Find window displaying this buffer
+			for _, win in ipairs(vim.api.nvim_list_wins()) do
+				if vim.api.nvim_win_get_buf(win) == bufnr then
+					return win
+				end
+			end
+		end
+	end
+	return nil
+end
+
 -- Create input popup for text entry (API keys, codes, etc.)
 -- opts: { title?, prompt?, on_submit, on_cancel?, width?, password? }
 function M.create_input_popup(opts)
@@ -218,14 +236,18 @@ function M.create_input_popup(opts)
 
 	local width = opts.width or 50
 
-	-- Get current window dimensions for centering
-	local win_width = vim.api.nvim_win_get_width(0)
-	local win_height = vim.api.nvim_win_get_height(0)
+	-- Try to get the OpenCode chat window, fall back to current window
+	local target_win = get_chat_winid() or vim.api.nvim_get_current_win()
+
+	-- Get target window dimensions for centering
+	local win_width = vim.api.nvim_win_get_width(target_win)
+	local win_height = vim.api.nvim_win_get_height(target_win)
+	local total_width = width + 2 -- border adds 2 to total width
 	local row = math.floor((win_height - 3) / 2)
-	local col = math.floor((win_width - width) / 2)
+	local col = math.max(0, math.floor((win_width - total_width) / 2))
 
 	local input = NuiInput({
-		relative = "win",
+		relative = { type = "win", winid = target_win },
 		position = { row = row, col = col },
 		size = { width = width },
 		border = {
@@ -314,12 +336,16 @@ function M.create_searchable_menu(items, on_select, opts)
 	local width = opts.width or 60
 	local list_height = math.min(#items + 2, 15)
 
-	-- Get current window dimensions for centering
-	local win_width = vim.api.nvim_win_get_width(0)
-	local win_height = vim.api.nvim_win_get_height(0)
+	-- Try to get the OpenCode chat window, fall back to current window
+	local target_win = get_chat_winid() or vim.api.nvim_get_current_win()
+
+	-- Get target window dimensions for centering
+	local win_width = vim.api.nvim_win_get_width(target_win)
+	local win_height = vim.api.nvim_win_get_height(target_win)
 	local total_height = list_height + 5
+	local total_width = width + 2 -- border adds 2 to total width
 	local row = math.floor((win_height - total_height) / 2)
-	local col = math.floor((win_width - width - 2) / 2)
+	local col = math.max(0, math.floor((win_width - total_width) / 2))
 
 	-- Track state
 	local filtered_items = vim.deepcopy(items)
@@ -329,7 +355,7 @@ function M.create_searchable_menu(items, on_select, opts)
 
 	-- Create input popup for search
 	local input_popup = NuiInput({
-		relative = "win",
+		relative = { type = "win", winid = target_win },
 		position = { row = row, col = col },
 		size = { width = width },
 		border = {
@@ -345,17 +371,12 @@ function M.create_searchable_menu(items, on_select, opts)
 	}, {
 		prompt = " ",
 		default_value = "",
-		on_change = function(value)
-			search_text = value
-			-- Filter and update list
-			M._update_searchable_list(filtered_items, items, search_text, list_popup, selected_idx)
-		end,
 	})
 
 	-- Create list popup for results
 	local list_bufnr = vim.api.nvim_create_buf(false, true)
 	local list_popup = Popup({
-		relative = "win",
+		relative = { type = "win", winid = target_win },
 		position = { row = row + 3, col = col },
 		size = { width = width, height = list_height },
 		border = {
@@ -375,7 +396,7 @@ function M.create_searchable_menu(items, on_select, opts)
 	-- Create layout combining both
 	local layout = NuiLayout(
 		{
-			relative = "win",
+			relative = { type = "win", winid = target_win },
 			position = { row = row, col = col },
 			size = {
 				width = width + 2,

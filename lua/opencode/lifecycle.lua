@@ -13,6 +13,10 @@ local pending_callbacks = {}
 -- Lifecycle timers
 local check_timer = nil
 
+-- Forward declarations for functions that need to be called before their definition
+local connect_to_server
+local check_existing_server
+
 -- Default configuration
 M.opts = {
 	auto_start = true,
@@ -23,7 +27,7 @@ M.opts = {
 }
 
 -- Check if OpenCode server is already running at configured host:port
-local function check_existing_server(callback)
+check_existing_server = function(callback)
 	local http = require("opencode.client.http")
 
 	http.health(function(err, data)
@@ -40,23 +44,50 @@ local function check_existing_server(callback)
 	end)
 end
 
+-- Parse server URL from output line
+-- Expected format: "opencode server listening on http://127.0.0.1:57168"
+local function parse_server_url(line)
+	if not line then
+		return nil
+	end
+
+	local url = line:match("listening on (http://[%w%.%-]+:%d+)")
+	if url then
+		local host, port = url:match("http://([%w%.%-]+):(%d+)")
+		if host and port then
+			return {
+				url = url,
+				host = host,
+				port = tonumber(port),
+			}
+		end
+	end
+
+	return nil
+end
+
 -- Start OpenCode server process
 local function spawn_server(callback)
 	local host = state.get_server_info().host
-	local port = state.get_server_info().port
 
 	-- Build opencode serve command
+	-- Use --port 0 to let opencode pick an available port
 	local cmd = "opencode"
 	local args = {
 		"serve",
-		"--hostname", host,
-		"--port", tostring(port),
+		"--hostname",
+		host,
+		"--port",
+		"0",
 	}
 
 	state.set_connection("starting")
 	state.set_server_managed(true)
 
-	local server_job = Job:new({
+	local server_ready = false
+	local server_job
+
+	server_job = Job:new({
 		command = cmd,
 		args = args,
 		env = vim.tbl_extend("force", vim.fn.environ(), {
@@ -65,19 +96,71 @@ local function spawn_server(callback)
 			OPENCODE_SERVER_PASSWORD = M.opts.auth and M.opts.auth.password,
 		}),
 		on_stdout = function(_, data)
-			-- Server output (can be logged if debug enabled)
-			if data and M.opts.debug then
-				vim.schedule(function()
-					vim.notify("OpenCode server: " .. data, vim.log.levels.DEBUG)
-				end)
+			if data then
+				-- Try to parse server URL from output
+				local server_info = parse_server_url(data)
+				if server_info and not server_ready then
+					server_ready = true
+
+					vim.schedule(function()
+						-- Update state and HTTP client with actual port
+						state.set_server_info({
+							host = server_info.host,
+							port = server_info.port,
+						})
+
+						-- Update HTTP client configuration
+						local http = require("opencode.client.http")
+						http.setup({
+							host = server_info.host,
+							port = server_info.port,
+						})
+
+						-- Update SSE client configuration
+						local sse = require("opencode.client.sse")
+						sse.setup({
+							host = server_info.host,
+							port = server_info.port,
+						})
+
+						if M.opts.debug then
+							vim.notify("OpenCode server started on " .. server_info.url, vim.log.levels.DEBUG)
+						end
+
+						-- Now connect to the server
+						state.set_connection("connecting")
+						check_existing_server(function(running, version)
+							if running then
+								connect_to_server(version)
+							else
+								-- Server reported listening but health check failed, retry
+								vim.defer_fn(function()
+									check_existing_server(function(retry_running, retry_version)
+										if retry_running then
+											connect_to_server(retry_version)
+										else
+											state.set_connection("error")
+											vim.notify("OpenCode server health check failed", vim.log.levels.ERROR)
+											callback({ error = "Health check failed" })
+										end
+									end)
+								end, 500)
+							end
+						end)
+					end)
+				elseif M.opts.debug then
+					vim.schedule(function()
+						vim.notify("OpenCode server: " .. data, vim.log.levels.DEBUG)
+					end)
+				end
 			end
 		end,
 		on_stderr = function(_, data)
-			-- Server errors
+			-- Server errors/warnings (including "Warning: OPENCODE_SERVER_PASSWORD is not set")
 			if data then
 				vim.schedule(function()
 					if M.opts.debug then
-						vim.notify("OpenCode server error: " .. data, vim.log.levels.DEBUG)
+						vim.notify("OpenCode server stderr: " .. data, vim.log.levels.DEBUG)
 					end
 				end)
 			end
@@ -107,39 +190,31 @@ local function spawn_server(callback)
 		end
 	end, 100)
 
-	-- Wait for server to be ready
+	-- Timeout handler - if we don't get the "listening on" message in time
 	local start_time = vim.uv.now()
-	local check_interval = M.opts.health_check_interval
 	local timeout = M.opts.startup_timeout
 
-	local function wait_for_ready()
-		check_existing_server(function(running, version)
-			if running then
-				-- Server is ready
-				state.set_connection("connecting")
-				vim.schedule(function()
-					connect_to_server(version)
-				end)
-				return
-			end
+	local function check_timeout()
+		if server_ready then
+			return -- Already connected
+		end
 
-			local elapsed = vim.uv.now() - start_time
-			if elapsed >= timeout then
-				state.set_connection("error")
-				vim.schedule(function()
-					vim.notify("OpenCode server startup timed out", vim.log.levels.ERROR)
-					callback({ error = "Startup timeout" })
-				end)
-				return
-			end
+		local elapsed = vim.uv.now() - start_time
+		if elapsed >= timeout then
+			state.set_connection("error")
+			vim.schedule(function()
+				vim.notify("OpenCode server startup timed out", vim.log.levels.ERROR)
+				callback({ error = "Startup timeout" })
+			end)
+			return
+		end
 
-			-- Check again after interval
-			check_timer = vim.defer_fn(wait_for_ready, check_interval)
-		end)
+		-- Check again
+		check_timer = vim.defer_fn(check_timeout, M.opts.health_check_interval)
 	end
 
-	-- Start waiting
-	wait_for_ready()
+	-- Start timeout check
+	check_timer = vim.defer_fn(check_timeout, M.opts.health_check_interval)
 end
 
 -- Process queued callbacks after connection
@@ -201,7 +276,7 @@ local function setup_event_listeners(client)
 end
 
 -- Connect to running server
-local function connect_to_server(version)
+connect_to_server = function(version)
 	local client = require("opencode.client")
 
 	state.set_connection("connected")

@@ -1,5 +1,6 @@
 -- opencode.nvim - Chat buffer UI module
 -- Main chat interface with configurable layouts
+-- This module mirrors the TUI's session/index.tsx rendering approach
 
 local M = {}
 
@@ -11,15 +12,17 @@ local markdown = require("opencode.ui.markdown")
 local tools = require("opencode.ui.tools")
 local thinking = require("opencode.ui.thinking")
 
--- State
+-- State (UI state only - message data lives in sync module)
 local state = {
 	bufnr = nil,
 	winid = nil,
 	layout = nil,
 	visible = false,
-	messages = {},
+	messages = {}, -- Local user messages only (sent before server confirms)
 	config = nil,
 	questions = {}, -- Track question positions: { [request_id] = { start_line, end_line } }
+	last_render_time = 0,
+	render_scheduled = false,
 }
 
 local question_widget = require("opencode.ui.question_widget")
@@ -50,6 +53,7 @@ local defaults = {
 		scroll_down = "<C-d>",
 		goto_top = "gg",
 		goto_bottom = "G",
+		abort = "<C-c>", -- Stop current generation
 	},
 }
 
@@ -116,6 +120,12 @@ local function setup_buffer(bufnr)
 	-- Go to top/bottom
 	vim.keymap.set("n", cfg.keymaps.goto_top, "gg", opts)
 	vim.keymap.set("n", cfg.keymaps.goto_bottom, "G", opts)
+
+	-- Abort/stop current generation
+	vim.keymap.set("n", cfg.keymaps.abort, function()
+		local opencode = require("opencode")
+		opencode.abort()
+	end, vim.tbl_extend("force", opts, { desc = "Stop current generation" }))
 
 	-- Help
 	vim.keymap.set("n", "?", function()
@@ -193,6 +203,7 @@ function M.show_help()
 		"",
 		" q          - Close chat",
 		" i          - Focus input",
+		" <C-c>      - Stop generation",
 		" <C-p>      - Command palette",
 		" <C-u>      - Scroll up",
 		" <C-d>      - Scroll down",
@@ -280,6 +291,15 @@ function M.create()
 	state.config = get_config()
 	state.bufnr = create_buffer()
 	state.messages = {}
+
+	-- Subscribe to chat_render events from events.lua
+	-- This is how the sync store notifies us to re-render
+	local events = require("opencode.events")
+	events.on("chat_render", function(data)
+		vim.schedule(function()
+			M.schedule_render()
+		end)
+	end)
 
 	-- Render initial content
 	M.render()
@@ -566,104 +586,287 @@ function M.get_messages()
 	return vim.deepcopy(state.messages)
 end
 
--- Render full buffer content (for initial load)
+-- Tool icons matching TUI style
+local TOOL_ICONS = {
+	bash = "$",
+	glob = "✱",
+	read = "→",
+	grep = "✱",
+	list = "→",
+	write = "←",
+	edit = "←",
+	webfetch = "%",
+	websearch = "◈",
+	codesearch = "◇",
+	task = "◉",
+	todowrite = "⚙",
+	todoread = "⊙",
+	question = "→",
+	apply_patch = "%",
+}
+
+-- Get tool icon
+local function get_tool_icon(tool_name)
+	return TOOL_ICONS[tool_name] or "⚙"
+end
+
+-- Format tool display line (like TUI's InlineTool)
+local function format_tool_line(tool_part)
+	local tool_name = tool_part.tool or "unknown"
+	local tool_status = tool_part.state and tool_part.state.status or "pending"
+	local icon = get_tool_icon(tool_name)
+	local input = tool_part.state and tool_part.state.input or {}
+	local metadata = tool_part.state and tool_part.state.metadata or {}
+
+	-- Format based on tool type (matching TUI patterns)
+	if tool_name == "glob" then
+		local pattern = input.pattern or ""
+		local count = metadata.count or 0
+		if tool_status == "completed" then
+			return string.format("%s Glob \"%s\" (%d matches)", icon, pattern, count)
+		end
+		return string.format("~ Finding files...")
+	elseif tool_name == "grep" then
+		local pattern = input.pattern or ""
+		local matches = metadata.matches or 0
+		if tool_status == "completed" then
+			return string.format("%s Grep \"%s\" (%d matches)", icon, pattern, matches)
+		end
+		return string.format("~ Searching content...")
+	elseif tool_name == "read" then
+		local filepath = input.filePath or input.file_path or ""
+		-- Shorten path if too long
+		if #filepath > 40 then
+			filepath = "..." .. filepath:sub(-37)
+		end
+		if tool_status == "completed" then
+			return string.format("%s Read %s", icon, filepath)
+		end
+		return string.format("~ Reading file...")
+	elseif tool_name == "write" then
+		local filepath = input.filePath or input.file_path or ""
+		if #filepath > 40 then
+			filepath = "..." .. filepath:sub(-37)
+		end
+		if tool_status == "completed" then
+			return string.format("%s Wrote %s", icon, filepath)
+		end
+		return string.format("~ Preparing write...")
+	elseif tool_name == "edit" then
+		local filepath = input.filePath or input.file_path or ""
+		if #filepath > 40 then
+			filepath = "..." .. filepath:sub(-37)
+		end
+		if tool_status == "completed" then
+			return string.format("%s Edit %s", icon, filepath)
+		end
+		return string.format("~ Preparing edit...")
+	elseif tool_name == "bash" then
+		local cmd = input.command or ""
+		local desc = input.description or "Shell"
+		if tool_status == "completed" then
+			return string.format("# %s", desc)
+		end
+		return string.format("~ Writing command...")
+	elseif tool_name == "todoread" or tool_name == "todowrite" then
+		if tool_status == "completed" then
+			return string.format("%s %s", icon, tool_name)
+		end
+		return string.format("~ Updating todos...")
+	elseif tool_name == "task" then
+		local subagent = input.subagent_type or "unknown"
+		local desc = input.description or ""
+		if tool_status == "completed" then
+			return string.format("%s %s Task \"%s\"", icon, subagent:sub(1, 1):upper() .. subagent:sub(2), desc)
+		end
+		return string.format("~ Delegating...")
+	else
+		if tool_status == "completed" then
+			return string.format("%s %s", icon, tool_name)
+		end
+		return string.format("~ %s...", tool_name)
+	end
+end
+
+-- Render full buffer content from sync store (mirrors TUI session/index.tsx)
+-- This is the main render function that reads from the centralized sync store
 function M.render()
 	if not state.bufnr or not vim.api.nvim_buf_is_valid(state.bufnr) then
 		return
 	end
 
+	local sync = require("opencode.sync")
+	local app_state = require("opencode.state")
+	local current_session = app_state.get_session()
+
 	local lines = {}
 	local highlights = {}
 
-	-- Header
-	table.insert(lines, " OpenCode Chat ")
-	table.insert(highlights, { line = 0, col_start = 0, col_end = 15, hl_group = "Title" })
-	table.insert(lines, string.rep("═", 60))
+	-- Session header (like TUI's "# New session - timestamp")
+	local session_name = current_session.name or "New session"
+	local session_time = os.date("%Y-%m-%dT%H:%M:%SZ")
+	local header_line = string.format("# %s - %s", session_name, session_time)
+	table.insert(lines, header_line)
+	table.insert(highlights, { line = 0, col_start = 0, col_end = #header_line, hl_group = "Comment" })
 	table.insert(lines, "")
 
-	-- Render all messages
-	for _, message in ipairs(state.messages) do
-		-- Skip question type messages (rendered separately by question widget)
-		if message.type == "question" then
-			goto continue_message
-		end
+	-- Get messages from sync store (like TUI's sync.data.message[sessionID])
+	local messages = current_session.id and sync.get_messages(current_session.id) or {}
 
-		local role_display = message.role == "user" and "You"
-			or (message.role == "assistant" and "Assistant" or "System")
-		local time_str = os.date("%H:%M", message.timestamp)
-		local id_short = message.id and message.id:sub(1, 6) or "??????"
+	-- Render all messages from sync store
+	for _, message in ipairs(messages) do
+		-- Get content from parts (like TUI's sync.data.part[message.id])
+		local content = sync.get_message_text(message.id)
+		local reasoning = sync.get_message_reasoning(message.id)
+		local tool_parts = sync.get_message_tools(message.id)
 
-		-- Skip empty assistant messages (no content and no reasoning)
-		local has_content = message.content and message.content ~= ""
-		local has_reasoning = message.reasoning and message.reasoning ~= ""
-		local should_render = message.role ~= "assistant" or has_content or has_reasoning
+		-- Skip empty assistant messages (no content and no reasoning and no tools)
+		local has_content = content and content ~= ""
+		local has_reasoning = reasoning and reasoning ~= ""
+		local has_tools = #tool_parts > 0
+		local should_render = message.role ~= "assistant" or has_content or has_reasoning or has_tools
 
 		if should_render then
-			local header_text = string.format(
-				"%s [%s] %s%s",
-				role_display,
-				id_short,
-				string.rep(" ", 50 - #role_display - #time_str - #id_short - 3),
-				time_str
-			)
-			table.insert(lines, header_text)
-			table.insert(highlights, {
-				line = #lines - 1,
-				col_start = 0,
-				col_end = #role_display,
-				hl_group = message.role == "user" and "Identifier" or "Constant",
-			})
-
-			table.insert(lines, string.rep("─", 60))
-
-			-- Render reasoning/thinking content if available
-			if message.reasoning and message.reasoning ~= "" and thinking.is_enabled() then
-				local reasoning_lines = thinking.format_reasoning(message.reasoning)
-				local reasoning_start = #lines
-
-				for _, line in ipairs(reasoning_lines) do
-					table.insert(lines, line)
-				end
-
-				-- Schedule highlight application
-				vim.schedule(function()
-					if state.bufnr and vim.api.nvim_buf_is_valid(state.bufnr) then
-						thinking.apply_highlights(state.bufnr, reasoning_start, #reasoning_lines)
-					end
-				end)
-			end
-
-			-- Render tool activity if present
-			if message.tool_activity and next(message.tool_activity) then
-				local tool_start = #lines
-				table.insert(lines, "🔧 Tools:")
-				table.insert(highlights, {
-					line = tool_start,
-					col_start = 0,
-					col_end = 10,
-					hl_group = "Special",
-				})
-				for tool_name, tool_info in pairs(message.tool_activity) do
-					local tool_line = string.format("  %s %s [%s]", tool_info.icon, tool_name, tool_info.status)
-					table.insert(lines, tool_line)
+			if message.role == "user" then
+				-- User message: bordered box style (like TUI)
+				-- │ message content
+				local content_lines = vim.split(content or "", "\n", { plain = true })
+				for i, line in ipairs(content_lines) do
+					local formatted = "│ " .. line
+					table.insert(lines, formatted)
+					-- Highlight the border character
 					table.insert(highlights, {
 						line = #lines - 1,
 						col_start = 0,
-						col_end = #tool_line,
-						hl_group = tool_info.status == "completed" and "DiagnosticOk"
-							or tool_info.status == "error" and "DiagnosticError"
-							or "DiagnosticInfo",
+						col_end = 3,
+						hl_group = "Special",
 					})
 				end
 				table.insert(lines, "")
-			end
+			else
+				-- Assistant message: reasoning, tools, then content
 
-			-- Message content with markdown rendering
-			local content = message.content or ""
-			local use_markdown = markdown.has_markdown(content)
+				-- Render reasoning/thinking (like TUI's yellow "Thinking:" prefix)
+				if has_reasoning and thinking.is_enabled() then
+					-- Split reasoning into lines and prefix with "Thinking:"
+					local reasoning_lines_raw = vim.split(reasoning, "\n", { plain = true })
+					for i, rline in ipairs(reasoning_lines_raw) do
+						local formatted
+						if i == 1 then
+							formatted = "Thinking: " .. rline
+						else
+							formatted = "          " .. rline -- indent continuation
+						end
+						table.insert(lines, formatted)
+						-- Highlight "Thinking:" in yellow/warning color
+						if i == 1 then
+							table.insert(highlights, {
+								line = #lines - 1,
+								col_start = 0,
+								col_end = 9,
+								hl_group = "WarningMsg",
+							})
+							-- Rest in muted/italic style
+							table.insert(highlights, {
+								line = #lines - 1,
+								col_start = 10,
+								col_end = #formatted,
+								hl_group = "Comment",
+							})
+						else
+							table.insert(highlights, {
+								line = #lines - 1,
+								col_start = 0,
+								col_end = #formatted,
+								hl_group = "Comment",
+							})
+						end
+					end
+					table.insert(lines, "")
+				end
+
+				-- Render tool calls inline (like TUI's InlineTool style)
+				if has_tools then
+					for _, tool_part in ipairs(tool_parts) do
+						local tool_line = format_tool_line(tool_part)
+						local tool_status = tool_part.state and tool_part.state.status or "pending"
+
+						table.insert(lines, tool_line)
+
+						-- Color based on status
+						local hl_group = "Comment" -- pending/running = muted
+						if tool_status == "completed" then
+							hl_group = "Normal"
+						elseif tool_status == "error" then
+							hl_group = "ErrorMsg"
+						end
+
+						table.insert(highlights, {
+							line = #lines - 1,
+							col_start = 0,
+							col_end = #tool_line,
+							hl_group = hl_group,
+						})
+					end
+				end
+
+				-- Render text content (assistant's response)
+				if has_content then
+					local use_markdown = markdown.has_markdown(content)
+					local content_start = #lines
+					if use_markdown then
+						local md_lines, md_highlights = markdown.render_to_lines(markdown.parse(content))
+						for _, line in ipairs(md_lines) do
+							table.insert(lines, line)
+						end
+						for _, hl in ipairs(md_highlights) do
+							hl.line = content_start + hl.line
+							table.insert(highlights, hl)
+						end
+					else
+						-- Plain text
+						local content_lines = vim.split(content, "\n", { plain = true })
+						for _, line in ipairs(content_lines) do
+							table.insert(lines, line)
+						end
+					end
+				end
+
+				table.insert(lines, "")
+			end
+		end
+	end
+
+	-- Also render any local-only messages (system messages, errors, etc.)
+	-- Note: User messages are NOT stored locally anymore - they come from the server
+	-- via SSE events to prevent duplicate rendering
+	for _, message in ipairs(state.messages) do
+		-- Skip if this message is already in sync store
+		if message.id and current_session.id then
+			local sync_msg = sync.get_message(current_session.id, message.id)
+			if sync_msg then
+				goto continue_local_message
+			end
+		end
+
+		-- Skip question type messages (rendered separately)
+		if message.type == "question" then
+			goto continue_local_message
+		end
+
+		-- Skip user messages (they come from server via SSE)
+		if message.role == "user" then
+			goto continue_local_message
+		end
+
+		local has_content = message.content and message.content ~= ""
+
+		if has_content then
+			-- System/error messages
+			local use_markdown = markdown.has_markdown(message.content)
 			local content_start = #lines
 			if use_markdown then
-				local md_lines, md_highlights = markdown.render_to_lines(markdown.parse(content))
+				local md_lines, md_highlights = markdown.render_to_lines(markdown.parse(message.content))
 				for _, line in ipairs(md_lines) do
 					table.insert(lines, line)
 				end
@@ -672,8 +875,7 @@ function M.render()
 					table.insert(highlights, hl)
 				end
 			else
-				-- Plain text
-				local content_lines = vim.split(content, "\n", { plain = true })
+				local content_lines = vim.split(message.content, "\n", { plain = true })
 				for _, line in ipairs(content_lines) do
 					table.insert(lines, line)
 				end
@@ -682,11 +884,12 @@ function M.render()
 			table.insert(lines, "")
 		end
 
-		::continue_message::
+		::continue_local_message::
 	end
 
-	-- Initial state message
-	if #state.messages == 0 then
+	-- Initial state message (when no messages)
+	local total_messages = #messages + #state.messages
+	if total_messages == 0 then
 		table.insert(lines, " Welcome to OpenCode!")
 		table.insert(highlights, { line = #lines - 1, col_start = 0, col_end = 22, hl_group = "Comment" })
 		table.insert(lines, "")
@@ -772,146 +975,63 @@ end
 ---@param status string New status (pending, running, success, error)
 ---@param result? table Optional result data
 function M.update_tool_call(message_id, tool_index, status, result)
-	for _, msg in ipairs(state.messages) do
-		if msg.id == message_id and msg.tool_calls and msg.tool_calls[tool_index] then
-			msg.tool_calls[tool_index].status = status
-			if result then
-				msg.tool_calls[tool_index].result = result
-			end
-			-- Re-render the message
-			-- Clear from buffer and re-render
-			if state.bufnr and vim.api.nvim_buf_is_valid(state.bufnr) then
-				vim.bo[state.bufnr].modifiable = true
-				vim.api.nvim_buf_set_lines(state.bufnr, 0, -1, false, {})
-				M.render()
-				vim.bo[state.bufnr].modifiable = false
-			end
-			return true
-		end
-	end
-	return false
+	-- Tool calls are now stored in sync store as tool parts
+	-- Just trigger a re-render
+	M.schedule_render()
+	return true
 end
 
--- Track active tool calls per message
-local active_tools = {}
-
--- Update tool activity for a message (shows what the LLM is doing)
+-- Legacy function - tool activity is now read from sync store's tool parts
+-- Kept for backwards compatibility
 ---@param message_id string Message ID
 ---@param tool_name string Tool name
 ---@param status string Status (pending, running, completed, error)
 ---@param input? table Optional input data
 function M.update_tool_activity(message_id, tool_name, status, input)
-	if not state.bufnr or not vim.api.nvim_buf_is_valid(state.bufnr) then
-		return
-	end
-
-	-- Initialize tool tracking for this message
-	active_tools[message_id] = active_tools[message_id] or {}
-
-	-- Format tool display
-	local status_icon = ({
-		pending = "⏳",
-		running = "🔄",
-		completed = "✅",
-		error = "❌",
-	})[status] or "❓"
-
-	-- Store tool state
-	active_tools[message_id][tool_name] = {
-		status = status,
-		icon = status_icon,
-		input = input,
-		timestamp = os.time(),
-	}
-
-	-- Update the message's tool_activity field
-	for _, msg in ipairs(state.messages) do
-		if msg.id == message_id then
-			msg.tool_activity = active_tools[message_id]
-			break
-		end
-	end
-
-	-- Re-render the buffer to show tool activity
-	vim.bo[state.bufnr].modifiable = true
-	vim.api.nvim_buf_set_lines(state.bufnr, 0, -1, false, {})
-	M.render()
-	vim.bo[state.bufnr].modifiable = false
-
-	-- Auto-scroll to bottom if visible
-	if state.visible and state.winid and vim.api.nvim_win_is_valid(state.winid) then
-		local buf_lines = vim.api.nvim_buf_line_count(state.bufnr)
-		vim.api.nvim_win_set_cursor(state.winid, { buf_lines, 0 })
-	end
-
-	-- Force redraw to show updates immediately
-	vim.cmd("redraw")
+	-- Tool state is already in sync store, just re-render
+	M.schedule_render()
 end
 
 -- Clear tool activity for a message
+-- Now a no-op since we use the sync store
 function M.clear_tool_activity(message_id)
-	active_tools[message_id] = nil
+	-- No longer needed - sync store manages state
 end
 
--- Track streaming assistant message
-local streaming_message = {
-	id = nil,
-	content = "",
-	line_start = nil, -- Line where this message starts in buffer
-}
+-- Throttled render (like TUI's throttled updates)
+-- Prevents excessive re-renders during streaming
+local RENDER_THROTTLE_MS = 50
 
--- Update or create an assistant message (for streaming responses)
----@param message_id string Message ID from server
----@param content string Current content
-function M.update_assistant_message(message_id, content)
+-- Schedule a render with throttling
+function M.schedule_render()
+	if state.render_scheduled then
+		return
+	end
+
+	local now = vim.uv.now()
+	local elapsed = now - state.last_render_time
+
+	if elapsed >= RENDER_THROTTLE_MS then
+		-- Enough time has passed, render immediately
+		state.last_render_time = now
+		M.do_render()
+	else
+		-- Schedule render after throttle period
+		state.render_scheduled = true
+		vim.defer_fn(function()
+			state.render_scheduled = false
+			state.last_render_time = vim.uv.now()
+			M.do_render()
+		end, RENDER_THROTTLE_MS - elapsed)
+	end
+end
+
+-- Actually perform the render
+function M.do_render()
 	if not state.bufnr or not vim.api.nvim_buf_is_valid(state.bufnr) then
 		return
 	end
 
-	-- Check if this is a new message or update to existing
-	if streaming_message.id ~= message_id then
-		-- New message - add it
-		streaming_message.id = message_id
-		streaming_message.content = ""
-		streaming_message.line_start = nil
-
-		-- Find or create the message in our local state
-		local found = false
-		for _, msg in ipairs(state.messages) do
-			if msg.id == message_id then
-				found = true
-				msg.content = content
-				break
-			end
-		end
-
-		if not found then
-			-- Add new assistant message
-			local message = {
-				role = "assistant",
-				content = content,
-				timestamp = os.time(),
-				id = message_id,
-			}
-			table.insert(state.messages, message)
-		end
-
-		-- Remember where this message starts
-		streaming_message.line_start = vim.api.nvim_buf_line_count(state.bufnr)
-	end
-
-	-- Update the content
-	streaming_message.content = content
-
-	-- Update the message in state
-	for _, msg in ipairs(state.messages) do
-		if msg.id == message_id then
-			msg.content = content
-			break
-		end
-	end
-
-	-- Re-render the buffer
 	vim.bo[state.bufnr].modifiable = true
 	vim.api.nvim_buf_set_lines(state.bufnr, 0, -1, false, {})
 	M.render()
@@ -923,71 +1043,44 @@ function M.update_assistant_message(message_id, content)
 		vim.api.nvim_win_set_cursor(state.winid, { buf_lines, 0 })
 	end
 
-	-- Force redraw to show updates immediately
+	-- Force redraw
 	vim.cmd("redraw")
 end
 
--- Update reasoning content for a message (handles streaming reasoning parts)
+-- Legacy function - now just triggers a render since sync store has the data
+-- Kept for backwards compatibility
+---@param message_id string Message ID from server
+---@param content string Current content (ignored - read from sync store)
+function M.update_assistant_message(message_id, content)
+	-- Data is already in sync store, just re-render
+	M.schedule_render()
+end
+
+-- Legacy function - now just triggers a render since sync store has the data
+-- Kept for backwards compatibility
 ---@param message_id string Message ID
----@param reasoning_text string Current reasoning content
+---@param reasoning_text string Current reasoning content (ignored - read from sync store)
 function M.update_reasoning(message_id, reasoning_text)
 	if not thinking.is_enabled() then
 		return
 	end
 
-	-- Store reasoning in the thinking module
+	-- Store in thinking module for any additional processing
 	thinking.store_reasoning(message_id, reasoning_text)
 
-	-- Find or create the message in state
-	local found = false
-	for _, msg in ipairs(state.messages) do
-		if msg.id == message_id then
-			msg.reasoning = reasoning_text
-			found = true
-			break
-		end
-	end
-
-	-- If message doesn't exist yet, create it with reasoning
-	if not found then
-		local message = {
-			role = "assistant",
-			content = "",
-			reasoning = reasoning_text,
-			timestamp = os.time(),
-			id = message_id,
-		}
-		table.insert(state.messages, message)
-	end
-
-	-- Throttle UI updates to avoid excessive re-rendering
+	-- Throttle UI updates
 	if not thinking.should_update() then
 		return
 	end
 
-	-- Re-render the buffer to show updated reasoning
-	if state.bufnr and vim.api.nvim_buf_is_valid(state.bufnr) then
-		vim.bo[state.bufnr].modifiable = true
-		vim.api.nvim_buf_set_lines(state.bufnr, 0, -1, false, {})
-		M.render()
-		vim.bo[state.bufnr].modifiable = false
-
-		-- Auto-scroll to bottom if visible
-		if state.visible and state.winid and vim.api.nvim_win_is_valid(state.winid) then
-			local buf_lines = vim.api.nvim_buf_line_count(state.bufnr)
-			vim.api.nvim_win_set_cursor(state.winid, { buf_lines, 0 })
-		end
-
-		-- Force redraw to show updates immediately
-		vim.cmd("redraw")
-	end
+	-- Data is already in sync store, just re-render
+	M.schedule_render()
 end
 
 -- Clear streaming state (called when message is complete)
+-- Now a no-op since we use the sync store
 function M.clear_streaming_state()
-	streaming_message.id = nil
-	streaming_message.content = ""
-	streaming_message.line_start = nil
+	-- No longer needed - sync store manages state
 end
 
 -- Add a question message to the chat
