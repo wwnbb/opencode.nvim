@@ -196,70 +196,102 @@ local function create_buffer()
 	return bufnr
 end
 
--- Show help popup
+-- Show help popup (styled to match input popup)
 function M.show_help()
+	-- Ensure highlight groups exist
+	vim.api.nvim_set_hl(0, "OpenCodeInputBg", { link = "NormalFloat", default = true })
+	vim.api.nvim_set_hl(0, "OpenCodeInputBorder", { link = "Special", default = true })
+	vim.api.nvim_set_hl(0, "OpenCodeInputInfo", { link = "Comment", default = true })
+
 	local lines = {
-		" Chat Buffer Keymaps ",
+		"Chat Buffer Keymaps",
 		"",
-		" q          - Close chat",
-		" i          - Focus input",
-		" <C-c>      - Stop generation",
-		" <C-p>      - Command palette",
-		" <C-u>      - Scroll up",
-		" <C-d>      - Scroll down",
-		" gg         - Go to top",
-		" G          - Go to bottom",
-		" ?          - Show this help",
+		"q          Close chat",
+		"i          Focus input",
+		"<C-c>      Stop generation",
+		"<C-p>      Command palette",
+		"<C-u>      Scroll up",
+		"<C-d>      Scroll down",
+		"gg         Go to top",
+		"G          Go to bottom",
+		"?          Show this help",
 		"",
-		" Input Mode:",
-		" <C-g>      - Send message",
-		" <Esc>      - Cancel",
-		" ↑/↓        - Navigate history",
-		" <C-s>      - Stash input",
-		" <C-r>      - Restore input",
+		"Input Mode",
+		"<C-g>      Send message",
+		"<Esc>      Cancel",
+		"↑/↓        Navigate history",
+		"<C-s>      Stash input",
+		"<C-r>      Restore input",
 		"",
-		" Tool Calls:",
-		" <CR>       - Toggle details",
-		" gd         - Go to file",
-		" gD         - View diff",
+		"Tool Calls",
+		"<CR>       Toggle details",
+		"gd         Go to file",
+		"gD         View diff",
 		"",
-		" Question Tool:",
-		" 1-9        - Select option by number",
-		" ↑/↓ j/k    - Navigate options",
-		" Space      - Toggle multi-select",
-		" c          - Custom input",
-		" <CR>       - Confirm selection",
-		" <Esc>      - Cancel question",
-		" <Tab>      - Next question tab",
-		" <S-Tab>    - Previous question tab",
+		"Question Tool",
+		"1-9        Select option by number",
+		"↑/↓ j/k    Navigate options",
+		"Space      Toggle multi-select",
+		"c          Custom input",
+		"<CR>       Confirm selection",
+		"<Esc>      Cancel question",
+		"<Tab>      Next question tab",
+		"<S-Tab>    Previous question tab",
 		"",
-		" Press any key to close",
+		"Press any key to close",
 	}
 
-	local width = 40
+	local width = 42
 	local height = #lines
-	local ui_list = vim.api.nvim_list_uis()
-	local ui = ui_list and ui_list[1] or { width = 80, height = 24 }
-	local row = math.floor((ui.height - height) / 2)
-	local col = math.floor((ui.width - width) / 2)
+
+	-- Position relative to the chat window
+	local chat_winid = vim.api.nvim_get_current_win()
+	local chat_pos = vim.api.nvim_win_get_position(chat_winid)
+	local chat_win_width = vim.api.nvim_win_get_width(chat_winid)
+	local chat_win_height = vim.api.nvim_win_get_height(chat_winid)
+
+	local row = chat_pos[1] + math.floor((chat_win_height - height) / 2)
+	local col = chat_pos[2] + math.floor((chat_win_width - width) / 2)
 
 	local popup = Popup({
 		enter = true,
 		focusable = true,
 		border = {
-			style = "rounded",
-			text = {
-				top = " Help ",
-				top_align = "center",
-			},
+			style = { "", "", "", "", "", "", "", "┃" },
 		},
 		position = { row = row, col = col },
-		size = { width = width, height = height },
+		size = { width = width - 1, height = height },
+		win_options = {
+			winhighlight = "Normal:OpenCodeInputBg,EndOfBuffer:OpenCodeInputBg,FloatBorder:OpenCodeInputBorder",
+		},
 	})
 
 	popup:mount()
 	vim.api.nvim_buf_set_lines(popup.bufnr, 0, -1, false, lines)
 	vim.bo[popup.bufnr].modifiable = false
+
+	-- Apply highlights: section headers get agent color, keybind lines get hint style
+	local ns = vim.api.nvim_create_namespace("opencode_help")
+	local section_headers = {
+		["Chat Buffer Keymaps"] = true,
+		["Input Mode"] = true,
+		["Tool Calls"] = true,
+		["Question Tool"] = true,
+	}
+	for i, line in ipairs(lines) do
+		if section_headers[line] then
+			vim.api.nvim_buf_add_highlight(popup.bufnr, ns, "OpenCodeInputBorder", i - 1, 0, #line)
+		elseif line == "Press any key to close" then
+			vim.api.nvim_buf_add_highlight(popup.bufnr, ns, "OpenCodeInputInfo", i - 1, 0, #line)
+		elseif line ~= "" then
+			-- Highlight the key portion (up to first space after key)
+			local key_end = line:find("  ")
+			if key_end then
+				vim.api.nvim_buf_add_highlight(popup.bufnr, ns, "Normal", i - 1, 0, key_end - 1)
+				vim.api.nvim_buf_add_highlight(popup.bufnr, ns, "OpenCodeInputInfo", i - 1, key_end - 1, #line)
+			end
+		end
+	end
 
 	-- Close on various keys
 	local close_keys = { "q", "<Esc>", "<CR>", "<Space>" }
@@ -270,10 +302,10 @@ function M.show_help()
 	end
 
 	-- Close on any alphanumeric key
-	for i = 32, 126 do -- printable ASCII characters
+	for i = 32, 126 do
 		local char = string.char(i)
-		if not char:match("[qQ]") then -- Skip 'q' as it's already mapped
-			local ok, _ = pcall(function()
+		if not char:match("[qQ]") then
+			pcall(function()
 				vim.keymap.set("n", char, function()
 					popup:unmount()
 				end, { buffer = popup.bufnr, noremap = true, silent = true, nowait = true })
@@ -335,6 +367,9 @@ function M.open()
 			position = { row = dims.row, col = dims.col },
 			size = { width = dims.width, height = dims.height },
 			bufnr = state.bufnr,
+			win_options = {
+				fillchars = "eob: ",
+			},
 		})
 
 		popup:mount()
@@ -374,6 +409,9 @@ function M.open()
 		-- Mark as scratch buffer
 		vim.wo[state.winid].winfixwidth = cfg.layout == "vertical"
 		vim.wo[state.winid].winfixheight = cfg.layout == "horizontal"
+
+		-- Hide end-of-buffer markers
+		vim.wo[state.winid].fillchars = "eob: "
 	end
 
 	state.visible = true

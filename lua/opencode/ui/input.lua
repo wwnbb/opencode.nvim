@@ -7,8 +7,8 @@ local M = {}
 local Popup = require("nui.popup")
 local event = require("nui.utils.autocmd").event
 
--- Highlight group for the input area background
-local NS = vim.api.nvim_create_namespace("opencode_input")
+-- Namespace for info bar text highlights
+local NS_INFO = vim.api.nvim_create_namespace("opencode_input_info")
 
 -- State
 local state = {
@@ -54,7 +54,7 @@ local function setup_highlights()
 	vim.api.nvim_set_hl(0, "OpenCodeInputInfo", { link = "Comment", default = true })
 	vim.api.nvim_set_hl(0, "OpenCodeInputAgent", { link = "Special", default = true })
 	vim.api.nvim_set_hl(0, "OpenCodeInputModel", { link = "Normal", default = true })
-	vim.api.nvim_set_hl(0, "OpenCodeInputHint", { link = "Comment", default = true })
+	vim.api.nvim_set_hl(0, "OpenCodeInputProvider", { link = "Comment", default = true })
 end
 
 -- Load history from file
@@ -218,21 +218,32 @@ local function setup_keymaps(bufnr, cfg)
 	end, opts)
 end
 
--- Get the info line text (agent + model + hints)
-local function get_info_line()
+-- Get the info line parts (agent, model, provider) matching TUI layout
+local function get_info_parts()
 	local app_state = require("opencode.state")
-	local session = app_state.get_session()
-	local agent = session.agent or "Code"
-	local model = session.model or ""
+	local agent_state = app_state.get_agent()
+	local model_state = app_state.get_model()
 
-	-- Build info: "Agent  model_name  provider"
-	-- Fallback to simple display
-	local parts = {}
-	table.insert(parts, agent)
-	if model ~= "" then
-		table.insert(parts, " " .. model)
+	local agent = agent_state.name
+	local model = model_state.name
+	local provider = model_state.provider
+
+	-- Fall back to config defaults if state hasn't been set yet
+	if not agent or not model then
+		local cfg = require("opencode.config")
+		local defaults = cfg.defaults or {}
+		local session_cfg = defaults.session or {}
+		if not agent then
+			agent = session_cfg.default_agent or "Code"
+		end
+		if not model then
+			local dm = session_cfg.default_model or {}
+			model = dm.modelID or ""
+			provider = provider or dm.providerID or ""
+		end
 	end
-	return table.concat(parts, "")
+
+	return agent or "Code", model or "", provider or ""
 end
 
 -- Show input popup (TUI-style)
@@ -277,31 +288,34 @@ function M.show(opts)
 	local row = chat_pos[1] + chat_win_height - total_height
 	local col = chat_pos[2]
 
-	-- Define sign for left accent bar
-	vim.fn.sign_define("OpenCodeAccent", { text = "┃", texthl = "OpenCodeInputBorder" })
-	vim.fn.sign_define("OpenCodeAccentEnd", { text = "╹", texthl = "OpenCodeInputBorder" })
+	-- Left-only border: only the left side has a visible character.
+	-- nui border style order: top-left, top, top-right, right, bottom-right, bottom, bottom-left, left
+	-- Empty strings "" = no border on that side (no space consumed)
+	local left_border = { "", "", "", "", "", "", "", "┃" }
 
-	-- Create textarea popup (borderless, use signcolumn for left accent)
+	-- Create textarea popup with colored left border
 	state.bufnr = setup_buffer()
 	state.popup = Popup({
 		enter = true,
 		focusable = true,
-		border = "none",
+		border = {
+			style = left_border,
+		},
 		position = { row = row, col = col },
-		size = { width = width, height = height },
+		size = { width = width - 1, height = height },
 		bufnr = state.bufnr,
 		win_options = {
-			winhighlight = "Normal:OpenCodeInputBg,SignColumn:OpenCodeInputBg",
+			winhighlight = "Normal:OpenCodeInputBg,EndOfBuffer:OpenCodeInputBg,FloatBorder:OpenCodeInputBorder",
 			cursorline = false,
 			wrap = true,
 			linebreak = true,
-			signcolumn = "yes:1",
+			signcolumn = "no",
 			number = false,
 			relativenumber = false,
 		},
 	})
 
-	-- Create info bar popup (directly below textarea, borderless)
+	-- Create info bar popup (below textarea)
 	local info_bufnr = vim.api.nvim_create_buf(false, true)
 	vim.bo[info_bufnr].buftype = "nofile"
 	vim.bo[info_bufnr].bufhidden = "wipe"
@@ -309,73 +323,48 @@ function M.show(opts)
 	state.info_popup = Popup({
 		enter = false,
 		focusable = false,
-		border = "none",
+		border = {
+			style = { "", "", "", "", "", "", "", "┃" },
+		},
 		position = { row = row + height, col = col },
-		size = { width = width, height = info_height },
+		size = { width = width - 1, height = info_height },
 		bufnr = info_bufnr,
 		win_options = {
-			winhighlight = "Normal:OpenCodeInputInfo,SignColumn:OpenCodeInputInfo",
-			signcolumn = "yes:1",
+			winhighlight = "Normal:OpenCodeInputBg,EndOfBuffer:OpenCodeInputInfo,FloatBorder:OpenCodeInputBorder",
+			signcolumn = "no",
 			number = false,
 			relativenumber = false,
 		},
 	})
 
-	-- Mount both popups
+	-- Mount popups
 	state.popup:mount()
 	state.info_popup:mount()
 
 	state.winid = state.popup.winid
 	state.visible = true
 
-	-- Fill the buffer with empty lines so signs cover the full height,
-	-- then place accent signs on every line
-	local fill_lines = {}
-	for i = 1, height do
-		fill_lines[i] = ""
-	end
-	vim.api.nvim_buf_set_lines(state.bufnr, 0, -1, false, fill_lines)
-	for i = 1, height do
-		vim.fn.sign_place(0, "opencode_input", "OpenCodeAccent", state.bufnr, { lnum = i })
-	end
+	-- Set info bar content: "Agent model provider" (matching TUI layout)
+	local agent, model, provider = get_info_parts()
 
-	-- Place bottom-cap sign on info bar
-	vim.fn.sign_place(0, "opencode_input", "OpenCodeAccentEnd", info_bufnr, { lnum = 1 })
+	local agent_part = agent .. " "
+	local model_part = model ~= "" and (model .. " ") or ""
+	local provider_part = provider
+	local info_display = agent_part .. model_part .. provider_part
 
-	-- Set info bar content
-	local info_text = get_info_line()
-	local hints = "<C-g> send  <Esc> cancel  ↑↓ history  <C-s> stash  <C-r> restore"
-	local available = width - 2 -- account for signcolumn
-	local info_display = info_text
-	local remaining = available - #info_text - #hints
-	if remaining > 0 then
-		info_display = info_text .. string.rep(" ", remaining) .. hints
-	else
-		info_display = info_text .. hints
-	end
 	vim.api.nvim_buf_set_lines(info_bufnr, 0, -1, false, { info_display })
 
-	-- Apply highlights to info bar
-	vim.api.nvim_buf_add_highlight(info_bufnr, NS, "OpenCodeInputAgent", 0, 0, #info_text)
-	local hints_start = #info_display - #hints
-	if hints_start >= 0 then
-		vim.api.nvim_buf_add_highlight(info_bufnr, NS, "OpenCodeInputHint", 0, hints_start, #info_display)
+	-- Info bar highlights: agent (accent), model (normal), provider (muted)
+	local col = 0
+	vim.api.nvim_buf_add_highlight(info_bufnr, NS_INFO, "OpenCodeInputAgent", 0, col, col + #agent_part)
+	col = col + #agent_part
+	if model_part ~= "" then
+		vim.api.nvim_buf_add_highlight(info_bufnr, NS_INFO, "OpenCodeInputModel", 0, col, col + #model_part)
+		col = col + #model_part
 	end
-
-	-- Keep accent signs covering all buffer lines as user types
-	vim.api.nvim_create_autocmd({ "TextChanged", "TextChangedI" }, {
-		buffer = state.bufnr,
-		callback = function()
-			if not state.visible then
-				return true -- remove autocmd
-			end
-			vim.fn.sign_unplace("opencode_input", { buffer = state.bufnr })
-			local line_count = vim.api.nvim_buf_line_count(state.bufnr)
-			for i = 1, line_count do
-				vim.fn.sign_place(0, "opencode_input", "OpenCodeAccent", state.bufnr, { lnum = i })
-			end
-		end,
-	})
+	if provider_part ~= "" then
+		vim.api.nvim_buf_add_highlight(info_bufnr, NS_INFO, "OpenCodeInputProvider", 0, col, col + #provider_part)
+	end
 
 	-- Setup keymaps
 	setup_keymaps(state.bufnr, cfg)
@@ -385,8 +374,7 @@ function M.show(opts)
 		M.close()
 	end)
 
-	-- Move cursor to line 1 and start in insert mode
-	vim.api.nvim_win_set_cursor(state.winid, { 1, 0 })
+	-- Start in insert mode
 	vim.cmd("startinsert!")
 end
 
