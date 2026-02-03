@@ -110,6 +110,11 @@ function M.get(path, callback, opts)
 	curl.get(url, {
 		headers = merge_headers(opts.headers),
 		timeout = opts.timeout or M.opts.timeout,
+		on_error = function(err)
+			vim.schedule(function()
+				callback({ error = err.message or "Connection failed", exit_code = err.exit_code }, nil)
+			end)
+		end,
 		callback = function(response)
 			vim.schedule(function()
 				handle_response(response, callback)
@@ -133,6 +138,11 @@ function M.post(path, body, callback, opts)
 		headers = merge_headers(opts.headers),
 		body = json_body,
 		timeout = opts.timeout or M.opts.timeout,
+		on_error = function(err)
+			vim.schedule(function()
+				callback({ error = err.message or "Connection failed", exit_code = err.exit_code }, nil)
+			end)
+		end,
 		callback = function(response)
 			vim.schedule(function()
 				handle_response(response, callback)
@@ -156,6 +166,11 @@ function M.patch(path, body, callback, opts)
 		headers = merge_headers(opts.headers),
 		body = json_body,
 		timeout = opts.timeout or M.opts.timeout,
+		on_error = function(err)
+			vim.schedule(function()
+				callback({ error = err.message or "Connection failed", exit_code = err.exit_code }, nil)
+			end)
+		end,
 		callback = function(response)
 			vim.schedule(function()
 				handle_response(response, callback)
@@ -176,6 +191,11 @@ function M.delete(path, callback, opts)
 	curl.delete(url, {
 		headers = merge_headers(opts.headers),
 		timeout = opts.timeout or M.opts.timeout,
+		on_error = function(err)
+			vim.schedule(function()
+				callback({ error = err.message or "Connection failed", exit_code = err.exit_code }, nil)
+			end)
+		end,
 		callback = function(response)
 			vim.schedule(function()
 				handle_response(response, callback)
@@ -199,6 +219,11 @@ function M.put(path, body, callback, opts)
 		headers = merge_headers(opts.headers),
 		body = json_body,
 		timeout = opts.timeout or M.opts.timeout,
+		on_error = function(err)
+			vim.schedule(function()
+				callback({ error = err.message or "Connection failed", exit_code = err.exit_code }, nil)
+			end)
+		end,
 		callback = function(response)
 			vim.schedule(function()
 				handle_response(response, callback)

@@ -1,16 +1,21 @@
 -- opencode.nvim - Input area module
 -- Multi-line input with prompt history
+-- Styled to match OpenCode TUI prompt component
 
 local M = {}
 
 local Popup = require("nui.popup")
 local event = require("nui.utils.autocmd").event
 
+-- Highlight group for the input area background
+local NS = vim.api.nvim_create_namespace("opencode_input")
+
 -- State
 local state = {
 	bufnr = nil,
 	winid = nil,
 	popup = nil,
+	info_popup = nil,
 	visible = false,
 	on_send = nil,
 	on_cancel = nil,
@@ -27,8 +32,7 @@ local history = {
 
 -- Default configuration
 local defaults = {
-	height = 5,
-	border = "single",
+	height = 8,
 	prompt = "> ",
 	history_file = vim.fn.stdpath("data") .. "/opencode_input_history.json",
 	keymaps = {
@@ -41,6 +45,17 @@ local defaults = {
 		restore = "<C-r>",
 	},
 }
+
+-- Setup highlight groups
+local function setup_highlights()
+	-- Input area background (subtle elevation from chat bg)
+	vim.api.nvim_set_hl(0, "OpenCodeInputBg", { link = "NormalFloat", default = true })
+	vim.api.nvim_set_hl(0, "OpenCodeInputBorder", { link = "Special", default = true })
+	vim.api.nvim_set_hl(0, "OpenCodeInputInfo", { link = "Comment", default = true })
+	vim.api.nvim_set_hl(0, "OpenCodeInputAgent", { link = "Special", default = true })
+	vim.api.nvim_set_hl(0, "OpenCodeInputModel", { link = "Normal", default = true })
+	vim.api.nvim_set_hl(0, "OpenCodeInputHint", { link = "Comment", default = true })
+end
 
 -- Load history from file
 local function load_history()
@@ -203,13 +218,33 @@ local function setup_keymaps(bufnr, cfg)
 	end, opts)
 end
 
--- Show input popup
+-- Get the info line text (agent + model + hints)
+local function get_info_line()
+	local app_state = require("opencode.state")
+	local session = app_state.get_session()
+	local agent = session.agent or "Code"
+	local model = session.model or ""
+
+	-- Build info: "Agent  model_name  provider"
+	-- Fallback to simple display
+	local parts = {}
+	table.insert(parts, agent)
+	if model ~= "" then
+		table.insert(parts, " " .. model)
+	end
+	return table.concat(parts, "")
+end
+
+-- Show input popup (TUI-style)
+-- Positions itself relative to the current (chat) window
 function M.show(opts)
 	opts = opts or {}
 
 	if state.visible then
 		return
 	end
+
+	setup_highlights()
 
 	-- Load config
 	local config = require("opencode.config")
@@ -227,40 +262,120 @@ function M.show(opts)
 		history.index = #history.entries + 1
 	end
 
-	-- Get current window dimensions
-	local ui_list = vim.api.nvim_list_uis()
-	local ui = ui_list and ui_list[1] or { width = 80, height = 24 }
+	-- Get the chat window position/size to anchor the input relative to it
+	local chat_winid = vim.api.nvim_get_current_win()
+	local chat_pos = vim.api.nvim_win_get_position(chat_winid) -- [row, col] (0-indexed)
+	local chat_win_width = vim.api.nvim_win_get_width(chat_winid)
+	local chat_win_height = vim.api.nvim_win_get_height(chat_winid)
 
-	local width = math.min(80, ui.width - 4)
 	local height = cfg.height
+	local info_height = 1
+	local total_height = height + info_height
+	local width = chat_win_width
 
-	-- Position at bottom of screen
-	local row = ui.height - height - 2
-	local col = math.floor((ui.width - width) / 2)
+	-- Position at the bottom of the chat window
+	local row = chat_pos[1] + chat_win_height - total_height
+	local col = chat_pos[2]
 
-	-- Create popup
+	-- Define sign for left accent bar
+	vim.fn.sign_define("OpenCodeAccent", { text = "┃", texthl = "OpenCodeInputBorder" })
+	vim.fn.sign_define("OpenCodeAccentEnd", { text = "╹", texthl = "OpenCodeInputBorder" })
+
+	-- Create textarea popup (borderless, use signcolumn for left accent)
 	state.bufnr = setup_buffer()
 	state.popup = Popup({
 		enter = true,
 		focusable = true,
-		border = {
-			style = cfg.border,
-			text = {
-				top = " Input ",
-				top_align = "center",
-				bottom = " <C-g> send | <Esc> cancel | ↑↓ history | <C-s> stash | <C-r> restore ",
-				bottom_align = "center",
-			},
-		},
+		border = "none",
 		position = { row = row, col = col },
 		size = { width = width, height = height },
 		bufnr = state.bufnr,
+		win_options = {
+			winhighlight = "Normal:OpenCodeInputBg,SignColumn:OpenCodeInputBg",
+			cursorline = false,
+			wrap = true,
+			linebreak = true,
+			signcolumn = "yes:1",
+			number = false,
+			relativenumber = false,
+		},
 	})
 
-	-- Mount popup
+	-- Create info bar popup (directly below textarea, borderless)
+	local info_bufnr = vim.api.nvim_create_buf(false, true)
+	vim.bo[info_bufnr].buftype = "nofile"
+	vim.bo[info_bufnr].bufhidden = "wipe"
+
+	state.info_popup = Popup({
+		enter = false,
+		focusable = false,
+		border = "none",
+		position = { row = row + height, col = col },
+		size = { width = width, height = info_height },
+		bufnr = info_bufnr,
+		win_options = {
+			winhighlight = "Normal:OpenCodeInputInfo,SignColumn:OpenCodeInputInfo",
+			signcolumn = "yes:1",
+			number = false,
+			relativenumber = false,
+		},
+	})
+
+	-- Mount both popups
 	state.popup:mount()
+	state.info_popup:mount()
+
 	state.winid = state.popup.winid
 	state.visible = true
+
+	-- Fill the buffer with empty lines so signs cover the full height,
+	-- then place accent signs on every line
+	local fill_lines = {}
+	for i = 1, height do
+		fill_lines[i] = ""
+	end
+	vim.api.nvim_buf_set_lines(state.bufnr, 0, -1, false, fill_lines)
+	for i = 1, height do
+		vim.fn.sign_place(0, "opencode_input", "OpenCodeAccent", state.bufnr, { lnum = i })
+	end
+
+	-- Place bottom-cap sign on info bar
+	vim.fn.sign_place(0, "opencode_input", "OpenCodeAccentEnd", info_bufnr, { lnum = 1 })
+
+	-- Set info bar content
+	local info_text = get_info_line()
+	local hints = "<C-g> send  <Esc> cancel  ↑↓ history  <C-s> stash  <C-r> restore"
+	local available = width - 2 -- account for signcolumn
+	local info_display = info_text
+	local remaining = available - #info_text - #hints
+	if remaining > 0 then
+		info_display = info_text .. string.rep(" ", remaining) .. hints
+	else
+		info_display = info_text .. hints
+	end
+	vim.api.nvim_buf_set_lines(info_bufnr, 0, -1, false, { info_display })
+
+	-- Apply highlights to info bar
+	vim.api.nvim_buf_add_highlight(info_bufnr, NS, "OpenCodeInputAgent", 0, 0, #info_text)
+	local hints_start = #info_display - #hints
+	if hints_start >= 0 then
+		vim.api.nvim_buf_add_highlight(info_bufnr, NS, "OpenCodeInputHint", 0, hints_start, #info_display)
+	end
+
+	-- Keep accent signs covering all buffer lines as user types
+	vim.api.nvim_create_autocmd({ "TextChanged", "TextChangedI" }, {
+		buffer = state.bufnr,
+		callback = function()
+			if not state.visible then
+				return true -- remove autocmd
+			end
+			vim.fn.sign_unplace("opencode_input", { buffer = state.bufnr })
+			local line_count = vim.api.nvim_buf_line_count(state.bufnr)
+			for i = 1, line_count do
+				vim.fn.sign_place(0, "opencode_input", "OpenCodeAccent", state.bufnr, { lnum = i })
+			end
+		end,
+	})
 
 	-- Setup keymaps
 	setup_keymaps(state.bufnr, cfg)
@@ -270,7 +385,8 @@ function M.show(opts)
 		M.close()
 	end)
 
-	-- Start in insert mode
+	-- Move cursor to line 1 and start in insert mode
+	vim.api.nvim_win_set_cursor(state.winid, { 1, 0 })
 	vim.cmd("startinsert!")
 end
 
@@ -278,6 +394,10 @@ end
 function M.close()
 	if not state.visible then
 		return
+	end
+
+	if state.info_popup then
+		state.info_popup:unmount()
 	end
 
 	if state.popup then
@@ -288,6 +408,7 @@ function M.close()
 	state.winid = nil
 	state.bufnr = nil
 	state.popup = nil
+	state.info_popup = nil
 
 	-- Return to normal mode
 	vim.cmd("stopinsert")

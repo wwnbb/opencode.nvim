@@ -189,20 +189,36 @@ function M.send(message, opts)
 		local chat = require("opencode.ui.chat")
 		local client = require("opencode.client")
 
-		-- Show user message in chat
-		chat.add_message("user", message)
+		-- NOTE: We don't add the user message locally anymore.
+		-- The server will echo it back via SSE (message.updated event) with
+		-- the correct server-assigned ID. This prevents duplicate messages
+		-- that occurred when local IDs didn't match server IDs.
 
 		-- Get or create session
 		local session_id = state.get_session().id
 
 		local function send_with_session(sid)
 			-- Build message payload
+			-- Get model from: 1) opts, 2) state (user selection), 3) config default
+			local model = opts.model
+			if not model then
+				local state_model = state.get_model()
+				if state_model.id and state_model.provider then
+					model = {
+						providerID = state_model.provider,
+						modelID = state_model.id,
+					}
+				else
+					model = M._config.session.default_model
+				end
+			end
+
 			local payload = {
 				parts = {
 					{ type = "text", text = message }
 				},
 				agent = opts.agent or M._config.session.default_agent,
-				model = opts.model or M._config.session.default_model,
+				model = model,
 			}
 
 			-- Add context if provided
@@ -250,6 +266,40 @@ function M.send(message, opts)
 				end)
 			end)
 		end
+	end)
+end
+
+--- Abort/stop the current generation
+--- Similar to pressing Escape or clicking stop in the TUI
+function M.abort()
+	if not lifecycle then
+		vim.notify("OpenCode not initialized", vim.log.levels.ERROR)
+		return
+	end
+
+	local session_id = state.get_session().id
+	if not session_id then
+		vim.notify("No active session to abort", vim.log.levels.WARN)
+		return
+	end
+
+	local current_status = state.get_status()
+	if current_status ~= "streaming" then
+		vim.notify("Not currently streaming", vim.log.levels.INFO)
+		return
+	end
+
+	local client = require("opencode.client")
+	client.abort_session(session_id, function(err, result)
+		vim.schedule(function()
+			if err then
+				vim.notify("Failed to abort: " .. tostring(err.message or err.error or err), vim.log.levels.ERROR)
+				return
+			end
+
+			state.set_status("idle")
+			vim.notify("Generation stopped", vim.log.levels.INFO)
+		end)
 	end)
 end
 
@@ -410,14 +460,6 @@ function M.show_diff()
 	end
 
 	vim.notify("No pending changes to show", vim.log.levels.INFO)
-end
-
---- Abort current request
-function M.abort()
-	local client = require("opencode.client")
-	client.abort()
-	state.set_status("idle")
-	vim.notify("Request aborted", vim.log.levels.INFO)
 end
 
 --- Toggle log viewer window

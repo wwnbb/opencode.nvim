@@ -244,40 +244,13 @@ function M.setup_sse_bridge()
 end
 
 -- Setup chat update handlers for message events
+-- This mirrors the TUI's sync.tsx event handling pattern
 function M.setup_chat_handlers()
 	local state = require("opencode.state")
+	local sync = require("opencode.sync")
 
-	-- Track message parts for streaming assembly
-	local message_parts = {}
-
-	-- Handle message.created - just log, don't add (message_updated handles creation)
-	M.on("message", function(data)
-		vim.schedule(function()
-			local logger = require("opencode.logger")
-			logger.debug("message (created) received", { data = data })
-
-			local info = data.info
-			if not info then
-				logger.debug("message (created): NO INFO")
-				return
-			end
-
-			local current_session = state.get_session()
-			if not current_session.id or info.sessionID ~= current_session.id then
-				return
-			end
-
-			-- Note: We don't add messages here - message_updated is the primary handler
-			-- This avoids race conditions between message.created and message.updated
-			logger.debug("message (created): ignoring, waiting for message_updated", {
-				role = info.role,
-				id = info.id,
-			})
-		end)
-	end)
-
-	-- Handle message.updated - add or update message
-	-- This is the PRIMARY way messages get added to the chat (like the TUI)
+	-- Handle message.updated - the PRIMARY way messages are added/updated (like TUI sync.tsx:228-265)
+	-- This is the ONLY place where messages get added to the store
 	M.on("message_updated", function(data)
 		vim.schedule(function()
 			local logger = require("opencode.logger")
@@ -289,58 +262,54 @@ function M.setup_chat_handlers()
 				return
 			end
 
+			-- Update sync store first (like TUI does)
+			sync.handle_message_updated(info)
+
 			local current_session = state.get_session()
 			if not current_session.id or info.sessionID ~= current_session.id then
-				logger.debug("message_updated: WRONG SESSION", {
-					expected = current_session.id,
+				logger.debug("message_updated: different session", {
+					current = current_session.id,
 					received = info.sessionID,
 				})
 				return
 			end
 
-			-- Handle assistant messages (user messages are added locally, ignore from server)
+			-- Note: User messages now come from the server (not added locally)
+			-- so we process them like any other message to trigger re-render
+
+			-- Update status based on message state
 			if info.role == "assistant" then
-				local chat_ok, chat = pcall(require, "opencode.ui.chat")
-				if not chat_ok then
-					return
-				end
-
-				-- Check if message already exists
-				local messages = chat.get_messages()
-				local found = false
-				for _, msg in ipairs(messages) do
-					if msg.id == info.id then
-						found = true
-						break
-					end
-				end
-
-				if not found then
-					-- Add new assistant message (content comes via message_part_updated)
-					chat.add_message("assistant", "", {
-						id = info.id,
-						timestamp = os.time(),
-					})
-					logger.debug("Added assistant message", { id = info.id:sub(1, 10) })
-				end
-
-				-- Update status based on message state
 				if info.time and info.time.completed then
 					state.set_status("idle")
 				else
 					state.set_status("streaming")
 				end
-			elseif info.role == "user" then
-				-- Ignore user messages from server - they are added locally when sent
-				logger.debug("message_updated: ignoring user message from server", { id = info.id })
-				return
-			else
-				logger.debug("message_updated: non-assistant role", { role = info.role })
+			end
+
+			-- Notify chat UI to re-render
+			M.emit("chat_render", { session_id = current_session.id })
+		end)
+	end)
+
+	-- Handle message.removed (like TUI sync.tsx:267-279)
+	M.on("message_removed", function(data)
+		vim.schedule(function()
+			local logger = require("opencode.logger")
+			logger.debug("message_removed received", { data = data })
+
+			if data.sessionID and data.messageID then
+				sync.handle_message_removed(data.sessionID, data.messageID)
+
+				local current_session = state.get_session()
+				if current_session.id == data.sessionID then
+					M.emit("chat_render", { session_id = current_session.id })
+				end
 			end
 		end)
 	end)
 
-	-- Handle message.part.updated - update chat with streaming content
+	-- Handle message.part.updated - updates parts in sync store (like TUI sync.tsx:281-299)
+	-- Parts contain the actual content (text, reasoning, tool calls)
 	M.on("message_part_updated", function(data)
 		vim.schedule(function()
 			local logger = require("opencode.logger")
@@ -352,88 +321,43 @@ function M.setup_chat_handlers()
 				return
 			end
 
+			-- Update sync store first (like TUI does)
+			sync.handle_part_updated(part)
+
 			local current_session = state.get_session()
 			if not current_session.id or part.sessionID ~= current_session.id then
 				return
 			end
 
-			local msg_id = part.messageID
-
-			-- Track parts by message ID
-			message_parts[msg_id] = message_parts[msg_id] or {}
-
+			-- Emit specific events based on part type
 			if part.type == "text" then
-				-- Update or add text part (only for assistant messages)
-				message_parts[msg_id][part.id] = part.text
-
-				-- Assemble full text from all text parts only
-				local full_text = ""
-				for _, content in pairs(message_parts[msg_id]) do
-					if type(content) == "string" then
-						full_text = full_text .. content
-					end
-				end
-
-				-- Update chat UI - update_assistant_message will create the message if it doesn't exist
-				local chat_ok, chat = pcall(require, "opencode.ui.chat")
-				if chat_ok and chat.update_assistant_message then
-					chat.update_assistant_message(msg_id, full_text)
-				end
+				-- Text content update
+				M.emit("chat_render", { session_id = current_session.id })
 			elseif part.type == "reasoning" then
-				-- Handle reasoning/thinking part updates
-				local logger = require("opencode.logger")
-
+				-- Reasoning/thinking update
 				logger.debug("Reasoning part update", {
 					part_id = part.id,
-					message_id = msg_id,
+					message_id = part.messageID,
 					text_length = part.text and #part.text or 0,
 				})
 
-				-- Store reasoning text
-				message_parts[msg_id][part.id] = {
-					type = "reasoning",
-					text = part.text or "",
-				}
-
-				-- Assemble all reasoning content
-				local reasoning_text = ""
-				for _, content in pairs(message_parts[msg_id]) do
-					if type(content) == "table" and content.type == "reasoning" then
-						reasoning_text = reasoning_text .. content.text
-					end
-				end
-
-				-- Emit reasoning update event
 				M.emit("reasoning_update", {
-					message_id = msg_id,
+					message_id = part.messageID,
 					part_id = part.id,
 					text = part.text,
-					full_reasoning = reasoning_text,
 				})
-
-				-- Update chat UI with reasoning
-				local chat_ok, chat = pcall(require, "opencode.ui.chat")
-				if chat_ok and chat.update_reasoning then
-					chat.update_reasoning(msg_id, reasoning_text)
-				end
+				M.emit("chat_render", { session_id = current_session.id })
 			elseif part.type == "tool" then
-				-- Handle tool call updates
-				local logger = require("opencode.logger")
-
+				-- Tool call update
 				logger.debug("Tool call update", {
 					tool = part.tool,
 					status = part.state and part.state.status,
-					part = part,
 				})
 
 				local tool_state = part.state
 				if tool_state then
-					if tool_state.input then
-						logger.debug("Tool input", { input = tool_state.input })
-					end
-
 					M.emit("tool_update", {
-						message_id = msg_id,
+						message_id = part.messageID,
 						tool_name = part.tool,
 						call_id = part.callID,
 						status = tool_state.status,
@@ -441,36 +365,57 @@ function M.setup_chat_handlers()
 						output = tool_state.status == "completed" and tool_state.output or nil,
 						error = tool_state.status == "error" and tool_state.error or nil,
 					})
-
-					-- Update tool activity in chat UI
-					local chat_ok, chat = pcall(require, "opencode.ui.chat")
-					if chat_ok and chat.update_tool_activity then
-						chat.update_tool_activity(msg_id, part.tool, tool_state.status, tool_state.input)
-					end
 				end
+				M.emit("chat_render", { session_id = current_session.id })
 			end
 		end)
 	end)
 
-	-- Handle session.status changes
+	-- Handle message.part.removed (like TUI sync.tsx:302-314)
+	M.on("message_part_removed", function(data)
+		vim.schedule(function()
+			local logger = require("opencode.logger")
+			logger.debug("message_part_removed received", { data = data })
+
+			if data.messageID and data.partID then
+				sync.handle_part_removed(data.messageID, data.partID)
+
+				local current_session = state.get_session()
+				M.emit("chat_render", { session_id = current_session.id })
+			end
+		end)
+	end)
+
+	-- Handle session.status changes (like TUI sync.tsx:223-225)
 	M.on("session_status", function(data)
 		vim.schedule(function()
+			local sync = require("opencode.sync")
+
+			-- Update sync store first
+			if data.sessionID and data.status then
+				sync.handle_session_status(data.sessionID, data.status)
+			end
+
 			local current_session = state.get_session()
 			if data.sessionID ~= current_session.id then
 				return
 			end
 
-			if data.status == "idle" then
+			local status_type = data.status and data.status.type or data.status
+			if status_type == "idle" then
 				state.set_status("idle")
-			elseif data.status == "busy" or data.status == "streaming" then
+			elseif status_type == "busy" or status_type == "streaming" then
 				state.set_status("streaming")
 			end
 		end)
 	end)
 
-	-- Clear message parts cache on session change
-	M.on("session_change", function()
-		message_parts = {}
+	-- Clear sync store on session change
+	M.on("session_change", function(data)
+		local sync = require("opencode.sync")
+		if data and data.previous_id then
+			sync.clear_session(data.previous_id)
+		end
 	end)
 
 	-- Handle tool updates - specifically edit_file tools to show approval widget
