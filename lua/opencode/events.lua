@@ -755,6 +755,13 @@ function M.setup_question_handlers()
 			-- Store question state
 			question_state.add_question(request_id, session_id or current_session.id, questions)
 
+			-- Stop the spinner so user can interact with the question
+			local spinner_ok, spinner = pcall(require, "opencode.ui.spinner")
+			if spinner_ok and spinner.is_active() then
+				spinner.stop()
+				logger.debug("Stopped spinner for question interaction")
+			end
+
 			-- Add to chat as a special message
 			local chat_ok, chat = pcall(require, "opencode.ui.chat")
 			if chat_ok and chat.add_question_message then
@@ -825,6 +832,117 @@ function M.setup_question_handlers()
 	end)
 end
 
+-- Setup sync data handlers (providers, agents, config)
+-- This mirrors TUI's initial data loading when connecting
+function M.setup_sync_data_handlers()
+	local sync = require("opencode.sync")
+	local client = require("opencode.client")
+	local logger = require("opencode.logger")
+
+	-- Update input info bar when providers/agents load (if input is visible)
+	local function refresh_input_info_bar()
+		local input_ok, input = pcall(require, "opencode.ui.input")
+		if input_ok and input.is_visible and input.is_visible() then
+			input.update_info_bar()
+		end
+	end
+
+	M.on("providers_loaded", function()
+		refresh_input_info_bar()
+	end)
+
+	M.on("agents_loaded", function()
+		refresh_input_info_bar()
+	end)
+
+	M.on("config_loaded", function()
+		refresh_input_info_bar()
+	end)
+
+	-- Fetch initial data when connected (like TUI does on startup)
+	M.on("connected", function()
+		vim.schedule(function()
+			logger.debug("Fetching initial sync data (providers, agents, config)")
+
+			-- Fetch providers with models (using /config/providers like TUI does)
+			-- This returns { providers: Provider[], default: { providerID: modelID } }
+			client.get_config_providers(function(err, data)
+				vim.schedule(function()
+					if err then
+						logger.warn("Failed to fetch config providers", { error = err })
+						return
+					end
+					if data then
+						-- Handle providers array
+						local providers = data.providers or {}
+						sync.handle_providers(providers)
+						logger.debug("Providers loaded", { count = #providers })
+
+						-- Handle defaults mapping
+						if data.default then
+							sync.handle_provider_defaults(data.default)
+							logger.debug("Provider defaults loaded")
+						end
+
+						-- Emit event for UI updates
+						M.emit("providers_loaded", providers)
+
+						-- Warn if no providers are connected
+						if #providers == 0 then
+							logger.warn("No providers connected. Use :OpenCode command palette to connect a provider.")
+						end
+					end
+				end)
+			end)
+
+			-- Fetch agents
+			client.list_agents(function(err, agents)
+				vim.schedule(function()
+					if err then
+						logger.warn("Failed to fetch agents", { error = err })
+						return
+					end
+					if agents then
+						sync.handle_agents(agents)
+						-- Emit event for UI updates
+						M.emit("agents_loaded", agents)
+						logger.debug("Agents loaded", { count = #agents })
+					end
+				end)
+			end)
+
+			-- Fetch config
+			client.get_config(function(err, config)
+				vim.schedule(function()
+					if err then
+						logger.warn("Failed to fetch config", { error = err })
+						return
+					end
+					if config then
+						sync.handle_config(config)
+						-- Handle commands from config
+						if config.command then
+							sync.handle_commands(config.command)
+						end
+						M.emit("config_loaded", config)
+						logger.debug("Config loaded")
+					end
+				end)
+			end)
+
+			-- Fetch MCP status
+			client.get_mcp_status(function(err, mcp)
+				vim.schedule(function()
+					if not err and mcp then
+						sync.handle_mcp(mcp)
+						logger.debug("MCP status loaded")
+					end
+				end)
+			end)
+		end)
+	end)
+end
+
 -- Initialize event system with bridges
 function M.setup()
 	-- Setup bridges to other systems
@@ -846,6 +964,11 @@ function M.setup()
 	local ok4, err4 = pcall(M.setup_question_handlers)
 	if not ok4 then
 		vim.notify("Failed to setup question handlers: " .. tostring(err4), vim.log.levels.WARN)
+	end
+
+	local ok5, err5 = pcall(M.setup_sync_data_handlers)
+	if not ok5 then
+		vim.notify("Failed to setup sync data handlers: " .. tostring(err5), vim.log.levels.WARN)
 	end
 end
 

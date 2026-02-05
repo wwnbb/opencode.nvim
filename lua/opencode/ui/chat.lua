@@ -11,6 +11,7 @@ local input = require("opencode.ui.input")
 local markdown = require("opencode.ui.markdown")
 local tools = require("opencode.ui.tools")
 local thinking = require("opencode.ui.thinking")
+local spinner = require("opencode.ui.spinner")
 
 -- State (UI state only - message data lives in sync module)
 local state = {
@@ -21,6 +22,7 @@ local state = {
 	messages = {}, -- Local user messages only (sent before server confirms)
 	config = nil,
 	questions = {}, -- Track question positions: { [request_id] = { start_line, end_line } }
+	pending_questions = {}, -- Queue of questions received when chat wasn't visible
 	last_render_time = 0,
 	render_scheduled = false,
 }
@@ -333,10 +335,103 @@ function M.create()
 		end)
 	end)
 
+	-- Subscribe to status changes to manage loading spinner
+	events.on("status_change", function(data)
+		vim.schedule(function()
+			local new_status = data and data.status
+			if new_status == "streaming" or new_status == "thinking" then
+				-- Don't start spinner if there's a pending question awaiting user input
+				local has_pending_question = false
+				for _, msg in ipairs(state.messages) do
+					if msg.type == "question" and msg.status == "pending" then
+						has_pending_question = true
+						break
+					end
+				end
+				
+				if has_pending_question then
+					-- Don't start spinner while user needs to answer a question
+					return
+				end
+				
+				-- Start spinner if not already active
+				if not spinner.is_active() then
+					spinner.start({
+						interval_ms = 100,
+						on_frame = function()
+							-- Trigger re-render on each frame to update animation
+							M.schedule_render()
+						end,
+					})
+				end
+			else
+				-- Stop spinner for idle, paused, or error states
+				if spinner.is_active() then
+					spinner.stop()
+					M.schedule_render()
+				end
+			end
+		end)
+	end)
+
+	-- Reset spinner on session change (pick new random animation)
+	-- Also clear any pending questions from the old session
+	events.on("session_change", function(data)
+		vim.schedule(function()
+			if spinner.is_active() then
+				spinner.stop()
+			end
+			spinner.reset()
+			-- Clear pending questions from the old session
+			state.pending_questions = {}
+			-- Clear question position tracking
+			state.questions = {}
+			-- Remove question messages from state.messages (they belong to old session)
+			local new_messages = {}
+			for _, msg in ipairs(state.messages) do
+				if msg.type ~= "question" then
+					table.insert(new_messages, msg)
+				end
+			end
+			state.messages = new_messages
+		end)
+	end)
+
 	-- Render initial content
 	M.render()
 
 	return state.bufnr
+end
+
+-- Process any pending questions that were queued while chat was not visible
+-- This is a forward declaration; the actual implementation uses M.add_question_message
+local function process_pending_questions()
+	if #state.pending_questions == 0 then
+		return
+	end
+
+	local logger = require("opencode.logger")
+	logger.debug("Processing pending questions", { count = #state.pending_questions })
+
+	-- Copy and clear the pending queue to avoid re-processing
+	local pending = state.pending_questions
+	state.pending_questions = {}
+
+	for _, pq in ipairs(pending) do
+		-- Check if the question is still active (not already answered/rejected)
+		local qstate = question_state.get_question(pq.request_id)
+		if qstate and qstate.status == "pending" then
+			-- Re-call add_question_message now that chat is visible
+			-- The function will now proceed since state.visible is true
+			M.add_question_message(pq.request_id, pq.questions, pq.status)
+			logger.debug("Displayed pending question", { request_id = pq.request_id:sub(1, 10) })
+		else
+			logger.debug("Skipping stale pending question", {
+				request_id = pq.request_id:sub(1, 10),
+				reason = qstate and qstate.status or "not found",
+			})
+		end
+	end
 end
 
 -- Open chat window
@@ -416,6 +511,9 @@ function M.open()
 
 	state.visible = true
 
+	-- Process any questions that were queued while chat was not visible
+	process_pending_questions()
+
 	-- Move cursor to end
 	local line_count = vim.api.nvim_buf_line_count(state.bufnr)
 	if line_count > 0 then
@@ -455,6 +553,14 @@ end
 -- Check if chat is visible
 function M.is_visible()
 	return state.visible and state.winid and vim.api.nvim_win_is_valid(state.winid)
+end
+
+-- Get window ID
+function M.get_winid()
+	if state.winid and vim.api.nvim_win_is_valid(state.winid) then
+		return state.winid
+	end
+	return nil
 end
 
 -- Get buffer number (creates if needed)
@@ -608,14 +714,28 @@ function M.render_message(message)
 	end
 end
 
--- Clear all messages
+-- Clear all messages (UI only - session handling is done in opencode.clear())
 function M.clear()
 	state.messages = {}
+	state.questions = {}
+	state.last_render_time = 0
+	state.render_scheduled = false
+
+	-- Stop spinner if active
+	if spinner.is_active() then
+		spinner.stop()
+	end
+
 	if state.bufnr and vim.api.nvim_buf_is_valid(state.bufnr) then
 		vim.bo[state.bufnr].modifiable = true
 		vim.api.nvim_buf_set_lines(state.bufnr, 0, -1, false, {})
-		M.render()
 		vim.bo[state.bufnr].modifiable = false
+	end
+
+	-- Clear question state as well
+	local ok, qs = pcall(require, "opencode.question.state")
+	if ok then
+		qs.clear_all()
 	end
 end
 
@@ -661,14 +781,14 @@ local function format_tool_line(tool_part)
 		local pattern = input.pattern or ""
 		local count = metadata.count or 0
 		if tool_status == "completed" then
-			return string.format("%s Glob \"%s\" (%d matches)", icon, pattern, count)
+			return string.format('%s Glob "%s" (%d matches)', icon, pattern, count)
 		end
 		return string.format("~ Finding files...")
 	elseif tool_name == "grep" then
 		local pattern = input.pattern or ""
 		local matches = metadata.matches or 0
 		if tool_status == "completed" then
-			return string.format("%s Grep \"%s\" (%d matches)", icon, pattern, matches)
+			return string.format('%s Grep "%s" (%d matches)', icon, pattern, matches)
 		end
 		return string.format("~ Searching content...")
 	elseif tool_name == "read" then
@@ -715,7 +835,7 @@ local function format_tool_line(tool_part)
 		local subagent = input.subagent_type or "unknown"
 		local desc = input.description or ""
 		if tool_status == "completed" then
-			return string.format("%s %s Task \"%s\"", icon, subagent:sub(1, 1):upper() .. subagent:sub(2), desc)
+			return string.format('%s %s Task "%s"', icon, subagent:sub(1, 1):upper() .. subagent:sub(2), desc)
 		end
 		return string.format("~ Delegating...")
 	else
@@ -887,8 +1007,70 @@ function M.render()
 			end
 		end
 
-		-- Skip question type messages (rendered separately)
+		-- Render question type messages using question_widget
 		if message.type == "question" then
+			local qstate = question_state.get_question(message.request_id)
+			local q_start_line = #lines
+			local q_lines, q_highlights
+			local status = (qstate and qstate.status) or message.status or "pending"
+			
+			if status == "answered" then
+				-- Use answered display format
+				q_lines, q_highlights = question_widget.get_answered_lines(
+					message.request_id,
+					{ questions = message.questions },
+					message.answers
+				)
+			elseif status == "rejected" then
+				-- Use rejected display format
+				q_lines, q_highlights = question_widget.get_rejected_lines(
+					message.request_id,
+					{ questions = message.questions }
+				)
+			elseif qstate then
+				-- Pending - use interactive format with selection state
+				q_lines, q_highlights, _ = question_widget.get_lines_for_question(
+					message.request_id,
+					{ questions = message.questions },
+					qstate,
+					status
+				)
+			else
+				-- No qstate available, skip
+				goto continue_local_message
+			end
+			
+			local logger = require("opencode.logger")
+			logger.debug("render() including question", {
+				request_id = message.request_id:sub(1, 10),
+				start_line = q_start_line,
+				line_count = #q_lines,
+				status = status,
+			})
+			
+			-- Add question lines to buffer
+			for _, line in ipairs(q_lines) do
+				table.insert(lines, line)
+			end
+			
+			-- Adjust highlights for current position and add them
+			for _, hl in ipairs(q_highlights) do
+				table.insert(highlights, {
+					line = q_start_line + hl.line,
+					col_start = hl.col_start,
+					col_end = hl.col_end,
+					hl_group = hl.hl_group,
+				})
+			end
+			
+			-- Update position tracking for this question
+			state.questions[message.request_id] = {
+				start_line = q_start_line,
+				end_line = q_start_line + #q_lines - 1,
+				status = status,
+			}
+			
+			table.insert(lines, "")
 			goto continue_local_message
 		end
 
@@ -938,6 +1120,19 @@ function M.render()
 		table.insert(lines, " Press '?' for help")
 		table.insert(highlights, { line = #lines - 1, col_start = 0, col_end = 18, hl_group = "Comment" })
 		table.insert(lines, "")
+	end
+
+	-- Show loading indicator when processing (streaming or thinking)
+	if spinner.is_active() then
+		local loading_text = spinner.get_loading_text("∴ Thinkin")
+		table.insert(lines, "")
+		table.insert(lines, loading_text)
+		table.insert(highlights, {
+			line = #lines - 1,
+			col_start = 0,
+			col_end = #loading_text,
+			hl_group = "Comment",
+		})
 	end
 
 	vim.bo[state.bufnr].modifiable = true
@@ -1070,13 +1265,23 @@ function M.do_render()
 		return
 	end
 
+	-- Check if user is at bottom BEFORE re-rendering (to preserve scroll position)
+	local should_scroll = false
+	if state.visible and state.winid and vim.api.nvim_win_is_valid(state.winid) then
+		local cursor = vim.api.nvim_win_get_cursor(state.winid)
+		local win_height = vim.api.nvim_win_get_height(state.winid)
+		local buf_lines = vim.api.nvim_buf_line_count(state.bufnr)
+		-- Only auto-scroll if user is already near the bottom
+		should_scroll = cursor[1] >= buf_lines - win_height - 1
+	end
+
 	vim.bo[state.bufnr].modifiable = true
 	vim.api.nvim_buf_set_lines(state.bufnr, 0, -1, false, {})
 	M.render()
 	vim.bo[state.bufnr].modifiable = false
 
-	-- Auto-scroll to bottom if visible
-	if state.visible and state.winid and vim.api.nvim_win_is_valid(state.winid) then
+	-- Auto-scroll to bottom only if user was already at bottom
+	if should_scroll and state.visible and state.winid and vim.api.nvim_win_is_valid(state.winid) then
 		local buf_lines = vim.api.nvim_buf_line_count(state.bufnr)
 		vim.api.nvim_win_set_cursor(state.winid, { buf_lines, 0 })
 	end
@@ -1126,56 +1331,79 @@ end
 ---@param questions table
 ---@param status "pending" | "answered" | "rejected"
 function M.add_question_message(request_id, questions, status)
-	if not state.bufnr or not vim.api.nvim_buf_is_valid(state.bufnr) then
+	local logger = require("opencode.logger")
+	
+	logger.debug("add_question_message called", {
+		request_id = request_id:sub(1, 10),
+		has_bufnr = state.bufnr ~= nil,
+		bufnr_valid = state.bufnr and vim.api.nvim_buf_is_valid(state.bufnr),
+		visible = state.visible,
+	})
+	
+	-- If chat buffer isn't ready or visible, queue the question for later
+	if not state.bufnr or not vim.api.nvim_buf_is_valid(state.bufnr) or not state.visible then
+		-- Queue the question to display when chat becomes visible
+		table.insert(state.pending_questions, {
+			request_id = request_id,
+			questions = questions,
+			status = status,
+			timestamp = os.time(),
+		})
+
+		logger.debug("Question queued (chat not visible)", {
+			request_id = request_id:sub(1, 10),
+			pending_count = #state.pending_questions,
+		})
 		return
 	end
 
 	local qstate = question_state.get_question(request_id)
 	if not qstate then
+		logger.warn("Question state not found", { request_id = request_id:sub(1, 10) })
 		return
 	end
 
-	-- Get formatted lines
-	local lines, highlights, _ =
-		question_widget.get_lines_for_question(request_id, { questions = questions }, qstate, status)
-
-	-- Remember where this question starts
-	local line_count = vim.api.nvim_buf_line_count(state.bufnr)
-	local start_line = line_count
-
-	-- Insert into buffer
-	vim.bo[state.bufnr].modifiable = true
-	vim.api.nvim_buf_set_lines(state.bufnr, line_count, line_count, false, lines)
-
-	-- Apply highlights
-	for _, hl in ipairs(highlights) do
-		vim.api.nvim_buf_add_highlight(state.bufnr, -1, hl.hl_group, start_line + hl.line, hl.col_start, hl.col_end)
+	-- Check if this question is already in state.messages to avoid duplicates
+	local already_exists = false
+	for _, msg in ipairs(state.messages) do
+		if msg.type == "question" and msg.request_id == request_id then
+			already_exists = true
+			-- Update status if changed
+			msg.status = status
+			break
+		end
 	end
 
-	vim.bo[state.bufnr].modifiable = false
+	-- Store question data in a special message entry (if not already present)
+	if not already_exists then
+		table.insert(state.messages, {
+			role = "system",
+			type = "question",
+			request_id = request_id,
+			questions = questions,
+			status = status,
+			timestamp = os.time(),
+			id = "question_" .. request_id,
+		})
+		
+		logger.debug("Question added to state.messages", {
+			request_id = request_id:sub(1, 10),
+			status = status,
+		})
+	else
+		logger.debug("Question already in state.messages, updated status", {
+			request_id = request_id:sub(1, 10),
+			status = status,
+		})
+	end
 
-	-- Track question position
-	state.questions[request_id] = {
-		start_line = start_line,
-		end_line = start_line + #lines - 1,
-		status = status,
-	}
-
-	-- Store question data in a special message entry
-	table.insert(state.messages, {
-		role = "system",
-		type = "question",
-		request_id = request_id,
-		questions = questions,
-		status = status,
-		timestamp = os.time(),
-		id = "question_" .. request_id,
+	-- Trigger a render to display the question
+	-- The render() function will now include questions from state.messages
+	M.schedule_render()
+	
+	logger.debug("Question render scheduled", {
+		request_id = request_id:sub(1, 10),
 	})
-
-	-- Auto-scroll to show the question
-	if state.visible and state.winid and vim.api.nvim_win_is_valid(state.winid) then
-		vim.api.nvim_win_set_cursor(state.winid, { start_line + #lines, 0 })
-	end
 end
 
 -- Update question status and re-render
@@ -1183,54 +1411,33 @@ end
 ---@param status "answered" | "rejected"
 ---@param answers? table
 function M.update_question_status(request_id, status, answers)
-	if not state.bufnr or not vim.api.nvim_buf_is_valid(state.bufnr) then
-		return
-	end
-
-	local pos = state.questions[request_id]
-	if not pos then
-		return
-	end
-
-	-- Find the message entry
-	local msg_idx = nil
-	for i, msg in ipairs(state.messages) do
+	local logger = require("opencode.logger")
+	
+	-- Find and update the message entry
+	local found = false
+	for _, msg in ipairs(state.messages) do
 		if msg.type == "question" and msg.request_id == request_id then
-			msg_idx = i
 			msg.status = status
 			msg.answers = answers
+			found = true
 			break
 		end
 	end
 
-	if not msg_idx then
+	if not found then
+		logger.debug("update_question_status: question not found in state.messages", {
+			request_id = request_id:sub(1, 10),
+		})
 		return
 	end
 
-	-- Get new lines based on status
-	local lines, highlights
-	local questions = state.messages[msg_idx].questions
-
-	if status == "answered" then
-		lines, highlights = question_widget.get_answered_lines(request_id, { questions = questions }, answers)
-	else
-		lines, highlights = question_widget.get_rejected_lines(request_id, { questions = questions })
-	end
-
-	-- Replace old lines
-	vim.bo[state.bufnr].modifiable = true
-	vim.api.nvim_buf_set_lines(state.bufnr, pos.start_line, pos.end_line + 1, false, lines)
-
-	-- Apply highlights
-	for _, hl in ipairs(highlights) do
-		vim.api.nvim_buf_add_highlight(state.bufnr, -1, hl.hl_group, pos.start_line + hl.line, hl.col_start, hl.col_end)
-	end
-
-	vim.bo[state.bufnr].modifiable = false
-
-	-- Update position tracking
-	state.questions[request_id].end_line = pos.start_line + #lines - 1
-	state.questions[request_id].status = status
+	logger.debug("update_question_status: triggering re-render", {
+		request_id = request_id:sub(1, 10),
+		status = status,
+	})
+	
+	-- Trigger a re-render to update the question display
+	M.schedule_render()
 end
 
 -- Get question at cursor position
@@ -1544,6 +1751,18 @@ function M.debug_questions()
 	end
 
 	vim.notify(string.format("Debug: %d active questions logged", #all_questions), vim.log.levels.INFO)
+end
+
+-- Check if there are pending questions waiting to be displayed
+---@return number Number of pending questions
+function M.get_pending_question_count()
+	return #state.pending_questions
+end
+
+-- Check if there are any pending questions
+---@return boolean
+function M.has_pending_questions()
+	return #state.pending_questions > 0
 end
 
 return M

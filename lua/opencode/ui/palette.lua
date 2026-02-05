@@ -786,8 +786,22 @@ function M._show_provider_models(provider)
 			end)
 
 			float.create_searchable_menu(items, function(item)
-				state.set_model(item.model.id, item.model.name, provider.id)
-				vim.notify("Switched to model: " .. (item.model.name or item.model.id), vim.log.levels.INFO)
+				-- Use local.lua module for model selection (like TUI's local.tsx)
+				local lc_ok, lc = pcall(require, "opencode.local")
+				if lc_ok then
+					lc.model.set({
+						providerID = provider.id,
+						modelID = item.value,
+					}, { recent = true })
+				end
+				-- Also update old state for backward compatibility
+				state.set_model(item.value, item.model.name, provider.id)
+				vim.notify("Switched to model: " .. (item.model.name or item.value), vim.log.levels.INFO)
+				-- Update input info bar if visible
+				local input_ok, input = pcall(require, "opencode.ui.input")
+				if input_ok and input.is_visible and input.is_visible() then
+					input.update_info_bar()
+				end
 			end, { title = " Select model from " .. (provider.name or provider.id) .. " ", width = 50 })
 		end)
 	end)
@@ -962,26 +976,12 @@ local function register_defaults()
 	M.register({
 		id = "session.new",
 		title = "New Session",
-		description = "Create a new chat session",
+		description = "Create a new chat session (same as Clear Chat)",
 		category = "session",
 		keybind = "<leader>on",
 		action = function()
-			lifecycle.ensure_connected(function()
-				client.create_session({}, function(err, session)
-					if err then
-						vim.schedule(function()
-							vim.notify("Failed to create session: " .. tostring(err.message or err), vim.log.levels.ERROR)
-						end)
-						return
-					end
-					vim.schedule(function()
-						state.set_session(session.id, session.title or "New Session")
-						vim.notify("Created new session: " .. (session.title or session.id), vim.log.levels.INFO)
-						local chat = require("opencode.ui.chat")
-						chat.clear()
-					end)
-				end)
-			end)
+			-- Use the main clear() function which handles everything
+			opencode.clear()
 		end,
 	})
 
@@ -1018,8 +1018,18 @@ local function register_defaults()
 
 						local float = require("opencode.ui.float")
 						float.create_menu(items, function(item)
+							-- Clear sync data for current session before switching
+							local sync = require("opencode.sync")
+							local current = state.get_session()
+							if current.id then
+								sync.clear_session(current.id)
+							end
+							
+							-- Set new session
 							state.set_session(item.session.id, item.session.title)
 							vim.notify("Switched to session: " .. (item.session.title or item.session.id), vim.log.levels.INFO)
+							
+							-- Clear chat UI
 							local chat = require("opencode.ui.chat")
 							chat.clear()
 						end, { title = " Sessions " })
@@ -1126,7 +1136,8 @@ local function register_defaults()
 		keybind = "<leader>om",
 		action = function()
 			lifecycle.ensure_connected(function()
-				client.list_providers(function(err, response)
+				-- Use /config/providers (like TUI) to get providers with models
+				client.get_config_providers(function(err, response)
 					if err then
 						vim.schedule(function()
 							vim.notify("Failed to list providers: " .. tostring(err.message or err), vim.log.levels.ERROR)
@@ -1134,19 +1145,24 @@ local function register_defaults()
 						return
 					end
 					vim.schedule(function()
-						-- Response is { all: [...], default: {...}, connected: [...] }
-						local provider_list = response and response.all or {}
+						-- Response is { providers: Provider[], default: { providerID: modelID } }
+						local provider_list = response and response.providers or {}
 						if #provider_list == 0 then
-							vim.notify("No providers available", vim.log.levels.WARN)
+							vim.notify("No providers available. Connect a provider first.", vim.log.levels.WARN)
 							return
 						end
 
-						-- Build connected lookup set
+						-- Update sync store so is_model_valid works correctly
+						local sync = require("opencode.sync")
+						sync.handle_providers(provider_list)
+						if response.default then
+							sync.handle_provider_defaults(response.default)
+						end
+
+						-- All providers from /config/providers are connected
 						local connected_set = {}
-						if response.connected then
-							for _, cid in ipairs(response.connected) do
-								connected_set[cid] = true
-							end
+						for _, p in ipairs(provider_list) do
+							connected_set[p.id] = true
 						end
 
 						-- Flatten models from all providers
@@ -1175,10 +1191,24 @@ local function register_defaults()
 						end
 
 						local float = require("opencode.ui.float")
-						float.create_searchable_menu(items, function(item)
-							state.set_model(item.model.id, item.model.name, item.provider)
-							vim.notify("Switched to model: " .. (item.model.name or item.model.id), vim.log.levels.INFO)
-						end, { title = " Switch Model ", width = 60 })
+					float.create_searchable_menu(items, function(item)
+						-- Use local.lua module for model selection (like TUI's local.tsx)
+						local lc_ok, lc = pcall(require, "opencode.local")
+						if lc_ok then
+							lc.model.set({
+								providerID = item.provider,
+								modelID = item.value,
+							}, { recent = true })
+						end
+						-- Also update old state for backward compatibility
+						state.set_model(item.value, item.model.name, item.provider)
+						vim.notify("Switched to model: " .. (item.model.name or item.value), vim.log.levels.INFO)
+						-- Update input info bar if visible
+						local input_ok, input = pcall(require, "opencode.ui.input")
+						if input_ok and input.is_visible and input.is_visible() then
+							input.update_info_bar()
+						end
+					end, { title = " Switch Model ", width = 60 })
 					end)
 				end)
 			end)
@@ -1403,8 +1433,19 @@ local function register_defaults()
 
 						local float = require("opencode.ui.float")
 						float.create_menu(items, function(item)
+							-- Use local.lua module for agent selection (like TUI's local.tsx)
+							local lc_ok, lc = pcall(require, "opencode.local")
+							if lc_ok then
+								lc.agent.set(item.agent.name)
+							end
+							-- Also update old state for backward compatibility
 							state.set_agent(item.agent.id, item.agent.name, item.agent.mode)
 							vim.notify("Switched to agent: " .. (item.agent.name or item.agent.id), vim.log.levels.INFO)
+							-- Update input info bar if visible
+							local input_ok, input = pcall(require, "opencode.ui.input")
+							if input_ok and input.is_visible and input.is_visible() then
+								input.update_info_bar()
+							end
 						end, { title = " Agents " })
 					end)
 				end)
@@ -1460,13 +1501,12 @@ local function register_defaults()
 
 	M.register({
 		id = "action.clear",
-		title = "Clear Chat",
-		description = "Clear all messages in current chat",
+		title = "Clear Chat / New Session",
+		description = "Start a new session (like TUI's /clear or /new)",
 		category = "actions",
 		keybind = "<leader>oc",
 		action = function()
 			opencode.clear()
-			vim.notify("Chat cleared", vim.log.levels.INFO)
 		end,
 	})
 

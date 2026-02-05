@@ -33,6 +33,13 @@ local store = {
 	message = {}, -- { [sessionID] = { Message, ... } }
 	part = {}, -- { [messageID] = { Part, ... } }
 	session_status = {}, -- { [sessionID] = { type = "idle" | "busy" } }
+	-- Provider/agent/model data (like TUI's sync.tsx)
+	provider = {}, -- Array of connected provider info
+	provider_default = {}, -- { [providerID] = default_modelID }
+	agent = {}, -- Array of available agents
+	command = {}, -- Array of custom commands
+	config = {}, -- Global config
+	mcp = {}, -- MCP server status
 }
 
 -- Binary search implementation (matches TUI's Binary.search)
@@ -312,6 +319,142 @@ function M.clear_all()
 	store.message = {}
 	store.part = {}
 	store.session_status = {}
+	store.provider = {}
+	store.provider_default = {}
+	store.agent = {}
+	store.command = {}
+	store.config = {}
+	store.mcp = {}
+end
+
+-- Provider management (mirrors TUI sync.tsx)
+
+---Handle provider data update
+---@param providers table[] Array of provider objects
+function M.handle_providers(providers)
+	store.provider = providers or {}
+end
+
+---Handle provider defaults
+---@param defaults table<string, string> { [providerID] = default_modelID }
+function M.handle_provider_defaults(defaults)
+	store.provider_default = defaults or {}
+end
+
+---Get all providers
+---@return table[]
+function M.get_providers()
+	return store.provider or {}
+end
+
+---Get provider defaults
+---@return table<string, string>
+function M.get_provider_defaults()
+	return store.provider_default or {}
+end
+
+---Get a specific provider by ID
+---@param provider_id string
+---@return table|nil
+function M.get_provider(provider_id)
+	for _, provider in ipairs(store.provider) do
+		if provider.id == provider_id then
+			return provider
+		end
+	end
+	return nil
+end
+
+---Get a model from a provider
+---@param provider_id string
+---@param model_id string
+---@return table|nil
+function M.get_model(provider_id, model_id)
+	local provider = M.get_provider(provider_id)
+	if provider and provider.models then
+		return provider.models[model_id]
+	end
+	return nil
+end
+
+-- Agent management
+
+---Handle agent data update
+---@param agents table[] Array of agent objects
+function M.handle_agents(agents)
+	store.agent = agents or {}
+end
+
+---Get all agents
+---@return table[]
+function M.get_agents()
+	return store.agent or {}
+end
+
+---Get filtered agents (excluding subagents and hidden)
+---@return table[]
+function M.get_visible_agents()
+	local agents = {}
+	for _, agent in ipairs(store.agent) do
+		if agent.mode ~= "subagent" and not agent.hidden then
+			table.insert(agents, agent)
+		end
+	end
+	return agents
+end
+
+---Get a specific agent by name
+---@param name string
+---@return table|nil
+function M.get_agent(name)
+	for _, agent in ipairs(store.agent) do
+		if agent.name == name then
+			return agent
+		end
+	end
+	return nil
+end
+
+-- Config management
+
+---Handle config update
+---@param config table
+function M.handle_config(config)
+	store.config = config or {}
+end
+
+---Get config
+---@return table
+function M.get_config()
+	return store.config or {}
+end
+
+-- Command management
+
+---Handle custom commands update
+---@param commands table[]
+function M.handle_commands(commands)
+	store.command = commands or {}
+end
+
+---Get commands
+---@return table[]
+function M.get_commands()
+	return store.command or {}
+end
+
+-- MCP management
+
+---Handle MCP status update
+---@param mcp table<string, table>
+function M.handle_mcp(mcp)
+	store.mcp = mcp or {}
+end
+
+---Get MCP status
+---@return table<string, table>
+function M.get_mcp()
+	return store.mcp or {}
 end
 
 ---Get the raw store (for debugging)
