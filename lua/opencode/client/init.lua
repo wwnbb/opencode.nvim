@@ -51,8 +51,17 @@ end
 ---@param opts? table { parentID?, title? }
 ---@param callback function(err, session)
 function M.create_session(opts, callback)
-	opts = opts or {}
-	http.post("/session", opts, callback)
+	-- Ensure opts is an object (not empty array) for JSON encoding
+	-- An empty Lua table {} encodes as [] in JSON, but we need {}
+	-- Use vim.empty_dict() as base and merge any provided opts
+	local body = vim.empty_dict()
+	if opts and next(opts) then
+		-- Merge non-empty opts into the empty_dict base
+		for k, v in pairs(opts) do
+			body[k] = v
+		end
+	end
+	http.post("/session", body, callback)
 end
 
 -- Delete session
@@ -166,10 +175,17 @@ function M.reject_question(session_id, request_id, callback)
 	)
 end
 
--- Get list of providers
+-- Get list of providers (basic list with all/connected/default info)
 ---@param callback function(err, providers)
 function M.list_providers(callback)
 	http.get("/provider", callback)
+end
+
+-- Get configured providers with models (the main endpoint for provider/model selection)
+-- Returns { providers: Provider[], default: { providerID: modelID } }
+---@param callback function(err, data)
+function M.get_config_providers(callback)
+	http.get("/config/providers", callback)
 end
 
 -- Get provider auth methods

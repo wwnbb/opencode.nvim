@@ -81,6 +81,15 @@ function M.setup(opts)
     end
   end
 
+  -- Setup local state module (agent/model/variant selection)
+  local local_ok, local_module = pcall(require, "opencode.local")
+  if local_ok then
+    local_module.setup()
+    M.local_state = local_module
+  else
+    vim.notify("Failed to load local state module: " .. tostring(local_module), vim.log.levels.WARN)
+  end
+
   -- Setup command palette (registers default commands)
   local palette_ok, palette = pcall(require, "opencode.ui.palette")
   if palette_ok and type(palette.setup) == "function" then
@@ -94,24 +103,71 @@ function M.setup(opts)
     end
   end
 
-  -- Apply keymaps from user config (overrides plugin defaults)
+  -- Apply keymaps from user config (only if user explicitly configures them)
+  -- Users who want keymaps should add them to their config, e.g.:
+  -- keymaps = { toggle = "<leader>oo", command_palette = "<leader>op" }
   local km = M._config.keymaps or {}
   local map_opts = { noremap = true, silent = true }
-  vim.keymap.set("n", km.toggle or "<leader>oo", function()
-    require("opencode").toggle()
-  end, vim.tbl_extend("force", map_opts, { desc = "Toggle OpenCode" }))
+  
+  if km.toggle then
+    vim.keymap.set("n", km.toggle, function()
+      require("opencode").toggle()
+    end, vim.tbl_extend("force", map_opts, { desc = "Toggle OpenCode" }))
+  end
 
-  vim.keymap.set("n", km.command_palette or "<leader>op", function()
-    require("opencode").command_palette()
-  end, vim.tbl_extend("force", map_opts, { desc = "OpenCode command palette" }))
+  if km.command_palette then
+    vim.keymap.set("n", km.command_palette, function()
+      require("opencode").command_palette()
+    end, vim.tbl_extend("force", map_opts, { desc = "OpenCode command palette" }))
+  end
 
-  vim.keymap.set("n", km.show_diff or "<leader>od", function()
-    require("opencode").show_diff()
-  end, vim.tbl_extend("force", map_opts, { desc = "Show OpenCode diff" }))
+  if km.show_diff then
+    vim.keymap.set("n", km.show_diff, function()
+      require("opencode").show_diff()
+    end, vim.tbl_extend("force", map_opts, { desc = "Show OpenCode diff" }))
+  end
 
-  vim.keymap.set("n", km.abort or "<leader>ox", function()
-    require("opencode").abort()
-  end, vim.tbl_extend("force", map_opts, { desc = "Abort OpenCode request" }))
+  if km.abort then
+    vim.keymap.set("n", km.abort, function()
+      require("opencode").abort()
+    end, vim.tbl_extend("force", map_opts, { desc = "Abort OpenCode request" }))
+  end
+
+  -- Setup cursor hiding for opencode buffers
+  -- We need to hide the cursor completely in the chat buffer to avoid visual distractions
+  -- during streaming/thinking animations. Using blend=100 alone doesn't fully hide the cursor
+  -- because it only affects the highlight background. We also set fg/bg to match Normal background.
+  local function setup_hidden_cursor_highlight()
+    local normal_hl = vim.api.nvim_get_hl(0, { name = "Normal" })
+    local bg = normal_hl.bg or 0x000000
+    vim.api.nvim_set_hl(0, "OpenCodeHiddenCursor", {
+      fg = bg,
+      bg = bg,
+      blend = 100,
+      nocombine = true,
+    })
+  end
+
+  -- Set up initially and on colorscheme change
+  setup_hidden_cursor_highlight()
+  vim.api.nvim_create_autocmd("ColorScheme", {
+    callback = setup_hidden_cursor_highlight,
+    desc = "Update OpenCode hidden cursor highlight on colorscheme change",
+  })
+
+  vim.api.nvim_create_autocmd("FileType", {
+    pattern = "opencode",
+    callback = function()
+      -- Hide cursor in opencode buffers using transparent highlight
+      -- Include all cursor-related highlight groups for comprehensive hiding
+      local cursor_hls = "Cursor:OpenCodeHiddenCursor,lCursor:OpenCodeHiddenCursor,CursorLine:OpenCodeHiddenCursor,CursorColumn:OpenCodeHiddenCursor"
+      vim.wo.winhighlight = (vim.wo.winhighlight ~= "" and vim.wo.winhighlight .. "," or "") .. cursor_hls
+      -- Also disable cursorline/cursorcolumn visual indicators
+      vim.wo.cursorline = false
+      vim.wo.cursorcolumn = false
+    end,
+    desc = "Hide cursor in OpenCode chat buffer",
+  })
 
   vim.notify("OpenCode.nvim v" .. M.version .. " loaded", vim.log.levels.INFO)
 end
@@ -199,8 +255,35 @@ function M.send(message, opts)
 
 		local function send_with_session(sid)
 			-- Build message payload
-			-- Get model from: 1) opts, 2) state (user selection), 3) config default
+			-- Get model/agent/variant from: 1) opts, 2) local state (user selection), 3) config default
 			local model = opts.model
+			local agent = opts.agent
+			local variant = opts.variant
+
+			-- Try to get from local module (like TUI's local.tsx)
+			local local_ok, lc = pcall(require, "opencode.local")
+			if local_ok then
+				if not model then
+					local current_model = lc.model.current()
+					if current_model then
+						model = {
+							providerID = current_model.providerID,
+							modelID = current_model.modelID,
+						}
+					end
+				end
+				if not agent then
+					local current_agent = lc.agent.current()
+					if current_agent then
+						agent = current_agent.name
+					end
+				end
+				if not variant then
+					variant = lc.variant.current()
+				end
+			end
+
+			-- Fallback to old state module
 			if not model then
 				local state_model = state.get_model()
 				if state_model.id and state_model.provider then
@@ -213,12 +296,17 @@ function M.send(message, opts)
 				end
 			end
 
+			if not agent then
+				agent = M._config.session.default_agent
+			end
+
 			local payload = {
 				parts = {
 					{ type = "text", text = message }
 				},
-				agent = opts.agent or M._config.session.default_agent,
+				agent = agent,
 				model = model,
+				variant = variant,
 			}
 
 			-- Add context if provided
@@ -303,10 +391,50 @@ function M.abort()
 	end)
 end
 
---- Clear chat history
-function M.clear()
-	local chat = require("opencode.ui.chat")
-	chat.clear()
+--- Clear chat / Start new session (like TUI's /clear or /new)
+--- This creates a new session, clears the chat display, and clears sync data
+---@param opts? { silent?: boolean }
+function M.clear(opts)
+	opts = opts or {}
+	
+	if not lifecycle then
+		vim.notify("OpenCode not initialized", vim.log.levels.ERROR)
+		return
+	end
+
+	lifecycle.ensure_connected(function()
+		local chat = require("opencode.ui.chat")
+		local sync = require("opencode.sync")
+		local current_session = state.get_session()
+
+		-- Clear sync data for current session
+		if current_session.id then
+			sync.clear_session(current_session.id)
+		end
+
+		-- Create a new session
+		client.create_session({}, function(err, session)
+			vim.schedule(function()
+				if err then
+					vim.notify("Failed to create new session: " .. tostring(err.message or err.error or err), vim.log.levels.ERROR)
+					-- Still clear the UI even if session creation fails
+					chat.clear()
+					state.set_session(nil, nil)
+					return
+				end
+
+				-- Update state with new session
+				state.set_session(session.id, session.title or "New Session")
+				
+				-- Clear chat display
+				chat.clear()
+				
+				if not opts.silent then
+					vim.notify("Started new session", vim.log.levels.INFO)
+				end
+			end)
+		end)
+	end)
 end
 
 --- Get chat messages
@@ -499,6 +627,89 @@ end
 -- Expose config for other modules
 M._get_config = function()
 	return M._config
+end
+
+-- Agent/Model/Variant selection functions (like TUI's ctrl+t, ctrl+a, etc.)
+
+--- Cycle to next model variant (like TUI's ctrl+t)
+function M.cycle_variant()
+	local ok, lc = pcall(require, "opencode.local")
+	if ok then
+		lc.variant.cycle()
+		-- Update input info bar if visible
+		local input_ok, input = pcall(require, "opencode.ui.input")
+		if input_ok and input.is_visible() then
+			input.update_info_bar()
+		end
+	else
+		vim.notify("Local state module not loaded", vim.log.levels.WARN)
+	end
+end
+
+--- Cycle to next agent (like TUI's agent cycling)
+function M.cycle_agent()
+	local ok, lc = pcall(require, "opencode.local")
+	if ok then
+		lc.agent.move(1)
+		-- Update input info bar if visible
+		local input_ok, input = pcall(require, "opencode.ui.input")
+		if input_ok and input.is_visible() then
+			input.update_info_bar()
+		end
+	else
+		vim.notify("Local state module not loaded", vim.log.levels.WARN)
+	end
+end
+
+--- Cycle to next model from recent list
+function M.cycle_model()
+	local ok, lc = pcall(require, "opencode.local")
+	if ok then
+		lc.model.cycle(1)
+		-- Update input info bar if visible
+		local input_ok, input = pcall(require, "opencode.ui.input")
+		if input_ok and input.is_visible() then
+			input.update_info_bar()
+		end
+	else
+		vim.notify("Local state module not loaded", vim.log.levels.WARN)
+	end
+end
+
+--- Get current agent info
+function M.get_current_agent()
+	local ok, lc = pcall(require, "opencode.local")
+	if ok then
+		return lc.agent.current()
+	end
+	return nil
+end
+
+--- Get current model info
+function M.get_current_model()
+	local ok, lc = pcall(require, "opencode.local")
+	if ok then
+		return lc.model.parsed()
+	end
+	return nil
+end
+
+--- Get current variant
+function M.get_current_variant()
+	local ok, lc = pcall(require, "opencode.local")
+	if ok then
+		return lc.variant.current()
+	end
+	return nil
+end
+
+--- Get available variants for current model
+function M.get_variants()
+	local ok, lc = pcall(require, "opencode.local")
+	if ok then
+		return lc.variant.list()
+	end
+	return {}
 end
 
 return M
