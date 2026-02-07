@@ -115,7 +115,11 @@ function M.parse(text)
 			i = i + 1
 		-- Headers: # Header
 		elseif line:match("^#+%s") then
-			local level, content = line:match("^(#+)%s+(.+)$")
+			local level, content = line:match("^(#+)%s+(.*)")
+			if not level then
+				level = line:match("^(#+)")
+				content = ""
+			end
 			table.insert(segments, {
 				type = "header",
 				level = #level,
