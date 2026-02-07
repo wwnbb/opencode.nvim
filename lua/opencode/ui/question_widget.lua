@@ -18,19 +18,26 @@ local icons = {
 ---@param request_id string
 ---@param question_data table
 ---@param selection_state table
----@param status "pending" | "answered" | "rejected"
----@return table lines, table highlights, number option_count
+---@param status "pending" | "answered" | "rejected" | "confirming"
+---@return table lines, table highlights, number option_count, number first_option_line
 function M.get_lines_for_question(request_id, question_data, selection_state, status)
 	local lines = {}
 	local highlights = {}
 	local line_num = 0
 
 	local questions = question_data.questions or question_data
+
+	-- If in confirming state, show confirmation view instead
+	-- (must check BEFORE current_tab lookup since confirming uses a temp tab beyond question range)
+	if status == "confirming" then
+		return M.get_confirmation_lines(request_id, question_data, selection_state)
+	end
+
 	local current_tab = selection_state.current_tab or 1
 	local current_question = questions[current_tab]
 
 	if not current_question then
-		return lines, highlights, 0
+		return lines, highlights, 0, 0
 	end
 
 	-- Header line with icon and request ID
@@ -60,6 +67,16 @@ function M.get_lines_for_question(request_id, question_data, selection_state, st
 		for i, q in ipairs(questions) do
 			local tab_label = q.title or q.header or ("Q" .. i)
 			local is_active = i == current_tab
+			
+			-- Check if this question is answered
+			local selection = selection_state.selections and selection_state.selections[i]
+			local is_answered = selection and selection.is_answered
+			
+			-- Add checkmark if answered
+			if is_answered then
+				tab_label = tab_label .. " ✓"
+			end
+			
 			local prefix = is_active and "[" or " "
 			local suffix = is_active and "]" or " "
 			local tab_text = prefix .. tab_label .. suffix
@@ -69,6 +86,7 @@ function M.get_lines_for_question(request_id, question_data, selection_state, st
 				start_col = current_offset,
 				end_col = current_offset + #tab_text,
 				is_active = is_active,
+				is_answered = is_answered,
 			})
 
 			current_offset = current_offset + #tab_text + 1
@@ -78,11 +96,17 @@ function M.get_lines_for_question(request_id, question_data, selection_state, st
 
 		-- Apply tab highlights
 		for _, offset in ipairs(tab_highlight_offsets) do
+			local hl_group = "Normal"
+			if offset.is_active then
+				hl_group = "CursorLine"
+			elseif offset.is_answered then
+				hl_group = "Comment"
+			end
 			table.insert(highlights, {
 				line = line_num,
 				col_start = offset.start_col,
 				col_end = offset.end_col,
-				hl_group = offset.is_active and "CursorLine" or "Normal",
+				hl_group = hl_group,
 			})
 		end
 
@@ -117,11 +141,13 @@ function M.get_lines_for_question(request_id, question_data, selection_state, st
 
 	-- Options
 	local option_count = 0
+	local first_option_line = line_num
 	local selections = selection_state.selections and selection_state.selections[current_tab] or {}
 	local selected_indices = selections.selected_indices or {}
 	local is_multi = current_question.type == "multi"
 
 	if current_question.options and #current_question.options > 0 then
+		first_option_line = line_num
 		option_count = #current_question.options
 
 		for i, option in ipairs(current_question.options) do
@@ -200,12 +226,28 @@ function M.get_lines_for_question(request_id, question_data, selection_state, st
 			table.insert(hint_parts, "c custom")
 		end
 
-		table.insert(hint_parts, "Enter confirm")
-		table.insert(hint_parts, "Esc cancel")
-
+		-- Show progress for multi-question blocks
 		if #questions > 1 then
-			table.insert(hint_parts, "Tab next")
+			-- Count answered questions
+			local answered_count = 0
+			for i = 1, #questions do
+				local sel = selection_state.selections and selection_state.selections[i]
+				if sel and sel.is_answered then
+					answered_count = answered_count + 1
+				end
+			end
+			
+			if answered_count == #questions then
+				table.insert(hint_parts, "Enter submit")
+			else
+				table.insert(hint_parts, string.format("Enter submit (%d/%d)", answered_count, #questions))
+			end
+			table.insert(hint_parts, "Tab/S-Tab navigate")
+		else
+			table.insert(hint_parts, "Enter confirm")
 		end
+		
+		table.insert(hint_parts, "Esc cancel")
 
 		local hint = "[" .. table.concat(hint_parts, ", ") .. "]"
 		table.insert(lines, hint)
@@ -221,7 +263,7 @@ function M.get_lines_for_question(request_id, question_data, selection_state, st
 	-- Empty line after question
 	table.insert(lines, "")
 
-	return lines, highlights, option_count
+	return lines, highlights, option_count, first_option_line
 end
 
 -- Get option count for a question
@@ -351,6 +393,149 @@ function M.get_rejected_lines(request_id, question_data)
 	table.insert(lines, "")
 
 	return lines, highlights
+end
+
+-- Get confirmation view lines (shown when all questions are answered)
+---@param request_id string
+---@param question_data table
+---@param selection_state table
+---@return table lines, table highlights, number option_count, number first_option_line
+function M.get_confirmation_lines(request_id, question_data, selection_state)
+	local lines = {}
+	local highlights = {}
+	local line_num = 0
+
+	local questions = question_data.questions or question_data
+	
+	-- Header
+	local id_short = request_id:sub(1, 8)
+	local time_str = os.date("%H:%M", selection_state.timestamp or os.time())
+	local header = string.format("✓ Question [%s] %s%s", id_short, string.rep(" ", 50 - 2 - #id_short - #time_str), time_str)
+	table.insert(lines, header)
+	table.insert(highlights, {
+		line = line_num,
+		col_start = 0,
+		col_end = #header,
+		hl_group = "Title",
+	})
+	line_num = line_num + 1
+
+	-- Separator
+	table.insert(lines, string.rep("─", 60))
+	line_num = line_num + 1
+
+	-- Title
+	table.insert(lines, "Ready to Submit")
+	table.insert(highlights, {
+		line = line_num,
+		col_start = 0,
+		col_end = 15,
+		hl_group = "Title",
+	})
+	line_num = line_num + 1
+	
+	table.insert(lines, "")
+	line_num = line_num + 1
+
+	-- Show all questions with their answers
+	for i, question in ipairs(questions) do
+		local selection = selection_state.selections and selection_state.selections[i]
+		local answer_parts = {}
+		
+		-- Collect answer text
+		if selection then
+			for _, idx in ipairs(selection.selected_indices or {}) do
+				local option = question.options and question.options[idx]
+				if option then
+					local label = type(option) == "string" and option or (option.label or option.value or tostring(idx))
+					table.insert(answer_parts, label)
+				end
+			end
+			if selection.custom_input and selection.custom_input ~= "" then
+				table.insert(answer_parts, selection.custom_input)
+			end
+		end
+		
+		local answer_text = #answer_parts > 0 and table.concat(answer_parts, ", ") or "(no answer)"
+		local q_label = question.header or question.title or ("Question " .. i)
+		
+		-- Question label
+		table.insert(lines, q_label .. ":")
+		table.insert(highlights, {
+			line = line_num,
+			col_start = 0,
+			col_end = #q_label + 1,
+			hl_group = "Label",
+		})
+		line_num = line_num + 1
+		
+		-- Answer with checkmark
+		local answer_line = "  ✓ " .. answer_text
+		table.insert(lines, answer_line)
+		table.insert(highlights, {
+			line = line_num,
+			col_start = 0,
+			col_end = #answer_line,
+			hl_group = "String",
+		})
+		line_num = line_num + 1
+		
+		table.insert(lines, "")
+		line_num = line_num + 1
+	end
+
+	-- Confirmation prompt - read current selection
+	local temp_tab_idx = #questions + 1
+	local confirm_selection = selection_state.selections and selection_state.selections[temp_tab_idx]
+	local confirm_selected = confirm_selection and confirm_selection.selected_indices or { 1 }
+	local selected_choice = confirm_selected[1] or 1
+
+	local first_option_line = line_num
+
+	local yes_indicator = selected_choice == 1 and icons.selected or icons.unselected
+	local no_indicator = selected_choice == 2 and icons.selected or icons.unselected
+
+	local yes_text = yes_indicator .. " 1. Yes, submit all answers"
+	table.insert(lines, yes_text)
+	if selected_choice == 1 then
+		table.insert(highlights, {
+			line = line_num,
+			col_start = 0,
+			col_end = #yes_text,
+			hl_group = "CursorLine",
+		})
+	end
+	line_num = line_num + 1
+
+	local no_text = no_indicator .. " 2. No, review answers"
+	table.insert(lines, no_text)
+	if selected_choice == 2 then
+		table.insert(highlights, {
+			line = line_num,
+			col_start = 0,
+			col_end = #no_text,
+			hl_group = "CursorLine",
+		})
+	end
+	line_num = line_num + 1
+	
+	table.insert(lines, "")
+	line_num = line_num + 1
+
+	-- Hint
+	local hint = "[1-2 select, ↑↓ navigate, Enter confirm, Esc cancel]"
+	table.insert(lines, hint)
+	table.insert(highlights, {
+		line = line_num,
+		col_start = 0,
+		col_end = #hint,
+		hl_group = "Comment",
+	})
+	line_num = line_num + 1
+
+	table.insert(lines, "")
+
+	return lines, highlights, 2, first_option_line
 end
 
 -- Set custom icons

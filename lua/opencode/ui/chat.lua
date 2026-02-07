@@ -23,12 +23,27 @@ local state = {
 	config = nil,
 	questions = {}, -- Track question positions: { [request_id] = { start_line, end_line } }
 	pending_questions = {}, -- Queue of questions received when chat wasn't visible
+	focus_question = nil, -- request_id of question to focus cursor on after render
+	permissions = {}, -- Track permission positions: { [permission_id] = { start_line, end_line } }
+	pending_permissions = {}, -- Queue of permissions received when chat wasn't visible
+	focus_permission = nil, -- permission_id to focus cursor on after render
+	edits = {}, -- Track edit widget positions: { [permission_id] = { start_line, end_line } }
+	pending_edits = {}, -- Queue of edits received when chat wasn't visible
+	focus_edit = nil, -- permission_id to focus cursor on after render
+	focus_edit_line = nil,
 	last_render_time = 0,
 	render_scheduled = false,
 }
 
 local question_widget = require("opencode.ui.question_widget")
 local question_state = require("opencode.question.state")
+local permission_widget = require("opencode.ui.permission_widget")
+local permission_state = require("opencode.permission.state")
+local edit_widget = require("opencode.ui.edit_widget")
+local edit_state = require("opencode.edit.state")
+
+-- Namespace for all chat buffer highlights (enables incremental highlight updates)
+local chat_hl_ns = vim.api.nvim_create_namespace("opencode_chat_hl")
 
 -- Default configuration
 local defaults = {
@@ -189,6 +204,74 @@ local function setup_buffer(bufnr)
 	vim.keymap.set("n", "<Space>", function()
 		M.handle_question_toggle()
 	end, opts)
+
+	-- ==================== Edit widget keybindings ====================
+
+	-- Accept selected file
+	vim.keymap.set("n", "<C-a>", function()
+		local eid = M.get_edit_at_cursor()
+		if eid then
+			M.handle_edit_accept_file()
+		else
+			vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<C-a>", true, false, true), "n", false)
+		end
+	end, opts)
+
+	-- Reject selected file
+	vim.keymap.set("n", "<C-x>", function()
+		local eid = M.get_edit_at_cursor()
+		if eid then
+			M.handle_edit_reject_file()
+		else
+			vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<C-x>", true, false, true), "n", false)
+		end
+	end, opts)
+
+	-- Toggle inline diff (fugitive-style =)
+	vim.keymap.set("n", "=", function()
+		local eid = M.get_edit_at_cursor()
+		if eid then
+			M.handle_edit_toggle_diff()
+		else
+			vim.api.nvim_feedkeys("=", "n", false)
+		end
+	end, opts)
+
+	-- Accept ALL pending files
+	vim.keymap.set("n", "A", function()
+		local eid = M.get_edit_at_cursor()
+		if eid then
+			M.handle_edit_accept_all()
+		else
+			vim.api.nvim_feedkeys("A", "n", false)
+		end
+	end, opts)
+
+	-- Reject ALL pending files
+	vim.keymap.set("n", "X", function()
+		local eid = M.get_edit_at_cursor()
+		if eid then
+			M.handle_edit_reject_all()
+		else
+			vim.api.nvim_feedkeys("X", "n", false)
+		end
+	end, opts)
+
+	-- Diff in new tab (dt)
+	vim.keymap.set("n", "dt", function()
+		local eid = M.get_edit_at_cursor()
+		if eid then
+			M.handle_edit_diff_tab()
+		end
+	end, vim.tbl_extend("force", opts, { nowait = true }))
+
+	-- Diff vsplit (dv)
+	vim.keymap.set("n", "dv", function()
+		local eid = M.get_edit_at_cursor()
+		if eid then
+			M.handle_edit_diff_split()
+		end
+	end, vim.tbl_extend("force", opts, { nowait = true }))
 end
 
 -- Create chat buffer
@@ -240,6 +323,23 @@ function M.show_help()
 		"<Tab>      Next question tab",
 		"<S-Tab>    Previous question tab",
 		"",
+		"Permissions",
+		"1-3        Select option by number",
+		"↑/↓ j/k    Navigate options",
+		"<CR>       Confirm permission",
+		"<Esc>      Reject permission",
+		"",
+		"Edit Review",
+		"<C-a>      Accept selected file",
+		"<C-x>      Reject selected file",
+		"=          Toggle inline diff",
+		"dt         Open diff in new tab",
+		"dv         Open diff vsplit",
+		"A          Accept all files",
+		"X          Reject all files",
+		"<CR>       Open file in editor",
+		"1-9        Jump to file N",
+		"",
 		"Press any key to close",
 	}
 
@@ -279,6 +379,8 @@ function M.show_help()
 		["Input Mode"] = true,
 		["Tool Calls"] = true,
 		["Question Tool"] = true,
+		["Permissions"] = true,
+		["Edit Review"] = true,
 	}
 	for i, line in ipairs(lines) do
 		if section_headers[line] then
@@ -343,7 +445,7 @@ function M.create()
 				-- Don't start spinner if there's a pending question awaiting user input
 				local has_pending_question = false
 				for _, msg in ipairs(state.messages) do
-					if msg.type == "question" and msg.status == "pending" then
+					if (msg.type == "question" or msg.type == "permission") and msg.status == "pending" then
 						has_pending_question = true
 						break
 					end
@@ -359,10 +461,12 @@ function M.create()
 					spinner.start({
 						interval_ms = 100,
 						on_frame = function()
-							-- Trigger re-render on each frame to update animation
-							M.schedule_render()
+							-- Update only the spinner line in-place (no full re-render)
+							M.update_spinner_only()
 						end,
 					})
+					-- Initial full render to place the spinner line in the buffer
+					M.schedule_render()
 				end
 			else
 				-- Stop spinner for idle, paused, or error states
@@ -382,14 +486,18 @@ function M.create()
 				spinner.stop()
 			end
 			spinner.reset()
-			-- Clear pending questions from the old session
+			-- Clear pending questions, permissions, and edits from the old session
 			state.pending_questions = {}
-			-- Clear question position tracking
+			state.pending_permissions = {}
+			state.pending_edits = {}
+			-- Clear position tracking
 			state.questions = {}
-			-- Remove question messages from state.messages (they belong to old session)
+			state.permissions = {}
+			state.edits = {}
+			-- Remove question/permission messages from state.messages (they belong to old session)
 			local new_messages = {}
 			for _, msg in ipairs(state.messages) do
-				if msg.type ~= "question" then
+				if msg.type ~= "question" and msg.type ~= "permission" then
 					table.insert(new_messages, msg)
 				end
 			end
@@ -398,7 +506,7 @@ function M.create()
 	end)
 
 	-- Render initial content
-	M.render()
+	M.do_render()
 
 	return state.bufnr
 end
@@ -429,6 +537,58 @@ local function process_pending_questions()
 			logger.debug("Skipping stale pending question", {
 				request_id = pq.request_id:sub(1, 10),
 				reason = qstate and qstate.status or "not found",
+			})
+		end
+	end
+end
+
+-- Process any pending permissions that were queued while chat was not visible
+local function process_pending_permissions()
+	if #state.pending_permissions == 0 then
+		return
+	end
+
+	local logger = require("opencode.logger")
+	logger.debug("Processing pending permissions", { count = #state.pending_permissions })
+
+	local pending = state.pending_permissions
+	state.pending_permissions = {}
+
+	for _, pp in ipairs(pending) do
+		local pstate = permission_state.get_permission(pp.permission_id)
+		if pstate and pstate.status == "pending" then
+			M.add_permission_message(pp.permission_id, pstate, pp.status)
+			logger.debug("Displayed pending permission", { permission_id = pp.permission_id })
+		else
+			logger.debug("Skipping stale pending permission", {
+				permission_id = pp.permission_id,
+				reason = pstate and pstate.status or "not found",
+			})
+		end
+	end
+end
+
+-- Process any pending edits that were queued while chat was not visible
+local function process_pending_edits()
+	if #state.pending_edits == 0 then
+		return
+	end
+
+	local logger = require("opencode.logger")
+	logger.debug("Processing pending edits", { count = #state.pending_edits })
+
+	local pending = state.pending_edits
+	state.pending_edits = {}
+
+	for _, pe in ipairs(pending) do
+		local estate = edit_state.get_edit(pe.permission_id)
+		if estate and estate.status == "pending" then
+			M.add_edit_message(pe.permission_id, estate, pe.status)
+			logger.debug("Displayed pending edit", { permission_id = pe.permission_id })
+		else
+			logger.debug("Skipping stale pending edit", {
+				permission_id = pe.permission_id,
+				reason = estate and estate.status or "not found",
 			})
 		end
 	end
@@ -511,8 +671,10 @@ function M.open()
 
 	state.visible = true
 
-	-- Process any questions that were queued while chat was not visible
+	-- Process any questions/permissions/edits that were queued while chat was not visible
 	process_pending_questions()
+	process_pending_permissions()
+	process_pending_edits()
 
 	-- Move cursor to end
 	local line_count = vim.api.nvim_buf_line_count(state.bufnr)
@@ -696,7 +858,7 @@ function M.render_message(message)
 
 	-- Apply highlights
 	for _, hl in ipairs(highlights) do
-		vim.api.nvim_buf_add_highlight(state.bufnr, -1, hl.hl_group, line_count + hl.line, hl.col_start, hl.col_end)
+		vim.api.nvim_buf_add_highlight(state.bufnr, chat_hl_ns, hl.hl_group, line_count + hl.line, hl.col_start, hl.col_end)
 	end
 
 	vim.bo[state.bufnr].modifiable = false
@@ -718,6 +880,9 @@ end
 function M.clear()
 	state.messages = {}
 	state.questions = {}
+	state.permissions = {}
+	state.edits = {}
+	state.pending_edits = {}
 	state.last_render_time = 0
 	state.render_scheduled = false
 
@@ -732,10 +897,18 @@ function M.clear()
 		vim.bo[state.bufnr].modifiable = false
 	end
 
-	-- Clear question state as well
+	-- Clear question, permission, and edit state as well
 	local ok, qs = pcall(require, "opencode.question.state")
 	if ok then
 		qs.clear_all()
+	end
+	local ok2, ps = pcall(require, "opencode.permission.state")
+	if ok2 then
+		ps.clear_all()
+	end
+	local ok3, es = pcall(require, "opencode.edit.state")
+	if ok3 then
+		es.clear_all()
 	end
 end
 
@@ -859,6 +1032,97 @@ function M.render()
 
 	local lines = {}
 	local highlights = {}
+
+	-- Helper function to render permissions inline for a given messageID
+	-- Returns the lines and highlights added
+	local function render_permissions_for_message(message_id)
+		local perms = permission_state.get_permissions_for_message(message_id)
+		for _, pstate in ipairs(perms) do
+			local perm_id = pstate.permission_id
+			local p_start_line = #lines
+			local p_lines, p_highlights
+			local pstatus = pstate.status or "pending"
+
+			if pstatus == "approved" then
+				p_lines, p_highlights = permission_widget.get_approved_lines(perm_id, pstate)
+			elseif pstatus == "rejected" then
+				p_lines, p_highlights = permission_widget.get_rejected_lines(perm_id, pstate)
+			else
+				local first_option_offset
+				p_lines, p_highlights, _, first_option_offset = permission_widget.get_lines_for_permission(perm_id, pstate)
+				if state.focus_permission == perm_id then
+					state.focus_permission_line = p_start_line + first_option_offset + 1 -- 1-based
+				end
+			end
+
+			if p_lines then
+				for _, line in ipairs(p_lines) do
+					table.insert(lines, line)
+				end
+
+				for _, hl in ipairs(p_highlights) do
+					table.insert(highlights, {
+						line = p_start_line + hl.line,
+						col_start = hl.col_start,
+						col_end = hl.col_end,
+						hl_group = hl.hl_group,
+					})
+				end
+
+				state.permissions[perm_id] = {
+					start_line = p_start_line,
+					end_line = p_start_line + #p_lines - 1,
+					status = pstatus,
+				}
+
+				table.insert(lines, "")
+			end
+		end
+	end
+
+	-- Helper function to render edits inline for a given messageID
+	local function render_edits_for_message(message_id)
+		local edits = edit_state.get_edits_for_message(message_id)
+		for _, estate in ipairs(edits) do
+			local eid = estate.permission_id
+			local e_start_line = #lines
+			local e_lines, e_highlights
+			local estatus = estate.status or "pending"
+
+			if estatus == "sent" then
+				e_lines, e_highlights = edit_widget.get_resolved_lines(eid, estate)
+			else
+				local first_file_offset
+				e_lines, e_highlights, _, first_file_offset = edit_widget.get_lines_for_edit(eid, estate)
+				if state.focus_edit == eid then
+					state.focus_edit_line = e_start_line + first_file_offset + 1 -- 1-based
+				end
+			end
+
+			if e_lines then
+				for _, line in ipairs(e_lines) do
+					table.insert(lines, line)
+				end
+
+				for _, hl in ipairs(e_highlights) do
+					table.insert(highlights, {
+						line = e_start_line + hl.line,
+						col_start = hl.col_start,
+						col_end = hl.col_end,
+						hl_group = hl.hl_group,
+					})
+				end
+
+				state.edits[eid] = {
+					start_line = e_start_line,
+					end_line = e_start_line + #e_lines - 1,
+					status = estatus,
+				}
+
+				table.insert(lines, "")
+			end
+		end
+	end
 
 	-- Session header (like TUI's "# New session - timestamp")
 	local session_name = current_session.name or "New session"
@@ -991,6 +1255,12 @@ function M.render()
 				end
 
 				table.insert(lines, "")
+
+				-- Render permissions associated with this assistant message inline
+				render_permissions_for_message(message.id)
+
+				-- Render edits associated with this assistant message inline
+				render_edits_for_message(message.id)
 			end
 		end
 	end
@@ -1029,12 +1299,17 @@ function M.render()
 				)
 			elseif qstate then
 				-- Pending - use interactive format with selection state
-				q_lines, q_highlights, _ = question_widget.get_lines_for_question(
+				local first_option_offset
+				q_lines, q_highlights, _, first_option_offset = question_widget.get_lines_for_question(
 					message.request_id,
 					{ questions = message.questions },
 					qstate,
 					status
 				)
+				-- Store the absolute first option line for cursor positioning
+				if state.focus_question == message.request_id then
+					state.focus_question_line = q_start_line + first_option_offset + 1 -- 1-based
+				end
 			else
 				-- No qstate available, skip
 				goto continue_local_message
@@ -1074,6 +1349,11 @@ function M.render()
 			goto continue_local_message
 		end
 
+		-- Skip permission type messages - they are now rendered inline after their triggering message
+		if message.type == "permission" then
+			goto continue_local_message
+		end
+
 		-- Skip user messages (they come from server via SSE)
 		if message.role == "user" then
 			goto continue_local_message
@@ -1107,6 +1387,93 @@ function M.render()
 		::continue_local_message::
 	end
 
+	-- Render orphan permissions (those without an associated messageID)
+	-- These are rendered at the end, like legacy behavior for permissions without tool context
+	local orphan_perms = permission_state.get_orphan_permissions()
+	for _, pstate in ipairs(orphan_perms) do
+		local perm_id = pstate.permission_id
+		local p_start_line = #lines
+		local p_lines, p_highlights
+		local pstatus = pstate.status or "pending"
+
+		if pstatus == "approved" then
+			p_lines, p_highlights = permission_widget.get_approved_lines(perm_id, pstate)
+		elseif pstatus == "rejected" then
+			p_lines, p_highlights = permission_widget.get_rejected_lines(perm_id, pstate)
+		else
+			local first_option_offset
+			p_lines, p_highlights, _, first_option_offset = permission_widget.get_lines_for_permission(perm_id, pstate)
+			if state.focus_permission == perm_id then
+				state.focus_permission_line = p_start_line + first_option_offset + 1 -- 1-based
+			end
+		end
+
+		if p_lines then
+			for _, line in ipairs(p_lines) do
+				table.insert(lines, line)
+			end
+
+			for _, hl in ipairs(p_highlights) do
+				table.insert(highlights, {
+					line = p_start_line + hl.line,
+					col_start = hl.col_start,
+					col_end = hl.col_end,
+					hl_group = hl.hl_group,
+				})
+			end
+
+			state.permissions[perm_id] = {
+				start_line = p_start_line,
+				end_line = p_start_line + #p_lines - 1,
+				status = pstatus,
+			}
+
+			table.insert(lines, "")
+		end
+	end
+
+	-- Render orphan edits (those without an associated messageID)
+	local orphan_edits = edit_state.get_orphan_edits()
+	for _, estate in ipairs(orphan_edits) do
+		local eid = estate.permission_id
+		local e_start_line = #lines
+		local e_lines, e_highlights
+		local estatus = estate.status or "pending"
+
+		if estatus == "sent" then
+			e_lines, e_highlights = edit_widget.get_resolved_lines(eid, estate)
+		else
+			local first_file_offset
+			e_lines, e_highlights, _, first_file_offset = edit_widget.get_lines_for_edit(eid, estate)
+			if state.focus_edit == eid then
+				state.focus_edit_line = e_start_line + first_file_offset + 1 -- 1-based
+			end
+		end
+
+		if e_lines then
+			for _, line in ipairs(e_lines) do
+				table.insert(lines, line)
+			end
+
+			for _, hl in ipairs(e_highlights) do
+				table.insert(highlights, {
+					line = e_start_line + hl.line,
+					col_start = hl.col_start,
+					col_end = hl.col_end,
+					hl_group = hl.hl_group,
+				})
+			end
+
+			state.edits[eid] = {
+				start_line = e_start_line,
+				end_line = e_start_line + #e_lines - 1,
+				status = estatus,
+			}
+
+			table.insert(lines, "")
+		end
+	end
+
 	-- Initial state message (when no messages)
 	local total_messages = #messages + #state.messages
 	if total_messages == 0 then
@@ -1135,15 +1502,7 @@ function M.render()
 		})
 	end
 
-	vim.bo[state.bufnr].modifiable = true
-	vim.api.nvim_buf_set_lines(state.bufnr, 0, -1, false, lines)
-
-	-- Apply highlights
-	for _, hl in ipairs(highlights) do
-		vim.api.nvim_buf_add_highlight(state.bufnr, -1, hl.hl_group, hl.line, hl.col_start, hl.col_end)
-	end
-
-	vim.bo[state.bufnr].modifiable = false
+	return lines, highlights
 end
 
 -- Focus the chat window
@@ -1231,6 +1590,41 @@ function M.clear_tool_activity(message_id)
 	-- No longer needed - sync store manages state
 end
 
+-- Update only the spinner line in-place using nvim_buf_set_text
+-- This avoids a full buffer rebuild just to animate the spinner, preventing cursor blink
+function M.update_spinner_only()
+	if not state.bufnr or not vim.api.nvim_buf_is_valid(state.bufnr) then
+		return
+	end
+	if not spinner.is_active() then
+		return
+	end
+
+	local buf_lines = vim.api.nvim_buf_line_count(state.bufnr)
+	if buf_lines < 1 then
+		return
+	end
+
+	-- The spinner text is always the last line of the buffer (added at end of render())
+	local spinner_line = buf_lines - 1 -- 0-indexed
+	local current_line = vim.api.nvim_buf_get_lines(state.bufnr, spinner_line, spinner_line + 1, false)[1] or ""
+
+	local loading_text = spinner.get_loading_text("∴ Thinkin")
+
+	-- Skip if text hasn't changed
+	if current_line == loading_text then
+		return
+	end
+
+	vim.bo[state.bufnr].modifiable = true
+	vim.api.nvim_buf_set_text(state.bufnr, spinner_line, 0, spinner_line, #current_line, { loading_text })
+	vim.bo[state.bufnr].modifiable = false
+
+	-- Update spinner highlight
+	vim.api.nvim_buf_clear_namespace(state.bufnr, chat_hl_ns, spinner_line, spinner_line + 1)
+	vim.api.nvim_buf_add_highlight(state.bufnr, chat_hl_ns, "Comment", spinner_line, 0, #loading_text)
+end
+
 -- Throttled render (like TUI's throttled updates)
 -- Prevents excessive re-renders during streaming
 local RENDER_THROTTLE_MS = 50
@@ -1259,7 +1653,7 @@ function M.schedule_render()
 	end
 end
 
--- Actually perform the render
+-- Actually perform the render (incremental: only updates changed lines)
 function M.do_render()
 	if not state.bufnr or not vim.api.nvim_buf_is_valid(state.bufnr) then
 		return
@@ -1275,18 +1669,78 @@ function M.do_render()
 		should_scroll = cursor[1] >= buf_lines - win_height - 1
 	end
 
+	-- Build new content
+	local new_lines, highlights = M.render()
+	if #new_lines == 0 then
+		return
+	end
+
+	-- Get current buffer content for diffing
+	local old_lines = vim.api.nvim_buf_get_lines(state.bufnr, 0, -1, false)
+
+	-- Find first line that differs between old and new content
+	local first_diff = nil
+	local min_len = math.min(#old_lines, #new_lines)
+	for i = 1, min_len do
+		if old_lines[i] ~= new_lines[i] then
+			first_diff = i - 1 -- 0-indexed
+			break
+		end
+	end
+
+	if first_diff == nil then
+		if #old_lines == #new_lines then
+			-- Nothing changed at all, skip buffer update
+			return
+		end
+		-- Lines were appended or removed at the end
+		first_diff = min_len -- 0-indexed
+	end
+
+	-- Extract replacement lines (from first_diff to end of new content)
+	local replacement = {}
+	for i = first_diff + 1, #new_lines do
+		table.insert(replacement, new_lines[i])
+	end
+
 	vim.bo[state.bufnr].modifiable = true
-	vim.api.nvim_buf_set_lines(state.bufnr, 0, -1, false, {})
-	M.render()
+	vim.api.nvim_buf_set_lines(state.bufnr, first_diff, -1, false, replacement)
+
+	-- Update highlights only for the changed region
+	vim.api.nvim_buf_clear_namespace(state.bufnr, chat_hl_ns, first_diff, -1)
+	for _, hl in ipairs(highlights) do
+		if hl.line >= first_diff then
+			pcall(vim.api.nvim_buf_add_highlight, state.bufnr, chat_hl_ns, hl.hl_group, hl.line, hl.col_start, hl.col_end)
+		end
+	end
+
 	vim.bo[state.bufnr].modifiable = false
 
-	-- Auto-scroll to bottom only if user was already at bottom
-	if should_scroll and state.visible and state.winid and vim.api.nvim_win_is_valid(state.winid) then
+	-- Position cursor on first option of a newly added question or permission
+	if state.focus_question and state.focus_question_line and state.winid and vim.api.nvim_win_is_valid(state.winid) then
+		local buf_lines = vim.api.nvim_buf_line_count(state.bufnr)
+		local target = math.min(state.focus_question_line, buf_lines)
+		vim.api.nvim_win_set_cursor(state.winid, { target, 0 })
+		state.focus_question = nil
+		state.focus_question_line = nil
+	elseif state.focus_permission and state.focus_permission_line and state.winid and vim.api.nvim_win_is_valid(state.winid) then
+		local buf_lines = vim.api.nvim_buf_line_count(state.bufnr)
+		local target = math.min(state.focus_permission_line, buf_lines)
+		vim.api.nvim_win_set_cursor(state.winid, { target, 0 })
+		state.focus_permission = nil
+		state.focus_permission_line = nil
+	elseif state.focus_edit and state.focus_edit_line and state.winid and vim.api.nvim_win_is_valid(state.winid) then
+		local buf_lines = vim.api.nvim_buf_line_count(state.bufnr)
+		local target = math.min(state.focus_edit_line, buf_lines)
+		vim.api.nvim_win_set_cursor(state.winid, { target, 0 })
+		state.focus_edit = nil
+		state.focus_edit_line = nil
+	elseif should_scroll and state.visible and state.winid and vim.api.nvim_win_is_valid(state.winid) then
+		-- Auto-scroll to bottom only if user was already at bottom
 		local buf_lines = vim.api.nvim_buf_line_count(state.bufnr)
 		vim.api.nvim_win_set_cursor(state.winid, { buf_lines, 0 })
 	end
 
-	-- Force redraw
 	vim.cmd("redraw")
 end
 
@@ -1397,10 +1851,15 @@ function M.add_question_message(request_id, questions, status)
 		})
 	end
 
+	-- Focus cursor on the first option when the question renders
+	if status == "pending" then
+		state.focus_question = request_id
+	end
+
 	-- Trigger a render to display the question
 	-- The render() function will now include questions from state.messages
 	M.schedule_render()
-	
+
 	logger.debug("Question render scheduled", {
 		request_id = request_id:sub(1, 10),
 	})
@@ -1452,7 +1911,8 @@ function M.get_question_at_cursor()
 	local cursor_line = cursor[1] - 1 -- 0-based
 
 	for request_id, pos in pairs(state.questions) do
-		if cursor_line >= pos.start_line and cursor_line <= pos.end_line and pos.status == "pending" then
+		if cursor_line >= pos.start_line and cursor_line <= pos.end_line
+			and (pos.status == "pending" or pos.status == "confirming") then
 			return request_id, question_state.get_question(request_id)
 		end
 	end
@@ -1465,18 +1925,31 @@ end
 function M.handle_question_navigation(direction)
 	local request_id, qstate = M.get_question_at_cursor()
 
-	if not request_id then
-		-- Not on a question, use default navigation
-		local key = direction == "up" and "k" or "j"
-		vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes(key, true, false, true), "n", false)
+	if request_id then
+		question_state.move_selection(request_id, direction)
+		M.rerender_question(request_id)
 		return
 	end
 
-	-- Move selection
-	question_state.move_selection(request_id, direction)
+	-- Check permissions
+	local perm_id, pstate = M.get_permission_at_cursor()
+	if perm_id then
+		permission_state.move_selection(perm_id, direction)
+		M.rerender_permission(perm_id)
+		return
+	end
 
-	-- Re-render the question
-	M.rerender_question(request_id)
+	-- Check edits
+	local eid = M.get_edit_at_cursor()
+	if eid then
+		edit_state.move_selection(eid, direction)
+		M.rerender_edit(eid)
+		return
+	end
+
+	-- Not on a question, permission, or edit, use default navigation
+	local key = direction == "up" and "k" or "j"
+	vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes(key, true, false, true), "n", false)
 end
 
 -- Handle number key selection (1-9)
@@ -1484,30 +1957,138 @@ end
 function M.handle_question_number_select(number)
 	local request_id, qstate = M.get_question_at_cursor()
 
-	if not request_id then
-		-- Not on a question, pass through
-		vim.api.nvim_feedkeys(tostring(number), "n", false)
+	if request_id then
+		question_state.select_option(request_id, number)
+		M.rerender_question(request_id)
 		return
 	end
 
-	-- Select option by number
-	question_state.select_option(request_id, number)
+	-- Check permissions (only 1-3 valid)
+	local perm_id, pstate = M.get_permission_at_cursor()
+	if perm_id and number >= 1 and number <= 3 then
+		permission_state.select_option(perm_id, number)
+		M.rerender_permission(perm_id)
+		return
+	end
 
-	-- Re-render
-	M.rerender_question(request_id)
+	-- Check edits (jump to file N)
+	local eid = M.get_edit_at_cursor()
+	if eid then
+		local estate = edit_state.get_edit(eid)
+		if estate and number >= 1 and number <= #estate.files then
+			edit_state.move_selection_to(eid, number)
+			M.rerender_edit(eid)
+		end
+		return
+	end
+
+	-- Not on a question, permission, or edit, pass through
+	vim.api.nvim_feedkeys(tostring(number), "n", false)
 end
 
--- Handle question confirmation (Enter)
+-- Handle question confirmation (Enter) with double-Enter flow
+-- 1st Enter on an answered question: confirms/locks the answer (stays on current tab)
+-- 2nd Enter: advances to next unanswered question, or shows confirmation view if all answered
 function M.handle_question_confirm()
 	local request_id, qstate = M.get_question_at_cursor()
 
-	if not request_id then
-		-- Not on a question, use default Enter
-		vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<CR>", true, false, true), "n", false)
+	if request_id then
+		-- If already in confirming state, handle the confirmation choice (Yes/No)
+		if qstate.status == "confirming" then
+			local current_selection = question_state.get_current_selection(request_id)
+			local choice = current_selection and current_selection[1] or 1
+
+			if choice == 1 then
+				-- Submit answers
+				M.submit_question_answers(request_id)
+			else
+				-- Cancel confirmation, return to last tab before confirm
+				question_state.cancel_confirmation(request_id)
+				M.rerender_question(request_id)
+			end
+			return
+		end
+
+		local current_tab = qstate.current_tab
+		local total_count = #qstate.questions
+		local current_selection = qstate.selections[current_tab]
+		local is_current_answered = current_selection and current_selection.is_answered
+
+		-- Case 1: Current question is NOT answered → warn user
+		if not is_current_answered then
+			local _, total = question_state.get_answered_count(request_id)
+			if total > 1 then
+				local answered, _ = question_state.get_answered_count(request_id)
+				vim.notify(
+					string.format(
+						"Question block: %d/%d answered. Please select an answer for this question.",
+						answered,
+						total
+					),
+					vim.log.levels.WARN
+				)
+			else
+				vim.notify("Please select an answer before submitting.", vim.log.levels.WARN)
+			end
+			return
+		end
+
+		-- Case 2: Current question IS answered but NOT ready to advance → 1st Enter (confirm answer)
+		if not question_state.is_ready_to_advance(request_id) then
+			question_state.mark_ready_to_advance(request_id)
+			-- Stay on current tab, just rerender (visual feedback could be added later)
+			M.rerender_question(request_id)
+			return
+		end
+
+		-- Case 3: Current question IS answered AND ready to advance → 2nd Enter
+		local all_answered, unanswered_indices = question_state.are_all_answered(request_id)
+
+		if not all_answered then
+			-- Advance to the first unanswered question
+			if #unanswered_indices > 0 then
+				question_state.set_tab(request_id, unanswered_indices[1])
+				M.rerender_question(request_id)
+			end
+			return
+		end
+
+		-- All questions are answered
+		if total_count > 1 then
+			-- Multi-question block: show confirmation view
+			question_state.set_confirming(request_id)
+			M.rerender_question(request_id)
+		else
+			-- Single question: submit immediately
+			M.submit_question_answers(request_id)
+		end
 		return
 	end
 
-	-- Get answers
+	-- Check permissions
+	local perm_id, pstate = M.get_permission_at_cursor()
+	if perm_id and pstate then
+		M.handle_permission_confirm(perm_id, pstate)
+		return
+	end
+
+	-- Check edits (Enter = open selected file)
+	local eid = M.get_edit_at_cursor()
+	if eid then
+		local file = edit_state.get_selected_file(eid)
+		if file and file.filepath and file.filepath ~= "" then
+			vim.cmd("edit " .. vim.fn.fnameescape(file.filepath))
+		end
+		return
+	end
+
+	-- Not on a question, permission, or edit, use default Enter
+	vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<CR>", true, false, true), "n", false)
+end
+
+-- Submit question answers to server
+---@param request_id string
+function M.submit_question_answers(request_id)
 	local answers = question_state.get_answers(request_id)
 
 	-- Submit to server
@@ -1532,28 +2113,49 @@ end
 function M.handle_question_cancel()
 	local request_id, qstate = M.get_question_at_cursor()
 
-	if not request_id then
-		-- Not on a question, use default Esc
-		vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<Esc>", true, false, true), "n", false)
+	if request_id then
+		-- If in confirming state, just cancel confirmation and return to pending
+		if qstate.status == "confirming" then
+			question_state.cancel_confirmation(request_id)
+			M.rerender_question(request_id)
+			return
+		end
+		
+		-- Otherwise, reject the entire question on server
+		local client = require("opencode.client")
+		local current_session = require("opencode.state").get_session()
+
+		client.reject_question(current_session.id, request_id, function(err, success)
+			vim.schedule(function()
+				if err then
+					vim.notify("Failed to cancel question: " .. tostring(err), vim.log.levels.ERROR)
+					return
+				end
+
+				-- Mark as rejected locally
+				question_state.mark_rejected(request_id)
+				M.update_question_status(request_id, "rejected")
+			end)
+		end)
 		return
 	end
 
-	-- Reject on server
-	local client = require("opencode.client")
-	local current_session = require("opencode.state").get_session()
+	-- Check permissions
+	local perm_id, pstate = M.get_permission_at_cursor()
+	if perm_id then
+		M.handle_permission_reject(perm_id)
+		return
+	end
 
-	client.reject_question(current_session.id, request_id, function(err, success)
-		vim.schedule(function()
-			if err then
-				vim.notify("Failed to cancel question: " .. tostring(err), vim.log.levels.ERROR)
-				return
-			end
+	-- Check edits (Esc = reject all pending files)
+	local eid = M.get_edit_at_cursor()
+	if eid then
+		M.handle_edit_reject_all()
+		return
+	end
 
-			-- Mark as rejected locally
-			question_state.mark_rejected(request_id)
-			M.update_question_status(request_id, "rejected")
-		end)
-	end)
+	-- Not on a question, permission, or edit, use default Esc
+	vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<Esc>", true, false, true), "n", false)
 end
 
 -- Handle next tab (Tab)
@@ -1563,6 +2165,11 @@ function M.handle_question_next_tab()
 	if not request_id then
 		-- Not on a question, pass through
 		vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<Tab>", true, false, true), "n", false)
+		return
+	end
+
+	-- Ignore tab switching in confirming state
+	if qstate.status == "confirming" then
 		return
 	end
 
@@ -1585,6 +2192,11 @@ function M.handle_question_prev_tab()
 		return
 	end
 
+	-- Ignore tab switching in confirming state
+	if qstate.status == "confirming" then
+		return
+	end
+
 	local prev_tab = qstate.current_tab - 1
 	if prev_tab < 1 then
 		prev_tab = #qstate.questions
@@ -1601,6 +2213,11 @@ function M.handle_question_custom_input()
 	if not request_id then
 		-- Not on a question, pass through 'c' key
 		vim.api.nvim_feedkeys("c", "n", false)
+		return
+	end
+
+	-- Ignore custom input in confirming state
+	if qstate.status == "confirming" then
 		return
 	end
 
@@ -1647,6 +2264,11 @@ function M.handle_question_toggle()
 	if not request_id then
 		-- Not on a question, use default Space behavior
 		vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<Space>", true, false, true), "n", false)
+		return
+	end
+
+	-- Ignore toggle in confirming state
+	if qstate.status == "confirming" then
 		return
 	end
 
@@ -1709,14 +2331,16 @@ function M.rerender_question(request_id)
 	vim.api.nvim_buf_set_lines(state.bufnr, pos.start_line, pos.end_line + 1, false, lines)
 
 	-- Apply highlights
+	vim.api.nvim_buf_clear_namespace(state.bufnr, chat_hl_ns, pos.start_line, pos.start_line + #lines)
 	for _, hl in ipairs(highlights) do
-		vim.api.nvim_buf_add_highlight(state.bufnr, -1, hl.hl_group, pos.start_line + hl.line, hl.col_start, hl.col_end)
+		vim.api.nvim_buf_add_highlight(state.bufnr, chat_hl_ns, hl.hl_group, pos.start_line + hl.line, hl.col_start, hl.col_end)
 	end
 
 	vim.bo[state.bufnr].modifiable = false
 
-	-- Update position
+	-- Update position tracking
 	state.questions[request_id].end_line = pos.start_line + #lines - 1
+	state.questions[request_id].status = qstate.status
 end
 
 -- Clear all question tracking (e.g., on session change)
@@ -1763,6 +2387,517 @@ end
 ---@return boolean
 function M.has_pending_questions()
 	return #state.pending_questions > 0
+end
+
+-- ==================== Permission handling ====================
+
+-- Add a permission message to the chat (triggers render for inline display)
+---@param permission_id string
+---@param perm_data table Permission state data (unused, kept for API compatibility)
+---@param status "pending" | "approved" | "rejected"
+function M.add_permission_message(permission_id, perm_data, status)
+	local logger = require("opencode.logger")
+
+	logger.debug("add_permission_message called", {
+		permission_id = permission_id,
+		visible = state.visible,
+	})
+
+	-- If chat buffer isn't ready or visible, queue for later
+	if not state.bufnr or not vim.api.nvim_buf_is_valid(state.bufnr) or not state.visible then
+		table.insert(state.pending_permissions, {
+			permission_id = permission_id,
+			perm_data = perm_data,
+			status = status,
+			timestamp = os.time(),
+		})
+
+		logger.debug("Permission queued (chat not visible)", {
+			permission_id = permission_id,
+			pending_count = #state.pending_permissions,
+		})
+		return
+	end
+
+	local pstate = permission_state.get_permission(permission_id)
+	if not pstate then
+		logger.warn("Permission state not found", { permission_id = permission_id })
+		return
+	end
+
+	-- Focus cursor on the first option when the permission renders
+	if status == "pending" then
+		state.focus_permission = permission_id
+	end
+
+	-- Permissions are now rendered inline after their triggering message
+	-- No need to add to state.messages anymore
+	M.schedule_render()
+end
+
+-- Update permission status and re-render
+---@param permission_id string
+---@param status "approved" | "rejected"
+function M.update_permission_status(permission_id, status)
+	local logger = require("opencode.logger")
+
+	-- Permission state is already updated in permission_state module
+	-- Just trigger a re-render
+	logger.debug("update_permission_status: triggering re-render", {
+		permission_id = permission_id,
+		status = status,
+	})
+
+	M.schedule_render()
+end
+
+-- Get permission at cursor position
+---@return string|nil permission_id
+---@return table|nil perm_state
+function M.get_permission_at_cursor()
+	if not state.winid or not vim.api.nvim_win_is_valid(state.winid) then
+		return nil, nil
+	end
+
+	local cursor = vim.api.nvim_win_get_cursor(state.winid)
+	local cursor_line = cursor[1] - 1 -- 0-based
+
+	for perm_id, pos in pairs(state.permissions) do
+		if cursor_line >= pos.start_line and cursor_line <= pos.end_line and pos.status == "pending" then
+			return perm_id, permission_state.get_permission(perm_id)
+		end
+	end
+
+	return nil, nil
+end
+
+-- Handle permission confirmation (Enter)
+function M.handle_permission_confirm(perm_id, pstate)
+	local selected = pstate.selected_option or 1
+	local reply
+	if selected == 1 then
+		reply = "once"
+	elseif selected == 2 then
+		reply = "always"
+	else
+		reply = "reject"
+	end
+
+	local client = require("opencode.client")
+	client.respond_permission(perm_id, reply, {}, function(err)
+		vim.schedule(function()
+			if err then
+				vim.notify("Failed to respond to permission: " .. vim.inspect(err), vim.log.levels.ERROR)
+				return
+			end
+
+			if reply == "reject" then
+				permission_state.mark_rejected(perm_id)
+				M.update_permission_status(perm_id, "rejected")
+			else
+				permission_state.mark_approved(perm_id, reply)
+				M.update_permission_status(perm_id, "approved")
+			end
+		end)
+	end)
+end
+
+-- Handle permission rejection (Esc)
+function M.handle_permission_reject(perm_id)
+	local client = require("opencode.client")
+	client.respond_permission(perm_id, "reject", {}, function(err)
+		vim.schedule(function()
+			if err then
+				vim.notify("Failed to reject permission: " .. tostring(err), vim.log.levels.ERROR)
+				return
+			end
+
+			permission_state.mark_rejected(perm_id)
+			M.update_permission_status(perm_id, "rejected")
+		end)
+	end)
+end
+
+-- Re-render a permission in place
+---@param perm_id string
+function M.rerender_permission(perm_id)
+	if not state.bufnr or not vim.api.nvim_buf_is_valid(state.bufnr) then
+		return
+	end
+
+	local pos = state.permissions[perm_id]
+	if not pos then
+		return
+	end
+
+	local pstate = permission_state.get_permission(perm_id)
+	if not pstate then
+		return
+	end
+
+	local p_lines, p_highlights = permission_widget.get_lines_for_permission(perm_id, pstate)
+
+	vim.bo[state.bufnr].modifiable = true
+	vim.api.nvim_buf_set_lines(state.bufnr, pos.start_line, pos.end_line + 1, false, p_lines)
+
+	vim.api.nvim_buf_clear_namespace(state.bufnr, chat_hl_ns, pos.start_line, pos.start_line + #p_lines)
+	for _, hl in ipairs(p_highlights) do
+		vim.api.nvim_buf_add_highlight(state.bufnr, chat_hl_ns, hl.hl_group, pos.start_line + hl.line, hl.col_start, hl.col_end)
+	end
+
+	vim.bo[state.bufnr].modifiable = false
+
+	state.permissions[perm_id].end_line = pos.start_line + #p_lines - 1
+end
+
+-- ==================== Edit widget handling ====================
+
+-- Add an edit message to the chat (triggers render for inline display)
+---@param permission_id string
+---@param edit_data table Edit state data
+---@param status "pending" | "sent"
+function M.add_edit_message(permission_id, edit_data, status)
+	local logger = require("opencode.logger")
+
+	logger.debug("add_edit_message called", {
+		permission_id = permission_id,
+		visible = state.visible,
+	})
+
+	-- If chat buffer isn't ready or visible, queue for later
+	if not state.bufnr or not vim.api.nvim_buf_is_valid(state.bufnr) or not state.visible then
+		table.insert(state.pending_edits, {
+			permission_id = permission_id,
+			edit_data = edit_data,
+			status = status,
+			timestamp = os.time(),
+		})
+
+		logger.debug("Edit queued (chat not visible)", {
+			permission_id = permission_id,
+			pending_count = #state.pending_edits,
+		})
+		return
+	end
+
+	local estate = edit_state.get_edit(permission_id)
+	if not estate then
+		logger.warn("Edit state not found", { permission_id = permission_id })
+		return
+	end
+
+	-- Focus cursor on the first file line when the edit renders
+	if status == "pending" then
+		state.focus_edit = permission_id
+	end
+
+	-- Edits are rendered inline after their triggering message
+	M.schedule_render()
+end
+
+-- Get edit at cursor position
+---@return string|nil permission_id
+function M.get_edit_at_cursor()
+	if not state.winid or not vim.api.nvim_win_is_valid(state.winid) then
+		return nil
+	end
+
+	local cursor = vim.api.nvim_win_get_cursor(state.winid)
+	local cursor_line = cursor[1] - 1 -- 0-based
+
+	for eid, pos in pairs(state.edits) do
+		if cursor_line >= pos.start_line and cursor_line <= pos.end_line and pos.status == "pending" then
+			return eid
+		end
+	end
+
+	return nil
+end
+
+-- Handle accept selected file
+function M.handle_edit_accept_file()
+	local eid = M.get_edit_at_cursor()
+	if not eid then
+		return
+	end
+
+	local estate = edit_state.get_edit(eid)
+	if not estate then
+		return
+	end
+
+	local file = estate.files[estate.selected_file]
+	if not file or file.status ~= "pending" then
+		return
+	end
+
+	local ok, err = edit_state.accept_file(eid, estate.selected_file)
+	if not ok then
+		vim.notify("Failed to accept file: " .. (err or "unknown"), vim.log.levels.ERROR)
+		return
+	end
+
+	-- Check if all resolved -> finalize
+	if edit_state.are_all_resolved(eid) then
+		M.finalize_edit(eid)
+	else
+		M.rerender_edit(eid)
+	end
+end
+
+-- Handle reject selected file
+function M.handle_edit_reject_file()
+	local eid = M.get_edit_at_cursor()
+	if not eid then
+		return
+	end
+
+	local estate = edit_state.get_edit(eid)
+	if not estate then
+		return
+	end
+
+	local file = estate.files[estate.selected_file]
+	if not file or file.status ~= "pending" then
+		return
+	end
+
+	local ok, err = edit_state.reject_file(eid, estate.selected_file)
+	if not ok then
+		vim.notify("Failed to reject file: " .. (err or "unknown"), vim.log.levels.ERROR)
+		return
+	end
+
+	-- Check if all resolved -> finalize
+	if edit_state.are_all_resolved(eid) then
+		M.finalize_edit(eid)
+	else
+		M.rerender_edit(eid)
+	end
+end
+
+-- Handle accept all pending files
+function M.handle_edit_accept_all()
+	local eid = M.get_edit_at_cursor()
+	if not eid then
+		return
+	end
+
+	edit_state.accept_all(eid)
+
+	if edit_state.are_all_resolved(eid) then
+		M.finalize_edit(eid)
+	else
+		M.rerender_edit(eid)
+	end
+end
+
+-- Handle reject all pending files
+function M.handle_edit_reject_all()
+	local eid = M.get_edit_at_cursor()
+	if not eid then
+		return
+	end
+
+	edit_state.reject_all(eid)
+
+	if edit_state.are_all_resolved(eid) then
+		M.finalize_edit(eid)
+	else
+		M.rerender_edit(eid)
+	end
+end
+
+-- Handle toggle inline diff (= key, fugitive-style)
+function M.handle_edit_toggle_diff()
+	local eid = M.get_edit_at_cursor()
+	if not eid then
+		return
+	end
+
+	local estate = edit_state.get_edit(eid)
+	if not estate then
+		return
+	end
+
+	edit_state.toggle_inline_diff(eid, estate.selected_file)
+	M.rerender_edit(eid)
+end
+
+-- Handle diff in new tab (dt key)
+function M.handle_edit_diff_tab()
+	local eid = M.get_edit_at_cursor()
+	if not eid then
+		return
+	end
+
+	local estate = edit_state.get_edit(eid)
+	if not estate then
+		return
+	end
+
+	local file = estate.files[estate.selected_file]
+	if not file then
+		return
+	end
+
+	-- Use native_diff to show a single file in a new tab
+	-- Pass nil permission_id so it doesn't auto-reply to server
+	local native_diff = require("opencode.ui.native_diff")
+	native_diff.show(nil, { {
+		filePath = file.filepath,
+		relativePath = file.relative_path,
+		before = file.before,
+		after = file.after,
+		type = file.file_type,
+	} }, {})
+end
+
+-- Handle diff vsplit near chat (dv key)
+function M.handle_edit_diff_split()
+	local eid = M.get_edit_at_cursor()
+	if not eid then
+		return
+	end
+
+	local estate = edit_state.get_edit(eid)
+	if not estate then
+		return
+	end
+
+	local file = estate.files[estate.selected_file]
+	if not file then
+		return
+	end
+
+	M.open_inline_diff_split(file)
+end
+
+-- Open a vertical diff split near chat for a single file
+---@param file table File entry from edit state
+function M.open_inline_diff_split(file)
+	local filepath = file.filepath
+	local after_content = file.after or ""
+
+	-- Open the actual file in a leftabove vsplit
+	vim.cmd("leftabove vsplit " .. vim.fn.fnameescape(filepath))
+	local actual_win = vim.api.nvim_get_current_win()
+	local actual_buf = vim.api.nvim_get_current_buf()
+
+	-- Create a scratch buffer for proposed content
+	vim.cmd("vsplit")
+	local proposed_win = vim.api.nvim_get_current_win()
+	local proposed_buf = vim.api.nvim_create_buf(false, true)
+	vim.api.nvim_win_set_buf(proposed_win, proposed_buf)
+
+	-- Set proposed content
+	local proposed_lines = vim.split(after_content, "\n", { plain = true })
+	vim.api.nvim_buf_set_lines(proposed_buf, 0, -1, false, proposed_lines)
+
+	-- Configure proposed buffer
+	vim.bo[proposed_buf].buftype = "nofile"
+	vim.bo[proposed_buf].bufhidden = "wipe"
+	vim.bo[proposed_buf].swapfile = false
+	vim.bo[proposed_buf].modifiable = false
+
+	-- Set filetype for syntax highlighting
+	local ft = vim.filetype.match({ filename = filepath })
+	if ft and ft ~= "" then
+		vim.bo[proposed_buf].filetype = ft
+	end
+
+	local relative = file.relative_path or vim.fn.fnamemodify(filepath, ":t")
+	pcall(vim.api.nvim_buf_set_name, proposed_buf, "[proposed] " .. relative)
+
+	-- Enable diff on both windows
+	vim.api.nvim_win_call(proposed_win, function()
+		vim.cmd("diffthis")
+	end)
+	vim.api.nvim_win_call(actual_win, function()
+		vim.cmd("diffthis")
+	end)
+
+	-- Focus the actual file window
+	vim.api.nvim_set_current_win(actual_win)
+
+	-- Set q to close both diff windows
+	for _, buf in ipairs({ actual_buf, proposed_buf }) do
+		if vim.api.nvim_buf_is_valid(buf) then
+			vim.keymap.set("n", "q", function()
+				-- Close proposed buffer/window
+				if vim.api.nvim_buf_is_valid(proposed_buf) then
+					vim.api.nvim_buf_delete(proposed_buf, { force = true })
+				end
+				-- Turn off diff in actual window
+				if vim.api.nvim_win_is_valid(actual_win) then
+					vim.api.nvim_win_call(actual_win, function()
+						vim.cmd("diffoff")
+					end)
+				end
+			end, { buffer = buf, noremap = true, silent = true })
+		end
+	end
+end
+
+-- Finalize an edit: send reply to server after all files resolved
+---@param permission_id string
+function M.finalize_edit(permission_id)
+	local estate = edit_state.get_edit(permission_id)
+	if not estate then
+		return
+	end
+
+	-- Always send "once" to unblock the tool
+	-- The tool itself checks each file on disk to determine what was actually applied
+	local client = require("opencode.client")
+	client.respond_permission(permission_id, "once", {}, function(err)
+		vim.schedule(function()
+			if err then
+				vim.notify("Failed to send edit reply: " .. vim.inspect(err), vim.log.levels.ERROR)
+				return
+			end
+
+			edit_state.mark_sent(permission_id)
+			M.schedule_render()
+		end)
+	end)
+end
+
+-- Re-render an edit widget in place
+---@param edit_id string permission_id
+function M.rerender_edit(edit_id)
+	if not state.bufnr or not vim.api.nvim_buf_is_valid(state.bufnr) then
+		return
+	end
+
+	local pos = state.edits[edit_id]
+	if not pos then
+		return
+	end
+
+	local estate = edit_state.get_edit(edit_id)
+	if not estate then
+		return
+	end
+
+	local e_lines, e_highlights
+	if estate.status == "sent" then
+		e_lines, e_highlights = edit_widget.get_resolved_lines(edit_id, estate)
+	else
+		e_lines, e_highlights = edit_widget.get_lines_for_edit(edit_id, estate)
+	end
+
+	vim.bo[state.bufnr].modifiable = true
+	vim.api.nvim_buf_set_lines(state.bufnr, pos.start_line, pos.end_line + 1, false, e_lines)
+
+	vim.api.nvim_buf_clear_namespace(state.bufnr, chat_hl_ns, pos.start_line, pos.start_line + #e_lines)
+	for _, hl in ipairs(e_highlights) do
+		pcall(vim.api.nvim_buf_add_highlight, state.bufnr, chat_hl_ns, hl.hl_group, pos.start_line + hl.line, hl.col_start, hl.col_end)
+	end
+
+	vim.bo[state.bufnr].modifiable = false
+
+	state.edits[edit_id].end_line = pos.start_line + #e_lines - 1
 end
 
 return M

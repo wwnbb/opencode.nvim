@@ -531,6 +531,34 @@ function M.setup_chat_handlers()
 
 				-- Extract file data from metadata
 				local metadata = data.metadata or {}
+
+				-- Check for native diff request from custom tools -> edit widget
+				if metadata.opencode_native_diff == true then
+					local edit_state_mod = require("opencode.edit.state")
+					local current_session = require("opencode.state").get_session()
+					local nd_files = metadata.files or {}
+					local message_id = data.tool and data.tool.messageID or nil
+
+					edit_state_mod.add_edit(permission_id, current_session.id or "", nd_files, {
+						data = data,
+						metadata = metadata,
+						message_id = message_id,
+					})
+
+					-- Stop spinner so user can interact
+					local spinner_ok, perm_spinner = pcall(require, "opencode.ui.spinner")
+					if spinner_ok and perm_spinner.is_active and perm_spinner.is_active() then
+						perm_spinner.stop()
+					end
+
+					-- Add to chat as edit widget
+					local chat_ok, chat = pcall(require, "opencode.ui.chat")
+					if chat_ok and chat.add_edit_message then
+						chat.add_edit_message(permission_id, edit_state_mod.get_edit(permission_id), "pending")
+					end
+					return
+				end
+
 				local files = metadata.files or {}
 
 				logger.debug("Permission request", {
@@ -614,13 +642,71 @@ function M.setup_chat_handlers()
 						vim.log.levels.WARN
 					)
 				end
-			elseif permission_type == "bash" then
-				vim.notify(string.format("OpenCode wants to run command: %s", pattern), vim.log.levels.WARN)
 			else
-				vim.notify(
-					string.format("Permission request: %s for %s", permission_type, pattern),
-					vim.log.levels.INFO
-				)
+				-- Non-edit permission: handle interactively via permission state + chat widget
+				local permission_id = data.id or data.requestID or ("perm_" .. os.time())
+				local metadata = data.metadata or {}
+				local current_session = require("opencode.state").get_session()
+
+				-- Resolve tool_input from sync store if tool info is available
+				local tool_input = {}
+				if data.tool and data.tool.messageID and data.tool.callID then
+					local sync = require("opencode.sync")
+					local parts = sync.get_parts(data.tool.messageID)
+					for _, part in ipairs(parts) do
+						if part.callID == data.tool.callID and part.state and part.state.input then
+							tool_input = part.state.input
+							break
+						end
+					end
+				end
+
+				-- Fallback: extract input fields from metadata and top-level data fields
+				if not next(tool_input) then
+					tool_input = vim.tbl_deep_extend("force", {},
+						metadata.input or {},
+						{
+							command = data.command or metadata.command,
+							description = data.description or metadata.description,
+							path = data.path or metadata.path,
+							file_path = data.file_path or metadata.file_path or data.file or metadata.file,
+							pattern = data.pattern or metadata.pattern,
+							query = data.query or metadata.query,
+							url = data.url or metadata.url,
+							directory = data.directory or metadata.directory,
+							subagent_type = data.subagent_type or metadata.subagent_type,
+						}
+					)
+				end
+
+				-- Store permission state
+				local perm_state_mod = require("opencode.permission.state")
+				local message_id = data.tool and data.tool.messageID or nil
+				perm_state_mod.add_permission(permission_id, current_session.id or "", permission_type, {
+					metadata = metadata,
+					patterns = data.patterns or {},
+					always = data.always or {},
+					tool_input = tool_input,
+					message_id = message_id,
+				})
+
+				-- Stop spinner so user can interact
+				local spinner_ok2, perm_spinner = pcall(require, "opencode.ui.spinner")
+				if spinner_ok2 and perm_spinner.is_active() then
+					perm_spinner.stop()
+					logger.debug("Stopped spinner for permission interaction")
+				end
+
+				-- Add to chat as a special message
+				local chat_ok2, chat2 = pcall(require, "opencode.ui.chat")
+				if chat_ok2 and chat2.add_permission_message then
+					chat2.add_permission_message(permission_id, perm_state_mod.get_permission(permission_id), "pending")
+				end
+
+				logger.info("Permission request added", {
+					permission_id = permission_id,
+					type = permission_type,
+				})
 			end
 		end)
 	end)
@@ -943,6 +1029,21 @@ function M.setup_sync_data_handlers()
 	end)
 end
 
+-- Setup permission event handlers
+function M.setup_permission_handlers()
+	-- Clear permissions and edits on session change
+	M.on("session_change", function()
+		local perm_state_ok, perm_state = pcall(require, "opencode.permission.state")
+		if perm_state_ok then
+			perm_state.clear_all()
+		end
+		local edit_state_ok, edit_state_mod = pcall(require, "opencode.edit.state")
+		if edit_state_ok then
+			edit_state_mod.clear_all()
+		end
+	end)
+end
+
 -- Initialize event system with bridges
 function M.setup()
 	-- Setup bridges to other systems
@@ -969,6 +1070,11 @@ function M.setup()
 	local ok5, err5 = pcall(M.setup_sync_data_handlers)
 	if not ok5 then
 		vim.notify("Failed to setup sync data handlers: " .. tostring(err5), vim.log.levels.WARN)
+	end
+
+	local ok6, err6 = pcall(M.setup_permission_handlers)
+	if not ok6 then
+		vim.notify("Failed to setup permission handlers: " .. tostring(err6), vim.log.levels.WARN)
 	end
 end
 
