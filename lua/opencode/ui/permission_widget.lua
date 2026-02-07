@@ -83,6 +83,8 @@ local function get_permission_description(permission_type, tool_input)
 	elseif permission_type == "external_directory" then
 		local dir = tool_input.directory or tool_input.path or ""
 		return { "← Access external directory " .. dir }
+	elseif permission_type == "diff_review" then
+		return { "Review file changes" }
 	elseif permission_type == "doom_loop" then
 		return { "⟳ Continue after repeated failures" }
 	elseif permission_type == "task" then

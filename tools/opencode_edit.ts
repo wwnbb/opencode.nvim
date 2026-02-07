@@ -660,7 +660,7 @@ export default tool({
 
     // Ask for permission with native diff flag — blocks until user finishes reviewing
     await context.ask({
-      permission: "edit",
+      permission: "diff_review",
       patterns: [relativePath],
       always: ["*"],
       metadata: {
