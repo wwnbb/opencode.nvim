@@ -7,6 +7,7 @@ local icons = {
 	pending = "←",
 	accepted = "✓",
 	rejected = "✗",
+	resolved = "◆",
 	selected = "❯",
 	unselected = " ",
 }
@@ -56,6 +57,8 @@ function M.get_lines_for_edit(permission_id, edit_state)
 			prefix = " " .. icons.accepted
 		elseif file.status == "rejected" then
 			prefix = " " .. icons.rejected
+		elseif file.status == "resolved" then
+			prefix = " " .. icons.resolved
 		elseif is_selected then
 			prefix = " " .. icons.selected
 		else
@@ -102,6 +105,20 @@ function M.get_lines_for_edit(permission_id, edit_state)
 				col_start = prefix_len,
 				col_end = path_end,
 				hl_group = "ErrorMsg",
+			})
+		elseif file.status == "resolved" then
+			-- Blue/cyan for resolved manually
+			table.insert(highlights, {
+				line = line_num,
+				col_start = 0,
+				col_end = prefix_len,
+				hl_group = "Special",
+			})
+			table.insert(highlights, {
+				line = line_num,
+				col_start = prefix_len,
+				col_end = path_end,
+				hl_group = "Special",
 			})
 		elseif is_selected then
 			-- Cursor line highlight for selected
@@ -165,7 +182,7 @@ function M.get_lines_for_edit(permission_id, edit_state)
 	line_num = line_num + 1
 
 	-- Keybinding hint line
-	local hint = "<C-a> accept  <C-x> reject  = inline diff  dv diff split  dt diff tab"
+	local hint = "<C-a> accept  <C-x> reject  <C-m> resolve  = inline diff  dv diff split  dt diff tab"
 	table.insert(lines, hint)
 	table.insert(highlights, {
 		line = line_num,
@@ -175,7 +192,7 @@ function M.get_lines_for_edit(permission_id, edit_state)
 	})
 	line_num = line_num + 1
 
-	local hint2 = "Enter open  A accept all  X reject all  1-9 jump to file"
+	local hint2 = "Enter open  A accept all  X reject all  M resolve all  1-9 jump to file"
 	table.insert(lines, hint2)
 	table.insert(highlights, {
 		line = line_num,
@@ -211,6 +228,8 @@ function M.get_resolved_lines(permission_id, edit_state)
 		resolution_label = "Approved"
 	elseif resolution == "all_rejected" then
 		resolution_label = "Rejected"
+	elseif resolution == "all_resolved" then
+		resolution_label = "Resolved"
 	else
 		resolution_label = "Partial"
 	end
@@ -231,6 +250,8 @@ function M.get_resolved_lines(permission_id, edit_state)
 		hl_group = "String"
 	elseif resolution == "all_rejected" then
 		hl_group = "ErrorMsg"
+	elseif resolution == "all_resolved" then
+		hl_group = "Special"
 	end
 	table.insert(highlights, {
 		line = line_num,
@@ -246,14 +267,18 @@ function M.get_resolved_lines(permission_id, edit_state)
 
 	-- Compact file list with status
 	for _, file in ipairs(edit_state.files) do
-		local status_icon = file.status == "accepted" and icons.accepted or icons.rejected
+		local status_icon = file.status == "accepted" and icons.accepted
+			or file.status == "resolved" and icons.resolved
+			or icons.rejected
 		local path = file.relative_path or file.filepath or ""
 		local stats_str = string.format("+%d -%d", file.stats.added, file.stats.removed)
 		local padding = math.max(1, 50 - 2 - #path - #stats_str)
 		local file_line = string.format(" %s %s%s%s", status_icon, path, string.rep(" ", padding), stats_str)
 		table.insert(lines, file_line)
 
-		local file_hl = file.status == "accepted" and "String" or "ErrorMsg"
+		local file_hl = file.status == "accepted" and "String"
+			or file.status == "resolved" and "Special"
+			or "ErrorMsg"
 		table.insert(highlights, {
 			line = line_num,
 			col_start = 0,

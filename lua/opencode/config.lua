@@ -174,8 +174,8 @@ M.defaults = {
 ---@param opts table|nil User configuration
 ---@return table Merged configuration
 function M.merge(opts)
-  -- TODO: Implement deep merge
-  return vim.tbl_deep_extend("force", M.defaults, opts or {})
+	-- Deep merge user configuration with defaults
+	return vim.tbl_deep_extend("force", M.defaults, opts or {})
 end
 
 return M

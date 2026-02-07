@@ -36,6 +36,7 @@ M.STATUS = {
 	PENDING = "pending",
 	ACCEPTED = "accepted",
 	REJECTED = "rejected",
+	RESOLVED = "resolved",
 	APPLIED = "applied",
 	FAILED = "failed",
 	CONFLICT = "conflict",
@@ -351,11 +352,48 @@ function M.accept_hunk(change_id, hunk_index)
 	return true
 end
 
--- Reject a change
+-- Reject a change (revert file to original content)
 function M.reject(id)
-	local ok = M.update_status(id, M.STATUS.REJECTED)
+	local change = M.get(id)
+	if not change then
+		return false, "Change not found"
+	end
+
+	-- Revert file to original content
+	local ok, err = pcall(function()
+		local file = io.open(change.filepath, "w")
+		if not file then
+			error("Cannot open file for writing: " .. change.filepath)
+		end
+		file:write(change.original_content)
+		file:close()
+	end)
+
+	if not ok then
+		M.update_status(id, M.STATUS.FAILED, { message = err })
+		return false, err
+	end
+
+	-- Reload buffer if file is open
+	vim.schedule(function()
+		local bufnr = vim.fn.bufnr(change.filepath)
+		if bufnr ~= -1 then
+			vim.api.nvim_buf_call(bufnr, function()
+				vim.cmd("checktime")
+			end)
+		end
+	end)
+
+	M.update_status(id, M.STATUS.REJECTED)
+	emit_change_event("Rejected", id, { status = M.STATUS.REJECTED })
+	return true
+end
+
+-- Resolve a change manually (mark as resolved without touching the file)
+function M.resolve_manually(id)
+	local ok = M.update_status(id, M.STATUS.RESOLVED)
 	if ok then
-		emit_change_event("Rejected", id, { status = M.STATUS.REJECTED })
+		emit_change_event("Resolved", id, { status = M.STATUS.RESOLVED })
 	end
 	return ok
 end

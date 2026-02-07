@@ -227,6 +227,16 @@ local function setup_buffer(bufnr)
 		end
 	end, opts)
 
+	-- Resolve selected file manually
+	vim.keymap.set("n", "<C-m>", function()
+		local eid = M.get_edit_at_cursor()
+		if eid then
+			M.handle_edit_resolve_file()
+		else
+			vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<C-m>", true, false, true), "n", false)
+		end
+	end, opts)
+
 	-- Toggle inline diff (fugitive-style =)
 	vim.keymap.set("n", "=", function()
 		local eid = M.get_edit_at_cursor()
@@ -254,6 +264,16 @@ local function setup_buffer(bufnr)
 			M.handle_edit_reject_all()
 		else
 			vim.api.nvim_feedkeys("X", "n", false)
+		end
+	end, opts)
+
+	-- Resolve ALL pending files manually
+	vim.keymap.set("n", "M", function()
+		local eid = M.get_edit_at_cursor()
+		if eid then
+			M.handle_edit_resolve_all()
+		else
+			vim.api.nvim_feedkeys("M", "n", false)
 		end
 	end, opts)
 
@@ -332,11 +352,13 @@ function M.show_help()
 		"Edit Review",
 		"<C-a>      Accept selected file",
 		"<C-x>      Reject selected file",
+		"<C-m>      Resolve file manually",
 		"=          Toggle inline diff",
 		"dt         Open diff in new tab",
 		"dv         Open diff vsplit",
 		"A          Accept all files",
 		"X          Reject all files",
+		"M          Resolve all manually",
 		"<CR>       Open file in editor",
 		"1-9        Jump to file N",
 		"",
@@ -2700,6 +2722,53 @@ function M.handle_edit_reject_all()
 	end
 
 	edit_state.reject_all(eid)
+
+	if edit_state.are_all_resolved(eid) then
+		M.finalize_edit(eid)
+	else
+		M.rerender_edit(eid)
+	end
+end
+
+-- Handle resolve selected file manually
+function M.handle_edit_resolve_file()
+	local eid = M.get_edit_at_cursor()
+	if not eid then
+		return
+	end
+
+	local estate = edit_state.get_edit(eid)
+	if not estate then
+		return
+	end
+
+	local file = estate.files[estate.selected_file]
+	if not file or file.status ~= "pending" then
+		return
+	end
+
+	local ok, err = edit_state.resolve_file(eid, estate.selected_file)
+	if not ok then
+		vim.notify("Failed to resolve file: " .. (err or "unknown"), vim.log.levels.ERROR)
+		return
+	end
+
+	-- Check if all resolved -> finalize
+	if edit_state.are_all_resolved(eid) then
+		M.finalize_edit(eid)
+	else
+		M.rerender_edit(eid)
+	end
+end
+
+-- Handle resolve all pending files manually
+function M.handle_edit_resolve_all()
+	local eid = M.get_edit_at_cursor()
+	if not eid then
+		return
+	end
+
+	edit_state.resolve_all(eid)
 
 	if edit_state.are_all_resolved(eid) then
 		M.finalize_edit(eid)

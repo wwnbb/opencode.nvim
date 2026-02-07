@@ -4,8 +4,8 @@
 local M = {}
 
 -- Treesitter highlight support
-local has_treesitter, ts = pcall(require, "nvim-treesitter.parsers")
-local has_highlighter, highlighter = pcall(require, "vim.treesitter.highlighter")
+local has_treesitter = vim.treesitter ~= nil and vim.treesitter.language ~= nil
+local has_highlighter = pcall(require, "vim.treesitter.highlighter")
 
 -- State
 local state = {
@@ -164,8 +164,9 @@ function M.highlight_code(code, language)
 
 	-- Check if parser is available
 	if has_treesitter then
-		local parser_config = ts.get_parser_configs()
-		if parser_config and parser_config[lang] then
+		-- Check if parser is available using modern API
+		local ok = pcall(vim.treesitter.language.add, lang)
+		if ok then
 			-- Return language for later highlighting
 			return { type = "treesitter", language = lang }
 		end

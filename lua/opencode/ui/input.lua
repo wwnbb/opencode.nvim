@@ -35,6 +35,8 @@ local defaults = {
 	min_height = 3,
 	max_height = 20,
 	padding_top = 1,
+	padding_left = 2,
+	padding_right = 2,
 	prompt = "> ",
 	history_file = vim.fn.stdpath("data") .. "/opencode_input_history.json",
 	keymaps = {
@@ -65,6 +67,8 @@ local function setup_highlights()
 	vim.api.nvim_set_hl(0, "OpenCodeInputDot", { link = "Comment", default = true })
 end
 
+-- Setup buffer
+
 -- Load history from file
 local function load_history()
 	local file = io.open(defaults.history_file, "r")
@@ -79,6 +83,7 @@ local function load_history()
 	end
 end
 
+
 -- Save history to file
 local function save_history()
 	local dir = vim.fn.fnamemodify(defaults.history_file, ":h")
@@ -89,6 +94,7 @@ local function save_history()
 		file:close()
 	end
 end
+
 
 -- Add entry to history
 local function add_to_history(text)
@@ -112,14 +118,22 @@ local function add_to_history(text)
 	save_history()
 end
 
+
 -- Get input text (excluding padding lines)
+-- Get input text (excluding padding lines and left padding)
 local function get_input_text()
 	local lines = vim.api.nvim_buf_get_lines(state.bufnr, 0, -1, false)
 	-- Skip padding lines at the top
 	local padding = state.config and state.config.padding_top or 0
+	local left_padding = state.config and state.config.padding_left or 0
 	local content_lines = {}
 	for i = padding + 1, #lines do
-		table.insert(content_lines, lines[i])
+		local line = lines[i]
+		-- Strip left padding spaces
+		if left_padding > 0 then
+			line = line:sub(left_padding + 1)
+		end
+		table.insert(content_lines, line)
 	end
 	return table.concat(content_lines, "\n")
 end
@@ -151,6 +165,7 @@ local function calculate_content_height()
 	-- Clamp between min and max
 	return math.max(state.config.min_height, math.min(line_count, state.config.max_height))
 end
+
 
 -- Resize the input window based on content
 local function resize_input()
@@ -209,48 +224,59 @@ local function resize_input()
 	})
 end
 
+
 -- Navigate history
 local function history_prev()
 	if history.index > 1 then
 		history.index = history.index - 1
 		local text = history.entries[history.index]
 		local padding = state.config and state.config.padding_top or 0
+		local left_padding = state.config and state.config.padding_left or 0
+		local left_spaces = left_padding > 0 and string.rep(" ", left_padding) or ""
 		-- Preserve padding lines and set content after them
 		local padding_lines = {}
 		for _ = 1, padding do
-			table.insert(padding_lines, "")
+			table.insert(padding_lines, left_spaces)
 		end
 		local content_lines = vim.split(text, "\n")
-		local all_lines = vim.list_extend(padding_lines, content_lines)
-		vim.api.nvim_buf_set_lines(state.bufnr, 0, -1, false, all_lines)
-		vim.api.nvim_win_set_cursor(state.winid, { vim.api.nvim_buf_line_count(state.bufnr), 0 })
+		for _, line in ipairs(content_lines) do
+			table.insert(padding_lines, left_spaces .. line)
+		end
+		vim.api.nvim_buf_set_lines(state.bufnr, 0, -1, false, padding_lines)
+		vim.api.nvim_win_set_cursor(state.winid, { vim.api.nvim_buf_line_count(state.bufnr), left_padding })
 		resize_input()
 	end
 end
 
+
 local function history_next()
 	local padding = state.config and state.config.padding_top or 0
+	local left_padding = state.config and state.config.padding_left or 0
+	local left_spaces = left_padding > 0 and string.rep(" ", left_padding) or ""
 	local padding_lines = {}
 	for _ = 1, padding do
-		table.insert(padding_lines, "")
+		table.insert(padding_lines, left_spaces)
 	end
 
 	if history.index < #history.entries then
 		history.index = history.index + 1
 		local text = history.entries[history.index]
 		local content_lines = vim.split(text, "\n")
-		local all_lines = vim.list_extend(padding_lines, content_lines)
-		vim.api.nvim_buf_set_lines(state.bufnr, 0, -1, false, all_lines)
-		vim.api.nvim_win_set_cursor(state.winid, { vim.api.nvim_buf_line_count(state.bufnr), 0 })
+		for _, line in ipairs(content_lines) do
+			table.insert(padding_lines, left_spaces .. line)
+		end
+		vim.api.nvim_buf_set_lines(state.bufnr, 0, -1, false, padding_lines)
+		vim.api.nvim_win_set_cursor(state.winid, { vim.api.nvim_buf_line_count(state.bufnr), left_padding })
 		resize_input()
 	elseif history.index == #history.entries then
 		history.index = history.index + 1
-		table.insert(padding_lines, "")
+		table.insert(padding_lines, left_spaces)
 		vim.api.nvim_buf_set_lines(state.bufnr, 0, -1, false, padding_lines)
-		vim.api.nvim_win_set_cursor(state.winid, { padding + 1, 0 })
+		vim.api.nvim_win_set_cursor(state.winid, { padding + 1, left_padding })
 		resize_input()
 	end
 end
+
 
 -- Stash current input
 local function stash_input()
@@ -258,30 +284,37 @@ local function stash_input()
 	if text ~= "" then
 		history.stashed = text
 		local padding = state.config and state.config.padding_top or 0
+		local left_padding = state.config and state.config.padding_left or 0
+		local left_spaces = left_padding > 0 and string.rep(" ", left_padding) or ""
 		local padding_lines = {}
 		for _ = 1, padding do
-			table.insert(padding_lines, "")
+			table.insert(padding_lines, left_spaces)
 		end
-		table.insert(padding_lines, "")
+		table.insert(padding_lines, left_spaces)
 		vim.api.nvim_buf_set_lines(state.bufnr, 0, -1, false, padding_lines)
-		vim.api.nvim_win_set_cursor(state.winid, { padding + 1, 0 })
+		vim.api.nvim_win_set_cursor(state.winid, { padding + 1, left_padding })
 		resize_input()
 		vim.notify("Input stashed (restore with <C-r>)", vim.log.levels.INFO)
 	end
 end
 
+
 -- Restore stashed input
 local function restore_input()
 	if history.stashed then
 		local padding = state.config and state.config.padding_top or 0
+		local left_padding = state.config and state.config.padding_left or 0
+		local left_spaces = left_padding > 0 and string.rep(" ", left_padding) or ""
 		local padding_lines = {}
 		for _ = 1, padding do
-			table.insert(padding_lines, "")
+			table.insert(padding_lines, left_spaces)
 		end
 		local content_lines = vim.split(history.stashed, "\n")
-		local all_lines = vim.list_extend(padding_lines, content_lines)
-		vim.api.nvim_buf_set_lines(state.bufnr, 0, -1, false, all_lines)
-		vim.api.nvim_win_set_cursor(state.winid, { vim.api.nvim_buf_line_count(state.bufnr), 0 })
+		for _, line in ipairs(content_lines) do
+			table.insert(padding_lines, left_spaces .. line)
+		end
+		vim.api.nvim_buf_set_lines(state.bufnr, 0, -1, false, padding_lines)
+		vim.api.nvim_win_set_cursor(state.winid, { vim.api.nvim_buf_line_count(state.bufnr), left_padding })
 		history.stashed = nil
 		resize_input()
 	else
@@ -289,7 +322,7 @@ local function restore_input()
 	end
 end
 
--- Setup buffer
+
 local function setup_buffer()
 	local bufnr = vim.api.nvim_create_buf(false, true)
 
@@ -301,6 +334,7 @@ local function setup_buffer()
 	return bufnr
 end
 
+
 -- Titlecase helper (like TUI's Locale.titlecase)
 local function titlecase(str)
 	if not str or str == "" then
@@ -308,6 +342,7 @@ local function titlecase(str)
 	end
 	return str:sub(1, 1):upper() .. str:sub(2)
 end
+
 
 -- Get the info line parts (agent, model, provider, variant) matching TUI layout
 -- Uses the new local.lua module like TUI's local.tsx
@@ -333,6 +368,7 @@ local function get_info_parts()
 
 	return agent_name, model_name, provider_name, variant
 end
+
 
 -- Update the info bar display (call when agent/model/variant changes)
 local function update_info_bar()
@@ -404,6 +440,7 @@ local function update_info_bar()
 		)
 	end
 end
+
 
 -- Setup keymaps
 local function setup_keymaps(bufnr, cfg)
@@ -489,6 +526,7 @@ local function setup_keymaps(bufnr, cfg)
 		end, opts)
 	end
 end
+
 
 -- Show input popup (TUI-style)
 -- Positions itself relative to the current (chat) window
@@ -589,14 +627,17 @@ function M.show(opts)
 	state.visible = true
 
 	-- Add top padding by inserting empty lines at the start
-	if cfg.padding_top > 0 then
+	if cfg.padding_top > 0 or cfg.padding_left > 0 then
 		local padding_lines = {}
+		local left_spaces = cfg.padding_left > 0 and string.rep(" ", cfg.padding_left) or ""
 		for _ = 1, cfg.padding_top do
-			table.insert(padding_lines, "")
+			table.insert(padding_lines, left_spaces)
 		end
-		vim.api.nvim_buf_set_lines(state.bufnr, 0, 0, false, padding_lines)
+		-- Add content line with left padding
+		table.insert(padding_lines, left_spaces)
+		vim.api.nvim_buf_set_lines(state.bufnr, 0, -1, false, padding_lines)
 		-- Move cursor to after the padding
-		vim.api.nvim_win_set_cursor(state.winid, { cfg.padding_top + 1, 0 })
+		vim.api.nvim_win_set_cursor(state.winid, { cfg.padding_top + 1, cfg.padding_left })
 	end
 
 	-- Setup auto-resize on text change
@@ -679,6 +720,7 @@ function M.show(opts)
 	vim.cmd("startinsert!")
 end
 
+
 -- Close input
 function M.close()
 	if not state.visible then
@@ -703,10 +745,12 @@ function M.close()
 	vim.cmd("stopinsert")
 end
 
+
 -- Check if visible
 function M.is_visible()
 	return state.visible
 end
+
 
 -- Clear history
 function M.clear_history()
@@ -716,10 +760,12 @@ function M.clear_history()
 	os.remove(defaults.history_file)
 end
 
+
 -- Get history for inspection
 function M.get_history()
 	return vim.deepcopy(history.entries)
 end
+
 
 -- Setup (called by main module)
 function M.setup(opts)
@@ -731,10 +777,12 @@ function M.setup(opts)
 	end
 end
 
+
 -- Update info bar (can be called from outside when data changes)
 function M.update_info_bar()
 	update_info_bar()
 end
+
 
 -- Cycle variant (convenience function to call from outside)
 function M.cycle_variant()
@@ -745,6 +793,7 @@ function M.cycle_variant()
 	end
 end
 
+
 -- Cycle agent (convenience function to call from outside)
 function M.cycle_agent()
 	local ok, lc = pcall(require, "opencode.local")
@@ -754,6 +803,7 @@ function M.cycle_agent()
 	end
 end
 
+
 -- Cycle model (convenience function to call from outside)
 function M.cycle_model()
 	local ok, lc = pcall(require, "opencode.local")
@@ -762,5 +812,6 @@ function M.cycle_model()
 		update_info_bar()
 	end
 end
+
 
 return M
