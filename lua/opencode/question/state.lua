@@ -12,8 +12,9 @@ local active_questions = {}
 --   session_id = string,
 --   questions = array of question objects,
 --   current_tab = number (current question index),
---   selections = { [tab_index] = { selected_indices = {}, custom_input = "" } },
---   status = "pending" | "answered" | "rejected",
+--   selections = { [tab_index] = { selected_indices = {}, custom_input = "", is_answered = false, ready_to_advance = false } },
+--   status = "pending" | "answered" | "rejected" | "confirming",
+--   last_tab_before_confirm = number (tab to return to on cancel),
 --   timestamp = number,
 -- }
 
@@ -32,11 +33,13 @@ function M.add_question(request_id, session_id, questions_data)
 		timestamp = os.time(),
 	}
 
-	-- Initialize selections for each question
+	-- Initialize selections for each question without pre-selecting any option
 	for i = 1, #questions_data do
 		qstate.selections[i] = {
 			selected_indices = {},
 			custom_input = "",
+			is_answered = false,
+			ready_to_advance = false,
 		}
 	end
 
@@ -84,6 +87,7 @@ function M.update_selection(request_id, tab_index, selected_indices)
 	end
 
 	qstate.selections[tab_index].selected_indices = selected_indices
+	qstate.selections[tab_index].ready_to_advance = false
 	return true
 end
 
@@ -102,6 +106,11 @@ function M.set_custom_input(request_id, tab_index, text)
 	end
 
 	qstate.selections[tab_index].custom_input = text
+	qstate.selections[tab_index].ready_to_advance = false
+	-- Mark as answered if custom input is provided
+	if text and text ~= "" then
+		qstate.selections[tab_index].is_answered = true
+	end
 	return true
 end
 
@@ -119,15 +128,31 @@ function M.select_option(request_id, option_index)
 		return false
 	end
 
+	if qstate.status == "confirming" then
+		-- Confirmation view only has 2 options
+		if option_index < 1 or option_index > 2 then
+			return false
+		end
+		qstate.selections[tab_index].selected_indices = { option_index }
+		return true
+	end
+
 	-- Get question type
 	local question = qstate.questions[tab_index]
 	if not question then
 		return false
 	end
 
+	-- Validate option index is within range
+	if question.options and option_index > #question.options then
+		return false
+	end
+
 	-- For single-select, replace selection
 	-- For multi-select, this would toggle - but we use toggle_multi_select for that
 	qstate.selections[tab_index].selected_indices = { option_index }
+	qstate.selections[tab_index].is_answered = true
+	qstate.selections[tab_index].ready_to_advance = false
 
 	-- Emit update event
 	local events = require("opencode.events")
@@ -169,6 +194,10 @@ function M.toggle_multi_select(request_id, option_index)
 		table.insert(selected, option_index)
 	end
 
+	-- Mark as answered if at least one option is selected
+	qstate.selections[tab_index].is_answered = #selected > 0
+	qstate.selections[tab_index].ready_to_advance = false
+
 	-- Emit update event
 	local events = require("opencode.events")
 	events.emit("question_selection_changed", {
@@ -194,14 +223,20 @@ function M.move_selection(request_id, direction)
 		return false
 	end
 
-	local question = qstate.questions[tab_index]
-	if not question or not question.options then
-		return false
+	local option_count
+	if qstate.status == "confirming" then
+		-- Confirmation view has 2 options: Yes (1) and No (2)
+		option_count = 2
+	else
+		local question = qstate.questions[tab_index]
+		if not question or not question.options then
+			return false
+		end
+		option_count = #question.options
 	end
 
 	local selected = qstate.selections[tab_index].selected_indices
 	local current = selected[1] or 0
-	local option_count = #question.options
 
 	local new_index
 	if direction == "up" then
@@ -211,6 +246,11 @@ function M.move_selection(request_id, direction)
 	end
 
 	qstate.selections[tab_index].selected_indices = { new_index }
+	qstate.selections[tab_index].is_answered = true
+	-- Clear ready_to_advance when selection changes (not in confirming state)
+	if qstate.status ~= "confirming" then
+		qstate.selections[tab_index].ready_to_advance = false
+	end
 
 	-- Emit update event
 	local events = require("opencode.events")
@@ -262,6 +302,142 @@ function M.set_tab(request_id, tab_index)
 		tab_index = tab_index,
 	})
 
+	return true
+end
+
+-- Check if current tab's answer is ready to advance (double-Enter logic)
+---@param request_id string
+---@return boolean
+function M.is_ready_to_advance(request_id)
+	local qstate = active_questions[request_id]
+	if not qstate then
+		return false
+	end
+
+	local tab_index = qstate.current_tab
+	local selection = qstate.selections[tab_index]
+	if not selection then
+		return false
+	end
+
+	return selection.is_answered and selection.ready_to_advance
+end
+
+-- Mark current tab as ready to advance (called on first Enter when already answered)
+---@param request_id string
+function M.mark_ready_to_advance(request_id)
+	local qstate = active_questions[request_id]
+	if not qstate then
+		return false
+	end
+
+	local tab_index = qstate.current_tab
+	local selection = qstate.selections[tab_index]
+	if not selection then
+		return false
+	end
+
+	selection.ready_to_advance = true
+	return true
+end
+
+-- Check if all questions in a block have been answered
+---@param request_id string
+---@return boolean all_answered
+---@return number[] unanswered_indices Array of unanswered question indices
+function M.are_all_answered(request_id)
+	local qstate = active_questions[request_id]
+	if not qstate then
+		return false, {}
+	end
+
+	local unanswered = {}
+	for i = 1, #qstate.questions do
+		local selection = qstate.selections[i]
+		if not selection or not selection.is_answered then
+			table.insert(unanswered, i)
+		end
+	end
+
+	return #unanswered == 0, unanswered
+end
+
+-- Get count of answered questions
+---@param request_id string
+---@return number answered_count
+---@return number total_count
+function M.get_answered_count(request_id)
+	local qstate = active_questions[request_id]
+	if not qstate then
+		return 0, 0
+	end
+
+	local answered = 0
+	for i = 1, #qstate.questions do
+		local selection = qstate.selections[i]
+		if selection and selection.is_answered then
+			answered = answered + 1
+		end
+	end
+
+	return answered, #qstate.questions
+end
+
+-- Set question to confirming state (awaiting final submission)
+---@param request_id string
+function M.set_confirming(request_id)
+	local qstate = active_questions[request_id]
+	if not qstate then
+		return false
+	end
+	
+	-- Remember which tab we were on so cancel returns here
+	qstate.last_tab_before_confirm = qstate.current_tab
+	qstate.status = "confirming"
+	
+	-- Initialize a temporary selection for the confirmation options (1 = Yes, 2 = No)
+	-- We'll use the current_tab as a temporary holder
+	local temp_tab_idx = #qstate.questions + 1
+	qstate.selections[temp_tab_idx] = {
+		selected_indices = { 1 }, -- Default to "Yes"
+		custom_input = "",
+		is_answered = true,
+	}
+	qstate.current_tab = temp_tab_idx
+	
+	-- Emit event
+	local events = require("opencode.events")
+	events.emit("question_confirming", {
+		request_id = request_id,
+	})
+	
+	return true
+end
+
+-- Cancel confirmation and return to pending state
+---@param request_id string
+function M.cancel_confirmation(request_id)
+	local qstate = active_questions[request_id]
+	if not qstate then
+		return false
+	end
+	
+	qstate.status = "pending"
+	
+	-- Remove temporary confirmation selection
+	local temp_tab_idx = #qstate.questions + 1
+	qstate.selections[temp_tab_idx] = nil
+	
+	-- Return to the tab we were on before confirming (not Q1)
+	local return_tab = qstate.last_tab_before_confirm or #qstate.questions
+	qstate.current_tab = return_tab
+	qstate.last_tab_before_confirm = nil
+	
+	-- Clear ready_to_advance on that tab so it takes two Enters again
+	if qstate.selections[return_tab] then
+		qstate.selections[return_tab].ready_to_advance = false
+	end
+	
 	return true
 end
 
