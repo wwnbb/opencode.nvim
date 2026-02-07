@@ -14,7 +14,7 @@ local active_edits = {}
 --   files = [{
 --     index, filepath, relative_path,
 --     before, after, change_id,
---     status = "pending"|"accepted"|"rejected",
+--     status = "pending"|"accepted"|"rejected"|"resolved",
 --     stats = {added, removed},
 --     diff_lines = {...},  -- cached unified diff lines for = toggle
 --   }],
@@ -294,6 +294,52 @@ function M.reject_all(permission_id)
 	return true
 end
 
+--- Resolve a file manually (mark as resolved without touching disk)
+---@param permission_id string
+---@param file_index number
+---@return boolean, string|nil
+function M.resolve_file(permission_id, file_index)
+	local estate = active_edits[permission_id]
+	if not estate then
+		return false, "Edit not found"
+	end
+
+	local file = estate.files[file_index]
+	if not file then
+		return false, "File not found"
+	end
+
+	if file.status ~= "pending" then
+		return false, "File already resolved"
+	end
+
+	local changes = require("opencode.artifact.changes")
+	changes.resolve_manually(file.change_id)
+
+	file.status = "resolved"
+	return true
+end
+
+--- Resolve all pending files manually
+---@param permission_id string
+---@return boolean
+function M.resolve_all(permission_id)
+	local estate = active_edits[permission_id]
+	if not estate then
+		return false
+	end
+
+	for _, file in ipairs(estate.files) do
+		if file.status == "pending" then
+			local changes = require("opencode.artifact.changes")
+			changes.resolve_manually(file.change_id)
+			file.status = "resolved"
+		end
+	end
+
+	return true
+end
+
 --- Toggle inline diff visibility for a file
 ---@param permission_id string
 ---@param file_index number
@@ -337,7 +383,7 @@ end
 
 --- Get the resolution summary
 ---@param permission_id string
----@return string "all_accepted"|"all_rejected"|"mixed"|"pending"
+---@return string "all_accepted"|"all_rejected"|"all_resolved"|"mixed"|"pending"
 function M.get_resolution(permission_id)
 	local estate = active_edits[permission_id]
 	if not estate then
@@ -346,11 +392,14 @@ function M.get_resolution(permission_id)
 
 	local accepted = 0
 	local rejected = 0
+	local resolved = 0
 	for _, file in ipairs(estate.files) do
 		if file.status == "accepted" then
 			accepted = accepted + 1
 		elseif file.status == "rejected" then
 			rejected = rejected + 1
+		elseif file.status == "resolved" then
+			resolved = resolved + 1
 		else
 			return "pending"
 		end
@@ -360,6 +409,8 @@ function M.get_resolution(permission_id)
 		return "all_accepted"
 	elseif rejected == #estate.files then
 		return "all_rejected"
+	elseif resolved == #estate.files then
+		return "all_resolved"
 	else
 		return "mixed"
 	end

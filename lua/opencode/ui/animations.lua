@@ -84,20 +84,6 @@ M.animations = {
 	},
 
 	{
-		name = "Wave",
-		frames = {
-			"^         ^",
-			"^       ^",
-			"^    ^",
-			"^     ^",
-			"^      ^",
-			"^   ^",
-			"^       ^",
-			"^         ^",
-		}, -- 8 frames
-	},
-
-	{
 		name = "Flame Flicker",
 		frames = { ".", "'", "*", "'", ".", ",", "`", "." }, -- 8 frames
 	},
@@ -132,23 +118,6 @@ M.animations = {
 			"<- -- >",
 			"<--->",
 			">--<",
-		}, -- 8 frames
-	},
-
-	{
-		name = "Thinking",
-		frames = {
-			"Thinkng",
-			"Singing, sinking, dying, diving",
-			"Loving, leaving, pulling, pushing",
-			"Falling, feeling, swimming, swinging",
-			"Singing, sinking, dying, diving",
-			"Falling, feeling, swimming, swinging",
-			"Loving, leaving, pulling, pushing",
-			"Falling, feeling, swinging, swimming",
-			"Singing, sinking, dying, diving",
-			"Falling, feeling, swinging, swimming",
-			"Loving, leaving, pulling, pushing",
 		}, -- 8 frames
 	},
 }
