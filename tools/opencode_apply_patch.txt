@@ -31,3 +31,6 @@ It is important to remember:
 
 - You must include a header with your intended action (Add/Delete/Update)
 - You must prefix new lines with `+` even when creating a new file
+ - When updating files, include the original lines you are changing exactly as they appear (preserve whitespace) so the verifier can match context.
+ - Hunk headers should use unified-diff style with line ranges, for example: `@@ -12,3 +12,3 @@` followed by the exact original and replacement lines. If you prefer a single-line replacement, you may provide just the original line prefixed with `-` and the new line prefixed with `+` without a numeric header, but the original text must match exactly.
+ - If a hunk fails because context didn't match, run `Read` on the file and copy surrounding lines to ensure exact match before retrying.
