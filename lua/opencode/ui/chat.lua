@@ -2916,10 +2916,11 @@ function M.finalize_edit(permission_id)
 		return
 	end
 
-	-- Always send "once" to unblock the tool
-	-- The tool itself checks each file on disk to determine what was actually applied
+	-- Send "reject" if all files were rejected, otherwise "once"
+	local resolution = edit_state.get_resolution(permission_id)
+	local reply = (resolution == "all_rejected") and "reject" or "once"
 	local client = require("opencode.client")
-	client.respond_permission(permission_id, "once", {}, function(err)
+	client.respond_permission(permission_id, reply, {}, function(err)
 		vim.schedule(function()
 			if err then
 				vim.notify("Failed to send edit reply: " .. vim.inspect(err), vim.log.levels.ERROR)

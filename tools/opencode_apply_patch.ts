@@ -719,7 +719,7 @@ export default tool({
     // Ask for permission with native diff flag — blocks until user finishes reviewing all files
     const relativePaths = fileChanges.map((c) => c.relativePath)
     await context.ask({
-      permission: "edit",
+      permission: "diff_review",
       patterns: relativePaths,
       always: ["*"],
       metadata: {

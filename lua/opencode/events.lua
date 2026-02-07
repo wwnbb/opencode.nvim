@@ -435,6 +435,11 @@ function M.setup_chat_handlers()
 				data = data,
 			})
 
+			-- Custom tools are handled via the permission system with "diff_review" type
+			if tool_name == "opencode_edit" or tool_name == "opencode_apply_patch" then
+				return
+			end
+
 			-- Check if this is an edit tool that needs approval
 			local is_edit_tool = tool_name == "edit_file"
 				or tool_name == "Edit"
@@ -525,16 +530,57 @@ function M.setup_chat_handlers()
 			local permission_type = data.permission or data.type
 			local pattern = data.pattern or data.path or data.file or "unknown"
 
-			-- For edit permissions, extract file data and show diff viewer
-			if permission_type == "edit" then
+			-- Route diff_review permissions to the edit widget
+			if permission_type == "diff_review" then
+				local permission_id = data.id or data.requestID or ("perm_" .. os.time())
+				local edit_state_mod = require("opencode.edit.state")
+
+				-- Skip if already handled (dedup for duplicate SSE events)
+				if edit_state_mod.get_edit(permission_id) then
+					logger.debug("diff_review already handled, skipping", { id = permission_id })
+					return
+				end
+
+				local metadata = data.metadata or {}
+				local current_session = require("opencode.state").get_session()
+				local nd_files = metadata.files or {}
+				local message_id = data.tool and data.tool.messageID or nil
+
+				edit_state_mod.add_edit(permission_id, current_session.id or "", nd_files, {
+					data = data,
+					metadata = metadata,
+					message_id = message_id,
+				})
+
+				-- Stop spinner so user can interact
+				local spinner_ok, perm_spinner = pcall(require, "opencode.ui.spinner")
+				if spinner_ok and perm_spinner.is_active and perm_spinner.is_active() then
+					perm_spinner.stop()
+				end
+
+				-- Add to chat as edit widget
+				local chat_ok, chat = pcall(require, "opencode.ui.chat")
+				if chat_ok and chat.add_edit_message then
+					chat.add_edit_message(permission_id, edit_state_mod.get_edit(permission_id), "pending")
+				end
+				return
+
+			elseif permission_type == "edit" then
 				local permission_id = data.id or data.requestID or ("perm_" .. os.time())
 
 				-- Extract file data from metadata
 				local metadata = data.metadata or {}
 
-				-- Check for native diff request from custom tools -> edit widget
+				-- Check for native diff request from custom tools -> edit widget (legacy)
 				if metadata.opencode_native_diff == true then
 					local edit_state_mod = require("opencode.edit.state")
+
+					-- Skip if already handled (dedup: diff_review path may have created this edit)
+					if edit_state_mod.get_edit(permission_id) then
+						logger.debug("edit (native_diff) already handled, skipping", { id = permission_id })
+						return
+					end
+
 					local current_session = require("opencode.state").get_session()
 					local nd_files = metadata.files or {}
 					local message_id = data.tool and data.tool.messageID or nil
