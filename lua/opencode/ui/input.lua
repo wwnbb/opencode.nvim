@@ -297,7 +297,7 @@ local function setup_buffer()
 	vim.bo[bufnr].bufhidden = "wipe"
 	vim.bo[bufnr].swapfile = false
 	vim.bo[bufnr].filetype = "opencode_input"
-
+	vim.api.nvim_buf_set_var(bufnr, "completion", false)
 	return bufnr
 end
 
@@ -368,11 +368,25 @@ local function update_info_bar()
 	vim.api.nvim_buf_add_highlight(info_bufnr, NS_INFO, "OpenCodeInputAgent", 0, col_offset, col_offset + #agent_part)
 	col_offset = col_offset + #agent_part
 	if model_part ~= "" then
-		vim.api.nvim_buf_add_highlight(info_bufnr, NS_INFO, "OpenCodeInputModel", 0, col_offset, col_offset + #model_part)
+		vim.api.nvim_buf_add_highlight(
+			info_bufnr,
+			NS_INFO,
+			"OpenCodeInputModel",
+			0,
+			col_offset,
+			col_offset + #model_part
+		)
 		col_offset = col_offset + #model_part
 	end
 	if provider_part ~= "" then
-		vim.api.nvim_buf_add_highlight(info_bufnr, NS_INFO, "OpenCodeInputProvider", 0, col_offset, col_offset + #provider_part)
+		vim.api.nvim_buf_add_highlight(
+			info_bufnr,
+			NS_INFO,
+			"OpenCodeInputProvider",
+			0,
+			col_offset,
+			col_offset + #provider_part
+		)
 		col_offset = col_offset + #provider_part
 	end
 	if dot_part ~= "" then
@@ -380,7 +394,14 @@ local function update_info_bar()
 		col_offset = col_offset + #dot_part
 	end
 	if variant_part ~= "" then
-		vim.api.nvim_buf_add_highlight(info_bufnr, NS_INFO, "OpenCodeInputVariant", 0, col_offset, col_offset + #variant_part)
+		vim.api.nvim_buf_add_highlight(
+			info_bufnr,
+			NS_INFO,
+			"OpenCodeInputVariant",
+			0,
+			col_offset,
+			col_offset + #variant_part
+		)
 	end
 end
 
@@ -610,11 +631,25 @@ function M.show(opts)
 	vim.api.nvim_buf_add_highlight(info_bufnr, NS_INFO, "OpenCodeInputAgent", 0, col_offset, col_offset + #agent_part)
 	col_offset = col_offset + #agent_part
 	if model_part ~= "" then
-		vim.api.nvim_buf_add_highlight(info_bufnr, NS_INFO, "OpenCodeInputModel", 0, col_offset, col_offset + #model_part)
+		vim.api.nvim_buf_add_highlight(
+			info_bufnr,
+			NS_INFO,
+			"OpenCodeInputModel",
+			0,
+			col_offset,
+			col_offset + #model_part
+		)
 		col_offset = col_offset + #model_part
 	end
 	if provider_part ~= "" then
-		vim.api.nvim_buf_add_highlight(info_bufnr, NS_INFO, "OpenCodeInputProvider", 0, col_offset, col_offset + #provider_part)
+		vim.api.nvim_buf_add_highlight(
+			info_bufnr,
+			NS_INFO,
+			"OpenCodeInputProvider",
+			0,
+			col_offset,
+			col_offset + #provider_part
+		)
 		col_offset = col_offset + #provider_part
 	end
 	if dot_part ~= "" then
@@ -622,7 +657,14 @@ function M.show(opts)
 		col_offset = col_offset + #dot_part
 	end
 	if variant_part ~= "" then
-		vim.api.nvim_buf_add_highlight(info_bufnr, NS_INFO, "OpenCodeInputVariant", 0, col_offset, col_offset + #variant_part)
+		vim.api.nvim_buf_add_highlight(
+			info_bufnr,
+			NS_INFO,
+			"OpenCodeInputVariant",
+			0,
+			col_offset,
+			col_offset + #variant_part
+		)
 	end
 
 	-- Setup keymaps
