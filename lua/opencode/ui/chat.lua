@@ -176,10 +176,6 @@ local function setup_buffer(bufnr)
 		M.handle_question_confirm()
 	end, opts)
 
-	vim.keymap.set("n", "<Esc>", function()
-		M.handle_question_cancel()
-	end, opts)
-
 	vim.keymap.set("n", "<Tab>", function()
 		M.handle_question_next_tab()
 	end, opts)
@@ -406,15 +402,15 @@ function M.show_help()
 	}
 	for i, line in ipairs(lines) do
 		if section_headers[line] then
-			vim.api.nvim_buf_add_highlight(popup.bufnr, ns, "OpenCodeInputBorder", i - 1, 0, #line)
+			vim.api.nvim_buf_set_extmark(popup.bufnr, ns, i - 1, 0, { end_col = #line, hl_group = "OpenCodeInputBorder" })
 		elseif line == "Press any key to close" then
-			vim.api.nvim_buf_add_highlight(popup.bufnr, ns, "OpenCodeInputInfo", i - 1, 0, #line)
+			vim.api.nvim_buf_set_extmark(popup.bufnr, ns, i - 1, 0, { end_col = #line, hl_group = "OpenCodeInputInfo" })
 		elseif line ~= "" then
 			-- Highlight the key portion (up to first space after key)
 			local key_end = line:find("  ")
 			if key_end then
-				vim.api.nvim_buf_add_highlight(popup.bufnr, ns, "Normal", i - 1, 0, key_end - 1)
-				vim.api.nvim_buf_add_highlight(popup.bufnr, ns, "OpenCodeInputInfo", i - 1, key_end - 1, #line)
+				vim.api.nvim_buf_set_extmark(popup.bufnr, ns, i - 1, 0, { end_col = key_end - 1, hl_group = "Normal" })
+				vim.api.nvim_buf_set_extmark(popup.bufnr, ns, i - 1, key_end - 1, { end_col = #line, hl_group = "OpenCodeInputInfo" })
 			end
 		end
 	end
@@ -880,7 +876,12 @@ function M.render_message(message)
 
 	-- Apply highlights
 	for _, hl in ipairs(highlights) do
-		vim.api.nvim_buf_add_highlight(state.bufnr, chat_hl_ns, hl.hl_group, line_count + hl.line, hl.col_start, hl.col_end)
+		local end_col = hl.col_end
+		if end_col == -1 then
+			local l = vim.api.nvim_buf_get_lines(state.bufnr, line_count + hl.line, line_count + hl.line + 1, false)[1]
+			end_col = l and #l or 0
+		end
+		vim.api.nvim_buf_set_extmark(state.bufnr, chat_hl_ns, line_count + hl.line, hl.col_start, { end_col = end_col, hl_group = hl.hl_group })
 	end
 
 	vim.bo[state.bufnr].modifiable = false
@@ -937,6 +938,42 @@ end
 -- Get all messages
 function M.get_messages()
 	return vim.deepcopy(state.messages)
+end
+
+-- Load messages from server into chat (used when switching sessions)
+-- messages: array of server message objects { id, role, parts, time, ... }
+function M.load_messages(messages)
+	if not messages or #messages == 0 then
+		return
+	end
+	
+	local sync = require("opencode.sync")
+	
+	for _, msg in ipairs(messages) do
+		-- Convert server message format to local format
+		local role = msg.role or "assistant"
+		local content = ""
+		
+		-- Get text content from parts
+		if msg.parts then
+			local texts = {}
+			for _, part in ipairs(msg.parts) do
+				if part.type == "text" and part.text then
+					table.insert(texts, part.text)
+				end
+			end
+			content = table.concat(texts, "\n")
+		else
+			-- Fallback: try to get from sync store
+			content = sync.get_message_text(msg.id)
+		end
+		
+		-- Add message to local state
+		M.add_message(role, content, {
+			id = msg.id,
+			timestamp = msg.time and msg.time.created or os.time(),
+		})
+	end
 end
 
 -- Tool icons matching TUI style
@@ -1644,7 +1681,7 @@ function M.update_spinner_only()
 
 	-- Update spinner highlight
 	vim.api.nvim_buf_clear_namespace(state.bufnr, chat_hl_ns, spinner_line, spinner_line + 1)
-	vim.api.nvim_buf_add_highlight(state.bufnr, chat_hl_ns, "Comment", spinner_line, 0, #loading_text)
+	vim.api.nvim_buf_set_extmark(state.bufnr, chat_hl_ns, spinner_line, 0, { end_col = #loading_text, hl_group = "Comment" })
 end
 
 -- Throttled render (like TUI's throttled updates)
@@ -1732,7 +1769,12 @@ function M.do_render()
 	vim.api.nvim_buf_clear_namespace(state.bufnr, chat_hl_ns, first_diff, -1)
 	for _, hl in ipairs(highlights) do
 		if hl.line >= first_diff then
-			pcall(vim.api.nvim_buf_add_highlight, state.bufnr, chat_hl_ns, hl.hl_group, hl.line, hl.col_start, hl.col_end)
+			local end_col = hl.col_end
+			if end_col == -1 then
+				local l = vim.api.nvim_buf_get_lines(state.bufnr, hl.line, hl.line + 1, false)[1]
+				end_col = l and #l or 0
+			end
+			pcall(vim.api.nvim_buf_set_extmark, state.bufnr, chat_hl_ns, hl.line, hl.col_start, { end_col = end_col, hl_group = hl.hl_group })
 		end
 	end
 
@@ -2355,7 +2397,12 @@ function M.rerender_question(request_id)
 	-- Apply highlights
 	vim.api.nvim_buf_clear_namespace(state.bufnr, chat_hl_ns, pos.start_line, pos.start_line + #lines)
 	for _, hl in ipairs(highlights) do
-		vim.api.nvim_buf_add_highlight(state.bufnr, chat_hl_ns, hl.hl_group, pos.start_line + hl.line, hl.col_start, hl.col_end)
+		local end_col = hl.col_end
+		if end_col == -1 then
+			local l = vim.api.nvim_buf_get_lines(state.bufnr, pos.start_line + hl.line, pos.start_line + hl.line + 1, false)[1]
+			end_col = l and #l or 0
+		end
+		vim.api.nvim_buf_set_extmark(state.bufnr, chat_hl_ns, pos.start_line + hl.line, hl.col_start, { end_col = end_col, hl_group = hl.hl_group })
 	end
 
 	vim.bo[state.bufnr].modifiable = false
@@ -2564,7 +2611,12 @@ function M.rerender_permission(perm_id)
 
 	vim.api.nvim_buf_clear_namespace(state.bufnr, chat_hl_ns, pos.start_line, pos.start_line + #p_lines)
 	for _, hl in ipairs(p_highlights) do
-		vim.api.nvim_buf_add_highlight(state.bufnr, chat_hl_ns, hl.hl_group, pos.start_line + hl.line, hl.col_start, hl.col_end)
+		local end_col = hl.col_end
+		if end_col == -1 then
+			local l = vim.api.nvim_buf_get_lines(state.bufnr, pos.start_line + hl.line, pos.start_line + hl.line + 1, false)[1]
+			end_col = l and #l or 0
+		end
+		vim.api.nvim_buf_set_extmark(state.bufnr, chat_hl_ns, pos.start_line + hl.line, hl.col_start, { end_col = end_col, hl_group = hl.hl_group })
 	end
 
 	vim.bo[state.bufnr].modifiable = false
@@ -2962,7 +3014,12 @@ function M.rerender_edit(edit_id)
 
 	vim.api.nvim_buf_clear_namespace(state.bufnr, chat_hl_ns, pos.start_line, pos.start_line + #e_lines)
 	for _, hl in ipairs(e_highlights) do
-		pcall(vim.api.nvim_buf_add_highlight, state.bufnr, chat_hl_ns, hl.hl_group, pos.start_line + hl.line, hl.col_start, hl.col_end)
+		local end_col = hl.col_end
+		if end_col == -1 then
+			local l = vim.api.nvim_buf_get_lines(state.bufnr, pos.start_line + hl.line, pos.start_line + hl.line + 1, false)[1]
+			end_col = l and #l or 0
+		end
+		pcall(vim.api.nvim_buf_set_extmark, state.bufnr, chat_hl_ns, pos.start_line + hl.line, hl.col_start, { end_col = end_col, hl_group = hl.hl_group })
 	end
 
 	vim.bo[state.bufnr].modifiable = false

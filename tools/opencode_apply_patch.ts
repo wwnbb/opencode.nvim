@@ -253,6 +253,7 @@ interface UpdateFileChunk {
   old_lines: string[]
   new_lines: string[]
   change_context?: string
+  start_line?: number // 0-indexed line hint from unified-diff style headers
   is_end_of_file?: boolean
 }
 
@@ -299,7 +300,18 @@ function parseUpdateFileChunks(lines: string[], startIdx: number): { chunks: Upd
 
   while (i < lines.length && !lines[i].startsWith("***")) {
     if (lines[i].startsWith("@@")) {
-      const contextLine = lines[i].substring(2).trim()
+      let contextLine = lines[i].substring(2).trim()
+      let startLine: number | undefined
+
+      // Detect unified-diff style hunk headers: @@ -N,M +N,M @@ [optional context]
+      // The LLM sometimes generates these despite instructions not to.
+      // Extract the start line as a positioning hint and use any trailing text as context.
+      const unifiedMatch = contextLine.match(/^-(\d+)(?:,\d+)?\s+\+\d+(?:,\d+)?\s+@@(.*)$/)
+      if (unifiedMatch) {
+        startLine = parseInt(unifiedMatch[1], 10) - 1 // Convert to 0-indexed
+        contextLine = unifiedMatch[2].trim()
+      }
+
       i++
 
       const oldLines: string[] = []
@@ -332,6 +344,7 @@ function parseUpdateFileChunks(lines: string[], startIdx: number): { chunks: Upd
         old_lines: oldLines,
         new_lines: newLines,
         change_context: contextLine || undefined,
+        start_line: startLine,
         is_end_of_file: isEndOfFile || undefined,
       })
     } else {
@@ -490,6 +503,11 @@ function computeReplacements(
   let lineIndex = 0
 
   for (const chunk of chunks) {
+    // If we have a start_line hint from a unified-diff style header, use it to advance lineIndex
+    if (chunk.start_line !== undefined && chunk.start_line >= lineIndex) {
+      lineIndex = chunk.start_line
+    }
+
     if (chunk.change_context) {
       const contextIdx = seekSequence(originalLines, [chunk.change_context], lineIndex)
       if (contextIdx === -1) {

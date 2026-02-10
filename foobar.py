@@ -1,17 +1,32 @@
 """Simple foobar utility.
 
-Provides a `foobar` function that wraps a value with 'foo' and 'bar'.
+Provides `foobar` and `foobaz` functions that wrap values with 'foo' and
+'bar'/'baz', separating parts with colons.
 
 Examples:
 >>> foobar('x')
-'fooxbar'
+'foo:x:bar'
 >>> foobar()
-'foobar'
+'foo::bar'
+>>> foobaz('x')
+'foo:x:baz'
 """
 
 def foobar(value: str = "") -> str:
-    """Return a string wrapping `value` with 'foo' and 'bar'."""
-    return f"foo{value}bar"
+	"""Return a string wrapping `value` with 'foo' and 'bar', using colons.
+
+	This makes the separators explicit for clearer output in logs/tests.
+	Edited by opencode edit tool!
+	"""
+	return f"foo:{value}:bar"
+
+
+def foobaz(value: str = "") -> str:
+    """Return a string wrapping `value` with 'foo' and 'baz', using colons.
+
+    Similar to foobar but uses 'baz' suffix for variety.
+    """
+    return f"foo:{value}:baz"
 
 
 if __name__ == "__main__":
@@ -19,3 +34,7 @@ if __name__ == "__main__":
 
     arg = sys.argv[1] if len(sys.argv) > 1 else ""
     print(foobar(arg))
+
+
+
+

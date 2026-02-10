@@ -3,6 +3,8 @@
 
 local M = {}
 
+local hl_ns = vim.api.nvim_create_namespace("opencode_thinking")
+
 -- State storage for reasoning content per message
 local reasoning_store = {}
 
@@ -148,12 +150,14 @@ function M.apply_highlights(bufnr, start_line, line_count)
 	local content_hl = config.highlight or "Comment"
 
 	-- Header line gets title highlight
-	vim.api.nvim_buf_add_highlight(bufnr, -1, header_hl, start_line, 0, -1)
+	local header_text = vim.api.nvim_buf_get_lines(bufnr, start_line, start_line + 1, false)[1] or ""
+	vim.api.nvim_buf_set_extmark(bufnr, hl_ns, start_line, 0, { end_col = #header_text, hl_group = header_hl })
 
 	-- Content lines get comment highlight
 	for i = 1, line_count - 3 do -- Skip header, separator, and bottom separator
 		local line_num = start_line + i + 1 -- +1 to skip header and first separator
-		vim.api.nvim_buf_add_highlight(bufnr, -1, content_hl, line_num, 0, -1)
+		local line_text = vim.api.nvim_buf_get_lines(bufnr, line_num, line_num + 1, false)[1] or ""
+		vim.api.nvim_buf_set_extmark(bufnr, hl_ns, line_num, 0, { end_col = #line_text, hl_group = content_hl })
 	end
 end
 

@@ -8,4 +8,5 @@ Usage:
 - The edit will FAIL if `oldString` is not found in the file with an error "oldString not found in content".
 - The edit will FAIL if `oldString` is found multiple times in the file with an error "oldString found multiple times and requires more code context to uniquely identify the intended match". Either provide a larger string with more surrounding context to make it unique or use `replaceAll` to change every instance of `oldString`.
 - Use `replaceAll` for replacing and renaming strings across the file. This parameter is useful if you want to rename a variable for instance.
-- User can change the code during the diff review, add or romeve something, try to understand what he changed
+- This tool applies a single replacement per call. When you need to make multiple changes, prefer using `opencode_apply_patch` instead — it bundles all changes into a single patch so the user reviews them in one step.
+- User can change the code during the diff review, add or remove something, try to understand what he changed

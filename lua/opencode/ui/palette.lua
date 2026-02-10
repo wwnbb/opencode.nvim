@@ -6,6 +6,7 @@ local M = {}
 local Popup = require("nui.popup")
 local NuiText = require("nui.text")
 local event = require("nui.utils.autocmd").event
+local hl_ns = vim.api.nvim_create_namespace("opencode_palette")
 
 -- Configuration
 local config = {
@@ -398,7 +399,11 @@ local function render_list()
 	-- Apply highlights
 	for _, hl in ipairs(highlights_to_apply) do
 		local line_idx, hl_group, col_start, col_end = hl[1], hl[2], hl[3], hl[4]
-		vim.api.nvim_buf_add_highlight(buf, -1, hl_group, line_idx - 1, col_start, col_end)
+		if col_end == -1 then
+			local l = vim.api.nvim_buf_get_lines(buf, line_idx - 1, line_idx, false)[1]
+			col_end = l and #l or 0
+		end
+		vim.api.nvim_buf_set_extmark(buf, hl_ns, line_idx - 1, col_start, { end_col = col_end, hl_group = hl_group })
 	end
 
 	vim.bo[buf].modifiable = false
@@ -892,10 +897,14 @@ function M._show_oauth_auto_dialog(opts)
 	vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, lines)
 
 	-- Apply highlights
-	vim.api.nvim_buf_add_highlight(bufnr, -1, "Comment", 1, 0, -1) -- "Open the following..."
-	vim.api.nvim_buf_add_highlight(bufnr, -1, "String", 3, 0, -1) -- URL
+	local function hl_line(line_nr, hl_group)
+		local lt = vim.api.nvim_buf_get_lines(bufnr, line_nr, line_nr + 1, false)[1] or ""
+		vim.api.nvim_buf_set_extmark(bufnr, hl_ns, line_nr, 0, { end_col = #lt, hl_group = hl_group })
+	end
+	hl_line(1, "Comment") -- "Open the following..."
+	hl_line(3, "String") -- URL
 	if device_code then
-		vim.api.nvim_buf_add_highlight(bufnr, -1, "WarningMsg", 5, 0, -1) -- Device code line
+		hl_line(5, "WarningMsg") -- Device code line
 	end
 
 	vim.bo[bufnr].modifiable = false
@@ -1006,33 +1015,101 @@ local function register_defaults()
 							return
 						end
 
-						-- Create session picker
+						local float = require("opencode.ui.float")
+						local sync = require("opencode.sync")
+						local current = state.get_session()
+						
+						-- Sort sessions by update time (most recent first, like TUI)
+						table.sort(sessions, function(a, b)
+							local a_time = a.time and a.time.updated or 0
+							local b_time = b.time and b.time.updated or 0
+							return a_time > b_time
+						end)
+						
+						-- Format relative time helper
+						local function format_relative_time(timestamp)
+							if not timestamp then return "" end
+							local now = os.time()
+							local diff = now - timestamp
+							if diff < 60 then return "just now"
+							elseif diff < 3600 then return math.floor(diff / 60) .. "m ago"
+							elseif diff < 7200 then return "1h ago"
+							elseif diff < 86400 then return math.floor(diff / 3600) .. "h ago"
+							elseif diff < 172800 then return "Yesterday"
+							else return os.date("%b %d", timestamp) end
+						end
+						
+						-- Build items for searchable menu (same as model switch)
 						local items = {}
-						for _, s in ipairs(sessions) do
+						for _, session in ipairs(sessions) do
+							local is_current = current.id == session.id
+							local title = session.title or "Untitled"
+							local msg_count = session.messageCount or 0
+							local time_str = format_relative_time(session.time and session.time.updated)
+							local msg_str = msg_count > 0 and ("(" .. msg_count .. " msgs)") or ""
+							local current_marker = is_current and "● " or "  "
+							
 							table.insert(items, {
-								label = (s.title or s.id) .. " (" .. (s.messageCount or 0) .. " messages)",
-								value = s.id,
-								session = s,
+								label = current_marker .. title .. " " .. msg_str,
+								value = session.id,
+								session = session,
+								description = time_str,
+								priority = is_current and 1 or 0,
 							})
 						end
+						
+						-- Use searchable menu like model switch (with filter input)
+						float.create_searchable_menu(items, function(item)
+							local session = item.session
 
-						local float = require("opencode.ui.float")
-						float.create_menu(items, function(item)
-							-- Clear sync data for current session before switching
-							local sync = require("opencode.sync")
-							local current = state.get_session()
-							if current.id then
-								sync.clear_session(current.id)
+							-- Don't switch if already on this session
+							if current.id == session.id then
+								vim.notify("Already on session: " .. (session.title or session.id), vim.log.levels.INFO)
+								return
 							end
-							
-							-- Set new session
-							state.set_session(item.session.id, item.session.title)
-							vim.notify("Switched to session: " .. (item.session.title or item.session.id), vim.log.levels.INFO)
-							
-							-- Clear chat UI
-							local chat = require("opencode.ui.chat")
-							chat.clear()
-						end, { title = " Sessions " })
+
+							-- Show loading indicator
+							vim.notify("Loading session: " .. (session.title or session.id) .. "...", vim.log.levels.INFO)
+
+							-- Load session messages before switching (like TUI)
+							client.get_messages(session.id, {}, function(msg_err, messages)
+								vim.schedule(function()
+									if msg_err then
+										vim.notify("Failed to load session messages: " .. tostring(msg_err.message or msg_err), vim.log.levels.WARN)
+									end
+
+									-- Clear current session data from sync store
+									if current.id then
+										sync.clear_session(current.id)
+									end
+
+									-- Update sync store with loaded messages
+									if messages then
+										for _, msg in ipairs(messages) do
+											sync.handle_message_updated(msg)
+										end
+									end
+
+									-- Set new session
+									state.set_session(session.id, session.title)
+
+									-- Emit session switch event (like TUI's SessionSelect)
+									local events = require("opencode.events")
+									events.emit("session.selected", {
+										sessionID = session.id,
+										sessionTitle = session.title,
+										previousSessionID = current.id,
+									})
+
+									-- Clear chat UI and render from sync store
+									local chat = require("opencode.ui.chat")
+									chat.clear()
+									chat.render()
+
+									vim.notify("Switched to session: " .. (session.title or session.id), vim.log.levels.INFO)
+								end)
+							end)
+						end, { title = " Switch Session ", width = 70 })
 					end)
 				end)
 			end)
@@ -1710,7 +1787,8 @@ local function register_defaults()
 					vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, lines)
 
 					for _, hl in ipairs(highlights) do
-						vim.api.nvim_buf_add_highlight(bufnr, -1, hl.group, hl.line - 1, 0, -1)
+						local lt = vim.api.nvim_buf_get_lines(bufnr, hl.line - 1, hl.line, false)[1] or ""
+						vim.api.nvim_buf_set_extmark(bufnr, hl_ns, hl.line - 1, 0, { end_col = #lt, hl_group = hl.group })
 					end
 
 					vim.bo[bufnr].modifiable = false

@@ -6,12 +6,13 @@ import argparse
 from typing import NamedTuple
 
 
-def format_greeting(name: str = "User", shout: bool = False) -> str:
+def format_greeting(name: str = "Friend", shout: bool = False) -> str:
     """Return a greeting for `name`.
 
-    If ``shout`` is True the returned string is uppercased.
+    If ``shout`` is True the returned string is uppercased. The default
+    greeting has been updated to be more welcoming!
     """
-    greeting = f"Hello, {name}"
+    greeting = f"Hello, {name}! Welcome to OpenCode."
     return greeting.upper() if shout else greeting
 
 
