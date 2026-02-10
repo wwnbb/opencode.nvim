@@ -284,7 +284,12 @@ function M.apply_highlights(bufnr, highlights, ns_id)
 			end)
 		else
 			-- Apply regular highlight
-			vim.api.nvim_buf_add_highlight(bufnr, ns_id, hl.hl_group, hl.line, hl.col_start, hl.col_end)
+			local end_col = hl.col_end
+			if end_col == -1 then
+				local l = vim.api.nvim_buf_get_lines(bufnr, hl.line, hl.line + 1, false)[1]
+				end_col = l and #l or 0
+			end
+			vim.api.nvim_buf_set_extmark(bufnr, ns_id, hl.line, hl.col_start, { end_col = end_col, hl_group = hl.hl_group })
 		end
 	end
 

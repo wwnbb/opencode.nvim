@@ -6,6 +6,7 @@ local M = {}
 local Popup = require("nui.popup")
 local Layout = require("nui.layout")
 local event = require("nui.utils.autocmd").event
+local diff_hl_ns = vim.api.nvim_create_namespace("opencode_diff_hl")
 
 -- State
 local state = {
@@ -156,7 +157,12 @@ local function render_diff(change)
 	
 	-- Apply highlights
 	for _, hl in ipairs(highlights) do
-		vim.api.nvim_buf_add_highlight(state.diff_bufnr, -1, hl.hl_group, hl.line, hl.col_start, hl.col_end or -1)
+		local end_col = hl.col_end or -1
+		if end_col == -1 then
+			local l = vim.api.nvim_buf_get_lines(state.diff_bufnr, hl.line, hl.line + 1, false)[1]
+			end_col = l and #l or 0
+		end
+		vim.api.nvim_buf_set_extmark(state.diff_bufnr, diff_hl_ns, hl.line, hl.col_start, { end_col = end_col, hl_group = hl.hl_group })
 	end
 	
 	vim.bo[state.diff_bufnr].modifiable = false
@@ -203,7 +209,12 @@ local function render_file_list(changes)
 	vim.api.nvim_buf_set_lines(state.file_list_bufnr, 0, -1, false, lines)
 	
 	for _, hl in ipairs(highlights) do
-		vim.api.nvim_buf_add_highlight(state.file_list_bufnr, -1, hl.hl_group, hl.line, hl.col_start, hl.col_end)
+		local end_col = hl.col_end
+		if end_col == -1 then
+			local l = vim.api.nvim_buf_get_lines(state.file_list_bufnr, hl.line, hl.line + 1, false)[1]
+			end_col = l and #l or 0
+		end
+		vim.api.nvim_buf_set_extmark(state.file_list_bufnr, diff_hl_ns, hl.line, hl.col_start, { end_col = end_col, hl_group = hl.hl_group })
 	end
 	
 	vim.bo[state.file_list_bufnr].modifiable = false

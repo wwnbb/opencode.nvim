@@ -646,6 +646,14 @@ export default tool({
       createTwoFilesPatch(filePath, filePath, normalizeLineEndings(contentOld), normalizeLineEndings(contentNew)),
     )
 
+    // Count additions/deletions for display
+    let additions = 0
+    let deletions = 0
+    for (const change of diffLines(normalizeLineEndings(contentOld), normalizeLineEndings(contentNew))) {
+      if (change.added) additions += change.count || 0
+      if (change.removed) deletions += change.count || 0
+    }
+
     // Build file metadata for native diff viewer
     const files = [
       {
@@ -655,6 +663,8 @@ export default tool({
         before: contentOld,
         after: contentNew,
         diff,
+        additions,
+        deletions,
       },
     ]
 
