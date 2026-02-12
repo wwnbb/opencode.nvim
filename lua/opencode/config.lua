@@ -19,8 +19,9 @@ M.defaults = {
     health_check_interval = 1000,
     shutdown_on_exit = false,
     reuse_running = true,
+    config_dir = vim.fn.stdpath("config") .. "/opencode",
   },
-  
+
   -- Session
   session = {
     auto_create = true,
