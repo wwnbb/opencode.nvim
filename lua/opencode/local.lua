@@ -303,7 +303,7 @@ function M.model.parsed()
 	}
 end
 
----Get recent models
+---Get recent models (filtered to only valid ones)
 ---@return { providerID: string, modelID: string }[]
 function M.model.recent()
 	return state.recent
@@ -313,6 +313,57 @@ end
 ---@return { providerID: string, modelID: string }[]
 function M.model.favorite()
 	return state.favorite
+end
+
+---Check if a model is in favorites
+---@param model { providerID: string, modelID: string }
+---@return boolean
+function M.model.is_favorite(model)
+	if not model then
+		return false
+	end
+	for _, item in ipairs(state.favorite) do
+		if item.providerID == model.providerID and item.modelID == model.modelID then
+			return true
+		end
+	end
+	return false
+end
+
+---Remove all models for a provider from recent/favorite lists
+---@param provider_id string
+function M.model.remove_provider_models(provider_id)
+	if not provider_id then
+		return
+	end
+
+	local removed_count = 0
+
+	-- Remove from recent
+	local new_recent = {}
+	for _, item in ipairs(state.recent) do
+		if item.providerID ~= provider_id then
+			table.insert(new_recent, item)
+		else
+			removed_count = removed_count + 1
+		end
+	end
+	state.recent = new_recent
+
+	-- Remove from favorites
+	local new_favorite = {}
+	for _, item in ipairs(state.favorite) do
+		if item.providerID ~= provider_id then
+			table.insert(new_favorite, item)
+		else
+			removed_count = removed_count + 1
+		end
+	end
+	state.favorite = new_favorite
+
+	if removed_count > 0 then
+		save_state()
+	end
 end
 
 ---Set current model for current agent
@@ -350,7 +401,52 @@ function M.model.set(model, opts)
 	emit("model", nil, model)
 end
 
----Cycle through recent models
+local function table_length(t)
+	local count = 0
+	for _ in pairs(t) do
+		count = count + 1
+	end
+	return count
+end
+
+---Clean up invalid models from recent and favorite lists (run on startup)
+function M.model.cleanup()
+	-- Don't clean up if no providers are loaded yet (user may connect later)
+	local providers = sync.get_providers()
+	if #providers == 0 then
+		return
+	end
+
+	local removed = 0
+
+	-- Clean up recent
+	local new_recent = {}
+	for _, item in ipairs(state.recent) do
+		if is_model_valid(item) then
+			table.insert(new_recent, item)
+		else
+			removed = removed + 1
+		end
+	end
+	state.recent = new_recent
+
+	-- Clean up favorites
+	local new_favorite = {}
+	for _, item in ipairs(state.favorite) do
+		if is_model_valid(item) then
+			table.insert(new_favorite, item)
+		else
+			removed = removed + 1
+		end
+	end
+	state.favorite = new_favorite
+
+	if removed > 0 then
+		save_state()
+	end
+end
+
+---Cycle through favorite or recent models
 ---@param direction number 1 for next, -1 for previous
 ---@param opts? { silent?: boolean }
 function M.model.cycle(direction, opts)
@@ -362,31 +458,72 @@ function M.model.cycle(direction, opts)
 		end
 		return
 	end
-	local recent = state.recent
-	if #recent == 0 then
+
+	-- Determine which list to use: favorites take priority over recents
+	local source_list
+	local list_name
+
+	-- Check favorites first
+	local valid_favorites = {}
+	for _, item in ipairs(state.favorite) do
+		if is_model_valid(item) then
+			table.insert(valid_favorites, item)
+		end
+	end
+
+	if #valid_favorites > 0 then
+		source_list = valid_favorites
+		list_name = "favorite"
+	else
+		-- Fall back to recents
+		local valid_recent = {}
+		for _, item in ipairs(state.recent) do
+			if is_model_valid(item) then
+				table.insert(valid_recent, item)
+			end
+		end
+		source_list = valid_recent
+		list_name = "recent"
+	end
+
+	if #source_list == 0 then
 		if not opts.silent then
-			vim.notify("No recent models", vim.log.levels.INFO)
+			vim.notify("No valid models available", vim.log.levels.INFO)
 		end
 		return
 	end
-	-- Find current in recent
-	local current_idx = 1
-	for i, item in ipairs(recent) do
+
+	if #source_list == 1 then
+		if not opts.silent then
+			vim.notify("Only one valid model available", vim.log.levels.INFO)
+		end
+		return
+	end
+
+	-- Find current in the source list
+	local current_idx = nil
+	for i, item in ipairs(source_list) do
 		if item.providerID == current.providerID and item.modelID == current.modelID then
 			current_idx = i
 			break
 		end
 	end
+
+	-- If current not in the list, start from beginning
+	if not current_idx then
+		current_idx = 1
+	end
+
 	local next_idx = current_idx + direction
 	if next_idx < 1 then
-		next_idx = #recent
-	elseif next_idx > #recent then
+		next_idx = #source_list
+	elseif next_idx > #source_list then
 		next_idx = 1
 	end
-	local next_model = recent[next_idx]
+
+	local next_model = source_list[next_idx]
 	if next_model then
 		M.model.set(next_model, { silent = true })
-		-- Show feedback
 		if not opts.silent then
 			local parsed = M.model.parsed()
 			if parsed then
@@ -541,6 +678,15 @@ end
 ---Initialize the module (call on plugin setup)
 function M.setup()
 	load_state()
+	-- Delay cleanup until providers are loaded
+	-- Subscribe to providers_loaded event to clean up invalid models
+	local events_ok, events = pcall(require, "opencode.events")
+	if events_ok then
+		events.on("providers_loaded", function()
+			-- Clean up invalid models after providers are loaded
+			M.model.cleanup()
+		end)
+	end
 end
 
 ---Check if ready

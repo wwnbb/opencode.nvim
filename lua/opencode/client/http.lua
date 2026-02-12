@@ -13,7 +13,6 @@ end
 -- Default configuration (merged with user config)
 M.opts = {
 	host = "localhost",
-	port = 9099,
 	auth = {
 		username = "opencode",
 		password = nil,

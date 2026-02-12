@@ -24,6 +24,7 @@ M.opts = {
 	health_check_interval = 1000,
 	shutdown_on_exit = false,
 	reuse_running = true,
+	config_dir = nil,
 }
 
 -- Check if OpenCode server is already running at configured host:port
@@ -94,6 +95,8 @@ local function spawn_server(callback)
 			-- Pass through any auth env vars if configured
 			OPENCODE_SERVER_USERNAME = M.opts.auth and M.opts.auth.username,
 			OPENCODE_SERVER_PASSWORD = M.opts.auth and M.opts.auth.password,
+			-- Pass through config directory if configured
+			OPENCODE_CONFIG_DIR = M.opts.config_dir,
 		}),
 		on_stdout = function(_, data)
 			if data then

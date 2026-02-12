@@ -1246,17 +1246,30 @@ local function register_defaults()
 						-- provider.models is a map {model_id: model}, not an array
 						-- Connected providers' models get higher priority
 						local items = {}
+						
+						-- Get favorites to mark them with stars
+						local lc_ok, lc = pcall(require, "opencode.local")
+						local favorites_set = {}
+						if lc_ok then
+							local favorites = lc.model.favorite()
+							for _, fav in ipairs(favorites) do
+								favorites_set[fav.providerID .. "/" .. fav.modelID] = true
+							end
+						end
+						
 						for _, provider in ipairs(provider_list) do
 							if provider.models then
 								local is_connected = connected_set[provider.id] or false
 								for model_id, model in pairs(provider.models) do
+									local is_favorite = favorites_set[provider.id .. "/" .. model_id]
 									table.insert(items, {
-										label = string.format("[%s] %s", provider.id, model.name or model_id),
+										label = string.format("%s[%s] %s", is_favorite and "★ " or "", provider.id, model.name or model_id),
 										value = model_id,
 										provider = provider.id,
 										model = model,
 										description = is_connected and "Connected" or nil,
-										priority = is_connected and 1 or 0,
+										priority = (is_favorite and 2 or 0) + (is_connected and 1 or 0),
+										is_favorite = is_favorite,
 									})
 								end
 							end
@@ -1268,24 +1281,42 @@ local function register_defaults()
 						end
 
 						local float = require("opencode.ui.float")
-					float.create_searchable_menu(items, function(item)
-						-- Use local.lua module for model selection (like TUI's local.tsx)
-						local lc_ok, lc = pcall(require, "opencode.local")
-						if lc_ok then
-							lc.model.set({
-								providerID = item.provider,
-								modelID = item.value,
-							}, { recent = true })
-						end
-						-- Also update old state for backward compatibility
-						state.set_model(item.value, item.model.name, item.provider)
-						vim.notify("Switched to model: " .. (item.model.name or item.value), vim.log.levels.INFO)
-						-- Update input info bar if visible
-						local input_ok, input = pcall(require, "opencode.ui.input")
-						if input_ok and input.is_visible and input.is_visible() then
-							input.update_info_bar()
-						end
-					end, { title = " Switch Model ", width = 60 })
+						float.create_searchable_menu(items, function(item)
+							-- Use local.lua module for model selection (like TUI's local.tsx)
+							local lc_ok, lc = pcall(require, "opencode.local")
+							if lc_ok then
+								lc.model.set({
+									providerID = item.provider,
+									modelID = item.value,
+								}, { recent = true })
+							end
+							-- Also update old state for backward compatibility
+							state.set_model(item.value, item.model.name, item.provider)
+							vim.notify("Switched to model: " .. (item.model.name or item.value), vim.log.levels.INFO)
+							-- Update input info bar if visible
+							local input_ok, input = pcall(require, "opencode.ui.input")
+							if input_ok and input.is_visible and input.is_visible() then
+								input.update_info_bar()
+							end
+						end, { 
+							title = " Switch Model ", 
+							width = 60,
+							on_key = function(key, item)
+								if key == "f" and lc_ok then
+									lc.model.toggle_favorite({
+										providerID = item.provider,
+										modelID = item.value,
+									})
+									-- Update item state
+									item.is_favorite = not item.is_favorite
+									item.label = string.format("%s[%s] %s", item.is_favorite and "★ " or "", item.provider, item.model.name or item.value)
+									item.priority = (item.is_favorite and 2 or 0) + (item.description == "Connected" and 1 or 0)
+									vim.notify(item.is_favorite and "Added to favorites" or "Removed from favorites", vim.log.levels.INFO)
+									return true -- Keep menu open
+								end
+								return false
+							end
+							})
 					end)
 				end)
 			end)
@@ -1450,19 +1481,25 @@ local function register_defaults()
 								prompt = "Disconnect from " .. (item.provider.name or item.provider.id) .. "?",
 							}, function(choice)
 								if choice == "Yes" then
-									client.remove_provider_auth(item.provider.id, function(remove_err)
-										vim.schedule(function()
-											if remove_err then
-												vim.notify("Failed to disconnect: " .. tostring(remove_err.message or remove_err), vim.log.levels.ERROR)
-												return
-											end
+								client.remove_provider_auth(item.provider.id, function(remove_err)
+									vim.schedule(function()
+										if remove_err then
+											vim.notify("Failed to disconnect: " .. tostring(remove_err.message or remove_err), vim.log.levels.ERROR)
+											return
+										end
 
-											-- Dispose to refresh state
-											client.dispose(function()
-												vim.notify("Disconnected from " .. (item.provider.name or item.provider.id), vim.log.levels.INFO)
-											end)
+										-- Remove all models from this provider from recent/favorite lists
+										local lc_ok, lc = pcall(require, "opencode.local")
+										if lc_ok then
+											lc.model.remove_provider_models(item.provider.id)
+										end
+
+										-- Dispose to refresh state
+										client.dispose(function()
+											vim.notify("Disconnected from " .. (item.provider.name or item.provider.id), vim.log.levels.INFO)
 										end)
 									end)
+								end)
 								end
 							end)
 						end, { title = " Disconnect Provider ", width = 50 })
@@ -1509,7 +1546,7 @@ local function register_defaults()
 						end
 
 						local float = require("opencode.ui.float")
-						float.create_menu(items, function(item)
+						float.create_searchable_menu(items, function(item)
 							-- Use local.lua module for agent selection (like TUI's local.tsx)
 							local lc_ok, lc = pcall(require, "opencode.local")
 							if lc_ok then
@@ -1523,7 +1560,7 @@ local function register_defaults()
 							if input_ok and input.is_visible and input.is_visible() then
 								input.update_info_bar()
 							end
-						end, { title = " Agents " })
+						end, { title = " Switch Agent ", width = 60 })
 					end)
 				end)
 			end)
@@ -1552,11 +1589,11 @@ local function register_defaults()
 			end
 
 			local float = require("opencode.ui.float")
-			float.create_menu(items, function(item)
+			float.create_searchable_menu(items, function(item)
 				local current_agent = state.get_agent()
 				state.set_agent(current_agent.id, current_agent.name, item.mode.id)
 				vim.notify("Switched to mode: " .. item.mode.name, vim.log.levels.INFO)
-			end, { title = " Agent Mode " })
+			end, { title = " Switch Mode ", width = 60 })
 		end,
 	})
 

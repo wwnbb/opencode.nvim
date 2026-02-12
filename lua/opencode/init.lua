@@ -67,6 +67,7 @@ function M.setup(opts)
 		shutdown_on_exit = M._config.server.shutdown_on_exit,
 		reuse_running = M._config.server.reuse_running,
 		auth = M._config.server.auth,
+		config_dir = M._config.server.config_dir,
 	})
 
 	-- Expose state module

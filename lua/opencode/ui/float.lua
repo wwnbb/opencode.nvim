@@ -320,7 +320,8 @@ end
 -- Create interactive searchable menu with fuzzy filtering
 -- items: array of { label, value, description?, group?, priority? }
 -- on_select: function(item) called when item is selected
--- opts: { title?, width?, placeholder?, groups? }
+-- on_key: function(key, item) called when a custom key is pressed, return true to keep menu open
+-- opts: { title?, width?, placeholder?, groups?, on_key? }
 function M.create_searchable_menu(items, on_select, opts)
 	opts = opts or {}
 
@@ -376,7 +377,7 @@ function M.create_searchable_menu(items, on_select, opts)
 		border = {
 			style = "rounded",
 			text = {
-				bottom = " ↑↓/j,k:navigate  ⏎:select  esc:close ",
+				bottom = opts.on_key and " ↑↓/j,k:nav  ⏎:select  f:fav  esc:close " or " ↑↓/j,k:navigate  ⏎:select  esc:close ",
 				bottom_align = "center",
 			},
 		},
@@ -558,6 +559,21 @@ function M.create_searchable_menu(items, on_select, opts)
 	vim.keymap.set("n", "<Down>", function()
 		move_selection(1)
 	end, keymap_opts)
+
+	-- Custom key handler
+	if opts.on_key then
+		vim.keymap.set("n", "f", function()
+			if #filtered_items > 0 and filtered_items[selected_idx] then
+				local keep_open = opts.on_key("f", filtered_items[selected_idx])
+				if not keep_open then
+					close()
+				else
+					-- Re-render to show updated state
+					render_list()
+				end
+			end
+		end, keymap_opts)
+	end
 
 	-- Update on text change
 	input_popup:on(event.TextChangedI, function()
