@@ -386,6 +386,9 @@ function M.setup_chat_handlers()
 		end)
 	end)
 
+	-- Retry countdown timer handle
+	local retry_timer = nil
+
 	-- Handle session.status changes (like TUI sync.tsx:223-225)
 	M.on("session_status", function(data)
 		vim.schedule(function()
@@ -407,6 +410,36 @@ function M.setup_chat_handlers()
 			elseif status_type == "busy" or status_type == "streaming" then
 				state.set_status("streaming")
 			end
+
+			-- Manage retry countdown timer (re-render every second for countdown)
+			if status_type == "retry" then
+				if not retry_timer then
+					retry_timer = vim.uv.new_timer()
+					retry_timer:start(1000, 1000, vim.schedule_wrap(function()
+						-- Check if still in retry state
+						local cs = state.get_session()
+						local ss = cs.id and sync.get_session_status(cs.id)
+						if not ss or ss.type ~= "retry" then
+							if retry_timer then
+								retry_timer:stop()
+								retry_timer:close()
+								retry_timer = nil
+							end
+							return
+						end
+						M.emit("chat_render", { session_id = cs.id })
+					end))
+				end
+			else
+				if retry_timer then
+					retry_timer:stop()
+					retry_timer:close()
+					retry_timer = nil
+				end
+			end
+
+			-- Trigger chat re-render so status (e.g. retry) is shown in the buffer
+			M.emit("chat_render", { session_id = current_session.id })
 		end)
 	end)
 

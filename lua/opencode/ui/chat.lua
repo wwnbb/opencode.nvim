@@ -468,22 +468,15 @@ function M.create()
 						break
 					end
 				end
-				
+
 				if has_pending_question then
 					-- Don't start spinner while user needs to answer a question
 					return
 				end
-				
-				-- Start spinner if not already active
+
+				-- Start spinner if not already active (picks new random animation)
 				if not spinner.is_active() then
-					spinner.start({
-						interval_ms = 100,
-						on_frame = function()
-							-- Update only the spinner line in-place (no full re-render)
-							M.update_spinner_only()
-						end,
-					})
-					-- Initial full render to place the spinner line in the buffer
+					spinner.start()
 					M.schedule_render()
 				end
 			else
@@ -496,6 +489,14 @@ function M.create()
 		end)
 	end)
 
+	-- Advance spinner frame on each server event (event-driven animation)
+	events.on("chat_render", function()
+		if spinner.is_active() then
+			spinner.tick()
+			M.update_spinner_only()
+		end
+	end)
+
 	-- Reset spinner on session change (pick new random animation)
 	-- Also clear any pending questions from the old session
 	events.on("session_change", function(data)
@@ -503,7 +504,6 @@ function M.create()
 			if spinner.is_active() then
 				spinner.stop()
 			end
-			spinner.reset()
 			-- Clear pending questions, permissions, and edits from the old session
 			state.pending_questions = {}
 			state.pending_permissions = {}
@@ -1195,7 +1195,7 @@ function M.render()
 	local messages = current_session.id and sync.get_messages(current_session.id) or {}
 
 	-- Render all messages from sync store
-	for _, message in ipairs(messages) do
+	for msg_idx, message in ipairs(messages) do
 		-- Get content from parts (like TUI's sync.data.part[message.id])
 		local content = sync.get_message_text(message.id)
 		local reasoning = sync.get_message_reasoning(message.id)
@@ -1210,6 +1210,14 @@ function M.render()
 		if should_render then
 			if message.role == "user" then
 				-- User message: bordered box style (like TUI)
+				-- Top padding line with highlight bar
+				table.insert(lines, "│")
+				table.insert(highlights, {
+					line = #lines - 1,
+					col_start = 0,
+					col_end = 3,
+					hl_group = "Special",
+				})
 				-- │ message content
 				local content_lines = vim.split(content or "", "\n", { plain = true })
 				for i, line in ipairs(content_lines) do
@@ -1223,6 +1231,55 @@ function M.render()
 						hl_group = "Special",
 					})
 				end
+				-- Bottom padding line with highlight bar
+				table.insert(lines, "│")
+				table.insert(highlights, {
+					line = #lines - 1,
+					col_start = 0,
+					col_end = 3,
+					hl_group = "Special",
+				})
+
+				-- Show session retry status below the last user message
+				local session_status = current_session.id and sync.get_session_status(current_session.id)
+				if session_status and session_status.type == "retry" then
+					-- Only show below the last user message in the conversation
+					local is_last_user = true
+					for j = msg_idx + 1, #messages do
+						if messages[j].role == "user" then
+							is_last_user = false
+							break
+						end
+					end
+					if is_last_user then
+						local retry_msg = session_status.message or "Retrying..."
+						-- Truncate long messages (like TUI does at 80 chars)
+						if #retry_msg > 80 then
+							retry_msg = retry_msg:sub(1, 80) .. "..."
+						end
+						local attempt = session_status.attempt or 0
+						local retry_info = ""
+						if session_status.next then
+							local wait_sec = math.max(0, math.floor((session_status.next - os.time() * 1000) / 1000))
+							if wait_sec > 0 then
+								retry_info = string.format(" [retrying in %ds attempt #%d]", wait_sec, attempt)
+							else
+								retry_info = string.format(" [retrying attempt #%d]", attempt)
+							end
+						else
+							retry_info = string.format(" [attempt #%d]", attempt)
+						end
+						local status_text = retry_msg .. retry_info
+						table.insert(lines, status_text)
+						table.insert(highlights, {
+							line = #lines - 1,
+							col_start = 0,
+							col_end = #status_text,
+							hl_group = "ErrorMsg",
+						})
+					end
+				end
+
 				table.insert(lines, "")
 			else
 				-- Assistant message: reasoning, tools, then content
