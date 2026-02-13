@@ -377,7 +377,8 @@ function M.create_searchable_menu(items, on_select, opts)
 		border = {
 			style = "rounded",
 			text = {
-				bottom = opts.on_key and " ↑↓/j,k:nav  ⏎:select  f:fav  esc:close " or " ↑↓/j,k:navigate  ⏎:select  esc:close ",
+				bottom = opts.on_key and " ↑↓/j,k:nav  ⏎:select  f:fav  esc:close "
+					or " ↑↓/j,k:navigate  ⏎:select  esc:close ",
 				bottom_align = "center",
 			},
 		},
@@ -522,7 +523,6 @@ function M.create_searchable_menu(items, on_select, opts)
 	local keymap_opts = { buffer = input_bufnr, noremap = true, silent = true }
 
 	vim.keymap.set("i", "<CR>", select_current, keymap_opts)
-	vim.keymap.set("i", "<Esc>", close, keymap_opts)
 	vim.keymap.set("i", "<C-c>", close, keymap_opts)
 	vim.keymap.set("i", "<Up>", function()
 		move_selection(-1)
