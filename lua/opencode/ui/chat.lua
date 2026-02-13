@@ -1064,6 +1064,7 @@ local function format_tool_line(tool_part)
 		end
 		return string.format("~ Updating todos...")
 	elseif tool_name == "task" then
+		-- Task tools are rendered via render_task_tool; this is a fallback
 		local subagent = input.subagent_type or "unknown"
 		local desc = input.description or ""
 		if tool_status == "completed" then
@@ -1076,6 +1077,85 @@ local function format_tool_line(tool_part)
 		end
 		return string.format("~ %s...", tool_name)
 	end
+end
+
+-- Render a task tool part as multi-line display showing subagent activity
+-- Returns { lines = {string...}, highlights = {{line, col_start, col_end, hl_group}...} }
+local function render_task_tool(tool_part)
+	local input = tool_part.state and tool_part.state.input or {}
+	local metadata = tool_part.state and tool_part.state.metadata or {}
+	local tool_status = tool_part.state and tool_part.state.status or "pending"
+	local subagent = input.subagent_type or "unknown"
+	local desc = input.description or ""
+	local summary = metadata.summary or {}
+	local agent_label = subagent:sub(1, 1):upper() .. subagent:sub(2)
+
+	local result_lines = {}
+	local result_highlights = {}
+
+	local function add_line(text, hl_group)
+		table.insert(result_lines, text)
+		if hl_group then
+			table.insert(result_highlights, {
+				line = #result_lines - 1,
+				col_start = 0,
+				col_end = #text,
+				hl_group = hl_group,
+			})
+		end
+	end
+
+	if tool_status == "completed" then
+		-- Collapsed: single line with tool call count
+		local count = #summary
+		local header
+		if count > 0 then
+			header = string.format('◉ %s Task — "%s" (%d toolcalls)', agent_label, desc, count)
+		else
+			header = string.format('◉ %s Task — "%s"', agent_label, desc)
+		end
+		add_line(header, "Normal")
+	elseif #summary == 0 then
+		-- No summary yet — pending
+		add_line("~ Delegating...", "Comment")
+	else
+		-- Running: show header + sub-tool lines
+		local count = #summary
+		local header = string.format('◉ %s Task — "%s"', agent_label, desc)
+		add_line(header, "Special")
+
+		for i, entry in ipairs(summary) do
+			local entry_tool = entry.tool or "unknown"
+			local entry_state = entry.state or {}
+			local entry_status = entry_state.status or "pending"
+			local entry_title = entry_state.title or entry_tool
+			-- Shorten long titles
+			if #entry_title > 50 then
+				entry_title = entry_title:sub(1, 47) .. "..."
+			end
+
+			local is_last = (i == count)
+			local connector = is_last and "└" or "├"
+			local line
+			if entry_status == "completed" then
+				line = string.format("  %s ◎ %s", connector, entry_title)
+				add_line(line, "Comment")
+			else
+				-- running or pending
+				local count_str = string.format("(%d toolcalls)", count)
+				if is_last then
+					line = string.format("  %s ~ %s...", connector, entry_title)
+					-- Add the count at the end of the last line
+					line = line .. string.rep(" ", math.max(1, 40 - #line)) .. count_str
+				else
+					line = string.format("  %s ~ %s...", connector, entry_title)
+				end
+				add_line(line, "Normal")
+			end
+		end
+	end
+
+	return { lines = result_lines, highlights = result_highlights }
 end
 
 -- Render full buffer content from sync store (mirrors TUI session/index.tsx)
@@ -1326,25 +1406,42 @@ function M.render()
 				-- Render tool calls inline (like TUI's InlineTool style)
 				if has_tools then
 					for _, tool_part in ipairs(tool_parts) do
-						local tool_line = format_tool_line(tool_part)
-						local tool_status = tool_part.state and tool_part.state.status or "pending"
+						if tool_part.tool == "task" then
+							-- Multi-line task tool rendering
+							local result = render_task_tool(tool_part)
+							local base_line = #lines
+							for _, tl in ipairs(result.lines) do
+								table.insert(lines, tl)
+							end
+							for _, hl in ipairs(result.highlights) do
+								table.insert(highlights, {
+									line = base_line + hl.line,
+									col_start = hl.col_start,
+									col_end = hl.col_end,
+									hl_group = hl.hl_group,
+								})
+							end
+						else
+							local tool_line = format_tool_line(tool_part)
+							local tool_status = tool_part.state and tool_part.state.status or "pending"
 
-						table.insert(lines, tool_line)
+							table.insert(lines, tool_line)
 
-						-- Color based on status
-						local hl_group = "Comment" -- pending/running = muted
-						if tool_status == "completed" then
-							hl_group = "Normal"
-						elseif tool_status == "error" then
-							hl_group = "ErrorMsg"
+							-- Color based on status
+							local hl_group = "Comment" -- pending/running = muted
+							if tool_status == "completed" then
+								hl_group = "Normal"
+							elseif tool_status == "error" then
+								hl_group = "ErrorMsg"
+							end
+
+							table.insert(highlights, {
+								line = #lines - 1,
+								col_start = 0,
+								col_end = #tool_line,
+								hl_group = hl_group,
+							})
 						end
-
-						table.insert(highlights, {
-							line = #lines - 1,
-							col_start = 0,
-							col_end = #tool_line,
-							hl_group = hl_group,
-						})
 					end
 				end
 

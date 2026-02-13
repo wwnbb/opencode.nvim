@@ -68,24 +68,17 @@ function M.error(message, data)
   M.add(M.levels.ERROR, message, data)
 end
 
--- Get all logs
----@param limit? number Maximum number of logs to return
----@param level_filter? string Filter by level
----@return table Array of log entries
-function M.get_logs(limit, level_filter)
-  limit = limit or max_logs
-  local result = {}
-
-  for _, entry in ipairs(logs) do
-    if not level_filter or entry.level == level_filter then
-      table.insert(result, entry)
-      if #result >= limit then
-        break
-      end
-    end
+-- Get logs (returns the most recent entries from the end)
+-- Returns the shared array and a start index to avoid copying.
+---@param limit? number Maximum number of logs to return (from the end)
+---@return table logs The log array (do not modify)
+---@return number start_index 1-based index to start iterating from
+function M.get_logs(limit)
+  local total = #logs
+  if not limit or limit >= total then
+    return logs, 1
   end
-
-  return result
+  return logs, total - limit + 1
 end
 
 -- Clear all logs

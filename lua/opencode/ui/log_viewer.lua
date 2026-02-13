@@ -132,6 +132,160 @@ local function create_buffer()
 	return state.bufnr
 end
 
+-- Extract messageID from a log entry's data (checks common SSE event shapes)
+local function extract_message_id(entry)
+	if not entry.data then
+		return nil
+	end
+	local d = entry.data.data
+	if not d then
+		return nil
+	end
+	-- message.part.updated: data.data.part.messageID
+	if type(d) == "table" and d.part and d.part.messageID then
+		return d.part.messageID
+	end
+	-- message.updated: data.data.info.id
+	if type(d) == "table" and d.info and d.info.id then
+		return d.info.id
+	end
+	-- message.removed / message.part.removed: data.data.messageID
+	if type(d) == "table" and d.messageID then
+		return d.messageID
+	end
+	return nil
+end
+
+-- Group consecutive log entries by messageID into squashed groups
+-- Returns array of { message_id = string|nil, entries = {entry...} }
+---@param logs table The log array
+---@param start_index number 1-based index to start from
+local function squash_logs(logs, start_index)
+	local groups = {}
+	local current_group = nil
+
+	for i = start_index, #logs do
+		local entry = logs[i]
+		local mid = extract_message_id(entry)
+		if mid and current_group and current_group.message_id == mid then
+			table.insert(current_group.entries, entry)
+		else
+			current_group = {
+				message_id = mid,
+				entries = { entry },
+			}
+			table.insert(groups, current_group)
+		end
+	end
+
+	return groups
+end
+
+-- Format a squashed group of log entries for display
+---@param group table Squashed group { message_id, entries, original_indices }
+---@param cfg table Config
+---@param group_index number Index of group for fold tracking
+---@param is_folded boolean Whether this group is folded
+local function format_squashed_group(group, cfg, group_index, is_folded)
+	local entries = group.entries
+	local count = #entries
+	local last_entry = entries[count]
+
+	-- Single entry or no messageID — render normally
+	if count == 1 or not group.message_id then
+		return format_entry(last_entry, cfg, group_index, is_folded)
+	end
+
+	-- Squashed group: show summary header
+	local lines = {}
+	local highlights = {}
+
+	local fold_icon = is_folded and "▶ " or "▼ "
+	local short_id = group.message_id:sub(1, 8)
+	local header = string.format(
+		"%s%s [%s] [msg:%s] %s (%d events)",
+		fold_icon,
+		last_entry.timestamp,
+		last_entry.level,
+		short_id,
+		last_entry.message,
+		count
+	)
+	table.insert(lines, header)
+
+	-- Highlight fold icon
+	table.insert(highlights, {
+		line = 0,
+		col_start = 0,
+		col_end = #fold_icon,
+		hl_group = "Special",
+	})
+
+	-- Highlight the count badge
+	local count_str = string.format("(%d events)", count)
+	table.insert(highlights, {
+		line = 0,
+		col_start = #header - #count_str,
+		col_end = #header,
+		hl_group = "WarningMsg",
+	})
+
+	if is_folded then
+		-- Show one-line preview of all event types
+		local event_types = {}
+		for _, entry in ipairs(entries) do
+			local msg_short = entry.message:match("^(%S+)") or entry.message
+			event_types[msg_short] = (event_types[msg_short] or 0) + 1
+		end
+		local parts = {}
+		for ev, c in pairs(event_types) do
+			table.insert(parts, string.format("%s×%d", ev, c))
+		end
+		local preview = "  " .. table.concat(parts, ", ")
+		table.insert(lines, preview)
+		table.insert(highlights, {
+			line = 1,
+			col_start = 0,
+			col_end = #preview,
+			hl_group = "Comment",
+		})
+	else
+		-- Expanded: show each entry as a sub-line
+		for j, entry in ipairs(entries) do
+			local connector = j == count and "└" or "├"
+			local level_hl = cfg.level_highlights[entry.level] or "Normal"
+			local sub_line = string.format("  %s %s [%s] %s", connector, entry.timestamp, entry.level, entry.message)
+			table.insert(lines, sub_line)
+			table.insert(highlights, {
+				line = #lines - 1,
+				col_start = 0,
+				col_end = #sub_line,
+				hl_group = level_hl,
+			})
+
+			-- Show data for this sub-entry if present
+			if entry.data then
+				local data_str = vim.inspect(entry.data)
+				local win_width = state.winid and vim.api.nvim_win_get_width(state.winid) or 80
+				local max_line_length = win_width - 8
+				local indent = "    "
+				for line in data_str:gmatch("[^\n]+") do
+					if #line > max_line_length then
+						table.insert(lines, indent .. line:sub(1, max_line_length - 3) .. "...")
+					else
+						table.insert(lines, indent .. line)
+					end
+				end
+			end
+		end
+	end
+
+	-- Empty line separator
+	table.insert(lines, "")
+
+	return lines, highlights
+end
+
 -- Format log entry for display
 ---@param entry table Log entry
 ---@param cfg table Config
@@ -317,7 +471,7 @@ function M.refresh()
 	end
 
 	local logger = require("opencode.logger")
-	local logs = logger.get_logs()
+	local logs, log_start = logger.get_logs(100)
 	local cfg = get_config()
 
 	local all_lines = {}
@@ -325,7 +479,8 @@ function M.refresh()
 	local current_line = 0
 
 	-- Header
-	local header_text = string.format(" OpenCode Logs (%d entries) ", #logs)
+	local visible_count = #logs - log_start + 1
+	local header_text = string.format(" OpenCode Logs (%d entries) ", visible_count)
 	table.insert(all_lines, header_text)
 	table.insert(all_highlights, { line = 0, col_start = 0, col_end = #header_text, hl_group = "Title" })
 
@@ -348,13 +503,22 @@ function M.refresh()
 	-- Clear line-to-entry mapping
 	state.entry_lines = {}
 
-	-- Each log entry
-	for entry_index, entry in ipairs(logs) do
-		local is_folded = state.folded[entry_index] == true
-		local lines, highlights = format_entry(entry, cfg, entry_index, is_folded)
+	-- Squash consecutive entries with the same messageID
+	local groups = squash_logs(logs, log_start)
 
-		-- Map the header line to this entry index for fold toggling
-		state.entry_lines[current_line + 1] = entry_index -- +1 because nvim lines are 1-indexed
+	-- Each squashed group
+	for group_index, group in ipairs(groups) do
+		local is_folded = state.folded[group_index] == true
+		local lines, highlights
+
+		if #group.entries > 1 and group.message_id then
+			lines, highlights = format_squashed_group(group, cfg, group_index, is_folded)
+		else
+			lines, highlights = format_entry(group.entries[1], cfg, group_index, is_folded)
+		end
+
+		-- Map the header line to this group index for fold toggling
+		state.entry_lines[current_line + 1] = group_index -- +1 because nvim lines are 1-indexed
 
 		for _, line in ipairs(lines) do
 			table.insert(all_lines, line)
@@ -446,9 +610,18 @@ end
 -- Fold all entries
 function M.fold_all()
 	local logger = require("opencode.logger")
-	local logs = logger.get_logs()
-	for i = 1, #logs do
-		if logs[i].data then -- Only fold entries with data
+	local logs, log_start = logger.get_logs(100)
+	local groups = squash_logs(logs, log_start)
+	for i, group in ipairs(groups) do
+		-- Fold groups that have data or are multi-entry squashed groups
+		local has_data = false
+		for _, entry in ipairs(group.entries) do
+			if entry.data then
+				has_data = true
+				break
+			end
+		end
+		if has_data or #group.entries > 1 then
 			state.folded[i] = true
 		end
 	end
