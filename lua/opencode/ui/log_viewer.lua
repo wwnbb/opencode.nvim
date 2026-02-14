@@ -1,20 +1,13 @@
 -- opencode.nvim - Log Viewer UI module
--- Split window for viewing plugin logs
+-- Split window for viewing plugin logs using nui.nvim components
 
 local M = {}
 
-local hl_ns = vim.api.nvim_create_namespace("opencode_log_viewer")
+local NuiSplit = require("nui.split")
+local NuiLine = require("nui.line")
+local NuiText = require("nui.text")
 
--- State
-local state = {
-	bufnr = nil,
-	winid = nil,
-	visible = false,
-	auto_scroll = true,
-	config = nil,
-	folded = {}, -- Track folded entries by index: { [entry_index] = true }
-	entry_lines = {}, -- Map line numbers to entry indices for fold toggling
-}
+local hl_ns = vim.api.nvim_create_namespace("opencode_log_viewer")
 
 -- Default configuration
 local defaults = {
@@ -28,6 +21,237 @@ local defaults = {
 		ERROR = "ErrorMsg",
 	},
 }
+
+-- State
+local state = {
+	split = nil, -- NuiSplit instance
+	visible = false,
+	auto_scroll = true,
+	config = nil,
+	-- Data layer: flat list of entries (message.part.updated replaces in-place)
+	entries = {}, -- log entry objects
+	entries_log_count = 0, -- raw log count consumed into entries
+	-- UI layer
+	components = {}, -- LogLine[]
+	selected_idx = 0, -- 0 = none selected
+	header_line_count = 0,
+}
+
+---------------------------------------------------------------
+-- Setup highlights
+---------------------------------------------------------------
+
+local function setup_highlights()
+	vim.api.nvim_set_hl(0, "OpenCodeLogSelected", { link = "CursorLine", default = true })
+end
+
+---------------------------------------------------------------
+-- LogLine class
+---------------------------------------------------------------
+
+local LogLine = {}
+LogLine.__index = LogLine
+
+function LogLine.new(opts)
+	local self = setmetatable({}, LogLine)
+	self.entry = opts.entry
+	self.entry_index = opts.entry_index
+	self.config = opts.config
+	self.win_width = opts.win_width or 80
+	self.folded = opts.folded ~= false -- default true
+	self.selected = false
+	self._lines = {} -- NuiLine[]
+	self._buf_start = 0 -- 1-indexed
+	self._line_count = 0
+	self:_build_lines()
+	return self
+end
+
+function LogLine:fold()
+	self.folded = true
+	self:_build_lines()
+end
+
+function LogLine:unfold()
+	self.folded = false
+	self:_build_lines()
+end
+
+function LogLine:update(entry)
+	self.entry = entry
+	self:_build_lines()
+end
+
+function LogLine:hover(is_selected)
+	self.selected = is_selected
+	self:_build_lines()
+end
+
+function LogLine:line_count()
+	return self._line_count
+end
+
+function LogLine:is_foldable()
+	return self.entry.data ~= nil
+end
+
+function LogLine:_build_lines()
+	local lines = {}
+	local entry = self.entry
+	local cfg = self.config
+
+	-- Header line
+	local header = NuiLine()
+
+	-- Selected indicator prefix
+	if self.selected then
+		header:append(NuiText("▸ ", "OpenCodeLogSelected"))
+	else
+		header:append(NuiText("  "))
+	end
+
+	-- Fold icon
+	if entry.data then
+		header:append(NuiText(self.folded and "▶ " or "▼ ", "Special"))
+	else
+		header:append(NuiText("  "))
+	end
+
+	header:append(NuiText(entry.timestamp .. " ", "Comment"))
+
+	local level_hl = cfg.level_highlights[entry.level] or "Normal"
+	header:append(NuiText("[" .. entry.level .. "] ", level_hl))
+	header:append(NuiText(entry.message))
+
+	table.insert(lines, header)
+
+	-- Data lines
+	if entry.data then
+		if self.folded then
+			-- Collapsed preview
+			local data_str = vim.inspect(entry.data)
+			local first_line = data_str:match("^[^\n]+") or "{...}"
+			local preview = first_line:sub(1, 60)
+			if #first_line > 60 then
+				preview = preview .. "..."
+			end
+			local preview_line = NuiLine()
+			preview_line:append(NuiText("    " .. preview, "Comment"))
+			table.insert(lines, preview_line)
+		else
+			-- Full data
+			local data_str = vim.inspect(entry.data)
+			local max_line_length = self.win_width - 6
+			for line in data_str:gmatch("[^\n]+") do
+				local content = line
+				if #content > max_line_length then
+					content = content:sub(1, max_line_length - 3) .. "..."
+				end
+				local data_line = NuiLine()
+				data_line:append(NuiText("    " .. content, "Comment"))
+				table.insert(lines, data_line)
+			end
+		end
+	end
+
+	-- Empty separator line
+	table.insert(lines, NuiLine())
+
+	self._lines = lines
+	self._line_count = #lines
+end
+
+-- Re-render this component in place (replaces its existing buffer region).
+-- Only safe when line count has NOT changed (e.g. hover toggle).
+function LogLine:rerender(bufnr, ns_id)
+	if self._buf_start == 0 then
+		return
+	end
+
+	local content_lines = {}
+	for _, nui_line in ipairs(self._lines) do
+		table.insert(content_lines, nui_line:content())
+	end
+
+	-- Clear extmarks and replace lines
+	vim.api.nvim_buf_clear_namespace(bufnr, ns_id, self._buf_start - 1, self._buf_start - 1 + self._line_count)
+	vim.api.nvim_buf_set_lines(bufnr, self._buf_start - 1, self._buf_start - 1 + self._line_count, false, content_lines)
+
+	-- Apply highlights
+	for i, nui_line in ipairs(self._lines) do
+		nui_line:highlight(bufnr, ns_id, self._buf_start + i - 1)
+	end
+end
+
+---------------------------------------------------------------
+-- Data layer
+---------------------------------------------------------------
+
+-- Check if entry is a message.part.updated SSE event.
+-- Returns messageID string or nil.
+local function get_part_message_id(entry)
+	local d = entry.data and entry.data.data
+	if type(d) == "table" and d.part and d.part.messageID then
+		return d.part.messageID
+	end
+	return nil
+end
+
+-- Search state.entries backwards (up to 100) for an entry with matching messageID.
+-- Returns entry index or nil.
+local function find_entry_by_message_id(message_id)
+	for i = #state.entries, math.max(1, #state.entries - 99), -1 do
+		local mid = get_part_message_id(state.entries[i])
+		if mid == message_id then
+			return i
+		end
+	end
+	return nil
+end
+
+-- Rebuild state.entries from raw logs (full rebuild)
+local function rebuild_entries()
+	local logger = require("opencode.logger")
+	local logs, log_start = logger.get_logs()
+	state.entries = {}
+
+	for i = log_start, #logs do
+		local entry = logs[i]
+		local mid = get_part_message_id(entry)
+		local target = mid and find_entry_by_message_id(mid)
+
+		if target then
+			-- Replace existing entry with same messageID
+			state.entries[target] = entry
+		else
+			table.insert(state.entries, entry)
+		end
+	end
+
+	state.entries_log_count = #logs
+end
+
+-- Ingest a single entry into state.entries incrementally.
+-- Returns: action ("replace"|"append"), entry_index
+local function ingest_entry(entry)
+	local mid = get_part_message_id(entry)
+
+	if mid then
+		local target = find_entry_by_message_id(mid)
+		if target then
+			-- Replace existing entry in-place
+			state.entries[target] = entry
+			return "replace", target
+		end
+	end
+
+	table.insert(state.entries, entry)
+	return "append", #state.entries
+end
+
+---------------------------------------------------------------
+-- Config (preserved)
+---------------------------------------------------------------
 
 -- Get merged config
 local function get_config()
@@ -44,338 +268,558 @@ local function get_config()
 	return defaults
 end
 
--- Setup buffer options
-local function setup_buffer(bufnr)
-	vim.bo[bufnr].buftype = "nofile"
-	vim.bo[bufnr].bufhidden = "hide"
-	vim.bo[bufnr].swapfile = false
-	vim.bo[bufnr].filetype = "opencode_logs"
-	vim.bo[bufnr].modifiable = false
+---------------------------------------------------------------
+-- Helpers
+---------------------------------------------------------------
 
-	-- Buffer-local keymaps
-	local opts = { buffer = bufnr, noremap = true, silent = true }
+local function get_win_width()
+	if state.split and state.split.winid and vim.api.nvim_win_is_valid(state.split.winid) then
+		return vim.api.nvim_win_get_width(state.split.winid)
+	end
+	return 80
+end
+
+local function build_header_lines(log_count)
+	local lines = {}
+	local win_width = get_win_width()
+
+	-- Title
+	local title = NuiLine()
+	title:append(NuiText(string.format(" OpenCode Logs (%d entries) ", log_count), "Title"))
+	table.insert(lines, title)
+
+	-- Separator
+	local sep = NuiLine()
+	sep:append(NuiText(string.rep("═", win_width - 2), "Comment"))
+	table.insert(lines, sep)
+
+	-- Empty line
+	table.insert(lines, NuiLine())
+
+	-- Auto-scroll indicator
+	local indicator = NuiLine()
+	if state.auto_scroll then
+		indicator:append(NuiText(" [Auto-scroll ON - press 'a' to toggle] ", "Comment"))
+	else
+		indicator:append(NuiText(" [Auto-scroll OFF - press 'a' to toggle] ", "Comment"))
+	end
+	table.insert(lines, indicator)
+
+	-- Empty line
+	table.insert(lines, NuiLine())
+
+	return lines
+end
+
+---------------------------------------------------------------
+-- NuiSplit creation
+---------------------------------------------------------------
+
+local function create_split(cfg)
+	local position = cfg.position or "bottom"
+	local is_vertical = position == "left" or position == "right"
+	local size
+	if is_vertical then
+		size = { width = cfg.width or 80 }
+	else
+		size = { height = cfg.height or 15 }
+	end
+
+	local split = NuiSplit({
+		relative = "editor",
+		position = position,
+		size = size,
+		enter = true,
+		buf_options = {
+			buftype = "nofile",
+			bufhidden = "hide",
+			swapfile = false,
+			filetype = "opencode_logs",
+			modifiable = false,
+		},
+		win_options = {
+			winhighlight = "Cursor:OpenCodeHiddenCursor,lCursor:OpenCodeHiddenCursor,CursorLine:OpenCodeHiddenCursor,CursorColumn:OpenCodeHiddenCursor",
+			cursorline = false,
+			cursorcolumn = false,
+			number = false,
+			relativenumber = false,
+			signcolumn = "no",
+			wrap = false,
+			winfixwidth = is_vertical,
+			winfixheight = not is_vertical,
+		},
+	})
+
+	return split
+end
+
+---------------------------------------------------------------
+-- Keymap setup
+---------------------------------------------------------------
+
+local function setup_keymaps(split)
+	local opts = { noremap = true, silent = true }
 
 	-- Close
-	vim.keymap.set("n", "q", function()
+	split:map("n", "q", function()
+		M.close()
+	end, opts)
+	split:map("n", "<Esc>", function()
 		M.close()
 	end, opts)
 
-	vim.keymap.set("n", "<Esc>", function()
-		M.close()
+	-- Navigation (virtual cursor)
+	split:map("n", "j", function()
+		M.move_selection(1)
+	end, opts)
+	split:map("n", "k", function()
+		M.move_selection(-1)
 	end, opts)
 
 	-- Scroll
-	vim.keymap.set("n", "<C-u>", "<C-u>", opts)
-	vim.keymap.set("n", "<C-d>", "<C-d>", opts)
-	vim.keymap.set("n", "gg", "gg", opts)
-	vim.keymap.set("n", "G", "G", opts)
+	split:map("n", "<C-u>", function()
+		M.scroll_half_page(-1)
+	end, opts)
+	split:map("n", "<C-d>", function()
+		M.scroll_half_page(1)
+	end, opts)
+	split:map("n", "gg", function()
+		M.goto_top()
+	end, opts)
+	split:map("n", "G", function()
+		M.goto_bottom()
+	end, opts)
 
-	-- Clear logs
-	vim.keymap.set("n", "C", function()
+	-- Clear
+	split:map("n", "C", function()
 		M.clear_logs()
 	end, opts)
 
-	-- Toggle auto-scroll
-	vim.keymap.set("n", "a", function()
+	-- Auto-scroll toggle
+	split:map("n", "a", function()
 		M.toggle_auto_scroll()
 	end, opts)
 
 	-- Refresh
-	vim.keymap.set("n", "r", function()
+	split:map("n", "r", function()
 		M.refresh()
 	end, opts)
 
 	-- Help
-	vim.keymap.set("n", "?", function()
+	split:map("n", "?", function()
 		M.show_help()
 	end, opts)
 
-	-- Toggle fold on current line
-	vim.keymap.set("n", "<CR>", function()
-		M.toggle_fold_at_cursor()
+	-- Fold toggle
+	split:map("n", "<CR>", function()
+		M.toggle_fold_selected()
+	end, opts)
+	split:map("n", "o", function()
+		M.toggle_fold_selected()
+	end, opts)
+	split:map("n", "<Tab>", function()
+		M.toggle_fold_selected()
 	end, opts)
 
-	vim.keymap.set("n", "o", function()
-		M.toggle_fold_at_cursor()
-	end, opts)
-
-	vim.keymap.set("n", "<Tab>", function()
-		M.toggle_fold_at_cursor()
-	end, opts)
-
-	-- Fold all / Unfold all
-	vim.keymap.set("n", "zM", function()
+	-- Fold all / unfold all
+	split:map("n", "f", function()
 		M.fold_all()
 	end, opts)
-
-	vim.keymap.set("n", "zR", function()
+	split:map("n", "zM", function()
+		M.fold_all()
+	end, opts)
+	split:map("n", "F", function()
 		M.unfold_all()
 	end, opts)
-
-	vim.keymap.set("n", "f", function()
-		M.fold_all()
-	end, opts)
-
-	vim.keymap.set("n", "F", function()
+	split:map("n", "zR", function()
 		M.unfold_all()
 	end, opts)
 end
 
--- Create buffer
-local function create_buffer()
-	if state.bufnr and vim.api.nvim_buf_is_valid(state.bufnr) then
-		return state.bufnr
+---------------------------------------------------------------
+-- Virtual cursor navigation
+---------------------------------------------------------------
+
+function M.move_selection(delta)
+	local components = state.components
+	if #components == 0 then
+		return
 	end
 
-	state.bufnr = vim.api.nvim_create_buf(false, true)
-	setup_buffer(state.bufnr)
-	return state.bufnr
+	local bufnr = state.split and state.split.bufnr
+	if not bufnr or not vim.api.nvim_buf_is_valid(bufnr) then
+		return
+	end
+
+	local old_idx = state.selected_idx
+	local new_idx = old_idx + delta
+
+	-- Clamp
+	if new_idx < 1 then
+		new_idx = 1
+	end
+	if new_idx > #components then
+		new_idx = #components
+	end
+	if new_idx == old_idx then
+		return
+	end
+
+	vim.bo[bufnr].modifiable = true
+
+	-- Unhover old
+	if old_idx >= 1 and old_idx <= #components then
+		local old_comp = components[old_idx]
+		old_comp:hover(false)
+		old_comp:rerender(bufnr, hl_ns)
+	end
+
+	-- Hover new
+	local new_comp = components[new_idx]
+	new_comp:hover(true)
+	new_comp:rerender(bufnr, hl_ns)
+
+	vim.bo[bufnr].modifiable = false
+	state.selected_idx = new_idx
+
+	-- Scroll to keep selected visible
+	if state.split.winid and vim.api.nvim_win_is_valid(state.split.winid) then
+		vim.api.nvim_win_set_cursor(state.split.winid, { new_comp._buf_start, 0 })
+	end
 end
 
--- Extract messageID from a log entry's data (checks common SSE event shapes)
-local function extract_message_id(entry)
-	if not entry.data then
-		return nil
+function M.scroll_half_page(direction)
+	if not state.split or not state.split.winid or not vim.api.nvim_win_is_valid(state.split.winid) then
+		return
 	end
-	local d = entry.data.data
-	if not d then
-		return nil
+	local win_height = vim.api.nvim_win_get_height(state.split.winid)
+	local half = math.floor(win_height / 2)
+
+	-- Move selection by approximately half page worth of components
+	local moved = 0
+	local lines_moved = 0
+	while lines_moved < half do
+		local next_idx = state.selected_idx + (direction * (moved + 1))
+		if next_idx < 1 or next_idx > #state.components then
+			break
+		end
+		moved = moved + 1
+		lines_moved = lines_moved + state.components[next_idx]:line_count()
 	end
-	-- message.part.updated: data.data.part.messageID
-	if type(d) == "table" and d.part and d.part.messageID then
-		return d.part.messageID
+	if moved > 0 then
+		M.move_selection(direction * moved)
 	end
-	-- message.updated: data.data.info.id
-	if type(d) == "table" and d.info and d.info.id then
-		return d.info.id
-	end
-	-- message.removed / message.part.removed: data.data.messageID
-	if type(d) == "table" and d.messageID then
-		return d.messageID
-	end
-	return nil
 end
 
--- Group consecutive log entries by messageID into squashed groups
--- Returns array of { message_id = string|nil, entries = {entry...} }
----@param logs table The log array
----@param start_index number 1-based index to start from
-local function squash_logs(logs, start_index)
-	local groups = {}
-	local current_group = nil
-
-	for i = start_index, #logs do
-		local entry = logs[i]
-		local mid = extract_message_id(entry)
-		if mid and current_group and current_group.message_id == mid then
-			table.insert(current_group.entries, entry)
-		else
-			current_group = {
-				message_id = mid,
-				entries = { entry },
-			}
-			table.insert(groups, current_group)
-		end
+function M.goto_top()
+	if #state.components == 0 or state.selected_idx == 1 then
+		return
 	end
 
-	return groups
+	local bufnr = state.split and state.split.bufnr
+	if not bufnr or not vim.api.nvim_buf_is_valid(bufnr) then
+		return
+	end
+
+	vim.bo[bufnr].modifiable = true
+
+	-- Unhover old
+	if state.selected_idx >= 1 and state.selected_idx <= #state.components then
+		local old = state.components[state.selected_idx]
+		old:hover(false)
+		old:rerender(bufnr, hl_ns)
+	end
+
+	-- Hover first
+	state.selected_idx = 1
+	local new_comp = state.components[1]
+	new_comp:hover(true)
+	new_comp:rerender(bufnr, hl_ns)
+
+	vim.bo[bufnr].modifiable = false
+
+	if state.split.winid and vim.api.nvim_win_is_valid(state.split.winid) then
+		vim.api.nvim_win_set_cursor(state.split.winid, { new_comp._buf_start, 0 })
+	end
 end
 
--- Format a squashed group of log entries for display
----@param group table Squashed group { message_id, entries, original_indices }
----@param cfg table Config
----@param group_index number Index of group for fold tracking
----@param is_folded boolean Whether this group is folded
-local function format_squashed_group(group, cfg, group_index, is_folded)
-	local entries = group.entries
-	local count = #entries
-	local last_entry = entries[count]
-
-	-- Single entry or no messageID — render normally
-	if count == 1 or not group.message_id then
-		return format_entry(last_entry, cfg, group_index, is_folded)
+function M.goto_bottom()
+	if #state.components == 0 or state.selected_idx == #state.components then
+		return
 	end
 
-	-- Squashed group: show summary header
-	local lines = {}
-	local highlights = {}
+	local bufnr = state.split and state.split.bufnr
+	if not bufnr or not vim.api.nvim_buf_is_valid(bufnr) then
+		return
+	end
 
-	local fold_icon = is_folded and "▶ " or "▼ "
-	local short_id = group.message_id:sub(1, 8)
-	local header = string.format(
-		"%s%s [%s] [msg:%s] %s (%d events)",
-		fold_icon,
-		last_entry.timestamp,
-		last_entry.level,
-		short_id,
-		last_entry.message,
-		count
-	)
-	table.insert(lines, header)
+	vim.bo[bufnr].modifiable = true
 
-	-- Highlight fold icon
-	table.insert(highlights, {
-		line = 0,
-		col_start = 0,
-		col_end = #fold_icon,
-		hl_group = "Special",
-	})
+	-- Unhover old
+	if state.selected_idx >= 1 and state.selected_idx <= #state.components then
+		local old = state.components[state.selected_idx]
+		old:hover(false)
+		old:rerender(bufnr, hl_ns)
+	end
 
-	-- Highlight the count badge
-	local count_str = string.format("(%d events)", count)
-	table.insert(highlights, {
-		line = 0,
-		col_start = #header - #count_str,
-		col_end = #header,
-		hl_group = "WarningMsg",
-	})
+	-- Hover last
+	state.selected_idx = #state.components
+	local new_comp = state.components[state.selected_idx]
+	new_comp:hover(true)
+	new_comp:rerender(bufnr, hl_ns)
 
-	if is_folded then
-		-- Show one-line preview of all event types
-		local event_types = {}
-		for _, entry in ipairs(entries) do
-			local msg_short = entry.message:match("^(%S+)") or entry.message
-			event_types[msg_short] = (event_types[msg_short] or 0) + 1
-		end
-		local parts = {}
-		for ev, c in pairs(event_types) do
-			table.insert(parts, string.format("%s×%d", ev, c))
-		end
-		local preview = "  " .. table.concat(parts, ", ")
-		table.insert(lines, preview)
-		table.insert(highlights, {
-			line = 1,
-			col_start = 0,
-			col_end = #preview,
-			hl_group = "Comment",
-		})
+	vim.bo[bufnr].modifiable = false
+
+	if state.split.winid and vim.api.nvim_win_is_valid(state.split.winid) then
+		vim.api.nvim_win_set_cursor(state.split.winid, { new_comp._buf_start, 0 })
+	end
+end
+
+---------------------------------------------------------------
+-- Fold operations
+---------------------------------------------------------------
+
+function M.toggle_fold_selected()
+	if state.selected_idx < 1 or state.selected_idx > #state.components then
+		return
+	end
+
+	local comp = state.components[state.selected_idx]
+	if not comp:is_foldable() then
+		return
+	end
+
+	if comp.folded then
+		comp:unfold()
 	else
-		-- Expanded: show each entry as a sub-line
-		for j, entry in ipairs(entries) do
-			local connector = j == count and "└" or "├"
-			local level_hl = cfg.level_highlights[entry.level] or "Normal"
-			local sub_line = string.format("  %s %s [%s] %s", connector, entry.timestamp, entry.level, entry.message)
-			table.insert(lines, sub_line)
-			table.insert(highlights, {
-				line = #lines - 1,
-				col_start = 0,
-				col_end = #sub_line,
-				hl_group = level_hl,
-			})
-
-			-- Show data for this sub-entry if present
-			if entry.data then
-				local data_str = vim.inspect(entry.data)
-				local win_width = state.winid and vim.api.nvim_win_get_width(state.winid) or 80
-				local max_line_length = win_width - 8
-				local indent = "    "
-				for line in data_str:gmatch("[^\n]+") do
-					if #line > max_line_length then
-						table.insert(lines, indent .. line:sub(1, max_line_length - 3) .. "...")
-					else
-						table.insert(lines, indent .. line)
-					end
-				end
-			end
-		end
+		comp:fold()
 	end
 
-	-- Empty line separator
-	table.insert(lines, "")
-
-	return lines, highlights
+	-- Line count changed, need full refresh
+	M.refresh()
 end
 
--- Format log entry for display
----@param entry table Log entry
----@param cfg table Config
----@param entry_index number Index of entry for fold tracking
----@param is_folded boolean Whether this entry is folded
-local function format_entry(entry, cfg, entry_index, is_folded)
-	local lines = {}
-	local highlights = {}
+function M.fold_all()
+	for _, comp in ipairs(state.components) do
+		if comp:is_foldable() then
+			comp:fold()
+		end
+	end
+	M.refresh()
+end
 
-	-- Fold indicator
-	local fold_icon = ""
-	if entry.data then
-		fold_icon = is_folded and "▶ " or "▼ "
-	else
-		fold_icon = "  "
+function M.unfold_all()
+	for _, comp in ipairs(state.components) do
+		if comp:is_foldable() then
+			comp:unfold()
+		end
+	end
+	M.refresh()
+end
+
+---------------------------------------------------------------
+-- Full render
+---------------------------------------------------------------
+
+function M.refresh()
+	if not state.split or not state.split.bufnr or not vim.api.nvim_buf_is_valid(state.split.bufnr) then
+		return
 	end
 
-	-- Header line with timestamp and level
-	local level_indicator = string.format("[%s]", entry.level)
-	local header = string.format("%s%s %s %s", fold_icon, entry.timestamp, level_indicator, entry.message)
-	table.insert(lines, header)
+	local cfg = get_config()
+	local win_width = get_win_width()
+	local bufnr = state.split.bufnr
 
-	-- Highlight for the fold icon
-	if entry.data then
-		table.insert(highlights, {
-			line = 0,
-			col_start = 0,
-			col_end = #fold_icon,
-			hl_group = "Special",
+	-- Rebuild data layer from raw logs
+	rebuild_entries()
+
+	-- Build header
+	local visible_count = state.entries_log_count
+	local header_lines = build_header_lines(visible_count)
+	state.header_line_count = #header_lines
+
+	-- Preserve fold state from old components
+	local old_fold_state = {}
+	for _, comp in ipairs(state.components) do
+		old_fold_state[comp.entry_index] = comp.folded
+	end
+
+	-- Create new LogLine components from state.entries
+	state.components = {}
+	for entry_index, entry in ipairs(state.entries) do
+		local comp = LogLine.new({
+			entry = entry,
+			entry_index = entry_index,
+			config = cfg,
+			win_width = win_width,
+			folded = old_fold_state[entry_index],
 		})
+		table.insert(state.components, comp)
 	end
 
-	-- Highlight for the level
-	local hl_group = cfg.level_highlights[entry.level] or "Normal"
-	table.insert(highlights, {
-		line = 0,
-		col_start = #fold_icon + 9, -- After fold icon and timestamp
-		col_end = #fold_icon + 9 + #level_indicator,
-		hl_group = hl_group,
-	})
+	-- Determine selected_idx
+	if state.auto_scroll and #state.components > 0 then
+		state.selected_idx = #state.components
+	elseif #state.components == 0 then
+		state.selected_idx = 0
+	elseif state.selected_idx < 1 then
+		state.selected_idx = 1
+	elseif state.selected_idx > #state.components then
+		state.selected_idx = #state.components
+	end
 
-	-- Data if present and not folded
-	if entry.data then
-		if is_folded then
-			-- Show collapsed preview
-			local data_str = vim.inspect(entry.data)
-			local first_line = data_str:match("^[^\n]+") or "{...}"
-			local preview = "  " .. first_line:sub(1, 60)
-			if #first_line > 60 then
-				preview = preview .. "..."
-			end
-			table.insert(lines, preview)
-			table.insert(highlights, {
-				line = 1,
-				col_start = 0,
-				col_end = #preview,
-				hl_group = "Comment",
-			})
-		else
-			-- Show full data
-			local data_str = vim.inspect(entry.data)
-			-- Get window width for wrapping
-			local win_width = state.winid and vim.api.nvim_win_get_width(state.winid) or 80
-			local max_line_length = win_width - 4
-			local indent = "  "
+	-- Apply hover to selected component
+	if state.selected_idx >= 1 and state.selected_idx <= #state.components then
+		state.components[state.selected_idx]:hover(true)
+	end
 
-			for line in data_str:gmatch("[^\n]+") do
-				if #line > max_line_length then
-					-- Truncate long lines
-					table.insert(lines, indent .. line:sub(1, max_line_length - 3) .. "...")
-				else
-					table.insert(lines, indent .. line)
-				end
-			end
+	-- Collect all content strings and NuiLine references
+	local all_content = {}
+	local all_nui_lines = {}
+
+	for _, nui_line in ipairs(header_lines) do
+		table.insert(all_content, nui_line:content())
+		table.insert(all_nui_lines, nui_line)
+	end
+
+	local current_line = state.header_line_count + 1 -- 1-indexed
+	for _, comp in ipairs(state.components) do
+		comp._buf_start = current_line
+		for _, nui_line in ipairs(comp._lines) do
+			table.insert(all_content, nui_line:content())
+			table.insert(all_nui_lines, nui_line)
 		end
+		current_line = current_line + comp._line_count
 	end
 
-	-- Empty line separator
-	table.insert(lines, "")
+	-- Write buffer in one shot
+	vim.bo[bufnr].modifiable = true
+	vim.api.nvim_buf_clear_namespace(bufnr, hl_ns, 0, -1)
+	vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, all_content)
 
-	return lines, highlights
+	-- Apply highlights
+	for i, nui_line in ipairs(all_nui_lines) do
+		nui_line:highlight(bufnr, hl_ns, i)
+	end
+
+	vim.bo[bufnr].modifiable = false
+
+	-- Auto-scroll to bottom
+	if state.auto_scroll and state.visible and state.split.winid and vim.api.nvim_win_is_valid(state.split.winid) then
+		local buf_lines = vim.api.nvim_buf_line_count(bufnr)
+		vim.api.nvim_win_set_cursor(state.split.winid, { buf_lines, 0 })
+	end
+
+	vim.cmd("redraw")
 end
+
+---------------------------------------------------------------
+-- Incremental render
+---------------------------------------------------------------
+
+-- Render a single entry incrementally (for live updates)
+function M.render_entry(entry)
+	if not state.split or not state.split.bufnr or not vim.api.nvim_buf_is_valid(state.split.bufnr) then
+		return
+	end
+
+	local logger = require("opencode.logger")
+	local logs = logger.get_logs()
+
+	-- Fall back to full refresh if incremental state is invalid
+	-- (first render, log trimming occurred, or multiple entries added at once)
+	if state.entries_log_count == 0 or #logs ~= state.entries_log_count + 1 then
+		M.refresh()
+		return
+	end
+
+	local cfg = get_config()
+	local win_width = get_win_width()
+	local bufnr = state.split.bufnr
+
+	-- Ingest into data layer
+	local action, entry_idx = ingest_entry(entry)
+	state.entries_log_count = #logs
+
+	vim.bo[bufnr].modifiable = true
+
+	if action == "replace" then
+		-- Entry was replaced in-place; re-render its component
+		local comp = state.components[entry_idx]
+		if comp then
+			local old_line_count = comp:line_count()
+			comp:update(state.entries[entry_idx])
+			local new_line_count = comp:line_count()
+
+			if new_line_count == old_line_count then
+				-- Same line count: replace in place
+				comp:rerender(bufnr, hl_ns)
+			else
+				-- Line count changed: full refresh
+				vim.bo[bufnr].modifiable = false
+				M.refresh()
+				return
+			end
+		else
+			-- Component missing: full refresh
+			vim.bo[bufnr].modifiable = false
+			M.refresh()
+			return
+		end
+	else
+		-- New entry: create component and append to buffer
+		local comp = LogLine.new({
+			entry = state.entries[entry_idx],
+			entry_index = entry_idx,
+			config = cfg,
+			win_width = win_width,
+		})
+
+		local buf_end = vim.api.nvim_buf_line_count(bufnr)
+		comp._buf_start = buf_end + 1
+
+		local content_lines = {}
+		for _, nui_line in ipairs(comp._lines) do
+			table.insert(content_lines, nui_line:content())
+		end
+		vim.api.nvim_buf_set_lines(bufnr, buf_end, buf_end, false, content_lines)
+
+		for i, nui_line in ipairs(comp._lines) do
+			nui_line:highlight(bufnr, hl_ns, comp._buf_start + i - 1)
+		end
+
+		table.insert(state.components, comp)
+	end
+
+	-- Update header count
+	local header_text = string.format(" OpenCode Logs (%d entries) ", #logs)
+	vim.api.nvim_buf_set_lines(bufnr, 0, 1, false, { header_text })
+	vim.api.nvim_buf_clear_namespace(bufnr, hl_ns, 0, 1)
+	vim.api.nvim_buf_set_extmark(bufnr, hl_ns, 0, 0, { end_col = #header_text, hl_group = "Title" })
+
+	vim.bo[bufnr].modifiable = false
+
+	-- Auto-scroll to bottom
+	if state.auto_scroll and state.visible and state.split.winid and vim.api.nvim_win_is_valid(state.split.winid) then
+		local buf_lines = vim.api.nvim_buf_line_count(bufnr)
+		vim.api.nvim_win_set_cursor(state.split.winid, { buf_lines, 0 })
+	end
+
+	-- Force redraw so changes are visible even without auto-scroll
+	vim.cmd("redraw")
+end
+
+---------------------------------------------------------------
+-- Public API
+---------------------------------------------------------------
 
 -- Open log viewer in a split
 function M.open(opts)
 	opts = opts or {}
 
 	if state.visible then
-		if state.winid and vim.api.nvim_win_is_valid(state.winid) then
-			vim.api.nvim_set_current_win(state.winid)
+		if state.split and state.split.winid and vim.api.nvim_win_is_valid(state.split.winid) then
+			vim.api.nvim_set_current_win(state.split.winid)
 		end
 		return
 	end
@@ -393,36 +837,17 @@ function M.open(opts)
 	end
 	state.config = cfg
 
-	create_buffer()
+	setup_highlights()
 
-	-- Determine split command based on position
-	local split_cmd
-	if cfg.position == "bottom" then
-		split_cmd = string.format("botright %dsplit", cfg.height)
-	elseif cfg.position == "top" then
-		split_cmd = string.format("topleft %dsplit", cfg.height)
-	elseif cfg.position == "left" then
-		split_cmd = string.format("topleft %dvsplit", cfg.width)
-	else -- right
-		split_cmd = string.format("botright %dvsplit", cfg.width)
-	end
-
-	-- Create split window
-	vim.cmd(split_cmd)
-	state.winid = vim.api.nvim_get_current_win()
-	vim.api.nvim_win_set_buf(state.winid, state.bufnr)
-
-	-- Set window options
-	if cfg.position == "left" or cfg.position == "right" then
-		vim.wo[state.winid].winfixwidth = true
-		vim.api.nvim_win_set_width(state.winid, cfg.width)
+	if state.split then
+		-- Reuse existing split (show preserves buffer)
+		state.split:show()
 	else
-		vim.wo[state.winid].winfixheight = true
-		vim.api.nvim_win_set_height(state.winid, cfg.height)
+		-- Create new split
+		state.split = create_split(cfg)
+		setup_keymaps(state.split)
+		state.split:mount()
 	end
-
-	-- Mark as scratch buffer
-	vim.bo[state.bufnr].bufhidden = "hide"
 
 	state.visible = true
 
@@ -430,9 +855,11 @@ function M.open(opts)
 	M.refresh()
 
 	-- Auto-scroll to bottom
-	if state.auto_scroll and state.winid then
-		local buf_lines = vim.api.nvim_buf_line_count(state.bufnr)
-		vim.api.nvim_win_set_cursor(state.winid, { buf_lines, 0 })
+	if state.auto_scroll and state.split.winid then
+		local buf_lines = vim.api.nvim_buf_line_count(state.split.bufnr)
+		if buf_lines > 0 then
+			vim.api.nvim_win_set_cursor(state.split.winid, { buf_lines, 0 })
+		end
 	end
 end
 
@@ -442,12 +869,11 @@ function M.close()
 		return
 	end
 
-	if state.winid and vim.api.nvim_win_is_valid(state.winid) then
-		vim.api.nvim_win_close(state.winid, true)
+	if state.split then
+		state.split:hide()
 	end
 
 	state.visible = false
-	state.winid = nil
 end
 
 -- Toggle visibility
@@ -461,117 +887,20 @@ end
 
 -- Check if visible
 function M.is_visible()
-	return state.visible and state.winid and vim.api.nvim_win_is_valid(state.winid)
-end
-
--- Refresh all logs
-function M.refresh()
-	if not state.bufnr or not vim.api.nvim_buf_is_valid(state.bufnr) then
-		return
-	end
-
-	local logger = require("opencode.logger")
-	local logs, log_start = logger.get_logs(100)
-	local cfg = get_config()
-
-	local all_lines = {}
-	local all_highlights = {}
-	local current_line = 0
-
-	-- Header
-	local visible_count = #logs - log_start + 1
-	local header_text = string.format(" OpenCode Logs (%d entries) ", visible_count)
-	table.insert(all_lines, header_text)
-	table.insert(all_highlights, { line = 0, col_start = 0, col_end = #header_text, hl_group = "Title" })
-
-	-- Get window width for separator
-	local win_width = state.winid and vim.api.nvim_win_get_width(state.winid) or 80
-	table.insert(all_lines, string.rep("═", win_width - 2))
-	table.insert(all_lines, "")
-	current_line = 3
-
-	-- Auto-scroll indicator
-	if state.auto_scroll then
-		table.insert(all_lines, " [Auto-scroll ON - press 'a' to toggle] ")
-	else
-		table.insert(all_lines, " [Auto-scroll OFF - press 'a' to toggle] ")
-	end
-	table.insert(all_highlights, { line = current_line, col_start = 0, col_end = 40, hl_group = "Comment" })
-	table.insert(all_lines, "")
-	current_line = current_line + 2
-
-	-- Clear line-to-entry mapping
-	state.entry_lines = {}
-
-	-- Squash consecutive entries with the same messageID
-	local groups = squash_logs(logs, log_start)
-
-	-- Each squashed group
-	for group_index, group in ipairs(groups) do
-		local is_folded = state.folded[group_index] == true
-		local lines, highlights
-
-		if #group.entries > 1 and group.message_id then
-			lines, highlights = format_squashed_group(group, cfg, group_index, is_folded)
-		else
-			lines, highlights = format_entry(group.entries[1], cfg, group_index, is_folded)
-		end
-
-		-- Map the header line to this group index for fold toggling
-		state.entry_lines[current_line + 1] = group_index -- +1 because nvim lines are 1-indexed
-
-		for _, line in ipairs(lines) do
-			table.insert(all_lines, line)
-		end
-
-		for _, hl in ipairs(highlights) do
-			hl.line = current_line + hl.line
-			table.insert(all_highlights, hl)
-		end
-
-		current_line = current_line + #lines
-	end
-
-	-- Render to buffer
-	vim.bo[state.bufnr].modifiable = true
-	vim.api.nvim_buf_set_lines(state.bufnr, 0, -1, false, all_lines)
-
-	-- Apply highlights
-	for _, hl in ipairs(all_highlights) do
-		local end_col = hl.col_end
-		if end_col == -1 then
-			local l = vim.api.nvim_buf_get_lines(state.bufnr, hl.line, hl.line + 1, false)[1]
-			end_col = l and #l or 0
-		end
-		vim.api.nvim_buf_set_extmark(state.bufnr, hl_ns, hl.line, hl.col_start, { end_col = end_col, hl_group = hl.hl_group })
-	end
-
-	vim.bo[state.bufnr].modifiable = false
-
-	-- Auto-scroll to bottom if enabled
-	if state.auto_scroll and state.visible and state.winid and vim.api.nvim_win_is_valid(state.winid) then
-		local buf_lines = vim.api.nvim_buf_line_count(state.bufnr)
-		vim.api.nvim_win_set_cursor(state.winid, { buf_lines, 0 })
-	end
-
-	-- Force redraw to show updates immediately
-	vim.cmd("redraw")
-end
-
--- Render a single entry (for live updates)
-function M.render_entry(entry)
-	if not state.bufnr or not vim.api.nvim_buf_is_valid(state.bufnr) then
-		return
-	end
-
-	-- Just do a full refresh for simplicity and consistency
-	M.refresh()
+	return state.visible
+		and state.split ~= nil
+		and state.split.winid ~= nil
+		and vim.api.nvim_win_is_valid(state.split.winid)
 end
 
 -- Clear logs
 function M.clear_logs()
 	local logger = require("opencode.logger")
 	logger.clear()
+	state.entries = {}
+	state.entries_log_count = 0
+	state.components = {}
+	state.selected_idx = 0
 	M.refresh()
 	vim.notify("Logs cleared", vim.log.levels.INFO)
 end
@@ -583,63 +912,13 @@ function M.toggle_auto_scroll()
 	vim.notify(string.format("Auto-scroll %s", state.auto_scroll and "enabled" or "disabled"), vim.log.levels.INFO)
 end
 
--- Toggle fold at cursor position
-function M.toggle_fold_at_cursor()
-	if not state.winid or not vim.api.nvim_win_is_valid(state.winid) then
-		return
-	end
-
-	local cursor = vim.api.nvim_win_get_cursor(state.winid)
-	local line_num = cursor[1]
-
-	-- Find the entry index for this line (search backwards to find header line)
-	local entry_index = nil
-	for l = line_num, 1, -1 do
-		if state.entry_lines[l] then
-			entry_index = state.entry_lines[l]
-			break
-		end
-	end
-
-	if entry_index then
-		state.folded[entry_index] = not state.folded[entry_index]
-		M.refresh()
-	end
-end
-
--- Fold all entries
-function M.fold_all()
-	local logger = require("opencode.logger")
-	local logs, log_start = logger.get_logs(100)
-	local groups = squash_logs(logs, log_start)
-	for i, group in ipairs(groups) do
-		-- Fold groups that have data or are multi-entry squashed groups
-		local has_data = false
-		for _, entry in ipairs(group.entries) do
-			if entry.data then
-				has_data = true
-				break
-			end
-		end
-		if has_data or #group.entries > 1 then
-			state.folded[i] = true
-		end
-	end
-	M.refresh()
-end
-
--- Unfold all entries
-function M.unfold_all()
-	state.folded = {}
-	M.refresh()
-end
-
--- Show help
+-- Show help (preserved - already uses nui.popup)
 function M.show_help()
 	local lines = {
 		" Log Viewer Keymaps ",
 		"",
 		" q / <Esc>  - Close viewer",
+		" j / k      - Navigate entries",
 		" <C-u>      - Scroll up",
 		" <C-d>      - Scroll down",
 		" gg         - Go to top",
