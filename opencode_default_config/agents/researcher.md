@@ -4,7 +4,12 @@ mode: primary
 tools:
   todowrite: true
   todoread: true
-  context7: true
+  context7: false
+  glob: false
+  list: false
+  read: false
+  grep: false
+  bash: false
   opencode_edit: false
   opencode_apply_patch: false
 
