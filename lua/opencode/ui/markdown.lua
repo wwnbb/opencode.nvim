@@ -200,39 +200,19 @@ function M.render_to_lines(segments, opts)
 			})
 		elseif segment.type == "code_block" then
 			table.insert(lines, "")
-			table.insert(lines, "┌" .. string.rep("─", 58) .. "┐")
 
-			-- Language label
-			if segment.language and segment.language ~= "" then
-				local label = " " .. segment.language .. " "
-				table.insert(lines, "│" .. label .. string.rep(" ", 58 - #label) .. "│")
-				table.insert(highlights, {
-					line = #lines - 1,
-					col_start = 1,
-					col_end = 1 + #label,
-					hl_group = "Comment",
-				})
-			else
-				table.insert(lines, "│" .. string.rep(" ", 58) .. "│")
-			end
-
-			-- Code content
+			-- Code content - render as plain text lines
 			local code_lines = vim.split(segment.content, "\n", { plain = true })
 			for _, code_line in ipairs(code_lines) do
-				-- Truncate if too long
-				if #code_line > 58 then
-					code_line = code_line:sub(1, 55) .. "..."
-				end
-				local padded = code_line .. string.rep(" ", 58 - #code_line)
-				table.insert(lines, "│" .. padded .. "│")
+				table.insert(lines, code_line)
 
 				-- Store highlight info for code
 				local hl = M.highlight_code(code_line, segment.language)
 				if hl then
 					table.insert(highlights, {
 						line = #lines - 1,
-						col_start = 1,
-						col_end = 1 + #code_line,
+						col_start = 0,
+						col_end = #code_line,
 						hl_group = hl.type == "treesitter" and "Normal" or ("@" .. hl.language),
 						code = true,
 						language = segment.language,
@@ -240,7 +220,6 @@ function M.render_to_lines(segments, opts)
 				end
 			end
 
-			table.insert(lines, "└" .. string.rep("─", 58) .. "┘")
 			table.insert(lines, "")
 		elseif segment.type == "inline_code" then
 			table.insert(lines, "`" .. segment.content .. "`")

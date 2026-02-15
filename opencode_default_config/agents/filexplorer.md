@@ -1,6 +1,7 @@
 ---
 description: Explore codebases to find files. This agent specializes in file discovery and deep codebase analysis.
 mode: subagent
+model: chutes/mistralai/Devstral-2-123B-Instruct-2512-TEE
 tools:
   bash: true
   skill: true
