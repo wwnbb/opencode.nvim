@@ -587,13 +587,16 @@ function M.create()
 			state.tools = {}
 			state.expanded_tools = {}
 			-- Remove question/permission messages from state.messages (they belong to old session)
-			local new_messages = {}
-			for _, msg in ipairs(state.messages) do
-				if msg.type ~= "question" and msg.type ~= "permission" then
-					table.insert(new_messages, msg)
+			-- But preserve them when navigating into/out of child sessions
+			if not is_navigating then
+				local new_messages = {}
+				for _, msg in ipairs(state.messages) do
+					if msg.type ~= "question" and msg.type ~= "permission" then
+						table.insert(new_messages, msg)
+					end
 				end
+				state.messages = new_messages
 			end
-			state.messages = new_messages
 			-- Clear navigation stack unless we're drilling into a child session
 			if not is_navigating then
 				state.session_stack = {}
@@ -1716,70 +1719,88 @@ function M.render()
 		table.insert(raw_lines, text)
 	end
 
-	-- Helper: render permissions for a message
-	local function render_permissions(message_id)
-		local perms = permission_state.get_permissions_for_message(message_id)
-		for _, pstate in ipairs(perms) do
-			local perm_id = pstate.permission_id
-			local pstatus = pstate.status or "pending"
-			local p_lines, p_highlights
+	-- Track which permissions/edits were rendered inline (to find orphans later)
+	local rendered_perm_ids = {}
+	local rendered_edit_ids = {}
 
-			if pstatus == "approved" then
-				p_lines, p_highlights = permission_widget.get_approved_lines(perm_id, pstate)
-			elseif pstatus == "rejected" then
-				p_lines, p_highlights = permission_widget.get_rejected_lines(perm_id, pstate)
-			else
-				local first_option_offset
-				p_lines, p_highlights, _, first_option_offset =
-					permission_widget.get_lines_for_permission(perm_id, pstate)
-				if state.focus_permission == perm_id then
-					state.focus_permission_line = #raw_lines + first_option_offset + 1
-				end
-			end
+	-- Helper: render a single permission state entry
+	local function render_single_permission(pstate)
+		local perm_id = pstate.permission_id
+		local pstatus = pstate.status or "pending"
+		local p_lines, p_highlights
 
-			if p_lines then
-				for _, line_text in ipairs(p_lines) do
-					add_raw_line(line_text)
-				end
-				add_raw_line("")
-				state.permissions[perm_id] = {
-					start_line = #raw_lines - #p_lines,
-					end_line = #raw_lines - 1,
-					status = pstatus,
-				}
+		if pstatus == "approved" then
+			p_lines, p_highlights = permission_widget.get_approved_lines(perm_id, pstate)
+		elseif pstatus == "rejected" then
+			p_lines, p_highlights = permission_widget.get_rejected_lines(perm_id, pstate)
+		else
+			local first_option_offset
+			p_lines, p_highlights, _, first_option_offset =
+				permission_widget.get_lines_for_permission(perm_id, pstate)
+			if state.focus_permission == perm_id then
+				state.focus_permission_line = #raw_lines + first_option_offset + 1
 			end
+		end
+
+		if p_lines then
+			local perm_start = #raw_lines
+			for _, line_text in ipairs(p_lines) do
+				add_raw_line(line_text)
+			end
+			state.permissions[perm_id] = {
+				start_line = perm_start,
+				end_line = perm_start + #p_lines - 1,
+				status = pstatus,
+			}
+			add_raw_line("")
 		end
 	end
 
-	-- Helper: render edits for a message
+	-- Helper: render a single edit state entry
+	local function render_single_edit(estate)
+		local eid = estate.permission_id
+		local estatus = estate.status or "pending"
+		local e_lines, e_highlights
+
+		if estatus == "sent" then
+			e_lines, e_highlights = edit_widget.get_resolved_lines(eid, estate)
+		else
+			local first_file_offset
+			e_lines, e_highlights, _, first_file_offset = edit_widget.get_lines_for_edit(eid, estate)
+			if state.focus_edit == eid then
+				state.focus_edit_line = #raw_lines + first_file_offset + 1
+			end
+		end
+
+		if e_lines then
+			local edit_start = #raw_lines
+			for _, line_text in ipairs(e_lines) do
+				add_raw_line(line_text)
+			end
+			state.edits[eid] = {
+				start_line = edit_start,
+				end_line = edit_start + #e_lines - 1,
+				status = estatus,
+			}
+			add_raw_line("")
+		end
+	end
+
+	-- Helper: render permissions for a message (inline)
+	local function render_permissions(message_id)
+		local perms = permission_state.get_permissions_for_message(message_id)
+		for _, pstate in ipairs(perms) do
+			rendered_perm_ids[pstate.permission_id] = true
+			render_single_permission(pstate)
+		end
+	end
+
+	-- Helper: render edits for a message (inline)
 	local function render_edits(message_id)
 		local edits = edit_state.get_edits_for_message(message_id)
 		for _, estate in ipairs(edits) do
-			local eid = estate.permission_id
-			local estatus = estate.status or "pending"
-			local e_lines, e_highlights
-
-			if estatus == "sent" then
-				e_lines, e_highlights = edit_widget.get_resolved_lines(eid, estate)
-			else
-				local first_file_offset
-				e_lines, e_highlights, _, first_file_offset = edit_widget.get_lines_for_edit(eid, estate)
-				if state.focus_edit == eid then
-					state.focus_edit_line = #raw_lines + first_file_offset + 1
-				end
-			end
-
-			if e_lines then
-				for _, line_text in ipairs(e_lines) do
-					add_raw_line(line_text)
-				end
-				add_raw_line("")
-				state.edits[eid] = {
-					start_line = #raw_lines - #e_lines,
-					end_line = #raw_lines - 1,
-					status = estatus,
-				}
-			end
+			rendered_edit_ids[estate.permission_id] = true
+			render_single_edit(estate)
 		end
 	end
 
@@ -2024,6 +2045,32 @@ function M.render()
 			add_raw_line("")
 		end
 		::continue_local_message::
+	end
+
+	-- Build set of current session message IDs to identify orphans
+	local session_msg_ids = {}
+	for _, message in ipairs(messages) do
+		session_msg_ids[message.id] = true
+	end
+
+	-- Render orphan permissions (from subagent/child sessions)
+	-- Skip any whose message_id belongs to the current session (already rendered inline)
+	local all_perms = permission_state.get_all()
+	for _, pstate in ipairs(all_perms) do
+		if not rendered_perm_ids[pstate.permission_id]
+			and not (pstate.message_id and session_msg_ids[pstate.message_id]) then
+			render_single_permission(pstate)
+		end
+	end
+
+	-- Render orphan edits (from subagent/child sessions)
+	-- Skip any whose message_id belongs to the current session (already rendered inline)
+	local all_edits = edit_state.get_all()
+	for _, estate in ipairs(all_edits) do
+		if not rendered_edit_ids[estate.permission_id]
+			and not (estate.message_id and session_msg_ids[estate.message_id]) then
+			render_single_edit(estate)
+		end
 	end
 
 	-- Empty state message
@@ -2408,6 +2455,7 @@ function M.add_question_message(request_id, questions, status)
 			status = status,
 			timestamp = os.time(),
 			id = "question_" .. request_id,
+			source_session_id = qstate.session_id,
 		})
 
 		logger.debug("Question added to state.messages", {

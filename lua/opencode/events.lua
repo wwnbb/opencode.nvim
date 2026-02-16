@@ -897,17 +897,8 @@ function M.setup_question_handlers()
 				return
 			end
 
-			-- Check session match
+			-- Store question state (allow questions from subagent/child sessions)
 			local current_session = state.get_session()
-			if session_id and session_id ~= current_session.id then
-				logger.debug("Question for different session, ignoring", {
-					expected = current_session.id,
-					received = session_id,
-				})
-				return
-			end
-
-			-- Store question state
 			question_state.add_question(request_id, session_id or current_session.id, questions)
 
 			-- Stop the spinner so user can interact with the question
