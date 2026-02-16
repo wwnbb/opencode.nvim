@@ -15,6 +15,53 @@ local thinking = require("opencode.ui.thinking")
 local ChatMessage = {}
 ChatMessage.__index = ChatMessage
 
+---Wrap a string to fit within max_width, breaking at word boundaries
+---@param text string
+---@param max_width number
+---@return string[]
+local function wrap_text(text, max_width)
+	if max_width <= 0 then
+		return { text }
+	end
+	if vim.fn.strdisplaywidth(text) <= max_width then
+		return { text }
+	end
+
+	local result = {}
+	local remaining = text
+	while vim.fn.strdisplaywidth(remaining) > max_width do
+		local last_space_byte = nil
+		local byte_pos = 0
+		local col = 0
+		while byte_pos < #remaining do
+			local char_len = vim.fn.byteidx(remaining:sub(byte_pos + 1), 1)
+			if char_len <= 0 then
+				char_len = 1
+			end
+			local ch = remaining:sub(byte_pos + 1, byte_pos + char_len)
+			local char_width = vim.fn.strdisplaywidth(ch)
+			if col + char_width > max_width then
+				break
+			end
+			col = col + char_width
+			byte_pos = byte_pos + char_len
+			if ch == " " then
+				last_space_byte = byte_pos
+			end
+		end
+		local cut = (last_space_byte and last_space_byte > 0) and last_space_byte or byte_pos
+		table.insert(result, remaining:sub(1, cut))
+		remaining = remaining:sub(cut + 1)
+		if remaining:sub(1, 1) == " " then
+			remaining = remaining:sub(2)
+		end
+	end
+	if #remaining > 0 then
+		table.insert(result, remaining)
+	end
+	return result
+end
+
 ---Create a new ChatMessage component
 ---@param opts table
 ---@return ChatMessage
@@ -27,6 +74,7 @@ function ChatMessage.new(opts)
 	self.tool_parts = opts.tool_parts or {}
 	self.timestamp = opts.timestamp
 	self.complete = opts.complete ~= false
+	self.width = opts.width or 80
 	self._lines = {} -- NuiLine[]
 	self._line_count = 0
 	self:_build_lines()
@@ -47,6 +95,9 @@ function ChatMessage:update(opts)
 	end
 	if opts.complete ~= nil then
 		self.complete = opts.complete
+	end
+	if opts.width ~= nil then
+		self.width = opts.width
 	end
 	self:_build_lines()
 end
@@ -108,18 +159,23 @@ end
 function ChatMessage:_build_user_message(lines)
 	local content = self.content or ""
 	local content_lines = vim.split(content, "\n", { plain = true })
+	-- Reserve 2 columns for "│ " prefix
+	local max_content_width = self.width - 2
 
 	-- Top border line with highlight bar
 	local top_line = NuiLine()
 	top_line:append(NuiText("│", "Special"))
 	table.insert(lines, top_line)
 
-	-- Content lines with border prefix
+	-- Content lines with border prefix, wrapped to fit
 	for _, line in ipairs(content_lines) do
-		local content_line = NuiLine()
-		content_line:append(NuiText("│ ", "Special"))
-		content_line:append(line)
-		table.insert(lines, content_line)
+		local wrapped = wrap_text(line, max_content_width)
+		for _, wline in ipairs(wrapped) do
+			local content_line = NuiLine()
+			content_line:append(NuiText("│ ", "Special"))
+			content_line:append(wline)
+			table.insert(lines, content_line)
+		end
 	end
 
 	-- Bottom border line

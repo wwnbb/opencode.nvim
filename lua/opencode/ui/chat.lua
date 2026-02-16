@@ -38,10 +38,13 @@ local state = {
 	tasks = {}, -- Track task positions: { [part_id] = { start_line, end_line, tool_part } }
 	expanded_tasks = {}, -- Toggle set: { [part_id] = true }
 	task_child_cache = {}, -- Rendered child content: { [part_id] = { lines, highlights } }
+	tools = {}, -- Track tool positions: { [part_id] = { start_line, end_line, tool_part } }
+	expanded_tools = {}, -- Toggle set: { [part_id] = true }
 	session_stack = {}, -- Stack of { id, name } for parent session navigation
 	navigating = false, -- Flag to prevent session_change handler from clearing stack
 	last_render_time = 0,
 	render_scheduled = false,
+	auto_scroll = true, -- Auto-scroll to bottom on new content
 }
 
 local question_widget = require("opencode.ui.question_widget")
@@ -152,6 +155,11 @@ local function setup_buffer(bufnr)
 		local opencode = require("opencode")
 		opencode.abort()
 	end, vim.tbl_extend("force", opts, { desc = "Stop current generation" }))
+
+	-- Toggle auto-scroll
+	vim.keymap.set("n", "a", function()
+		M.toggle_auto_scroll()
+	end, vim.tbl_extend("force", opts, { desc = "Toggle auto-scroll" }))
 
 	-- Help
 	vim.keymap.set("n", "?", function()
@@ -312,6 +320,20 @@ local function setup_buffer(bufnr)
 			M.leave_child_session()
 		end
 	end, opts)
+
+	-- Toggle tool output display (per-tool, in-place)
+	vim.keymap.set("n", "O", function()
+		local tool_part_id = M.get_tool_at_cursor()
+		if tool_part_id then
+			M.handle_tool_toggle(tool_part_id)
+			return
+		end
+		local task_part_id = M.get_task_at_cursor()
+		if task_part_id then
+			M.handle_task_toggle(task_part_id)
+			return
+		end
+	end, vim.tbl_extend("force", opts, { desc = "Toggle tool output" }))
 end
 
 -- Create chat buffer
@@ -319,6 +341,12 @@ local function create_buffer()
 	local bufnr = vim.api.nvim_create_buf(false, true)
 	setup_buffer(bufnr)
 	return bufnr
+end
+
+-- Toggle auto-scroll
+function M.toggle_auto_scroll()
+	state.auto_scroll = not state.auto_scroll
+	vim.notify(string.format("Auto-scroll %s", state.auto_scroll and "enabled" or "disabled"), vim.log.levels.INFO)
 end
 
 -- Show help popup (styled to match input popup)
@@ -333,6 +361,7 @@ function M.show_help()
 		"",
 		"q          Close chat",
 		"i          Focus input",
+		"a          Toggle auto-scroll",
 		"<C-c>      Stop generation",
 		"<C-p>      Command palette",
 		"<C-u>      Scroll up",
@@ -349,6 +378,7 @@ function M.show_help()
 		"<C-r>      Restore input",
 		"",
 		"Tool Calls",
+		"O          Toggle tool output (per-tool)",
 		"<CR>       Toggle details",
 		"gd         Enter subagent output",
 		"<BS>       Go back to parent",
@@ -554,6 +584,8 @@ function M.create()
 			state.tasks = {}
 			state.expanded_tasks = {}
 			state.task_child_cache = {}
+			state.tools = {}
+			state.expanded_tools = {}
 			-- Remove question/permission messages from state.messages (they belong to old session)
 			local new_messages = {}
 			for _, msg in ipairs(state.messages) do
@@ -939,7 +971,7 @@ function M.render_message(message)
 	vim.bo[state.bufnr].modifiable = false
 
 	-- Auto-scroll if at bottom
-	if state.visible and state.winid then
+	if state.auto_scroll and state.visible and state.winid then
 		local cursor = vim.api.nvim_win_get_cursor(state.winid)
 		local win_height = vim.api.nvim_win_get_height(state.winid)
 		local buf_lines = vim.api.nvim_buf_line_count(state.bufnr)
@@ -961,6 +993,8 @@ function M.clear()
 	state.tasks = {}
 	state.expanded_tasks = {}
 	state.task_child_cache = {}
+	state.tools = {}
+	state.expanded_tools = {}
 	state.last_render_time = 0
 	state.render_scheduled = false
 
@@ -1402,24 +1436,82 @@ end
 -- NuiLine-based rendering helpers (component approach)
 --==============================================================================
 
+---Wrap a string to fit within max_width, breaking at word boundaries
+---@param text string
+---@param max_width number
+---@return string[]
+local function wrap_text(text, max_width)
+	if max_width <= 0 then
+		return { text }
+	end
+	if vim.fn.strdisplaywidth(text) <= max_width then
+		return { text }
+	end
+
+	local result = {}
+	local remaining = text
+	while vim.fn.strdisplaywidth(remaining) > max_width do
+		-- Walk character by character using vim's char index to handle multibyte
+		local last_space_byte = nil
+		local byte_pos = 0
+		local col = 0
+		while byte_pos < #remaining do
+			local char_len = vim.fn.byteidx(remaining:sub(byte_pos + 1), 1)
+			if char_len <= 0 then
+				char_len = 1
+			end
+			local ch = remaining:sub(byte_pos + 1, byte_pos + char_len)
+			local char_width = vim.fn.strdisplaywidth(ch)
+			if col + char_width > max_width then
+				break
+			end
+			col = col + char_width
+			byte_pos = byte_pos + char_len
+			if ch == " " then
+				last_space_byte = byte_pos
+			end
+		end
+		local cut = (last_space_byte and last_space_byte > 0) and last_space_byte or byte_pos
+		table.insert(result, remaining:sub(1, cut))
+		remaining = remaining:sub(cut + 1)
+		if remaining:sub(1, 1) == " " then
+			remaining = remaining:sub(2)
+		end
+	end
+	if #remaining > 0 then
+		table.insert(result, remaining)
+	end
+	return result
+end
+
 ---Render a user message using NuiLine
 ---@param content string|nil
 ---@return NuiLine[]
-local function render_user_message_nui(content)
+local function render_user_message(content)
 	local lines = {}
 	local content_lines = vim.split(content or "", "\n", { plain = true })
+
+	-- Get available width for content (window width minus "│ " prefix)
+	local win_width = 80
+	if state.winid and vim.api.nvim_win_is_valid(state.winid) then
+		win_width = vim.api.nvim_win_get_width(state.winid)
+	end
+	local max_content_width = win_width - 2
 
 	-- Top border line
 	local top_line = NuiLine()
 	top_line:append(NuiText("│", "Special"))
 	table.insert(lines, top_line)
 
-	-- Content lines
+	-- Content lines, wrapped to fit within border
 	for _, text in ipairs(content_lines) do
-		local line = NuiLine()
-		line:append(NuiText("│ ", "Special"))
-		line:append(text)
-		table.insert(lines, line)
+		local wrapped = wrap_text(text, max_content_width)
+		for _, wline in ipairs(wrapped) do
+			local line = NuiLine()
+			line:append(NuiText("│ ", "Special"))
+			line:append(wline)
+			table.insert(lines, line)
+		end
 	end
 
 	-- Bottom border
@@ -1436,7 +1528,7 @@ end
 ---Render reasoning using NuiLine
 ---@param reasoning string|nil
 ---@return NuiLine[]
-local function render_reasoning_nui(reasoning)
+local function render_reasoning(reasoning)
 	local lines = {}
 	if not reasoning or reasoning == "" or not thinking.is_enabled() then
 		return lines
@@ -1461,41 +1553,92 @@ local function render_reasoning_nui(reasoning)
 	return lines
 end
 
----Render a tool line using NuiLine
+---Render a tool line as { lines = string[], highlights = [] }
 ---@param tool_part table
----@return NuiLine
-local function render_tool_line_nui(tool_part)
+---@param is_expanded boolean
+---@return table { lines: string[], highlights: table[] }
+local function render_tool_line(tool_part, is_expanded)
 	local tool_name = tool_part.tool or "unknown"
 	local tool_status = tool_part.state and tool_part.state.status or "pending"
 
 	local status_symbol = "○"
-	local hl_group = "Comment"
+	local status_hl = "Comment"
 	if tool_status == "completed" then
 		status_symbol = "●"
-		hl_group = "Normal"
+		status_hl = "Normal"
 	elseif tool_status == "running" then
 		status_symbol = "◐"
-		hl_group = "WarningMsg"
+		status_hl = "WarningMsg"
 	elseif tool_status == "error" then
 		status_symbol = "✗"
-		hl_group = "ErrorMsg"
+		status_hl = "ErrorMsg"
 	end
 
-	local line = NuiLine()
-	line:append(NuiText(status_symbol .. " ", hl_group))
-	line:append(NuiText(tool_name, "Function"))
+	local result_lines = {}
+	local result_highlights = {}
 
+	local function add_hl_line(text, hl_group)
+		table.insert(result_lines, text)
+		if hl_group then
+			table.insert(result_highlights, {
+				line = #result_lines - 1,
+				col_start = 0,
+				col_end = #text,
+				hl_group = hl_group,
+			})
+		end
+	end
+
+	-- Build header: fold_icon status_symbol tool_name [- description]
+	local fold_icon = is_expanded and "▾" or "▸"
+	local header = fold_icon .. " " .. status_symbol .. " " .. tool_name
 	if tool_part.input and tool_part.input.description then
-		line:append(NuiText(" - " .. tool_part.input.description, "Comment"))
+		header = header .. " - " .. tool_part.input.description
+	end
+	add_hl_line(header, status_hl)
+
+	-- Show full tool input/output when expanded
+	if is_expanded then
+		local tool_state_data = tool_part.state or {}
+		local tool_input = tool_state_data.input
+		local tool_output = tool_state_data.output
+		local tool_error = tool_state_data.error
+
+		-- Show input
+		if tool_input then
+			local input_str = type(tool_input) == "string" and tool_input or vim.json.encode(tool_input)
+			add_hl_line("  Input: ", "Special")
+			for _, iline in ipairs(vim.split(input_str, "\n", { plain = true })) do
+				add_hl_line("    " .. iline, "Comment")
+			end
+		end
+
+		-- Show output
+		if tool_output then
+			local output_str = type(tool_output) == "string" and tool_output or vim.inspect(tool_output)
+			add_hl_line("  Output: ", "Special")
+			for _, oline in ipairs(vim.split(output_str, "\n", { plain = true })) do
+				add_hl_line("    " .. oline, "Comment")
+			end
+		end
+
+		-- Show error
+		if tool_error then
+			local error_str = type(tool_error) == "string" and tool_error or vim.inspect(tool_error)
+			add_hl_line("  Error: ", "ErrorMsg")
+			for _, eline in ipairs(vim.split(error_str, "\n", { plain = true })) do
+				add_hl_line("    " .. eline, "ErrorMsg")
+			end
+		end
 	end
 
-	return line
+	return { lines = result_lines, highlights = result_highlights }
 end
 
 ---Render content (markdown or plain) using NuiLine
 ---@param content string|nil
 ---@return NuiLine[]
-local function render_content_nui(content)
+local function render_content(content)
 	local lines = {}
 	if not content or content == "" then
 		return lines
@@ -1560,7 +1703,7 @@ function M.render()
 	local raw_lines = {} -- string[] for backward compat
 
 	-- Helper to add a NuiLine and its raw content
-	local function add_nui_line(nui_line)
+	local function add_line(nui_line)
 		table.insert(nui_lines, nui_line)
 		table.insert(raw_lines, nui_line:content())
 	end
@@ -1574,7 +1717,7 @@ function M.render()
 	end
 
 	-- Helper: render permissions for a message
-	local function render_permissions_nui(message_id)
+	local function render_permissions(message_id)
 		local perms = permission_state.get_permissions_for_message(message_id)
 		for _, pstate in ipairs(perms) do
 			local perm_id = pstate.permission_id
@@ -1609,7 +1752,7 @@ function M.render()
 	end
 
 	-- Helper: render edits for a message
-	local function render_edits_nui(message_id)
+	local function render_edits(message_id)
 		local edits = edit_state.get_edits_for_message(message_id)
 		for _, estate in ipairs(edits) do
 			local eid = estate.permission_id
@@ -1651,11 +1794,11 @@ function M.render()
 		end
 		bc_line:append(NuiText(" > ", "Comment"))
 		bc_line:append(NuiText(current_session.name or "Subagent", "Special"))
-		add_nui_line(bc_line)
+		add_line(bc_line)
 
 		local hint_line = NuiLine()
 		hint_line:append(NuiText("<BS> Go back", "Comment"))
-		add_nui_line(hint_line)
+		add_line(hint_line)
 		add_raw_line("")
 	end
 
@@ -1665,7 +1808,7 @@ function M.render()
 	local header_line = "# " .. session_name .. " - " .. session_time
 	local header = NuiLine()
 	header:append(NuiText(header_line, "Comment"))
-	add_nui_line(header)
+	add_line(header)
 	add_raw_line("")
 
 	-- Get messages from sync store
@@ -1694,9 +1837,9 @@ function M.render()
 		if should_render then
 			if message.role == "user" then
 				-- User message using NuiLine helpers
-				local msg_lines = render_user_message_nui(content)
+				local msg_lines = render_user_message(content)
 				for _, nl in ipairs(msg_lines) do
-					add_nui_line(nl)
+					add_line(nl)
 				end
 
 				-- Session retry status
@@ -1729,7 +1872,7 @@ function M.render()
 						local status_text = retry_msg .. retry_info
 						local status_line = NuiLine()
 						status_line:append(NuiText(status_text, "ErrorMsg"))
-						add_nui_line(status_line)
+						add_line(status_line)
 					end
 				end
 
@@ -1738,9 +1881,9 @@ function M.render()
 				-- Assistant message
 				-- Reasoning
 				if has_reasoning and thinking.is_enabled() then
-					local reasoning_lines = render_reasoning_nui(reasoning)
+					local reasoning_lines = render_reasoning(reasoning)
 					for _, nl in ipairs(reasoning_lines) do
-						add_nui_line(nl)
+						add_line(nl)
 					end
 				end
 
@@ -1761,31 +1904,53 @@ function M.render()
 								tool_part = tool_part,
 							}
 						else
-							local tool_line = render_tool_line_nui(tool_part)
-							add_nui_line(tool_line)
+							local is_expanded = state.expanded_tools[tool_part.id] or false
+							local result = render_tool_line(tool_part, is_expanded)
+							local base_line = #raw_lines
+							-- Build highlight lookup by line index
+							local hl_by_line = {}
+							for _, hl in ipairs(result.highlights) do
+								hl_by_line[hl.line] = hl
+							end
+							for idx, tl in ipairs(result.lines) do
+								table.insert(raw_lines, tl)
+								local nl = NuiLine()
+								local line_hl = hl_by_line[idx - 1]
+								if line_hl then
+									nl:append(NuiText(tl, line_hl.hl_group))
+								else
+									nl:append(tl)
+								end
+								table.insert(nui_lines, nl)
+							end
+							state.tools[tool_part.id] = {
+								start_line = base_line,
+								end_line = base_line + #result.lines - 1,
+								tool_part = tool_part,
+							}
 						end
 					end
 				end
 
 				-- Content
 				if has_content then
-					local content_lines = render_content_nui(content)
+					local content_lines = render_content(content)
 					for _, nl in ipairs(content_lines) do
-						add_nui_line(nl)
+						add_line(nl)
 					end
 				end
 
 				-- Footer (only show for the last assistant message when session is done)
 				local is_streaming = (msg_idx == last_assistant_idx and app_state.get_status() == "streaming")
-				if should_show_footer(message, is_streaming) then
+				if msg_idx == last_assistant_idx and should_show_footer(message, is_streaming) then
 					local footer_line, _ = render_metadata_footer(message, messages)
 					add_raw_line(footer_line)
 					add_raw_line("")
 				end
 
 				-- Permissions and edits
-				render_permissions_nui(message.id)
-				render_edits_nui(message.id)
+				render_permissions(message.id)
+				render_edits(message.id)
 			end
 		end
 	end
@@ -1852,9 +2017,9 @@ function M.render()
 		local has_content = message.content and message.content ~= ""
 
 		if has_content then
-			local content_lines = render_content_nui(message.content)
+			local content_lines = render_content(message.content)
 			for _, nl in ipairs(content_lines) do
-				add_nui_line(nl)
+				add_line(nl)
 			end
 			add_raw_line("")
 		end
@@ -1875,7 +2040,7 @@ function M.render()
 		local loading_text = spinner.get_loading_text("∴ Thinkin")
 		local loading_line = NuiLine()
 		loading_line:append(NuiText(loading_text, "Comment"))
-		add_nui_line(loading_line)
+		add_line(loading_line)
 	end
 
 	return raw_lines, nui_lines
@@ -2043,7 +2208,7 @@ function M.do_render()
 
 	-- Check if user is at bottom BEFORE re-rendering (to preserve scroll position)
 	local should_scroll = false
-	if state.visible and state.winid and vim.api.nvim_win_is_valid(state.winid) then
+	if state.auto_scroll and state.visible and state.winid and vim.api.nvim_win_is_valid(state.winid) then
 		local cursor = vim.api.nvim_win_get_cursor(state.winid)
 		local win_height = vim.api.nvim_win_get_height(state.winid)
 		local buf_lines = vim.api.nvim_buf_line_count(state.bufnr)
@@ -3437,6 +3602,26 @@ function M.get_task_at_cursor()
 	return nil, nil
 end
 
+-- Get regular tool at cursor position
+---@return string|nil part_id
+---@return table|nil tool_info
+function M.get_tool_at_cursor()
+	if not state.winid or not vim.api.nvim_win_is_valid(state.winid) then
+		return nil, nil
+	end
+
+	local cursor = vim.api.nvim_win_get_cursor(state.winid)
+	local cursor_line = cursor[1] - 1 -- 0-based
+
+	for part_id, pos in pairs(state.tools) do
+		if cursor_line >= pos.start_line and cursor_line <= pos.end_line then
+			return part_id, pos
+		end
+	end
+
+	return nil, nil
+end
+
 -- Re-render a task widget in place (expand/collapse)
 ---@param part_id string
 function M.rerender_task(part_id)
@@ -3507,6 +3692,12 @@ function M.rerender_task(part_id)
 			if id ~= part_id and tpos.start_line > pos.start_line then
 				state.tasks[id].start_line = tpos.start_line + delta
 				state.tasks[id].end_line = tpos.end_line + delta
+			end
+		end
+		for id, tlpos in pairs(state.tools) do
+			if tlpos.start_line > pos.start_line then
+				state.tools[id].start_line = tlpos.start_line + delta
+				state.tools[id].end_line = tlpos.end_line + delta
 			end
 		end
 	end
@@ -3584,6 +3775,102 @@ function M.handle_task_toggle(part_id)
 			M.rerender_task(part_id)
 		end)
 	end)
+end
+
+-- Re-render a regular tool widget in place (expand/collapse)
+---@param part_id string
+function M.rerender_tool(part_id)
+	if not state.bufnr or not vim.api.nvim_buf_is_valid(state.bufnr) then
+		return
+	end
+
+	local pos = state.tools[part_id]
+	if not pos then
+		return
+	end
+
+	local is_expanded = state.expanded_tools[part_id] or false
+	local result = render_tool_line(pos.tool_part, is_expanded)
+
+	local old_line_count = pos.end_line - pos.start_line + 1
+	local new_line_count = #result.lines
+	local delta = new_line_count - old_line_count
+
+	vim.bo[state.bufnr].modifiable = true
+	vim.api.nvim_buf_set_lines(state.bufnr, pos.start_line, pos.end_line + 1, false, result.lines)
+
+	vim.api.nvim_buf_clear_namespace(state.bufnr, chat_hl_ns, pos.start_line, pos.start_line + new_line_count)
+	for _, hl in ipairs(result.highlights) do
+		local end_col = hl.col_end
+		if end_col == -1 then
+			local l = vim.api.nvim_buf_get_lines(
+				state.bufnr,
+				pos.start_line + hl.line,
+				pos.start_line + hl.line + 1,
+				false
+			)[1]
+			end_col = l and #l or 0
+		end
+		pcall(vim.api.nvim_buf_set_extmark, state.bufnr, chat_hl_ns, pos.start_line + hl.line, hl.col_start, {
+			end_col = end_col,
+			hl_group = hl.hl_group,
+		})
+	end
+
+	vim.bo[state.bufnr].modifiable = false
+
+	-- Update this tool's end_line
+	state.tools[part_id].end_line = pos.start_line + new_line_count - 1
+
+	-- Shift all widgets positioned after this tool by the delta
+	if delta ~= 0 then
+		for id, qpos in pairs(state.questions) do
+			if qpos.start_line > pos.start_line then
+				state.questions[id].start_line = qpos.start_line + delta
+				state.questions[id].end_line = qpos.end_line + delta
+			end
+		end
+		for id, ppos in pairs(state.permissions) do
+			if ppos.start_line > pos.start_line then
+				state.permissions[id].start_line = ppos.start_line + delta
+				state.permissions[id].end_line = ppos.end_line + delta
+			end
+		end
+		for id, epos in pairs(state.edits) do
+			if epos.start_line > pos.start_line then
+				state.edits[id].start_line = epos.start_line + delta
+				state.edits[id].end_line = epos.end_line + delta
+			end
+		end
+		for id, tpos in pairs(state.tasks) do
+			if tpos.start_line > pos.start_line then
+				state.tasks[id].start_line = tpos.start_line + delta
+				state.tasks[id].end_line = tpos.end_line + delta
+			end
+		end
+		for id, tlpos in pairs(state.tools) do
+			if id ~= part_id and tlpos.start_line > pos.start_line then
+				state.tools[id].start_line = tlpos.start_line + delta
+				state.tools[id].end_line = tlpos.end_line + delta
+			end
+		end
+	end
+end
+
+-- Handle tool toggle (expand/collapse tool input/output)
+---@param part_id string
+function M.handle_tool_toggle(part_id)
+	local pos = state.tools[part_id]
+	if not pos then
+		return
+	end
+
+	if state.expanded_tools[part_id] then
+		state.expanded_tools[part_id] = nil
+	else
+		state.expanded_tools[part_id] = true
+	end
+	M.rerender_tool(part_id)
 end
 
 -- Check if we're currently navigating between sessions (for event handlers to skip cleanup)
