@@ -1668,20 +1668,6 @@ local function register_defaults()
 	})
 
 	M.register({
-		id = "action.diff",
-		title = "Show Diff",
-		description = "View pending file changes",
-		category = "actions",
-		keybind = "<leader>od",
-		action = function()
-			opencode.show_diff()
-		end,
-		enabled = function()
-			return #changes.get_all() > 0
-		end,
-	})
-
-	M.register({
 		id = "action.status",
 		title = "Show Status",
 		description = "Show current session and connection status",
@@ -1943,38 +1929,6 @@ local function register_defaults()
 	})
 
 	-- Files commands
-	M.register({
-		id = "files.changed",
-		title = "View Changed Files",
-		description = "View all pending file changes",
-		category = "files",
-		action = function()
-			local all_changes = changes.get_all()
-			if #all_changes == 0 then
-				vim.notify("No pending changes", vim.log.levels.INFO)
-				return
-			end
-
-			local items = {}
-			for _, change in ipairs(all_changes) do
-				local stats = change.stats or { additions = 0, deletions = 0 }
-				table.insert(items, {
-					label = string.format("%s +%d -%d", change.filepath, stats.additions or 0, stats.deletions or 0),
-					change = change,
-				})
-			end
-
-			local float = require("opencode.ui.float")
-			float.create_menu(items, function(item)
-				local diff = require("opencode.ui.diff")
-				diff.show(item.change.id)
-			end, { title = " Changed Files (" .. #all_changes .. ") " })
-		end,
-		enabled = function()
-			return #changes.get_all() > 0
-		end,
-	})
-
 	-- System commands
 	M.register({
 		id = "system.restart",
