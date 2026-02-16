@@ -122,12 +122,6 @@ function M.setup(opts)
     end, vim.tbl_extend("force", map_opts, { desc = "OpenCode command palette" }))
   end
 
-  if km.show_diff then
-    vim.keymap.set("n", km.show_diff, function()
-      require("opencode").show_diff()
-    end, vim.tbl_extend("force", map_opts, { desc = "Show OpenCode diff" }))
-  end
-
   if km.abort then
     vim.keymap.set("n", km.abort, function()
       require("opencode").abort()
@@ -567,28 +561,6 @@ function M.command_palette()
 		local palette = require("opencode.ui.palette")
 		palette.show()
 	end)
-end
-
---- Show diff viewer
-function M.show_diff()
-	local diff = require("opencode.ui.diff")
-	local changes = require("opencode.artifact.changes")
-	local all_changes = changes.get_all()
-
-	if #all_changes == 0 then
-		vim.notify("No pending changes to show", vim.log.levels.INFO)
-		return
-	end
-
-	-- Show the first pending change
-	for _, change in ipairs(all_changes) do
-		if change.status == "pending" then
-			diff.show(change.id)
-			return
-		end
-	end
-
-	vim.notify("No pending changes to show", vim.log.levels.INFO)
 end
 
 --- Toggle log viewer window

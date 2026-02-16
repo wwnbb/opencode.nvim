@@ -278,10 +278,10 @@ function M.setup_chat_handlers()
 			-- so we process them like any other message to trigger re-render
 
 			-- Update status based on message state
+			-- Only set "streaming" here; "idle" is determined by session.status events
+			-- (the backend may set time.completed on each tool call during streaming)
 			if info.role == "assistant" then
-				if info.time and info.time.completed then
-					state.set_status("idle")
-				else
+				if not (info.time and info.time.completed) then
 					state.set_status("streaming")
 				end
 			end
@@ -443,8 +443,13 @@ function M.setup_chat_handlers()
 		end)
 	end)
 
-	-- Clear sync store on session change
+	-- Clear sync store on session change (skip when navigating into child sessions)
 	M.on("session_change", function(data)
+		local chat_ok, chat = pcall(require, "opencode.ui.chat")
+		local is_navigating = chat_ok and chat.is_navigating and chat.is_navigating()
+		if is_navigating then
+			return
+		end
 		local sync = require("opencode.sync")
 		if data and data.previous_id then
 			sync.clear_session(data.previous_id)
@@ -538,10 +543,6 @@ function M.setup_chat_handlers()
 								},
 							})
 
-							if change_id then
-								local diff = require("opencode.ui.diff")
-								diff.show(change_id)
-							end
 						end
 					end
 				end
@@ -708,9 +709,6 @@ function M.setup_chat_handlers()
 							changes_count = #change_ids,
 						})
 
-						-- Show the first diff viewer for approval
-						local diff = require("opencode.ui.diff")
-						diff.show(change_ids[1])
 					else
 						vim.notify("Failed to create any change records", vim.log.levels.ERROR)
 					end
@@ -830,11 +828,7 @@ function M.setup_chat_handlers()
 				},
 			})
 
-			if change_id then
-				-- Show the diff viewer for approval
-				local diff = require("opencode.ui.diff")
-				diff.show(change_id)
-			else
+			if not change_id then
 				vim.notify("Failed to create change record for: " .. filepath, vim.log.levels.ERROR)
 			end
 		end)
@@ -873,10 +867,6 @@ function M.setup_chat_handlers()
 						},
 					})
 
-					if change_id then
-						local diff_ui = require("opencode.ui.diff")
-						diff_ui.show(change_id)
-					end
 				end
 			end
 		end)
@@ -991,9 +981,13 @@ function M.setup_question_handlers()
 		end)
 	end)
 
-	-- Clear questions on session change
+	-- Clear questions on session change (skip when navigating into child sessions)
 	M.on("session_change", function()
-		question_state.clear_all()
+		local chat_ok, chat = pcall(require, "opencode.ui.chat")
+		local is_navigating = chat_ok and chat.is_navigating and chat.is_navigating()
+		if not is_navigating then
+			question_state.clear_all()
+		end
 	end)
 end
 
@@ -1110,8 +1104,13 @@ end
 
 -- Setup permission event handlers
 function M.setup_permission_handlers()
-	-- Clear permissions and edits on session change
+	-- Clear permissions and edits on session change (skip when navigating into child sessions)
 	M.on("session_change", function()
+		local chat_ok, chat = pcall(require, "opencode.ui.chat")
+		local is_navigating = chat_ok and chat.is_navigating and chat.is_navigating()
+		if is_navigating then
+			return
+		end
 		local perm_state_ok, perm_state = pcall(require, "opencode.permission.state")
 		if perm_state_ok then
 			perm_state.clear_all()

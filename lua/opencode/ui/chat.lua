@@ -6,12 +6,16 @@ local M = {}
 
 local Popup = require("nui.popup")
 local Layout = require("nui.layout")
+local NuiLine = require("nui.line")
+local NuiText = require("nui.text")
 local event = require("nui.utils.autocmd").event
 local input = require("opencode.ui.input")
 local markdown = require("opencode.ui.markdown")
+local chat_components = require("opencode.ui.chat_components")
 local tools = require("opencode.ui.tools")
 local thinking = require("opencode.ui.thinking")
 local spinner = require("opencode.ui.spinner")
+local locale = require("opencode.util.locale")
 
 -- State (UI state only - message data lives in sync module)
 local state = {
@@ -31,6 +35,11 @@ local state = {
 	pending_edits = {}, -- Queue of edits received when chat wasn't visible
 	focus_edit = nil, -- permission_id to focus cursor on after render
 	focus_edit_line = nil,
+	tasks = {}, -- Track task positions: { [part_id] = { start_line, end_line, tool_part } }
+	expanded_tasks = {}, -- Toggle set: { [part_id] = true }
+	task_child_cache = {}, -- Rendered child content: { [part_id] = { lines, highlights } }
+	session_stack = {}, -- Stack of { id, name } for parent session navigation
+	navigating = false, -- Flag to prevent session_change handler from clearing stack
 	last_render_time = 0,
 	render_scheduled = false,
 }
@@ -288,6 +297,21 @@ local function setup_buffer(bufnr)
 			M.handle_edit_diff_split()
 		end
 	end, vim.tbl_extend("force", opts, { nowait = true }))
+
+	-- Go to subagent output (gd) — drill into child session
+	vim.keymap.set("n", "gd", function()
+		local task_part_id, task_info = M.get_task_at_cursor()
+		if task_part_id then
+			M.enter_child_session(task_part_id)
+		end
+	end, vim.tbl_extend("force", opts, { nowait = true }))
+
+	-- Go back to parent session (Backspace)
+	vim.keymap.set("n", "<BS>", function()
+		if #state.session_stack > 0 then
+			M.leave_child_session()
+		end
+	end, opts)
 end
 
 -- Create chat buffer
@@ -326,7 +350,8 @@ function M.show_help()
 		"",
 		"Tool Calls",
 		"<CR>       Toggle details",
-		"gd         Go to file",
+		"gd         Enter subagent output",
+		"<BS>       Go back to parent",
 		"gD         View diff",
 		"",
 		"Question Tool",
@@ -402,7 +427,13 @@ function M.show_help()
 	}
 	for i, line in ipairs(lines) do
 		if section_headers[line] then
-			vim.api.nvim_buf_set_extmark(popup.bufnr, ns, i - 1, 0, { end_col = #line, hl_group = "OpenCodeInputBorder" })
+			vim.api.nvim_buf_set_extmark(
+				popup.bufnr,
+				ns,
+				i - 1,
+				0,
+				{ end_col = #line, hl_group = "OpenCodeInputBorder" }
+			)
 		elseif line == "Press any key to close" then
 			vim.api.nvim_buf_set_extmark(popup.bufnr, ns, i - 1, 0, { end_col = #line, hl_group = "OpenCodeInputInfo" })
 		elseif line ~= "" then
@@ -410,7 +441,13 @@ function M.show_help()
 			local key_end = line:find("  ")
 			if key_end then
 				vim.api.nvim_buf_set_extmark(popup.bufnr, ns, i - 1, 0, { end_col = key_end - 1, hl_group = "Normal" })
-				vim.api.nvim_buf_set_extmark(popup.bufnr, ns, i - 1, key_end - 1, { end_col = #line, hl_group = "OpenCodeInputInfo" })
+				vim.api.nvim_buf_set_extmark(
+					popup.bufnr,
+					ns,
+					i - 1,
+					key_end - 1,
+					{ end_col = #line, hl_group = "OpenCodeInputInfo" }
+				)
 			end
 		end
 	end
@@ -500,6 +537,8 @@ function M.create()
 	-- Reset spinner on session change (pick new random animation)
 	-- Also clear any pending questions from the old session
 	events.on("session_change", function(data)
+		-- Capture navigating flag NOW (before vim.schedule defers)
+		local is_navigating = state.navigating
 		vim.schedule(function()
 			if spinner.is_active() then
 				spinner.stop()
@@ -512,6 +551,9 @@ function M.create()
 			state.questions = {}
 			state.permissions = {}
 			state.edits = {}
+			state.tasks = {}
+			state.expanded_tasks = {}
+			state.task_child_cache = {}
 			-- Remove question/permission messages from state.messages (they belong to old session)
 			local new_messages = {}
 			for _, msg in ipairs(state.messages) do
@@ -520,6 +562,10 @@ function M.create()
 				end
 			end
 			state.messages = new_messages
+			-- Clear navigation stack unless we're drilling into a child session
+			if not is_navigating then
+				state.session_stack = {}
+			end
 		end)
 	end)
 
@@ -881,7 +927,13 @@ function M.render_message(message)
 			local l = vim.api.nvim_buf_get_lines(state.bufnr, line_count + hl.line, line_count + hl.line + 1, false)[1]
 			end_col = l and #l or 0
 		end
-		vim.api.nvim_buf_set_extmark(state.bufnr, chat_hl_ns, line_count + hl.line, hl.col_start, { end_col = end_col, hl_group = hl.hl_group })
+		vim.api.nvim_buf_set_extmark(
+			state.bufnr,
+			chat_hl_ns,
+			line_count + hl.line,
+			hl.col_start,
+			{ end_col = end_col, hl_group = hl.hl_group }
+		)
 	end
 
 	vim.bo[state.bufnr].modifiable = false
@@ -906,6 +958,9 @@ function M.clear()
 	state.permissions = {}
 	state.edits = {}
 	state.pending_edits = {}
+	state.tasks = {}
+	state.expanded_tasks = {}
+	state.task_child_cache = {}
 	state.last_render_time = 0
 	state.render_scheduled = false
 
@@ -946,14 +1001,14 @@ function M.load_messages(messages)
 	if not messages or #messages == 0 then
 		return
 	end
-	
+
 	local sync = require("opencode.sync")
-	
+
 	for _, msg in ipairs(messages) do
 		-- Convert server message format to local format
 		local role = msg.role or "assistant"
 		local content = ""
-		
+
 		-- Get text content from parts
 		if msg.parts then
 			local texts = {}
@@ -967,7 +1022,7 @@ function M.load_messages(messages)
 			-- Fallback: try to get from sync store
 			content = sync.get_message_text(msg.id)
 		end
-		
+
 		-- Add message to local state
 		M.add_message(role, content, {
 			id = msg.id,
@@ -1079,9 +1134,64 @@ local function format_tool_line(tool_part)
 	end
 end
 
+-- Build renderable content from a child session's messages
+-- Reads from the sync store (must be populated before calling)
+-- Returns { lines = {string...}, highlights = {{line, col_start, col_end, hl_group}...} }
+local function build_child_session_content(session_id)
+	local sync = require("opencode.sync")
+	local messages = sync.get_messages(session_id)
+	local result_lines = {}
+	local result_highlights = {}
+
+	local function add_line(text, hl_group)
+		table.insert(result_lines, text)
+		if hl_group then
+			table.insert(result_highlights, {
+				line = #result_lines - 1,
+				col_start = 0,
+				col_end = #text,
+				hl_group = hl_group,
+			})
+		end
+	end
+
+	for _, message in ipairs(messages) do
+		if message.role == "user" then
+			local text = sync.get_message_text(message.id)
+			if text and text ~= "" then
+				local text_lines = vim.split(text, "\n", { plain = true })
+				for i, line in ipairs(text_lines) do
+					if i == 1 then
+						add_line("  >> " .. line, "Special")
+					else
+						add_line("     " .. line, "Special")
+					end
+				end
+			end
+		elseif message.role == "assistant" then
+			-- Tool calls
+			local tool_parts = sync.get_message_tools(message.id)
+			for _, tp in ipairs(tool_parts) do
+				local tool_line = format_tool_line(tp)
+				add_line("  " .. tool_line, "Comment")
+			end
+			-- Text content
+			local text = sync.get_message_text(message.id)
+			if text and text ~= "" then
+				local text_lines = vim.split(text, "\n", { plain = true })
+				for _, line in ipairs(text_lines) do
+					add_line("  " .. line, nil)
+				end
+			end
+		end
+	end
+
+	return { lines = result_lines, highlights = result_highlights }
+end
+
 -- Render a task tool part as multi-line display showing subagent activity
 -- Returns { lines = {string...}, highlights = {{line, col_start, col_end, hl_group}...} }
-local function render_task_tool(tool_part)
+local function render_task_tool(tool_part, expanded, child_content)
 	local input = tool_part.state and tool_part.state.input or {}
 	local metadata = tool_part.state and tool_part.state.metadata or {}
 	local tool_status = tool_part.state and tool_part.state.status or "pending"
@@ -1106,15 +1216,32 @@ local function render_task_tool(tool_part)
 	end
 
 	if tool_status == "completed" then
-		-- Collapsed: single line with tool call count
 		local count = #summary
+		local icon = expanded and "▾" or "▸"
 		local header
 		if count > 0 then
-			header = string.format('◉ %s Task — "%s" (%d toolcalls)', agent_label, desc, count)
+			header = string.format('%s %s Task — "%s" (%d toolcalls)', icon, agent_label, desc, count)
 		else
-			header = string.format('◉ %s Task — "%s"', agent_label, desc)
+			header = string.format('%s %s Task — "%s"', icon, agent_label, desc)
 		end
 		add_line(header, "Normal")
+
+		if expanded and child_content then
+			for _, cl in ipairs(child_content.lines) do
+				table.insert(result_lines, cl)
+			end
+			for _, hl in ipairs(child_content.highlights) do
+				table.insert(result_highlights, {
+					line = hl.line + 1, -- offset by 1 for the header line
+					col_start = hl.col_start,
+					col_end = hl.col_end,
+					hl_group = hl.hl_group,
+				})
+			end
+		elseif expanded then
+			-- Loading state
+			add_line("  (loading...)", "Comment")
+		end
 	elseif #summary == 0 then
 		-- No summary yet — pending
 		add_line("~ Delegating...", "Comment")
@@ -1158,29 +1285,301 @@ local function render_task_tool(tool_part)
 	return { lines = result_lines, highlights = result_highlights }
 end
 
--- Render full buffer content from sync store (mirrors TUI session/index.tsx)
--- This is the main render function that reads from the centralized sync store
+-- Fallback colors for agents (matches TUI's color palette)
+local AGENT_FALLBACK_COLORS = {
+	"DiagnosticInfo", -- blue
+	"DiagnosticWarn", -- orange
+	"DiagnosticHint", -- green
+	"DiagnosticUnderline", -- cyan
+	"Special", -- purple
+	"Title", -- yellow
+}
+
+---Get highlight group for an agent (mirrors TUI's local.agent.color)
+---@param agent_name string
+---@return string hl_group
+local function get_agent_hl(agent_name)
+	local sync = require("opencode.sync")
+	local agents = sync.get_agents()
+	-- Find agent by name
+	for i, agent in ipairs(agents) do
+		if agent.name == agent_name then
+			-- If agent has a color, we'd need to create a highlight group
+			-- For simplicity, use fallback colors based on index
+			return AGENT_FALLBACK_COLORS[((i - 1) % #AGENT_FALLBACK_COLORS) + 1]
+		end
+	end
+	-- Agent not found, use first fallback color
+	return AGENT_FALLBACK_COLORS[1]
+end
+
+---Calculate duration for an assistant message
+---Duration = assistant.time.completed - parent_user.time.created
+---@param message table Assistant message
+---@param messages table[] All messages in session
+---@return number|nil duration_ms Duration in milliseconds, or nil if not complete
+local function calculate_duration(message, messages)
+	-- Check if message is complete
+	if not message.time or not message.time.completed then
+		return nil
+	end
+	-- Find parent user message
+	local parent_id = message.parentID
+	if not parent_id then
+		return nil
+	end
+	for _, msg in ipairs(messages) do
+		if msg.id == parent_id and msg.role == "user" then
+			if msg.time and msg.time.created then
+				return message.time.completed - msg.time.created
+			end
+			break
+		end
+	end
+	return nil
+end
+
+---Check if assistant message should show metadata footer
+---Show when: message has time.completed AND response is no longer being streamed
+---@param message table
+---@param is_streaming boolean Whether this message is still being streamed
+---@return boolean
+local function should_show_footer(message, is_streaming)
+	if not message.time then
+		return false
+	end
+	if not message.time.completed then
+		return false
+	end
+	-- Don't show footer while the response is still being processed;
+	-- it should only appear at the end when the request is fully complete (or cancelled)
+	if is_streaming then
+		return false
+	end
+	return true
+end
+
+---Render metadata footer for assistant message
+---Format: ▣ Agent · modelID · duration
+---@param message table Assistant message
+---@param messages table[] All messages in session
+---@return string line
+---@return table[] highlights
+local function render_metadata_footer(message, messages)
+	local highlights = {}
+	local parts = {}
+	-- ▣ symbol with agent color
+	local agent_name = message.agent or "unknown"
+	local agent_hl = get_agent_hl(agent_name)
+	table.insert(parts, "▣")
+	-- Agent name (titlecase)
+	table.insert(parts, " ")
+	table.insert(parts, locale.titlecase(agent_name))
+	-- Model ID
+	local model_id = message.modelID or ""
+	if model_id ~= "" then
+		table.insert(parts, " · ")
+		table.insert(parts, model_id)
+	end
+	-- Duration
+	local duration_ms = calculate_duration(message, messages)
+	if duration_ms then
+		table.insert(parts, " · ")
+		table.insert(parts, locale.duration(duration_ms))
+	end
+	local line = table.concat(parts)
+	-- Calculate highlight positions
+	-- ▣ symbol: position 0-2 (UTF-8: ▣ is 3 bytes)
+	table.insert(highlights, {
+		col_start = 0,
+		col_end = 3,
+		hl_group = agent_hl,
+	})
+	return line, highlights
+end
+
+--==============================================================================
+-- NuiLine-based rendering helpers (component approach)
+--==============================================================================
+
+---Render a user message using NuiLine
+---@param content string|nil
+---@return NuiLine[]
+local function render_user_message_nui(content)
+	local lines = {}
+	local content_lines = vim.split(content or "", "\n", { plain = true })
+
+	-- Top border line
+	local top_line = NuiLine()
+	top_line:append(NuiText("│", "Special"))
+	table.insert(lines, top_line)
+
+	-- Content lines
+	for _, text in ipairs(content_lines) do
+		local line = NuiLine()
+		line:append(NuiText("│ ", "Special"))
+		line:append(text)
+		table.insert(lines, line)
+	end
+
+	-- Bottom border
+	local bottom_line = NuiLine()
+	bottom_line:append(NuiText("│", "Special"))
+	table.insert(lines, bottom_line)
+
+	-- Empty separator
+	table.insert(lines, NuiLine())
+
+	return lines
+end
+
+---Render reasoning using NuiLine
+---@param reasoning string|nil
+---@return NuiLine[]
+local function render_reasoning_nui(reasoning)
+	local lines = {}
+	if not reasoning or reasoning == "" or not thinking.is_enabled() then
+		return lines
+	end
+
+	local reasoning_lines = vim.split(reasoning, "\n", { plain = true })
+	for i, rline in ipairs(reasoning_lines) do
+		local line = NuiLine()
+		if i == 1 then
+			line:append(NuiText("Thinking: ", "WarningMsg"))
+			line:append(NuiText(rline, "Comment"))
+		else
+			line:append(NuiText("          " .. rline, "Comment"))
+		end
+		table.insert(lines, line)
+	end
+
+	if #lines > 0 then
+		table.insert(lines, NuiLine())
+	end
+
+	return lines
+end
+
+---Render a tool line using NuiLine
+---@param tool_part table
+---@return NuiLine
+local function render_tool_line_nui(tool_part)
+	local tool_name = tool_part.tool or "unknown"
+	local tool_status = tool_part.state and tool_part.state.status or "pending"
+
+	local status_symbol = "○"
+	local hl_group = "Comment"
+	if tool_status == "completed" then
+		status_symbol = "●"
+		hl_group = "Normal"
+	elseif tool_status == "running" then
+		status_symbol = "◐"
+		hl_group = "WarningMsg"
+	elseif tool_status == "error" then
+		status_symbol = "✗"
+		hl_group = "ErrorMsg"
+	end
+
+	local line = NuiLine()
+	line:append(NuiText(status_symbol .. " ", hl_group))
+	line:append(NuiText(tool_name, "Function"))
+
+	if tool_part.input and tool_part.input.description then
+		line:append(NuiText(" - " .. tool_part.input.description, "Comment"))
+	end
+
+	return line
+end
+
+---Render content (markdown or plain) using NuiLine
+---@param content string|nil
+---@return NuiLine[]
+local function render_content_nui(content)
+	local lines = {}
+	if not content or content == "" then
+		return lines
+	end
+
+	local use_markdown = markdown.has_markdown(content)
+
+	if use_markdown then
+		local parsed = markdown.parse(content)
+		local md_lines, _ = markdown.render_to_lines(parsed)
+		for _, text in ipairs(md_lines) do
+			local line = NuiLine()
+			line:append(text)
+			table.insert(lines, line)
+		end
+	else
+		local content_lines = vim.split(content, "\n", { plain = true })
+		for _, text in ipairs(content_lines) do
+			local line = NuiLine()
+			line:append(text)
+			table.insert(lines, line)
+		end
+	end
+
+	return lines
+end
+
+---Extract raw content from NuiLine array
+---@param nui_lines NuiLine[]
+---@return string[]
+local function extract_lines(nui_lines)
+	local lines = {}
+	for _, nui_line in ipairs(nui_lines) do
+		table.insert(lines, nui_line:content())
+	end
+	return lines
+end
+
+---Apply highlights from NuiLine array to buffer
+---@param nui_lines NuiLine[]
+---@param bufnr number
+---@param ns_id number
+---@param start_line number 0-indexed
+local function apply_highlights(nui_lines, bufnr, ns_id, start_line)
+	for i, nui_line in ipairs(nui_lines) do
+		nui_line:highlight(bufnr, ns_id, start_line + i - 1)
+	end
+end
+
+-- Render full buffer using NuiLine components
+---@return string[] raw_lines, NuiLine[] nui_lines
 function M.render()
 	if not state.bufnr or not vim.api.nvim_buf_is_valid(state.bufnr) then
-		return
+		return {}, {}
 	end
 
 	local sync = require("opencode.sync")
 	local app_state = require("opencode.state")
 	local current_session = app_state.get_session()
 
-	local lines = {}
-	local highlights = {}
+	local nui_lines = {} -- NuiLine[] for building content
+	local raw_lines = {} -- string[] for backward compat
 
-	-- Helper function to render permissions inline for a given messageID
-	-- Returns the lines and highlights added
-	local function render_permissions_for_message(message_id)
+	-- Helper to add a NuiLine and its raw content
+	local function add_nui_line(nui_line)
+		table.insert(nui_lines, nui_line)
+		table.insert(raw_lines, nui_line:content())
+	end
+
+	-- Helper to add raw line (for content without highlights)
+	local function add_raw_line(text)
+		local line = NuiLine()
+		line:append(text)
+		table.insert(nui_lines, line)
+		table.insert(raw_lines, text)
+	end
+
+	-- Helper: render permissions for a message
+	local function render_permissions_nui(message_id)
 		local perms = permission_state.get_permissions_for_message(message_id)
 		for _, pstate in ipairs(perms) do
 			local perm_id = pstate.permission_id
-			local p_start_line = #lines
-			local p_lines, p_highlights
 			local pstatus = pstate.status or "pending"
+			local p_lines, p_highlights
 
 			if pstatus == "approved" then
 				p_lines, p_highlights = permission_widget.get_approved_lines(perm_id, pstate)
@@ -1188,45 +1587,34 @@ function M.render()
 				p_lines, p_highlights = permission_widget.get_rejected_lines(perm_id, pstate)
 			else
 				local first_option_offset
-				p_lines, p_highlights, _, first_option_offset = permission_widget.get_lines_for_permission(perm_id, pstate)
+				p_lines, p_highlights, _, first_option_offset =
+					permission_widget.get_lines_for_permission(perm_id, pstate)
 				if state.focus_permission == perm_id then
-					state.focus_permission_line = p_start_line + first_option_offset + 1 -- 1-based
+					state.focus_permission_line = #raw_lines + first_option_offset + 1
 				end
 			end
 
 			if p_lines then
-				for _, line in ipairs(p_lines) do
-					table.insert(lines, line)
+				for _, line_text in ipairs(p_lines) do
+					add_raw_line(line_text)
 				end
-
-				for _, hl in ipairs(p_highlights) do
-					table.insert(highlights, {
-						line = p_start_line + hl.line,
-						col_start = hl.col_start,
-						col_end = hl.col_end,
-						hl_group = hl.hl_group,
-					})
-				end
-
+				add_raw_line("")
 				state.permissions[perm_id] = {
-					start_line = p_start_line,
-					end_line = p_start_line + #p_lines - 1,
+					start_line = #raw_lines - #p_lines,
+					end_line = #raw_lines - 1,
 					status = pstatus,
 				}
-
-				table.insert(lines, "")
 			end
 		end
 	end
 
-	-- Helper function to render edits inline for a given messageID
-	local function render_edits_for_message(message_id)
+	-- Helper: render edits for a message
+	local function render_edits_nui(message_id)
 		local edits = edit_state.get_edits_for_message(message_id)
 		for _, estate in ipairs(edits) do
 			local eid = estate.permission_id
-			local e_start_line = #lines
-			local e_lines, e_highlights
 			local estatus = estate.status or "pending"
+			local e_lines, e_highlights
 
 			if estatus == "sent" then
 				e_lines, e_highlights = edit_widget.get_resolved_lines(eid, estate)
@@ -1234,54 +1622,70 @@ function M.render()
 				local first_file_offset
 				e_lines, e_highlights, _, first_file_offset = edit_widget.get_lines_for_edit(eid, estate)
 				if state.focus_edit == eid then
-					state.focus_edit_line = e_start_line + first_file_offset + 1 -- 1-based
+					state.focus_edit_line = #raw_lines + first_file_offset + 1
 				end
 			end
 
 			if e_lines then
-				for _, line in ipairs(e_lines) do
-					table.insert(lines, line)
+				for _, line_text in ipairs(e_lines) do
+					add_raw_line(line_text)
 				end
-
-				for _, hl in ipairs(e_highlights) do
-					table.insert(highlights, {
-						line = e_start_line + hl.line,
-						col_start = hl.col_start,
-						col_end = hl.col_end,
-						hl_group = hl.hl_group,
-					})
-				end
-
+				add_raw_line("")
 				state.edits[eid] = {
-					start_line = e_start_line,
-					end_line = e_start_line + #e_lines - 1,
+					start_line = #raw_lines - #e_lines,
+					end_line = #raw_lines - 1,
 					status = estatus,
 				}
-
-				table.insert(lines, "")
 			end
 		end
 	end
 
-	-- Session header (like TUI's "# New session - timestamp")
+	-- Breadcrumb navigation (when inside a child session)
+	if #state.session_stack > 0 then
+		local bc_line = NuiLine()
+		for i, entry in ipairs(state.session_stack) do
+			if i > 1 then
+				bc_line:append(NuiText(" > ", "Comment"))
+			end
+			bc_line:append(NuiText(entry.name, "Comment"))
+		end
+		bc_line:append(NuiText(" > ", "Comment"))
+		bc_line:append(NuiText(current_session.name or "Subagent", "Special"))
+		add_nui_line(bc_line)
+
+		local hint_line = NuiLine()
+		hint_line:append(NuiText("<BS> Go back", "Comment"))
+		add_nui_line(hint_line)
+		add_raw_line("")
+	end
+
+	-- Session header
 	local session_name = current_session.name or "New session"
 	local session_time = os.date("%Y-%m-%dT%H:%M:%SZ")
-	local header_line = string.format("# %s - %s", session_name, session_time)
-	table.insert(lines, header_line)
-	table.insert(highlights, { line = 0, col_start = 0, col_end = #header_line, hl_group = "Comment" })
-	table.insert(lines, "")
+	local header_line = "# " .. session_name .. " - " .. session_time
+	local header = NuiLine()
+	header:append(NuiText(header_line, "Comment"))
+	add_nui_line(header)
+	add_raw_line("")
 
-	-- Get messages from sync store (like TUI's sync.data.message[sessionID])
+	-- Get messages from sync store
 	local messages = current_session.id and sync.get_messages(current_session.id) or {}
 
-	-- Render all messages from sync store
+	-- Find the last assistant message index (for footer display logic)
+	local last_assistant_idx = nil
+	for i = #messages, 1, -1 do
+		if messages[i].role == "assistant" then
+			last_assistant_idx = i
+			break
+		end
+	end
+
+	-- Render all messages
 	for msg_idx, message in ipairs(messages) do
-		-- Get content from parts (like TUI's sync.data.part[message.id])
 		local content = sync.get_message_text(message.id)
 		local reasoning = sync.get_message_reasoning(message.id)
 		local tool_parts = sync.get_message_tools(message.id)
 
-		-- Skip empty assistant messages (no content and no reasoning and no tools)
 		local has_content = content and content ~= ""
 		local has_reasoning = reasoning and reasoning ~= ""
 		local has_tools = #tool_parts > 0
@@ -1289,41 +1693,15 @@ function M.render()
 
 		if should_render then
 			if message.role == "user" then
-				-- User message: bordered box style (like TUI)
-				-- Top padding line with highlight bar
-				table.insert(lines, "│")
-				table.insert(highlights, {
-					line = #lines - 1,
-					col_start = 0,
-					col_end = 3,
-					hl_group = "Special",
-				})
-				-- │ message content
-				local content_lines = vim.split(content or "", "\n", { plain = true })
-				for i, line in ipairs(content_lines) do
-					local formatted = "│ " .. line
-					table.insert(lines, formatted)
-					-- Highlight the border character
-					table.insert(highlights, {
-						line = #lines - 1,
-						col_start = 0,
-						col_end = 3,
-						hl_group = "Special",
-					})
+				-- User message using NuiLine helpers
+				local msg_lines = render_user_message_nui(content)
+				for _, nl in ipairs(msg_lines) do
+					add_nui_line(nl)
 				end
-				-- Bottom padding line with highlight bar
-				table.insert(lines, "│")
-				table.insert(highlights, {
-					line = #lines - 1,
-					col_start = 0,
-					col_end = 3,
-					hl_group = "Special",
-				})
 
-				-- Show session retry status below the last user message
+				-- Session retry status
 				local session_status = current_session.id and sync.get_session_status(current_session.id)
 				if session_status and session_status.type == "retry" then
-					-- Only show below the last user message in the conversation
 					local is_last_user = true
 					for j = msg_idx + 1, #messages do
 						if messages[j].role == "user" then
@@ -1333,7 +1711,6 @@ function M.render()
 					end
 					if is_last_user then
 						local retry_msg = session_status.message or "Retrying..."
-						-- Truncate long messages (like TUI does at 80 chars)
 						if #retry_msg > 80 then
 							retry_msg = retry_msg:sub(1, 80) .. "..."
 						end
@@ -1350,139 +1727,71 @@ function M.render()
 							retry_info = string.format(" [attempt #%d]", attempt)
 						end
 						local status_text = retry_msg .. retry_info
-						table.insert(lines, status_text)
-						table.insert(highlights, {
-							line = #lines - 1,
-							col_start = 0,
-							col_end = #status_text,
-							hl_group = "ErrorMsg",
-						})
+						local status_line = NuiLine()
+						status_line:append(NuiText(status_text, "ErrorMsg"))
+						add_nui_line(status_line)
 					end
 				end
 
-				table.insert(lines, "")
+				add_raw_line("")
 			else
-				-- Assistant message: reasoning, tools, then content
-
-				-- Render reasoning/thinking (like TUI's yellow "Thinking:" prefix)
+				-- Assistant message
+				-- Reasoning
 				if has_reasoning and thinking.is_enabled() then
-					-- Split reasoning into lines and prefix with "Thinking:"
-					local reasoning_lines_raw = vim.split(reasoning, "\n", { plain = true })
-					for i, rline in ipairs(reasoning_lines_raw) do
-						local formatted
-						if i == 1 then
-							formatted = "Thinking: " .. rline
-						else
-							formatted = "          " .. rline -- indent continuation
-						end
-						table.insert(lines, formatted)
-						-- Highlight "Thinking:" in yellow/warning color
-						if i == 1 then
-							table.insert(highlights, {
-								line = #lines - 1,
-								col_start = 0,
-								col_end = 9,
-								hl_group = "WarningMsg",
-							})
-							-- Rest in muted/italic style
-							table.insert(highlights, {
-								line = #lines - 1,
-								col_start = 10,
-								col_end = #formatted,
-								hl_group = "Comment",
-							})
-						else
-							table.insert(highlights, {
-								line = #lines - 1,
-								col_start = 0,
-								col_end = #formatted,
-								hl_group = "Comment",
-							})
-						end
+					local reasoning_lines = render_reasoning_nui(reasoning)
+					for _, nl in ipairs(reasoning_lines) do
+						add_nui_line(nl)
 					end
-					table.insert(lines, "")
 				end
 
-				-- Render tool calls inline (like TUI's InlineTool style)
+				-- Tool calls
 				if has_tools then
 					for _, tool_part in ipairs(tool_parts) do
 						if tool_part.tool == "task" then
-							-- Multi-line task tool rendering
-							local result = render_task_tool(tool_part)
-							local base_line = #lines
+							local is_expanded = state.expanded_tasks[tool_part.id] or false
+							local cached = state.task_child_cache[tool_part.id]
+							local result = render_task_tool(tool_part, is_expanded, cached)
+							local base_line = #raw_lines
 							for _, tl in ipairs(result.lines) do
-								table.insert(lines, tl)
+								add_raw_line(tl)
 							end
-							for _, hl in ipairs(result.highlights) do
-								table.insert(highlights, {
-									line = base_line + hl.line,
-									col_start = hl.col_start,
-									col_end = hl.col_end,
-									hl_group = hl.hl_group,
-								})
-							end
+							state.tasks[tool_part.id] = {
+								start_line = base_line,
+								end_line = base_line + #result.lines - 1,
+								tool_part = tool_part,
+							}
 						else
-							local tool_line = format_tool_line(tool_part)
-							local tool_status = tool_part.state and tool_part.state.status or "pending"
-
-							table.insert(lines, tool_line)
-
-							-- Color based on status
-							local hl_group = "Comment" -- pending/running = muted
-							if tool_status == "completed" then
-								hl_group = "Normal"
-							elseif tool_status == "error" then
-								hl_group = "ErrorMsg"
-							end
-
-							table.insert(highlights, {
-								line = #lines - 1,
-								col_start = 0,
-								col_end = #tool_line,
-								hl_group = hl_group,
-							})
+							local tool_line = render_tool_line_nui(tool_part)
+							add_nui_line(tool_line)
 						end
 					end
 				end
 
-				-- Render text content (assistant's response)
+				-- Content
 				if has_content then
-					local use_markdown = markdown.has_markdown(content)
-					local content_start = #lines
-					if use_markdown then
-						local md_lines, md_highlights = markdown.render_to_lines(markdown.parse(content))
-						for _, line in ipairs(md_lines) do
-							table.insert(lines, line)
-						end
-						for _, hl in ipairs(md_highlights) do
-							hl.line = content_start + hl.line
-							table.insert(highlights, hl)
-						end
-					else
-						-- Plain text
-						local content_lines = vim.split(content, "\n", { plain = true })
-						for _, line in ipairs(content_lines) do
-							table.insert(lines, line)
-						end
+					local content_lines = render_content_nui(content)
+					for _, nl in ipairs(content_lines) do
+						add_nui_line(nl)
 					end
 				end
 
-				table.insert(lines, "")
+				-- Footer (only show for the last assistant message when session is done)
+				local is_streaming = (msg_idx == last_assistant_idx and app_state.get_status() == "streaming")
+				if should_show_footer(message, is_streaming) then
+					local footer_line, _ = render_metadata_footer(message, messages)
+					add_raw_line(footer_line)
+					add_raw_line("")
+				end
 
-				-- Render permissions associated with this assistant message inline
-				render_permissions_for_message(message.id)
-
-				-- Render edits associated with this assistant message inline
-				render_edits_for_message(message.id)
+				-- Permissions and edits
+				render_permissions_nui(message.id)
+				render_edits_nui(message.id)
 			end
 		end
 	end
 
-	-- Also render any local-only messages (system messages, errors, etc.)
-	-- Note: User messages are NOT stored locally anymore - they come from the server
-	-- via SSE events to prevent duplicate rendering
+	-- Local messages (questions, etc.)
 	for _, message in ipairs(state.messages) do
-		-- Skip if this message is already in sync store
 		if message.id and current_session.id then
 			local sync_msg = sync.get_message(current_session.id, message.id)
 			if sync_msg then
@@ -1490,28 +1799,23 @@ function M.render()
 			end
 		end
 
-		-- Render question type messages using question_widget
 		if message.type == "question" then
 			local qstate = question_state.get_question(message.request_id)
-			local q_start_line = #lines
+			local q_start_line = #raw_lines
 			local q_lines, q_highlights
 			local status = (qstate and qstate.status) or message.status or "pending"
-			
+
 			if status == "answered" then
-				-- Use answered display format
 				q_lines, q_highlights = question_widget.get_answered_lines(
 					message.request_id,
 					{ questions = message.questions },
 					message.answers
 				)
 			elseif status == "rejected" then
-				-- Use rejected display format
-				q_lines, q_highlights = question_widget.get_rejected_lines(
-					message.request_id,
-					{ questions = message.questions }
-				)
+				q_lines, q_highlights = question_widget.get_rejected_lines(message.request_id, {
+					questions = message.questions,
+				})
 			elseif qstate then
-				-- Pending - use interactive format with selection state
 				local first_option_offset
 				q_lines, q_highlights, _, first_option_offset = question_widget.get_lines_for_question(
 					message.request_id,
@@ -1519,203 +1823,62 @@ function M.render()
 					qstate,
 					status
 				)
-				-- Store the absolute first option line for cursor positioning
 				if state.focus_question == message.request_id then
-					state.focus_question_line = q_start_line + first_option_offset + 1 -- 1-based
+					state.focus_question_line = q_start_line + first_option_offset + 1
 				end
 			else
-				-- No qstate available, skip
 				goto continue_local_message
 			end
-			
-			local logger = require("opencode.logger")
-			logger.debug("render() including question", {
-				request_id = message.request_id:sub(1, 10),
-				start_line = q_start_line,
-				line_count = #q_lines,
-				status = status,
-			})
-			
-			-- Add question lines to buffer
-			for _, line in ipairs(q_lines) do
-				table.insert(lines, line)
+
+			for _, line_text in ipairs(q_lines) do
+				add_raw_line(line_text)
 			end
-			
-			-- Adjust highlights for current position and add them
-			for _, hl in ipairs(q_highlights) do
-				table.insert(highlights, {
-					line = q_start_line + hl.line,
-					col_start = hl.col_start,
-					col_end = hl.col_end,
-					hl_group = hl.hl_group,
-				})
-			end
-			
-			-- Update position tracking for this question
+
 			state.questions[message.request_id] = {
 				start_line = q_start_line,
 				end_line = q_start_line + #q_lines - 1,
 				status = status,
 			}
-			
-			table.insert(lines, "")
-			goto continue_local_message
+
+			add_raw_line("")
+			::continue_local_message::
 		end
 
-		-- Skip permission type messages - they are now rendered inline after their triggering message
-		if message.type == "permission" then
-			goto continue_local_message
-		end
-
-		-- Skip user messages (they come from server via SSE)
-		if message.role == "user" then
+		if message.type == "permission" or message.role == "user" then
+			-- Skip - rendered inline
 			goto continue_local_message
 		end
 
 		local has_content = message.content and message.content ~= ""
 
 		if has_content then
-			-- System/error messages
-			local use_markdown = markdown.has_markdown(message.content)
-			local content_start = #lines
-			if use_markdown then
-				local md_lines, md_highlights = markdown.render_to_lines(markdown.parse(message.content))
-				for _, line in ipairs(md_lines) do
-					table.insert(lines, line)
-				end
-				for _, hl in ipairs(md_highlights) do
-					hl.line = content_start + hl.line
-					table.insert(highlights, hl)
-				end
-			else
-				local content_lines = vim.split(message.content, "\n", { plain = true })
-				for _, line in ipairs(content_lines) do
-					table.insert(lines, line)
-				end
+			local content_lines = render_content_nui(message.content)
+			for _, nl in ipairs(content_lines) do
+				add_nui_line(nl)
 			end
-
-			table.insert(lines, "")
+			add_raw_line("")
 		end
-
 		::continue_local_message::
 	end
 
-	-- Render orphan permissions (those without an associated messageID)
-	-- These are rendered at the end, like legacy behavior for permissions without tool context
-	local orphan_perms = permission_state.get_orphan_permissions()
-	for _, pstate in ipairs(orphan_perms) do
-		local perm_id = pstate.permission_id
-		local p_start_line = #lines
-		local p_lines, p_highlights
-		local pstatus = pstate.status or "pending"
-
-		if pstatus == "approved" then
-			p_lines, p_highlights = permission_widget.get_approved_lines(perm_id, pstate)
-		elseif pstatus == "rejected" then
-			p_lines, p_highlights = permission_widget.get_rejected_lines(perm_id, pstate)
-		else
-			local first_option_offset
-			p_lines, p_highlights, _, first_option_offset = permission_widget.get_lines_for_permission(perm_id, pstate)
-			if state.focus_permission == perm_id then
-				state.focus_permission_line = p_start_line + first_option_offset + 1 -- 1-based
-			end
-		end
-
-		if p_lines then
-			for _, line in ipairs(p_lines) do
-				table.insert(lines, line)
-			end
-
-			for _, hl in ipairs(p_highlights) do
-				table.insert(highlights, {
-					line = p_start_line + hl.line,
-					col_start = hl.col_start,
-					col_end = hl.col_end,
-					hl_group = hl.hl_group,
-				})
-			end
-
-			state.permissions[perm_id] = {
-				start_line = p_start_line,
-				end_line = p_start_line + #p_lines - 1,
-				status = pstatus,
-			}
-
-			table.insert(lines, "")
-		end
+	-- Empty state message
+	if #raw_lines == 0 then
+		add_raw_line(" No active session")
+		add_raw_line(" Press 'i' to focus input")
+		add_raw_line(" Press '<C-p>' for command palette")
+		add_raw_line(" Press '?' for help")
+		add_raw_line("")
 	end
 
-	-- Render orphan edits (those without an associated messageID)
-	local orphan_edits = edit_state.get_orphan_edits()
-	for _, estate in ipairs(orphan_edits) do
-		local eid = estate.permission_id
-		local e_start_line = #lines
-		local e_lines, e_highlights
-		local estatus = estate.status or "pending"
-
-		if estatus == "sent" then
-			e_lines, e_highlights = edit_widget.get_resolved_lines(eid, estate)
-		else
-			local first_file_offset
-			e_lines, e_highlights, _, first_file_offset = edit_widget.get_lines_for_edit(eid, estate)
-			if state.focus_edit == eid then
-				state.focus_edit_line = e_start_line + first_file_offset + 1 -- 1-based
-			end
-		end
-
-		if e_lines then
-			for _, line in ipairs(e_lines) do
-				table.insert(lines, line)
-			end
-
-			for _, hl in ipairs(e_highlights) do
-				table.insert(highlights, {
-					line = e_start_line + hl.line,
-					col_start = hl.col_start,
-					col_end = hl.col_end,
-					hl_group = hl.hl_group,
-				})
-			end
-
-			state.edits[eid] = {
-				start_line = e_start_line,
-				end_line = e_start_line + #e_lines - 1,
-				status = estatus,
-			}
-
-			table.insert(lines, "")
-		end
-	end
-
-	-- Initial state message (when no messages)
-	local total_messages = #messages + #state.messages
-	if total_messages == 0 then
-		table.insert(lines, " Welcome to OpenCode!")
-		table.insert(highlights, { line = #lines - 1, col_start = 0, col_end = 22, hl_group = "Comment" })
-		table.insert(lines, "")
-		table.insert(lines, " Press 'i' to focus input")
-		table.insert(highlights, { line = #lines - 1, col_start = 0, col_end = 25, hl_group = "Comment" })
-		table.insert(lines, " Press '<C-p>' for command palette")
-		table.insert(highlights, { line = #lines - 1, col_start = 0, col_end = 33, hl_group = "Comment" })
-		table.insert(lines, " Press '?' for help")
-		table.insert(highlights, { line = #lines - 1, col_start = 0, col_end = 18, hl_group = "Comment" })
-		table.insert(lines, "")
-	end
-
-	-- Show loading indicator when processing (streaming or thinking)
+	-- Loading indicator
 	if spinner.is_active() then
 		local loading_text = spinner.get_loading_text("∴ Thinkin")
-		table.insert(lines, "")
-		table.insert(lines, loading_text)
-		table.insert(highlights, {
-			line = #lines - 1,
-			col_start = 0,
-			col_end = #loading_text,
-			hl_group = "Comment",
-		})
+		local loading_line = NuiLine()
+		loading_line:append(NuiText(loading_text, "Comment"))
+		add_nui_line(loading_line)
 	end
 
-	return lines, highlights
+	return raw_lines, nui_lines
 end
 
 -- Focus the chat window
@@ -1835,7 +1998,13 @@ function M.update_spinner_only()
 
 	-- Update spinner highlight
 	vim.api.nvim_buf_clear_namespace(state.bufnr, chat_hl_ns, spinner_line, spinner_line + 1)
-	vim.api.nvim_buf_set_extmark(state.bufnr, chat_hl_ns, spinner_line, 0, { end_col = #loading_text, hl_group = "Comment" })
+	vim.api.nvim_buf_set_extmark(
+		state.bufnr,
+		chat_hl_ns,
+		spinner_line,
+		0,
+		{ end_col = #loading_text, hl_group = "Comment" }
+	)
 end
 
 -- Throttled render (like TUI's throttled updates)
@@ -1882,14 +2051,19 @@ function M.do_render()
 		should_scroll = cursor[1] >= buf_lines - win_height - 1
 	end
 
-	-- Build new content
-	local new_lines, highlights = M.render()
-	if #new_lines == 0 then
+	-- Build new content using NuiLine-based render
+	local new_lines, nui_lines = M.render()
+	if #new_lines == 0 or #nui_lines == 0 then
+		-- Still set empty state to ensure buffer is properly initialized
+		vim.bo[state.bufnr].modifiable = true
+		vim.api.nvim_buf_set_lines(state.bufnr, 0, -1, false, new_lines)
+		vim.bo[state.bufnr].modifiable = false
 		return
 	end
 
 	-- Get current buffer content for diffing
 	local old_lines = vim.api.nvim_buf_get_lines(state.bufnr, 0, -1, false)
+	local buf_line_count = vim.api.nvim_buf_line_count(state.bufnr)
 
 	-- Find first line that differs between old and new content
 	local first_diff = nil
@@ -1910,6 +2084,12 @@ function M.do_render()
 		first_diff = min_len -- 0-indexed
 	end
 
+	-- Ensure we don't try to highlight beyond buffer bounds
+	first_diff = math.min(first_diff, buf_line_count - 1)
+	if first_diff < 0 then
+		first_diff = 0
+	end
+
 	-- Extract replacement lines (from first_diff to end of new content)
 	local replacement = {}
 	for i = first_diff + 1, #new_lines do
@@ -1919,29 +2099,36 @@ function M.do_render()
 	vim.bo[state.bufnr].modifiable = true
 	vim.api.nvim_buf_set_lines(state.bufnr, first_diff, -1, false, replacement)
 
-	-- Update highlights only for the changed region
+	-- Clear and apply highlights using NuiLine
+	buf_line_count = vim.api.nvim_buf_line_count(state.bufnr)
 	vim.api.nvim_buf_clear_namespace(state.bufnr, chat_hl_ns, first_diff, -1)
-	for _, hl in ipairs(highlights) do
-		if hl.line >= first_diff then
-			local end_col = hl.col_end
-			if end_col == -1 then
-				local l = vim.api.nvim_buf_get_lines(state.bufnr, hl.line, hl.line + 1, false)[1]
-				end_col = l and #l or 0
-			end
-			pcall(vim.api.nvim_buf_set_extmark, state.bufnr, chat_hl_ns, hl.line, hl.col_start, { end_col = end_col, hl_group = hl.hl_group })
+	for i, nui_line in ipairs(nui_lines) do
+		local line_idx = i - 1 -- 0-indexed line index
+		if line_idx >= first_diff and line_idx < buf_line_count then
+			nui_line:highlight(state.bufnr, chat_hl_ns, i)
 		end
 	end
 
 	vim.bo[state.bufnr].modifiable = false
 
 	-- Position cursor on first option of a newly added question or permission
-	if state.focus_question and state.focus_question_line and state.winid and vim.api.nvim_win_is_valid(state.winid) then
+	if
+		state.focus_question
+		and state.focus_question_line
+		and state.winid
+		and vim.api.nvim_win_is_valid(state.winid)
+	then
 		local buf_lines = vim.api.nvim_buf_line_count(state.bufnr)
 		local target = math.min(state.focus_question_line, buf_lines)
 		vim.api.nvim_win_set_cursor(state.winid, { target, 0 })
 		state.focus_question = nil
 		state.focus_question_line = nil
-	elseif state.focus_permission and state.focus_permission_line and state.winid and vim.api.nvim_win_is_valid(state.winid) then
+	elseif
+		state.focus_permission
+		and state.focus_permission_line
+		and state.winid
+		and vim.api.nvim_win_is_valid(state.winid)
+	then
 		local buf_lines = vim.api.nvim_buf_line_count(state.bufnr)
 		local target = math.min(state.focus_permission_line, buf_lines)
 		vim.api.nvim_win_set_cursor(state.winid, { target, 0 })
@@ -2004,14 +2191,14 @@ end
 ---@param status "pending" | "answered" | "rejected"
 function M.add_question_message(request_id, questions, status)
 	local logger = require("opencode.logger")
-	
+
 	logger.debug("add_question_message called", {
 		request_id = request_id:sub(1, 10),
 		has_bufnr = state.bufnr ~= nil,
 		bufnr_valid = state.bufnr and vim.api.nvim_buf_is_valid(state.bufnr),
 		visible = state.visible,
 	})
-	
+
 	-- If chat buffer isn't ready or visible, queue the question for later
 	if not state.bufnr or not vim.api.nvim_buf_is_valid(state.bufnr) or not state.visible then
 		-- Queue the question to display when chat becomes visible
@@ -2057,7 +2244,7 @@ function M.add_question_message(request_id, questions, status)
 			timestamp = os.time(),
 			id = "question_" .. request_id,
 		})
-		
+
 		logger.debug("Question added to state.messages", {
 			request_id = request_id:sub(1, 10),
 			status = status,
@@ -2089,7 +2276,7 @@ end
 ---@param answers? table
 function M.update_question_status(request_id, status, answers)
 	local logger = require("opencode.logger")
-	
+
 	-- Find and update the message entry
 	local found = false
 	for _, msg in ipairs(state.messages) do
@@ -2112,7 +2299,7 @@ function M.update_question_status(request_id, status, answers)
 		request_id = request_id:sub(1, 10),
 		status = status,
 	})
-	
+
 	-- Trigger a re-render to update the question display
 	M.schedule_render()
 end
@@ -2129,8 +2316,11 @@ function M.get_question_at_cursor()
 	local cursor_line = cursor[1] - 1 -- 0-based
 
 	for request_id, pos in pairs(state.questions) do
-		if cursor_line >= pos.start_line and cursor_line <= pos.end_line
-			and (pos.status == "pending" or pos.status == "confirming") then
+		if
+			cursor_line >= pos.start_line
+			and cursor_line <= pos.end_line
+			and (pos.status == "pending" or pos.status == "confirming")
+		then
 			return request_id, question_state.get_question(request_id)
 		end
 	end
@@ -2208,6 +2398,13 @@ end
 -- 1st Enter on an answered question: confirms/locks the answer (stays on current tab)
 -- 2nd Enter: advances to next unanswered question, or shows confirmation view if all answered
 function M.handle_question_confirm()
+	-- Check tasks first (expand/collapse completed subagent output)
+	local task_part_id, task_info = M.get_task_at_cursor()
+	if task_part_id then
+		M.handle_task_toggle(task_part_id)
+		return
+	end
+
 	local request_id, qstate = M.get_question_at_cursor()
 
 	if request_id then
@@ -2338,7 +2535,7 @@ function M.handle_question_cancel()
 			M.rerender_question(request_id)
 			return
 		end
-		
+
 		-- Otherwise, reject the entire question on server
 		local client = require("opencode.client")
 		local current_session = require("opencode.state").get_session()
@@ -2553,10 +2750,21 @@ function M.rerender_question(request_id)
 	for _, hl in ipairs(highlights) do
 		local end_col = hl.col_end
 		if end_col == -1 then
-			local l = vim.api.nvim_buf_get_lines(state.bufnr, pos.start_line + hl.line, pos.start_line + hl.line + 1, false)[1]
+			local l = vim.api.nvim_buf_get_lines(
+				state.bufnr,
+				pos.start_line + hl.line,
+				pos.start_line + hl.line + 1,
+				false
+			)[1]
 			end_col = l and #l or 0
 		end
-		vim.api.nvim_buf_set_extmark(state.bufnr, chat_hl_ns, pos.start_line + hl.line, hl.col_start, { end_col = end_col, hl_group = hl.hl_group })
+		vim.api.nvim_buf_set_extmark(
+			state.bufnr,
+			chat_hl_ns,
+			pos.start_line + hl.line,
+			hl.col_start,
+			{ end_col = end_col, hl_group = hl.hl_group }
+		)
 	end
 
 	vim.bo[state.bufnr].modifiable = false
@@ -2767,10 +2975,21 @@ function M.rerender_permission(perm_id)
 	for _, hl in ipairs(p_highlights) do
 		local end_col = hl.col_end
 		if end_col == -1 then
-			local l = vim.api.nvim_buf_get_lines(state.bufnr, pos.start_line + hl.line, pos.start_line + hl.line + 1, false)[1]
+			local l = vim.api.nvim_buf_get_lines(
+				state.bufnr,
+				pos.start_line + hl.line,
+				pos.start_line + hl.line + 1,
+				false
+			)[1]
 			end_col = l and #l or 0
 		end
-		vim.api.nvim_buf_set_extmark(state.bufnr, chat_hl_ns, pos.start_line + hl.line, hl.col_start, { end_col = end_col, hl_group = hl.hl_group })
+		vim.api.nvim_buf_set_extmark(
+			state.bufnr,
+			chat_hl_ns,
+			pos.start_line + hl.line,
+			hl.col_start,
+			{ end_col = end_col, hl_group = hl.hl_group }
+		)
 	end
 
 	vim.bo[state.bufnr].modifiable = false
@@ -3019,13 +3238,15 @@ function M.handle_edit_diff_tab()
 	-- Use native_diff to show a single file in a new tab
 	-- Pass nil permission_id so it doesn't auto-reply to server
 	local native_diff = require("opencode.ui.native_diff")
-	native_diff.show(nil, { {
-		filePath = file.filepath,
-		relativePath = file.relative_path,
-		before = file.before,
-		after = file.after,
-		type = file.file_type,
-	} }, {})
+	native_diff.show(nil, {
+		{
+			filePath = file.filepath,
+			relativePath = file.relative_path,
+			before = file.before,
+			after = file.after,
+			type = file.file_type,
+		},
+	}, {})
 end
 
 -- Handle diff vsplit near chat (dv key)
@@ -3170,15 +3391,298 @@ function M.rerender_edit(edit_id)
 	for _, hl in ipairs(e_highlights) do
 		local end_col = hl.col_end
 		if end_col == -1 then
-			local l = vim.api.nvim_buf_get_lines(state.bufnr, pos.start_line + hl.line, pos.start_line + hl.line + 1, false)[1]
+			local l = vim.api.nvim_buf_get_lines(
+				state.bufnr,
+				pos.start_line + hl.line,
+				pos.start_line + hl.line + 1,
+				false
+			)[1]
 			end_col = l and #l or 0
 		end
-		pcall(vim.api.nvim_buf_set_extmark, state.bufnr, chat_hl_ns, pos.start_line + hl.line, hl.col_start, { end_col = end_col, hl_group = hl.hl_group })
+		pcall(
+			vim.api.nvim_buf_set_extmark,
+			state.bufnr,
+			chat_hl_ns,
+			pos.start_line + hl.line,
+			hl.col_start,
+			{ end_col = end_col, hl_group = hl.hl_group }
+		)
 	end
 
 	vim.bo[state.bufnr].modifiable = false
 
 	state.edits[edit_id].end_line = pos.start_line + #e_lines - 1
+end
+
+-- Get task at cursor position (completed or running)
+---@return string|nil part_id
+---@return table|nil task_info
+function M.get_task_at_cursor()
+	if not state.winid or not vim.api.nvim_win_is_valid(state.winid) then
+		return nil, nil
+	end
+
+	local cursor = vim.api.nvim_win_get_cursor(state.winid)
+	local cursor_line = cursor[1] - 1 -- 0-based
+
+	for part_id, pos in pairs(state.tasks) do
+		if cursor_line >= pos.start_line and cursor_line <= pos.end_line then
+			local tool_status = pos.tool_part.state and pos.tool_part.state.status or "pending"
+			if tool_status == "completed" or tool_status == "running" then
+				return part_id, pos
+			end
+		end
+	end
+
+	return nil, nil
+end
+
+-- Re-render a task widget in place (expand/collapse)
+---@param part_id string
+function M.rerender_task(part_id)
+	if not state.bufnr or not vim.api.nvim_buf_is_valid(state.bufnr) then
+		return
+	end
+
+	local pos = state.tasks[part_id]
+	if not pos then
+		return
+	end
+
+	local is_expanded = state.expanded_tasks[part_id] or false
+	local cached = state.task_child_cache[part_id]
+	local result = render_task_tool(pos.tool_part, is_expanded, cached)
+
+	local old_line_count = pos.end_line - pos.start_line + 1
+	local new_line_count = #result.lines
+	local delta = new_line_count - old_line_count
+
+	vim.bo[state.bufnr].modifiable = true
+	vim.api.nvim_buf_set_lines(state.bufnr, pos.start_line, pos.end_line + 1, false, result.lines)
+
+	vim.api.nvim_buf_clear_namespace(state.bufnr, chat_hl_ns, pos.start_line, pos.start_line + new_line_count)
+	for _, hl in ipairs(result.highlights) do
+		local end_col = hl.col_end
+		if end_col == -1 then
+			local l = vim.api.nvim_buf_get_lines(
+				state.bufnr,
+				pos.start_line + hl.line,
+				pos.start_line + hl.line + 1,
+				false
+			)[1]
+			end_col = l and #l or 0
+		end
+		pcall(vim.api.nvim_buf_set_extmark, state.bufnr, chat_hl_ns, pos.start_line + hl.line, hl.col_start, {
+			end_col = end_col,
+			hl_group = hl.hl_group,
+		})
+	end
+
+	vim.bo[state.bufnr].modifiable = false
+
+	-- Update this task's end_line
+	state.tasks[part_id].end_line = pos.start_line + new_line_count - 1
+
+	-- Shift all widgets positioned after this task by the delta
+	if delta ~= 0 then
+		for id, qpos in pairs(state.questions) do
+			if qpos.start_line > pos.start_line then
+				state.questions[id].start_line = qpos.start_line + delta
+				state.questions[id].end_line = qpos.end_line + delta
+			end
+		end
+		for id, ppos in pairs(state.permissions) do
+			if ppos.start_line > pos.start_line then
+				state.permissions[id].start_line = ppos.start_line + delta
+				state.permissions[id].end_line = ppos.end_line + delta
+			end
+		end
+		for id, epos in pairs(state.edits) do
+			if epos.start_line > pos.start_line then
+				state.edits[id].start_line = epos.start_line + delta
+				state.edits[id].end_line = epos.end_line + delta
+			end
+		end
+		for id, tpos in pairs(state.tasks) do
+			if id ~= part_id and tpos.start_line > pos.start_line then
+				state.tasks[id].start_line = tpos.start_line + delta
+				state.tasks[id].end_line = tpos.end_line + delta
+			end
+		end
+	end
+end
+
+-- Handle task toggle (expand/collapse child session content)
+---@param part_id string
+function M.handle_task_toggle(part_id)
+	local pos = state.tasks[part_id]
+	if not pos then
+		return
+	end
+
+	-- Toggle expanded state
+	if state.expanded_tasks[part_id] then
+		-- Collapse
+		state.expanded_tasks[part_id] = nil
+		M.rerender_task(part_id)
+		return
+	end
+
+	-- Expand
+	state.expanded_tasks[part_id] = true
+
+	-- Check if we already have cached content
+	if state.task_child_cache[part_id] then
+		M.rerender_task(part_id)
+		return
+	end
+
+	-- Get child session ID from metadata
+	local metadata = pos.tool_part.state and pos.tool_part.state.metadata or {}
+	local child_session_id = metadata.sessionId
+	if not child_session_id then
+		-- No child session, just show empty expanded state
+		M.rerender_task(part_id)
+		return
+	end
+
+	-- Show loading state immediately
+	M.rerender_task(part_id)
+
+	-- Fetch child session messages
+	local client = require("opencode.client")
+	local sync = require("opencode.sync")
+
+	client.get_messages(child_session_id, {}, function(err, response)
+		vim.schedule(function()
+			if err then
+				-- On error, collapse back
+				state.expanded_tasks[part_id] = nil
+				M.rerender_task(part_id)
+				return
+			end
+
+			-- Populate sync store with fetched data
+			if response and type(response) == "table" then
+				for _, msg_with_parts in ipairs(response) do
+					local info = msg_with_parts.info
+					if info then
+						info.sessionID = child_session_id
+						sync.handle_message_updated(info)
+					end
+					local parts = msg_with_parts.parts
+					if parts then
+						for _, part in ipairs(parts) do
+							sync.handle_part_updated(part)
+						end
+					end
+				end
+			end
+
+			-- Build and cache content
+			state.task_child_cache[part_id] = build_child_session_content(child_session_id)
+			M.rerender_task(part_id)
+		end)
+	end)
+end
+
+-- Check if we're currently navigating between sessions (for event handlers to skip cleanup)
+---@return boolean
+function M.is_navigating()
+	return state.navigating
+end
+
+-- Enter a child session (drill down into subagent output)
+---@param part_id string
+function M.enter_child_session(part_id)
+	local pos = state.tasks[part_id]
+	if not pos then
+		return
+	end
+
+	local metadata = pos.tool_part.state and pos.tool_part.state.metadata or {}
+	local child_session_id = metadata.sessionId
+	if not child_session_id then
+		vim.notify("No child session available", vim.log.levels.WARN)
+		return
+	end
+
+	local app_state = require("opencode.state")
+	local client = require("opencode.client")
+	local sync = require("opencode.sync")
+
+	-- Push current session onto stack
+	local current = app_state.get_session()
+	local input = pos.tool_part.state and pos.tool_part.state.input or {}
+	table.insert(state.session_stack, {
+		id = current.id,
+		name = current.name or "Session",
+	})
+
+	-- Derive a name for the child session
+	local child_name = input.description or "Subagent"
+
+	-- Switch session (set navigating flag to prevent session_change from clearing the stack)
+	state.navigating = true
+	app_state.set_session(child_session_id, child_name)
+	state.navigating = false
+
+	-- Fetch child session messages if not already in sync store
+	local messages = sync.get_messages(child_session_id)
+	if #messages > 0 then
+		-- Schedule render after session_change cleanup runs
+		vim.schedule(function()
+			M.do_render()
+		end)
+	else
+		-- Need to fetch first
+		client.get_messages(child_session_id, {}, function(err, response)
+			vim.schedule(function()
+				if err then
+					vim.notify("Failed to load subagent messages: " .. tostring(err), vim.log.levels.ERROR)
+					M.leave_child_session()
+					return
+				end
+
+				if response and type(response) == "table" then
+					for _, msg_with_parts in ipairs(response) do
+						local info = msg_with_parts.info
+						if info then
+							info.sessionID = child_session_id
+							sync.handle_message_updated(info)
+						end
+						local parts = msg_with_parts.parts
+						if parts then
+							for _, part in ipairs(parts) do
+								sync.handle_part_updated(part)
+							end
+						end
+					end
+				end
+
+				M.do_render()
+			end)
+		end)
+	end
+end
+
+-- Leave current child session and return to parent
+function M.leave_child_session()
+	if #state.session_stack == 0 then
+		return
+	end
+
+	local app_state = require("opencode.state")
+	local parent = table.remove(state.session_stack)
+
+	state.navigating = true
+	app_state.set_session(parent.id, parent.name)
+	state.navigating = false
+
+	-- Schedule render after session_change cleanup runs
+	vim.schedule(function()
+		M.do_render()
+	end)
 end
 
 return M
