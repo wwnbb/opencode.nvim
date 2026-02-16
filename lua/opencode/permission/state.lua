@@ -62,6 +62,17 @@ function M.get_permission(permission_id)
 	return active_permissions[permission_id]
 end
 
+-- Get all permissions (regardless of status)
+---@return table Array of permission states sorted by timestamp
+function M.get_all()
+	local result = {}
+	for _, pstate in pairs(active_permissions) do
+		table.insert(result, pstate)
+	end
+	table.sort(result, function(a, b) return a.timestamp < b.timestamp end)
+	return result
+end
+
 -- Get all active (pending) permissions
 ---@return table Array of permission states
 function M.get_all_active()

@@ -106,6 +106,17 @@ function M.get_edit(permission_id)
 	return active_edits[permission_id]
 end
 
+--- Get all edits (regardless of status)
+---@return table Array of edit states sorted by timestamp
+function M.get_all()
+	local result = {}
+	for _, estate in pairs(active_edits) do
+		table.insert(result, estate)
+	end
+	table.sort(result, function(a, b) return a.timestamp < b.timestamp end)
+	return result
+end
+
 --- Get all active (pending) edits
 ---@return table Array of edit states
 function M.get_all_active()
