@@ -188,10 +188,6 @@ function M.agent.move(direction, opts)
 	if agent.model and is_model_valid(agent.model) then
 		M.model.set(agent.model, { silent = true })
 	end
-	-- Show feedback
-	if not opts.silent then
-		vim.notify("Agent: " .. (agent.name or state.agent), vim.log.levels.INFO)
-	end
 end
 
 -- Fallback palette (mirrors TUI's [secondary, accent, success, warning, primary, error])
@@ -575,12 +571,6 @@ function M.model.cycle(direction, opts)
 	local next_model = source_list[next_idx]
 	if next_model then
 		M.model.set(next_model, { silent = true })
-		if not opts.silent then
-			local parsed = M.model.parsed()
-			if parsed then
-				vim.notify("Model: " .. (parsed.name or next_model.modelID), vim.log.levels.INFO)
-			end
-		end
 	end
 end
 
