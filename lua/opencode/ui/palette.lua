@@ -328,6 +328,7 @@ local state = {
 	query = "",
 	selected = 1,
 	results = {},
+	prev_win = nil,
 }
 
 -- Render the command list
@@ -461,6 +462,7 @@ end
 
 -- Close the palette
 function M.hide()
+	local prev_win = state.prev_win
 	if state.input_popup then
 		pcall(function()
 			state.input_popup:unmount()
@@ -476,6 +478,17 @@ function M.hide()
 	state.query = ""
 	state.selected = 1
 	state.results = {}
+	state.prev_win = nil
+
+	-- Restore focus to the window that was active before the palette opened
+	if prev_win and vim.api.nvim_win_is_valid(prev_win) then
+		vim.api.nvim_set_current_win(prev_win)
+	else
+		local chat = require("opencode.ui.chat")
+		if chat.focus then
+			chat.focus()
+		end
+	end
 end
 
 -- Show the command palette
@@ -488,6 +501,9 @@ function M.show()
 
 	load_config()
 	setup_highlights()
+
+	-- Save current window to restore focus on close
+	state.prev_win = vim.api.nvim_get_current_win()
 
 	-- Calculate dimensions
 	local ui_list = vim.api.nvim_list_uis()
