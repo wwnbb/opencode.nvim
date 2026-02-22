@@ -701,12 +701,18 @@ function M._connect_provider_with_method(provider, method, method_index)
 							client.oauth_callback(provider.id, method_index, code, function(cb_err)
 								vim.schedule(function()
 									if cb_err then
-										vim.notify("OAuth failed: " .. tostring(cb_err.message or cb_err), vim.log.levels.ERROR)
+										vim.notify(
+											"OAuth failed: " .. tostring(cb_err.message or cb_err),
+											vim.log.levels.ERROR
+										)
 										return
 									end
 
 									client.dispose(function()
-										vim.notify("Connected to " .. (provider.name or provider.id), vim.log.levels.INFO)
+										vim.notify(
+											"Connected to " .. (provider.name or provider.id),
+											vim.log.levels.INFO
+										)
 										M._show_provider_models(provider)
 									end)
 								end)
@@ -718,7 +724,9 @@ function M._connect_provider_with_method(provider, method, method_index)
 					-- Extract device code from instructions (format like "XXXX-XXXX" or "XXXX-XXXXX")
 					local device_code = nil
 					if authorization.instructions then
-						device_code = authorization.instructions:match("[A-Z0-9][A-Z0-9][A-Z0-9][A-Z0-9]%-[A-Z0-9][A-Z0-9][A-Z0-9][A-Z0-9][A-Z0-9]?")
+						device_code = authorization.instructions:match(
+							"[A-Z0-9][A-Z0-9][A-Z0-9][A-Z0-9]%-[A-Z0-9][A-Z0-9][A-Z0-9][A-Z0-9][A-Z0-9]?"
+						)
 					end
 
 					-- Show the authorization dialog
@@ -911,9 +919,13 @@ function M._show_oauth_auto_dialog(opts)
 
 	-- Close function
 	local function close()
-		if is_closed then return end
+		if is_closed then
+			return
+		end
 		is_closed = true
-		pcall(function() popup:unmount() end)
+		pcall(function()
+			popup:unmount()
+		end)
 	end
 
 	-- Setup keymaps
@@ -946,7 +958,9 @@ function M._show_oauth_auto_dialog(opts)
 	-- Start polling for OAuth completion in the background
 	client.oauth_callback(provider.id, method_index, nil, function(cb_err)
 		vim.schedule(function()
-			if is_closed then return end
+			if is_closed then
+				return
+			end
 
 			close()
 
@@ -1005,7 +1019,10 @@ local function register_defaults()
 				client.list_sessions(function(err, sessions)
 					if err then
 						vim.schedule(function()
-							vim.notify("Failed to list sessions: " .. tostring(err.message or err), vim.log.levels.ERROR)
+							vim.notify(
+								"Failed to list sessions: " .. tostring(err.message or err),
+								vim.log.levels.ERROR
+							)
 						end)
 						return
 					end
@@ -1018,27 +1035,36 @@ local function register_defaults()
 						local float = require("opencode.ui.float")
 						local sync = require("opencode.sync")
 						local current = state.get_session()
-						
+
 						-- Sort sessions by update time (most recent first, like TUI)
 						table.sort(sessions, function(a, b)
 							local a_time = a.time and a.time.updated or 0
 							local b_time = b.time and b.time.updated or 0
 							return a_time > b_time
 						end)
-						
+
 						-- Format relative time helper
 						local function format_relative_time(timestamp)
-							if not timestamp then return "" end
+							if not timestamp then
+								return ""
+							end
 							local now = os.time()
 							local diff = now - timestamp
-							if diff < 60 then return "just now"
-							elseif diff < 3600 then return math.floor(diff / 60) .. "m ago"
-							elseif diff < 7200 then return "1h ago"
-							elseif diff < 86400 then return math.floor(diff / 3600) .. "h ago"
-							elseif diff < 172800 then return "Yesterday"
-							else return os.date("%b %d", timestamp) end
+							if diff < 60 then
+								return "just now"
+							elseif diff < 3600 then
+								return math.floor(diff / 60) .. "m ago"
+							elseif diff < 7200 then
+								return "1h ago"
+							elseif diff < 86400 then
+								return math.floor(diff / 3600) .. "h ago"
+							elseif diff < 172800 then
+								return "Yesterday"
+							else
+								return os.date("%b %d", timestamp)
+							end
 						end
-						
+
 						-- Build items for searchable menu (same as model switch)
 						local items = {}
 						for _, session in ipairs(sessions) do
@@ -1048,7 +1074,7 @@ local function register_defaults()
 							local time_str = format_relative_time(session.time and session.time.updated)
 							local msg_str = msg_count > 0 and ("(" .. msg_count .. " msgs)") or ""
 							local current_marker = is_current and "● " or "  "
-							
+
 							table.insert(items, {
 								label = current_marker .. title .. " " .. msg_str,
 								value = session.id,
@@ -1057,7 +1083,7 @@ local function register_defaults()
 								priority = is_current and 1 or 0,
 							})
 						end
-						
+
 						-- Use searchable menu like model switch (with filter input)
 						float.create_searchable_menu(items, function(item)
 							local session = item.session
@@ -1069,13 +1095,19 @@ local function register_defaults()
 							end
 
 							-- Show loading indicator
-							vim.notify("Loading session: " .. (session.title or session.id) .. "...", vim.log.levels.INFO)
+							vim.notify(
+								"Loading session: " .. (session.title or session.id) .. "...",
+								vim.log.levels.INFO
+							)
 
 							-- Load session messages before switching (like TUI)
 							client.get_messages(session.id, {}, function(msg_err, messages)
 								vim.schedule(function()
 									if msg_err then
-										vim.notify("Failed to load session messages: " .. tostring(msg_err.message or msg_err), vim.log.levels.WARN)
+										vim.notify(
+											"Failed to load session messages: " .. tostring(msg_err.message or msg_err),
+											vim.log.levels.WARN
+										)
 									end
 
 									-- Clear current session data from sync store
@@ -1106,7 +1138,10 @@ local function register_defaults()
 									chat.clear()
 									chat.render()
 
-									vim.notify("Switched to session: " .. (session.title or session.id), vim.log.levels.INFO)
+									vim.notify(
+										"Switched to session: " .. (session.title or session.id),
+										vim.log.levels.INFO
+									)
 								end)
 							end)
 						end, { title = " Switch Session ", width = 70 })
@@ -1169,7 +1204,10 @@ local function register_defaults()
 						client.delete_session(session.id, function(err)
 							if err then
 								vim.schedule(function()
-									vim.notify("Failed to delete session: " .. tostring(err.message or err), vim.log.levels.ERROR)
+									vim.notify(
+										"Failed to delete session: " .. tostring(err.message or err),
+										vim.log.levels.ERROR
+									)
 								end)
 								return
 							end
@@ -1217,7 +1255,10 @@ local function register_defaults()
 				client.get_config_providers(function(err, response)
 					if err then
 						vim.schedule(function()
-							vim.notify("Failed to list providers: " .. tostring(err.message or err), vim.log.levels.ERROR)
+							vim.notify(
+								"Failed to list providers: " .. tostring(err.message or err),
+								vim.log.levels.ERROR
+							)
 						end)
 						return
 					end
@@ -1246,7 +1287,7 @@ local function register_defaults()
 						-- provider.models is a map {model_id: model}, not an array
 						-- Connected providers' models get higher priority
 						local items = {}
-						
+
 						-- Get favorites to mark them with stars
 						local lc_ok, lc = pcall(require, "opencode.local")
 						local favorites_set = {}
@@ -1256,14 +1297,19 @@ local function register_defaults()
 								favorites_set[fav.providerID .. "/" .. fav.modelID] = true
 							end
 						end
-						
+
 						for _, provider in ipairs(provider_list) do
 							if provider.models then
 								local is_connected = connected_set[provider.id] or false
 								for model_id, model in pairs(provider.models) do
 									local is_favorite = favorites_set[provider.id .. "/" .. model_id]
 									table.insert(items, {
-										label = string.format("%s[%s] %s", is_favorite and "★ " or "", provider.id, model.name or model_id),
+										label = string.format(
+											"%s[%s] %s",
+											is_favorite and "★ " or "",
+											provider.id,
+											model.name or model_id
+										),
 										value = model_id,
 										provider = provider.id,
 										model = model,
@@ -1298,8 +1344,8 @@ local function register_defaults()
 							if input_ok and input.is_visible and input.is_visible() then
 								input.update_info_bar()
 							end
-						end, { 
-							title = " Switch Model ", 
+						end, {
+							title = " Switch Model ",
 							width = 60,
 							on_key = function(key, item)
 								if key == "f" and lc_ok then
@@ -1309,14 +1355,23 @@ local function register_defaults()
 									})
 									-- Update item state
 									item.is_favorite = not item.is_favorite
-									item.label = string.format("%s[%s] %s", item.is_favorite and "★ " or "", item.provider, item.model.name or item.value)
-									item.priority = (item.is_favorite and 2 or 0) + (item.description == "Connected" and 1 or 0)
-									vim.notify(item.is_favorite and "Added to favorites" or "Removed from favorites", vim.log.levels.INFO)
+									item.label = string.format(
+										"%s[%s] %s",
+										item.is_favorite and "★ " or "",
+										item.provider,
+										item.model.name or item.value
+									)
+									item.priority = (item.is_favorite and 2 or 0)
+										+ (item.description == "Connected" and 1 or 0)
+									vim.notify(
+										item.is_favorite and "Added to favorites" or "Removed from favorites",
+										vim.log.levels.INFO
+									)
 									return true -- Keep menu open
 								end
 								return false
-							end
-							})
+							end,
+						})
 					end)
 				end)
 			end)
@@ -1335,7 +1390,10 @@ local function register_defaults()
 				client.list_providers(function(err, response)
 					if err then
 						vim.schedule(function()
-							vim.notify("Failed to list providers: " .. tostring(err.message or err), vim.log.levels.ERROR)
+							vim.notify(
+								"Failed to list providers: " .. tostring(err.message or err),
+								vim.log.levels.ERROR
+							)
 						end)
 						return
 					end
@@ -1393,7 +1451,7 @@ local function register_defaults()
 									provider = provider,
 									description = description,
 									priority = 100 - priority, -- Higher = better
-									auth_methods = auth_methods[provider.id] or {{ type = "api", label = "API key" }},
+									auth_methods = auth_methods[provider.id] or { { type = "api", label = "API key" } },
 								})
 							end
 
@@ -1421,7 +1479,11 @@ local function register_defaults()
 									end
 
 									float.create_menu(method_items, function(method_item)
-										M._connect_provider_with_method(item.provider, method_item.method, method_item.value)
+										M._connect_provider_with_method(
+											item.provider,
+											method_item.method,
+											method_item.value
+										)
 									end, { title = " Select auth method " })
 								end
 							end, { title = " Connect a provider ", width = 55 })
@@ -1442,7 +1504,10 @@ local function register_defaults()
 				client.list_providers(function(err, response)
 					if err then
 						vim.schedule(function()
-							vim.notify("Failed to list providers: " .. tostring(err.message or err), vim.log.levels.ERROR)
+							vim.notify(
+								"Failed to list providers: " .. tostring(err.message or err),
+								vim.log.levels.ERROR
+							)
 						end)
 						return
 					end
@@ -1476,30 +1541,36 @@ local function register_defaults()
 
 						local float = require("opencode.ui.float")
 						float.create_searchable_menu(items, function(item)
-							-- Confirm disconnection
 							vim.ui.select({ "Yes", "No" }, {
 								prompt = "Disconnect from " .. (item.provider.name or item.provider.id) .. "?",
 							}, function(choice)
 								if choice == "Yes" then
-								client.remove_provider_auth(item.provider.id, function(remove_err)
-									vim.schedule(function()
-										if remove_err then
-											vim.notify("Failed to disconnect: " .. tostring(remove_err.message or remove_err), vim.log.levels.ERROR)
-											return
-										end
+									client.remove_provider_auth(item.provider.id, function(remove_err)
+										vim.schedule(function()
+											if remove_err then
+												vim.notify(
+													"Failed to disconnect: "
+														.. tostring(remove_err.message or remove_err),
+													vim.log.levels.ERROR
+												)
+												return
+											end
 
-										-- Remove all models from this provider from recent/favorite lists
-										local lc_ok, lc = pcall(require, "opencode.local")
-										if lc_ok then
-											lc.model.remove_provider_models(item.provider.id)
-										end
+											-- Remove all models from this provider from recent/favorite lists
+											local lc_ok, lc = pcall(require, "opencode.local")
+											if lc_ok then
+												lc.model.remove_provider_models(item.provider.id)
+											end
 
-										-- Dispose to refresh state
-										client.dispose(function()
-											vim.notify("Disconnected from " .. (item.provider.name or item.provider.id), vim.log.levels.INFO)
+											-- Dispose to refresh state
+											client.dispose(function()
+												vim.notify(
+													"Disconnected from " .. (item.provider.name or item.provider.id),
+													vim.log.levels.INFO
+												)
+											end)
 										end)
 									end)
-								end)
 								end
 							end)
 						end, { title = " Disconnect Provider ", width = 50 })
@@ -1539,7 +1610,8 @@ local function register_defaults()
 						local items = {}
 						for _, agent in ipairs(agents) do
 							table.insert(items, {
-								label = (agent.name or agent.id) .. (agent.description and (" - " .. agent.description) or ""),
+								label = (agent.name or agent.id)
+									.. (agent.description and (" - " .. agent.description) or ""),
 								value = agent.id,
 								agent = agent,
 							})
@@ -1712,7 +1784,9 @@ local function register_defaults()
 						for name, info in pairs(server_status.mcp) do
 							table.insert(mcp_list, { name = name, info = info })
 						end
-						table.sort(mcp_list, function(a, b) return a.name < b.name end)
+						table.sort(mcp_list, function(a, b)
+							return a.name < b.name
+						end)
 
 						if #mcp_list > 0 then
 							add_section("MCP Servers", #mcp_list)
@@ -1811,7 +1885,13 @@ local function register_defaults()
 
 					for _, hl in ipairs(highlights) do
 						local lt = vim.api.nvim_buf_get_lines(bufnr, hl.line - 1, hl.line, false)[1] or ""
-						vim.api.nvim_buf_set_extmark(bufnr, hl_ns, hl.line - 1, 0, { end_col = #lt, hl_group = hl.group })
+						vim.api.nvim_buf_set_extmark(
+							bufnr,
+							hl_ns,
+							hl.line - 1,
+							0,
+							{ end_col = #lt, hl_group = hl.group }
+						)
 					end
 
 					vim.bo[bufnr].modifiable = false
@@ -1909,7 +1989,10 @@ local function register_defaults()
 
 					local float = require("opencode.ui.float")
 					float.create_menu(items, function(item)
-						vim.notify(string.format("Tool: %s - %s", item.tool.name, item.tool.description or "No description"), vim.log.levels.INFO)
+						vim.notify(
+							string.format("Tool: %s - %s", item.tool.name, item.tool.description or "No description"),
+							vim.log.levels.INFO
+						)
 					end, { title = " MCP Tools (" .. #all_tools .. ") " })
 				end)
 			end)

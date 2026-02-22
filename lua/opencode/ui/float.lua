@@ -409,12 +409,15 @@ function M.create_searchable_menu(items, on_select, opts)
 	local function filter_items()
 		filtered_items = {}
 		local query = search_text:lower()
-
+		query = string.gsub(query, "^%W+", "")
 		for _, item in ipairs(items) do
 			local label = (item.label or ""):lower()
 			local desc = (item.description or ""):lower()
-
-			if query == "" or label:find(query, 1, true) or desc:find(query, 1, true) then
+			if #query == 0 then
+				table.insert(filtered_items, item)
+			elseif label:find(query, 1, true) then
+				table.insert(filtered_items, item)
+			elseif desc:find(query, 1, true) then
 				table.insert(filtered_items, item)
 			end
 		end
