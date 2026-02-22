@@ -194,6 +194,57 @@ function M.agent.move(direction, opts)
 	end
 end
 
+-- Fallback palette (mirrors TUI's [secondary, accent, success, warning, primary, error])
+local AGENT_FALLBACK_COLORS = {
+	"DiagnosticInfo", -- blue  (TUI: secondary)
+	"DiagnosticWarn", -- orange (TUI: accent)
+	"DiagnosticHint", -- green  (TUI: success)
+	"Title", -- yellow (TUI: warning)
+	"Special", -- purple (TUI: primary)
+	"ErrorMsg", -- red    (TUI: error)
+}
+
+---Create (or reuse) a highlight group for a hex color string.
+---@param hex string e.g. "#FFA500"
+---@param hl_name string unique highlight group name
+---@return string hl_name
+local function ensure_hex_hl(hex, hl_name)
+	-- nvim_set_hl accepts the hex string directly for `fg`
+	vim.api.nvim_set_hl(0, hl_name, { fg = hex, bold = true, default = false })
+	return hl_name
+end
+
+---Get highlight group for an agent by name (mirrors TUI's local.agent.color).
+---Checks the agent's configured `color` field first, then falls back to the
+---palette indexed over *all* agents (same as TUI, which uses sync.data.agent).
+---@param agent_name string
+---@return string hl_group
+function M.agent.color(agent_name)
+	-- Use all agents for index lookup, matching TUI behaviour
+	local all_agents = sync.get_agents()
+	local found_agent = nil
+	local found_index = -1
+	for i, a in ipairs(all_agents) do
+		if a.name == agent_name then
+			found_agent = a
+			found_index = i
+			break
+		end
+	end
+
+	-- If agent has a custom hex color, create a dynamic highlight group
+	if found_agent and type(found_agent.color) == "string" and found_agent.color:match("^#%x%x%x%x%x%x$") then
+		local safe_name = "OpenCodeAgent_" .. agent_name:gsub("[^%w]", "_")
+		return ensure_hex_hl(found_agent.color, safe_name)
+	end
+
+	-- Fallback: cycle through palette by agent index
+	if found_index == -1 then
+		return AGENT_FALLBACK_COLORS[1]
+	end
+	return AGENT_FALLBACK_COLORS[((found_index - 1) % #AGENT_FALLBACK_COLORS) + 1]
+end
+
 -- Model module (like TUI's model in local.tsx)
 M.model = {}
 

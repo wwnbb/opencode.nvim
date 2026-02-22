@@ -57,12 +57,24 @@ local function setup_highlights()
 	-- Input area background (subtle elevation from chat bg)
 	vim.api.nvim_set_hl(0, "OpenCodeInputBg", { link = "NormalFloat", default = true })
 	vim.api.nvim_set_hl(0, "OpenCodeInputBorder", { link = "Special", default = true })
+	-- Agent border: starts as Special, updated dynamically per current agent
+	vim.api.nvim_set_hl(0, "OpenCodeInputBorderAgent", { link = "Special", default = true })
 	vim.api.nvim_set_hl(0, "OpenCodeInputInfo", { link = "Comment", default = true })
 	vim.api.nvim_set_hl(0, "OpenCodeInputAgent", { link = "Special", default = true })
 	vim.api.nvim_set_hl(0, "OpenCodeInputModel", { link = "Normal", default = true })
 	vim.api.nvim_set_hl(0, "OpenCodeInputProvider", { link = "Comment", default = true })
 	vim.api.nvim_set_hl(0, "OpenCodeInputVariant", { link = "WarningMsg", default = true })
 	vim.api.nvim_set_hl(0, "OpenCodeInputDot", { link = "Comment", default = true })
+end
+
+-- Update the border highlight to match the current agent color
+local function update_border_color(agent_name)
+	local ok, lc = pcall(require, "opencode.local")
+	if not ok then
+		return
+	end
+	local agent_hl = lc.agent.color(agent_name)
+	vim.api.nvim_set_hl(0, "OpenCodeInputBorderAgent", { link = agent_hl, default = false })
 end
 
 -- Load history from file
@@ -259,6 +271,14 @@ local function update_info_bar()
 
 	local agent, model, provider, variant = get_info_parts()
 
+	-- Get dynamic per-agent highlight and update border color
+	local agent_hl = "OpenCodeInputAgent"
+	local ok, lc = pcall(require, "opencode.local")
+	if ok then
+		agent_hl = lc.agent.color(agent)
+	end
+	update_border_color(agent)
+
 	local agent_part = titlecase(agent) .. " "
 	local model_part = model ~= "" and model or ""
 	local provider_part = provider ~= "" and (" " .. provider) or ""
@@ -283,7 +303,7 @@ local function update_info_bar()
 		NS_INFO,
 		0,
 		col_offset,
-		{ end_col = col_offset + #agent_part, hl_group = "OpenCodeInputAgent" }
+		{ end_col = col_offset + #agent_part, hl_group = agent_hl }
 	)
 	col_offset = col_offset + #agent_part
 	if model_part ~= "" then
@@ -492,7 +512,7 @@ function M.show(opts)
 			filetype = "opencode_input",
 		},
 		win_options = {
-			winhighlight = "Normal:OpenCodeInputBg,EndOfBuffer:OpenCodeInputBg,FloatBorder:OpenCodeInputBorder",
+			winhighlight = "Normal:OpenCodeInputBg,EndOfBuffer:OpenCodeInputBg,FloatBorder:OpenCodeInputBorderAgent",
 			cursorline = false,
 			wrap = true,
 			linebreak = true,
@@ -517,7 +537,7 @@ function M.show(opts)
 			bufhidden = "wipe",
 		},
 		win_options = {
-			winhighlight = "Normal:OpenCodeInputBg,EndOfBuffer:OpenCodeInputInfo,FloatBorder:OpenCodeInputBorder",
+			winhighlight = "Normal:OpenCodeInputBg,EndOfBuffer:OpenCodeInputInfo,FloatBorder:OpenCodeInputBorderAgent",
 			signcolumn = "no",
 			number = false,
 			relativenumber = false,
@@ -547,6 +567,14 @@ function M.show(opts)
 	--   <agent> <model> <provider> [dot] <variant>
 	local agent, model, provider, variant = get_info_parts()
 
+	-- Get dynamic per-agent highlight and set border color before render
+	local agent_hl_show = "OpenCodeInputAgent"
+	local lc_ok, lc_mod = pcall(require, "opencode.local")
+	if lc_ok then
+		agent_hl_show = lc_mod.agent.color(agent)
+	end
+	update_border_color(agent)
+
 	local agent_part = titlecase(agent) .. " "
 	local model_part = model ~= "" and model or ""
 	local provider_part = provider ~= "" and (" " .. provider) or ""
@@ -563,14 +591,14 @@ function M.show(opts)
 	local info_buf = state.info_popup.bufnr
 	vim.api.nvim_buf_set_lines(info_buf, 0, -1, false, { info_display })
 
-	-- Info bar highlights: agent (accent), model (normal), provider (muted), dot (muted), variant (warning/bold)
+	-- Info bar highlights: agent (per-agent color), model (normal), provider (muted), dot (muted), variant (warning/bold)
 	local col_offset = 0
 	vim.api.nvim_buf_set_extmark(
 		info_buf,
 		NS_INFO,
 		0,
 		col_offset,
-		{ end_col = col_offset + #agent_part, hl_group = "OpenCodeInputAgent" }
+		{ end_col = col_offset + #agent_part, hl_group = agent_hl_show }
 	)
 	col_offset = col_offset + #agent_part
 	if model_part ~= "" then
