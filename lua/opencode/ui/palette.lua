@@ -1117,7 +1117,16 @@ local function register_defaults()
 									-- Update sync store with loaded messages
 									if messages then
 										for _, msg in ipairs(messages) do
-											sync.handle_message_updated(msg)
+											local info = msg.info
+											if info then
+												sync.handle_message_updated(info)
+											end
+											local parts = msg.parts
+											if parts then
+												for _, part in ipairs(parts) do
+													sync.handle_part_updated(part)
+												end
+											end
 										end
 									end
 
@@ -1135,7 +1144,7 @@ local function register_defaults()
 									-- Clear chat UI and render from sync store
 									local chat = require("opencode.ui.chat")
 									chat.clear()
-									chat.render()
+									chat.do_render()
 
 									vim.notify(
 										"Switched to session: " .. (session.title or session.id),
