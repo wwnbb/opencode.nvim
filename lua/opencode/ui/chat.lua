@@ -1322,32 +1322,15 @@ local function render_task_tool(tool_part, expanded, child_content)
 	return { lines = result_lines, highlights = result_highlights }
 end
 
--- Fallback colors for agents (matches TUI's color palette)
-local AGENT_FALLBACK_COLORS = {
-	"DiagnosticInfo", -- blue
-	"DiagnosticWarn", -- orange
-	"DiagnosticHint", -- green
-	"DiagnosticUnderline", -- cyan
-	"Special", -- purple
-	"Title", -- yellow
-}
-
----Get highlight group for an agent (mirrors TUI's local.agent.color)
+---Get highlight group for an agent (delegates to local.lua's M.agent.color)
 ---@param agent_name string
 ---@return string hl_group
 local function get_agent_hl(agent_name)
-	local sync = require("opencode.sync")
-	local agents = sync.get_agents()
-	-- Find agent by name
-	for i, agent in ipairs(agents) do
-		if agent.name == agent_name then
-			-- If agent has a color, we'd need to create a highlight group
-			-- For simplicity, use fallback colors based on index
-			return AGENT_FALLBACK_COLORS[((i - 1) % #AGENT_FALLBACK_COLORS) + 1]
-		end
+	local ok, lc = pcall(require, "opencode.local")
+	if ok then
+		return lc.agent.color(agent_name)
 	end
-	-- Agent not found, use first fallback color
-	return AGENT_FALLBACK_COLORS[1]
+	return "DiagnosticInfo"
 end
 
 ---Calculate duration for an assistant message
@@ -1400,39 +1383,27 @@ end
 ---Format: ▣ Agent · modelID · duration
 ---@param message table Assistant message
 ---@param messages table[] All messages in session
----@return string line
----@return table[] highlights
+---@return NuiLine
 local function render_metadata_footer(message, messages)
-	local highlights = {}
-	local parts = {}
-	-- ▣ symbol with agent color
 	local agent_name = message.agent or "unknown"
 	local agent_hl = get_agent_hl(agent_name)
-	table.insert(parts, "▣")
-	-- Agent name (titlecase)
-	table.insert(parts, " ")
-	table.insert(parts, locale.titlecase(agent_name))
+
+	local line = NuiLine()
+	-- ▣ symbol + agent name in agent color
+	line:append(NuiText("▣ " .. locale.titlecase(agent_name), agent_hl))
 	-- Model ID
 	local model_id = message.modelID or ""
 	if model_id ~= "" then
-		table.insert(parts, " · ")
-		table.insert(parts, model_id)
+		line:append(NuiText(" · ", "Comment"))
+		line:append(NuiText(model_id, "Comment"))
 	end
 	-- Duration
 	local duration_ms = calculate_duration(message, messages)
 	if duration_ms then
-		table.insert(parts, " · ")
-		table.insert(parts, locale.duration(duration_ms))
+		line:append(NuiText(" · ", "Comment"))
+		line:append(NuiText(locale.duration(duration_ms), agent_hl))
 	end
-	local line = table.concat(parts)
-	-- Calculate highlight positions
-	-- ▣ symbol: position 0-2 (UTF-8: ▣ is 3 bytes)
-	table.insert(highlights, {
-		col_start = 0,
-		col_end = 3,
-		hl_group = agent_hl,
-	})
-	return line, highlights
+	return line
 end
 
 --==============================================================================
@@ -1490,9 +1461,10 @@ end
 ---Render a user message using NuiLine
 ---@param content string|nil
 ---@return NuiLine[]
-local function render_user_message(content)
+local function render_user_message(content, agent_name)
 	local lines = {}
 	local content_lines = vim.split(content or "", "\n", { plain = true })
+	local border_hl = get_agent_hl(agent_name or "unknown")
 
 	-- Get available width for content (window width minus "│ " prefix)
 	local win_width = 80
@@ -1503,7 +1475,7 @@ local function render_user_message(content)
 
 	-- Top border line
 	local top_line = NuiLine()
-	top_line:append(NuiText("│", "Special"))
+	top_line:append(NuiText("│", border_hl))
 	table.insert(lines, top_line)
 
 	-- Content lines, wrapped to fit within border
@@ -1511,7 +1483,7 @@ local function render_user_message(content)
 		local wrapped = wrap_text(text, max_content_width)
 		for _, wline in ipairs(wrapped) do
 			local line = NuiLine()
-			line:append(NuiText("│ ", "Special"))
+			line:append(NuiText("│ ", border_hl))
 			line:append(wline)
 			table.insert(lines, line)
 		end
@@ -1519,7 +1491,7 @@ local function render_user_message(content)
 
 	-- Bottom border
 	local bottom_line = NuiLine()
-	bottom_line:append(NuiText("│", "Special"))
+	bottom_line:append(NuiText("│", border_hl))
 	table.insert(lines, bottom_line)
 
 	-- Empty separator
@@ -1858,7 +1830,7 @@ function M.render()
 		if should_render then
 			if message.role == "user" then
 				-- User message using NuiLine helpers
-				local msg_lines = render_user_message(content)
+				local msg_lines = render_user_message(content, message.agent)
 				for _, nl in ipairs(msg_lines) do
 					add_line(nl)
 				end
@@ -1964,8 +1936,7 @@ function M.render()
 				-- Footer (show for all completed assistant messages)
 				local is_streaming = (msg_idx == last_assistant_idx and app_state.get_status() == "streaming")
 				if should_show_footer(message, is_streaming) then
-					local footer_line, _ = render_metadata_footer(message, messages)
-					add_raw_line(footer_line)
+					add_line(render_metadata_footer(message, messages))
 					add_raw_line("")
 				end
 
