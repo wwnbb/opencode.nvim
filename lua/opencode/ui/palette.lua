@@ -809,7 +809,6 @@ function M._show_provider_models(provider)
 				end
 				-- Also update old state for backward compatibility
 				state.set_model(item.value, item.model.name, provider.id)
-				vim.notify("Switched to model: " .. (item.model.name or item.value), vim.log.levels.INFO)
 				-- Update input info bar if visible
 				local input_ok, input = pcall(require, "opencode.ui.input")
 				if input_ok and input.is_visible and input.is_visible() then
@@ -1338,7 +1337,6 @@ local function register_defaults()
 							end
 							-- Also update old state for backward compatibility
 							state.set_model(item.value, item.model.name, item.provider)
-							vim.notify("Switched to model: " .. (item.model.name or item.value), vim.log.levels.INFO)
 							-- Update input info bar if visible
 							local input_ok, input = pcall(require, "opencode.ui.input")
 							if input_ok and input.is_visible and input.is_visible() then
@@ -1626,7 +1624,6 @@ local function register_defaults()
 							end
 							-- Also update old state for backward compatibility
 							state.set_agent(item.agent.id, item.agent.name)
-							vim.notify("Switched to agent: " .. (item.agent.name or item.agent.id), vim.log.levels.INFO)
 							-- Update input info bar if visible
 							local input_ok, input = pcall(require, "opencode.ui.input")
 							if input_ok and input.is_visible and input.is_visible() then
