@@ -117,6 +117,20 @@ function M.get_all()
 	return result
 end
 
+--- Get all edits belonging to a specific session
+---@param session_id string
+---@return table Array of edit states sorted by timestamp
+function M.get_all_for_session(session_id)
+	local result = {}
+	for _, estate in pairs(active_edits) do
+		if estate.session_id == session_id then
+			table.insert(result, estate)
+		end
+	end
+	table.sort(result, function(a, b) return a.timestamp < b.timestamp end)
+	return result
+end
+
 --- Get all active (pending) edits
 ---@return table Array of edit states
 function M.get_all_active()
@@ -444,6 +458,18 @@ function M.clear_all()
 		events.emit("edit_removed", { permission_id = permission_id })
 	end
 	active_edits = {}
+end
+
+--- Clear edits belonging to a specific session only
+---@param session_id string
+function M.clear_session(session_id)
+	local events = require("opencode.events")
+	for permission_id, estate in pairs(active_edits) do
+		if estate.session_id == session_id then
+			events.emit("edit_removed", { permission_id = permission_id })
+			active_edits[permission_id] = nil
+		end
+	end
 end
 
 return M

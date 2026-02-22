@@ -34,7 +34,6 @@ local state = {
 	agent = {
 		id = nil,
 		name = nil,
-		mode = nil,
 	},
 	
 	-- Streaming/thinking status
@@ -202,13 +201,12 @@ end
 
 -- Agent
 
-function M.set_agent(id, name, mode)
+function M.set_agent(id, name)
 	local old = vim.deepcopy(state.agent)
-	
+
 	set("id", id, "agent")
 	set("name", name or id, "agent")
-	set("mode", mode, "agent")
-	
+
 	return old
 end
 
@@ -405,7 +403,6 @@ function M.get_status_summary()
 		model = state.model.name,
 		provider = state.model.provider,
 		agent = state.agent.name,
-		mode = state.agent.mode,
 		session = state.session.name,
 		message_count = state.session.message_count,
 		diff_stats = M.get_pending_changes_stats(),
