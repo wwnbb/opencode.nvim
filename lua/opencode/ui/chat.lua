@@ -1961,9 +1961,9 @@ function M.render()
 					end
 				end
 
-				-- Footer (only show for the last assistant message when session is done)
+				-- Footer (show for all completed assistant messages)
 				local is_streaming = (msg_idx == last_assistant_idx and app_state.get_status() == "streaming")
-				if msg_idx == last_assistant_idx and should_show_footer(message, is_streaming) then
+				if should_show_footer(message, is_streaming) then
 					local footer_line, _ = render_metadata_footer(message, messages)
 					add_raw_line(footer_line)
 					add_raw_line("")
@@ -2063,12 +2063,18 @@ function M.render()
 		end
 	end
 
-	-- Render orphan edits (from subagent/child sessions)
-	-- Skip any whose message_id belongs to the current session (already rendered inline)
-	local all_edits = edit_state.get_all()
-	for _, estate in ipairs(all_edits) do
+	-- Render orphan edits: pending edits with no message_id (or a message_id that
+	-- belongs to a different session). Scoped to the current session so edits from
+	-- a parent session don't bleed into a child-session view and vice versa.
+	-- Resolved orphans (status == "sent") are intentionally omitted: they have no
+	-- parent message to anchor to so showing them persistently below new messages
+	-- would be misleading. Inline edits (message_id matches) always show their
+	-- Approved/Rejected state regardless of status via the render_edits() path above.
+	local session_edits = edit_state.get_all_for_session(current_session.id)
+	for _, estate in ipairs(session_edits) do
 		if not rendered_edit_ids[estate.permission_id]
-			and not (estate.message_id and session_msg_ids[estate.message_id]) then
+			and not (estate.message_id and session_msg_ids[estate.message_id])
+			and estate.status == "pending" then
 			render_single_edit(estate)
 		end
 	end

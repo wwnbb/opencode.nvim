@@ -1625,7 +1625,7 @@ local function register_defaults()
 								lc.agent.set(item.agent.name)
 							end
 							-- Also update old state for backward compatibility
-							state.set_agent(item.agent.id, item.agent.name, item.agent.mode)
+							state.set_agent(item.agent.id, item.agent.name)
 							vim.notify("Switched to agent: " .. (item.agent.name or item.agent.id), vim.log.levels.INFO)
 							-- Update input info bar if visible
 							local input_ok, input = pcall(require, "opencode.ui.input")
@@ -1636,36 +1636,6 @@ local function register_defaults()
 					end)
 				end)
 			end)
-		end,
-	})
-
-	M.register({
-		id = "agent.mode",
-		title = "Switch Mode",
-		description = "Switch agent mode (build/plan)",
-		category = "agent",
-		keybind = "<leader>oM",
-		action = function()
-			local modes = {
-				{ id = "build", name = "Build", description = "Execute and build code" },
-				{ id = "plan", name = "Plan", description = "Plan and discuss without execution" },
-			}
-
-			local items = {}
-			for _, mode in ipairs(modes) do
-				table.insert(items, {
-					label = mode.name .. " - " .. mode.description,
-					value = mode.id,
-					mode = mode,
-				})
-			end
-
-			local float = require("opencode.ui.float")
-			float.create_searchable_menu(items, function(item)
-				local current_agent = state.get_agent()
-				state.set_agent(current_agent.id, current_agent.name, item.mode.id)
-				vim.notify("Switched to mode: " .. item.mode.name, vim.log.levels.INFO)
-			end, { title = " Switch Mode ", width = 60 })
 		end,
 	})
 
