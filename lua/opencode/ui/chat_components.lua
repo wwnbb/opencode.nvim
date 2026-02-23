@@ -159,15 +159,21 @@ end
 function ChatMessage:_build_user_message(lines)
 	local content = self.content or ""
 	local content_lines = vim.split(content, "\n", { plain = true })
-	-- Reserve 2 columns for "> " prefix
-	local max_content_width = self.width - 2
+	local app_state = require("opencode.state")
+	local full_config = app_state.get_config() or {}
+	local chat_prompt = full_config.chat and full_config.chat.input and full_config.chat.input.prompt
+	local input_prompt = full_config.input and full_config.input.prompt
+	local prompt = type(chat_prompt) == "string" and chat_prompt or (type(input_prompt) == "string" and input_prompt or "> ")
+	local prompt_width = vim.fn.strdisplaywidth(prompt)
+	-- Reserve columns for prompt prefix
+	local max_content_width = math.max(1, self.width - prompt_width)
 
 	-- Content lines with quote prefix, wrapped to fit
 	for _, line in ipairs(content_lines) do
 		local wrapped = wrap_text(line, max_content_width)
 		for _, wline in ipairs(wrapped) do
 			local content_line = NuiLine()
-			content_line:append(NuiText("> ", "Comment"))
+			content_line:append(NuiText(prompt, "Comment"))
 			content_line:append(wline)
 			table.insert(lines, content_line)
 		end

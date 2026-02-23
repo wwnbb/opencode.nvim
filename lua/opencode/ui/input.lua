@@ -35,7 +35,7 @@ local history = {
 local defaults = {
 	min_height = 3,
 	max_height = 20,
-	prompt = "> ",
+	prompt = "┃ ",
 	history_file = vim.fn.stdpath("data") .. "/opencode_input_history.json",
 	keymaps = {
 		send = "<C-g>",
@@ -446,9 +446,14 @@ function M.show(opts)
 	setup_highlights()
 
 	-- Load config
-	local config = require("opencode.config")
-	local user_config = config.defaults or {}
-	local cfg = vim.tbl_deep_extend("force", defaults, user_config.input or {})
+	local app_state = require("opencode.state")
+	local full_config = app_state.get_config() or {}
+	local cfg = vim.tbl_deep_extend(
+		"force",
+		defaults,
+		full_config.input or {},
+		(full_config.chat and full_config.chat.input) or {}
+	)
 	state.config = cfg
 
 	-- Set callbacks
