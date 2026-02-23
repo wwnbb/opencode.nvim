@@ -1464,37 +1464,30 @@ end
 local function render_user_message(content, agent_name)
 	local lines = {}
 	local content_lines = vim.split(content or "", "\n", { plain = true })
-	local border_hl = get_agent_hl(agent_name or "unknown")
+	local prefix_hl = get_agent_hl(agent_name or "unknown")
 
-	-- Get available width for content (window width minus "│ " prefix)
+	-- Get available width for content (window width minus "> " prefix)
 	local win_width = 80
 	if state.winid and vim.api.nvim_win_is_valid(state.winid) then
 		win_width = vim.api.nvim_win_get_width(state.winid)
 	end
 	local max_content_width = win_width - 2
 
-	-- Top border line
-	local top_line = NuiLine()
-	top_line:append(NuiText("│", border_hl))
-	table.insert(lines, top_line)
+	-- Empty line before user message
+	table.insert(lines, NuiLine())
 
-	-- Content lines, wrapped to fit within border
+	-- Content lines, wrapped to fit within prefix width
 	for _, text in ipairs(content_lines) do
 		local wrapped = wrap_text(text, max_content_width)
 		for _, wline in ipairs(wrapped) do
 			local line = NuiLine()
-			line:append(NuiText("│ ", border_hl))
+			line:append(NuiText("> ", prefix_hl))
 			line:append(wline)
 			table.insert(lines, line)
 		end
 	end
 
-	-- Bottom border
-	local bottom_line = NuiLine()
-	bottom_line:append(NuiText("│", border_hl))
-	table.insert(lines, bottom_line)
-
-	-- Empty separator
+	-- Empty line after user message
 	table.insert(lines, NuiLine())
 
 	return lines
@@ -1707,8 +1700,7 @@ function M.render()
 			p_lines, p_highlights = permission_widget.get_rejected_lines(perm_id, pstate)
 		else
 			local first_option_offset
-			p_lines, p_highlights, _, first_option_offset =
-				permission_widget.get_lines_for_permission(perm_id, pstate)
+			p_lines, p_highlights, _, first_option_offset = permission_widget.get_lines_for_permission(perm_id, pstate)
 			if state.focus_permission == perm_id then
 				state.focus_permission_line = #raw_lines + first_option_offset + 1
 			end
@@ -2028,8 +2020,10 @@ function M.render()
 	-- Skip any whose message_id belongs to the current session (already rendered inline)
 	local all_perms = permission_state.get_all()
 	for _, pstate in ipairs(all_perms) do
-		if not rendered_perm_ids[pstate.permission_id]
-			and not (pstate.message_id and session_msg_ids[pstate.message_id]) then
+		if
+			not rendered_perm_ids[pstate.permission_id]
+			and not (pstate.message_id and session_msg_ids[pstate.message_id])
+		then
 			render_single_permission(pstate)
 		end
 	end
@@ -2043,9 +2037,11 @@ function M.render()
 	-- Approved/Rejected state regardless of status via the render_edits() path above.
 	local session_edits = edit_state.get_all_for_session(current_session.id)
 	for _, estate in ipairs(session_edits) do
-		if not rendered_edit_ids[estate.permission_id]
+		if
+			not rendered_edit_ids[estate.permission_id]
 			and not (estate.message_id and session_msg_ids[estate.message_id])
-			and estate.status == "pending" then
+			and estate.status == "pending"
+		then
 			render_single_edit(estate)
 		end
 	end
