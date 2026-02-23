@@ -167,7 +167,7 @@ local function resize_input()
 	if layout.is_float then
 		-- Float mode: reposition input popup using absolute editor-relative coordinates
 		local fd = layout.float_dims
-		local new_row = fd.row + fd.height - new_height - layout.info_height
+		local new_row = fd.row + fd.height - new_height - layout.padding_rows - layout.info_height + layout.row_offset
 		state.popup:update_layout({
 			position = { row = new_row, col = layout.col },
 			size = { width = layout.content_width, height = new_height },
@@ -493,6 +493,9 @@ function M.show(opts)
 		-- float_dims = { row, col, width, height } of the chat content window in screen space.
 		local height = cfg.min_height
 		local info_height = 1
+		local info_top_pad = 1
+		local padding_rows = 1 -- top padding only
+		local row_offset = 1 -- shift both widgets 1 line down
 
 		-- Left-only border: same style as non-float mode (┃ on left side only)
 		-- Offset 1 col right so the ┃ doesn't overlap the outer window border
@@ -504,7 +507,9 @@ function M.show(opts)
 			is_float = true,
 			float_dims = float_dims,
 			col = float_col,
-			info_height = info_height,
+			info_height = info_height + info_top_pad,
+			padding_rows = padding_rows,
+			row_offset = row_offset,
 			current_height = height,
 			content_width = float_content_width,
 		}
@@ -516,10 +521,10 @@ function M.show(opts)
 			relative = "editor",
 			border = {
 				style = float_border,
-				padding = { top = 0, bottom = 0, left = 1, right = 0 },
+				padding = { top = 1, bottom = 0, left = 1, right = 0 },
 			},
 			position = {
-				row = float_dims.row + float_dims.height - height - info_height,
+				row = float_dims.row + float_dims.height - height - padding_rows - info_height - info_top_pad + row_offset,
 				col = float_col,
 			},
 			size = { width = float_content_width, height = height },
@@ -548,10 +553,10 @@ function M.show(opts)
 			relative = "editor",
 			border = {
 				style = float_border,
-				padding = { top = 0, bottom = 0, left = 1, right = 0 },
+				padding = { top = 1, bottom = 0, left = 1, right = 0 },
 			},
 			position = {
-				row = float_dims.row + float_dims.height - info_height,
+				row = float_dims.row + float_dims.height - info_height - info_top_pad + row_offset,
 				col = float_col,
 			},
 			size = { width = float_content_width, height = info_height },
