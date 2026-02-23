@@ -788,6 +788,11 @@ function M.close()
 		return
 	end
 
+	-- Close input if it's open (important for float split mode where input is inside the float)
+	if input.is_visible() then
+		input.close()
+	end
+
 	if state.config.layout == "float" and state.layout then
 		state.layout:unmount()
 	else
@@ -2099,7 +2104,11 @@ function M.focus_input()
 		M.open()
 	end
 
+	M.focus()
+
 	input.show({
+		winid = state.winid,
+		layout_type = state.config and state.config.layout,
 		on_send = function(text)
 			-- Send message via main module
 			local opencode = require("opencode")
@@ -2850,6 +2859,8 @@ function M.handle_question_custom_input()
 	-- Show input prompt
 	local input = require("opencode.ui.input")
 	input.show({
+		winid = state.winid,
+		layout_type = state.config.layout,
 		on_send = function(text)
 			if text and text ~= "" then
 				-- Store custom input
