@@ -88,9 +88,9 @@ local defaults = {
 
 -- Merge with user config
 local function get_config()
-	local config = require("opencode.config")
-	local user_config = config.defaults or {}
-	return vim.tbl_deep_extend("force", defaults, user_config.chat or {})
+	local app_state = require("opencode.state")
+	local full_config = app_state.get_config() or {}
+	return vim.tbl_deep_extend("force", defaults, full_config.chat or {})
 end
 
 -- Calculate dimensions based on layout and config
@@ -1461,17 +1461,33 @@ end
 ---Render a user message using NuiLine
 ---@param content string|nil
 ---@return NuiLine[]
+local function get_user_prompt()
+	local app_state = require("opencode.state")
+	local full_config = app_state.get_config() or {}
+	local chat_prompt = full_config.chat and full_config.chat.input and full_config.chat.input.prompt
+	if type(chat_prompt) == "string" then
+		return chat_prompt
+	end
+	local input_prompt = full_config.input and full_config.input.prompt
+	if type(input_prompt) == "string" then
+		return input_prompt
+	end
+	return "> "
+end
+
 local function render_user_message(content, agent_name)
 	local lines = {}
 	local content_lines = vim.split(content or "", "\n", { plain = true })
 	local prefix_hl = get_agent_hl(agent_name or "unknown")
+	local prompt = get_user_prompt()
 
-	-- Get available width for content (window width minus "> " prefix)
+	-- Get available width for content (window width minus prompt prefix)
 	local win_width = 80
 	if state.winid and vim.api.nvim_win_is_valid(state.winid) then
 		win_width = vim.api.nvim_win_get_width(state.winid)
 	end
-	local max_content_width = win_width - 2
+	local prompt_width = vim.fn.strdisplaywidth(prompt)
+	local max_content_width = math.max(1, win_width - prompt_width)
 
 	-- Empty line before user message
 	table.insert(lines, NuiLine())
@@ -1481,7 +1497,7 @@ local function render_user_message(content, agent_name)
 		local wrapped = wrap_text(text, max_content_width)
 		for _, wline in ipairs(wrapped) do
 			local line = NuiLine()
-			line:append(NuiText("> ", prefix_hl))
+			line:append(NuiText(prompt, prefix_hl))
 			line:append(wline)
 			table.insert(lines, line)
 		end
