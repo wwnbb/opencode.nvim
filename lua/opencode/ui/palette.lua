@@ -331,6 +331,62 @@ local state = {
 	prev_win = nil,
 }
 
+local PALETTE_ZINDEX = 80
+
+-- Resolve chat window context for palette placement.
+-- Mirrors input widget behavior:
+-- - float chat => editor-relative absolute coordinates
+-- - split chat => window-relative coordinates
+local function resolve_palette_target()
+	local target_win = nil
+	local float_dims = nil
+
+	local chat_ok, chat = pcall(require, "opencode.ui.chat")
+	if chat_ok then
+		if type(chat.get_winid) == "function" then
+			local chat_winid = chat.get_winid()
+			if chat_winid and vim.api.nvim_win_is_valid(chat_winid) then
+				target_win = chat_winid
+			end
+		end
+		if type(chat.get_float_dims) == "function" then
+			float_dims = chat.get_float_dims()
+		end
+	end
+
+	if not target_win then
+		local current = vim.api.nvim_get_current_win()
+		if current and vim.api.nvim_win_is_valid(current) then
+			target_win = current
+		end
+	end
+
+	return target_win, float_dims
+end
+
+local function focus_chat_if_visible()
+	local chat_ok, chat = pcall(require, "opencode.ui.chat")
+	if not chat_ok then
+		return false
+	end
+
+	local is_visible = true
+	if type(chat.is_visible) == "function" then
+		is_visible = chat.is_visible()
+	elseif type(chat.get_winid) == "function" then
+		local winid = chat.get_winid()
+		is_visible = winid and vim.api.nvim_win_is_valid(winid) or false
+	end
+	if not is_visible then
+		return false
+	end
+	if type(chat.focus) ~= "function" then
+		return false
+	end
+
+	return pcall(chat.focus)
+end
+
 -- Render the command list
 local function render_list()
 	if not state.popup or not vim.api.nvim_buf_is_valid(state.popup.bufnr) then
@@ -480,14 +536,14 @@ function M.hide()
 	state.results = {}
 	state.prev_win = nil
 
-	-- Restore focus to the window that was active before the palette opened
+	-- Prefer returning focus to chat while it is visible.
+	if focus_chat_if_visible() then
+		return
+	end
+
+	-- Fallback to the previously active window (e.g. when chat is not visible).
 	if prev_win and vim.api.nvim_win_is_valid(prev_win) then
 		vim.api.nvim_set_current_win(prev_win)
-	else
-		local chat = require("opencode.ui.chat")
-		if chat.focus then
-			chat.focus()
-		end
 	end
 end
 
@@ -508,16 +564,68 @@ function M.show()
 	-- Calculate dimensions
 	local ui_list = vim.api.nvim_list_uis()
 	local ui = ui_list and ui_list[1] or { width = 80, height = 24 }
+	local target_win, float_dims = resolve_palette_target()
 
-	local width = math.min(config.width, ui.width - 10)
-	local height = math.min(config.height, ui.height - 8)
-	local row = math.floor((ui.height - height - 3) / 2)
-	local col = math.floor((ui.width - width) / 2)
+	local width, height, row, col
+	local relative
+	local input_zindex
+	local popup_zindex
+
+	local has_float_dims = type(float_dims) == "table"
+		and type(float_dims.row) == "number"
+		and type(float_dims.col) == "number"
+		and type(float_dims.width) == "number"
+		and type(float_dims.height) == "number"
+		and float_dims.width >= 20
+		and float_dims.height >= 8
+
+	if has_float_dims then
+		-- Float mode (same strategy as input.show): editor-relative absolute placement.
+		local anchor_row = float_dims.row + 1
+		local anchor_col = float_dims.col + 1
+		local anchor_width = math.max(20, float_dims.width - 2)
+		local anchor_height = math.max(8, float_dims.height - 2)
+
+		local max_width = math.max(20, math.min(anchor_width - 4, ui.width - 10))
+		local max_height = math.max(6, math.min(anchor_height - 6, ui.height - 8))
+		width = math.min(config.width, max_width)
+		height = math.min(config.height, max_height)
+		row = anchor_row + math.floor((anchor_height - height - 3) / 2)
+		col = anchor_col + math.floor((anchor_width - width) / 2)
+
+		-- Clamp absolute editor-relative position to current screen bounds.
+		row = math.max(0, math.min(row, math.max(0, ui.height - (height + 3))))
+		col = math.max(0, math.min(col, math.max(0, ui.width - width)))
+
+		relative = "editor"
+		input_zindex = PALETTE_ZINDEX + 1
+		popup_zindex = PALETTE_ZINDEX
+	else
+		-- Split mode: window-relative placement inside chat window.
+		local win_width = ui.width
+		local win_height = ui.height
+		if target_win and vim.api.nvim_win_is_valid(target_win) then
+			win_width = vim.api.nvim_win_get_width(target_win)
+			win_height = vim.api.nvim_win_get_height(target_win)
+			relative = { type = "win", winid = target_win }
+		else
+			relative = "editor"
+		end
+
+		local max_width = math.max(20, win_width - 4)
+		local max_height = math.max(6, win_height - 6)
+		width = math.min(config.width, max_width)
+		height = math.min(config.height, max_height)
+		row = math.max(0, math.floor((win_height - height - 3) / 2))
+		col = math.max(0, math.floor((win_width - width) / 2))
+	end
 
 	-- Create input popup at top
 	state.input_popup = Popup({
 		enter = true,
 		focusable = true,
+		relative = relative,
+		zindex = input_zindex,
 		border = {
 			style = config.border,
 			text = {
@@ -533,6 +641,8 @@ function M.show()
 	state.popup = Popup({
 		enter = false,
 		focusable = false,
+		relative = relative,
+		zindex = popup_zindex,
 		border = {
 			style = config.border,
 		},
@@ -661,6 +771,7 @@ function M._connect_provider_with_method(provider, method, method_index)
 		float.create_input_popup({
 			title = " " .. (method.label or "API Key") .. " ",
 			prompt = "Enter API key for " .. (provider.name or provider.id) .. ":",
+			refocus_chat = true,
 			on_submit = function(api_key)
 				if not api_key or api_key == "" then
 					vim.notify("API key cannot be empty", vim.log.levels.WARN)
@@ -708,6 +819,7 @@ function M._connect_provider_with_method(provider, method, method_index)
 					float.create_input_popup({
 						title = " " .. (method.label or "OAuth") .. " ",
 						prompt = authorization.instructions or "Enter authorization code:",
+						refocus_chat = true,
 						on_submit = function(code)
 							if not code or code == "" then
 								vim.notify("Authorization code cannot be empty", vim.log.levels.WARN)
@@ -941,6 +1053,7 @@ function M._show_oauth_auto_dialog(opts)
 		pcall(function()
 			popup:unmount()
 		end)
+		focus_chat_if_visible()
 	end
 
 	-- Setup keymaps

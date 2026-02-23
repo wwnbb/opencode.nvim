@@ -8,7 +8,6 @@ local Popup = require("nui.popup")
 local Layout = require("nui.layout")
 local NuiLine = require("nui.line")
 local NuiText = require("nui.text")
-local event = require("nui.utils.autocmd").event
 local input = require("opencode.ui.input")
 local markdown = require("opencode.ui.markdown")
 local chat_components = require("opencode.ui.chat_components")
@@ -732,12 +731,24 @@ function M.open()
 		-- Store content-area dimensions so input can use editor-relative positioning
 		state.float_dims = dims
 
-		-- Handle unmount
-		popup:on(event.BufLeave, function()
-			state.visible = false
-			state.winid = nil
-			state.float_dims = nil
-		end)
+		-- Track manual window closure without treating focus changes as close.
+		-- BufLeave fires whenever another float takes focus (palette/menus), which
+		-- must not mark chat hidden.
+		local popup_winid = popup.winid
+		if popup_winid and vim.api.nvim_win_is_valid(popup_winid) then
+			vim.api.nvim_create_autocmd("WinClosed", {
+				pattern = tostring(popup_winid),
+				once = true,
+				callback = function()
+					if state.winid == popup_winid then
+						state.visible = false
+						state.winid = nil
+						state.layout = nil
+						state.float_dims = nil
+					end
+				end,
+			})
+		end
 	else
 		-- Split layout
 		local split_cmd = "split"
@@ -831,6 +842,14 @@ function M.get_winid()
 		return state.winid
 	end
 	return nil
+end
+
+-- Get float layout dimensions when chat is in float mode
+function M.get_float_dims()
+	if not state.visible or not state.float_dims then
+		return nil
+	end
+	return vim.deepcopy(state.float_dims)
 end
 
 -- Get buffer number (creates if needed)

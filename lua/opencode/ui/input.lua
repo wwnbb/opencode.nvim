@@ -30,6 +30,7 @@ local history = {
 	index = 0,
 	max_entries = 100,
 	stashed = nil,
+	pending = nil, -- draft text persisted across open/close cycles
 }
 
 -- Default configuration
@@ -366,10 +367,11 @@ local function setup_keymaps(bufnr, cfg)
 		local text = get_input_text()
 		if text ~= "" then
 			add_to_history(text)
+			history.pending = nil
 			if state.on_send then
 				state.on_send(text)
 			end
-			M.close()
+			M.close(false)
 		end
 	end
 
@@ -780,14 +782,29 @@ function M.show(opts)
 	-- Setup keymaps (same for both modes)
 	setup_keymaps(state.bufnr, cfg)
 
+	-- Re-populate buffer with any unsent text from the previous open
+	if history.pending then
+		local lines = vim.split(history.pending, "\n")
+		vim.api.nvim_buf_set_lines(state.bufnr, 0, -1, false, lines)
+		vim.schedule(resize_input)
+	end
+
 	-- Start in insert mode
 	vim.cmd("startinsert!")
 end
 
 -- Close input
-function M.close()
+-- save_draft defaults to true; pass false when submitting so the draft is cleared
+function M.close(save_draft)
 	if not state.visible then
 		return
+	end
+
+	if save_draft ~= false then
+		if state.bufnr and vim.api.nvim_buf_is_valid(state.bufnr) then
+			local text = get_input_text()
+			history.pending = text ~= "" and text or nil
+		end
 	end
 
 	if state.info_popup then
