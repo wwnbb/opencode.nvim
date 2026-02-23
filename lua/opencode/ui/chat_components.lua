@@ -154,34 +154,24 @@ function ChatMessage:_build_lines()
 	self._line_count = #lines
 end
 
----Build user message with bordered box style
+---Build user message with simple quote prefix
 ---@param lines NuiLine[]
 function ChatMessage:_build_user_message(lines)
 	local content = self.content or ""
 	local content_lines = vim.split(content, "\n", { plain = true })
-	-- Reserve 2 columns for "│ " prefix
+	-- Reserve 2 columns for "> " prefix
 	local max_content_width = self.width - 2
 
-	-- Top border line with highlight bar
-	local top_line = NuiLine()
-	top_line:append(NuiText("│", "Special"))
-	table.insert(lines, top_line)
-
-	-- Content lines with border prefix, wrapped to fit
+	-- Content lines with quote prefix, wrapped to fit
 	for _, line in ipairs(content_lines) do
 		local wrapped = wrap_text(line, max_content_width)
 		for _, wline in ipairs(wrapped) do
 			local content_line = NuiLine()
-			content_line:append(NuiText("│ ", "Special"))
+			content_line:append(NuiText("> ", "Comment"))
 			content_line:append(wline)
 			table.insert(lines, content_line)
 		end
 	end
-
-	-- Bottom border line
-	local bottom_line = NuiLine()
-	bottom_line:append(NuiText("│", "Special"))
-	table.insert(lines, bottom_line)
 
 	-- Empty separator
 	table.insert(lines, NuiLine())
