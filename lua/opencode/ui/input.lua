@@ -16,7 +16,6 @@ local state = {
 	winid = nil,
 	popup = nil,
 	info_popup = nil,
-	info_winid = nil, -- for float split mode
 	info_bufnr = nil, -- unified info buffer reference (set in both modes)
 	visible = false,
 	on_send = nil,
@@ -163,16 +162,16 @@ local function resize_input()
 		return
 	end
 
-	local diff = new_height - layout.current_height
 	layout.current_height = new_height
 
 	if layout.is_float then
-		-- Split mode: resize input window; Neovim adjusts the chat window automatically
-		vim.api.nvim_win_set_height(state.winid, new_height)
-		if layout.chat_winid and vim.api.nvim_win_is_valid(layout.chat_winid) then
-			local chat_height = vim.api.nvim_win_get_height(layout.chat_winid)
-			vim.api.nvim_win_set_height(layout.chat_winid, chat_height - diff)
-		end
+		-- Float mode: reposition input popup using absolute editor-relative coordinates
+		local fd = layout.float_dims
+		local new_row = fd.row + fd.height - new_height - layout.info_height
+		state.popup:update_layout({
+			position = { row = new_row, col = layout.col },
+			size = { width = layout.content_width, height = new_height },
+		})
 	else
 		-- NUI popup mode: bottom-anchored, recalculate row so the bottom edge stays fixed
 		local total_height = new_height + layout.padding_rows + layout.info_height
@@ -484,69 +483,98 @@ function M.show(opts)
 		chat_winid = vim.api.nvim_get_current_win()
 	end
 
-	-- Use split windows when inside a float to avoid complex NUI relative-to-float positioning issues
-	local is_float = opts.layout_type == "float"
+	-- When inside a floating chat window, use editor-relative NUI popups positioned via
+	-- absolute screen coordinates. This avoids the NUI complex-border chain issue where
+	-- the chat popup's border window causes misplacement for win-relative children.
+	local float_dims = opts.float_dims
 
-	if is_float then
-		-- Float mode: create actual Neovim split windows within the float
-		local original_chat_height = vim.api.nvim_win_get_height(chat_winid)
+	if float_dims then
+		-- Float mode: NUI popups anchored to editor with computed absolute positions.
+		-- float_dims = { row, col, width, height } of the chat content window in screen space.
+		local height = cfg.min_height
 		local info_height = 1
-		local input_height = cfg.min_height
 
-		-- Shrink chat window to make room for input + info splits
-		vim.api.nvim_win_set_height(chat_winid, original_chat_height - input_height - info_height)
-
-		-- Create input buffer
-		state.bufnr = vim.api.nvim_create_buf(false, true)
-		vim.bo[state.bufnr].buftype = "nofile"
-		vim.bo[state.bufnr].bufhidden = "wipe"
-		vim.bo[state.bufnr].swapfile = false
-		vim.bo[state.bufnr].filetype = "opencode_input"
-
-		-- Open input window as a split below chat (within the float)
-		state.winid = vim.api.nvim_open_win(state.bufnr, true, {
-			split = "below",
-			win = chat_winid,
-			height = input_height,
-		})
-
-		vim.wo[state.winid].winhighlight = "Normal:OpenCodeInputBg,EndOfBuffer:OpenCodeInputBg"
-		vim.wo[state.winid].wrap = true
-		vim.wo[state.winid].linebreak = true
-		vim.wo[state.winid].signcolumn = "no"
-		vim.wo[state.winid].number = false
-		vim.wo[state.winid].relativenumber = false
-		vim.wo[state.winid].cursorline = false
-		vim.wo[state.winid].statusline = " "
-
-		-- Create info buffer
-		local info_buf = vim.api.nvim_create_buf(false, true)
-		vim.bo[info_buf].buftype = "nofile"
-		vim.bo[info_buf].bufhidden = "wipe"
-
-		-- Open info window as a split below input
-		state.info_winid = vim.api.nvim_open_win(info_buf, false, {
-			split = "below",
-			win = state.winid,
-			height = info_height,
-		})
-
-		vim.wo[state.info_winid].winhighlight = "Normal:OpenCodeInputBg,EndOfBuffer:OpenCodeInputInfo"
-		vim.wo[state.info_winid].signcolumn = "no"
-		vim.wo[state.info_winid].number = false
-		vim.wo[state.info_winid].relativenumber = false
-		vim.wo[state.info_winid].statusline = " "
-
-		state.info_bufnr = info_buf
-		state.visible = true
+		-- Left-only border: same style as non-float mode (┃ on left side only)
+		-- Offset 1 col right so the ┃ doesn't overlap the outer window border
+		local float_border = { "┃", "", "", "", "", "", "┃", "┃" }
+		local float_col = float_dims.col + 1
+		local float_content_width = float_dims.width - 3 -- 1 col offset + 1 border + 1 left padding
 
 		state.layout = {
 			is_float = true,
-			chat_winid = chat_winid,
-			original_chat_height = original_chat_height,
+			float_dims = float_dims,
+			col = float_col,
 			info_height = info_height,
-			current_height = input_height,
+			current_height = height,
+			content_width = float_content_width,
 		}
+
+		-- Input popup: fills the bottom portion of the chat float
+		state.popup = Popup({
+			enter = true,
+			focusable = true,
+			relative = "editor",
+			border = {
+				style = float_border,
+				padding = { top = 0, bottom = 0, left = 1, right = 0 },
+			},
+			position = {
+				row = float_dims.row + float_dims.height - height - info_height,
+				col = float_col,
+			},
+			size = { width = float_content_width, height = height },
+			zindex = 51,
+			buf_options = {
+				buftype = "nofile",
+				bufhidden = "wipe",
+				swapfile = false,
+				filetype = "opencode_input",
+			},
+			win_options = {
+				winhighlight = "Normal:OpenCodeInputBg,EndOfBuffer:OpenCodeInputBg,FloatBorder:OpenCodeInputBorderAgent",
+				cursorline = false,
+				wrap = true,
+				linebreak = true,
+				signcolumn = "no",
+				number = false,
+				relativenumber = false,
+			},
+		})
+
+		-- Info bar popup: one row below input, at the very bottom of the chat float
+		state.info_popup = Popup({
+			enter = false,
+			focusable = false,
+			relative = "editor",
+			border = {
+				style = float_border,
+				padding = { top = 0, bottom = 0, left = 1, right = 0 },
+			},
+			position = {
+				row = float_dims.row + float_dims.height - info_height,
+				col = float_col,
+			},
+			size = { width = float_content_width, height = info_height },
+			zindex = 51,
+			buf_options = {
+				buftype = "nofile",
+				bufhidden = "wipe",
+			},
+			win_options = {
+				winhighlight = "Normal:OpenCodeInputBg,EndOfBuffer:OpenCodeInputInfo,FloatBorder:OpenCodeInputBorderAgent",
+				signcolumn = "no",
+				number = false,
+				relativenumber = false,
+			},
+		})
+
+		state.popup:mount()
+		state.info_popup:mount()
+
+		state.bufnr = state.popup.bufnr
+		state.winid = state.popup.winid
+		state.info_bufnr = state.info_popup.bufnr
+		state.visible = true
 
 		vim.api.nvim_buf_set_var(state.bufnr, "completion", false)
 
@@ -558,15 +586,10 @@ function M.show(opts)
 			end,
 		})
 
-		-- Close input when leaving the input buffer
-		vim.api.nvim_create_autocmd("BufLeave", {
-			buffer = state.bufnr,
-			callback = function()
-				vim.schedule(function()
-					M.close()
-				end)
-			end,
-		})
+		-- Handle unmount
+		state.popup:on(event.BufLeave, function()
+			M.close()
+		end)
 	else
 		-- Non-float mode: use NUI floating popups relative to the chat window
 		local chat_win_width = vim.api.nvim_win_get_width(chat_winid)
@@ -762,27 +785,12 @@ function M.close()
 		return
 	end
 
-	local layout = state.layout
+	if state.info_popup then
+		state.info_popup:unmount()
+	end
 
-	if layout and layout.is_float then
-		-- Float split mode: close the split windows and restore chat height
-		if state.info_winid and vim.api.nvim_win_is_valid(state.info_winid) then
-			vim.api.nvim_win_close(state.info_winid, true)
-		end
-		if state.winid and vim.api.nvim_win_is_valid(state.winid) then
-			vim.api.nvim_win_close(state.winid, true)
-		end
-		if layout.chat_winid and vim.api.nvim_win_is_valid(layout.chat_winid) then
-			vim.api.nvim_win_set_height(layout.chat_winid, layout.original_chat_height)
-		end
-	else
-		-- NUI popup mode: unmount popups
-		if state.info_popup then
-			state.info_popup:unmount()
-		end
-		if state.popup then
-			state.popup:unmount()
-		end
+	if state.popup then
+		state.popup:unmount()
 	end
 
 	state.visible = false
@@ -790,7 +798,6 @@ function M.close()
 	state.bufnr = nil
 	state.popup = nil
 	state.info_popup = nil
-	state.info_winid = nil
 	state.info_bufnr = nil
 	state.layout = nil
 

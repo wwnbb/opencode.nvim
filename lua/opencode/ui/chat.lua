@@ -729,11 +729,14 @@ function M.open()
 		popup:mount()
 		state.layout = popup
 		state.winid = popup.winid
+		-- Store content-area dimensions so input can use editor-relative positioning
+		state.float_dims = dims
 
 		-- Handle unmount
 		popup:on(event.BufLeave, function()
 			state.visible = false
 			state.winid = nil
+			state.float_dims = nil
 		end)
 	else
 		-- Split layout
@@ -805,6 +808,7 @@ function M.close()
 	state.visible = false
 	state.winid = nil
 	state.layout = nil
+	state.float_dims = nil
 end
 
 -- Toggle chat window
@@ -2108,7 +2112,7 @@ function M.focus_input()
 
 	input.show({
 		winid = state.winid,
-		layout_type = state.config and state.config.layout,
+		float_dims = state.float_dims,
 		on_send = function(text)
 			-- Send message via main module
 			local opencode = require("opencode")
@@ -2860,7 +2864,7 @@ function M.handle_question_custom_input()
 	local input = require("opencode.ui.input")
 	input.show({
 		winid = state.winid,
-		layout_type = state.config.layout,
+		float_dims = state.float_dims,
 		on_send = function(text)
 			if text and text ~= "" then
 				-- Store custom input
