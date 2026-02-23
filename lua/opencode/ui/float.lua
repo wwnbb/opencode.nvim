@@ -5,6 +5,113 @@ local M = {}
 
 local Popup = require("nui.popup")
 local hl_ns = vim.api.nvim_create_namespace("opencode_float")
+local OVERLAY_ZINDEX = 80
+
+local function focus_chat_if_visible()
+	local ok, chat = pcall(require, "opencode.ui.chat")
+	if not ok then
+		return false
+	end
+
+	local is_visible = true
+	if type(chat.is_visible) == "function" then
+		is_visible = chat.is_visible()
+	elseif type(chat.get_winid) == "function" then
+		local winid = chat.get_winid()
+		is_visible = winid and vim.api.nvim_win_is_valid(winid) or false
+	end
+	if not is_visible then
+		return false
+	end
+	if type(chat.focus) ~= "function" then
+		return false
+	end
+
+	return pcall(chat.focus)
+end
+
+local function is_valid_float_dims(float_dims)
+	return type(float_dims) == "table"
+		and type(float_dims.row) == "number"
+		and type(float_dims.col) == "number"
+		and type(float_dims.width) == "number"
+		and type(float_dims.height) == "number"
+		and float_dims.width >= 20
+		and float_dims.height >= 8
+end
+
+local function get_chat_context()
+	local target_win = nil
+	local float_dims = nil
+
+	local ok, chat = pcall(require, "opencode.ui.chat")
+	if ok then
+		if type(chat.get_winid) == "function" then
+			local chat_winid = chat.get_winid()
+			if chat_winid and vim.api.nvim_win_is_valid(chat_winid) then
+				target_win = chat_winid
+			end
+		end
+		if type(chat.get_float_dims) == "function" then
+			float_dims = chat.get_float_dims()
+		end
+
+		-- Fallback for older chat module versions that don't expose get_winid().
+		if not target_win and type(chat.get_bufnr) == "function" then
+			local bufnr = chat.get_bufnr()
+			if bufnr then
+				for _, win in ipairs(vim.api.nvim_list_wins()) do
+					if vim.api.nvim_win_get_buf(win) == bufnr then
+						target_win = win
+						break
+					end
+				end
+			end
+		end
+	end
+
+	if not target_win then
+		local current = vim.api.nvim_get_current_win()
+		if current and vim.api.nvim_win_is_valid(current) then
+			target_win = current
+		end
+	end
+
+	return target_win, float_dims
+end
+
+local function resolve_centered_placement(total_width, total_height)
+	local target_win, float_dims = get_chat_context()
+	local ui_list = vim.api.nvim_list_uis()
+	local ui = ui_list and ui_list[1] or { width = 80, height = 24 }
+
+	if is_valid_float_dims(float_dims) then
+		local anchor_row = float_dims.row + 1
+		local anchor_col = float_dims.col + 1
+		local anchor_width = math.max(20, float_dims.width - 2)
+		local anchor_height = math.max(8, float_dims.height - 2)
+		local row = anchor_row + math.floor((anchor_height - total_height) / 2)
+		local col = anchor_col + math.floor((anchor_width - total_width) / 2)
+
+		row = math.max(0, math.min(row, math.max(0, ui.height - total_height)))
+		col = math.max(0, math.min(col, math.max(0, ui.width - total_width)))
+
+		return "editor", row, col, OVERLAY_ZINDEX
+	end
+
+	local win_width = ui.width
+	local win_height = ui.height
+	local relative = "editor"
+	if target_win and vim.api.nvim_win_is_valid(target_win) then
+		win_width = vim.api.nvim_win_get_width(target_win)
+		win_height = vim.api.nvim_win_get_height(target_win)
+		relative = { type = "win", winid = target_win }
+	end
+
+	local row = math.max(0, math.floor((win_height - total_height) / 2))
+	local col = math.max(0, math.floor((win_width - total_width) / 2))
+	return relative, row, col, nil
+end
 
 -- Create a centered floating popup with standard styling
 function M.create_centered_popup(opts)
@@ -151,13 +258,42 @@ function M.create_menu(items, on_select, opts)
 
 	local width = opts.width or 40
 	local height = math.min(#items + 2, 20)
+	local total_width = width + 2
+	local total_height = height + 2
+	local relative, row, col, zindex = resolve_centered_placement(total_width, total_height)
 
-	local popup, bufnr = M.create_centered_popup({
-		width = width,
-		height = height,
-		border = "rounded",
-		title = opts.title or " Select ",
+	local popup = Popup({
+		enter = true,
+		focusable = true,
+		relative = relative,
+		position = { row = row, col = col },
+		size = { width = width, height = height },
+		zindex = zindex,
+		border = {
+			style = "rounded",
+			text = {
+				top = (opts.title or " Select "),
+				top_align = "center",
+			},
+		},
+		win_options = {
+			cursorline = true,
+			winhighlight = "Normal:Normal,FloatBorder:FloatBorder,CursorLine:PmenuSel",
+		},
 	})
+	local bufnr = popup.bufnr
+	local is_closed = false
+
+	local function close()
+		if is_closed then
+			return
+		end
+		is_closed = true
+		pcall(function()
+			popup:unmount()
+		end)
+		focus_chat_if_visible()
+	end
 
 	-- Set content
 	local lines = {}
@@ -175,52 +311,37 @@ function M.create_menu(items, on_select, opts)
 		local cursor = vim.api.nvim_win_get_cursor(0)
 		local idx = cursor[1]
 		if items[idx] then
+			close()
 			on_select(items[idx], idx)
-			popup:unmount()
 		end
 	end, opts_map)
 
 	vim.keymap.set("n", "q", function()
-		popup:unmount()
+		close()
 	end, opts_map)
 
 	vim.keymap.set("n", "<Esc>", function()
-		popup:unmount()
+		close()
 	end, opts_map)
 
 	-- Number shortcuts
 	for i = 1, math.min(9, #items) do
 		vim.keymap.set("n", tostring(i), function()
+			close()
 			on_select(items[i], i)
-			popup:unmount()
 		end, opts_map)
 	end
 
 	popup:mount()
+	if popup.winid and vim.api.nvim_win_is_valid(popup.winid) then
+		vim.api.nvim_win_set_cursor(popup.winid, { 1, 0 })
+	end
 
 	return popup
 end
 
--- Helper to get the OpenCode chat window ID
-local function get_chat_winid()
-	-- Try to get the chat window from the chat module
-	local ok, chat = pcall(require, "opencode.ui.chat")
-	if ok and chat.get_bufnr then
-		local bufnr = chat.get_bufnr()
-		if bufnr then
-			-- Find window displaying this buffer
-			for _, win in ipairs(vim.api.nvim_list_wins()) do
-				if vim.api.nvim_win_get_buf(win) == bufnr then
-					return win
-				end
-			end
-		end
-	end
-	return nil
-end
-
 -- Create input popup for text entry (API keys, codes, etc.)
--- opts: { title?, prompt?, on_submit, on_cancel?, width?, password? }
+-- opts: { title?, prompt?, on_submit, on_cancel?, width?, password?, refocus_chat? }
 function M.create_input_popup(opts)
 	opts = opts or {}
 
@@ -229,20 +350,15 @@ function M.create_input_popup(opts)
 
 	local width = opts.width or 50
 
-	-- Try to get the OpenCode chat window, fall back to current window
-	local target_win = get_chat_winid() or vim.api.nvim_get_current_win()
-
-	-- Get target window dimensions for centering
-	local win_width = vim.api.nvim_win_get_width(target_win)
-	local win_height = vim.api.nvim_win_get_height(target_win)
 	local total_width = width + 2 -- border adds 2 to total width
-	local row = math.floor((win_height - 3) / 2)
-	local col = math.max(0, math.floor((win_width - total_width) / 2))
+	local total_height = 3
+	local relative, row, col, zindex = resolve_centered_placement(total_width, total_height)
 
 	local input = NuiInput({
-		relative = { type = "win", winid = target_win },
+		relative = relative,
 		position = { row = row, col = col },
 		size = { width = width },
+		zindex = zindex,
 		border = {
 			style = "rounded",
 			text = {
@@ -268,7 +384,12 @@ function M.create_input_popup(opts)
 			return
 		end
 		is_closed = true
-		input:unmount()
+		pcall(function()
+			input:unmount()
+		end)
+		if opts.refocus_chat then
+			focus_chat_if_visible()
+		end
 	end
 
 	-- Setup keymaps
@@ -331,17 +452,11 @@ function M.create_searchable_menu(items, on_select, opts)
 
 	local width = opts.width or 60
 	local list_height = math.min(#items + 2, 15)
-
-	-- Try to get the OpenCode chat window, fall back to current window
-	local target_win = get_chat_winid() or vim.api.nvim_get_current_win()
-
-	-- Get target window dimensions for centering
-	local win_width = vim.api.nvim_win_get_width(target_win)
-	local win_height = vim.api.nvim_win_get_height(target_win)
 	local total_height = list_height + 5
 	local total_width = width + 2 -- border adds 2 to total width
-	local row = math.floor((win_height - total_height) / 2)
-	local col = math.max(0, math.floor((win_width - total_width) / 2))
+	local relative, row, col, zindex = resolve_centered_placement(total_width, total_height)
+	local input_zindex = zindex and (zindex + 1) or nil
+	local list_zindex = zindex
 
 	-- Track state
 	local filtered_items = vim.deepcopy(items)
@@ -351,9 +466,10 @@ function M.create_searchable_menu(items, on_select, opts)
 
 	-- Create input popup for search
 	local input_popup = NuiInput({
-		relative = { type = "win", winid = target_win },
+		relative = relative,
 		position = { row = row, col = col },
 		size = { width = width },
+		zindex = input_zindex,
 		border = {
 			style = "rounded",
 			text = {
@@ -371,9 +487,10 @@ function M.create_searchable_menu(items, on_select, opts)
 
 	-- Create list popup for results
 	local list_popup = Popup({
-		relative = { type = "win", winid = target_win },
+		relative = relative,
 		position = { row = row + 3, col = col },
 		size = { width = width, height = list_height },
+		zindex = list_zindex,
 		border = {
 			style = "rounded",
 			text = {
@@ -390,15 +507,20 @@ function M.create_searchable_menu(items, on_select, opts)
 	local list_bufnr = list_popup.bufnr
 
 	-- Create layout combining both
-	local layout = NuiLayout(
-		{
-			relative = { type = "win", winid = target_win },
-			position = { row = row, col = col },
-			size = {
-				width = width + 2,
-				height = list_height + 5,
-			},
+	local layout_opts = {
+		relative = relative,
+		position = { row = row, col = col },
+		size = {
+			width = width + 2,
+			height = list_height + 5,
 		},
+	}
+	if zindex then
+		layout_opts.zindex = zindex
+	end
+
+	local layout = NuiLayout(
+		layout_opts,
 		NuiLayout.Box({
 			NuiLayout.Box(input_popup, { size = { height = 3 } }),
 			NuiLayout.Box(list_popup, { size = { height = list_height } }),
@@ -489,7 +611,10 @@ function M.create_searchable_menu(items, on_select, opts)
 			return
 		end
 		is_closed = true
-		layout:unmount()
+		pcall(function()
+			layout:unmount()
+		end)
+		focus_chat_if_visible()
 	end
 
 	-- Select current item
@@ -645,21 +770,15 @@ function M.create_session_list(sessions, on_select, on_delete, on_rename, opts)
 
 	local width = opts.width or 70
 	local height = math.min(#sessions + 4, 20)
-
-	-- Try to get the OpenCode chat window
-	local target_win = get_chat_winid() or vim.api.nvim_get_current_win()
-
-	-- Get target window dimensions
-	local win_width = vim.api.nvim_win_get_width(target_win)
-	local win_height = vim.api.nvim_win_get_height(target_win)
 	local total_width = width + 2
-	local row = math.floor((win_height - height) / 2)
-	local col = math.max(0, math.floor((win_width - total_width) / 2))
+	local total_height = height + 2
+	local relative, row, col, zindex = resolve_centered_placement(total_width, total_height)
 
 	local popup = Popup({
-		relative = { type = "win", winid = target_win },
+		relative = relative,
 		enter = true,
 		focusable = true,
+		zindex = zindex,
 		border = {
 			style = "rounded",
 			text = {
@@ -754,6 +873,7 @@ function M.create_session_list(sessions, on_select, on_delete, on_rename, opts)
 		pcall(function()
 			popup:unmount()
 		end)
+		focus_chat_if_visible()
 	end
 
 	-- Select current session
