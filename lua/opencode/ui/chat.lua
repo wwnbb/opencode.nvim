@@ -95,20 +95,21 @@ end
 -- Calculate dimensions based on layout and config
 local function calculate_dimensions(cfg)
 	local ui = vim.api.nvim_list_uis()[1]
+	local editor_width = (vim.o.columns and vim.o.columns > 0) and vim.o.columns or ui.width
 	local width, height, row, col
 
 	if cfg.layout == "float" then
-		width = math.floor(ui.width * cfg.float.width)
+		width = math.floor(editor_width * cfg.float.width)
 		height = math.floor(ui.height * cfg.float.height)
 		row = math.floor((ui.height - height) / 2)
-		col = math.floor((ui.width - width) / 2)
+		col = math.floor((editor_width - width) / 2)
 	elseif cfg.layout == "vertical" then
 		width = cfg.width
 		height = ui.height
 		row = 0
-		col = cfg.position == "right" and (ui.width - width) or 0
+		col = cfg.position == "right" and (editor_width - width) or 0
 	else -- horizontal
-		width = ui.width
+		width = editor_width
 		height = cfg.height
 		row = cfg.position == "bottom" and (ui.height - height) or 0
 		col = 0
