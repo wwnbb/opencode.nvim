@@ -708,6 +708,7 @@ function M.open()
 	if cfg.layout == "float" then
 		-- Float layout
 		local popup = Popup({
+			relative = "editor",
 			enter = true,
 			focusable = true,
 			border = {
