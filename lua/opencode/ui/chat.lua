@@ -719,7 +719,13 @@ function M.open()
 					top_align = cfg.float.title_pos,
 				},
 			},
-			position = { row = dims.row, col = dims.col },
+			-- Keep editor-relative placement in both option shapes for nui.nvim compatibility.
+			-- Some versions/read-paths rely on position.relative and otherwise behave win-relative.
+			position = {
+				relative = "editor",
+				row = dims.row,
+				col = dims.col,
+			},
 			size = { width = dims.width, height = dims.height },
 			bufnr = state.bufnr,
 			win_options = {
