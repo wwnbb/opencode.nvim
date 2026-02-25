@@ -311,6 +311,79 @@ local function build_header_lines(log_count)
 	return lines
 end
 
+local function is_valid_win(winid)
+	return type(winid) == "number" and vim.api.nvim_win_is_valid(winid)
+end
+
+local function is_valid_buf(bufnr)
+	return type(bufnr) == "number" and vim.api.nvim_buf_is_valid(bufnr)
+end
+
+local function split_has_window(split)
+	return split ~= nil and is_valid_win(split.winid)
+end
+
+local function split_has_buffer(split)
+	return split ~= nil and is_valid_buf(split.bufnr)
+end
+
+local function get_fallback_win()
+	local ok, current = pcall(vim.api.nvim_get_current_win)
+	if ok and is_valid_win(current) then
+		return current
+	end
+
+	for _, winid in ipairs(vim.api.nvim_list_wins()) do
+		if is_valid_win(winid) then
+			return winid
+		end
+	end
+
+	return nil
+end
+
+local function ensure_current_win()
+	local winid = get_fallback_win()
+	if not winid then
+		return false
+	end
+
+	pcall(vim.api.nvim_set_current_win, winid)
+	return true
+end
+
+local function reset_split_state()
+	if not state.split then
+		return
+	end
+
+	pcall(function()
+		state.split:unmount()
+	end)
+	state.split = nil
+end
+
+local function focus_split()
+	if split_has_window(state.split) then
+		pcall(vim.api.nvim_set_current_win, state.split.winid)
+	end
+end
+
+local function try_show_split(split)
+	if not split then
+		return false
+	end
+
+	local ok = pcall(function()
+		split:show()
+	end)
+	if not ok then
+		return false
+	end
+
+	return split_has_window(split)
+end
+
 ---------------------------------------------------------------
 -- NuiSplit creation
 ---------------------------------------------------------------
@@ -329,7 +402,7 @@ local function create_split(cfg)
 		relative = "editor",
 		position = position,
 		size = size,
-		enter = true,
+		enter = false,
 		buf_options = {
 			buftype = "nofile",
 			bufhidden = "hide",
@@ -434,6 +507,24 @@ local function setup_keymaps(split)
 	split:map("n", "zR", function()
 		M.unfold_all()
 	end, opts)
+end
+
+local function try_mount_split(cfg)
+	state.split = create_split(cfg)
+	setup_keymaps(state.split)
+
+	local ok, err = pcall(function()
+		state.split:mount()
+	end)
+	if not ok then
+		return false, err
+	end
+
+	if not split_has_window(state.split) then
+		return false, "split did not create a valid window"
+	end
+
+	return true, nil
 end
 
 ---------------------------------------------------------------
@@ -817,11 +908,13 @@ end
 function M.open(opts)
 	opts = opts or {}
 
-	if state.visible then
-		if state.split and state.split.winid and vim.api.nvim_win_is_valid(state.split.winid) then
-			vim.api.nvim_set_current_win(state.split.winid)
-		end
+	if state.visible and split_has_window(state.split) then
+		focus_split()
 		return
+	end
+
+	if state.visible and not split_has_window(state.split) then
+		state.visible = false
 	end
 
 	-- Merge config with any provided options
@@ -839,23 +932,47 @@ function M.open(opts)
 
 	setup_highlights()
 
-	if state.split then
-		-- Reuse existing split (show preserves buffer)
-		state.split:show()
-	else
-		-- Create new split
-		state.split = create_split(cfg)
-		setup_keymaps(state.split)
-		state.split:mount()
+	local opened = false
+	local open_err = nil
+
+	if state.split and split_has_buffer(state.split) then
+		ensure_current_win()
+		opened = try_show_split(state.split)
+		if not opened then
+			reset_split_state()
+		end
+	elseif state.split then
+		reset_split_state()
+	end
+
+	if not opened then
+		ensure_current_win()
+		local ok, err = try_mount_split(cfg)
+		if not ok then
+			open_err = tostring(err)
+			reset_split_state()
+
+			-- Retry once, forcing a valid current window before mounting.
+			ensure_current_win()
+			ok, err = try_mount_split(cfg)
+			if not ok then
+				open_err = tostring(err)
+				reset_split_state()
+				state.visible = false
+				vim.notify("Failed to open OpenCode log viewer: " .. open_err, vim.log.levels.ERROR)
+				return
+			end
+		end
 	end
 
 	state.visible = true
+	focus_split()
 
 	-- Initial render
 	M.refresh()
 
 	-- Auto-scroll to bottom
-	if state.auto_scroll and state.split.winid then
+	if state.auto_scroll and split_has_window(state.split) and split_has_buffer(state.split) then
 		local buf_lines = vim.api.nvim_buf_line_count(state.split.bufnr)
 		if buf_lines > 0 then
 			vim.api.nvim_win_set_cursor(state.split.winid, { buf_lines, 0 })
@@ -870,7 +987,9 @@ function M.close()
 	end
 
 	if state.split then
-		state.split:hide()
+		pcall(function()
+			state.split:hide()
+		end)
 	end
 
 	state.visible = false
@@ -887,10 +1006,7 @@ end
 
 -- Check if visible
 function M.is_visible()
-	return state.visible
-		and state.split ~= nil
-		and state.split.winid ~= nil
-		and vim.api.nvim_win_is_valid(state.split.winid)
+	return state.visible and split_has_window(state.split)
 end
 
 -- Clear logs

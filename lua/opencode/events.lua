@@ -223,22 +223,14 @@ function M.setup_sse_bridge()
 		["error"] = "error",
 	}
 
-	local logger = require("opencode.logger")
-
 	for sse_event, local_event in pairs(sse_to_local) do
 		client.on_event(sse_event, function(data)
-			-- Log all SSE events
-			logger.debug("SSE event: " .. sse_event, { data = data })
 			M.emit(local_event, data)
 		end)
 	end
 
-	-- Also emit raw SSE events for advanced use and log them
+	-- Also emit raw SSE events for advanced use
 	client.on_event("*", function(event_type, data)
-		-- Skip heartbeat noise
-		if event_type ~= "server.heartbeat" then
-			logger.info("SSE raw: " .. tostring(event_type), { data = data })
-		end
 		M.emit("sse_" .. event_type, data)
 	end)
 end
@@ -253,12 +245,8 @@ function M.setup_chat_handlers()
 	-- This is the ONLY place where messages get added to the store
 	M.on("message_updated", function(data)
 		vim.schedule(function()
-			local logger = require("opencode.logger")
-			logger.debug("message_updated received", { data = data })
-
 			local info = data.info
 			if not info then
-				logger.debug("message_updated: NO INFO")
 				return
 			end
 
@@ -267,10 +255,6 @@ function M.setup_chat_handlers()
 
 			local current_session = state.get_session()
 			if not current_session.id or info.sessionID ~= current_session.id then
-				logger.debug("message_updated: different session", {
-					current = current_session.id,
-					received = info.sessionID,
-				})
 				return
 			end
 
@@ -294,9 +278,6 @@ function M.setup_chat_handlers()
 	-- Handle message.removed (like TUI sync.tsx:267-279)
 	M.on("message_removed", function(data)
 		vim.schedule(function()
-			local logger = require("opencode.logger")
-			logger.debug("message_removed received", { data = data })
-
 			if data.sessionID and data.messageID then
 				sync.handle_message_removed(data.sessionID, data.messageID)
 
@@ -312,20 +293,44 @@ function M.setup_chat_handlers()
 	-- Parts contain the actual content (text, reasoning, tool calls)
 	M.on("message_part_updated", function(data)
 		vim.schedule(function()
-			local logger = require("opencode.logger")
-			logger.debug("message_part_updated", { data = data })
-
 			local part = data.part
 			if not part then
-				logger.debug("message_part_updated: NO PART")
 				return
+			end
+
+			local current_session = state.get_session()
+			local resolved_session_id = part.sessionID
+
+			if not resolved_session_id and part.messageID then
+				resolved_session_id = sync.find_message_session_id(part.messageID)
+			end
+
+			-- If the backend omits sessionID for streaming chunks, infer current session
+			-- while actively streaming so incremental text appears immediately.
+			if not resolved_session_id and current_session.id and state.is_streaming() then
+				resolved_session_id = current_session.id
+			end
+
+			if resolved_session_id then
+				part.sessionID = resolved_session_id
 			end
 
 			-- Update sync store first (like TUI does)
 			sync.handle_part_updated(part)
 
-			local current_session = state.get_session()
-			if not current_session.id or part.sessionID ~= current_session.id then
+			if not current_session.id then
+				return
+			end
+
+			local in_current_session = false
+			if part.messageID then
+				in_current_session = sync.get_message(current_session.id, part.messageID) ~= nil
+			end
+			if not in_current_session and resolved_session_id then
+				in_current_session = resolved_session_id == current_session.id
+			end
+
+			if not in_current_session then
 				return
 			end
 
@@ -335,12 +340,6 @@ function M.setup_chat_handlers()
 				M.emit("chat_render", { session_id = current_session.id })
 			elseif part.type == "reasoning" then
 				-- Reasoning/thinking update
-				logger.debug("Reasoning part update", {
-					part_id = part.id,
-					message_id = part.messageID,
-					text_length = part.text and #part.text or 0,
-				})
-
 				M.emit("reasoning_update", {
 					message_id = part.messageID,
 					part_id = part.id,
@@ -349,11 +348,6 @@ function M.setup_chat_handlers()
 				M.emit("chat_render", { session_id = current_session.id })
 			elseif part.type == "tool" then
 				-- Tool call update
-				logger.debug("Tool call update", {
-					tool = part.tool,
-					status = part.state and part.state.status,
-				})
-
 				local tool_state = part.state
 				if tool_state then
 					M.emit("tool_update", {
@@ -374,9 +368,6 @@ function M.setup_chat_handlers()
 	-- Handle message.part.removed (like TUI sync.tsx:302-314)
 	M.on("message_part_removed", function(data)
 		vim.schedule(function()
-			local logger = require("opencode.logger")
-			logger.debug("message_part_removed received", { data = data })
-
 			if data.messageID and data.partID then
 				sync.handle_part_removed(data.messageID, data.partID)
 
