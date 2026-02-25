@@ -34,4 +34,6 @@ It is important to remember:
  - When updating files, include the original lines you are changing exactly as they appear (preserve whitespace) so the verifier can match context.
  - Hunk headers use `@@` followed by a context line from the source file to locate the change, for example: `@@ def greet():`. Do NOT use unified-diff line-range syntax like `@@ -12,3 +12,3 @@`. The text after `@@` is searched for literally in the file to find where to apply the change.
  - If a hunk fails because context didn't match, run `Read` on the file and copy surrounding lines to ensure exact match before retrying.
- - User can change the code during the diff review, add or remove something, try to understand what he changed
+ - User can change code during diff review, apply only some hunks, or reject files.
+ - The tool output and metadata report FINAL post-review file states (`applied`, `rejected`, or `partial`) and final diffs.
+ - Treat final on-disk results as authoritative context for next steps; do not re-apply rejected chunks unless explicitly requested.
