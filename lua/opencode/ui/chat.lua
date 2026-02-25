@@ -1480,24 +1480,47 @@ local function calculate_duration(message, messages)
 	return nil
 end
 
----Check if assistant message should show metadata footer
----Show when: message has time.completed AND response is no longer being streamed
+---Check if assistant message is "final" (like TUI's final() memo).
+---A message is final when it has a finish reason that is NOT "tool-calls" or "unknown",
+---meaning the LLM decided to stop rather than pausing for a tool call.
 ---@param message table
----@param is_streaming boolean Whether this message is still being streamed
 ---@return boolean
-local function should_show_footer(message, is_streaming)
+local function is_message_final(message)
+	local finish = message.finish
+	if not finish then
+		return false
+	end
+	return finish ~= "tool-calls" and finish ~= "unknown"
+end
+
+---Check if assistant message should show metadata footer
+---Show when: message is final (non-tool-call finish) OR it is the last assistant message
+---and the request is no longer streaming, OR it was aborted.
+---Mirrors TUI: `props.last || final() || props.message.error?.name === "MessageAbortedError"`
+---@param message table
+---@param is_last boolean Whether this is the last assistant message
+---@param is_streaming boolean Whether the last assistant message is still being streamed
+---@return boolean
+local function should_show_footer(message, is_last, is_streaming)
 	if not message.time then
 		return false
 	end
 	if not message.time.completed then
 		return false
 	end
-	-- Don't show footer while the response is still being processed;
-	-- it should only appear at the end when the request is fully complete (or cancelled)
-	if is_streaming then
-		return false
+	-- Aborted messages always show footer (like TUI)
+	if message.error and message.error.name == "MessageAbortedError" then
+		return true
 	end
-	return true
+	-- Message finished with a non-tool-call reason (e.g. "end-turn", "stop")
+	if is_message_final(message) then
+		return true
+	end
+	-- Last assistant message shows footer only when no longer streaming
+	if is_last and not is_streaming then
+		return true
+	end
+	return false
 end
 
 ---Render metadata footer for assistant message
@@ -2084,9 +2107,10 @@ function M.render()
 					end
 				end
 
-				-- Footer (show for all completed assistant messages)
-				local is_streaming = (msg_idx == last_assistant_idx and app_state.get_status() == "streaming")
-				if should_show_footer(message, is_streaming) then
+				-- Footer (mirrors TUI: props.last || final() || aborted)
+				local is_last = (msg_idx == last_assistant_idx)
+				local is_streaming = (is_last and app_state.get_status() == "streaming")
+				if should_show_footer(message, is_last, is_streaming) then
 					add_line(render_metadata_footer(message, messages))
 					add_raw_line("")
 				end
