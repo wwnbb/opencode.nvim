@@ -839,6 +839,24 @@ function M.is_visible()
 	return state.visible
 end
 
+---@return number[]
+function M.get_winids()
+	if not state.visible then
+		return {}
+	end
+
+	local wins = {}
+	if state.winid and vim.api.nvim_win_is_valid(state.winid) then
+		table.insert(wins, state.winid)
+	end
+
+	if state.info_popup and state.info_popup.winid and vim.api.nvim_win_is_valid(state.info_popup.winid) then
+		table.insert(wins, state.info_popup.winid)
+	end
+
+	return wins
+end
+
 -- Clear history
 function M.clear_history()
 	history.entries = {}

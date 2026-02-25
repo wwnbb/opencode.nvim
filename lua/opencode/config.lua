@@ -39,6 +39,7 @@ M.defaults = {
 		position = "right",
 		width = 80,
 		height = 20,
+		close_on_focus_lost = true,
 		message_display = {
 			user_prefix = "> ",
 			multiline_prefix = true,
