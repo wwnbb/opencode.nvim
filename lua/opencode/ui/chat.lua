@@ -39,6 +39,7 @@ local state = {
 	task_child_cache = {}, -- Rendered child content: { [part_id] = { lines, highlights } }
 	tools = {}, -- Track tool positions: { [part_id] = { start_line, end_line, tool_part } }
 	expanded_tools = {}, -- Toggle set: { [part_id] = true }
+	stream_blocks = {}, -- Streaming text blocks: { [message_id] = { start_line, end_line } }
 	session_stack = {}, -- Stack of { id, name } for parent session navigation
 	navigating = false, -- Flag to prevent session_change handler from clearing stack
 	last_render_time = 0,
@@ -591,6 +592,7 @@ function M.create()
 	state.config = get_config()
 	state.bufnr = create_buffer()
 	state.messages = {}
+	state.stream_blocks = {}
 
 	-- Subscribe to chat_render events from events.lua
 	-- This is how the sync store notifies us to re-render
@@ -598,6 +600,22 @@ function M.create()
 	events.on("chat_render", function(data)
 		vim.schedule(function()
 			M.schedule_render()
+		end)
+	end)
+
+	events.on("message_part_updated", function(data)
+		vim.schedule(function()
+			local part = data and data.part
+			if not part or part.type ~= "text" or not part.messageID then
+				return
+			end
+			if not state.visible or not state.bufnr or not vim.api.nvim_buf_is_valid(state.bufnr) then
+				return
+			end
+
+			if not M.update_stream_text_block(part.messageID) then
+				M.schedule_render()
+			end
 		end)
 	end)
 
@@ -665,6 +683,7 @@ function M.create()
 			state.task_child_cache = {}
 			state.tools = {}
 			state.expanded_tools = {}
+			state.stream_blocks = {}
 			-- Remove question/permission messages from state.messages (they belong to old session)
 			-- But preserve them when navigating into/out of child sessions
 			if not is_navigating then
@@ -1119,6 +1138,7 @@ function M.clear()
 	state.task_child_cache = {}
 	state.tools = {}
 	state.expanded_tools = {}
+	state.stream_blocks = {}
 	state.last_render_time = 0
 	state.render_scheduled = false
 
@@ -1799,14 +1819,16 @@ end
 
 ---Render content (markdown or plain) using NuiLine
 ---@param content string|nil
+---@param opts? table { stream_plain?: boolean }
 ---@return NuiLine[]
-local function render_content(content)
+local function render_content(content, opts)
+	opts = opts or {}
 	local lines = {}
 	if not content or content == "" then
 		return lines
 	end
 
-	local use_markdown = markdown.has_markdown(content)
+	local use_markdown = not opts.stream_plain and markdown.has_markdown(content)
 
 	if use_markdown then
 		local parsed = markdown.parse(content)
@@ -1850,6 +1872,104 @@ local function apply_highlights(nui_lines, bufnr, ns_id, start_line)
 	end
 end
 
+local function shift_line_map(line_map, old_end, delta)
+	if delta == 0 then
+		return
+	end
+
+	for _, pos in pairs(line_map) do
+		if pos and pos.start_line and pos.end_line and pos.start_line > old_end then
+			pos.start_line = pos.start_line + delta
+			pos.end_line = pos.end_line + delta
+		end
+	end
+end
+
+local function shift_tracked_lines(old_end, delta, skip_stream_message_id)
+	if delta == 0 then
+		return
+	end
+
+	shift_line_map(state.questions, old_end, delta)
+	shift_line_map(state.permissions, old_end, delta)
+	shift_line_map(state.edits, old_end, delta)
+	shift_line_map(state.tasks, old_end, delta)
+	shift_line_map(state.tools, old_end, delta)
+
+	for message_id, pos in pairs(state.stream_blocks) do
+		if message_id ~= skip_stream_message_id and pos.start_line and pos.end_line and pos.start_line > old_end then
+			pos.start_line = pos.start_line + delta
+			pos.end_line = pos.end_line + delta
+		end
+	end
+
+	if state.focus_question_line and (state.focus_question_line - 1) > old_end then
+		state.focus_question_line = state.focus_question_line + delta
+	end
+	if state.focus_permission_line and (state.focus_permission_line - 1) > old_end then
+		state.focus_permission_line = state.focus_permission_line + delta
+	end
+	if state.focus_edit_line and (state.focus_edit_line - 1) > old_end then
+		state.focus_edit_line = state.focus_edit_line + delta
+	end
+end
+
+function M.update_stream_text_block(message_id)
+	if not message_id then
+		return false
+	end
+	if not state.bufnr or not vim.api.nvim_buf_is_valid(state.bufnr) then
+		return false
+	end
+
+	local block = state.stream_blocks[message_id]
+	if not block then
+		return false
+	end
+
+	local sync = require("opencode.sync")
+	local content = sync.get_message_text(message_id)
+	local content_lines = render_content(content, { stream_plain = true })
+	if #content_lines == 0 then
+		local empty = NuiLine()
+		empty:append("")
+		content_lines = { empty }
+	end
+	local replacement = extract_lines(content_lines)
+
+	local should_scroll = false
+	if state.auto_scroll and state.visible and state.winid and vim.api.nvim_win_is_valid(state.winid) then
+		local cursor = vim.api.nvim_win_get_cursor(state.winid)
+		local win_height = vim.api.nvim_win_get_height(state.winid)
+		local buf_lines = vim.api.nvim_buf_line_count(state.bufnr)
+		should_scroll = cursor[1] >= buf_lines - win_height - 1
+	end
+
+	local old_end = block.end_line
+	local old_count = old_end - block.start_line + 1
+	local new_count = #replacement
+	local delta = new_count - old_count
+
+	vim.bo[state.bufnr].modifiable = true
+	vim.api.nvim_buf_set_lines(state.bufnr, block.start_line, old_end + 1, false, replacement)
+
+	local clear_end = math.max(old_end + 1, block.start_line + new_count)
+	vim.api.nvim_buf_clear_namespace(state.bufnr, chat_hl_ns, block.start_line, clear_end)
+	apply_highlights(content_lines, state.bufnr, chat_hl_ns, block.start_line)
+	vim.bo[state.bufnr].modifiable = false
+
+	block.end_line = block.start_line + new_count - 1
+	shift_tracked_lines(old_end, delta, message_id)
+
+	if should_scroll and state.visible and state.winid and vim.api.nvim_win_is_valid(state.winid) then
+		local buf_lines = vim.api.nvim_buf_line_count(state.bufnr)
+		vim.api.nvim_win_set_cursor(state.winid, { buf_lines, 0 })
+	end
+
+	vim.cmd("redraw")
+	return true
+end
+
 -- Render full buffer using NuiLine components
 ---@return string[] raw_lines, NuiLine[] nui_lines
 function M.render()
@@ -1881,6 +2001,7 @@ function M.render()
 	-- Track which permissions/edits were rendered inline (to find orphans later)
 	local rendered_perm_ids = {}
 	local rendered_edit_ids = {}
+	local next_stream_blocks = {}
 
 	-- Helper: render a single permission state entry
 	local function render_single_permission(pstate)
@@ -2007,6 +2128,8 @@ function M.render()
 		local content = sync.get_message_text(message.id)
 		local reasoning = sync.get_message_reasoning(message.id)
 		local tool_parts = sync.get_message_tools(message.id)
+		local incomplete_assistant = message.role == "assistant" and not (message.time and message.time.completed)
+		local render_as_plain_stream = app_state.get_status() == "streaming" and incomplete_assistant
 
 		local has_content = content and content ~= ""
 		local has_reasoning = reasoning and reasoning ~= ""
@@ -2113,9 +2236,19 @@ function M.render()
 
 				-- Content
 				if has_content then
-					local content_lines = render_content(content)
+					local content_start = #raw_lines
+					local content_lines = render_content(content, {
+						stream_plain = render_as_plain_stream,
+					})
 					for _, nl in ipairs(content_lines) do
 						add_line(nl)
+					end
+
+					if incomplete_assistant and #content_lines > 0 then
+						next_stream_blocks[message.id] = {
+							start_line = content_start,
+							end_line = #raw_lines - 1,
+						}
 					end
 				end
 
@@ -2257,6 +2390,7 @@ function M.render()
 		add_line(loading_line)
 	end
 
+	state.stream_blocks = next_stream_blocks
 	return raw_lines, nui_lines
 end
 

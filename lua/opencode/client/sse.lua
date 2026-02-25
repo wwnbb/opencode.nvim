@@ -30,7 +30,11 @@ local state = {
 	connected = false,
 	reconnect_count = 0,
 	event_buffer = "",
-	event_id = nil,
+	current_event = {
+		id = nil,
+		event = "message",
+		data_lines = {},
+	},
 }
 
 -- Event callbacks registry
@@ -42,72 +46,64 @@ local function sse_url()
 	return url
 end
 
--- Parse SSE event from buffer
-local function parse_sse_event(data)
-	local event = {
+local function reset_current_event()
+	state.current_event = {
 		id = nil,
 		event = "message",
-		data = nil,
+		data_lines = {},
 	}
-
-	local lines = vim.split(data, "\n", { plain = true })
-	local data_lines = {}
-
-	for _, raw_line in ipairs(lines) do
-		local line = raw_line:gsub("\r$", "")
-		if line:sub(1, 5) == "data:" then
-			table.insert(data_lines, line:sub(6):match("^%s*(.+)$") or "")
-		elseif line:sub(1, 7) == "event:" then
-			event.event = line:sub(8):match("^%s*(.+)$") or "message"
-		elseif line:sub(1, 4) == "id:" then
-			event.id = line:sub(5):match("^%s*(.+)$")
-		end
-	end
-
-	if #data_lines > 0 then
-		event.data = table.concat(data_lines, "\n")
-	end
-
-	return event
 end
 
--- Find the next complete SSE event boundary.
--- Returns boundary start index and boundary length, or nil when incomplete.
-local function next_event_boundary(buffer)
-	local lf = buffer:find("\n\n", 1, true)
-	local crlf = buffer:find("\r\n\r\n", 1, true)
+local function emit_current_event()
+	local event = state.current_event
+	if not event or #event.data_lines == 0 then
+		reset_current_event()
+		return
+	end
 
-	if not lf and not crlf then
-		return nil, nil
+	local payload = table.concat(event.data_lines, "\n")
+	local ok, parsed = pcall(vim.json.decode, payload)
+	if ok and parsed then
+		M.emit(event.event, parsed, event.id)
+	else
+		M.emit(event.event, payload, event.id)
 	end
-	if lf and (not crlf or lf < crlf) then
-		return lf, 2
-	end
-	return crlf, 4
+
+	reset_current_event()
 end
 
 -- Process SSE data buffer
 local function process_buffer()
-	-- Look for complete events (double newline)
+	-- Process line-by-line to handle both chunked and line-delimited stdout behavior.
+	-- Some job backends do not preserve SSE blank separators reliably.
 	while true do
-		local event_end, boundary_len = next_event_boundary(state.event_buffer)
-		if not event_end then
+		local newline = state.event_buffer:find("\n", 1, true)
+		if not newline then
 			break
 		end
 
-		local event_data = state.event_buffer:sub(1, event_end - 1)
-		state.event_buffer = state.event_buffer:sub(event_end + boundary_len)
+		local raw_line = state.event_buffer:sub(1, newline - 1)
+		state.event_buffer = state.event_buffer:sub(newline + 1)
+		local line = raw_line:gsub("\r$", "")
 
-		local event = parse_sse_event(event_data)
-		if event.data then
-			-- Parse JSON data
-			local ok, parsed = pcall(vim.json.decode, event.data)
-			if ok and parsed then
-				M.emit(event.event, parsed, event.id)
-			else
-				-- Emit raw data if JSON parsing fails
-				M.emit(event.event, event.data, event.id)
+		if line == "" then
+			emit_current_event()
+		elseif line:sub(1, 1) == ":" then
+			-- Comment line, ignore.
+		elseif line:sub(1, 7) == "event:" then
+			-- Some runtimes may drop SSE separators; flush when a new event begins.
+			if #state.current_event.data_lines > 0 then
+				emit_current_event()
 			end
+			state.current_event.event = line:sub(8):match("^%s*(.+)$") or "message"
+		elseif line:sub(1, 4) == "id:" then
+			if #state.current_event.data_lines > 0 then
+				emit_current_event()
+			end
+			state.current_event.id = line:sub(5):match("^%s*(.+)$")
+		elseif line:sub(1, 5) == "data:" then
+			local value = line:sub(6):match("^%s*(.*)$") or ""
+			table.insert(state.current_event.data_lines, value)
 		end
 	end
 end
@@ -211,6 +207,7 @@ function M.connect()
 		end,
 		on_exit = function(_, code)
 			vim.schedule(function()
+				emit_current_event()
 				state.job = nil
 				state.connected = false
 

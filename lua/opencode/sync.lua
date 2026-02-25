@@ -81,14 +81,32 @@ local function get_message_id(msg)
 	return msg.id
 end
 
+-- Find owning session for a message ID.
+-- Returns sessionID string or nil.
+local function find_message_session_id(message_id)
+	for session_id, messages in pairs(store.message) do
+		local result = binary_search(messages, message_id, get_message_id)
+		if result.found then
+			return session_id
+		end
+	end
+	return nil
+end
+
 -- Ensure a message row exists for a part update.
 -- This lets streaming text render even if message.updated arrives slightly later.
 local function ensure_message_for_part(part)
-	local session_id = part.sessionID
 	local message_id = part.messageID
-	if not session_id or not message_id then
+	if not message_id then
 		return
 	end
+
+	local session_id = part.sessionID or find_message_session_id(message_id)
+	if not session_id then
+		return
+	end
+
+	part.sessionID = part.sessionID or session_id
 
 	local placeholder = {
 		id = message_id,
@@ -252,6 +270,13 @@ function M.get_message(session_id, message_id)
 		return messages[result.index]
 	end
 	return nil
+end
+
+---Find the owning session for a message ID
+---@param message_id string
+---@return string|nil
+function M.find_message_session_id(message_id)
+	return find_message_session_id(message_id)
 end
 
 ---Get parts for a message
