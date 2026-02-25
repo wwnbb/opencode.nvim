@@ -278,12 +278,12 @@ function M.setup_chat_handlers()
 			-- so we process them like any other message to trigger re-render
 
 			-- Update status based on message state
-			-- Always set "streaming" for assistant messages; "idle" is determined
-			-- solely by session.status events. The backend may set time.completed
-			-- on the message after each tool call while still processing, so we
-			-- must NOT skip setting streaming when time.completed is present.
+			-- Only set "streaming" here; "idle" is determined by session.status events
+			-- (the backend may set time.completed on each tool call during streaming)
 			if info.role == "assistant" then
-				state.set_status("streaming")
+				if not (info.time and info.time.completed) then
+					state.set_status("streaming")
+				end
 			end
 
 			-- Notify chat UI to re-render

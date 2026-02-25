@@ -18,6 +18,7 @@ local M = {}
 ---@field agent? string
 ---@field modelID? string
 ---@field providerID? string
+---@field finish? string Finish reason: "tool-calls", "end-turn", "stop", "unknown", etc.
 
 ---@class Part
 ---@field id string
