@@ -183,14 +183,7 @@ function M.emit(event_type, data, event_id)
 	-- Handle wrapped global event format: {directory, payload: {type, properties}}
 	local actual_type = event_type
 	local actual_data = data
-	local maxLength = 20
-	local fullString = table.concat(data, ", ")
-	local truncatedString = string.sub(fullString, 1, maxLength)
-
-	if #fullString > maxLength then
-		truncatedString = truncatedString .. "..."
-	end
-	vim.notify(truncatedString)
+	vim.notify(event_type)
 
 	if type(data) == "table" and data.payload and data.payload.type then
 		actual_type = data.payload.type
