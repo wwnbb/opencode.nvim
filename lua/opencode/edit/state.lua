@@ -36,6 +36,64 @@ local function parse_diff_lines(diff_str)
 	return vim.split(diff_str, "\n", { plain = true })
 end
 
+---@param text string|nil
+---@return string
+local function normalize_line_endings(text)
+	return (text or ""):gsub("\r\n", "\n")
+end
+
+---@param filepath string
+---@return string
+local function read_file_content(filepath)
+	local file = io.open(filepath, "r")
+	if not file then
+		return ""
+	end
+
+	local content = file:read("*all") or ""
+	file:close()
+	return content
+end
+
+---@param filepath string
+---@return boolean
+local function flush_modified_buffer(filepath)
+	if not filepath or filepath == "" then
+		return true
+	end
+
+	local bufnr = vim.fn.bufnr(filepath)
+	if bufnr == -1 or not vim.api.nvim_buf_is_valid(bufnr) then
+		return true
+	end
+
+	if not vim.bo[bufnr].modified then
+		return true
+	end
+
+	return pcall(vim.api.nvim_buf_call, bufnr, function()
+		vim.cmd("silent write")
+	end)
+end
+
+---@param file table
+---@return "accepted"|"rejected"|"resolved"
+local function classify_manual_resolution(file)
+	local actual = normalize_line_endings(read_file_content(file.filepath))
+	local before = normalize_line_endings(file.before)
+	local after = normalize_line_endings(file.after)
+
+	if actual == after then
+		return "accepted"
+	end
+
+	if actual == before then
+		return "rejected"
+	end
+
+	return "resolved"
+end
+
 --- Add a new edit to track
 ---@param permission_id string
 ---@param session_id string
@@ -338,10 +396,15 @@ function M.resolve_file(permission_id, file_index)
 		return false, "File already resolved"
 	end
 
+	local flushed = flush_modified_buffer(file.filepath)
+	if not flushed then
+		return false, "Failed to save modified buffer"
+	end
+
 	local changes = require("opencode.artifact.changes")
 	changes.resolve_manually(file.change_id)
 
-	file.status = "resolved"
+	file.status = classify_manual_resolution(file)
 	return true
 end
 
@@ -356,9 +419,14 @@ function M.resolve_all(permission_id)
 
 	for _, file in ipairs(estate.files) do
 		if file.status == "pending" then
+			local flushed = flush_modified_buffer(file.filepath)
+			if not flushed then
+				return false
+			end
+
 			local changes = require("opencode.artifact.changes")
 			changes.resolve_manually(file.change_id)
-			file.status = "resolved"
+			file.status = classify_manual_resolution(file)
 		end
 	end
 
