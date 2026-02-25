@@ -24,9 +24,8 @@ return {
 				layout = "vertical",
 				position = "right",
 				width = 80,
-				input = {
-					height = 5,
-					prompt = "> ",
+				message_display = {
+					user_prefix = "> ",
 				},
 			},
 

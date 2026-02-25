@@ -12,17 +12,44 @@ require("opencode").setup({
 		auto_start = true,
 		lazy = true,
 	},
-	
-	chat = {
-		layout = "vertical",
-		position = "right",
-		width = 80,
-		input = {
-			height = 5,
-			prompt = "> ",
+
+	session = {
+		default_model = {
+			providerID = "github-copilot",
+			modelID = "gpt-5-mini",
 		},
 	},
-	
+
+	-- require("opencode").setup({
+	--     chat = {
+	--       layout = "vertical",  -- "vertical" | "horizontal" | "float"
+	--       position = "right",   -- "left" | "right" | "top" | "bottom"
+	--       width = 80,
+	--       height = 20,
+	--     },
+	--     float = {
+	--       width = 0.8,          -- % of editor width
+	--       height = 0.8,         -- % of editor height
+	--       border = "rounded",
+	--       title = " OpenCode ",
+	--       title_pos = "center",
+	--     },
+	--   })
+	chat = {
+		layout = "float",
+		-- position = "",
+		float = {
+			width = 0.9,
+			height = 0.9,
+			border = "rounded",
+			title = " OpenCode ",
+			title_pos = "center",
+		},
+		-- message_display = {
+		-- 	user_prefix = "| ",
+		-- },
+	},
+
 	lualine = {
 		enabled = true,
 		mode = "normal",
@@ -31,12 +58,12 @@ require("opencode").setup({
 		show_status = true,
 		show_message_count = true,
 	},
-	
+
 	diff = {
 		layout = "vertical",
 		file_list_width = 30,
 	},
-	
+
 	keymaps = {
 		toggle = "<leader>ot",
 		command_palette = "<leader>op",

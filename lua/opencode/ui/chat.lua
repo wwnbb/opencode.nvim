@@ -69,10 +69,8 @@ local defaults = {
 		title = " OpenCode ",
 		title_pos = "center",
 	},
-	input = {
-		height = 5,
-		border = "single",
-		prompt = "> ",
+	message_display = {
+		user_prefix = "> ",
 	},
 	keymaps = {
 		close = "q",
@@ -1497,25 +1495,35 @@ end
 ---Render a user message using NuiLine
 ---@param content string|nil
 ---@return NuiLine[]
-local function get_user_prompt()
+local function get_user_message_display()
 	local app_state = require("opencode.state")
 	local full_config = app_state.get_config() or {}
-	local chat_prompt = full_config.chat and full_config.chat.input and full_config.chat.input.prompt
-	if type(chat_prompt) == "string" then
-		return chat_prompt
+	local display_cfg = full_config.chat and full_config.chat.message_display or {}
+	local message_prefix = display_cfg and display_cfg.user_prefix
+	local prompt
+	if type(message_prefix) == "string" then
+		prompt = message_prefix
+	else
+		local chat_prompt = full_config.chat and full_config.chat.input and full_config.chat.input.prompt
+		if type(chat_prompt) == "string" then
+			prompt = chat_prompt
+		else
+			local input_prompt = full_config.input and full_config.input.prompt
+			prompt = type(input_prompt) == "string" and input_prompt or "> "
+		end
 	end
-	local input_prompt = full_config.input and full_config.input.prompt
-	if type(input_prompt) == "string" then
-		return input_prompt
+	local multiline_prefix = display_cfg and display_cfg.multiline_prefix
+	if type(multiline_prefix) ~= "boolean" then
+		multiline_prefix = true
 	end
-	return "> "
+	return prompt, multiline_prefix
 end
 
 local function render_user_message(content, agent_name)
 	local lines = {}
 	local content_lines = vim.split(content or "", "\n", { plain = true })
 	local prefix_hl = get_agent_hl(agent_name or "unknown")
-	local prompt = get_user_prompt()
+	local prompt, multiline_prefix = get_user_message_display()
 
 	-- Get available width for content (window width minus prompt prefix)
 	local win_width = 80
@@ -1523,19 +1531,31 @@ local function render_user_message(content, agent_name)
 		win_width = vim.api.nvim_win_get_width(state.winid)
 	end
 	local prompt_width = vim.fn.strdisplaywidth(prompt)
-	local max_content_width = math.max(1, win_width - prompt_width)
+	local first_line_width = math.max(1, win_width - prompt_width)
+	local continuation_width = math.max(1, win_width)
 
 	-- Empty line before user message
 	table.insert(lines, NuiLine())
 
-	-- Content lines, wrapped to fit within prefix width
+	-- Content lines, wrapped to fit configured prefix behavior
+	local first_output_line = true
 	for _, text in ipairs(content_lines) do
-		local wrapped = wrap_text(text, max_content_width)
+		local wrapped
+		if multiline_prefix then
+			wrapped = wrap_text(text, first_line_width)
+		else
+			local initial = first_output_line and first_line_width or continuation_width
+			wrapped = wrap_text(text, initial)
+		end
 		for _, wline in ipairs(wrapped) do
 			local line = NuiLine()
-			line:append(NuiText(prompt, prefix_hl))
+			local should_prefix = multiline_prefix or first_output_line
+			if should_prefix then
+				line:append(NuiText(prompt, prefix_hl))
+			end
 			line:append(wline)
 			table.insert(lines, line)
+			first_output_line = false
 		end
 	end
 

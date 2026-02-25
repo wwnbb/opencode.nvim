@@ -805,12 +805,16 @@ require('opencode').focus()  -- Focus input area
       title_pos = "center",
     },
 
-    -- Input area
+    -- Input composer
     input = {
-      height = 5,              -- Default input height
-      max_height = 15,         -- Max height when expanding
-      border = "single",
-      prompt = "> ",
+      min_height = 3,
+      max_height = 20,
+    },
+
+    -- User message rendering in transcript
+    message_display = {
+      user_prefix = "> ",
+      multiline_prefix = true,   -- true: prefix every rendered line, false: prefix only first line
     },
 
     -- Message display
