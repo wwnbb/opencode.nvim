@@ -81,6 +81,45 @@ local function get_message_id(msg)
 	return msg.id
 end
 
+-- Ensure a message row exists for a part update.
+-- This lets streaming text render even if message.updated arrives slightly later.
+local function ensure_message_for_part(part)
+	local session_id = part.sessionID
+	local message_id = part.messageID
+	if not session_id or not message_id then
+		return
+	end
+
+	local placeholder = {
+		id = message_id,
+		sessionID = session_id,
+		role = "assistant",
+		time = {
+			created = vim.uv.now(),
+		},
+	}
+
+	local messages = store.message[session_id]
+	if not messages then
+		store.message[session_id] = { placeholder }
+		return
+	end
+
+	local result = binary_search(messages, message_id, get_message_id)
+	if result.found then
+		return
+	end
+
+	table.insert(messages, result.index, placeholder)
+
+	-- Keep the same 100 message cap behavior as regular message updates.
+	if #messages > 100 then
+		local oldest = messages[1]
+		table.remove(messages, 1)
+		store.part[oldest.id] = nil
+	end
+end
+
 -- Get part ID from part
 local function get_part_id(part)
 	return part.id
@@ -146,6 +185,8 @@ function M.handle_part_updated(part)
 	if not message_id then
 		return
 	end
+
+	ensure_message_for_part(part)
 
 	local parts = store.part[message_id]
 

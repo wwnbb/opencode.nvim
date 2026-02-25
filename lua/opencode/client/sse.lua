@@ -14,6 +14,7 @@ end
 M.opts = {
 	host = "localhost",
 	port = 9099,
+	endpoint = "/event", -- Matches TUI's session-scoped event stream
 	auth = {
 		username = "opencode",
 		password = nil,
@@ -37,7 +38,7 @@ local listeners = {}
 
 -- Build SSE endpoint URL
 local function sse_url()
-	local url = string.format("http://%s:%d/global/event", M.opts.host, M.opts.port)
+	local url = string.format("http://%s:%d%s", M.opts.host, M.opts.port, M.opts.endpoint or "/event")
 	return url
 end
 
@@ -52,7 +53,8 @@ local function parse_sse_event(data)
 	local lines = vim.split(data, "\n", { plain = true })
 	local data_lines = {}
 
-	for _, line in ipairs(lines) do
+	for _, raw_line in ipairs(lines) do
+		local line = raw_line:gsub("\r$", "")
 		if line:sub(1, 5) == "data:" then
 			table.insert(data_lines, line:sub(6):match("^%s*(.+)$") or "")
 		elseif line:sub(1, 7) == "event:" then
@@ -69,39 +71,40 @@ local function parse_sse_event(data)
 	return event
 end
 
+-- Find the next complete SSE event boundary.
+-- Returns boundary start index and boundary length, or nil when incomplete.
+local function next_event_boundary(buffer)
+	local lf = buffer:find("\n\n", 1, true)
+	local crlf = buffer:find("\r\n\r\n", 1, true)
+
+	if not lf and not crlf then
+		return nil, nil
+	end
+	if lf and (not crlf or lf < crlf) then
+		return lf, 2
+	end
+	return crlf, 4
+end
+
 -- Process SSE data buffer
 local function process_buffer()
 	-- Look for complete events (double newline)
 	while true do
-		local event_end = state.event_buffer:find("\n\n", 1, true)
-		if not event_end then
-			event_end = state.event_buffer:find("\r\n\r\n", 1, true)
-		end
+		local event_end, boundary_len = next_event_boundary(state.event_buffer)
 		if not event_end then
 			break
 		end
 
 		local event_data = state.event_buffer:sub(1, event_end - 1)
-		state.event_buffer = state.event_buffer:sub(event_end + 2)
+		state.event_buffer = state.event_buffer:sub(event_end + boundary_len)
 
 		local event = parse_sse_event(event_data)
 		if event.data then
-			-- DEBUG: Log all SSE events
-			vim.schedule(function()
-				vim.notify(string.format("[SSE] Event: %s", event.event), vim.log.levels.DEBUG)
-			end)
-
 			-- Parse JSON data
 			local ok, parsed = pcall(vim.json.decode, event.data)
 			if ok and parsed then
-				vim.schedule(function()
-					vim.notify(string.format("[SSE] Parsed %s successfully", event.event), vim.log.levels.DEBUG)
-				end)
 				M.emit(event.event, parsed, event.id)
 			else
-				vim.schedule(function()
-					vim.notify(string.format("[SSE] JSON parse FAILED for %s: %s", event.event, tostring(parsed)), vim.log.levels.DEBUG)
-				end)
 				-- Emit raw data if JSON parsing fails
 				M.emit(event.event, event.data, event.id)
 			end

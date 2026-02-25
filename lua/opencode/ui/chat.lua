@@ -1494,51 +1494,33 @@ local function is_message_final(message)
 end
 
 ---Check if assistant message should show metadata footer
----Mirrors TUI: `props.last || final() || props.message.error?.name === "MessageAbortedError"`
----
----TUI shows footer when:
---- 1. props.last — message is the last assistant message (no time.completed required)
---- 2. final() — message has a non-tool-call finish reason
---- 3. message was aborted (MessageAbortedError)
----
----For cases 1, we only show when not actively streaming (to avoid flicker).
----For cases 2 and 3, we show regardless since the message is definitively done.
+---Mirrors TUI exactly: `props.last || final() || props.message.error?.name === "MessageAbortedError"`
 ---@param message table
 ---@param is_last boolean Whether this is the last assistant message
----@param is_streaming boolean Whether the last assistant message is still being streamed
 ---@return boolean
-local function should_show_footer(message, is_last, is_streaming)
-	if not message.time then
+local function should_show_footer(message, is_last)
+	if message and message.modelID == nil and message.providerID == nil and message.agent == nil and message.mode == nil then
+		-- Placeholder rows (from early part updates) should not render incomplete metadata.
 		return false
 	end
-	-- Aborted messages always show footer (like TUI)
+	if is_last then
+		return true
+	end
+	if is_message_final(message) then
+		return true
+	end
 	if message.error and message.error.name == "MessageAbortedError" then
-		return true
-	end
-	-- Message finished with a non-tool-call reason (e.g. "end-turn", "stop")
-	-- Requires time.completed for duration calculation
-	if message.time.completed and is_message_final(message) then
-		return true
-	end
-	-- Last assistant message shows footer when no longer streaming (like TUI's props.last)
-	-- Does NOT require time.completed — handles early abort where backend never sets it
-	if is_last and not is_streaming then
 		return true
 	end
 	return false
 end
 
----Check if message was interrupted (aborted or cancelled without reaching a final finish reason)
+---Check if message was interrupted
+---Matches TUI: only explicit MessageAbortedError shows "interrupted".
 ---@param message table
 ---@return boolean
 local function is_interrupted(message)
-	-- Explicit abort error from backend
-	if message.error and message.error.name == "MessageAbortedError" then
-		return true
-	end
-	-- Message is not final — either cancelled between tool calls (finish="tool-calls"),
-	-- or aborted early before the processor set a finish reason at all
-	return not is_message_final(message)
+	return message.error and message.error.name == "MessageAbortedError" or false
 end
 
 ---Render metadata footer for assistant message
@@ -1550,9 +1532,10 @@ end
 ---@param messages table[] All messages in session
 ---@return NuiLine
 local function render_metadata_footer(message, messages)
-	local agent_name = message.agent or "unknown"
+	local agent_name = message.mode or message.agent or "unknown"
+	local agent_id = message.agent or message.mode or "unknown"
 	local interrupted = is_interrupted(message)
-	local agent_hl = interrupted and "Comment" or get_agent_hl(agent_name)
+	local agent_hl = interrupted and "Comment" or get_agent_hl(agent_id)
 
 	local line = NuiLine()
 	-- ▣ symbol + agent name (muted when interrupted, agent color otherwise)
@@ -2138,8 +2121,7 @@ function M.render()
 
 				-- Footer (mirrors TUI: props.last || final() || aborted)
 				local is_last = (msg_idx == last_assistant_idx)
-				local is_streaming = (is_last and app_state.get_status() == "streaming")
-				if should_show_footer(message, is_last, is_streaming) then
+				if should_show_footer(message, is_last) then
 					add_line(render_metadata_footer(message, messages))
 					add_raw_line("")
 				end
@@ -2416,9 +2398,8 @@ function M.update_spinner_only()
 	)
 end
 
--- Throttled render (like TUI's throttled updates)
--- Prevents excessive re-renders during streaming
-local RENDER_THROTTLE_MS = 50
+-- Throttled render (close to TUI cadence for smoother streaming updates)
+local RENDER_THROTTLE_MS = 16
 
 -- Schedule a render with throttling
 function M.schedule_render()
