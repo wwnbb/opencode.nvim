@@ -1524,16 +1524,18 @@ local function should_show_footer(message, is_last, is_streaming)
 end
 
 ---Render metadata footer for assistant message
----Format: ▣ Agent · modelID · duration
+---Format: ▣ Agent · modelID · duration [· interrupted]
+---Mirrors TUI: aborted messages use muted colors, skip duration, append "interrupted"
 ---@param message table Assistant message
 ---@param messages table[] All messages in session
 ---@return NuiLine
 local function render_metadata_footer(message, messages)
 	local agent_name = message.agent or "unknown"
-	local agent_hl = get_agent_hl(agent_name)
+	local is_aborted = message.error and message.error.name == "MessageAbortedError"
+	local agent_hl = is_aborted and "Comment" or get_agent_hl(agent_name)
 
 	local line = NuiLine()
-	-- ▣ symbol + agent name in agent color
+	-- ▣ symbol + agent name (muted when aborted, agent color otherwise)
 	line:append(NuiText("▣ " .. locale.titlecase(agent_name), agent_hl))
 	-- Model ID
 	local model_id = message.modelID or ""
@@ -1541,11 +1543,18 @@ local function render_metadata_footer(message, messages)
 		line:append(NuiText(" · ", "Comment"))
 		line:append(NuiText(model_id, "Comment"))
 	end
-	-- Duration
-	local duration_ms = calculate_duration(message, messages)
-	if duration_ms then
+	-- Duration (only shown for final messages, not aborted — matches TUI)
+	if not is_aborted and is_message_final(message) then
+		local duration_ms = calculate_duration(message, messages)
+		if duration_ms then
+			line:append(NuiText(" · ", "Comment"))
+			line:append(NuiText(locale.duration(duration_ms), agent_hl))
+		end
+	end
+	-- Interrupted label for aborted messages
+	if is_aborted then
 		line:append(NuiText(" · ", "Comment"))
-		line:append(NuiText(locale.duration(duration_ms), agent_hl))
+		line:append(NuiText("interrupted", "Comment"))
 	end
 	return line
 end
