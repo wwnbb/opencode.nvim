@@ -694,61 +694,53 @@ export default tool({
     const normalizedProposed = normalizeLineEndings(contentNew)
     const normalizedOld = normalizeLineEndings(contentOld)
 
-    if (normalizedActual === normalizedProposed) {
-      // All changes accepted
-      let output = "Edit applied successfully."
+    const status =
+      normalizedActual === normalizedProposed
+        ? "applied"
+        : normalizedActual === normalizedOld
+          ? "rejected"
+          : "partial"
 
-      // Provide metadata for diff tracking
-      const filediff = {
-        file: filePath,
-        before: contentOld,
-        after: contentNew,
-        additions: 0,
-        deletions: 0,
-      }
-      for (const change of diffLines(contentOld, contentNew)) {
-        if (change.added) filediff.additions += change.count || 0
-        if (change.removed) filediff.deletions += change.count || 0
-      }
+    const actualDiff = trimDiff(
+      createTwoFilesPatch(filePath, filePath, normalizedOld, normalizedActual),
+    )
 
-      context.metadata({
-        metadata: {
-          diff,
-          filediff,
-        },
-      })
+    const proposedDiff = trimDiff(
+      createTwoFilesPatch(filePath, filePath, normalizeLineEndings(contentOld), normalizeLineEndings(contentNew)),
+    )
 
-      return output
-    } else if (normalizedActual === normalizedOld) {
-      // No changes applied (user rejected)
-      return "Edit was rejected. No changes were applied."
-    } else {
-      // Partial changes applied
-      const actualDiff = trimDiff(
-        createTwoFilesPatch(filePath, filePath, normalizedOld, normalizedActual),
-      )
-
-      const filediff = {
-        file: filePath,
-        before: contentOld,
-        after: actualContent,
-        additions: 0,
-        deletions: 0,
-      }
-      for (const change of diffLines(contentOld, actualContent)) {
-        if (change.added) filediff.additions += change.count || 0
-        if (change.removed) filediff.deletions += change.count || 0
-      }
-
-      context.metadata({
-        metadata: {
-          diff: actualDiff,
-          filediff,
-        },
-      })
-
-      return `Edit partially applied.\n\nActual diff:\n${actualDiff}`
+    const filediff = {
+      file: filePath,
+      relativePath,
+      status,
+      before: contentOld,
+      proposed: contentNew,
+      after: actualContent,
+      additions: 0,
+      deletions: 0,
     }
+    for (const change of diffLines(contentOld, actualContent)) {
+      if (change.added) filediff.additions += change.count || 0
+      if (change.removed) filediff.deletions += change.count || 0
+    }
+
+    context.metadata({
+      metadata: {
+        status,
+        diff: actualDiff,
+        filediff,
+        proposed_diff: proposedDiff,
+      },
+    })
+
+    if (status === "applied") {
+      return "Edit applied successfully. Use current file contents as source of truth for next steps."
+    }
+
+    if (status === "rejected") {
+      return "Edit was rejected. Keep working from the current on-disk file state and do not re-apply the rejected replacement unless explicitly requested."
+    }
+
+    return `Edit partially applied. Respect the resulting file as authoritative and avoid reverting user adjustments.\n\nActual diff:\n${actualDiff}`
   },
 })
-

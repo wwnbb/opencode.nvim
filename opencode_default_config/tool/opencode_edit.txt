@@ -9,4 +9,6 @@ Usage:
 - The edit will FAIL if `oldString` is found multiple times in the file with an error "oldString found multiple times and requires more code context to uniquely identify the intended match". Either provide a larger string with more surrounding context to make it unique or use `replaceAll` to change every instance of `oldString`.
 - Use `replaceAll` for replacing and renaming strings across the file. This parameter is useful if you want to rename a variable for instance.
 - This tool applies a single replacement per call. When you need to make multiple changes, prefer using `opencode_apply_patch` instead — it bundles all changes into a single patch so the user reviews them in one step.
-- User can change the code during the diff review, add or remove something, try to understand what he changed
+- User can change the code during the diff review, add or remove something, or keep only part of the proposed edit.
+- The tool output and metadata describe the FINAL on-disk result after review (`applied`, `rejected`, or `partial`). Treat that final result as authoritative.
+- Never assume the proposed replacement was fully applied; if status is `rejected` or `partial`, continue from the current file state and avoid reapplying old content unless explicitly requested.

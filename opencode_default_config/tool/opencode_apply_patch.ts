@@ -750,58 +750,135 @@ export default tool({
 
     // After approval resolves, read each file back and compare actual vs proposed
     const resultLines: string[] = []
+    const actualFiles: Array<{
+      filePath: string
+      relativePath: string
+      type: "add" | "update" | "delete" | "move"
+      status: "applied" | "rejected" | "partial"
+      before: string
+      proposed: string
+      after: string
+      diff: string
+      additions: number
+      deletions: number
+      movePath?: string
+    }> = []
+
+    let actualTotalDiff = ""
 
     for (const change of fileChanges) {
-      if (change.type === "delete") {
-        // Check if file was actually deleted
-        try {
-          await fs.stat(change.filePath)
-          resultLines.push(`D (skipped) ${change.relativePath}`)
-        } catch {
-          resultLines.push(`D ${change.relativePath}`)
-        }
-        continue
-      }
-
       const targetPath = change.movePath ?? change.filePath
-      const targetRelative = path.relative(context.worktree, targetPath)
 
       let actualContent = ""
-      try {
-        actualContent = await fs.readFile(targetPath, "utf-8")
-      } catch {
-        // File doesn't exist — user may have rejected creation
-        resultLines.push(`  (skipped) ${targetRelative}`)
-        continue
+
+      if (change.type === "move") {
+        // Move can end up in either source or target depending on review outcome.
+        let targetExists = false
+        let sourceExists = false
+
+        try {
+          actualContent = await fs.readFile(targetPath, "utf-8")
+          targetExists = true
+        } catch {
+          targetExists = false
+        }
+
+        try {
+          await fs.stat(change.filePath)
+          sourceExists = true
+        } catch {
+          sourceExists = false
+        }
+
+        if (!targetExists && sourceExists) {
+          // Most likely rejected move: content stays at source path.
+          try {
+            actualContent = await fs.readFile(change.filePath, "utf-8")
+          } catch {
+            actualContent = ""
+          }
+        }
+      } else if (change.type === "delete") {
+        // Deleted file should be absent. If still present, keep its current content.
+        try {
+          actualContent = await fs.readFile(change.filePath, "utf-8")
+        } catch {
+          actualContent = ""
+        }
+      } else {
+        try {
+          actualContent = await fs.readFile(targetPath, "utf-8")
+        } catch {
+          actualContent = ""
+        }
       }
 
       const normalizedActual = normalizeLineEndings(actualContent)
       const normalizedProposed = normalizeLineEndings(change.newContent)
       const normalizedOld = normalizeLineEndings(change.oldContent)
 
-      if (normalizedActual === normalizedProposed) {
-        // Fully applied
-        const prefix = change.type === "add" ? "A" : change.type === "move" ? "R" : "M"
-        resultLines.push(`${prefix} ${targetRelative}`)
-      } else if (normalizedActual === normalizedOld) {
-        // Not applied (rejected)
-        resultLines.push(`  (rejected) ${targetRelative}`)
+      const status =
+        normalizedActual === normalizedProposed
+          ? "applied"
+          : normalizedActual === normalizedOld
+            ? "rejected"
+            : "partial"
+
+      const actualDiff = trimDiff(
+        createTwoFilesPatch(targetPath, targetPath, normalizedOld, normalizedActual),
+      )
+
+      let additions = 0
+      let deletions = 0
+      for (const d of diffLines(change.oldContent, actualContent)) {
+        if (d.added) additions += d.count || 0
+        if (d.removed) deletions += d.count || 0
+      }
+
+      actualFiles.push({
+        filePath: change.filePath,
+        relativePath: change.relativePath,
+        type: change.type,
+        status,
+        before: change.oldContent,
+        proposed: change.newContent,
+        after: actualContent,
+        diff: actualDiff,
+        additions,
+        deletions,
+        movePath: change.movePath,
+      })
+
+      actualTotalDiff += actualDiff + "\n"
+
+      if (status === "applied") {
+        const prefix = change.type === "add" ? "A" : change.type === "move" ? "R" : change.type === "delete" ? "D" : "M"
+        resultLines.push(`${prefix} ${change.relativePath}`)
+      } else if (status === "rejected") {
+        resultLines.push(`  (rejected) ${change.relativePath}`)
       } else {
-        // Partially applied
-        const prefix = change.type === "add" ? "A" : "M"
-        resultLines.push(`${prefix} (partial) ${targetRelative}`)
+        const prefix = change.type === "add" ? "A" : change.type === "delete" ? "D" : "M"
+        resultLines.push(`${prefix} (partial) ${change.relativePath}`)
       }
     }
 
-    // Provide metadata
+    // Provide metadata using the final post-review file state.
     context.metadata({
       metadata: {
-        diff: totalDiff,
-        files,
+        diff: actualTotalDiff,
+        files: actualFiles,
+        proposed_diff: totalDiff,
+        proposed_files: files,
       },
     })
 
-    return `Patch applied. Results:\n${resultLines.join("\n")}`
+    return [
+      "Patch review completed.",
+      "Use the resulting on-disk file contents as source of truth for follow-up steps.",
+      "Do not re-apply rejected changes unless explicitly requested.",
+      "",
+      "Results:",
+      ...resultLines,
+    ].join("\n")
   },
 })
-
