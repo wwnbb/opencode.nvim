@@ -20,6 +20,7 @@ local state = {
 	visible = false,
 	on_send = nil,
 	on_cancel = nil,
+	close_on_send = true,
 	config = nil,
 	layout = nil,
 }
@@ -368,10 +369,15 @@ local function setup_keymaps(bufnr, cfg)
 		if text ~= "" then
 			add_to_history(text)
 			history.pending = nil
+			vim.api.nvim_buf_set_lines(state.bufnr, 0, -1, false, { "" })
+			vim.api.nvim_win_set_cursor(state.winid, { 1, 0 })
+			resize_input()
 			if state.on_send then
 				state.on_send(text)
 			end
-			M.close(false)
+			if state.close_on_send then
+				M.close(false)
+			end
 		end
 	end
 
@@ -472,6 +478,7 @@ function M.show(opts)
 	-- Set callbacks
 	state.on_send = opts.on_send
 	state.on_cancel = opts.on_cancel or function() end
+	state.close_on_send = opts.close_on_send ~= false
 
 	-- Load history on first show
 	if #history.entries == 0 then

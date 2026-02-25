@@ -2140,6 +2140,7 @@ function M.focus_input()
 	input.show({
 		winid = state.winid,
 		float_dims = state.float_dims,
+		close_on_send = false,
 		on_send = function(text)
 			local opencode = require("opencode")
 			local slash_ok, slash = pcall(require, "opencode.slash")
