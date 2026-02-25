@@ -2,18 +2,12 @@
 -- Handles real-time event streaming from OpenCode server
 
 local M = {}
-
--- Check for plenary.nvim dependency
-local has_plenary, Job = pcall(require, "plenary.job")
-if not has_plenary then
-	vim.notify("opencode.nvim requires plenary.nvim. Please install nvim-lua/plenary.nvim", vim.log.levels.ERROR)
-	return M
-end
+local transport = require("opencode.client.transport")
+local uv = vim.uv
 
 -- Configuration
 M.opts = {
 	host = "localhost",
-	port = 9099,
 	endpoint = "/event", -- Matches TUI's session-scoped event stream
 	auth = {
 		username = "opencode",
@@ -22,11 +16,14 @@ M.opts = {
 	reconnect = true,
 	reconnect_delay = 5000,
 	max_reconnects = 5,
+	connect_timeout = 10000,
 }
 
 -- Internal state
 local state = {
-	job = nil,
+	stream = nil,
+	reconnect_timer = nil,
+	manual_disconnect = false,
 	connected = false,
 	reconnect_count = 0,
 	event_buffer = "",
@@ -40,10 +37,29 @@ local state = {
 -- Event callbacks registry
 local listeners = {}
 
--- Build SSE endpoint URL
-local function sse_url()
-	local url = string.format("http://%s:%d%s", M.opts.host, M.opts.port, M.opts.endpoint or "/event")
-	return url
+local function stop_reconnect_timer()
+	if not state.reconnect_timer then
+		return
+	end
+
+	if not uv.is_closing(state.reconnect_timer) then
+		pcall(function()
+			state.reconnect_timer:stop()
+		end)
+		pcall(function()
+			state.reconnect_timer:close()
+		end)
+	end
+	state.reconnect_timer = nil
+end
+
+local function auth_header()
+	if not M.opts.auth.password then
+		return nil
+	end
+	local credentials = string.format("%s:%s", M.opts.auth.username, M.opts.auth.password)
+	local encoded = vim.fn.base64encode(credentials)
+	return "Basic " .. encoded
 end
 
 local function reset_current_event()
@@ -74,8 +90,8 @@ end
 
 -- Process SSE data buffer
 local function process_buffer()
-	-- Process line-by-line to handle both chunked and line-delimited stdout behavior.
-	-- Some job backends do not preserve SSE blank separators reliably.
+	-- Process line-by-line because socket callbacks may split SSE frames arbitrarily.
+	-- Flush buffered data whenever we hit SSE's blank-line delimiter.
 	while true do
 		local newline = state.event_buffer:find("\n", 1, true)
 		if not newline then
@@ -108,11 +124,73 @@ local function process_buffer()
 	end
 end
 
+local function schedule_reconnect()
+	if not M.opts.reconnect then
+		return
+	end
+	if state.manual_disconnect then
+		return
+	end
+	if state.reconnect_count >= M.opts.max_reconnects then
+		return
+	end
+
+	stop_reconnect_timer()
+	state.reconnect_count = state.reconnect_count + 1
+
+	local timer = uv.new_timer()
+	if not timer then
+		M.emit("error", "Failed to create reconnect timer")
+		return
+	end
+
+	state.reconnect_timer = timer
+	timer:start(
+		M.opts.reconnect_delay,
+		0,
+		vim.schedule_wrap(function()
+			stop_reconnect_timer()
+			if state.manual_disconnect then
+				return
+			end
+			M.connect()
+		end)
+	)
+end
+
+local function handle_stream_closed(reason)
+	emit_current_event()
+	stop_reconnect_timer()
+
+	local was_connected = state.connected
+	state.connected = false
+	state.stream = nil
+
+	if state.manual_disconnect then
+		state.manual_disconnect = false
+		if was_connected then
+			M.emit("disconnected", reason or "Connection closed")
+		end
+		return
+	end
+
+	M.emit("disconnected", reason or "Connection closed")
+	schedule_reconnect()
+end
+
 -- Emit event to all listeners
 function M.emit(event_type, data, event_id)
 	-- Handle wrapped global event format: {directory, payload: {type, properties}}
 	local actual_type = event_type
 	local actual_data = data
+	local maxLength = 20
+	local fullString = table.concat(data, ", ")
+	local truncatedString = string.sub(fullString, 1, maxLength)
+
+	if #fullString > maxLength then
+		truncatedString = truncatedString .. "..."
+	end
+	vim.notify(truncatedString)
 
 	if type(data) == "table" and data.payload and data.payload.type then
 		actual_type = data.payload.type
@@ -170,82 +248,83 @@ end
 
 -- Start SSE connection
 function M.connect()
-	if state.job then
+	if state.stream then
 		return -- Already connected or connecting
 	end
 
-	local url = sse_url()
-	local args = { "-sS", "-N", "-H", "Accept: text/event-stream" }
-
-	-- Add auth if configured
-	if M.opts.auth.password then
-		local credentials = string.format("%s:%s", M.opts.auth.username, M.opts.auth.password)
-		table.insert(args, "-u")
-		table.insert(args, credentials)
-	end
-
-	table.insert(args, url)
-
+	state.manual_disconnect = false
 	state.event_buffer = ""
 	state.connected = false
 
-	state.job = Job:new({
-		command = "curl",
-		args = args,
-		on_stdout = function(_, data)
-			if data then
-				state.event_buffer = state.event_buffer .. data .. "\n"
-				vim.schedule(process_buffer)
-			end
-		end,
-		on_stderr = function(_, data)
-			if data then
-				vim.schedule(function()
-					M.emit("error", data)
-				end)
-			end
-		end,
-		on_exit = function(_, code)
-			vim.schedule(function()
-				emit_current_event()
-				state.job = nil
-				state.connected = false
+	local headers = {
+		Accept = "text/event-stream",
+		["Cache-Control"] = "no-cache",
+	}
+	local auth = auth_header()
+	if auth then
+		headers.Authorization = auth
+	end
 
-				if code ~= 0 then
-					M.emit("disconnected", "Connection closed with code: " .. code)
-
-					-- Auto-reconnect if enabled
-					if M.opts.reconnect and state.reconnect_count < M.opts.max_reconnects then
-						state.reconnect_count = state.reconnect_count + 1
-						vim.defer_fn(function()
-							M.connect()
-						end, M.opts.reconnect_delay)
-					end
-				else
-					M.emit("disconnected", "Connection closed normally")
+	local stream, err = transport.open_stream({
+		host = M.opts.host,
+		port = M.opts.port,
+		method = "GET",
+		path = M.opts.endpoint or "/event",
+		headers = headers,
+		timeout = M.opts.connect_timeout,
+		on_headers = function(status, _)
+			if status < 200 or status >= 300 then
+				M.emit("error", "SSE handshake failed with HTTP status " .. status)
+				if state.stream and state.stream.close then
+					state.stream.close()
 				end
-			end)
+				return
+			end
+
+			state.connected = true
+			state.reconnect_count = 0
+			M.emit("connected", nil)
+		end,
+		on_data = function(data)
+			if not data or data == "" then
+				return
+			end
+			state.event_buffer = state.event_buffer .. data
+			process_buffer()
+		end,
+		on_error = function(stream_err)
+			local message = stream_err and (stream_err.message or stream_err.error) or "SSE stream error"
+			M.emit("error", message)
+		end,
+		on_close = function(reason)
+			handle_stream_closed(reason)
 		end,
 	})
 
-	state.job:start()
-	state.connected = true
-	state.reconnect_count = 0
-	M.emit("connected", nil)
+	if not stream then
+		local message = err and (err.message or err.error) or "Failed to open SSE stream"
+		M.emit("error", message)
+		schedule_reconnect()
+		return
+	end
+
+	state.stream = stream
 end
 
 -- Disconnect from SSE stream
 function M.disconnect()
-	if state.job then
-		state.job:shutdown()
-		state.job = nil
+	stop_reconnect_timer()
+	state.manual_disconnect = true
+	if state.stream and state.stream.close then
+		state.stream.close()
+		state.stream = nil
 	end
 	state.connected = false
 end
 
 -- Check if connected
 function M.is_connected()
-	return state.connected and state.job ~= nil
+	return state.connected and state.stream ~= nil
 end
 
 -- Configure SSE client
@@ -259,7 +338,8 @@ function M.status()
 	return {
 		connected = state.connected,
 		reconnect_count = state.reconnect_count,
-		has_job = state.job ~= nil,
+		has_job = state.stream ~= nil,
+		has_stream = state.stream ~= nil,
 	}
 end
 
