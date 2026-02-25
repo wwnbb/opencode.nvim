@@ -656,9 +656,12 @@ function M.show()
 
 	local input_buf = state.input_popup.bufnr
 	local input_win = state.input_popup.winid
+	local popup_buf = state.popup.bufnr
 
 	-- Set input buffer options
 	vim.bo[input_buf].buftype = "prompt"
+	vim.bo[input_buf].filetype = "opencode_palette"
+	vim.bo[popup_buf].filetype = "opencode_palette"
 	vim.fn.prompt_setprompt(input_buf, " > ")
 
 	-- Start insert mode
@@ -737,6 +740,25 @@ function M.toggle()
 	else
 		M.show()
 	end
+end
+
+function M.is_visible()
+	return state.popup ~= nil and state.input_popup ~= nil
+end
+
+---@return number[]
+function M.get_winids()
+	local wins = {}
+
+	if state.input_popup and state.input_popup.winid and vim.api.nvim_win_is_valid(state.input_popup.winid) then
+		table.insert(wins, state.input_popup.winid)
+	end
+
+	if state.popup and state.popup.winid and vim.api.nvim_win_is_valid(state.popup.winid) then
+		table.insert(wins, state.popup.winid)
+	end
+
+	return wins
 end
 
 -- Trigger a command by ID

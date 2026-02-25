@@ -44,6 +44,7 @@ local state = {
 	last_render_time = 0,
 	render_scheduled = false,
 	auto_scroll = true, -- Auto-scroll to bottom on new content
+	focus_augroup = nil,
 }
 
 local question_widget = require("opencode.ui.question_widget")
@@ -62,6 +63,7 @@ local defaults = {
 	position = "right", -- "left" | "right" | "top" | "bottom"
 	width = 80,
 	height = 20,
+	close_on_focus_lost = true,
 	float = {
 		width = 0.8,
 		height = 0.8,
@@ -114,6 +116,85 @@ local function calculate_dimensions(cfg)
 	end
 
 	return { width = width, height = height, row = row, col = col }
+end
+
+local function clear_float_focus_autocmds()
+	if not state.focus_augroup then
+		return
+	end
+
+	pcall(vim.api.nvim_del_augroup_by_id, state.focus_augroup)
+	state.focus_augroup = nil
+end
+
+---@param winid number
+---@return boolean
+local function is_opencode_related_window(winid)
+	if not winid or not vim.api.nvim_win_is_valid(winid) then
+		return false
+	end
+
+	if state.winid and winid == state.winid then
+		return true
+	end
+
+	local ok_buf, bufnr = pcall(vim.api.nvim_win_get_buf, winid)
+	if ok_buf and bufnr and vim.api.nvim_buf_is_valid(bufnr) then
+		local ft = vim.bo[bufnr].filetype
+		if type(ft) == "string" and ft:match("^opencode") then
+			return true
+		end
+	end
+
+	local ok_input, input_ui = pcall(require, "opencode.ui.input")
+	if ok_input and type(input_ui.get_winids) == "function" then
+		for _, candidate in ipairs(input_ui.get_winids()) do
+			if winid == candidate then
+				return true
+			end
+		end
+	end
+
+	local ok_palette, palette = pcall(require, "opencode.ui.palette")
+	if ok_palette and type(palette.get_winids) == "function" then
+		for _, candidate in ipairs(palette.get_winids()) do
+			if winid == candidate then
+				return true
+			end
+		end
+	end
+
+	return false
+end
+
+local function setup_float_focus_autocmds()
+	clear_float_focus_autocmds()
+
+	state.focus_augroup = vim.api.nvim_create_augroup("OpenCodeFloatFocus_" .. tostring(state.bufnr or 0), { clear = true })
+
+	vim.api.nvim_create_autocmd({ "WinEnter", "TabEnter" }, {
+		group = state.focus_augroup,
+		callback = function()
+			vim.schedule(function()
+				if not state.visible then
+					return
+				end
+				if not state.config or state.config.layout ~= "float" then
+					return
+				end
+				if state.config.close_on_focus_lost == false then
+					return
+				end
+
+				local current_win = vim.api.nvim_get_current_win()
+				if is_opencode_related_window(current_win) then
+					return
+				end
+
+				M.close()
+			end)
+		end,
+	})
 end
 
 -- Setup buffer options
@@ -734,6 +815,9 @@ function M.open()
 		popup:mount()
 		state.layout = popup
 		state.winid = popup.winid
+		if cfg.close_on_focus_lost ~= false then
+			setup_float_focus_autocmds()
+		end
 		-- Store content-area dimensions so input can use editor-relative positioning
 		state.float_dims = dims
 
@@ -747,6 +831,7 @@ function M.open()
 				once = true,
 				callback = function()
 					if state.winid == popup_winid then
+						clear_float_focus_autocmds()
 						state.visible = false
 						state.winid = nil
 						state.layout = nil
@@ -807,6 +892,8 @@ function M.close()
 	if not state.visible then
 		return
 	end
+
+	clear_float_focus_autocmds()
 
 	-- Close input if it's open (important for float split mode where input is inside the float)
 	if input.is_visible() then
