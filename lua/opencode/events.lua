@@ -206,6 +206,7 @@ function M.setup_sse_bridge()
 		["message.updated"] = "message_updated",
 		["message.removed"] = "message_removed",
 		["message.part.updated"] = "message_part_updated",
+		["message.part.delta"] = "message_part_delta",
 		["message.part.removed"] = "message_part_removed",
 		["session.updated"] = "session_updated",
 		["session.status"] = "session_status",
@@ -240,6 +241,84 @@ end
 function M.setup_chat_handlers()
 	local state = require("opencode.state")
 	local sync = require("opencode.sync")
+
+	---@param part table
+	---@param current_session table
+	---@return string|nil
+	local function resolve_part_session_id(part, current_session)
+		local resolved_session_id = part.sessionID
+
+		if not resolved_session_id and part.messageID then
+			resolved_session_id = sync.find_message_session_id(part.messageID)
+		end
+
+		-- If the backend omits sessionID for streaming chunks, infer current session
+		-- while actively streaming so incremental text appears immediately.
+		if not resolved_session_id and current_session.id and state.is_streaming() then
+			resolved_session_id = current_session.id
+		end
+
+		if resolved_session_id then
+			part.sessionID = resolved_session_id
+		end
+
+		return resolved_session_id
+	end
+
+	---@param part table
+	---@param current_session table
+	---@param resolved_session_id string|nil
+	---@return boolean
+	local function part_in_current_session(part, current_session, resolved_session_id)
+		if not current_session.id then
+			return false
+		end
+
+		local in_current_session = false
+		if part.messageID then
+			in_current_session = sync.get_message(current_session.id, part.messageID) ~= nil
+		end
+		if not in_current_session and resolved_session_id then
+			in_current_session = resolved_session_id == current_session.id
+		end
+
+		return in_current_session
+	end
+
+	---@param part table
+	---@param current_session table
+	local function emit_part_events(part, current_session)
+		if part.type == "text" then
+			M.emit("chat_render", { session_id = current_session.id })
+			return
+		end
+
+		if part.type == "reasoning" then
+			M.emit("reasoning_update", {
+				message_id = part.messageID,
+				part_id = part.id,
+				text = part.text,
+			})
+			M.emit("chat_render", { session_id = current_session.id })
+			return
+		end
+
+		if part.type == "tool" then
+			local tool_state = part.state
+			if tool_state then
+				M.emit("tool_update", {
+					message_id = part.messageID,
+					tool_name = part.tool,
+					call_id = part.callID,
+					status = tool_state.status,
+					input = tool_state.input,
+					output = tool_state.status == "completed" and tool_state.output or nil,
+					error = tool_state.status == "error" and tool_state.error or nil,
+				})
+			end
+			M.emit("chat_render", { session_id = current_session.id })
+		end
+	end
 
 	-- Handle message.updated - the PRIMARY way messages are added/updated (like TUI sync.tsx:228-265)
 	-- This is the ONLY place where messages get added to the store
@@ -299,69 +378,52 @@ function M.setup_chat_handlers()
 			end
 
 			local current_session = state.get_session()
-			local resolved_session_id = part.sessionID
-
-			if not resolved_session_id and part.messageID then
-				resolved_session_id = sync.find_message_session_id(part.messageID)
-			end
-
-			-- If the backend omits sessionID for streaming chunks, infer current session
-			-- while actively streaming so incremental text appears immediately.
-			if not resolved_session_id and current_session.id and state.is_streaming() then
-				resolved_session_id = current_session.id
-			end
-
-			if resolved_session_id then
-				part.sessionID = resolved_session_id
-			end
+			local resolved_session_id = resolve_part_session_id(part, current_session)
 
 			-- Update sync store first (like TUI does)
 			sync.handle_part_updated(part)
 
-			if not current_session.id then
+			if not part_in_current_session(part, current_session, resolved_session_id) then
 				return
 			end
 
-			local in_current_session = false
-			if part.messageID then
-				in_current_session = sync.get_message(current_session.id, part.messageID) ~= nil
-			end
-			if not in_current_session and resolved_session_id then
-				in_current_session = resolved_session_id == current_session.id
-			end
+			emit_part_events(part, current_session)
+		end)
+	end)
 
-			if not in_current_session then
+	-- Handle message.part.delta - incremental token/chunk updates while streaming.
+	M.on("message_part_delta", function(data)
+		vim.schedule(function()
+			if not data then
+				return
+			end
+			if not data.messageID or not data.partID or not data.field or type(data.delta) ~= "string" then
 				return
 			end
 
-			-- Emit specific events based on part type
-			if part.type == "text" then
-				-- Text content update
-				M.emit("chat_render", { session_id = current_session.id })
-			elseif part.type == "reasoning" then
-				-- Reasoning/thinking update
-				M.emit("reasoning_update", {
-					message_id = part.messageID,
-					part_id = part.id,
-					text = part.text,
-				})
-				M.emit("chat_render", { session_id = current_session.id })
-			elseif part.type == "tool" then
-				-- Tool call update
-				local tool_state = part.state
-				if tool_state then
-					M.emit("tool_update", {
-						message_id = part.messageID,
-						tool_name = part.tool,
-						call_id = part.callID,
-						status = tool_state.status,
-						input = tool_state.input,
-						output = tool_state.status == "completed" and tool_state.output or nil,
-						error = tool_state.status == "error" and tool_state.error or nil,
-					})
-				end
-				M.emit("chat_render", { session_id = current_session.id })
+			local current_session = state.get_session()
+			local part_hint = {
+				id = data.partID,
+				messageID = data.messageID,
+				sessionID = data.sessionID,
+			}
+			local resolved_session_id = resolve_part_session_id(part_hint, current_session)
+			local part = sync.handle_part_delta({
+				messageID = data.messageID,
+				partID = data.partID,
+				field = data.field,
+				delta = data.delta,
+				sessionID = resolved_session_id,
+			})
+			if not part then
+				return
 			end
+
+			if not part_in_current_session(part, current_session, resolved_session_id) then
+				return
+			end
+
+			emit_part_events(part, current_session)
 		end)
 	end)
 

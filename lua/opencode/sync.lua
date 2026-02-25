@@ -29,6 +29,13 @@ local M = {}
 ---@field tool? string
 ---@field state? table
 
+---@class PartDelta
+---@field messageID string
+---@field partID string
+---@field field string
+---@field delta string
+---@field sessionID? string
+
 -- Internal store
 local store = {
 	message = {}, -- { [sessionID] = { Message, ... } }
@@ -143,6 +150,32 @@ local function get_part_id(part)
 	return part.id
 end
 
+---@param part Part
+---@param field string
+---@param delta string
+local function append_part_delta(part, field, delta)
+	local path = vim.split(field, ".", { plain = true, trimempty = true })
+	if #path == 0 then
+		return
+	end
+
+	local node = part
+	for i = 1, #path - 1 do
+		local key = path[i]
+		if type(node[key]) ~= "table" then
+			node[key] = {}
+		end
+		node = node[key]
+	end
+
+	local leaf = path[#path]
+	local current = node[leaf]
+	if type(current) ~= "string" then
+		current = ""
+	end
+	node[leaf] = current .. delta
+end
+
 ---Handle message.updated event (mirrors TUI sync.tsx:228-265)
 ---@param info Message
 function M.handle_message_updated(info)
@@ -224,6 +257,47 @@ function M.handle_part_updated(part)
 		-- Insert new part at correct position
 		table.insert(parts, result.index, part)
 	end
+end
+
+---Handle message.part.delta event by appending streamed text to an existing part field.
+---Falls back to creating a text part if the part does not exist yet.
+---@param part_delta PartDelta
+---@return Part|nil
+function M.handle_part_delta(part_delta)
+	local message_id = part_delta.messageID
+	local part_id = part_delta.partID
+	local field = part_delta.field
+	local delta = part_delta.delta
+
+	if not message_id or not part_id or not field or type(delta) ~= "string" then
+		return nil
+	end
+
+	local session_id = part_delta.sessionID or find_message_session_id(message_id)
+	local parts = store.part[message_id]
+	if not parts then
+		parts = {}
+		store.part[message_id] = parts
+	end
+
+	local result = binary_search(parts, part_id, get_part_id)
+	if not result.found then
+		local new_part = {
+			id = part_id,
+			messageID = message_id,
+			sessionID = session_id,
+			type = "text",
+		}
+		ensure_message_for_part(new_part)
+		table.insert(parts, result.index, new_part)
+	end
+
+	local part = parts[result.index]
+	if part_delta.sessionID and not part.sessionID then
+		part.sessionID = part_delta.sessionID
+	end
+	append_part_delta(part, field, delta)
+	return part
 end
 
 ---Handle message.part.removed event (mirrors TUI sync.tsx:302-314)
