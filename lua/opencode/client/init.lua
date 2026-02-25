@@ -76,8 +76,13 @@ end
 ---@param opts? table { messageID? }
 ---@param callback function(err, session)
 function M.fork_session(session_id, opts, callback)
-	opts = opts or {}
-	http.post("/session/" .. session_id .. "/fork", opts, callback)
+	local body = vim.empty_dict()
+	if opts and next(opts) then
+		for k, v in pairs(opts) do
+			body[k] = v
+		end
+	end
+	http.post("/session/" .. session_id .. "/fork", body, callback)
 end
 
 -- Get session messages
@@ -131,6 +136,20 @@ end
 function M.revert_message(session_id, message_id, opts, callback)
 	opts = opts or {}
 	http.post("/session/" .. session_id .. "/revert", vim.tbl_deep_extend("force", opts, { messageID = message_id }), callback)
+end
+
+-- Summarize (compact) session
+---@param session_id string
+---@param opts? table
+---@param callback function(err, response)
+function M.summarize_session(session_id, opts, callback)
+	local body = vim.empty_dict()
+	if opts and next(opts) then
+		for k, v in pairs(opts) do
+			body[k] = v
+		end
+	end
+	http.post("/session/" .. session_id .. "/summarize", body, callback)
 end
 
 -- Respond to permission request
@@ -243,6 +262,12 @@ end
 ---@param callback function(err, agents)
 function M.list_agents(callback)
 	http.get("/agent", callback)
+end
+
+-- Get list of skills
+---@param callback function(err, skills)
+function M.list_skills(callback)
+	http.get("/skill", callback)
 end
 
 -- Get file content
@@ -362,12 +387,43 @@ end
 -- Execute slash command
 ---@param session_id string
 ---@param command string
----@param args table
----@param opts? table { messageID?, agent?, model? }
+---@param args string|table
+---@param opts? table { messageID?, agent?, model?, variant? }
 ---@param callback function(err, response)
 function M.execute_command(session_id, command, args, opts, callback)
-	opts = opts or {}
-	http.post("/session/" .. session_id .. "/command", vim.tbl_deep_extend("force", opts, {
+	local request_opts = vim.tbl_deep_extend("force", {}, opts or {})
+
+	if not request_opts.agent or request_opts.agent == "" then
+		local local_ok, lc = pcall(require, "opencode.local")
+		if local_ok and lc and lc.agent and type(lc.agent.current) == "function" then
+			local current_agent = lc.agent.current()
+			if current_agent and current_agent.name then
+				request_opts.agent = current_agent.name
+			end
+		end
+	end
+
+	if not request_opts.model then
+		local local_ok, lc = pcall(require, "opencode.local")
+		if local_ok and lc and lc.model and type(lc.model.current) == "function" then
+			local current_model = lc.model.current()
+			if current_model and current_model.providerID and current_model.modelID then
+				request_opts.model = {
+					providerID = current_model.providerID,
+					modelID = current_model.modelID,
+				}
+			end
+		end
+	end
+
+	if request_opts.variant == nil then
+		local local_ok, lc = pcall(require, "opencode.local")
+		if local_ok and lc and lc.variant and type(lc.variant.current) == "function" then
+			request_opts.variant = lc.variant.current()
+		end
+	end
+
+	http.post("/session/" .. session_id .. "/command", vim.tbl_deep_extend("force", request_opts, {
 		command = command,
 		arguments = args,
 	}), callback)

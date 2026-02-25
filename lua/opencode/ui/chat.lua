@@ -2141,8 +2141,15 @@ function M.focus_input()
 		winid = state.winid,
 		float_dims = state.float_dims,
 		on_send = function(text)
-			-- Send message via main module
 			local opencode = require("opencode")
+			local slash_ok, slash = pcall(require, "opencode.slash")
+			if slash_ok and type(slash.parse) == "function" and type(slash.execute) == "function" then
+				local parsed = slash.parse(text)
+				if parsed then
+					slash.execute(parsed)
+					return
+				end
+			end
 			opencode.send(text)
 		end,
 		on_cancel = function()

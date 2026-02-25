@@ -186,7 +186,98 @@ function M.register_defaults()
 			palette.trigger("agent.switch")
 		end,
 	})
-	
+
+	-- /skills - Select and run a skill
+	M.register({
+		name = "skills",
+		description = "Select and run a skill",
+		category = "actions",
+		handler = function()
+			local palette = require("opencode.ui.palette")
+			palette.trigger("action.skills")
+		end,
+		enabled = function()
+			return state.get_session().id ~= nil and state.is_connected()
+		end,
+	})
+
+	-- /skill <name> - Run a specific skill
+	M.register({
+		name = "skill",
+		description = "Run a specific skill by name",
+		category = "actions",
+		handler = function(args)
+			local name = vim.trim(args or "")
+			if name == "" then
+				vim.notify("Usage: /skill <name>", vim.log.levels.WARN)
+				return
+			end
+
+			local session = state.get_session()
+			if not session.id then
+				vim.notify("No active session", vim.log.levels.WARN)
+				return
+			end
+
+			local function has_skill_command()
+				local ok, sync = pcall(require, "opencode.sync")
+				if not ok or type(sync.get_commands) ~= "function" then
+					return false
+				end
+
+				local commands = sync.get_commands() or {}
+				for key, cmd in pairs(commands) do
+					if key == "skill" then
+						return true
+					end
+					if type(cmd) == "table" and cmd.name == "skill" then
+						return true
+					end
+				end
+
+				return false
+			end
+
+			local function run_skill_via_tool()
+				local opencode = require("opencode")
+				opencode.send(
+					string.format(
+						"Use the `skill` tool to load the skill named `%s`, then reply with a one-line confirmation.",
+						name
+					)
+				)
+				vim.notify("Requested skill via tool: " .. name, vim.log.levels.INFO)
+			end
+
+			lifecycle.ensure_connected(function()
+				local client = require("opencode.client")
+				if not has_skill_command() then
+					run_skill_via_tool()
+					return
+				end
+
+				client.execute_command(session.id, "skill", name, {}, function(err)
+					vim.schedule(function()
+						if err then
+							local err_text = tostring(err.message or err.error or err)
+							local lower = err_text:lower()
+							if lower:find("command") and (lower:find("not found") or lower:find("unknown")) then
+								run_skill_via_tool()
+								return
+							end
+							vim.notify("Failed to run skill: " .. err_text, vim.log.levels.ERROR)
+							return
+						end
+						vim.notify("Running skill: " .. name, vim.log.levels.INFO)
+					end)
+				end)
+			end)
+		end,
+		enabled = function()
+			return state.get_session().id ~= nil and state.is_connected()
+		end,
+	})
+
 	-- /connect - Connect provider
 	M.register({
 		name = "connect",
@@ -213,6 +304,59 @@ function M.register_defaults()
 		end,
 	})
 	
+	-- /copy - Copy session transcript
+	M.register({
+		name = "copy",
+		description = "Copy session transcript",
+		category = "session",
+		handler = function()
+			local session_id = state.get_session().id
+			if not session_id then
+				vim.notify("No active session", vim.log.levels.WARN)
+				return
+			end
+
+			local sync = require("opencode.sync")
+			local messages = sync.get_messages(session_id)
+			if #messages == 0 then
+				vim.notify("No messages to copy", vim.log.levels.INFO)
+				return
+			end
+
+			local lines = { "Session: " .. session_id, "" }
+			for _, message in ipairs(messages) do
+				if message.role == "user" then
+					table.insert(lines, "USER:")
+				else
+					table.insert(lines, "ASSISTANT:")
+				end
+
+				local text_parts = {}
+				for _, part in ipairs(sync.get_parts(message.id) or {}) do
+					if part.type == "text" and part.text and part.text ~= "" then
+						table.insert(text_parts, part.text)
+					end
+				end
+
+				if #text_parts > 0 then
+					table.insert(lines, table.concat(text_parts, "\n"))
+				else
+					table.insert(lines, "[No text content]")
+				end
+
+				table.insert(lines, "")
+			end
+
+			local transcript = table.concat(lines, "\n")
+			vim.fn.setreg("+", transcript)
+			vim.fn.setreg("*", transcript)
+			vim.notify("Session transcript copied to clipboard", vim.log.levels.INFO)
+		end,
+		enabled = function()
+			return state.get_session().id ~= nil
+		end,
+	})
+
 	-- /help - Show help
 	M.register({
 		name = "help",

@@ -32,6 +32,7 @@ local categories = {
 	{ id = "model", name = "Model", icon = "󰢚" },
 	{ id = "agent", name = "Agent", icon = "󰧱" },
 	{ id = "actions", name = "Actions", icon = "󰜨" },
+	{ id = "prompt", name = "Prompt", icon = "󰯂" },
 	{ id = "mcp", name = "MCP", icon = "󰡨" },
 	{ id = "files", name = "Files", icon = "󰈙" },
 	{ id = "navigation", name = "Navigation", icon = "󰆋" },
@@ -1322,6 +1323,59 @@ local function register_defaults()
 	})
 
 	M.register({
+		id = "session.copy",
+		title = "Copy Session Transcript",
+		description = "Copy current session transcript to clipboard",
+		category = "session",
+		action = function()
+			local session_id = state.get_session().id
+			if not session_id then
+				vim.notify("No active session", vim.log.levels.WARN)
+				return
+			end
+
+			local sync = require("opencode.sync")
+			local messages = sync.get_messages(session_id)
+			if #messages == 0 then
+				vim.notify("No messages to copy", vim.log.levels.INFO)
+				return
+			end
+
+			local lines = { "Session: " .. session_id, "" }
+			for _, message in ipairs(messages) do
+				if message.role == "user" then
+					table.insert(lines, "USER:")
+				else
+					table.insert(lines, "ASSISTANT:")
+				end
+
+				local text_parts = {}
+				for _, part in ipairs(sync.get_parts(message.id) or {}) do
+					if part.type == "text" and part.text and part.text ~= "" then
+						table.insert(text_parts, part.text)
+					end
+				end
+
+				if #text_parts > 0 then
+					table.insert(lines, table.concat(text_parts, "\n"))
+				else
+					table.insert(lines, "[No text content]")
+				end
+
+				table.insert(lines, "")
+			end
+
+			local transcript = table.concat(lines, "\n")
+			vim.fn.setreg("+", transcript)
+			vim.fn.setreg("*", transcript)
+			vim.notify("Session transcript copied to clipboard", vim.log.levels.INFO)
+		end,
+		enabled = function()
+			return state.get_session().id ~= nil
+		end,
+	})
+
+	M.register({
 		id = "session.delete",
 		title = "Delete Session",
 		description = "Delete current session",
@@ -1807,9 +1861,67 @@ local function register_defaults()
 		description = "Compact session messages",
 		category = "actions",
 		action = function()
-			-- Note: This is a placeholder - actual compact functionality
-			-- depends on server API support (session compaction)
-			vim.notify("Compact session - not yet implemented in server API", vim.log.levels.WARN)
+			local session = state.get_session()
+			if not session.id then
+				vim.notify("No active session to compact", vim.log.levels.WARN)
+				return
+			end
+
+			local compact_opts = {}
+			local local_ok, lc = pcall(require, "opencode.local")
+			if local_ok and lc and lc.model and type(lc.model.current) == "function" then
+				local current_model = lc.model.current()
+				if current_model and current_model.providerID and current_model.modelID then
+					compact_opts.providerID = current_model.providerID
+					compact_opts.modelID = current_model.modelID
+				end
+			end
+
+			if not compact_opts.providerID or not compact_opts.modelID then
+				local state_model = state.get_model()
+				if state_model and state_model.provider and state_model.id then
+					compact_opts.providerID = state_model.provider
+					compact_opts.modelID = state_model.id
+				end
+			end
+
+			if not compact_opts.providerID or not compact_opts.modelID then
+				vim.notify("No model selected for compaction", vim.log.levels.WARN)
+				return
+			end
+
+			lifecycle.ensure_connected(function()
+				client.summarize_session(session.id, compact_opts, function(err)
+					if err then
+						if type(err) == "table" and err.status == 404 then
+							client.execute_command(session.id, "compact", {}, {}, function(fallback_err)
+								vim.schedule(function()
+									if fallback_err then
+										vim.notify(
+											"Failed to compact session: "
+												.. tostring(fallback_err.message or fallback_err),
+											vim.log.levels.ERROR
+										)
+										return
+									end
+									vim.notify("Session compaction started", vim.log.levels.INFO)
+								end)
+							end)
+							return
+						end
+						vim.schedule(function()
+							vim.notify(
+								"Failed to compact session: " .. tostring(err.message or err),
+								vim.log.levels.ERROR
+							)
+						end)
+						return
+					end
+					vim.schedule(function()
+						vim.notify("Session compaction started", vim.log.levels.INFO)
+					end)
+				end)
+			end)
 		end,
 		enabled = function()
 			return state.get_session().id ~= nil
@@ -2010,6 +2122,136 @@ local function register_defaults()
 			end)
 		end,
 		suggested = true,
+	})
+
+	M.register({
+		id = "action.skills",
+		title = "Run Skill",
+		description = "Select and execute an available skill",
+		category = "prompt",
+		suggested = true,
+		action = function()
+			local session = state.get_session()
+			if not session.id then
+				vim.notify("No active session", vim.log.levels.WARN)
+				return
+			end
+
+			if not state.is_connected() then
+				vim.notify("Not connected to OpenCode server", vim.log.levels.WARN)
+				return
+			end
+
+			local sync = require("opencode.sync")
+			local float = require("opencode.ui.float")
+
+			local function has_skill_command()
+				local commands = sync.get_commands() or {}
+				for key, cmd in pairs(commands) do
+					if key == "skill" then
+						return true
+					end
+					if type(cmd) == "table" and cmd.name == "skill" then
+						return true
+					end
+				end
+				return false
+			end
+
+			local function run_skill_via_tool(name)
+				local opencode = require("opencode")
+				opencode.send(
+					string.format(
+						"Use the `skill` tool to load the skill named `%s`, then reply with a one-line confirmation.",
+						name
+					)
+				)
+				vim.notify("Requested skill via tool: " .. name, vim.log.levels.INFO)
+			end
+
+			local function run_skill(name)
+				if not has_skill_command() then
+					run_skill_via_tool(name)
+					return
+				end
+
+				client.execute_command(session.id, "skill", name, {}, function(err)
+					vim.schedule(function()
+						if err then
+							local err_text = tostring(err.message or err.error or err)
+							local lower = err_text:lower()
+							if lower:find("command") and (lower:find("not found") or lower:find("unknown")) then
+								run_skill_via_tool(name)
+								return
+							end
+							vim.notify("Failed to run skill: " .. err_text, vim.log.levels.ERROR)
+							return
+						end
+						vim.notify("Running skill: " .. name, vim.log.levels.INFO)
+					end)
+				end)
+			end
+
+			local function show_skill_picker(skills)
+				local normalized = {}
+				if type(skills) == "table" then
+					for _, skill in pairs(skills) do
+						if type(skill) == "table" and skill.name then
+							table.insert(normalized, skill)
+						end
+					end
+				end
+
+				if #normalized == 0 then
+					vim.notify("No skills available", vim.log.levels.INFO)
+					return
+				end
+
+				local items = {}
+				for _, skill in ipairs(normalized) do
+					table.insert(items, {
+						label = skill.name,
+						value = skill.name,
+						description = skill.description or skill.location or "",
+						skill = skill,
+					})
+				end
+
+				if #items == 0 then
+					vim.notify("No skills available", vim.log.levels.INFO)
+					return
+				end
+
+				float.create_searchable_menu(items, function(item)
+					local selected_name = item and (item.value or item.label)
+					if not selected_name or selected_name == "" then
+						vim.notify("Invalid skill selection", vim.log.levels.WARN)
+						return
+					end
+
+					run_skill(selected_name)
+				end, { title = " Select Skill ", width = 60 })
+			end
+
+			local skills = sync.get_skills()
+			if type(skills) == "table" and #skills > 0 then
+				show_skill_picker(skills)
+				return
+			end
+
+			client.list_skills(function(err, fetched_skills)
+				vim.schedule(function()
+					if err then
+						vim.notify("Failed to load skills: " .. tostring(err.message or err), vim.log.levels.ERROR)
+						return
+					end
+
+					local list = type(fetched_skills) == "table" and fetched_skills or {}
+					sync.handle_skills(list)
+					show_skill_picker(list)
+				end)
+			end)
+		end,
 	})
 
 	-- MCP commands
