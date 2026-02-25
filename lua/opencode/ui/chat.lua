@@ -1494,9 +1494,15 @@ local function is_message_final(message)
 end
 
 ---Check if assistant message should show metadata footer
----Show when: message is final (non-tool-call finish) OR it is the last assistant message
----and the request is no longer streaming, OR it was aborted.
 ---Mirrors TUI: `props.last || final() || props.message.error?.name === "MessageAbortedError"`
+---
+---TUI shows footer when:
+--- 1. props.last — message is the last assistant message (no time.completed required)
+--- 2. final() — message has a non-tool-call finish reason
+--- 3. message was aborted (MessageAbortedError)
+---
+---For cases 1, we only show when not actively streaming (to avoid flicker).
+---For cases 2 and 3, we show regardless since the message is definitively done.
 ---@param message table
 ---@param is_last boolean Whether this is the last assistant message
 ---@param is_streaming boolean Whether the last assistant message is still being streamed
@@ -1505,37 +1511,51 @@ local function should_show_footer(message, is_last, is_streaming)
 	if not message.time then
 		return false
 	end
-	if not message.time.completed then
-		return false
-	end
 	-- Aborted messages always show footer (like TUI)
 	if message.error and message.error.name == "MessageAbortedError" then
 		return true
 	end
 	-- Message finished with a non-tool-call reason (e.g. "end-turn", "stop")
-	if is_message_final(message) then
+	-- Requires time.completed for duration calculation
+	if message.time.completed and is_message_final(message) then
 		return true
 	end
-	-- Last assistant message shows footer only when no longer streaming
+	-- Last assistant message shows footer when no longer streaming (like TUI's props.last)
+	-- Does NOT require time.completed — handles early abort where backend never sets it
 	if is_last and not is_streaming then
 		return true
 	end
 	return false
 end
 
+---Check if message was interrupted (aborted or cancelled without reaching a final finish reason)
+---@param message table
+---@return boolean
+local function is_interrupted(message)
+	-- Explicit abort error from backend
+	if message.error and message.error.name == "MessageAbortedError" then
+		return true
+	end
+	-- Message is not final — either cancelled between tool calls (finish="tool-calls"),
+	-- or aborted early before the processor set a finish reason at all
+	return not is_message_final(message)
+end
+
 ---Render metadata footer for assistant message
 ---Format: ▣ Agent · modelID · duration [· interrupted]
----Mirrors TUI: aborted messages use muted colors, skip duration, append "interrupted"
+---Mirrors TUI rendering:
+--- - Normal completed: agent color, duration shown
+--- - Interrupted: muted color, "interrupted", no duration
 ---@param message table Assistant message
 ---@param messages table[] All messages in session
 ---@return NuiLine
 local function render_metadata_footer(message, messages)
 	local agent_name = message.agent or "unknown"
-	local is_aborted = message.error and message.error.name == "MessageAbortedError"
-	local agent_hl = is_aborted and "Comment" or get_agent_hl(agent_name)
+	local interrupted = is_interrupted(message)
+	local agent_hl = interrupted and "Comment" or get_agent_hl(agent_name)
 
 	local line = NuiLine()
-	-- ▣ symbol + agent name (muted when aborted, agent color otherwise)
+	-- ▣ symbol + agent name (muted when interrupted, agent color otherwise)
 	line:append(NuiText("▣ " .. locale.titlecase(agent_name), agent_hl))
 	-- Model ID
 	local model_id = message.modelID or ""
@@ -1543,16 +1563,16 @@ local function render_metadata_footer(message, messages)
 		line:append(NuiText(" · ", "Comment"))
 		line:append(NuiText(model_id, "Comment"))
 	end
-	-- Duration (only shown for final messages, not aborted — matches TUI)
-	if not is_aborted and is_message_final(message) then
+	-- Duration (only shown for final messages — matches TUI)
+	if not interrupted and is_message_final(message) then
 		local duration_ms = calculate_duration(message, messages)
 		if duration_ms then
 			line:append(NuiText(" · ", "Comment"))
 			line:append(NuiText(locale.duration(duration_ms), agent_hl))
 		end
 	end
-	-- Interrupted label for aborted messages
-	if is_aborted then
+	-- Interrupted label
+	if interrupted then
 		line:append(NuiText(" · ", "Comment"))
 		line:append(NuiText("interrupted", "Comment"))
 	end
