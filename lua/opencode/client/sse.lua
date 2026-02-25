@@ -122,6 +122,10 @@ function M.emit(event_type, data, event_id)
 		actual_type = data.payload.type
 		actual_data = data.payload.properties or {}
 		actual_data._directory = data.directory
+	elseif type(data) == "table" and data.type and data.properties then
+		-- Session-scoped /event payload format: { type, properties }
+		actual_type = data.type
+		actual_data = data.properties or {}
 	end
 
 	local callbacks = listeners[actual_type] or {}
