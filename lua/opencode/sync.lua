@@ -38,6 +38,7 @@ local store = {
 	provider_default = {}, -- { [providerID] = default_modelID }
 	agent = {}, -- Array of available agents
 	command = {}, -- Array of custom commands
+	skill = {}, -- Array of available skills
 	config = {}, -- Global config
 	mcp = {}, -- MCP server status
 }
@@ -323,6 +324,7 @@ function M.clear_all()
 	store.provider_default = {}
 	store.agent = {}
 	store.command = {}
+	store.skill = {}
 	store.config = {}
 	store.mcp = {}
 end
@@ -441,6 +443,20 @@ end
 ---@return table[]
 function M.get_commands()
 	return store.command or {}
+end
+
+-- Skill management
+
+---Handle skills update
+---@param skills table[]
+function M.handle_skills(skills)
+	store.skill = skills or {}
+end
+
+---Get skills
+---@return table[]
+function M.get_skills()
+	return store.skill or {}
 end
 
 -- MCP management

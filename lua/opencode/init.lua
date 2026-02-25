@@ -104,6 +104,14 @@ function M.setup(opts)
     end
   end
 
+  -- Setup slash commands (registers default commands like /new)
+  local slash_ok, slash = pcall(require, "opencode.slash")
+  if slash_ok and type(slash.register_defaults) == "function" then
+    slash.register_defaults()
+  elseif not slash_ok then
+    vim.notify("Failed to load slash commands: " .. tostring(slash), vim.log.levels.WARN)
+  end
+
   -- Apply keymaps from user config (only if user explicitly configures them)
   -- Users who want keymaps should add them to their config, e.g.:
   -- keymaps = { toggle = "<leader>oo", command_palette = "<leader>op" }

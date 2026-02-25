@@ -415,20 +415,24 @@ function M.setup_chat_handlers()
 			if status_type == "retry" then
 				if not retry_timer then
 					retry_timer = vim.uv.new_timer()
-					retry_timer:start(1000, 1000, vim.schedule_wrap(function()
-						-- Check if still in retry state
-						local cs = state.get_session()
-						local ss = cs.id and sync.get_session_status(cs.id)
-						if not ss or ss.type ~= "retry" then
-							if retry_timer then
-								retry_timer:stop()
-								retry_timer:close()
-								retry_timer = nil
+					retry_timer:start(
+						1000,
+						1000,
+						vim.schedule_wrap(function()
+							-- Check if still in retry state
+							local cs = state.get_session()
+							local ss = cs.id and sync.get_session_status(cs.id)
+							if not ss or ss.type ~= "retry" then
+								if retry_timer then
+									retry_timer:stop()
+									retry_timer:close()
+									retry_timer = nil
+								end
+								return
 							end
-							return
-						end
-						M.emit("chat_render", { session_id = cs.id })
-					end))
+							M.emit("chat_render", { session_id = cs.id })
+						end)
+					)
 				end
 			else
 				if retry_timer then
@@ -542,7 +546,6 @@ function M.setup_chat_handlers()
 									message_id = data.message_id,
 								},
 							})
-
 						end
 					end
 				end
@@ -598,7 +601,6 @@ function M.setup_chat_handlers()
 					chat.add_edit_message(permission_id, edit_state_mod.get_edit(permission_id), "pending")
 				end
 				return
-
 			elseif permission_type == "edit" then
 				local permission_id = data.id or data.requestID or ("perm_" .. os.time())
 
@@ -708,7 +710,6 @@ function M.setup_chat_handlers()
 							id = permission_id,
 							changes_count = #change_ids,
 						})
-
 					else
 						vim.notify("Failed to create any change records", vim.log.levels.ERROR)
 					end
@@ -740,20 +741,17 @@ function M.setup_chat_handlers()
 
 				-- Fallback: extract input fields from metadata and top-level data fields
 				if not next(tool_input) then
-					tool_input = vim.tbl_deep_extend("force", {},
-						metadata.input or {},
-						{
-							command = data.command or metadata.command,
-							description = data.description or metadata.description,
-							path = data.path or metadata.path,
-							file_path = data.file_path or metadata.file_path or data.file or metadata.file,
-							pattern = data.pattern or metadata.pattern,
-							query = data.query or metadata.query,
-							url = data.url or metadata.url,
-							directory = data.directory or metadata.directory,
-							subagent_type = data.subagent_type or metadata.subagent_type,
-						}
-					)
+					tool_input = vim.tbl_deep_extend("force", {}, metadata.input or {}, {
+						command = data.command or metadata.command,
+						description = data.description or metadata.description,
+						path = data.path or metadata.path,
+						file_path = data.file_path or metadata.file_path or data.file or metadata.file,
+						pattern = data.pattern or metadata.pattern,
+						query = data.query or metadata.query,
+						url = data.url or metadata.url,
+						directory = data.directory or metadata.directory,
+						subagent_type = data.subagent_type or metadata.subagent_type,
+					})
 				end
 
 				-- Store permission state
@@ -866,7 +864,6 @@ function M.setup_chat_handlers()
 							session_id = data.sessionID,
 						},
 					})
-
 				end
 			end
 		end)
@@ -893,7 +890,10 @@ function M.setup_question_handlers()
 			local questions = data.questions
 
 			if not request_id or not questions then
-				logger.warn("Invalid question data", { data = data, request_id = request_id, has_questions = questions ~= nil })
+				logger.warn(
+					"Invalid question data",
+					{ data = data, request_id = request_id, has_questions = questions ~= nil }
+				)
 				return
 			end
 
@@ -1012,7 +1012,7 @@ function M.setup_sync_data_handlers()
 	-- Fetch initial data when connected (like TUI does on startup)
 	M.on("connected", function()
 		vim.schedule(function()
-			logger.debug("Fetching initial sync data (providers, agents, config)")
+			logger.debug("Fetching initial sync data (providers, agents, config, skills)")
 
 			-- Fetch providers with models (using /config/providers like TUI does)
 			-- This returns { providers: Provider[], default: { providerID: modelID } }
@@ -1077,6 +1077,19 @@ function M.setup_sync_data_handlers()
 						M.emit("config_loaded", config)
 						logger.debug("Config loaded")
 					end
+				end)
+			end)
+
+			-- Fetch skills
+			client.list_skills(function(err, skills)
+				vim.schedule(function()
+					if err then
+						logger.warn("Failed to fetch skills", { error = err })
+						return
+					end
+					sync.handle_skills(skills)
+					M.emit("skills_loaded", skills)
+					logger.debug("Skills loaded", { count = skills and #skills or 0 })
 				end)
 			end)
 
