@@ -161,21 +161,39 @@ function ChatMessage:_build_user_message(lines)
 	local content_lines = vim.split(content, "\n", { plain = true })
 	local app_state = require("opencode.state")
 	local full_config = app_state.get_config() or {}
+	local display_cfg = full_config.chat and full_config.chat.message_display or {}
+	local message_prefix = display_cfg and display_cfg.user_prefix
 	local chat_prompt = full_config.chat and full_config.chat.input and full_config.chat.input.prompt
 	local input_prompt = full_config.input and full_config.input.prompt
-	local prompt = type(chat_prompt) == "string" and chat_prompt or (type(input_prompt) == "string" and input_prompt or "> ")
+	local prompt = type(message_prefix) == "string" and message_prefix
+		or (type(chat_prompt) == "string" and chat_prompt or (type(input_prompt) == "string" and input_prompt or "> "))
+	local multiline_prefix = display_cfg and display_cfg.multiline_prefix
+	if type(multiline_prefix) ~= "boolean" then
+		multiline_prefix = true
+	end
 	local prompt_width = vim.fn.strdisplaywidth(prompt)
-	-- Reserve columns for prompt prefix
-	local max_content_width = math.max(1, self.width - prompt_width)
+	local first_line_width = math.max(1, self.width - prompt_width)
+	local continuation_width = math.max(1, self.width)
 
-	-- Content lines with quote prefix, wrapped to fit
+	-- Content lines with configured prefix behavior
+	local first_output_line = true
 	for _, line in ipairs(content_lines) do
-		local wrapped = wrap_text(line, max_content_width)
+		local wrapped
+		if multiline_prefix then
+			wrapped = wrap_text(line, first_line_width)
+		else
+			local initial = first_output_line and first_line_width or continuation_width
+			wrapped = wrap_text(line, initial)
+		end
 		for _, wline in ipairs(wrapped) do
 			local content_line = NuiLine()
-			content_line:append(NuiText(prompt, "Comment"))
+			local should_prefix = multiline_prefix or first_output_line
+			if should_prefix then
+				content_line:append(NuiText(prompt, "Comment"))
+			end
 			content_line:append(wline)
 			table.insert(lines, content_line)
+			first_output_line = false
 		end
 	end
 
