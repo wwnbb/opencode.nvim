@@ -183,7 +183,6 @@ function M.emit(event_type, data, event_id)
 	-- Handle wrapped global event format: {directory, payload: {type, properties}}
 	local actual_type = event_type
 	local actual_data = data
-	vim.notify(event_type)
 
 	if type(data) == "table" and data.payload and data.payload.type then
 		actual_type = data.payload.type
