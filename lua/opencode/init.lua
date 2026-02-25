@@ -389,7 +389,6 @@ function M.abort()
 			end
 
 			state.set_status("idle")
-			vim.notify("Generation stopped", vim.log.levels.INFO)
 		end)
 	end)
 end
