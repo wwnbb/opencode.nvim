@@ -29,6 +29,12 @@ M.opts = {
 
 -- Check if OpenCode server is already running at configured host:port
 check_existing_server = function(callback)
+	local server_info = state.get_server_info()
+	if not server_info.port then
+		callback(false)
+		return
+	end
+
 	local http = require("opencode.client.http")
 
 	http.health(function(err, data)
@@ -52,9 +58,12 @@ local function parse_server_url(line)
 		return nil
 	end
 
-	local url = line:match("listening on (http://[%w%.%-]+:%d+)")
+	local url = line:match("listening on (http://[^%s]+)")
 	if url then
-		local host, port = url:match("http://([%w%.%-]+):(%d+)")
+		local host, port = url:match("^http://%[([^%]]+)%]:(%d+)$")
+		if not host then
+			host, port = url:match("^http://([^:/]+):(%d+)$")
+		end
 		if host and port then
 			return {
 				url = url,
@@ -72,14 +81,13 @@ local function spawn_server(callback)
 	local host = state.get_server_info().host
 
 	-- Build opencode serve command
-	-- Use --port 0 to let opencode pick an available port
+	-- Use --port (without a value) to let opencode pick an available port
 	local cmd = "opencode"
 	local args = {
 		"serve",
 		"--hostname",
 		host,
 		"--port",
-		"0",
 	}
 
 	state.set_connection("starting")

@@ -8,7 +8,6 @@ M.defaults = {
 	-- Server connection
 	server = {
 		host = "localhost",
-		port = 9099,
 		auth = {
 			username = "opencode",
 			password = nil,

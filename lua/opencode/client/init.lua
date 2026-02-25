@@ -13,7 +13,7 @@ function M.setup(opts)
 
 	local config = {
 		host = opts.host or "localhost",
-		port = opts.port or 9099,
+		port = opts.port,
 		auth = opts.auth or { username = "opencode", password = nil },
 		timeout = opts.timeout or 30000,
 	}

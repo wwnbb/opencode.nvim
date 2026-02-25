@@ -13,7 +13,7 @@ local state = {
 		pid = nil,
 		managed = false,
 		host = "localhost",
-		port = 9099,
+		port = nil,
 		version = nil,
 	},
 	
@@ -139,7 +139,7 @@ function M.set_server_info(info)
 	if info.host then
 		set("host", info.host, "server")
 	end
-	if info.port then
+	if info.port ~= nil then
 		set("port", info.port, "server")
 	end
 	if info.version then

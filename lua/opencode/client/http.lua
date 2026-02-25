@@ -1,14 +1,8 @@
 -- opencode.nvim - HTTP client for OpenCode server API
--- Uses plenary.nvim for async HTTP requests
+-- Uses vim.uv sockets for async HTTP requests
 
 local M = {}
-
--- Check for plenary.nvim dependency
-local has_plenary, curl = pcall(require, "plenary.curl")
-if not has_plenary then
-	vim.notify("opencode.nvim requires plenary.nvim. Please install nvim-lua/plenary.nvim", vim.log.levels.ERROR)
-	return M
-end
+local transport = require("opencode.client.transport")
 
 -- Default configuration (merged with user config)
 M.opts = {
@@ -20,11 +14,6 @@ M.opts = {
 	timeout = 30000,
 }
 
--- Build base URL from config
-local function base_url()
-	return string.format("http://%s:%d", M.opts.host, M.opts.port)
-end
-
 -- Build authentication header
 local function auth_header()
 	if not M.opts.auth.password then
@@ -32,12 +21,16 @@ local function auth_header()
 	end
 	local credentials = string.format("%s:%s", M.opts.auth.username, M.opts.auth.password)
 	local encoded = vim.fn.base64encode(credentials)
-	return { Authorization = "Basic " .. encoded }
+	return "Basic " .. encoded
 end
 
 -- Merge headers
 local function merge_headers(additional)
-	local headers = auth_header() or {}
+	local headers = {}
+	local auth = auth_header()
+	if auth then
+		headers.Authorization = auth
+	end
 	headers["Content-Type"] = "application/json"
 	headers["Accept"] = "application/json"
 
@@ -50,10 +43,19 @@ local function merge_headers(additional)
 	return headers
 end
 
+---@param callback function
+---@param err table|nil
+---@param data any
+local function schedule_callback(callback, err, data)
+	vim.schedule(function()
+		callback(err, data)
+	end)
+end
+
 -- Handle HTTP response
 local function handle_response(response, callback)
 	if not response then
-		callback({ error = "No response from server" }, nil)
+		schedule_callback(callback, { error = "No response from server", message = "No response from server" }, nil)
 		return
 	end
 
@@ -61,25 +63,29 @@ local function handle_response(response, callback)
 		local err = {
 			status = response.status,
 			message = response.body or "HTTP error",
+			error = response.body or "HTTP error",
 		}
-		callback(err, nil)
+		schedule_callback(callback, err, nil)
 		return
 	end
 
 	-- Handle empty body (e.g., 204 No Content)
 	if not response.body or response.body == "" then
-		callback(nil, true)
+		schedule_callback(callback, nil, true)
 		return
 	end
 
 	-- Parse JSON response
 	local ok, body = pcall(vim.json.decode, response.body)
 	if not ok then
-		callback({ error = "Failed to parse JSON: " .. tostring(body) }, nil)
+		schedule_callback(callback, {
+			error = "Failed to parse JSON: " .. tostring(body),
+			message = "Failed to parse JSON: " .. tostring(body),
+		}, nil)
 		return
 	end
 
-	callback(nil, body)
+	schedule_callback(callback, nil, body)
 end
 
 -- Configure the HTTP client
@@ -88,38 +94,61 @@ function M.setup(opts)
 	M.opts = vim.tbl_deep_extend("force", M.opts, opts or {})
 end
 
+---@param path string
+---@param query? table
+---@return string
+local function build_path(path, query)
+	if not query then
+		return path
+	end
+
+	local query_parts = {}
+	for key, value in pairs(query) do
+		table.insert(query_parts, string.format(
+			"%s=%s",
+			vim.fn.urlencode(tostring(key)),
+			vim.fn.urlencode(tostring(value))
+		))
+	end
+
+	if #query_parts == 0 then
+		return path
+	end
+
+	return path .. "?" .. table.concat(query_parts, "&")
+end
+
+---@param method string
+---@param path string
+---@param callback function
+---@param opts? table
+---@param body? string
+local function request(method, path, callback, opts, body)
+	opts = opts or {}
+
+	transport.request({
+		host = M.opts.host,
+		port = M.opts.port,
+		method = method,
+		path = build_path(path, opts.query),
+		headers = merge_headers(opts.headers),
+		timeout = opts.timeout or M.opts.timeout,
+		body = body,
+	}, function(err, response)
+		if err then
+			schedule_callback(callback, err, nil)
+			return
+		end
+		handle_response(response, callback)
+	end)
+end
+
 -- GET request
 ---@param path string API path
 ---@param callback function(err, data)
 ---@param opts? table Optional request options (query params, headers)
 function M.get(path, callback, opts)
-	opts = opts or {}
-
-	local url = base_url() .. path
-	if opts.query then
-		local query_parts = {}
-		for k, v in pairs(opts.query) do
-			table.insert(query_parts, string.format("%s=%s", k, vim.fn.urlencode(tostring(v))))
-		end
-		if #query_parts > 0 then
-			url = url .. "?" .. table.concat(query_parts, "&")
-		end
-	end
-
-	curl.get(url, {
-		headers = merge_headers(opts.headers),
-		timeout = opts.timeout or M.opts.timeout,
-		on_error = function(err)
-			vim.schedule(function()
-				callback({ error = err.message or "Connection failed", exit_code = err.exit_code }, nil)
-			end)
-		end,
-		callback = function(response)
-			vim.schedule(function()
-				handle_response(response, callback)
-			end)
-		end,
-	})
+	request("GET", path, callback, opts, nil)
 end
 
 -- POST request
@@ -128,26 +157,16 @@ end
 ---@param callback function(err, data)
 ---@param opts? table Optional request options
 function M.post(path, body, callback, opts)
-	opts = opts or {}
+	local ok, json_body = pcall(vim.json.encode, body)
+	if not ok then
+		schedule_callback(callback, {
+			error = "Failed to encode request body: " .. tostring(json_body),
+			message = "Failed to encode request body: " .. tostring(json_body),
+		}, nil)
+		return
+	end
 
-	local url = base_url() .. path
-	local json_body = vim.json.encode(body)
-
-	curl.post(url, {
-		headers = merge_headers(opts.headers),
-		body = json_body,
-		timeout = opts.timeout or M.opts.timeout,
-		on_error = function(err)
-			vim.schedule(function()
-				callback({ error = err.message or "Connection failed", exit_code = err.exit_code }, nil)
-			end)
-		end,
-		callback = function(response)
-			vim.schedule(function()
-				handle_response(response, callback)
-			end)
-		end,
-	})
+	request("POST", path, callback, opts, json_body)
 end
 
 -- PATCH request
@@ -156,26 +175,16 @@ end
 ---@param callback function(err, data)
 ---@param opts? table Optional request options
 function M.patch(path, body, callback, opts)
-	opts = opts or {}
+	local ok, json_body = pcall(vim.json.encode, body)
+	if not ok then
+		schedule_callback(callback, {
+			error = "Failed to encode request body: " .. tostring(json_body),
+			message = "Failed to encode request body: " .. tostring(json_body),
+		}, nil)
+		return
+	end
 
-	local url = base_url() .. path
-	local json_body = vim.json.encode(body)
-
-	curl.patch(url, {
-		headers = merge_headers(opts.headers),
-		body = json_body,
-		timeout = opts.timeout or M.opts.timeout,
-		on_error = function(err)
-			vim.schedule(function()
-				callback({ error = err.message or "Connection failed", exit_code = err.exit_code }, nil)
-			end)
-		end,
-		callback = function(response)
-			vim.schedule(function()
-				handle_response(response, callback)
-			end)
-		end,
-	})
+	request("PATCH", path, callback, opts, json_body)
 end
 
 -- DELETE request
@@ -183,24 +192,7 @@ end
 ---@param callback function(err, data)
 ---@param opts? table Optional request options
 function M.delete(path, callback, opts)
-	opts = opts or {}
-
-	local url = base_url() .. path
-
-	curl.delete(url, {
-		headers = merge_headers(opts.headers),
-		timeout = opts.timeout or M.opts.timeout,
-		on_error = function(err)
-			vim.schedule(function()
-				callback({ error = err.message or "Connection failed", exit_code = err.exit_code }, nil)
-			end)
-		end,
-		callback = function(response)
-			vim.schedule(function()
-				handle_response(response, callback)
-			end)
-		end,
-	})
+	request("DELETE", path, callback, opts, nil)
 end
 
 -- PUT request
@@ -209,26 +201,20 @@ end
 ---@param callback function(err, data)
 ---@param opts? table Optional request options
 function M.put(path, body, callback, opts)
-	opts = opts or {}
+	local json_body = nil
+	if body ~= nil then
+		local ok, encoded = pcall(vim.json.encode, body)
+		if not ok then
+			schedule_callback(callback, {
+				error = "Failed to encode request body: " .. tostring(encoded),
+				message = "Failed to encode request body: " .. tostring(encoded),
+			}, nil)
+			return
+		end
+		json_body = encoded
+	end
 
-	local url = base_url() .. path
-	local json_body = body and vim.json.encode(body) or nil
-
-	curl.put(url, {
-		headers = merge_headers(opts.headers),
-		body = json_body,
-		timeout = opts.timeout or M.opts.timeout,
-		on_error = function(err)
-			vim.schedule(function()
-				callback({ error = err.message or "Connection failed", exit_code = err.exit_code }, nil)
-			end)
-		end,
-		callback = function(response)
-			vim.schedule(function()
-				handle_response(response, callback)
-			end)
-		end,
-	})
+	request("PUT", path, callback, opts, json_body)
 end
 
 -- Check server health
@@ -241,18 +227,37 @@ end
 ---@return boolean connected
 ---@return string|nil error
 function M.test_connection()
-	local url = base_url() .. "/global/health"
-	local result = nil
-	local err = nil
+	local done = false
+	local connected = false
+	local error_message = nil
 
-	local job = curl.get(url, {
-		headers = merge_headers(),
-		timeout = 5000,
-		synchronous = true,
-	})
+	M.health(function(err, data)
+		if err then
+			error_message = err.message or err.error or tostring(err)
+			done = true
+			return
+		end
 
-	if not job or job.status ~= 200 then
-		return false, job and job.body or "Connection failed"
+		if not data or not data.healthy then
+			error_message = "Health check failed"
+			done = true
+			return
+		end
+
+		connected = true
+		done = true
+	end)
+
+	local completed = vim.wait(5000, function()
+		return done
+	end, 20)
+
+	if not completed then
+		return false, "Connection timeout"
+	end
+
+	if not connected then
+		return false, error_message or "Connection failed"
 	end
 
 	return true, nil
