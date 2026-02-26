@@ -38,17 +38,17 @@ local M = {}
 
 -- Internal store
 local store = {
-	message = {}, -- { [sessionID] = { Message, ... } }
-	part = {}, -- { [messageID] = { Part, ... } }
+	message = {},       -- { [sessionID] = { Message, ... } }
+	part = {},          -- { [messageID] = { Part, ... } }
 	session_status = {}, -- { [sessionID] = { type = "idle" | "busy" } }
 	-- Provider/agent/model data (like TUI's sync.tsx)
-	provider = {}, -- Array of connected provider info
+	provider = {},      -- Array of connected provider info
 	provider_default = {}, -- { [providerID] = default_modelID }
-	agent = {}, -- Array of available agents
-	command = {}, -- Array of custom commands
-	skill = {}, -- Array of available skills
-	config = {}, -- Global config
-	mcp = {}, -- MCP server status
+	agent = {},         -- Array of available agents
+	command = {},       -- Array of custom commands
+	skill = {},         -- Array of available skills
+	config = {},        -- Global config
+	mcp = {},           -- MCP server status
 }
 
 -- Binary search implementation (matches TUI's Binary.search)
@@ -252,7 +252,21 @@ function M.handle_part_updated(part)
 
 	if result.found then
 		-- Update existing part (reconcile)
-		parts[result.index] = vim.tbl_deep_extend("force", parts[result.index], part)
+		local dest = parts[result.index]
+		local src = part
+		local merged = vim.tbl_deep_extend("force", dest, src)
+
+		-- Special handling for metadata arrays (like summary) that get wiped by tbl_deep_extend if
+		-- the server sends an empty dictionary incidentally.
+		if src.metadata and src.metadata.summary then
+			if type(src.metadata.summary) == "table" and next(src.metadata.summary) == nil and dest.metadata and dest.metadata.summary then
+				merged.metadata.summary = dest.metadata.summary
+			else
+				merged.metadata.summary = src.metadata.summary
+			end
+		end
+
+		parts[result.index] = merged
 	else
 		-- Insert new part at correct position
 		table.insert(parts, result.index, part)

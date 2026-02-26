@@ -22,26 +22,26 @@ local state = {
 	winid = nil,
 	layout = nil,
 	visible = false,
-	messages = {}, -- Local user messages only (sent before server confirms)
+	messages = {},         -- Local user messages only (sent before server confirms)
 	config = nil,
-	questions = {}, -- Track question positions: { [request_id] = { start_line, end_line } }
+	questions = {},        -- Track question positions: { [request_id] = { start_line, end_line } }
 	pending_questions = {}, -- Queue of questions received when chat wasn't visible
-	focus_question = nil, -- request_id of question to focus cursor on after render
-	permissions = {}, -- Track permission positions: { [permission_id] = { start_line, end_line } }
+	focus_question = nil,  -- request_id of question to focus cursor on after render
+	permissions = {},      -- Track permission positions: { [permission_id] = { start_line, end_line } }
 	pending_permissions = {}, -- Queue of permissions received when chat wasn't visible
 	focus_permission = nil, -- permission_id to focus cursor on after render
-	edits = {}, -- Track edit widget positions: { [permission_id] = { start_line, end_line } }
-	pending_edits = {}, -- Queue of edits received when chat wasn't visible
-	focus_edit = nil, -- permission_id to focus cursor on after render
+	edits = {},            -- Track edit widget positions: { [permission_id] = { start_line, end_line } }
+	pending_edits = {},    -- Queue of edits received when chat wasn't visible
+	focus_edit = nil,      -- permission_id to focus cursor on after render
 	focus_edit_line = nil,
-	tasks = {}, -- Track task positions: { [part_id] = { start_line, end_line, tool_part } }
-	expanded_tasks = {}, -- Toggle set: { [part_id] = true }
+	tasks = {},            -- Track task positions: { [part_id] = { start_line, end_line, tool_part } }
+	expanded_tasks = {},   -- Toggle set: { [part_id] = true }
 	task_child_cache = {}, -- Rendered child content: { [part_id] = { lines, highlights } }
-	tools = {}, -- Track tool positions: { [part_id] = { start_line, end_line, tool_part } }
-	expanded_tools = {}, -- Toggle set: { [part_id] = true }
-	stream_blocks = {}, -- Streaming text blocks: { [message_id] = { start_line, end_line } }
-	session_stack = {}, -- Stack of { id, name } for parent session navigation
-	navigating = false, -- Flag to prevent session_change handler from clearing stack
+	tools = {},            -- Track tool positions: { [part_id] = { start_line, end_line, tool_part } }
+	expanded_tools = {},   -- Toggle set: { [part_id] = true }
+	stream_blocks = {},    -- Streaming text blocks: { [message_id] = { start_line, end_line } }
+	session_stack = {},    -- Stack of { id, name } for parent session navigation
+	navigating = false,    -- Flag to prevent session_change handler from clearing stack
 	last_render_time = 0,
 	render_scheduled = false,
 	auto_scroll = true, -- Auto-scroll to bottom on new content
@@ -171,7 +171,8 @@ end
 local function setup_float_focus_autocmds()
 	clear_float_focus_autocmds()
 
-	state.focus_augroup = vim.api.nvim_create_augroup("OpenCodeFloatFocus_" .. tostring(state.bufnr or 0), { clear = true })
+	state.focus_augroup = vim.api.nvim_create_augroup("OpenCodeFloatFocus_" .. tostring(state.bufnr or 0),
+		{ clear = true })
 
 	vim.api.nvim_create_autocmd({ "WinEnter", "TabEnter" }, {
 		group = state.focus_augroup,
@@ -1300,8 +1301,12 @@ local function format_tool_line(tool_part)
 		-- Task tools are rendered via render_task_tool; this is a fallback
 		local subagent = input.subagent_type or "unknown"
 		local desc = input.description or ""
+		local agent_label = subagent:sub(1, 1):upper() .. subagent:sub(2)
 		if tool_status == "completed" then
-			return string.format('%s %s Task "%s"', icon, subagent:sub(1, 1):upper() .. subagent:sub(2), desc)
+			return string.format('%s %s Task — "%s"', icon, agent_label, desc)
+		end
+		if desc ~= "" then
+			return string.format('~ %s Task — "%s"...', agent_label, desc)
 		end
 		return string.format("~ Delegating...")
 	else
@@ -1420,43 +1425,61 @@ local function render_task_tool(tool_part, expanded, child_content)
 			-- Loading state
 			add_line("  (loading...)", "Comment")
 		end
-	elseif #summary == 0 then
-		-- No summary yet — pending
-		add_line("~ Delegating...", "Comment")
 	else
-		-- Running: show header + sub-tool lines
+		-- Running or pending
 		local count = #summary
-		local header = string.format('◉ %s Task — "%s"', agent_label, desc)
+		local icon = expanded and "▾" or "◉"
+		local header = string.format('%s %s Task — "%s"', icon, agent_label, desc)
 		add_line(header, "Special")
 
-		for i, entry in ipairs(summary) do
-			local entry_tool = entry.tool or "unknown"
-			local entry_state = entry.state or {}
-			local entry_status = entry_state.status or "pending"
-			local entry_title = entry_state.title or entry_tool
-			-- Shorten long titles
-			if #entry_title > 50 then
-				entry_title = entry_title:sub(1, 47) .. "..."
+		if expanded and child_content then
+			for _, cl in ipairs(child_content.lines) do
+				table.insert(result_lines, cl)
 			end
-
-			local is_last = (i == count)
-			local connector = is_last and "└" or "├"
-			local line
-			if entry_status == "completed" then
-				line = string.format("  %s ◎ %s", connector, entry_title)
-				add_line(line, "Comment")
-			else
-				-- running or pending
-				local count_str = string.format("(%d toolcalls)", count)
-				if is_last then
-					line = string.format("  %s ~ %s...", connector, entry_title)
-					-- Add the count at the end of the last line
-					line = line .. string.rep(" ", math.max(1, 40 - #line)) .. count_str
-				else
-					line = string.format("  %s ~ %s...", connector, entry_title)
+			for _, hl in ipairs(child_content.highlights) do
+				table.insert(result_highlights, {
+					line = hl.line + 1, -- offset by 1 for the header line
+					col_start = hl.col_start,
+					col_end = hl.col_end,
+					hl_group = hl.hl_group,
+				})
+			end
+		elseif expanded then
+			add_line("  (loading...)", "Comment")
+		elseif count > 0 then
+			-- Running: show sub-tool lines (summary) when not expanded
+			for i, entry in ipairs(summary) do
+				local entry_tool = entry.tool or "unknown"
+				local entry_state = entry.state or {}
+				local entry_status = entry_state.status or "pending"
+				local entry_title = entry_state.title or entry_tool
+				-- Shorten long titles
+				if #entry_title > 50 then
+					entry_title = entry_title:sub(1, 47) .. "..."
 				end
-				add_line(line, "Normal")
+
+				local is_last = (i == count)
+				local connector = is_last and "└" or "├"
+				local line
+				if entry_status == "completed" then
+					line = string.format("  %s ◎ %s", connector, entry_title)
+					add_line(line, "Comment")
+				else
+					-- running or pending
+					local count_str = string.format("(%d toolcalls)", count)
+					if is_last then
+						line = string.format("  %s ~ %s...", connector, entry_title)
+						-- Add the count at the end of the last line
+						line = line .. string.rep(" ", math.max(1, 40 - #line)) .. count_str
+					else
+						line = string.format("  %s ~ %s...", connector, entry_title)
+					end
+					add_line(line, "Normal")
+				end
 			end
+		else
+			-- #summary == 0 and not expanded
+			add_line("  ~ Delegating...", "Comment")
 		end
 	end
 
@@ -2189,6 +2212,24 @@ function M.render()
 					end
 				end
 
+				-- Content (before tool calls so text/reasoning appears first)
+				if has_content then
+					local content_start = #raw_lines
+					local content_lines = render_content(content, {
+						stream_plain = render_as_plain_stream,
+					})
+					for _, nl in ipairs(content_lines) do
+						add_line(nl)
+					end
+
+					if incomplete_assistant and #content_lines > 0 then
+						next_stream_blocks[message.id] = {
+							start_line = content_start,
+							end_line = #raw_lines - 1,
+						}
+					end
+				end
+
 				-- Tool calls
 				if has_tools then
 					for _, tool_part in ipairs(tool_parts) do
@@ -2231,24 +2272,6 @@ function M.render()
 								tool_part = tool_part,
 							}
 						end
-					end
-				end
-
-				-- Content
-				if has_content then
-					local content_start = #raw_lines
-					local content_lines = render_content(content, {
-						stream_plain = render_as_plain_stream,
-					})
-					for _, nl in ipairs(content_lines) do
-						add_line(nl)
-					end
-
-					if incomplete_assistant and #content_lines > 0 then
-						next_stream_blocks[message.id] = {
-							start_line = content_start,
-							end_line = #raw_lines - 1,
-						}
 					end
 				end
 
