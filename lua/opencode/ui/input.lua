@@ -133,6 +133,30 @@ local function get_input_text()
 	return table.concat(lines, "\n")
 end
 
+-- Lock the input window so it cannot scroll (topline stays at 1).
+-- Called after resize and via WinScrolled to prevent any scroll while the
+-- window has not yet reached its maximum height.
+local function lock_scroll()
+	if not state.visible or not state.winid or not vim.api.nvim_win_is_valid(state.winid) then
+		return
+	end
+	local cfg = state.config
+	local layout = state.layout
+	if not cfg or not layout then
+		return
+	end
+	if layout.current_height < cfg.max_height then
+		local view = vim.api.nvim_win_call(state.winid, function()
+			return vim.fn.winsaveview()
+		end)
+		if view.topline ~= 1 or view.leftcol ~= 0 then
+			vim.api.nvim_win_call(state.winid, function()
+				vim.fn.winrestview({ topline = 1, leftcol = 0 })
+			end)
+		end
+	end
+end
+
 -- Resize the input window based on content (grows upward, shrinks downward)
 local function resize_input()
 	if not state.visible or not state.bufnr or not state.winid then
@@ -159,6 +183,7 @@ local function resize_input()
 	end
 	local new_height = math.max(cfg.min_height, math.min(display_lines, cfg.max_height))
 	if new_height == layout.current_height then
+		lock_scroll()
 		return
 	end
 	layout.current_height = new_height
@@ -173,7 +198,7 @@ local function resize_input()
 		position = { row = layout.row - vertical_shift, col = layout.col },
 		size = { width = layout.content_width, height = new_height },
 	})
-	vim.wo.scrolloff = 0
+	lock_scroll()
 end
 
 -- Navigate history
@@ -506,7 +531,7 @@ function M.show(opts)
 		local info_top_pad = 1
 		local padding_rows = 1
 		local float_col = float_dims.col + 1
-		local float_content_width = float_dims.width - 3
+		local float_content_width = float_dims.width - 6
 		local row = float_dims.row + float_dims.height - height - padding_rows - info_height - info_top_pad
 
 		state.layout = {
@@ -541,7 +566,7 @@ function M.show(opts)
 		local padding_rows = 1
 		local padding_cols = 1
 		local total_height = height + padding_rows * 3 + info_height
-		local width = chat_win_width
+		local width = chat_win_width - 2
 
 		local row = chat_win_height - total_height
 		local col = 1
@@ -592,6 +617,7 @@ function M.show(opts)
 			signcolumn = "no",
 			number = false,
 			relativenumber = false,
+			scrolloff = 0,
 		},
 	})
 
@@ -632,6 +658,14 @@ function M.show(opts)
 		buffer = state.bufnr,
 		callback = function()
 			resize_input()
+		end,
+	})
+
+	-- Prevent scrolling while the window hasn't reached max height
+	vim.api.nvim_create_autocmd("WinScrolled", {
+		buffer = state.bufnr,
+		callback = function()
+			lock_scroll()
 		end,
 	})
 
