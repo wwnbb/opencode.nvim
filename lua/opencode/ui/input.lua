@@ -36,7 +36,7 @@ local history = {
 
 -- Default configuration
 local defaults = {
-	min_height = 3,
+	min_height = 1,
 	max_height = 20,
 	prompt = "┃ ",
 	history_file = vim.fn.stdpath("data") .. "/opencode_input_history.json",
@@ -154,36 +154,26 @@ local function resize_input()
 		if line_width == 0 then
 			display_lines = display_lines + 1
 		else
-			display_lines = display_lines + math.ceil(line_width / win_width)
+			display_lines = display_lines + math.ceil((line_width + 1) / win_width)
 		end
 	end
-
 	local new_height = math.max(cfg.min_height, math.min(display_lines, cfg.max_height))
-
 	if new_height == layout.current_height then
 		return
 	end
-
 	layout.current_height = new_height
-
-	if layout.is_float then
-		-- Float mode: reposition input popup using absolute editor-relative coordinates
-		local fd = layout.float_dims
-		local new_row = fd.row + fd.height - new_height - layout.padding_rows - layout.info_height + layout.row_offset
-		state.popup:update_layout({
-			position = { row = new_row, col = layout.col },
-			size = { width = layout.content_width, height = new_height },
-		})
+	local vertical_shift
+	if display_lines < 1 then
+		vertical_shift = 0
 	else
-		-- NUI popup mode: bottom-anchored, recalculate row so the bottom edge stays fixed
-		local total_height = new_height + layout.padding_rows + layout.info_height
-		local new_row = layout.chat_row + layout.chat_height - total_height
-
-		state.popup:update_layout({
-			position = { row = new_row, col = layout.col },
-			size = { width = layout.content_width, height = new_height },
-		})
+		vertical_shift = display_lines - 1
 	end
+	-- vim.print(vertical_shift, lines)
+	state.popup:update_layout({
+		position = { row = layout.row - vertical_shift, col = layout.col },
+		size = { width = layout.content_width, height = new_height },
+	})
+	vim.wo.scrolloff = 0
 end
 
 -- Navigate history
@@ -497,218 +487,157 @@ function M.show(opts)
 	-- the chat popup's border window causes misplacement for win-relative children.
 	local float_dims = opts.float_dims
 
-	if float_dims then
-		-- Float mode: NUI popups anchored to editor with computed absolute positions.
-		-- float_dims = { row, col, width, height } of the chat content window in screen space.
-		local height = cfg.min_height
-		local info_height = 1
-		local info_top_pad = 1
-		local padding_rows = 1 -- top padding only
-		local row_offset = 1 -- shift both widgets 1 line down
+	local height = cfg.min_height
+	local info_height = 1
+	local border = { "┃", "", "", "", "", "", "┃", "┃" }
+	local padding = { top = 1, bottom = 1, left = 1, right = 0 }
 
-		-- Left-only border: same style as non-float mode (┃ on left side only)
-		-- Offset 1 col right so the ┃ doesn't overlap the outer window border
-		local float_border = { "┃", "", "", "", "", "", "┃", "┃" }
+	local popup_relative
+	local popup_position
+	local popup_size
+	local popup_zindex
+
+	local info_relative
+	local info_position
+	local info_size
+	local info_zindex
+
+	if float_dims then
+		local info_top_pad = 1
+		local padding_rows = 1
 		local float_col = float_dims.col + 1
-		local float_content_width = float_dims.width - 3 -- 1 col offset + 1 border + 1 left padding
+		local float_content_width = float_dims.width - 3
+		local row = float_dims.row + float_dims.height - height - padding_rows - info_height - info_top_pad
 
 		state.layout = {
 			is_float = true,
 			float_dims = float_dims,
 			col = float_col,
+			row = float_dims.row + float_dims.height - height - padding_rows - info_height - info_top_pad,
 			info_height = info_height + info_top_pad,
 			padding_rows = padding_rows,
-			row_offset = row_offset,
 			current_height = height,
 			content_width = float_content_width,
 		}
 
-		-- Input popup: fills the bottom portion of the chat float
-		state.popup = Popup({
-			enter = true,
-			focusable = true,
-			relative = "editor",
-			border = {
-				style = float_border,
-				padding = { top = 1, bottom = 0, left = 1, right = 0 },
-			},
-			position = {
-				row = float_dims.row + float_dims.height - height - padding_rows - info_height - info_top_pad + row_offset,
-				col = float_col,
-			},
-			size = { width = float_content_width, height = height },
-			zindex = 51,
-			buf_options = {
-				buftype = "nofile",
-				bufhidden = "wipe",
-				swapfile = false,
-				filetype = "opencode_input",
-			},
-			win_options = {
-				winhighlight = "Normal:OpenCodeInputBg,EndOfBuffer:OpenCodeInputBg,FloatBorder:OpenCodeInputBorderAgent",
-				cursorline = false,
-				wrap = true,
-				linebreak = true,
-				signcolumn = "no",
-				number = false,
-				relativenumber = false,
-			},
-		})
+		popup_relative = "editor"
+		popup_position = {
+			row = row,
+			col = float_col,
+		}
+		popup_size = { width = float_content_width, height = height }
+		popup_zindex = 51
 
-		-- Info bar popup: one row below input, at the very bottom of the chat float
-		state.info_popup = Popup({
-			enter = false,
-			focusable = false,
-			relative = "editor",
-			border = {
-				style = float_border,
-				padding = { top = 1, bottom = 0, left = 1, right = 0 },
-			},
-			position = {
-				row = float_dims.row + float_dims.height - info_height - info_top_pad + row_offset,
-				col = float_col,
-			},
-			size = { width = float_content_width, height = info_height },
-			zindex = 51,
-			buf_options = {
-				buftype = "nofile",
-				bufhidden = "wipe",
-			},
-			win_options = {
-				winhighlight = "Normal:OpenCodeInputBg,EndOfBuffer:OpenCodeInputInfo,FloatBorder:OpenCodeInputBorderAgent",
-				signcolumn = "no",
-				number = false,
-				relativenumber = false,
-			},
-		})
-
-		state.popup:mount()
-		state.info_popup:mount()
-
-		state.bufnr = state.popup.bufnr
-		state.winid = state.popup.winid
-		state.info_bufnr = state.info_popup.bufnr
-		state.visible = true
-
-		vim.api.nvim_buf_set_var(state.bufnr, "completion", false)
-
-		-- Setup auto-resize on text change
-		vim.api.nvim_create_autocmd({ "TextChanged", "TextChangedI" }, {
-			buffer = state.bufnr,
-			callback = function()
-				resize_input()
-			end,
-		})
-
-		-- Handle unmount
-		state.popup:on(event.BufLeave, function()
-			M.close()
-		end)
+		info_relative = "editor"
+		info_position = {
+			row = float_dims.row + float_dims.height - info_height - info_top_pad,
+			col = float_col,
+		}
+		info_size = { width = float_content_width, height = info_height }
+		info_zindex = 51
 	else
-		-- Non-float mode: use NUI floating popups relative to the chat window
 		local chat_win_width = vim.api.nvim_win_get_width(chat_winid)
 		local chat_win_height = vim.api.nvim_win_get_height(chat_winid)
-
-		local height = cfg.min_height
-		local info_height = 1
-		local padding = 1
-		local padding_rows = padding * 2 -- top + bottom
-		local padding_cols = padding * 2 -- left + right
-		local total_height = height + padding_rows + info_height
+		local padding_rows = 1
+		local padding_cols = 1
+		local total_height = height + padding_rows * 3 + info_height
 		local width = chat_win_width
 
-		-- Position at the bottom of the chat window
 		local row = chat_win_height - total_height
-		local col = 0
-
+		local col = 1
+		local content_width = width - 1 - padding_cols
 		state.layout = {
 			is_float = false,
 			chat_row = 0,
 			chat_height = chat_win_height,
 			col = col,
-			content_width = width - 1 - padding_cols,
+			row = row,
+			content_width = content_width,
 			padding_rows = padding_rows,
 			info_height = info_height,
 			current_height = height,
 		}
 
-		-- Left-only border: only the left side has a visible character.
-		-- nui border style order: top-left, top, top-right, right, bottom-right, bottom, bottom-left, left
-		-- Empty strings "" = no border on that side (no space consumed)
-		local border = { "┃", "", "", "", "", "", "┃", "┃" }
+		popup_relative = { type = "win", winid = chat_winid }
+		popup_position = { row = row, col = col }
+		popup_size = { width = width - padding_cols * 2, height = height }
 
-		state.popup = Popup({
-			enter = true,
-			focusable = true,
-			relative = { type = "win", winid = chat_winid },
-			border = {
-				style = border,
-				padding = { top = padding, bottom = padding, left = padding, right = padding },
-			},
-			position = { row = row, col = col },
-			size = { width = width - 1 - padding_cols, height = height },
-			buf_options = {
-				buftype = "nofile",
-				bufhidden = "wipe",
-				swapfile = false,
-				filetype = "opencode_input",
-			},
-			win_options = {
-				winhighlight = "Normal:OpenCodeInputBg,EndOfBuffer:OpenCodeInputBg,FloatBorder:OpenCodeInputBorderAgent",
-				cursorline = false,
-				wrap = true,
-				linebreak = true,
-				signcolumn = "no",
-				number = false,
-				relativenumber = false,
-			},
-		})
-
-		state.info_popup = Popup({
-			enter = false,
-			focusable = false,
-			relative = { type = "win", winid = chat_winid },
-			border = {
-				style = border,
-				padding = { left = padding, right = 0, top = padding, bottom = padding },
-			},
-			position = { row = row + height, col = col },
-			size = { width = width - 2, height = info_height },
-			buf_options = {
-				buftype = "nofile",
-				bufhidden = "wipe",
-			},
-			win_options = {
-				winhighlight = "Normal:OpenCodeInputBg,EndOfBuffer:OpenCodeInputInfo,FloatBorder:OpenCodeInputBorderAgent",
-				signcolumn = "no",
-				number = false,
-				relativenumber = false,
-			},
-		})
-
-		state.popup:mount()
-		state.info_popup:mount()
-
-		state.bufnr = state.popup.bufnr
-		state.winid = state.popup.winid
-		state.info_bufnr = state.info_popup.bufnr
-		state.visible = true
-
-		vim.api.nvim_buf_set_var(state.bufnr, "completion", false)
-
-		-- Setup auto-resize on text change
-		vim.api.nvim_create_autocmd({ "TextChanged", "TextChangedI" }, {
-			buffer = state.bufnr,
-			callback = function()
-				resize_input()
-			end,
-		})
-
-		-- Handle unmount
-		state.popup:on(event.BufLeave, function()
-			M.close()
-		end)
+		info_relative = { type = "win", winid = chat_winid }
+		info_position = { row = row + height + padding_rows, col = col }
+		info_size = { width = width - 2, height = info_height }
 	end
+
+	state.popup = Popup({
+		enter = true,
+		focusable = true,
+		relative = popup_relative,
+		border = {
+			style = border,
+			padding = padding,
+		},
+		position = popup_position,
+		size = popup_size,
+		zindex = popup_zindex,
+		buf_options = {
+			buftype = "nofile",
+			bufhidden = "wipe",
+			swapfile = false,
+			filetype = "opencode_input",
+		},
+		win_options = {
+			winhighlight = "Normal:OpenCodeInputBg,EndOfBuffer:OpenCodeInputBg,FloatBorder:OpenCodeInputBorderAgent",
+			cursorline = false,
+			wrap = true,
+			linebreak = true,
+			signcolumn = "no",
+			number = false,
+			relativenumber = false,
+		},
+	})
+
+	state.info_popup = Popup({
+		enter = false,
+		focusable = false,
+		relative = info_relative,
+		border = {
+			style = border,
+			padding = padding,
+		},
+		position = info_position,
+		size = info_size,
+		zindex = info_zindex,
+		buf_options = {
+			buftype = "nofile",
+			bufhidden = "wipe",
+		},
+		win_options = {
+			winhighlight = "Normal:OpenCodeInputBg,EndOfBuffer:OpenCodeInputInfo,FloatBorder:OpenCodeInputBorderAgent",
+			signcolumn = "no",
+			number = false,
+			relativenumber = false,
+		},
+	})
+
+	state.popup:mount()
+	state.info_popup:mount()
+
+	state.bufnr = state.popup.bufnr
+	state.winid = state.popup.winid
+	state.info_bufnr = state.info_popup.bufnr
+	state.visible = true
+
+	vim.api.nvim_buf_set_var(state.bufnr, "completion", false)
+
+	vim.api.nvim_create_autocmd({ "TextChanged", "TextChangedI" }, {
+		buffer = state.bufnr,
+		callback = function()
+			resize_input()
+		end,
+	})
+
+	state.popup:on(event.BufLeave, function()
+		M.close()
+	end)
 
 	-- Common: populate info bar content
 	-- Format: "<agent> <model> <provider> [dot] <variant>" (matching TUI layout)
