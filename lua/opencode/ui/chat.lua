@@ -46,7 +46,87 @@ local state = {
 	render_scheduled = false,
 	auto_scroll = true, -- Auto-scroll to bottom on new content
 	focus_augroup = nil,
+	task_anim_timer = nil,
+	task_anim_frame = 1,
 }
+
+local TASK_ANIM_FRAMES = { "|", "/", "-", "\\" }
+
+local function get_task_anim_frame()
+	return TASK_ANIM_FRAMES[state.task_anim_frame] or TASK_ANIM_FRAMES[1]
+end
+
+local function tick_task_anim_frame()
+	state.task_anim_frame = state.task_anim_frame + 1
+	if state.task_anim_frame > #TASK_ANIM_FRAMES then
+		state.task_anim_frame = 1
+	end
+end
+
+local function stop_task_animation_timer()
+	if not state.task_anim_timer then
+		return
+	end
+	if vim.uv.is_closing(state.task_anim_timer) then
+		state.task_anim_timer = nil
+		return
+	end
+	state.task_anim_timer:stop()
+	state.task_anim_timer:close()
+	state.task_anim_timer = nil
+end
+
+local function has_active_task_rows()
+	for _, pos in pairs(state.tasks) do
+		local status = pos
+			and pos.tool_part
+			and pos.tool_part.state
+			and pos.tool_part.state.status
+			or "pending"
+		if status == "pending" or status == "running" then
+			return true
+		end
+	end
+	return false
+end
+
+local function start_task_animation_timer()
+	if state.task_anim_timer then
+		return
+	end
+
+	local timer = vim.uv.new_timer()
+	if not timer then
+		return
+	end
+
+	state.task_anim_timer = timer
+	timer:start(
+		120,
+		120,
+		vim.schedule_wrap(function()
+			if not state.visible then
+				return
+			end
+
+			local ok_state, app_state = pcall(require, "opencode.state")
+			if not ok_state then
+				return
+			end
+			local status = app_state.get_status()
+			if status ~= "streaming" and status ~= "thinking" then
+				return
+			end
+
+			if not has_active_task_rows() then
+				return
+			end
+
+			tick_task_anim_frame()
+			M.schedule_render()
+		end)
+	)
+end
 
 local question_widget = require("opencode.ui.question_widget")
 local question_state = require("opencode.question.state")
@@ -414,7 +494,7 @@ local function setup_buffer(bufnr)
 			M.handle_task_toggle(task_part_id)
 			return
 		end
-	end, vim.tbl_extend("force", opts, { desc = "Toggle tool output" }))
+	end, vim.tbl_extend("force", opts, { desc = "Toggle tool output", nowait = true }))
 end
 
 -- Create chat buffer
@@ -644,12 +724,16 @@ function M.create()
 					spinner.start()
 					M.schedule_render()
 				end
+				if state.visible then
+					start_task_animation_timer()
+				end
 			else
 				-- Stop spinner for idle, paused, or error states
 				if spinner.is_active() then
 					spinner.stop()
 					M.schedule_render()
 				end
+				stop_task_animation_timer()
 			end
 		end)
 	end)
@@ -671,6 +755,7 @@ function M.create()
 			if spinner.is_active() then
 				spinner.stop()
 			end
+			stop_task_animation_timer()
 			-- Clear pending questions, permissions, and edits from the old session
 			state.pending_questions = {}
 			state.pending_permissions = {}
@@ -845,21 +930,22 @@ function M.open()
 		-- BufLeave fires whenever another float takes focus (palette/menus), which
 		-- must not mark chat hidden.
 		local popup_winid = popup.winid
-		if popup_winid and vim.api.nvim_win_is_valid(popup_winid) then
-			vim.api.nvim_create_autocmd("WinClosed", {
-				pattern = tostring(popup_winid),
-				once = true,
-				callback = function()
-					if state.winid == popup_winid then
-						clear_float_focus_autocmds()
-						state.visible = false
-						state.winid = nil
-						state.layout = nil
-						state.float_dims = nil
-					end
-				end,
-			})
-		end
+			if popup_winid and vim.api.nvim_win_is_valid(popup_winid) then
+				vim.api.nvim_create_autocmd("WinClosed", {
+					pattern = tostring(popup_winid),
+					once = true,
+					callback = function()
+						if state.winid == popup_winid then
+							clear_float_focus_autocmds()
+							state.visible = false
+							state.winid = nil
+							state.layout = nil
+							state.float_dims = nil
+							stop_task_animation_timer()
+						end
+					end,
+				})
+			end
 	else
 		-- Split layout
 		local split_cmd = "split"
@@ -894,6 +980,15 @@ function M.open()
 	end
 
 	state.visible = true
+	do
+		local ok_state, app_state = pcall(require, "opencode.state")
+		if ok_state then
+			local status = app_state.get_status()
+			if status == "streaming" or status == "thinking" then
+				start_task_animation_timer()
+			end
+		end
+	end
 
 	-- Process any questions/permissions/edits that were queued while chat was not visible
 	process_pending_questions()
@@ -933,6 +1028,7 @@ function M.close()
 	state.winid = nil
 	state.layout = nil
 	state.float_dims = nil
+	stop_task_animation_timer()
 end
 
 -- Toggle chat window
@@ -1147,6 +1243,8 @@ function M.clear()
 	if spinner.is_active() then
 		spinner.stop()
 	end
+	stop_task_animation_timer()
+	state.task_anim_frame = 1
 
 	if state.bufnr and vim.api.nvim_buf_is_valid(state.bufnr) then
 		vim.bo[state.bufnr].modifiable = true
@@ -1234,13 +1332,56 @@ local function get_tool_icon(tool_name)
 	return TOOL_ICONS[tool_name] or "⚙"
 end
 
+---@param tool_part table
+---@return table
+local function get_tool_metadata(tool_part)
+	local part_metadata = tool_part and tool_part.metadata or {}
+	local state_metadata = (tool_part and tool_part.state and tool_part.state.metadata) or {}
+	return vim.tbl_deep_extend("force", {}, part_metadata, state_metadata)
+end
+
+---@param summary_raw any
+---@return table[]
+local function normalize_task_summary(summary_raw)
+	if type(summary_raw) ~= "table" then
+		return {}
+	end
+
+	local normalized = {}
+	for _, item in pairs(summary_raw) do
+		if type(item) == "table" then
+			table.insert(normalized, item)
+		end
+	end
+
+	if #normalized <= 1 then
+		return normalized
+	end
+
+	table.sort(normalized, function(a, b)
+		local a_id = tostring(a.id or "")
+		local b_id = tostring(b.id or "")
+		return a_id < b_id
+	end)
+	return normalized
+end
+
+---@param raw string|nil
+---@return string
+local function format_title(raw)
+	if type(raw) ~= "string" or raw == "" then
+		return "Unknown"
+	end
+	return raw:sub(1, 1):upper() .. raw:sub(2)
+end
+
 -- Format tool display line (like TUI's InlineTool)
 local function format_tool_line(tool_part)
 	local tool_name = tool_part.tool or "unknown"
 	local tool_status = tool_part.state and tool_part.state.status or "pending"
 	local icon = get_tool_icon(tool_name)
 	local input = tool_part.state and tool_part.state.input or {}
-	local metadata = tool_part.state and tool_part.state.metadata or {}
+	local metadata = get_tool_metadata(tool_part)
 
 	-- Format based on tool type (matching TUI patterns)
 	if tool_name == "glob" then
@@ -1301,14 +1442,12 @@ local function format_tool_line(tool_part)
 		-- Task tools are rendered via render_task_tool; this is a fallback
 		local subagent = input.subagent_type or "unknown"
 		local desc = input.description or ""
-		local agent_label = subagent:sub(1, 1):upper() .. subagent:sub(2)
-		if tool_status == "completed" then
-			return string.format('%s %s Task — "%s"', icon, agent_label, desc)
+		local agent_label = format_title(subagent)
+		local complete = input.subagent_type or input.description
+		if tool_status ~= "pending" and complete then
+			return string.format('◉ %s Task "%s"', agent_label, desc)
 		end
-		if desc ~= "" then
-			return string.format('~ %s Task — "%s"...', agent_label, desc)
-		end
-		return string.format("~ Delegating...")
+		return string.format("~ Delegating... %s", get_task_anim_frame())
 	else
 		if tool_status == "completed" then
 			return string.format("%s %s", icon, tool_name)
@@ -1372,16 +1511,62 @@ local function build_child_session_content(session_id)
 	return { lines = result_lines, highlights = result_highlights }
 end
 
+---Get highlight group for an agent (delegates to local.lua's M.agent.color)
+---@param agent_name string
+---@return string hl_group
+local function get_agent_hl(agent_name)
+	local ok, lc = pcall(require, "opencode.local")
+	if ok then
+		return lc.agent.color(agent_name)
+	end
+	return "DiagnosticInfo"
+end
+
 -- Render a task tool part as multi-line display showing subagent activity
 -- Returns { lines = {string...}, highlights = {{line, col_start, col_end, hl_group}...} }
 local function render_task_tool(tool_part, expanded, child_content)
 	local input = tool_part.state and tool_part.state.input or {}
-	local metadata = tool_part.state and tool_part.state.metadata or {}
+	local metadata = get_tool_metadata(tool_part)
 	local tool_status = tool_part.state and tool_part.state.status or "pending"
 	local subagent = input.subagent_type or "unknown"
 	local desc = input.description or ""
-	local summary = metadata.summary or {}
-	local agent_label = subagent:sub(1, 1):upper() .. subagent:sub(2)
+	local summary = normalize_task_summary(metadata.summary)
+	if #summary == 0 then
+		local child_session_id = metadata.sessionId or metadata.sessionID or metadata.childSessionID or metadata.child_session_id
+		if child_session_id then
+			local ok_sync, sync = pcall(require, "opencode.sync")
+			if ok_sync then
+				local derived = {}
+				local messages = sync.get_messages(child_session_id)
+				for _, message in ipairs(messages) do
+					if message.role == "assistant" then
+						local tools = sync.get_message_tools(message.id)
+						for _, part in ipairs(tools) do
+							local part_state = part.state or {}
+							local status = part_state.status or "pending"
+							table.insert(derived, {
+								id = part.id,
+								tool = part.tool,
+								state = {
+									status = status,
+									title = status == "completed" and part_state.title or nil,
+								},
+							})
+						end
+					end
+				end
+				if #derived > 0 then
+					table.sort(derived, function(a, b)
+						return tostring(a.id or "") < tostring(b.id or "")
+					end)
+					summary = derived
+				end
+			end
+		end
+	end
+	local agent_label = format_title(subagent)
+	local task_frame = get_task_anim_frame()
+	local working = tool_status == "pending" or tool_status == "running"
 
 	local result_lines = {}
 	local result_highlights = {}
@@ -1398,103 +1583,197 @@ local function render_task_tool(tool_part, expanded, child_content)
 		end
 	end
 
-	if tool_status == "completed" then
-		local count = #summary
-		local icon = expanded and "▾" or "▸"
-		local header
-		if count > 0 then
-			header = string.format('%s %s Task — "%s" (%d toolcalls)', icon, agent_label, desc, count)
-		else
-			header = string.format('%s %s Task — "%s"', icon, agent_label, desc)
-		end
-		add_line(header, "Normal")
+	local complete = input.subagent_type or input.description
+	if not complete then
+		add_line("~ Delegating...", "Comment")
+		return { lines = result_lines, highlights = result_highlights }
+	end
 
-		if expanded and child_content then
+	local count = #summary
+	if count == 0 then
+		local line = format_tool_line(tool_part)
+		if working and not line:find(task_frame, 1, true) then
+			line = line .. " " .. task_frame
+		end
+		local line_hl
+		if tool_status == "error" then
+			line_hl = "DiagnosticError"
+		elseif working then
+			line_hl = "Special"
+		else
+			line_hl = get_agent_hl(subagent)
+		end
+		add_line(line, line_hl)
+		return { lines = result_lines, highlights = result_highlights }
+	end
+
+	local header_hl = tool_status == "error" and "DiagnosticError" or get_agent_hl(subagent)
+	add_line(string.format("# %s Task", agent_label), header_hl)
+	local status_prefix = working and (task_frame .. " ") or ""
+	local detail_hl = working and "Special" or "Comment"
+	add_line(string.format("  %s%s (%d toolcalls)", status_prefix, desc, count), detail_hl)
+
+	-- Render all summary items so the list grows as the subagent executes more tools.
+	for _, item in ipairs(summary) do
+		local item_state = item.state or {}
+		local item_status = item_state.status or "pending"
+		local tool_name = tostring(item.tool or "unknown")
+		local title = item_status == "completed" and tostring(item_state.title or "") or ""
+		local icon
+		if item_status == "error" then
+			icon = "✖"
+		elseif item_status == "running" then
+			icon = task_frame
+		elseif item_status == "completed" then
+			icon = "●"
+		else
+			icon = "○"
+		end
+		local line = vim.trim(string.format("  ▸ %s %s %s", icon, tool_name, title))
+		local line_hl
+		if item_status == "error" then
+			line_hl = "DiagnosticError"
+		elseif item_status == "running" then
+			line_hl = "Special"
+		else
+			line_hl = "Comment"
+		end
+		add_line(line, line_hl)
+	end
+
+	-- Optional child-session content stays behind explicit toggle.
+	if expanded then
+		local offset = #result_lines
+		if child_content then
 			for _, cl in ipairs(child_content.lines) do
 				table.insert(result_lines, cl)
 			end
 			for _, hl in ipairs(child_content.highlights) do
 				table.insert(result_highlights, {
-					line = hl.line + 1, -- offset by 1 for the header line
+					line = hl.line + offset,
 					col_start = hl.col_start,
 					col_end = hl.col_end,
 					hl_group = hl.hl_group,
 				})
-			end
-		elseif expanded then
-			-- Loading state
-			add_line("  (loading...)", "Comment")
-		end
-	else
-		-- Running or pending
-		local count = #summary
-		local icon = expanded and "▾" or "◉"
-		local header = string.format('%s %s Task — "%s"', icon, agent_label, desc)
-		add_line(header, "Special")
-
-		if expanded and child_content then
-			for _, cl in ipairs(child_content.lines) do
-				table.insert(result_lines, cl)
-			end
-			for _, hl in ipairs(child_content.highlights) do
-				table.insert(result_highlights, {
-					line = hl.line + 1, -- offset by 1 for the header line
-					col_start = hl.col_start,
-					col_end = hl.col_end,
-					hl_group = hl.hl_group,
-				})
-			end
-		elseif expanded then
-			add_line("  (loading...)", "Comment")
-		elseif count > 0 then
-			-- Running: show sub-tool lines (summary) when not expanded
-			for i, entry in ipairs(summary) do
-				local entry_tool = entry.tool or "unknown"
-				local entry_state = entry.state or {}
-				local entry_status = entry_state.status or "pending"
-				local entry_title = entry_state.title or entry_tool
-				-- Shorten long titles
-				if #entry_title > 50 then
-					entry_title = entry_title:sub(1, 47) .. "..."
-				end
-
-				local is_last = (i == count)
-				local connector = is_last and "└" or "├"
-				local line
-				if entry_status == "completed" then
-					line = string.format("  %s ◎ %s", connector, entry_title)
-					add_line(line, "Comment")
-				else
-					-- running or pending
-					local count_str = string.format("(%d toolcalls)", count)
-					if is_last then
-						line = string.format("  %s ~ %s...", connector, entry_title)
-						-- Add the count at the end of the last line
-						line = line .. string.rep(" ", math.max(1, 40 - #line)) .. count_str
-					else
-						line = string.format("  %s ~ %s...", connector, entry_title)
-					end
-					add_line(line, "Normal")
-				end
 			end
 		else
-			-- #summary == 0 and not expanded
-			add_line("  ~ Delegating...", "Comment")
+			add_line("  (loading...)", "Comment")
 		end
 	end
 
 	return { lines = result_lines, highlights = result_highlights }
 end
 
----Get highlight group for an agent (delegates to local.lua's M.agent.color)
----@param agent_name string
----@return string hl_group
-local function get_agent_hl(agent_name)
-	local ok, lc = pcall(require, "opencode.local")
-	if ok then
-		return lc.agent.color(agent_name)
+---@param tool_part table
+---@return string|nil
+local function get_task_child_session_id(tool_part)
+	local metadata = get_tool_metadata(tool_part)
+	return metadata.sessionId or metadata.sessionID or metadata.childSessionID or metadata.child_session_id
+end
+
+---@param children any
+---@param input table
+---@param start_time number|nil
+---@return string|nil
+local function pick_child_session_id(children, input, start_time)
+	if type(children) ~= "table" or #children == 0 then
+		return nil
 	end
-	return "DiagnosticInfo"
+
+	local desc = type(input.description) == "string" and input.description or nil
+	local subagent = type(input.subagent_type) == "string" and input.subagent_type or nil
+	local candidates = {}
+
+	for _, child in ipairs(children) do
+		if type(child) == "table" and type(child.id) == "string" and child.id ~= "" then
+			table.insert(candidates, child)
+		end
+	end
+
+	if #candidates == 0 then
+		return nil
+	end
+
+	local function score(child)
+		local title = type(child.title) == "string" and child.title or ""
+		local created = child.time and child.time.created or 0
+		local updated = child.time and child.time.updated or created
+		local value = 0
+
+		if desc and desc ~= "" and title:find(desc, 1, true) then
+			value = value + 2
+		end
+
+		if subagent and subagent ~= "" then
+			local marker = "@" .. subagent .. " subagent"
+			if title:find(marker, 1, true) then
+				value = value + 3
+			end
+		end
+
+		if type(start_time) == "number" and start_time > 0 and created > 0 then
+			local delta = math.abs(created - start_time)
+			if delta <= 120000 then
+				value = value + 2
+			end
+		end
+
+		return value, updated, created
+	end
+
+	table.sort(candidates, function(a, b)
+		local a_score, a_updated, a_created = score(a)
+		local b_score, b_updated, b_created = score(b)
+
+		if a_score ~= b_score then
+			return a_score > b_score
+		end
+		if a_updated ~= b_updated then
+			return a_updated > b_updated
+		end
+		if a_created ~= b_created then
+			return a_created > b_created
+		end
+		return a.id > b.id
+	end)
+
+	return candidates[1] and candidates[1].id or nil
+end
+
+---@param tool_part table
+---@param callback function(err: any, child_session_id: string|nil)
+local function resolve_task_child_session_id(tool_part, callback)
+	local child_session_id = get_task_child_session_id(tool_part)
+	if child_session_id then
+		callback(nil, child_session_id)
+		return
+	end
+
+	local ok_state, app_state = pcall(require, "opencode.state")
+	local ok_client, client = pcall(require, "opencode.client")
+	if not ok_state or not ok_client then
+		callback("Missing required modules", nil)
+		return
+	end
+
+	local current = app_state.get_session()
+	if not current or not current.id then
+		callback(nil, nil)
+		return
+	end
+
+	local input = tool_part and tool_part.state and tool_part.state.input or {}
+	local start_time = tool_part and tool_part.state and tool_part.state.time and tool_part.state.time.start or nil
+
+	client.get_session_children(current.id, function(err, children)
+		vim.schedule(function()
+			if err then
+				callback(err, nil)
+				return
+			end
+			callback(nil, pick_child_session_id(children, input, start_time))
+		end)
+	end)
 end
 
 ---Calculate duration for an assistant message
@@ -2238,8 +2517,20 @@ function M.render()
 							local cached = state.task_child_cache[tool_part.id]
 							local result = render_task_tool(tool_part, is_expanded, cached)
 							local base_line = #raw_lines
-							for _, tl in ipairs(result.lines) do
-								add_raw_line(tl)
+							local hl_by_line = {}
+							for _, hl in ipairs(result.highlights) do
+								hl_by_line[hl.line] = hl
+							end
+							for idx, tl in ipairs(result.lines) do
+								table.insert(raw_lines, tl)
+								local nl = NuiLine()
+								local line_hl = hl_by_line[idx - 1]
+								if line_hl then
+									nl:append(NuiText(tl, line_hl.hl_group))
+								else
+									nl:append(tl)
+								end
+								table.insert(nui_lines, nl)
 							end
 							state.tasks[tool_part.id] = {
 								start_line = base_line,
@@ -3964,23 +4255,21 @@ function M.rerender_edit(edit_id)
 	state.edits[edit_id].end_line = pos.start_line + #e_lines - 1
 end
 
--- Get task at cursor position (completed or running)
+-- Get task at cursor position.
 ---@return string|nil part_id
 ---@return table|nil task_info
 function M.get_task_at_cursor()
-	if not state.winid or not vim.api.nvim_win_is_valid(state.winid) then
+	local winid = vim.api.nvim_get_current_win()
+	if not winid or not vim.api.nvim_win_is_valid(winid) then
 		return nil, nil
 	end
 
-	local cursor = vim.api.nvim_win_get_cursor(state.winid)
+	local cursor = vim.api.nvim_win_get_cursor(winid)
 	local cursor_line = cursor[1] - 1 -- 0-based
 
 	for part_id, pos in pairs(state.tasks) do
 		if cursor_line >= pos.start_line and cursor_line <= pos.end_line then
-			local tool_status = pos.tool_part.state and pos.tool_part.state.status or "pending"
-			if tool_status == "completed" or tool_status == "running" then
-				return part_id, pos
-			end
+			return part_id, pos
 		end
 	end
 
@@ -4113,51 +4402,53 @@ function M.handle_task_toggle(part_id)
 		return
 	end
 
-	-- Get child session ID from metadata
-	local metadata = pos.tool_part.state and pos.tool_part.state.metadata or {}
-	local child_session_id = metadata.sessionId
-	if not child_session_id then
-		-- No child session, just show empty expanded state
-		M.rerender_task(part_id)
-		return
-	end
-
 	-- Show loading state immediately
 	M.rerender_task(part_id)
 
-	-- Fetch child session messages
-	local client = require("opencode.client")
-	local sync = require("opencode.sync")
+	resolve_task_child_session_id(pos.tool_part, function(err, child_session_id)
+		if not state.expanded_tasks[part_id] then
+			return
+		end
 
-	client.get_messages(child_session_id, {}, function(err, response)
-		vim.schedule(function()
-			if err then
-				-- On error, collapse back
-				state.expanded_tasks[part_id] = nil
-				M.rerender_task(part_id)
-				return
-			end
+		if err or not child_session_id then
+			M.rerender_task(part_id)
+			return
+		end
 
-			-- Populate sync store with fetched data
-			if response and type(response) == "table" then
-				for _, msg_with_parts in ipairs(response) do
-					local info = msg_with_parts.info
-					if info then
-						info.sessionID = child_session_id
-						sync.handle_message_updated(info)
-					end
-					local parts = msg_with_parts.parts
-					if parts then
-						for _, part in ipairs(parts) do
-							sync.handle_part_updated(part)
+		-- Fetch child session messages
+		local client = require("opencode.client")
+		local sync = require("opencode.sync")
+
+		client.get_messages(child_session_id, {}, function(fetch_err, response)
+			vim.schedule(function()
+				if fetch_err then
+					-- On error, collapse back
+					state.expanded_tasks[part_id] = nil
+					M.rerender_task(part_id)
+					return
+				end
+
+				-- Populate sync store with fetched data
+				if response and type(response) == "table" then
+					for _, msg_with_parts in ipairs(response) do
+						local info = msg_with_parts.info
+						if info then
+							info.sessionID = child_session_id
+							sync.handle_message_updated(info)
+						end
+						local parts = msg_with_parts.parts
+						if parts then
+							for _, part in ipairs(parts) do
+								sync.handle_part_updated(part)
+							end
 						end
 					end
 				end
-			end
 
-			-- Build and cache content
-			state.task_child_cache[part_id] = build_child_session_content(child_session_id)
-			M.rerender_task(part_id)
+				-- Build and cache content
+				state.task_child_cache[part_id] = build_child_session_content(child_session_id)
+				M.rerender_task(part_id)
+			end)
 		end)
 	end)
 end
@@ -4272,70 +4563,78 @@ function M.enter_child_session(part_id)
 		return
 	end
 
-	local metadata = pos.tool_part.state and pos.tool_part.state.metadata or {}
-	local child_session_id = metadata.sessionId
-	if not child_session_id then
-		vim.notify("No child session available", vim.log.levels.WARN)
-		return
-	end
+	resolve_task_child_session_id(pos.tool_part, function(err, child_session_id)
+		if err then
+			vim.notify("Failed to resolve child session: " .. tostring(err), vim.log.levels.WARN)
+			return
+		end
+		if not child_session_id then
+			vim.notify("No child session available yet", vim.log.levels.WARN)
+			return
+		end
 
-	local app_state = require("opencode.state")
-	local client = require("opencode.client")
-	local sync = require("opencode.sync")
+		local app_state = require("opencode.state")
+		local client = require("opencode.client")
+		local sync = require("opencode.sync")
 
-	-- Push current session onto stack
-	local current = app_state.get_session()
-	local input = pos.tool_part.state and pos.tool_part.state.input or {}
-	table.insert(state.session_stack, {
-		id = current.id,
-		name = current.name or "Session",
-	})
+		-- Push current session onto stack
+		local current = app_state.get_session()
+		if current.id == child_session_id then
+			return
+		end
 
-	-- Derive a name for the child session
-	local child_name = input.description or "Subagent"
+		local input = pos.tool_part.state and pos.tool_part.state.input or {}
+		table.insert(state.session_stack, {
+			id = current.id,
+			name = current.name or "Session",
+		})
 
-	-- Switch session (set navigating flag to prevent session_change from clearing the stack)
-	state.navigating = true
-	app_state.set_session(child_session_id, child_name)
-	state.navigating = false
+		-- Derive a name for the child session
+		local child_name = input.description or "Subagent"
 
-	-- Fetch child session messages if not already in sync store
-	local messages = sync.get_messages(child_session_id)
-	if #messages > 0 then
-		-- Schedule render after session_change cleanup runs
-		vim.schedule(function()
-			M.do_render()
-		end)
-	else
-		-- Need to fetch first
-		client.get_messages(child_session_id, {}, function(err, response)
+		-- Switch session (set navigating flag to prevent session_change from clearing the stack)
+		state.navigating = true
+		app_state.set_session(child_session_id, child_name)
+		state.navigating = false
+
+		-- Fetch child session messages if not already in sync store
+		local messages = sync.get_messages(child_session_id)
+		if #messages > 0 then
+			-- Schedule render after session_change cleanup runs
 			vim.schedule(function()
-				if err then
-					vim.notify("Failed to load subagent messages: " .. tostring(err), vim.log.levels.ERROR)
-					M.leave_child_session()
-					return
-				end
+				M.do_render()
+			end)
+		else
+			-- Need to fetch first
+			client.get_messages(child_session_id, {}, function(fetch_err, response)
+				vim.schedule(function()
+					if fetch_err then
+						vim.notify("Failed to load subagent messages: " .. tostring(fetch_err), vim.log.levels.ERROR)
+						M.leave_child_session()
+						return
+					end
 
-				if response and type(response) == "table" then
-					for _, msg_with_parts in ipairs(response) do
-						local info = msg_with_parts.info
-						if info then
-							info.sessionID = child_session_id
-							sync.handle_message_updated(info)
-						end
-						local parts = msg_with_parts.parts
-						if parts then
-							for _, part in ipairs(parts) do
-								sync.handle_part_updated(part)
+					if response and type(response) == "table" then
+						for _, msg_with_parts in ipairs(response) do
+							local info = msg_with_parts.info
+							if info then
+								info.sessionID = child_session_id
+								sync.handle_message_updated(info)
+							end
+							local parts = msg_with_parts.parts
+							if parts then
+								for _, part in ipairs(parts) do
+									sync.handle_part_updated(part)
+								end
 							end
 						end
 					end
-				end
 
-				M.do_render()
+					M.do_render()
+				end)
 			end)
-		end)
-	end
+		end
+	end)
 end
 
 -- Leave current child session and return to parent
