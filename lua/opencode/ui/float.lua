@@ -209,7 +209,7 @@ function M.show_notification(message, level, timeout)
 	local ui_list = vim.api.nvim_list_uis()
 	local ui = ui_list and ui_list[1] or { width = 80, height = 24 }
 
-	local row = 1 -- Top of screen
+	local row = 1                 -- Top of screen
 	local col = ui.width - width - 2 -- Right aligned
 
 	local popup = Popup({
@@ -275,6 +275,9 @@ function M.create_menu(items, on_select, opts)
 				top = (opts.title or " Select "),
 				top_align = "center",
 			},
+		},
+		buf_options = {
+			filetype = "opencode_float",
 		},
 		win_options = {
 			cursorline = true,
@@ -367,6 +370,9 @@ function M.create_input_popup(opts)
 				bottom = " ⏎:submit  esc:cancel ",
 				bottom_align = "center",
 			},
+		},
+		buf_options = {
+			filetype = "opencode_float",
 		},
 		win_options = {
 			winhighlight = "Normal:Normal,FloatBorder:FloatBorder",
@@ -477,6 +483,9 @@ function M.create_searchable_menu(items, on_select, opts)
 				top_align = "center",
 			},
 		},
+		buf_options = {
+			filetype = "opencode_float",
+		},
 		win_options = {
 			winhighlight = "Normal:Normal,FloatBorder:FloatBorder",
 		},
@@ -498,6 +507,9 @@ function M.create_searchable_menu(items, on_select, opts)
 					or " ↑↓/j,k:navigate  ⏎:select  esc:close ",
 				bottom_align = "center",
 			},
+		},
+		buf_options = {
+			filetype = "opencode_float",
 		},
 		win_options = {
 			cursorline = true,
@@ -790,6 +802,9 @@ function M.create_session_list(sessions, on_select, on_delete, on_rename, opts)
 		},
 		position = { row = row, col = col },
 		size = { width = width, height = height },
+		buf_options = {
+			filetype = "opencode_float",
+		},
 		win_options = {
 			cursorline = true,
 			winhighlight = "Normal:Normal,FloatBorder:FloatBorder,CursorLine:PmenuSel",
