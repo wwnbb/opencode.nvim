@@ -176,6 +176,63 @@ local function append_part_delta(part, field, delta)
 	node[leaf] = current .. delta
 end
 
+---@param root table
+---@param path string[]
+---@return any
+local function get_nested(root, path)
+	local node = root
+	for _, key in ipairs(path) do
+		if type(node) ~= "table" then
+			return nil
+		end
+		node = node[key]
+		if node == nil then
+			return nil
+		end
+	end
+	return node
+end
+
+---@param root table
+---@param path string[]
+---@param value any
+local function set_nested(root, path, value)
+	if #path == 0 then
+		return
+	end
+
+	local node = root
+	for i = 1, #path - 1 do
+		local key = path[i]
+		if type(node[key]) ~= "table" then
+			node[key] = {}
+		end
+		node = node[key]
+	end
+	node[path[#path]] = value
+end
+
+---@param dest table
+---@param src table
+---@param merged table
+---@param path string[]
+local function preserve_summary_path(dest, src, merged, path)
+	local src_summary = get_nested(src, path)
+	if src_summary == nil then
+		return
+	end
+
+	local dest_summary = get_nested(dest, path)
+	if type(src_summary) == "table" and next(src_summary) == nil then
+		if type(dest_summary) == "table" and next(dest_summary) ~= nil then
+			set_nested(merged, path, dest_summary)
+			return
+		end
+	end
+
+	set_nested(merged, path, src_summary)
+end
+
 ---Handle message.updated event (mirrors TUI sync.tsx:228-265)
 ---@param info Message
 function M.handle_message_updated(info)
@@ -256,15 +313,9 @@ function M.handle_part_updated(part)
 		local src = part
 		local merged = vim.tbl_deep_extend("force", dest, src)
 
-		-- Special handling for metadata arrays (like summary) that get wiped by tbl_deep_extend if
-		-- the server sends an empty dictionary incidentally.
-		if src.metadata and src.metadata.summary then
-			if type(src.metadata.summary) == "table" and next(src.metadata.summary) == nil and dest.metadata and dest.metadata.summary then
-				merged.metadata.summary = dest.metadata.summary
-			else
-				merged.metadata.summary = src.metadata.summary
-			end
-		end
+		-- Preserve task summary arrays when backend sends an empty dictionary in partial updates.
+		preserve_summary_path(dest, src, merged, { "state", "metadata", "summary" })
+		preserve_summary_path(dest, src, merged, { "metadata", "summary" })
 
 		parts[result.index] = merged
 	else

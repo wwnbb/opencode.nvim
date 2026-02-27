@@ -47,6 +47,13 @@ function M.get_session(session_id, callback)
 	http.get("/session/" .. session_id, callback)
 end
 
+-- Get child sessions for a parent session
+---@param session_id string
+---@param callback function(err, sessions)
+function M.get_session_children(session_id, callback)
+	http.get("/session/" .. session_id .. "/children", callback)
+end
+
 -- Create new session
 ---@param opts? table { parentID?, title? }
 ---@param callback function(err, session)
