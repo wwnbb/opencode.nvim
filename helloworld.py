@@ -1,18 +1,15 @@
-
 #!/usr/bin/env python3
-"""helloworld.py - simple greeting utility for the repo."""
+"""Simple greeting utility for the repo."""
 
 import argparse
-from typing import NamedTuple
 
 
-def format_greeting(name: str = "Friend", shout: bool = False) -> str:
-    """Return a greeting for `name`.
+GREETING_TEMPLATE = "Hi, {name}! Great to see you in OpenCode.nvim."
 
-    If ``shout`` is True the returned string is uppercased. The default
-    greeting has been updated to be more welcoming!
-    """
-    greeting = f"Hello, {name}! Welcome to the OpenCode project."
+
+def format_greeting(name: str = "User", shout: bool = False) -> str:
+    """Return a greeting for ``name``."""
+    greeting = GREETING_TEMPLATE.format(name=name)
     return greeting.upper() if shout else greeting
 
 
@@ -30,6 +27,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-"""helloworld.py - simple greeting utility for repository."""
-def format_greeting(name: str = "World", shout: bool = False) -> str:
-    parser = argparse.ArgumentParser(description="Print a warm greeting to the user.")

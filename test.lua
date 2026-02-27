@@ -35,6 +35,7 @@ require("opencode").setup({
 	--       title_pos = "center",
 	--     },
 	--   })
+	--
 	chat = {
 		layout = "float",
 		-- position = "",
@@ -49,6 +50,13 @@ require("opencode").setup({
 		-- 	user_prefix = "| ",
 		-- },
 	},
+
+	-- chat = {
+	-- 	layout = "vertical", -- "vertical" | "horizontal" | "float"
+	-- 	position = "right", -- "left" | "right" | "top" | "bottom"
+	-- 	width = 80,
+	-- 	height = 20,
+	-- },
 
 	lualine = {
 		enabled = true,
