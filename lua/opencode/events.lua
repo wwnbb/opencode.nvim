@@ -613,88 +613,58 @@ function M.setup_chat_handlers()
 				return
 			end
 
-			local logger = require("opencode.logger")
-			logger.debug("Permission event received", { data = data })
+				local logger = require("opencode.logger")
+				logger.debug("Permission event received", { data = data })
 
-			-- Show permission notification
-			local permission_type = data.permission or data.type
-			local pattern = data.pattern or data.path or data.file or "unknown"
-
-			-- Route diff_review permissions to the edit widget
-			if permission_type == "diff_review" then
-				local permission_id = data.id or data.requestID or ("perm_" .. os.time())
-				local edit_state_mod = require("opencode.edit.state")
-
-				-- Skip if already handled (dedup for duplicate SSE events)
-				if edit_state_mod.get_edit(permission_id) then
-					logger.debug("diff_review already handled, skipping", { id = permission_id })
-					return
-				end
-
+				-- Show permission notification
+				local permission_type = data.permission or data.type
+				local pattern = data.pattern or data.path or data.file or "unknown"
 				local metadata = data.metadata or {}
 				local current_session = require("opencode.state").get_session()
-				local nd_files = metadata.files or {}
 				local message_id = data.tool and data.tool.messageID or nil
 
-				-- Resolve the session that owns the calling message, so that
-				-- subagent edits get tagged with the subagent session ID not
-				-- the currently-viewed (parent) session ID.
-				local edit_session_id = current_session.id or ""
-				if message_id then
-					local ok_sync, sync_mod = pcall(require, "opencode.sync")
-					if ok_sync then
-						local msg_session = sync_mod.find_message_session_id(message_id)
-						if msg_session then edit_session_id = msg_session end
+				---@param session_hint table
+				---@param event_data table
+				---@param event_metadata table
+				---@param source_message_id string|nil
+				---@return string
+				local function resolve_widget_session_id(session_hint, event_data, event_metadata, source_message_id)
+					if source_message_id then
+						local ok_sync, sync_mod = pcall(require, "opencode.sync")
+						if ok_sync and sync_mod.find_message_session_id then
+							local msg_session = sync_mod.find_message_session_id(source_message_id)
+							if msg_session and msg_session ~= "" then
+								return msg_session
+							end
+						end
 					end
+
+					local fallback_session = event_data.sessionID
+						or event_data.session_id
+						or event_data.sessionId
+						or event_metadata.sessionID
+						or event_metadata.session_id
+						or event_metadata.sessionId
+					if fallback_session and fallback_session ~= "" then
+						return fallback_session
+					end
+
+					return (session_hint and session_hint.id) or ""
 				end
 
-				edit_state_mod.add_edit(permission_id, edit_session_id, nd_files, {
-					data = data,
-					metadata = metadata,
-					message_id = message_id,
-				})
-
-				-- Stop spinner so user can interact
-				local spinner_ok, perm_spinner = pcall(require, "opencode.ui.spinner")
-				if spinner_ok and perm_spinner.is_active and perm_spinner.is_active() then
-					perm_spinner.stop()
-				end
-
-				-- Add to chat as edit widget
-				local chat_ok, chat = pcall(require, "opencode.ui.chat")
-				if chat_ok and chat.add_edit_message then
-					chat.add_edit_message(permission_id, edit_state_mod.get_edit(permission_id), "pending")
-				end
-				return
-			elseif permission_type == "edit" then
-				local permission_id = data.id or data.requestID or ("perm_" .. os.time())
-
-				-- Extract file data from metadata
-				local metadata = data.metadata or {}
-
-				-- Check for native diff request from custom tools -> edit widget (legacy)
-				if metadata.opencode_native_diff == true then
+				-- Route diff_review permissions to the edit widget
+				if permission_type == "diff_review" then
+					local permission_id = data.id or data.requestID or ("perm_" .. os.time())
 					local edit_state_mod = require("opencode.edit.state")
 
-					-- Skip if already handled (dedup: diff_review path may have created this edit)
+					-- Skip if already handled (dedup for duplicate SSE events)
 					if edit_state_mod.get_edit(permission_id) then
-						logger.debug("edit (native_diff) already handled, skipping", { id = permission_id })
+						logger.debug("diff_review already handled, skipping", { id = permission_id })
 						return
 					end
 
-					local current_session = require("opencode.state").get_session()
 					local nd_files = metadata.files or {}
-					local message_id = data.tool and data.tool.messageID or nil
-
-					-- Resolve the session that owns the calling message.
-					local edit_session_id = current_session.id or ""
-					if message_id then
-						local ok_sync, sync_mod = pcall(require, "opencode.sync")
-						if ok_sync then
-							local msg_session = sync_mod.find_message_session_id(message_id)
-							if msg_session then edit_session_id = msg_session end
-						end
-					end
+					local edit_session_id = resolve_widget_session_id(current_session, data, metadata, message_id)
 
 					edit_state_mod.add_edit(permission_id, edit_session_id, nd_files, {
 						data = data,
@@ -714,150 +684,182 @@ function M.setup_chat_handlers()
 						chat.add_edit_message(permission_id, edit_state_mod.get_edit(permission_id), "pending")
 					end
 					return
-				end
+				elseif permission_type == "edit" then
+					local permission_id = data.id or data.requestID or ("perm_" .. os.time())
 
-				local files = metadata.files or {}
+					-- Check for native diff request from custom tools -> edit widget (legacy)
+					if metadata.opencode_native_diff == true then
+						local edit_state_mod = require("opencode.edit.state")
 
-				logger.debug("Permission request", {
-					id = permission_id,
-					files_count = #files,
-				})
-
-				-- If we have file change data, show the diff viewer for ALL files
-				if #files > 0 then
-					local changes = require("opencode.artifact.changes")
-					local change_ids = {}
-
-					-- Process each file in the permission request
-					for i, file_data in ipairs(files) do
-						local filepath = file_data.file or file_data.path or file_data.filepath or file_data.filePath
-						local original_content = file_data.before or ""
-						local modified_content = file_data.after or ""
-
-						-- Skip if no filepath
-						if not filepath then
-							logger.debug("File missing filepath", { index = i })
-							goto continue_file
+						-- Skip if already handled (dedup: diff_review path may have created this edit)
+						if edit_state_mod.get_edit(permission_id) then
+							logger.debug("edit (native_diff) already handled, skipping", { id = permission_id })
+							return
 						end
 
-						-- Ensure filepath is absolute
-						if not filepath:match("^/") then
-							filepath = "/" .. filepath
-						end
+						local nd_files = metadata.files or {}
+						local edit_session_id = resolve_widget_session_id(current_session, data, metadata, message_id)
 
-						logger.debug("Processing file", {
-							index = i,
-							filepath = filepath,
-							before_length = #original_content,
-							after_length = #modified_content,
+						edit_state_mod.add_edit(permission_id, edit_session_id, nd_files, {
+							data = data,
+							metadata = metadata,
+							message_id = message_id,
 						})
 
-						-- Add change to the changes module
-						local change_id = changes.add_change(filepath, original_content, modified_content, {
-							metadata = {
-								source = "permission",
-								permission_id = permission_id,
-								diff = metadata.diff,
-								file_index = i,
-								total_files = #files,
-							},
-						})
-
-						if change_id then
-							table.insert(change_ids, change_id)
+						-- Stop spinner so user can interact
+						local spinner_ok, perm_spinner = pcall(require, "opencode.ui.spinner")
+						if spinner_ok and perm_spinner.is_active and perm_spinner.is_active() then
+							perm_spinner.stop()
 						end
 
-						::continue_file::
+						-- Add to chat as edit widget
+						local chat_ok, chat = pcall(require, "opencode.ui.chat")
+						if chat_ok and chat.add_edit_message then
+							chat.add_edit_message(permission_id, edit_state_mod.get_edit(permission_id), "pending")
+						end
+						return
 					end
 
-					-- Store pending permission for approval callback (with all change IDs)
-					if #change_ids > 0 then
-						M._pending_permission = {
-							id = permission_id,
-							change_ids = change_ids,
-							current_index = 1,
-							type = permission_type,
-							pattern = pattern,
-							data = data,
-						}
+					local files = metadata.files or {}
 
-						logger.debug("Stored permission", {
-							id = permission_id,
-							changes_count = #change_ids,
-						})
+					logger.debug("Permission request", {
+						id = permission_id,
+						files_count = #files,
+					})
+
+					-- If we have file change data, show the diff viewer for ALL files
+					if #files > 0 then
+						local changes = require("opencode.artifact.changes")
+						local change_ids = {}
+
+						-- Process each file in the permission request
+						for i, file_data in ipairs(files) do
+							local filepath = file_data.file or file_data.path or file_data.filepath or file_data.filePath
+							local original_content = file_data.before or ""
+							local modified_content = file_data.after or ""
+
+							-- Skip if no filepath
+							if not filepath then
+								logger.debug("File missing filepath", { index = i })
+								goto continue_file
+							end
+
+							-- Ensure filepath is absolute
+							if not filepath:match("^/") then
+								filepath = "/" .. filepath
+							end
+
+							logger.debug("Processing file", {
+								index = i,
+								filepath = filepath,
+								before_length = #original_content,
+								after_length = #modified_content,
+							})
+
+							-- Add change to the changes module
+							local change_id = changes.add_change(filepath, original_content, modified_content, {
+								metadata = {
+									source = "permission",
+									permission_id = permission_id,
+									diff = metadata.diff,
+									file_index = i,
+									total_files = #files,
+								},
+							})
+
+							if change_id then
+								table.insert(change_ids, change_id)
+							end
+
+							::continue_file::
+						end
+
+						-- Store pending permission for approval callback (with all change IDs)
+						if #change_ids > 0 then
+							M._pending_permission = {
+								id = permission_id,
+								change_ids = change_ids,
+								current_index = 1,
+								type = permission_type,
+								pattern = pattern,
+								data = data,
+							}
+
+							logger.debug("Stored permission", {
+								id = permission_id,
+								changes_count = #change_ids,
+							})
+						else
+							vim.notify("Failed to create any change records", vim.log.levels.ERROR)
+						end
 					else
-						vim.notify("Failed to create any change records", vim.log.levels.ERROR)
+						-- No file data, just show notification
+						vim.notify(
+							string.format("OpenCode wants to edit: %s (no diff data available)", pattern),
+							vim.log.levels.WARN
+						)
 					end
 				else
-					-- No file data, just show notification
-					vim.notify(
-						string.format("OpenCode wants to edit: %s (no diff data available)", pattern),
-						vim.log.levels.WARN
-					)
-				end
-			else
-				-- Non-edit permission: handle interactively via permission state + chat widget
-				local permission_id = data.id or data.requestID or ("perm_" .. os.time())
-				local metadata = data.metadata or {}
-				local current_session = require("opencode.state").get_session()
+					-- Non-edit permission: handle interactively via permission state + chat widget
+					local permission_id = data.id or data.requestID or ("perm_" .. os.time())
+					local permission_session_id = resolve_widget_session_id(current_session, data, metadata, message_id)
 
-				-- Resolve tool_input from sync store if tool info is available
-				local tool_input = {}
-				if data.tool and data.tool.messageID and data.tool.callID then
-					local sync = require("opencode.sync")
-					local parts = sync.get_parts(data.tool.messageID)
-					for _, part in ipairs(parts) do
-						if part.callID == data.tool.callID and part.state and part.state.input then
-							tool_input = part.state.input
-							break
+					-- Resolve tool_input from sync store if tool info is available
+					local tool_input = {}
+					if data.tool and data.tool.messageID and data.tool.callID then
+						local sync = require("opencode.sync")
+						local parts = sync.get_parts(data.tool.messageID)
+						for _, part in ipairs(parts) do
+							if part.callID == data.tool.callID and part.state and part.state.input then
+								tool_input = part.state.input
+								break
+							end
 						end
 					end
-				end
 
-				-- Fallback: extract input fields from metadata and top-level data fields
-				if not next(tool_input) then
-					tool_input = vim.tbl_deep_extend("force", {}, metadata.input or {}, {
-						command = data.command or metadata.command,
-						description = data.description or metadata.description,
-						path = data.path or metadata.path,
-						file_path = data.file_path or metadata.file_path or data.file or metadata.file,
-						pattern = data.pattern or metadata.pattern,
-						query = data.query or metadata.query,
-						url = data.url or metadata.url,
-						directory = data.directory or metadata.directory,
-						subagent_type = data.subagent_type or metadata.subagent_type,
+					-- Fallback: extract input fields from metadata and top-level data fields
+					if not next(tool_input) then
+						tool_input = vim.tbl_deep_extend("force", {}, metadata.input or {}, {
+							command = data.command or metadata.command,
+							description = data.description or metadata.description,
+							path = data.path or metadata.path,
+							file_path = data.file_path or metadata.file_path or data.file or metadata.file,
+							pattern = data.pattern or metadata.pattern,
+							query = data.query or metadata.query,
+							url = data.url or metadata.url,
+							directory = data.directory or metadata.directory,
+							subagent_type = data.subagent_type or metadata.subagent_type,
+						})
+					end
+
+					-- Store permission state
+					local perm_state_mod = require("opencode.permission.state")
+					perm_state_mod.add_permission(permission_id, permission_session_id, permission_type, {
+						metadata = metadata,
+						patterns = data.patterns or {},
+						always = data.always or {},
+						tool_input = tool_input,
+						message_id = message_id,
+					})
+
+					-- Stop spinner so user can interact
+					local spinner_ok2, perm_spinner = pcall(require, "opencode.ui.spinner")
+					if spinner_ok2 and perm_spinner.is_active() then
+						perm_spinner.stop()
+						logger.debug("Stopped spinner for permission interaction")
+					end
+
+					-- Add to chat as a special message
+					local chat_ok2, chat2 = pcall(require, "opencode.ui.chat")
+					if chat_ok2 and chat2.add_permission_message then
+						chat2.add_permission_message(permission_id, perm_state_mod.get_permission(permission_id), "pending")
+					end
+
+					logger.info("Permission request added", {
+						permission_id = permission_id,
+						type = permission_type,
 					})
 				end
-
-				-- Store permission state
-				local perm_state_mod = require("opencode.permission.state")
-				local message_id = data.tool and data.tool.messageID or nil
-				perm_state_mod.add_permission(permission_id, current_session.id or "", permission_type, {
-					metadata = metadata,
-					patterns = data.patterns or {},
-					always = data.always or {},
-					tool_input = tool_input,
-					message_id = message_id,
-				})
-
-				-- Stop spinner so user can interact
-				local spinner_ok2, perm_spinner = pcall(require, "opencode.ui.spinner")
-				if spinner_ok2 and perm_spinner.is_active() then
-					perm_spinner.stop()
-					logger.debug("Stopped spinner for permission interaction")
-				end
-
-				-- Add to chat as a special message
-				local chat_ok2, chat2 = pcall(require, "opencode.ui.chat")
-				if chat_ok2 and chat2.add_permission_message then
-					chat2.add_permission_message(permission_id, perm_state_mod.get_permission(permission_id), "pending")
-				end
-
-				logger.info("Permission request added", {
-					permission_id = permission_id,
-					type = permission_type,
-				})
-			end
 		end)
 	end)
 
