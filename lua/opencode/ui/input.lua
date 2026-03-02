@@ -531,7 +531,7 @@ function M.show(opts)
 		local info_top_pad = 1
 		local padding_rows = 1
 		local float_col = float_dims.col + 1
-		local float_content_width = float_dims.width - 6
+		local float_content_width = float_dims.width - 3
 		local row = float_dims.row + float_dims.height - height - padding_rows - info_height - info_top_pad
 
 		state.layout = {
