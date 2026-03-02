@@ -201,6 +201,19 @@ local function resize_input()
 	lock_scroll()
 end
 
+-- Set input text in the active input buffer and keep cursor at the end.
+local function set_input_text(text)
+	local content = text or ""
+	local lines = vim.split(content, "\n", { plain = true })
+	if #lines == 0 then
+		lines = { "" }
+	end
+
+	vim.api.nvim_buf_set_lines(state.bufnr, 0, -1, false, lines)
+	vim.api.nvim_win_set_cursor(state.winid, { #lines, #lines[#lines] })
+	resize_input()
+end
+
 -- Navigate history
 local function history_prev()
 	if history.index > 1 then
@@ -831,6 +844,61 @@ end
 -- Get history for inspection
 function M.get_history()
 	return vim.deepcopy(history.entries)
+end
+
+--- Get pending input text without opening the input UI.
+---@return string
+function M.get_pending_text()
+	if state.visible and state.bufnr and vim.api.nvim_buf_is_valid(state.bufnr) then
+		return get_input_text()
+	end
+	return history.pending or ""
+end
+
+--- Set pending input text without opening the input UI.
+---@param text string
+function M.set_pending_text(text)
+	local content = text or ""
+	if content == "" then
+		history.pending = nil
+	else
+		history.pending = content
+	end
+
+	if not state.visible or not state.bufnr or not vim.api.nvim_buf_is_valid(state.bufnr) then
+		return
+	end
+
+	set_input_text(content)
+end
+
+--- Append text to pending input without opening the input UI.
+---@param text string
+---@param opts? { separator?: string }
+---@return string
+function M.append_pending_text(text, opts)
+	local extra = text or ""
+	if extra == "" then
+		return M.get_pending_text()
+	end
+
+	opts = opts or {}
+	local separator = opts.separator or "\n"
+	local current = M.get_pending_text()
+	local next_text
+
+	if current == "" then
+		next_text = extra
+	elseif separator == "" then
+		next_text = current .. extra
+	elseif current:sub(-#separator) == separator then
+		next_text = current .. extra
+	else
+		next_text = current .. separator .. extra
+	end
+
+	M.set_pending_text(next_text)
+	return next_text
 end
 
 -- Setup (called by main module)
