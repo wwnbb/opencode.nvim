@@ -13,6 +13,40 @@ local events
 local lifecycle
 local client
 
+---@param opts? { context?: string }
+---@return string|nil
+local function _build_current_line_prompt(opts)
+	opts = opts or {}
+
+	local bufnr = vim.api.nvim_get_current_buf()
+	local filepath = vim.api.nvim_buf_get_name(bufnr)
+	if filepath == "" then
+		vim.notify("OpenCode: current buffer has no file path", vim.log.levels.WARN)
+		return nil
+	end
+
+	local line_num = vim.api.nvim_win_get_cursor(0)[1]
+	local line_text = vim.api.nvim_buf_get_lines(bufnr, line_num - 1, line_num, false)[1] or ""
+	local display_path = vim.fn.fnamemodify(filepath, ":~:.")
+	if display_path == "" then
+		display_path = filepath
+	end
+
+	local parts = {
+		string.format("@%s#%d", display_path, line_num),
+	}
+	if line_text ~= "" then
+		table.insert(parts, line_text)
+	end
+
+	local context = opts.context and vim.trim(opts.context) or ""
+	if context ~= "" then
+		table.insert(parts, "Context: " .. context)
+	end
+
+	return table.concat(parts, "\n")
+end
+
 --- Setup function - called by user to configure the plugin
 ---@param opts table Configuration options
 function M.setup(opts)
@@ -231,6 +265,58 @@ function M.focus_input()
 		local chat = require("opencode.ui.chat")
 		chat.focus_input()
 	end)
+end
+
+--- Add current file/line to the draft input without opening the chat window.
+---@param opts? { context?: string, send?: boolean, separator?: string }
+---@return boolean
+function M.add_current_line_to_input(opts)
+	opts = opts or {}
+
+	local prompt = _build_current_line_prompt({ context = opts.context })
+	if not prompt then
+		return false
+	end
+
+	local input_ok, input = pcall(require, "opencode.ui.input")
+	if not input_ok then
+		vim.notify("Failed to load input module: " .. tostring(input), vim.log.levels.ERROR)
+		return false
+	end
+
+	input.append_pending_text(prompt, { separator = opts.separator or "\n\n" })
+
+	if opts.send ~= true then
+		vim.notify("Added current line to OpenCode input", vim.log.levels.INFO)
+		return true
+	end
+
+	if not lifecycle then
+		vim.notify("OpenCode not initialized; line was added to draft only", vim.log.levels.WARN)
+		return false
+	end
+
+	local text = input.get_pending_text()
+	if vim.trim(text) == "" then
+		vim.notify("OpenCode input is empty", vim.log.levels.WARN)
+		return false
+	end
+
+	input.set_pending_text("")
+	M.send(text)
+	vim.notify("Sent OpenCode prompt with current line", vim.log.levels.INFO)
+	return true
+end
+
+--- Add current file/line plus extra context to the draft input.
+---@param context string
+---@param opts? { send?: boolean, separator?: string }
+---@return boolean
+function M.add_current_line_to_input_with_context(context, opts)
+	local merged_opts = vim.tbl_extend("force", opts or {}, {
+		context = context,
+	})
+	return M.add_current_line_to_input(merged_opts)
 end
 
 --- Send a message to the chat
