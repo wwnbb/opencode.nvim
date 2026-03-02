@@ -636,7 +636,19 @@ function M.setup_chat_handlers()
 				local nd_files = metadata.files or {}
 				local message_id = data.tool and data.tool.messageID or nil
 
-				edit_state_mod.add_edit(permission_id, current_session.id or "", nd_files, {
+				-- Resolve the session that owns the calling message, so that
+				-- subagent edits get tagged with the subagent session ID not
+				-- the currently-viewed (parent) session ID.
+				local edit_session_id = current_session.id or ""
+				if message_id then
+					local ok_sync, sync_mod = pcall(require, "opencode.sync")
+					if ok_sync then
+						local msg_session = sync_mod.find_message_session_id(message_id)
+						if msg_session then edit_session_id = msg_session end
+					end
+				end
+
+				edit_state_mod.add_edit(permission_id, edit_session_id, nd_files, {
 					data = data,
 					metadata = metadata,
 					message_id = message_id,
@@ -674,7 +686,17 @@ function M.setup_chat_handlers()
 					local nd_files = metadata.files or {}
 					local message_id = data.tool and data.tool.messageID or nil
 
-					edit_state_mod.add_edit(permission_id, current_session.id or "", nd_files, {
+					-- Resolve the session that owns the calling message.
+					local edit_session_id = current_session.id or ""
+					if message_id then
+						local ok_sync, sync_mod = pcall(require, "opencode.sync")
+						if ok_sync then
+							local msg_session = sync_mod.find_message_session_id(message_id)
+							if msg_session then edit_session_id = msg_session end
+						end
+					end
+
+					edit_state_mod.add_edit(permission_id, edit_session_id, nd_files, {
 						data = data,
 						metadata = metadata,
 						message_id = message_id,
