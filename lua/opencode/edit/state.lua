@@ -171,7 +171,9 @@ function M.get_all()
 	for _, estate in pairs(active_edits) do
 		table.insert(result, estate)
 	end
-	table.sort(result, function(a, b) return a.timestamp < b.timestamp end)
+	table.sort(result, function(a, b)
+		return a.timestamp < b.timestamp
+	end)
 	return result
 end
 
@@ -185,7 +187,9 @@ function M.get_all_for_session(session_id)
 			table.insert(result, estate)
 		end
 	end
-	table.sort(result, function(a, b) return a.timestamp < b.timestamp end)
+	table.sort(result, function(a, b)
+		return a.timestamp < b.timestamp
+	end)
 	return result
 end
 
@@ -201,6 +205,26 @@ function M.get_all_active()
 	return result
 end
 
+--- Check whether any edit is awaiting user action
+---@return boolean
+function M.has_pending_edits()
+	for _, estate in pairs(active_edits) do
+		if estate.status == "pending" then
+			local has_files = false
+			for _, file in ipairs(estate.files or {}) do
+				has_files = true
+				if file.status == "pending" then
+					return true
+				end
+			end
+			if not has_files then
+				return true
+			end
+		end
+	end
+	return false
+end
+
 --- Get all edits for a specific message ID (for inline rendering)
 ---@param message_id string
 ---@return table Array of edit states
@@ -211,7 +235,9 @@ function M.get_edits_for_message(message_id)
 			table.insert(result, estate)
 		end
 	end
-	table.sort(result, function(a, b) return a.timestamp < b.timestamp end)
+	table.sort(result, function(a, b)
+		return a.timestamp < b.timestamp
+	end)
 	return result
 end
 
@@ -224,7 +250,9 @@ function M.get_orphan_edits()
 			table.insert(result, estate)
 		end
 	end
-	table.sort(result, function(a, b) return a.timestamp < b.timestamp end)
+	table.sort(result, function(a, b)
+		return a.timestamp < b.timestamp
+	end)
 	return result
 end
 

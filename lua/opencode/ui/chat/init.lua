@@ -348,14 +348,18 @@ local function setup_buffer(bufnr)
 	end, opts)
 
 	vim.keymap.set("n", "O", function()
-		local tool_part_id = chat_tasks.get_tool_at_cursor()
-		if tool_part_id then
-			chat_tasks.handle_tool_toggle(tool_part_id)
-			return
-		end
+		-- Task blocks are registered in state.tasks with their full line range,
+		-- so get_task_at_cursor() covers the header AND all ├/└ summary lines.
+		-- Check task first so no task line ever falls through to handle_tool_toggle.
 		local task_part_id = chat_tasks.get_task_at_cursor()
 		if task_part_id then
 			chat_tasks.handle_task_toggle(task_part_id)
+			return
+		end
+		-- Regular (non-task) tools: expand/collapse raw I/O.
+		local tool_part_id = chat_tasks.get_tool_at_cursor()
+		if tool_part_id then
+			chat_tasks.handle_tool_toggle(tool_part_id)
 			return
 		end
 	end, vim.tbl_extend("force", opts, { desc = "Toggle tool output", nowait = true }))
@@ -401,7 +405,7 @@ function M.show_help()
 		"<C-r>      Restore input",
 		"",
 		"Tool Calls",
-		"O          Toggle tool output (per-tool)",
+		"O          Toggle task expand (tool I/O in subagent view only)",
 		"<CR>       Toggle details",
 		"gd         Enter subagent output",
 		"<BS>       Go back to parent",
@@ -483,7 +487,8 @@ function M.show_help()
 			local key_end = line:find("  ")
 			if key_end then
 				vim.api.nvim_buf_set_extmark(popup.bufnr, ns, i - 1, 0, { end_col = key_end - 1, hl_group = "Normal" })
-				vim.api.nvim_buf_set_extmark(popup.bufnr, ns, i - 1, key_end - 1, { end_col = #line, hl_group = "OpenCodeInputInfo" })
+				vim.api.nvim_buf_set_extmark(popup.bufnr, ns, i - 1, key_end - 1,
+					{ end_col = #line, hl_group = "OpenCodeInputInfo" })
 			end
 		end
 	end
@@ -1133,18 +1138,57 @@ function M.render()
 
 	local nui_lines = {}
 	local raw_lines = {}
+	local last_block_kind = nil -- "tool" | "non_tool"
 
-	local function add_line(nui_line)
+	local function push_line(text, nui_line)
 		table.insert(nui_lines, nui_line)
-		table.insert(raw_lines, nui_line:content())
-	end
-
-	local function add_raw_line(text)
-		local line = NuiLine()
-		line:append(text)
-		table.insert(nui_lines, line)
 		table.insert(raw_lines, text)
 	end
+
+	local function ensure_single_blank_separator()
+		while #raw_lines > 0 and raw_lines[#raw_lines] == "" do
+			table.remove(raw_lines)
+			table.remove(nui_lines)
+		end
+		local line = NuiLine()
+		line:append("")
+		push_line("", line)
+	end
+
+	local function normalize_block_transition(next_kind)
+		if not next_kind or next_kind == "blank" then
+			return
+		end
+		if last_block_kind and last_block_kind ~= next_kind then
+			ensure_single_blank_separator()
+		end
+		last_block_kind = next_kind
+	end
+
+	local function add_line(nui_line, kind)
+		local text = nui_line:content()
+		local line_kind = kind or (text == "" and "blank" or "non_tool")
+		normalize_block_transition(line_kind)
+		push_line(text, nui_line)
+	end
+
+	local function add_raw_line(text, kind)
+		local line = NuiLine()
+		line:append(text)
+		local line_kind = kind or (text == "" and "blank" or "non_tool")
+		normalize_block_transition(line_kind)
+		push_line(text, line)
+	end
+
+	-- Reset position-tracking tables: render() always fully rebuilds them from
+	-- scratch, so any stale entries from a previous frame (e.g. a subagent edit
+	-- that is now suppressed) must be cleared.  Without this, a removed widget's
+	-- old line-range can match the cursor and incorrectly re-trigger rerender_edit.
+	state.questions = {}
+	state.permissions = {}
+	state.edits = {}
+	state.tasks = {}
+	state.tools = {}
 
 	local rendered_perm_ids = {}
 	local rendered_edit_ids = {}
@@ -1222,7 +1266,16 @@ function M.render()
 		local edits = edit_state.get_edits_for_message(message_id)
 		for _, estate in ipairs(edits) do
 			rendered_edit_ids[estate.permission_id] = true
-			render_single_edit(estate)
+			-- Always render edits that belong to the current session (primary-chat
+			-- edits should show their "Approved" confirmed state).
+			-- For edits from other sessions (subagent orphans surfaced via get_all),
+			-- suppress the resolved state in the parent chat to avoid a ghost banner,
+			-- but still show it when navigated into the child session.
+			local in_child_session = #state.session_stack > 0
+			local owns_edit = estate.session_id == current_session.id
+			if estate.status == "pending" or owns_edit or in_child_session then
+				render_single_edit(estate)
+			end
 		end
 	end
 
@@ -1340,63 +1393,62 @@ function M.render()
 					end
 				end
 
-				if has_tools then
-					for _, tool_part in ipairs(tool_parts) do
-						if tool_part.tool == "task" then
-							local is_expanded = state.expanded_tasks[tool_part.id] or false
-							local cached = state.task_child_cache[tool_part.id]
-							local result = chat_tasks.render_task_tool(tool_part, is_expanded, cached)
-							local base_line = #raw_lines
-							local hl_by_line = {}
-							for _, hl in ipairs(result.highlights) do
-								hl_by_line[hl.line] = hl
-							end
-							for idx, tl in ipairs(result.lines) do
-								table.insert(raw_lines, tl)
-								local nl = NuiLine()
-								local line_hl = hl_by_line[idx - 1]
-								if line_hl then
-									nl:append(NuiText(tl, line_hl.hl_group))
-								else
-									nl:append(tl)
+					if has_tools then
+						for _, tool_part in ipairs(tool_parts) do
+							if tool_part.tool == "task" then
+								local is_expanded = state.expanded_tasks[tool_part.id] or false
+								local cached = state.task_child_cache[tool_part.id]
+								local result = chat_tasks.render_task_tool(tool_part, is_expanded, cached)
+								local base_line = #raw_lines
+								local hl_by_line = {}
+								for _, hl in ipairs(result.highlights) do
+									hl_by_line[hl.line] = hl
 								end
-								table.insert(nui_lines, nl)
-							end
-							state.tasks[tool_part.id] = {
-								start_line = base_line,
-								end_line = base_line + #result.lines - 1,
-								tool_part = tool_part,
-							}
-						else
-							local is_expanded = state.expanded_tools[tool_part.id] or false
-							local result = render.render_tool_line(tool_part, is_expanded)
-							local base_line = #raw_lines
-							local hl_by_line = {}
-							for _, hl in ipairs(result.highlights) do
-								hl_by_line[hl.line] = hl
-							end
-							for idx, tl in ipairs(result.lines) do
-								table.insert(raw_lines, tl)
-								local nl = NuiLine()
-								local line_hl = hl_by_line[idx - 1]
-								if line_hl then
-									nl:append(NuiText(tl, line_hl.hl_group))
-								else
-									nl:append(tl)
+								for idx, tl in ipairs(result.lines) do
+									local nl = NuiLine()
+									local line_hl = hl_by_line[idx - 1]
+									if line_hl then
+										nl:append(NuiText(tl, line_hl.hl_group))
+									else
+										nl:append(tl)
+									end
+									add_line(nl, "tool")
 								end
-								table.insert(nui_lines, nl)
+								state.tasks[tool_part.id] = {
+									start_line = base_line,
+									end_line = base_line + #result.lines - 1,
+									tool_part = tool_part,
+								}
+							else
+								local is_expanded = state.expanded_tools[tool_part.id] or false
+								local result = render.render_tool_line(tool_part, is_expanded)
+								local base_line = #raw_lines
+								local hl_by_line = {}
+								for _, hl in ipairs(result.highlights) do
+									hl_by_line[hl.line] = hl
+								end
+								for idx, tl in ipairs(result.lines) do
+									local nl = NuiLine()
+									local line_hl = hl_by_line[idx - 1]
+									if line_hl then
+										nl:append(NuiText(tl, line_hl.hl_group))
+									else
+										nl:append(tl)
+									end
+									add_line(nl, "tool")
+								end
+								state.tools[tool_part.id] = {
+									start_line = base_line,
+									end_line = base_line + #result.lines - 1,
+									tool_part = tool_part,
+								}
 							end
-							state.tools[tool_part.id] = {
-								start_line = base_line,
-								end_line = base_line + #result.lines - 1,
-								tool_part = tool_part,
-							}
 						end
 					end
-				end
 
 				local is_last = (msg_idx == last_assistant_idx)
 				if render.should_show_footer(message, is_last) then
+					ensure_single_blank_separator()
 					add_line(render.render_metadata_footer(message, messages))
 					add_raw_line("")
 				end
@@ -1492,12 +1544,20 @@ function M.render()
 		end
 	end
 
-	local session_edits = edit_state.get_all_for_session(current_session.id)
-	for _, estate in ipairs(session_edits) do
+	-- Orphan edits: use get_all() so subagent edits surface in parent chat.
+	-- Primary-session edits (owns_edit) are always rendered (pending OR resolved).
+	-- Cross-session edits (subagent orphans) are skipped once resolved to avoid
+	-- the ghost "Approved" banner persisting in the parent chat.
+	local all_edits = edit_state.get_all()
+	local in_child_session_orphan = #state.session_stack > 0
+	for _, estate in ipairs(all_edits) do
+		local not_already_rendered = not rendered_edit_ids[estate.permission_id]
+		local not_inline = not (estate.message_id and session_msg_ids[estate.message_id])
+		local owns_edit = estate.session_id == current_session.id
 		if
-			not rendered_edit_ids[estate.permission_id]
-			and not (estate.message_id and session_msg_ids[estate.message_id])
-			and estate.status == "pending"
+			not_already_rendered
+			and not_inline
+			and (estate.status == "pending" or owns_edit or in_child_session_orphan)
 		then
 			render_single_edit(estate)
 		end
@@ -1932,51 +1992,51 @@ end
 -- ─── Re-exports from sub-modules ─────────────────────────────────────────────
 
 -- Questions
-M.add_question_message     = chat_questions.add_question_message
-M.update_question_status   = chat_questions.update_question_status
-M.get_question_at_cursor   = chat_questions.get_question_at_cursor
-M.rerender_question        = chat_questions.rerender_question
-M.submit_question_answers  = chat_questions.submit_question_answers
-M.clear_questions          = chat_questions.clear_questions
-M.debug_questions          = chat_questions.debug_questions
+M.add_question_message       = chat_questions.add_question_message
+M.update_question_status     = chat_questions.update_question_status
+M.get_question_at_cursor     = chat_questions.get_question_at_cursor
+M.rerender_question          = chat_questions.rerender_question
+M.submit_question_answers    = chat_questions.submit_question_answers
+M.clear_questions            = chat_questions.clear_questions
+M.debug_questions            = chat_questions.debug_questions
 M.get_pending_question_count = chat_questions.get_pending_question_count
-M.has_pending_questions    = chat_questions.has_pending_questions
+M.has_pending_questions      = chat_questions.has_pending_questions
 
 -- Permissions
-M.add_permission_message   = chat_permissions.add_permission_message
-M.update_permission_status = chat_permissions.update_permission_status
-M.get_permission_at_cursor = chat_permissions.get_permission_at_cursor
-M.rerender_permission      = chat_permissions.rerender_permission
-M.handle_permission_confirm = chat_permissions.handle_permission_confirm
-M.handle_permission_reject  = chat_permissions.handle_permission_reject
+M.add_permission_message     = chat_permissions.add_permission_message
+M.update_permission_status   = chat_permissions.update_permission_status
+M.get_permission_at_cursor   = chat_permissions.get_permission_at_cursor
+M.rerender_permission        = chat_permissions.rerender_permission
+M.handle_permission_confirm  = chat_permissions.handle_permission_confirm
+M.handle_permission_reject   = chat_permissions.handle_permission_reject
 
 -- Edits
-M.add_edit_message         = chat_edits.add_edit_message
-M.get_edit_at_cursor       = chat_edits.get_edit_at_cursor
-M.rerender_edit            = chat_edits.rerender_edit
-M.finalize_edit            = chat_edits.finalize_edit
-M.handle_edit_accept_file  = chat_edits.handle_edit_accept_file
-M.handle_edit_reject_file  = chat_edits.handle_edit_reject_file
-M.handle_edit_accept_all   = chat_edits.handle_edit_accept_all
-M.handle_edit_reject_all   = chat_edits.handle_edit_reject_all
-M.handle_edit_resolve_file = chat_edits.handle_edit_resolve_file
-M.handle_edit_resolve_all  = chat_edits.handle_edit_resolve_all
-M.handle_edit_toggle_diff  = chat_edits.handle_edit_toggle_diff
-M.handle_edit_diff_tab     = chat_edits.handle_edit_diff_tab
-M.handle_edit_diff_split   = chat_edits.handle_edit_diff_split
-M.open_inline_diff_split   = chat_edits.open_inline_diff_split
+M.add_edit_message           = chat_edits.add_edit_message
+M.get_edit_at_cursor         = chat_edits.get_edit_at_cursor
+M.rerender_edit              = chat_edits.rerender_edit
+M.finalize_edit              = chat_edits.finalize_edit
+M.handle_edit_accept_file    = chat_edits.handle_edit_accept_file
+M.handle_edit_reject_file    = chat_edits.handle_edit_reject_file
+M.handle_edit_accept_all     = chat_edits.handle_edit_accept_all
+M.handle_edit_reject_all     = chat_edits.handle_edit_reject_all
+M.handle_edit_resolve_file   = chat_edits.handle_edit_resolve_file
+M.handle_edit_resolve_all    = chat_edits.handle_edit_resolve_all
+M.handle_edit_toggle_diff    = chat_edits.handle_edit_toggle_diff
+M.handle_edit_diff_tab       = chat_edits.handle_edit_diff_tab
+M.handle_edit_diff_split     = chat_edits.handle_edit_diff_split
+M.open_inline_diff_split     = chat_edits.open_inline_diff_split
 
 -- Tasks / tools
-M.get_task_at_cursor       = chat_tasks.get_task_at_cursor
-M.get_tool_at_cursor       = chat_tasks.get_tool_at_cursor
-M.rerender_task            = chat_tasks.rerender_task
-M.handle_task_toggle       = chat_tasks.handle_task_toggle
-M.rerender_tool            = chat_tasks.rerender_tool
-M.handle_tool_toggle       = chat_tasks.handle_tool_toggle
+M.get_task_at_cursor         = chat_tasks.get_task_at_cursor
+M.get_tool_at_cursor         = chat_tasks.get_tool_at_cursor
+M.rerender_task              = chat_tasks.rerender_task
+M.handle_task_toggle         = chat_tasks.handle_task_toggle
+M.rerender_tool              = chat_tasks.rerender_tool
+M.handle_tool_toggle         = chat_tasks.handle_tool_toggle
 
 -- Session navigation
-M.is_navigating            = chat_nav.is_navigating
-M.enter_child_session      = chat_nav.enter_child_session
-M.leave_child_session      = chat_nav.leave_child_session
+M.is_navigating              = chat_nav.is_navigating
+M.enter_child_session        = chat_nav.enter_child_session
+M.leave_child_session        = chat_nav.leave_child_session
 
 return M
