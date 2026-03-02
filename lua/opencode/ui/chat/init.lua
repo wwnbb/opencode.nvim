@@ -1135,6 +1135,7 @@ function M.render()
 	local sync = require("opencode.sync")
 	local app_state = require("opencode.state")
 	local current_session = app_state.get_session()
+	local in_child_session_view = #state.session_stack > 0
 
 	local nui_lines = {}
 	local raw_lines = {}
@@ -1178,6 +1179,20 @@ function M.render()
 		local line_kind = kind or (text == "" and "blank" or "non_tool")
 		normalize_block_transition(line_kind)
 		push_line(text, line)
+	end
+
+	---@param owner_session_id string|nil
+	---@param widget_status string|nil
+	---@return boolean
+	local function should_render_session_widget(owner_session_id, widget_status)
+		local owns_widget = owner_session_id == current_session.id
+		if owns_widget then
+			return true
+		end
+		if in_child_session_view then
+			return false
+		end
+		return (widget_status or "pending") == "pending"
 	end
 
 	-- Reset position-tracking tables: render() always fully rebuilds them from
@@ -1258,7 +1273,9 @@ function M.render()
 		local perms = permission_state.get_permissions_for_message(message_id)
 		for _, pstate in ipairs(perms) do
 			rendered_perm_ids[pstate.permission_id] = true
-			render_single_permission(pstate)
+			if should_render_session_widget(pstate.session_id, pstate.status) then
+				render_single_permission(pstate)
+			end
 		end
 	end
 
@@ -1266,14 +1283,7 @@ function M.render()
 		local edits = edit_state.get_edits_for_message(message_id)
 		for _, estate in ipairs(edits) do
 			rendered_edit_ids[estate.permission_id] = true
-			-- Always render edits that belong to the current session (primary-chat
-			-- edits should show their "Approved" confirmed state).
-			-- For edits from other sessions (subagent orphans surfaced via get_all),
-			-- suppress the resolved state in the parent chat to avoid a ghost banner,
-			-- but still show it when navigated into the child session.
-			local in_child_session = #state.session_stack > 0
-			local owns_edit = estate.session_id == current_session.id
-			if estate.status == "pending" or owns_edit or in_child_session then
+			if should_render_session_widget(estate.session_id, estate.status) then
 				render_single_edit(estate)
 			end
 		end
@@ -1528,7 +1538,9 @@ function M.render()
 		::continue_local_message::
 	end
 
-	-- Orphan permissions (from subagent/child sessions)
+	-- Orphan permissions from other sessions:
+	-- parent view shows cross-session widgets only while pending;
+	-- child view shows current-session widgets only.
 	local session_msg_ids = {}
 	for _, message in ipairs(messages) do
 		session_msg_ids[message.id] = true
@@ -1539,25 +1551,23 @@ function M.render()
 		if
 			not rendered_perm_ids[pstate.permission_id]
 			and not (pstate.message_id and session_msg_ids[pstate.message_id])
+			and should_render_session_widget(pstate.session_id, pstate.status)
 		then
 			render_single_permission(pstate)
 		end
 	end
 
-	-- Orphan edits: use get_all() so subagent edits surface in parent chat.
-	-- Primary-session edits (owns_edit) are always rendered (pending OR resolved).
-	-- Cross-session edits (subagent orphans) are skipped once resolved to avoid
-	-- the ghost "Approved" banner persisting in the parent chat.
+	-- Orphan edits from other sessions:
+	-- parent view shows cross-session widgets only while pending;
+	-- child view shows current-session widgets only.
 	local all_edits = edit_state.get_all()
-	local in_child_session_orphan = #state.session_stack > 0
 	for _, estate in ipairs(all_edits) do
 		local not_already_rendered = not rendered_edit_ids[estate.permission_id]
 		local not_inline = not (estate.message_id and session_msg_ids[estate.message_id])
-		local owns_edit = estate.session_id == current_session.id
 		if
 			not_already_rendered
 			and not_inline
-			and (estate.status == "pending" or owns_edit or in_child_session_orphan)
+			and should_render_session_widget(estate.session_id, estate.status)
 		then
 			render_single_edit(estate)
 		end
