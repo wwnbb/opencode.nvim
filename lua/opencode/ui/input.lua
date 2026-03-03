@@ -187,13 +187,12 @@ local function resize_input()
 		return
 	end
 	layout.current_height = new_height
-	local vertical_shift
-	if display_lines < 1 then
-		vertical_shift = 0
-	else
-		vertical_shift = display_lines - 1
-	end
-	-- vim.print(vertical_shift, lines)
+
+	-- Keep the input anchored to the bottom edge of the chat window.
+	-- Shift only by the effective popup growth (clamped height), not by the
+	-- raw wrapped line count, otherwise large pasted blocks push the popup up.
+	local vertical_shift = math.max(0, new_height - cfg.min_height)
+
 	state.popup:update_layout({
 		position = { row = layout.row - vertical_shift, col = layout.col },
 		size = { width = layout.content_width, height = new_height },
