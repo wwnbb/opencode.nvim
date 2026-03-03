@@ -13,6 +13,43 @@ local events
 local lifecycle
 local client
 
+---@param prompt string
+---@param opts? { send?: boolean, separator?: string }
+---@param label string
+---@return boolean
+local function _append_prompt_to_input(prompt, opts, label)
+	opts = opts or {}
+
+	local input_ok, input = pcall(require, "opencode.ui.input")
+	if not input_ok then
+		vim.notify("Failed to load input module: " .. tostring(input), vim.log.levels.ERROR)
+		return false
+	end
+
+	input.append_pending_text(prompt, { separator = opts.separator or "\n\n" })
+
+	if opts.send ~= true then
+		vim.notify("Added " .. label .. " to OpenCode input", vim.log.levels.INFO)
+		return true
+	end
+
+	if not lifecycle then
+		vim.notify("OpenCode not initialized; content was added to draft only", vim.log.levels.WARN)
+		return false
+	end
+
+	local text = input.get_pending_text()
+	if vim.trim(text) == "" then
+		vim.notify("OpenCode input is empty", vim.log.levels.WARN)
+		return false
+	end
+
+	input.set_pending_text("")
+	M.send(text)
+	vim.notify("Sent OpenCode prompt with " .. label, vim.log.levels.INFO)
+	return true
+end
+
 ---@param opts? { context?: string }
 ---@return string|nil
 local function _build_current_line_prompt(opts)
@@ -38,6 +75,82 @@ local function _build_current_line_prompt(opts)
 	if line_text ~= "" then
 		table.insert(parts, line_text)
 	end
+
+	local context = opts.context and vim.trim(opts.context) or ""
+	if context ~= "" then
+		table.insert(parts, "Context: " .. context)
+	end
+
+	return table.concat(parts, "\n")
+end
+
+---@param opts? { context?: string }
+---@return string|nil
+local function _build_visual_selection_prompt(opts)
+	opts = opts or {}
+
+	local bufnr = vim.api.nvim_get_current_buf()
+	local filepath = vim.api.nvim_buf_get_name(bufnr)
+	if filepath == "" then
+		vim.notify("OpenCode: current buffer has no file path", vim.log.levels.WARN)
+		return nil
+	end
+
+	local start_pos = vim.fn.getpos("'<")
+	local end_pos = vim.fn.getpos("'>")
+	local start_line = start_pos[2]
+	local start_col = start_pos[3]
+	local end_line = end_pos[2]
+	local end_col = end_pos[3]
+
+	if start_line == 0 or end_line == 0 then
+		vim.notify("OpenCode: no visual selection found", vim.log.levels.WARN)
+		return nil
+	end
+
+	if start_line > end_line then
+		start_line, end_line = end_line, start_line
+		start_col, end_col = end_col, start_col
+	elseif start_line == end_line and start_col > end_col then
+		start_col, end_col = end_col, start_col
+	end
+
+	local lines = vim.api.nvim_buf_get_lines(bufnr, start_line - 1, end_line, false)
+	if #lines == 0 then
+		vim.notify("OpenCode: selected range is empty", vim.log.levels.WARN)
+		return nil
+	end
+
+	local visual_mode = vim.fn.visualmode()
+	if visual_mode == "\022" then
+		local col_start = math.min(start_col, end_col)
+		local col_end = math.max(start_col, end_col)
+		for i, line in ipairs(lines) do
+			lines[i] = line:sub(col_start, col_end)
+		end
+	elseif visual_mode ~= "V" then
+		if #lines == 1 then
+			lines[1] = lines[1]:sub(start_col, end_col)
+		else
+			lines[1] = lines[1]:sub(start_col)
+			lines[#lines] = lines[#lines]:sub(1, end_col)
+		end
+	end
+
+	local display_path = vim.fn.fnamemodify(filepath, ":~:.")
+	if display_path == "" then
+		display_path = filepath
+	end
+
+	local line_ref = tostring(start_line)
+	if start_line ~= end_line then
+		line_ref = string.format("%d-%d", start_line, end_line)
+	end
+
+	local parts = {
+		string.format("@%s#%s", display_path, line_ref),
+		table.concat(lines, "\n"),
+	}
 
 	local context = opts.context and vim.trim(opts.context) or ""
 	if context ~= "" then
@@ -278,34 +391,7 @@ function M.add_current_line_to_input(opts)
 		return false
 	end
 
-	local input_ok, input = pcall(require, "opencode.ui.input")
-	if not input_ok then
-		vim.notify("Failed to load input module: " .. tostring(input), vim.log.levels.ERROR)
-		return false
-	end
-
-	input.append_pending_text(prompt, { separator = opts.separator or "\n\n" })
-
-	if opts.send ~= true then
-		vim.notify("Added current line to OpenCode input", vim.log.levels.INFO)
-		return true
-	end
-
-	if not lifecycle then
-		vim.notify("OpenCode not initialized; line was added to draft only", vim.log.levels.WARN)
-		return false
-	end
-
-	local text = input.get_pending_text()
-	if vim.trim(text) == "" then
-		vim.notify("OpenCode input is empty", vim.log.levels.WARN)
-		return false
-	end
-
-	input.set_pending_text("")
-	M.send(text)
-	vim.notify("Sent OpenCode prompt with current line", vim.log.levels.INFO)
-	return true
+	return _append_prompt_to_input(prompt, opts, "current line")
 end
 
 --- Add current file/line plus extra context to the draft input.
@@ -317,6 +403,31 @@ function M.add_current_line_to_input_with_context(context, opts)
 		context = context,
 	})
 	return M.add_current_line_to_input(merged_opts)
+end
+
+--- Add the current visual selection to the draft input without opening chat.
+---@param opts? { context?: string, send?: boolean, separator?: string }
+---@return boolean
+function M.add_visual_selection_to_input(opts)
+	opts = opts or {}
+
+	local prompt = _build_visual_selection_prompt({ context = opts.context })
+	if not prompt then
+		return false
+	end
+
+	return _append_prompt_to_input(prompt, opts, "selection")
+end
+
+--- Add current visual selection plus extra context to the draft input.
+---@param context string
+---@param opts? { send?: boolean, separator?: string }
+---@return boolean
+function M.add_visual_selection_to_input_with_context(context, opts)
+	local merged_opts = vim.tbl_extend("force", opts or {}, {
+		context = context,
+	})
+	return M.add_visual_selection_to_input(merged_opts)
 end
 
 --- Send a message to the chat
