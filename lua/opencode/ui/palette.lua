@@ -1059,8 +1059,8 @@ function M._show_oauth_auto_dialog(opts)
 		local lt = vim.api.nvim_buf_get_lines(bufnr, line_nr, line_nr + 1, false)[1] or ""
 		vim.api.nvim_buf_set_extmark(bufnr, hl_ns, line_nr, 0, { end_col = #lt, hl_group = hl_group })
 	end
-	hl_line(1, "Comment") -- "Open the following..."
-	hl_line(3, "String") -- URL
+	hl_line(1, "Comment")  -- "Open the following..."
+	hl_line(3, "String")   -- URL
 	if device_code then
 		hl_line(5, "WarningMsg") -- Device code line
 	end
@@ -1167,7 +1167,7 @@ local function register_defaults()
 		keybind = "<leader>os",
 		action = function()
 			lifecycle.ensure_connected(function()
-				client.list_sessions(function(err, sessions)
+				client.list_sessions({ roots = true }, function(err, sessions)
 					if err then
 						vim.schedule(function()
 							vim.notify(
@@ -1194,13 +1194,15 @@ local function register_defaults()
 							return a_time > b_time
 						end)
 
-						-- Format relative time helper
+						-- Format relative time helper (timestamp is ms from JS Date.now())
 						local function format_relative_time(timestamp)
 							if not timestamp then
 								return ""
 							end
+							-- Convert ms -> seconds for comparison with os.time()
+							local ts_sec = math.floor(timestamp / 1000)
 							local now = os.time()
-							local diff = now - timestamp
+							local diff = now - ts_sec
 							if diff < 60 then
 								return "just now"
 							elseif diff < 3600 then
@@ -1212,7 +1214,7 @@ local function register_defaults()
 							elseif diff < 172800 then
 								return "Yesterday"
 							else
-								return os.date("%b %d", timestamp)
+								return os.date("%b %d", ts_sec)
 							end
 						end
 
@@ -1231,11 +1233,12 @@ local function register_defaults()
 								value = session.id,
 								session = session,
 								description = time_str,
-								priority = is_current and 1 or 0,
+								-- sort_key carries the ms timestamp for time-based ordering
+								sort_key = session.time and session.time.updated or 0,
 							})
 						end
 
-						-- Use searchable menu like model switch (with filter input)
+						-- Use searchable menu with time-based sort (most recent first, like TUI)
 						float.create_searchable_menu(items, function(item)
 							local session = item.session
 
@@ -1304,7 +1307,14 @@ local function register_defaults()
 									)
 								end)
 							end)
-						end, { title = " Switch Session ", width = 70 })
+						end, {
+							title = " Switch Session ",
+							width = 70,
+							sort_fn = function(a, b)
+								-- Most recently updated first (matches TUI: toSorted((a,b) => b.time.updated - a.time.updated))
+								return (a.sort_key or 0) > (b.sort_key or 0)
+							end,
+						})
 					end)
 				end)
 			end)
@@ -1762,7 +1772,7 @@ local function register_defaults()
 											if remove_err then
 												vim.notify(
 													"Failed to disconnect: "
-														.. tostring(remove_err.message or remove_err),
+													.. tostring(remove_err.message or remove_err),
 													vim.log.levels.ERROR
 												)
 												return
@@ -1921,7 +1931,7 @@ local function register_defaults()
 									if fallback_err then
 										vim.notify(
 											"Failed to compact session: "
-												.. tostring(fallback_err.message or fallback_err),
+											.. tostring(fallback_err.message or fallback_err),
 											vim.log.levels.ERROR
 										)
 										return
