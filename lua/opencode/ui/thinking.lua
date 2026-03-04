@@ -73,7 +73,7 @@ function M.format_reasoning(text, opts)
 	local topic = M.extract_topic(text)
 	local header
 	if topic then
-		header = string.format("%s Thinking: %s", icon, topic)
+		header = string.format("%s %s", icon, topic)
 	else
 		header = string.format("%s Thinking", icon)
 	end
@@ -170,17 +170,6 @@ end
 -- Get configuration
 function M.get_config()
 	return vim.deepcopy(get_config())
-end
-
--- Throttled update check (disabled - always returns true for live updates)
-function M.should_update()
-	-- Throttling disabled for live updates
-	return true
-end
-
--- Reset throttle (useful for final updates)
-function M.reset_throttle()
-	last_update = 0
 end
 
 return M

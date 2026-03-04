@@ -94,6 +94,14 @@ function M.setup(opts)
 	M.opts = vim.tbl_deep_extend("force", M.opts, opts or {})
 end
 
+-- Simple percent-encoder for URL query params
+local function urlencode(s)
+	s = tostring(s)
+	return s:gsub("[^A-Za-z0-9%-_.~]", function(c)
+		return string.format("%%%02X", c:byte())
+	end)
+end
+
 ---@param path string
 ---@param query? table
 ---@return string
@@ -106,8 +114,8 @@ local function build_path(path, query)
 	for key, value in pairs(query) do
 		table.insert(query_parts, string.format(
 			"%s=%s",
-			vim.fn.urlencode(tostring(key)),
-			vim.fn.urlencode(tostring(value))
+			urlencode(key),
+			urlencode(value)
 		))
 	end
 

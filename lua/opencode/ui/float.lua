@@ -556,15 +556,19 @@ function M.create_searchable_menu(items, on_select, opts)
 			end
 		end
 
-		-- Sort: prioritized items first, then alphabetically
-		table.sort(filtered_items, function(a, b)
-			local a_priority = a.priority or 0
-			local b_priority = b.priority or 0
-			if a_priority ~= b_priority then
-				return a_priority > b_priority
-			end
-			return (a.label or "") < (b.label or "")
-		end)
+		-- Sort: use custom sort_fn if provided, otherwise priority first then alphabetically
+		if opts.sort_fn then
+			table.sort(filtered_items, opts.sort_fn)
+		else
+			table.sort(filtered_items, function(a, b)
+				local a_priority = a.priority or 0
+				local b_priority = b.priority or 0
+				if a_priority ~= b_priority then
+					return a_priority > b_priority
+				end
+				return (a.label or "") < (b.label or "")
+			end)
+		end
 
 		return filtered_items
 	end

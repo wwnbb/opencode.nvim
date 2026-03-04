@@ -35,9 +35,16 @@ function M.health(callback)
 end
 
 -- Get all sessions
+---@param opts? table { roots?, directory?, search?, limit?, start? }
 ---@param callback function(err, sessions)
-function M.list_sessions(callback)
-	http.get("/session", callback)
+function M.list_sessions(opts, callback)
+	if type(opts) == "function" then
+		-- backwards compatibility: list_sessions(callback)
+		callback = opts
+		opts = nil
+	end
+	local query_opts = opts and next(opts) and { query = opts } or nil
+	http.get("/session", callback, query_opts)
 end
 
 -- Get session details
@@ -142,7 +149,8 @@ end
 ---@param callback function(err, success)
 function M.revert_message(session_id, message_id, opts, callback)
 	opts = opts or {}
-	http.post("/session/" .. session_id .. "/revert", vim.tbl_deep_extend("force", opts, { messageID = message_id }), callback)
+	http.post("/session/" .. session_id .. "/revert", vim.tbl_deep_extend("force", opts, { messageID = message_id }),
+		callback)
 end
 
 -- Summarize (compact) session
