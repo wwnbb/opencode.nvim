@@ -9,6 +9,98 @@ local chat_hl_ns = cs.chat_hl_ns
 local edit_widget = require("opencode.ui.edit_widget")
 local edit_state = require("opencode.edit.state")
 
+local INLINE_DIFF_WIN_VAR = "opencode_inline_diff_split"
+
+local inline_diff_state = {
+	active = false,
+	actual_win = nil,
+	actual_buf = nil,
+	proposed_win = nil,
+	proposed_buf = nil,
+}
+
+---@param winid number|nil
+---@return boolean
+local function is_valid_window(winid)
+	return winid ~= nil and vim.api.nvim_win_is_valid(winid)
+end
+
+---@param bufnr number|nil
+---@return boolean
+local function is_valid_buffer(bufnr)
+	return bufnr ~= nil and vim.api.nvim_buf_is_valid(bufnr)
+end
+
+local function reset_inline_diff_state()
+	inline_diff_state.active = false
+	inline_diff_state.actual_win = nil
+	inline_diff_state.actual_buf = nil
+	inline_diff_state.proposed_win = nil
+	inline_diff_state.proposed_buf = nil
+end
+
+---@return boolean
+local function is_inline_diff_state_valid()
+	if not inline_diff_state.active then
+		return false
+	end
+	if not is_valid_window(inline_diff_state.actual_win) or not is_valid_window(inline_diff_state.proposed_win) then
+		return false
+	end
+	if not is_valid_buffer(inline_diff_state.actual_buf) or not is_valid_buffer(inline_diff_state.proposed_buf) then
+		return false
+	end
+	if vim.api.nvim_win_get_buf(inline_diff_state.actual_win) ~= inline_diff_state.actual_buf then
+		return false
+	end
+	if vim.api.nvim_win_get_buf(inline_diff_state.proposed_win) ~= inline_diff_state.proposed_buf then
+		return false
+	end
+	return true
+end
+
+local function ensure_inline_diff_state()
+	if not inline_diff_state.active then
+		return
+	end
+	if is_inline_diff_state_valid() then
+		return
+	end
+	reset_inline_diff_state()
+end
+
+---@param winid number
+local function mark_inline_diff_window(winid)
+	if not is_valid_window(winid) then
+		return
+	end
+	pcall(vim.api.nvim_win_set_var, winid, INLINE_DIFF_WIN_VAR, true)
+end
+
+---@param winid number|nil
+---@return boolean
+local function is_inline_diff_window_marked(winid)
+	if not is_valid_window(winid) then
+		return false
+	end
+	local ok, marked = pcall(vim.api.nvim_win_get_var, winid, INLINE_DIFF_WIN_VAR)
+	return ok and marked == true
+end
+
+---@param winid number|nil
+---@param force boolean
+---@return boolean, string|nil
+local function close_window(winid, force)
+	if not is_valid_window(winid) then
+		return true
+	end
+	local ok, err = pcall(vim.api.nvim_win_close, winid, force)
+	if ok then
+		return true
+	end
+	return false, tostring(err)
+end
+
 local function schedule_render()
 	require("opencode.ui.chat").schedule_render()
 end
@@ -368,18 +460,80 @@ function M.handle_edit_diff_split()
 	M.open_inline_diff_split(file)
 end
 
+--- Check whether a window belongs to the OpenCode inline diff split.
+---@param winid number|nil
+---@return boolean
+function M.is_inline_diff_window(winid)
+	return is_inline_diff_window_marked(winid)
+end
+
+--- Close the active OpenCode inline diff split (if any).
+---@param opts? table { check_unsaved?: boolean, unsaved_message?: string, silent?: boolean, force?: boolean }
+---@return boolean ok
+---@return string|nil err
+function M.close_inline_diff_split(opts)
+	opts = opts or {}
+	ensure_inline_diff_state()
+	if not inline_diff_state.active then
+		return true
+	end
+
+	local check_unsaved = opts.check_unsaved == true
+	local unsaved_message = opts.unsaved_message or "Save or discard inline diff changes before continuing."
+	local silent = opts.silent == true
+	local force = opts.force == true
+
+	if check_unsaved and is_valid_buffer(inline_diff_state.actual_buf) and vim.bo[inline_diff_state.actual_buf].modified then
+		if not silent then
+			vim.notify(unsaved_message, vim.log.levels.WARN)
+		end
+		return false, "unsaved_changes"
+	end
+
+	local closed_actual, actual_err = close_window(inline_diff_state.actual_win, force)
+	if not closed_actual then
+		if not silent then
+			vim.notify("Could not close diff split: " .. (actual_err or "unknown error"), vim.log.levels.WARN)
+		end
+		return false, actual_err
+	end
+
+	local _, proposed_err = close_window(inline_diff_state.proposed_win, true)
+	if proposed_err and not silent then
+		vim.notify("Could not fully close diff split: " .. proposed_err, vim.log.levels.WARN)
+	end
+
+	if is_valid_buffer(inline_diff_state.proposed_buf) then
+		pcall(vim.api.nvim_buf_delete, inline_diff_state.proposed_buf, { force = true })
+	end
+
+	reset_inline_diff_state()
+	return true
+end
+
 ---Open a vertical diff split near chat for a single file.
 ---@param file table  File entry from edit state
 function M.open_inline_diff_split(file)
+	ensure_inline_diff_state()
+	local ok_close = M.close_inline_diff_split({
+		check_unsaved = true,
+		unsaved_message = "Save or discard inline diff changes before opening another diff split.",
+	})
+	if not ok_close then
+		return
+	end
+
 	local filepath = file.filepath
 	local after_content = file.after or ""
 
 	vim.cmd("leftabove vsplit " .. vim.fn.fnameescape(filepath))
 	local actual_win = vim.api.nvim_get_current_win()
 	local actual_buf = vim.api.nvim_get_current_buf()
+	mark_inline_diff_window(actual_win)
 
 	vim.cmd("vsplit")
 	local proposed_win = vim.api.nvim_get_current_win()
+	mark_inline_diff_window(proposed_win)
 	local proposed_buf = vim.api.nvim_create_buf(false, true)
 	vim.api.nvim_win_set_buf(proposed_win, proposed_buf)
 
@@ -406,19 +560,21 @@ function M.open_inline_diff_split(file)
 		vim.cmd("diffthis")
 	end)
 
+	inline_diff_state.active = true
+	inline_diff_state.actual_win = actual_win
+	inline_diff_state.actual_buf = actual_buf
+	inline_diff_state.proposed_win = proposed_win
+	inline_diff_state.proposed_buf = proposed_buf
+
 	vim.api.nvim_set_current_win(actual_win)
 
 	for _, buf in ipairs({ actual_buf, proposed_buf }) do
 		if vim.api.nvim_buf_is_valid(buf) then
 			vim.keymap.set("n", "q", function()
-				if vim.api.nvim_buf_is_valid(proposed_buf) then
-					vim.api.nvim_buf_delete(proposed_buf, { force = true })
-				end
-				if vim.api.nvim_win_is_valid(actual_win) then
-					vim.api.nvim_win_call(actual_win, function()
-						vim.cmd("diffoff")
-					end)
-				end
+				M.close_inline_diff_split({
+					check_unsaved = true,
+					unsaved_message = "Save or discard inline diff changes before closing the diff split.",
+				})
 			end, { buffer = buf, noremap = true, silent = true })
 		end
 	end
