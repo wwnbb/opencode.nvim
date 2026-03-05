@@ -168,12 +168,18 @@ local function setup_keymaps()
 	for _, buf in ipairs(bufs) do
 		local opts = { buffer = buf, noremap = true, silent = true }
 
-		-- <C-a>: Confirm current file (save + advance or finish)
+		-- <C-a>: Confirm current file (save as-is, auto-classify, advance)
+		-- Does NOT overwrite manual edits — file is classified by comparing disk state to before/after.
 		vim.keymap.set("n", "<C-a>", function()
 			M._confirm_current()
 		end, opts)
 
-		-- <C-x>: Reject current file (revert + advance or finish)
+		-- <C-s>: Alias for <C-a> — explicit "save my manual edits and mark as resolved"
+		vim.keymap.set("n", "<C-s>", function()
+			M._confirm_current()
+		end, opts)
+
+		-- <C-x>: Reject current file (revert to original + advance)
 		vim.keymap.set("n", "<C-x>", function()
 			M._reject_current()
 		end, opts)
@@ -230,12 +236,16 @@ local function setup_keymaps()
 				"  ]c       - Jump to next change",
 				"  [c       - Jump to previous change",
 				"  <C-y>    - Apply ALL remaining proposed hunks at once",
-				"  <C-a>    - Confirm current file (save and advance)",
-				"  <C-x>    - Reject current file (revert and advance)",
+				"  <C-a>    - Save file as-is and advance (auto-classifies: accepted/resolved)",
+				"  <C-s>    - Same as <C-a> (save manual edits and mark as resolved)",
+				"  <C-x>    - Reject current file (revert to original and advance)",
 				"  <C-n>    - Same as <C-a> (confirm + next)",
 				"  <C-p>    - Go to previous file",
 				"  q        - Reject ALL files and close",
 				"  ?        - Show this help",
+				"",
+				"Tip: use <C-y> to apply all proposed changes, then <C-a> to confirm.",
+				"     Or edit manually and press <C-s> / <C-a> to keep your edits.",
 			}
 			vim.notify(table.concat(help, "\n"), vim.log.levels.INFO)
 		end, opts)
@@ -366,9 +376,11 @@ function M._show_file(index)
 	vim.notify(status_msg, vim.log.levels.INFO)
 end
 
---- Sync the chat edit widget status after a confirm/reject action
---- This updates the file status in the chat buffer and triggers finalization if needed.
----@param action "accept"|"reject"
+--- Sync the chat edit widget status after a confirm/reject/resolve action.
+--- "resolve" reads the current disk state and auto-classifies
+--- (accepted if matches 'after', rejected if matches 'before', resolved otherwise).
+--- This is used by <C-a> / <C-s> so manual edits are never overwritten.
+---@param action "resolve"|"reject"
 local function sync_edit_action(action)
 	if not state.edit_id or not state.edit_file_index then
 		return
@@ -392,9 +404,11 @@ local function sync_edit_action(action)
 			return
 		end
 
-		if action == "accept" then
-			edit_state.accept_file(edit_id, file_index)
-		else
+		if action == "resolve" then
+			-- Auto-classify: reads disk, compares to before/after, sets status accordingly.
+			-- This preserves whatever the user saved manually.
+			edit_state.resolve_file(edit_id, file_index)
+		else -- "reject"
 			edit_state.reject_file(edit_id, file_index)
 		end
 
@@ -410,15 +424,18 @@ local function sync_edit_action(action)
 	end)
 end
 
---- Confirm current file: save and advance to next or finish
+--- Confirm current file: save current buffer state and advance.
+--- Uses "resolve" so the file is auto-classified based on its current disk content
+--- (accepted if all hunks applied, rejected if reverted, resolved if partially edited).
+--- Manual edits are NEVER overwritten.
 function M._confirm_current()
-	-- Save the file buffer
+	-- Save the file buffer as-is (preserves any manual edits)
 	if state.original_win and vim.api.nvim_win_is_valid(state.original_win) then
 		vim.api.nvim_win_call(state.original_win, function()
 			vim.cmd("silent! write")
 		end)
 	end
-	sync_edit_action("accept")
+	sync_edit_action("resolve")
 	M._advance_or_finish()
 end
 
