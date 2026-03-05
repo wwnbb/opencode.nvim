@@ -14,9 +14,12 @@ local state = {
 	proposed_buf = nil, -- Scratch buffer with proposed content (LEFT side, readonly)
 	original_win = nil,
 	proposed_win = nil,
-	tab_page = nil,    -- Tab page for the diff view (keeps chat untouched)
+	tab_page = nil,     -- Tab page for the diff view (keeps chat untouched)
 	previous_winid = nil, -- To restore focus on close
 	file_snapshots = {}, -- {[index] = original_content} for undo on reject
+	-- Back-reference to the chat edit widget (set when launched from dt)
+	edit_id = nil,      -- permission_id of the originating edit
+	edit_file_index = nil, -- which file index in the edit widget was opened
 }
 
 local logger_ok, logger = pcall(require, "opencode.logger")
@@ -363,6 +366,50 @@ function M._show_file(index)
 	vim.notify(status_msg, vim.log.levels.INFO)
 end
 
+--- Sync the chat edit widget status after a confirm/reject action
+--- This updates the file status in the chat buffer and triggers finalization if needed.
+---@param action "accept"|"reject"
+local function sync_edit_action(action)
+	if not state.edit_id or not state.edit_file_index then
+		return
+	end
+	local edit_id = state.edit_id
+	local file_index = state.edit_file_index
+
+	vim.schedule(function()
+		local ok_es, edit_state = pcall(require, "opencode.edit.state")
+		if not ok_es then
+			return
+		end
+
+		local estate = edit_state.get_edit(edit_id)
+		if not estate or estate.status ~= "pending" then
+			return
+		end
+
+		local file = estate.files[file_index]
+		if not file or file.status ~= "pending" then
+			return
+		end
+
+		if action == "accept" then
+			edit_state.accept_file(edit_id, file_index)
+		else
+			edit_state.reject_file(edit_id, file_index)
+		end
+
+		-- Trigger rerender or finalization in the chat
+		local ok_edits, chat_edits = pcall(require, "opencode.ui.chat.edits")
+		if ok_edits then
+			if edit_state.are_all_resolved(edit_id) then
+				chat_edits.finalize_edit(edit_id)
+			else
+				chat_edits.rerender_edit(edit_id)
+			end
+		end
+	end)
+end
+
 --- Confirm current file: save and advance to next or finish
 function M._confirm_current()
 	-- Save the file buffer
@@ -371,6 +418,7 @@ function M._confirm_current()
 			vim.cmd("silent! write")
 		end)
 	end
+	sync_edit_action("accept")
 	M._advance_or_finish()
 end
 
@@ -400,6 +448,7 @@ function M._reject_current()
 		end
 	end
 
+	sync_edit_action("reject")
 	M._advance_or_finish()
 end
 
@@ -478,6 +527,8 @@ function M.show(permission_id, files, opts)
 	state.files = files
 	state.current_file_index = 1
 	state.file_snapshots = {}
+	state.edit_id = opts.edit_id or nil
+	state.edit_file_index = opts.file_index or nil
 
 	-- Stop spinner if active
 	local spinner_ok, spinner = pcall(require, "opencode.ui.spinner")
