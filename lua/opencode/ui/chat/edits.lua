@@ -490,6 +490,10 @@ function M.close_inline_diff_split(opts)
 		return false, "unsaved_changes"
 	end
 
+	if state.visible and is_valid_window(state.winid) and state.winid ~= vim.api.nvim_get_current_win() then
+		pcall(vim.api.nvim_set_current_win, state.winid)
+	end
+
 	local closed_actual, actual_err = close_window(inline_diff_state.actual_win, force)
 	if not closed_actual then
 		if not silent then
@@ -521,6 +525,13 @@ function M.open_inline_diff_split(file)
 	})
 	if not ok_close then
 		return
+	end
+
+	if state.visible and state.config and state.config.layout == "float" then
+		local chat_ok, chat = pcall(require, "opencode.ui.chat")
+		if chat_ok and type(chat.close) == "function" then
+			chat.close()
+		end
 	end
 
 	local filepath = file.filepath
