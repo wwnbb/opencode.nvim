@@ -635,7 +635,7 @@ function M.is_inline_diff_window(winid)
 end
 
 --- Close the active OpenCode inline diff split (if any).
----@param opts? table { check_unsaved?: boolean, unsaved_message?: string, silent?: boolean, force?: boolean }
+---@param opts? table { check_unsaved?: boolean, unsaved_message?: string, silent?: boolean }
 ---@return boolean ok
 ---@return string|nil err
 function M.close_inline_diff_split(opts)
@@ -649,7 +649,6 @@ function M.close_inline_diff_split(opts)
 	local check_unsaved = opts.check_unsaved == true
 	local unsaved_message = opts.unsaved_message or "Save or discard inline diff changes before continuing."
 	local silent = opts.silent == true
-	local force = opts.force == true
 
 	local actual_win = tracked_active and inline_diff_state.actual_win or nil
 	local actual_buf = tracked_active and inline_diff_state.actual_buf or nil
@@ -668,32 +667,52 @@ function M.close_inline_diff_split(opts)
 		pcall(vim.api.nvim_set_current_win, state.winid)
 	end
 
-	if tracked_active then
-		local closed_actual, actual_err = close_window(inline_diff_state.actual_win, force)
-		if not closed_actual then
-			if not silent then
-				vim.notify("Could not close diff split: " .. (actual_err or "unknown error"), vim.log.levels.WARN)
-			end
-			return false, actual_err
+	local valid_marked = {}
+	local marked_set = {}
+	for _, winid in ipairs(marked_wins) do
+		if is_valid_window(winid) and not marked_set[winid] then
+			marked_set[winid] = true
+			table.insert(valid_marked, winid)
 		end
+	end
+	if #valid_marked == 0 then
+		reset_inline_diff_state()
+		return true
+	end
 
-		local _, proposed_err = close_window(inline_diff_state.proposed_win, true)
-		if proposed_err and not silent then
-			vim.notify("Could not fully close diff split: " .. proposed_err, vim.log.levels.WARN)
+	local total_windows = #vim.api.nvim_list_wins()
+	local keep_win = nil
+	if total_windows <= #valid_marked then
+		if is_valid_window(actual_win) and marked_set[actual_win] then
+			keep_win = actual_win
+		else
+			keep_win = valid_marked[1]
 		end
-	else
-		local close_err
-		for _, winid in ipairs(marked_wins) do
-			if is_valid_window(winid) then
-				local ok_close, err = close_window(winid, true)
-				if not ok_close and not close_err then
-					close_err = err
-				end
+	end
+
+	if keep_win and is_valid_window(keep_win) and vim.api.nvim_get_current_win() ~= keep_win then
+		pcall(vim.api.nvim_set_current_win, keep_win)
+	end
+
+	local close_err
+	for _, winid in ipairs(valid_marked) do
+		if not keep_win or winid ~= keep_win then
+			local ok_close, err = close_window(winid, true)
+			if not ok_close and not close_err then
+				close_err = err
 			end
 		end
-		if close_err and not silent then
-			vim.notify("Could not fully close stale diff split: " .. tostring(close_err), vim.log.levels.WARN)
-		end
+	end
+
+	if keep_win and is_valid_window(keep_win) then
+		pcall(vim.api.nvim_win_set_var, keep_win, INLINE_DIFF_WIN_VAR, false)
+		pcall(vim.api.nvim_win_call, keep_win, function()
+			vim.cmd("diffoff!")
+		end)
+	end
+
+	if close_err and not silent then
+		vim.notify("Could not fully close diff split: " .. tostring(close_err), vim.log.levels.WARN)
 	end
 
 	if is_valid_buffer(inline_diff_state.proposed_buf) then
