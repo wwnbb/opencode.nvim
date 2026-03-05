@@ -747,16 +747,6 @@ function M.close()
 		return
 	end
 
-	local ok_diff, diff_err = chat_edits.close_inline_diff_split({ check_unsaved = true, silent = true })
-	if not ok_diff then
-		if diff_err == "unsaved_changes" then
-			vim.notify("Save or discard inline diff changes before closing OpenCode chat.", vim.log.levels.WARN)
-		else
-			vim.notify("Could not close inline diff split: " .. tostring(diff_err or "unknown"), vim.log.levels.WARN)
-		end
-		return
-	end
-
 	clear_float_focus_autocmds()
 
 	if input.is_visible() then
