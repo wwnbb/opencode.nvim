@@ -8,13 +8,13 @@ local M = {}
 local state = {
 	active = false,
 	permission_id = nil,
-	files = {}, -- Array of {filePath, before, after, type, relativePath, diff}
+	files = {},      -- Array of {filePath, before, after, type, relativePath, diff}
 	current_file_index = 1,
 	original_buf = nil, -- Buffer for the actual file (RIGHT side, editable)
 	proposed_buf = nil, -- Scratch buffer with proposed content (LEFT side, readonly)
 	original_win = nil,
 	proposed_win = nil,
-	tab_page = nil, -- Tab page for the diff view (keeps chat untouched)
+	tab_page = nil,    -- Tab page for the diff view (keeps chat untouched)
 	previous_winid = nil, -- To restore focus on close
 	file_snapshots = {}, -- {[index] = original_content} for undo on reject
 }
@@ -101,6 +101,9 @@ function M.close()
 		vim.api.nvim_buf_delete(state.proposed_buf, { force = true })
 	end
 
+	-- Capture previous_winid BEFORE resetting state (state reset nils it)
+	local prev_win = state.previous_winid
+
 	-- Reset state
 	state.active = false
 	state.permission_id = nil
@@ -112,17 +115,18 @@ function M.close()
 	state.proposed_win = nil
 	state.tab_page = nil
 	state.file_snapshots = {}
+	state.previous_winid = nil
 
 	-- Restore focus to previous window
 	vim.schedule(function()
-		if state.previous_winid and vim.api.nvim_win_is_valid(state.previous_winid) then
-			vim.api.nvim_set_current_win(state.previous_winid)
+		if prev_win and vim.api.nvim_win_is_valid(prev_win) then
+			vim.api.nvim_set_current_win(prev_win)
 		end
-		state.previous_winid = nil
 
-		-- Re-open input so user can continue chatting
+		-- Re-open input only if the chat is still visible (it may have been
+		-- closed by WinEnter/TabEnter while the diff tab was active)
 		local chat_ok, chat = pcall(require, "opencode.ui.chat")
-		if chat_ok and chat.focus_input then
+		if chat_ok and chat.focus_input and chat.is_visible and chat.is_visible() then
 			chat.focus_input()
 		end
 	end)
