@@ -345,7 +345,11 @@ function M.handle_edit_diff_tab()
 			after = file.after,
 			type = file.file_type,
 		},
-	}, {})
+	}, {
+		-- Pass back-reference so the diff tab can sync status to the chat widget
+		edit_id = eid,
+		file_index = estate.selected_file,
+	})
 end
 
 function M.handle_edit_diff_split()
