@@ -78,6 +78,26 @@ local function mark_inline_diff_window(winid)
 end
 
 ---@param winid number|nil
+local function clear_inline_diff_mark(winid)
+	if not is_valid_window(winid) then
+		return
+	end
+	if not pcall(vim.api.nvim_win_del_var, winid, INLINE_DIFF_WIN_VAR) then
+		pcall(vim.api.nvim_win_set_var, winid, INLINE_DIFF_WIN_VAR, false)
+	end
+end
+
+---@param winid number|nil
+local function disable_diff_on_window(winid)
+	if not is_valid_window(winid) then
+		return
+	end
+	pcall(vim.api.nvim_win_call, winid, function()
+		vim.cmd("diffoff!")
+	end)
+end
+
+---@param winid number|nil
 ---@return boolean
 local function is_inline_diff_window_marked(winid)
 	if not is_valid_window(winid) then
@@ -132,6 +152,57 @@ local function close_window(winid, force)
 		return true
 	end
 	return false, tostring(err)
+end
+
+---@param err string|nil
+---@return boolean
+local function is_last_window_close_error(err)
+	return type(err) == "string" and err:match("E444") ~= nil
+end
+
+---@param winid number|nil
+---@return number|nil, number|nil, string|nil
+local function normalize_surviving_inline_diff_window(winid)
+	if not is_valid_window(winid) then
+		return nil, nil, nil
+	end
+
+	local bufnr = vim.api.nvim_win_get_buf(winid)
+	local is_scratch = is_valid_buffer(bufnr) and vim.bo[bufnr].buftype == "nofile"
+
+	clear_inline_diff_mark(winid)
+	disable_diff_on_window(winid)
+
+	if not is_scratch then
+		if is_valid_buffer(bufnr) then
+			return winid, bufnr, nil
+		end
+		return nil, nil, nil
+	end
+
+	local ok_close, err = close_window(winid, true)
+	if ok_close then
+		if is_valid_buffer(bufnr) then
+			pcall(vim.api.nvim_buf_delete, bufnr, { force = true })
+		end
+		return nil, nil, nil
+	end
+
+	if is_last_window_close_error(err) then
+		local old_buf = bufnr
+		local ok_new, new_err = pcall(vim.api.nvim_win_call, winid, function()
+			vim.cmd("enew")
+		end)
+		if ok_new then
+			if is_valid_buffer(old_buf) then
+				pcall(vim.api.nvim_buf_delete, old_buf, { force = true })
+			end
+			return nil, nil, nil
+		end
+		return nil, nil, tostring(new_err)
+	end
+
+	return nil, nil, err
 end
 
 ---@param winid number
@@ -638,12 +709,14 @@ end
 ---@param opts? table { check_unsaved?: boolean, unsaved_message?: string, silent?: boolean }
 ---@return boolean ok
 ---@return string|nil err
+---@return number|nil reusable_win
+---@return number|nil reusable_buf
 function M.close_inline_diff_split(opts)
 	opts = opts or {}
 	local marked_wins = list_marked_inline_diff_windows()
 	local tracked_active = inline_diff_state.active and is_inline_diff_state_valid()
 	if not tracked_active and not inline_diff_state.active and #marked_wins == 0 then
-		return true
+		return true, nil, nil, nil
 	end
 
 	local check_unsaved = opts.check_unsaved == true
@@ -660,7 +733,7 @@ function M.close_inline_diff_split(opts)
 		if not silent then
 			vim.notify(unsaved_message, vim.log.levels.WARN)
 		end
-		return false, "unsaved_changes"
+		return false, "unsaved_changes", nil, nil
 	end
 
 	if state.visible and is_valid_window(state.winid) and state.winid ~= vim.api.nvim_get_current_win() then
@@ -677,38 +750,64 @@ function M.close_inline_diff_split(opts)
 	end
 	if #valid_marked == 0 then
 		reset_inline_diff_state()
-		return true
+		return true, nil, nil, nil
 	end
 
-	local total_windows = #vim.api.nvim_list_wins()
-	local keep_win = nil
-	if total_windows <= #valid_marked then
-		if is_valid_window(actual_win) and marked_set[actual_win] then
-			keep_win = actual_win
-		else
-			keep_win = valid_marked[1]
-		end
-	end
-
-	if keep_win and is_valid_window(keep_win) and vim.api.nvim_get_current_win() ~= keep_win then
-		pcall(vim.api.nvim_set_current_win, keep_win)
+	if not is_valid_window(actual_win) or not marked_set[actual_win] then
+		actual_win, actual_buf = find_actual_from_marked_windows(valid_marked)
 	end
 
 	local close_err
+	local reusable_win
+	local reusable_buf
+	local ordered_wins = {}
+
 	for _, winid in ipairs(valid_marked) do
-		if not keep_win or winid ~= keep_win then
-			local ok_close, err = close_window(winid, true)
-			if not ok_close and not close_err then
-				close_err = err
-			end
+		if winid ~= actual_win then
+			table.insert(ordered_wins, winid)
 		end
 	end
+	if is_valid_window(actual_win) and marked_set[actual_win] then
+		table.insert(ordered_wins, actual_win)
+	end
 
-	if keep_win and is_valid_window(keep_win) then
-		pcall(vim.api.nvim_win_set_var, keep_win, INLINE_DIFF_WIN_VAR, false)
-		pcall(vim.api.nvim_win_call, keep_win, function()
-			vim.cmd("diffoff!")
-		end)
+	if #ordered_wins == 1 then
+		local only_win = ordered_wins[1]
+		local only_buf = is_valid_window(only_win) and vim.api.nvim_win_get_buf(only_win) or nil
+		local is_actual = is_valid_window(actual_win) and only_win == actual_win
+		local norm_win, norm_buf, norm_err = normalize_surviving_inline_diff_window(only_win)
+		if is_actual and is_valid_window(norm_win) and is_valid_buffer(norm_buf) then
+			reusable_win = norm_win
+			reusable_buf = norm_buf
+		elseif norm_err then
+			close_err = norm_err
+		elseif is_valid_buffer(only_buf) and vim.bo[only_buf].buftype == "nofile" then
+			reusable_win = nil
+			reusable_buf = nil
+		end
+	else
+		for _, winid in ipairs(ordered_wins) do
+			if is_valid_window(winid) then
+				local ok_close, err = close_window(winid, true)
+				if not ok_close then
+					local is_actual = is_valid_window(actual_win) and winid == actual_win
+					if is_actual and is_last_window_close_error(err) then
+						local norm_win, norm_buf, norm_err = normalize_surviving_inline_diff_window(winid)
+						if is_valid_window(norm_win) and is_valid_buffer(norm_buf) then
+							reusable_win = norm_win
+							reusable_buf = norm_buf
+						elseif norm_err and not close_err then
+							close_err = norm_err
+						end
+					else
+						local _, _, norm_err = normalize_surviving_inline_diff_window(winid)
+						if not close_err then
+							close_err = norm_err or err
+						end
+					end
+				end
+			end
+		end
 	end
 
 	if close_err and not silent then
@@ -720,14 +819,14 @@ function M.close_inline_diff_split(opts)
 	end
 
 	reset_inline_diff_state()
-	return true
+	return true, close_err, reusable_win, reusable_buf
 end
 
 ---Open a vertical diff split near chat for a single file.
 ---@param file table  File entry from edit state
 function M.open_inline_diff_split(file)
 	ensure_inline_diff_state()
-	local ok_close = M.close_inline_diff_split({
+	local ok_close, _, reusable_win = M.close_inline_diff_split({
 		check_unsaved = true,
 		unsaved_message = "Save or discard inline diff changes before opening another diff split.",
 	})
@@ -744,7 +843,7 @@ function M.open_inline_diff_split(file)
 
 	local filepath = file.filepath
 	local after_content = file.after or ""
-	local anchor_win = find_anchor_window()
+	local anchor_win = is_valid_window(reusable_win) and reusable_win or find_anchor_window()
 	if not anchor_win then
 		anchor_win = create_fallback_anchor_window()
 	end
