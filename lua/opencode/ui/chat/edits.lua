@@ -101,6 +101,140 @@ local function close_window(winid, force)
 	return false, tostring(err)
 end
 
+---@param winid number
+---@param option string
+---@return any
+local function get_window_option(winid, option)
+	local ok, value = pcall(function()
+		return vim.wo[winid][option]
+	end)
+	if ok then
+		return value
+	end
+	return nil
+end
+
+---@param path string|nil
+---@return string
+local function normalize_path(path)
+	if not path or path == "" then
+		return ""
+	end
+	return vim.fn.fnamemodify(path, ":p")
+end
+
+---@param winid number|nil
+---@return boolean
+local function is_usable_anchor_window(winid)
+	if not is_valid_window(winid) then
+		return false
+	end
+	if state.winid and winid == state.winid then
+		return false
+	end
+	if is_inline_diff_window_marked(winid) then
+		return false
+	end
+	if get_window_option(winid, "previewwindow") then
+		return false
+	end
+	if get_window_option(winid, "winfixwidth") then
+		return false
+	end
+	if get_window_option(winid, "winfixbuf") then
+		return false
+	end
+
+	local bufnr = vim.api.nvim_win_get_buf(winid)
+	if not is_valid_buffer(bufnr) then
+		return false
+	end
+
+	local buftype = vim.bo[bufnr].buftype
+	if buftype == "nofile" or buftype == "help" or buftype == "quickfix" or buftype == "terminal" or buftype == "prompt" then
+		return false
+	end
+
+	local ft = vim.bo[bufnr].filetype or ""
+	if ft:match("^opencode") then
+		return false
+	end
+	if ft == "gitrebase" or ft == "gitcommit" then
+		return false
+	end
+	if ft == "NvimTree" or ft:match("^neo%-tree") then
+		return false
+	end
+
+	return true
+end
+
+---@return number|nil
+local function find_anchor_window()
+	local seen = {}
+	local ordered = {}
+	local alt_winnr = vim.fn.winnr("#")
+	if alt_winnr and alt_winnr > 0 then
+		table.insert(ordered, alt_winnr)
+	end
+	local max_winnr = vim.fn.winnr("$")
+	for nr = 1, max_winnr do
+		table.insert(ordered, nr)
+	end
+
+	for _, nr in ipairs(ordered) do
+		if not seen[nr] then
+			seen[nr] = true
+			local winid = vim.fn.win_getid(nr)
+			if is_usable_anchor_window(winid) then
+				return winid
+			end
+		end
+	end
+
+	local current = vim.api.nvim_get_current_win()
+	if is_usable_anchor_window(current) then
+		return current
+	end
+	return nil
+end
+
+---@return number
+local function create_fallback_anchor_window()
+	vim.cmd("belowright new")
+	local winid = vim.api.nvim_get_current_win()
+	local bufnr = vim.api.nvim_get_current_buf()
+	vim.bo[bufnr].bufhidden = "delete"
+	return winid
+end
+
+---@param anchor_win number
+---@param filepath string
+---@return boolean, number|string
+local function ensure_actual_file_window(anchor_win, filepath)
+	if not is_valid_window(anchor_win) then
+		return false, "Invalid target window"
+	end
+
+	local target_abs = normalize_path(filepath)
+	local current_buf = vim.api.nvim_win_get_buf(anchor_win)
+	local current_abs = normalize_path(vim.api.nvim_buf_get_name(current_buf))
+
+	if current_abs ~= target_abs then
+		if vim.bo[current_buf].modified then
+			return false, "Save or discard changes in the current file window before opening diff split."
+		end
+		local ok, err = pcall(vim.api.nvim_win_call, anchor_win, function()
+			vim.cmd("edit " .. vim.fn.fnameescape(filepath))
+		end)
+		if not ok then
+			return false, "Failed to open file for diff split: " .. tostring(err)
+		end
+	end
+
+	return true, vim.api.nvim_win_get_buf(anchor_win)
+end
+
 local function schedule_render()
 	require("opencode.ui.chat").schedule_render()
 end
@@ -536,13 +670,28 @@ function M.open_inline_diff_split(file)
 
 	local filepath = file.filepath
 	local after_content = file.after or ""
+	local anchor_win = find_anchor_window()
+	if not anchor_win then
+		anchor_win = create_fallback_anchor_window()
+	end
+	if not is_valid_window(anchor_win) then
+		vim.notify("Could not find a usable window for diff split.", vim.log.levels.WARN)
+		return
+	end
 
-	vim.cmd("leftabove vsplit " .. vim.fn.fnameescape(filepath))
-	local actual_win = vim.api.nvim_get_current_win()
-	local actual_buf = vim.api.nvim_get_current_buf()
+	local ok_actual, actual_result = ensure_actual_file_window(anchor_win, filepath)
+	if not ok_actual then
+		vim.notify(tostring(actual_result), vim.log.levels.WARN)
+		return
+	end
+
+	local actual_win = anchor_win
+	local actual_buf = actual_result
+	vim.api.nvim_set_current_win(actual_win)
+
 	mark_inline_diff_window(actual_win)
 
-	vim.cmd("vsplit")
+	vim.cmd("leftabove vsplit")
 	local proposed_win = vim.api.nvim_get_current_win()
 	mark_inline_diff_window(proposed_win)
 	local proposed_buf = vim.api.nvim_create_buf(false, true)
