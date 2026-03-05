@@ -682,7 +682,14 @@ function M.show(opts)
 	})
 
 	state.popup:on(event.BufLeave, function()
-		M.close()
+		vim.schedule(function()
+			-- Don't close input when the user is entering the native diff tab
+			local nd_ok, nd = pcall(require, "opencode.ui.native_diff")
+			if nd_ok and nd.is_active and nd.is_active() then
+				return
+			end
+			M.close()
+		end)
 	end)
 
 	-- Common: populate info bar content
@@ -890,7 +897,7 @@ function M.append_pending_text(text, opts)
 		next_text = extra
 	elseif separator == "" then
 		next_text = current .. extra
-	elseif current:sub(-#separator) == separator then
+	elseif current:sub(- #separator) == separator then
 		next_text = current .. extra
 	else
 		next_text = current .. separator .. extra

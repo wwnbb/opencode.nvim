@@ -162,6 +162,12 @@ local function setup_float_focus_autocmds()
 					return
 				end
 
+				-- Don't close when the user is in the native diff tab
+				local nd_ok, nd = pcall(require, "opencode.ui.native_diff")
+				if nd_ok and nd.is_active and nd.is_active() then
+					return
+				end
+
 				local current_win = vim.api.nvim_get_current_win()
 				if is_opencode_related_window(current_win) then
 					return
@@ -1403,58 +1409,58 @@ function M.render()
 					end
 				end
 
-					if has_tools then
-						for _, tool_part in ipairs(tool_parts) do
-							if tool_part.tool == "task" then
-								local is_expanded = state.expanded_tasks[tool_part.id] or false
-								local cached = state.task_child_cache[tool_part.id]
-								local result = chat_tasks.render_task_tool(tool_part, is_expanded, cached)
-								local base_line = #raw_lines
-								local hl_by_line = {}
-								for _, hl in ipairs(result.highlights) do
-									hl_by_line[hl.line] = hl
-								end
-								for idx, tl in ipairs(result.lines) do
-									local nl = NuiLine()
-									local line_hl = hl_by_line[idx - 1]
-									if line_hl then
-										nl:append(NuiText(tl, line_hl.hl_group))
-									else
-										nl:append(tl)
-									end
-									add_line(nl, "tool")
-								end
-								state.tasks[tool_part.id] = {
-									start_line = base_line,
-									end_line = base_line + #result.lines - 1,
-									tool_part = tool_part,
-								}
-							else
-								local is_expanded = state.expanded_tools[tool_part.id] or false
-								local result = render.render_tool_line(tool_part, is_expanded)
-								local base_line = #raw_lines
-								local hl_by_line = {}
-								for _, hl in ipairs(result.highlights) do
-									hl_by_line[hl.line] = hl
-								end
-								for idx, tl in ipairs(result.lines) do
-									local nl = NuiLine()
-									local line_hl = hl_by_line[idx - 1]
-									if line_hl then
-										nl:append(NuiText(tl, line_hl.hl_group))
-									else
-										nl:append(tl)
-									end
-									add_line(nl, "tool")
-								end
-								state.tools[tool_part.id] = {
-									start_line = base_line,
-									end_line = base_line + #result.lines - 1,
-									tool_part = tool_part,
-								}
+				if has_tools then
+					for _, tool_part in ipairs(tool_parts) do
+						if tool_part.tool == "task" then
+							local is_expanded = state.expanded_tasks[tool_part.id] or false
+							local cached = state.task_child_cache[tool_part.id]
+							local result = chat_tasks.render_task_tool(tool_part, is_expanded, cached)
+							local base_line = #raw_lines
+							local hl_by_line = {}
+							for _, hl in ipairs(result.highlights) do
+								hl_by_line[hl.line] = hl
 							end
+							for idx, tl in ipairs(result.lines) do
+								local nl = NuiLine()
+								local line_hl = hl_by_line[idx - 1]
+								if line_hl then
+									nl:append(NuiText(tl, line_hl.hl_group))
+								else
+									nl:append(tl)
+								end
+								add_line(nl, "tool")
+							end
+							state.tasks[tool_part.id] = {
+								start_line = base_line,
+								end_line = base_line + #result.lines - 1,
+								tool_part = tool_part,
+							}
+						else
+							local is_expanded = state.expanded_tools[tool_part.id] or false
+							local result = render.render_tool_line(tool_part, is_expanded)
+							local base_line = #raw_lines
+							local hl_by_line = {}
+							for _, hl in ipairs(result.highlights) do
+								hl_by_line[hl.line] = hl
+							end
+							for idx, tl in ipairs(result.lines) do
+								local nl = NuiLine()
+								local line_hl = hl_by_line[idx - 1]
+								if line_hl then
+									nl:append(NuiText(tl, line_hl.hl_group))
+								else
+									nl:append(tl)
+								end
+								add_line(nl, "tool")
+							end
+							state.tools[tool_part.id] = {
+								start_line = base_line,
+								end_line = base_line + #result.lines - 1,
+								tool_part = tool_part,
+							}
 						end
 					end
+				end
 
 				local is_last = (msg_idx == last_assistant_idx)
 				if render.should_show_footer(message, is_last) then
