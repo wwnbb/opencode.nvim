@@ -94,22 +94,65 @@ end
 -- ─── Cursor query ─────────────────────────────────────────────────────────────
 
 ---@return string|nil permission_id
----@return table|nil perm_state
-function M.get_permission_at_cursor()
+---@return table|nil pstate
+---@return table|nil pos
+---@return number|nil cursor_line
+local function get_pending_permission_context_at_cursor()
 	if not state.winid or not vim.api.nvim_win_is_valid(state.winid) then
-		return nil, nil
+		return nil, nil, nil, nil
 	end
 
 	local cursor = vim.api.nvim_win_get_cursor(state.winid)
 	local cursor_line = cursor[1] - 1
 
-	for perm_id, pos in pairs(state.permissions) do
+	for permission_id, pos in pairs(state.permissions) do
 		if cursor_line >= pos.start_line and cursor_line <= pos.end_line and pos.status == "pending" then
-			return perm_id, permission_state.get_permission(perm_id)
+			local pstate = permission_state.get_permission(permission_id)
+			if pstate and pstate.status == "pending" then
+				return permission_id, pstate, pos, cursor_line
+			end
 		end
 	end
 
-	return nil, nil
+	return nil, nil, nil, nil
+end
+
+---@return string|nil permission_id
+---@return table|nil perm_state
+function M.get_permission_at_cursor()
+	local permission_id, pstate = get_pending_permission_context_at_cursor()
+	return permission_id, pstate
+end
+
+---@return string|nil permission_id
+---@return boolean changed
+function M.sync_selected_option_from_cursor()
+	local permission_id, pstate, pos, cursor_line = get_pending_permission_context_at_cursor()
+	if not permission_id or not pstate or not pos or not cursor_line then
+		return nil, false
+	end
+
+	local _, _, option_count, first_option_line = permission_widget.get_lines_for_permission(permission_id, pstate)
+	if option_count <= 0 then
+		return permission_id, false
+	end
+
+	local widget_line = cursor_line - pos.start_line
+	if widget_line < first_option_line or widget_line >= (first_option_line + option_count) then
+		return permission_id, false
+	end
+
+	local option_index = widget_line - first_option_line + 1
+	if pstate.selected_option == option_index then
+		return permission_id, false
+	end
+
+	if not permission_state.select_option(permission_id, option_index) then
+		return permission_id, false
+	end
+
+	M.rerender_permission(permission_id)
+	return permission_id, true
 end
 
 -- ─── In-place re-render ───────────────────────────────────────────────────────
