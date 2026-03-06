@@ -29,6 +29,7 @@ M.state = {
 	tools = {},             -- Track tool positions: { [part_id] = { start_line, end_line, tool_part } }
 	expanded_tools = {},    -- Toggle set: { [part_id] = true }
 	stream_blocks = {},     -- Streaming text blocks: { [message_id] = { start_line, end_line } }
+	spinner_footer_line = nil,
 	session_stack = {},     -- Stack of { id, name } for parent session navigation
 	navigating = false,     -- Flag to prevent session_change handler from clearing stack
 	last_render_time = 0,

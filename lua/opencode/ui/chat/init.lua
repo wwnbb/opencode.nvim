@@ -613,6 +613,7 @@ function M.create()
 			state.tools = {}
 			state.expanded_tools = {}
 			state.stream_blocks = {}
+			state.spinner_footer_line = nil
 			if not is_navigating then
 				local new_messages = {}
 				for _, msg in ipairs(state.messages) do
@@ -961,6 +962,7 @@ function M.clear()
 	state.tools = {}
 	state.expanded_tools = {}
 	state.stream_blocks = {}
+	state.spinner_footer_line = nil
 	state.last_render_time = 0
 	state.render_scheduled = false
 
@@ -1217,6 +1219,7 @@ function M.render()
 	local rendered_perm_ids = {}
 	local rendered_edit_ids = {}
 	local next_stream_blocks = {}
+	state.spinner_footer_line = nil
 
 	local function render_single_permission(pstate)
 		local perm_id = pstate.permission_id
@@ -1468,7 +1471,14 @@ function M.render()
 				local is_last = (msg_idx == last_assistant_idx)
 				if render.should_show_footer(message, is_last) then
 					ensure_single_blank_separator()
-					add_line(render.render_metadata_footer(message, messages))
+					local footer_line_idx = #raw_lines
+					local show_spinner = spinner.is_active() and is_last and incomplete_assistant
+					add_line(render.render_metadata_footer(message, messages, {
+						spinner_frame = show_spinner and spinner.get_frame() or nil,
+					}))
+					if show_spinner then
+						state.spinner_footer_line = footer_line_idx
+					end
 					add_raw_line("")
 				end
 
@@ -1591,14 +1601,6 @@ function M.render()
 		add_raw_line("")
 	end
 
-	-- Loading spinner
-	if spinner.is_active() then
-		local loading_text = spinner.get_loading_text("∴ Thinkin")
-		local loading_line = NuiLine()
-		loading_line:append(NuiText(loading_text, "Comment"))
-		add_line(loading_line)
-	end
-
 	state.stream_blocks = next_stream_blocks
 	return raw_lines, nui_lines
 end
@@ -1613,31 +1615,42 @@ function M.update_spinner_only()
 		return
 	end
 
-	local buf_lines = vim.api.nvim_buf_line_count(state.bufnr)
-	if buf_lines < 1 then
+	local footer_line = state.spinner_footer_line
+	if type(footer_line) ~= "number" then
 		return
 	end
 
-	local spinner_line = buf_lines - 1
-	local current_line = vim.api.nvim_buf_get_lines(state.bufnr, spinner_line, spinner_line + 1, false)[1] or ""
-	local loading_text = spinner.get_loading_text("∴ Thinkin")
+	local buf_lines = vim.api.nvim_buf_line_count(state.bufnr)
+	if footer_line < 0 or footer_line >= buf_lines then
+		return
+	end
 
-	if current_line == loading_text then
+	local current_line = vim.api.nvim_buf_get_lines(state.bufnr, footer_line, footer_line + 1, false)[1] or ""
+	if current_line == "" then
+		return
+	end
+
+	local marker = "▣"
+	local marker_pos = string.find(current_line, marker, 1, true)
+	if marker_pos ~= 1 then
+		return
+	end
+
+	local next_frame = spinner.get_frame()
+	if next_frame == "" then
+		return
+	end
+
+	local rest = vim.fn.strcharpart(current_line, 2)
+	local next_line = marker .. next_frame .. rest
+
+	if current_line == next_line then
 		return
 	end
 
 	vim.bo[state.bufnr].modifiable = true
-	vim.api.nvim_buf_set_text(state.bufnr, spinner_line, 0, spinner_line, #current_line, { loading_text })
+	vim.api.nvim_buf_set_text(state.bufnr, footer_line, 0, footer_line, #current_line, { next_line })
 	vim.bo[state.bufnr].modifiable = false
-
-	vim.api.nvim_buf_clear_namespace(state.bufnr, chat_hl_ns, spinner_line, spinner_line + 1)
-	vim.api.nvim_buf_set_extmark(
-		state.bufnr,
-		chat_hl_ns,
-		spinner_line,
-		0,
-		{ end_col = #loading_text, hl_group = "Comment" }
-	)
 end
 
 local RENDER_THROTTLE_MS = 16
