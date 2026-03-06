@@ -1,15 +1,15 @@
 -- opencode.nvim - Loading spinner module
--- Event-driven spinner: frame advances only when explicitly ticked (on server events)
 
 local M = {}
 
 local SPINNER_NAME = "Spinning Bar"
 local SPINNER_FRAMES = { "|", "/", "-", "\\" }
+local FRAME_INTERVAL_MS = 120
 
 -- Spinner state
 local state = {
 	active = false,
-	frame_index = 1,
+	started_at = nil,
 }
 
 -- Get current frame text
@@ -19,7 +19,15 @@ function M.get_frame()
 		return ""
 	end
 
-	return SPINNER_FRAMES[state.frame_index] or ""
+	local now = vim.uv.now()
+	local started_at = state.started_at or now
+	local elapsed = now - started_at
+	if elapsed < 0 then
+		elapsed = 0
+	end
+
+	local frame_index = (math.floor(elapsed / FRAME_INTERVAL_MS) % #SPINNER_FRAMES) + 1
+	return SPINNER_FRAMES[frame_index] or ""
 end
 
 -- Get current animation name
@@ -37,16 +45,8 @@ function M.is_active()
 	return state.active
 end
 
--- Advance to the next frame (call this on each server event)
 function M.tick()
-	if not state.active then
-		return
-	end
-
-	state.frame_index = state.frame_index + 1
-	if state.frame_index > #SPINNER_FRAMES then
-		state.frame_index = 1
-	end
+	return
 end
 
 -- Start the spinner
@@ -56,7 +56,7 @@ function M.start()
 		return
 	end
 
-	state.frame_index = 1
+	state.started_at = vim.uv.now()
 	state.active = true
 
 	local logger_ok, logger = pcall(require, "opencode.logger")
@@ -68,7 +68,7 @@ end
 -- Stop the spinner animation
 function M.stop()
 	state.active = false
-	state.frame_index = 1
+	state.started_at = nil
 
 	local logger_ok, logger = pcall(require, "opencode.logger")
 	if logger_ok then

@@ -36,6 +36,7 @@ M.state = {
 	render_scheduled = false,
 	auto_scroll = true,     -- Auto-scroll to bottom on new content
 	focus_augroup = nil,
+	spinner_anim_timer = nil,
 	task_anim_timer = nil,
 	task_anim_frame = 1,
 	float_dims = nil,

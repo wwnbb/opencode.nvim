@@ -380,6 +380,48 @@ local function create_buffer()
 	return bufnr
 end
 
+local SPINNER_ANIM_INTERVAL_MS = 80
+
+local function stop_spinner_animation_timer()
+	if not state.spinner_anim_timer then
+		return
+	end
+	if vim.uv.is_closing(state.spinner_anim_timer) then
+		state.spinner_anim_timer = nil
+		return
+	end
+	state.spinner_anim_timer:stop()
+	state.spinner_anim_timer:close()
+	state.spinner_anim_timer = nil
+end
+
+local function start_spinner_animation_timer()
+	if state.spinner_anim_timer then
+		return
+	end
+	if not state.visible or not spinner.is_active() then
+		return
+	end
+
+	local timer = vim.uv.new_timer()
+	if not timer then
+		return
+	end
+
+	state.spinner_anim_timer = timer
+	timer:start(
+		SPINNER_ANIM_INTERVAL_MS,
+		SPINNER_ANIM_INTERVAL_MS,
+		vim.schedule_wrap(function()
+			if not state.visible or not spinner.is_active() then
+				stop_spinner_animation_timer()
+				return
+			end
+			M.update_spinner_only()
+		end)
+	)
+end
+
 -- ─── Window lifecycle ─────────────────────────────────────────────────────────
 
 function M.toggle_auto_scroll()
@@ -575,6 +617,7 @@ function M.create()
 					M.schedule_render()
 				end
 				if state.visible then
+					start_spinner_animation_timer()
 					chat_tasks.start_task_animation_timer()
 				end
 			else
@@ -582,16 +625,10 @@ function M.create()
 					spinner.stop()
 					M.schedule_render()
 				end
+				stop_spinner_animation_timer()
 				chat_tasks.stop_task_animation_timer()
 			end
 		end)
-	end)
-
-	events.on("chat_render", function()
-		if spinner.is_active() then
-			spinner.tick()
-			M.update_spinner_only()
-		end
 	end)
 
 	events.on("session_change", function(data)
@@ -600,6 +637,7 @@ function M.create()
 			if spinner.is_active() then
 				spinner.stop()
 			end
+			stop_spinner_animation_timer()
 			chat_tasks.stop_task_animation_timer()
 			state.pending_questions = {}
 			state.pending_permissions = {}
@@ -690,6 +728,7 @@ function M.open()
 						state.winid = nil
 						state.layout = nil
 						state.float_dims = nil
+						stop_spinner_animation_timer()
 						chat_tasks.stop_task_animation_timer()
 					end
 				end,
@@ -728,6 +767,9 @@ function M.open()
 		if ok_state then
 			local status = app_state.get_status()
 			if status == "streaming" or status == "thinking" then
+				if spinner.is_active() then
+					start_spinner_animation_timer()
+				end
 				chat_tasks.start_task_animation_timer()
 			end
 		end
@@ -766,6 +808,7 @@ function M.close()
 	state.winid = nil
 	state.layout = nil
 	state.float_dims = nil
+	stop_spinner_animation_timer()
 	chat_tasks.stop_task_animation_timer()
 end
 
@@ -969,6 +1012,7 @@ function M.clear()
 	if spinner.is_active() then
 		spinner.stop()
 	end
+	stop_spinner_animation_timer()
 	chat_tasks.stop_task_animation_timer()
 	state.task_anim_frame = 1
 
@@ -1634,6 +1678,9 @@ end
 
 function M.update_spinner_only()
 	if not state.bufnr or not vim.api.nvim_buf_is_valid(state.bufnr) then
+		return
+	end
+	if not state.visible then
 		return
 	end
 	if not spinner.is_active() then
