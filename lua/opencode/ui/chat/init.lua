@@ -1903,7 +1903,7 @@ function M.handle_question_navigation(direction)
 	end
 
 	local key = direction == "up" and "k" or "j"
-	vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes(key, true, false, true), "n", false)
+	vim.cmd("normal! " .. key)
 end
 
 ---Route 1-9 to whichever widget is under cursor.
