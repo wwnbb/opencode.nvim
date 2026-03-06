@@ -1717,15 +1717,13 @@ function M.update_spinner_only()
 		return
 	end
 
-	local rest = vim.fn.strcharpart(current_line, 1)
-	local next_line = next_frame .. rest
-
-	if current_line == next_line then
+	local current_frame_bytes = #current_frame
+	if current_frame_bytes <= 0 then
 		return
 	end
 
 	vim.bo[state.bufnr].modifiable = true
-	vim.api.nvim_buf_set_text(state.bufnr, footer_line, 0, footer_line, #current_line, { next_line })
+	vim.api.nvim_buf_set_text(state.bufnr, footer_line, 0, footer_line, current_frame_bytes, { next_frame })
 	vim.bo[state.bufnr].modifiable = false
 end
 
