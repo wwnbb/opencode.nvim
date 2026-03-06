@@ -149,10 +149,12 @@ end
 -- ─── Cursor query ─────────────────────────────────────────────────────────────
 
 ---@return string|nil request_id
----@return table|nil question_state_data
-function M.get_question_at_cursor()
+---@return table|nil qstate
+---@return table|nil pos
+---@return number|nil cursor_line
+local function get_pending_question_context_at_cursor()
 	if not state.winid or not vim.api.nvim_win_is_valid(state.winid) then
-		return nil, nil
+		return nil, nil, nil, nil
 	end
 
 	local cursor = vim.api.nvim_win_get_cursor(state.winid)
@@ -164,11 +166,72 @@ function M.get_question_at_cursor()
 			and cursor_line <= pos.end_line
 			and (pos.status == "pending" or pos.status == "confirming")
 		then
-			return request_id, question_state.get_question(request_id)
+			local qstate = question_state.get_question(request_id)
+			if qstate and (qstate.status == "pending" or qstate.status == "confirming") then
+				return request_id, qstate, pos, cursor_line
+			end
 		end
 	end
 
-	return nil, nil
+	return nil, nil, nil, nil
+end
+
+---@param request_id string
+---@return table|nil questions
+local function get_question_payload(request_id)
+	for _, msg in ipairs(state.messages) do
+		if msg.type == "question" and msg.request_id == request_id then
+			return msg.questions
+		end
+	end
+
+	return nil
+end
+
+---@return string|nil request_id
+---@return table|nil question_state_data
+function M.get_question_at_cursor()
+	local request_id, qstate = get_pending_question_context_at_cursor()
+	return request_id, qstate
+end
+
+---@return string|nil request_id
+---@return boolean changed
+function M.sync_selected_option_from_cursor()
+	local request_id, qstate, pos, cursor_line = get_pending_question_context_at_cursor()
+	if not request_id or not qstate or not pos or not cursor_line then
+		return nil, false
+	end
+
+	local questions = get_question_payload(request_id)
+	if not questions then
+		return request_id, false
+	end
+
+	local _, _, option_count, first_option_line =
+		question_widget.get_lines_for_question(request_id, { questions = questions }, qstate, qstate.status)
+	if option_count <= 0 then
+		return request_id, false
+	end
+
+	local widget_line = cursor_line - pos.start_line
+	if widget_line < first_option_line or widget_line >= (first_option_line + option_count) then
+		return request_id, false
+	end
+
+	local option_index = widget_line - first_option_line + 1
+	local current_selection = question_state.get_current_selection(request_id)
+	local current_option = current_selection and current_selection[1] or nil
+	if current_option == option_index then
+		return request_id, false
+	end
+
+	if not question_state.select_option(request_id, option_index) then
+		return request_id, false
+	end
+
+	M.rerender_question(request_id)
+	return request_id, true
 end
 
 -- ─── In-place re-render ───────────────────────────────────────────────────────
@@ -189,13 +252,7 @@ function M.rerender_question(request_id)
 		return
 	end
 
-	local questions = nil
-	for _, msg in ipairs(state.messages) do
-		if msg.type == "question" and msg.request_id == request_id then
-			questions = msg.questions
-			break
-		end
-	end
+	local questions = get_question_payload(request_id)
 	if not questions then
 		return
 	end

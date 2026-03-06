@@ -225,7 +225,7 @@ local function setup_buffer(bufnr)
 		palette.show()
 	end, { buffer = bufnr, noremap = true, silent = true, desc = "Open command palette" })
 
-	-- Question / permission / edit navigation (j/k routes to active widget)
+	-- Question / permission / edit navigation (cursor moves first; widget selection follows cursor)
 	vim.keymap.set("n", "j", function()
 		M.handle_question_navigation("down")
 	end, opts)
@@ -477,7 +477,7 @@ function M.show_help()
 		"",
 		"Question Tool",
 		"1-9        Select option by number",
-		"↑/↓ j/k    Navigate options",
+		"↑/↓ j/k    Move cursor (selection follows)",
 		"Space      Toggle multi-select",
 		"c          Custom input",
 		"<CR>       Confirm selection",
@@ -487,7 +487,7 @@ function M.show_help()
 		"",
 		"Permissions",
 		"1-3        Select option by number",
-		"↑/↓ j/k    Navigate options",
+		"↑/↓ j/k    Move cursor (selection follows)",
 		"<CR>       Confirm permission",
 		"<Esc>      Reject permission",
 		"",
@@ -1850,11 +1850,9 @@ function M.do_render()
 		state.focus_permission = nil
 		state.focus_permission_line = nil
 	elseif state.focus_edit and state.focus_edit_line and state.winid and vim.api.nvim_win_is_valid(state.winid) then
-		if state.auto_scroll then
-			local buf_lines = vim.api.nvim_buf_line_count(state.bufnr)
-			local target = math.min(state.focus_edit_line, buf_lines)
-			vim.api.nvim_win_set_cursor(state.winid, { target, 0 })
-		end
+		local buf_lines = vim.api.nvim_buf_line_count(state.bufnr)
+		local target = math.min(state.focus_edit_line, buf_lines)
+		vim.api.nvim_win_set_cursor(state.winid, { target, 0 })
 		state.focus_edit = nil
 		state.focus_edit_line = nil
 	elseif should_scroll and state.visible and state.winid and vim.api.nvim_win_is_valid(state.winid) then
@@ -1885,25 +1883,15 @@ function M.clear_streaming_state() end
 
 -- ─── Cross-domain key routers ─────────────────────────────────────────────────
 
----Route j/k/arrows to whichever widget is under cursor.
+---Move cursor first, then sync widget selection to cursor.
 ---@param direction "up" | "down"
 function M.handle_question_navigation(direction)
-	local request_id, qstate = chat_questions.get_question_at_cursor()
-	if request_id then
-		question_state.move_selection(request_id, direction)
-		chat_questions.rerender_question(request_id)
-		return
-	end
-
-	local perm_id, pstate = chat_permissions.get_permission_at_cursor()
-	if perm_id then
-		permission_state.move_selection(perm_id, direction)
-		chat_permissions.rerender_permission(perm_id)
-		return
-	end
-
 	local key = direction == "up" and "k" or "j"
 	vim.cmd("normal! " .. key)
+
+	chat_questions.sync_selected_option_from_cursor()
+	chat_permissions.sync_selected_option_from_cursor()
+	chat_edits.sync_selected_file_from_cursor()
 end
 
 ---Route 1-9 to whichever widget is under cursor.
