@@ -551,7 +551,7 @@ function M.render_metadata_footer(message, messages, opts)
 	local token_usage = _get_token_usage(message)
 	local token_limit = _get_token_limit(message)
 	local spinner_frame = (type(opts.spinner_frame) == "string" and #opts.spinner_frame > 0) and opts.spinner_frame or nil
-	local agent_prefix = spinner_frame and ("▣" .. spinner_frame .. " ") or "▣ "
+	local agent_prefix = spinner_frame and (spinner_frame .. " ") or "▣ "
 
 	local line = NuiLine()
 	line:append(NuiText(agent_prefix .. locale.titlecase(agent_name), agent_hl))

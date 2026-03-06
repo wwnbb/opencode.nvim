@@ -1330,6 +1330,8 @@ function M.render()
 	add_raw_line("")
 
 	local messages = current_session.id and sync.get_messages(current_session.id) or {}
+	local spinner_active = spinner.is_active()
+	local spinner_footer_rendered = false
 
 	local last_assistant_idx = nil
 	for i = #messages, 1, -1 do
@@ -1349,7 +1351,9 @@ function M.render()
 		local has_content = content and content ~= ""
 		local has_reasoning = reasoning and reasoning ~= ""
 		local has_tools = #tool_parts > 0
-		local should_render = message.role ~= "assistant" or has_content or has_reasoning or has_tools
+		local is_last_assistant = (msg_idx == last_assistant_idx)
+		local force_processing_render = spinner_active and is_last_assistant and incomplete_assistant
+		local should_render = message.role ~= "assistant" or has_content or has_reasoning or has_tools or force_processing_render
 
 		if should_render then
 			if message.role == "user" then
@@ -1468,16 +1472,16 @@ function M.render()
 					end
 				end
 
-				local is_last = (msg_idx == last_assistant_idx)
-				if render.should_show_footer(message, is_last) then
+				if force_processing_render or render.should_show_footer(message, is_last_assistant) then
 					ensure_single_blank_separator()
 					local footer_line_idx = #raw_lines
-					local show_spinner = spinner.is_active() and is_last and incomplete_assistant
+					local show_spinner = spinner_active and is_last_assistant and incomplete_assistant
 					add_line(render.render_metadata_footer(message, messages, {
 						spinner_frame = show_spinner and spinner.get_frame() or nil,
 					}))
 					if show_spinner then
 						state.spinner_footer_line = footer_line_idx
+						spinner_footer_rendered = true
 					end
 					add_raw_line("")
 				end
@@ -1592,6 +1596,27 @@ function M.render()
 		end
 	end
 
+	if spinner_active and not spinner_footer_rendered then
+		local app_agent = app_state.get_agent() or {}
+		local app_model = app_state.get_model() or {}
+		local fallback_agent = app_agent.name or app_agent.id or "assistant"
+		local fallback_message = {
+			role = "assistant",
+			agent = app_agent.id or app_agent.name or "assistant",
+			mode = fallback_agent,
+			modelID = app_model.id,
+			providerID = app_model.provider,
+		}
+
+		ensure_single_blank_separator()
+		local footer_line_idx = #raw_lines
+		add_line(render.render_metadata_footer(fallback_message, messages, {
+			spinner_frame = spinner.get_frame(),
+		}))
+		state.spinner_footer_line = footer_line_idx
+		add_raw_line("")
+	end
+
 	-- Empty state
 	if #raw_lines == 0 then
 		add_raw_line(" No active session")
@@ -1630,9 +1655,8 @@ function M.update_spinner_only()
 		return
 	end
 
-	local marker = "▣"
-	local marker_pos = string.find(current_line, marker, 1, true)
-	if marker_pos ~= 1 then
+	local second_char = vim.fn.strcharpart(current_line, 1, 1)
+	if second_char ~= " " then
 		return
 	end
 
@@ -1641,8 +1665,13 @@ function M.update_spinner_only()
 		return
 	end
 
-	local rest = vim.fn.strcharpart(current_line, 2)
-	local next_line = marker .. next_frame .. rest
+	local current_frame = vim.fn.strcharpart(current_line, 0, 1)
+	if current_frame == next_frame then
+		return
+	end
+
+	local rest = vim.fn.strcharpart(current_line, 1)
+	local next_line = next_frame .. rest
 
 	if current_line == next_line then
 		return
