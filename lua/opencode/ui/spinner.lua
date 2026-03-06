@@ -3,31 +3,30 @@
 
 local M = {}
 
-local animations = require("opencode.ui.animations")
+local SPINNER_NAME = "Spinning Bar"
+local SPINNER_FRAMES = { "|", "/", "-", "\\" }
 
 -- Spinner state
 local state = {
 	active = false,
 	frame_index = 1,
-	current_animation = nil,
 }
 
 -- Get current frame text
 ---@return string Current animation frame or empty string if not active
 function M.get_frame()
-	if not state.active or not state.current_animation then
+	if not state.active then
 		return ""
 	end
 
-	local frames = state.current_animation.frames
-	return frames[state.frame_index] or ""
+	return SPINNER_FRAMES[state.frame_index] or ""
 end
 
 -- Get current animation name
 ---@return string|nil Current animation name or nil if not active
 function M.get_animation_name()
-	if state.current_animation then
-		return state.current_animation.name
+	if state.active then
+		return SPINNER_NAME
 	end
 	return nil
 end
@@ -40,35 +39,21 @@ end
 
 -- Advance to the next frame (call this on each server event)
 function M.tick()
-	if not state.active or not state.current_animation then
+	if not state.active then
 		return
 	end
 
-	local frames = state.current_animation.frames
 	state.frame_index = state.frame_index + 1
-	if state.frame_index > #frames then
+	if state.frame_index > #SPINNER_FRAMES then
 		state.frame_index = 1
 	end
 end
 
--- Start the spinner (picks a new random animation)
----@param opts? table Options: { animation = string|nil }
-function M.start(opts)
-	opts = opts or {}
-
+-- Start the spinner
+function M.start()
 	-- Don't restart if already active
 	if state.active then
 		return
-	end
-
-	-- Select animation: by name, or random
-	if opts.animation then
-		state.current_animation = animations.get_by_name(opts.animation)
-	end
-
-	-- If no animation specified or not found, pick a random one
-	if not state.current_animation then
-		state.current_animation = animations.get_random()
 	end
 
 	state.frame_index = 1
@@ -76,15 +61,14 @@ function M.start(opts)
 
 	local logger_ok, logger = pcall(require, "opencode.logger")
 	if logger_ok then
-		logger.debug("Spinner started", { animation = state.current_animation.name })
+		logger.debug("Spinner started", { animation = SPINNER_NAME })
 	end
 end
 
--- Stop the spinner animation and clear animation for next fresh pick
+-- Stop the spinner animation
 function M.stop()
 	state.active = false
 	state.frame_index = 1
-	state.current_animation = nil
 
 	local logger_ok, logger = pcall(require, "opencode.logger")
 	if logger_ok then

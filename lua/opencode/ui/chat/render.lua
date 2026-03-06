@@ -540,17 +540,21 @@ end
 ---Render metadata footer for an assistant message.
 ---@param message table
 ---@param messages table[]
+---@param opts? table { spinner_frame?: string|nil }
 ---@return NuiLine
-function M.render_metadata_footer(message, messages)
+function M.render_metadata_footer(message, messages, opts)
+	opts = opts or {}
 	local agent_name = message.mode or message.agent or "unknown"
 	local agent_id = message.agent or message.mode or "unknown"
 	local interrupted = M.is_interrupted(message)
 	local agent_hl = interrupted and "Comment" or M.get_agent_hl(agent_id)
 	local token_usage = _get_token_usage(message)
 	local token_limit = _get_token_limit(message)
+	local spinner_frame = (type(opts.spinner_frame) == "string" and #opts.spinner_frame > 0) and opts.spinner_frame or nil
+	local agent_prefix = spinner_frame and ("▣" .. spinner_frame .. " ") or "▣ "
 
 	local line = NuiLine()
-	line:append(NuiText("▣ " .. locale.titlecase(agent_name), agent_hl))
+	line:append(NuiText(agent_prefix .. locale.titlecase(agent_name), agent_hl))
 	local model_id = message.modelID or ""
 	if model_id ~= "" then
 		line:append(NuiText(" · ", "Comment"))
