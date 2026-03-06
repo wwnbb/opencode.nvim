@@ -17,6 +17,8 @@ local inline_diff_state = {
 	actual_buf = nil,
 	proposed_win = nil,
 	proposed_buf = nil,
+	edit_id = nil,
+	file_index = nil,
 }
 
 ---@param winid number|nil
@@ -37,6 +39,8 @@ local function reset_inline_diff_state()
 	inline_diff_state.actual_buf = nil
 	inline_diff_state.proposed_win = nil
 	inline_diff_state.proposed_buf = nil
+	inline_diff_state.edit_id = nil
+	inline_diff_state.file_index = nil
 end
 
 ---@return boolean
@@ -341,6 +345,150 @@ end
 
 local function schedule_render()
 	require("opencode.ui.chat").schedule_render()
+end
+
+---@param filepath string
+---@param content string
+---@return boolean, string|nil
+local function write_file(filepath, content)
+	local dir = vim.fn.fnamemodify(filepath, ":h")
+	if dir and dir ~= "" then
+		vim.fn.mkdir(dir, "p")
+	end
+
+	local fd, err = io.open(filepath, "w")
+	if not fd then
+		return false, err
+	end
+
+	local ok, write_err = pcall(function()
+		fd:write(content)
+	end)
+	fd:close()
+	if not ok then
+		return false, tostring(write_err)
+	end
+
+	return true
+end
+
+---@return string|nil, number|nil, table|nil, table|nil
+local function get_inline_diff_edit_context()
+	local edit_id = inline_diff_state.edit_id
+	local file_index = inline_diff_state.file_index
+	if not edit_id or not file_index then
+		return nil, nil, nil, nil
+	end
+
+	local estate = edit_state.get_edit(edit_id)
+	if not estate or estate.status ~= "pending" then
+		return edit_id, file_index, nil, nil
+	end
+
+	return edit_id, file_index, estate, estate.files[file_index]
+end
+
+---@param edit_id string
+local function refresh_inline_diff_edit(edit_id)
+	if edit_state.are_all_resolved(edit_id) then
+		M.finalize_edit(edit_id)
+	else
+		M.rerender_edit(edit_id)
+	end
+end
+
+local function confirm_inline_diff_file()
+	local edit_id, file_index, _, file = get_inline_diff_edit_context()
+	if not edit_id or not file_index or not file or file.status ~= "pending" then
+		return
+	end
+
+	if is_valid_window(inline_diff_state.actual_win) then
+		vim.api.nvim_win_call(inline_diff_state.actual_win, function()
+			vim.cmd("silent! write")
+		end)
+	end
+
+	local ok, err = edit_state.resolve_file(edit_id, file_index)
+	if not ok then
+		vim.notify("Failed to confirm file: " .. (err or "unknown"), vim.log.levels.ERROR)
+		return
+	end
+
+	M.close_inline_diff_split({ silent = true })
+	refresh_inline_diff_edit(edit_id)
+end
+
+local function reject_inline_diff_file()
+	local edit_id, file_index, _, file = get_inline_diff_edit_context()
+	if not edit_id or not file_index or not file or file.status ~= "pending" then
+		return
+	end
+
+	local filepath = file.filepath
+	local before = file.before or ""
+	local file_type = file.file_type or "update"
+	local ok = true
+	local err
+
+	if file_type == "add" and before == "" then
+		if vim.fn.filereadable(filepath) == 1 then
+			ok, err = os.remove(filepath)
+		end
+	else
+		ok, err = write_file(filepath, before)
+	end
+
+	if not ok then
+		vim.notify("Failed to reject file: " .. tostring(err or "unknown"), vim.log.levels.ERROR)
+		return
+	end
+
+	if is_valid_buffer(inline_diff_state.actual_buf) then
+		pcall(vim.api.nvim_buf_call, inline_diff_state.actual_buf, function()
+			vim.cmd("silent! edit!")
+		end)
+	end
+
+	local reject_ok, reject_err = edit_state.reject_file(edit_id, file_index)
+	if not reject_ok then
+		vim.notify("Failed to reject file: " .. (reject_err or "unknown"), vim.log.levels.ERROR)
+		return
+	end
+
+	M.close_inline_diff_split({ silent = true })
+	refresh_inline_diff_edit(edit_id)
+end
+
+local function apply_inline_diff_hunks()
+	if not is_valid_window(inline_diff_state.actual_win) then
+		return
+	end
+
+	vim.api.nvim_set_current_win(inline_diff_state.actual_win)
+	pcall(function()
+		vim.cmd("%diffget")
+	end)
+end
+
+local function show_inline_diff_help()
+	local help = {
+		"Diff Split Keymaps:",
+		"",
+		"  do       - Obtain hunk from proposed (LEFT) into actual (RIGHT)",
+		"  dp       - Put hunk from actual (RIGHT) to proposed (LEFT)",
+		"  ]c       - Jump to next change",
+		"  [c       - Jump to previous change",
+		"  <C-y>    - Apply ALL remaining proposed hunks at once",
+		"  <C-a>    - Save file as-is and resolve it in the edit widget",
+		"  <C-s>    - Same as <C-a>",
+		"  <C-x>    - Reject current file and restore the original content",
+		"  q        - Close the diff split",
+		"  ?        - Show this help",
+		"",
+		"Tip: use <C-y> to apply all proposed changes, then <C-a> to confirm.",
+	}
+	vim.notify(table.concat(help, "\n"), vim.log.levels.INFO)
 end
 
 -- ─── Pending queue ────────────────────────────────────────────────────────────
@@ -695,7 +843,10 @@ function M.handle_edit_diff_split()
 	if not file then
 		return
 	end
-	M.open_inline_diff_split(file)
+	M.open_inline_diff_split(file, {
+		edit_id = eid,
+		file_index = estate.selected_file,
+	})
 end
 
 --- Check whether a window belongs to the OpenCode inline diff split.
@@ -824,7 +975,9 @@ end
 
 ---Open a vertical diff split near chat for a single file.
 ---@param file table  File entry from edit state
-function M.open_inline_diff_split(file)
+---@param opts? table { edit_id?: string, file_index?: number }
+function M.open_inline_diff_split(file, opts)
+	opts = opts or {}
 	ensure_inline_diff_state()
 	local ok_close, _, reusable_win = M.close_inline_diff_split({
 		check_unsaved = true,
@@ -898,19 +1051,32 @@ function M.open_inline_diff_split(file)
 	inline_diff_state.actual_buf = actual_buf
 	inline_diff_state.proposed_win = proposed_win
 	inline_diff_state.proposed_buf = proposed_buf
+	inline_diff_state.edit_id = opts.edit_id
+	inline_diff_state.file_index = opts.file_index
 
 	vim.api.nvim_set_current_win(actual_win)
 
 	for _, buf in ipairs({ actual_buf, proposed_buf }) do
 		if vim.api.nvim_buf_is_valid(buf) then
+			local keymap_opts = { buffer = buf, noremap = true, silent = true }
+
+			vim.keymap.set("n", "<C-a>", confirm_inline_diff_file, keymap_opts)
+			vim.keymap.set("n", "<C-s>", confirm_inline_diff_file, keymap_opts)
+			vim.keymap.set("n", "<C-x>", reject_inline_diff_file, keymap_opts)
+			vim.keymap.set("n", "<C-y>", apply_inline_diff_hunks, keymap_opts)
+			vim.keymap.set("n", "?", show_inline_diff_help, keymap_opts)
 			vim.keymap.set("n", "q", function()
 				M.close_inline_diff_split({
 					check_unsaved = true,
 					unsaved_message = "Save or discard inline diff changes before closing the diff split.",
 				})
-			end, { buffer = buf, noremap = true, silent = true })
+			end, keymap_opts)
 		end
 	end
+
+	pcall(function()
+		vim.cmd("normal! ]c")
+	end)
 end
 
 return M
