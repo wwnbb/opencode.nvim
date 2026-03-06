@@ -10,6 +10,7 @@ local NuiText = require("nui.text")
 local markdown = require("opencode.ui.markdown")
 local thinking = require("opencode.ui.thinking")
 local locale = require("opencode.util.locale")
+local sync = require("opencode.sync")
 
 local cs = require("opencode.ui.chat.state")
 local state = cs.state
@@ -371,6 +372,111 @@ function M.shift_line_map(line_map, old_end, delta)
 	end
 end
 
+---@param value any
+---@return number|nil
+local function _numeric(value)
+	if type(value) ~= "number" then
+		return nil
+	end
+	if value ~= value or value == math.huge or value == -math.huge then
+		return nil
+	end
+	return value
+end
+
+---@param value number
+---@return string
+local function _format_compact_number(value)
+	if value < 1000 then
+		return tostring(math.floor(value + 0.5))
+	end
+
+	local units = { "", "k", "m", "b", "t" }
+	local unit_idx = 1
+	local scaled = value
+	while scaled >= 1000 and unit_idx < #units do
+		scaled = scaled / 1000
+		unit_idx = unit_idx + 1
+	end
+
+	local rounded = math.floor(scaled * 10 + 0.5) / 10
+	if rounded >= 1000 and unit_idx < #units then
+		rounded = rounded / 1000
+		unit_idx = unit_idx + 1
+	end
+
+	if rounded == math.floor(rounded) then
+		return string.format("%d%s", rounded, units[unit_idx])
+	end
+	return string.format("%.1f%s", rounded, units[unit_idx])
+end
+
+---@param message table
+---@return number|nil
+local function _get_token_usage(message)
+	if type(message) ~= "table" or type(message.tokens) ~= "table" then
+		return nil
+	end
+
+	local tokens = message.tokens
+	local total = _numeric(tokens.total)
+	if total then
+		return total
+	end
+
+	local sum = 0
+	local has_value = false
+	local fields = { "input", "output", "reasoning" }
+	for _, key in ipairs(fields) do
+		local value = _numeric(tokens[key])
+		if value then
+			sum = sum + value
+			has_value = true
+		end
+	end
+
+	if type(tokens.cache) == "table" then
+		local cache_fields = { "read", "write" }
+		for _, key in ipairs(cache_fields) do
+			local value = _numeric(tokens.cache[key])
+			if value then
+				sum = sum + value
+				has_value = true
+			end
+		end
+	end
+
+	if has_value then
+		return sum
+	end
+	return nil
+end
+
+---@param message table
+---@return number|nil
+local function _get_token_limit(message)
+	if type(message) ~= "table" then
+		return nil
+	end
+	if type(message.providerID) ~= "string" or message.providerID == "" then
+		return nil
+	end
+	if type(message.modelID) ~= "string" or message.modelID == "" then
+		return nil
+	end
+
+	local ok, model = pcall(sync.get_model, message.providerID, message.modelID)
+	if not ok or type(model) ~= "table" or type(model.limit) ~= "table" then
+		return nil
+	end
+
+	local context_limit = _numeric(model.limit.context)
+	if context_limit then
+		return context_limit
+	end
+	return _numeric(model.limit.input)
+end
+
 -- ─── Message metadata helpers ─────────────────────────────────────────────────
 
 ---@param message table
@@ -440,6 +546,8 @@ function M.render_metadata_footer(message, messages)
 	local agent_id = message.agent or message.mode or "unknown"
 	local interrupted = M.is_interrupted(message)
 	local agent_hl = interrupted and "Comment" or M.get_agent_hl(agent_id)
+	local token_usage = _get_token_usage(message)
+	local token_limit = _get_token_limit(message)
 
 	local line = NuiLine()
 	line:append(NuiText("▣ " .. locale.titlecase(agent_name), agent_hl))
@@ -447,6 +555,14 @@ function M.render_metadata_footer(message, messages)
 	if model_id ~= "" then
 		line:append(NuiText(" · ", "Comment"))
 		line:append(NuiText(model_id, "Comment"))
+	end
+	if token_usage then
+		line:append(NuiText(" · ", "Comment"))
+		local token_text = _format_compact_number(token_usage)
+		if token_limit then
+			token_text = token_text .. "/" .. _format_compact_number(token_limit)
+		end
+		line:append(NuiText(token_text .. " tok", "Comment"))
 	end
 	if not interrupted and M.is_message_final(message) then
 		local duration_ms = M.calculate_duration(message, messages)
