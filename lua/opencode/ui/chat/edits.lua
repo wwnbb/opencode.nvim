@@ -560,10 +560,41 @@ end
 
 -- ─── Cursor query ─────────────────────────────────────────────────────────────
 
----@return string|nil permission_id
-function M.get_edit_at_cursor()
-	if not state.winid or not vim.api.nvim_win_is_valid(state.winid) then
+---@param estate table
+---@param widget_line number
+---@return number|nil
+local function map_widget_line_to_file_index(estate, widget_line)
+	if not estate or estate.status ~= "pending" then
 		return nil
+	end
+
+	if widget_line < 2 then
+		return nil
+	end
+
+	local line = 2
+	for i, file in ipairs(estate.files or {}) do
+		local block_start = line
+		line = line + 1
+
+		local diff_lines = file.diff_lines or {}
+		if estate.expanded_files and estate.expanded_files[i] and #diff_lines > 0 then
+			line = line + #diff_lines
+		end
+
+		local block_end = line - 1
+		if widget_line >= block_start and widget_line <= block_end then
+			return i
+		end
+	end
+
+	return nil
+end
+
+---@return string|nil, table|nil, table|nil, number|nil
+local function get_pending_edit_context_at_cursor()
+	if not state.winid or not vim.api.nvim_win_is_valid(state.winid) then
+		return nil, nil, nil, nil
 	end
 
 	local cursor = vim.api.nvim_win_get_cursor(state.winid)
@@ -571,11 +602,42 @@ function M.get_edit_at_cursor()
 
 	for eid, pos in pairs(state.edits) do
 		if cursor_line >= pos.start_line and cursor_line <= pos.end_line and pos.status == "pending" then
-			return eid
+			local estate = edit_state.get_edit(eid)
+			if estate and estate.status == "pending" then
+				return eid, estate, pos, cursor_line
+			end
 		end
 	end
 
-	return nil
+	return nil, nil, nil, nil
+end
+
+---@return string|nil permission_id
+function M.get_edit_at_cursor()
+	local eid = get_pending_edit_context_at_cursor()
+	return eid
+end
+
+---@return string|nil edit_id
+---@return boolean changed
+function M.sync_selected_file_from_cursor()
+	local eid, estate, pos, cursor_line = get_pending_edit_context_at_cursor()
+	if not eid or not estate or not pos or not cursor_line then
+		return nil, false
+	end
+
+	local widget_line = cursor_line - pos.start_line
+	local file_index = map_widget_line_to_file_index(estate, widget_line)
+	if not file_index or file_index == estate.selected_file then
+		return eid, false
+	end
+
+	if not edit_state.move_selection_to(eid, file_index) then
+		return eid, false
+	end
+
+	M.rerender_edit(eid)
+	return eid, true
 end
 
 -- ─── In-place re-render ───────────────────────────────────────────────────────
@@ -660,6 +722,8 @@ end
 -- ─── File handlers ────────────────────────────────────────────────────────────
 
 function M.handle_edit_accept_file()
+	M.sync_selected_file_from_cursor()
+
 	local eid = M.get_edit_at_cursor()
 	if not eid then
 		return
@@ -689,6 +753,8 @@ function M.handle_edit_accept_file()
 end
 
 function M.handle_edit_reject_file()
+	M.sync_selected_file_from_cursor()
+
 	local eid = M.get_edit_at_cursor()
 	if not eid then
 		return
@@ -744,6 +810,8 @@ function M.handle_edit_reject_all()
 end
 
 function M.handle_edit_resolve_file()
+	M.sync_selected_file_from_cursor()
+
 	local eid = M.get_edit_at_cursor()
 	if not eid then
 		return
@@ -786,6 +854,8 @@ function M.handle_edit_resolve_all()
 end
 
 function M.handle_edit_toggle_diff()
+	M.sync_selected_file_from_cursor()
+
 	local eid = M.get_edit_at_cursor()
 	if not eid then
 		return
@@ -801,6 +871,8 @@ end
 -- ─── Diff viewers ─────────────────────────────────────────────────────────────
 
 function M.handle_edit_diff_tab()
+	M.sync_selected_file_from_cursor()
+
 	local eid = M.get_edit_at_cursor()
 	if not eid then
 		return
@@ -831,6 +903,8 @@ function M.handle_edit_diff_tab()
 end
 
 function M.handle_edit_diff_split()
+	M.sync_selected_file_from_cursor()
+
 	local eid = M.get_edit_at_cursor()
 	if not eid then
 		return

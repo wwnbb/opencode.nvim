@@ -372,6 +372,19 @@ local function setup_buffer(bufnr)
 			return
 		end
 	end, vim.tbl_extend("force", opts, { desc = "Toggle tool output", nowait = true }))
+
+	vim.api.nvim_create_autocmd("CursorMoved", {
+		buffer = bufnr,
+		callback = function()
+			if not state.visible or not state.winid or not vim.api.nvim_win_is_valid(state.winid) then
+				return
+			end
+			if vim.api.nvim_get_current_win() ~= state.winid then
+				return
+			end
+			chat_edits.sync_selected_file_from_cursor()
+		end,
+	})
 end
 
 local function create_buffer()
@@ -775,14 +788,14 @@ function M.open()
 		end
 	end
 
-	chat_questions.process_pending_questions()
-	chat_permissions.process_pending_permissions()
-	chat_edits.process_pending_edits()
-
 	local line_count = vim.api.nvim_buf_line_count(state.bufnr)
 	if line_count > 0 then
 		vim.api.nvim_win_set_cursor(state.winid or 0, { line_count, 0 })
 	end
+
+	chat_questions.process_pending_questions()
+	chat_permissions.process_pending_permissions()
+	chat_edits.process_pending_edits()
 end
 
 function M.close()
@@ -1837,9 +1850,11 @@ function M.do_render()
 		state.focus_permission = nil
 		state.focus_permission_line = nil
 	elseif state.focus_edit and state.focus_edit_line and state.winid and vim.api.nvim_win_is_valid(state.winid) then
-		local buf_lines = vim.api.nvim_buf_line_count(state.bufnr)
-		local target = math.min(state.focus_edit_line, buf_lines)
-		vim.api.nvim_win_set_cursor(state.winid, { target, 0 })
+		if state.auto_scroll then
+			local buf_lines = vim.api.nvim_buf_line_count(state.bufnr)
+			local target = math.min(state.focus_edit_line, buf_lines)
+			vim.api.nvim_win_set_cursor(state.winid, { target, 0 })
+		end
 		state.focus_edit = nil
 		state.focus_edit_line = nil
 	elseif should_scroll and state.visible and state.winid and vim.api.nvim_win_is_valid(state.winid) then
@@ -1884,13 +1899,6 @@ function M.handle_question_navigation(direction)
 	if perm_id then
 		permission_state.move_selection(perm_id, direction)
 		chat_permissions.rerender_permission(perm_id)
-		return
-	end
-
-	local eid = chat_edits.get_edit_at_cursor()
-	if eid then
-		edit_state.move_selection(eid, direction)
-		chat_edits.rerender_edit(eid)
 		return
 	end
 
@@ -2005,6 +2013,7 @@ function M.handle_question_confirm()
 
 	local eid = chat_edits.get_edit_at_cursor()
 	if eid then
+		chat_edits.sync_selected_file_from_cursor()
 		local file = edit_state.get_selected_file(eid)
 		if file and file.filepath and file.filepath ~= "" then
 			vim.cmd("edit " .. vim.fn.fnameescape(file.filepath))
