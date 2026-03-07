@@ -1379,8 +1379,7 @@ function M.render()
 
 	-- Session header
 	local session_name = current_session.name or "New session"
-	local session_time = os.date("%Y-%m-%dT%H:%M:%SZ")
-	local header_line = "# " .. session_name .. " - " .. session_time
+	local header_line = "# " .. session_name
 	local header = NuiLine()
 	header:append(NuiText(header_line, "Comment"))
 	add_line(header)

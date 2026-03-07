@@ -547,6 +547,7 @@ function M.render_metadata_footer(message, messages, opts)
 	local agent_name = message.mode or message.agent or "unknown"
 	local agent_id = message.agent or message.mode or "unknown"
 	local interrupted = M.is_interrupted(message)
+	local is_final = M.is_message_final(message)
 	local agent_hl = interrupted and "Comment" or M.get_agent_hl(agent_id)
 	local token_usage = _get_token_usage(message)
 	local token_limit = _get_token_limit(message)
@@ -560,7 +561,9 @@ function M.render_metadata_footer(message, messages, opts)
 		line:append(NuiText(" · ", "Comment"))
 		line:append(NuiText(model_id, "Comment"))
 	end
-	if token_usage then
+	-- Streaming updates often report zero token usage until completion.
+	-- Hide zero/limit output to avoid noisy footer churn like "0/400k tok".
+	if token_usage and token_usage > 0 then
 		line:append(NuiText(" · ", "Comment"))
 		local token_text = _format_compact_number(token_usage)
 		if token_limit then
@@ -568,7 +571,7 @@ function M.render_metadata_footer(message, messages, opts)
 		end
 		line:append(NuiText(token_text .. " tok", "Comment"))
 	end
-	if not interrupted and M.is_message_final(message) then
+	if not interrupted and is_final then
 		local duration_ms = M.calculate_duration(message, messages)
 		if duration_ms then
 			line:append(NuiText(" · ", "Comment"))
