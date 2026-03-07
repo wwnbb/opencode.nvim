@@ -47,8 +47,9 @@ end
 -- Get description lines for a permission based on type
 ---@param permission_type string
 ---@param tool_input table
+---@param perm_state? table
 ---@return table lines Array of description lines
-local function get_permission_description(permission_type, tool_input)
+local function get_permission_description(permission_type, tool_input, perm_state)
 	tool_input = tool_input or {}
 
 	if permission_type == "bash" then
@@ -60,7 +61,27 @@ local function get_permission_description(permission_type, tool_input)
 		end
 		return lines
 	elseif permission_type == "read" then
-		local path = normalize_path(tool_input.file_path or tool_input.filePath or tool_input.path or "")
+		local metadata = (perm_state and perm_state.metadata) or {}
+		local patterns = (perm_state and perm_state.patterns) or {}
+		local path = normalize_path(
+			tool_input.file_path
+				or tool_input.filePath
+				or tool_input.filepath
+				or tool_input.file
+				or tool_input.path
+				or tool_input.pattern
+				or metadata.file_path
+				or metadata.filePath
+				or metadata.filepath
+				or metadata.file
+				or metadata.path
+				or metadata.pattern
+				or patterns[1]
+				or ""
+		)
+		if path == "" then
+			return { "→ Read" }
+		end
 		return { "→ Read " .. path }
 	elseif permission_type == "glob" then
 		local pattern = tool_input.pattern or ""
@@ -133,7 +154,7 @@ function M.get_lines_for_permission(permission_id, perm_state)
 	line_num = line_num + 1
 
 	-- Permission description
-	local desc_lines = get_permission_description(perm_state.permission_type, perm_state.tool_input)
+	local desc_lines = get_permission_description(perm_state.permission_type, perm_state.tool_input, perm_state)
 	for _, dline in ipairs(desc_lines) do
 		table.insert(lines, dline)
 		table.insert(highlights, {
@@ -222,7 +243,7 @@ function M.get_approved_lines(permission_id, perm_state)
 	table.insert(lines, string.rep("─", 60))
 	line_num = line_num + 1
 
-	local desc_lines = get_permission_description(perm_state.permission_type, perm_state.tool_input)
+	local desc_lines = get_permission_description(perm_state.permission_type, perm_state.tool_input, perm_state)
 	local summary = desc_lines[1] or perm_state.permission_type
 	local display = summary .. " - " .. reply_label
 	table.insert(lines, display)
@@ -269,7 +290,7 @@ function M.get_rejected_lines(permission_id, perm_state)
 	table.insert(lines, string.rep("─", 60))
 	line_num = line_num + 1
 
-	local desc_lines = get_permission_description(perm_state.permission_type, perm_state.tool_input)
+	local desc_lines = get_permission_description(perm_state.permission_type, perm_state.tool_input, perm_state)
 	local summary = desc_lines[1] or perm_state.permission_type
 	local display = summary .. " - Rejected"
 	table.insert(lines, display)
