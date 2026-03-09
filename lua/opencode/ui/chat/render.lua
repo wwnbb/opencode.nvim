@@ -7,7 +7,6 @@ local M = {}
 
 local NuiLine = require("nui.line")
 local NuiText = require("nui.text")
-local markdown = require("opencode.ui.markdown")
 local thinking = require("opencode.ui.thinking")
 local locale = require("opencode.util.locale")
 local sync = require("opencode.sync")
@@ -223,35 +222,23 @@ function M.render_reasoning(reasoning)
 	return lines
 end
 
----Render content (markdown or plain) using NuiLine.
+---Render content using plain text lines only.
 ---@param content string|nil
----@param opts? table { stream_plain?: boolean }
+---@param _opts? table
 ---@return NuiLine[]
-function M.render_content(content, opts)
-	opts = opts or {}
+function M.render_content(content, _opts)
 	local lines = {}
 	if not content or content == "" then
 		return lines
 	end
 
-	local use_markdown = not opts.stream_plain and markdown.has_markdown(content)
-
-	if use_markdown then
-		local parsed = markdown.parse(content)
-		local md_lines, _ = markdown.render_to_lines(parsed)
-		for _, text in ipairs(md_lines) do
-			local line = NuiLine()
-			line:append(text)
-			table.insert(lines, line)
-		end
-	else
-		local content_lines = vim.split(content, "\n", { plain = true })
-		for _, text in ipairs(content_lines) do
-			local line = NuiLine()
-			line:append(text)
-			table.insert(lines, line)
-		end
+	local content_lines = vim.split(content, "\n", { plain = true })
+	for _, text in ipairs(content_lines) do
+		local line = NuiLine()
+		line:append(text)
+		table.insert(lines, line)
 	end
+
 	return lines
 end
 

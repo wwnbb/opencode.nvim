@@ -5,7 +5,6 @@ local M = {}
 
 local NuiLine = require("nui.line")
 local NuiText = require("nui.text")
-local markdown = require("opencode.ui.markdown")
 local thinking = require("opencode.ui.thinking")
 
 --==============================================================================
@@ -273,29 +272,15 @@ function ChatMessage:_build_tool_line(lines, tool_part)
 	table.insert(lines, tool_line)
 end
 
----Build content lines with markdown support
+---Build content lines with plain text only
 ---@param lines NuiLine[]
 function ChatMessage:_build_content_lines(lines)
 	local content = self.content
-	local use_markdown = markdown.has_markdown(content)
-
-	if use_markdown then
-		local parsed = markdown.parse(content)
-		local md_lines, md_highlights = markdown.render_to_lines(parsed)
-
-		for i, text in ipairs(md_lines) do
-			local line = NuiLine()
-			line:append(text)
-			table.insert(lines, line)
-		end
-	else
-		-- Plain text
-		local content_lines = vim.split(content, "\n", { plain = true })
-		for _, text in ipairs(content_lines) do
-			local line = NuiLine()
-			line:append(text)
-			table.insert(lines, line)
-		end
+	local content_lines = vim.split(content, "\n", { plain = true })
+	for _, text in ipairs(content_lines) do
+		local line = NuiLine()
+		line:append(text)
+		table.insert(lines, line)
 	end
 end
 

@@ -8,7 +8,6 @@ local Popup = require("nui.popup")
 local NuiLine = require("nui.line")
 local NuiText = require("nui.text")
 local input = require("opencode.ui.input")
-local markdown = require("opencode.ui.markdown")
 local thinking = require("opencode.ui.thinking")
 local spinner = require("opencode.ui.spinner")
 local locale = require("opencode.util.locale")
@@ -956,21 +955,9 @@ function M.render_message(message)
 
 	table.insert(lines, string.rep("─", 60))
 
-	local use_markdown = markdown.has_markdown(message.content)
-	if use_markdown then
-		local md_lines, md_highlights = markdown.render_to_lines(markdown.parse(message.content))
-		for _, line in ipairs(md_lines) do
-			table.insert(lines, line)
-		end
-		for _, hl in ipairs(md_highlights) do
-			hl.line = hl.line + 2
-			table.insert(highlights, hl)
-		end
-	else
-		local content_lines = vim.split(message.content or "", "\n", { plain = true })
-		for _, line in ipairs(content_lines) do
-			table.insert(lines, line)
-		end
+	local content_lines = vim.split(message.content or "", "\n", { plain = true })
+	for _, line in ipairs(content_lines) do
+		table.insert(lines, line)
 	end
 
 	table.insert(lines, "")
