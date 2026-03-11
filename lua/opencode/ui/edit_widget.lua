@@ -181,8 +181,11 @@ function M.get_lines_for_edit(permission_id, edit_state)
 	table.insert(lines, "")
 	line_num = line_num + 1
 
+	local is_readonly = edit_state.review_mode == "readonly"
+
 	-- Keybinding hint line
-	local hint = "<C-a> accept  <C-x> reject  <C-m> resolve  = inline diff  dv diff split  dt diff tab"
+	local hint = is_readonly and "<C-a> approve  <C-x> reject  = inline diff"
+		or "<C-a> accept  <C-x> reject  <C-m> resolve  = inline diff  dv diff split  dt diff tab"
 	table.insert(lines, hint)
 	table.insert(highlights, {
 		line = line_num,
@@ -192,7 +195,8 @@ function M.get_lines_for_edit(permission_id, edit_state)
 	})
 	line_num = line_num + 1
 
-	local hint2 = "Enter open  A accept all  X reject all  M resolve all  1-9 jump to file"
+	local hint2 = is_readonly and "Enter approve  Esc reject  A approve all  X reject all  1-9 jump to file"
+		or "Enter open  A accept all  X reject all  M resolve all  1-9 jump to file"
 	table.insert(lines, hint2)
 	table.insert(highlights, {
 		line = line_num,

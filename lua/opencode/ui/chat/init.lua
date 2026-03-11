@@ -1987,6 +1987,12 @@ function M.handle_question_confirm()
 
 	local eid = chat_edits.get_edit_at_cursor()
 	if eid then
+		if edit_state.is_readonly(eid) then
+			edit_state.accept_all(eid)
+			chat_edits.finalize_edit(eid)
+			return
+		end
+
 		chat_edits.sync_selected_file_from_cursor()
 		local file = edit_state.get_selected_file(eid)
 		if file and file.filepath and file.filepath ~= "" then

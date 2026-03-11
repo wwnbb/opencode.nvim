@@ -36,6 +36,26 @@ local function parse_diff_lines(diff_str)
 	return vim.split(diff_str, "\n", { plain = true })
 end
 
+---@param diff_str any
+---@return number, number
+local function parse_diff_stats(diff_str)
+	if type(diff_str) ~= "string" or diff_str == "" then
+		return 0, 0
+	end
+
+	local additions = 0
+	local deletions = 0
+	for _, line in ipairs(vim.split(diff_str, "\n", { plain = true })) do
+		if line:sub(1, 3) ~= "+++" and line:sub(1, 1) == "+" then
+			additions = additions + 1
+		elseif line:sub(1, 3) ~= "---" and line:sub(1, 1) == "-" then
+			deletions = deletions + 1
+		end
+	end
+
+	return additions, deletions
+end
+
 ---@param text string|nil
 ---@return string
 local function normalize_line_endings(text)
@@ -101,25 +121,34 @@ end
 ---@param opts table { data, metadata, message_id }
 function M.add_edit(permission_id, session_id, files_data, opts)
 	opts = opts or {}
+	local review_mode = opts.review_mode or "interactive"
 	local changes = require("opencode.artifact.changes")
 
 	local files = {}
 	for i, fd in ipairs(files_data) do
-		local filepath = fd.filePath or fd.filepath or fd.path or ""
+		local filepath = fd.filePath or fd.filepath or fd.file_path or fd.file or fd.path or ""
 		local relative_path = fd.relativePath or fd.relative_path or vim.fn.fnamemodify(filepath, ":.")
 		local before = fd.before or ""
 		local after = fd.after or ""
-		local additions = fd.additions or 0
-		local deletions = fd.deletions or 0
+		local additions = fd.additions
+		local deletions = fd.deletions
+		if type(additions) ~= "number" or type(deletions) ~= "number" then
+			local parsed_additions, parsed_deletions = parse_diff_stats(fd.diff)
+			additions = type(additions) == "number" and additions or parsed_additions
+			deletions = type(deletions) == "number" and deletions or parsed_deletions
+		end
 
 		-- Create change record for accept/reject file writing
-		local change_id = changes.add_change(filepath, before, after, {
-			metadata = {
-				source = "edit_widget",
-				permission_id = permission_id,
-				file_index = i,
-			},
-		})
+		local change_id = nil
+		if review_mode ~= "readonly" then
+			change_id = changes.add_change(filepath, before, after, {
+				metadata = {
+					source = "edit_widget",
+					permission_id = permission_id,
+					file_index = i,
+				},
+			})
+		end
 
 		table.insert(files, {
 			index = i,
@@ -143,6 +172,7 @@ function M.add_edit(permission_id, session_id, files_data, opts)
 		selected_file = 1,
 		expanded_files = {},
 		status = "pending",
+		review_mode = review_mode,
 		timestamp = os.time(),
 		data = opts.data or {},
 		metadata = opts.metadata or {},
@@ -310,6 +340,16 @@ function M.get_selected_file(permission_id)
 	return estate.files[estate.selected_file]
 end
 
+---@param permission_id string
+---@return boolean
+function M.is_readonly(permission_id)
+	local estate = active_edits[permission_id]
+	if not estate then
+		return false
+	end
+	return estate.review_mode == "readonly"
+end
+
 --- Accept a file (write to disk via changes module)
 ---@param permission_id string
 ---@param file_index number
@@ -327,6 +367,11 @@ function M.accept_file(permission_id, file_index)
 
 	if file.status ~= "pending" then
 		return false, "File already resolved"
+	end
+
+	if estate.review_mode == "readonly" then
+		file.status = "accepted"
+		return true
 	end
 
 	local changes = require("opencode.artifact.changes")
@@ -358,6 +403,11 @@ function M.reject_file(permission_id, file_index)
 		return false, "File already resolved"
 	end
 
+	if estate.review_mode == "readonly" then
+		file.status = "rejected"
+		return true
+	end
+
 	local changes = require("opencode.artifact.changes")
 	changes.reject(file.change_id)
 
@@ -376,8 +426,10 @@ function M.accept_all(permission_id)
 
 	for _, file in ipairs(estate.files) do
 		if file.status == "pending" then
-			local changes = require("opencode.artifact.changes")
-			changes.accept(file.change_id, { force = true })
+			if estate.review_mode ~= "readonly" then
+				local changes = require("opencode.artifact.changes")
+				changes.accept(file.change_id, { force = true })
+			end
 			file.status = "accepted"
 		end
 	end
@@ -396,8 +448,10 @@ function M.reject_all(permission_id)
 
 	for _, file in ipairs(estate.files) do
 		if file.status == "pending" then
-			local changes = require("opencode.artifact.changes")
-			changes.reject(file.change_id)
+			if estate.review_mode ~= "readonly" then
+				local changes = require("opencode.artifact.changes")
+				changes.reject(file.change_id)
+			end
 			file.status = "rejected"
 		end
 	end
@@ -424,6 +478,10 @@ function M.resolve_file(permission_id, file_index)
 		return false, "File already resolved"
 	end
 
+	if estate.review_mode == "readonly" then
+		return false, "Readonly edit cannot be resolved manually"
+	end
+
 	local flushed = flush_modified_buffer(file.filepath)
 	if not flushed then
 		return false, "Failed to save modified buffer"
@@ -442,6 +500,10 @@ end
 function M.resolve_all(permission_id)
 	local estate = active_edits[permission_id]
 	if not estate then
+		return false
+	end
+
+	if estate.review_mode == "readonly" then
 		return false
 	end
 

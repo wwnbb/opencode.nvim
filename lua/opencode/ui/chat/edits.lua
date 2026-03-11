@@ -21,6 +21,11 @@ local inline_diff_state = {
 	file_index = nil,
 }
 
+local readonly_warning_state = {
+	resolve = {},
+	diff = {},
+}
+
 ---@param winid number|nil
 ---@return boolean
 local function is_valid_window(winid)
@@ -345,6 +350,23 @@ end
 
 local function schedule_render()
 	require("opencode.ui.chat").schedule_render()
+end
+
+---@param permission_id string
+---@param kind "resolve"|"diff"
+---@param message string
+local function warn_readonly_once(permission_id, kind, message)
+	if readonly_warning_state[kind][permission_id] then
+		return
+	end
+	readonly_warning_state[kind][permission_id] = true
+	vim.notify(message, vim.log.levels.WARN)
+end
+
+---@param permission_id string
+local function clear_readonly_warnings(permission_id)
+	readonly_warning_state.resolve[permission_id] = nil
+	readonly_warning_state.diff[permission_id] = nil
 end
 
 ---@param filepath string
@@ -713,6 +735,7 @@ function M.finalize_edit(permission_id)
 				vim.notify("Failed to send edit reply: " .. vim.inspect(err), vim.log.levels.ERROR)
 				return
 			end
+			clear_readonly_warnings(permission_id)
 			edit_state.mark_sent(permission_id)
 			schedule_render()
 		end)
@@ -736,6 +759,12 @@ function M.handle_edit_accept_file()
 
 	local file = estate.files[estate.selected_file]
 	if not file or file.status ~= "pending" then
+		return
+	end
+
+	if edit_state.is_readonly(eid) then
+		edit_state.accept_all(eid)
+		M.finalize_edit(eid)
 		return
 	end
 
@@ -767,6 +796,12 @@ function M.handle_edit_reject_file()
 
 	local file = estate.files[estate.selected_file]
 	if not file or file.status ~= "pending" then
+		return
+	end
+
+	if edit_state.is_readonly(eid) then
+		edit_state.reject_all(eid)
+		M.finalize_edit(eid)
 		return
 	end
 
@@ -822,6 +857,11 @@ function M.handle_edit_resolve_file()
 		return
 	end
 
+	if edit_state.is_readonly(eid) then
+		warn_readonly_once(eid, "resolve", "Readonly edit review does not support manual resolve.")
+		return
+	end
+
 	local file = estate.files[estate.selected_file]
 	if not file or file.status ~= "pending" then
 		return
@@ -843,6 +883,10 @@ end
 function M.handle_edit_resolve_all()
 	local eid = M.get_edit_at_cursor()
 	if not eid then
+		return
+	end
+	if edit_state.is_readonly(eid) then
+		warn_readonly_once(eid, "resolve", "Readonly edit review does not support manual resolve.")
 		return
 	end
 	edit_state.resolve_all(eid)
@@ -881,6 +925,10 @@ function M.handle_edit_diff_tab()
 	if not estate then
 		return
 	end
+	if edit_state.is_readonly(eid) then
+		warn_readonly_once(eid, "diff", "Readonly edit review does not support opening diff editors.")
+		return
+	end
 	local file = estate.files[estate.selected_file]
 	if not file then
 		return
@@ -911,6 +959,10 @@ function M.handle_edit_diff_split()
 	end
 	local estate = edit_state.get_edit(eid)
 	if not estate then
+		return
+	end
+	if edit_state.is_readonly(eid) then
+		warn_readonly_once(eid, "diff", "Readonly edit review does not support opening diff editors.")
 		return
 	end
 	local file = estate.files[estate.selected_file]

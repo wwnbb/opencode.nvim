@@ -618,7 +618,6 @@ function M.setup_chat_handlers()
 
 				-- Show permission notification
 				local permission_type = data.permission or data.type
-				local pattern = data.pattern or data.path or data.file or "unknown"
 				local metadata = data.metadata or {}
 				local current_session = require("opencode.state").get_session()
 				local message_id = data.tool and data.tool.messageID or nil
@@ -652,24 +651,153 @@ function M.setup_chat_handlers()
 					return (session_hint and session_hint.id) or ""
 				end
 
-				-- Route diff_review permissions to the edit widget
-				if permission_type == "diff_review" then
+				---@param ... any
+				---@return string|nil
+				local function first_non_empty(...)
+					for i = 1, select("#", ...) do
+						local value = select(i, ...)
+						if type(value) == "string" and value ~= "" then
+							return value
+						end
+					end
+					return nil
+				end
+
+				---@param diff_text any
+				---@return number, number
+				local function calc_diff_stats(diff_text)
+					if type(diff_text) ~= "string" or diff_text == "" then
+						return 0, 0
+					end
+
+					local additions = 0
+					local deletions = 0
+					for _, line in ipairs(vim.split(diff_text, "\n", { plain = true })) do
+						if line:sub(1, 3) ~= "+++" and line:sub(1, 1) == "+" then
+							additions = additions + 1
+						elseif line:sub(1, 3) ~= "---" and line:sub(1, 1) == "-" then
+							deletions = deletions + 1
+						end
+					end
+
+					return additions, deletions
+				end
+
+				---@param patterns any
+				---@return string|nil
+				local function extract_pattern_path(patterns)
+					if type(patterns) ~= "table" then
+						return nil
+					end
+
+					if vim.tbl_islist(patterns) then
+						for _, item in ipairs(patterns) do
+							if type(item) == "string" and item ~= "" then
+								return item
+							end
+							if type(item) == "table" then
+								local nested = first_non_empty(
+									item.path,
+									item.filepath,
+									item.file_path,
+									item.file,
+									item.pattern
+								)
+								if nested then
+									return nested
+								end
+							end
+						end
+						return nil
+					end
+
+					return first_non_empty(
+						patterns.path,
+						patterns.filepath,
+						patterns.file_path,
+						patterns.file,
+						patterns.pattern
+					)
+				end
+
+				---@param raw_files any
+				---@return table
+				local function normalize_edit_files(raw_files)
+					if type(raw_files) ~= "table" then
+						return {}
+					end
+					if vim.tbl_islist(raw_files) then
+						return raw_files
+					end
+					return { raw_files }
+				end
+
+				---@param event_data table
+				---@param event_metadata table
+				---@return table
+				local function synthesize_edit_files(event_data, event_metadata)
+					local path = first_non_empty(
+						event_metadata.filepath,
+						event_metadata.file_path,
+						event_metadata.file,
+						event_metadata.path,
+						event_data.filepath,
+						event_data.file_path,
+						event_data.file,
+						event_data.path,
+						event_metadata.pattern,
+						event_data.pattern,
+						extract_pattern_path(event_metadata.patterns),
+						extract_pattern_path(event_data.patterns)
+					) or "(pending edit)"
+
+					local before = event_metadata.before or event_data.before or ""
+					local after = event_metadata.after or event_data.after or event_metadata.content or event_data.content or ""
+					local diff = first_non_empty(event_metadata.diff, event_data.diff, event_metadata.patch, event_data.patch)
+					local diff_additions, diff_deletions = calc_diff_stats(diff)
+
+					return {
+						{
+							filePath = path,
+							relativePath = vim.fn.fnamemodify(path, ":."),
+							before = before,
+							after = after,
+							diff = diff,
+							additions = event_metadata.additions or event_data.additions or diff_additions,
+							deletions = event_metadata.deletions or event_data.deletions or diff_deletions,
+							type = event_metadata.type or event_data.type or "update",
+						},
+					}
+				end
+
+				if permission_type == "diff_review" or permission_type == "edit" then
 					local permission_id = data.id or data.requestID or ("perm_" .. os.time())
 					local edit_state_mod = require("opencode.edit.state")
 
 					-- Skip if already handled (dedup for duplicate SSE events)
 					if edit_state_mod.get_edit(permission_id) then
-						logger.debug("diff_review already handled, skipping", { id = permission_id })
+						logger.debug("edit permission already handled, skipping", {
+							id = permission_id,
+							type = permission_type,
+						})
 						return
 					end
 
-					local nd_files = metadata.files or {}
+					local nd_files = normalize_edit_files(metadata.files)
+					if #nd_files == 0 then
+						nd_files = synthesize_edit_files(data, metadata)
+					end
 					local edit_session_id = resolve_widget_session_id(current_session, data, metadata, message_id)
+					local review_mode = "interactive"
+					if permission_type == "edit" and metadata.opencode_native_diff ~= true then
+						review_mode = "readonly"
+					end
 
 					edit_state_mod.add_edit(permission_id, edit_session_id, nd_files, {
 						data = data,
 						metadata = metadata,
 						message_id = message_id,
+						review_mode = review_mode,
 					})
 
 					-- Stop spinner so user can interact
@@ -684,121 +812,6 @@ function M.setup_chat_handlers()
 						chat.add_edit_message(permission_id, edit_state_mod.get_edit(permission_id), "pending")
 					end
 					return
-				elseif permission_type == "edit" then
-					local permission_id = data.id or data.requestID or ("perm_" .. os.time())
-
-					-- Check for native diff request from custom tools -> edit widget (legacy)
-					if metadata.opencode_native_diff == true then
-						local edit_state_mod = require("opencode.edit.state")
-
-						-- Skip if already handled (dedup: diff_review path may have created this edit)
-						if edit_state_mod.get_edit(permission_id) then
-							logger.debug("edit (native_diff) already handled, skipping", { id = permission_id })
-							return
-						end
-
-						local nd_files = metadata.files or {}
-						local edit_session_id = resolve_widget_session_id(current_session, data, metadata, message_id)
-
-						edit_state_mod.add_edit(permission_id, edit_session_id, nd_files, {
-							data = data,
-							metadata = metadata,
-							message_id = message_id,
-						})
-
-						-- Stop spinner so user can interact
-						local spinner_ok, perm_spinner = pcall(require, "opencode.ui.spinner")
-						if spinner_ok and perm_spinner.is_active and perm_spinner.is_active() then
-							perm_spinner.stop()
-						end
-
-						-- Add to chat as edit widget
-						local chat_ok, chat = pcall(require, "opencode.ui.chat")
-						if chat_ok and chat.add_edit_message then
-							chat.add_edit_message(permission_id, edit_state_mod.get_edit(permission_id), "pending")
-						end
-						return
-					end
-
-					local files = metadata.files or {}
-
-					logger.debug("Permission request", {
-						id = permission_id,
-						files_count = #files,
-					})
-
-					-- If we have file change data, show the diff viewer for ALL files
-					if #files > 0 then
-						local changes = require("opencode.artifact.changes")
-						local change_ids = {}
-
-						-- Process each file in the permission request
-						for i, file_data in ipairs(files) do
-							local filepath = file_data.file or file_data.path or file_data.filepath or file_data.filePath
-							local original_content = file_data.before or ""
-							local modified_content = file_data.after or ""
-
-							-- Skip if no filepath
-							if not filepath then
-								logger.debug("File missing filepath", { index = i })
-								goto continue_file
-							end
-
-							-- Ensure filepath is absolute
-							if not filepath:match("^/") then
-								filepath = "/" .. filepath
-							end
-
-							logger.debug("Processing file", {
-								index = i,
-								filepath = filepath,
-								before_length = #original_content,
-								after_length = #modified_content,
-							})
-
-							-- Add change to the changes module
-							local change_id = changes.add_change(filepath, original_content, modified_content, {
-								metadata = {
-									source = "permission",
-									permission_id = permission_id,
-									diff = metadata.diff,
-									file_index = i,
-									total_files = #files,
-								},
-							})
-
-							if change_id then
-								table.insert(change_ids, change_id)
-							end
-
-							::continue_file::
-						end
-
-						-- Store pending permission for approval callback (with all change IDs)
-						if #change_ids > 0 then
-							M._pending_permission = {
-								id = permission_id,
-								change_ids = change_ids,
-								current_index = 1,
-								type = permission_type,
-								pattern = pattern,
-								data = data,
-							}
-
-							logger.debug("Stored permission", {
-								id = permission_id,
-								changes_count = #change_ids,
-							})
-						else
-							vim.notify("Failed to create any change records", vim.log.levels.ERROR)
-						end
-					else
-						-- No file data, just show notification
-						vim.notify(
-							string.format("OpenCode wants to edit: %s (no diff data available)", pattern),
-							vim.log.levels.WARN
-						)
-					end
 				else
 					-- Non-edit permission: handle interactively via permission state + chat widget
 					local permission_id = data.id or data.requestID or ("perm_" .. os.time())
