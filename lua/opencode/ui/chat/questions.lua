@@ -8,6 +8,7 @@ local chat_hl_ns = cs.chat_hl_ns
 
 local question_widget = require("opencode.ui.question_widget")
 local question_state = require("opencode.question.state")
+local widget_support = require("opencode.ui.chat.widget_support")
 
 local function schedule_render()
 	require("opencode.ui.chat").schedule_render()
@@ -106,9 +107,7 @@ function M.add_question_message(request_id, questions, status)
 		})
 	end
 
-	if status == "pending" then
-		state.focus_question = request_id
-	end
+	widget_support.request_focus("question", request_id, status)
 
 	schedule_render()
 
@@ -297,9 +296,10 @@ function M.submit_question_answers(request_id)
 	local answers = question_state.get_answers(request_id)
 
 	local client = require("opencode.client")
-	local current_session = require("opencode.state").get_session()
+	local qstate = question_state.get_question(request_id)
+	local session_id = (qstate and qstate.session_id) or require("opencode.state").get_session().id
 
-	client.reply_to_question(current_session.id, request_id, answers, function(err, success)
+	client.reply_to_question(session_id, request_id, answers, function(err, success)
 		vim.schedule(function()
 			if err then
 				vim.notify("Failed to submit answer: " .. vim.inspect(err), vim.log.levels.ERROR)

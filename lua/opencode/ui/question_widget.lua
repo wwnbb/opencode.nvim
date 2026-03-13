@@ -2,6 +2,7 @@
 -- Renders interactive questions inline in chat buffer
 
 local M = {}
+local widget_base = require("opencode.ui.widget_base")
 
 -- Icons and config (will be configurable)
 local icons = {
@@ -43,19 +44,13 @@ function M.get_lines_for_question(request_id, question_data, selection_state, st
 	-- Header line with icon and request ID
 	local icon = icons[status] or icons.pending
 	local id_short = request_id:sub(1, 8)
-	local time_str = os.date("%H:%M", selection_state.timestamp or os.time())
-	local header = string.format("%s Question [%s] %s%s", icon, id_short, string.rep(" ", 50 - 10 - #id_short - #time_str), time_str)
+	local header = widget_base.format_header(icon, "Question", id_short, selection_state.timestamp)
 	table.insert(lines, header)
-	table.insert(highlights, {
-		line = line_num,
-		col_start = 0,
-		col_end = #icon + 9,
-		hl_group = status == "pending" and "Title" or "Comment",
-	})
+	widget_base.add_full_line_highlight(highlights, line_num, header, status == "pending" and "Title" or "Comment")
 	line_num = line_num + 1
 
 	-- Separator
-	table.insert(lines, string.rep("─", 60))
+	table.insert(lines, widget_base.separator())
 	line_num = line_num + 1
 
 	-- Tab bar (if multiple questions)
@@ -145,6 +140,7 @@ function M.get_lines_for_question(request_id, question_data, selection_state, st
 	local selections = selection_state.selections and selection_state.selections[current_tab] or {}
 	local selected_indices = selections.selected_indices or {}
 	local is_multi = current_question.type == "multi"
+	local allow_custom = current_question.allow_custom or current_question.allowCustom
 
 	if current_question.options and #current_question.options > 0 then
 		first_option_line = line_num
@@ -174,19 +170,13 @@ function M.get_lines_for_question(request_id, question_data, selection_state, st
 
 			-- Highlight selected option
 			if is_selected then
-				table.insert(highlights, {
-					line = line_num,
-					col_start = 0,
-					col_end = #option_text,
-					hl_group = "CursorLine",
-				})
+				widget_base.add_full_line_highlight(highlights, line_num, option_text, "CursorLine")
 			end
 
 			line_num = line_num + 1
 		end
 
 		-- Custom input option (if enabled)
-		local allow_custom = current_question.allow_custom or current_question.allowCustom
 		if allow_custom then
 			local custom_selected = selections.custom_input and selections.custom_input ~= ""
 			local custom_indicator = custom_selected and icons.selected or icons.unselected
@@ -196,13 +186,9 @@ function M.get_lines_for_question(request_id, question_data, selection_state, st
 			line_num = line_num + 1
 
 			if custom_selected then
-				table.insert(lines, custom_indicator .. " Custom: " .. custom_text)
-				table.insert(highlights, {
-					line = line_num,
-					col_start = 0,
-					col_end = 10 + #custom_text,
-					hl_group = "CursorLine",
-				})
+				local custom_line = custom_indicator .. " Custom: " .. custom_text
+				table.insert(lines, custom_line)
+				widget_base.add_full_line_highlight(highlights, line_num, custom_line, "CursorLine")
 			else
 				table.insert(lines, custom_indicator .. " Provide custom answer...")
 			end
@@ -251,12 +237,7 @@ function M.get_lines_for_question(request_id, question_data, selection_state, st
 
 		local hint = "[" .. table.concat(hint_parts, ", ") .. "]"
 		table.insert(lines, hint)
-		table.insert(highlights, {
-			line = line_num,
-			col_start = 0,
-			col_end = #hint,
-			hl_group = "Comment",
-		})
+		widget_base.add_full_line_highlight(highlights, line_num, hint, "Comment")
 		line_num = line_num + 1
 	end
 
@@ -322,19 +303,13 @@ function M.get_answered_lines(request_id, question_data, answers)
 	local line_num = 0
 
 	local id_short = request_id:sub(1, 8)
-	local time_str = os.date("%H:%M", os.time())
-	local header = string.format("%s Question [%s] %s%s", icons.answered, id_short, string.rep(" ", 50 - 2 - #id_short - #time_str), time_str)
+	local header = widget_base.format_header(icons.answered, "Question", id_short, os.time())
 
 	table.insert(lines, header)
-	table.insert(highlights, {
-		line = line_num,
-		col_start = 0,
-		col_end = 2,
-		hl_group = "Comment",
-	})
+	widget_base.add_full_line_highlight(highlights, line_num, header, "Comment")
 	line_num = line_num + 1
 
-	table.insert(lines, string.rep("─", 60))
+	table.insert(lines, widget_base.separator())
 	line_num = line_num + 1
 
 	local questions = question_data.questions or question_data
@@ -363,19 +338,13 @@ function M.get_rejected_lines(request_id, question_data)
 	local line_num = 0
 
 	local id_short = request_id:sub(1, 8)
-	local time_str = os.date("%H:%M", os.time())
-	local header = string.format("%s Question [%s] %s%s", icons.rejected, id_short, string.rep(" ", 50 - 2 - #id_short - #time_str), time_str)
+	local header = widget_base.format_header(icons.rejected, "Question", id_short, os.time())
 
 	table.insert(lines, header)
-	table.insert(highlights, {
-		line = line_num,
-		col_start = 0,
-		col_end = 2,
-		hl_group = "Error",
-	})
+	widget_base.add_full_line_highlight(highlights, line_num, header, "Error")
 	line_num = line_num + 1
 
-	table.insert(lines, string.rep("─", 60))
+	table.insert(lines, widget_base.separator())
 	line_num = line_num + 1
 
 	local questions = question_data.questions or question_data
@@ -409,29 +378,19 @@ function M.get_confirmation_lines(request_id, question_data, selection_state)
 	
 	-- Header
 	local id_short = request_id:sub(1, 8)
-	local time_str = os.date("%H:%M", selection_state.timestamp or os.time())
-	local header = string.format("✓ Question [%s] %s%s", id_short, string.rep(" ", 50 - 2 - #id_short - #time_str), time_str)
+	local header = widget_base.format_header("✓", "Question", id_short, selection_state.timestamp)
 	table.insert(lines, header)
-	table.insert(highlights, {
-		line = line_num,
-		col_start = 0,
-		col_end = #header,
-		hl_group = "Title",
-	})
+	widget_base.add_full_line_highlight(highlights, line_num, header, "Title")
 	line_num = line_num + 1
 
 	-- Separator
-	table.insert(lines, string.rep("─", 60))
+	table.insert(lines, widget_base.separator())
 	line_num = line_num + 1
 
 	-- Title
-	table.insert(lines, "Ready to Submit")
-	table.insert(highlights, {
-		line = line_num,
-		col_start = 0,
-		col_end = 15,
-		hl_group = "Title",
-	})
+	local title = "Ready to Submit"
+	table.insert(lines, title)
+	widget_base.add_full_line_highlight(highlights, line_num, title, "Title")
 	line_num = line_num + 1
 	
 	table.insert(lines, "")
@@ -460,24 +419,15 @@ function M.get_confirmation_lines(request_id, question_data, selection_state)
 		local q_label = question.header or question.title or ("Question " .. i)
 		
 		-- Question label
-		table.insert(lines, q_label .. ":")
-		table.insert(highlights, {
-			line = line_num,
-			col_start = 0,
-			col_end = #q_label + 1,
-			hl_group = "Label",
-		})
+		local question_line = q_label .. ":"
+		table.insert(lines, question_line)
+		widget_base.add_full_line_highlight(highlights, line_num, question_line, "Label")
 		line_num = line_num + 1
 		
 		-- Answer with checkmark
 		local answer_line = "  ✓ " .. answer_text
 		table.insert(lines, answer_line)
-		table.insert(highlights, {
-			line = line_num,
-			col_start = 0,
-			col_end = #answer_line,
-			hl_group = "String",
-		})
+		widget_base.add_full_line_highlight(highlights, line_num, answer_line, "String")
 		line_num = line_num + 1
 		
 		table.insert(lines, "")
@@ -498,24 +448,14 @@ function M.get_confirmation_lines(request_id, question_data, selection_state)
 	local yes_text = yes_indicator .. " 1. Yes, submit all answers"
 	table.insert(lines, yes_text)
 	if selected_choice == 1 then
-		table.insert(highlights, {
-			line = line_num,
-			col_start = 0,
-			col_end = #yes_text,
-			hl_group = "CursorLine",
-		})
+		widget_base.add_full_line_highlight(highlights, line_num, yes_text, "CursorLine")
 	end
 	line_num = line_num + 1
 
 	local no_text = no_indicator .. " 2. No, review answers"
 	table.insert(lines, no_text)
 	if selected_choice == 2 then
-		table.insert(highlights, {
-			line = line_num,
-			col_start = 0,
-			col_end = #no_text,
-			hl_group = "CursorLine",
-		})
+		widget_base.add_full_line_highlight(highlights, line_num, no_text, "CursorLine")
 	end
 	line_num = line_num + 1
 	
@@ -525,12 +465,7 @@ function M.get_confirmation_lines(request_id, question_data, selection_state)
 	-- Hint
 	local hint = "[1-2 select, ↑↓ navigate, Enter confirm, Esc cancel]"
 	table.insert(lines, hint)
-	table.insert(highlights, {
-		line = line_num,
-		col_start = 0,
-		col_end = #hint,
-		hl_group = "Comment",
-	})
+	widget_base.add_full_line_highlight(highlights, line_num, hint, "Comment")
 	line_num = line_num + 1
 
 	table.insert(lines, "")

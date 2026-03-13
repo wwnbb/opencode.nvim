@@ -8,6 +8,7 @@ local chat_hl_ns = cs.chat_hl_ns
 
 local permission_widget = require("opencode.ui.permission_widget")
 local permission_state = require("opencode.permission.state")
+local widget_support = require("opencode.ui.chat.widget_support")
 
 local function schedule_render()
 	require("opencode.ui.chat").schedule_render()
@@ -73,9 +74,7 @@ function M.add_permission_message(permission_id, perm_data, status)
 		return
 	end
 
-	if status == "pending" then
-		state.focus_permission = permission_id
-	end
+	widget_support.request_focus("permission", permission_id, status)
 
 	schedule_render()
 end

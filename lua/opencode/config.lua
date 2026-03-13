@@ -16,7 +16,7 @@ M.defaults = {
 		auto_start = true,
 		startup_timeout = 10000,
 		health_check_interval = 1000,
-		shutdown_on_exit = false,
+		shutdown_on_exit = true,
 		reuse_running = true,
 		config_dir = vim.fn.stdpath("config") .. "/opencode",
 	},
