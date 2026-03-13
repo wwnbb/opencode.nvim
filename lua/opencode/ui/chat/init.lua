@@ -24,6 +24,7 @@ local chat_questions = require("opencode.ui.chat.questions")
 local chat_permissions = require("opencode.ui.chat.permissions")
 local chat_edits = require("opencode.ui.chat.edits")
 local chat_nav = require("opencode.ui.chat.nav")
+local widget_support = require("opencode.ui.chat.widget_support")
 
 local question_widget = require("opencode.ui.question_widget")
 local question_state = require("opencode.question.state")
@@ -1240,14 +1241,7 @@ function M.render()
 	---@param widget_status string|nil
 	---@return boolean
 	local function should_render_session_widget(owner_session_id, widget_status)
-		local owns_widget = owner_session_id == current_session.id
-		if owns_widget then
-			return true
-		end
-		if in_child_session_view then
-			return false
-		end
-		return (widget_status or "pending") == "pending"
+		return widget_support.should_render(owner_session_id, widget_status, current_session.id, in_child_session_view)
 	end
 
 	-- Reset position-tracking tables: render() always fully rebuilds them from
@@ -1277,9 +1271,7 @@ function M.render()
 		else
 			local first_option_offset
 			p_lines, p_highlights, _, first_option_offset = permission_widget.get_lines_for_permission(perm_id, pstate)
-			if state.focus_permission == perm_id then
-				state.focus_permission_line = #raw_lines + first_option_offset + 1
-			end
+			widget_support.capture_focus_line("permission", perm_id, #raw_lines + first_option_offset + 1)
 		end
 
 		if p_lines then
@@ -1306,9 +1298,7 @@ function M.render()
 		else
 			local first_file_offset
 			e_lines, e_highlights, _, first_file_offset = edit_widget.get_lines_for_edit(eid, estate)
-			if state.focus_edit == eid then
-				state.focus_edit_line = #raw_lines + first_file_offset + 1
-			end
+			widget_support.capture_focus_line("edit", eid, #raw_lines + first_file_offset + 1)
 		end
 
 		if e_lines then
@@ -1549,6 +1539,11 @@ function M.render()
 			local q_start_line = #raw_lines
 			local q_lines, q_highlights
 			local status = (qstate and qstate.status) or message.status or "pending"
+			local owner_session_id = message.source_session_id or (qstate and qstate.session_id)
+
+			if not should_render_session_widget(owner_session_id, status) then
+				goto continue_local_message
+			end
 
 			if status == "answered" then
 				q_lines, q_highlights = question_widget.get_answered_lines(
@@ -1568,9 +1563,7 @@ function M.render()
 					qstate,
 					status
 				)
-				if state.focus_question == message.request_id then
-					state.focus_question_line = q_start_line + first_option_offset + 1
-				end
+				widget_support.capture_focus_line("question", message.request_id, q_start_line + first_option_offset + 1)
 			else
 				goto continue_local_message
 			end
@@ -1813,34 +1806,13 @@ function M.do_render()
 
 	vim.bo[state.bufnr].modifiable = false
 
-	if
-		state.focus_question
-		and state.focus_question_line
-		and state.winid
-		and vim.api.nvim_win_is_valid(state.winid)
-	then
-		local buf_lines = vim.api.nvim_buf_line_count(state.bufnr)
-		local target = math.min(state.focus_question_line, buf_lines)
-		vim.api.nvim_win_set_cursor(state.winid, { target, 0 })
-		state.focus_question = nil
-		state.focus_question_line = nil
-	elseif
-		state.focus_permission
-		and state.focus_permission_line
-		and state.winid
-		and vim.api.nvim_win_is_valid(state.winid)
-	then
-		local buf_lines = vim.api.nvim_buf_line_count(state.bufnr)
-		local target = math.min(state.focus_permission_line, buf_lines)
-		vim.api.nvim_win_set_cursor(state.winid, { target, 0 })
-		state.focus_permission = nil
-		state.focus_permission_line = nil
-	elseif state.focus_edit and state.focus_edit_line and state.winid and vim.api.nvim_win_is_valid(state.winid) then
-		local buf_lines = vim.api.nvim_buf_line_count(state.bufnr)
-		local target = math.min(state.focus_edit_line, buf_lines)
-		vim.api.nvim_win_set_cursor(state.winid, { target, 0 })
-		state.focus_edit = nil
-		state.focus_edit_line = nil
+	local focused_kind = widget_support.apply_focus_cursor()
+	if focused_kind == "question" then
+		chat_questions.sync_selected_option_from_cursor()
+	elseif focused_kind == "permission" then
+		chat_permissions.sync_selected_option_from_cursor()
+	elseif focused_kind == "edit" then
+		chat_edits.sync_selected_file_from_cursor()
 	elseif should_scroll and state.visible and state.winid and vim.api.nvim_win_is_valid(state.winid) then
 		local buf_lines = vim.api.nvim_buf_line_count(state.bufnr)
 		vim.api.nvim_win_set_cursor(state.winid, { buf_lines, 0 })
@@ -2016,7 +1988,8 @@ function M.handle_question_cancel()
 
 		local client = require("opencode.client")
 		local current_session = require("opencode.state").get_session()
-		client.reject_question(current_session.id, request_id, function(err, success)
+		local session_id = qstate.session_id or current_session.id
+		client.reject_question(session_id, request_id, function(err, success)
 			vim.schedule(function()
 				if err then
 					vim.notify("Failed to cancel question: " .. tostring(err), vim.log.levels.ERROR)

@@ -2,6 +2,7 @@
 -- Renders fugitive-style file review widget inline in chat buffer
 
 local M = {}
+local widget_base = require("opencode.ui.widget_base")
 
 local icons = {
 	pending = "←",
@@ -23,25 +24,13 @@ function M.get_lines_for_edit(permission_id, edit_state)
 
 	-- Header: icon + short permission ID + timestamp
 	local id_short = permission_id:sub(1, 8)
-	local time_str = os.date("%H:%M", edit_state.timestamp or os.time())
-	local header = string.format(
-		"%s Edit [%s] %s%s",
-		icons.pending,
-		id_short,
-		string.rep(" ", math.max(0, 50 - 10 - #id_short - #time_str)),
-		time_str
-	)
+	local header = widget_base.format_header(icons.pending, "Edit", id_short, edit_state.timestamp)
 	table.insert(lines, header)
-	table.insert(highlights, {
-		line = line_num,
-		col_start = 0,
-		col_end = #header,
-		hl_group = "Title",
-	})
+	widget_base.add_full_line_highlight(highlights, line_num, header, "Title")
 	line_num = line_num + 1
 
 	-- Separator
-	table.insert(lines, string.rep("─", 60))
+	table.insert(lines, widget_base.separator())
 	line_num = line_num + 1
 
 	-- File list
@@ -122,12 +111,7 @@ function M.get_lines_for_edit(permission_id, edit_state)
 			})
 		elseif is_selected then
 			-- Cursor line highlight for selected
-			table.insert(highlights, {
-				line = line_num,
-				col_start = 0,
-				col_end = #file_line,
-				hl_group = "CursorLine",
-			})
+			widget_base.add_full_line_highlight(highlights, line_num, file_line, "CursorLine")
 		end
 
 		-- Stats highlights (always)
@@ -187,23 +171,13 @@ function M.get_lines_for_edit(permission_id, edit_state)
 	local hint = is_readonly and "<C-a> approve  <C-x> reject  = inline diff"
 		or "<C-a> accept  <C-x> reject  <C-m> resolve  = inline diff  dv diff split  dt diff tab"
 	table.insert(lines, hint)
-	table.insert(highlights, {
-		line = line_num,
-		col_start = 0,
-		col_end = #hint,
-		hl_group = "Comment",
-	})
+	widget_base.add_full_line_highlight(highlights, line_num, hint, "Comment")
 	line_num = line_num + 1
 
 	local hint2 = is_readonly and "Enter approve  Esc reject  A approve all  X reject all  1-9 jump to file"
 		or "Enter open  A accept all  X reject all  M resolve all  1-9 jump to file"
 	table.insert(lines, hint2)
-	table.insert(highlights, {
-		line = line_num,
-		col_start = 0,
-		col_end = #hint2,
-		hl_group = "Comment",
-	})
+	widget_base.add_full_line_highlight(highlights, line_num, hint2, "Comment")
 	line_num = line_num + 1
 
 	-- Trailing blank line
@@ -226,7 +200,6 @@ function M.get_resolved_lines(permission_id, edit_state)
 
 	-- Header with resolution status
 	local id_short = permission_id:sub(1, 8)
-	local time_str = os.date("%H:%M", edit_state.resolved_at or edit_state.timestamp or os.time())
 	local resolution_label
 	if resolution == "all_accepted" then
 		resolution_label = "Approved"
@@ -238,13 +211,12 @@ function M.get_resolved_lines(permission_id, edit_state)
 		resolution_label = "Partial"
 	end
 
-	local header = string.format(
-		"%s Edit [%s] %s%s  %s",
+	local header = widget_base.format_header(
 		icons.pending,
+		"Edit",
 		id_short,
-		string.rep(" ", math.max(0, 44 - 10 - #id_short - #time_str - #resolution_label)),
-		time_str,
-		resolution_label
+		edit_state.resolved_at or edit_state.timestamp,
+		{ suffix = resolution_label }
 	)
 	table.insert(lines, header)
 
@@ -266,7 +238,7 @@ function M.get_resolved_lines(permission_id, edit_state)
 	line_num = line_num + 1
 
 	-- Separator
-	table.insert(lines, string.rep("─", 60))
+	table.insert(lines, widget_base.separator())
 	line_num = line_num + 1
 
 	-- Compact file list with status

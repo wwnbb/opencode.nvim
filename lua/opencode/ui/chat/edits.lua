@@ -8,6 +8,7 @@ local chat_hl_ns = cs.chat_hl_ns
 
 local edit_widget = require("opencode.ui.edit_widget")
 local edit_state = require("opencode.edit.state")
+local widget_support = require("opencode.ui.chat.widget_support")
 
 local INLINE_DIFF_WIN_VAR = "opencode_inline_diff_split"
 
@@ -573,9 +574,7 @@ function M.add_edit_message(permission_id, edit_data, status)
 		return
 	end
 
-	if status == "pending" then
-		state.focus_edit = permission_id
-	end
+	widget_support.request_focus("edit", permission_id, status)
 
 	schedule_render()
 end

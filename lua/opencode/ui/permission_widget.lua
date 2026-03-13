@@ -2,6 +2,7 @@
 -- Renders interactive permission prompts inline in chat buffer
 
 local M = {}
+local widget_base = require("opencode.ui.widget_base")
 
 local icons = {
 	pending = "△",
@@ -132,25 +133,13 @@ function M.get_lines_for_permission(permission_id, perm_state)
 
 	-- Header
 	local id_short = permission_id:sub(1, 12)
-	local time_str = os.date("%H:%M", perm_state.timestamp or os.time())
-	local header = string.format(
-		"%s Permission required [%s] %s%s",
-		icons.pending,
-		id_short,
-		string.rep(" ", math.max(0, 50 - 22 - #id_short - #time_str)),
-		time_str
-	)
+	local header = widget_base.format_header(icons.pending, "Permission required", id_short, perm_state.timestamp)
 	table.insert(lines, header)
-	table.insert(highlights, {
-		line = line_num,
-		col_start = 0,
-		col_end = #header,
-		hl_group = "Title",
-	})
+	widget_base.add_full_line_highlight(highlights, line_num, header, "Title")
 	line_num = line_num + 1
 
 	-- Separator
-	table.insert(lines, string.rep("─", 60))
+	table.insert(lines, widget_base.separator())
 	line_num = line_num + 1
 
 	-- Permission description
@@ -181,12 +170,7 @@ function M.get_lines_for_permission(permission_id, perm_state)
 		table.insert(lines, option_text)
 
 		if is_selected then
-			table.insert(highlights, {
-				line = line_num,
-				col_start = 0,
-				col_end = #option_text,
-				hl_group = "CursorLine",
-			})
+			widget_base.add_full_line_highlight(highlights, line_num, option_text, "CursorLine")
 		end
 
 		line_num = line_num + 1
@@ -198,12 +182,7 @@ function M.get_lines_for_permission(permission_id, perm_state)
 
 	local hint = "[1-3 select, ↑↓ navigate, Enter confirm, Esc reject]"
 	table.insert(lines, hint)
-	table.insert(highlights, {
-		line = line_num,
-		col_start = 0,
-		col_end = #hint,
-		hl_group = "Comment",
-	})
+	widget_base.add_full_line_highlight(highlights, line_num, hint, "Comment")
 	line_num = line_num + 1
 
 	-- Trailing blank line
@@ -222,15 +201,8 @@ function M.get_approved_lines(permission_id, perm_state)
 	local line_num = 0
 
 	local id_short = permission_id:sub(1, 12)
-	local time_str = os.date("%H:%M", perm_state.resolved_at or os.time())
 	local reply_label = perm_state.reply == "always" and "Allowed (always)" or "Allowed (once)"
-	local header = string.format(
-		"%s Permission [%s] %s%s",
-		icons.approved,
-		id_short,
-		string.rep(" ", math.max(0, 50 - 14 - #id_short - #time_str)),
-		time_str
-	)
+	local header = widget_base.format_header(icons.approved, "Permission", id_short, perm_state.resolved_at)
 	table.insert(lines, header)
 	table.insert(highlights, {
 		line = line_num,
@@ -240,7 +212,7 @@ function M.get_approved_lines(permission_id, perm_state)
 	})
 	line_num = line_num + 1
 
-	table.insert(lines, string.rep("─", 60))
+	table.insert(lines, widget_base.separator())
 	line_num = line_num + 1
 
 	local desc_lines = get_permission_description(perm_state.permission_type, perm_state.tool_input, perm_state)
@@ -270,14 +242,7 @@ function M.get_rejected_lines(permission_id, perm_state)
 	local line_num = 0
 
 	local id_short = permission_id:sub(1, 12)
-	local time_str = os.date("%H:%M", perm_state.resolved_at or os.time())
-	local header = string.format(
-		"%s Permission [%s] %s%s",
-		icons.rejected,
-		id_short,
-		string.rep(" ", math.max(0, 50 - 14 - #id_short - #time_str)),
-		time_str
-	)
+	local header = widget_base.format_header(icons.rejected, "Permission", id_short, perm_state.resolved_at)
 	table.insert(lines, header)
 	table.insert(highlights, {
 		line = line_num,
@@ -287,7 +252,7 @@ function M.get_rejected_lines(permission_id, perm_state)
 	})
 	line_num = line_num + 1
 
-	table.insert(lines, string.rep("─", 60))
+	table.insert(lines, widget_base.separator())
 	line_num = line_num + 1
 
 	local desc_lines = get_permission_description(perm_state.permission_type, perm_state.tool_input, perm_state)
