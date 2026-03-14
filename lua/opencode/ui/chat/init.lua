@@ -146,10 +146,8 @@ end
 local function setup_float_focus_autocmds()
 	clear_float_focus_autocmds()
 
-	state.focus_augroup = vim.api.nvim_create_augroup(
-		"OpenCodeFloatFocus_" .. tostring(state.bufnr or 0),
-		{ clear = true }
-	)
+	state.focus_augroup =
+		vim.api.nvim_create_augroup("OpenCodeFloatFocus_" .. tostring(state.bufnr or 0), { clear = true })
 
 	vim.api.nvim_create_autocmd({ "WinEnter", "TabEnter" }, {
 		group = state.focus_augroup,
@@ -544,15 +542,26 @@ function M.show_help()
 	}
 	for i, line in ipairs(lines) do
 		if section_headers[line] then
-			vim.api.nvim_buf_set_extmark(popup.bufnr, ns, i - 1, 0, { end_col = #line, hl_group = "OpenCodeInputBorder" })
+			vim.api.nvim_buf_set_extmark(
+				popup.bufnr,
+				ns,
+				i - 1,
+				0,
+				{ end_col = #line, hl_group = "OpenCodeInputBorder" }
+			)
 		elseif line == "Press any key to close" then
 			vim.api.nvim_buf_set_extmark(popup.bufnr, ns, i - 1, 0, { end_col = #line, hl_group = "OpenCodeInputInfo" })
 		elseif line ~= "" then
 			local key_end = line:find("  ")
 			if key_end then
 				vim.api.nvim_buf_set_extmark(popup.bufnr, ns, i - 1, 0, { end_col = key_end - 1, hl_group = "Normal" })
-				vim.api.nvim_buf_set_extmark(popup.bufnr, ns, i - 1, key_end - 1,
-					{ end_col = #line, hl_group = "OpenCodeInputInfo" })
+				vim.api.nvim_buf_set_extmark(
+					popup.bufnr,
+					ns,
+					i - 1,
+					key_end - 1,
+					{ end_col = #line, hl_group = "OpenCodeInputInfo" }
+				)
 			end
 		end
 	end
@@ -708,6 +717,7 @@ function M.open()
 					top = cfg.float.title,
 					top_align = cfg.float.title_pos,
 				},
+				padding = { 0, 1 },
 			},
 			position = {
 				relative = "editor",
@@ -1386,7 +1396,11 @@ function M.render()
 		local has_tools = #tool_parts > 0
 		local is_last_assistant = (msg_idx == last_assistant_idx)
 		local force_processing_render = spinner_active and is_last_assistant and incomplete_assistant
-		local should_render = message.role ~= "assistant" or has_content or has_reasoning or has_tools or force_processing_render
+		local should_render = message.role ~= "assistant"
+			or has_content
+			or has_reasoning
+			or has_tools
+			or force_processing_render
 
 		if should_render then
 			if message.role == "user" then
@@ -1563,7 +1577,11 @@ function M.render()
 					qstate,
 					status
 				)
-				widget_support.capture_focus_line("question", message.request_id, q_start_line + first_option_offset + 1)
+				widget_support.capture_focus_line(
+					"question",
+					message.request_id,
+					q_start_line + first_option_offset + 1
+				)
 			else
 				goto continue_local_message
 			end
@@ -1623,11 +1641,7 @@ function M.render()
 	for _, estate in ipairs(all_edits) do
 		local not_already_rendered = not rendered_edit_ids[estate.permission_id]
 		local not_inline = not (estate.message_id and session_msg_ids[estate.message_id])
-		if
-			not_already_rendered
-			and not_inline
-			and should_render_session_widget(estate.session_id, estate.status)
-		then
+		if not_already_rendered and not_inline and should_render_session_widget(estate.session_id, estate.status) then
 			render_single_edit(estate)
 		end
 	end
@@ -2060,51 +2074,51 @@ end
 -- ─── Re-exports from sub-modules ─────────────────────────────────────────────
 
 -- Questions
-M.add_question_message       = chat_questions.add_question_message
-M.update_question_status     = chat_questions.update_question_status
-M.get_question_at_cursor     = chat_questions.get_question_at_cursor
-M.rerender_question          = chat_questions.rerender_question
-M.submit_question_answers    = chat_questions.submit_question_answers
-M.clear_questions            = chat_questions.clear_questions
-M.debug_questions            = chat_questions.debug_questions
+M.add_question_message = chat_questions.add_question_message
+M.update_question_status = chat_questions.update_question_status
+M.get_question_at_cursor = chat_questions.get_question_at_cursor
+M.rerender_question = chat_questions.rerender_question
+M.submit_question_answers = chat_questions.submit_question_answers
+M.clear_questions = chat_questions.clear_questions
+M.debug_questions = chat_questions.debug_questions
 M.get_pending_question_count = chat_questions.get_pending_question_count
-M.has_pending_questions      = chat_questions.has_pending_questions
+M.has_pending_questions = chat_questions.has_pending_questions
 
 -- Permissions
-M.add_permission_message     = chat_permissions.add_permission_message
-M.update_permission_status   = chat_permissions.update_permission_status
-M.get_permission_at_cursor   = chat_permissions.get_permission_at_cursor
-M.rerender_permission        = chat_permissions.rerender_permission
-M.handle_permission_confirm  = chat_permissions.handle_permission_confirm
-M.handle_permission_reject   = chat_permissions.handle_permission_reject
+M.add_permission_message = chat_permissions.add_permission_message
+M.update_permission_status = chat_permissions.update_permission_status
+M.get_permission_at_cursor = chat_permissions.get_permission_at_cursor
+M.rerender_permission = chat_permissions.rerender_permission
+M.handle_permission_confirm = chat_permissions.handle_permission_confirm
+M.handle_permission_reject = chat_permissions.handle_permission_reject
 
 -- Edits
-M.add_edit_message           = chat_edits.add_edit_message
-M.get_edit_at_cursor         = chat_edits.get_edit_at_cursor
-M.rerender_edit              = chat_edits.rerender_edit
-M.finalize_edit              = chat_edits.finalize_edit
-M.handle_edit_accept_file    = chat_edits.handle_edit_accept_file
-M.handle_edit_reject_file    = chat_edits.handle_edit_reject_file
-M.handle_edit_accept_all     = chat_edits.handle_edit_accept_all
-M.handle_edit_reject_all     = chat_edits.handle_edit_reject_all
-M.handle_edit_resolve_file   = chat_edits.handle_edit_resolve_file
-M.handle_edit_resolve_all    = chat_edits.handle_edit_resolve_all
-M.handle_edit_toggle_diff    = chat_edits.handle_edit_toggle_diff
-M.handle_edit_diff_tab       = chat_edits.handle_edit_diff_tab
-M.handle_edit_diff_split     = chat_edits.handle_edit_diff_split
-M.open_inline_diff_split     = chat_edits.open_inline_diff_split
+M.add_edit_message = chat_edits.add_edit_message
+M.get_edit_at_cursor = chat_edits.get_edit_at_cursor
+M.rerender_edit = chat_edits.rerender_edit
+M.finalize_edit = chat_edits.finalize_edit
+M.handle_edit_accept_file = chat_edits.handle_edit_accept_file
+M.handle_edit_reject_file = chat_edits.handle_edit_reject_file
+M.handle_edit_accept_all = chat_edits.handle_edit_accept_all
+M.handle_edit_reject_all = chat_edits.handle_edit_reject_all
+M.handle_edit_resolve_file = chat_edits.handle_edit_resolve_file
+M.handle_edit_resolve_all = chat_edits.handle_edit_resolve_all
+M.handle_edit_toggle_diff = chat_edits.handle_edit_toggle_diff
+M.handle_edit_diff_tab = chat_edits.handle_edit_diff_tab
+M.handle_edit_diff_split = chat_edits.handle_edit_diff_split
+M.open_inline_diff_split = chat_edits.open_inline_diff_split
 
 -- Tasks / tools
-M.get_task_at_cursor         = chat_tasks.get_task_at_cursor
-M.get_tool_at_cursor         = chat_tasks.get_tool_at_cursor
-M.rerender_task              = chat_tasks.rerender_task
-M.handle_task_toggle         = chat_tasks.handle_task_toggle
-M.rerender_tool              = chat_tasks.rerender_tool
-M.handle_tool_toggle         = chat_tasks.handle_tool_toggle
+M.get_task_at_cursor = chat_tasks.get_task_at_cursor
+M.get_tool_at_cursor = chat_tasks.get_tool_at_cursor
+M.rerender_task = chat_tasks.rerender_task
+M.handle_task_toggle = chat_tasks.handle_task_toggle
+M.rerender_tool = chat_tasks.rerender_tool
+M.handle_tool_toggle = chat_tasks.handle_tool_toggle
 
 -- Session navigation
-M.is_navigating              = chat_nav.is_navigating
-M.enter_child_session        = chat_nav.enter_child_session
-M.leave_child_session        = chat_nav.leave_child_session
+M.is_navigating = chat_nav.is_navigating
+M.enter_child_session = chat_nav.enter_child_session
+M.leave_child_session = chat_nav.leave_child_session
 
 return M
