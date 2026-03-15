@@ -1059,8 +1059,8 @@ function M._show_oauth_auto_dialog(opts)
 		local lt = vim.api.nvim_buf_get_lines(bufnr, line_nr, line_nr + 1, false)[1] or ""
 		vim.api.nvim_buf_set_extmark(bufnr, hl_ns, line_nr, 0, { end_col = #lt, hl_group = hl_group })
 	end
-	hl_line(1, "Comment")  -- "Open the following..."
-	hl_line(3, "String")   -- URL
+	hl_line(1, "Comment") -- "Open the following..."
+	hl_line(3, "String") -- URL
 	if device_code then
 		hl_line(5, "WarningMsg") -- Device code line
 	end
@@ -1772,7 +1772,7 @@ local function register_defaults()
 											if remove_err then
 												vim.notify(
 													"Failed to disconnect: "
-													.. tostring(remove_err.message or remove_err),
+														.. tostring(remove_err.message or remove_err),
 													vim.log.levels.ERROR
 												)
 												return
@@ -1931,7 +1931,7 @@ local function register_defaults()
 									if fallback_err then
 										vim.notify(
 											"Failed to compact session: "
-											.. tostring(fallback_err.message or fallback_err),
+												.. tostring(fallback_err.message or fallback_err),
 											vim.log.levels.ERROR
 										)
 										return
@@ -2177,13 +2177,13 @@ local function register_defaults()
 			local sync = require("opencode.sync")
 			local float = require("opencode.ui.float")
 
-			local function has_skill_command()
+			local function has_command(name)
 				local commands = sync.get_commands() or {}
 				for key, cmd in pairs(commands) do
-					if key == "skill" then
+					if key == name then
 						return true
 					end
-					if type(cmd) == "table" and cmd.name == "skill" then
+					if type(cmd) == "table" and cmd.name == name then
 						return true
 					end
 				end
@@ -2202,7 +2202,7 @@ local function register_defaults()
 			end
 
 			local function run_skill(name)
-				if not has_skill_command() then
+				if not has_command("load-skills") then
 					run_skill_via_tool(name)
 					return
 				end
@@ -2265,22 +2265,46 @@ local function register_defaults()
 				end, { title = " Select Skill ", width = 60 })
 			end
 
-			local skills = sync.get_skills()
-			if type(skills) == "table" and #skills > 0 then
-				show_skill_picker(skills)
+			local function show_local_skill_picker()
+				local skills = sync.get_skills()
+				if type(skills) == "table" and #skills > 0 then
+					show_skill_picker(skills)
+					return
+				end
+
+				client.list_skills(function(err, fetched_skills)
+					vim.schedule(function()
+						if err then
+							vim.notify("Failed to load skills: " .. tostring(err.message or err), vim.log.levels.ERROR)
+							return
+						end
+
+						local list = type(fetched_skills) == "table" and fetched_skills or {}
+						sync.handle_skills(list)
+						show_skill_picker(list)
+					end)
+				end)
+			end
+
+			if not has_command("load_skills") then
+				show_local_skill_picker()
 				return
 			end
 
-			client.list_skills(function(err, fetched_skills)
+			client.execute_command(session.id, "load_skills", {}, {}, function(err)
 				vim.schedule(function()
 					if err then
-						vim.notify("Failed to load skills: " .. tostring(err.message or err), vim.log.levels.ERROR)
+						local err_text = tostring(err.message or err.error or err)
+						local lower = err_text:lower()
+						if lower:find("command") and (lower:find("not found") or lower:find("unknown")) then
+							show_local_skill_picker()
+							return
+						end
+						vim.notify("Failed to load skills: " .. err_text, vim.log.levels.ERROR)
 						return
 					end
 
-					local list = type(fetched_skills) == "table" and fetched_skills or {}
-					sync.handle_skills(list)
-					show_skill_picker(list)
+					vim.notify("Loading skills", vim.log.levels.INFO)
 				end)
 			end)
 		end,

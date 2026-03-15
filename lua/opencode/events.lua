@@ -531,7 +531,7 @@ function M.setup_chat_handlers()
 			})
 
 			-- Custom tools are handled via the permission system with "diff_review" type
-			if tool_name == "opencode_edit" or tool_name == "opencode_apply_patch" then
+			if tool_name == "neovim_edit" or tool_name == "neovim_apply_patch" then
 				return
 			end
 

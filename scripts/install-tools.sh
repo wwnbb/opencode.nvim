@@ -4,7 +4,7 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PLUGIN_ROOT="$(dirname "$SCRIPT_DIR")"
-SOURCE_DIR="$PLUGIN_ROOT/opencode_default_config"
+SOURCE_DIR="$PLUGIN_ROOT/opencode_nvim"
 CONFIG_DIR="${1:-${XDG_CONFIG_HOME:-$HOME/.config}/nvim/opencode}"
 
 mkdir -p "$CONFIG_DIR"

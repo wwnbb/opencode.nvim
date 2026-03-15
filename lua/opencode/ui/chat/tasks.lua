@@ -315,7 +315,7 @@ end
 --     ▸ Task: <desc> (<N> toolcalls)
 --    ├ ...
 --    ├ → Read foo.lua
---    └ ⚙  opencode_edit bar.lua
+--    └ ⚙  neovim_edit bar.lua
 --
 -- Layout (expanded, after O):
 --   ◉ Coder · claude-opus-4
@@ -326,7 +326,7 @@ end
 --
 --    ├ ...
 --    ├ → Read foo.lua
---    └ ⚙  opencode_edit bar.lua
+--    └ ⚙  neovim_edit bar.lua
 --
 function M.render_task_tool(tool_part, expanded, _child_content)
 	local input = tool_part.state and tool_part.state.input or {}

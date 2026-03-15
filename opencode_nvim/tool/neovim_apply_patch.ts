@@ -2,7 +2,7 @@ import { tool } from "@opencode-ai/plugin"
 import * as fs from "fs/promises"
 import { readFileSync } from "fs"
 import * as path from "path"
-import DESCRIPTION from "./opencode_apply_patch.txt"
+import DESCRIPTION from "./neovim_apply_patch.txt"
 
 // =============================================================================
 // Inline diff utilities (replacing "diff" npm package)
