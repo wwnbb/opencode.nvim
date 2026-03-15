@@ -209,7 +209,7 @@ function M.show_notification(message, level, timeout)
 	local ui_list = vim.api.nvim_list_uis()
 	local ui = ui_list and ui_list[1] or { width = 80, height = 24 }
 
-	local row = 1                 -- Top of screen
+	local row = 1 -- Top of screen
 	local col = ui.width - width - 2 -- Right aligned
 
 	local popup = Popup({
@@ -447,10 +447,11 @@ end
 -- Create interactive searchable menu with fuzzy filtering
 -- items: array of { label, value, description?, group?, priority? }
 -- on_select: function(item) called when item is selected
--- on_key: function(key, item) called when a custom key is pressed, return true to keep menu open
--- opts: { title?, width?, placeholder?, groups?, on_key? }
+-- custom_key: { key, on_key, text? } custom hotkey config; on_key(item) returns true to keep menu open
+-- opts: { title?, width?, placeholder?, groups?, custom_key? }
 function M.create_searchable_menu(items, on_select, opts)
 	opts = opts or {}
+	local custom_key = opts.custom_key
 
 	local NuiLayout = require("nui.layout")
 	local NuiInput = require("nui.input")
@@ -503,7 +504,7 @@ function M.create_searchable_menu(items, on_select, opts)
 		border = {
 			style = "rounded",
 			text = {
-				bottom = opts.on_key and " ↑↓/j,k:nav  ⏎:select  f:fav  esc:close "
+				bottom = custom_key and (" ↑↓/j,k:nav  ⏎:select  " .. (custom_key.text or "") .. "  esc:close ")
 					or " ↑↓/j,k:navigate  ⏎:select  esc:close ",
 				bottom_align = "center",
 			},
@@ -705,10 +706,10 @@ function M.create_searchable_menu(items, on_select, opts)
 	end, keymap_opts)
 
 	-- Custom key handler
-	if opts.on_key then
-		vim.keymap.set("n", "f", function()
+	if custom_key and custom_key.key and custom_key.on_key then
+		vim.keymap.set("n", custom_key.key, function()
 			if #filtered_items > 0 and filtered_items[selected_idx] then
-				local keep_open = opts.on_key("f", filtered_items[selected_idx])
+				local keep_open = custom_key.on_key(filtered_items[selected_idx])
 				if not keep_open then
 					close()
 				else

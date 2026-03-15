@@ -1569,30 +1569,34 @@ local function register_defaults()
 						end, {
 							title = " Switch Model ",
 							width = 60,
-							on_key = function(key, item)
-								if key == "f" and lc_ok then
-									lc.model.toggle_favorite({
-										providerID = item.provider,
-										modelID = item.value,
-									})
-									-- Update item state
-									item.is_favorite = not item.is_favorite
-									item.label = string.format(
-										"%s[%s] %s",
-										item.is_favorite and "★ " or "",
-										item.provider,
-										item.model.name or item.value
-									)
-									item.priority = (item.is_favorite and 2 or 0)
-										+ (item.description == "Connected" and 1 or 0)
-									vim.notify(
-										item.is_favorite and "Added to favorites" or "Removed from favorites",
-										vim.log.levels.INFO
-									)
-									return true -- Keep menu open
-								end
-								return false
-							end,
+							custom_key = {
+								key = "f",
+								text = "f:fav",
+								on_key = function(item)
+									if lc_ok then
+										lc.model.toggle_favorite({
+											providerID = item.provider,
+											modelID = item.value,
+										})
+										-- Update item state
+										item.is_favorite = not item.is_favorite
+										item.label = string.format(
+											"%s[%s] %s",
+											item.is_favorite and "★ " or "",
+											item.provider,
+											item.model.name or item.value
+										)
+										item.priority = (item.is_favorite and 2 or 0)
+											+ (item.description == "Connected" and 1 or 0)
+										vim.notify(
+											item.is_favorite and "Added to favorites" or "Removed from favorites",
+											vim.log.levels.INFO
+										)
+										return true -- Keep menu open
+									end
+									return false
+								end,
+							},
 						})
 					end)
 				end)
