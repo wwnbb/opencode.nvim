@@ -2190,15 +2190,15 @@ local function register_defaults()
 				return false
 			end
 
-			local function run_skill(name)
+			local function load_skills(name)
 				client.execute_command(session.id, "load_skills", name, {}, function(err)
 					vim.schedule(function()
 						if err then
 							local err_text = tostring(err.message or err.error or err)
-							vim.notify("Failed to run skill: " .. err_text, vim.log.levels.ERROR)
+							vim.notify("Failed to run load_skills: " .. err_text, vim.log.levels.ERROR, name)
 							return
 						end
-						vim.notify("Running skill: " .. name, vim.log.levels.INFO)
+						vim.notify("Loading skills: " .. name, vim.log.levels.INFO)
 					end)
 				end)
 			end
@@ -2240,7 +2240,7 @@ local function register_defaults()
 						return
 					end
 
-					run_skill(selected_name)
+					load_skills(selected_name)
 				end, { title = " Select Skill ", width = 60 })
 			end
 
