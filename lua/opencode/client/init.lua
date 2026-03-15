@@ -149,8 +149,11 @@ end
 ---@param callback function(err, success)
 function M.revert_message(session_id, message_id, opts, callback)
 	opts = opts or {}
-	http.post("/session/" .. session_id .. "/revert", vim.tbl_deep_extend("force", opts, { messageID = message_id }),
-		callback)
+	http.post(
+		"/session/" .. session_id .. "/revert",
+		vim.tbl_deep_extend("force", opts, { messageID = message_id }),
+		callback
+	)
 end
 
 -- Summarize (compact) session
@@ -175,11 +178,7 @@ end
 ---@param callback function(err, success)
 function M.respond_permission(permission_id, reply, opts, callback)
 	opts = opts or {}
-	http.post(
-		"/permission/" .. permission_id .. "/reply",
-		{ reply = reply, message = opts.message },
-		callback
-	)
+	http.post("/permission/" .. permission_id .. "/reply", { reply = reply, message = opts.message }, callback)
 end
 
 -- Reply to a question with selected answers
@@ -189,11 +188,7 @@ end
 ---@param answers table Array of answer arrays, e.g., {{"label1"}, {"label2"}}
 ---@param callback function(err, success)
 function M.reply_to_question(session_id, request_id, answers, callback)
-	http.post(
-		"/question/" .. request_id .. "/reply",
-		{ answers = answers },
-		callback
-	)
+	http.post("/question/" .. request_id .. "/reply", { answers = answers }, callback)
 end
 
 -- Reject/cancel a question request
@@ -202,11 +197,7 @@ end
 ---@param request_id string Question request ID
 ---@param callback function(err, success)
 function M.reject_question(session_id, request_id, callback)
-	http.post(
-		"/question/" .. request_id .. "/reject",
-		{},
-		callback
-	)
+	http.post("/question/" .. request_id .. "/reject", {}, callback)
 end
 
 -- Get list of providers (basic list with all/connected/default info)
@@ -423,12 +414,13 @@ function M.execute_command(session_id, command, args, opts, callback)
 		if local_ok and lc and lc.model and type(lc.model.current) == "function" then
 			local current_model = lc.model.current()
 			if current_model and current_model.providerID and current_model.modelID then
-				request_opts.model = {
-					providerID = current_model.providerID,
-					modelID = current_model.modelID,
-				}
+				request_opts.model = current_model.providerID .. "/" .. current_model.modelID
 			end
 		end
+	end
+
+	if type(request_opts.model) == "table" and request_opts.model.providerID and request_opts.model.modelID then
+		request_opts.model = request_opts.model.providerID .. "/" .. request_opts.model.modelID
 	end
 
 	if request_opts.variant == nil then
@@ -438,10 +430,25 @@ function M.execute_command(session_id, command, args, opts, callback)
 		end
 	end
 
-	http.post("/session/" .. session_id .. "/command", vim.tbl_deep_extend("force", request_opts, {
-		command = command,
-		arguments = args,
-	}), callback)
+	local arguments = ""
+	if type(args) == "string" then
+		arguments = args
+	elseif args == nil then
+		arguments = ""
+	elseif type(args) == "table" then
+		arguments = next(args) == nil and "" or vim.json.encode(args)
+	else
+		arguments = tostring(args)
+	end
+
+	http.post(
+		"/session/" .. session_id .. "/command",
+		vim.tbl_deep_extend("force", request_opts, {
+			command = command,
+			arguments = arguments,
+		}),
+		callback
+	)
 end
 
 -- Run shell command
@@ -451,9 +458,13 @@ end
 ---@param callback function(err, response)
 function M.run_shell(session_id, command, opts, callback)
 	opts = opts or {}
-	http.post("/session/" .. session_id .. "/shell", vim.tbl_deep_extend("force", opts, {
-		command = command,
-	}), callback)
+	http.post(
+		"/session/" .. session_id .. "/shell",
+		vim.tbl_deep_extend("force", opts, {
+			command = command,
+		}),
+		callback
+	)
 end
 
 -- Dispose instance
