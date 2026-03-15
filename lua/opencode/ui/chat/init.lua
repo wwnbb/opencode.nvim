@@ -1247,6 +1247,12 @@ function M.render()
 		push_line(text, line)
 	end
 
+	---@return number
+	local function prepare_widget_start()
+		normalize_block_transition("non_tool")
+		return #raw_lines
+	end
+
 	---@param owner_session_id string|nil
 	---@param widget_status string|nil
 	---@return boolean
@@ -1273,19 +1279,21 @@ function M.render()
 		local perm_id = pstate.permission_id
 		local pstatus = pstate.status or "pending"
 		local p_lines, p_highlights
+		local first_option_offset
 
 		if pstatus == "approved" then
 			p_lines, p_highlights = permission_widget.get_approved_lines(perm_id, pstate)
 		elseif pstatus == "rejected" then
 			p_lines, p_highlights = permission_widget.get_rejected_lines(perm_id, pstate)
 		else
-			local first_option_offset
 			p_lines, p_highlights, _, first_option_offset = permission_widget.get_lines_for_permission(perm_id, pstate)
-			widget_support.capture_focus_line("permission", perm_id, #raw_lines + first_option_offset + 1)
 		end
 
 		if p_lines then
-			local perm_start = #raw_lines
+			local perm_start = prepare_widget_start()
+			if first_option_offset then
+				widget_support.capture_focus_line("permission", perm_id, perm_start + first_option_offset + 1)
+			end
 			for _, line_text in ipairs(p_lines) do
 				add_raw_line(line_text)
 			end
@@ -1302,17 +1310,19 @@ function M.render()
 		local eid = estate.permission_id
 		local estatus = estate.status or "pending"
 		local e_lines, e_highlights
+		local first_file_offset
 
 		if estatus == "sent" then
 			e_lines, e_highlights = edit_widget.get_resolved_lines(eid, estate)
 		else
-			local first_file_offset
 			e_lines, e_highlights, _, first_file_offset = edit_widget.get_lines_for_edit(eid, estate)
-			widget_support.capture_focus_line("edit", eid, #raw_lines + first_file_offset + 1)
 		end
 
 		if e_lines then
-			local edit_start = #raw_lines
+			local edit_start = prepare_widget_start()
+			if first_file_offset then
+				widget_support.capture_focus_line("edit", eid, edit_start + first_file_offset + 1)
+			end
 			for _, line_text in ipairs(e_lines) do
 				add_raw_line(line_text)
 			end
@@ -1550,10 +1560,11 @@ function M.render()
 
 		if message.type == "question" then
 			local qstate = question_state.get_question(message.request_id)
-			local q_start_line = #raw_lines
 			local q_lines, q_highlights
+			local q_start_line
 			local status = (qstate and qstate.status) or message.status or "pending"
 			local owner_session_id = message.source_session_id or (qstate and qstate.session_id)
+			local first_option_offset
 
 			if not should_render_session_widget(owner_session_id, status) then
 				goto continue_local_message
@@ -1570,20 +1581,23 @@ function M.render()
 					questions = message.questions,
 				})
 			elseif qstate then
-				local first_option_offset
 				q_lines, q_highlights, _, first_option_offset = question_widget.get_lines_for_question(
 					message.request_id,
 					{ questions = message.questions },
 					qstate,
 					status
 				)
+			else
+				goto continue_local_message
+			end
+
+			q_start_line = prepare_widget_start()
+			if first_option_offset then
 				widget_support.capture_focus_line(
 					"question",
 					message.request_id,
 					q_start_line + first_option_offset + 1
 				)
-			else
-				goto continue_local_message
 			end
 
 			for _, line_text in ipairs(q_lines) do
@@ -1756,6 +1770,19 @@ function M.schedule_render()
 	end
 end
 
+---@return string|nil
+local function apply_widget_focus_cursor()
+	local focused_kind = widget_support.apply_focus_cursor()
+	if focused_kind == "question" then
+		chat_questions.sync_selected_option_from_cursor()
+	elseif focused_kind == "permission" then
+		chat_permissions.sync_selected_option_from_cursor()
+	elseif focused_kind == "edit" then
+		chat_edits.sync_selected_file_from_cursor()
+	end
+	return focused_kind
+end
+
 function M.do_render()
 	if not state.bufnr or not vim.api.nvim_buf_is_valid(state.bufnr) then
 		return
@@ -1774,6 +1801,9 @@ function M.do_render()
 		vim.bo[state.bufnr].modifiable = true
 		vim.api.nvim_buf_set_lines(state.bufnr, 0, -1, false, new_lines)
 		vim.bo[state.bufnr].modifiable = false
+		if apply_widget_focus_cursor() then
+			vim.cmd("redraw")
+		end
 		return
 	end
 
@@ -1791,6 +1821,9 @@ function M.do_render()
 
 	if first_diff == nil then
 		if #old_lines == #new_lines then
+			if apply_widget_focus_cursor() then
+				vim.cmd("redraw")
+			end
 			return
 		end
 		first_diff = min_len
@@ -1820,14 +1853,7 @@ function M.do_render()
 
 	vim.bo[state.bufnr].modifiable = false
 
-	local focused_kind = widget_support.apply_focus_cursor()
-	if focused_kind == "question" then
-		chat_questions.sync_selected_option_from_cursor()
-	elseif focused_kind == "permission" then
-		chat_permissions.sync_selected_option_from_cursor()
-	elseif focused_kind == "edit" then
-		chat_edits.sync_selected_file_from_cursor()
-	elseif should_scroll and state.visible and state.winid and vim.api.nvim_win_is_valid(state.winid) then
+	if not apply_widget_focus_cursor() and should_scroll and state.visible and state.winid and vim.api.nvim_win_is_valid(state.winid) then
 		local buf_lines = vim.api.nvim_buf_line_count(state.bufnr)
 		vim.api.nvim_win_set_cursor(state.winid, { buf_lines, 0 })
 	end

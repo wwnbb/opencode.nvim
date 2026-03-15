@@ -1,20 +1,18 @@
-Use the `apply_patch` tool to edit files. Your patch language is a stripped-down, file-oriented diff format designed to be easy to parse and safe to apply. You can think of it as a high-level envelope:
+Use `neovim_apply_patch` to edit files with a stripped-down, file-oriented diff format.
 
-CRITICAL!!!: USER CAN MANUALLY CHANGE CODE DURING REVIEW. RESPECT THE RESULTING FILE AS AUTHORITATIVE AND AVOID REVERTING USER ADJUSTMENTS.
+Patch envelope:
 
 *** Begin Patch
 [ one or more file sections ]
 *** End Patch
 
-Within that envelope, you get a sequence of file operations.
-You MUST include a header to specify the action you are taking.
-Each operation starts with one of three headers:
+Each file section must start with one header:
 
-*** Add File: <path> - create a new file. Every following line is a + line (the initial contents).
-*** Delete File: <path> - remove an existing file. Nothing follows.
-*** Update File: <path> - patch an existing file in place (optionally with a rename).
+*** Add File: <path> - create a file; every content line starts with `+`.
+*** Delete File: <path> - delete a file; no body.
+*** Update File: <path> - patch a file in place; may include a rename.
 
-Example patch:
+Example:
 
 ```
 *** Begin Patch
@@ -29,13 +27,17 @@ Example patch:
 *** End Patch
 ```
 
-It is important to remember:
+Critical review rules:
+- USER MAY EDIT CODE DURING REVIEW. Treat the final on-disk file as authoritative and never overwrite user adjustments.
+- After any reviewed edit, re-read the file and continue from the current file state.
+- Never auto-retry after `rejected` or `partial`, or after a user-altered review result, unless the user explicitly asks.
 
-- You must include a header with your intended action (Add/Delete/Update)
-- You must prefix new lines with `+` even when creating a new file
- - When updating files, include the original lines you are changing exactly as they appear (preserve whitespace) so the verifier can match context.
- - Hunk headers use `@@` followed by a context line from the source file to locate the change, for example: `@@ def greet():`. Do NOT use unified-diff line-range syntax like `@@ -12,3 +12,3 @@`. The text after `@@` is searched for literally in the file to find where to apply the change.
- - If a hunk fails because context didn't match, run `Read` on the file and copy surrounding lines to ensure exact match before retrying.
- - User can change code during diff review, apply only some hunks, or reject files.
- - The tool output and metadata report FINAL post-review file states (`applied`, `rejected`, or `partial`) and final diffs.
- - Treat final on-disk results as authoritative context for next steps; do not re-apply rejected chunks unless explicitly requested.
+Important rules:
+- Always include an operation header (`Add File`, `Delete File`, or `Update File`).
+- Prefix every added line with `+`, including new file contents.
+- For updates, copy the original lines exactly, including whitespace, so context matches.
+- Hunk headers use `@@` plus a literal context line, for example `@@ def greet():`; do not use unified diff ranges like `@@ -12,3 +12,3 @@`.
+- If a hunk fails because context does not match, use `Read` to get the exact surrounding lines before retrying.
+- Review results may apply only some hunks or reject files entirely.
+- Tool output reports the final file state as `applied`, `rejected`, or `partial`, plus final diffs.
+- Treat those final results as authoritative; do not re-apply rejected chunks unless explicitly requested.

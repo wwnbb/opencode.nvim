@@ -1,6 +1,9 @@
 Performs exact string replacements in files.
 
-CRITICAL!!!: USER CAN MANUALLY CHANGE CODE DURING REVIEW. RESPECT THE RESULTING FILE AS AUTHORITATIVE AND AVOID REVERTING USER ADJUSTMENTS.
+CRITICAL!!!:
+    USER CAN MANUALLY CHANGE CODE DURING REVIEW. RESPECT THE RESULTING FILE AS AUTHORITATIVE AND AVOID REVERTING USER ADJUSTMENTS.
+    After any reviewed edit, re-read the file and treat user changes as FINAL.
+    NEVER auto-retry after `rejected`/`partial` or after a user-altered review result unless the user explicitly asks.
 
 Usage:
 - You must use your `Read` tool at least once in the conversation before editing. This tool will error if you attempt an edit without reading the file.
