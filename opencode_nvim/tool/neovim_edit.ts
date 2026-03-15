@@ -1,7 +1,7 @@
 import { tool } from "@opencode-ai/plugin"
 import * as fs from "fs/promises"
 import * as path from "path"
-import DESCRIPTION from "./opencode_edit.txt"
+import DESCRIPTION from "./neovim_edit.txt"
 
 // =============================================================================
 // Inline diff utilities (replacing "diff" npm package)
