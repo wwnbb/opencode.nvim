@@ -2190,32 +2190,11 @@ local function register_defaults()
 				return false
 			end
 
-			local function run_skill_via_tool(name)
-				local opencode = require("opencode")
-				opencode.send(
-					string.format(
-						"Use the `skill` tool to load the skill named `%s`, then reply with a one-line confirmation.",
-						name
-					)
-				)
-				vim.notify("Requested skill via tool: " .. name, vim.log.levels.INFO)
-			end
-
 			local function run_skill(name)
-				if not has_command("load-skills") then
-					run_skill_via_tool(name)
-					return
-				end
-
-				client.execute_command(session.id, "skill", name, {}, function(err)
+				client.execute_command(session.id, "load_skills", name, {}, function(err)
 					vim.schedule(function()
 						if err then
 							local err_text = tostring(err.message or err.error or err)
-							local lower = err_text:lower()
-							if lower:find("command") and (lower:find("not found") or lower:find("unknown")) then
-								run_skill_via_tool(name)
-								return
-							end
 							vim.notify("Failed to run skill: " .. err_text, vim.log.levels.ERROR)
 							return
 						end
@@ -2286,7 +2265,7 @@ local function register_defaults()
 				end)
 			end
 
-			if not has_command("load_skills") then
+			if not has_command("loadskills") then
 				show_local_skill_picker()
 				return
 			end
