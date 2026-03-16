@@ -7,6 +7,7 @@ local state = cs.state
 local chat_hl_ns = cs.chat_hl_ns
 
 local question_widget = require("opencode.ui.question_widget")
+local widget_base = require("opencode.ui.widget_base")
 local question_state = require("opencode.question.state")
 local widget_support = require("opencode.ui.chat.widget_support")
 
@@ -207,9 +208,10 @@ function M.sync_selected_option_from_cursor()
 		return request_id, false
 	end
 
-	local _, _, option_count, first_option_line =
-		question_widget.get_lines_for_question(request_id, { questions = questions }, qstate, qstate.status)
-	if option_count <= 0 then
+	local _, _, meta = question_widget.get_lines_for_question(request_id, { questions = questions }, qstate, qstate.status)
+	local option_count = meta and meta.interactive_count or 0
+	local first_option_line = widget_base.get_focus_offset(meta)
+	if option_count <= 0 or first_option_line == nil then
 		return request_id, false
 	end
 

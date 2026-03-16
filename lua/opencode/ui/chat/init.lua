@@ -27,6 +27,7 @@ local chat_nav = require("opencode.ui.chat.nav")
 local widget_support = require("opencode.ui.chat.widget_support")
 
 local question_widget = require("opencode.ui.question_widget")
+local widget_base = require("opencode.ui.widget_base")
 local question_state = require("opencode.question.state")
 local permission_widget = require("opencode.ui.permission_widget")
 local permission_state = require("opencode.permission.state")
@@ -380,7 +381,7 @@ local function setup_buffer(bufnr)
 			if vim.api.nvim_get_current_win() ~= state.winid then
 				return
 			end
-			chat_edits.sync_selected_file_from_cursor()
+			M.sync_widget_selection_from_cursor()
 		end,
 	})
 end
@@ -798,8 +799,9 @@ function M.open()
 		end
 	end
 
+	local has_pending_widget = #state.pending_questions > 0 or #state.pending_permissions > 0 or #state.pending_edits > 0
 	local line_count = vim.api.nvim_buf_line_count(state.bufnr)
-	if line_count > 0 then
+	if line_count > 0 and not has_pending_widget then
 		vim.api.nvim_win_set_cursor(state.winid or 0, { line_count, 0 })
 	end
 
@@ -1260,6 +1262,19 @@ function M.render()
 		return widget_support.should_render(owner_session_id, widget_status, current_session.id, in_child_session_view)
 	end
 
+	---@param kind string
+	---@param widget_id string
+	---@param widget_start number
+	---@param meta OpenCodeWidgetMeta|nil
+	local function capture_widget_focus(kind, widget_id, widget_start, meta)
+		local focus_offset = widget_base.get_focus_offset(meta)
+		if focus_offset == nil then
+			return
+		end
+
+		widget_support.capture_focus_line(kind, widget_id, widget_start + focus_offset + 1)
+	end
+
 	-- Reset position-tracking tables: render() always fully rebuilds them from
 	-- scratch, so any stale entries from a previous frame (e.g. a subagent edit
 	-- that is now suppressed) must be cleared.  Without this, a removed widget's
@@ -1278,22 +1293,21 @@ function M.render()
 	local function render_single_permission(pstate)
 		local perm_id = pstate.permission_id
 		local pstatus = pstate.status or "pending"
-		local p_lines, p_highlights
-		local first_option_offset
+		local p_lines, p_highlights, p_meta
 
 		if pstatus == "approved" then
 			p_lines, p_highlights = permission_widget.get_approved_lines(perm_id, pstate)
+			p_meta = widget_base.make_meta()
 		elseif pstatus == "rejected" then
 			p_lines, p_highlights = permission_widget.get_rejected_lines(perm_id, pstate)
+			p_meta = widget_base.make_meta()
 		else
-			p_lines, p_highlights, _, first_option_offset = permission_widget.get_lines_for_permission(perm_id, pstate)
+			p_lines, p_highlights, p_meta = permission_widget.get_lines_for_permission(perm_id, pstate)
 		end
 
 		if p_lines then
 			local perm_start = prepare_widget_start()
-			if first_option_offset then
-				widget_support.capture_focus_line("permission", perm_id, perm_start + first_option_offset + 1)
-			end
+			capture_widget_focus("permission", perm_id, perm_start, p_meta)
 			for _, line_text in ipairs(p_lines) do
 				add_raw_line(line_text)
 			end
@@ -1309,20 +1323,18 @@ function M.render()
 	local function render_single_edit(estate)
 		local eid = estate.permission_id
 		local estatus = estate.status or "pending"
-		local e_lines, e_highlights
-		local first_file_offset
+		local e_lines, e_highlights, e_meta
 
 		if estatus == "sent" then
 			e_lines, e_highlights = edit_widget.get_resolved_lines(eid, estate)
+			e_meta = widget_base.make_meta()
 		else
-			e_lines, e_highlights, _, first_file_offset = edit_widget.get_lines_for_edit(eid, estate)
+			e_lines, e_highlights, e_meta = edit_widget.get_lines_for_edit(eid, estate)
 		end
 
 		if e_lines then
 			local edit_start = prepare_widget_start()
-			if first_file_offset then
-				widget_support.capture_focus_line("edit", eid, edit_start + first_file_offset + 1)
-			end
+			capture_widget_focus("edit", eid, edit_start, e_meta)
 			for _, line_text in ipairs(e_lines) do
 				add_raw_line(line_text)
 			end
@@ -1561,11 +1573,10 @@ function M.render()
 
 		if message.type == "question" then
 			local qstate = question_state.get_question(message.request_id)
-			local q_lines, q_highlights
+			local q_lines, q_highlights, q_meta
 			local q_start_line
 			local status = (qstate and qstate.status) or message.status or "pending"
 			local owner_session_id = message.source_session_id or (qstate and qstate.session_id)
-			local first_option_offset
 
 			if not should_render_session_widget(owner_session_id, status) then
 				goto continue_local_message
@@ -1577,12 +1588,14 @@ function M.render()
 					{ questions = message.questions },
 					message.answers
 				)
+				q_meta = widget_base.make_meta()
 			elseif status == "rejected" then
 				q_lines, q_highlights = question_widget.get_rejected_lines(message.request_id, {
 					questions = message.questions,
 				})
+				q_meta = widget_base.make_meta()
 			elseif qstate then
-				q_lines, q_highlights, _, first_option_offset = question_widget.get_lines_for_question(
+				q_lines, q_highlights, q_meta = question_widget.get_lines_for_question(
 					message.request_id,
 					{ questions = message.questions },
 					qstate,
@@ -1593,13 +1606,7 @@ function M.render()
 			end
 
 			q_start_line = prepare_widget_start()
-			if first_option_offset then
-				widget_support.capture_focus_line(
-					"question",
-					message.request_id,
-					q_start_line + first_option_offset + 1
-				)
-			end
+			capture_widget_focus("question", message.request_id, q_start_line, q_meta)
 
 			for _, line_text in ipairs(q_lines) do
 				add_raw_line(line_text)
@@ -1774,12 +1781,8 @@ end
 ---@return string|nil
 local function apply_widget_focus_cursor()
 	local focused_kind = widget_support.apply_focus_cursor()
-	if focused_kind == "question" then
-		chat_questions.sync_selected_option_from_cursor()
-	elseif focused_kind == "permission" then
-		chat_permissions.sync_selected_option_from_cursor()
-	elseif focused_kind == "edit" then
-		chat_edits.sync_selected_file_from_cursor()
+	if focused_kind then
+		M.sync_widget_selection_from_cursor()
 	end
 	return focused_kind
 end
@@ -1901,15 +1904,19 @@ function M.clear_streaming_state() end
 
 -- ─── Cross-domain key routers ─────────────────────────────────────────────────
 
+function M.sync_widget_selection_from_cursor()
+	chat_questions.sync_selected_option_from_cursor()
+	chat_permissions.sync_selected_option_from_cursor()
+	chat_edits.sync_selected_file_from_cursor()
+end
+
 ---Move cursor first, then sync widget selection to cursor.
 ---@param direction "up" | "down"
 function M.handle_question_navigation(direction)
 	local key = direction == "up" and "k" or "j"
 	vim.cmd("normal! " .. key)
 
-	chat_questions.sync_selected_option_from_cursor()
-	chat_permissions.sync_selected_option_from_cursor()
-	chat_edits.sync_selected_file_from_cursor()
+	M.sync_widget_selection_from_cursor()
 end
 
 ---Route 1-9 to whichever widget is under cursor.

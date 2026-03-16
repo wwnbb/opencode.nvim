@@ -125,7 +125,7 @@ end
 -- Get formatted lines for a pending permission
 ---@param permission_id string
 ---@param perm_state table Permission state from permission/state.lua
----@return table lines, table highlights, number option_count, number first_option_line
+---@return table lines, table highlights, OpenCodeWidgetMeta meta
 function M.get_lines_for_permission(permission_id, perm_state)
 	local lines = {}
 	local highlights = {}
@@ -188,7 +188,10 @@ function M.get_lines_for_permission(permission_id, perm_state)
 	-- Trailing blank line
 	table.insert(lines, "")
 
-	return lines, highlights, 3, first_option_line
+	return lines, highlights, widget_base.make_meta({
+		interactive_count = #OPTION_LABELS,
+		first_interactive_line = first_option_line,
+	})
 end
 
 -- Get formatted lines for an approved permission

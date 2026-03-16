@@ -20,7 +20,7 @@ local icons = {
 ---@param question_data table
 ---@param selection_state table
 ---@param status "pending" | "answered" | "rejected" | "confirming"
----@return table lines, table highlights, number option_count, number first_option_line
+---@return table lines, table highlights, OpenCodeWidgetMeta meta
 function M.get_lines_for_question(request_id, question_data, selection_state, status)
 	local lines = {}
 	local highlights = {}
@@ -38,7 +38,7 @@ function M.get_lines_for_question(request_id, question_data, selection_state, st
 	local current_question = questions[current_tab]
 
 	if not current_question then
-		return lines, highlights, 0, 0
+		return lines, highlights, widget_base.make_meta()
 	end
 
 	-- Header line with icon and request ID
@@ -244,7 +244,10 @@ function M.get_lines_for_question(request_id, question_data, selection_state, st
 	-- Empty line after question
 	table.insert(lines, "")
 
-	return lines, highlights, option_count, first_option_line
+	return lines, highlights, widget_base.make_meta({
+		interactive_count = option_count,
+		first_interactive_line = first_option_line,
+	})
 end
 
 -- Get option count for a question
@@ -368,7 +371,7 @@ end
 ---@param request_id string
 ---@param question_data table
 ---@param selection_state table
----@return table lines, table highlights, number option_count, number first_option_line
+---@return table lines, table highlights, OpenCodeWidgetMeta meta
 function M.get_confirmation_lines(request_id, question_data, selection_state)
 	local lines = {}
 	local highlights = {}
@@ -470,7 +473,10 @@ function M.get_confirmation_lines(request_id, question_data, selection_state)
 
 	table.insert(lines, "")
 
-	return lines, highlights, 2, first_option_line
+	return lines, highlights, widget_base.make_meta({
+		interactive_count = 2,
+		first_interactive_line = first_option_line,
+	})
 end
 
 -- Set custom icons

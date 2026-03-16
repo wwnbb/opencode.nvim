@@ -32,7 +32,7 @@ end
 ---@return boolean
 function M.request_focus(kind, widget_id, widget_status)
 	local focus_key, line_key = focus_keys(kind)
-	if (widget_status or "pending") ~= "pending" or not state.auto_scroll then
+	if (widget_status or "pending") ~= "pending" then
 		if state[focus_key] == widget_id then
 			state[focus_key] = nil
 			state[line_key] = nil
