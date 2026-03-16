@@ -1221,32 +1221,9 @@ function M.clear_tool_activity(message_id) end
 -- ─── Line tracking ────────────────────────────────────────────────────────────
 
 local function shift_tracked_lines(old_end, delta, skip_stream_message_id)
-	if delta == 0 then
-		return
-	end
-
-	render.shift_line_map(state.questions, old_end, delta)
-	render.shift_line_map(state.permissions, old_end, delta)
-	render.shift_line_map(state.edits, old_end, delta)
-	render.shift_line_map(state.tasks, old_end, delta)
-	render.shift_line_map(state.tools, old_end, delta)
-
-	for message_id, pos in pairs(state.stream_blocks) do
-		if message_id ~= skip_stream_message_id and pos.start_line and pos.end_line and pos.start_line > old_end then
-			pos.start_line = pos.start_line + delta
-			pos.end_line = pos.end_line + delta
-		end
-	end
-
-	if state.focus_question_line and (state.focus_question_line - 1) > old_end then
-		state.focus_question_line = state.focus_question_line + delta
-	end
-	if state.focus_permission_line and (state.focus_permission_line - 1) > old_end then
-		state.focus_permission_line = state.focus_permission_line + delta
-	end
-	if state.focus_edit_line and (state.focus_edit_line - 1) > old_end then
-		state.focus_edit_line = state.focus_edit_line + delta
-	end
+	widget_support.shift_tracked_lines(old_end, delta, {
+		skip_stream_message_id = skip_stream_message_id,
+	})
 end
 
 function M.update_stream_text_block(message_id)
@@ -1405,10 +1382,62 @@ function M.render()
 	state.tasks = {}
 	state.tools = {}
 
+	local rendered_question_ids = {}
 	local rendered_perm_ids = {}
 	local rendered_edit_ids = {}
 	local next_stream_blocks = {}
 	state.spinner_footer_line = nil
+
+	local function render_single_question(message)
+		local qstate = question_state.get_question(message.request_id)
+		local q_lines, q_highlights, q_meta
+		local q_start_line
+		local status = (qstate and qstate.status) or message.status or "pending"
+		local owner_session_id = message.source_session_id or (qstate and qstate.session_id)
+
+		if not should_render_session_widget(owner_session_id, status) then
+			return
+		end
+
+		if status == "answered" then
+			q_lines, q_highlights = question_widget.get_answered_lines(
+				message.request_id,
+				{ questions = message.questions },
+				message.answers
+			)
+			q_meta = widget_base.make_meta()
+		elseif status == "rejected" then
+			q_lines, q_highlights = question_widget.get_rejected_lines(message.request_id, {
+				questions = message.questions,
+			})
+			q_meta = widget_base.make_meta()
+		elseif qstate then
+			q_lines, q_highlights, q_meta = question_widget.get_lines_for_question(
+				message.request_id,
+				{ questions = message.questions },
+				qstate,
+				status
+			)
+		else
+			return
+		end
+
+		q_start_line = prepare_widget_start()
+		capture_widget_focus("question", message.request_id, q_start_line, q_meta)
+
+		for _, line_text in ipairs(q_lines) do
+			add_raw_line(line_text)
+		end
+
+		state.questions[message.request_id] = {
+			start_line = q_start_line,
+			end_line = q_start_line + #q_lines - 1,
+			status = status,
+			highlights = q_highlights,
+		}
+
+		add_raw_line("")
+	end
 
 	local function render_single_permission(pstate)
 		local perm_id = pstate.permission_id
@@ -1435,6 +1464,7 @@ function M.render()
 				start_line = perm_start,
 				end_line = perm_start + #p_lines - 1,
 				status = pstatus,
+				highlights = p_highlights,
 			}
 			add_raw_line("")
 		end
@@ -1468,22 +1498,73 @@ function M.render()
 		end
 	end
 
-	local function render_permissions(message_id)
-		local perms = permission_state.get_permissions_for_message(message_id)
-		for _, pstate in ipairs(perms) do
-			rendered_perm_ids[pstate.permission_id] = true
-			if should_render_session_widget(pstate.session_id, pstate.status) then
-				render_single_permission(pstate)
+	local function render_widgets_for_message(message_id)
+		local widget_items = {}
+		local widget_order = {
+			question = 1,
+			permission = 2,
+			edit = 3,
+		}
+
+		for _, message in ipairs(state.messages) do
+			if message.type == "question" and message.message_id == message_id then
+				table.insert(widget_items, {
+					kind = "question",
+					id = message.request_id,
+					timestamp = message.timestamp or 0,
+					data = message,
+				})
 			end
 		end
-	end
 
-	local function render_edits_for_msg(message_id)
+		local perms = permission_state.get_permissions_for_message(message_id)
+		for _, pstate in ipairs(perms) do
+			table.insert(widget_items, {
+				kind = "permission",
+				id = pstate.permission_id,
+				timestamp = pstate.timestamp or 0,
+				data = pstate,
+			})
+		end
+
 		local edits = edit_state.get_edits_for_message(message_id)
 		for _, estate in ipairs(edits) do
-			rendered_edit_ids[estate.permission_id] = true
-			if should_render_session_widget(estate.session_id, estate.status) then
-				render_single_edit(estate)
+			table.insert(widget_items, {
+				kind = "edit",
+				id = estate.permission_id,
+				timestamp = estate.timestamp or 0,
+				data = estate,
+			})
+		end
+
+		table.sort(widget_items, function(a, b)
+			if a.timestamp ~= b.timestamp then
+				return a.timestamp < b.timestamp
+			end
+
+			local a_order = widget_order[a.kind] or 99
+			local b_order = widget_order[b.kind] or 99
+			if a_order ~= b_order then
+				return a_order < b_order
+			end
+
+			return tostring(a.id or "") < tostring(b.id or "")
+		end)
+
+		for _, item in ipairs(widget_items) do
+			if item.kind == "question" then
+				rendered_question_ids[item.id] = true
+				render_single_question(item.data)
+			elseif item.kind == "permission" then
+				rendered_perm_ids[item.id] = true
+				if should_render_session_widget(item.data.session_id, item.data.status) then
+					render_single_permission(item.data)
+				end
+			elseif item.kind == "edit" then
+				rendered_edit_ids[item.id] = true
+				if should_render_session_widget(item.data.session_id, item.data.status) then
+					render_single_edit(item.data)
+				end
 			end
 		end
 	end
@@ -1676,8 +1757,7 @@ function M.render()
 					add_raw_line("")
 				end
 
-				render_permissions(message.id)
-				render_edits_for_msg(message.id)
+				render_widgets_for_message(message.id)
 			end
 		end
 	end
@@ -1692,54 +1772,12 @@ function M.render()
 		end
 
 		if message.type == "question" then
-			local qstate = question_state.get_question(message.request_id)
-			local q_lines, q_highlights, q_meta
-			local q_start_line
-			local status = (qstate and qstate.status) or message.status or "pending"
-			local owner_session_id = message.source_session_id or (qstate and qstate.session_id)
-
-			if not should_render_session_widget(owner_session_id, status) then
+			if rendered_question_ids[message.request_id] then
 				goto continue_local_message
 			end
 
-			if status == "answered" then
-				q_lines, q_highlights = question_widget.get_answered_lines(
-					message.request_id,
-					{ questions = message.questions },
-					message.answers
-				)
-				q_meta = widget_base.make_meta()
-			elseif status == "rejected" then
-				q_lines, q_highlights = question_widget.get_rejected_lines(message.request_id, {
-					questions = message.questions,
-				})
-				q_meta = widget_base.make_meta()
-			elseif qstate then
-				q_lines, q_highlights, q_meta = question_widget.get_lines_for_question(
-					message.request_id,
-					{ questions = message.questions },
-					qstate,
-					status
-				)
-			else
-				goto continue_local_message
-			end
-
-			q_start_line = prepare_widget_start()
-			capture_widget_focus("question", message.request_id, q_start_line, q_meta)
-
-			for _, line_text in ipairs(q_lines) do
-				add_raw_line(line_text)
-			end
-
-			state.questions[message.request_id] = {
-				start_line = q_start_line,
-				end_line = q_start_line + #q_lines - 1,
-				status = status,
-			}
-
-			add_raw_line("")
-			::continue_local_message::
+			render_single_question(message)
+			goto continue_local_message
 		end
 
 		if message.type == "permission" or message.role == "user" then
@@ -1969,25 +2007,32 @@ function M.do_render()
 			nui_line:highlight(state.bufnr, chat_hl_ns, i)
 		end
 	end
-	for _, edit_pos in pairs(state.edits) do
-		local highlights = edit_pos.highlights
-		if highlights and edit_pos.end_line >= first_diff then
-			for _, hl in ipairs(highlights) do
-				local line_idx = edit_pos.start_line + hl.line
-				if line_idx >= first_diff and line_idx < buf_line_count then
-					local end_col = hl.col_end
-					if end_col == -1 then
-						local line_text = vim.api.nvim_buf_get_lines(state.bufnr, line_idx, line_idx + 1, false)[1]
-						end_col = line_text and #line_text or 0
+
+	local function apply_widget_extmarks(line_map)
+		for _, pos in pairs(line_map) do
+			local highlights = pos.highlights
+			if highlights and pos.end_line >= first_diff then
+				for _, hl in ipairs(highlights) do
+					local line_idx = pos.start_line + hl.line
+					if line_idx >= first_diff and line_idx < buf_line_count then
+						local end_col = hl.col_end
+						if end_col == -1 then
+							local line_text = vim.api.nvim_buf_get_lines(state.bufnr, line_idx, line_idx + 1, false)[1]
+							end_col = line_text and #line_text or 0
+						end
+						pcall(vim.api.nvim_buf_set_extmark, state.bufnr, chat_hl_ns, line_idx, hl.col_start, {
+							end_col = end_col,
+							hl_group = hl.hl_group,
+						})
 					end
-					pcall(vim.api.nvim_buf_set_extmark, state.bufnr, chat_hl_ns, line_idx, hl.col_start, {
-						end_col = end_col,
-						hl_group = hl.hl_group,
-					})
 				end
 			end
 		end
 	end
+
+	apply_widget_extmarks(state.questions)
+	apply_widget_extmarks(state.permissions)
+	apply_widget_extmarks(state.edits)
 
 	vim.bo[state.bufnr].modifiable = false
 

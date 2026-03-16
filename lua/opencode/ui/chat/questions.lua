@@ -31,7 +31,10 @@ function M.process_pending_questions()
 	for _, pq in ipairs(pending) do
 		local qstate = question_state.get_question(pq.request_id)
 		if qstate and qstate.status == "pending" then
-			M.add_question_message(pq.request_id, pq.questions, pq.status)
+			M.add_question_message(pq.request_id, pq.questions, pq.status, {
+				message_id = pq.message_id,
+				source_session_id = pq.source_session_id,
+			})
 			logger.debug("Displayed pending question", { request_id = pq.request_id:sub(1, 10) })
 		else
 			logger.debug("Skipping stale pending question", {
@@ -47,8 +50,10 @@ end
 ---@param request_id string
 ---@param questions table
 ---@param status "pending" | "answered" | "rejected"
-function M.add_question_message(request_id, questions, status)
+---@param opts? table { message_id?: string|nil, source_session_id?: string|nil }
+function M.add_question_message(request_id, questions, status, opts)
 	local logger = require("opencode.logger")
+	opts = opts or {}
 
 	logger.debug("add_question_message called", {
 		request_id = request_id:sub(1, 10),
@@ -62,6 +67,8 @@ function M.add_question_message(request_id, questions, status)
 			request_id = request_id,
 			questions = questions,
 			status = status,
+			message_id = opts.message_id,
+			source_session_id = opts.source_session_id,
 			timestamp = os.time(),
 		})
 		logger.debug("Question queued (chat not visible)", {
@@ -81,7 +88,10 @@ function M.add_question_message(request_id, questions, status)
 	for _, msg in ipairs(state.messages) do
 		if msg.type == "question" and msg.request_id == request_id then
 			already_exists = true
+			msg.questions = questions
 			msg.status = status
+			msg.message_id = opts.message_id or msg.message_id
+			msg.source_session_id = opts.source_session_id or qstate.session_id or msg.source_session_id
 			break
 		end
 	end
@@ -95,7 +105,8 @@ function M.add_question_message(request_id, questions, status)
 			status = status,
 			timestamp = os.time(),
 			id = "question_" .. request_id,
-			source_session_id = qstate.session_id,
+			message_id = opts.message_id,
+			source_session_id = opts.source_session_id or qstate.session_id,
 		})
 		logger.debug("Question added to state.messages", {
 			request_id = request_id:sub(1, 10),
@@ -260,6 +271,10 @@ function M.rerender_question(request_id)
 
 	local lines, highlights, _ =
 		question_widget.get_lines_for_question(request_id, { questions = questions }, qstate, qstate.status)
+	local old_end = pos.end_line
+	local old_count = old_end - pos.start_line + 1
+	local new_count = #lines
+	local delta = new_count - old_count
 
 	vim.bo[state.bufnr].modifiable = true
 	vim.api.nvim_buf_set_lines(state.bufnr, pos.start_line, pos.end_line + 1, false, lines)
@@ -287,7 +302,9 @@ function M.rerender_question(request_id)
 
 	vim.bo[state.bufnr].modifiable = false
 
+	widget_support.shift_tracked_lines(old_end, delta)
 	state.questions[request_id].end_line = pos.start_line + #lines - 1
+	state.questions[request_id].highlights = highlights
 	state.questions[request_id].status = qstate.status
 end
 
