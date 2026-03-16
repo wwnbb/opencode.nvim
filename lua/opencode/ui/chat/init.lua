@@ -33,6 +33,7 @@ local permission_widget = require("opencode.ui.permission_widget")
 local permission_state = require("opencode.permission.state")
 local edit_widget = require("opencode.ui.edit_widget")
 local edit_state = require("opencode.edit.state")
+local apply_widget_focus_cursor
 
 -- ─── Configuration ────────────────────────────────────────────────────────────
 
@@ -179,6 +180,119 @@ local function setup_float_focus_autocmds()
 			end)
 		end,
 	})
+end
+
+-- ─── Cursor preservation ──────────────────────────────────────────────────────
+
+---@class OpenCodeWidgetCursorContext
+---@field kind "question" | "permission" | "edit"
+---@field id string
+---@field relative_line number
+
+---@param kind "question" | "permission" | "edit"
+---@return table
+local function get_widget_positions(kind)
+	if kind == "question" then
+		return state.questions
+	end
+	if kind == "permission" then
+		return state.permissions
+	end
+	return state.edits
+end
+
+---@param kind "question" | "permission" | "edit"
+---@param pos table|nil
+---@return boolean
+local function is_widget_cursor_target(kind, pos)
+	if not pos then
+		return false
+	end
+
+	if kind == "question" then
+		return pos.status == "pending" or pos.status == "confirming"
+	end
+	if kind == "permission" then
+		return pos.status == "pending"
+	end
+	return pos.status ~= "sent"
+end
+
+---@return OpenCodeWidgetCursorContext|nil
+local function capture_widget_cursor_context()
+	if not state.visible or not state.winid or not vim.api.nvim_win_is_valid(state.winid) then
+		return nil
+	end
+
+	local cursor_line = vim.api.nvim_win_get_cursor(state.winid)[1] - 1
+	local widget_kinds = { "question", "permission", "edit" }
+
+	for _, kind in ipairs(widget_kinds) do
+		for widget_id, pos in pairs(get_widget_positions(kind)) do
+			if
+				is_widget_cursor_target(kind, pos)
+				and cursor_line >= pos.start_line
+				and cursor_line <= pos.end_line
+			then
+				return {
+					kind = kind,
+					id = widget_id,
+					relative_line = cursor_line - pos.start_line,
+				}
+			end
+		end
+	end
+
+	return nil
+end
+
+---@param widget_cursor OpenCodeWidgetCursorContext|nil
+---@return boolean
+local function restore_widget_cursor_context(widget_cursor)
+	if not widget_cursor then
+		return false
+	end
+	if not state.visible or not state.winid or not vim.api.nvim_win_is_valid(state.winid) then
+		return false
+	end
+	if not state.bufnr or not vim.api.nvim_buf_is_valid(state.bufnr) then
+		return false
+	end
+
+	local pos = get_widget_positions(widget_cursor.kind)[widget_cursor.id]
+	if not is_widget_cursor_target(widget_cursor.kind, pos) then
+		return false
+	end
+
+	local buf_lines = vim.api.nvim_buf_line_count(state.bufnr)
+	local min_line = math.min(pos.start_line + 1, buf_lines)
+	local max_line = math.min(pos.end_line + 1, buf_lines)
+	if min_line <= 0 or max_line <= 0 then
+		return false
+	end
+
+	local target_line = pos.start_line + widget_cursor.relative_line + 1
+	target_line = math.max(min_line, math.min(target_line, max_line))
+
+	vim.api.nvim_win_set_cursor(state.winid, { target_line, 0 })
+	M.sync_widget_selection_from_cursor()
+	return true
+end
+
+---@param widget_cursor OpenCodeWidgetCursorContext|nil
+---@return boolean
+local function should_auto_scroll(widget_cursor)
+	if widget_cursor then
+		return false
+	end
+	if not state.auto_scroll or not state.visible or not state.winid or not vim.api.nvim_win_is_valid(state.winid) then
+		return false
+	end
+
+	local cursor = vim.api.nvim_win_get_cursor(state.winid)
+	local win_height = vim.api.nvim_win_get_height(state.winid)
+	local buf_lines = vim.api.nvim_buf_line_count(state.bufnr)
+	return cursor[1] >= buf_lines - win_height - 1
 end
 
 -- ─── Buffer setup ────────────────────────────────────────────────────────────
@@ -1148,6 +1262,8 @@ function M.update_stream_text_block(message_id)
 		return false
 	end
 
+	local widget_cursor = capture_widget_cursor_context()
+
 	local sync = require("opencode.sync")
 	local content = sync.get_message_text(message_id)
 	local content_lines = render.render_content(content, { stream_plain = true })
@@ -1158,13 +1274,7 @@ function M.update_stream_text_block(message_id)
 	end
 	local replacement = render.extract_lines(content_lines)
 
-	local should_scroll = false
-	if state.auto_scroll and state.visible and state.winid and vim.api.nvim_win_is_valid(state.winid) then
-		local cursor = vim.api.nvim_win_get_cursor(state.winid)
-		local win_height = vim.api.nvim_win_get_height(state.winid)
-		local buf_lines = vim.api.nvim_buf_line_count(state.bufnr)
-		should_scroll = cursor[1] >= buf_lines - win_height - 1
-	end
+	local should_scroll = should_auto_scroll(widget_cursor)
 
 	local old_end = block.end_line
 	local old_count = old_end - block.start_line + 1
@@ -1181,6 +1291,16 @@ function M.update_stream_text_block(message_id)
 
 	block.end_line = block.start_line + new_count - 1
 	shift_tracked_lines(old_end, delta, message_id)
+
+	if apply_widget_focus_cursor and apply_widget_focus_cursor() then
+		vim.cmd("redraw")
+		return true
+	end
+
+	if restore_widget_cursor_context(widget_cursor) then
+		vim.cmd("redraw")
+		return true
+	end
 
 	if should_scroll and state.visible and state.winid and vim.api.nvim_win_is_valid(state.winid) then
 		local buf_lines = vim.api.nvim_buf_line_count(state.bufnr)
@@ -1779,7 +1899,7 @@ function M.schedule_render()
 end
 
 ---@return string|nil
-local function apply_widget_focus_cursor()
+apply_widget_focus_cursor = function()
 	local focused_kind = widget_support.apply_focus_cursor()
 	if focused_kind then
 		M.sync_widget_selection_from_cursor()
@@ -1792,13 +1912,8 @@ function M.do_render()
 		return
 	end
 
-	local should_scroll = false
-	if state.auto_scroll and state.visible and state.winid and vim.api.nvim_win_is_valid(state.winid) then
-		local cursor = vim.api.nvim_win_get_cursor(state.winid)
-		local win_height = vim.api.nvim_win_get_height(state.winid)
-		local buf_lines = vim.api.nvim_buf_line_count(state.bufnr)
-		should_scroll = cursor[1] >= buf_lines - win_height - 1
-	end
+	local widget_cursor = capture_widget_cursor_context()
+	local should_scroll = should_auto_scroll(widget_cursor)
 
 	local new_lines, nui_lines = M.render()
 	if #new_lines == 0 or #nui_lines == 0 then
@@ -1876,7 +1991,17 @@ function M.do_render()
 
 	vim.bo[state.bufnr].modifiable = false
 
-	if not apply_widget_focus_cursor() and should_scroll and state.visible and state.winid and vim.api.nvim_win_is_valid(state.winid) then
+	if apply_widget_focus_cursor() then
+		vim.cmd("redraw")
+		return
+	end
+
+	if restore_widget_cursor_context(widget_cursor) then
+		vim.cmd("redraw")
+		return
+	end
+
+	if should_scroll and state.visible and state.winid and vim.api.nvim_win_is_valid(state.winid) then
 		local buf_lines = vim.api.nvim_buf_line_count(state.bufnr)
 		vim.api.nvim_win_set_cursor(state.winid, { buf_lines, 0 })
 	end
