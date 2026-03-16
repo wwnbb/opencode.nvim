@@ -1330,6 +1330,7 @@ function M.render()
 				start_line = edit_start,
 				end_line = edit_start + #e_lines - 1,
 				status = estatus,
+				highlights = e_highlights,
 			}
 			add_raw_line("")
 		end
@@ -1848,6 +1849,25 @@ function M.do_render()
 		local line_idx = i - 1
 		if line_idx >= first_diff and line_idx < buf_line_count then
 			nui_line:highlight(state.bufnr, chat_hl_ns, i)
+		end
+	end
+	for _, edit_pos in pairs(state.edits) do
+		local highlights = edit_pos.highlights
+		if highlights and edit_pos.end_line >= first_diff then
+			for _, hl in ipairs(highlights) do
+				local line_idx = edit_pos.start_line + hl.line
+				if line_idx >= first_diff and line_idx < buf_line_count then
+					local end_col = hl.col_end
+					if end_col == -1 then
+						local line_text = vim.api.nvim_buf_get_lines(state.bufnr, line_idx, line_idx + 1, false)[1]
+						end_col = line_text and #line_text or 0
+					end
+					pcall(vim.api.nvim_buf_set_extmark, state.bufnr, chat_hl_ns, line_idx, hl.col_start, {
+						end_col = end_col,
+						hl_group = hl.hl_group,
+					})
+				end
+			end
 		end
 	end
 
