@@ -7,6 +7,7 @@ local state = cs.state
 local chat_hl_ns = cs.chat_hl_ns
 
 local permission_widget = require("opencode.ui.permission_widget")
+local widget_base = require("opencode.ui.widget_base")
 local permission_state = require("opencode.permission.state")
 local widget_support = require("opencode.ui.chat.widget_support")
 
@@ -131,8 +132,10 @@ function M.sync_selected_option_from_cursor()
 		return nil, false
 	end
 
-	local _, _, option_count, first_option_line = permission_widget.get_lines_for_permission(permission_id, pstate)
-	if option_count <= 0 then
+	local _, _, meta = permission_widget.get_lines_for_permission(permission_id, pstate)
+	local option_count = meta and meta.interactive_count or 0
+	local first_option_line = widget_base.get_focus_offset(meta)
+	if option_count <= 0 or first_option_line == nil then
 		return permission_id, false
 	end
 

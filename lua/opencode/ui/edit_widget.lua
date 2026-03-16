@@ -16,7 +16,7 @@ local icons = {
 --- Get formatted lines for a pending (interactive) edit widget
 ---@param permission_id string
 ---@param edit_state table Edit state from edit/state.lua
----@return table lines, table highlights, number file_count, number first_file_line
+---@return table lines, table highlights, OpenCodeWidgetMeta meta
 function M.get_lines_for_edit(permission_id, edit_state)
 	local lines = {}
 	local highlights = {}
@@ -183,7 +183,10 @@ function M.get_lines_for_edit(permission_id, edit_state)
 	-- Trailing blank line
 	table.insert(lines, "")
 
-	return lines, highlights, #edit_state.files, first_file_line
+	return lines, highlights, widget_base.make_meta({
+		interactive_count = #edit_state.files,
+		first_interactive_line = first_file_line,
+	})
 end
 
 --- Get formatted lines for a resolved edit (all files accepted/rejected, reply sent)

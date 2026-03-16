@@ -3,6 +3,11 @@ local M = {}
 M.SEPARATOR_WIDTH = 60
 M.HEADER_WIDTH = 50
 
+---@class OpenCodeWidgetMeta
+---@field interactive_count number
+---@field first_interactive_line number|nil
+---@field auto_focus boolean
+
 ---@param icon string
 ---@param title string
 ---@param id_short string
@@ -45,6 +50,44 @@ function M.add_full_line_highlight(highlights, line, text, hl_group)
 		col_end = #text,
 		hl_group = hl_group,
 	})
+end
+
+---@param opts? table
+---@return OpenCodeWidgetMeta
+function M.make_meta(opts)
+	opts = opts or {}
+
+	local interactive_count = opts.interactive_count or 0
+	local first_interactive_line = type(opts.first_interactive_line) == "number" and opts.first_interactive_line or nil
+	local auto_focus = opts.auto_focus ~= false
+
+	if interactive_count <= 0 then
+		first_interactive_line = nil
+	end
+
+	return {
+		interactive_count = interactive_count,
+		first_interactive_line = first_interactive_line,
+		auto_focus = auto_focus,
+	}
+end
+
+---@param meta OpenCodeWidgetMeta|nil
+---@return number|nil
+function M.get_focus_offset(meta)
+	if not meta or meta.auto_focus == false then
+		return nil
+	end
+
+	if (meta.interactive_count or 0) <= 0 then
+		return nil
+	end
+
+	if type(meta.first_interactive_line) ~= "number" then
+		return nil
+	end
+
+	return meta.first_interactive_line
 end
 
 return M
