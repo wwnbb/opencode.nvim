@@ -176,6 +176,10 @@ function M.rerender_permission(perm_id)
 	end
 
 	local p_lines, p_highlights = permission_widget.get_lines_for_permission(perm_id, pstate)
+	local old_end = pos.end_line
+	local old_count = old_end - pos.start_line + 1
+	local new_count = #p_lines
+	local delta = new_count - old_count
 
 	vim.bo[state.bufnr].modifiable = true
 	vim.api.nvim_buf_set_lines(state.bufnr, pos.start_line, pos.end_line + 1, false, p_lines)
@@ -203,7 +207,9 @@ function M.rerender_permission(perm_id)
 
 	vim.bo[state.bufnr].modifiable = false
 
+	widget_support.shift_tracked_lines(old_end, delta)
 	state.permissions[perm_id].end_line = pos.start_line + #p_lines - 1
+	state.permissions[perm_id].highlights = p_highlights
 end
 
 -- ─── Handlers ─────────────────────────────────────────────────────────────────

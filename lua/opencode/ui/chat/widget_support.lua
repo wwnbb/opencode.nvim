@@ -2,6 +2,7 @@ local M = {}
 
 local cs = require("opencode.ui.chat.state")
 local state = cs.state
+local render = require("opencode.ui.chat.render")
 
 local FOCUS_ORDER = { "question", "permission", "edit" }
 
@@ -82,6 +83,45 @@ function M.apply_focus_cursor()
 	end
 
 	return nil, nil
+end
+
+---@param old_end number
+---@param delta number
+---@param opts? table { skip_stream_message_id?: string|nil }
+function M.shift_tracked_lines(old_end, delta, opts)
+	if delta == 0 then
+		return
+	end
+
+	opts = opts or {}
+
+	render.shift_line_map(state.questions, old_end, delta)
+	render.shift_line_map(state.permissions, old_end, delta)
+	render.shift_line_map(state.edits, old_end, delta)
+	render.shift_line_map(state.tasks, old_end, delta)
+	render.shift_line_map(state.tools, old_end, delta)
+
+	for message_id, pos in pairs(state.stream_blocks) do
+		if
+			message_id ~= opts.skip_stream_message_id
+			and pos.start_line
+			and pos.end_line
+			and pos.start_line > old_end
+		then
+			pos.start_line = pos.start_line + delta
+			pos.end_line = pos.end_line + delta
+		end
+	end
+
+	if state.focus_question_line and (state.focus_question_line - 1) > old_end then
+		state.focus_question_line = state.focus_question_line + delta
+	end
+	if state.focus_permission_line and (state.focus_permission_line - 1) > old_end then
+		state.focus_permission_line = state.focus_permission_line + delta
+	end
+	if state.focus_edit_line and (state.focus_edit_line - 1) > old_end then
+		state.focus_edit_line = state.focus_edit_line + delta
+	end
 end
 
 return M

@@ -977,6 +977,7 @@ function M.setup_question_handlers()
 
 			local request_id = data.requestID or data.id
 			local session_id = data.sessionID
+			local message_id = data.tool and data.tool.messageID or nil
 			local questions = data.questions
 
 			if not request_id or not questions then
@@ -987,9 +988,17 @@ function M.setup_question_handlers()
 				return
 			end
 
-			-- Store question state (allow questions from subagent/child sessions)
 			local current_session = state.get_session()
-			question_state.add_question(request_id, session_id or current_session.id, questions)
+			if message_id then
+				local ok_sync, sync = pcall(require, "opencode.sync")
+				if ok_sync and sync.find_message_session_id then
+					session_id = sync.find_message_session_id(message_id) or session_id
+				end
+			end
+			session_id = session_id or (current_session and current_session.id) or ""
+
+			-- Store question state (allow questions from subagent/child sessions)
+			question_state.add_question(request_id, session_id, questions)
 
 			-- Stop the spinner so user can interact with the question
 			local spinner_ok, spinner = pcall(require, "opencode.ui.spinner")
@@ -1001,7 +1010,10 @@ function M.setup_question_handlers()
 			-- Add to chat as a special message
 			local chat_ok, chat = pcall(require, "opencode.ui.chat")
 			if chat_ok and chat.add_question_message then
-				chat.add_question_message(request_id, questions, "pending")
+				chat.add_question_message(request_id, questions, "pending", {
+					message_id = message_id,
+					source_session_id = session_id,
+				})
 			end
 
 			logger.info("Question added", { request_id = request_id:sub(1, 10), count = #questions })

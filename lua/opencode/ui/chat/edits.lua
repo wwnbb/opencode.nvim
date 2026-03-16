@@ -685,6 +685,10 @@ function M.rerender_edit(edit_id)
 	else
 		e_lines, e_highlights = edit_widget.get_lines_for_edit(edit_id, estate)
 	end
+	local old_end = pos.end_line
+	local old_count = old_end - pos.start_line + 1
+	local new_count = #e_lines
+	local delta = new_count - old_count
 
 	vim.bo[state.bufnr].modifiable = true
 	vim.api.nvim_buf_set_lines(state.bufnr, pos.start_line, pos.end_line + 1, false, e_lines)
@@ -713,7 +717,9 @@ function M.rerender_edit(edit_id)
 
 	vim.bo[state.bufnr].modifiable = false
 
+	widget_support.shift_tracked_lines(old_end, delta)
 	state.edits[edit_id].end_line = pos.start_line + #e_lines - 1
+	state.edits[edit_id].highlights = e_highlights
 end
 
 -- ─── Finalize ─────────────────────────────────────────────────────────────────
