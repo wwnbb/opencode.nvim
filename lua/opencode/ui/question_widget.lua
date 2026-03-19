@@ -306,7 +306,12 @@ function M.get_answered_lines(request_id, question_data, answers)
 	local line_num = 0
 
 	local id_short = request_id:sub(1, 8)
-	local header = widget_base.format_header(icons.answered, "Question", id_short, os.time())
+	local header = widget_base.format_header(
+		icons.answered,
+		"Question",
+		id_short,
+		question_data.timestamp or os.time()
+	)
 
 	table.insert(lines, header)
 	widget_base.add_full_line_highlight(highlights, line_num, header, "Comment")
@@ -341,7 +346,12 @@ function M.get_rejected_lines(request_id, question_data)
 	local line_num = 0
 
 	local id_short = request_id:sub(1, 8)
-	local header = widget_base.format_header(icons.rejected, "Question", id_short, os.time())
+	local header = widget_base.format_header(
+		icons.rejected,
+		"Question",
+		id_short,
+		question_data.timestamp or os.time()
+	)
 
 	table.insert(lines, header)
 	widget_base.add_full_line_highlight(highlights, line_num, header, "Error")

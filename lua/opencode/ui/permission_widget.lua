@@ -205,7 +205,7 @@ function M.get_approved_lines(permission_id, perm_state)
 
 	local id_short = permission_id:sub(1, 12)
 	local reply_label = perm_state.reply == "always" and "Allowed (always)" or "Allowed (once)"
-	local header = widget_base.format_header(icons.approved, "Permission", id_short, perm_state.resolved_at)
+	local header = widget_base.format_header(icons.approved, "Permission", id_short, perm_state.timestamp)
 	table.insert(lines, header)
 	table.insert(highlights, {
 		line = line_num,
@@ -245,7 +245,7 @@ function M.get_rejected_lines(permission_id, perm_state)
 	local line_num = 0
 
 	local id_short = permission_id:sub(1, 12)
-	local header = widget_base.format_header(icons.rejected, "Permission", id_short, perm_state.resolved_at)
+	local header = widget_base.format_header(icons.rejected, "Permission", id_short, perm_state.timestamp)
 	table.insert(lines, header)
 	table.insert(highlights, {
 		line = line_num,

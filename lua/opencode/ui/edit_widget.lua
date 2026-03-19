@@ -218,7 +218,7 @@ function M.get_resolved_lines(permission_id, edit_state)
 		icons.pending,
 		"Edit",
 		id_short,
-		edit_state.resolved_at or edit_state.timestamp,
+		edit_state.timestamp,
 		{ suffix = resolution_label }
 	)
 	table.insert(lines, header)

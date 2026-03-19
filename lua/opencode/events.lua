@@ -622,6 +622,48 @@ function M.setup_chat_handlers()
 				local current_session = require("opencode.state").get_session()
 				local message_id = data.tool and data.tool.messageID or nil
 
+				-- Guard: only handle edit/diff_review permissions that belong to our session.
+				-- Both editors receive every SSE event from the shared server. Without this
+				-- check, the second open editor would also create edit state and render the
+				-- widget even though the permission request was initiated from a different session.
+				-- Mirrors the same pattern used in message_updated (session ID check) and
+				-- session_status handlers.
+				if permission_type == "diff_review" or permission_type == "edit" then
+					-- Try to resolve the owning session from the most-reliable source first:
+					-- the message ID via the sync store (populated only for the active session),
+					-- then the raw sessionID field on the event payload / metadata.
+					local event_session_id = nil
+
+					if message_id then
+						local ok_sync, sync_mod = pcall(require, "opencode.sync")
+						if ok_sync and sync_mod.find_message_session_id then
+							event_session_id = sync_mod.find_message_session_id(message_id)
+						end
+					end
+
+					if not event_session_id or event_session_id == "" then
+						event_session_id = data.sessionID
+							or data.session_id
+							or data.sessionId
+							or metadata.sessionID
+							or metadata.session_id
+							or metadata.sessionId
+					end
+
+					-- If we successfully resolved a session and it doesn't match ours, skip.
+					if event_session_id and event_session_id ~= "" and current_session.id then
+						if event_session_id ~= current_session.id then
+							local logger_g = require("opencode.logger")
+							logger_g.debug("edit permission belongs to a different session, skipping", {
+								event_session = event_session_id,
+								current_session = current_session.id,
+								permission_type = permission_type,
+							})
+							return
+						end
+					end
+				end
+
 				---@param session_hint table
 				---@param event_data table
 				---@param event_metadata table
