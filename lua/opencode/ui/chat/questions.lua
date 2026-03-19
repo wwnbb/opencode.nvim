@@ -34,6 +34,7 @@ function M.process_pending_questions()
 			M.add_question_message(pq.request_id, pq.questions, pq.status, {
 				message_id = pq.message_id,
 				source_session_id = pq.source_session_id,
+				timestamp = pq.timestamp,
 			})
 			logger.debug("Displayed pending question", { request_id = pq.request_id:sub(1, 10) })
 		else
@@ -50,10 +51,12 @@ end
 ---@param request_id string
 ---@param questions table
 ---@param status "pending" | "answered" | "rejected"
----@param opts? table { message_id?: string|nil, source_session_id?: string|nil }
+---@param opts? table { message_id?: string|nil, source_session_id?: string|nil, timestamp?: number|nil }
 function M.add_question_message(request_id, questions, status, opts)
 	local logger = require("opencode.logger")
 	opts = opts or {}
+	local qstate = question_state.get_question(request_id)
+	local message_timestamp = opts.timestamp or (qstate and qstate.timestamp) or os.time()
 
 	logger.debug("add_question_message called", {
 		request_id = request_id:sub(1, 10),
@@ -69,7 +72,7 @@ function M.add_question_message(request_id, questions, status, opts)
 			status = status,
 			message_id = opts.message_id,
 			source_session_id = opts.source_session_id,
-			timestamp = os.time(),
+			timestamp = message_timestamp,
 		})
 		logger.debug("Question queued (chat not visible)", {
 			request_id = request_id:sub(1, 10),
@@ -78,7 +81,6 @@ function M.add_question_message(request_id, questions, status, opts)
 		return
 	end
 
-	local qstate = question_state.get_question(request_id)
 	if not qstate then
 		logger.warn("Question state not found", { request_id = request_id:sub(1, 10) })
 		return
@@ -103,7 +105,7 @@ function M.add_question_message(request_id, questions, status, opts)
 			request_id = request_id,
 			questions = questions,
 			status = status,
-			timestamp = os.time(),
+			timestamp = message_timestamp,
 			id = "question_" .. request_id,
 			message_id = opts.message_id,
 			source_session_id = opts.source_session_id or qstate.session_id,

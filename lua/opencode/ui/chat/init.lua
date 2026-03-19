@@ -1402,13 +1402,14 @@ function M.render()
 		if status == "answered" then
 			q_lines, q_highlights = question_widget.get_answered_lines(
 				message.request_id,
-				{ questions = message.questions },
+				{ questions = message.questions, timestamp = message.timestamp },
 				message.answers
 			)
 			q_meta = widget_base.make_meta()
 		elseif status == "rejected" then
 			q_lines, q_highlights = question_widget.get_rejected_lines(message.request_id, {
 				questions = message.questions,
+				timestamp = message.timestamp,
 			})
 			q_meta = widget_base.make_meta()
 		elseif qstate then
