@@ -338,6 +338,11 @@ local function setup_buffer(bufnr)
 		palette.show()
 	end, { buffer = bufnr, noremap = true, silent = true, desc = "Open command palette" })
 
+	vim.keymap.set("n", "N", function()
+		local opencode = require("opencode")
+		opencode.clear()
+	end, { buffer = bufnr, noremap = true, silent = true, desc = "Start new session" })
+
 	-- Question / permission / edit navigation (cursor moves first; widget selection follows cursor)
 	vim.keymap.set("n", "j", function()
 		M.handle_question_navigation("down")
@@ -568,6 +573,7 @@ function M.show_help()
 		"a          Toggle auto-scroll",
 		"<C-c>      Stop generation",
 		"<C-p>      Command palette",
+		"N          Start new session",
 		"<C-u>      Scroll up",
 		"<C-d>      Scroll down",
 		"gg         Go to top",
@@ -843,6 +849,7 @@ function M.open()
 			bufnr = state.bufnr,
 			win_options = {
 				fillchars = "eob: ",
+				wrap = true,
 			},
 		})
 
@@ -897,6 +904,7 @@ function M.open()
 		vim.wo[state.winid].winfixwidth = cfg.layout == "vertical"
 		vim.wo[state.winid].winfixheight = cfg.layout == "horizontal"
 		vim.wo[state.winid].fillchars = "eob: "
+		vim.wo[state.winid].wrap = true
 	end
 
 	state.visible = true
