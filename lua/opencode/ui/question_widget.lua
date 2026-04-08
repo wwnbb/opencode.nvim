@@ -15,6 +15,16 @@ local icons = {
 	multi_unselected = "☐",
 }
 
+---@param option_count number
+---@return string
+local function format_option_hint(option_count)
+	if option_count <= 0 then
+		return "select an answer"
+	end
+
+	return string.format("select with 1-%d or ↑↓", math.min(option_count, 9))
+end
+
 -- Get formatted lines for a question
 ---@param request_id string
 ---@param question_data table
@@ -43,8 +53,7 @@ function M.get_lines_for_question(request_id, question_data, selection_state, st
 
 	-- Header line with icon and request ID
 	local icon = icons[status] or icons.pending
-	local id_short = request_id:sub(1, 8)
-	local header = widget_base.format_header(icon, "Question", id_short, selection_state.timestamp)
+	local header = widget_base.format_header(icon, "Question", request_id, selection_state.timestamp)
 	table.insert(lines, header)
 	widget_base.add_full_line_highlight(highlights, line_num, header, status == "pending" and "Title" or "Comment")
 	line_num = line_num + 1
@@ -202,15 +211,8 @@ function M.get_lines_for_question(request_id, question_data, selection_state, st
 		table.insert(lines, "")
 		line_num = line_num + 1
 
-		local hint_parts = {}
-		if option_count > 0 then
-			table.insert(hint_parts, "1-" .. math.min(option_count, 9) .. " select")
-		end
-		table.insert(hint_parts, "↑↓ navigate")
-
-		if allow_custom then
-			table.insert(hint_parts, "c custom")
-		end
+		local hint
+		local ready_to_advance = selections.ready_to_advance
 
 		-- Show progress for multi-question blocks
 		if #questions > 1 then
@@ -222,20 +224,36 @@ function M.get_lines_for_question(request_id, question_data, selection_state, st
 					answered_count = answered_count + 1
 				end
 			end
-			
-			if answered_count == #questions then
-				table.insert(hint_parts, "Enter submit")
-			else
-				table.insert(hint_parts, string.format("Enter submit (%d/%d)", answered_count, #questions))
-			end
-			table.insert(hint_parts, "Tab/S-Tab navigate")
-		else
-			table.insert(hint_parts, "Enter confirm")
-		end
-		
-		table.insert(hint_parts, "Esc cancel")
 
-		local hint = "[" .. table.concat(hint_parts, ", ") .. "]"
+			if ready_to_advance then
+				hint = string.format(
+					"Tip: press Enter again to continue (%d/%d answered). Tab/S-Tab review, Esc cancel.",
+					answered_count,
+					#questions
+				)
+			else
+				hint = string.format(
+					"Tip: %s, then press Enter twice to continue (%d/%d answered). Tab/S-Tab review, Esc cancel.",
+					format_option_hint(option_count),
+					answered_count,
+					#questions
+				)
+			end
+		else
+			if ready_to_advance then
+				hint = "Tip: press Enter again to submit this answer, or change the selection to keep editing. Esc cancel."
+			else
+				hint = string.format(
+					"Tip: %s, then press Enter twice to submit. Esc cancel.",
+					format_option_hint(option_count)
+				)
+			end
+		end
+
+		if allow_custom then
+			hint = hint:gsub(" Esc cancel%.$", " Press c for custom input. Esc cancel.")
+		end
+
 		table.insert(lines, hint)
 		widget_base.add_full_line_highlight(highlights, line_num, hint, "Comment")
 		line_num = line_num + 1
@@ -305,11 +323,10 @@ function M.get_answered_lines(request_id, question_data, answers)
 	local highlights = {}
 	local line_num = 0
 
-	local id_short = request_id:sub(1, 8)
 	local header = widget_base.format_header(
 		icons.answered,
 		"Question",
-		id_short,
+		request_id,
 		question_data.timestamp or os.time()
 	)
 
@@ -345,11 +362,10 @@ function M.get_rejected_lines(request_id, question_data)
 	local highlights = {}
 	local line_num = 0
 
-	local id_short = request_id:sub(1, 8)
 	local header = widget_base.format_header(
 		icons.rejected,
 		"Question",
-		id_short,
+		request_id,
 		question_data.timestamp or os.time()
 	)
 
@@ -390,8 +406,7 @@ function M.get_confirmation_lines(request_id, question_data, selection_state)
 	local questions = question_data.questions or question_data
 	
 	-- Header
-	local id_short = request_id:sub(1, 8)
-	local header = widget_base.format_header("✓", "Question", id_short, selection_state.timestamp)
+	local header = widget_base.format_header("✓", "Question", request_id, selection_state.timestamp)
 	table.insert(lines, header)
 	widget_base.add_full_line_highlight(highlights, line_num, header, "Title")
 	line_num = line_num + 1
@@ -476,7 +491,7 @@ function M.get_confirmation_lines(request_id, question_data, selection_state)
 	line_num = line_num + 1
 
 	-- Hint
-	local hint = "[1-2 select, ↑↓ navigate, Enter confirm, Esc cancel]"
+	local hint = "Tip: choose Yes or No, then press Enter to continue. Esc returns to the questions."
 	table.insert(lines, hint)
 	widget_base.add_full_line_highlight(highlights, line_num, hint, "Comment")
 	line_num = line_num + 1

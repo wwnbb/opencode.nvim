@@ -1072,12 +1072,13 @@ function M.render_message(message)
 
 	local role_display = message.role == "user" and "You" or (message.role == "assistant" and "Assistant" or "System")
 	local time_str = os.date("%H:%M", message.timestamp)
-	local id_short = message.id and message.id:sub(1, 6) or "??????"
+	local id_display = message.id or "??????"
+	local header_padding = string.rep(" ", math.max(1, 50 - #role_display - #time_str - #id_display - 3))
 	local header_text = string.format(
 		"%s [%s] %s%s",
 		role_display,
-		id_short,
-		string.rep(" ", 50 - #role_display - #time_str - #id_short - 3),
+		id_display,
+		header_padding,
 		time_str
 	)
 	table.insert(lines, header_text)

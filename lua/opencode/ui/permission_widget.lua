@@ -132,8 +132,7 @@ function M.get_lines_for_permission(permission_id, perm_state)
 	local line_num = 0
 
 	-- Header
-	local id_short = permission_id:sub(1, 12)
-	local header = widget_base.format_header(icons.pending, "Permission required", id_short, perm_state.timestamp)
+	local header = widget_base.format_header(icons.pending, "Permission required", permission_id, perm_state.timestamp)
 	table.insert(lines, header)
 	widget_base.add_full_line_highlight(highlights, line_num, header, "Title")
 	line_num = line_num + 1
@@ -203,9 +202,8 @@ function M.get_approved_lines(permission_id, perm_state)
 	local highlights = {}
 	local line_num = 0
 
-	local id_short = permission_id:sub(1, 12)
 	local reply_label = perm_state.reply == "always" and "Allowed (always)" or "Allowed (once)"
-	local header = widget_base.format_header(icons.approved, "Permission", id_short, perm_state.timestamp)
+	local header = widget_base.format_header(icons.approved, "Permission", permission_id, perm_state.timestamp)
 	table.insert(lines, header)
 	table.insert(highlights, {
 		line = line_num,
@@ -244,8 +242,7 @@ function M.get_rejected_lines(permission_id, perm_state)
 	local highlights = {}
 	local line_num = 0
 
-	local id_short = permission_id:sub(1, 12)
-	local header = widget_base.format_header(icons.rejected, "Permission", id_short, perm_state.timestamp)
+	local header = widget_base.format_header(icons.rejected, "Permission", permission_id, perm_state.timestamp)
 	table.insert(lines, header)
 	table.insert(highlights, {
 		line = line_num,
