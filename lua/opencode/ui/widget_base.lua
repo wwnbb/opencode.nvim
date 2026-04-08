@@ -10,14 +10,14 @@ M.HEADER_WIDTH = 50
 
 ---@param icon string
 ---@param title string
----@param id_short string
+---@param id_label string
 ---@param timestamp number|nil
 ---@param opts? table
 ---@return string
-function M.format_header(icon, title, id_short, timestamp, opts)
+function M.format_header(icon, title, id_label, timestamp, opts)
 	opts = opts or {}
 
-	local left = string.format("%s %s [%s]", icon, title, id_short)
+	local left = string.format("%s %s [%s]", icon, title, id_label)
 	local time_str = os.date("%H:%M", timestamp or os.time())
 	local right = time_str
 	local suffix = opts.suffix

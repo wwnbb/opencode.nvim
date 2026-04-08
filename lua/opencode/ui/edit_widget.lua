@@ -22,9 +22,8 @@ function M.get_lines_for_edit(permission_id, edit_state)
 	local highlights = {}
 	local line_num = 0
 
-	-- Header: icon + short permission ID + timestamp
-	local id_short = permission_id:sub(1, 8)
-	local header = widget_base.format_header(icons.pending, "Edit", id_short, edit_state.timestamp)
+	-- Header: icon + permission ID + timestamp
+	local header = widget_base.format_header(icons.pending, "Edit", permission_id, edit_state.timestamp)
 	table.insert(lines, header)
 	widget_base.add_full_line_highlight(highlights, line_num, header, "Title")
 	line_num = line_num + 1
@@ -202,7 +201,6 @@ function M.get_resolved_lines(permission_id, edit_state)
 	local resolution = edit_state_mod.get_resolution(permission_id)
 
 	-- Header with resolution status
-	local id_short = permission_id:sub(1, 8)
 	local resolution_label
 	if resolution == "all_accepted" then
 		resolution_label = "Approved"
@@ -217,7 +215,7 @@ function M.get_resolved_lines(permission_id, edit_state)
 	local header = widget_base.format_header(
 		icons.pending,
 		"Edit",
-		id_short,
+		permission_id,
 		edit_state.timestamp,
 		{ suffix = resolution_label }
 	)

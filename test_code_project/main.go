@@ -16,9 +16,9 @@ func main() {
 	fmt.Println("hello world")
 
 	user := User{
-		ID:    1,
-		Name:  "John Doe",
-		Email: "john@example.com",
+		ID:    42,
+		Name:  "Jane Smith",
+		Email: "jane.smith@example.com",
 	}
 
 	fmt.Printf("User: %+v\n", user)
