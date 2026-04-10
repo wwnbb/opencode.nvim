@@ -1167,7 +1167,12 @@ local function register_defaults()
 		keybind = "<leader>os",
 		action = function()
 			lifecycle.ensure_connected(function()
-				client.list_sessions({ roots = true }, function(err, sessions)
+				local directory = vim.fn.fnamemodify(vim.fn.getcwd(), ":p")
+				if vim.fs and vim.fs.normalize then
+					directory = vim.fs.normalize(directory)
+				end
+
+				client.list_sessions({ roots = true, directory = directory }, function(err, sessions)
 					if err then
 						vim.schedule(function()
 							vim.notify(

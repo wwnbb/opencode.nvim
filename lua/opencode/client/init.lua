@@ -6,6 +6,26 @@ local M = {}
 local http = require("opencode.client.http")
 local sse = require("opencode.client.sse")
 
+---@param directory? string
+---@return string|nil
+local function normalize_directory(directory)
+	local dir = directory
+	if not dir or dir == "" then
+		dir = vim.fn.getcwd()
+	end
+
+	local absolute = vim.fn.fnamemodify(dir, ":p")
+	if absolute == "" then
+		return nil
+	end
+
+	if vim.fs and vim.fs.normalize then
+		return vim.fs.normalize(absolute)
+	end
+
+	return absolute
+end
+
 -- Configure both clients
 ---@param opts table Configuration options
 function M.setup(opts)
@@ -62,20 +82,36 @@ function M.get_session_children(session_id, callback)
 end
 
 -- Create new session
----@param opts? table { parentID?, title? }
+---@param opts? table { parentID?, title?, permission?, directory? }
 ---@param callback function(err, session)
 function M.create_session(opts, callback)
+	opts = opts or {}
+	local directory = normalize_directory(opts.directory)
+
 	-- Ensure opts is an object (not empty array) for JSON encoding
 	-- An empty Lua table {} encodes as [] in JSON, but we need {}
 	-- Use vim.empty_dict() as base and merge any provided opts
 	local body = vim.empty_dict()
-	if opts and next(opts) then
+	if next(opts) then
 		-- Merge non-empty opts into the empty_dict base
 		for k, v in pairs(opts) do
 			body[k] = v
 		end
 	end
-	http.post("/session", body, callback)
+
+	if directory then
+		body.directory = directory
+	end
+
+	http.post("/session", body, function(err, session)
+		if not err or not directory or err.status ~= 400 then
+			callback(err, session)
+			return
+		end
+
+		body.directory = nil
+		http.post("/session", body, callback, { query = { directory = directory } })
+	end)
 end
 
 -- Delete session
