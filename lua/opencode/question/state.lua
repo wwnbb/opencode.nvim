@@ -22,7 +22,9 @@ local active_questions = {}
 ---@param request_id string The question request ID from server
 ---@param session_id string Session ID
 ---@param questions_data table Array of question objects from server
-function M.add_question(request_id, session_id, questions_data)
+---@param opts? table { timestamp?: number }
+function M.add_question(request_id, session_id, questions_data, opts)
+	opts = opts or {}
 	local qstate = {
 		request_id = request_id,
 		session_id = session_id,
@@ -30,7 +32,7 @@ function M.add_question(request_id, session_id, questions_data)
 		current_tab = 1,
 		selections = {},
 		status = "pending",
-		timestamp = os.time(),
+		timestamp = opts.timestamp or os.time(),
 	}
 
 	-- Initialize selections for each question without pre-selecting any option

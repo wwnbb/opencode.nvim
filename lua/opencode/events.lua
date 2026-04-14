@@ -135,6 +135,64 @@ function M.clear(event_type)
 	end
 end
 
+---@param raw_time any
+---@return number|nil
+local function event_time_to_seconds(raw_time)
+	if type(raw_time) ~= "number" then
+		return nil
+	end
+	if raw_time > 100000000000 then
+		return math.floor(raw_time / 1000)
+	end
+	return math.floor(raw_time)
+end
+
+---@param payload table|nil
+---@return string|nil
+local function resolve_event_message_id(payload)
+	if type(payload) ~= "table" then
+		return nil
+	end
+
+	local tool = payload.tool
+	if type(tool) == "table" then
+		local nested = tool.messageID or tool.message_id or tool.messageId
+		if type(nested) == "string" and nested ~= "" then
+			return nested
+		end
+	end
+
+	local direct = payload.messageID or payload.message_id or payload.messageId
+	if type(direct) == "string" and direct ~= "" then
+		return direct
+	end
+
+	return nil
+end
+
+---@param payload table|nil
+---@return string|nil
+local function resolve_event_call_id(payload)
+	if type(payload) ~= "table" then
+		return nil
+	end
+
+	local tool = payload.tool
+	if type(tool) == "table" then
+		local nested = tool.callID or tool.call_id or tool.callId
+		if type(nested) == "string" and nested ~= "" then
+			return nested
+		end
+	end
+
+	local direct = payload.callID or payload.call_id or payload.callId
+	if type(direct) == "string" and direct ~= "" then
+		return direct
+	end
+
+	return nil
+end
+
 -- Get count of listeners for an event type
 ---@param event_type string
 ---@return number Count of registered listeners
@@ -620,7 +678,9 @@ function M.setup_chat_handlers()
 				local permission_type = data.permission or data.type
 				local metadata = data.metadata or {}
 				local current_session = require("opencode.state").get_session()
-				local message_id = data.tool and data.tool.messageID or nil
+				local message_id = resolve_event_message_id(data)
+				local call_id = resolve_event_call_id(data)
+				local timestamp = event_time_to_seconds(data.time and data.time.created)
 
 				-- Guard: only handle edit/diff_review permissions that belong to our session.
 				-- Both editors receive every SSE event from the shared server. Without this
@@ -840,6 +900,7 @@ function M.setup_chat_handlers()
 						metadata = metadata,
 						message_id = message_id,
 						review_mode = review_mode,
+						timestamp = timestamp,
 					})
 
 					-- Stop spinner so user can interact
@@ -861,11 +922,11 @@ function M.setup_chat_handlers()
 
 					-- Resolve tool_input from sync store if tool info is available
 					local tool_input = {}
-					if data.tool and data.tool.messageID and data.tool.callID then
+					if message_id and call_id then
 						local sync = require("opencode.sync")
-						local parts = sync.get_parts(data.tool.messageID)
+						local parts = sync.get_parts(message_id)
 						for _, part in ipairs(parts) do
-							if part.callID == data.tool.callID and part.state and part.state.input then
+							if part.callID == call_id and part.state and part.state.input then
 								tool_input = part.state.input
 								break
 							end
@@ -895,6 +956,7 @@ function M.setup_chat_handlers()
 						always = data.always or {},
 						tool_input = tool_input,
 						message_id = message_id,
+						timestamp = timestamp,
 					})
 
 					-- Stop spinner so user can interact
@@ -1019,8 +1081,9 @@ function M.setup_question_handlers()
 
 			local request_id = data.requestID or data.id
 			local session_id = data.sessionID
-			local message_id = data.tool and data.tool.messageID or nil
+			local message_id = resolve_event_message_id(data)
 			local questions = data.questions
+			local timestamp = event_time_to_seconds(data.time and data.time.created)
 
 			if not request_id or not questions then
 				logger.warn(
@@ -1040,7 +1103,9 @@ function M.setup_question_handlers()
 			session_id = session_id or (current_session and current_session.id) or ""
 
 			-- Store question state (allow questions from subagent/child sessions)
-			question_state.add_question(request_id, session_id, questions)
+			question_state.add_question(request_id, session_id, questions, {
+				timestamp = timestamp,
+			})
 
 			-- Stop the spinner so user can interact with the question
 			local spinner_ok, spinner = pcall(require, "opencode.ui.spinner")
@@ -1055,6 +1120,7 @@ function M.setup_question_handlers()
 				chat.add_question_message(request_id, questions, "pending", {
 					message_id = message_id,
 					source_session_id = session_id,
+					timestamp = timestamp,
 				})
 			end
 

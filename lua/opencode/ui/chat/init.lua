@@ -1753,6 +1753,8 @@ function M.render()
 					end
 				end
 
+				render_widgets_for_message(message.id)
+
 				if force_processing_render or render.should_show_footer(message, is_last_assistant) then
 					ensure_single_blank_separator()
 					local footer_line_idx = #raw_lines
@@ -1766,8 +1768,6 @@ function M.render()
 					end
 					add_raw_line("")
 				end
-
-				render_widgets_for_message(message.id)
 			end
 		end
 	end

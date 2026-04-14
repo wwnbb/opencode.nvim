@@ -118,7 +118,7 @@ end
 ---@param permission_id string
 ---@param session_id string
 ---@param files_data table Array of file data from metadata.files
----@param opts table { data, metadata, message_id }
+---@param opts table { data, metadata, message_id, timestamp }
 function M.add_edit(permission_id, session_id, files_data, opts)
 	opts = opts or {}
 	local review_mode = opts.review_mode or "interactive"
@@ -173,7 +173,7 @@ function M.add_edit(permission_id, session_id, files_data, opts)
 		expanded_files = {},
 		status = "pending",
 		review_mode = review_mode,
-		timestamp = os.time(),
+		timestamp = opts.timestamp or os.time(),
 		data = opts.data or {},
 		metadata = opts.metadata or {},
 	}
