@@ -28,7 +28,7 @@ local OPTION_COUNT = 3
 ---@param permission_id string
 ---@param session_id string
 ---@param permission_type string
----@param opts table { metadata, patterns, always, tool_input, message_id }
+---@param opts table { metadata, patterns, always, tool_input, message_id, timestamp }
 function M.add_permission(permission_id, session_id, permission_type, opts)
 	opts = opts or {}
 	local pstate = {
@@ -43,7 +43,7 @@ function M.add_permission(permission_id, session_id, permission_type, opts)
 		selected_option = 1,
 		status = "pending",
 		reply = nil,
-		timestamp = os.time(),
+		timestamp = opts.timestamp or os.time(),
 	}
 
 	active_permissions[permission_id] = pstate
