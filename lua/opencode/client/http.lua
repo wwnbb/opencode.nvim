@@ -34,6 +34,13 @@ local function merge_headers(additional)
 	headers["Content-Type"] = "application/json"
 	headers["Accept"] = "application/json"
 
+	-- Always send the current working directory so the server uses
+	-- the correct project context for this Neovim instance
+	local cwd = vim.fn.getcwd()
+	if cwd and cwd ~= "" then
+		headers["x-opencode-directory"] = cwd
+	end
+
 	if additional then
 		for k, v in pairs(additional) do
 			headers[k] = v

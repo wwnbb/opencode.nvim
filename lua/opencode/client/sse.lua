@@ -257,11 +257,28 @@ function M.connect()
 		headers.Authorization = auth
 	end
 
+	-- Send current working directory so the server scopes this
+	-- SSE stream to the correct project context
+	local cwd = vim.fn.getcwd()
+	if cwd and cwd ~= "" then
+		headers["x-opencode-directory"] = cwd
+	end
+
+	-- Build endpoint path with directory query param for robustness
+	local endpoint = M.opts.endpoint or "/event"
+	if cwd and cwd ~= "" then
+		-- Percent-encode the directory for safe URL query param
+		local encoded = cwd:gsub("[^A-Za-z0-9%-_.~]", function(c)
+			return string.format("%%%02X", c:byte())
+		end)
+		endpoint = endpoint .. "?directory=" .. encoded
+	end
+
 	local stream, err = transport.open_stream({
 		host = M.opts.host,
 		port = M.opts.port,
 		method = "GET",
-		path = M.opts.endpoint or "/event",
+		path = endpoint,
 		headers = headers,
 		timeout = M.opts.connect_timeout,
 		on_headers = function(status, _)
