@@ -82,11 +82,10 @@ function M.get_session_children(session_id, callback)
 end
 
 -- Create new session
----@param opts? table { parentID?, title?, permission?, directory? }
+---@param opts? table { parentID?, title?, permission? }
 ---@param callback function(err, session)
 function M.create_session(opts, callback)
 	opts = opts or {}
-	local directory = normalize_directory(opts.directory)
 
 	-- Ensure opts is an object (not empty array) for JSON encoding
 	-- An empty Lua table {} encodes as [] in JSON, but we need {}
@@ -99,19 +98,15 @@ function M.create_session(opts, callback)
 		end
 	end
 
+	-- The x-opencode-directory header is sent on every request by http.lua,
+	-- so the server middleware will set Instance.directory from that header.
+	-- We also pass directory as a query param for maximum compatibility.
+	local directory = normalize_directory(nil)
 	if directory then
-		body.directory = directory
-	end
-
-	http.post("/session", body, function(err, session)
-		if not err or not directory or err.status ~= 400 then
-			callback(err, session)
-			return
-		end
-
-		body.directory = nil
 		http.post("/session", body, callback, { query = { directory = directory } })
-	end)
+	else
+		http.post("/session", body, callback)
+	end
 end
 
 -- Delete session
