@@ -1400,6 +1400,11 @@ function M.render()
 	local rendered_edit_ids = {}
 	local next_stream_blocks = {}
 	state.spinner_footer_line = nil
+	local widget_order = {
+		question = 1,
+		permission = 2,
+		edit = 3,
+	}
 
 	local function render_single_question(message)
 		local qstate = question_state.get_question(message.request_id)
@@ -1512,45 +1517,8 @@ function M.render()
 		end
 	end
 
-	local function render_widgets_for_message(message_id)
-		local widget_items = {}
-		local widget_order = {
-			question = 1,
-			permission = 2,
-			edit = 3,
-		}
-
-		for _, message in ipairs(state.messages) do
-			if message.type == "question" and message.message_id == message_id then
-				table.insert(widget_items, {
-					kind = "question",
-					id = message.request_id,
-					timestamp = message.timestamp or 0,
-					data = message,
-				})
-			end
-		end
-
-		local perms = permission_state.get_permissions_for_message(message_id)
-		for _, pstate in ipairs(perms) do
-			table.insert(widget_items, {
-				kind = "permission",
-				id = pstate.permission_id,
-				timestamp = pstate.timestamp or 0,
-				data = pstate,
-			})
-		end
-
-		local edits = edit_state.get_edits_for_message(message_id)
-		for _, estate in ipairs(edits) do
-			table.insert(widget_items, {
-				kind = "edit",
-				id = estate.permission_id,
-				timestamp = estate.timestamp or 0,
-				data = estate,
-			})
-		end
-
+	---@param widget_items table
+	local function render_widget_items(widget_items)
 		table.sort(widget_items, function(a, b)
 			if a.timestamp ~= b.timestamp then
 				return a.timestamp < b.timestamp
@@ -1581,6 +1549,81 @@ function M.render()
 				end
 			end
 		end
+	end
+
+	local function render_widgets_for_message(message_id)
+		local widget_items = {}
+
+		for _, message in ipairs(state.messages) do
+			if message.type == "question" and message.message_id == message_id then
+				table.insert(widget_items, {
+					kind = "question",
+					id = message.request_id,
+					timestamp = message.timestamp or 0,
+					data = message,
+				})
+			end
+		end
+
+		local perms = permission_state.get_permissions_for_message(message_id)
+		for _, pstate in ipairs(perms) do
+			if not pstate.call_id then
+				table.insert(widget_items, {
+					kind = "permission",
+					id = pstate.permission_id,
+					timestamp = pstate.timestamp or 0,
+					data = pstate,
+				})
+			end
+		end
+
+		local edits = edit_state.get_edits_for_message(message_id)
+		for _, estate in ipairs(edits) do
+			if not estate.call_id then
+				table.insert(widget_items, {
+					kind = "edit",
+					id = estate.permission_id,
+					timestamp = estate.timestamp or 0,
+					data = estate,
+				})
+			end
+		end
+
+		render_widget_items(widget_items)
+	end
+
+	local function render_widgets_for_tool_call(message_id, call_id)
+		if type(call_id) ~= "string" or call_id == "" then
+			return
+		end
+
+		local widget_items = {}
+
+		local perms = permission_state.get_permissions_for_message(message_id)
+		for _, pstate in ipairs(perms) do
+			if pstate.call_id == call_id then
+				table.insert(widget_items, {
+					kind = "permission",
+					id = pstate.permission_id,
+					timestamp = pstate.timestamp or 0,
+					data = pstate,
+				})
+			end
+		end
+
+		local edits = edit_state.get_edits_for_message(message_id)
+		for _, estate in ipairs(edits) do
+			if estate.call_id == call_id then
+				table.insert(widget_items, {
+					kind = "edit",
+					id = estate.permission_id,
+					timestamp = estate.timestamp or 0,
+					data = estate,
+				})
+			end
+		end
+
+		render_widget_items(widget_items)
 	end
 
 	-- Breadcrumb navigation (when inside a child session)
@@ -1754,6 +1797,8 @@ function M.render()
 								tool_part = tool_part,
 							}
 						end
+
+						render_widgets_for_tool_call(message.id, tool_part.callID)
 					end
 				end
 

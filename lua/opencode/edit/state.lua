@@ -11,6 +11,7 @@ local active_edits = {}
 --   permission_id = string,
 --   session_id = string,
 --   message_id = string|nil,
+--   call_id = string|nil,
 --   files = [{
 --     index, filepath, relative_path,
 --     before, after, change_id,
@@ -119,7 +120,7 @@ end
 ---@param permission_id string
 ---@param session_id string
 ---@param files_data table Array of file data from metadata.files
----@param opts table { data, metadata, message_id, timestamp }
+---@param opts table { data, metadata, message_id, call_id, timestamp }
 function M.add_edit(permission_id, session_id, files_data, opts)
 	opts = opts or {}
 	local review_mode = opts.review_mode or "interactive"
@@ -169,6 +170,7 @@ function M.add_edit(permission_id, session_id, files_data, opts)
 		permission_id = permission_id,
 		session_id = session_id,
 		message_id = opts.message_id,
+		call_id = opts.call_id,
 		files = files,
 		selected_file = 1,
 		expanded_files = {},

@@ -899,6 +899,7 @@ function M.setup_chat_handlers()
 						data = data,
 						metadata = metadata,
 						message_id = message_id,
+						call_id = call_id,
 						review_mode = review_mode,
 						timestamp = timestamp,
 					})
@@ -956,6 +957,7 @@ function M.setup_chat_handlers()
 						always = data.always or {},
 						tool_input = tool_input,
 						message_id = message_id,
+						call_id = call_id,
 						timestamp = timestamp,
 					})
 
