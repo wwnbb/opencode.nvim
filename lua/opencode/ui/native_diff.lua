@@ -27,6 +27,70 @@ if not logger_ok then
 	logger = { debug = function() end, info = function() end, warn = function() end }
 end
 
+local function get_note()
+	if not state.edit_id then
+		return ""
+	end
+
+	local ok, edit_state = pcall(require, "opencode.edit.state")
+	if not ok then
+		return ""
+	end
+
+	local estate = edit_state.get_edit(state.edit_id)
+	return estate and vim.trim(estate.message or "") or ""
+end
+
+local function focus_diff_window(winid)
+	local target = winid
+	if not target or not vim.api.nvim_win_is_valid(target) then
+		target = state.original_win
+	end
+	if (not target or not vim.api.nvim_win_is_valid(target)) and state.proposed_win and vim.api.nvim_win_is_valid(state.proposed_win) then
+		target = state.proposed_win
+	end
+	if target and vim.api.nvim_win_is_valid(target) then
+		vim.api.nvim_set_current_win(target)
+	end
+end
+
+local function edit_note()
+	if not state.edit_id then
+		vim.notify("No edit note target available", vim.log.levels.WARN)
+		return
+	end
+
+	local ok, edit_state = pcall(require, "opencode.edit.state")
+	if not ok then
+		return
+	end
+
+	local estate = edit_state.get_edit(state.edit_id)
+	if not estate or estate.status ~= "pending" then
+		return
+	end
+
+	local input = require("opencode.ui.input")
+	local current = vim.api.nvim_get_current_win()
+	local function finish(text)
+		edit_state.set_message(state.edit_id, text or "")
+		local ok_edits, chat_edits = pcall(require, "opencode.ui.chat.edits")
+		if ok_edits and chat_edits.rerender_edit then
+			chat_edits.rerender_edit(state.edit_id)
+		end
+		focus_diff_window(current)
+	end
+
+	input.show({
+		winid = current,
+		text = estate.message or "",
+		persist_pending = false,
+		add_history = false,
+		on_send = finish,
+		on_cancel = finish,
+	})
+end
+
 --- Get the filetype from a file path for syntax highlighting
 ---@param filepath string
 ---@return string
@@ -75,7 +139,8 @@ local function send_reply(reply)
 	end
 
 	local client = require("opencode.client")
-	client.respond_permission(state.permission_id, reply, {}, function(err, result)
+	local message = get_note()
+	client.respond_permission(state.permission_id, reply, { message = message ~= "" and message or nil }, function(err, result)
 		vim.schedule(function()
 			if err then
 				vim.notify("Failed to send reply to server: " .. vim.inspect(err), vim.log.levels.WARN)
@@ -119,6 +184,8 @@ function M.close()
 	state.tab_page = nil
 	state.file_snapshots = {}
 	state.previous_winid = nil
+	state.edit_id = nil
+	state.edit_file_index = nil
 
 	-- Restore focus to previous window
 	vim.schedule(function()
@@ -204,6 +271,10 @@ local function setup_keymaps()
 			M._confirm_current()
 		end, opts)
 
+		vim.keymap.set("n", "m", function()
+			edit_note()
+		end, opts)
+
 		-- <C-p>: Go to previous file
 		vim.keymap.set("n", "<C-p>", function()
 			if state.current_file_index > 1 then
@@ -241,6 +312,7 @@ local function setup_keymaps()
 				"  <C-x>    - Reject current file (revert to original and advance)",
 				"  <C-n>    - Same as <C-a> (confirm + next)",
 				"  <C-p>    - Go to previous file",
+				"  m        - Add or edit note",
 				"  q        - Reject ALL files and close",
 				"  ?        - Show this help",
 				"",
@@ -362,14 +434,14 @@ function M._show_file(index)
 	local status_msg
 	if total > 1 then
 		status_msg = string.format(
-			"[%d/%d] %s | <C-a>=confirm  <C-x>=reject  do=get hunk  ?=help",
+			"[%d/%d] %s | <C-a>=confirm  <C-x>=reject  m=note  do=get hunk  ?=help",
 			index,
 			total,
 			relative
 		)
 	else
 		status_msg = string.format(
-			"%s | <C-a>=confirm  <C-x>=reject  do=get hunk  ?=help",
+			"%s | <C-a>=confirm  <C-x>=reject  m=note  do=get hunk  ?=help",
 			relative
 		)
 	end
@@ -487,7 +559,18 @@ function M._reject_all()
 	end
 
 	-- Send rejection reply
-	send_reply("reject")
+	if state.edit_id then
+		local ok_state, edit_state = pcall(require, "opencode.edit.state")
+		if ok_state then
+			edit_state.reject_all(state.edit_id)
+		end
+		local ok_edits, chat_edits = pcall(require, "opencode.ui.chat.edits")
+		if ok_edits and chat_edits.finalize_edit then
+			chat_edits.finalize_edit(state.edit_id)
+		end
+	else
+		send_reply("reject")
+	end
 
 	-- Close the diff view
 	close_diff_windows()
@@ -508,7 +591,9 @@ function M._advance_or_finish()
 		end)
 	else
 		-- All files reviewed — send approval reply and close
-		send_reply("once")
+		if not state.edit_id then
+			send_reply("once")
+		end
 
 		vim.schedule(function()
 			M.close()

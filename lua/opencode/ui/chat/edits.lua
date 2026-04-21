@@ -734,7 +734,8 @@ function M.finalize_edit(permission_id)
 	local resolution = edit_state.get_resolution(permission_id)
 	local reply = (resolution == "all_rejected") and "reject" or "once"
 	local client = require("opencode.client")
-	client.respond_permission(permission_id, reply, {}, function(err)
+	local message = vim.trim((estate and estate.message) or "")
+	client.respond_permission(permission_id, reply, { message = message ~= "" and message or nil }, function(err)
 		vim.schedule(function()
 			if err then
 				vim.notify("Failed to send edit reply: " .. vim.inspect(err), vim.log.levels.ERROR)
@@ -900,6 +901,37 @@ function M.handle_edit_resolve_all()
 	else
 		M.rerender_edit(eid)
 	end
+end
+
+function M.handle_edit_message()
+	local eid = M.get_edit_at_cursor()
+	if not eid then
+		return
+	end
+
+	local estate = edit_state.get_edit(eid)
+	if not estate or estate.status ~= "pending" then
+		return
+	end
+
+	local input_ui = require("opencode.ui.input")
+	local chat = require("opencode.ui.chat")
+
+	local function finish(text)
+		edit_state.set_message(eid, text or "")
+		M.rerender_edit(eid)
+		chat.focus()
+	end
+
+	input_ui.show({
+		winid = state.winid,
+		float_dims = state.float_dims,
+		text = estate.message or "",
+		persist_pending = false,
+		add_history = false,
+		on_send = finish,
+		on_cancel = finish,
+	})
 end
 
 function M.handle_edit_toggle_diff()
