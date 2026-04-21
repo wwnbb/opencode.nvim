@@ -21,6 +21,8 @@ local state = {
 	on_send = nil,
 	on_cancel = nil,
 	close_on_send = true,
+	persist_pending = true,
+	add_history = true,
 	config = nil,
 	layout = nil,
 }
@@ -394,8 +396,12 @@ local function setup_keymaps(bufnr, cfg)
 	local function send_message()
 		local text = get_input_text()
 		if text ~= "" then
-			add_to_history(text)
-			history.pending = nil
+			if state.add_history then
+				add_to_history(text)
+			end
+			if state.persist_pending then
+				history.pending = nil
+			end
 			vim.api.nvim_buf_set_lines(state.bufnr, 0, -1, false, { "" })
 			vim.api.nvim_win_set_cursor(state.winid, { 1, 0 })
 			resize_input()
@@ -420,8 +426,9 @@ local function setup_keymaps(bufnr, cfg)
 
 	-- Close input
 	local function close_input()
+		local text = get_input_text()
 		if state.on_cancel then
-			state.on_cancel()
+			state.on_cancel(text)
 		end
 		M.close()
 	end
@@ -506,6 +513,8 @@ function M.show(opts)
 	state.on_send = opts.on_send
 	state.on_cancel = opts.on_cancel or function() end
 	state.close_on_send = opts.close_on_send ~= false
+	state.persist_pending = opts.persist_pending ~= false
+	state.add_history = opts.add_history ~= false
 
 	-- Load history on first show
 	if #history.entries == 0 then
@@ -772,8 +781,12 @@ function M.show(opts)
 	setup_keymaps(state.bufnr, cfg)
 
 	-- Re-populate buffer with any unsent text from the previous open
-	if history.pending then
-		local lines = vim.split(history.pending, "\n")
+	local text = opts.text
+	if text == nil then
+		text = history.pending
+	end
+	if text and text ~= "" then
+		local lines = vim.split(text, "\n")
 		vim.api.nvim_buf_set_lines(state.bufnr, 0, -1, false, lines)
 		vim.schedule(resize_input)
 	end
@@ -789,7 +802,7 @@ function M.close(save_draft)
 		return
 	end
 
-	if save_draft ~= false then
+	if save_draft ~= false and state.persist_pending then
 		if state.bufnr and vim.api.nvim_buf_is_valid(state.bufnr) then
 			local text = get_input_text()
 			history.pending = text ~= "" and text or nil
@@ -811,6 +824,8 @@ function M.close(save_draft)
 	state.info_popup = nil
 	state.info_bufnr = nil
 	state.layout = nil
+	state.persist_pending = true
+	state.add_history = true
 
 	-- Return to normal mode
 	vim.cmd("stopinsert")

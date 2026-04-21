@@ -12,11 +12,22 @@ local active_questions = {}
 --   session_id = string,
 --   questions = array of question objects,
 --   current_tab = number (current question index),
---   selections = { [tab_index] = { selected_indices = {}, custom_input = "", is_answered = false, ready_to_advance = false } },
+--   selections = { [tab_index] = { selected_indices = {}, custom_input = "", message = "", is_answered = false, ready_to_advance = false } },
 --   status = "pending" | "answered" | "rejected" | "confirming",
 --   last_tab_before_confirm = number (tab to return to on cancel),
 --   timestamp = number,
 -- }
+
+---@param text string|nil
+---@return string
+local function format_message_answer(text)
+	local message = vim.trim(text or "")
+	if message == "" then
+		return ""
+	end
+
+	return "Message: " .. message:gsub("%s*\n%s*", " / ")
+end
 
 -- Add a new question to track
 ---@param request_id string The question request ID from server
@@ -40,6 +51,7 @@ function M.add_question(request_id, session_id, questions_data, opts)
 		qstate.selections[i] = {
 			selected_indices = {},
 			custom_input = "",
+			message = "",
 			is_answered = false,
 			ready_to_advance = false,
 		}
@@ -113,6 +125,25 @@ function M.set_custom_input(request_id, tab_index, text)
 	if text and text ~= "" then
 		qstate.selections[tab_index].is_answered = true
 	end
+	return true
+end
+
+-- Set message for a specific question tab
+---@param request_id string
+---@param tab_index number
+---@param text string
+function M.set_message(request_id, tab_index, text)
+	local qstate = active_questions[request_id]
+	if not qstate then
+		return false
+	end
+
+	if not qstate.selections[tab_index] then
+		return false
+	end
+
+	qstate.selections[tab_index].message = vim.trim(text or "")
+	qstate.selections[tab_index].ready_to_advance = false
 	return true
 end
 
@@ -403,6 +434,7 @@ function M.set_confirming(request_id)
 	qstate.selections[temp_tab_idx] = {
 		selected_indices = { 1 }, -- Default to "Yes"
 		custom_input = "",
+		message = "",
 		is_answered = true,
 	}
 	qstate.current_tab = temp_tab_idx
@@ -473,6 +505,11 @@ function M.get_answers(request_id)
 		-- Add custom input if present
 		if selection.custom_input and selection.custom_input ~= "" then
 			table.insert(answer, selection.custom_input)
+		end
+
+		local message = format_message_answer(selection.message)
+		if message ~= "" then
+			table.insert(answer, message)
 		end
 
 		-- Default to empty answer if nothing selected
