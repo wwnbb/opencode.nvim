@@ -58,6 +58,12 @@ local function normalize_path(filepath)
 	return filepath
 end
 
+---@param title string
+---@return string
+local function summary_line(title)
+	return "# " .. title
+end
+
 ---@param permission_type string
 ---@param tool_input table
 ---@param perm_state? table
@@ -65,6 +71,21 @@ end
 local function get_permission_path(permission_type, tool_input, perm_state)
 	local metadata = (perm_state and perm_state.metadata) or {}
 	local patterns = (perm_state and perm_state.patterns) or {}
+	local cwd = normalize_path(vim.fn.getcwd())
+
+	if permission_type == "bash" then
+		return normalize_path(first_non_empty(
+			tool_input.workdir,
+			tool_input.cwd,
+			tool_input.directory,
+			tool_input.path,
+			metadata.workdir,
+			metadata.cwd,
+			metadata.directory,
+			metadata.path,
+			cwd
+		))
+	end
 
 	if permission_type == "read" then
 		return normalize_path(
@@ -91,7 +112,8 @@ local function get_permission_path(permission_type, tool_input, perm_state)
 			tool_input.path,
 			metadata.path,
 			tool_input.directory,
-			metadata.directory
+			metadata.directory,
+			cwd
 		))
 	end
 
@@ -104,7 +126,21 @@ local function get_permission_path(permission_type, tool_input, perm_state)
 		))
 	end
 
-	return ""
+	return normalize_path(first_non_empty(
+		tool_input.file_path,
+		tool_input.filePath,
+		tool_input.filepath,
+		tool_input.file,
+		tool_input.path,
+		tool_input.directory,
+		metadata.file_path,
+		metadata.filePath,
+		metadata.filepath,
+		metadata.file,
+		metadata.path,
+		metadata.directory,
+		patterns[1]
+	))
 end
 
 ---@param lines table
@@ -139,6 +175,22 @@ local function with_message_lines(lines, message)
 	return with_detail_lines(lines, "Message", vim.trim(message or ""))
 end
 
+---@param lines table
+---@param permission_type string
+---@param tool_input table
+---@param perm_state? table
+---@return table
+local function with_common_tool_details(lines, permission_type, tool_input, perm_state)
+	lines = with_detail_lines(lines, "Command", tool_input.command or "")
+	lines = with_path_line(lines, get_permission_path(permission_type, tool_input, perm_state))
+	lines = with_detail_lines(lines, "Pattern", tool_input.pattern or "")
+	lines = with_detail_lines(lines, "Query", tool_input.query or "")
+	lines = with_detail_lines(lines, "URL", tool_input.url or "")
+	lines = with_detail_lines(lines, "Agent", tool_input.subagent_type or "")
+	lines = with_detail_lines(lines, "Description", tool_input.description or "")
+	return lines
+end
+
 -- Get description lines for a permission based on type
 ---@param permission_type string
 ---@param tool_input table
@@ -148,69 +200,63 @@ local function get_permission_description(permission_type, tool_input, perm_stat
 	tool_input = tool_input or {}
 
 	if permission_type == "bash" then
-		local desc = tool_input.description or "Run bash command"
-		local cmd = tool_input.command or ""
-		local lines = { "# " .. desc }
-		if cmd ~= "" then
-			table.insert(lines, "  $ " .. cmd)
+		local lines = with_common_tool_details({ summary_line("Bash") }, permission_type, tool_input, perm_state)
+		if #lines == 1 then
+			lines = with_detail_lines(lines, "Description", "Run bash command")
 		end
 		return with_message_lines(lines, perm_state and perm_state.message)
 	elseif permission_type == "read" then
-		local path = get_permission_path(permission_type, tool_input, perm_state)
-		if path == "" then
-			return with_message_lines({ "→ Read" }, perm_state and perm_state.message)
-		end
-		return with_message_lines(with_path_line({ "→ Read" }, path), perm_state and perm_state.message)
-	elseif permission_type == "glob" then
-		local pattern = tool_input.pattern or ""
-		return with_message_lines(with_path_line(
-			{ string.format('✱ Glob "%s"', pattern) },
-			get_permission_path(permission_type, tool_input, perm_state)
-		), perm_state and perm_state.message)
-	elseif permission_type == "grep" then
-		local pattern = tool_input.pattern or ""
-		return with_message_lines(with_path_line(
-			{ string.format('✱ Grep "%s"', pattern) },
-			get_permission_path(permission_type, tool_input, perm_state)
-		), perm_state and perm_state.message)
-	elseif permission_type == "list" then
-		local path = get_permission_path(permission_type, tool_input, perm_state)
-		if path == "" then
-			return with_message_lines({ "→ List" }, perm_state and perm_state.message)
-		end
-		return with_message_lines(with_path_line({ "→ List" }, path), perm_state and perm_state.message)
-	elseif permission_type == "webfetch" then
-		local url = tool_input.url or ""
-		return with_message_lines({ "%% WebFetch " .. url }, perm_state and perm_state.message)
-	elseif permission_type == "websearch" then
-		local query = tool_input.query or ""
-		return with_message_lines({ string.format('◈ Web Search "%s"', query) }, perm_state and perm_state.message)
-	elseif permission_type == "codesearch" then
-		local query = tool_input.query or ""
-		return with_message_lines({ string.format('◇ Code Search "%s"', query) }, perm_state and perm_state.message)
-	elseif permission_type == "external_directory" then
-		local path = get_permission_path(permission_type, tool_input, perm_state)
-		if path == "" then
-			return with_message_lines({ "← Access external directory" }, perm_state and perm_state.message)
-		end
 		return with_message_lines(
-			with_path_line({ "← Access external directory" }, path),
+			with_common_tool_details({ summary_line("Read") }, permission_type, tool_input, perm_state),
+			perm_state and perm_state.message
+		)
+	elseif permission_type == "glob" then
+		return with_message_lines(
+			with_common_tool_details({ summary_line("Glob") }, permission_type, tool_input, perm_state),
+			perm_state and perm_state.message
+		)
+	elseif permission_type == "grep" then
+		return with_message_lines(
+			with_common_tool_details({ summary_line("Grep") }, permission_type, tool_input, perm_state),
+			perm_state and perm_state.message
+		)
+	elseif permission_type == "list" then
+		return with_message_lines(
+			with_common_tool_details({ summary_line("List") }, permission_type, tool_input, perm_state),
+			perm_state and perm_state.message
+		)
+	elseif permission_type == "webfetch" then
+		return with_message_lines(
+			with_common_tool_details({ summary_line("WebFetch") }, permission_type, tool_input, perm_state),
+			perm_state and perm_state.message
+		)
+	elseif permission_type == "websearch" then
+		return with_message_lines(
+			with_common_tool_details({ summary_line("Web Search") }, permission_type, tool_input, perm_state),
+			perm_state and perm_state.message
+		)
+	elseif permission_type == "codesearch" then
+		return with_message_lines(
+			with_common_tool_details({ summary_line("Code Search") }, permission_type, tool_input, perm_state),
+			perm_state and perm_state.message
+		)
+	elseif permission_type == "external_directory" then
+		return with_message_lines(
+			with_common_tool_details({ summary_line("External directory") }, permission_type, tool_input, perm_state),
 			perm_state and perm_state.message
 		)
 	elseif permission_type == "diff_review" then
-		return with_message_lines({ "Review file changes" }, perm_state and perm_state.message)
+		return with_message_lines({ summary_line("Diff review") }, perm_state and perm_state.message)
 	elseif permission_type == "doom_loop" then
-		return with_message_lines({ "⟳ Continue after repeated failures" }, perm_state and perm_state.message)
+		return with_message_lines({ summary_line("Continue after repeated failures") }, perm_state and perm_state.message)
 	elseif permission_type == "task" then
-		local subagent = tool_input.subagent_type or "Task"
-		local desc = tool_input.description or ""
-		local lines = { "# " .. subagent:sub(1, 1):upper() .. subagent:sub(2) .. " Task" }
-		if desc ~= "" then
-			table.insert(lines, "◉ " .. desc)
-		end
+		local lines = with_common_tool_details({ summary_line("Task") }, permission_type, tool_input, perm_state)
 		return with_message_lines(lines, perm_state and perm_state.message)
 	else
-		return with_message_lines({ "Call tool " .. permission_type }, perm_state and perm_state.message)
+		return with_message_lines(
+			with_common_tool_details({ summary_line(permission_type) }, permission_type, tool_input, perm_state),
+			perm_state and perm_state.message
+		)
 	end
 end
 
@@ -311,7 +357,7 @@ function M.get_approved_lines(permission_id, perm_state)
 	line_num = line_num + 1
 
 	local desc_lines = get_permission_description(perm_state.permission_type, perm_state.tool_input, perm_state)
-	local summary = desc_lines[1] or perm_state.permission_type
+	local summary = (desc_lines[1] or perm_state.permission_type):gsub("^#%s*", "")
 	local display = summary .. " - " .. reply_label
 	table.insert(lines, display)
 	table.insert(highlights, {
@@ -357,7 +403,7 @@ function M.get_rejected_lines(permission_id, perm_state)
 	line_num = line_num + 1
 
 	local desc_lines = get_permission_description(perm_state.permission_type, perm_state.tool_input, perm_state)
-	local summary = desc_lines[1] or perm_state.permission_type
+	local summary = (desc_lines[1] or perm_state.permission_type):gsub("^#%s*", "")
 	local display = summary .. " - Rejected"
 	table.insert(lines, display)
 	table.insert(highlights, {
