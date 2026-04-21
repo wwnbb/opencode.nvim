@@ -13,6 +13,28 @@ local icons = {
 	unselected = " ",
 }
 
+---@param lines table
+---@param highlights table
+---@param line_num number
+---@param message string|nil
+---@return number
+local function append_message_lines(lines, highlights, line_num, message)
+	local text = vim.trim(message or "")
+	if text == "" then
+		return line_num
+	end
+
+	for i, part in ipairs(vim.split(text, "\n", { plain = true })) do
+		local prefix = i == 1 and "  Message: " or "           "
+		local line = prefix .. part
+		table.insert(lines, line)
+		widget_base.add_full_line_highlight(highlights, line_num, line, "Comment")
+		line_num = line_num + 1
+	end
+
+	return line_num
+end
+
 --- Get formatted lines for a pending (interactive) edit widget
 ---@param permission_id string
 ---@param edit_state table Edit state from edit/state.lua
@@ -31,6 +53,12 @@ function M.get_lines_for_edit(permission_id, edit_state)
 	-- Separator
 	table.insert(lines, widget_base.separator())
 	line_num = line_num + 1
+
+	if edit_state.message and edit_state.message ~= "" then
+		line_num = append_message_lines(lines, highlights, line_num, edit_state.message)
+		table.insert(lines, "")
+		line_num = line_num + 1
+	end
 
 	-- File list
 	local first_file_line = line_num
@@ -167,8 +195,8 @@ function M.get_lines_for_edit(permission_id, edit_state)
 	local is_readonly = edit_state.review_mode == "readonly"
 
 	-- Keybinding hint line
-	local hint = is_readonly and "<C-a> approve  <C-x> reject  = inline diff"
-		or "<C-a> accept  <C-x> reject  <C-m> resolve  = inline diff  dv diff split  dt diff tab"
+	local hint = is_readonly and "<C-a> approve  <C-x> reject  = inline diff  m message"
+		or "<C-a> accept  <C-x> reject  <C-m> resolve  = inline diff  m message  dv diff split  dt diff tab"
 	table.insert(lines, hint)
 	widget_base.add_full_line_highlight(highlights, line_num, hint, "Comment")
 	line_num = line_num + 1
@@ -241,6 +269,12 @@ function M.get_resolved_lines(permission_id, edit_state)
 	-- Separator
 	table.insert(lines, widget_base.separator())
 	line_num = line_num + 1
+
+	if edit_state.message and edit_state.message ~= "" then
+		line_num = append_message_lines(lines, highlights, line_num, edit_state.message)
+		table.insert(lines, "")
+		line_num = line_num + 1
+	end
 
 	-- Compact file list with status
 	for _, file in ipairs(edit_state.files) do

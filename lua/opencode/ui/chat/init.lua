@@ -2312,6 +2312,12 @@ function M.handle_widget_message()
 		return
 	end
 
+	local edit_id = chat_edits.get_edit_at_cursor()
+	if edit_id then
+		chat_edits.handle_edit_message()
+		return
+	end
+
 	vim.api.nvim_feedkeys("m", "n", false)
 end
 

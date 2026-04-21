@@ -21,6 +21,7 @@ local active_edits = {}
 --   selected_file = 1,        -- cursor position (1-based)
 --   expanded_files = {},       -- set of file indices with inline diff visible
 --   status = "pending"|"sent", -- overall status
+--   message = string,            -- optional user note sent with final reply
 --   timestamp = number,
 --   data = table,              -- original event data for reference
 --   metadata = table,
@@ -172,6 +173,7 @@ function M.add_edit(permission_id, session_id, files_data, opts)
 		selected_file = 1,
 		expanded_files = {},
 		status = "pending",
+		message = "",
 		review_mode = review_mode,
 		timestamp = opts.timestamp or os.time(),
 		data = opts.data or {},
@@ -326,6 +328,20 @@ function M.move_selection_to(permission_id, index)
 	end
 
 	estate.selected_file = index
+	return true
+end
+
+--- Set message for an edit request
+---@param permission_id string
+---@param text string
+---@return boolean
+function M.set_message(permission_id, text)
+	local estate = active_edits[permission_id]
+	if not estate then
+		return false
+	end
+
+	estate.message = vim.trim(text or "")
 	return true
 end
 
