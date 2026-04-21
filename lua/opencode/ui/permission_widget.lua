@@ -18,6 +18,19 @@ local OPTION_LABELS = {
 	"Reject",
 }
 
+---@param ... any
+---@return string
+local function first_non_empty(...)
+	for i = 1, select("#", ...) do
+		local value = select(i, ...)
+		if type(value) == "string" and value ~= "" then
+			return value
+		end
+	end
+
+	return ""
+end
+
 -- Normalize filepath to cwd-relative or ~-prefixed
 ---@param filepath string
 ---@return string
@@ -45,6 +58,67 @@ local function normalize_path(filepath)
 	return filepath
 end
 
+---@param permission_type string
+---@param tool_input table
+---@param perm_state? table
+---@return string
+local function get_permission_path(permission_type, tool_input, perm_state)
+	local metadata = (perm_state and perm_state.metadata) or {}
+	local patterns = (perm_state and perm_state.patterns) or {}
+
+	if permission_type == "read" then
+		return normalize_path(
+			first_non_empty(
+				tool_input.file_path,
+				tool_input.filePath,
+				tool_input.filepath,
+				tool_input.file,
+				tool_input.path,
+				tool_input.pattern,
+				metadata.file_path,
+				metadata.filePath,
+				metadata.filepath,
+				metadata.file,
+				metadata.path,
+				metadata.pattern,
+				patterns[1]
+			)
+		)
+	end
+
+	if permission_type == "glob" or permission_type == "grep" or permission_type == "list" then
+		return normalize_path(first_non_empty(
+			tool_input.path,
+			metadata.path,
+			tool_input.directory,
+			metadata.directory
+		))
+	end
+
+	if permission_type == "external_directory" then
+		return normalize_path(first_non_empty(
+			tool_input.directory,
+			tool_input.path,
+			metadata.directory,
+			metadata.path
+		))
+	end
+
+	return ""
+end
+
+---@param lines table
+---@param path string
+---@return table
+local function with_path_line(lines, path)
+	if path == "" then
+		return lines
+	end
+
+	table.insert(lines, "  Path: " .. path)
+	return lines
+end
+
 -- Get description lines for a permission based on type
 ---@param permission_type string
 ---@param tool_input table
@@ -62,37 +136,29 @@ local function get_permission_description(permission_type, tool_input, perm_stat
 		end
 		return lines
 	elseif permission_type == "read" then
-		local metadata = (perm_state and perm_state.metadata) or {}
-		local patterns = (perm_state and perm_state.patterns) or {}
-		local path = normalize_path(
-			tool_input.file_path
-				or tool_input.filePath
-				or tool_input.filepath
-				or tool_input.file
-				or tool_input.path
-				or tool_input.pattern
-				or metadata.file_path
-				or metadata.filePath
-				or metadata.filepath
-				or metadata.file
-				or metadata.path
-				or metadata.pattern
-				or patterns[1]
-				or ""
-		)
+		local path = get_permission_path(permission_type, tool_input, perm_state)
 		if path == "" then
 			return { "→ Read" }
 		end
-		return { "→ Read " .. path }
+		return with_path_line({ "→ Read" }, path)
 	elseif permission_type == "glob" then
 		local pattern = tool_input.pattern or ""
-		return { string.format('✱ Glob "%s"', pattern) }
+		return with_path_line(
+			{ string.format('✱ Glob "%s"', pattern) },
+			get_permission_path(permission_type, tool_input, perm_state)
+		)
 	elseif permission_type == "grep" then
 		local pattern = tool_input.pattern or ""
-		return { string.format('✱ Grep "%s"', pattern) }
+		return with_path_line(
+			{ string.format('✱ Grep "%s"', pattern) },
+			get_permission_path(permission_type, tool_input, perm_state)
+		)
 	elseif permission_type == "list" then
-		local path = normalize_path(tool_input.path or "")
-		return { "→ List " .. path }
+		local path = get_permission_path(permission_type, tool_input, perm_state)
+		if path == "" then
+			return { "→ List" }
+		end
+		return with_path_line({ "→ List" }, path)
 	elseif permission_type == "webfetch" then
 		local url = tool_input.url or ""
 		return { "%% WebFetch " .. url }
@@ -103,8 +169,11 @@ local function get_permission_description(permission_type, tool_input, perm_stat
 		local query = tool_input.query or ""
 		return { string.format('◇ Code Search "%s"', query) }
 	elseif permission_type == "external_directory" then
-		local dir = tool_input.directory or tool_input.path or ""
-		return { "← Access external directory " .. dir }
+		local path = get_permission_path(permission_type, tool_input, perm_state)
+		if path == "" then
+			return { "← Access external directory" }
+		end
+		return with_path_line({ "← Access external directory" }, path)
 	elseif permission_type == "diff_review" then
 		return { "Review file changes" }
 	elseif permission_type == "doom_loop" then
@@ -187,10 +256,12 @@ function M.get_lines_for_permission(permission_id, perm_state)
 	-- Trailing blank line
 	table.insert(lines, "")
 
-	return lines, highlights, widget_base.make_meta({
-		interactive_count = #OPTION_LABELS,
-		first_interactive_line = first_option_line,
-	})
+	return lines,
+		highlights,
+		widget_base.make_meta({
+			interactive_count = #OPTION_LABELS,
+			first_interactive_line = first_option_line,
+		})
 end
 
 -- Get formatted lines for an approved permission
