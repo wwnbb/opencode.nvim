@@ -378,6 +378,10 @@ local function setup_buffer(bufnr)
 		M.handle_question_custom_input()
 	end, opts)
 
+	vim.keymap.set("n", "m", function()
+		M.handle_widget_message()
+	end, opts)
+
 	vim.keymap.set("n", "<Space>", function()
 		M.handle_question_toggle()
 	end, opts)
@@ -2292,6 +2296,23 @@ function M.handle_question_custom_input()
 		return
 	end
 	chat_questions.handle_question_custom_input(request_id)
+end
+
+---Route 'm' to the active question or permission widget.
+function M.handle_widget_message()
+	local request_id = chat_questions.get_question_at_cursor()
+	if request_id then
+		chat_questions.handle_question_message(request_id)
+		return
+	end
+
+	local perm_id = chat_permissions.get_permission_at_cursor()
+	if perm_id then
+		chat_permissions.handle_permission_message(perm_id)
+		return
+	end
+
+	vim.api.nvim_feedkeys("m", "n", false)
 end
 
 ---Route Space to the active question.

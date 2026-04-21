@@ -226,7 +226,8 @@ function M.handle_permission_confirm(perm_id, pstate)
 	end
 
 	local client = require("opencode.client")
-	client.respond_permission(perm_id, reply, {}, function(err)
+	local message = vim.trim((pstate and pstate.message) or "")
+	client.respond_permission(perm_id, reply, { message = message ~= "" and message or nil }, function(err)
 		vim.schedule(function()
 			if err then
 				vim.notify("Failed to respond to permission: " .. vim.inspect(err), vim.log.levels.ERROR)
@@ -245,7 +246,9 @@ end
 
 function M.handle_permission_reject(perm_id)
 	local client = require("opencode.client")
-	client.respond_permission(perm_id, "reject", {}, function(err)
+	local pstate = permission_state.get_permission(perm_id)
+	local message = vim.trim((pstate and pstate.message) or "")
+	client.respond_permission(perm_id, "reject", { message = message ~= "" and message or nil }, function(err)
 		vim.schedule(function()
 			if err then
 				vim.notify("Failed to reject permission: " .. tostring(err), vim.log.levels.ERROR)
@@ -255,6 +258,33 @@ function M.handle_permission_reject(perm_id)
 			M.update_permission_status(perm_id, "rejected")
 		end)
 	end)
+end
+
+---@param perm_id string
+function M.handle_permission_message(perm_id)
+	local pstate = permission_state.get_permission(perm_id)
+	if not pstate or pstate.status ~= "pending" then
+		return
+	end
+
+	local input_ui = require("opencode.ui.input")
+	local chat = require("opencode.ui.chat")
+
+	local function finish(text)
+		permission_state.set_message(perm_id, text or "")
+		M.rerender_permission(perm_id)
+		chat.focus()
+	end
+
+	input_ui.show({
+		winid = state.winid,
+		float_dims = state.float_dims,
+		text = pstate.message or "",
+		persist_pending = false,
+		add_history = false,
+		on_send = finish,
+		on_cancel = finish,
+	})
 end
 
 return M

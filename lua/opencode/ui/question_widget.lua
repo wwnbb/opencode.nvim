@@ -25,6 +25,40 @@ local function format_option_hint(option_count)
 	return string.format("select with 1-%d or ↑↓", math.min(option_count, 9))
 end
 
+---@param text string|nil
+---@return string
+local function format_message_answer(text)
+	local message = vim.trim(text or "")
+	if message == "" then
+		return ""
+	end
+
+	return "Message: " .. message:gsub("%s*\n%s*", " / ")
+end
+
+---@param lines table
+---@param highlights table
+---@param line_num number
+---@param text string|nil
+---@return number
+local function append_message_lines(lines, highlights, line_num, text)
+	local message = vim.trim(text or "")
+	if message == "" then
+		return line_num
+	end
+
+	local parts = vim.split(message, "\n", { plain = true })
+	for i, part in ipairs(parts) do
+		local prefix = i == 1 and "  Message: " or "           "
+		local line = prefix .. part
+		table.insert(lines, line)
+		widget_base.add_full_line_highlight(highlights, line_num, line, "Comment")
+		line_num = line_num + 1
+	end
+
+	return line_num
+end
+
 -- Get formatted lines for a question
 ---@param request_id string
 ---@param question_data table
@@ -46,6 +80,7 @@ function M.get_lines_for_question(request_id, question_data, selection_state, st
 
 	local current_tab = selection_state.current_tab or 1
 	local current_question = questions[current_tab]
+	local selections = selection_state.selections and selection_state.selections[current_tab] or {}
 
 	if not current_question then
 		return lines, highlights, widget_base.make_meta()
@@ -140,13 +175,18 @@ function M.get_lines_for_question(request_id, question_data, selection_state, st
 		end
 	end
 
+	if selections.message and selections.message ~= "" then
+		table.insert(lines, "")
+		line_num = line_num + 1
+		line_num = append_message_lines(lines, highlights, line_num, selections.message)
+	end
+
 	table.insert(lines, "")
 	line_num = line_num + 1
 
 	-- Options
 	local option_count = 0
 	local first_option_line = line_num
-	local selections = selection_state.selections and selection_state.selections[current_tab] or {}
 	local selected_indices = selections.selected_indices or {}
 	local is_multi = current_question.type == "multi"
 	local allow_custom = current_question.allow_custom or current_question.allowCustom
@@ -251,7 +291,9 @@ function M.get_lines_for_question(request_id, question_data, selection_state, st
 		end
 
 		if allow_custom then
-			hint = hint:gsub(" Esc cancel%.$", " Press c for custom input. Esc cancel.")
+			hint = hint:gsub(" Esc cancel%.$", " Press c for custom input. Press m for message. Esc cancel.")
+		else
+			hint = hint:gsub(" Esc cancel%.$", " Press m for message. Esc cancel.")
 		end
 
 		table.insert(lines, hint)
@@ -440,6 +482,10 @@ function M.get_confirmation_lines(request_id, question_data, selection_state)
 			end
 			if selection.custom_input and selection.custom_input ~= "" then
 				table.insert(answer_parts, selection.custom_input)
+			end
+			local message = format_message_answer(selection.message)
+			if message ~= "" then
+				table.insert(answer_parts, message)
 			end
 		end
 		

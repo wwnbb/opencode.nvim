@@ -108,15 +108,35 @@ local function get_permission_path(permission_type, tool_input, perm_state)
 end
 
 ---@param lines table
----@param path string
+---@param label string
+---@param value string
 ---@return table
-local function with_path_line(lines, path)
-	if path == "" then
+local function with_detail_lines(lines, label, value)
+	if value == "" then
 		return lines
 	end
 
-	table.insert(lines, "  Path: " .. path)
+	local parts = vim.split(value, "\n", { plain = true })
+	for i, part in ipairs(parts) do
+		local prefix = i == 1 and string.format("  %s: ", label) or string.rep(" ", #label + 4)
+		table.insert(lines, prefix .. part)
+	end
+
 	return lines
+end
+
+---@param lines table
+---@param path string
+---@return table
+local function with_path_line(lines, path)
+	return with_detail_lines(lines, "Path", path)
+end
+
+---@param lines table
+---@param message string|nil
+---@return table
+local function with_message_lines(lines, message)
+	return with_detail_lines(lines, "Message", vim.trim(message or ""))
 end
 
 -- Get description lines for a permission based on type
@@ -134,50 +154,53 @@ local function get_permission_description(permission_type, tool_input, perm_stat
 		if cmd ~= "" then
 			table.insert(lines, "  $ " .. cmd)
 		end
-		return lines
+		return with_message_lines(lines, perm_state and perm_state.message)
 	elseif permission_type == "read" then
 		local path = get_permission_path(permission_type, tool_input, perm_state)
 		if path == "" then
-			return { "→ Read" }
+			return with_message_lines({ "→ Read" }, perm_state and perm_state.message)
 		end
-		return with_path_line({ "→ Read" }, path)
+		return with_message_lines(with_path_line({ "→ Read" }, path), perm_state and perm_state.message)
 	elseif permission_type == "glob" then
 		local pattern = tool_input.pattern or ""
-		return with_path_line(
+		return with_message_lines(with_path_line(
 			{ string.format('✱ Glob "%s"', pattern) },
 			get_permission_path(permission_type, tool_input, perm_state)
-		)
+		), perm_state and perm_state.message)
 	elseif permission_type == "grep" then
 		local pattern = tool_input.pattern or ""
-		return with_path_line(
+		return with_message_lines(with_path_line(
 			{ string.format('✱ Grep "%s"', pattern) },
 			get_permission_path(permission_type, tool_input, perm_state)
-		)
+		), perm_state and perm_state.message)
 	elseif permission_type == "list" then
 		local path = get_permission_path(permission_type, tool_input, perm_state)
 		if path == "" then
-			return { "→ List" }
+			return with_message_lines({ "→ List" }, perm_state and perm_state.message)
 		end
-		return with_path_line({ "→ List" }, path)
+		return with_message_lines(with_path_line({ "→ List" }, path), perm_state and perm_state.message)
 	elseif permission_type == "webfetch" then
 		local url = tool_input.url or ""
-		return { "%% WebFetch " .. url }
+		return with_message_lines({ "%% WebFetch " .. url }, perm_state and perm_state.message)
 	elseif permission_type == "websearch" then
 		local query = tool_input.query or ""
-		return { string.format('◈ Web Search "%s"', query) }
+		return with_message_lines({ string.format('◈ Web Search "%s"', query) }, perm_state and perm_state.message)
 	elseif permission_type == "codesearch" then
 		local query = tool_input.query or ""
-		return { string.format('◇ Code Search "%s"', query) }
+		return with_message_lines({ string.format('◇ Code Search "%s"', query) }, perm_state and perm_state.message)
 	elseif permission_type == "external_directory" then
 		local path = get_permission_path(permission_type, tool_input, perm_state)
 		if path == "" then
-			return { "← Access external directory" }
+			return with_message_lines({ "← Access external directory" }, perm_state and perm_state.message)
 		end
-		return with_path_line({ "← Access external directory" }, path)
+		return with_message_lines(
+			with_path_line({ "← Access external directory" }, path),
+			perm_state and perm_state.message
+		)
 	elseif permission_type == "diff_review" then
-		return { "Review file changes" }
+		return with_message_lines({ "Review file changes" }, perm_state and perm_state.message)
 	elseif permission_type == "doom_loop" then
-		return { "⟳ Continue after repeated failures" }
+		return with_message_lines({ "⟳ Continue after repeated failures" }, perm_state and perm_state.message)
 	elseif permission_type == "task" then
 		local subagent = tool_input.subagent_type or "Task"
 		local desc = tool_input.description or ""
@@ -185,9 +208,9 @@ local function get_permission_description(permission_type, tool_input, perm_stat
 		if desc ~= "" then
 			table.insert(lines, "◉ " .. desc)
 		end
-		return lines
+		return with_message_lines(lines, perm_state and perm_state.message)
 	else
-		return { "Call tool " .. permission_type }
+		return with_message_lines({ "Call tool " .. permission_type }, perm_state and perm_state.message)
 	end
 end
 
@@ -248,7 +271,7 @@ function M.get_lines_for_permission(permission_id, perm_state)
 	table.insert(lines, "")
 	line_num = line_num + 1
 
-	local hint = "[1-3 select, ↑↓ navigate, Enter confirm, Esc reject]"
+	local hint = "[1-3 select, m message, ↑↓ navigate, Enter confirm, Esc reject]"
 	table.insert(lines, hint)
 	widget_base.add_full_line_highlight(highlights, line_num, hint, "Comment")
 	line_num = line_num + 1
@@ -299,6 +322,13 @@ function M.get_approved_lines(permission_id, perm_state)
 	})
 	line_num = line_num + 1
 
+	for i = 2, #desc_lines do
+		local dline = desc_lines[i]
+		table.insert(lines, dline)
+		widget_base.add_full_line_highlight(highlights, line_num, dline, "Normal")
+		line_num = line_num + 1
+	end
+
 	table.insert(lines, "")
 
 	return lines, highlights
@@ -337,6 +367,13 @@ function M.get_rejected_lines(permission_id, perm_state)
 		hl_group = "Error",
 	})
 	line_num = line_num + 1
+
+	for i = 2, #desc_lines do
+		local dline = desc_lines[i]
+		table.insert(lines, dline)
+		widget_base.add_full_line_highlight(highlights, line_num, dline, "Normal")
+		line_num = line_num + 1
+	end
 
 	table.insert(lines, "")
 
