@@ -939,12 +939,13 @@ function M.setup_chat_handlers()
 						tool_input = vim.tbl_deep_extend("force", {}, metadata.input or {}, {
 							command = data.command or metadata.command,
 							description = data.description or metadata.description,
-							path = data.path or metadata.path,
-							file_path = data.file_path or metadata.file_path or data.file or metadata.file,
+							path = data.path or metadata.path or data.filepath or metadata.filepath,
+							file_path = data.file_path or metadata.file_path or data.file or metadata.file or data.filepath
+								or metadata.filepath,
 							pattern = data.pattern or metadata.pattern,
 							query = data.query or metadata.query,
 							url = data.url or metadata.url,
-							directory = data.directory or metadata.directory,
+							directory = data.directory or metadata.directory or data.parentDir or metadata.parentDir,
 							subagent_type = data.subagent_type or metadata.subagent_type,
 						})
 					end
