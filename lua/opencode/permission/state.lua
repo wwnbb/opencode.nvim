@@ -11,6 +11,7 @@ local active_permissions = {}
 --   permission_id = string,      -- "per_xxx"
 --   session_id = string,
 --   message_id = string|nil,     -- messageID that triggered this permission (for inline rendering)
+--   call_id = string|nil,        -- tool callID for rendering beside the matching tool line
 --   permission_type = string,    -- "bash", "read", "glob", "grep", etc.
 --   metadata = table,
 --   patterns = table,
@@ -29,13 +30,14 @@ local OPTION_COUNT = 3
 ---@param permission_id string
 ---@param session_id string
 ---@param permission_type string
----@param opts table { metadata, patterns, always, tool_input, message_id, timestamp }
+---@param opts table { metadata, patterns, always, tool_input, message_id, call_id, timestamp }
 function M.add_permission(permission_id, session_id, permission_type, opts)
 	opts = opts or {}
 	local pstate = {
 		permission_id = permission_id,
 		session_id = session_id,
 		message_id = opts.message_id, -- messageID that triggered this permission
+		call_id = opts.call_id,
 		permission_type = permission_type,
 		metadata = opts.metadata or {},
 		patterns = opts.patterns or {},
