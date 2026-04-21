@@ -16,6 +16,7 @@ local active_permissions = {}
 --   patterns = table,
 --   always = table,
 --   tool_input = table,          -- resolved tool input (command, path, pattern, etc.)
+--   message = string,            -- optional user note sent with the response
 --   selected_option = number,    -- 1=Allow once, 2=Allow always, 3=Reject
 --   status = string,             -- "pending" | "approved" | "rejected"
 --   reply = string|nil,          -- "once" | "always" | "reject"
@@ -40,6 +41,7 @@ function M.add_permission(permission_id, session_id, permission_type, opts)
 		patterns = opts.patterns or {},
 		always = opts.always or {},
 		tool_input = opts.tool_input or {},
+		message = "",
 		selected_option = 1,
 		status = "pending",
 		reply = nil,
@@ -136,6 +138,20 @@ function M.select_option(permission_id, option_index)
 		selected = option_index,
 	})
 
+	return true
+end
+
+-- Set message for a permission request
+---@param permission_id string
+---@param text string
+---@return boolean
+function M.set_message(permission_id, text)
+	local pstate = active_permissions[permission_id]
+	if not pstate then
+		return false
+	end
+
+	pstate.message = vim.trim(text or "")
 	return true
 end
 

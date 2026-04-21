@@ -375,6 +375,7 @@ function M.handle_question_custom_input(request_id)
 
 	local current_tab = qstate.current_tab
 	local question = qstate.questions[current_tab]
+	local selection = qstate.selections[current_tab] or {}
 
 	if not question.allow_custom and not question.allowCustom then
 		vim.notify("Custom input not allowed for this question", vim.log.levels.WARN)
@@ -385,6 +386,9 @@ function M.handle_question_custom_input(request_id)
 	input_ui.show({
 		winid = state.winid,
 		float_dims = state.float_dims,
+		text = selection.custom_input or "",
+		persist_pending = false,
+		add_history = false,
 		on_send = function(text)
 			if text and text ~= "" then
 				question_state.set_custom_input(request_id, current_tab, text)
@@ -398,6 +402,35 @@ function M.handle_question_custom_input(request_id)
 		on_cancel = function()
 			require("opencode.ui.chat").focus()
 		end,
+	})
+end
+
+---@param request_id string
+function M.handle_question_message(request_id)
+	local qstate = question_state.get_question(request_id)
+	if not qstate or qstate.status == "confirming" then
+		return
+	end
+
+	local current_tab = qstate.current_tab
+	local selection = qstate.selections[current_tab] or {}
+	local input_ui = require("opencode.ui.input")
+	local chat = require("opencode.ui.chat")
+
+	local function finish(text)
+		question_state.set_message(request_id, current_tab, text or "")
+		M.rerender_question(request_id)
+		chat.focus()
+	end
+
+	input_ui.show({
+		winid = state.winid,
+		float_dims = state.float_dims,
+		text = selection.message or "",
+		persist_pending = false,
+		add_history = false,
+		on_send = finish,
+		on_cancel = finish,
 	})
 end
 
