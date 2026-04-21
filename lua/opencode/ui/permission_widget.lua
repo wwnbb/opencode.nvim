@@ -119,10 +119,20 @@ local function get_permission_path(permission_type, tool_input, perm_state)
 
 	if permission_type == "external_directory" then
 		return normalize_path(first_non_empty(
+			tool_input.file_path,
+			tool_input.filePath,
+			tool_input.filepath,
+			tool_input.file,
+			metadata.file_path,
+			metadata.filePath,
+			metadata.filepath,
+			metadata.file,
 			tool_input.directory,
 			tool_input.path,
 			metadata.directory,
-			metadata.path
+			metadata.parentDir,
+			metadata.path,
+			patterns[1]
 		))
 	end
 
