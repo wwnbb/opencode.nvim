@@ -1,4 +1,5 @@
 import { tool } from "@opencode-ai/plugin"
+import { Effect } from "effect"
 import * as fs from "fs/promises"
 import { readFileSync } from "fs"
 import * as path from "path"
@@ -595,6 +596,8 @@ export default tool({
     patchText: tool.schema.string().describe("The full patch text that describes all changes to be made"),
   },
   async execute(params, context) {
+    const { agent, sessionID, directory, worktree, ask } = context
+
     if (!params.patchText) {
       throw new Error("patchText is required")
     }
@@ -632,8 +635,8 @@ export default tool({
     let totalDiff = ""
 
     for (const hunk of hunks) {
-      const filePath = path.resolve(context.directory, hunk.path)
-      const relativePath = path.relative(context.worktree, filePath)
+      const filePath = path.resolve(directory, hunk.path)
+      const relativePath = path.relative(worktree, filePath)
 
       switch (hunk.type) {
         case "add": {
@@ -679,7 +682,7 @@ export default tool({
             if (change.removed) deletions += change.count || 0
           }
 
-          const movePath = hunk.move_path ? path.resolve(context.directory, hunk.move_path) : undefined
+          const movePath = hunk.move_path ? path.resolve(directory, hunk.move_path) : undefined
 
           fileChanges.push({
             filePath,
@@ -736,17 +739,22 @@ export default tool({
 
     // Ask for permission with native diff flag — blocks until user finishes reviewing all files
     const relativePaths = fileChanges.map((c) => c.relativePath)
-    await context.ask({
-      permission: "neovim_apply_patch",
-      patterns: relativePaths,
-      always: ["*"],
-      metadata: {
-        filepath: relativePaths.join(", "),
-        diff: totalDiff,
-        opencode_native_diff: true,
-        files,
-      },
-    })
+    await Effect.runPromise(
+      ask({
+        permission: "neovim_apply_patch",
+        patterns: relativePaths,
+        always: ["*"],
+        metadata: {
+          operation: "neovim_apply_patch",
+          agent,
+          sessionID,
+          filepath: relativePaths.join(", "),
+          diff: totalDiff,
+          opencode_native_diff: true,
+          files,
+        },
+      }),
+    )
 
     // After approval resolves, read each file back and compare actual vs proposed
     const resultLines: string[] = []
