@@ -1,4 +1,5 @@
 import { tool } from "@opencode-ai/plugin"
+import { Effect } from "effect"
 import * as fs from "fs/promises"
 import { readFileSync } from "fs"
 import * as path from "path"
@@ -736,8 +737,8 @@ export default tool({
 
     // Ask for permission with native diff flag — blocks until user finishes reviewing all files
     const relativePaths = fileChanges.map((c) => c.relativePath)
-    await context.ask({
-      permission: "diff_review",
+    await Effect.runPromise(context.ask({
+      permission: "neovim_apply_patch",
       patterns: relativePaths,
       always: ["*"],
       metadata: {
@@ -746,7 +747,7 @@ export default tool({
         opencode_native_diff: true,
         files,
       },
-    })
+    }))
 
     // After approval resolves, read each file back and compare actual vs proposed
     const resultLines: string[] = []
@@ -863,22 +864,21 @@ export default tool({
     }
 
     // Provide metadata using the final post-review file state.
-    context.metadata({
+    return {
+      output: [
+        "Patch review completed.",
+        "Use the resulting on-disk file contents as source of truth for follow-up steps.",
+        "Do not re-apply rejected changes unless explicitly requested.",
+        "",
+        "Results:",
+        ...resultLines,
+      ].join("\n"),
       metadata: {
         diff: actualTotalDiff,
         files: actualFiles,
         proposed_diff: totalDiff,
         proposed_files: files,
       },
-    })
-
-    return [
-      "Patch review completed.",
-      "Use the resulting on-disk file contents as source of truth for follow-up steps.",
-      "Do not re-apply rejected changes unless explicitly requested.",
-      "",
-      "Results:",
-      ...resultLines,
-    ].join("\n")
+    }
   },
 })
