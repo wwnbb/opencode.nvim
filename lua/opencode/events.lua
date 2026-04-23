@@ -588,7 +588,7 @@ function M.setup_chat_handlers()
 				data = data,
 			})
 
-			-- Custom tools are handled via the permission system with "diff_review" type
+			-- Custom tools are handled via the permission system via native diff review
 			if tool_name == "neovim_edit" or tool_name == "neovim_apply_patch" then
 				return
 			end
@@ -682,13 +682,18 @@ function M.setup_chat_handlers()
 				local call_id = resolve_event_call_id(data)
 				local timestamp = event_time_to_seconds(data.time and data.time.created)
 
-				-- Guard: only handle edit/diff_review permissions that belong to our session.
+				local is_native_diff_permission = metadata.opencode_native_diff == true
+					or permission_type == "diff_review"
+					or permission_type == "neovim_edit"
+					or permission_type == "neovim_apply_patch"
+
+				-- Guard: only handle edit/native-diff permissions that belong to our session.
 				-- Both editors receive every SSE event from the shared server. Without this
 				-- check, the second open editor would also create edit state and render the
 				-- widget even though the permission request was initiated from a different session.
 				-- Mirrors the same pattern used in message_updated (session ID check) and
 				-- session_status handlers.
-				if permission_type == "diff_review" or permission_type == "edit" then
+				if is_native_diff_permission or permission_type == "edit" then
 					-- Try to resolve the owning session from the most-reliable source first:
 					-- the message ID via the sync store (populated only for the active session),
 					-- then the raw sessionID field on the event payload / metadata.
@@ -872,7 +877,7 @@ function M.setup_chat_handlers()
 					}
 				end
 
-				if permission_type == "diff_review" or permission_type == "edit" then
+				if is_native_diff_permission or permission_type == "edit" then
 					local permission_id = data.id or data.requestID or ("perm_" .. os.time())
 					local edit_state_mod = require("opencode.edit.state")
 
@@ -891,7 +896,7 @@ function M.setup_chat_handlers()
 					end
 					local edit_session_id = resolve_widget_session_id(current_session, data, metadata, message_id)
 					local review_mode = "interactive"
-					if permission_type == "edit" and metadata.opencode_native_diff ~= true then
+					if permission_type == "edit" and not is_native_diff_permission then
 						review_mode = "readonly"
 					end
 

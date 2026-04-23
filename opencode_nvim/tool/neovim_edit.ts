@@ -1,4 +1,5 @@
 import { tool } from "@opencode-ai/plugin"
+import { Effect } from "effect"
 import * as fs from "fs/promises"
 import * as path from "path"
 import DESCRIPTION from "./neovim_edit.txt"
@@ -669,8 +670,8 @@ export default tool({
     ]
 
     // Ask for permission with native diff flag — blocks until user finishes reviewing
-    await context.ask({
-      permission: "diff_review",
+    await Effect.runPromise(context.ask({
+      permission: "neovim_edit",
       patterns: [relativePath],
       always: ["*"],
       metadata: {
@@ -679,7 +680,7 @@ export default tool({
         opencode_native_diff: true,
         files,
       },
-    })
+    }))
 
     // After approval resolves, read the file back from disk to see what the user actually applied
     let actualContent = ""
@@ -724,23 +725,32 @@ export default tool({
       if (change.removed) filediff.deletions += change.count || 0
     }
 
-    context.metadata({
-      metadata: {
-        status,
-        diff: actualDiff,
-        filediff,
-        proposed_diff: proposedDiff,
-      },
-    })
+    const metadata = {
+      status,
+      diff: actualDiff,
+      filediff,
+      proposed_diff: proposedDiff,
+    }
 
     if (status === "applied") {
-      return "Edit applied successfully. Use current file contents as source of truth for next steps."
+      return {
+        output: "Edit applied successfully. Use current file contents as source of truth for next steps.",
+        metadata,
+      }
     }
 
     if (status === "rejected") {
-      return "Edit was rejected. Keep working from the current on-disk file state and do not re-apply the rejected replacement unless explicitly requested."
+      return {
+        output:
+          "Edit was rejected. Keep working from the current on-disk file state and do not re-apply the rejected replacement unless explicitly requested.",
+        metadata,
+      }
     }
 
-    return `Edit partially applied. Respect the resulting file as authoritative and avoid reverting user adjustments.\n\nActual diff:\n${actualDiff}`
+    return {
+      output:
+        `Edit partially applied. Respect the resulting file as authoritative and avoid reverting user adjustments.\n\nActual diff:\n${actualDiff}`,
+      metadata,
+    }
   },
 })
