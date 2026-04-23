@@ -1,29 +1,7 @@
 import { tool } from "@opencode-ai/plugin"
 import * as fs from "fs/promises"
-import { createRequire } from "node:module"
 import * as path from "path"
 import DESCRIPTION from "./neovim_edit.txt"
-
-const require = createRequire(import.meta.url)
-
-let runPromise: (<T>(effect: unknown) => Promise<T>) | undefined
-
-async function runToolEffect<T>(effectLike: unknown): Promise<T> {
-  if (effectLike && typeof effectLike === "object" && typeof (effectLike as { then?: unknown }).then === "function") {
-    return await (effectLike as Promise<T>)
-  }
-
-  if (!runPromise) {
-    const pluginRequire = createRequire(require.resolve("@opencode-ai/plugin"))
-    const effectModule = pluginRequire("effect") as { Effect?: { runPromise?: <U>(effect: unknown) => Promise<U> } }
-    if (!effectModule.Effect || !effectModule.Effect.runPromise) {
-      throw new Error("Failed to resolve Effect.runPromise for plugin tool permission handling")
-    }
-    runPromise = effectModule.Effect.runPromise
-  }
-
-  return runPromise<T>(effectLike)
-}
 
 // =============================================================================
 // Inline diff utilities (replacing "diff" npm package)
@@ -691,7 +669,7 @@ export default tool({
     ]
 
     // Ask for permission with native diff flag — blocks until user finishes reviewing
-    await runToolEffect(context.ask({
+    await context.ask({
       permission: "neovim_edit",
       patterns: [relativePath],
       always: ["*"],
@@ -701,7 +679,7 @@ export default tool({
         opencode_native_diff: true,
         files,
       },
-    }))
+    })
 
     // After approval resolves, read the file back from disk to see what the user actually applied
     let actualContent = ""
