@@ -1,19 +1,16 @@
-Use `neovim_apply_patch` to edit files with a stripped-down, file-oriented diff format.
+Edit files with compact file patch format.
 
-Patch envelope:
-
+Envelope:
 *** Begin Patch
-[ one or more file sections ]
+[file sections]
 *** End Patch
 
-Each file section must start with one header:
-
-*** Add File: <path> - create a file; every content line starts with `+`.
-*** Delete File: <path> - delete a file; no body.
-*** Update File: <path> - patch a file in place; may include a rename.
+File headers:
+- `*** Add File: <path>` create file; every content line starts `+`.
+- `*** Delete File: <path>` delete file; no body.
+- `*** Update File: <path>` patch file; optional next line `*** Move to: <path>`.
 
 Example:
-
 ```
 *** Begin Patch
 *** Add File: hello.txt
@@ -27,17 +24,13 @@ Example:
 *** End Patch
 ```
 
-Critical review rules:
-- USER MAY EDIT CODE DURING REVIEW. Treat the final on-disk file as authoritative and never overwrite user adjustments.
-- After any reviewed edit, re-read the file and continue from the current file state.
-- Never auto-retry after `rejected` or `partial`, or after a user-altered review result, unless the user explicitly asks.
-
-Important rules:
-- Always include an operation header (`Add File`, `Delete File`, or `Update File`).
-- Prefix every added line with `+`, including new file contents.
-- For updates, copy the original lines exactly, including whitespace, so context matches.
-- Hunk headers use `@@` plus a literal context line, for example `@@ def greet():`; do not use unified diff ranges like `@@ -12,3 +12,3 @@`.
-- If a hunk fails because context does not match, use `Read` to get the exact surrounding lines before retrying.
-- Review results may apply only some hunks or reject files entirely.
-- Tool output reports the final file state as `applied`, `rejected`, or `partial`, plus final diffs.
-- Treat those final results as authoritative; do not re-apply rejected chunks unless explicitly requested.
+Rules:
+- User may edit during review. Final disk content wins. Re-read after review.
+- Treat user review edits as intentional, not mistakes. Do not "fix" or revert them unless user explicitly asks.
+- Never auto-retry `rejected`/`partial`/user-edited result unless user asks.
+- Always include file header.
+- Added lines need `+`, including new files.
+- Updates: copy old lines exactly, whitespace included.
+- Hunk header = `@@` + literal anchor line, e.g. `@@ def greet():`. To replace anchor too, repeat it as `-` line. Avoid unified ranges like `@@ -12,3 +12,3 @@`.
+- If context fails, `Read` exact surrounding lines before retry.
+- Output reports final state: `applied`, `rejected`, or `partial`; trust it.

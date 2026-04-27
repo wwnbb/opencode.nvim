@@ -1,17 +1,15 @@
-Performs exact string replacements in files.
+Exact string replacement in existing files.
 
-CRITICAL!!!:
-    USER CAN MANUALLY CHANGE CODE DURING REVIEW. RESPECT THE RESULTING FILE AS AUTHORITATIVE AND AVOID REVERTING USER ADJUSTMENTS.
-    After any reviewed edit, re-read the file and treat user changes as FINAL.
-    NEVER auto-retry after `rejected`/`partial` or after a user-altered review result unless the user explicitly asks.
+cRITICAL!!!!:
+- User may edit during review. Final disk content wins. Re-read after review.
+- Treat user review edits as intentional, not mistakes. Do not "fix" or revert them unless user explicitly asks.
+- Never auto-retry `rejected`/`partial`/user-edited result unless user asks.
 
 Usage:
-- You must use your `Read` tool at least once in the conversation before editing. This tool will error if you attempt an edit without reading the file.
-- When editing text from Read tool output, ensure you preserve the exact indentation (tabs/spaces) as it appears AFTER the line number prefix. The line number prefix format is: spaces + line number + tab. Everything after that tab is the actual file content to match. Never include any part of the line number prefix in the oldString or newString.
-- ALWAYS prefer editing existing files in the codebase. NEVER write new files unless explicitly required.
-- The edit will FAIL if `oldString` is not found in the file with an error "oldString not found in content".
-- The edit will FAIL if `oldString` is found multiple times in the file with an error "oldString found multiple times and requires more code context to uniquely identify the intended match". Either provide a larger string with more surrounding context to make it unique or use `replaceAll` to change every instance of `oldString`.
-- Use `replaceAll` for replacing and renaming strings across the file. This parameter is useful if you want to rename a variable for instance.
-- This tool applies a single replacement per call. When you need to make multiple changes, prefer using `neovim_apply_patch` instead — it bundles all changes into a single patch so the user reviews them in one step.
-- User can change the code during the diff review, add or remove something, or keep only part of the proposed edit.
-- The tool output and metadata describe the FINAL on-disk result after review (`applied`, `rejected`, or `partial`). Treat that final result as authoritative.
+- Must use `Read` once before edit, or tool errors.
+- From `Read` output, copy content after line-number prefix only. Keep exact tabs/spaces. Never include line numbers.
+- Prefer existing files. Do not create files unless required.
+- `oldString` must match once. Missing => `oldString not found in content`. Multiple => add context or use `replaceAll`.
+- Use `replaceAll` for file-wide rename/replacement.
+- One replacement per call. For multiple edits, prefer `neovim_apply_patch`.
+- Output/metadata describe final disk state: `applied`, `rejected`, or `partial`; trust it.
