@@ -514,7 +514,9 @@ function computeReplacements(
       if (contextIdx === -1) {
         throw new Error(`Failed to find context '${chunk.change_context}' in ${filePath}`)
       }
-      lineIndex = contextIdx + 1
+
+      const firstOldLine = chunk.old_lines[0]
+      lineIndex = firstOldLine === chunk.change_context ? contextIdx : contextIdx + 1
     }
 
     if (chunk.old_lines.length === 0) {
