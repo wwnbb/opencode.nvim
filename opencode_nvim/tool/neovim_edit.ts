@@ -1,4 +1,5 @@
 import { tool } from "@opencode-ai/plugin"
+import { Effect } from "effect"
 import * as fs from "fs/promises"
 import * as path from "path"
 import DESCRIPTION from "./neovim_edit.txt"
@@ -600,6 +601,8 @@ export default tool({
     replaceAll: tool.schema.boolean().optional().describe("Replace all occurrences of oldString (default false)"),
   },
   async execute(params, context) {
+    const { agent, sessionID, directory, worktree, ask } = context
+
     if (!params.filePath) {
       throw new Error("filePath is required")
     }
@@ -608,11 +611,9 @@ export default tool({
       throw new Error("oldString and newString must be different")
     }
 
-    const filePath = path.isAbsolute(params.filePath)
-      ? params.filePath
-      : path.join(context.directory, params.filePath)
+    const filePath = path.resolve(directory, params.filePath)
 
-    const relativePath = path.relative(context.worktree, filePath)
+    const relativePath = path.relative(worktree, filePath)
 
     // Read current file content
     let contentOld = ""
@@ -669,17 +670,22 @@ export default tool({
     ]
 
     // Ask for permission with native diff flag — blocks until user finishes reviewing
-    await context.ask({
-      permission: "neovim_edit",
-      patterns: [relativePath],
-      always: ["*"],
-      metadata: {
-        filepath: filePath,
-        diff,
-        opencode_native_diff: true,
-        files,
-      },
-    })
+    await Effect.runPromise(
+      ask({
+        permission: "neovim_edit",
+        patterns: [relativePath],
+        always: ["*"],
+        metadata: {
+          operation: "neovim_edit",
+          agent,
+          sessionID,
+          filepath: filePath,
+          diff,
+          opencode_native_diff: true,
+          files,
+        },
+      }),
+    )
 
     // After approval resolves, read the file back from disk to see what the user actually applied
     let actualContent = ""
