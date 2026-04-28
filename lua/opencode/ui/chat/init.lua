@@ -1320,6 +1320,12 @@ function M.render()
 	local last_block_kind = nil -- "tool" | "non_tool"
 
 	local function push_line(text, nui_line)
+		local safe_text = render.sanitize_buffer_line(text)
+		if safe_text ~= text then
+			nui_line = NuiLine()
+			nui_line:append(safe_text)
+			text = safe_text
+		end
 		table.insert(nui_lines, nui_line)
 		table.insert(raw_lines, text)
 	end
