@@ -15,6 +15,13 @@ local cs = require("opencode.ui.chat.state")
 local state = cs.state
 local chat_hl_ns = cs.chat_hl_ns
 
+---@param text any
+---@return string
+function M.sanitize_buffer_line(text)
+	text = type(text) == "string" and text or tostring(text or "")
+	return (text:gsub("\r\n", " ↵ "):gsub("\n", " ↵ "):gsub("\r", " ↵ "))
+end
+
 -- ─── Agent highlight ─────────────────────────────────────────────────────────
 
 ---@param agent_name string
@@ -327,7 +334,7 @@ end
 function M.extract_lines(nui_lines)
 	local lines = {}
 	for _, nui_line in ipairs(nui_lines) do
-		table.insert(lines, nui_line:content())
+		table.insert(lines, M.sanitize_buffer_line(nui_line:content()))
 	end
 	return lines
 end

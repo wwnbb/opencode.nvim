@@ -1,0 +1,7 @@
+WRN 2026-04-21T04:07:06.815 ?.98060    server_start:197: Failed to start server: operation not permitted: /var/folders/wt/dsm_lvf55rqg8541j_v_7rmm0000gn/T/nvim.admin/Udk9Vr/nvim.98060.0
+WRN 2026-04-21T04:07:17.281 ?.98147    server_start:197: Failed to start server: operation not permitted: /var/folders/wt/dsm_lvf55rqg8541j_v_7rmm0000gn/T/nvim.admin/LSV9Nj/nvim.98147.0
+WRN 2026-04-21T04:07:37.170 ?.98305    server_start:197: Failed to start server: operation not permitted: /var/folders/wt/dsm_lvf55rqg8541j_v_7rmm0000gn/T/nvim.admin/3og8yG/nvim.98305.0
+WRN 2026-04-21T04:07:46.547 ?.98387    server_start:197: Failed to start server: operation not permitted: /var/folders/wt/dsm_lvf55rqg8541j_v_7rmm0000gn/T/nvim.admin/VDvfmR/nvim.98387.0
+WRN 2026-04-21T04:07:57.681 ?.98476    server_start:197: Failed to start server: operation not permitted: /var/folders/wt/dsm_lvf55rqg8541j_v_7rmm0000gn/T/nvim.admin/U5sHNR/nvim.98476.0
+WRN 2026-04-21T04:08:18.075 ?.98653    server_start:197: Failed to start server: operation not permitted: /var/folders/wt/dsm_lvf55rqg8541j_v_7rmm0000gn/T/nvim.admin/ToI56s/nvim.98653.0
+WRN 2026-04-21T04:08:31.426 ?.98771    server_start:197: Failed to start server: operation not permitted: /var/folders/wt/dsm_lvf55rqg8541j_v_7rmm0000gn/T/nvim.admin/7ppDlm/nvim.98771.0
