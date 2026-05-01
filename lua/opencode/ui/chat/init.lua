@@ -737,7 +737,7 @@ function M.create()
 			if not state.visible or not state.bufnr or not vim.api.nvim_buf_is_valid(state.bufnr) then
 				return
 			end
-			if not M.update_stream_text_block(part.messageID) then
+			if not M.update_stream_text_block(part.messageID, part.id) then
 				M.schedule_render()
 			end
 		end)
@@ -1239,7 +1239,7 @@ local function shift_tracked_lines(old_end, delta, skip_stream_message_id)
 	})
 end
 
-function M.update_stream_text_block(message_id)
+function M.update_stream_text_block(message_id, part_id)
 	if not message_id then
 		return false
 	end
@@ -1251,11 +1251,15 @@ function M.update_stream_text_block(message_id)
 	if not block then
 		return false
 	end
+	if block.part_id and part_id and block.part_id ~= part_id then
+		return false
+	end
 
 	local widget_cursor = capture_widget_cursor_context()
 
 	local sync = require("opencode.sync")
-	local content = sync.get_message_text(message_id)
+	local part = block.part_id and sync.get_part(message_id, block.part_id) or nil
+	local content = (part and part.text) or sync.get_message_text(message_id)
 	local content_lines = render.render_content(content, { stream_plain = true })
 	if #content_lines == 0 then
 		local empty = NuiLine()
@@ -1617,6 +1621,22 @@ function M.render()
 			end
 		end
 
+		for _, pstate in ipairs(permission_state.get_all()) do
+			if
+				not pstate.message_id
+				and pstate.call_id == call_id
+				and pstate.session_id == current_session.id
+				and not rendered_perm_ids[pstate.permission_id]
+			then
+				table.insert(widget_items, {
+					kind = "permission",
+					id = pstate.permission_id,
+					timestamp = pstate.timestamp or 0,
+					data = pstate,
+				})
+			end
+		end
+
 		local edits = edit_state.get_edits_for_message(message_id)
 		for _, estate in ipairs(edits) do
 			if estate.call_id == call_id then
@@ -1629,7 +1649,76 @@ function M.render()
 			end
 		end
 
+		for _, estate in ipairs(edit_state.get_all()) do
+			if
+				not estate.message_id
+				and estate.call_id == call_id
+				and estate.session_id == current_session.id
+				and not rendered_edit_ids[estate.permission_id]
+			then
+				table.insert(widget_items, {
+					kind = "edit",
+					id = estate.permission_id,
+					timestamp = estate.timestamp or 0,
+					data = estate,
+				})
+			end
+		end
+
 		render_widget_items(widget_items)
+	end
+
+	---@param tool_part table
+	local function render_tool_part(tool_part)
+		if tool_part.tool == "task" then
+			local is_expanded = state.expanded_tasks[tool_part.id] or false
+			local cached = state.task_child_cache[tool_part.id]
+			local result = chat_tasks.render_task_tool(tool_part, is_expanded, cached)
+			local base_line = #raw_lines
+			local hl_by_line = {}
+			for _, hl in ipairs(result.highlights) do
+				hl_by_line[hl.line] = hl
+			end
+			for idx, tl in ipairs(result.lines) do
+				local nl = NuiLine()
+				local line_hl = hl_by_line[idx - 1]
+				if line_hl then
+					nl:append(NuiText(tl, line_hl.hl_group))
+				else
+					nl:append(tl)
+				end
+				add_line(nl, "tool")
+			end
+			state.tasks[tool_part.id] = {
+				start_line = base_line,
+				end_line = base_line + #result.lines - 1,
+				tool_part = tool_part,
+			}
+			return
+		end
+
+		local is_expanded = state.expanded_tools[tool_part.id] or false
+		local result = render.render_tool_line(tool_part, is_expanded)
+		local base_line = #raw_lines
+		local hl_by_line = {}
+		for _, hl in ipairs(result.highlights) do
+			hl_by_line[hl.line] = hl
+		end
+		for idx, tl in ipairs(result.lines) do
+			local nl = NuiLine()
+			local line_hl = hl_by_line[idx - 1]
+			if line_hl then
+				nl:append(NuiText(tl, line_hl.hl_group))
+			else
+				nl:append(tl)
+			end
+			add_line(nl, "tool")
+		end
+		state.tools[tool_part.id] = {
+			start_line = base_line,
+			end_line = base_line + #result.lines - 1,
+			tool_part = tool_part,
+		}
 	end
 
 	-- Breadcrumb navigation (when inside a child session)
@@ -1675,6 +1764,7 @@ function M.render()
 		local content = sync.get_message_text(message.id)
 		local reasoning = sync.get_message_reasoning(message.id)
 		local tool_parts = sync.get_message_tools(message.id)
+		local parts = sync.get_parts(message.id)
 		local incomplete_assistant = message.role == "assistant" and not (message.time and message.time.completed)
 		local render_as_plain_stream = app_state.get_status() == "streaming" and incomplete_assistant
 
@@ -1732,79 +1822,28 @@ function M.render()
 				add_raw_line("")
 			else
 				-- Assistant message
-				if has_reasoning and thinking.is_enabled() then
-					local reasoning_lines = render.render_reasoning(reasoning)
-					for _, nl in ipairs(reasoning_lines) do
-						add_line(nl)
-					end
-				end
-
-				if has_content then
-					local content_start = #raw_lines
-					local content_lines = render.render_content(content, { stream_plain = render_as_plain_stream })
-					for _, nl in ipairs(content_lines) do
-						add_line(nl)
-					end
-					if incomplete_assistant and #content_lines > 0 then
-						next_stream_blocks[message.id] = {
-							start_line = content_start,
-							end_line = #raw_lines - 1,
-						}
-					end
-				end
-
-				if has_tools then
-					for _, tool_part in ipairs(tool_parts) do
-						if tool_part.tool == "task" then
-							local is_expanded = state.expanded_tasks[tool_part.id] or false
-							local cached = state.task_child_cache[tool_part.id]
-							local result = chat_tasks.render_task_tool(tool_part, is_expanded, cached)
-							local base_line = #raw_lines
-							local hl_by_line = {}
-							for _, hl in ipairs(result.highlights) do
-								hl_by_line[hl.line] = hl
-							end
-							for idx, tl in ipairs(result.lines) do
-								local nl = NuiLine()
-								local line_hl = hl_by_line[idx - 1]
-								if line_hl then
-									nl:append(NuiText(tl, line_hl.hl_group))
-								else
-									nl:append(tl)
-								end
-								add_line(nl, "tool")
-							end
-							state.tasks[tool_part.id] = {
-								start_line = base_line,
-								end_line = base_line + #result.lines - 1,
-								tool_part = tool_part,
-							}
-						else
-							local is_expanded = state.expanded_tools[tool_part.id] or false
-							local result = render.render_tool_line(tool_part, is_expanded)
-							local base_line = #raw_lines
-							local hl_by_line = {}
-							for _, hl in ipairs(result.highlights) do
-								hl_by_line[hl.line] = hl
-							end
-							for idx, tl in ipairs(result.lines) do
-								local nl = NuiLine()
-								local line_hl = hl_by_line[idx - 1]
-								if line_hl then
-									nl:append(NuiText(tl, line_hl.hl_group))
-								else
-									nl:append(tl)
-								end
-								add_line(nl, "tool")
-							end
-							state.tools[tool_part.id] = {
-								start_line = base_line,
-								end_line = base_line + #result.lines - 1,
-								tool_part = tool_part,
+				for _, part in ipairs(parts) do
+					if part.type == "reasoning" and part.text and part.text ~= "" and thinking.is_enabled() then
+						local reasoning_lines = render.render_reasoning(part.text)
+						for _, nl in ipairs(reasoning_lines) do
+							add_line(nl)
+						end
+					elseif part.type == "text" and part.text and part.text ~= "" then
+						local content_start = #raw_lines
+						local content_lines = render.render_content(part.text, { stream_plain = render_as_plain_stream })
+						for _, nl in ipairs(content_lines) do
+							add_line(nl)
+						end
+						if incomplete_assistant and #content_lines > 0 then
+							next_stream_blocks[message.id] = {
+								start_line = content_start,
+								end_line = #raw_lines - 1,
+								part_id = part.id,
 							}
 						end
-
-						render_widgets_for_tool_call(message.id, tool_part.callID)
+					elseif part.type == "tool" then
+						render_tool_part(part)
+						render_widgets_for_tool_call(message.id, part.callID)
 					end
 				end
 
