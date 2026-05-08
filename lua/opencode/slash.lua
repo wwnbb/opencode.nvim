@@ -201,15 +201,36 @@ function M.register_defaults()
 		end,
 	})
 
-	-- /skill <name> - Run a specific skill
+	-- /skill <name>[, <name>...] - Run one or more specific skills
 	M.register({
 		name = "skill",
-		description = "Run a specific skill by name",
+		description = "Run one or more skills by name",
 		category = "actions",
 		handler = function(args)
-			local name = vim.trim(args or "")
-			if name == "" then
-				vim.notify("Usage: /skill <name>", vim.log.levels.WARN)
+			local function parse_skill_names(input)
+				local names = {}
+				local seen = {}
+				local text = vim.trim(input or "")
+				text = text:gsub("^%[", ""):gsub("%]$", "")
+				if text == "" then
+					return names
+				end
+
+				local pattern = text:find(",", 1, true) and "[^,]+" or "%S+"
+				for part in text:gmatch(pattern) do
+					local name = vim.trim(part)
+					name = name:gsub("^['\"]", ""):gsub("['\"]$", "")
+					if name ~= "" and not seen[name] then
+						seen[name] = true
+						table.insert(names, name)
+					end
+				end
+				return names
+			end
+
+			local names = parse_skill_names(args)
+			if #names == 0 then
+				vim.notify("Usage: /skill <name>[, <name>...]", vim.log.levels.WARN)
 				return
 			end
 
@@ -219,56 +240,58 @@ function M.register_defaults()
 				return
 			end
 
-			local function has_skill_command()
+			local function resolve_load_skills_command()
 				local ok, sync = pcall(require, "opencode.sync")
 				if not ok or type(sync.get_commands) ~= "function" then
-					return false
+					return nil
 				end
 
+				local candidates = {
+					load_skills = true,
+					loadskills = true,
+				}
 				local commands = sync.get_commands() or {}
 				for key, cmd in pairs(commands) do
-					if key == "skill" then
-						return true
+					if candidates[key] then
+						return key
 					end
-					if type(cmd) == "table" and cmd.name == "skill" then
-						return true
+					if type(cmd) == "table" and candidates[cmd.name] then
+						return cmd.name
 					end
 				end
 
-				return false
+				return nil
 			end
 
-			local function run_skill_via_tool()
+			local function run_skills_via_tool()
+				local joined = table.concat(names, ", ")
 				local opencode = require("opencode")
-				opencode.send(
-					string.format(
-						"Use the `skill` tool to load the skill named `%s`, then reply with a one-line confirmation.",
-						name
-					)
-				)
-				vim.notify("Requested skill via tool: " .. name, vim.log.levels.INFO)
+				opencode.send("load_skill [" .. joined .. "]")
+				vim.notify("Requested skills via tool: " .. joined, vim.log.levels.INFO)
 			end
 
 			lifecycle.ensure_connected(function()
 				local client = require("opencode.client")
-				if not has_skill_command() then
-					run_skill_via_tool()
+				local command_name = resolve_load_skills_command()
+				if not command_name then
+					run_skills_via_tool()
 					return
 				end
 
-				client.execute_command(session.id, "skill", name, {}, function(err)
+				local joined = table.concat(names, ", ")
+				client.execute_command(session.id, command_name, joined, {}, function(err)
 					vim.schedule(function()
 						if err then
 							local err_text = tostring(err.message or err.error or err)
 							local lower = err_text:lower()
 							if lower:find("command") and (lower:find("not found") or lower:find("unknown")) then
-								run_skill_via_tool()
+								run_skills_via_tool()
 								return
 							end
-							vim.notify("Failed to run skill: " .. err_text, vim.log.levels.ERROR)
+							vim.notify("Failed to run skills: " .. err_text, vim.log.levels.ERROR)
 							return
 						end
-						vim.notify("Running skill: " .. name, vim.log.levels.INFO)
+						vim.notify("Running skills: " .. joined, vim.log.levels.INFO)
 					end)
 				end)
 			end)
