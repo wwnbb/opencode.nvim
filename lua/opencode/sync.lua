@@ -51,6 +51,12 @@ local store = {
 	mcp = {},           -- MCP server status
 }
 
+local UTILITY_AGENT_NAMES = {
+	compaction = true,
+	summary = true,
+	title = true,
+}
+
 -- Binary search implementation (matches TUI's Binary.search)
 -- Returns { found = bool, index = number }
 -- If found, index is the position of the item
@@ -599,16 +605,42 @@ function M.get_agents()
 	return store.agent or {}
 end
 
----Get filtered agents (excluding subagents and hidden)
----@return table[]
-function M.get_visible_agents()
-	local agents = {}
-	for _, agent in ipairs(store.agent) do
-		if agent.mode ~= "subagent" and not agent.hidden then
-			table.insert(agents, agent)
+---Check whether an agent should be selectable as a primary chat agent.
+---@param agent table|nil Agent object
+---@return boolean visible Whether the agent should be shown in primary-agent UI
+function M.is_visible_agent(agent)
+	if type(agent) ~= "table" then
+		return false
+	end
+	if agent.hidden then
+		return false
+	end
+
+	local name = agent.name or agent.id
+	if type(name) == "string" and UTILITY_AGENT_NAMES[name] then
+		return false
+	end
+
+	return agent.mode == "primary" or agent.mode == "all"
+end
+
+---Filter agents to primary-capable, user-visible entries.
+---@param agents table[]|nil Array of agent objects
+---@return table[] agents Filtered agents
+function M.filter_visible_agents(agents)
+	local visible = {}
+	for _, agent in ipairs(agents or {}) do
+		if M.is_visible_agent(agent) then
+			table.insert(visible, agent)
 		end
 	end
-	return agents
+	return visible
+end
+
+---Get filtered agents (excluding subagents, hidden agents, and utility agents)
+---@return table[]
+function M.get_visible_agents()
+	return M.filter_visible_agents(store.agent)
 end
 
 ---Get a specific agent by name
