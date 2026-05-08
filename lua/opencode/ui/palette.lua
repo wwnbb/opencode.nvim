@@ -2170,8 +2170,8 @@ local function register_defaults()
 
 	M.register({
 		id = "action.skills",
-		title = "Run Skill",
-		description = "Select and execute an available skill",
+		title = "Run Skills",
+		description = "Select and execute available skills",
 		category = "prompt",
 		suggested = true,
 		action = function()
@@ -2189,28 +2189,104 @@ local function register_defaults()
 			local sync = require("opencode.sync")
 			local float = require("opencode.ui.float")
 
-			local function has_command(name)
+			local function resolve_command(names)
+				local candidates = {}
+				for _, name in ipairs(names) do
+					candidates[name] = true
+				end
+
 				local commands = sync.get_commands() or {}
 				for key, cmd in pairs(commands) do
-					if key == name then
-						return true
+					if candidates[key] then
+						return key
 					end
-					if type(cmd) == "table" and cmd.name == name then
-						return true
+					if type(cmd) == "table" and candidates[cmd.name] then
+						return cmd.name
 					end
 				end
-				return false
+				return nil
 			end
 
-			local function load_skills(name)
-				client.execute_command(session.id, "load_skills", name, {}, function(err)
+			local function add_skill_name(names, seen, value)
+				local name = vim.trim(tostring(value or ""))
+				name = name:gsub("^%[", ""):gsub("%]$", "")
+				name = name:gsub("^['\"]", ""):gsub("['\"]$", "")
+				if name == "" or seen[name] then
+					return
+				end
+
+				seen[name] = true
+				table.insert(names, name)
+			end
+
+			local function add_skill_names(names, seen, value)
+				if type(value) ~= "string" then
+					add_skill_name(names, seen, value)
+					return
+				end
+
+				local text = vim.trim(value)
+				if text == "" then
+					return
+				end
+
+				local pattern = text:find(",", 1, true) and "[^,]+" or "%S+"
+				for part in text:gmatch(pattern) do
+					add_skill_name(names, seen, part)
+				end
+			end
+
+			local function normalize_skill_names(value)
+				local names = {}
+				local seen = {}
+				if type(value) == "table" then
+					for _, item in ipairs(value) do
+						if type(item) == "table" then
+							add_skill_names(names, seen, item.value or item.label or item.name)
+						else
+							add_skill_names(names, seen, item)
+						end
+					end
+				else
+					add_skill_names(names, seen, value)
+				end
+				return names
+			end
+
+			local function request_skills_via_tool(names)
+				local joined = table.concat(names, ", ")
+				local opencode = require("opencode")
+				opencode.send("load_skill [" .. joined .. "]")
+				vim.notify("Requested skills via tool: " .. joined, vim.log.levels.INFO)
+			end
+
+			local function load_skills(selected)
+				local names = normalize_skill_names(selected)
+				if #names == 0 then
+					vim.notify("No skills selected", vim.log.levels.WARN)
+					return
+				end
+
+				local command_name = resolve_command({ "load_skills", "loadskills" })
+				if not command_name then
+					request_skills_via_tool(names)
+					return
+				end
+
+				local joined = table.concat(names, ", ")
+				client.execute_command(session.id, command_name, joined, {}, function(err)
 					vim.schedule(function()
 						if err then
 							local err_text = tostring(err.message or err.error or err)
-							vim.notify("Failed to run load_skills: " .. err_text, vim.log.levels.ERROR, name)
+							local lower = err_text:lower()
+							if lower:find("command") and (lower:find("not found") or lower:find("unknown")) then
+								request_skills_via_tool(names)
+								return
+							end
+							vim.notify("Failed to run load_skills: " .. err_text, vim.log.levels.ERROR)
 							return
 						end
-						vim.notify("Loading skills: " .. name, vim.log.levels.INFO)
+						vim.notify("Loading skills: " .. joined, vim.log.levels.INFO)
 					end)
 				end)
 			end
@@ -2245,15 +2321,14 @@ local function register_defaults()
 					return
 				end
 
-				float.create_searchable_menu(items, function(item)
-					local selected_name = item and (item.value or item.label)
-					if not selected_name or selected_name == "" then
+				float.create_searchable_menu(items, function(selected_items)
+					if type(selected_items) ~= "table" or #selected_items == 0 then
 						vim.notify("Invalid skill selection", vim.log.levels.WARN)
 						return
 					end
 
-					load_skills(selected_name)
-				end, { title = " Select Skill ", width = 60 })
+					load_skills(selected_items)
+				end, { title = " Select Skills ", width = 60, multi_select = true, confirm_label = "load" })
 			end
 
 			local function show_local_skill_picker()
@@ -2277,27 +2352,7 @@ local function register_defaults()
 				end)
 			end
 
-			if not has_command("loadskills") then
-				show_local_skill_picker()
-				return
-			end
-
-			client.execute_command(session.id, "load_skills", {}, {}, function(err)
-				vim.schedule(function()
-					if err then
-						local err_text = tostring(err.message or err.error or err)
-						local lower = err_text:lower()
-						if lower:find("command") and (lower:find("not found") or lower:find("unknown")) then
-							show_local_skill_picker()
-							return
-						end
-						vim.notify("Failed to load skills: " .. err_text, vim.log.levels.ERROR)
-						return
-					end
-
-					vim.notify("Loading skills", vim.log.levels.INFO)
-				end)
-			end)
+			show_local_skill_picker()
 		end,
 	})
 

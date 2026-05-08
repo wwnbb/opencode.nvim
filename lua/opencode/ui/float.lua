@@ -446,12 +446,13 @@ end
 
 -- Create interactive searchable menu with fuzzy filtering
 -- items: array of { label, value, description?, group?, priority? }
--- on_select: function(item) called when item is selected
+-- on_select: function(item|items) called when item is selected, or with selected items when multi_select is true
 -- custom_key: { key, on_key, text? } custom hotkey config; on_key(item, render) returns true to keep menu open
--- opts: { title?, width?, placeholder?, groups?, custom_key?, close_on_select? }
+-- opts: { title?, width?, placeholder?, groups?, custom_key?, close_on_select?, multi_select?, confirm_label? }
 function M.create_searchable_menu(items, on_select, opts)
 	opts = opts or {}
 	local custom_key = opts.custom_key
+	local multi_select = opts.multi_select == true
 
 	local NuiLayout = require("nui.layout")
 	local NuiInput = require("nui.input")
@@ -470,6 +471,34 @@ function M.create_searchable_menu(items, on_select, opts)
 	local selected_idx = 1
 	local search_text = ""
 	local is_closed = false
+	local selected_items = {}
+
+	local function item_key(item)
+		if type(item) == "table" then
+			local value = item.value or item.label
+			if value ~= nil then
+				return tostring(value)
+			end
+		end
+		return tostring(item)
+	end
+
+	local bottom_text = nil
+	if opts.footer_text then
+		bottom_text = opts.footer_text
+	elseif multi_select then
+		local confirm_label = opts.confirm_label or "confirm"
+		if custom_key then
+			bottom_text = " ↑↓/j,k:nav  tab/space:toggle  ⏎:" .. confirm_label
+				.. "  " .. (custom_key.text or "") .. "  esc:close "
+		else
+			bottom_text = " ↑↓/j,k:nav  tab/space:toggle  ⏎:" .. confirm_label .. "  esc:close "
+		end
+	elseif custom_key then
+		bottom_text = " ↑↓/j,k:nav  ⏎:select  " .. (custom_key.text or "") .. "  esc:close "
+	else
+		bottom_text = " ↑↓/j,k:navigate  ⏎:select  esc:close "
+	end
 
 	-- Create input popup for search
 	local input_popup = NuiInput({
@@ -504,8 +533,7 @@ function M.create_searchable_menu(items, on_select, opts)
 		border = {
 			style = "rounded",
 			text = {
-				bottom = custom_key and (" ↑↓/j,k:nav  ⏎:select  " .. (custom_key.text or "") .. "  esc:close ")
-					or " ↑↓/j,k:navigate  ⏎:select  esc:close ",
+				bottom = bottom_text,
 				bottom_align = "center",
 			},
 		},
@@ -587,7 +615,11 @@ function M.create_searchable_menu(items, on_select, opts)
 			for i, item in ipairs(filtered_items) do
 				local prefix = i == selected_idx and "▸ " or "  "
 				local label = item.label or tostring(item.value)
-				local line = prefix .. label
+				local marker = ""
+				if multi_select then
+					marker = selected_items[item_key(item)] and "[x] " or "[ ] "
+				end
+				local line = prefix .. marker .. label
 
 				-- Add description if present
 				if item.description then
@@ -634,8 +666,40 @@ function M.create_searchable_menu(items, on_select, opts)
 		focus_chat_if_visible()
 	end
 
+	local function get_selected_items()
+		local selected = {}
+		for _, item in ipairs(items) do
+			if selected_items[item_key(item)] then
+				table.insert(selected, item)
+			end
+		end
+		return selected
+	end
+
+	local function confirm_multi_selection()
+		if #filtered_items == 0 then
+			return
+		end
+
+		local selected = get_selected_items()
+		if #selected == 0 and filtered_items[selected_idx] then
+			selected = { filtered_items[selected_idx] }
+		end
+		if #selected == 0 then
+			return
+		end
+
+		close()
+		on_select(selected)
+	end
+
 	-- Select current item
 	local function select_current()
+		if multi_select then
+			confirm_multi_selection()
+			return
+		end
+
 		if #filtered_items > 0 and filtered_items[selected_idx] then
 			local item = filtered_items[selected_idx]
 			if opts.close_on_select == false then
@@ -646,6 +710,23 @@ function M.create_searchable_menu(items, on_select, opts)
 			close()
 			on_select(item)
 		end
+	end
+
+	local function toggle_current()
+		if not multi_select then
+			return
+		end
+		if #filtered_items == 0 or not filtered_items[selected_idx] then
+			return
+		end
+
+		local key = item_key(filtered_items[selected_idx])
+		if selected_items[key] then
+			selected_items[key] = nil
+		else
+			selected_items[key] = true
+		end
+		render_list()
 	end
 
 	-- Move selection
@@ -674,6 +755,10 @@ function M.create_searchable_menu(items, on_select, opts)
 
 	vim.keymap.set("i", "<CR>", select_current, keymap_opts)
 	vim.keymap.set("i", "<C-c>", close, keymap_opts)
+	if multi_select then
+		vim.keymap.set("i", "<Tab>", toggle_current, keymap_opts)
+		vim.keymap.set("i", "<C-Space>", toggle_current, keymap_opts)
+	end
 	vim.keymap.set("i", "<Up>", function()
 		move_selection(-1)
 	end, keymap_opts)
@@ -697,6 +782,9 @@ function M.create_searchable_menu(items, on_select, opts)
 	vim.keymap.set("n", "<CR>", select_current, keymap_opts)
 	vim.keymap.set("n", "<Esc>", close, keymap_opts)
 	vim.keymap.set("n", "q", close, keymap_opts)
+	if multi_select then
+		vim.keymap.set("n", "<Space>", toggle_current, keymap_opts)
+	end
 	vim.keymap.set("n", "j", function()
 		move_selection(1)
 	end, keymap_opts)
