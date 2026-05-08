@@ -1145,6 +1145,7 @@ local function register_defaults()
 	local client = require("opencode.client")
 	local lifecycle = require("opencode.lifecycle")
 	local changes = require("opencode.artifact.changes")
+	local sync = require("opencode.sync")
 
 	-- Session commands
 	M.register({
@@ -1833,13 +1834,15 @@ local function register_defaults()
 						return
 					end
 					vim.schedule(function()
-						if not agents or #agents == 0 then
+						sync.handle_agents(agents)
+						local visible_agents = sync.get_visible_agents()
+						if #visible_agents == 0 then
 							vim.notify("No agents available", vim.log.levels.WARN)
 							return
 						end
 
 						local items = {}
-						for _, agent in ipairs(agents) do
+						for _, agent in ipairs(visible_agents) do
 							table.insert(items, {
 								label = (agent.name or agent.id)
 									.. (agent.description and (" - " .. agent.description) or ""),
