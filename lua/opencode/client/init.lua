@@ -26,6 +26,15 @@ local function normalize_directory(directory)
 	return absolute
 end
 
+---@param segment string
+---@return string
+local function encode_path_segment(segment)
+	local encoded = tostring(segment):gsub("[^A-Za-z0-9%-_.~]", function(c)
+		return string.format("%%%02X", c:byte())
+	end)
+	return encoded
+end
+
 -- Configure both clients
 ---@param opts table Configuration options
 function M.setup(opts)
@@ -328,6 +337,20 @@ end
 ---@param callback function(err, mcp_status)
 function M.get_mcp_status(callback)
 	http.get("/mcp", callback)
+end
+
+-- Connect MCP server
+---@param name string MCP server name
+---@param callback function(err, success)
+function M.connect_mcp(name, callback)
+	http.post("/mcp/" .. encode_path_segment(name) .. "/connect", vim.empty_dict(), callback)
+end
+
+-- Disconnect MCP server
+---@param name string MCP server name
+---@param callback function(err, success)
+function M.disconnect_mcp(name, callback)
+	http.post("/mcp/" .. encode_path_segment(name) .. "/disconnect", vim.empty_dict(), callback)
 end
 
 -- Get LSP status
