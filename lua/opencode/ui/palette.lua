@@ -2302,7 +2302,7 @@ local function register_defaults()
 	M.register({
 		id = "mcp.status",
 		title = "MCP Servers",
-		description = "Show MCP server status",
+		description = "List and toggle MCP servers",
 		category = "mcp",
 		keybind = "<leader>oS",
 		action = function()
@@ -2319,13 +2319,123 @@ local function register_defaults()
 						return
 					end
 
-					local lines = { "MCP Server Status:", "" }
-					for name, server in pairs(status) do
-						local status_icon = server.status == "connected" and "●" or "○"
-						table.insert(lines, string.format("  %s %s: %s", status_icon, name, server.status))
+					local function format_status(server)
+						local value = type(server) == "table" and server.status or nil
+						if value == "connected" then
+							return "connected", "●", "Connected", 3
+						end
+						if value == "disabled" then
+							return "disabled", "○", "Disabled", 2
+						end
+						if value == "failed" then
+							return "failed", "×", "Failed", 1
+						end
+						if value == "needs_auth" then
+							return "needs_auth", "!", "Needs auth", 1
+						end
+						if value == "needs_client_registration" then
+							return "needs_client_registration", "!", "Needs client ID", 1
+						end
+						return value or "unknown", "?", "Unknown", 0
 					end
 
-					vim.notify(table.concat(lines, "\n"), vim.log.levels.INFO)
+					local function describe_server(server)
+						if type(server) ~= "table" then
+							return nil
+						end
+						if server.status == "failed" and server.error then
+							return tostring(server.error)
+						end
+						if server.status == "needs_client_registration" and server.error then
+							return tostring(server.error)
+						end
+						local _, _, text = format_status(server)
+						return text
+					end
+
+					local function update_item(item, server)
+						local status_value, icon, status_text, priority = format_status(server)
+						item.server = server
+						item.status = status_value
+						item.label = string.format("%s %s", icon, item.value)
+						item.description = describe_server(server)
+						item.priority = priority
+						item.status_text = status_text
+					end
+
+					local items = {}
+					for name, server in pairs(status) do
+						local item = {
+							value = name,
+						}
+						update_item(item, server)
+						table.insert(items, item)
+					end
+
+					table.sort(items, function(a, b)
+						return a.value < b.value
+					end)
+
+					local function refresh_item(item, render)
+						client.get_mcp_status(function(refresh_err, refreshed)
+							if refresh_err then
+								vim.notify(
+									"Failed to refresh MCP status: " .. tostring(refresh_err.message or refresh_err),
+									vim.log.levels.ERROR
+								)
+								return
+							end
+							if refreshed then
+								local sync = require("opencode.sync")
+								sync.handle_mcp(refreshed)
+								update_item(item, refreshed[item.value] or { status = "disabled" })
+								if render then
+									render()
+								end
+							end
+						end)
+					end
+
+					local float = require("opencode.ui.float")
+					float.create_searchable_menu(items, function(item)
+						vim.notify(
+							item.value .. ": " .. (item.description or item.status_text or item.status),
+							vim.log.levels.INFO
+						)
+					end, {
+						title = " MCP Servers ",
+						width = 60,
+						close_on_select = false,
+						custom_key = {
+							key = "t",
+							text = "t:toggle",
+							on_key = function(item, render)
+								local was_connected = item.status == "connected"
+								local toggle = was_connected and client.disconnect_mcp or client.connect_mcp
+								toggle(item.value, function(toggle_err)
+									if toggle_err then
+										vim.notify(
+											"Failed to toggle MCP server "
+												.. item.value
+												.. ": "
+												.. tostring(toggle_err.message or toggle_err),
+											vim.log.levels.ERROR
+										)
+										return
+									end
+									refresh_item(item, render)
+									vim.notify(
+										item.value .. (was_connected and " disabled" or " enabled"),
+										vim.log.levels.INFO
+									)
+								end)
+								return true
+							end,
+						},
+						sort_fn = function(a, b)
+							return a.value < b.value
+						end,
+					})
 				end)
 			end)
 		end,

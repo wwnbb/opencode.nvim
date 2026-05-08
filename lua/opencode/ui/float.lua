@@ -447,8 +447,8 @@ end
 -- Create interactive searchable menu with fuzzy filtering
 -- items: array of { label, value, description?, group?, priority? }
 -- on_select: function(item) called when item is selected
--- custom_key: { key, on_key, text? } custom hotkey config; on_key(item) returns true to keep menu open
--- opts: { title?, width?, placeholder?, groups?, custom_key? }
+-- custom_key: { key, on_key, text? } custom hotkey config; on_key(item, render) returns true to keep menu open
+-- opts: { title?, width?, placeholder?, groups?, custom_key?, close_on_select? }
 function M.create_searchable_menu(items, on_select, opts)
 	opts = opts or {}
 	local custom_key = opts.custom_key
@@ -638,6 +638,11 @@ function M.create_searchable_menu(items, on_select, opts)
 	local function select_current()
 		if #filtered_items > 0 and filtered_items[selected_idx] then
 			local item = filtered_items[selected_idx]
+			if opts.close_on_select == false then
+				on_select(item)
+				render_list()
+				return
+			end
 			close()
 			on_select(item)
 		end
@@ -709,7 +714,7 @@ function M.create_searchable_menu(items, on_select, opts)
 	if custom_key and custom_key.key and custom_key.on_key then
 		vim.keymap.set("n", custom_key.key, function()
 			if #filtered_items > 0 and filtered_items[selected_idx] then
-				local keep_open = custom_key.on_key(filtered_items[selected_idx])
+				local keep_open = custom_key.on_key(filtered_items[selected_idx], render_list)
 				if not keep_open then
 					close()
 				else
