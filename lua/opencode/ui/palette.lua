@@ -1975,25 +1975,25 @@ local function register_defaults()
 		description = "Revert all pending changes",
 		category = "actions",
 		action = function()
-			local all_changes = changes.get_all()
-			if #all_changes == 0 then
+			local pending = changes.get_pending()
+			if #pending == 0 then
 				vim.notify("No pending changes to revert", vim.log.levels.INFO)
 				return
 			end
 
 			vim.ui.select({ "Yes", "No" }, {
-				prompt = "Revert all " .. #all_changes .. " pending changes?",
+				prompt = "Revert all " .. #pending .. " pending changes?",
 			}, function(choice)
 				if choice == "Yes" then
-					for _, change in ipairs(all_changes) do
-						changes.reject_change(change.id)
+					for _, change in ipairs(pending) do
+						changes.reject(change.id)
 					end
 					vim.notify("Reverted all changes", vim.log.levels.INFO)
 				end
 			end)
 		end,
 		enabled = function()
-			return #changes.get_all() > 0
+			return #changes.get_pending() > 0
 		end,
 	})
 

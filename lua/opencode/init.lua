@@ -229,27 +229,40 @@ function M.setup(opts)
     end
   end
 
-  -- Setup local state module (agent/model/variant selection)
-  local local_ok, local_module = pcall(require, "opencode.local")
-  if local_ok then
-    local_module.setup()
-    M.local_state = local_module
-  else
-    vim.notify("Failed to load local state module: " .. tostring(local_module), vim.log.levels.WARN)
-  end
+	-- Setup local state module (agent/model/variant selection)
+	local local_ok, local_module = pcall(require, "opencode.local")
+	if local_ok then
+		local_module.setup()
+		M.local_state = local_module
+	else
+		vim.notify("Failed to load local state module: " .. tostring(local_module), vim.log.levels.WARN)
+	end
 
-  -- Setup command palette (registers default commands)
-  local palette_ok, palette = pcall(require, "opencode.ui.palette")
-  if palette_ok and type(palette.setup) == "function" then
-    pcall(function()
-      palette.setup()
-      M.palette = palette
-    end)
-  else
-    if not palette_ok then
-      vim.notify("Failed to load command palette: " .. tostring(palette), vim.log.levels.WARN)
-    end
-  end
+	-- Setup artifact change tracking before UI modules register commands that depend on it.
+	local changes_ok, changes = pcall(require, "opencode.artifact.changes")
+	if changes_ok and type(changes.setup) == "function" then
+		local changes_setup_ok, changes_err = pcall(changes.setup, M._config.changes or {})
+		if changes_setup_ok then
+			M.changes = changes
+		else
+			vim.notify("Failed to setup change tracking: " .. tostring(changes_err), vim.log.levels.WARN)
+		end
+	elseif not changes_ok then
+		vim.notify("Failed to load change tracking: " .. tostring(changes), vim.log.levels.WARN)
+	end
+
+	-- Setup command palette (registers default commands)
+	local palette_ok, palette = pcall(require, "opencode.ui.palette")
+	if palette_ok and type(palette.setup) == "function" then
+		local palette_setup_ok, palette_err = pcall(palette.setup)
+		if palette_setup_ok then
+			M.palette = palette
+		else
+			vim.notify("Failed to setup command palette: " .. tostring(palette_err), vim.log.levels.WARN)
+		end
+	elseif not palette_ok then
+		vim.notify("Failed to load command palette: " .. tostring(palette), vim.log.levels.WARN)
+	end
 
   -- Setup slash commands (registers default commands like /new)
   local slash_ok, slash = pcall(require, "opencode.slash")
