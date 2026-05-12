@@ -736,36 +736,14 @@ function M.send(message, opts)
 				end
 			end
 
-			local function handle_prompt_response(response)
-				if type(response) ~= "table" then
-					return
-				end
-				local sync_response_ok, sync_response = pcall(require, "opencode.sync")
-				if not sync_response_ok then
-					return
-				end
-				if response.info then
-					sync_response.handle_message_updated(response.info)
-				end
-				if type(response.parts) == "table" then
-					for _, part in ipairs(response.parts) do
-						sync_response.handle_part_updated(part)
-					end
-				end
-				local events_ok, response_events = pcall(require, "opencode.events")
-				if events_ok then
-					response_events.emit("chat_render", { session_id = sid })
-				end
-			end
-
 			logger.debug("Sending prompt request", {
-				route = "/session/:id/message",
+				route = "/session/:id/prompt_async",
 				session_id = sid,
 				message_id = prompt_message_id,
 			})
 			state.set_status("streaming")
 
-			client.send_message(sid, payload, { timeout = 0 }, function(err, response)
+			client.send_message_async(sid, payload, function(err)
 				if err then
 					logger.debug("Prompt request rejected", {
 						session_id = sid,
@@ -779,19 +757,12 @@ function M.send(message, opts)
 					return
 				end
 
-				logger.debug("Prompt request completed", {
+				logger.debug("Prompt request accepted", {
 					session_id = sid,
 					agent = agent,
 					model = summarize_model_ref(model),
 					variant = variant,
-					has_response = type(response) == "table",
-					part_count = type(response) == "table" and type(response.parts) == "table" and #response.parts or nil,
 				})
-
-				vim.schedule(function()
-					handle_prompt_response(response)
-					state.set_status("idle")
-				end)
 
 				vim.defer_fn(function()
 					local current = state.get_session()

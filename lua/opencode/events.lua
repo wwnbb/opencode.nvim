@@ -274,6 +274,7 @@ function M.setup_sse_bridge()
 		["file.edited"] = "edit",
 		["permission.requested"] = "permission",
 		["permission.asked"] = "permission", -- Server sends permission.asked
+		["permission.replied"] = "permission_replied",
 		["question.asked"] = "question_asked",
 		["question.replied"] = "question_replied",
 		["question.rejected"] = "question_rejected",
@@ -1590,6 +1591,9 @@ end
 
 -- Setup permission event handlers
 function M.setup_permission_handlers()
+	local app_state = require("opencode.state")
+	local logger = require("opencode.logger")
+
 	-- Clear permissions and edits on session change (skip when navigating into child sessions)
 	M.on("session_change", function()
 		local chat_ok, chat = pcall(require, "opencode.ui.chat")
@@ -1605,6 +1609,57 @@ function M.setup_permission_handlers()
 		if edit_state_ok then
 			edit_state_mod.clear_all()
 		end
+	end)
+
+	-- OpenCode clients treat permission.replied as the lifecycle event that resolves
+	-- the active request. Keep local permission/edit widgets in step with the
+	-- server even when the reply was sent by another UI or arrives before the
+	-- HTTP callback completes.
+	M.on("permission_replied", function(data)
+		vim.schedule(function()
+			if not data then
+				return
+			end
+
+			local permission_id = data.requestID or data.permissionID or data.id
+			if not permission_id or permission_id == "" then
+				return
+			end
+
+			local reply = data.reply or data.response
+			local changed = false
+
+			local perm_state_ok, perm_state_mod = pcall(require, "opencode.permission.state")
+			if perm_state_ok and perm_state_mod.has_permission and perm_state_mod.has_permission(permission_id) then
+				if reply == "reject" then
+					changed = perm_state_mod.mark_rejected(permission_id) or changed
+				else
+					changed = perm_state_mod.mark_approved(permission_id, reply == "always" and "always" or "once")
+						or changed
+				end
+
+				local chat_ok, chat = pcall(require, "opencode.ui.chat")
+				if chat_ok and chat.update_permission_status then
+					chat.update_permission_status(permission_id, reply == "reject" and "rejected" or "approved")
+				end
+			end
+
+			local edit_state_ok, edit_state_mod = pcall(require, "opencode.edit.state")
+			if edit_state_ok and edit_state_mod.get_edit and edit_state_mod.get_edit(permission_id) then
+				edit_state_mod.mark_sent(permission_id)
+				changed = true
+			end
+
+			if changed then
+				local session = app_state.get_session()
+				M.emit("chat_render", { session_id = data.sessionID or (session and session.id) })
+				logger.debug("Permission reply handled", {
+					permission_id = permission_id,
+					reply = reply,
+					sessionID = data.sessionID,
+				})
+			end
+		end)
 	end)
 end
 
