@@ -505,12 +505,27 @@ function M.send(message, opts)
 						modelID = state_model.id,
 					}
 				else
-					model = M._config.session.default_model
+					local sync_ok, sync = pcall(require, "opencode.sync")
+					local default_model = M._config.session.default_model
+					if
+						sync_ok
+						and default_model
+						and default_model.providerID
+						and default_model.modelID
+						and sync.get_model(default_model.providerID, default_model.modelID)
+					then
+						model = default_model
+					end
 				end
 			end
 
 			if not agent then
-				agent = M._config.session.default_agent
+				local sync_ok, sync = pcall(require, "opencode.sync")
+				local configured_agent = M._config.session.default_agent
+				local configured = sync_ok and configured_agent and sync.get_agent(configured_agent) or nil
+				if configured and sync.is_visible_agent(configured) then
+					agent = configured.name
+				end
 			end
 
 			local payload = {
