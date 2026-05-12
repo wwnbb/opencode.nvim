@@ -701,7 +701,8 @@ function M.is_visible_agent(agent)
 	if type(agent) ~= "table" then
 		return false
 	end
-	if agent.hidden then
+	-- JSON null decodes to vim.NIL, which is truthy; only boolean true means hidden.
+	if agent.hidden == true then
 		return false
 	end
 
