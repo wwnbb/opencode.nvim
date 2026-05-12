@@ -717,7 +717,21 @@ function M.variant.current()
 	if not model then
 		return nil
 	end
-	return state.variant[variant_key(model)]
+	local selected = state.variant[variant_key(model)]
+	if not selected or selected == "default" then
+		return nil
+	end
+	for _, variant in ipairs(M.variant.list()) do
+		if variant == selected then
+			return selected
+		end
+	end
+	logger.debug("Variant selection skipped", {
+		reason = "not_available_for_model",
+		model = model_summary(model),
+		variant = selected,
+	})
+	return nil
 end
 
 ---Get available variants for current model

@@ -257,6 +257,7 @@ end
 -- This bridges server-sent events to the local event system
 function M.setup_sse_bridge()
 	local client = require("opencode.client")
+	local logger = require("opencode.logger")
 
 	-- Map SSE events to local events
 	local sse_to_local = {
@@ -285,12 +286,31 @@ function M.setup_sse_bridge()
 
 	for sse_event, local_event in pairs(sse_to_local) do
 		client.on_event(sse_event, function(data)
+			logger.debug("SSE event mapped", {
+				sse_event = sse_event,
+				local_event = local_event,
+				sessionID = type(data) == "table" and data.sessionID or nil,
+				messageID = type(data) == "table" and (data.messageID or (data.info and data.info.id)) or nil,
+				role = type(data) == "table" and data.info and data.info.role or nil,
+				part_type = type(data) == "table" and data.part and data.part.type or nil,
+				status = type(data) == "table" and data.status and data.status.type or nil,
+				error = type(data) == "table" and data.error or nil,
+			})
 			M.emit(local_event, data)
 		end)
 	end
 
 	-- Also emit raw SSE events for advanced use
 	client.on_event("*", function(event_type, data)
+		logger.debug("SSE event received", {
+			event_type = event_type,
+			mapped = sse_to_local[event_type] ~= nil,
+			sessionID = type(data) == "table" and data.sessionID or nil,
+			messageID = type(data) == "table" and (data.messageID or (data.info and data.info.id)) or nil,
+			role = type(data) == "table" and data.info and data.info.role or nil,
+			part_type = type(data) == "table" and data.part and data.part.type or nil,
+			status = type(data) == "table" and data.status and data.status.type or nil,
+		})
 		M.emit("sse_" .. event_type, data)
 	end)
 end
@@ -300,6 +320,7 @@ end
 function M.setup_chat_handlers()
 	local state = require("opencode.state")
 	local sync = require("opencode.sync")
+	local logger = require("opencode.logger")
 
 	---@param part table
 	---@param current_session table
@@ -385,6 +406,9 @@ function M.setup_chat_handlers()
 		vim.schedule(function()
 			local info = data.info
 			if not info then
+				logger.debug("Message update ignored", {
+					reason = "missing_info",
+				})
 				return
 			end
 
@@ -393,8 +417,24 @@ function M.setup_chat_handlers()
 
 			local current_session = state.get_session()
 			if not current_session.id or info.sessionID ~= current_session.id then
+				logger.debug("Message update stored outside current session", {
+					message_session = info.sessionID,
+					current_session = current_session.id,
+					messageID = info.id,
+					role = info.role,
+				})
 				return
 			end
+
+			logger.debug("Message update stored for current session", {
+				sessionID = info.sessionID,
+				messageID = info.id,
+				role = info.role,
+				agent = info.agent,
+				providerID = info.providerID,
+				modelID = info.modelID,
+				completed = info.time and info.time.completed ~= nil or false,
+			})
 
 			-- Note: User messages now come from the server (not added locally)
 			-- so we process them like any other message to trigger re-render
@@ -433,6 +473,9 @@ function M.setup_chat_handlers()
 		vim.schedule(function()
 			local part = data.part
 			if not part then
+				logger.debug("Part update ignored", {
+					reason = "missing_part",
+				})
 				return
 			end
 
@@ -443,9 +486,22 @@ function M.setup_chat_handlers()
 			sync.handle_part_updated(part)
 
 			if not part_in_current_session(part, current_session, resolved_session_id) then
+				logger.debug("Part update stored outside current session", {
+					part_session = resolved_session_id,
+					current_session = current_session.id,
+					partID = part.id,
+					messageID = part.messageID,
+					type = part.type,
+				})
 				return
 			end
 
+			logger.debug("Part update stored for current session", {
+				sessionID = resolved_session_id,
+				partID = part.id,
+				messageID = part.messageID,
+				type = part.type,
+			})
 			emit_part_events(part, current_session)
 		end)
 	end)
@@ -454,9 +510,18 @@ function M.setup_chat_handlers()
 	M.on("message_part_delta", function(data)
 		vim.schedule(function()
 			if not data then
+				logger.debug("Part delta ignored", {
+					reason = "missing_data",
+				})
 				return
 			end
 			if not data.messageID or not data.partID or not data.field or type(data.delta) ~= "string" then
+				logger.debug("Part delta ignored", {
+					reason = "malformed",
+					messageID = data.messageID,
+					partID = data.partID,
+					field = data.field,
+				})
 				return
 			end
 
@@ -475,13 +540,33 @@ function M.setup_chat_handlers()
 				sessionID = resolved_session_id,
 			})
 			if not part then
+				logger.debug("Part delta ignored", {
+					reason = "part_not_found",
+					partID = data.partID,
+					messageID = data.messageID,
+					sessionID = resolved_session_id,
+				})
 				return
 			end
 
 			if not part_in_current_session(part, current_session, resolved_session_id) then
+				logger.debug("Part delta stored outside current session", {
+					part_session = resolved_session_id,
+					current_session = current_session.id,
+					partID = part.id,
+					messageID = part.messageID,
+					type = part.type,
+				})
 				return
 			end
 
+			logger.debug("Part delta stored for current session", {
+				sessionID = resolved_session_id,
+				partID = part.id,
+				messageID = part.messageID,
+				field = data.field,
+				delta_length = #data.delta,
+			})
 			emit_part_events(part, current_session)
 		end)
 	end)
@@ -528,6 +613,13 @@ function M.setup_chat_handlers()
 	M.on("session_status", function(data)
 		vim.schedule(function()
 			local sync = require("opencode.sync")
+			logger.debug("Session status event handling", {
+				sessionID = data and data.sessionID or nil,
+				status = data and data.status and data.status.type or data and data.status or nil,
+			})
+			if not data then
+				return
+			end
 
 			-- Update sync store first
 			if data.sessionID and data.status then
@@ -536,6 +628,11 @@ function M.setup_chat_handlers()
 
 			local current_session = state.get_session()
 			if data.sessionID ~= current_session.id then
+				logger.debug("Session status ignored", {
+					reason = "different_session",
+					sessionID = data.sessionID,
+					current_session = current_session.id,
+				})
 				return
 			end
 
@@ -586,12 +683,21 @@ function M.setup_chat_handlers()
 		vim.schedule(function()
 			local current_session = state.get_session()
 			if data and data.sessionID and data.sessionID ~= current_session.id then
+				logger.debug("Session error ignored", {
+					reason = "different_session",
+					sessionID = data.sessionID,
+					current_session = current_session.id,
+				})
 				return
 			end
 
 			state.set_status("idle")
 
 			local message = format_session_error(data and data.error)
+			logger.debug("Session error handled", {
+				sessionID = data and data.sessionID or nil,
+				message = message,
+			})
 			vim.notify("OpenCode session error: " .. message, vim.log.levels.ERROR)
 
 			local chat_ok, chat = pcall(require, "opencode.ui.chat")

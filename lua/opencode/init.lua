@@ -622,6 +622,7 @@ function M.send(message, opts)
 				variant = variant,
 				text_length = type(message) == "string" and #message or nil,
 			})
+			local before_message_count = sync_ok and #sync.get_messages(sid) or nil
 
 			-- Add context if provided
 			if opts.context then
@@ -633,6 +634,10 @@ function M.send(message, opts)
 			-- Send to server asynchronously
 			client.send_message_async(sid, payload, function(err)
 				if err then
+					logger.debug("prompt_async rejected", {
+						session_id = sid,
+						error = err.message or err.error or tostring(err),
+					})
 					vim.schedule(function()
 						vim.notify("Failed to send message: " .. tostring(err.message or err.error or err), vim.log.levels.ERROR)
 						chat.add_message("system", "Error: Failed to send message")
@@ -640,10 +645,39 @@ function M.send(message, opts)
 					return
 				end
 
+				logger.debug("prompt_async accepted", {
+					session_id = sid,
+					agent = agent,
+					model = summarize_model_ref(model),
+					variant = variant,
+				})
+
 				-- Message sent successfully, server will respond via SSE
 				vim.schedule(function()
 					state.set_status("streaming")
 				end)
+
+				vim.defer_fn(function()
+					local current = state.get_session()
+					if current.id ~= sid then
+						return
+					end
+					local current_status = state.get_status()
+					if current_status ~= "streaming" then
+						return
+					end
+					local sync_after_ok, sync_after = pcall(require, "opencode.sync")
+					local messages = sync_after_ok and sync_after.get_messages(sid) or {}
+					if before_message_count and #messages <= before_message_count then
+						logger.warn("No SSE messages observed after prompt_async", {
+							session_id = sid,
+							wait_ms = 3000,
+							status = current_status,
+							before_message_count = before_message_count,
+							after_message_count = #messages,
+						})
+					end
+				end, 3000)
 			end)
 		end
 
