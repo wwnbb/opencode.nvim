@@ -467,6 +467,8 @@ function M.send(message, opts)
 		local session_id = state.get_session().id
 
 		local function send_with_session(sid)
+			local logger = require("opencode.logger")
+
 			-- Build message payload
 			-- Get model/agent/variant from: 1) opts, 2) local state (user selection), 3) config default
 			local model = opts.model
@@ -474,20 +476,65 @@ function M.send(message, opts)
 			local variant = opts.variant
 			local sync_ok, sync = pcall(require, "opencode.sync")
 
-			local function resolve_model_ref(ref)
+			local function summarize_model_ref(ref)
+				if type(ref) ~= "table" then
+					return {
+						kind = ref == vim.NIL and "vim.NIL" or type(ref),
+					}
+				end
+				return {
+					kind = "table",
+					providerID = ref.providerID,
+					modelID = ref.modelID,
+					variant = ref.variant,
+				}
+			end
+
+			local function resolve_model_ref(ref, source)
 				if type(ref) ~= "table" or type(ref.providerID) ~= "string" or type(ref.modelID) ~= "string" then
+					logger.debug("Send model candidate skipped", {
+						source = source,
+						reason = "malformed",
+						model = summarize_model_ref(ref),
+					})
 					return nil
 				end
 				if ref.providerID == "" or ref.modelID == "" then
+					logger.debug("Send model candidate skipped", {
+						source = source,
+						reason = "empty",
+						model = summarize_model_ref(ref),
+					})
 					return nil
 				end
 				if not sync_ok or not sync.get_model(ref.providerID, ref.modelID) then
+					logger.debug("Send model candidate skipped", {
+						source = source,
+						reason = sync_ok and "not_in_sync" or "sync_unavailable",
+						model = summarize_model_ref(ref),
+					})
 					return nil
 				end
+				logger.debug("Send model candidate accepted", {
+					source = source,
+					model = summarize_model_ref(ref),
+				})
 				return {
 					providerID = ref.providerID,
 					modelID = ref.modelID,
 				}
+			end
+
+			if model then
+				local resolved = resolve_model_ref(model, "opts")
+				if resolved then
+					model = resolved
+				else
+					logger.debug("Explicit send model dropped after validation miss", {
+						model = summarize_model_ref(model),
+					})
+					model = nil
+				end
 			end
 
 			-- Try to get from local module (like TUI's local.tsx)
@@ -495,17 +542,29 @@ function M.send(message, opts)
 			if local_ok then
 				if not model then
 					local current_model = lc.model.current()
-					model = resolve_model_ref(current_model)
+					model = resolve_model_ref(current_model, "local_current")
 				end
 				if not agent then
 					local current_agent = lc.agent.current()
 					if current_agent then
 						agent = current_agent.name
+						logger.debug("Send agent selected", {
+							source = "local_current",
+							agent = agent,
+						})
+					else
+						logger.debug("Send agent candidate missing", {
+							source = "local_current",
+						})
 					end
 				end
 				if not variant then
 					variant = lc.variant.current()
 				end
+			else
+				logger.debug("Send local state unavailable", {
+					error = tostring(lc),
+				})
 			end
 
 			-- Fallback to old state module
@@ -515,12 +574,17 @@ function M.send(message, opts)
 					model = resolve_model_ref({
 						providerID = state_model.provider,
 						modelID = state_model.id,
+					}, "legacy_state")
+				else
+					logger.debug("Send legacy state model skipped", {
+						provider = state_model.provider,
+						id = state_model.id,
 					})
 				end
 
 				if not model then
 					local default_model = M._config.session.default_model
-					model = resolve_model_ref(default_model)
+					model = resolve_model_ref(default_model, "plugin_config_default")
 				end
 			end
 
@@ -529,6 +593,16 @@ function M.send(message, opts)
 				local configured = sync_ok and configured_agent and sync.get_agent(configured_agent) or nil
 				if configured and sync.is_visible_agent(configured) then
 					agent = configured.name
+					logger.debug("Send agent selected", {
+						source = "plugin_config_default",
+						agent = agent,
+					})
+				else
+					logger.debug("Send configured agent skipped", {
+						agent = configured_agent,
+						reason = not sync_ok and "sync_unavailable"
+							or (not configured and "not_in_sync" or "not_visible"),
+					})
 				end
 			end
 
@@ -540,6 +614,14 @@ function M.send(message, opts)
 				model = model,
 				variant = variant,
 			}
+
+			logger.debug("Sending prompt_async payload", {
+				session_id = sid,
+				agent = agent,
+				model = summarize_model_ref(model),
+				variant = variant,
+				text_length = type(message) == "string" and #message or nil,
+			})
 
 			-- Add context if provided
 			if opts.context then
