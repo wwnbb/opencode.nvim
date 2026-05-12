@@ -1768,7 +1768,7 @@ function M.render()
 	end
 
 	for msg_idx, message in ipairs(messages) do
-		local content = sync.get_message_text(message.id)
+		local content = sync.get_message_text(message.id, message.role == "user" and { include_synthetic = false } or nil)
 		local reasoning = sync.get_message_reasoning(message.id)
 		local tool_parts = sync.get_message_tools(message.id)
 		local parts = sync.get_parts(message.id)
@@ -1881,14 +1881,18 @@ function M.render()
 		for _, synced in ipairs(messages) do
 			local created = synced.time and synced.time.created
 			local same_turn = not created or local_ms == 0 or created >= local_ms - 5000
-			if synced.role == "user" and same_turn and sync.get_message_text(synced.id) == local_message.content then
+			if
+				synced.role == "user"
+				and same_turn
+				and sync.get_message_text(synced.id, { include_synthetic = false }) == local_message.content
+			then
 				return true
 			end
 		end
 		return false
 	end
 
-	-- Local messages (optimistic user echo, questions, etc.)
+	-- Local messages (legacy messages, questions, etc.)
 	for _, message in ipairs(state.messages) do
 		if message.session_id and current_session.id and message.session_id ~= current_session.id then
 			goto continue_local_message
@@ -1901,6 +1905,9 @@ function M.render()
 		end
 
 		if message.role == "user" then
+			if message.optimistic then
+				goto continue_local_message
+			end
 			if has_server_user_echo(message) then
 				goto continue_local_message
 			end
