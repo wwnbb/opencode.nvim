@@ -108,6 +108,8 @@ local function setup_chat_window_options(winid)
 	wo.relativenumber = false
 	wo.signcolumn = "no"
 	wo.foldcolumn = "0"
+	wo.cursorline = false
+	wo.cursorcolumn = false
 	pcall(function()
 		wo.statuscolumn = ""
 	end)
