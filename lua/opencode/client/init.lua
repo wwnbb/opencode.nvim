@@ -151,9 +151,15 @@ end
 -- Send message to session
 ---@param session_id string
 ---@param message table { parts, model?, agent?, noReply?, system?, tools?, messageID? }
----@param callback function(err, response)
-function M.send_message(session_id, message, callback)
-	http.post("/session/" .. session_id .. "/message", message, callback)
+---@param opts_or_callback? table|function
+---@param callback? function(err, response)
+function M.send_message(session_id, message, opts_or_callback, callback)
+	local opts = opts_or_callback
+	if type(opts_or_callback) == "function" then
+		callback = opts_or_callback
+		opts = nil
+	end
+	http.post("/session/" .. session_id .. "/message", message, callback, opts)
 end
 
 -- Send async message (no wait for response)

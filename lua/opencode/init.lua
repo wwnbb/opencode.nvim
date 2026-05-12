@@ -631,30 +631,60 @@ function M.send(message, opts)
 				end
 			end
 
-			-- Send to server asynchronously
-			client.send_message_async(sid, payload, function(err)
+			local function handle_prompt_response(response)
+				if type(response) ~= "table" then
+					return
+				end
+				local sync_response_ok, sync_response = pcall(require, "opencode.sync")
+				if not sync_response_ok then
+					return
+				end
+				if response.info then
+					sync_response.handle_message_updated(response.info)
+				end
+				if type(response.parts) == "table" then
+					for _, part in ipairs(response.parts) do
+						sync_response.handle_part_updated(part)
+					end
+				end
+				local events_ok, response_events = pcall(require, "opencode.events")
+				if events_ok then
+					response_events.emit("chat_render", { session_id = sid })
+				end
+			end
+
+			logger.debug("Sending prompt request", {
+				route = "/session/:id/message",
+				session_id = sid,
+			})
+			state.set_status("streaming")
+
+			client.send_message(sid, payload, { timeout = 0 }, function(err, response)
 				if err then
-					logger.debug("prompt_async rejected", {
+					logger.debug("Prompt request rejected", {
 						session_id = sid,
 						error = err.message or err.error or tostring(err),
 					})
 					vim.schedule(function()
+						state.set_status("idle")
 						vim.notify("Failed to send message: " .. tostring(err.message or err.error or err), vim.log.levels.ERROR)
 						chat.add_message("system", "Error: Failed to send message")
 					end)
 					return
 				end
 
-				logger.debug("prompt_async accepted", {
+				logger.debug("Prompt request completed", {
 					session_id = sid,
 					agent = agent,
 					model = summarize_model_ref(model),
 					variant = variant,
+					has_response = type(response) == "table",
+					part_count = type(response) == "table" and type(response.parts) == "table" and #response.parts or nil,
 				})
 
-				-- Message sent successfully, server will respond via SSE
 				vim.schedule(function()
-					state.set_status("streaming")
+					handle_prompt_response(response)
+					state.set_status("idle")
 				end)
 
 				vim.defer_fn(function()
@@ -669,7 +699,7 @@ function M.send(message, opts)
 					local sync_after_ok, sync_after = pcall(require, "opencode.sync")
 					local messages = sync_after_ok and sync_after.get_messages(sid) or {}
 					if before_message_count and #messages <= before_message_count then
-						logger.warn("No SSE messages observed after prompt_async", {
+						logger.warn("No messages observed after prompt request", {
 							session_id = sid,
 							wait_ms = 3000,
 							status = current_status,
