@@ -1254,6 +1254,87 @@ function M.setup_sync_data_handlers()
 	local client = require("opencode.client")
 	local logger = require("opencode.logger")
 
+	---@param value any
+	---@return string
+	local function value_kind(value)
+		if value == nil then
+			return "nil"
+		end
+		if value == vim.NIL then
+			return "vim.NIL"
+		end
+		return type(value)
+	end
+
+	---@param tbl table|nil
+	---@return number
+	local function count_keys(tbl)
+		local count = 0
+		if type(tbl) ~= "table" then
+			return count
+		end
+		for _, _ in pairs(tbl) do
+			count = count + 1
+		end
+		return count
+	end
+
+	---@param providers table[]
+	---@param defaults table|nil
+	---@return table
+	local function summarize_providers(providers, defaults)
+		local sample = {}
+		local model_count = 0
+		for _, provider in ipairs(providers or {}) do
+			local provider_model_count = count_keys(provider.models)
+			model_count = model_count + provider_model_count
+			if #sample < 6 then
+				table.insert(sample, {
+					id = provider.id,
+					name = provider.name,
+					model_count = provider_model_count,
+					default_model = type(provider.id) == "string" and defaults and defaults[provider.id] or nil,
+				})
+			end
+		end
+		return {
+			count = #(providers or {}),
+			model_count = model_count,
+			default_count = count_keys(defaults),
+			sample = sample,
+		}
+	end
+
+	---@param agents table[]
+	---@return table
+	local function summarize_agents(agents)
+		local visible = {}
+		local hidden_true_count = 0
+		local hidden_null_count = 0
+		local subagent_count = 0
+		for _, agent in ipairs(agents or {}) do
+			if agent.hidden == true then
+				hidden_true_count = hidden_true_count + 1
+			elseif agent.hidden == vim.NIL then
+				hidden_null_count = hidden_null_count + 1
+			end
+			if agent.mode == "subagent" then
+				subagent_count = subagent_count + 1
+			end
+			if sync.is_visible_agent(agent) and #visible < 8 then
+				table.insert(visible, agent.name or agent.id)
+			end
+		end
+		return {
+			count = #(agents or {}),
+			visible_count = #sync.get_visible_agents(),
+			visible_sample = visible,
+			hidden_true_count = hidden_true_count,
+			hidden_null_count = hidden_null_count,
+			subagent_count = subagent_count,
+		}
+	end
+
 	-- Update input info bar when providers/agents load (if input is visible)
 	local function refresh_input_info_bar()
 		local input_ok, input = pcall(require, "opencode.ui.input")
@@ -1291,13 +1372,13 @@ function M.setup_sync_data_handlers()
 						-- Handle providers array
 						local providers = data.providers or {}
 						sync.handle_providers(providers)
-						logger.debug("Providers loaded", { count = #providers })
 
 						-- Handle defaults mapping
 						if data.default then
 							sync.handle_provider_defaults(data.default)
-							logger.debug("Provider defaults loaded")
 						end
+
+						logger.debug("Providers loaded", summarize_providers(providers, data.default))
 
 						-- Emit event for UI updates
 						M.emit("providers_loaded", providers)
@@ -1321,7 +1402,7 @@ function M.setup_sync_data_handlers()
 						sync.handle_agents(agents)
 						-- Emit event for UI updates
 						M.emit("agents_loaded", agents)
-						logger.debug("Agents loaded", { count = #agents })
+						logger.debug("Agents loaded", summarize_agents(agents))
 					end
 				end)
 			end)
@@ -1340,7 +1421,12 @@ function M.setup_sync_data_handlers()
 							sync.handle_commands(config.command)
 						end
 						M.emit("config_loaded", config)
-						logger.debug("Config loaded")
+						logger.debug("Config loaded", {
+							model = config.model,
+							model_kind = value_kind(config.model),
+							default_agent = config.default_agent,
+							command_count = count_keys(config.command),
+						})
 					end
 				end)
 			end)

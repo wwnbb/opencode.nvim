@@ -4,6 +4,7 @@
 local M = {}
 
 local sync = require("opencode.sync")
+local logger = require("opencode.logger")
 
 -- Persistent state file path
 local state_file = vim.fn.stdpath("data") .. "/opencode_local.json"
@@ -25,6 +26,47 @@ local state = {
 
 -- State change listeners
 local listeners = {}
+
+---@param value any
+---@return string
+local function value_kind(value)
+	if value == nil then
+		return "nil"
+	end
+	if value == vim.NIL then
+		return "vim.NIL"
+	end
+	return type(value)
+end
+
+---@param model any
+---@return table
+local function model_summary(model)
+	if type(model) ~= "table" then
+		return {
+			kind = value_kind(model),
+		}
+	end
+	return {
+		kind = "table",
+		providerID = model.providerID,
+		modelID = model.modelID,
+		variant = model.variant,
+	}
+end
+
+---@param tbl table|nil
+---@return number
+local function count_keys(tbl)
+	local count = 0
+	if type(tbl) ~= "table" then
+		return count
+	end
+	for _, _ in pairs(tbl) do
+		count = count + 1
+	end
+	return count
+end
 
 ---Emit state change
 ---@param key string
@@ -92,19 +134,6 @@ local function is_model_valid(model)
 		return false
 	end
 	return provider.models[model.modelID] ~= nil
-end
-
----Get first valid model from multiple options (like TUI's getFirstValidModel)
----@vararg function Functions that return model or nil
----@return { providerID: string, modelID: string }|nil
-local function get_first_valid_model(...)
-	for _, fn in ipairs({ ... }) do
-		local model = fn()
-		if model and is_model_valid(model) then
-			return model
-		end
-	end
-	return nil
 end
 
 -- Agent module (like TUI's agent in local.tsx)
@@ -258,16 +287,42 @@ local function get_fallback_model()
 		if provider_id and model_id then
 			local m = { providerID = provider_id, modelID = model_id }
 			if is_model_valid(m) then
+				logger.debug("Fallback model selected", {
+					source = "config",
+					model = model_summary(m),
+				})
 				return m
 			end
+			logger.debug("Fallback config model invalid", {
+				model = model_summary(m),
+			})
+		else
+			logger.debug("Fallback config model malformed", {
+				model = config.model,
+			})
 		end
+	elseif config.model ~= nil then
+		logger.debug("Fallback config model skipped", {
+			model = model_summary(config.model),
+		})
 	end
 
 	-- Check recent models
+	local invalid_recent = 0
 	for _, item in ipairs(state.recent) do
 		if is_model_valid(item) then
+			logger.debug("Fallback model selected", {
+				source = "recent",
+				model = model_summary(item),
+			})
 			return item
 		end
+		invalid_recent = invalid_recent + 1
+	end
+	if invalid_recent > 0 then
+		logger.debug("Fallback recent models skipped", {
+			invalid_count = invalid_recent,
+		})
 	end
 
 	-- Get first connected provider's default or first model
@@ -278,20 +333,37 @@ local function get_fallback_model()
 		if default_model then
 			local m = { providerID = provider.id, modelID = default_model }
 			if is_model_valid(m) then
+				logger.debug("Fallback model selected", {
+					source = "provider_default",
+					model = model_summary(m),
+				})
 				return m
 			end
+			logger.debug("Fallback provider default invalid", {
+				providerID = provider.id,
+				modelID = default_model,
+			})
 		end
 		-- Try first model
 		if provider.models then
 			for model_id, _ in pairs(provider.models) do
 				local m = { providerID = provider.id, modelID = model_id }
 				if is_model_valid(m) then
+					logger.debug("Fallback model selected", {
+						source = "first_provider_model",
+						model = model_summary(m),
+					})
 					return m
 				end
 			end
 		end
 	end
 
+	logger.debug("Fallback model unavailable", {
+		provider_count = #providers,
+		default_count = count_keys(defaults),
+		recent_count = #state.recent,
+	})
 	return nil
 end
 
@@ -300,20 +372,56 @@ end
 function M.model.current()
 	local agent = M.agent.current()
 	if not agent then
+		logger.debug("Model selection skipped", {
+			reason = "no_visible_agent",
+			visible_agent_count = #M.agent.list(),
+			provider_count = #sync.get_providers(),
+		})
 		return nil
 	end
-	return get_first_valid_model(
-		-- Check per-agent selection
-		function()
-			return state.model[agent.name]
-		end,
-		-- Check agent's configured model
-		function()
-			return agent.model
-		end,
-		-- Fallback
-		get_fallback_model
-	)
+	local candidates = {
+		{
+			source = "agent_state",
+			model = state.model[agent.name],
+		},
+		{
+			source = "agent_config",
+			model = agent.model,
+		},
+		{
+			source = "fallback",
+			model = get_fallback_model(),
+		},
+	}
+	for _, candidate in ipairs(candidates) do
+		if is_model_valid(candidate.model) then
+			logger.debug("Model selection resolved", {
+				agent = agent.name,
+				source = candidate.source,
+				model = model_summary(candidate.model),
+			})
+			return candidate.model
+		end
+		if candidate.model ~= nil then
+			logger.debug("Model selection candidate invalid", {
+				agent = agent.name,
+				source = candidate.source,
+				model = model_summary(candidate.model),
+			})
+		else
+			logger.debug("Model selection candidate missing", {
+				agent = agent.name,
+				source = candidate.source,
+			})
+		end
+	end
+
+	logger.debug("Model selection failed", {
+		agent = agent.name,
+		provider_count = #sync.get_providers(),
+		default_count = count_keys(sync.get_provider_defaults()),
+	})
+	return nil
 end
 
 ---Get current model info (with name, provider name, etc.)
