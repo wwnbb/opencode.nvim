@@ -3,6 +3,8 @@
 
 local M = {}
 
+local session_util = require("opencode.util.session")
+
 -- Internal state store
 local state = {
 	-- Connection lifecycle
@@ -158,9 +160,10 @@ end
 function M.set_session(id, name)
 	local old_id = state.session.id
 	local old_name = state.session.name
+	local display_name = session_util.displayTitle(name) or id
 	
 	set("id", id, "session")
-	set("name", name or id, "session")
+	set("name", display_name, "session")
 	
 	return { id = old_id, name = old_name }
 end

@@ -6,6 +6,7 @@ local M = {}
 local Popup = require("nui.popup")
 local NuiText = require("nui.text")
 local event = require("nui.utils.autocmd").event
+local session_util = require("opencode.util.session")
 local hl_ns = vim.api.nvim_create_namespace("opencode_palette")
 
 -- Configuration
@@ -1228,7 +1229,7 @@ local function register_defaults()
 						local items = {}
 						for _, session in ipairs(sessions) do
 							local is_current = current.id == session.id
-							local title = session.title or "Untitled"
+							local title = session_util.displayTitle(session.title) or "New session"
 							local msg_count = session.messageCount or 0
 							local time_str = format_relative_time(session.time and session.time.updated)
 							local msg_str = msg_count > 0 and ("(" .. msg_count .. " msgs)") or ""
@@ -1250,13 +1251,14 @@ local function register_defaults()
 
 							-- Don't switch if already on this session
 							if current.id == session.id then
-								vim.notify("Already on session: " .. (session.title or session.id), vim.log.levels.INFO)
+								local title = session_util.displayTitle(session.title) or session.id
+								vim.notify("Already on session: " .. title, vim.log.levels.INFO)
 								return
 							end
 
 							-- Show loading indicator
 							vim.notify(
-								"Loading session: " .. (session.title or session.id) .. "...",
+								"Loading session: " .. (session_util.displayTitle(session.title) or session.id) .. "...",
 								vim.log.levels.INFO
 							)
 
@@ -1308,7 +1310,7 @@ local function register_defaults()
 									chat.do_render()
 
 									vim.notify(
-										"Switched to session: " .. (session.title or session.id),
+										"Switched to session: " .. (session_util.displayTitle(session.title) or session.id),
 										vim.log.levels.INFO
 									)
 								end)
@@ -1350,7 +1352,7 @@ local function register_defaults()
 					end
 					vim.schedule(function()
 						state.set_session(session.id, session.title or "Forked Session")
-						vim.notify("Forked session: " .. (session.title or session.id), vim.log.levels.INFO)
+						vim.notify("Forked session: " .. (session_util.displayTitle(session.title) or session.id), vim.log.levels.INFO)
 					end)
 				end)
 			end)
@@ -1426,7 +1428,7 @@ local function register_defaults()
 			end
 
 			vim.ui.select({ "Yes", "No" }, {
-				prompt = "Delete session '" .. (session.name or session.id) .. "'?",
+				prompt = "Delete session '" .. (session_util.displayTitle(session.name) or session.id) .. "'?",
 			}, function(choice)
 				if choice == "Yes" then
 					lifecycle.ensure_connected(function()

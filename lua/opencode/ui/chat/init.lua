@@ -71,7 +71,7 @@ local function get_config()
 end
 
 local function calculate_dimensions(cfg)
-	local ui = vim.api.nvim_list_uis()[1]
+	local ui = vim.api.nvim_list_uis()[1] or { width = vim.o.columns, height = vim.o.lines }
 	local editor_width = (vim.o.columns and vim.o.columns > 0) and vim.o.columns or ui.width
 	local width, height, row, col
 
@@ -93,6 +93,24 @@ local function calculate_dimensions(cfg)
 	end
 
 	return { width = width, height = height, row = row, col = col }
+end
+
+---@param winid number|nil
+local function setup_chat_window_options(winid)
+	if not winid or not vim.api.nvim_win_is_valid(winid) then
+		return
+	end
+
+	local wo = vim.wo[winid]
+	wo.fillchars = "eob: "
+	wo.wrap = true
+	wo.number = false
+	wo.relativenumber = false
+	wo.signcolumn = "no"
+	wo.foldcolumn = "0"
+	pcall(function()
+		wo.statuscolumn = ""
+	end)
 end
 
 -- ─── Float focus autocmds ─────────────────────────────────────────────────────
@@ -854,12 +872,17 @@ function M.open()
 			win_options = {
 				fillchars = "eob: ",
 				wrap = true,
+				number = false,
+				relativenumber = false,
+				signcolumn = "no",
+				foldcolumn = "0",
 			},
 		})
 
 		popup:mount()
 		state.layout = popup
 		state.winid = popup.winid
+		setup_chat_window_options(state.winid)
 		if cfg.close_on_focus_lost ~= false then
 			setup_float_focus_autocmds()
 		end
@@ -907,11 +930,11 @@ function M.open()
 
 		vim.wo[state.winid].winfixwidth = cfg.layout == "vertical"
 		vim.wo[state.winid].winfixheight = cfg.layout == "horizontal"
-		vim.wo[state.winid].fillchars = "eob: "
-		vim.wo[state.winid].wrap = true
+		setup_chat_window_options(state.winid)
 	end
 
 	state.visible = true
+	M.do_render()
 	do
 		local ok_state, app_state = pcall(require, "opencode.state")
 		if ok_state then

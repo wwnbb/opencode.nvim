@@ -4,6 +4,7 @@
 local M = {}
 
 local Popup = require("nui.popup")
+local session_util = require("opencode.util.session")
 local hl_ns = vim.api.nvim_create_namespace("opencode_float")
 local OVERLAY_ZINDEX = 80
 
@@ -925,7 +926,7 @@ function M.create_session_list(sessions, on_select, on_delete, on_rename, opts)
 		local highlights = {}
 
 		for i, session in ipairs(sessions) do
-			local title = session.title or "Untitled"
+			local title = session_util.displayTitle(session.title) or "New session"
 			local time_str = format_relative_time(session.time and session.time.updated)
 			local msg_count = session.messageCount or 0
 
@@ -1004,8 +1005,9 @@ function M.create_session_list(sessions, on_select, on_delete, on_rename, opts)
 		end
 		local session = sessions[selected_idx]
 		if session then
+			local title = session_util.displayTitle(session.title) or "New session"
 			vim.ui.select({ "Yes", "No" }, {
-				prompt = "Delete session '" .. (session.title or "Untitled") .. "'?",
+				prompt = "Delete session '" .. title .. "'?",
 			}, function(choice)
 				if choice == "Yes" then
 					on_delete(session, function()
