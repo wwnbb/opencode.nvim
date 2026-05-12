@@ -15,6 +15,10 @@ local cs = require("opencode.ui.chat.state")
 local state = cs.state
 local chat_hl_ns = cs.chat_hl_ns
 
+local function ensure_user_message_highlights()
+	vim.api.nvim_set_hl(0, "OpenCodeUserMessageBg", { link = "CursorLine", default = true })
+end
+
 ---@param text any
 ---@return string
 function M.sanitize_buffer_line(text)
@@ -162,43 +166,44 @@ end
 ---@param agent_name string|nil
 ---@return NuiLine[]
 function M.render_user_message(content, agent_name)
+	ensure_user_message_highlights()
+
 	local lines = {}
 	local content_lines = vim.split(content or "", "\n", { plain = true })
-	local prefix_hl = M.get_agent_hl(agent_name or "unknown")
-	local prompt, multiline_prefix = M.get_user_message_display()
+	local border_hl = M.get_agent_hl(agent_name or "unknown")
 
 	local win_width = 80
 	if state.winid and vim.api.nvim_win_is_valid(state.winid) then
 		win_width = vim.api.nvim_win_get_width(state.winid)
 	end
-	local prompt_width = vim.fn.strdisplaywidth(prompt)
-	local first_line_width = math.max(1, win_width - prompt_width)
-	local continuation_width = math.max(1, win_width)
+	local bg_width = math.max(1, win_width - 1)
+	local content_width = math.max(1, bg_width - 2)
 
-	table.insert(lines, NuiLine())
-
-	local first_output_line = true
-	for _, text in ipairs(content_lines) do
-		local wrapped
-		if multiline_prefix then
-			wrapped = M.wrap_text(text, first_line_width)
-		else
-			local initial = first_output_line and first_line_width or continuation_width
-			wrapped = M.wrap_text(text, initial)
+	local function pad(text, width)
+		local current = vim.fn.strdisplaywidth(text)
+		if current >= width then
+			return text
 		end
+		return text .. string.rep(" ", width - current)
+	end
+
+	local function add_block_line(text)
+		local line = NuiLine()
+		line:append(NuiText("┃", border_hl))
+		line:append(NuiText(text, "OpenCodeUserMessageBg"))
+		table.insert(lines, line)
+	end
+
+	add_block_line(string.rep(" ", bg_width))
+
+	for _, text in ipairs(content_lines) do
+		local wrapped = M.wrap_text(text, content_width)
 		for _, wline in ipairs(wrapped) do
-			local line = NuiLine()
-			local should_prefix = multiline_prefix or first_output_line
-			if should_prefix then
-				line:append(NuiText(prompt, prefix_hl))
-			end
-			line:append(wline)
-			table.insert(lines, line)
-			first_output_line = false
+			add_block_line("  " .. pad(wline, content_width))
 		end
 	end
 
-	table.insert(lines, NuiLine())
+	add_block_line(string.rep(" ", bg_width))
 	return lines
 end
 

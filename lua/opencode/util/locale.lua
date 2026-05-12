@@ -5,8 +5,11 @@ local M = {}
 ---@param str string
 ---@return string
 function M.titlecase(str)
-	local result = str:gsub("%b%w", function(c)
-		return c:upper()
+	if type(str) ~= "string" or str == "" then
+		return ""
+	end
+	local result = str:gsub("(%S)(%S*)", function(first, rest)
+		return first:upper() .. rest
 	end)
 	return result
 end

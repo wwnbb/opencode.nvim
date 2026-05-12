@@ -13,6 +13,89 @@ local events
 local lifecycle
 local client
 
+local ID_CHARS = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+local id_last_timestamp = 0
+local id_counter = 0
+
+---@return number
+local function current_time_ms()
+	if vim.uv and type(vim.uv.gettimeofday) == "function" then
+		local ok, seconds, microseconds = pcall(vim.uv.gettimeofday)
+		if ok and type(seconds) == "number" then
+			return (seconds * 1000) + math.floor((microseconds or 0) / 1000)
+		end
+	end
+	return os.time() * 1000
+end
+
+---@param len number
+---@return string
+local function random_base62(len)
+	local out = {}
+	for i = 1, len do
+		local idx = math.random(#ID_CHARS)
+		out[i] = ID_CHARS:sub(idx, idx)
+	end
+	return table.concat(out)
+end
+
+---@param prefix string
+---@return string
+local function ascending_id(prefix)
+	local timestamp = current_time_ms()
+	if timestamp ~= id_last_timestamp then
+		id_last_timestamp = timestamp
+		id_counter = 0
+	end
+	id_counter = (id_counter % 0xfff) + 1
+
+	local value = (timestamp * 0x1000) + id_counter
+	local hex = {}
+	for shift = 40, 0, -8 do
+		local byte = math.floor(value / (2 ^ shift)) % 256
+		table.insert(hex, string.format("%02x", byte))
+	end
+	return prefix .. "_" .. table.concat(hex) .. random_base62(14)
+end
+
+---@param sync_module table
+---@param session_id string
+---@param message_id string
+---@param part_id string
+---@param text string
+---@param agent string|nil
+---@param model table|nil
+---@param variant string|nil
+local function seed_user_message(sync_module, session_id, message_id, part_id, text, agent, model, variant)
+	local info = {
+		id = message_id,
+		sessionID = session_id,
+		role = "user",
+		time = {
+			created = current_time_ms(),
+		},
+		agent = agent,
+	}
+	if model then
+		info.model = {
+			providerID = model.providerID,
+			modelID = model.modelID,
+			variant = variant,
+		}
+		info.providerID = model.providerID
+		info.modelID = model.modelID
+	end
+
+	sync_module.handle_message_updated(info)
+	sync_module.handle_part_updated({
+		id = part_id,
+		messageID = message_id,
+		sessionID = session_id,
+		type = "text",
+		text = text,
+	})
+end
+
 ---@param prompt string
 ---@param opts? { send?: boolean, separator?: string }
 ---@param label string
@@ -606,9 +689,12 @@ function M.send(message, opts)
 				end
 			end
 
+			local prompt_message_id = ascending_id("msg")
+			local prompt_part_id = ascending_id("prt")
 			local payload = {
+				messageID = prompt_message_id,
 				parts = {
-					{ type = "text", text = message }
+					{ id = prompt_part_id, type = "text", text = message }
 				},
 				agent = agent,
 				model = model,
@@ -620,9 +706,21 @@ function M.send(message, opts)
 				agent = agent,
 				model = summarize_model_ref(model),
 				variant = variant,
+				message_id = prompt_message_id,
 				text_length = type(message) == "string" and #message or nil,
 			})
-			local before_message_count = sync_ok and #sync.get_messages(sid) or nil
+			local before_message_count = nil
+			local before_assistant_count = nil
+			if sync_ok then
+				local before_messages = sync.get_messages(sid)
+				before_message_count = #before_messages
+				before_assistant_count = 0
+				for _, msg in ipairs(before_messages) do
+					if msg.role == "assistant" then
+						before_assistant_count = before_assistant_count + 1
+					end
+				end
+			end
 
 			-- Add context if provided
 			if opts.context then
@@ -631,14 +729,11 @@ function M.send(message, opts)
 				end
 			end
 
-			if chat.add_message then
-				chat.add_message("user", message, {
-					id = "local_user_" .. sid .. "_" .. tostring(vim.uv.now()),
-					session_id = sid,
-					agent = agent,
-					optimistic = true,
-					render = false,
-				})
+			if sync_ok then
+				seed_user_message(sync, sid, prompt_message_id, prompt_part_id, message, agent, model, variant)
+				if events and events.emit then
+					events.emit("chat_render", { session_id = sid })
+				end
 			end
 
 			local function handle_prompt_response(response)
@@ -666,6 +761,7 @@ function M.send(message, opts)
 			logger.debug("Sending prompt request", {
 				route = "/session/:id/message",
 				session_id = sid,
+				message_id = prompt_message_id,
 			})
 			state.set_status("streaming")
 
@@ -708,13 +804,21 @@ function M.send(message, opts)
 					end
 					local sync_after_ok, sync_after = pcall(require, "opencode.sync")
 					local messages = sync_after_ok and sync_after.get_messages(sid) or {}
-					if before_message_count and #messages <= before_message_count then
-						logger.warn("No messages observed after prompt request", {
+					local assistant_count = 0
+					for _, msg in ipairs(messages) do
+						if msg.role == "assistant" then
+							assistant_count = assistant_count + 1
+						end
+					end
+					if before_assistant_count and assistant_count <= before_assistant_count then
+						logger.warn("No assistant message observed after prompt request", {
 							session_id = sid,
 							wait_ms = 3000,
 							status = current_status,
 							before_message_count = before_message_count,
 							after_message_count = #messages,
+							before_assistant_count = before_assistant_count,
+							after_assistant_count = assistant_count,
 						})
 					end
 				end, 3000)

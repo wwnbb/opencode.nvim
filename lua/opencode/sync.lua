@@ -450,13 +450,15 @@ end
 
 ---Get assembled text content for a message (from all text parts)
 ---@param message_id string
+---@param opts? { include_synthetic?: boolean }
 ---@return string
-function M.get_message_text(message_id)
+function M.get_message_text(message_id, opts)
+	opts = opts or {}
 	local parts = store.part[message_id] or {}
 	local text_parts = {}
 
 	for _, part in ipairs(parts) do
-		if part.type == "text" and part.text then
+		if part.type == "text" and part.text and (opts.include_synthetic ~= false or not part.synthetic) then
 			table.insert(text_parts, part.text)
 		end
 	end
