@@ -472,18 +472,30 @@ function M.send(message, opts)
 			local model = opts.model
 			local agent = opts.agent
 			local variant = opts.variant
+			local sync_ok, sync = pcall(require, "opencode.sync")
+
+			local function resolve_model_ref(ref)
+				if type(ref) ~= "table" or type(ref.providerID) ~= "string" or type(ref.modelID) ~= "string" then
+					return nil
+				end
+				if ref.providerID == "" or ref.modelID == "" then
+					return nil
+				end
+				if not sync_ok or not sync.get_model(ref.providerID, ref.modelID) then
+					return nil
+				end
+				return {
+					providerID = ref.providerID,
+					modelID = ref.modelID,
+				}
+			end
 
 			-- Try to get from local module (like TUI's local.tsx)
 			local local_ok, lc = pcall(require, "opencode.local")
 			if local_ok then
 				if not model then
 					local current_model = lc.model.current()
-					if current_model then
-						model = {
-							providerID = current_model.providerID,
-							modelID = current_model.modelID,
-						}
-					end
+					model = resolve_model_ref(current_model)
 				end
 				if not agent then
 					local current_agent = lc.agent.current()
@@ -499,28 +511,20 @@ function M.send(message, opts)
 			-- Fallback to old state module
 			if not model then
 				local state_model = state.get_model()
-				if state_model.id and state_model.provider then
-					model = {
+				if type(state_model.provider) == "string" and type(state_model.id) == "string" then
+					model = resolve_model_ref({
 						providerID = state_model.provider,
 						modelID = state_model.id,
-					}
-				else
-					local sync_ok, sync = pcall(require, "opencode.sync")
+					})
+				end
+
+				if not model then
 					local default_model = M._config.session.default_model
-					if
-						sync_ok
-						and default_model
-						and default_model.providerID
-						and default_model.modelID
-						and sync.get_model(default_model.providerID, default_model.modelID)
-					then
-						model = default_model
-					end
+					model = resolve_model_ref(default_model)
 				end
 			end
 
 			if not agent then
-				local sync_ok, sync = pcall(require, "opencode.sync")
 				local configured_agent = M._config.session.default_agent
 				local configured = sync_ok and configured_agent and sync.get_agent(configured_agent) or nil
 				if configured and sync.is_visible_agent(configured) then

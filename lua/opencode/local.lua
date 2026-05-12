@@ -78,10 +78,13 @@ local function save_state()
 end
 
 ---Check if a model is valid (provider connected and model exists)
----@param model { providerID: string, modelID: string }
+---@param model any
 ---@return boolean
 local function is_model_valid(model)
-	if not model or not model.providerID or not model.modelID then
+	if type(model) ~= "table" or type(model.providerID) ~= "string" or type(model.modelID) ~= "string" then
+		return false
+	end
+	if model.providerID == "" or model.modelID == "" then
 		return false
 	end
 	local provider = sync.get_provider(model.providerID)
@@ -249,7 +252,7 @@ M.model = {}
 local function get_fallback_model()
 	-- Check config default
 	local config = sync.get_config()
-	if config.model then
+	if type(config.model) == "string" then
 		-- Parse "providerID/modelID" format
 		local provider_id, model_id = config.model:match("^([^/]+)/(.+)$")
 		if provider_id and model_id then
@@ -271,7 +274,7 @@ local function get_fallback_model()
 	local providers = sync.get_providers()
 	local defaults = sync.get_provider_defaults()
 	for _, provider in ipairs(providers) do
-		local default_model = defaults[provider.id]
+		local default_model = type(provider.id) == "string" and defaults[provider.id] or nil
 		if default_model then
 			local m = { providerID = provider.id, modelID = default_model }
 			if is_model_valid(m) then
@@ -420,8 +423,10 @@ function M.model.set(model, opts)
 	opts = opts or {}
 	if not is_model_valid(model) then
 		if not opts.silent then
+			local provider_id = type(model) == "table" and model.providerID or nil
+			local model_id = type(model) == "table" and model.modelID or nil
 			vim.notify(
-				string.format("Model %s/%s is not valid", model.providerID or "?", model.modelID or "?"),
+				string.format("Model %s/%s is not valid", provider_id or "?", model_id or "?"),
 				vim.log.levels.WARN
 			)
 		end
