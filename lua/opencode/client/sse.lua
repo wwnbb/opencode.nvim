@@ -8,7 +8,7 @@ local uv = vim.uv
 -- Configuration
 M.opts = {
 	host = "localhost",
-	endpoint = "/event", -- Matches TUI's session-scoped event stream
+	endpoint = "/global/event", -- Matches TUI's global event stream
 	auth = {
 		username = "opencode",
 		password = nil,
@@ -32,6 +32,7 @@ local state = {
 		event = "message",
 		data_lines = {},
 	},
+	directory = nil,
 }
 
 -- Event callbacks registry
@@ -68,6 +69,40 @@ local function reset_current_event()
 		event = "message",
 		data_lines = {},
 	}
+end
+
+---@param directory string|nil
+---@return string|nil
+local function normalize_directory(directory)
+	if not directory or directory == "" then
+		return nil
+	end
+
+	local normalized = directory
+	if vim.fs and vim.fs.normalize then
+		normalized = vim.fs.normalize(normalized)
+	end
+	return normalized:gsub("/+$", "")
+end
+
+---@param data any
+---@return boolean
+local function should_accept_global_event(data)
+	if type(data) ~= "table" or not data.payload then
+		return true
+	end
+
+	local directory = data.directory
+	if not directory or directory == "" or directory == "global" then
+		return true
+	end
+
+	local current = state.directory
+	if not current or current == "" then
+		return true
+	end
+
+	return normalize_directory(directory) == current
 end
 
 local function emit_current_event()
@@ -185,9 +220,16 @@ function M.emit(event_type, data, event_id)
 	local actual_data = data
 
 	if type(data) == "table" and data.payload and data.payload.type then
+		if not should_accept_global_event(data) then
+			return
+		end
+		if data.payload.type == "sync" then
+			return
+		end
 		actual_type = data.payload.type
 		actual_data = data.payload.properties or {}
 		actual_data._directory = data.directory
+		actual_data._workspace = data.workspace
 	elseif type(data) == "table" and data.type and data.properties then
 		-- Session-scoped /event payload format: { type, properties }
 		actual_type = data.type
@@ -266,7 +308,8 @@ function M.connect()
 
 	-- Build endpoint path with directory query param for robustness
 	local endpoint = M.opts.endpoint or "/event"
-	if cwd and cwd ~= "" then
+	state.directory = normalize_directory(cwd)
+	if endpoint ~= "/global/event" and cwd and cwd ~= "" then
 		-- Percent-encode the directory for safe URL query param
 		local encoded = cwd:gsub("[^A-Za-z0-9%-_.~]", function(c)
 			return string.format("%%%02X", c:byte())

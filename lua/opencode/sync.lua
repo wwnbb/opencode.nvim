@@ -386,6 +386,43 @@ function M.handle_part_removed(message_id, part_id)
 	end
 end
 
+---Hydrate messages and parts from /session/:id/message (mirrors TUI session.sync)
+---@param session_id string
+---@param messages table[]|nil
+---@return number message_count
+---@return number part_count
+function M.handle_session_messages(session_id, messages)
+	if type(messages) ~= "table" then
+		return 0, 0
+	end
+
+	local message_count = 0
+	local part_count = 0
+
+	for _, msg_with_parts in ipairs(messages) do
+		if type(msg_with_parts) == "table" then
+			local info = msg_with_parts.info or msg_with_parts
+			if type(info) == "table" and info.id then
+				info.sessionID = info.sessionID or session_id
+				M.handle_message_updated(info)
+				message_count = message_count + 1
+			end
+
+			if type(msg_with_parts.parts) == "table" then
+				for _, part in ipairs(msg_with_parts.parts) do
+					if type(part) == "table" then
+						part.sessionID = part.sessionID or (info and info.sessionID) or session_id
+						M.handle_part_updated(part)
+						part_count = part_count + 1
+					end
+				end
+			end
+		end
+	end
+
+	return message_count, part_count
+end
+
 ---Handle session.status event (mirrors TUI sync.tsx:223-225)
 ---@param session_id string
 ---@param status table

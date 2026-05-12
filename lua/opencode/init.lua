@@ -729,6 +729,63 @@ function M.send(message, opts)
 				end
 			end
 
+			local function handle_prompt_response(response)
+				if not sync_ok or type(response) ~= "table" then
+					return
+				end
+				if sync.handle_session_messages then
+					sync.handle_session_messages(sid, { response })
+				else
+					if response.info then
+						sync.handle_message_updated(response.info)
+					end
+					if type(response.parts) == "table" then
+						for _, part in ipairs(response.parts) do
+							sync.handle_part_updated(part)
+						end
+					end
+				end
+				if events and events.emit then
+					events.emit("chat_render", { session_id = sid })
+				end
+			end
+
+			local function sync_session_messages(reason, callback)
+				client.get_messages(sid, { limit = 100 }, function(fetch_err, messages)
+					if fetch_err then
+						logger.debug("Session message sync failed", {
+							session_id = sid,
+							reason = reason,
+							error = fetch_err.message or fetch_err.error or tostring(fetch_err),
+						})
+						if callback then
+							callback()
+						end
+						return
+					end
+
+					local message_count = 0
+					local part_count = 0
+					if sync_ok and sync.handle_session_messages then
+						message_count, part_count = sync.handle_session_messages(sid, messages)
+					end
+
+					logger.debug("Session messages synced", {
+						session_id = sid,
+						reason = reason,
+						message_count = message_count,
+						part_count = part_count,
+					})
+
+					if events and events.emit then
+						events.emit("chat_render", { session_id = sid })
+					end
+					if callback then
+						callback()
+					end
+				end)
+			end
+
 			if sync_ok then
 				seed_user_message(sync, sid, prompt_message_id, prompt_part_id, message, agent, model, variant)
 				if events and events.emit then
@@ -737,13 +794,13 @@ function M.send(message, opts)
 			end
 
 			logger.debug("Sending prompt request", {
-				route = "/session/:id/prompt_async",
+				route = "/session/:id/message",
 				session_id = sid,
 				message_id = prompt_message_id,
 			})
 			state.set_status("streaming")
 
-			client.send_message_async(sid, payload, function(err)
+			client.send_message(sid, payload, { timeout = 0 }, function(err, response)
 				if err then
 					logger.debug("Prompt request rejected", {
 						session_id = sid,
@@ -757,22 +814,42 @@ function M.send(message, opts)
 					return
 				end
 
-				logger.debug("Prompt request accepted", {
+				logger.debug("Prompt request completed", {
 					session_id = sid,
 					agent = agent,
 					model = summarize_model_ref(model),
 					variant = variant,
+					has_response = type(response) == "table",
+					part_count = type(response) == "table" and type(response.parts) == "table" and #response.parts or nil,
 				})
 
-				vim.defer_fn(function()
+				vim.schedule(function()
+					handle_prompt_response(response)
+					sync_session_messages("prompt_completed")
 					local current = state.get_session()
-					if current.id ~= sid then
-						return
+					if current.id == sid then
+						state.set_status("idle")
 					end
-					local current_status = state.get_status()
-					if current_status ~= "streaming" then
-						return
-					end
+				end)
+			end)
+
+			vim.defer_fn(function()
+				local current = state.get_session()
+				if current.id == sid and state.get_status() == "streaming" then
+					sync_session_messages("prompt_started")
+				end
+			end, 500)
+
+			vim.defer_fn(function()
+				local current = state.get_session()
+				if current.id ~= sid then
+					return
+				end
+				local current_status = state.get_status()
+				if current_status ~= "streaming" then
+					return
+				end
+				sync_session_messages("prompt_watchdog", function()
 					local sync_after_ok, sync_after = pcall(require, "opencode.sync")
 					local messages = sync_after_ok and sync_after.get_messages(sid) or {}
 					local assistant_count = 0
@@ -792,8 +869,8 @@ function M.send(message, opts)
 							after_assistant_count = assistant_count,
 						})
 					end
-				end, 3000)
-			end)
+				end)
+			end, 3000)
 		end
 
 		if session_id then
