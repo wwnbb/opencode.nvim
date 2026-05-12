@@ -268,6 +268,7 @@ function M.setup_sse_bridge()
 		["message.part.removed"] = "message_part_removed",
 		["session.updated"] = "session_updated",
 		["session.status"] = "session_status",
+		["session.error"] = "session_error",
 		["session.diff"] = "session_diff",
 		["file.edited"] = "edit",
 		["permission.requested"] = "permission",
@@ -500,6 +501,29 @@ function M.setup_chat_handlers()
 	-- Retry countdown timer handle
 	local retry_timer = nil
 
+	local function format_session_error(err)
+		if type(err) == "string" then
+			return err
+		end
+		if type(err) ~= "table" then
+			return tostring(err or "unknown error")
+		end
+		if type(err.data) == "table" and type(err.data.message) == "string" then
+			return err.data.message
+		end
+		if type(err.message) == "string" then
+			return err.message
+		end
+		if type(err.name) == "string" then
+			return err.name
+		end
+		local ok, encoded = pcall(vim.json.encode, err)
+		if ok and encoded and encoded ~= "" then
+			return encoded
+		end
+		return "unknown error"
+	end
+
 	-- Handle session.status changes (like TUI sync.tsx:223-225)
 	M.on("session_status", function(data)
 		vim.schedule(function()
@@ -555,6 +579,29 @@ function M.setup_chat_handlers()
 
 			-- Trigger chat re-render so status (e.g. retry) is shown in the buffer
 			M.emit("chat_render", { session_id = current_session.id })
+		end)
+	end)
+
+	M.on("session_error", function(data)
+		vim.schedule(function()
+			local current_session = state.get_session()
+			if data and data.sessionID and data.sessionID ~= current_session.id then
+				return
+			end
+
+			state.set_status("idle")
+
+			local message = format_session_error(data and data.error)
+			vim.notify("OpenCode session error: " .. message, vim.log.levels.ERROR)
+
+			local chat_ok, chat = pcall(require, "opencode.ui.chat")
+			if chat_ok and chat.add_message then
+				chat.add_message("system", "OpenCode session error: " .. message)
+			end
+
+			if current_session.id then
+				M.emit("chat_render", { session_id = current_session.id })
+			end
 		end)
 	end)
 

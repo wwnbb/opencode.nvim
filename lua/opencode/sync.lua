@@ -57,82 +57,6 @@ local UTILITY_AGENT_NAMES = {
 	title = true,
 }
 
-local function count_keys(t)
-	if type(t) ~= "table" then
-		return 0
-	end
-	local count = 0
-	for _ in pairs(t) do
-		count = count + 1
-	end
-	return count
-end
-
-local function debug_log(message, data)
-	local ok, logger = pcall(require, "opencode.logger")
-	if ok then
-		logger.debug(message, data)
-	end
-end
-
-local function summarize_model(model)
-	if type(model) ~= "table" then
-		return model
-	end
-	return {
-		providerID = model.providerID,
-		modelID = model.modelID,
-	}
-end
-
-local function summarize_agent(agent)
-	if type(agent) ~= "table" then
-		return agent
-	end
-	return {
-		id = agent.id,
-		name = agent.name,
-		mode = agent.mode,
-		hidden = agent.hidden,
-		model = summarize_model(agent.model),
-	}
-end
-
-local function summarize_agents(agents)
-	local summary = {}
-	for i, agent in ipairs(agents or {}) do
-		if i > 12 then
-			table.insert(summary, { more = #agents - 12 })
-			break
-		end
-		table.insert(summary, summarize_agent(agent))
-	end
-	return summary
-end
-
-local function summarize_provider(provider)
-	if type(provider) ~= "table" then
-		return provider
-	end
-	return {
-		id = provider.id,
-		name = provider.name,
-		model_count = count_keys(provider.models),
-	}
-end
-
-local function summarize_providers(providers)
-	local summary = {}
-	for i, provider in ipairs(providers or {}) do
-		if i > 12 then
-			table.insert(summary, { more = #providers - 12 })
-			break
-		end
-		table.insert(summary, summarize_provider(provider))
-	end
-	return summary
-end
-
 -- Binary search implementation (matches TUI's Binary.search)
 -- Returns { found = bool, index = number }
 -- If found, index is the position of the item
@@ -623,19 +547,12 @@ end
 ---@param providers table[] Array of provider objects
 function M.handle_providers(providers)
 	store.provider = providers or {}
-	debug_log("Sync providers updated", {
-		count = #store.provider,
-		providers = summarize_providers(store.provider),
-	})
 end
 
 ---Handle provider defaults
 ---@param defaults table<string, string> { [providerID] = default_modelID }
 function M.handle_provider_defaults(defaults)
 	store.provider_default = defaults or {}
-	debug_log("Sync provider defaults updated", {
-		defaults = store.provider_default,
-	})
 end
 
 ---Get all providers
@@ -680,12 +597,6 @@ end
 ---@param agents table[] Array of agent objects
 function M.handle_agents(agents)
 	store.agent = agents or {}
-	debug_log("Sync agents updated", {
-		count = #store.agent,
-		visible_count = #M.get_visible_agents(),
-		agents = summarize_agents(store.agent),
-		visible_agents = summarize_agents(M.get_visible_agents()),
-	})
 end
 
 ---Get all agents

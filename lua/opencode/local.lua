@@ -4,7 +4,6 @@
 local M = {}
 
 local sync = require("opencode.sync")
-local logger = require("opencode.logger")
 
 -- Persistent state file path
 local state_file = vim.fn.stdpath("data") .. "/opencode_local.json"
@@ -26,70 +25,6 @@ local state = {
 
 -- State change listeners
 local listeners = {}
-
-local function count_keys(t)
-	if type(t) ~= "table" then
-		return 0
-	end
-	local count = 0
-	for _ in pairs(t) do
-		count = count + 1
-	end
-	return count
-end
-
-local function summarize_model(model)
-	if type(model) ~= "table" then
-		return model
-	end
-	return {
-		providerID = model.providerID,
-		modelID = model.modelID,
-	}
-end
-
-local function summarize_agent(agent)
-	if type(agent) ~= "table" then
-		return agent
-	end
-	return {
-		id = agent.id,
-		name = agent.name,
-		mode = agent.mode,
-		hidden = agent.hidden,
-		model = summarize_model(agent.model),
-	}
-end
-
-local function summarize_agents(agents)
-	local summary = {}
-	for i, agent in ipairs(agents or {}) do
-		if i > 12 then
-			table.insert(summary, { more = #agents - 12 })
-			break
-		end
-		table.insert(summary, summarize_agent(agent))
-	end
-	return summary
-end
-
-local function summarize_providers(providers, defaults)
-	local summary = {}
-	defaults = defaults or {}
-	for i, provider in ipairs(providers or {}) do
-		if i > 12 then
-			table.insert(summary, { more = #providers - 12 })
-			break
-		end
-		table.insert(summary, {
-			id = provider.id,
-			name = provider.name,
-			model_count = count_keys(provider.models),
-			default = defaults[provider.id],
-		})
-	end
-	return summary
-end
 
 ---Emit state change
 ---@param key string
@@ -142,36 +77,31 @@ local function save_state()
 	end
 end
 
----@param model { providerID: string, modelID: string }|nil
----@return string|nil reason Invalid reason, or nil when valid
-local function get_model_invalid_reason(model)
-	if type(model) ~= "table" then
-		return "missing_model"
-	end
-	if not model.providerID or model.providerID == "" then
-		return "missing_providerID"
-	end
-	if not model.modelID or model.modelID == "" then
-		return "missing_modelID"
-	end
-	local provider = sync.get_provider(model.providerID)
-	if not provider then
-		return "provider_not_loaded"
-	end
-	if type(provider.models) ~= "table" then
-		return "provider_has_no_models"
-	end
-	if provider.models[model.modelID] == nil then
-		return "model_not_found"
-	end
-	return nil
-end
-
 ---Check if a model is valid (provider connected and model exists)
 ---@param model { providerID: string, modelID: string }
 ---@return boolean
 local function is_model_valid(model)
-	return get_model_invalid_reason(model) == nil
+	if not model or not model.providerID or not model.modelID then
+		return false
+	end
+	local provider = sync.get_provider(model.providerID)
+	if not provider or not provider.models then
+		return false
+	end
+	return provider.models[model.modelID] ~= nil
+end
+
+---Get first valid model from multiple options (like TUI's getFirstValidModel)
+---@vararg function Functions that return model or nil
+---@return { providerID: string, modelID: string }|nil
+local function get_first_valid_model(...)
+	for _, fn in ipairs({ ... }) do
+		local model = fn()
+		if model and is_model_valid(model) then
+			return model
+		end
+	end
+	return nil
 end
 
 -- Agent module (like TUI's agent in local.tsx)
@@ -317,8 +247,6 @@ M.model = {}
 ---Get fallback model (from config, recent, or first available)
 ---@return { providerID: string, modelID: string }|nil
 local function get_fallback_model()
-	local checked = {}
-
 	-- Check config default
 	local config = sync.get_config()
 	if config.model then
@@ -326,24 +254,16 @@ local function get_fallback_model()
 		local provider_id, model_id = config.model:match("^([^/]+)/(.+)$")
 		if provider_id and model_id then
 			local m = { providerID = provider_id, modelID = model_id }
-			local invalid = get_model_invalid_reason(m)
-			if not invalid then
+			if is_model_valid(m) then
 				return m
 			end
-			table.insert(checked, { source = "config", model = summarize_model(m), reason = invalid })
-		else
-			table.insert(checked, { source = "config", value = config.model, reason = "invalid_model_format" })
 		end
 	end
 
 	-- Check recent models
 	for _, item in ipairs(state.recent) do
-		local invalid = get_model_invalid_reason(item)
-		if not invalid then
+		if is_model_valid(item) then
 			return item
-		end
-		if #checked < 10 then
-			table.insert(checked, { source = "recent", model = summarize_model(item), reason = invalid })
 		end
 	end
 
@@ -354,36 +274,20 @@ local function get_fallback_model()
 		local default_model = defaults[provider.id]
 		if default_model then
 			local m = { providerID = provider.id, modelID = default_model }
-			local invalid = get_model_invalid_reason(m)
-			if not invalid then
+			if is_model_valid(m) then
 				return m
-			end
-			if #checked < 10 then
-				table.insert(checked, { source = "provider_default", model = summarize_model(m), reason = invalid })
 			end
 		end
 		-- Try first model
 		if provider.models then
 			for model_id, _ in pairs(provider.models) do
 				local m = { providerID = provider.id, modelID = model_id }
-				local invalid = get_model_invalid_reason(m)
-				if not invalid then
+				if is_model_valid(m) then
 					return m
-				end
-				if #checked < 10 then
-					table.insert(checked, { source = "provider_model", model = summarize_model(m), reason = invalid })
 				end
 			end
 		end
 	end
-
-	logger.debug("Fallback model unavailable", {
-		config_model = config.model,
-		recent_count = #state.recent,
-		provider_count = #providers,
-		providers = summarize_providers(providers, defaults),
-		checked = checked,
-	})
 
 	return nil
 end
@@ -393,59 +297,20 @@ end
 function M.model.current()
 	local agent = M.agent.current()
 	if not agent then
-		local agents = sync.get_agents()
-		local visible_agents = M.agent.list()
-		local providers = sync.get_providers()
-		logger.debug("Model selection skipped: no current agent", {
-			agent_count = #agents,
-			visible_agent_count = #visible_agents,
-			agents = summarize_agents(agents),
-			visible_agents = summarize_agents(visible_agents),
-			provider_count = #providers,
-			providers = summarize_providers(providers, sync.get_provider_defaults()),
-		})
 		return nil
 	end
-
-	local candidates = {
-		{ source = "agent_selection", model = state.model[agent.name] },
-		{ source = "agent_config", model = agent.model },
-	}
-	local checked = {}
-	for _, candidate in ipairs(candidates) do
-		local invalid = get_model_invalid_reason(candidate.model)
-		if not invalid then
-			return candidate.model
-		end
-		table.insert(checked, {
-			source = candidate.source,
-			model = summarize_model(candidate.model),
-			reason = invalid,
-		})
-	end
-
-	local fallback_model = get_fallback_model()
-	local fallback_invalid = get_model_invalid_reason(fallback_model)
-	if not fallback_invalid then
-		return fallback_model
-	end
-	table.insert(checked, {
-		source = "fallback",
-		model = summarize_model(fallback_model),
-		reason = fallback_invalid,
-	})
-
-	local providers = sync.get_providers()
-	local defaults = sync.get_provider_defaults()
-	logger.debug("Model selection failed", {
-		agent = summarize_agent(agent),
-		candidates = checked,
-		config_model = sync.get_config().model,
-		recent_count = #state.recent,
-		provider_count = #providers,
-		providers = summarize_providers(providers, defaults),
-	})
-	return nil
+	return get_first_valid_model(
+		-- Check per-agent selection
+		function()
+			return state.model[agent.name]
+		end,
+		-- Check agent's configured model
+		function()
+			return agent.model
+		end,
+		-- Fallback
+		get_fallback_model
+	)
 end
 
 ---Get current model info (with name, provider name, etc.)
