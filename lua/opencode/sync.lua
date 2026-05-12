@@ -621,7 +621,7 @@ function M.is_visible_agent(agent)
 		return false
 	end
 
-	return agent.mode == "primary" or agent.mode == "all"
+	return agent.mode ~= "subagent"
 end
 
 ---Filter agents to primary-capable, user-visible entries.
