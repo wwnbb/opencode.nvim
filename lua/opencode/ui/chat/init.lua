@@ -763,19 +763,41 @@ function M.create()
 		end)
 	end)
 
+	local function has_pending_interaction()
+		for _, msg in ipairs(state.messages) do
+			if (msg.type == "question" or msg.type == "permission") and msg.status == "pending" then
+				return true
+			end
+		end
+
+		local question_ok, question_state_mod = pcall(require, "opencode.question.state")
+		if question_ok and question_state_mod.get_all_active and #question_state_mod.get_all_active() > 0 then
+			return true
+		end
+
+		local perm_ok, perm_state_mod = pcall(require, "opencode.permission.state")
+		if perm_ok and perm_state_mod.get_all_active and #perm_state_mod.get_all_active() > 0 then
+			return true
+		end
+
+		local edit_ok, edit_state_mod = pcall(require, "opencode.edit.state")
+		if edit_ok and edit_state_mod.has_pending_edits and edit_state_mod.has_pending_edits() then
+			return true
+		end
+
+		return false
+	end
+
 	events.on("status_change", function(data)
 		vim.schedule(function()
 			local new_status = data and data.status
 			if new_status == "streaming" or new_status == "thinking" then
-				local has_pending_question = false
-				for _, msg in ipairs(state.messages) do
-					if (msg.type == "question" or msg.type == "permission") and msg.status == "pending" then
-						has_pending_question = true
-						break
+				if has_pending_interaction() then
+					if spinner.is_active() then
+						spinner.stop()
+						M.schedule_render()
 					end
-				end
-
-				if has_pending_question then
+					stop_spinner_animation_timer()
 					return
 				end
 
