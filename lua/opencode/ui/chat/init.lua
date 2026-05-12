@@ -1050,11 +1050,18 @@ function M.add_message(role, content, opts)
 		content = content,
 		timestamp = opts.timestamp or os.time(),
 		id = opts.id or tostring(os.time()) .. "_" .. #state.messages,
+		session_id = opts.session_id,
+		agent = opts.agent,
+		optimistic = opts.optimistic,
 		tool_calls = opts.tool_calls,
 	}
 
 	table.insert(state.messages, message)
-	M.render_message(message)
+	if opts.render == false then
+		M.schedule_render()
+	else
+		M.render_message(message)
+	end
 	return message.id
 end
 
@@ -1866,13 +1873,43 @@ function M.render()
 		end
 	end
 
-	-- Local messages (questions, etc.)
+	local function has_server_user_echo(local_message)
+		if local_message.role ~= "user" or type(local_message.content) ~= "string" then
+			return false
+		end
+		local local_ms = (local_message.timestamp or 0) * 1000
+		for _, synced in ipairs(messages) do
+			local created = synced.time and synced.time.created
+			local same_turn = not created or local_ms == 0 or created >= local_ms - 5000
+			if synced.role == "user" and same_turn and sync.get_message_text(synced.id) == local_message.content then
+				return true
+			end
+		end
+		return false
+	end
+
+	-- Local messages (optimistic user echo, questions, etc.)
 	for _, message in ipairs(state.messages) do
+		if message.session_id and current_session.id and message.session_id ~= current_session.id then
+			goto continue_local_message
+		end
 		if message.id and current_session.id then
 			local sync_msg = sync.get_message(current_session.id, message.id)
 			if sync_msg then
 				goto continue_local_message
 			end
+		end
+
+		if message.role == "user" then
+			if has_server_user_echo(message) then
+				goto continue_local_message
+			end
+			local msg_lines = render.render_user_message(message.content or "", message.agent)
+			for _, nl in ipairs(msg_lines) do
+				add_line(nl)
+			end
+			add_raw_line("")
+			goto continue_local_message
 		end
 
 		if message.type == "question" then
@@ -1884,7 +1921,7 @@ function M.render()
 			goto continue_local_message
 		end
 
-		if message.type == "permission" or message.role == "user" then
+		if message.type == "permission" then
 			goto continue_local_message
 		end
 
@@ -1934,12 +1971,26 @@ function M.render()
 		local app_agent = app_state.get_agent() or {}
 		local app_model = app_state.get_model() or {}
 		local fallback_agent = app_agent.name or app_agent.id or "assistant"
+		local fallback_model_id = app_model.id
+		local fallback_provider_id = app_model.provider
+		local local_ok, local_state = pcall(require, "opencode.local")
+		if local_ok then
+			local current_agent = local_state.agent.current()
+			local current_model = local_state.model.current()
+			if current_agent and current_agent.name then
+				fallback_agent = current_agent.name
+			end
+			if current_model then
+				fallback_model_id = current_model.modelID
+				fallback_provider_id = current_model.providerID
+			end
+		end
 		local fallback_message = {
 			role = "assistant",
-			agent = app_agent.id or app_agent.name or "assistant",
+			agent = fallback_agent,
 			mode = fallback_agent,
-			modelID = app_model.id,
-			providerID = app_model.provider,
+			modelID = fallback_model_id,
+			providerID = fallback_provider_id,
 		}
 
 		ensure_single_blank_separator()

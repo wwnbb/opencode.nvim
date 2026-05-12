@@ -615,7 +615,7 @@ function M.send(message, opts)
 				variant = variant,
 			}
 
-			logger.debug("Sending prompt_async payload", {
+			logger.debug("Resolved prompt payload", {
 				session_id = sid,
 				agent = agent,
 				model = summarize_model_ref(model),
@@ -629,6 +629,16 @@ function M.send(message, opts)
 				for _, ctx in ipairs(opts.context) do
 					table.insert(payload.parts, ctx)
 				end
+			end
+
+			if chat.add_message then
+				chat.add_message("user", message, {
+					id = "local_user_" .. sid .. "_" .. tostring(vim.uv.now()),
+					session_id = sid,
+					agent = agent,
+					optimistic = true,
+					render = false,
+				})
 			end
 
 			local function handle_prompt_response(response)

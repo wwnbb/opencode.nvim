@@ -471,6 +471,23 @@ local function _get_token_limit(message)
 	return _numeric(model.limit.input)
 end
 
+---@param message table
+---@return string
+local function _get_model_name(message)
+	local model_id = type(message) == "table" and message.modelID or nil
+	if type(model_id) ~= "string" or model_id == "" then
+		return ""
+	end
+	if type(message.providerID) ~= "string" or message.providerID == "" then
+		return model_id
+	end
+	local ok, model = pcall(sync.get_model, message.providerID, model_id)
+	if ok and type(model) == "table" and type(model.name) == "string" and model.name ~= "" then
+		return model.name
+	end
+	return model_id
+end
+
 -- ─── Message metadata helpers ─────────────────────────────────────────────────
 
 ---@param message table
@@ -550,13 +567,11 @@ function M.render_metadata_footer(message, messages, opts)
 
 	local line = NuiLine()
 	line:append(NuiText(agent_prefix .. locale.titlecase(agent_name), agent_hl))
-	local model_id = message.modelID or ""
-	if model_id ~= "" then
+	local model_name = _get_model_name(message)
+	if model_name ~= "" then
 		line:append(NuiText(" · ", "Comment"))
-		line:append(NuiText(model_id, "Comment"))
+		line:append(NuiText(model_name, "Comment"))
 	end
-	-- Streaming updates often report zero token usage until completion.
-	-- Hide zero/limit output to avoid noisy footer churn like "0/400k tok".
 	if token_usage and token_usage > 0 then
 		line:append(NuiText(" · ", "Comment"))
 		local token_text = _format_compact_number(token_usage)
