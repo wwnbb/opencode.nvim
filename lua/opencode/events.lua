@@ -586,6 +586,31 @@ function M.setup_chat_handlers()
 	-- Retry countdown timer handle
 	local retry_timer = nil
 
+	-- Handle session.updated title changes.
+	-- OpenCode starts new sessions with a generated default title, then may
+	-- rename the session from the first real user prompt.
+	M.on("session_updated", function(data)
+		vim.schedule(function()
+			if not data or type(data.info) ~= "table" then
+				return
+			end
+
+			local current_session = state.get_session()
+			local session_id = data.sessionID or data.info.id
+			if not session_id or session_id ~= current_session.id then
+				return
+			end
+
+			local title = data.info.title
+			if title == nil or title == vim.NIL then
+				return
+			end
+
+			state.set_session(session_id, title)
+			M.emit("chat_render", { session_id = session_id })
+		end)
+	end)
+
 	local function format_session_error(err)
 		if type(err) == "string" then
 			return err

@@ -19,6 +19,18 @@ local function ensure_user_message_highlights()
 	vim.api.nvim_set_hl(0, "OpenCodeUserMessageBg", { link = "CursorLine", default = true })
 end
 
+---@return number width
+local function get_chat_text_width()
+	if not state.winid or not vim.api.nvim_win_is_valid(state.winid) then
+		return 80
+	end
+
+	local width = vim.api.nvim_win_get_width(state.winid)
+	local wininfo = vim.fn.getwininfo(state.winid)[1]
+	local textoff = wininfo and tonumber(wininfo.textoff) or 0
+	return math.max(1, width - textoff)
+end
+
 ---@param text any
 ---@return string
 function M.sanitize_buffer_line(text)
@@ -172,11 +184,8 @@ function M.render_user_message(content, agent_name)
 	local content_lines = vim.split(content or "", "\n", { plain = true })
 	local border_hl = M.get_agent_hl(agent_name or "unknown")
 
-	local win_width = 80
-	if state.winid and vim.api.nvim_win_is_valid(state.winid) then
-		win_width = vim.api.nvim_win_get_width(state.winid)
-	end
-	local bg_width = math.max(1, win_width - 1)
+	local text_width = get_chat_text_width()
+	local bg_width = math.max(1, text_width - 1)
 	local content_width = math.max(1, bg_width - 2)
 
 	local function pad(text, width)

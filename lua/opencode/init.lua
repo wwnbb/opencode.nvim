@@ -830,10 +830,16 @@ function M.send(message, opts)
 			send_with_session(session_id)
 		else
 			-- Create new session first
-			client.create_session({ title = opts.title or "Neovim Chat" }, function(err, session)
+			local session_opts = vim.empty_dict()
+			if type(opts.title) == "string" and opts.title ~= "" then
+				session_opts.title = opts.title
+			end
+
+			client.create_session(session_opts, function(err, session)
 				if err or not session then
 					vim.schedule(function()
-						vim.notify("Failed to create session: " .. tostring(err and (err.message or err.error) or "unknown"), vim.log.levels.ERROR)
+						local message = err and (err.message or err.error) or "unknown"
+						vim.notify("Failed to create session: " .. tostring(message), vim.log.levels.ERROR)
 						chat.add_message("system", "Error: Failed to create session")
 					end)
 					return
@@ -841,7 +847,7 @@ function M.send(message, opts)
 
 				-- Store session info
 				vim.schedule(function()
-					state.set_session(session.id, session.title or "Neovim Chat")
+					state.set_session(session.id, session.title or "New session")
 					send_with_session(session.id)
 				end)
 			end)
@@ -915,7 +921,7 @@ function M.clear(opts)
 				end
 
 				-- Update state with new session
-				state.set_session(session.id, session.title or "New Session")
+				state.set_session(session.id, session.title or "New session")
 				
 				-- Clear chat display
 				chat.clear()
