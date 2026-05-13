@@ -193,6 +193,68 @@ local function resolve_event_call_id(payload)
 	return nil
 end
 
+---@param tool_part table|nil
+---@return string|nil
+local function resolve_task_child_session_id(tool_part)
+	if type(tool_part) ~= "table" or tool_part.tool ~= "task" then
+		return nil
+	end
+
+	local part_metadata = type(tool_part.metadata) == "table" and tool_part.metadata or {}
+	local tool_state = type(tool_part.state) == "table" and tool_part.state or {}
+	local state_metadata = type(tool_state.metadata) == "table" and tool_state.metadata or {}
+
+	return state_metadata.sessionId
+		or state_metadata.sessionID
+		or state_metadata.childSessionID
+		or state_metadata.child_session_id
+		or part_metadata.sessionId
+		or part_metadata.sessionID
+		or part_metadata.childSessionID
+		or part_metadata.child_session_id
+end
+
+---@param parent_session_id string|nil
+---@param child_session_id string|nil
+---@return boolean
+local function session_owns_task_child(parent_session_id, child_session_id)
+	if not parent_session_id or parent_session_id == "" or not child_session_id or child_session_id == "" then
+		return false
+	end
+
+	local ok_sync, sync = pcall(require, "opencode.sync")
+	if not ok_sync then
+		return false
+	end
+
+	for _, message in ipairs(sync.get_messages(parent_session_id) or {}) do
+		for _, part in ipairs(sync.get_message_tools(message.id) or {}) do
+			if resolve_task_child_session_id(part) == child_session_id then
+				return true
+			end
+		end
+	end
+
+	return false
+end
+
+---@param current_session_id string|nil
+---@param event_session_id string|nil
+---@return boolean
+local function permission_session_is_relevant(current_session_id, event_session_id)
+	if not event_session_id or event_session_id == "" then
+		return true
+	end
+	if not current_session_id or current_session_id == "" then
+		return true
+	end
+	if event_session_id == current_session_id then
+		return true
+	end
+
+	return session_owns_task_child(current_session_id, event_session_id)
+end
+
 -- Get count of listeners for an event type
 ---@param event_type string
 ---@return number Count of registered listeners
@@ -866,12 +928,11 @@ function M.setup_chat_handlers()
 					or permission_type == "neovim_edit"
 					or permission_type == "neovim_apply_patch"
 
-				-- Guard: only handle edit/native-diff permissions that belong to our session.
-				-- Both editors receive every SSE event from the shared server. Without this
-				-- check, the second open editor would also create edit state and render the
-				-- widget even though the permission request was initiated from a different session.
-				-- Mirrors the same pattern used in message_updated (session ID check) and
-				-- session_status handlers.
+				-- Guard: only handle edit/native-diff permissions that belong to the
+				-- current session or to a task child session owned by it. Subagent
+				-- tool calls run in child sessions, so filtering strictly by the
+				-- current session leaves the backend waiting for an edit approval
+				-- that the UI never renders.
 				if is_native_diff_permission or permission_type == "edit" then
 					-- Try to resolve the owning session from the most-reliable source first:
 					-- the message ID via the sync store (populated only for the active session),
@@ -894,17 +955,16 @@ function M.setup_chat_handlers()
 							or metadata.sessionId
 					end
 
-					-- If we successfully resolved a session and it doesn't match ours, skip.
-					if event_session_id and event_session_id ~= "" and current_session.id then
-						if event_session_id ~= current_session.id then
-							local logger_g = require("opencode.logger")
-							logger_g.debug("edit permission belongs to a different session, skipping", {
-								event_session = event_session_id,
-								current_session = current_session.id,
-								permission_type = permission_type,
-							})
-							return
-						end
+					-- If we successfully resolved a session and it is neither ours nor
+					-- one of our task children, skip it as an unrelated editor/session.
+					if not permission_session_is_relevant(current_session.id, event_session_id) then
+						local logger_g = require("opencode.logger")
+						logger_g.debug("edit permission belongs to an unrelated session, skipping", {
+							event_session = event_session_id,
+							current_session = current_session.id,
+							permission_type = permission_type,
+						})
+						return
 					end
 				end
 
