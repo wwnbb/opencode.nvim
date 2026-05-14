@@ -20,6 +20,7 @@ local chat_hl_ns = cs.chat_hl_ns
 
 local render = require("opencode.ui.chat.render")
 local chat_tasks = require("opencode.ui.chat.tasks")
+local chat_todos = require("opencode.ui.chat.todos")
 local chat_questions = require("opencode.ui.chat.questions")
 local chat_permissions = require("opencode.ui.chat.permissions")
 local chat_edits = require("opencode.ui.chat.edits")
@@ -52,6 +53,29 @@ local defaults = {
 	},
 	message_display = {
 		user_prefix = "> ",
+	},
+	todo = {
+		enabled = true,
+		show_dock = true,
+		hide_when_done = true,
+		default_collapsed = false,
+		keymaps = {
+			toggle = "T",
+		},
+		icons = {
+			pending = "[ ]",
+			in_progress = "[•]",
+			completed = "[✓]",
+			cancelled = "[ ]",
+		},
+		highlights = {
+			pending = "Comment",
+			in_progress = "WarningMsg",
+			completed = "Comment",
+			cancelled = "Comment",
+			header = "Title",
+			border = "Comment",
+		},
 	},
 	keymaps = {
 		close = "q",
@@ -349,6 +373,15 @@ local function setup_buffer(bufnr)
 		M.toggle_auto_scroll()
 	end, vim.tbl_extend("force", opts, { desc = "Toggle auto-scroll" }))
 
+	local todo_keymap = cfg.todo
+		and cfg.todo.keymaps
+		and cfg.todo.keymaps.toggle
+	if todo_keymap and todo_keymap ~= "" then
+		vim.keymap.set("n", todo_keymap, function()
+			chat_todos.toggle_current_dock()
+		end, vim.tbl_extend("force", opts, { desc = "Toggle todo dock" }))
+	end
+
 	vim.keymap.set("n", "?", function()
 		M.show_help()
 	end, opts)
@@ -589,6 +622,12 @@ function M.show_help()
 	vim.api.nvim_set_hl(0, "OpenCodeInputBorder", { link = "Special", default = true })
 	vim.api.nvim_set_hl(0, "OpenCodeInputInfo", { link = "Comment", default = true })
 
+	local todo_toggle = state.config
+		and state.config.todo
+		and state.config.todo.keymaps
+		and state.config.todo.keymaps.toggle
+		or "T"
+
 	local lines = {
 		"Chat Buffer Keymaps",
 		"",
@@ -617,6 +656,10 @@ function M.show_help()
 		"gd         Enter subagent output",
 		"<BS>       Go back to parent",
 		"gD         View diff",
+		"",
+		"Todos",
+		string.format("%-10s Toggle todo dock", todo_toggle),
+		"<CR>       Toggle dock on header",
 		"",
 		"Question Tool",
 		"1-9        Select option by number",
@@ -681,6 +724,7 @@ function M.show_help()
 		["Chat Buffer Keymaps"] = true,
 		["Input Mode"] = true,
 		["Tool Calls"] = true,
+		["Todos"] = true,
 		["Question Tool"] = true,
 		["Permissions"] = true,
 		["Edit Review"] = true,
@@ -839,6 +883,7 @@ function M.create()
 			state.task_child_cache = {}
 			state.tools = {}
 			state.expanded_tools = {}
+			state.todo_dock = nil
 			state.stream_blocks = {}
 			state.spinner_footer_line = nil
 			if not is_navigating then
@@ -1061,7 +1106,6 @@ function M.focus_input()
 	input.show({
 		winid = state.winid,
 		float_dims = state.float_dims,
-		close_on_send = false,
 		on_send = function(text)
 			local opencode = require("opencode")
 			local slash_ok, slash = pcall(require, "opencode.slash")
@@ -1198,6 +1242,7 @@ function M.clear()
 	state.task_child_cache = {}
 	state.tools = {}
 	state.expanded_tools = {}
+	state.todo_dock = nil
 	state.stream_blocks = {}
 	state.spinner_footer_line = nil
 	state.last_render_time = 0
@@ -1458,6 +1503,7 @@ function M.render()
 	state.edits = {}
 	state.tasks = {}
 	state.tools = {}
+	state.todo_dock = nil
 
 	local rendered_question_ids = {}
 	local rendered_perm_ids = {}
@@ -1722,27 +1768,35 @@ function M.render()
 		render_widget_items(widget_items)
 	end
 
+	---@param result table
+	---@param kind string
+	---@return number base_line
+	local function add_render_result(result, kind)
+		local base_line = #raw_lines
+		local hl_by_line = {}
+		for _, hl in ipairs(result.highlights or {}) do
+			hl_by_line[hl.line] = hl
+		end
+		for idx, text in ipairs(result.lines or {}) do
+			local nl = NuiLine()
+			local line_hl = hl_by_line[idx - 1]
+			if line_hl then
+				nl:append(NuiText(text, line_hl.hl_group))
+			else
+				nl:append(text)
+			end
+			add_line(nl, kind)
+		end
+		return base_line
+	end
+
 	---@param tool_part table
 	local function render_tool_part(tool_part)
 		if tool_part.tool == "task" then
 			local is_expanded = state.expanded_tasks[tool_part.id] or false
 			local cached = state.task_child_cache[tool_part.id]
 			local result = chat_tasks.render_task_tool(tool_part, is_expanded, cached)
-			local base_line = #raw_lines
-			local hl_by_line = {}
-			for _, hl in ipairs(result.highlights) do
-				hl_by_line[hl.line] = hl
-			end
-			for idx, tl in ipairs(result.lines) do
-				local nl = NuiLine()
-				local line_hl = hl_by_line[idx - 1]
-				if line_hl then
-					nl:append(NuiText(tl, line_hl.hl_group))
-				else
-					nl:append(tl)
-				end
-				add_line(nl, "tool")
-			end
+			local base_line = add_render_result(result, "tool")
 			state.tasks[tool_part.id] = {
 				start_line = base_line,
 				end_line = base_line + #result.lines - 1,
@@ -1752,22 +1806,9 @@ function M.render()
 		end
 
 		local is_expanded = state.expanded_tools[tool_part.id] or false
-		local result = render.render_tool_line(tool_part, is_expanded)
-		local base_line = #raw_lines
-		local hl_by_line = {}
-		for _, hl in ipairs(result.highlights) do
-			hl_by_line[hl.line] = hl
-		end
-		for idx, tl in ipairs(result.lines) do
-			local nl = NuiLine()
-			local line_hl = hl_by_line[idx - 1]
-			if line_hl then
-				nl:append(NuiText(tl, line_hl.hl_group))
-			else
-				nl:append(tl)
-			end
-			add_line(nl, "tool")
-		end
+		local result = not is_expanded and chat_todos.render_tool(tool_part) or nil
+		result = result or render.render_tool_line(tool_part, is_expanded)
+		local base_line = add_render_result(result, "tool")
 		state.tools[tool_part.id] = {
 			start_line = base_line,
 			end_line = base_line + #result.lines - 1,
@@ -1801,6 +1842,21 @@ function M.render()
 	header:append(NuiText(header_line, "Comment"))
 	add_line(header)
 	add_raw_line("")
+
+	if current_session.id then
+		local dock_result = chat_todos.render_dock(current_session.id, sync.get_todos(current_session.id))
+		if dock_result and #dock_result.lines > 0 then
+			local base_line = add_render_result(dock_result, "non_tool")
+			state.todo_dock = {
+				start_line = base_line,
+				end_line = base_line + #dock_result.lines - 1,
+				header_line = base_line,
+				session_id = current_session.id,
+				collapsed = dock_result.collapsed == true,
+			}
+			add_raw_line("")
+		end
+	end
 
 	local messages = current_session.id and sync.get_messages(current_session.id) or {}
 	local spinner_active = spinner.is_active()
@@ -2330,6 +2386,12 @@ end
 
 ---Route Enter to tasks/questions/permissions/edits.
 function M.handle_question_confirm()
+	local todo_session_id = chat_todos.get_dock_at_cursor()
+	if todo_session_id then
+		chat_todos.toggle_dock(todo_session_id)
+		return
+	end
+
 	local task_part_id = chat_tasks.get_task_at_cursor()
 	if task_part_id then
 		chat_tasks.handle_task_toggle(task_part_id)

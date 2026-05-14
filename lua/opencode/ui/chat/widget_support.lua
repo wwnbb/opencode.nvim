@@ -100,6 +100,11 @@ function M.shift_tracked_lines(old_end, delta, opts)
 	render.shift_line_map(state.edits, old_end, delta)
 	render.shift_line_map(state.tasks, old_end, delta)
 	render.shift_line_map(state.tools, old_end, delta)
+	if state.todo_dock and state.todo_dock.start_line > old_end then
+		state.todo_dock.start_line = state.todo_dock.start_line + delta
+		state.todo_dock.end_line = state.todo_dock.end_line + delta
+		state.todo_dock.header_line = state.todo_dock.header_line + delta
+	end
 
 	for message_id, pos in pairs(state.stream_blocks) do
 		if

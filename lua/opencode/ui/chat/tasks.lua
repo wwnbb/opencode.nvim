@@ -8,6 +8,7 @@ local cs = require("opencode.ui.chat.state")
 local state = cs.state
 local chat_hl_ns = cs.chat_hl_ns
 local render = require("opencode.ui.chat.render")
+local chat_todos = require("opencode.ui.chat.todos")
 local edit_state = require("opencode.edit.state")
 
 -- ─── Animation ────────────────────────────────────────────────────────────────
@@ -750,6 +751,11 @@ local function shift_all_after(anchor_start, delta, skip_task_id, skip_tool_id)
 			state.tools[id].end_line = tlpos.end_line + delta
 		end
 	end
+	if state.todo_dock and state.todo_dock.start_line > anchor_start then
+		state.todo_dock.start_line = state.todo_dock.start_line + delta
+		state.todo_dock.end_line = state.todo_dock.end_line + delta
+		state.todo_dock.header_line = state.todo_dock.header_line + delta
+	end
 end
 
 ---Re-render a task widget in place (expand/collapse).
@@ -862,7 +868,8 @@ function M.rerender_tool(part_id)
 	end
 
 	local is_expanded = state.expanded_tools[part_id] or false
-	local result = render.render_tool_line(pos.tool_part, is_expanded)
+	local result = not is_expanded and chat_todos.render_tool(pos.tool_part) or nil
+	result = result or render.render_tool_line(pos.tool_part, is_expanded)
 
 	local old_line_count = pos.end_line - pos.start_line + 1
 	local new_line_count = #result.lines

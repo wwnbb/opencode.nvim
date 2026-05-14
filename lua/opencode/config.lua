@@ -43,6 +43,29 @@ M.defaults = {
 			user_prefix = "> ",
 			multiline_prefix = true,
 		},
+		todo = {
+			enabled = true,
+			show_dock = true,
+			hide_when_done = true,
+			default_collapsed = false,
+			keymaps = {
+				toggle = "T",
+			},
+			icons = {
+				pending = "[ ]",
+				in_progress = "[•]",
+				completed = "[✓]",
+				cancelled = "[ ]",
+			},
+			highlights = {
+				pending = "Comment",
+				in_progress = "WarningMsg",
+				completed = "Comment",
+				cancelled = "Comment",
+				header = "Title",
+				border = "Comment",
+			},
+		},
 	},
 
 	-- Input

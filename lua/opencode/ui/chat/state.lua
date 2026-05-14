@@ -28,6 +28,8 @@ M.state = {
 	task_child_cache = {},  -- Rendered child content: { [part_id] = { lines, highlights } }
 	tools = {},             -- Track tool positions: { [part_id] = { start_line, end_line, tool_part } }
 	expanded_tools = {},    -- Toggle set: { [part_id] = true }
+	todo_dock = nil,        -- Track live todo dock: { start_line, end_line, header_line, session_id, collapsed }
+	todo_dock_collapsed = {}, -- Toggle set by session: { [session_id] = boolean }
 	stream_blocks = {},     -- Streaming text blocks: { [message_id] = { start_line, end_line } }
 	spinner_footer_line = nil,
 	session_stack = {},     -- Stack of { id, name } for parent session navigation
