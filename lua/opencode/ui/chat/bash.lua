@@ -9,19 +9,84 @@ local render = require("opencode.ui.chat.render")
 local MAX_COLLAPSED_OUTPUT_LINES = 10
 local BASH_ANIM_FRAMES = { "|", "/", "-", "\\" }
 
+local function get_hl(name)
+	local ok, value = pcall(vim.api.nvim_get_hl, 0, { name = name, link = false })
+	return ok and value or {}
+end
+
+local function set_panel_hl(name, fg_source, fallback)
+	local cursor = get_hl("CursorLine")
+	local fg_hl = get_hl(fg_source)
+	local fallback_hl = fallback and get_hl(fallback) or {}
+	local opts = {}
+	if fg_hl.fg or fallback_hl.fg then
+		opts.fg = fg_hl.fg or fallback_hl.fg
+	end
+	if cursor.bg then
+		opts.bg = cursor.bg
+	end
+	if next(opts) == nil then
+		opts.link = fallback or fg_source
+	end
+	vim.api.nvim_set_hl(0, name, opts)
+end
+
+local function ensure_highlights()
+	set_panel_hl("OpenCodeBashMuted", "Comment", "Normal")
+	set_panel_hl("OpenCodeBashCommand", "String", "Normal")
+	set_panel_hl("OpenCodeBashOutput", "Normal", nil)
+	set_panel_hl("OpenCodeBashError", "DiagnosticError", "ErrorMsg")
+end
+
+---@return number width
+local function get_chat_text_width()
+	if not state.winid or not vim.api.nvim_win_is_valid(state.winid) then
+		return 80
+	end
+
+	local width = vim.api.nvim_win_get_width(state.winid)
+	local wininfo = vim.fn.getwininfo(state.winid)[1]
+	local textoff = wininfo and tonumber(wininfo.textoff) or 0
+	return math.max(1, width - textoff)
+end
+
+---@param text string
+---@return string
+local function pad_to_width(text)
+	local width = get_chat_text_width()
+	local current = vim.fn.strdisplaywidth(text)
+	if current >= width then
+		return text
+	end
+	return text .. string.rep(" ", width - current)
+end
+
 ---@param result table
 ---@param text string
 ---@param hl_group string|nil
 local function add_line(result, text, hl_group)
-	table.insert(result.lines, text)
+	local line = pad_to_width(text)
+	table.insert(result.lines, line)
 	if hl_group then
 		table.insert(result.highlights, {
 			line = #result.lines - 1,
 			col_start = 0,
-			col_end = #text,
+			col_end = #line,
 			hl_group = hl_group,
 		})
 	end
+end
+
+---@param result table
+---@param text string
+---@param hl_group string
+local function add_panel_line(result, text, hl_group)
+	add_line(result, "▏  " .. text, hl_group)
+end
+
+---@param result table
+local function add_panel_blank(result)
+	add_line(result, "▏", "OpenCodeBashOutput")
 end
 
 ---@param value any
@@ -183,7 +248,7 @@ local function add_command(result, command)
 	local lines = vim.split(command, "\n", { plain = true })
 	for i, line in ipairs(lines) do
 		local prefix = i == 1 and "$ " or "  "
-		add_line(result, prefix .. line, "String")
+		add_panel_line(result, prefix .. line, "OpenCodeBashCommand")
 	end
 end
 
@@ -194,6 +259,7 @@ function M.render_tool(tool_part, expanded)
 	if type(tool_part) ~= "table" or tool_part.tool ~= "bash" then
 		return nil
 	end
+	ensure_highlights()
 
 	local tool_state = type(tool_part.state) == "table" and tool_part.state or {}
 	local input = type(tool_state.input) == "table" and tool_state.input or {}
@@ -210,7 +276,7 @@ function M.render_tool(tool_part, expanded)
 	local result = { lines = {}, highlights = {} }
 	if command == "" then
 		local text = working and ("~ Writing command... " .. get_anim_frame()) or "~ Writing command..."
-		add_line(result, text, working and "Special" or "Comment")
+		add_panel_line(result, text, working and "OpenCodeBashCommand" or "OpenCodeBashMuted")
 		return result
 	end
 
@@ -232,9 +298,19 @@ function M.render_tool(tool_part, expanded)
 	local output_body = strip_echoed_command(output, command, workdir)
 	local error_body = trim_edge_newlines(error_text)
 	local has_error = status == "error" or error_body ~= "" or (exit_code ~= nil and exit_code ~= 0)
+	local entries = {}
+	append_body_entries(entries, output_body, "OpenCodeBashOutput")
+	if output_body ~= "" and error_body ~= "" then
+		table.insert(entries, { text = "", hl_group = "OpenCodeBashOutput" })
+	end
+	append_body_entries(entries, error_body, "OpenCodeBashError")
+	local has_overflow = #entries > MAX_COLLAPSED_OUTPUT_LINES
 
-	local fold_icon = expanded and "▾" or "▸"
-	local header = fold_icon .. " # " .. description
+	local header = "# " .. description
+	if has_overflow or expanded then
+		local fold_icon = expanded and "▾" or "▸"
+		header = fold_icon .. " " .. header
+	end
 	if exit_code ~= nil and exit_code ~= 0 then
 		header = header .. " (exit " .. tostring(exit_code) .. ")"
 	end
@@ -242,38 +318,36 @@ function M.render_tool(tool_part, expanded)
 		header = header .. " " .. get_anim_frame()
 	end
 
-	local header_hl = "Comment"
+	local header_hl = "OpenCodeBashMuted"
 	if has_error then
-		header_hl = "DiagnosticError"
+		header_hl = "OpenCodeBashError"
 	elseif working then
-		header_hl = "Special"
+		header_hl = "OpenCodeBashCommand"
 	end
 
-	add_line(result, header, header_hl)
+	add_panel_line(result, header, header_hl)
+	add_panel_blank(result)
 	add_command(result, command)
-
-	local entries = {}
-	append_body_entries(entries, output_body, nil)
-	if output_body ~= "" and error_body ~= "" then
-		table.insert(entries, { text = "", hl_group = nil })
-	end
-	append_body_entries(entries, error_body, "DiagnosticError")
 
 	if #entries == 0 then
 		return result
 	end
 
-	add_line(result, "", nil)
+	add_panel_blank(result)
 
 	local limit = expanded and #entries or math.min(MAX_COLLAPSED_OUTPUT_LINES, #entries)
 	for i = 1, limit do
 		local entry = entries[i]
-		add_line(result, entry.text, entry.hl_group)
+		if entry.text == "" then
+			add_panel_blank(result)
+		else
+			add_panel_line(result, entry.text, entry.hl_group)
+		end
 	end
 
-	if not expanded and #entries > MAX_COLLAPSED_OUTPUT_LINES then
+	if not expanded and has_overflow then
 		local remaining = #entries - MAX_COLLAPSED_OUTPUT_LINES
-		add_line(result, "… (" .. tostring(remaining) .. " more lines, press O to expand)", "Comment")
+		add_panel_line(result, "… (" .. tostring(remaining) .. " more lines, press O to expand)", "OpenCodeBashMuted")
 	end
 
 	return result

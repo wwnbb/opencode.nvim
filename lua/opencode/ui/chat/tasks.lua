@@ -796,6 +796,7 @@ function M.rerender_task(part_id)
 	local delta = new_line_count - old_line_count
 
 	vim.bo[state.bufnr].modifiable = true
+	vim.api.nvim_buf_clear_namespace(state.bufnr, chat_hl_ns, pos.start_line, pos.end_line + 1)
 	vim.api.nvim_buf_set_lines(state.bufnr, pos.start_line, pos.end_line + 1, false, result.lines)
 	vim.api.nvim_buf_clear_namespace(state.bufnr, chat_hl_ns, pos.start_line, pos.start_line + new_line_count)
 	apply_result_highlights(result, pos)
@@ -892,6 +893,7 @@ function M.rerender_tool(part_id)
 	local delta = new_line_count - old_line_count
 
 	vim.bo[state.bufnr].modifiable = true
+	vim.api.nvim_buf_clear_namespace(state.bufnr, chat_hl_ns, pos.start_line, pos.end_line + 1)
 	vim.api.nvim_buf_set_lines(state.bufnr, pos.start_line, pos.end_line + 1, false, result.lines)
 	vim.api.nvim_buf_clear_namespace(state.bufnr, chat_hl_ns, pos.start_line, pos.start_line + new_line_count)
 	apply_result_highlights(result, pos)
