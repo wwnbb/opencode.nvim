@@ -1807,8 +1807,7 @@ function M.render()
 		end
 
 		local is_expanded = state.expanded_tools[tool_part.id] or false
-		local result = not is_expanded and chat_todos.render_tool(tool_part) or nil
-		result = result or render.render_tool_line(tool_part, is_expanded)
+		local result = chat_tasks.render_regular_tool(tool_part, is_expanded)
 		local base_line = add_render_result(result, "tool")
 		state.tools[tool_part.id] = {
 			start_line = base_line,

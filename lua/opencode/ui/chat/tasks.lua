@@ -9,6 +9,7 @@ local state = cs.state
 local chat_hl_ns = cs.chat_hl_ns
 local render = require("opencode.ui.chat.render")
 local chat_todos = require("opencode.ui.chat.todos")
+local chat_bash = require("opencode.ui.chat.bash")
 local edit_state = require("opencode.edit.state")
 
 -- ─── Animation ────────────────────────────────────────────────────────────────
@@ -47,6 +48,17 @@ function M.has_active_task_rows()
 			and pos.tool_part.state.status
 			or "pending"
 		if status == "pending" or status == "running" then
+			return true
+		end
+	end
+	for _, pos in pairs(state.tools) do
+		local tool_part = pos and pos.tool_part
+		local status = tool_part
+			and tool_part.tool == "bash"
+			and tool_part.state
+			and tool_part.state.status
+			or "pending"
+		if tool_part and tool_part.tool == "bash" and (status == "pending" or status == "running") then
 			return true
 		end
 	end
@@ -541,6 +553,16 @@ function M.render_task_tool(tool_part, expanded, _child_content)
 	return { lines = result_lines, highlights = result_highlights }
 end
 
+---Render a regular non-task tool through specialized widgets before generic I/O.
+---@param tool_part table
+---@param is_expanded boolean
+---@return table { lines: string[], highlights: table[] }
+function M.render_regular_tool(tool_part, is_expanded)
+	local result = not is_expanded and chat_todos.render_tool(tool_part) or nil
+	result = result or chat_bash.render_tool(tool_part, is_expanded)
+	return result or render.render_tool_line(tool_part, is_expanded)
+end
+
 -- ─── Child session resolution ─────────────────────────────────────────────────
 
 ---@param tool_part table
@@ -863,8 +885,7 @@ function M.rerender_tool(part_id)
 	end
 
 	local is_expanded = state.expanded_tools[part_id] or false
-	local result = not is_expanded and chat_todos.render_tool(pos.tool_part) or nil
-	result = result or render.render_tool_line(pos.tool_part, is_expanded)
+	local result = M.render_regular_tool(pos.tool_part, is_expanded)
 
 	local old_line_count = pos.end_line - pos.start_line + 1
 	local new_line_count = #result.lines
