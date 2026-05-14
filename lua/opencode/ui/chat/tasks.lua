@@ -9,6 +9,7 @@ local state = cs.state
 local chat_hl_ns = cs.chat_hl_ns
 local render = require("opencode.ui.chat.render")
 local chat_todos = require("opencode.ui.chat.todos")
+local chat_read = require("opencode.ui.chat.read")
 local edit_state = require("opencode.edit.state")
 
 -- ─── Animation ────────────────────────────────────────────────────────────────
@@ -864,6 +865,7 @@ function M.rerender_tool(part_id)
 
 	local is_expanded = state.expanded_tools[part_id] or false
 	local result = not is_expanded and chat_todos.render_tool(pos.tool_part) or nil
+	result = result or chat_read.render_tool(pos.tool_part, is_expanded)
 	result = result or render.render_tool_line(pos.tool_part, is_expanded)
 
 	local old_line_count = pos.end_line - pos.start_line + 1
