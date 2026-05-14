@@ -54,12 +54,13 @@ function M.has_active_task_rows()
 	end
 	for _, pos in pairs(state.tools) do
 		local tool_part = pos and pos.tool_part
+		local is_animated_tool = tool_part and (tool_part.tool == "bash" or tool_part.tool == "read")
 		local status = tool_part
-			and tool_part.tool == "bash"
+			and is_animated_tool
 			and tool_part.state
 			and tool_part.state.status
 			or "pending"
-		if tool_part and tool_part.tool == "bash" and (status == "pending" or status == "running") then
+		if is_animated_tool and (status == "pending" or status == "running") then
 			return true
 		end
 	end
