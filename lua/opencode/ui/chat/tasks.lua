@@ -10,6 +10,7 @@ local chat_hl_ns = cs.chat_hl_ns
 local render = require("opencode.ui.chat.render")
 local chat_todos = require("opencode.ui.chat.todos")
 local chat_bash = require("opencode.ui.chat.bash")
+local chat_read = require("opencode.ui.chat.read")
 local edit_state = require("opencode.edit.state")
 
 -- ─── Animation ────────────────────────────────────────────────────────────────
@@ -560,6 +561,7 @@ end
 function M.render_regular_tool(tool_part, is_expanded)
 	local result = not is_expanded and chat_todos.render_tool(tool_part) or nil
 	result = result or chat_bash.render_tool(tool_part, is_expanded)
+	result = result or chat_read.render_tool(tool_part, is_expanded)
 	return result or render.render_tool_line(tool_part, is_expanded)
 end
 
