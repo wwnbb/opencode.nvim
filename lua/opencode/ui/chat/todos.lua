@@ -6,6 +6,7 @@ local M = {}
 local render = require("opencode.ui.chat.render")
 local cs = require("opencode.ui.chat.state")
 local state = cs.state
+local todo_hl_ns = vim.api.nvim_create_namespace("opencode_todo_hl")
 
 ---@class OpenCodeTodoConfig
 ---@field enabled boolean
@@ -328,8 +329,10 @@ end
 
 ---@param session_id string
 ---@param todos any
+---@param opts? table { width?: number }
 ---@return table|nil result
-function M.render_dock(session_id, todos)
+function M.render_dock(session_id, todos, opts)
+	opts = opts or {}
 	local cfg = M.get_config()
 	local normalized = M.normalize_todos(todos)
 	if not session_id or not M.should_show_dock(normalized, cfg) then
@@ -346,13 +349,13 @@ function M.render_dock(session_id, todos)
 	if collapsed then
 		local preview = active_preview_todo(normalized)
 		if preview then
-			add_todo_item(result, preview, cfg, { width = get_chat_text_width() })
+			add_todo_item(result, preview, cfg, { width = opts.width or get_chat_text_width() })
 		end
 		return result
 	end
 
 	for _, todo in ipairs(normalized) do
-		add_todo_item(result, todo, cfg, { width = get_chat_text_width() })
+		add_todo_item(result, todo, cfg, { width = opts.width or get_chat_text_width() })
 	end
 	return result
 end
@@ -388,25 +391,225 @@ function M.render_tool(tool_part)
 	return M.render_block(todos)
 end
 
+---@return boolean
+local function todo_window_is_valid()
+	return state.todo_winid and vim.api.nvim_win_is_valid(state.todo_winid) or false
+end
+
+---@return boolean
+local function todo_buffer_is_valid()
+	return state.todo_bufnr and vim.api.nvim_buf_is_valid(state.todo_bufnr) or false
+end
+
+local function setup_todo_buffer()
+	if todo_buffer_is_valid() then
+		return state.todo_bufnr
+	end
+
+	local bufnr = vim.api.nvim_create_buf(false, true)
+	state.todo_bufnr = bufnr
+	vim.bo[bufnr].buftype = "nofile"
+	vim.bo[bufnr].bufhidden = "hide"
+	vim.bo[bufnr].swapfile = false
+	vim.bo[bufnr].filetype = "opencode_todo"
+	vim.bo[bufnr].modifiable = false
+
+	local opts = { buffer = bufnr, noremap = true, silent = true }
+	local cfg = M.get_config()
+	local toggle_key = cfg.keymaps and cfg.keymaps.toggle or "T"
+	vim.keymap.set("n", "<CR>", function()
+		M.toggle_current_dock()
+	end, opts)
+	if toggle_key and toggle_key ~= "" then
+		vim.keymap.set("n", toggle_key, function()
+			M.toggle_current_dock()
+		end, opts)
+	end
+	vim.keymap.set("n", "q", function()
+		M.close_window()
+	end, opts)
+
+	return bufnr
+end
+
+local function setup_todo_window_options(winid)
+	if not winid or not vim.api.nvim_win_is_valid(winid) then
+		return
+	end
+
+	local wo = vim.wo[winid]
+	wo.fillchars = "eob: "
+	wo.wrap = true
+	wo.number = false
+	wo.relativenumber = false
+	wo.signcolumn = "no"
+	wo.foldcolumn = "0"
+	wo.cursorline = false
+	wo.cursorcolumn = false
+	pcall(function()
+		wo.statuscolumn = ""
+	end)
+end
+
+---@return table|nil frame
+local function get_chat_frame()
+	if not state.visible or not state.winid or not vim.api.nvim_win_is_valid(state.winid) then
+		return nil
+	end
+
+	if state.config and state.config.layout == "float" and state.float_dims then
+		return vim.deepcopy(state.float_dims)
+	end
+
+	local pos = vim.api.nvim_win_get_position(state.winid)
+	return {
+		row = pos[1],
+		col = pos[2],
+		width = vim.api.nvim_win_get_width(state.winid),
+		height = vim.api.nvim_win_get_height(state.winid),
+	}
+end
+
+---@param value number
+---@param min_value number
+---@param max_value number
+---@return number
+local function clamp(value, min_value, max_value)
+	return math.max(min_value, math.min(value, max_value))
+end
+
+---@param frame table
+---@param line_count number
+---@return table|nil
+local function calculate_window_config(frame, line_count)
+	local cfg = state.config or {}
+	local layout = cfg.layout or "vertical"
+	local ui = vim.api.nvim_list_uis()[1] or { width = vim.o.columns, height = vim.o.lines }
+
+	local max_width = math.max(20, frame.width - 4)
+	local width
+	if layout == "vertical" then
+		width = max_width
+	else
+		width = math.min(max_width, math.max(24, math.floor(frame.width * 0.38)))
+	end
+
+	width = clamp(width, 20, math.max(20, ui.width - 4))
+
+	local max_height = math.max(1, frame.height - 4)
+	if layout == "vertical" then
+		max_height = math.max(1, math.min(max_height, 10))
+	elseif layout == "horizontal" then
+		max_height = math.max(1, math.min(max_height, frame.height - 2))
+	else
+		max_height = math.max(1, math.min(max_height, 12))
+	end
+	local height = clamp(line_count, 1, max_height)
+
+	local row = frame.row + 1
+	local col = frame.col + 1
+	if layout == "horizontal" or layout == "float" then
+		col = frame.col + frame.width - width - 2
+	end
+
+	row = clamp(row, 0, math.max(0, ui.height - height - 2))
+	col = clamp(col, 0, math.max(0, ui.width - width - 2))
+
+	return {
+		relative = "editor",
+		row = row,
+		col = col,
+		width = width,
+		height = height,
+		style = "minimal",
+		border = "single",
+		focusable = true,
+		zindex = 70,
+	}
+end
+
+function M.close_window()
+	if todo_window_is_valid() then
+		pcall(vim.api.nvim_win_close, state.todo_winid, true)
+	end
+	state.todo_winid = nil
+end
+
+function M.update_window()
+	local app_state = require("opencode.state")
+	local sync = require("opencode.sync")
+	local current = app_state.get_session()
+	local session_id = current and current.id
+	local frame = get_chat_frame()
+	if not frame or not session_id then
+		M.close_window()
+		return
+	end
+
+	local cfg = M.get_config()
+	local todos = M.normalize_todos(sync.get_todos(session_id))
+	if not M.should_show_dock(todos, cfg) then
+		M.close_window()
+		return
+	end
+
+	local preliminary = calculate_window_config(frame, #todos + 1)
+	if not preliminary then
+		M.close_window()
+		return
+	end
+
+	local result = M.render_dock(session_id, todos, { width = preliminary.width })
+	if not result or #result.lines == 0 then
+		M.close_window()
+		return
+	end
+
+	local win_config = calculate_window_config(frame, #result.lines)
+	if not win_config then
+		M.close_window()
+		return
+	end
+
+	local bufnr = setup_todo_buffer()
+	vim.bo[bufnr].modifiable = true
+	vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, result.lines)
+	vim.api.nvim_buf_clear_namespace(bufnr, todo_hl_ns, 0, -1)
+	for _, hl in ipairs(result.highlights or {}) do
+		local line_idx = hl.line
+		if line_idx >= 0 and line_idx < #result.lines then
+			local end_col = hl.col_end
+			if end_col == -1 then
+				end_col = #result.lines[line_idx + 1]
+			end
+			pcall(vim.api.nvim_buf_set_extmark, bufnr, todo_hl_ns, line_idx, hl.col_start, {
+				end_col = end_col,
+				hl_group = hl.hl_group,
+			})
+		end
+	end
+	vim.bo[bufnr].modifiable = false
+
+	if todo_window_is_valid() then
+		vim.api.nvim_win_set_config(state.todo_winid, win_config)
+		if vim.api.nvim_win_get_buf(state.todo_winid) ~= bufnr then
+			vim.api.nvim_win_set_buf(state.todo_winid, bufnr)
+		end
+	else
+		state.todo_winid = vim.api.nvim_open_win(bufnr, false, win_config)
+	end
+
+	setup_todo_window_options(state.todo_winid)
+end
+
 ---@return string|nil session_id
----@return table|nil dock_info
 function M.get_dock_at_cursor()
-	if not state.winid or not vim.api.nvim_win_is_valid(state.winid) then
-		return nil, nil
+	if todo_window_is_valid() and vim.api.nvim_get_current_win() == state.todo_winid then
+		local app_state = require("opencode.state")
+		local current = app_state.get_session()
+		return current and current.id or nil
 	end
-
-	local dock = state.todo_dock
-	if not dock or not dock.header_line then
-		return nil, nil
-	end
-
-	local cursor = vim.api.nvim_win_get_cursor(state.winid)
-	local cursor_line = cursor[1] - 1
-	if cursor_line == dock.header_line then
-		return dock.session_id, dock
-	end
-
-	return nil, nil
+	return nil
 end
 
 ---@param session_id string|nil
@@ -427,10 +630,7 @@ function M.toggle_dock(session_id)
 	local cfg = M.get_config()
 	state.todo_dock_collapsed[session_id] = not M.is_dock_collapsed(session_id, todos, cfg)
 
-	local ok, chat = pcall(require, "opencode.ui.chat")
-	if ok and chat.schedule_render then
-		chat.schedule_render()
-	end
+	M.update_window()
 end
 
 function M.toggle_current_dock()

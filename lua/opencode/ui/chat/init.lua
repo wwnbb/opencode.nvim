@@ -379,7 +379,7 @@ local function setup_buffer(bufnr)
 	if todo_keymap and todo_keymap ~= "" then
 		vim.keymap.set("n", todo_keymap, function()
 			chat_todos.toggle_current_dock()
-		end, vim.tbl_extend("force", opts, { desc = "Toggle todo dock" }))
+		end, vim.tbl_extend("force", opts, { desc = "Toggle todo window" }))
 	end
 
 	vim.keymap.set("n", "?", function()
@@ -658,8 +658,7 @@ function M.show_help()
 		"gD         View diff",
 		"",
 		"Todos",
-		string.format("%-10s Toggle todo dock", todo_toggle),
-		"<CR>       Toggle dock on header",
+		string.format("%-10s Toggle todo window", todo_toggle),
 		"",
 		"Question Tool",
 		"1-9        Select option by number",
@@ -883,7 +882,6 @@ function M.create()
 			state.task_child_cache = {}
 			state.tools = {}
 			state.expanded_tools = {}
-			state.todo_dock = nil
 			state.stream_blocks = {}
 			state.spinner_footer_line = nil
 			if not is_navigating then
@@ -898,6 +896,7 @@ function M.create()
 			if not is_navigating then
 				state.session_stack = {}
 			end
+			chat_todos.update_window()
 		end)
 	end)
 
@@ -965,6 +964,7 @@ function M.open()
 				callback = function()
 					if state.winid == popup_winid then
 						clear_float_focus_autocmds()
+						chat_todos.close_window()
 						state.visible = false
 						state.winid = nil
 						state.layout = nil
@@ -1030,10 +1030,12 @@ end
 
 function M.close()
 	if not state.visible then
+		chat_todos.close_window()
 		return
 	end
 
 	clear_float_focus_autocmds()
+	chat_todos.close_window()
 
 	if input.is_visible() then
 		input.close()
@@ -1232,6 +1234,7 @@ function M.render_message(message)
 end
 
 function M.clear()
+	chat_todos.close_window()
 	state.messages = {}
 	state.questions = {}
 	state.permissions = {}
@@ -1242,7 +1245,6 @@ function M.clear()
 	state.task_child_cache = {}
 	state.tools = {}
 	state.expanded_tools = {}
-	state.todo_dock = nil
 	state.stream_blocks = {}
 	state.spinner_footer_line = nil
 	state.last_render_time = 0
@@ -1503,7 +1505,6 @@ function M.render()
 	state.edits = {}
 	state.tasks = {}
 	state.tools = {}
-	state.todo_dock = nil
 
 	local rendered_question_ids = {}
 	local rendered_perm_ids = {}
@@ -1842,21 +1843,6 @@ function M.render()
 	header:append(NuiText(header_line, "Comment"))
 	add_line(header)
 	add_raw_line("")
-
-	if current_session.id then
-		local dock_result = chat_todos.render_dock(current_session.id, sync.get_todos(current_session.id))
-		if dock_result and #dock_result.lines > 0 then
-			local base_line = add_render_result(dock_result, "non_tool")
-			state.todo_dock = {
-				start_line = base_line,
-				end_line = base_line + #dock_result.lines - 1,
-				header_line = base_line,
-				session_id = current_session.id,
-				collapsed = dock_result.collapsed == true,
-			}
-			add_raw_line("")
-		end
-	end
 
 	local messages = current_session.id and sync.get_messages(current_session.id) or {}
 	local spinner_active = spinner.is_active()
@@ -2219,6 +2205,7 @@ function M.do_render()
 	local should_scroll = should_auto_scroll(widget_cursor)
 
 	local new_lines, nui_lines = M.render()
+	chat_todos.update_window()
 	if #new_lines == 0 or #nui_lines == 0 then
 		vim.bo[state.bufnr].modifiable = true
 		vim.api.nvim_buf_set_lines(state.bufnr, 0, -1, false, new_lines)
