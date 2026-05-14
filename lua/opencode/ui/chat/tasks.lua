@@ -751,11 +751,6 @@ local function shift_all_after(anchor_start, delta, skip_task_id, skip_tool_id)
 			state.tools[id].end_line = tlpos.end_line + delta
 		end
 	end
-	if state.todo_dock and state.todo_dock.start_line > anchor_start then
-		state.todo_dock.start_line = state.todo_dock.start_line + delta
-		state.todo_dock.end_line = state.todo_dock.end_line + delta
-		state.todo_dock.header_line = state.todo_dock.header_line + delta
-	end
 end
 
 ---Re-render a task widget in place (expand/collapse).
