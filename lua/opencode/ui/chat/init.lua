@@ -21,6 +21,7 @@ local chat_hl_ns = cs.chat_hl_ns
 local render = require("opencode.ui.chat.render")
 local chat_tasks = require("opencode.ui.chat.tasks")
 local chat_todos = require("opencode.ui.chat.todos")
+local chat_read = require("opencode.ui.chat.read")
 local chat_questions = require("opencode.ui.chat.questions")
 local chat_permissions = require("opencode.ui.chat.permissions")
 local chat_edits = require("opencode.ui.chat.edits")
@@ -1808,6 +1809,7 @@ function M.render()
 
 		local is_expanded = state.expanded_tools[tool_part.id] or false
 		local result = not is_expanded and chat_todos.render_tool(tool_part) or nil
+		result = result or chat_read.render_tool(tool_part, is_expanded)
 		result = result or render.render_tool_line(tool_part, is_expanded)
 		local base_line = add_render_result(result, "tool")
 		state.tools[tool_part.id] = {
