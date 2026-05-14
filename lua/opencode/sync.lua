@@ -8,6 +8,12 @@ local M = {}
 ---@field message table<string, Message[]> Messages by sessionID
 ---@field part table<string, Part[]> Parts by messageID
 ---@field session_status table<string, SessionStatus> Status by sessionID
+---@field todo table<string, OpenCodeTodo[]> Todos by sessionID
+
+---@class OpenCodeTodo
+---@field content string Brief task description
+---@field status "pending"|"in_progress"|"completed"|"cancelled"
+---@field priority? "high"|"medium"|"low"
 
 ---@class Message
 ---@field id string
@@ -41,6 +47,7 @@ local store = {
 	message = {},       -- { [sessionID] = { Message, ... } }
 	part = {},          -- { [messageID] = { Part, ... } }
 	session_status = {}, -- { [sessionID] = { type = "idle" | "busy" } }
+	todo = {},          -- { [sessionID] = { Todo, ... } }
 	-- Provider/agent/model data (like TUI's sync.tsx)
 	provider = {},      -- Array of connected provider info
 	provider_default = {}, -- { [providerID] = default_modelID }
@@ -430,6 +437,21 @@ function M.handle_session_status(session_id, status)
 	store.session_status[session_id] = status
 end
 
+---Handle todo.updated event (mirrors TUI sync.tsx todo store updates)
+---@param session_id string
+---@param todos OpenCodeTodo[]|nil
+function M.handle_todo_updated(session_id, todos)
+	if not session_id or session_id == "" then
+		return
+	end
+	if type(todos) ~= "table" then
+		store.todo[session_id] = {}
+		return
+	end
+
+	store.todo[session_id] = vim.deepcopy(todos)
+end
+
 ---Get messages for a session
 ---@param session_id string
 ---@return Message[]
@@ -542,6 +564,13 @@ function M.get_session_status(session_id)
 	return store.session_status[session_id]
 end
 
+---Get todos for a session
+---@param session_id string
+---@return OpenCodeTodo[]
+function M.get_todos(session_id)
+	return store.todo[session_id] or {}
+end
+
 ---Check if session is busy
 ---@param session_id string
 ---@return boolean
@@ -564,6 +593,9 @@ function M.clear_session(session_id)
 
 	-- Remove status
 	store.session_status[session_id] = nil
+
+	-- Remove todos
+	store.todo[session_id] = nil
 end
 
 ---Clear all data
@@ -571,6 +603,7 @@ function M.clear_all()
 	store.message = {}
 	store.part = {}
 	store.session_status = {}
+	store.todo = {}
 	store.provider = {}
 	store.provider_default = {}
 	store.agent = {}

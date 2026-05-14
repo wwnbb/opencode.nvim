@@ -148,6 +148,13 @@ function M.get_messages(session_id, opts, callback)
 	http.get("/session/" .. session_id .. "/message", callback, { query = opts })
 end
 
+-- Get session todos
+---@param session_id string
+---@param callback function(err, todos)
+function M.get_session_todos(session_id, callback)
+	http.get("/session/" .. encode_path_segment(session_id) .. "/todo", callback)
+end
+
 -- Send message to session
 ---@param session_id string
 ---@param message table { parts, model?, agent?, noReply?, system?, tools?, messageID? }

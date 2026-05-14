@@ -333,6 +333,7 @@ function M.setup_sse_bridge()
 		["session.status"] = "session_status",
 		["session.error"] = "session_error",
 		["session.diff"] = "session_diff",
+		["todo.updated"] = "todo_updated",
 		["file.edited"] = "edit",
 		["permission.requested"] = "permission",
 		["permission.asked"] = "permission", -- Server sends permission.asked
@@ -384,6 +385,43 @@ function M.setup_chat_handlers()
 	local state = require("opencode.state")
 	local sync = require("opencode.sync")
 	local logger = require("opencode.logger")
+
+	---@param session_id string|nil
+	---@param reason string
+	local function fetch_session_todos(session_id, reason)
+		if not session_id or session_id == "" then
+			return
+		end
+
+		local ok_client, client = pcall(require, "opencode.client")
+		if not ok_client or type(client.get_session_todos) ~= "function" then
+			return
+		end
+
+		client.get_session_todos(session_id, function(err, todos)
+			vim.schedule(function()
+				if err then
+					logger.debug("Session todo sync failed", {
+						session_id = session_id,
+						reason = reason,
+						error = err.message or err.error or tostring(err),
+					})
+					todos = {}
+				end
+
+				sync.handle_todo_updated(session_id, todos or {})
+				M.emit("todo_update", {
+					session_id = session_id,
+					todos = todos or {},
+				})
+
+				local current_session = state.get_session()
+				if current_session.id == session_id then
+					M.emit("chat_render", { session_id = session_id })
+				end
+			end)
+		end)
+	end
 
 	---@param part table
 	---@param current_session table
@@ -646,6 +684,41 @@ function M.setup_chat_handlers()
 		end)
 	end)
 
+	-- Handle todo.updated (OpenCode session todo state)
+	M.on("todo_updated", function(data)
+		vim.schedule(function()
+			if type(data) ~= "table" or not data.sessionID then
+				logger.debug("Todo update ignored", {
+					reason = "malformed",
+				})
+				return
+			end
+
+			local todos = type(data.todos) == "table" and data.todos or {}
+			sync.handle_todo_updated(data.sessionID, todos)
+			M.emit("todo_update", {
+				session_id = data.sessionID,
+				todos = todos,
+			})
+
+			local current_session = state.get_session()
+			if current_session.id ~= data.sessionID then
+				logger.debug("Todo update stored outside current session", {
+					sessionID = data.sessionID,
+					current_session = current_session.id,
+					count = #todos,
+				})
+				return
+			end
+
+			logger.debug("Todo update stored for current session", {
+				sessionID = data.sessionID,
+				count = #todos,
+			})
+			M.emit("chat_render", { session_id = current_session.id })
+		end)
+	end)
+
 	-- Retry countdown timer handle
 	local retry_timer = nil
 
@@ -797,6 +870,15 @@ function M.setup_chat_handlers()
 				M.emit("chat_render", { session_id = current_session.id })
 			end
 		end)
+	end)
+
+	M.on("session_change", function(data)
+		fetch_session_todos(data and data.id, "session_change")
+	end)
+
+	M.on("connected", function()
+		local current_session = state.get_session()
+		fetch_session_todos(current_session and current_session.id, "connected")
 	end)
 
 	-- Clear sync store on session change (skip when navigating into child sessions)
