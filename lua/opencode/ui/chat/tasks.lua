@@ -162,6 +162,78 @@ local function format_match_count(count)
 	return tostring(count) .. " " .. (count == 1 and "match" or "matches")
 end
 
+---@param value any
+---@return string
+local function trim_string(value)
+	if type(value) ~= "string" then
+		return ""
+	end
+	return vim.trim(value)
+end
+
+---@param value any
+---@return string
+local function skill_name_from_value(value)
+	if type(value) == "table" then
+		for _, key in ipairs({ "name", "skill", "skillName", "skill_name", "value", "label" }) do
+			local text = trim_string(value[key])
+			if text ~= "" then
+				return text
+			end
+		end
+		return ""
+	end
+	if type(value) ~= "string" then
+		return ""
+	end
+
+	local text = trim_string(value)
+	if text == "" then
+		return ""
+	end
+
+	return text:match('"name"%s*:%s*"([^"]+)"')
+		or text:match("'name'%s*:%s*'([^']+)'")
+		or (text:sub(1, 1) == "{" and "")
+		or text:match("^load_skill%s+%[(.-)%]$")
+		or text:match("^load_skill%s+(.+)$")
+		or text
+end
+
+---@param input table|string
+---@param metadata table
+---@param title string|nil
+---@param raw string|nil
+---@return string
+local function get_skill_name(input, metadata, title, raw)
+	local from_title = type(title) == "string" and title:match("Loaded skill:%s*(.+)") or nil
+	local name = skill_name_from_value(input)
+	if name == "" then
+		name = skill_name_from_value(metadata.name)
+	end
+	if name == "" then
+		name = skill_name_from_value(metadata.skill)
+	end
+	if name == "" then
+		name = trim_string(from_title)
+	end
+	if name == "" then
+		name = skill_name_from_value(raw)
+	end
+	name = name:gsub("^%[", ""):gsub("%]$", "")
+	return name
+end
+
+---@param text string
+---@param max_len number
+---@return string
+local function truncate_label(text, max_len)
+	if #text <= max_len then
+		return text
+	end
+	return text:sub(1, max_len - 3) .. "..."
+end
+
 -- Format an icon-prefixed label for a summary item.
 -- The icon mirrors TOOL_ICONS; the text uses title when available or is
 -- derived from the tool name / input fields.
@@ -228,8 +300,10 @@ local function format_summary_item_label(item)
 			return icon .. " " .. render.format_title(agent) .. (d ~= "" and (" – " .. d) or "")
 		end
 	elseif tool_name == "skill" then
-		local name = input.name or ""
-		if name ~= "" then return icon .. ' Skill "' .. name .. '"' end
+		local name = get_skill_name(input, metadata, item_state.title, item_state.raw)
+		if name ~= "" then
+			return icon .. ' Skill "' .. truncate_label(name, 40) .. '"'
+		end
 	end
 
 	-- Generic: capitalised tool name
@@ -297,9 +371,17 @@ function M.format_tool_line(tool_part)
 		end
 		return string.format("~ Updating todos...")
 	elseif tool_name == "skill" then
-		local name = input.name or ""
+		local raw = tool_part.state and tool_part.state.raw or nil
+		local title = tool_part.state and tool_part.state.title or nil
+		local name = get_skill_name(input, metadata, title, raw)
 		if tool_status == "completed" then
-			return string.format('%s Skill "%s"', icon, name)
+			if name ~= "" then
+				return string.format('%s Skill "%s"', icon, name)
+			end
+			return string.format("%s Skill", icon)
+		end
+		if name ~= "" then
+			return string.format('~ Loading skill "%s"...', name)
 		end
 		return string.format("~ Loading skill...")
 	elseif tool_name == "task" then
