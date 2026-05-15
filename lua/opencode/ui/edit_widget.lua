@@ -345,6 +345,7 @@ local function append_inline_diff(result, file)
 		local diff_line = display_diff_line(raw_line, file)
 		local line_index, _, rows = render.add_panel_raw_line(result, "  " .. diff_line, diff_hl_group(raw_line), {
 			prefix = PANEL_PREFIX,
+			wrap = true,
 		})
 		start_line = start_line or line_index
 		end_line = rows[#rows].line_index
