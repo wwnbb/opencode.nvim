@@ -11,6 +11,8 @@ local render = require("opencode.ui.chat.render")
 local chat_todos = require("opencode.ui.chat.todos")
 local chat_bash = require("opencode.ui.chat.bash")
 local chat_read = require("opencode.ui.chat.read")
+local chat_skill = require("opencode.ui.chat.skill")
+local chat_search = require("opencode.ui.chat.search")
 local edit_state = require("opencode.edit.state")
 
 -- ─── Animation ────────────────────────────────────────────────────────────────
@@ -54,7 +56,14 @@ function M.has_active_task_rows()
 	end
 	for _, pos in pairs(state.tools) do
 		local tool_part = pos and pos.tool_part
-		local is_animated_tool = tool_part and (tool_part.tool == "bash" or tool_part.tool == "read")
+		local is_animated_tool = tool_part
+			and (
+				tool_part.tool == "bash"
+				or tool_part.tool == "read"
+				or tool_part.tool == "skill"
+				or tool_part.tool == "glob"
+				or tool_part.tool == "grep"
+			)
 		local status = tool_part
 			and is_animated_tool
 			and tool_part.state
@@ -127,10 +136,29 @@ local TOOL_ICONS = {
 	todoread = "⊙",
 	question = "→",
 	apply_patch = "%",
+	skill = "→",
 }
 
 local function get_tool_icon(tool_name)
 	return TOOL_ICONS[tool_name] or "⚙"
+end
+
+---@param value any
+---@return number|nil
+local function normalize_count(value)
+	if type(value) == "number" then
+		return value
+	end
+	if type(value) == "string" and value ~= "" then
+		return tonumber(value)
+	end
+	return nil
+end
+
+---@param count number
+---@return string
+local function format_match_count(count)
+	return tostring(count) .. " " .. (count == 1 and "match" or "matches")
 end
 
 -- Format an icon-prefixed label for a summary item.
@@ -143,6 +171,7 @@ local function format_summary_item_label(item)
 	local item_state = item.state or {}
 	local item_status = item_state.status or "pending"
 	local input = item_state.input or {}
+	local metadata = item_state.metadata or item.metadata or {}
 	local icon = TOOL_ICONS[tool_name] or "⚙"
 
 	-- Prefer the server-supplied title when completed
@@ -179,16 +208,27 @@ local function format_summary_item_label(item)
 		end
 	elseif tool_name == "glob" then
 		local pat = input.pattern or ""
-		if pat ~= "" then return icon .. ' Glob "' .. pat .. '"' end
+		if pat ~= "" then
+			local count = normalize_count(metadata.count)
+			local suffix = count and (" (" .. format_match_count(count) .. ")") or ""
+			return icon .. ' Glob "' .. pat .. '"' .. suffix
+		end
 	elseif tool_name == "grep" then
 		local pat = input.pattern or ""
-		if pat ~= "" then return icon .. ' Grep "' .. pat .. '"' end
+		if pat ~= "" then
+			local matches = normalize_count(metadata.matches)
+			local suffix = matches and (" (" .. format_match_count(matches) .. ")") or ""
+			return icon .. ' Grep "' .. pat .. '"' .. suffix
+		end
 	elseif tool_name == "task" then
 		local agent = input.subagent_type or ""
 		local d = input.description or ""
 		if agent ~= "" then
 			return icon .. " " .. render.format_title(agent) .. (d ~= "" and (" – " .. d) or "")
 		end
+	elseif tool_name == "skill" then
+		local name = input.name or ""
+		if name ~= "" then return icon .. ' Skill "' .. name .. '"' end
 	end
 
 	-- Generic: capitalised tool name
@@ -205,16 +245,16 @@ function M.format_tool_line(tool_part)
 
 	if tool_name == "glob" then
 		local pattern = input.pattern or ""
-		local count = metadata.count or 0
+		local count = normalize_count(metadata.count) or 0
 		if tool_status == "completed" then
-			return string.format('%s Glob "%s" (%d matches)', icon, pattern, count)
+			return string.format('%s Glob "%s" (%s)', icon, pattern, format_match_count(count))
 		end
 		return string.format("~ Finding files...")
 	elseif tool_name == "grep" then
 		local pattern = input.pattern or ""
-		local matches = metadata.matches or 0
+		local matches = normalize_count(metadata.matches) or 0
 		if tool_status == "completed" then
-			return string.format('%s Grep "%s" (%d matches)', icon, pattern, matches)
+			return string.format('%s Grep "%s" (%s)', icon, pattern, format_match_count(matches))
 		end
 		return string.format("~ Searching content...")
 	elseif tool_name == "read" then
@@ -255,6 +295,12 @@ function M.format_tool_line(tool_part)
 			return string.format("%s %s", icon, tool_name)
 		end
 		return string.format("~ Updating todos...")
+	elseif tool_name == "skill" then
+		local name = input.name or ""
+		if tool_status == "completed" then
+			return string.format('%s Skill "%s"', icon, name)
+		end
+		return string.format("~ Loading skill...")
 	elseif tool_name == "task" then
 		local subagent = input.subagent_type or "unknown"
 		local desc = input.description or ""
@@ -563,6 +609,8 @@ function M.render_regular_tool(tool_part, is_expanded)
 	local result = not is_expanded and chat_todos.render_tool(tool_part) or nil
 	result = result or chat_bash.render_tool(tool_part, is_expanded)
 	result = result or chat_read.render_tool(tool_part, is_expanded)
+	result = result or chat_skill.render_tool(tool_part, is_expanded)
+	result = result or chat_search.render_tool(tool_part, is_expanded)
 	return result or render.render_tool_line(tool_part, is_expanded)
 end
 

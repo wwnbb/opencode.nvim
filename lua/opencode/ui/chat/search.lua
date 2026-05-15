@@ -1,4 +1,4 @@
--- Dedicated read tool rendering for the chat buffer.
+-- Glob/grep tool widget renderer for the chat buffer.
 
 local M = {}
 
@@ -7,7 +7,20 @@ local state = cs.state
 local render = require("opencode.ui.chat.render")
 
 local MAX_COLLAPSED_OUTPUT_LINES = 10
-local READ_ANIM_FRAMES = { "|", "/", "-", "\\" }
+local SEARCH_ANIM_FRAMES = { "|", "/", "-", "\\" }
+
+local TOOL_CONFIG = {
+	glob = {
+		title = "Glob",
+		pending = "Finding files...",
+		count_key = "count",
+	},
+	grep = {
+		title = "Grep",
+		pending = "Searching content...",
+		count_key = "matches",
+	},
+}
 
 local function get_hl(name)
 	local ok, value = pcall(vim.api.nvim_get_hl, 0, { name = name, link = false })
@@ -35,11 +48,11 @@ local function set_panel_hl(name, fg_source, fallback, extra_opts)
 end
 
 local function ensure_highlights()
-	set_panel_hl("OpenCodeReadMuted", "Comment", "Normal")
-	set_panel_hl("OpenCodeReadPath", "String", "Normal")
-	set_panel_hl("OpenCodeReadFilename", "String", "Normal", { bold = true })
-	set_panel_hl("OpenCodeReadOutput", "Normal", nil)
-	set_panel_hl("OpenCodeReadError", "DiagnosticError", "ErrorMsg")
+	set_panel_hl("OpenCodeSearchMuted", "Comment", "Normal")
+	set_panel_hl("OpenCodeSearchPattern", "String", "Normal", { bold = true })
+	set_panel_hl("OpenCodeSearchPath", "Directory", "Normal")
+	set_panel_hl("OpenCodeSearchOutput", "Normal", nil)
+	set_panel_hl("OpenCodeSearchError", "DiagnosticError", "ErrorMsg")
 end
 
 ---@return number width
@@ -68,6 +81,8 @@ end
 ---@param result table
 ---@param text string
 ---@param hl_group string|nil
+---@return number line_index
+---@return string line
 local function add_line(result, text, hl_group)
 	text = render.sanitize_buffer_line(text)
 	local line = pad_to_width(text)
@@ -87,13 +102,15 @@ end
 ---@param result table
 ---@param text string
 ---@param hl_group string
+---@return number line_index
+---@return string line
 local function add_panel_line(result, text, hl_group)
 	return add_line(result, "▏  " .. text, hl_group)
 end
 
 ---@param result table
 local function add_panel_blank(result)
-	add_line(result, "▏", "OpenCodeReadOutput")
+	add_line(result, "▏", "OpenCodeSearchOutput")
 end
 
 ---@param result table
@@ -107,6 +124,8 @@ local function is_nil(value)
 	return value == nil or value == vim.NIL
 end
 
+---@param value any
+---@return boolean
 local function is_present(value)
 	return value ~= nil and value ~= vim.NIL and tostring(value) ~= ""
 end
@@ -182,69 +201,69 @@ end
 ---@return string
 local function normalize_path(path)
 	if not is_present(path) then
-		return "unknown"
+		return ""
 	end
-	return vim.fn.fnamemodify(tostring(path), ":~:.")
+
+	local normalized = tostring(path)
+	if normalized:match("^file://") then
+		local ok, filepath = pcall(vim.uri_to_fname, normalized)
+		if ok and filepath and filepath ~= "" then
+			normalized = filepath
+		end
+	end
+	return vim.fn.fnamemodify(normalized, ":~:.")
 end
 
+---@param tool_part table
+---@return table|string
 local function get_input(tool_part)
 	local state_input = tool_part and tool_part.state and tool_part.state.input
-	if type(state_input) == "table" then
-		return state_input
-	end
 	local part_input = tool_part and tool_part.input
-	if type(part_input) == "table" then
-		return part_input
+	if type(state_input) == "table" or type(part_input) == "table" then
+		return vim.tbl_deep_extend(
+			"force",
+			{},
+			type(part_input) == "table" and part_input or {},
+			type(state_input) == "table" and state_input or {}
+		)
 	end
 	return state_input or part_input or {}
 end
 
-local function get_read_path(input)
-	if type(input) == "string" then
+---@param input table|string
+---@param key string
+---@return any
+local function input_value(input, key)
+	if type(input) == "table" then
+		return input[key]
+	end
+	if key == "pattern" and type(input) == "string" then
 		return input
 	end
-	if type(input) ~= "table" then
-		return nil
+	return nil
+end
+
+---@param value any
+---@return number|nil
+local function normalize_number(value)
+	if type(value) == "number" then
+		return value
 	end
-	return input.filePath or input.file_path or input.filepath
+	if type(value) == "string" and value ~= "" then
+		return tonumber(value)
+	end
+	return nil
+end
+
+---@param count number
+---@return string
+local function format_match_count(count)
+	return tostring(count) .. " " .. (count == 1 and "match" or "matches")
 end
 
 ---@return string
 local function get_anim_frame()
-	return READ_ANIM_FRAMES[state.task_anim_frame] or READ_ANIM_FRAMES[1]
-end
-
----@param text string
----@param tag string
----@return string|nil
-local function extract_tag(text, tag)
-	local open_tag = "<" .. tag .. ">"
-	local close_tag = "</" .. tag .. ">"
-	local start_pos = text:find(open_tag, 1, true)
-	if not start_pos then
-		return nil
-	end
-	local end_pos = text:find(close_tag, start_pos + #open_tag, true)
-	if not end_pos then
-		return nil
-	end
-	return trim_edge_newlines(text:sub(start_pos + #open_tag, end_pos - 1))
-end
-
----@param output string
----@return string
-local function extract_read_body(output)
-	local content = extract_tag(output, "content")
-	if is_present(content) then
-		return content
-	end
-
-	local entries = extract_tag(output, "entries")
-	if is_present(entries) then
-		return entries
-	end
-
-	return trim_edge_newlines(output)
+	return SEARCH_ANIM_FRAMES[state.task_anim_frame] or SEARCH_ANIM_FRAMES[1]
 end
 
 ---@param entries table[]
@@ -259,25 +278,6 @@ local function append_body_entries(entries, text, hl_group)
 	end
 end
 
----@param metadata table
----@return table[]
-local function get_loaded_entries(metadata)
-	local entries = {}
-	local loaded = metadata and metadata.loaded
-	if type(loaded) ~= "table" then
-		return entries
-	end
-	for _, filepath in ipairs(loaded) do
-		if type(filepath) == "string" and filepath ~= "" then
-			table.insert(entries, {
-				text = "↳ Loaded " .. normalize_path(filepath),
-				hl_group = "OpenCodeReadMuted",
-			})
-		end
-	end
-	return entries
-end
-
 ---@param result table
 ---@param entry table
 local function add_entry(result, entry)
@@ -288,11 +288,32 @@ local function add_entry(result, entry)
 	add_panel_line(result, entry.text, entry.hl_group)
 end
 
+---@param result table
+---@param line_index number
+---@param line string
+---@param text string
+---@param hl_group string
+local function highlight_text(result, line_index, line, text, hl_group)
+	if text == "" then
+		return
+	end
+	local start_pos = line:find(text, 1, true)
+	if not start_pos then
+		return
+	end
+	table.insert(result.highlights, {
+		line = line_index,
+		col_start = start_pos - 1,
+		col_end = start_pos + #text - 1,
+		hl_group = hl_group,
+	})
+end
+
 ---@param tool_part table
----@param is_expanded boolean
+---@param expanded boolean
 ---@return table|nil result
-function M.render_tool(tool_part, is_expanded)
-	if type(tool_part) ~= "table" or tool_part.tool ~= "read" then
+function M.render_tool(tool_part, expanded)
+	if type(tool_part) ~= "table" or (tool_part.tool ~= "glob" and tool_part.tool ~= "grep") then
 		return nil
 	end
 	ensure_highlights()
@@ -302,93 +323,77 @@ function M.render_tool(tool_part, is_expanded)
 	local metadata = render.get_tool_metadata(tool_part)
 	local status = tool_state.status or "pending"
 	local working = status == "pending" or status == "running"
-	local filepath = first_nonempty_trimmed_text(
-		get_read_path(input),
-		metadata.filePath,
-		metadata.file_path,
-		metadata.filepath,
-		metadata.path
-	)
+	local config = TOOL_CONFIG[tool_part.tool]
+	local pattern = first_nonempty_trimmed_text(input_value(input, "pattern"), metadata.pattern)
+	local path = first_nonempty_trimmed_text(input_value(input, "path"), metadata.path)
+	local include = first_nonempty_trimmed_text(input_value(input, "include"), metadata.include)
+	local display_path = normalize_path(path)
 	local output = first_nonempty_text(tool_state.output, metadata.output, tool_part.output, metadata.preview)
-	local error_body = first_nonempty_text(tool_state.error, metadata.error, tool_part.error)
-	local body = extract_read_body(output)
-	if body == "" then
-		body = first_nonempty_text(metadata.preview)
+	local error_body = trim_edge_newlines(first_nonempty_text(tool_state.error, metadata.error, tool_part.error))
+	local count = normalize_number(metadata[config.count_key])
+	if count == nil then
+		count = normalize_number(tool_state[config.count_key])
 	end
 
-	local body_entries = {}
-	append_body_entries(body_entries, body, "OpenCodeReadOutput")
-	if #body_entries > 0 and error_body ~= "" then
-		table.insert(body_entries, { text = "", hl_group = "OpenCodeReadOutput" })
-	end
-	append_body_entries(body_entries, trim_edge_newlines(error_body), "OpenCodeReadError")
-
-	local loaded_entries = {}
-	if status == "completed" then
-		loaded_entries = get_loaded_entries(metadata)
+	local body = trim_edge_newlines(output)
+	if body == "" and status == "completed" then
+		body = "No files found"
 	end
 
-	local has_overflow = #body_entries > MAX_COLLAPSED_OUTPUT_LINES
-	local display_path = normalize_path(filepath)
-	local header = "# Read " .. display_path
+	local entries = {}
+	append_body_entries(entries, body, "OpenCodeSearchOutput")
+	if #entries > 0 and error_body ~= "" then
+		table.insert(entries, { text = "", hl_group = "OpenCodeSearchOutput" })
+	end
+	append_body_entries(entries, error_body, "OpenCodeSearchError")
 
-	if type(input) == "table" then
-		if is_present(input.offset) then
-			header = header .. " offset=" .. tostring(input.offset)
-		end
-		if is_present(input.limit) then
-			header = header .. " limit=" .. tostring(input.limit)
-		end
+	local has_overflow = #entries > MAX_COLLAPSED_OUTPUT_LINES
+	local display_pattern = pattern ~= "" and pattern or "..."
+	local header = '# ' .. config.title .. ' "' .. display_pattern .. '"'
+	if display_path ~= "" then
+		header = header .. " in " .. display_path
+	end
+	if tool_part.tool == "grep" and include ~= "" then
+		header = header .. " include=" .. include
+	end
+	if count ~= nil then
+		header = header .. " (" .. format_match_count(count) .. ")"
 	end
 	if working then
 		header = header .. " " .. get_anim_frame()
 	end
-	if has_overflow or is_expanded then
-		local fold_icon = is_expanded and "▾" or "▸"
+	if has_overflow or expanded then
+		local fold_icon = expanded and "▾" or "▸"
 		header = fold_icon .. " " .. header
 	end
 
-	local header_hl = "OpenCodeReadMuted"
+	local header_hl = "OpenCodeSearchMuted"
 	if status == "error" or error_body ~= "" then
-		header_hl = "OpenCodeReadError"
+		header_hl = "OpenCodeSearchError"
 	elseif working then
-		header_hl = "OpenCodeReadPath"
+		header_hl = "OpenCodeSearchPattern"
 	end
 
 	local result = { lines = {}, highlights = {} }
 	local header_line_index, header_line = add_panel_line(result, header, header_hl)
-	local path_start = header_line:find(display_path, 1, true)
-	if path_start then
-		table.insert(result.highlights, {
-			line = header_line_index,
-			col_start = path_start - 1,
-			col_end = path_start + #display_path - 1,
-			hl_group = "OpenCodeReadFilename",
-		})
-	end
+	highlight_text(result, header_line_index, header_line, '"' .. display_pattern .. '"', "OpenCodeSearchPattern")
+	highlight_text(result, header_line_index, header_line, display_path, "OpenCodeSearchPath")
 
-	if #body_entries == 0 and #loaded_entries == 0 then
+	if #entries == 0 then
 		add_trailing_separator(result)
 		return result
 	end
 
 	add_panel_blank(result)
 
-	local limit = is_expanded and #body_entries or math.min(MAX_COLLAPSED_OUTPUT_LINES, #body_entries)
+	local limit = expanded and #entries or math.min(MAX_COLLAPSED_OUTPUT_LINES, #entries)
 	for i = 1, limit do
-		add_entry(result, body_entries[i])
+		add_entry(result, entries[i])
 	end
 
-	if not is_expanded and has_overflow then
-		local remaining = #body_entries - MAX_COLLAPSED_OUTPUT_LINES
-		add_panel_line(result, "… (" .. tostring(remaining) .. " more lines, press O to expand)", "OpenCodeReadMuted")
-	else
-		if #body_entries > 0 and #loaded_entries > 0 then
-			add_panel_blank(result)
-		end
-		for _, entry in ipairs(loaded_entries) do
-			add_entry(result, entry)
-		end
+	if not expanded and has_overflow then
+		local remaining = #entries - MAX_COLLAPSED_OUTPUT_LINES
+		add_panel_line(result, "… (" .. tostring(remaining) .. " more lines, press O to expand)", "OpenCodeSearchMuted")
 	end
 
 	add_trailing_separator(result)
