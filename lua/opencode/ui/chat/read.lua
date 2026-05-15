@@ -5,6 +5,7 @@ local M = {}
 local cs = require("opencode.ui.chat.state")
 local state = cs.state
 local render = require("opencode.ui.chat.render")
+local syntax = require("opencode.ui.syntax")
 
 local MAX_COLLAPSED_OUTPUT_LINES = 10
 local READ_ANIM_FRAMES = { "|", "/", "-", "\\" }
@@ -50,6 +51,16 @@ end
 ---@return table[] rows
 local function add_panel_line(result, text, hl_group)
 	return render.add_panel_line(result, text, hl_group)
+end
+
+---@param result table
+---@param text string
+---@param hl_group string
+---@return number line_index
+---@return string line
+---@return table[] rows
+local function add_panel_raw_line(result, text, hl_group)
+	return render.add_panel_raw_line(result, text, hl_group)
 end
 
 ---@param result table
@@ -327,9 +338,26 @@ function M.render_tool(tool_part, is_expanded)
 
 	add_panel_blank(result)
 
+	local read_lang = syntax.language_for_path(filepath)
+	local code_start_line = nil
+	local code_lines = {}
 	local limit = is_expanded and #body_entries or math.min(MAX_COLLAPSED_OUTPUT_LINES, #body_entries)
 	for i = 1, limit do
-		add_entry(result, body_entries[i])
+		local entry = body_entries[i]
+		if read_lang and entry.hl_group == "OpenCodeReadOutput" then
+			local line_index = add_panel_raw_line(result, entry.text, entry.hl_group)
+			code_start_line = code_start_line or line_index
+			table.insert(code_lines, entry.text)
+		else
+			add_entry(result, entry)
+		end
+	end
+	if read_lang and code_start_line and #code_lines > 0 then
+		syntax.add_highlights(result, table.concat(code_lines, "\n"), read_lang, {
+			scope = "tools",
+			line_start = code_start_line,
+			col_offset = #"▏  ",
+		})
 	end
 
 	if not is_expanded and has_overflow then

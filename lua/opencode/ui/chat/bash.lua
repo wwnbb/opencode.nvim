@@ -5,6 +5,7 @@ local M = {}
 local cs = require("opencode.ui.chat.state")
 local state = cs.state
 local render = require("opencode.ui.chat.render")
+local syntax = require("opencode.ui.syntax")
 
 local MAX_COLLAPSED_OUTPUT_LINES = 10
 local BASH_ANIM_FRAMES = { "|", "/", "-", "\\" }
@@ -43,6 +44,15 @@ end
 ---@param hl_group string
 local function add_panel_line(result, text, hl_group)
 	return render.add_panel_line(result, text, hl_group)
+end
+
+---@param result table
+---@param text string
+---@param hl_group string
+---@return number line_index
+local function add_panel_raw_line(result, text, hl_group)
+	local line_index = render.add_panel_raw_line(result, text, hl_group)
+	return line_index
 end
 
 ---@param result table
@@ -207,9 +217,18 @@ end
 ---@param command string
 local function add_command(result, command)
 	local lines = vim.split(command, "\n", { plain = true })
+	local start_line = nil
 	for i, line in ipairs(lines) do
 		local prefix = i == 1 and "$ " or "  "
-		add_panel_line(result, prefix .. line, "OpenCodeBashCommand")
+		local line_index = add_panel_raw_line(result, prefix .. line, "OpenCodeBashCommand")
+		start_line = start_line or line_index
+	end
+	if start_line then
+		syntax.add_highlights(result, table.concat(lines, "\n"), "bash", {
+			scope = "tools",
+			line_start = start_line,
+			col_offset = #"▏  $ ",
+		})
 	end
 end
 
@@ -266,6 +285,7 @@ function M.render_tool(tool_part, expanded)
 	end
 	append_body_entries(entries, error_body, "OpenCodeBashError")
 	local has_overflow = #entries > MAX_COLLAPSED_OUTPUT_LINES
+	local output_lang = syntax.detect_output_language(output_body, metadata)
 
 	local header = "# " .. description
 	if has_overflow or expanded then
@@ -296,13 +316,36 @@ function M.render_tool(tool_part, expanded)
 
 	add_panel_blank(result)
 
+	local output_start_line = nil
+	local output_lines = {}
 	local limit = expanded and #entries or math.min(MAX_COLLAPSED_OUTPUT_LINES, #entries)
 	for i = 1, limit do
 		local entry = entries[i]
-		if entry.text == "" then
+		if output_lang and entry.hl_group == "OpenCodeBashOutput" then
+			local line_index = add_panel_raw_line(result, entry.text, entry.hl_group)
+			output_start_line = output_start_line or line_index
+			table.insert(output_lines, entry.text)
+		elseif entry.text == "" then
 			add_panel_blank(result)
 		else
 			add_panel_line(result, entry.text, entry.hl_group)
+		end
+	end
+	if output_lang and output_start_line and #output_lines > 0 then
+		local output_text = table.concat(output_lines, "\n")
+		if output_lang == "markdown" then
+			syntax.add_markdown_highlights(result, output_text, {
+				scope = "tools",
+				line_start = output_start_line,
+				col_offset = #"▏  ",
+				compat_markdown = false,
+			})
+		else
+			syntax.add_highlights(result, output_text, output_lang, {
+				scope = "tools",
+				line_start = output_start_line,
+				col_offset = #"▏  ",
+			})
 		end
 	end
 

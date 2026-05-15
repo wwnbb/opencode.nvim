@@ -7,13 +7,14 @@ import (
 )
 
 const (
-	defaultUserID    = 45
-	defaultUserName  = "Jane Smith Rabbit Jr"
-	defaultUserEmail = "jane.smith@example.com"
-
+	defaultUserID       = 45
+	defaultUserName     = "Jane Smith Rabbit Jr"
+	defaultUserEmail    = "jane.smith@example.com"
 	defaultGreetingName = "OpenCode"
 	defaultEvenNumber   = 4
 )
+
+// defaultUserID       = 45 defaultUserName     = "Jane Smith Rabbit Jr" defaultUserEmail    = "jane.smith@example.com" defaultGreetingName = "OpenCode" defaultEvenNumber   = 4
 
 type User struct {
 	ID    int

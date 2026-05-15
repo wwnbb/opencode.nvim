@@ -856,22 +856,7 @@ end
 -- ─── In-place widget rendering ────────────────────────────────────────────────
 
 local function apply_result_highlights(result, pos)
-	for _, hl in ipairs(result.highlights) do
-		local end_col = hl.col_end
-		if end_col == -1 then
-			local l = vim.api.nvim_buf_get_lines(
-				state.bufnr,
-				pos.start_line + hl.line,
-				pos.start_line + hl.line + 1,
-				false
-			)[1]
-			end_col = l and #l or 0
-		end
-		pcall(vim.api.nvim_buf_set_extmark, state.bufnr, chat_hl_ns, pos.start_line + hl.line, hl.col_start, {
-			end_col = end_col,
-			hl_group = hl.hl_group,
-		})
-	end
+	render.apply_extmark_highlights(state.bufnr, chat_hl_ns, result.highlights, pos.start_line)
 end
 
 local function shift_all_after(anchor_start, delta, skip_task_id, skip_tool_id)

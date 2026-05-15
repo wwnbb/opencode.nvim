@@ -5,6 +5,7 @@ local M = {}
 
 local widget_base = require("opencode.ui.widget_base")
 local render = require("opencode.ui.chat.render")
+local syntax = require("opencode.ui.syntax")
 
 local PANEL_PREFIX = "▏  "
 local PANEL_EMPTY = "▏"
@@ -339,11 +340,30 @@ end
 local function append_inline_diff(result, file)
 	local start_line = nil
 	local end_line = nil
+	local lang = syntax.language_for_path(file and (file.filepath or file.relative_path))
 	for _, raw_line in ipairs(file.diff_lines or {}) do
 		local diff_line = display_diff_line(raw_line, file)
-		local line_index, _, rows = add_panel_line(result, "  " .. diff_line, diff_hl_group(raw_line))
+		local line_index, _, rows = render.add_panel_raw_line(result, "  " .. diff_line, diff_hl_group(raw_line), {
+			prefix = PANEL_PREFIX,
+		})
 		start_line = start_line or line_index
 		end_line = rows[#rows].line_index
+		if
+			lang
+			and raw_line:sub(1, 3) ~= "+++"
+			and raw_line:sub(1, 3) ~= "---"
+			and not raw_line:match("^@@")
+			and (raw_line:sub(1, 1) == "+" or raw_line:sub(1, 1) == "-" or raw_line:sub(1, 1) == " ")
+		then
+			local code = raw_line:sub(2)
+			if code ~= "" then
+				syntax.add_highlights(result, code, lang, {
+					scope = "diffs",
+					line_start = line_index,
+					col_offset = (#PANEL_PREFIX) + (#"  ") + 1,
+				})
+			end
+		end
 	end
 	return start_line, end_line
 end

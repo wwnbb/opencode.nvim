@@ -5,6 +5,7 @@ local M = {}
 local cs = require("opencode.ui.chat.state")
 local state = cs.state
 local render = require("opencode.ui.chat.render")
+local syntax = require("opencode.ui.syntax")
 
 local MAX_COLLAPSED_OUTPUT_LINES = 10
 local SEARCH_ANIM_FRAMES = { "|", "/", "-", "\\" }
@@ -63,6 +64,16 @@ end
 ---@return table[] rows
 local function add_panel_line(result, text, hl_group)
 	return render.add_panel_line(result, text, hl_group)
+end
+
+---@param result table
+---@param text string
+---@param hl_group string
+---@return number line_index
+---@return string line
+---@return table[] rows
+local function add_panel_raw_line(result, text, hl_group)
+	return render.add_panel_raw_line(result, text, hl_group)
 end
 
 ---@param result table
@@ -245,6 +256,29 @@ local function add_entry(result, entry)
 	add_panel_line(result, entry.text, entry.hl_group)
 end
 
+---@param text string
+---@return string|nil path
+---@return string|nil body
+---@return number|nil body_col
+local function parse_grep_line(text)
+	local path, body = text:match("^([^:\n]+):%d+:%d+:(.*)$")
+	local body_col
+	if path then
+		local before = text:match("^([^:\n]+:%d+:%d+:)")
+		body_col = before and #before or nil
+		return path, body, body_col
+	end
+
+	path, body = text:match("^([^:\n]+):%d+:(.*)$")
+	if path then
+		local before = text:match("^([^:\n]+:%d+:)")
+		body_col = before and #before or nil
+		return path, body, body_col
+	end
+
+	return nil, nil, nil
+end
+
 ---@param result table
 ---@param rows table[]|nil
 ---@param text string
@@ -332,7 +366,24 @@ function M.render_tool(tool_part, expanded)
 
 	local limit = expanded and #entries or math.min(MAX_COLLAPSED_OUTPUT_LINES, #entries)
 	for i = 1, limit do
-		add_entry(result, entries[i])
+		local entry = entries[i]
+		local grep_path, grep_body, body_col = nil, nil, nil
+		local grep_lang = nil
+		if tool_part.tool == "grep" and entry.hl_group == "OpenCodeSearchOutput" then
+			grep_path, grep_body, body_col = parse_grep_line(entry.text)
+			grep_lang = grep_path and syntax.language_for_path(grep_path) or nil
+		end
+
+		if grep_lang and grep_body and grep_body ~= "" and body_col then
+			local line_index = add_panel_raw_line(result, entry.text, entry.hl_group)
+			syntax.add_highlights(result, grep_body, grep_lang, {
+				scope = "tools",
+				line_start = line_index,
+				col_offset = (#"▏  ") + body_col,
+			})
+		else
+			add_entry(result, entry)
+		end
 	end
 
 	if not expanded and has_overflow then

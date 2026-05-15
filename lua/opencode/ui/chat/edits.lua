@@ -9,6 +9,7 @@ local chat_hl_ns = cs.chat_hl_ns
 local edit_widget = require("opencode.ui.edit_widget")
 local edit_state = require("opencode.edit.state")
 local widget_support = require("opencode.ui.chat.widget_support")
+local syntax = require("opencode.ui.syntax")
 
 local INLINE_DIFF_WIN_VAR = "opencode_inline_diff_split"
 
@@ -712,26 +713,7 @@ function M.rerender_edit(edit_id)
 	vim.api.nvim_buf_set_lines(state.bufnr, pos.start_line, pos.end_line + 1, false, e_lines)
 
 	vim.api.nvim_buf_clear_namespace(state.bufnr, chat_hl_ns, pos.start_line, pos.start_line + #e_lines)
-	for _, hl in ipairs(e_highlights) do
-		local end_col = hl.col_end
-		if end_col == -1 then
-			local l = vim.api.nvim_buf_get_lines(
-				state.bufnr,
-				pos.start_line + hl.line,
-				pos.start_line + hl.line + 1,
-				false
-			)[1]
-			end_col = l and #l or 0
-		end
-		pcall(
-			vim.api.nvim_buf_set_extmark,
-			state.bufnr,
-			chat_hl_ns,
-			pos.start_line + hl.line,
-			hl.col_start,
-			{ end_col = end_col, hl_group = hl.hl_group }
-		)
-	end
+	require("opencode.ui.chat.render").apply_extmark_highlights(state.bufnr, chat_hl_ns, e_highlights, pos.start_line)
 
 	vim.bo[state.bufnr].modifiable = false
 
@@ -1216,6 +1198,8 @@ function M.open_inline_diff_split(file, opts)
 	local ft = vim.filetype.match({ filename = filepath })
 	if ft and ft ~= "" then
 		vim.bo[proposed_buf].filetype = ft
+		syntax.start_buffer(proposed_buf, ft, { scope = "diffs" })
+		syntax.start_buffer(actual_buf, ft, { scope = "diffs" })
 	end
 
 	local relative = file.relative_path or vim.fn.fnamemodify(filepath, ":t")
