@@ -10,6 +10,7 @@ local NuiText = require("nui.text")
 local thinking = require("opencode.ui.thinking")
 local locale = require("opencode.util.locale")
 local sync = require("opencode.sync")
+local syntax = require("opencode.ui.syntax")
 
 local cs = require("opencode.ui.chat.state")
 local state = cs.state
@@ -98,6 +99,16 @@ function M.get_tool_metadata(tool_part)
 	local part_metadata = tool_part and tool_part.metadata or {}
 	local state_metadata = (tool_part and tool_part.state and tool_part.state.metadata) or {}
 	return vim.tbl_deep_extend("force", {}, part_metadata, state_metadata)
+end
+
+---@param value table
+---@return string
+local function json_or_inspect(value)
+	local ok, encoded = pcall(vim.json.encode, value)
+	if ok and type(encoded) == "string" then
+		return encoded
+	end
+	return vim.inspect(value)
 end
 
 -- ─── Text wrapping ────────────────────────────────────────────────────────────
@@ -232,6 +243,44 @@ function M.add_panel_line(result, text, hl_group, opts)
 	end
 
 	return rows[1].line_index, rows[1].line, rows
+end
+
+---@param result table
+---@param text string
+---@param hl_group string|nil
+---@param opts? table
+---@return number line_index
+---@return string line
+---@return table[] rows
+function M.add_panel_raw_line(result, text, hl_group, opts)
+	opts = opts or {}
+	result.lines = result.lines or {}
+	result.highlights = result.highlights or {}
+
+	local prefix = opts.prefix or "▏  "
+	local width = opts.width or get_chat_text_width()
+	local body = M.sanitize_buffer_line(text)
+	local line = M.pad_to_width(prefix .. body, width)
+	table.insert(result.lines, line)
+
+	local line_index = #result.lines - 1
+	if hl_group then
+		table.insert(result.highlights, {
+			line = line_index,
+			col_start = 0,
+			col_end = #line,
+			hl_group = hl_group,
+		})
+	end
+
+	return line_index, line, {
+		{
+			line_index = line_index,
+			line = line,
+			text = body,
+			prefix = prefix,
+		},
+	}
 end
 
 ---@param result table
@@ -398,6 +447,7 @@ end
 ---@param _opts? table
 ---@return NuiLine[]
 function M.render_content(content, _opts)
+	local opts = _opts or {}
 	local lines = {}
 	if not content or content == "" then
 		return lines
@@ -408,6 +458,13 @@ function M.render_content(content, _opts)
 		local line = NuiLine()
 		line:append(text)
 		table.insert(lines, line)
+	end
+
+	if not opts.stream_plain and syntax.is_enabled("assistant_markdown") then
+		lines._opencode_highlights = syntax.highlight_markdown_fenced_blocks(content, {
+			scope = "assistant_markdown",
+			compat_markdown = true,
+		})
 	end
 
 	return lines
@@ -463,18 +520,53 @@ function M.render_tool_line(tool_part, is_expanded)
 		local tool_error = tool_state_data.error
 
 		if tool_input then
-			local input_str = type(tool_input) == "string" and tool_input or vim.json.encode(tool_input)
+			local input_str = type(tool_input) == "string" and tool_input or json_or_inspect(tool_input)
 			add_hl_line("  Input: ", "Special")
+			local input_start = #result_lines
 			for _, iline in ipairs(vim.split(input_str, "\n", { plain = true })) do
 				add_hl_line("    " .. iline, "Comment")
+			end
+			local input_lang = type(tool_input) == "table" and "json" or syntax.detect_output_language(input_str, nil)
+			if input_lang then
+				if input_lang == "markdown" then
+					syntax.add_markdown_highlights({ highlights = result_highlights }, input_str, {
+						scope = "tools",
+						line_start = input_start,
+						col_offset = 4,
+						compat_markdown = false,
+					})
+				else
+					syntax.add_highlights({ highlights = result_highlights }, input_str, input_lang, {
+						scope = "tools",
+						line_start = input_start,
+						col_offset = 4,
+					})
+				end
 			end
 		end
 
 		if tool_output then
-			local output_str = type(tool_output) == "string" and tool_output or vim.inspect(tool_output)
+			local output_str = type(tool_output) == "string" and tool_output or json_or_inspect(tool_output)
 			add_hl_line("  Output: ", "Special")
+			local output_start = #result_lines
 			for _, oline in ipairs(vim.split(output_str, "\n", { plain = true })) do
 				add_hl_line("    " .. oline, "Comment")
+			end
+			local output_lang = type(tool_output) == "table" and "json"
+				or syntax.detect_output_language(output_str, M.get_tool_metadata(tool_part))
+			if output_lang == "markdown" then
+				syntax.add_markdown_highlights({ highlights = result_highlights }, output_str, {
+					scope = "tools",
+					line_start = output_start,
+					col_offset = 4,
+					compat_markdown = false,
+				})
+			elseif output_lang then
+				syntax.add_highlights({ highlights = result_highlights }, output_str, output_lang, {
+					scope = "tools",
+					line_start = output_start,
+					col_offset = 4,
+				})
 			end
 		end
 
@@ -511,6 +603,56 @@ end
 function M.apply_highlights(nui_lines, bufnr, ns_id, start_line)
 	for i, nui_line in ipairs(nui_lines) do
 		nui_line:highlight(bufnr, ns_id, start_line + i - 1)
+	end
+	M.apply_extmark_highlights(bufnr, ns_id, nui_lines._opencode_highlights, start_line)
+end
+
+---@param bufnr number
+---@param ns_id number
+---@param highlights table[]|nil
+---@param start_line number
+---@param opts? table
+function M.apply_extmark_highlights(bufnr, ns_id, highlights, start_line, opts)
+	if type(highlights) ~= "table" then
+		return
+	end
+
+	opts = opts or {}
+	local min_line = opts.min_line
+	local max_line = opts.max_line
+	local line_count = vim.api.nvim_buf_line_count(bufnr)
+
+	for _, hl in ipairs(highlights) do
+		if type(hl) == "table" and hl.hl_group then
+			local line = start_line + (hl.line or 0)
+			local end_line = hl.end_line and (start_line + hl.end_line) or line
+			local in_bounds = line >= 0 and line < line_count
+			local after_min = not min_line or end_line >= min_line
+			local before_max = not max_line or line < max_line
+			if in_bounds and after_min and before_max then
+				local col_start = math.max(0, hl.col_start or 0)
+				local end_col = hl.end_col or hl.col_end
+				if end_col == nil or end_col == -1 then
+					local end_text = vim.api.nvim_buf_get_lines(bufnr, end_line, end_line + 1, false)[1]
+					end_col = end_text and #end_text or col_start
+				end
+
+				local mark_opts = {
+					hl_group = hl.hl_group,
+				}
+				if hl.priority then
+					mark_opts.priority = hl.priority
+				end
+				if end_line ~= line then
+					mark_opts.end_row = end_line
+					mark_opts.end_col = math.max(0, end_col)
+				else
+					mark_opts.end_col = math.max(col_start, end_col)
+				end
+
+				pcall(vim.api.nvim_buf_set_extmark, bufnr, ns_id, line, col_start, mark_opts)
+			end
+		end
 	end
 end
 
@@ -668,7 +810,13 @@ end
 ---@param is_last boolean
 ---@return boolean
 function M.should_show_footer(message, is_last)
-	if message and message.modelID == nil and message.providerID == nil and message.agent == nil and message.mode == nil then
+	if
+		message
+		and message.modelID == nil
+		and message.providerID == nil
+		and message.agent == nil
+		and message.mode == nil
+	then
 		return false
 	end
 	if is_last then

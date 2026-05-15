@@ -5,6 +5,8 @@
 
 local M = {}
 
+local syntax = require("opencode.ui.syntax")
+
 local state = {
 	active = false,
 	permission_id = nil,
@@ -404,6 +406,8 @@ function M._show_file(index)
 	local ft = get_filetype(filepath)
 	if ft and ft ~= "" then
 		vim.bo[state.proposed_buf].filetype = ft
+		syntax.start_buffer(state.proposed_buf, ft, { scope = "diffs" })
+		syntax.start_buffer(state.original_buf, ft, { scope = "diffs" })
 	end
 
 	-- Name the scratch buffer for clarity

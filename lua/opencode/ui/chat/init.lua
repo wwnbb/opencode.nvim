@@ -1411,10 +1411,10 @@ end
 -- ─── Main render ─────────────────────────────────────────────────────────────
 
 ---Build full buffer content using NuiLine components.
----@return string[] raw_lines, NuiLine[] nui_lines
+---@return string[] raw_lines, NuiLine[] nui_lines, table[] content_highlights
 function M.render()
 	if not state.bufnr or not vim.api.nvim_buf_is_valid(state.bufnr) then
-		return {}, {}
+		return {}, {}, {}
 	end
 
 	local sync = require("opencode.sync")
@@ -1424,6 +1424,7 @@ function M.render()
 
 	local nui_lines = {}
 	local raw_lines = {}
+	local content_highlights = {}
 	local last_block_kind = nil -- "tool" | "non_tool"
 
 	local function push_line(text, nui_line)
@@ -1470,6 +1471,31 @@ function M.render()
 		local line_kind = kind or (text == "" and "blank" or "non_tool")
 		normalize_block_transition(line_kind)
 		push_line(text, line)
+	end
+
+	local function append_relative_highlights(highlights, base_line)
+		if type(highlights) ~= "table" or type(base_line) ~= "number" then
+			return
+		end
+		for _, hl in ipairs(highlights) do
+			if type(hl) == "table" then
+				table.insert(content_highlights, vim.tbl_extend("force", {}, hl, {
+					line = base_line + (hl.line or 0),
+					end_line = hl.end_line and (base_line + hl.end_line) or nil,
+				}))
+			end
+		end
+	end
+
+	local function add_nui_lines(lines, kind)
+		local base_line = nil
+		for _, nl in ipairs(lines) do
+			add_line(nl, kind)
+			if base_line == nil then
+				base_line = #raw_lines - 1
+			end
+		end
+		append_relative_highlights(lines._opencode_highlights, base_line)
 	end
 
 	---@return number
@@ -1922,9 +1948,7 @@ function M.render()
 					elseif part.type == "text" and part.text and part.text ~= "" then
 						local content_start = #raw_lines
 						local content_lines = render.render_content(part.text, { stream_plain = render_as_plain_stream })
-						for _, nl in ipairs(content_lines) do
-							add_line(nl)
-						end
+						add_nui_lines(content_lines)
 						if incomplete_assistant and #content_lines > 0 then
 							next_stream_blocks[message.id] = {
 								start_line = content_start,
@@ -2019,9 +2043,7 @@ function M.render()
 		local has_content = message.content and message.content ~= ""
 		if has_content then
 			local content_lines = render.render_content(message.content)
-			for _, nl in ipairs(content_lines) do
-				add_line(nl)
-			end
+			add_nui_lines(content_lines)
 			add_raw_line("")
 		end
 		::continue_local_message::
@@ -2103,7 +2125,7 @@ function M.render()
 	end
 
 	state.stream_blocks = next_stream_blocks
-	return raw_lines, nui_lines
+	return raw_lines, nui_lines, content_highlights
 end
 
 -- ─── Render engine ────────────────────────────────────────────────────────────
@@ -2199,7 +2221,7 @@ function M.do_render()
 	local widget_cursor = capture_widget_cursor_context()
 	local should_scroll = should_auto_scroll(widget_cursor)
 
-	local new_lines, nui_lines = M.render()
+	local new_lines, nui_lines, content_highlights = M.render()
 	chat_todos.update_window()
 	if #new_lines == 0 or #nui_lines == 0 then
 		vim.bo[state.bufnr].modifiable = true
@@ -2259,20 +2281,10 @@ function M.do_render()
 		for _, pos in pairs(line_map) do
 			local highlights = pos.highlights
 			if highlights and pos.end_line >= first_diff then
-				for _, hl in ipairs(highlights) do
-					local line_idx = pos.start_line + hl.line
-					if line_idx >= first_diff and line_idx < buf_line_count then
-						local end_col = hl.col_end
-						if end_col == -1 then
-							local line_text = vim.api.nvim_buf_get_lines(state.bufnr, line_idx, line_idx + 1, false)[1]
-							end_col = line_text and #line_text or 0
-						end
-						pcall(vim.api.nvim_buf_set_extmark, state.bufnr, chat_hl_ns, line_idx, hl.col_start, {
-							end_col = end_col,
-							hl_group = hl.hl_group,
-						})
-					end
-				end
+				render.apply_extmark_highlights(state.bufnr, chat_hl_ns, highlights, pos.start_line, {
+					min_line = first_diff,
+					max_line = buf_line_count,
+				})
 			end
 		end
 	end
@@ -2282,6 +2294,7 @@ function M.do_render()
 	apply_widget_extmarks(state.edits)
 	apply_widget_extmarks(state.tasks)
 	apply_widget_extmarks(state.tools)
+	render.apply_extmark_highlights(state.bufnr, chat_hl_ns, content_highlights, 0, { min_line = first_diff })
 
 	vim.bo[state.bufnr].modifiable = false
 

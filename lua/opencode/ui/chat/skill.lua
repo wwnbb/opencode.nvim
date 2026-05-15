@@ -5,6 +5,7 @@ local M = {}
 local cs = require("opencode.ui.chat.state")
 local state = cs.state
 local render = require("opencode.ui.chat.render")
+local syntax = require("opencode.ui.syntax")
 
 local MAX_COLLAPSED_OUTPUT_LINES = 6
 local SKILL_ANIM_FRAMES = { "|", "/", "-", "\\" }
@@ -51,6 +52,15 @@ end
 ---@return table[] rows
 local function add_panel_line(result, text, hl_group)
 	return render.add_panel_line(result, text, hl_group)
+end
+
+---@param result table
+---@param text string
+---@param hl_group string
+---@return number line_index
+local function add_panel_raw_line(result, text, hl_group)
+	local line_index = render.add_panel_raw_line(result, text, hl_group)
+	return line_index
 end
 
 ---@param result table
@@ -663,8 +673,35 @@ function M.render_tool(tool_part, expanded)
 	end
 
 	local limit = expanded and #body_entries or math.min(MAX_COLLAPSED_OUTPUT_LINES, #body_entries)
+	local body_lang = syntax.detect_output_language(body, metadata) or "markdown"
+	local body_start_line = nil
+	local body_lines = {}
 	for i = 1, limit do
-		add_entry(result, body_entries[i])
+		local entry = body_entries[i]
+		if body_lang and entry.hl_group == "OpenCodeSkillOutput" then
+			local line_index = add_panel_raw_line(result, entry.text, entry.hl_group)
+			body_start_line = body_start_line or line_index
+			table.insert(body_lines, entry.text)
+		else
+			add_entry(result, entry)
+		end
+	end
+	if body_lang and body_start_line and #body_lines > 0 then
+		local body_text = table.concat(body_lines, "\n")
+		if body_lang == "markdown" then
+			syntax.add_markdown_highlights(result, body_text, {
+				scope = "tools",
+				line_start = body_start_line,
+				col_offset = #"▏  ",
+				compat_markdown = false,
+			})
+		else
+			syntax.add_highlights(result, body_text, body_lang, {
+				scope = "tools",
+				line_start = body_start_line,
+				col_offset = #"▏  ",
+			})
+		end
 	end
 
 	if not expanded and has_overflow then
