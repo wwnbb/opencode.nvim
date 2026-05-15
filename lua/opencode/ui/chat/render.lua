@@ -387,8 +387,8 @@ function M.render_user_message(content, agent_name)
 	local bg_width = math.max(1, text_width - 1)
 	local content_width = math.max(1, bg_width - 2)
 
-	local function pad(text, width)
-		local current = vim.fn.strdisplaywidth(text)
+	local function pad_after_prefix(prefix, text, width)
+		local current = vim.fn.strdisplaywidth(prefix .. text)
 		if current >= width then
 			return text
 		end
@@ -398,20 +398,20 @@ function M.render_user_message(content, agent_name)
 	local function add_block_line(text)
 		local line = NuiLine()
 		line:append(NuiText("┃", border_hl))
-		line:append(NuiText(text, "OpenCodeUserMessageBg"))
+		line:append(NuiText(pad_after_prefix("┃", text, text_width), "OpenCodeUserMessageBg"))
 		table.insert(lines, line)
 	end
 
-	add_block_line(string.rep(" ", bg_width))
+	add_block_line("")
 
 	for _, text in ipairs(content_lines) do
 		local wrapped = M.wrap_text(text, content_width)
 		for _, wline in ipairs(wrapped) do
-			add_block_line("  " .. pad(wline, content_width))
+			add_block_line("  " .. wline)
 		end
 	end
 
-	add_block_line(string.rep(" ", bg_width))
+	add_block_line("")
 	return lines
 end
 
