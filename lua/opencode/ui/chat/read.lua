@@ -90,6 +90,11 @@ local function add_panel_blank(result)
 	add_line(result, "▏", "OpenCodeReadOutput")
 end
 
+---@param result table
+local function add_trailing_separator(result)
+	table.insert(result.lines, "")
+end
+
 ---@param value any
 ---@return boolean
 local function is_nil(value)
@@ -347,6 +352,7 @@ function M.render_tool(tool_part, is_expanded)
 	add_panel_line(result, header, header_hl)
 
 	if #body_entries == 0 and #loaded_entries == 0 then
+		add_trailing_separator(result)
 		return result
 	end
 
@@ -369,6 +375,7 @@ function M.render_tool(tool_part, is_expanded)
 		end
 	end
 
+	add_trailing_separator(result)
 	return result
 end
 
