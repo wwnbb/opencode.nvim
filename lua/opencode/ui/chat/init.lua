@@ -1774,18 +1774,9 @@ function M.render()
 	---@return number base_line
 	local function add_render_result(result, kind)
 		local base_line = #raw_lines
-		local hl_by_line = {}
-		for _, hl in ipairs(result.highlights or {}) do
-			hl_by_line[hl.line] = hl
-		end
-		for idx, text in ipairs(result.lines or {}) do
+		for _, text in ipairs(result.lines or {}) do
 			local nl = NuiLine()
-			local line_hl = hl_by_line[idx - 1]
-			if line_hl then
-				nl:append(NuiText(text, line_hl.hl_group))
-			else
-				nl:append(text)
-			end
+			nl:append(text)
 			add_line(nl, kind)
 		end
 		return base_line
@@ -1802,6 +1793,7 @@ function M.render()
 				start_line = base_line,
 				end_line = base_line + #result.lines - 1,
 				tool_part = tool_part,
+				highlights = result.highlights,
 			}
 			return
 		end
@@ -1813,6 +1805,7 @@ function M.render()
 			start_line = base_line,
 			end_line = base_line + #result.lines - 1,
 			tool_part = tool_part,
+			highlights = result.highlights,
 		}
 	end
 
@@ -2284,6 +2277,8 @@ function M.do_render()
 	apply_widget_extmarks(state.questions)
 	apply_widget_extmarks(state.permissions)
 	apply_widget_extmarks(state.edits)
+	apply_widget_extmarks(state.tasks)
+	apply_widget_extmarks(state.tools)
 
 	vim.bo[state.bufnr].modifiable = false
 

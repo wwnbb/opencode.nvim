@@ -13,6 +13,7 @@ local chat_bash = require("opencode.ui.chat.bash")
 local chat_read = require("opencode.ui.chat.read")
 local chat_skill = require("opencode.ui.chat.skill")
 local chat_search = require("opencode.ui.chat.search")
+local chat_file_edit_results = require("opencode.ui.chat.file_edit_results")
 local edit_state = require("opencode.edit.state")
 
 -- ─── Animation ────────────────────────────────────────────────────────────────
@@ -611,6 +612,7 @@ function M.render_regular_tool(tool_part, is_expanded)
 	result = result or chat_read.render_tool(tool_part, is_expanded)
 	result = result or chat_skill.render_tool(tool_part, is_expanded)
 	result = result or chat_search.render_tool(tool_part, is_expanded)
+	result = result or chat_file_edit_results.render_tool(tool_part, is_expanded)
 	return result or render.render_tool_line(tool_part, is_expanded)
 end
 
@@ -854,6 +856,7 @@ function M.rerender_task(part_id)
 	vim.bo[state.bufnr].modifiable = false
 
 	state.tasks[part_id].end_line = pos.start_line + new_line_count - 1
+	state.tasks[part_id].highlights = result.highlights
 	shift_all_after(pos.start_line, delta, part_id, nil)
 end
 
@@ -951,6 +954,7 @@ function M.rerender_tool(part_id)
 	vim.bo[state.bufnr].modifiable = false
 
 	state.tools[part_id].end_line = pos.start_line + new_line_count - 1
+	state.tools[part_id].highlights = result.highlights
 	shift_all_after(pos.start_line, delta, nil, part_id)
 end
 
