@@ -38,55 +38,16 @@ local function ensure_highlights()
 	set_panel_hl("OpenCodeBashError", "DiagnosticError", "ErrorMsg")
 end
 
----@return number width
-local function get_chat_text_width()
-	if not state.winid or not vim.api.nvim_win_is_valid(state.winid) then
-		return 80
-	end
-
-	local width = vim.api.nvim_win_get_width(state.winid)
-	local wininfo = vim.fn.getwininfo(state.winid)[1]
-	local textoff = wininfo and tonumber(wininfo.textoff) or 0
-	return math.max(1, width - textoff)
-end
-
----@param text string
----@return string
-local function pad_to_width(text)
-	local width = get_chat_text_width()
-	local current = vim.fn.strdisplaywidth(text)
-	if current >= width then
-		return text
-	end
-	return text .. string.rep(" ", width - current)
-end
-
----@param result table
----@param text string
----@param hl_group string|nil
-local function add_line(result, text, hl_group)
-	local line = pad_to_width(text)
-	table.insert(result.lines, line)
-	if hl_group then
-		table.insert(result.highlights, {
-			line = #result.lines - 1,
-			col_start = 0,
-			col_end = #line,
-			hl_group = hl_group,
-		})
-	end
-end
-
 ---@param result table
 ---@param text string
 ---@param hl_group string
 local function add_panel_line(result, text, hl_group)
-	add_line(result, "▏  " .. text, hl_group)
+	return render.add_panel_line(result, text, hl_group)
 end
 
 ---@param result table
 local function add_panel_blank(result)
-	add_line(result, "▏", "OpenCodeBashOutput")
+	render.add_panel_blank(result, "OpenCodeBashOutput")
 end
 
 ---@param value any

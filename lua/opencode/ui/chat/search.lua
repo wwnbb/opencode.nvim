@@ -55,62 +55,19 @@ local function ensure_highlights()
 	set_panel_hl("OpenCodeSearchError", "DiagnosticError", "ErrorMsg")
 end
 
----@return number width
-local function get_chat_text_width()
-	if not state.winid or not vim.api.nvim_win_is_valid(state.winid) then
-		return 80
-	end
-
-	local width = vim.api.nvim_win_get_width(state.winid)
-	local wininfo = vim.fn.getwininfo(state.winid)[1]
-	local textoff = wininfo and tonumber(wininfo.textoff) or 0
-	return math.max(1, width - textoff)
-end
-
----@param text string
----@return string
-local function pad_to_width(text)
-	local width = get_chat_text_width()
-	local current = vim.fn.strdisplaywidth(text)
-	if current >= width then
-		return text
-	end
-	return text .. string.rep(" ", width - current)
-end
-
----@param result table
----@param text string
----@param hl_group string|nil
----@return number line_index
----@return string line
-local function add_line(result, text, hl_group)
-	text = render.sanitize_buffer_line(text)
-	local line = pad_to_width(text)
-	table.insert(result.lines, line)
-	local line_index = #result.lines - 1
-	if hl_group then
-		table.insert(result.highlights, {
-			line = line_index,
-			col_start = 0,
-			col_end = #line,
-			hl_group = hl_group,
-		})
-	end
-	return line_index, line
-end
-
 ---@param result table
 ---@param text string
 ---@param hl_group string
 ---@return number line_index
 ---@return string line
+---@return table[] rows
 local function add_panel_line(result, text, hl_group)
-	return add_line(result, "▏  " .. text, hl_group)
+	return render.add_panel_line(result, text, hl_group)
 end
 
 ---@param result table
 local function add_panel_blank(result)
-	add_line(result, "▏", "OpenCodeSearchOutput")
+	render.add_panel_blank(result, "OpenCodeSearchOutput")
 end
 
 ---@param result table
@@ -289,24 +246,11 @@ local function add_entry(result, entry)
 end
 
 ---@param result table
----@param line_index number
----@param line string
+---@param rows table[]|nil
 ---@param text string
 ---@param hl_group string
-local function highlight_text(result, line_index, line, text, hl_group)
-	if text == "" then
-		return
-	end
-	local start_pos = line:find(text, 1, true)
-	if not start_pos then
-		return
-	end
-	table.insert(result.highlights, {
-		line = line_index,
-		col_start = start_pos - 1,
-		col_end = start_pos + #text - 1,
-		hl_group = hl_group,
-	})
+local function highlight_text(result, rows, text, hl_group)
+	render.highlight_panel_text(result, rows, text, hl_group)
 end
 
 ---@param tool_part table
@@ -375,9 +319,9 @@ function M.render_tool(tool_part, expanded)
 	end
 
 	local result = { lines = {}, highlights = {} }
-	local header_line_index, header_line = add_panel_line(result, header, header_hl)
-	highlight_text(result, header_line_index, header_line, '"' .. display_pattern .. '"', "OpenCodeSearchPattern")
-	highlight_text(result, header_line_index, header_line, display_path, "OpenCodeSearchPath")
+	local _, _, header_rows = add_panel_line(result, header, header_hl)
+	highlight_text(result, header_rows, '"' .. display_pattern .. '"', "OpenCodeSearchPattern")
+	highlight_text(result, header_rows, display_path, "OpenCodeSearchPath")
 
 	if #entries == 0 then
 		add_trailing_separator(result)

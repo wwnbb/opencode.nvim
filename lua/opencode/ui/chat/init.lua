@@ -128,6 +128,8 @@ local function setup_chat_window_options(winid)
 	local wo = vim.wo[winid]
 	wo.fillchars = "eob: "
 	wo.wrap = true
+	wo.linebreak = true
+	wo.breakindent = true
 	wo.number = false
 	wo.relativenumber = false
 	wo.signcolumn = "no"
@@ -1623,6 +1625,7 @@ function M.render()
 				end_line = edit_start + #e_lines - 1,
 				status = estatus,
 				highlights = e_highlights,
+				meta = e_meta,
 			}
 			add_raw_line("")
 		end
