@@ -7,8 +7,8 @@ import (
 )
 
 const (
-	defaultUserID    = 50
-	defaultUserName  = "Jane Smith"
+	defaultUserID    = 45
+	defaultUserName  = "Jane Smith Rabbit Jr"
 	defaultUserEmail = "jane.smith@example.com"
 
 	defaultGreetingName = "OpenCode"
