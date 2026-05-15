@@ -136,29 +136,67 @@ local function utf8_char_len_at(text, byte_pos)
 	return math.min(length, #text - byte_pos)
 end
 
+---@return number
+local function get_tabstop()
+	local value = tonumber(vim.bo.tabstop) or tonumber(vim.o.tabstop) or 8
+	if value <= 0 then
+		return 8
+	end
+	return value
+end
+
+---@param ch string
+---@param col number
+---@return number
+local function char_display_width(ch, col)
+	if ch == "\t" then
+		local tabstop = get_tabstop()
+		return tabstop - (col % tabstop)
+	end
+	return vim.fn.strdisplaywidth(ch)
+end
+
+---@param text string
+---@param initial_col number
+---@return number
+local function display_width_from_col(text, initial_col)
+	local width = 0
+	local byte_pos = 0
+	while byte_pos < #text do
+		local char_len = utf8_char_len_at(text, byte_pos)
+		local ch = text:sub(byte_pos + 1, byte_pos + char_len)
+		width = width + char_display_width(ch, initial_col + width)
+		byte_pos = byte_pos + char_len
+	end
+	return width
+end
+
 ---Wrap a string to fit within max_width, breaking at word boundaries.
 ---@param text string
 ---@param max_width number
+---@param opts? table
 ---@return string[]
-function M.wrap_text(text, max_width)
+function M.wrap_text(text, max_width, opts)
+	opts = opts or {}
 	text = type(text) == "string" and text or tostring(text or "")
 	if max_width <= 0 then
 		return { text }
 	end
-	if vim.fn.strdisplaywidth(text) <= max_width then
+	local initial_col = opts.initial_col or 0
+	if display_width_from_col(text, initial_col) <= max_width then
 		return { text }
 	end
 
 	local result = {}
 	local remaining = text
-	while vim.fn.strdisplaywidth(remaining) > max_width do
+	while display_width_from_col(remaining, initial_col) > max_width do
 		local last_space_byte = nil
 		local byte_pos = 0
 		local col = 0
 		while byte_pos < #remaining do
 			local char_len = utf8_char_len_at(remaining, byte_pos)
 			local ch = remaining:sub(byte_pos + 1, byte_pos + char_len)
-			local char_width = vim.fn.strdisplaywidth(ch)
+			local char_width = char_display_width(ch, initial_col + col)
 			if col + char_width > max_width then
 				if byte_pos == 0 then
 					byte_pos = char_len
@@ -219,7 +257,9 @@ function M.add_panel_line(result, text, hl_group, opts)
 	local prefix = opts.prefix or "▏  "
 	local width = opts.width or get_chat_text_width()
 	local body_width = math.max(1, width - vim.fn.strdisplaywidth(prefix))
-	local chunks = M.wrap_text(M.sanitize_buffer_line(text), body_width)
+	local chunks = M.wrap_text(M.sanitize_buffer_line(text), body_width, {
+		initial_col = vim.fn.strdisplaywidth(prefix),
+	})
 	local rows = {}
 
 	for _, chunk in ipairs(chunks) do
@@ -260,27 +300,34 @@ function M.add_panel_raw_line(result, text, hl_group, opts)
 	local prefix = opts.prefix or "▏  "
 	local width = opts.width or get_chat_text_width()
 	local body = M.sanitize_buffer_line(text)
-	local line = M.pad_to_width(prefix .. body, width)
-	table.insert(result.lines, line)
+	local body_width = math.max(1, width - vim.fn.strdisplaywidth(prefix))
+	local chunks = opts.wrap and M.wrap_text(body, body_width, {
+		initial_col = vim.fn.strdisplaywidth(prefix),
+	}) or { body }
+	local rows = {}
 
-	local line_index = #result.lines - 1
-	if hl_group then
-		table.insert(result.highlights, {
-			line = line_index,
-			col_start = 0,
-			col_end = #line,
-			hl_group = hl_group,
+	for _, chunk in ipairs(chunks) do
+		local line = M.pad_to_width(prefix .. chunk, width)
+		table.insert(result.lines, line)
+
+		local line_index = #result.lines - 1
+		if hl_group then
+			table.insert(result.highlights, {
+				line = line_index,
+				col_start = 0,
+				col_end = #line,
+				hl_group = hl_group,
+			})
+		end
+		table.insert(rows, {
+			line_index = line_index,
+			line = line,
+			text = chunk,
+			prefix = prefix,
 		})
 	end
 
-	return line_index, line, {
-		{
-			line_index = line_index,
-			line = line,
-			text = body,
-			prefix = prefix,
-		},
-	}
+	return rows[1].line_index, rows[1].line, rows
 end
 
 ---@param result table
@@ -405,7 +452,9 @@ function M.render_user_message(content, agent_name)
 	add_block_line("")
 
 	for _, text in ipairs(content_lines) do
-		local wrapped = M.wrap_text(text, content_width)
+		local wrapped = M.wrap_text(text, content_width, {
+			initial_col = vim.fn.strdisplaywidth("┃  "),
+		})
 		for _, wline in ipairs(wrapped) do
 			add_block_line("  " .. wline)
 		end
