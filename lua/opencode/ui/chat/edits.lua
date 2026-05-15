@@ -589,11 +589,11 @@ local function map_widget_line_to_file_index(estate, widget_line)
 		return nil
 	end
 
-	if widget_line < 2 then
+	local line = edit_widget.get_first_file_line(estate)
+	if widget_line < line then
 		return nil
 	end
 
-	local line = 2
 	for i, file in ipairs(estate.files or {}) do
 		local block_start = line
 		line = line + 1

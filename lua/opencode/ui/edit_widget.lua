@@ -1,11 +1,15 @@
 -- opencode.nvim - Edit widget module
--- Renders fugitive-style file review widget inline in chat buffer
+-- Renders an interactive edit review widget inline in the chat buffer.
 
 local M = {}
+
 local widget_base = require("opencode.ui.widget_base")
+local chat_state = require("opencode.ui.chat.state").state
+
+local PANEL_PREFIX = "▏  "
+local PANEL_EMPTY = "▏"
 
 local icons = {
-	pending = "←",
 	accepted = "✓",
 	rejected = "✗",
 	resolved = "◆",
@@ -13,319 +17,476 @@ local icons = {
 	unselected = " ",
 }
 
----@param lines table
----@param highlights table
----@param line_num number
+---@param name string
+---@return table
+local function get_hl(name)
+	local ok, value = pcall(vim.api.nvim_get_hl, 0, { name = name, link = false })
+	return ok and value or {}
+end
+
+---@param name string
+---@param fg_source string
+---@param fallback string|nil
+---@param extra_opts table|nil
+local function set_panel_hl(name, fg_source, fallback, extra_opts)
+	local cursor = get_hl("CursorLine")
+	local fg_hl = get_hl(fg_source)
+	local fallback_hl = fallback and get_hl(fallback) or {}
+	local opts = {}
+
+	if fg_hl.fg or fallback_hl.fg then
+		opts.fg = fg_hl.fg or fallback_hl.fg
+	end
+	if cursor.bg then
+		opts.bg = cursor.bg
+	end
+	if extra_opts then
+		opts = vim.tbl_extend("force", opts, extra_opts)
+	end
+	if next(opts) == nil then
+		opts.link = fallback or fg_source
+	end
+
+	vim.api.nvim_set_hl(0, name, opts)
+end
+
+local function ensure_highlights()
+	set_panel_hl("OpenCodeEditMuted", "Comment", "Normal")
+	set_panel_hl("OpenCodeEditHeader", "Title", "Normal", { bold = true })
+	set_panel_hl("OpenCodeEditPath", "String", "Normal", { bold = true })
+	set_panel_hl("OpenCodeEditOutput", "Normal", nil)
+	set_panel_hl("OpenCodeEditSelected", "Normal", "CursorLine", { bold = true })
+	set_panel_hl("OpenCodeEditAccepted", "String", "Normal")
+	set_panel_hl("OpenCodeEditRejected", "DiagnosticError", "ErrorMsg")
+	set_panel_hl("OpenCodeEditResolved", "Special", "Normal")
+	set_panel_hl("OpenCodeEditDiffAdd", "DiffAdd", "String")
+	set_panel_hl("OpenCodeEditDiffDelete", "DiffDelete", "DiagnosticError")
+	set_panel_hl("OpenCodeEditDiffHeader", "Title", "Normal")
+end
+
+---@return number width
+local function get_chat_text_width()
+	if not chat_state.winid or not vim.api.nvim_win_is_valid(chat_state.winid) then
+		return 80
+	end
+
+	local width = vim.api.nvim_win_get_width(chat_state.winid)
+	local wininfo = vim.fn.getwininfo(chat_state.winid)[1]
+	local textoff = wininfo and tonumber(wininfo.textoff) or 0
+	return math.max(1, width - textoff)
+end
+
+---@param text string
+---@return string
+local function pad_to_width(text)
+	local width = get_chat_text_width()
+	local current = vim.fn.strdisplaywidth(text)
+	if current >= width then
+		return text
+	end
+	return text .. string.rep(" ", width - current)
+end
+
+---@param text string|nil
+---@return string
+local function normalize_path(text)
+	if not text or text == "" then
+		return "unknown"
+	end
+	return vim.fn.fnamemodify(text, ":~:.")
+end
+
+---@param result table
+---@param line number
+---@param col_start number
+---@param col_end number
+---@param hl_group string
+local function add_highlight(result, line, col_start, col_end, hl_group)
+	table.insert(result.highlights, {
+		line = line,
+		col_start = col_start,
+		col_end = col_end,
+		hl_group = hl_group,
+	})
+end
+
+---@param result table
+---@param text string
+---@param hl_group string|nil
+---@return number line_index, string line
+local function add_line(result, text, hl_group)
+	local line = pad_to_width(text)
+	table.insert(result.lines, line)
+	local line_index = #result.lines - 1
+	if hl_group then
+		add_highlight(result, line_index, 0, #line, hl_group)
+	end
+	return line_index, line
+end
+
+---@param result table
+---@param text string
+---@param hl_group string
+---@return number line_index, string line
+local function add_panel_line(result, text, hl_group)
+	return add_line(result, PANEL_PREFIX .. text, hl_group)
+end
+
+---@param result table
+local function add_panel_blank(result)
+	add_line(result, PANEL_EMPTY, "OpenCodeEditOutput")
+end
+
+---@param result table
+local function add_trailing_separator(result)
+	table.insert(result.lines, "")
+end
+
+---@param file table
+---@return string
+local function file_path(file)
+	return normalize_path(file and (file.relative_path or file.filepath) or nil)
+end
+
+---@param file table
+---@return string
+local function file_stats(file)
+	local stats = file and file.stats or {}
+	local added = tonumber(stats.added) or 0
+	local removed = tonumber(stats.removed) or 0
+	return string.format("+%d -%d", added, removed)
+end
+
+---@param edit_state table
+---@return number added, number removed
+local function total_stats(edit_state)
+	local added = 0
+	local removed = 0
+
+	for _, file in ipairs(edit_state.files or {}) do
+		local stats = file.stats or {}
+		added = added + (tonumber(stats.added) or 0)
+		removed = removed + (tonumber(stats.removed) or 0)
+	end
+
+	return added, removed
+end
+
+---@param count number
+---@return string
+local function file_count_label(count)
+	return count == 1 and "file" or "files"
+end
+
+---@param file table
+---@return string
+local function file_type_label(file)
+	local file_type = file and file.file_type or "update"
+	if file_type == "add" or file_type == "create" or file_type == "new" then
+		return "A"
+	end
+	if file_type == "delete" or file_type == "remove" then
+		return "D"
+	end
+	return "M"
+end
+
+---@param file table
+---@param is_selected boolean
+---@return string
+local function file_icon(file, is_selected)
+	if file.status == "accepted" then
+		return icons.accepted
+	end
+	if file.status == "rejected" then
+		return icons.rejected
+	end
+	if file.status == "resolved" then
+		return icons.resolved
+	end
+	if is_selected then
+		return icons.selected
+	end
+	return icons.unselected
+end
+
+---@param file table
+---@param is_selected boolean
+---@return string
+local function file_hl_group(file, is_selected)
+	if file.status == "accepted" then
+		return "OpenCodeEditAccepted"
+	end
+	if file.status == "rejected" then
+		return "OpenCodeEditRejected"
+	end
+	if file.status == "resolved" then
+		return "OpenCodeEditResolved"
+	end
+	if is_selected then
+		return "OpenCodeEditSelected"
+	end
+	return "OpenCodeEditOutput"
+end
+
+---@param result table
+---@param line_index number
+---@param line string
+---@param path string
+---@param path_hl string
+local function add_path_highlight(result, line_index, line, path, path_hl)
+	local path_start = line:find(path, 1, true)
+	if not path_start then
+		return
+	end
+	add_highlight(result, line_index, path_start - 1, path_start + #path - 1, path_hl)
+end
+
+---@param result table
+---@param line_index number
+---@param line string
+---@param stats string
+local function add_stats_highlights(result, line_index, line, stats)
+	local stats_start = line:find(stats, 1, true)
+	local added = stats:match("^(%+%d+)")
+	local removed = stats:match("(%-%d+)$")
+	if not stats_start or not added or not removed then
+		return
+	end
+
+	local added_start = stats_start - 1
+	local removed_start = added_start + #added + 1
+	add_highlight(result, line_index, added_start, added_start + #added, "OpenCodeEditDiffAdd")
+	add_highlight(result, line_index, removed_start, removed_start + #removed, "OpenCodeEditDiffDelete")
+end
+
+---@param left string
+---@param right string
+---@return string
+local function align_right(left, right)
+	local body_width = math.max(20, get_chat_text_width() - vim.fn.strdisplaywidth(PANEL_PREFIX))
+	local left_width = vim.fn.strdisplaywidth(left)
+	local right_width = vim.fn.strdisplaywidth(right)
+	local padding = math.max(1, body_width - left_width - right_width)
+	return left .. string.rep(" ", padding) .. right
+end
+
+---@param edit_state table
+---@param status_label string|nil
+---@return string header, string target
+local function build_header(edit_state, status_label)
+	local files = edit_state.files or {}
+	local count = #files
+	local added, removed = total_stats(edit_state)
+	local stats = string.format("+%d -%d", added, removed)
+	local target = count == 1 and file_path(files[1]) or string.format("%d %s", count, file_count_label(count))
+	local header = "# Edit " .. target .. " " .. stats
+
+	if status_label and status_label ~= "" then
+		header = header .. " (" .. status_label .. ")"
+	elseif edit_state.review_mode == "readonly" then
+		header = header .. " (review)"
+	end
+
+	return header, target
+end
+
 ---@param message string|nil
 ---@return number
-local function append_message_lines(lines, highlights, line_num, message)
+local function message_line_count(message)
 	local text = vim.trim(message or "")
 	if text == "" then
-		return line_num
+		return 0
+	end
+	return #vim.split(text, "\n", { plain = true })
+end
+
+---@param result table
+---@param message string|nil
+local function append_message_lines(result, message)
+	local text = vim.trim(message or "")
+	if text == "" then
+		return
 	end
 
 	for i, part in ipairs(vim.split(text, "\n", { plain = true })) do
-		local prefix = i == 1 and "  Message: " or "           "
-		local line = prefix .. part
-		table.insert(lines, line)
-		widget_base.add_full_line_highlight(highlights, line_num, line, "Comment")
-		line_num = line_num + 1
+		local prefix = i == 1 and "Message: " or "         "
+		add_panel_line(result, prefix .. part, "OpenCodeEditMuted")
 	end
-
-	return line_num
 end
 
---- Get formatted lines for a pending (interactive) edit widget
+---@param diff_line string
+---@param file table
+---@return string
+local function display_diff_line(diff_line, file)
+	local prefix = diff_line:sub(1, 4)
+	if prefix ~= "--- " and prefix ~= "+++ " then
+		return diff_line
+	end
+
+	local raw_path = diff_line:sub(5)
+	if raw_path == "/dev/null" then
+		return diff_line
+	end
+
+	return prefix .. file_path(file)
+end
+
+---@param diff_line string
+---@return string
+local function diff_hl_group(diff_line)
+	if diff_line:sub(1, 3) == "+++" or diff_line:sub(1, 1) == "+" then
+		return "OpenCodeEditDiffAdd"
+	end
+	if diff_line:sub(1, 3) == "---" or diff_line:sub(1, 1) == "-" then
+		return "OpenCodeEditDiffDelete"
+	end
+	if diff_line:match("^@@") then
+		return "OpenCodeEditDiffHeader"
+	end
+	return "OpenCodeEditMuted"
+end
+
+---@param result table
+---@param file table
+---@param is_selected boolean
+local function append_file_line(result, file, is_selected)
+	local path = file_path(file)
+	local stats = file_stats(file)
+	local icon = file_icon(file, is_selected)
+	local type_label = file_type_label(file)
+	local left = string.format("%s %s %s", icon, type_label, path)
+	local line_index, line = add_panel_line(result, align_right(left, stats), file_hl_group(file, is_selected))
+	local path_hl = file.status == "accepted" and "OpenCodeEditAccepted"
+		or file.status == "rejected" and "OpenCodeEditRejected"
+		or file.status == "resolved" and "OpenCodeEditResolved"
+		or "OpenCodeEditPath"
+
+	add_path_highlight(result, line_index, line, path, path_hl)
+	add_stats_highlights(result, line_index, line, stats)
+end
+
+---@param result table
+---@param file table
+local function append_inline_diff(result, file)
+	for _, raw_line in ipairs(file.diff_lines or {}) do
+		local diff_line = display_diff_line(raw_line, file)
+		add_panel_line(result, "  " .. diff_line, diff_hl_group(raw_line))
+	end
+end
+
+---@param result table
+---@param edit_state table
+local function append_hint_lines(result, edit_state)
+	local is_readonly = edit_state.review_mode == "readonly"
+	if is_readonly then
+		add_panel_line(result, "Keys: <C-a>/Enter approve  <C-x>/Esc reject  = inline diff", "OpenCodeEditMuted")
+		add_panel_line(result, "      A approve all  X reject all  m message  1-9 jump", "OpenCodeEditMuted")
+		return
+	end
+
+	add_panel_line(result, "Keys: <C-a> accept  <C-x> reject  <C-m> resolve  = inline diff", "OpenCodeEditMuted")
+	add_panel_line(result, "      Enter open  A accept all  X reject all  M resolve all", "OpenCodeEditMuted")
+	add_panel_line(result, "      m message  dv diff split  dt diff tab  1-9 jump", "OpenCodeEditMuted")
+end
+
+---@param edit_state table
+---@return number
+function M.get_first_file_line(edit_state)
+	local line = 2 -- header + panel blank
+	local messages = message_line_count(edit_state and edit_state.message)
+	if messages > 0 then
+		line = line + messages + 1 -- message lines + separating panel blank
+	end
+	return line
+end
+
+--- Get formatted lines for a pending (interactive) edit widget.
 ---@param permission_id string
 ---@param edit_state table Edit state from edit/state.lua
 ---@return table lines, table highlights, OpenCodeWidgetMeta meta
 function M.get_lines_for_edit(permission_id, edit_state)
-	local lines = {}
-	local highlights = {}
-	local line_num = 0
+	ensure_highlights()
 
-	-- Header: icon + permission ID + timestamp
-	local header = widget_base.format_header(icons.pending, "Edit", permission_id, edit_state.timestamp)
-	table.insert(lines, header)
-	widget_base.add_full_line_highlight(highlights, line_num, header, "Title")
-	line_num = line_num + 1
-
-	-- Separator
-	table.insert(lines, widget_base.separator())
-	line_num = line_num + 1
+	local result = { lines = {}, highlights = {} }
+	local header, target = build_header(edit_state)
+	local header_line_index, header_line = add_panel_line(result, header, "OpenCodeEditHeader")
+	add_path_highlight(result, header_line_index, header_line, target, "OpenCodeEditPath")
+	add_panel_blank(result)
 
 	if edit_state.message and edit_state.message ~= "" then
-		line_num = append_message_lines(lines, highlights, line_num, edit_state.message)
-		table.insert(lines, "")
-		line_num = line_num + 1
+		append_message_lines(result, edit_state.message)
+		add_panel_blank(result)
 	end
 
-	-- File list
-	local first_file_line = line_num
+	local first_file_line = #result.lines
 	local selected = edit_state.selected_file or 1
-
-	for i, file in ipairs(edit_state.files) do
-		local is_selected = (i == selected)
-
-		-- Status prefix
-		local prefix
-		if file.status == "accepted" then
-			prefix = " " .. icons.accepted
-		elseif file.status == "rejected" then
-			prefix = " " .. icons.rejected
-		elseif file.status == "resolved" then
-			prefix = " " .. icons.resolved
-		elseif is_selected then
-			prefix = " " .. icons.selected
-		else
-			prefix = "  "
-		end
-
-		-- Stats
-		local stats_str = string.format("+%d -%d", file.stats.added, file.stats.removed)
-		local path = file.relative_path or file.filepath or ""
-
-		-- Build file line with right-aligned stats
-		local padding = math.max(1, 50 - #prefix - #path - #stats_str)
-		local file_line = string.format("%s %s%s%s", prefix, path, string.rep(" ", padding), stats_str)
-		table.insert(lines, file_line)
-
-		-- Highlights for file line
-		local prefix_len = #prefix + 1 -- +1 for the space after prefix
-		local path_end = prefix_len + #path
-
-		if file.status == "accepted" then
-			-- Green for accepted
-			table.insert(highlights, {
-				line = line_num,
-				col_start = 0,
-				col_end = prefix_len,
-				hl_group = "String",
-			})
-			table.insert(highlights, {
-				line = line_num,
-				col_start = prefix_len,
-				col_end = path_end,
-				hl_group = "String",
-			})
-		elseif file.status == "rejected" then
-			-- Red for rejected
-			table.insert(highlights, {
-				line = line_num,
-				col_start = 0,
-				col_end = prefix_len,
-				hl_group = "ErrorMsg",
-			})
-			table.insert(highlights, {
-				line = line_num,
-				col_start = prefix_len,
-				col_end = path_end,
-				hl_group = "ErrorMsg",
-			})
-		elseif file.status == "resolved" then
-			-- Blue/cyan for resolved manually
-			table.insert(highlights, {
-				line = line_num,
-				col_start = 0,
-				col_end = prefix_len,
-				hl_group = "Special",
-			})
-			table.insert(highlights, {
-				line = line_num,
-				col_start = prefix_len,
-				col_end = path_end,
-				hl_group = "Special",
-			})
-		elseif is_selected then
-			-- Cursor line highlight for selected
-			widget_base.add_full_line_highlight(highlights, line_num, file_line, "CursorLine")
-		end
-
-		-- Stats highlights (always)
-		local stats_start = #file_line - #stats_str
-		local plus_end = stats_start + 1 + #tostring(file.stats.added)
-		table.insert(highlights, {
-			line = line_num,
-			col_start = stats_start,
-			col_end = plus_end,
-			hl_group = "DiffAdd",
-		})
-		table.insert(highlights, {
-			line = line_num,
-			col_start = plus_end + 1,
-			col_end = #file_line,
-			hl_group = "DiffDelete",
-		})
-
-		line_num = line_num + 1
-
-		-- Inline diff expansion (if toggled)
-		if edit_state.expanded_files[i] and file.diff_lines and #file.diff_lines > 0 then
-			for _, diff_line in ipairs(file.diff_lines) do
-				local indented = "  " .. diff_line
-				table.insert(lines, indented)
-
-				-- Highlight based on diff line prefix
-				local hl_group = "Comment" -- context lines
-				local first_char = diff_line:sub(1, 1)
-				if first_char == "+" then
-					hl_group = "DiffAdd"
-				elseif first_char == "-" then
-					hl_group = "DiffDelete"
-				elseif diff_line:match("^@@") then
-					hl_group = "Title"
-				end
-
-				table.insert(highlights, {
-					line = line_num,
-					col_start = 0,
-					col_end = #indented,
-					hl_group = hl_group,
-				})
-
-				line_num = line_num + 1
-			end
+	local expanded_files = edit_state.expanded_files or {}
+	for i, file in ipairs(edit_state.files or {}) do
+		append_file_line(result, file, i == selected)
+		if expanded_files[i] and file.diff_lines and #file.diff_lines > 0 then
+			append_inline_diff(result, file)
 		end
 	end
 
-	-- Blank line before hints
-	table.insert(lines, "")
-	line_num = line_num + 1
+	if #(edit_state.files or {}) == 0 then
+		add_panel_line(result, "No file changes detected.", "OpenCodeEditMuted")
+	end
 
-	local is_readonly = edit_state.review_mode == "readonly"
+	add_panel_blank(result)
+	append_hint_lines(result, edit_state)
+	add_trailing_separator(result)
 
-	-- Keybinding hint line
-	local hint = is_readonly and "<C-a> approve  <C-x> reject  = inline diff  m message"
-		or "<C-a> accept  <C-x> reject  <C-m> resolve  = inline diff  m message  dv diff split  dt diff tab"
-	table.insert(lines, hint)
-	widget_base.add_full_line_highlight(highlights, line_num, hint, "Comment")
-	line_num = line_num + 1
-
-	local hint2 = is_readonly and "Enter approve  Esc reject  A approve all  X reject all  1-9 jump to file"
-		or "Enter open  A accept all  X reject all  M resolve all  1-9 jump to file"
-	table.insert(lines, hint2)
-	widget_base.add_full_line_highlight(highlights, line_num, hint2, "Comment")
-	line_num = line_num + 1
-
-	-- Trailing blank line
-	table.insert(lines, "")
-
-	return lines, highlights, widget_base.make_meta({
-		interactive_count = #edit_state.files,
+	return result.lines, result.highlights, widget_base.make_meta({
+		interactive_count = #(edit_state.files or {}),
 		first_interactive_line = first_file_line,
 	})
 end
 
---- Get formatted lines for a resolved edit (all files accepted/rejected, reply sent)
+--- Get formatted lines for a resolved edit (all files accepted/rejected, reply sent).
 ---@param permission_id string
 ---@param edit_state table Edit state from edit/state.lua
 ---@return table lines, table highlights
 function M.get_resolved_lines(permission_id, edit_state)
-	local lines = {}
-	local highlights = {}
-	local line_num = 0
+	ensure_highlights()
 
+	local result = { lines = {}, highlights = {} }
 	local edit_state_mod = require("opencode.edit.state")
 	local resolution = edit_state_mod.get_resolution(permission_id)
+	local resolution_label = "partial"
+	local header_hl = "OpenCodeEditMuted"
 
-	-- Header with resolution status
-	local resolution_label
 	if resolution == "all_accepted" then
-		resolution_label = "Approved"
+		resolution_label = "approved"
+		header_hl = "OpenCodeEditAccepted"
 	elseif resolution == "all_rejected" then
-		resolution_label = "Rejected"
+		resolution_label = "rejected"
+		header_hl = "OpenCodeEditRejected"
 	elseif resolution == "all_resolved" then
-		resolution_label = "Resolved"
-	else
-		resolution_label = "Partial"
+		resolution_label = "resolved"
+		header_hl = "OpenCodeEditResolved"
 	end
 
-	local header = widget_base.format_header(
-		icons.pending,
-		"Edit",
-		permission_id,
-		edit_state.timestamp,
-		{ suffix = resolution_label }
-	)
-	table.insert(lines, header)
-
-	-- Header highlight
-	local hl_group = "Comment"
-	if resolution == "all_accepted" then
-		hl_group = "String"
-	elseif resolution == "all_rejected" then
-		hl_group = "ErrorMsg"
-	elseif resolution == "all_resolved" then
-		hl_group = "Special"
-	end
-	table.insert(highlights, {
-		line = line_num,
-		col_start = 0,
-		col_end = #header,
-		hl_group = hl_group,
-	})
-	line_num = line_num + 1
-
-	-- Separator
-	table.insert(lines, widget_base.separator())
-	line_num = line_num + 1
+	local header, target = build_header(edit_state, resolution_label)
+	local header_line_index, header_line = add_panel_line(result, header, header_hl)
+	add_path_highlight(result, header_line_index, header_line, target, "OpenCodeEditPath")
+	add_panel_blank(result)
 
 	if edit_state.message and edit_state.message ~= "" then
-		line_num = append_message_lines(lines, highlights, line_num, edit_state.message)
-		table.insert(lines, "")
-		line_num = line_num + 1
+		append_message_lines(result, edit_state.message)
+		add_panel_blank(result)
 	end
 
-	-- Compact file list with status
-	for _, file in ipairs(edit_state.files) do
-		local status_icon = file.status == "accepted" and icons.accepted
-			or file.status == "resolved" and icons.resolved
-			or icons.rejected
-		local path = file.relative_path or file.filepath or ""
-		local stats_str = string.format("+%d -%d", file.stats.added, file.stats.removed)
-		local padding = math.max(1, 50 - 2 - #path - #stats_str)
-		local file_line = string.format(" %s %s%s%s", status_icon, path, string.rep(" ", padding), stats_str)
-		table.insert(lines, file_line)
-
-		local file_hl = file.status == "accepted" and "String"
-			or file.status == "resolved" and "Special"
-			or "ErrorMsg"
-		table.insert(highlights, {
-			line = line_num,
-			col_start = 0,
-			col_end = 4, -- icon area
-			hl_group = file_hl,
-		})
-		table.insert(highlights, {
-			line = line_num,
-			col_start = 4,
-			col_end = 4 + #path,
-			hl_group = "Comment",
-		})
-
-		-- Stats
-		local stats_start = #file_line - #stats_str
-		local plus_end = stats_start + 1 + #tostring(file.stats.added)
-		table.insert(highlights, {
-			line = line_num,
-			col_start = stats_start,
-			col_end = plus_end,
-			hl_group = "DiffAdd",
-		})
-		table.insert(highlights, {
-			line = line_num,
-			col_start = plus_end + 1,
-			col_end = #file_line,
-			hl_group = "DiffDelete",
-		})
-
-		line_num = line_num + 1
+	for _, file in ipairs(edit_state.files or {}) do
+		append_file_line(result, file, false)
 	end
 
-	-- Trailing blank line
-	table.insert(lines, "")
+	if #(edit_state.files or {}) == 0 then
+		add_panel_line(result, "No file changes detected.", "OpenCodeEditMuted")
+	end
 
-	return lines, highlights
+	add_trailing_separator(result)
+	return result.lines, result.highlights
 end
 
 return M
