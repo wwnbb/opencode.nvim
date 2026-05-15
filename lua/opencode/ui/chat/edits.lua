@@ -582,10 +582,28 @@ end
 -- ─── Cursor query ─────────────────────────────────────────────────────────────
 
 ---@param estate table
+---@param pos table|nil
 ---@param widget_line number
 ---@return number|nil
-local function map_widget_line_to_file_index(estate, widget_line)
+local function map_widget_line_to_file_index(estate, pos, widget_line)
 	if not estate or estate.status ~= "pending" then
+		return nil
+	end
+
+	local ranges = pos and pos.meta and pos.meta.file_ranges
+	if type(ranges) == "table" then
+		for _, range in ipairs(ranges) do
+			if
+				type(range) == "table"
+				and type(range.index) == "number"
+				and type(range.start_line) == "number"
+				and type(range.end_line) == "number"
+				and widget_line >= range.start_line
+				and widget_line <= range.end_line
+			then
+				return range.index
+			end
+		end
 		return nil
 	end
 
@@ -648,7 +666,7 @@ function M.sync_selected_file_from_cursor()
 	end
 
 	local widget_line = cursor_line - pos.start_line
-	local file_index = map_widget_line_to_file_index(estate, widget_line)
+	local file_index = map_widget_line_to_file_index(estate, pos, widget_line)
 	if not file_index or file_index == estate.selected_file then
 		return eid, false
 	end
@@ -679,11 +697,11 @@ function M.rerender_edit(edit_id)
 		return
 	end
 
-	local e_lines, e_highlights
+	local e_lines, e_highlights, e_meta
 	if estate.status == "sent" then
 		e_lines, e_highlights = edit_widget.get_resolved_lines(edit_id, estate)
 	else
-		e_lines, e_highlights = edit_widget.get_lines_for_edit(edit_id, estate)
+		e_lines, e_highlights, e_meta = edit_widget.get_lines_for_edit(edit_id, estate)
 	end
 	local old_end = pos.end_line
 	local old_count = old_end - pos.start_line + 1
@@ -720,6 +738,7 @@ function M.rerender_edit(edit_id)
 	widget_support.shift_tracked_lines(old_end, delta)
 	state.edits[edit_id].end_line = pos.start_line + #e_lines - 1
 	state.edits[edit_id].highlights = e_highlights
+	state.edits[edit_id].meta = e_meta
 end
 
 -- ─── Finalize ─────────────────────────────────────────────────────────────────

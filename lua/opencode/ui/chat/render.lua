@@ -31,6 +31,11 @@ local function get_chat_text_width()
 	return math.max(1, width - textoff)
 end
 
+---@return number width
+function M.get_chat_text_width()
+	return get_chat_text_width()
+end
+
 ---@param text any
 ---@return string
 function M.sanitize_buffer_line(text)
@@ -97,11 +102,35 @@ end
 
 -- ─── Text wrapping ────────────────────────────────────────────────────────────
 
+---@param text string
+---@param byte_pos number 0-based byte offset
+---@return number length
+local function utf8_char_len_at(text, byte_pos)
+	local first = text:byte(byte_pos + 1)
+	if not first then
+		return 0
+	end
+	local length
+	if first < 0x80 then
+		length = 1
+	elseif first < 0xE0 then
+		length = 2
+	elseif first < 0xF0 then
+		length = 3
+	elseif first < 0xF8 then
+		length = 4
+	else
+		length = 1
+	end
+	return math.min(length, #text - byte_pos)
+end
+
 ---Wrap a string to fit within max_width, breaking at word boundaries.
 ---@param text string
 ---@param max_width number
 ---@return string[]
 function M.wrap_text(text, max_width)
+	text = type(text) == "string" and text or tostring(text or "")
 	if max_width <= 0 then
 		return { text }
 	end
@@ -116,25 +145,33 @@ function M.wrap_text(text, max_width)
 		local byte_pos = 0
 		local col = 0
 		while byte_pos < #remaining do
-			local char_len = vim.fn.byteidx(remaining:sub(byte_pos + 1), 1)
-			if char_len <= 0 then
-				char_len = 1
-			end
+			local char_len = utf8_char_len_at(remaining, byte_pos)
 			local ch = remaining:sub(byte_pos + 1, byte_pos + char_len)
 			local char_width = vim.fn.strdisplaywidth(ch)
 			if col + char_width > max_width then
+				if byte_pos == 0 then
+					byte_pos = char_len
+				end
 				break
 			end
 			col = col + char_width
 			byte_pos = byte_pos + char_len
-			if ch == " " then
+			if ch:match("%s") then
 				last_space_byte = byte_pos
 			end
 		end
-		local cut = (last_space_byte and last_space_byte > 0) and last_space_byte or byte_pos
-		table.insert(result, remaining:sub(1, cut))
+		local cut_at_space = last_space_byte and last_space_byte > 0
+		local cut = cut_at_space and last_space_byte or byte_pos
+		if cut <= 0 then
+			cut = utf8_char_len_at(remaining, 0)
+		end
+		local piece = remaining:sub(1, cut):gsub("%s+$", "")
+		if piece == "" then
+			piece = remaining:sub(1, cut)
+		end
+		table.insert(result, piece)
 		remaining = remaining:sub(cut + 1)
-		if remaining:sub(1, 1) == " " then
+		if cut_at_space and remaining:sub(1, 1):match("%s") then
 			remaining = remaining:sub(2)
 		end
 	end
@@ -142,6 +179,119 @@ function M.wrap_text(text, max_width)
 		table.insert(result, remaining)
 	end
 	return result
+end
+
+---@param text string
+---@param width? number
+---@return string
+function M.pad_to_width(text, width)
+	width = width or get_chat_text_width()
+	local current = vim.fn.strdisplaywidth(text)
+	if current >= width then
+		return text
+	end
+	return text .. string.rep(" ", width - current)
+end
+
+---@param result table
+---@param text string
+---@param hl_group string|nil
+---@param opts? table
+---@return number line_index
+---@return string line
+---@return table[] rows
+function M.add_panel_line(result, text, hl_group, opts)
+	opts = opts or {}
+	result.lines = result.lines or {}
+	result.highlights = result.highlights or {}
+
+	local prefix = opts.prefix or "▏  "
+	local width = opts.width or get_chat_text_width()
+	local body_width = math.max(1, width - vim.fn.strdisplaywidth(prefix))
+	local chunks = M.wrap_text(M.sanitize_buffer_line(text), body_width)
+	local rows = {}
+
+	for _, chunk in ipairs(chunks) do
+		local line = M.pad_to_width(prefix .. chunk, width)
+		table.insert(result.lines, line)
+		local line_index = #result.lines - 1
+		if hl_group then
+			table.insert(result.highlights, {
+				line = line_index,
+				col_start = 0,
+				col_end = #line,
+				hl_group = hl_group,
+			})
+		end
+		table.insert(rows, {
+			line_index = line_index,
+			line = line,
+			text = chunk,
+			prefix = prefix,
+		})
+	end
+
+	return rows[1].line_index, rows[1].line, rows
+end
+
+---@param result table
+---@param hl_group string|nil
+---@param opts? table
+---@return number line_index
+---@return string line
+---@return table[] rows
+function M.add_panel_blank(result, hl_group, opts)
+	opts = opts or {}
+	result.lines = result.lines or {}
+	result.highlights = result.highlights or {}
+
+	local prefix = opts.prefix or "▏"
+	local width = opts.width or get_chat_text_width()
+	local line = M.pad_to_width(prefix, width)
+	table.insert(result.lines, line)
+	local line_index = #result.lines - 1
+	if hl_group then
+		table.insert(result.highlights, {
+			line = line_index,
+			col_start = 0,
+			col_end = #line,
+			hl_group = hl_group,
+		})
+	end
+
+	return line_index, line, {
+		{
+			line_index = line_index,
+			line = line,
+			text = "",
+			prefix = prefix,
+		},
+	}
+end
+
+---@param result table
+---@param rows table[]|nil
+---@param text string
+---@param hl_group string
+---@return boolean highlighted
+function M.highlight_panel_text(result, rows, text, hl_group)
+	if text == "" or not rows then
+		return false
+	end
+	result.highlights = result.highlights or {}
+	for _, row in ipairs(rows) do
+		local start_pos = row.line:find(text, 1, true)
+		if start_pos then
+			table.insert(result.highlights, {
+				line = row.line_index,
+				col_start = start_pos - 1,
+				col_end = start_pos + #text - 1,
+				hl_group = hl_group,
+			})
+			return true
+		end
+	end
+	return false
 end
 
 -- ─── User message display config ─────────────────────────────────────────────

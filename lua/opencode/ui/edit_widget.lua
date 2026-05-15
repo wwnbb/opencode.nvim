@@ -4,7 +4,7 @@
 local M = {}
 
 local widget_base = require("opencode.ui.widget_base")
-local chat_state = require("opencode.ui.chat.state").state
+local render = require("opencode.ui.chat.render")
 
 local PANEL_PREFIX = "▏  "
 local PANEL_EMPTY = "▏"
@@ -64,29 +64,6 @@ local function ensure_highlights()
 	set_panel_hl("OpenCodeEditDiffHeader", "Title", "Normal")
 end
 
----@return number width
-local function get_chat_text_width()
-	if not chat_state.winid or not vim.api.nvim_win_is_valid(chat_state.winid) then
-		return 80
-	end
-
-	local width = vim.api.nvim_win_get_width(chat_state.winid)
-	local wininfo = vim.fn.getwininfo(chat_state.winid)[1]
-	local textoff = wininfo and tonumber(wininfo.textoff) or 0
-	return math.max(1, width - textoff)
-end
-
----@param text string
----@return string
-local function pad_to_width(text)
-	local width = get_chat_text_width()
-	local current = vim.fn.strdisplaywidth(text)
-	if current >= width then
-		return text
-	end
-	return text .. string.rep(" ", width - current)
-end
-
 ---@param text string|nil
 ---@return string
 local function normalize_path(text)
@@ -112,29 +89,16 @@ end
 
 ---@param result table
 ---@param text string
----@param hl_group string|nil
----@return number line_index, string line
-local function add_line(result, text, hl_group)
-	local line = pad_to_width(text)
-	table.insert(result.lines, line)
-	local line_index = #result.lines - 1
-	if hl_group then
-		add_highlight(result, line_index, 0, #line, hl_group)
-	end
-	return line_index, line
-end
-
----@param result table
----@param text string
 ---@param hl_group string
 ---@return number line_index, string line
+---@return table[] rows
 local function add_panel_line(result, text, hl_group)
-	return add_line(result, PANEL_PREFIX .. text, hl_group)
+	return render.add_panel_line(result, text, hl_group, { prefix = PANEL_PREFIX })
 end
 
 ---@param result table
 local function add_panel_blank(result)
-	add_line(result, PANEL_EMPTY, "OpenCodeEditOutput")
+	render.add_panel_blank(result, "OpenCodeEditOutput", { prefix = PANEL_EMPTY })
 end
 
 ---@param result table
@@ -230,41 +194,40 @@ local function file_hl_group(file, is_selected)
 end
 
 ---@param result table
----@param line_index number
----@param line string
+---@param rows table[]|nil
 ---@param path string
 ---@param path_hl string
-local function add_path_highlight(result, line_index, line, path, path_hl)
-	local path_start = line:find(path, 1, true)
-	if not path_start then
-		return
-	end
-	add_highlight(result, line_index, path_start - 1, path_start + #path - 1, path_hl)
+local function add_path_highlight(result, rows, path, path_hl)
+	render.highlight_panel_text(result, rows, path, path_hl)
 end
 
 ---@param result table
----@param line_index number
----@param line string
+---@param rows table[]|nil
 ---@param stats string
-local function add_stats_highlights(result, line_index, line, stats)
-	local stats_start = line:find(stats, 1, true)
+local function add_stats_highlights(result, rows, stats)
 	local added = stats:match("^(%+%d+)")
 	local removed = stats:match("(%-%d+)$")
-	if not stats_start or not added or not removed then
+	if not added or not removed or not rows then
 		return
 	end
 
-	local added_start = stats_start - 1
-	local removed_start = added_start + #added + 1
-	add_highlight(result, line_index, added_start, added_start + #added, "OpenCodeEditDiffAdd")
-	add_highlight(result, line_index, removed_start, removed_start + #removed, "OpenCodeEditDiffDelete")
+	for _, row in ipairs(rows) do
+		local stats_start = row.line:find(stats, 1, true)
+		if stats_start then
+			local added_start = stats_start - 1
+			local removed_start = added_start + #added + 1
+			add_highlight(result, row.line_index, added_start, added_start + #added, "OpenCodeEditDiffAdd")
+			add_highlight(result, row.line_index, removed_start, removed_start + #removed, "OpenCodeEditDiffDelete")
+			return
+		end
+	end
 end
 
 ---@param left string
 ---@param right string
 ---@return string
 local function align_right(left, right)
-	local body_width = math.max(20, get_chat_text_width() - vim.fn.strdisplaywidth(PANEL_PREFIX))
+	local body_width = math.max(20, render.get_chat_text_width() - vim.fn.strdisplaywidth(PANEL_PREFIX))
 	local left_width = vim.fn.strdisplaywidth(left)
 	local right_width = vim.fn.strdisplaywidth(right)
 	local padding = math.max(1, body_width - left_width - right_width)
@@ -350,29 +313,39 @@ end
 ---@param result table
 ---@param file table
 ---@param is_selected boolean
+---@return number start_line
+---@return number end_line
 local function append_file_line(result, file, is_selected)
 	local path = file_path(file)
 	local stats = file_stats(file)
 	local icon = file_icon(file, is_selected)
 	local type_label = file_type_label(file)
 	local left = string.format("%s %s %s", icon, type_label, path)
-	local line_index, line = add_panel_line(result, align_right(left, stats), file_hl_group(file, is_selected))
+	local line_index, _, rows = add_panel_line(result, align_right(left, stats), file_hl_group(file, is_selected))
 	local path_hl = file.status == "accepted" and "OpenCodeEditAccepted"
 		or file.status == "rejected" and "OpenCodeEditRejected"
 		or file.status == "resolved" and "OpenCodeEditResolved"
 		or "OpenCodeEditPath"
 
-	add_path_highlight(result, line_index, line, path, path_hl)
-	add_stats_highlights(result, line_index, line, stats)
+	add_path_highlight(result, rows, path, path_hl)
+	add_stats_highlights(result, rows, stats)
+	return line_index, rows[#rows].line_index
 end
 
 ---@param result table
 ---@param file table
+---@return number|nil start_line
+---@return number|nil end_line
 local function append_inline_diff(result, file)
+	local start_line = nil
+	local end_line = nil
 	for _, raw_line in ipairs(file.diff_lines or {}) do
 		local diff_line = display_diff_line(raw_line, file)
-		add_panel_line(result, "  " .. diff_line, diff_hl_group(raw_line))
+		local line_index, _, rows = add_panel_line(result, "  " .. diff_line, diff_hl_group(raw_line))
+		start_line = start_line or line_index
+		end_line = rows[#rows].line_index
 	end
+	return start_line, end_line
 end
 
 ---@param result table
@@ -410,8 +383,8 @@ function M.get_lines_for_edit(permission_id, edit_state)
 
 	local result = { lines = {}, highlights = {} }
 	local header, target = build_header(edit_state)
-	local header_line_index, header_line = add_panel_line(result, header, "OpenCodeEditHeader")
-	add_path_highlight(result, header_line_index, header_line, target, "OpenCodeEditPath")
+	local _, _, header_rows = add_panel_line(result, header, "OpenCodeEditHeader")
+	add_path_highlight(result, header_rows, target, "OpenCodeEditPath")
 	add_panel_blank(result)
 
 	if edit_state.message and edit_state.message ~= "" then
@@ -420,13 +393,20 @@ function M.get_lines_for_edit(permission_id, edit_state)
 	end
 
 	local first_file_line = #result.lines
+	local file_ranges = {}
 	local selected = edit_state.selected_file or 1
 	local expanded_files = edit_state.expanded_files or {}
 	for i, file in ipairs(edit_state.files or {}) do
-		append_file_line(result, file, i == selected)
+		local file_start, file_end = append_file_line(result, file, i == selected)
 		if expanded_files[i] and file.diff_lines and #file.diff_lines > 0 then
-			append_inline_diff(result, file)
+			local _, diff_end = append_inline_diff(result, file)
+			file_end = diff_end or file_end
 		end
+		table.insert(file_ranges, {
+			index = i,
+			start_line = file_start,
+			end_line = file_end,
+		})
 	end
 
 	if #(edit_state.files or {}) == 0 then
@@ -440,6 +420,7 @@ function M.get_lines_for_edit(permission_id, edit_state)
 	return result.lines, result.highlights, widget_base.make_meta({
 		interactive_count = #(edit_state.files or {}),
 		first_interactive_line = first_file_line,
+		file_ranges = file_ranges,
 	})
 end
 
@@ -468,8 +449,8 @@ function M.get_resolved_lines(permission_id, edit_state)
 	end
 
 	local header, target = build_header(edit_state, resolution_label)
-	local header_line_index, header_line = add_panel_line(result, header, header_hl)
-	add_path_highlight(result, header_line_index, header_line, target, "OpenCodeEditPath")
+	local _, _, header_rows = add_panel_line(result, header, header_hl)
+	add_path_highlight(result, header_rows, target, "OpenCodeEditPath")
 	add_panel_blank(result)
 
 	if edit_state.message and edit_state.message ~= "" then

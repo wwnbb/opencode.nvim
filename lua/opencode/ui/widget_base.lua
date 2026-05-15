@@ -7,6 +7,7 @@ M.HEADER_WIDTH = 50
 ---@field interactive_count number
 ---@field first_interactive_line number|nil
 ---@field auto_focus boolean
+---@field file_ranges table[]|nil
 
 ---@param icon string
 ---@param title string
@@ -65,11 +66,19 @@ function M.make_meta(opts)
 		first_interactive_line = nil
 	end
 
-	return {
+	local meta = {
 		interactive_count = interactive_count,
 		first_interactive_line = first_interactive_line,
 		auto_focus = auto_focus,
 	}
+
+	for key, value in pairs(opts) do
+		if meta[key] == nil then
+			meta[key] = value
+		end
+	end
+
+	return meta
 end
 
 ---@param meta OpenCodeWidgetMeta|nil

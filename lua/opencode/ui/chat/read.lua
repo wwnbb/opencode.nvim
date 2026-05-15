@@ -42,58 +42,19 @@ local function ensure_highlights()
 	set_panel_hl("OpenCodeReadError", "DiagnosticError", "ErrorMsg")
 end
 
----@return number width
-local function get_chat_text_width()
-	if not state.winid or not vim.api.nvim_win_is_valid(state.winid) then
-		return 80
-	end
-
-	local width = vim.api.nvim_win_get_width(state.winid)
-	local wininfo = vim.fn.getwininfo(state.winid)[1]
-	local textoff = wininfo and tonumber(wininfo.textoff) or 0
-	return math.max(1, width - textoff)
-end
-
----@param text string
----@return string
-local function pad_to_width(text)
-	local width = get_chat_text_width()
-	local current = vim.fn.strdisplaywidth(text)
-	if current >= width then
-		return text
-	end
-	return text .. string.rep(" ", width - current)
-end
-
----@param result table
----@param text string
----@param hl_group string|nil
-local function add_line(result, text, hl_group)
-	text = render.sanitize_buffer_line(text)
-	local line = pad_to_width(text)
-	table.insert(result.lines, line)
-	local line_index = #result.lines - 1
-	if hl_group then
-		table.insert(result.highlights, {
-			line = line_index,
-			col_start = 0,
-			col_end = #line,
-			hl_group = hl_group,
-		})
-	end
-	return line_index, line
-end
-
 ---@param result table
 ---@param text string
 ---@param hl_group string
+---@return number line_index
+---@return string line
+---@return table[] rows
 local function add_panel_line(result, text, hl_group)
-	return add_line(result, "▏  " .. text, hl_group)
+	return render.add_panel_line(result, text, hl_group)
 end
 
 ---@param result table
 local function add_panel_blank(result)
-	add_line(result, "▏", "OpenCodeReadOutput")
+	render.add_panel_blank(result, "OpenCodeReadOutput")
 end
 
 ---@param result table
@@ -356,16 +317,8 @@ function M.render_tool(tool_part, is_expanded)
 	end
 
 	local result = { lines = {}, highlights = {} }
-	local header_line_index, header_line = add_panel_line(result, header, header_hl)
-	local path_start = header_line:find(display_path, 1, true)
-	if path_start then
-		table.insert(result.highlights, {
-			line = header_line_index,
-			col_start = path_start - 1,
-			col_end = path_start + #display_path - 1,
-			hl_group = "OpenCodeReadFilename",
-		})
-	end
+	local _, _, header_rows = add_panel_line(result, header, header_hl)
+	render.highlight_panel_text(result, header_rows, display_path, "OpenCodeReadFilename")
 
 	if #body_entries == 0 and #loaded_entries == 0 then
 		add_trailing_separator(result)
