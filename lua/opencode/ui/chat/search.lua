@@ -372,18 +372,20 @@ function M.render_tool(tool_part, expanded)
 		if tool_part.tool == "grep" and entry.hl_group == "OpenCodeSearchOutput" then
 			grep_path, grep_body, body_col = parse_grep_line(entry.text)
 			grep_lang = grep_path and syntax.language_for_path(grep_path) or nil
-		end
+			end
 
-		if grep_lang and grep_body and grep_body ~= "" and body_col then
-			local line_index = add_panel_raw_line(result, entry.text, entry.hl_group)
-			syntax.add_highlights(result, grep_body, grep_lang, {
-				scope = "tools",
-				line_start = line_index,
-				col_offset = (#"▏  ") + body_col,
-			})
-		else
-			add_entry(result, entry)
-		end
+			if grep_lang and grep_body and grep_body ~= "" and body_col then
+				local line_index, _, rows = add_panel_raw_line(result, entry.text, entry.hl_group)
+				if #rows == 1 then
+					syntax.add_highlights(result, grep_body, grep_lang, {
+						scope = "tools",
+						line_start = line_index,
+						col_offset = (#"▏  ") + body_col,
+					})
+				end
+			else
+				add_entry(result, entry)
+			end
 	end
 
 	if not expanded and has_overflow then

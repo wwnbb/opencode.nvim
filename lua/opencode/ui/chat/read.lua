@@ -341,18 +341,22 @@ function M.render_tool(tool_part, is_expanded)
 	local read_lang = syntax.language_for_path(filepath)
 	local code_start_line = nil
 	local code_lines = {}
+	local can_highlight_code = true
 	local limit = is_expanded and #body_entries or math.min(MAX_COLLAPSED_OUTPUT_LINES, #body_entries)
 	for i = 1, limit do
 		local entry = body_entries[i]
 		if read_lang and entry.hl_group == "OpenCodeReadOutput" then
-			local line_index = add_panel_raw_line(result, entry.text, entry.hl_group)
+			local line_index, _, rows = add_panel_raw_line(result, entry.text, entry.hl_group)
 			code_start_line = code_start_line or line_index
 			table.insert(code_lines, entry.text)
+			if #rows > 1 then
+				can_highlight_code = false
+			end
 		else
 			add_entry(result, entry)
 		end
 	end
-	if read_lang and code_start_line and #code_lines > 0 then
+	if read_lang and code_start_line and #code_lines > 0 and can_highlight_code then
 		syntax.add_highlights(result, table.concat(code_lines, "\n"), read_lang, {
 			scope = "tools",
 			line_start = code_start_line,
