@@ -18,12 +18,40 @@ local edit_state = require("opencode.edit.state")
 -- ─── Animation ────────────────────────────────────────────────────────────────
 
 local TASK_ANIM_FRAMES = { "⠋", "⠙", "⠹", "⠸" }
-local TASK_COMPLETE_ICON = "│"
+local TASK_COMPLETE_ICON = "✓"
+local TASK_CANCELLED_ICON = "✕"
 local TASK_ERROR_ICON = "✗"
 local TASK_HIGHLIGHT_PRIORITY = 4200
 
 function M.get_task_anim_frame()
 	return TASK_ANIM_FRAMES[state.task_anim_frame] or TASK_ANIM_FRAMES[1]
+end
+
+---@param status string
+---@return boolean
+local function is_task_working(status)
+	return status == "pending" or status == "running"
+end
+
+---@param status string
+---@return boolean
+local function is_task_cancelled(status)
+	return status == "cancelled" or status == "canceled" or status == "interrupted" or status == "aborted"
+end
+
+---@param status string
+---@return string icon
+local function get_task_status_icon(status)
+	if is_task_working(status) then
+		return M.get_task_anim_frame()
+	end
+	if status == "error" then
+		return TASK_ERROR_ICON
+	end
+	if is_task_cancelled(status) then
+		return TASK_CANCELLED_ICON
+	end
+	return TASK_COMPLETE_ICON
 end
 
 local function tick_task_anim_frame()
@@ -53,7 +81,7 @@ function M.has_active_task_rows()
 			and pos.tool_part.state
 			and pos.tool_part.state.status
 			or "pending"
-		if status == "pending" or status == "running" then
+		if is_task_working(status) then
 			return true
 		end
 	end
@@ -440,13 +468,13 @@ function M.format_tool_line(tool_part)
 		local desc = input.description or ""
 		local agent_label = render.format_title(subagent)
 		if desc ~= "" and tool_status ~= "pending" then
-			local prefix = tool_status == "running" and M.get_task_anim_frame() or TASK_COMPLETE_ICON
-			if tool_status == "error" then
-				prefix = TASK_ERROR_ICON
-			end
+			local prefix = get_task_status_icon(tool_status)
 			return string.format("%s %s Task – %s", prefix, agent_label, desc)
 		end
-		return string.format("%s Delegating...", M.get_task_anim_frame())
+		if is_task_working(tool_status) then
+			return string.format("%s Delegating...", M.get_task_anim_frame())
+		end
+		return string.format("%s %s Task", get_task_status_icon(tool_status), agent_label)
 	else
 		if tool_status == "completed" then
 			return string.format("%s %s", icon, tool_name)
@@ -514,11 +542,11 @@ end
 --     ↳ Grep nvim_create_user_command
 --
 -- Layout (collapsed, completed):
---   │ Explore Task — Inventory user commands
+--   ✓ Explore Task — Inventory user commands
 --     └ 1 toolcall · 1.2s
 --
 -- Layout (expanded, after O):
---   │ Explore Task — Inventory user commands
+--   ✓ Explore Task — Inventory user commands
 --     └ 1 toolcall · 1.2s
 --
 --     >> <first line of child user message>
@@ -592,7 +620,7 @@ function M.render_task_tool(tool_part, expanded, _child_content)
 
 	local agent_label = render.format_title(subagent)
 	local task_frame = M.get_task_anim_frame()
-	local working = tool_status == "pending" or tool_status == "running"
+	local working = is_task_working(tool_status)
 	local completed = tool_status == "completed"
 	local metadata_count = get_metadata_toolcall_count(metadata) or 0
 	local count = math.max(#summary, metadata_count)
@@ -662,19 +690,17 @@ function M.render_task_tool(tool_part, expanded, _child_content)
 
 	-- Still-initialising: no input yet
 	if desc == "" then
-		local line = working and (task_frame .. " Delegating...") or (TASK_COMPLETE_ICON .. " " .. agent_label .. " Task")
+		local line = working and (task_frame .. " Delegating...")
+			or (get_task_status_icon(tool_status) .. " " .. agent_label .. " Task")
 		add_line(line, tool_status == "error" and "DiagnosticError" or "Comment")
 		return { lines = result_lines, highlights = result_highlights }
 	end
 
 	local line_hl = "Comment"
-	local task_icon = TASK_COMPLETE_ICON
+	local task_icon = get_task_status_icon(tool_status)
 	local agent_hl = render.get_agent_hl(subagent)
 	if tool_status == "error" then
 		line_hl = "DiagnosticError"
-		task_icon = TASK_ERROR_ICON
-	elseif working then
-		task_icon = task_frame
 	end
 
 	add_task_header(task_icon, line_hl, agent_hl)
