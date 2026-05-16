@@ -20,6 +20,7 @@ local edit_state = require("opencode.edit.state")
 local TASK_ANIM_FRAMES = { "⠋", "⠙", "⠹", "⠸" }
 local TASK_COMPLETE_ICON = "│"
 local TASK_ERROR_ICON = "✗"
+local TASK_HIGHLIGHT_PRIORITY = 4200
 
 function M.get_task_anim_frame()
 	return TASK_ANIM_FRAMES[state.task_anim_frame] or TASK_ANIM_FRAMES[1]
@@ -469,6 +470,7 @@ function M.build_child_session_content(session_id)
 				col_start = 0,
 				col_end = #text,
 				hl_group = hl_group,
+				priority = TASK_HIGHLIGHT_PRIORITY,
 			})
 		end
 	end
@@ -607,6 +609,7 @@ function M.render_task_tool(tool_part, expanded, _child_content)
 				col_start = 0,
 				col_end = #text,
 				hl_group = hl_group,
+				priority = TASK_HIGHLIGHT_PRIORITY,
 			})
 		end
 	end
@@ -624,7 +627,7 @@ function M.render_task_tool(tool_part, expanded, _child_content)
 						col_start = col,
 						col_end = col + #text,
 						hl_group = segment.hl_group,
-						priority = segment.priority,
+						priority = segment.priority or TASK_HIGHLIGHT_PRIORITY,
 					})
 				end
 				col = col + #text
@@ -641,7 +644,7 @@ function M.render_task_tool(tool_part, expanded, _child_content)
 	local function add_task_header(icon, icon_hl, agent_hl)
 		add_spans_line({
 			{ text = icon .. " ", hl_group = icon_hl },
-			{ text = agent_label, hl_group = agent_hl, priority = 120 },
+			{ text = agent_label, hl_group = agent_hl },
 			{ text = " Task – " .. desc, hl_group = "Comment" },
 		})
 	end
@@ -651,8 +654,8 @@ function M.render_task_tool(tool_part, expanded, _child_content)
 		local rest = label:sub(#first + 1)
 		add_spans_line({
 			{ text = "  ↳ ", hl_group = "Comment" },
-			{ text = first, hl_group = "Normal", priority = 110 },
-			{ text = rest, hl_group = "Normal", priority = 110 },
+			{ text = first, hl_group = "Normal" },
+			{ text = rest, hl_group = "Normal" },
 			{ text = suffix or "", hl_group = "Comment" },
 		})
 	end

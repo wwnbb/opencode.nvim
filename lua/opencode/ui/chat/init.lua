@@ -2238,9 +2238,43 @@ function M.do_render()
 	local new_lines, nui_lines, content_highlights = M.render()
 	chat_todos.update_window()
 	resume_render_animation_timers()
+
+	local function apply_render_highlights()
+		if not state.bufnr or not vim.api.nvim_buf_is_valid(state.bufnr) then
+			return
+		end
+
+		local buf_line_count = vim.api.nvim_buf_line_count(state.bufnr)
+		vim.api.nvim_buf_clear_namespace(state.bufnr, chat_hl_ns, 0, -1)
+
+		for i, nui_line in ipairs(nui_lines) do
+			if i <= buf_line_count then
+				nui_line:highlight(state.bufnr, chat_hl_ns, i)
+			end
+		end
+
+		local function apply_widget_extmarks(line_map)
+			for _, pos in pairs(line_map) do
+				if pos.highlights then
+					render.apply_extmark_highlights(state.bufnr, chat_hl_ns, pos.highlights, pos.start_line, {
+						max_line = buf_line_count,
+					})
+				end
+			end
+		end
+
+		apply_widget_extmarks(state.questions)
+		apply_widget_extmarks(state.permissions)
+		apply_widget_extmarks(state.edits)
+		apply_widget_extmarks(state.tasks)
+		apply_widget_extmarks(state.tools)
+		render.apply_extmark_highlights(state.bufnr, chat_hl_ns, content_highlights, 0, { max_line = buf_line_count })
+	end
+
 	if #new_lines == 0 or #nui_lines == 0 then
 		vim.bo[state.bufnr].modifiable = true
 		vim.api.nvim_buf_set_lines(state.bufnr, 0, -1, false, new_lines)
+		vim.api.nvim_buf_clear_namespace(state.bufnr, chat_hl_ns, 0, -1)
 		vim.bo[state.bufnr].modifiable = false
 		if apply_widget_focus_cursor() then
 			vim.cmd("redraw")
@@ -2262,6 +2296,7 @@ function M.do_render()
 
 	if first_diff == nil then
 		if #old_lines == #new_lines then
+			apply_render_highlights()
 			if apply_widget_focus_cursor() then
 				vim.cmd("redraw")
 			end
@@ -2283,34 +2318,7 @@ function M.do_render()
 	vim.bo[state.bufnr].modifiable = true
 	vim.api.nvim_buf_set_lines(state.bufnr, first_diff, -1, false, replacement)
 
-	buf_line_count = vim.api.nvim_buf_line_count(state.bufnr)
-	vim.api.nvim_buf_clear_namespace(state.bufnr, chat_hl_ns, first_diff, -1)
-	for i, nui_line in ipairs(nui_lines) do
-		local line_idx = i - 1
-		if line_idx >= first_diff and line_idx < buf_line_count then
-			nui_line:highlight(state.bufnr, chat_hl_ns, i)
-		end
-	end
-
-	local function apply_widget_extmarks(line_map)
-		for _, pos in pairs(line_map) do
-			local highlights = pos.highlights
-			if highlights and pos.end_line >= first_diff then
-				render.apply_extmark_highlights(state.bufnr, chat_hl_ns, highlights, pos.start_line, {
-					min_line = first_diff,
-					max_line = buf_line_count,
-				})
-			end
-		end
-	end
-
-	apply_widget_extmarks(state.questions)
-	apply_widget_extmarks(state.permissions)
-	apply_widget_extmarks(state.edits)
-	apply_widget_extmarks(state.tasks)
-	apply_widget_extmarks(state.tools)
-	render.apply_extmark_highlights(state.bufnr, chat_hl_ns, content_highlights, 0, { min_line = first_diff })
-
+	apply_render_highlights()
 	vim.bo[state.bufnr].modifiable = false
 
 	if apply_widget_focus_cursor() then
