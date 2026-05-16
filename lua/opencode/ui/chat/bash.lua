@@ -8,6 +8,9 @@ local render = require("opencode.ui.chat.render")
 local syntax = require("opencode.ui.syntax")
 
 local MAX_COLLAPSED_OUTPUT_LINES = 10
+local PANEL_PREFIX = "▏  "
+local PANEL_BLANK_PREFIX = "▏"
+local PANEL_BORDER_HL = "OpenCodeBashMuted"
 local BASH_ANIM_FRAMES = { "|", "/", "-", "\\" }
 
 local function get_hl(name)
@@ -43,7 +46,10 @@ end
 ---@param text string
 ---@param hl_group string
 local function add_panel_line(result, text, hl_group)
-	return render.add_panel_line(result, text, hl_group)
+	return render.add_panel_line(result, text, hl_group, {
+		prefix = PANEL_PREFIX,
+		prefix_hl_group = PANEL_BORDER_HL,
+	})
 end
 
 ---@param result table
@@ -53,12 +59,18 @@ end
 ---@return string line
 ---@return table[] rows
 local function add_panel_raw_line(result, text, hl_group)
-	return render.add_panel_raw_line(result, text, hl_group)
+	return render.add_panel_raw_line(result, text, hl_group, {
+		prefix = PANEL_PREFIX,
+		prefix_hl_group = PANEL_BORDER_HL,
+	})
 end
 
 ---@param result table
 local function add_panel_blank(result)
-	render.add_panel_blank(result, "OpenCodeBashOutput")
+	render.add_panel_blank(result, "OpenCodeBashOutput", {
+		prefix = PANEL_BLANK_PREFIX,
+		prefix_hl_group = PANEL_BORDER_HL,
+	})
 end
 
 ---@param value any
@@ -232,7 +244,7 @@ local function add_command(result, command)
 		syntax.add_highlights(result, table.concat(lines, "\n"), "bash", {
 			scope = "tools",
 			line_start = start_line,
-			col_offset = #"▏  $ ",
+			col_offset = #PANEL_PREFIX + #"$ ",
 		})
 	end
 end
@@ -346,14 +358,14 @@ function M.render_tool(tool_part, expanded)
 			syntax.add_markdown_highlights(result, output_text, {
 				scope = "tools",
 				line_start = output_start_line,
-				col_offset = #"▏  ",
+				col_offset = #PANEL_PREFIX,
 				compat_markdown = false,
 			})
 		else
 			syntax.add_highlights(result, output_text, output_lang, {
 				scope = "tools",
 				line_start = output_start_line,
-				col_offset = #"▏  ",
+				col_offset = #PANEL_PREFIX,
 			})
 		end
 	end

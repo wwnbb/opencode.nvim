@@ -16,6 +16,7 @@ local cs = require("opencode.ui.chat.state")
 local state = cs.state
 local chat_hl_ns = cs.chat_hl_ns
 local UI_HIGHLIGHT_PRIORITY = 4200
+local PANEL_PREFIX_HL_PRIORITY = UI_HIGHLIGHT_PRIORITY + 1
 
 local function ensure_user_message_highlights()
 	vim.api.nvim_set_hl(0, "OpenCodeUserMessageBg", { link = "CursorLine", default = true })
@@ -244,9 +245,26 @@ function M.pad_to_width(text, width)
 end
 
 ---@param result table
+---@param line_index number
+---@param prefix string
+---@param hl_group string|nil
+local function add_panel_prefix_highlight(result, line_index, prefix, hl_group)
+	if not hl_group or prefix == "" then
+		return
+	end
+	table.insert(result.highlights, {
+		line = line_index,
+		col_start = 0,
+		col_end = #prefix,
+		hl_group = hl_group,
+		priority = PANEL_PREFIX_HL_PRIORITY,
+	})
+end
+
+---@param result table
 ---@param text string
 ---@param hl_group string|nil
----@param opts? table
+---@param opts? table { prefix?: string, width?: number, prefix_hl_group?: string }
 ---@return number line_index
 ---@return string line
 ---@return table[] rows
@@ -275,6 +293,7 @@ function M.add_panel_line(result, text, hl_group, opts)
 				hl_group = hl_group,
 			})
 		end
+		add_panel_prefix_highlight(result, line_index, prefix, opts.prefix_hl_group)
 		table.insert(rows, {
 			line_index = line_index,
 			line = line,
@@ -289,7 +308,7 @@ end
 ---@param result table
 ---@param text string
 ---@param hl_group string|nil
----@param opts? table
+---@param opts? table { prefix?: string, width?: number, wrap?: boolean, prefix_hl_group?: string }
 ---@return number line_index
 ---@return string line
 ---@return table[] rows
@@ -320,6 +339,7 @@ function M.add_panel_raw_line(result, text, hl_group, opts)
 				hl_group = hl_group,
 			})
 		end
+		add_panel_prefix_highlight(result, line_index, prefix, opts.prefix_hl_group)
 		table.insert(rows, {
 			line_index = line_index,
 			line = line,
@@ -333,7 +353,7 @@ end
 
 ---@param result table
 ---@param hl_group string|nil
----@param opts? table
+---@param opts? table { prefix?: string, width?: number, prefix_hl_group?: string }
 ---@return number line_index
 ---@return string line
 ---@return table[] rows
@@ -355,6 +375,7 @@ function M.add_panel_blank(result, hl_group, opts)
 			hl_group = hl_group,
 		})
 	end
+	add_panel_prefix_highlight(result, line_index, prefix, opts.prefix_hl_group)
 
 	return line_index, line, {
 		{

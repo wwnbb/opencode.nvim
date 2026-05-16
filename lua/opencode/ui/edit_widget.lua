@@ -9,6 +9,7 @@ local syntax = require("opencode.ui.syntax")
 
 local PANEL_PREFIX = "▏  "
 local PANEL_EMPTY = "▏"
+local PANEL_BORDER_HL = "OpenCodeEditMuted"
 
 local icons = {
 	accepted = "✓",
@@ -94,12 +95,18 @@ end
 ---@return number line_index, string line
 ---@return table[] rows
 local function add_panel_line(result, text, hl_group)
-	return render.add_panel_line(result, text, hl_group, { prefix = PANEL_PREFIX })
+	return render.add_panel_line(result, text, hl_group, {
+		prefix = PANEL_PREFIX,
+		prefix_hl_group = PANEL_BORDER_HL,
+	})
 end
 
 ---@param result table
 local function add_panel_blank(result)
-	render.add_panel_blank(result, "OpenCodeEditOutput", { prefix = PANEL_EMPTY })
+	render.add_panel_blank(result, "OpenCodeEditOutput", {
+		prefix = PANEL_EMPTY,
+		prefix_hl_group = PANEL_BORDER_HL,
+	})
 end
 
 ---@param result table
@@ -345,6 +352,7 @@ local function append_inline_diff(result, file)
 		local diff_line = display_diff_line(raw_line, file)
 		local line_index, _, rows = render.add_panel_raw_line(result, "  " .. diff_line, diff_hl_group(raw_line), {
 			prefix = PANEL_PREFIX,
+			prefix_hl_group = PANEL_BORDER_HL,
 		})
 		start_line = start_line or line_index
 		end_line = rows[#rows].line_index

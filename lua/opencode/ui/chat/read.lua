@@ -8,6 +8,9 @@ local render = require("opencode.ui.chat.render")
 local syntax = require("opencode.ui.syntax")
 
 local MAX_COLLAPSED_OUTPUT_LINES = 10
+local PANEL_PREFIX = "▏  "
+local PANEL_BLANK_PREFIX = "▏"
+local PANEL_BORDER_HL = "OpenCodeReadMuted"
 local READ_ANIM_FRAMES = { "|", "/", "-", "\\" }
 
 local function get_hl(name)
@@ -50,7 +53,10 @@ end
 ---@return string line
 ---@return table[] rows
 local function add_panel_line(result, text, hl_group)
-	return render.add_panel_line(result, text, hl_group)
+	return render.add_panel_line(result, text, hl_group, {
+		prefix = PANEL_PREFIX,
+		prefix_hl_group = PANEL_BORDER_HL,
+	})
 end
 
 ---@param result table
@@ -60,12 +66,18 @@ end
 ---@return string line
 ---@return table[] rows
 local function add_panel_raw_line(result, text, hl_group)
-	return render.add_panel_raw_line(result, text, hl_group)
+	return render.add_panel_raw_line(result, text, hl_group, {
+		prefix = PANEL_PREFIX,
+		prefix_hl_group = PANEL_BORDER_HL,
+	})
 end
 
 ---@param result table
 local function add_panel_blank(result)
-	render.add_panel_blank(result, "OpenCodeReadOutput")
+	render.add_panel_blank(result, "OpenCodeReadOutput", {
+		prefix = PANEL_BLANK_PREFIX,
+		prefix_hl_group = PANEL_BORDER_HL,
+	})
 end
 
 ---@param result table
@@ -360,7 +372,7 @@ function M.render_tool(tool_part, is_expanded)
 		syntax.add_highlights(result, table.concat(code_lines, "\n"), read_lang, {
 			scope = "tools",
 			line_start = code_start_line,
-			col_offset = #"▏  ",
+			col_offset = #PANEL_PREFIX,
 		})
 	end
 

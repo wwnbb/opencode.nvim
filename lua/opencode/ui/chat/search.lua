@@ -8,6 +8,9 @@ local render = require("opencode.ui.chat.render")
 local syntax = require("opencode.ui.syntax")
 
 local MAX_COLLAPSED_OUTPUT_LINES = 10
+local PANEL_PREFIX = "▏  "
+local PANEL_BLANK_PREFIX = "▏"
+local PANEL_BORDER_HL = "OpenCodeSearchMuted"
 local SEARCH_ANIM_FRAMES = { "|", "/", "-", "\\" }
 
 local TOOL_CONFIG = {
@@ -63,7 +66,10 @@ end
 ---@return string line
 ---@return table[] rows
 local function add_panel_line(result, text, hl_group)
-	return render.add_panel_line(result, text, hl_group)
+	return render.add_panel_line(result, text, hl_group, {
+		prefix = PANEL_PREFIX,
+		prefix_hl_group = PANEL_BORDER_HL,
+	})
 end
 
 ---@param result table
@@ -73,12 +79,18 @@ end
 ---@return string line
 ---@return table[] rows
 local function add_panel_raw_line(result, text, hl_group)
-	return render.add_panel_raw_line(result, text, hl_group)
+	return render.add_panel_raw_line(result, text, hl_group, {
+		prefix = PANEL_PREFIX,
+		prefix_hl_group = PANEL_BORDER_HL,
+	})
 end
 
 ---@param result table
 local function add_panel_blank(result)
-	render.add_panel_blank(result, "OpenCodeSearchOutput")
+	render.add_panel_blank(result, "OpenCodeSearchOutput", {
+		prefix = PANEL_BLANK_PREFIX,
+		prefix_hl_group = PANEL_BORDER_HL,
+	})
 end
 
 ---@param result table
@@ -372,20 +384,20 @@ function M.render_tool(tool_part, expanded)
 		if tool_part.tool == "grep" and entry.hl_group == "OpenCodeSearchOutput" then
 			grep_path, grep_body, body_col = parse_grep_line(entry.text)
 			grep_lang = grep_path and syntax.language_for_path(grep_path) or nil
-			end
+		end
 
-			if grep_lang and grep_body and grep_body ~= "" and body_col then
-				local line_index, _, rows = add_panel_raw_line(result, entry.text, entry.hl_group)
-				if #rows == 1 then
-					syntax.add_highlights(result, grep_body, grep_lang, {
-						scope = "tools",
-						line_start = line_index,
-						col_offset = (#"▏  ") + body_col,
-					})
-				end
-			else
-				add_entry(result, entry)
+		if grep_lang and grep_body and grep_body ~= "" and body_col then
+			local line_index, _, rows = add_panel_raw_line(result, entry.text, entry.hl_group)
+			if #rows == 1 then
+				syntax.add_highlights(result, grep_body, grep_lang, {
+					scope = "tools",
+					line_start = line_index,
+					col_offset = (#PANEL_PREFIX) + body_col,
+				})
 			end
+		else
+			add_entry(result, entry)
+		end
 	end
 
 	if not expanded and has_overflow then
