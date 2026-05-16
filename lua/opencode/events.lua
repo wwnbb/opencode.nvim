@@ -770,6 +770,31 @@ function M.setup_chat_handlers()
 		return "unknown error"
 	end
 
+	local function is_session_abort_error(err)
+		if type(err) == "string" then
+			return vim.trim(err):lower() == "aborted"
+		end
+		if type(err) ~= "table" then
+			return false
+		end
+
+		local name = err.name or err._tag
+		if name == "MessageAbortedError" or name == "AbortError" then
+			return true
+		end
+
+		local data = err.data
+		if type(data) == "table" and type(data.message) == "string" then
+			return vim.trim(data.message):lower() == "aborted"
+		end
+
+		if type(err.message) == "string" then
+			return vim.trim(err.message):lower() == "aborted"
+		end
+
+		return false
+	end
+
 	-- Handle session.status changes (like TUI sync.tsx:223-225)
 	M.on("session_status", function(data)
 		vim.schedule(function()
@@ -853,6 +878,15 @@ function M.setup_chat_handlers()
 			end
 
 			state.set_status("idle")
+			if is_session_abort_error(data and data.error) then
+				logger.debug("Session abort ignored", {
+					sessionID = data and data.sessionID or nil,
+				})
+				if current_session.id then
+					M.emit("chat_render", { session_id = current_session.id })
+				end
+				return
+			end
 
 			local message = format_session_error(data and data.error)
 			logger.debug("Session error handled", {

@@ -7,6 +7,7 @@ local render = require("opencode.ui.chat.render")
 local cs = require("opencode.ui.chat.state")
 local state = cs.state
 local todo_hl_ns = vim.api.nvim_create_namespace("opencode_todo_hl")
+local PANEL_PREFIX_HL_PRIORITY = 4201
 
 ---@class OpenCodeTodoConfig
 ---@field enabled boolean
@@ -224,6 +225,25 @@ local function add_line(result, text, hl_group)
 	end
 end
 
+---@param result table
+---@param text string
+---@param hl_group string|nil
+---@param prefix string
+---@param prefix_hl_group string|nil
+local function add_prefixed_line(result, text, hl_group, prefix, prefix_hl_group)
+	add_line(result, text, hl_group)
+	if not prefix_hl_group or prefix == "" then
+		return
+	end
+	table.insert(result.highlights, {
+		line = #result.lines - 1,
+		col_start = 0,
+		col_end = #prefix,
+		hl_group = prefix_hl_group,
+		priority = PANEL_PREFIX_HL_PRIORITY,
+	})
+end
+
 ---@param cfg OpenCodeTodoConfig
 ---@param status string
 ---@return string
@@ -246,6 +266,7 @@ local function add_todo_item(result, todo, cfg, opts)
 	opts = opts or {}
 
 	local prefix = opts.prefix or ""
+	local prefix_hl_group = opts.prefix_hl_group
 	local width = opts.width or get_chat_text_width()
 	local icon = status_icon(cfg, todo.status)
 	local first_prefix = prefix .. icon .. " "
@@ -259,7 +280,7 @@ local function add_todo_item(result, todo, cfg, opts)
 	local hl_group = status_highlight(cfg, todo.status)
 	for idx, text in ipairs(wrapped) do
 		local line_prefix = idx == 1 and first_prefix or continuation_prefix
-		add_line(result, line_prefix .. text, hl_group)
+		add_prefixed_line(result, line_prefix .. text, hl_group, prefix, prefix_hl_group)
 	end
 end
 
@@ -315,11 +336,13 @@ function M.render_block(todos, opts)
 	local width = opts.width or get_chat_text_width()
 	local title = opts.title or "# Todos"
 	local header_hl = cfg.highlights and cfg.highlights.header or "Title"
+	local border_hl = cfg.highlights and cfg.highlights.border or "Comment"
 
-	add_line(result, prefix .. title, header_hl)
+	add_prefixed_line(result, prefix .. title, header_hl, prefix, border_hl)
 	for _, todo in ipairs(normalized) do
 		add_todo_item(result, todo, cfg, {
 			prefix = prefix,
+			prefix_hl_group = border_hl,
 			width = width,
 		})
 	end
@@ -582,10 +605,14 @@ function M.update_window()
 			if end_col == -1 then
 				end_col = #result.lines[line_idx + 1]
 			end
-			pcall(vim.api.nvim_buf_set_extmark, bufnr, todo_hl_ns, line_idx, hl.col_start, {
+			local mark_opts = {
 				end_col = end_col,
 				hl_group = hl.hl_group,
-			})
+			}
+			if hl.priority then
+				mark_opts.priority = hl.priority
+			end
+			pcall(vim.api.nvim_buf_set_extmark, bufnr, todo_hl_ns, line_idx, hl.col_start, mark_opts)
 		end
 	end
 	vim.bo[bufnr].modifiable = false
