@@ -443,7 +443,7 @@ function M.format_tool_line(tool_part)
 			if tool_status == "error" then
 				prefix = TASK_ERROR_ICON
 			end
-			return string.format("%s %s Task — %s", prefix, agent_label, desc)
+			return string.format("%s %s Task – %s", prefix, agent_label, desc)
 		end
 		return string.format("%s Delegating...", M.get_task_anim_frame())
 	else
@@ -611,6 +611,52 @@ function M.render_task_tool(tool_part, expanded, _child_content)
 		end
 	end
 
+	local function add_spans_line(segments)
+		local line = {}
+		local spans = {}
+		local col = 0
+		for _, segment in ipairs(segments) do
+			local text = segment.text or ""
+			if text ~= "" then
+				table.insert(line, text)
+				if segment.hl_group then
+					table.insert(spans, {
+						col_start = col,
+						col_end = col + #text,
+						hl_group = segment.hl_group,
+						priority = segment.priority,
+					})
+				end
+				col = col + #text
+			end
+		end
+
+		table.insert(result_lines, table.concat(line))
+		for _, span in ipairs(spans) do
+			span.line = #result_lines - 1
+			table.insert(result_highlights, span)
+		end
+	end
+
+	local function add_task_header(icon, icon_hl, agent_hl)
+		add_spans_line({
+			{ text = icon .. " ", hl_group = icon_hl },
+			{ text = agent_label, hl_group = agent_hl, priority = 120 },
+			{ text = " Task – " .. desc, hl_group = "Comment" },
+		})
+	end
+
+	local function add_task_detail(label, suffix)
+		local first = label:match("^%S+") or label
+		local rest = label:sub(#first + 1)
+		add_spans_line({
+			{ text = "  ↳ ", hl_group = "Comment" },
+			{ text = first, hl_group = "Normal", priority = 110 },
+			{ text = rest, hl_group = "Normal", priority = 110 },
+			{ text = suffix or "", hl_group = "Comment" },
+		})
+	end
+
 	-- Still-initialising: no input yet
 	if desc == "" then
 		local line = working and (task_frame .. " Delegating...") or (TASK_COMPLETE_ICON .. " " .. agent_label .. " Task")
@@ -620,6 +666,7 @@ function M.render_task_tool(tool_part, expanded, _child_content)
 
 	local line_hl = "Comment"
 	local task_icon = TASK_COMPLETE_ICON
+	local agent_hl = render.get_agent_hl(subagent)
 	if tool_status == "error" then
 		line_hl = "DiagnosticError"
 		task_icon = TASK_ERROR_ICON
@@ -627,7 +674,7 @@ function M.render_task_tool(tool_part, expanded, _child_content)
 		task_icon = task_frame
 	end
 
-	add_line(task_icon .. " " .. agent_label .. " Task — " .. desc, line_hl)
+	add_task_header(task_icon, line_hl, agent_hl)
 
 	if tool_status == "error" then
 		local err = tool_part.state and tool_part.state.error or nil
@@ -640,7 +687,7 @@ function M.render_task_tool(tool_part, expanded, _child_content)
 			current_item = summary[1]
 		end
 		if current_item then
-			add_line("  ↳ " .. format_summary_item_label(current_item), "Comment")
+			add_task_detail(format_summary_item_label(current_item), " · " .. format_toolcall_count(count))
 		else
 			add_line("  ↳ " .. format_toolcall_count(count), "Comment")
 		end
