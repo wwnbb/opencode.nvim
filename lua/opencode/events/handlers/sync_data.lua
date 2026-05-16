@@ -133,6 +133,14 @@ function M.setup(events)
 
 						-- Emit event for UI updates
 						events.emit("providers_loaded", providers)
+						events.emit("sync_changed", {
+							kind = "providers",
+							action = "loaded",
+						})
+						local local_ok, local_state = pcall(require, "opencode.local")
+						if local_ok and local_state.model and type(local_state.model.cleanup) == "function" then
+							local_state.model.cleanup()
+						end
 
 						-- Warn if no providers are connected
 						if #providers == 0 then
@@ -153,6 +161,10 @@ function M.setup(events)
 						sync.handle_agents(agents)
 						-- Emit event for UI updates
 						events.emit("agents_loaded", agents)
+						events.emit("sync_changed", {
+							kind = "agents",
+							action = "loaded",
+						})
 						logger.debug("Agents loaded", summarize_agents(agents))
 					end
 				end)
@@ -172,6 +184,10 @@ function M.setup(events)
 							sync.handle_commands(config.command)
 						end
 						events.emit("config_loaded", config)
+						events.emit("sync_changed", {
+							kind = "config",
+							action = "loaded",
+						})
 						logger.debug("Config loaded", {
 							model = config.model,
 							model_kind = value_kind(config.model),
@@ -191,6 +207,10 @@ function M.setup(events)
 					end
 					sync.handle_skills(skills)
 					events.emit("skills_loaded", skills)
+					events.emit("sync_changed", {
+						kind = "skills",
+						action = "loaded",
+					})
 					logger.debug("Skills loaded", { count = skills and #skills or 0 })
 				end)
 			end)
@@ -200,6 +220,10 @@ function M.setup(events)
 				vim.schedule(function()
 					if not err and mcp then
 						sync.handle_mcp(mcp)
+						events.emit("sync_changed", {
+							kind = "mcp",
+							action = "loaded",
+						})
 						logger.debug("MCP status loaded")
 					end
 				end)

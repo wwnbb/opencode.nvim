@@ -7,11 +7,11 @@ import (
 )
 
 const (
-	defaultUserID       = 45
-	defaultUserName     = "Jane Smith Rabbit Jr"
-	defaultUserEmail    = "jane.smith@example.com"
-	defaultGreetingName = "OpenCode"
-	defaultEvenNumber   = 4
+	defaultUserID       = 30
+	defaultUserName     = "Nikola Tesla"
+	defaultUserEmail    = "nikola.tesla@example.com"
+	defaultGreetingName = "CoderBased"
+	defaultEvenNumber   = 6
 )
 
 // defaultUserID       = 45 defaultUserName     = "Jane Smith Rabbit Jr" defaultUserEmail    = "jane.smith@example.com" defaultGreetingName = "OpenCode" defaultEvenNumber   = 4

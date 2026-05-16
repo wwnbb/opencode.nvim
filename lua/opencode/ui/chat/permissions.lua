@@ -10,37 +10,24 @@ local permission_widget = require("opencode.ui.permission_widget")
 local widget_base = require("opencode.ui.widget_base")
 local permission_state = require("opencode.permission.state")
 local widget_support = require("opencode.ui.chat.widget_support")
+local render_coordinator = require("opencode.ui.chat.render_coordinator")
 
 local function schedule_render()
-	require("opencode.ui.chat").schedule_render()
+	render_coordinator.request({ kind = "permission" })
+end
+
+---@param event_type string
+---@param data table
+local function emit(event_type, data)
+	local ok, events = pcall(require, "opencode.events")
+	if ok and events and type(events.emit) == "function" then
+		events.emit(event_type, data)
+	end
 end
 
 -- ─── Pending queue ────────────────────────────────────────────────────────────
 
-function M.process_pending_permissions()
-	if #state.pending_permissions == 0 then
-		return
-	end
-
-	local logger = require("opencode.logger")
-	logger.debug("Processing pending permissions", { count = #state.pending_permissions })
-
-	local pending = state.pending_permissions
-	state.pending_permissions = {}
-
-	for _, pp in ipairs(pending) do
-		local pstate = permission_state.get_permission(pp.permission_id)
-		if pstate and pstate.status == "pending" then
-			M.add_permission_message(pp.permission_id, pstate, pp.status)
-			logger.debug("Displayed pending permission", { permission_id = pp.permission_id })
-		else
-			logger.debug("Skipping stale pending permission", {
-				permission_id = pp.permission_id,
-				reason = pstate and pstate.status or "not found",
-			})
-		end
-	end
-end
+function M.process_pending_permissions() end
 
 -- ─── Add / update ─────────────────────────────────────────────────────────────
 
@@ -54,20 +41,6 @@ function M.add_permission_message(permission_id, perm_data, status)
 		permission_id = permission_id,
 		visible = state.visible,
 	})
-
-	if not state.bufnr or not vim.api.nvim_buf_is_valid(state.bufnr) or not state.visible then
-		table.insert(state.pending_permissions, {
-			permission_id = permission_id,
-			perm_data = perm_data,
-			status = status,
-			timestamp = os.time(),
-		})
-		logger.debug("Permission queued (chat not visible)", {
-			permission_id = permission_id,
-			pending_count = #state.pending_permissions,
-		})
-		return
-	end
 
 	local pstate = permission_state.get_permission(permission_id)
 	if not pstate then
@@ -153,6 +126,15 @@ function M.sync_selected_option_from_cursor()
 		return permission_id, false
 	end
 
+	emit("permission_selection_changed", {
+		permission_id = permission_id,
+		selected = option_index,
+	})
+	emit("interaction_changed", {
+		kind = "permission",
+		action = "selection_changed",
+		id = permission_id,
+	})
 	M.rerender_permission(permission_id)
 	return permission_id, true
 end
@@ -235,11 +217,23 @@ function M.handle_permission_confirm(perm_id, pstate)
 			end
 			if reply == "reject" then
 				permission_state.mark_rejected(perm_id)
+				emit("permission_rejected", {
+					permission_id = perm_id,
+				})
 				M.update_permission_status(perm_id, "rejected")
 			else
 				permission_state.mark_approved(perm_id, reply)
+				emit("permission_approved", {
+					permission_id = perm_id,
+					reply = reply,
+				})
 				M.update_permission_status(perm_id, "approved")
 			end
+			emit("interaction_changed", {
+				kind = "permission",
+				action = reply == "reject" and "rejected" or "approved",
+				id = perm_id,
+			})
 		end)
 	end)
 end
@@ -255,6 +249,14 @@ function M.handle_permission_reject(perm_id)
 				return
 			end
 			permission_state.mark_rejected(perm_id)
+			emit("permission_rejected", {
+				permission_id = perm_id,
+			})
+			emit("interaction_changed", {
+				kind = "permission",
+				action = "rejected",
+				id = perm_id,
+			})
 			M.update_permission_status(perm_id, "rejected")
 		end)
 	end)

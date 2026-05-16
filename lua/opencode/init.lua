@@ -9,6 +9,8 @@ M.version = "0.1.0"
 -- Modules (lazy loaded)
 local config = require("opencode.config")
 local state = require("opencode.state")
+local selectors = require("opencode.selectors")
+local session_actions = require("opencode.session")
 local events
 local lifecycle
 local client
@@ -570,11 +572,6 @@ function M.send(message, opts)
 		local function send_with_session(sid)
 			local logger = require("opencode.logger")
 
-			-- Build message payload
-			-- Get model/agent/variant from: 1) opts, 2) local state (user selection), 3) config default
-			local model = opts.model
-			local agent = opts.agent
-			local variant = opts.variant
 			local sync_ok, sync = pcall(require, "opencode.sync")
 
 			local function summarize_model_ref(ref)
@@ -591,121 +588,10 @@ function M.send(message, opts)
 				}
 			end
 
-			local function resolve_model_ref(ref, source)
-				if type(ref) ~= "table" or type(ref.providerID) ~= "string" or type(ref.modelID) ~= "string" then
-					logger.debug("Send model candidate skipped", {
-						source = source,
-						reason = "malformed",
-						model = summarize_model_ref(ref),
-					})
-					return nil
-				end
-				if ref.providerID == "" or ref.modelID == "" then
-					logger.debug("Send model candidate skipped", {
-						source = source,
-						reason = "empty",
-						model = summarize_model_ref(ref),
-					})
-					return nil
-				end
-				if not sync_ok or not sync.get_model(ref.providerID, ref.modelID) then
-					logger.debug("Send model candidate skipped", {
-						source = source,
-						reason = sync_ok and "not_in_sync" or "sync_unavailable",
-						model = summarize_model_ref(ref),
-					})
-					return nil
-				end
-				logger.debug("Send model candidate accepted", {
-					source = source,
-					model = summarize_model_ref(ref),
-				})
-				return {
-					providerID = ref.providerID,
-					modelID = ref.modelID,
-				}
-			end
-
-			if model then
-				local resolved = resolve_model_ref(model, "opts")
-				if resolved then
-					model = resolved
-				else
-					logger.debug("Explicit send model dropped after validation miss", {
-						model = summarize_model_ref(model),
-					})
-					model = nil
-				end
-			end
-
-			-- Try to get from local module (like TUI's local.tsx)
-			local local_ok, lc = pcall(require, "opencode.local")
-			if local_ok then
-				if not model then
-					local current_model = lc.model.current()
-					model = resolve_model_ref(current_model, "local_current")
-				end
-				if not agent then
-					local current_agent = lc.agent.current()
-					if current_agent then
-						agent = current_agent.name
-						logger.debug("Send agent selected", {
-							source = "local_current",
-							agent = agent,
-						})
-					else
-						logger.debug("Send agent candidate missing", {
-							source = "local_current",
-						})
-					end
-				end
-				if not variant then
-					variant = lc.variant.current()
-				end
-			else
-				logger.debug("Send local state unavailable", {
-					error = tostring(lc),
-				})
-			end
-
-			-- Fallback to old state module
-			if not model then
-				local state_model = state.get_model()
-				if type(state_model.provider) == "string" and type(state_model.id) == "string" then
-					model = resolve_model_ref({
-						providerID = state_model.provider,
-						modelID = state_model.id,
-					}, "legacy_state")
-				else
-					logger.debug("Send legacy state model skipped", {
-						provider = state_model.provider,
-						id = state_model.id,
-					})
-				end
-
-				if not model then
-					local default_model = M._config.session.default_model
-					model = resolve_model_ref(default_model, "plugin_config_default")
-				end
-			end
-
-			if not agent then
-				local configured_agent = M._config.session.default_agent
-				local configured = sync_ok and configured_agent and sync.get_agent(configured_agent) or nil
-				if configured and sync.is_visible_agent(configured) then
-					agent = configured.name
-					logger.debug("Send agent selected", {
-						source = "plugin_config_default",
-						agent = agent,
-					})
-				else
-					logger.debug("Send configured agent skipped", {
-						agent = configured_agent,
-						reason = not sync_ok and "sync_unavailable"
-							or (not configured and "not_in_sync" or "not_visible"),
-					})
-				end
-			end
+			local selection = selectors.send_selection(opts)
+			local model = selection.model
+			local agent = selection.agent
+			local variant = selection.variant
 
 			local prompt_message_id = ascending_id("msg")
 			local prompt_part_id = ascending_id("prt")
@@ -784,7 +670,11 @@ function M.send(message, opts)
 					end
 				end
 				if events and events.emit then
-					events.emit("chat_render", { session_id = sid })
+					events.emit("sync_changed", {
+						kind = "message",
+						action = "prompt_response",
+						session_id = sid,
+					})
 				end
 			end
 
@@ -816,7 +706,11 @@ function M.send(message, opts)
 					})
 
 					if events and events.emit then
-						events.emit("chat_render", { session_id = sid })
+						events.emit("sync_changed", {
+							kind = "session_messages",
+							action = reason,
+							session_id = sid,
+						})
 					end
 					if callback then
 						callback()
@@ -833,7 +727,12 @@ function M.send(message, opts)
 					sync.handle_part_updated(part)
 				end
 				if events and events.emit then
-					events.emit("chat_render", { session_id = sid })
+					events.emit("sync_changed", {
+						kind = "message",
+						action = "seeded",
+						session_id = sid,
+						message_id = prompt_message_id,
+					})
 				end
 			end
 
@@ -842,7 +741,10 @@ function M.send(message, opts)
 				session_id = sid,
 				message_id = prompt_message_id,
 			})
-			state.set_status("streaming")
+			session_actions.set_status("streaming", {
+				reason = "send_started",
+				session_id = sid,
+			})
 
 			client.send_message(sid, payload, { timeout = 0 }, function(err, response)
 				if err then
@@ -851,7 +753,10 @@ function M.send(message, opts)
 						error = err.message or err.error or tostring(err),
 					})
 					vim.schedule(function()
-						state.set_status("idle")
+						session_actions.set_status("idle", {
+							reason = "send_failed",
+							session_id = sid,
+						})
 						vim.notify("Failed to send message: " .. tostring(err.message or err.error or err), vim.log.levels.ERROR)
 						chat.add_message("system", "Error: Failed to send message")
 					end)
@@ -872,7 +777,10 @@ function M.send(message, opts)
 					sync_session_messages("prompt_completed")
 					local current = state.get_session()
 					if current.id == sid then
-						state.set_status("idle")
+						session_actions.set_status("idle", {
+							reason = "send_completed",
+							session_id = sid,
+						})
 					end
 				end)
 			end)
@@ -939,7 +847,10 @@ function M.send(message, opts)
 
 				-- Store session info
 				vim.schedule(function()
-					state.set_session(session.id, session.title or "New session")
+					session_actions.set_active(session.id, session.title or "New session", {
+						reason = "send_create_session",
+						preserve_cache = true,
+					})
 					send_with_session(session.id)
 				end)
 			end)
@@ -975,7 +886,10 @@ function M.abort()
 				return
 			end
 
-			state.set_status("idle")
+			session_actions.set_status("idle", {
+				reason = "abort",
+				session_id = session_id,
+			})
 		end)
 	end)
 end
@@ -1008,12 +922,16 @@ function M.clear(opts)
 					vim.notify("Failed to create new session: " .. tostring(err.message or err.error or err), vim.log.levels.ERROR)
 					-- Still clear the UI even if session creation fails
 					chat.clear()
-					state.set_session(nil, nil)
+					session_actions.set_active(nil, nil, {
+						reason = "clear",
+					})
 					return
 				end
 
 				-- Update state with new session
-				state.set_session(session.id, session.title or "New session")
+				session_actions.set_active(session.id, session.title or "New session", {
+					reason = "clear",
+				})
 				
 				-- Clear chat display
 				chat.clear()

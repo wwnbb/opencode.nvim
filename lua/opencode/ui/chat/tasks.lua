@@ -108,7 +108,7 @@ function M.start_task_animation_timer()
 			end
 
 			tick_task_anim_frame()
-			require("opencode.ui.chat").schedule_render()
+			require("opencode.ui.chat.render_coordinator").request({ kind = "task_animation" })
 		end)
 	)
 end

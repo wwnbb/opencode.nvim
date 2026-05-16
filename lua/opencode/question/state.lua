@@ -39,6 +39,8 @@ function M.add_question(request_id, session_id, questions_data, opts)
 	local qstate = {
 		request_id = request_id,
 		session_id = session_id,
+		message_id = opts.message_id,
+		call_id = opts.call_id,
 		questions = questions_data,
 		current_tab = 1,
 		selections = {},
@@ -59,12 +61,7 @@ function M.add_question(request_id, session_id, questions_data, opts)
 
 	active_questions[request_id] = qstate
 
-	-- Emit event for UI
-	local events = require("opencode.events")
-	events.emit("question_pending", {
-		request_id = request_id,
-		questions_count = #questions_data,
-	})
+	return qstate
 end
 
 -- Get a question state by request ID
@@ -83,6 +80,44 @@ function M.get_all_active()
 			table.insert(result, qstate)
 		end
 	end
+	return result
+end
+
+-- Get all questions (regardless of status)
+---@return table Array of question states sorted by timestamp
+function M.get_all()
+	local result = {}
+	for _, qstate in pairs(active_questions) do
+		table.insert(result, qstate)
+	end
+	table.sort(result, function(a, b) return a.timestamp < b.timestamp end)
+	return result
+end
+
+-- Get all questions for a specific messageID (for inline rendering)
+---@param message_id string
+---@return table Array of question states associated with this message
+function M.get_questions_for_message(message_id)
+	local result = {}
+	for _, qstate in pairs(active_questions) do
+		if qstate.message_id == message_id then
+			table.insert(result, qstate)
+		end
+	end
+	table.sort(result, function(a, b) return a.timestamp < b.timestamp end)
+	return result
+end
+
+-- Get all questions without a messageID (orphan questions, rendered at end)
+---@return table Array of question states without associated messages
+function M.get_orphan_questions()
+	local result = {}
+	for _, qstate in pairs(active_questions) do
+		if not qstate.message_id then
+			table.insert(result, qstate)
+		end
+	end
+	table.sort(result, function(a, b) return a.timestamp < b.timestamp end)
 	return result
 end
 
@@ -187,14 +222,6 @@ function M.select_option(request_id, option_index)
 	qstate.selections[tab_index].is_answered = true
 	qstate.selections[tab_index].ready_to_advance = false
 
-	-- Emit update event
-	local events = require("opencode.events")
-	events.emit("question_selection_changed", {
-		request_id = request_id,
-		tab_index = tab_index,
-		selected = { option_index },
-	})
-
 	return true
 end
 
@@ -230,14 +257,6 @@ function M.toggle_multi_select(request_id, option_index)
 	-- Mark as answered if at least one option is selected
 	qstate.selections[tab_index].is_answered = #selected > 0
 	qstate.selections[tab_index].ready_to_advance = false
-
-	-- Emit update event
-	local events = require("opencode.events")
-	events.emit("question_selection_changed", {
-		request_id = request_id,
-		tab_index = tab_index,
-		selected = selected,
-	})
 
 	return true
 end
@@ -285,14 +304,6 @@ function M.move_selection(request_id, direction)
 		qstate.selections[tab_index].ready_to_advance = false
 	end
 
-	-- Emit update event
-	local events = require("opencode.events")
-	events.emit("question_selection_changed", {
-		request_id = request_id,
-		tab_index = tab_index,
-		selected = { new_index },
-	})
-
 	return true
 end
 
@@ -327,13 +338,6 @@ function M.set_tab(request_id, tab_index)
 	end
 
 	qstate.current_tab = tab_index
-
-	-- Emit update event
-	local events = require("opencode.events")
-	events.emit("question_tab_changed", {
-		request_id = request_id,
-		tab_index = tab_index,
-	})
 
 	return true
 end
@@ -439,12 +443,6 @@ function M.set_confirming(request_id)
 	}
 	qstate.current_tab = temp_tab_idx
 	
-	-- Emit event
-	local events = require("opencode.events")
-	events.emit("question_confirming", {
-		request_id = request_id,
-	})
-	
 	return true
 end
 
@@ -538,13 +536,6 @@ function M.mark_answered(request_id, answers)
 	qstate.answers = answers or M.get_answers(request_id)
 	qstate.answered_at = os.time()
 
-	-- Emit event
-	local events = require("opencode.events")
-	events.emit("question_answered", {
-		request_id = request_id,
-		answers = qstate.answers,
-	})
-
 	return true
 end
 
@@ -558,12 +549,6 @@ function M.mark_rejected(request_id)
 
 	qstate.status = "rejected"
 	qstate.rejected_at = os.time()
-
-	-- Emit event
-	local events = require("opencode.events")
-	events.emit("question_rejected", {
-		request_id = request_id,
-	})
 
 	return true
 end
@@ -597,11 +582,12 @@ end
 
 -- Clear all questions (e.g., on session change)
 function M.clear_all()
-	local events = require("opencode.events")
+	local removed = {}
 	for request_id, _ in pairs(active_questions) do
-		events.emit("question_removed", { request_id = request_id })
+		table.insert(removed, request_id)
 	end
 	active_questions = {}
+	return removed
 end
 
 return M

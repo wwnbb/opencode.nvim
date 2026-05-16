@@ -6,6 +6,7 @@ local M = {}
 local Job = require("plenary.job")
 local config = require("opencode.config")
 local state = require("opencode.state")
+local session_actions = require("opencode.session")
 
 -- Pending callbacks queue for lazy initialization
 local pending_callbacks = {}
@@ -273,9 +274,15 @@ local function setup_event_listeners(client)
 				local current_session = state.get_session()
 				if data.sessionID == current_session.id then
 					if data.status == "idle" then
-						state.set_status("idle")
+						session_actions.set_status("idle", {
+							reason = "lifecycle_session_status",
+							session_id = current_session.id,
+						})
 					elseif data.status == "busy" then
-						state.set_status("streaming")
+						session_actions.set_status("streaming", {
+							reason = "lifecycle_session_status",
+							session_id = current_session.id,
+						})
 					end
 				end
 			end)

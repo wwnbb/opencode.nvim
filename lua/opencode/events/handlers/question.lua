@@ -41,7 +41,20 @@ function M.setup(events)
 
 			-- Store question state (allow questions from subagent/child sessions)
 			question_state.add_question(request_id, session_id, questions, {
+				message_id = message_id,
 				timestamp = timestamp,
+			})
+			events.emit("question_pending", {
+				request_id = request_id,
+				questions_count = #questions,
+				session_id = session_id,
+				message_id = message_id,
+			})
+			events.emit("interaction_changed", {
+				kind = "question",
+				action = "pending",
+				id = request_id,
+				session_id = session_id,
 			})
 
 			-- Stop the spinner so user can interact with the question
@@ -49,16 +62,6 @@ function M.setup(events)
 			if spinner_ok and spinner.is_active() then
 				spinner.stop()
 				logger.debug("Stopped spinner for question interaction")
-			end
-
-			-- Add to chat as a special message
-			local chat_ok, chat = pcall(require, "opencode.ui.chat")
-			if chat_ok and chat.add_question_message then
-				chat.add_question_message(request_id, questions, "pending", {
-					message_id = message_id,
-					source_session_id = session_id,
-					timestamp = timestamp,
-				})
 			end
 
 			logger.info("Question added", { request_id = request_id:sub(1, 10), count = #questions })
@@ -81,12 +84,15 @@ function M.setup(events)
 
 			-- Mark as answered
 			question_state.mark_answered(request_id, data.answers)
-
-			-- Update chat UI
-			local chat_ok, chat = pcall(require, "opencode.ui.chat")
-			if chat_ok and chat.update_question_status then
-				chat.update_question_status(request_id, "answered", data.answers)
-			end
+			events.emit("question_answered", {
+				request_id = request_id,
+				answers = data.answers,
+			})
+			events.emit("interaction_changed", {
+				kind = "question",
+				action = "answered",
+				id = request_id,
+			})
 
 			logger.debug("Question answered", { request_id = request_id:sub(1, 10) })
 		end)
@@ -108,23 +114,25 @@ function M.setup(events)
 
 			-- Mark as rejected
 			question_state.mark_rejected(request_id)
-
-			-- Update chat UI
-			local chat_ok, chat = pcall(require, "opencode.ui.chat")
-			if chat_ok and chat.update_question_status then
-				chat.update_question_status(request_id, "rejected")
-			end
+			events.emit("interaction_changed", {
+				kind = "question",
+				action = "rejected",
+				id = request_id,
+			})
 
 			logger.debug("Question rejected", { request_id = request_id:sub(1, 10) })
 		end)
 	end)
 
-	-- Clear questions on session change (skip when navigating into child sessions)
-	events.on("session_change", function()
-		local chat_ok, chat = pcall(require, "opencode.ui.chat")
-		local is_navigating = chat_ok and chat.is_navigating and chat.is_navigating()
-		if not is_navigating then
-			question_state.clear_all()
+	-- Clear questions on session change unless the session boundary marks this
+	-- as a cache-preserving navigation.
+	events.on("session_change", function(data)
+		if data and data.preserve_cache then
+			return
+		end
+		local removed = question_state.clear_all()
+		for _, request_id in ipairs(removed or {}) do
+			events.emit("question_removed", { request_id = request_id })
 		end
 	end)
 end
