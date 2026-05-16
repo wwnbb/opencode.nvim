@@ -138,7 +138,7 @@ end
 
 -- Register default slash commands
 function M.register_defaults()
-	local opencode = require("opencode")
+	local actions = require("opencode.actions")
 	local lifecycle = require("opencode.lifecycle")
 	local state = require("opencode.state")
 	
@@ -161,7 +161,7 @@ function M.register_defaults()
 		description = "Start a new session",
 		category = "session",
 		handler = function()
-			opencode.clear()
+			actions.clear()
 		end,
 	})
 	
@@ -263,12 +263,11 @@ function M.register_defaults()
 				return nil
 			end
 
-			local function run_skills_via_tool()
-				local joined = table.concat(names, ", ")
-				local opencode = require("opencode")
-				opencode.send("load_skill [" .. joined .. "]")
-				vim.notify("Requested skills via tool: " .. joined, vim.log.levels.INFO)
-			end
+	local function run_skills_via_tool()
+		local joined = table.concat(names, ", ")
+		actions.send("load_skill [" .. joined .. "]")
+		vim.notify("Requested skills via tool: " .. joined, vim.log.levels.INFO)
+	end
 
 			lifecycle.ensure_connected(function()
 				local client = require("opencode.client")

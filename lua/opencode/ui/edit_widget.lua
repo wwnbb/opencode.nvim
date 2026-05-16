@@ -5,6 +5,7 @@ local M = {}
 
 local widget_base = require("opencode.ui.widget_base")
 local render = require("opencode.ui.chat.render")
+local panel = require("opencode.ui.panel")
 local syntax = require("opencode.ui.syntax")
 
 local PANEL_PREFIX = "▏  "
@@ -22,8 +23,7 @@ local icons = {
 ---@param name string
 ---@return table
 local function get_hl(name)
-	local ok, value = pcall(vim.api.nvim_get_hl, 0, { name = name, link = false })
-	return ok and value or {}
+	return panel.get_hl(name)
 end
 
 ---@param name string
@@ -31,25 +31,7 @@ end
 ---@param fallback string|nil
 ---@param extra_opts table|nil
 local function set_panel_hl(name, fg_source, fallback, extra_opts)
-	local cursor = get_hl("CursorLine")
-	local fg_hl = get_hl(fg_source)
-	local fallback_hl = fallback and get_hl(fallback) or {}
-	local opts = {}
-
-	if fg_hl.fg or fallback_hl.fg then
-		opts.fg = fg_hl.fg or fallback_hl.fg
-	end
-	if cursor.bg then
-		opts.bg = cursor.bg
-	end
-	if extra_opts then
-		opts = vim.tbl_extend("force", opts, extra_opts)
-	end
-	if next(opts) == nil then
-		opts.link = fallback or fg_source
-	end
-
-	vim.api.nvim_set_hl(0, name, opts)
+	panel.set_hl(name, fg_source, fallback, extra_opts)
 end
 
 local function ensure_highlights()
@@ -95,7 +77,7 @@ end
 ---@return number line_index, string line
 ---@return table[] rows
 local function add_panel_line(result, text, hl_group)
-	return render.add_panel_line(result, text, hl_group, {
+	return panel.add_line(result, text, hl_group, {
 		prefix = PANEL_PREFIX,
 		prefix_hl_group = PANEL_BORDER_HL,
 	})
@@ -103,7 +85,7 @@ end
 
 ---@param result table
 local function add_panel_blank(result)
-	render.add_panel_blank(result, "OpenCodeEditOutput", {
+	panel.add_blank(result, "OpenCodeEditOutput", {
 		prefix = PANEL_EMPTY,
 		prefix_hl_group = PANEL_BORDER_HL,
 	})

@@ -5,7 +5,9 @@ local M = {}
 local cs = require("opencode.ui.chat.state")
 local state = cs.state
 local render = require("opencode.ui.chat.render")
+local panel = require("opencode.ui.panel")
 local syntax = require("opencode.ui.syntax")
+local text_util = require("opencode.util.text")
 
 local MAX_COLLAPSED_OUTPUT_LINES = 10
 local PANEL_PREFIX = "▏  "
@@ -14,25 +16,11 @@ local PANEL_BORDER_HL = "OpenCodeBashMuted"
 local BASH_ANIM_FRAMES = { "|", "/", "-", "\\" }
 
 local function get_hl(name)
-	local ok, value = pcall(vim.api.nvim_get_hl, 0, { name = name, link = false })
-	return ok and value or {}
+	return panel.get_hl(name)
 end
 
 local function set_panel_hl(name, fg_source, fallback)
-	local cursor = get_hl("CursorLine")
-	local fg_hl = get_hl(fg_source)
-	local fallback_hl = fallback and get_hl(fallback) or {}
-	local opts = {}
-	if fg_hl.fg or fallback_hl.fg then
-		opts.fg = fg_hl.fg or fallback_hl.fg
-	end
-	if cursor.bg then
-		opts.bg = cursor.bg
-	end
-	if next(opts) == nil then
-		opts.link = fallback or fg_source
-	end
-	vim.api.nvim_set_hl(0, name, opts)
+	panel.set_hl(name, fg_source, fallback)
 end
 
 local function ensure_highlights()
@@ -46,7 +34,7 @@ end
 ---@param text string
 ---@param hl_group string
 local function add_panel_line(result, text, hl_group)
-	return render.add_panel_line(result, text, hl_group, {
+	return panel.add_line(result, text, hl_group, {
 		prefix = PANEL_PREFIX,
 		prefix_hl_group = PANEL_BORDER_HL,
 	})
@@ -59,7 +47,7 @@ end
 ---@return string line
 ---@return table[] rows
 local function add_panel_raw_line(result, text, hl_group)
-	return render.add_panel_raw_line(result, text, hl_group, {
+	return panel.add_raw_line(result, text, hl_group, {
 		prefix = PANEL_PREFIX,
 		prefix_hl_group = PANEL_BORDER_HL,
 	})
@@ -67,7 +55,7 @@ end
 
 ---@param result table
 local function add_panel_blank(result)
-	render.add_panel_blank(result, "OpenCodeBashOutput", {
+	panel.add_blank(result, "OpenCodeBashOutput", {
 		prefix = PANEL_BLANK_PREFIX,
 		prefix_hl_group = PANEL_BORDER_HL,
 	})
@@ -76,7 +64,7 @@ end
 ---@param value any
 ---@return boolean
 local function is_nil(value)
-	return value == nil or value == vim.NIL
+	return text_util.is_nil(value)
 end
 
 ---@param value any
@@ -110,47 +98,31 @@ end
 ---@param text string
 ---@return string
 local function strip_ansi(text)
-	local esc = string.char(27)
-	local bel = string.char(7)
-	text = text:gsub(esc .. "%][^" .. bel .. "]*" .. bel, "")
-	text = text:gsub(esc .. "%[[0-?]*[ -/]*[@-~]", "")
-	return text
+	return text_util.strip_ansi(text)
 end
 
 ---@param value any
 ---@return string
 local function normalize_text(value)
-	return strip_ansi(stringify(value)):gsub("\r\n", "\n"):gsub("\r", "\n")
+	return text_util.normalize_text(value, stringify)
 end
 
 ---@param ... any
 ---@return string
 local function first_nonempty_text(...)
-	for i = 1, select("#", ...) do
-		local text = normalize_text(select(i, ...))
-		if text ~= "" then
-			return text
-		end
-	end
-	return ""
+	return text_util.first_nonempty_text(stringify, ...)
 end
 
 ---@param ... any
 ---@return string
 local function first_nonempty_trimmed_text(...)
-	for i = 1, select("#", ...) do
-		local text = vim.trim(normalize_text(select(i, ...)))
-		if text ~= "" then
-			return text
-		end
-	end
-	return ""
+	return text_util.first_nonempty_trimmed_text(stringify, ...)
 end
 
 ---@param text string
 ---@return string
 local function trim_edge_newlines(text)
-	return (text or ""):gsub("^\n+", ""):gsub("\n+$", "")
+	return text_util.trim_edge_newlines(text)
 end
 
 ---@param lines string[]
