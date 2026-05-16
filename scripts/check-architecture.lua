@@ -48,6 +48,7 @@ for _, path in ipairs(files) do
 end
 
 local missing = {}
+local layering_violations = {}
 local adjacency = {}
 for mod, _ in pairs(modules) do
 	adjacency[mod] = {}
@@ -68,14 +69,45 @@ end
 
 for _, path in ipairs(files) do
 	local source = path:match("^lua/") and module_name(path) or nil
+	local content = read_file(path)
 	local line_no = 0
-	for line in (read_file(path) .. "\n"):gmatch("(.-)\n") do
+	for line in (content .. "\n"):gmatch("(.-)\n") do
 		line_no = line_no + 1
 		for req in line:gmatch("require%s*%(?%s*[\"']([^\"']+)[\"']") do
 			add_require(source, req, path, line_no)
 		end
 		for req in line:gmatch("pcall%s*%(%s*require%s*,%s*[\"']([^\"']+)[\"']") do
 			add_require(source, req, path, line_no)
+		end
+	end
+end
+
+local store_modules = {
+	["lua/opencode/state.lua"] = true,
+	["lua/opencode/sync.lua"] = true,
+	["lua/opencode/local.lua"] = true,
+	["lua/opencode/permission/state.lua"] = true,
+	["lua/opencode/question/state.lua"] = true,
+	["lua/opencode/edit/state.lua"] = true,
+}
+
+for _, path in ipairs(files) do
+	local content = read_file(path)
+	if store_modules[path] then
+		for line_no, line in ipairs(vim.split(content, "\n", { plain = true })) do
+			local requires_events = line:match("require%s*%(?%s*[\"']opencode%.events[\"']")
+			local requires_ui = line:match("require%s*%(?%s*[\"']opencode%.ui")
+			if requires_events or requires_ui then
+				table.insert(layering_violations, string.format("%s:%d store must not require events or UI", path, line_no))
+			end
+		end
+	end
+
+	if path ~= "lua/opencode/ui/chat/render_coordinator.lua" then
+		for line_no, line in ipairs(vim.split(content, "\n", { plain = true })) do
+			if line:match("emit%s*%(%s*[\"']chat_render[\"']") then
+				table.insert(layering_violations, string.format("%s:%d chat_render must go through render_coordinator", path, line_no))
+			end
 		end
 	end
 end
@@ -107,6 +139,7 @@ for mod, _ in pairs(modules) do
 	end
 end
 table.sort(missing)
+table.sort(layering_violations)
 table.sort(unreachable)
 
 local failed = false
@@ -114,6 +147,14 @@ if #missing > 0 then
 	failed = true
 	print("Missing internal requires:")
 	for _, item in ipairs(missing) do
+		print("  " .. item)
+	end
+end
+
+if #layering_violations > 0 then
+	failed = true
+	print("Layering violations:")
+	for _, item in ipairs(layering_violations) do
 		print("  " .. item)
 	end
 end

@@ -338,6 +338,19 @@ function M.setup(events)
 						review_mode = review_mode,
 						timestamp = timestamp,
 					})
+					events.emit("edit_pending", {
+						permission_id = permission_id,
+						file_count = #nd_files,
+						session_id = edit_session_id,
+						message_id = message_id,
+						call_id = call_id,
+					})
+					events.emit("interaction_changed", {
+						kind = "edit",
+						action = "pending",
+						id = permission_id,
+						session_id = edit_session_id,
+					})
 
 					-- Stop spinner so user can interact
 					local spinner_ok, perm_spinner = pcall(require, "opencode.ui.spinner")
@@ -345,11 +358,6 @@ function M.setup(events)
 						perm_spinner.stop()
 					end
 
-					-- Add to chat as edit widget
-					local chat_ok, chat = pcall(require, "opencode.ui.chat")
-					if chat_ok and chat.add_edit_message then
-						chat.add_edit_message(permission_id, edit_state_mod.get_edit(permission_id), "pending")
-					end
 					return
 				else
 					-- Non-edit permission: handle interactively via permission state + chat widget
@@ -396,18 +404,25 @@ function M.setup(events)
 						call_id = call_id,
 						timestamp = timestamp,
 					})
+					events.emit("permission_pending", {
+						permission_id = permission_id,
+						permission_type = permission_type,
+						session_id = permission_session_id,
+						message_id = message_id,
+						call_id = call_id,
+					})
+					events.emit("interaction_changed", {
+						kind = "permission",
+						action = "pending",
+						id = permission_id,
+						session_id = permission_session_id,
+					})
 
 					-- Stop spinner so user can interact
 					local spinner_ok2, perm_spinner = pcall(require, "opencode.ui.spinner")
 					if spinner_ok2 and perm_spinner.is_active() then
 						perm_spinner.stop()
 						logger.debug("Stopped spinner for permission interaction")
-					end
-
-					-- Add to chat as a special message
-					local chat_ok2, chat2 = pcall(require, "opencode.ui.chat")
-					if chat_ok2 and chat2.add_permission_message then
-						chat2.add_permission_message(permission_id, perm_state_mod.get_permission(permission_id), "pending")
 					end
 
 					logger.info("Permission request added", {
@@ -504,20 +519,25 @@ function M.setup(events)
 	local app_state = require("opencode.state")
 	local logger = require("opencode.logger")
 
-	-- Clear permissions and edits on session change (skip when navigating into child sessions)
-	events.on("session_change", function()
-		local chat_ok, chat = pcall(require, "opencode.ui.chat")
-		local is_navigating = chat_ok and chat.is_navigating and chat.is_navigating()
-		if is_navigating then
+	-- Clear permissions and edits on session change unless the session boundary
+	-- marks this as a cache-preserving navigation.
+	events.on("session_change", function(data)
+		if data and data.preserve_cache then
 			return
 		end
 		local perm_state_ok, perm_state = pcall(require, "opencode.permission.state")
 		if perm_state_ok then
-			perm_state.clear_all()
+			local removed = perm_state.clear_all()
+			for _, permission_id in ipairs(removed or {}) do
+				events.emit("permission_removed", { permission_id = permission_id })
+			end
 		end
 		local edit_state_ok, edit_state_mod = pcall(require, "opencode.edit.state")
 		if edit_state_ok then
-			edit_state_mod.clear_all()
+			local removed = edit_state_mod.clear_all()
+			for _, permission_id in ipairs(removed or {}) do
+				events.emit("edit_removed", { permission_id = permission_id })
+			end
 		end
 	end)
 
@@ -543,14 +563,16 @@ function M.setup(events)
 			if perm_state_ok and perm_state_mod.has_permission and perm_state_mod.has_permission(permission_id) then
 				if reply == "reject" then
 					changed = perm_state_mod.mark_rejected(permission_id) or changed
+					events.emit("permission_rejected", {
+						permission_id = permission_id,
+					})
 				else
 					changed = perm_state_mod.mark_approved(permission_id, reply == "always" and "always" or "once")
 						or changed
-				end
-
-				local chat_ok, chat = pcall(require, "opencode.ui.chat")
-				if chat_ok and chat.update_permission_status then
-					chat.update_permission_status(permission_id, reply == "reject" and "rejected" or "approved")
+					events.emit("permission_approved", {
+						permission_id = permission_id,
+						reply = reply == "always" and "always" or "once",
+					})
 				end
 			end
 
@@ -558,11 +580,22 @@ function M.setup(events)
 			if edit_state_ok and edit_state_mod.get_edit and edit_state_mod.get_edit(permission_id) then
 				edit_state_mod.mark_sent(permission_id)
 				changed = true
+				events.emit("interaction_changed", {
+					kind = "edit",
+					action = "sent",
+					id = permission_id,
+					session_id = data.sessionID,
+				})
 			end
 
 			if changed then
 				local session = app_state.get_session()
-				events.emit("chat_render", { session_id = data.sessionID or (session and session.id) })
+				events.emit("interaction_changed", {
+					kind = "permission",
+					action = reply == "reject" and "rejected" or "approved",
+					id = permission_id,
+					session_id = data.sessionID or (session and session.id),
+				})
 				logger.debug("Permission reply handled", {
 					permission_id = permission_id,
 					reply = reply,

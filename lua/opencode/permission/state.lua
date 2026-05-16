@@ -52,11 +52,7 @@ function M.add_permission(permission_id, session_id, permission_type, opts)
 
 	active_permissions[permission_id] = pstate
 
-	local events = require("opencode.events")
-	events.emit("permission_pending", {
-		permission_id = permission_id,
-		permission_type = permission_type,
-	})
+	return pstate
 end
 
 -- Get a permission state by ID
@@ -134,12 +130,6 @@ function M.select_option(permission_id, option_index)
 
 	pstate.selected_option = option_index
 
-	local events = require("opencode.events")
-	events.emit("permission_selection_changed", {
-		permission_id = permission_id,
-		selected = option_index,
-	})
-
 	return true
 end
 
@@ -177,12 +167,6 @@ function M.move_selection(permission_id, direction)
 
 	pstate.selected_option = new_index
 
-	local events = require("opencode.events")
-	events.emit("permission_selection_changed", {
-		permission_id = permission_id,
-		selected = new_index,
-	})
-
 	return true
 end
 
@@ -200,12 +184,6 @@ function M.mark_approved(permission_id, reply)
 	pstate.reply = reply
 	pstate.resolved_at = os.time()
 
-	local events = require("opencode.events")
-	events.emit("permission_approved", {
-		permission_id = permission_id,
-		reply = reply,
-	})
-
 	return true
 end
 
@@ -222,11 +200,6 @@ function M.mark_rejected(permission_id)
 	pstate.reply = "reject"
 	pstate.resolved_at = os.time()
 
-	local events = require("opencode.events")
-	events.emit("permission_rejected", {
-		permission_id = permission_id,
-	})
-
 	return true
 end
 
@@ -239,11 +212,12 @@ end
 
 -- Clear all permissions (e.g., on session change)
 function M.clear_all()
-	local events = require("opencode.events")
+	local removed = {}
 	for permission_id, _ in pairs(active_permissions) do
-		events.emit("permission_removed", { permission_id = permission_id })
+		table.insert(removed, permission_id)
 	end
 	active_permissions = {}
+	return removed
 end
 
 return M

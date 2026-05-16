@@ -10,41 +10,24 @@ local question_widget = require("opencode.ui.question_widget")
 local widget_base = require("opencode.ui.widget_base")
 local question_state = require("opencode.question.state")
 local widget_support = require("opencode.ui.chat.widget_support")
+local render_coordinator = require("opencode.ui.chat.render_coordinator")
 
 local function schedule_render()
-	require("opencode.ui.chat").schedule_render()
+	render_coordinator.request({ kind = "question" })
+end
+
+---@param event_type string
+---@param data table
+local function emit(event_type, data)
+	local ok, events = pcall(require, "opencode.events")
+	if ok and events and type(events.emit) == "function" then
+		events.emit(event_type, data)
+	end
 end
 
 -- ─── Pending queue ────────────────────────────────────────────────────────────
 
-function M.process_pending_questions()
-	if #state.pending_questions == 0 then
-		return
-	end
-
-	local logger = require("opencode.logger")
-	logger.debug("Processing pending questions", { count = #state.pending_questions })
-
-	local pending = state.pending_questions
-	state.pending_questions = {}
-
-	for _, pq in ipairs(pending) do
-		local qstate = question_state.get_question(pq.request_id)
-		if qstate and qstate.status == "pending" then
-			M.add_question_message(pq.request_id, pq.questions, pq.status, {
-				message_id = pq.message_id,
-				source_session_id = pq.source_session_id,
-				timestamp = pq.timestamp,
-			})
-			logger.debug("Displayed pending question", { request_id = pq.request_id:sub(1, 10) })
-		else
-			logger.debug("Skipping stale pending question", {
-				request_id = pq.request_id:sub(1, 10),
-				reason = qstate and qstate.status or "not found",
-			})
-		end
-	end
-end
+function M.process_pending_questions() end
 
 -- ─── Add / update ─────────────────────────────────────────────────────────────
 
@@ -56,7 +39,6 @@ function M.add_question_message(request_id, questions, status, opts)
 	local logger = require("opencode.logger")
 	opts = opts or {}
 	local qstate = question_state.get_question(request_id)
-	local message_timestamp = opts.timestamp or (qstate and qstate.timestamp) or os.time()
 
 	logger.debug("add_question_message called", {
 		request_id = request_id:sub(1, 10),
@@ -65,60 +47,9 @@ function M.add_question_message(request_id, questions, status, opts)
 		visible = state.visible,
 	})
 
-	if not state.bufnr or not vim.api.nvim_buf_is_valid(state.bufnr) or not state.visible then
-		table.insert(state.pending_questions, {
-			request_id = request_id,
-			questions = questions,
-			status = status,
-			message_id = opts.message_id,
-			source_session_id = opts.source_session_id,
-			timestamp = message_timestamp,
-		})
-		logger.debug("Question queued (chat not visible)", {
-			request_id = request_id:sub(1, 10),
-			pending_count = #state.pending_questions,
-		})
-		return
-	end
-
 	if not qstate then
 		logger.warn("Question state not found", { request_id = request_id:sub(1, 10) })
 		return
-	end
-
-	local already_exists = false
-	for _, msg in ipairs(state.messages) do
-		if msg.type == "question" and msg.request_id == request_id then
-			already_exists = true
-			msg.questions = questions
-			msg.status = status
-			msg.message_id = opts.message_id or msg.message_id
-			msg.source_session_id = opts.source_session_id or qstate.session_id or msg.source_session_id
-			break
-		end
-	end
-
-	if not already_exists then
-		table.insert(state.messages, {
-			role = "system",
-			type = "question",
-			request_id = request_id,
-			questions = questions,
-			status = status,
-			timestamp = message_timestamp,
-			id = "question_" .. request_id,
-			message_id = opts.message_id,
-			source_session_id = opts.source_session_id or qstate.session_id,
-		})
-		logger.debug("Question added to state.messages", {
-			request_id = request_id:sub(1, 10),
-			status = status,
-		})
-	else
-		logger.debug("Question already in state.messages, updated status", {
-			request_id = request_id:sub(1, 10),
-			status = status,
-		})
 	end
 
 	widget_support.request_focus("question", request_id, status)
@@ -133,23 +64,6 @@ end
 ---@param answers? table
 function M.update_question_status(request_id, status, answers)
 	local logger = require("opencode.logger")
-
-	local found = false
-	for _, msg in ipairs(state.messages) do
-		if msg.type == "question" and msg.request_id == request_id then
-			msg.status = status
-			msg.answers = answers
-			found = true
-			break
-		end
-	end
-
-	if not found then
-		logger.debug("update_question_status: question not found in state.messages", {
-			request_id = request_id:sub(1, 10),
-		})
-		return
-	end
 
 	logger.debug("update_question_status: triggering re-render", {
 		request_id = request_id:sub(1, 10),
@@ -192,13 +106,8 @@ end
 ---@param request_id string
 ---@return table|nil questions
 local function get_question_payload(request_id)
-	for _, msg in ipairs(state.messages) do
-		if msg.type == "question" and msg.request_id == request_id then
-			return msg.questions
-		end
-	end
-
-	return nil
+	local qstate = question_state.get_question(request_id)
+	return qstate and qstate.questions or nil
 end
 
 ---@return string|nil request_id
@@ -244,6 +153,16 @@ function M.sync_selected_option_from_cursor()
 		return request_id, false
 	end
 
+	emit("question_selection_changed", {
+		request_id = request_id,
+		tab_index = qstate.current_tab,
+		selected = { option_index },
+	})
+	emit("interaction_changed", {
+		kind = "question",
+		action = "selection_changed",
+		id = request_id,
+	})
 	M.rerender_question(request_id)
 	return request_id, true
 end
@@ -327,6 +246,15 @@ function M.submit_question_answers(request_id)
 				return
 			end
 			question_state.mark_answered(request_id, answers)
+			emit("question_answered", {
+				request_id = request_id,
+				answers = answers,
+			})
+			emit("interaction_changed", {
+				kind = "question",
+				action = "answered",
+				id = request_id,
+			})
 			M.update_question_status(request_id, "answered", answers)
 		end)
 	end)
@@ -347,6 +275,10 @@ function M.handle_question_next_tab(request_id)
 	end
 
 	question_state.set_tab(request_id, next_tab)
+	emit("question_tab_changed", {
+		request_id = request_id,
+		tab_index = next_tab,
+	})
 	M.rerender_question(request_id)
 end
 
@@ -363,6 +295,10 @@ function M.handle_question_prev_tab(request_id)
 	end
 
 	question_state.set_tab(request_id, prev_tab)
+	emit("question_tab_changed", {
+		request_id = request_id,
+		tab_index = prev_tab,
+	})
 	M.rerender_question(request_id)
 end
 
@@ -452,6 +388,16 @@ function M.handle_question_toggle(request_id)
 	local current_selection = question_state.get_current_selection(request_id)
 	local current_idx = current_selection and current_selection[1] or 1
 	question_state.toggle_multi_select(request_id, current_idx)
+	emit("question_selection_changed", {
+		request_id = request_id,
+		tab_index = qstate.current_tab,
+		selected = question_state.get_current_selection(request_id),
+	})
+	emit("interaction_changed", {
+		kind = "question",
+		action = "selection_changed",
+		id = request_id,
+	})
 	M.rerender_question(request_id)
 end
 
@@ -491,12 +437,12 @@ end
 
 ---@return number
 function M.get_pending_question_count()
-	return #state.pending_questions
+	return #question_state.get_all_active()
 end
 
 ---@return boolean
 function M.has_pending_questions()
-	return #state.pending_questions > 0
+	return #question_state.get_all_active() > 0
 end
 
 return M

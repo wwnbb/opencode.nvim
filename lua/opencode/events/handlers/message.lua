@@ -2,6 +2,7 @@ local M = {}
 
 function M.setup(events)
 	local state = require("opencode.state")
+	local session_actions = require("opencode.session")
 	local sync = require("opencode.sync")
 	local logger = require("opencode.logger")
 
@@ -33,11 +34,6 @@ function M.setup(events)
 					session_id = session_id,
 					todos = todos or {},
 				})
-
-				local current_session = state.get_session()
-				if current_session.id == session_id then
-					events.emit("chat_render", { session_id = session_id })
-				end
 			end)
 		end)
 	end
@@ -89,7 +85,13 @@ function M.setup(events)
 	---@param current_session table
 	local function emit_part_events(part, current_session)
 		if part.type == "text" then
-			events.emit("chat_render", { session_id = current_session.id })
+			events.emit("sync_changed", {
+				kind = "part",
+				action = "updated",
+				session_id = current_session.id,
+				message_id = part.messageID,
+				part_id = part.id,
+			})
 			return
 		end
 
@@ -99,7 +101,13 @@ function M.setup(events)
 				part_id = part.id,
 				text = part.text,
 			})
-			events.emit("chat_render", { session_id = current_session.id })
+			events.emit("sync_changed", {
+				kind = "part",
+				action = "updated",
+				session_id = current_session.id,
+				message_id = part.messageID,
+				part_id = part.id,
+			})
 			return
 		end
 
@@ -116,7 +124,13 @@ function M.setup(events)
 					error = tool_state.status == "error" and tool_state.error or nil,
 				})
 			end
-			events.emit("chat_render", { session_id = current_session.id })
+			events.emit("sync_changed", {
+				kind = "part",
+				action = "updated",
+				session_id = current_session.id,
+				message_id = part.messageID,
+				part_id = part.id,
+			})
 		end
 	end
 
@@ -159,17 +173,12 @@ function M.setup(events)
 			-- Note: User messages now come from the server (not added locally)
 			-- so we process them like any other message to trigger re-render
 
-			-- Update status based on message state
-			-- Only set "streaming" here; "idle" is determined by session.status events
-			-- (the backend may set time.completed on each tool call during streaming)
-			if info.role == "assistant" then
-				if not (info.time and info.time.completed) then
-					state.set_status("streaming")
-				end
-			end
-
-			-- Notify chat UI to re-render
-			events.emit("chat_render", { session_id = current_session.id })
+			events.emit("sync_changed", {
+				kind = "message",
+				action = "updated",
+				session_id = current_session.id,
+				message_id = info.id,
+			})
 		end)
 	end)
 
@@ -181,7 +190,12 @@ function M.setup(events)
 
 				local current_session = state.get_session()
 				if current_session.id == data.sessionID then
-					events.emit("chat_render", { session_id = current_session.id })
+					events.emit("sync_changed", {
+						kind = "message",
+						action = "removed",
+						session_id = current_session.id,
+						message_id = data.messageID,
+					})
 				end
 			end
 		end)
@@ -298,7 +312,13 @@ function M.setup(events)
 				sync.handle_part_removed(data.messageID, data.partID)
 
 				local current_session = state.get_session()
-				events.emit("chat_render", { session_id = current_session.id })
+				events.emit("sync_changed", {
+					kind = "part",
+					action = "removed",
+					session_id = current_session.id,
+					message_id = data.messageID,
+					part_id = data.partID,
+				})
 			end
 		end)
 	end)
@@ -334,7 +354,6 @@ function M.setup(events)
 				sessionID = data.sessionID,
 				count = #todos,
 			})
-			events.emit("chat_render", { session_id = current_session.id })
 		end)
 	end)
 
@@ -361,8 +380,15 @@ function M.setup(events)
 				return
 			end
 
-			state.set_session(session_id, title)
-			events.emit("chat_render", { session_id = session_id })
+			session_actions.set_active(session_id, title, {
+				reason = "session_updated",
+				preserve_cache = true,
+			})
+			events.emit("sync_changed", {
+				kind = "session",
+				action = "updated",
+				session_id = session_id,
+			})
 		end)
 	end)
 
@@ -443,9 +469,15 @@ function M.setup(events)
 
 			local status_type = data.status and data.status.type or data.status
 			if status_type == "idle" then
-				state.set_status("idle")
+				session_actions.set_status("idle", {
+					reason = "session_status",
+					session_id = current_session.id,
+				})
 			elseif status_type == "busy" or status_type == "streaming" then
-				state.set_status("streaming")
+				session_actions.set_status("streaming", {
+					reason = "session_status",
+					session_id = current_session.id,
+				})
 			end
 
 			-- Manage retry countdown timer (re-render every second for countdown)
@@ -467,7 +499,11 @@ function M.setup(events)
 								end
 								return
 							end
-							events.emit("chat_render", { session_id = cs.id })
+							events.emit("sync_changed", {
+								kind = "session_status",
+								action = "retry_tick",
+								session_id = cs.id,
+							})
 						end)
 					)
 				end
@@ -479,8 +515,11 @@ function M.setup(events)
 				end
 			end
 
-			-- Trigger chat re-render so status (e.g. retry) is shown in the buffer
-			events.emit("chat_render", { session_id = current_session.id })
+			events.emit("sync_changed", {
+				kind = "session_status",
+				action = "updated",
+				session_id = current_session.id,
+			})
 		end)
 	end)
 
@@ -496,13 +535,20 @@ function M.setup(events)
 				return
 			end
 
-			state.set_status("idle")
+			session_actions.set_status("idle", {
+				reason = "session_error",
+				session_id = current_session.id,
+			})
 			if is_session_abort_error(data and data.error) then
 				logger.debug("Session abort ignored", {
 					sessionID = data and data.sessionID or nil,
 				})
 				if current_session.id then
-					events.emit("chat_render", { session_id = current_session.id })
+					events.emit("sync_changed", {
+						kind = "session_error",
+						action = "aborted",
+						session_id = current_session.id,
+					})
 				end
 				return
 			end
@@ -514,13 +560,17 @@ function M.setup(events)
 			})
 			vim.notify("OpenCode session error: " .. message, vim.log.levels.ERROR)
 
-			local chat_ok, chat = pcall(require, "opencode.ui.chat")
-			if chat_ok and chat.add_message then
-				chat.add_message("system", "OpenCode session error: " .. message)
-			end
-
 			if current_session.id then
-				events.emit("chat_render", { session_id = current_session.id })
+				events.emit("local_notice", {
+					role = "system",
+					content = "OpenCode session error: " .. message,
+					session_id = current_session.id,
+				})
+				events.emit("sync_changed", {
+					kind = "session_error",
+					action = "error",
+					session_id = current_session.id,
+				})
 			end
 		end)
 	end)
@@ -534,15 +584,11 @@ function M.setup(events)
 		fetch_session_todos(current_session and current_session.id, "connected")
 	end)
 
-	-- Clear sync store on session change (skip when navigating into child sessions)
+	-- Clear sync store only for explicit reset/disconnect flows.
 	events.on("session_change", function(data)
-		local chat_ok, chat = pcall(require, "opencode.ui.chat")
-		local is_navigating = chat_ok and chat.is_navigating and chat.is_navigating()
-		if is_navigating then
-			return
-		end
 		local sync = require("opencode.sync")
-		if data and data.previous_id then
+		local reason = data and data.reason
+		if data and data.previous_id and (reason == "clear" or reason == "disconnect") then
 			sync.clear_session(data.previous_id)
 		end
 	end)

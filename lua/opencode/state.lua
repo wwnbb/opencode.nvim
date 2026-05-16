@@ -199,6 +199,17 @@ function M.set_model(id, name, provider)
 end
 
 function M.get_model()
+	local ok, selectors = pcall(require, "opencode.selectors")
+	if ok and selectors.current_model then
+		local model = selectors.current_model()
+		if type(model) == "table" and ((model.modelID and model.modelID ~= "") or (model.name and model.name ~= "")) then
+			return {
+				id = model.modelID or model.id,
+				name = model.name or model.modelID or model.id,
+				provider = model.providerID or model.provider,
+			}
+		end
+	end
 	return vim.deepcopy(state.model)
 end
 
@@ -214,6 +225,16 @@ function M.set_agent(id, name)
 end
 
 function M.get_agent()
+	local ok, selectors = pcall(require, "opencode.selectors")
+	if ok and selectors.current_agent then
+		local agent = selectors.current_agent()
+		if type(agent) == "table" and ((agent.id and agent.id ~= "") or (agent.name and agent.name ~= "")) then
+			return {
+				id = agent.id or agent.name,
+				name = agent.name or agent.id,
+			}
+		end
+	end
 	return vim.deepcopy(state.agent)
 end
 
@@ -266,14 +287,34 @@ function M.add_pending_change(file_path, change_data)
 end
 
 function M.get_pending_change(file_path)
+	local ok, changes = pcall(require, "opencode.artifact.changes")
+	if ok and changes.get_all then
+		for _, change in ipairs(changes.get_all()) do
+			if change.filepath == file_path then
+				return change
+			end
+		end
+	end
 	return state.pending_changes.files[file_path] and vim.deepcopy(state.pending_changes.files[file_path]) or nil
 end
 
 function M.get_all_pending_changes()
+	local ok, changes = pcall(require, "opencode.artifact.changes")
+	if ok and changes.get_pending then
+		local result = {}
+		for _, change in ipairs(changes.get_pending()) do
+			result[change.filepath] = change
+		end
+		return result
+	end
 	return vim.deepcopy(state.pending_changes.files)
 end
 
 function M.get_pending_changes_stats()
+	local ok, selectors = pcall(require, "opencode.selectors")
+	if ok and selectors.changes_stats then
+		return selectors.changes_stats()
+	end
 	return {
 		total_files = vim.tbl_count(state.pending_changes.files),
 		total_additions = state.pending_changes.total_additions,
@@ -399,13 +440,15 @@ end
 
 -- Get status summary (for lualine, etc.)
 function M.get_status_summary()
+	local model = M.get_model()
+	local agent = M.get_agent()
 	return {
 		connected = M.is_connected(),
 		connection_state = state.connection,
 		status = state.status,
-		model = state.model.name,
-		provider = state.model.provider,
-		agent = state.agent.name,
+		model = model.name,
+		provider = model.provider,
+		agent = agent.name,
 		session = state.session.name,
 		message_count = state.session.message_count,
 		diff_stats = M.get_pending_changes_stats(),

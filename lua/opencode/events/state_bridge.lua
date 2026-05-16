@@ -14,14 +14,6 @@ function M.setup(events)
 		end
 	end)
 
-	state.on("status", function(new_val, old_val)
-		events.emit("status_change", { status = new_val, previous = old_val })
-	end)
-
-	state.on("session.id", function(new_val, old_val)
-		events.emit("session_change", { id = new_val, previous_id = old_val })
-	end)
-
 	state.on("model.id", function(new_val, old_val)
 		events.emit("model_change", { model = new_val, previous = old_val })
 	end)

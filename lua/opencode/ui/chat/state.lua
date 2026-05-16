@@ -9,18 +9,15 @@ M.state = {
 	winid = nil,
 	layout = nil,
 	visible = false,
-	messages = {},          -- Local user messages only (sent before server confirms)
+	local_notices = {},     -- Local user/system notices not backed by the server
 	config = nil,
 	questions = {},         -- Track question positions: { [request_id] = { start_line, end_line } }
-	pending_questions = {}, -- Queue of questions received when chat wasn't visible
 	focus_question = nil,   -- request_id of question to focus cursor on after render
 	focus_question_line = nil,
 	permissions = {},       -- Track permission positions: { [permission_id] = { start_line, end_line } }
-	pending_permissions = {}, -- Queue of permissions received when chat wasn't visible
 	focus_permission = nil, -- permission_id to focus cursor on after render
 	focus_permission_line = nil,
 	edits = {},             -- Track edit widget positions: { [permission_id] = { start_line, end_line } }
-	pending_edits = {},     -- Queue of edits received when chat wasn't visible
 	focus_edit = nil,       -- permission_id to focus cursor on after render
 	focus_edit_line = nil,
 	tasks = {},             -- Track task positions: { [part_id] = { start_line, end_line, tool_part } }
@@ -34,7 +31,7 @@ M.state = {
 	stream_blocks = {},     -- Streaming text blocks: { [message_id] = { start_line, end_line } }
 	spinner_footer_line = nil,
 	session_stack = {},     -- Stack of { id, name } for parent session navigation
-	navigating = false,     -- Flag to prevent session_change handler from clearing stack
+	navigating = false,     -- Compatibility flag for older callers; session actions carry navigation metadata
 	last_render_time = 0,
 	render_scheduled = false,
 	auto_scroll = true,     -- Auto-scroll to bottom on new content

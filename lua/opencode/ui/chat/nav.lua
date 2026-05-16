@@ -4,6 +4,7 @@ local M = {}
 
 local cs = require("opencode.ui.chat.state")
 local state = cs.state
+local render_coordinator = require("opencode.ui.chat.render_coordinator")
 
 ---@return boolean
 function M.is_navigating()
@@ -31,6 +32,7 @@ function M.enter_child_session(part_id)
 		end
 
 		local app_state = require("opencode.state")
+		local session_actions = require("opencode.session")
 		local client = require("opencode.client")
 		local sync = require("opencode.sync")
 
@@ -47,14 +49,15 @@ function M.enter_child_session(part_id)
 
 		local child_name = input.description or "Subagent"
 
-		state.navigating = true
-		app_state.set_session(child_session_id, child_name)
-		state.navigating = false
+		session_actions.set_active(child_session_id, child_name, {
+			reason = "child_navigation",
+			preserve_cache = true,
+		})
 
 		local messages = sync.get_messages(child_session_id)
 		if #messages > 0 then
 			vim.schedule(function()
-				require("opencode.ui.chat").do_render()
+				render_coordinator.request({ session_id = child_session_id, reason = "child_navigation" })
 			end)
 		else
 			client.get_messages(child_session_id, {}, function(fetch_err, response)
@@ -81,7 +84,7 @@ function M.enter_child_session(part_id)
 						end
 					end
 
-					require("opencode.ui.chat").do_render()
+					render_coordinator.request({ session_id = child_session_id, reason = "child_navigation_loaded" })
 				end)
 			end)
 		end
@@ -94,15 +97,16 @@ function M.leave_child_session()
 		return
 	end
 
-	local app_state = require("opencode.state")
+	local session_actions = require("opencode.session")
 	local parent = table.remove(state.session_stack)
 
-	state.navigating = true
-	app_state.set_session(parent.id, parent.name)
-	state.navigating = false
+	session_actions.set_active(parent.id, parent.name, {
+		reason = "child_navigation",
+		preserve_cache = true,
+	})
 
 	vim.schedule(function()
-		require("opencode.ui.chat").do_render()
+		render_coordinator.request({ session_id = parent.id, reason = "child_navigation" })
 	end)
 end
 

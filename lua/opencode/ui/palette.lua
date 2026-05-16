@@ -7,6 +7,7 @@ local Popup = require("nui.popup")
 local NuiText = require("nui.text")
 local event = require("nui.utils.autocmd").event
 local session_util = require("opencode.util.session")
+local session_actions = require("opencode.session")
 local hl_ns = vim.api.nvim_create_namespace("opencode_palette")
 
 -- Configuration
@@ -1294,7 +1295,9 @@ local function register_defaults()
 									end
 
 									-- Set new session
-									state.set_session(session.id, session.title)
+									session_actions.set_active(session.id, session.title, {
+										reason = "session_switch",
+									})
 
 									-- Emit session switch event (like TUI's SessionSelect)
 									local events = require("opencode.events")
@@ -1307,7 +1310,10 @@ local function register_defaults()
 									-- Clear chat UI and render from sync store
 									local chat = require("opencode.ui.chat")
 									chat.clear()
-									chat.do_render()
+									require("opencode.ui.chat.render_coordinator").request({
+										session_id = session.id,
+										reason = "session_switch",
+									})
 
 									vim.notify(
 										"Switched to session: " .. (session_util.displayTitle(session.title) or session.id),
@@ -1351,7 +1357,9 @@ local function register_defaults()
 						return
 					end
 					vim.schedule(function()
-						state.set_session(session.id, session.title or "Forked Session")
+						session_actions.set_active(session.id, session.title or "Forked Session", {
+							reason = "session_fork",
+						})
 						vim.notify("Forked session: " .. (session_util.displayTitle(session.title) or session.id), vim.log.levels.INFO)
 					end)
 				end)
@@ -1443,7 +1451,9 @@ local function register_defaults()
 								return
 							end
 							vim.schedule(function()
-								state.set_session(nil, nil)
+								session_actions.set_active(nil, nil, {
+									reason = "session_delete",
+								})
 								vim.notify("Session deleted", vim.log.levels.INFO)
 								local chat = require("opencode.ui.chat")
 								chat.clear()

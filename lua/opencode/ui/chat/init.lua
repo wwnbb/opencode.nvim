@@ -88,6 +88,15 @@ local defaults = {
 	},
 }
 
+---@param event_type string
+---@param data table
+local function emit(event_type, data)
+	local ok, events = pcall(require, "opencode.events")
+	if ok and events and type(events.emit) == "function" then
+		events.emit(event_type, data)
+	end
+end
+
 local function get_config()
 	local app_state = require("opencode.state")
 	local full_config = app_state.get_config() or {}
@@ -793,7 +802,7 @@ function M.create()
 
 	state.config = get_config()
 	state.bufnr = create_buffer()
-	state.messages = {}
+	state.local_notices = {}
 	state.stream_blocks = {}
 
 	local events = require("opencode.events")
@@ -804,7 +813,7 @@ function M.create()
 		end)
 	end)
 
-	events.on("message_part_updated", function(data)
+	events.on("chat_stream_part_updated", function(data)
 		vim.schedule(function()
 			local part = data and data.part
 			if not part or part.type ~= "text" or not part.messageID then
@@ -819,13 +828,19 @@ function M.create()
 		end)
 	end)
 
-	local function has_pending_interaction()
-		for _, msg in ipairs(state.messages) do
-			if (msg.type == "question" or msg.type == "permission") and msg.status == "pending" then
-				return true
+	events.on("local_notice", function(data)
+		vim.schedule(function()
+			if type(data) ~= "table" then
+				return
 			end
-		end
+			M.add_message(data.role or "system", data.content or "", {
+				session_id = data.session_id,
+				render = false,
+			})
+		end)
+	end)
 
+	local function has_pending_interaction()
 		local question_ok, question_state_mod = pcall(require, "opencode.question.state")
 		if question_ok and question_state_mod.get_all_active and #question_state_mod.get_all_active() > 0 then
 			return true
@@ -877,18 +892,15 @@ function M.create()
 	end)
 
 	events.on("session_change", function(data)
-		local is_navigating = state.navigating
+		local preserve_cache = data and data.preserve_cache
 		vim.schedule(function()
-			if not is_navigating then
+			if not preserve_cache then
 				if spinner.is_active() then
 					spinner.stop()
 				end
 				stop_spinner_animation_timer()
 				chat_tasks.stop_task_animation_timer()
 			end
-			state.pending_questions = {}
-			state.pending_permissions = {}
-			state.pending_edits = {}
 			state.questions = {}
 			state.permissions = {}
 			state.edits = {}
@@ -899,16 +911,7 @@ function M.create()
 			state.expanded_tools = {}
 			state.stream_blocks = {}
 			state.spinner_footer_line = nil
-			if not is_navigating then
-				local new_messages = {}
-				for _, msg in ipairs(state.messages) do
-					if msg.type ~= "question" and msg.type ~= "permission" then
-						table.insert(new_messages, msg)
-					end
-				end
-				state.messages = new_messages
-			end
-			if not is_navigating then
+			if not preserve_cache then
 				state.session_stack = {}
 			end
 			chat_todos.update_window()
@@ -918,6 +921,25 @@ function M.create()
 	M.do_render()
 
 	return state.bufnr
+end
+
+local function request_focus_for_pending_widgets()
+	for _, qstate in ipairs(question_state.get_all()) do
+		if qstate.status == "pending" or qstate.status == "confirming" then
+			return widget_support.request_focus("question", qstate.request_id, qstate.status)
+		end
+	end
+	for _, pstate in ipairs(permission_state.get_all()) do
+		if pstate.status == "pending" then
+			return widget_support.request_focus("permission", pstate.permission_id, pstate.status)
+		end
+	end
+	for _, estate in ipairs(edit_state.get_all()) do
+		if estate.status == "pending" then
+			return widget_support.request_focus("edit", estate.permission_id, estate.status)
+		end
+	end
+	return false
 end
 
 function M.open()
@@ -1018,6 +1040,7 @@ function M.open()
 	end
 
 	state.visible = true
+	local focused_pending_widget = request_focus_for_pending_widgets()
 	M.do_render()
 	do
 		local ok_state, app_state = pcall(require, "opencode.state")
@@ -1032,15 +1055,10 @@ function M.open()
 		end
 	end
 
-	local has_pending_widget = #state.pending_questions > 0 or #state.pending_permissions > 0 or #state.pending_edits > 0
 	local line_count = vim.api.nvim_buf_line_count(state.bufnr)
-	if line_count > 0 and not has_pending_widget then
+	if line_count > 0 and not focused_pending_widget then
 		vim.api.nvim_win_set_cursor(state.winid or 0, { line_count, 0 })
 	end
-
-	chat_questions.process_pending_questions()
-	chat_permissions.process_pending_permissions()
-	chat_edits.process_pending_edits()
 end
 
 function M.close()
@@ -1158,14 +1176,14 @@ function M.add_message(role, content, opts)
 		role = role,
 		content = content,
 		timestamp = opts.timestamp or os.time(),
-		id = opts.id or tostring(os.time()) .. "_" .. #state.messages,
+		id = opts.id or tostring(os.time()) .. "_" .. #state.local_notices,
 		session_id = opts.session_id,
 		agent = opts.agent,
 		optimistic = opts.optimistic,
 		tool_calls = opts.tool_calls,
 	}
 
-	table.insert(state.messages, message)
+	table.insert(state.local_notices, message)
 	if opts.render == false then
 		M.schedule_render()
 	else
@@ -1251,11 +1269,10 @@ end
 
 function M.clear()
 	chat_todos.close_window()
-	state.messages = {}
+	state.local_notices = {}
 	state.questions = {}
 	state.permissions = {}
 	state.edits = {}
-	state.pending_edits = {}
 	state.tasks = {}
 	state.expanded_tasks = {}
 	state.task_child_cache = {}
@@ -1281,20 +1298,26 @@ function M.clear()
 
 	local ok, qs = pcall(require, "opencode.question.state")
 	if ok then
-		qs.clear_all()
+		for _, request_id in ipairs(qs.clear_all() or {}) do
+			emit("question_removed", { request_id = request_id })
+		end
 	end
 	local ok2, ps = pcall(require, "opencode.permission.state")
 	if ok2 then
-		ps.clear_all()
+		for _, permission_id in ipairs(ps.clear_all() or {}) do
+			emit("permission_removed", { permission_id = permission_id })
+		end
 	end
 	local ok3, es = pcall(require, "opencode.edit.state")
 	if ok3 then
-		es.clear_all()
+		for _, permission_id in ipairs(es.clear_all() or {}) do
+			emit("edit_removed", { permission_id = permission_id })
+		end
 	end
 end
 
 function M.get_messages()
-	return vim.deepcopy(state.messages)
+	return vim.deepcopy(state.local_notices)
 end
 
 function M.load_messages(messages)
@@ -1559,12 +1582,15 @@ function M.render()
 		edit = 3,
 	}
 
-	local function render_single_question(message)
-		local qstate = question_state.get_question(message.request_id)
+	local function render_single_question(qstate)
+		if not qstate then
+			return
+		end
+		local request_id = qstate.request_id
 		local q_lines, q_highlights, q_meta
 		local q_start_line
-		local status = (qstate and qstate.status) or message.status or "pending"
-		local owner_session_id = message.source_session_id or (qstate and qstate.session_id)
+		local status = qstate.status or "pending"
+		local owner_session_id = qstate.session_id
 
 		if not should_render_session_widget(owner_session_id, status) then
 			return
@@ -1572,36 +1598,30 @@ function M.render()
 
 		if status == "answered" then
 			q_lines, q_highlights = question_widget.get_answered_lines(
-				message.request_id,
-				{ questions = message.questions, timestamp = message.timestamp },
-				message.answers
+				request_id,
+				{ questions = qstate.questions, timestamp = qstate.timestamp },
+				qstate.answers
 			)
 			q_meta = widget_base.make_meta()
 		elseif status == "rejected" then
-			q_lines, q_highlights = question_widget.get_rejected_lines(message.request_id, {
-				questions = message.questions,
-				timestamp = message.timestamp,
+			q_lines, q_highlights = question_widget.get_rejected_lines(request_id, {
+				questions = qstate.questions,
+				timestamp = qstate.timestamp,
 			})
 			q_meta = widget_base.make_meta()
-		elseif qstate then
-			q_lines, q_highlights, q_meta = question_widget.get_lines_for_question(
-				message.request_id,
-				{ questions = message.questions },
-				qstate,
-				status
-			)
 		else
-			return
+			q_lines, q_highlights, q_meta =
+				question_widget.get_lines_for_question(request_id, { questions = qstate.questions }, qstate, status)
 		end
 
 		q_start_line = prepare_widget_start()
-		capture_widget_focus("question", message.request_id, q_start_line, q_meta)
+		capture_widget_focus("question", request_id, q_start_line, q_meta)
 
 		for _, line_text in ipairs(q_lines) do
 			add_raw_line(line_text)
 		end
 
-		state.questions[message.request_id] = {
+		state.questions[request_id] = {
 			start_line = q_start_line,
 			end_line = q_start_line + #q_lines - 1,
 			status = status,
@@ -1708,15 +1728,13 @@ function M.render()
 	local function render_widgets_for_message(message_id)
 		local widget_items = {}
 
-		for _, message in ipairs(state.messages) do
-			if message.type == "question" and message.message_id == message_id then
-				table.insert(widget_items, {
-					kind = "question",
-					id = message.request_id,
-					timestamp = message.timestamp or 0,
-					data = message,
-				})
-			end
+		for _, qstate in ipairs(question_state.get_questions_for_message(message_id)) do
+			table.insert(widget_items, {
+				kind = "question",
+				id = qstate.request_id,
+				timestamp = qstate.timestamp or 0,
+				data = qstate,
+			})
 		end
 
 		local perms = permission_state.get_permissions_for_message(message_id)
@@ -2025,8 +2043,8 @@ function M.render()
 		return false
 	end
 
-	-- Local messages (legacy messages, questions, etc.)
-	for _, message in ipairs(state.messages) do
+	-- Local notices (legacy user/system notices not backed by server state)
+	for _, message in ipairs(state.local_notices) do
 		if message.session_id and current_session.id and message.session_id ~= current_session.id then
 			goto continue_local_message
 		end
@@ -2052,19 +2070,6 @@ function M.render()
 			goto continue_local_message
 		end
 
-		if message.type == "question" then
-			if rendered_question_ids[message.request_id] then
-				goto continue_local_message
-			end
-
-			render_single_question(message)
-			goto continue_local_message
-		end
-
-		if message.type == "permission" then
-			goto continue_local_message
-		end
-
 		local has_content = message.content and message.content ~= ""
 		if has_content then
 			local content_lines = render.render_content(message.content)
@@ -2074,14 +2079,24 @@ function M.render()
 		::continue_local_message::
 	end
 
-	-- Orphan permissions from other sessions:
-	-- parent view shows cross-session widgets only while pending;
-	-- child view shows current-session widgets only.
 	local session_msg_ids = {}
 	for _, message in ipairs(messages) do
 		session_msg_ids[message.id] = true
 	end
 
+	for _, qstate in ipairs(question_state.get_all()) do
+		if
+			not rendered_question_ids[qstate.request_id]
+			and not (qstate.message_id and session_msg_ids[qstate.message_id])
+			and should_render_session_widget(qstate.session_id, qstate.status)
+		then
+			render_single_question(qstate)
+		end
+	end
+
+	-- Orphan permissions from other sessions:
+	-- parent view shows cross-session widgets only while pending;
+	-- child view shows current-session widgets only.
 	local all_perms = permission_state.get_all()
 	for _, pstate in ipairs(all_perms) do
 		if
@@ -2390,14 +2405,36 @@ end
 function M.handle_question_number_select(number)
 	local request_id = chat_questions.get_question_at_cursor()
 	if request_id then
-		question_state.select_option(request_id, number)
+		if question_state.select_option(request_id, number) then
+			local qstate = question_state.get_question(request_id)
+			emit("question_selection_changed", {
+				request_id = request_id,
+				tab_index = qstate and qstate.current_tab or nil,
+				selected = { number },
+			})
+			emit("interaction_changed", {
+				kind = "question",
+				action = "selection_changed",
+				id = request_id,
+			})
+		end
 		chat_questions.rerender_question(request_id)
 		return
 	end
 
 	local perm_id = chat_permissions.get_permission_at_cursor()
 	if perm_id and number >= 1 and number <= 3 then
-		permission_state.select_option(perm_id, number)
+		if permission_state.select_option(perm_id, number) then
+			emit("permission_selection_changed", {
+				permission_id = perm_id,
+				selected = number,
+			})
+			emit("interaction_changed", {
+				kind = "permission",
+				action = "selection_changed",
+				id = perm_id,
+			})
+		end
 		chat_permissions.rerender_permission(perm_id)
 		return
 	end
@@ -2438,6 +2475,11 @@ function M.handle_question_confirm()
 				chat_questions.submit_question_answers(request_id)
 			else
 				question_state.cancel_confirmation(request_id)
+				emit("interaction_changed", {
+					kind = "question",
+					action = "confirmation_cancelled",
+					id = request_id,
+				})
 				chat_questions.rerender_question(request_id)
 			end
 			return
@@ -2476,6 +2518,10 @@ function M.handle_question_confirm()
 		if not all_answered then
 			if #unanswered_indices > 0 then
 				question_state.set_tab(request_id, unanswered_indices[1])
+				emit("question_tab_changed", {
+					request_id = request_id,
+					tab_index = unanswered_indices[1],
+				})
 				chat_questions.rerender_question(request_id)
 			end
 			return
@@ -2483,6 +2529,9 @@ function M.handle_question_confirm()
 
 		if total_count > 1 then
 			question_state.set_confirming(request_id)
+			emit("question_confirming", {
+				request_id = request_id,
+			})
 			chat_questions.rerender_question(request_id)
 		else
 			chat_questions.submit_question_answers(request_id)
@@ -2521,6 +2570,11 @@ function M.handle_question_cancel()
 	if request_id then
 		if qstate.status == "confirming" then
 			question_state.cancel_confirmation(request_id)
+			emit("interaction_changed", {
+				kind = "question",
+				action = "confirmation_cancelled",
+				id = request_id,
+			})
 			chat_questions.rerender_question(request_id)
 			return
 		end
@@ -2535,6 +2589,11 @@ function M.handle_question_cancel()
 					return
 				end
 				question_state.mark_rejected(request_id)
+				emit("interaction_changed", {
+					kind = "question",
+					action = "rejected",
+					id = request_id,
+				})
 				chat_questions.update_question_status(request_id, "rejected")
 			end)
 		end)

@@ -184,11 +184,7 @@ function M.add_edit(permission_id, session_id, files_data, opts)
 
 	active_edits[permission_id] = estate
 
-	local events = require("opencode.events")
-	events.emit("edit_pending", {
-		permission_id = permission_id,
-		file_count = #files,
-	})
+	return estate
 end
 
 --- Get an edit state by permission ID
@@ -629,23 +625,25 @@ end
 
 --- Clear all edits (on session change)
 function M.clear_all()
-	local events = require("opencode.events")
+	local removed = {}
 	for permission_id, _ in pairs(active_edits) do
-		events.emit("edit_removed", { permission_id = permission_id })
+		table.insert(removed, permission_id)
 	end
 	active_edits = {}
+	return removed
 end
 
 --- Clear edits belonging to a specific session only
 ---@param session_id string
 function M.clear_session(session_id)
-	local events = require("opencode.events")
+	local removed = {}
 	for permission_id, estate in pairs(active_edits) do
 		if estate.session_id == session_id then
-			events.emit("edit_removed", { permission_id = permission_id })
+			table.insert(removed, permission_id)
 			active_edits[permission_id] = nil
 		end
 	end
+	return removed
 end
 
 return M

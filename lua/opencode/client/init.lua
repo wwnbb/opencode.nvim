@@ -465,24 +465,15 @@ end
 ---@param callback function(err, response)
 function M.execute_command(session_id, command, args, opts, callback)
 	local request_opts = vim.tbl_deep_extend("force", {}, opts or {})
+	local selection = require("opencode.selectors").send_selection(request_opts)
 
 	if not request_opts.agent or request_opts.agent == "" then
-		local local_ok, lc = pcall(require, "opencode.local")
-		if local_ok and lc and lc.agent and type(lc.agent.current) == "function" then
-			local current_agent = lc.agent.current()
-			if current_agent and current_agent.name then
-				request_opts.agent = current_agent.name
-			end
-		end
+		request_opts.agent = selection.agent
 	end
 
 	if not request_opts.model then
-		local local_ok, lc = pcall(require, "opencode.local")
-		if local_ok and lc and lc.model and type(lc.model.current) == "function" then
-			local current_model = lc.model.current()
-			if current_model and current_model.providerID and current_model.modelID then
-				request_opts.model = current_model.providerID .. "/" .. current_model.modelID
-			end
+		if selection.model then
+			request_opts.model = selection.model.providerID .. "/" .. selection.model.modelID
 		end
 	end
 
@@ -491,10 +482,7 @@ function M.execute_command(session_id, command, args, opts, callback)
 	end
 
 	if request_opts.variant == nil then
-		local local_ok, lc = pcall(require, "opencode.local")
-		if local_ok and lc and lc.variant and type(lc.variant.current) == "function" then
-			request_opts.variant = lc.variant.current()
-		end
+		request_opts.variant = selection.variant
 	end
 
 	local arguments = ""

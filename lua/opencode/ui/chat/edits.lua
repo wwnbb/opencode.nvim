@@ -10,6 +10,7 @@ local edit_widget = require("opencode.ui.edit_widget")
 local edit_state = require("opencode.edit.state")
 local widget_support = require("opencode.ui.chat.widget_support")
 local syntax = require("opencode.ui.syntax")
+local render_coordinator = require("opencode.ui.chat.render_coordinator")
 
 local INLINE_DIFF_WIN_VAR = "opencode_inline_diff_split"
 
@@ -351,7 +352,7 @@ local function ensure_actual_file_window(anchor_win, filepath)
 end
 
 local function schedule_render()
-	require("opencode.ui.chat").schedule_render()
+	render_coordinator.request({ kind = "edit" })
 end
 
 ---@param permission_id string
@@ -517,30 +518,7 @@ end
 
 -- ─── Pending queue ────────────────────────────────────────────────────────────
 
-function M.process_pending_edits()
-	if #state.pending_edits == 0 then
-		return
-	end
-
-	local logger = require("opencode.logger")
-	logger.debug("Processing pending edits", { count = #state.pending_edits })
-
-	local pending = state.pending_edits
-	state.pending_edits = {}
-
-	for _, pe in ipairs(pending) do
-		local estate = edit_state.get_edit(pe.permission_id)
-		if estate and estate.status == "pending" then
-			M.add_edit_message(pe.permission_id, estate, pe.status)
-			logger.debug("Displayed pending edit", { permission_id = pe.permission_id })
-		else
-			logger.debug("Skipping stale pending edit", {
-				permission_id = pe.permission_id,
-				reason = estate and estate.status or "not found",
-			})
-		end
-	end
-end
+function M.process_pending_edits() end
 
 -- ─── Add ─────────────────────────────────────────────────────────────────────
 
@@ -555,20 +533,6 @@ function M.add_edit_message(permission_id, edit_data, status)
 		visible = state.visible,
 	})
 
-	if not state.bufnr or not vim.api.nvim_buf_is_valid(state.bufnr) or not state.visible then
-		table.insert(state.pending_edits, {
-			permission_id = permission_id,
-			edit_data = edit_data,
-			status = status,
-			timestamp = os.time(),
-		})
-		logger.debug("Edit queued (chat not visible)", {
-			permission_id = permission_id,
-			pending_count = #state.pending_edits,
-		})
-		return
-	end
-
 	local estate = edit_state.get_edit(permission_id)
 	if not estate then
 		logger.warn("Edit state not found", { permission_id = permission_id })
@@ -577,7 +541,7 @@ function M.add_edit_message(permission_id, edit_data, status)
 
 	widget_support.request_focus("edit", permission_id, status)
 
-	schedule_render()
+	render_coordinator.request({ kind = "edit" })
 end
 
 -- ─── Cursor query ─────────────────────────────────────────────────────────────

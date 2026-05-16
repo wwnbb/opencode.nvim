@@ -838,15 +838,6 @@ end
 ---Initialize the module (call on plugin setup)
 function M.setup()
 	load_state()
-	-- Delay cleanup until providers are loaded
-	-- Subscribe to providers_loaded event to clean up invalid models
-	local events_ok, events = pcall(require, "opencode.events")
-	if events_ok then
-		events.on("providers_loaded", function()
-			-- Clean up invalid models after providers are loaded
-			M.model.cleanup()
-		end)
-	end
 end
 
 ---Check if ready
