@@ -80,6 +80,7 @@ M.defaults = {
 			cancel = "<Esc>",
 			history_prev = "<Up>",
 			history_next = "<Down>",
+			paste = "<C-v>",
 			stash = "<C-s>",
 			restore = "<C-r>",
 		},

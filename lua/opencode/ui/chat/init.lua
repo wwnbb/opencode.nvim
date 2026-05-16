@@ -659,6 +659,7 @@ function M.show_help()
 		"",
 		"Input Mode",
 		"<C-g>      Send message",
+		"<C-v>      Paste clipboard",
 		"<Esc>      Cancel",
 		"↑/↓        Navigate history",
 		"<C-s>      Stash input",
@@ -1124,17 +1125,18 @@ function M.focus_input()
 	input.show({
 		winid = state.winid,
 		float_dims = state.float_dims,
-		on_send = function(text)
+		on_send = function(text, parts)
 			local opencode = require("opencode")
 			local slash_ok, slash = pcall(require, "opencode.slash")
-			if slash_ok and type(slash.parse) == "function" and type(slash.execute) == "function" then
+			local has_parts = type(parts) == "table" and #parts > 0
+			if not has_parts and slash_ok and type(slash.parse) == "function" and type(slash.execute) == "function" then
 				local parsed = slash.parse(text)
 				if parsed then
 					slash.execute(parsed)
 					return
 				end
 			end
-			opencode.send(text)
+			opencode.send(text, { parts = parts })
 		end,
 		on_cancel = function()
 			M.focus()
@@ -1912,7 +1914,18 @@ function M.render()
 
 		if should_render then
 			if message.role == "user" then
-				local msg_lines = render.render_user_message(content, message.agent)
+				local file_parts = {}
+				for _, part in ipairs(parts or {}) do
+					if
+						part.type == "file"
+						and not part.synthetic
+						and part.mime ~= "text/plain"
+						and part.mime ~= "application/x-directory"
+					then
+						table.insert(file_parts, part)
+					end
+				end
+				local msg_lines = render.render_user_message(content, message.agent, file_parts)
 				for _, nl in ipairs(msg_lines) do
 					add_line(nl)
 				end

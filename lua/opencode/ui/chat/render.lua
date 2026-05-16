@@ -423,8 +423,9 @@ end
 ---Render a user message using NuiLine.
 ---@param content string|nil
 ---@param agent_name string|nil
+---@param files? table[]
 ---@return NuiLine[]
-function M.render_user_message(content, agent_name)
+function M.render_user_message(content, agent_name, files)
 	ensure_user_message_highlights()
 
 	local lines = {}
@@ -454,6 +455,19 @@ function M.render_user_message(content, agent_name)
 
 	for _, text in ipairs(content_lines) do
 		local wrapped = M.wrap_text(text, content_width, {
+			initial_col = vim.fn.strdisplaywidth("┃  "),
+		})
+		for _, wline in ipairs(wrapped) do
+			add_block_line("  " .. wline)
+		end
+	end
+
+	for _, file in ipairs(files or {}) do
+		local mime = file.mime or "file"
+		local label = mime:match("^image/") and "img" or (mime == "application/pdf" and "pdf" or "file")
+		local filename = file.filename or file.name or file.uri or "attachment"
+		local display = label .. " " .. filename
+		local wrapped = M.wrap_text(display, content_width, {
 			initial_col = vim.fn.strdisplaywidth("┃  "),
 		})
 		for _, wline in ipairs(wrapped) do

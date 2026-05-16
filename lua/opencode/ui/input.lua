@@ -25,6 +25,8 @@ local state = {
 	add_history = true,
 	config = nil,
 	layout = nil,
+	parts = {},
+	normalizing_paste = false,
 }
 
 -- History management
@@ -33,7 +35,9 @@ local history = {
 	index = 0,
 	max_entries = 100,
 	stashed = nil,
+	stashed_parts = nil,
 	pending = nil, -- draft text persisted across open/close cycles
+	pending_parts = nil,
 }
 
 -- Default configuration
@@ -48,6 +52,7 @@ local defaults = {
 		cancel = "<Esc>",
 		history_prev = "<Up>",
 		history_next = "<Down>",
+		paste = "<C-v>",
 		stash = "<C-s>",
 		restore = "<C-r>",
 		-- Agent/model/variant cycling (matching TUI keybinds)
@@ -130,9 +135,236 @@ local function add_to_history(text)
 end
 
 -- Get input text
+local resize_input
+
 local function get_input_text()
 	local lines = vim.api.nvim_buf_get_lines(state.bufnr, 0, -1, false)
 	return table.concat(lines, "\n")
+end
+
+---@param parts table[]|nil
+---@return table[]
+local function copy_parts(parts)
+	local copied = {}
+	for _, part in ipairs(parts or {}) do
+		table.insert(copied, vim.deepcopy(part))
+	end
+	return copied
+end
+
+---@param text string
+---@return boolean
+local function insert_text_at_cursor(text)
+	if not state.visible or not state.bufnr or not state.winid then
+		return false
+	end
+	if not vim.api.nvim_buf_is_valid(state.bufnr) or not vim.api.nvim_win_is_valid(state.winid) then
+		return false
+	end
+
+	local content = text or ""
+	if content == "" then
+		return true
+	end
+
+	local lines = vim.split(content, "\n", { plain = true })
+	local cursor = vim.api.nvim_win_get_cursor(state.winid)
+	local row = cursor[1] - 1
+	local col = cursor[2]
+
+	vim.api.nvim_buf_set_text(state.bufnr, row, col, row, col, lines)
+
+	local new_row = row + #lines
+	local new_col = #lines == 1 and (col + #lines[1]) or #lines[#lines]
+	vim.api.nvim_win_set_cursor(state.winid, { new_row, new_col })
+	resize_input()
+	return true
+end
+
+---@param mime string|nil
+---@return integer
+local function count_file_parts(mime)
+	local count = 0
+	local image = type(mime) == "string" and mime:match("^image/") ~= nil
+	for _, part in ipairs(state.parts or {}) do
+		if part.type == "file" then
+			if image and type(part.mime) == "string" and part.mime:match("^image/") then
+				count = count + 1
+			elseif not image and part.mime == mime then
+				count = count + 1
+			end
+		end
+	end
+	return count
+end
+
+---@param content table { data: string, mime: string, filename?: string, filepath?: string }
+---@param opts? { insert?: boolean }
+---@return string|nil marker
+local function add_file_part(content, opts)
+	if type(content) ~= "table" or type(content.data) ~= "string" or content.data == "" then
+		return nil
+	end
+	opts = opts or {}
+
+	if not state.visible and #state.parts == 0 and history.pending_parts then
+		state.parts = copy_parts(history.pending_parts)
+	end
+
+	local mime = content.mime or "application/octet-stream"
+	local is_image = mime:match("^image/") ~= nil
+	local marker = is_image and ("[Image " .. tostring(count_file_parts(mime) + 1) .. "]")
+		or ("[File " .. tostring(#state.parts + 1) .. "]")
+	local filename = content.filename
+	if not filename or filename == "" then
+		filename = is_image and "clipboard.png" or "clipboard"
+	end
+
+	local part = {
+		type = "file",
+		mime = mime,
+		filename = filename,
+		url = "data:" .. mime .. ";base64," .. content.data,
+		source = {
+			type = "file",
+			path = content.filepath or filename,
+			text = {
+				start = 0,
+				["end"] = #marker,
+				value = marker,
+			},
+		},
+		_marker = marker,
+	}
+
+	table.insert(state.parts, part)
+
+	if opts.insert == false then
+		return marker
+	end
+
+	if state.visible then
+		insert_text_at_cursor(marker .. " ")
+	else
+		history.pending = (history.pending or "") .. marker .. " "
+		history.pending_parts = copy_parts(state.parts)
+	end
+
+	return marker
+end
+
+---@param text string
+---@return table[]
+local function active_parts_for_text(text)
+	local active = {}
+	for _, part in ipairs(state.parts or {}) do
+		local marker = part._marker
+		if type(marker) ~= "string" or (text or ""):find(marker, 1, true) then
+			local copy = vim.deepcopy(part)
+			copy._marker = nil
+			table.insert(active, copy)
+		end
+	end
+	return active
+end
+
+---@param line string
+---@param clipboard table
+---@return integer|nil start_col
+---@return integer|nil end_col
+---@return table|nil content
+local function find_image_path_in_line(line, clipboard)
+	local trimmed = vim.trim(line or "")
+	if trimmed == "" then
+		return nil, nil, nil
+	end
+
+	local content = clipboard.image_from_text(trimmed)
+	if content then
+		local start_col = line:find(trimmed, 1, true) or 1
+		return start_col, start_col + #trimmed - 1, content
+	end
+
+	local lower = string.lower(line)
+	local patterns = {
+		"file://[^%s]+%.png",
+		"file://[^%s]+%.jpg",
+		"file://[^%s]+%.jpeg",
+		"file://[^%s]+%.gif",
+		"file://[^%s]+%.webp",
+		"file://[^%s]+%.bmp",
+		"file://[^%s]+%.tiff",
+		"file://[^%s]+%.tif",
+		"file://[^%s]+%.heic",
+		"file://[^%s]+%.avif",
+		"/.*%.png",
+		"/.*%.jpg",
+		"/.*%.jpeg",
+		"/.*%.gif",
+		"/.*%.webp",
+		"/.*%.bmp",
+		"/.*%.tiff",
+		"/.*%.tif",
+		"/.*%.heic",
+		"/.*%.avif",
+	}
+
+	for _, pattern in ipairs(patterns) do
+		local start_col, end_col = lower:find(pattern)
+		if start_col then
+			local candidate = line:sub(start_col, end_col)
+			content = clipboard.image_from_text(candidate)
+			if content then
+				return start_col, end_col, content
+			end
+		end
+	end
+
+	return nil, nil, nil
+end
+
+local function normalize_pasted_image_paths()
+	if state.normalizing_paste or not state.visible or not state.bufnr then
+		return
+	end
+	if not vim.api.nvim_buf_is_valid(state.bufnr) then
+		return
+	end
+
+	local ok, clipboard = pcall(require, "opencode.clipboard")
+	if not ok then
+		return
+	end
+
+	local lines = vim.api.nvim_buf_get_lines(state.bufnr, 0, -1, false)
+	local changed = false
+
+	for idx, line in ipairs(lines) do
+		local start_col, end_col, content = find_image_path_in_line(line, clipboard)
+		if start_col and end_col and content then
+			local marker = add_file_part(content, { insert = false })
+			if marker then
+				lines[idx] = line:sub(1, start_col - 1) .. marker .. line:sub(end_col + 1)
+				changed = true
+			end
+		end
+	end
+
+	if not changed then
+		return
+	end
+
+	state.normalizing_paste = true
+	local cursor = state.winid and vim.api.nvim_win_is_valid(state.winid) and vim.api.nvim_win_get_cursor(state.winid)
+		or nil
+	vim.api.nvim_buf_set_lines(state.bufnr, 0, -1, false, lines)
+	if cursor then
+		local row = math.min(cursor[1], #lines)
+		local col = math.min(cursor[2], #(lines[row] or ""))
+		pcall(vim.api.nvim_win_set_cursor, state.winid, { row, col })
+	end
+	state.normalizing_paste = false
+	resize_input()
 end
 
 -- Lock the input window so it cannot scroll (topline stays at 1).
@@ -160,7 +392,7 @@ local function lock_scroll()
 end
 
 -- Resize the input window based on content (grows upward, shrinks downward)
-local function resize_input()
+function resize_input()
 	if not state.visible or not state.bufnr or not state.winid then
 		return
 	end
@@ -221,6 +453,7 @@ local function history_prev()
 		history.index = history.index - 1
 		local text = history.entries[history.index]
 		local content_lines = vim.split(text, "\n")
+		state.parts = {}
 		vim.api.nvim_buf_set_lines(state.bufnr, 0, -1, false, content_lines)
 		vim.api.nvim_win_set_cursor(state.winid, { #content_lines, vim.fn.col(".") - 1 })
 		resize_input()
@@ -232,11 +465,13 @@ local function history_next()
 		history.index = history.index + 1
 		local text = history.entries[history.index]
 		local content_lines = vim.split(text, "\n")
+		state.parts = {}
 		vim.api.nvim_buf_set_lines(state.bufnr, 0, -1, false, content_lines)
 		vim.api.nvim_win_set_cursor(state.winid, { #content_lines, vim.fn.col(".") - 1 })
 		resize_input()
 	elseif history.index == #history.entries then
 		history.index = history.index + 1
+		state.parts = {}
 		vim.api.nvim_buf_set_lines(state.bufnr, 0, -1, false, { "" })
 		vim.api.nvim_win_set_cursor(state.winid, { 1, 0 })
 		resize_input()
@@ -246,8 +481,10 @@ end
 -- Stash current input
 local function stash_input()
 	local text = get_input_text()
-	if text ~= "" then
+	if text ~= "" or #state.parts > 0 then
 		history.stashed = text
+		history.stashed_parts = copy_parts(state.parts)
+		state.parts = {}
 		vim.api.nvim_buf_set_lines(state.bufnr, 0, -1, false, { "" })
 		vim.api.nvim_win_set_cursor(state.winid, { 1, 0 })
 		resize_input()
@@ -259,9 +496,11 @@ end
 local function restore_input()
 	if history.stashed then
 		local content_lines = vim.split(history.stashed, "\n")
+		state.parts = copy_parts(history.stashed_parts)
 		vim.api.nvim_buf_set_lines(state.bufnr, 0, -1, false, content_lines)
 		vim.api.nvim_win_set_cursor(state.winid, { #content_lines, vim.fn.col(".") - 1 })
 		history.stashed = nil
+		history.stashed_parts = nil
 		resize_input()
 	else
 		vim.notify("No stashed input", vim.log.levels.WARN)
@@ -394,19 +633,23 @@ local function setup_keymaps(bufnr, cfg)
 	local opts = { buffer = bufnr, noremap = true, silent = true }
 
 	local function send_message()
+		normalize_pasted_image_paths()
 		local text = get_input_text()
-		if text ~= "" then
+		local parts = active_parts_for_text(text)
+		if text ~= "" or #parts > 0 then
 			if state.add_history then
 				add_to_history(text)
 			end
 			if state.persist_pending then
 				history.pending = nil
+				history.pending_parts = nil
 			end
+			state.parts = {}
 			vim.api.nvim_buf_set_lines(state.bufnr, 0, -1, false, { "" })
 			vim.api.nvim_win_set_cursor(state.winid, { 1, 0 })
 			resize_input()
 			if state.on_send then
-				state.on_send(text)
+				state.on_send(text, parts)
 			end
 			if state.close_on_send then
 				M.close(false)
@@ -443,6 +686,13 @@ local function setup_keymaps(bufnr, cfg)
 	vim.keymap.set("i", cfg.keymaps.history_next, function()
 		history_next()
 	end, opts)
+
+	-- Clipboard paste (text fallback, image attachments where supported)
+	if cfg.keymaps.paste then
+		vim.keymap.set({ "i", "n" }, cfg.keymaps.paste, function()
+			M.paste_clipboard()
+		end, opts)
+	end
 
 	-- Stash/restore
 	vim.keymap.set({ "i", "n" }, cfg.keymaps.stash, function()
@@ -515,6 +765,11 @@ function M.show(opts)
 	state.close_on_send = opts.close_on_send ~= false
 	state.persist_pending = opts.persist_pending ~= false
 	state.add_history = opts.add_history ~= false
+	if opts.text ~= nil then
+		state.parts = copy_parts(opts.parts)
+	else
+		state.parts = copy_parts(history.pending_parts)
+	end
 
 	-- Load history on first show
 	if #history.entries == 0 then
@@ -678,6 +933,7 @@ function M.show(opts)
 	vim.api.nvim_create_autocmd({ "TextChanged", "TextChangedI" }, {
 		buffer = state.bufnr,
 		callback = function()
+			normalize_pasted_image_paths()
 			resize_input()
 		end,
 	})
@@ -806,6 +1062,7 @@ function M.close(save_draft)
 		if state.bufnr and vim.api.nvim_buf_is_valid(state.bufnr) then
 			local text = get_input_text()
 			history.pending = text ~= "" and text or nil
+			history.pending_parts = #state.parts > 0 and copy_parts(state.parts) or nil
 		end
 	end
 
@@ -824,6 +1081,7 @@ function M.close(save_draft)
 	state.info_popup = nil
 	state.info_bufnr = nil
 	state.layout = nil
+	state.parts = {}
 	state.persist_pending = true
 	state.add_history = true
 
@@ -859,6 +1117,10 @@ function M.clear_history()
 	history.entries = {}
 	history.index = 1
 	history.stashed = nil
+	history.stashed_parts = nil
+	history.pending = nil
+	history.pending_parts = nil
+	state.parts = {}
 	os.remove(defaults.history_file)
 end
 
@@ -882,6 +1144,8 @@ function M.set_pending_text(text)
 	local content = text or ""
 	if content == "" then
 		history.pending = nil
+		history.pending_parts = nil
+		state.parts = {}
 	else
 		history.pending = content
 	end
@@ -891,6 +1155,45 @@ function M.set_pending_text(text)
 	end
 
 	set_input_text(content)
+end
+
+---Paste clipboard content into the input, using file parts for images.
+---@return boolean success
+function M.paste_clipboard()
+	local ok, clipboard = pcall(require, "opencode.clipboard")
+	if not ok then
+		vim.notify("Failed to load clipboard helper: " .. tostring(clipboard), vim.log.levels.ERROR)
+		return false
+	end
+
+	local content = clipboard.read()
+	if not content then
+		vim.notify("Clipboard is empty or unsupported", vim.log.levels.WARN)
+		return false
+	end
+
+	if type(content.mime) == "string" and content.mime:match("^image/") then
+		add_file_part(content)
+		return true
+	end
+
+	if content.mime == "text/plain" then
+		local image = clipboard.image_from_text(content.data)
+		if image then
+			add_file_part(image)
+			return true
+		end
+
+		if state.visible then
+			insert_text_at_cursor(content.data)
+		else
+			history.pending = (history.pending or "") .. content.data
+		end
+		return true
+	end
+
+	vim.notify("Unsupported clipboard content: " .. tostring(content.mime), vim.log.levels.WARN)
+	return false
 end
 
 --- Append text to pending input without opening the input UI.
