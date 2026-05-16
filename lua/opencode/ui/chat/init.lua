@@ -612,6 +612,18 @@ local function start_spinner_animation_timer()
 	)
 end
 
+local function resume_render_animation_timers()
+	if not state.visible then
+		return
+	end
+	if spinner.is_active() then
+		start_spinner_animation_timer()
+	end
+	if chat_tasks.has_active_task_rows() then
+		chat_tasks.start_task_animation_timer()
+	end
+end
+
 -- ─── Window lifecycle ─────────────────────────────────────────────────────────
 
 function M.toggle_auto_scroll()
@@ -868,11 +880,13 @@ function M.create()
 	events.on("session_change", function(data)
 		local is_navigating = state.navigating
 		vim.schedule(function()
-			if spinner.is_active() then
-				spinner.stop()
+			if not is_navigating then
+				if spinner.is_active() then
+					spinner.stop()
+				end
+				stop_spinner_animation_timer()
+				chat_tasks.stop_task_animation_timer()
 			end
-			stop_spinner_animation_timer()
-			chat_tasks.stop_task_animation_timer()
 			state.pending_questions = {}
 			state.pending_permissions = {}
 			state.pending_edits = {}
@@ -2223,6 +2237,7 @@ function M.do_render()
 
 	local new_lines, nui_lines, content_highlights = M.render()
 	chat_todos.update_window()
+	resume_render_animation_timers()
 	if #new_lines == 0 or #nui_lines == 0 then
 		vim.bo[state.bufnr].modifiable = true
 		vim.api.nvim_buf_set_lines(state.bufnr, 0, -1, false, new_lines)

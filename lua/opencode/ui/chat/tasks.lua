@@ -97,20 +97,12 @@ function M.start_task_animation_timer()
 				return
 			end
 
-			local ok_state, app_state = pcall(require, "opencode.state")
-			if not ok_state then
-				return
-			end
-			local status = app_state.get_status()
-			if status ~= "streaming" and status ~= "thinking" then
-				return
-			end
-
 			if edit_state.has_pending_edits() then
 				return
 			end
 
 			if not M.has_active_task_rows() then
+				M.stop_task_animation_timer()
 				return
 			end
 
@@ -446,11 +438,14 @@ function M.format_tool_line(tool_part)
 		local subagent = input.subagent_type or "unknown"
 		local desc = input.description or ""
 		local agent_label = render.format_title(subagent)
-		local complete = input.subagent_type or input.description
-		if tool_status ~= "pending" and complete then
-			return string.format('◉ %s Task "%s"', agent_label, desc)
+		if desc ~= "" and tool_status ~= "pending" then
+			local prefix = tool_status == "running" and M.get_task_anim_frame() or TASK_COMPLETE_ICON
+			if tool_status == "error" then
+				prefix = TASK_ERROR_ICON
+			end
+			return string.format("%s %s Task — %s", prefix, agent_label, desc)
 		end
-		return string.format("~ Delegating... %s", M.get_task_anim_frame())
+		return string.format("%s Delegating...", M.get_task_anim_frame())
 	else
 		if tool_status == "completed" then
 			return string.format("%s %s", icon, tool_name)
