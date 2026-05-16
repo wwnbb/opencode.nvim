@@ -367,8 +367,7 @@ local function setup_buffer(bufnr)
 	vim.keymap.set("n", cfg.keymaps.goto_bottom, "G", opts)
 
 	vim.keymap.set("n", cfg.keymaps.abort, function()
-		local opencode = require("opencode")
-		opencode.abort()
+		require("opencode.actions").abort()
 	end, vim.tbl_extend("force", opts, { desc = "Stop current generation" }))
 
 	vim.keymap.set("n", "a", function()
@@ -394,8 +393,7 @@ local function setup_buffer(bufnr)
 	end, { buffer = bufnr, noremap = true, silent = true, desc = "Open command palette" })
 
 	vim.keymap.set("n", "N", function()
-		local opencode = require("opencode")
-		opencode.clear()
+		require("opencode.actions").clear()
 	end, { buffer = bufnr, noremap = true, silent = true, desc = "Start new session" })
 
 	-- Question / permission / edit navigation (cursor moves first; widget selection follows cursor)
@@ -1126,7 +1124,7 @@ function M.focus_input()
 		winid = state.winid,
 		float_dims = state.float_dims,
 		on_send = function(text, parts)
-			local opencode = require("opencode")
+			local actions = require("opencode.actions")
 			local slash_ok, slash = pcall(require, "opencode.slash")
 			local has_parts = type(parts) == "table" and #parts > 0
 			if not has_parts and slash_ok and type(slash.parse) == "function" and type(slash.execute) == "function" then
@@ -1136,7 +1134,7 @@ function M.focus_input()
 					return
 				end
 			end
-			opencode.send(text, { parts = parts })
+			actions.send(text, { parts = parts })
 		end,
 		on_cancel = function()
 			M.focus()

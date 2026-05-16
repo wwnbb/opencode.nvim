@@ -1141,7 +1141,7 @@ end
 
 -- Register default commands
 local function register_defaults()
-	local opencode = require("opencode")
+	local actions = require("opencode.actions")
 	local state = require("opencode.state")
 	local client = require("opencode.client")
 	local lifecycle = require("opencode.lifecycle")
@@ -1157,7 +1157,7 @@ local function register_defaults()
 		keybind = "<leader>on",
 		action = function()
 			-- Use the main clear() function which handles everything
-			opencode.clear()
+			actions.clear()
 		end,
 	})
 
@@ -2266,12 +2266,11 @@ local function register_defaults()
 				return names
 			end
 
-			local function request_skills_via_tool(names)
-				local joined = table.concat(names, ", ")
-				local opencode = require("opencode")
-				opencode.send("load_skill [" .. joined .. "]")
-				vim.notify("Requested skills via tool: " .. joined, vim.log.levels.INFO)
-			end
+	local function request_skills_via_tool(names)
+		local joined = table.concat(names, ", ")
+		actions.send("load_skill [" .. joined .. "]")
+		vim.notify("Requested skills via tool: " .. joined, vim.log.levels.INFO)
+	end
 
 			local function load_skills(selected)
 				local names = normalize_skill_names(selected)
