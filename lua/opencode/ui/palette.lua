@@ -1902,6 +1902,17 @@ local function register_defaults()
 	})
 
 	M.register({
+		id = "action.paste_clipboard",
+		title = "Paste Clipboard",
+		description = "Paste text or attach a screenshot to the OpenCode input",
+		category = "actions",
+		keybind = "<C-v>",
+		action = function()
+			opencode.paste_clipboard()
+		end,
+	})
+
+	M.register({
 		id = "action.compact",
 		title = "Compact Session",
 		description = "Compact session messages",

@@ -50,6 +50,12 @@ end, {
 	desc = "Abort/stop current generation",
 })
 
+vim.api.nvim_create_user_command("OpenCodePaste", function()
+	require("opencode").paste_clipboard()
+end, {
+	desc = "Paste clipboard into OpenCode input (supports screenshots)",
+})
+
 vim.api.nvim_create_user_command("OpenCodeLog", function()
 	require("opencode.ui.log_viewer").toggle()
 end, {

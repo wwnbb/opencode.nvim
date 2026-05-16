@@ -476,6 +476,24 @@ function M.focus_input()
 	end)
 end
 
+--- Paste clipboard content into the OpenCode input.
+--- Images are attached as OpenCode file parts when supported by the platform.
+---@return nil
+function M.paste_clipboard()
+	if not lifecycle then
+		vim.notify("OpenCode not initialized", vim.log.levels.ERROR)
+		return
+	end
+
+	lifecycle.ensure_connected(function()
+		local chat = require("opencode.ui.chat")
+		chat.focus_input()
+		vim.schedule(function()
+			require("opencode.ui.input").paste_clipboard()
+		end)
+	end)
+end
+
 --- Add current file/line to the draft input without opening the chat window.
 ---@param opts? { context?: string, send?: boolean, separator?: string }
 ---@return boolean
@@ -701,6 +719,32 @@ function M.send(message, opts)
 				variant = variant,
 			}
 
+			local function append_part(part)
+				if type(part) ~= "table" then
+					return
+				end
+				local prompt_part = vim.deepcopy(part)
+				prompt_part._marker = nil
+				if not prompt_part.id then
+					prompt_part.id = ascending_id("prt")
+				end
+				table.insert(payload.parts, prompt_part)
+			end
+
+			-- Add context if provided
+			if opts.context then
+				for _, ctx in ipairs(opts.context) do
+					append_part(ctx)
+				end
+			end
+
+			-- Add prompt attachments (for example pasted screenshots)
+			if opts.parts then
+				for _, part in ipairs(opts.parts) do
+					append_part(part)
+				end
+			end
+
 			logger.debug("Resolved prompt payload", {
 				session_id = sid,
 				agent = agent,
@@ -708,6 +752,7 @@ function M.send(message, opts)
 				variant = variant,
 				message_id = prompt_message_id,
 				text_length = type(message) == "string" and #message or nil,
+				part_count = #payload.parts,
 			})
 			local before_message_count = nil
 			local before_assistant_count = nil
@@ -719,13 +764,6 @@ function M.send(message, opts)
 					if msg.role == "assistant" then
 						before_assistant_count = before_assistant_count + 1
 					end
-				end
-			end
-
-			-- Add context if provided
-			if opts.context then
-				for _, ctx in ipairs(opts.context) do
-					table.insert(payload.parts, ctx)
 				end
 			end
 
@@ -788,6 +826,12 @@ function M.send(message, opts)
 
 			if sync_ok then
 				seed_user_message(sync, sid, prompt_message_id, prompt_part_id, message, agent, model, variant)
+				for i = 2, #payload.parts do
+					local part = vim.deepcopy(payload.parts[i])
+					part.messageID = prompt_message_id
+					part.sessionID = sid
+					sync.handle_part_updated(part)
+				end
 				if events and events.emit then
 					events.emit("chat_render", { session_id = sid })
 				end
