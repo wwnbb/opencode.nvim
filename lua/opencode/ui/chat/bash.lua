@@ -50,9 +50,10 @@ end
 ---@param text string
 ---@param hl_group string
 ---@return number line_index
+---@return string line
+---@return table[] rows
 local function add_panel_raw_line(result, text, hl_group)
-	local line_index = render.add_panel_raw_line(result, text, hl_group)
-	return line_index
+	return render.add_panel_raw_line(result, text, hl_group)
 end
 
 ---@param result table
@@ -218,12 +219,16 @@ end
 local function add_command(result, command)
 	local lines = vim.split(command, "\n", { plain = true })
 	local start_line = nil
+	local can_highlight = true
 	for i, line in ipairs(lines) do
 		local prefix = i == 1 and "$ " or "  "
-		local line_index = add_panel_raw_line(result, prefix .. line, "OpenCodeBashCommand")
+		local line_index, _, rows = add_panel_raw_line(result, prefix .. line, "OpenCodeBashCommand")
 		start_line = start_line or line_index
+		if #rows > 1 then
+			can_highlight = false
+		end
 	end
-	if start_line then
+	if start_line and can_highlight then
 		syntax.add_highlights(result, table.concat(lines, "\n"), "bash", {
 			scope = "tools",
 			line_start = start_line,
@@ -318,20 +323,24 @@ function M.render_tool(tool_part, expanded)
 
 	local output_start_line = nil
 	local output_lines = {}
+	local can_highlight_output = true
 	local limit = expanded and #entries or math.min(MAX_COLLAPSED_OUTPUT_LINES, #entries)
 	for i = 1, limit do
 		local entry = entries[i]
 		if output_lang and entry.hl_group == "OpenCodeBashOutput" then
-			local line_index = add_panel_raw_line(result, entry.text, entry.hl_group)
+			local line_index, _, rows = add_panel_raw_line(result, entry.text, entry.hl_group)
 			output_start_line = output_start_line or line_index
 			table.insert(output_lines, entry.text)
+			if #rows > 1 then
+				can_highlight_output = false
+			end
 		elseif entry.text == "" then
 			add_panel_blank(result)
 		else
 			add_panel_line(result, entry.text, entry.hl_group)
 		end
 	end
-	if output_lang and output_start_line and #output_lines > 0 then
+	if output_lang and output_start_line and #output_lines > 0 and can_highlight_output then
 		local output_text = table.concat(output_lines, "\n")
 		if output_lang == "markdown" then
 			syntax.add_markdown_highlights(result, output_text, {

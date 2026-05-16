@@ -301,7 +301,7 @@ function M.add_panel_raw_line(result, text, hl_group, opts)
 	local width = opts.width or get_chat_text_width()
 	local body = M.sanitize_buffer_line(text)
 	local body_width = math.max(1, width - vim.fn.strdisplaywidth(prefix))
-	local chunks = opts.wrap and M.wrap_text(body, body_width, {
+	local chunks = opts.wrap ~= false and M.wrap_text(body, body_width, {
 		initial_col = vim.fn.strdisplaywidth(prefix),
 	}) or { body }
 	local rows = {}

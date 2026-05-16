@@ -58,9 +58,10 @@ end
 ---@param text string
 ---@param hl_group string
 ---@return number line_index
+---@return string line
+---@return table[] rows
 local function add_panel_raw_line(result, text, hl_group)
-	local line_index = render.add_panel_raw_line(result, text, hl_group)
-	return line_index
+	return render.add_panel_raw_line(result, text, hl_group)
 end
 
 ---@param result table
@@ -676,17 +677,21 @@ function M.render_tool(tool_part, expanded)
 	local body_lang = syntax.detect_output_language(body, metadata) or "markdown"
 	local body_start_line = nil
 	local body_lines = {}
+	local can_highlight_body = true
 	for i = 1, limit do
 		local entry = body_entries[i]
 		if body_lang and entry.hl_group == "OpenCodeSkillOutput" then
-			local line_index = add_panel_raw_line(result, entry.text, entry.hl_group)
+			local line_index, _, rows = add_panel_raw_line(result, entry.text, entry.hl_group)
 			body_start_line = body_start_line or line_index
 			table.insert(body_lines, entry.text)
+			if #rows > 1 then
+				can_highlight_body = false
+			end
 		else
 			add_entry(result, entry)
 		end
 	end
-	if body_lang and body_start_line and #body_lines > 0 then
+	if body_lang and body_start_line and #body_lines > 0 and can_highlight_body then
 		local body_text = table.concat(body_lines, "\n")
 		if body_lang == "markdown" then
 			syntax.add_markdown_highlights(result, body_text, {
