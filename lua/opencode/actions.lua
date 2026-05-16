@@ -28,6 +28,10 @@ function M.focus_input()
 	return api().focus_input()
 end
 
+function M.open_input_at_end(opts)
+	return api().open_input_at_end(opts)
+end
+
 function M.start()
 	return api().start()
 end
@@ -76,8 +80,24 @@ function M.add_current_line_to_input(opts)
 	return api().add_current_line_to_input(opts)
 end
 
+function M.add_current_line(opts)
+	return api().add_current_line(opts)
+end
+
+function M.add_current_line_and_open_input(opts)
+	return api().add_current_line_and_open_input(opts)
+end
+
 function M.add_visual_selection_to_input(opts)
 	return api().add_visual_selection_to_input(opts)
+end
+
+function M.add_visual_selection(opts)
+	return api().add_visual_selection(opts)
+end
+
+function M.add_visual_selection_and_open_input(opts)
+	return api().add_visual_selection_and_open_input(opts)
 end
 
 function M.trigger_palette(id)

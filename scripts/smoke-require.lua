@@ -95,7 +95,8 @@ if #failures > 0 then
 end
 
 local setup_ok, setup_err = pcall(function()
-	require("opencode").setup({
+	local opencode = require("opencode")
+	opencode.setup({
 		server = {
 			auto_start = false,
 		},
@@ -103,7 +104,15 @@ local setup_ok, setup_err = pcall(function()
 			enabled = true,
 		},
 	})
-	local component = require("opencode").lualine_component()
+	assert(type(opencode.open_input_at_end) == "function", "open_input_at_end is not exported")
+	assert(type(opencode.add_current_line) == "function", "add_current_line is not exported")
+	assert(type(opencode.add_current_line_and_open_input) == "function", "add_current_line_and_open_input is not exported")
+	assert(type(opencode.add_visual_selection) == "function", "add_visual_selection is not exported")
+	assert(
+		type(opencode.add_visual_selection_and_open_input) == "function",
+		"add_visual_selection_and_open_input is not exported"
+	)
+	local component = opencode.lualine_component()
 	assert(type(component) == "string", "lualine component did not return a string")
 end)
 

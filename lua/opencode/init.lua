@@ -135,6 +135,58 @@ local function _append_prompt_to_input(prompt, opts, label)
 	return true
 end
 
+---@return boolean
+local function _is_visual_mode()
+	local mode = vim.api.nvim_get_mode().mode
+	return mode == "v" or mode == "V" or mode == "\022"
+end
+
+---@return nil
+local function _leave_visual_mode()
+	local esc = vim.api.nvim_replace_termcodes("<Esc>", true, false, true)
+	vim.api.nvim_feedkeys(esc, "nx", false)
+end
+
+---@param input table
+---@return boolean
+local function _focus_input_window_at_end(input)
+	for _, win in ipairs(input.get_winids()) do
+		if vim.api.nvim_win_is_valid(win) then
+			local buf = vim.api.nvim_win_get_buf(win)
+			if vim.bo[buf].filetype == "opencode_input" then
+				local last = vim.api.nvim_buf_line_count(buf)
+				if not pcall(vim.api.nvim_set_current_win, win) then
+					return false
+				end
+				vim.api.nvim_win_set_cursor(win, { last, 0 })
+				vim.api.nvim_win_call(win, function()
+					vim.cmd("normal! zb")
+				end)
+				vim.cmd("startinsert!")
+				return true
+			end
+		end
+	end
+	return false
+end
+
+---@param input table
+---@param max_attempts number
+---@param delay number
+---@param attempt number
+---@return nil
+local function _focus_input_window_when_ready(input, max_attempts, delay, attempt)
+	if _focus_input_window_at_end(input) then
+		return
+	end
+	if attempt >= max_attempts then
+		return
+	end
+	vim.defer_fn(function()
+		_focus_input_window_when_ready(input, max_attempts, delay, attempt + 1)
+	end, delay)
+end
+
 ---@param opts? { context?: string }
 ---@return string|nil
 local function _build_current_line_prompt(opts)
@@ -478,6 +530,37 @@ function M.focus_input()
 	end)
 end
 
+--- Focus the OpenCode input, placing the cursor at the end of the draft.
+---@param opts? { attempts?: number, delay?: number }
+---@return boolean success Whether focusing was requested
+function M.open_input_at_end(opts)
+	if not lifecycle then
+		vim.notify("OpenCode not initialized", vim.log.levels.ERROR)
+		return false
+	end
+
+	local input_ok, input = pcall(require, "opencode.ui.input")
+	if not input_ok then
+		vim.notify("Failed to load input module: " .. tostring(input), vim.log.levels.ERROR)
+		return false
+	end
+
+	local pending = input.get_pending_text()
+	if pending ~= "" and not pending:match("\n$") then
+		input.set_pending_text(pending .. "\n")
+	end
+
+	M.focus_input()
+
+	opts = opts or {}
+	local max_attempts = opts.attempts or 20
+	local delay = opts.delay or 10
+	vim.schedule(function()
+		_focus_input_window_when_ready(input, max_attempts, delay, 1)
+	end)
+	return true
+end
+
 --- Paste clipboard content into the OpenCode input.
 --- Images are attached as OpenCode file parts when supported by the platform.
 ---@return nil
@@ -510,6 +593,29 @@ function M.add_current_line_to_input(opts)
 	return _append_prompt_to_input(prompt, opts, "current line")
 end
 
+--- Add current file/line to the draft input.
+---@param opts? { context?: string, send?: boolean, separator?: string, open_input?: boolean }
+---@return boolean
+function M.add_current_line(opts)
+	opts = opts or {}
+
+	local ok = M.add_current_line_to_input(opts)
+	if ok and opts.open_input then
+		M.open_input_at_end()
+	end
+	return ok
+end
+
+--- Add current file/line to the draft input and focus the input at the end.
+---@param opts? { context?: string, send?: boolean, separator?: string }
+---@return boolean
+function M.add_current_line_and_open_input(opts)
+	local merged_opts = vim.tbl_extend("force", opts or {}, {
+		open_input = true,
+	})
+	return M.add_current_line(merged_opts)
+end
+
 --- Add current file/line plus extra context to the draft input.
 ---@param context string
 ---@param opts? { send?: boolean, separator?: string }
@@ -533,6 +639,37 @@ function M.add_visual_selection_to_input(opts)
 	end
 
 	return _append_prompt_to_input(prompt, opts, "selection")
+end
+
+--- Add the current visual selection to the draft input.
+---@param opts? { context?: string, send?: boolean, separator?: string, open_input?: boolean }
+---@return boolean
+function M.add_visual_selection(opts)
+	opts = opts or {}
+
+	if _is_visual_mode() then
+		_leave_visual_mode()
+		vim.schedule(function()
+			M.add_visual_selection(opts)
+		end)
+		return true
+	end
+
+	local ok = M.add_visual_selection_to_input(opts)
+	if ok and opts.open_input then
+		M.open_input_at_end()
+	end
+	return ok
+end
+
+--- Add the current visual selection to the draft input and focus the input at the end.
+---@param opts? { context?: string, send?: boolean, separator?: string }
+---@return boolean
+function M.add_visual_selection_and_open_input(opts)
+	local merged_opts = vim.tbl_extend("force", opts or {}, {
+		open_input = true,
+	})
+	return M.add_visual_selection(merged_opts)
 end
 
 --- Add current visual selection plus extra context to the draft input.
