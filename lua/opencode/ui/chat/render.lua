@@ -15,6 +15,7 @@ local syntax = require("opencode.ui.syntax")
 local cs = require("opencode.ui.chat.state")
 local state = cs.state
 local chat_hl_ns = cs.chat_hl_ns
+local UI_HIGHLIGHT_PRIORITY = 4200
 
 local function ensure_user_message_highlights()
 	vim.api.nvim_set_hl(0, "OpenCodeUserMessageBg", { link = "CursorLine", default = true })
@@ -927,7 +928,8 @@ function M.render_metadata_footer(message, messages, opts)
 	local agent_prefix = spinner_frame and (spinner_frame .. " ") or "▣ "
 
 	local line = NuiLine()
-	line:append(NuiText(agent_prefix .. locale.titlecase(agent_name), agent_hl))
+	line:append(NuiText(agent_prefix, { hl_group = "Comment", priority = UI_HIGHLIGHT_PRIORITY }))
+	line:append(NuiText(locale.titlecase(agent_name), { hl_group = agent_hl, priority = UI_HIGHLIGHT_PRIORITY }))
 	local model_name = _get_model_name(message)
 	if model_name ~= "" then
 		line:append(NuiText(" · ", "Comment"))
