@@ -3,7 +3,6 @@
 
 local M = {}
 
-local NuiText = require("nui.text")
 local cs = require("opencode.ui.chat.state")
 local state = cs.state
 local chat_hl_ns = cs.chat_hl_ns
@@ -18,7 +17,9 @@ local edit_state = require("opencode.edit.state")
 
 -- ─── Animation ────────────────────────────────────────────────────────────────
 
-local TASK_ANIM_FRAMES = { "|", "/", "-", "\\" }
+local TASK_ANIM_FRAMES = { "⠋", "⠙", "⠹", "⠸" }
+local TASK_COMPLETE_ICON = "│"
+local TASK_ERROR_ICON = "✗"
 
 function M.get_task_anim_frame()
 	return TASK_ANIM_FRAMES[state.task_anim_frame] or TASK_ANIM_FRAMES[1]
@@ -162,6 +163,20 @@ local function format_match_count(count)
 	return tostring(count) .. " " .. (count == 1 and "match" or "matches")
 end
 
+---@param count number
+---@return string
+local function format_toolcall_count(count)
+	return tostring(count) .. " " .. (count == 1 and "toolcall" or "toolcalls")
+end
+
+---@param metadata table
+---@return number|nil
+local function get_metadata_toolcall_count(metadata)
+	return normalize_count(metadata.toolcalls)
+		or normalize_count(metadata.toolCalls)
+		or normalize_count(metadata.calls)
+end
+
 ---@param value any
 ---@return string
 local function trim_string(value)
@@ -234,80 +249,123 @@ local function truncate_label(text, max_len)
 	return text:sub(1, max_len - 3) .. "..."
 end
 
--- Format an icon-prefixed label for a summary item.
--- The icon mirrors TOOL_ICONS; the text uses title when available or is
--- derived from the tool name / input fields.
+-- Format a task child-tool label, matching the TUI's concise "Tool title" row.
 ---@param item table  { tool: string, state: { status: string, title: string|nil, input: table|nil } }
----@return string label   (includes leading icon)
+---@return string label
 local function format_summary_item_label(item)
 	local tool_name = tostring(item.tool or "unknown")
 	local item_state = item.state or {}
 	local item_status = item_state.status or "pending"
 	local input = item_state.input or {}
 	local metadata = item_state.metadata or item.metadata or {}
-	local icon = TOOL_ICONS[tool_name] or "⚙"
 
-	-- Prefer the server-supplied title when completed
-	local title = item_status == "completed" and item_state.title or nil
+	-- Prefer the server-supplied title while it describes visible activity.
+	local title = (item_status == "completed" or item_status == "running") and trim_string(item_state.title) or ""
 	if title and title ~= "" then
-		if #title > 45 then title = title:sub(1, 42) .. "..." end
-		return icon .. " " .. title
+		return render.format_title(tool_name) .. " " .. truncate_label(title, 52)
 	end
 
-	-- Tool-specific fallback with icon
+	-- Tool-specific fallback
 	if tool_name == "read" then
 		local fp = input.filePath or input.file_path or ""
 		if fp ~= "" then
 			if #fp > 40 then fp = "..." .. fp:sub(-37) end
-			return icon .. " Read " .. fp
+			return "Read " .. fp
 		end
 	elseif tool_name == "write" then
 		local fp = input.filePath or input.file_path or ""
 		if fp ~= "" then
 			if #fp > 40 then fp = "..." .. fp:sub(-37) end
-			return icon .. " Wrote " .. fp
+			return "Write " .. fp
 		end
 	elseif tool_name == "edit" then
 		local fp = input.filePath or input.file_path or ""
 		if fp ~= "" then
 			if #fp > 40 then fp = "..." .. fp:sub(-37) end
-			return icon .. " Edit " .. fp
+			return "Edit " .. fp
 		end
 	elseif tool_name == "bash" then
 		local d = input.description or ""
 		if d ~= "" then
 			if #d > 40 then d = d:sub(1, 37) .. "..." end
-			return icon .. " " .. d
+			return "Bash " .. d
 		end
 	elseif tool_name == "glob" then
 		local pat = input.pattern or ""
 		if pat ~= "" then
 			local count = normalize_count(metadata.count)
 			local suffix = count and (" (" .. format_match_count(count) .. ")") or ""
-			return icon .. ' Glob "' .. pat .. '"' .. suffix
+			return "Glob " .. pat .. suffix
 		end
 	elseif tool_name == "grep" then
 		local pat = input.pattern or ""
 		if pat ~= "" then
 			local matches = normalize_count(metadata.matches)
 			local suffix = matches and (" (" .. format_match_count(matches) .. ")") or ""
-			return icon .. ' Grep "' .. pat .. '"' .. suffix
+			return "Grep " .. pat .. suffix
 		end
 	elseif tool_name == "task" then
 		local agent = input.subagent_type or ""
 		local d = input.description or ""
 		if agent ~= "" then
-			return icon .. " " .. render.format_title(agent) .. (d ~= "" and (" – " .. d) or "")
+			return render.format_title(agent) .. " Task" .. (d ~= "" and (" — " .. d) or "")
 		end
 	elseif tool_name == "skill" then
 		local name = get_skill_name(input, metadata, item_state.title, item_state.raw)
 		if name ~= "" then
-			return icon .. ' Skill "' .. truncate_label(name, 40) .. '"'
+			return 'Skill "' .. truncate_label(name, 40) .. '"'
 		end
 	end
 
 	-- Generic: capitalised tool name
-	return icon .. " " .. render.format_title(tool_name)
+	return render.format_title(tool_name)
+end
+
+---@param summary table[]
+---@return table|nil item
+local function find_current_summary_item(summary)
+	for i = #summary, 1, -1 do
+		local item = summary[i]
+		local item_state = item and item.state or {}
+		local status = item_state.status or "pending"
+		local title = trim_string(item_state.title)
+		if (status == "running" or status == "completed") and title ~= "" then
+			return item
+		end
+	end
+	return nil
+end
+
+---@param state_time table|nil
+---@return string|nil duration
+local function format_state_duration(state_time)
+	if type(state_time) ~= "table" then
+		return nil
+	end
+
+	local start_time = normalize_count(state_time.start or state_time.created)
+	local end_time = normalize_count(state_time["end"] or state_time.completed or state_time.updated)
+	if not start_time or not end_time or end_time <= start_time then
+		return nil
+	end
+
+	local duration = end_time - start_time
+	if duration >= 1000 then
+		duration = duration / 1000
+	end
+	if duration < 1 then
+		return string.format("%dms", math.floor(duration * 1000 + 0.5))
+	end
+	if duration < 10 then
+		return string.format("%.1fs", duration)
+	end
+	if duration < 60 then
+		return string.format("%ds", math.floor(duration + 0.5))
+	end
+
+	local minutes = math.floor(duration / 60)
+	local seconds = math.floor(duration % 60 + 0.5)
+	return string.format("%dm%02ds", minutes, seconds)
 end
 
 -- Format a single tool display line (matches TUI InlineTool style).
@@ -452,25 +510,23 @@ function M.build_child_session_content(session_id)
 	return { lines = result_lines, highlights = result_highlights }
 end
 
--- Render a task tool part as multi-line display showing subagent activity.
+-- Render a task tool part as a compact TUI-style subagent summary.
 --
--- Layout (collapsed):
---   ◉ Coder · claude-opus-4
---     ▸ Task: <desc> (<N> toolcalls)
---    ├ ...
---    ├ → Read foo.lua
---    └ ⚙  neovim_edit bar.lua
+-- Layout (collapsed, running):
+--   ⠋ Explore Task — Inventory user commands
+--     ↳ Grep nvim_create_user_command
+--
+-- Layout (collapsed, completed):
+--   │ Explore Task — Inventory user commands
+--     └ 1 toolcall · 1.2s
 --
 -- Layout (expanded, after O):
---   ◉ Coder · claude-opus-4
---     ▾ Task: <desc> (<N> toolcalls)
+--   │ Explore Task — Inventory user commands
+--     └ 1 toolcall · 1.2s
 --
 --     >> <first line of child user message>
---        <continuation...>
 --
---    ├ ...
---    ├ → Read foo.lua
---    └ ⚙  neovim_edit bar.lua
+--     ↳ Grep nvim_create_user_command
 --
 function M.render_task_tool(tool_part, expanded, _child_content)
 	local input = tool_part.state and tool_part.state.input or {}
@@ -502,8 +558,9 @@ function M.render_task_tool(tool_part, expanded, _child_content)
 								tool = part.tool,
 								state = {
 									status = status,
-									title = status == "completed" and part_state.title or nil,
+									title = part_state.title,
 									input = part_state.input or {},
+									metadata = render.get_tool_metadata(part),
 								},
 							})
 						end
@@ -519,8 +576,7 @@ function M.render_task_tool(tool_part, expanded, _child_content)
 		end
 	end
 
-	-- ── Gather child session data (model + first user message for expand) ──
-	local child_model = nil
+	-- ── Gather the first child user message for the expanded prompt preview ──
 	local child_user_prompt = nil
 	if child_session_id then
 		local ok_sync2, sync2 = pcall(require, "opencode.sync")
@@ -532,13 +588,7 @@ function M.render_task_tool(tool_part, expanded, _child_content)
 					child_user_prompt = sync2.get_message_text(msg.id)
 					if child_user_prompt == "" then child_user_prompt = nil end
 				end
-				-- First assistant message → the model used
-				if msg.role == "assistant" and not child_model and (msg.modelID or msg.providerID) then
-					local mid = msg.modelID or ""
-					child_model = mid:match("[^/]+$") or mid
-					if child_model == "" then child_model = nil end
-				end
-				if child_user_prompt and child_model then break end
+				if child_user_prompt then break end
 			end
 		end
 	end
@@ -546,6 +596,10 @@ function M.render_task_tool(tool_part, expanded, _child_content)
 	local agent_label = render.format_title(subagent)
 	local task_frame = M.get_task_anim_frame()
 	local working = tool_status == "pending" or tool_status == "running"
+	local completed = tool_status == "completed"
+	local metadata_count = get_metadata_toolcall_count(metadata) or 0
+	local count = math.max(#summary, metadata_count)
+	local duration = format_state_duration(tool_part.state and tool_part.state.time)
 
 	local result_lines = {}
 	local result_highlights = {}
@@ -563,73 +617,52 @@ function M.render_task_tool(tool_part, expanded, _child_content)
 	end
 
 	-- Still-initialising: no input yet
-	local complete = input.subagent_type or input.description
-	if not complete then
-		add_line("~ Delegating...", "Comment")
+	if desc == "" then
+		local line = working and (task_frame .. " Delegating...") or (TASK_COMPLETE_ICON .. " " .. agent_label .. " Task")
+		add_line(line, tool_status == "error" and "DiagnosticError" or "Comment")
 		return { lines = result_lines, highlights = result_highlights }
 	end
 
-	local count = #summary
-	local agent_hl = render.get_agent_hl(subagent)
-
-	-- ── No tool data yet (e.g. still launching) ──
-	if count == 0 then
-		local line = M.format_tool_line(tool_part)
-		if working and not line:find(task_frame, 1, true) then
-			line = line .. " " .. task_frame
-		end
-		local line_hl
-		if tool_status == "error" then
-			line_hl = "DiagnosticError"
-		elseif working then
-			line_hl = "Special"
-		else
-			line_hl = agent_hl
-		end
-		add_line(line, line_hl)
-		return { lines = result_lines, highlights = result_highlights }
-	end
-
-	-- ────────────────────────────────────────────────────────────────────────────
-	-- Line 1:  ◉ Coder · claude-opus-4
-	-- ────────────────────────────────────────────────────────────────────────────
-	local agent_line_hl
+	local line_hl = "Comment"
+	local task_icon = TASK_COMPLETE_ICON
 	if tool_status == "error" then
-		agent_line_hl = "DiagnosticError"
+		line_hl = "DiagnosticError"
+		task_icon = TASK_ERROR_ICON
 	elseif working then
-		agent_line_hl = "Special"
-	else
-		agent_line_hl = agent_hl
+		task_icon = task_frame
 	end
-	local agent_line = "◉ " .. agent_label
-	if child_model then
-		agent_line = agent_line .. " · " .. child_model
-	end
-	if working then
-		agent_line = task_frame .. " " .. agent_line
-	end
-	add_line(agent_line, agent_line_hl)
 
-	-- ────────────────────────────────────────────────────────────────────────────
-	-- Line 2:  ▸/▾ Task: <desc> (<N> toolcalls)
-	-- ────────────────────────────────────────────────────────────────────────────
-	local fold_icon = expanded and "▾" or "▸"
-	local task_hl = working and "Special" or "Comment"
-	local task_row = string.format("  %s Task: %s (%d toolcalls)", fold_icon, desc, count)
-	add_line(task_row, task_hl)
+	add_line(task_icon .. " " .. agent_label .. " Task — " .. desc, line_hl)
 
-	-- ────────────────────────────────────────────────────────────────────────────
-	-- Expanded: show the child session's user message (the task prompt)
-	-- ────────────────────────────────────────────────────────────────────────────
+	if tool_status == "error" then
+		local err = tool_part.state and tool_part.state.error or nil
+		if err then
+			add_line("  ✗ " .. tostring(err), "DiagnosticError")
+		end
+	elseif working and count > 0 then
+		local current_item = find_current_summary_item(summary)
+		if not current_item and #summary == 1 then
+			current_item = summary[1]
+		end
+		if current_item then
+			add_line("  ↳ " .. format_summary_item_label(current_item), "Comment")
+		else
+			add_line("  ↳ " .. format_toolcall_count(count), "Comment")
+		end
+	elseif completed and count > 0 then
+		local suffix = duration and (" · " .. duration) or ""
+		add_line("  └ " .. format_toolcall_count(count) .. suffix, "Comment")
+	end
+
 	if expanded then
-		add_line("", nil) -- blank separator
+		add_line("", nil)
 		if child_user_prompt and child_user_prompt ~= "" then
 			local prompt_lines = vim.split(child_user_prompt, "\n", { plain = true })
 			for i, pl in ipairs(prompt_lines) do
 				if pl == "" then
 					add_line("", nil)
 				elseif i == 1 then
-					add_line("  >> " .. pl, "Special")
+					add_line("  >> " .. pl, "Comment")
 				else
 					add_line("     " .. pl, "Comment")
 				end
@@ -637,48 +670,21 @@ function M.render_task_tool(tool_part, expanded, _child_content)
 		else
 			add_line("  (task prompt not yet loaded)", "Comment")
 		end
-		add_line("", nil) -- blank separator before tool list
+
+		if #summary > 0 then
+			add_line("", nil)
+			for _, item in ipairs(summary) do
+				local item_state = item.state or {}
+				local item_status = item_state.status or "pending"
+				local prefix = item_status == "running" and (task_frame .. " ") or ""
+				local item_hl = item_status == "error" and "DiagnosticError" or "Comment"
+				add_line("  ↳ " .. prefix .. format_summary_item_label(item), item_hl)
+			end
+		end
 	end
 
-	-- ────────────────────────────────────────────────────────────────────────────
-	-- Tool call list — always last 3 with ├/└ connectors
-	-- ────────────────────────────────────────────────────────────────────────────
-	local MAX_SHOWN = 3
-	local display_items
-	if expanded then
-		-- All tool calls visible when expanded
-		display_items = summary
-	elseif count > MAX_SHOWN then
-		add_line(" ├ ...", "Comment")
-		display_items = {}
-		for i = count - MAX_SHOWN + 1, count do
-			table.insert(display_items, summary[i])
-		end
-	else
-		display_items = summary
-	end
-
-	for i, item in ipairs(display_items) do
-		local item_state = item.state or {}
-		local item_status = item_state.status or "pending"
-		local is_last = (i == #display_items)
-		local connector = is_last and " └ " or " ├ "
-		local label = format_summary_item_label(item)
-		local line
-		if item_status == "running" and working then
-			line = connector .. task_frame .. " " .. label
-		else
-			line = connector .. label
-		end
-		local line_hl
-		if item_status == "error" then
-			line_hl = "DiagnosticError"
-		elseif item_status == "running" then
-			line_hl = "Special"
-		else
-			line_hl = "Comment"
-		end
-		add_line(line, line_hl)
+	if #result_lines > 1 then
+		add_line("", nil)
 	end
 
 	return { lines = result_lines, highlights = result_highlights }
