@@ -24,6 +24,8 @@ local setup_modules = {
 	{ name = "message handlers", load = function() return require("opencode.events.handlers.message") end },
 	{ name = "permission handlers", load = function() return require("opencode.events.handlers.permission") end },
 	{ name = "question handlers", load = function() return require("opencode.events.handlers.question") end },
+	{ name = "session store handlers", load = function() return require("opencode.events.handlers.session_store") end },
+	{ name = "notification handlers", load = function() return require("opencode.events.handlers.notifications") end },
 	{ name = "sync data handlers", load = function() return require("opencode.events.handlers.sync_data") end },
 	{ name = "chat render coordinator", load = function() return require("opencode.ui.chat.render_coordinator") end },
 }

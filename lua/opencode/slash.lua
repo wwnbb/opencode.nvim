@@ -154,11 +154,20 @@ function M.register_defaults()
 		end,
 	})
 	
-	-- /new, /clear - Start new session
+	-- /new - Start new session
 	M.register({
 		name = "new",
-		aliases = { "clear" },
 		description = "Start a new session",
+		category = "session",
+		handler = function()
+			actions.new_session()
+		end,
+	})
+
+	-- /clear - Clear current chat without switching sessions
+	M.register({
+		name = "clear",
+		description = "Clear the current chat",
 		category = "session",
 		handler = function()
 			actions.clear()

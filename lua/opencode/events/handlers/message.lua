@@ -5,6 +5,7 @@ function M.setup(events)
 	local session_actions = require("opencode.session")
 	local sync = require("opencode.sync")
 	local logger = require("opencode.logger")
+	local event_util = require("opencode.events.util")
 
 	---@param session_id string|nil
 	---@param reason string
@@ -148,8 +149,22 @@ function M.setup(events)
 
 			-- Update sync store first (like TUI does)
 			sync.handle_message_updated(info)
-
 			local current_session = state.get_session()
+			if info.sessionID and (current_session.id == info.sessionID or state.is_runtime_session(info.sessionID)) then
+				local count = #sync.get_messages(info.sessionID)
+				if current_session.id == info.sessionID then
+					state.set_message_count(count)
+				end
+				session_actions.remember({
+					id = info.sessionID,
+					message_count = count,
+					messageCount = count,
+				}, {
+					touch = current_session.id == info.sessionID and state.is_runtime_session(info.sessionID),
+					reason = "message_updated",
+				})
+			end
+
 			if not current_session.id or info.sessionID ~= current_session.id then
 				logger.debug("Message update stored outside current session", {
 					message_session = info.sessionID,
@@ -371,7 +386,7 @@ function M.setup(events)
 
 			local current_session = state.get_session()
 			local session_id = data.sessionID or data.info.id
-			if not session_id or session_id ~= current_session.id then
+			if not session_id then
 				return
 			end
 
@@ -380,10 +395,23 @@ function M.setup(events)
 				return
 			end
 
-			session_actions.set_active(session_id, title, {
+			session_actions.remember({
+				id = session_id,
+				title = title,
+				name = title,
+				time = data.info.time,
+				parentID = data.info.parentID,
+			}, {
+				touch = session_id == current_session.id and state.is_runtime_session(session_id),
 				reason = "session_updated",
-				preserve_cache = true,
 			})
+			if session_id == current_session.id then
+				session_actions.set_active(session_id, title, {
+					reason = "session_updated",
+					preserve_cache = true,
+					runtime = state.is_runtime_session(session_id),
+				})
+			end
 			events.emit("sync_changed", {
 				kind = "session",
 				action = "updated",
@@ -455,6 +483,9 @@ function M.setup(events)
 			-- Update sync store first
 			if data.sessionID and data.status then
 				sync.handle_session_status(data.sessionID, data.status)
+				session_actions.set_session_status(data.sessionID, data.status, {
+					reason = "session_status",
+				})
 			end
 
 			local current_session = state.get_session()
@@ -468,18 +499,6 @@ function M.setup(events)
 			end
 
 			local status_type = data.status and data.status.type or data.status
-			if status_type == "idle" then
-				session_actions.set_status("idle", {
-					reason = "session_status",
-					session_id = current_session.id,
-				})
-			elseif status_type == "busy" or status_type == "streaming" then
-				session_actions.set_status("streaming", {
-					reason = "session_status",
-					session_id = current_session.id,
-				})
-			end
-
 			-- Manage retry countdown timer (re-render every second for countdown)
 			if status_type == "retry" then
 				if not retry_timer then
@@ -526,50 +545,53 @@ function M.setup(events)
 	events.on("session_error", function(data)
 		vim.schedule(function()
 			local current_session = state.get_session()
-			if data and data.sessionID and data.sessionID ~= current_session.id then
-				logger.debug("Session error ignored", {
-					reason = "different_session",
-					sessionID = data.sessionID,
-					current_session = current_session.id,
-				})
-				return
-			end
+			local session_id = (data and data.sessionID) or current_session.id
 
-			session_actions.set_status("idle", {
+			session_actions.set_session_status(session_id, {
+				type = "error",
+				message = format_session_error(data and data.error),
+			}, {
 				reason = "session_error",
-				session_id = current_session.id,
 			})
 			if is_session_abort_error(data and data.error) then
 				logger.debug("Session abort ignored", {
 					sessionID = data and data.sessionID or nil,
 				})
-				if current_session.id then
+				if session_id then
+					session_actions.set_session_status(session_id, { type = "idle" }, {
+						reason = "session_abort",
+					})
 					events.emit("sync_changed", {
 						kind = "session_error",
 						action = "aborted",
-						session_id = current_session.id,
+						session_id = session_id,
 					})
 				end
 				return
 			end
 
 			local message = format_session_error(data and data.error)
+			local notice_session_id = nil
+			if session_id == current_session.id then
+				notice_session_id = session_id
+			else
+				notice_session_id = event_util.runtime_root_for_session(session_id)
+			end
 			logger.debug("Session error handled", {
 				sessionID = data and data.sessionID or nil,
 				message = message,
 			})
-			vim.notify("OpenCode session error: " .. message, vim.log.levels.ERROR)
 
-			if current_session.id then
+			if notice_session_id then
 				events.emit("local_notice", {
 					role = "system",
 					content = "OpenCode session error: " .. message,
-					session_id = current_session.id,
+					session_id = notice_session_id,
 				})
 				events.emit("sync_changed", {
 					kind = "session_error",
 					action = "error",
-					session_id = current_session.id,
+					session_id = notice_session_id,
 				})
 			end
 		end)
@@ -588,7 +610,7 @@ function M.setup(events)
 	events.on("session_change", function(data)
 		local sync = require("opencode.sync")
 		local reason = data and data.reason
-		if data and data.previous_id and (reason == "clear" or reason == "disconnect") then
+		if data and data.previous_id and not data.preserve_cache and (reason == "clear" or reason == "disconnect") then
 			sync.clear_session(data.previous_id)
 		end
 	end)

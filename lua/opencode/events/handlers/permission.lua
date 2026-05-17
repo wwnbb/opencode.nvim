@@ -147,9 +147,12 @@ function M.setup(events)
 							or metadata.sessionId
 					end
 
-					-- If we successfully resolved a session and it is neither ours nor
-					-- one of our task children, skip it as an unrelated editor/session.
-					if not util.permission_session_is_relevant(current_session.id, event_session_id) then
+					-- If we successfully resolved a session and it belongs neither to
+					-- the selected chat nor to any root session started in this editor
+					-- run, skip it as unrelated backend history.
+					local is_relevant = util.permission_session_is_relevant(current_session.id, event_session_id)
+						or util.runtime_root_for_session(event_session_id) ~= nil
+					if not is_relevant then
 						local logger_g = require("opencode.logger")
 						logger_g.debug("edit permission belongs to an unrelated session, skipping", {
 							event_session = event_session_id,

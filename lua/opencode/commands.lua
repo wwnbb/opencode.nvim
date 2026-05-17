@@ -87,6 +87,18 @@ local function create_commands()
 		desc = "Close OpenCode chat window",
 	})
 
+	vim.api.nvim_create_user_command("OpenCodeClear", function()
+		actions().clear()
+	end, {
+		desc = "Clear current OpenCode chat",
+	})
+
+	vim.api.nvim_create_user_command("OpenCodeNew", function()
+		actions().new_session()
+	end, {
+		desc = "Start a new OpenCode session",
+	})
+
 	vim.api.nvim_create_user_command("OpenCodeStart", function()
 		actions().start()
 	end, {
@@ -137,6 +149,12 @@ local function create_commands()
 		actions().command_palette()
 	end, {
 		desc = "Open OpenCode command palette",
+	})
+
+	vim.api.nvim_create_user_command("OpenCodeActiveSessions", function()
+		actions().active_sessions()
+	end, {
+		desc = "Show active OpenCode sessions",
 	})
 
 	vim.api.nvim_create_user_command("OpenCodeAddLine", function()
@@ -208,6 +226,10 @@ local function create_default_keymaps()
 	vim.keymap.set("n", "<leader>ol", function()
 		actions().toggle_logs()
 	end, { desc = "Toggle OpenCode logs", noremap = true, silent = true })
+
+	vim.keymap.set("n", "<leader>oS", function()
+		actions().active_sessions()
+	end, { desc = "OpenCode active sessions", noremap = true, silent = true })
 end
 
 function M.setup()

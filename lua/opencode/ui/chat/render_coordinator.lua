@@ -81,6 +81,18 @@ function M.setup(events)
 		M.request(data)
 	end)
 
+	events.on("session_status_change", function(data)
+		M.request(data)
+	end)
+
+	events.on("session_pending_change", function(data)
+		M.request(data)
+	end)
+
+	events.on("sessions_changed", function(data)
+		M.request(data)
+	end)
+
 	events.on("message_part_updated", function(data)
 		events.emit("chat_stream_part_updated", data)
 	end)

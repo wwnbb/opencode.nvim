@@ -83,6 +83,18 @@ function M.get_session(session_id, callback)
 	http.get("/session/" .. session_id, callback)
 end
 
+-- Get current status for all non-idle sessions
+---@param opts? table { directory? }
+---@param callback function(err, statuses)
+function M.get_session_statuses(opts, callback)
+	if type(opts) == "function" then
+		callback = opts
+		opts = nil
+	end
+	local query_opts = opts and next(opts) and { query = opts } or nil
+	http.get("/session/status", callback, query_opts)
+end
+
 -- Get child sessions for a parent session
 ---@param session_id string
 ---@param callback function(err, sessions)
