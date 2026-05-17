@@ -36,6 +36,14 @@ local edit_widget = require("opencode.ui.edit_widget")
 local edit_state = require("opencode.edit.state")
 local apply_widget_focus_cursor
 
+local EDIT_WIDGET_TOOL_ROWS = {
+	write = true,
+	edit = true,
+	apply_patch = true,
+	neovim_edit = true,
+	neovim_apply_patch = true,
+}
+
 -- ─── Configuration ────────────────────────────────────────────────────────────
 
 local defaults = {
@@ -1803,6 +1811,34 @@ function M.render()
 		return false
 	end
 
+	local function has_edit_widget_for_tool_call(message_id, call_id)
+		for _, estate in ipairs(edit_state.get_edits_for_message(message_id)) do
+			if
+				(not estate.call_id or estate.call_id == call_id)
+				and should_render_session_widget(estate.session_id, estate.status)
+			then
+				return true
+			end
+		end
+
+		if type(call_id) ~= "string" or call_id == "" then
+			return false
+		end
+
+		for _, estate in ipairs(edit_state.get_all()) do
+			if
+				not estate.message_id
+				and estate.call_id == call_id
+				and estate.session_id == current_session.id
+				and should_render_session_widget(estate.session_id, estate.status)
+			then
+				return true
+			end
+		end
+
+		return false
+	end
+
 	local function render_widgets_for_tool_call(message_id, call_id)
 		if type(call_id) ~= "string" or call_id == "" then
 			return
@@ -2066,8 +2102,12 @@ function M.render()
 							}
 						end
 					elseif part.type == "tool" then
-						local skip_tool_row = part.tool == "question"
-							and has_question_widget_for_tool_call(message.id, part.callID)
+						local skip_tool_row = false
+						if part.tool == "question" then
+							skip_tool_row = has_question_widget_for_tool_call(message.id, part.callID)
+						elseif EDIT_WIDGET_TOOL_ROWS[part.tool] then
+							skip_tool_row = has_edit_widget_for_tool_call(message.id, part.callID)
+						end
 						if not skip_tool_row then
 							render_tool_part(part)
 						end

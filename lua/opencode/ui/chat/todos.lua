@@ -6,8 +6,28 @@ local M = {}
 local render = require("opencode.ui.chat.render")
 local cs = require("opencode.ui.chat.state")
 local state = cs.state
+local panel = require("opencode.ui.panel")
+local text_util = require("opencode.util.text")
 local todo_hl_ns = vim.api.nvim_create_namespace("opencode_todo_hl")
 local PANEL_PREFIX_HL_PRIORITY = 4201
+local MAX_COLLAPSED_OUTPUT_LINES = 10
+local PANEL_PREFIX = "▏  "
+local PANEL_BLANK_PREFIX = "▏"
+local PANEL_BORDER_HL = "OpenCodeTodoMuted"
+local TODO_ANIM_FRAMES = { "|", "/", "-", "\\" }
+
+local STATUS_HIGHLIGHTS = {
+	pending = "OpenCodeTodoPending",
+	in_progress = "OpenCodeTodoProgress",
+	completed = "OpenCodeTodoCompleted",
+	cancelled = "OpenCodeTodoCancelled",
+}
+
+local PRIORITY_MARKERS = {
+	high = "!",
+	medium = "•",
+	low = "·",
+}
 
 ---@class OpenCodeTodoConfig
 ---@field enabled boolean
@@ -58,19 +78,106 @@ function M.get_config()
 end
 
 ---@param cfg OpenCodeTodoConfig|nil
+local function ensure_highlights(cfg)
+	cfg = cfg or M.get_config()
+	local highlights = cfg.highlights or {}
+	panel.set_hl("OpenCodeTodoMuted", highlights.border or "Comment", "Normal")
+	panel.set_hl("OpenCodeTodoHeader", highlights.header or "Title", "Normal", { bold = true })
+	panel.set_hl("OpenCodeTodoPending", highlights.pending or "Comment", "Normal")
+	panel.set_hl("OpenCodeTodoProgress", highlights.in_progress or "WarningMsg", "WarningMsg")
+	panel.set_hl("OpenCodeTodoCompleted", highlights.completed or "DiagnosticOk", "DiagnosticOk")
+	panel.set_hl("OpenCodeTodoCancelled", highlights.cancelled or "Comment", "Normal")
+	panel.set_hl("OpenCodeTodoPriority", "Special", "Normal")
+	panel.set_hl("OpenCodeTodoOutput", "Normal", nil)
+	panel.set_hl("OpenCodeTodoError", "DiagnosticError", "ErrorMsg")
+end
+
+---@param result table
+---@param text string
+---@param hl_group string
+---@return number line_index
+---@return string line
+---@return table[] rows
+local function add_panel_line(result, text, hl_group)
+	return panel.add_line(result, text, hl_group, {
+		prefix = PANEL_PREFIX,
+		prefix_hl_group = PANEL_BORDER_HL,
+	})
+end
+
+---@param result table
+---@param text string
+---@param hl_group string
+---@param opts? table
+---@return number line_index
+---@return string line
+---@return table[] rows
+local function add_panel_raw_line(result, text, hl_group, opts)
+	local panel_opts = vim.tbl_extend("force", opts or {}, {
+		prefix = PANEL_PREFIX,
+		prefix_hl_group = PANEL_BORDER_HL,
+	})
+	return panel.add_raw_line(result, text, hl_group, panel_opts)
+end
+
+---@param result table
+local function add_panel_blank(result)
+	panel.add_blank(result, "OpenCodeTodoOutput", {
+		prefix = PANEL_BLANK_PREFIX,
+		prefix_hl_group = PANEL_BORDER_HL,
+	})
+end
+
+---@param cfg OpenCodeTodoConfig|nil
 ---@return boolean
 function M.is_enabled(cfg)
 	cfg = cfg or M.get_config()
 	return cfg.enabled ~= false
 end
 
+---@param value any
+---@return boolean
+local function is_nil(value)
+	return text_util.is_nil(value)
+end
+
+---@param value any
+---@return string
+local function stringify(value)
+	if is_nil(value) then
+		return ""
+	end
+	if type(value) == "string" then
+		return value
+	end
+	if type(value) == "table" then
+		if type(value.output) == "string" then
+			return value.output
+		end
+		if type(value.content) == "string" then
+			return value.content
+		end
+		return vim.inspect(value)
+	end
+	return tostring(value)
+end
+
+---@param value any
+---@return string
+local function normalize_text(value)
+	return text_util.normalize_text(value, stringify)
+end
+
+---@param ... any
+---@return string
+local function first_nonempty_trimmed_text(...)
+	return text_util.first_nonempty_trimmed_text(stringify, ...)
+end
+
 ---@param text any
 ---@return string
 local function normalize_content(text)
-	if text == nil or text == vim.NIL then
-		return ""
-	end
-	return vim.trim(tostring(text):gsub("\r\n", " "):gsub("\r", " "):gsub("\n", " "))
+	return vim.trim(normalize_text(text):gsub("\n+", " "))
 end
 
 ---@param status any
@@ -89,6 +196,23 @@ local function normalize_priority(priority)
 		return priority
 	end
 	return nil
+end
+
+---@param tool_part table
+---@return table|string
+local function get_input(tool_part)
+	local tool_state = type(tool_part.state) == "table" and tool_part.state or {}
+	local state_input = tool_state.input
+	local part_input = tool_part.input
+	if type(state_input) == "table" or type(part_input) == "table" then
+		return vim.tbl_deep_extend(
+			"force",
+			{},
+			type(part_input) == "table" and part_input or {},
+			type(state_input) == "table" and state_input or {}
+		)
+	end
+	return state_input or part_input or {}
 end
 
 ---@param todos any
@@ -122,31 +246,32 @@ function M.extract_tool_todos(tool_part)
 	end
 
 	local tool_state = type(tool_part.state) == "table" and tool_part.state or {}
-	local input = type(tool_state.input) == "table" and tool_state.input or tool_part.input
+	local input = get_input(tool_part)
 	local metadata = render.get_tool_metadata(tool_part)
 	local output = type(tool_state.output) == "table" and tool_state.output or {}
 
-	local function first_nonempty(todos)
-		local normalized = M.normalize_todos(todos)
-		if #normalized > 0 then
-			return normalized
+	local function first_nonempty(...)
+		for i = 1, select("#", ...) do
+			local value = select(i, ...)
+			local normalized = M.normalize_todos(value)
+			if #normalized > 0 then
+				return normalized
+			end
+			if type(value) == "table" then
+				normalized = M.normalize_todos(value.todos or value.todo)
+				if #normalized > 0 then
+					return normalized
+				end
+			end
 		end
 		return nil
 	end
 
-	local normalized = first_nonempty(type(input) == "table" and input.todos or nil)
+	local normalized = first_nonempty(input)
 	if normalized then
 		return normalized
 	end
-	normalized = first_nonempty(metadata.todos)
-	if normalized then
-		return normalized
-	end
-	normalized = first_nonempty(output.todos)
-	if normalized then
-		return normalized
-	end
-	normalized = first_nonempty(tool_part.todos)
+	normalized = first_nonempty(metadata, output, tool_part.todos)
 	if normalized then
 		return normalized
 	end
@@ -160,15 +285,40 @@ function M.is_terminal(status)
 end
 
 ---@param todos OpenCodeTodo[]
----@return number
-local function count_completed(todos)
-	local count = 0
+---@return table counts
+local function count_by_status(todos)
+	local counts = {
+		pending = 0,
+		in_progress = 0,
+		completed = 0,
+		cancelled = 0,
+	}
 	for _, todo in ipairs(todos) do
-		if todo.status == "completed" then
-			count = count + 1
+		if counts[todo.status] ~= nil then
+			counts[todo.status] = counts[todo.status] + 1
 		end
 	end
-	return count
+	return counts
+end
+
+---@param todos OpenCodeTodo[]
+---@return string summary
+local function format_summary(todos)
+	if #todos == 0 then
+		return ""
+	end
+	local counts = count_by_status(todos)
+	local parts = { string.format("%d/%d done", counts.completed, #todos) }
+	if counts.in_progress > 0 then
+		table.insert(parts, tostring(counts.in_progress) .. " active")
+	end
+	if counts.pending > 0 then
+		table.insert(parts, tostring(counts.pending) .. " pending")
+	end
+	if counts.cancelled > 0 then
+		table.insert(parts, tostring(counts.cancelled) .. " cancelled")
+	end
+	return table.concat(parts, " · ")
 end
 
 ---@param todos OpenCodeTodo[]
@@ -251,11 +401,56 @@ local function status_icon(cfg, status)
 	return (cfg.icons and cfg.icons[status]) or DEFAULT_CONFIG.icons[status] or DEFAULT_CONFIG.icons.pending
 end
 
----@param cfg OpenCodeTodoConfig
+---@param _cfg OpenCodeTodoConfig
 ---@param status string
 ---@return string
-local function status_highlight(cfg, status)
-	return (cfg.highlights and cfg.highlights[status]) or DEFAULT_CONFIG.highlights[status] or "Comment"
+local function status_highlight(_cfg, status)
+	return STATUS_HIGHLIGHTS[status] or STATUS_HIGHLIGHTS.pending
+end
+
+---@return string
+local function get_anim_frame()
+	return TODO_ANIM_FRAMES[state.task_anim_frame] or TODO_ANIM_FRAMES[1]
+end
+
+---@param priority string|nil
+---@return string
+local function priority_marker(priority)
+	return priority and PRIORITY_MARKERS[priority] or ""
+end
+
+---@param result table
+---@param todo OpenCodeTodo
+---@param cfg OpenCodeTodoConfig
+---@param width number|nil
+local function add_panel_todo_item(result, todo, cfg, width)
+	width = width or get_chat_text_width()
+	local icon = status_icon(cfg, todo.status)
+	local priority = priority_marker(todo.priority)
+	local first_prefix = priority ~= "" and (icon .. " " .. priority .. " ") or (icon .. " ")
+	local continuation_prefix = string.rep(" ", vim.fn.strdisplaywidth(first_prefix))
+	local available = math.max(
+		8,
+		width - vim.fn.strdisplaywidth(PANEL_PREFIX) - vim.fn.strdisplaywidth(first_prefix)
+	)
+	local wrapped = render.wrap_text(todo.content, available, {
+		initial_col = vim.fn.strdisplaywidth(PANEL_PREFIX .. first_prefix),
+	})
+	if #wrapped == 0 then
+		wrapped = { "" }
+	end
+
+	local hl_group = status_highlight(cfg, todo.status)
+	for idx, text in ipairs(wrapped) do
+		local line_prefix = idx == 1 and first_prefix or continuation_prefix
+		local _, _, rows = add_panel_raw_line(result, line_prefix .. text, hl_group, {
+			width = width,
+			wrap = false,
+		})
+		if idx == 1 and priority ~= "" then
+			render.highlight_panel_text(result, rows, priority, "OpenCodeTodoPriority")
+		end
+	end
 end
 
 ---@param result table
@@ -321,31 +516,83 @@ function M.is_dock_collapsed(session_id, todos, cfg)
 end
 
 ---@param todos OpenCodeTodo[]
----@param opts? table { title?: string, prefix?: string, width?: number }
+---@param opts? table Render options
 ---@return table result
 function M.render_block(todos, opts)
 	opts = opts or {}
 	local cfg = M.get_config()
+	ensure_highlights(cfg)
 	local normalized = M.normalize_todos(todos)
 	local result = { lines = {}, highlights = {} }
-	if not M.is_enabled(cfg) or #normalized == 0 then
+	if not M.is_enabled(cfg) then
 		return result
 	end
 
-	local prefix = opts.prefix or "┃  "
 	local width = opts.width or get_chat_text_width()
 	local title = opts.title or "# Todos"
-	local header_hl = cfg.highlights and cfg.highlights.header or "Title"
-	local border_hl = cfg.highlights and cfg.highlights.border or "Comment"
+	local status = opts.status or "completed"
+	local working = status == "pending" or status == "running"
+	local error_body = opts.error or ""
+	local has_error = status == "error" or error_body ~= ""
+	local expanded = opts.expanded == true
+	local has_overflow = #normalized > MAX_COLLAPSED_OUTPUT_LINES
+	local summary = format_summary(normalized)
 
-	add_prefixed_line(result, prefix .. title, header_hl, prefix, border_hl)
-	for _, todo in ipairs(normalized) do
-		add_todo_item(result, todo, cfg, {
-			prefix = prefix,
-			prefix_hl_group = border_hl,
-			width = width,
-		})
+	local header = title
+	if working then
+		header = "~ " .. (opts.pending_label or "Updating todos...") .. " " .. get_anim_frame()
+	elseif has_error then
+		header = "# Todo update failed"
 	end
+	if summary ~= "" then
+		header = header .. " " .. summary
+	end
+	if (has_overflow or expanded) and not working then
+		header = (expanded and "▾ " or "▸ ") .. header
+	end
+
+	local header_hl = "OpenCodeTodoHeader"
+	if has_error then
+		header_hl = "OpenCodeTodoError"
+	elseif working then
+		header_hl = "OpenCodeTodoProgress"
+	end
+
+	add_panel_blank(result)
+	add_panel_line(result, header, header_hl)
+
+	if error_body ~= "" then
+		add_panel_blank(result)
+		add_panel_line(result, error_body, "OpenCodeTodoError")
+	end
+
+	if #normalized == 0 then
+		if not working and error_body == "" then
+			add_panel_blank(result)
+			add_panel_line(result, "No todos", "OpenCodeTodoMuted")
+		end
+		add_panel_blank(result)
+		return result
+	end
+
+	add_panel_blank(result)
+
+	local limit = expanded and #normalized or math.min(MAX_COLLAPSED_OUTPUT_LINES, #normalized)
+	for idx = 1, limit do
+		add_panel_todo_item(result, normalized[idx], cfg, width)
+	end
+
+	if not expanded and has_overflow then
+		local remaining = #normalized - MAX_COLLAPSED_OUTPUT_LINES
+		local suffix = remaining == 1 and "todo" or "todos"
+		add_panel_line(
+			result,
+			"… (" .. tostring(remaining) .. " more " .. suffix .. ", press O to expand)",
+			"OpenCodeTodoMuted"
+		)
+	end
+
+	add_panel_blank(result)
 
 	return result
 end
@@ -357,6 +604,7 @@ end
 function M.render_dock(session_id, todos, opts)
 	opts = opts or {}
 	local cfg = M.get_config()
+	ensure_highlights(cfg)
 	local normalized = M.normalize_todos(todos)
 	if not session_id or not M.should_show_dock(normalized, cfg) then
 		return nil
@@ -364,9 +612,9 @@ function M.render_dock(session_id, todos, opts)
 
 	local collapsed = M.is_dock_collapsed(session_id, normalized, cfg)
 	local result = { lines = {}, highlights = {}, collapsed = collapsed }
-	local completed = count_completed(normalized)
-	local header_hl = cfg.highlights and cfg.highlights.header or "Title"
-	local header = collapsed and string.format("▶ Todo %d/%d", completed, #normalized) or "▼ Todo"
+	local summary = format_summary(normalized)
+	local header_hl = "OpenCodeTodoHeader"
+	local header = collapsed and ("▶ Todos " .. summary) or ("▼ Todos " .. summary)
 	add_line(result, header, header_hl)
 
 	if collapsed then
@@ -384,8 +632,9 @@ function M.render_dock(session_id, todos, opts)
 end
 
 ---@param tool_part table
+---@param is_expanded boolean
 ---@return table|nil result
-function M.render_tool(tool_part)
+function M.render_tool(tool_part, is_expanded)
 	local cfg = M.get_config()
 	if not M.is_enabled(cfg) or type(tool_part) ~= "table" then
 		return nil
@@ -396,22 +645,20 @@ function M.render_tool(tool_part)
 		return nil
 	end
 
-	local tool_status = tool_part.state and tool_part.state.status or "pending"
-	if tool_status ~= "completed" then
-		return {
-			lines = { "~ Updating todos..." },
-			highlights = {
-				{ line = 0, col_start = 0, col_end = -1, hl_group = "Comment" },
-			},
-		}
-	end
-
+	local tool_state = type(tool_part.state) == "table" and tool_part.state or {}
+	local metadata = render.get_tool_metadata(tool_part)
+	local tool_status = tool_state.status or "pending"
+	local pending_label = tool_name == "todoread" and "Reading todos..." or "Updating todos..."
+	local title = tool_name == "todoread" and "# Read todos" or "# Updated todos"
+	local error_body = first_nonempty_trimmed_text(tool_state.error, metadata.error, tool_part.error)
 	local todos = M.extract_tool_todos(tool_part)
-	if #todos == 0 then
-		return nil
-	end
-
-	return M.render_block(todos)
+	return M.render_block(todos, {
+		title = title,
+		status = tool_status,
+		pending_label = pending_label,
+		error = error_body,
+		expanded = is_expanded == true,
+	})
 end
 
 ---@return boolean
