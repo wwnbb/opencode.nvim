@@ -243,9 +243,11 @@ function M.render_tool(tool_part, expanded)
 	local workdir = first_nonempty_trimmed_text(input.workdir, input.cwd, metadata.workdir, metadata.cwd)
 
 	local result = { lines = {}, highlights = {} }
+	add_panel_blank(result)
 	if command == "" then
 		local text = working and ("~ Writing command... " .. get_anim_frame()) or "~ Writing command..."
 		add_panel_line(result, text, working and "OpenCodeBashCommand" or "OpenCodeBashMuted")
+		add_panel_blank(result)
 		return result
 	end
 
@@ -300,6 +302,7 @@ function M.render_tool(tool_part, expanded)
 	add_command(result, command)
 
 	if #entries == 0 then
+		add_panel_blank(result)
 		return result
 	end
 
@@ -347,6 +350,7 @@ function M.render_tool(tool_part, expanded)
 		add_panel_line(result, "… (" .. tostring(remaining) .. " more lines, press O to expand)", "OpenCodeBashMuted")
 	end
 
+	add_panel_blank(result)
 	return result
 end
 

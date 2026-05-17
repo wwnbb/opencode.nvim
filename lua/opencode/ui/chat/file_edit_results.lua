@@ -2,8 +2,6 @@
 
 local M = {}
 
-local cs = require("opencode.ui.chat.state")
-local state = cs.state
 local render = require("opencode.ui.chat.render")
 
 ---@class OpenCodeFileEditResultFile
@@ -610,28 +608,6 @@ local function highlight_text_after(result, line_index, line, text, hl_group, ma
 	})
 end
 
----@return number width
-local function get_chat_text_width()
-	if not state.winid or not vim.api.nvim_win_is_valid(state.winid) then
-		return 80
-	end
-
-	local width = vim.api.nvim_win_get_width(state.winid)
-	local wininfo = vim.fn.getwininfo(state.winid)[1]
-	local textoff = wininfo and tonumber(wininfo.textoff) or 0
-	return math.max(1, width - textoff)
-end
-
----@param prefix string
----@param suffix string
----@return string
-local function align_suffix(prefix, suffix)
-	local target = math.min(math.max(48, get_chat_text_width() - 18), 72)
-	local width = vim.fn.strdisplaywidth(prefix)
-	local padding = math.max(1, target - width)
-	return prefix .. string.rep(" ", padding) .. suffix
-end
-
 ---@param tool_part table
 ---@param metadata table
 ---@return OpenCodeFileEditResult|nil
@@ -889,7 +865,7 @@ local function render_collapsed(model)
 		end
 
 		local prefix = string.format("  %s %s %s", status_icon, type_marker, path)
-		local line_index, line = add_line(result, align_suffix(prefix, suffix), "Comment")
+		local line_index, line = add_line(result, prefix .. "  " .. suffix, "Comment")
 		highlight_text(result, line_index, line, status_icon, STATUS_HL[status] or "Comment")
 		if status ~= "rejected" and status ~= "failed" then
 			highlight_stats(result, line_index, line, file.additions, file.deletions)

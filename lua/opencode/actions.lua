@@ -48,6 +48,26 @@ function M.abort()
 	return api().abort()
 end
 
+function M.set_danger_mode(enabled, opts)
+	return api().set_danger_mode(enabled, opts)
+end
+
+function M.enable_danger_mode(opts)
+	return api().enable_danger_mode(opts)
+end
+
+function M.disable_danger_mode(opts)
+	return api().disable_danger_mode(opts)
+end
+
+function M.toggle_danger_mode(opts)
+	return api().toggle_danger_mode(opts)
+end
+
+function M.is_danger_mode_enabled()
+	return api().is_danger_mode_enabled()
+end
+
 function M.clear(opts)
 	return api().clear(opts)
 end

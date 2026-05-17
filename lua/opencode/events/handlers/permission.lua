@@ -1,6 +1,7 @@
 local M = {}
 
 local util = require("opencode.events.util")
+local auto_approve = require("opencode.permission.danger")
 
 function M.setup(events)
 	-- Handle tool updates - specifically edit_file tools to show approval widget
@@ -188,6 +189,19 @@ function M.setup(events)
 					return (session_hint and session_hint.id) or ""
 				end
 
+				local permission_id = data.id or data.requestID or ("perm_" .. os.time())
+				local permission_session_id = resolve_widget_session_id(current_session, data, metadata, message_id)
+				if require("opencode.state").is_danger_mode_enabled() then
+					local handled = auto_approve.approve(permission_id, {
+						permission_type = permission_type,
+						session_id = permission_session_id,
+						kind = (is_native_diff_permission or permission_type == "edit") and "edit" or "permission",
+					})
+					if handled then
+						return
+					end
+				end
+
 				---@param ... any
 				---@return string|nil
 				local function first_non_empty(...)
@@ -308,7 +322,6 @@ function M.setup(events)
 				end
 
 				if is_native_diff_permission or permission_type == "edit" then
-					local permission_id = data.id or data.requestID or ("perm_" .. os.time())
 					local edit_state_mod = require("opencode.edit.state")
 
 					-- Skip if already handled (dedup for duplicate SSE events)
@@ -361,9 +374,6 @@ function M.setup(events)
 					return
 				else
 					-- Non-edit permission: handle interactively via permission state + chat widget
-					local permission_id = data.id or data.requestID or ("perm_" .. os.time())
-					local permission_session_id = resolve_widget_session_id(current_session, data, metadata, message_id)
-
 					-- Resolve tool_input from sync store if tool info is available
 					local tool_input = {}
 					if message_id and call_id then
@@ -525,6 +535,7 @@ function M.setup(events)
 		if data and data.preserve_cache then
 			return
 		end
+		auto_approve.clear()
 		local perm_state_ok, perm_state = pcall(require, "opencode.permission.state")
 		if perm_state_ok then
 			local removed = perm_state.clear_all()

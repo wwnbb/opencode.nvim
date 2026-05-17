@@ -33,7 +33,7 @@ end
 ---@param request_id string The question request ID from server
 ---@param session_id string Session ID
 ---@param questions_data table Array of question objects from server
----@param opts? table { timestamp?: number }
+---@param opts? table { timestamp?: number, message_id?: string|nil, call_id?: string|nil }
 function M.add_question(request_id, session_id, questions_data, opts)
 	opts = opts or {}
 	local qstate = {

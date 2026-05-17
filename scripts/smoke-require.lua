@@ -112,6 +112,12 @@ local setup_ok, setup_err = pcall(function()
 		type(opencode.add_visual_selection_and_open_input) == "function",
 		"add_visual_selection_and_open_input is not exported"
 	)
+	assert(type(opencode.toggle_danger_mode) == "function", "toggle_danger_mode is not exported")
+	assert(type(opencode.is_danger_mode_enabled) == "function", "is_danger_mode_enabled is not exported")
+	opencode.enable_danger_mode({ silent = true })
+	assert(opencode.is_danger_mode_enabled() == true, "danger mode did not enable")
+	opencode.disable_danger_mode({ silent = true })
+	assert(opencode.is_danger_mode_enabled() == false, "danger mode did not disable")
 	local component = opencode.lualine_component()
 	assert(type(component) == "string", "lualine component did not return a string")
 end)

@@ -610,11 +610,13 @@ function M.render_tool(tool_part, expanded)
 	end
 
 	local result = { lines = {}, highlights = {} }
+	add_panel_blank(result)
 	local _, _, header_rows = add_panel_line(result, header, header_hl)
 	highlight_text(result, header_rows, '"' .. name .. '"', "OpenCodeSkillName")
 
 	local has_details = description ~= "" or dir ~= "" or #parsed.files > 0
 	if not has_details and #body_entries == 0 then
+		add_panel_blank(result)
 		add_trailing_separator(result)
 		return result
 	end
@@ -650,6 +652,7 @@ function M.render_tool(tool_part, expanded)
 		local count = count_nonempty_entries(body_entries)
 		local suffix = has_overflow and ", press O to expand" or ", press O to show"
 		add_panel_line(result, line_count_label(count) .. suffix, "OpenCodeSkillMuted")
+		add_panel_blank(result)
 		add_trailing_separator(result)
 		return result
 	end
@@ -695,6 +698,7 @@ function M.render_tool(tool_part, expanded)
 		add_panel_line(result, "… (" .. tostring(remaining) .. " more lines, press O to expand)", "OpenCodeSkillMuted")
 	end
 
+	add_panel_blank(result)
 	add_trailing_separator(result)
 	return result
 end

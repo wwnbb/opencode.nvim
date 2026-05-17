@@ -32,6 +32,9 @@ M.defaults = {
 		},
 	},
 
+	-- Danger mode auto-approves permission requests while enabled.
+	danger_mode = false,
+
 	-- Chat
 	chat = {
 		layout = "vertical",

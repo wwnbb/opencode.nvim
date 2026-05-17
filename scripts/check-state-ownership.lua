@@ -219,4 +219,42 @@ assert_true(permission_state.has_permission("preserve_perm"), "preserve_cache se
 assert_true(edit_state.get_edit("preserve_edit") ~= nil, "preserve_cache session_change should keep edits")
 assert_true(question_state.has_question("hidden_question"), "preserve_cache session_change should keep questions")
 
+bus.clear()
+bus.clear_history()
+permission_state.clear_all()
+edit_state.clear_all()
+state.set_danger_mode(true)
+require("opencode.permission.danger").clear()
+
+local client = require("opencode.client")
+local original_respond_permission = client.respond_permission
+local replies = {}
+client.respond_permission = function(permission_id, reply, opts, callback)
+	table.insert(replies, {
+		permission_id = permission_id,
+		reply = reply,
+		opts = opts,
+	})
+	if callback then
+		callback(nil, true)
+	end
+end
+
+require("opencode.events.handlers.permission").setup(bus)
+bus.emit("permission", {
+	id = "danger_perm",
+	permission = "bash",
+	sessionID = "session_hidden",
+})
+wait_for(function()
+	return #replies == 1
+end, "danger mode should auto-reply to permission requests")
+assert_eq(replies[1].permission_id, "danger_perm", "danger mode reply should target permission")
+assert_eq(replies[1].reply, "once", "danger mode should use one-shot approval")
+assert_true(not permission_state.has_permission("danger_perm"), "danger mode should skip pending permission widget")
+
+client.respond_permission = original_respond_permission
+state.set_danger_mode(false)
+require("opencode.permission.danger").clear()
+
 print("State ownership checks passed")

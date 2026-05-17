@@ -103,6 +103,15 @@ local function get_config()
 	return vim.tbl_deep_extend("force", defaults, full_config.chat or {})
 end
 
+local function ensure_session_title_highlight()
+	local ok, title_hl = pcall(vim.api.nvim_get_hl, 0, { name = "Title", link = false })
+	local opts = { bold = true }
+	if ok and type(title_hl) == "table" then
+		opts = vim.tbl_extend("force", title_hl, opts)
+	end
+	vim.api.nvim_set_hl(0, "OpenCodeSessionTitle", opts)
+end
+
 local function calculate_dimensions(cfg)
 	local ui = vim.api.nvim_list_uis()[1] or { width = vim.o.columns, height = vim.o.lines }
 	local editor_width = (vim.o.columns and vim.o.columns > 0) and vim.o.columns or ui.width
@@ -1729,12 +1738,14 @@ function M.render()
 		local widget_items = {}
 
 		for _, qstate in ipairs(question_state.get_questions_for_message(message_id)) do
-			table.insert(widget_items, {
-				kind = "question",
-				id = qstate.request_id,
-				timestamp = qstate.timestamp or 0,
-				data = qstate,
-			})
+			if not rendered_question_ids[qstate.request_id] then
+				table.insert(widget_items, {
+					kind = "question",
+					id = qstate.request_id,
+					timestamp = qstate.timestamp or 0,
+					data = qstate,
+				})
+			end
 		end
 
 		local perms = permission_state.get_permissions_for_message(message_id)
@@ -1764,12 +1775,67 @@ function M.render()
 		render_widget_items(widget_items)
 	end
 
+	local function has_question_widget_for_tool_call(message_id, call_id)
+		for _, qstate in ipairs(question_state.get_questions_for_message(message_id)) do
+			if
+				(not qstate.call_id or qstate.call_id == call_id)
+				and should_render_session_widget(qstate.session_id, qstate.status)
+			then
+				return true
+			end
+		end
+
+		if type(call_id) ~= "string" or call_id == "" then
+			return false
+		end
+
+		for _, qstate in ipairs(question_state.get_all()) do
+			if
+				not qstate.message_id
+				and qstate.call_id == call_id
+				and qstate.session_id == current_session.id
+				and should_render_session_widget(qstate.session_id, qstate.status)
+			then
+				return true
+			end
+		end
+
+		return false
+	end
+
 	local function render_widgets_for_tool_call(message_id, call_id)
 		if type(call_id) ~= "string" or call_id == "" then
 			return
 		end
 
 		local widget_items = {}
+
+		for _, qstate in ipairs(question_state.get_questions_for_message(message_id)) do
+			if qstate.call_id == call_id then
+				table.insert(widget_items, {
+					kind = "question",
+					id = qstate.request_id,
+					timestamp = qstate.timestamp or 0,
+					data = qstate,
+				})
+			end
+		end
+
+		for _, qstate in ipairs(question_state.get_all()) do
+			if
+				not qstate.message_id
+				and qstate.call_id == call_id
+				and qstate.session_id == current_session.id
+				and not rendered_question_ids[qstate.request_id]
+			then
+				table.insert(widget_items, {
+					kind = "question",
+					id = qstate.request_id,
+					timestamp = qstate.timestamp or 0,
+					data = qstate,
+				})
+			end
+		end
 
 		local perms = permission_state.get_permissions_for_message(message_id)
 		for _, pstate in ipairs(perms) do
@@ -1890,10 +1956,10 @@ function M.render()
 	end
 
 	-- Session header
+	ensure_session_title_highlight()
 	local session_name = current_session.name or "New session"
-	local header_line = "# " .. session_name
 	local header = NuiLine()
-	header:append(NuiText(header_line, "Comment"))
+	header:append(NuiText(session_name, "OpenCodeSessionTitle"))
 	add_line(header)
 	add_raw_line("")
 
@@ -2000,7 +2066,11 @@ function M.render()
 							}
 						end
 					elseif part.type == "tool" then
-						render_tool_part(part)
+						local skip_tool_row = part.tool == "question"
+							and has_question_widget_for_tool_call(message.id, part.callID)
+						if not skip_tool_row then
+							render_tool_part(part)
+						end
 						render_widgets_for_tool_call(message.id, part.callID)
 					end
 				end

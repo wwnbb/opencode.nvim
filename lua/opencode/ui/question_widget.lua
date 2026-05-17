@@ -1,556 +1,569 @@
 -- opencode.nvim - Question widget module
--- Renders interactive questions inline in chat buffer
+-- Renders interactive questions inline in the chat buffer.
 
 local M = {}
+
+local panel = require("opencode.ui.panel")
+local render = require("opencode.ui.chat.render")
 local widget_base = require("opencode.ui.widget_base")
 
--- Icons and config (will be configurable)
+local PANEL_PREFIX = "▏  "
+local PANEL_BLANK_PREFIX = "▏"
+local PANEL_BORDER_HL = "OpenCodeQuestionMuted"
+
 local icons = {
-	pending = "💭",
-	answered = "✓",
-	rejected = "✗",
 	selected = "❯",
-	unselected = "  ",
+	unselected = " ",
 	multi_selected = "☑",
 	multi_unselected = "☐",
 }
 
----@param option_count number
----@return string
-local function format_option_hint(option_count)
-	if option_count <= 0 then
-		return "select an answer"
-	end
-
-	return string.format("select with 1-%d or ↑↓", math.min(option_count, 9))
+local function get_hl(name)
+	return panel.get_hl(name)
 end
 
----@param text string|nil
+local function set_panel_hl(name, fg_source, fallback, extra_opts)
+	panel.set_hl(name, fg_source, fallback, extra_opts)
+end
+
+local function ensure_highlights()
+	set_panel_hl("OpenCodeQuestionMuted", "Comment", "Normal")
+	set_panel_hl("OpenCodeQuestionHeader", "Title", "Normal", { bold = true })
+	set_panel_hl("OpenCodeQuestionTitle", "Label", "Title", { bold = true })
+	set_panel_hl("OpenCodeQuestionOutput", "Normal", nil)
+	set_panel_hl("OpenCodeQuestionSelected", "Normal", "CursorLine", { bold = true })
+	set_panel_hl("OpenCodeQuestionAnswer", "String", "Normal")
+	set_panel_hl("OpenCodeQuestionError", "DiagnosticError", "ErrorMsg")
+
+	vim.api.nvim_set_hl(0, "OpenCodeQuestionSelectedMarker", {
+		fg = get_hl("Special").fg or get_hl("Title").fg,
+		bg = get_hl("CursorLine").bg,
+		bold = true,
+	})
+end
+
+---@param result table
+---@param text string
+---@param hl_group string
+---@return number line_index
+---@return string line
+---@return table[] rows
+local function add_panel_line(result, text, hl_group)
+	return panel.add_line(result, text, hl_group, {
+		prefix = PANEL_PREFIX,
+		prefix_hl_group = PANEL_BORDER_HL,
+	})
+end
+
+---@param result table
+---@param text string
+---@param hl_group string
+---@return number line_index
+---@return string line
+---@return table[] rows
+local function add_panel_raw_line(result, text, hl_group)
+	return panel.add_raw_line(result, text, hl_group, {
+		prefix = PANEL_PREFIX,
+		prefix_hl_group = PANEL_BORDER_HL,
+		wrap = false,
+	})
+end
+
+---@param result table
+local function add_panel_blank(result)
+	panel.add_blank(result, "OpenCodeQuestionOutput", {
+		prefix = PANEL_BLANK_PREFIX,
+		prefix_hl_group = PANEL_BORDER_HL,
+	})
+end
+
+---@param result table
+local function add_trailing_separator(result)
+	table.insert(result.lines, "")
+end
+
+---@param value any
 ---@return string
-local function format_message_answer(text)
-	local message = vim.trim(text or "")
-	if message == "" then
+local function trim_string(value)
+	if type(value) ~= "string" then
 		return ""
 	end
-
-	return "Message: " .. message:gsub("%s*\n%s*", " / ")
+	return vim.trim(value)
 end
 
----@param lines table
----@param highlights table
----@param line_num number
+---@param question_data table
+---@return table
+local function get_questions(question_data)
+	if type(question_data) ~= "table" then
+		return {}
+	end
+	return question_data.questions or question_data
+end
+
+---@param question table|nil
+---@param fallback string|nil
+---@return string
+local function get_question_title(question, fallback)
+	if type(question) ~= "table" then
+		return fallback or "Question"
+	end
+
+	local title = trim_string(question.header)
+	if title ~= "" then
+		return title
+	end
+
+	title = trim_string(question.title)
+	if title ~= "" then
+		return title
+	end
+
+	title = trim_string(question.question)
+	if title ~= "" then
+		return title:match("^[^\n]+") or title
+	end
+
+	return fallback or "Question"
+end
+
+---@param option any
+---@param fallback string
+---@return string
+local function get_option_label(option, fallback)
+	if type(option) == "string" then
+		return option
+	end
+	if type(option) == "table" then
+		return tostring(option.label or option.value or fallback)
+	end
+	return tostring(option or fallback)
+end
+
+---@param selected_indices table
+---@param index number
+---@return boolean
+local function is_selected(selected_indices, index)
+	for _, selected in ipairs(selected_indices or {}) do
+		if selected == index then
+			return true
+		end
+	end
+	return false
+end
+
+---@param result table
+---@param rows table[]|nil
+---@param text string
+---@param hl_group string
+local function highlight_panel_text(result, rows, text, hl_group)
+	render.highlight_panel_text(result, rows, text, hl_group)
+end
+
+---@param result table
+---@param title string
+---@param status string
+---@param suffix string|nil
+local function add_header(result, title, status, suffix)
+	local header = "# Question"
+	if title ~= "" then
+		header = header .. " " .. title
+	end
+	if suffix and suffix ~= "" then
+		header = header .. " " .. suffix
+	end
+
+	local hl_group = "OpenCodeQuestionHeader"
+	if status == "answered" then
+		hl_group = "OpenCodeQuestionAnswer"
+	elseif status == "rejected" then
+		hl_group = "OpenCodeQuestionError"
+	end
+
+	local _, _, rows = add_panel_line(result, header, hl_group)
+	if title ~= "" then
+		highlight_panel_text(result, rows, title, "OpenCodeQuestionTitle")
+	end
+end
+
+---@param result table
 ---@param text string|nil
----@return number
-local function append_message_lines(lines, highlights, line_num, text)
-	local message = vim.trim(text or "")
-	if message == "" then
-		return line_num
+---@param hl_group string
+local function append_text_lines(result, text, hl_group)
+	if type(text) ~= "string" or text == "" then
+		return
 	end
 
-	local parts = vim.split(message, "\n", { plain = true })
-	for i, part in ipairs(parts) do
-		local prefix = i == 1 and "  Message: " or "           "
-		local line = prefix .. part
-		table.insert(lines, line)
-		widget_base.add_full_line_highlight(highlights, line_num, line, "Comment")
-		line_num = line_num + 1
+	for _, line in ipairs(vim.split(text, "\n", { plain = true })) do
+		if line == "" then
+			add_panel_blank(result)
+		else
+			add_panel_line(result, line, hl_group)
+		end
 	end
-
-	return line_num
 end
 
--- Get formatted lines for a question
----@param request_id string
+---@param result table
+---@param text string|nil
+local function append_message_lines(result, text)
+	local message = trim_string(text)
+	if message == "" then
+		return
+	end
+
+	for i, part in ipairs(vim.split(message, "\n", { plain = true })) do
+		local prefix = i == 1 and "Message: " or "         "
+		add_panel_line(result, prefix .. part, "OpenCodeQuestionMuted")
+	end
+end
+
+---@param option_count number
+---@param is_multi boolean
+---@param allow_custom boolean
+---@param ready_to_advance boolean
+---@param has_multiple boolean
+---@param answered_count number
+---@param total_count number
+---@return string
+local function format_hint(
+	option_count,
+	is_multi,
+	allow_custom,
+	ready_to_advance,
+	has_multiple,
+	answered_count,
+	total_count
+)
+	local parts = {}
+	if ready_to_advance then
+		table.insert(parts, "Enter again to continue")
+	else
+		if option_count > 0 then
+			table.insert(parts, string.format("1-%d select", math.min(option_count, 9)))
+			table.insert(parts, "↑↓ move")
+		else
+			table.insert(parts, "select an answer")
+		end
+		if is_multi then
+			table.insert(parts, "Space toggle")
+		end
+		table.insert(parts, "Enter twice submit")
+	end
+
+	if has_multiple then
+		table.insert(parts, string.format("%d/%d answered", answered_count, total_count))
+		table.insert(parts, "Tab/S-Tab review")
+	end
+	if allow_custom then
+		table.insert(parts, "c custom")
+	end
+	table.insert(parts, "m message")
+	table.insert(parts, "Esc cancel")
+	return table.concat(parts, " · ")
+end
+
+---@param result table
+---@param questions table
+---@param current_tab number
+---@param selection_state table
+local function append_tab_bar(result, questions, current_tab, selection_state)
+	if #questions <= 1 then
+		return
+	end
+
+	local parts = {}
+	local spans = {}
+	local offset = 0
+	for i, question in ipairs(questions) do
+		local selection = selection_state.selections and selection_state.selections[i]
+		local answered = selection and selection.is_answered
+		local label = tostring(i) .. " " .. get_question_title(question, "Q" .. tostring(i))
+		if answered then
+			label = label .. " ✓"
+		end
+		local text = i == current_tab and ("[" .. label .. "]") or (" " .. label .. " ")
+		table.insert(parts, text)
+		table.insert(spans, {
+			start_col = offset,
+			end_col = offset + #text,
+			hl_group = i == current_tab and "OpenCodeQuestionSelected"
+				or (answered and "OpenCodeQuestionAnswer" or "OpenCodeQuestionMuted"),
+		})
+		offset = offset + #text + 1
+	end
+
+	local line_index = add_panel_raw_line(result, table.concat(parts, " "), "OpenCodeQuestionMuted")
+	for _, span in ipairs(spans) do
+		table.insert(result.highlights, {
+			line = line_index,
+			col_start = #PANEL_PREFIX + span.start_col,
+			col_end = #PANEL_PREFIX + span.end_col,
+			hl_group = span.hl_group,
+		})
+	end
+end
+
+---@param selection table
+---@param question table
+---@return string[]
+local function collect_selection_answers(selection, question)
+	local answer_parts = {}
+	if type(selection) ~= "table" then
+		return answer_parts
+	end
+
+	for _, idx in ipairs(selection.selected_indices or {}) do
+		local option = question.options and question.options[idx]
+		if option then
+			table.insert(answer_parts, get_option_label(option, tostring(idx)))
+		end
+	end
+	if selection.custom_input and selection.custom_input ~= "" then
+		table.insert(answer_parts, selection.custom_input)
+	end
+
+	local message = trim_string(selection.message)
+	if message ~= "" then
+		table.insert(answer_parts, "Message: " .. message:gsub("%s*\n%s*", " / "))
+	end
+	return answer_parts
+end
+
+-- Get formatted lines for a question.
+---@param _request_id string
 ---@param question_data table
 ---@param selection_state table
----@param status "pending" | "answered" | "rejected" | "confirming"
+---@param status "pending"|"answered"|"rejected"|"confirming"
 ---@return table lines, table highlights, OpenCodeWidgetMeta meta
-function M.get_lines_for_question(request_id, question_data, selection_state, status)
-	local lines = {}
-	local highlights = {}
-	local line_num = 0
-
-	local questions = question_data.questions or question_data
-
-	-- If in confirming state, show confirmation view instead
-	-- (must check BEFORE current_tab lookup since confirming uses a temp tab beyond question range)
+function M.get_lines_for_question(_request_id, question_data, selection_state, status)
+	ensure_highlights()
 	if status == "confirming" then
-		return M.get_confirmation_lines(request_id, question_data, selection_state)
+		return M.get_confirmation_lines(_request_id, question_data, selection_state)
 	end
 
+	local result = { lines = {}, highlights = {} }
+	local questions = get_questions(question_data)
 	local current_tab = selection_state.current_tab or 1
 	local current_question = questions[current_tab]
 	local selections = selection_state.selections and selection_state.selections[current_tab] or {}
 
 	if not current_question then
-		return lines, highlights, widget_base.make_meta()
+		return result.lines, result.highlights, widget_base.make_meta()
 	end
 
-	-- Header line with icon and request ID
-	local icon = icons[status] or icons.pending
-	local header = widget_base.format_header(icon, "Question", request_id, selection_state.timestamp)
-	table.insert(lines, header)
-	widget_base.add_full_line_highlight(highlights, line_num, header, status == "pending" and "Title" or "Comment")
-	line_num = line_num + 1
+	local title = get_question_title(current_question, "Question")
+	local suffix = #questions > 1 and string.format("(%d/%d)", current_tab, #questions) or nil
+	add_panel_blank(result)
+	add_header(result, title, status or "pending", suffix)
+	add_panel_blank(result)
 
-	-- Separator
-	table.insert(lines, widget_base.separator())
-	line_num = line_num + 1
-
-	-- Tab bar (if multiple questions)
+	append_tab_bar(result, questions, current_tab, selection_state)
 	if #questions > 1 then
-		local tab_parts = {}
-		local tab_highlight_offsets = {}
-		local current_offset = 0
-
-		for i, q in ipairs(questions) do
-			local tab_label = q.title or q.header or ("Q" .. i)
-			local is_active = i == current_tab
-			
-			-- Check if this question is answered
-			local selection = selection_state.selections and selection_state.selections[i]
-			local is_answered = selection and selection.is_answered
-			
-			-- Add checkmark if answered
-			if is_answered then
-				tab_label = tab_label .. " ✓"
-			end
-			
-			local prefix = is_active and "[" or " "
-			local suffix = is_active and "]" or " "
-			local tab_text = prefix .. tab_label .. suffix
-
-			table.insert(tab_parts, tab_text)
-			table.insert(tab_highlight_offsets, {
-				start_col = current_offset,
-				end_col = current_offset + #tab_text,
-				is_active = is_active,
-				is_answered = is_answered,
-			})
-
-			current_offset = current_offset + #tab_text + 1
-		end
-
-		table.insert(lines, table.concat(tab_parts, " "))
-
-		-- Apply tab highlights
-		for _, offset in ipairs(tab_highlight_offsets) do
-			local hl_group = "Normal"
-			if offset.is_active then
-				hl_group = "CursorLine"
-			elseif offset.is_answered then
-				hl_group = "Comment"
-			end
-			table.insert(highlights, {
-				line = line_num,
-				col_start = offset.start_col,
-				col_end = offset.end_col,
-				hl_group = hl_group,
-			})
-		end
-
-		line_num = line_num + 1
-		table.insert(lines, "")
-		line_num = line_num + 1
+		add_panel_blank(result)
 	end
 
-	-- Question header/title
-	if current_question.header then
-		table.insert(lines, current_question.header)
-		table.insert(highlights, {
-			line = line_num,
-			col_start = 0,
-			col_end = #current_question.header,
-			hl_group = "Label",
-		})
-		line_num = line_num + 1
-	end
-
-	-- Question text
-	if current_question.question then
-		local question_lines = vim.split(current_question.question, "\n", { plain = true })
-		for _, qline in ipairs(question_lines) do
-			table.insert(lines, qline)
-			line_num = line_num + 1
-		end
+	local body = trim_string(current_question.question)
+	if body ~= "" and body ~= title then
+		append_text_lines(result, current_question.question, "OpenCodeQuestionOutput")
+	elseif body == "" and title ~= "" then
+		add_panel_line(result, title, "OpenCodeQuestionTitle")
 	end
 
 	if selections.message and selections.message ~= "" then
-		table.insert(lines, "")
-		line_num = line_num + 1
-		line_num = append_message_lines(lines, highlights, line_num, selections.message)
+		add_panel_blank(result)
+		append_message_lines(result, selections.message)
 	end
 
-	table.insert(lines, "")
-	line_num = line_num + 1
+	add_panel_blank(result)
 
-	-- Options
 	local option_count = 0
-	local first_option_line = line_num
+	local first_option_line = #result.lines
 	local selected_indices = selections.selected_indices or {}
 	local is_multi = current_question.type == "multi"
 	local allow_custom = current_question.allow_custom or current_question.allowCustom
 
 	if current_question.options and #current_question.options > 0 then
-		first_option_line = line_num
 		option_count = #current_question.options
 
 		for i, option in ipairs(current_question.options) do
-			local is_selected = false
-			for _, idx in ipairs(selected_indices) do
-				if idx == i then
-					is_selected = true
-					break
-				end
-			end
-
-			local option_text
-			local option_label = type(option) == "string" and option or (option.label or option.value or tostring(i))
-
+			local selected = is_selected(selected_indices, i)
+			local option_label = get_option_label(option, tostring(i))
+			local marker
 			if is_multi then
-				local checkbox = is_selected and icons.multi_selected or icons.multi_unselected
-				option_text = string.format("%s %d. %s", checkbox, i, option_label)
+				marker = selected and icons.multi_selected or icons.multi_unselected
 			else
-				local indicator = is_selected and icons.selected or icons.unselected
-				option_text = string.format("%s %d. %s", indicator, i, option_label)
+				marker = selected and icons.selected or icons.unselected
 			end
 
-			table.insert(lines, option_text)
-
-			-- Highlight selected option
-			if is_selected then
-				widget_base.add_full_line_highlight(highlights, line_num, option_text, "CursorLine")
+			local option_text = string.format("%s %d. %s", marker, i, option_label)
+			local _, _, rows = add_panel_raw_line(
+				result,
+				option_text,
+				selected and "OpenCodeQuestionSelected" or "OpenCodeQuestionOutput"
+			)
+			if selected then
+				highlight_panel_text(result, rows, marker, "OpenCodeQuestionSelectedMarker")
 			end
-
-			line_num = line_num + 1
 		end
 
-		-- Custom input option (if enabled)
 		if allow_custom then
-			local custom_selected = selections.custom_input and selections.custom_input ~= ""
-			local custom_indicator = custom_selected and icons.selected or icons.unselected
+			add_panel_blank(result)
 			local custom_text = selections.custom_input or ""
-
-			table.insert(lines, "")
-			line_num = line_num + 1
-
-			if custom_selected then
-				local custom_line = custom_indicator .. " Custom: " .. custom_text
-				table.insert(lines, custom_line)
-				widget_base.add_full_line_highlight(highlights, line_num, custom_line, "CursorLine")
-			else
-				table.insert(lines, custom_indicator .. " Provide custom answer...")
-			end
-
-			line_num = line_num + 1
+			local custom_selected = custom_text ~= ""
+			local custom_marker = custom_selected and icons.selected or icons.unselected
+			local custom_line = custom_selected and (custom_marker .. " Custom: " .. custom_text)
+				or (custom_marker .. " Custom answer...")
+			add_panel_line(
+				result,
+				custom_line,
+				custom_selected and "OpenCodeQuestionSelected" or "OpenCodeQuestionMuted"
+			)
 		end
 	end
 
-	-- Keymap hint
 	if status == "pending" then
-		table.insert(lines, "")
-		line_num = line_num + 1
-
-		local hint
-		local ready_to_advance = selections.ready_to_advance
-
-		-- Show progress for multi-question blocks
-		if #questions > 1 then
-			-- Count answered questions
-			local answered_count = 0
-			for i = 1, #questions do
-				local sel = selection_state.selections and selection_state.selections[i]
-				if sel and sel.is_answered then
-					answered_count = answered_count + 1
-				end
-			end
-
-			if ready_to_advance then
-				hint = string.format(
-					"Tip: press Enter again to continue (%d/%d answered). Tab/S-Tab review, Esc cancel.",
-					answered_count,
-					#questions
-				)
-			else
-				hint = string.format(
-					"Tip: %s, then press Enter twice to continue (%d/%d answered). Tab/S-Tab review, Esc cancel.",
-					format_option_hint(option_count),
-					answered_count,
-					#questions
-				)
-			end
-		else
-			if ready_to_advance then
-				hint = "Tip: press Enter again to submit this answer, or change the selection to keep editing. Esc cancel."
-			else
-				hint = string.format(
-					"Tip: %s, then press Enter twice to submit. Esc cancel.",
-					format_option_hint(option_count)
-				)
+		local answered_count = 0
+		for i = 1, #questions do
+			local selection = selection_state.selections and selection_state.selections[i]
+			if selection and selection.is_answered then
+				answered_count = answered_count + 1
 			end
 		end
 
-		if allow_custom then
-			hint = hint:gsub(" Esc cancel%.$", " Press c for custom input. Press m for message. Esc cancel.")
-		else
-			hint = hint:gsub(" Esc cancel%.$", " Press m for message. Esc cancel.")
-		end
-
-		table.insert(lines, hint)
-		widget_base.add_full_line_highlight(highlights, line_num, hint, "Comment")
-		line_num = line_num + 1
+		add_panel_blank(result)
+		add_panel_line(
+			result,
+			format_hint(
+				option_count,
+				is_multi,
+				allow_custom,
+				selections.ready_to_advance == true,
+				#questions > 1,
+				answered_count,
+				#questions
+			),
+			"OpenCodeQuestionMuted"
+		)
 	end
 
-	-- Empty line after question
-	table.insert(lines, "")
+	add_panel_blank(result)
+	add_trailing_separator(result)
 
-	return lines, highlights, widget_base.make_meta({
-		interactive_count = option_count,
-		first_interactive_line = first_option_line,
-	})
+	return result.lines,
+		result.highlights,
+		widget_base.make_meta({
+			interactive_count = option_count,
+			first_interactive_line = first_option_line,
+		})
 end
 
--- Get option count for a question
----@param question_data table
----@return number
-function M.get_option_count(question_data)
-	local questions = question_data.questions or question_data
-	if #questions == 0 then
-		return 0
-	end
-
-	local current_question = questions[1]
-	if not current_question.options then
-		return 0
-	end
-
-	return #current_question.options
-end
-
--- Check if line is within a question's range
----@param bufnr number
----@param line number 0-based line number
----@param question_line_start number
----@param question_line_end number
----@return boolean
-function M.is_line_in_question(bufnr, line, question_line_start, question_line_end)
-	return line >= question_line_start and line <= question_line_end
-end
-
--- Get option index from line number
----@param line number Line number within question (relative to question start)
----@param header_lines number Number of header lines before options
----@param has_tabs boolean Whether question has tab bar
----@param has_header boolean Whether question has header text
----@return number|nil option_index
-function M.get_option_index_from_line(line, header_lines, has_tabs, has_header)
-	-- Account for: header (1) + separator (1) + [tabs (2 if has_tabs)] + [header] + question + empty + options start
-	local options_start = 2 + (has_tabs and 2 or 0) + header_lines + 1
-
-	if line < options_start then
-		return nil
-	end
-
-	local option_index = line - options_start + 1
-	return option_index > 0 and option_index or nil
-end
-
--- Format answered question display
----@param request_id string
+-- Format answered question display.
+---@param _request_id string
 ---@param question_data table
 ---@param answers table
 ---@return table lines, table highlights
-function M.get_answered_lines(request_id, question_data, answers)
-	local lines = {}
-	local highlights = {}
-	local line_num = 0
+function M.get_answered_lines(_request_id, question_data, answers)
+	ensure_highlights()
 
-	local header = widget_base.format_header(
-		icons.answered,
-		"Question",
-		request_id,
-		question_data.timestamp or os.time()
-	)
-
-	table.insert(lines, header)
-	widget_base.add_full_line_highlight(highlights, line_num, header, "Comment")
-	line_num = line_num + 1
-
-	table.insert(lines, widget_base.separator())
-	line_num = line_num + 1
-
-	local questions = question_data.questions or question_data
+	local result = { lines = {}, highlights = {} }
+	local questions = get_questions(question_data)
+	add_panel_blank(result)
+	add_header(result, "answered", "answered")
+	add_panel_blank(result)
 
 	for i, question in ipairs(questions) do
-		local answer = answers and answers[i] or {}
-		local answer_text = table.concat(answer, ", ")
+		local raw_answer = answers and answers[i] or {}
+		local answer_text
+		if type(raw_answer) == "table" then
+			answer_text = table.concat(raw_answer, ", ")
+		else
+			answer_text = tostring(raw_answer or "")
+		end
+		if answer_text == "" then
+			answer_text = "(no answer)"
+		end
 
-		local display_text = (question.header or question.question or "Question") .. ": " .. answer_text
-		table.insert(lines, display_text)
-		line_num = line_num + 1
+		local label = get_question_title(question, "Question " .. tostring(i))
+		add_panel_line(result, label .. ": " .. answer_text, "OpenCodeQuestionAnswer")
 	end
 
-	table.insert(lines, "")
-
-	return lines, highlights
+	add_panel_blank(result)
+	add_trailing_separator(result)
+	return result.lines, result.highlights
 end
 
--- Format rejected question display
----@param request_id string
+-- Format rejected question display.
+---@param _request_id string
 ---@param question_data table
 ---@return table lines, table highlights
-function M.get_rejected_lines(request_id, question_data)
-	local lines = {}
-	local highlights = {}
-	local line_num = 0
+function M.get_rejected_lines(_request_id, question_data)
+	ensure_highlights()
 
-	local header = widget_base.format_header(
-		icons.rejected,
-		"Question",
-		request_id,
-		question_data.timestamp or os.time()
-	)
+	local result = { lines = {}, highlights = {} }
+	local questions = get_questions(question_data)
+	local title = questions[1] and get_question_title(questions[1], "Question") or "Question"
 
-	table.insert(lines, header)
-	widget_base.add_full_line_highlight(highlights, line_num, header, "Error")
-	line_num = line_num + 1
+	add_panel_blank(result)
+	add_header(result, title, "rejected", "cancelled")
+	add_panel_blank(result)
+	add_panel_line(result, "Cancelled", "OpenCodeQuestionError")
+	add_panel_blank(result)
+	add_trailing_separator(result)
 
-	table.insert(lines, widget_base.separator())
-	line_num = line_num + 1
-
-	local questions = question_data.questions or question_data
-	local question_text = questions[1] and (questions[1].header or questions[1].question or "Question")
-
-	table.insert(lines, question_text .. " - Cancelled")
-	table.insert(highlights, {
-		line = line_num,
-		col_start = #question_text + 1,
-		col_end = #question_text + 1 + 10,
-		hl_group = "Error",
-	})
-	line_num = line_num + 1
-
-	table.insert(lines, "")
-
-	return lines, highlights
+	return result.lines, result.highlights
 end
 
--- Get confirmation view lines (shown when all questions are answered)
----@param request_id string
+-- Get confirmation view lines (shown when all questions are answered).
+---@param _request_id string
 ---@param question_data table
 ---@param selection_state table
 ---@return table lines, table highlights, OpenCodeWidgetMeta meta
-function M.get_confirmation_lines(request_id, question_data, selection_state)
-	local lines = {}
-	local highlights = {}
-	local line_num = 0
+function M.get_confirmation_lines(_request_id, question_data, selection_state)
+	ensure_highlights()
 
-	local questions = question_data.questions or question_data
-	
-	-- Header
-	local header = widget_base.format_header("✓", "Question", request_id, selection_state.timestamp)
-	table.insert(lines, header)
-	widget_base.add_full_line_highlight(highlights, line_num, header, "Title")
-	line_num = line_num + 1
+	local result = { lines = {}, highlights = {} }
+	local questions = get_questions(question_data)
 
-	-- Separator
-	table.insert(lines, widget_base.separator())
-	line_num = line_num + 1
+	add_panel_blank(result)
+	add_header(result, "ready to submit", "pending")
+	add_panel_blank(result)
 
-	-- Title
-	local title = "Ready to Submit"
-	table.insert(lines, title)
-	widget_base.add_full_line_highlight(highlights, line_num, title, "Title")
-	line_num = line_num + 1
-	
-	table.insert(lines, "")
-	line_num = line_num + 1
-
-	-- Show all questions with their answers
 	for i, question in ipairs(questions) do
 		local selection = selection_state.selections and selection_state.selections[i]
-		local answer_parts = {}
-		
-		-- Collect answer text
-		if selection then
-			for _, idx in ipairs(selection.selected_indices or {}) do
-				local option = question.options and question.options[idx]
-				if option then
-					local label = type(option) == "string" and option or (option.label or option.value or tostring(idx))
-					table.insert(answer_parts, label)
-				end
-			end
-			if selection.custom_input and selection.custom_input ~= "" then
-				table.insert(answer_parts, selection.custom_input)
-			end
-			local message = format_message_answer(selection.message)
-			if message ~= "" then
-				table.insert(answer_parts, message)
-			end
-		end
-		
-		local answer_text = #answer_parts > 0 and table.concat(answer_parts, ", ") or "(no answer)"
-		local q_label = question.header or question.title or ("Question " .. i)
-		
-		-- Question label
-		local question_line = q_label .. ":"
-		table.insert(lines, question_line)
-		widget_base.add_full_line_highlight(highlights, line_num, question_line, "Label")
-		line_num = line_num + 1
-		
-		-- Answer with checkmark
-		local answer_line = "  ✓ " .. answer_text
-		table.insert(lines, answer_line)
-		widget_base.add_full_line_highlight(highlights, line_num, answer_line, "String")
-		line_num = line_num + 1
-		
-		table.insert(lines, "")
-		line_num = line_num + 1
+		local answers = collect_selection_answers(selection, question)
+		local answer_text = #answers > 0 and table.concat(answers, ", ") or "(no answer)"
+		local label = get_question_title(question, "Question " .. tostring(i))
+		add_panel_line(result, label .. ": " .. answer_text, "OpenCodeQuestionAnswer")
 	end
 
-	-- Confirmation prompt - read current selection
+	add_panel_blank(result)
+
 	local temp_tab_idx = #questions + 1
 	local confirm_selection = selection_state.selections and selection_state.selections[temp_tab_idx]
 	local confirm_selected = confirm_selection and confirm_selection.selected_indices or { 1 }
 	local selected_choice = confirm_selected[1] or 1
+	local first_option_line = #result.lines
 
-	local first_option_line = line_num
-
-	local yes_indicator = selected_choice == 1 and icons.selected or icons.unselected
-	local no_indicator = selected_choice == 2 and icons.selected or icons.unselected
-
-	local yes_text = yes_indicator .. " 1. Yes, submit all answers"
-	table.insert(lines, yes_text)
-	if selected_choice == 1 then
-		widget_base.add_full_line_highlight(highlights, line_num, yes_text, "CursorLine")
+	for i, label in ipairs({ "Yes, submit all answers", "No, review answers" }) do
+		local selected = selected_choice == i
+		local marker = selected and icons.selected or icons.unselected
+		local line = string.format("%s %d. %s", marker, i, label)
+		add_panel_raw_line(result, line, selected and "OpenCodeQuestionSelected" or "OpenCodeQuestionOutput")
 	end
-	line_num = line_num + 1
 
-	local no_text = no_indicator .. " 2. No, review answers"
-	table.insert(lines, no_text)
-	if selected_choice == 2 then
-		widget_base.add_full_line_highlight(highlights, line_num, no_text, "CursorLine")
-	end
-	line_num = line_num + 1
-	
-	table.insert(lines, "")
-	line_num = line_num + 1
+	add_panel_blank(result)
+	add_panel_line(result, "Enter to continue · Esc returns to questions", "OpenCodeQuestionMuted")
+	add_panel_blank(result)
+	add_trailing_separator(result)
 
-	-- Hint
-	local hint = "Tip: choose Yes or No, then press Enter to continue. Esc returns to the questions."
-	table.insert(lines, hint)
-	widget_base.add_full_line_highlight(highlights, line_num, hint, "Comment")
-	line_num = line_num + 1
-
-	table.insert(lines, "")
-
-	return lines, highlights, widget_base.make_meta({
-		interactive_count = 2,
-		first_interactive_line = first_option_line,
-	})
+	return result.lines,
+		result.highlights,
+		widget_base.make_meta({
+			interactive_count = 2,
+			first_interactive_line = first_option_line,
+		})
 end
 
--- Set custom icons
+-- Set custom icons.
 ---@param custom_icons table
 function M.set_icons(custom_icons)
 	icons = vim.tbl_deep_extend("force", icons, custom_icons or {})

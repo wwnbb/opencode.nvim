@@ -48,6 +48,26 @@ local function run_add_selection_context_command(send_now, raw_context)
 	end)
 end
 
+local function run_danger_mode_command(raw_mode)
+	local mode = vim.trim(raw_mode or ""):lower()
+	if mode == "" or mode == "toggle" then
+		actions().toggle_danger_mode()
+		return
+	end
+
+	if mode == "on" or mode == "enable" or mode == "enabled" or mode == "true" then
+		actions().enable_danger_mode()
+		return
+	end
+
+	if mode == "off" or mode == "disable" or mode == "disabled" or mode == "false" then
+		actions().disable_danger_mode()
+		return
+	end
+
+	vim.notify("Usage: :OpenCodeDangerMode [on|off|toggle]", vim.log.levels.ERROR)
+end
+
 local function create_commands()
 	vim.api.nvim_create_user_command("OpenCode", function()
 		actions().open()
@@ -89,6 +109,16 @@ local function create_commands()
 		actions().abort()
 	end, {
 		desc = "Abort/stop current generation",
+	})
+
+	vim.api.nvim_create_user_command("OpenCodeDangerMode", function(args)
+		run_danger_mode_command(args.args)
+	end, {
+		nargs = "?",
+		complete = function()
+			return { "on", "off", "toggle" }
+		end,
+		desc = "Toggle OpenCode danger mode permission auto-approval",
 	})
 
 	vim.api.nvim_create_user_command("OpenCodePaste", function()
