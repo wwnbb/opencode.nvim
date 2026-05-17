@@ -3,6 +3,7 @@ local M = {}
 local cs = require("opencode.ui.chat.state")
 local state = cs.state
 local render = require("opencode.ui.chat.render")
+local event_util = require("opencode.events.util")
 
 local FOCUS_ORDER = { "question", "permission", "edit" }
 
@@ -24,7 +25,11 @@ function M.should_render(owner_session_id, widget_status, current_session_id, in
 	if in_child_session_view then
 		return false
 	end
-	return (widget_status or "pending") == "pending"
+	local status = widget_status or "pending"
+	if status ~= "pending" and status ~= "confirming" then
+		return false
+	end
+	return event_util.permission_session_is_relevant(current_session_id, owner_session_id)
 end
 
 ---@param kind string

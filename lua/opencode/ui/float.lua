@@ -275,6 +275,8 @@ function M.create_menu(items, on_select, opts)
 			text = {
 				top = (opts.title or " Select "),
 				top_align = "center",
+				bottom = opts.footer_text,
+				bottom_align = "center",
 			},
 		},
 		buf_options = {
@@ -302,7 +304,17 @@ function M.create_menu(items, on_select, opts)
 	-- Set content
 	local lines = {}
 	for i, item in ipairs(items) do
-		table.insert(lines, string.format("  %d. %s", i, item.label or item))
+		local label = type(item) == "table" and (item.label or item.value) or item
+		local line = string.format("  %d. %s", i, tostring(label or ""))
+		local description = type(item) == "table" and item.description or nil
+		if description and description ~= "" then
+			local desc = tostring(description)
+			local desc_space = width - #line - #desc - 2
+			if desc_space > 0 then
+				line = line .. string.rep(" ", desc_space) .. desc
+			end
+		end
+		table.insert(lines, line)
 	end
 
 	vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, lines)
@@ -326,6 +338,36 @@ function M.create_menu(items, on_select, opts)
 
 	vim.keymap.set("n", "<Esc>", function()
 		close()
+	end, opts_map)
+
+	local function move_cursor(delta)
+		if not popup.winid or not vim.api.nvim_win_is_valid(popup.winid) or #items == 0 then
+			return
+		end
+		local cursor = vim.api.nvim_win_get_cursor(popup.winid)
+		local next_line = cursor[1] + delta
+		if next_line < 1 then
+			next_line = #items
+		elseif next_line > #items then
+			next_line = 1
+		end
+		vim.api.nvim_win_set_cursor(popup.winid, { next_line, 0 })
+	end
+
+	vim.keymap.set("n", "j", function()
+		move_cursor(1)
+	end, opts_map)
+
+	vim.keymap.set("n", "k", function()
+		move_cursor(-1)
+	end, opts_map)
+
+	vim.keymap.set("n", "<Down>", function()
+		move_cursor(1)
+	end, opts_map)
+
+	vim.keymap.set("n", "<Up>", function()
+		move_cursor(-1)
 	end, opts_map)
 
 	-- Number shortcuts

@@ -72,6 +72,10 @@ function M.clear(opts)
 	return api().clear(opts)
 end
 
+function M.new_session(opts)
+	return api().new_session(opts)
+end
+
 function M.send(message, opts)
 	return api().send(message, opts)
 end
@@ -82,6 +86,10 @@ end
 
 function M.command_palette()
 	return api().command_palette()
+end
+
+function M.active_sessions()
+	return api().active_sessions()
 end
 
 function M.toggle_logs()

@@ -45,6 +45,7 @@ function M.enter_child_session(part_id)
 		table.insert(state.session_stack, {
 			id = current.id,
 			name = current.name or "Session",
+			runtime = app_state.is_runtime_session(current.id),
 		})
 
 		local child_name = input.description or "Subagent"
@@ -52,6 +53,7 @@ function M.enter_child_session(part_id)
 		session_actions.set_active(child_session_id, child_name, {
 			reason = "child_navigation",
 			preserve_cache = true,
+			runtime = false,
 		})
 
 		local messages = sync.get_messages(child_session_id)
@@ -103,6 +105,7 @@ function M.leave_child_session()
 	session_actions.set_active(parent.id, parent.name, {
 		reason = "child_navigation",
 		preserve_cache = true,
+		runtime = parent.runtime ~= false,
 	})
 
 	vim.schedule(function()

@@ -11,6 +11,8 @@ local input = require("opencode.ui.input")
 local thinking = require("opencode.ui.thinking")
 local spinner = require("opencode.ui.spinner")
 local locale = require("opencode.util.locale")
+local session_util = require("opencode.util.session")
+local event_util = require("opencode.events.util")
 
 -- ─── Shared state & sub-modules ──────────────────────────────────────────────
 
@@ -165,6 +167,291 @@ local function setup_chat_window_options(winid)
 	pcall(function()
 		wo.statuscolumn = ""
 	end)
+end
+
+local function ensure_winbar_highlights()
+	vim.api.nvim_set_hl(0, "OpenCodeWinbar", { link = "StatusLine", default = true })
+	vim.api.nvim_set_hl(0, "OpenCodeWinbarCurrent", { link = "TabLineSel", default = true })
+	vim.api.nvim_set_hl(0, "OpenCodeWinbarRunning", { link = "DiagnosticOk", default = true })
+	vim.api.nvim_set_hl(0, "OpenCodeWinbarWaiting", { link = "DiagnosticWarn", default = true })
+	vim.api.nvim_set_hl(0, "OpenCodeWinbarError", { link = "DiagnosticError", default = true })
+	vim.api.nvim_set_hl(0, "OpenCodeWinbarIdle", { link = "Comment", default = true })
+end
+
+---@param text string
+---@return string
+local function escape_winbar_text(text)
+	local escaped = tostring(text or ""):gsub("%%", "%%%%")
+	return escaped
+end
+
+---@param pending table|nil
+---@return number
+local function pending_total(pending)
+	pending = pending or {}
+	return (pending.permissions or 0) + (pending.questions or 0) + (pending.edits or 0)
+end
+
+---@param session table
+---@param icons table
+---@return string icon
+---@return string hl
+local function session_tab_icon(session, icons)
+	local status = session.status or {}
+	local status_type = type(status) == "table" and status.type or status
+	if pending_total(session.pending) > 0 then
+		return icons.waiting or "◈", "OpenCodeWinbarWaiting"
+	end
+	if status_type == "busy" or status_type == "retry" or status_type == "streaming" then
+		return icons.running or "●", "OpenCodeWinbarRunning"
+	end
+	if status_type == "error" then
+		return icons.error or "✕", "OpenCodeWinbarError"
+	end
+	return icons.idle or "○", "OpenCodeWinbarIdle"
+end
+
+---@param title string
+---@param max_len number
+---@return string
+local function truncate_title(title, max_len)
+	title = title or ""
+	if #title <= max_len then
+		return title
+	end
+	if max_len <= 3 then
+		return title:sub(1, max_len)
+	end
+	return title:sub(1, max_len - 3) .. "..."
+end
+
+---@param text string|table|nil
+---@param align string|nil
+---@return boolean
+local function set_float_border_title(text, align)
+	if not state.config or state.config.layout ~= "float" then
+		return false
+	end
+	if not state.layout or not state.layout.border or type(state.layout.border.set_text) ~= "function" then
+		return false
+	end
+
+	local cfg = state.config or get_config()
+	local fallback = cfg.float and cfg.float.title or " OpenCode "
+	local title = fallback
+	if type(text) == "string" and text ~= "" then
+		title = " " .. text .. " "
+	elseif type(text) == "table" then
+		title = text
+	end
+	local title_align = align or (cfg.float and cfg.float.title_pos) or "center"
+
+	local ok = pcall(function()
+		state.layout.border:set_text("top", title, title_align)
+	end)
+	return ok
+end
+
+---@param tabs_cfg table
+---@param current_session table|nil
+---@return table tabs
+local function build_session_tabs(tabs_cfg, current_session)
+	ensure_winbar_highlights()
+
+	local app_state = require("opencode.state")
+	local sessions = app_state.get_active_sessions()
+	local active_session = current_session or app_state.get_session() or {}
+	local current_root_session_id = nil
+	if active_session.id and not app_state.is_runtime_session(active_session.id) then
+		for _, session in ipairs(sessions) do
+			if event_util.session_owns_task_child(session.id, active_session.id) then
+				current_root_session_id = session.id
+				break
+			end
+		end
+	end
+
+	local max_tabs = math.max(1, tonumber(tabs_cfg.max_tabs) or 3)
+	local separator = tabs_cfg.separator or " │ "
+	local icons = tabs_cfg.icons or {}
+	local parts = {}
+	local line = NuiLine()
+	local has_tabs = false
+	state.winbar_targets = {}
+
+	line:append(" ", "OpenCodeWinbar")
+	for index, session in ipairs(sessions) do
+		if index > max_tabs then
+			break
+		end
+		state.winbar_targets[index] = session.id
+		local icon, icon_hl = session_tab_icon(session, icons)
+		local title = session_util.displayTitle(session.title or session.name) or session.id
+		local display_title = truncate_title(title, 18)
+		local is_current = session.is_current or current_root_session_id == session.id
+		local label_hl = is_current and "OpenCodeWinbarCurrent" or "OpenCodeWinbar"
+		local label = string.format(" %s %s ", icon, display_title)
+		if has_tabs then
+			line:append(separator, "OpenCodeWinbar")
+		end
+		line:append(icon, icon_hl)
+		line:append(" " .. display_title, label_hl)
+		has_tabs = true
+		table.insert(
+			parts,
+			string.format(
+				"%%%d@v:lua.__opencode_chat_winbar_click@%%#%s#%s%%#%s#%s%%T",
+				index,
+				icon_hl,
+				escape_winbar_text(icon),
+				label_hl,
+				escape_winbar_text(label:sub(#icon + 2))
+			)
+		)
+	end
+
+	local running = 0
+	local waiting = 0
+	for _, session in ipairs(sessions) do
+		local status = session.status or {}
+		local status_type = type(status) == "table" and status.type or status
+		if status_type == "busy" or status_type == "retry" or status_type == "streaming" then
+			running = running + 1
+		end
+		if pending_total(session.pending) > 0 then
+			waiting = waiting + 1
+		end
+	end
+
+	if #sessions > max_tabs or running > 0 or waiting > 0 then
+		if has_tabs then
+			line:append(separator, "OpenCodeWinbar")
+		end
+		line:append((icons.running or "●") .. tostring(running), "OpenCodeWinbarRunning")
+		line:append(" ", "OpenCodeWinbar")
+		line:append((icons.waiting or "◈") .. tostring(waiting), "OpenCodeWinbarWaiting")
+		has_tabs = true
+		table.insert(
+			parts,
+			string.format(
+				"%%#OpenCodeWinbar#%s%%#OpenCodeWinbarRunning#%s%d %%#OpenCodeWinbarWaiting#%s%d",
+				"",
+				escape_winbar_text(icons.running or "●"),
+				running,
+				escape_winbar_text(icons.waiting or "◈"),
+				waiting
+			)
+		)
+	end
+
+	if has_tabs then
+		line:append(" ", "OpenCodeWinbar")
+	end
+
+	return {
+		line = line,
+		parts = parts,
+		separator = separator,
+		has_tabs = has_tabs,
+	}
+end
+
+function M.update_winbar()
+	if not state.winid or not vim.api.nvim_win_is_valid(state.winid) then
+		return
+	end
+	local cfg = state.config or get_config()
+	local tabs_cfg = cfg.session_tabs or {}
+	if tabs_cfg.enabled == false then
+		pcall(function()
+			vim.wo[state.winid].winbar = ""
+		end)
+		state.winbar_targets = {}
+		set_float_border_title(nil)
+		return
+	end
+
+	if cfg.layout == "float" then
+		pcall(function()
+			vim.wo[state.winid].winbar = ""
+		end)
+		set_float_border_title(nil)
+		return
+	end
+
+	local tabs = build_session_tabs(tabs_cfg)
+
+	pcall(function()
+		vim.wo[state.winid].winbar = table.concat(tabs.parts, escape_winbar_text(tabs.separator))
+	end)
+end
+
+---@param target number|string
+function M.select_winbar_session(target)
+	local index = tonumber(target)
+	local session_id = index and state.winbar_targets[index] or nil
+	if not session_id then
+		return
+	end
+	local app_state = require("opencode.state")
+	local record = app_state.get_session_record(session_id) or { id = session_id }
+	require("opencode.session").switch_to(record, {
+		notify = false,
+		reason = "winbar",
+	})
+end
+
+---@param direction number
+---@return boolean switched
+function M.cycle_session(direction)
+	local app_state = require("opencode.state")
+	local sessions = app_state.get_active_sessions()
+	if #sessions <= 1 then
+		return false
+	end
+
+	local current = app_state.get_session() or {}
+	local current_index = nil
+	for index, session in ipairs(sessions) do
+		if session.id == current.id or session.is_current then
+			current_index = index
+			break
+		end
+	end
+
+	if not current_index and current.id then
+		for index, session in ipairs(sessions) do
+			if event_util.session_owns_task_child(session.id, current.id) then
+				current_index = index
+				break
+			end
+		end
+	end
+
+	local step = direction < 0 and -1 or 1
+	if not current_index then
+		current_index = step > 0 and 0 or 1
+	end
+
+	local next_index = ((current_index - 1 + step) % #sessions) + 1
+	local target = sessions[next_index]
+	if not target or target.id == current.id then
+		return false
+	end
+
+	local record = app_state.get_session_record(target.id) or target
+	require("opencode.session").switch_to(record, {
+		notify = false,
+		reason = "winbar",
+	})
+	return true
+end
+
+_G.__opencode_chat_winbar_click = _G.__opencode_chat_winbar_click or function(minwid)
+	local ok, chat = pcall(require, "opencode.ui.chat")
+	if ok and type(chat.select_winbar_session) == "function" then
+		chat.select_winbar_session(minwid)
+	end
 end
 
 -- ─── Float focus autocmds ─────────────────────────────────────────────────────
@@ -419,8 +706,16 @@ local function setup_buffer(bufnr)
 	end, { buffer = bufnr, noremap = true, silent = true, desc = "Open command palette" })
 
 	vim.keymap.set("n", "N", function()
-		require("opencode.actions").clear()
+		require("opencode.actions").new_session()
 	end, { buffer = bufnr, noremap = true, silent = true, desc = "Start new session" })
+
+	vim.keymap.set("n", "gt", function()
+		M.cycle_session(1)
+	end, vim.tbl_extend("force", opts, { desc = "Next OpenCode session" }))
+
+	vim.keymap.set("n", "gT", function()
+		M.cycle_session(-1)
+	end, vim.tbl_extend("force", opts, { desc = "Previous OpenCode session" }))
 
 	-- Question / permission / edit navigation (cursor moves first; widget selection follows cursor)
 	vim.keymap.set("n", "j", function()
@@ -675,6 +970,8 @@ function M.show_help()
 		"<C-c>      Stop generation",
 		"<C-p>      Command palette",
 		"N          Start new session",
+		"gt         Next session",
+		"gT         Previous session",
 		"<C-u>      Scroll up",
 		"<C-d>      Scroll down",
 		"gg         Go to top",
@@ -858,19 +1155,34 @@ function M.create()
 	end)
 
 	local function has_pending_interaction()
+		local current_session = require("opencode.state").get_session()
+		local in_child_session_view = #state.session_stack > 0
+
 		local question_ok, question_state_mod = pcall(require, "opencode.question.state")
-		if question_ok and question_state_mod.get_all_active and #question_state_mod.get_all_active() > 0 then
-			return true
+		if question_ok and question_state_mod.get_all_active then
+			for _, qstate in ipairs(question_state_mod.get_all_active()) do
+				if widget_support.should_render(qstate.session_id, qstate.status, current_session.id, in_child_session_view) then
+					return true
+				end
+			end
 		end
 
 		local perm_ok, perm_state_mod = pcall(require, "opencode.permission.state")
-		if perm_ok and perm_state_mod.get_all_active and #perm_state_mod.get_all_active() > 0 then
-			return true
+		if perm_ok and perm_state_mod.get_all_active then
+			for _, pstate in ipairs(perm_state_mod.get_all_active()) do
+				if widget_support.should_render(pstate.session_id, pstate.status, current_session.id, in_child_session_view) then
+					return true
+				end
+			end
 		end
 
 		local edit_ok, edit_state_mod = pcall(require, "opencode.edit.state")
-		if edit_ok and edit_state_mod.has_pending_edits and edit_state_mod.has_pending_edits() then
-			return true
+		if edit_ok and edit_state_mod.get_all_active then
+			for _, estate in ipairs(edit_state_mod.get_all_active()) do
+				if widget_support.should_render(estate.session_id, estate.status, current_session.id, in_child_session_view) then
+					return true
+				end
+			end
 		end
 
 		return false
@@ -910,6 +1222,8 @@ function M.create()
 
 	events.on("session_change", function(data)
 		local preserve_cache = data and data.preserve_cache
+		local reason = data and data.reason
+		local changed_session = data and data.previous_id ~= data.id
 		vim.schedule(function()
 			if not preserve_cache then
 				if spinner.is_active() then
@@ -928,7 +1242,7 @@ function M.create()
 			state.expanded_tools = {}
 			state.stream_blocks = {}
 			state.spinner_footer_line = nil
-			if not preserve_cache then
+			if not preserve_cache or (changed_session and reason ~= "child_navigation") then
 				state.session_stack = {}
 			end
 			chat_todos.update_window()
@@ -941,18 +1255,29 @@ function M.create()
 end
 
 local function request_focus_for_pending_widgets()
+	local current_session = require("opencode.state").get_session()
+	local in_child_session_view = #state.session_stack > 0
 	for _, qstate in ipairs(question_state.get_all()) do
-		if qstate.status == "pending" or qstate.status == "confirming" then
+		if
+			(qstate.status == "pending" or qstate.status == "confirming")
+			and widget_support.should_render(qstate.session_id, qstate.status, current_session.id, in_child_session_view)
+		then
 			return widget_support.request_focus("question", qstate.request_id, qstate.status)
 		end
 	end
 	for _, pstate in ipairs(permission_state.get_all()) do
-		if pstate.status == "pending" then
+		if
+			pstate.status == "pending"
+			and widget_support.should_render(pstate.session_id, pstate.status, current_session.id, in_child_session_view)
+		then
 			return widget_support.request_focus("permission", pstate.permission_id, pstate.status)
 		end
 	end
 	for _, estate in ipairs(edit_state.get_all()) do
-		if estate.status == "pending" then
+		if
+			estate.status == "pending"
+			and widget_support.should_render(estate.session_id, estate.status, current_session.id, in_child_session_view)
+		then
 			return widget_support.request_focus("edit", estate.permission_id, estate.status)
 		end
 	end
@@ -1005,6 +1330,7 @@ function M.open()
 		state.layout = popup
 		state.winid = popup.winid
 		setup_chat_window_options(state.winid)
+		M.update_winbar()
 		if cfg.close_on_focus_lost ~= false then
 			setup_float_focus_autocmds()
 		end
@@ -1054,6 +1380,7 @@ function M.open()
 		vim.wo[state.winid].winfixwidth = cfg.layout == "vertical"
 		vim.wo[state.winid].winfixheight = cfg.layout == "horizontal"
 		setup_chat_window_options(state.winid)
+		M.update_winbar()
 	end
 
 	state.visible = true
@@ -1331,6 +1658,31 @@ function M.clear()
 			emit("edit_removed", { permission_id = permission_id })
 		end
 	end
+end
+
+---@param session_id string|nil
+function M.clear_session_view(session_id)
+	state.local_notices = vim.tbl_filter(function(message)
+		if not session_id or session_id == "" then
+			return false
+		end
+		return message.session_id and message.session_id ~= session_id
+	end, state.local_notices or {})
+
+	state.questions = {}
+	state.permissions = {}
+	state.edits = {}
+	state.tasks = {}
+	state.expanded_tasks = {}
+	state.task_child_cache = {}
+	state.tools = {}
+	state.expanded_tools = {}
+	state.stream_blocks = {}
+	state.spinner_footer_line = nil
+	state.last_render_time = 0
+	state.render_scheduled = false
+
+	M.schedule_render()
 end
 
 function M.get_messages()
@@ -1972,6 +2324,17 @@ function M.render()
 		}
 	end
 
+	local chat_config = state.config or get_config()
+	local tabs_cfg = chat_config.session_tabs or {}
+
+	if chat_config.layout == "float" and tabs_cfg.enabled ~= false then
+		local tabs = build_session_tabs(tabs_cfg, current_session)
+		if tabs.has_tabs then
+			add_line(tabs.line)
+			add_raw_line("")
+		end
+	end
+
 	-- Breadcrumb navigation (when inside a child session)
 	if #state.session_stack > 0 then
 		local bc_line = NuiLine()
@@ -1991,13 +2354,15 @@ function M.render()
 		add_raw_line("")
 	end
 
-	-- Session header
-	ensure_session_title_highlight()
-	local session_name = current_session.name or "New session"
-	local header = NuiLine()
-	header:append(NuiText(session_name, "OpenCodeSessionTitle"))
-	add_line(header)
-	add_raw_line("")
+	-- Session header is kept for child views and for users who disable fixed tabs.
+	if tabs_cfg.enabled == false or in_child_session_view then
+		ensure_session_title_highlight()
+		local session_name = current_session.name or "New session"
+		local header = NuiLine()
+		header:append(NuiText(session_name, "OpenCodeSessionTitle"))
+		add_line(header)
+		add_raw_line("")
+	end
 
 	local messages = current_session.id and sync.get_messages(current_session.id) or {}
 	local spinner_active = spinner.is_active()
@@ -2267,7 +2632,9 @@ function M.render()
 
 	-- Empty state
 	if #raw_lines == 0 then
-		add_raw_line(" No active session")
+		if not current_session.id then
+			add_raw_line(" No active session")
+		end
 		add_raw_line(" Press 'i' to focus input")
 		add_raw_line(" Press '<C-p>' for command palette")
 		add_raw_line(" Press '?' for help")
@@ -2367,6 +2734,7 @@ function M.do_render()
 	if not state.bufnr or not vim.api.nvim_buf_is_valid(state.bufnr) then
 		return
 	end
+	M.update_winbar()
 
 	local widget_cursor = capture_widget_cursor_context()
 	local should_scroll = should_auto_scroll(widget_cursor)

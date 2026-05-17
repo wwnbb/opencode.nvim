@@ -598,6 +598,16 @@ function M.clear_session(session_id)
 	store.todo[session_id] = nil
 end
 
+---Clear only messages/parts for a session, preserving status and todos.
+---@param session_id string
+function M.clear_session_messages(session_id)
+	local messages = store.message[session_id] or {}
+	for _, msg in ipairs(messages) do
+		store.part[msg.id] = nil
+	end
+	store.message[session_id] = nil
+end
+
 ---Clear all data
 function M.clear_all()
 	store.message = {}

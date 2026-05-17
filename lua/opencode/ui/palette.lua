@@ -1153,12 +1153,22 @@ local function register_defaults()
 	M.register({
 		id = "session.new",
 		title = "New Session",
-		description = "Create a new chat session (same as Clear Chat)",
+		description = "Create a new chat session",
 		category = "session",
 		keybind = "<leader>on",
 		action = function()
-			-- Use the main clear() function which handles everything
-			actions.clear()
+			actions.new_session()
+		end,
+	})
+
+	M.register({
+		id = "session.active",
+		title = "Active Sessions",
+		description = "Show running, waiting, and recent sessions",
+		category = "session",
+		keybind = "<leader>oS",
+		action = function()
+			actions.active_sessions()
 		end,
 	})
 
@@ -1192,7 +1202,6 @@ local function register_defaults()
 						end
 
 						local float = require("opencode.ui.float")
-						local sync = require("opencode.sync")
 						local current = state.get_session()
 
 						-- Sort sessions by update time (most recent first, like TUI)
@@ -1249,78 +1258,10 @@ local function register_defaults()
 						-- Use searchable menu with time-based sort (most recent first, like TUI)
 						float.create_searchable_menu(items, function(item)
 							local session = item.session
-
-							-- Don't switch if already on this session
-							if current.id == session.id then
-								local title = session_util.displayTitle(session.title) or session.id
-								vim.notify("Already on session: " .. title, vim.log.levels.INFO)
-								return
-							end
-
-							-- Show loading indicator
-							vim.notify(
-								"Loading session: " .. (session_util.displayTitle(session.title) or session.id) .. "...",
-								vim.log.levels.INFO
-							)
-
-							-- Load session messages before switching (like TUI)
-							client.get_messages(session.id, {}, function(msg_err, messages)
-								vim.schedule(function()
-									if msg_err then
-										vim.notify(
-											"Failed to load session messages: " .. tostring(msg_err.message or msg_err),
-											vim.log.levels.WARN
-										)
-									end
-
-									-- Clear current session data from sync store
-									if current.id then
-										sync.clear_session(current.id)
-									end
-
-									-- Update sync store with loaded messages
-									if messages then
-										for _, msg in ipairs(messages) do
-											local info = msg.info
-											if info then
-												sync.handle_message_updated(info)
-											end
-											local parts = msg.parts
-											if parts then
-												for _, part in ipairs(parts) do
-													sync.handle_part_updated(part)
-												end
-											end
-										end
-									end
-
-									-- Set new session
-									session_actions.set_active(session.id, session.title, {
-										reason = "session_switch",
-									})
-
-									-- Emit session switch event (like TUI's SessionSelect)
-									local events = require("opencode.events")
-									events.emit("session.selected", {
-										sessionID = session.id,
-										sessionTitle = session.title,
-										previousSessionID = current.id,
-									})
-
-									-- Clear chat UI and render from sync store
-									local chat = require("opencode.ui.chat")
-									chat.clear()
-									require("opencode.ui.chat.render_coordinator").request({
-										session_id = session.id,
-										reason = "session_switch",
-									})
-
-									vim.notify(
-										"Switched to session: " .. (session_util.displayTitle(session.title) or session.id),
-										vim.log.levels.INFO
-									)
-								end)
-							end)
+							session_actions.switch_to(session, {
+								notify = true,
+								reason = "session_switch",
+							})
 						end, {
 							title = " Switch Session ",
 							width = 70,
@@ -1359,6 +1300,7 @@ local function register_defaults()
 					vim.schedule(function()
 						session_actions.set_active(session.id, session.title or "Forked Session", {
 							reason = "session_fork",
+							preserve_cache = true,
 						})
 						vim.notify("Forked session: " .. (session_util.displayTitle(session.title) or session.id), vim.log.levels.INFO)
 					end)
@@ -1453,10 +1395,15 @@ local function register_defaults()
 							vim.schedule(function()
 								session_actions.set_active(nil, nil, {
 									reason = "session_delete",
+									preserve_cache = true,
 								})
+								session_actions.forget(session.id, {
+									reason = "session_delete",
+								})
+								sync.clear_session(session.id)
 								vim.notify("Session deleted", vim.log.levels.INFO)
 								local chat = require("opencode.ui.chat")
-								chat.clear()
+								chat.clear_session_view(session.id)
 							end)
 						end)
 					end)
@@ -1902,8 +1849,8 @@ local function register_defaults()
 
 	M.register({
 		id = "action.clear",
-		title = "Clear Chat / New Session",
-		description = "Start a new session (like TUI's /clear or /new)",
+		title = "Clear Chat",
+		description = "Clear the current chat without switching sessions",
 		category = "actions",
 		keybind = "<leader>oc",
 		action = function()
@@ -2054,7 +2001,6 @@ local function register_defaults()
 		title = "Show Status",
 		description = "Show current session and connection status",
 		category = "actions",
-		keybind = "<leader>oS",
 		action = function()
 			-- Fetch full status from server (combines multiple endpoints)
 			client.get_status(function(err, server_status)

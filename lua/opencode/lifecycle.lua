@@ -6,7 +6,6 @@ local M = {}
 local Job = require("plenary.job")
 local config = require("opencode.config")
 local state = require("opencode.state")
-local session_actions = require("opencode.session")
 
 -- Pending callbacks queue for lazy initialization
 local pending_callbacks = {}
@@ -257,36 +256,14 @@ local function setup_event_listeners(client)
 		state.set_connection("connected")
 	end)
 
-	-- Message events are handled by events.lua setup_chat_handlers()
-	-- We only track message count here
+	-- Message counts are updated by events.handlers.message after sync de-dupes updates.
 	client.on_event("message.updated", function(data)
-		if data and data.info then
-			vim.schedule(function()
-				state.increment_message_count()
-			end)
-		end
+		return data
 	end)
 
-	-- Session status events from server
+	-- Session status events are mirrored by events.handlers.message.
 	client.on_event("session.status", function(data)
-		if data and data.status then
-			vim.schedule(function()
-				local current_session = state.get_session()
-				if data.sessionID == current_session.id then
-					if data.status == "idle" then
-						session_actions.set_status("idle", {
-							reason = "lifecycle_session_status",
-							session_id = current_session.id,
-						})
-					elseif data.status == "busy" then
-						session_actions.set_status("streaming", {
-							reason = "lifecycle_session_status",
-							session_id = current_session.id,
-						})
-					end
-				end
-			end)
-		end
+		return data
 	end)
 
 	-- File edit events are handled by events.lua edit handler

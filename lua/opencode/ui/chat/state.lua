@@ -40,6 +40,7 @@ M.state = {
 	task_anim_timer = nil,
 	task_anim_frame = 1,
 	float_dims = nil,
+	winbar_targets = {},
 }
 
 -- Namespace for all chat buffer highlights (enables incremental highlight updates)

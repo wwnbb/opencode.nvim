@@ -58,7 +58,7 @@ end
 
 ---@param tool_part table|nil
 ---@return string|nil
-local function resolve_task_child_session_id(tool_part)
+function M.resolve_task_child_session_id(tool_part)
 	if type(tool_part) ~= "table" or tool_part.tool ~= "task" then
 		return nil
 	end
@@ -80,7 +80,7 @@ end
 ---@param parent_session_id string|nil
 ---@param child_session_id string|nil
 ---@return boolean
-local function session_owns_task_child(parent_session_id, child_session_id)
+function M.session_owns_task_child(parent_session_id, child_session_id)
 	if not parent_session_id or parent_session_id == "" or not child_session_id or child_session_id == "" then
 		return false
 	end
@@ -92,13 +92,37 @@ local function session_owns_task_child(parent_session_id, child_session_id)
 
 	for _, message in ipairs(sync.get_messages(parent_session_id) or {}) do
 		for _, part in ipairs(sync.get_message_tools(message.id) or {}) do
-			if resolve_task_child_session_id(part) == child_session_id then
+			if M.resolve_task_child_session_id(part) == child_session_id then
 				return true
 			end
 		end
 	end
 
 	return false
+end
+
+---@param session_id string|nil
+---@return string|nil
+function M.runtime_root_for_session(session_id)
+	if not session_id or session_id == "" then
+		return nil
+	end
+
+	local ok_state, state = pcall(require, "opencode.state")
+	if not ok_state then
+		return session_id
+	end
+	if state.is_runtime_session(session_id) then
+		return session_id
+	end
+
+	for _, session in ipairs(state.get_active_sessions()) do
+		if M.session_owns_task_child(session.id, session_id) then
+			return session.id
+		end
+	end
+
+	return nil
 end
 
 ---@param current_session_id string|nil
@@ -115,7 +139,7 @@ function M.permission_session_is_relevant(current_session_id, event_session_id)
 		return true
 	end
 
-	return session_owns_task_child(current_session_id, event_session_id)
+	return M.session_owns_task_child(current_session_id, event_session_id)
 end
 
 

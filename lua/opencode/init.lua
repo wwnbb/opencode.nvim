@@ -434,6 +434,12 @@ function M.setup(opts)
     end, vim.tbl_extend("force", map_opts, { desc = "Abort OpenCode request" }))
   end
 
+  if km.active_sessions then
+    vim.keymap.set("n", km.active_sessions, function()
+      require("opencode").active_sessions()
+    end, vim.tbl_extend("force", map_opts, { desc = "OpenCode active sessions" }))
+  end
+
   -- Setup cursor hiding for opencode buffers
   -- We need to hide the cursor completely in the chat buffer to avoid visual distractions
   -- during streaming/thinking animations. Using blend=100 alone doesn't fully hide the cursor
@@ -838,6 +844,9 @@ function M.send(message, opts)
 					local part_count = 0
 					if sync_ok and sync.handle_session_messages then
 						message_count, part_count = sync.handle_session_messages(sid, messages)
+						session_actions.set_message_cache(sid, messages, {
+							reason = reason,
+						})
 					end
 
 					logger.debug("Session messages synced", {
@@ -878,69 +887,109 @@ function M.send(message, opts)
 				end
 			end
 
-			logger.debug("Sending prompt request", {
-				route = "/session/:id/message",
-				session_id = sid,
-				message_id = prompt_message_id,
-			})
 			session_actions.set_status("streaming", {
 				reason = "send_started",
 				session_id = sid,
 			})
 
-			client.send_message(sid, payload, { timeout = 0 }, function(err, response)
-				if err then
-					logger.debug("Prompt request rejected", {
-						session_id = sid,
-						error = err.message or err.error or tostring(err),
-					})
-					vim.schedule(function()
-						session_actions.set_status("idle", {
-							reason = "send_failed",
-							session_id = sid,
-						})
-						vim.notify("Failed to send message: " .. tostring(err.message or err.error or err), vim.log.levels.ERROR)
-						chat.add_message("system", "Error: Failed to send message")
-					end)
-					return
-				end
+			local cfg = state.get_config() or {}
+			local parallel = cfg.session and cfg.session.parallel or {}
+			local use_prompt_async = parallel.enabled ~= false and parallel.use_prompt_async ~= false
 
-				logger.debug("Prompt request completed", {
+			if use_prompt_async then
+				logger.debug("Sending async prompt request", {
+					route = "/session/:id/prompt_async",
 					session_id = sid,
-					agent = agent,
-					model = summarize_model_ref(model),
-					variant = variant,
-					has_response = type(response) == "table",
-					part_count = type(response) == "table" and type(response.parts) == "table" and #response.parts or nil,
+					message_id = prompt_message_id,
 				})
+				client.send_message_async(sid, payload, function(err)
+					if err then
+						logger.debug("Async prompt request rejected", {
+							session_id = sid,
+							error = err.message or err.error or tostring(err),
+						})
+						vim.schedule(function()
+							session_actions.set_status("idle", {
+								reason = "send_failed",
+								session_id = sid,
+							})
+							vim.notify(
+								"Failed to send message: " .. tostring(err.message or err.error or err),
+								vim.log.levels.ERROR
+							)
+							chat.add_message("system", "Error: Failed to send message", {
+								session_id = sid,
+							})
+						end)
+						return
+					end
 
-				vim.schedule(function()
-					handle_prompt_response(response)
-					sync_session_messages("prompt_completed")
-					local current = state.get_session()
-					if current.id == sid then
+					logger.debug("Async prompt accepted", {
+						session_id = sid,
+						agent = agent,
+						model = summarize_model_ref(model),
+						variant = variant,
+					})
+				end)
+			else
+				logger.debug("Sending prompt request", {
+					route = "/session/:id/message",
+					session_id = sid,
+					message_id = prompt_message_id,
+				})
+				client.send_message(sid, payload, { timeout = 0 }, function(err, response)
+					if err then
+						logger.debug("Prompt request rejected", {
+							session_id = sid,
+							error = err.message or err.error or tostring(err),
+						})
+						vim.schedule(function()
+							session_actions.set_status("idle", {
+								reason = "send_failed",
+								session_id = sid,
+							})
+							vim.notify(
+								"Failed to send message: " .. tostring(err.message or err.error or err),
+								vim.log.levels.ERROR
+							)
+							chat.add_message("system", "Error: Failed to send message", {
+								session_id = sid,
+							})
+						end)
+						return
+					end
+
+					logger.debug("Prompt request completed", {
+						session_id = sid,
+						agent = agent,
+						model = summarize_model_ref(model),
+						variant = variant,
+						has_response = type(response) == "table",
+						part_count = type(response) == "table" and type(response.parts) == "table" and #response.parts
+							or nil,
+					})
+
+					vim.schedule(function()
+						handle_prompt_response(response)
+						sync_session_messages("prompt_completed")
 						session_actions.set_status("idle", {
 							reason = "send_completed",
 							session_id = sid,
 						})
-					end
+					end)
 				end)
-			end)
+			end
 
 			vim.defer_fn(function()
-				local current = state.get_session()
-				if current.id == sid and state.get_status() == "streaming" then
+				local session_status = state.get_session_status(sid)
+				if session_status.type == "busy" or session_status.type == "retry" then
 					sync_session_messages("prompt_started")
 				end
 			end, 500)
 
 			vim.defer_fn(function()
-				local current = state.get_session()
-				if current.id ~= sid then
-					return
-				end
-				local current_status = state.get_status()
-				if current_status ~= "streaming" then
+				local session_status = state.get_session_status(sid)
+				if session_status.type ~= "busy" and session_status.type ~= "retry" then
 					return
 				end
 				sync_session_messages("prompt_watchdog", function()
@@ -956,7 +1005,7 @@ function M.send(message, opts)
 						logger.warn("No assistant message observed after prompt request", {
 							session_id = sid,
 							wait_ms = 3000,
-							status = current_status,
+							status = session_status.type,
 							before_message_count = before_message_count,
 							after_message_count = #messages,
 							before_assistant_count = before_assistant_count,
@@ -1036,48 +1085,84 @@ function M.abort()
 	end)
 end
 
---- Clear chat / Start new session (like TUI's /clear or /new)
---- This creates a new session, clears the chat display, and clears sync data
+--- Clear the current chat without changing the active session.
 ---@param opts? { silent?: boolean }
 function M.clear(opts)
 	opts = opts or {}
-	
+
+	local chat = require("opencode.ui.chat")
+	local sync = require("opencode.sync")
+	local current_session = state.get_session()
+
+	if current_session.id then
+		if type(sync.clear_session_messages) == "function" then
+			sync.clear_session_messages(current_session.id)
+		else
+			sync.clear_session(current_session.id)
+		end
+		state.set_message_count(0)
+		session_actions.set_message_cache(current_session.id, {}, {
+			reason = "clear_chat",
+		})
+		chat.clear_session_view(current_session.id)
+	else
+		chat.clear()
+	end
+
+	if events and events.emit then
+		events.emit("sync_changed", {
+			kind = "session_messages",
+			action = "clear_chat",
+			session_id = current_session.id,
+		})
+	end
+
+	if not opts.silent then
+		vim.notify("Cleared current OpenCode chat", vim.log.levels.INFO)
+	end
+end
+
+--- Start a new root session and make it active.
+---@param opts? { silent?: boolean }
+function M.new_session(opts)
+	opts = opts or {}
+
 	if not lifecycle then
 		vim.notify("OpenCode not initialized", vim.log.levels.ERROR)
 		return
 	end
 
 	lifecycle.ensure_connected(function()
-		local chat = require("opencode.ui.chat")
 		local sync = require("opencode.sync")
 		local current_session = state.get_session()
+		local cfg = state.get_config() or {}
+		local parallel = cfg.session and cfg.session.parallel or {}
+		local preserve_cache = parallel.enabled ~= false
 
-		-- Clear sync data for current session
-		if current_session.id then
+		if current_session.id and not preserve_cache then
 			sync.clear_session(current_session.id)
 		end
 
-		-- Create a new session
 		client.create_session({}, function(err, session)
 			vim.schedule(function()
 				if err then
 					vim.notify("Failed to create new session: " .. tostring(err.message or err.error or err), vim.log.levels.ERROR)
-					-- Still clear the UI even if session creation fails
-					chat.clear()
-					session_actions.set_active(nil, nil, {
-						reason = "clear",
-					})
 					return
 				end
 
-				-- Update state with new session
 				session_actions.set_active(session.id, session.title or "New session", {
-					reason = "clear",
+					reason = "new_session",
+					preserve_cache = preserve_cache,
 				})
-				
-				-- Clear chat display
-				chat.clear()
-				
+
+				local render_ok, render_coordinator = pcall(require, "opencode.ui.chat.render_coordinator")
+				if render_ok then
+					render_coordinator.request({
+						session_id = session.id,
+						reason = "new_session",
+					})
+				end
+
 				if not opts.silent then
 					vim.notify("Started new session", vim.log.levels.INFO)
 				end
@@ -1275,6 +1360,18 @@ function M.command_palette()
 	lifecycle.ensure_connected(function()
 		local palette = require("opencode.ui.palette")
 		palette.show()
+	end)
+end
+
+--- Show active/recent sessions with per-session status.
+function M.active_sessions()
+	if not lifecycle then
+		vim.notify("OpenCode not initialized", vim.log.levels.ERROR)
+		return
+	end
+
+	lifecycle.ensure_connected(function()
+		require("opencode.ui.active_sessions").show()
 	end)
 end
 

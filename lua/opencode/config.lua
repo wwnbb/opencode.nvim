@@ -30,6 +30,11 @@ M.defaults = {
 			providerID = "github-copilot",
 			modelID = "gpt-5-mini",
 		},
+		parallel = {
+			enabled = true,
+			recent_limit = 30,
+			use_prompt_async = true,
+		},
 	},
 
 	-- Danger mode auto-approves permission requests while enabled.
@@ -45,6 +50,17 @@ M.defaults = {
 		message_display = {
 			user_prefix = "> ",
 			multiline_prefix = true,
+		},
+		session_tabs = {
+			enabled = true,
+			max_tabs = 3,
+			separator = " │ ",
+			icons = {
+				running = "●",
+				waiting = "◈",
+				idle = "○",
+				error = "✕",
+			},
 		},
 		todo = {
 			enabled = true,
@@ -203,12 +219,23 @@ M.defaults = {
 		max_frecency_entries = 100,
 	},
 
+	notifications = {
+		enabled = true,
+		permissions = true,
+		questions = true,
+		edits = true,
+		done = true,
+		errors = true,
+		current_session = true,
+	},
+
 	-- Keymaps
 	keymaps = {
 		toggle = "<leader>oo",
 		command_palette = "<leader>op",
 		show_diff = "<leader>od",
 		abort = "<leader>ox",
+		active_sessions = "<leader>oS",
 	},
 }
 
