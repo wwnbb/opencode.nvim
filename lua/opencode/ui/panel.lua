@@ -58,6 +58,8 @@ function M.add_raw_line(result, text, hl_group, opts)
 		prefix_hl_group = opts.prefix_hl_group,
 		width = opts.width,
 		wrap = opts.wrap,
+		body_prefix = opts.body_prefix,
+		continuation_prefix = opts.continuation_prefix,
 	})
 end
 

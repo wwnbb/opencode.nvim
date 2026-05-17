@@ -52,10 +52,10 @@ end
 ---@return string line
 ---@return table[] rows
 local function add_panel_raw_line(result, text, hl_group, opts)
-	local panel_opts = vim.tbl_extend("force", opts or {}, {
+	local panel_opts = vim.tbl_extend("force", {
 		prefix = PANEL_PREFIX,
 		prefix_hl_group = PANEL_BORDER_HL,
-	})
+	}, opts or {})
 	return panel.add_raw_line(result, text, hl_group, panel_opts)
 end
 
@@ -243,6 +243,115 @@ local function add_entry(result, entry)
 	add_panel_line(result, entry.text, entry.hl_group)
 end
 
+---@param text string
+---@return string|nil gutter
+---@return string body
+local function split_line_number_gutter(text)
+	local gutter, body = tostring(text or ""):match("^(%d+:%s?)(.*)$")
+	if gutter then
+		return gutter, body
+	end
+	return nil, text
+end
+
+---@param gutter string
+---@return string
+local function continuation_gutter(gutter)
+	return string.rep(" ", vim.fn.strdisplaywidth(gutter))
+end
+
+---@param result table
+---@param text string
+---@param hl_group string
+---@return string source_text
+---@return table[] rows
+local function add_code_entry(result, text, hl_group)
+	local gutter, body = split_line_number_gutter(text)
+	if not gutter then
+		local _, _, rows = add_panel_raw_line(result, text, hl_group)
+		return text, rows
+	end
+
+	local _, _, rows = add_panel_raw_line(result, body, hl_group, {
+		body_prefix = gutter,
+		continuation_prefix = continuation_gutter(gutter),
+	})
+	return body, rows
+end
+
+---@param result table
+---@param row table
+---@param source_start number
+---@param source_end number
+---@param hl_group string
+---@param priority number|nil
+local function add_wrapped_row_highlight(result, row, source_start, source_end, hl_group, priority)
+	local row_start = row.byte_start or 0
+	local row_end = row.byte_end or (row_start + #(row.text or ""))
+	local overlap_start = math.max(source_start, row_start)
+	local overlap_end = math.min(source_end, row_end)
+	if overlap_start >= overlap_end then
+		return
+	end
+
+	local prefix_len = #(row.prefix or "")
+	local highlight = {
+		line = row.line_index,
+		col_start = prefix_len + overlap_start - row_start,
+		col_end = prefix_len + overlap_end - row_start,
+		hl_group = hl_group,
+	}
+	if priority then
+		highlight.priority = priority
+	end
+	table.insert(result.highlights, highlight)
+end
+
+---@param result table
+---@param rows table[]|nil
+---@param source_start number
+---@param source_end number
+---@param hl_group string
+---@param priority number|nil
+local function add_wrapped_line_highlight(result, rows, source_start, source_end, hl_group, priority)
+	if source_end <= source_start then
+		return
+	end
+	for _, row in ipairs(rows or {}) do
+		add_wrapped_row_highlight(result, row, source_start, source_end, hl_group, priority)
+	end
+end
+
+---@param result table
+---@param text string
+---@param lang string
+---@param row_map table[]
+local function add_wrapped_syntax_highlights(result, text, lang, row_map)
+	local source_lines = vim.split(text, "\n", { plain = true })
+	for _, hl in ipairs(syntax.highlight_text(text, lang, { scope = "tools" })) do
+		local first_line = hl.line or 0
+		local last_line = hl.end_line or first_line
+		local max_line = math.max(0, #source_lines - 1)
+		if first_line <= max_line then
+			last_line = math.min(last_line, max_line)
+			for source_line = first_line, last_line do
+				local line_text = source_lines[source_line + 1] or ""
+				local source_start = source_line == first_line and (hl.col_start or 0) or 0
+				local source_end
+				if source_line == last_line then
+					source_end = hl.end_col or hl.col_end or hl.col_start or #line_text
+				else
+					source_end = #line_text
+				end
+				if source_end == -1 then
+					source_end = #line_text
+				end
+				add_wrapped_line_highlight(result, row_map[source_line + 1], source_start, source_end, hl.hl_group, hl.priority)
+			end
+		end
+	end
+end
+
 ---@param tool_part table
 ---@param is_expanded boolean
 ---@return table|nil result
@@ -324,29 +433,21 @@ function M.render_tool(tool_part, is_expanded)
 	add_panel_blank(result)
 
 	local read_lang = syntax.language_for_path(filepath)
-	local code_start_line = nil
 	local code_lines = {}
-	local can_highlight_code = true
+	local code_rows = {}
 	local limit = is_expanded and #body_entries or math.min(MAX_COLLAPSED_OUTPUT_LINES, #body_entries)
 	for i = 1, limit do
 		local entry = body_entries[i]
 		if read_lang and entry.hl_group == "OpenCodeReadOutput" then
-			local line_index, _, rows = add_panel_raw_line(result, entry.text, entry.hl_group, { wrap = false })
-			code_start_line = code_start_line or line_index
-			table.insert(code_lines, entry.text)
-			if #rows > 1 then
-				can_highlight_code = false
-			end
+			local source_text, rows = add_code_entry(result, entry.text, entry.hl_group)
+			table.insert(code_lines, source_text)
+			table.insert(code_rows, rows)
 		else
 			add_entry(result, entry)
 		end
 	end
-	if read_lang and code_start_line and #code_lines > 0 and can_highlight_code then
-		syntax.add_highlights(result, table.concat(code_lines, "\n"), read_lang, {
-			scope = "tools",
-			line_start = code_start_line,
-			col_offset = #PANEL_PREFIX,
-		})
+	if read_lang and #code_lines > 0 then
+		add_wrapped_syntax_highlights(result, table.concat(code_lines, "\n"), read_lang, code_rows)
 	end
 
 	if not is_expanded and has_overflow then

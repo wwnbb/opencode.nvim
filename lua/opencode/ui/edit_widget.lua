@@ -13,6 +13,7 @@ local PANEL_EMPTY = "▏"
 local PANEL_BORDER_HL = "OpenCodeEditMuted"
 local DIFF_INDENT = "  "
 local DIFF_LINE_NUMBER_WIDTH = 4
+local DIFF_LINE_NUMBER_SEPARATOR = ":  "
 local DIFF_BODY_PRIORITY = 4098
 local DIFF_GUTTER_PRIORITY = 4300
 
@@ -20,7 +21,8 @@ local icons = {
 	accepted = "✓",
 	rejected = "✗",
 	resolved = "◆",
-	selected = "❯",
+	expanded = "▾",
+	collapsed = "▸",
 	unselected = " ",
 }
 
@@ -38,10 +40,22 @@ local function set_panel_hl(name, fg_source, fallback, extra_opts)
 	panel.set_hl(name, fg_source, fallback, extra_opts)
 end
 
+---@param sources string[]
+---@param fallback integer|nil
+---@return integer|nil
+local function pick_fg(sources, fallback)
+	for _, source in ipairs(sources) do
+		local hl = get_hl(source)
+		if hl.fg then
+			return hl.fg
+		end
+	end
+	return fallback
+end
+
 local function ensure_highlights()
 	set_panel_hl("OpenCodeEditMuted", "Comment", "Normal")
 	set_panel_hl("OpenCodeEditHeader", "Title", "Normal", { bold = true })
-	set_panel_hl("OpenCodeEditPath", "String", "Normal", { bold = true })
 	set_panel_hl("OpenCodeEditOutput", "Normal", nil)
 	set_panel_hl("OpenCodeEditSelected", "Normal", "CursorLine", { bold = true })
 	set_panel_hl("OpenCodeEditAccepted", "String", "Normal")
@@ -52,7 +66,18 @@ local function ensure_highlights()
 	set_panel_hl("OpenCodeEditDiffContext", "Normal", nil)
 	set_panel_hl("OpenCodeEditDiffMeta", "Comment", "Normal")
 	set_panel_hl("OpenCodeEditDiffHeader", "Special", "Title", { bold = true })
+	set_panel_hl("OpenCodeEditDiffSeparator", "LineNr", "Comment")
 
+	vim.api.nvim_set_hl(0, "OpenCodeEditPath", {
+		fg = pick_fg({ "Normal" }, nil),
+		bold = true,
+	})
+	vim.api.nvim_set_hl(0, "OpenCodeEditStatAdd", {
+		fg = pick_fg({ "String", "Added", "DiagnosticOk", "DiffAdd" }, 0x00aa00),
+	})
+	vim.api.nvim_set_hl(0, "OpenCodeEditStatDelete", {
+		fg = pick_fg({ "DiagnosticError", "Removed", "ErrorMsg", "DiffDelete" }, 0xdd0000),
+	})
 	vim.api.nvim_set_hl(0, "OpenCodeEditDiffLineNr", {
 		fg = get_hl("LineNr").fg or get_hl("Comment").fg,
 		bg = get_hl("CursorLine").bg,
@@ -167,9 +192,9 @@ local function file_type_label(file)
 end
 
 ---@param file table
----@param is_selected boolean
+---@param is_expanded boolean
 ---@return string
-local function file_icon(file, is_selected)
+local function file_icon(file, is_expanded)
 	if file.status == "accepted" then
 		return icons.accepted
 	end
@@ -179,8 +204,12 @@ local function file_icon(file, is_selected)
 	if file.status == "resolved" then
 		return icons.resolved
 	end
-	if is_selected then
-		return icons.selected
+	if is_expanded then
+		return icons.expanded
+	end
+	local diff_lines = file.diff_lines or {}
+	if #diff_lines > 0 then
+		return icons.collapsed
 	end
 	return icons.unselected
 end
@@ -227,8 +256,8 @@ local function add_stats_highlights(result, rows, stats)
 		if stats_start then
 			local added_start = stats_start - 1
 			local removed_start = added_start + #added + 1
-			add_highlight(result, row.line_index, added_start, added_start + #added, "OpenCodeEditDiffAdd")
-			add_highlight(result, row.line_index, removed_start, removed_start + #removed, "OpenCodeEditDiffDelete")
+			add_highlight(result, row.line_index, added_start, added_start + #added, "OpenCodeEditStatAdd")
+			add_highlight(result, row.line_index, removed_start, removed_start + #removed, "OpenCodeEditStatDelete")
 			return
 		end
 	end
@@ -236,7 +265,7 @@ end
 
 ---@param edit_state table
 ---@param status_label string|nil
----@return string header, string target
+---@return string header, string target, string stats
 local function build_header(edit_state, status_label)
 	local files = edit_state.files or {}
 	local count = #files
@@ -251,7 +280,7 @@ local function build_header(edit_state, status_label)
 		header = header .. " (review)"
 	end
 
-	return header, target
+	return header, target, stats
 end
 
 ---@param message string|nil
@@ -381,7 +410,12 @@ end
 local function format_diff_code_line(diff_line, kind, old_line, new_line)
 	local code = diff_line:sub(2)
 	local number = kind == "delete" and old_line or new_line
-	return string.format("%" .. DIFF_LINE_NUMBER_WIDTH .. "s  %s", format_line_number(number), code)
+	return string.format(
+		"%" .. DIFF_LINE_NUMBER_WIDTH .. "s%s%s",
+		format_line_number(number),
+		DIFF_LINE_NUMBER_SEPARATOR,
+		code
+	)
 end
 
 ---@param kind string
@@ -411,12 +445,13 @@ end
 ---@param result table
 ---@param file table
 ---@param is_selected boolean
+---@param is_expanded boolean
 ---@return number start_line
 ---@return number end_line
-local function append_file_line(result, file, is_selected)
+local function append_file_line(result, file, is_selected, is_expanded)
 	local path = file_path(file)
 	local stats = file_stats(file)
-	local icon = file_icon(file, is_selected)
+	local icon = file_icon(file, is_expanded)
 	local type_label = file_type_label(file)
 	local line_text = string.format("%s %s %s  %s", icon, type_label, path, stats)
 	local line_index, _, rows = add_panel_line(result, line_text, file_hl_group(file, is_selected))
@@ -467,10 +502,11 @@ local function append_inline_diff(result, file)
 
 			if is_code_line then
 				local gutter_start = #PANEL_PREFIX + #DIFF_INDENT
-				local code_start = gutter_start + DIFF_LINE_NUMBER_WIDTH + 2
+				local separator_start = gutter_start + DIFF_LINE_NUMBER_WIDTH
+				local code_start = separator_start + #DIFF_LINE_NUMBER_SEPARATOR
 				local body_hl = diff_body_hl_group(kind)
 				if body_hl then
-					add_highlight(result, line_index, gutter_start, #rendered_line, body_hl, DIFF_BODY_PRIORITY)
+					add_highlight(result, line_index, code_start, #rendered_line, body_hl, DIFF_BODY_PRIORITY)
 				end
 				add_highlight(
 					result,
@@ -478,6 +514,14 @@ local function append_inline_diff(result, file)
 					gutter_start,
 					gutter_start + DIFF_LINE_NUMBER_WIDTH,
 					diff_line_number_hl_group(kind),
+					DIFF_GUTTER_PRIORITY
+				)
+				add_highlight(
+					result,
+					line_index,
+					separator_start,
+					separator_start + #DIFF_LINE_NUMBER_SEPARATOR,
+					"OpenCodeEditDiffSeparator",
 					DIFF_GUTTER_PRIORITY
 				)
 
@@ -522,10 +566,11 @@ function M.get_lines_for_edit(permission_id, edit_state)
 	ensure_highlights()
 
 	local result = { lines = {}, highlights = {} }
-	local header, target = build_header(edit_state)
+	local header, target, stats = build_header(edit_state)
 	add_panel_blank(result)
 	local _, _, header_rows = add_panel_line(result, header, "OpenCodeEditHeader")
 	add_path_highlight(result, header_rows, target, "OpenCodeEditPath")
+	add_stats_highlights(result, header_rows, stats)
 	add_panel_blank(result)
 
 	if edit_state.message and edit_state.message ~= "" then
@@ -538,7 +583,7 @@ function M.get_lines_for_edit(permission_id, edit_state)
 	local selected = edit_state.selected_file or 1
 	local expanded_files = edit_state.expanded_files or {}
 	for i, file in ipairs(edit_state.files or {}) do
-		local file_start, file_end = append_file_line(result, file, i == selected)
+		local file_start, file_end = append_file_line(result, file, i == selected, expanded_files[i] == true)
 		if expanded_files[i] and file.diff_lines and #file.diff_lines > 0 then
 			add_panel_blank(result)
 			local _, diff_end = append_inline_diff(result, file)
@@ -589,10 +634,11 @@ function M.get_resolved_lines(permission_id, edit_state)
 		header_hl = "OpenCodeEditResolved"
 	end
 
-	local header, target = build_header(edit_state, resolution_label)
+	local header, target, stats = build_header(edit_state, resolution_label)
 	add_panel_blank(result)
 	local _, _, header_rows = add_panel_line(result, header, header_hl)
 	add_path_highlight(result, header_rows, target, "OpenCodeEditPath")
+	add_stats_highlights(result, header_rows, stats)
 	add_panel_blank(result)
 
 	if edit_state.message and edit_state.message ~= "" then
@@ -601,7 +647,7 @@ function M.get_resolved_lines(permission_id, edit_state)
 	end
 
 	for _, file in ipairs(edit_state.files or {}) do
-		append_file_line(result, file, false)
+		append_file_line(result, file, false, false)
 	end
 
 	if #(edit_state.files or {}) == 0 then

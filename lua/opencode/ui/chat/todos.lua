@@ -23,6 +23,18 @@ local STATUS_HIGHLIGHTS = {
 	cancelled = "OpenCodeTodoCancelled",
 }
 
+local DOCK_HIGHLIGHTS = {
+	OpenCodeTodoMuted = "OpenCodeTodoDockMuted",
+	OpenCodeTodoHeader = "OpenCodeTodoDockHeader",
+	OpenCodeTodoPending = "OpenCodeTodoDockPending",
+	OpenCodeTodoProgress = "OpenCodeTodoDockProgress",
+	OpenCodeTodoCompleted = "OpenCodeTodoDockCompleted",
+	OpenCodeTodoCancelled = "OpenCodeTodoDockCancelled",
+	OpenCodeTodoPriority = "OpenCodeTodoDockPriority",
+	OpenCodeTodoOutput = "OpenCodeTodoDockOutput",
+	OpenCodeTodoError = "OpenCodeTodoDockError",
+}
+
 local PRIORITY_MARKERS = {
 	high = "!",
 	medium = "•",
@@ -77,6 +89,23 @@ function M.get_config()
 	return vim.tbl_deep_extend("force", {}, DEFAULT_CONFIG, todo_config or {})
 end
 
+---@param name string
+---@param fg_source string
+---@param fallback string|nil
+---@param extra_opts? table
+local function set_dock_hl(name, fg_source, fallback, extra_opts)
+	local fg_hl = panel.get_hl(fg_source)
+	local fallback_hl = fallback and panel.get_hl(fallback) or {}
+	local opts = {}
+	if fg_hl.fg or fallback_hl.fg then
+		opts.fg = fg_hl.fg or fallback_hl.fg
+	end
+	if extra_opts then
+		opts = vim.tbl_extend("force", opts, extra_opts)
+	end
+	vim.api.nvim_set_hl(0, name, opts)
+end
+
 ---@param cfg OpenCodeTodoConfig|nil
 local function ensure_highlights(cfg)
 	cfg = cfg or M.get_config()
@@ -90,6 +119,16 @@ local function ensure_highlights(cfg)
 	panel.set_hl("OpenCodeTodoPriority", "Special", "Normal")
 	panel.set_hl("OpenCodeTodoOutput", "Normal", nil)
 	panel.set_hl("OpenCodeTodoError", "DiagnosticError", "ErrorMsg")
+
+	set_dock_hl("OpenCodeTodoDockMuted", highlights.border or "Comment", "Normal")
+	set_dock_hl("OpenCodeTodoDockHeader", highlights.header or "Title", "Normal", { bold = true })
+	set_dock_hl("OpenCodeTodoDockPending", highlights.pending or "Comment", "Normal")
+	set_dock_hl("OpenCodeTodoDockProgress", highlights.in_progress or "WarningMsg", "WarningMsg")
+	set_dock_hl("OpenCodeTodoDockCompleted", highlights.completed or "DiagnosticOk", "DiagnosticOk")
+	set_dock_hl("OpenCodeTodoDockCancelled", highlights.cancelled or "Comment", "Normal")
+	set_dock_hl("OpenCodeTodoDockPriority", "Special", "Normal")
+	set_dock_hl("OpenCodeTodoDockOutput", "Normal", nil)
+	set_dock_hl("OpenCodeTodoDockError", "DiagnosticError", "ErrorMsg")
 end
 
 ---@param result table
@@ -392,6 +431,12 @@ local function add_prefixed_line(result, text, hl_group, prefix, prefix_hl_group
 		hl_group = prefix_hl_group,
 		priority = PANEL_PREFIX_HL_PRIORITY,
 	})
+end
+
+---@param hl_group string
+---@return string
+local function dock_highlight_group(hl_group)
+	return DOCK_HIGHLIGHTS[hl_group] or hl_group
 end
 
 ---@param cfg OpenCodeTodoConfig
@@ -854,7 +899,7 @@ function M.update_window()
 			end
 			local mark_opts = {
 				end_col = end_col,
-				hl_group = hl.hl_group,
+				hl_group = dock_highlight_group(hl.hl_group),
 			}
 			if hl.priority then
 				mark_opts.priority = hl.priority

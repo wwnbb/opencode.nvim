@@ -180,6 +180,51 @@ local function split_lines(text)
 	return vim.split(text or "", "\n", { plain = true })
 end
 
+---@param value number|nil
+---@param line_text string
+---@return number
+local function normalize_end_col(value, line_text)
+	if value == nil or value == -1 then
+		return #line_text
+	end
+	return value
+end
+
+---@param target table[]
+---@param source_lines string[]
+---@param hl table
+---@param line_offset number
+---@param col_offset number
+local function append_offset_highlight(target, source_lines, hl, line_offset, col_offset)
+	local first_line = hl.line or 0
+	local last_line = hl.end_line or first_line
+	local max_line = math.max(0, #source_lines - 1)
+	if first_line > max_line then
+		return
+	end
+	last_line = math.min(last_line, max_line)
+	for source_line = first_line, last_line do
+		local line_text = source_lines[source_line + 1] or ""
+		local col_start = source_line == first_line and (hl.col_start or 0) or 0
+		local col_end
+		if source_line == last_line then
+			col_end = normalize_end_col(hl.end_col or hl.col_end or hl.col_start, line_text)
+		else
+			col_end = #line_text
+		end
+
+		if col_end > col_start then
+			table.insert(target, {
+				line = line_offset + source_line,
+				col_start = col_offset + col_start,
+				col_end = col_offset + col_end,
+				hl_group = hl.hl_group,
+				priority = hl.priority,
+			})
+		end
+	end
+end
+
 ---@param value any
 ---@return string|nil
 local function first_string(value)
@@ -398,15 +443,9 @@ function M.add_highlights(result, text, language, opts)
 	local highlights = M.highlight_text(text, language, opts)
 	local line_start = opts.line_start or 0
 	local col_offset = opts.col_offset or 0
+	local source_lines = split_lines(text)
 	for _, hl in ipairs(highlights) do
-		table.insert(result.highlights, {
-			line = line_start + hl.line,
-			col_start = col_offset + hl.col_start,
-			end_line = line_start + (hl.end_line or hl.line),
-			end_col = col_offset + (hl.end_col or hl.col_end or hl.col_start),
-			hl_group = hl.hl_group,
-			priority = hl.priority,
-		})
+		append_offset_highlight(result.highlights, source_lines, hl, line_start, col_offset)
 	end
 	return highlights
 end
@@ -460,21 +499,15 @@ function M.highlight_markdown_fenced_blocks(text, opts)
 			while i <= #lines and not lines[i]:match(close_pattern(fence)) do
 				i = i + 1
 			end
-				local code_end = i - 1
-				if lang and code_end >= code_start then
-					local code = join_range(lines, code_start, code_end)
-					local highlight_opts = vim.tbl_extend("force", opts, {
-						scope = opts.scope or "assistant_markdown",
-					})
-					for _, hl in ipairs(M.highlight_text(code, lang, highlight_opts)) do
-					table.insert(highlights, {
-						line = code_start - 1 + hl.line,
-						col_start = hl.col_start,
-						end_line = code_start - 1 + (hl.end_line or hl.line),
-						end_col = hl.end_col or hl.col_end or hl.col_start,
-						hl_group = hl.hl_group,
-						priority = hl.priority,
-					})
+			local code_end = i - 1
+			if lang and code_end >= code_start then
+				local code = join_range(lines, code_start, code_end)
+				local code_lines = split_lines(code)
+				local highlight_opts = vim.tbl_extend("force", opts, {
+					scope = opts.scope or "assistant_markdown",
+				})
+				for _, hl in ipairs(M.highlight_text(code, lang, highlight_opts)) do
+					append_offset_highlight(highlights, code_lines, hl, code_start - 1, 0)
 				end
 			end
 			i = i + 1
@@ -499,8 +532,7 @@ function M.add_markdown_highlights(result, text, opts)
 		table.insert(result.highlights, {
 			line = line_start + hl.line,
 			col_start = col_offset + hl.col_start,
-			end_line = line_start + (hl.end_line or hl.line),
-			end_col = col_offset + (hl.end_col or hl.col_end or hl.col_start),
+			col_end = col_offset + (hl.col_end or hl.end_col or hl.col_start),
 			hl_group = hl.hl_group,
 			priority = hl.priority,
 		})
