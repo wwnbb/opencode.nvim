@@ -7,7 +7,7 @@ import (
 )
 
 const (
-	defaultUserID       = 45
+	defaultUserID       = 40
 	defaultUserName     = "Nikola Tesla"
 	defaultUserEmail    = "nikola.tesla@example.com"
 	defaultGreetingName = "CoderBased"
