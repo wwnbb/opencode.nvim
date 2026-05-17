@@ -56,6 +56,8 @@ function M.add_raw_line(result, text, hl_group, opts)
 	return require("opencode.ui.chat.render").add_panel_raw_line(result, text, hl_group, {
 		prefix = opts.prefix,
 		prefix_hl_group = opts.prefix_hl_group,
+		width = opts.width,
+		wrap = opts.wrap,
 	})
 end
 

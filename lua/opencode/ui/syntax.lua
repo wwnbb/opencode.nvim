@@ -13,6 +13,7 @@ local DEFAULT_CONFIG = {
 }
 
 local DEFAULT_EXTMARK_PRIORITY = 4100
+local syntax_hl_cache = {}
 
 local LANGUAGE_ALIASES = {
 	csharp = "c_sharp",
@@ -30,6 +31,102 @@ local LANGUAGE_ALIASES = {
 	yml = "yaml",
 	zsh = "bash",
 }
+
+---@param value table
+---@return boolean
+local function has_any_key(value)
+	return type(value) == "table" and next(value) ~= nil
+end
+
+---@param name string
+---@return string
+local function encode_hl_name(name)
+	return (name:gsub("[^%w_]", function(ch)
+		return string.format("_%02X", ch:byte())
+	end))
+end
+
+local function clear_syntax_hl_cache()
+	for key in pairs(syntax_hl_cache) do
+		syntax_hl_cache[key] = nil
+	end
+end
+
+vim.api.nvim_create_autocmd("ColorScheme", {
+	group = vim.api.nvim_create_augroup("OpenCodeSyntaxHighlights", { clear = true }),
+	callback = clear_syntax_hl_cache,
+	desc = "Refresh OpenCode syntax highlight wrappers",
+})
+
+---@param opts table
+---@return boolean
+local function has_background_attrs(opts)
+	return opts.bg ~= nil
+		or opts.ctermbg ~= nil
+		or opts.blend ~= nil
+		or opts.reverse == true
+		or opts.standout == true
+		or opts.nocombine == true
+end
+
+---@param opts table
+---@return table
+local function strip_background_attrs(opts)
+	local clean = {}
+	for key, value in pairs(opts) do
+		if
+			key ~= "bg"
+			and key ~= "ctermbg"
+			and key ~= "blend"
+			and key ~= "reverse"
+			and key ~= "standout"
+			and key ~= "nocombine"
+			and key ~= "link"
+		then
+			if key == "cterm" and type(value) == "table" then
+				local cterm = vim.tbl_extend("force", {}, value)
+				cterm.bg = nil
+				cterm.reverse = nil
+				cterm.standout = nil
+				if has_any_key(cterm) then
+					clean.cterm = cterm
+				end
+			else
+				clean[key] = value
+			end
+		end
+	end
+	return clean
+end
+
+---@param hl_group string
+---@return string|nil
+local function syntax_hl_group(hl_group)
+	if type(hl_group) ~= "string" or hl_group == "" then
+		return nil
+	end
+
+	if syntax_hl_cache[hl_group] ~= nil then
+		return syntax_hl_cache[hl_group] or nil
+	end
+
+	local ok, opts = pcall(vim.api.nvim_get_hl, 0, { name = hl_group, link = false })
+	if not ok or type(opts) ~= "table" or not has_background_attrs(opts) then
+		syntax_hl_cache[hl_group] = hl_group
+		return hl_group
+	end
+
+	local clean = strip_background_attrs(opts)
+	if not has_any_key(clean) then
+		syntax_hl_cache[hl_group] = false
+		return nil
+	end
+
+	local wrapped = "OpenCodeSyntax_" .. encode_hl_name(hl_group)
+	vim.api.nvim_set_hl(0, wrapped, clean)
+	syntax_hl_cache[hl_group] = wrapped
+	return wrapped
+end
 
 ---@return table
 local function get_full_config()
@@ -248,6 +345,7 @@ function M.highlight_text(text, language, opts)
 				for capture, node, metadata in query:iter_captures(root, text, 0, line_count) do
 					local capture_name = query.captures[capture]
 					if type(capture_name) == "string" and capture_name:sub(1, 1) ~= "_" then
+						local hl_group = syntax_hl_group("@" .. capture_name .. "." .. lang)
 						local range_ok, range = pcall(vim.treesitter.get_range, node, text, metadata and metadata[capture])
 						local row_start, col_start, row_end, col_end
 						if range_ok and type(range) == "table" then
@@ -265,13 +363,14 @@ function M.highlight_text(text, language, opts)
 							and type(row_end) == "number"
 							and type(col_end) == "number"
 							and (row_start ~= row_end or col_start ~= col_end)
+							and hl_group
 						then
 							table.insert(highlights, {
 								line = row_start,
 								col_start = col_start,
 								end_line = row_end,
 								end_col = col_end,
-								hl_group = "@" .. capture_name .. "." .. lang,
+								hl_group = hl_group,
 								priority = capture_priority(metadata, capture),
 							})
 						end

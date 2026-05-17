@@ -2,14 +2,21 @@
 -- Renders interactive permission prompts inline in chat buffer
 
 local M = {}
+
+local panel = require("opencode.ui.panel")
+local render = require("opencode.ui.chat.render")
 local widget_base = require("opencode.ui.widget_base")
+
+local PANEL_PREFIX = "▏  "
+local PANEL_EMPTY = "▏"
+local PANEL_BORDER_HL = "OpenCodePermissionMuted"
 
 local icons = {
 	pending = "△",
 	approved = "✓",
 	rejected = "✗",
 	selected = "❯",
-	unselected = "  ",
+	unselected = " ",
 }
 
 local OPTION_LABELS = {
@@ -17,6 +24,85 @@ local OPTION_LABELS = {
 	"Allow always",
 	"Reject",
 }
+
+---@param name string
+---@return table
+local function get_hl(name)
+	return panel.get_hl(name)
+end
+
+---@param name string
+---@param fg_source string
+---@param fallback string|nil
+---@param extra_opts table|nil
+local function set_panel_hl(name, fg_source, fallback, extra_opts)
+	panel.set_hl(name, fg_source, fallback, extra_opts)
+end
+
+local function ensure_highlights()
+	set_panel_hl("OpenCodePermissionMuted", "Comment", "Normal")
+	set_panel_hl("OpenCodePermissionHeader", "Title", "Normal", { bold = true })
+	set_panel_hl("OpenCodePermissionTitle", "Label", "Title", { bold = true })
+	set_panel_hl("OpenCodePermissionOutput", "Normal", nil)
+	set_panel_hl("OpenCodePermissionSelected", "Normal", "CursorLine", { bold = true })
+	set_panel_hl("OpenCodePermissionApproved", "String", "Normal")
+	set_panel_hl("OpenCodePermissionRejected", "DiagnosticError", "ErrorMsg")
+	set_panel_hl("OpenCodePermissionPath", "String", "Normal", { bold = true })
+	set_panel_hl("OpenCodePermissionCommand", "Special", "Normal")
+
+	vim.api.nvim_set_hl(0, "OpenCodePermissionSelectedMarker", {
+		fg = get_hl("Special").fg or get_hl("Title").fg,
+		bg = get_hl("CursorLine").bg,
+		bold = true,
+	})
+end
+
+---@param result table
+---@param text string
+---@param hl_group string
+---@return number line_index
+---@return string line
+---@return table[] rows
+local function add_panel_line(result, text, hl_group)
+	return panel.add_line(result, text, hl_group, {
+		prefix = PANEL_PREFIX,
+		prefix_hl_group = PANEL_BORDER_HL,
+	})
+end
+
+---@param result table
+---@param text string
+---@param hl_group string
+---@return number line_index
+---@return string line
+---@return table[] rows
+local function add_panel_raw_line(result, text, hl_group)
+	return panel.add_raw_line(result, text, hl_group, {
+		prefix = PANEL_PREFIX,
+		prefix_hl_group = PANEL_BORDER_HL,
+	})
+end
+
+---@param result table
+local function add_panel_blank(result)
+	panel.add_blank(result, "OpenCodePermissionOutput", {
+		prefix = PANEL_EMPTY,
+		prefix_hl_group = PANEL_BORDER_HL,
+	})
+end
+
+---@param result table
+local function add_trailing_separator(result)
+	table.insert(result.lines, "")
+end
+
+---@param result table
+---@param rows table[]|nil
+---@param text string
+---@param hl_group string
+local function highlight_panel_text(result, rows, text, hl_group)
+	render.highlight_panel_text(result, rows, text, hl_group)
+end
 
 ---@param ... any
 ---@return string
@@ -270,73 +356,142 @@ local function get_permission_description(permission_type, tool_input, perm_stat
 	end
 end
 
--- Get formatted lines for a pending permission
----@param permission_id string
----@param perm_state table Permission state from permission/state.lua
----@return table lines, table highlights, OpenCodeWidgetMeta meta
-function M.get_lines_for_permission(permission_id, perm_state)
-	local lines = {}
-	local highlights = {}
-	local line_num = 0
+---@param line string|nil
+---@return string
+local function clean_description_line(line)
+	if type(line) ~= "string" then
+		return ""
+	end
+	return (line:gsub("^#%s*", ""):gsub("^%s+", ""))
+end
 
-	-- Header
-	local header = widget_base.format_header(icons.pending, "Permission required", permission_id, perm_state.timestamp)
-	table.insert(lines, header)
-	widget_base.add_full_line_highlight(highlights, line_num, header, "Title")
-	line_num = line_num + 1
+---@param description_lines table
+---@return string
+local function description_title(description_lines)
+	local title = clean_description_line(description_lines[1])
+	return title ~= "" and title or "Permission"
+end
 
-	-- Separator
-	table.insert(lines, widget_base.separator())
-	line_num = line_num + 1
+---@param label string
+---@return string
+local function detail_value_hl(label)
+	if label == "Path" then
+		return "OpenCodePermissionPath"
+	end
+	if label == "Command" then
+		return "OpenCodePermissionCommand"
+	end
+	return "OpenCodePermissionOutput"
+end
 
-	-- Permission description
-	local desc_lines = get_permission_description(perm_state.permission_type, perm_state.tool_input, perm_state)
-	for _, dline in ipairs(desc_lines) do
-		table.insert(lines, dline)
-		table.insert(highlights, {
-			line = line_num,
-			col_start = 0,
-			col_end = #dline,
-			hl_group = "Normal",
-		})
-		line_num = line_num + 1
+---@param result table
+---@param line string
+local function append_description_detail(result, line)
+	local text = clean_description_line(line)
+	if text == "" then
+		add_panel_blank(result)
+		return
 	end
 
-	-- Blank line before options
-	table.insert(lines, "")
-	line_num = line_num + 1
+	local label, value = text:match("^([^:]+):%s*(.*)$")
+	local _, _, rows = add_panel_line(result, text, "OpenCodePermissionMuted")
+	if label and value and value ~= "" then
+		highlight_panel_text(result, rows, value, detail_value_hl(label))
+	end
+end
 
-	-- Options
-	local first_option_line = line_num
+---@param result table
+---@param desc_lines table
+local function append_description(result, desc_lines)
+	local title = description_title(desc_lines)
+	local _, _, title_rows = add_panel_line(result, title, "OpenCodePermissionTitle")
+	highlight_panel_text(result, title_rows, title, "OpenCodePermissionTitle")
+
+	for i = 2, #desc_lines do
+		append_description_detail(result, desc_lines[i])
+	end
+end
+
+---@param result table
+---@param title string
+---@param status "pending"|"approved"|"rejected"
+---@param suffix string|nil
+local function add_header(result, title, status, suffix)
+	local header = "# Permission"
+	if status == "pending" then
+		header = "# Permission required"
+	elseif status == "approved" then
+		header = "# Permission allowed"
+	elseif status == "rejected" then
+		header = "# Permission rejected"
+	end
+	if title ~= "" then
+		header = header .. " " .. title
+	end
+	if suffix and suffix ~= "" then
+		header = header .. " " .. suffix
+	end
+
+	local hl_group = "OpenCodePermissionHeader"
+	if status == "approved" then
+		hl_group = "OpenCodePermissionApproved"
+	elseif status == "rejected" then
+		hl_group = "OpenCodePermissionRejected"
+	end
+
+	local _, _, rows = add_panel_line(result, header, hl_group)
+	if title ~= "" then
+		highlight_panel_text(result, rows, title, "OpenCodePermissionTitle")
+	end
+end
+
+---@param result table
+---@param option_count number
+local function append_hint(result, option_count)
+	local hint = string.format("1-%d select · ↑↓ move · Enter confirm · Esc reject · m message", option_count)
+	add_panel_line(result, hint, "OpenCodePermissionMuted")
+end
+
+-- Get formatted lines for a pending permission
+---@param _permission_id string
+---@param perm_state table Permission state from permission/state.lua
+---@return table lines, table highlights, OpenCodeWidgetMeta meta
+function M.get_lines_for_permission(_permission_id, perm_state)
+	ensure_highlights()
+
+	local result = { lines = {}, highlights = {} }
+	local desc_lines = get_permission_description(perm_state.permission_type, perm_state.tool_input, perm_state)
+
+	add_panel_blank(result)
+	add_header(result, "", "pending")
+	add_panel_blank(result)
+	append_description(result, desc_lines)
+	add_panel_blank(result)
+
+	local first_option_line = #result.lines
 	local selected = perm_state.selected_option or 1
 
 	for i, label in ipairs(OPTION_LABELS) do
 		local is_selected = i == selected
 		local indicator = is_selected and icons.selected or icons.unselected
 		local option_text = string.format("%s %d. %s", indicator, i, label)
-		table.insert(lines, option_text)
-
+		local _, _, rows = add_panel_raw_line(
+			result,
+			option_text,
+			is_selected and "OpenCodePermissionSelected" or "OpenCodePermissionOutput"
+		)
 		if is_selected then
-			widget_base.add_full_line_highlight(highlights, line_num, option_text, "CursorLine")
+			highlight_panel_text(result, rows, indicator, "OpenCodePermissionSelectedMarker")
 		end
-
-		line_num = line_num + 1
 	end
 
-	-- Keymap hint
-	table.insert(lines, "")
-	line_num = line_num + 1
+	add_panel_blank(result)
+	append_hint(result, #OPTION_LABELS)
+	add_panel_blank(result)
+	add_trailing_separator(result)
 
-	local hint = "[1-3 select, m message, ↑↓ navigate, Enter confirm, Esc reject]"
-	table.insert(lines, hint)
-	widget_base.add_full_line_highlight(highlights, line_num, hint, "Comment")
-	line_num = line_num + 1
-
-	-- Trailing blank line
-	table.insert(lines, "")
-
-	return lines,
-		highlights,
+	return result.lines,
+		result.highlights,
 		widget_base.make_meta({
 			interactive_count = #OPTION_LABELS,
 			first_interactive_line = first_option_line,
@@ -344,96 +499,44 @@ function M.get_lines_for_permission(permission_id, perm_state)
 end
 
 -- Get formatted lines for an approved permission
----@param permission_id string
+---@param _permission_id string
 ---@param perm_state table
 ---@return table lines, table highlights
-function M.get_approved_lines(permission_id, perm_state)
-	local lines = {}
-	local highlights = {}
-	local line_num = 0
+function M.get_approved_lines(_permission_id, perm_state)
+	ensure_highlights()
 
-	local reply_label = perm_state.reply == "always" and "Allowed (always)" or "Allowed (once)"
-	local header = widget_base.format_header(icons.approved, "Permission", permission_id, perm_state.timestamp)
-	table.insert(lines, header)
-	table.insert(highlights, {
-		line = line_num,
-		col_start = 0,
-		col_end = #icons.approved + 1,
-		hl_group = "Comment",
-	})
-	line_num = line_num + 1
-
-	table.insert(lines, widget_base.separator())
-	line_num = line_num + 1
-
+	local reply_suffix = perm_state.reply == "always" and "(always)" or "(once)"
+	local result = { lines = {}, highlights = {} }
 	local desc_lines = get_permission_description(perm_state.permission_type, perm_state.tool_input, perm_state)
-	local summary = (desc_lines[1] or perm_state.permission_type):gsub("^#%s*", "")
-	local display = summary .. " - " .. reply_label
-	table.insert(lines, display)
-	table.insert(highlights, {
-		line = line_num,
-		col_start = #summary + 1,
-		col_end = #display,
-		hl_group = "Comment",
-	})
-	line_num = line_num + 1
 
-	for i = 2, #desc_lines do
-		local dline = desc_lines[i]
-		table.insert(lines, dline)
-		widget_base.add_full_line_highlight(highlights, line_num, dline, "Normal")
-		line_num = line_num + 1
-	end
+	add_panel_blank(result)
+	add_header(result, "", "approved", reply_suffix)
+	add_panel_blank(result)
+	append_description(result, desc_lines)
+	add_panel_blank(result)
+	add_trailing_separator(result)
 
-	table.insert(lines, "")
-
-	return lines, highlights
+	return result.lines, result.highlights
 end
 
 -- Get formatted lines for a rejected permission
----@param permission_id string
+---@param _permission_id string
 ---@param perm_state table
 ---@return table lines, table highlights
-function M.get_rejected_lines(permission_id, perm_state)
-	local lines = {}
-	local highlights = {}
-	local line_num = 0
+function M.get_rejected_lines(_permission_id, perm_state)
+	ensure_highlights()
 
-	local header = widget_base.format_header(icons.rejected, "Permission", permission_id, perm_state.timestamp)
-	table.insert(lines, header)
-	table.insert(highlights, {
-		line = line_num,
-		col_start = 0,
-		col_end = #icons.rejected + 1,
-		hl_group = "Error",
-	})
-	line_num = line_num + 1
-
-	table.insert(lines, widget_base.separator())
-	line_num = line_num + 1
-
+	local result = { lines = {}, highlights = {} }
 	local desc_lines = get_permission_description(perm_state.permission_type, perm_state.tool_input, perm_state)
-	local summary = (desc_lines[1] or perm_state.permission_type):gsub("^#%s*", "")
-	local display = summary .. " - Rejected"
-	table.insert(lines, display)
-	table.insert(highlights, {
-		line = line_num,
-		col_start = #summary + 1,
-		col_end = #display,
-		hl_group = "Error",
-	})
-	line_num = line_num + 1
 
-	for i = 2, #desc_lines do
-		local dline = desc_lines[i]
-		table.insert(lines, dline)
-		widget_base.add_full_line_highlight(highlights, line_num, dline, "Normal")
-		line_num = line_num + 1
-	end
+	add_panel_blank(result)
+	add_header(result, "", "rejected")
+	add_panel_blank(result)
+	append_description(result, desc_lines)
+	add_panel_blank(result)
+	add_trailing_separator(result)
 
-	table.insert(lines, "")
-
-	return lines, highlights
+	return result.lines, result.highlights
 end
 
 return M

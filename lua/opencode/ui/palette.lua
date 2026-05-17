@@ -1912,6 +1912,32 @@ local function register_defaults()
 	})
 
 	M.register({
+		id = "action.danger_mode.enable",
+		title = "Enable Danger Mode",
+		description = "Auto-approve permission requests until disabled",
+		category = "actions",
+		action = function()
+			actions.enable_danger_mode()
+		end,
+		enabled = function()
+			return not state.is_danger_mode_enabled()
+		end,
+	})
+
+	M.register({
+		id = "action.danger_mode.disable",
+		title = "Disable Danger Mode",
+		description = "Stop auto-approving permission requests",
+		category = "actions",
+		action = function()
+			actions.disable_danger_mode()
+		end,
+		enabled = function()
+			return state.is_danger_mode_enabled()
+		end,
+	})
+
+	M.register({
 		id = "action.paste_clipboard",
 		title = "Paste Clipboard",
 		description = "Paste text or attach a screenshot to the OpenCode input",

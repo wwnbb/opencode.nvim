@@ -1,0 +1,162 @@
+# Ripgrep Tool Usage Guide
+
+## Core Flags
+
+### Context Lines (Essential)
+Always use context lines to understand matches in context:
+- `-A N` - Show N lines AFTER match
+- `-B N` - Show N lines BEFORE match
+- `-C N` - Show N lines BEFORE and AFTER match (most common)
+
+Example: `rg -A 10 "func.*handleRequest"` shows function definition + body
+
+### File Type Filtering
+Use `-t` to filter by language instead of globs:
+- `rg -t go "pattern"` - Only Go files
+- `rg -t py "pattern"` - Only Python files
+- `rg -t js -t ts "pattern"` - JavaScript and TypeScript
+- `rg -t rust "pattern"` - Only Rust files
+
+### Output Control
+Choose appropriate output format for the task:
+- `--files-with-matches` / `-l` - Just filenames (fastest for finding relevant files)
+- `-c` - Files with match counts
+- Default (with lines) - Full context for reading code
+
+### Path Filtering
+Narrow search scope for better performance:
+- `rg "pattern" src/handlers/` - Specific directory
+- `rg "pattern" -g "*.tsx"` - Glob-based filtering
+
+## Common Search Patterns
+
+### Finding Type/Struct/Class Definitions
+```bash
+# Go
+rg "^type \w+ struct" -t go -A 15
+# Python
+rg "^class \w+" -t py -A 10
+# TypeScript
+rg "^(export )?(interface|type|class) \w+" -t ts -A 10
+```
+Use `^` anchor to find declarations at line start.
+
+### Finding Function/Method Definitions
+```bash
+# Go
+rg "^func \(\w+ \*\w+\) \w+" -t go -A 20
+# Python
+rg "^\s*def \w+" -t py -A 10
+# JavaScript/TypeScript
+rg "^(export )?(async )?function \w+" -t js -A 15
+```
+
+### Finding Constants and Enums
+```bash
+rg "STATUS_OK|STATUS_ERROR|STATUS_PENDING" -t go
+rg "^const \w+" -t go -A 5
+```
+Search for multiple patterns using OR (pipe separator).
+
+### Finding Imports and Dependencies
+```bash
+rg "^import " -t py -l
+rg "require\(|from ['\"]" -t js -t ts
+```
+
+## Efficient Search Strategies
+
+### 1. Start Broad, Then Narrow
+```bash
+# First: Find relevant files
+rg "UserService" -l
+# Then: Search specific files with context
+rg "class UserService" -A 20
+```
+
+### 2. Search Multiple Related Terms
+```bash
+# All error-related constants
+rg "ERR_[A-Z_]+" -A 1
+# All handler functions
+rg "handle\w+|on\w+Event" -A 5
+```
+
+### 3. Find Cross-References
+```bash
+# Where is this function called?
+rg "processOrder" -B 2 -A 2
+# Where is this type used?
+rg "\bUserConfig\b" -l
+```
+
+### 4. Trace Data Flow
+```bash
+# Follow a value through the codebase
+rg "parseRequest" -A 5
+rg "validateInput" -A 5
+rg "saveToDatabase" -A 10
+```
+
+## Useful Tips
+
+### Ignore Patterns
+Skip generated or vendor files:
+```bash
+rg "pattern" -g "!vendor/" -g "!node_modules/" -g "!*.generated.*"
+```
+
+### Test Files
+Include/exclude test files as needed:
+```bash
+rg "pattern" -g "*_test.go" -g "*.test.ts"   # Only tests
+rg "pattern" -g "!*_test.go" -g "!*.test.*"  # Exclude tests
+```
+
+### Hidden and Ignored Files
+Search hidden files and files skipped by ignore rules:
+```bash
+rg "pattern" --hidden          # Include dotfiles
+rg "pattern" --no-ignore-vcs   # Include files ignored by .gitignore/VCS ignore rules
+rg "pattern" --no-ignore       # Disable all ignore-file filtering
+```
+Untracked files that are not ignored are searched by default.
+
+### Case Insensitive and Word Boundaries
+```bash
+rg -i "error" -A 3            # Case insensitive
+rg "\berror\b" -A 3           # Exact word match
+rg -i "\berror\b" -A 3        # Both
+```
+
+### Multiline Matching
+```bash
+rg -U "struct \{[\s\S]*?\}" -t go    # Match across lines
+```
+
+## Performance Tips
+1. **Use file type filtering** (`-t`) instead of globs when possible (faster)
+2. **Limit context** to what's needed (`-A 5` vs `-A 50`)
+3. **Use `-l`** (files with matches) first to identify targets
+4. **Specify a path** when you know the general location
+5. **Use word boundaries** (`\b`) for precise matches: `rg "\bConfig\b"`
+6. **Use `--max-count N`** to stop after N matches per file; tool `max_count=0` leaves matches unlimited
+
+## Common Patterns Summary
+
+| Task | Command |
+|------|---------|
+| Find type/class definition | `rg "^(type\|class\|interface) X" -A 15` |
+| Find function definition | `rg "^(func\|def\|function) .*Name" -A 20` |
+| Find all handlers | `rg "handle\w+\|on\w+Event"` |
+| Find usages | `rg "\bTypeName\b" -l` |
+| Trace constant usage | `rg "CONST_NAME" -A 3` |
+| Find TODO/FIXME | `rg "TODO\|FIXME\|HACK\|XXX"` |
+| Find config/env vars | `rg "os\.Getenv\|process\.env\|ENV\[" -A 1` |
+
+## Remember
+- Always include context (`-A`, `-B`, `-C`) for code understanding
+- Specify a path to narrow scope in large codebases
+- Combine multiple patterns with `|` for OR logic
+- Use `-l` (files with matches) for quick file discovery
+- Prefer `-t lang` over `-g "*.ext"` for better performance

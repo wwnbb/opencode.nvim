@@ -47,14 +47,16 @@ end
 ---@param result table
 ---@param text string
 ---@param hl_group string
+---@param opts? table
 ---@return number line_index
 ---@return string line
 ---@return table[] rows
-local function add_panel_raw_line(result, text, hl_group)
-	return panel.add_raw_line(result, text, hl_group, {
+local function add_panel_raw_line(result, text, hl_group, opts)
+	local panel_opts = vim.tbl_extend("force", opts or {}, {
 		prefix = PANEL_PREFIX,
 		prefix_hl_group = PANEL_BORDER_HL,
 	})
+	return panel.add_raw_line(result, text, hl_group, panel_opts)
 end
 
 ---@param result table
@@ -309,10 +311,12 @@ function M.render_tool(tool_part, is_expanded)
 	end
 
 	local result = { lines = {}, highlights = {} }
+	add_panel_blank(result)
 	local _, _, header_rows = add_panel_line(result, header, header_hl)
 	render.highlight_panel_text(result, header_rows, display_path, "OpenCodeReadFilename")
 
 	if #body_entries == 0 and #loaded_entries == 0 then
+		add_panel_blank(result)
 		add_trailing_separator(result)
 		return result
 	end
@@ -327,7 +331,7 @@ function M.render_tool(tool_part, is_expanded)
 	for i = 1, limit do
 		local entry = body_entries[i]
 		if read_lang and entry.hl_group == "OpenCodeReadOutput" then
-			local line_index, _, rows = add_panel_raw_line(result, entry.text, entry.hl_group)
+			local line_index, _, rows = add_panel_raw_line(result, entry.text, entry.hl_group, { wrap = false })
 			code_start_line = code_start_line or line_index
 			table.insert(code_lines, entry.text)
 			if #rows > 1 then
@@ -357,6 +361,7 @@ function M.render_tool(tool_part, is_expanded)
 		end
 	end
 
+	add_panel_blank(result)
 	add_trailing_separator(result)
 	return result
 end

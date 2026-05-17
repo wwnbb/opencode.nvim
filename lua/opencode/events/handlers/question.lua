@@ -19,6 +19,7 @@ function M.setup(events)
 			local request_id = data.requestID or data.id
 			local session_id = data.sessionID
 			local message_id = util.resolve_event_message_id(data)
+			local call_id = util.resolve_event_call_id(data)
 			local questions = data.questions
 			local timestamp = util.event_time_to_seconds(data.time and data.time.created)
 
@@ -42,6 +43,7 @@ function M.setup(events)
 			-- Store question state (allow questions from subagent/child sessions)
 			question_state.add_question(request_id, session_id, questions, {
 				message_id = message_id,
+				call_id = call_id,
 				timestamp = timestamp,
 			})
 			events.emit("question_pending", {
@@ -49,6 +51,7 @@ function M.setup(events)
 				questions_count = #questions,
 				session_id = session_id,
 				message_id = message_id,
+				call_id = call_id,
 			})
 			events.emit("interaction_changed", {
 				kind = "question",

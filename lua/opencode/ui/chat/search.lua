@@ -334,11 +334,13 @@ function M.render_tool(tool_part, expanded)
 	end
 
 	local result = { lines = {}, highlights = {} }
+	add_panel_blank(result)
 	local _, _, header_rows = add_panel_line(result, header, header_hl)
 	highlight_text(result, header_rows, '"' .. display_pattern .. '"', "OpenCodeSearchPattern")
 	highlight_text(result, header_rows, display_path, "OpenCodeSearchPath")
 
 	if #entries == 0 then
+		add_panel_blank(result)
 		add_trailing_separator(result)
 		return result
 	end
@@ -374,6 +376,7 @@ function M.render_tool(tool_part, expanded)
 		add_panel_line(result, "… (" .. tostring(remaining) .. " more lines, press O to expand)", "OpenCodeSearchMuted")
 	end
 
+	add_panel_blank(result)
 	add_trailing_separator(result)
 	return result
 end

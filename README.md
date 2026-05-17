@@ -23,3 +23,19 @@ keyset("x", "<leader>oe", opencode.add_visual_selection_and_open_input, {
 keyset("n", "<leader>oa", opencode.add_current_line, { desc = "OpenCode add line" })
 keyset("x", "<leader>oa", opencode.add_visual_selection, { desc = "OpenCode add selection" })
 ```
+
+## Danger Mode
+
+Danger mode auto-approves permission requests while it is enabled. It replies with `once` for each request, so approvals are not persisted after you disable the mode.
+
+```vim
+:OpenCodeDangerMode on
+:OpenCodeDangerMode off
+:OpenCodeDangerMode toggle
+```
+
+```lua
+require("opencode").setup({
+	danger_mode = false,
+})
+```

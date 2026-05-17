@@ -40,6 +40,9 @@ local state = {
 	
 	-- Streaming/thinking status
 	status = "idle", -- "idle" | "streaming" | "thinking" | "paused" | "error"
+
+	-- Danger mode: auto-approve permission requests while enabled.
+	danger_mode = false,
 	
 	-- Pending changes from edits
 	pending_changes = {
@@ -264,6 +267,25 @@ function M.is_idle()
 	return state.status == "idle"
 end
 
+-- Danger mode
+
+---@param enabled boolean
+---@return boolean old_enabled Previous danger mode state
+function M.set_danger_mode(enabled)
+	return set("danger_mode", enabled == true)
+end
+
+---@return boolean
+function M.is_danger_mode_enabled()
+	return state.danger_mode == true
+end
+
+---@return boolean enabled New danger mode state
+function M.toggle_danger_mode()
+	M.set_danger_mode(not state.danger_mode)
+	return state.danger_mode
+end
+
 -- Pending changes
 
 function M.add_pending_change(file_path, change_data)
@@ -406,6 +428,7 @@ function M.reset()
 		message_count = 0,
 	}
 	state.status = "idle"
+	state.danger_mode = false
 	state.pending_changes = {
 		files = {},
 		total_additions = 0,
@@ -451,6 +474,7 @@ function M.get_status_summary()
 		agent = agent.name,
 		session = state.session.name,
 		message_count = state.session.message_count,
+		danger_mode = state.danger_mode,
 		diff_stats = M.get_pending_changes_stats(),
 	}
 end

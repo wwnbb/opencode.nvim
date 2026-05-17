@@ -305,6 +305,7 @@ function M.setup(opts)
 
 	-- Initialize state with config
 	state.set_config(M._config)
+	state.set_danger_mode(M._config.danger_mode == true)
 	state.set_server_info({
 		host = M._config.server.host,
 		port = M._config.server.port,
@@ -468,6 +469,10 @@ function M.setup(opts)
     end,
     desc = "Hide cursor in OpenCode chat buffer",
   })
+
+  if M._config.danger_mode == true then
+    vim.notify("OpenCode danger mode enabled: permission requests will be auto-approved", vim.log.levels.WARN)
+  end
 
   vim.notify("OpenCode.nvim v" .. M.version .. " loaded", vim.log.levels.INFO)
 end
@@ -1139,6 +1144,67 @@ end
 ---@return boolean
 function M.is_streaming()
 	return state.get_status() == "streaming"
+end
+
+---@param enabled boolean
+---@param opts? { silent?: boolean }
+---@return boolean enabled Current danger mode state
+function M.set_danger_mode(enabled, opts)
+	opts = opts or {}
+	local current = enabled == true
+	state.set_danger_mode(current)
+
+	local pending_count = 0
+	if current then
+		local danger_ok, danger = pcall(require, "opencode.permission.danger")
+		if danger_ok and type(danger.approve_pending) == "function" then
+			pending_count = danger.approve_pending()
+		end
+	else
+		local danger_ok, danger = pcall(require, "opencode.permission.danger")
+		if danger_ok and type(danger.clear) == "function" then
+			danger.clear()
+		end
+	end
+
+	if events and type(events.emit) == "function" then
+		events.emit("danger_mode_changed", { enabled = current })
+		events.emit("status_change", { danger_mode = current })
+	end
+
+	if opts.silent ~= true then
+		if current then
+			local suffix = pending_count > 0 and ("; auto-approving " .. pending_count .. " pending request(s)") or ""
+			vim.notify("OpenCode danger mode enabled" .. suffix, vim.log.levels.WARN)
+		else
+			vim.notify("OpenCode danger mode disabled", vim.log.levels.INFO)
+		end
+	end
+
+	return current
+end
+
+---@param opts? { silent?: boolean }
+---@return boolean enabled Current danger mode state
+function M.enable_danger_mode(opts)
+	return M.set_danger_mode(true, opts)
+end
+
+---@param opts? { silent?: boolean }
+---@return boolean enabled Current danger mode state
+function M.disable_danger_mode(opts)
+	return M.set_danger_mode(false, opts)
+end
+
+---@param opts? { silent?: boolean }
+---@return boolean enabled Current danger mode state
+function M.toggle_danger_mode(opts)
+	return M.set_danger_mode(not state.is_danger_mode_enabled(), opts)
+end
+
+---@return boolean
+function M.is_danger_mode_enabled()
+	return state.is_danger_mode_enabled()
 end
 
 --- Ensure connected (for lazy init)
