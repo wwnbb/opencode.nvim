@@ -177,20 +177,33 @@ end
 ---@param text string
 ---@param max_width number
 ---@param opts? table
----@return string[]
-function M.wrap_text(text, max_width, opts)
+---@return table[] chunks
+function M.wrap_text_with_ranges(text, max_width, opts)
 	opts = opts or {}
 	text = type(text) == "string" and text or tostring(text or "")
 	if max_width <= 0 then
-		return { text }
+		return {
+			{
+				text = text,
+				byte_start = 0,
+				byte_end = #text,
+			},
+		}
 	end
 	local initial_col = opts.initial_col or 0
 	if display_width_from_col(text, initial_col) <= max_width then
-		return { text }
+		return {
+			{
+				text = text,
+				byte_start = 0,
+				byte_end = #text,
+			},
+		}
 	end
 
 	local result = {}
 	local remaining = text
+	local remaining_start = 0
 	while display_width_from_col(remaining, initial_col) > max_width do
 		local last_space_byte = nil
 		local byte_pos = 0
@@ -216,18 +229,44 @@ function M.wrap_text(text, max_width, opts)
 		if cut <= 0 then
 			cut = utf8_char_len_at(remaining, 0)
 		end
-		local piece = remaining:sub(1, cut):gsub("%s+$", "")
+		local raw_piece = remaining:sub(1, cut)
+		local piece = raw_piece:gsub("%s+$", "")
+		local piece_end = remaining_start + #piece
 		if piece == "" then
-			piece = remaining:sub(1, cut)
+			piece = raw_piece
+			piece_end = remaining_start + #piece
 		end
-		table.insert(result, piece)
+		table.insert(result, {
+			text = piece,
+			byte_start = remaining_start,
+			byte_end = piece_end,
+		})
 		remaining = remaining:sub(cut + 1)
+		remaining_start = remaining_start + cut
 		if cut_at_space and remaining:sub(1, 1):match("%s") then
 			remaining = remaining:sub(2)
+			remaining_start = remaining_start + 1
 		end
 	end
 	if #remaining > 0 then
-		table.insert(result, remaining)
+		table.insert(result, {
+			text = remaining,
+			byte_start = remaining_start,
+			byte_end = #text,
+		})
+	end
+	return result
+end
+
+---Wrap a string to fit within max_width, breaking at word boundaries.
+---@param text string
+---@param max_width number
+---@param opts? table
+---@return string[]
+function M.wrap_text(text, max_width, opts)
+	local result = {}
+	for _, chunk in ipairs(M.wrap_text_with_ranges(text, max_width, opts)) do
+		table.insert(result, chunk.text)
 	end
 	return result
 end
@@ -276,13 +315,13 @@ function M.add_panel_line(result, text, hl_group, opts)
 	local prefix = opts.prefix or "▏  "
 	local width = opts.width or get_chat_text_width()
 	local body_width = math.max(1, width - vim.fn.strdisplaywidth(prefix))
-	local chunks = M.wrap_text(M.sanitize_buffer_line(text), body_width, {
+	local chunks = M.wrap_text_with_ranges(M.sanitize_buffer_line(text), body_width, {
 		initial_col = vim.fn.strdisplaywidth(prefix),
 	})
 	local rows = {}
 
 	for _, chunk in ipairs(chunks) do
-		local line = M.pad_to_width(prefix .. chunk, width)
+		local line = M.pad_to_width(prefix .. chunk.text, width)
 		table.insert(result.lines, line)
 		local line_index = #result.lines - 1
 		if hl_group then
@@ -297,8 +336,10 @@ function M.add_panel_line(result, text, hl_group, opts)
 		table.insert(rows, {
 			line_index = line_index,
 			line = line,
-			text = chunk,
+			text = chunk.text,
 			prefix = prefix,
+			byte_start = chunk.byte_start,
+			byte_end = chunk.byte_end,
 		})
 	end
 
@@ -308,7 +349,7 @@ end
 ---@param result table
 ---@param text string
 ---@param hl_group string|nil
----@param opts? table { prefix?: string, width?: number, wrap?: boolean, prefix_hl_group?: string }
+---@param opts? table
 ---@return number line_index
 ---@return string line
 ---@return table[] rows
@@ -320,14 +361,28 @@ function M.add_panel_raw_line(result, text, hl_group, opts)
 	local prefix = opts.prefix or "▏  "
 	local width = opts.width or get_chat_text_width()
 	local body = M.sanitize_buffer_line(text)
-	local body_width = math.max(1, width - vim.fn.strdisplaywidth(prefix))
-	local chunks = opts.wrap ~= false and M.wrap_text(body, body_width, {
-		initial_col = vim.fn.strdisplaywidth(prefix),
-	}) or { body }
+	local body_prefix = opts.body_prefix or ""
+	local continuation_prefix = opts.continuation_prefix or body_prefix
+	local body_prefix_width = math.max(
+		vim.fn.strdisplaywidth(body_prefix),
+		vim.fn.strdisplaywidth(continuation_prefix)
+	)
+	local body_width = math.max(1, width - vim.fn.strdisplaywidth(prefix) - body_prefix_width)
+	local chunks = opts.wrap ~= false and M.wrap_text_with_ranges(body, body_width, {
+		initial_col = vim.fn.strdisplaywidth(prefix) + body_prefix_width,
+	}) or {
+		{
+			text = body,
+			byte_start = 0,
+			byte_end = #body,
+		},
+	}
 	local rows = {}
 
-	for _, chunk in ipairs(chunks) do
-		local line = M.pad_to_width(prefix .. chunk, width)
+	for index, chunk in ipairs(chunks) do
+		local row_body_prefix = index == 1 and body_prefix or continuation_prefix
+		local row_prefix = prefix .. row_body_prefix
+		local line = M.pad_to_width(row_prefix .. chunk.text, width)
 		table.insert(result.lines, line)
 
 		local line_index = #result.lines - 1
@@ -343,8 +398,10 @@ function M.add_panel_raw_line(result, text, hl_group, opts)
 		table.insert(rows, {
 			line_index = line_index,
 			line = line,
-			text = chunk,
-			prefix = prefix,
+			text = chunk.text,
+			prefix = row_prefix,
+			byte_start = chunk.byte_start,
+			byte_end = chunk.byte_end,
 		})
 	end
 
