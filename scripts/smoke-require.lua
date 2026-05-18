@@ -138,6 +138,49 @@ local setup_ok, setup_err = pcall(function()
 	assert(opencode.is_danger_mode_enabled() == false, "danger mode did not disable")
 	local component = opencode.lualine_component()
 	assert(type(component) == "string", "lualine component did not return a string")
+	local app_state = require("opencode.state")
+	local lualine = require("opencode.components.lualine")
+	lualine.setup({
+		show_attention = true,
+		attention_icon = "◈",
+		show_diff_stats = false,
+	})
+	app_state.set_session("attention-session", "Attention session")
+	app_state.set_session_pending_counts("attention-session", { questions = 1 })
+	local attention_component = lualine.component()
+	assert(attention_component:find("◈1", 1, true), "lualine component did not show attention count")
+	assert(not attention_component:find("idle", 1, true), "lualine component should not show status text")
+	app_state.set_session_pending_counts("attention-session", { questions = 0 })
+	if vim.fn.executable("git") == 1 then
+		local original_cwd = vim.fn.getcwd()
+		local tmp = vim.fn.tempname()
+		vim.fn.mkdir(tmp, "p")
+		vim.fn.system({ "git", "-C", tmp, "init" })
+		if vim.v.shell_error == 0 then
+			vim.fn.writefile({ "one", "two", "three" }, tmp .. "/new.txt")
+			vim.cmd("lcd " .. vim.fn.fnameescape(tmp))
+
+			lualine.setup({
+				show_attention = false,
+				show_diff_stats = true,
+				diff_stats_cache_ms = 0,
+				diff_stats_include_untracked = true,
+			})
+			local diff_component = lualine.component()
+			assert(diff_component:find("+3", 1, true), "lualine component did not show git additions")
+			assert(diff_component:find("-0", 1, true), "lualine component did not show git deletions")
+			assert(
+				diff_component:find("OpenCodeLualineDiffAdd", 1, true),
+				"lualine additions were not highlighted"
+			)
+			assert(
+				diff_component:find("OpenCodeLualineDiffDelete", 1, true),
+				"lualine deletions were not highlighted"
+			)
+		end
+		vim.cmd("lcd " .. vim.fn.fnameescape(original_cwd))
+		vim.fn.delete(tmp, "rf")
+	end
 
 	local slash = require("opencode.slash")
 	local slash_commands = {}

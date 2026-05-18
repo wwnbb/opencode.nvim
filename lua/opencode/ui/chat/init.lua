@@ -522,25 +522,31 @@ local function build_session_tabs(tabs_cfg, current_session)
 	end
 
 	---@param page_start number
-	local function append_ellipsis(page_start)
+	---@param hidden_count number
+	local function append_ellipsis(page_start, hidden_count)
 		append_separator()
 		local id = register_target({
 			kind = "page",
 			start = clamp(page_start, 1, max_start),
 			current_session_id = current_session_id,
 		})
+		local label = "..." .. tostring(hidden_count)
 		local start_col = display_col + 1
-		append_text("...", "OpenCodeWinbar")
+		append_text(label, "OpenCodeWinbar")
 		register_mouse_target(id, start_col, display_col)
 		has_tabs = true
 		table.insert(
 			parts,
-			string.format("%%%d@v:lua.__opencode_chat_winbar_click@%%#OpenCodeWinbar#...%%T", id)
+			string.format(
+				"%%%d@v:lua.__opencode_chat_winbar_click@%%#OpenCodeWinbar#%s%%T",
+				id,
+				escape_winbar_text(label)
+			)
 		)
 	end
 
 	if #sessions > max_tabs and start_index > 1 then
-		append_ellipsis(start_index - max_tabs)
+		append_ellipsis(start_index - max_tabs, start_index - 1)
 	end
 
 	for index = start_index, end_index do
@@ -577,7 +583,7 @@ local function build_session_tabs(tabs_cfg, current_session)
 	end
 
 	if #sessions > max_tabs and end_index < #sessions then
-		append_ellipsis(start_index + max_tabs)
+		append_ellipsis(start_index + max_tabs, #sessions - end_index)
 	end
 
 	local running = 0

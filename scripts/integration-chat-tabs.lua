@@ -34,6 +34,19 @@ local function ellipsis_count(text)
 	return count
 end
 
+local function label_count(text, label)
+	local count = 0
+	local start = 1
+	while true do
+		local found = text:find(label, start, true)
+		if not found then
+			return count
+		end
+		count = count + 1
+		start = found + #label
+	end
+end
+
 local function visible_title_count(text)
 	local count = 0
 	for index = 1, 5 do
@@ -72,7 +85,7 @@ local function has_keymap(bufnr, mode, lhs)
 	return false
 end
 
-local function assert_visible_window(text, visible, hidden, expected_ellipsis, label)
+local function assert_visible_window(text, visible, hidden, expected_ellipsis, expected_overflow, label)
 	for _, title in ipairs(visible) do
 		assert_contains(text, title, label)
 	end
@@ -81,6 +94,9 @@ local function assert_visible_window(text, visible, hidden, expected_ellipsis, l
 	end
 	assert_eq(visible_title_count(text), 3, label .. " renders only max_tabs real tabs")
 	assert_eq(ellipsis_count(text), expected_ellipsis, label .. " ellipsis count")
+	for overflow_label, expected_count in pairs(expected_overflow or {}) do
+		assert_eq(label_count(text, overflow_label), expected_count, label .. " overflow " .. overflow_label .. " count")
+	end
 end
 
 vim.o.columns = 140
@@ -182,7 +198,14 @@ assert_eq(vim.api.nvim_get_current_win(), winid, "visual mode key returns focus 
 assert_true(not is_visual_or_select_mode(vim.api.nvim_get_mode().mode), "tab strip does not remain in visual mode")
 
 local first_line = tab_line(chat_view)
-assert_visible_window(first_line, { "Tab 1", "Tab 2", "Tab 3" }, { "Tab 4", "Tab 5" }, 1, "initial view")
+assert_visible_window(
+	first_line,
+	{ "Tab 1", "Tab 2", "Tab 3" },
+	{ "Tab 4", "Tab 5" },
+	1,
+	{ ["...2"] = 1 },
+	"initial view"
+)
 
 local tab3_target = find_target(chat_view, function(target)
 	return target.kind == "session" and target.session_id == "session-3"
@@ -194,7 +217,14 @@ assert_eq(app_state.get_session().id, "session-3", "selecting a visible tab swit
 chat.update_winbar()
 
 local middle_line = tab_line(chat_view)
-assert_visible_window(middle_line, { "Tab 2", "Tab 3", "Tab 4" }, { "Tab 1", "Tab 5" }, 2, "centered tab 3 view")
+assert_visible_window(
+	middle_line,
+	{ "Tab 2", "Tab 3", "Tab 4" },
+	{ "Tab 1", "Tab 5" },
+	2,
+	{ ["...1"] = 2 },
+	"centered tab 3 view"
+)
 
 local left_page_target = find_target(chat_view, function(target)
 	return target.kind == "page" and target.start == 1
@@ -212,7 +242,14 @@ assert_true(vim.api.nvim_win_is_valid(winid), "chat window remains open after pa
 assert_eq(vim.api.nvim_get_current_win(), winid, "paging returns focus to chat window")
 
 local end_line = tab_line(chat_view)
-assert_visible_window(end_line, { "Tab 3", "Tab 4", "Tab 5" }, { "Tab 1", "Tab 2" }, 1, "end view")
+assert_visible_window(
+	end_line,
+	{ "Tab 3", "Tab 4", "Tab 5" },
+	{ "Tab 1", "Tab 2" },
+	1,
+	{ ["...2"] = 1 },
+	"end view"
+)
 
 local back_page_target = find_target(chat_view, function(target)
 	return target.kind == "page" and target.start == 1
@@ -225,6 +262,13 @@ assert_true(vim.api.nvim_win_is_valid(winid), "chat window remains open after pa
 assert_eq(vim.api.nvim_get_current_win(), winid, "paging back returns focus to chat window")
 
 local back_line = tab_line(chat_view)
-assert_visible_window(back_line, { "Tab 1", "Tab 2", "Tab 3" }, { "Tab 4", "Tab 5" }, 1, "paged back view")
+assert_visible_window(
+	back_line,
+	{ "Tab 1", "Tab 2", "Tab 3" },
+	{ "Tab 4", "Tab 5" },
+	1,
+	{ ["...2"] = 1 },
+	"paged back view"
+)
 
 print("Chat tab integration passed")

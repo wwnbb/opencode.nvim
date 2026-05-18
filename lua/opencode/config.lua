@@ -188,6 +188,17 @@ M.defaults = {
 		height = 15, -- for top/bottom splits
 	},
 
+	-- Lualine statusline component
+	lualine = {
+		enabled = true,
+		show_attention = true,
+		attention_icon = "◈",
+		show_diff_stats = true,
+		diff_stats_cache_ms = 2000,
+		diff_stats_include_untracked = true,
+		diff_stats_max_untracked_file_size = 1024 * 1024,
+	},
+
 	-- Question tool
 	question = {
 		enabled = true,
