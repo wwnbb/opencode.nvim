@@ -15,6 +15,7 @@ local syntax = require("opencode.ui.syntax")
 local cs = require("opencode.ui.chat.state")
 local state = cs.state
 local chat_hl_ns = cs.chat_hl_ns
+local PANEL_BACKGROUND_HL_PRIORITY = 4000
 local UI_HIGHLIGHT_PRIORITY = 4200
 local PANEL_PREFIX_HL_PRIORITY = UI_HIGHLIGHT_PRIORITY + 1
 
@@ -301,6 +302,23 @@ local function add_panel_prefix_highlight(result, line_index, prefix, hl_group)
 end
 
 ---@param result table
+---@param line_index number
+---@param line string
+---@param hl_group string|nil
+local function add_panel_background_highlight(result, line_index, line, hl_group)
+	if not hl_group then
+		return
+	end
+	table.insert(result.highlights, {
+		line = line_index,
+		col_start = 0,
+		col_end = #line,
+		hl_group = hl_group,
+		priority = PANEL_BACKGROUND_HL_PRIORITY,
+	})
+end
+
+---@param result table
 ---@param text string
 ---@param hl_group string|nil
 ---@param opts? table { prefix?: string, width?: number, prefix_hl_group?: string }
@@ -324,14 +342,7 @@ function M.add_panel_line(result, text, hl_group, opts)
 		local line = M.pad_to_width(prefix .. chunk.text, width)
 		table.insert(result.lines, line)
 		local line_index = #result.lines - 1
-		if hl_group then
-			table.insert(result.highlights, {
-				line = line_index,
-				col_start = 0,
-				col_end = #line,
-				hl_group = hl_group,
-			})
-		end
+		add_panel_background_highlight(result, line_index, line, hl_group)
 		add_panel_prefix_highlight(result, line_index, prefix, opts.prefix_hl_group)
 		table.insert(rows, {
 			line_index = line_index,
@@ -386,14 +397,7 @@ function M.add_panel_raw_line(result, text, hl_group, opts)
 		table.insert(result.lines, line)
 
 		local line_index = #result.lines - 1
-		if hl_group then
-			table.insert(result.highlights, {
-				line = line_index,
-				col_start = 0,
-				col_end = #line,
-				hl_group = hl_group,
-			})
-		end
+		add_panel_background_highlight(result, line_index, line, hl_group)
 		add_panel_prefix_highlight(result, line_index, prefix, opts.prefix_hl_group)
 		table.insert(rows, {
 			line_index = line_index,
@@ -424,14 +428,7 @@ function M.add_panel_blank(result, hl_group, opts)
 	local line = M.pad_to_width(prefix, width)
 	table.insert(result.lines, line)
 	local line_index = #result.lines - 1
-	if hl_group then
-		table.insert(result.highlights, {
-			line = line_index,
-			col_start = 0,
-			col_end = #line,
-			hl_group = hl_group,
-		})
-	end
+	add_panel_background_highlight(result, line_index, line, hl_group)
 	add_panel_prefix_highlight(result, line_index, prefix, opts.prefix_hl_group)
 
 	return line_index, line, {
@@ -782,6 +779,9 @@ function M.apply_extmark_highlights(bufnr, ns_id, highlights, start_line, opts)
 				local mark_opts = {
 					hl_group = hl.hl_group,
 				}
+				if hl.hl_eol ~= nil then
+					mark_opts.hl_eol = hl.hl_eol
+				end
 				if hl.priority then
 					mark_opts.priority = hl.priority
 				end

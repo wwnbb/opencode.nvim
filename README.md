@@ -39,3 +39,30 @@ require("opencode").setup({
 	danger_mode = false,
 })
 ```
+
+## Session Tabs
+
+Session tabs are shown above the chat when multiple sessions are active. Their colors can be configured under
+`chat.session_tabs.colors`; omit any value to keep the colorscheme-derived default for that part.
+
+Use `x` in the chat buffer or `:OpenCodeCloseSession` to close the current active tab without deleting the
+underlying OpenCode session. The session can still be resumed later from the session list.
+
+```lua
+require("opencode").setup({
+	chat = {
+		session_tabs = {
+			colors = {
+				active_fg = "#ffffff",
+				active_bg = "#3b82f6",
+				inactive_fg = "#9ca3af",
+				inactive_bg = "#1f2937",
+				running_fg = "#22c55e",
+				waiting_fg = "#f59e0b",
+				error_fg = "#ef4444",
+				idle_fg = "#6b7280",
+			},
+		},
+	},
+})
+```

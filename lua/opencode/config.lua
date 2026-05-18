@@ -55,12 +55,16 @@ M.defaults = {
 			enabled = true,
 			max_tabs = 3,
 			separator = " │ ",
+			colors = {},
 			icons = {
 				running = "●",
 				waiting = "◈",
 				idle = "○",
 				error = "✕",
 			},
+		},
+		keymaps = {
+			close_session = "x",
 		},
 		todo = {
 			enabled = true,

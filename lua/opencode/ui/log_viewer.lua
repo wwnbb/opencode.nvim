@@ -26,7 +26,7 @@ local defaults = {
 local state = {
 	split = nil, -- NuiSplit instance
 	visible = false,
-	auto_scroll = true,
+	auto_scroll = false,
 	config = nil,
 	-- Data layer: flat list of entries (message.part.updated replaces in-place)
 	entries = {}, -- log entry objects

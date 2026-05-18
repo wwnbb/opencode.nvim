@@ -1173,6 +1173,20 @@ local function register_defaults()
 	})
 
 	M.register({
+		id = "session.close",
+		title = "Close Session Tab",
+		description = "Close the current active tab without deleting the session",
+		category = "session",
+		keybind = "x",
+		action = function()
+			actions.close_session({ notify = true })
+		end,
+		enabled = function()
+			return state.get_session().id ~= nil
+		end,
+	})
+
+	M.register({
 		id = "session.list",
 		title = "Switch Session",
 		description = "Switch to another session",

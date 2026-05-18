@@ -79,18 +79,33 @@ function M.show()
 		end
 
 		local items = {}
-		for index, session in ipairs(sessions) do
+		local function make_label(session)
 			local title = session_util.displayTitle(session.title or session.name) or session.id
 			local is_current = session.is_current or current_root_session_id == session.id
 			local marker = is_current and "● " or "  "
+			return marker .. title
+		end
+
+		for index, session in ipairs(sessions) do
+			local is_current = session.is_current or current_root_session_id == session.id
 			table.insert(items, {
-				label = marker .. title,
+				label = make_label(session),
 				value = session.id,
 				session = session,
 				description = stats_label(session),
 				priority = is_current and 100 or (100 - index),
 				sort_index = index,
 			})
+		end
+
+		local function refresh_labels()
+			local next_current = app_state.get_session()
+			for index, item in ipairs(items) do
+				local session = item.session or {}
+				session.is_current = next_current.id == session.id
+				item.label = make_label(session)
+				item.priority = session.is_current and 100 or (100 - (item.sort_index or index))
+			end
 		end
 
 		local float = require("opencode.ui.float")
@@ -102,7 +117,28 @@ function M.show()
 		end, {
 			title = " Active Sessions ",
 			width = 76,
-			footer_text = " ↑↓/j,k:navigate  ⏎:select  esc:close ",
+			footer_text = " ↑↓/j,k:navigate  ⏎:select  x:close tab  esc:close ",
+			custom_key = {
+				key = "x",
+				text = "x:close tab",
+				on_key = function(item)
+					local closed = require("opencode.actions").close_session({
+						session_id = item.value,
+						notify = true,
+					})
+					if not closed then
+						return true
+					end
+					for i = #items, 1, -1 do
+						if items[i].value == item.value then
+							table.remove(items, i)
+							break
+						end
+					end
+					refresh_labels()
+					return #items > 0
+				end,
+			},
 		})
 	end)
 end

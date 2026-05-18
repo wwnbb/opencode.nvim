@@ -173,6 +173,20 @@ function M.register_defaults()
 			actions.clear()
 		end,
 	})
+
+	-- /close - Close current active session tab without deleting it
+	M.register({
+		name = "close",
+		aliases = { "close-session", "close-tab" },
+		description = "Close the current session tab",
+		category = "session",
+		handler = function()
+			actions.close_session({ notify = true })
+		end,
+		enabled = function()
+			return state.get_session().id ~= nil
+		end,
+	})
 	
 	-- /models - Switch model
 	M.register({

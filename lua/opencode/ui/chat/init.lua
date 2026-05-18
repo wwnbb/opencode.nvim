@@ -92,6 +92,7 @@ local defaults = {
 	},
 	keymaps = {
 		close = "q",
+		close_session = "x",
 		focus_input = "i",
 		scroll_up = "<C-u>",
 		scroll_down = "<C-d>",
@@ -172,46 +173,119 @@ local function setup_chat_window_options(winid)
 	end)
 end
 
-local function ensure_winbar_highlights()
-	vim.api.nvim_set_hl(0, "OpenCodeWinbar", { link = "StatusLine", default = true })
-	vim.api.nvim_set_hl(0, "OpenCodeWinbarRunning", { link = "DiagnosticOk", default = true })
-	vim.api.nvim_set_hl(0, "OpenCodeWinbarWaiting", { link = "DiagnosticWarn", default = true })
-	vim.api.nvim_set_hl(0, "OpenCodeWinbarError", { link = "DiagnosticError", default = true })
-	vim.api.nvim_set_hl(0, "OpenCodeWinbarIdle", { link = "Comment", default = true })
+---@param opts table
+---@return boolean
+local function has_highlight_options(opts)
+	return type(opts) == "table" and next(opts) ~= nil
+end
 
+---@param colors table
+---@param keys string[]
+---@param fallback any
+---@return any
+local function tab_color(colors, keys, fallback)
+	if type(colors) ~= "table" then
+		return fallback
+	end
+	for _, key in ipairs(keys) do
+		local value = colors[key]
+		if value ~= nil and value ~= "" then
+			return value
+		end
+	end
+	return fallback
+end
+
+---@param name string
+---@param opts table
+---@param fallback table|nil
+local function set_winbar_hl(name, opts, fallback)
+	local ok = pcall(vim.api.nvim_set_hl, 0, name, opts)
+	if not ok and fallback then
+		pcall(vim.api.nvim_set_hl, 0, name, fallback)
+	end
+end
+
+---@param tabs_cfg table|nil
+local function ensure_winbar_highlights(tabs_cfg)
 	local function get_hl(name)
 		local ok, value = pcall(vim.api.nvim_get_hl, 0, { name = name, link = false })
 		return ok and value or {}
 	end
 
+	local colors = type(tabs_cfg) == "table" and tabs_cfg.colors or {}
 	local normal = get_hl("Normal")
 	local selected = get_hl("PmenuSel")
 	local visual = get_hl("Visual")
 	local tab_selected = get_hl("TabLineSel")
 	local search = get_hl("Search")
-	local active_bg = selected.bg or visual.bg or tab_selected.bg or search.bg or "#2d5f87"
-	local active_fg = selected.fg or normal.fg or tab_selected.fg or "#ffffff"
+	local fallback_active_bg = selected.bg or visual.bg or tab_selected.bg or search.bg or "#2d5f87"
+	local fallback_active_fg = selected.fg or normal.fg or tab_selected.fg or "#ffffff"
+	local active_bg = tab_color(colors, { "active_bg", "current_bg" }, fallback_active_bg)
+	local active_fg = tab_color(colors, { "active_fg", "current_fg" }, fallback_active_fg)
+	local inactive_bg = tab_color(colors, { "inactive_bg" }, nil)
+	local inactive_fg = tab_color(colors, { "inactive_fg" }, nil)
+	local running_fg = tab_color(colors, { "running_fg" }, nil)
+	local waiting_fg = tab_color(colors, { "waiting_fg" }, nil)
+	local error_fg = tab_color(colors, { "error_fg" }, nil)
+	local idle_fg = tab_color(colors, { "idle_fg" }, nil)
+	local inactive_opts = {
+		fg = inactive_fg,
+		bg = inactive_bg,
+	}
+
+	if has_highlight_options(inactive_opts) then
+		set_winbar_hl("OpenCodeWinbar", inactive_opts, { link = "StatusLine", default = true })
+	else
+		set_winbar_hl("OpenCodeWinbar", { link = "StatusLine", default = true })
+	end
+
+	local function set_status_hl(name, source, fg)
+		if fg or inactive_bg then
+			local source_hl = get_hl(source)
+			set_winbar_hl(name, {
+				fg = fg or source_hl.fg,
+				bg = inactive_bg,
+			}, { link = source, default = true })
+			return
+		end
+		set_winbar_hl(name, { link = source, default = true })
+	end
+
+	set_status_hl("OpenCodeWinbarRunning", "DiagnosticOk", running_fg)
+	set_status_hl("OpenCodeWinbarWaiting", "DiagnosticWarn", waiting_fg)
+	set_status_hl("OpenCodeWinbarError", "DiagnosticError", error_fg)
+	set_status_hl("OpenCodeWinbarIdle", "Comment", idle_fg)
+
 	local active_opts = {
 		fg = active_fg,
 		bg = active_bg,
 		bold = true,
 	}
 
-	vim.api.nvim_set_hl(0, "OpenCodeWinbarCurrent", active_opts)
+	set_winbar_hl("OpenCodeWinbarCurrent", active_opts, {
+		fg = fallback_active_fg,
+		bg = fallback_active_bg,
+		bold = true,
+	})
 
-	local function set_active_icon_hl(name, source)
+	local function set_active_icon_hl(name, source, fg)
 		local source_hl = get_hl(source)
-		vim.api.nvim_set_hl(0, name, {
-			fg = source_hl.fg or active_fg,
+		set_winbar_hl(name, {
+			fg = fg or source_hl.fg or active_fg,
 			bg = active_bg,
+			bold = true,
+		}, {
+			fg = source_hl.fg or fallback_active_fg,
+			bg = fallback_active_bg,
 			bold = true,
 		})
 	end
 
-	set_active_icon_hl("OpenCodeWinbarCurrentRunning", "DiagnosticOk")
-	set_active_icon_hl("OpenCodeWinbarCurrentWaiting", "DiagnosticWarn")
-	set_active_icon_hl("OpenCodeWinbarCurrentError", "DiagnosticError")
-	set_active_icon_hl("OpenCodeWinbarCurrentIdle", "Normal")
+	set_active_icon_hl("OpenCodeWinbarCurrentRunning", "DiagnosticOk", running_fg)
+	set_active_icon_hl("OpenCodeWinbarCurrentWaiting", "DiagnosticWarn", waiting_fg)
+	set_active_icon_hl("OpenCodeWinbarCurrentError", "DiagnosticError", error_fg)
+	set_active_icon_hl("OpenCodeWinbarCurrentIdle", "Normal", idle_fg)
 end
 
 ---@param text string
@@ -307,7 +381,7 @@ end
 ---@param current_session table|nil
 ---@return table tabs
 local function build_session_tabs(tabs_cfg, current_session)
-	ensure_winbar_highlights()
+	ensure_winbar_highlights(tabs_cfg)
 
 	local app_state = require("opencode.state")
 	local sessions = app_state.get_active_sessions()
@@ -908,6 +982,12 @@ local function setup_buffer(bufnr)
 		require("opencode.actions").new_session()
 	end, { buffer = bufnr, noremap = true, silent = true, desc = "Start new session" })
 
+	if cfg.keymaps.close_session and cfg.keymaps.close_session ~= "" then
+		vim.keymap.set("n", cfg.keymaps.close_session, function()
+			require("opencode.actions").close_session({ notify = true })
+		end, vim.tbl_extend("force", opts, { desc = "Close current OpenCode session tab" }))
+	end
+
 	vim.keymap.set("n", "gt", function()
 		M.cycle_session(1)
 	end, vim.tbl_extend("force", opts, { desc = "Next OpenCode session" }))
@@ -1159,6 +1239,10 @@ function M.show_help()
 		and state.config.todo.keymaps
 		and state.config.todo.keymaps.toggle
 		or "T"
+	local close_session_key = state.config
+		and state.config.keymaps
+		and state.config.keymaps.close_session
+		or "x"
 
 	local lines = {
 		"Chat Buffer Keymaps",
@@ -1169,6 +1253,7 @@ function M.show_help()
 		"<C-c>      Stop generation",
 		"<C-p>      Command palette",
 		"N          Start new session",
+		string.format("%-10s Close current session tab", close_session_key),
 		"gt         Next session",
 		"gT         Previous session",
 		"<C-u>      Scroll up",
@@ -2503,11 +2588,13 @@ function M.render()
 	---@param kind string
 	---@return number base_line
 	local function add_render_result(result, kind)
+		-- Block transitions can insert a separator; highlights must start after it.
+		normalize_block_transition(kind)
 		local base_line = #raw_lines
 		for _, text in ipairs(result.lines or {}) do
 			local nl = NuiLine()
 			nl:append(text)
-			add_line(nl, kind)
+			push_line(text, nl)
 		end
 		return base_line
 	end

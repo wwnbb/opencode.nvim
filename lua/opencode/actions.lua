@@ -76,6 +76,10 @@ function M.new_session(opts)
 	return api().new_session(opts)
 end
 
+function M.close_session(opts)
+	return api().close_session(opts)
+end
+
 function M.send(message, opts)
 	return api().send(message, opts)
 end
