@@ -40,6 +40,23 @@ require("opencode").setup({
 })
 ```
 
+## Lualine Component
+
+The lualine component stays compact: `◈2` means two chats need user attention. When your current working
+directory is inside a git repository, it can also show changed line counts like `+100 -20`. Additions use
+`OpenCodeLualineDiffAdd`; deletions use `OpenCodeLualineDiffDelete`.
+
+```lua
+require("opencode").setup({
+	lualine = {
+		show_attention = true,
+		attention_icon = "◈",
+		show_diff_stats = true,
+		diff_stats_cache_ms = 2000,
+	},
+})
+```
+
 ## Testing
 
 Install pinned local Neovim test dependencies once:

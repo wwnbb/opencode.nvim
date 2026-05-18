@@ -60,11 +60,9 @@ require("opencode").setup({
 
 	lualine = {
 		enabled = true,
-		mode = "normal",
-		show_model = true,
-		show_agent = true,
-		show_status = true,
-		show_message_count = true,
+		show_attention = true,
+		attention_icon = "◈",
+		show_diff_stats = true,
 	},
 
 	diff = {
