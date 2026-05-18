@@ -31,6 +31,9 @@ M.state = {
 	todo_dock_collapsed = {}, -- Toggle set by session: { [session_id] = boolean }
 	session_tabs_bufnr = nil, -- Float session tabs window buffer
 	session_tabs_winid = nil, -- Float session tabs window id
+	session_tabs_start = nil, -- First active-session index shown in the tab strip
+	session_tabs_current_id = nil, -- Current root session id used for tab strip centering
+	session_tabs_mouse_targets = {}, -- Float tab click targets: { start_col, end_col, target }
 	stream_blocks = {},     -- Streaming text blocks: { [message_id] = { start_line, end_line } }
 	spinner_footer_line = nil,
 	session_stack = {},     -- Stack of { id, name } for parent session navigation

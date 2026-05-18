@@ -40,6 +40,20 @@ require("opencode").setup({
 })
 ```
 
+## Testing
+
+Install pinned local Neovim test dependencies once:
+
+```sh
+./scripts/bootstrap-test-deps.sh
+```
+
+Run all headless checks, including the chat tab integration scenario:
+
+```sh
+./scripts/test-headless.sh
+```
+
 ## Session Tabs
 
 Session tabs are shown above the chat when multiple sessions are active. Their colors can be configured under
@@ -47,6 +61,9 @@ Session tabs are shown above the chat when multiple sessions are active. Their c
 
 Use `x` in the chat buffer or `:OpenCodeCloseSession` to close the current active tab without deleting the
 underlying OpenCode session. The session can still be resumed later from the session list.
+
+Use `gt`/`gT` to move between session tabs. Use `Ngt` to jump to a tab by index, such as `5gt`, and `0gt` to
+jump to the first tab.
 
 ```lua
 require("opencode").setup({

@@ -20,8 +20,10 @@ local cs = require("opencode.ui.chat.state")
 local state = cs.state
 local chat_hl_ns = cs.chat_hl_ns
 local session_tabs_hl_ns = vim.api.nvim_create_namespace("opencode_session_tabs_hl")
+local session_tabs_augroup = vim.api.nvim_create_augroup("OpenCodeSessionTabs", { clear = false })
 local FLOAT_SESSION_TABS_ZINDEX = 75
 local FLOAT_CHAT_TOP_PADDING = 2
+local SESSION_TAB_COUNT_MAPPING_LIMIT = 99
 
 local render = require("opencode.ui.chat.render")
 local chat_tasks = require("opencode.ui.chat.tasks")
@@ -350,6 +352,20 @@ local function truncate_title(title, max_len)
 	return title:sub(1, max_len - 3) .. "..."
 end
 
+---@param value number
+---@param min_value number
+---@param max_value number
+---@return number
+local function clamp(value, min_value, max_value)
+	if value < min_value then
+		return min_value
+	end
+	if value > max_value then
+		return max_value
+	end
+	return value
+end
+
 ---@param text string|table|nil
 ---@param align string|nil
 ---@return boolean
@@ -377,6 +393,64 @@ local function set_float_border_title(text, align)
 	return ok
 end
 
+---@param sessions table[]
+---@param active_session table
+---@param current_root_session_id string|nil
+---@return number|nil index
+---@return string|nil session_id
+local function current_session_tab_index(sessions, active_session, current_root_session_id)
+	for index, session in ipairs(sessions) do
+		if session.is_current or session.id == active_session.id or session.id == current_root_session_id then
+			return index, session.id
+		end
+	end
+	return nil, current_root_session_id or active_session.id
+end
+
+---@param session_count number
+---@param max_tabs number
+---@param current_index number|nil
+---@return number start_index
+local function centered_session_tabs_start(session_count, max_tabs, current_index)
+	if session_count <= max_tabs then
+		return 1
+	end
+	if not current_index then
+		return 1
+	end
+
+	local max_start = session_count - max_tabs + 1
+	local start_index = current_index - math.floor(max_tabs / 2)
+	return clamp(start_index, 1, max_start)
+end
+
+---@param sessions table[]
+---@param max_tabs number
+---@param current_index number|nil
+---@param current_session_id string|nil
+---@return number start_index
+local function visible_session_tabs_start(sessions, max_tabs, current_index, current_session_id)
+	local session_count = #sessions
+	if session_count <= max_tabs then
+		state.session_tabs_start = nil
+		state.session_tabs_current_id = current_session_id
+		return 1
+	end
+
+	local max_start = session_count - max_tabs + 1
+	local stored_start = tonumber(state.session_tabs_start)
+	if stored_start and state.session_tabs_current_id == current_session_id then
+		local start_index = clamp(math.floor(stored_start), 1, max_start)
+		state.session_tabs_start = start_index
+		return start_index
+	end
+
+	local start_index = centered_session_tabs_start(session_count, max_tabs, current_index)
+	state.session_tabs_start = start_index
+	state.session_tabs_current_id = current_session_id
+	return start_index
+end
+
 ---@param tabs_cfg table
 ---@param current_session table|nil
 ---@return table tabs
@@ -402,39 +476,108 @@ local function build_session_tabs(tabs_cfg, current_session)
 	local parts = {}
 	local line = NuiLine()
 	local has_tabs = false
+	local display_col = 0
+	local target_id = 0
 	state.winbar_targets = {}
+	state.session_tabs_mouse_targets = {}
 
-	line:append(" ", "OpenCodeWinbar")
-	for index, session in ipairs(sessions) do
-		if index > max_tabs then
-			break
+	local current_index, current_session_id = current_session_tab_index(sessions, active_session, current_root_session_id)
+	local start_index = visible_session_tabs_start(sessions, max_tabs, current_index, current_session_id)
+	local end_index = math.min(#sessions, start_index + max_tabs - 1)
+	local max_start = math.max(1, #sessions - max_tabs + 1)
+
+	---@param text string
+	---@param hl string
+	local function append_text(text, hl)
+		line:append(text, hl)
+		display_col = display_col + vim.fn.strdisplaywidth(text)
+	end
+
+	local function append_separator()
+		if has_tabs then
+			append_text(separator, "OpenCodeWinbar")
 		end
-		state.winbar_targets[index] = session.id
+	end
+
+	---@param target table
+	---@return number
+	local function register_target(target)
+		target_id = target_id + 1
+		state.winbar_targets[target_id] = target
+		return target_id
+	end
+
+	---@param id number
+	---@param start_col number
+	---@param end_col number
+	local function register_mouse_target(id, start_col, end_col)
+		if end_col < start_col then
+			return
+		end
+		table.insert(state.session_tabs_mouse_targets, {
+			target = id,
+			start_col = start_col,
+			end_col = end_col,
+		})
+	end
+
+	---@param page_start number
+	local function append_ellipsis(page_start)
+		append_separator()
+		local id = register_target({
+			kind = "page",
+			start = clamp(page_start, 1, max_start),
+			current_session_id = current_session_id,
+		})
+		local start_col = display_col + 1
+		append_text("...", "OpenCodeWinbar")
+		register_mouse_target(id, start_col, display_col)
+		has_tabs = true
+		table.insert(
+			parts,
+			string.format("%%%d@v:lua.__opencode_chat_winbar_click@%%#OpenCodeWinbar#...%%T", id)
+		)
+	end
+
+	if #sessions > max_tabs and start_index > 1 then
+		append_ellipsis(start_index - max_tabs)
+	end
+
+	for index = start_index, end_index do
+		local session = sessions[index]
 		local icon, icon_hl = session_tab_icon(session, icons)
 		local title = session_util.displayTitle(session.title or session.name) or session.id
 		local display_title = truncate_title(title, 18)
-		local is_current = session.is_current or current_root_session_id == session.id
+		local is_current = session.is_current or active_session.id == session.id or current_root_session_id == session.id
 		local label_hl = is_current and "OpenCodeWinbarCurrent" or "OpenCodeWinbar"
 		local display_icon = is_current and (" " .. icon) or icon
 		local display_label = is_current and (" " .. display_title .. " ") or (" " .. display_title)
 		local display_icon_hl = is_current and current_session_tab_icon_hl(icon_hl) or icon_hl
-		if has_tabs then
-			line:append(separator, "OpenCodeWinbar")
-		end
-		line:append(display_icon, display_icon_hl)
-		line:append(display_label, label_hl)
+		append_separator()
+		local id = register_target({
+			kind = "session",
+			session_id = session.id,
+		})
+		local start_col = display_col + 1
+		append_text(display_icon, display_icon_hl)
+		append_text(display_label, label_hl)
+		register_mouse_target(id, start_col, display_col)
 		has_tabs = true
 		table.insert(
 			parts,
 			string.format(
 				"%%%d@v:lua.__opencode_chat_winbar_click@%%#%s#%s%%#%s#%s%%T",
-				index,
+				id,
 				display_icon_hl,
 				escape_winbar_text(display_icon),
 				label_hl,
 				escape_winbar_text(display_label)
 			)
 		)
+	end
+
+	if #sessions > max_tabs and end_index < #sessions then
+		append_ellipsis(start_index + max_tabs)
 	end
 
 	local running = 0
@@ -450,13 +593,11 @@ local function build_session_tabs(tabs_cfg, current_session)
 		end
 	end
 
-	if #sessions > max_tabs or running > 0 or waiting > 0 then
-		if has_tabs then
-			line:append(separator, "OpenCodeWinbar")
-		end
-		line:append((icons.running or "●") .. tostring(running), "OpenCodeWinbarRunning")
-		line:append(" ", "OpenCodeWinbar")
-		line:append((icons.waiting or "◈") .. tostring(waiting), "OpenCodeWinbarWaiting")
+	if running > 0 or waiting > 0 then
+		append_separator()
+		append_text((icons.running or "●") .. tostring(running), "OpenCodeWinbarRunning")
+		append_text(" ", "OpenCodeWinbar")
+		append_text((icons.waiting or "◈") .. tostring(waiting), "OpenCodeWinbarWaiting")
 		has_tabs = true
 		table.insert(
 			parts,
@@ -472,7 +613,7 @@ local function build_session_tabs(tabs_cfg, current_session)
 	end
 
 	if has_tabs then
-		line:append(" ", "OpenCodeWinbar")
+		append_text(" ", "OpenCodeWinbar")
 	end
 
 	return {
@@ -498,6 +639,54 @@ local function close_float_session_tabs_window()
 		pcall(vim.api.nvim_win_close, state.session_tabs_winid, true)
 	end
 	state.session_tabs_winid = nil
+	state.session_tabs_mouse_targets = {}
+end
+
+local function focus_chat_window()
+	if state.winid and vim.api.nvim_win_is_valid(state.winid) then
+		pcall(vim.api.nvim_set_current_win, state.winid)
+	end
+end
+
+---@param mode string
+---@return boolean
+local function is_visual_or_select_mode(mode)
+	return mode == "v" or mode == "V" or mode == string.char(22) or mode == "s" or mode == "S" or mode == string.char(19)
+end
+
+local function leave_session_tabs_visual_mode()
+	if is_visual_or_select_mode(vim.api.nvim_get_mode().mode) then
+		local esc = vim.api.nvim_replace_termcodes("<Esc>", true, false, true)
+		vim.api.nvim_feedkeys(esc, "nx", false)
+	end
+	focus_chat_window()
+end
+
+local function handle_session_tabs_mouse_click()
+	local mouse = vim.fn.getmousepos()
+	if not mouse or mouse.winid ~= state.session_tabs_winid then
+		focus_chat_window()
+		return
+	end
+
+	local col = tonumber(mouse.wincol or 0) or 0
+	if col <= 0 then
+		col = tonumber(mouse.column or 0) or 0
+	end
+	if col <= 0 then
+		focus_chat_window()
+		return
+	end
+
+	for _, target in ipairs(state.session_tabs_mouse_targets or {}) do
+		if col >= target.start_col and col <= target.end_col then
+			M.select_winbar_session(target.target)
+			focus_chat_window()
+			return
+		end
+	end
+
+	focus_chat_window()
 end
 
 ---@return number bufnr
@@ -514,6 +703,37 @@ local function setup_session_tabs_buffer()
 	vim.bo[bufnr].filetype = "opencode_session_tabs"
 	vim.bo[bufnr].modifiable = false
 	vim.bo[bufnr].readonly = true
+
+	local function map(mode, lhs, rhs, desc)
+		vim.keymap.set(mode, lhs, rhs, {
+			buffer = bufnr,
+			noremap = true,
+			silent = true,
+			nowait = true,
+			desc = desc,
+		})
+	end
+
+	map("n", "<LeftMouse>", handle_session_tabs_mouse_click, "Select OpenCode session tab")
+	map({ "v", "s" }, "<LeftMouse>", leave_session_tabs_visual_mode, "Leave OpenCode session tab selection")
+	map({ "n", "v", "s" }, "<LeftDrag>", leave_session_tabs_visual_mode, "Ignore OpenCode session tab drag")
+	map({ "n", "v", "s" }, "<LeftRelease>", leave_session_tabs_visual_mode, "Ignore OpenCode session tab release")
+	map("n", "v", leave_session_tabs_visual_mode, "Disable OpenCode session tab visual mode")
+	map("n", "V", leave_session_tabs_visual_mode, "Disable OpenCode session tab linewise visual mode")
+	map("n", "<C-v>", leave_session_tabs_visual_mode, "Disable OpenCode session tab block visual mode")
+
+	pcall(vim.api.nvim_create_autocmd, "ModeChanged", {
+		group = session_tabs_augroup,
+		buffer = bufnr,
+		callback = function()
+			if not session_tabs_window_is_valid() or vim.api.nvim_get_current_win() ~= state.session_tabs_winid then
+				return
+			end
+			if is_visual_or_select_mode(vim.api.nvim_get_mode().mode) then
+				vim.schedule(leave_session_tabs_visual_mode)
+			end
+		end,
+	})
 
 	return bufnr
 end
@@ -543,12 +763,12 @@ local function setup_session_tabs_window_options(winid)
 end
 
 ---@param frame table
----@param tab_width number
+---@param _tab_width number
 ---@return table|nil
-local function calculate_session_tabs_window_config(frame, tab_width)
+local function calculate_session_tabs_window_config(frame, _tab_width)
 	local ui = vim.api.nvim_list_uis()[1] or { width = vim.o.columns, height = vim.o.lines }
 	local max_width = math.max(1, (tonumber(frame.width) or 0) - 2)
-	local width = math.min(max_width, math.max(1, tonumber(tab_width) or 0))
+	local width = max_width
 	local row = math.max(0, tonumber(frame.row) or 0)
 	local col = math.max(0, tonumber(frame.col) or 0) + 1
 
@@ -565,7 +785,7 @@ local function calculate_session_tabs_window_config(frame, tab_width)
 		width = width,
 		height = 1,
 		style = "minimal",
-		focusable = false,
+		focusable = true,
 		zindex = FLOAT_SESSION_TABS_ZINDEX,
 	}
 end
@@ -630,6 +850,7 @@ function M.update_winbar()
 			vim.wo[state.winid].winbar = ""
 		end)
 		state.winbar_targets = {}
+		state.session_tabs_mouse_targets = {}
 		set_float_border_title(nil)
 		close_float_session_tabs_window()
 		return
@@ -655,8 +876,18 @@ end
 ---@param target number|string
 function M.select_winbar_session(target)
 	local index = tonumber(target)
-	local session_id = index and state.winbar_targets[index] or nil
+	local entry = index and state.winbar_targets[index] or nil
+	if type(entry) == "table" and entry.kind == "page" then
+		state.session_tabs_start = entry.start
+		state.session_tabs_current_id = entry.current_session_id
+		M.update_winbar()
+		focus_chat_window()
+		return
+	end
+
+	local session_id = type(entry) == "table" and entry.session_id or entry
 	if not session_id then
+		focus_chat_window()
 		return
 	end
 	local app_state = require("opencode.state")
@@ -665,6 +896,51 @@ function M.select_winbar_session(target)
 		notify = false,
 		reason = "winbar",
 	})
+	focus_chat_window()
+end
+
+---@param target table|nil
+---@param current_session table|nil
+---@return boolean switched
+local function switch_to_session_tab(target, current_session)
+	if type(target) ~= "table" or not target.id then
+		return false
+	end
+
+	local current = current_session or require("opencode.state").get_session() or {}
+	if target.id == current.id then
+		return false
+	end
+
+	local app_state = require("opencode.state")
+	local record = app_state.get_session_record(target.id) or target
+	require("opencode.session").switch_to(record, {
+		notify = false,
+		reason = "winbar",
+	})
+	return true
+end
+
+---@param index number
+---@return boolean switched
+function M.go_to_session_tab(index)
+	local target_index = tonumber(index)
+	if not target_index then
+		return false
+	end
+
+	if target_index == 0 then
+		target_index = 1
+	else
+		target_index = math.floor(target_index)
+	end
+	if target_index < 1 then
+		return false
+	end
+
+	local app_state = require("opencode.state")
+	local sessions = app_state.get_active_sessions()
+	return switch_to_session_tab(sessions[target_index], app_state.get_session())
 end
 
 ---@param direction number
@@ -701,16 +977,7 @@ function M.cycle_session(direction)
 
 	local next_index = ((current_index - 1 + step) % #sessions) + 1
 	local target = sessions[next_index]
-	if not target or target.id == current.id then
-		return false
-	end
-
-	local record = app_state.get_session_record(target.id) or target
-	require("opencode.session").switch_to(record, {
-		notify = false,
-		reason = "winbar",
-	})
-	return true
+	return switch_to_session_tab(target, current)
 end
 
 _G.__opencode_chat_winbar_click = _G.__opencode_chat_winbar_click or function(minwid)
@@ -773,6 +1040,36 @@ local function is_opencode_related_window(winid)
 	return false
 end
 
+---@param current_win number|nil
+---@return boolean
+local function mouse_is_inside_float_frame(current_win)
+	if not state.float_dims then
+		return false
+	end
+	local mouse = vim.fn.getmousepos()
+	if type(mouse) ~= "table" then
+		return false
+	end
+	local mouse_winid = tonumber(mouse.winid or 0) or 0
+	if current_win and mouse_winid > 0 and mouse_winid ~= current_win then
+		return false
+	end
+
+	local row = (tonumber(mouse.screenrow or 0) or 0) - 1
+	local col = (tonumber(mouse.screencol or 0) or 0) - 1
+	if row < 0 or col < 0 then
+		return false
+	end
+
+	local frame = state.float_dims
+	local frame_row = tonumber(frame.row) or 0
+	local frame_col = tonumber(frame.col) or 0
+	local frame_height = tonumber(frame.height) or 0
+	local frame_width = tonumber(frame.width) or 0
+
+	return row >= frame_row and row < frame_row + frame_height and col >= frame_col and col < frame_col + frame_width
+end
+
 local function setup_float_focus_autocmds()
 	clear_float_focus_autocmds()
 
@@ -804,6 +1101,10 @@ local function setup_float_focus_autocmds()
 
 				local current_win = vim.api.nvim_get_current_win()
 				if is_opencode_related_window(current_win) then
+					return
+				end
+				if mouse_is_inside_float_frame(current_win) then
+					focus_chat_window()
 					return
 				end
 
@@ -989,8 +1290,24 @@ local function setup_buffer(bufnr)
 	end
 
 	vim.keymap.set("n", "gt", function()
+		local count = tonumber(vim.v.count) or 0
+		if count > 0 then
+			M.go_to_session_tab(count)
+			return
+		end
 		M.cycle_session(1)
-	end, vim.tbl_extend("force", opts, { desc = "Next OpenCode session" }))
+	end, vim.tbl_extend("force", opts, { desc = "Next or counted OpenCode session" }))
+
+	vim.keymap.set("n", "0gt", function()
+		M.go_to_session_tab(0)
+	end, vim.tbl_extend("force", opts, { desc = "First OpenCode session" }))
+
+	for i = 1, SESSION_TAB_COUNT_MAPPING_LIMIT do
+		local index = i
+		vim.keymap.set("n", tostring(index) .. "gt", function()
+			M.go_to_session_tab(index)
+		end, vim.tbl_extend("force", opts, { desc = string.format("OpenCode session %d", index) }))
+	end
 
 	vim.keymap.set("n", "gT", function()
 		M.cycle_session(-1)
@@ -1255,6 +1572,8 @@ function M.show_help()
 		"N          Start new session",
 		string.format("%-10s Close current session tab", close_session_key),
 		"gt         Next session",
+		"Ngt        Go to session N",
+		"0gt        Go to first session",
 		"gT         Previous session",
 		"<C-u>      Scroll up",
 		"<C-d>      Scroll down",
