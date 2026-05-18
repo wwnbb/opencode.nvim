@@ -19,6 +19,9 @@ local event_util = require("opencode.events.util")
 local cs = require("opencode.ui.chat.state")
 local state = cs.state
 local chat_hl_ns = cs.chat_hl_ns
+local session_tabs_hl_ns = vim.api.nvim_create_namespace("opencode_session_tabs_hl")
+local FLOAT_SESSION_TABS_ZINDEX = 75
+local FLOAT_CHAT_TOP_PADDING = 2
 
 local render = require("opencode.ui.chat.render")
 local chat_tasks = require("opencode.ui.chat.tasks")
@@ -171,11 +174,44 @@ end
 
 local function ensure_winbar_highlights()
 	vim.api.nvim_set_hl(0, "OpenCodeWinbar", { link = "StatusLine", default = true })
-	vim.api.nvim_set_hl(0, "OpenCodeWinbarCurrent", { link = "TabLineSel", default = true })
 	vim.api.nvim_set_hl(0, "OpenCodeWinbarRunning", { link = "DiagnosticOk", default = true })
 	vim.api.nvim_set_hl(0, "OpenCodeWinbarWaiting", { link = "DiagnosticWarn", default = true })
 	vim.api.nvim_set_hl(0, "OpenCodeWinbarError", { link = "DiagnosticError", default = true })
 	vim.api.nvim_set_hl(0, "OpenCodeWinbarIdle", { link = "Comment", default = true })
+
+	local function get_hl(name)
+		local ok, value = pcall(vim.api.nvim_get_hl, 0, { name = name, link = false })
+		return ok and value or {}
+	end
+
+	local normal = get_hl("Normal")
+	local selected = get_hl("PmenuSel")
+	local visual = get_hl("Visual")
+	local tab_selected = get_hl("TabLineSel")
+	local search = get_hl("Search")
+	local active_bg = selected.bg or visual.bg or tab_selected.bg or search.bg or "#2d5f87"
+	local active_fg = selected.fg or normal.fg or tab_selected.fg or "#ffffff"
+	local active_opts = {
+		fg = active_fg,
+		bg = active_bg,
+		bold = true,
+	}
+
+	vim.api.nvim_set_hl(0, "OpenCodeWinbarCurrent", active_opts)
+
+	local function set_active_icon_hl(name, source)
+		local source_hl = get_hl(source)
+		vim.api.nvim_set_hl(0, name, {
+			fg = source_hl.fg or active_fg,
+			bg = active_bg,
+			bold = true,
+		})
+	end
+
+	set_active_icon_hl("OpenCodeWinbarCurrentRunning", "DiagnosticOk")
+	set_active_icon_hl("OpenCodeWinbarCurrentWaiting", "DiagnosticWarn")
+	set_active_icon_hl("OpenCodeWinbarCurrentError", "DiagnosticError")
+	set_active_icon_hl("OpenCodeWinbarCurrentIdle", "Normal")
 end
 
 ---@param text string
@@ -209,6 +245,21 @@ local function session_tab_icon(session, icons)
 		return icons.error or "✕", "OpenCodeWinbarError"
 	end
 	return icons.idle or "○", "OpenCodeWinbarIdle"
+end
+
+---@param icon_hl string
+---@return string
+local function current_session_tab_icon_hl(icon_hl)
+	if icon_hl == "OpenCodeWinbarRunning" then
+		return "OpenCodeWinbarCurrentRunning"
+	end
+	if icon_hl == "OpenCodeWinbarWaiting" then
+		return "OpenCodeWinbarCurrentWaiting"
+	end
+	if icon_hl == "OpenCodeWinbarError" then
+		return "OpenCodeWinbarCurrentError"
+	end
+	return "OpenCodeWinbarCurrentIdle"
 end
 
 ---@param title string
@@ -290,22 +341,24 @@ local function build_session_tabs(tabs_cfg, current_session)
 		local display_title = truncate_title(title, 18)
 		local is_current = session.is_current or current_root_session_id == session.id
 		local label_hl = is_current and "OpenCodeWinbarCurrent" or "OpenCodeWinbar"
-		local label = string.format(" %s %s ", icon, display_title)
+		local display_icon = is_current and (" " .. icon) or icon
+		local display_label = is_current and (" " .. display_title .. " ") or (" " .. display_title)
+		local display_icon_hl = is_current and current_session_tab_icon_hl(icon_hl) or icon_hl
 		if has_tabs then
 			line:append(separator, "OpenCodeWinbar")
 		end
-		line:append(icon, icon_hl)
-		line:append(" " .. display_title, label_hl)
+		line:append(display_icon, display_icon_hl)
+		line:append(display_label, label_hl)
 		has_tabs = true
 		table.insert(
 			parts,
 			string.format(
 				"%%%d@v:lua.__opencode_chat_winbar_click@%%#%s#%s%%#%s#%s%%T",
 				index,
-				icon_hl,
-				escape_winbar_text(icon),
+				display_icon_hl,
+				escape_winbar_text(display_icon),
 				label_hl,
-				escape_winbar_text(label:sub(#icon + 2))
+				escape_winbar_text(display_label)
 			)
 		)
 	end
@@ -356,8 +409,144 @@ local function build_session_tabs(tabs_cfg, current_session)
 	}
 end
 
+---@return boolean
+local function session_tabs_window_is_valid()
+	return state.session_tabs_winid and vim.api.nvim_win_is_valid(state.session_tabs_winid) or false
+end
+
+---@return boolean
+local function session_tabs_buffer_is_valid()
+	return state.session_tabs_bufnr and vim.api.nvim_buf_is_valid(state.session_tabs_bufnr) or false
+end
+
+local function close_float_session_tabs_window()
+	if session_tabs_window_is_valid() then
+		pcall(vim.api.nvim_win_close, state.session_tabs_winid, true)
+	end
+	state.session_tabs_winid = nil
+end
+
+---@return number bufnr
+local function setup_session_tabs_buffer()
+	if session_tabs_buffer_is_valid() then
+		return state.session_tabs_bufnr
+	end
+
+	local bufnr = vim.api.nvim_create_buf(false, true)
+	state.session_tabs_bufnr = bufnr
+	vim.bo[bufnr].buftype = "nofile"
+	vim.bo[bufnr].bufhidden = "hide"
+	vim.bo[bufnr].swapfile = false
+	vim.bo[bufnr].filetype = "opencode_session_tabs"
+	vim.bo[bufnr].modifiable = false
+	vim.bo[bufnr].readonly = true
+
+	return bufnr
+end
+
+---@param winid number|nil
+local function setup_session_tabs_window_options(winid)
+	if not winid or not vim.api.nvim_win_is_valid(winid) then
+		return
+	end
+
+	local wo = vim.wo[winid]
+	wo.fillchars = "eob: "
+	wo.wrap = false
+	wo.number = false
+	wo.relativenumber = false
+	wo.signcolumn = "no"
+	wo.foldcolumn = "0"
+	wo.cursorline = false
+	wo.cursorcolumn = false
+	wo.winhighlight = "Normal:OpenCodeWinbar,EndOfBuffer:OpenCodeWinbar"
+	pcall(function()
+		wo.statuscolumn = ""
+	end)
+	pcall(function()
+		wo.winbar = ""
+	end)
+end
+
+---@param frame table
+---@param tab_width number
+---@return table|nil
+local function calculate_session_tabs_window_config(frame, tab_width)
+	local ui = vim.api.nvim_list_uis()[1] or { width = vim.o.columns, height = vim.o.lines }
+	local max_width = math.max(1, (tonumber(frame.width) or 0) - 2)
+	local width = math.min(max_width, math.max(1, tonumber(tab_width) or 0))
+	local row = math.max(0, tonumber(frame.row) or 0)
+	local col = math.max(0, tonumber(frame.col) or 0) + 1
+
+	if width <= 0 or row >= ui.height or col >= ui.width then
+		return nil
+	end
+
+	width = math.min(width, math.max(1, ui.width - col))
+
+	return {
+		relative = "editor",
+		row = row,
+		col = col,
+		width = width,
+		height = 1,
+		style = "minimal",
+		focusable = false,
+		zindex = FLOAT_SESSION_TABS_ZINDEX,
+	}
+end
+
+---@param tabs_cfg table
+---@param current_session table|nil
+---@return boolean visible
+local function update_float_session_tabs_window(tabs_cfg, current_session)
+	if not state.visible or not state.config or state.config.layout ~= "float" or tabs_cfg.enabled == false then
+		close_float_session_tabs_window()
+		return false
+	end
+	if not state.float_dims then
+		close_float_session_tabs_window()
+		return false
+	end
+
+	local tabs = build_session_tabs(tabs_cfg, current_session)
+	if not tabs.has_tabs then
+		close_float_session_tabs_window()
+		return false
+	end
+
+	local tab_width = vim.fn.strdisplaywidth(tabs.line:content())
+	local win_config = calculate_session_tabs_window_config(state.float_dims, tab_width)
+	if not win_config then
+		close_float_session_tabs_window()
+		return false
+	end
+
+	local bufnr = setup_session_tabs_buffer()
+	vim.bo[bufnr].readonly = false
+	vim.bo[bufnr].modifiable = true
+	vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { tabs.line:content() })
+	vim.api.nvim_buf_clear_namespace(bufnr, session_tabs_hl_ns, 0, -1)
+	tabs.line:highlight(bufnr, session_tabs_hl_ns, 1)
+	vim.bo[bufnr].modifiable = false
+	vim.bo[bufnr].readonly = true
+
+	if session_tabs_window_is_valid() then
+		vim.api.nvim_win_set_config(state.session_tabs_winid, win_config)
+		if vim.api.nvim_win_get_buf(state.session_tabs_winid) ~= bufnr then
+			vim.api.nvim_win_set_buf(state.session_tabs_winid, bufnr)
+		end
+	else
+		state.session_tabs_winid = vim.api.nvim_open_win(bufnr, false, win_config)
+	end
+
+	setup_session_tabs_window_options(state.session_tabs_winid)
+	return true
+end
+
 function M.update_winbar()
 	if not state.winid or not vim.api.nvim_win_is_valid(state.winid) then
+		close_float_session_tabs_window()
 		return
 	end
 	local cfg = state.config or get_config()
@@ -368,6 +557,7 @@ function M.update_winbar()
 		end)
 		state.winbar_targets = {}
 		set_float_border_title(nil)
+		close_float_session_tabs_window()
 		return
 	end
 
@@ -376,9 +566,11 @@ function M.update_winbar()
 			vim.wo[state.winid].winbar = ""
 		end)
 		set_float_border_title(nil)
+		update_float_session_tabs_window(tabs_cfg)
 		return
 	end
 
+	close_float_session_tabs_window()
 	local tabs = build_session_tabs(tabs_cfg)
 
 	pcall(function()
@@ -471,6 +663,9 @@ local function is_opencode_related_window(winid)
 	if state.winid and winid == state.winid then
 		return true
 	end
+	if state.session_tabs_winid and winid == state.session_tabs_winid then
+		return true
+	end
 	if type(chat_edits.is_inline_diff_window) == "function" and chat_edits.is_inline_diff_window(winid) then
 		return true
 	end
@@ -510,11 +705,14 @@ local function setup_float_focus_autocmds()
 	state.focus_augroup =
 		vim.api.nvim_create_augroup("OpenCodeFloatFocus_" .. tostring(state.bufnr or 0), { clear = true })
 
-	vim.api.nvim_create_autocmd({ "WinEnter", "TabEnter" }, {
+	vim.api.nvim_create_autocmd("WinEnter", {
 		group = state.focus_augroup,
 		callback = function()
 			vim.schedule(function()
 				if not state.visible then
+					return
+				end
+				if state.tabpage and state.tabpage ~= vim.api.nvim_get_current_tabpage() then
 					return
 				end
 				if not state.config or state.config.layout ~= "float" then
@@ -662,6 +860,7 @@ local function setup_buffer(bufnr)
 	vim.bo[bufnr].swapfile = false
 	vim.bo[bufnr].filetype = "opencode"
 	vim.bo[bufnr].modifiable = false
+	pcall(vim.api.nvim_buf_set_name, bufnr, "opencode")
 
 	local cfg = state.config
 	local opts = { buffer = bufnr, noremap = true, silent = true }
@@ -1285,8 +1484,11 @@ local function request_focus_for_pending_widgets()
 end
 
 function M.open()
-	if state.visible then
+	if M.is_visible() then
 		return
+	end
+	if state.visible then
+		M.close()
 	end
 
 	if not state.bufnr or not vim.api.nvim_buf_is_valid(state.bufnr) then
@@ -1297,6 +1499,9 @@ function M.open()
 	local dims = calculate_dimensions(cfg)
 
 	if cfg.layout == "float" then
+		-- Keep the outer frame stable while reserving top space for the fixed tabbar.
+		local popup_row = dims.row + math.floor(FLOAT_CHAT_TOP_PADDING / 2)
+		local popup_height = math.max(1, dims.height - FLOAT_CHAT_TOP_PADDING)
 		local popup = Popup({
 			relative = "editor",
 			enter = true,
@@ -1307,14 +1512,14 @@ function M.open()
 					top = cfg.float.title,
 					top_align = cfg.float.title_pos,
 				},
-				padding = { 0, 1 },
+				padding = { FLOAT_CHAT_TOP_PADDING, 1, 0, 1 },
 			},
 			position = {
 				relative = "editor",
-				row = dims.row,
+				row = popup_row,
 				col = dims.col,
 			},
-			size = { width = dims.width, height = dims.height },
+			size = { width = dims.width, height = popup_height },
 			bufnr = state.bufnr,
 			win_options = {
 				fillchars = "eob: ",
@@ -1329,6 +1534,7 @@ function M.open()
 		popup:mount()
 		state.layout = popup
 		state.winid = popup.winid
+		state.tabpage = vim.api.nvim_get_current_tabpage()
 		setup_chat_window_options(state.winid)
 		M.update_winbar()
 		if cfg.close_on_focus_lost ~= false then
@@ -1345,8 +1551,10 @@ function M.open()
 					if state.winid == popup_winid then
 						clear_float_focus_autocmds()
 						chat_todos.close_window()
+						close_float_session_tabs_window()
 						state.visible = false
 						state.winid = nil
+						state.tabpage = nil
 						state.layout = nil
 						state.float_dims = nil
 						stop_spinner_animation_timer()
@@ -1369,6 +1577,7 @@ function M.open()
 
 		vim.cmd(split_cmd)
 		state.winid = vim.api.nvim_get_current_win()
+		state.tabpage = vim.api.nvim_get_current_tabpage()
 		vim.api.nvim_win_set_buf(state.winid, state.bufnr)
 
 		if cfg.layout == "vertical" then
@@ -1408,11 +1617,13 @@ end
 function M.close()
 	if not state.visible then
 		chat_todos.close_window()
+		close_float_session_tabs_window()
 		return
 	end
 
 	clear_float_focus_autocmds()
 	chat_todos.close_window()
+	close_float_session_tabs_window()
 
 	if input.is_visible() then
 		input.close()
@@ -1428,6 +1639,7 @@ function M.close()
 
 	state.visible = false
 	state.winid = nil
+	state.tabpage = nil
 	state.layout = nil
 	state.float_dims = nil
 	stop_spinner_animation_timer()
@@ -1435,7 +1647,7 @@ function M.close()
 end
 
 function M.toggle()
-	if state.visible then
+	if M.is_visible() then
 		M.close()
 	else
 		M.open()
@@ -1443,18 +1655,21 @@ function M.toggle()
 end
 
 function M.is_visible()
-	return state.visible and state.winid and vim.api.nvim_win_is_valid(state.winid)
+	return state.visible
+		and state.winid
+		and vim.api.nvim_win_is_valid(state.winid)
+		and (not state.tabpage or state.tabpage == vim.api.nvim_get_current_tabpage())
 end
 
 function M.get_winid()
-	if state.winid and vim.api.nvim_win_is_valid(state.winid) then
+	if M.is_visible() and state.winid and vim.api.nvim_win_is_valid(state.winid) then
 		return state.winid
 	end
 	return nil
 end
 
 function M.get_float_dims()
-	if not state.visible or not state.float_dims then
+	if not M.is_visible() or not state.float_dims then
 		return nil
 	end
 	return vim.deepcopy(state.float_dims)
@@ -1468,7 +1683,7 @@ function M.get_bufnr()
 end
 
 function M.focus()
-	if not state.visible then
+	if not M.is_visible() then
 		M.open()
 	end
 	if state.winid and vim.api.nvim_win_is_valid(state.winid) then
@@ -2326,14 +2541,6 @@ function M.render()
 
 	local chat_config = state.config or get_config()
 	local tabs_cfg = chat_config.session_tabs or {}
-
-	if chat_config.layout == "float" and tabs_cfg.enabled ~= false then
-		local tabs = build_session_tabs(tabs_cfg, current_session)
-		if tabs.has_tabs then
-			add_line(tabs.line)
-			add_raw_line("")
-		end
-	end
 
 	-- Breadcrumb navigation (when inside a child session)
 	if #state.session_stack > 0 then
