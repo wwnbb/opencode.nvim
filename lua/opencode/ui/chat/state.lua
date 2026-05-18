@@ -7,6 +7,7 @@ local M = {}
 M.state = {
 	bufnr = nil,
 	winid = nil,
+	tabpage = nil,
 	layout = nil,
 	visible = false,
 	local_notices = {},     -- Local user/system notices not backed by the server
@@ -28,6 +29,8 @@ M.state = {
 	todo_bufnr = nil,       -- Live todo window buffer
 	todo_winid = nil,       -- Live todo window id
 	todo_dock_collapsed = {}, -- Toggle set by session: { [session_id] = boolean }
+	session_tabs_bufnr = nil, -- Float session tabs window buffer
+	session_tabs_winid = nil, -- Float session tabs window id
 	stream_blocks = {},     -- Streaming text blocks: { [message_id] = { start_line, end_line } }
 	spinner_footer_line = nil,
 	session_stack = {},     -- Stack of { id, name } for parent session navigation
