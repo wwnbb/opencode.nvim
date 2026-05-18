@@ -8,45 +8,10 @@
 
 set -e
 
-# Find plenary.nvim (common locations)
-PLENARY_PATH=""
-for path in "$HOME/.local/share/nvim/lazy/plenary.nvim" \
-	"$HOME/.local/share/nvim/store/plenary.nvim" \
-	"$HOME/.config/nvim/plugged/plenary.nvim" \
-	"/usr/share/nvim/site/pack/packer/start/plenary.nvim"; do
-	if [ -d "$path" ]; then
-		PLENARY_PATH="$path"
-		break
-	fi
-done
-
-if [ -z "$PLENARY_PATH" ]; then
-	echo "Error: plenary.nvim not found!"
-	echo "Please install plenary.nvim first:"
-	echo "  - With lazy.nvim: 'nvim-lua/plenary.nvim'"
-	echo "  - With packer: 'nvim-lua/plenary.nvim'"
-	exit 1
-fi
-
-# Find nui.nvim (common locations)
-NUI_PATH=""
-for path in "$HOME/.local/share/nvim/lazy/nui.nvim" \
-	"$HOME/.local/share/nvim/store/nui.nvim" \
-	"$HOME/.config/nvim/plugged/nui.nvim" \
-	"/usr/share/nvim/site/pack/packer/start/nui.nvim"; do
-	if [ -d "$path" ]; then
-		NUI_PATH="$path"
-		break
-	fi
-done
-
-if [ -z "$NUI_PATH" ]; then
-	echo "Error: nui.nvim not found!"
-	echo "Please install nui.nvim first:"
-	echo "  - With lazy.nvim: 'MunifTanjim/nui.nvim'"
-	echo "  - With packer: 'MunifTanjim/nui.nvim'"
-	exit 1
-fi
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PLUGIN_ROOT="$SCRIPT_DIR"
+source "$SCRIPT_DIR/scripts/nvim-test-deps.sh"
+resolve_nvim_test_deps
 
 # Parse arguments
 USE_MINIMAL=false
@@ -86,7 +51,7 @@ if [ "$USE_MINIMAL" = true ]; then
 	echo "Using plenary.nvim from: $PLENARY_PATH"
 	echo "Using nui.nvim from: $NUI_PATH"
 	nvim -u NONE \
-		--cmd "set rtp+=$(pwd)" \
+		--cmd "set rtp+=$PLUGIN_ROOT" \
 		--cmd "set rtp+=$PLENARY_PATH" \
 		--cmd "set rtp+=$NUI_PATH" \
 		--cmd "runtime plugin/opencode.lua" \
@@ -96,8 +61,8 @@ else
 	echo "Using test.lua config (leader=comma, ,ot to toggle)"
 	echo "Using plenary.nvim from: $PLENARY_PATH"
 	echo "Using nui.nvim from: $NUI_PATH"
-	nvim -u test.lua \
-		--cmd "set rtp+=$(pwd)" \
+	nvim -u "$PLUGIN_ROOT/test.lua" \
+		--cmd "set rtp+=$PLUGIN_ROOT" \
 		--cmd "set rtp+=$PLENARY_PATH" \
 		--cmd "set rtp+=$NUI_PATH" \
 		"$@"
