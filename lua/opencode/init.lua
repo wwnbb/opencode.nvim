@@ -1171,6 +1171,18 @@ function M.new_session(opts)
 	end)
 end
 
+--- Close the current active session tab without deleting the backend session.
+---@param opts? { session_id?: string, notify?: boolean, silent?: boolean }
+---@return boolean closed Whether a runtime session tab was closed
+function M.close_session(opts)
+	opts = opts or {}
+	return session_actions.close(opts.session_id, {
+		notify = opts.notify ~= false,
+		silent = opts.silent == true,
+		reason = "session_close",
+	})
+end
+
 --- Get chat messages
 function M.get_messages()
 	local chat = require("opencode.ui.chat")

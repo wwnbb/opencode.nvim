@@ -667,12 +667,14 @@ function M.render_dock(session_id, todos, opts)
 		if preview then
 			add_todo_item(result, preview, cfg, { width = opts.width or get_chat_text_width() })
 		end
+		add_line(result, "", "OpenCodeTodoOutput")
 		return result
 	end
 
 	for _, todo in ipairs(normalized) do
 		add_todo_item(result, todo, cfg, { width = opts.width or get_chat_text_width() })
 	end
+	add_line(result, "", "OpenCodeTodoOutput")
 	return result
 end
 

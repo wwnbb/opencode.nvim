@@ -105,6 +105,16 @@ local setup_ok, setup_err = pcall(function()
 		server = {
 			auto_start = false,
 		},
+		chat = {
+			session_tabs = {
+				colors = {
+					active_fg = "#ffffff",
+					active_bg = "#3b82f6",
+					inactive_bg = "#1f2937",
+					running_fg = "#22c55e",
+				},
+			},
+		},
 		lualine = {
 			enabled = true,
 		},
@@ -120,6 +130,7 @@ local setup_ok, setup_err = pcall(function()
 	assert(type(opencode.active_sessions) == "function", "active_sessions is not exported")
 	assert(type(opencode.toggle_danger_mode) == "function", "toggle_danger_mode is not exported")
 	assert(type(opencode.new_session) == "function", "new_session is not exported")
+	assert(type(opencode.close_session) == "function", "close_session is not exported")
 	assert(type(opencode.is_danger_mode_enabled) == "function", "is_danger_mode_enabled is not exported")
 	opencode.enable_danger_mode({ silent = true })
 	assert(opencode.is_danger_mode_enabled() == true, "danger mode did not enable")
@@ -141,6 +152,11 @@ local setup_ok, setup_err = pcall(function()
 
 	local app_state = require("opencode.state")
 	app_state.set_session("runtime-session", "Runtime Session")
+	slash_commands = {}
+	for _, command in ipairs(slash.get_commands()) do
+		slash_commands[command.name] = command
+	end
+	assert(slash_commands.close ~= nil, "/close is not registered")
 	app_state.set_recent_sessions({
 		{ id = "historical-session", title = "Historical Session", messageCount = 5 },
 	}, 30)
@@ -161,7 +177,22 @@ local setup_ok, setup_err = pcall(function()
 	require("opencode.ui.chat.state").state.winid = winid
 	require("opencode.ui.chat").update_winbar()
 	assert(vim.wo[winid].winbar:match("Runtime Session"), "chat winbar did not render runtime session tab")
+	local current_tab_hl = vim.api.nvim_get_hl(0, { name = "OpenCodeWinbarCurrent", link = false })
+	assert(current_tab_hl.fg == 0xffffff, "configured active tab foreground was not applied")
+	assert(current_tab_hl.bg == 0x3b82f6, "configured active tab background was not applied")
+	local running_tab_hl = vim.api.nvim_get_hl(0, { name = "OpenCodeWinbarRunning", link = false })
+	assert(running_tab_hl.fg == 0x22c55e, "configured running tab foreground was not applied")
+	assert(running_tab_hl.bg == 0x1f2937, "configured inactive tab background was not applied")
 	vim.cmd("bwipeout!")
+	app_state.set_session("second-session", "Second Session")
+	assert(opencode.close_session({ silent = true }) == true, "close_session did not close current tab")
+	assert(app_state.get_session().id == "runtime-session", "close_session did not activate neighboring tab")
+	assert(app_state.get_session_record("second-session") ~= nil, "close_session deleted the session record")
+	active_by_id = {}
+	for _, session in ipairs(app_state.get_active_sessions()) do
+		active_by_id[session.id] = true
+	end
+	assert(active_by_id["second-session"] ~= true, "closed session leaked into active sessions")
 	app_state.set_session("child-session", "Child Session", { runtime = false })
 	active_by_id = {}
 	for _, session in ipairs(app_state.get_active_sessions()) do

@@ -262,6 +262,10 @@ function M.create_menu(items, on_select, opts)
 	local total_width = width + 2
 	local total_height = height + 2
 	local relative, row, col, zindex = resolve_centered_placement(total_width, total_height)
+	local footer_text = opts.footer_text
+	if not footer_text and opts.custom_key then
+		footer_text = " ↑↓/j,k:navigate  ⏎:select  " .. (opts.custom_key.text or "") .. "  esc:close "
+	end
 
 	local popup = Popup({
 		enter = true,
@@ -275,7 +279,7 @@ function M.create_menu(items, on_select, opts)
 			text = {
 				top = (opts.title or " Select "),
 				top_align = "center",
-				bottom = opts.footer_text,
+				bottom = footer_text,
 				bottom_align = "center",
 			},
 		},
@@ -301,24 +305,38 @@ function M.create_menu(items, on_select, opts)
 		focus_chat_if_visible()
 	end
 
-	-- Set content
-	local lines = {}
-	for i, item in ipairs(items) do
-		local label = type(item) == "table" and (item.label or item.value) or item
-		local line = string.format("  %d. %s", i, tostring(label or ""))
-		local description = type(item) == "table" and item.description or nil
-		if description and description ~= "" then
-			local desc = tostring(description)
-			local desc_space = width - #line - #desc - 2
-			if desc_space > 0 then
-				line = line .. string.rep(" ", desc_space) .. desc
+	local function render_items()
+		local lines = {}
+		for i, item in ipairs(items) do
+			local label = type(item) == "table" and (item.label or item.value) or item
+			local line = string.format("  %d. %s", i, tostring(label or ""))
+			local description = type(item) == "table" and item.description or nil
+			if description and description ~= "" then
+				local desc = tostring(description)
+				local desc_space = width - #line - #desc - 2
+				if desc_space > 0 then
+					line = line .. string.rep(" ", desc_space) .. desc
+				end
 			end
+			table.insert(lines, line)
 		end
-		table.insert(lines, line)
+
+		if #lines == 0 then
+			table.insert(lines, "  No items")
+		end
+
+		vim.bo[bufnr].modifiable = true
+		vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, lines)
+		vim.bo[bufnr].modifiable = false
+
+		if popup.winid and vim.api.nvim_win_is_valid(popup.winid) and #items > 0 then
+			local cursor = vim.api.nvim_win_get_cursor(popup.winid)
+			local next_line = math.min(math.max(cursor[1], 1), #items)
+			vim.api.nvim_win_set_cursor(popup.winid, { next_line, 0 })
+		end
 	end
 
-	vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, lines)
-	vim.bo[bufnr].modifiable = false
+	render_items()
 
 	-- Setup keymaps
 	local opts_map = { buffer = bufnr, noremap = true, silent = true }
@@ -373,8 +391,28 @@ function M.create_menu(items, on_select, opts)
 	-- Number shortcuts
 	for i = 1, math.min(9, #items) do
 		vim.keymap.set("n", tostring(i), function()
+			if not items[i] then
+				return
+			end
 			close()
 			on_select(items[i], i)
+		end, opts_map)
+	end
+
+	if opts.custom_key and opts.custom_key.key and opts.custom_key.on_key then
+		vim.keymap.set("n", opts.custom_key.key, function()
+			local cursor = vim.api.nvim_win_get_cursor(0)
+			local idx = cursor[1]
+			if not items[idx] then
+				return
+			end
+
+			local keep_open = opts.custom_key.on_key(items[idx], idx, render_items)
+			if keep_open == false then
+				close()
+				return
+			end
+			render_items()
 		end, opts_map)
 	end
 

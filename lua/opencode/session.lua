@@ -53,6 +53,74 @@ local function global_status_to_session(status)
 	return { type = "idle" }
 end
 
+---@param session_id string|nil
+---@return string|nil
+local function runtime_session_id(session_id)
+	if not session_id or session_id == "" then
+		return nil
+	end
+	if state.is_runtime_session(session_id) then
+		return session_id
+	end
+	return event_util.runtime_root_for_session(session_id)
+end
+
+---@param close_id string
+---@return table|nil
+local function next_session_after_close(close_id)
+	local sessions = state.get_active_sessions()
+	local close_index = nil
+	local remaining = {}
+
+	for index, session in ipairs(sessions) do
+		if session.id == close_id then
+			close_index = index
+		else
+			table.insert(remaining, session)
+		end
+	end
+
+	if #remaining == 0 then
+		return nil
+	end
+	if not close_index then
+		return remaining[1]
+	end
+
+	local next_index = math.min(close_index, #remaining)
+	return remaining[next_index]
+end
+
+---@param session table
+---@param opts? table { notify?: boolean, reason?: string }
+local function activate_local(session, opts)
+	opts = opts or {}
+	if type(session) ~= "table" or not session.id then
+		return
+	end
+
+	local current = state.get_session()
+	M.remember(session, { touch = false, reason = opts.reason or "session_switch" })
+	M.set_active(session.id, session.title or session.name, {
+		reason = opts.reason or "session_switch",
+		preserve_cache = true,
+	})
+	emit("session.selected", {
+		sessionID = session.id,
+		sessionTitle = session.title or session.name,
+		previousSessionID = current.id,
+	})
+	emit("sync_changed", {
+		kind = "session",
+		action = opts.reason or "session_switch",
+		session_id = session.id,
+	})
+	if opts.notify then
+		local title = session_util.displayTitle(session.title or session.name) or session.id
+		vim.notify("Switched to session: " .. title, vim.log.levels.INFO)
+	end
+end
+
 ---@param status string
 ---@param opts table
 ---@return string previous
@@ -198,6 +266,80 @@ function M.forget(session_id, opts)
 	end
 	state.remove_session(session_id)
 	emit("sessions_changed", { reason = opts.reason or "forget", session_id = session_id })
+end
+
+---@param session_id? string
+---@param opts? table { notify?: boolean, reason?: string, silent?: boolean }
+---@return boolean closed
+function M.close(session_id, opts)
+	opts = opts or {}
+	local current = state.get_session()
+	local target_id = runtime_session_id(session_id or current.id)
+	if not target_id then
+		if not opts.silent then
+			vim.notify("No active OpenCode session tab to close", vim.log.levels.WARN)
+		end
+		return false
+	end
+
+	if not state.is_runtime_session(target_id) then
+		if not opts.silent then
+			vim.notify("OpenCode session is not an active tab", vim.log.levels.INFO)
+		end
+		return false
+	end
+
+	local current_root = runtime_session_id(current.id)
+	local next_session = next_session_after_close(target_id)
+	local closed = state.close_runtime_session(target_id)
+	local title = session_util.displayTitle(closed and (closed.title or closed.name)) or target_id
+
+	local ok_sync, sync = pcall(require, "opencode.sync")
+	if ok_sync and type(sync.clear_session) == "function" then
+		sync.clear_session(target_id)
+	end
+
+	if current_root == target_id then
+		if next_session then
+			local record = state.get_session_record(next_session.id) or next_session
+			activate_local(record, {
+				reason = opts.reason or "session_close",
+			})
+		else
+			M.set_active(nil, nil, {
+				reason = opts.reason or "session_close",
+				preserve_cache = true,
+			})
+		end
+
+		local ok_chat, chat = pcall(require, "opencode.ui.chat")
+		if ok_chat and type(chat.clear_session_view) == "function" then
+			chat.clear_session_view(target_id)
+		end
+	end
+
+	emit("session.closed", {
+		sessionID = target_id,
+		session_id = target_id,
+		nextSessionID = next_session and next_session.id or nil,
+		next_session_id = next_session and next_session.id or nil,
+		reason = opts.reason or "session_close",
+	})
+	emit("session_pending_change", {
+		session_id = target_id,
+		pending = { permissions = 0, questions = 0, edits = 0 },
+	})
+	emit("sessions_changed", { reason = opts.reason or "session_close", session_id = target_id })
+	emit("sync_changed", {
+		kind = "session",
+		action = opts.reason or "session_close",
+		session_id = target_id,
+	})
+
+	if opts.notify and not opts.silent then
+		vim.notify("Closed session tab: " .. title, vim.log.levels.INFO)
+	end
+	return true
 end
 
 ---@param sessions table[]|nil
