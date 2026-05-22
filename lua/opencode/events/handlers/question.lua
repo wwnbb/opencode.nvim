@@ -2,6 +2,23 @@ local M = {}
 
 local util = require("opencode.events.util")
 
+local function stop_spinner_for_current_question(current_session_id, question_session_id, logger)
+	if not util.permission_session_is_relevant(current_session_id, question_session_id) then
+		return
+	end
+
+	local spinner_ok, spinner = pcall(require, "opencode.ui.spinner")
+	if spinner_ok and spinner.is_active and spinner.is_active() then
+		spinner.stop()
+		if logger then
+			logger.debug("Stopped spinner for question interaction", {
+				session_id = question_session_id,
+				current_session_id = current_session_id,
+			})
+		end
+	end
+end
+
 function M.setup(events)
 	local state = require("opencode.state")
 	local question_state = require("opencode.question.state")
@@ -60,12 +77,8 @@ function M.setup(events)
 				session_id = session_id,
 			})
 
-			-- Stop the spinner so user can interact with the question
-			local spinner_ok, spinner = pcall(require, "opencode.ui.spinner")
-			if spinner_ok and spinner.is_active() then
-				spinner.stop()
-				logger.debug("Stopped spinner for question interaction")
-			end
+			-- Stop the spinner only when the question belongs to the visible session.
+			stop_spinner_for_current_question(current_session and current_session.id, session_id, logger)
 
 			logger.info("Question added", { request_id = request_id:sub(1, 10), count = #questions })
 		end)

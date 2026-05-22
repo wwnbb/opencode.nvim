@@ -85,6 +85,16 @@ local function has_keymap(bufnr, mode, lhs)
 	return false
 end
 
+local function hl_bg(name)
+	local hl = vim.api.nvim_get_hl(0, { name = name, link = false })
+	return hl.bg
+end
+
+local function hl_fg(name)
+	local hl = vim.api.nvim_get_hl(0, { name = name, link = false })
+	return hl.fg
+end
+
 local function assert_visible_window(text, visible, hidden, expected_ellipsis, expected_overflow, label)
 	for _, title in ipairs(visible) do
 		assert_contains(text, title, label)
@@ -102,6 +112,29 @@ end
 vim.o.columns = 140
 vim.o.lines = 40
 
+local dynamic_color_calls = 0
+local function dynamic_tab_colors()
+	dynamic_color_calls = dynamic_color_calls + 1
+	if vim.o.background == "light" then
+		return {
+			active_fg = "#111111",
+			active_bg = "#eeeeee",
+			inactive_fg = "#222222",
+			inactive_bg = "#ffffff",
+			idle_fg = "#333333",
+			active_idle_fg = "#444444",
+		}
+	end
+	return {
+		active_fg = "#eeeeee",
+		active_bg = "#111111",
+		inactive_fg = "#dddddd",
+		inactive_bg = "#222222",
+		idle_fg = "#cccccc",
+		current_idle_fg = "#bbbbbb",
+	}
+end
+
 local opencode = require("opencode")
 opencode.setup({
 	server = {
@@ -114,6 +147,7 @@ opencode.setup({
 			enabled = true,
 			max_tabs = 3,
 			separator = " | ",
+			colors = dynamic_tab_colors,
 			icons = {
 				running = "R",
 				waiting = "W",
@@ -178,6 +212,17 @@ chat_view.float_dims = {
 }
 
 chat.update_winbar()
+
+vim.o.background = "dark"
+chat.update_winbar()
+assert_eq(hl_bg("OpenCodeWinbarCurrent"), 0x111111, "dynamic dark session tab background")
+assert_eq(hl_fg("OpenCodeWinbarCurrentIdle"), 0xbbbbbb, "dynamic dark active idle icon")
+vim.o.background = "light"
+assert_true(vim.wait(100, function()
+	return hl_bg("OpenCodeWinbarCurrent") == 0xeeeeee
+end), "background change refreshes dynamic session tab colors")
+assert_eq(hl_fg("OpenCodeWinbarCurrentIdle"), 0x444444, "dynamic light active idle icon")
+assert_true(dynamic_color_calls >= 2, "dynamic session tab colors are reevaluated")
 
 assert_true(chat_view.session_tabs_winid and vim.api.nvim_win_is_valid(chat_view.session_tabs_winid), "float tab window stays open")
 assert_true(vim.api.nvim_win_is_valid(winid), "chat window stays open")
@@ -270,5 +315,14 @@ assert_visible_window(
 	{ ["...2"] = 1 },
 	"paged back view"
 )
+
+app_state.upsert_session({
+	id = "session-1",
+	title = "Комиссия по символу maker taker",
+	name = "Комиссия по символу maker taker",
+}, { touch = false })
+chat.update_winbar()
+local unicode_line = tab_line(chat_view)
+assert_contains(unicode_line, "Комиссия по сим...", "unicode tab title truncates on character boundaries")
 
 print("Chat tab integration passed")

@@ -112,6 +112,7 @@ local setup_ok, setup_err = pcall(function()
 					active_bg = "#3b82f6",
 					inactive_bg = "#1f2937",
 					running_fg = "#22c55e",
+					active_running_fg = "#86efac",
 				},
 			},
 		},
