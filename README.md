@@ -75,6 +75,8 @@ Run all headless checks, including the chat tab integration scenario:
 
 Session tabs are shown above the chat when multiple sessions are active. Their colors can be configured under
 `chat.session_tabs.colors`; omit any value to keep the colorscheme-derived default for that part.
+Use `active_running_fg`, `active_waiting_fg`, `active_error_fg`, and `active_idle_fg` when status icons need
+different colors on the active tab.
 
 Use `x` in the chat buffer or `:OpenCodeCloseSession` to close the current active tab without deleting the
 underlying OpenCode session. The session can still be resumed later from the session list.
@@ -95,6 +97,10 @@ require("opencode").setup({
 				waiting_fg = "#f59e0b",
 				error_fg = "#ef4444",
 				idle_fg = "#6b7280",
+				active_running_fg = "#86efac",
+				active_waiting_fg = "#fcd34d",
+				active_error_fg = "#fca5a5",
+				active_idle_fg = "#e5e7eb",
 			},
 		},
 	},

@@ -119,6 +119,35 @@ local function get_config()
 	return vim.tbl_deep_extend("force", defaults, full_config.chat or {})
 end
 
+local session_tabs_refresh_autocmds_setup = false
+
+local function schedule_session_tabs_refresh()
+	vim.schedule(function()
+		if state.visible and type(M.update_winbar) == "function" then
+			M.update_winbar()
+		end
+	end)
+end
+
+local function setup_session_tabs_refresh_autocmds()
+	if session_tabs_refresh_autocmds_setup then
+		return
+	end
+	session_tabs_refresh_autocmds_setup = true
+
+	vim.api.nvim_create_autocmd("ColorScheme", {
+		group = session_tabs_augroup,
+		callback = schedule_session_tabs_refresh,
+		desc = "Refresh OpenCode session tabs after colorscheme changes",
+	})
+	vim.api.nvim_create_autocmd("OptionSet", {
+		group = session_tabs_augroup,
+		pattern = "background",
+		callback = schedule_session_tabs_refresh,
+		desc = "Refresh OpenCode session tabs after background changes",
+	})
+end
+
 local function ensure_session_title_highlight()
 	local ok, title_hl = pcall(vim.api.nvim_get_hl, 0, { name = "Title", link = false })
 	local opts = { bold = true }
@@ -198,6 +227,22 @@ local function tab_color(colors, keys, fallback)
 	return fallback
 end
 
+---@param colors table|function|nil
+---@return table
+local function resolve_tab_colors(colors)
+	if type(colors) == "function" then
+		local ok, resolved = pcall(colors)
+		if ok and type(resolved) == "table" then
+			return resolved
+		end
+		return {}
+	end
+	if type(colors) == "table" then
+		return colors
+	end
+	return {}
+end
+
 ---@param name string
 ---@param opts table
 ---@param fallback table|nil
@@ -215,7 +260,7 @@ local function ensure_winbar_highlights(tabs_cfg)
 		return ok and value or {}
 	end
 
-	local colors = type(tabs_cfg) == "table" and tabs_cfg.colors or {}
+	local colors = resolve_tab_colors(type(tabs_cfg) == "table" and tabs_cfg.colors or nil)
 	local normal = get_hl("Normal")
 	local selected = get_hl("PmenuSel")
 	local visual = get_hl("Visual")
@@ -231,6 +276,10 @@ local function ensure_winbar_highlights(tabs_cfg)
 	local waiting_fg = tab_color(colors, { "waiting_fg" }, nil)
 	local error_fg = tab_color(colors, { "error_fg" }, nil)
 	local idle_fg = tab_color(colors, { "idle_fg" }, nil)
+	local active_running_fg = tab_color(colors, { "active_running_fg", "current_running_fg" }, running_fg)
+	local active_waiting_fg = tab_color(colors, { "active_waiting_fg", "current_waiting_fg" }, waiting_fg)
+	local active_error_fg = tab_color(colors, { "active_error_fg", "current_error_fg" }, error_fg)
+	local active_idle_fg = tab_color(colors, { "active_idle_fg", "current_idle_fg" }, idle_fg)
 	local inactive_opts = {
 		fg = inactive_fg,
 		bg = inactive_bg,
@@ -284,10 +333,10 @@ local function ensure_winbar_highlights(tabs_cfg)
 		})
 	end
 
-	set_active_icon_hl("OpenCodeWinbarCurrentRunning", "DiagnosticOk", running_fg)
-	set_active_icon_hl("OpenCodeWinbarCurrentWaiting", "DiagnosticWarn", waiting_fg)
-	set_active_icon_hl("OpenCodeWinbarCurrentError", "DiagnosticError", error_fg)
-	set_active_icon_hl("OpenCodeWinbarCurrentIdle", "Normal", idle_fg)
+	set_active_icon_hl("OpenCodeWinbarCurrentRunning", "DiagnosticOk", active_running_fg)
+	set_active_icon_hl("OpenCodeWinbarCurrentWaiting", "DiagnosticWarn", active_waiting_fg)
+	set_active_icon_hl("OpenCodeWinbarCurrentError", "DiagnosticError", active_error_fg)
+	set_active_icon_hl("OpenCodeWinbarCurrentIdle", "Normal", active_idle_fg)
 end
 
 ---@param text string
@@ -342,14 +391,18 @@ end
 ---@param max_len number
 ---@return string
 local function truncate_title(title, max_len)
-	title = title or ""
-	if #title <= max_len then
+	title = tostring(title or "")
+	max_len = math.max(0, tonumber(max_len) or 0)
+	if vim.fn.strchars(title) <= max_len then
 		return title
 	end
-	if max_len <= 3 then
-		return title:sub(1, max_len)
+	if max_len == 0 then
+		return ""
 	end
-	return title:sub(1, max_len - 3) .. "..."
+	if max_len <= 3 then
+		return vim.fn.strcharpart(title, 0, max_len)
+	end
+	return vim.fn.strcharpart(title, 0, max_len - 3) .. "..."
 end
 
 ---@param value number
@@ -1724,6 +1777,7 @@ function M.create()
 	end
 
 	state.config = get_config()
+	setup_session_tabs_refresh_autocmds()
 	state.bufnr = create_buffer()
 	state.local_notices = {}
 	state.stream_blocks = {}

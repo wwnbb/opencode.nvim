@@ -3,6 +3,23 @@ local M = {}
 local util = require("opencode.events.util")
 local auto_approve = require("opencode.permission.danger")
 
+local function stop_spinner_for_current_interaction(current_session_id, interaction_session_id, logger, kind)
+	if not util.permission_session_is_relevant(current_session_id, interaction_session_id) then
+		return
+	end
+
+	local spinner_ok, spinner = pcall(require, "opencode.ui.spinner")
+	if spinner_ok and spinner.is_active and spinner.is_active() then
+		spinner.stop()
+		if logger then
+			logger.debug("Stopped spinner for " .. kind .. " interaction", {
+				session_id = interaction_session_id,
+				current_session_id = current_session_id,
+			})
+		end
+	end
+end
+
 function M.setup(events)
 	-- Handle tool updates - specifically edit_file tools to show approval widget
 	events.on("tool_update", function(data)
@@ -368,11 +385,8 @@ function M.setup(events)
 						session_id = edit_session_id,
 					})
 
-					-- Stop spinner so user can interact
-					local spinner_ok, perm_spinner = pcall(require, "opencode.ui.spinner")
-					if spinner_ok and perm_spinner.is_active and perm_spinner.is_active() then
-						perm_spinner.stop()
-					end
+					-- Stop spinner only when this interaction belongs to the visible session.
+					stop_spinner_for_current_interaction(current_session.id, edit_session_id, logger, "edit")
 
 					return
 				else
@@ -431,12 +445,8 @@ function M.setup(events)
 						session_id = permission_session_id,
 					})
 
-					-- Stop spinner so user can interact
-					local spinner_ok2, perm_spinner = pcall(require, "opencode.ui.spinner")
-					if spinner_ok2 and perm_spinner.is_active() then
-						perm_spinner.stop()
-						logger.debug("Stopped spinner for permission interaction")
-					end
+					-- Stop spinner only when this interaction belongs to the visible session.
+					stop_spinner_for_current_interaction(current_session.id, permission_session_id, logger, "permission")
 
 					logger.info("Permission request added", {
 						permission_id = permission_id,

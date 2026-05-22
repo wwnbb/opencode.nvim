@@ -175,6 +175,61 @@ end, "idle session.status should set idle")
 
 bus.clear()
 bus.clear_history()
+state.reset()
+sync.clear_all()
+permission_state.clear_all()
+question_state.clear_all()
+session_actions.set_active("visible_session", "Visible Session", { preserve_cache = true })
+require("opencode.events.handlers.permission").setup(bus)
+require("opencode.events.handlers.question").setup(bus)
+local spinner = require("opencode.ui.spinner")
+
+spinner.start()
+bus.emit("permission", {
+	id = "perm_other_session",
+	permission = "bash",
+	sessionID = "other_session",
+	time = { created = 1 },
+})
+vim.wait(50)
+assert_true(spinner.is_active(), "permission in another root session should not stop visible spinner")
+
+bus.emit("permission", {
+	id = "perm_visible_session",
+	permission = "bash",
+	sessionID = "visible_session",
+	time = { created = 2 },
+})
+wait_for(function()
+	return not spinner.is_active()
+end, "permission in visible session should stop spinner")
+
+spinner.start()
+bus.emit("question_asked", {
+	requestID = "question_other_session",
+	sessionID = "other_session",
+	questions = {
+		{ prompt = "Pick", options = { { label = "A", value = "a" } } },
+	},
+	time = { created = 3 },
+})
+vim.wait(50)
+assert_true(spinner.is_active(), "question in another root session should not stop visible spinner")
+
+bus.emit("question_asked", {
+	requestID = "question_visible_session",
+	sessionID = "visible_session",
+	questions = {
+		{ prompt = "Pick", options = { { label = "A", value = "a" } } },
+	},
+	time = { created = 4 },
+})
+wait_for(function()
+	return not spinner.is_active()
+end, "question in visible session should stop spinner")
+
+bus.clear()
+bus.clear_history()
 local render_coordinator = require("opencode.ui.chat.render_coordinator")
 render_coordinator.setup(bus)
 local render_count = 0
