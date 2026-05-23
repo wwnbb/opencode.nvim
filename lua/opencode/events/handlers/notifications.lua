@@ -67,51 +67,10 @@ local function notify(session_id, message, level)
 	vim.notify(message, level or vim.log.levels.INFO)
 end
 
----@param err any
----@return string
-local function format_session_error(err)
-	if type(err) == "string" then
-		return err
-	end
-	if type(err) ~= "table" then
-		return tostring(err or "Session error")
-	end
-	if type(err.data) == "table" and type(err.data.message) == "string" then
-		return err.data.message
-	end
-	if type(err.message) == "string" then
-		return err.message
-	end
-	if type(err.name) == "string" then
-		return err.name
-	end
-	return "Session error"
-end
-
----@param err any
----@return boolean
-local function is_abort_error(err)
-	if type(err) == "string" then
-		return vim.trim(err):lower() == "aborted"
-	end
-	if type(err) ~= "table" then
-		return false
-	end
-	local name = err.name or err._tag
-	if name == "MessageAbortedError" or name == "AbortError" then
-		return true
-	end
-	if type(err.message) == "string" then
-		return vim.trim(err.message):lower() == "aborted"
-	end
-	return type(err.data) == "table"
-		and type(err.data.message) == "string"
-		and vim.trim(err.data.message):lower() == "aborted"
-end
-
 function M.setup(events)
 	local active = {}
 	local errored = {}
+	local recent_session_errors = {}
 	local permissions = {}
 	local questions = {}
 	local edits = {}
@@ -224,7 +183,7 @@ function M.setup(events)
 	events.on("session_error", function(data)
 		vim.schedule(function()
 			local session_id = data and data.sessionID
-			if not session_id or is_abort_error(data and data.error) then
+			if not session_id or event_util.is_abort_error(data and data.error) then
 				return
 			end
 			local root_session_id = event_util.runtime_root_for_session(session_id) or session_id
@@ -234,7 +193,11 @@ function M.setup(events)
 			errored[root_session_id] = true
 			active[root_session_id] = nil
 			if should_notify("errors", root_session_id) then
-				notify(root_session_id, format_session_error(data and data.error), vim.log.levels.ERROR)
+				local message = event_util.format_session_error(data and data.error)
+				local dedupe_key = root_session_id .. "\0" .. message
+				if not event_util.mark_recent_error(recent_session_errors, dedupe_key) then
+					notify(root_session_id, message, vim.log.levels.ERROR)
+				end
 			end
 		end)
 	end)

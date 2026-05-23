@@ -6,6 +6,7 @@ function M.setup(events)
 	local sync = require("opencode.sync")
 	local logger = require("opencode.logger")
 	local event_util = require("opencode.events.util")
+	local recent_session_errors = {}
 
 	---@param session_id string|nil
 	---@param reason string
@@ -420,54 +421,6 @@ function M.setup(events)
 		end)
 	end)
 
-	local function format_session_error(err)
-		if type(err) == "string" then
-			return err
-		end
-		if type(err) ~= "table" then
-			return tostring(err or "unknown error")
-		end
-		if type(err.data) == "table" and type(err.data.message) == "string" then
-			return err.data.message
-		end
-		if type(err.message) == "string" then
-			return err.message
-		end
-		if type(err.name) == "string" then
-			return err.name
-		end
-		local ok, encoded = pcall(vim.json.encode, err)
-		if ok and encoded and encoded ~= "" then
-			return encoded
-		end
-		return "unknown error"
-	end
-
-	local function is_session_abort_error(err)
-		if type(err) == "string" then
-			return vim.trim(err):lower() == "aborted"
-		end
-		if type(err) ~= "table" then
-			return false
-		end
-
-		local name = err.name or err._tag
-		if name == "MessageAbortedError" or name == "AbortError" then
-			return true
-		end
-
-		local data = err.data
-		if type(data) == "table" and type(data.message) == "string" then
-			return vim.trim(data.message):lower() == "aborted"
-		end
-
-		if type(err.message) == "string" then
-			return vim.trim(err.message):lower() == "aborted"
-		end
-
-		return false
-	end
-
 	-- Handle session.status changes (like TUI sync.tsx:223-225)
 	events.on("session_status", function(data)
 		vim.schedule(function()
@@ -546,14 +499,9 @@ function M.setup(events)
 		vim.schedule(function()
 			local current_session = state.get_session()
 			local session_id = (data and data.sessionID) or current_session.id
+			local err = data and data.error
 
-			session_actions.set_session_status(session_id, {
-				type = "error",
-				message = format_session_error(data and data.error),
-			}, {
-				reason = "session_error",
-			})
-			if is_session_abort_error(data and data.error) then
+			if event_util.is_abort_error(err) then
 				logger.debug("Session abort ignored", {
 					sessionID = data and data.sessionID or nil,
 				})
@@ -570,7 +518,18 @@ function M.setup(events)
 				return
 			end
 
-			local message = format_session_error(data and data.error)
+			local message = event_util.format_session_error(err, { fallback = "unknown error" })
+			if session_id then
+				local error_status = {
+					type = "error",
+					message = message,
+				}
+				sync.handle_session_status(session_id, error_status)
+				session_actions.set_session_status(session_id, error_status, {
+					reason = "session_error",
+				})
+			end
+
 			local notice_session_id = nil
 			if session_id == current_session.id then
 				notice_session_id = session_id
@@ -583,11 +542,21 @@ function M.setup(events)
 			})
 
 			if notice_session_id then
-				events.emit("local_notice", {
-					role = "system",
-					content = "OpenCode session error: " .. message,
-					session_id = notice_session_id,
-				})
+				local dedupe_key = notice_session_id .. "\0" .. message
+				local duplicate = event_util.mark_recent_error(recent_session_errors, dedupe_key)
+				if not duplicate then
+					events.emit("local_notice", {
+						role = "system",
+						kind = "session_error",
+						content = "OpenCode session error: " .. message,
+						session_id = notice_session_id,
+					})
+				else
+					logger.debug("Duplicate session error notice suppressed", {
+						sessionID = notice_session_id,
+						message = message,
+					})
+				end
 				events.emit("sync_changed", {
 					kind = "session_error",
 					action = "error",
