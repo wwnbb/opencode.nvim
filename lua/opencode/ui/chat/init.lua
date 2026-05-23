@@ -26,6 +26,7 @@ local FLOAT_CHAT_TOP_PADDING = 2
 local SESSION_TAB_COUNT_MAPPING_LIMIT = 99
 
 local render = require("opencode.ui.chat.render")
+local panel = require("opencode.ui.panel")
 local chat_tasks = require("opencode.ui.chat.tasks")
 local chat_todos = require("opencode.ui.chat.todos")
 local chat_questions = require("opencode.ui.chat.questions")
@@ -155,6 +156,11 @@ local function ensure_session_title_highlight()
 		opts = vim.tbl_extend("force", title_hl, opts)
 	end
 	vim.api.nvim_set_hl(0, "OpenCodeSessionTitle", opts)
+end
+
+local function ensure_session_error_highlights()
+	panel.set_hl("OpenCodeSessionError", "DiagnosticError", "ErrorMsg")
+	panel.set_hl("OpenCodeSessionErrorBorder", "DiagnosticError", "ErrorMsg")
 end
 
 local function calculate_dimensions(cfg)
@@ -1811,6 +1817,7 @@ function M.create()
 				return
 			end
 			M.add_message(data.role or "system", data.content or "", {
+				kind = data.kind,
 				session_id = data.session_id,
 				render = false,
 			})
@@ -2202,6 +2209,7 @@ function M.add_message(role, content, opts)
 		id = opts.id or tostring(os.time()) .. "_" .. #state.local_notices,
 		session_id = opts.session_id,
 		agent = opts.agent,
+		kind = opts.kind,
 		optimistic = opts.optimistic,
 		tool_calls = opts.tool_calls,
 	}
@@ -3220,8 +3228,18 @@ function M.render()
 
 		local has_content = message.content and message.content ~= ""
 		if has_content then
-			local content_lines = render.render_content(message.content)
-			add_nui_lines(content_lines)
+			if message.kind == "session_error" then
+				ensure_session_error_highlights()
+				local result = { lines = {}, highlights = {} }
+				render.add_panel_line(result, message.content, "OpenCodeSessionError", {
+					prefix_hl_group = "OpenCodeSessionErrorBorder",
+				})
+				local base_line = add_render_result(result, "non_tool")
+				append_relative_highlights(result.highlights, base_line)
+			else
+				local content_lines = render.render_content(message.content)
+				add_nui_lines(content_lines)
+			end
 			add_raw_line("")
 		end
 		::continue_local_message::

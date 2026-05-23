@@ -99,6 +99,30 @@ if #failures > 0 then
 	os.exit(1)
 end
 
+local event_util = require("opencode.events.util")
+local nested_session_error = {
+	type = "error",
+	sequence_number = 113,
+	error = {
+		type = "invalid_request",
+		code = "cyber_policy",
+		message = "This content was flagged for possible cybersecurity risk.",
+	},
+}
+assert(
+	event_util.format_session_error(nested_session_error) == "This content was flagged for possible cybersecurity risk. [cyber_policy]",
+	"nested session error did not format cleanly"
+)
+assert(
+	event_util.format_session_error(nested_session_error, { include_code = false })
+		== "This content was flagged for possible cybersecurity risk.",
+	"nested session error did not support code-free formatting"
+)
+assert(event_util.is_abort_error({ error = { name = "MessageAbortedError" } }), "nested abort error was not detected")
+local recent_errors = {}
+assert(event_util.mark_recent_error(recent_errors, "session\0error") == false, "first recent error was marked duplicate")
+assert(event_util.mark_recent_error(recent_errors, "session\0error") == true, "duplicate recent error was not detected")
+
 local setup_ok, setup_err = pcall(function()
 	local opencode = require("opencode")
 	opencode.setup({

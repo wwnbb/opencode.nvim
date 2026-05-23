@@ -1,5 +1,4 @@
 import { tool } from "@opencode-ai/plugin"
-import { Effect } from "effect"
 import * as fs from "fs/promises"
 import * as path from "path"
 import DESCRIPTION from "./neovim_apply_patch.txt"
@@ -733,25 +732,23 @@ export default tool({
 
     let approved = true
     try {
-      await Effect.runPromise(
-        context.ask({
-          permission: "neovim_apply_patch",
-          patterns,
-          always: ["*"],
-          metadata: {
-            opencode_native_diff: true,
-            operation: "neovim_apply_patch",
-            agent: context.agent,
-            sessionID: context.sessionID,
-            messageID: context.messageID,
-            filepath: patterns.join(", "),
-            diff: proposedDiff,
-            proposed_diff: proposedDiff,
-            files: reviewFiles,
-            proposed_files: proposedFiles,
-          },
-        }),
-      )
+      await context.ask({
+        permission: "neovim_apply_patch",
+        patterns,
+        always: ["*"],
+        metadata: {
+          opencode_native_diff: true,
+          operation: "neovim_apply_patch",
+          agent: context.agent,
+          sessionID: context.sessionID,
+          messageID: context.messageID,
+          filepath: patterns.join(", "),
+          diff: proposedDiff,
+          proposed_diff: proposedDiff,
+          files: reviewFiles,
+          proposed_files: proposedFiles,
+        },
+      })
     } catch (error) {
       if (!isPermissionRejected(error)) throw error
       approved = false
