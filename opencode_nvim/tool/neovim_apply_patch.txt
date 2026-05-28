@@ -18,8 +18,8 @@ Example:
 *** Update File: src/app.py
 *** Move to: src/main.py
 @@ def greet():
--print("Hi")
-+print("Hello, world!")
+-    print("Hi")
++    print("Hello, world!")
 *** Delete File: obsolete.txt
 *** End Patch
 ```
@@ -29,8 +29,9 @@ Rules:
 - Treat user review edits as intentional, not mistakes. Do not "fix" or revert them unless user explicitly asks.
 - Never auto-retry `rejected`/`partial`/user-edited result unless user asks.
 - Always include file header.
-- Added lines need `+`, including new files.
-- Updates: copy old lines exactly, whitespace included.
-- Hunk header = `@@` + literal anchor line, e.g. `@@ def greet():`. To replace anchor too, repeat it as `-` line. Avoid unified ranges like `@@ -12,3 +12,3 @@`.
+- Added lines need `+`, including new files. Content starts immediately after `+`.
+- Updates: copy old and new lines exactly, whitespace included. A line written as `+foo` is written at column 0; use `+    foo` for an indented line.
+- Replacements that remove leading indentation are rejected by default. Set `allowIndentChange=true` only when intentionally dedenting code.
+- Hunk header = `@@` + optional literal anchor line, e.g. `@@ def greet():`. For an indented anchor, include a separator space plus the real indentation, e.g. `@@     if ready:`. To replace anchor too, repeat it as `-` line. Avoid unified ranges like `@@ -12,3 +12,3 @@`.
 - If context fails, `Read` exact surrounding lines before retry.
 - Output reports final state: `applied`, `rejected`, or `partial`; trust it.

@@ -15,6 +15,8 @@ local PANEL_PREFIX = "▏  "
 local PANEL_BLANK_PREFIX = "▏"
 local PANEL_BORDER_HL = "OpenCodeTodoMuted"
 local TODO_ANIM_FRAMES = { "|", "/", "-", "\\" }
+local TODO_READ_TOOLS = { todoread = true, todolist = true }
+local TODO_WRITE_TOOLS = { todowrite = true }
 
 local STATUS_HIGHLIGHTS = {
 	pending = "OpenCodeTodoPending",
@@ -80,6 +82,24 @@ local VALID_STATUS = {
 	completed = true,
 	cancelled = true,
 }
+
+---@param tool_name string|nil
+---@return boolean
+function M.is_todo_read_tool(tool_name)
+	return TODO_READ_TOOLS[tool_name] == true
+end
+
+---@param tool_name string|nil
+---@return boolean
+function M.is_todo_write_tool(tool_name)
+	return TODO_WRITE_TOOLS[tool_name] == true
+end
+
+---@param tool_name string|nil
+---@return boolean
+function M.is_todo_tool(tool_name)
+	return M.is_todo_read_tool(tool_name) or M.is_todo_write_tool(tool_name)
+end
 
 ---@return OpenCodeTodoConfig
 function M.get_config()
@@ -688,24 +708,29 @@ function M.render_tool(tool_part, is_expanded)
 	end
 
 	local tool_name = tool_part.tool
-	if tool_name ~= "todowrite" and tool_name ~= "todoread" then
+	if not M.is_todo_tool(tool_name) then
 		return nil
 	end
 
 	local tool_state = type(tool_part.state) == "table" and tool_part.state or {}
 	local metadata = render.get_tool_metadata(tool_part)
 	local tool_status = tool_state.status or "pending"
-	local pending_label = tool_name == "todoread" and "Reading todos..." or "Updating todos..."
-	local title = tool_name == "todoread" and "# Read todos" or "# Updated todos"
+	local is_read = M.is_todo_read_tool(tool_name)
+	local pending_label = is_read and "Reading todos..." or "Updating todos..."
+	local title = is_read and "# Read todos" or "# Updated todos"
 	local error_body = first_nonempty_trimmed_text(tool_state.error, metadata.error, tool_part.error)
 	local todos = M.extract_tool_todos(tool_part)
-	return M.render_block(todos, {
+	local result = M.render_block(todos, {
 		title = title,
 		status = tool_status,
 		pending_label = pending_label,
 		error = error_body,
 		expanded = is_expanded == true,
 	})
+	if #result.lines > 0 then
+		table.insert(result.lines, "")
+	end
+	return result
 end
 
 ---@return boolean

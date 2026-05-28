@@ -8,6 +8,8 @@ cRITICAL!!!!:
 Usage:
 - Must use `Read` once before edit, or tool errors.
 - From `Read` output, copy content after line-number prefix only. Keep exact tabs/spaces. Never include line numbers.
+- `newString` is literal replacement text. Preserve indentation explicitly; if replacing `    foo()`, write `    bar()`, not `bar()`.
+- Replacements that remove leading indentation are rejected by default. Set `allowIndentChange=true` only when intentionally dedenting code.
 - Prefer existing files. Do not create files unless required.
 - `oldString` must match once. Missing => `oldString not found in content`. Multiple => add context or use `replaceAll`.
 - Use `replaceAll` for file-wide rename/replacement.

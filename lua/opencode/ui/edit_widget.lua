@@ -407,14 +407,12 @@ end
 ---@param old_line number|nil
 ---@param new_line number|nil
 ---@return string
-local function format_diff_code_line(diff_line, kind, old_line, new_line)
-	local code = diff_line:sub(2)
+local function format_diff_code_gutter(kind, old_line, new_line)
 	local number = kind == "delete" and old_line or new_line
 	return string.format(
-		"%" .. DIFF_LINE_NUMBER_WIDTH .. "s%s%s",
+		"%" .. DIFF_LINE_NUMBER_WIDTH .. "s%s",
 		format_line_number(number),
-		DIFF_LINE_NUMBER_SEPARATOR,
-		code
+		DIFF_LINE_NUMBER_SEPARATOR
 	)
 end
 
@@ -440,6 +438,69 @@ local function diff_line_number_hl_group(kind)
 		return "OpenCodeEditDiffDelete"
 	end
 	return "OpenCodeEditDiffLineNr"
+end
+
+---@param text string
+---@return string
+local function display_width_spaces(text)
+	return string.rep(" ", vim.fn.strdisplaywidth(text))
+end
+
+---@param result table
+---@param row table
+---@param source_start number
+---@param source_end number
+---@param hl_group string
+---@param priority number|nil
+local function add_wrapped_row_highlight(result, row, source_start, source_end, hl_group, priority)
+	local row_start = row.byte_start or 0
+	local row_end = row.byte_end or (row_start + #(row.text or ""))
+	local overlap_start = math.max(source_start, row_start)
+	local overlap_end = math.min(source_end, row_end)
+	if overlap_start >= overlap_end then
+		return
+	end
+
+	add_highlight(
+		result,
+		row.line_index,
+		#(row.prefix or "") + overlap_start - row_start,
+		#(row.prefix or "") + overlap_end - row_start,
+		hl_group,
+		priority
+	)
+end
+
+---@param result table
+---@param rows table[]|nil
+---@param source_start number
+---@param source_end number
+---@param hl_group string
+---@param priority number|nil
+local function add_wrapped_line_highlight(result, rows, source_start, source_end, hl_group, priority)
+	if source_end <= source_start then
+		return
+	end
+	for _, row in ipairs(rows or {}) do
+		add_wrapped_row_highlight(result, row, source_start, source_end, hl_group, priority)
+	end
+end
+
+---@param result table
+---@param rows table[]
+---@param text string
+---@param lang string
+local function add_wrapped_syntax_highlights(result, rows, text, lang)
+	for _, hl in ipairs(syntax.highlight_text(text, lang, { scope = "diffs" })) do
+		if (hl.line or 0) == 0 then
+			local source_start = hl.col_start or 0
+			local source_end = hl.end_col or hl.col_end or hl.col_start or #text
+			if source_end == -1 then
+				source_end = #text
+			end
+			add_wrapped_line_highlight(result, rows, source_start, source_end, hl.hl_group, hl.priority)
+		end
+	end
 end
 
 ---@param result table
@@ -486,15 +547,25 @@ local function append_inline_diff(result, file)
 		elseif kind ~= "file_add" and kind ~= "file_delete" and kind ~= "meta" then
 			local diff_line = display_diff_line(raw_line, file, is_file_header)
 			local is_code_line = kind == "add" or kind == "delete" or kind == "context"
-			local body = is_code_line and format_diff_code_line(diff_line, kind, old_line, new_line) or diff_line
-			local line_index, rendered_line, rows = render.add_panel_raw_line(
+			local body = diff_line
+			local body_prefix = DIFF_INDENT
+			local continuation_prefix = DIFF_INDENT
+			local gutter = nil
+			if is_code_line then
+				gutter = format_diff_code_gutter(kind, old_line, new_line)
+				body = diff_line:sub(2)
+				body_prefix = DIFF_INDENT .. gutter
+				continuation_prefix = DIFF_INDENT .. display_width_spaces(gutter)
+			end
+			local line_index, _, rows = render.add_panel_raw_line(
 				result,
-				DIFF_INDENT .. body,
+				body,
 				diff_line_hl_group(kind),
 				{
 					prefix = PANEL_PREFIX,
 					prefix_hl_group = PANEL_BORDER_HL,
-					wrap = false,
+					body_prefix = body_prefix,
+					continuation_prefix = continuation_prefix,
 				}
 			)
 			start_line = start_line or line_index
@@ -503,10 +574,11 @@ local function append_inline_diff(result, file)
 			if is_code_line then
 				local gutter_start = #PANEL_PREFIX + #DIFF_INDENT
 				local separator_start = gutter_start + DIFF_LINE_NUMBER_WIDTH
-				local code_start = separator_start + #DIFF_LINE_NUMBER_SEPARATOR
 				local body_hl = diff_body_hl_group(kind)
 				if body_hl then
-					add_highlight(result, line_index, code_start, #rendered_line, body_hl, DIFF_BODY_PRIORITY)
+					for _, row in ipairs(rows) do
+						add_highlight(result, row.line_index, #row.prefix, #row.line, body_hl, DIFF_BODY_PRIORITY)
+					end
 				end
 				add_highlight(
 					result,
@@ -527,11 +599,7 @@ local function append_inline_diff(result, file)
 
 				local code = raw_line:sub(2)
 				if lang and code ~= "" then
-					syntax.add_highlights(result, code, lang, {
-						scope = "diffs",
-						line_start = line_index,
-						col_offset = code_start,
-					})
+					add_wrapped_syntax_highlights(result, rows, code, lang)
 				end
 			end
 			if kind == "add" then

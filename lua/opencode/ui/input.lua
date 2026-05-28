@@ -14,6 +14,7 @@ local NS_INFO = vim.api.nvim_create_namespace("opencode_input_info")
 local state = {
 	bufnr = nil,
 	winid = nil,
+	parent_winid = nil,
 	popup = nil,
 	info_popup = nil,
 	info_bufnr = nil, -- unified info buffer reference (set in both modes)
@@ -27,6 +28,7 @@ local state = {
 	layout = nil,
 	parts = {},
 	normalizing_paste = false,
+	resize_scheduled = false,
 }
 
 -- History management
@@ -136,10 +138,52 @@ end
 
 -- Get input text
 local resize_input
+local schedule_resize_input
+
+local IMAGE_FILE_HINT_PATTERNS = {
+	"%.[Aa][Vv][Ii][Ff]",
+	"%.[Bb][Mm][Pp]",
+	"%.[Gg][Ii][Ff]",
+	"%.[Hh][Ee][Ii][Cc]",
+	"%.[Jj][Pp][Ee][Gg]",
+	"%.[Jj][Pp][Gg]",
+	"%.[Pp][Nn][Gg]",
+	"%.[Tt][Ii][Ff]",
+	"%.[Tt][Ii][Ff][Ff]",
+	"%.[Ww][Ee][Bb][Pp]",
+}
+
+local function has_image_file_hint(text)
+	if type(text) ~= "string" or text == "" then
+		return false
+	end
+	for _, pattern in ipairs(IMAGE_FILE_HINT_PATTERNS) do
+		if text:find(pattern) then
+			return true
+		end
+	end
+	return false
+end
+
+local function is_single_text_value(text)
+	return type(text) == "string" and text ~= "" and not text:find("\n", 1, true)
+end
 
 local function get_input_text()
 	local lines = vim.api.nvim_buf_get_lines(state.bufnr, 0, -1, false)
 	return table.concat(lines, "\n")
+end
+
+local function focus_parent_before_unmount()
+	if not state.winid or not vim.api.nvim_win_is_valid(state.winid) then
+		return
+	end
+	if vim.api.nvim_get_current_win() ~= state.winid then
+		return
+	end
+	if state.parent_winid and vim.api.nvim_win_is_valid(state.parent_winid) then
+		pcall(vim.api.nvim_set_current_win, state.parent_winid)
+	end
 end
 
 ---@param parts table[]|nil
@@ -177,7 +221,7 @@ local function insert_text_at_cursor(text)
 	local new_row = row + #lines
 	local new_col = #lines == 1 and (col + #lines[1]) or #lines[#lines]
 	vim.api.nvim_win_set_cursor(state.winid, { new_row, new_col })
-	resize_input()
+	schedule_resize_input()
 	return true
 end
 
@@ -276,6 +320,9 @@ end
 local function find_image_path_in_line(line, clipboard)
 	local trimmed = vim.trim(line or "")
 	if trimmed == "" then
+		return nil, nil, nil
+	end
+	if not has_image_file_hint(trimmed) then
 		return nil, nil, nil
 	end
 
@@ -403,11 +450,14 @@ function resize_input()
 	local cfg = state.config
 	local layout = state.layout
 	local lines = vim.api.nvim_buf_get_lines(state.bufnr, 0, -1, false)
-	local win_width = vim.api.nvim_win_get_width(state.winid)
+	local win_width = math.max(1, vim.api.nvim_win_get_width(state.winid))
 
 	-- Calculate display lines accounting for line wrapping
 	local display_lines = 0
 	for _, line in ipairs(lines) do
+		if display_lines >= cfg.max_height then
+			break
+		end
 		local line_width = vim.fn.strdisplaywidth(line)
 		if line_width == 0 then
 			display_lines = display_lines + 1
@@ -432,6 +482,17 @@ function resize_input()
 		size = { width = layout.content_width, height = new_height },
 	})
 	lock_scroll()
+end
+
+function schedule_resize_input()
+	if state.resize_scheduled then
+		return
+	end
+	state.resize_scheduled = true
+	vim.schedule(function()
+		state.resize_scheduled = false
+		resize_input()
+	end)
 end
 
 -- Set input text in the active input buffer and keep cursor at the end.
@@ -633,8 +694,11 @@ local function setup_keymaps(bufnr, cfg)
 	local opts = { buffer = bufnr, noremap = true, silent = true }
 
 	local function send_message()
-		normalize_pasted_image_paths()
 		local text = get_input_text()
+		if has_image_file_hint(text) then
+			normalize_pasted_image_paths()
+			text = get_input_text()
+		end
 		local parts = active_parts_for_text(text)
 		if text ~= "" or #parts > 0 then
 			if state.add_history then
@@ -782,6 +846,7 @@ function M.show(opts)
 	if not chat_winid or not vim.api.nvim_win_is_valid(chat_winid) then
 		chat_winid = vim.api.nvim_get_current_win()
 	end
+	state.parent_winid = chat_winid
 
 	-- When inside a floating chat window, use editor-relative NUI popups positioned via
 	-- absolute screen coordinates. This avoids the NUI complex-border chain issue where
@@ -933,8 +998,7 @@ function M.show(opts)
 	vim.api.nvim_create_autocmd({ "TextChanged", "TextChangedI" }, {
 		buffer = state.bufnr,
 		callback = function()
-			normalize_pasted_image_paths()
-			resize_input()
+			schedule_resize_input()
 		end,
 	})
 
@@ -1066,6 +1130,8 @@ function M.close(save_draft)
 		end
 	end
 
+	focus_parent_before_unmount()
+
 	if state.info_popup then
 		state.info_popup:unmount()
 	end
@@ -1076,6 +1142,7 @@ function M.close(save_draft)
 
 	state.visible = false
 	state.winid = nil
+	state.parent_winid = nil
 	state.bufnr = nil
 	state.popup = nil
 	state.info_popup = nil
@@ -1178,14 +1245,19 @@ function M.paste_clipboard()
 	end
 
 	if content.mime == "text/plain" then
-		local image = clipboard.image_from_text(content.data)
-		if image then
-			add_file_part(image)
-			return true
+		if is_single_text_value(content.data) and has_image_file_hint(content.data) then
+			local image = clipboard.image_from_text(content.data)
+			if image then
+				add_file_part(image)
+				return true
+			end
 		end
 
 		if state.visible then
 			insert_text_at_cursor(content.data)
+			if has_image_file_hint(content.data) then
+				normalize_pasted_image_paths()
+			end
 		else
 			history.pending = (history.pending or "") .. content.data
 		end

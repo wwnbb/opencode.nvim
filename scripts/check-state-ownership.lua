@@ -138,6 +138,17 @@ assert_eq(fallback.model.providerID, "p2", "invalid opts model should fall back 
 assert_eq(fallback.model.modelID, "m2", "invalid opts model should fall back to local model")
 assert_eq(fallback.agent, "Plan", "local agent should be selected")
 
+local logger = require("opencode.logger")
+sync.handle_provider_defaults({ p1 = "m1" })
+local_state.agent.set("Code")
+logger.clear()
+local fallback_current = local_state.model.current()
+assert_eq(fallback_current.providerID, "p1", "fallback provider default should be selected")
+assert_eq(fallback_current.modelID, "m1", "fallback provider default model should be selected")
+local first_log_count = logger.count()
+local_state.model.current()
+assert_eq(logger.count(), first_log_count, "unchanged model selection reads should not append logs")
+
 bus.clear()
 bus.clear_history()
 state.reset()

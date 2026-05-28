@@ -44,7 +44,18 @@ end
 ---@return string
 function M.sanitize_buffer_line(text)
 	text = type(text) == "string" and text or tostring(text or "")
-	return (text:gsub("\r\n", " ↵ "):gsub("\n", " ↵ "):gsub("\r", " ↵ "))
+	return (text:gsub("\r\n", " ↵ "):gsub("\n", " ↵ "):gsub("\r", " ↵ "):gsub("%z", "<NUL>"))
+end
+
+---@param text any
+---@return number
+local function safe_display_width(text)
+	local safe_text = M.sanitize_buffer_line(text)
+	local ok, width = pcall(vim.fn.strdisplaywidth, safe_text)
+	if ok and type(width) == "number" then
+		return width
+	end
+	return #safe_text
 end
 
 -- ─── Agent highlight ─────────────────────────────────────────────────────────
@@ -156,7 +167,7 @@ local function char_display_width(ch, col)
 		local tabstop = get_tabstop()
 		return tabstop - (col % tabstop)
 	end
-	return vim.fn.strdisplaywidth(ch)
+	return safe_display_width(ch)
 end
 
 ---@param text string
@@ -181,7 +192,7 @@ end
 ---@return table[] chunks
 function M.wrap_text_with_ranges(text, max_width, opts)
 	opts = opts or {}
-	text = type(text) == "string" and text or tostring(text or "")
+	text = M.sanitize_buffer_line(text)
 	if max_width <= 0 then
 		return {
 			{
@@ -277,7 +288,8 @@ end
 ---@return string
 function M.pad_to_width(text, width)
 	width = width or get_chat_text_width()
-	local current = vim.fn.strdisplaywidth(text)
+	text = M.sanitize_buffer_line(text)
+	local current = safe_display_width(text)
 	if current >= width then
 		return text
 	end
@@ -332,9 +344,10 @@ function M.add_panel_line(result, text, hl_group, opts)
 
 	local prefix = opts.prefix or "▏  "
 	local width = opts.width or get_chat_text_width()
-	local body_width = math.max(1, width - vim.fn.strdisplaywidth(prefix))
+	local prefix_width = safe_display_width(prefix)
+	local body_width = math.max(1, width - prefix_width)
 	local chunks = M.wrap_text_with_ranges(M.sanitize_buffer_line(text), body_width, {
-		initial_col = vim.fn.strdisplaywidth(prefix),
+		initial_col = prefix_width,
 	})
 	local rows = {}
 
@@ -375,12 +388,13 @@ function M.add_panel_raw_line(result, text, hl_group, opts)
 	local body_prefix = opts.body_prefix or ""
 	local continuation_prefix = opts.continuation_prefix or body_prefix
 	local body_prefix_width = math.max(
-		vim.fn.strdisplaywidth(body_prefix),
-		vim.fn.strdisplaywidth(continuation_prefix)
+		safe_display_width(body_prefix),
+		safe_display_width(continuation_prefix)
 	)
-	local body_width = math.max(1, width - vim.fn.strdisplaywidth(prefix) - body_prefix_width)
+	local prefix_width = safe_display_width(prefix)
+	local body_width = math.max(1, width - prefix_width - body_prefix_width)
 	local chunks = opts.wrap ~= false and M.wrap_text_with_ranges(body, body_width, {
-		initial_col = vim.fn.strdisplaywidth(prefix) + body_prefix_width,
+		initial_col = prefix_width + body_prefix_width,
 	}) or {
 		{
 			text = body,
@@ -512,7 +526,7 @@ function M.render_user_message(content, agent_name, files)
 	local content_width = math.max(1, bg_width - 2)
 
 	local function pad_after_prefix(prefix, text, width)
-		local current = vim.fn.strdisplaywidth(prefix .. text)
+		local current = safe_display_width(prefix .. text)
 		if current >= width then
 			return text
 		end
@@ -530,7 +544,7 @@ function M.render_user_message(content, agent_name, files)
 
 	for _, text in ipairs(content_lines) do
 		local wrapped = M.wrap_text(text, content_width, {
-			initial_col = vim.fn.strdisplaywidth("┃  "),
+			initial_col = safe_display_width("┃  "),
 		})
 		for _, wline in ipairs(wrapped) do
 			add_block_line("  " .. wline)
@@ -543,7 +557,7 @@ function M.render_user_message(content, agent_name, files)
 		local filename = file.filename or file.name or file.uri or "attachment"
 		local display = label .. " " .. filename
 		local wrapped = M.wrap_text(display, content_width, {
-			initial_col = vim.fn.strdisplaywidth("┃  "),
+			initial_col = safe_display_width("┃  "),
 		})
 		for _, wline in ipairs(wrapped) do
 			add_block_line("  " .. wline)

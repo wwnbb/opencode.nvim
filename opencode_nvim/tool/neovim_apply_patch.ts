@@ -138,6 +138,35 @@ function sameState(current: FileState, expected: FileState): boolean {
   return sameContent(current.content, expected.content)
 }
 
+function leadingWhitespace(line: string): string {
+  const match = line.match(/^[ \t]*/)
+  return match ? match[0] : ""
+}
+
+function assertNoAccidentalIndentRemoval(
+  filePath: string,
+  oldLines: string[],
+  newLines: string[],
+  allowIndentChange = false,
+) {
+  if (allowIndentChange || oldLines.length !== newLines.length) return
+
+  for (let index = 0; index < oldLines.length; index++) {
+    const oldLine = oldLines[index]
+    const newLine = newLines[index]
+    if (oldLine.trim() === "" || newLine.trim() === "") continue
+
+    const oldIndent = leadingWhitespace(oldLine)
+    const newIndent = leadingWhitespace(newLine)
+    if (oldIndent.length > 0 && newIndent.length === 0) {
+      throw new Error(
+        `Patch appears to remove leading indentation in ${filePath} on replacement line ${index + 1}. ` +
+          "Include the original indentation after '+', or set allowIndentChange=true if this dedent is intentional.",
+      )
+    }
+  }
+}
+
 function trimDiff(diff: string): string {
   const lines = diff.split("\n")
   const contentLines = lines.filter(
@@ -238,6 +267,11 @@ function parseAddFileContent(lines: string[], start: number) {
   return { content: content.join("\n"), next: index }
 }
 
+function parseHunkContext(raw: string): string {
+  if (raw === "") return ""
+  return raw.startsWith(" ") ? raw.slice(1) : raw
+}
+
 function parseUpdateFileChunks(lines: string[], start: number) {
   const chunks: UpdateFileChunk[] = []
   let index = start
@@ -248,12 +282,12 @@ function parseUpdateFileChunks(lines: string[], start: number) {
       continue
     }
 
-    let changeContext = lines[index].slice(2).trim()
+    let changeContext = parseHunkContext(lines[index].slice(2))
     let startLine: number | undefined
     const unified = changeContext.match(/^-(\d+)(?:,\d+)?\s+\+\d+(?:,\d+)?\s+@@(.*)$/)
     if (unified) {
       startLine = Number.parseInt(unified[1], 10) - 1
-      changeContext = unified[2].trim()
+      changeContext = parseHunkContext(unified[2])
     }
     index++
     const oldLines: string[] = []
@@ -337,15 +371,6 @@ function parsePatch(patchText: string): Hunk[] {
   return hunks
 }
 
-function normalizeUnicode(text: string): string {
-  return text
-    .replace(/[\u2018\u2019\u201a\u201b]/g, "'")
-    .replace(/[\u201c\u201d\u201e\u201f]/g, '"')
-    .replace(/[\u2010\u2011\u2012\u2013\u2014\u2015]/g, "-")
-    .replace(/\u2026/g, "...")
-    .replace(/\u00a0/g, " ")
-}
-
 type Comparator = (left: string, right: string) => boolean
 
 function tryMatch(lines: string[], pattern: string[], start: number, compare: Comparator, eof: boolean): number {
@@ -368,20 +393,15 @@ function seekSequence(lines: string[], pattern: string[], start: number, eof = f
 
   const rstrip = tryMatch(lines, pattern, start, (left, right) => left.trimEnd() === right.trimEnd(), eof)
   if (rstrip !== -1) return rstrip
-
-  const trim = tryMatch(lines, pattern, start, (left, right) => left.trim() === right.trim(), eof)
-  if (trim !== -1) return trim
-
-  return tryMatch(
-    lines,
-    pattern,
-    start,
-    (left, right) => normalizeUnicode(left.trim()) === normalizeUnicode(right.trim()),
-    eof,
-  )
+  return -1
 }
 
-function computeReplacements(lines: string[], filePath: string, chunks: UpdateFileChunk[]) {
+function computeReplacements(
+  lines: string[],
+  filePath: string,
+  chunks: UpdateFileChunk[],
+  allowIndentChange = false,
+) {
   const replacements: Array<[number, number, string[]]> = []
   let lineIndex = 0
 
@@ -412,6 +432,7 @@ function computeReplacements(lines: string[], filePath: string, chunks: UpdateFi
     }
     if (found === -1) throw new Error(`Failed to find expected lines in ${filePath}:\n${chunk.old_lines.join("\n")}`)
 
+    assertNoAccidentalIndentRemoval(filePath, oldLines, newLines, allowIndentChange)
     replacements.push([found, oldLines.length, newLines])
     lineIndex = found + oldLines.length
   }
@@ -419,11 +440,16 @@ function computeReplacements(lines: string[], filePath: string, chunks: UpdateFi
   return replacements.sort((left, right) => left[0] - right[0])
 }
 
-function deriveNewContent(filePath: string, chunks: UpdateFileChunk[], original: string): string {
+function deriveNewContent(
+  filePath: string,
+  chunks: UpdateFileChunk[],
+  original: string,
+  allowIndentChange = false,
+): string {
   let lines = original.split("\n")
   if (lines.length > 0 && lines[lines.length - 1] === "") lines.pop()
 
-  const replacements = computeReplacements(lines, filePath, chunks)
+  const replacements = computeReplacements(lines, filePath, chunks, allowIndentChange)
   const next = [...lines]
   for (let index = replacements.length - 1; index >= 0; index--) {
     const [start, oldLength, replacement] = replacements[index]
@@ -433,7 +459,12 @@ function deriveNewContent(filePath: string, chunks: UpdateFileChunk[], original:
   return next.join("\n")
 }
 
-async function buildChanges(hunks: Hunk[], directory: string, worktree: string): Promise<FileChange[]> {
+async function buildChanges(
+  hunks: Hunk[],
+  directory: string,
+  worktree: string,
+  allowIndentChange = false,
+): Promise<FileChange[]> {
   const changes: FileChange[] = []
 
   for (const hunk of hunks) {
@@ -481,7 +512,7 @@ async function buildChanges(hunks: Hunk[], directory: string, worktree: string):
 
     const before = await readState(filePath)
     if (!before.exists) throw new Error(`apply_patch verification failed: Failed to read file to update: ${filePath}`)
-    const newContent = deriveNewContent(filePath, hunk.chunks, before.content)
+    const newContent = deriveNewContent(filePath, hunk.chunks, before.content, allowIndentChange)
     const proposedDiff = makeDiff(filePath, before.content, newContent)
     const count = stats(before.content, newContent)
     const movePath = hunk.move_path ? resolveFilePath(directory, hunk.move_path) : undefined
@@ -678,6 +709,7 @@ export default tool({
   description: DESCRIPTION,
   args: {
     patchText: schema.string().describe("The full patch text that describes all changes to be made"),
+    allowIndentChange: schema.boolean().optional().describe("Allow replacement lines to remove leading indentation"),
   },
   async execute(args, context) {
     if (!args.patchText) throw new Error("patchText is required")
@@ -695,7 +727,7 @@ export default tool({
       throw new Error("apply_patch verification failed: no hunks found")
     }
 
-    const changes = await buildChanges(hunks, context.directory, context.worktree)
+    const changes = await buildChanges(hunks, context.directory, context.worktree, args.allowIndentChange)
     if (changes.length === 0) throw new Error("apply_patch verification failed: no hunks found")
 
     const reviewFiles = changes.flatMap(reviewFilesForChange)

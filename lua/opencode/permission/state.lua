@@ -12,6 +12,7 @@ local active_permissions = {}
 --   session_id = string,
 --   message_id = string|nil,     -- messageID that triggered this permission (for inline rendering)
 --   call_id = string|nil,        -- tool callID for rendering beside the matching tool line
+--   tool_name = string|nil,      -- tool that triggered this permission
 --   permission_type = string,    -- "bash", "read", "glob", "grep", etc.
 --   metadata = table,
 --   patterns = table,
@@ -30,7 +31,7 @@ local OPTION_COUNT = 3
 ---@param permission_id string
 ---@param session_id string
 ---@param permission_type string
----@param opts table { metadata, patterns, always, tool_input, message_id, call_id, timestamp }
+---@param opts table { metadata, patterns, always, tool_input, message_id, call_id, tool_name, timestamp }
 function M.add_permission(permission_id, session_id, permission_type, opts)
 	opts = opts or {}
 	local pstate = {
@@ -38,6 +39,7 @@ function M.add_permission(permission_id, session_id, permission_type, opts)
 		session_id = session_id,
 		message_id = opts.message_id, -- messageID that triggered this permission
 		call_id = opts.call_id,
+		tool_name = opts.tool_name,
 		permission_type = permission_type,
 		metadata = opts.metadata or {},
 		patterns = opts.patterns or {},
@@ -144,6 +146,44 @@ function M.set_message(permission_id, text)
 	end
 
 	pstate.message = vim.trim(text or "")
+	return true
+end
+
+-- Merge resolved tool input into an existing permission.
+---@param permission_id string
+---@param tool_input table
+---@return boolean
+function M.merge_tool_input(permission_id, tool_input)
+	local pstate = active_permissions[permission_id]
+	if not pstate or type(tool_input) ~= "table" then
+		return false
+	end
+
+	pstate.tool_input = vim.tbl_deep_extend(
+		"force",
+		{},
+		type(pstate.tool_input) == "table" and pstate.tool_input or {},
+		tool_input
+	)
+	return true
+end
+
+-- Set the tool name that triggered a permission request.
+---@param permission_id string
+---@param tool_name string
+---@return boolean
+function M.set_tool_name(permission_id, tool_name)
+	local pstate = active_permissions[permission_id]
+	if not pstate or type(tool_name) ~= "string" or tool_name == "" then
+		return false
+	end
+
+	local trimmed = vim.trim(tool_name)
+	if trimmed == "" then
+		return false
+	end
+
+	pstate.tool_name = trimmed
 	return true
 end
 
