@@ -94,8 +94,7 @@ function M.has_active_task_rows()
 				or tool_part.tool == "skill"
 				or tool_part.tool == "glob"
 				or tool_part.tool == "grep"
-				or tool_part.tool == "todoread"
-				or tool_part.tool == "todowrite"
+				or chat_todos.is_todo_tool(tool_part.tool)
 			)
 		local status = tool_part
 			and is_animated_tool
@@ -157,6 +156,7 @@ local TOOL_ICONS = {
 	websearch = "◈",
 	codesearch = "◇",
 	task = "◉",
+	todolist = "⊙",
 	todowrite = "⚙",
 	todoread = "⊙",
 	question = "→",
@@ -297,9 +297,9 @@ local function format_summary_item_label(item)
 	local item_status = item_state.status or "pending"
 	local input = item_state.input or {}
 	local metadata = item_state.metadata or item.metadata or {}
-	if tool_name == "todoread" or tool_name == "todowrite" then
+	if chat_todos.is_todo_tool(tool_name) then
 		local progress = format_todo_progress(item)
-		local action = tool_name == "todoread" and "Read Todos" or "Update Todos"
+		local action = chat_todos.is_todo_read_tool(tool_name) and "Read Todos" or "Update Todos"
 		return progress and (action .. " " .. progress) or action
 	end
 
@@ -467,14 +467,14 @@ function M.format_tool_line(tool_part)
 			return string.format("# %s", desc)
 		end
 		return string.format("~ Writing command...")
-	elseif tool_name == "todoread" or tool_name == "todowrite" then
+	elseif chat_todos.is_todo_tool(tool_name) then
 		if tool_status == "completed" then
 			local progress = format_todo_progress(tool_part)
-			local action = tool_name == "todoread" and "Read Todos" or "Updated Todos"
+			local action = chat_todos.is_todo_read_tool(tool_name) and "Read Todos" or "Updated Todos"
 			return progress and string.format("%s %s %s", icon, action, progress)
 				or string.format("%s %s", icon, action)
 		end
-		return tool_name == "todoread" and "~ Reading todos..." or "~ Updating todos..."
+		return chat_todos.is_todo_read_tool(tool_name) and "~ Reading todos..." or "~ Updating todos..."
 	elseif tool_name == "skill" then
 		local raw = tool_part.state and tool_part.state.raw or nil
 		local title = tool_part.state and tool_part.state.title or nil

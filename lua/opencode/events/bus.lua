@@ -1,6 +1,7 @@
 -- opencode.nvim - Event system module
 -- Pub/sub event bus for inter-module communication
 
+---@class OpencodeEventBus
 local M = {}
 
 -- Event registry: { event_type = { callback1, callback2, ... } }
@@ -11,6 +12,7 @@ local once_listeners = {}
 
 -- Event history (for debugging/playback)
 local event_history = {}
+
 local max_history = 100
 
 -- Get or create listener list for an event type
@@ -150,6 +152,5 @@ function M.list_event_types()
 	end
 	return types
 end
-
 
 return M

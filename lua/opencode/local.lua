@@ -277,8 +277,12 @@ end
 M.model = {}
 
 ---Get fallback model (from config, recent, or first available)
+---@param opts? { log?: boolean }
 ---@return { providerID: string, modelID: string }|nil
-local function get_fallback_model()
+local function get_fallback_model(opts)
+	opts = opts or {}
+	local log = opts.log == true
+
 	-- Check config default
 	local config = sync.get_config()
 	if type(config.model) == "string" then
@@ -287,39 +291,49 @@ local function get_fallback_model()
 		if provider_id and model_id then
 			local m = { providerID = provider_id, modelID = model_id }
 			if is_model_valid(m) then
-				logger.debug("Fallback model selected", {
-					source = "config",
-					model = model_summary(m),
-				})
+				if log then
+					logger.debug("Fallback model selected", {
+						source = "config",
+						model = model_summary(m),
+					})
+				end
 				return m
 			end
-			logger.debug("Fallback config model invalid", {
-				model = model_summary(m),
-			})
+			if log then
+				logger.debug("Fallback config model invalid", {
+					model = model_summary(m),
+				})
+			end
 		else
-			logger.debug("Fallback config model malformed", {
-				model = config.model,
-			})
+			if log then
+				logger.debug("Fallback config model malformed", {
+					model = config.model,
+				})
+			end
 		end
 	elseif config.model ~= nil then
-		logger.debug("Fallback config model skipped", {
-			model = model_summary(config.model),
-		})
+		if log then
+			logger.debug("Fallback config model skipped", {
+				model = model_summary(config.model),
+			})
+		end
 	end
 
 	-- Check recent models
 	local invalid_recent = 0
 	for _, item in ipairs(state.recent) do
 		if is_model_valid(item) then
-			logger.debug("Fallback model selected", {
-				source = "recent",
-				model = model_summary(item),
-			})
+			if log then
+				logger.debug("Fallback model selected", {
+					source = "recent",
+					model = model_summary(item),
+				})
+			end
 			return item
 		end
 		invalid_recent = invalid_recent + 1
 	end
-	if invalid_recent > 0 then
+	if log and invalid_recent > 0 then
 		logger.debug("Fallback recent models skipped", {
 			invalid_count = invalid_recent,
 		})
@@ -333,38 +347,99 @@ local function get_fallback_model()
 		if default_model then
 			local m = { providerID = provider.id, modelID = default_model }
 			if is_model_valid(m) then
-				logger.debug("Fallback model selected", {
-					source = "provider_default",
-					model = model_summary(m),
-				})
+				if log then
+					logger.debug("Fallback model selected", {
+						source = "provider_default",
+						model = model_summary(m),
+					})
+				end
 				return m
 			end
-			logger.debug("Fallback provider default invalid", {
-				providerID = provider.id,
-				modelID = default_model,
-			})
+			if log then
+				logger.debug("Fallback provider default invalid", {
+					providerID = provider.id,
+					modelID = default_model,
+				})
+			end
 		end
 		-- Try first model
 		if provider.models then
 			for model_id, _ in pairs(provider.models) do
 				local m = { providerID = provider.id, modelID = model_id }
 				if is_model_valid(m) then
-					logger.debug("Fallback model selected", {
-						source = "first_provider_model",
-						model = model_summary(m),
-					})
+					if log then
+						logger.debug("Fallback model selected", {
+							source = "first_provider_model",
+							model = model_summary(m),
+						})
+					end
 					return m
 				end
 			end
 		end
 	end
 
-	logger.debug("Fallback model unavailable", {
-		provider_count = #providers,
-		default_count = count_keys(defaults),
-		recent_count = #state.recent,
-	})
+	if log then
+		logger.debug("Fallback model unavailable", {
+			provider_count = #providers,
+			default_count = count_keys(defaults),
+			recent_count = #state.recent,
+		})
+	end
 	return nil
+end
+
+local last_model_selection_log_key = nil
+
+---@param model any
+---@return string
+local function model_log_key(model)
+	if type(model) ~= "table" then
+		return value_kind(model)
+	end
+	return table.concat({
+		value_kind(model.providerID),
+		tostring(model.providerID or ""),
+		value_kind(model.modelID),
+		tostring(model.modelID or ""),
+		value_kind(model.variant),
+		tostring(model.variant or ""),
+	}, ":")
+end
+
+---@param candidates table[]
+---@param agent table
+---@param result_source string
+---@return string
+local function model_selection_log_key(candidates, agent, result_source)
+	local parts = {
+		"model_selection",
+		tostring(agent.name or agent.id or ""),
+		"providers=" .. tostring(#sync.get_providers()),
+		"defaults=" .. tostring(count_keys(sync.get_provider_defaults())),
+		"result=" .. result_source,
+	}
+	for _, candidate in ipairs(candidates) do
+		local status = "missing"
+		if candidate.model ~= nil then
+			status = is_model_valid(candidate.model) and "valid" or "invalid"
+		end
+		table.insert(parts, candidate.source .. "=" .. status .. ":" .. model_log_key(candidate.model))
+	end
+	return table.concat(parts, "\31")
+end
+
+---@param candidates table[]
+---@param agent table
+---@param result_source string
+---@return boolean
+local function should_log_model_selection(candidates, agent, result_source)
+	local key = model_selection_log_key(candidates, agent, result_source)
+	if key == last_model_selection_log_key then
+		return false
+	end
+	last_model_selection_log_key = key
+	return true
 end
 
 ---Get current model key for the current agent
@@ -372,11 +447,19 @@ end
 function M.model.current()
 	local agent = M.agent.current()
 	if not agent then
-		logger.debug("Model selection skipped", {
-			reason = "no_visible_agent",
-			visible_agent_count = #M.agent.list(),
-			provider_count = #sync.get_providers(),
-		})
+		local key = table.concat({
+			"no_visible_agent",
+			"agents=" .. tostring(#M.agent.list()),
+			"providers=" .. tostring(#sync.get_providers()),
+		}, "\31")
+		if key ~= last_model_selection_log_key then
+			last_model_selection_log_key = key
+			logger.debug("Model selection skipped", {
+				reason = "no_visible_agent",
+				visible_agent_count = #M.agent.list(),
+				provider_count = #sync.get_providers(),
+			})
+		end
 		return nil
 	end
 	local candidates = {
@@ -395,32 +478,56 @@ function M.model.current()
 	}
 	for _, candidate in ipairs(candidates) do
 		if is_model_valid(candidate.model) then
-			logger.debug("Model selection resolved", {
-				agent = agent.name,
-				source = candidate.source,
-				model = model_summary(candidate.model),
-			})
+			if should_log_model_selection(candidates, agent, candidate.source) then
+				for _, skipped in ipairs(candidates) do
+					if skipped == candidate then
+						break
+					end
+					if skipped.model ~= nil then
+						logger.debug("Model selection candidate invalid", {
+							agent = agent.name,
+							source = skipped.source,
+							model = model_summary(skipped.model),
+						})
+					else
+						logger.debug("Model selection candidate missing", {
+							agent = agent.name,
+							source = skipped.source,
+						})
+					end
+				end
+				logger.debug("Model selection resolved", {
+					agent = agent.name,
+					source = candidate.source,
+					model = model_summary(candidate.model),
+				})
+			end
 			return candidate.model
-		end
-		if candidate.model ~= nil then
-			logger.debug("Model selection candidate invalid", {
-				agent = agent.name,
-				source = candidate.source,
-				model = model_summary(candidate.model),
-			})
-		else
-			logger.debug("Model selection candidate missing", {
-				agent = agent.name,
-				source = candidate.source,
-			})
 		end
 	end
 
-	logger.debug("Model selection failed", {
-		agent = agent.name,
-		provider_count = #sync.get_providers(),
-		default_count = count_keys(sync.get_provider_defaults()),
-	})
+	if should_log_model_selection(candidates, agent, "failed") then
+		for _, candidate in ipairs(candidates) do
+			if candidate.model ~= nil then
+				logger.debug("Model selection candidate invalid", {
+					agent = agent.name,
+					source = candidate.source,
+					model = model_summary(candidate.model),
+				})
+			else
+				logger.debug("Model selection candidate missing", {
+					agent = agent.name,
+					source = candidate.source,
+				})
+			end
+		end
+		logger.debug("Model selection failed", {
+			agent = agent.name,
+			provider_count = #sync.get_providers(),
+			default_count = count_keys(sync.get_provider_defaults()),
+		})
+	end
+
 	return nil
 end
 

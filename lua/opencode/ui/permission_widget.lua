@@ -25,6 +25,45 @@ local OPTION_LABELS = {
 	"Reject",
 }
 
+local TOOL_INPUT_FIELDS = {
+	"command",
+	"description",
+	"workdir",
+	"cwd",
+	"directory",
+	"parentDir",
+	"path",
+	"file_path",
+	"filePath",
+	"filepath",
+	"file",
+	"pattern",
+	"query",
+	"url",
+	"subagent_type",
+	"subagentType",
+}
+
+local TOOL_DISPLAY_NAMES = {
+	apply_patch = "Apply Patch",
+	bash = "Bash",
+	codesearch = "Code Search",
+	edit = "Edit",
+	glob = "Glob",
+	grep = "Grep",
+	list = "List",
+	neovim_apply_patch = "Neovim Apply Patch",
+	neovim_edit = "Neovim Edit",
+	read = "Read",
+	skill = "Skill",
+	task = "Task",
+	todoread = "Read Todos",
+	todowrite = "Update Todos",
+	webfetch = "WebFetch",
+	websearch = "Web Search",
+	write = "Write",
+}
+
 ---@param name string
 ---@return table
 local function get_hl(name)
@@ -115,6 +154,218 @@ local function first_non_empty(...)
 	end
 
 	return ""
+end
+
+---@param value any
+---@return table|nil
+local function as_table(value)
+	if type(value) == "table" then
+		return value
+	end
+	if type(value) == "string" and value ~= "" then
+		local ok, decoded = pcall(vim.json.decode, value)
+		if ok and type(decoded) == "table" then
+			return decoded
+		end
+	end
+	return nil
+end
+
+---@param dest table
+---@param key string
+---@param value any
+local function set_non_empty(dest, key, value)
+	if type(value) == "string" then
+		if value ~= "" then
+			dest[key] = value
+		end
+	elseif value ~= nil then
+		dest[key] = value
+	end
+end
+
+---@param dest table
+---@param source table|nil
+local function merge_tool_input_source(dest, source)
+	source = as_table(source)
+	if not source then
+		return
+	end
+
+	for _, key in ipairs(TOOL_INPUT_FIELDS) do
+		set_non_empty(dest, key, source[key])
+	end
+
+	set_non_empty(dest, "directory", source.directory or source.parentDir)
+	set_non_empty(dest, "subagent_type", source.subagent_type or source.subagentType)
+end
+
+---@param part table
+---@return table
+local function extract_tool_input(part)
+	local fresh = {}
+	local tool_state = type(part.state) == "table" and part.state or {}
+
+	merge_tool_input_source(fresh, render.get_tool_metadata(part))
+	merge_tool_input_source(fresh, part.input)
+	merge_tool_input_source(fresh, tool_state.input)
+
+	return fresh
+end
+
+---@param tool_name any
+---@return string
+local function format_tool_name(tool_name)
+	if type(tool_name) ~= "string" then
+		return ""
+	end
+
+	local trimmed = vim.trim(tool_name)
+	if trimmed == "" then
+		return ""
+	end
+
+	local mapped = TOOL_DISPLAY_NAMES[trimmed:lower()]
+	if mapped then
+		return mapped
+	end
+
+	local spaced = trimmed:gsub("([a-z0-9])([A-Z])", "%1 %2"):gsub("[_%.-]+", " ")
+	return (spaced:gsub("(%S)(%S*)", function(first, rest)
+		return first:upper() .. rest
+	end))
+end
+
+---@param part table
+---@return string
+local function extract_tool_name(part)
+	if type(part) ~= "table" then
+		return ""
+	end
+
+	local tool_state = type(part.state) == "table" and part.state or {}
+	local metadata = render.get_tool_metadata(part)
+	return first_non_empty(
+		part.tool,
+		part.tool_name,
+		part.toolName,
+		tool_state.tool,
+		tool_state.tool_name,
+		tool_state.toolName,
+		metadata.tool,
+		metadata.tool_name,
+		metadata.toolName
+	)
+end
+
+---@param part table
+---@param call_id string
+---@return boolean
+local function part_matches_call(part, call_id)
+	local part_call_id = part.callID or part.call_id or part.callId
+	return type(part_call_id) == "string" and part_call_id ~= "" and part_call_id == call_id
+end
+
+---@param message_id string|nil
+---@param call_id string|nil
+---@return table|nil
+local function find_tool_part(message_id, call_id)
+	if type(message_id) ~= "string" or message_id == "" or type(call_id) ~= "string" or call_id == "" then
+		return nil
+	end
+
+	local ok, sync = pcall(require, "opencode.sync")
+	if not ok or type(sync.get_parts) ~= "function" then
+		return nil
+	end
+
+	for _, part in ipairs(sync.get_parts(message_id)) do
+		if part_matches_call(part, call_id) then
+			return part
+		end
+	end
+
+	return nil
+end
+
+---@param permission_id string
+---@param perm_state table
+---@param tool_name string
+local function persist_tool_name(permission_id, perm_state, tool_name)
+	if tool_name == "" or perm_state.tool_name == tool_name then
+		return
+	end
+
+	local ok_state, permission_state = pcall(require, "opencode.permission.state")
+	if ok_state and type(permission_state.set_tool_name) == "function" then
+		permission_state.set_tool_name(permission_id, tool_name)
+	else
+		perm_state.tool_name = tool_name
+	end
+end
+
+---@param permission_id string
+---@param perm_state table
+---@return table
+local function resolve_tool_input(permission_id, perm_state)
+	local current = type(perm_state.tool_input) == "table" and perm_state.tool_input or {}
+	local part = find_tool_part(perm_state.message_id, perm_state.call_id)
+	if not part then
+		return current
+	end
+
+	persist_tool_name(permission_id, perm_state, extract_tool_name(part))
+
+	local fresh = extract_tool_input(part)
+	if not next(fresh) then
+		return current
+	end
+
+	local merged = vim.tbl_deep_extend("force", {}, current, fresh)
+	if not vim.deep_equal(current, merged) then
+		local ok_state, permission_state = pcall(require, "opencode.permission.state")
+		if ok_state and type(permission_state.merge_tool_input) == "function" then
+			permission_state.merge_tool_input(permission_id, fresh)
+		else
+			perm_state.tool_input = merged
+		end
+	end
+
+	return merged
+end
+
+---@param permission_id string
+---@param perm_state table
+---@return string
+local function resolve_tool_name(permission_id, perm_state)
+	local tool_name = first_non_empty(perm_state.tool_name)
+	if tool_name ~= "" then
+		return tool_name
+	end
+
+	local metadata = type(perm_state.metadata) == "table" and perm_state.metadata or {}
+	tool_name = first_non_empty(metadata.tool, metadata.tool_name, metadata.toolName)
+	if tool_name ~= "" then
+		persist_tool_name(permission_id, perm_state, tool_name)
+		return tool_name
+	end
+
+	local part = find_tool_part(perm_state.message_id, perm_state.call_id)
+	tool_name = extract_tool_name(part)
+	if tool_name ~= "" then
+		persist_tool_name(permission_id, perm_state, tool_name)
+		return tool_name
+	end
+
+	return ""
+end
+
+---@param permission_id string
+---@param perm_state table
+---@return string
+local function permission_header_title(permission_id, perm_state)
+	local tool_name = format_tool_name(resolve_tool_name(permission_id, perm_state))
+	return tool_name ~= "" and ("for " .. tool_name) or ""
 end
 
 -- Normalize filepath to cwd-relative or ~-prefixed
@@ -453,17 +704,19 @@ local function append_hint(result, option_count)
 end
 
 -- Get formatted lines for a pending permission
----@param _permission_id string
+---@param permission_id string
 ---@param perm_state table Permission state from permission/state.lua
 ---@return table lines, table highlights, OpenCodeWidgetMeta meta
-function M.get_lines_for_permission(_permission_id, perm_state)
+function M.get_lines_for_permission(permission_id, perm_state)
 	ensure_highlights()
 
 	local result = { lines = {}, highlights = {} }
-	local desc_lines = get_permission_description(perm_state.permission_type, perm_state.tool_input, perm_state)
+	local tool_input = resolve_tool_input(permission_id, perm_state)
+	local header_title = permission_header_title(permission_id, perm_state)
+	local desc_lines = get_permission_description(perm_state.permission_type, tool_input, perm_state)
 
 	add_panel_blank(result)
-	add_header(result, "", "pending")
+	add_header(result, header_title, "pending")
 	add_panel_blank(result)
 	append_description(result, desc_lines)
 	add_panel_blank(result)
@@ -499,18 +752,20 @@ function M.get_lines_for_permission(_permission_id, perm_state)
 end
 
 -- Get formatted lines for an approved permission
----@param _permission_id string
+---@param permission_id string
 ---@param perm_state table
 ---@return table lines, table highlights
-function M.get_approved_lines(_permission_id, perm_state)
+function M.get_approved_lines(permission_id, perm_state)
 	ensure_highlights()
 
 	local reply_suffix = perm_state.reply == "always" and "(always)" or "(once)"
 	local result = { lines = {}, highlights = {} }
-	local desc_lines = get_permission_description(perm_state.permission_type, perm_state.tool_input, perm_state)
+	local tool_input = resolve_tool_input(permission_id, perm_state)
+	local header_title = permission_header_title(permission_id, perm_state)
+	local desc_lines = get_permission_description(perm_state.permission_type, tool_input, perm_state)
 
 	add_panel_blank(result)
-	add_header(result, "", "approved", reply_suffix)
+	add_header(result, header_title, "approved", reply_suffix)
 	add_panel_blank(result)
 	append_description(result, desc_lines)
 	add_panel_blank(result)
@@ -520,17 +775,19 @@ function M.get_approved_lines(_permission_id, perm_state)
 end
 
 -- Get formatted lines for a rejected permission
----@param _permission_id string
+---@param permission_id string
 ---@param perm_state table
 ---@return table lines, table highlights
-function M.get_rejected_lines(_permission_id, perm_state)
+function M.get_rejected_lines(permission_id, perm_state)
 	ensure_highlights()
 
 	local result = { lines = {}, highlights = {} }
-	local desc_lines = get_permission_description(perm_state.permission_type, perm_state.tool_input, perm_state)
+	local tool_input = resolve_tool_input(permission_id, perm_state)
+	local header_title = permission_header_title(permission_id, perm_state)
+	local desc_lines = get_permission_description(perm_state.permission_type, tool_input, perm_state)
 
 	add_panel_blank(result)
-	add_header(result, "", "rejected")
+	add_header(result, header_title, "rejected")
 	add_panel_blank(result)
 	append_description(result, desc_lines)
 	add_panel_blank(result)

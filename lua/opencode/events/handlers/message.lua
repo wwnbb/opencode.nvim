@@ -79,6 +79,9 @@ function M.setup(events)
 		if not in_current_session and resolved_session_id then
 			in_current_session = resolved_session_id == current_session.id
 		end
+		if not in_current_session and resolved_session_id then
+			in_current_session = event_util.permission_session_is_relevant(current_session.id, resolved_session_id)
+		end
 
 		return in_current_session
 	end

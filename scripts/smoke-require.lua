@@ -123,6 +123,18 @@ local recent_errors = {}
 assert(event_util.mark_recent_error(recent_errors, "session\0error") == false, "first recent error was marked duplicate")
 assert(event_util.mark_recent_error(recent_errors, "session\0error") == true, "duplicate recent error was not detected")
 
+local render = require("opencode.ui.chat.render")
+local binary_line = "PAR1" .. string.char(0) .. "data"
+assert(render.sanitize_buffer_line(binary_line) == "PAR1<NUL>data", "NUL byte was not sanitized")
+local wrapped_binary = render.wrap_text_with_ranges(binary_line, 80)
+assert(wrapped_binary[1].text == "PAR1<NUL>data", "binary line did not wrap as sanitized text")
+local panel_result = { lines = {}, highlights = {} }
+assert(
+	pcall(render.add_panel_line, panel_result, binary_line, "Normal", { width = 40 }),
+	"panel line render failed on binary text"
+)
+assert(not panel_result.lines[1]:find(string.char(0), 1, true), "panel line kept a raw NUL byte")
+
 local setup_ok, setup_err = pcall(function()
 	local opencode = require("opencode")
 	opencode.setup({

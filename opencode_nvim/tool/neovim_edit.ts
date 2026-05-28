@@ -6,6 +6,33 @@ import { createTwoFilesPatch, diffLines } from "./diff"
 
 const schema = tool.schema
 
+// In opencode >=1.15.9, context.metadata() returns Effect<void> instead of void
+// (not wrapped in registry unlike ask). We attempt to run it if it's an Effect.
+// context.ask() now returns Promise<void> (wrapped via bridge.promise in registry).
+function callMetadata(context: any, input: any): void {
+  try {
+    const result = context.metadata(input)
+    // Effect objects have ._op field in effect library
+    // They are NOT thenable in effect v3+, so we can't await them directly
+    // This is a server-side issue (metadata not wrapped in registry.ts).
+    // Best we can do: ignore the Effect safely - metadata won't render before ask dialog,
+    // but it WILL be set by the ask metadata field which the server processes.
+    void result
+  } catch {
+    // ignore
+  }
+}
+
+async function callAsk(context: any, input: any): Promise<void> {
+  // In opencode >=1.15.9, ask returns Promise<void> via bridge.promise()
+  // In older versions it returned Effect<void> via bridge.run()
+  const result = context.ask(input)
+  if (result != null && typeof (result as any).then === "function") {
+    await (result as Promise<void>)
+  }
+  // If Effect without .then() - fire-and-forget, permission handled server-side
+}
+
 type Status = "applied" | "partial" | "rejected" | "failed"
 
 type FileState = {
@@ -119,7 +146,47 @@ function sameState(current: FileState, expected: FileState): boolean {
   return sameContent(current.content, expected.content)
 }
 
-function replaceExact(content: string, oldString: string, newString: string, replaceAll = false): string {
+function leadingWhitespace(line: string): string {
+  const match = line.match(/^[ \t]*/)
+  return match ? match[0] : ""
+}
+
+function assertNoAccidentalIndentRemoval(
+  filePath: string,
+  oldText: string,
+  newText: string,
+  allowIndentChange = false,
+) {
+  if (allowIndentChange) return
+
+  const oldLines = normalizeLineEndings(oldText).split("\n")
+  const newLines = normalizeLineEndings(newText).split("\n")
+  if (oldLines.length !== newLines.length) return
+
+  for (let index = 0; index < oldLines.length; index++) {
+    const oldLine = oldLines[index]
+    const newLine = newLines[index]
+    if (oldLine.trim() === "" || newLine.trim() === "") continue
+
+    const oldIndent = leadingWhitespace(oldLine)
+    const newIndent = leadingWhitespace(newLine)
+    if (oldIndent.length > 0 && newIndent.length === 0) {
+      throw new Error(
+        `Replacement appears to remove leading indentation in ${filePath} on replacement line ${index + 1}. ` +
+          "Include the original indentation in newString, or set allowIndentChange=true if this dedent is intentional.",
+      )
+    }
+  }
+}
+
+function replaceExact(
+  content: string,
+  oldString: string,
+  newString: string,
+  replaceAll = false,
+  allowIndentChange = false,
+  filePath = "file",
+): string {
   if (oldString === newString) {
     throw new Error("No changes to apply: oldString and newString are identical.")
   }
@@ -141,6 +208,7 @@ function replaceExact(content: string, oldString: string, newString: string, rep
         "Provide more surrounding lines in oldString to identify the correct match.",
     )
   }
+  assertNoAccidentalIndentRemoval(filePath, oldString, newString, allowIndentChange)
   if (replaceAll) return content.split(oldString).join(newString)
 
   return content.slice(0, first) + newString + content.slice(first + oldString.length)
@@ -222,6 +290,7 @@ export default tool({
     oldString: schema.string().describe("The exact text to replace"),
     newString: schema.string().describe("The replacement text"),
     replaceAll: schema.boolean().optional().describe("Replace all occurrences of oldString"),
+    allowIndentChange: schema.boolean().optional().describe("Allow replacement lines to remove leading indentation"),
   },
   async execute(args, context) {
     const filePath = resolveFilePath(context.directory, args.filePath)
@@ -236,7 +305,14 @@ export default tool({
     const ending = detectLineEnding(before.content)
     const oldString = convertToLineEnding(normalizeLineEndings(args.oldString), ending)
     const newString = convertToLineEnding(normalizeLineEndings(nextInput.content), ending)
-    const afterContent = replaceExact(before.content, oldString, newString, args.replaceAll)
+    const afterContent = replaceExact(
+      before.content,
+      oldString,
+      newString,
+      args.replaceAll,
+      args.allowIndentChange,
+      filePath,
+    )
     const after = { exists: true, content: afterContent, bom: desiredBom }
     const proposedDiff = makeDiff(filePath, before.content, after.content)
     const proposedStats = stats(before.content, after.content)
@@ -256,7 +332,7 @@ export default tool({
       status: "pending",
     }
 
-    context.metadata({
+    callMetadata(context, {
       title: relativePath,
       metadata: {
         opencode_native_diff: true,
@@ -272,7 +348,7 @@ export default tool({
 
     let approved = true
     try {
-      await context.ask({
+      await callAsk(context, {
         permission: "neovim_edit",
         patterns: [relativePath],
         always: ["*"],
