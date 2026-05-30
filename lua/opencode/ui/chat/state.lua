@@ -36,6 +36,8 @@ M.state = {
 	session_tabs_mouse_targets = {}, -- Float tab click targets: { start_col, end_col, target }
 	stream_blocks = {},     -- Streaming text blocks: { [message_id] = { start_line, end_line } }
 	spinner_footer_line = nil,
+	render_cache = nil,     -- Internal rendered block cache for stable chat content
+	last_render_highlight_signature = nil,
 	session_stack = {},     -- Stack of { id, name } for parent session navigation
 	navigating = false,     -- Compatibility flag for older callers; session actions carry navigation metadata
 	last_render_time = 0,

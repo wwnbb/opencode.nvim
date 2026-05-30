@@ -48,6 +48,9 @@ local store = {
 	part = {},          -- { [messageID] = { Part, ... } }
 	session_status = {}, -- { [sessionID] = { type = "idle" | "busy" } }
 	todo = {},          -- { [sessionID] = { Todo, ... } }
+	message_revision = {}, -- { [messageID] = number } internal render invalidation
+	part_revision = {}, -- { [messageID .. "\0" .. partID] = number } internal render invalidation
+	session_revision = {}, -- { [sessionID] = number } internal render invalidation
 	-- Provider/agent/model data (like TUI's sync.tsx)
 	provider = {},      -- Array of connected provider info
 	provider_default = {}, -- { [providerID] = default_modelID }
@@ -101,9 +104,70 @@ local function get_message_id(msg)
 	return msg.id
 end
 
+local find_message_session_id
+
+---@param message_id string|nil
+---@param part_id string|nil
+---@return string|nil
+local function part_revision_key(message_id, part_id)
+	if not message_id or not part_id then
+		return nil
+	end
+	return message_id .. "\0" .. part_id
+end
+
+---@param map table
+---@param key string|nil
+---@return number
+local function bump_revision(map, key)
+	if not key or key == "" then
+		return 0
+	end
+	local next_revision = (map[key] or 0) + 1
+	map[key] = next_revision
+	return next_revision
+end
+
+---@param session_id string|nil
+local function bump_session_revision(session_id)
+	bump_revision(store.session_revision, session_id)
+end
+
+---@param message_id string|nil
+---@param session_id string|nil
+local function bump_message_revision(message_id, session_id)
+	if not message_id or message_id == "" then
+		return
+	end
+	bump_revision(store.message_revision, message_id)
+	bump_session_revision(session_id or find_message_session_id(message_id))
+end
+
+---@param message_id string|nil
+---@param part_id string|nil
+---@param session_id string|nil
+local function bump_part_revision(message_id, part_id, session_id)
+	bump_message_revision(message_id, session_id)
+	bump_revision(store.part_revision, part_revision_key(message_id, part_id))
+end
+
+---@param message_id string|nil
+local function clear_message_revisions(message_id)
+	if not message_id then
+		return
+	end
+	store.message_revision[message_id] = nil
+	local prefix = message_id .. "\0"
+	for key in pairs(store.part_revision) do
+		if key:sub(1, #prefix) == prefix then
+			store.part_revision[key] = nil
+		end
+	end
+end
+
 -- Find owning session for a message ID.
 -- Returns sessionID string or nil.
-local function find_message_session_id(message_id)
+function find_message_session_id(message_id)
 	for session_id, messages in pairs(store.message) do
 		local result = binary_search(messages, message_id, get_message_id)
 		if result.found then
@@ -259,6 +323,7 @@ function M.handle_message_updated(info)
 	-- If no messages for this session, create array with this message
 	if not messages then
 		store.message[session_id] = { info }
+		bump_message_revision(info.id, session_id)
 		return
 	end
 
@@ -268,9 +333,11 @@ function M.handle_message_updated(info)
 	if result.found then
 		-- Update existing message (reconcile)
 		messages[result.index] = vim.tbl_deep_extend("force", messages[result.index], info)
+		bump_message_revision(info.id, session_id)
 	else
 		-- Insert new message at correct position (maintains sorted order)
 		table.insert(messages, result.index, info)
+		bump_message_revision(info.id, session_id)
 
 		-- Limit to 100 messages per session (like TUI)
 		if #messages > 100 then
@@ -278,6 +345,7 @@ function M.handle_message_updated(info)
 			table.remove(messages, 1)
 			-- Also remove parts for oldest message
 			store.part[oldest.id] = nil
+			clear_message_revisions(oldest.id)
 		end
 	end
 end
@@ -296,6 +364,8 @@ function M.handle_message_removed(session_id, message_id)
 		table.remove(messages, result.index)
 		-- Also remove parts
 		store.part[message_id] = nil
+		clear_message_revisions(message_id)
+		bump_session_revision(session_id)
 	end
 end
 
@@ -314,6 +384,7 @@ function M.handle_part_updated(part)
 	-- If no parts for this message, create array with this part
 	if not parts then
 		store.part[message_id] = { part }
+		bump_part_revision(message_id, part.id, part.sessionID)
 		return
 	end
 
@@ -335,6 +406,7 @@ function M.handle_part_updated(part)
 		-- Insert new part at correct position
 		table.insert(parts, result.index, part)
 	end
+	bump_part_revision(message_id, part.id, part.sessionID)
 end
 
 ---Handle message.part.delta event by appending streamed text to an existing part field.
@@ -375,6 +447,7 @@ function M.handle_part_delta(part_delta)
 		part.sessionID = part_delta.sessionID
 	end
 	append_part_delta(part, field, delta)
+	bump_part_revision(message_id, part_id, part.sessionID)
 	return part
 end
 
@@ -390,6 +463,7 @@ function M.handle_part_removed(message_id, part_id)
 	local result = binary_search(parts, part_id, get_part_id)
 	if result.found then
 		table.remove(parts, result.index)
+		bump_part_revision(message_id, part_id, find_message_session_id(message_id))
 	end
 end
 
@@ -435,6 +509,7 @@ end
 ---@param status table
 function M.handle_session_status(session_id, status)
 	store.session_status[session_id] = status
+	bump_session_revision(session_id)
 end
 
 ---Handle todo.updated event (mirrors TUI sync.tsx todo store updates)
@@ -450,6 +525,7 @@ function M.handle_todo_updated(session_id, todos)
 	end
 
 	store.todo[session_id] = vim.deepcopy(todos)
+	bump_session_revision(session_id)
 end
 
 ---Get messages for a session
@@ -481,6 +557,26 @@ end
 ---@return string|nil
 function M.find_message_session_id(message_id)
 	return find_message_session_id(message_id)
+end
+
+---@param session_id string
+---@return number
+function M.get_session_revision(session_id)
+	return store.session_revision[session_id] or 0
+end
+
+---@param message_id string
+---@return number
+function M.get_message_revision(message_id)
+	return store.message_revision[message_id] or 0
+end
+
+---@param message_id string
+---@param part_id string
+---@return number
+function M.get_part_revision(message_id, part_id)
+	local key = part_revision_key(message_id, part_id)
+	return key and store.part_revision[key] or 0
 end
 
 ---Get parts for a message
@@ -586,10 +682,12 @@ function M.clear_session(session_id)
 	local messages = store.message[session_id] or {}
 	for _, msg in ipairs(messages) do
 		store.part[msg.id] = nil
+		clear_message_revisions(msg.id)
 	end
 
 	-- Remove messages
 	store.message[session_id] = nil
+	store.session_revision[session_id] = nil
 
 	-- Remove status
 	store.session_status[session_id] = nil
@@ -604,8 +702,10 @@ function M.clear_session_messages(session_id)
 	local messages = store.message[session_id] or {}
 	for _, msg in ipairs(messages) do
 		store.part[msg.id] = nil
+		clear_message_revisions(msg.id)
 	end
 	store.message[session_id] = nil
+	bump_session_revision(session_id)
 end
 
 ---Clear all data
@@ -614,6 +714,9 @@ function M.clear_all()
 	store.part = {}
 	store.session_status = {}
 	store.todo = {}
+	store.message_revision = {}
+	store.part_revision = {}
+	store.session_revision = {}
 	store.provider = {}
 	store.provider_default = {}
 	store.agent = {}

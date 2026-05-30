@@ -120,6 +120,133 @@ local function get_config()
 	return vim.tbl_deep_extend("force", defaults, full_config.chat or {})
 end
 
+local RENDER_CACHE_MAX_BLOCKS = 300
+
+local function ensure_render_cache()
+	if type(state.render_cache) ~= "table" then
+		state.render_cache = { blocks = {}, order = {} }
+	end
+	state.render_cache.blocks = state.render_cache.blocks or {}
+	state.render_cache.order = state.render_cache.order or {}
+	return state.render_cache
+end
+
+local function clear_render_cache()
+	state.render_cache = { blocks = {}, order = {} }
+	state.last_render_highlight_signature = nil
+end
+
+local function render_cache_key(...)
+	local parts = {}
+	for i = 1, select("#", ...) do
+		parts[i] = tostring(select(i, ...) or "")
+	end
+	return table.concat(parts, "\0")
+end
+
+local function render_cache_get(key)
+	local cache = ensure_render_cache()
+	return cache.blocks[key]
+end
+
+local function render_cache_put(key, value)
+	if not key or not value then
+		return value
+	end
+	local cache = ensure_render_cache()
+	if cache.blocks[key] == nil then
+		table.insert(cache.order, key)
+	end
+	cache.blocks[key] = value
+	while #cache.order > RENDER_CACHE_MAX_BLOCKS do
+		local oldest = table.remove(cache.order, 1)
+		cache.blocks[oldest] = nil
+	end
+	return value
+end
+
+local function append_highlight_signature(parts, highlights, start_line)
+	if type(highlights) ~= "table" then
+		return
+	end
+	start_line = start_line or 0
+	for _, hl in ipairs(highlights) do
+		if type(hl) == "table" and hl.hl_group then
+			local line = start_line + (hl.line or 0)
+			local end_line = hl.end_line and (start_line + hl.end_line) or line
+			table.insert(
+				parts,
+				table.concat({
+					tostring(line),
+					tostring(end_line),
+					tostring(hl.col_start or 0),
+					tostring(hl.col_end or hl.end_col or ""),
+					tostring(hl.hl_group or ""),
+					tostring(hl.priority or ""),
+					tostring(hl.hl_eol or ""),
+				}, ":")
+			)
+		end
+	end
+end
+
+local function render_highlight_signature(content_highlights)
+	local parts = {}
+	append_highlight_signature(parts, content_highlights, 0)
+
+	local function append_line_map(line_map)
+		local keys = {}
+		for key in pairs(line_map or {}) do
+			table.insert(keys, key)
+		end
+		table.sort(keys, function(a, b)
+			return tostring(a) < tostring(b)
+		end)
+		for _, key in ipairs(keys) do
+			local pos = line_map[key]
+			append_highlight_signature(parts, pos and pos.highlights, pos and pos.start_line or 0)
+		end
+	end
+
+	for _, line_map in ipairs({ state.questions, state.permissions, state.edits, state.tasks, state.tools }) do
+		append_line_map(line_map)
+	end
+	return table.concat(parts, "|")
+end
+
+local function highlight_clear_start(changed_start, content_highlights)
+	local clear_start = changed_start or 0
+	local function consider(highlights, start_line)
+		local moved = false
+		if type(highlights) ~= "table" then
+			return moved
+		end
+		start_line = start_line or 0
+		for _, hl in ipairs(highlights) do
+			if type(hl) == "table" then
+				local line = start_line + (hl.line or 0)
+				local end_line = hl.end_line and (start_line + hl.end_line) or line
+				if line < clear_start and end_line >= clear_start then
+					clear_start = line
+					moved = true
+				end
+			end
+		end
+		return moved
+	end
+
+	local moved = true
+	while moved do
+		moved = consider(content_highlights, 0)
+		for _, line_map in ipairs({ state.questions, state.permissions, state.edits, state.tasks, state.tools }) do
+			for _, pos in pairs(line_map or {}) do
+				moved = consider(pos.highlights, pos.start_line or 0) or moved
+			end
+		end
+	end
+	return math.max(0, clear_start)
+end
+
 local session_tabs_refresh_autocmds_setup = false
 
 local function schedule_session_tabs_refresh()
@@ -1215,6 +1342,23 @@ local function is_widget_cursor_target(kind, pos)
 	return pos.status ~= "sent"
 end
 
+---@return number|nil min_line
+---@return number|nil max_line
+local function interactive_widget_bounds()
+	local min_line = nil
+	local max_line = nil
+	local widget_kinds = { "question", "permission", "edit" }
+	for _, kind in ipairs(widget_kinds) do
+		for _, pos in pairs(get_widget_positions(kind)) do
+			if is_widget_cursor_target(kind, pos) then
+				min_line = min_line and math.min(min_line, pos.start_line) or pos.start_line
+				max_line = max_line and math.max(max_line, pos.end_line) or pos.end_line
+			end
+		end
+	end
+	return min_line, max_line
+end
+
 ---@return OpenCodeWidgetCursorContext|nil
 local function capture_widget_cursor_context()
 	if not state.visible or not state.winid or not vim.api.nvim_win_is_valid(state.winid) then
@@ -1787,6 +1931,7 @@ function M.create()
 	state.bufnr = create_buffer()
 	state.local_notices = {}
 	state.stream_blocks = {}
+	clear_render_cache()
 
 	local events = require("opencode.events")
 
@@ -1912,6 +2057,7 @@ function M.create()
 			state.expanded_tools = {}
 			state.stream_blocks = {}
 			state.spinner_footer_line = nil
+			clear_render_cache()
 			if not preserve_cache or (changed_session and reason ~= "child_navigation") then
 				state.session_stack = {}
 			end
@@ -2313,6 +2459,7 @@ function M.clear()
 	state.spinner_footer_line = nil
 	state.last_render_time = 0
 	state.render_scheduled = false
+	clear_render_cache()
 
 	if spinner.is_active() then
 		spinner.stop()
@@ -2368,6 +2515,7 @@ function M.clear_session_view(session_id)
 	state.spinner_footer_line = nil
 	state.last_render_time = 0
 	state.render_scheduled = false
+	clear_render_cache()
 
 	M.schedule_render()
 end
@@ -2519,6 +2667,31 @@ function M.render()
 	local raw_lines = {}
 	local content_highlights = {}
 	local last_block_kind = nil -- "tool" | "non_tool"
+	local chat_width = render.get_chat_text_width()
+
+	local function cached_nui_lines(key, build)
+		local cached = key and render_cache_get(key)
+		if cached and cached.nui_lines then
+			return cached.nui_lines
+		end
+		local lines = build()
+		if key then
+			render_cache_put(key, { nui_lines = lines })
+		end
+		return lines
+	end
+
+	local function cached_render_result(key, build)
+		local cached = key and render_cache_get(key)
+		if cached and cached.result then
+			return cached.result
+		end
+		local result = build()
+		if key then
+			render_cache_put(key, { result = result })
+		end
+		return result
+	end
 
 	local function push_line(text, nui_line)
 		local safe_text = render.sanitize_buffer_line(text)
@@ -2991,7 +3164,22 @@ function M.render()
 		if tool_part.tool == "task" then
 			local is_expanded = state.expanded_tasks[tool_part.id] or false
 			local cached = state.task_child_cache[tool_part.id]
-			local result = chat_tasks.render_task_tool(tool_part, is_expanded, cached)
+			local cache_key = nil
+			if not is_expanded and not chat_tasks.is_animating_tool_part(tool_part) then
+				cache_key = render_cache_key(
+					"task",
+					current_session.id,
+					tool_part.messageID,
+					tool_part.id,
+					sync.get_message_revision(tool_part.messageID),
+					sync.get_part_revision(tool_part.messageID, tool_part.id),
+					chat_width,
+					is_expanded
+				)
+			end
+			local result = cached_render_result(cache_key, function()
+				return chat_tasks.render_task_tool(tool_part, is_expanded, cached)
+			end)
 			local base_line = add_render_result(result, "tool")
 			state.tasks[tool_part.id] = {
 				start_line = base_line,
@@ -3003,7 +3191,22 @@ function M.render()
 		end
 
 		local is_expanded = state.expanded_tools[tool_part.id] or false
-		local result = chat_tasks.render_regular_tool(tool_part, is_expanded)
+		local cache_key = nil
+		if not chat_tasks.is_animating_tool_part(tool_part) then
+			cache_key = render_cache_key(
+				"tool",
+				current_session.id,
+				tool_part.messageID,
+				tool_part.id,
+				sync.get_message_revision(tool_part.messageID),
+				sync.get_part_revision(tool_part.messageID, tool_part.id),
+				chat_width,
+				is_expanded
+			)
+		end
+		local result = cached_render_result(cache_key, function()
+			return chat_tasks.render_regular_tool(tool_part, is_expanded)
+		end)
 		local base_line = add_render_result(result, "tool")
 		state.tools[tool_part.id] = {
 			start_line = base_line,
@@ -3089,7 +3292,19 @@ function M.render()
 						table.insert(file_parts, part)
 					end
 				end
-				local msg_lines = render.render_user_message(content, message.agent, file_parts)
+				local msg_lines = cached_nui_lines(
+					render_cache_key(
+						"user",
+						current_session.id,
+						message.id,
+						sync.get_message_revision(message.id),
+						chat_width,
+						message.agent or ""
+					),
+					function()
+						return render.render_user_message(content, message.agent, file_parts)
+					end
+				)
 				for _, nl in ipairs(msg_lines) do
 					add_line(nl)
 				end
@@ -3130,15 +3345,44 @@ function M.render()
 				add_raw_line("")
 			else
 				-- Assistant message
-				for _, part in ipairs(parts) do
+				for part_idx, part in ipairs(parts) do
 					if part.type == "reasoning" and part.text and part.text ~= "" and thinking.is_enabled() then
-						local reasoning_lines = render.render_reasoning(part.text)
+						local cache_key = nil
+						if not incomplete_assistant then
+							cache_key = render_cache_key(
+								"reasoning",
+								current_session.id,
+								message.id,
+								part.id or part_idx,
+								sync.get_message_revision(message.id),
+								sync.get_part_revision(message.id, part.id),
+								chat_width
+							)
+						end
+						local reasoning_lines = cached_nui_lines(cache_key, function()
+							return render.render_reasoning(part.text)
+						end)
 						for _, nl in ipairs(reasoning_lines) do
 							add_line(nl)
 						end
 					elseif part.type == "text" and part.text and part.text ~= "" then
 						local content_start = #raw_lines
-						local content_lines = render.render_content(part.text, { stream_plain = render_as_plain_stream })
+						local cache_key = nil
+						if not incomplete_assistant then
+							cache_key = render_cache_key(
+								"text",
+								current_session.id,
+								message.id,
+								part.id or part_idx,
+								sync.get_message_revision(message.id),
+								sync.get_part_revision(message.id, part.id),
+								chat_width,
+								render_as_plain_stream
+							)
+						end
+						local content_lines = cached_nui_lines(cache_key, function()
+							return render.render_content(part.text, { stream_plain = render_as_plain_stream })
+						end)
 						add_nui_lines(content_lines)
 						if incomplete_assistant and #content_lines > 0 then
 							next_stream_blocks[message.id] = {
@@ -3433,16 +3677,19 @@ function M.do_render()
 	local new_lines, nui_lines, content_highlights = M.render()
 	chat_todos.update_window()
 	resume_render_animation_timers()
+	local highlight_signature = render_highlight_signature(content_highlights)
 
-	local function apply_render_highlights()
+	local function apply_render_highlights(changed_start)
 		if not state.bufnr or not vim.api.nvim_buf_is_valid(state.bufnr) then
 			return
 		end
 
 		local buf_line_count = vim.api.nvim_buf_line_count(state.bufnr)
-		vim.api.nvim_buf_clear_namespace(state.bufnr, chat_hl_ns, 0, -1)
+		local clear_start = highlight_clear_start(changed_start or 0, content_highlights)
+		vim.api.nvim_buf_clear_namespace(state.bufnr, chat_hl_ns, clear_start, -1)
 
-		for i, nui_line in ipairs(nui_lines) do
+		for i = clear_start + 1, #nui_lines do
+			local nui_line = nui_lines[i]
 			if i <= buf_line_count then
 				nui_line:highlight(state.bufnr, chat_hl_ns, i)
 			end
@@ -3452,6 +3699,7 @@ function M.do_render()
 			for _, pos in pairs(line_map) do
 				if pos.highlights then
 					render.apply_extmark_highlights(state.bufnr, chat_hl_ns, pos.highlights, pos.start_line, {
+						min_line = clear_start,
 						max_line = buf_line_count,
 					})
 				end
@@ -3463,7 +3711,11 @@ function M.do_render()
 		apply_widget_extmarks(state.edits)
 		apply_widget_extmarks(state.tasks)
 		apply_widget_extmarks(state.tools)
-		render.apply_extmark_highlights(state.bufnr, chat_hl_ns, content_highlights, 0, { max_line = buf_line_count })
+		render.apply_extmark_highlights(state.bufnr, chat_hl_ns, content_highlights, 0, {
+			min_line = clear_start,
+			max_line = buf_line_count,
+		})
+		state.last_render_highlight_signature = highlight_signature
 	end
 
 	if #new_lines == 0 or #nui_lines == 0 then
@@ -3471,6 +3723,7 @@ function M.do_render()
 		vim.api.nvim_buf_set_lines(state.bufnr, 0, -1, false, new_lines)
 		vim.api.nvim_buf_clear_namespace(state.bufnr, chat_hl_ns, 0, -1)
 		vim.bo[state.bufnr].modifiable = false
+		state.last_render_highlight_signature = nil
 		if apply_widget_focus_cursor() then
 			vim.cmd("redraw")
 		end
@@ -3491,7 +3744,9 @@ function M.do_render()
 
 	if first_diff == nil then
 		if #old_lines == #new_lines then
-			apply_render_highlights()
+			if state.last_render_highlight_signature ~= highlight_signature then
+				apply_render_highlights(0)
+			end
 			if apply_widget_focus_cursor() then
 				vim.cmd("redraw")
 			end
@@ -3513,7 +3768,7 @@ function M.do_render()
 	vim.bo[state.bufnr].modifiable = true
 	vim.api.nvim_buf_set_lines(state.bufnr, first_diff, -1, false, replacement)
 
-	apply_render_highlights()
+	apply_render_highlights(first_diff)
 	vim.bo[state.bufnr].modifiable = false
 
 	if apply_widget_focus_cursor() then
@@ -3555,6 +3810,17 @@ function M.clear_streaming_state() end
 -- ─── Cross-domain key routers ─────────────────────────────────────────────────
 
 function M.sync_widget_selection_from_cursor()
+	if not state.winid or not vim.api.nvim_win_is_valid(state.winid) then
+		return
+	end
+	local min_line, max_line = interactive_widget_bounds()
+	if not min_line or not max_line then
+		return
+	end
+	local cursor_line = vim.api.nvim_win_get_cursor(state.winid)[1] - 1
+	if cursor_line < min_line or cursor_line > max_line then
+		return
+	end
 	chat_questions.sync_selected_option_from_cursor()
 	chat_permissions.sync_selected_option_from_cursor()
 	chat_edits.sync_selected_file_from_cursor()
