@@ -61,6 +61,33 @@ local function tick_task_anim_frame()
 	end
 end
 
+local ANIMATED_REGULAR_TOOLS = {
+	bash = true,
+	read = true,
+	skill = true,
+	glob = true,
+	grep = true,
+}
+
+---@param tool_name string|nil
+---@return boolean
+local function is_animated_regular_tool(tool_name)
+	return ANIMATED_REGULAR_TOOLS[tool_name] == true or chat_todos.is_todo_tool(tool_name)
+end
+
+---@param tool_part table|nil
+---@return boolean
+function M.is_animating_tool_part(tool_part)
+	if type(tool_part) ~= "table" then
+		return false
+	end
+	local status = tool_part.state and tool_part.state.status or "pending"
+	if tool_part.tool == "task" then
+		return is_task_working(status)
+	end
+	return is_animated_regular_tool(tool_part.tool) and is_task_working(status)
+end
+
 function M.stop_task_animation_timer()
 	if not state.task_anim_timer then
 		return
@@ -76,32 +103,12 @@ end
 
 function M.has_active_task_rows()
 	for _, pos in pairs(state.tasks) do
-		local status = pos
-			and pos.tool_part
-			and pos.tool_part.state
-			and pos.tool_part.state.status
-			or "pending"
-		if is_task_working(status) then
+		if M.is_animating_tool_part(pos and pos.tool_part) then
 			return true
 		end
 	end
 	for _, pos in pairs(state.tools) do
-		local tool_part = pos and pos.tool_part
-		local is_animated_tool = tool_part
-			and (
-				tool_part.tool == "bash"
-				or tool_part.tool == "read"
-				or tool_part.tool == "skill"
-				or tool_part.tool == "glob"
-				or tool_part.tool == "grep"
-				or chat_todos.is_todo_tool(tool_part.tool)
-			)
-		local status = tool_part
-			and is_animated_tool
-			and tool_part.state
-			and tool_part.state.status
-			or "pending"
-		if is_animated_tool and (status == "pending" or status == "running") then
+		if M.is_animating_tool_part(pos and pos.tool_part) then
 			return true
 		end
 	end
@@ -137,7 +144,9 @@ function M.start_task_animation_timer()
 			end
 
 			tick_task_anim_frame()
-			require("opencode.ui.chat.render_coordinator").request({ kind = "task_animation" })
+			if M.update_active_animations_in_place() then
+				vim.cmd("redraw")
+			end
 		end)
 	)
 end
@@ -960,6 +969,165 @@ end
 
 local function apply_result_highlights(result, pos)
 	render.apply_extmark_highlights(state.bufnr, chat_hl_ns, result.highlights, pos.start_line)
+end
+
+---@return number|nil top_line
+---@return number|nil bottom_line
+local function get_visible_line_range()
+	if not state.winid or not vim.api.nvim_win_is_valid(state.winid) then
+		return nil, nil
+	end
+	local ok, top, bottom = pcall(vim.api.nvim_win_call, state.winid, function()
+		return vim.fn.line("w0") - 1, vim.fn.line("w$") - 1
+	end)
+	if not ok then
+		return nil, nil
+	end
+	return top, bottom
+end
+
+---@param pos table|nil
+---@param top_line number|nil
+---@param bottom_line number|nil
+---@return boolean
+local function block_is_visible(pos, top_line, bottom_line)
+	if not pos or type(pos.start_line) ~= "number" or type(pos.end_line) ~= "number" then
+		return false
+	end
+	if top_line == nil or bottom_line == nil then
+		return true
+	end
+	return pos.end_line >= top_line and pos.start_line <= bottom_line
+end
+
+---@param highlights table[]|nil
+---@return string
+local function highlight_signature(highlights)
+	if type(highlights) ~= "table" then
+		return ""
+	end
+	local parts = {}
+	for _, hl in ipairs(highlights) do
+		if type(hl) == "table" then
+			table.insert(
+				parts,
+				table.concat({
+					tostring(hl.line or 0),
+					tostring(hl.end_line or ""),
+					tostring(hl.col_start or 0),
+					tostring(hl.col_end or hl.end_col or ""),
+					tostring(hl.hl_group or ""),
+					tostring(hl.priority or ""),
+					tostring(hl.hl_eol or ""),
+				}, ":")
+			)
+		end
+	end
+	return table.concat(parts, "|")
+end
+
+---@param pos table
+---@param result table
+---@return boolean updated
+local function update_block_lines_in_place(pos, result)
+	if not state.bufnr or not vim.api.nvim_buf_is_valid(state.bufnr) then
+		return false
+	end
+	local new_lines = result.lines or {}
+	local old_count = pos.end_line - pos.start_line + 1
+	if old_count ~= #new_lines then
+		return false
+	end
+
+	local old_lines = vim.api.nvim_buf_get_lines(state.bufnr, pos.start_line, pos.end_line + 1, false)
+	local changed = false
+	for i, line in ipairs(new_lines) do
+		if old_lines[i] ~= line then
+			changed = true
+			break
+		end
+	end
+
+	local old_highlight_signature = highlight_signature(pos.highlights)
+	local new_highlight_signature = highlight_signature(result.highlights)
+	if not changed and old_highlight_signature == new_highlight_signature then
+		return false
+	end
+
+	vim.bo[state.bufnr].modifiable = true
+	if changed then
+		local range_start = nil
+		local replacement = {}
+		local function flush_range(before_index)
+			if not range_start then
+				return
+			end
+			vim.api.nvim_buf_set_lines(
+				state.bufnr,
+				pos.start_line + range_start - 1,
+				pos.start_line + before_index - 1,
+				false,
+				replacement
+			)
+			range_start = nil
+			replacement = {}
+		end
+
+		for i, line in ipairs(new_lines) do
+			if old_lines[i] ~= line then
+				range_start = range_start or i
+				table.insert(replacement, line)
+			else
+				flush_range(i)
+			end
+		end
+		flush_range(#new_lines + 1)
+	end
+
+	vim.api.nvim_buf_clear_namespace(state.bufnr, chat_hl_ns, pos.start_line, pos.end_line + 1)
+	apply_result_highlights(result, pos)
+	vim.bo[state.bufnr].modifiable = false
+	pos.highlights = result.highlights
+	return true
+end
+
+---@return boolean updated
+function M.update_active_animations_in_place()
+	if not state.visible or not state.bufnr or not vim.api.nvim_buf_is_valid(state.bufnr) then
+		return false
+	end
+	local top_line, bottom_line = get_visible_line_range()
+	local updated = false
+
+	for part_id, pos in pairs(state.tasks) do
+		if M.is_animating_tool_part(pos and pos.tool_part) and block_is_visible(pos, top_line, bottom_line) then
+			local result = M.render_task_tool(
+				pos.tool_part,
+				state.expanded_tasks[part_id] or false,
+				state.task_child_cache[part_id]
+			)
+			if #result.lines ~= (pos.end_line - pos.start_line + 1) then
+				M.rerender_task(part_id)
+				updated = true
+			else
+				updated = update_block_lines_in_place(pos, result) or updated
+			end
+		end
+	end
+
+	for part_id, pos in pairs(state.tools) do
+		if M.is_animating_tool_part(pos and pos.tool_part) and block_is_visible(pos, top_line, bottom_line) then
+			local result = M.render_regular_tool(pos.tool_part, state.expanded_tools[part_id] or false)
+			if #result.lines ~= (pos.end_line - pos.start_line + 1) then
+				M.rerender_tool(part_id)
+				updated = true
+			else
+				updated = update_block_lines_in_place(pos, result) or updated
+			end
+		end
+	end
+
+	return updated
 end
 
 local function shift_all_after(anchor_start, delta, skip_task_id, skip_tool_id)
