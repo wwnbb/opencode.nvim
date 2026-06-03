@@ -19,13 +19,156 @@ local check_existing_server
 
 -- Default configuration
 M.opts = {
+	command = "opencode",
 	auto_start = true,
 	startup_timeout = 10000,
 	health_check_interval = 1000,
 	shutdown_on_exit = true,
 	reuse_running = true,
+	use_shell_env = true,
+	env = {},
 	config_dir = nil,
 }
+
+local shell_env_cache = nil
+
+local function parse_env_output(output)
+	local env = {}
+	if type(output) ~= "string" or output == "" then
+		return env
+	end
+
+	for line in output:gmatch("[^\r\n]+") do
+		local key, value = line:match("^([%w_]+)=(.*)$")
+		if key then
+			env[key] = value
+		end
+	end
+
+	return env
+end
+
+local function load_shell_env()
+	if M.opts.use_shell_env == false then
+		return {}
+	end
+	if shell_env_cache then
+		return shell_env_cache
+	end
+
+	local shell = os.getenv("SHELL") or vim.o.shell or "/bin/sh"
+	local shell_name = vim.fn.fnamemodify(shell, ":t")
+	local flag = (shell_name == "bash" or shell_name == "zsh") and "-lic" or "-lc"
+	local ok, output = pcall(vim.fn.system, { shell, flag, "env" })
+	if not ok or vim.v.shell_error ~= 0 then
+		shell_env_cache = {}
+		return shell_env_cache
+	end
+
+	shell_env_cache = parse_env_output(output)
+	return shell_env_cache
+end
+
+local function prepend_path(path, dir)
+	if type(dir) ~= "string" or dir == "" then
+		return path or ""
+	end
+
+	local parts = {}
+	local seen = {}
+	local function add(part)
+		if part and part ~= "" and not seen[part] then
+			seen[part] = true
+			table.insert(parts, part)
+		end
+	end
+
+	add(dir)
+	for part in tostring(path or ""):gmatch("[^:]+") do
+		add(part)
+	end
+
+	return table.concat(parts, ":")
+end
+
+local function env_value(env, key)
+	local value = env[key]
+	if value == nil or value == vim.NIL then
+		return nil
+	end
+	return tostring(value)
+end
+
+local function promote_toolchain_bins(env)
+	local path = env_value(env, "PATH") or os.getenv("PATH") or ""
+	local volta_home = env_value(env, "VOLTA_HOME")
+	local bun_install = env_value(env, "BUN_INSTALL")
+	local nvm_bin = env_value(env, "NVM_BIN")
+
+	if volta_home and volta_home ~= "" then
+		path = prepend_path(path, volta_home .. "/bin")
+	end
+	if bun_install and bun_install ~= "" then
+		path = prepend_path(path, bun_install .. "/bin")
+	end
+	if nvm_bin and nvm_bin ~= "" then
+		path = prepend_path(path, nvm_bin)
+	end
+
+	env.PATH = path
+end
+
+local function build_server_env()
+	local env = vim.tbl_extend(
+		"force",
+		vim.fn.environ(),
+		load_shell_env(),
+		type(M.opts.env) == "table" and M.opts.env or {},
+		{
+			OPENCODE_SERVER_USERNAME = M.opts.auth and M.opts.auth.username,
+			OPENCODE_SERVER_PASSWORD = M.opts.auth and M.opts.auth.password,
+			OPENCODE_CONFIG_DIR = M.opts.config_dir,
+		}
+	)
+
+	for key, value in pairs(env) do
+		if value == vim.NIL then
+			env[key] = nil
+		end
+	end
+
+	promote_toolchain_bins(env)
+
+	for key, value in pairs(env) do
+		if value ~= nil then
+			env[key] = tostring(value)
+		end
+	end
+
+	return env
+end
+
+local function resolve_command(command, env)
+	command = command or "opencode"
+	if command:find("/", 1, true) then
+		return command
+	end
+
+	local path = env and env.PATH or os.getenv("PATH") or ""
+	for dir in path:gmatch("[^:]+") do
+		local candidate = dir .. "/" .. command
+		if vim.fn.executable(candidate) == 1 then
+			return candidate
+		end
+	end
+
+	local exepath = vim.fn.exepath(command)
+	if exepath and exepath ~= "" then
+		return exepath
+	end
+
+	return command
+end
 
 -- Check if OpenCode server is already running at configured host:port
 check_existing_server = function(callback)
@@ -79,10 +222,11 @@ end
 -- Start OpenCode server process
 local function spawn_server(callback)
 	local host = state.get_server_info().host
+	local env = build_server_env()
 
 	-- Build opencode serve command
 	-- Use --port (without a value) to let opencode pick an available port
-	local cmd = "opencode"
+	local cmd = resolve_command(M.opts.command, env)
 	local args = {
 		"serve",
 		"--hostname",
@@ -99,13 +243,7 @@ local function spawn_server(callback)
 	server_job = Job:new({
 		command = cmd,
 		args = args,
-		env = vim.tbl_extend("force", vim.fn.environ(), {
-			-- Pass through any auth env vars if configured
-			OPENCODE_SERVER_USERNAME = M.opts.auth and M.opts.auth.username,
-			OPENCODE_SERVER_PASSWORD = M.opts.auth and M.opts.auth.password,
-			-- Pass through config directory if configured
-			OPENCODE_CONFIG_DIR = M.opts.config_dir,
-		}),
+		env = env,
 		on_stdout = function(_, data)
 			if data then
 				-- Try to parse server URL from output
@@ -442,6 +580,7 @@ end
 function M.setup(opts)
 	opts = opts or {}
 	M.opts = vim.tbl_deep_extend("force", M.opts, opts)
+	shell_env_cache = nil
 
 	-- Store auth in opts for spawn_server
 	if opts.auth then
