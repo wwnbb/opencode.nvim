@@ -144,8 +144,8 @@ function M.start_task_animation_timer()
 			end
 
 			tick_task_anim_frame()
-			if M.update_active_animations_in_place() then
-				vim.cmd("redraw")
+			if not M.update_animation_frames_in_place() then
+				M.update_active_animations_in_place()
 			end
 		end)
 	)
@@ -1310,6 +1310,106 @@ function M.handle_tool_toggle(part_id)
 		state.expanded_tools[part_id] = true
 	end
 	M.rerender_tool(part_id)
+end
+
+-- ─── Frame-only animation update (fast path) ──────────────────────────────────
+
+---Update spinner frame characters in-place using nvim_buf_set_text.
+---Avoids full redraw and extmark re-apply. Falls back to
+---update_active_animations_in_place() when frame positions cannot be found.
+---@return boolean true if any frame character was updated
+function M.update_animation_frames_in_place()
+	if not state.visible or not state.bufnr or not vim.api.nvim_buf_is_valid(state.bufnr) then
+		return false
+	end
+
+	local top_line, bottom_line = get_visible_line_range()
+	if top_line == nil or bottom_line == nil then
+		return false
+	end
+
+	local updated = false
+	local task_frame = TASK_ANIM_FRAMES[state.task_anim_frame] or TASK_ANIM_FRAMES[1]
+	local classic_frames = { "|", "/", "-", "\\" }
+	local classic_frame = classic_frames[state.task_anim_frame] or classic_frames[1]
+
+	local bufnr = state.bufnr
+	local buf_lines = vim.api.nvim_buf_line_count(bufnr)
+
+	vim.bo[bufnr].modifiable = true
+
+	-- Update task blocks: header frame at col 0, and "  ↳ " summary frames
+	for _, pos in pairs(state.tasks) do
+		if pos and M.is_animating_tool_part(pos.tool_part)
+			and block_is_visible(pos, top_line, bottom_line)
+			and pos.start_line >= 0 and pos.start_line < buf_lines then
+
+			local line_text = vim.api.nvim_buf_get_lines(bufnr, pos.start_line, pos.start_line + 1, false)[1]
+			if line_text and #line_text > 0 then
+				local first_char = vim.fn.strcharpart(line_text, 0, 1)
+				for _, tf in ipairs(TASK_ANIM_FRAMES) do
+					if first_char == tf then
+						vim.api.nvim_buf_set_text(bufnr, pos.start_line, 0, pos.start_line, #first_char, { task_frame })
+						updated = true
+						break
+					end
+				end
+			end
+
+			-- Scan summary lines for "  ↳ " prefix with task frame
+			for line_nr = pos.start_line + 1, math.min(pos.end_line, buf_lines - 1) do
+				local line = vim.api.nvim_buf_get_lines(bufnr, line_nr, line_nr + 1, false)[1]
+				if line and #line > 0 then
+					local prefix_chars = vim.fn.strcharpart(line, 0, 4)
+					if prefix_chars == "  ↳ " then
+						local fifth_char = vim.fn.strcharpart(line, 4, 1)
+						for _, tf in ipairs(TASK_ANIM_FRAMES) do
+							if fifth_char == tf then
+								local byte_offset = #vim.fn.strcharpart(line, 0, 4)
+								vim.api.nvim_buf_set_text(bufnr, line_nr, byte_offset, line_nr, byte_offset + #fifth_char, { task_frame })
+								updated = true
+								break
+							end
+						end
+					end
+				end
+			end
+		end
+	end
+
+	-- Update regular tool blocks: classic spinner at end of header line
+	for _, pos in pairs(state.tools) do
+		if pos and M.is_animating_tool_part(pos.tool_part)
+			and block_is_visible(pos, top_line, bottom_line) then
+
+			local block_updated = false
+			local candidates = { pos.start_line + 1, pos.start_line }
+			for _, line_nr in ipairs(candidates) do
+				if block_updated then break end
+				if line_nr >= 0 and line_nr < buf_lines then
+					local line = vim.api.nvim_buf_get_lines(bufnr, line_nr, line_nr + 1, false)[1]
+					if line and #line > 0 then
+						local char_count = vim.fn.strchars(line)
+						if char_count > 0 then
+							local last_char = vim.fn.strcharpart(line, char_count - 1, 1)
+							for _, cf in ipairs(classic_frames) do
+								if last_char == cf then
+									local byte_offset = #vim.fn.strcharpart(line, 0, char_count - 1)
+									vim.api.nvim_buf_set_text(bufnr, line_nr, byte_offset, line_nr, byte_offset + #last_char, { classic_frame })
+									block_updated = true
+									updated = true
+									break
+								end
+							end
+						end
+					end
+				end
+			end
+		end
+	end
+
+	vim.bo[bufnr].modifiable = false
+	return updated
 end
 
 return M
