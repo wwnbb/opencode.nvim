@@ -1964,6 +1964,7 @@ function M.create()
 			M.add_message(data.role or "system", data.content or "", {
 				kind = data.kind,
 				session_id = data.session_id,
+				child_session_id = data.child_session_id,
 				render = false,
 			})
 		end)
@@ -2356,6 +2357,7 @@ function M.add_message(role, content, opts)
 		session_id = opts.session_id,
 		agent = opts.agent,
 		kind = opts.kind,
+		child_session_id = opts.child_session_id,
 		optimistic = opts.optimistic,
 		tool_calls = opts.tool_calls,
 	}
@@ -2803,6 +2805,7 @@ function M.render()
 	local rendered_question_ids = {}
 	local rendered_perm_ids = {}
 	local rendered_edit_ids = {}
+	local rendered_local_notice_ids = {}
 	local next_stream_blocks = {}
 	state.spinner_footer_line = nil
 	local widget_order = {
@@ -2950,6 +2953,88 @@ function M.render()
 				if should_render_session_widget(item.data.session_id, item.data.status) then
 					render_single_edit(item.data)
 				end
+			end
+		end
+	end
+
+	local function render_session_error_notice(notice)
+		ensure_session_error_highlights()
+		local result = { lines = {}, highlights = {} }
+		render.add_panel_line(result, notice.content, "OpenCodeSessionError", {
+			prefix_hl_group = "OpenCodeSessionErrorBorder",
+		})
+		local base_line = add_render_result(result, "non_tool")
+		append_relative_highlights(result.highlights, base_line)
+	end
+
+	local function render_child_session_widgets_for_task(tool_part)
+		local child_session_id = event_util.resolve_task_child_session_id(tool_part)
+		if type(child_session_id) ~= "string" or child_session_id == "" then
+			return
+		end
+		local widget_items = {}
+
+		for _, qstate in ipairs(question_state.get_all()) do
+			local qid = qstate.request_id
+			if
+				qstate.session_id == child_session_id
+				and qid
+				and not rendered_question_ids[qid]
+				and should_render_session_widget(qstate.session_id, qstate.status)
+			then
+				table.insert(widget_items, {
+					kind = "question",
+					id = qid,
+					timestamp = qstate.timestamp or 0,
+					data = qstate,
+				})
+			end
+		end
+
+		for _, pstate in ipairs(permission_state.get_all()) do
+			local pid = pstate.permission_id
+			if
+				pstate.session_id == child_session_id
+				and pid
+				and not rendered_perm_ids[pid]
+				and should_render_session_widget(pstate.session_id, pstate.status)
+			then
+				table.insert(widget_items, {
+					kind = "permission",
+					id = pid,
+					timestamp = pstate.timestamp or 0,
+					data = pstate,
+				})
+			end
+		end
+
+		for _, estate in ipairs(edit_state.get_all_for_session(child_session_id)) do
+			local eid = estate.permission_id
+			if
+				eid
+				and not rendered_edit_ids[eid]
+				and should_render_session_widget(estate.session_id, estate.status)
+			then
+				table.insert(widget_items, {
+					kind = "edit",
+					id = eid,
+					timestamp = estate.timestamp or 0,
+					data = estate,
+				})
+			end
+		end
+
+		render_widget_items(widget_items)
+
+		for _, notice in ipairs(state.local_notices) do
+			if
+				notice.kind == "session_error"
+				and notice.child_session_id == child_session_id
+				and not rendered_local_notice_ids[notice.id]
+			then
+				rendered_local_notice_ids[notice.id] = true
+				render_session_error_notice(notice)
+				add_raw_line("")
 			end
 		end
 	end
@@ -3402,6 +3487,9 @@ function M.render()
 							render_tool_part(part)
 						end
 						render_widgets_for_tool_call(message.id, part.callID)
+						if part.tool == "task" then
+							render_child_session_widgets_for_task(part)
+						end
 					end
 				end
 
@@ -3445,6 +3533,9 @@ function M.render()
 
 	-- Local notices (legacy user/system notices not backed by server state)
 	for _, message in ipairs(state.local_notices) do
+		if message.id and rendered_local_notice_ids[message.id] then
+			goto continue_local_message
+		end
 		if message.session_id and current_session.id and message.session_id ~= current_session.id then
 			goto continue_local_message
 		end
@@ -3473,13 +3564,7 @@ function M.render()
 		local has_content = message.content and message.content ~= ""
 		if has_content then
 			if message.kind == "session_error" then
-				ensure_session_error_highlights()
-				local result = { lines = {}, highlights = {} }
-				render.add_panel_line(result, message.content, "OpenCodeSessionError", {
-					prefix_hl_group = "OpenCodeSessionErrorBorder",
-				})
-				local base_line = add_render_result(result, "non_tool")
-				append_relative_highlights(result.highlights, base_line)
+				render_session_error_notice(message)
 			else
 				local content_lines = render.render_content(message.content)
 				add_nui_lines(content_lines)

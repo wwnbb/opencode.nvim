@@ -8,6 +8,31 @@ local session_util = require("opencode.util.session")
 local hl_ns = vim.api.nvim_create_namespace("opencode_float")
 local OVERLAY_ZINDEX = 80
 
+local function normalize_custom_keys(opts)
+	local keys = {}
+	if type(opts.custom_keys) == "table" then
+		for _, custom_key in ipairs(opts.custom_keys) do
+			if type(custom_key) == "table" and custom_key.key and custom_key.on_key then
+				table.insert(keys, custom_key)
+			end
+		end
+	end
+	if type(opts.custom_key) == "table" and opts.custom_key.key and opts.custom_key.on_key then
+		table.insert(keys, opts.custom_key)
+	end
+	return keys
+end
+
+local function custom_key_footer_text(custom_keys)
+	local labels = {}
+	for _, custom_key in ipairs(custom_keys) do
+		if custom_key.text and custom_key.text ~= "" then
+			table.insert(labels, custom_key.text)
+		end
+	end
+	return table.concat(labels, "  ")
+end
+
 local function focus_chat_if_visible()
 	local ok, chat = pcall(require, "opencode.ui.chat")
 	if not ok then
@@ -129,6 +154,7 @@ function M.create_centered_popup(opts)
 	local popup = Popup({
 		enter = opts.enter ~= false,
 		focusable = opts.focusable ~= false,
+		zindex = opts.zindex,
 		border = {
 			style = opts.border or "rounded",
 			text = opts.title and {
@@ -256,6 +282,7 @@ end
 -- Create menu/selection popup (basic version for backwards compatibility)
 function M.create_menu(items, on_select, opts)
 	opts = opts or {}
+	local custom_keys = normalize_custom_keys(opts)
 
 	local width = opts.width or 40
 	local height = math.min(#items + 2, 20)
@@ -263,8 +290,8 @@ function M.create_menu(items, on_select, opts)
 	local total_height = height + 2
 	local relative, row, col, zindex = resolve_centered_placement(total_width, total_height)
 	local footer_text = opts.footer_text
-	if not footer_text and opts.custom_key then
-		footer_text = " ↑↓/j,k:navigate  ⏎:select  " .. (opts.custom_key.text or "") .. "  esc:close "
+	if not footer_text and #custom_keys > 0 then
+		footer_text = " ↑↓/j,k:navigate  ⏎:select  " .. custom_key_footer_text(custom_keys) .. "  esc:close "
 	end
 
 	local popup = Popup({
@@ -399,15 +426,18 @@ function M.create_menu(items, on_select, opts)
 		end, opts_map)
 	end
 
-	if opts.custom_key and opts.custom_key.key and opts.custom_key.on_key then
-		vim.keymap.set("n", opts.custom_key.key, function()
+	for _, custom_key in ipairs(custom_keys) do
+		vim.keymap.set("n", custom_key.key, function()
 			local cursor = vim.api.nvim_win_get_cursor(0)
 			local idx = cursor[1]
 			if not items[idx] then
 				return
 			end
 
-			local keep_open = opts.custom_key.on_key(items[idx], idx, render_items)
+			local keep_open = custom_key.on_key(items[idx], idx, render_items, close)
+			if is_closed then
+				return
+			end
 			if keep_open == false then
 				close()
 				return
@@ -528,11 +558,12 @@ end
 -- Create interactive searchable menu with fuzzy filtering
 -- items: array of { label, value, description?, group?, priority? }
 -- on_select: function(item|items) called when item is selected, or with selected items when multi_select is true
--- custom_key: { key, on_key, text? } custom hotkey config; on_key(item, render) returns true to keep menu open
--- opts: { title?, width?, placeholder?, groups?, custom_key?, close_on_select?, multi_select?, confirm_label? }
+-- custom_key: { key, on_key, text? } custom hotkey config; on_key(item, render, close) returns true to keep menu open
+-- custom_keys: array of custom_key entries
+-- opts: { title?, width?, placeholder?, groups?, custom_key?, custom_keys?, close_on_select?, multi_select?, confirm_label? }
 function M.create_searchable_menu(items, on_select, opts)
 	opts = opts or {}
-	local custom_key = opts.custom_key
+	local custom_keys = normalize_custom_keys(opts)
 	local multi_select = opts.multi_select == true
 
 	local NuiLayout = require("nui.layout")
@@ -565,18 +596,19 @@ function M.create_searchable_menu(items, on_select, opts)
 	end
 
 	local bottom_text = nil
+	local custom_text = custom_key_footer_text(custom_keys)
 	if opts.footer_text then
 		bottom_text = opts.footer_text
 	elseif multi_select then
 		local confirm_label = opts.confirm_label or "confirm"
-		if custom_key then
+		if #custom_keys > 0 then
 			bottom_text = " ↑↓/j,k:nav  tab/space:toggle  ⏎:" .. confirm_label
-				.. "  " .. (custom_key.text or "") .. "  esc:close "
+				.. "  " .. custom_text .. "  esc:close "
 		else
 			bottom_text = " ↑↓/j,k:nav  tab/space:toggle  ⏎:" .. confirm_label .. "  esc:close "
 		end
-	elseif custom_key then
-		bottom_text = " ↑↓/j,k:nav  ⏎:select  " .. (custom_key.text or "") .. "  esc:close "
+	elseif #custom_keys > 0 then
+		bottom_text = " ↑↓/j,k:nav  ⏎:select  " .. custom_text .. "  esc:close "
 	else
 		bottom_text = " ↑↓/j,k:navigate  ⏎:select  esc:close "
 	end
@@ -879,11 +911,14 @@ function M.create_searchable_menu(items, on_select, opts)
 		move_selection(1)
 	end, keymap_opts)
 
-	-- Custom key handler
-	if custom_key and custom_key.key and custom_key.on_key then
+	-- Custom key handlers
+	for _, custom_key in ipairs(custom_keys) do
 		vim.keymap.set("n", custom_key.key, function()
 			if #filtered_items > 0 and filtered_items[selected_idx] then
-				local keep_open = custom_key.on_key(filtered_items[selected_idx], render_list)
+				local keep_open = custom_key.on_key(filtered_items[selected_idx], render_list, close)
+				if is_closed then
+					return
+				end
 				if not keep_open then
 					close()
 				else

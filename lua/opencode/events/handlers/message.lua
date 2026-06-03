@@ -545,7 +545,7 @@ function M.setup(events)
 			})
 
 			if notice_session_id then
-				local dedupe_key = notice_session_id .. "\0" .. message
+				local dedupe_key = session_id .. "\0" .. notice_session_id .. "\0" .. message
 				local duplicate = event_util.mark_recent_error(recent_session_errors, dedupe_key)
 				if not duplicate then
 					events.emit("local_notice", {
@@ -553,6 +553,7 @@ function M.setup(events)
 						kind = "session_error",
 						content = "OpenCode session error: " .. message,
 						session_id = notice_session_id,
+						child_session_id = session_id,
 					})
 				else
 					logger.debug("Duplicate session error notice suppressed", {

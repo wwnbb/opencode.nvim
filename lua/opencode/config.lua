@@ -7,6 +7,7 @@ local M = {}
 M.defaults = {
 	-- Server connection
 	server = {
+		command = "opencode",
 		host = "localhost",
 		auth = {
 			username = "opencode",
@@ -18,6 +19,8 @@ M.defaults = {
 		health_check_interval = 1000,
 		shutdown_on_exit = true,
 		reuse_running = true,
+		use_shell_env = true,
+		env = {},
 		config_dir = vim.fn.stdpath("config") .. "/opencode",
 	},
 
