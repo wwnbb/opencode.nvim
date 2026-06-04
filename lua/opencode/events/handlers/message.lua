@@ -152,6 +152,7 @@ function M.setup(events)
 			local tool_state = part.state
 			if tool_state then
 				events.emit("tool_update", {
+					session_id = event_session_id,
 					message_id = part.messageID,
 					tool_name = part.tool,
 					call_id = part.callID,

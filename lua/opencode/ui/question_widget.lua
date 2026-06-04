@@ -151,6 +151,12 @@ local function is_selected(selected_indices, index)
 	return false
 end
 
+---@param question table|nil
+---@return boolean
+local function is_multi_question(question)
+	return type(question) == "table" and (question.type == "multi" or question.multiple == true)
+end
+
 ---@param result table
 ---@param rows table[]|nil
 ---@param text string
@@ -378,7 +384,7 @@ function M.get_lines_for_question(_request_id, question_data, selection_state, s
 	local option_count = 0
 	local first_option_line = #result.lines
 	local selected_indices = selections.selected_indices or {}
-	local is_multi = current_question.type == "multi"
+	local is_multi = is_multi_question(current_question)
 	local allow_custom = current_question.allow_custom or current_question.allowCustom
 
 	if current_question.options and #current_question.options > 0 then

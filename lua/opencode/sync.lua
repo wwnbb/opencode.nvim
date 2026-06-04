@@ -290,6 +290,54 @@ local function set_nested(root, path, value)
 	node[path[#path]] = value
 end
 
+---@param message_id string|nil
+---@return Message|nil
+local function get_message_by_id(message_id)
+	local session_id = message_id and find_message_session_id(message_id)
+	if not session_id then
+		return nil
+	end
+
+	local messages = store.message[session_id]
+	if not messages then
+		return nil
+	end
+
+	local result = binary_search(messages, message_id, get_message_id)
+	if result.found then
+		return messages[result.index]
+	end
+	return nil
+end
+
+---@param message_id string|nil
+---@return boolean
+local function is_incomplete_assistant_message(message_id)
+	local message = get_message_by_id(message_id)
+	return message ~= nil and message.role == "assistant" and not (message.time and message.time.completed ~= nil)
+end
+
+---@param dest table
+---@param src table
+---@param merged table
+local function preserve_streaming_text(dest, src, merged)
+	if not (src.type == "text" or src.type == "reasoning" or dest.type == "text" or dest.type == "reasoning") then
+		return
+	end
+	if not is_incomplete_assistant_message(dest.messageID or src.messageID) then
+		return
+	end
+
+	local dest_text = dest.text
+	local src_text = src.text
+	if type(dest_text) ~= "string" or type(src_text) ~= "string" then
+		return
+	end
+	if #src_text < #dest_text then
+		merged.text = dest_text
+	end
+end
+
 ---@param dest table
 ---@param src table
 ---@param merged table
@@ -397,6 +445,11 @@ function M.handle_part_updated(part)
 		local dest = parts[result.index]
 		local src = part
 		local merged = vim.tbl_deep_extend("force", dest, src)
+
+		-- During streaming, /message snapshots and part.updated events can lag
+		-- behind accumulated deltas. Do not let a stale shorter snapshot erase
+		-- text that will be restored only after the final full update.
+		preserve_streaming_text(dest, src, merged)
 
 		-- Preserve task summary arrays when backend sends an empty dictionary in partial updates.
 		preserve_summary_path(dest, src, merged, { "state", "metadata", "summary" })

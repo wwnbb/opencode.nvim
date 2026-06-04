@@ -110,6 +110,32 @@ local function get_question_payload(request_id)
 	return qstate and qstate.questions or nil
 end
 
+---@param request_id string
+---@param qstate table
+---@param pos table
+---@param cursor_line number
+---@return number|nil option_index
+local function get_option_index_at_cursor(request_id, qstate, pos, cursor_line)
+	local questions = get_question_payload(request_id)
+	if not questions then
+		return nil
+	end
+
+	local _, _, meta = question_widget.get_lines_for_question(request_id, { questions = questions }, qstate, qstate.status)
+	local option_count = meta and meta.interactive_count or 0
+	local first_option_line = widget_base.get_focus_offset(meta)
+	if option_count <= 0 or first_option_line == nil then
+		return nil
+	end
+
+	local widget_line = cursor_line - pos.start_line
+	if widget_line < first_option_line or widget_line >= (first_option_line + option_count) then
+		return nil
+	end
+
+	return widget_line - first_option_line + 1
+end
+
 ---@return string|nil request_id
 ---@return table|nil question_state_data
 function M.get_question_at_cursor()
@@ -125,24 +151,16 @@ function M.sync_selected_option_from_cursor()
 		return nil, false
 	end
 
-	local questions = get_question_payload(request_id)
-	if not questions then
+	local option_index = get_option_index_at_cursor(request_id, qstate, pos, cursor_line)
+	if not option_index then
 		return request_id, false
 	end
 
-	local _, _, meta = question_widget.get_lines_for_question(request_id, { questions = questions }, qstate, qstate.status)
-	local option_count = meta and meta.interactive_count or 0
-	local first_option_line = widget_base.get_focus_offset(meta)
-	if option_count <= 0 or first_option_line == nil then
+	local current_question = qstate.questions and qstate.questions[qstate.current_tab]
+	if qstate.status ~= "confirming" and question_state.is_multi_question(current_question) then
 		return request_id, false
 	end
 
-	local widget_line = cursor_line - pos.start_line
-	if widget_line < first_option_line or widget_line >= (first_option_line + option_count) then
-		return request_id, false
-	end
-
-	local option_index = widget_line - first_option_line + 1
 	local current_selection = question_state.get_current_selection(request_id)
 	local current_option = current_selection and current_selection[1] or nil
 	if current_option == option_index then
@@ -328,7 +346,7 @@ function M.handle_question_custom_input(request_id)
 		on_send = function(text)
 			if text and text ~= "" then
 				question_state.set_custom_input(request_id, current_tab, text)
-				if question.type ~= "multi" then
+				if not question_state.is_multi_question(question) then
 					question_state.update_selection(request_id, current_tab, {})
 				end
 				M.rerender_question(request_id)
@@ -380,13 +398,19 @@ function M.handle_question_toggle(request_id)
 	local current_tab = qstate.current_tab
 	local question = qstate.questions[current_tab]
 
-	if question.type ~= "multi" then
+	if not question_state.is_multi_question(question) then
 		vim.notify("Use 1-9 to select an option (Space is for multi-select only)", vim.log.levels.INFO)
 		return
 	end
 
+	local option_index
+	local cursor_request_id, cursor_qstate, pos, cursor_line = get_pending_question_context_at_cursor()
+	if cursor_request_id == request_id and cursor_qstate and pos and cursor_line then
+		option_index = get_option_index_at_cursor(request_id, cursor_qstate, pos, cursor_line)
+	end
+
 	local current_selection = question_state.get_current_selection(request_id)
-	local current_idx = current_selection and current_selection[1] or 1
+	local current_idx = option_index or (current_selection and current_selection[1]) or 1
 	question_state.toggle_multi_select(request_id, current_idx)
 	emit("question_selection_changed", {
 		request_id = request_id,
