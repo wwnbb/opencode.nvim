@@ -29,6 +29,14 @@ local function format_message_answer(text)
 	return "Message: " .. message:gsub("%s*\n%s*", " / ")
 end
 
+---@param question table|nil
+---@return boolean
+local function is_multi_question(question)
+	return type(question) == "table" and (question.type == "multi" or question.multiple == true)
+end
+
+M.is_multi_question = is_multi_question
+
 -- Add a new question to track
 ---@param request_id string The question request ID from server
 ---@param session_id string Session ID
@@ -69,6 +77,35 @@ end
 ---@return table|nil
 function M.get_question(request_id)
 	return active_questions[request_id]
+end
+
+---@param request_id string
+---@param opts table { session_id?: string|nil, message_id?: string|nil, call_id?: string|nil, timestamp?: number|nil }
+---@return boolean changed
+function M.set_context(request_id, opts)
+	local qstate = active_questions[request_id]
+	if not qstate or type(opts) ~= "table" then
+		return false
+	end
+
+	local changed = false
+	if opts.session_id and opts.session_id ~= "" and qstate.session_id ~= opts.session_id then
+		qstate.session_id = opts.session_id
+		changed = true
+	end
+	if opts.message_id and opts.message_id ~= "" and qstate.message_id ~= opts.message_id then
+		qstate.message_id = opts.message_id
+		changed = true
+	end
+	if opts.call_id and opts.call_id ~= "" and qstate.call_id ~= opts.call_id then
+		qstate.call_id = opts.call_id
+		changed = true
+	end
+	if opts.timestamp and qstate.timestamp ~= opts.timestamp then
+		qstate.timestamp = opts.timestamp
+		changed = true
+	end
+	return changed
 end
 
 -- Get all active questions

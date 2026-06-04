@@ -120,6 +120,14 @@ local function get_config()
 	return vim.tbl_deep_extend("force", defaults, full_config.chat or {})
 end
 
+local function is_processing_status(status)
+	local status_type = type(status) == "table" and status.type or status
+	return status_type == "busy"
+		or status_type == "streaming"
+		or status_type == "thinking"
+		or status_type == "retry"
+end
+
 local RENDER_CACHE_MAX_BLOCKS = 300
 
 local function ensure_render_cache()
@@ -1742,6 +1750,9 @@ local function start_spinner_animation_timer()
 	if not state.visible or not spinner.is_active() then
 		return
 	end
+	if type(state.spinner_footer_line) ~= "number" then
+		return
+	end
 
 	local timer = vim.uv.new_timer()
 	if not timer then
@@ -1753,7 +1764,7 @@ local function start_spinner_animation_timer()
 		SPINNER_ANIM_INTERVAL_MS,
 		SPINNER_ANIM_INTERVAL_MS,
 		vim.schedule_wrap(function()
-			if not state.visible or not spinner.is_active() then
+			if not state.visible or not spinner.is_active() or type(state.spinner_footer_line) ~= "number" then
 				stop_spinner_animation_timer()
 				return
 			end
@@ -1766,7 +1777,7 @@ local function resume_render_animation_timers()
 	if not state.visible then
 		return
 	end
-	if spinner.is_active() then
+	if spinner.is_active() and type(state.spinner_footer_line) == "number" then
 		start_spinner_animation_timer()
 	end
 	if chat_tasks.has_active_task_rows() then
@@ -3383,7 +3394,12 @@ function M.render()
 	end
 
 	local messages = current_session.id and sync.get_messages(current_session.id) or {}
-	local spinner_active = spinner.is_active()
+	local current_session_processing = false
+	if current_session.id then
+		current_session_processing = is_processing_status(app_state.get_session_status(current_session.id))
+	else
+		current_session_processing = is_processing_status(app_state.get_status())
+	end
 	local spinner_footer_rendered = false
 
 	local last_assistant_idx = nil
@@ -3393,6 +3409,15 @@ function M.render()
 			break
 		end
 	end
+	local last_assistant = last_assistant_idx and messages[last_assistant_idx] or nil
+	local last_message = messages[#messages]
+	local last_assistant_completed = last_assistant and last_assistant.time and last_assistant.time.completed ~= nil
+	local last_assistant_waiting_on_tools = last_assistant and last_assistant.finish == "tool-calls"
+	local has_pending_response_gap = not last_message
+		or last_message.role ~= "assistant"
+		or not last_assistant_completed
+		or last_assistant_waiting_on_tools
+	local spinner_active = spinner.is_active() and current_session_processing and has_pending_response_gap
 
 	for msg_idx, message in ipairs(messages) do
 		local content = sync.get_message_text(message.id, message.role == "user" and { include_synthetic = false } or nil)
@@ -3400,7 +3425,7 @@ function M.render()
 		local tool_parts = sync.get_message_tools(message.id)
 		local parts = sync.get_parts(message.id)
 		local incomplete_assistant = message.role == "assistant" and not (message.time and message.time.completed)
-		local render_as_plain_stream = app_state.get_status() == "streaming" and incomplete_assistant
+		local render_as_plain_stream = current_session_processing and incomplete_assistant
 
 		local has_content = content and content ~= ""
 		local has_reasoning = reasoning and reasoning ~= ""
@@ -4027,12 +4052,19 @@ end
 function M.handle_question_number_select(number)
 	local request_id = chat_questions.get_question_at_cursor()
 	if request_id then
-		if question_state.select_option(request_id, number) then
-			local qstate = question_state.get_question(request_id)
+		local qstate = question_state.get_question(request_id)
+		local current_question = qstate and qstate.questions and qstate.questions[qstate.current_tab]
+		local changed
+		if qstate and qstate.status ~= "confirming" and question_state.is_multi_question(current_question) then
+			changed = question_state.toggle_multi_select(request_id, number)
+		else
+			changed = question_state.select_option(request_id, number)
+		end
+		if changed then
 			emit("question_selection_changed", {
 				request_id = request_id,
 				tab_index = qstate and qstate.current_tab or nil,
-				selected = { number },
+				selected = question_state.get_current_selection(request_id),
 			})
 			emit("interaction_changed", {
 				kind = "question",

@@ -256,6 +256,12 @@ function M.reply_to_question(session_id, request_id, answers, callback)
 	http.post("/question/" .. request_id .. "/reply", { answers = answers }, callback)
 end
 
+-- Get all pending question requests
+---@param callback function(err, questions)
+function M.list_questions(callback)
+	http.get("/question", callback)
+end
+
 -- Reject/cancel a question request
 -- API endpoint: /question/:requestID/reject
 ---@param session_id string Session ID (unused, kept for API compatibility)
