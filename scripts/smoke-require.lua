@@ -11,12 +11,21 @@ local noop = function() end
 local popup = {}
 popup.__index = popup
 function popup:new(opts)
-	return setmetatable({ opts = opts or {}, bufnr = 1, winid = 1 }, self)
+	return setmetatable({
+		opts = opts or {},
+		bufnr = vim.api.nvim_get_current_buf(),
+		winid = vim.api.nvim_get_current_win(),
+	}, self)
 end
 function popup:mount() end
 function popup:unmount() end
 function popup:map() end
 function popup:on() end
+setmetatable(popup, {
+	__call = function(cls, opts)
+		return cls:new(opts)
+	end,
+})
 
 local line = {}
 line.__index = line
@@ -123,6 +132,162 @@ local recent_errors = {}
 assert(event_util.mark_recent_error(recent_errors, "session\0error") == false, "first recent error was marked duplicate")
 assert(event_util.mark_recent_error(recent_errors, "session\0error") == true, "duplicate recent error was not detected")
 
+local changes = require("opencode.artifact.changes")
+local top_insert = changes.calculate_hunks({ "a", "b", "c" }, { "x", "a", "b", "c" })
+assert(#top_insert == 1, "top insertion should produce one hunk")
+assert(top_insert[1].line_count == 1, "top insertion should not mark shifted lines as changed")
+assert(top_insert[1].original_lines[1] == "", "top insertion original side should be empty")
+assert(top_insert[1].modified_lines[1] == "x", "top insertion modified side should contain inserted line")
+local middle_insert = changes.calculate_hunks({ "a", "b", "c" }, { "a", "x", "b", "c" })
+assert(middle_insert[1].start_line == 2, "middle insertion should start at inserted position")
+assert(middle_insert[1].line_count == 1, "middle insertion should produce minimal hunk")
+local middle_delete = changes.calculate_hunks({ "a", "b", "c" }, { "a", "c" })
+assert(middle_delete[1].start_line == 2, "middle deletion should start at removed line")
+assert(middle_delete[1].original_lines[1] == "b", "middle deletion original side should contain removed line")
+assert(middle_delete[1].modified_lines[1] == "", "middle deletion modified side should be empty")
+
+local search = require("opencode.ui.chat.search")
+local parse_grep_line
+for i = 1, math.huge do
+	local name, value = debug.getupvalue(search.render_tool, i)
+	if not name then
+		break
+	end
+	if name == "parse_grep_line" then
+		parse_grep_line = value
+		break
+	end
+end
+assert(type(parse_grep_line) == "function", "grep parser upvalue should be available")
+local grep_path, grep_body, grep_body_col = parse_grep_line("path:with:colon/file.lua:12:3:local x = 1")
+assert(grep_path == "path:with:colon/file.lua", "grep parser should preserve colon-containing path")
+assert(grep_body == "local x = 1", "grep parser should return body after line and column")
+assert(grep_body_col == #"path:with:colon/file.lua:12:3:", "grep parser should return correct body offset")
+grep_path, grep_body, grep_body_col = parse_grep_line("path:with:colon/file.lua:12:body")
+assert(grep_path == "path:with:colon/file.lua", "grep parser should preserve colon path without column")
+assert(grep_body == "body", "grep parser should return no-column body")
+assert(grep_body_col == #"path:with:colon/file.lua:12:", "grep parser should return no-column body offset")
+
+local thinking = require("opencode.ui.thinking")
+assert(thinking.extract_topic("**Planning** next") == "Planning", "thinking topic extraction should trim markdown header")
+local thinking_hl_ok, thinking_hl = pcall(thinking.get_highlights, 0)
+assert(thinking_hl_ok, "thinking highlights should not crash: " .. tostring(thinking_hl))
+assert(thinking_hl[1].hl_group == "Title", "thinking highlights should default header highlight")
+
+local sync = require("opencode.sync")
+sync.clear_all()
+sync.handle_part_updated({
+	id = "text-visible",
+	messageID = "msg_synthetic_filter",
+	sessionID = "session_synthetic_filter",
+	type = "text",
+	text = "visible",
+})
+sync.handle_part_updated({
+	id = "text-synthetic",
+	messageID = "msg_synthetic_filter",
+	sessionID = "session_synthetic_filter",
+	type = "text",
+	text = "hidden",
+	synthetic = true,
+})
+assert(
+	sync.get_message_text("msg_synthetic_filter", { include_synthetic = false }) == "visible",
+	"synthetic text parts should be excluded when include_synthetic=false"
+)
+sync.clear_all()
+
+do
+	local saved_client = package.loaded["opencode.client"]
+	local saved_http = package.loaded["opencode.client.http"]
+	local saved_sse = package.loaded["opencode.client.sse"]
+	package.loaded["opencode.client"] = nil
+	package.loaded["opencode.client.http"] = {
+		health = function(callback)
+			callback(nil, { version = "test-version" })
+		end,
+		get = function(path, callback)
+			if path == "/global/config" then
+				callback(nil, { plugin = { "test-plugin" } })
+			else
+				callback(nil, {})
+			end
+		end,
+	}
+	package.loaded["opencode.client.sse"] = {
+		setup = noop,
+	}
+
+	local status_client = require("opencode.client")
+	local status_calls = 0
+	local status_result = nil
+	status_client.get_status(function(err, status)
+		status_calls = status_calls + 1
+		assert(err == nil, "fake status request should not error")
+		status_result = status
+	end)
+	assert(status_calls == 1, "client.get_status should call callback exactly once with synchronous HTTP callbacks")
+	assert(
+		status_result and status_result.plugins and status_result.plugins[1] == "test-plugin",
+		"client.get_status should include plugins from global config"
+	)
+
+	package.loaded["opencode.client"] = saved_client
+	package.loaded["opencode.client.http"] = saved_http
+	package.loaded["opencode.client.sse"] = saved_sse
+end
+
+do
+	local logger = require("opencode.logger")
+	local app_state = require("opencode.state")
+	app_state.set_config({ logs = { max_entries = 2 } })
+	logger.clear()
+	logger.debug("first retained test")
+	logger.debug("second retained test")
+	logger.debug("third retained test")
+	local retained = logger.get_logs()
+	assert(#retained == 2, "logger should trim old entries to configured max_entries")
+	assert(retained[1].message == "second retained test", "logger should keep newest entries after trimming")
+	assert(retained[2].message == "third retained test", "logger should keep latest entry after trimming")
+	app_state.set_config(nil)
+	logger.clear()
+
+	local log_viewer = require("opencode.ui.log_viewer")
+	logger.clear()
+	logger.debug("old update", { data = { part = { messageID = "msg_log_rebuild" } } })
+	logger.debug("new update", { data = { part = { messageID = "msg_log_rebuild" } } })
+	log_viewer.open({ position = "bottom", height = 8 })
+	local log_text = table.concat(vim.api.nvim_buf_get_lines(1, 0, -1, false), "\n")
+	assert(log_text:find("new update", 1, true), "log viewer rebuild should render latest part update")
+	assert(not log_text:find("old update", 1, true), "log viewer rebuild should replace older part update")
+	log_viewer.close()
+	logger.clear()
+end
+
+do
+	local clipboard = require("opencode.clipboard")
+	local tmp = vim.fn.tempname() .. ".png"
+	vim.fn.writefile({ "abc" }, tmp)
+	local content, err = clipboard.read_image_file(tmp, "image/png")
+	assert(content ~= nil, "clipboard image file read should succeed: " .. tostring(err))
+	local expected_data = vim.base64 and vim.base64.encode("abc\n") or "YWJjCg=="
+	assert(content.data == expected_data, "clipboard image file should be base64 encoded")
+	assert(content.mime == "image/png", "clipboard image file should preserve explicit mime")
+	vim.fn.delete(tmp)
+end
+
+do
+	local edit_state = require("opencode.edit.state")
+	edit_state.clear_all()
+	edit_state.add_edit("edit_empty", "session_empty", {}, {})
+	assert(edit_state.has_pending_edits() == false, "empty edit should not count as pending")
+	edit_state.add_edit("edit_file", "session_file", {
+		{ filePath = "a.txt", before = "a", after = "b" },
+	}, {})
+	assert(edit_state.has_pending_edits() == true, "edit with pending file should count as pending")
+	edit_state.clear_all()
+end
+
 local render = require("opencode.ui.chat.render")
 local binary_line = "PAR1" .. string.char(0) .. "data"
 assert(render.sanitize_buffer_line(binary_line) == "PAR1<NUL>data", "NUL byte was not sanitized")
@@ -173,6 +338,25 @@ local setup_ok, setup_err = pcall(function()
 	assert(opencode.is_danger_mode_enabled() == true, "danger mode did not enable")
 	opencode.disable_danger_mode({ silent = true })
 	assert(opencode.is_danger_mode_enabled() == false, "danger mode did not disable")
+	local permission_state = require("opencode.permission.state")
+	local danger = require("opencode.permission.danger")
+	local client = require("opencode.client")
+	permission_state.clear_all()
+	danger.clear()
+	local original_respond_permission = client.respond_permission
+	local approved = {}
+	client.respond_permission = function(permission_id, reply, opts, callback)
+		table.insert(approved, { permission_id = permission_id, reply = reply, opts = opts })
+		callback(nil, true)
+	end
+	permission_state.add_permission("perm_danger_pending", "session_danger", "bash", {})
+	assert(danger.approve_pending() == 1, "danger mode should queue active permission approval")
+	assert(#approved == 1, "danger mode should call respond_permission for active permission")
+	assert(approved[1].permission_id == "perm_danger_pending", "danger mode approved wrong permission")
+	assert(approved[1].reply == "once", "danger mode should approve permissions once")
+	client.respond_permission = original_respond_permission
+	permission_state.clear_all()
+	danger.clear()
 	local component = opencode.lualine_component()
 	assert(type(component) == "string", "lualine component did not return a string")
 	local app_state = require("opencode.state")

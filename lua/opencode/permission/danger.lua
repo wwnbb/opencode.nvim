@@ -117,8 +117,8 @@ function M.approve_pending()
 	local count = 0
 
 	local perm_ok, perm_state = pcall(require, "opencode.permission.state")
-	if perm_ok and type(perm_state.get_pending_permissions) == "function" then
-		for _, pstate in ipairs(perm_state.get_pending_permissions()) do
+	if perm_ok and type(perm_state.get_all_active) == "function" then
+		for _, pstate in ipairs(perm_state.get_all_active()) do
 			local _, queued = M.approve(pstate.permission_id, {
 				permission_type = pstate.permission_type,
 				session_id = pstate.session_id,

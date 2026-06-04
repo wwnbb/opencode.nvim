@@ -95,6 +95,22 @@ local function find_entry_by_message_id(message_id)
 	return nil
 end
 
+-- Insert a new entry or replace the most recent message.part.updated entry
+-- for the same messageID.
+local function upsert_entry(entry)
+	local mid = get_part_message_id(entry)
+	if mid then
+		local target = find_entry_by_message_id(mid)
+		if target then
+			state.entries[target] = entry
+			return "replace", target
+		end
+	end
+
+	table.insert(state.entries, entry)
+	return "append", #state.entries
+end
+
 -- Rebuild state.entries from raw logs (full rebuild)
 local function rebuild_entries()
 	local logger = require("opencode.logger")
@@ -102,16 +118,7 @@ local function rebuild_entries()
 	state.entries = {}
 
 	for i = log_start, #logs do
-		local entry = logs[i]
-		local mid = get_part_message_id(entry)
-		local target = mid and find_entry_by_message_id(mid)
-
-		if target then
-			-- Replace existing entry with same messageID
-			state.entries[target] = entry
-		else
-			table.insert(state.entries, entry)
-		end
+		upsert_entry(logs[i])
 	end
 
 	state.entries_log_count = #logs
@@ -120,19 +127,7 @@ end
 -- Ingest a single entry into state.entries incrementally.
 -- Returns: action ("replace"|"append"), entry_index
 local function ingest_entry(entry)
-	local mid = get_part_message_id(entry)
-
-	if mid then
-		local target = find_entry_by_message_id(mid)
-		if target then
-			-- Replace existing entry in-place
-			state.entries[target] = entry
-			return "replace", target
-		end
-	end
-
-	table.insert(state.entries, entry)
-	return "append", #state.entries
+	return upsert_entry(entry)
 end
 
 ---------------------------------------------------------------

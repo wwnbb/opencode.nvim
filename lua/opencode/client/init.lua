@@ -401,7 +401,7 @@ function M.get_status(callback)
 		formatters = nil,
 		plugins = nil,
 	}
-	local pending = 4 -- health, mcp, lsp, formatter, config
+	local pending = 5 -- health, mcp, lsp, formatter, config
 	local errors = {}
 
 	local function check_done()
@@ -458,7 +458,6 @@ function M.get_status(callback)
 	end)
 
 	-- Fetch config for plugins
-	pending = pending + 1
 	http.get("/global/config", function(err, data)
 		if not err and data and data.plugin then
 			results.plugins = data.plugin

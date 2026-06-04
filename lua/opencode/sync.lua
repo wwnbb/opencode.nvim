@@ -34,6 +34,7 @@ local M = {}
 ---@field text? string
 ---@field tool? string
 ---@field state? table
+---@field synthetic? boolean
 
 ---@class PartDelta
 ---@field messageID string

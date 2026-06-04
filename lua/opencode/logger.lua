@@ -5,6 +5,7 @@ local M = {}
 
 -- Log storage
 local logs = {}
+local DEFAULT_MAX_ENTRIES = 1000
 
 -- Log levels
 M.levels = {
@@ -17,6 +18,30 @@ M.levels = {
 -- Get current timestamp string
 local function timestamp()
 	return os.date("%H:%M:%S")
+end
+
+---@return integer
+local function max_entries()
+	local configured
+	local ok_state, app_state = pcall(require, "opencode.state")
+	if ok_state and type(app_state.get_config) == "function" then
+		local cfg = app_state.get_config()
+		configured = cfg and cfg.logs and cfg.logs.max_entries
+	end
+	if configured == nil then
+		local ok_config, config = pcall(require, "opencode.config")
+		configured = ok_config and config.defaults and config.defaults.logs and config.defaults.logs.max_entries or nil
+	end
+
+	local value = math.floor(tonumber(configured) or DEFAULT_MAX_ENTRIES)
+	return math.max(1, value)
+end
+
+local function trim_logs()
+	local limit = max_entries()
+	while #logs > limit do
+		table.remove(logs, 1)
+	end
 end
 
 -- Add a log entry
@@ -33,6 +58,7 @@ function M.add(level, message, data)
 	}
 
 	table.insert(logs, entry)
+	trim_logs()
 
 	-- Notify log viewer of new entry if visible
 	local viewer_ok, viewer = pcall(require, "opencode.ui.log_viewer")

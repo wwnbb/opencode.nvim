@@ -16,6 +16,16 @@ local function emit(event_type, data)
 	end
 end
 
+---@param data? table
+local function request_chat_render(data)
+	local ok, render_coordinator = pcall(require, "opencode.ui.chat.render_coordinator")
+	if ok and type(render_coordinator.request) == "function" then
+		render_coordinator.request(vim.tbl_extend("force", data or {}, {
+			force = true,
+		}))
+	end
+end
+
 ---@param status any
 ---@return table
 local function normalize_session_status(status)
@@ -570,22 +580,33 @@ function M.switch_to(session, opts)
 
 	local ok_sync, sync = pcall(require, "opencode.sync")
 	local ok_client, client = pcall(require, "opencode.client")
+	activate()
+	request_chat_render({
+		session_id = session.id,
+		reason = opts.reason or "session_switch",
+	})
 	if not ok_client or type(client.get_messages) ~= "function" then
-		activate()
 		return
 	end
 
 	client.get_messages(session.id, { limit = 100 }, function(err, messages)
-		if err and opts.notify then
-			vim.notify("Failed to load session messages: " .. tostring(err.message or err.error or err), vim.log.levels.WARN)
-		end
-		if ok_sync and messages and type(sync.handle_session_messages) == "function" then
-			sync.handle_session_messages(session.id, messages)
-			M.set_message_cache(session.id, messages, {
-				reason = "session_switch",
-			})
-		end
-		activate()
+		vim.schedule(function()
+			if err and opts.notify then
+				vim.notify("Failed to load session messages: " .. tostring(err.message or err.error or err), vim.log.levels.WARN)
+			end
+			if ok_sync and messages and type(sync.handle_session_messages) == "function" then
+				sync.handle_session_messages(session.id, messages)
+				M.set_message_cache(session.id, messages, {
+					reason = "session_switch",
+				})
+			end
+			if state.get_session().id == session.id then
+				request_chat_render({
+					session_id = session.id,
+					reason = "session_switch_loaded",
+				})
+			end
+		end)
 	end)
 end
 

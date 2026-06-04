@@ -568,8 +568,8 @@ function M.show()
 
 	local width, height, row, col
 	local relative
-	local input_zindex
-	local popup_zindex
+	local input_zindex = PALETTE_ZINDEX + 1
+	local popup_zindex = PALETTE_ZINDEX
 
 	local has_float_dims = type(float_dims) == "table"
 		and type(float_dims.row) == "number"
