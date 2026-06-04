@@ -1,5 +1,6 @@
 local M = {}
 
+local actions = require("opencode.actions")
 local session_util = require("opencode.util.session")
 local event_util = require("opencode.events.util")
 
@@ -52,11 +53,7 @@ local function stats_label(session)
 end
 
 local function refresh_data(callback)
-	local session_actions = require("opencode.session")
-	session_actions.refresh_status(function()
-		session_actions.recount_pending()
-		callback()
-	end)
+	actions.refresh_session_activity(callback)
 end
 
 function M.show()
@@ -108,12 +105,12 @@ function M.show()
 			end
 		end
 
-		local float = require("opencode.ui.float")
-		float.create_menu(items, function(item)
-			require("opencode.session").switch_to(item.session, {
-				notify = true,
-				reason = "active_sessions",
-			})
+			local float = require("opencode.ui.float")
+			float.create_menu(items, function(item)
+				actions.switch_session(item.session, {
+					notify = true,
+					reason = "active_sessions",
+				})
 		end, {
 			title = " Active Sessions ",
 			width = 76,

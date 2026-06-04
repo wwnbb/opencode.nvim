@@ -535,18 +535,10 @@ end
 ---@return number line_index
 ---@return string line
 local function add_line(result, text, hl_group)
-	local line = render.sanitize_buffer_line(text)
-	table.insert(result.lines, line)
-	local line_index = #result.lines - 1
-	if hl_group then
-		table.insert(result.highlights, {
-			line = line_index,
-			col_start = 0,
-			col_end = #line,
-			hl_group = hl_group,
-		})
+	if text == "" then
+		return render.add_panel_blank(result, hl_group)
 	end
-	return line_index, line
+	return render.add_panel_line(result, text, hl_group)
 end
 
 ---@param result table
@@ -970,17 +962,9 @@ end
 
 ---@return table
 local function render_pending()
-	return {
-		lines = { "~ Preparing file changes..." },
-		highlights = {
-			{
-				line = 0,
-				col_start = 0,
-				col_end = #"~ Preparing file changes...",
-				hl_group = "Comment",
-			},
-		},
-	}
+	local result = { lines = {}, highlights = {} }
+	add_line(result, "~ Preparing file changes...", "Comment")
+	return result
 end
 
 ---@param tool_part table

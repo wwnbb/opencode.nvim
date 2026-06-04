@@ -106,13 +106,7 @@ local selectors = require("opencode.selectors")
 bus.clear()
 bus.clear_history()
 require("opencode.events.state_bridge").setup(bus)
-local changes_update_count = 0
 local changes_sync_count = 0
-bus.on("changes_update", function(data)
-	changes_update_count = changes_update_count + 1
-	assert_true(type(data.files) == "table", "changes_update should include files table")
-	assert_true(type(data.stats) == "table", "changes_update should include stats table")
-end)
 bus.on("sync_changed", function(data)
 	if type(data) == "table" and data.kind == "changes" and data.action == "updated" then
 		changes_sync_count = changes_sync_count + 1
@@ -124,9 +118,27 @@ state.add_pending_change("bridge_state_change.lua", {
 	additions = 1,
 	deletions = 0,
 })
-assert_eq(changes_update_count, 1, "pending file changes should emit changes_update")
 assert_eq(changes_sync_count, 1, "pending file changes should request sync_changed changes update")
 state.clear_all_pending_changes()
+bus.clear()
+bus.clear_history()
+
+local original_notify = vim.notify
+local notifications = {}
+vim.notify = function(message, level)
+	table.insert(notifications, { message = tostring(message), level = level })
+end
+
+require("opencode.events.handlers.notifications").setup(bus)
+bus.emit("error", { message = "sse boom" })
+wait_for(function()
+	for _, item in ipairs(notifications) do
+		if item.message:find("OpenCode event stream error: sse boom", 1, true) then
+			return true
+		end
+	end
+	return false
+end, "SSE errors should surface through vim.notify")
 bus.clear()
 bus.clear_history()
 
@@ -164,6 +176,60 @@ local fallback = selectors.send_selection({
 assert_eq(fallback.model.providerID, "p2", "invalid opts model should fall back to local provider")
 assert_eq(fallback.model.modelID, "m2", "invalid opts model should fall back to local model")
 assert_eq(fallback.agent, "Plan", "local agent should be selected")
+assert_eq(selectors.current_model().providerID, "p2", "selectors should expose local provider selection")
+assert_eq(selectors.current_model().modelID, "m2", "selectors should expose local model selection")
+assert_eq(selectors.current_agent().name, "Plan", "selectors should expose local agent selection")
+
+bus.clear()
+bus.clear_history()
+local client = require("opencode.client")
+local original_get_config_providers = client.get_config_providers
+local original_list_agents = client.list_agents
+local original_get_config = client.get_config
+local original_list_skills = client.list_skills
+local original_get_mcp_status = client.get_mcp_status
+local local_notices = {}
+client.get_config_providers = function(callback)
+	callback({ message = "providers failed" })
+end
+client.list_agents = function(callback)
+	callback(nil, {})
+end
+client.get_config = function(callback)
+	callback(nil, {})
+end
+client.list_skills = function(callback)
+	callback(nil, {})
+end
+client.get_mcp_status = function(callback)
+	callback(nil, {})
+end
+bus.on("local_notice", function(data)
+	table.insert(local_notices, data)
+end)
+require("opencode.events.handlers.sync_data").setup(bus)
+bus.emit("connected")
+wait_for(function()
+	return #local_notices > 0 and #notifications > 1
+end, "initial sync failures should surface as a notice and notification")
+assert_true(
+	local_notices[1].content:find("Failed to fetch config providers: providers failed", 1, true) ~= nil,
+	"initial sync local notice should include the failing fetch"
+)
+client.get_config_providers = original_get_config_providers
+client.list_agents = original_list_agents
+client.get_config = original_get_config
+client.list_skills = original_list_skills
+client.get_mcp_status = original_get_mcp_status
+vim.notify = original_notify
+sync.handle_providers({
+	{ id = "p1", name = "Provider 1", models = { m1 = { name = "Model 1" } } },
+	{ id = "p2", name = "Provider 2", models = { m2 = { name = "Model 2" } } },
+})
+sync.handle_agents({
+	{ id = "code", name = "Code" },
+	{ id = "plan", name = "Plan" },
+})
 
 local logger = require("opencode.logger")
 sync.handle_provider_defaults({ p1 = "m1" })
@@ -319,7 +385,6 @@ edit_state.clear_all()
 state.set_danger_mode(true)
 require("opencode.permission.danger").clear()
 
-local client = require("opencode.client")
 local original_respond_permission = client.respond_permission
 local replies = {}
 client.respond_permission = function(permission_id, reply, opts, callback)
@@ -349,5 +414,86 @@ assert_true(not permission_state.has_permission("danger_perm"), "danger mode sho
 client.respond_permission = original_respond_permission
 state.set_danger_mode(false)
 require("opencode.permission.danger").clear()
+
+bus.clear()
+bus.clear_history()
+sync.clear_all()
+state.reset()
+permission_state.clear_all()
+question_state.clear_all()
+edit_state.clear_all()
+local cleanup_chat = require("opencode.ui.chat")
+local cleanup_chat_state = require("opencode.ui.chat.state").state
+local danger = require("opencode.permission.danger")
+client.respond_permission = function(permission_id, reply, opts, callback)
+	table.insert(replies, {
+		permission_id = permission_id,
+		reply = reply,
+		opts = opts,
+	})
+	if callback then
+		callback(nil, true)
+	end
+end
+sync.handle_message_updated({
+	id = "cleanup_message",
+	sessionID = "cleanup_session",
+	role = "assistant",
+	time = { created = 1 },
+})
+permission_state.add_permission("cleanup_perm", "cleanup_session", "bash", {})
+question_state.add_question("cleanup_question", "cleanup_session", {
+	{ prompt = "Cleanup?", options = { { label = "Yes", value = "yes" } } },
+})
+edit_state.add_edit("cleanup_edit", "cleanup_session", {
+	{ filePath = "cleanup.lua", before = "a", after = "b" },
+}, { review_mode = "readonly" })
+cleanup_chat.add_message("system", "cleanup notice", { render = false })
+local replies_before_cleanup = #replies
+danger.approve("cleanup_danger")
+assert_eq(#replies, replies_before_cleanup + 1, "danger approval should queue before cleanup")
+require("opencode.cleanup").reset_all()
+assert_eq(#sync.get_messages("cleanup_session"), 0, "cleanup should clear sync messages")
+assert_true(not permission_state.has_permission("cleanup_perm"), "cleanup should clear permissions")
+assert_true(not question_state.has_question("cleanup_question"), "cleanup should clear questions")
+assert_eq(edit_state.get_edit("cleanup_edit"), nil, "cleanup should clear edits")
+assert_eq(#cleanup_chat_state.local_notices, 0, "cleanup should clear chat local notices")
+danger.approve("cleanup_danger")
+assert_eq(#replies, replies_before_cleanup + 2, "cleanup should clear danger reply dedupe")
+client.respond_permission = original_respond_permission
+
+local file_edit_results = require("opencode.ui.chat.file_edit_results")
+local long_title = "Patch applied " .. string.rep("with wrapped summary ", 8)
+local rendered_file_result = file_edit_results.render_tool({
+	tool = "apply_patch",
+	state = {
+		status = "completed",
+		metadata = {
+			title = long_title,
+			files = {
+				{
+					filePath = "lua/opencode/some/really/long/path/for/render_check.lua",
+					type = "update",
+					status = "applied",
+					additions = 3,
+					deletions = 2,
+				},
+			},
+		},
+	},
+}, false)
+assert_true(rendered_file_result ~= nil, "file edit result should render")
+assert_true(#rendered_file_result.lines > 1, "file edit result should wrap long panel text")
+for _, line_text in ipairs(rendered_file_result.lines) do
+	assert_eq(line_text:sub(1, #"▏  "), "▏  ", "file edit result lines should use panel prefix")
+end
+local has_diff_add = false
+local has_diff_delete = false
+for _, hl in ipairs(rendered_file_result.highlights) do
+	has_diff_add = has_diff_add or hl.hl_group == "DiffAdd"
+	has_diff_delete = has_diff_delete or hl.hl_group == "DiffDelete"
+end
+assert_true(has_diff_add, "file edit result should highlight additions")
+assert_true(has_diff_delete, "file edit result should highlight deletions")
 
 print("State ownership checks passed")

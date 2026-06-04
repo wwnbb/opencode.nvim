@@ -133,11 +133,6 @@ function M.setup(events)
 		end
 
 		if part.type == "reasoning" then
-			events.emit("reasoning_update", {
-				message_id = part.messageID,
-				part_id = part.id,
-				text = part.text,
-			})
 			events.emit("sync_changed", {
 				kind = "part",
 				action = "updated",

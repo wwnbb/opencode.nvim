@@ -46,6 +46,7 @@ local M = {}
 -- Internal store
 local store = {
 	message = {},       -- { [sessionID] = { Message, ... } }
+	message_session = {}, -- { [messageID] = sessionID }
 	part = {},          -- { [messageID] = { Part, ... } }
 	session_status = {}, -- { [sessionID] = { type = "idle" | "busy" } }
 	todo = {},          -- { [sessionID] = { Todo, ... } }
@@ -106,6 +107,18 @@ local function get_message_id(msg)
 end
 
 local find_message_session_id
+
+local function index_message_session(session_id, message_id)
+	if session_id and message_id and message_id ~= "" then
+		store.message_session[message_id] = session_id
+	end
+end
+
+local function unindex_message_session(message_id)
+	if message_id then
+		store.message_session[message_id] = nil
+	end
+end
 
 ---@param message_id string|nil
 ---@param part_id string|nil
@@ -169,9 +182,14 @@ end
 -- Find owning session for a message ID.
 -- Returns sessionID string or nil.
 function find_message_session_id(message_id)
+	local indexed = store.message_session[message_id]
+	if indexed then
+		return indexed
+	end
 	for session_id, messages in pairs(store.message) do
 		local result = binary_search(messages, message_id, get_message_id)
 		if result.found then
+			index_message_session(session_id, message_id)
 			return session_id
 		end
 	end
@@ -205,6 +223,7 @@ local function ensure_message_for_part(part)
 	local messages = store.message[session_id]
 	if not messages then
 		store.message[session_id] = { placeholder }
+		index_message_session(session_id, message_id)
 		return
 	end
 
@@ -214,12 +233,14 @@ local function ensure_message_for_part(part)
 	end
 
 	table.insert(messages, result.index, placeholder)
+	index_message_session(session_id, message_id)
 
 	-- Keep the same 100 message cap behavior as regular message updates.
 	if #messages > 100 then
 		local oldest = messages[1]
 		table.remove(messages, 1)
 		store.part[oldest.id] = nil
+		unindex_message_session(oldest.id)
 	end
 end
 
@@ -368,10 +389,15 @@ function M.handle_message_updated(info)
 	end
 
 	local messages = store.message[session_id]
+	local previous_session_id = store.message_session[info.id]
+	if previous_session_id and previous_session_id ~= session_id then
+		M.handle_message_removed(previous_session_id, info.id)
+	end
 
 	-- If no messages for this session, create array with this message
 	if not messages then
 		store.message[session_id] = { info }
+		index_message_session(session_id, info.id)
 		bump_message_revision(info.id, session_id)
 		return
 	end
@@ -382,10 +408,12 @@ function M.handle_message_updated(info)
 	if result.found then
 		-- Update existing message (reconcile)
 		messages[result.index] = vim.tbl_deep_extend("force", messages[result.index], info)
+		index_message_session(session_id, info.id)
 		bump_message_revision(info.id, session_id)
 	else
 		-- Insert new message at correct position (maintains sorted order)
 		table.insert(messages, result.index, info)
+		index_message_session(session_id, info.id)
 		bump_message_revision(info.id, session_id)
 
 		-- Limit to 100 messages per session (like TUI)
@@ -394,6 +422,7 @@ function M.handle_message_updated(info)
 			table.remove(messages, 1)
 			-- Also remove parts for oldest message
 			store.part[oldest.id] = nil
+			unindex_message_session(oldest.id)
 			clear_message_revisions(oldest.id)
 		end
 	end
@@ -413,6 +442,7 @@ function M.handle_message_removed(session_id, message_id)
 		table.remove(messages, result.index)
 		-- Also remove parts
 		store.part[message_id] = nil
+		unindex_message_session(message_id)
 		clear_message_revisions(message_id)
 		bump_session_revision(session_id)
 	end
@@ -736,6 +766,7 @@ function M.clear_session(session_id)
 	local messages = store.message[session_id] or {}
 	for _, msg in ipairs(messages) do
 		store.part[msg.id] = nil
+		unindex_message_session(msg.id)
 		clear_message_revisions(msg.id)
 	end
 
@@ -756,6 +787,7 @@ function M.clear_session_messages(session_id)
 	local messages = store.message[session_id] or {}
 	for _, msg in ipairs(messages) do
 		store.part[msg.id] = nil
+		unindex_message_session(msg.id)
 		clear_message_revisions(msg.id)
 	end
 	store.message[session_id] = nil
@@ -765,6 +797,7 @@ end
 ---Clear all data
 function M.clear_all()
 	store.message = {}
+	store.message_session = {}
 	store.part = {}
 	store.session_status = {}
 	store.todo = {}

@@ -11,6 +11,7 @@ local widget_base = require("opencode.ui.widget_base")
 local question_state = require("opencode.question.state")
 local widget_support = require("opencode.ui.chat.widget_support")
 local render_coordinator = require("opencode.ui.chat.render_coordinator")
+local actions = require("opencode.actions")
 
 local function schedule_render()
 	render_coordinator.request({ kind = "question" })
@@ -253,11 +254,10 @@ end
 function M.submit_question_answers(request_id)
 	local answers = question_state.get_answers(request_id)
 
-	local client = require("opencode.client")
 	local qstate = question_state.get_question(request_id)
 	local session_id = (qstate and qstate.session_id) or require("opencode.state").get_session().id
 
-	client.reply_to_question(session_id, request_id, answers, function(err, success)
+	actions.reply_to_question(session_id, request_id, answers, function(err)
 		vim.schedule(function()
 			if err then
 				vim.notify("Failed to submit answer: " .. vim.inspect(err), vim.log.levels.ERROR)

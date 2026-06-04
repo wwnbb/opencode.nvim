@@ -11,6 +11,7 @@ local widget_base = require("opencode.ui.widget_base")
 local permission_state = require("opencode.permission.state")
 local widget_support = require("opencode.ui.chat.widget_support")
 local render_coordinator = require("opencode.ui.chat.render_coordinator")
+local actions = require("opencode.actions")
 
 local function schedule_render()
 	render_coordinator.request({ kind = "permission" })
@@ -207,9 +208,8 @@ function M.handle_permission_confirm(perm_id, pstate)
 		reply = "reject"
 	end
 
-	local client = require("opencode.client")
 	local message = vim.trim((pstate and pstate.message) or "")
-	client.respond_permission(perm_id, reply, { message = message ~= "" and message or nil }, function(err)
+	actions.respond_permission(perm_id, reply, { message = message ~= "" and message or nil }, function(err)
 		vim.schedule(function()
 			if err then
 				vim.notify("Failed to respond to permission: " .. vim.inspect(err), vim.log.levels.ERROR)
@@ -239,10 +239,9 @@ function M.handle_permission_confirm(perm_id, pstate)
 end
 
 function M.handle_permission_reject(perm_id)
-	local client = require("opencode.client")
 	local pstate = permission_state.get_permission(perm_id)
 	local message = vim.trim((pstate and pstate.message) or "")
-	client.respond_permission(perm_id, "reject", { message = message ~= "" and message or nil }, function(err)
+	actions.respond_permission(perm_id, "reject", { message = message ~= "" and message or nil }, function(err)
 		vim.schedule(function()
 			if err then
 				vim.notify("Failed to reject permission: " .. tostring(err), vim.log.levels.ERROR)

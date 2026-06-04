@@ -5,6 +5,7 @@ local M = {}
 local cs = require("opencode.ui.chat.state")
 local state = cs.state
 local render_coordinator = require("opencode.ui.chat.render_coordinator")
+local actions = require("opencode.actions")
 
 ---@return boolean
 function M.is_navigating()
@@ -31,10 +32,8 @@ function M.enter_child_session(part_id)
 			return
 		end
 
-		local app_state = require("opencode.state")
-		local session_actions = require("opencode.session")
-		local client = require("opencode.client")
-		local sync = require("opencode.sync")
+			local app_state = require("opencode.state")
+			local sync = require("opencode.sync")
 
 		local current = app_state.get_session()
 		if current.id == child_session_id then
@@ -50,11 +49,11 @@ function M.enter_child_session(part_id)
 
 		local child_name = input.description or "Subagent"
 
-		session_actions.set_active(child_session_id, child_name, {
-			reason = "child_navigation",
-			preserve_cache = true,
-			runtime = false,
-		})
+			actions.set_active_session(child_session_id, child_name, {
+				reason = "child_navigation",
+				preserve_cache = true,
+				runtime = false,
+			})
 
 		local messages = sync.get_messages(child_session_id)
 		if #messages > 0 then
@@ -62,34 +61,18 @@ function M.enter_child_session(part_id)
 				render_coordinator.request({ session_id = child_session_id, reason = "child_navigation" })
 			end)
 		else
-			client.get_messages(child_session_id, {}, function(fetch_err, response)
-				vim.schedule(function()
-					if fetch_err then
-						vim.notify("Failed to load subagent messages: " .. tostring(fetch_err), vim.log.levels.ERROR)
-						M.leave_child_session()
-						return
-					end
-
-					if response and type(response) == "table" then
-						for _, msg_with_parts in ipairs(response) do
-							local info = msg_with_parts.info
-							if info then
-								info.sessionID = child_session_id
-								sync.handle_message_updated(info)
-							end
-							local parts = msg_with_parts.parts
-							if parts then
-								for _, part in ipairs(parts) do
-									sync.handle_part_updated(part)
-								end
-							end
+				actions.load_session_messages(child_session_id, {}, function(fetch_err)
+					vim.schedule(function()
+						if fetch_err then
+							vim.notify("Failed to load subagent messages: " .. tostring(fetch_err), vim.log.levels.ERROR)
+							M.leave_child_session()
+							return
 						end
-					end
 
-					render_coordinator.request({ session_id = child_session_id, reason = "child_navigation_loaded" })
+						render_coordinator.request({ session_id = child_session_id, reason = "child_navigation_loaded" })
+					end)
 				end)
-			end)
-		end
+			end
 	end)
 end
 
@@ -99,10 +82,9 @@ function M.leave_child_session()
 		return
 	end
 
-	local session_actions = require("opencode.session")
 	local parent = table.remove(state.session_stack)
 
-	session_actions.set_active(parent.id, parent.name, {
+	actions.set_active_session(parent.id, parent.name, {
 		reason = "child_navigation",
 		preserve_cache = true,
 		runtime = parent.runtime ~= false,

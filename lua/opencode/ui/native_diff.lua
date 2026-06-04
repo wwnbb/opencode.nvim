@@ -6,6 +6,7 @@
 local M = {}
 
 local syntax = require("opencode.ui.syntax")
+local actions = require("opencode.actions")
 
 local state = {
 	active = false,
@@ -140,9 +141,8 @@ local function send_reply(reply)
 		return
 	end
 
-	local client = require("opencode.client")
 	local message = get_note()
-	client.respond_permission(state.permission_id, reply, { message = message ~= "" and message or nil }, function(err, result)
+	actions.respond_permission(state.permission_id, reply, { message = message ~= "" and message or nil }, function(err, result)
 		vim.schedule(function()
 			if err then
 				vim.notify("Failed to send reply to server: " .. vim.inspect(err), vim.log.levels.WARN)

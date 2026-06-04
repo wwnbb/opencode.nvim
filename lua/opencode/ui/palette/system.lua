@@ -3,7 +3,6 @@
 local M = {}
 
 local actions = require("opencode.actions")
-local lifecycle = require("opencode.lifecycle")
 local state = require("opencode.state")
 function M.register(palette)
 	palette.register({
@@ -30,14 +29,14 @@ function M.register(palette)
 	})
 	palette.register({
 		id = "system.reconnect",
-		title = "Reconnect",
+			title = "Reconnect",
 		description = "Reconnect to the OpenCode server",
 		category = "system",
-		action = function()
-			lifecycle.ensure_connected(function()
-				vim.notify("Reconnected to OpenCode server", vim.log.levels.INFO)
-			end)
-		end,
+			action = function()
+				actions.reconnect(function()
+					vim.notify("Reconnected to OpenCode server", vim.log.levels.INFO)
+				end)
+			end,
 		enabled = function()
 			return not state.is_connected()
 		end,

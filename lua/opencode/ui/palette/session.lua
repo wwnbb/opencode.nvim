@@ -3,9 +3,6 @@
 local M = {}
 
 local actions = require("opencode.actions")
-local client = require("opencode.client")
-local lifecycle = require("opencode.lifecycle")
-local session_actions = require("opencode.session")
 local session_util = require("opencode.util.session")
 local state = require("opencode.state")
 local sync = require("opencode.sync")
@@ -50,26 +47,19 @@ function M.register(palette)
 		category = "session",
 		keybind = "<leader>os",
 		action = function()
-			lifecycle.ensure_connected(function()
 				local directory = vim.fn.fnamemodify(vim.fn.getcwd(), ":p")
 				if vim.fs and vim.fs.normalize then
 					directory = vim.fs.normalize(directory)
 				end
 
-				client.list_sessions({ roots = true, directory = directory }, function(err, sessions)
-					if err then
-						vim.schedule(function()
-							vim.notify(
-								"Failed to list sessions: " .. tostring(err.message or err),
-								vim.log.levels.ERROR
-							)
-						end)
-						return
-					end
-					vim.schedule(function()
-						if not sessions or #sessions == 0 then
-							vim.notify("No sessions found", vim.log.levels.INFO)
+				actions.list_sessions({ roots = true, directory = directory }, function(err, sessions)
+						if err then
+							vim.notify("Failed to list sessions: " .. tostring(err.message or err), vim.log.levels.ERROR)
 							return
+						end
+							if not sessions or #sessions == 0 then
+								vim.notify("No sessions found", vim.log.levels.INFO)
+								return
 						end
 
 						local float = require("opencode.ui.float")
@@ -127,12 +117,12 @@ function M.register(palette)
 						end
 
 						-- Use searchable menu with time-based sort (most recent first, like TUI)
-						float.create_searchable_menu(items, function(item)
-							local session = item.session
-							session_actions.switch_to(session, {
-								notify = true,
-								reason = "session_switch",
-							})
+							float.create_searchable_menu(items, function(item)
+								local session = item.session
+								actions.switch_session(session, {
+									notify = true,
+									reason = "session_switch",
+								})
 						end, {
 							title = " Switch Session ",
 							width = 70,
@@ -140,12 +130,10 @@ function M.register(palette)
 								-- Most recently updated first (matches TUI: toSorted((a,b) => b.time.updated - a.time.updated))
 								return (a.sort_key or 0) > (b.sort_key or 0)
 							end,
-						})
+							})
 					end)
-				end)
-			end)
-		end,
-	})
+			end,
+		})
 	palette.register({
 		id = "session.fork",
 		title = "Fork Session",
@@ -159,24 +147,18 @@ function M.register(palette)
 				return
 			end
 
-			lifecycle.ensure_connected(function()
-				client.fork_session(current.id, {}, function(err, session)
-					if err then
-						vim.schedule(function()
+				actions.fork_session(current.id, {}, function(err, session)
+						if err then
 							vim.notify("Failed to fork session: " .. tostring(err.message or err), vim.log.levels.ERROR)
-						end)
-						return
-					end
-					vim.schedule(function()
-						session_actions.set_active(session.id, session.title or "Forked Session", {
+							return
+						end
+						actions.set_active_session(session.id, session.title or "Forked Session", {
 							reason = "session_fork",
 							preserve_cache = true,
 						})
 						vim.notify("Forked session: " .. (session_util.displayTitle(session.title) or session.id), vim.log.levels.INFO)
 					end)
-				end)
-			end)
-		end,
+			end,
 		enabled = function()
 			return state.get_session().id ~= nil
 		end,
@@ -249,34 +231,23 @@ function M.register(palette)
 				prompt = "Delete session '" .. (session_util.displayTitle(session.name) or session.id) .. "'?",
 			}, function(choice)
 				if choice == "Yes" then
-					lifecycle.ensure_connected(function()
-						client.delete_session(session.id, function(err)
-							if err then
-								vim.schedule(function()
-									vim.notify(
-										"Failed to delete session: " .. tostring(err.message or err),
-										vim.log.levels.ERROR
-									)
-								end)
-								return
-							end
-							vim.schedule(function()
-								session_actions.set_active(nil, nil, {
+						actions.delete_session(session.id, function(err)
+								if err then
+									vim.notify("Failed to delete session: " .. tostring(err.message or err), vim.log.levels.ERROR)
+									return
+								end
+								actions.set_active_session(nil, nil, {
 									reason = "session_delete",
 									preserve_cache = true,
 								})
-								session_actions.forget(session.id, {
+								actions.forget_session(session.id, {
 									reason = "session_delete",
 								})
-								sync.clear_session(session.id)
+								actions.clear_session_data(session.id)
 								vim.notify("Session deleted", vim.log.levels.INFO)
-								local chat = require("opencode.ui.chat")
-								chat.clear_session_view(session.id)
 							end)
-						end)
-					end)
-				end
-			end)
+					end
+				end)
 		end,
 		enabled = function()
 			return state.get_session().id ~= nil

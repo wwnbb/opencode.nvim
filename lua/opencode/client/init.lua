@@ -328,13 +328,6 @@ function M.get_config(callback)
 	http.get("/global/config", callback)
 end
 
--- Update config
----@param config table
----@param callback function(err, updated_config)
-function M.update_config(config, callback)
-	http.patch("/global/config", config, callback)
-end
-
 -- Get list of agents
 ---@param callback function(err, agents)
 function M.list_agents(callback)
@@ -345,23 +338,6 @@ end
 ---@param callback function(err, skills)
 function M.list_skills(callback)
 	http.get("/skill", callback)
-end
-
--- Get file content
----@param path string File path
----@param callback function(err, content)
-function M.get_file(path, callback)
-	http.get("/file/content", callback, { query = { path = path } })
-end
-
--- Find files
----@param query string Search query
----@param opts? table { type?, directory?, limit? }
----@param callback function(err, files)
-function M.find_files(query, opts, callback)
-	opts = opts or {}
-	opts.query = query
-	http.get("/find/file", callback, { query = opts })
 end
 
 -- Get MCP status
@@ -382,18 +358,6 @@ end
 ---@param callback function(err, success)
 function M.disconnect_mcp(name, callback)
 	http.post("/mcp/" .. encode_path_segment(name) .. "/disconnect", vim.empty_dict(), callback)
-end
-
--- Get LSP status
----@param callback function(err, lsp_status)
-function M.get_lsp_status(callback)
-	http.get("/lsp", callback)
-end
-
--- Get formatter status
----@param callback function(err, formatter_status)
-function M.get_formatter_status(callback)
-	http.get("/formatter", callback)
 end
 
 -- Get full server status (version, MCP servers, LSP servers, formatters, plugins)
@@ -518,22 +482,6 @@ function M.execute_command(session_id, command, args, opts, callback)
 		vim.tbl_deep_extend("force", request_opts, {
 			command = command,
 			arguments = arguments,
-		}),
-		callback
-	)
-end
-
--- Run shell command
----@param session_id string
----@param command string
----@param opts? table { agent?, model? }
----@param callback function(err, response)
-function M.run_shell(session_id, command, opts, callback)
-	opts = opts or {}
-	http.post(
-		"/session/" .. session_id .. "/shell",
-		vim.tbl_deep_extend("force", opts, {
-			command = command,
 		}),
 		callback
 	)

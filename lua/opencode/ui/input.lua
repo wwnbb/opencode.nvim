@@ -581,11 +581,7 @@ end
 local function get_info_parts()
 	local ok, lc = pcall(require, "opencode.local")
 	if not ok then
-		-- Fallback to old state module
-		local app_state = require("opencode.state")
-		local agent_state = app_state.get_agent()
-		local model_state = app_state.get_model()
-		return agent_state.name or "Code", model_state.name or "", model_state.provider or "", nil
+		return "Code", "", "", nil
 	end
 
 	-- Use local module (mirrors TUI's local.tsx)

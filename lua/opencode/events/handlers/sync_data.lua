@@ -86,6 +86,17 @@ function M.setup(events)
 		}
 	end
 
+	local function report_initial_sync_error(kind, err)
+		local message = "Failed to fetch " .. kind .. ": " .. tostring(err and (err.message or err.error) or err)
+		logger.warn("Failed to fetch " .. kind, { error = err })
+		vim.notify("OpenCode " .. message, vim.log.levels.WARN)
+		events.emit("local_notice", {
+			role = "system",
+			kind = "sync_error",
+			content = message,
+		})
+	end
+
 	-- Update input info bar when providers/agents load (if input is visible)
 	local function refresh_input_info_bar()
 		local input_ok, input = pcall(require, "opencode.ui.input")
@@ -116,7 +127,7 @@ function M.setup(events)
 			client.get_config_providers(function(err, data)
 				vim.schedule(function()
 					if err then
-						logger.warn("Failed to fetch config providers", { error = err })
+						report_initial_sync_error("config providers", err)
 						return
 					end
 					if data then
@@ -154,7 +165,7 @@ function M.setup(events)
 			client.list_agents(function(err, agents)
 				vim.schedule(function()
 					if err then
-						logger.warn("Failed to fetch agents", { error = err })
+						report_initial_sync_error("agents", err)
 						return
 					end
 					if agents then
@@ -174,7 +185,7 @@ function M.setup(events)
 			client.get_config(function(err, config)
 				vim.schedule(function()
 					if err then
-						logger.warn("Failed to fetch config", { error = err })
+						report_initial_sync_error("config", err)
 						return
 					end
 					if config then
@@ -202,7 +213,7 @@ function M.setup(events)
 			client.list_skills(function(err, skills)
 				vim.schedule(function()
 					if err then
-						logger.warn("Failed to fetch skills", { error = err })
+						report_initial_sync_error("skills", err)
 						return
 					end
 					sync.handle_skills(skills)
