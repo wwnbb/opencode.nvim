@@ -3,20 +3,7 @@
 local M = {}
 
 local uv = vim.uv
-local unpack = table.unpack or unpack
-
----@param callback function|nil
-local function schedule(callback, ...)
-	if not callback then
-		return
-	end
-
-	local argc = select("#", ...)
-	local args = { ... }
-	vim.schedule(function()
-		callback(unpack(args, 1, argc))
-	end)
-end
+local schedule_callback = require("opencode.util.schedule").schedule_callback
 
 ---@param message string
 ---@param extras? table
@@ -220,7 +207,7 @@ end
 function M.request(opts, callback)
 	local host, port, target_err = normalize_target(opts or {})
 	if target_err then
-		schedule(callback, target_err, nil)
+		schedule_callback(callback, target_err, nil)
 		return
 	end
 
@@ -268,7 +255,7 @@ function M.request(opts, callback)
 		end
 		done = true
 		cleanup()
-		schedule(callback, err, result)
+		schedule_callback(callback, err, result)
 	end
 
 	local function complete_response()
@@ -602,9 +589,9 @@ function M.open_stream(opts)
 		cleanup()
 
 		if err then
-			schedule(opts.on_error, err)
+			schedule_callback(opts.on_error, err)
 		end
-		schedule(opts.on_close, reason)
+		schedule_callback(opts.on_close, reason)
 	end
 
 	if opts.timeout and opts.timeout > 0 then
@@ -645,7 +632,7 @@ function M.open_stream(opts)
 		end
 
 		if headers_parsed then
-			schedule(opts.on_data, data)
+			schedule_callback(opts.on_data, data)
 			return
 		end
 
@@ -664,10 +651,10 @@ function M.open_stream(opts)
 		stop_timer(timer)
 		timer = nil
 
-		schedule(opts.on_headers, parsed.status, parsed.headers)
+		schedule_callback(opts.on_headers, parsed.status, parsed.headers)
 
 		if remaining and remaining ~= "" then
-			schedule(opts.on_data, remaining)
+			schedule_callback(opts.on_data, remaining)
 		end
 	end
 

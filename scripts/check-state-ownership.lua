@@ -188,34 +188,131 @@ local original_list_agents = client.list_agents
 local original_get_config = client.get_config
 local original_list_skills = client.list_skills
 local original_get_mcp_status = client.get_mcp_status
+
+local function setup_initial_sync_capture()
+	local loaded = {
+		providers = 0,
+		agents = 0,
+		config = 0,
+		skills = 0,
+	}
+	local sync_changed = {}
+	require("opencode.events.handlers.sync_data").setup(bus)
+	bus.on("providers_loaded", function()
+		loaded.providers = loaded.providers + 1
+	end)
+	bus.on("agents_loaded", function()
+		loaded.agents = loaded.agents + 1
+	end)
+	bus.on("config_loaded", function()
+		loaded.config = loaded.config + 1
+	end)
+	bus.on("skills_loaded", function()
+		loaded.skills = loaded.skills + 1
+	end)
+	bus.on("sync_changed", function(data)
+		if type(data) == "table" and data.action == "loaded" then
+			sync_changed[data.kind] = (sync_changed[data.kind] or 0) + 1
+		end
+	end)
+	return loaded, sync_changed
+end
+
+sync.clear_all()
+client.get_config_providers = function(callback)
+	callback(nil, {
+		providers = {
+			{ id = "sync-provider", name = "Sync Provider", models = { ["sync-model"] = { name = "Sync Model" } } },
+		},
+		default = { ["sync-provider"] = "sync-model" },
+	})
+end
+client.list_agents = function(callback)
+	callback(nil, { { id = "sync-agent", name = "Sync Agent" } })
+end
+client.get_config = function(callback)
+	callback(nil, {
+		model = "sync-model",
+		default_agent = "Sync Agent",
+		command = { sync_command = { template = "echo sync" } },
+	})
+end
+client.list_skills = function(callback)
+	callback(nil, { { name = "sync-skill" } })
+end
+client.get_mcp_status = function(callback)
+	callback(nil, { servers = { sync = { status = "connected" } } })
+end
+local loaded, sync_changed = setup_initial_sync_capture()
+bus.emit("connected")
+wait_for(function()
+	return loaded.providers == 1
+		and loaded.agents == 1
+		and loaded.config == 1
+		and loaded.skills == 1
+		and sync_changed.providers == 1
+		and sync_changed.agents == 1
+		and sync_changed.config == 1
+		and sync_changed.skills == 1
+		and sync_changed.mcp == 1
+end, "initial sync success should emit all loaded and sync_changed events")
+assert_eq(sync.get_providers()[1].id, "sync-provider", "initial sync should store providers")
+assert_eq(sync.get_provider_defaults()["sync-provider"], "sync-model", "initial sync should store provider defaults")
+assert_eq(sync.get_agents()[1].name, "Sync Agent", "initial sync should store agents")
+assert_eq(sync.get_config().model, "sync-model", "initial sync should store config")
+assert_true(sync.get_commands().sync_command ~= nil, "initial sync should store commands")
+assert_eq(sync.get_skills()[1].name, "sync-skill", "initial sync should store skills")
+assert_eq(sync.get_mcp().servers.sync.status, "connected", "initial sync should store MCP status")
+
+bus.clear()
+bus.clear_history()
+sync.clear_all()
 local local_notices = {}
+local notification_baseline = #notifications
 client.get_config_providers = function(callback)
 	callback({ message = "providers failed" })
 end
 client.list_agents = function(callback)
-	callback(nil, {})
+	callback(nil, { { id = "agent-after-failure", name = "Agent After Failure" } })
 end
 client.get_config = function(callback)
-	callback(nil, {})
+	callback(nil, { command = { failure_command = { template = "echo still runs" } } })
 end
 client.list_skills = function(callback)
-	callback(nil, {})
+	callback(nil, { { name = "skill-after-failure" } })
 end
 client.get_mcp_status = function(callback)
-	callback(nil, {})
+	callback({ message = "mcp failed quietly" })
 end
+loaded, sync_changed = setup_initial_sync_capture()
 bus.on("local_notice", function(data)
 	table.insert(local_notices, data)
 end)
-require("opencode.events.handlers.sync_data").setup(bus)
 bus.emit("connected")
 wait_for(function()
-	return #local_notices > 0 and #notifications > 1
-end, "initial sync failures should surface as a notice and notification")
+	return #local_notices > 0
+		and #notifications == notification_baseline + 1
+		and loaded.agents == 1
+		and loaded.config == 1
+		and loaded.skills == 1
+		and sync_changed.agents == 1
+		and sync_changed.config == 1
+		and sync_changed.skills == 1
+end, "one initial sync failure should not prevent other fetches")
 assert_true(
 	local_notices[1].content:find("Failed to fetch config providers: providers failed", 1, true) ~= nil,
 	"initial sync local notice should include the failing fetch"
 )
+assert_eq(loaded.providers, 0, "failed providers fetch should not emit providers_loaded")
+assert_eq(sync.get_agents()[1].name, "Agent After Failure", "agents should still load after provider failure")
+assert_true(sync.get_commands().failure_command ~= nil, "config commands should still load after provider failure")
+assert_eq(sync.get_skills()[1].name, "skill-after-failure", "skills should still load after provider failure")
+for index = notification_baseline + 1, #notifications do
+	assert_true(
+		notifications[index].message:find("mcp failed quietly", 1, true) == nil,
+		"MCP initial sync errors should remain quiet"
+	)
+end
 client.get_config_providers = original_get_config_providers
 client.list_agents = original_list_agents
 client.get_config = original_get_config

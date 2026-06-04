@@ -490,12 +490,8 @@ local function sync_edit_action(action)
 
 		-- Trigger rerender or finalization in the chat
 		local ok_edits, chat_edits = pcall(require, "opencode.ui.chat.edits")
-		if ok_edits then
-			if edit_state.are_all_resolved(edit_id) then
-				chat_edits.finalize_edit(edit_id)
-			else
-				chat_edits.rerender_edit(edit_id)
-			end
+		if ok_edits and chat_edits.refresh_edit then
+			chat_edits.refresh_edit(edit_id)
 		end
 	end)
 end

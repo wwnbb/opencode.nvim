@@ -4,7 +4,6 @@
 local M = {}
 
 local panel = require("opencode.ui.panel")
-local render = require("opencode.ui.chat.render")
 local widget_base = require("opencode.ui.widget_base")
 
 local PANEL_PREFIX = "▏  "
@@ -18,12 +17,23 @@ local icons = {
 	multi_unselected = "☐",
 }
 
-local function get_hl(name)
-	return panel.get_hl(name)
+local panel_helpers = panel.create_helpers({
+	prefix = PANEL_PREFIX,
+	blank_prefix = PANEL_BLANK_PREFIX,
+	border_hl = PANEL_BORDER_HL,
+	default_hl = "OpenCodeQuestionOutput",
+})
+local get_hl = panel_helpers.get_hl
+local add_panel_line = panel_helpers.add_line
+local add_panel_raw_line = function(result, text, hl_group)
+	return panel_helpers.add_raw_line(result, text, hl_group, { wrap = false })
 end
+local add_panel_blank = panel_helpers.add_blank
+local add_trailing_separator = panel_helpers.add_separator
+local highlight_panel_text = panel_helpers.highlight_text
 
 local function set_panel_hl(name, fg_source, fallback, extra_opts)
-	panel.set_hl(name, fg_source, fallback, extra_opts)
+	panel_helpers.set_hl(name, fg_source, fallback, extra_opts)
 end
 
 local function ensure_highlights()
@@ -40,46 +50,6 @@ local function ensure_highlights()
 		bg = get_hl("CursorLine").bg,
 		bold = true,
 	})
-end
-
----@param result table
----@param text string
----@param hl_group string
----@return number line_index
----@return string line
----@return table[] rows
-local function add_panel_line(result, text, hl_group)
-	return panel.add_line(result, text, hl_group, {
-		prefix = PANEL_PREFIX,
-		prefix_hl_group = PANEL_BORDER_HL,
-	})
-end
-
----@param result table
----@param text string
----@param hl_group string
----@return number line_index
----@return string line
----@return table[] rows
-local function add_panel_raw_line(result, text, hl_group)
-	return panel.add_raw_line(result, text, hl_group, {
-		prefix = PANEL_PREFIX,
-		prefix_hl_group = PANEL_BORDER_HL,
-		wrap = false,
-	})
-end
-
----@param result table
-local function add_panel_blank(result)
-	panel.add_blank(result, "OpenCodeQuestionOutput", {
-		prefix = PANEL_BLANK_PREFIX,
-		prefix_hl_group = PANEL_BORDER_HL,
-	})
-end
-
----@param result table
-local function add_trailing_separator(result)
-	table.insert(result.lines, "")
 end
 
 ---@param value any
@@ -155,14 +125,6 @@ end
 ---@return boolean
 local function is_multi_question(question)
 	return type(question) == "table" and (question.type == "multi" or question.multiple == true)
-end
-
----@param result table
----@param rows table[]|nil
----@param text string
----@param hl_group string
-local function highlight_panel_text(result, rows, text, hl_group)
-	render.highlight_panel_text(result, rows, text, hl_group)
 end
 
 ---@param result table

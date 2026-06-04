@@ -28,12 +28,20 @@ local TOOL_CONFIG = {
 	},
 }
 
-local function get_hl(name)
-	return panel.get_hl(name)
-end
+local panel_helpers = panel.create_helpers({
+	prefix = PANEL_PREFIX,
+	blank_prefix = PANEL_BLANK_PREFIX,
+	border_hl = PANEL_BORDER_HL,
+	default_hl = "OpenCodeSearchOutput",
+})
+local add_panel_line = panel_helpers.add_line
+local add_panel_raw_line = panel_helpers.add_raw_line
+local add_panel_blank = panel_helpers.add_blank
+local add_trailing_separator = panel_helpers.add_separator
+local highlight_text = panel_helpers.highlight_text
 
 local function set_panel_hl(name, fg_source, fallback, extra_opts)
-	panel.set_hl(name, fg_source, fallback, extra_opts)
+	panel_helpers.set_hl(name, fg_source, fallback, extra_opts)
 end
 
 local function ensure_highlights()
@@ -42,45 +50,6 @@ local function ensure_highlights()
 	set_panel_hl("OpenCodeSearchPath", "Directory", "Normal")
 	set_panel_hl("OpenCodeSearchOutput", "Normal", nil)
 	set_panel_hl("OpenCodeSearchError", "DiagnosticError", "ErrorMsg")
-end
-
----@param result table
----@param text string
----@param hl_group string
----@return number line_index
----@return string line
----@return table[] rows
-local function add_panel_line(result, text, hl_group)
-	return panel.add_line(result, text, hl_group, {
-		prefix = PANEL_PREFIX,
-		prefix_hl_group = PANEL_BORDER_HL,
-	})
-end
-
----@param result table
----@param text string
----@param hl_group string
----@return number line_index
----@return string line
----@return table[] rows
-local function add_panel_raw_line(result, text, hl_group)
-	return panel.add_raw_line(result, text, hl_group, {
-		prefix = PANEL_PREFIX,
-		prefix_hl_group = PANEL_BORDER_HL,
-	})
-end
-
----@param result table
-local function add_panel_blank(result)
-	panel.add_blank(result, "OpenCodeSearchOutput", {
-		prefix = PANEL_BLANK_PREFIX,
-		prefix_hl_group = PANEL_BORDER_HL,
-	})
-end
-
----@param result table
-local function add_trailing_separator(result)
-	table.insert(result.lines, "")
 end
 
 ---@param value any
@@ -257,14 +226,6 @@ local function parse_grep_line(text)
 	end
 
 	return nil, nil, nil
-end
-
----@param result table
----@param rows table[]|nil
----@param text string
----@param hl_group string
-local function highlight_text(result, rows, text, hl_group)
-	render.highlight_panel_text(result, rows, text, hl_group)
 end
 
 ---@param tool_part table

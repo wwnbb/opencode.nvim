@@ -302,6 +302,310 @@ assert(
 )
 assert(not panel_result.lines[1]:find(string.char(0), 1, true), "panel line kept a raw NUL byte")
 
+local function wait_until(predicate, message)
+	assert(vim.wait(500, predicate, 10), message)
+end
+
+do
+	local panel = require("opencode.ui.panel")
+	local helpers = panel.create_helpers({
+		prefix = "| ",
+		blank_prefix = "|",
+		border_hl = "PanelBorderTest",
+		default_hl = "PanelDefaultTest",
+	})
+	local result = { lines = {}, highlights = {} }
+	local _, _, wrapped_rows = helpers.add_line(result, "wrapped words for panel factory", nil, { width = 14 })
+	assert(#wrapped_rows > 1, "panel factory add_line should preserve wrapping")
+	for _, row in ipairs(wrapped_rows) do
+		assert(row.line:sub(1, 2) == "| ", "panel factory wrapped rows should keep prefix")
+	end
+	local _, _, raw_rows = helpers.add_raw_line(result, "raw words stay together", "PanelRawTest", {
+		width = 14,
+		wrap = false,
+	})
+	assert(#raw_rows == 1, "panel factory raw lines should preserve wrap=false")
+	helpers.add_blank(result)
+	assert(result.lines[#result.lines]:sub(1, 1) == "|", "panel factory blank line should keep blank prefix")
+	helpers.add_separator(result)
+	assert(result.lines[#result.lines] == "", "panel factory separator should append a trailing blank line")
+	helpers.highlight_text(result, wrapped_rows, "wrapped", "PanelWrappedTextTest")
+	local saw_text_highlight = false
+	local saw_prefix_highlight = false
+	for _, hl in ipairs(result.highlights) do
+		saw_text_highlight = saw_text_highlight or hl.hl_group == "PanelWrappedTextTest"
+		saw_prefix_highlight = saw_prefix_highlight or hl.hl_group == "PanelBorderTest"
+	end
+	assert(saw_text_highlight, "panel factory highlight_text should add text highlights")
+	assert(saw_prefix_highlight, "panel factory should preserve border prefix highlights")
+
+	local bash_result = require("opencode.ui.chat.bash").render_tool({
+		tool = "bash",
+		state = {
+			status = "completed",
+			input = { command = "echo hi" },
+			output = "hi",
+		},
+	}, false)
+	assert(bash_result and table.concat(bash_result.lines, "\n"):find("Shell", 1, true), "bash widget should render")
+
+	local question_lines = require("opencode.ui.question_widget").get_lines_for_question("question_panel_test", {
+		{ header = "Pick", question = "Choose one", options = { { label = "A", value = "a" } } },
+	}, {
+		current_tab = 1,
+		selections = { { selected_indices = { 1 } } },
+	}, "pending")
+	assert(table.concat(question_lines, "\n"):find("Pick", 1, true), "question widget should render")
+
+	local permission_state = require("opencode.permission.state")
+	permission_state.clear_all()
+	local perm = permission_state.add_permission("permission_panel_test", "session_panel_test", "bash", {
+		tool_input = { command = "echo hi" },
+	})
+	local permission_lines = require("opencode.ui.permission_widget").get_lines_for_permission(
+		"permission_panel_test",
+		perm
+	)
+	assert(table.concat(permission_lines, "\n"):find("Permission", 1, true), "permission widget should render")
+
+	local edit_state_for_panel = require("opencode.edit.state")
+	local changes_for_panel = require("opencode.artifact.changes")
+	edit_state_for_panel.clear_all()
+	changes_for_panel.clear()
+	local tmp = vim.fn.tempname()
+	vim.fn.writefile({ "before" }, tmp)
+	local edit = edit_state_for_panel.add_edit("edit_panel_test", "session_panel_test", {
+		{ filePath = tmp, before = "before\n", after = "after\n" },
+	}, {})
+	local edit_lines = require("opencode.ui.edit_widget").get_lines_for_edit("edit_panel_test", edit)
+	assert(table.concat(edit_lines, "\n"):find(vim.fn.fnamemodify(tmp, ":t"), 1, true), "edit widget should render")
+	vim.fn.delete(tmp)
+	edit_state_for_panel.clear_all()
+	changes_for_panel.clear()
+end
+
+do
+	local schedule = require("opencode.util.schedule")
+	local received
+	schedule.schedule_callback(function(a, b, c)
+		received = { a = a, b = b, c = c, n = select("#", a, b, c) }
+	end, "one", nil, "three")
+	wait_until(function()
+		return received ~= nil
+	end, "scheduled callback should run")
+	assert(received.a == "one", "scheduled callback should receive first argument")
+	assert(received.b == nil, "scheduled callback should preserve nil middle argument")
+	assert(received.c == "three", "scheduled callback should receive trailing argument")
+	assert(received.n == 3, "scheduled callback should receive all arguments")
+
+	local original_notify = vim.notify
+	local notifications = {}
+	vim.notify = function(message, level)
+		table.insert(notifications, { message = tostring(message), level = level })
+	end
+	schedule.schedule_pcall("schedule test label", function()
+		error("schedule boom")
+	end)
+	wait_until(function()
+		return #notifications > 0
+	end, "scheduled callback errors should be reported")
+	assert(
+		notifications[1].message:find("schedule test label", 1, true) ~= nil,
+		"scheduled callback error should include label"
+	)
+	vim.notify = original_notify
+end
+
+do
+	local chat_edits = require("opencode.ui.chat.edits")
+	local chat_state = require("opencode.ui.chat.state").state
+	local edit_state = require("opencode.edit.state")
+	local changes = require("opencode.artifact.changes")
+	local original_finalize = chat_edits.finalize_edit
+	local original_rerender = chat_edits.rerender_edit
+	local original_refresh = chat_edits.refresh_edit
+	local original_winid = chat_state.winid
+	local original_bufnr = chat_state.bufnr
+	local original_edits = chat_state.edits
+	local winid = vim.api.nvim_get_current_win()
+	local bufnr = vim.api.nvim_get_current_buf()
+	local calls = { finalize = 0, rerender = 0 }
+
+	local function reset_calls()
+		calls.finalize = 0
+		calls.rerender = 0
+		calls.last_finalized = nil
+		calls.last_rerendered = nil
+	end
+
+	chat_edits.finalize_edit = function(edit_id)
+		calls.finalize = calls.finalize + 1
+		calls.last_finalized = edit_id
+	end
+	chat_edits.rerender_edit = function(edit_id)
+		calls.rerender = calls.rerender + 1
+		calls.last_rerendered = edit_id
+	end
+
+	local function make_edit(edit_id, file_count, opts)
+		edit_state.clear_all()
+		changes.clear()
+		local files = {}
+		local paths = {}
+		for index = 1, file_count do
+			local path = vim.fn.tempname()
+			local before = "before " .. tostring(index) .. "\n"
+			local after = "after " .. tostring(index) .. "\n"
+			vim.fn.writefile(vim.split(before, "\n", { plain = true }), path)
+			table.insert(paths, path)
+			table.insert(files, {
+				filePath = path,
+				before = before,
+				after = after,
+			})
+		end
+		edit_state.add_edit(edit_id, "session_edit_lifecycle", files, opts or {})
+		local ranges = {}
+		for index = 1, file_count do
+			table.insert(ranges, {
+				index = index,
+				start_line = index - 1,
+				end_line = index - 1,
+			})
+		end
+		chat_state.winid = winid
+		chat_state.bufnr = bufnr
+		chat_state.edits = {
+			[edit_id] = {
+				start_line = 0,
+				end_line = math.max(0, file_count - 1),
+				status = "pending",
+				meta = { file_ranges = ranges },
+			},
+		}
+		local was_modifiable = vim.bo[bufnr].modifiable
+		vim.bo[bufnr].modifiable = true
+		vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { "one", "two", "three", "four" })
+		vim.bo[bufnr].modifiable = was_modifiable
+		vim.api.nvim_win_set_cursor(winid, { 1, 0 })
+		return paths
+	end
+
+	local function select_file(edit_id, index)
+		edit_state.move_selection_to(edit_id, index)
+		vim.api.nvim_win_set_cursor(winid, { index, 0 })
+	end
+
+	local function cleanup(paths)
+		for _, path in ipairs(paths or {}) do
+			vim.fn.delete(path)
+		end
+		edit_state.clear_all()
+		changes.clear()
+		chat_state.edits = {}
+	end
+
+	local function run_single_file_flow(label, handler)
+		local edit_id = "edit_single_" .. label
+		local paths = make_edit(edit_id, 2)
+		reset_calls()
+		select_file(edit_id, 1)
+		handler()
+		assert(calls.rerender == 1, label .. " first single-file action should rerender while pending")
+		assert(calls.finalize == 0, label .. " first single-file action should not finalize while pending")
+		reset_calls()
+		select_file(edit_id, 2)
+		handler()
+		assert(calls.finalize == 1, label .. " second single-file action should finalize once resolved")
+		assert(calls.rerender == 0, label .. " final single-file action should not rerender")
+		cleanup(paths)
+	end
+
+	run_single_file_flow("accept", chat_edits.handle_edit_accept_file)
+	run_single_file_flow("reject", chat_edits.handle_edit_reject_file)
+	run_single_file_flow("resolve", chat_edits.handle_edit_resolve_file)
+
+	local function run_all_file_flow(label, handler)
+		local edit_id = "edit_all_" .. label
+		local paths = make_edit(edit_id, 2)
+		reset_calls()
+		select_file(edit_id, 1)
+		handler()
+		assert(calls.finalize == 1, label .. " all-file action should finalize once resolved")
+		assert(calls.rerender == 0, label .. " all-file action should not rerender after all resolved")
+		cleanup(paths)
+	end
+
+	run_all_file_flow("accept", chat_edits.handle_edit_accept_all)
+	run_all_file_flow("reject", chat_edits.handle_edit_reject_all)
+	run_all_file_flow("resolve", chat_edits.handle_edit_resolve_all)
+
+	local readonly_accept_paths = make_edit("edit_readonly_accept", 2, { review_mode = "readonly" })
+	reset_calls()
+	select_file("edit_readonly_accept", 1)
+	chat_edits.handle_edit_accept_file()
+	assert(calls.finalize == 1, "readonly accept should finalize directly")
+	assert(calls.rerender == 0, "readonly accept should not rerender")
+	cleanup(readonly_accept_paths)
+
+	local readonly_reject_paths = make_edit("edit_readonly_reject", 2, { review_mode = "readonly" })
+	reset_calls()
+	select_file("edit_readonly_reject", 1)
+	chat_edits.handle_edit_reject_file()
+	assert(calls.finalize == 1, "readonly reject should finalize directly")
+	assert(calls.rerender == 0, "readonly reject should not rerender")
+	cleanup(readonly_reject_paths)
+
+	local native_diff = require("opencode.ui.native_diff")
+	local native_state
+	for index = 1, math.huge do
+		local name, value = debug.getupvalue(native_diff.show, index)
+		if not name then
+			break
+		end
+		if name == "state" then
+			native_state = value
+			break
+		end
+	end
+	local sync_edit_action
+	for index = 1, math.huge do
+		local name, value = debug.getupvalue(native_diff._confirm_current, index)
+		if not name then
+			break
+		end
+		if name == "sync_edit_action" then
+			sync_edit_action = value
+			break
+		end
+	end
+	assert(type(native_state) == "table", "native diff state upvalue should be available")
+	assert(type(sync_edit_action) == "function", "native diff sync action upvalue should be available")
+	local native_paths = make_edit("edit_native_refresh", 2)
+	local refresh_calls = 0
+	chat_edits.refresh_edit = function(edit_id)
+		refresh_calls = refresh_calls + 1
+		calls.last_refreshed = edit_id
+	end
+	native_state.edit_id = "edit_native_refresh"
+	native_state.edit_file_index = 1
+	sync_edit_action("resolve")
+	wait_until(function()
+		return refresh_calls == 1
+	end, "native diff sync should refresh through shared edit path")
+	assert(calls.last_refreshed == "edit_native_refresh", "native diff refresh should target originating edit")
+	native_state.edit_id = nil
+	native_state.edit_file_index = nil
+	cleanup(native_paths)
+
+	chat_edits.finalize_edit = original_finalize
+	chat_edits.rerender_edit = original_rerender
+	chat_edits.refresh_edit = original_refresh
+	chat_state.winid = original_winid
+	chat_state.bufnr = original_bufnr
+	chat_state.edits = original_edits
+end
+
 local setup_ok, setup_err = pcall(function()
 	local opencode = require("opencode")
 	opencode.setup({

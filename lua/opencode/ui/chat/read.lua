@@ -15,12 +15,19 @@ local PANEL_BLANK_PREFIX = "▏"
 local PANEL_BORDER_HL = "OpenCodeReadMuted"
 local READ_ANIM_FRAMES = { "|", "/", "-", "\\" }
 
-local function get_hl(name)
-	return panel.get_hl(name)
-end
+local panel_helpers = panel.create_helpers({
+	prefix = PANEL_PREFIX,
+	blank_prefix = PANEL_BLANK_PREFIX,
+	border_hl = PANEL_BORDER_HL,
+	default_hl = "OpenCodeReadOutput",
+})
+local add_panel_line = panel_helpers.add_line
+local add_panel_raw_line = panel_helpers.add_raw_line
+local add_panel_blank = panel_helpers.add_blank
+local add_trailing_separator = panel_helpers.add_separator
 
 local function set_panel_hl(name, fg_source, fallback, extra_opts)
-	panel.set_hl(name, fg_source, fallback, extra_opts)
+	panel_helpers.set_hl(name, fg_source, fallback, extra_opts)
 end
 
 local function ensure_highlights()
@@ -29,47 +36,6 @@ local function ensure_highlights()
 	set_panel_hl("OpenCodeReadFilename", "String", "Normal", { bold = true })
 	set_panel_hl("OpenCodeReadOutput", "Normal", nil)
 	set_panel_hl("OpenCodeReadError", "DiagnosticError", "ErrorMsg")
-end
-
----@param result table
----@param text string
----@param hl_group string
----@return number line_index
----@return string line
----@return table[] rows
-local function add_panel_line(result, text, hl_group)
-	return panel.add_line(result, text, hl_group, {
-		prefix = PANEL_PREFIX,
-		prefix_hl_group = PANEL_BORDER_HL,
-	})
-end
-
----@param result table
----@param text string
----@param hl_group string
----@param opts? table
----@return number line_index
----@return string line
----@return table[] rows
-local function add_panel_raw_line(result, text, hl_group, opts)
-	local panel_opts = vim.tbl_extend("force", {
-		prefix = PANEL_PREFIX,
-		prefix_hl_group = PANEL_BORDER_HL,
-	}, opts or {})
-	return panel.add_raw_line(result, text, hl_group, panel_opts)
-end
-
----@param result table
-local function add_panel_blank(result)
-	panel.add_blank(result, "OpenCodeReadOutput", {
-		prefix = PANEL_BLANK_PREFIX,
-		prefix_hl_group = PANEL_BORDER_HL,
-	})
-end
-
----@param result table
-local function add_trailing_separator(result)
-	table.insert(result.lines, "")
 end
 
 ---@param value any
@@ -422,7 +388,7 @@ function M.render_tool(tool_part, is_expanded)
 	local result = { lines = {}, highlights = {} }
 	add_panel_blank(result)
 	local _, _, header_rows = add_panel_line(result, header, header_hl)
-	render.highlight_panel_text(result, header_rows, display_path, "OpenCodeReadFilename")
+	panel_helpers.highlight_text(result, header_rows, display_path, "OpenCodeReadFilename")
 
 	if #body_entries == 0 and #loaded_entries == 0 then
 		add_panel_blank(result)

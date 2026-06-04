@@ -3,6 +3,7 @@
 
 local M = {}
 local transport = require("opencode.client.transport")
+local schedule_callback = require("opencode.util.schedule").schedule_callback
 
 -- Default configuration (merged with user config)
 M.opts = {
@@ -48,15 +49,6 @@ local function merge_headers(additional)
 	end
 
 	return headers
-end
-
----@param callback function
----@param err table|nil
----@param data any
-local function schedule_callback(callback, err, data)
-	vim.schedule(function()
-		callback(err, data)
-	end)
 end
 
 -- Handle HTTP response
