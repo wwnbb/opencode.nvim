@@ -559,8 +559,13 @@ end
 -- Disconnect from server (keep server running)
 function M.disconnect()
 	local client = require("opencode.client")
+	local cleanup = require("opencode.cleanup")
 
 	client.disconnect_events()
+	cleanup.clear_transient({
+		clear_chat = true,
+		reset_state = false,
+	})
 	state.set_connection("idle")
 
 	-- Clear any pending callbacks

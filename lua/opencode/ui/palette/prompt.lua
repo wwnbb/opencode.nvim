@@ -3,7 +3,6 @@
 local M = {}
 
 local actions = require("opencode.actions")
-local client = require("opencode.client")
 local state = require("opencode.state")
 function M.register(palette)
 	palette.register({
@@ -111,22 +110,20 @@ function M.register(palette)
 				end
 
 				local joined = table.concat(names, ", ")
-				client.execute_command(session.id, command_name, joined, {}, function(err)
-					vim.schedule(function()
-						if err then
-							local err_text = tostring(err.message or err.error or err)
-							local lower = err_text:lower()
+					actions.execute_command(session.id, command_name, joined, {}, function(err)
+							if err then
+								local err_text = tostring(err.message or err.error or err)
+								local lower = err_text:lower()
 							if lower:find("command") and (lower:find("not found") or lower:find("unknown")) then
 								request_skills_via_tool(names)
 								return
 							end
 							vim.notify("Failed to run load_skills: " .. err_text, vim.log.levels.ERROR)
 							return
-						end
-						vim.notify("Loading skills: " .. joined, vim.log.levels.INFO)
+							end
+							vim.notify("Loading skills: " .. joined, vim.log.levels.INFO)
 					end)
-				end)
-			end
+				end
 
 			local function show_skill_picker(skills)
 				local normalized = {}
@@ -175,19 +172,16 @@ function M.register(palette)
 					return
 				end
 
-				client.list_skills(function(err, fetched_skills)
-					vim.schedule(function()
-						if err then
-							vim.notify("Failed to load skills: " .. tostring(err.message or err), vim.log.levels.ERROR)
-							return
-						end
+					actions.list_skills(function(err, fetched_skills)
+							if err then
+								vim.notify("Failed to load skills: " .. tostring(err.message or err), vim.log.levels.ERROR)
+								return
+							end
 
-						local list = type(fetched_skills) == "table" and fetched_skills or {}
-						sync.handle_skills(list)
-						show_skill_picker(list)
+							local list = type(fetched_skills) == "table" and fetched_skills or {}
+							show_skill_picker(list)
 					end)
-				end)
-			end
+				end
 
 			show_local_skill_picker()
 		end,

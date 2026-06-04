@@ -6,6 +6,9 @@ local M = {}
 local events_ref = nil
 local pending = false
 local pending_data = nil
+local stream_pending = false
+local stream_updates = {}
+local STREAM_UPDATE_DELAY_MS = 16
 
 ---@param data table|nil
 local function merge_pending(data)
@@ -46,6 +49,46 @@ function M.flush()
 	end
 end
 
+local function stream_update_key(data)
+	if type(data) ~= "table" then
+		return nil
+	end
+	return table.concat({
+		tostring(data.session_id or data.sessionID or data.sessionId or ""),
+		tostring(data.message_id or data.messageID or data.messageId or ""),
+		tostring(data.part_id or data.partID or data.partId or ""),
+	}, "\0")
+end
+
+function M.flush_stream_updates()
+	stream_pending = false
+	local updates = stream_updates
+	stream_updates = {}
+
+	local bus = events()
+	if not bus or type(bus.emit) ~= "function" then
+		return
+	end
+	for _, data in pairs(updates) do
+		bus.emit("chat_stream_part_updated", data)
+	end
+end
+
+---@param data? table
+function M.request_stream_update(data)
+	local key = stream_update_key(data)
+	if key then
+		stream_updates[key] = data
+	end
+	if stream_pending then
+		return
+	end
+	stream_pending = true
+	vim.defer_fn(function()
+		M.flush_stream_updates()
+	end, STREAM_UPDATE_DELAY_MS)
+end
+
 ---@param data? table
 function M.request(data)
 	merge_pending(data)
@@ -65,7 +108,7 @@ function M.setup(events)
 
 	events.on("sync_changed", function(data)
 		if type(data) == "table" and data.kind == "part" and data.action == "updated" then
-			events.emit("chat_stream_part_updated", data)
+			M.request_stream_update(data)
 			return
 		end
 		M.request(data)

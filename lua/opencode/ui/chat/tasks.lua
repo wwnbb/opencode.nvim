@@ -14,6 +14,7 @@ local chat_skill = require("opencode.ui.chat.skill")
 local chat_search = require("opencode.ui.chat.search")
 local chat_file_edit_results = require("opencode.ui.chat.file_edit_results")
 local edit_state = require("opencode.edit.state")
+local actions = require("opencode.actions")
 
 -- ─── Animation ────────────────────────────────────────────────────────────────
 
@@ -898,8 +899,7 @@ function M.resolve_task_child_session_id(tool_part, callback)
 	end
 
 	local ok_state, app_state = pcall(require, "opencode.state")
-	local ok_client, client = pcall(require, "opencode.client")
-	if not ok_state or not ok_client then
+	if not ok_state then
 		callback("Missing required modules", nil)
 		return
 	end
@@ -913,14 +913,12 @@ function M.resolve_task_child_session_id(tool_part, callback)
 	local input = tool_part and tool_part.state and tool_part.state.input or {}
 	local start_time = tool_part and tool_part.state and tool_part.state.time and tool_part.state.time.start or nil
 
-	client.get_session_children(current.id, function(err, children)
-		vim.schedule(function()
-			if err then
-				callback(err, nil)
-				return
-			end
-			callback(nil, pick_child_session_id(children, input, start_time))
-		end)
+	actions.get_session_children(current.id, function(err, children)
+		if err then
+			callback(err, nil)
+			return
+		end
+		callback(nil, pick_child_session_id(children, input, start_time))
 	end)
 end
 
@@ -1231,34 +1229,15 @@ function M.handle_task_toggle(part_id)
 			return
 		end
 
-		local client = require("opencode.client")
-		local sync = require("opencode.sync")
-
-		client.get_messages(child_session_id, {}, function(fetch_err, response)
-			vim.schedule(function()
-				if fetch_err then
+			actions.load_session_messages(child_session_id, {}, function(fetch_err)
+				vim.schedule(function()
+					if fetch_err then
 					state.expanded_tasks[part_id] = nil
 					M.rerender_task(part_id)
 					return
 				end
 
-				if response and type(response) == "table" then
-					for _, msg_with_parts in ipairs(response) do
-						local info = msg_with_parts.info
-						if info then
-							info.sessionID = child_session_id
-							sync.handle_message_updated(info)
-						end
-						local parts = msg_with_parts.parts
-						if parts then
-							for _, part in ipairs(parts) do
-								sync.handle_part_updated(part)
-							end
-						end
-					end
-				end
-
-				state.task_child_cache[part_id] = M.build_child_session_content(child_session_id)
+					state.task_child_cache[part_id] = M.build_child_session_content(child_session_id)
 				M.rerender_task(part_id)
 			end)
 		end)

@@ -64,6 +64,7 @@ opencode.setup({
 local app_state = require("opencode.state")
 local session_actions = require("opencode.session")
 local sync = require("opencode.sync")
+local local_state = require("opencode.local")
 local chat = require("opencode.ui.chat")
 local chat_state = require("opencode.ui.chat.state").state
 local client = require("opencode.client")
@@ -73,6 +74,23 @@ local question_state = require("opencode.question.state")
 
 client.get_messages = function(_, _, callback)
 	callback(nil, {})
+end
+
+local function seed_selection()
+	sync.handle_providers({
+		{
+			id = "openai",
+			name = "OpenAI",
+			models = {
+				["gpt-5.5"] = { name = "GPT-5.5" },
+			},
+		},
+	})
+	sync.handle_agents({
+		{ id = "coder_v2", name = "coder_v2" },
+	})
+	local_state.agent.set("coder_v2")
+	local_state.model.set({ providerID = "openai", modelID = "gpt-5.5" })
 end
 
 local function seed_assistant(session_id, message_id, part_id, text, created)
@@ -141,8 +159,7 @@ assert_not_contains(buffer_text(), "ALPHA_ONLY_RENDER_TEXT", "reopened chat shou
 
 sync.clear_all()
 app_state.reset()
-app_state.set_agent("coder_v2", "coder_v2")
-app_state.set_model("gpt-5.5", "GPT-5.5", "openai")
+seed_selection()
 session_actions.set_active("idle-spinner", "Idle Spinner", { preserve_cache = true })
 session_actions.set_session_status("idle-spinner", { type = "idle" }, { reason = "test_idle" })
 sync.handle_message_updated({
@@ -186,8 +203,7 @@ spinner.stop()
 
 sync.clear_all()
 app_state.reset()
-app_state.set_agent("coder_v2", "coder_v2")
-app_state.set_model("gpt-5.5", "GPT-5.5", "openai")
+seed_selection()
 session_actions.set_active("return-a", "Return A", { preserve_cache = true })
 session_actions.remember({ id = "return-b", title = "Return B" }, { touch = true })
 session_actions.set_session_status("return-a", { type = "busy" }, { reason = "test_busy" })

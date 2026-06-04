@@ -1,0 +1,2 @@
+def hehe():
+    print("hehehhe")

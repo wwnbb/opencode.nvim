@@ -630,17 +630,6 @@ function M.add_current_line_and_open_input(opts)
 	return M.add_current_line(merged_opts)
 end
 
---- Add current file/line plus extra context to the draft input.
----@param context string
----@param opts? { send?: boolean, separator?: string }
----@return boolean
-function M.add_current_line_to_input_with_context(context, opts)
-	local merged_opts = vim.tbl_extend("force", opts or {}, {
-		context = context,
-	})
-	return M.add_current_line_to_input(merged_opts)
-end
-
 --- Add the current visual selection to the draft input without opening chat.
 ---@param opts? { context?: string, send?: boolean, separator?: string }
 ---@return boolean
@@ -684,17 +673,6 @@ function M.add_visual_selection_and_open_input(opts)
 		open_input = true,
 	})
 	return M.add_visual_selection(merged_opts)
-end
-
---- Add current visual selection plus extra context to the draft input.
----@param context string
----@param opts? { send?: boolean, separator?: string }
----@return boolean
-function M.add_visual_selection_to_input_with_context(context, opts)
-	local merged_opts = vim.tbl_extend("force", opts or {}, {
-		context = context,
-	})
-	return M.add_visual_selection_to_input(merged_opts)
 end
 
 --- Send a message to the chat
@@ -1186,12 +1164,6 @@ function M.close_session(opts)
 	})
 end
 
---- Get chat messages
-function M.get_messages()
-	local chat = require("opencode.ui.chat")
-	return chat.get_messages()
-end
-
 --- Manually start server
 function M.start()
 	if not lifecycle then
@@ -1268,7 +1240,6 @@ function M.set_danger_mode(enabled, opts)
 	end
 
 	if events and type(events.emit) == "function" then
-		events.emit("danger_mode_changed", { enabled = current })
 		events.emit("status_change", { danger_mode = current })
 	end
 
@@ -1305,62 +1276,6 @@ end
 ---@return boolean
 function M.is_danger_mode_enabled()
 	return state.is_danger_mode_enabled()
-end
-
---- Ensure connected (for lazy init)
----@param callback function Called when connected
-function M.ensure_connected(callback)
-	if not lifecycle then
-		vim.notify("OpenCode not initialized", vim.log.levels.ERROR)
-		return false
-	end
-	return lifecycle.ensure_connected(callback)
-end
-
--- Event system methods
-
---- Subscribe to an event
----@param event_type string Event type (e.g., "message", "connected", "status_change")
----@param callback function Callback function(data)
-function M.on(event_type, callback)
-	if not events then
-		vim.notify("OpenCode not initialized", vim.log.levels.ERROR)
-		return nil
-	end
-	return events.on(event_type, callback)
-end
-
---- Subscribe to an event (one-time only)
----@param event_type string Event type
----@param callback function Callback function(data)
-function M.once(event_type, callback)
-	if not events then
-		vim.notify("OpenCode not initialized", vim.log.levels.ERROR)
-		return nil
-	end
-	return events.once(event_type, callback)
-end
-
---- Unsubscribe from an event
----@param event_type string Event type
----@param callback function Callback to remove
-function M.off(event_type, callback)
-	if not events then
-		vim.notify("OpenCode not initialized", vim.log.levels.ERROR)
-		return
-	end
-	events.off(event_type, callback)
-end
-
---- Manually emit an event (for testing or custom events)
----@param event_type string Event type
----@param data any Event data
-function M.emit(event_type, data)
-	if not events then
-		vim.notify("OpenCode not initialized", vim.log.levels.ERROR)
-		return
-	end
-	events.emit(event_type, data)
 end
 
 -- UI Components
@@ -1427,89 +1342,6 @@ end
 -- Expose config for other modules
 M._get_config = function()
 	return M._config
-end
-
--- Agent/Model/Variant selection functions (like TUI's ctrl+t, ctrl+a, etc.)
-
---- Cycle to next model variant (like TUI's ctrl+t)
-function M.cycle_variant()
-	local ok, lc = pcall(require, "opencode.local")
-	if ok then
-		lc.variant.cycle()
-		-- Update input info bar if visible
-		local input_ok, input = pcall(require, "opencode.ui.input")
-		if input_ok and input.is_visible() then
-			input.update_info_bar()
-		end
-	else
-		vim.notify("Local state module not loaded", vim.log.levels.WARN)
-	end
-end
-
---- Cycle to next agent (like TUI's agent cycling)
-function M.cycle_agent()
-	local ok, lc = pcall(require, "opencode.local")
-	if ok then
-		lc.agent.move(1)
-		-- Update input info bar if visible
-		local input_ok, input = pcall(require, "opencode.ui.input")
-		if input_ok and input.is_visible() then
-			input.update_info_bar()
-		end
-	else
-		vim.notify("Local state module not loaded", vim.log.levels.WARN)
-	end
-end
-
---- Cycle to next model from recent list
-function M.cycle_model()
-	local ok, lc = pcall(require, "opencode.local")
-	if ok then
-		lc.model.cycle(1)
-		-- Update input info bar if visible
-		local input_ok, input = pcall(require, "opencode.ui.input")
-		if input_ok and input.is_visible() then
-			input.update_info_bar()
-		end
-	else
-		vim.notify("Local state module not loaded", vim.log.levels.WARN)
-	end
-end
-
---- Get current agent info
-function M.get_current_agent()
-	local ok, lc = pcall(require, "opencode.local")
-	if ok then
-		return lc.agent.current()
-	end
-	return nil
-end
-
---- Get current model info
-function M.get_current_model()
-	local ok, lc = pcall(require, "opencode.local")
-	if ok then
-		return lc.model.parsed()
-	end
-	return nil
-end
-
---- Get current variant
-function M.get_current_variant()
-	local ok, lc = pcall(require, "opencode.local")
-	if ok then
-		return lc.variant.current()
-	end
-	return nil
-end
-
---- Get available variants for current model
-function M.get_variants()
-	local ok, lc = pcall(require, "opencode.local")
-	if ok then
-		return lc.variant.list()
-	end
-	return {}
 end
 
 return M

@@ -24,12 +24,9 @@ function M.setup(events)
 		["question.asked"] = "question_asked",
 		["question.replied"] = "question_replied",
 		["question.rejected"] = "question_rejected",
-		["status.streaming"] = "stream_start",
-		["status.idle"] = "stream_end",
-		["server.connected"] = "server_connected",
-		["server.heartbeat"] = "server_heartbeat",
-		["error"] = "error",
-	}
+			["server.connected"] = "server_connected",
+			["error"] = "error",
+		}
 
 	for sse_event, local_event in pairs(sse_to_local) do
 		client.on_event(sse_event, function(data)
@@ -46,20 +43,6 @@ function M.setup(events)
 			events.emit(local_event, data)
 		end)
 	end
-
-	-- Also emit raw SSE events for advanced use
-	client.on_event("*", function(event_type, data)
-		logger.debug("SSE event received", {
-			event_type = event_type,
-			mapped = sse_to_local[event_type] ~= nil,
-			sessionID = type(data) == "table" and data.sessionID or nil,
-			messageID = type(data) == "table" and (data.messageID or (data.info and data.info.id)) or nil,
-			role = type(data) == "table" and data.info and data.info.role or nil,
-			part_type = type(data) == "table" and data.part and data.part.type or nil,
-			status = type(data) == "table" and data.status and data.status.type or nil,
-		})
-		events.emit("sse_" .. event_type, data)
-	end)
-end
+	end
 
 return M

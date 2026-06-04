@@ -75,6 +75,21 @@ function M.setup(events)
 	local questions = {}
 	local edits = {}
 
+	events.on("error", function(data)
+		vim.schedule(function()
+			local message
+			if type(data) == "table" then
+				message = data.message or data.error or vim.inspect(data)
+			else
+				message = tostring(data or "Unknown error")
+			end
+			if message == "" then
+				message = "Unknown error"
+			end
+			vim.notify("OpenCode event stream error: " .. message, vim.log.levels.ERROR)
+		end)
+	end)
+
 	events.on("permission_pending", function(data)
 		vim.schedule(function()
 			local id = data and data.permission_id

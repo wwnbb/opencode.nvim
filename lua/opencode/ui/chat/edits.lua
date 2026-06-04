@@ -11,6 +11,7 @@ local edit_state = require("opencode.edit.state")
 local widget_support = require("opencode.ui.chat.widget_support")
 local syntax = require("opencode.ui.syntax")
 local render_coordinator = require("opencode.ui.chat.render_coordinator")
+local actions = require("opencode.actions")
 
 local INLINE_DIFF_WIN_VAR = "opencode_inline_diff_split"
 
@@ -698,9 +699,8 @@ function M.finalize_edit(permission_id)
 
 	local resolution = edit_state.get_resolution(permission_id)
 	local reply = (resolution == "all_rejected") and "reject" or "once"
-	local client = require("opencode.client")
 	local message = vim.trim((estate and estate.message) or "")
-	client.respond_permission(permission_id, reply, { message = message ~= "" and message or nil }, function(err)
+	actions.respond_permission(permission_id, reply, { message = message ~= "" and message or nil }, function(err)
 		vim.schedule(function()
 			if err then
 				vim.notify("Failed to send edit reply: " .. vim.inspect(err), vim.log.levels.ERROR)

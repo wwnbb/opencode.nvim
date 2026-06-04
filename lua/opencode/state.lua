@@ -36,20 +36,8 @@ local state = {
 		message_cache = {},
 	},
 	
-	-- Current model/provider/agent
-	model = {
-		id = nil,
-		name = nil,
-		provider = nil,
-	},
-	
-	agent = {
-		id = nil,
-		name = nil,
-	},
-	
-	-- Streaming/thinking status
-	status = "idle", -- "idle" | "streaming" | "thinking" | "paused" | "error"
+		-- Streaming/thinking status
+		status = "idle", -- "idle" | "streaming" | "thinking" | "paused" | "error"
 
 	-- Danger mode: auto-approve permission requests while enabled.
 	danger_mode = false,
@@ -705,58 +693,6 @@ function M.increment_message_count()
 	return current + 1
 end
 
--- Model
-
-function M.set_model(id, name, provider)
-	local old = vim.deepcopy(state.model)
-	
-	set("id", id, "model")
-	set("name", name or id, "model")
-	set("provider", provider, "model")
-	
-	return old
-end
-
-function M.get_model()
-	local ok, selectors = pcall(require, "opencode.selectors")
-	if ok and selectors.current_model then
-		local model = selectors.current_model()
-		if type(model) == "table" and ((model.modelID and model.modelID ~= "") or (model.name and model.name ~= "")) then
-			return {
-				id = model.modelID or model.id,
-				name = model.name or model.modelID or model.id,
-				provider = model.providerID or model.provider,
-			}
-		end
-	end
-	return vim.deepcopy(state.model)
-end
-
--- Agent
-
-function M.set_agent(id, name)
-	local old = vim.deepcopy(state.agent)
-
-	set("id", id, "agent")
-	set("name", name or id, "agent")
-
-	return old
-end
-
-function M.get_agent()
-	local ok, selectors = pcall(require, "opencode.selectors")
-	if ok and selectors.current_agent then
-		local agent = selectors.current_agent()
-		if type(agent) == "table" and ((agent.id and agent.id ~= "") or (agent.name and agent.name ~= "")) then
-			return {
-				id = agent.id or agent.name,
-				name = agent.name or agent.id,
-			}
-		end
-	end
-	return vim.deepcopy(state.agent)
-end
-
 -- Status
 
 function M.set_status(status)
@@ -987,15 +923,24 @@ end
 
 -- Get status summary (for lualine, etc.)
 function M.get_status_summary()
-	local model = M.get_model()
-	local agent = M.get_agent()
+	local model = {}
+	local agent = {}
+	local ok, selectors = pcall(require, "opencode.selectors")
+	if ok then
+		if type(selectors.current_model) == "function" then
+			model = selectors.current_model() or {}
+		end
+		if type(selectors.current_agent) == "function" then
+			agent = selectors.current_agent() or {}
+		end
+	end
 	return {
 		connected = M.is_connected(),
 		connection_state = state.connection,
 		status = state.status,
-		model = model.name,
-		provider = model.provider,
-		agent = agent.name,
+		model = model.name or model.modelID,
+		provider = model.provider or model.providerID,
+		agent = agent.name or agent.id,
 		session = state.session.name,
 		message_count = state.session.message_count,
 		session_status = state.session.id and M.get_session_status(state.session.id) or { type = "idle" },

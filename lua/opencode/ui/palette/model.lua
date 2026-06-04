@@ -2,9 +2,7 @@
 
 local M = {}
 
-local client = require("opencode.client")
-local lifecycle = require("opencode.lifecycle")
-local state = require("opencode.state")
+local actions = require("opencode.actions")
 
 local hl_ns = vim.api.nvim_create_namespace("opencode_palette")
 
@@ -37,8 +35,6 @@ end
 ---@param method table Auth method { type, label }
 ---@param method_index number 0-indexed method index for API
 local function connect_provider_with_method(provider, method, method_index)
-	local client = require("opencode.client")
-	local state = require("opencode.state")
 	local float = require("opencode.ui.float")
 
 	-- Ensure we're focused on the chat window before showing input
@@ -59,16 +55,16 @@ local function connect_provider_with_method(provider, method, method_index)
 					return
 				end
 
-				client.set_provider_auth(provider.id, { type = "api", key = api_key }, function(err)
-					vim.schedule(function()
+					actions.set_provider_auth(provider.id, { type = "api", key = api_key }, function(err)
+						vim.schedule(function()
 						if err then
 							vim.notify("Failed to set API key: " .. tostring(err.message or err), vim.log.levels.ERROR)
 							return
 						end
 
 						-- Dispose and reconnect to refresh provider list
-						client.dispose(function()
-							vim.notify("Connected to " .. (provider.name or provider.id), vim.log.levels.INFO)
+							actions.dispose_server(function()
+								vim.notify("Connected to " .. (provider.name or provider.id), vim.log.levels.INFO)
 
 							-- Now show model selection for this provider
 							show_provider_models(provider)
@@ -79,8 +75,8 @@ local function connect_provider_with_method(provider, method, method_index)
 		})
 	elseif method.type == "oauth" then
 		-- OAuth authentication - initiate OAuth flow
-		client.oauth_authorize(provider.id, method_index, function(err, authorization)
-			vim.schedule(function()
+			actions.oauth_authorize(provider.id, method_index, function(err, authorization)
+				vim.schedule(function()
 				if err then
 					vim.notify("Failed to start OAuth: " .. tostring(err.message or err), vim.log.levels.ERROR)
 					return
@@ -107,8 +103,8 @@ local function connect_provider_with_method(provider, method, method_index)
 								return
 							end
 
-							client.oauth_callback(provider.id, method_index, code, function(cb_err)
-								vim.schedule(function()
+								actions.oauth_callback(provider.id, method_index, code, function(cb_err)
+									vim.schedule(function()
 									if cb_err then
 										vim.notify(
 											"OAuth failed: " .. tostring(cb_err.message or cb_err),
@@ -117,7 +113,7 @@ local function connect_provider_with_method(provider, method, method_index)
 										return
 									end
 
-									client.dispose(function()
+										actions.dispose_server(function()
 										vim.notify(
 											"Connected to " .. (provider.name or provider.id),
 											vim.log.levels.INFO
@@ -157,8 +153,6 @@ end
 -- Helper: Show model selection for a specific provider after connection
 ---@param provider table Provider info
 show_provider_models = function(provider)
-	local client = require("opencode.client")
-	local state = require("opencode.state")
 	local float = require("opencode.ui.float")
 
 	-- Ensure we're focused on the chat window
@@ -168,7 +162,7 @@ show_provider_models = function(provider)
 	end
 
 	-- Refresh provider list to get updated models
-	client.list_providers(function(err, response)
+	actions.list_providers(function(err, response)
 		vim.schedule(function()
 			if err then
 				vim.notify("Failed to refresh providers", vim.log.levels.WARN)
@@ -207,23 +201,12 @@ show_provider_models = function(provider)
 				return a.label < b.label
 			end)
 
-			float.create_searchable_menu(items, function(item)
-				-- Use local.lua module for model selection (like TUI's local.tsx)
-				local lc_ok, lc = pcall(require, "opencode.local")
-				if lc_ok then
-					lc.model.set({
+				float.create_searchable_menu(items, function(item)
+					actions.select_model({
 						providerID = provider.id,
 						modelID = item.value,
 					}, { recent = true })
-				end
-				-- Also update old state for backward compatibility
-				state.set_model(item.value, item.model.name, provider.id)
-				-- Update input info bar if visible
-				local input_ok, input = pcall(require, "opencode.ui.input")
-				if input_ok and input.is_visible and input.is_visible() then
-					input.update_info_bar()
-				end
-			end, { title = " Select model from " .. (provider.name or provider.id) .. " ", width = 50 })
+				end, { title = " Select model from " .. (provider.name or provider.id) .. " ", width = 50 })
 		end)
 	end)
 end
@@ -232,7 +215,6 @@ end
 -- Shows URL, device code, and waits for user to complete auth in browser
 ---@param opts table { provider, method, method_index, authorization, device_code }
 show_oauth_auto_dialog = function(opts)
-	local client = require("opencode.client")
 	local float = require("opencode.ui.float")
 	local Popup = require("nui.popup")
 	local event = require("nui.utils.autocmd").event
@@ -365,7 +347,7 @@ show_oauth_auto_dialog = function(opts)
 	end
 
 	-- Start polling for OAuth completion in the background
-	client.oauth_callback(provider.id, method_index, nil, function(cb_err)
+	actions.oauth_callback(provider.id, method_index, nil, function(cb_err)
 		vim.schedule(function()
 			if is_closed then
 				return
@@ -378,7 +360,7 @@ show_oauth_auto_dialog = function(opts)
 				return
 			end
 
-			client.dispose(function()
+				actions.dispose_server(function()
 				vim.notify("Connected to " .. (provider.name or provider.id), vim.log.levels.INFO)
 				show_provider_models(provider)
 			end)
@@ -404,11 +386,10 @@ function M.register(palette)
 		category = "model",
 		keybind = "<leader>om",
 		action = function()
-			lifecycle.ensure_connected(function()
 				-- Use /config/providers (like TUI) to get providers with models
-				client.get_config_providers(function(err, response)
-					if err then
-						vim.schedule(function()
+				actions.get_config_providers(function(err, response)
+						if err then
+							vim.schedule(function()
 							vim.notify(
 								"Failed to list providers: " .. tostring(err.message or err),
 								vim.log.levels.ERROR
@@ -424,14 +405,7 @@ function M.register(palette)
 							return
 						end
 
-						-- Update sync store so is_model_valid works correctly
-						local sync = require("opencode.sync")
-						sync.handle_providers(provider_list)
-						if response.default then
-							sync.handle_provider_defaults(response.default)
-						end
-
-						-- All providers from /config/providers are connected
+							-- All providers from /config/providers are connected
 						local connected_set = {}
 						for _, p in ipairs(provider_list) do
 							connected_set[p.id] = true
@@ -443,14 +417,10 @@ function M.register(palette)
 						local items = {}
 
 						-- Get favorites to mark them with stars
-						local lc_ok, lc = pcall(require, "opencode.local")
-						local favorites_set = {}
-						if lc_ok then
-							local favorites = lc.model.favorite()
-							for _, fav in ipairs(favorites) do
+							local favorites_set = {}
+							for _, fav in ipairs(actions.model_favorites()) do
 								favorites_set[fav.providerID .. "/" .. fav.modelID] = true
 							end
-						end
 
 						for _, provider in ipairs(provider_list) do
 							if provider.models then
@@ -480,32 +450,20 @@ function M.register(palette)
 							return
 						end
 
-						local float = require("opencode.ui.float")
-						float.create_searchable_menu(items, function(item)
-							-- Use local.lua module for model selection (like TUI's local.tsx)
-							local lc_ok, lc = pcall(require, "opencode.local")
-							if lc_ok then
-								lc.model.set({
+							local float = require("opencode.ui.float")
+							float.create_searchable_menu(items, function(item)
+								actions.select_model({
 									providerID = item.provider,
 									modelID = item.value,
 								}, { recent = true })
-							end
-							-- Also update old state for backward compatibility
-							state.set_model(item.value, item.model.name, item.provider)
-							-- Update input info bar if visible
-							local input_ok, input = pcall(require, "opencode.ui.input")
-							if input_ok and input.is_visible and input.is_visible() then
-								input.update_info_bar()
-							end
-						end, {
+							end, {
 							title = " Switch Model ",
 							width = 60,
 							custom_key = {
-								key = "f",
-								text = "f:fav",
-								on_key = function(item)
-									if lc_ok then
-										lc.model.toggle_favorite({
+									key = "f",
+									text = "f:fav",
+									on_key = function(item)
+										actions.toggle_model_favorite({
 											providerID = item.provider,
 											modelID = item.value,
 										})
@@ -524,16 +482,13 @@ function M.register(palette)
 											vim.log.levels.INFO
 										)
 										return true -- Keep menu open
-									end
-									return false
-								end,
-							},
-						})
+									end,
+								},
+							})
+						end)
 					end)
-				end)
-			end)
-		end,
-	})
+			end,
+		})
 	palette.register({
 		id = "provider.connect",
 		title = "Connect Provider",
@@ -541,10 +496,9 @@ function M.register(palette)
 		category = "model",
 		keybind = "<leader>op",
 		action = function()
-			lifecycle.ensure_connected(function()
 				-- Fetch both providers and auth methods
-				client.list_providers(function(err, response)
-					if err then
+				actions.list_providers(function(err, response)
+						if err then
 						vim.schedule(function()
 							vim.notify(
 								"Failed to list providers: " .. tostring(err.message or err),
@@ -554,8 +508,15 @@ function M.register(palette)
 						return
 					end
 
-					client.get_provider_auth(function(auth_err, auth_methods)
-						vim.schedule(function()
+						actions.get_provider_auth(function(auth_err, auth_methods)
+							vim.schedule(function()
+								if auth_err then
+									vim.notify(
+										"Failed to list provider auth methods: " .. tostring(auth_err.message or auth_err),
+										vim.log.levels.ERROR
+									)
+									return
+								end
 							-- Response is { all: [...], default: {...}, connected: [...] }
 							local provider_list = response and response.all or {}
 							if #provider_list == 0 then
@@ -643,21 +604,19 @@ function M.register(palette)
 									end, { title = " Select auth method " })
 								end
 							end, { title = " Connect a provider ", width = 55 })
+							end)
 						end)
 					end)
-				end)
-			end)
-		end,
-	})
+			end,
+		})
 	palette.register({
 		id = "provider.disconnect",
 		title = "Disconnect Provider",
 		description = "Remove authentication from a provider",
 		category = "model",
 		action = function()
-			lifecycle.ensure_connected(function()
-				client.list_providers(function(err, response)
-					if err then
+				actions.list_providers(function(err, response)
+						if err then
 						vim.schedule(function()
 							vim.notify(
 								"Failed to list providers: " .. tostring(err.message or err),
@@ -700,8 +659,8 @@ function M.register(palette)
 								prompt = "Disconnect from " .. (item.provider.name or item.provider.id) .. "?",
 							}, function(choice)
 								if choice == "Yes" then
-									client.remove_provider_auth(item.provider.id, function(remove_err)
-										vim.schedule(function()
+										actions.remove_provider_auth(item.provider.id, function(remove_err)
+											vim.schedule(function()
 											if remove_err then
 												vim.notify(
 													"Failed to disconnect: "
@@ -712,13 +671,10 @@ function M.register(palette)
 											end
 
 											-- Remove all models from this provider from recent/favorite lists
-											local lc_ok, lc = pcall(require, "opencode.local")
-											if lc_ok then
-												lc.model.remove_provider_models(item.provider.id)
-											end
+												actions.remove_provider_models(item.provider.id)
 
-											-- Dispose to refresh state
-											client.dispose(function()
+												-- Dispose to refresh state
+												actions.dispose_server(function()
 												vim.notify(
 													"Disconnected from " .. (item.provider.name or item.provider.id),
 													vim.log.levels.INFO
@@ -729,10 +685,9 @@ function M.register(palette)
 								end
 							end)
 						end, { title = " Disconnect Provider ", width = 50 })
+						end)
 					end)
-				end)
-			end)
-		end,
+			end,
 		enabled = function()
 			-- Only enable if there are connected providers
 			-- This is a simple check - could be made more accurate with async check

@@ -13,6 +13,7 @@ local spinner = require("opencode.ui.spinner")
 local locale = require("opencode.util.locale")
 local session_util = require("opencode.util.session")
 local event_util = require("opencode.events.util")
+local actions = require("opencode.actions")
 
 -- ─── Shared state & sub-modules ──────────────────────────────────────────────
 
@@ -1118,7 +1119,7 @@ function M.select_winbar_session(target)
 	end
 	local app_state = require("opencode.state")
 	local record = app_state.get_session_record(session_id) or { id = session_id }
-	require("opencode.session").switch_to(record, {
+	actions.switch_session(record, {
 		notify = false,
 		reason = "winbar",
 	})
@@ -1140,7 +1141,7 @@ local function switch_to_session_tab(target, current_session)
 
 	local app_state = require("opencode.state")
 	local record = app_state.get_session_record(target.id) or target
-	require("opencode.session").switch_to(record, {
+	actions.switch_session(record, {
 		notify = false,
 		reason = "winbar",
 	})
@@ -2555,61 +2556,6 @@ function M.clear_session_view(session_id)
 	M.schedule_render({ force = true })
 end
 
-function M.get_messages()
-	return vim.deepcopy(state.local_notices)
-end
-
-function M.load_messages(messages)
-	if not messages or #messages == 0 then
-		return
-	end
-	local sync = require("opencode.sync")
-	for _, msg in ipairs(messages) do
-		local role = msg.role or "assistant"
-		local content = ""
-		if msg.parts then
-			local texts = {}
-			for _, part in ipairs(msg.parts) do
-				if part.type == "text" and part.text then
-					table.insert(texts, part.text)
-				end
-			end
-			content = table.concat(texts, "\n")
-		else
-			content = sync.get_message_text(msg.id)
-		end
-		M.add_message(role, content, {
-			id = msg.id,
-			timestamp = msg.time and msg.time.created or os.time(),
-		})
-	end
-end
-
--- Legacy tool call API (no-op wrappers kept for backward compat)
-function M.add_tool_call(tool_name, args, opts)
-	opts = opts or {}
-	local tool_call = {
-		name = tool_name,
-		args = vim.json.encode(args),
-		status = opts.status or "pending",
-		result = opts.result,
-		timestamp = os.time(),
-	}
-	local content = string.format("```tool-call\n%s\n```", vim.json.encode(tool_call))
-	return M.add_message("system", content, { tool_calls = { tool_call } })
-end
-
-function M.update_tool_call(message_id, tool_index, status, result)
-	M.schedule_render()
-	return true
-end
-
-function M.update_tool_activity(message_id, tool_name, status, input)
-	M.schedule_render()
-end
-
-function M.clear_tool_activity(message_id) end
-
 -- ─── Line tracking ────────────────────────────────────────────────────────────
 
 local function shift_tracked_lines(old_end, delta, skip_stream_block_key)
@@ -2705,10 +2651,6 @@ function M.update_stream_part_block(session_id, message_id, part_id)
 
 	vim.cmd("redraw")
 	return true
-end
-
-function M.update_stream_text_block(message_id, part_id)
-	return M.update_stream_part_block(nil, message_id, part_id)
 end
 
 -- ─── Main render ─────────────────────────────────────────────────────────────
@@ -2864,11 +2806,40 @@ function M.render()
 
 	local rendered_question_ids = {}
 	local rendered_perm_ids = {}
-	local rendered_edit_ids = {}
-	local rendered_local_notice_ids = {}
-	local next_stream_blocks = {}
-	state.spinner_footer_line = nil
-	local widget_order = {
+		local rendered_edit_ids = {}
+		local rendered_local_notice_ids = {}
+		local next_stream_blocks = {}
+		state.spinner_footer_line = nil
+		local all_questions = question_state.get_all()
+		local all_permissions = permission_state.get_all()
+		local all_edits = edit_state.get_all()
+		local questions_by_message = {}
+		local permissions_by_message = {}
+		local edits_by_message = {}
+		local edits_by_session = {}
+		for _, qstate in ipairs(all_questions) do
+			if qstate.message_id then
+				questions_by_message[qstate.message_id] = questions_by_message[qstate.message_id] or {}
+				table.insert(questions_by_message[qstate.message_id], qstate)
+			end
+		end
+		for _, pstate in ipairs(all_permissions) do
+			if pstate.message_id then
+				permissions_by_message[pstate.message_id] = permissions_by_message[pstate.message_id] or {}
+				table.insert(permissions_by_message[pstate.message_id], pstate)
+			end
+		end
+		for _, estate in ipairs(all_edits) do
+			if estate.message_id then
+				edits_by_message[estate.message_id] = edits_by_message[estate.message_id] or {}
+				table.insert(edits_by_message[estate.message_id], estate)
+			end
+			if estate.session_id then
+				edits_by_session[estate.session_id] = edits_by_session[estate.session_id] or {}
+				table.insert(edits_by_session[estate.session_id], estate)
+			end
+		end
+		local widget_order = {
 		question = 1,
 		permission = 2,
 		edit = 3,
@@ -3034,7 +3005,7 @@ function M.render()
 		end
 		local widget_items = {}
 
-		for _, qstate in ipairs(question_state.get_all()) do
+		for _, qstate in ipairs(all_questions) do
 			local qid = qstate.request_id
 			if
 				qstate.session_id == child_session_id
@@ -3051,7 +3022,7 @@ function M.render()
 			end
 		end
 
-		for _, pstate in ipairs(permission_state.get_all()) do
+		for _, pstate in ipairs(all_permissions) do
 			local pid = pstate.permission_id
 			if
 				pstate.session_id == child_session_id
@@ -3068,7 +3039,7 @@ function M.render()
 			end
 		end
 
-		for _, estate in ipairs(edit_state.get_all_for_session(child_session_id)) do
+		for _, estate in ipairs(edits_by_session[child_session_id] or {}) do
 			local eid = estate.permission_id
 			if
 				eid
@@ -3102,7 +3073,7 @@ function M.render()
 	local function render_widgets_for_message(message_id)
 		local widget_items = {}
 
-		for _, qstate in ipairs(question_state.get_questions_for_message(message_id)) do
+		for _, qstate in ipairs(questions_by_message[message_id] or {}) do
 			if not rendered_question_ids[qstate.request_id] then
 				table.insert(widget_items, {
 					kind = "question",
@@ -3113,7 +3084,7 @@ function M.render()
 			end
 		end
 
-		local perms = permission_state.get_permissions_for_message(message_id)
+		local perms = permissions_by_message[message_id] or {}
 		for _, pstate in ipairs(perms) do
 			if not pstate.call_id then
 				table.insert(widget_items, {
@@ -3125,7 +3096,7 @@ function M.render()
 			end
 		end
 
-		local edits = edit_state.get_edits_for_message(message_id)
+		local edits = edits_by_message[message_id] or {}
 		for _, estate in ipairs(edits) do
 			if not estate.call_id then
 				table.insert(widget_items, {
@@ -3141,7 +3112,7 @@ function M.render()
 	end
 
 	local function has_question_widget_for_tool_call(message_id, call_id)
-		for _, qstate in ipairs(question_state.get_questions_for_message(message_id)) do
+		for _, qstate in ipairs(questions_by_message[message_id] or {}) do
 			if
 				(not qstate.call_id or qstate.call_id == call_id)
 				and should_render_session_widget(qstate.session_id, qstate.status)
@@ -3154,7 +3125,7 @@ function M.render()
 			return false
 		end
 
-		for _, qstate in ipairs(question_state.get_all()) do
+		for _, qstate in ipairs(all_questions) do
 			if
 				not qstate.message_id
 				and qstate.call_id == call_id
@@ -3169,7 +3140,7 @@ function M.render()
 	end
 
 	local function has_edit_widget_for_tool_call(message_id, call_id)
-		for _, estate in ipairs(edit_state.get_edits_for_message(message_id)) do
+		for _, estate in ipairs(edits_by_message[message_id] or {}) do
 			if
 				(not estate.call_id or estate.call_id == call_id)
 				and should_render_session_widget(estate.session_id, estate.status)
@@ -3182,7 +3153,7 @@ function M.render()
 			return false
 		end
 
-		for _, estate in ipairs(edit_state.get_all()) do
+		for _, estate in ipairs(all_edits) do
 			if
 				not estate.message_id
 				and estate.call_id == call_id
@@ -3203,7 +3174,7 @@ function M.render()
 
 		local widget_items = {}
 
-		for _, qstate in ipairs(question_state.get_questions_for_message(message_id)) do
+		for _, qstate in ipairs(questions_by_message[message_id] or {}) do
 			if qstate.call_id == call_id then
 				table.insert(widget_items, {
 					kind = "question",
@@ -3214,7 +3185,7 @@ function M.render()
 			end
 		end
 
-		for _, qstate in ipairs(question_state.get_all()) do
+		for _, qstate in ipairs(all_questions) do
 			if
 				not qstate.message_id
 				and qstate.call_id == call_id
@@ -3230,7 +3201,7 @@ function M.render()
 			end
 		end
 
-		local perms = permission_state.get_permissions_for_message(message_id)
+		local perms = permissions_by_message[message_id] or {}
 		for _, pstate in ipairs(perms) do
 			if pstate.call_id == call_id then
 				table.insert(widget_items, {
@@ -3242,7 +3213,7 @@ function M.render()
 			end
 		end
 
-		for _, pstate in ipairs(permission_state.get_all()) do
+		for _, pstate in ipairs(all_permissions) do
 			if
 				not pstate.message_id
 				and pstate.call_id == call_id
@@ -3258,7 +3229,7 @@ function M.render()
 			end
 		end
 
-		local edits = edit_state.get_edits_for_message(message_id)
+		local edits = edits_by_message[message_id] or {}
 		for _, estate in ipairs(edits) do
 			if estate.call_id == call_id then
 				table.insert(widget_items, {
@@ -3270,7 +3241,7 @@ function M.render()
 			end
 		end
 
-		for _, estate in ipairs(edit_state.get_all()) do
+		for _, estate in ipairs(all_edits) do
 			if
 				not estate.message_id
 				and estate.call_id == call_id
@@ -3673,7 +3644,7 @@ function M.render()
 		session_msg_ids[message.id] = true
 	end
 
-	for _, qstate in ipairs(question_state.get_all()) do
+		for _, qstate in ipairs(all_questions) do
 		if
 			not rendered_question_ids[qstate.request_id]
 			and not (qstate.message_id and session_msg_ids[qstate.message_id])
@@ -3686,8 +3657,7 @@ function M.render()
 	-- Orphan permissions from other sessions:
 	-- parent view shows cross-session widgets only while pending;
 	-- child view shows current-session widgets only.
-	local all_perms = permission_state.get_all()
-	for _, pstate in ipairs(all_perms) do
+		for _, pstate in ipairs(all_permissions) do
 		if
 			not rendered_perm_ids[pstate.permission_id]
 			and not (pstate.message_id and session_msg_ids[pstate.message_id])
@@ -3700,7 +3670,6 @@ function M.render()
 	-- Orphan edits from other sessions:
 	-- parent view shows cross-session widgets only while pending;
 	-- child view shows current-session widgets only.
-	local all_edits = edit_state.get_all()
 	for _, estate in ipairs(all_edits) do
 		local not_already_rendered = not rendered_edit_ids[estate.permission_id]
 		local not_inline = not (estate.message_id and session_msg_ids[estate.message_id])
@@ -3710,12 +3679,10 @@ function M.render()
 	end
 
 	if spinner_active and not spinner_footer_rendered then
-		local app_agent = app_state.get_agent() or {}
-		local app_model = app_state.get_model() or {}
-		local fallback_agent = app_agent.name or app_agent.id or "assistant"
-		local fallback_model_id = app_model.id
-		local fallback_provider_id = app_model.provider
-		local local_ok, local_state = pcall(require, "opencode.local")
+			local fallback_agent = "assistant"
+			local fallback_model_id = nil
+			local fallback_provider_id = nil
+			local local_ok, local_state = pcall(require, "opencode.local")
 		if local_ok then
 			local current_agent = local_state.agent.current()
 			local current_model = local_state.model.current()
@@ -4001,24 +3968,6 @@ function M.do_render()
 	vim.cmd("redraw")
 end
 
--- Legacy compatibility
-function M.update_assistant_message(message_id, content)
-	M.schedule_render()
-end
-
-function M.update_reasoning(message_id, reasoning_text)
-	if not thinking.is_enabled() then
-		return
-	end
-	thinking.store_reasoning(message_id, reasoning_text)
-	if not thinking.should_update() then
-		return
-	end
-	M.schedule_render()
-end
-
-function M.clear_streaming_state() end
-
 -- ─── Cross-domain key routers ─────────────────────────────────────────────────
 
 function M.sync_widget_selection_from_cursor()
@@ -4233,11 +4182,10 @@ function M.handle_question_cancel()
 			return
 		end
 
-		local client = require("opencode.client")
-		local current_session = require("opencode.state").get_session()
-		local session_id = qstate.session_id or current_session.id
-		client.reject_question(session_id, request_id, function(err, success)
-			vim.schedule(function()
+			local current_session = require("opencode.state").get_session()
+			local session_id = qstate.session_id or current_session.id
+			actions.reject_question(session_id, request_id, function(err)
+				vim.schedule(function()
 				if err then
 					vim.notify("Failed to cancel question: " .. tostring(err), vim.log.levels.ERROR)
 					return

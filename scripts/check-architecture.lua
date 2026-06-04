@@ -91,6 +91,12 @@ local store_modules = {
 	["lua/opencode/edit/state.lua"] = true,
 }
 
+local ui_forbidden_requires = {
+	["opencode.client"] = true,
+	["opencode.lifecycle"] = true,
+	["opencode.session"] = true,
+}
+
 for _, path in ipairs(files) do
 	local content = read_file(path)
 	if store_modules[path] then
@@ -107,6 +113,39 @@ for _, path in ipairs(files) do
 		for line_no, line in ipairs(vim.split(content, "\n", { plain = true })) do
 			if line:match("emit%s*%(%s*[\"']chat_render[\"']") then
 				table.insert(layering_violations, string.format("%s:%d chat_render must go through render_coordinator", path, line_no))
+			end
+		end
+	end
+
+	if path:match("^lua/opencode/ui/") then
+		for line_no, line in ipairs(vim.split(content, "\n", { plain = true })) do
+			for req in line:gmatch("require%s*%(?%s*[\"']([^\"']+)[\"']") do
+				if ui_forbidden_requires[req] then
+					table.insert(
+						layering_violations,
+						string.format("%s:%d UI modules must call opencode.actions instead of requiring %s", path, line_no, req)
+					)
+				end
+			end
+			for req in line:gmatch("pcall%s*%(%s*require%s*,%s*[\"']([^\"']+)[\"']") do
+				if ui_forbidden_requires[req] then
+					table.insert(
+						layering_violations,
+						string.format("%s:%d UI modules must call opencode.actions instead of requiring %s", path, line_no, req)
+					)
+				end
+			end
+			if line:match("%f[%w_]sync%.handle_") then
+				table.insert(
+					layering_violations,
+					string.format("%s:%d UI modules must not ingest sync data directly", path, line_no)
+				)
+			end
+			if line:match("%f[%w_]state%.set_[%w_]+%s*%(") then
+				table.insert(
+					layering_violations,
+					string.format("%s:%d UI modules must not mutate app state directly", path, line_no)
+				)
 			end
 		end
 	end

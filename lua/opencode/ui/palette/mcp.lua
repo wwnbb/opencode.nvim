@@ -2,7 +2,7 @@
 
 local M = {}
 
-local client = require("opencode.client")
+local actions = require("opencode.actions")
 
 local function mcp_value_to_text(value)
 	if value == nil or value == vim.NIL then
@@ -232,17 +232,14 @@ function M.register(palette)
 		category = "mcp",
 		keybind = "<leader>oS",
 		action = function()
-			client.get_mcp_status(function(err, status)
-				if err then
-					vim.schedule(function()
+				actions.get_mcp_status(function(err, status)
+					if err then
 						vim.notify("Failed to get MCP status: " .. tostring(err.message or err), vim.log.levels.ERROR)
-					end)
-					return
-				end
-				vim.schedule(function()
-					if not status or vim.tbl_isempty(status) then
-						vim.notify("No MCP servers configured", vim.log.levels.INFO)
 						return
+					end
+						if not status or vim.tbl_isempty(status) then
+							vim.notify("No MCP servers configured", vim.log.levels.INFO)
+							return
 					end
 
 					local function format_status(server)
@@ -298,25 +295,23 @@ function M.register(palette)
 						table.insert(items, item)
 					end
 
-					table.sort(items, function(a, b)
-						return a.value < b.value
-					end)
+						table.sort(items, function(a, b)
+							return a.value < b.value
+						end)
 
-					local function refresh_item(item, render)
-						client.get_mcp_status(function(refresh_err, refreshed)
-							if refresh_err then
-								vim.notify(
-									"Failed to refresh MCP status: " .. tostring(refresh_err.message or refresh_err),
+						local function refresh_item(item, render)
+							actions.get_mcp_status(function(refresh_err, refreshed)
+								if refresh_err then
+									vim.notify(
+										"Failed to refresh MCP status: " .. tostring(refresh_err.message or refresh_err),
 									vim.log.levels.ERROR
 								)
-								return
-							end
-							if refreshed then
-								local sync = require("opencode.sync")
-								sync.handle_mcp(refreshed)
-								update_item(item, refreshed[item.value] or { status = "disabled" })
-								if render then
-									render()
+									return
+								end
+								if refreshed then
+									update_item(item, refreshed[item.value] or { status = "disabled" })
+									if render then
+										render()
 								end
 							end
 						end)
@@ -346,14 +341,13 @@ function M.register(palette)
 							},
 							{
 								key = "t",
-								text = "t:toggle",
-								on_key = function(item, render)
-									local was_connected = item.status == "connected"
-									local toggle = was_connected and client.disconnect_mcp or client.connect_mcp
-									toggle(item.value, function(toggle_err)
-										if toggle_err then
-											vim.notify(
-												"Failed to toggle MCP server "
+									text = "t:toggle",
+									on_key = function(item, render)
+										local was_connected = item.status == "connected"
+										actions.toggle_mcp(item.value, was_connected, function(toggle_err)
+											if toggle_err then
+												vim.notify(
+													"Failed to toggle MCP server "
 													.. item.value
 													.. ": "
 													.. tostring(toggle_err.message or toggle_err),
@@ -365,19 +359,18 @@ function M.register(palette)
 										vim.notify(
 											item.value .. (was_connected and " disabled" or " enabled"),
 											vim.log.levels.INFO
-										)
-									end)
-									return true
-								end,
+											)
+										end)
+										return true
+									end,
 							},
 						},
 						sort_fn = function(a, b)
 							return a.value < b.value
 						end,
-					})
+						})
 				end)
-			end)
-		end,
+			end,
 	})
 	palette.register({
 		id = "mcp.tools",

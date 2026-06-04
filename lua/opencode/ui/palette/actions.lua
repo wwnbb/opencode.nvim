@@ -4,8 +4,7 @@ local M = {}
 
 local opencode_actions = require("opencode.actions")
 local changes = require("opencode.artifact.changes")
-local client = require("opencode.client")
-local lifecycle = require("opencode.lifecycle")
+local selectors = require("opencode.selectors")
 local state = require("opencode.state")
 
 local hl_ns = vim.api.nvim_create_namespace("opencode_palette")
@@ -80,62 +79,26 @@ function M.register(palette)
 				return
 			end
 
-			local compact_opts = {}
-			local local_ok, lc = pcall(require, "opencode.local")
-			if local_ok and lc and lc.model and type(lc.model.current) == "function" then
-				local current_model = lc.model.current()
+				local compact_opts = {}
+				local current_model = selectors.current_model()
 				if current_model and current_model.providerID and current_model.modelID then
 					compact_opts.providerID = current_model.providerID
 					compact_opts.modelID = current_model.modelID
 				end
-			end
-
-			if not compact_opts.providerID or not compact_opts.modelID then
-				local state_model = state.get_model()
-				if state_model and state_model.provider and state_model.id then
-					compact_opts.providerID = state_model.provider
-					compact_opts.modelID = state_model.id
-				end
-			end
 
 			if not compact_opts.providerID or not compact_opts.modelID then
 				vim.notify("No model selected for compaction", vim.log.levels.WARN)
 				return
 			end
 
-			lifecycle.ensure_connected(function()
-				client.summarize_session(session.id, compact_opts, function(err)
+				opencode_actions.compact_session(session.id, compact_opts, function(err)
 					if err then
-						if type(err) == "table" and err.status == 404 then
-							client.execute_command(session.id, "compact", {}, {}, function(fallback_err)
-								vim.schedule(function()
-									if fallback_err then
-										vim.notify(
-											"Failed to compact session: "
-												.. tostring(fallback_err.message or fallback_err),
-											vim.log.levels.ERROR
-										)
-										return
-									end
-									vim.notify("Session compaction started", vim.log.levels.INFO)
-								end)
-							end)
-							return
-						end
-						vim.schedule(function()
-							vim.notify(
-								"Failed to compact session: " .. tostring(err.message or err),
-								vim.log.levels.ERROR
-							)
-						end)
+						vim.notify("Failed to compact session: " .. tostring(err.message or err), vim.log.levels.ERROR)
 						return
 					end
-					vim.schedule(function()
-						vim.notify("Session compaction started", vim.log.levels.INFO)
-					end)
+					vim.notify("Session compaction started", vim.log.levels.INFO)
 				end)
-			end)
-		end,
+			end,
 		enabled = function()
 			return state.get_session().id ~= nil
 		end,
@@ -174,7 +137,7 @@ function M.register(palette)
 		category = "actions",
 		action = function()
 			-- Fetch full status from server (combines multiple endpoints)
-			client.get_status(function(err, server_status)
+				opencode_actions.get_server_status(function(err, server_status)
 				vim.schedule(function()
 					local lines = {}
 					local highlights = {}
