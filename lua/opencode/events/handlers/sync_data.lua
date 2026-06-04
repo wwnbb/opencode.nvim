@@ -4,6 +4,7 @@ function M.setup(events)
 	local sync = require("opencode.sync")
 	local client = require("opencode.client")
 	local logger = require("opencode.logger")
+	local schedule = require("opencode.util.schedule")
 
 	---@param value any
 	---@return string
@@ -117,128 +118,166 @@ function M.setup(events)
 		refresh_input_info_bar()
 	end)
 
+	---@param spec table
+	---@return string
+	local function sync_kind(spec)
+		if spec.loaded_event then
+			return (spec.loaded_event:gsub("_loaded$", ""))
+		end
+		return spec.kind
+	end
+
+	---@param spec table
+	local function fetch_initial_item(spec)
+		spec.request(function(err, data)
+			schedule.schedule_pcall("initial sync " .. spec.kind, function()
+				if err then
+					if not spec.quiet_errors then
+						report_initial_sync_error(spec.kind, err)
+					end
+					return
+				end
+
+				local payload, should_emit = spec.on_success(data)
+				if should_emit == false then
+					return
+				end
+
+				if spec.debug_summary then
+					logger.debug(spec.debug_label or (spec.kind .. " loaded"), spec.debug_summary(payload, data))
+				elseif spec.debug_label then
+					logger.debug(spec.debug_label)
+				end
+
+				if spec.loaded_event then
+					events.emit(spec.loaded_event, payload)
+				end
+				events.emit("sync_changed", {
+					kind = sync_kind(spec),
+					action = "loaded",
+				})
+
+				if spec.after_emit then
+					spec.after_emit(payload, data)
+				end
+			end)
+		end)
+	end
+
+	local initial_sync_specs = {
+		{
+			kind = "config providers",
+			request = function(callback)
+				client.get_config_providers(callback)
+			end,
+			loaded_event = "providers_loaded",
+			on_success = function(data)
+				if not data then
+					return nil, false
+				end
+				local providers = data.providers or {}
+				sync.handle_providers(providers)
+				if data.default then
+					sync.handle_provider_defaults(data.default)
+				end
+				return providers
+			end,
+			debug_label = "Providers loaded",
+			debug_summary = function(providers, data)
+				return summarize_providers(providers, data and data.default)
+			end,
+			after_emit = function(providers)
+				local local_ok, local_state = pcall(require, "opencode.local")
+				if local_ok and local_state.model and type(local_state.model.cleanup) == "function" then
+					local_state.model.cleanup()
+				end
+
+				if #providers == 0 then
+					logger.warn("No providers connected. Use :OpenCode command palette to connect a provider.")
+				end
+			end,
+		},
+		{
+			kind = "agents",
+			request = function(callback)
+				client.list_agents(callback)
+			end,
+			loaded_event = "agents_loaded",
+			on_success = function(agents)
+				if not agents then
+					return nil, false
+				end
+				sync.handle_agents(agents)
+				return agents
+			end,
+			debug_label = "Agents loaded",
+			debug_summary = summarize_agents,
+		},
+		{
+			kind = "config",
+			request = function(callback)
+				client.get_config(callback)
+			end,
+			loaded_event = "config_loaded",
+			on_success = function(config)
+				if not config then
+					return nil, false
+				end
+				sync.handle_config(config)
+				if config.command then
+					sync.handle_commands(config.command)
+				end
+				return config
+			end,
+			debug_label = "Config loaded",
+			debug_summary = function(config)
+				return {
+					model = config.model,
+					model_kind = value_kind(config.model),
+					default_agent = config.default_agent,
+					command_count = count_keys(config.command),
+				}
+			end,
+		},
+		{
+			kind = "skills",
+			request = function(callback)
+				client.list_skills(callback)
+			end,
+			loaded_event = "skills_loaded",
+			on_success = function(skills)
+				sync.handle_skills(skills)
+				return skills
+			end,
+			debug_label = "Skills loaded",
+			debug_summary = function(skills)
+				return { count = skills and #skills or 0 }
+			end,
+		},
+		{
+			kind = "mcp",
+			request = function(callback)
+				client.get_mcp_status(callback)
+			end,
+			quiet_errors = true,
+			on_success = function(mcp)
+				if not mcp then
+					return nil, false
+				end
+				sync.handle_mcp(mcp)
+				return mcp
+			end,
+			debug_label = "MCP status loaded",
+		},
+	}
+
 	-- Fetch initial data when connected (like TUI does on startup)
 	events.on("connected", function()
-		vim.schedule(function()
+		schedule.schedule_pcall("initial sync fetch start", function()
 			logger.debug("Fetching initial sync data (providers, agents, config, skills)")
-
-			-- Fetch providers with models (using /config/providers like TUI does)
-			-- This returns { providers: Provider[], default: { providerID: modelID } }
-			client.get_config_providers(function(err, data)
-				vim.schedule(function()
-					if err then
-						report_initial_sync_error("config providers", err)
-						return
-					end
-					if data then
-						-- Handle providers array
-						local providers = data.providers or {}
-						sync.handle_providers(providers)
-
-						-- Handle defaults mapping
-						if data.default then
-							sync.handle_provider_defaults(data.default)
-						end
-
-						logger.debug("Providers loaded", summarize_providers(providers, data.default))
-
-						-- Emit event for UI updates
-						events.emit("providers_loaded", providers)
-						events.emit("sync_changed", {
-							kind = "providers",
-							action = "loaded",
-						})
-						local local_ok, local_state = pcall(require, "opencode.local")
-						if local_ok and local_state.model and type(local_state.model.cleanup) == "function" then
-							local_state.model.cleanup()
-						end
-
-						-- Warn if no providers are connected
-						if #providers == 0 then
-							logger.warn("No providers connected. Use :OpenCode command palette to connect a provider.")
-						end
-					end
-				end)
-			end)
-
-			-- Fetch agents
-			client.list_agents(function(err, agents)
-				vim.schedule(function()
-					if err then
-						report_initial_sync_error("agents", err)
-						return
-					end
-					if agents then
-						sync.handle_agents(agents)
-						-- Emit event for UI updates
-						events.emit("agents_loaded", agents)
-						events.emit("sync_changed", {
-							kind = "agents",
-							action = "loaded",
-						})
-						logger.debug("Agents loaded", summarize_agents(agents))
-					end
-				end)
-			end)
-
-			-- Fetch config
-			client.get_config(function(err, config)
-				vim.schedule(function()
-					if err then
-						report_initial_sync_error("config", err)
-						return
-					end
-					if config then
-						sync.handle_config(config)
-						-- Handle commands from config
-						if config.command then
-							sync.handle_commands(config.command)
-						end
-						events.emit("config_loaded", config)
-						events.emit("sync_changed", {
-							kind = "config",
-							action = "loaded",
-						})
-						logger.debug("Config loaded", {
-							model = config.model,
-							model_kind = value_kind(config.model),
-							default_agent = config.default_agent,
-							command_count = count_keys(config.command),
-						})
-					end
-				end)
-			end)
-
-			-- Fetch skills
-			client.list_skills(function(err, skills)
-				vim.schedule(function()
-					if err then
-						report_initial_sync_error("skills", err)
-						return
-					end
-					sync.handle_skills(skills)
-					events.emit("skills_loaded", skills)
-					events.emit("sync_changed", {
-						kind = "skills",
-						action = "loaded",
-					})
-					logger.debug("Skills loaded", { count = skills and #skills or 0 })
-				end)
-			end)
-
-			-- Fetch MCP status
-			client.get_mcp_status(function(err, mcp)
-				vim.schedule(function()
-					if not err and mcp then
-						sync.handle_mcp(mcp)
-						events.emit("sync_changed", {
-							kind = "mcp",
-							action = "loaded",
-						})
-						logger.debug("MCP status loaded")
-					end
-				end)
-			end)
+			for _, spec in ipairs(initial_sync_specs) do
+				fetch_initial_item(spec)
+			end
 		end)
 	end)
 end

@@ -4,7 +4,6 @@
 local M = {}
 
 local widget_base = require("opencode.ui.widget_base")
-local render = require("opencode.ui.chat.render")
 local panel = require("opencode.ui.panel")
 local syntax = require("opencode.ui.syntax")
 
@@ -26,18 +25,23 @@ local icons = {
 	unselected = " ",
 }
 
----@param name string
----@return table
-local function get_hl(name)
-	return panel.get_hl(name)
-end
+local panel_helpers = panel.create_helpers({
+	prefix = PANEL_PREFIX,
+	blank_prefix = PANEL_EMPTY,
+	border_hl = PANEL_BORDER_HL,
+	default_hl = "OpenCodeEditOutput",
+})
+local get_hl = panel_helpers.get_hl
+local add_panel_line = panel_helpers.add_line
+local add_panel_blank = panel_helpers.add_blank
+local add_trailing_separator = panel_helpers.add_separator
 
 ---@param name string
 ---@param fg_source string
 ---@param fallback string|nil
 ---@param extra_opts table|nil
 local function set_panel_hl(name, fg_source, fallback, extra_opts)
-	panel.set_hl(name, fg_source, fallback, extra_opts)
+	panel_helpers.set_hl(name, fg_source, fallback, extra_opts)
 end
 
 ---@param sources string[]
@@ -115,31 +119,6 @@ local function add_highlight(result, line, col_start, col_end, hl_group, priorit
 		hl_group = hl_group,
 		priority = priority,
 	})
-end
-
----@param result table
----@param text string
----@param hl_group string
----@return number line_index, string line
----@return table[] rows
-local function add_panel_line(result, text, hl_group)
-	return panel.add_line(result, text, hl_group, {
-		prefix = PANEL_PREFIX,
-		prefix_hl_group = PANEL_BORDER_HL,
-	})
-end
-
----@param result table
-local function add_panel_blank(result)
-	panel.add_blank(result, "OpenCodeEditOutput", {
-		prefix = PANEL_EMPTY,
-		prefix_hl_group = PANEL_BORDER_HL,
-	})
-end
-
----@param result table
-local function add_trailing_separator(result)
-	table.insert(result.lines, "")
 end
 
 ---@param file table
@@ -238,7 +217,7 @@ end
 ---@param path string
 ---@param path_hl string
 local function add_path_highlight(result, rows, path, path_hl)
-	render.highlight_panel_text(result, rows, path, path_hl)
+	panel_helpers.highlight_text(result, rows, path, path_hl)
 end
 
 ---@param result table
@@ -557,13 +536,11 @@ local function append_inline_diff(result, file)
 				body_prefix = DIFF_INDENT .. gutter
 				continuation_prefix = DIFF_INDENT .. display_width_spaces(gutter)
 			end
-			local line_index, _, rows = render.add_panel_raw_line(
+			local line_index, _, rows = panel_helpers.add_raw_line(
 				result,
 				body,
 				diff_line_hl_group(kind),
 				{
-					prefix = PANEL_PREFIX,
-					prefix_hl_group = PANEL_BORDER_HL,
 					body_prefix = body_prefix,
 					continuation_prefix = continuation_prefix,
 				}

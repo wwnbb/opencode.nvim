@@ -415,7 +415,10 @@ local function get_inline_diff_edit_context()
 end
 
 ---@param edit_id string
-local function refresh_inline_diff_edit(edit_id)
+function M.refresh_edit(edit_id)
+	if not edit_id then
+		return
+	end
 	if edit_state.are_all_resolved(edit_id) then
 		M.finalize_edit(edit_id)
 	else
@@ -442,7 +445,7 @@ local function confirm_inline_diff_file()
 	end
 
 	M.close_inline_diff_split({ silent = true })
-	refresh_inline_diff_edit(edit_id)
+	M.refresh_edit(edit_id)
 end
 
 local function reject_inline_diff_file()
@@ -483,7 +486,7 @@ local function reject_inline_diff_file()
 	end
 
 	M.close_inline_diff_split({ silent = true })
-	refresh_inline_diff_edit(edit_id)
+	M.refresh_edit(edit_id)
 end
 
 local function apply_inline_diff_hunks()
@@ -516,10 +519,6 @@ local function show_inline_diff_help()
 	}
 	vim.notify(table.concat(help, "\n"), vim.log.levels.INFO)
 end
-
--- ─── Pending queue ────────────────────────────────────────────────────────────
-
-function M.process_pending_edits() end
 
 -- ─── Add ─────────────────────────────────────────────────────────────────────
 
@@ -713,6 +712,31 @@ function M.finalize_edit(permission_id)
 	end)
 end
 
+---@param edit_id string
+---@param action fun(permission_id: string, file_index: number): boolean, string|nil
+---@param error_label string
+---@return boolean
+local function apply_edit_file_action(edit_id, action, error_label)
+	local estate = edit_state.get_edit(edit_id)
+	if not estate then
+		return false
+	end
+
+	local file = estate.files[estate.selected_file]
+	if not file or file.status ~= "pending" then
+		return false
+	end
+
+	local ok, err = action(edit_id, estate.selected_file)
+	if not ok then
+		vim.notify("Failed to " .. error_label .. ": " .. (err or "unknown"), vim.log.levels.ERROR)
+		return false
+	end
+
+	M.refresh_edit(edit_id)
+	return true
+end
+
 -- ─── File handlers ────────────────────────────────────────────────────────────
 
 function M.handle_edit_accept_file()
@@ -739,17 +763,7 @@ function M.handle_edit_accept_file()
 		return
 	end
 
-	local ok, err = edit_state.accept_file(eid, estate.selected_file)
-	if not ok then
-		vim.notify("Failed to accept file: " .. (err or "unknown"), vim.log.levels.ERROR)
-		return
-	end
-
-	if edit_state.are_all_resolved(eid) then
-		M.finalize_edit(eid)
-	else
-		M.rerender_edit(eid)
-	end
+	apply_edit_file_action(eid, edit_state.accept_file, "accept file")
 end
 
 function M.handle_edit_reject_file()
@@ -776,17 +790,7 @@ function M.handle_edit_reject_file()
 		return
 	end
 
-	local ok, err = edit_state.reject_file(eid, estate.selected_file)
-	if not ok then
-		vim.notify("Failed to reject file: " .. (err or "unknown"), vim.log.levels.ERROR)
-		return
-	end
-
-	if edit_state.are_all_resolved(eid) then
-		M.finalize_edit(eid)
-	else
-		M.rerender_edit(eid)
-	end
+	apply_edit_file_action(eid, edit_state.reject_file, "reject file")
 end
 
 function M.handle_edit_accept_all()
@@ -795,11 +799,7 @@ function M.handle_edit_accept_all()
 		return
 	end
 	edit_state.accept_all(eid)
-	if edit_state.are_all_resolved(eid) then
-		M.finalize_edit(eid)
-	else
-		M.rerender_edit(eid)
-	end
+	M.refresh_edit(eid)
 end
 
 function M.handle_edit_reject_all()
@@ -808,11 +808,7 @@ function M.handle_edit_reject_all()
 		return
 	end
 	edit_state.reject_all(eid)
-	if edit_state.are_all_resolved(eid) then
-		M.finalize_edit(eid)
-	else
-		M.rerender_edit(eid)
-	end
+	M.refresh_edit(eid)
 end
 
 function M.handle_edit_resolve_file()
@@ -838,17 +834,7 @@ function M.handle_edit_resolve_file()
 		return
 	end
 
-	local ok, err = edit_state.resolve_file(eid, estate.selected_file)
-	if not ok then
-		vim.notify("Failed to resolve file: " .. (err or "unknown"), vim.log.levels.ERROR)
-		return
-	end
-
-	if edit_state.are_all_resolved(eid) then
-		M.finalize_edit(eid)
-	else
-		M.rerender_edit(eid)
-	end
+	apply_edit_file_action(eid, edit_state.resolve_file, "resolve file")
 end
 
 function M.handle_edit_resolve_all()
@@ -861,11 +847,7 @@ function M.handle_edit_resolve_all()
 		return
 	end
 	edit_state.resolve_all(eid)
-	if edit_state.are_all_resolved(eid) then
-		M.finalize_edit(eid)
-	else
-		M.rerender_edit(eid)
-	end
+	M.refresh_edit(eid)
 end
 
 function M.handle_edit_message()

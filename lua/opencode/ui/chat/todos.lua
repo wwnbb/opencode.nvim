@@ -18,6 +18,16 @@ local TODO_ANIM_FRAMES = { "|", "/", "-", "\\" }
 local TODO_READ_TOOLS = { todoread = true, todolist = true }
 local TODO_WRITE_TOOLS = { todowrite = true }
 
+local panel_helpers = panel.create_helpers({
+	prefix = PANEL_PREFIX,
+	blank_prefix = PANEL_BLANK_PREFIX,
+	border_hl = PANEL_BORDER_HL,
+	default_hl = "OpenCodeTodoOutput",
+})
+local add_panel_line = panel_helpers.add_line
+local add_panel_raw_line = panel_helpers.add_raw_line
+local add_panel_blank = panel_helpers.add_blank
+
 local STATUS_HIGHLIGHTS = {
 	pending = "OpenCodeTodoPending",
 	in_progress = "OpenCodeTodoProgress",
@@ -130,15 +140,15 @@ end
 local function ensure_highlights(cfg)
 	cfg = cfg or M.get_config()
 	local highlights = cfg.highlights or {}
-	panel.set_hl("OpenCodeTodoMuted", highlights.border or "Comment", "Normal")
-	panel.set_hl("OpenCodeTodoHeader", highlights.header or "Title", "Normal", { bold = true })
-	panel.set_hl("OpenCodeTodoPending", highlights.pending or "Comment", "Normal")
-	panel.set_hl("OpenCodeTodoProgress", highlights.in_progress or "WarningMsg", "WarningMsg")
-	panel.set_hl("OpenCodeTodoCompleted", highlights.completed or "DiagnosticOk", "DiagnosticOk")
-	panel.set_hl("OpenCodeTodoCancelled", highlights.cancelled or "Comment", "Normal")
-	panel.set_hl("OpenCodeTodoPriority", "Special", "Normal")
-	panel.set_hl("OpenCodeTodoOutput", "Normal", nil)
-	panel.set_hl("OpenCodeTodoError", "DiagnosticError", "ErrorMsg")
+	panel_helpers.set_hl("OpenCodeTodoMuted", highlights.border or "Comment", "Normal")
+	panel_helpers.set_hl("OpenCodeTodoHeader", highlights.header or "Title", "Normal", { bold = true })
+	panel_helpers.set_hl("OpenCodeTodoPending", highlights.pending or "Comment", "Normal")
+	panel_helpers.set_hl("OpenCodeTodoProgress", highlights.in_progress or "WarningMsg", "WarningMsg")
+	panel_helpers.set_hl("OpenCodeTodoCompleted", highlights.completed or "DiagnosticOk", "DiagnosticOk")
+	panel_helpers.set_hl("OpenCodeTodoCancelled", highlights.cancelled or "Comment", "Normal")
+	panel_helpers.set_hl("OpenCodeTodoPriority", "Special", "Normal")
+	panel_helpers.set_hl("OpenCodeTodoOutput", "Normal", nil)
+	panel_helpers.set_hl("OpenCodeTodoError", "DiagnosticError", "ErrorMsg")
 
 	set_dock_hl("OpenCodeTodoDockMuted", highlights.border or "Comment", "Normal")
 	set_dock_hl("OpenCodeTodoDockHeader", highlights.header or "Title", "Normal", { bold = true })
@@ -149,42 +159,6 @@ local function ensure_highlights(cfg)
 	set_dock_hl("OpenCodeTodoDockPriority", "Special", "Normal")
 	set_dock_hl("OpenCodeTodoDockOutput", "Normal", nil)
 	set_dock_hl("OpenCodeTodoDockError", "DiagnosticError", "ErrorMsg")
-end
-
----@param result table
----@param text string
----@param hl_group string
----@return number line_index
----@return string line
----@return table[] rows
-local function add_panel_line(result, text, hl_group)
-	return panel.add_line(result, text, hl_group, {
-		prefix = PANEL_PREFIX,
-		prefix_hl_group = PANEL_BORDER_HL,
-	})
-end
-
----@param result table
----@param text string
----@param hl_group string
----@param opts? table
----@return number line_index
----@return string line
----@return table[] rows
-local function add_panel_raw_line(result, text, hl_group, opts)
-	local panel_opts = vim.tbl_extend("force", opts or {}, {
-		prefix = PANEL_PREFIX,
-		prefix_hl_group = PANEL_BORDER_HL,
-	})
-	return panel.add_raw_line(result, text, hl_group, panel_opts)
-end
-
----@param result table
-local function add_panel_blank(result)
-	panel.add_blank(result, "OpenCodeTodoOutput", {
-		prefix = PANEL_BLANK_PREFIX,
-		prefix_hl_group = PANEL_BORDER_HL,
-	})
 end
 
 ---@param cfg OpenCodeTodoConfig|nil
@@ -513,7 +487,7 @@ local function add_panel_todo_item(result, todo, cfg, width)
 			wrap = false,
 		})
 		if idx == 1 and priority ~= "" then
-			render.highlight_panel_text(result, rows, priority, "OpenCodeTodoPriority")
+			panel_helpers.highlight_text(result, rows, priority, "OpenCodeTodoPriority")
 		end
 	end
 end

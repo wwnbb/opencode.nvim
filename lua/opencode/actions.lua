@@ -28,16 +28,7 @@ local function local_state()
 	return require("opencode.local")
 end
 
-local function schedule_callback(callback, ...)
-	if type(callback) ~= "function" then
-		return
-	end
-	local args = { ... }
-	vim.schedule(function()
-		local unpack_fn = table.unpack or unpack
-		callback(unpack_fn(args))
-	end)
-end
+local schedule_callback = require("opencode.util.schedule").schedule_callback
 
 local function update_input_info_bar()
 	local ok, input = pcall(require, "opencode.ui.input")
