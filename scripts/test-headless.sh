@@ -16,6 +16,7 @@ if [ "$#" -eq 0 ]; then
 		"scripts/check-state-ownership.lua"
 		"scripts/smoke-require.lua"
 		"scripts/integration-chat-tabs.lua"
+		"scripts/integration-chat-render-freshness.lua"
 	)
 else
 	TEST_SCRIPTS=("$@")

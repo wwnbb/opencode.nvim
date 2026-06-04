@@ -755,7 +755,7 @@ end
 ---@param start_line number 0-indexed
 function M.apply_highlights(nui_lines, bufnr, ns_id, start_line)
 	for i, nui_line in ipairs(nui_lines) do
-		nui_line:highlight(bufnr, ns_id, start_line + i - 1)
+		nui_line:highlight(bufnr, ns_id, start_line + i)
 	end
 	M.apply_extmark_highlights(bufnr, ns_id, nui_lines._opencode_highlights, start_line)
 end

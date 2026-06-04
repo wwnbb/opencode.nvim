@@ -92,7 +92,7 @@ end
 
 ---@param old_end number
 ---@param delta number
----@param opts? table { skip_stream_message_id?: string|nil }
+---@param opts? table { skip_stream_block_key?: string|nil, skip_stream_message_id?: string|nil }
 function M.shift_tracked_lines(old_end, delta, opts)
 	if delta == 0 then
 		return
@@ -106,9 +106,10 @@ function M.shift_tracked_lines(old_end, delta, opts)
 	render.shift_line_map(state.tasks, old_end, delta)
 	render.shift_line_map(state.tools, old_end, delta)
 
-	for message_id, pos in pairs(state.stream_blocks) do
+	for block_key, pos in pairs(state.stream_blocks) do
 		if
-			message_id ~= opts.skip_stream_message_id
+			block_key ~= opts.skip_stream_block_key
+			and (not opts.skip_stream_message_id or pos.message_id ~= opts.skip_stream_message_id)
 			and pos.start_line
 			and pos.end_line
 			and pos.start_line > old_end
@@ -116,6 +117,10 @@ function M.shift_tracked_lines(old_end, delta, opts)
 			pos.start_line = pos.start_line + delta
 			pos.end_line = pos.end_line + delta
 		end
+	end
+
+	if state.spinner_footer_line and state.spinner_footer_line > old_end then
+		state.spinner_footer_line = state.spinner_footer_line + delta
 	end
 
 	if state.focus_question_line and (state.focus_question_line - 1) > old_end then

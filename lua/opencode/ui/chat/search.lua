@@ -242,18 +242,17 @@ end
 ---@return string|nil body
 ---@return number|nil body_col
 local function parse_grep_line(text)
-	local path, body = text:match("^([^:\n]+):%d+:%d+:(.*)$")
-	local body_col
-	if path then
-		local before = text:match("^([^:\n]+:%d+:%d+:)")
-		body_col = before and #before or nil
+	local path, line, col, body = text:match("^(.*):(%d+):(%d+):(.*)$")
+	if path and path ~= "" then
+		local before = path .. ":" .. line .. ":" .. col .. ":"
+		local body_col = #before
 		return path, body, body_col
 	end
 
-	path, body = text:match("^([^:\n]+):%d+:(.*)$")
-	if path then
-		local before = text:match("^([^:\n]+:%d+:)")
-		body_col = before and #before or nil
+	path, line, body = text:match("^(.*):(%d+):(.*)$")
+	if path and path ~= "" then
+		local before = path .. ":" .. line .. ":"
+		local body_col = #before
 		return path, body, body_col
 	end
 

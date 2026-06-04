@@ -53,7 +53,7 @@ function M.extract_topic(text)
 		return nil
 	end
 	local match = text:match("^%s*%*%*(.-)%*%*")
-	return match and match:trim() or nil
+	return match and vim.trim(match) or nil
 end
 
 -- Format reasoning text for display
@@ -122,6 +122,7 @@ end
 
 -- Get highlight configuration for rendering
 function M.get_highlights(start_line)
+	local config = get_config()
 	local highlights = {}
 
 	-- Header highlight
@@ -129,7 +130,7 @@ function M.get_highlights(start_line)
 		line = start_line,
 		col_start = 0,
 		col_end = -1, -- Full line
-		hl_group = config.header_highlight,
+		hl_group = config.header_highlight or "Title",
 	})
 
 	-- Content highlights (apply Comment highlight to all content lines)

@@ -240,15 +240,10 @@ end
 function M.has_pending_edits()
 	for _, estate in pairs(active_edits) do
 		if estate.status == "pending" then
-			local has_files = false
 			for _, file in ipairs(estate.files or {}) do
-				has_files = true
 				if file.status == "pending" then
 					return true
 				end
-			end
-			if not has_files then
-				return true
 			end
 		end
 	end

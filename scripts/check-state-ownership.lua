@@ -103,6 +103,33 @@ local sync = require("opencode.sync")
 local local_state = require("opencode.local")
 local selectors = require("opencode.selectors")
 
+bus.clear()
+bus.clear_history()
+require("opencode.events.state_bridge").setup(bus)
+local changes_update_count = 0
+local changes_sync_count = 0
+bus.on("changes_update", function(data)
+	changes_update_count = changes_update_count + 1
+	assert_true(type(data.files) == "table", "changes_update should include files table")
+	assert_true(type(data.stats) == "table", "changes_update should include stats table")
+end)
+bus.on("sync_changed", function(data)
+	if type(data) == "table" and data.kind == "changes" and data.action == "updated" then
+		changes_sync_count = changes_sync_count + 1
+	end
+end)
+state.add_pending_change("bridge_state_change.lua", {
+	original = "",
+	modified = "changed",
+	additions = 1,
+	deletions = 0,
+})
+assert_eq(changes_update_count, 1, "pending file changes should emit changes_update")
+assert_eq(changes_sync_count, 1, "pending file changes should request sync_changed changes update")
+state.clear_all_pending_changes()
+bus.clear()
+bus.clear_history()
+
 sync.clear_all()
 sync.handle_providers({
 	{ id = "p1", name = "Provider 1", models = { m1 = { name = "Model 1" } } },

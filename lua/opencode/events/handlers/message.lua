@@ -40,6 +40,36 @@ function M.setup(events)
 		end)
 	end
 
+	---@param status table|string|nil
+	---@return boolean
+	local function is_busy_status(status)
+		local status_type = type(status) == "table" and status.type or status
+		return status_type == "busy"
+			or status_type == "streaming"
+			or status_type == "thinking"
+			or status_type == "retry"
+	end
+
+	---@param current_session table
+	---@return boolean
+	local function can_infer_current_stream_session(current_session)
+		if not current_session.id or not state.is_streaming() then
+			return false
+		end
+
+		local busy_count = 0
+		for _, session in ipairs(state.get_active_sessions()) do
+			if session.id and is_busy_status(session.status or state.get_session_status(session.id)) then
+				busy_count = busy_count + 1
+				if busy_count > 1 then
+					return false
+				end
+			end
+		end
+
+		return busy_count == 1 and is_busy_status(state.get_session_status(current_session.id))
+	end
+
 	---@param part table
 	---@param current_session table
 	---@return string|nil
@@ -50,9 +80,9 @@ function M.setup(events)
 			resolved_session_id = sync.find_message_session_id(part.messageID)
 		end
 
-		-- If the backend omits sessionID for streaming chunks, infer current session
-		-- while actively streaming so incremental text appears immediately.
-		if not resolved_session_id and current_session.id and state.is_streaming() then
+		-- If the backend omits sessionID for streaming chunks, infer the current
+		-- session only when there is no competing busy runtime session.
+		if not resolved_session_id and can_infer_current_stream_session(current_session) then
 			resolved_session_id = current_session.id
 		end
 
@@ -88,12 +118,14 @@ function M.setup(events)
 
 	---@param part table
 	---@param current_session table
-	local function emit_part_events(part, current_session)
+	---@param resolved_session_id string|nil
+	local function emit_part_events(part, current_session, resolved_session_id)
+		local event_session_id = resolved_session_id or part.sessionID or current_session.id
 		if part.type == "text" then
 			events.emit("sync_changed", {
 				kind = "part",
 				action = "updated",
-				session_id = current_session.id,
+				session_id = event_session_id,
 				message_id = part.messageID,
 				part_id = part.id,
 			})
@@ -109,7 +141,7 @@ function M.setup(events)
 			events.emit("sync_changed", {
 				kind = "part",
 				action = "updated",
-				session_id = current_session.id,
+				session_id = event_session_id,
 				message_id = part.messageID,
 				part_id = part.id,
 			})
@@ -132,7 +164,7 @@ function M.setup(events)
 			events.emit("sync_changed", {
 				kind = "part",
 				action = "updated",
-				session_id = current_session.id,
+				session_id = event_session_id,
 				message_id = part.messageID,
 				part_id = part.id,
 			})
@@ -255,7 +287,7 @@ function M.setup(events)
 				messageID = part.messageID,
 				type = part.type,
 			})
-			emit_part_events(part, current_session)
+			emit_part_events(part, current_session, resolved_session_id)
 		end)
 	end)
 
@@ -320,7 +352,7 @@ function M.setup(events)
 				field = data.field,
 				delta_length = #data.delta,
 			})
-			emit_part_events(part, current_session)
+			emit_part_events(part, current_session, resolved_session_id)
 		end)
 	end)
 

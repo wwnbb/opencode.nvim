@@ -239,6 +239,45 @@ end
 ---@return table[]
 function M.calculate_hunks(original_lines, modified_lines)
 	local hunks = {}
+
+	if type(vim.diff) == "function" then
+		local original_text = table.concat(original_lines or {}, "\n")
+		local modified_text = table.concat(modified_lines or {}, "\n")
+		local ok, diff = pcall(vim.diff, original_text, modified_text, {
+			result_type = "indices",
+			algorithm = "myers",
+		})
+
+		if ok and type(diff) == "table" then
+			for _, item in ipairs(diff) do
+				local original_start = item[1] or 0
+				local original_count = item[2] or 0
+				local modified_start = item[3] or 0
+				local modified_count = item[4] or 0
+				local start_line = original_count > 0 and original_start or math.max(1, original_start + 1)
+				local line_count = math.max(original_count, modified_count, 1)
+				local hunk = {
+					start_line = start_line,
+					end_line = start_line + line_count - 1,
+					original_lines = {},
+					modified_lines = {},
+					line_count = line_count,
+					status = M.STATUS.PENDING,
+				}
+
+				for offset = 0, line_count - 1 do
+					local original_line = offset < original_count and original_lines[original_start + offset] or ""
+					local modified_line = offset < modified_count and modified_lines[modified_start + offset] or ""
+					table.insert(hunk.original_lines, original_line or "")
+					table.insert(hunk.modified_lines, modified_line or "")
+				end
+
+				table.insert(hunks, hunk)
+			end
+			return hunks
+		end
+	end
+
 	local i = 1
 	local original_len = #original_lines
 	local modified_len = #modified_lines

@@ -189,6 +189,7 @@ M.defaults = {
 		position = "bottom", -- "bottom" | "top" | "left" | "right"
 		width = 80, -- for left/right splits
 		height = 15, -- for top/bottom splits
+		max_entries = 1000,
 	},
 
 	-- Lualine statusline component

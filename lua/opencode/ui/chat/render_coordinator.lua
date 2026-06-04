@@ -12,7 +12,9 @@ local function merge_pending(data)
 	data = data or {}
 	pending_data = pending_data or {}
 	for key, value in pairs(data) do
-		if pending_data[key] == nil then
+		if key == "force" then
+			pending_data.force = pending_data.force == true or value == true
+		elseif pending_data[key] == nil then
 			pending_data[key] = value
 		end
 	end
@@ -62,6 +64,10 @@ function M.setup(events)
 	events_ref = events
 
 	events.on("sync_changed", function(data)
+		if type(data) == "table" and data.kind == "part" and data.action == "updated" then
+			events.emit("chat_stream_part_updated", data)
+			return
+		end
 		M.request(data)
 	end)
 
@@ -93,9 +99,6 @@ function M.setup(events)
 		M.request(data)
 	end)
 
-	events.on("message_part_updated", function(data)
-		events.emit("chat_stream_part_updated", data)
-	end)
 end
 
 return M

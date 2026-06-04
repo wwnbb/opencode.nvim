@@ -78,12 +78,41 @@ local function encode_base64(data)
 	return nil
 end
 
+---@param data any
+---@return string|nil
+local function binary_to_string(data)
+	if type(data) == "string" then
+		return data
+	end
+
+	if vim.fn.exists("*blob2list") == 1 then
+		local ok, bytes = pcall(vim.fn.blob2list, data)
+		if ok and type(bytes) == "table" then
+			local chunks = {}
+			for i, byte in ipairs(bytes) do
+				if type(byte) ~= "number" then
+					return nil
+				end
+				chunks[i] = string.char(byte)
+			end
+			return table.concat(chunks)
+		end
+	end
+
+	return nil
+end
+
 ---@param filepath string
 ---@return string|nil data
 ---@return string|nil err
 local function read_file_base64(filepath)
 	local ok, data = pcall(vim.fn.readblob, filepath)
-	if not ok or type(data) ~= "string" then
+	if not ok then
+		return nil, "Cannot read file"
+	end
+
+	data = binary_to_string(data)
+	if type(data) ~= "string" then
 		return nil, "Cannot read file"
 	end
 	if data == "" then
