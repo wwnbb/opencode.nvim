@@ -385,6 +385,17 @@ require("opencode.events.handlers.permission").setup(bus)
 require("opencode.events.handlers.question").setup(bus)
 local spinner = require("opencode.ui.spinner")
 
+bus.emit("permission", {
+	id = "perm_missing_session",
+	permission = "bash",
+	time = { created = 0 },
+})
+vim.wait(50)
+assert_true(
+	not permission_state.has_permission("perm_missing_session"),
+	"permission without session or message identity should be dropped"
+)
+
 spinner.start()
 bus.emit("permission", {
 	id = "perm_other_session",
@@ -496,6 +507,17 @@ client.respond_permission = function(permission_id, reply, opts, callback)
 end
 
 require("opencode.events.handlers.permission").setup(bus)
+bus.emit("permission", {
+	id = "danger_missing_session",
+	permission = "bash",
+})
+vim.wait(50)
+assert_eq(#replies, 0, "danger mode should not auto-reply to permission without session identity")
+assert_true(
+	not permission_state.has_permission("danger_missing_session"),
+	"danger mode should drop permission without session identity"
+)
+
 bus.emit("permission", {
 	id = "danger_perm",
 	permission = "bash",
