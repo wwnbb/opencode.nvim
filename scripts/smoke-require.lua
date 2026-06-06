@@ -170,6 +170,41 @@ assert(grep_path == "path:with:colon/file.lua", "grep parser should preserve col
 assert(grep_body == "body", "grep parser should return no-column body")
 assert(grep_body_col == #"path:with:colon/file.lua:12:", "grep parser should return no-column body offset")
 
+local rg = require("opencode.ui.chat.rg")
+local function find_function_upvalue(fn, target, seen)
+	seen = seen or {}
+	if type(fn) ~= "function" or seen[fn] then
+		return nil
+	end
+	seen[fn] = true
+	for i = 1, math.huge do
+		local name, value = debug.getupvalue(fn, i)
+		if not name then
+			break
+		end
+		if name == target then
+			return value
+		end
+		if type(value) == "function" then
+			local nested = find_function_upvalue(value, target, seen)
+			if nested then
+				return nested
+			end
+		end
+	end
+	return nil
+end
+local parse_rg_line = find_function_upvalue(rg.render_tool, "parse_rg_line")
+assert(type(parse_rg_line) == "function", "rg parser upvalue should be available")
+local rg_path, rg_body, rg_body_col = parse_rg_line("path:with:colon/file.lua:12:3:local x = 1")
+assert(rg_path == "path:with:colon/file.lua", "rg parser should preserve colon-containing path")
+assert(rg_body == "local x = 1", "rg parser should return body after line and column")
+assert(rg_body_col == #"path:with:colon/file.lua:12:3:", "rg parser should return correct body offset")
+rg_path, rg_body, rg_body_col = parse_rg_line("path:with:colon/file.lua-12-local x = 1")
+assert(rg_path == "path:with:colon/file.lua", "rg parser should preserve context path")
+assert(rg_body == "local x = 1", "rg parser should return context body")
+assert(rg_body_col == #"path:with:colon/file.lua-12-", "rg parser should return context body offset")
+
 local thinking = require("opencode.ui.thinking")
 assert(thinking.extract_topic("**Planning** next") == "Planning", "thinking topic extraction should trim markdown header")
 local thinking_hl_ok, thinking_hl = pcall(thinking.get_highlights, 0)
@@ -348,6 +383,16 @@ do
 		},
 	}, false)
 	assert(bash_result and table.concat(bash_result.lines, "\n"):find("Shell", 1, true), "bash widget should render")
+
+	local rg_result = rg.render_tool({
+		tool = "rg",
+		state = {
+			status = "completed",
+			input = { pattern = "local", path = "lua", type = "lua", column = true },
+			output = "lua/opencode/init.lua:12:3:local M = {}",
+		},
+	}, false)
+	assert(rg_result and table.concat(rg_result.lines, "\n"):find("Ripgrep", 1, true), "rg widget should render")
 
 	local question_lines = require("opencode.ui.question_widget").get_lines_for_question("question_panel_test", {
 		{ header = "Pick", question = "Choose one", options = { { label = "A", value = "a" } } },

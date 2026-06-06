@@ -12,6 +12,7 @@ local chat_bash = require("opencode.ui.chat.bash")
 local chat_read = require("opencode.ui.chat.read")
 local chat_skill = require("opencode.ui.chat.skill")
 local chat_search = require("opencode.ui.chat.search")
+local chat_rg = require("opencode.ui.chat.rg")
 local chat_file_edit_results = require("opencode.ui.chat.file_edit_results")
 local edit_state = require("opencode.edit.state")
 local actions = require("opencode.actions")
@@ -68,6 +69,7 @@ local ANIMATED_REGULAR_TOOLS = {
 	skill = true,
 	glob = true,
 	grep = true,
+	rg = true,
 }
 
 ---@param tool_name string|nil
@@ -157,6 +159,7 @@ end
 local TOOL_ICONS = {
 	bash = "$",
 	glob = "✱",
+	rg = "✱",
 	read = "→",
 	grep = "✱",
 	list = "→",
@@ -358,6 +361,16 @@ local function format_summary_item_label(item)
 			local suffix = matches and (" (" .. format_match_count(matches) .. ")") or ""
 			return "Grep " .. pat .. suffix
 		end
+	elseif tool_name == "rg" then
+		local pat = input.pattern or ""
+		if pat ~= "" then
+			local matches = normalize_count(metadata.matches)
+				or normalize_count(metadata.matchCount)
+				or normalize_count(metadata.match_count)
+				or normalize_count(metadata.count)
+			local suffix = matches and (" (" .. format_match_count(matches) .. ")") or ""
+			return "Ripgrep " .. pat .. suffix
+		end
 	elseif tool_name == "task" then
 		local agent = input.subagent_type or ""
 		local d = input.description or ""
@@ -442,6 +455,19 @@ function M.format_tool_line(tool_part)
 		local matches = normalize_count(metadata.matches) or 0
 		if tool_status == "completed" then
 			return string.format('%s Grep "%s" (%s)', icon, pattern, format_match_count(matches))
+		end
+		return string.format("~ Searching content...")
+	elseif tool_name == "rg" then
+		local pattern = input.pattern or ""
+		local matches = normalize_count(metadata.matches)
+			or normalize_count(metadata.matchCount)
+			or normalize_count(metadata.match_count)
+			or normalize_count(metadata.count)
+		if tool_status == "completed" then
+			if matches then
+				return string.format('%s Ripgrep "%s" (%s)', icon, pattern, format_match_count(matches))
+			end
+			return string.format('%s Ripgrep "%s"', icon, pattern)
 		end
 		return string.format("~ Searching content...")
 	elseif tool_name == "read" then
@@ -807,6 +833,7 @@ function M.render_regular_tool(tool_part, is_expanded)
 	result = result or chat_read.render_tool(tool_part, is_expanded)
 	result = result or chat_skill.render_tool(tool_part, is_expanded)
 	result = result or chat_search.render_tool(tool_part, is_expanded)
+	result = result or chat_rg.render_tool(tool_part, is_expanded)
 	result = result or chat_file_edit_results.render_tool(tool_part, is_expanded)
 	return result or render.render_tool_line(tool_part, is_expanded)
 end
