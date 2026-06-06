@@ -260,4 +260,44 @@ function M.clear_all()
 	return removed
 end
 
+---@param predicate fun(pstate: table, permission_id: string): boolean|nil
+---@return table removed
+function M.clear_pending_matching(predicate)
+	if type(predicate) ~= "function" then
+		return {}
+	end
+
+	local removed = {}
+	local removed_ids = {}
+	for permission_id, pstate in pairs(active_permissions) do
+		if pstate and pstate.status == "pending" and predicate(pstate, permission_id) then
+			removed[#removed + 1] = vim.deepcopy(pstate)
+			removed_ids[#removed_ids + 1] = permission_id
+		end
+	end
+
+	for _, permission_id in ipairs(removed_ids) do
+		active_permissions[permission_id] = nil
+	end
+
+	table.sort(removed, function(a, b)
+		return (a and a.timestamp or 0) < (b and b.timestamp or 0)
+	end)
+
+	return removed
+end
+
+-- Clear pending permissions for a specific session.
+---@param session_id string|nil
+---@return table removed
+function M.clear_pending_for_session(session_id)
+	if not session_id or session_id == "" then
+		return {}
+	end
+
+	return M.clear_pending_matching(function(pstate)
+		return pstate.session_id == session_id
+	end)
+end
+
 return M

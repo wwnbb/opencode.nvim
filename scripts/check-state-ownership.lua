@@ -475,6 +475,77 @@ assert_true(permission_state.has_permission("preserve_perm"), "preserve_cache se
 assert_true(edit_state.get_edit("preserve_edit") ~= nil, "preserve_cache session_change should keep edits")
 assert_true(question_state.has_question("hidden_question"), "preserve_cache session_change should keep questions")
 
+local original_respond_permission_close = client.respond_permission
+local close_replies = {}
+client.respond_permission = function(permission_id, reply, opts, callback)
+	table.insert(close_replies, {
+		permission_id = permission_id,
+		reply = reply,
+		opts = opts,
+	})
+end
+
+permission_state.clear_all()
+question_state.clear_all()
+edit_state.clear_all()
+state.reset()
+sync.clear_all()
+
+session_actions.set_active("session_close_a", "Session Close A", { preserve_cache = true })
+session_actions.set_active("session_close_b", "Session Close B", { preserve_cache = true })
+session_actions.set_active("session_close_a", "Session Close A", { preserve_cache = true })
+
+sync.handle_message_updated({
+	id = "task_parent_message",
+	sessionID = "session_close_a",
+	role = "assistant",
+	time = { created = 1 },
+})
+sync.handle_part_updated({
+	id = "task_parent_task_part",
+	messageID = "task_parent_message",
+	sessionID = "session_close_a",
+	type = "tool",
+	tool = "task",
+	metadata = { sessionId = "session_close_child" },
+})
+assert_eq(sync.get_task_parent_session("session_close_child"), "session_close_a", "task child index should record the parent before close")
+
+permission_state.add_permission("close_perm_a", "session_close_a", "bash", {})
+permission_state.add_permission("close_perm_child", "session_close_child", "bash", {})
+permission_state.add_permission("close_perm_other", "session_close_b", "bash", {})
+assert_true(session_actions.close("session_close_a", { silent = true }), "session.close should succeed for the runtime session")
+wait_for(function()
+	return #close_replies == 2
+		and not permission_state.has_permission("close_perm_a")
+		and not permission_state.has_permission("close_perm_child")
+		and permission_state.has_permission("close_perm_other")
+end, "session.close should clear the closed session permissions and preserve others")
+
+local function history_has(event_type, permission_id)
+	for _, entry in ipairs(bus.get_history()) do
+		if entry.type == event_type and type(entry.data) == "table" then
+			if entry.data.permission_id == permission_id or entry.data.id == permission_id then
+				return true
+			end
+		end
+	end
+	return false
+end
+
+assert_eq(close_replies[1].reply, "reject", "session.close should reject permissions")
+assert_eq(close_replies[1].opts.message, "Session closed", "session.close should use the close message")
+assert_eq(close_replies[2].reply, "reject", "session.close should reject child permissions")
+assert_eq(close_replies[2].opts.message, "Session closed", "session.close should use the close message for child permissions")
+assert_true(history_has("permission_rejected", "close_perm_a"), "session.close should emit permission_rejected for the root permission")
+assert_true(history_has("permission_removed", "close_perm_a"), "session.close should emit permission_removed for the root permission")
+assert_true(history_has("interaction_changed", "close_perm_a"), "session.close should emit interaction_changed for the root permission")
+assert_true(history_has("permission_rejected", "close_perm_child"), "session.close should emit permission_rejected for the task child permission")
+assert_true(history_has("permission_removed", "close_perm_child"), "session.close should emit permission_removed for the task child permission")
+assert_true(history_has("interaction_changed", "close_perm_child"), "session.close should emit interaction_changed for the task child permission")
+
+client.respond_permission = original_respond_permission_close
+
 bus.clear()
 bus.clear_history()
 permission_state.clear_all()
