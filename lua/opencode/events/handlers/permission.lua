@@ -126,66 +126,18 @@ function M.setup(events)
 
 				-- Show permission notification
 				local permission_type = data.permission or data.type
-				local metadata = data.metadata or {}
+				local metadata = type(data.metadata) == "table" and data.metadata or {}
 				local current_session = require("opencode.state").get_session()
 				local message_id = util.resolve_event_message_id(data)
 				local call_id = util.resolve_event_call_id(data)
 				local timestamp = util.event_time_to_seconds(data.time and data.time.created)
+				local permission_id = data.id or data.requestID or ("perm_" .. os.time())
 
-				local is_native_diff_permission = metadata.opencode_native_diff == true
-					or permission_type == "diff_review"
-					or permission_type == "neovim_edit"
-					or permission_type == "neovim_apply_patch"
-
-				-- Guard: only handle edit/native-diff permissions that belong to the
-				-- current session or to a task child session owned by it. Subagent
-				-- tool calls run in child sessions, so filtering strictly by the
-				-- current session leaves the backend waiting for an edit approval
-				-- that the UI never renders.
-				if is_native_diff_permission or permission_type == "edit" then
-					-- Try to resolve the owning session from the most-reliable source first:
-					-- the message ID via the sync store (populated only for the active session),
-					-- then the raw sessionID field on the event payload / metadata.
-					local event_session_id = nil
-
-					if message_id then
-						local ok_sync, sync_mod = pcall(require, "opencode.sync")
-						if ok_sync and sync_mod.find_message_session_id then
-							event_session_id = sync_mod.find_message_session_id(message_id)
-						end
-					end
-
-					if not event_session_id or event_session_id == "" then
-						event_session_id = data.sessionID
-							or data.session_id
-							or data.sessionId
-							or metadata.sessionID
-							or metadata.session_id
-							or metadata.sessionId
-					end
-
-					-- If we successfully resolved a session and it belongs neither to
-					-- the selected chat nor to any root session started in this editor
-					-- run, skip it as unrelated backend history.
-					local is_relevant = util.permission_session_is_relevant(current_session.id, event_session_id)
-						or util.runtime_root_for_session(event_session_id) ~= nil
-					if not is_relevant then
-						local logger_g = require("opencode.logger")
-						logger_g.debug("edit permission belongs to an unrelated session, skipping", {
-							event_session = event_session_id,
-							current_session = current_session.id,
-							permission_type = permission_type,
-						})
-						return
-					end
-				end
-
-				---@param session_hint table
 				---@param event_data table
 				---@param event_metadata table
 				---@param source_message_id string|nil
-				---@return string
-				local function resolve_widget_session_id(session_hint, event_data, event_metadata, source_message_id)
+				---@return string|nil
+				local function resolve_widget_session_id(event_data, event_metadata, source_message_id)
 					if source_message_id then
 						local ok_sync, sync_mod = pcall(require, "opencode.sync")
 						if ok_sync and sync_mod.find_message_session_id then
@@ -206,11 +158,43 @@ function M.setup(events)
 						return fallback_session
 					end
 
-					return (session_hint and session_hint.id) or ""
+					return nil
 				end
 
-				local permission_id = data.id or data.requestID or ("perm_" .. os.time())
-				local permission_session_id = resolve_widget_session_id(current_session, data, metadata, message_id)
+				local permission_session_id = resolve_widget_session_id(data, metadata, message_id)
+				if not permission_session_id then
+					logger.debug("Permission event missing session identity, dropping", {
+						permission_id = permission_id,
+						permission_type = permission_type,
+						message_id = message_id,
+						call_id = call_id,
+					})
+					return
+				end
+
+				local is_native_diff_permission = metadata.opencode_native_diff == true
+					or permission_type == "diff_review"
+					or permission_type == "neovim_edit"
+					or permission_type == "neovim_apply_patch"
+
+				-- Guard: only handle edit/native-diff permissions that belong to the
+				-- current session or to a task child session owned by it. Subagent
+				-- tool calls run in child sessions, so filtering strictly by the
+				-- current session leaves the backend waiting for an edit approval
+				-- that the UI never renders.
+				if is_native_diff_permission or permission_type == "edit" then
+					local is_relevant = util.permission_session_is_relevant(current_session.id, permission_session_id)
+						or util.runtime_root_for_session(permission_session_id) ~= nil
+					if not is_relevant then
+						local logger_g = require("opencode.logger")
+						logger_g.debug("edit permission belongs to an unrelated session, skipping", {
+							event_session = permission_session_id,
+							current_session = current_session.id,
+							permission_type = permission_type,
+						})
+						return
+					end
+				end
 				if require("opencode.state").is_danger_mode_enabled() then
 					local handled = auto_approve.approve(permission_id, {
 						permission_type = permission_type,
@@ -357,7 +341,7 @@ function M.setup(events)
 					if #nd_files == 0 then
 						nd_files = synthesize_edit_files(data, metadata)
 					end
-					local edit_session_id = resolve_widget_session_id(current_session, data, metadata, message_id)
+					local edit_session_id = permission_session_id
 					local review_mode = "interactive"
 					if permission_type == "edit" and not is_native_diff_permission then
 						review_mode = "readonly"
