@@ -618,6 +618,17 @@ function M.mark_sent(permission_id)
 	end
 end
 
+--- Remove an edit from tracking
+---@param permission_id string
+---@return boolean
+function M.remove_edit(permission_id)
+	if active_edits[permission_id] then
+		active_edits[permission_id] = nil
+		return true
+	end
+	return false
+end
+
 --- Clear all edits (on session change)
 function M.clear_all()
 	local removed = {}

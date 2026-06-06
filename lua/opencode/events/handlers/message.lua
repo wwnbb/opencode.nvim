@@ -49,6 +49,45 @@ function M.setup(events)
 			or status_type == "retry"
 	end
 
+	---@param info table
+	---@return boolean
+	local function completed_assistant_message_can_idle_session(info)
+		if type(info) ~= "table" or not info.sessionID or not info.id then
+			return false
+		end
+		if info.role ~= "assistant" then
+			return false
+		end
+		if type(info.time) ~= "table" or info.time.completed == nil then
+			return false
+		end
+		if info.finish == "tool-calls" then
+			return false
+		end
+
+		local messages = sync.get_messages(info.sessionID)
+		local latest = messages and messages[#messages] or nil
+		return type(latest) == "table" and latest.id == info.id
+	end
+
+	---@param info table
+	local function mark_session_idle_after_completed_message(info)
+		if not completed_assistant_message_can_idle_session(info) then
+			return
+		end
+
+		local current_status = state.get_session_status(info.sessionID)
+		if not is_busy_status(current_status) then
+			return
+		end
+
+		local idle_status = { type = "idle" }
+		sync.handle_session_status(info.sessionID, idle_status)
+		session_actions.set_session_status(info.sessionID, idle_status, {
+			reason = "message_completed",
+		})
+	end
+
 	---@param current_session table
 	---@return boolean
 	local function can_infer_current_stream_session(current_session)
@@ -200,6 +239,8 @@ function M.setup(events)
 					reason = "message_updated",
 				})
 			end
+
+			mark_session_idle_after_completed_message(info)
 
 			if not current_session.id or info.sessionID ~= current_session.id then
 				logger.debug("Message update stored outside current session", {

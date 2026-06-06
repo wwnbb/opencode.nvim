@@ -150,6 +150,165 @@ local function next_session_after_close(close_id)
 	return remaining[next_index]
 end
 
+---@param root_session_id string
+---@param session_id string|nil
+---@return boolean
+local function session_owned_by_root(root_session_id, session_id)
+	if not root_session_id or root_session_id == "" or not session_id or session_id == "" then
+		return false
+	end
+	if session_id == root_session_id then
+		return true
+	end
+	return event_util.runtime_root_for_session(session_id) == root_session_id
+end
+
+---@param kind string
+---@param id string
+---@param err any
+local function log_close_reject_error(kind, id, err)
+	if not err then
+		return
+	end
+	local ok_logger, logger = pcall(require, "opencode.logger")
+	if ok_logger and logger and type(logger.debug) == "function" then
+		logger.debug("Failed to reject " .. kind .. " while closing session", {
+			id = id,
+			error = err.message or err.error or tostring(err),
+		})
+	end
+end
+
+---@param permission_id string
+local function reject_permission_request(permission_id)
+	local ok_client, client = pcall(require, "opencode.client")
+	if not ok_client or type(client.respond_permission) ~= "function" then
+		return
+	end
+	pcall(function()
+		client.respond_permission(permission_id, "reject", { message = "Session closed" }, function(err)
+			log_close_reject_error("permission", permission_id, err)
+		end)
+	end)
+end
+
+---@param session_id string|nil
+---@param request_id string
+local function reject_question_request(session_id, request_id)
+	local ok_client, client = pcall(require, "opencode.client")
+	if not ok_client or type(client.reject_question) ~= "function" then
+		return
+	end
+	pcall(function()
+		client.reject_question(session_id or "", request_id, function(err)
+			log_close_reject_error("question", request_id, err)
+		end)
+	end)
+end
+
+---@param root_session_id string
+local function close_pending_interactions_for_session(root_session_id)
+	if not root_session_id or root_session_id == "" then
+		return
+	end
+
+	local ok_auto, auto_approve = pcall(require, "opencode.permission.danger")
+	if ok_auto and type(auto_approve.clear) == "function" then
+		auto_approve.clear()
+	end
+
+	local ok_perm, perm_state = pcall(require, "opencode.permission.state")
+	if ok_perm and type(perm_state.get_all) == "function" and type(perm_state.remove_permission) == "function" then
+		local owned = {}
+		for _, pstate in ipairs(perm_state.get_all()) do
+			if session_owned_by_root(root_session_id, pstate.session_id) then
+				table.insert(owned, pstate)
+			end
+		end
+		for _, pstate in ipairs(owned) do
+			if pstate.status == "pending" then
+				reject_permission_request(pstate.permission_id)
+			end
+			if perm_state.remove_permission(pstate.permission_id) then
+				emit("permission_removed", {
+					permission_id = pstate.permission_id,
+					session_id = pstate.session_id,
+					reason = "session_close",
+				})
+				emit("interaction_changed", {
+					kind = "permission",
+					action = "removed",
+					id = pstate.permission_id,
+					session_id = pstate.session_id,
+				})
+			end
+		end
+	end
+
+	local ok_question, question_state = pcall(require, "opencode.question.state")
+	if
+		ok_question
+		and type(question_state.get_all) == "function"
+		and type(question_state.remove_question) == "function"
+	then
+		local owned = {}
+		for _, qstate in ipairs(question_state.get_all()) do
+			if session_owned_by_root(root_session_id, qstate.session_id) then
+				table.insert(owned, qstate)
+			end
+		end
+		for _, qstate in ipairs(owned) do
+			if qstate.status == "pending" or qstate.status == "confirming" then
+				reject_question_request(qstate.session_id, qstate.request_id)
+			end
+			if question_state.remove_question(qstate.request_id) then
+				emit("question_removed", {
+					request_id = qstate.request_id,
+					session_id = qstate.session_id,
+					reason = "session_close",
+				})
+				emit("interaction_changed", {
+					kind = "question",
+					action = "removed",
+					id = qstate.request_id,
+					session_id = qstate.session_id,
+				})
+			end
+		end
+	end
+
+	local ok_edit, edit_state = pcall(require, "opencode.edit.state")
+	if ok_edit and type(edit_state.get_all) == "function" and type(edit_state.remove_edit) == "function" then
+		local owned = {}
+		for _, estate in ipairs(edit_state.get_all()) do
+			if session_owned_by_root(root_session_id, estate.session_id) then
+				table.insert(owned, estate)
+			end
+		end
+		for _, estate in ipairs(owned) do
+			if estate.status == "pending" then
+				if type(edit_state.reject_all) == "function" then
+					pcall(edit_state.reject_all, estate.permission_id)
+				end
+				reject_permission_request(estate.permission_id)
+			end
+			if edit_state.remove_edit(estate.permission_id) then
+				emit("edit_removed", {
+					permission_id = estate.permission_id,
+					session_id = estate.session_id,
+					reason = "session_close",
+				})
+				emit("interaction_changed", {
+					kind = "edit",
+					action = "removed",
+					id = estate.permission_id,
+					session_id = estate.session_id,
+				})
+			end
+		end
+	end
+end
+
 ---@param session table
 ---@param opts? table { notify?: boolean, reason?: string }
 local function activate_local(session, opts)
@@ -350,7 +509,7 @@ function M.close(session_id, opts)
 
 	local current_root = runtime_session_id(current.id)
 	local next_session = next_session_after_close(target_id)
-	close_pending_permissions_for_session(target_id)
+	close_pending_interactions_for_session(target_id)
 	local closed = state.close_runtime_session(target_id)
 	local title = session_util.displayTitle(closed and (closed.title or closed.name)) or target_id
 
@@ -573,7 +732,8 @@ function M.refresh_status(callback)
 			end
 			for _, session_id in ipairs(state.get_session_status_ids()) do
 				local current_status = state.get_session_status(session_id)
-				if state.is_runtime_session(session_id)
+				if
+					state.is_runtime_session(session_id)
 					and not seen[session_id]
 					and (current_status.type == "busy" or current_status.type == "retry")
 				then
@@ -642,7 +802,10 @@ function M.switch_to(session, opts)
 	client.get_messages(session.id, { limit = 100 }, function(err, messages)
 		vim.schedule(function()
 			if err and opts.notify then
-				vim.notify("Failed to load session messages: " .. tostring(err.message or err.error or err), vim.log.levels.WARN)
+				vim.notify(
+					"Failed to load session messages: " .. tostring(err.message or err.error or err),
+					vim.log.levels.WARN
+				)
 			end
 			if ok_sync and messages and type(sync.handle_session_messages) == "function" then
 				sync.handle_session_messages(session.id, messages)
