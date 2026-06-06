@@ -1,2 +1,0 @@
-def kaaboom():
-    print("kaaboom")

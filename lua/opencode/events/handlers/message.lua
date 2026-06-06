@@ -6,7 +6,6 @@ function M.setup(events)
 	local sync = require("opencode.sync")
 	local logger = require("opencode.logger")
 	local event_util = require("opencode.events.util")
-	local recent_session_errors = {}
 
 	---@param session_id string|nil
 	---@param reason string
@@ -573,22 +572,6 @@ function M.setup(events)
 			})
 
 			if notice_session_id then
-				local dedupe_key = session_id .. "\0" .. notice_session_id .. "\0" .. message
-				local duplicate = event_util.mark_recent_error(recent_session_errors, dedupe_key)
-				if not duplicate then
-					events.emit("local_notice", {
-						role = "system",
-						kind = "session_error",
-						content = "OpenCode session error: " .. message,
-						session_id = notice_session_id,
-						child_session_id = session_id,
-					})
-				else
-					logger.debug("Duplicate session error notice suppressed", {
-						sessionID = notice_session_id,
-						message = message,
-					})
-				end
 				events.emit("sync_changed", {
 					kind = "session_error",
 					action = "error",

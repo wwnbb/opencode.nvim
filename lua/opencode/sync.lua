@@ -53,6 +53,8 @@ local store = {
 	message_revision = {}, -- { [messageID] = number } internal render invalidation
 	part_revision = {}, -- { [messageID .. "\0" .. partID] = number } internal render invalidation
 	session_revision = {}, -- { [sessionID] = number } internal render invalidation
+	provider_revision = 0, -- internal render invalidation for model metadata
+	agent_revision = 0,    -- internal render invalidation for agent colors
 	-- Provider/agent/model data (like TUI's sync.tsx)
 	provider = {},      -- Array of connected provider info
 	provider_default = {}, -- { [providerID] = default_modelID }
@@ -140,6 +142,11 @@ local function bump_revision(map, key)
 	local next_revision = (map[key] or 0) + 1
 	map[key] = next_revision
 	return next_revision
+end
+
+---@param field string
+local function bump_store_counter(field)
+	store[field] = (store[field] or 0) + 1
 end
 
 ---@param session_id string|nil
@@ -804,6 +811,8 @@ function M.clear_all()
 	store.message_revision = {}
 	store.part_revision = {}
 	store.session_revision = {}
+	store.provider_revision = 0
+	store.agent_revision = 0
 	store.provider = {}
 	store.provider_default = {}
 	store.agent = {}
@@ -819,12 +828,20 @@ end
 ---@param providers table[] Array of provider objects
 function M.handle_providers(providers)
 	store.provider = providers or {}
+	bump_store_counter("provider_revision")
 end
 
 ---Handle provider defaults
 ---@param defaults table<string, string> { [providerID] = default_modelID }
 function M.handle_provider_defaults(defaults)
 	store.provider_default = defaults or {}
+	bump_store_counter("provider_revision")
+end
+
+---Get provider/model metadata revision.
+---@return number
+function M.get_provider_revision()
+	return store.provider_revision or 0
 end
 
 ---Get all providers
@@ -869,6 +886,13 @@ end
 ---@param agents table[] Array of agent objects
 function M.handle_agents(agents)
 	store.agent = agents or {}
+	bump_store_counter("agent_revision")
+end
+
+---Get agent metadata revision.
+---@return number
+function M.get_agent_revision()
+	return store.agent_revision or 0
 end
 
 ---Get all agents

@@ -16,6 +16,15 @@ local chat_file_edit_results = require("opencode.ui.chat.file_edit_results")
 local edit_state = require("opencode.edit.state")
 local actions = require("opencode.actions")
 
+local REGULAR_TOOL_RENDERERS = {
+	chat_todos.render_tool,
+	chat_bash.render_tool,
+	chat_read.render_tool,
+	chat_skill.render_tool,
+	chat_search.render_tool,
+	chat_file_edit_results.render_tool,
+}
+
 -- ─── Animation ────────────────────────────────────────────────────────────────
 
 local TASK_ANIM_FRAMES = { "⠋", "⠙", "⠹", "⠸" }
@@ -62,18 +71,15 @@ local function tick_task_anim_frame()
 	end
 end
 
-local ANIMATED_REGULAR_TOOLS = {
-	bash = true,
-	read = true,
-	skill = true,
-	glob = true,
-	grep = true,
-}
-
 ---@param tool_name string|nil
 ---@return boolean
 local function is_animated_regular_tool(tool_name)
-	return ANIMATED_REGULAR_TOOLS[tool_name] == true or chat_todos.is_todo_tool(tool_name)
+	return tool_name == "bash"
+		or tool_name == "read"
+		or tool_name == "skill"
+		or tool_name == "glob"
+		or tool_name == "grep"
+		or chat_todos.is_todo_tool(tool_name)
 end
 
 ---@param tool_part table|nil
@@ -519,56 +525,11 @@ function M.format_tool_line(tool_part)
 	end
 end
 
--- Build renderable content from a child session's messages.
-function M.build_child_session_content(session_id)
-	local sync = require("opencode.sync")
-	local messages = sync.get_messages(session_id)
-	local result_lines = {}
-	local result_highlights = {}
-
-	local function add_line(text, hl_group)
-		table.insert(result_lines, text)
-		if hl_group then
-			table.insert(result_highlights, {
-				line = #result_lines - 1,
-				col_start = 0,
-				col_end = #text,
-				hl_group = hl_group,
-				priority = TASK_HIGHLIGHT_PRIORITY,
-			})
-		end
-	end
-
-	for _, message in ipairs(messages) do
-		if message.role == "user" then
-			local text = sync.get_message_text(message.id)
-			if text and text ~= "" then
-				local text_lines = vim.split(text, "\n", { plain = true })
-				for i, line in ipairs(text_lines) do
-					if i == 1 then
-						add_line("  >> " .. line, "Special")
-					else
-						add_line("     " .. line, "Special")
-					end
-				end
-			end
-		elseif message.role == "assistant" then
-			local tool_parts = sync.get_message_tools(message.id)
-			for _, tp in ipairs(tool_parts) do
-				local tool_line = M.format_tool_line(tp)
-				add_line("  " .. tool_line, "Comment")
-			end
-			local text = sync.get_message_text(message.id)
-			if text and text ~= "" then
-				local text_lines = vim.split(text, "\n", { plain = true })
-				for _, line in ipairs(text_lines) do
-					add_line("  " .. line, nil)
-				end
-			end
-		end
-	end
-
-	return { lines = result_lines, highlights = result_highlights }
+---@param tool_part table
+---@return string|nil
+local function get_task_child_session_id(tool_part)
+	local metadata = render.get_tool_metadata(tool_part)
+	return metadata.sessionId or metadata.sessionID or metadata.childSessionID or metadata.child_session_id
 end
 
 -- Render a task tool part as a compact TUI-style subagent summary.
@@ -589,7 +550,7 @@ end
 --
 --     ↳ Grep nvim_create_user_command
 --
-function M.render_task_tool(tool_part, expanded, _child_content)
+function M.render_task_tool(tool_part, expanded)
 	local input = tool_part.state and tool_part.state.input or {}
 	local metadata = render.get_tool_metadata(tool_part)
 	local tool_status = tool_part.state and tool_part.state.status or "pending"
@@ -598,10 +559,7 @@ function M.render_task_tool(tool_part, expanded, _child_content)
 	local summary = render.normalize_task_summary(metadata.summary)
 
 	-- ── Try to derive summary from child session when server hasn't sent one ──
-	local child_session_id = metadata.sessionId
-		or metadata.sessionID
-		or metadata.childSessionID
-		or metadata.child_session_id
+	local child_session_id = get_task_child_session_id(tool_part)
 	if #summary == 0 then
 		if child_session_id then
 			local ok_sync, sync = pcall(require, "opencode.sync")
@@ -802,23 +760,16 @@ end
 ---@param is_expanded boolean
 ---@return table { lines: string[], highlights: table[] }
 function M.render_regular_tool(tool_part, is_expanded)
-	local result = chat_todos.render_tool(tool_part, is_expanded)
-	result = result or chat_bash.render_tool(tool_part, is_expanded)
-	result = result or chat_read.render_tool(tool_part, is_expanded)
-	result = result or chat_skill.render_tool(tool_part, is_expanded)
-	result = result or chat_search.render_tool(tool_part, is_expanded)
-	result = result or chat_file_edit_results.render_tool(tool_part, is_expanded)
-	return result or render.render_tool_line(tool_part, is_expanded)
+	for _, render_tool in ipairs(REGULAR_TOOL_RENDERERS) do
+		local result = render_tool(tool_part, is_expanded)
+		if result then
+			return result
+		end
+	end
+	return render.render_tool_line(tool_part, is_expanded)
 end
 
 -- ─── Child session resolution ─────────────────────────────────────────────────
-
----@param tool_part table
----@return string|nil
-local function get_task_child_session_id(tool_part)
-	local metadata = render.get_tool_metadata(tool_part)
-	return metadata.sessionId or metadata.sessionID or metadata.childSessionID or metadata.child_session_id
-end
 
 ---@param children any
 ---@param input table
@@ -924,10 +875,11 @@ end
 
 -- ─── Cursor position queries ──────────────────────────────────────────────────
 
+---@param positions table
+---@param winid number|nil
 ---@return string|nil part_id
----@return table|nil task_info
-function M.get_task_at_cursor()
-	local winid = vim.api.nvim_get_current_win()
+---@return table|nil position
+local function get_position_at_cursor(positions, winid)
 	if not winid or not vim.api.nvim_win_is_valid(winid) then
 		return nil, nil
 	end
@@ -935,7 +887,7 @@ function M.get_task_at_cursor()
 	local cursor = vim.api.nvim_win_get_cursor(winid)
 	local cursor_line = cursor[1] - 1
 
-	for part_id, pos in pairs(state.tasks) do
+	for part_id, pos in pairs(positions) do
 		if cursor_line >= pos.start_line and cursor_line <= pos.end_line then
 			return part_id, pos
 		end
@@ -945,22 +897,15 @@ function M.get_task_at_cursor()
 end
 
 ---@return string|nil part_id
+---@return table|nil task_info
+function M.get_task_at_cursor()
+	return get_position_at_cursor(state.tasks, vim.api.nvim_get_current_win())
+end
+
+---@return string|nil part_id
 ---@return table|nil tool_info
 function M.get_tool_at_cursor()
-	if not state.winid or not vim.api.nvim_win_is_valid(state.winid) then
-		return nil, nil
-	end
-
-	local cursor = vim.api.nvim_win_get_cursor(state.winid)
-	local cursor_line = cursor[1] - 1
-
-	for part_id, pos in pairs(state.tools) do
-		if cursor_line >= pos.start_line and cursor_line <= pos.end_line then
-			return part_id, pos
-		end
-	end
-
-	return nil, nil
+	return get_position_at_cursor(state.tools, state.winid)
 end
 
 -- ─── In-place widget rendering ────────────────────────────────────────────────
@@ -1089,35 +1034,20 @@ local function update_block_lines_in_place(pos, result)
 	return true
 end
 
+---@param positions table
+---@param top_line number|nil
+---@param bottom_line number|nil
+---@param render_block function
+---@param rerender_block function
 ---@return boolean updated
-function M.update_active_animations_in_place()
-	if not state.visible or not state.bufnr or not vim.api.nvim_buf_is_valid(state.bufnr) then
-		return false
-	end
-	local top_line, bottom_line = get_visible_line_range()
+local function update_animating_blocks(positions, top_line, bottom_line, render_block, rerender_block)
 	local updated = false
 
-	for part_id, pos in pairs(state.tasks) do
+	for part_id, pos in pairs(positions) do
 		if M.is_animating_tool_part(pos and pos.tool_part) and block_is_visible(pos, top_line, bottom_line) then
-			local result = M.render_task_tool(
-				pos.tool_part,
-				state.expanded_tasks[part_id] or false,
-				state.task_child_cache[part_id]
-			)
+			local result = render_block(part_id, pos)
 			if #result.lines ~= (pos.end_line - pos.start_line + 1) then
-				M.rerender_task(part_id)
-				updated = true
-			else
-				updated = update_block_lines_in_place(pos, result) or updated
-			end
-		end
-	end
-
-	for part_id, pos in pairs(state.tools) do
-		if M.is_animating_tool_part(pos and pos.tool_part) and block_is_visible(pos, top_line, bottom_line) then
-			local result = M.render_regular_tool(pos.tool_part, state.expanded_tools[part_id] or false)
-			if #result.lines ~= (pos.end_line - pos.start_line + 1) then
-				M.rerender_tool(part_id)
+				rerender_block(part_id)
 				updated = true
 			else
 				updated = update_block_lines_in_place(pos, result) or updated
@@ -1126,6 +1056,23 @@ function M.update_active_animations_in_place()
 	end
 
 	return updated
+end
+
+---@return boolean updated
+function M.update_active_animations_in_place()
+	if not state.visible or not state.bufnr or not vim.api.nvim_buf_is_valid(state.bufnr) then
+		return false
+	end
+	local top_line, bottom_line = get_visible_line_range()
+	local tasks_updated = update_animating_blocks(state.tasks, top_line, bottom_line, function(part_id, pos)
+		return M.render_task_tool(pos.tool_part, state.expanded_tasks[part_id] or false)
+	end, M.rerender_task)
+
+	local tools_updated = update_animating_blocks(state.tools, top_line, bottom_line, function(part_id, pos)
+		return M.render_regular_tool(pos.tool_part, state.expanded_tools[part_id] or false)
+	end, M.rerender_tool)
+
+	return tasks_updated or tools_updated
 end
 
 local function shift_all_after(anchor_start, delta, skip_task_id, skip_tool_id)
@@ -1164,6 +1111,27 @@ local function shift_all_after(anchor_start, delta, skip_task_id, skip_tool_id)
 	end
 end
 
+---@param pos table
+---@param result table
+---@param skip_task_id string|nil
+---@param skip_tool_id string|nil
+local function replace_rendered_block(pos, result, skip_task_id, skip_tool_id)
+	local old_line_count = pos.end_line - pos.start_line + 1
+	local new_line_count = #result.lines
+	local delta = new_line_count - old_line_count
+
+	vim.bo[state.bufnr].modifiable = true
+	vim.api.nvim_buf_clear_namespace(state.bufnr, chat_hl_ns, pos.start_line, pos.end_line + 1)
+	vim.api.nvim_buf_set_lines(state.bufnr, pos.start_line, pos.end_line + 1, false, result.lines)
+	vim.api.nvim_buf_clear_namespace(state.bufnr, chat_hl_ns, pos.start_line, pos.start_line + new_line_count)
+	apply_result_highlights(result, pos)
+	vim.bo[state.bufnr].modifiable = false
+
+	pos.end_line = pos.start_line + new_line_count - 1
+	pos.highlights = result.highlights
+	shift_all_after(pos.start_line, delta, skip_task_id, skip_tool_id)
+end
+
 ---Re-render a task widget in place (expand/collapse).
 ---@param part_id string
 function M.rerender_task(part_id)
@@ -1177,23 +1145,7 @@ function M.rerender_task(part_id)
 	end
 
 	local is_expanded = state.expanded_tasks[part_id] or false
-	local cached = state.task_child_cache[part_id]
-	local result = M.render_task_tool(pos.tool_part, is_expanded, cached)
-
-	local old_line_count = pos.end_line - pos.start_line + 1
-	local new_line_count = #result.lines
-	local delta = new_line_count - old_line_count
-
-	vim.bo[state.bufnr].modifiable = true
-	vim.api.nvim_buf_clear_namespace(state.bufnr, chat_hl_ns, pos.start_line, pos.end_line + 1)
-	vim.api.nvim_buf_set_lines(state.bufnr, pos.start_line, pos.end_line + 1, false, result.lines)
-	vim.api.nvim_buf_clear_namespace(state.bufnr, chat_hl_ns, pos.start_line, pos.start_line + new_line_count)
-	apply_result_highlights(result, pos)
-	vim.bo[state.bufnr].modifiable = false
-
-	state.tasks[part_id].end_line = pos.start_line + new_line_count - 1
-	state.tasks[part_id].highlights = result.highlights
-	shift_all_after(pos.start_line, delta, part_id, nil)
+	replace_rendered_block(pos, M.render_task_tool(pos.tool_part, is_expanded), part_id, nil)
 end
 
 ---Handle task toggle (expand/collapse child session content).
@@ -1229,15 +1181,15 @@ function M.handle_task_toggle(part_id)
 			return
 		end
 
-			actions.load_session_messages(child_session_id, {}, function(fetch_err)
-				vim.schedule(function()
-					if fetch_err then
+		actions.load_session_messages(child_session_id, {}, function(fetch_err)
+			vim.schedule(function()
+				if fetch_err then
 					state.expanded_tasks[part_id] = nil
 					M.rerender_task(part_id)
 					return
 				end
 
-					state.task_child_cache[part_id] = M.build_child_session_content(child_session_id)
+				state.task_child_cache[part_id] = true
 				M.rerender_task(part_id)
 			end)
 		end)
@@ -1257,22 +1209,7 @@ function M.rerender_tool(part_id)
 	end
 
 	local is_expanded = state.expanded_tools[part_id] or false
-	local result = M.render_regular_tool(pos.tool_part, is_expanded)
-
-	local old_line_count = pos.end_line - pos.start_line + 1
-	local new_line_count = #result.lines
-	local delta = new_line_count - old_line_count
-
-	vim.bo[state.bufnr].modifiable = true
-	vim.api.nvim_buf_clear_namespace(state.bufnr, chat_hl_ns, pos.start_line, pos.end_line + 1)
-	vim.api.nvim_buf_set_lines(state.bufnr, pos.start_line, pos.end_line + 1, false, result.lines)
-	vim.api.nvim_buf_clear_namespace(state.bufnr, chat_hl_ns, pos.start_line, pos.start_line + new_line_count)
-	apply_result_highlights(result, pos)
-	vim.bo[state.bufnr].modifiable = false
-
-	state.tools[part_id].end_line = pos.start_line + new_line_count - 1
-	state.tools[part_id].highlights = result.highlights
-	shift_all_after(pos.start_line, delta, nil, part_id)
+	replace_rendered_block(pos, M.render_regular_tool(pos.tool_part, is_expanded), nil, part_id)
 end
 
 ---Handle tool toggle (expand/collapse tool input/output).

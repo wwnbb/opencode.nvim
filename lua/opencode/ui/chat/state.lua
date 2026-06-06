@@ -23,7 +23,7 @@ M.state = {
 	focus_edit_line = nil,
 	tasks = {},             -- Track task positions: { [part_id] = { start_line, end_line, tool_part } }
 	expanded_tasks = {},    -- Toggle set: { [part_id] = true }
-	task_child_cache = {},  -- Rendered child content: { [part_id] = { lines, highlights } }
+	task_child_cache = {},  -- Loaded child-session markers: { [part_id] = true }
 	tools = {},             -- Track tool positions: { [part_id] = { start_line, end_line, tool_part } }
 	expanded_tools = {},    -- Toggle set: { [part_id] = true }
 	todo_bufnr = nil,       -- Live todo window buffer

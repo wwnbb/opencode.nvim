@@ -754,8 +754,16 @@ end
 ---@param ns_id number
 ---@param start_line number 0-indexed
 function M.apply_highlights(nui_lines, bufnr, ns_id, start_line)
+	if not bufnr or not vim.api.nvim_buf_is_valid(bufnr) then
+		return
+	end
+
+	local line_count = vim.api.nvim_buf_line_count(bufnr)
 	for i, nui_line in ipairs(nui_lines) do
-		nui_line:highlight(bufnr, ns_id, start_line + i)
+		local line = start_line + i
+		if line >= 1 and line <= line_count then
+			nui_line:highlight(bufnr, ns_id, line)
+		end
 	end
 	M.apply_extmark_highlights(bufnr, ns_id, nui_lines._opencode_highlights, start_line)
 end
@@ -867,6 +875,9 @@ local function _format_compact_number(value)
 	return string.format("%.1f%s", rounded, units[unit_idx])
 end
 
+local TOKEN_USAGE_FIELDS = { "input", "output", "reasoning" }
+local TOKEN_CACHE_FIELDS = { "read", "write" }
+
 ---@param message table
 ---@return number|nil
 local function _get_token_usage(message)
@@ -882,8 +893,7 @@ local function _get_token_usage(message)
 
 	local sum = 0
 	local has_value = false
-	local fields = { "input", "output", "reasoning" }
-	for _, key in ipairs(fields) do
+	for _, key in ipairs(TOKEN_USAGE_FIELDS) do
 		local value = _numeric(tokens[key])
 		if value then
 			sum = sum + value
@@ -892,8 +902,7 @@ local function _get_token_usage(message)
 	end
 
 	if type(tokens.cache) == "table" then
-		local cache_fields = { "read", "write" }
-		for _, key in ipairs(cache_fields) do
+		for _, key in ipairs(TOKEN_CACHE_FIELDS) do
 			local value = _numeric(tokens.cache[key])
 			if value then
 				sum = sum + value
@@ -909,8 +918,8 @@ local function _get_token_usage(message)
 end
 
 ---@param message table
----@return number|nil
-local function _get_token_limit(message)
+---@return table|nil
+local function _get_model(message)
 	if type(message) ~= "table" then
 		return nil
 	end
@@ -922,7 +931,26 @@ local function _get_token_limit(message)
 	end
 
 	local ok, model = pcall(sync.get_model, message.providerID, message.modelID)
-	if not ok or type(model) ~= "table" or type(model.limit) ~= "table" then
+	if ok and type(model) == "table" then
+		return model
+	end
+	return nil
+end
+
+---@param message table
+---@param model? table
+---@return number|nil
+local function _get_token_limit(message, model)
+	if type(message) ~= "table" then
+		return nil
+	end
+	if type(message.providerID) ~= "string" or message.providerID == "" then
+		return nil
+	end
+	if type(message.modelID) ~= "string" or message.modelID == "" then
+		return nil
+	end
+	if type(model) ~= "table" or type(model.limit) ~= "table" then
 		return nil
 	end
 
@@ -934,8 +962,9 @@ local function _get_token_limit(message)
 end
 
 ---@param message table
+---@param model? table
 ---@return string
-local function _get_model_name(message)
+local function _get_model_name(message, model)
 	local model_id = type(message) == "table" and message.modelID or nil
 	if type(model_id) ~= "string" or model_id == "" then
 		return ""
@@ -943,8 +972,7 @@ local function _get_model_name(message)
 	if type(message.providerID) ~= "string" or message.providerID == "" then
 		return model_id
 	end
-	local ok, model = pcall(sync.get_model, message.providerID, model_id)
-	if ok and type(model) == "table" and type(model.name) == "string" and model.name ~= "" then
+	if type(model) == "table" and type(model.name) == "string" and model.name ~= "" then
 		return model.name
 	end
 	return model_id
@@ -1019,7 +1047,7 @@ end
 ---Render metadata footer for an assistant message.
 ---@param message table
 ---@param messages table[]
----@param opts? table { spinner_frame?: string|nil }
+---@param opts? table { spinner_frame?: string|nil, duration_ms?: number|nil, duration_calculated?: boolean }
 ---@return NuiLine
 function M.render_metadata_footer(message, messages, opts)
 	opts = opts or {}
@@ -1028,15 +1056,16 @@ function M.render_metadata_footer(message, messages, opts)
 	local interrupted = M.is_interrupted(message)
 	local is_final = M.is_message_final(message)
 	local agent_hl = interrupted and "Comment" or M.get_agent_hl(agent_id)
+	local model = _get_model(message)
 	local token_usage = _get_token_usage(message)
-	local token_limit = _get_token_limit(message)
+	local token_limit = _get_token_limit(message, model)
 	local spinner_frame = (type(opts.spinner_frame) == "string" and #opts.spinner_frame > 0) and opts.spinner_frame or nil
 	local agent_prefix = spinner_frame and (spinner_frame .. " ") or "▣ "
 
 	local line = NuiLine()
 	line:append(NuiText(agent_prefix, { hl_group = "Comment", priority = UI_HIGHLIGHT_PRIORITY }))
 	line:append(NuiText(locale.titlecase(agent_name), { hl_group = agent_hl, priority = UI_HIGHLIGHT_PRIORITY }))
-	local model_name = _get_model_name(message)
+	local model_name = _get_model_name(message, model)
 	if model_name ~= "" then
 		line:append(NuiText(" · ", "Comment"))
 		line:append(NuiText(model_name, "Comment"))
@@ -1050,7 +1079,12 @@ function M.render_metadata_footer(message, messages, opts)
 		line:append(NuiText(token_text .. " tok", "Comment"))
 	end
 	if not interrupted and is_final then
-		local duration_ms = M.calculate_duration(message, messages)
+		local duration_ms
+		if opts.duration_calculated then
+			duration_ms = opts.duration_ms
+		else
+			duration_ms = M.calculate_duration(message, messages)
+		end
 		if duration_ms then
 			line:append(NuiText(" · ", "Comment"))
 			line:append(NuiText(locale.duration(duration_ms), agent_hl))

@@ -8,6 +8,11 @@ local Popup = require("nui.popup")
 local NuiLine = require("nui.line")
 local NuiText = require("nui.text")
 local input = require("opencode.ui.input")
+local chat_help = require("opencode.ui.chat.help")
+local chat_float_focus = require("opencode.ui.chat.float_focus")
+local chat_messages = require("opencode.ui.chat.messages")
+local chat_keymaps = require("opencode.ui.chat.keymaps")
+local chat_session_tabs = require("opencode.ui.chat.session_tabs")
 local thinking = require("opencode.ui.thinking")
 local spinner = require("opencode.ui.spinner")
 local locale = require("opencode.util.locale")
@@ -20,21 +25,24 @@ local actions = require("opencode.actions")
 local cs = require("opencode.ui.chat.state")
 local state = cs.state
 local chat_hl_ns = cs.chat_hl_ns
-local session_tabs_hl_ns = vim.api.nvim_create_namespace("opencode_session_tabs_hl")
-local session_tabs_augroup = vim.api.nvim_create_augroup("OpenCodeSessionTabs", { clear = false })
-local FLOAT_SESSION_TABS_ZINDEX = 75
 local FLOAT_CHAT_TOP_PADDING = 2
-local SESSION_TAB_COUNT_MAPPING_LIMIT = 99
 
 local render = require("opencode.ui.chat.render")
+local render_state = require("opencode.ui.chat.render_state")
+local chat_cursor = require("opencode.ui.chat.cursor")
 local panel = require("opencode.ui.panel")
 local chat_tasks = require("opencode.ui.chat.tasks")
 local chat_todos = require("opencode.ui.chat.todos")
 local chat_questions = require("opencode.ui.chat.questions")
 local chat_permissions = require("opencode.ui.chat.permissions")
 local chat_edits = require("opencode.ui.chat.edits")
+local chat_interactions = require("opencode.ui.chat.interactions")
 local chat_nav = require("opencode.ui.chat.nav")
 local widget_support = require("opencode.ui.chat.widget_support")
+
+chat_messages.set_schedule_render(function(opts)
+	M.schedule_render(opts)
+end)
 
 local question_widget = require("opencode.ui.question_widget")
 local widget_base = require("opencode.ui.widget_base")
@@ -129,187 +137,17 @@ local function is_processing_status(status)
 		or status_type == "retry"
 end
 
-local RENDER_CACHE_MAX_BLOCKS = 300
+local reset_chat_surface = render_state.reset_chat_surface
+local render_cache_key = render_state.render_cache_key
+local stream_block_key = render_state.stream_block_key
+local render_cache_get = render_state.render_cache_get
+local render_cache_put = render_state.render_cache_put
+local render_highlight_signature = render_state.render_highlight_signature
+local highlight_clear_start = render_state.highlight_clear_start
 
-local function ensure_render_cache()
-	if type(state.render_cache) ~= "table" then
-		state.render_cache = { blocks = {}, order = {} }
-	end
-	state.render_cache.blocks = state.render_cache.blocks or {}
-	state.render_cache.order = state.render_cache.order or {}
-	return state.render_cache
-end
-
-local function clear_render_cache()
-	state.render_cache = { blocks = {}, order = {} }
-	state.last_render_highlight_signature = nil
-end
-
----@param opts? table { reset_expansions?: boolean }
-local function reset_chat_surface(opts)
-	opts = opts or {}
-	state.questions = {}
-	state.permissions = {}
-	state.edits = {}
-	state.tasks = {}
-	state.task_child_cache = {}
-	state.tools = {}
-	if opts.reset_expansions then
-		state.expanded_tasks = {}
-		state.expanded_tools = {}
-	end
-	state.stream_blocks = {}
-	state.spinner_footer_line = nil
-	state.force_full_render = true
-	clear_render_cache()
-end
-
-local function render_cache_key(...)
-	local parts = {}
-	for i = 1, select("#", ...) do
-		parts[i] = tostring(select(i, ...) or "")
-	end
-	return table.concat(parts, "\0")
-end
-
-local function stream_block_key(session_id, message_id, part_id, kind)
-	if not session_id or not message_id or not part_id or not kind then
-		return nil
-	end
-	return render_cache_key("stream", session_id, message_id, part_id, kind)
-end
-
-local function render_cache_get(key)
-	local cache = ensure_render_cache()
-	return cache.blocks[key]
-end
-
-local function render_cache_put(key, value)
-	if not key or not value then
-		return value
-	end
-	local cache = ensure_render_cache()
-	if cache.blocks[key] == nil then
-		table.insert(cache.order, key)
-	end
-	cache.blocks[key] = value
-	while #cache.order > RENDER_CACHE_MAX_BLOCKS do
-		local oldest = table.remove(cache.order, 1)
-		cache.blocks[oldest] = nil
-	end
-	return value
-end
-
-local function append_highlight_signature(parts, highlights, start_line)
-	if type(highlights) ~= "table" then
-		return
-	end
-	start_line = start_line or 0
-	for _, hl in ipairs(highlights) do
-		if type(hl) == "table" and hl.hl_group then
-			local line = start_line + (hl.line or 0)
-			local end_line = hl.end_line and (start_line + hl.end_line) or line
-			table.insert(
-				parts,
-				table.concat({
-					tostring(line),
-					tostring(end_line),
-					tostring(hl.col_start or 0),
-					tostring(hl.col_end or hl.end_col or ""),
-					tostring(hl.hl_group or ""),
-					tostring(hl.priority or ""),
-					tostring(hl.hl_eol or ""),
-				}, ":")
-			)
-		end
-	end
-end
-
-local function render_highlight_signature(content_highlights)
-	local parts = {}
-	append_highlight_signature(parts, content_highlights, 0)
-
-	local function append_line_map(line_map)
-		local keys = {}
-		for key in pairs(line_map or {}) do
-			table.insert(keys, key)
-		end
-		table.sort(keys, function(a, b)
-			return tostring(a) < tostring(b)
-		end)
-		for _, key in ipairs(keys) do
-			local pos = line_map[key]
-			append_highlight_signature(parts, pos and pos.highlights, pos and pos.start_line or 0)
-		end
-	end
-
-	for _, line_map in ipairs({ state.questions, state.permissions, state.edits, state.tasks, state.tools }) do
-		append_line_map(line_map)
-	end
-	return table.concat(parts, "|")
-end
-
-local function highlight_clear_start(changed_start, content_highlights)
-	local clear_start = changed_start or 0
-	local function consider(highlights, start_line)
-		local moved = false
-		if type(highlights) ~= "table" then
-			return moved
-		end
-		start_line = start_line or 0
-		for _, hl in ipairs(highlights) do
-			if type(hl) == "table" then
-				local line = start_line + (hl.line or 0)
-				local end_line = hl.end_line and (start_line + hl.end_line) or line
-				if line < clear_start and end_line >= clear_start then
-					clear_start = line
-					moved = true
-				end
-			end
-		end
-		return moved
-	end
-
-	local moved = true
-	while moved do
-		moved = consider(content_highlights, 0)
-		for _, line_map in ipairs({ state.questions, state.permissions, state.edits, state.tasks, state.tools }) do
-			for _, pos in pairs(line_map or {}) do
-				moved = consider(pos.highlights, pos.start_line or 0) or moved
-			end
-		end
-	end
-	return math.max(0, clear_start)
-end
-
-local session_tabs_refresh_autocmds_setup = false
-
-local function schedule_session_tabs_refresh()
-	vim.schedule(function()
-		if state.visible and type(M.update_winbar) == "function" then
-			M.update_winbar()
-		end
-	end)
-end
-
-local function setup_session_tabs_refresh_autocmds()
-	if session_tabs_refresh_autocmds_setup then
-		return
-	end
-	session_tabs_refresh_autocmds_setup = true
-
-	vim.api.nvim_create_autocmd("ColorScheme", {
-		group = session_tabs_augroup,
-		callback = schedule_session_tabs_refresh,
-		desc = "Refresh OpenCode session tabs after colorscheme changes",
-	})
-	vim.api.nvim_create_autocmd("OptionSet", {
-		group = session_tabs_augroup,
-		pattern = "background",
-		callback = schedule_session_tabs_refresh,
-		desc = "Refresh OpenCode session tabs after background changes",
-	})
-end
+local capture_widget_cursor_context = chat_cursor.capture_widget_cursor_context
+local restore_widget_cursor_context = chat_cursor.restore_widget_cursor_context
+local should_auto_scroll = chat_cursor.should_auto_scroll
 
 local function ensure_session_title_highlight()
 	local ok, title_hl = pcall(vim.api.nvim_get_hl, 0, { name = "Title", link = false })
@@ -372,1360 +210,42 @@ local function setup_chat_window_options(winid)
 	end)
 end
 
----@param opts table
----@return boolean
-local function has_highlight_options(opts)
-	return type(opts) == "table" and next(opts) ~= nil
-end
-
----@param colors table
----@param keys string[]
----@param fallback any
----@return any
-local function tab_color(colors, keys, fallback)
-	if type(colors) ~= "table" then
-		return fallback
-	end
-	for _, key in ipairs(keys) do
-		local value = colors[key]
-		if value ~= nil and value ~= "" then
-			return value
-		end
-	end
-	return fallback
-end
-
----@param colors table|function|nil
----@return table
-local function resolve_tab_colors(colors)
-	if type(colors) == "function" then
-		local ok, resolved = pcall(colors)
-		if ok and type(resolved) == "table" then
-			return resolved
-		end
-		return {}
-	end
-	if type(colors) == "table" then
-		return colors
-	end
-	return {}
-end
-
----@param name string
----@param opts table
----@param fallback table|nil
-local function set_winbar_hl(name, opts, fallback)
-	local ok = pcall(vim.api.nvim_set_hl, 0, name, opts)
-	if not ok and fallback then
-		pcall(vim.api.nvim_set_hl, 0, name, fallback)
-	end
-end
-
----@param tabs_cfg table|nil
-local function ensure_winbar_highlights(tabs_cfg)
-	local function get_hl(name)
-		local ok, value = pcall(vim.api.nvim_get_hl, 0, { name = name, link = false })
-		return ok and value or {}
-	end
-
-	local colors = resolve_tab_colors(type(tabs_cfg) == "table" and tabs_cfg.colors or nil)
-	local normal = get_hl("Normal")
-	local selected = get_hl("PmenuSel")
-	local visual = get_hl("Visual")
-	local tab_selected = get_hl("TabLineSel")
-	local search = get_hl("Search")
-	local fallback_active_bg = selected.bg or visual.bg or tab_selected.bg or search.bg or "#2d5f87"
-	local fallback_active_fg = selected.fg or normal.fg or tab_selected.fg or "#ffffff"
-	local active_bg = tab_color(colors, { "active_bg", "current_bg" }, fallback_active_bg)
-	local active_fg = tab_color(colors, { "active_fg", "current_fg" }, fallback_active_fg)
-	local inactive_bg = tab_color(colors, { "inactive_bg" }, nil)
-	local inactive_fg = tab_color(colors, { "inactive_fg" }, nil)
-	local running_fg = tab_color(colors, { "running_fg" }, nil)
-	local waiting_fg = tab_color(colors, { "waiting_fg" }, nil)
-	local error_fg = tab_color(colors, { "error_fg" }, nil)
-	local idle_fg = tab_color(colors, { "idle_fg" }, nil)
-	local active_running_fg = tab_color(colors, { "active_running_fg", "current_running_fg" }, running_fg)
-	local active_waiting_fg = tab_color(colors, { "active_waiting_fg", "current_waiting_fg" }, waiting_fg)
-	local active_error_fg = tab_color(colors, { "active_error_fg", "current_error_fg" }, error_fg)
-	local active_idle_fg = tab_color(colors, { "active_idle_fg", "current_idle_fg" }, idle_fg)
-	local inactive_opts = {
-		fg = inactive_fg,
-		bg = inactive_bg,
-	}
-
-	if has_highlight_options(inactive_opts) then
-		set_winbar_hl("OpenCodeWinbar", inactive_opts, { link = "StatusLine", default = true })
-	else
-		set_winbar_hl("OpenCodeWinbar", { link = "StatusLine", default = true })
-	end
-
-	local function set_status_hl(name, source, fg)
-		if fg or inactive_bg then
-			local source_hl = get_hl(source)
-			set_winbar_hl(name, {
-				fg = fg or source_hl.fg,
-				bg = inactive_bg,
-			}, { link = source, default = true })
-			return
-		end
-		set_winbar_hl(name, { link = source, default = true })
-	end
-
-	set_status_hl("OpenCodeWinbarRunning", "DiagnosticOk", running_fg)
-	set_status_hl("OpenCodeWinbarWaiting", "DiagnosticWarn", waiting_fg)
-	set_status_hl("OpenCodeWinbarError", "DiagnosticError", error_fg)
-	set_status_hl("OpenCodeWinbarIdle", "Comment", idle_fg)
-
-	local active_opts = {
-		fg = active_fg,
-		bg = active_bg,
-		bold = true,
-	}
-
-	set_winbar_hl("OpenCodeWinbarCurrent", active_opts, {
-		fg = fallback_active_fg,
-		bg = fallback_active_bg,
-		bold = true,
-	})
-
-	local function set_active_icon_hl(name, source, fg)
-		local source_hl = get_hl(source)
-		set_winbar_hl(name, {
-			fg = fg or source_hl.fg or active_fg,
-			bg = active_bg,
-			bold = true,
-		}, {
-			fg = source_hl.fg or fallback_active_fg,
-			bg = fallback_active_bg,
-			bold = true,
-		})
-	end
-
-	set_active_icon_hl("OpenCodeWinbarCurrentRunning", "DiagnosticOk", active_running_fg)
-	set_active_icon_hl("OpenCodeWinbarCurrentWaiting", "DiagnosticWarn", active_waiting_fg)
-	set_active_icon_hl("OpenCodeWinbarCurrentError", "DiagnosticError", active_error_fg)
-	set_active_icon_hl("OpenCodeWinbarCurrentIdle", "Normal", active_idle_fg)
-end
-
----@param text string
----@return string
-local function escape_winbar_text(text)
-	local escaped = tostring(text or ""):gsub("%%", "%%%%")
-	return escaped
-end
-
----@param pending table|nil
----@return number
-local function pending_total(pending)
-	pending = pending or {}
-	return (pending.permissions or 0) + (pending.questions or 0) + (pending.edits or 0)
-end
-
----@param session table
----@param icons table
----@return string icon
----@return string hl
-local function session_tab_icon(session, icons)
-	local status = session.status or {}
-	local status_type = type(status) == "table" and status.type or status
-	if pending_total(session.pending) > 0 then
-		return icons.waiting or "◈", "OpenCodeWinbarWaiting"
-	end
-	if status_type == "busy" or status_type == "retry" or status_type == "streaming" then
-		return icons.running or "●", "OpenCodeWinbarRunning"
-	end
-	if status_type == "error" then
-		return icons.error or "✕", "OpenCodeWinbarError"
-	end
-	return icons.idle or "○", "OpenCodeWinbarIdle"
-end
-
----@param icon_hl string
----@return string
-local function current_session_tab_icon_hl(icon_hl)
-	if icon_hl == "OpenCodeWinbarRunning" then
-		return "OpenCodeWinbarCurrentRunning"
-	end
-	if icon_hl == "OpenCodeWinbarWaiting" then
-		return "OpenCodeWinbarCurrentWaiting"
-	end
-	if icon_hl == "OpenCodeWinbarError" then
-		return "OpenCodeWinbarCurrentError"
-	end
-	return "OpenCodeWinbarCurrentIdle"
-end
-
----@param title string
----@param max_len number
----@return string
-local function truncate_title(title, max_len)
-	title = tostring(title or "")
-	max_len = math.max(0, tonumber(max_len) or 0)
-	if vim.fn.strchars(title) <= max_len then
-		return title
-	end
-	if max_len == 0 then
-		return ""
-	end
-	if max_len <= 3 then
-		return vim.fn.strcharpart(title, 0, max_len)
-	end
-	return vim.fn.strcharpart(title, 0, max_len - 3) .. "..."
-end
-
----@param value number
----@param min_value number
----@param max_value number
----@return number
-local function clamp(value, min_value, max_value)
-	if value < min_value then
-		return min_value
-	end
-	if value > max_value then
-		return max_value
-	end
-	return value
-end
-
----@param text string|table|nil
----@param align string|nil
----@return boolean
-local function set_float_border_title(text, align)
-	if not state.config or state.config.layout ~= "float" then
-		return false
-	end
-	if not state.layout or not state.layout.border or type(state.layout.border.set_text) ~= "function" then
-		return false
-	end
-
-	local cfg = state.config or get_config()
-	local fallback = cfg.float and cfg.float.title or " OpenCode "
-	local title = fallback
-	if type(text) == "string" and text ~= "" then
-		title = " " .. text .. " "
-	elseif type(text) == "table" then
-		title = text
-	end
-	local title_align = align or (cfg.float and cfg.float.title_pos) or "center"
-
-	local ok = pcall(function()
-		state.layout.border:set_text("top", title, title_align)
-	end)
-	return ok
-end
-
----@param sessions table[]
----@param active_session table
----@param current_root_session_id string|nil
----@return number|nil index
----@return string|nil session_id
-local function current_session_tab_index(sessions, active_session, current_root_session_id)
-	for index, session in ipairs(sessions) do
-		if session.is_current or session.id == active_session.id or session.id == current_root_session_id then
-			return index, session.id
-		end
-	end
-	return nil, current_root_session_id or active_session.id
-end
-
----@param session_count number
----@param max_tabs number
----@param current_index number|nil
----@return number start_index
-local function centered_session_tabs_start(session_count, max_tabs, current_index)
-	if session_count <= max_tabs then
-		return 1
-	end
-	if not current_index then
-		return 1
-	end
-
-	local max_start = session_count - max_tabs + 1
-	local start_index = current_index - math.floor(max_tabs / 2)
-	return clamp(start_index, 1, max_start)
-end
-
----@param sessions table[]
----@param max_tabs number
----@param current_index number|nil
----@param current_session_id string|nil
----@return number start_index
-local function visible_session_tabs_start(sessions, max_tabs, current_index, current_session_id)
-	local session_count = #sessions
-	if session_count <= max_tabs then
-		state.session_tabs_start = nil
-		state.session_tabs_current_id = current_session_id
-		return 1
-	end
-
-	local max_start = session_count - max_tabs + 1
-	local stored_start = tonumber(state.session_tabs_start)
-	if stored_start and state.session_tabs_current_id == current_session_id then
-		local start_index = clamp(math.floor(stored_start), 1, max_start)
-		state.session_tabs_start = start_index
-		return start_index
-	end
-
-	local start_index = centered_session_tabs_start(session_count, max_tabs, current_index)
-	state.session_tabs_start = start_index
-	state.session_tabs_current_id = current_session_id
-	return start_index
-end
-
----@param tabs_cfg table
----@param current_session table|nil
----@return table tabs
-local function build_session_tabs(tabs_cfg, current_session)
-	ensure_winbar_highlights(tabs_cfg)
-
-	local app_state = require("opencode.state")
-	local sessions = app_state.get_active_sessions()
-	local active_session = current_session or app_state.get_session() or {}
-	local current_root_session_id = nil
-	if active_session.id and not app_state.is_runtime_session(active_session.id) then
-		for _, session in ipairs(sessions) do
-			if event_util.session_owns_task_child(session.id, active_session.id) then
-				current_root_session_id = session.id
-				break
-			end
-		end
-	end
-
-	local max_tabs = math.max(1, tonumber(tabs_cfg.max_tabs) or 3)
-	local separator = tabs_cfg.separator or " │ "
-	local icons = tabs_cfg.icons or {}
-	local parts = {}
-	local line = NuiLine()
-	local has_tabs = false
-	local display_col = 0
-	local target_id = 0
-	state.winbar_targets = {}
-	state.session_tabs_mouse_targets = {}
-
-	local current_index, current_session_id = current_session_tab_index(sessions, active_session, current_root_session_id)
-	local start_index = visible_session_tabs_start(sessions, max_tabs, current_index, current_session_id)
-	local end_index = math.min(#sessions, start_index + max_tabs - 1)
-	local max_start = math.max(1, #sessions - max_tabs + 1)
-
-	---@param text string
-	---@param hl string
-	local function append_text(text, hl)
-		line:append(text, hl)
-		display_col = display_col + vim.fn.strdisplaywidth(text)
-	end
-
-	local function append_separator()
-		if has_tabs then
-			append_text(separator, "OpenCodeWinbar")
-		end
-	end
-
-	---@param target table
-	---@return number
-	local function register_target(target)
-		target_id = target_id + 1
-		state.winbar_targets[target_id] = target
-		return target_id
-	end
-
-	---@param id number
-	---@param start_col number
-	---@param end_col number
-	local function register_mouse_target(id, start_col, end_col)
-		if end_col < start_col then
-			return
-		end
-		table.insert(state.session_tabs_mouse_targets, {
-			target = id,
-			start_col = start_col,
-			end_col = end_col,
-		})
-	end
-
-	---@param page_start number
-	---@param hidden_count number
-	local function append_ellipsis(page_start, hidden_count)
-		append_separator()
-		local id = register_target({
-			kind = "page",
-			start = clamp(page_start, 1, max_start),
-			current_session_id = current_session_id,
-		})
-		local label = "..." .. tostring(hidden_count)
-		local start_col = display_col + 1
-		append_text(label, "OpenCodeWinbar")
-		register_mouse_target(id, start_col, display_col)
-		has_tabs = true
-		table.insert(
-			parts,
-			string.format(
-				"%%%d@v:lua.__opencode_chat_winbar_click@%%#OpenCodeWinbar#%s%%T",
-				id,
-				escape_winbar_text(label)
-			)
-		)
-	end
-
-	if #sessions > max_tabs and start_index > 1 then
-		append_ellipsis(start_index - max_tabs, start_index - 1)
-	end
-
-	for index = start_index, end_index do
-		local session = sessions[index]
-		local icon, icon_hl = session_tab_icon(session, icons)
-		local title = session_util.displayTitle(session.title or session.name) or session.id
-		local display_title = truncate_title(title, 18)
-		local is_current = session.is_current or active_session.id == session.id or current_root_session_id == session.id
-		local label_hl = is_current and "OpenCodeWinbarCurrent" or "OpenCodeWinbar"
-		local display_icon = is_current and (" " .. icon) or icon
-		local display_label = is_current and (" " .. display_title .. " ") or (" " .. display_title)
-		local display_icon_hl = is_current and current_session_tab_icon_hl(icon_hl) or icon_hl
-		append_separator()
-		local id = register_target({
-			kind = "session",
-			session_id = session.id,
-		})
-		local start_col = display_col + 1
-		append_text(display_icon, display_icon_hl)
-		append_text(display_label, label_hl)
-		register_mouse_target(id, start_col, display_col)
-		has_tabs = true
-		table.insert(
-			parts,
-			string.format(
-				"%%%d@v:lua.__opencode_chat_winbar_click@%%#%s#%s%%#%s#%s%%T",
-				id,
-				display_icon_hl,
-				escape_winbar_text(display_icon),
-				label_hl,
-				escape_winbar_text(display_label)
-			)
-		)
-	end
-
-	if #sessions > max_tabs and end_index < #sessions then
-		append_ellipsis(start_index + max_tabs, #sessions - end_index)
-	end
-
-	local running = 0
-	local waiting = 0
-	for _, session in ipairs(sessions) do
-		local status = session.status or {}
-		local status_type = type(status) == "table" and status.type or status
-		if status_type == "busy" or status_type == "retry" or status_type == "streaming" then
-			running = running + 1
-		end
-		if pending_total(session.pending) > 0 then
-			waiting = waiting + 1
-		end
-	end
-
-	if running > 0 or waiting > 0 then
-		append_separator()
-		append_text((icons.running or "●") .. tostring(running), "OpenCodeWinbarRunning")
-		append_text(" ", "OpenCodeWinbar")
-		append_text((icons.waiting or "◈") .. tostring(waiting), "OpenCodeWinbarWaiting")
-		has_tabs = true
-		table.insert(
-			parts,
-			string.format(
-				"%%#OpenCodeWinbar#%s%%#OpenCodeWinbarRunning#%s%d %%#OpenCodeWinbarWaiting#%s%d",
-				"",
-				escape_winbar_text(icons.running or "●"),
-				running,
-				escape_winbar_text(icons.waiting or "◈"),
-				waiting
-			)
-		)
-	end
-
-	if has_tabs then
-		append_text(" ", "OpenCodeWinbar")
-	end
-
-	return {
-		line = line,
-		parts = parts,
-		separator = separator,
-		has_tabs = has_tabs,
-	}
-end
-
----@return boolean
-local function session_tabs_window_is_valid()
-	return state.session_tabs_winid and vim.api.nvim_win_is_valid(state.session_tabs_winid) or false
-end
-
----@return boolean
-local function session_tabs_buffer_is_valid()
-	return state.session_tabs_bufnr and vim.api.nvim_buf_is_valid(state.session_tabs_bufnr) or false
-end
-
-local function close_float_session_tabs_window()
-	if session_tabs_window_is_valid() then
-		pcall(vim.api.nvim_win_close, state.session_tabs_winid, true)
-	end
-	state.session_tabs_winid = nil
-	state.session_tabs_mouse_targets = {}
-end
-
-local function focus_chat_window()
-	if state.winid and vim.api.nvim_win_is_valid(state.winid) then
-		pcall(vim.api.nvim_set_current_win, state.winid)
-	end
-end
-
----@param mode string
----@return boolean
-local function is_visual_or_select_mode(mode)
-	return mode == "v" or mode == "V" or mode == string.char(22) or mode == "s" or mode == "S" or mode == string.char(19)
-end
-
-local function leave_session_tabs_visual_mode()
-	if is_visual_or_select_mode(vim.api.nvim_get_mode().mode) then
-		local esc = vim.api.nvim_replace_termcodes("<Esc>", true, false, true)
-		vim.api.nvim_feedkeys(esc, "nx", false)
-	end
-	focus_chat_window()
-end
-
-local function handle_session_tabs_mouse_click()
-	local mouse = vim.fn.getmousepos()
-	if not mouse or mouse.winid ~= state.session_tabs_winid then
-		focus_chat_window()
-		return
-	end
-
-	local col = tonumber(mouse.wincol or 0) or 0
-	if col <= 0 then
-		col = tonumber(mouse.column or 0) or 0
-	end
-	if col <= 0 then
-		focus_chat_window()
-		return
-	end
-
-	for _, target in ipairs(state.session_tabs_mouse_targets or {}) do
-		if col >= target.start_col and col <= target.end_col then
-			M.select_winbar_session(target.target)
-			focus_chat_window()
-			return
-		end
-	end
-
-	focus_chat_window()
-end
-
----@return number bufnr
-local function setup_session_tabs_buffer()
-	if session_tabs_buffer_is_valid() then
-		return state.session_tabs_bufnr
-	end
-
-	local bufnr = vim.api.nvim_create_buf(false, true)
-	state.session_tabs_bufnr = bufnr
-	vim.bo[bufnr].buftype = "nofile"
-	vim.bo[bufnr].bufhidden = "hide"
-	vim.bo[bufnr].swapfile = false
-	vim.bo[bufnr].filetype = "opencode_session_tabs"
-	vim.bo[bufnr].modifiable = false
-	vim.bo[bufnr].readonly = true
-
-	local function map(mode, lhs, rhs, desc)
-		vim.keymap.set(mode, lhs, rhs, {
-			buffer = bufnr,
-			noremap = true,
-			silent = true,
-			nowait = true,
-			desc = desc,
-		})
-	end
-
-	map("n", "<LeftMouse>", handle_session_tabs_mouse_click, "Select OpenCode session tab")
-	map({ "v", "s" }, "<LeftMouse>", leave_session_tabs_visual_mode, "Leave OpenCode session tab selection")
-	map({ "n", "v", "s" }, "<LeftDrag>", leave_session_tabs_visual_mode, "Ignore OpenCode session tab drag")
-	map({ "n", "v", "s" }, "<LeftRelease>", leave_session_tabs_visual_mode, "Ignore OpenCode session tab release")
-	map("n", "v", leave_session_tabs_visual_mode, "Disable OpenCode session tab visual mode")
-	map("n", "V", leave_session_tabs_visual_mode, "Disable OpenCode session tab linewise visual mode")
-	map("n", "<C-v>", leave_session_tabs_visual_mode, "Disable OpenCode session tab block visual mode")
-
-	pcall(vim.api.nvim_create_autocmd, "ModeChanged", {
-		group = session_tabs_augroup,
-		buffer = bufnr,
-		callback = function()
-			if not session_tabs_window_is_valid() or vim.api.nvim_get_current_win() ~= state.session_tabs_winid then
-				return
-			end
-			if is_visual_or_select_mode(vim.api.nvim_get_mode().mode) then
-				vim.schedule(leave_session_tabs_visual_mode)
-			end
-		end,
-	})
-
-	return bufnr
-end
-
----@param winid number|nil
-local function setup_session_tabs_window_options(winid)
-	if not winid or not vim.api.nvim_win_is_valid(winid) then
-		return
-	end
-
-	local wo = vim.wo[winid]
-	wo.fillchars = "eob: "
-	wo.wrap = false
-	wo.number = false
-	wo.relativenumber = false
-	wo.signcolumn = "no"
-	wo.foldcolumn = "0"
-	wo.cursorline = false
-	wo.cursorcolumn = false
-	wo.winhighlight = "Normal:OpenCodeWinbar,EndOfBuffer:OpenCodeWinbar"
-	pcall(function()
-		wo.statuscolumn = ""
-	end)
-	pcall(function()
-		wo.winbar = ""
-	end)
-end
-
----@param frame table
----@param _tab_width number
----@return table|nil
-local function calculate_session_tabs_window_config(frame, _tab_width)
-	local ui = vim.api.nvim_list_uis()[1] or { width = vim.o.columns, height = vim.o.lines }
-	local max_width = math.max(1, (tonumber(frame.width) or 0) - 2)
-	local width = max_width
-	local row = math.max(0, tonumber(frame.row) or 0)
-	local col = math.max(0, tonumber(frame.col) or 0) + 1
-
-	if width <= 0 or row >= ui.height or col >= ui.width then
-		return nil
-	end
-
-	width = math.min(width, math.max(1, ui.width - col))
-
-	return {
-		relative = "editor",
-		row = row,
-		col = col,
-		width = width,
-		height = 1,
-		style = "minimal",
-		focusable = true,
-		zindex = FLOAT_SESSION_TABS_ZINDEX,
-	}
-end
-
----@param tabs_cfg table
----@param current_session table|nil
----@return boolean visible
-local function update_float_session_tabs_window(tabs_cfg, current_session)
-	if not state.visible or not state.config or state.config.layout ~= "float" or tabs_cfg.enabled == false then
-		close_float_session_tabs_window()
-		return false
-	end
-	if not state.float_dims then
-		close_float_session_tabs_window()
-		return false
-	end
-
-	local tabs = build_session_tabs(tabs_cfg, current_session)
-	if not tabs.has_tabs then
-		close_float_session_tabs_window()
-		return false
-	end
-
-	local tab_width = vim.fn.strdisplaywidth(tabs.line:content())
-	local win_config = calculate_session_tabs_window_config(state.float_dims, tab_width)
-	if not win_config then
-		close_float_session_tabs_window()
-		return false
-	end
-
-	local bufnr = setup_session_tabs_buffer()
-	vim.bo[bufnr].readonly = false
-	vim.bo[bufnr].modifiable = true
-	vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { tabs.line:content() })
-	vim.api.nvim_buf_clear_namespace(bufnr, session_tabs_hl_ns, 0, -1)
-	tabs.line:highlight(bufnr, session_tabs_hl_ns, 1)
-	vim.bo[bufnr].modifiable = false
-	vim.bo[bufnr].readonly = true
-
-	if session_tabs_window_is_valid() then
-		vim.api.nvim_win_set_config(state.session_tabs_winid, win_config)
-		if vim.api.nvim_win_get_buf(state.session_tabs_winid) ~= bufnr then
-			vim.api.nvim_win_set_buf(state.session_tabs_winid, bufnr)
-		end
-	else
-		state.session_tabs_winid = vim.api.nvim_open_win(bufnr, false, win_config)
-	end
-
-	setup_session_tabs_window_options(state.session_tabs_winid)
-	return true
-end
-
 function M.update_winbar()
-	if not state.winid or not vim.api.nvim_win_is_valid(state.winid) then
-		close_float_session_tabs_window()
-		return
-	end
-	local cfg = state.config or get_config()
-	local tabs_cfg = cfg.session_tabs or {}
-	if tabs_cfg.enabled == false then
-		pcall(function()
-			vim.wo[state.winid].winbar = ""
-		end)
-		state.winbar_targets = {}
-		state.session_tabs_mouse_targets = {}
-		set_float_border_title(nil)
-		close_float_session_tabs_window()
-		return
-	end
-
-	if cfg.layout == "float" then
-		pcall(function()
-			vim.wo[state.winid].winbar = ""
-		end)
-		set_float_border_title(nil)
-		update_float_session_tabs_window(tabs_cfg)
-		return
-	end
-
-	close_float_session_tabs_window()
-	local tabs = build_session_tabs(tabs_cfg)
-
-	pcall(function()
-		vim.wo[state.winid].winbar = table.concat(tabs.parts, escape_winbar_text(tabs.separator))
-	end)
+	return chat_session_tabs.update_winbar()
 end
 
----@param target number|string
 function M.select_winbar_session(target)
-	local index = tonumber(target)
-	local entry = index and state.winbar_targets[index] or nil
-	if type(entry) == "table" and entry.kind == "page" then
-		state.session_tabs_start = entry.start
-		state.session_tabs_current_id = entry.current_session_id
-		M.update_winbar()
-		focus_chat_window()
-		return
-	end
-
-	local session_id = type(entry) == "table" and entry.session_id or entry
-	if not session_id then
-		focus_chat_window()
-		return
-	end
-	local app_state = require("opencode.state")
-	local record = app_state.get_session_record(session_id) or { id = session_id }
-	actions.switch_session(record, {
-		notify = false,
-		reason = "winbar",
-	})
-	focus_chat_window()
+	return chat_session_tabs.select_winbar_session(target)
 end
 
----@param target table|nil
----@param current_session table|nil
----@return boolean switched
-local function switch_to_session_tab(target, current_session)
-	if type(target) ~= "table" or not target.id then
-		return false
-	end
-
-	local current = current_session or require("opencode.state").get_session() or {}
-	if target.id == current.id then
-		return false
-	end
-
-	local app_state = require("opencode.state")
-	local record = app_state.get_session_record(target.id) or target
-	actions.switch_session(record, {
-		notify = false,
-		reason = "winbar",
-	})
-	return true
-end
-
----@param index number
----@return boolean switched
 function M.go_to_session_tab(index)
-	local target_index = tonumber(index)
-	if not target_index then
-		return false
-	end
-
-	if target_index == 0 then
-		target_index = 1
-	else
-		target_index = math.floor(target_index)
-	end
-	if target_index < 1 then
-		return false
-	end
-
-	local app_state = require("opencode.state")
-	local sessions = app_state.get_active_sessions()
-	return switch_to_session_tab(sessions[target_index], app_state.get_session())
+	return chat_session_tabs.go_to_session_tab(index)
 end
 
----@param direction number
----@return boolean switched
 function M.cycle_session(direction)
-	local app_state = require("opencode.state")
-	local sessions = app_state.get_active_sessions()
-	if #sessions <= 1 then
-		return false
-	end
-
-	local current = app_state.get_session() or {}
-	local current_index = nil
-	for index, session in ipairs(sessions) do
-		if session.id == current.id or session.is_current then
-			current_index = index
-			break
-		end
-	end
-
-	if not current_index and current.id then
-		for index, session in ipairs(sessions) do
-			if event_util.session_owns_task_child(session.id, current.id) then
-				current_index = index
-				break
-			end
-		end
-	end
-
-	local step = direction < 0 and -1 or 1
-	if not current_index then
-		current_index = step > 0 and 0 or 1
-	end
-
-	local next_index = ((current_index - 1 + step) % #sessions) + 1
-	local target = sessions[next_index]
-	return switch_to_session_tab(target, current)
-end
-
-_G.__opencode_chat_winbar_click = _G.__opencode_chat_winbar_click or function(minwid)
-	local ok, chat = pcall(require, "opencode.ui.chat")
-	if ok and type(chat.select_winbar_session) == "function" then
-		chat.select_winbar_session(minwid)
-	end
+	return chat_session_tabs.cycle_session(direction)
 end
 
 -- ─── Float focus autocmds ─────────────────────────────────────────────────────
 
-local function clear_float_focus_autocmds()
-	if not state.focus_augroup then
-		return
-	end
-	pcall(vim.api.nvim_del_augroup_by_id, state.focus_augroup)
-	state.focus_augroup = nil
-end
-
-local function is_opencode_related_window(winid)
-	if not winid or not vim.api.nvim_win_is_valid(winid) then
-		return false
-	end
-	if state.winid and winid == state.winid then
-		return true
-	end
-	if state.session_tabs_winid and winid == state.session_tabs_winid then
-		return true
-	end
-	if type(chat_edits.is_inline_diff_window) == "function" and chat_edits.is_inline_diff_window(winid) then
-		return true
-	end
-
-	local ok_buf, bufnr = pcall(vim.api.nvim_win_get_buf, winid)
-	if ok_buf and bufnr and vim.api.nvim_buf_is_valid(bufnr) then
-		local ft = vim.bo[bufnr].filetype
-		if type(ft) == "string" and ft:match("^opencode") then
-			return true
-		end
-	end
-
-	local ok_input, input_ui = pcall(require, "opencode.ui.input")
-	if ok_input and type(input_ui.get_winids) == "function" then
-		for _, candidate in ipairs(input_ui.get_winids()) do
-			if winid == candidate then
-				return true
-			end
-		end
-	end
-
-	local ok_palette, palette = pcall(require, "opencode.ui.palette")
-	if ok_palette and type(palette.get_winids) == "function" then
-		for _, candidate in ipairs(palette.get_winids()) do
-			if winid == candidate then
-				return true
-			end
-		end
-	end
-
-	return false
-end
-
----@param current_win number|nil
----@return boolean
-local function mouse_is_inside_float_frame(current_win)
-	if not state.float_dims then
-		return false
-	end
-	local mouse = vim.fn.getmousepos()
-	if type(mouse) ~= "table" then
-		return false
-	end
-	local mouse_winid = tonumber(mouse.winid or 0) or 0
-	if current_win and mouse_winid > 0 and mouse_winid ~= current_win then
-		return false
-	end
-
-	local row = (tonumber(mouse.screenrow or 0) or 0) - 1
-	local col = (tonumber(mouse.screencol or 0) or 0) - 1
-	if row < 0 or col < 0 then
-		return false
-	end
-
-	local frame = state.float_dims
-	local frame_row = tonumber(frame.row) or 0
-	local frame_col = tonumber(frame.col) or 0
-	local frame_height = tonumber(frame.height) or 0
-	local frame_width = tonumber(frame.width) or 0
-
-	return row >= frame_row and row < frame_row + frame_height and col >= frame_col and col < frame_col + frame_width
-end
-
-local function setup_float_focus_autocmds()
-	clear_float_focus_autocmds()
-
-	state.focus_augroup =
-		vim.api.nvim_create_augroup("OpenCodeFloatFocus_" .. tostring(state.bufnr or 0), { clear = true })
-
-	vim.api.nvim_create_autocmd("WinEnter", {
-		group = state.focus_augroup,
-		callback = function()
-			vim.schedule(function()
-				if not state.visible then
-					return
-				end
-				if state.tabpage and state.tabpage ~= vim.api.nvim_get_current_tabpage() then
-					return
-				end
-				if not state.config or state.config.layout ~= "float" then
-					return
-				end
-				if state.config.close_on_focus_lost == false then
-					return
-				end
-
-				-- Don't close when the user is in the native diff tab
-				local nd_ok, nd = pcall(require, "opencode.ui.native_diff")
-				if nd_ok and nd.is_active and nd.is_active() then
-					return
-				end
-
-				local current_win = vim.api.nvim_get_current_win()
-				if is_opencode_related_window(current_win) then
-					return
-				end
-				if mouse_is_inside_float_frame(current_win) then
-					focus_chat_window()
-					return
-				end
-
-				M.close()
-			end)
-		end,
-	})
-end
-
 -- ─── Cursor preservation ──────────────────────────────────────────────────────
-
----@class OpenCodeWidgetCursorContext
----@field kind "question" | "permission" | "edit"
----@field id string
----@field relative_line number
-
----@param kind "question" | "permission" | "edit"
----@return table
-local function get_widget_positions(kind)
-	if kind == "question" then
-		return state.questions
-	end
-	if kind == "permission" then
-		return state.permissions
-	end
-	return state.edits
-end
-
----@param kind "question" | "permission" | "edit"
----@param pos table|nil
----@return boolean
-local function is_widget_cursor_target(kind, pos)
-	if not pos then
-		return false
-	end
-
-	if kind == "question" then
-		return pos.status == "pending" or pos.status == "confirming"
-	end
-	if kind == "permission" then
-		return pos.status == "pending"
-	end
-	return pos.status ~= "sent"
-end
-
----@return number|nil min_line
----@return number|nil max_line
-local function interactive_widget_bounds()
-	local min_line = nil
-	local max_line = nil
-	local widget_kinds = { "question", "permission", "edit" }
-	for _, kind in ipairs(widget_kinds) do
-		for _, pos in pairs(get_widget_positions(kind)) do
-			if is_widget_cursor_target(kind, pos) then
-				min_line = min_line and math.min(min_line, pos.start_line) or pos.start_line
-				max_line = max_line and math.max(max_line, pos.end_line) or pos.end_line
-			end
-		end
-	end
-	return min_line, max_line
-end
-
----@return OpenCodeWidgetCursorContext|nil
-local function capture_widget_cursor_context()
-	if not state.visible or not state.winid or not vim.api.nvim_win_is_valid(state.winid) then
-		return nil
-	end
-
-	local cursor_line = vim.api.nvim_win_get_cursor(state.winid)[1] - 1
-	local widget_kinds = { "question", "permission", "edit" }
-
-	for _, kind in ipairs(widget_kinds) do
-		for widget_id, pos in pairs(get_widget_positions(kind)) do
-			if
-				is_widget_cursor_target(kind, pos)
-				and cursor_line >= pos.start_line
-				and cursor_line <= pos.end_line
-			then
-				return {
-					kind = kind,
-					id = widget_id,
-					relative_line = cursor_line - pos.start_line,
-				}
-			end
-		end
-	end
-
-	return nil
-end
-
----@param widget_cursor OpenCodeWidgetCursorContext|nil
----@return boolean
-local function restore_widget_cursor_context(widget_cursor)
-	if not widget_cursor then
-		return false
-	end
-	if not state.visible or not state.winid or not vim.api.nvim_win_is_valid(state.winid) then
-		return false
-	end
-	if not state.bufnr or not vim.api.nvim_buf_is_valid(state.bufnr) then
-		return false
-	end
-
-	local pos = get_widget_positions(widget_cursor.kind)[widget_cursor.id]
-	if not is_widget_cursor_target(widget_cursor.kind, pos) then
-		return false
-	end
-
-	local buf_lines = vim.api.nvim_buf_line_count(state.bufnr)
-	local min_line = math.min(pos.start_line + 1, buf_lines)
-	local max_line = math.min(pos.end_line + 1, buf_lines)
-	if min_line <= 0 or max_line <= 0 then
-		return false
-	end
-
-	local target_line = pos.start_line + widget_cursor.relative_line + 1
-	target_line = math.max(min_line, math.min(target_line, max_line))
-
-	vim.api.nvim_win_set_cursor(state.winid, { target_line, 0 })
-	M.sync_widget_selection_from_cursor()
-	return true
-end
-
----@param widget_cursor OpenCodeWidgetCursorContext|nil
----@return boolean
-local function should_auto_scroll(widget_cursor)
-	if widget_cursor then
-		return false
-	end
-	if not state.auto_scroll or not state.visible or not state.winid or not vim.api.nvim_win_is_valid(state.winid) then
-		return false
-	end
-
-	local cursor = vim.api.nvim_win_get_cursor(state.winid)
-	local win_height = vim.api.nvim_win_get_height(state.winid)
-	local buf_lines = vim.api.nvim_buf_line_count(state.bufnr)
-	return cursor[1] >= buf_lines - win_height - 1
-end
-
--- ─── Buffer setup ────────────────────────────────────────────────────────────
-
-local function setup_buffer(bufnr)
-	vim.bo[bufnr].buftype = "nofile"
-	vim.bo[bufnr].bufhidden = "hide"
-	vim.bo[bufnr].swapfile = false
-	vim.bo[bufnr].filetype = "opencode"
-	vim.bo[bufnr].modifiable = false
-	pcall(vim.api.nvim_buf_set_name, bufnr, "opencode")
-
-	local cfg = state.config
-	local opts = { buffer = bufnr, noremap = true, silent = true }
-
-	vim.keymap.set("n", cfg.keymaps.close, function()
-		M.close()
-	end, opts)
-
-	vim.keymap.set("n", cfg.keymaps.focus_input, function()
-		M.focus_input()
-	end, opts)
-
-	vim.keymap.set("n", cfg.keymaps.scroll_up, "<C-u>", opts)
-	vim.keymap.set("n", cfg.keymaps.scroll_down, "<C-d>", opts)
-	vim.keymap.set("n", cfg.keymaps.goto_top, "gg", opts)
-	vim.keymap.set("n", cfg.keymaps.goto_bottom, "G", opts)
-
-	vim.keymap.set("n", cfg.keymaps.abort, function()
-		require("opencode.actions").abort()
-	end, vim.tbl_extend("force", opts, { desc = "Stop current generation" }))
-
-	vim.keymap.set("n", "a", function()
-		M.toggle_auto_scroll()
-	end, vim.tbl_extend("force", opts, { desc = "Toggle auto-scroll" }))
-
-	local todo_keymap = cfg.todo
-		and cfg.todo.keymaps
-		and cfg.todo.keymaps.toggle
-	if todo_keymap and todo_keymap ~= "" then
-		vim.keymap.set("n", todo_keymap, function()
-			chat_todos.toggle_current_dock()
-		end, vim.tbl_extend("force", opts, { desc = "Toggle todo window" }))
-	end
-
-	vim.keymap.set("n", "?", function()
-		M.show_help()
-	end, opts)
-
-	vim.keymap.set("n", "<C-p>", function()
-		local palette = require("opencode.ui.palette")
-		palette.show()
-	end, { buffer = bufnr, noremap = true, silent = true, desc = "Open command palette" })
-
-	vim.keymap.set("n", "N", function()
-		require("opencode.actions").new_session()
-	end, { buffer = bufnr, noremap = true, silent = true, desc = "Start new session" })
-
-	if cfg.keymaps.close_session and cfg.keymaps.close_session ~= "" then
-		vim.keymap.set("n", cfg.keymaps.close_session, function()
-			require("opencode.actions").close_session({ notify = true })
-		end, vim.tbl_extend("force", opts, { desc = "Close current OpenCode session tab" }))
-	end
-
-	vim.keymap.set("n", "gt", function()
-		local count = tonumber(vim.v.count) or 0
-		if count > 0 then
-			M.go_to_session_tab(count)
-			return
-		end
-		M.cycle_session(1)
-	end, vim.tbl_extend("force", opts, { desc = "Next or counted OpenCode session" }))
-
-	vim.keymap.set("n", "0gt", function()
-		M.go_to_session_tab(0)
-	end, vim.tbl_extend("force", opts, { desc = "First OpenCode session" }))
-
-	for i = 1, SESSION_TAB_COUNT_MAPPING_LIMIT do
-		local index = i
-		vim.keymap.set("n", tostring(index) .. "gt", function()
-			M.go_to_session_tab(index)
-		end, vim.tbl_extend("force", opts, { desc = string.format("OpenCode session %d", index) }))
-	end
-
-	vim.keymap.set("n", "gT", function()
-		M.cycle_session(-1)
-	end, vim.tbl_extend("force", opts, { desc = "Previous OpenCode session" }))
-
-	-- Question / permission / edit navigation (cursor moves first; widget selection follows cursor)
-	vim.keymap.set("n", "j", function()
-		M.handle_question_navigation("down")
-	end, opts)
-	vim.keymap.set("n", "k", function()
-		M.handle_question_navigation("up")
-	end, opts)
-	vim.keymap.set("n", "<Down>", function()
-		M.handle_question_navigation("down")
-	end, opts)
-	vim.keymap.set("n", "<Up>", function()
-		M.handle_question_navigation("up")
-	end, opts)
-
-	vim.keymap.set("n", "<CR>", function()
-		M.handle_question_confirm()
-	end, opts)
-
-	vim.keymap.set("n", "<Tab>", function()
-		M.handle_question_next_tab()
-	end, opts)
-	vim.keymap.set("n", "<S-Tab>", function()
-		M.handle_question_prev_tab()
-	end, opts)
-
-	for i = 1, 9 do
-		vim.keymap.set("n", tostring(i), function()
-			M.handle_question_number_select(i)
-		end, opts)
-	end
-
-	vim.keymap.set("n", "c", function()
-		M.handle_question_custom_input()
-	end, opts)
-
-	vim.keymap.set("n", "m", function()
-		M.handle_widget_message()
-	end, opts)
-
-	vim.keymap.set("n", "<Space>", function()
-		M.handle_question_toggle()
-	end, opts)
-
-	-- Edit widget keybindings
-	vim.keymap.set("n", "<C-a>", function()
-		local eid = chat_edits.get_edit_at_cursor()
-		if eid then
-			chat_edits.handle_edit_accept_file()
-		else
-			vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<C-a>", true, false, true), "n", false)
-		end
-	end, opts)
-
-	vim.keymap.set("n", "<C-x>", function()
-		local eid = chat_edits.get_edit_at_cursor()
-		if eid then
-			chat_edits.handle_edit_reject_file()
-		else
-			vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<C-x>", true, false, true), "n", false)
-		end
-	end, opts)
-
-	vim.keymap.set("n", "<C-m>", function()
-		local eid = chat_edits.get_edit_at_cursor()
-		if eid then
-			chat_edits.handle_edit_resolve_file()
-		else
-			vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<C-m>", true, false, true), "n", false)
-		end
-	end, opts)
-
-	vim.keymap.set("n", "=", function()
-		local eid = chat_edits.get_edit_at_cursor()
-		if eid then
-			chat_edits.handle_edit_toggle_diff()
-		else
-			vim.api.nvim_feedkeys("=", "n", false)
-		end
-	end, opts)
-
-	vim.keymap.set("n", "A", function()
-		local eid = chat_edits.get_edit_at_cursor()
-		if eid then
-			chat_edits.handle_edit_accept_all()
-		else
-			vim.api.nvim_feedkeys("A", "n", false)
-		end
-	end, opts)
-
-	vim.keymap.set("n", "X", function()
-		local eid = chat_edits.get_edit_at_cursor()
-		if eid then
-			chat_edits.handle_edit_reject_all()
-		else
-			vim.api.nvim_feedkeys("X", "n", false)
-		end
-	end, opts)
-
-	vim.keymap.set("n", "M", function()
-		local eid = chat_edits.get_edit_at_cursor()
-		if eid then
-			chat_edits.handle_edit_resolve_all()
-		else
-			vim.api.nvim_feedkeys("M", "n", false)
-		end
-	end, opts)
-
-	vim.keymap.set("n", "dt", function()
-		local eid = chat_edits.get_edit_at_cursor()
-		if eid then
-			chat_edits.handle_edit_diff_tab()
-		end
-	end, vim.tbl_extend("force", opts, { nowait = true }))
-
-	vim.keymap.set("n", "dv", function()
-		local eid = chat_edits.get_edit_at_cursor()
-		if eid then
-			chat_edits.handle_edit_diff_split()
-		end
-	end, vim.tbl_extend("force", opts, { nowait = true }))
-
-	-- Task / subagent navigation
-	vim.keymap.set("n", "gd", function()
-		local task_part_id = chat_tasks.get_task_at_cursor()
-		if task_part_id then
-			chat_nav.enter_child_session(task_part_id)
-		end
-	end, vim.tbl_extend("force", opts, { nowait = true }))
-
-	vim.keymap.set("n", "<BS>", function()
-		if #state.session_stack > 0 then
-			chat_nav.leave_child_session()
-		end
-	end, opts)
-
-	vim.keymap.set("n", "O", function()
-		-- Task blocks are registered in state.tasks with their full line range,
-		-- so get_task_at_cursor() covers the header AND all ├/└ summary lines.
-		-- Check task first so no task line ever falls through to handle_tool_toggle.
-		local task_part_id = chat_tasks.get_task_at_cursor()
-		if task_part_id then
-			chat_tasks.handle_task_toggle(task_part_id)
-			return
-		end
-		-- Regular (non-task) tools: expand/collapse raw I/O.
-		local tool_part_id = chat_tasks.get_tool_at_cursor()
-		if tool_part_id then
-			chat_tasks.handle_tool_toggle(tool_part_id)
-			return
-		end
-	end, vim.tbl_extend("force", opts, { desc = "Toggle tool output", nowait = true }))
-
-	vim.api.nvim_create_autocmd("CursorMoved", {
-		buffer = bufnr,
-		callback = function()
-			if not state.visible or not state.winid or not vim.api.nvim_win_is_valid(state.winid) then
-				return
-			end
-			if vim.api.nvim_get_current_win() ~= state.winid then
-				return
-			end
-			M.sync_widget_selection_from_cursor()
-		end,
-	})
-end
 
 local function create_buffer()
 	local bufnr = vim.api.nvim_create_buf(false, true)
-	setup_buffer(bufnr)
+	chat_keymaps.setup_buffer(bufnr, {
+		close = function()
+			M.close()
+		end,
+		focus_input = function()
+			M.focus_input()
+		end,
+		toggle_auto_scroll = function()
+			M.toggle_auto_scroll()
+		end,
+		show_help = function()
+			M.show_help()
+		end,
+	})
 	return bufnr
 end
 
@@ -1794,169 +314,7 @@ function M.toggle_auto_scroll()
 end
 
 function M.show_help()
-	vim.api.nvim_set_hl(0, "OpenCodeInputBg", { link = "NormalFloat", default = true })
-	vim.api.nvim_set_hl(0, "OpenCodeInputBorder", { link = "Special", default = true })
-	vim.api.nvim_set_hl(0, "OpenCodeInputInfo", { link = "Comment", default = true })
-
-	local todo_toggle = state.config
-		and state.config.todo
-		and state.config.todo.keymaps
-		and state.config.todo.keymaps.toggle
-		or "T"
-	local close_session_key = state.config
-		and state.config.keymaps
-		and state.config.keymaps.close_session
-		or "x"
-
-	local lines = {
-		"Chat Buffer Keymaps",
-		"",
-		"q          Close chat",
-		"i          Focus input",
-		"a          Toggle auto-scroll",
-		"<C-c>      Stop generation",
-		"<C-p>      Command palette",
-		"N          Start new session",
-		string.format("%-10s Close current session tab", close_session_key),
-		"gt         Next session",
-		"Ngt        Go to session N",
-		"0gt        Go to first session",
-		"gT         Previous session",
-		"<C-u>      Scroll up",
-		"<C-d>      Scroll down",
-		"gg         Go to top",
-		"G          Go to bottom",
-		"?          Show this help",
-		"",
-		"Input Mode",
-		"<C-g>      Send message",
-		"<C-v>      Paste clipboard",
-		"<Esc>      Cancel",
-		"↑/↓        Navigate history",
-		"<C-s>      Stash input",
-		"<C-r>      Restore input",
-		"",
-		"Tool Calls",
-		"O          Toggle task expand (tool I/O in subagent view only)",
-		"<CR>       Toggle details",
-		"gd         Enter subagent output",
-		"<BS>       Go back to parent",
-		"gD         View diff",
-		"",
-		"Todos",
-		string.format("%-10s Toggle todo window", todo_toggle),
-		"",
-		"Question Tool",
-		"1-9        Select option by number",
-		"↑/↓ j/k    Move cursor (selection follows)",
-		"Space      Toggle multi-select",
-		"c          Custom input",
-		"<CR>       Confirm selection",
-		"<Esc>      Cancel question",
-		"<Tab>      Next question tab",
-		"<S-Tab>    Previous question tab",
-		"",
-		"Permissions",
-		"1-3        Select option by number",
-		"↑/↓ j/k    Move cursor (selection follows)",
-		"<CR>       Confirm permission",
-		"<Esc>      Reject permission",
-		"",
-		"Edit Review",
-		"<C-a>      Accept selected file",
-		"<C-x>      Reject selected file",
-		"<C-m>      Resolve file manually",
-		"=          Toggle inline diff",
-		"dt         Open diff in new tab",
-		"dv         Open diff vsplit",
-		"A          Accept all files",
-		"X          Reject all files",
-		"M          Resolve all manually",
-		"<CR>       Open file in editor",
-		"1-9        Jump to file N",
-		"",
-		"Press any key to close",
-	}
-
-	local width = 42
-	local height = #lines
-
-	local chat_winid = vim.api.nvim_get_current_win()
-	local chat_pos = vim.api.nvim_win_get_position(chat_winid)
-	local chat_win_width = vim.api.nvim_win_get_width(chat_winid)
-	local chat_win_height = vim.api.nvim_win_get_height(chat_winid)
-
-	local row = chat_pos[1] + math.floor((chat_win_height - height) / 2)
-	local col = chat_pos[2] + math.floor((chat_win_width - width) / 2)
-
-	local popup = Popup({
-		enter = true,
-		focusable = true,
-		border = { style = { "", "", "", "", "", "", "", "┃" } },
-		position = { row = row, col = col },
-		size = { width = width - 1, height = height },
-		win_options = {
-			winhighlight = "Normal:OpenCodeInputBg,EndOfBuffer:OpenCodeInputBg,FloatBorder:OpenCodeInputBorder",
-		},
-	})
-
-	popup:mount()
-	vim.api.nvim_buf_set_lines(popup.bufnr, 0, -1, false, lines)
-	vim.bo[popup.bufnr].modifiable = false
-
-	local ns = vim.api.nvim_create_namespace("opencode_help")
-	local section_headers = {
-		["Chat Buffer Keymaps"] = true,
-		["Input Mode"] = true,
-		["Tool Calls"] = true,
-		["Todos"] = true,
-		["Question Tool"] = true,
-		["Permissions"] = true,
-		["Edit Review"] = true,
-	}
-	for i, line in ipairs(lines) do
-		if section_headers[line] then
-			vim.api.nvim_buf_set_extmark(
-				popup.bufnr,
-				ns,
-				i - 1,
-				0,
-				{ end_col = #line, hl_group = "OpenCodeInputBorder" }
-			)
-		elseif line == "Press any key to close" then
-			vim.api.nvim_buf_set_extmark(popup.bufnr, ns, i - 1, 0, { end_col = #line, hl_group = "OpenCodeInputInfo" })
-		elseif line ~= "" then
-			local key_end = line:find("  ")
-			if key_end then
-				vim.api.nvim_buf_set_extmark(popup.bufnr, ns, i - 1, 0, { end_col = key_end - 1, hl_group = "Normal" })
-				vim.api.nvim_buf_set_extmark(
-					popup.bufnr,
-					ns,
-					i - 1,
-					key_end - 1,
-					{ end_col = #line, hl_group = "OpenCodeInputInfo" }
-				)
-			end
-		end
-	end
-
-	local close_keys = { "q", "<Esc>", "<CR>", "<Space>" }
-	for _, key in ipairs(close_keys) do
-		vim.keymap.set("n", key, function()
-			popup:unmount()
-		end, { buffer = popup.bufnr, noremap = true, silent = true })
-	end
-
-	for i = 32, 126 do
-		local char = string.char(i)
-		if not char:match("[qQ]") then
-			pcall(function()
-				vim.keymap.set("n", char, function()
-					popup:unmount()
-				end, { buffer = popup.bufnr, noremap = true, silent = true, nowait = true })
-			end)
-		end
-	end
+	chat_help.show(state.config)
 end
 
 function M.create()
@@ -1965,7 +323,7 @@ function M.create()
 	end
 
 	state.config = get_config()
-	setup_session_tabs_refresh_autocmds()
+	chat_session_tabs.setup_refresh_autocmds()
 	state.bufnr = create_buffer()
 	state.local_notices = {}
 	reset_chat_surface()
@@ -2200,14 +558,17 @@ function M.open()
 		})
 
 		popup:mount()
-		state.layout = popup
-		state.winid = popup.winid
-		state.tabpage = vim.api.nvim_get_current_tabpage()
-		setup_chat_window_options(state.winid)
-		M.update_winbar()
-		if cfg.close_on_focus_lost ~= false then
-			setup_float_focus_autocmds()
-		end
+			state.layout = popup
+			state.winid = popup.winid
+			state.tabpage = vim.api.nvim_get_current_tabpage()
+			setup_chat_window_options(state.winid)
+			M.update_winbar()
+			if cfg.close_on_focus_lost ~= false then
+				chat_float_focus.setup({
+					close = M.close,
+					focus_chat = chat_session_tabs.focus_chat_window,
+				})
+			end
 		state.float_dims = dims
 
 		local popup_winid = popup.winid
@@ -2215,11 +576,11 @@ function M.open()
 			vim.api.nvim_create_autocmd("WinClosed", {
 				pattern = tostring(popup_winid),
 				once = true,
-				callback = function()
-					if state.winid == popup_winid then
-						clear_float_focus_autocmds()
-						chat_todos.close_window()
-						close_float_session_tabs_window()
+			callback = function()
+				if state.winid == popup_winid then
+					chat_float_focus.clear()
+					chat_todos.close_window()
+					chat_session_tabs.close_float_window()
 						state.visible = false
 						state.winid = nil
 						state.tabpage = nil
@@ -2287,15 +648,15 @@ end
 function M.close()
 	if not state.visible then
 		chat_todos.close_window()
-		close_float_session_tabs_window()
+		chat_session_tabs.close_float_window()
 		reset_chat_surface()
 		return
 	end
 
 	reset_chat_surface()
-	clear_float_focus_autocmds()
+	chat_float_focus.clear()
 	chat_todos.close_window()
-	close_float_session_tabs_window()
+	chat_session_tabs.close_float_window()
 
 	if input.is_visible() then
 		input.close()
@@ -2401,159 +762,20 @@ end
 ---@param content string
 ---@param opts? table
 function M.add_message(role, content, opts)
-	opts = opts or {}
-
-	local message = {
-		role = role,
-		content = content,
-		timestamp = opts.timestamp or os.time(),
-		id = opts.id or tostring(os.time()) .. "_" .. #state.local_notices,
-		session_id = opts.session_id,
-		agent = opts.agent,
-		kind = opts.kind,
-		child_session_id = opts.child_session_id,
-		optimistic = opts.optimistic,
-		tool_calls = opts.tool_calls,
-	}
-
-	table.insert(state.local_notices, message)
-	if opts.render == false then
-		M.schedule_render()
-	else
-		M.render_message(message)
-	end
-	return message.id
+	return chat_messages.add_message(role, content, opts)
 end
 
 function M.render_message(message)
-	if not state.bufnr or not vim.api.nvim_buf_is_valid(state.bufnr) then
-		return
-	end
-
-	local lines = {}
-	local highlights = {}
-
-	if
-		message.role == "assistant"
-		and (not message.content or message.content == "")
-		and (not message.reasoning or message.reasoning == "")
-	then
-		return
-	end
-
-	local role_display = message.role == "user" and "You" or (message.role == "assistant" and "Assistant" or "System")
-	local time_str = os.date("%H:%M", message.timestamp)
-	local id_display = message.id or "??????"
-	local header_padding = string.rep(" ", math.max(1, 50 - #role_display - #time_str - #id_display - 3))
-	local header_text = string.format(
-		"%s [%s] %s%s",
-		role_display,
-		id_display,
-		header_padding,
-		time_str
-	)
-	table.insert(lines, header_text)
-	table.insert(highlights, {
-		line = #lines - 1,
-		col_start = 0,
-		col_end = #role_display,
-		hl_group = message.role == "user" and "Identifier" or "Constant",
-	})
-
-	table.insert(lines, string.rep("─", 60))
-
-	local content_lines = vim.split(message.content or "", "\n", { plain = true })
-	for _, line in ipairs(content_lines) do
-		table.insert(lines, line)
-	end
-
-	table.insert(lines, "")
-
-	vim.bo[state.bufnr].modifiable = true
-	local line_count = vim.api.nvim_buf_line_count(state.bufnr)
-	vim.api.nvim_buf_set_lines(state.bufnr, line_count, line_count, false, lines)
-
-	for _, hl in ipairs(highlights) do
-		local end_col = hl.col_end
-		if end_col == -1 then
-			local l = vim.api.nvim_buf_get_lines(state.bufnr, line_count + hl.line, line_count + hl.line + 1, false)[1]
-			end_col = l and #l or 0
-		end
-		vim.api.nvim_buf_set_extmark(
-			state.bufnr,
-			chat_hl_ns,
-			line_count + hl.line,
-			hl.col_start,
-			{ end_col = end_col, hl_group = hl.hl_group }
-		)
-	end
-
-	vim.bo[state.bufnr].modifiable = false
-
-	if state.auto_scroll and state.visible and state.winid then
-		local cursor = vim.api.nvim_win_get_cursor(state.winid)
-		local win_height = vim.api.nvim_win_get_height(state.winid)
-		local buf_lines = vim.api.nvim_buf_line_count(state.bufnr)
-		if cursor[1] >= buf_lines - win_height - 1 then
-			vim.api.nvim_win_set_cursor(state.winid, { buf_lines, 0 })
-		end
-	end
+	return chat_messages.render_message(message)
 end
 
 function M.clear()
-	chat_todos.close_window()
-	state.local_notices = {}
-	reset_chat_surface({ reset_expansions = true })
-	state.last_render_time = 0
-	state.render_scheduled = false
-
-	if spinner.is_active() then
-		spinner.stop()
-	end
-	stop_spinner_animation_timer()
-	chat_tasks.stop_task_animation_timer()
-	state.task_anim_frame = 1
-
-	if state.bufnr and vim.api.nvim_buf_is_valid(state.bufnr) then
-		vim.bo[state.bufnr].modifiable = true
-		vim.api.nvim_buf_set_lines(state.bufnr, 0, -1, false, {})
-		vim.bo[state.bufnr].modifiable = false
-	end
-
-	local ok, qs = pcall(require, "opencode.question.state")
-	if ok then
-		for _, request_id in ipairs(qs.clear_all() or {}) do
-			emit("question_removed", { request_id = request_id })
-		end
-	end
-	local ok2, ps = pcall(require, "opencode.permission.state")
-	if ok2 then
-		for _, permission_id in ipairs(ps.clear_all() or {}) do
-			emit("permission_removed", { permission_id = permission_id })
-		end
-	end
-	local ok3, es = pcall(require, "opencode.edit.state")
-	if ok3 then
-		for _, permission_id in ipairs(es.clear_all() or {}) do
-			emit("edit_removed", { permission_id = permission_id })
-		end
-	end
+	return chat_messages.clear()
 end
 
 ---@param session_id string|nil
 function M.clear_session_view(session_id)
-	state.local_notices = vim.tbl_filter(function(message)
-		if not session_id or session_id == "" then
-			return false
-		end
-		return message.session_id and message.session_id ~= session_id
-	end, state.local_notices or {})
-
-	reset_chat_surface({ reset_expansions = true })
-	state.last_render_time = 0
-	state.render_scheduled = false
-
-	M.schedule_render({ force = true })
+	return chat_messages.clear_session_view(session_id)
 end
 
 -- ─── Line tracking ────────────────────────────────────────────────────────────
@@ -2597,6 +819,20 @@ function M.update_stream_part_block(session_id, message_id, part_id)
 		return false
 	end
 	if block.session_id ~= effective_session_id or block.part_id ~= part_id or block.kind ~= part.type then
+		return false
+	end
+	local buf_line_count = vim.api.nvim_buf_line_count(state.bufnr)
+	if
+		type(block.start_line) ~= "number"
+		or type(block.end_line) ~= "number"
+		or block.start_line < 0
+		or block.end_line < block.start_line
+		or block.start_line >= buf_line_count
+		or block.end_line >= buf_line_count
+	then
+		if block_key then
+			state.stream_blocks[block_key] = nil
+		end
 		return false
 	end
 
@@ -2672,6 +908,13 @@ function M.render()
 	local content_highlights = {}
 	local last_block_kind = nil -- "tool" | "non_tool"
 	local chat_width = render.get_chat_text_width()
+	local metadata_provider_revision = sync.get_provider_revision()
+	local metadata_agent_revision = sync.get_agent_revision()
+	content_highlights._opencode_signature = render_cache_key(
+		"metadata",
+		metadata_provider_revision,
+		metadata_agent_revision
+	)
 
 	local function cached_nui_lines(key, build)
 		local cached = key and render_cache_get(key)
@@ -2695,6 +938,13 @@ function M.render()
 			render_cache_put(key, { result = result })
 		end
 		return result
+	end
+
+	local function cached_nui_line(key, build)
+		local lines = cached_nui_lines(key, function()
+			return { build() }
+		end)
+		return lines[1]
 	end
 
 	local function push_line(text, nui_line)
@@ -2806,44 +1056,47 @@ function M.render()
 
 	local rendered_question_ids = {}
 	local rendered_perm_ids = {}
-		local rendered_edit_ids = {}
-		local rendered_local_notice_ids = {}
-		local next_stream_blocks = {}
-		state.spinner_footer_line = nil
-		local all_questions = question_state.get_all()
-		local all_permissions = permission_state.get_all()
-		local all_edits = edit_state.get_all()
-		local questions_by_message = {}
-		local permissions_by_message = {}
-		local edits_by_message = {}
-		local edits_by_session = {}
-		for _, qstate in ipairs(all_questions) do
-			if qstate.message_id then
-				questions_by_message[qstate.message_id] = questions_by_message[qstate.message_id] or {}
-				table.insert(questions_by_message[qstate.message_id], qstate)
-			end
+	local rendered_edit_ids = {}
+	local rendered_local_notice_ids = {}
+	local next_stream_blocks = {}
+	state.spinner_footer_line = nil
+	local all_questions = question_state.get_all()
+	local all_permissions = permission_state.get_all()
+	local all_edits = edit_state.get_all()
+	local questions_by_message = {}
+	local permissions_by_message = {}
+	local edits_by_message = {}
+	local edits_by_session = {}
+	for _, qstate in ipairs(all_questions) do
+		if qstate.message_id then
+			questions_by_message[qstate.message_id] = questions_by_message[qstate.message_id] or {}
+			table.insert(questions_by_message[qstate.message_id], qstate)
 		end
-		for _, pstate in ipairs(all_permissions) do
-			if pstate.message_id then
-				permissions_by_message[pstate.message_id] = permissions_by_message[pstate.message_id] or {}
-				table.insert(permissions_by_message[pstate.message_id], pstate)
-			end
+	end
+	for _, pstate in ipairs(all_permissions) do
+		if pstate.message_id then
+			permissions_by_message[pstate.message_id] = permissions_by_message[pstate.message_id] or {}
+			table.insert(permissions_by_message[pstate.message_id], pstate)
 		end
-		for _, estate in ipairs(all_edits) do
-			if estate.message_id then
-				edits_by_message[estate.message_id] = edits_by_message[estate.message_id] or {}
-				table.insert(edits_by_message[estate.message_id], estate)
-			end
-			if estate.session_id then
-				edits_by_session[estate.session_id] = edits_by_session[estate.session_id] or {}
-				table.insert(edits_by_session[estate.session_id], estate)
-			end
+	end
+	for _, estate in ipairs(all_edits) do
+		if estate.message_id then
+			edits_by_message[estate.message_id] = edits_by_message[estate.message_id] or {}
+			table.insert(edits_by_message[estate.message_id], estate)
 		end
-		local widget_order = {
+		if estate.session_id then
+			edits_by_session[estate.session_id] = edits_by_session[estate.session_id] or {}
+			table.insert(edits_by_session[estate.session_id], estate)
+		end
+	end
+	local widget_order = {
 		question = 1,
 		permission = 2,
 		edit = 3,
 	}
+
+	---@type fun(result: table, kind: string): number
+	local add_render_result
 
 	local function render_single_question(qstate)
 		if not qstate then
@@ -3263,7 +1516,7 @@ function M.render()
 	---@param result table
 	---@param kind string
 	---@return number base_line
-	local function add_render_result(result, kind)
+	add_render_result = function(result, kind)
 		-- Block transitions can insert a separator; highlights must start after it.
 		normalize_block_transition(kind)
 		local base_line = #raw_lines
@@ -3279,7 +1532,6 @@ function M.render()
 	local function render_tool_part(tool_part)
 		if tool_part.tool == "task" then
 			local is_expanded = state.expanded_tasks[tool_part.id] or false
-			local cached = state.task_child_cache[tool_part.id]
 			local cache_key = nil
 			if not is_expanded and not chat_tasks.is_animating_tool_part(tool_part) then
 				cache_key = render_cache_key(
@@ -3294,7 +1546,7 @@ function M.render()
 				)
 			end
 			local result = cached_render_result(cache_key, function()
-				return chat_tasks.render_task_tool(tool_part, is_expanded, cached)
+				return chat_tasks.render_task_tool(tool_part, is_expanded)
 			end)
 			local base_line = add_render_result(result, "tool")
 			state.tasks[tool_part.id] = {
@@ -3365,6 +1617,60 @@ function M.render()
 	end
 
 	local messages = current_session.id and sync.get_messages(current_session.id) or {}
+	local user_created_by_id = {}
+	for _, msg in ipairs(messages) do
+		if msg.id and msg.role == "user" and msg.time and type(msg.time.created) == "number" then
+			user_created_by_id[msg.id] = msg.time.created
+		end
+	end
+
+	---@param message table
+	---@return number|nil
+	local function metadata_footer_duration(message)
+		if not message or not message.time or type(message.time.completed) ~= "number" then
+			return nil
+		end
+		local parent_created = message.parentID and user_created_by_id[message.parentID]
+		if type(parent_created) ~= "number" then
+			return nil
+		end
+		return message.time.completed - parent_created
+	end
+
+	---@param message table
+	---@param spinner_frame string|nil
+	---@return NuiLine
+	local function render_metadata_footer_line(message, spinner_frame)
+		local duration_ms = metadata_footer_duration(message)
+		local cache_key = message
+			and message.id
+			and render_cache_key(
+				"metadata_footer",
+				current_session.id,
+				message.id,
+				sync.get_message_revision(message.id),
+				metadata_provider_revision,
+				metadata_agent_revision,
+				duration_ms or "",
+				spinner_frame or ""
+			)
+		if cache_key then
+			return cached_nui_line(cache_key, function()
+				return render.render_metadata_footer(message, messages, {
+					spinner_frame = spinner_frame,
+					duration_ms = duration_ms,
+					duration_calculated = true,
+				})
+			end)
+		end
+
+		return render.render_metadata_footer(message, messages, {
+			spinner_frame = spinner_frame,
+			duration_ms = duration_ms,
+			duration_calculated = true,
+		})
+	end
+
 	local current_session_processing = false
 	if current_session.id then
 		current_session_processing = is_processing_status(app_state.get_session_status(current_session.id))
@@ -3564,9 +1870,8 @@ function M.render()
 					ensure_single_blank_separator()
 					local footer_line_idx = #raw_lines
 					local show_spinner = spinner_active and is_last_assistant and incomplete_assistant
-					add_line(render.render_metadata_footer(message, messages, {
-						spinner_frame = show_spinner and spinner.get_frame() or nil,
-					}))
+					local spinner_frame = show_spinner and spinner.get_frame() or nil
+					add_line(render_metadata_footer_line(message, spinner_frame))
 					if show_spinner then
 						state.spinner_footer_line = footer_line_idx
 						spinner_footer_rendered = true
@@ -3679,10 +1984,10 @@ function M.render()
 	end
 
 	if spinner_active and not spinner_footer_rendered then
-			local fallback_agent = "assistant"
-			local fallback_model_id = nil
-			local fallback_provider_id = nil
-			local local_ok, local_state = pcall(require, "opencode.local")
+		local fallback_agent = "assistant"
+		local fallback_model_id = nil
+		local fallback_provider_id = nil
+		local local_ok, local_state = pcall(require, "opencode.local")
 		if local_ok then
 			local current_agent = local_state.agent.current()
 			local current_model = local_state.model.current()
@@ -3704,9 +2009,7 @@ function M.render()
 
 		ensure_single_blank_separator()
 		local footer_line_idx = #raw_lines
-		add_line(render.render_metadata_footer(fallback_message, messages, {
-			spinner_frame = spinner.get_frame(),
-		}))
+		add_line(render_metadata_footer_line(fallback_message, spinner.get_frame()))
 		state.spinner_footer_line = footer_line_idx
 		add_raw_line("")
 	end
@@ -3971,313 +2274,43 @@ end
 -- ─── Cross-domain key routers ─────────────────────────────────────────────────
 
 function M.sync_widget_selection_from_cursor()
-	if not state.winid or not vim.api.nvim_win_is_valid(state.winid) then
-		return
-	end
-	local min_line, max_line = interactive_widget_bounds()
-	if not min_line or not max_line then
-		return
-	end
-	local cursor_line = vim.api.nvim_win_get_cursor(state.winid)[1] - 1
-	if cursor_line < min_line or cursor_line > max_line then
-		return
-	end
-	chat_questions.sync_selected_option_from_cursor()
-	chat_permissions.sync_selected_option_from_cursor()
-	chat_edits.sync_selected_file_from_cursor()
+	return chat_interactions.sync_widget_selection_from_cursor()
 end
 
----Move cursor first, then sync widget selection to cursor.
----@param direction "up" | "down"
 function M.handle_question_navigation(direction)
-	local key = direction == "up" and "k" or "j"
-	vim.cmd("normal! " .. key)
-
-	M.sync_widget_selection_from_cursor()
+	return chat_interactions.handle_question_navigation(direction)
 end
 
----Route 1-9 to whichever widget is under cursor.
----@param number number
 function M.handle_question_number_select(number)
-	local request_id = chat_questions.get_question_at_cursor()
-	if request_id then
-		local qstate = question_state.get_question(request_id)
-		local current_question = qstate and qstate.questions and qstate.questions[qstate.current_tab]
-		local changed
-		if qstate and qstate.status ~= "confirming" and question_state.is_multi_question(current_question) then
-			changed = question_state.toggle_multi_select(request_id, number)
-		else
-			changed = question_state.select_option(request_id, number)
-		end
-		if changed then
-			emit("question_selection_changed", {
-				request_id = request_id,
-				tab_index = qstate and qstate.current_tab or nil,
-				selected = question_state.get_current_selection(request_id),
-			})
-			emit("interaction_changed", {
-				kind = "question",
-				action = "selection_changed",
-				id = request_id,
-			})
-		end
-		chat_questions.rerender_question(request_id)
-		return
-	end
-
-	local perm_id = chat_permissions.get_permission_at_cursor()
-	if perm_id and number >= 1 and number <= 3 then
-		if permission_state.select_option(perm_id, number) then
-			emit("permission_selection_changed", {
-				permission_id = perm_id,
-				selected = number,
-			})
-			emit("interaction_changed", {
-				kind = "permission",
-				action = "selection_changed",
-				id = perm_id,
-			})
-		end
-		chat_permissions.rerender_permission(perm_id)
-		return
-	end
-
-	local eid = chat_edits.get_edit_at_cursor()
-	if eid then
-		local estate = edit_state.get_edit(eid)
-		if estate and number >= 1 and number <= #estate.files then
-			edit_state.move_selection_to(eid, number)
-			chat_edits.rerender_edit(eid)
-		end
-		return
-	end
-
-	vim.api.nvim_feedkeys(tostring(number), "n", false)
+	return chat_interactions.handle_question_number_select(number)
 end
 
----Route Enter to tasks/questions/permissions/edits.
 function M.handle_question_confirm()
-	local todo_session_id = chat_todos.get_dock_at_cursor()
-	if todo_session_id then
-		chat_todos.toggle_dock(todo_session_id)
-		return
-	end
-
-	local task_part_id = chat_tasks.get_task_at_cursor()
-	if task_part_id then
-		chat_tasks.handle_task_toggle(task_part_id)
-		return
-	end
-
-	local request_id, qstate = chat_questions.get_question_at_cursor()
-	if request_id then
-		if qstate.status == "confirming" then
-			local current_selection = question_state.get_current_selection(request_id)
-			local choice = current_selection and current_selection[1] or 1
-			if choice == 1 then
-				chat_questions.submit_question_answers(request_id)
-			else
-				question_state.cancel_confirmation(request_id)
-				emit("interaction_changed", {
-					kind = "question",
-					action = "confirmation_cancelled",
-					id = request_id,
-				})
-				chat_questions.rerender_question(request_id)
-			end
-			return
-		end
-
-		local current_tab = qstate.current_tab
-		local total_count = #qstate.questions
-		local current_selection = qstate.selections[current_tab]
-		local is_current_answered = current_selection and current_selection.is_answered
-
-		if not is_current_answered then
-			local _, total = question_state.get_answered_count(request_id)
-			if total > 1 then
-				local answered, _ = question_state.get_answered_count(request_id)
-				vim.notify(
-					string.format(
-						"Question block: %d/%d answered. Please select an answer for this question.",
-						answered,
-						total
-					),
-					vim.log.levels.WARN
-				)
-			else
-				vim.notify("Please select an answer before submitting.", vim.log.levels.WARN)
-			end
-			return
-		end
-
-		if not question_state.is_ready_to_advance(request_id) then
-			question_state.mark_ready_to_advance(request_id)
-			chat_questions.rerender_question(request_id)
-			return
-		end
-
-		local all_answered, unanswered_indices = question_state.are_all_answered(request_id)
-		if not all_answered then
-			if #unanswered_indices > 0 then
-				question_state.set_tab(request_id, unanswered_indices[1])
-				emit("question_tab_changed", {
-					request_id = request_id,
-					tab_index = unanswered_indices[1],
-				})
-				chat_questions.rerender_question(request_id)
-			end
-			return
-		end
-
-		if total_count > 1 then
-			question_state.set_confirming(request_id)
-			emit("question_confirming", {
-				request_id = request_id,
-			})
-			chat_questions.rerender_question(request_id)
-		else
-			chat_questions.submit_question_answers(request_id)
-		end
-		return
-	end
-
-	local perm_id, pstate = chat_permissions.get_permission_at_cursor()
-	if perm_id and pstate then
-		chat_permissions.handle_permission_confirm(perm_id, pstate)
-		return
-	end
-
-	local eid = chat_edits.get_edit_at_cursor()
-	if eid then
-		if edit_state.is_readonly(eid) then
-			edit_state.accept_all(eid)
-			chat_edits.finalize_edit(eid)
-			return
-		end
-
-		chat_edits.sync_selected_file_from_cursor()
-		local file = edit_state.get_selected_file(eid)
-		if file and file.filepath and file.filepath ~= "" then
-			vim.cmd("edit " .. vim.fn.fnameescape(file.filepath))
-		end
-		return
-	end
-
-	vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<CR>", true, false, true), "n", false)
+	return chat_interactions.handle_question_confirm()
 end
 
----Route Escape to questions/permissions/edits.
 function M.handle_question_cancel()
-	local request_id, qstate = chat_questions.get_question_at_cursor()
-	if request_id then
-		if qstate.status == "confirming" then
-			question_state.cancel_confirmation(request_id)
-			emit("interaction_changed", {
-				kind = "question",
-				action = "confirmation_cancelled",
-				id = request_id,
-			})
-			chat_questions.rerender_question(request_id)
-			return
-		end
-
-			local current_session = require("opencode.state").get_session()
-			local session_id = qstate.session_id or current_session.id
-			actions.reject_question(session_id, request_id, function(err)
-				vim.schedule(function()
-				if err then
-					vim.notify("Failed to cancel question: " .. tostring(err), vim.log.levels.ERROR)
-					return
-				end
-				question_state.mark_rejected(request_id)
-				emit("interaction_changed", {
-					kind = "question",
-					action = "rejected",
-					id = request_id,
-				})
-				chat_questions.update_question_status(request_id, "rejected")
-			end)
-		end)
-		return
-	end
-
-	local perm_id = chat_permissions.get_permission_at_cursor()
-	if perm_id then
-		chat_permissions.handle_permission_reject(perm_id)
-		return
-	end
-
-	local eid = chat_edits.get_edit_at_cursor()
-	if eid then
-		chat_edits.handle_edit_reject_all()
-		return
-	end
-
-	vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<Esc>", true, false, true), "n", false)
+	return chat_interactions.handle_question_cancel()
 end
 
----Route Tab to the active question.
 function M.handle_question_next_tab()
-	local request_id = chat_questions.get_question_at_cursor()
-	if not request_id then
-		vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<Tab>", true, false, true), "n", false)
-		return
-	end
-	chat_questions.handle_question_next_tab(request_id)
+	return chat_interactions.handle_question_next_tab()
 end
 
----Route Shift-Tab to the active question.
 function M.handle_question_prev_tab()
-	local request_id = chat_questions.get_question_at_cursor()
-	if not request_id then
-		vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<S-Tab>", true, false, true), "n", false)
-		return
-	end
-	chat_questions.handle_question_prev_tab(request_id)
+	return chat_interactions.handle_question_prev_tab()
 end
 
----Route 'c' to the active question.
 function M.handle_question_custom_input()
-	local request_id = chat_questions.get_question_at_cursor()
-	if not request_id then
-		vim.api.nvim_feedkeys("c", "n", false)
-		return
-	end
-	chat_questions.handle_question_custom_input(request_id)
+	return chat_interactions.handle_question_custom_input()
 end
 
----Route 'm' to the active question or permission widget.
 function M.handle_widget_message()
-	local request_id = chat_questions.get_question_at_cursor()
-	if request_id then
-		chat_questions.handle_question_message(request_id)
-		return
-	end
-
-	local perm_id = chat_permissions.get_permission_at_cursor()
-	if perm_id then
-		chat_permissions.handle_permission_message(perm_id)
-		return
-	end
-
-	local edit_id = chat_edits.get_edit_at_cursor()
-	if edit_id then
-		chat_edits.handle_edit_message()
-		return
-	end
-
-	vim.api.nvim_feedkeys("m", "n", false)
+	return chat_interactions.handle_widget_message()
 end
 
----Route Space to the active question.
 function M.handle_question_toggle()
-	local request_id = chat_questions.get_question_at_cursor()
-	if not request_id then
-		vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<Space>", true, false, true), "n", false)
-		return
-	end
-	chat_questions.handle_question_toggle(request_id)
+	return chat_interactions.handle_question_toggle()
 end
 
 -- ─── Re-exports from sub-modules ─────────────────────────────────────────────
