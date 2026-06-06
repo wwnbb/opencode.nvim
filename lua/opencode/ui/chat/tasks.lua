@@ -12,6 +12,7 @@ local chat_bash = require("opencode.ui.chat.bash")
 local chat_read = require("opencode.ui.chat.read")
 local chat_skill = require("opencode.ui.chat.skill")
 local chat_search = require("opencode.ui.chat.search")
+local chat_rg = require("opencode.ui.chat.rg")
 local chat_file_edit_results = require("opencode.ui.chat.file_edit_results")
 local edit_state = require("opencode.edit.state")
 local actions = require("opencode.actions")
@@ -22,6 +23,7 @@ local REGULAR_TOOL_RENDERERS = {
 	chat_read.render_tool,
 	chat_skill.render_tool,
 	chat_search.render_tool,
+	chat_rg.render_tool,
 	chat_file_edit_results.render_tool,
 }
 
@@ -163,6 +165,7 @@ end
 local TOOL_ICONS = {
 	bash = "$",
 	glob = "✱",
+	rg = "✱",
 	read = "→",
 	grep = "✱",
 	list = "→",
@@ -227,9 +230,7 @@ end
 ---@param metadata table
 ---@return number|nil
 local function get_metadata_toolcall_count(metadata)
-	return normalize_count(metadata.toolcalls)
-		or normalize_count(metadata.toolCalls)
-		or normalize_count(metadata.calls)
+	return normalize_count(metadata.toolcalls) or normalize_count(metadata.toolCalls) or normalize_count(metadata.calls)
 end
 
 ---@param value any
@@ -329,25 +330,33 @@ local function format_summary_item_label(item)
 	if tool_name == "read" then
 		local fp = input.filePath or input.file_path or ""
 		if fp ~= "" then
-			if #fp > 40 then fp = "..." .. fp:sub(-37) end
+			if #fp > 40 then
+				fp = "..." .. fp:sub(-37)
+			end
 			return "Read " .. fp
 		end
 	elseif tool_name == "write" then
 		local fp = input.filePath or input.file_path or ""
 		if fp ~= "" then
-			if #fp > 40 then fp = "..." .. fp:sub(-37) end
+			if #fp > 40 then
+				fp = "..." .. fp:sub(-37)
+			end
 			return "Write " .. fp
 		end
 	elseif tool_name == "edit" then
 		local fp = input.filePath or input.file_path or ""
 		if fp ~= "" then
-			if #fp > 40 then fp = "..." .. fp:sub(-37) end
+			if #fp > 40 then
+				fp = "..." .. fp:sub(-37)
+			end
 			return "Edit " .. fp
 		end
 	elseif tool_name == "bash" then
 		local d = input.description or ""
 		if d ~= "" then
-			if #d > 40 then d = d:sub(1, 37) .. "..." end
+			if #d > 40 then
+				d = d:sub(1, 37) .. "..."
+			end
 			return "Bash " .. d
 		end
 	elseif tool_name == "glob" then
@@ -363,6 +372,16 @@ local function format_summary_item_label(item)
 			local matches = normalize_count(metadata.matches)
 			local suffix = matches and (" (" .. format_match_count(matches) .. ")") or ""
 			return "Grep " .. pat .. suffix
+		end
+	elseif tool_name == "rg" then
+		local pat = input.pattern or ""
+		if pat ~= "" then
+			local matches = normalize_count(metadata.matches)
+				or normalize_count(metadata.matchCount)
+				or normalize_count(metadata.match_count)
+				or normalize_count(metadata.count)
+			local suffix = matches and (" (" .. format_match_count(matches) .. ")") or ""
+			return "Ripgrep " .. pat .. suffix
 		end
 	elseif tool_name == "task" then
 		local agent = input.subagent_type or ""
@@ -448,6 +467,19 @@ function M.format_tool_line(tool_part)
 		local matches = normalize_count(metadata.matches) or 0
 		if tool_status == "completed" then
 			return string.format('%s Grep "%s" (%s)', icon, pattern, format_match_count(matches))
+		end
+		return string.format("~ Searching content...")
+	elseif tool_name == "rg" then
+		local pattern = input.pattern or ""
+		local matches = normalize_count(metadata.matches)
+			or normalize_count(metadata.matchCount)
+			or normalize_count(metadata.match_count)
+			or normalize_count(metadata.count)
+		if tool_status == "completed" then
+			if matches then
+				return string.format('%s Ripgrep "%s" (%s)', icon, pattern, format_match_count(matches))
+			end
+			return string.format('%s Ripgrep "%s"', icon, pattern)
 		end
 		return string.format("~ Searching content...")
 	elseif tool_name == "read" then
@@ -605,9 +637,13 @@ function M.render_task_tool(tool_part, expanded)
 				-- First user message → the task prompt
 				if msg.role == "user" and not child_user_prompt then
 					child_user_prompt = sync2.get_message_text(msg.id)
-					if child_user_prompt == "" then child_user_prompt = nil end
+					if child_user_prompt == "" then
+						child_user_prompt = nil
+					end
 				end
-				if child_user_prompt then break end
+				if child_user_prompt then
+					break
+				end
 			end
 		end
 	end
@@ -1256,10 +1292,13 @@ function M.update_animation_frames_in_place()
 
 	-- Update task blocks: header frame at col 0, and "  ↳ " summary frames
 	for _, pos in pairs(state.tasks) do
-		if pos and M.is_animating_tool_part(pos.tool_part)
+		if
+			pos
+			and M.is_animating_tool_part(pos.tool_part)
 			and block_is_visible(pos, top_line, bottom_line)
-			and pos.start_line >= 0 and pos.start_line < buf_lines then
-
+			and pos.start_line >= 0
+			and pos.start_line < buf_lines
+		then
 			local line_text = vim.api.nvim_buf_get_lines(bufnr, pos.start_line, pos.start_line + 1, false)[1]
 			if line_text and #line_text > 0 then
 				local first_char = vim.fn.strcharpart(line_text, 0, 1)
@@ -1282,7 +1321,14 @@ function M.update_animation_frames_in_place()
 						for _, tf in ipairs(TASK_ANIM_FRAMES) do
 							if fifth_char == tf then
 								local byte_offset = #vim.fn.strcharpart(line, 0, 4)
-								vim.api.nvim_buf_set_text(bufnr, line_nr, byte_offset, line_nr, byte_offset + #fifth_char, { task_frame })
+								vim.api.nvim_buf_set_text(
+									bufnr,
+									line_nr,
+									byte_offset,
+									line_nr,
+									byte_offset + #fifth_char,
+									{ task_frame }
+								)
 								updated = true
 								break
 							end
@@ -1295,13 +1341,13 @@ function M.update_animation_frames_in_place()
 
 	-- Update regular tool blocks: classic spinner at end of header line
 	for _, pos in pairs(state.tools) do
-		if pos and M.is_animating_tool_part(pos.tool_part)
-			and block_is_visible(pos, top_line, bottom_line) then
-
+		if pos and M.is_animating_tool_part(pos.tool_part) and block_is_visible(pos, top_line, bottom_line) then
 			local block_updated = false
 			local candidates = { pos.start_line + 1, pos.start_line }
 			for _, line_nr in ipairs(candidates) do
-				if block_updated then break end
+				if block_updated then
+					break
+				end
 				if line_nr >= 0 and line_nr < buf_lines then
 					local line = vim.api.nvim_buf_get_lines(bufnr, line_nr, line_nr + 1, false)[1]
 					if line and #line > 0 then
@@ -1311,7 +1357,14 @@ function M.update_animation_frames_in_place()
 							for _, cf in ipairs(classic_frames) do
 								if last_char == cf then
 									local byte_offset = #vim.fn.strcharpart(line, 0, char_count - 1)
-									vim.api.nvim_buf_set_text(bufnr, line_nr, byte_offset, line_nr, byte_offset + #last_char, { classic_frame })
+									vim.api.nvim_buf_set_text(
+										bufnr,
+										line_nr,
+										byte_offset,
+										line_nr,
+										byte_offset + #last_char,
+										{ classic_frame }
+									)
 									block_updated = true
 									updated = true
 									break

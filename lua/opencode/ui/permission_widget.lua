@@ -51,6 +51,8 @@ local TOOL_INPUT_FIELDS = {
 	"filepath",
 	"file",
 	"pattern",
+	"type",
+	"glob",
 	"query",
 	"url",
 	"subagent_type",
@@ -68,6 +70,7 @@ local TOOL_DISPLAY_NAMES = {
 	neovim_apply_patch = "Neovim Apply Patch",
 	neovim_edit = "Neovim Edit",
 	read = "Read",
+	rg = "Ripgrep",
 	skill = "Skill",
 	task = "Task",
 	todoread = "Read Todos",
@@ -404,7 +407,7 @@ local function get_permission_path(permission_type, tool_input, perm_state)
 		)
 	end
 
-	if permission_type == "glob" or permission_type == "grep" or permission_type == "list" then
+	if permission_type == "glob" or permission_type == "grep" or permission_type == "rg" or permission_type == "list" then
 		return normalize_path(first_non_empty(
 			tool_input.path,
 			metadata.path,
@@ -491,6 +494,8 @@ local function with_common_tool_details(lines, permission_type, tool_input, perm
 	lines = with_detail_lines(lines, "Command", tool_input.command or "")
 	lines = with_path_line(lines, get_permission_path(permission_type, tool_input, perm_state))
 	lines = with_detail_lines(lines, "Pattern", tool_input.pattern or "")
+	lines = with_detail_lines(lines, "Type", tool_input.type or "")
+	lines = with_detail_lines(lines, "Glob", tool_input.glob or "")
 	lines = with_detail_lines(lines, "Query", tool_input.query or "")
 	lines = with_detail_lines(lines, "URL", tool_input.url or "")
 	lines = with_detail_lines(lines, "Agent", tool_input.subagent_type or "")
@@ -525,6 +530,11 @@ local function get_permission_description(permission_type, tool_input, perm_stat
 	elseif permission_type == "grep" then
 		return with_message_lines(
 			with_common_tool_details({ summary_line("Grep") }, permission_type, tool_input, perm_state),
+			perm_state and perm_state.message
+		)
+	elseif permission_type == "rg" then
+		return with_message_lines(
+			with_common_tool_details({ summary_line("Ripgrep") }, permission_type, tool_input, perm_state),
 			perm_state and perm_state.message
 		)
 	elseif permission_type == "list" then

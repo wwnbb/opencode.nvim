@@ -14,7 +14,6 @@ local syntax = require("opencode.ui.syntax")
 
 local cs = require("opencode.ui.chat.state")
 local state = cs.state
-local chat_hl_ns = cs.chat_hl_ns
 local PANEL_BACKGROUND_HL_PRIORITY = 4000
 local UI_HIGHLIGHT_PRIORITY = 4200
 local PANEL_PREFIX_HL_PRIORITY = UI_HIGHLIGHT_PRIORITY + 1
@@ -387,21 +386,20 @@ function M.add_panel_raw_line(result, text, hl_group, opts)
 	local body = M.sanitize_buffer_line(text)
 	local body_prefix = opts.body_prefix or ""
 	local continuation_prefix = opts.continuation_prefix or body_prefix
-	local body_prefix_width = math.max(
-		safe_display_width(body_prefix),
-		safe_display_width(continuation_prefix)
-	)
+	local body_prefix_width = math.max(safe_display_width(body_prefix), safe_display_width(continuation_prefix))
 	local prefix_width = safe_display_width(prefix)
 	local body_width = math.max(1, width - prefix_width - body_prefix_width)
-	local chunks = opts.wrap ~= false and M.wrap_text_with_ranges(body, body_width, {
-		initial_col = prefix_width + body_prefix_width,
-	}) or {
-		{
-			text = body,
-			byte_start = 0,
-			byte_end = #body,
-		},
-	}
+	local chunks = opts.wrap ~= false
+			and M.wrap_text_with_ranges(body, body_width, {
+				initial_col = prefix_width + body_prefix_width,
+			})
+		or {
+			{
+				text = body,
+				byte_start = 0,
+				byte_end = #body,
+			},
+		}
 	local rows = {}
 
 	for index, chunk in ipairs(chunks) do
@@ -1059,7 +1057,8 @@ function M.render_metadata_footer(message, messages, opts)
 	local model = _get_model(message)
 	local token_usage = _get_token_usage(message)
 	local token_limit = _get_token_limit(message, model)
-	local spinner_frame = (type(opts.spinner_frame) == "string" and #opts.spinner_frame > 0) and opts.spinner_frame or nil
+	local spinner_frame = (type(opts.spinner_frame) == "string" and #opts.spinner_frame > 0) and opts.spinner_frame
+		or nil
 	local agent_prefix = spinner_frame and (spinner_frame .. " ") or "▣ "
 
 	local line = NuiLine()
