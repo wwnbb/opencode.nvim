@@ -48,8 +48,12 @@ local store = {
 	message = {},       -- { [sessionID] = { Message, ... } }
 	message_session = {}, -- { [messageID] = sessionID }
 	part = {},          -- { [messageID] = { Part, ... } }
+	part_delta_buffer = {}, -- { [messageID .. "\0" .. partID .. "\0" .. field] = { string, ... } }
 	session_status = {}, -- { [sessionID] = { type = "idle" | "busy" } }
 	todo = {},          -- { [sessionID] = { Todo, ... } }
+	task_child_parent = {}, -- { [child_session_id] = parent_session_id }
+	task_child_owner = {}, -- { [child_session_id] = messageID .. "\0" .. partID }
+	task_part_child = {}, -- { [messageID .. "\0" .. partID] = child_session_id }
 	message_revision = {}, -- { [messageID] = number } internal render invalidation
 	part_revision = {}, -- { [messageID .. "\0" .. partID] = number } internal render invalidation
 	session_revision = {}, -- { [sessionID] = number } internal render invalidation
@@ -109,6 +113,8 @@ local function get_message_id(msg)
 end
 
 local find_message_session_id
+local clear_part_delta_buffers_for_message
+local clear_task_child_indices_for_message
 
 local function index_message_session(session_id, message_id)
 	if session_id and message_id and message_id ~= "" then
@@ -130,6 +136,24 @@ local function part_revision_key(message_id, part_id)
 		return nil
 	end
 	return message_id .. "\0" .. part_id
+end
+
+---@param message_id string|nil
+---@param part_id string|nil
+---@param field string|nil
+---@return string|nil
+local function part_delta_key(message_id, part_id, field)
+	if not message_id or not part_id or not field then
+		return nil
+	end
+	return message_id .. "\0" .. part_id .. "\0" .. field
+end
+
+---@param message_id string|nil
+---@param part_id string|nil
+---@return string|nil
+local function part_key(message_id, part_id)
+	return part_revision_key(message_id, part_id)
 end
 
 ---@param map table
@@ -246,40 +270,17 @@ local function ensure_message_for_part(part)
 	if #messages > 100 then
 		local oldest = messages[1]
 		table.remove(messages, 1)
+		clear_part_delta_buffers_for_message(oldest.id)
+		clear_task_child_indices_for_message(oldest.id)
 		store.part[oldest.id] = nil
 		unindex_message_session(oldest.id)
+		clear_message_revisions(oldest.id)
 	end
 end
 
 -- Get part ID from part
 local function get_part_id(part)
 	return part.id
-end
-
----@param part Part
----@param field string
----@param delta string
-local function append_part_delta(part, field, delta)
-	local path = vim.split(field, ".", { plain = true, trimempty = true })
-	if #path == 0 then
-		return
-	end
-
-	local node = part
-	for i = 1, #path - 1 do
-		local key = path[i]
-		if type(node[key]) ~= "table" then
-			node[key] = {}
-		end
-		node = node[key]
-	end
-
-	local leaf = path[#path]
-	local current = node[leaf]
-	if type(current) ~= "string" then
-		current = ""
-	end
-	node[leaf] = current .. delta
 end
 
 ---@param root table
@@ -316,6 +317,116 @@ local function set_nested(root, path, value)
 		node = node[key]
 	end
 	node[path[#path]] = value
+end
+
+---@param field string
+---@return string[]
+local function split_part_field(field)
+	if type(field) ~= "string" or field == "" then
+		return {}
+	end
+	return vim.split(field, ".", { plain = true, trimempty = true })
+end
+
+---@param message_id string
+---@param part_id string
+---@param field string
+---@param delta string
+local function buffer_part_delta(message_id, part_id, field, delta)
+	local key = part_delta_key(message_id, part_id, field)
+	if not key or delta == "" then
+		return
+	end
+	local chunks = store.part_delta_buffer[key]
+	if not chunks then
+		chunks = {}
+		store.part_delta_buffer[key] = chunks
+	end
+	table.insert(chunks, delta)
+end
+
+---@param part Part
+---@param field string
+local function materialize_part_field(part, field)
+	if type(part) ~= "table" then
+		return
+	end
+	local message_id = part.messageID
+	local part_id = part.id
+	local key = part_delta_key(message_id, part_id, field)
+	local chunks = key and store.part_delta_buffer[key]
+	if type(chunks) ~= "table" or #chunks == 0 then
+		if key then
+			store.part_delta_buffer[key] = nil
+		end
+		return
+	end
+
+	local path = split_part_field(field)
+	if #path == 0 then
+		store.part_delta_buffer[key] = nil
+		return
+	end
+
+	local current = get_nested(part, path)
+	if type(current) ~= "string" then
+		current = ""
+	end
+	set_nested(part, path, current .. table.concat(chunks))
+	store.part_delta_buffer[key] = nil
+end
+
+---@param part Part
+local function materialize_part(part)
+	if type(part) ~= "table" or not part.messageID or not part.id then
+		return
+	end
+	local prefix = part.messageID .. "\0" .. part.id .. "\0"
+	local fields = {}
+	for key in pairs(store.part_delta_buffer) do
+		if key:sub(1, #prefix) == prefix then
+			table.insert(fields, key:sub(#prefix + 1))
+		end
+	end
+	for _, field in ipairs(fields) do
+		materialize_part_field(part, field)
+	end
+end
+
+---@param parts Part[]|nil
+---@return Part[]
+local function materialize_parts(parts)
+	for _, part in ipairs(parts or {}) do
+		materialize_part(part)
+	end
+	return parts or {}
+end
+
+---@param message_id string|nil
+---@param part_id string|nil
+local function clear_part_delta_buffers(message_id, part_id)
+	if not message_id or not part_id then
+		return
+	end
+	local prefix = message_id .. "\0" .. part_id .. "\0"
+	for key in pairs(store.part_delta_buffer) do
+		if key:sub(1, #prefix) == prefix then
+			store.part_delta_buffer[key] = nil
+		end
+	end
+end
+
+---@param message_id string|nil
+clear_part_delta_buffers_for_message = function(message_id)
+	if not message_id then
+		return
+	end
+	local prefix = message_id .. "\0"
+	for key in pairs(store.part_delta_buffer) do
+		if key:sub(1, #prefix) == prefix then
+			store.part_delta_buffer[key] = nil
+		end
+	end
 end
 
 ---@param message_id string|nil
@@ -387,6 +498,96 @@ local function preserve_summary_path(dest, src, merged, path)
 	set_nested(merged, path, src_summary)
 end
 
+---@param tool_part table|nil
+---@return string|nil
+local function resolve_task_child_session_id(tool_part)
+	if type(tool_part) ~= "table" or tool_part.tool ~= "task" then
+		return nil
+	end
+
+	local part_metadata = type(tool_part.metadata) == "table" and tool_part.metadata or {}
+	local tool_state = type(tool_part.state) == "table" and tool_part.state or {}
+	local state_metadata = type(tool_state.metadata) == "table" and tool_state.metadata or {}
+
+	return state_metadata.sessionId
+		or state_metadata.sessionID
+		or state_metadata.childSessionID
+		or state_metadata.child_session_id
+		or part_metadata.sessionId
+		or part_metadata.sessionID
+		or part_metadata.childSessionID
+		or part_metadata.child_session_id
+end
+
+---@param message_id string|nil
+---@param part_id string|nil
+local function clear_task_child_index(message_id, part_id)
+	local key = part_key(message_id, part_id)
+	if not key then
+		return
+	end
+	local child_session_id = store.task_part_child[key]
+	if child_session_id then
+		if store.task_child_owner[child_session_id] == key then
+			store.task_child_parent[child_session_id] = nil
+			store.task_child_owner[child_session_id] = nil
+		end
+	end
+	store.task_part_child[key] = nil
+end
+
+---@param part table|nil
+local function index_task_child(part)
+	if type(part) ~= "table" then
+		return
+	end
+
+	local message_id = part.messageID
+	local part_id = part.id
+	clear_task_child_index(message_id, part_id)
+
+	if part.type ~= "tool" or part.tool ~= "task" then
+		return
+	end
+
+	local child_session_id = resolve_task_child_session_id(part)
+	if not child_session_id or child_session_id == "" then
+		return
+	end
+
+	local parent_session_id = part.sessionID or find_message_session_id(message_id)
+	if not parent_session_id or parent_session_id == "" then
+		return
+	end
+
+	local key = part_key(message_id, part_id)
+	if not key then
+		return
+	end
+
+	store.task_part_child[key] = child_session_id
+	store.task_child_parent[child_session_id] = parent_session_id
+	store.task_child_owner[child_session_id] = key
+end
+
+---@param message_id string|nil
+clear_task_child_indices_for_message = function(message_id)
+	if not message_id then
+		return
+	end
+	local prefix = message_id .. "\0"
+	for key in pairs(store.task_part_child) do
+		if key:sub(1, #prefix) == prefix then
+			local child_session_id = store.task_part_child[key]
+			if child_session_id and store.task_child_owner[child_session_id] == key then
+				store.task_child_parent[child_session_id] = nil
+				store.task_child_owner[child_session_id] = nil
+			end
+			store.task_part_child[key] = nil
+		end
+	end
+end
+
 ---Handle message.updated event (mirrors TUI sync.tsx:228-265)
 ---@param info Message
 function M.handle_message_updated(info)
@@ -428,6 +629,8 @@ function M.handle_message_updated(info)
 			local oldest = messages[1]
 			table.remove(messages, 1)
 			-- Also remove parts for oldest message
+			clear_part_delta_buffers_for_message(oldest.id)
+			clear_task_child_indices_for_message(oldest.id)
 			store.part[oldest.id] = nil
 			unindex_message_session(oldest.id)
 			clear_message_revisions(oldest.id)
@@ -441,6 +644,11 @@ end
 function M.handle_message_removed(session_id, message_id)
 	local messages = store.message[session_id]
 	if not messages then
+		clear_part_delta_buffers_for_message(message_id)
+		clear_task_child_indices_for_message(message_id)
+		store.part[message_id] = nil
+		unindex_message_session(message_id)
+		clear_message_revisions(message_id)
 		return
 	end
 
@@ -448,6 +656,8 @@ function M.handle_message_removed(session_id, message_id)
 	if result.found then
 		table.remove(messages, result.index)
 		-- Also remove parts
+		clear_part_delta_buffers_for_message(message_id)
+		clear_task_child_indices_for_message(message_id)
 		store.part[message_id] = nil
 		unindex_message_session(message_id)
 		clear_message_revisions(message_id)
@@ -470,6 +680,8 @@ function M.handle_part_updated(part)
 	-- If no parts for this message, create array with this part
 	if not parts then
 		store.part[message_id] = { part }
+		clear_part_delta_buffers(message_id, part.id)
+		index_task_child(part)
 		bump_part_revision(message_id, part.id, part.sessionID)
 		return
 	end
@@ -480,6 +692,7 @@ function M.handle_part_updated(part)
 	if result.found then
 		-- Update existing part (reconcile)
 		local dest = parts[result.index]
+		materialize_part(dest)
 		local src = part
 		local merged = vim.tbl_deep_extend("force", dest, src)
 
@@ -493,9 +706,13 @@ function M.handle_part_updated(part)
 		preserve_summary_path(dest, src, merged, { "metadata", "summary" })
 
 		parts[result.index] = merged
+		clear_part_delta_buffers(message_id, part.id)
+		index_task_child(merged)
 	else
 		-- Insert new part at correct position
 		table.insert(parts, result.index, part)
+		clear_part_delta_buffers(message_id, part.id)
+		index_task_child(part)
 	end
 	bump_part_revision(message_id, part.id, part.sessionID)
 end
@@ -537,7 +754,7 @@ function M.handle_part_delta(part_delta)
 	if part_delta.sessionID and not part.sessionID then
 		part.sessionID = part_delta.sessionID
 	end
-	append_part_delta(part, field, delta)
+	buffer_part_delta(message_id, part_id, field, delta)
 	bump_part_revision(message_id, part_id, part.sessionID)
 	return part
 end
@@ -548,9 +765,13 @@ end
 function M.handle_part_removed(message_id, part_id)
 	local parts = store.part[message_id]
 	if not parts then
+		clear_part_delta_buffers(message_id, part_id)
+		clear_task_child_index(message_id, part_id)
 		return
 	end
 
+	clear_part_delta_buffers(message_id, part_id)
+	clear_task_child_index(message_id, part_id)
 	local result = binary_search(parts, part_id, get_part_id)
 	if result.found then
 		table.remove(parts, result.index)
@@ -674,7 +895,7 @@ end
 ---@param message_id string
 ---@return Part[]
 function M.get_parts(message_id)
-	return store.part[message_id] or {}
+	return materialize_parts(store.part[message_id])
 end
 
 ---Get a specific part
@@ -689,9 +910,46 @@ function M.get_part(message_id, part_id)
 
 	local result = binary_search(parts, part_id, get_part_id)
 	if result.found then
+		materialize_part(parts[result.index])
 		return parts[result.index]
 	end
 	return nil
+end
+
+---Get all render-relevant part data for a message in one scan.
+---@param message_id string
+---@param opts? { include_synthetic?: boolean }
+---@return { content: string, reasoning: string, tool_parts: Part[], parts: Part[], message_revision: number, part_revisions: table<string, number> }
+function M.get_message_render_parts(message_id, opts)
+	opts = opts or {}
+	local parts = materialize_parts(store.part[message_id])
+	local text_parts = {}
+	local reasoning_parts = {}
+	local tool_parts = {}
+	local part_revisions = {}
+
+	for _, part in ipairs(parts) do
+		if part.id then
+			local key = part_revision_key(message_id, part.id)
+			part_revisions[part.id] = key and store.part_revision[key] or 0
+		end
+		if part.type == "text" and part.text and (opts.include_synthetic ~= false or not part.synthetic) then
+			table.insert(text_parts, part.text)
+		elseif part.type == "reasoning" and part.text then
+			table.insert(reasoning_parts, part.text)
+		elseif part.type == "tool" then
+			table.insert(tool_parts, part)
+		end
+	end
+
+	return {
+		content = table.concat(text_parts, ""),
+		reasoning = table.concat(reasoning_parts, ""),
+		tool_parts = tool_parts,
+		parts = parts,
+		message_revision = store.message_revision[message_id] or 0,
+		part_revisions = part_revisions,
+	}
 end
 
 ---Get assembled text content for a message (from all text parts)
@@ -699,49 +957,30 @@ end
 ---@param opts? { include_synthetic?: boolean }
 ---@return string
 function M.get_message_text(message_id, opts)
-	opts = opts or {}
-	local parts = store.part[message_id] or {}
-	local text_parts = {}
-
-	for _, part in ipairs(parts) do
-		if part.type == "text" and part.text and (opts.include_synthetic ~= false or not part.synthetic) then
-			table.insert(text_parts, part.text)
-		end
-	end
-
-	return table.concat(text_parts, "")
+	return M.get_message_render_parts(message_id, opts).content
 end
 
 ---Get reasoning text for a message (from all reasoning parts)
 ---@param message_id string
 ---@return string
 function M.get_message_reasoning(message_id)
-	local parts = store.part[message_id] or {}
-	local reasoning_parts = {}
-
-	for _, part in ipairs(parts) do
-		if part.type == "reasoning" and part.text then
-			table.insert(reasoning_parts, part.text)
-		end
-	end
-
-	return table.concat(reasoning_parts, "")
+	return M.get_message_render_parts(message_id).reasoning
 end
 
 ---Get tool parts for a message
 ---@param message_id string
 ---@return Part[]
 function M.get_message_tools(message_id)
-	local parts = store.part[message_id] or {}
-	local tool_parts = {}
+	return M.get_message_render_parts(message_id).tool_parts
+end
 
-	for _, part in ipairs(parts) do
-		if part.type == "tool" then
-			table.insert(tool_parts, part)
-		end
+---@param child_session_id string|nil
+---@return string|nil
+function M.get_task_parent_session(child_session_id)
+	if not child_session_id or child_session_id == "" then
+		return nil
 	end
-
-	return tool_parts
+	return store.task_child_parent[child_session_id]
 end
 
 ---Get session status
@@ -772,6 +1011,8 @@ function M.clear_session(session_id)
 	-- Remove all parts for messages in this session
 	local messages = store.message[session_id] or {}
 	for _, msg in ipairs(messages) do
+		clear_part_delta_buffers_for_message(msg.id)
+		clear_task_child_indices_for_message(msg.id)
 		store.part[msg.id] = nil
 		unindex_message_session(msg.id)
 		clear_message_revisions(msg.id)
@@ -793,6 +1034,8 @@ end
 function M.clear_session_messages(session_id)
 	local messages = store.message[session_id] or {}
 	for _, msg in ipairs(messages) do
+		clear_part_delta_buffers_for_message(msg.id)
+		clear_task_child_indices_for_message(msg.id)
 		store.part[msg.id] = nil
 		unindex_message_session(msg.id)
 		clear_message_revisions(msg.id)
@@ -806,8 +1049,12 @@ function M.clear_all()
 	store.message = {}
 	store.message_session = {}
 	store.part = {}
+	store.part_delta_buffer = {}
 	store.session_status = {}
 	store.todo = {}
+	store.task_child_parent = {}
+	store.task_child_owner = {}
+	store.task_part_child = {}
 	store.message_revision = {}
 	store.part_revision = {}
 	store.session_revision = {}

@@ -281,6 +281,13 @@ function M.session_owns_task_child(parent_session_id, child_session_id)
 		return false
 	end
 
+	if type(sync.get_task_parent_session) == "function" then
+		local indexed_parent = sync.get_task_parent_session(child_session_id)
+		if indexed_parent then
+			return indexed_parent == parent_session_id
+		end
+	end
+
 	for _, message in ipairs(sync.get_messages(parent_session_id) or {}) do
 		for _, part in ipairs(sync.get_message_tools(message.id) or {}) do
 			if M.resolve_task_child_session_id(part) == child_session_id then

@@ -364,7 +364,12 @@ function M.create()
 			then
 				return
 			end
-			if not M.update_stream_part_block(session_id or current_session.id, message_id, part_id) then
+			if
+				not M.update_stream_part_block(session_id or current_session.id, message_id, part_id, {
+					delta = data and data.delta,
+					field = data and data.field,
+				})
+			then
 				M.schedule_render({ force = true })
 			end
 		end)
@@ -786,7 +791,8 @@ local function shift_tracked_lines(old_end, delta, skip_stream_block_key)
 	})
 end
 
-function M.update_stream_part_block(session_id, message_id, part_id)
+function M.update_stream_part_block(session_id, message_id, part_id, opts)
+	opts = opts or {}
 	if part_id == nil then
 		part_id = message_id
 		message_id = session_id
@@ -818,7 +824,12 @@ function M.update_stream_part_block(session_id, message_id, part_id)
 	if not block then
 		return false
 	end
-	if block.session_id ~= effective_session_id or block.part_id ~= part_id or block.kind ~= part.type then
+	if
+		block.session_id ~= effective_session_id
+		or block.message_id ~= message_id
+		or block.part_id ~= part_id
+		or block.kind ~= part.type
+	then
 		return false
 	end
 	local buf_line_count = vim.api.nvim_buf_line_count(state.bufnr)
@@ -837,6 +848,80 @@ function M.update_stream_part_block(session_id, message_id, part_id)
 	end
 
 	local widget_cursor = capture_widget_cursor_context()
+	local should_scroll = should_auto_scroll(widget_cursor)
+	local chat_width = render.get_chat_text_width()
+
+	local function finish_stream_update()
+		if apply_widget_focus_cursor and apply_widget_focus_cursor() then
+			vim.cmd("redraw")
+			return true
+		end
+
+		if restore_widget_cursor_context(widget_cursor) then
+			vim.cmd("redraw")
+			return true
+		end
+
+		if should_scroll and state.visible and state.winid and vim.api.nvim_win_is_valid(state.winid) then
+			local buf_lines = vim.api.nvim_buf_line_count(state.bufnr)
+			vim.api.nvim_win_set_cursor(state.winid, { buf_lines, 0 })
+		end
+
+		vim.cmd("redraw")
+		return true
+	end
+
+	local function try_plain_text_append()
+		local delta = opts.delta
+		if part.type ~= "text" or opts.field ~= "text" or type(delta) ~= "string" or delta == "" then
+			return false
+		end
+		if delta:find("\r", 1, true) or delta:find("\0", 1, true) then
+			return false
+		end
+		if delta:find("\n", 1, true) then
+			return false
+		end
+		if block.chat_width ~= chat_width then
+			return false
+		end
+		if type(block.text_length) ~= "number" then
+			return false
+		end
+
+		local content = part.text or ""
+		if #content ~= block.text_length + #delta then
+			return false
+		end
+
+		local last_line = vim.api.nvim_buf_get_lines(state.bufnr, block.end_line, block.end_line + 1, false)[1]
+		if type(last_line) ~= "string" then
+			return false
+		end
+
+		vim.bo[state.bufnr].modifiable = true
+		local ok = pcall(
+			vim.api.nvim_buf_set_text,
+			state.bufnr,
+			block.end_line,
+			#last_line,
+			block.end_line,
+			#last_line,
+			{ delta }
+		)
+		vim.bo[state.bufnr].modifiable = false
+		if not ok then
+			return false
+		end
+
+		block.text_length = #content
+		block.chat_width = chat_width
+		return finish_stream_update()
+	end
+
+	if try_plain_text_append() then
+		return true
+	end
 
 	local content = part.text or ""
 	local content_lines
@@ -852,8 +937,6 @@ function M.update_stream_part_block(session_id, message_id, part_id)
 	end
 	local replacement = render.extract_lines(content_lines)
 
-	local should_scroll = should_auto_scroll(widget_cursor)
-
 	local old_end = block.end_line
 	local old_count = old_end - block.start_line + 1
 	local new_count = #replacement
@@ -868,25 +951,11 @@ function M.update_stream_part_block(session_id, message_id, part_id)
 	vim.bo[state.bufnr].modifiable = false
 
 	block.end_line = block.start_line + new_count - 1
+	block.text_length = #content
+	block.chat_width = chat_width
 	shift_tracked_lines(old_end, delta, block_key)
 
-	if apply_widget_focus_cursor and apply_widget_focus_cursor() then
-		vim.cmd("redraw")
-		return true
-	end
-
-	if restore_widget_cursor_context(widget_cursor) then
-		vim.cmd("redraw")
-		return true
-	end
-
-	if should_scroll and state.visible and state.winid and vim.api.nvim_win_is_valid(state.winid) then
-		local buf_lines = vim.api.nvim_buf_line_count(state.bufnr)
-		vim.api.nvim_win_set_cursor(state.winid, { buf_lines, 0 })
-	end
-
-	vim.cmd("redraw")
-	return true
+	return finish_stream_update()
 end
 
 -- ─── Main render ─────────────────────────────────────────────────────────────
@@ -1529,7 +1598,8 @@ function M.render()
 	end
 
 	---@param tool_part table
-	local function render_tool_part(tool_part)
+	local function render_tool_part(tool_part, message_revision, part_revisions)
+		local part_revision = tool_part.id and part_revisions and part_revisions[tool_part.id] or 0
 		if tool_part.tool == "task" then
 			local is_expanded = state.expanded_tasks[tool_part.id] or false
 			local cache_key = nil
@@ -1539,8 +1609,8 @@ function M.render()
 					current_session.id,
 					tool_part.messageID,
 					tool_part.id,
-					sync.get_message_revision(tool_part.messageID),
-					sync.get_part_revision(tool_part.messageID, tool_part.id),
+					message_revision,
+					part_revision,
 					chat_width,
 					is_expanded
 				)
@@ -1566,8 +1636,8 @@ function M.render()
 				current_session.id,
 				tool_part.messageID,
 				tool_part.id,
-				sync.get_message_revision(tool_part.messageID),
-				sync.get_part_revision(tool_part.messageID, tool_part.id),
+				message_revision,
+				part_revision,
 				chat_width,
 				is_expanded
 			)
@@ -1640,7 +1710,7 @@ function M.render()
 	---@param message table
 	---@param spinner_frame string|nil
 	---@return NuiLine
-	local function render_metadata_footer_line(message, spinner_frame)
+	local function render_metadata_footer_line(message, spinner_frame, message_revision)
 		local duration_ms = metadata_footer_duration(message)
 		local cache_key = message
 			and message.id
@@ -1648,7 +1718,7 @@ function M.render()
 				"metadata_footer",
 				current_session.id,
 				message.id,
-				sync.get_message_revision(message.id),
+				message_revision or 0,
 				metadata_provider_revision,
 				metadata_agent_revision,
 				duration_ms or "",
@@ -1697,10 +1767,16 @@ function M.render()
 	local spinner_active = spinner.is_active() and current_session_processing and has_pending_response_gap
 
 	for msg_idx, message in ipairs(messages) do
-		local content = sync.get_message_text(message.id, message.role == "user" and { include_synthetic = false } or nil)
-		local reasoning = sync.get_message_reasoning(message.id)
-		local tool_parts = sync.get_message_tools(message.id)
-		local parts = sync.get_parts(message.id)
+		local render_parts = sync.get_message_render_parts(
+			message.id,
+			message.role == "user" and { include_synthetic = false } or nil
+		)
+		local content = render_parts.content
+		local reasoning = render_parts.reasoning
+		local tool_parts = render_parts.tool_parts
+		local parts = render_parts.parts
+		local message_revision = render_parts.message_revision
+		local part_revisions = render_parts.part_revisions
 		local incomplete_assistant = message.role == "assistant" and not (message.time and message.time.completed)
 		local render_as_plain_stream = current_session_processing and incomplete_assistant
 
@@ -1733,7 +1809,7 @@ function M.render()
 						"user",
 						current_session.id,
 						message.id,
-						sync.get_message_revision(message.id),
+						message_revision,
 						chat_width,
 						message.agent or ""
 					),
@@ -1791,8 +1867,8 @@ function M.render()
 								current_session.id,
 								message.id,
 								part.id or part_idx,
-								sync.get_message_revision(message.id),
-								sync.get_part_revision(message.id, part.id),
+								message_revision,
+								part.id and part_revisions[part.id] or 0,
 								chat_width
 							)
 						end
@@ -1812,6 +1888,8 @@ function M.render()
 									message_id = message.id,
 									part_id = part.id,
 									kind = "reasoning",
+									chat_width = chat_width,
+									text_length = #(part.text or ""),
 								}
 							end
 						end
@@ -1824,8 +1902,8 @@ function M.render()
 								current_session.id,
 								message.id,
 								part.id or part_idx,
-								sync.get_message_revision(message.id),
-								sync.get_part_revision(message.id, part.id),
+								message_revision,
+								part.id and part_revisions[part.id] or 0,
 								chat_width,
 								render_as_plain_stream
 							)
@@ -1844,6 +1922,8 @@ function M.render()
 									message_id = message.id,
 									part_id = part.id,
 									kind = "text",
+									chat_width = chat_width,
+									text_length = #(part.text or ""),
 								}
 							end
 						end
@@ -1855,7 +1935,7 @@ function M.render()
 							skip_tool_row = has_edit_widget_for_tool_call(message.id, part.callID)
 						end
 						if not skip_tool_row then
-							render_tool_part(part)
+							render_tool_part(part, message_revision, part_revisions)
 						end
 						render_widgets_for_tool_call(message.id, part.callID)
 						if part.tool == "task" then
@@ -1871,7 +1951,7 @@ function M.render()
 					local footer_line_idx = #raw_lines
 					local show_spinner = spinner_active and is_last_assistant and incomplete_assistant
 					local spinner_frame = show_spinner and spinner.get_frame() or nil
-					add_line(render_metadata_footer_line(message, spinner_frame))
+					add_line(render_metadata_footer_line(message, spinner_frame, message_revision))
 					if show_spinner then
 						state.spinner_footer_line = footer_line_idx
 						spinner_footer_rendered = true
@@ -1893,7 +1973,7 @@ function M.render()
 			if
 				synced.role == "user"
 				and same_turn
-				and sync.get_message_text(synced.id, { include_synthetic = false }) == local_message.content
+				and sync.get_message_render_parts(synced.id, { include_synthetic = false }).content == local_message.content
 			then
 				return true
 			end

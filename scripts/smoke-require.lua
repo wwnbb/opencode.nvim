@@ -235,6 +235,196 @@ assert(
 sync.clear_all()
 
 do
+	sync.handle_message_updated({
+		id = "msg_buffered_delta",
+		sessionID = "session_buffered_delta",
+		role = "assistant",
+		time = { created = 1 },
+	})
+	sync.handle_part_updated({
+		id = "text_part",
+		messageID = "msg_buffered_delta",
+		sessionID = "session_buffered_delta",
+		type = "text",
+		text = "",
+	})
+	for _, delta in ipairs({ "hel", "lo", " world" }) do
+		sync.handle_part_delta({
+			messageID = "msg_buffered_delta",
+			partID = "text_part",
+			field = "text",
+			delta = delta,
+			sessionID = "session_buffered_delta",
+		})
+	end
+	assert(sync.get_part("msg_buffered_delta", "text_part").text == "hello world", "get_part should materialize deltas")
+
+	sync.handle_part_updated({
+		id = "parts_text",
+		messageID = "msg_buffered_delta",
+		sessionID = "session_buffered_delta",
+		type = "text",
+		text = "",
+	})
+	sync.handle_part_delta({
+		messageID = "msg_buffered_delta",
+		partID = "parts_text",
+		field = "text",
+		delta = "from parts",
+		sessionID = "session_buffered_delta",
+	})
+	local parts = sync.get_parts("msg_buffered_delta")
+	local saw_parts_text = false
+	for _, part in ipairs(parts) do
+		saw_parts_text = saw_parts_text or (part.id == "parts_text" and part.text == "from parts")
+	end
+	assert(saw_parts_text, "get_parts should materialize deltas")
+
+	sync.handle_part_updated({
+		id = "reason_part",
+		messageID = "msg_buffered_delta",
+		sessionID = "session_buffered_delta",
+		type = "reasoning",
+		text = "",
+	})
+	sync.handle_part_delta({
+		messageID = "msg_buffered_delta",
+		partID = "reason_part",
+		field = "text",
+		delta = "because",
+		sessionID = "session_buffered_delta",
+	})
+	assert(sync.get_message_reasoning("msg_buffered_delta") == "because", "reasoning should materialize deltas")
+
+	sync.handle_part_updated({
+		id = "updated_part",
+		messageID = "msg_buffered_delta",
+		sessionID = "session_buffered_delta",
+		type = "text",
+		text = "base",
+	})
+	sync.handle_part_delta({
+		messageID = "msg_buffered_delta",
+		partID = "updated_part",
+		field = "text",
+		delta = " plus",
+		sessionID = "session_buffered_delta",
+	})
+	sync.handle_part_updated({
+		id = "updated_part",
+		messageID = "msg_buffered_delta",
+		sessionID = "session_buffered_delta",
+		type = "text",
+		text = "base plus",
+	})
+	assert(sync.get_part("msg_buffered_delta", "updated_part").text == "base plus", "part.updated should not double append")
+
+	sync.handle_part_updated({
+		id = "stale_part",
+		messageID = "msg_buffered_delta",
+		sessionID = "session_buffered_delta",
+		type = "text",
+		text = "fresh",
+	})
+	sync.handle_part_delta({
+		messageID = "msg_buffered_delta",
+		partID = "stale_part",
+		field = "text",
+		delta = " text",
+		sessionID = "session_buffered_delta",
+	})
+	sync.handle_part_updated({
+		id = "stale_part",
+		messageID = "msg_buffered_delta",
+		sessionID = "session_buffered_delta",
+		type = "text",
+		text = "fresh",
+	})
+	assert(sync.get_message_text("msg_buffered_delta"):find("fresh text", 1, true), "stale part update erased buffered text")
+	sync.clear_all()
+end
+
+do
+	sync.handle_message_updated({
+		id = "msg_render_accessor",
+		sessionID = "session_render_accessor",
+		role = "user",
+		time = { created = 1 },
+	})
+	sync.handle_part_updated({
+		id = "a_text",
+		messageID = "msg_render_accessor",
+		sessionID = "session_render_accessor",
+		type = "text",
+		text = "visible",
+	})
+	sync.handle_part_updated({
+		id = "b_synthetic",
+		messageID = "msg_render_accessor",
+		sessionID = "session_render_accessor",
+		type = "text",
+		text = "hidden",
+		synthetic = true,
+	})
+	sync.handle_part_updated({
+		id = "c_reason",
+		messageID = "msg_render_accessor",
+		sessionID = "session_render_accessor",
+		type = "reasoning",
+		text = "why",
+	})
+	sync.handle_part_updated({
+		id = "d_tool",
+		messageID = "msg_render_accessor",
+		sessionID = "session_render_accessor",
+		type = "tool",
+		tool = "bash",
+		state = { status = "completed" },
+	})
+	local render_parts = sync.get_message_render_parts("msg_render_accessor", { include_synthetic = false })
+	assert(render_parts.content == "visible", "render accessor should honor include_synthetic=false")
+	assert(render_parts.reasoning == "why", "render accessor should collect reasoning")
+	assert(#render_parts.tool_parts == 1 and render_parts.tool_parts[1].id == "d_tool", "render accessor should collect tools")
+	assert(render_parts.parts[1].id == "a_text" and render_parts.parts[4].id == "d_tool", "render accessor should preserve part order")
+	assert(render_parts.message_revision > 0, "render accessor should include message revision")
+	assert(render_parts.part_revisions.a_text > 0, "render accessor should include part revisions")
+	sync.clear_all()
+end
+
+do
+	local event_util_for_tasks = require("opencode.events.util")
+	sync.handle_message_updated({
+		id = "task_index_message",
+		sessionID = "task_parent",
+		role = "assistant",
+		time = { created = 1 },
+	})
+	sync.handle_part_updated({
+		id = "task_index_part",
+		messageID = "task_index_message",
+		sessionID = "task_parent",
+		type = "tool",
+		tool = "task",
+		metadata = { sessionId = "task_child_a" },
+	})
+	assert(sync.get_task_parent_session("task_child_a") == "task_parent", "task child index should record parent")
+	assert(event_util_for_tasks.session_owns_task_child("task_parent", "task_child_a"), "task ownership should use index")
+	sync.handle_part_updated({
+		id = "task_index_part",
+		messageID = "task_index_message",
+		sessionID = "task_parent",
+		type = "tool",
+		tool = "task",
+		metadata = { sessionId = "task_child_b" },
+	})
+	assert(sync.get_task_parent_session("task_child_a") == nil, "task index should clear replaced child")
+	assert(sync.get_task_parent_session("task_child_b") == "task_parent", "task index should record replacement child")
+	sync.handle_part_removed("task_index_message", "task_index_part")
+	assert(sync.get_task_parent_session("task_child_b") == nil, "task index should clear removed child")
+	sync.clear_all()
+end
+
+do
 	local saved_client = package.loaded["opencode.client"]
 	local saved_http = package.loaded["opencode.client.http"]
 	local saved_sse = package.loaded["opencode.client.sse"]
@@ -339,6 +529,154 @@ assert(not panel_result.lines[1]:find(string.char(0), 1, true), "panel line kept
 
 local function wait_until(predicate, message)
 	assert(vim.wait(500, predicate, 10), message)
+end
+
+do
+	local saved_client = package.loaded["opencode.client"]
+	local saved_lifecycle = package.loaded["opencode.lifecycle"]
+	local calls = {}
+	package.loaded["opencode.client"] = {
+		get_messages = function(session_id, opts, callback)
+			table.insert(calls, { session_id = session_id, opts = opts })
+			callback(nil, {})
+		end,
+	}
+	package.loaded["opencode.lifecycle"] = {
+		ensure_connected = function(callback)
+			callback()
+		end,
+	}
+
+	local actions = require("opencode.actions")
+	local callbacks = 0
+	actions.load_session_messages("default_limit_session", nil, function()
+		callbacks = callbacks + 1
+	end)
+	actions.load_session_messages("explicit_limit_session", { limit = 25 }, function()
+		callbacks = callbacks + 1
+	end)
+	wait_until(function()
+		return callbacks == 2
+	end, "load_session_messages callbacks should run")
+	assert(calls[1].opts.limit == 100, "load_session_messages should default to limit=100")
+	assert(calls[2].opts.limit == 25, "load_session_messages should honor explicit limit")
+
+	package.loaded["opencode.client"] = saved_client
+	package.loaded["opencode.lifecycle"] = saved_lifecycle
+end
+
+do
+	local chat = require("opencode.ui.chat")
+	local chat_state = require("opencode.ui.chat.state").state
+	local render_state = require("opencode.ui.chat.render_state")
+	local chat_render = require("opencode.ui.chat.render")
+	local app_state = require("opencode.state")
+	local previous_session = app_state.get_session()
+	local previous_buf = vim.api.nvim_get_current_buf()
+	local previous_state = {
+		bufnr = chat_state.bufnr,
+		winid = chat_state.winid,
+		visible = chat_state.visible,
+		stream_blocks = chat_state.stream_blocks,
+		auto_scroll = chat_state.auto_scroll,
+	}
+
+	local bufnr = vim.api.nvim_create_buf(false, true)
+	local winid = vim.api.nvim_get_current_win()
+	vim.api.nvim_win_set_buf(winid, bufnr)
+	chat_state.bufnr = bufnr
+	chat_state.winid = winid
+	chat_state.visible = true
+	chat_state.auto_scroll = false
+	chat_state.stream_blocks = {}
+	app_state.set_session("stream_session", "Stream Session")
+	sync.clear_all()
+	sync.handle_message_updated({
+		id = "stream_message",
+		sessionID = "stream_session",
+		role = "assistant",
+		time = { created = 1 },
+	})
+	sync.handle_part_updated({
+		id = "stream_part",
+		messageID = "stream_message",
+		sessionID = "stream_session",
+		type = "text",
+		text = "hello",
+	})
+	vim.bo[bufnr].modifiable = true
+	vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { "hello" })
+	vim.bo[bufnr].modifiable = false
+
+	local block_key = render_state.stream_block_key("stream_session", "stream_message", "stream_part", "text")
+	chat_state.stream_blocks[block_key] = {
+		start_line = 0,
+		end_line = 0,
+		session_id = "stream_session",
+		message_id = "stream_message",
+		part_id = "stream_part",
+		kind = "text",
+		chat_width = chat_render.get_chat_text_width(),
+		text_length = #"hello",
+	}
+	sync.handle_part_delta({
+		messageID = "stream_message",
+		partID = "stream_part",
+		field = "text",
+		delta = " world",
+		sessionID = "stream_session",
+	})
+	assert(
+		chat.update_stream_part_block("stream_session", "stream_message", "stream_part", {
+			field = "text",
+			delta = " world",
+		}),
+		"same-line stream delta should update in place"
+	)
+	assert(
+		vim.api.nvim_buf_get_lines(bufnr, 0, 1, false)[1] == "hello world",
+		"same-line stream delta did not append visibly"
+	)
+	assert(chat_state.stream_blocks[block_key].end_line == 0, "same-line stream delta should not grow block")
+
+	sync.handle_part_delta({
+		messageID = "stream_message",
+		partID = "stream_part",
+		field = "text",
+		delta = "\nnext",
+		sessionID = "stream_session",
+	})
+	assert(
+		chat.update_stream_part_block("stream_session", "stream_message", "stream_part", {
+			field = "text",
+			delta = "\nnext",
+		}),
+		"newline stream delta should fall back to block replacement"
+	)
+	local updated_stream_lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+	assert(#updated_stream_lines == 2, "newline stream delta should grow rendered block")
+	assert(updated_stream_lines[1] == "hello world", "newline fallback should preserve first line")
+	assert(updated_stream_lines[2] == "next", "newline fallback should render next line")
+
+	sync.clear_all()
+	chat_state.bufnr = previous_state.bufnr
+	chat_state.winid = previous_state.winid
+	chat_state.visible = previous_state.visible
+	chat_state.stream_blocks = previous_state.stream_blocks
+	chat_state.auto_scroll = previous_state.auto_scroll
+	if previous_session and previous_session.id then
+		app_state.set_session(previous_session.id, previous_session.name, {
+			runtime = previous_session.runtime,
+		})
+	else
+		app_state.set_session(nil, nil)
+	end
+	if vim.api.nvim_buf_is_valid(previous_buf) then
+		vim.api.nvim_win_set_buf(winid, previous_buf)
+	end
+	if vim.api.nvim_buf_is_valid(bufnr) then
+		vim.api.nvim_buf_delete(bufnr, { force = true })
+	end
 end
 
 do

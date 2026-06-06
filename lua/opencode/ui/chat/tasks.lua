@@ -1217,7 +1217,7 @@ function M.handle_task_toggle(part_id)
 			return
 		end
 
-		actions.load_session_messages(child_session_id, {}, function(fetch_err)
+		actions.load_session_messages(child_session_id, { limit = 100 }, function(fetch_err)
 			vim.schedule(function()
 				if fetch_err then
 					state.expanded_tasks[part_id] = nil

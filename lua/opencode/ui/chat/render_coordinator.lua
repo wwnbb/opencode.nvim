@@ -74,11 +74,31 @@ function M.flush_stream_updates()
 	end
 end
 
+local function merge_stream_update(existing, data)
+	if type(existing) ~= "table" then
+		return data
+	end
+	data = data or {}
+	local merged = vim.tbl_extend("force", existing, data)
+	if
+		type(existing.delta) == "string"
+		and type(data.delta) == "string"
+		and existing.field == data.field
+	then
+		merged.delta = existing.delta .. data.delta
+		merged.field = data.field
+	elseif existing.delta ~= nil or data.delta ~= nil then
+		merged.delta = nil
+		merged.field = nil
+	end
+	return merged
+end
+
 ---@param data? table
 function M.request_stream_update(data)
 	local key = stream_update_key(data)
 	if key then
-		stream_updates[key] = data
+		stream_updates[key] = merge_stream_update(stream_updates[key], data)
 	end
 	if stream_pending then
 		return

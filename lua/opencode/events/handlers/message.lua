@@ -118,7 +118,8 @@ function M.setup(events)
 	---@param part table
 	---@param current_session table
 	---@param resolved_session_id string|nil
-	local function emit_part_events(part, current_session, resolved_session_id)
+	local function emit_part_events(part, current_session, resolved_session_id, opts)
+		opts = opts or {}
 		local event_session_id = resolved_session_id or part.sessionID or current_session.id
 		if part.type == "text" then
 			events.emit("sync_changed", {
@@ -127,6 +128,8 @@ function M.setup(events)
 				session_id = event_session_id,
 				message_id = part.messageID,
 				part_id = part.id,
+				delta = opts.delta,
+				field = opts.field,
 			})
 			return
 		end
@@ -138,6 +141,8 @@ function M.setup(events)
 				session_id = event_session_id,
 				message_id = part.messageID,
 				part_id = part.id,
+				delta = opts.delta,
+				field = opts.field,
 			})
 			return
 		end
@@ -347,7 +352,10 @@ function M.setup(events)
 				field = data.field,
 				delta_length = #data.delta,
 			})
-			emit_part_events(part, current_session, resolved_session_id)
+			emit_part_events(part, current_session, resolved_session_id, {
+				delta = data.delta,
+				field = data.field,
+			})
 		end)
 	end)
 

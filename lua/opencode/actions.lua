@@ -179,8 +179,16 @@ function M.clear_session_data(session_id)
 end
 
 function M.load_session_messages(session_id, opts, callback)
+	if type(opts) == "function" then
+		callback = opts
+		opts = nil
+	end
+	local request_opts = vim.tbl_extend("force", {}, opts or {})
+	if request_opts.limit == nil then
+		request_opts.limit = 100
+	end
 	return with_connection(function()
-		client().get_messages(session_id, opts or {}, function(err, response)
+		client().get_messages(session_id, request_opts, function(err, response)
 			if not err and response and type(response) == "table" then
 				local store = sync()
 				if type(store.handle_session_messages) == "function" then

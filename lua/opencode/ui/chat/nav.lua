@@ -61,7 +61,7 @@ function M.enter_child_session(part_id)
 				render_coordinator.request({ session_id = child_session_id, reason = "child_navigation" })
 			end)
 		else
-				actions.load_session_messages(child_session_id, {}, function(fetch_err)
+				actions.load_session_messages(child_session_id, { limit = 100 }, function(fetch_err)
 					vim.schedule(function()
 						if fetch_err then
 							vim.notify("Failed to load subagent messages: " .. tostring(fetch_err), vim.log.levels.ERROR)
