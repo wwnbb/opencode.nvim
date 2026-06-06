@@ -250,6 +250,30 @@ function M.has_permission(permission_id)
 	return active_permissions[permission_id] ~= nil
 end
 
+-- Remove a permission from tracking
+---@param permission_id string
+---@return boolean
+function M.remove_permission(permission_id)
+	if active_permissions[permission_id] then
+		active_permissions[permission_id] = nil
+		return true
+	end
+	return false
+end
+
+-- Clear permissions belonging to a specific session only
+---@param session_id string
+function M.clear_session(session_id)
+	local removed = {}
+	for permission_id, pstate in pairs(active_permissions) do
+		if pstate.session_id == session_id then
+			table.insert(removed, permission_id)
+			active_permissions[permission_id] = nil
+		end
+	end
+	return removed
+end
+
 -- Clear all permissions (e.g., on session change)
 function M.clear_all()
 	local removed = {}

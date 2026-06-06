@@ -617,6 +617,19 @@ function M.get_question_count()
 	return count
 end
 
+-- Clear questions belonging to a specific session only
+---@param session_id string
+function M.clear_session(session_id)
+	local removed = {}
+	for request_id, qstate in pairs(active_questions) do
+		if qstate.session_id == session_id then
+			table.insert(removed, request_id)
+			active_questions[request_id] = nil
+		end
+	end
+	return removed
+end
+
 -- Clear all questions (e.g., on session change)
 function M.clear_all()
 	local removed = {}

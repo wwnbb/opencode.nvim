@@ -374,6 +374,88 @@ wait_for(function()
 	return state.get_status() == "idle"
 end, "idle session.status should set idle")
 
+state.reset()
+sync.clear_all()
+bus.clear_history()
+state.set_session("running_root", "Running Root")
+state.set_session("complete_root", "Complete Root")
+session_actions.set_session_status("running_root", { type = "busy" }, { reason = "test_busy" })
+session_actions.set_session_status("complete_root", { type = "busy" }, { reason = "test_busy" })
+bus.emit("message_updated", {
+	info = {
+		id = "complete_assistant",
+		sessionID = "complete_root",
+		role = "assistant",
+		time = { created = 1, completed = 2 },
+	},
+})
+wait_for(function()
+	return state.get_session_status("complete_root").type == "idle"
+end, "completed assistant message should clear only its owning session status")
+assert_eq(state.get_session_status("running_root").type, "busy", "unrelated running session should stay busy")
+assert_eq(state.get_status(), "idle", "active completed session should mirror idle globally")
+
+session_actions.set_session_status("complete_root", { type = "busy" }, { reason = "test_tool_calls" })
+bus.emit("message_updated", {
+	info = {
+		id = "tool_call_assistant",
+		sessionID = "complete_root",
+		role = "assistant",
+		finish = "tool-calls",
+		time = { created = 3, completed = 4 },
+	},
+})
+vim.wait(50)
+assert_eq(state.get_session_status("complete_root").type, "busy", "tool-call completions should not mark session idle")
+
+state.reset()
+sync.clear_all()
+permission_state.clear_all()
+question_state.clear_all()
+edit_state.clear_all()
+state.set_session("permission_waiting", "Permission Waiting")
+state.set_session("permission_idle", "Permission Idle")
+permission_state.add_permission("perm_waiting_root", "permission_waiting", "bash", {})
+session_actions.recount_pending()
+assert_eq(
+	state.get_session_pending_counts("permission_waiting").permissions,
+	1,
+	"root permission should count only on owning session"
+)
+assert_eq(
+	state.get_session_pending_counts("permission_idle").permissions,
+	0,
+	"unrelated session should not inherit root permission count"
+)
+
+sync.handle_message_updated({
+	id = "permission_waiting_assistant",
+	sessionID = "permission_waiting",
+	role = "assistant",
+	time = { created = 1 },
+})
+sync.handle_part_updated({
+	id = "permission_waiting_task",
+	messageID = "permission_waiting_assistant",
+	sessionID = "permission_waiting",
+	type = "tool",
+	tool = "task",
+	metadata = { sessionId = "permission_child" },
+})
+permission_state.add_permission("perm_waiting_child", "permission_child", "bash", {})
+permission_state.add_permission("perm_idle_root", "permission_idle", "bash", {})
+session_actions.recount_pending()
+assert_eq(
+	state.get_session_pending_counts("permission_waiting").permissions,
+	2,
+	"child permission should roll up only to owning root session"
+)
+assert_eq(
+	state.get_session_pending_counts("permission_idle").permissions,
+	1,
+	"unrelated root permission should remain isolated"
+)
+
 bus.clear()
 bus.clear_history()
 state.reset()
@@ -474,6 +556,99 @@ bus.emit("session_change", {
 assert_true(permission_state.has_permission("preserve_perm"), "preserve_cache session_change should keep permissions")
 assert_true(edit_state.get_edit("preserve_edit") ~= nil, "preserve_cache session_change should keep edits")
 assert_true(question_state.has_question("hidden_question"), "preserve_cache session_change should keep questions")
+
+bus.clear()
+bus.clear_history()
+state.reset()
+sync.clear_all()
+permission_state.clear_all()
+question_state.clear_all()
+edit_state.clear_all()
+local original_respond_permission_for_close = client.respond_permission
+local original_reject_question_for_close = client.reject_question
+local original_get_session_todos_for_close = client.get_session_todos
+local rejected_permissions = {}
+local rejected_questions = {}
+client.respond_permission = function(permission_id, reply, opts, callback)
+	table.insert(rejected_permissions, {
+		permission_id = permission_id,
+		reply = reply,
+		opts = opts,
+	})
+	if callback then
+		callback(nil, true)
+	end
+end
+client.reject_question = function(session_id, request_id, callback)
+	table.insert(rejected_questions, {
+		session_id = session_id,
+		request_id = request_id,
+	})
+	if callback then
+		callback(nil, true)
+	end
+end
+client.get_session_todos = function(_, callback)
+	if callback then
+		callback(nil, {})
+	end
+end
+
+state.set_session("close_root", "Close Root")
+state.set_session("keep_root", "Keep Root")
+state.set_session("close_root", "Close Root")
+sync.handle_message_updated({
+	id = "close_root_assistant",
+	sessionID = "close_root",
+	role = "assistant",
+	time = { created = 1 },
+})
+sync.handle_part_updated({
+	id = "close_root_task",
+	messageID = "close_root_assistant",
+	sessionID = "close_root",
+	type = "tool",
+	tool = "task",
+	metadata = { sessionId = "close_child" },
+})
+permission_state.add_permission("perm_close_root", "close_root", "bash", {})
+permission_state.add_permission("perm_close_child", "close_child", "bash", {})
+permission_state.add_permission("perm_keep_root", "keep_root", "bash", {})
+question_state.add_question("question_close_root", "close_root", {
+	{ prompt = "Close root?", options = { { label = "Yes", value = "yes" } } },
+})
+question_state.add_question("question_close_child", "close_child", {
+	{ prompt = "Close child?", options = { { label = "Yes", value = "yes" } } },
+})
+question_state.add_question("question_keep_root", "keep_root", {
+	{ prompt = "Keep root?", options = { { label = "Yes", value = "yes" } } },
+})
+edit_state.add_edit("edit_close_root", "close_root", {
+	{ filePath = "README.md", before = "a", after = "b" },
+}, { review_mode = "readonly" })
+edit_state.add_edit("edit_close_child", "close_child", {
+	{ filePath = "README.md", before = "a", after = "b" },
+}, { review_mode = "readonly" })
+edit_state.add_edit("edit_keep_root", "keep_root", {
+	{ filePath = "README.md", before = "a", after = "b" },
+}, { review_mode = "readonly" })
+
+assert_true(session_actions.close("close_root", { silent = true }) == true, "close should remove target runtime tab")
+assert_true(not permission_state.has_permission("perm_close_root"), "close should clear root permission")
+assert_true(not permission_state.has_permission("perm_close_child"), "close should clear child permission")
+assert_true(permission_state.has_permission("perm_keep_root"), "close should preserve unrelated permission")
+assert_true(not question_state.has_question("question_close_root"), "close should clear root question")
+assert_true(not question_state.has_question("question_close_child"), "close should clear child question")
+assert_true(question_state.has_question("question_keep_root"), "close should preserve unrelated question")
+assert_true(edit_state.get_edit("edit_close_root") == nil, "close should clear root edit")
+assert_true(edit_state.get_edit("edit_close_child") == nil, "close should clear child edit")
+assert_true(edit_state.get_edit("edit_keep_root") ~= nil, "close should preserve unrelated edit")
+assert_eq(#rejected_permissions, 4, "close should reject root and child permissions/edits")
+assert_eq(#rejected_questions, 2, "close should reject root and child questions")
+
+client.respond_permission = original_respond_permission_for_close
+client.reject_question = original_reject_question_for_close
+client.get_session_todos = original_get_session_todos_for_close
 
 bus.clear()
 bus.clear_history()
