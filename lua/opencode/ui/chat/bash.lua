@@ -9,6 +9,7 @@ local panel = require("opencode.ui.panel")
 local syntax = require("opencode.ui.syntax")
 local text_util = require("opencode.util.text")
 
+local MAX_COLLAPSED_COMMAND_LINES = 12
 local MAX_COLLAPSED_OUTPUT_LINES = 10
 local PANEL_PREFIX = "▏  "
 local PANEL_BLANK_PREFIX = "▏"
@@ -164,22 +165,33 @@ end
 ---@param entries table[]
 ---@param text string
 ---@param hl_group string|nil
-local function append_body_entries(entries, text, hl_group)
+---@param max_entries number|nil
+---@return number total_lines
+local function append_body_entries(entries, text, hl_group, max_entries)
 	if text == "" then
-		return
+		return 0
 	end
+	local total = 0
 	for _, line in ipairs(vim.split(text, "\n", { plain = true })) do
-		table.insert(entries, { text = line, hl_group = hl_group })
+		total = total + 1
+		if not max_entries or #entries < max_entries then
+			table.insert(entries, { text = line, hl_group = hl_group })
+		end
 	end
+	return total
 end
 
 ---@param result table
----@param command string
-local function add_command(result, command)
-	local lines = vim.split(command, "\n", { plain = true })
+---@param command_lines string[]
+---@param expanded boolean
+local function add_command(result, command_lines, expanded)
 	local start_line = nil
 	local can_highlight = true
-	for i, line in ipairs(lines) do
+	local limit = expanded and #command_lines or math.min(MAX_COLLAPSED_COMMAND_LINES, #command_lines)
+	local displayed_lines = {}
+	for i = 1, limit do
+		local line = command_lines[i] or ""
+		table.insert(displayed_lines, line)
 		local prefix = i == 1 and "$ " or "  "
 		local line_index, _, rows = add_panel_raw_line(result, prefix .. line, "OpenCodeBashCommand")
 		start_line = start_line or line_index
@@ -187,8 +199,17 @@ local function add_command(result, command)
 			can_highlight = false
 		end
 	end
+
+	if not expanded and #command_lines > MAX_COLLAPSED_COMMAND_LINES then
+		add_panel_line(
+			result,
+			"... (" .. tostring(#command_lines - MAX_COLLAPSED_COMMAND_LINES) .. " more command lines, press O to expand)",
+			"OpenCodeBashMuted"
+		)
+	end
+
 	if start_line and can_highlight then
-		syntax.add_highlights(result, table.concat(lines, "\n"), "bash", {
+		syntax.add_highlights(result, table.concat(displayed_lines, "\n"), "bash", {
 			scope = "tools",
 			line_start = start_line,
 			col_offset = #PANEL_PREFIX + #"$ ",
@@ -244,17 +265,29 @@ function M.render_tool(tool_part, expanded)
 	local output_body = strip_echoed_command(output, command, workdir)
 	local error_body = trim_edge_newlines(error_text)
 	local has_error = status == "error" or error_body ~= "" or (exit_code ~= nil and exit_code ~= 0)
+	local command_lines = vim.split(command, "\n", { plain = true })
+	local has_command_overflow = #command_lines > MAX_COLLAPSED_COMMAND_LINES
 	local entries = {}
-	append_body_entries(entries, output_body, "OpenCodeBashOutput")
+	local max_entries = expanded and nil or MAX_COLLAPSED_OUTPUT_LINES
+	local total_entries = append_body_entries(entries, output_body, "OpenCodeBashOutput", max_entries)
 	if output_body ~= "" and error_body ~= "" then
-		table.insert(entries, { text = "", hl_group = "OpenCodeBashOutput" })
+		total_entries = total_entries + 1
+		if not max_entries or #entries < max_entries then
+			table.insert(entries, { text = "", hl_group = "OpenCodeBashOutput" })
+		end
 	end
-	append_body_entries(entries, error_body, "OpenCodeBashError")
-	local has_overflow = #entries > MAX_COLLAPSED_OUTPUT_LINES
-	local output_lang = syntax.detect_output_language(output_body, metadata)
+	total_entries = total_entries + append_body_entries(entries, error_body, "OpenCodeBashError", max_entries)
+	local has_overflow = total_entries > #entries
+	local output_probe_lines = {}
+	for _, entry in ipairs(entries) do
+		if entry.hl_group == "OpenCodeBashOutput" and entry.text ~= "" then
+			table.insert(output_probe_lines, entry.text)
+		end
+	end
+	local output_lang = syntax.detect_output_language(table.concat(output_probe_lines, "\n"), metadata)
 
 	local header = "# " .. description
-	if has_overflow or expanded then
+	if has_command_overflow or has_overflow or expanded then
 		local fold_icon = expanded and "▾" or "▸"
 		header = fold_icon .. " " .. header
 	end
@@ -274,7 +307,7 @@ function M.render_tool(tool_part, expanded)
 
 	add_panel_line(result, header, header_hl)
 	add_panel_blank(result)
-	add_command(result, command)
+	add_command(result, command_lines, expanded)
 
 	if #entries == 0 then
 		add_panel_blank(result)
@@ -286,9 +319,7 @@ function M.render_tool(tool_part, expanded)
 	local output_start_line = nil
 	local output_lines = {}
 	local can_highlight_output = true
-	local limit = expanded and #entries or math.min(MAX_COLLAPSED_OUTPUT_LINES, #entries)
-	for i = 1, limit do
-		local entry = entries[i]
+	for _, entry in ipairs(entries) do
 		if output_lang and entry.hl_group == "OpenCodeBashOutput" then
 			local line_index, _, rows = add_panel_raw_line(result, entry.text, entry.hl_group)
 			output_start_line = output_start_line or line_index
@@ -321,7 +352,7 @@ function M.render_tool(tool_part, expanded)
 	end
 
 	if not expanded and has_overflow then
-		local remaining = #entries - MAX_COLLAPSED_OUTPUT_LINES
+		local remaining = total_entries - #entries
 		add_panel_line(result, "… (" .. tostring(remaining) .. " more lines, press O to expand)", "OpenCodeBashMuted")
 	end
 

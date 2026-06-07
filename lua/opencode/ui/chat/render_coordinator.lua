@@ -2,6 +2,7 @@
 -- Other modules request renders here instead of emitting chat_render directly.
 
 local M = {}
+local perf = require("opencode.perf")
 
 local events_ref = nil
 local pending = false
@@ -39,6 +40,7 @@ function M.flush()
 	if not pending then
 		return
 	end
+	local done = perf.start("chat.render_coordinator.flush")
 	pending = false
 	local data = pending_data or {}
 	pending_data = nil
@@ -47,6 +49,7 @@ function M.flush()
 	if bus and type(bus.emit) == "function" then
 		bus.emit("chat_render", data)
 	end
+	done({ force = data.force == true })
 end
 
 local function stream_update_key(data)
@@ -61,17 +64,22 @@ local function stream_update_key(data)
 end
 
 function M.flush_stream_updates()
+	local done = perf.start("chat.render_coordinator.flush_stream_updates")
 	stream_pending = false
 	local updates = stream_updates
 	stream_updates = {}
 
 	local bus = events()
 	if not bus or type(bus.emit) ~= "function" then
+		done({ skipped = true, reason = "no_bus" })
 		return
 	end
+	local count = 0
 	for _, data in pairs(updates) do
+		count = count + 1
 		bus.emit("chat_stream_part_updated", data)
 	end
+	done({ updates = count })
 end
 
 local function merge_stream_update(existing, data)
@@ -96,23 +104,28 @@ end
 
 ---@param data? table
 function M.request_stream_update(data)
+	local done = perf.start("chat.render_coordinator.request_stream_update")
 	local key = stream_update_key(data)
 	if key then
 		stream_updates[key] = merge_stream_update(stream_updates[key], data)
 	end
 	if stream_pending then
+		done({ coalesced = true, has_key = key ~= nil })
 		return
 	end
 	stream_pending = true
 	vim.defer_fn(function()
 		M.flush_stream_updates()
 	end, STREAM_UPDATE_DELAY_MS)
+	done({ coalesced = false, has_key = key ~= nil })
 end
 
 ---@param data? table
 function M.request(data)
+	local done = perf.start("chat.render_coordinator.request")
 	merge_pending(data)
 	if pending then
+		done({ coalesced = true, force = type(data) == "table" and data.force == true })
 		return
 	end
 
@@ -120,6 +133,7 @@ function M.request(data)
 	vim.schedule(function()
 		M.flush()
 	end)
+	done({ coalesced = false, force = type(data) == "table" and data.force == true })
 end
 
 ---@param events table

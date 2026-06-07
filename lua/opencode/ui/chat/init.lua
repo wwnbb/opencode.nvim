@@ -39,6 +39,7 @@ local chat_edits = require("opencode.ui.chat.edits")
 local chat_interactions = require("opencode.ui.chat.interactions")
 local chat_nav = require("opencode.ui.chat.nav")
 local widget_support = require("opencode.ui.chat.widget_support")
+local perf = require("opencode.perf")
 
 chat_messages.set_schedule_render(function(opts)
 	M.schedule_render(opts)
@@ -68,6 +69,8 @@ local defaults = {
 	position = "right",
 	width = 80,
 	height = 20,
+	max_rendered_messages = 60,
+	max_user_message_lines = 120,
 	close_on_focus_lost = true,
 	float = {
 		width = 0.8,
@@ -370,7 +373,7 @@ function M.create()
 					field = data and data.field,
 				})
 			then
-				M.schedule_render({ force = true })
+				M.schedule_render()
 			end
 		end)
 	end)
@@ -430,7 +433,6 @@ function M.create()
 				if has_pending_interaction() then
 					if spinner.is_active() then
 						spinner.stop()
-						M.schedule_render()
 					end
 					stop_spinner_animation_timer()
 					return
@@ -438,7 +440,6 @@ function M.create()
 
 				if not spinner.is_active() then
 					spinner.start()
-					M.schedule_render()
 				end
 				if state.visible then
 					start_spinner_animation_timer()
@@ -447,7 +448,6 @@ function M.create()
 			else
 				if spinner.is_active() then
 					spinner.stop()
-					M.schedule_render()
 				end
 				stop_spinner_animation_timer()
 				chat_tasks.stop_task_animation_timer()
@@ -467,14 +467,16 @@ function M.create()
 				stop_spinner_animation_timer()
 				chat_tasks.stop_task_animation_timer()
 			end
+			local force_full_render = not preserve_cache or changed_session
 			reset_chat_surface({
 				reset_expansions = not preserve_cache or (changed_session and reason ~= "child_navigation"),
+				preserve_render_cache = preserve_cache == true,
+				force_full_render = force_full_render,
 			})
 			if not preserve_cache or (changed_session and reason ~= "child_navigation") then
 				state.session_stack = {}
 			end
 			chat_todos.update_window()
-			M.schedule_render({ force = true })
 		end)
 	end)
 
@@ -847,6 +849,7 @@ function M.update_stream_part_block(session_id, message_id, part_id, opts)
 		return false
 	end
 
+	local done_stream = perf.start("chat.stream.update_part_block")
 	local widget_cursor = capture_widget_cursor_context()
 	local should_scroll = should_auto_scroll(widget_cursor)
 	local chat_width = render.get_chat_text_width()
@@ -899,6 +902,7 @@ function M.update_stream_part_block(session_id, message_id, part_id, opts)
 			return false
 		end
 
+		local done_set_text = perf.start("chat.stream.plain_text_append.set_text")
 		vim.bo[state.bufnr].modifiable = true
 		local ok = pcall(
 			vim.api.nvim_buf_set_text,
@@ -910,19 +914,30 @@ function M.update_stream_part_block(session_id, message_id, part_id, opts)
 			{ delta }
 		)
 		vim.bo[state.bufnr].modifiable = false
+		done_set_text({ ok = ok, delta_bytes = #delta, line = block.end_line })
 		if not ok then
 			return false
 		end
 
 		block.text_length = #content
 		block.chat_width = chat_width
-		return finish_stream_update()
+		local result = finish_stream_update()
+		done_stream({
+			path = "plain_text_append",
+			result = result,
+			part_id = part_id,
+			message_id = message_id,
+			delta_bytes = #delta,
+			text_bytes = #content,
+		})
+		return result
 	end
 
 	if try_plain_text_append() then
 		return true
 	end
 
+	local done_stream_render = perf.start("chat.stream.render_replacement")
 	local content = part.text or ""
 	local content_lines
 	if part.type == "reasoning" then
@@ -936,12 +951,20 @@ function M.update_stream_part_block(session_id, message_id, part_id, opts)
 		content_lines = { empty }
 	end
 	local replacement = render.extract_lines(content_lines)
+	done_stream_render({
+		part_id = part_id,
+		message_id = message_id,
+		type = part.type,
+		text_bytes = #content,
+		lines = #replacement,
+	})
 
 	local old_end = block.end_line
 	local old_count = old_end - block.start_line + 1
 	local new_count = #replacement
 	local delta = new_count - old_count
 
+	local done_stream_apply = perf.start("chat.stream.apply_replacement")
 	vim.bo[state.bufnr].modifiable = true
 	vim.api.nvim_buf_set_lines(state.bufnr, block.start_line, old_end + 1, false, replacement)
 
@@ -949,13 +972,32 @@ function M.update_stream_part_block(session_id, message_id, part_id, opts)
 	vim.api.nvim_buf_clear_namespace(state.bufnr, chat_hl_ns, block.start_line, clear_end)
 	render.apply_highlights(content_lines, state.bufnr, chat_hl_ns, block.start_line)
 	vim.bo[state.bufnr].modifiable = false
+	done_stream_apply({
+		part_id = part_id,
+		message_id = message_id,
+		old_lines = old_count,
+		new_lines = new_count,
+		delta = delta,
+	})
 
 	block.end_line = block.start_line + new_count - 1
 	block.text_length = #content
 	block.chat_width = chat_width
 	shift_tracked_lines(old_end, delta, block_key)
 
-	return finish_stream_update()
+	local result = finish_stream_update()
+	done_stream({
+		path = "replacement",
+		result = result,
+		part_id = part_id,
+		message_id = message_id,
+		type = part.type,
+		text_bytes = #content,
+		old_lines = old_count,
+		new_lines = new_count,
+		delta = delta,
+	})
+	return result
 end
 
 -- ─── Main render ─────────────────────────────────────────────────────────────
@@ -967,6 +1009,7 @@ function M.render()
 		return {}, {}, {}
 	end
 
+	local done_render_total = perf.start("chat.render.total")
 	local sync = require("opencode.sync")
 	local app_state = require("opencode.state")
 	local current_session = app_state.get_session()
@@ -1123,6 +1166,7 @@ function M.render()
 	state.tasks = {}
 	state.tools = {}
 
+	local done_interaction_index = perf.start("chat.render.index_interactions")
 	local rendered_question_ids = {}
 	local rendered_perm_ids = {}
 	local rendered_edit_ids = {}
@@ -1163,6 +1207,11 @@ function M.render()
 		permission = 2,
 		edit = 3,
 	}
+	done_interaction_index({
+		questions = #all_questions,
+		permissions = #all_permissions,
+		edits = #all_edits,
+	})
 
 	---@type fun(result: table, kind: string): number
 	local add_render_result
@@ -1599,6 +1648,8 @@ function M.render()
 
 	---@param tool_part table
 	local function render_tool_part(tool_part, message_revision, part_revisions)
+		local tool_name = tostring(tool_part and tool_part.tool or "unknown")
+		local done = perf.start("chat.render.tool_part." .. tool_name)
 		local part_revision = tool_part.id and part_revisions and part_revisions[tool_part.id] or 0
 		if tool_part.tool == "task" then
 			local is_expanded = state.expanded_tasks[tool_part.id] or false
@@ -1625,6 +1676,14 @@ function M.render()
 				tool_part = tool_part,
 				highlights = result.highlights,
 			}
+			done({
+				tool = tool_name,
+				part_id = tool_part.id,
+				expanded = is_expanded == true,
+				lines = #(result.lines or {}),
+				highlights = #(result.highlights or {}),
+				cacheable = cache_key ~= nil,
+			})
 			return
 		end
 
@@ -1652,10 +1711,19 @@ function M.render()
 			tool_part = tool_part,
 			highlights = result.highlights,
 		}
+		done({
+			tool = tool_name,
+			part_id = tool_part.id,
+			expanded = is_expanded == true,
+			lines = #(result.lines or {}),
+			highlights = #(result.highlights or {}),
+			cacheable = cache_key ~= nil,
+		})
 	end
 
 	local chat_config = state.config or get_config()
 	local tabs_cfg = chat_config.session_tabs or {}
+	local max_user_message_lines = tonumber(chat_config.max_user_message_lines) or 0
 
 	-- Breadcrumb navigation (when inside a child session)
 	if #state.session_stack > 0 then
@@ -1686,9 +1754,57 @@ function M.render()
 		add_raw_line("")
 	end
 
-	local messages = current_session.id and sync.get_messages(current_session.id) or {}
+	local done_get_messages = perf.start("chat.render.get_messages")
+	local all_messages = current_session.id and sync.get_messages(current_session.id) or {}
+	local messages = all_messages
+	local max_rendered_messages = tonumber(chat_config.max_rendered_messages) or 0
+	local skipped_messages = 0
+	if max_rendered_messages > 0 and #all_messages > max_rendered_messages then
+		local first_render_index = #all_messages - max_rendered_messages + 1
+		local message_index_by_id = {}
+		for index, message in ipairs(all_messages) do
+			if message.id then
+				message_index_by_id[message.id] = index
+			end
+		end
+
+		local function anchor_message(message_id, owner_session_id, status)
+			local index = message_id and message_index_by_id[message_id]
+			if index and should_render_session_widget(owner_session_id, status) then
+				first_render_index = math.min(first_render_index, index)
+			end
+		end
+
+		for _, qstate in ipairs(all_questions) do
+			if qstate.status == "pending" or qstate.status == "confirming" then
+				anchor_message(qstate.message_id, qstate.session_id, qstate.status)
+			end
+		end
+		for _, pstate in ipairs(all_permissions) do
+			if pstate.status == nil or pstate.status == "pending" then
+				anchor_message(pstate.message_id, pstate.session_id, pstate.status)
+			end
+		end
+		for _, estate in ipairs(all_edits) do
+			if estate.status == nil or estate.status == "pending" then
+				anchor_message(estate.message_id, estate.session_id, estate.status)
+			end
+		end
+
+		skipped_messages = first_render_index - 1
+		messages = {}
+		for i = skipped_messages + 1, #all_messages do
+			messages[#messages + 1] = all_messages[i]
+		end
+	end
+	done_get_messages({
+		session_id = current_session.id,
+		messages = #all_messages,
+		rendered_messages = #messages,
+		skipped_messages = skipped_messages,
+	})
 	local user_created_by_id = {}
-	for _, msg in ipairs(messages) do
+	for _, msg in ipairs(all_messages) do
 		if msg.id and msg.role == "user" and msg.time and type(msg.time.created) == "number" then
 			user_created_by_id[msg.id] = msg.time.created
 		end
@@ -1726,7 +1842,7 @@ function M.render()
 			)
 		if cache_key then
 			return cached_nui_line(cache_key, function()
-				return render.render_metadata_footer(message, messages, {
+				return render.render_metadata_footer(message, all_messages, {
 					spinner_frame = spinner_frame,
 					duration_ms = duration_ms,
 					duration_calculated = true,
@@ -1734,7 +1850,7 @@ function M.render()
 			end)
 		end
 
-		return render.render_metadata_footer(message, messages, {
+		return render.render_metadata_footer(message, all_messages, {
 			spinner_frame = spinner_frame,
 			duration_ms = duration_ms,
 			duration_calculated = true,
@@ -1766,7 +1882,17 @@ function M.render()
 		or last_assistant_waiting_on_tools
 	local spinner_active = spinner.is_active() and current_session_processing and has_pending_response_gap
 
+	if skipped_messages > 0 then
+		local history_line = NuiLine()
+		history_line:append(NuiText(string.format("... %d earlier messages hidden", skipped_messages), "Comment"))
+		add_line(history_line)
+		add_raw_line("")
+	end
+
+	local done_messages_loop = perf.start("chat.render.messages_loop")
 	for msg_idx, message in ipairs(messages) do
+		local message_start_line = #raw_lines
+		local done_message = perf.start("chat.render.message." .. tostring(message.role or "unknown"))
 		local render_parts = sync.get_message_render_parts(
 			message.id,
 			message.role == "user" and { include_synthetic = false } or nil
@@ -1811,10 +1937,13 @@ function M.render()
 						message.id,
 						message_revision,
 						chat_width,
-						message.agent or ""
+						message.agent or "",
+						max_user_message_lines
 					),
 					function()
-						return render.render_user_message(content, message.agent, file_parts)
+						return render.render_user_message(content, message.agent, file_parts, {
+							max_lines = max_user_message_lines,
+						})
 					end
 				)
 				for _, nl in ipairs(msg_lines) do
@@ -1960,14 +2089,30 @@ function M.render()
 				end
 			end
 		end
+		done_message({
+			message_id = message.id,
+			role = message.role,
+			should_render = should_render,
+			parts = #(parts or {}),
+			tool_parts = #(tool_parts or {}),
+			content_bytes = #(content or ""),
+			reasoning_bytes = #(reasoning or ""),
+			lines = #raw_lines - message_start_line,
+		})
 	end
+	done_messages_loop({
+		messages = #all_messages,
+		rendered_messages = #messages,
+		skipped_messages = skipped_messages,
+		lines = #raw_lines,
+	})
 
 	local function has_server_user_echo(local_message)
 		if local_message.role ~= "user" or type(local_message.content) ~= "string" then
 			return false
 		end
 		local local_ms = (local_message.timestamp or 0) * 1000
-		for _, synced in ipairs(messages) do
+		for _, synced in ipairs(all_messages) do
 			local created = synced.time and synced.time.created
 			local same_turn = not created or local_ms == 0 or created >= local_ms - 5000
 			if
@@ -1981,6 +2126,7 @@ function M.render()
 		return false
 	end
 
+	local done_local_notices = perf.start("chat.render.local_notices")
 	-- Local notices (legacy user/system notices not backed by server state)
 	for _, message in ipairs(state.local_notices) do
 		if message.id and rendered_local_notice_ids[message.id] then
@@ -2003,7 +2149,9 @@ function M.render()
 			if has_server_user_echo(message) then
 				goto continue_local_message
 			end
-			local msg_lines = render.render_user_message(message.content or "", message.agent)
+			local msg_lines = render.render_user_message(message.content or "", message.agent, nil, {
+				max_lines = max_user_message_lines,
+			})
 			for _, nl in ipairs(msg_lines) do
 				add_line(nl)
 			end
@@ -2023,13 +2171,15 @@ function M.render()
 		end
 		::continue_local_message::
 	end
+	done_local_notices({ notices = #state.local_notices, lines = #raw_lines })
 
 	local session_msg_ids = {}
-	for _, message in ipairs(messages) do
+	for _, message in ipairs(all_messages) do
 		session_msg_ids[message.id] = true
 	end
 
-		for _, qstate in ipairs(all_questions) do
+	local done_orphan_widgets = perf.start("chat.render.orphan_widgets")
+	for _, qstate in ipairs(all_questions) do
 		if
 			not rendered_question_ids[qstate.request_id]
 			and not (qstate.message_id and session_msg_ids[qstate.message_id])
@@ -2042,7 +2192,7 @@ function M.render()
 	-- Orphan permissions from other sessions:
 	-- parent view shows cross-session widgets only while pending;
 	-- child view shows current-session widgets only.
-		for _, pstate in ipairs(all_permissions) do
+	for _, pstate in ipairs(all_permissions) do
 		if
 			not rendered_perm_ids[pstate.permission_id]
 			and not (pstate.message_id and session_msg_ids[pstate.message_id])
@@ -2062,6 +2212,12 @@ function M.render()
 			render_single_edit(estate)
 		end
 	end
+	done_orphan_widgets({
+		questions = #all_questions,
+		permissions = #all_permissions,
+		edits = #all_edits,
+		lines = #raw_lines,
+	})
 
 	if spinner_active and not spinner_footer_rendered then
 		local fallback_agent = "assistant"
@@ -2106,71 +2262,98 @@ function M.render()
 	end
 
 	state.stream_blocks = next_stream_blocks
+	local stream_block_count = 0
+	for _ in pairs(next_stream_blocks) do
+		stream_block_count = stream_block_count + 1
+	end
+	done_render_total({
+		session_id = current_session.id,
+		messages = #all_messages,
+		rendered_messages = #messages,
+		skipped_messages = skipped_messages,
+		lines = #raw_lines,
+		highlights = #content_highlights,
+		stream_blocks = stream_block_count,
+	})
 	return raw_lines, nui_lines, content_highlights
 end
 
 -- ─── Render engine ────────────────────────────────────────────────────────────
 
 function M.update_spinner_only()
+	local done = perf.start("chat.update_spinner_only")
 	if not state.bufnr or not vim.api.nvim_buf_is_valid(state.bufnr) then
+		done({ skipped = true, reason = "invalid_buffer" })
 		return
 	end
 	if not state.visible then
+		done({ skipped = true, reason = "hidden" })
 		return
 	end
 	if not spinner.is_active() then
+		done({ skipped = true, reason = "inactive" })
 		return
 	end
 
 	local footer_line = state.spinner_footer_line
 	if type(footer_line) ~= "number" then
+		done({ skipped = true, reason = "missing_footer" })
 		return
 	end
 
 	local buf_lines = vim.api.nvim_buf_line_count(state.bufnr)
 	if footer_line < 0 or footer_line >= buf_lines then
+		done({ skipped = true, reason = "footer_out_of_range", footer_line = footer_line, buf_lines = buf_lines })
 		return
 	end
 
 	local current_line = vim.api.nvim_buf_get_lines(state.bufnr, footer_line, footer_line + 1, false)[1] or ""
 	if current_line == "" then
+		done({ skipped = true, reason = "empty_line", footer_line = footer_line })
 		return
 	end
 
 	local second_char = vim.fn.strcharpart(current_line, 1, 1)
 	if second_char ~= " " then
+		done({ skipped = true, reason = "unexpected_line", footer_line = footer_line })
 		return
 	end
 
 	local next_frame = spinner.get_frame()
 	if next_frame == "" then
+		done({ skipped = true, reason = "empty_frame" })
 		return
 	end
 
 	local current_frame = vim.fn.strcharpart(current_line, 0, 1)
 	if current_frame == next_frame then
+		done({ skipped = true, reason = "same_frame" })
 		return
 	end
 
 	local current_frame_bytes = #current_frame
 	if current_frame_bytes <= 0 then
+		done({ skipped = true, reason = "invalid_frame" })
 		return
 	end
 
 	vim.bo[state.bufnr].modifiable = true
 	vim.api.nvim_buf_set_text(state.bufnr, footer_line, 0, footer_line, current_frame_bytes, { next_frame })
 	vim.bo[state.bufnr].modifiable = false
+	done({ footer_line = footer_line, buf_lines = buf_lines })
 end
 
 local RENDER_THROTTLE_MS = 16
 
 ---@param opts? table { force?: boolean }
 function M.schedule_render(opts)
+	local done = perf.start("chat.schedule_render")
 	opts = opts or {}
 	if opts.force then
 		state.force_full_render = true
 	end
 	if state.render_scheduled then
+		done({ skipped = true, reason = "already_scheduled", force = opts.force == true })
 		return
 	end
 
@@ -2179,14 +2362,17 @@ function M.schedule_render(opts)
 
 	if elapsed >= RENDER_THROTTLE_MS then
 		state.last_render_time = now
+		done({ path = "immediate", elapsed_since_last_ms = elapsed, force = opts.force == true })
 		M.do_render()
 	else
 		state.render_scheduled = true
+		local delay = RENDER_THROTTLE_MS - elapsed
 		vim.defer_fn(function()
 			state.render_scheduled = false
 			state.last_render_time = vim.uv.now()
 			M.do_render()
-		end, RENDER_THROTTLE_MS - elapsed)
+		end, delay)
+		done({ path = "deferred", delay_ms = delay, elapsed_since_last_ms = elapsed, force = opts.force == true })
 	end
 end
 
@@ -2203,33 +2389,62 @@ function M.do_render()
 	if not state.bufnr or not vim.api.nvim_buf_is_valid(state.bufnr) then
 		return
 	end
+	local done_total = perf.start("chat.do_render.total")
 	local force_full_render = state.force_full_render == true
 	state.force_full_render = false
+	local done_winbar = perf.start("chat.do_render.update_winbar")
 	M.update_winbar()
+	done_winbar({ force_full_render = force_full_render })
 
+	local done_cursor_capture = perf.start("chat.do_render.capture_cursor")
 	local widget_cursor = capture_widget_cursor_context()
 	local should_scroll = should_auto_scroll(widget_cursor)
+	done_cursor_capture({ should_scroll = should_scroll })
 
+	local done_render_call = perf.start("chat.do_render.render_call")
 	local new_lines, nui_lines, content_highlights = M.render()
+	done_render_call({
+		lines = #new_lines,
+		nui_lines = #nui_lines,
+		highlights = #content_highlights,
+	})
+	local done_todos = perf.start("chat.do_render.todos_update")
 	chat_todos.update_window()
+	done_todos({ lines = #new_lines })
+	local done_animation_timers = perf.start("chat.do_render.resume_animation_timers")
 	resume_render_animation_timers()
-	local highlight_signature = render_highlight_signature(content_highlights)
+	done_animation_timers()
+	local highlight_signature = nil
+	local function current_highlight_signature()
+		if highlight_signature == nil then
+			local done_highlight_signature = perf.start("chat.do_render.highlight_signature")
+			highlight_signature = render_highlight_signature(content_highlights)
+			done_highlight_signature({ highlights = #content_highlights })
+		end
+		return highlight_signature
+	end
 
 	local function apply_render_highlights(changed_start)
+		local done_apply = perf.start("chat.do_render.apply_render_highlights")
 		if not state.bufnr or not vim.api.nvim_buf_is_valid(state.bufnr) then
+			done_apply({ skipped = true, reason = "invalid_buffer" })
 			return
 		end
 
 		local buf_line_count = vim.api.nvim_buf_line_count(state.bufnr)
+		local done_clear = perf.start("chat.do_render.apply_render_highlights.clear")
 		local clear_start = highlight_clear_start(changed_start or 0, content_highlights)
 		vim.api.nvim_buf_clear_namespace(state.bufnr, chat_hl_ns, clear_start, -1)
+		done_clear({ clear_start = clear_start, buf_line_count = buf_line_count })
 
+		local done_nui_highlights = perf.start("chat.do_render.apply_render_highlights.nui_lines")
 		for i = clear_start + 1, #nui_lines do
 			local nui_line = nui_lines[i]
 			if i <= buf_line_count then
 				nui_line:highlight(state.bufnr, chat_hl_ns, i)
 			end
 		end
+		done_nui_highlights({ clear_start = clear_start, lines = #nui_lines })
 
 		local function apply_widget_extmarks(line_map)
 			for _, pos in pairs(line_map) do
@@ -2242,59 +2457,88 @@ function M.do_render()
 			end
 		end
 
+		local done_widget_extmarks = perf.start("chat.do_render.apply_render_highlights.widget_extmarks")
 		apply_widget_extmarks(state.questions)
 		apply_widget_extmarks(state.permissions)
 		apply_widget_extmarks(state.edits)
 		apply_widget_extmarks(state.tasks)
 		apply_widget_extmarks(state.tools)
+		done_widget_extmarks()
+		local done_content_extmarks = perf.start("chat.do_render.apply_render_highlights.content_extmarks")
 		render.apply_extmark_highlights(state.bufnr, chat_hl_ns, content_highlights, 0, {
 			min_line = clear_start,
 			max_line = buf_line_count,
 		})
+		done_content_extmarks({ highlights = #content_highlights, clear_start = clear_start })
 		state.last_render_highlight_signature = highlight_signature
+		done_apply({
+			changed_start = changed_start,
+			clear_start = clear_start,
+			lines = #nui_lines,
+			content_highlights = #content_highlights,
+		})
 	end
 
 	if #new_lines == 0 or #nui_lines == 0 then
+		local done_empty_apply = perf.start("chat.do_render.empty_set_lines")
 		vim.bo[state.bufnr].modifiable = true
 		vim.api.nvim_buf_set_lines(state.bufnr, 0, -1, false, new_lines)
 		vim.api.nvim_buf_clear_namespace(state.bufnr, chat_hl_ns, 0, -1)
 		vim.bo[state.bufnr].modifiable = false
+		done_empty_apply({ lines = #new_lines })
 		state.last_render_highlight_signature = nil
 		if apply_widget_focus_cursor() then
 			vim.cmd("redraw")
 		end
+		done_total({ path = "empty", lines = #new_lines, force_full_render = force_full_render })
 		return
 	end
 
+	local done_get_old_lines = perf.start("chat.do_render.get_old_lines")
 	local old_lines = vim.api.nvim_buf_get_lines(state.bufnr, 0, -1, false)
 	local buf_line_count = vim.api.nvim_buf_line_count(state.bufnr)
+	done_get_old_lines({ old_lines = #old_lines, buf_line_count = buf_line_count })
 
 	if force_full_render then
+		local done_full_set_lines = perf.start("chat.do_render.full_set_lines")
 		vim.bo[state.bufnr].modifiable = true
 		vim.api.nvim_buf_set_lines(state.bufnr, 0, -1, false, new_lines)
 		vim.api.nvim_buf_clear_namespace(state.bufnr, chat_hl_ns, 0, -1)
 		apply_render_highlights(0)
 		vim.bo[state.bufnr].modifiable = false
+		done_full_set_lines({ lines = #new_lines })
 
 		if apply_widget_focus_cursor() then
+			local done_redraw = perf.start("chat.do_render.redraw")
 			vim.cmd("redraw")
+			done_redraw({ path = "force_focus" })
+			done_total({ path = "force_focus", lines = #new_lines, force_full_render = true })
 			return
 		end
 
 		if restore_widget_cursor_context(widget_cursor) then
+			local done_redraw = perf.start("chat.do_render.redraw")
 			vim.cmd("redraw")
+			done_redraw({ path = "force_restore_cursor" })
+			done_total({ path = "force_restore_cursor", lines = #new_lines, force_full_render = true })
 			return
 		end
 
 		if should_scroll and state.visible and state.winid and vim.api.nvim_win_is_valid(state.winid) then
+			local done_scroll = perf.start("chat.do_render.scroll")
 			local buf_lines = vim.api.nvim_buf_line_count(state.bufnr)
 			vim.api.nvim_win_set_cursor(state.winid, { buf_lines, 0 })
+			done_scroll({ buf_lines = buf_lines, path = "force" })
 		end
 
+		local done_redraw = perf.start("chat.do_render.redraw")
 		vim.cmd("redraw")
+		done_redraw({ path = "force" })
+		done_total({ path = "force", lines = #new_lines, force_full_render = true })
 		return
 	end
 
+	local done_diff_scan = perf.start("chat.do_render.diff_scan")
 	local first_diff = nil
 	local min_len = math.min(#old_lines, #new_lines)
 	for i = 1, min_len do
@@ -2303,15 +2547,19 @@ function M.do_render()
 			break
 		end
 	end
+	done_diff_scan({ old_lines = #old_lines, new_lines = #new_lines, first_diff = first_diff, min_len = min_len })
 
 	if first_diff == nil then
 		if #old_lines == #new_lines then
-			if state.last_render_highlight_signature ~= highlight_signature then
+			if state.last_render_highlight_signature ~= current_highlight_signature() then
 				apply_render_highlights(0)
 			end
 			if apply_widget_focus_cursor() then
+				local done_redraw = perf.start("chat.do_render.redraw")
 				vim.cmd("redraw")
+				done_redraw({ path = "no_line_diff_focus" })
 			end
+			done_total({ path = "no_line_diff", lines = #new_lines, force_full_render = false })
 			return
 		end
 		first_diff = min_len
@@ -2322,33 +2570,70 @@ function M.do_render()
 		first_diff = 0
 	end
 
+	local done_build_replacement = perf.start("chat.do_render.build_replacement")
 	local replacement = {}
 	for i = first_diff + 1, #new_lines do
 		table.insert(replacement, new_lines[i])
 	end
+	done_build_replacement({
+		first_diff = first_diff,
+		replacement_lines = #replacement,
+		new_lines = #new_lines,
+	})
 
+	local done_set_lines = perf.start("chat.do_render.set_lines")
 	vim.bo[state.bufnr].modifiable = true
 	vim.api.nvim_buf_set_lines(state.bufnr, first_diff, -1, false, replacement)
+	done_set_lines({ first_diff = first_diff, replacement_lines = #replacement })
 
 	apply_render_highlights(first_diff)
 	vim.bo[state.bufnr].modifiable = false
 
 	if apply_widget_focus_cursor() then
+		local done_redraw = perf.start("chat.do_render.redraw")
 		vim.cmd("redraw")
+		done_redraw({ path = "focus" })
+		done_total({
+			path = "focus",
+			lines = #new_lines,
+			first_diff = first_diff,
+			replacement_lines = #replacement,
+			force_full_render = false,
+		})
 		return
 	end
 
 	if restore_widget_cursor_context(widget_cursor) then
+		local done_redraw = perf.start("chat.do_render.redraw")
 		vim.cmd("redraw")
+		done_redraw({ path = "restore_cursor" })
+		done_total({
+			path = "restore_cursor",
+			lines = #new_lines,
+			first_diff = first_diff,
+			replacement_lines = #replacement,
+			force_full_render = false,
+		})
 		return
 	end
 
 	if should_scroll and state.visible and state.winid and vim.api.nvim_win_is_valid(state.winid) then
+		local done_scroll = perf.start("chat.do_render.scroll")
 		local buf_lines = vim.api.nvim_buf_line_count(state.bufnr)
 		vim.api.nvim_win_set_cursor(state.winid, { buf_lines, 0 })
+		done_scroll({ buf_lines = buf_lines })
 	end
 
+	local done_redraw = perf.start("chat.do_render.redraw")
 	vim.cmd("redraw")
+	done_redraw({ path = "normal" })
+	done_total({
+		path = "normal",
+		lines = #new_lines,
+		first_diff = first_diff,
+		replacement_lines = #replacement,
+		force_full_render = false,
+	})
 end
 
 -- ─── Cross-domain key routers ─────────────────────────────────────────────────

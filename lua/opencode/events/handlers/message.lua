@@ -6,6 +6,7 @@ function M.setup(events)
 	local sync = require("opencode.sync")
 	local logger = require("opencode.logger")
 	local event_util = require("opencode.events.util")
+	local perf = require("opencode.perf")
 
 	---@param session_id string|nil
 	---@param reason string
@@ -214,11 +215,13 @@ function M.setup(events)
 	-- This is the ONLY place where messages get added to the store
 	events.on("message_updated", function(data)
 		vim.schedule(function()
+			local done = perf.start("events.message_updated")
 			local info = data.info
 			if not info then
 				logger.debug("Message update ignored", {
 					reason = "missing_info",
 				})
+				done({ skipped = true, reason = "missing_info" })
 				return
 			end
 
@@ -249,6 +252,12 @@ function M.setup(events)
 					messageID = info.id,
 					role = info.role,
 				})
+				done({
+					message_id = info.id,
+					session_id = info.sessionID,
+					role = info.role,
+					current = false,
+				})
 				return
 			end
 
@@ -270,6 +279,12 @@ function M.setup(events)
 				action = "updated",
 				session_id = current_session.id,
 				message_id = info.id,
+			})
+			done({
+				message_id = info.id,
+				session_id = info.sessionID,
+				role = info.role,
+				current = true,
 			})
 		end)
 	end)
@@ -297,11 +312,13 @@ function M.setup(events)
 	-- Parts contain the actual content (text, reasoning, tool calls)
 	events.on("message_part_updated", function(data)
 		vim.schedule(function()
+			local done = perf.start("events.message_part_updated")
 			local part = data.part
 			if not part then
 				logger.debug("Part update ignored", {
 					reason = "missing_part",
 				})
+				done({ skipped = true, reason = "missing_part" })
 				return
 			end
 
@@ -319,6 +336,13 @@ function M.setup(events)
 					messageID = part.messageID,
 					type = part.type,
 				})
+				done({
+					part_id = part.id,
+					message_id = part.messageID,
+					type = part.type,
+					session_id = resolved_session_id,
+					current = false,
+				})
 				return
 			end
 
@@ -329,16 +353,26 @@ function M.setup(events)
 				type = part.type,
 			})
 			emit_part_events(part, current_session, resolved_session_id)
+			done({
+				part_id = part.id,
+				message_id = part.messageID,
+				type = part.type,
+				tool = part.tool,
+				session_id = resolved_session_id,
+				current = true,
+			})
 		end)
 	end)
 
 	-- Handle message.part.delta - incremental token/chunk updates while streaming.
 	events.on("message_part_delta", function(data)
 		vim.schedule(function()
+			local done = perf.start("events.message_part_delta")
 			if not data then
 				logger.debug("Part delta ignored", {
 					reason = "missing_data",
 				})
+				done({ skipped = true, reason = "missing_data" })
 				return
 			end
 			if not data.messageID or not data.partID or not data.field or type(data.delta) ~= "string" then
@@ -346,6 +380,13 @@ function M.setup(events)
 					reason = "malformed",
 					messageID = data.messageID,
 					partID = data.partID,
+					field = data.field,
+				})
+				done({
+					skipped = true,
+					reason = "malformed",
+					message_id = data.messageID,
+					part_id = data.partID,
 					field = data.field,
 				})
 				return
@@ -372,6 +413,14 @@ function M.setup(events)
 					messageID = data.messageID,
 					sessionID = resolved_session_id,
 				})
+				done({
+					skipped = true,
+					reason = "part_not_found",
+					message_id = data.messageID,
+					part_id = data.partID,
+					field = data.field,
+					delta_bytes = #data.delta,
+				})
 				return
 			end
 
@@ -382,6 +431,15 @@ function M.setup(events)
 					partID = part.id,
 					messageID = part.messageID,
 					type = part.type,
+				})
+				done({
+					part_id = part.id,
+					message_id = part.messageID,
+					type = part.type,
+					session_id = resolved_session_id,
+					field = data.field,
+					delta_bytes = #data.delta,
+					current = false,
 				})
 				return
 			end
@@ -396,6 +454,15 @@ function M.setup(events)
 			emit_part_events(part, current_session, resolved_session_id, {
 				delta = data.delta,
 				field = data.field,
+			})
+			done({
+				part_id = part.id,
+				message_id = part.messageID,
+				type = part.type,
+				session_id = resolved_session_id,
+				field = data.field,
+				delta_bytes = #data.delta,
+				current = true,
 			})
 		end)
 	end)

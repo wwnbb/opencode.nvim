@@ -11,6 +11,7 @@ local thinking = require("opencode.ui.thinking")
 local locale = require("opencode.util.locale")
 local sync = require("opencode.sync")
 local syntax = require("opencode.ui.syntax")
+local perf = require("opencode.perf")
 
 local cs = require("opencode.ui.chat.state")
 local state = cs.state
@@ -190,26 +191,31 @@ end
 ---@param opts? table
 ---@return table[] chunks
 function M.wrap_text_with_ranges(text, max_width, opts)
+	local done = perf.start("chat.render.wrap_text_with_ranges")
 	opts = opts or {}
 	text = M.sanitize_buffer_line(text)
 	if max_width <= 0 then
-		return {
+		local result = {
 			{
 				text = text,
 				byte_start = 0,
 				byte_end = #text,
 			},
 		}
+		done({ bytes = #text, max_width = max_width, chunks = #result })
+		return result
 	end
 	local initial_col = opts.initial_col or 0
 	if display_width_from_col(text, initial_col) <= max_width then
-		return {
+		local result = {
 			{
 				text = text,
 				byte_start = 0,
 				byte_end = #text,
 			},
 		}
+		done({ bytes = #text, max_width = max_width, chunks = #result })
+		return result
 	end
 
 	local result = {}
@@ -266,6 +272,7 @@ function M.wrap_text_with_ranges(text, max_width, opts)
 			byte_end = #text,
 		})
 	end
+	done({ bytes = #text, max_width = max_width, chunks = #result })
 	return result
 end
 
@@ -511,12 +518,35 @@ end
 ---@param content string|nil
 ---@param agent_name string|nil
 ---@param files? table[]
+---@param opts? { max_lines?: number }
 ---@return NuiLine[]
-function M.render_user_message(content, agent_name, files)
+function M.render_user_message(content, agent_name, files, opts)
+	local done = perf.start("chat.render.render_user_message")
+	opts = opts or {}
 	ensure_user_message_highlights()
 
 	local lines = {}
 	local content_lines = vim.split(content or "", "\n", { plain = true })
+	local original_content_lines = #content_lines
+	local max_lines = tonumber(opts.max_lines) or 0
+	local hidden_content_lines = 0
+	if max_lines > 0 and #content_lines > max_lines then
+		local visible_budget = math.max(1, max_lines - 1)
+		local head_lines = math.max(1, math.floor(visible_budget * 0.75))
+		local tail_lines = math.max(0, visible_budget - head_lines)
+		local compacted = {}
+		for i = 1, head_lines do
+			compacted[#compacted + 1] = content_lines[i] or ""
+		end
+		hidden_content_lines = #content_lines - head_lines - tail_lines
+		compacted[#compacted + 1] = "... (" .. tostring(hidden_content_lines) .. " lines hidden)"
+		for i = #content_lines - tail_lines + 1, #content_lines do
+			if i > head_lines then
+				compacted[#compacted + 1] = content_lines[i] or ""
+			end
+		end
+		content_lines = compacted
+	end
 	local border_hl = M.get_agent_hl(agent_name or "unknown")
 
 	local text_width = get_chat_text_width()
@@ -563,6 +593,15 @@ function M.render_user_message(content, agent_name, files)
 	end
 
 	add_block_line("")
+	done({
+		content_bytes = #(content or ""),
+		content_lines = original_content_lines,
+		hidden_content_lines = hidden_content_lines,
+		max_lines = max_lines,
+		files = #(files or {}),
+		lines = #lines,
+		agent = agent_name,
+	})
 	return lines
 end
 
@@ -570,8 +609,10 @@ end
 ---@param reasoning string|nil
 ---@return NuiLine[]
 function M.render_reasoning(reasoning)
+	local done = perf.start("chat.render.render_reasoning")
 	local lines = {}
 	if not reasoning or reasoning == "" or not thinking.is_enabled() then
+		done({ bytes = #(reasoning or ""), lines = 0, skipped = true })
 		return lines
 	end
 
@@ -590,6 +631,7 @@ function M.render_reasoning(reasoning)
 	if #lines > 0 then
 		table.insert(lines, NuiLine())
 	end
+	done({ bytes = #reasoning, lines = #lines })
 	return lines
 end
 
@@ -598,9 +640,11 @@ end
 ---@param _opts? table
 ---@return NuiLine[]
 function M.render_content(content, _opts)
+	local done = perf.start("chat.render.render_content")
 	local opts = _opts or {}
 	local lines = {}
 	if not content or content == "" then
+		done({ bytes = 0, lines = 0, skipped = true })
 		return lines
 	end
 
@@ -618,6 +662,12 @@ function M.render_content(content, _opts)
 		})
 	end
 
+	done({
+		bytes = #content,
+		lines = #lines,
+		stream_plain = opts.stream_plain == true,
+		highlights = type(lines._opencode_highlights) == "table" and #lines._opencode_highlights or 0,
+	})
 	return lines
 end
 
@@ -626,6 +676,7 @@ end
 ---@param is_expanded boolean
 ---@return table { lines: string[], highlights: table[] }
 function M.render_tool_line(tool_part, is_expanded)
+	local done = perf.start("chat.render.render_tool_line." .. tostring(tool_part and tool_part.tool or "unknown"))
 	local tool_name = tool_part.tool or "unknown"
 	local tool_status = tool_part.state and tool_part.state.status or "pending"
 
@@ -731,7 +782,14 @@ function M.render_tool_line(tool_part, is_expanded)
 		end
 	end
 
-	return { lines = result_lines, highlights = result_highlights }
+	local result = { lines = result_lines, highlights = result_highlights }
+	done({
+		tool = tool_name,
+		expanded = is_expanded == true,
+		lines = #result_lines,
+		highlights = #result_highlights,
+	})
+	return result
 end
 
 -- ─── NuiLine utilities ────────────────────────────────────────────────────────
@@ -753,7 +811,9 @@ end
 ---@param ns_id number
 ---@param start_line number 0-indexed
 function M.apply_highlights(nui_lines, bufnr, ns_id, start_line)
+	local done = perf.start("chat.render.apply_highlights")
 	if not bufnr or not vim.api.nvim_buf_is_valid(bufnr) then
+		done({ skipped = true, reason = "invalid_buffer" })
 		return
 	end
 
@@ -765,6 +825,7 @@ function M.apply_highlights(nui_lines, bufnr, ns_id, start_line)
 		end
 	end
 	M.apply_extmark_highlights(bufnr, ns_id, nui_lines._opencode_highlights, start_line)
+	done({ lines = #nui_lines, start_line = start_line })
 end
 
 ---@param bufnr number
@@ -776,6 +837,7 @@ function M.apply_extmark_highlights(bufnr, ns_id, highlights, start_line, opts)
 	if type(highlights) ~= "table" then
 		return
 	end
+	local done = perf.start("chat.render.apply_extmark_highlights")
 
 	opts = opts or {}
 	local min_line = opts.min_line
@@ -817,6 +879,12 @@ function M.apply_extmark_highlights(bufnr, ns_id, highlights, start_line, opts)
 			end
 		end
 	end
+	done({
+		highlights = #highlights,
+		start_line = start_line,
+		min_line = min_line,
+		max_line = max_line,
+	})
 end
 
 ---Shift positions in a line map when content above them changes size.
@@ -1049,6 +1117,7 @@ end
 ---@param opts? table { spinner_frame?: string|nil, duration_ms?: number|nil, duration_calculated?: boolean }
 ---@return NuiLine
 function M.render_metadata_footer(message, messages, opts)
+	local done = perf.start("chat.render.render_metadata_footer")
 	opts = opts or {}
 	local agent_name = message.mode or message.agent or "unknown"
 	local agent_id = message.agent or message.mode or "unknown"
@@ -1094,6 +1163,13 @@ function M.render_metadata_footer(message, messages, opts)
 		line:append(NuiText(" · ", "Comment"))
 		line:append(NuiText("interrupted", "Comment"))
 	end
+	done({
+		message_id = message and message.id,
+		messages = #(messages or {}),
+		has_model = model ~= nil,
+		has_token_usage = token_usage ~= nil,
+		spinner = spinner_frame ~= nil,
+	})
 	return line
 end
 

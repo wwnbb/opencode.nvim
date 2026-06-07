@@ -3,6 +3,7 @@
 -- Uses binary search for efficient lookups like the TUI implementation
 
 local M = {}
+local perf = require("opencode.perf")
 
 ---@class SyncStore
 ---@field message table<string, Message[]> Messages by sessionID
@@ -194,6 +195,13 @@ end
 local function bump_part_revision(message_id, part_id, session_id)
 	bump_message_revision(message_id, session_id)
 	bump_revision(store.part_revision, part_revision_key(message_id, part_id))
+end
+
+---@param old_value any
+---@param new_value any
+---@return boolean
+local function values_changed(old_value, new_value)
+	return not vim.deep_equal(old_value, new_value)
 end
 
 ---@param message_id string|nil
@@ -396,10 +404,13 @@ end
 ---@param parts Part[]|nil
 ---@return Part[]
 local function materialize_parts(parts)
+	local done = perf.start("sync.materialize_parts")
 	for _, part in ipairs(parts or {}) do
 		materialize_part(part)
 	end
-	return parts or {}
+	local result = parts or {}
+	done({ parts = #result })
+	return result
 end
 
 ---@param message_id string|nil
@@ -590,16 +601,19 @@ end
 
 ---Handle message.updated event (mirrors TUI sync.tsx:228-265)
 ---@param info Message
+---@return boolean changed
 function M.handle_message_updated(info)
 	local session_id = info.sessionID
 	if not session_id then
-		return
+		return false
 	end
 
 	local messages = store.message[session_id]
+	local changed = false
 	local previous_session_id = store.message_session[info.id]
 	if previous_session_id and previous_session_id ~= session_id then
 		M.handle_message_removed(previous_session_id, info.id)
+		changed = true
 	end
 
 	-- If no messages for this session, create array with this message
@@ -607,7 +621,7 @@ function M.handle_message_updated(info)
 		store.message[session_id] = { info }
 		index_message_session(session_id, info.id)
 		bump_message_revision(info.id, session_id)
-		return
+		return true
 	end
 
 	-- Binary search for existing message
@@ -615,14 +629,20 @@ function M.handle_message_updated(info)
 
 	if result.found then
 		-- Update existing message (reconcile)
-		messages[result.index] = vim.tbl_deep_extend("force", messages[result.index], info)
+		local current = messages[result.index]
+		local merged = vim.tbl_deep_extend("force", current, info)
+		changed = values_changed(current, merged)
+		messages[result.index] = merged
 		index_message_session(session_id, info.id)
-		bump_message_revision(info.id, session_id)
+		if changed then
+			bump_message_revision(info.id, session_id)
+		end
 	else
 		-- Insert new message at correct position (maintains sorted order)
 		table.insert(messages, result.index, info)
 		index_message_session(session_id, info.id)
 		bump_message_revision(info.id, session_id)
+		changed = true
 
 		-- Limit to 100 messages per session (like TUI)
 		if #messages > 100 then
@@ -636,6 +656,7 @@ function M.handle_message_updated(info)
 			clear_message_revisions(oldest.id)
 		end
 	end
+	return changed
 end
 
 ---Handle message.removed event (mirrors TUI sync.tsx:267-279)
@@ -667,10 +688,11 @@ end
 
 ---Handle message.part.updated event (mirrors TUI sync.tsx:281-299)
 ---@param part Part
+---@return boolean changed
 function M.handle_part_updated(part)
 	local message_id = part.messageID
 	if not message_id then
-		return
+		return false
 	end
 
 	ensure_message_for_part(part)
@@ -683,7 +705,7 @@ function M.handle_part_updated(part)
 		clear_part_delta_buffers(message_id, part.id)
 		index_task_child(part)
 		bump_part_revision(message_id, part.id, part.sessionID)
-		return
+		return true
 	end
 
 	-- Binary search for existing part
@@ -705,16 +727,22 @@ function M.handle_part_updated(part)
 		preserve_summary_path(dest, src, merged, { "state", "metadata", "summary" })
 		preserve_summary_path(dest, src, merged, { "metadata", "summary" })
 
+		local changed = values_changed(dest, merged)
 		parts[result.index] = merged
 		clear_part_delta_buffers(message_id, part.id)
 		index_task_child(merged)
+		if changed then
+			bump_part_revision(message_id, part.id, part.sessionID)
+		end
+		return changed
 	else
 		-- Insert new part at correct position
 		table.insert(parts, result.index, part)
 		clear_part_delta_buffers(message_id, part.id)
 		index_task_child(part)
+		bump_part_revision(message_id, part.id, part.sessionID)
+		return true
 	end
-	bump_part_revision(message_id, part.id, part.sessionID)
 end
 
 ---Handle message.part.delta event by appending streamed text to an existing part field.
@@ -722,12 +750,14 @@ end
 ---@param part_delta PartDelta
 ---@return Part|nil
 function M.handle_part_delta(part_delta)
+	local done = perf.start("sync.handle_part_delta")
 	local message_id = part_delta.messageID
 	local part_id = part_delta.partID
 	local field = part_delta.field
 	local delta = part_delta.delta
 
 	if not message_id or not part_id or not field or type(delta) ~= "string" then
+		done({ ignored = true })
 		return nil
 	end
 
@@ -756,6 +786,13 @@ function M.handle_part_delta(part_delta)
 	end
 	buffer_part_delta(message_id, part_id, field, delta)
 	bump_part_revision(message_id, part_id, part.sessionID)
+	done({
+		message_id = message_id,
+		part_id = part_id,
+		field = field,
+		delta_bytes = #delta,
+		parts = #parts,
+	})
 	return part
 end
 
@@ -784,20 +821,24 @@ end
 ---@param messages table[]|nil
 ---@return number message_count
 ---@return number part_count
+---@return number changed_count
 function M.handle_session_messages(session_id, messages)
 	if type(messages) ~= "table" then
-		return 0, 0
+		return 0, 0, 0
 	end
 
 	local message_count = 0
 	local part_count = 0
+	local changed_count = 0
 
 	for _, msg_with_parts in ipairs(messages) do
 		if type(msg_with_parts) == "table" then
 			local info = msg_with_parts.info or msg_with_parts
 			if type(info) == "table" and info.id then
 				info.sessionID = info.sessionID or session_id
-				M.handle_message_updated(info)
+				if M.handle_message_updated(info) then
+					changed_count = changed_count + 1
+				end
 				message_count = message_count + 1
 			end
 
@@ -805,7 +846,9 @@ function M.handle_session_messages(session_id, messages)
 				for _, part in ipairs(msg_with_parts.parts) do
 					if type(part) == "table" then
 						part.sessionID = part.sessionID or (info and info.sessionID) or session_id
-						M.handle_part_updated(part)
+						if M.handle_part_updated(part) then
+							changed_count = changed_count + 1
+						end
 						part_count = part_count + 1
 					end
 				end
@@ -813,7 +856,7 @@ function M.handle_session_messages(session_id, messages)
 		end
 	end
 
-	return message_count, part_count
+	return message_count, part_count, changed_count
 end
 
 ---Handle session.status event (mirrors TUI sync.tsx:223-225)
@@ -895,7 +938,10 @@ end
 ---@param message_id string
 ---@return Part[]
 function M.get_parts(message_id)
-	return materialize_parts(store.part[message_id])
+	local done = perf.start("sync.get_parts")
+	local parts = materialize_parts(store.part[message_id])
+	done({ message_id = message_id, parts = #parts })
+	return parts
 end
 
 ---Get a specific part
@@ -921,6 +967,7 @@ end
 ---@param opts? { include_synthetic?: boolean }
 ---@return { content: string, reasoning: string, tool_parts: Part[], parts: Part[], message_revision: number, part_revisions: table<string, number> }
 function M.get_message_render_parts(message_id, opts)
+	local done = perf.start("sync.get_message_render_parts")
 	opts = opts or {}
 	local parts = materialize_parts(store.part[message_id])
 	local text_parts = {}
@@ -942,7 +989,7 @@ function M.get_message_render_parts(message_id, opts)
 		end
 	end
 
-	return {
+	local result = {
 		content = table.concat(text_parts, ""),
 		reasoning = table.concat(reasoning_parts, ""),
 		tool_parts = tool_parts,
@@ -950,6 +997,16 @@ function M.get_message_render_parts(message_id, opts)
 		message_revision = store.message_revision[message_id] or 0,
 		part_revisions = part_revisions,
 	}
+	done({
+		message_id = message_id,
+		parts = #parts,
+		text_parts = #text_parts,
+		reasoning_parts = #reasoning_parts,
+		tool_parts = #tool_parts,
+		content_bytes = #result.content,
+		reasoning_bytes = #result.reasoning,
+	})
+	return result
 end
 
 ---Get assembled text content for a message (from all text parts)

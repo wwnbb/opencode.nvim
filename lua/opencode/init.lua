@@ -823,8 +823,9 @@ function M.send(message, opts)
 
 					local message_count = 0
 					local part_count = 0
+					local changed_count = 0
 					if sync_ok and sync.handle_session_messages then
-						message_count, part_count = sync.handle_session_messages(sid, messages)
+						message_count, part_count, changed_count = sync.handle_session_messages(sid, messages)
 						session_actions.set_message_cache(sid, messages, {
 							reason = reason,
 						})
@@ -835,9 +836,10 @@ function M.send(message, opts)
 						reason = reason,
 						message_count = message_count,
 						part_count = part_count,
+						changed_count = changed_count,
 					})
 
-					if events and events.emit then
+					if changed_count > 0 and events and events.emit then
 						events.emit("sync_changed", {
 							kind = "session_messages",
 							action = reason,

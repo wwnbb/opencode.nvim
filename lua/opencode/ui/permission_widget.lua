@@ -24,6 +24,8 @@ local OPTION_LABELS = {
 	"Allow always",
 	"Reject",
 }
+local MAX_PERMISSION_COMMAND_HEAD_LINES = 8
+local MAX_PERMISSION_COMMAND_TAIL_LINES = 4
 
 local panel_helpers = panel.create_helpers({
 	prefix = PANEL_PREFIX,
@@ -456,18 +458,38 @@ end
 ---@param lines table
 ---@param label string
 ---@param value string
+---@param opts? { head_lines?: number, tail_lines?: number }
 ---@return table
-local function with_detail_lines(lines, label, value)
+local function with_detail_lines(lines, label, value, opts)
 	if value == "" then
 		return lines
 	end
 
 	local parts = vim.split(value, "\n", { plain = true })
-	for i, part in ipairs(parts) do
-		local prefix = i == 1 and string.format("  %s: ", label) or string.rep(" ", #label + 4)
+	local function add_part(part, index)
+		local prefix = index == 1 and string.format("  %s: ", label) or string.rep(" ", #label + 4)
 		table.insert(lines, prefix .. part)
 	end
 
+	opts = opts or {}
+	local head_lines = tonumber(opts.head_lines) or 0
+	local tail_lines = tonumber(opts.tail_lines) or 0
+	local max_lines = head_lines + tail_lines
+	if max_lines > 0 and #parts > max_lines then
+		for i = 1, head_lines do
+			add_part(parts[i] or "", i)
+		end
+		local hidden = #parts - max_lines
+		table.insert(lines, string.rep(" ", #label + 4) .. "... (" .. tostring(hidden) .. " command lines hidden)")
+		for i = #parts - tail_lines + 1, #parts do
+			add_part(parts[i] or "", i)
+		end
+		return lines
+	end
+
+	for i, part in ipairs(parts) do
+		add_part(part, i)
+	end
 	return lines
 end
 
@@ -491,7 +513,14 @@ end
 ---@param perm_state? table
 ---@return table
 local function with_common_tool_details(lines, permission_type, tool_input, perm_state)
-	lines = with_detail_lines(lines, "Command", tool_input.command or "")
+	local command_opts = nil
+	if permission_type == "bash" then
+		command_opts = {
+			head_lines = MAX_PERMISSION_COMMAND_HEAD_LINES,
+			tail_lines = MAX_PERMISSION_COMMAND_TAIL_LINES,
+		}
+	end
+	lines = with_detail_lines(lines, "Command", tool_input.command or "", command_opts)
 	lines = with_path_line(lines, get_permission_path(permission_type, tool_input, perm_state))
 	lines = with_detail_lines(lines, "Pattern", tool_input.pattern or "")
 	lines = with_detail_lines(lines, "Type", tool_input.type or "")

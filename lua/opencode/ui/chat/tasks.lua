@@ -16,6 +16,7 @@ local chat_rg = require("opencode.ui.chat.rg")
 local chat_file_edit_results = require("opencode.ui.chat.file_edit_results")
 local edit_state = require("opencode.edit.state")
 local actions = require("opencode.actions")
+local perf = require("opencode.perf")
 
 local REGULAR_TOOL_RENDERERS = {
 	chat_todos.render_tool,
@@ -34,6 +35,7 @@ local TASK_COMPLETE_ICON = "✓"
 local TASK_CANCELLED_ICON = "✕"
 local TASK_ERROR_ICON = "✗"
 local TASK_HIGHLIGHT_PRIORITY = 4200
+local MAX_REGULAR_TOOL_ANIMATION_RENDER_LINES = 120
 
 function M.get_task_anim_frame()
 	return TASK_ANIM_FRAMES[state.task_anim_frame] or TASK_ANIM_FRAMES[1]
@@ -583,6 +585,7 @@ end
 --     ↳ Grep nvim_create_user_command
 --
 function M.render_task_tool(tool_part, expanded)
+	local done = perf.start("chat.tasks.render_task_tool")
 	local input = tool_part.state and tool_part.state.input or {}
 	local metadata = render.get_tool_metadata(tool_part)
 	local tool_status = tool_part.state and tool_part.state.status or "pending"
@@ -724,7 +727,16 @@ function M.render_task_tool(tool_part, expanded)
 		local line = working and (task_frame .. " Delegating...")
 			or (get_task_status_icon(tool_status) .. " " .. agent_label .. " Task")
 		add_line(line, tool_status == "error" and "DiagnosticError" or "Comment")
-		return { lines = result_lines, highlights = result_highlights }
+		local result = { lines = result_lines, highlights = result_highlights }
+		done({
+			status = tool_status,
+			subagent = subagent,
+			expanded = expanded == true,
+			lines = #result_lines,
+			highlights = #result_highlights,
+			empty_description = true,
+		})
+		return result
 	end
 
 	local line_hl = "Comment"
@@ -789,7 +801,17 @@ function M.render_task_tool(tool_part, expanded)
 		add_line("", nil)
 	end
 
-	return { lines = result_lines, highlights = result_highlights }
+	local result = { lines = result_lines, highlights = result_highlights }
+	done({
+		status = tool_status,
+		subagent = subagent,
+		expanded = expanded == true,
+		child_session_id = child_session_id,
+		summary = #summary,
+		lines = #result_lines,
+		highlights = #result_highlights,
+	})
+	return result
 end
 
 ---Render a regular non-task tool through specialized widgets before generic I/O.
@@ -797,13 +819,31 @@ end
 ---@param is_expanded boolean
 ---@return table { lines: string[], highlights: table[] }
 function M.render_regular_tool(tool_part, is_expanded)
+	local tool_name = tostring(tool_part and tool_part.tool or "unknown")
+	local done = perf.start("chat.tasks.render_regular_tool." .. tool_name)
 	for _, render_tool in ipairs(REGULAR_TOOL_RENDERERS) do
+		local done_try = perf.start("chat.tasks.render_regular_tool.try." .. tool_name)
 		local result = render_tool(tool_part, is_expanded)
+		done_try({ tool = tool_name, matched = result ~= nil })
 		if result then
+			done({
+				tool = tool_name,
+				expanded = is_expanded == true,
+				lines = #(result.lines or {}),
+				highlights = #(result.highlights or {}),
+			})
 			return result
 		end
 	end
-	return render.render_tool_line(tool_part, is_expanded)
+	local result = render.render_tool_line(tool_part, is_expanded)
+	done({
+		tool = tool_name,
+		expanded = is_expanded == true,
+		lines = #(result.lines or {}),
+		highlights = #(result.highlights or {}),
+		fallback = true,
+	})
+	return result
 end
 
 -- ─── Child session resolution ─────────────────────────────────────────────────
@@ -1092,6 +1132,9 @@ local function update_animating_blocks(positions, top_line, bottom_line, render_
 	for part_id, pos in pairs(positions) do
 		if M.is_animating_tool_part(pos and pos.tool_part) and block_is_visible(pos, top_line, bottom_line) then
 			local result = render_block(part_id, pos)
+			if result == nil then
+				goto continue
+			end
 			if #result.lines ~= (pos.end_line - pos.start_line + 1) then
 				rerender_block(part_id)
 				updated = true
@@ -1099,6 +1142,7 @@ local function update_animating_blocks(positions, top_line, bottom_line, render_
 				updated = update_block_lines_in_place(pos, result) or updated
 			end
 		end
+		::continue::
 	end
 
 	return updated
@@ -1106,7 +1150,9 @@ end
 
 ---@return boolean updated
 function M.update_active_animations_in_place()
+	local done = perf.start("chat.tasks.update_active_animations_in_place")
 	if not state.visible or not state.bufnr or not vim.api.nvim_buf_is_valid(state.bufnr) then
+		done({ skipped = true })
 		return false
 	end
 	local top_line, bottom_line = get_visible_line_range()
@@ -1115,10 +1161,15 @@ function M.update_active_animations_in_place()
 	end, M.rerender_task)
 
 	local tools_updated = update_animating_blocks(state.tools, top_line, bottom_line, function(part_id, pos)
+		if (pos.end_line - pos.start_line + 1) > MAX_REGULAR_TOOL_ANIMATION_RENDER_LINES then
+			return nil
+		end
 		return M.render_regular_tool(pos.tool_part, state.expanded_tools[part_id] or false)
 	end, M.rerender_tool)
 
-	return tasks_updated or tools_updated
+	local updated = tasks_updated or tools_updated
+	done({ updated = updated, top_line = top_line, bottom_line = bottom_line })
+	return updated
 end
 
 local function shift_all_after(anchor_start, delta, skip_task_id, skip_tool_id)
@@ -1162,6 +1213,7 @@ end
 ---@param skip_task_id string|nil
 ---@param skip_tool_id string|nil
 local function replace_rendered_block(pos, result, skip_task_id, skip_tool_id)
+	local done = perf.start("chat.tasks.replace_rendered_block")
 	result = sanitize_result_lines(result)
 	local old_line_count = pos.end_line - pos.start_line + 1
 	local new_line_count = #result.lines
@@ -1177,22 +1229,32 @@ local function replace_rendered_block(pos, result, skip_task_id, skip_tool_id)
 	pos.end_line = pos.start_line + new_line_count - 1
 	pos.highlights = result.highlights
 	shift_all_after(pos.start_line, delta, skip_task_id, skip_tool_id)
+	done({
+		old_lines = old_line_count,
+		new_lines = new_line_count,
+		delta = delta,
+		highlights = #(result.highlights or {}),
+	})
 end
 
 ---Re-render a task widget in place (expand/collapse).
 ---@param part_id string
 function M.rerender_task(part_id)
+	local done = perf.start("chat.tasks.rerender_task")
 	if not state.bufnr or not vim.api.nvim_buf_is_valid(state.bufnr) then
+		done({ part_id = part_id, skipped = true, reason = "invalid_buffer" })
 		return
 	end
 
 	local pos = state.tasks[part_id]
 	if not pos then
+		done({ part_id = part_id, skipped = true, reason = "missing_position" })
 		return
 	end
 
 	local is_expanded = state.expanded_tasks[part_id] or false
 	replace_rendered_block(pos, M.render_task_tool(pos.tool_part, is_expanded), part_id, nil)
+	done({ part_id = part_id, expanded = is_expanded == true })
 end
 
 ---Handle task toggle (expand/collapse child session content).
@@ -1246,17 +1308,25 @@ end
 ---Re-render a regular tool widget in place (expand/collapse).
 ---@param part_id string
 function M.rerender_tool(part_id)
+	local done = perf.start("chat.tasks.rerender_tool")
 	if not state.bufnr or not vim.api.nvim_buf_is_valid(state.bufnr) then
+		done({ part_id = part_id, skipped = true, reason = "invalid_buffer" })
 		return
 	end
 
 	local pos = state.tools[part_id]
 	if not pos then
+		done({ part_id = part_id, skipped = true, reason = "missing_position" })
 		return
 	end
 
 	local is_expanded = state.expanded_tools[part_id] or false
 	replace_rendered_block(pos, M.render_regular_tool(pos.tool_part, is_expanded), nil, part_id)
+	done({
+		part_id = part_id,
+		tool = pos.tool_part and pos.tool_part.tool,
+		expanded = is_expanded == true,
+	})
 end
 
 ---Handle tool toggle (expand/collapse tool input/output).

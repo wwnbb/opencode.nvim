@@ -49,6 +49,8 @@ M.defaults = {
 		position = "right",
 		width = 80,
 		height = 20,
+		max_rendered_messages = 60,
+		max_user_message_lines = 120,
 		close_on_focus_lost = true,
 		message_display = {
 			user_prefix = "> ",
@@ -123,6 +125,7 @@ M.defaults = {
 	-- Best-effort syntax highlighting for code-like chat surfaces
 	syntax = {
 		enabled = true,
+		min_bytes = 24,
 		max_lines = 500,
 		max_bytes = 200 * 1024,
 		assistant_markdown = true,

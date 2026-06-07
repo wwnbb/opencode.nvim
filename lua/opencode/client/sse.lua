@@ -71,6 +71,17 @@ local function reset_current_event()
 	}
 end
 
+local function log_raw_event(event, payload)
+	local ok, logger = pcall(require, "opencode.logger")
+	if ok and type(logger.raw_server) == "function" then
+		logger.raw_server(
+			string.format("SSE %s %s", M.opts.endpoint or "/global/event", tostring(event.event or "message")),
+			payload,
+			event.id and { id = event.id } or nil
+		)
+	end
+end
+
 ---@param directory string|nil
 ---@return string|nil
 local function normalize_directory(directory)
@@ -113,6 +124,8 @@ local function emit_current_event()
 	end
 
 	local payload = table.concat(event.data_lines, "\n")
+	log_raw_event(event, payload)
+
 	local ok, parsed = pcall(vim.json.decode, payload)
 	if ok and parsed then
 		M.emit(event.event, parsed, event.id)

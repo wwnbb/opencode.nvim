@@ -2,8 +2,9 @@ local M = {}
 
 local cs = require("opencode.ui.chat.state")
 local state = cs.state
+local perf = require("opencode.perf")
 
-local RENDER_CACHE_MAX_BLOCKS = 300
+local RENDER_CACHE_MAX_BLOCKS = 1000
 
 function M.ensure_render_cache()
 	if type(state.render_cache) ~= "table" then
@@ -19,7 +20,7 @@ function M.clear_render_cache()
 	state.last_render_highlight_signature = nil
 end
 
----@param opts? table { reset_expansions?: boolean }
+---@param opts? table { reset_expansions?: boolean, preserve_render_cache?: boolean, force_full_render?: boolean }
 function M.reset_chat_surface(opts)
 	opts = opts or {}
 	state.questions = {}
@@ -34,8 +35,12 @@ function M.reset_chat_surface(opts)
 	end
 	state.stream_blocks = {}
 	state.spinner_footer_line = nil
-	state.force_full_render = true
-	M.clear_render_cache()
+	if opts.force_full_render ~= false then
+		state.force_full_render = true
+	end
+	if not opts.preserve_render_cache then
+		M.clear_render_cache()
+	end
 end
 
 ---@param ... any
@@ -61,8 +66,11 @@ end
 
 ---@param key string|nil
 function M.render_cache_get(key)
+	local done = perf.start("chat.render_state.render_cache_get")
 	local cache = M.ensure_render_cache()
-	return cache.blocks[key]
+	local value = cache.blocks[key]
+	done({ hit = value ~= nil })
+	return value
 end
 
 ---@param key string|nil
@@ -71,6 +79,7 @@ function M.render_cache_put(key, value)
 	if not key or not value then
 		return value
 	end
+	local done = perf.start("chat.render_state.render_cache_put")
 	local cache = M.ensure_render_cache()
 	if cache.blocks[key] == nil then
 		table.insert(cache.order, key)
@@ -80,6 +89,7 @@ function M.render_cache_put(key, value)
 		local oldest = table.remove(cache.order, 1)
 		cache.blocks[oldest] = nil
 	end
+	done({ cache_size = #cache.order })
 	return value
 end
 
@@ -114,6 +124,7 @@ end
 ---@param content_highlights table|nil
 ---@return string
 function M.render_highlight_signature(content_highlights)
+	local done = perf.start("chat.render_state.render_highlight_signature")
 	local parts = {}
 	if type(content_highlights) == "table" and content_highlights._opencode_signature then
 		table.insert(parts, tostring(content_highlights._opencode_signature))
@@ -137,13 +148,16 @@ function M.render_highlight_signature(content_highlights)
 	for _, line_map in ipairs({ state.questions, state.permissions, state.edits, state.tasks, state.tools }) do
 		append_line_map(line_map)
 	end
-	return table.concat(parts, "|")
+	local result = table.concat(parts, "|")
+	done({ parts = #parts, bytes = #result })
+	return result
 end
 
 ---@param changed_start number|nil
 ---@param content_highlights table|nil
 ---@return number
 function M.highlight_clear_start(changed_start, content_highlights)
+	local done = perf.start("chat.render_state.highlight_clear_start")
 	local clear_start = changed_start or 0
 	local function consider(highlights, start_line)
 		local moved = false
@@ -173,7 +187,9 @@ function M.highlight_clear_start(changed_start, content_highlights)
 			end
 		end
 	end
-	return math.max(0, clear_start)
+	local result = math.max(0, clear_start)
+	done({ changed_start = changed_start, clear_start = result })
+	return result
 end
 
 return M
