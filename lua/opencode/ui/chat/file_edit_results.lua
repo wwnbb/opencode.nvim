@@ -532,13 +532,14 @@ end
 ---@param result table
 ---@param text string
 ---@param hl_group string|nil
+---@param opts table|nil
 ---@return number line_index
 ---@return string line
-local function add_line(result, text, hl_group)
+local function add_line(result, text, hl_group, opts)
 	if text == "" then
 		return render.add_panel_blank(result, hl_group)
 	end
-	return render.add_panel_line(result, text, hl_group)
+	return render.add_panel_line(result, text, hl_group, opts)
 end
 
 ---@param result table
@@ -963,7 +964,7 @@ end
 ---@return table
 local function render_pending()
 	local result = { lines = {}, highlights = {} }
-	add_line(result, "~ Preparing file changes...", "Comment")
+	add_line(result, "~ Preparing file changes...", "Comment", { prefix = "   " })
 	return result
 end
 

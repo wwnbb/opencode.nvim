@@ -6,9 +6,6 @@ local M = {}
 -- Log storage
 local logs = {}
 local DEFAULT_MAX_ENTRIES = 1000
-local LOG_DIR = vim.fn.expand("~/.nvim/opencode/logs")
-local LOG_FILE = LOG_DIR .. "/opencode.nvim.log"
-local log_dir_ready = false
 
 -- Log levels
 M.levels = {
@@ -47,27 +44,6 @@ local function trim_logs()
 	end
 end
 
-local function append_to_file(entry)
-	if not log_dir_ready then
-		pcall(vim.fn.mkdir, LOG_DIR, "p")
-		log_dir_ready = true
-	end
-
-	local file = io.open(LOG_FILE, "a")
-	if not file then
-		return
-	end
-
-	local line = string.format("%s [%s] %s", os.date("%Y-%m-%d %H:%M:%S", entry.time_raw), entry.level, entry.message)
-	if entry.data ~= nil then
-		local ok, encoded = pcall(vim.json.encode, entry.data)
-		line = line .. " " .. (ok and encoded or vim.inspect(entry.data))
-	end
-
-	file:write(line .. "\n")
-	file:close()
-end
-
 -- Add a log entry
 ---@param level string Log level (DEBUG, INFO, WARN, ERROR)
 ---@param message string Log message
@@ -83,7 +59,6 @@ function M.add(level, message, data)
 
 	table.insert(logs, entry)
 	trim_logs()
-	append_to_file(entry)
 
 	-- Notify log viewer of new entry if visible
 	local viewer_ok, viewer = pcall(require, "opencode.ui.log_viewer")

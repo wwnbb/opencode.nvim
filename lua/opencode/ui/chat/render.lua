@@ -646,6 +646,7 @@ function M.render_tool_line(tool_part, is_expanded)
 	local result_highlights = {}
 
 	local function add_hl_line(text, hl_group)
+		text = M.sanitize_buffer_line(text)
 		table.insert(result_lines, text)
 		if hl_group then
 			table.insert(result_highlights, {

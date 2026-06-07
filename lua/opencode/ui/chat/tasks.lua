@@ -660,6 +660,7 @@ function M.render_task_tool(tool_part, expanded)
 	local result_highlights = {}
 
 	local function add_line(text, hl_group)
+		text = render.sanitize_buffer_line(text)
 		table.insert(result_lines, text)
 		if hl_group then
 			table.insert(result_highlights, {
@@ -677,7 +678,7 @@ function M.render_task_tool(tool_part, expanded)
 		local spans = {}
 		local col = 0
 		for _, segment in ipairs(segments) do
-			local text = segment.text or ""
+			local text = render.sanitize_buffer_line(segment.text)
 			if text ~= "" then
 				table.insert(line, text)
 				if segment.hl_group then
@@ -950,6 +951,14 @@ local function apply_result_highlights(result, pos)
 	render.apply_extmark_highlights(state.bufnr, chat_hl_ns, result.highlights, pos.start_line)
 end
 
+local function sanitize_result_lines(result)
+	result.lines = result.lines or {}
+	for i, line in ipairs(result.lines) do
+		result.lines[i] = render.sanitize_buffer_line(line)
+	end
+	return result
+end
+
 ---@return number|nil top_line
 ---@return number|nil bottom_line
 local function get_visible_line_range()
@@ -1012,6 +1021,7 @@ local function update_block_lines_in_place(pos, result)
 	if not state.bufnr or not vim.api.nvim_buf_is_valid(state.bufnr) then
 		return false
 	end
+	result = sanitize_result_lines(result)
 	local new_lines = result.lines or {}
 	local old_count = pos.end_line - pos.start_line + 1
 	if old_count ~= #new_lines then
@@ -1152,6 +1162,7 @@ end
 ---@param skip_task_id string|nil
 ---@param skip_tool_id string|nil
 local function replace_rendered_block(pos, result, skip_task_id, skip_tool_id)
+	result = sanitize_result_lines(result)
 	local old_line_count = pos.end_line - pos.start_line + 1
 	local new_line_count = #result.lines
 	local delta = new_line_count - old_line_count

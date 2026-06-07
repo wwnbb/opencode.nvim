@@ -127,7 +127,12 @@ function M.setup(events)
 	events_ref = events
 
 	events.on("sync_changed", function(data)
-		if type(data) == "table" and data.kind == "part" and data.action == "updated" then
+		if
+			type(data) == "table"
+			and data.kind == "part"
+			and data.action == "updated"
+			and type(data.delta) == "string"
+		then
 			M.request_stream_update(data)
 			return
 		end

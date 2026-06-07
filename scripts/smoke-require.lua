@@ -518,6 +518,7 @@ end
 local render = require("opencode.ui.chat.render")
 local binary_line = "PAR1" .. string.char(0) .. "data"
 assert(render.sanitize_buffer_line(binary_line) == "PAR1<NUL>data", "NUL byte was not sanitized")
+assert(render.sanitize_buffer_line("one\ntwo\r\nthree") == "one ↵ two ↵ three", "newlines were not sanitized")
 local wrapped_binary = render.wrap_text_with_ranges(binary_line, 80)
 assert(wrapped_binary[1].text == "PAR1<NUL>data", "binary line did not wrap as sanitized text")
 local panel_result = { lines = {}, highlights = {} }
@@ -527,8 +528,107 @@ assert(
 )
 assert(not panel_result.lines[1]:find(string.char(0), 1, true), "panel line kept a raw NUL byte")
 
+local function assert_no_buffer_newlines(lines, message)
+	for _, line_text in ipairs(lines) do
+		assert(not line_text:find("\n", 1, true), message .. " kept a raw LF")
+		assert(not line_text:find("\r", 1, true), message .. " kept a raw CR")
+	end
+end
+
+local chat_tasks = require("opencode.ui.chat.tasks")
+local multiline_task = chat_tasks.render_task_tool({
+	id = "task_newline",
+	tool = "task",
+	state = {
+		status = "running",
+		input = {
+			subagent_type = "build",
+			description = "Investigate\nnewline crash",
+		},
+		metadata = {
+			summary = {
+				{
+					id = "1",
+					tool = "bash",
+					state = {
+						status = "running",
+						title = "Run\nchecks",
+						input = {},
+					},
+				},
+			},
+		},
+	},
+}, false)
+assert_no_buffer_newlines(multiline_task.lines, "task renderer")
+assert(multiline_task.lines[1]:find("Investigate ↵ newline crash", 1, true), "task description was not sanitized")
+assert(multiline_task.lines[2]:find("Run ↵ checks", 1, true), "task summary title was not sanitized")
+
+local generic_tool = render.render_tool_line({
+	tool = "custom",
+	input = {
+		description = "Generated\nheader",
+	},
+	state = {
+		status = "running",
+		input = {
+			payload = "body\nvalue",
+		},
+		output = "output\r\nvalue",
+		error = "error\nvalue",
+	},
+}, true)
+assert_no_buffer_newlines(generic_tool.lines, "generic tool renderer")
+assert(generic_tool.lines[1]:find("Generated ↵ header", 1, true), "generic tool header was not sanitized")
+
 local function wait_until(predicate, message)
 	assert(vim.wait(500, predicate, 10), message)
+end
+
+do
+	local bus = require("opencode.events.bus")
+	local render_coordinator = require("opencode.ui.chat.render_coordinator")
+	bus.clear()
+	bus.clear_history()
+	render_coordinator.setup(bus)
+
+	local full_render_count = 0
+	local stream_render_count = 0
+	bus.on("chat_render", function()
+		full_render_count = full_render_count + 1
+	end)
+	bus.on("chat_stream_part_updated", function()
+		stream_render_count = stream_render_count + 1
+	end)
+
+	bus.emit("sync_changed", {
+		kind = "part",
+		action = "updated",
+		session_id = "stream_route_session",
+		message_id = "stream_route_message",
+		part_id = "stream_route_part",
+	})
+	wait_until(function()
+		return full_render_count == 1
+	end, "part.updated snapshots should request a full chat render")
+	assert(stream_render_count == 0, "part.updated snapshots should not use stream-only rendering")
+
+	bus.emit("sync_changed", {
+		kind = "part",
+		action = "updated",
+		session_id = "stream_route_session",
+		message_id = "stream_route_message",
+		part_id = "stream_route_part",
+		field = "text",
+		delta = "chunk",
+	})
+	wait_until(function()
+		return stream_render_count == 1
+	end, "part deltas should use stream-only rendering")
+	assert(full_render_count == 1, "part deltas should not force a full render")
+
+	bus.clear()
+	bus.clear_history()
 end
 
 do
