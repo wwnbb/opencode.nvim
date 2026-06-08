@@ -522,6 +522,146 @@ wait_for(function()
 	return not spinner.is_active()
 end, "question in visible session should stop spinner")
 
+local permission_request = require("opencode.events.handlers.permission_flow.request")
+local decoded_wire = assert(permission_request.decode({
+	requestID = "decoder_wire",
+	permission = "bash",
+	sessionID = "decoder_session",
+	messageID = "decoder_message",
+	callID = "decoder_call",
+	time = { created = 1000 },
+}))
+assert_eq(decoded_wire.id, "decoder_wire", "decoder should accept wire request id")
+assert_eq(decoded_wire.type, "bash", "decoder should accept wire permission type")
+assert_eq(decoded_wire.session_id, "decoder_session", "decoder should accept wire session id")
+assert_eq(decoded_wire.message_id, "decoder_message", "decoder should accept wire message id")
+assert_eq(decoded_wire.call_id, "decoder_call", "decoder should accept wire call id")
+
+local decoded_internal = assert(permission_request.decode({
+	request_id = "decoder_internal",
+	type = "grep",
+	session_id = "decoder_internal_session",
+	message_id = "decoder_internal_message",
+	call_id = "decoder_internal_call",
+}))
+assert_eq(decoded_internal.id, "decoder_internal", "decoder should accept internal request id")
+assert_eq(decoded_internal.session_id, "decoder_internal_session", "decoder should accept internal session id")
+assert_eq(decoded_internal.message_id, "decoder_internal_message", "decoder should accept internal message id")
+assert_eq(decoded_internal.call_id, "decoder_internal_call", "decoder should accept internal call id")
+
+local missing_id = permission_request.decode({ permission = "bash", sessionID = "decoder_session" })
+assert_eq(missing_id, nil, "decoder should reject missing request id")
+local missing_session = permission_request.decode({ requestID = "decoder_missing_session", permission = "bash" })
+assert_eq(missing_session, nil, "decoder should reject missing session id")
+
+bus.clear()
+bus.clear_history()
+state.reset()
+sync.clear_all()
+permission_state.clear_all()
+edit_state.clear_all()
+session_actions.set_active("flow_visible", "Flow Visible", { preserve_cache = true })
+require("opencode.events.handlers.permission").setup(bus)
+
+sync.handle_message_updated({
+	id = "flow_message",
+	sessionID = "flow_visible",
+	role = "assistant",
+	time = { created = 10 },
+})
+sync.handle_part_updated({
+	id = "flow_tool_part",
+	messageID = "flow_message",
+	sessionID = "flow_visible",
+	type = "tool",
+	tool = "bash",
+	callID = "flow_call",
+	state = { input = { command = "from sync" } },
+})
+bus.emit("permission", {
+	requestID = "flow_perm_sync",
+	permission = "bash",
+	messageID = "flow_message",
+	callID = "flow_call",
+	metadata = { input = { command = "from metadata" } },
+})
+wait_for(function()
+	return permission_state.has_permission("flow_perm_sync")
+end, "non-edit permission should be stored")
+assert_eq(
+	permission_state.get_permission("flow_perm_sync").tool_input.command,
+	"from sync",
+	"non-edit permission should prefer sync tool input"
+)
+
+bus.emit("permission", {
+	requestID = "flow_perm_metadata",
+	permission = "grep",
+	sessionID = "flow_visible",
+	metadata = { input = { query = "from metadata" } },
+})
+wait_for(function()
+	return permission_state.has_permission("flow_perm_metadata")
+end, "non-edit permission should use metadata input")
+assert_eq(
+	permission_state.get_permission("flow_perm_metadata").tool_input.query,
+	"from metadata",
+	"non-edit permission should retain metadata tool input"
+)
+
+bus.emit("permission", {
+	requestID = "flow_edit_native",
+	type = "neovim_edit",
+	sessionID = "flow_visible",
+	metadata = {
+		files = {
+			{ filePath = "README.md", before = "a", after = "b" },
+		},
+	},
+})
+wait_for(function()
+	return edit_state.get_edit("flow_edit_native") ~= nil
+end, "native edit permission should create edit state")
+assert_eq(edit_state.get_edit("flow_edit_native").review_mode, "interactive", "native edit should be interactive")
+
+bus.emit("permission", {
+	requestID = "flow_edit_readonly",
+	type = "edit",
+	sessionID = "flow_visible",
+	path = "README.md",
+	before = "a",
+	after = "b",
+})
+wait_for(function()
+	return edit_state.get_edit("flow_edit_readonly") ~= nil
+end, "plain edit permission should create edit state")
+assert_eq(edit_state.get_edit("flow_edit_readonly").review_mode, "readonly", "plain edit should be readonly")
+
+local function count_history(event_type, permission_id)
+	local count = 0
+	for _, entry in ipairs(bus.get_history()) do
+		if entry.type == event_type and type(entry.data) == "table" then
+			if entry.data.permission_id == permission_id or entry.data.id == permission_id then
+				count = count + 1
+			end
+		end
+	end
+	return count
+end
+
+bus.emit("permission", {
+	requestID = "flow_edit_native",
+	type = "neovim_edit",
+	sessionID = "flow_visible",
+	metadata = {
+		files = {
+			{ filePath = "README.md", before = "a", after = "b" },
+		},
+	},
+})
+vim.wait(50)
+assert_eq(count_history("edit_pending", "flow_edit_native"), 1, "duplicate edit permission should be ignored")
+
 bus.clear()
 bus.clear_history()
 local render_coordinator = require("opencode.ui.chat.render_coordinator")
