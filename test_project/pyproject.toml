@@ -1,0 +1,16 @@
+[project]
+name = "test-project"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.11.4"
+dependencies = [
+    "fastapi>=0.110,<1.0",
+    "uvicorn>=0.27,<1.0",
+]
+
+[project.optional-dependencies]
+test = [
+    "httpx>=0.27,<1.0",
+    "pytest>=8.0,<9.0",
+]

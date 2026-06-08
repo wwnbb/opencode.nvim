@@ -6,6 +6,7 @@ local cs = require("opencode.ui.chat.state")
 local state = cs.state
 local render = require("opencode.ui.chat.render")
 local render_state = require("opencode.ui.chat.render_state")
+local widget_support = require("opencode.ui.chat.widget_support")
 local sync = require("opencode.sync")
 
 local Context = {}
@@ -179,7 +180,7 @@ function Context:register_stream_block(message_id, part, kind, start_line)
 	if not block_key then
 		return
 	end
-	self.next_stream_blocks[block_key] = {
+	self.next_stream_blocks[block_key] = widget_support.mark_render_generation({
 		start_line = start_line,
 		end_line = #self.raw_lines - 1,
 		session_id = session_id,
@@ -188,7 +189,7 @@ function Context:register_stream_block(message_id, part, kind, start_line)
 		kind = kind,
 		chat_width = self.chat_width,
 		text_length = #(part.text or ""),
-	}
+	})
 end
 
 function Context:set_spinner_footer_line(line)

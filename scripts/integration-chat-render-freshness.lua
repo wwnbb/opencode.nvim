@@ -66,7 +66,9 @@ local session_actions = require("opencode.session")
 local sync = require("opencode.sync")
 local local_state = require("opencode.local")
 local chat = require("opencode.ui.chat")
-local chat_state = require("opencode.ui.chat.state").state
+local chat_state_mod = require("opencode.ui.chat.state")
+local chat_state = chat_state_mod.state
+local render_state = require("opencode.ui.chat.render_state")
 local client = require("opencode.client")
 local events = require("opencode.events")
 local spinner = require("opencode.ui.spinner")
@@ -115,6 +117,21 @@ end
 local function buffer_text()
 	local bufnr = chat.get_bufnr()
 	return table.concat(vim.api.nvim_buf_get_lines(bufnr, 0, -1, false), "\n")
+end
+
+local function count_chat_highlights(hl_group)
+	local bufnr = chat.get_bufnr()
+	if not bufnr or not vim.api.nvim_buf_is_valid(bufnr) then
+		return 0
+	end
+	local count = 0
+	for _, mark in ipairs(vim.api.nvim_buf_get_extmarks(bufnr, chat_state_mod.chat_hl_ns, 0, -1, { details = true })) do
+		local details = mark[4] or {}
+		if details.hl_group == hl_group then
+			count = count + 1
+		end
+	end
+	return count
 end
 
 local function wait_for_buffer_contains(needle, message)
@@ -200,6 +217,92 @@ wait_for_buffer_contains("IDLE_SPINNER_DONE_TEXT", "idle spinner regression base
 assert_not_contains(buffer_text(), "| Coder_v2", "idle completed session should not render a live fallback spinner")
 assert_eq(count_occurrences(buffer_text(), "Coder_v2"), 1, "idle completed session should render one assistant footer")
 spinner.stop()
+
+sync.clear_all()
+app_state.reset()
+seed_selection()
+session_actions.set_active("highlight-refresh", "Highlight Refresh", { preserve_cache = true })
+session_actions.set_session_status("highlight-refresh", { type = "idle" }, { reason = "test_highlights" })
+sync.handle_message_updated({
+	id = "highlight-user",
+	sessionID = "highlight-refresh",
+	role = "user",
+	time = { created = 70 },
+	agent = "coder_v2",
+})
+sync.handle_part_updated({
+	id = "highlight-user-part",
+	messageID = "highlight-user",
+	sessionID = "highlight-refresh",
+	type = "text",
+	text = "USER_HIGHLIGHT_REFRESH_TEXT",
+})
+sync.handle_message_updated({
+	id = "highlight-assistant",
+	sessionID = "highlight-refresh",
+	role = "assistant",
+	time = { created = 71, completed = 72 },
+	agent = "coder_v2",
+	mode = "coder_v2",
+	modelID = "gpt-5.5",
+	providerID = "openai",
+	finish = "tool-calls",
+})
+sync.handle_part_updated({
+	id = "highlight-todos",
+	messageID = "highlight-assistant",
+	sessionID = "highlight-refresh",
+	type = "tool",
+	tool = "todowrite",
+	state = {
+		status = "completed",
+		input = {
+			todos = {
+				{ content = "Keep panel background", status = "completed" },
+				{ content = "Keep pending background", status = "pending" },
+			},
+		},
+	},
+})
+chat.open()
+wait_for_buffer_contains("USER_HIGHLIGHT_REFRESH_TEXT", "highlight refresh baseline should render user message")
+wait_for_buffer_contains("Keep panel background", "highlight refresh baseline should render todo widget")
+assert_true(count_chat_highlights("OpenCodeUserMessageBg") > 0, "user message background should be applied")
+assert_true(count_chat_highlights("OpenCodeTodoHeader") > 0, "todo panel header background should be applied")
+
+local todo_pos = chat_state.tools["highlight-todos"]
+assert_true(todo_pos ~= nil, "highlight refresh todo widget should be tracked")
+render_state.clear_chat_highlights(chat.get_bufnr(), todo_pos.start_line, todo_pos.start_line + 3)
+assert_eq(count_chat_highlights("OpenCodeTodoHeader"), 0, "test should clear the todo header extmark")
+sync.handle_part_updated({
+	id = "highlight-todos",
+	messageID = "highlight-assistant",
+	sessionID = "highlight-refresh",
+	type = "tool",
+	tool = "todowrite",
+	state = {
+		status = "completed",
+		input = {
+			todos = {
+				{ content = "Keep panel background updated", status = "completed" },
+				{ content = "Keep pending background", status = "pending" },
+			},
+		},
+	},
+})
+chat.do_render()
+assert_contains(buffer_text(), "Keep panel background updated", "partial todo body update should render")
+assert_true(count_chat_highlights("OpenCodeUserMessageBg") > 0, "partial render should keep user background")
+assert_true(count_chat_highlights("OpenCodeTodoHeader") > 0, "partial render should restore todo header background")
+assert_true(count_chat_highlights("OpenCodeTodoCompleted") > 0, "partial render should restore completed todo background")
+assert_true(count_chat_highlights("OpenCodeTodoPending") > 0, "partial render should restore pending todo background")
+
+render_state.clear_chat_highlights(chat.get_bufnr(), 0, -1)
+assert_eq(count_chat_highlights("OpenCodeUserMessageBg"), 0, "test should clear user background extmarks")
+assert_eq(count_chat_highlights("OpenCodeTodoHeader"), 0, "test should clear todo background extmarks")
+chat.do_render()
+assert_true(count_chat_highlights("OpenCodeUserMessageBg") > 0, "no-diff render should restore user background")
+assert_true(count_chat_highlights("OpenCodeTodoHeader") > 0, "no-diff render should restore todo panel background")
 
 sync.clear_all()
 app_state.reset()

@@ -15,8 +15,10 @@ local chat_skill = require("opencode.ui.chat.skill")
 local chat_search = require("opencode.ui.chat.search")
 local chat_rg = require("opencode.ui.chat.rg")
 local chat_file_edit_results = require("opencode.ui.chat.file_edit_results")
+local widget_support = require("opencode.ui.chat.widget_support")
 local edit_state = require("opencode.edit.state")
 local actions = require("opencode.actions")
+local render_state = require("opencode.ui.chat.render_state")
 local perf = require("opencode.perf")
 
 local REGULAR_TOOL_RENDERERS = {
@@ -93,7 +95,6 @@ local function is_animated_regular_tool(tool_name)
 		or tool_name == "skill"
 		or tool_name == "glob"
 		or tool_name == "grep"
-		or chat_todos.is_todo_tool(tool_name)
 end
 
 ---@param tool_part table|nil
@@ -157,6 +158,10 @@ function M.start_task_animation_timer()
 			end
 
 			if edit_state.has_pending_edits() then
+				return
+			end
+
+			if widget_support.in_place_updates_blocked() then
 				return
 			end
 
@@ -1232,7 +1237,7 @@ local function update_block_lines_in_place(pos, result)
 		flush_range(#new_lines + 1)
 	end
 
-	vim.api.nvim_buf_clear_namespace(state.bufnr, chat_hl_ns, pos.start_line, pos.end_line + 1)
+	render_state.clear_chat_highlights(state.bufnr, pos.start_line, pos.end_line + 1)
 	apply_result_highlights(result, pos)
 	vim.bo[state.bufnr].modifiable = false
 	pos.highlights = result.highlights
@@ -1249,7 +1254,11 @@ local function update_animating_blocks(positions, top_line, bottom_line, render_
 	local updated = false
 
 	for part_id, pos in pairs(positions) do
-		if M.is_animating_tool_part(pos and pos.tool_part) and block_is_visible(pos, top_line, bottom_line) then
+		if
+			M.is_animating_tool_part(pos and pos.tool_part)
+			and widget_support.position_generation_is_current(pos)
+			and block_is_visible(pos, top_line, bottom_line)
+		then
 			local result = render_block(part_id, pos)
 			if result == nil then
 				goto continue
@@ -1272,6 +1281,10 @@ function M.update_active_animations_in_place()
 	local done = perf.start("chat.tasks.update_active_animations_in_place")
 	if not state.visible or not state.bufnr or not vim.api.nvim_buf_is_valid(state.bufnr) then
 		done({ skipped = true })
+		return false
+	end
+	if widget_support.in_place_updates_blocked() then
+		done({ skipped = true, reason = "render_pending" })
 		return false
 	end
 	local top_line, bottom_line = get_visible_line_range()
@@ -1333,21 +1346,27 @@ end
 ---@param skip_tool_id string|nil
 local function replace_rendered_block(pos, result, skip_task_id, skip_tool_id)
 	local done = perf.start("chat.tasks.replace_rendered_block")
+	if not widget_support.can_update_in_place(pos) then
+		done({ skipped = true, reason = "stale_render_generation" })
+		return false
+	end
 	result = sanitize_result_lines(result)
 	local old_line_count = pos.end_line - pos.start_line + 1
 	local new_line_count = #result.lines
 	local delta = new_line_count - old_line_count
+	local clear_end = math.max(pos.end_line + 1, pos.start_line + new_line_count)
 
 	vim.bo[state.bufnr].modifiable = true
-	M.clear_animation_extmarks(state.bufnr, pos.start_line, pos.end_line + 1)
-	vim.api.nvim_buf_clear_namespace(state.bufnr, chat_hl_ns, pos.start_line, pos.end_line + 1)
+	M.clear_animation_extmarks(state.bufnr, pos.start_line, clear_end)
+	render_state.clear_chat_highlights(state.bufnr, pos.start_line, clear_end)
 	vim.api.nvim_buf_set_lines(state.bufnr, pos.start_line, pos.end_line + 1, false, result.lines)
-	vim.api.nvim_buf_clear_namespace(state.bufnr, chat_hl_ns, pos.start_line, pos.start_line + new_line_count)
+	render_state.clear_chat_highlights(state.bufnr, pos.start_line, clear_end)
 	apply_result_highlights(result, pos)
 	vim.bo[state.bufnr].modifiable = false
 
 	pos.end_line = pos.start_line + new_line_count - 1
 	pos.highlights = result.highlights
+	widget_support.mark_applied_render_generation(pos)
 	shift_all_after(pos.start_line, delta, skip_task_id, skip_tool_id)
 	done({
 		old_lines = old_line_count,
@@ -1355,6 +1374,7 @@ local function replace_rendered_block(pos, result, skip_task_id, skip_tool_id)
 		delta = delta,
 		highlights = #(result.highlights or {}),
 	})
+	return true
 end
 
 ---Re-render a task widget in place (expand/collapse).
@@ -1373,7 +1393,10 @@ function M.rerender_task(part_id)
 	end
 
 	local is_expanded = state.expanded_tasks[part_id] or false
-	replace_rendered_block(pos, M.render_task_tool(pos.tool_part, is_expanded), part_id, nil)
+	if not replace_rendered_block(pos, M.render_task_tool(pos.tool_part, is_expanded), part_id, nil) then
+		done({ part_id = part_id, skipped = true, reason = "render_pending_or_stale" })
+		return
+	end
 	done({ part_id = part_id, expanded = is_expanded == true })
 end
 
@@ -1441,7 +1464,10 @@ function M.rerender_tool(part_id)
 	end
 
 	local is_expanded = state.expanded_tools[part_id] or false
-	replace_rendered_block(pos, M.render_regular_tool(pos.tool_part, is_expanded), nil, part_id)
+	if not replace_rendered_block(pos, M.render_regular_tool(pos.tool_part, is_expanded), nil, part_id) then
+		done({ part_id = part_id, skipped = true, reason = "render_pending_or_stale" })
+		return
+	end
 	done({
 		part_id = part_id,
 		tool = pos.tool_part and pos.tool_part.tool,
@@ -1495,6 +1521,9 @@ function M.update_animation_frames_in_place()
 	if not state.visible or not state.bufnr or not vim.api.nvim_buf_is_valid(state.bufnr) then
 		return false
 	end
+	if widget_support.in_place_updates_blocked() then
+		return false
+	end
 
 	local top_line, bottom_line = get_visible_line_range()
 	if top_line == nil or bottom_line == nil then
@@ -1516,6 +1545,7 @@ function M.update_animation_frames_in_place()
 		if
 			pos
 			and M.is_animating_tool_part(pos.tool_part)
+			and widget_support.position_generation_is_current(pos)
 			and block_is_visible(pos, top_line, bottom_line)
 			and pos.start_line >= 0
 			and pos.start_line < buf_lines
@@ -1547,7 +1577,12 @@ function M.update_animation_frames_in_place()
 
 	-- Update regular tool blocks: classic spinner at end of header line
 	for _, pos in pairs(state.tools) do
-		if pos and M.is_animating_tool_part(pos.tool_part) and block_is_visible(pos, top_line, bottom_line) then
+		if
+			pos
+			and M.is_animating_tool_part(pos.tool_part)
+			and widget_support.position_generation_is_current(pos)
+			and block_is_visible(pos, top_line, bottom_line)
+		then
 			local block_updated = false
 			local candidates = { pos.start_line + 1, pos.start_line }
 			for _, line_nr in ipairs(candidates) do

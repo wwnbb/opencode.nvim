@@ -497,20 +497,22 @@ function M.setup(events)
 
 			local todos = type(data.todos) == "table" and data.todos or {}
 			sync.handle_todo_updated(data.sessionID, todos)
-			events.emit("todo_update", {
-				session_id = data.sessionID,
-				todos = todos,
-			})
 
 			local current_session = state.get_session()
-			if current_session.id ~= data.sessionID then
+			local relevant = event_util.permission_session_is_relevant(current_session and current_session.id, data.sessionID)
+			if not relevant then
 				logger.debug("Todo update stored outside current session", {
 					sessionID = data.sessionID,
-					current_session = current_session.id,
+					current_session = current_session and current_session.id or nil,
 					count = #todos,
 				})
 				return
 			end
+
+			events.emit("todo_update", {
+				session_id = data.sessionID,
+				todos = todos,
+			})
 
 			logger.debug("Todo update stored for current session", {
 				sessionID = data.sessionID,

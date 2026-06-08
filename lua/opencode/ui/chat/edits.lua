@@ -11,6 +11,7 @@ local edit_state = require("opencode.edit.state")
 local widget_support = require("opencode.ui.chat.widget_support")
 local syntax = require("opencode.ui.syntax")
 local render_coordinator = require("opencode.ui.chat.render_coordinator")
+local render_state = require("opencode.ui.chat.render_state")
 local actions = require("opencode.actions")
 
 local INLINE_DIFF_WIN_VAR = "opencode_inline_diff_split"
@@ -682,7 +683,7 @@ function M.rerender_edit(edit_id)
 	vim.bo[state.bufnr].modifiable = true
 	vim.api.nvim_buf_set_lines(state.bufnr, pos.start_line, pos.end_line + 1, false, e_lines)
 	local clear_end = pos.start_line + math.max(old_count, new_count)
-	vim.api.nvim_buf_clear_namespace(state.bufnr, chat_hl_ns, pos.start_line, clear_end)
+	render_state.clear_chat_highlights(state.bufnr, pos.start_line, clear_end)
 	require("opencode.ui.chat.render").apply_extmark_highlights(state.bufnr, chat_hl_ns, e_highlights, pos.start_line)
 
 	vim.bo[state.bufnr].modifiable = false

@@ -132,6 +132,7 @@ local reset_chat_surface = render_state.reset_chat_surface
 local stream_block_key = render_state.stream_block_key
 local render_highlight_signature = render_state.render_highlight_signature
 local highlight_clear_start = render_state.highlight_clear_start
+local clear_chat_highlights = render_state.clear_chat_highlights
 
 local capture_widget_cursor_context = chat_cursor.capture_widget_cursor_context
 local restore_widget_cursor_context = chat_cursor.restore_widget_cursor_context
@@ -797,6 +798,9 @@ function M.update_stream_part_block(session_id, message_id, part_id, opts)
 	if not block then
 		return false
 	end
+	if not widget_support.can_update_in_place(block) then
+		return false
+	end
 	if
 		block.session_id ~= effective_session_id
 		or block.message_id ~= message_id
@@ -940,7 +944,7 @@ function M.update_stream_part_block(session_id, message_id, part_id, opts)
 	vim.api.nvim_buf_set_lines(state.bufnr, block.start_line, old_end + 1, false, replacement)
 
 	local clear_end = math.max(old_end + 1, block.start_line + new_count)
-	vim.api.nvim_buf_clear_namespace(state.bufnr, chat_hl_ns, block.start_line, clear_end)
+	clear_chat_highlights(state.bufnr, block.start_line, clear_end)
 	render.apply_highlights(content_lines, state.bufnr, chat_hl_ns, block.start_line)
 	vim.bo[state.bufnr].modifiable = false
 	done_stream_apply({
@@ -1124,6 +1128,16 @@ function M.do_render()
 		return
 	end
 	local done_total = perf.start("chat.do_render.total")
+	local render_generation = (state.render_generation or 0) + 1
+	state.render_generation = render_generation
+	state.render_in_progress = true
+	local function mark_render_applied()
+		if state.render_generation == render_generation then
+			state.applied_render_generation = render_generation
+		end
+		state.render_in_progress = false
+	end
+
 	chat_tasks.clear_animation_extmarks(state.bufnr)
 	local force_full_render = state.force_full_render == true
 	state.force_full_render = false
@@ -1166,10 +1180,16 @@ function M.do_render()
 			return
 		end
 
+		local requested_start = tonumber(changed_start) or 0
+		local dirty_start = tonumber(state.render_highlights_dirty_start)
+		if dirty_start then
+			requested_start = math.min(requested_start, dirty_start)
+		end
+
 		local buf_line_count = vim.api.nvim_buf_line_count(state.bufnr)
 		local done_clear = perf.start("chat.do_render.apply_render_highlights.clear")
-		local clear_start = highlight_clear_start(changed_start or 0, content_highlights)
-		vim.api.nvim_buf_clear_namespace(state.bufnr, chat_hl_ns, clear_start, -1)
+		local clear_start = highlight_clear_start(requested_start, content_highlights)
+		clear_chat_highlights(state.bufnr, clear_start, -1)
 		done_clear({ clear_start = clear_start, buf_line_count = buf_line_count })
 
 		local done_nui_highlights = perf.start("chat.do_render.apply_render_highlights.nui_lines")
@@ -1205,9 +1225,11 @@ function M.do_render()
 			max_line = buf_line_count,
 		})
 		done_content_extmarks({ highlights = #content_highlights, clear_start = clear_start })
-		state.last_render_highlight_signature = highlight_signature
+		state.last_render_highlight_signature = current_highlight_signature()
+		state.render_highlights_dirty_start = nil
 		done_apply({
 			changed_start = changed_start,
+			requested_start = requested_start,
 			clear_start = clear_start,
 			lines = #nui_lines,
 			content_highlights = #content_highlights,
@@ -1218,13 +1240,15 @@ function M.do_render()
 		local done_empty_apply = perf.start("chat.do_render.empty_set_lines")
 		vim.bo[state.bufnr].modifiable = true
 		vim.api.nvim_buf_set_lines(state.bufnr, 0, -1, false, new_lines)
-		vim.api.nvim_buf_clear_namespace(state.bufnr, chat_hl_ns, 0, -1)
+		clear_chat_highlights(state.bufnr, 0, -1)
 		vim.bo[state.bufnr].modifiable = false
 		done_empty_apply({ lines = #new_lines })
 		state.last_render_highlight_signature = nil
+		state.render_highlights_dirty_start = nil
 		if apply_widget_focus_cursor() then
 			vim.cmd("redraw")
 		end
+		mark_render_applied()
 		done_total({ path = "empty", lines = #new_lines, force_full_render = force_full_render })
 		return
 	end
@@ -1238,7 +1262,6 @@ function M.do_render()
 		local done_full_set_lines = perf.start("chat.do_render.full_set_lines")
 		vim.bo[state.bufnr].modifiable = true
 		vim.api.nvim_buf_set_lines(state.bufnr, 0, -1, false, new_lines)
-		vim.api.nvim_buf_clear_namespace(state.bufnr, chat_hl_ns, 0, -1)
 		apply_render_highlights(0)
 		vim.bo[state.bufnr].modifiable = false
 		done_full_set_lines({ lines = #new_lines })
@@ -1247,6 +1270,7 @@ function M.do_render()
 			local done_redraw = perf.start("chat.do_render.redraw")
 			vim.cmd("redraw")
 			done_redraw({ path = "force_focus" })
+			mark_render_applied()
 			done_total({ path = "force_focus", lines = #new_lines, force_full_render = true })
 			return
 		end
@@ -1255,6 +1279,7 @@ function M.do_render()
 			local done_redraw = perf.start("chat.do_render.redraw")
 			vim.cmd("redraw")
 			done_redraw({ path = "force_restore_cursor" })
+			mark_render_applied()
 			done_total({ path = "force_restore_cursor", lines = #new_lines, force_full_render = true })
 			return
 		end
@@ -1269,6 +1294,7 @@ function M.do_render()
 		local done_redraw = perf.start("chat.do_render.redraw")
 		vim.cmd("redraw")
 		done_redraw({ path = "force" })
+		mark_render_applied()
 		done_total({ path = "force", lines = #new_lines, force_full_render = true })
 		return
 	end
@@ -1287,13 +1313,14 @@ function M.do_render()
 	if first_diff == nil then
 		if #old_lines == #new_lines then
 			if state.last_render_highlight_signature ~= current_highlight_signature() then
-				apply_render_highlights(0)
+				apply_render_highlights(state.render_highlights_dirty_start or 0)
 			end
 			if apply_widget_focus_cursor() then
 				local done_redraw = perf.start("chat.do_render.redraw")
 				vim.cmd("redraw")
 				done_redraw({ path = "no_line_diff_focus" })
 			end
+			mark_render_applied()
 			done_total({ path = "no_line_diff", lines = #new_lines, force_full_render = false })
 			return
 		end
@@ -1328,6 +1355,7 @@ function M.do_render()
 		local done_redraw = perf.start("chat.do_render.redraw")
 		vim.cmd("redraw")
 		done_redraw({ path = "focus" })
+		mark_render_applied()
 		done_total({
 			path = "focus",
 			lines = #new_lines,
@@ -1342,6 +1370,7 @@ function M.do_render()
 		local done_redraw = perf.start("chat.do_render.redraw")
 		vim.cmd("redraw")
 		done_redraw({ path = "restore_cursor" })
+		mark_render_applied()
 		done_total({
 			path = "restore_cursor",
 			lines = #new_lines,
@@ -1362,6 +1391,7 @@ function M.do_render()
 	local done_redraw = perf.start("chat.do_render.redraw")
 	vim.cmd("redraw")
 	done_redraw({ path = "normal" })
+	mark_render_applied()
 	done_total({
 		path = "normal",
 		lines = #new_lines,

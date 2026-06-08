@@ -2,6 +2,7 @@ local M = {}
 
 local state = require("opencode.ui.chat.state").state
 local chat_tasks = require("opencode.ui.chat.tasks")
+local widget_support = require("opencode.ui.chat.widget_support")
 local perf = require("opencode.perf")
 
 function M.render_tool_part(ctx, tool_part, message_revision, part_revisions)
@@ -28,12 +29,12 @@ function M.render_tool_part(ctx, tool_part, message_revision, part_revisions)
 			return chat_tasks.render_task_tool(tool_part, is_expanded)
 		end)
 		local base_line = ctx:add_render_result(result, "tool")
-		state.tasks[tool_part.id] = {
+		state.tasks[tool_part.id] = widget_support.mark_render_generation({
 			start_line = base_line,
 			end_line = base_line + #result.lines - 1,
 			tool_part = tool_part,
 			highlights = result.highlights,
-		}
+		})
 		chat_tasks.ensure_task_child_loaded(tool_part)
 		done({
 			tool = tool_name,
@@ -64,12 +65,12 @@ function M.render_tool_part(ctx, tool_part, message_revision, part_revisions)
 		return chat_tasks.render_regular_tool(tool_part, is_expanded)
 	end)
 	local base_line = ctx:add_render_result(result, "tool")
-	state.tools[tool_part.id] = {
+	state.tools[tool_part.id] = widget_support.mark_render_generation({
 		start_line = base_line,
 		end_line = base_line + #result.lines - 1,
 		tool_part = tool_part,
 		highlights = result.highlights,
-	}
+	})
 	done({
 		tool = tool_name,
 		part_id = tool_part.id,

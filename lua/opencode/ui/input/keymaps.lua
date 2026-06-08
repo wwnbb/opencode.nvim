@@ -14,6 +14,10 @@ local function map(bufnr, modes, lhs, rhs)
 	})
 end
 
+local function is_escape_key(lhs)
+	return type(lhs) == "string" and lhs:lower() == "<esc>"
+end
+
 function M.setup(bufnr, cfg, handlers)
 	local keys = cfg.keymaps or {}
 
@@ -22,7 +26,10 @@ function M.setup(bufnr, cfg, handlers)
 	map(bufnr, "i", keys.send_alt, handlers.send)
 	map(bufnr, "n", keys.send_alt, handlers.send)
 
-	map(bufnr, { "i", "n" }, keys.cancel, handlers.cancel)
+	map(bufnr, "n", keys.cancel, handlers.cancel)
+	if not is_escape_key(keys.cancel) then
+		map(bufnr, "i", keys.cancel, handlers.cancel)
+	end
 	map(bufnr, "n", "q", handlers.cancel)
 	map(bufnr, { "i", "n" }, "<C-c>", handlers.cancel)
 

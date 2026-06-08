@@ -20,6 +20,34 @@ function M.clear_render_cache()
 	state.last_render_highlight_signature = nil
 end
 
+local function normalize_line(line)
+	line = tonumber(line) or 0
+	return math.max(0, math.floor(line))
+end
+
+function M.invalidate_render_highlights(start_line)
+	state.last_render_highlight_signature = nil
+	if start_line ~= nil then
+		local dirty_start = normalize_line(start_line)
+		local current_dirty = tonumber(state.render_highlights_dirty_start)
+		if not current_dirty or dirty_start < current_dirty then
+			state.render_highlights_dirty_start = dirty_start
+		end
+	end
+end
+
+---@param bufnr number|nil
+---@param start_line number|nil
+---@param end_line number|nil
+function M.clear_chat_highlights(bufnr, start_line, end_line)
+	if not bufnr or not vim.api.nvim_buf_is_valid(bufnr) then
+		return
+	end
+	local clear_start = normalize_line(start_line)
+	vim.api.nvim_buf_clear_namespace(bufnr, cs.chat_hl_ns, clear_start, end_line or -1)
+	M.invalidate_render_highlights(clear_start)
+end
+
 ---@param opts? table { reset_expansions?: boolean, preserve_render_cache?: boolean, force_full_render?: boolean }
 function M.reset_chat_surface(opts)
 	opts = opts or {}
@@ -36,6 +64,8 @@ function M.reset_chat_surface(opts)
 	end
 	state.stream_blocks = {}
 	state.spinner_footer_line = nil
+	state.render_in_progress = false
+	state.render_highlights_dirty_start = nil
 	if opts.force_full_render ~= false then
 		state.force_full_render = true
 	end
@@ -159,7 +189,7 @@ end
 ---@return number
 function M.highlight_clear_start(changed_start, content_highlights)
 	local done = perf.start("chat.render_state.highlight_clear_start")
-	local clear_start = changed_start or 0
+	local clear_start = normalize_line(changed_start)
 	local function consider(highlights, start_line)
 		local moved = false
 		if type(highlights) ~= "table" then
@@ -178,12 +208,28 @@ function M.highlight_clear_start(changed_start, content_highlights)
 		end
 		return moved
 	end
+	local function consider_widget_range(pos)
+		if type(pos) ~= "table" then
+			return false
+		end
+		local start_line = tonumber(pos.start_line)
+		local end_line = tonumber(pos.end_line)
+		if not start_line or not end_line then
+			return false
+		end
+		if start_line < clear_start and end_line >= clear_start then
+			clear_start = normalize_line(start_line)
+			return true
+		end
+		return false
+	end
 
 	local moved = true
 	while moved do
 		moved = consider(content_highlights, 0)
 		for _, line_map in ipairs({ state.questions, state.permissions, state.edits, state.tasks, state.tools }) do
 			for _, pos in pairs(line_map or {}) do
+				moved = consider_widget_range(pos) or moved
 				moved = consider(pos.highlights, pos.start_line or 0) or moved
 			end
 		end

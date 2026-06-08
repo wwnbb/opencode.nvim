@@ -206,6 +206,75 @@ assert(
 sync.clear_all()
 
 do
+	local input_keymaps = require("opencode.ui.input.keymaps")
+	local bufnr = vim.api.nvim_create_buf(false, true)
+	local function has_buffer_keymap(mode, lhs)
+		for _, keymap in ipairs(vim.api.nvim_buf_get_keymap(bufnr, mode)) do
+			if keymap.lhs == lhs then
+				return true
+			end
+		end
+		return false
+	end
+
+	input_keymaps.setup(bufnr, {
+		keymaps = {
+			send = "<C-g>",
+			send_alt = "<C-x><C-s>",
+			cancel = "<Esc>",
+		},
+	}, {
+		send = noop,
+		cancel = noop,
+	})
+
+	assert(not has_buffer_keymap("i", "<Esc>"), "input should allow <Esc> to leave insert mode")
+	assert(has_buffer_keymap("n", "<Esc>"), "input should keep normal-mode <Esc> cancel mapping")
+	vim.api.nvim_buf_delete(bufnr, { force = true })
+end
+
+do
+	local chat_state = require("opencode.ui.chat.state").state
+	local render_state = require("opencode.ui.chat.render_state")
+	local previous = {
+		questions = chat_state.questions,
+		permissions = chat_state.permissions,
+		edits = chat_state.edits,
+		tasks = chat_state.tasks,
+		tools = chat_state.tools,
+	}
+
+	chat_state.questions = {}
+	chat_state.permissions = {}
+	chat_state.edits = {}
+	chat_state.tasks = {}
+	chat_state.tools = {
+		widget_highlight_range = {
+			start_line = 10,
+			end_line = 20,
+			highlights = {
+				{ line = 1, col_start = 0, col_end = 10, hl_group = "OpenCodeTodoHeader" },
+			},
+		},
+	}
+
+	assert(
+		render_state.highlight_clear_start(15, {}) == 10,
+		"highlight clear should expand from inside a widget to the widget start"
+	)
+	assert(
+		render_state.highlight_clear_start(21, {}) == 21,
+		"highlight clear should not expand outside the widget range"
+	)
+
+	chat_state.questions = previous.questions
+	chat_state.permissions = previous.permissions
+	chat_state.edits = previous.edits
+	chat_state.tasks = previous.tasks
+	chat_state.tools = previous.tools
+end
+
+do
 	sync.handle_message_updated({
 		id = "msg_buffered_delta",
 		sessionID = "session_buffered_delta",
@@ -773,6 +842,71 @@ do
 end
 
 do
+	local bus = require("opencode.events.bus")
+	local message_handler = require("opencode.events.handlers.message")
+	local app_state = require("opencode.state")
+	local previous_session = app_state.get_session()
+
+	bus.clear()
+	bus.clear_history()
+	message_handler.setup(bus)
+
+	sync.clear_all()
+	app_state.set_session("todo_filter_parent", "Todo Filter Parent")
+	sync.handle_message_updated({
+		id = "todo_filter_msg",
+		sessionID = "todo_filter_parent",
+		role = "assistant",
+		time = { created = 1 },
+	})
+	sync.handle_part_updated({
+		id = "todo_filter_task",
+		messageID = "todo_filter_msg",
+		sessionID = "todo_filter_parent",
+		type = "tool",
+		tool = "task",
+		state = {
+			status = "running",
+			input = { subagent_type = "build", description = "child" },
+			metadata = { sessionId = "todo_filter_child" },
+		},
+	})
+
+	local todo_update_count = 0
+	bus.on("todo_update", function(data)
+		todo_update_count = todo_update_count + 1
+		assert(data.session_id ~= "todo_filter_unrelated", "unrelated todo updates should not request chat render")
+	end)
+
+	bus.emit("todo_updated", {
+		sessionID = "todo_filter_unrelated",
+		todos = { { content = "ignore", status = "pending" } },
+	})
+	assert(vim.wait(100, function()
+		return todo_update_count > 0
+	end, 10) == false, "unrelated todo update should be filtered")
+
+	bus.emit("todo_updated", {
+		sessionID = "todo_filter_child",
+		todos = { { content = "child", status = "in_progress" } },
+	})
+	wait_until(function()
+		return todo_update_count == 1
+	end, "task-child todo update should request chat render")
+
+	sync.clear_all()
+	if previous_session and previous_session.id then
+		app_state.set_session(previous_session.id, previous_session.name, {
+			runtime = previous_session.runtime,
+		})
+	else
+		app_state.set_session(nil, nil)
+	end
+	bus.clear()
+	bus.clear_history()
+end
+
+do
 	local saved_client = package.loaded["opencode.client"]
 	local saved_lifecycle = package.loaded["opencode.lifecycle"]
 	local calls = {}
@@ -1132,6 +1266,198 @@ do
 end
 
 do
+	local chat = require("opencode.ui.chat")
+	local chat_state_mod = require("opencode.ui.chat.state")
+	local chat_state = chat_state_mod.state
+	local app_state = require("opencode.state")
+	local previous_buf = vim.api.nvim_get_current_buf()
+	local previous_session = app_state.get_session()
+	local previous_config = app_state.get_config()
+	local previous_bufnr = chat_state.bufnr
+	local previous_winid = chat_state.winid
+	local previous_visible = chat_state.visible
+	local previous_chat_config = chat_state.config
+	local previous_local_notices = chat_state.local_notices
+	local previous_session_stack = chat_state.session_stack
+	local previous_auto_scroll = chat_state.auto_scroll
+	local previous_stream_blocks = chat_state.stream_blocks
+	local previous_spinner_footer_line = chat_state.spinner_footer_line
+	local previous_questions = chat_state.questions
+	local previous_permissions = chat_state.permissions
+	local previous_edits = chat_state.edits
+	local previous_tasks = chat_state.tasks
+	local previous_tools = chat_state.tools
+	local previous_force_full_render = chat_state.force_full_render
+	local previous_render_scheduled = chat_state.render_scheduled
+	local previous_render_in_progress = chat_state.render_in_progress
+	local previous_render_generation = chat_state.render_generation
+	local previous_applied_render_generation = chat_state.applied_render_generation
+	local previous_last_render_highlight_signature = chat_state.last_render_highlight_signature
+	local previous_render_highlights_dirty_start = chat_state.render_highlights_dirty_start
+
+	local bufnr = vim.api.nvim_create_buf(false, true)
+	local winid = vim.api.nvim_get_current_win()
+	vim.api.nvim_win_set_buf(winid, bufnr)
+	chat_state.bufnr = bufnr
+	chat_state.winid = winid
+	chat_state.visible = true
+	chat_state.config = {
+		max_rendered_messages = 20,
+		session_tabs = { enabled = false },
+	}
+	chat_state.local_notices = {}
+	chat_state.session_stack = {}
+	chat_state.auto_scroll = false
+	chat_state.stream_blocks = {}
+	chat_state.spinner_footer_line = nil
+	chat_state.questions = {}
+	chat_state.permissions = {}
+	chat_state.edits = {}
+	chat_state.tasks = {}
+	chat_state.tools = {}
+	chat_state.force_full_render = true
+	chat_state.render_scheduled = false
+	chat_state.render_in_progress = false
+	chat_state.render_generation = 0
+	chat_state.applied_render_generation = 0
+	chat_state.last_render_highlight_signature = nil
+	chat_state.render_highlights_dirty_start = nil
+
+	app_state.set_config({ chat = { todo = { show_dock = false } } })
+	sync.clear_all()
+	app_state.set_session("todo_widget_parent", "Todo Widget Parent")
+	app_state.set_session_status("todo_widget_parent", { type = "busy" })
+	sync.handle_message_updated({
+		id = "todo_widget_msg",
+		sessionID = "todo_widget_parent",
+		role = "assistant",
+		time = { created = 1 },
+		finish = "tool-calls",
+	})
+	sync.handle_part_updated({
+		id = "todo_widget_task",
+		messageID = "todo_widget_msg",
+		sessionID = "todo_widget_parent",
+		type = "tool",
+		tool = "task",
+		state = {
+			status = "completed",
+			input = { subagent_type = "grep_slave", description = "child todos" },
+			metadata = { sessionId = "todo_widget_child" },
+		},
+	})
+	sync.handle_part_updated({
+		id = "todo_widget_tool",
+		messageID = "todo_widget_msg",
+		sessionID = "todo_widget_parent",
+		type = "tool",
+		tool = "todowrite",
+		state = {
+			status = "running",
+			input = {
+				todos = {
+					{ content = "Keep first", status = "in_progress" },
+					{ content = "Remove second", status = "pending" },
+					{ content = "Remove third", status = "pending" },
+				},
+			},
+		},
+	})
+
+	chat.do_render()
+	assert(chat_state.tools.todo_widget_tool, "todowrite widget should be tracked after render")
+
+	for i = 1, 12 do
+		sync.handle_todo_updated("todo_widget_child", {
+			{ content = "child tick " .. tostring(i), status = i == 12 and "completed" or "in_progress" },
+		})
+		chat.do_render()
+	end
+
+	local rendered_before = table.concat(vim.api.nvim_buf_get_lines(bufnr, 0, -1, false), "\n")
+	local header_count = 0
+	for _ in rendered_before:gmatch("Updating todos%.%.%.") do
+		header_count = header_count + 1
+	end
+	assert(header_count == 1, "child todo churn should not duplicate the parent todowrite widget")
+
+	sync.handle_part_updated({
+		id = "todo_widget_tool",
+		messageID = "todo_widget_msg",
+		sessionID = "todo_widget_parent",
+		type = "tool",
+		tool = "todowrite",
+		state = {
+			status = "completed",
+			input = {
+				todos = {
+					{ content = "Keep first", status = "completed" },
+				},
+			},
+		},
+	})
+	chat_state.tools.todo_widget_tool.tool_part = sync.get_part("todo_widget_msg", "todo_widget_tool")
+	chat.rerender_tool("todo_widget_tool")
+
+	local rendered_after = table.concat(vim.api.nvim_buf_get_lines(bufnr, 0, -1, false), "\n")
+	assert(rendered_after:find("Keep first", 1, true), "shrunk todowrite widget should keep current todo")
+	assert(not rendered_after:find("Remove second", 1, true), "shrunk todowrite widget should remove stale todo text")
+	assert(not rendered_after:find("Remove third", 1, true), "shrunk todowrite widget should remove stale trailing todo text")
+
+	local todo_pos = chat_state.tools.todo_widget_tool
+	assert(todo_pos and todo_pos.start_line <= todo_pos.end_line, "shrunk todowrite widget should keep valid range")
+	for _, mark in ipairs(vim.api.nvim_buf_get_extmarks(bufnr, chat_state_mod.chat_hl_ns, 0, -1, { details = true })) do
+		local row = mark[2]
+		local details = mark[4] or {}
+		local hl_group = details.hl_group
+		if type(hl_group) == "string" and hl_group:find("^OpenCodeTodo") then
+			assert(
+				row >= todo_pos.start_line and row <= todo_pos.end_line,
+				"todo highlight extmark leaked outside the current widget range"
+			)
+		end
+	end
+
+	require("opencode.ui.chat.tasks").stop_task_animation_timer()
+	sync.clear_all()
+	app_state.set_config(previous_config)
+	if previous_session and previous_session.id then
+		app_state.set_session(previous_session.id, previous_session.name, {
+			runtime = previous_session.runtime,
+		})
+	else
+		app_state.set_session(nil, nil)
+	end
+	chat_state.bufnr = previous_bufnr
+	chat_state.winid = previous_winid
+	chat_state.visible = previous_visible
+	chat_state.config = previous_chat_config
+	chat_state.local_notices = previous_local_notices
+	chat_state.session_stack = previous_session_stack
+	chat_state.auto_scroll = previous_auto_scroll
+	chat_state.stream_blocks = previous_stream_blocks
+	chat_state.spinner_footer_line = previous_spinner_footer_line
+	chat_state.questions = previous_questions
+	chat_state.permissions = previous_permissions
+	chat_state.edits = previous_edits
+	chat_state.tasks = previous_tasks
+	chat_state.tools = previous_tools
+	chat_state.force_full_render = previous_force_full_render
+	chat_state.render_scheduled = previous_render_scheduled
+	chat_state.render_in_progress = previous_render_in_progress
+	chat_state.render_generation = previous_render_generation
+	chat_state.applied_render_generation = previous_applied_render_generation
+	chat_state.last_render_highlight_signature = previous_last_render_highlight_signature
+	chat_state.render_highlights_dirty_start = previous_render_highlights_dirty_start
+	if vim.api.nvim_buf_is_valid(previous_buf) then
+		vim.api.nvim_win_set_buf(winid, previous_buf)
+	end
+	if vim.api.nvim_buf_is_valid(bufnr) then
+		vim.api.nvim_buf_delete(bufnr, { force = true })
+	end
+end
+
+do
 	local panel = require("opencode.ui.panel")
 	local helpers = panel.create_helpers({
 		prefix = "| ",
@@ -1285,6 +1611,13 @@ do
 		},
 	}, false)
 	assert(render_text(todo_write_result):find("Updated todos", 1, true), "todowrite widget should render")
+	assert(
+		not chat_tasks.is_animating_tool_part({
+			tool = "todowrite",
+			state = { status = "running" },
+		}),
+		"todowrite widget should use scheduled renders instead of animation in-place updates"
+	)
 
 	local todo_read_result = todos.render_tool({
 		tool = "todoread",

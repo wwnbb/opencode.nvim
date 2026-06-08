@@ -90,6 +90,51 @@ function M.apply_focus_cursor()
 	return nil, nil
 end
 
+---@return number
+function M.current_render_generation()
+	return state.render_generation or 0
+end
+
+---@param pos table|nil
+---@param generation? number
+---@return table|nil
+function M.mark_render_generation(pos, generation)
+	if type(pos) == "table" then
+		pos.render_generation = generation or M.current_render_generation()
+	end
+	return pos
+end
+
+---@param pos table|nil
+---@return table|nil
+function M.mark_applied_render_generation(pos)
+	if type(pos) == "table" then
+		pos.render_generation = state.applied_render_generation or state.render_generation or pos.render_generation
+	end
+	return pos
+end
+
+---@return boolean
+function M.in_place_updates_blocked()
+	return state.render_scheduled == true or state.render_in_progress == true
+end
+
+---@param pos table|nil
+---@return boolean
+function M.position_generation_is_current(pos)
+	local applied_generation = state.applied_render_generation
+	if type(pos) ~= "table" or not pos.render_generation or not applied_generation then
+		return true
+	end
+	return pos.render_generation == applied_generation
+end
+
+---@param pos table|nil
+---@return boolean
+function M.can_update_in_place(pos)
+	return not M.in_place_updates_blocked() and M.position_generation_is_current(pos)
+end
+
 ---@param old_end number
 ---@param delta number
 ---@param opts? table { skip_stream_block_key?: string|nil, skip_stream_message_id?: string|nil }
