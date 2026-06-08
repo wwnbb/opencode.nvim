@@ -132,40 +132,46 @@ function M.setup(events)
 		return resolved_session_id
 	end
 
-	---@param part table
 	---@param current_session table
-	---@param resolved_session_id string|nil
-	---@return boolean
-	local function part_in_current_session(part, current_session, resolved_session_id)
-		if not current_session.id then
-			return false
+	---@param event_session_id string|nil
+	---@param message_id string|nil
+	---@return string|nil
+	local function resolve_render_session_id(current_session, event_session_id, message_id)
+		if type(current_session) ~= "table" or not current_session.id then
+			return nil
 		end
 
-		local in_current_session = false
-		if part.messageID then
-			in_current_session = sync.get_message(current_session.id, part.messageID) ~= nil
+		if message_id and sync.get_message(current_session.id, message_id) ~= nil then
+			return current_session.id
 		end
-		if not in_current_session and resolved_session_id then
-			in_current_session = resolved_session_id == current_session.id
-		end
-		if not in_current_session and resolved_session_id then
-			in_current_session = event_util.permission_session_is_relevant(current_session.id, resolved_session_id)
+		if not event_session_id or event_session_id == "" then
+			return nil
 		end
 
-		return in_current_session
+		return event_util.render_target_session_id(current_session.id, event_session_id)
 	end
 
 	---@param part table
 	---@param current_session table
 	---@param resolved_session_id string|nil
+	---@return string|nil
+	local function resolve_part_render_session_id(part, current_session, resolved_session_id)
+		return resolve_render_session_id(current_session, resolved_session_id or part.sessionID, part.messageID)
+	end
+
+	---@param part table
+	---@param current_session table
+	---@param resolved_session_id string|nil
+	---@param opts? table
 	local function emit_part_events(part, current_session, resolved_session_id, opts)
 		opts = opts or {}
-		local event_session_id = resolved_session_id or part.sessionID or current_session.id
+		local actual_session_id = resolved_session_id or part.sessionID or current_session.id
+		local render_session_id = opts.render_session_id or actual_session_id
 		if part.type == "text" then
 			events.emit("sync_changed", {
 				kind = "part",
 				action = "updated",
-				session_id = event_session_id,
+				session_id = render_session_id,
 				message_id = part.messageID,
 				part_id = part.id,
 				delta = opts.delta,
@@ -178,7 +184,7 @@ function M.setup(events)
 			events.emit("sync_changed", {
 				kind = "part",
 				action = "updated",
-				session_id = event_session_id,
+				session_id = render_session_id,
 				message_id = part.messageID,
 				part_id = part.id,
 				delta = opts.delta,
@@ -191,7 +197,7 @@ function M.setup(events)
 			local tool_state = part.state
 			if tool_state then
 				events.emit("tool_update", {
-					session_id = event_session_id,
+					session_id = actual_session_id,
 					message_id = part.messageID,
 					tool_name = part.tool,
 					call_id = part.callID,
@@ -204,7 +210,7 @@ function M.setup(events)
 			events.emit("sync_changed", {
 				kind = "part",
 				action = "updated",
-				session_id = event_session_id,
+				session_id = render_session_id,
 				message_id = part.messageID,
 				part_id = part.id,
 			})
@@ -245,7 +251,8 @@ function M.setup(events)
 
 			mark_session_idle_after_completed_message(info)
 
-			if not current_session.id or info.sessionID ~= current_session.id then
+			local render_session_id = resolve_render_session_id(current_session, info.sessionID, info.id)
+			if not render_session_id then
 				logger.debug("Message update stored outside current session", {
 					message_session = info.sessionID,
 					current_session = current_session.id,
@@ -261,8 +268,9 @@ function M.setup(events)
 				return
 			end
 
-			logger.debug("Message update stored for current session", {
+			logger.debug("Message update stored for visible session", {
 				sessionID = info.sessionID,
+				render_session_id = render_session_id,
 				messageID = info.id,
 				role = info.role,
 				agent = info.agent,
@@ -277,14 +285,15 @@ function M.setup(events)
 			events.emit("sync_changed", {
 				kind = "message",
 				action = "updated",
-				session_id = current_session.id,
+				session_id = render_session_id,
 				message_id = info.id,
 			})
 			done({
 				message_id = info.id,
 				session_id = info.sessionID,
+				render_session_id = render_session_id,
 				role = info.role,
-				current = true,
+				current = render_session_id == current_session.id,
 			})
 		end)
 	end)
@@ -328,7 +337,8 @@ function M.setup(events)
 			-- Update sync store first (like TUI does)
 			sync.handle_part_updated(part)
 
-			if not part_in_current_session(part, current_session, resolved_session_id) then
+			local render_session_id = resolve_part_render_session_id(part, current_session, resolved_session_id)
+			if not render_session_id then
 				logger.debug("Part update stored outside current session", {
 					part_session = resolved_session_id,
 					current_session = current_session.id,
@@ -346,20 +356,24 @@ function M.setup(events)
 				return
 			end
 
-			logger.debug("Part update stored for current session", {
+			logger.debug("Part update stored for visible session", {
 				sessionID = resolved_session_id,
+				render_session_id = render_session_id,
 				partID = part.id,
 				messageID = part.messageID,
 				type = part.type,
 			})
-			emit_part_events(part, current_session, resolved_session_id)
+			emit_part_events(part, current_session, resolved_session_id, {
+				render_session_id = render_session_id,
+			})
 			done({
 				part_id = part.id,
 				message_id = part.messageID,
 				type = part.type,
 				tool = part.tool,
 				session_id = resolved_session_id,
-				current = true,
+				render_session_id = render_session_id,
+				current = render_session_id == current_session.id,
 			})
 		end)
 	end)
@@ -424,7 +438,8 @@ function M.setup(events)
 				return
 			end
 
-			if not part_in_current_session(part, current_session, resolved_session_id) then
+			local render_session_id = resolve_part_render_session_id(part, current_session, resolved_session_id)
+			if not render_session_id then
 				logger.debug("Part delta stored outside current session", {
 					part_session = resolved_session_id,
 					current_session = current_session.id,
@@ -444,14 +459,16 @@ function M.setup(events)
 				return
 			end
 
-			logger.debug("Part delta stored for current session", {
+			logger.debug("Part delta stored for visible session", {
 				sessionID = resolved_session_id,
+				render_session_id = render_session_id,
 				partID = part.id,
 				messageID = part.messageID,
 				field = data.field,
 				delta_length = #data.delta,
 			})
 			emit_part_events(part, current_session, resolved_session_id, {
+				render_session_id = render_session_id,
 				delta = data.delta,
 				field = data.field,
 			})
@@ -460,9 +477,10 @@ function M.setup(events)
 				message_id = part.messageID,
 				type = part.type,
 				session_id = resolved_session_id,
+				render_session_id = render_session_id,
 				field = data.field,
 				delta_bytes = #data.delta,
-				current = true,
+				current = render_session_id == current_session.id,
 			})
 		end)
 	end)
@@ -540,7 +558,8 @@ function M.setup(events)
 			end
 
 			local title = data.info.title
-			if title == nil or title == vim.NIL then
+			local parent_id = data.info.parentID or data.info.parentId or data.info.parent_id
+			if (title == nil or title == vim.NIL) and (parent_id == nil or parent_id == vim.NIL) then
 				return
 			end
 
@@ -549,23 +568,27 @@ function M.setup(events)
 				title = title,
 				name = title,
 				time = data.info.time,
-				parentID = data.info.parentID,
+				parentID = parent_id,
 			}, {
 				touch = session_id == current_session.id and state.is_runtime_session(session_id),
 				reason = "session_updated",
 			})
-			if session_id == current_session.id then
+			if session_id == current_session.id and title ~= nil and title ~= vim.NIL then
 				session_actions.set_active(session_id, title, {
 					reason = "session_updated",
 					preserve_cache = true,
 					runtime = state.is_runtime_session(session_id),
 				})
 			end
-			events.emit("sync_changed", {
-				kind = "session",
-				action = "updated",
-				session_id = session_id,
-			})
+
+			local render_session_id = event_util.render_target_session_id(current_session.id, session_id)
+			if render_session_id then
+				events.emit("sync_changed", {
+					kind = "session",
+					action = "updated",
+					session_id = render_session_id,
+				})
+			end
 		end)
 	end)
 

@@ -71,6 +71,7 @@ local chat_state = chat_state_mod.state
 local render_state = require("opencode.ui.chat.render_state")
 local client = require("opencode.client")
 local events = require("opencode.events")
+local event_util = require("opencode.events.util")
 local spinner = require("opencode.ui.spinner")
 local question_state = require("opencode.question.state")
 
@@ -491,6 +492,154 @@ assert_not_contains(buffer_text(), " question", "question widget should hide the
 assert_true(not spinner.is_active(), "question tool recovery should stop the visible spinner")
 client.list_questions = original_list_questions
 spinner.stop()
+
+sync.clear_all()
+question_state.clear_all()
+app_state.reset()
+seed_selection()
+session_actions.set_active("task-parent", "Task Parent", { preserve_cache = true })
+session_actions.set_session_status("task-parent", { type = "busy" }, { reason = "test_task_child" })
+sync.handle_message_updated({
+	id = "task-parent-msg",
+	sessionID = "task-parent",
+	role = "assistant",
+	time = { created = 80 },
+	agent = "coder_v2",
+	mode = "coder_v2",
+	modelID = "gpt-5.5",
+	providerID = "openai",
+	finish = "tool-calls",
+})
+sync.handle_part_updated({
+	id = "task-parent-part",
+	messageID = "task-parent-msg",
+	sessionID = "task-parent",
+	type = "tool",
+	tool = "task",
+	state = {
+		status = "running",
+		input = {
+			subagent_type = "grep_slave",
+			description = "Child render",
+		},
+		metadata = {
+			sessionId = "task-child",
+		},
+		time = { start = 81 },
+	},
+})
+
+chat.open()
+wait_for_buffer_contains("Child render", "task parent baseline should render")
+events.emit("message_updated", {
+	info = {
+		id = "task-child-msg",
+		sessionID = "task-child",
+		role = "assistant",
+		time = { created = 82 },
+		agent = "grep_slave",
+		mode = "grep_slave",
+		modelID = "gpt-5.5",
+		providerID = "openai",
+	},
+})
+events.emit("message_part_updated", {
+	part = {
+		id = "task-child-read",
+		messageID = "task-child-msg",
+		sessionID = "task-child",
+		type = "tool",
+		tool = "read",
+		state = {
+			status = "running",
+			input = {
+				filePath = "/tmp/task_child.lua",
+			},
+			time = { start = 83 },
+		},
+	},
+})
+wait_for_buffer_contains(
+	"Read /tmp/task_child.lua",
+	"task child part update should render in visible parent without switching"
+)
+events.emit("message_part_delta", {
+	messageID = "task-child-msg",
+	partID = "task-child-read",
+	sessionID = "task-child",
+	field = "state.title",
+	delta = "Reading child session now",
+})
+wait_for_buffer_contains(
+	"Read Reading child session now",
+	"task child part delta should rerender the visible parent without switching"
+)
+
+sync.clear_all()
+app_state.reset()
+seed_selection()
+session_actions.set_active("late-parent", "Late Parent", { preserve_cache = true })
+chat.open()
+
+local late_parent_sync_events = 0
+events.on("sync_changed", function(data)
+	if type(data) == "table" and data.session_id == "late-parent" then
+		late_parent_sync_events = late_parent_sync_events + 1
+	end
+end)
+
+local before_late_parent_generation = chat_state.render_generation or 0
+events.emit("session_updated", {
+	sessionID = "late-child",
+	info = {
+		id = "late-child",
+		parentID = "late-parent",
+		time = { created = 90, updated = 90 },
+	},
+})
+wait_for(function()
+	return event_util.session_owns_task_child("late-parent", "late-child")
+end, "session.updated parentID should mark child relevant to visible parent")
+wait_for(function()
+	return late_parent_sync_events >= 1 and (chat_state.render_generation or 0) > before_late_parent_generation
+end, "late parentID session update should rerender the visible parent")
+
+events.emit("message_updated", {
+	info = {
+		id = "late-child-msg",
+		sessionID = "late-child",
+		role = "assistant",
+		time = { created = 91 },
+	},
+})
+wait_for(function()
+	return late_parent_sync_events >= 2
+end, "late child message update should request a parent render")
+
+events.emit("message_part_updated", {
+	part = {
+		id = "late-child-text",
+		messageID = "late-child-msg",
+		sessionID = "late-child",
+		type = "text",
+		text = "LATE_CHILD_TEXT",
+	},
+})
+wait_for(function()
+	return late_parent_sync_events >= 3
+end, "late child part update should request a parent render")
+
+local before_late_stream_generation = chat_state.render_generation or 0
+events.emit("chat_stream_part_updated", {
+	session_id = "late-child",
+	message_id = "late-child-msg",
+	part_id = "late-child-text",
+	delta = "STREAM",
+	field = "text",
+})
+wait_for(function()
+	return (chat_state.render_generation or 0) > before_late_stream_generation
+end, "late child stream update should schedule a parent render")
 
 sync.clear_all()
 app_state.reset()

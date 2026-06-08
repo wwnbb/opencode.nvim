@@ -73,7 +73,12 @@ end
 ---@return string
 function M.anim_frame(frames)
 	frames = frames or M.ANIM_FRAMES
-	return frames[chat_state.task_anim_frame] or frames[1] or ""
+	local count = #frames
+	if count == 0 then
+		return ""
+	end
+	local index = tonumber(chat_state.task_anim_frame) or 1
+	return frames[((index - 1) % count) + 1] or frames[1] or ""
 end
 
 ---@param expanded boolean

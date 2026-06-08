@@ -331,16 +331,12 @@ function M.create()
 				return
 			end
 			local current_session = require("opencode.state").get_session()
-			if
-				session_id
-				and current_session.id
-				and session_id ~= current_session.id
-				and not event_util.permission_session_is_relevant(current_session.id, session_id)
-			then
+			local render_session_id = event_util.render_target_session_id(current_session.id, session_id)
+			if not render_session_id then
 				return
 			end
 			if
-				not M.update_stream_part_block(session_id or current_session.id, message_id, part_id, {
+				not M.update_stream_part_block(render_session_id, message_id, part_id, {
 					delta = data and data.delta,
 					field = data and data.field,
 				})

@@ -33,7 +33,7 @@ local REGULAR_TOOL_RENDERERS = {
 
 -- ─── Animation ────────────────────────────────────────────────────────────────
 
-local TASK_ANIM_FRAMES = { "⠋", "⠙", "⠹", "⠸" }
+local TASK_ANIM_FRAMES = { "⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏" }
 local TASK_COMPLETE_ICON = "✓"
 local TASK_CANCELLED_ICON = "✕"
 local TASK_ERROR_ICON = "✗"
@@ -41,8 +41,17 @@ local TASK_HIGHLIGHT_PRIORITY = 4200
 local TASK_ANIMATION_PRIORITY = TASK_HIGHLIGHT_PRIORITY + 50
 local MAX_REGULAR_TOOL_ANIMATION_RENDER_LINES = 120
 
+local function frame_at(frames, index)
+	local count = type(frames) == "table" and #frames or 0
+	if count == 0 then
+		return ""
+	end
+	index = tonumber(index) or 1
+	return frames[((index - 1) % count) + 1] or frames[1] or ""
+end
+
 function M.get_task_anim_frame()
-	return TASK_ANIM_FRAMES[state.task_anim_frame] or TASK_ANIM_FRAMES[1]
+	return frame_at(TASK_ANIM_FRAMES, state.task_anim_frame)
 end
 
 ---@param status string
@@ -637,9 +646,58 @@ end
 ---@param tool_part table
 ---@return string|nil
 local function get_task_child_session_id(tool_part)
+	local ok_sync, sync = pcall(require, "opencode.sync")
+	if ok_sync and type(sync.get_task_child_session_for_part) == "function" then
+		local indexed = sync.get_task_child_session_for_part(tool_part)
+		if indexed and indexed ~= "" then
+			return indexed
+		end
+	elseif ok_sync and type(sync.get_task_child_session) == "function" then
+		local indexed = sync.get_task_child_session(tool_part.messageID, tool_part.id)
+		if indexed and indexed ~= "" then
+			return indexed
+		end
+	end
+
 	local metadata = render.get_tool_metadata(tool_part)
-	return metadata.sessionId or metadata.sessionID or metadata.childSessionID or metadata.child_session_id
+	return metadata.sessionId
+		or metadata.sessionID
+		or metadata.session_id
+		or metadata.childSessionID
+		or metadata.childSessionId
+		or metadata.child_session_id
+		or tool_part.childSessionID
+		or tool_part.childSessionId
+		or tool_part.child_session_id
 end
+
+---@param tool_part table|nil
+---@return string|nil
+local function get_task_parent_session_id(tool_part)
+	if type(tool_part) ~= "table" then
+		return nil
+	end
+	if tool_part.sessionID and tool_part.sessionID ~= "" then
+		return tool_part.sessionID
+	end
+	if tool_part.messageID then
+		local ok_sync, sync = pcall(require, "opencode.sync")
+		if ok_sync and type(sync.find_message_session_id) == "function" then
+			local session_id = sync.find_message_session_id(tool_part.messageID)
+			if session_id and session_id ~= "" then
+				return session_id
+			end
+		end
+	end
+	local ok_state, app_state = pcall(require, "opencode.state")
+	if ok_state then
+		local current = app_state.get_session()
+		return current and current.id or nil
+	end
+	return nil
+end
+
+local schedule_task_child_resolution
 
 ---@param tool_part table|nil
 ---@param opts? table
@@ -658,6 +716,10 @@ function M.ensure_task_child_loaded(tool_part, opts)
 
 	local child_session_id = get_task_child_session_id(tool_part)
 	if not child_session_id or child_session_id == "" then
+		local parent_session_id = get_task_parent_session_id(tool_part)
+		if parent_session_id and schedule_task_child_resolution then
+			schedule_task_child_resolution(parent_session_id)
+		end
 		return
 	end
 
@@ -716,39 +778,38 @@ function M.render_task_tool(tool_part, expanded)
 	local desc = input.description or ""
 	local summary = render.normalize_task_summary(metadata.summary)
 
-	-- ── Try to derive summary from child session when server hasn't sent one ──
+	-- ── Prefer live child-session tool activity when available ──
 	local child_session_id = get_task_child_session_id(tool_part)
-	if #summary == 0 then
-		if child_session_id then
-			local ok_sync, sync = pcall(require, "opencode.sync")
-			if ok_sync then
-				local derived = {}
-				local messages = sync.get_messages(child_session_id)
-				for _, message in ipairs(messages) do
-					if message.role == "assistant" then
-						local tools = sync.get_message_tools(message.id)
-						for _, part in ipairs(tools) do
-							local part_state = part.state or {}
-							local status = part_state.status or "pending"
-							table.insert(derived, {
-								id = part.id,
-								tool = part.tool,
-								state = {
-									status = status,
-									title = part_state.title,
-									input = part_state.input or {},
-									metadata = render.get_tool_metadata(part),
-								},
-							})
-						end
+	if child_session_id then
+		local ok_sync, sync = pcall(require, "opencode.sync")
+		if ok_sync then
+			local derived = {}
+			local messages = sync.get_messages(child_session_id)
+			for _, message in ipairs(messages) do
+				if message.role == "assistant" then
+					local tools = sync.get_message_tools(message.id)
+					for _, part in ipairs(tools) do
+						local part_state = part.state or {}
+						local status = part_state.status or "pending"
+						table.insert(derived, {
+							id = part.id,
+							tool = part.tool,
+							state = {
+								status = status,
+								title = part_state.title,
+								input = part_state.input or {},
+								metadata = render.get_tool_metadata(part),
+							},
+							metadata = render.get_tool_metadata(part),
+						})
 					end
 				end
-				if #derived > 0 then
-					table.sort(derived, function(a, b)
-						return tostring(a.id or "") < tostring(b.id or "")
-					end)
-					summary = derived
-				end
+			end
+			if #derived > 0 then
+				table.sort(derived, function(a, b)
+					return tostring(a.id or "") < tostring(b.id or "")
+				end)
+				summary = derived
 			end
 		end
 	end
@@ -971,73 +1032,272 @@ end
 
 -- ─── Child session resolution ─────────────────────────────────────────────────
 
----@param children any
----@param input table
----@param start_time number|nil
----@return string|nil
-local function pick_child_session_id(children, input, start_time)
-	if type(children) ~= "table" or #children == 0 then
-		return nil
+local task_child_resolution_pending = {}
+
+---@param child table
+---@return string
+local function child_title(child)
+	return tostring(child.title or child.name or child.description or "")
+end
+
+---@param child table
+---@return number created
+---@return number updated
+local function child_times(child)
+	local time = type(child.time) == "table" and child.time or {}
+	local created = normalize_count(time.created or time.start) or 0
+	local updated = normalize_count(time.updated or time.completed or time["end"]) or created
+	return created, updated
+end
+
+---@param tool_part table
+---@param parent_session_id string
+---@return table
+local function task_resolution_item(tool_part, parent_session_id)
+	local tool_state = type(tool_part.state) == "table" and tool_part.state or {}
+	local input = type(tool_state.input) == "table" and tool_state.input or {}
+	return {
+		part_id = tool_part.id,
+		message_id = tool_part.messageID,
+		parent_session_id = parent_session_id,
+		tool_part = tool_part,
+		input = input,
+		start_time = tool_state.time and normalize_count(tool_state.time.start or tool_state.time.created) or nil,
+	}
+end
+
+---@param child table
+---@param item table
+---@return number score
+local function score_child_for_task(child, item)
+	local title = child_title(child)
+	local input = item.input or {}
+	local desc = type(input.description) == "string" and vim.trim(input.description) or ""
+	local subagent = type(input.subagent_type) == "string" and vim.trim(input.subagent_type) or ""
+	local value = 0
+
+	if desc ~= "" and title:find(desc, 1, true) then
+		value = value + 4
 	end
 
-	local desc = type(input.description) == "string" and input.description or nil
-	local subagent = type(input.subagent_type) == "string" and input.subagent_type or nil
-	local candidates = {}
-
-	for _, child in ipairs(children) do
-		if type(child) == "table" and type(child.id) == "string" and child.id ~= "" then
-			table.insert(candidates, child)
-		end
-	end
-
-	if #candidates == 0 then
-		return nil
-	end
-
-	local function score(child)
-		local title = type(child.title) == "string" and child.title or ""
-		local created = child.time and child.time.created or 0
-		local updated = child.time and child.time.updated or created
-		local value = 0
-
-		if desc and desc ~= "" and title:find(desc, 1, true) then
+	if subagent ~= "" then
+		local marker = "@" .. subagent .. " subagent"
+		if title:find(marker, 1, true) then
+			value = value + 3
+		elseif child.agent == subagent or child.mode == subagent then
 			value = value + 2
 		end
-
-		if subagent and subagent ~= "" then
-			local marker = "@" .. subagent .. " subagent"
-			if title:find(marker, 1, true) then
-				value = value + 3
-			end
-		end
-
-		if type(start_time) == "number" and start_time > 0 and created > 0 then
-			local delta = math.abs(created - start_time)
-			if delta <= 120000 then
-				value = value + 2
-			end
-		end
-
-		return value, updated, created
 	end
 
-	table.sort(candidates, function(a, b)
-		local a_score, a_updated, a_created = score(a)
-		local b_score, b_updated, b_created = score(b)
+	local created = child_times(child)
+	if type(item.start_time) == "number" and item.start_time > 0 and created > 0 then
+		local delta = math.abs(created - item.start_time)
+		if delta <= 10000 then
+			value = value + 2
+		elseif delta <= 120000 then
+			value = value + 1
+		end
+	end
 
-		if a_score ~= b_score then
-			return a_score > b_score
+	return value
+end
+
+---@param children any
+---@param items table[]
+---@param excluded_children table<string, boolean>
+---@return table[] assignments
+local function resolve_child_assignments(children, items, excluded_children)
+	if type(children) ~= "table" or #children == 0 or #items == 0 then
+		return {}
+	end
+
+	local remaining_children = {}
+	for _, child in ipairs(children) do
+		if type(child) == "table" and type(child.id) == "string" and child.id ~= "" and not excluded_children[child.id] then
+			table.insert(remaining_children, child)
 		end
-		if a_updated ~= b_updated then
-			return a_updated > b_updated
+	end
+	if #remaining_children == 0 then
+		return {}
+	end
+
+	local remaining_items = {}
+	for _, item in ipairs(items) do
+		table.insert(remaining_items, item)
+	end
+	local assignments = {}
+
+	while #remaining_items > 0 and #remaining_children > 0 do
+		local proposals_by_child = {}
+
+		for _, item in ipairs(remaining_items) do
+			local best = nil
+			local best_tied = false
+			for _, child in ipairs(remaining_children) do
+				local score = score_child_for_task(child, item)
+				if score > 0 then
+					local proposal = { item = item, child = child, score = score }
+					if not best or score > best.score then
+						best = proposal
+						best_tied = false
+					elseif score == best.score then
+						best_tied = true
+					end
+				end
+			end
+			if best and not best_tied then
+				local child_id = best.child.id
+				proposals_by_child[child_id] = proposals_by_child[child_id] or {}
+				table.insert(proposals_by_child[child_id], best)
+			end
 		end
-		if a_created ~= b_created then
-			return a_created > b_created
+
+		local selected = {}
+		for child_id, proposals in pairs(proposals_by_child) do
+			local best = nil
+			local tied = false
+			for _, proposal in ipairs(proposals) do
+				if not best or proposal.score > best.score then
+					best = proposal
+					tied = false
+				elseif proposal.score == best.score then
+					tied = true
+				end
+			end
+			if best and not tied then
+				selected[child_id] = best
+			end
 		end
-		return a.id > b.id
+
+		local assigned_count = 0
+		local assigned_parts = {}
+		local assigned_children = {}
+		for child_id, proposal in pairs(selected) do
+			table.insert(assignments, proposal)
+			assigned_parts[proposal.item.part_id] = true
+			assigned_children[child_id] = true
+			assigned_count = assigned_count + 1
+		end
+		if assigned_count == 0 then
+			break
+		end
+
+		local next_items = {}
+		for _, item in ipairs(remaining_items) do
+			if not assigned_parts[item.part_id] then
+				table.insert(next_items, item)
+			end
+		end
+		remaining_items = next_items
+
+		local next_children = {}
+		for _, child in ipairs(remaining_children) do
+			if not assigned_children[child.id] then
+				table.insert(next_children, child)
+			end
+		end
+		remaining_children = next_children
+	end
+
+	return assignments
+end
+
+---@param parent_session_id string
+---@return table[]
+local function collect_unresolved_task_items(parent_session_id)
+	local items = {}
+	for _, pos in pairs(state.tasks) do
+		local tool_part = pos and pos.tool_part
+		if
+			type(tool_part) == "table"
+			and tool_part.tool == "task"
+			and tool_part.id
+			and tool_part.messageID
+			and get_task_parent_session_id(tool_part) == parent_session_id
+			and not get_task_child_session_id(tool_part)
+		then
+			table.insert(items, task_resolution_item(tool_part, parent_session_id))
+		end
+	end
+	table.sort(items, function(a, b)
+		local a_start = a.start_time or 0
+		local b_start = b.start_time or 0
+		if a_start ~= b_start then
+			return a_start < b_start
+		end
+		return tostring(a.part_id or "") < tostring(b.part_id or "")
 	end)
+	return items
+end
 
-	return candidates[1] and candidates[1].id or nil
+---@param parent_session_id string
+---@param items table[]
+---@param children table[]
+---@return table[] assignments
+local function record_resolved_children(parent_session_id, items, children)
+	local ok_sync, sync = pcall(require, "opencode.sync")
+	local excluded = {}
+	if ok_sync and type(sync.get_task_parent_session) == "function" then
+		for _, child in ipairs(children or {}) do
+			if type(child) == "table" and type(child.id) == "string" then
+				local owner_parent = sync.get_task_parent_session(child.id)
+				if owner_parent then
+					excluded[child.id] = true
+				end
+			end
+		end
+	end
+
+	local assignments = resolve_child_assignments(children, items, excluded)
+	for _, assignment in ipairs(assignments) do
+		local item = assignment.item
+		local child = assignment.child
+		if item and child and child.id then
+			actions.record_task_child_session(parent_session_id, item.message_id, item.part_id, child.id)
+			local pos = state.tasks[item.part_id]
+			if pos then
+				M.ensure_task_child_loaded(pos.tool_part)
+				M.rerender_task(item.part_id)
+			end
+		end
+	end
+	return assignments
+end
+
+---@param parent_session_id string
+---@param children? table[]
+---@return table[]|nil assignments
+function M.resolve_missing_task_children(parent_session_id, children)
+	if not parent_session_id or parent_session_id == "" then
+		return nil
+	end
+	local items = collect_unresolved_task_items(parent_session_id)
+	if #items == 0 then
+		return {}
+	end
+
+	if type(children) == "table" then
+		return record_resolved_children(parent_session_id, items, children)
+	end
+
+	actions.get_session_children(parent_session_id, function(err, fetched_children)
+		if err or type(fetched_children) ~= "table" then
+			return
+		end
+		record_resolved_children(parent_session_id, items, fetched_children)
+	end)
+	return nil
+end
+
+schedule_task_child_resolution = function(parent_session_id)
+	if not parent_session_id or parent_session_id == "" or task_child_resolution_pending[parent_session_id] then
+		return
+	end
+	task_child_resolution_pending[parent_session_id] = true
+	vim.defer_fn(function()
+		task_child_resolution_pending[parent_session_id] = nil
+		M.resolve_missing_task_children(parent_session_id)
+	end, 20)
 end
 
 ---@param tool_part table
@@ -1063,13 +1323,19 @@ function M.resolve_task_child_session_id(tool_part, callback)
 
 	local input = tool_part and tool_part.state and tool_part.state.input or {}
 	local start_time = tool_part and tool_part.state and tool_part.state.time and tool_part.state.time.start or nil
+	local parent_session_id = get_task_parent_session_id(tool_part) or current.id
+	local item = task_resolution_item(tool_part, parent_session_id)
+	item.input = input
+	item.start_time = normalize_count(start_time)
 
-	actions.get_session_children(current.id, function(err, children)
+	actions.get_session_children(parent_session_id, function(err, children)
 		if err then
 			callback(err, nil)
 			return
 		end
-		callback(nil, pick_child_session_id(children, input, start_time))
+		local assignments = record_resolved_children(parent_session_id, { item }, children or {})
+		local assignment = assignments and assignments[1]
+		callback(nil, assignment and assignment.child and assignment.child.id or nil)
 	end)
 end
 
@@ -1531,9 +1797,9 @@ function M.update_animation_frames_in_place()
 	end
 
 	local updated = false
-	local task_frame = TASK_ANIM_FRAMES[state.task_anim_frame] or TASK_ANIM_FRAMES[1]
+	local task_frame = frame_at(TASK_ANIM_FRAMES, state.task_anim_frame)
 	local classic_frames = { "|", "/", "-", "\\" }
-	local classic_frame = classic_frames[state.task_anim_frame] or classic_frames[1]
+	local classic_frame = frame_at(classic_frames, state.task_anim_frame)
 
 	local bufnr = state.bufnr
 	local buf_lines = vim.api.nvim_buf_line_count(bufnr)

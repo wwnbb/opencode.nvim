@@ -465,6 +465,82 @@ do
 end
 
 do
+	local event_util_for_tasks = require("opencode.events.util")
+	local actions_for_tasks = require("opencode.actions")
+	local events = require("opencode.events")
+
+	events.clear()
+	sync.handle_message_updated({
+		id = "task_state_message",
+		sessionID = "task_state_parent",
+		role = "assistant",
+		time = { created = 1 },
+	})
+	sync.handle_part_updated({
+		id = "task_state_part",
+		messageID = "task_state_message",
+		sessionID = "task_state_parent",
+		type = "tool",
+		tool = "task",
+		state = { metadata = { sessionID = "task_state_child" } },
+	})
+	assert(sync.get_task_parent_session("task_state_child") == "task_state_parent", "state.metadata sessionID should index child")
+
+	local sync_changed = 0
+	events.on("sync_changed", function(data)
+		if
+			data
+			and data.session_id == "task_state_parent"
+			and data.message_id == "task_state_message"
+			and data.part_id == "task_state_late_part"
+		then
+			sync_changed = sync_changed + 1
+		end
+	end)
+	sync.handle_part_updated({
+		id = "task_state_late_part",
+		messageID = "task_state_message",
+		sessionID = "task_state_parent",
+		type = "tool",
+		tool = "task",
+		state = {
+			status = "running",
+			input = { subagent_type = "build", description = "late child" },
+		},
+	})
+	sync.handle_message_updated({
+		id = "task_state_late_child_msg",
+		sessionID = "task_state_late_child",
+		role = "assistant",
+		time = { created = 2 },
+	})
+	sync.handle_part_updated({
+		id = "task_state_late_child_tool",
+		messageID = "task_state_late_child_msg",
+		sessionID = "task_state_late_child",
+		type = "tool",
+		tool = "read",
+		state = { status = "running", input = { filePath = "/tmp/late.lua" } },
+	})
+	assert(
+		actions_for_tasks.record_task_child_session(
+			"task_state_parent",
+			"task_state_message",
+			"task_state_late_part",
+			"task_state_late_child"
+		) == true,
+		"action boundary should record late child mapping"
+	)
+	assert(sync_changed == 1, "late child mapping should emit one parent part sync_changed event")
+	assert(
+		event_util_for_tasks.session_owns_task_child("task_state_parent", "task_state_late_child"),
+		"late mapped child should be relevant to the parent"
+	)
+	events.clear()
+	sync.clear_all()
+end
+
+do
 	local saved_client = package.loaded["opencode.client"]
 	local saved_http = package.loaded["opencode.client.http"]
 	local saved_sse = package.loaded["opencode.client.sse"]
@@ -649,6 +725,108 @@ local running_count_task = chat_tasks.render_task_tool({
 assert(running_count_task.lines[2]:find("2 toolcalls", 1, true), "running task did not parse toolCallCount")
 
 do
+	local chat_state = require("opencode.ui.chat.state").state
+	local previous = {
+		task_child_cache = chat_state.task_child_cache,
+		task_child_loading = chat_state.task_child_loading,
+		tasks = chat_state.tasks,
+		bufnr = chat_state.bufnr,
+	}
+	local tasks = {}
+	local descriptions = {
+		"Map repo architecture",
+		"Explore UI widgets",
+		"Trace client events",
+		"Inspect state model",
+		"Review commands API",
+	}
+
+	chat_state.task_child_cache = {}
+	chat_state.task_child_loading = {}
+	chat_state.tasks = {}
+	chat_state.bufnr = nil
+	sync.clear_all()
+	sync.handle_message_updated({
+		id = "parallel_parent_msg",
+		sessionID = "parallel_parent",
+		role = "assistant",
+		time = { created = 1 },
+	})
+
+	for i, desc in ipairs(descriptions) do
+		local task_part = {
+			id = "parallel_task_" .. i,
+			messageID = "parallel_parent_msg",
+			sessionID = "parallel_parent",
+			type = "tool",
+			tool = "task",
+			state = {
+				status = "running",
+				input = {
+					subagent_type = "grep_slave",
+					description = desc,
+				},
+				time = { start = 1000 + i * 1000 },
+			},
+		}
+		tasks[i] = task_part
+		sync.handle_part_updated(task_part)
+		chat_state.tasks[task_part.id] = {
+			start_line = i,
+			end_line = i,
+			tool_part = task_part,
+		}
+
+		sync.handle_message_updated({
+			id = "parallel_child_msg_" .. i,
+			sessionID = "parallel_child_" .. i,
+			role = "assistant",
+			time = { created = 2000 + i * 1000 },
+		})
+		sync.handle_part_updated({
+			id = "parallel_child_tool_" .. i,
+			messageID = "parallel_child_msg_" .. i,
+			sessionID = "parallel_child_" .. i,
+			type = "tool",
+			tool = "read",
+			state = {
+				status = "running",
+				input = { filePath = "/tmp/parallel_" .. i .. ".lua" },
+			},
+		})
+	end
+
+	local children = {
+		{ id = "parallel_child_3", title = "@grep_slave subagent - " .. descriptions[3], time = { created = 5000 } },
+		{ id = "parallel_child_1", title = "@grep_slave subagent - " .. descriptions[1], time = { created = 3000 } },
+		{ id = "parallel_child_5", title = "@grep_slave subagent - " .. descriptions[5], time = { created = 7000 } },
+		{ id = "parallel_child_2", title = "@grep_slave subagent - " .. descriptions[2], time = { created = 4000 } },
+		{ id = "parallel_child_4", title = "@grep_slave subagent - " .. descriptions[4], time = { created = 6000 } },
+	}
+	local assignments = chat_tasks.resolve_missing_task_children("parallel_parent", children)
+	assert(#assignments == 5, "parallel child resolver should assign all uniquely matched children")
+
+	local seen_children = {}
+	for i, task_part in ipairs(tasks) do
+		local child_id = sync.get_task_child_session("parallel_parent_msg", task_part.id)
+		assert(child_id == "parallel_child_" .. i, "parallel task mapped to the wrong child: " .. tostring(child_id))
+		assert(not seen_children[child_id], "parallel child was reused across tasks: " .. tostring(child_id))
+		seen_children[child_id] = true
+
+		local rendered = chat_tasks.render_task_tool(task_part, false)
+		assert(
+			rendered.lines[2] and rendered.lines[2]:find("Read /tmp/parallel_" .. i .. ".lua", 1, true),
+			"parallel task did not render its own child tool summary"
+		)
+	end
+
+	sync.clear_all()
+	for key, value in pairs(previous) do
+		chat_state[key] = value
+	end
+end
+
+do
 	local actions_mod = require("opencode.actions")
 	local chat_state = require("opencode.ui.chat.state").state
 	local previous = {
@@ -736,6 +914,15 @@ do
 	chat_state.visible = true
 	chat_state.tasks = {}
 	chat_state.tools = {}
+	chat_state.task_anim_frame = 1
+
+	local tool_panel = require("opencode.ui.chat.tool_panel")
+	chat_state.task_anim_frame = 5
+	assert(chat_tasks.get_task_anim_frame() == "⠼", "task animation is missing middle braille frames")
+	chat_state.task_anim_frame = 10
+	assert(chat_tasks.get_task_anim_frame() == "⠏", "task animation is missing final braille frame")
+	chat_state.task_anim_frame = 6
+	assert(tool_panel.anim_frame({ "|", "/", "-", "\\" }) == "/", "regular tool animation should wrap shared frame index")
 	chat_state.task_anim_frame = 1
 
 	local rendered_task = chat_tasks.render_task_tool(task_part, false)

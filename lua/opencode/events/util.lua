@@ -254,18 +254,38 @@ function M.resolve_task_child_session_id(tool_part)
 		return nil
 	end
 
+	local ok_sync, sync = pcall(require, "opencode.sync")
+	if ok_sync and type(sync.get_task_child_session_for_part) == "function" then
+		local indexed = sync.get_task_child_session_for_part(tool_part)
+		if type(indexed) == "string" and indexed ~= "" then
+			return indexed
+		end
+	elseif ok_sync and type(sync.get_task_child_session) == "function" then
+		local indexed = sync.get_task_child_session(tool_part.messageID, tool_part.id)
+		if type(indexed) == "string" and indexed ~= "" then
+			return indexed
+		end
+	end
+
 	local part_metadata = type(tool_part.metadata) == "table" and tool_part.metadata or {}
 	local tool_state = type(tool_part.state) == "table" and tool_part.state or {}
 	local state_metadata = type(tool_state.metadata) == "table" and tool_state.metadata or {}
 
 	return state_metadata.sessionId
 		or state_metadata.sessionID
+		or state_metadata.session_id
 		or state_metadata.childSessionID
+		or state_metadata.childSessionId
 		or state_metadata.child_session_id
 		or part_metadata.sessionId
 		or part_metadata.sessionID
+		or part_metadata.session_id
 		or part_metadata.childSessionID
+		or part_metadata.childSessionId
 		or part_metadata.child_session_id
+		or tool_part.childSessionID
+		or tool_part.childSessionId
+		or tool_part.child_session_id
 end
 
 ---@param parent_session_id string|nil
@@ -288,15 +308,52 @@ function M.session_owns_task_child(parent_session_id, child_session_id)
 		end
 	end
 
+	local ok_state, state = pcall(require, "opencode.state")
+	if ok_state and type(state.get_session_record) == "function" then
+		local record = state.get_session_record(child_session_id)
+		local record_parent = type(record) == "table"
+			and (record.parentID or record.parentId or record.parent_id)
+			or nil
+		if record_parent then
+			return record_parent == parent_session_id
+		end
+	end
+
 	for _, message in ipairs(sync.get_messages(parent_session_id) or {}) do
 		for _, part in ipairs(sync.get_message_tools(message.id) or {}) do
-			if M.resolve_task_child_session_id(part) == child_session_id then
+			local resolved_child = nil
+			if type(sync.get_task_child_session_for_part) == "function" then
+				resolved_child = sync.get_task_child_session_for_part(part)
+			end
+			if not resolved_child then
+				resolved_child = M.resolve_task_child_session_id(part)
+			end
+			if resolved_child == child_session_id then
 				return true
 			end
 		end
 	end
 
 	return false
+end
+
+---@param current_session_id string|nil
+---@param event_session_id string|nil
+---@return string|nil
+function M.render_target_session_id(current_session_id, event_session_id)
+	if not current_session_id or current_session_id == "" then
+		return nil
+	end
+	if not event_session_id or event_session_id == "" then
+		return current_session_id
+	end
+	if event_session_id == current_session_id then
+		return current_session_id
+	end
+	if M.session_owns_task_child(current_session_id, event_session_id) then
+		return current_session_id
+	end
+	return nil
 end
 
 ---@param session_id string|nil

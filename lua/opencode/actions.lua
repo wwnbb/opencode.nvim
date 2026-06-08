@@ -28,6 +28,15 @@ local function local_state()
 	return require("opencode.local")
 end
 
+---@param event_type string
+---@param data table
+local function emit(event_type, data)
+	local ok, events = pcall(require, "opencode.events")
+	if ok and events and type(events.emit) == "function" then
+		events.emit(event_type, data)
+	end
+end
+
 local schedule_callback = require("opencode.util.schedule").schedule_callback
 
 local function update_input_info_bar()
@@ -217,6 +226,29 @@ function M.get_session_children(session_id, callback)
 			schedule_callback(callback, err, children)
 		end)
 	end)
+end
+
+---@param parent_session_id string
+---@param message_id string
+---@param part_id string
+---@param child_session_id string
+---@return boolean changed
+function M.record_task_child_session(parent_session_id, message_id, part_id, child_session_id)
+	local store = sync()
+	if type(store.record_task_child_session) ~= "function" then
+		return false
+	end
+	local changed = store.record_task_child_session(parent_session_id, message_id, part_id, child_session_id)
+	if changed then
+		emit("sync_changed", {
+			kind = "part",
+			action = "updated",
+			session_id = parent_session_id,
+			message_id = message_id,
+			part_id = part_id,
+		})
+	end
+	return changed
 end
 
 function M.send(message, opts)

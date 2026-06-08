@@ -522,12 +522,19 @@ local function resolve_task_child_session_id(tool_part)
 
 	return state_metadata.sessionId
 		or state_metadata.sessionID
+		or state_metadata.session_id
 		or state_metadata.childSessionID
+		or state_metadata.childSessionId
 		or state_metadata.child_session_id
 		or part_metadata.sessionId
 		or part_metadata.sessionID
+		or part_metadata.session_id
 		or part_metadata.childSessionID
+		or part_metadata.childSessionId
 		or part_metadata.child_session_id
+		or tool_part.childSessionID
+		or tool_part.childSessionId
+		or tool_part.child_session_id
 end
 
 ---@param message_id string|nil
@@ -545,6 +552,65 @@ local function clear_task_child_index(message_id, part_id)
 		end
 	end
 	store.task_part_child[key] = nil
+end
+
+---@param parent_session_id string
+---@param message_id string
+---@param part_id string
+---@param child_session_id string
+---@return boolean changed
+local function record_task_child_index(parent_session_id, message_id, part_id, child_session_id)
+	if
+		not parent_session_id
+		or parent_session_id == ""
+		or not message_id
+		or message_id == ""
+		or not part_id
+		or part_id == ""
+		or not child_session_id
+		or child_session_id == ""
+	then
+		return false
+	end
+
+	local key = part_key(message_id, part_id)
+	if not key then
+		return false
+	end
+
+	local changed = false
+	local existing_child = store.task_part_child[key]
+	if existing_child ~= child_session_id then
+		clear_task_child_index(message_id, part_id)
+		changed = true
+	end
+
+	local existing_owner = store.task_child_owner[child_session_id]
+	if existing_owner and existing_owner ~= key then
+		store.task_part_child[existing_owner] = nil
+		local old_message_id, old_part_id = existing_owner:match("^(.-)%z(.+)$")
+		if old_message_id and old_part_id then
+			bump_part_revision(old_message_id, old_part_id, find_message_session_id(old_message_id))
+		end
+		changed = true
+	end
+
+	if
+		store.task_part_child[key] ~= child_session_id
+		or store.task_child_parent[child_session_id] ~= parent_session_id
+		or store.task_child_owner[child_session_id] ~= key
+	then
+		changed = true
+	end
+
+	store.task_part_child[key] = child_session_id
+	store.task_child_parent[child_session_id] = parent_session_id
+	store.task_child_owner[child_session_id] = key
+
+	if changed then
+		bump_part_revision(message_id, part_id, parent_session_id)
+	end
+	return changed
 end
 
 ---@param part table|nil
@@ -576,9 +642,7 @@ local function index_task_child(part)
 		return
 	end
 
-	store.task_part_child[key] = child_session_id
-	store.task_child_parent[child_session_id] = parent_session_id
-	store.task_child_owner[child_session_id] = key
+	record_task_child_index(parent_session_id, message_id, part_id, child_session_id)
 end
 
 ---@param message_id string|nil
@@ -1038,6 +1102,47 @@ function M.get_task_parent_session(child_session_id)
 		return nil
 	end
 	return store.task_child_parent[child_session_id]
+end
+
+---@param message_id string|nil
+---@param part_id string|nil
+---@return string|nil
+function M.get_task_child_session(message_id, part_id)
+	local key = part_key(message_id, part_id)
+	return key and store.task_part_child[key] or nil
+end
+
+---@param child_session_id string|nil
+---@return string|nil message_id
+---@return string|nil part_id
+function M.get_task_child_owner(child_session_id)
+	if not child_session_id or child_session_id == "" then
+		return nil, nil
+	end
+	local key = store.task_child_owner[child_session_id]
+	if not key then
+		return nil, nil
+	end
+	local message_id, part_id = key:match("^(.-)%z(.+)$")
+	return message_id, part_id
+end
+
+---@param tool_part table|nil
+---@return string|nil
+function M.get_task_child_session_for_part(tool_part)
+	if type(tool_part) ~= "table" then
+		return nil
+	end
+	return M.get_task_child_session(tool_part.messageID, tool_part.id) or resolve_task_child_session_id(tool_part)
+end
+
+---@param parent_session_id string
+---@param message_id string
+---@param part_id string
+---@param child_session_id string
+---@return boolean changed
+function M.record_task_child_session(parent_session_id, message_id, part_id, child_session_id)
+	return record_task_child_index(parent_session_id, message_id, part_id, child_session_id)
 end
 
 ---Get session status
