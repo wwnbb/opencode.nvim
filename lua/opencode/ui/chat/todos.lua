@@ -736,6 +736,7 @@ local function setup_todo_buffer()
 
 	local bufnr = vim.api.nvim_create_buf(false, true)
 	state.todo_bufnr = bufnr
+	state.todo_dock_signature = nil
 	vim.bo[bufnr].buftype = "nofile"
 	vim.bo[bufnr].bufhidden = "hide"
 	vim.bo[bufnr].swapfile = false
@@ -758,6 +759,57 @@ local function setup_todo_buffer()
 	end, opts)
 
 	return bufnr
+end
+
+---@param result table
+---@return string
+local function dock_render_signature(result)
+	local parts = {}
+	for _, line in ipairs(result.lines or {}) do
+		table.insert(parts, "L:" .. tostring(line))
+	end
+	for _, hl in ipairs(result.highlights or {}) do
+		if type(hl) == "table" then
+			table.insert(
+				parts,
+				table.concat({
+					"H",
+					tostring(hl.line or 0),
+					tostring(hl.col_start or 0),
+					tostring(hl.col_end or hl.end_col or ""),
+					tostring(hl.hl_group or ""),
+					tostring(hl.priority or ""),
+				}, ":")
+			)
+		end
+	end
+	return table.concat(parts, "\n")
+end
+
+---@param bufnr number
+---@param result table
+local function apply_dock_buffer_render(bufnr, result)
+	vim.bo[bufnr].modifiable = true
+	vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, result.lines)
+	vim.api.nvim_buf_clear_namespace(bufnr, todo_hl_ns, 0, -1)
+	for _, hl in ipairs(result.highlights or {}) do
+		local line_idx = hl.line
+		if line_idx >= 0 and line_idx < #result.lines then
+			local end_col = hl.col_end
+			if end_col == -1 then
+				end_col = #result.lines[line_idx + 1]
+			end
+			local mark_opts = {
+				end_col = end_col,
+				hl_group = dock_highlight_group(hl.hl_group),
+			}
+			if hl.priority then
+				mark_opts.priority = hl.priority
+			end
+			pcall(vim.api.nvim_buf_set_extmark, bufnr, todo_hl_ns, line_idx, hl.col_start, mark_opts)
+		end
+	end
+	vim.bo[bufnr].modifiable = false
 end
 
 local function setup_todo_window_options(winid)
@@ -906,27 +958,12 @@ function M.update_window()
 	end
 
 	local bufnr = setup_todo_buffer()
-	vim.bo[bufnr].modifiable = true
-	vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, result.lines)
-	vim.api.nvim_buf_clear_namespace(bufnr, todo_hl_ns, 0, -1)
-	for _, hl in ipairs(result.highlights or {}) do
-		local line_idx = hl.line
-		if line_idx >= 0 and line_idx < #result.lines then
-			local end_col = hl.col_end
-			if end_col == -1 then
-				end_col = #result.lines[line_idx + 1]
-			end
-			local mark_opts = {
-				end_col = end_col,
-				hl_group = dock_highlight_group(hl.hl_group),
-			}
-			if hl.priority then
-				mark_opts.priority = hl.priority
-			end
-			pcall(vim.api.nvim_buf_set_extmark, bufnr, todo_hl_ns, line_idx, hl.col_start, mark_opts)
-		end
+	local signature = dock_render_signature(result)
+	local buffer_changed = state.todo_dock_signature ~= signature
+	if buffer_changed then
+		apply_dock_buffer_render(bufnr, result)
+		state.todo_dock_signature = signature
 	end
-	vim.bo[bufnr].modifiable = false
 
 	if todo_window_is_valid() then
 		vim.api.nvim_win_set_config(state.todo_winid, win_config)
@@ -943,6 +980,7 @@ function M.update_window()
 		todos = #todos,
 		lines = #result.lines,
 		highlights = #(result.highlights or {}),
+		buffer_changed = buffer_changed,
 	})
 end
 

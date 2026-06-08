@@ -206,8 +206,20 @@ local function normalize_count(value)
 	if type(value) == "number" then
 		return value
 	end
-	if type(value) == "string" and value ~= "" then
-		return tonumber(value)
+	if type(value) == "string" then
+		local text = vim.trim(value)
+		if text ~= "" then
+			return tonumber(text)
+		end
+	end
+	if type(value) == "table" then
+		local count = 0
+		for _ in pairs(value) do
+			count = count + 1
+		end
+		if count > 0 then
+			return count
+		end
 	end
 	return nil
 end
@@ -243,7 +255,22 @@ end
 ---@param metadata table
 ---@return number|nil
 local function get_metadata_toolcall_count(metadata)
-	return normalize_count(metadata.toolcalls) or normalize_count(metadata.toolCalls) or normalize_count(metadata.calls)
+	for _, key in ipairs({
+		"toolcalls",
+		"toolCalls",
+		"tool_calls",
+		"toolCallCount",
+		"tool_call_count",
+		"calls",
+		"callCount",
+		"call_count",
+	}) do
+		local count = normalize_count(metadata[key])
+		if count ~= nil then
+			return count
+		end
+	end
+	return nil
 end
 
 ---@param value any
@@ -322,11 +349,35 @@ end
 ---@param item table  { tool: string, state: { status: string, title: string|nil, input: table|nil } }
 ---@return string label
 local function format_summary_item_label(item)
+	item = type(item) == "table" and item or {}
 	local tool_name = tostring(item.tool or "unknown")
-	local item_state = item.state or {}
+	local item_state = type(item.state) == "table" and item.state or {}
 	local item_status = item_state.status or "pending"
-	local input = item_state.input or {}
-	local metadata = item_state.metadata or item.metadata or {}
+	local metadata = vim.tbl_deep_extend(
+		"force",
+		{},
+		type(item.metadata) == "table" and item.metadata or {},
+		type(item_state.metadata) == "table" and item_state.metadata or {}
+	)
+	local input = item_state.input
+	if type(input) ~= "table" then
+		input = item.input
+	end
+	if type(input) ~= "table" then
+		input = metadata.input
+	end
+	if type(input) == "table" then
+		input = vim.tbl_deep_extend(
+			"force",
+			{},
+			type(metadata.input) == "table" and metadata.input or {},
+			type(item.input) == "table" and item.input or {},
+			type(item_state.input) == "table" and item_state.input or {}
+		)
+	elseif input == nil then
+		input = {}
+	end
+	local input_table = type(input) == "table" and input or {}
 	if chat_todos.is_todo_tool(tool_name) then
 		local progress = format_todo_progress(item)
 		local action = chat_todos.is_todo_read_tool(tool_name) and "Read Todos" or "Update Todos"
@@ -341,7 +392,7 @@ local function format_summary_item_label(item)
 
 	-- Tool-specific fallback
 	if tool_name == "read" then
-		local fp = input.filePath or input.file_path or ""
+		local fp = input_table.filePath or input_table.file_path or ""
 		if fp ~= "" then
 			if #fp > 40 then
 				fp = "..." .. fp:sub(-37)
@@ -349,7 +400,7 @@ local function format_summary_item_label(item)
 			return "Read " .. fp
 		end
 	elseif tool_name == "write" then
-		local fp = input.filePath or input.file_path or ""
+		local fp = input_table.filePath or input_table.file_path or ""
 		if fp ~= "" then
 			if #fp > 40 then
 				fp = "..." .. fp:sub(-37)
@@ -357,7 +408,7 @@ local function format_summary_item_label(item)
 			return "Write " .. fp
 		end
 	elseif tool_name == "edit" then
-		local fp = input.filePath or input.file_path or ""
+		local fp = input_table.filePath or input_table.file_path or ""
 		if fp ~= "" then
 			if #fp > 40 then
 				fp = "..." .. fp:sub(-37)
@@ -365,7 +416,7 @@ local function format_summary_item_label(item)
 			return "Edit " .. fp
 		end
 	elseif tool_name == "bash" then
-		local d = input.description or ""
+		local d = input_table.description or ""
 		if d ~= "" then
 			if #d > 40 then
 				d = d:sub(1, 37) .. "..."
@@ -373,21 +424,21 @@ local function format_summary_item_label(item)
 			return "Bash " .. d
 		end
 	elseif tool_name == "glob" then
-		local pat = input.pattern or ""
+		local pat = input_table.pattern or ""
 		if pat ~= "" then
 			local count = normalize_count(metadata.count)
 			local suffix = count and (" (" .. format_match_count(count) .. ")") or ""
 			return "Glob " .. pat .. suffix
 		end
 	elseif tool_name == "grep" then
-		local pat = input.pattern or ""
+		local pat = input_table.pattern or ""
 		if pat ~= "" then
 			local matches = normalize_count(metadata.matches)
 			local suffix = matches and (" (" .. format_match_count(matches) .. ")") or ""
 			return "Grep " .. pat .. suffix
 		end
 	elseif tool_name == "rg" then
-		local pat = input.pattern or ""
+		local pat = input_table.pattern or ""
 		if pat ~= "" then
 			local matches = normalize_count(metadata.matches)
 				or normalize_count(metadata.matchCount)
@@ -397,8 +448,8 @@ local function format_summary_item_label(item)
 			return "Ripgrep " .. pat .. suffix
 		end
 	elseif tool_name == "task" then
-		local agent = input.subagent_type or ""
-		local d = input.description or ""
+		local agent = input_table.subagent_type or ""
+		local d = input_table.description or ""
 		if agent ~= "" then
 			return render.format_title(agent) .. " Task" .. (d ~= "" and (" — " .. d) or "")
 		end
@@ -418,11 +469,19 @@ end
 local function find_current_summary_item(summary)
 	for i = #summary, 1, -1 do
 		local item = summary[i]
-		local item_state = item and item.state or {}
+		local item_state = type(item and item.state) == "table" and item.state or {}
 		local status = item_state.status or "pending"
 		local title = trim_string(item_state.title)
-		if (status == "running" or status == "completed") and title ~= "" then
-			return item
+		if status == "running" or status == "completed" then
+			if title ~= "" then
+				return item
+			end
+
+			local label = trim_string(format_summary_item_label(item))
+			local generic = render.format_title(tostring(item and item.tool or "unknown"))
+			if label ~= "" and label ~= generic then
+				return item
+			end
 		end
 	end
 	return nil
@@ -575,6 +634,54 @@ end
 local function get_task_child_session_id(tool_part)
 	local metadata = render.get_tool_metadata(tool_part)
 	return metadata.sessionId or metadata.sessionID or metadata.childSessionID or metadata.child_session_id
+end
+
+---@param tool_part table|nil
+---@param opts? table
+function M.ensure_task_child_loaded(tool_part, opts)
+	if type(tool_part) ~= "table" or tool_part.tool ~= "task" then
+		return
+	end
+	local part_id = tool_part.id
+	if not part_id then
+		return
+	end
+	local tool_status = tool_part.state and tool_part.state.status or "pending"
+	if not is_task_working(tool_status) then
+		return
+	end
+
+	local child_session_id = get_task_child_session_id(tool_part)
+	if not child_session_id or child_session_id == "" then
+		return
+	end
+
+	local ok_sync, sync = pcall(require, "opencode.sync")
+	if ok_sync and type(sync.get_messages) == "function" then
+		local messages = sync.get_messages(child_session_id)
+		if type(messages) == "table" and #messages > 0 then
+			state.task_child_cache[part_id] = true
+			return
+		end
+	end
+
+	if state.task_child_cache[part_id] or state.task_child_loading[part_id] then
+		return
+	end
+
+	state.task_child_loading[part_id] = true
+	local load_opts = vim.tbl_extend("force", { limit = 100 }, type(opts) == "table" and opts or {})
+	actions.load_session_messages(child_session_id, load_opts, function(fetch_err)
+		vim.schedule(function()
+			state.task_child_loading[part_id] = nil
+			if not fetch_err then
+				state.task_child_cache[part_id] = true
+			end
+			if state.tasks[part_id] then
+				M.rerender_task(part_id)
+			end
+		end)
+	end)
 end
 
 -- Render a task tool part as a compact TUI-style subagent summary.

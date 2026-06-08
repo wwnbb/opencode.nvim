@@ -73,7 +73,6 @@ require("opencode").setup({
 	keymaps = {
 		toggle = "<leader>ot",
 		command_palette = "<leader>op",
-		show_diff = "<leader>od",
 		abort = "<leader>ox",
 	},
 })
@@ -86,10 +85,6 @@ end, { desc = "Toggle OpenCode chat", noremap = true, silent = true })
 vim.keymap.set("n", "<leader>op", function()
 	require("opencode").command_palette()
 end, { desc = "OpenCode command palette", noremap = true, silent = true })
-
-vim.keymap.set("n", "<leader>od", function()
-	require("opencode").show_diff()
-end, { desc = "OpenCode diff viewer", noremap = true, silent = true })
 
 vim.keymap.set("n", "<leader>ox", function()
 	require("opencode").abort()
@@ -122,4 +117,4 @@ if lualine_ok then
 end
 
 vim.notify("Test config loaded! Leader is 'comma'", vim.log.levels.INFO)
-vim.notify("Keymaps: ,ot=toggle ,op=palette ,od=diff ,ox=abort", vim.log.levels.INFO)
+vim.notify("Keymaps: ,ot=toggle ,op=palette ,ox=abort", vim.log.levels.INFO)

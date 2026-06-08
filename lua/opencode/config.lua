@@ -255,7 +255,6 @@ M.defaults = {
 	keymaps = {
 		toggle = "<leader>oo",
 		command_palette = "<leader>op",
-		show_diff = "<leader>od",
 		abort = "<leader>ox",
 		active_sessions = "<leader>oS",
 	},

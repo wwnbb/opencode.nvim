@@ -120,19 +120,6 @@ local function write_file(filepath, content)
 	end
 end
 
---- Read content from a file
----@param filepath string
----@return string
-local function read_file(filepath)
-	local f = io.open(filepath, "r")
-	if not f then
-		return ""
-	end
-	local content = f:read("*all")
-	f:close()
-	return content
-end
-
 --- Send permission reply to server
 ---@param reply string "once" | "reject"
 local function send_reply(reply)

@@ -11,6 +11,7 @@ local widget_base = require("opencode.ui.widget_base")
 local question_state = require("opencode.question.state")
 local widget_support = require("opencode.ui.chat.widget_support")
 local render_coordinator = require("opencode.ui.chat.render_coordinator")
+local render = require("opencode.ui.chat.render")
 local actions = require("opencode.actions")
 
 local function schedule_render()
@@ -218,27 +219,9 @@ function M.rerender_question(request_id)
 
 	vim.bo[state.bufnr].modifiable = true
 	vim.api.nvim_buf_set_lines(state.bufnr, pos.start_line, pos.end_line + 1, false, lines)
-
-	vim.api.nvim_buf_clear_namespace(state.bufnr, chat_hl_ns, pos.start_line, pos.start_line + #lines)
-	for _, hl in ipairs(highlights) do
-		local end_col = hl.col_end
-		if end_col == -1 then
-			local l = vim.api.nvim_buf_get_lines(
-				state.bufnr,
-				pos.start_line + hl.line,
-				pos.start_line + hl.line + 1,
-				false
-			)[1]
-			end_col = l and #l or 0
-		end
-		vim.api.nvim_buf_set_extmark(
-			state.bufnr,
-			chat_hl_ns,
-			pos.start_line + hl.line,
-			hl.col_start,
-			{ end_col = end_col, hl_group = hl.hl_group }
-		)
-	end
+	local clear_end = pos.start_line + math.max(old_count, new_count)
+	vim.api.nvim_buf_clear_namespace(state.bufnr, chat_hl_ns, pos.start_line, clear_end)
+	render.apply_extmark_highlights(state.bufnr, chat_hl_ns, highlights, pos.start_line)
 
 	vim.bo[state.bufnr].modifiable = false
 

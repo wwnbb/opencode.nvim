@@ -75,55 +75,6 @@ local function runtime_session_id(session_id)
 	return event_util.runtime_root_for_session(session_id)
 end
 
----@param target_id string
-local function close_pending_permissions_for_session(target_id)
-	local ok_perm, perm_state = pcall(require, "opencode.permission.state")
-	if not ok_perm or type(perm_state.clear_pending_matching) ~= "function" then
-		return
-	end
-
-	local removed = perm_state.clear_pending_matching(function(pstate)
-		local session_id = pstate and pstate.session_id
-		return session_id == target_id or event_util.session_owns_task_child(target_id, session_id)
-	end)
-	if not removed or #removed == 0 then
-		return
-	end
-
-	local client_ok, client = pcall(require, "opencode.client")
-	local logger_ok, logger = pcall(require, "opencode.logger")
-
-	for _, pstate in ipairs(removed) do
-		local permission_id = pstate and pstate.permission_id
-		if permission_id and client_ok and type(client.respond_permission) == "function" then
-			client.respond_permission(permission_id, "reject", { message = "Session closed" }, function(err)
-				if err and logger_ok and logger and type(logger.warn) == "function" then
-					logger.warn("Failed to reject permission for closed session", {
-						permission_id = permission_id,
-						session_id = target_id,
-						error = err,
-					})
-				end
-			end)
-		end
-
-		emit("permission_rejected", {
-			permission_id = permission_id,
-			session_id = pstate.session_id or target_id,
-		})
-		emit("permission_removed", {
-			permission_id = permission_id,
-			session_id = pstate.session_id or target_id,
-		})
-		emit("interaction_changed", {
-			kind = "permission",
-			action = "rejected",
-			id = permission_id,
-			session_id = pstate.session_id or target_id,
-		})
-	end
-end
-
 ---@param close_id string
 ---@return table|nil
 local function next_session_after_close(close_id)
@@ -206,6 +157,26 @@ local function reject_question_request(session_id, request_id)
 	end)
 end
 
+---@param permission_id string
+---@param session_id string|nil
+---@param source string
+local function emit_permission_rejected_for_close(permission_id, session_id, source)
+	emit("permission_rejected", {
+		permission_id = permission_id,
+		session_id = session_id,
+		reason = "session_close",
+		source = source,
+	})
+	emit("interaction_changed", {
+		kind = "permission",
+		action = "rejected",
+		id = permission_id,
+		session_id = session_id,
+		reason = "session_close",
+		source = source,
+	})
+end
+
 ---@param root_session_id string
 local function close_pending_interactions_for_session(root_session_id)
 	if not root_session_id or root_session_id == "" then
@@ -228,6 +199,10 @@ local function close_pending_interactions_for_session(root_session_id)
 		for _, pstate in ipairs(owned) do
 			if pstate.status == "pending" then
 				reject_permission_request(pstate.permission_id)
+				if type(perm_state.mark_rejected) == "function" then
+					perm_state.mark_rejected(pstate.permission_id)
+				end
+				emit_permission_rejected_for_close(pstate.permission_id, pstate.session_id, "permission")
 			end
 			if perm_state.remove_permission(pstate.permission_id) then
 				emit("permission_removed", {
@@ -291,6 +266,7 @@ local function close_pending_interactions_for_session(root_session_id)
 					pcall(edit_state.reject_all, estate.permission_id)
 				end
 				reject_permission_request(estate.permission_id)
+				emit_permission_rejected_for_close(estate.permission_id, estate.session_id, "edit")
 			end
 			if edit_state.remove_edit(estate.permission_id) then
 				emit("edit_removed", {

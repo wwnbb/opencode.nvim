@@ -28,6 +28,7 @@ function M.reset_chat_surface(opts)
 	state.edits = {}
 	state.tasks = {}
 	state.task_child_cache = {}
+	state.task_child_loading = {}
 	state.tools = {}
 	if opts.reset_expansions then
 		state.expanded_tasks = {}

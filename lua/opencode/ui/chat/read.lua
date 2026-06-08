@@ -69,18 +69,6 @@ local function stringify(value)
 	return tostring(value)
 end
 
----@param text string
----@return string
-local function strip_ansi(text)
-	return text_util.strip_ansi(text)
-end
-
----@param value any
----@return string
-local function normalize_text(value)
-	return text_util.normalize_text(value, stringify)
-end
-
 ---@param ... any
 ---@return string
 local function first_nonempty_text(...)

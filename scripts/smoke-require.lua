@@ -564,6 +564,92 @@ assert_no_buffer_newlines(multiline_task.lines, "task renderer")
 assert(multiline_task.lines[1]:find("Investigate ↵ newline crash", 1, true), "task description was not sanitized")
 assert(multiline_task.lines[2]:find("Run ↵ checks", 1, true), "task summary title was not sanitized")
 
+local running_read_task = chat_tasks.render_task_tool({
+	id = "task_running_read",
+	tool = "task",
+	state = {
+		status = "running",
+		input = {
+			subagent_type = "build",
+			description = "Inspect file",
+		},
+		metadata = {
+			tool_calls = 3,
+			summary = {
+				{
+					id = "1",
+					tool = "read",
+					state = {
+						status = "running",
+						title = "",
+						input = { filePath = "/tmp/config.lua" },
+					},
+				},
+			},
+		},
+	},
+}, false)
+assert(running_read_task.lines[2]:find("Read /tmp/config.lua", 1, true), "running task did not label current read")
+assert(running_read_task.lines[2]:find("3 toolcalls", 1, true), "running task did not parse snake_case count")
+
+local running_count_task = chat_tasks.render_task_tool({
+	id = "task_toolcall_count",
+	tool = "task",
+	state = {
+		status = "running",
+		input = {
+			subagent_type = "build",
+			description = "Count tools",
+		},
+		metadata = {
+			toolCallCount = "2",
+		},
+	},
+}, false)
+assert(running_count_task.lines[2]:find("2 toolcalls", 1, true), "running task did not parse toolCallCount")
+
+do
+	local actions_mod = require("opencode.actions")
+	local chat_state = require("opencode.ui.chat.state").state
+	local previous = {
+		task_child_cache = chat_state.task_child_cache,
+		task_child_loading = chat_state.task_child_loading,
+		tasks = chat_state.tasks,
+	}
+	local original_load_session_messages = actions_mod.load_session_messages
+	local calls = 0
+
+	chat_state.task_child_cache = {}
+	chat_state.task_child_loading = {}
+	chat_state.tasks = {}
+	actions_mod.load_session_messages = function(session_id, opts, callback)
+		calls = calls + 1
+		assert(session_id == "child_autoload", "autoload should use metadata child session id")
+		assert(opts and opts.limit == 100, "autoload should request the default message limit")
+		callback(nil, {})
+	end
+
+	chat_tasks.ensure_task_child_loaded({
+		id = "task_autoload",
+		tool = "task",
+		state = {
+			status = "running",
+			metadata = { sessionId = "child_autoload" },
+		},
+	})
+	assert(calls == 1, "autoload should issue one child-session load")
+	assert(chat_state.task_child_loading.task_autoload == true, "autoload should mark the task as loading")
+	assert(vim.wait(200, function()
+		return chat_state.task_child_loading.task_autoload == nil
+	end, 10), "autoload cleanup was not scheduled")
+	assert(chat_state.task_child_cache.task_autoload == true, "autoload success should cache the child session")
+
+	actions_mod.load_session_messages = original_load_session_messages
+	for key, value in pairs(previous) do
+		chat_state[key] = value
+	end
+end
+
 do
 	local chat_state_mod = require("opencode.ui.chat.state")
 	local chat_state = chat_state_mod.state
@@ -855,6 +941,217 @@ do
 	else
 		app_state.set_session(nil, nil)
 	end
+	if vim.api.nvim_buf_is_valid(previous_buf) then
+		vim.api.nvim_win_set_buf(winid, previous_buf)
+	end
+	if vim.api.nvim_buf_is_valid(bufnr) then
+		vim.api.nvim_buf_delete(bufnr, { force = true })
+	end
+end
+
+do
+	local chat = require("opencode.ui.chat")
+	local chat_state = require("opencode.ui.chat.state").state
+	local render_state = require("opencode.ui.chat.render_state")
+	local app_state = require("opencode.state")
+	local question_state = require("opencode.question.state")
+	local permission_state = require("opencode.permission.state")
+	local edit_state = require("opencode.edit.state")
+	local spinner = require("opencode.ui.spinner")
+
+	local previous_buf = vim.api.nvim_get_current_buf()
+	local previous_session = app_state.get_session()
+	local previous_view = {
+		bufnr = chat_state.bufnr,
+		winid = chat_state.winid,
+		visible = chat_state.visible,
+		config = chat_state.config,
+		local_notices = chat_state.local_notices,
+		session_stack = chat_state.session_stack,
+		auto_scroll = chat_state.auto_scroll,
+		stream_blocks = chat_state.stream_blocks,
+		spinner_footer_line = chat_state.spinner_footer_line,
+		questions = chat_state.questions,
+		permissions = chat_state.permissions,
+		edits = chat_state.edits,
+		tasks = chat_state.tasks,
+		tools = chat_state.tools,
+	}
+
+	local bufnr = vim.api.nvim_create_buf(false, true)
+	local winid = vim.api.nvim_get_current_win()
+	vim.api.nvim_win_set_buf(winid, bufnr)
+	chat_state.bufnr = bufnr
+	chat_state.winid = winid
+	chat_state.visible = true
+	chat_state.config = {
+		max_rendered_messages = 2,
+		max_user_message_lines = 120,
+		session_tabs = { enabled = false },
+	}
+	chat_state.local_notices = {
+		{
+			role = "user",
+			content = "recent echoed local",
+			timestamp = 4,
+			session_id = "render_contract_session",
+			id = "local_echo",
+		},
+	}
+	chat_state.session_stack = {}
+	chat_state.auto_scroll = false
+	chat_state.stream_blocks = {}
+	chat_state.spinner_footer_line = nil
+	chat_state.questions = {}
+	chat_state.permissions = {}
+	chat_state.edits = {}
+	chat_state.tasks = {}
+	chat_state.tools = {}
+
+	sync.clear_all()
+	question_state.clear_all()
+	permission_state.clear_all()
+	edit_state.clear_all()
+	app_state.set_session("render_contract_session", "Render Contract")
+	app_state.set_session_status("render_contract_session", { type = "streaming" })
+
+	sync.handle_message_updated({
+		id = "m1",
+		sessionID = "render_contract_session",
+		role = "user",
+		time = { created = 1000 },
+	})
+	sync.handle_part_updated({
+		id = "m1_text",
+		messageID = "m1",
+		sessionID = "render_contract_session",
+		type = "text",
+		text = "older user anchored",
+	})
+	sync.handle_message_updated({
+		id = "m2",
+		sessionID = "render_contract_session",
+		role = "assistant",
+		time = { created = 2000, completed = 2500 },
+	})
+	sync.handle_part_updated({
+		id = "m2_text",
+		messageID = "m2",
+		sessionID = "render_contract_session",
+		type = "text",
+		text = "older assistant",
+	})
+	sync.handle_message_updated({
+		id = "m3",
+		sessionID = "render_contract_session",
+		role = "user",
+		time = { created = 4000 },
+	})
+	sync.handle_part_updated({
+		id = "m3_text",
+		messageID = "m3",
+		sessionID = "render_contract_session",
+		type = "text",
+		text = "recent echoed local",
+	})
+	sync.handle_message_updated({
+		id = "m4",
+		sessionID = "render_contract_session",
+		role = "assistant",
+		time = { created = 5000 },
+	})
+	sync.handle_part_updated({
+		id = "m4_text",
+		messageID = "m4",
+		sessionID = "render_contract_session",
+		type = "text",
+		text = "streaming answer",
+	})
+	sync.handle_part_updated({
+		id = "m4_question_tool",
+		messageID = "m4",
+		sessionID = "render_contract_session",
+		type = "tool",
+		tool = "question",
+		callID = "call_question",
+		state = { status = "pending", input = {} },
+	})
+	sync.handle_part_updated({
+		id = "m4_edit_tool",
+		messageID = "m4",
+		sessionID = "render_contract_session",
+		type = "tool",
+		tool = "edit",
+		callID = "call_edit",
+		state = { status = "pending", input = {} },
+	})
+
+	question_state.add_question("q_anchor", "render_contract_session", {
+		{ question = "Anchor?", options = { { label = "Yes", value = "yes" } } },
+	}, { message_id = "m1", timestamp = 1 })
+	question_state.add_question("q_tool", "render_contract_session", {
+		{ question = "Tool question?", options = { { label = "Yes", value = "yes" } } },
+	}, { message_id = "m4", call_id = "call_question", timestamp = 5 })
+	permission_state.add_permission("perm_orphan", "render_contract_session", "bash", {
+		timestamp = 6,
+		tool_input = { command = "pwd" },
+	})
+	edit_state.add_edit("edit_tool", "render_contract_session", {
+		{ filePath = "render-contract.txt", before = "a", after = "b" },
+	}, {
+		message_id = "m4",
+		call_id = "call_edit",
+		timestamp = 7,
+		review_mode = "readonly",
+	})
+
+	spinner.start()
+	local raw_lines = chat.render()
+	local rendered = table.concat(raw_lines, "\n")
+	local echo_count = 0
+	for _ in rendered:gmatch("recent echoed local") do
+		echo_count = echo_count + 1
+	end
+
+	assert(rendered:find("older user anchored", 1, true), "pending widget should anchor a message before cutoff")
+	assert(echo_count == 1, "local user notice should not duplicate a server echo")
+	assert(chat_state.questions.q_tool, "tool-call question should be tracked")
+	assert(chat_state.permissions.perm_orphan, "orphan permission should be tracked")
+	assert(chat_state.edits.edit_tool, "tool-call edit should be tracked")
+	assert(chat_state.tools.m4_question_tool == nil, "question tool row should be suppressed by widget")
+	assert(chat_state.tools.m4_edit_tool == nil, "edit tool row should be suppressed by widget")
+
+	local block_key = render_state.stream_block_key("render_contract_session", "m4", "m4_text", "text")
+	assert(chat_state.stream_blocks[block_key], "full render should register streaming text block")
+	assert(type(chat_state.spinner_footer_line) == "number", "full render should register spinner footer line")
+
+	spinner.stop()
+	sync.clear_all()
+	question_state.clear_all()
+	permission_state.clear_all()
+	edit_state.clear_all()
+	app_state.remove_session("render_contract_session")
+	if previous_session and previous_session.id then
+		app_state.set_session(previous_session.id, previous_session.name, {
+			runtime = previous_session.runtime,
+		})
+	else
+		app_state.set_session(nil, nil)
+	end
+	chat_state.bufnr = previous_view.bufnr
+	chat_state.winid = previous_view.winid
+	chat_state.visible = previous_view.visible
+	chat_state.config = previous_view.config
+	chat_state.local_notices = previous_view.local_notices
+	chat_state.session_stack = previous_view.session_stack
+	chat_state.auto_scroll = previous_view.auto_scroll
+	chat_state.stream_blocks = previous_view.stream_blocks
+	chat_state.spinner_footer_line = previous_view.spinner_footer_line
+	chat_state.questions = previous_view.questions
+	chat_state.permissions = previous_view.permissions
+	chat_state.edits = previous_view.edits
+	chat_state.tasks = previous_view.tasks
+	chat_state.tools = previous_view.tools
 	if vim.api.nvim_buf_is_valid(previous_buf) then
 		vim.api.nvim_win_set_buf(winid, previous_buf)
 	end
