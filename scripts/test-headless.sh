@@ -17,6 +17,7 @@ if [ "$#" -eq 0 ]; then
 		"scripts/check-send-flow.lua"
 		"scripts/check-transport.lua"
 		"scripts/test-input-history.lua"
+		"scripts/test-input-mentions.lua"
 		"scripts/smoke-require.lua"
 		"scripts/integration-chat-tabs.lua"
 		"scripts/integration-chat-render-freshness.lua"

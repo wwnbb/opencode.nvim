@@ -8,6 +8,7 @@ local history = require("opencode.ui.input.history")
 local info_bar = require("opencode.ui.input.info_bar")
 local keymaps = require("opencode.ui.input.keymaps")
 local layout = require("opencode.ui.input.layout")
+local mentions = require("opencode.ui.input.mentions")
 local popups = require("opencode.ui.input.popups")
 
 local state = {
@@ -26,6 +27,7 @@ local state = {
 	config = nil,
 	layout = nil,
 	parts = {},
+	mentions = nil,
 	normalizing_paste = false,
 	resize_scheduled = false,
 }
@@ -71,6 +73,7 @@ end
 
 local function clear_input()
 	state.parts = {}
+	mentions.clear(state)
 	set_input_text("")
 end
 
@@ -102,6 +105,9 @@ local function send_message()
 	end
 
 	local parts = attachments.active_parts_for_text(state, text)
+	for _, part in ipairs(mentions.active_parts(state)) do
+		table.insert(parts, part)
+	end
 	if text == "" and #parts == 0 then
 		return
 	end
@@ -137,6 +143,7 @@ local function history_prev()
 		return
 	end
 	state.parts = {}
+	mentions.clear(state)
 	set_input_text(text)
 end
 
@@ -146,6 +153,7 @@ local function history_next()
 		return
 	end
 	state.parts = {}
+	mentions.clear(state)
 	set_input_text(text)
 end
 
@@ -168,6 +176,7 @@ local function restore_input()
 	end
 
 	state.parts = parts
+	mentions.clear(state)
 	set_input_text(text)
 end
 
@@ -183,6 +192,11 @@ local function mount_input(chat_winid, float_dims, cfg)
 	state.winid = state.popup.winid
 	state.info_bufnr = state.info_popup.bufnr
 	state.visible = true
+	state.mentions = {
+		parts = {},
+		items = {},
+		selected = 1,
+	}
 
 	vim.api.nvim_buf_set_var(state.bufnr, "completion", false)
 end
@@ -206,6 +220,7 @@ function M.show(opts)
 	history.configure(cfg)
 	history.load()
 	info_bar.setup_highlights()
+	mentions.setup_highlights()
 
 	local chat_winid = opts.winid
 	if not chat_winid or not vim.api.nvim_win_is_valid(chat_winid) then
@@ -217,6 +232,15 @@ function M.show(opts)
 
 	autocmds.setup(state, {
 		schedule_resize = schedule_resize_input,
+		input_changed = function()
+			mentions.refresh(state)
+		end,
+		cursor_moved = function()
+			mentions.refresh(state)
+		end,
+		insert_leave = function()
+			mentions.close_popup(state)
+		end,
 		lock_scroll = function()
 			layout.lock_scroll(state)
 		end,
@@ -230,6 +254,18 @@ function M.show(opts)
 		cancel = cancel_input,
 		history_prev = history_prev,
 		history_next = history_next,
+		mention_prev = function()
+			return mentions.move_selection(state, -1)
+		end,
+		mention_next = function()
+			return mentions.move_selection(state, 1)
+		end,
+		mention_select = function()
+			return mentions.select_current(state)
+		end,
+		mention_close = function()
+			return mentions.close_popup(state)
+		end,
 		paste = function()
 			M.paste_clipboard()
 		end,
@@ -254,6 +290,7 @@ function M.show(opts)
 	end
 	if text and text ~= "" then
 		set_input_text(text)
+		mentions.refresh(state)
 	end
 
 	vim.cmd("startinsert!")
@@ -268,6 +305,7 @@ function M.close(save_draft)
 		history.set_pending(get_input_text(), state.parts)
 	end
 
+	mentions.clear(state)
 	focus_parent_before_unmount()
 	popups.unmount(state)
 
@@ -280,6 +318,7 @@ function M.close(save_draft)
 	state.info_bufnr = nil
 	state.layout = nil
 	state.parts = {}
+	state.mentions = nil
 	state.on_send = nil
 	state.on_cancel = nil
 	state.close_on_send = true
@@ -308,6 +347,9 @@ function M.get_winids()
 
 	if state.info_popup and state.info_popup.winid and vim.api.nvim_win_is_valid(state.info_popup.winid) then
 		table.insert(wins, state.info_popup.winid)
+	end
+	if state.mentions and state.mentions.popup_win and vim.api.nvim_win_is_valid(state.mentions.popup_win) then
+		table.insert(wins, state.mentions.popup_win)
 	end
 
 	return wins
@@ -339,6 +381,7 @@ function M.set_pending_text(text)
 	end
 
 	if state.visible then
+		mentions.clear(state)
 		set_input_text(content)
 	end
 end

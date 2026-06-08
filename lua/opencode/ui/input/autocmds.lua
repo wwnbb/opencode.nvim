@@ -9,8 +9,29 @@ function M.setup(state, callbacks)
 
 	vim.api.nvim_create_autocmd({ "TextChanged", "TextChangedI" }, {
 		buffer = state.bufnr,
-		callback = callbacks.schedule_resize,
+		callback = function()
+			if callbacks.schedule_resize then
+				callbacks.schedule_resize()
+			end
+			if callbacks.input_changed then
+				callbacks.input_changed()
+			end
+		end,
 	})
+
+	if callbacks.cursor_moved then
+		vim.api.nvim_create_autocmd({ "CursorMoved", "CursorMovedI" }, {
+			buffer = state.bufnr,
+			callback = callbacks.cursor_moved,
+		})
+	end
+
+	if callbacks.insert_leave then
+		vim.api.nvim_create_autocmd("InsertLeave", {
+			buffer = state.bufnr,
+			callback = callbacks.insert_leave,
+		})
+	end
 
 	vim.api.nvim_create_autocmd("WinScrolled", {
 		buffer = state.bufnr,

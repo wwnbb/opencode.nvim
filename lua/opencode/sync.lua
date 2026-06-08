@@ -1349,6 +1349,45 @@ function M.get_visible_agents()
 	return M.filter_visible_agents(store.agent)
 end
 
+---Check whether an agent should be mentionable via @ autocomplete.
+---@param agent table|nil Agent object
+---@return boolean mentionable Whether the agent should be shown in @ autocomplete
+function M.is_mentionable_agent(agent)
+	if type(agent) ~= "table" then
+		return false
+	end
+	-- JSON null decodes to vim.NIL, which is truthy; only boolean true means hidden.
+	if agent.hidden == true then
+		return false
+	end
+
+	local name = agent.name or agent.id
+	if type(name) ~= "string" or name == "" then
+		return false
+	end
+
+	return agent.mode ~= "primary"
+end
+
+---Filter agents to entries mentionable via @ autocomplete.
+---@param agents table[]|nil Array of agent objects
+---@return table[] agents Filtered agents
+function M.filter_mentionable_agents(agents)
+	local mentionable = {}
+	for _, agent in ipairs(agents or {}) do
+		if M.is_mentionable_agent(agent) then
+			table.insert(mentionable, agent)
+		end
+	end
+	return mentionable
+end
+
+---Get agents mentionable via @ autocomplete.
+---@return table[]
+function M.get_mentionable_agents()
+	return M.filter_mentionable_agents(store.agent)
+end
+
 ---Get a specific agent by name
 ---@param name string
 ---@return table|nil
