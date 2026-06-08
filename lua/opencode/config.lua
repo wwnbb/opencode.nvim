@@ -98,10 +98,10 @@ M.defaults = {
 
 	-- Input
 	input = {
-		height = 5,
-		border = "single",
+		min_height = 1,
+		max_height = 20,
+		history_file = vim.fn.stdpath("data") .. "/opencode_input_history.json",
 		max_history = 100,
-		persist_history = true,
 		keymaps = {
 			send = "<C-g>",
 			send_alt = "<C-x><C-s>",
@@ -111,6 +111,9 @@ M.defaults = {
 			paste = "<C-v>",
 			stash = "<C-s>",
 			restore = "<C-r>",
+			variant_cycle = "<C-t>",
+			agent_cycle = "<C-a>",
+			model_cycle = "<C-e>",
 		},
 	},
 

@@ -24,7 +24,7 @@ function M.register(palette)
 			end
 
 			local sync = require("opencode.sync")
-			local float = require("opencode.ui.float")
+			local menu = require("opencode.ui.menu")
 
 			local function resolve_command(names)
 				local candidates = {}
@@ -155,14 +155,22 @@ function M.register(palette)
 					return
 				end
 
-				float.create_searchable_menu(items, function(selected_items)
-					if type(selected_items) ~= "table" or #selected_items == 0 then
-						vim.notify("Invalid skill selection", vim.log.levels.WARN)
-						return
-					end
+				menu.open({
+					items = items,
+					title = " Select Skills ",
+					width = 60,
+					searchable = true,
+					multi_select = true,
+					confirm_label = "load",
+					on_select = function(selected_items)
+						if type(selected_items) ~= "table" or #selected_items == 0 then
+							vim.notify("Invalid skill selection", vim.log.levels.WARN)
+							return
+						end
 
-					load_skills(selected_items)
-				end, { title = " Select Skills ", width = 60, multi_select = true, confirm_label = "load" })
+						load_skills(selected_items)
+					end,
+				})
 			end
 
 			local function show_local_skill_picker()

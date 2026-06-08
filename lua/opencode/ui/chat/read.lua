@@ -2,22 +2,15 @@
 
 local M = {}
 
-local cs = require("opencode.ui.chat.state")
-local state = cs.state
-local render = require("opencode.ui.chat.render")
-local panel = require("opencode.ui.panel")
+local tool_panel = require("opencode.ui.chat.tool_panel")
 local syntax = require("opencode.ui.syntax")
 local text_util = require("opencode.util.text")
 
 local MAX_COLLAPSED_OUTPUT_LINES = 10
-local PANEL_PREFIX = "▏  "
-local PANEL_BLANK_PREFIX = "▏"
+local PANEL_PREFIX = tool_panel.PANEL_PREFIX
 local PANEL_BORDER_HL = "OpenCodeReadMuted"
-local READ_ANIM_FRAMES = { "|", "/", "-", "\\" }
 
-local panel_helpers = panel.create_helpers({
-	prefix = PANEL_PREFIX,
-	blank_prefix = PANEL_BLANK_PREFIX,
+local panel_helpers = tool_panel.create_panel({
 	border_hl = PANEL_BORDER_HL,
 	default_hl = "OpenCodeReadOutput",
 })
@@ -26,16 +19,12 @@ local add_panel_raw_line = panel_helpers.add_raw_line
 local add_panel_blank = panel_helpers.add_blank
 local add_trailing_separator = panel_helpers.add_separator
 
-local function set_panel_hl(name, fg_source, fallback, extra_opts)
-	panel_helpers.set_hl(name, fg_source, fallback, extra_opts)
-end
-
 local function ensure_highlights()
-	set_panel_hl("OpenCodeReadMuted", "Comment", "Normal")
-	set_panel_hl("OpenCodeReadPath", "String", "Normal")
-	set_panel_hl("OpenCodeReadFilename", "String", "Normal", { bold = true })
-	set_panel_hl("OpenCodeReadOutput", "Normal", nil)
-	set_panel_hl("OpenCodeReadError", "DiagnosticError", "ErrorMsg")
+	panel_helpers.set_hl("OpenCodeReadMuted", "Comment", "Normal")
+	panel_helpers.set_hl("OpenCodeReadPath", "String", "Normal")
+	panel_helpers.set_hl("OpenCodeReadFilename", "String", "Normal", { bold = true })
+	panel_helpers.set_hl("OpenCodeReadOutput", "Normal", nil)
+	panel_helpers.set_hl("OpenCodeReadError", "DiagnosticError", "ErrorMsg")
 end
 
 ---@param value any
@@ -96,31 +85,11 @@ local function normalize_path(path)
 	return vim.fn.fnamemodify(tostring(path), ":~:.")
 end
 
-local function get_input(tool_part)
-	local state_input = tool_part and tool_part.state and tool_part.state.input
-	if type(state_input) == "table" then
-		return state_input
-	end
-	local part_input = tool_part and tool_part.input
-	if type(part_input) == "table" then
-		return part_input
-	end
-	return state_input or part_input or {}
-end
-
 local function get_read_path(input)
-	if type(input) == "string" then
-		return input
-	end
 	if type(input) ~= "table" then
 		return nil
 	end
-	return input.filePath or input.file_path or input.filepath
-end
-
----@return string
-local function get_anim_frame()
-	return READ_ANIM_FRAMES[state.task_anim_frame] or READ_ANIM_FRAMES[1]
+	return input.filePath
 end
 
 ---@param text string
@@ -156,18 +125,6 @@ local function extract_read_body(output)
 	return trim_edge_newlines(output)
 end
 
----@param entries table[]
----@param text string
----@param hl_group string|nil
-local function append_body_entries(entries, text, hl_group)
-	if text == "" then
-		return
-	end
-	for _, line in ipairs(vim.split(text, "\n", { plain = true })) do
-		table.insert(entries, { text = line, hl_group = hl_group })
-	end
-end
-
 ---@param metadata table
 ---@return table[]
 local function get_loaded_entries(metadata)
@@ -185,16 +142,6 @@ local function get_loaded_entries(metadata)
 		end
 	end
 	return entries
-end
-
----@param result table
----@param entry table
-local function add_entry(result, entry)
-	if entry.text == "" then
-		add_panel_blank(result)
-		return
-	end
-	add_panel_line(result, entry.text, entry.hl_group)
 end
 
 ---@param text string
@@ -315,31 +262,19 @@ function M.render_tool(tool_part, is_expanded)
 	end
 	ensure_highlights()
 
-	local tool_state = type(tool_part.state) == "table" and tool_part.state or {}
-	local input = get_input(tool_part)
-	local metadata = render.get_tool_metadata(tool_part)
-	local status = tool_state.status or "pending"
-	local working = status == "pending" or status == "running"
-	local filepath = first_nonempty_trimmed_text(
-		get_read_path(input),
-		metadata.filePath,
-		metadata.file_path,
-		metadata.filepath,
-		metadata.path
-	)
-	local output = first_nonempty_text(tool_state.output, metadata.output, tool_part.output, metadata.preview)
-	local error_body = first_nonempty_text(tool_state.error, metadata.error, tool_part.error)
+	local ctx = tool_panel.context(tool_part)
+	local input = ctx.input
+	local metadata = ctx.metadata
+	local status = ctx.status
+	local working = ctx.working
+	local filepath = first_nonempty_trimmed_text(get_read_path(input), metadata.path)
+	local output = first_nonempty_text(ctx.output)
+	local error_body = trim_edge_newlines(first_nonempty_text(ctx.error))
 	local body = extract_read_body(output)
-	if body == "" then
-		body = first_nonempty_text(metadata.preview)
-	end
 
 	local body_entries = {}
-	append_body_entries(body_entries, body, "OpenCodeReadOutput")
-	if #body_entries > 0 and error_body ~= "" then
-		table.insert(body_entries, { text = "", hl_group = "OpenCodeReadOutput" })
-	end
-	append_body_entries(body_entries, trim_edge_newlines(error_body), "OpenCodeReadError")
+	tool_panel.append_entries(body_entries, body, "OpenCodeReadOutput")
+	tool_panel.append_error_entries(body_entries, error_body, "OpenCodeReadError", "OpenCodeReadOutput")
 
 	local loaded_entries = {}
 	if status == "completed" then
@@ -358,13 +293,11 @@ function M.render_tool(tool_part, is_expanded)
 			header = header .. " limit=" .. tostring(input.limit)
 		end
 	end
-	if working then
-		header = header .. " " .. get_anim_frame()
-	end
-	if has_overflow or is_expanded then
-		local fold_icon = is_expanded and "▾" or "▸"
-		header = fold_icon .. " " .. header
-	end
+	header = tool_panel.header(header, {
+		fold = has_overflow or is_expanded,
+		expanded = is_expanded,
+		working = working,
+	})
 
 	local header_hl = "OpenCodeReadMuted"
 	if status == "error" or error_body ~= "" then
@@ -373,7 +306,7 @@ function M.render_tool(tool_part, is_expanded)
 		header_hl = "OpenCodeReadPath"
 	end
 
-	local result = { lines = {}, highlights = {} }
+	local result = panel_helpers.result()
 	add_panel_blank(result)
 	local _, _, header_rows = add_panel_line(result, header, header_hl)
 	panel_helpers.highlight_text(result, header_rows, display_path, "OpenCodeReadFilename")
@@ -389,30 +322,30 @@ function M.render_tool(tool_part, is_expanded)
 	local read_lang = syntax.language_for_path(filepath)
 	local code_lines = {}
 	local code_rows = {}
-	local limit = is_expanded and #body_entries or math.min(MAX_COLLAPSED_OUTPUT_LINES, #body_entries)
-	for i = 1, limit do
-		local entry = body_entries[i]
-		if read_lang and entry.hl_group == "OpenCodeReadOutput" then
-			local source_text, rows = add_code_entry(result, entry.text, entry.hl_group)
-			table.insert(code_lines, source_text)
-			table.insert(code_rows, rows)
-		else
-			add_entry(result, entry)
-		end
-	end
+	local _, render_overflow = panel_helpers.render_entries(result, body_entries, {
+		expanded = is_expanded,
+		max = MAX_COLLAPSED_OUTPUT_LINES,
+		overflow_hl = "OpenCodeReadMuted",
+		render_entry = function(_, entry)
+			if read_lang and entry.hl_group == "OpenCodeReadOutput" then
+				local source_text, rows = add_code_entry(result, entry.text, entry.hl_group)
+				table.insert(code_lines, source_text)
+				table.insert(code_rows, rows)
+			else
+				panel_helpers.add_entry(result, entry)
+			end
+		end,
+	})
 	if read_lang and #code_lines > 0 then
 		add_wrapped_syntax_highlights(result, table.concat(code_lines, "\n"), read_lang, code_rows)
 	end
 
-	if not is_expanded and has_overflow then
-		local remaining = #body_entries - MAX_COLLAPSED_OUTPUT_LINES
-		add_panel_line(result, "… (" .. tostring(remaining) .. " more lines, press O to expand)", "OpenCodeReadMuted")
-	else
+	if not render_overflow then
 		if #body_entries > 0 and #loaded_entries > 0 then
 			add_panel_blank(result)
 		end
 		for _, entry in ipairs(loaded_entries) do
-			add_entry(result, entry)
+			panel_helpers.add_entry(result, entry)
 		end
 	end
 

@@ -105,36 +105,43 @@ function M.show()
 			end
 		end
 
-			local float = require("opencode.ui.float")
-			float.create_menu(items, function(item)
+		local menu = require("opencode.ui.menu")
+		menu.open({
+			items = items,
+			title = " Active Sessions ",
+			width = 76,
+			searchable = false,
+			on_select = function(item)
 				actions.switch_session(item.session, {
 					notify = true,
 					reason = "active_sessions",
 				})
-		end, {
-			title = " Active Sessions ",
-			width = 76,
-			footer_text = " ↑↓/j,k:navigate  ⏎:select  x:close tab  esc:close ",
-			custom_key = {
-				key = "x",
-				text = "x:close tab",
-				on_key = function(item)
-					local closed = require("opencode.actions").close_session({
-						session_id = item.value,
-						notify = true,
-					})
-					if not closed then
-						return true
-					end
-					for i = #items, 1, -1 do
-						if items[i].value == item.value then
-							table.remove(items, i)
-							break
+			end,
+			keys = {
+				{
+					key = "x",
+					label = "x:close tab",
+					handler = function(ctx, item)
+						local closed = require("opencode.actions").close_session({
+							session_id = item.value,
+							notify = true,
+						})
+						if not closed then
+							return
 						end
-					end
-					refresh_labels()
-					return #items > 0
-				end,
+						for i = #items, 1, -1 do
+							if items[i].value == item.value then
+								table.remove(items, i)
+								break
+							end
+						end
+						if #items == 0 then
+							ctx.close()
+							return
+						end
+						refresh_labels()
+					end,
+				},
 			},
 		})
 	end)

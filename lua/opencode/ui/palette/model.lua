@@ -3,31 +3,12 @@
 local M = {}
 
 local actions = require("opencode.actions")
+local float_context = require("opencode.ui.float_context")
 
 local hl_ns = vim.api.nvim_create_namespace("opencode_palette")
 
 local show_provider_models
 local show_oauth_auto_dialog
-
-local function focus_chat_if_visible()
-	local chat_ok, chat = pcall(require, "opencode.ui.chat")
-	if not chat_ok then
-		return false
-	end
-
-	local is_visible = true
-	if type(chat.is_visible) == "function" then
-		is_visible = chat.is_visible()
-	elseif type(chat.get_winid) == "function" then
-		local winid = chat.get_winid()
-		is_visible = winid and vim.api.nvim_win_is_valid(winid) or false
-	end
-	if not is_visible or type(chat.focus) ~= "function" then
-		return false
-	end
-
-	return pcall(chat.focus)
-end
 
 -- Helper: Connect provider with specific auth method
 -- This handles API key input or OAuth flow
@@ -153,7 +134,7 @@ end
 -- Helper: Show model selection for a specific provider after connection
 ---@param provider table Provider info
 show_provider_models = function(provider)
-	local float = require("opencode.ui.float")
+	local menu = require("opencode.ui.menu")
 
 	-- Ensure we're focused on the chat window
 	local chat = require("opencode.ui.chat")
@@ -201,12 +182,18 @@ show_provider_models = function(provider)
 				return a.label < b.label
 			end)
 
-				float.create_searchable_menu(items, function(item)
+			menu.open({
+				items = items,
+				title = " Select model from " .. (provider.name or provider.id) .. " ",
+				width = 50,
+				searchable = true,
+				on_select = function(item)
 					actions.select_model({
 						providerID = provider.id,
 						modelID = item.value,
 					}, { recent = true })
-				end, { title = " Select model from " .. (provider.name or provider.id) .. " ", width = 50 })
+				end,
+			})
 		end)
 	end)
 end
@@ -316,7 +303,7 @@ show_oauth_auto_dialog = function(opts)
 		pcall(function()
 			popup:unmount()
 		end)
-		focus_chat_if_visible()
+		float_context.focus_chat_if_visible()
 	end
 
 	-- Setup keymaps
@@ -450,24 +437,27 @@ function M.register(palette)
 							return
 						end
 
-							local float = require("opencode.ui.float")
-							float.create_searchable_menu(items, function(item)
+						local menu = require("opencode.ui.menu")
+						menu.open({
+							items = items,
+							title = " Switch Model ",
+							width = 60,
+							searchable = true,
+							on_select = function(item)
 								actions.select_model({
 									providerID = item.provider,
 									modelID = item.value,
 								}, { recent = true })
-							end, {
-							title = " Switch Model ",
-							width = 60,
-							custom_key = {
+							end,
+							keys = {
+								{
 									key = "f",
-									text = "f:fav",
-									on_key = function(item)
+									label = "f:fav",
+									handler = function(_ctx, item)
 										actions.toggle_model_favorite({
 											providerID = item.provider,
 											modelID = item.value,
 										})
-										-- Update item state
 										item.is_favorite = not item.is_favorite
 										item.label = string.format(
 											"%s[%s] %s",
@@ -481,10 +471,10 @@ function M.register(palette)
 											item.is_favorite and "Added to favorites" or "Removed from favorites",
 											vim.log.levels.INFO
 										)
-										return true -- Keep menu open
 									end,
 								},
-							})
+							},
+						})
 						end)
 					end)
 			end,
@@ -577,15 +567,19 @@ function M.register(palette)
 								return a.priority > b.priority
 							end)
 
-							local float = require("opencode.ui.float")
-							float.create_searchable_menu(items, function(item)
-								-- Start provider connection flow
-								local methods = item.auth_methods
-								if #methods == 1 then
-									-- Single auth method, go directly
-									connect_provider_with_method(item.provider, methods[1], 0)
-								else
-									-- Multiple auth methods, let user choose
+							local menu = require("opencode.ui.menu")
+							menu.open({
+								items = items,
+								title = " Connect a provider ",
+								width = 55,
+								searchable = true,
+								on_select = function(item)
+									local methods = item.auth_methods
+									if #methods == 1 then
+										connect_provider_with_method(item.provider, methods[1], 0)
+										return
+									end
+
 									local method_items = {}
 									for i, method in ipairs(methods) do
 										table.insert(method_items, {
@@ -595,15 +589,21 @@ function M.register(palette)
 										})
 									end
 
-									float.create_menu(method_items, function(method_item)
-										connect_provider_with_method(
-											item.provider,
-											method_item.method,
-											method_item.value
-										)
-									end, { title = " Select auth method " })
-								end
-							end, { title = " Connect a provider ", width = 55 })
+									menu.open({
+										items = method_items,
+										title = " Select auth method ",
+										searchable = false,
+										sort = false,
+										on_select = function(method_item)
+											connect_provider_with_method(
+												item.provider,
+												method_item.method,
+												method_item.value
+											)
+										end,
+									})
+								end,
+							})
 							end)
 						end)
 					end)
@@ -653,38 +653,44 @@ function M.register(palette)
 							return
 						end
 
-						local float = require("opencode.ui.float")
-						float.create_searchable_menu(items, function(item)
-							vim.ui.select({ "Yes", "No" }, {
-								prompt = "Disconnect from " .. (item.provider.name or item.provider.id) .. "?",
-							}, function(choice)
-								if choice == "Yes" then
+						local menu = require("opencode.ui.menu")
+						menu.open({
+							items = items,
+							title = " Disconnect Provider ",
+							width = 50,
+							searchable = true,
+							on_select = function(item)
+								vim.ui.select({ "Yes", "No" }, {
+									prompt = "Disconnect from " .. (item.provider.name or item.provider.id) .. "?",
+								}, function(choice)
+									if choice == "Yes" then
 										actions.remove_provider_auth(item.provider.id, function(remove_err)
 											vim.schedule(function()
-											if remove_err then
-												vim.notify(
-													"Failed to disconnect: "
-														.. tostring(remove_err.message or remove_err),
-													vim.log.levels.ERROR
-												)
-												return
-											end
+												if remove_err then
+													vim.notify(
+														"Failed to disconnect: "
+															.. tostring(remove_err.message or remove_err),
+														vim.log.levels.ERROR
+													)
+													return
+												end
 
-											-- Remove all models from this provider from recent/favorite lists
+												-- Remove all models from this provider from recent/favorite lists
 												actions.remove_provider_models(item.provider.id)
 
 												-- Dispose to refresh state
 												actions.dispose_server(function()
-												vim.notify(
-													"Disconnected from " .. (item.provider.name or item.provider.id),
-													vim.log.levels.INFO
-												)
+													vim.notify(
+														"Disconnected from " .. (item.provider.name or item.provider.id),
+														vim.log.levels.INFO
+													)
+												end)
 											end)
 										end)
-									end)
-								end
-							end)
-						end, { title = " Disconnect Provider ", width = 50 })
+									end
+								end)
+							end,
+						})
 						end)
 					end)
 			end,

@@ -1,4 +1,3 @@
----
 
 ### 3. `lua/opencode/edit/state.lua:accept_all()` / `reject_all()`
 

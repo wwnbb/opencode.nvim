@@ -62,7 +62,7 @@ function M.register(palette)
 								return
 						end
 
-						local float = require("opencode.ui.float")
+						local menu = require("opencode.ui.menu")
 						local current = state.get_session()
 
 						-- Sort sessions by update time (most recent first, like TUI)
@@ -116,21 +116,23 @@ function M.register(palette)
 							})
 						end
 
-						-- Use searchable menu with time-based sort (most recent first, like TUI)
-							float.create_searchable_menu(items, function(item)
+						menu.open({
+							items = items,
+							title = " Switch Session ",
+							width = 70,
+							searchable = true,
+							sort = function(a, b)
+								-- Most recently updated first (matches TUI: toSorted((a,b) => b.time.updated - a.time.updated))
+								return (a.sort_key or 0) > (b.sort_key or 0)
+							end,
+							on_select = function(item)
 								local session = item.session
 								actions.switch_session(session, {
 									notify = true,
 									reason = "session_switch",
 								})
-						end, {
-							title = " Switch Session ",
-							width = 70,
-							sort_fn = function(a, b)
-								-- Most recently updated first (matches TUI: toSorted((a,b) => b.time.updated - a.time.updated))
-								return (a.sort_key or 0) > (b.sort_key or 0)
 							end,
-							})
+						})
 					end)
 			end,
 		})

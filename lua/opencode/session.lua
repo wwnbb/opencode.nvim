@@ -263,7 +263,14 @@ local function close_pending_interactions_for_session(root_session_id)
 		for _, estate in ipairs(owned) do
 			if estate.status == "pending" then
 				if type(edit_state.reject_all) == "function" then
-					pcall(edit_state.reject_all, estate.permission_id)
+					local call_ok, rejected, reject_err = pcall(edit_state.reject_all, estate.permission_id)
+					if not call_ok or not rejected then
+						vim.notify(
+							"Failed to reject edit before closing session: "
+								.. tostring((call_ok and reject_err) or rejected or "unknown error"),
+							vim.log.levels.ERROR
+						)
+					end
 				end
 				reject_permission_request(estate.permission_id)
 				emit_permission_rejected_for_close(estate.permission_id, estate.session_id, "edit")

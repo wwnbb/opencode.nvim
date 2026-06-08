@@ -497,13 +497,7 @@ function M.get_user_message_display()
 	if type(message_prefix) == "string" then
 		prompt = message_prefix
 	else
-		local chat_prompt = full_config.chat and full_config.chat.input and full_config.chat.input.prompt
-		if type(chat_prompt) == "string" then
-			prompt = chat_prompt
-		else
-			local input_prompt = full_config.input and full_config.input.prompt
-			prompt = type(input_prompt) == "string" and input_prompt or "> "
-		end
+		prompt = "> "
 	end
 	local multiline_prefix = display_cfg and display_cfg.multiline_prefix
 	if type(multiline_prefix) ~= "boolean" then

@@ -472,7 +472,11 @@ local function sync_edit_action(action)
 			-- This preserves whatever the user saved manually.
 			edit_state.resolve_file(edit_id, file_index)
 		else -- "reject"
-			edit_state.reject_file(edit_id, file_index)
+			local rejected, reject_err = edit_state.reject_file(edit_id, file_index)
+			if not rejected then
+				vim.notify("Failed to reject file: " .. (reject_err or "unknown error"), vim.log.levels.ERROR)
+				return
+			end
 		end
 
 		-- Trigger rerender or finalization in the chat
@@ -549,7 +553,11 @@ function M._reject_all()
 	if state.edit_id then
 		local ok_state, edit_state = pcall(require, "opencode.edit.state")
 		if ok_state then
-			edit_state.reject_all(state.edit_id)
+			local rejected, reject_err = edit_state.reject_all(state.edit_id)
+			if not rejected then
+				vim.notify("Failed to reject edit: " .. (reject_err or "unknown error"), vim.log.levels.ERROR)
+				return
+			end
 		end
 		local ok_edits, chat_edits = pcall(require, "opencode.ui.chat.edits")
 		if ok_edits and chat_edits.finalize_edit then

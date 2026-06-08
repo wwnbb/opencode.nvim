@@ -4,6 +4,7 @@
 local M = {}
 
 local render = require("opencode.ui.chat.render")
+local tool_panel = require("opencode.ui.chat.tool_panel")
 local cs = require("opencode.ui.chat.state")
 local state = cs.state
 local panel = require("opencode.ui.panel")
@@ -12,16 +13,12 @@ local perf = require("opencode.perf")
 local todo_hl_ns = vim.api.nvim_create_namespace("opencode_todo_hl")
 local PANEL_PREFIX_HL_PRIORITY = 4201
 local MAX_COLLAPSED_OUTPUT_LINES = 10
-local PANEL_PREFIX = "▏  "
-local PANEL_BLANK_PREFIX = "▏"
+local PANEL_PREFIX = tool_panel.PANEL_PREFIX
 local PANEL_BORDER_HL = "OpenCodeTodoMuted"
-local TODO_ANIM_FRAMES = { "|", "/", "-", "\\" }
 local TODO_READ_TOOLS = { todoread = true, todolist = true }
 local TODO_WRITE_TOOLS = { todowrite = true }
 
-local panel_helpers = panel.create_helpers({
-	prefix = PANEL_PREFIX,
-	blank_prefix = PANEL_BLANK_PREFIX,
+local panel_helpers = tool_panel.create_panel({
 	border_hl = PANEL_BORDER_HL,
 	default_hl = "OpenCodeTodoOutput",
 })
@@ -122,14 +119,14 @@ end
 
 ---@param name string
 ---@param fg_source string
----@param fallback string|nil
+---@param default_source string|nil
 ---@param extra_opts? table
-local function set_dock_hl(name, fg_source, fallback, extra_opts)
+local function set_dock_hl(name, fg_source, default_source, extra_opts)
 	local fg_hl = panel.get_hl(fg_source)
-	local fallback_hl = fallback and panel.get_hl(fallback) or {}
+	local default_hl = default_source and panel.get_hl(default_source) or {}
 	local opts = {}
-	if fg_hl.fg or fallback_hl.fg then
-		opts.fg = fg_hl.fg or fallback_hl.fg
+	if fg_hl.fg or default_hl.fg then
+		opts.fg = fg_hl.fg or default_hl.fg
 	end
 	if extra_opts then
 		opts = vim.tbl_extend("force", opts, extra_opts)
@@ -232,23 +229,6 @@ local function normalize_priority(priority)
 	return nil
 end
 
----@param tool_part table
----@return table|string
-local function get_input(tool_part)
-	local tool_state = type(tool_part.state) == "table" and tool_part.state or {}
-	local state_input = tool_state.input
-	local part_input = tool_part.input
-	if type(state_input) == "table" or type(part_input) == "table" then
-		return vim.tbl_deep_extend(
-			"force",
-			{},
-			type(part_input) == "table" and part_input or {},
-			type(state_input) == "table" and state_input or {}
-		)
-	end
-	return state_input or part_input or {}
-end
-
 ---@param todos any
 ---@return OpenCodeTodo[]
 function M.normalize_todos(todos)
@@ -279,10 +259,10 @@ function M.extract_tool_todos(tool_part)
 		return {}
 	end
 
-	local tool_state = type(tool_part.state) == "table" and tool_part.state or {}
-	local input = get_input(tool_part)
-	local metadata = render.get_tool_metadata(tool_part)
-	local output = type(tool_state.output) == "table" and tool_state.output or {}
+	local ctx = tool_panel.context(tool_part)
+	local input = ctx.input
+	local metadata = ctx.metadata
+	local output = type(ctx.output) == "table" and ctx.output or {}
 
 	local function first_nonempty(...)
 		for i = 1, select("#", ...) do
@@ -305,7 +285,7 @@ function M.extract_tool_todos(tool_part)
 	if normalized then
 		return normalized
 	end
-	normalized = first_nonempty(metadata, output, tool_part.todos)
+	normalized = first_nonempty(metadata, output)
 	if normalized then
 		return normalized
 	end
@@ -382,18 +362,6 @@ local function active_preview_todo(todos)
 	return todos[1]
 end
 
----@return number width
-local function get_chat_text_width()
-	if not state.winid or not vim.api.nvim_win_is_valid(state.winid) then
-		return 80
-	end
-
-	local width = vim.api.nvim_win_get_width(state.winid)
-	local wininfo = vim.fn.getwininfo(state.winid)[1]
-	local textoff = wininfo and tonumber(wininfo.textoff) or 0
-	return math.max(1, width - textoff)
-end
-
 ---@param result table
 ---@param text string
 ---@param hl_group string|nil
@@ -448,11 +416,6 @@ local function status_highlight(_cfg, status)
 	return STATUS_HIGHLIGHTS[status] or STATUS_HIGHLIGHTS.pending
 end
 
----@return string
-local function get_anim_frame()
-	return TODO_ANIM_FRAMES[state.task_anim_frame] or TODO_ANIM_FRAMES[1]
-end
-
 ---@param priority string|nil
 ---@return string
 local function priority_marker(priority)
@@ -464,7 +427,7 @@ end
 ---@param cfg OpenCodeTodoConfig
 ---@param width number|nil
 local function add_panel_todo_item(result, todo, cfg, width)
-	width = width or get_chat_text_width()
+	width = width or tool_panel.chat_width()
 	local icon = status_icon(cfg, todo.status)
 	local priority = priority_marker(todo.priority)
 	local first_prefix = priority ~= "" and (icon .. " " .. priority .. " ") or (icon .. " ")
@@ -502,7 +465,7 @@ local function add_todo_item(result, todo, cfg, opts)
 
 	local prefix = opts.prefix or ""
 	local prefix_hl_group = opts.prefix_hl_group
-	local width = opts.width or get_chat_text_width()
+	local width = opts.width or tool_panel.chat_width()
 	local icon = status_icon(cfg, todo.status)
 	local first_prefix = prefix .. icon .. " "
 	local continuation_prefix = prefix .. string.rep(" ", vim.fn.strdisplaywidth(icon) + 1)
@@ -563,12 +526,12 @@ function M.render_block(todos, opts)
 	local cfg = M.get_config()
 	ensure_highlights(cfg)
 	local normalized = M.normalize_todos(todos)
-	local result = { lines = {}, highlights = {} }
+	local result = panel_helpers.result()
 	if not M.is_enabled(cfg) then
 		return result
 	end
 
-	local width = opts.width or get_chat_text_width()
+	local width = opts.width or tool_panel.chat_width()
 	local title = opts.title or "# Todos"
 	local status = opts.status or "completed"
 	local working = status == "pending" or status == "running"
@@ -580,7 +543,7 @@ function M.render_block(todos, opts)
 
 	local header = title
 	if working then
-		header = "~ " .. (opts.pending_label or "Updating todos...") .. " " .. get_anim_frame()
+		header = "~ " .. (opts.pending_label or "Updating todos...") .. " " .. tool_panel.anim_frame()
 	elseif has_error then
 		header = "# Todo update failed"
 	end
@@ -617,7 +580,7 @@ function M.render_block(todos, opts)
 
 	add_panel_blank(result)
 
-	local limit = expanded and #normalized or math.min(MAX_COLLAPSED_OUTPUT_LINES, #normalized)
+	local limit = tool_panel.visible_count(normalized, expanded, MAX_COLLAPSED_OUTPUT_LINES)
 	for idx = 1, limit do
 		add_panel_todo_item(result, normalized[idx], cfg, width)
 	end
@@ -625,11 +588,7 @@ function M.render_block(todos, opts)
 	if not expanded and has_overflow then
 		local remaining = #normalized - MAX_COLLAPSED_OUTPUT_LINES
 		local suffix = remaining == 1 and "todo" or "todos"
-		add_panel_line(
-			result,
-			"… (" .. tostring(remaining) .. " more " .. suffix .. ", press O to expand)",
-			"OpenCodeTodoMuted"
-		)
+		add_panel_line(result, tool_panel.overflow_text(remaining, suffix), "OpenCodeTodoMuted")
 	end
 
 	add_panel_blank(result)
@@ -660,14 +619,14 @@ function M.render_dock(session_id, todos, opts)
 	if collapsed then
 		local preview = active_preview_todo(normalized)
 		if preview then
-			add_todo_item(result, preview, cfg, { width = opts.width or get_chat_text_width() })
+			add_todo_item(result, preview, cfg, { width = opts.width or tool_panel.chat_width() })
 		end
 		add_line(result, "", "OpenCodeTodoOutput")
 		return result
 	end
 
 	for _, todo in ipairs(normalized) do
-		add_todo_item(result, todo, cfg, { width = opts.width or get_chat_text_width() })
+		add_todo_item(result, todo, cfg, { width = opts.width or tool_panel.chat_width() })
 	end
 	add_line(result, "", "OpenCodeTodoOutput")
 	return result
@@ -690,13 +649,12 @@ function M.render_tool(tool_part, is_expanded)
 		return nil
 	end
 
-	local tool_state = type(tool_part.state) == "table" and tool_part.state or {}
-	local metadata = render.get_tool_metadata(tool_part)
-	local tool_status = tool_state.status or "pending"
+	local ctx = tool_panel.context(tool_part)
+	local tool_status = ctx.status
 	local is_read = M.is_todo_read_tool(tool_name)
 	local pending_label = is_read and "Reading todos..." or "Updating todos..."
 	local title = is_read and "# Read todos" or "# Updated todos"
-	local error_body = first_nonempty_trimmed_text(tool_state.error, metadata.error, tool_part.error)
+	local error_body = first_nonempty_trimmed_text(ctx.error)
 	local todos = M.extract_tool_todos(tool_part)
 	local result = M.render_block(todos, {
 		title = title,

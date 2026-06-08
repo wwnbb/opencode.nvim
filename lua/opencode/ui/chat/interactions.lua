@@ -236,8 +236,7 @@ function M.handle_question_confirm()
 	local eid = chat_edits.get_edit_at_cursor()
 	if eid then
 		if edit_state.is_readonly(eid) then
-			edit_state.accept_all(eid)
-			chat_edits.finalize_edit(eid)
+			chat_edits.handle_edit_accept_all()
 			return
 		end
 

@@ -149,61 +149,32 @@ assert(middle_delete[1].original_lines[1] == "b", "middle deletion original side
 assert(middle_delete[1].modified_lines[1] == "", "middle deletion modified side should be empty")
 
 local search = require("opencode.ui.chat.search")
-local parse_grep_line
-for i = 1, math.huge do
-	local name, value = debug.getupvalue(search.render_tool, i)
-	if not name then
-		break
-	end
-	if name == "parse_grep_line" then
-		parse_grep_line = value
-		break
-	end
-end
-assert(type(parse_grep_line) == "function", "grep parser upvalue should be available")
-local grep_path, grep_body, grep_body_col = parse_grep_line("path:with:colon/file.lua:12:3:local x = 1")
-assert(grep_path == "path:with:colon/file.lua", "grep parser should preserve colon-containing path")
-assert(grep_body == "local x = 1", "grep parser should return body after line and column")
-assert(grep_body_col == #"path:with:colon/file.lua:12:3:", "grep parser should return correct body offset")
-grep_path, grep_body, grep_body_col = parse_grep_line("path:with:colon/file.lua:12:body")
-assert(grep_path == "path:with:colon/file.lua", "grep parser should preserve colon path without column")
-assert(grep_body == "body", "grep parser should return no-column body")
-assert(grep_body_col == #"path:with:colon/file.lua:12:", "grep parser should return no-column body offset")
-
 local rg = require("opencode.ui.chat.rg")
-local function find_function_upvalue(fn, target, seen)
-	seen = seen or {}
-	if type(fn) ~= "function" or seen[fn] then
-		return nil
-	end
-	seen[fn] = true
-	for i = 1, math.huge do
-		local name, value = debug.getupvalue(fn, i)
-		if not name then
-			break
-		end
-		if name == target then
-			return value
-		end
-		if type(value) == "function" then
-			local nested = find_function_upvalue(value, target, seen)
-			if nested then
-				return nested
-			end
-		end
-	end
-	return nil
+local function render_text(result)
+	return table.concat(result and result.lines or {}, "\n")
 end
-local parse_rg_line = find_function_upvalue(rg.render_tool, "parse_rg_line")
-assert(type(parse_rg_line) == "function", "rg parser upvalue should be available")
-local rg_path, rg_body, rg_body_col = parse_rg_line("path:with:colon/file.lua:12:3:local x = 1")
-assert(rg_path == "path:with:colon/file.lua", "rg parser should preserve colon-containing path")
-assert(rg_body == "local x = 1", "rg parser should return body after line and column")
-assert(rg_body_col == #"path:with:colon/file.lua:12:3:", "rg parser should return correct body offset")
-rg_path, rg_body, rg_body_col = parse_rg_line("path:with:colon/file.lua-12-local x = 1")
-assert(rg_path == "path:with:colon/file.lua", "rg parser should preserve context path")
-assert(rg_body == "local x = 1", "rg parser should return context body")
-assert(rg_body_col == #"path:with:colon/file.lua-12-", "rg parser should return context body offset")
+
+local grep_render = search.render_tool({
+	tool = "grep",
+	state = {
+		status = "completed",
+		input = { pattern = "local" },
+		output = "path:with:colon/file.lua:12:3:local x = 1",
+	},
+	metadata = { matches = 1 },
+}, true)
+assert(render_text(grep_render):find("path:with:colon/file.lua:12:3:local x = 1", 1, true), "grep widget should render colon-containing paths")
+
+local rg_render = rg.render_tool({
+	tool = "rg",
+	state = {
+		status = "completed",
+		input = { pattern = "local" },
+		output = "path:with:colon/file.lua-12-local x = 1",
+	},
+	metadata = { matches = 1 },
+}, true)
+assert(render_text(rg_render):find("path:with:colon/file.lua-12-local x = 1", 1, true), "rg widget should render context lines with colon-containing paths")
 
 local thinking = require("opencode.ui.thinking")
 assert(thinking.extract_topic("**Planning** next") == "Planning", "thinking topic extraction should trim markdown header")
@@ -1193,8 +1164,15 @@ do
 	assert(saw_text_highlight, "panel factory highlight_text should add text highlights")
 	assert(saw_prefix_highlight, "panel factory should preserve border prefix highlights")
 
-	local bash_result = require("opencode.ui.chat.bash").render_tool({
+	local bash = require("opencode.ui.chat.bash")
+	local read = require("opencode.ui.chat.read")
+	local skill = require("opencode.ui.chat.skill")
+	local todos = require("opencode.ui.chat.todos")
+
+	local bash_result = bash.render_tool({
 		tool = "bash",
+		input = { command = "echo stale" },
+		output = "stale",
 		state = {
 			status = "completed",
 			input = { command = "echo hi" },
@@ -1202,6 +1180,52 @@ do
 		},
 	}, false)
 	assert(bash_result and table.concat(bash_result.lines, "\n"):find("Shell", 1, true), "bash widget should render")
+	assert(not render_text(bash_result):find("stale", 1, true), "bash widget should only use canonical state fields")
+
+	local bash_error = bash.render_tool({
+		tool = "bash",
+		state = {
+			status = "error",
+			input = { command = "false" },
+			error = "boom",
+		},
+	}, false)
+	assert(render_text(bash_error):find("boom", 1, true), "bash widget should render canonical state.error")
+
+	local read_output = {}
+	for i = 1, 12 do
+		table.insert(read_output, tostring(i) .. ": local value_" .. tostring(i) .. " = " .. tostring(i))
+	end
+	local read_collapsed = read.render_tool({
+		tool = "read",
+		state = {
+			status = "completed",
+			input = { filePath = "lua/opencode/init.lua" },
+			output = table.concat(read_output, "\n"),
+		},
+	}, false)
+	local read_expanded = read.render_tool({
+		tool = "read",
+		state = {
+			status = "completed",
+			input = { filePath = "lua/opencode/init.lua" },
+			output = table.concat(read_output, "\n"),
+		},
+	}, true)
+	assert(render_text(read_collapsed):find("Read lua/opencode/init.lua", 1, true), "read widget should render state.input.filePath")
+	assert(render_text(read_collapsed):find("more lines", 1, true), "read widget should show collapsed overflow")
+	assert(not render_text(read_expanded):find("more lines", 1, true), "read widget should hide overflow when expanded")
+
+	local glob_result = search.render_tool({
+		tool = "glob",
+		state = {
+			status = "completed",
+			input = { pattern = "*.lua", path = "lua/opencode" },
+			output = "lua/opencode/init.lua",
+		},
+		metadata = { count = 1 },
+	}, false)
+	assert(render_text(glob_result):find("Glob", 1, true), "glob widget should render")
 
 	local rg_result = rg.render_tool({
 		tool = "rg",
@@ -1212,6 +1236,68 @@ do
 		},
 	}, false)
 	assert(rg_result and table.concat(rg_result.lines, "\n"):find("Ripgrep", 1, true), "rg widget should render")
+
+	local rg_lines = {}
+	for i = 1, 11 do
+		table.insert(rg_lines, "lua/opencode/init.lua:" .. tostring(i) .. ":local value_" .. tostring(i))
+	end
+	local rg_collapsed = rg.render_tool({
+		tool = "rg",
+		state = {
+			status = "completed",
+			input = { pattern = "value", path = "lua" },
+			output = table.concat(rg_lines, "\n"),
+		},
+		metadata = { matches = 11 },
+	}, false)
+	local rg_expanded = rg.render_tool({
+		tool = "rg",
+		state = {
+			status = "completed",
+			input = { pattern = "value", path = "lua" },
+			output = table.concat(rg_lines, "\n"),
+		},
+		metadata = { matches = 11 },
+	}, true)
+	assert(render_text(rg_collapsed):find("more lines", 1, true), "rg widget should show collapsed overflow")
+	assert(not render_text(rg_expanded):find("more lines", 1, true), "rg widget should hide overflow when expanded")
+
+	local skill_result = skill.render_tool({
+		tool = "skill",
+		state = {
+			status = "completed",
+			input = { name = "opencode-nvim-widgets" },
+			output = "# Skill: opencode-nvim-widgets\n\nRender widgets cleanly.",
+		},
+	}, false)
+	assert(render_text(skill_result):find('Skill "opencode-nvim-widgets"', 1, true), "skill widget should render")
+
+	local todo_write_result = todos.render_tool({
+		tool = "todowrite",
+		state = {
+			status = "completed",
+			input = {
+				todos = {
+					{ content = "Write helper", status = "completed", priority = "high" },
+					{ content = "Use helper", status = "in_progress" },
+				},
+			},
+		},
+	}, false)
+	assert(render_text(todo_write_result):find("Updated todos", 1, true), "todowrite widget should render")
+
+	local todo_read_result = todos.render_tool({
+		tool = "todoread",
+		state = {
+			status = "completed",
+			output = {
+				todos = {
+					{ content = "Read helper", status = "pending" },
+				},
+			},
+		},
+	}, false)
+	assert(render_text(todo_read_result):find("Read todos", 1, true), "todoread widget should render")
 
 	local question_lines = require("opencode.ui.question_widget").get_lines_for_question("question_panel_test", {
 		{ header = "Pick", question = "Choose one", options = { { label = "A", value = "a" } } },
@@ -1404,6 +1490,80 @@ do
 	run_all_file_flow("reject", chat_edits.handle_edit_reject_all)
 	run_all_file_flow("resolve", chat_edits.handle_edit_resolve_all)
 
+	local original_accept = changes.accept
+	local original_reject = changes.reject
+
+	local accept_failure_paths = make_edit("edit_accept_partial_failure", 3)
+	local accept_failure_edit = edit_state.get_edit("edit_accept_partial_failure")
+	local failed_accept_change = accept_failure_edit.files[2].change_id
+	changes.accept = function(change_id, opts)
+		if change_id == failed_accept_change then
+			return false, "accept write failed"
+		end
+		return original_accept(change_id, opts)
+	end
+	local accept_ok, accept_err, accept_errors = edit_state.accept_all("edit_accept_partial_failure")
+	assert(not accept_ok, "accept_all should fail when a file cannot be applied")
+	assert(accept_err:find("accept write failed", 1, true), "accept_all error should include failed file detail")
+	assert(#accept_errors == 1, "accept_all should return one aggregated error")
+	assert(accept_failure_edit.files[1].status == "accepted", "accept_all should accept successful files")
+	assert(accept_failure_edit.files[2].status == "pending", "accept_all should leave failed files pending")
+	assert(accept_failure_edit.files[3].status == "accepted", "accept_all should continue after a failed file")
+	changes.accept = original_accept
+	cleanup(accept_failure_paths)
+
+	local reject_failure_paths = make_edit("edit_reject_partial_failure", 3)
+	local reject_failure_edit = edit_state.get_edit("edit_reject_partial_failure")
+	local failed_reject_change = reject_failure_edit.files[2].change_id
+	changes.reject = function(change_id)
+		if change_id == failed_reject_change then
+			return false, "reject write failed"
+		end
+		return original_reject(change_id)
+	end
+	local reject_ok, reject_err, reject_errors = edit_state.reject_all("edit_reject_partial_failure")
+	assert(not reject_ok, "reject_all should fail when a file cannot be reverted")
+	assert(reject_err:find("reject write failed", 1, true), "reject_all error should include failed file detail")
+	assert(#reject_errors == 1, "reject_all should return one aggregated error")
+	assert(reject_failure_edit.files[1].status == "rejected", "reject_all should reject successful files")
+	assert(reject_failure_edit.files[2].status == "pending", "reject_all should leave failed files pending")
+	assert(reject_failure_edit.files[3].status == "rejected", "reject_all should continue after a failed file")
+	changes.reject = original_reject
+	cleanup(reject_failure_paths)
+
+	local reject_file_failure_paths = make_edit("edit_reject_file_failure", 1)
+	local reject_file_edit = edit_state.get_edit("edit_reject_file_failure")
+	changes.reject = function()
+		return false, "single reject failed"
+	end
+	local reject_file_ok = edit_state.reject_file("edit_reject_file_failure", 1)
+	assert(not reject_file_ok, "reject_file should fail when the change cannot be reverted")
+	assert(reject_file_edit.files[1].status == "pending", "reject_file should leave failed files pending")
+	changes.reject = original_reject
+	cleanup(reject_file_failure_paths)
+
+	local original_notify = vim.notify
+	vim.notify = noop
+	local chat_failure_paths = make_edit("edit_chat_batch_failure", 2)
+	local chat_failure_edit = edit_state.get_edit("edit_chat_batch_failure")
+	local chat_failed_change = chat_failure_edit.files[2].change_id
+	changes.accept = function(change_id, opts)
+		if change_id == chat_failed_change then
+			return false, "chat batch failed"
+		end
+		return original_accept(change_id, opts)
+	end
+	reset_calls()
+	select_file("edit_chat_batch_failure", 1)
+	chat_edits.handle_edit_accept_all()
+	assert(calls.finalize == 0, "failed chat batch action should not finalize")
+	assert(calls.rerender == 1, "failed chat batch action should rerender")
+	assert(chat_failure_edit.files[1].status == "accepted", "failed chat batch should keep successful statuses")
+	assert(chat_failure_edit.files[2].status == "pending", "failed chat batch should leave failed file pending")
+	changes.accept = original_accept
+	vim.notify = original_notify
+	cleanup(chat_failure_paths)
+
 	local readonly_accept_paths = make_edit("edit_readonly_accept", 2, { review_mode = "readonly" })
 	reset_calls()
 	select_file("edit_readonly_accept", 1)
@@ -1524,6 +1684,37 @@ local setup_ok, setup_err = pcall(function()
 	assert(#approved == 1, "danger mode should call respond_permission for active permission")
 	assert(approved[1].permission_id == "perm_danger_pending", "danger mode approved wrong permission")
 	assert(approved[1].reply == "once", "danger mode should approve permissions once")
+	local edit_state = require("opencode.edit.state")
+	local changes = require("opencode.artifact.changes")
+	local original_accept = changes.accept
+	local original_notify = vim.notify
+	local danger_path = vim.fn.tempname()
+	vim.fn.writefile({ "before" }, danger_path)
+	approved = {}
+	permission_state.clear_all()
+	edit_state.clear_all()
+	changes.clear()
+	danger.clear()
+	edit_state.add_edit("edit_danger_failed", "session_danger", {
+		{ filePath = danger_path, before = "before\n", after = "after\n" },
+	}, {})
+	local danger_edit = edit_state.get_edit("edit_danger_failed")
+	local danger_failed_change = danger_edit.files[1].change_id
+	changes.accept = function(change_id, opts)
+		if change_id == danger_failed_change then
+			return false, "danger accept failed"
+		end
+		return original_accept(change_id, opts)
+	end
+	vim.notify = noop
+	assert(danger.approve_pending() == 0, "danger mode should not queue edit approval after local failure")
+	assert(#approved == 0, "danger mode should not call respond_permission after local edit failure")
+	assert(danger_edit.files[1].status == "pending", "danger mode should leave failed edit files pending")
+	vim.notify = original_notify
+	changes.accept = original_accept
+	vim.fn.delete(danger_path)
+	edit_state.clear_all()
+	changes.clear()
 	client.respond_permission = original_respond_permission
 	permission_state.clear_all()
 	danger.clear()

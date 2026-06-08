@@ -116,6 +116,106 @@ local function classify_manual_resolution(file)
 	return "resolved"
 end
 
+local FILE_ACTIONS = {
+	accept = {
+		status = "accepted",
+		verb = "accept",
+		apply = function(changes, change_id)
+			return changes.accept(change_id, { force = true })
+		end,
+	},
+	reject = {
+		status = "rejected",
+		verb = "reject",
+		apply = function(changes, change_id)
+			return changes.reject(change_id)
+		end,
+	},
+}
+
+---@param file table
+---@return string
+local function describe_file(file)
+	if file.relative_path and file.relative_path ~= "" then
+		return file.relative_path
+	end
+	if file.filepath and file.filepath ~= "" then
+		return file.filepath
+	end
+	return "file #" .. tostring(file.index or "?")
+end
+
+---@param action table
+---@param errors table[]
+---@return string
+local function summarize_batch_errors(action, errors)
+	local count = #errors
+	local samples = {}
+	local sample_count = math.min(count, 3)
+	for index = 1, sample_count do
+		local item = errors[index]
+		table.insert(samples, string.format("%s: %s", item.label, item.error))
+	end
+	local suffix = count > sample_count and string.format(" (+%d more)", count - sample_count) or ""
+	local noun = count == 1 and "file" or "files"
+	return string.format("Failed to %s %d %s: %s%s", action.verb, count, noun, table.concat(samples, "; "), suffix)
+end
+
+---@param estate table
+---@param file table
+---@param action table
+---@return boolean ok
+---@return string|nil err
+local function apply_file_action(estate, file, action)
+	if estate.review_mode == "readonly" then
+		file.status = action.status
+		return true, nil
+	end
+
+	local changes = require("opencode.artifact.changes")
+	local ok, err = action.apply(changes, file.change_id)
+	if not ok then
+		return false, err or "unknown error"
+	end
+
+	file.status = action.status
+	return true, nil
+end
+
+---@param permission_id string
+---@param action table
+---@return boolean ok
+---@return string|nil err
+---@return table[]|nil errors
+local function apply_pending_files(permission_id, action)
+	local estate = active_edits[permission_id]
+	if not estate then
+		return false, "Edit not found", nil
+	end
+
+	local errors = {}
+	for _, file in ipairs(estate.files) do
+		if file.status == "pending" then
+			local ok, err = apply_file_action(estate, file, action)
+			if not ok then
+				table.insert(errors, {
+					index = file.index,
+					filepath = file.filepath,
+					relative_path = file.relative_path,
+					label = describe_file(file),
+					error = err or "unknown error",
+				})
+			end
+		end
+	end
+
+	if #errors > 0 then
+		return false, summarize_batch_errors(action, errors), errors
+	end
+
+	return true, nil, nil
+end
+
 --- Add a new edit to track
 ---@param permission_id string
 ---@param session_id string
@@ -362,110 +462,69 @@ end
 --- Accept a file (write to disk via changes module)
 ---@param permission_id string
 ---@param file_index number
----@return boolean, string|nil
+---@return boolean ok
+---@return string|nil err
+---@return table[]|nil errors
 function M.accept_file(permission_id, file_index)
 	local estate = active_edits[permission_id]
 	if not estate then
-		return false, "Edit not found"
+		return false, "Edit not found", nil
 	end
 
 	local file = estate.files[file_index]
 	if not file then
-		return false, "File not found"
+		return false, "File not found", nil
 	end
 
 	if file.status ~= "pending" then
-		return false, "File already resolved"
+		return false, "File already resolved", nil
 	end
 
-	if estate.review_mode == "readonly" then
-		file.status = "accepted"
-		return true
-	end
-
-	local changes = require("opencode.artifact.changes")
-	local ok, err = changes.accept(file.change_id, { force = true })
-	if not ok then
-		return false, err
-	end
-
-	file.status = "accepted"
-	return true
+	local ok, err = apply_file_action(estate, file, FILE_ACTIONS.accept)
+	return ok, err, nil
 end
 
---- Reject a file (mark as rejected, file stays unchanged on disk)
+--- Reject a file
 ---@param permission_id string
 ---@param file_index number
----@return boolean, string|nil
+---@return boolean ok
+---@return string|nil err
+---@return table[]|nil errors
 function M.reject_file(permission_id, file_index)
 	local estate = active_edits[permission_id]
 	if not estate then
-		return false, "Edit not found"
+		return false, "Edit not found", nil
 	end
 
 	local file = estate.files[file_index]
 	if not file then
-		return false, "File not found"
+		return false, "File not found", nil
 	end
 
 	if file.status ~= "pending" then
-		return false, "File already resolved"
+		return false, "File already resolved", nil
 	end
 
-	if estate.review_mode == "readonly" then
-		file.status = "rejected"
-		return true
-	end
-
-	local changes = require("opencode.artifact.changes")
-	changes.reject(file.change_id)
-
-	file.status = "rejected"
-	return true
+	local ok, err = apply_file_action(estate, file, FILE_ACTIONS.reject)
+	return ok, err, nil
 end
 
 --- Accept all pending files
 ---@param permission_id string
----@return boolean
+---@return boolean ok
+---@return string|nil err
+---@return table[]|nil errors
 function M.accept_all(permission_id)
-	local estate = active_edits[permission_id]
-	if not estate then
-		return false
-	end
-
-	for _, file in ipairs(estate.files) do
-		if file.status == "pending" then
-			if estate.review_mode ~= "readonly" then
-				local changes = require("opencode.artifact.changes")
-				changes.accept(file.change_id, { force = true })
-			end
-			file.status = "accepted"
-		end
-	end
-
-	return true
+	return apply_pending_files(permission_id, FILE_ACTIONS.accept)
 end
 
 --- Reject all pending files
 ---@param permission_id string
----@return boolean
+---@return boolean ok
+---@return string|nil err
+---@return table[]|nil errors
 function M.reject_all(permission_id)
-	local estate = active_edits[permission_id]
-	if not estate then
-		return false
-	end
-
-	for _, file in ipairs(estate.files) do
-		if file.status == "pending" then
-			if estate.review_mode ~= "readonly" then
-				local changes = require("opencode.artifact.changes")
-				changes.reject(file.change_id)
-			end
-			file.status = "rejected"
-		end
-	end
-
-	return true
+	return apply_pending_files(permission_id, FILE_ACTIONS.reject)
 end
 
 --- Resolve a file manually (mark as resolved without touching disk)

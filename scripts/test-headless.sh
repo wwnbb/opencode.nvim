@@ -14,7 +14,9 @@ if [ "$#" -eq 0 ]; then
 	TEST_SCRIPTS=(
 		"scripts/check-architecture.lua"
 		"scripts/check-state-ownership.lua"
+		"scripts/check-send-flow.lua"
 		"scripts/check-transport.lua"
+		"scripts/test-input-history.lua"
 		"scripts/smoke-require.lua"
 		"scripts/integration-chat-tabs.lua"
 		"scripts/integration-chat-render-freshness.lua"

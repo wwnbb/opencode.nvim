@@ -30,6 +30,12 @@ local readonly_warning_state = {
 	diff = {},
 }
 
+---@param label string
+---@param err string|nil
+local function notify_edit_action_error(label, err)
+	vim.notify("Failed to " .. label .. ": " .. (err or "unknown error"), vim.log.levels.ERROR)
+end
+
 ---@param winid number|nil
 ---@return boolean
 local function is_valid_window(winid)
@@ -729,7 +735,23 @@ local function apply_edit_file_action(edit_id, action, error_label)
 
 	local ok, err = action(edit_id, estate.selected_file)
 	if not ok then
-		vim.notify("Failed to " .. error_label .. ": " .. (err or "unknown"), vim.log.levels.ERROR)
+		notify_edit_action_error(error_label, err)
+		return false
+	end
+
+	M.refresh_edit(edit_id)
+	return true
+end
+
+---@param edit_id string
+---@param action fun(permission_id: string): boolean, string|nil, table[]|nil
+---@param error_label string
+---@return boolean
+local function apply_edit_batch_action(edit_id, action, error_label)
+	local ok, err = action(edit_id)
+	if not ok then
+		notify_edit_action_error(error_label, err)
+		M.rerender_edit(edit_id)
 		return false
 	end
 
@@ -758,8 +780,7 @@ function M.handle_edit_accept_file()
 	end
 
 	if edit_state.is_readonly(eid) then
-		edit_state.accept_all(eid)
-		M.finalize_edit(eid)
+		apply_edit_batch_action(eid, edit_state.accept_all, "accept edit")
 		return
 	end
 
@@ -785,8 +806,7 @@ function M.handle_edit_reject_file()
 	end
 
 	if edit_state.is_readonly(eid) then
-		edit_state.reject_all(eid)
-		M.finalize_edit(eid)
+		apply_edit_batch_action(eid, edit_state.reject_all, "reject edit")
 		return
 	end
 
@@ -798,8 +818,7 @@ function M.handle_edit_accept_all()
 	if not eid then
 		return
 	end
-	edit_state.accept_all(eid)
-	M.refresh_edit(eid)
+	apply_edit_batch_action(eid, edit_state.accept_all, "accept edit")
 end
 
 function M.handle_edit_reject_all()
@@ -807,8 +826,7 @@ function M.handle_edit_reject_all()
 	if not eid then
 		return
 	end
-	edit_state.reject_all(eid)
-	M.refresh_edit(eid)
+	apply_edit_batch_action(eid, edit_state.reject_all, "reject edit")
 end
 
 function M.handle_edit_resolve_file()

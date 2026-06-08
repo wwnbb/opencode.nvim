@@ -33,10 +33,16 @@ function M.register(palette)
 					})
 				end
 
-				local float = require("opencode.ui.float")
-				float.create_searchable_menu(items, function(item)
-					actions.select_agent(item.agent.name)
-				end, { title = " Switch Agent ", width = 60 })
+				local menu = require("opencode.ui.menu")
+				menu.open({
+					items = items,
+					title = " Switch Agent ",
+					width = 60,
+					searchable = true,
+					on_select = function(item)
+						actions.select_agent(item.agent.name)
+					end,
+				})
 			end)
 		end,
 	})

@@ -133,10 +133,11 @@ function M.approve_pending()
 	local edit_ok, edit_state = pcall(require, "opencode.edit.state")
 	if edit_ok and type(edit_state.get_all_active) == "function" then
 		for _, estate in ipairs(edit_state.get_all_active()) do
-			local accepted, accept_err = pcall(edit_state.accept_all, estate.permission_id)
-			if not accepted then
+			local call_ok, accepted, accept_err = pcall(edit_state.accept_all, estate.permission_id)
+			if not call_ok or not accepted then
 				vim.notify(
-					"OpenCode danger mode failed to accept edit: " .. tostring(accept_err),
+					"OpenCode danger mode failed to accept edit: "
+						.. tostring((call_ok and accept_err) or accepted or "unknown error"),
 					vim.log.levels.ERROR
 				)
 			else

@@ -2,22 +2,15 @@
 
 local M = {}
 
-local cs = require("opencode.ui.chat.state")
-local state = cs.state
-local render = require("opencode.ui.chat.render")
-local panel = require("opencode.ui.panel")
+local tool_panel = require("opencode.ui.chat.tool_panel")
 local syntax = require("opencode.ui.syntax")
 local text_util = require("opencode.util.text")
 
 local MAX_COLLAPSED_OUTPUT_LINES = 6
-local PANEL_PREFIX = "▏  "
-local PANEL_BLANK_PREFIX = "▏"
+local PANEL_PREFIX = tool_panel.PANEL_PREFIX
 local PANEL_BORDER_HL = "OpenCodeSkillMuted"
-local SKILL_ANIM_FRAMES = { "|", "/", "-", "\\" }
 
-local panel_helpers = panel.create_helpers({
-	prefix = PANEL_PREFIX,
-	blank_prefix = PANEL_BLANK_PREFIX,
+local panel_helpers = tool_panel.create_panel({
 	border_hl = PANEL_BORDER_HL,
 	default_hl = "OpenCodeSkillOutput",
 })
@@ -27,17 +20,13 @@ local add_panel_blank = panel_helpers.add_blank
 local add_trailing_separator = panel_helpers.add_separator
 local highlight_text = panel_helpers.highlight_text
 
-local function set_panel_hl(name, fg_source, fallback, extra_opts)
-	panel_helpers.set_hl(name, fg_source, fallback, extra_opts)
-end
-
 local function ensure_highlights()
-	set_panel_hl("OpenCodeSkillMuted", "Comment", "Normal")
-	set_panel_hl("OpenCodeSkillName", "String", "Normal", { bold = true })
-	set_panel_hl("OpenCodeSkillDescription", "Normal", nil)
-	set_panel_hl("OpenCodeSkillPath", "Directory", "Normal")
-	set_panel_hl("OpenCodeSkillOutput", "Normal", nil)
-	set_panel_hl("OpenCodeSkillError", "DiagnosticError", "ErrorMsg")
+	panel_helpers.set_hl("OpenCodeSkillMuted", "Comment", "Normal")
+	panel_helpers.set_hl("OpenCodeSkillName", "String", "Normal", { bold = true })
+	panel_helpers.set_hl("OpenCodeSkillDescription", "Normal", nil)
+	panel_helpers.set_hl("OpenCodeSkillPath", "Directory", "Normal")
+	panel_helpers.set_hl("OpenCodeSkillOutput", "Normal", nil)
+	panel_helpers.set_hl("OpenCodeSkillError", "DiagnosticError", "ErrorMsg")
 end
 
 ---@param value any
@@ -126,27 +115,6 @@ local function normalize_path(path)
 	return vim.fn.fnamemodify(normalized, ":~:.")
 end
 
----@param tool_part table
----@return table|string
-local function get_input(tool_part)
-	local state_input = tool_part and tool_part.state and tool_part.state.input
-	local part_input = tool_part and tool_part.input
-	if type(state_input) == "table" or type(part_input) == "table" then
-		return vim.tbl_deep_extend(
-			"force",
-			{},
-			type(part_input) == "table" and part_input or {},
-			type(state_input) == "table" and state_input or {}
-		)
-	end
-	return state_input or part_input or {}
-end
-
----@return string
-local function get_anim_frame()
-	return SKILL_ANIM_FRAMES[state.task_anim_frame] or SKILL_ANIM_FRAMES[1]
-end
-
 ---@param text string
 ---@return string
 local function unquote(text)
@@ -228,16 +196,14 @@ end
 
 ---@param input table|string
 ---@param metadata table
----@param tool_state table
 ---@return string[]
-local function get_input_names(input, metadata, tool_state)
+local function get_input_names(input, metadata)
 	local names = {}
 	local seen = {}
 	add_skill_names(names, seen, input)
 	add_skill_names(names, seen, metadata.name)
 	add_skill_names(names, seen, metadata.skill)
 	add_skill_names(names, seen, metadata.skills)
-	add_skill_names(names, seen, tool_state.raw)
 	return names
 end
 
@@ -415,40 +381,16 @@ local function parse_skill_output(output)
 	return parsed
 end
 
----@param entries table[]
----@param text string
----@param hl_group string|nil
-local function append_body_entries(entries, text, hl_group)
-	if text == "" then
-		return
-	end
-	for _, line in ipairs(vim.split(text, "\n", { plain = true })) do
-		table.insert(entries, { text = line, hl_group = hl_group })
-	end
-end
-
----@param result table
----@param entry table
-local function add_entry(result, entry)
-	if entry.text == "" then
-		add_panel_blank(result)
-		return
-	end
-	add_panel_line(result, entry.text, entry.hl_group)
-end
-
 ---@param names string[]
 ---@param parsed table
 ---@param metadata table
----@param tool_state table
 ---@return string
-local function resolve_display_name(names, parsed, metadata, tool_state)
+local function resolve_display_name(names, parsed, metadata)
 	if #names > 0 then
 		return table.concat(names, ", ")
 	end
 
-	local title_name = type(tool_state.title) == "string" and tool_state.title:match("Loaded skill:%s*(.+)") or nil
-	return first_nonempty_trimmed_text(parsed.name, metadata.name, title_name)
+	return first_nonempty_trimmed_text(parsed.name, metadata.name)
 end
 
 ---@param name string
@@ -505,22 +447,16 @@ function M.render_tool(tool_part, expanded)
 	end
 	ensure_highlights()
 
-	local tool_state = type(tool_part.state) == "table" and tool_part.state or {}
-	local input = get_input(tool_part)
-	local metadata = render.get_tool_metadata(tool_part)
-	local status = tool_state.status or "pending"
-	local working = status == "pending" or status == "running"
-	local output = first_nonempty_text(
-		tool_state.output,
-		metadata.output,
-		tool_part.output,
-		tool_state.content,
-		tool_part.content
-	)
-	local error_body = trim_edge_newlines(first_nonempty_text(tool_state.error, metadata.error, tool_part.error))
+	local ctx = tool_panel.context(tool_part)
+	local input = ctx.input
+	local metadata = ctx.metadata
+	local status = ctx.status
+	local working = ctx.working
+	local output = first_nonempty_text(ctx.output)
+	local error_body = trim_edge_newlines(first_nonempty_text(ctx.error))
 	local parsed = parse_skill_output(output)
-	local input_names = get_input_names(input, metadata, tool_state)
-	local name = resolve_display_name(input_names, parsed, metadata, tool_state)
+	local input_names = get_input_names(input, metadata)
+	local name = resolve_display_name(input_names, parsed, metadata)
 
 	if name == "" then
 		name = "unknown"
@@ -529,26 +465,22 @@ function M.render_tool(tool_part, expanded)
 	local dir = resolve_dir(name, parsed, metadata)
 	local description = resolve_description(name, parsed, metadata)
 	local body = parsed.body
-	if body == "" then
-		body = first_nonempty_text(metadata.preview)
-	end
 
 	local body_entries = {}
-	append_body_entries(body_entries, body, "OpenCodeSkillOutput")
-	if #body_entries > 0 and error_body ~= "" then
-		table.insert(body_entries, { text = "", hl_group = "OpenCodeSkillOutput" })
-	end
-	append_body_entries(body_entries, error_body, "OpenCodeSkillError")
+	tool_panel.append_entries(body_entries, body, "OpenCodeSkillOutput")
+	tool_panel.append_error_entries(body_entries, error_body, "OpenCodeSkillError", "OpenCodeSkillOutput")
 
 	local has_body = #body_entries > 0
 	local has_overflow = has_body and #body_entries > MAX_COLLAPSED_OUTPUT_LINES
 	local header = '# Skill "' .. name .. '"'
-	if working then
-		header = header .. " " .. get_anim_frame()
-	end
 	if has_body then
-		local fold_icon = expanded and "▾" or "▸"
-		header = fold_icon .. " " .. header
+		header = tool_panel.header(header, {
+			fold = true,
+			expanded = expanded,
+			working = working,
+		})
+	elseif working then
+		header = tool_panel.header(header, { working = true })
 	end
 
 	local header_hl = "OpenCodeSkillMuted"
@@ -558,7 +490,7 @@ function M.render_tool(tool_part, expanded)
 		header_hl = "OpenCodeSkillName"
 	end
 
-	local result = { lines = {}, highlights = {} }
+	local result = panel_helpers.result()
 	add_panel_blank(result)
 	local _, _, header_rows = add_panel_line(result, header, header_hl)
 	highlight_text(result, header_rows, '"' .. name .. '"', "OpenCodeSkillName")
@@ -606,24 +538,27 @@ function M.render_tool(tool_part, expanded)
 		return result
 	end
 
-	local limit = expanded and #body_entries or math.min(MAX_COLLAPSED_OUTPUT_LINES, #body_entries)
 	local body_lang = syntax.detect_output_language(body, metadata) or "markdown"
 	local body_start_line = nil
 	local body_lines = {}
 	local can_highlight_body = true
-	for i = 1, limit do
-		local entry = body_entries[i]
-		if body_lang and entry.hl_group == "OpenCodeSkillOutput" then
-			local line_index, _, rows = add_panel_raw_line(result, entry.text, entry.hl_group)
-			body_start_line = body_start_line or line_index
-			table.insert(body_lines, entry.text)
-			if #rows > 1 then
-				can_highlight_body = false
+	panel_helpers.render_entries(result, body_entries, {
+		expanded = expanded,
+		max = MAX_COLLAPSED_OUTPUT_LINES,
+		overflow_hl = "OpenCodeSkillMuted",
+		render_entry = function(_, entry)
+			if body_lang and entry.hl_group == "OpenCodeSkillOutput" then
+				local line_index, _, rows = add_panel_raw_line(result, entry.text, entry.hl_group)
+				body_start_line = body_start_line or line_index
+				table.insert(body_lines, entry.text)
+				if #rows > 1 then
+					can_highlight_body = false
+				end
+			else
+				panel_helpers.add_entry(result, entry)
 			end
-		else
-			add_entry(result, entry)
-		end
-	end
+		end,
+	})
 	if body_lang and body_start_line and #body_lines > 0 and can_highlight_body then
 		local body_text = table.concat(body_lines, "\n")
 		if body_lang == "markdown" then
@@ -640,11 +575,6 @@ function M.render_tool(tool_part, expanded)
 				col_offset = #PANEL_PREFIX,
 			})
 		end
-	end
-
-	if not expanded and has_overflow then
-		local remaining = #body_entries - MAX_COLLAPSED_OUTPUT_LINES
-		add_panel_line(result, "… (" .. tostring(remaining) .. " more lines, press O to expand)", "OpenCodeSkillMuted")
 	end
 
 	add_panel_blank(result)
