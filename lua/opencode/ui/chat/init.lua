@@ -14,7 +14,6 @@ local chat_keymaps = require("opencode.ui.chat.keymaps")
 local chat_session_tabs = require("opencode.ui.chat.session_tabs")
 local spinner = require("opencode.ui.spinner")
 local locale = require("opencode.util.locale")
-local session_util = require("opencode.util.session")
 local event_util = require("opencode.events.util")
 local actions = require("opencode.actions")
 
@@ -118,14 +117,6 @@ local function get_config()
 	local app_state = require("opencode.state")
 	local full_config = app_state.get_config() or {}
 	return vim.tbl_deep_extend("force", defaults, full_config.chat or {})
-end
-
-local function is_processing_status(status)
-	local status_type = type(status) == "table" and status.type or status
-	return status_type == "busy"
-		or status_type == "streaming"
-		or status_type == "thinking"
-		or status_type == "retry"
 end
 
 local reset_chat_surface = render_state.reset_chat_surface

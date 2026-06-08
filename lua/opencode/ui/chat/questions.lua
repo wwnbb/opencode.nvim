@@ -28,10 +28,6 @@ local function emit(event_type, data)
 	end
 end
 
--- ─── Pending queue ────────────────────────────────────────────────────────────
-
-function M.process_pending_questions() end
-
 -- ─── Add / update ─────────────────────────────────────────────────────────────
 
 ---@param request_id string

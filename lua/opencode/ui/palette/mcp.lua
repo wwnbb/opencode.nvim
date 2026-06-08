@@ -432,17 +432,6 @@ function M.register(palette)
 			end)
 		end,
 	})
-	palette.register({
-		id = "mcp.refresh",
-		title = "Refresh MCP",
-		description = "Refresh MCP server connections",
-		category = "mcp",
-		action = function()
-			-- Note: This is a placeholder - actual refresh functionality
-			-- depends on server API support
-			vim.notify("Refresh MCP - not yet implemented in server API", vim.log.levels.WARN)
-		end,
-	})
 end
 
 return M

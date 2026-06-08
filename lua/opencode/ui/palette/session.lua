@@ -255,20 +255,6 @@ function M.register(palette)
 			return state.get_session().id ~= nil
 		end,
 	})
-	palette.register({
-		id = "session.archive",
-		title = "Archive Session",
-		description = "Archive current session",
-		category = "session",
-		action = function()
-			-- Note: This is a placeholder - actual archive functionality
-			-- depends on server API support
-			vim.notify("Archive session - not yet implemented in server API", vim.log.levels.WARN)
-		end,
-		enabled = function()
-			return state.get_session().id ~= nil
-		end,
-	})
 end
 
 return M

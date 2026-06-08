@@ -45,10 +45,6 @@ function M.is_active()
 	return state.active
 end
 
-function M.tick()
-	return
-end
-
 -- Start the spinner
 function M.start()
 	-- Don't restart if already active

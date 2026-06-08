@@ -654,7 +654,6 @@ function M.show()
 	state.popup:mount()
 
 	local input_buf = state.input_popup.bufnr
-	local input_win = state.input_popup.winid
 	local popup_buf = state.popup.bufnr
 
 	-- Set input buffer options

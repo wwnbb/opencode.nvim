@@ -497,18 +497,6 @@ function M.register_defaults()
 		end,
 	})
 	
-	-- /redo - Redo undone message
-	M.register({
-		name = "redo",
-		description = "Redo previously undone message",
-		category = "session",
-		handler = function()
-			-- Note: Redo functionality depends on server implementation
-			-- This is a placeholder
-			vim.notify("Redo not yet implemented", vim.log.levels.INFO)
-		end,
-	})
-	
 	-- /share - Share current session
 	M.register({
 		name = "share",
