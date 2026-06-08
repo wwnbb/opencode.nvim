@@ -49,7 +49,18 @@ end
 ---@param port integer
 ---@param callback function
 local function resolve_target(host, port, callback)
-	local req, req_err = uv.getaddrinfo(host, tostring(port), { socktype = "stream" }, function(err, addresses)
+	local req, req_err = uv.getaddrinfo(host, tostring(port), {
+		family = 0,
+		socktype = "stream",
+		protocol = 0,
+		addrconfig = false,
+		v4mapped = false,
+		all = false,
+		numerichost = false,
+		passive = false,
+		numericserv = false,
+		canonname = false,
+	}, function(err, addresses)
 		if err then
 			callback(make_error("Failed to resolve host '" .. host .. "': " .. tostring(err)), nil)
 			return
@@ -83,7 +94,7 @@ local function resolve_target(host, port, callback)
 	end
 end
 
----@param handle uv_handle_t|nil
+---@param handle uv.uv_handle_t|nil
 local function safe_close(handle)
 	if not handle then
 		return
@@ -94,11 +105,11 @@ local function safe_close(handle)
 	end
 
 	pcall(function()
-		handle:close()
+		uv.close(handle)
 	end)
 end
 
----@param timer uv_timer_t|nil
+---@param timer uv.uv_timer_t|nil
 local function stop_timer(timer)
 	if not timer then
 		return
@@ -109,10 +120,10 @@ local function stop_timer(timer)
 	end
 
 	pcall(function()
-		timer:stop()
+		uv.timer_stop(timer)
 	end)
 	pcall(function()
-		timer:close()
+		uv.close(timer)
 	end)
 end
 

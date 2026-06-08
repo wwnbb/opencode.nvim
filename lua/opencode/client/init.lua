@@ -248,11 +248,10 @@ end
 
 -- Reply to a question with selected answers
 -- API endpoint: /question/:requestID/reply
----@param session_id string Session ID (unused, kept for API compatibility)
 ---@param request_id string Question request ID
 ---@param answers table Array of answer arrays, e.g., {{"label1"}, {"label2"}}
 ---@param callback function(err, success)
-function M.reply_to_question(session_id, request_id, answers, callback)
+function M.reply_to_question(request_id, answers, callback)
 	http.post("/question/" .. request_id .. "/reply", { answers = answers }, callback)
 end
 

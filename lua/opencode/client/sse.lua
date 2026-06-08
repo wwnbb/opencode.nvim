@@ -93,7 +93,7 @@ local function normalize_directory(directory)
 	if vim.fs and vim.fs.normalize then
 		normalized = vim.fs.normalize(normalized)
 	end
-	return normalized:gsub("/+$", "")
+	return (normalized:gsub("/+$", ""))
 end
 
 ---@param data any

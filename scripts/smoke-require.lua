@@ -564,6 +564,90 @@ assert_no_buffer_newlines(multiline_task.lines, "task renderer")
 assert(multiline_task.lines[1]:find("Investigate ↵ newline crash", 1, true), "task description was not sanitized")
 assert(multiline_task.lines[2]:find("Run ↵ checks", 1, true), "task summary title was not sanitized")
 
+do
+	local chat_state_mod = require("opencode.ui.chat.state")
+	local chat_state = chat_state_mod.state
+	local previous = {
+		bufnr = chat_state.bufnr,
+		winid = chat_state.winid,
+		visible = chat_state.visible,
+		tasks = chat_state.tasks,
+		tools = chat_state.tools,
+		task_anim_frame = chat_state.task_anim_frame,
+	}
+	local winid = vim.api.nvim_get_current_win()
+	local previous_win_buf = vim.api.nvim_win_get_buf(winid)
+	local bufnr = vim.api.nvim_create_buf(false, true)
+	vim.api.nvim_win_set_buf(winid, bufnr)
+
+	local task_part = {
+		id = "task_anim_overlay",
+		tool = "task",
+		state = {
+			status = "running",
+			input = {
+				subagent_type = "webfetcher_slave",
+				description = "Research vim.diff docs",
+			},
+			metadata = {
+				summary = {
+					{
+						id = "1",
+						tool = "webfetch",
+						state = {
+							status = "running",
+							title = "Webfetch https://raw.githubusercontent.com/neovim/neovim/...",
+							input = {},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	chat_state.bufnr = bufnr
+	chat_state.winid = winid
+	chat_state.visible = true
+	chat_state.tasks = {}
+	chat_state.tools = {}
+	chat_state.task_anim_frame = 1
+
+	local rendered_task = chat_tasks.render_task_tool(task_part, false)
+	vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, rendered_task.lines)
+	render.apply_extmark_highlights(bufnr, chat_state_mod.chat_hl_ns, rendered_task.highlights, 0)
+	chat_state.tasks[task_part.id] = {
+		start_line = 0,
+		end_line = #rendered_task.lines - 1,
+		tool_part = task_part,
+		highlights = rendered_task.highlights,
+	}
+
+	local before_lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+	local before_highlights =
+		vim.inspect(vim.api.nvim_buf_get_extmarks(bufnr, chat_state_mod.chat_hl_ns, 0, -1, { details = true }))
+	chat_state.task_anim_frame = 2
+	assert(chat_tasks.update_animation_frames_in_place() == true, "task animation overlay did not update")
+	assert(
+		vim.deep_equal(before_lines, vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)),
+		"task animation should not mutate buffer text"
+	)
+	assert(
+		before_highlights
+			== vim.inspect(vim.api.nvim_buf_get_extmarks(bufnr, chat_state_mod.chat_hl_ns, 0, -1, { details = true })),
+		"task animation should not move task highlight extmarks"
+	)
+	assert(
+		#vim.api.nvim_buf_get_extmarks(bufnr, chat_state_mod.chat_anim_ns, 0, -1, { details = true }) > 0,
+		"task animation overlay extmark was not applied"
+	)
+	chat_tasks.clear_animation_extmarks(bufnr)
+
+	vim.api.nvim_win_set_buf(winid, previous_win_buf)
+	for key, value in pairs(previous) do
+		chat_state[key] = value
+	end
+end
+
 local generic_tool = render.render_tool_line({
 	tool = "custom",
 	input = {

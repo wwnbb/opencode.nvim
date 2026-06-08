@@ -2390,6 +2390,7 @@ function M.do_render()
 		return
 	end
 	local done_total = perf.start("chat.do_render.total")
+	chat_tasks.clear_animation_extmarks(state.bufnr)
 	local force_full_render = state.force_full_render == true
 	state.force_full_render = false
 	local done_winbar = perf.start("chat.do_render.update_winbar")

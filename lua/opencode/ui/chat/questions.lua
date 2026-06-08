@@ -254,10 +254,7 @@ end
 function M.submit_question_answers(request_id)
 	local answers = question_state.get_answers(request_id)
 
-	local qstate = question_state.get_question(request_id)
-	local session_id = (qstate and qstate.session_id) or require("opencode.state").get_session().id
-
-	actions.reply_to_question(session_id, request_id, answers, function(err)
+	actions.reply_to_question(request_id, answers, function(err)
 		vim.schedule(function()
 			if err then
 				vim.notify("Failed to submit answer: " .. vim.inspect(err), vim.log.levels.ERROR)

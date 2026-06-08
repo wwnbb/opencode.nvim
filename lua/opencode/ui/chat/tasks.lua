@@ -6,6 +6,7 @@ local M = {}
 local cs = require("opencode.ui.chat.state")
 local state = cs.state
 local chat_hl_ns = cs.chat_hl_ns
+local chat_anim_ns = cs.chat_anim_ns
 local render = require("opencode.ui.chat.render")
 local chat_todos = require("opencode.ui.chat.todos")
 local chat_bash = require("opencode.ui.chat.bash")
@@ -35,6 +36,7 @@ local TASK_COMPLETE_ICON = "✓"
 local TASK_CANCELLED_ICON = "✕"
 local TASK_ERROR_ICON = "✗"
 local TASK_HIGHLIGHT_PRIORITY = 4200
+local TASK_ANIMATION_PRIORITY = TASK_HIGHLIGHT_PRIORITY + 50
 local MAX_REGULAR_TOOL_ANIMATION_RENDER_LINES = 120
 
 function M.get_task_anim_frame()
@@ -75,6 +77,14 @@ local function tick_task_anim_frame()
 	end
 end
 
+function M.clear_animation_extmarks(bufnr, start_line, end_line)
+	bufnr = bufnr or state.bufnr
+	if not bufnr or not vim.api.nvim_buf_is_valid(bufnr) then
+		return
+	end
+	pcall(vim.api.nvim_buf_clear_namespace, bufnr, chat_anim_ns, start_line or 0, end_line or -1)
+end
+
 ---@param tool_name string|nil
 ---@return boolean
 local function is_animated_regular_tool(tool_name)
@@ -110,6 +120,7 @@ function M.stop_task_animation_timer()
 	state.task_anim_timer:stop()
 	state.task_anim_timer:close()
 	state.task_anim_timer = nil
+	M.clear_animation_extmarks()
 end
 
 function M.has_active_task_rows()
@@ -1005,13 +1016,13 @@ local function get_visible_line_range()
 	if not state.winid or not vim.api.nvim_win_is_valid(state.winid) then
 		return nil, nil
 	end
-	local ok, top, bottom = pcall(vim.api.nvim_win_call, state.winid, function()
-		return vim.fn.line("w0") - 1, vim.fn.line("w$") - 1
+	local ok, range = pcall(vim.api.nvim_win_call, state.winid, function()
+		return { vim.fn.line("w0") - 1, vim.fn.line("w$") - 1 }
 	end)
-	if not ok then
+	if not ok or type(range) ~= "table" then
 		return nil, nil
 	end
-	return top, bottom
+	return range[1], range[2]
 end
 
 ---@param pos table|nil
@@ -1085,6 +1096,7 @@ local function update_block_lines_in_place(pos, result)
 
 	vim.bo[state.bufnr].modifiable = true
 	if changed then
+		M.clear_animation_extmarks(state.bufnr, pos.start_line, pos.end_line + 1)
 		local range_start = nil
 		local replacement = {}
 		local function flush_range(before_index)
@@ -1220,6 +1232,7 @@ local function replace_rendered_block(pos, result, skip_task_id, skip_tool_id)
 	local delta = new_line_count - old_line_count
 
 	vim.bo[state.bufnr].modifiable = true
+	M.clear_animation_extmarks(state.bufnr, pos.start_line, pos.end_line + 1)
 	vim.api.nvim_buf_clear_namespace(state.bufnr, chat_hl_ns, pos.start_line, pos.end_line + 1)
 	vim.api.nvim_buf_set_lines(state.bufnr, pos.start_line, pos.end_line + 1, false, result.lines)
 	vim.api.nvim_buf_clear_namespace(state.bufnr, chat_hl_ns, pos.start_line, pos.start_line + new_line_count)
@@ -1347,9 +1360,29 @@ end
 
 -- ─── Frame-only animation update (fast path) ──────────────────────────────────
 
----Update spinner frame characters in-place using nvim_buf_set_text.
----Avoids full redraw and extmark re-apply. Falls back to
----update_active_animations_in_place() when frame positions cannot be found.
+local function is_animation_frame(char, frames)
+	for _, frame in ipairs(frames) do
+		if char == frame then
+			return true
+		end
+	end
+	return false
+end
+
+local function set_frame_overlay(bufnr, line_nr, byte_col, frame, hl_group)
+	local ok = pcall(vim.api.nvim_buf_set_extmark, bufnr, chat_anim_ns, line_nr, byte_col, {
+		virt_text = { { frame, hl_group or "Comment" } },
+		virt_text_pos = "overlay",
+		hl_mode = "combine",
+		priority = TASK_ANIMATION_PRIORITY,
+		right_gravity = false,
+	})
+	return ok
+end
+
+---Update spinner frames with overlay extmarks.
+---Avoids mutating buffer text, which can disturb highlight extmarks on the task row.
+---Falls back to update_active_animations_in_place() when frame positions cannot be found.
 ---@return boolean true if any frame character was updated
 function M.update_animation_frames_in_place()
 	if not state.visible or not state.bufnr or not vim.api.nvim_buf_is_valid(state.bufnr) then
@@ -1369,7 +1402,7 @@ function M.update_animation_frames_in_place()
 	local bufnr = state.bufnr
 	local buf_lines = vim.api.nvim_buf_line_count(bufnr)
 
-	vim.bo[bufnr].modifiable = true
+	M.clear_animation_extmarks(bufnr)
 
 	-- Update task blocks: header frame at col 0, and "  ↳ " summary frames
 	for _, pos in pairs(state.tasks) do
@@ -1383,12 +1416,8 @@ function M.update_animation_frames_in_place()
 			local line_text = vim.api.nvim_buf_get_lines(bufnr, pos.start_line, pos.start_line + 1, false)[1]
 			if line_text and #line_text > 0 then
 				local first_char = vim.fn.strcharpart(line_text, 0, 1)
-				for _, tf in ipairs(TASK_ANIM_FRAMES) do
-					if first_char == tf then
-						vim.api.nvim_buf_set_text(bufnr, pos.start_line, 0, pos.start_line, #first_char, { task_frame })
-						updated = true
-						break
-					end
+				if is_animation_frame(first_char, TASK_ANIM_FRAMES) then
+					updated = set_frame_overlay(bufnr, pos.start_line, 0, task_frame, "Comment") or updated
 				end
 			end
 
@@ -1399,20 +1428,9 @@ function M.update_animation_frames_in_place()
 					local prefix_chars = vim.fn.strcharpart(line, 0, 4)
 					if prefix_chars == "  ↳ " then
 						local fifth_char = vim.fn.strcharpart(line, 4, 1)
-						for _, tf in ipairs(TASK_ANIM_FRAMES) do
-							if fifth_char == tf then
-								local byte_offset = #vim.fn.strcharpart(line, 0, 4)
-								vim.api.nvim_buf_set_text(
-									bufnr,
-									line_nr,
-									byte_offset,
-									line_nr,
-									byte_offset + #fifth_char,
-									{ task_frame }
-								)
-								updated = true
-								break
-							end
+						if is_animation_frame(fifth_char, TASK_ANIM_FRAMES) then
+							local byte_offset = #vim.fn.strcharpart(line, 0, 4)
+							updated = set_frame_overlay(bufnr, line_nr, byte_offset, task_frame, "Comment") or updated
 						end
 					end
 				end
@@ -1432,24 +1450,14 @@ function M.update_animation_frames_in_place()
 				if line_nr >= 0 and line_nr < buf_lines then
 					local line = vim.api.nvim_buf_get_lines(bufnr, line_nr, line_nr + 1, false)[1]
 					if line and #line > 0 then
-						local char_count = vim.fn.strchars(line)
+						local trimmed = line:gsub("%s+$", "")
+						local char_count = vim.fn.strchars(trimmed)
 						if char_count > 0 then
-							local last_char = vim.fn.strcharpart(line, char_count - 1, 1)
-							for _, cf in ipairs(classic_frames) do
-								if last_char == cf then
-									local byte_offset = #vim.fn.strcharpart(line, 0, char_count - 1)
-									vim.api.nvim_buf_set_text(
-										bufnr,
-										line_nr,
-										byte_offset,
-										line_nr,
-										byte_offset + #last_char,
-										{ classic_frame }
-									)
-									block_updated = true
-									updated = true
-									break
-								end
+							local last_char = vim.fn.strcharpart(trimmed, char_count - 1, 1)
+							if is_animation_frame(last_char, classic_frames) then
+								local byte_offset = #vim.fn.strcharpart(trimmed, 0, char_count - 1)
+								block_updated = set_frame_overlay(bufnr, line_nr, byte_offset, classic_frame, "Comment")
+								updated = block_updated or updated
 							end
 						end
 					end
@@ -1458,7 +1466,6 @@ function M.update_animation_frames_in_place()
 		end
 	end
 
-	vim.bo[bufnr].modifiable = false
 	return updated
 end
 

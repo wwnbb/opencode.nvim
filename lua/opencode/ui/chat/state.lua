@@ -54,5 +54,6 @@ M.state = {
 
 -- Namespace for all chat buffer highlights (enables incremental highlight updates)
 M.chat_hl_ns = vim.api.nvim_create_namespace("opencode_chat_hl")
+M.chat_anim_ns = vim.api.nvim_create_namespace("opencode_chat_anim")
 
 return M

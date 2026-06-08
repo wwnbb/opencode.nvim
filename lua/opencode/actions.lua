@@ -374,8 +374,8 @@ function M.respond_permission(permission_id, reply, opts, callback)
 	end)
 end
 
-function M.reply_to_question(session_id, request_id, answers, callback)
-	return client().reply_to_question(session_id, request_id, answers, function(err, result)
+function M.reply_to_question(request_id, answers, callback)
+	return client().reply_to_question(request_id, answers, function(err, result)
 		schedule_callback(callback, err, result)
 	end)
 end

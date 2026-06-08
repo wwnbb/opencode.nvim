@@ -240,10 +240,10 @@ end
 function M.calculate_hunks(original_lines, modified_lines)
 	local hunks = {}
 
-	if type(vim.diff) == "function" then
+	if vim.text and type(vim.text.diff) == "function" then
 		local original_text = table.concat(original_lines or {}, "\n")
 		local modified_text = table.concat(modified_lines or {}, "\n")
-		local ok, diff = pcall(vim.diff, original_text, modified_text, {
+		local ok, diff = pcall(vim.text.diff, original_text, modified_text, {
 			result_type = "indices",
 			algorithm = "myers",
 		})
