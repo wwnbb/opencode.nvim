@@ -172,13 +172,9 @@ local function completion_items(agents)
 	for _, agent in ipairs(agents or {}) do
 		local name = agent_name(agent)
 		if name ~= "" then
-			local description = agent_description(agent)
 			table.insert(items, {
 				word = "@" .. name,
 				abbr = "@" .. name,
-				kind = "Agent",
-				menu = description,
-				info = description,
 				dup = 1,
 				user_data = completion_user_data(agent),
 			})
