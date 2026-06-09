@@ -10,6 +10,7 @@ local keymaps = require("opencode.ui.input.keymaps")
 local layout = require("opencode.ui.input.layout")
 local mentions = require("opencode.ui.input.mentions")
 local popups = require("opencode.ui.input.popups")
+local slash_commands = require("opencode.ui.input.slash_commands")
 
 local state = {
 	bufnr = nil,
@@ -28,6 +29,7 @@ local state = {
 	layout = nil,
 	parts = {},
 	mentions = nil,
+	slash_commands = nil,
 	normalizing_paste = false,
 	resize_scheduled = false,
 }
@@ -73,6 +75,7 @@ end
 
 local function clear_input()
 	state.parts = {}
+	slash_commands.reset(state)
 	mentions.reset(state)
 	set_input_text("")
 end
@@ -143,6 +146,7 @@ local function history_prev()
 		return
 	end
 	state.parts = {}
+	slash_commands.reset(state)
 	mentions.reset(state)
 	set_input_text(text)
 end
@@ -153,6 +157,7 @@ local function history_next()
 		return
 	end
 	state.parts = {}
+	slash_commands.reset(state)
 	mentions.reset(state)
 	set_input_text(text)
 end
@@ -176,6 +181,7 @@ local function restore_input()
 	end
 
 	state.parts = parts
+	slash_commands.reset(state)
 	mentions.reset(state)
 	set_input_text(text)
 end
@@ -195,6 +201,7 @@ local function mount_input(chat_winid, float_dims, cfg)
 	state.mentions = {
 		parts = {},
 	}
+	state.slash_commands = {}
 	mentions.enable_native_complete(state)
 
 	vim.api.nvim_buf_set_var(state.bufnr, "completion", false)
@@ -232,15 +239,25 @@ function M.show(opts)
 	autocmds.setup(state, {
 		schedule_resize = schedule_resize_input,
 		input_changed = function()
+			if slash_commands.refresh(state) then
+				return
+			end
 			mentions.refresh(state)
 		end,
 		cursor_moved = function()
+			if slash_commands.refresh(state) then
+				return
+			end
 			mentions.refresh(state)
 		end,
 		complete_done = function()
+			if slash_commands.complete_done(state) then
+				return
+			end
 			mentions.complete_done(state)
 		end,
 		insert_leave = function()
+			slash_commands.close_completion(state)
 			mentions.close_completion(state)
 		end,
 		lock_scroll = function()
@@ -280,7 +297,9 @@ function M.show(opts)
 	end
 	if text and text ~= "" then
 		set_input_text(text)
-		mentions.refresh(state)
+		if not slash_commands.refresh(state) then
+			mentions.refresh(state)
+		end
 	end
 
 	vim.cmd("startinsert!")
@@ -295,6 +314,7 @@ function M.close(save_draft)
 		history.set_pending(get_input_text(), state.parts)
 	end
 
+	slash_commands.clear(state)
 	mentions.clear(state)
 	focus_parent_before_unmount()
 	popups.unmount(state)
@@ -309,6 +329,7 @@ function M.close(save_draft)
 	state.layout = nil
 	state.parts = {}
 	state.mentions = nil
+	state.slash_commands = nil
 	state.on_send = nil
 	state.on_cancel = nil
 	state.close_on_send = true
@@ -345,6 +366,7 @@ end
 function M.clear_history()
 	history.clear()
 	state.parts = {}
+	slash_commands.reset(state)
 	mentions.reset(state)
 end
 
@@ -369,6 +391,7 @@ function M.set_pending_text(text)
 	end
 
 	if state.visible then
+		slash_commands.reset(state)
 		mentions.reset(state)
 		set_input_text(content)
 	end
