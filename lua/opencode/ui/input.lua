@@ -73,7 +73,7 @@ end
 
 local function clear_input()
 	state.parts = {}
-	mentions.clear(state)
+	mentions.reset(state)
 	set_input_text("")
 end
 
@@ -143,7 +143,7 @@ local function history_prev()
 		return
 	end
 	state.parts = {}
-	mentions.clear(state)
+	mentions.reset(state)
 	set_input_text(text)
 end
 
@@ -153,7 +153,7 @@ local function history_next()
 		return
 	end
 	state.parts = {}
-	mentions.clear(state)
+	mentions.reset(state)
 	set_input_text(text)
 end
 
@@ -176,7 +176,7 @@ local function restore_input()
 	end
 
 	state.parts = parts
-	mentions.clear(state)
+	mentions.reset(state)
 	set_input_text(text)
 end
 
@@ -194,9 +194,8 @@ local function mount_input(chat_winid, float_dims, cfg)
 	state.visible = true
 	state.mentions = {
 		parts = {},
-		items = {},
-		selected = 1,
 	}
+	mentions.enable_native_complete(state)
 
 	vim.api.nvim_buf_set_var(state.bufnr, "completion", false)
 end
@@ -238,8 +237,11 @@ function M.show(opts)
 		cursor_moved = function()
 			mentions.refresh(state)
 		end,
+		complete_done = function()
+			mentions.complete_done(state)
+		end,
 		insert_leave = function()
-			mentions.close_popup(state)
+			mentions.close_completion(state)
 		end,
 		lock_scroll = function()
 			layout.lock_scroll(state)
@@ -254,18 +256,6 @@ function M.show(opts)
 		cancel = cancel_input,
 		history_prev = history_prev,
 		history_next = history_next,
-		mention_prev = function()
-			return mentions.move_selection(state, -1)
-		end,
-		mention_next = function()
-			return mentions.move_selection(state, 1)
-		end,
-		mention_select = function()
-			return mentions.select_current(state)
-		end,
-		mention_close = function()
-			return mentions.close_popup(state)
-		end,
 		paste = function()
 			M.paste_clipboard()
 		end,
@@ -348,9 +338,6 @@ function M.get_winids()
 	if state.info_popup and state.info_popup.winid and vim.api.nvim_win_is_valid(state.info_popup.winid) then
 		table.insert(wins, state.info_popup.winid)
 	end
-	if state.mentions and state.mentions.popup_win and vim.api.nvim_win_is_valid(state.mentions.popup_win) then
-		table.insert(wins, state.mentions.popup_win)
-	end
 
 	return wins
 end
@@ -358,6 +345,7 @@ end
 function M.clear_history()
 	history.clear()
 	state.parts = {}
+	mentions.reset(state)
 end
 
 function M.get_history()
@@ -381,7 +369,7 @@ function M.set_pending_text(text)
 	end
 
 	if state.visible then
-		mentions.clear(state)
+		mentions.reset(state)
 		set_input_text(content)
 	end
 end

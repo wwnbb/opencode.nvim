@@ -84,6 +84,13 @@ assert_nil(mentions.detect_trigger_in_line("中文@", #"中文@"), "non-whitespa
 
 mentions.setup_highlights()
 
+local previous_completeopt = vim.o.completeopt
+local option_state = {}
+mentions.enable_native_complete(option_state)
+assert_eq(vim.o.completeopt, "menuone,noselect,noinsert", "native completion should use menu-only completeopt")
+mentions.clear(option_state)
+assert_eq(vim.o.completeopt, previous_completeopt, "native completion should restore completeopt")
+
 local bufnr = vim.api.nvim_create_buf(false, true)
 vim.api.nvim_set_current_buf(bufnr)
 local winid = vim.api.nvim_get_current_win()

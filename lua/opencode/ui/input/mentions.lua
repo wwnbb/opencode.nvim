@@ -1,15 +1,13 @@
--- opencode.nvim - Input @agent mentions
+-- opencode.nvim - Input native @agent completion
 
 local M = {}
 
 local sync = require("opencode.sync")
 
 local NS_MENTIONS = vim.api.nvim_create_namespace("opencode_input_mentions")
-local NS_POPUP = vim.api.nvim_create_namespace("opencode_input_mentions_popup")
 
-local MAX_VISIBLE_ITEMS = 8
-local MIN_POPUP_WIDTH = 24
-local MAX_POPUP_WIDTH = 72
+local COMPLETION_SOURCE = "opencode_agent_mention"
+local COMPLETEOPT = "menuone,noselect,noinsert"
 
 local function valid_buf(bufnr)
 	return bufnr and vim.api.nvim_buf_is_valid(bufnr)
@@ -22,8 +20,6 @@ end
 local function ensure_state(state)
 	state.mentions = state.mentions or {}
 	state.mentions.parts = state.mentions.parts or {}
-	state.mentions.items = state.mentions.items or {}
-	state.mentions.selected = state.mentions.selected or 1
 	return state.mentions
 end
 
@@ -41,32 +37,6 @@ end
 local function agent_description(agent)
 	local description = type(agent) == "table" and agent.description or nil
 	return type(description) == "string" and description or ""
-end
-
-local function display_width(text)
-	return vim.fn.strdisplaywidth(tostring(text or ""))
-end
-
-local function truncate_to_width(text, width)
-	text = tostring(text or "")
-	if width <= 0 then
-		return ""
-	end
-	if display_width(text) <= width then
-		return text
-	end
-
-	local suffix = width > 3 and "..." or ""
-	local target = math.max(1, width - #suffix)
-	local result = ""
-	for i = 1, vim.fn.strchars(text) do
-		local next_result = vim.fn.strcharpart(text, 0, i)
-		if display_width(next_result) > target then
-			break
-		end
-		result = next_result
-	end
-	return result .. suffix
 end
 
 local function last_plain_at(text)
@@ -158,264 +128,113 @@ function M.filter_agents(agents, query)
 	return filtered
 end
 
-local function close_popup(state)
-	local mention_state = state and state.mentions
-	if not mention_state then
-		return false
-	end
-
-	local was_open = valid_win(mention_state.popup_win)
-	if was_open then
-		pcall(vim.api.nvim_win_close, mention_state.popup_win, true)
-	end
-	if valid_buf(mention_state.popup_buf) then
-		pcall(vim.api.nvim_buf_delete, mention_state.popup_buf, { force = true })
-	end
-
-	mention_state.popup_win = nil
-	mention_state.popup_buf = nil
-	mention_state.items = {}
-	mention_state.trigger = nil
-	mention_state.selected = 1
-	set_completion_var(state, false)
-	return was_open
-end
-
-function M.close_popup(state)
-	return close_popup(state)
-end
-
-function M.is_popup_visible(state)
-	local mention_state = state and state.mentions
-	return mention_state ~= nil and valid_win(mention_state.popup_win)
-end
-
 function M.setup_highlights()
-	vim.api.nvim_set_hl(0, "OpenCodeInputMentionSelected", { link = "CursorLine", default = true })
 	vim.api.nvim_set_hl(0, "OpenCodeInputMentionName", { link = "OpenCodeInputAgent", default = true })
-	vim.api.nvim_set_hl(0, "OpenCodeInputMentionDescription", { link = "Comment", default = true })
 end
 
-local function popup_width(items)
-	local width = MIN_POPUP_WIDTH
-	for _, agent in ipairs(items or {}) do
-		local line = "  @" .. agent_name(agent)
-		local description = agent_description(agent)
-		if description ~= "" then
-			line = line .. "  " .. description
-		end
-		width = math.max(width, display_width(line))
-	end
-	return math.min(MAX_POPUP_WIDTH, width)
-end
-
-local function visible_window(items, selected)
-	local count = #items
-	if count <= MAX_VISIBLE_ITEMS then
-		return 1, count
-	end
-
-	local first = selected - math.floor(MAX_VISIBLE_ITEMS / 2)
-	first = math.max(1, first)
-	first = math.min(first, count - MAX_VISIBLE_ITEMS + 1)
-	return first, first + MAX_VISIBLE_ITEMS - 1
-end
-
-local function format_agent_line(agent, selected, width)
-	local name = "@" .. agent_name(agent)
-	local prefix = selected and "> " or "  "
-	local left = prefix .. name
-	local description = agent_description(agent)
-
-	if description == "" then
-		return truncate_to_width(left, width)
-	end
-
-	local desc_width = display_width(description)
-	local left_width = width - desc_width - 2
-	if left_width <= display_width(prefix) + 4 then
-		return truncate_to_width(left, width)
-	end
-
-	left = truncate_to_width(left, left_width)
-	local padding = math.max(2, width - display_width(left) - desc_width)
-	return left .. string.rep(" ", padding) .. description
-end
-
-local function popup_lines(items, selected, width, has_agents)
-	if #items == 0 then
-		local message = has_agents and "No matching agents" or "No mentionable agents"
-		return { truncate_to_width("  " .. message, width) }
-	end
-
-	local first, last = visible_window(items, selected)
-	local lines = {}
-	for idx = first, last do
-		table.insert(lines, format_agent_line(items[idx], idx == selected, width))
-	end
-	return lines
-end
-
-local function popup_position(state, trigger, width, height)
-	local win_pos = vim.api.nvim_win_get_position(state.winid)
-	local line = trigger.line or ""
-	local prefix = line:sub(1, trigger.start_col)
-	local col = win_pos[2] + display_width(prefix)
-	local total_width = width + 2
-
-	if col + total_width > vim.o.columns then
-		col = math.max(0, vim.o.columns - total_width)
-	end
-
-	local cursor = vim.api.nvim_win_get_cursor(state.winid)
-	local total_height = height + 2
-	local max_row = math.max(0, vim.o.lines - total_height - 2)
-	local above = win_pos[1] + cursor[1] - total_height
-	local below = win_pos[1] + cursor[1]
-	local row = above >= 0 and above or below
-
-	return math.max(0, math.min(row, max_row)), math.max(0, col)
-end
-
-local function ensure_popup(state, width, height, trigger)
+function M.enable_native_complete(state)
 	local mention_state = ensure_state(state)
-	local row, col = popup_position(state, trigger, width, height)
-	local config = {
-		relative = "editor",
-		row = row,
-		col = col,
-		width = width,
-		height = height,
-		style = "minimal",
-		border = "single",
-		focusable = false,
-		zindex = 60,
-	}
-
-	if valid_win(mention_state.popup_win) and valid_buf(mention_state.popup_buf) then
-		vim.api.nvim_win_set_config(mention_state.popup_win, config)
-		return mention_state.popup_buf
+	if mention_state.completeopt_restore == nil then
+		mention_state.completeopt_restore = vim.o.completeopt
 	end
-
-	local bufnr = vim.api.nvim_create_buf(false, true)
-	vim.bo[bufnr].buftype = "nofile"
-	vim.bo[bufnr].bufhidden = "wipe"
-	vim.bo[bufnr].swapfile = false
-
-	local winid = vim.api.nvim_open_win(bufnr, false, config)
-	vim.wo[winid].wrap = false
-	vim.wo[winid].cursorline = false
-	vim.wo[winid].signcolumn = "no"
-	vim.wo[winid].number = false
-	vim.wo[winid].relativenumber = false
-	vim.wo[winid].winhighlight =
-		"Normal:OpenCodeInputBg,EndOfBuffer:OpenCodeInputBg,FloatBorder:OpenCodeInputBorderAgent"
-
-	mention_state.popup_buf = bufnr
-	mention_state.popup_win = winid
-	return bufnr
+	vim.o.completeopt = COMPLETEOPT
 end
 
-local function mark_popup_lines(bufnr, lines, items, selected)
-	vim.api.nvim_buf_clear_namespace(bufnr, NS_POPUP, 0, -1)
-	if #items == 0 then
-		vim.api.nvim_buf_add_highlight(bufnr, NS_POPUP, "OpenCodeInputMentionDescription", 0, 0, -1)
-		return
+function M.restore_native_complete(state)
+	local mention_state = state and state.mentions
+	if mention_state and mention_state.completeopt_restore ~= nil then
+		vim.o.completeopt = mention_state.completeopt_restore
+		mention_state.completeopt_restore = nil
 	end
+end
 
-	local first = visible_window(items, selected)
-	for line_idx, line in ipairs(lines) do
-		local item_idx = first + line_idx - 1
-		local agent = items[item_idx]
-		if item_idx == selected then
-			vim.api.nvim_buf_add_highlight(bufnr, NS_POPUP, "OpenCodeInputMentionSelected", line_idx - 1, 0, -1)
-		end
+local function close_native_menu(state)
+	set_completion_var(state, false)
+	if vim.fn.mode():sub(1, 1) == "i" and vim.fn.pumvisible() == 1 then
+		local keys = vim.api.nvim_replace_termcodes("<C-e>", true, false, true)
+		vim.api.nvim_feedkeys(keys, "n", false)
+	end
+end
 
-		local name = "@" .. agent_name(agent)
-		local start_col = line:find(name, 1, true)
-		if start_col then
-			vim.api.nvim_buf_add_highlight(
-				bufnr,
-				NS_POPUP,
-				"OpenCodeInputMentionName",
-				line_idx - 1,
-				start_col - 1,
-				start_col - 1 + #name
-			)
+function M.close_completion(state)
+	close_native_menu(state)
+end
+
+local function completion_user_data(agent)
+	return vim.json.encode({
+		source = COMPLETION_SOURCE,
+		name = agent_name(agent),
+	})
+end
+
+local function completion_items(agents)
+	local items = {}
+	for _, agent in ipairs(agents or {}) do
+		local name = agent_name(agent)
+		if name ~= "" then
+			local description = agent_description(agent)
+			table.insert(items, {
+				word = "@" .. name,
+				abbr = "@" .. name,
+				kind = "Agent",
+				menu = description,
+				info = description,
+				dup = 1,
+				user_data = completion_user_data(agent),
+			})
 		end
 	end
+	return items
 end
 
-local function render_popup(state)
-	local mention_state = ensure_state(state)
-	local trigger = mention_state.trigger
-	if not trigger then
-		close_popup(state)
-		return
-	end
-
-	local items = mention_state.items or {}
-	local has_agents = #(sync.get_mentionable_agents() or {}) > 0
-	local width = popup_width(items)
-	local height = math.max(1, math.min(#items, MAX_VISIBLE_ITEMS))
-	local lines = popup_lines(items, mention_state.selected or 1, width, has_agents)
-	height = #lines
-
-	local bufnr = ensure_popup(state, width, height, trigger)
-	vim.bo[bufnr].modifiable = true
-	vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, lines)
-	vim.bo[bufnr].modifiable = false
-	mark_popup_lines(bufnr, lines, items, mention_state.selected or 1)
-	set_completion_var(state, true)
-end
-
+---@param state table
+---@return boolean opened
 function M.refresh(state)
 	if not state or not state.visible then
-		close_popup(state)
+		close_native_menu(state)
+		return false
+	end
+	if vim.fn.mode():sub(1, 1) ~= "i" then
+		close_native_menu(state)
 		return false
 	end
 
 	local trigger = detect_trigger(state)
 	if not trigger then
-		close_popup(state)
+		close_native_menu(state)
 		return false
 	end
 
-	local mention_state = ensure_state(state)
-	local previous = mention_state.items and mention_state.items[mention_state.selected]
-	local previous_name = previous and agent_name(previous) or nil
-	local items = M.filter_agents(sync.get_mentionable_agents(), trigger.query)
-
-	mention_state.trigger = trigger
-	mention_state.items = items
-	mention_state.selected = 1
-	if previous_name then
-		for idx, agent in ipairs(items) do
-			if agent_name(agent) == previous_name then
-				mention_state.selected = idx
-				break
-			end
-		end
+	local items = completion_items(M.filter_agents(sync.get_mentionable_agents(), trigger.query))
+	if #items == 0 then
+		close_native_menu(state)
+		return false
 	end
 
-	render_popup(state)
+	ensure_state(state).trigger = trigger
+	set_completion_var(state, true)
+	pcall(vim.fn.complete, trigger.start_col + 1, items)
 	return true
 end
 
-function M.move_selection(state, delta)
-	local mention_state = ensure_state(state)
-	if not valid_win(mention_state.popup_win) then
-		return false
+local function decoded_completion_item()
+	local item = vim.v.completed_item
+	if type(item) ~= "table" or item.word == nil or item.word == "" then
+		return nil
 	end
 
-	local count = #(mention_state.items or {})
-	if count == 0 then
-		return true
+	local ok, data = pcall(vim.json.decode, item.user_data or "")
+	if not ok or type(data) ~= "table" or data.source ~= COMPLETION_SOURCE then
+		return nil
+	end
+	if type(data.name) ~= "string" or data.name == "" then
+		return nil
 	end
 
-	mention_state.selected = ((mention_state.selected - 1 + delta) % count) + 1
-	render_popup(state)
-	return true
+	return {
+		word = tostring(item.word),
+		name = data.name,
+	}
 end
 
 local function char_after(line, col)
@@ -425,33 +244,22 @@ local function char_after(line, col)
 	return line:sub(col + 1, col + 1)
 end
 
----@param state table
----@param trigger table
----@param agent table
----@return boolean
-function M.insert_mention(state, trigger, agent)
+local function mark_completed_mention(state, item)
 	if not valid_buf(state and state.bufnr) or not valid_win(state.winid) then
 		return false
 	end
-	if type(trigger) ~= "table" or type(agent) ~= "table" then
-		return false
-	end
 
-	local name = agent_name(agent)
-	if name == "" then
-		return false
-	end
-
-	local row = trigger.row or (vim.api.nvim_win_get_cursor(state.winid)[1] - 1)
+	local cursor = vim.api.nvim_win_get_cursor(state.winid)
+	local row = cursor[1] - 1
+	local col = cursor[2]
 	local line = vim.api.nvim_buf_get_lines(state.bufnr, row, row + 1, false)[1] or ""
-	local mention_value = "@" .. name
-	local suffix = char_after(line, trigger.end_col):match("%s") and "" or " "
-	local inserted = mention_value .. suffix
+	local start_col = col - #item.word
+	if start_col < 0 or line:sub(start_col + 1, col) ~= item.word then
+		return false
+	end
 
-	vim.api.nvim_buf_set_text(state.bufnr, row, trigger.start_col, row, trigger.end_col, { inserted })
-
-	local end_col = trigger.start_col + #mention_value
-	local extmark_id = vim.api.nvim_buf_set_extmark(state.bufnr, NS_MENTIONS, row, trigger.start_col, {
+	local end_col = col
+	local extmark_id = vim.api.nvim_buf_set_extmark(state.bufnr, NS_MENTIONS, row, start_col, {
 		end_row = row,
 		end_col = end_col,
 		right_gravity = false,
@@ -462,42 +270,35 @@ function M.insert_mention(state, trigger, agent)
 
 	table.insert(ensure_state(state).parts, {
 		type = "agent",
-		name = name,
+		name = item.name,
 		source = {
 			start = 0,
 			["end"] = 0,
-			value = mention_value,
+			value = item.word,
 		},
 		_mention = {
 			extmark_id = extmark_id,
-			value = mention_value,
+			value = item.word,
 		},
 	})
 
-	vim.api.nvim_win_set_cursor(state.winid, { row + 1, trigger.start_col + #inserted })
+	if char_after(line, end_col):match("%s") then
+		return true
+	end
+
+	vim.api.nvim_buf_set_text(state.bufnr, row, end_col, row, end_col, { " " })
+	vim.api.nvim_win_set_cursor(state.winid, { row + 1, end_col + 1 })
 	return true
 end
 
-function M.select_current(state)
-	local mention_state = ensure_state(state)
-	if not valid_win(mention_state.popup_win) then
+function M.complete_done(state)
+	set_completion_var(state, false)
+
+	local item = decoded_completion_item()
+	if not item then
 		return false
 	end
-
-	local agent = mention_state.items and mention_state.items[mention_state.selected]
-	if not agent then
-		return true
-	end
-
-	local trigger = mention_state.trigger or detect_trigger(state)
-	if not trigger then
-		close_popup(state)
-		return true
-	end
-
-	local ok = M.insert_mention(state, trigger, agent)
-	close_popup(state)
-	return ok or true
+	return mark_completed_mention(state, item)
 end
 
 local function position_to_offset(lines, row, col)
@@ -577,13 +378,58 @@ function M.active_parts(state)
 	return active
 end
 
+---@param state table
+---@param trigger table
+---@param agent table
+---@return boolean
+function M.insert_mention(state, trigger, agent)
+	if not valid_buf(state and state.bufnr) or not valid_win(state.winid) then
+		return false
+	end
+	if type(trigger) ~= "table" or type(agent) ~= "table" then
+		return false
+	end
+
+	local name = agent_name(agent)
+	if name == "" then
+		return false
+	end
+
+	local row = trigger.row or (vim.api.nvim_win_get_cursor(state.winid)[1] - 1)
+	local line = vim.api.nvim_buf_get_lines(state.bufnr, row, row + 1, false)[1] or ""
+	local mention_value = "@" .. name
+	local suffix = char_after(line, trigger.end_col):match("%s") and "" or " "
+	local inserted = mention_value .. suffix
+
+	vim.api.nvim_buf_set_text(state.bufnr, row, trigger.start_col, row, trigger.end_col, { inserted })
+	vim.api.nvim_win_set_cursor(state.winid, { row + 1, trigger.start_col + #mention_value })
+	local ok = mark_completed_mention(state, {
+		word = mention_value,
+		name = name,
+	})
+	if ok and suffix ~= "" then
+		vim.api.nvim_win_set_cursor(state.winid, { row + 1, trigger.start_col + #inserted })
+	end
+	return ok
+end
+
 function M.clear(state)
-	close_popup(state)
+	close_native_menu(state)
 	if state then
+		M.restore_native_complete(state)
 		state.mentions = {
 			parts = {},
-			items = {},
-			selected = 1,
+		}
+	end
+end
+
+function M.reset(state)
+	close_native_menu(state)
+	if state then
+		local mention_state = ensure_state(state)
+		state.mentions = {
+			parts = {},
+			completeopt_restore = mention_state.completeopt_restore,
 		}
 	end
 end
