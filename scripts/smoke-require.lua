@@ -983,6 +983,148 @@ local function wait_until(predicate, message)
 end
 
 do
+	local sse = require("opencode.client.sse")
+	sse.clear_listeners()
+
+	local delta_count = 0
+	local delta_payload = nil
+	local delta_event_id = nil
+	sse.on("message.part.delta", function(data, event_id)
+		delta_count = delta_count + 1
+		delta_payload = data
+		delta_event_id = event_id
+	end)
+
+	local sync_delta = {
+		directory = vim.fn.getcwd(),
+		workspace = "smoke-workspace",
+		payload = {
+			type = "sync",
+			syncEvent = {
+				id = "evt_sync_delta",
+				type = "message.part.delta.1",
+				seq = 42,
+				aggregateID = "ses_sync_delta",
+				data = {
+					sessionID = "ses_sync_delta",
+					messageID = "msg_sync_delta",
+					partID = "prt_sync_delta",
+					field = "text",
+					delta = "hello",
+				},
+			},
+		},
+	}
+	sse.emit("message", sync_delta)
+	assert(delta_count == 1, "sync-only message.part.delta.1 should reach message.part.delta listeners")
+	assert(delta_event_id == "evt_sync_delta", "sync event id should be forwarded")
+	assert(delta_payload.sessionID == "ses_sync_delta", "sync delta sessionID should be preserved")
+	assert(delta_payload.messageID == "msg_sync_delta", "sync delta messageID should be preserved")
+	assert(delta_payload.partID == "prt_sync_delta", "sync delta partID should be preserved")
+	assert(delta_payload.delta == "hello", "sync delta text should be preserved")
+	assert(delta_payload._sync_seq == 42, "sync metadata seq should be attached")
+	assert(delta_payload._sync_aggregate_id == "ses_sync_delta", "sync aggregate id should be attached")
+	assert(delta_payload._directory == vim.fn.getcwd(), "global event directory should be attached")
+	assert(delta_payload._workspace == "smoke-workspace", "global event workspace should be attached")
+
+	sse.emit("message", {
+		directory = vim.fn.getcwd(),
+		payload = {
+			id = "evt_sync_delta",
+			type = "message.part.delta",
+			properties = {
+				sessionID = "ses_sync_delta",
+				messageID = "msg_sync_delta",
+				partID = "prt_sync_delta",
+				field = "text",
+				delta = "hello",
+			},
+		},
+	})
+	assert(delta_count == 1, "legacy duplicate after sync event should not double-emit deltas")
+
+	local update_count = 0
+	local update_payload = nil
+	local part_update_count = 0
+	local part_update_payload = nil
+	sse.clear_listeners()
+	sse.on("message.updated", function(data)
+		update_count = update_count + 1
+		update_payload = data
+	end)
+	sse.on("message.part.updated", function(data)
+		part_update_count = part_update_count + 1
+		part_update_payload = data
+	end)
+
+	sse.emit("message", {
+		directory = vim.fn.getcwd(),
+		payload = {
+			id = "evt_legacy_update",
+			type = "message.updated",
+			properties = {
+				sessionID = "ses_sync_shape",
+				info = {
+					id = "msg_sync_shape",
+					sessionID = "ses_sync_shape",
+					role = "assistant",
+				},
+			},
+		},
+	})
+	sse.emit("message", {
+		directory = vim.fn.getcwd(),
+		payload = {
+			type = "sync",
+			syncEvent = {
+				id = "evt_legacy_update",
+				type = "message.updated.1",
+				seq = 1,
+				aggregateID = "ses_sync_shape",
+				data = {
+					sessionID = "ses_sync_shape",
+					info = {
+						id = "msg_sync_shape",
+						sessionID = "ses_sync_shape",
+						role = "assistant",
+					},
+				},
+			},
+		},
+	})
+	assert(update_count == 1, "sync duplicate after legacy event should not double-emit message.updated")
+	assert(update_payload.info.id == "msg_sync_shape", "message.updated info shape should be preserved")
+
+	sse.emit("message", {
+		directory = vim.fn.getcwd(),
+		payload = {
+			type = "sync",
+			syncEvent = {
+				id = "evt_sync_part_update",
+				type = "message.part.updated.1",
+				seq = 2,
+				aggregateID = "ses_sync_shape",
+				data = {
+					sessionID = "ses_sync_shape",
+					part = {
+						id = "prt_sync_shape",
+						messageID = "msg_sync_shape",
+						sessionID = "ses_sync_shape",
+						type = "text",
+						text = "assistant text",
+					},
+				},
+			},
+		},
+	})
+	assert(part_update_count == 1, "sync message.part.updated.1 should reach message.part.updated listeners")
+	assert(part_update_payload.part.id == "prt_sync_shape", "message.part.updated part shape should be preserved")
+	assert(part_update_payload.part.text == "assistant text", "message.part.updated text should be preserved")
+
+	sse.clear_listeners()
+end
+
+do
 	local bus = require("opencode.events.bus")
 	local render_coordinator = require("opencode.ui.chat.render_coordinator")
 	bus.clear()

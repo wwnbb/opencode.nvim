@@ -641,6 +641,29 @@ wait_for(function()
 	return (chat_state.render_generation or 0) > before_late_stream_generation
 end, "late child stream update should schedule a parent render")
 
+local original_update_stream_part_block = chat.update_stream_part_block
+local original_schedule_render = chat.schedule_render
+local fallback_force = nil
+chat.update_stream_part_block = function()
+	return false
+end
+chat.schedule_render = function(opts)
+	fallback_force = type(opts) == "table" and opts.force == true
+end
+events.emit("chat_stream_part_updated", {
+	session_id = "late-parent",
+	message_id = "late-force-msg",
+	part_id = "late-force-part",
+	delta = "FORCE",
+	field = "text",
+})
+wait_for(function()
+	return fallback_force ~= nil
+end, "stream fallback should request a render when no in-place block exists")
+chat.update_stream_part_block = original_update_stream_part_block
+chat.schedule_render = original_schedule_render
+assert_true(fallback_force, "stream fallback should force a full render")
+
 sync.clear_all()
 app_state.reset()
 seed_assistant("stream-a", "stream-a-existing", "stream-a-existing-part", "STREAM_A_VISIBLE_TEXT", 20)

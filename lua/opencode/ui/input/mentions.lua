@@ -1,13 +1,10 @@
--- opencode.nvim - Input native @agent completion
+-- opencode.nvim - Input @agent mention support
 
 local M = {}
 
 local sync = require("opencode.sync")
 
 local NS_MENTIONS = vim.api.nvim_create_namespace("opencode_input_mentions")
-
-local COMPLETION_SOURCE = "opencode_agent_mention"
-local COMPLETEOPT = "menuone,noselect,noinsert"
 
 local function valid_buf(bufnr)
 	return bufnr and vim.api.nvim_buf_is_valid(bufnr)
@@ -23,18 +20,12 @@ local function ensure_state(state)
 	return state.mentions
 end
 
-local function set_completion_var(state, value)
-	if valid_buf(state and state.bufnr) then
-		pcall(vim.api.nvim_buf_set_var, state.bufnr, "completion", value == true)
-	end
-end
-
-local function agent_name(agent)
+function M.agent_name(agent)
 	local name = type(agent) == "table" and (agent.name or agent.id) or nil
 	return type(name) == "string" and name or ""
 end
 
-local function agent_description(agent)
+function M.agent_description(agent)
 	local description = type(agent) == "table" and agent.description or nil
 	return type(description) == "string" and description or ""
 end
@@ -85,7 +76,7 @@ function M.detect_trigger_in_line(line, col)
 	}
 end
 
-local function detect_trigger(state)
+function M.detect_trigger(state)
 	if not valid_buf(state and state.bufnr) or not valid_win(state.winid) then
 		return nil
 	end
@@ -113,8 +104,8 @@ function M.filter_agents(agents, query)
 
 	for _, agent in ipairs(agents or {}) do
 		if sync.is_mentionable_agent(agent) then
-			local name = agent_name(agent)
-			local description = agent_description(agent)
+			local name = M.agent_name(agent)
+			local description = M.agent_description(agent)
 			local include = needle == ""
 				or name:lower():find(needle, 1, true) ~= nil
 				or description:lower():find(needle, 1, true) ~= nil
@@ -130,107 +121,6 @@ end
 
 function M.setup_highlights()
 	vim.api.nvim_set_hl(0, "OpenCodeInputMentionName", { link = "OpenCodeInputAgent", default = true })
-end
-
-function M.enable_native_complete(state)
-	local mention_state = ensure_state(state)
-	if mention_state.completeopt_restore == nil then
-		mention_state.completeopt_restore = vim.o.completeopt
-	end
-	vim.o.completeopt = COMPLETEOPT
-end
-
-function M.restore_native_complete(state)
-	local mention_state = state and state.mentions
-	if mention_state and mention_state.completeopt_restore ~= nil then
-		vim.o.completeopt = mention_state.completeopt_restore
-		mention_state.completeopt_restore = nil
-	end
-end
-
-local function close_native_menu(state)
-	set_completion_var(state, false)
-	if vim.fn.mode():sub(1, 1) == "i" and vim.fn.pumvisible() == 1 then
-		local keys = vim.api.nvim_replace_termcodes("<C-e>", true, false, true)
-		vim.api.nvim_feedkeys(keys, "n", false)
-	end
-end
-
-function M.close_completion(state)
-	close_native_menu(state)
-end
-
-local function completion_user_data(agent)
-	return vim.json.encode({
-		source = COMPLETION_SOURCE,
-		name = agent_name(agent),
-	})
-end
-
-local function completion_items(agents)
-	local items = {}
-	for _, agent in ipairs(agents or {}) do
-		local name = agent_name(agent)
-		if name ~= "" then
-			table.insert(items, {
-				word = "@" .. name,
-				abbr = "@" .. name,
-				dup = 1,
-				user_data = completion_user_data(agent),
-			})
-		end
-	end
-	return items
-end
-
----@param state table
----@return boolean opened
-function M.refresh(state)
-	if not state or not state.visible then
-		close_native_menu(state)
-		return false
-	end
-	if vim.fn.mode():sub(1, 1) ~= "i" then
-		close_native_menu(state)
-		return false
-	end
-
-	local trigger = detect_trigger(state)
-	if not trigger then
-		close_native_menu(state)
-		return false
-	end
-
-	local items = completion_items(M.filter_agents(sync.get_mentionable_agents(), trigger.query))
-	if #items == 0 then
-		close_native_menu(state)
-		return false
-	end
-
-	ensure_state(state).trigger = trigger
-	set_completion_var(state, true)
-	pcall(vim.fn.complete, trigger.start_col + 1, items)
-	return true
-end
-
-local function decoded_completion_item()
-	local item = vim.v.completed_item
-	if type(item) ~= "table" or item.word == nil or item.word == "" then
-		return nil
-	end
-
-	local ok, data = pcall(vim.json.decode, item.user_data or "")
-	if not ok or type(data) ~= "table" or data.source ~= COMPLETION_SOURCE then
-		return nil
-	end
-	if type(data.name) ~= "string" or data.name == "" then
-		return nil
-	end
-
-	return {
-		word = tostring(item.word),
-		name = data.name,
-	}
 end
 
 local function char_after(line, col)
@@ -285,16 +175,6 @@ local function mark_completed_mention(state, item)
 	vim.api.nvim_buf_set_text(state.bufnr, row, end_col, row, end_col, { " " })
 	vim.api.nvim_win_set_cursor(state.winid, { row + 1, end_col + 1 })
 	return true
-end
-
-function M.complete_done(state)
-	set_completion_var(state, false)
-
-	local item = decoded_completion_item()
-	if not item then
-		return false
-	end
-	return mark_completed_mention(state, item)
 end
 
 local function position_to_offset(lines, row, col)
@@ -386,7 +266,7 @@ function M.insert_mention(state, trigger, agent)
 		return false
 	end
 
-	local name = agent_name(agent)
+	local name = M.agent_name(agent)
 	if name == "" then
 		return false
 	end
@@ -410,9 +290,7 @@ function M.insert_mention(state, trigger, agent)
 end
 
 function M.clear(state)
-	close_native_menu(state)
 	if state then
-		M.restore_native_complete(state)
 		state.mentions = {
 			parts = {},
 		}
@@ -420,12 +298,9 @@ function M.clear(state)
 end
 
 function M.reset(state)
-	close_native_menu(state)
 	if state then
-		local mention_state = ensure_state(state)
 		state.mentions = {
 			parts = {},
-			completeopt_restore = mention_state.completeopt_restore,
 		}
 	end
 end

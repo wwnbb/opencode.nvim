@@ -25,9 +25,37 @@ end
 function M.setup(bufnr, cfg, handlers)
 	local keys = cfg.keymaps or {}
 
-	map(bufnr, "i", keys.send, handlers.send)
+	local function schedule(handler)
+		if not handler then
+			return
+		end
+		vim.schedule(function()
+			if vim.api.nvim_buf_is_valid(bufnr) then
+				handler()
+			end
+		end)
+	end
+
+	local function autocomplete_visible()
+		return handlers.autocomplete_visible and handlers.autocomplete_visible()
+	end
+
+	local function confirm_autocomplete()
+		schedule(handlers.autocomplete_confirm)
+		return ""
+	end
+
+	local function send_or_confirm()
+		if autocomplete_visible() then
+			return confirm_autocomplete()
+		end
+		schedule(handlers.send)
+		return ""
+	end
+
+	map(bufnr, "i", keys.send, send_or_confirm, { expr = true, replace_keycodes = false })
 	map(bufnr, "n", keys.send, handlers.send)
-	map(bufnr, "i", keys.send_alt, handlers.send)
+	map(bufnr, "i", keys.send_alt, send_or_confirm, { expr = true, replace_keycodes = false })
 	map(bufnr, "n", keys.send_alt, handlers.send)
 
 	map(bufnr, "n", keys.cancel, handlers.cancel)
@@ -38,18 +66,54 @@ function M.setup(bufnr, cfg, handlers)
 	map(bufnr, { "i", "n" }, "<C-c>", handlers.cancel)
 
 	map(bufnr, "i", keys.history_prev, function()
-		if vim.fn.pumvisible() == 1 then
-			return termcodes("<C-p>")
+		if autocomplete_visible() then
+			schedule(handlers.autocomplete_prev)
+			return ""
 		end
-		handlers.history_prev()
+		schedule(handlers.history_prev)
 		return ""
 	end, { expr = true, replace_keycodes = false })
 	map(bufnr, "i", keys.history_next, function()
-		if vim.fn.pumvisible() == 1 then
-			return termcodes("<C-n>")
+		if autocomplete_visible() then
+			schedule(handlers.autocomplete_next)
+			return ""
 		end
-		handlers.history_next()
+		schedule(handlers.history_next)
 		return ""
+	end, { expr = true, replace_keycodes = false })
+
+	map(bufnr, "i", "<C-p>", function()
+		if autocomplete_visible() then
+			schedule(handlers.autocomplete_prev)
+			return ""
+		end
+		return termcodes("<C-p>")
+	end, { expr = true, replace_keycodes = false })
+	map(bufnr, "i", "<C-n>", function()
+		if autocomplete_visible() then
+			schedule(handlers.autocomplete_next)
+			return ""
+		end
+		return termcodes("<C-n>")
+	end, { expr = true, replace_keycodes = false })
+	map(bufnr, "i", "<Tab>", function()
+		if autocomplete_visible() then
+			return confirm_autocomplete()
+		end
+		return termcodes("<Tab>")
+	end, { expr = true, replace_keycodes = false })
+	map(bufnr, "i", "<S-Tab>", function()
+		if autocomplete_visible() then
+			schedule(handlers.autocomplete_prev)
+			return ""
+		end
+		return termcodes("<S-Tab>")
+	end, { expr = true, replace_keycodes = false })
+	map(bufnr, "i", "<CR>", function()
+		if autocomplete_visible() then
+			return confirm_autocomplete()
+		end
+		return termcodes("<CR>")
 	end, { expr = true, replace_keycodes = false })
 
 	map(bufnr, { "i", "n" }, keys.paste, handlers.paste)

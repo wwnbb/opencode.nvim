@@ -1,183 +1,28 @@
 import { tool } from "@opencode-ai/plugin"
-import * as fs from "fs/promises"
-import * as path from "path"
 import DESCRIPTION from "./neovim_edit.txt"
-import { createTwoFilesPatch, diffLines } from "./diff"
+import { callAsk, callMetadata, isPermissionRejected } from "./lib/context"
+import {
+  displayPath,
+  readState,
+  removeEmptyCreatedFile,
+  resolveFilePath,
+  sameState,
+  splitBom,
+  writeState,
+} from "./lib/file_state"
+import {
+  assertNoAccidentalIndentRemoval,
+  convertToLineEnding,
+  detectLineEnding,
+  makeDiff,
+  normalizeLineEndings,
+  sameContent,
+  stats,
+} from "./lib/text"
 
 const schema = tool.schema
 
-// In opencode >=1.15.9, context.metadata() returns Effect<void> instead of void
-// (not wrapped in registry unlike ask). We attempt to run it if it's an Effect.
-// context.ask() now returns Promise<void> (wrapped via bridge.promise in registry).
-function callMetadata(context: any, input: any): void {
-  try {
-    const result = context.metadata(input)
-    // Effect objects have ._op field in effect library
-    // They are NOT thenable in effect v3+, so we can't await them directly
-    // This is a server-side issue (metadata not wrapped in registry.ts).
-    // Best we can do: ignore the Effect safely - metadata won't render before ask dialog,
-    // but it WILL be set by the ask metadata field which the server processes.
-    void result
-  } catch {
-    // ignore
-  }
-}
-
-async function callAsk(context: any, input: any): Promise<void> {
-  // In opencode >=1.15.9, ask returns Promise<void> via bridge.promise()
-  // In older versions it returned Effect<void> via bridge.run()
-  const result = context.ask(input)
-  if (result != null && typeof (result as any).then === "function") {
-    await (result as Promise<void>)
-  }
-  // If Effect without .then() - fire-and-forget, permission handled server-side
-}
-
 type Status = "applied" | "partial" | "rejected" | "failed"
-
-type FileState = {
-  exists: boolean
-  content: string
-  bom: boolean
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null
-}
-
-function permissionErrorTag(error: unknown, seen = new Set<unknown>()): string | undefined {
-  if (typeof error === "string") {
-    if (error.includes("PermissionCorrectedError")) return "PermissionCorrectedError"
-    if (error.includes("PermissionRejectedError")) return "PermissionRejectedError"
-    if (error.includes("The user rejected permission to use this specific tool call with")) {
-      return "PermissionCorrectedError"
-    }
-    if (error.includes("The user rejected permission to use this specific tool call.")) {
-      return "PermissionRejectedError"
-    }
-    return undefined
-  }
-
-  if (!isRecord(error) || seen.has(error)) return undefined
-  seen.add(error)
-
-  const tag = error._tag ?? error.name
-  if (tag === "PermissionRejectedError" || tag === "PermissionCorrectedError") return tag
-
-  if (error instanceof Error) {
-    const byText = permissionErrorTag(`${error.name}\n${error.message}\n${error.stack ?? ""}`, seen)
-    if (byText) return byText
-  }
-
-  for (const key of ["cause", "error", "reason", "defect", "failure"]) {
-    const found = permissionErrorTag(error[key], seen)
-    if (found) return found
-  }
-
-  for (const key of ["errors", "failures", "defects"]) {
-    const values = error[key]
-    if (!Array.isArray(values)) continue
-    for (const value of values) {
-      const found = permissionErrorTag(value, seen)
-      if (found) return found
-    }
-  }
-
-  return undefined
-}
-
-function isPermissionRejected(error: unknown): boolean {
-  return permissionErrorTag(error) === "PermissionRejectedError"
-}
-
-function splitBom(text: string): FileState {
-  if (text.charCodeAt(0) === 0xfeff) {
-    return { exists: true, content: text.slice(1), bom: true }
-  }
-  return { exists: true, content: text, bom: false }
-}
-
-function joinBom(content: string, bom: boolean): string {
-  return bom ? "\ufeff" + content : content
-}
-
-async function readState(filePath: string): Promise<FileState> {
-  try {
-    const stat = await fs.stat(filePath)
-    if (stat.isDirectory()) throw new Error(`Path is a directory, not a file: ${filePath}`)
-    return splitBom(await fs.readFile(filePath, "utf8"))
-  } catch (error) {
-    if (typeof error === "object" && error && "code" in error && error.code === "ENOENT") {
-      return { exists: false, content: "", bom: false }
-    }
-    throw error
-  }
-}
-
-async function writeState(filePath: string, content: string, bom: boolean) {
-  await fs.mkdir(path.dirname(filePath), { recursive: true })
-  await fs.writeFile(filePath, joinBom(content, bom), "utf8")
-}
-
-async function removeEmptyCreatedFile(filePath: string, before: FileState, current: FileState) {
-  if (before.exists || !current.exists || current.content !== "") return
-  await fs.rm(filePath, { force: true })
-}
-
-function normalizeLineEndings(text: string): string {
-  return text.replaceAll("\r\n", "\n").replaceAll("\r", "\n")
-}
-
-function detectLineEnding(text: string): "\n" | "\r\n" {
-  return text.includes("\r\n") ? "\r\n" : "\n"
-}
-
-function convertToLineEnding(text: string, ending: "\n" | "\r\n"): string {
-  if (ending === "\n") return text
-  return text.replaceAll("\n", "\r\n")
-}
-
-function sameContent(left: string, right: string): boolean {
-  return normalizeLineEndings(left) === normalizeLineEndings(right)
-}
-
-function sameState(current: FileState, expected: FileState): boolean {
-  if (!current.exists || !expected.exists) return current.exists === expected.exists
-  return sameContent(current.content, expected.content)
-}
-
-function leadingWhitespace(line: string): string {
-  const match = line.match(/^[ \t]*/)
-  return match ? match[0] : ""
-}
-
-function assertNoAccidentalIndentRemoval(
-  filePath: string,
-  oldText: string,
-  newText: string,
-  allowIndentChange = false,
-) {
-  if (allowIndentChange) return
-
-  const oldLines = normalizeLineEndings(oldText).split("\n")
-  const newLines = normalizeLineEndings(newText).split("\n")
-  if (oldLines.length !== newLines.length) return
-
-  for (let index = 0; index < oldLines.length; index++) {
-    const oldLine = oldLines[index]
-    const newLine = newLines[index]
-    if (oldLine.trim() === "" || newLine.trim() === "") continue
-
-    const oldIndent = leadingWhitespace(oldLine)
-    const newIndent = leadingWhitespace(newLine)
-    if (oldIndent.length > 0 && newIndent.length === 0) {
-      throw new Error(
-        `Replacement appears to remove leading indentation in ${filePath} on replacement line ${index + 1}. ` +
-          "Include the original indentation in newString, or set allowIndentChange=true if this dedent is intentional.",
-      )
-    }
-  }
-}
 
 function replaceExact(
   content: string,
@@ -208,72 +53,17 @@ function replaceExact(
         "Provide more surrounding lines in oldString to identify the correct match.",
     )
   }
-  assertNoAccidentalIndentRemoval(filePath, oldString, newString, allowIndentChange)
+  assertNoAccidentalIndentRemoval(
+    filePath,
+    oldString,
+    newString,
+    allowIndentChange,
+    "Replacement",
+    "Include the original indentation in newString, or set allowIndentChange=true if this dedent is intentional.",
+  )
   if (replaceAll) return content.split(oldString).join(newString)
 
   return content.slice(0, first) + newString + content.slice(first + oldString.length)
-}
-
-function trimDiff(diff: string): string {
-  const lines = diff.split("\n")
-  const contentLines = lines.filter(
-    (line) =>
-      (line.startsWith("+") || line.startsWith("-") || line.startsWith(" ")) &&
-      !line.startsWith("---") &&
-      !line.startsWith("+++"),
-  )
-
-  if (contentLines.length === 0) return diff
-
-  let min = Infinity
-  for (const line of contentLines) {
-    const content = line.slice(1)
-    if (content.trim().length === 0) continue
-    const match = content.match(/^(\s*)/)
-    if (match) min = Math.min(min, match[1].length)
-  }
-  if (min === Infinity || min === 0) return diff
-
-  return lines
-    .map((line) => {
-      if (
-        (line.startsWith("+") || line.startsWith("-") || line.startsWith(" ")) &&
-        !line.startsWith("---") &&
-        !line.startsWith("+++")
-      ) {
-        return line[0] + line.slice(1 + min)
-      }
-      return line
-    })
-    .join("\n")
-}
-
-function makeDiff(filePath: string, before: string, after: string): string {
-  return trimDiff(
-    createTwoFilesPatch(filePath, filePath, normalizeLineEndings(before), normalizeLineEndings(after)),
-  )
-}
-
-function stats(before: string, after: string) {
-  let additions = 0
-  let deletions = 0
-  const oldText = normalizeLineEndings(before).replace(/\n$/, "")
-  const newText = normalizeLineEndings(after).replace(/\n$/, "")
-  for (const change of diffLines(oldText, newText)) {
-    if (change.added) additions += change.count || 0
-    if (change.removed) deletions += change.count || 0
-  }
-  return { additions, deletions }
-}
-
-function resolveFilePath(directory: string, filePath: string): string {
-  return path.isAbsolute(filePath) ? filePath : path.resolve(directory, filePath)
-}
-
-function displayPath(worktree: string, filePath: string): string {
-  const relative = path.relative(worktree, filePath)
-  if (relative && !relative.startsWith("..") && !path.isAbsolute(relative)) return relative.replaceAll("\\", "/")
-  return filePath
 }
 
 function statusLabel(status: Status): string {

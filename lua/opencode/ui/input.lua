@@ -3,6 +3,7 @@
 local M = {}
 
 local attachments = require("opencode.ui.input.attachments")
+local autocomplete = require("opencode.ui.input.autocomplete")
 local autocmds = require("opencode.ui.input.autocmds")
 local history = require("opencode.ui.input.history")
 local info_bar = require("opencode.ui.input.info_bar")
@@ -28,6 +29,7 @@ local state = {
 	config = nil,
 	layout = nil,
 	parts = {},
+	autocomplete = nil,
 	mentions = nil,
 	slash_commands = nil,
 	normalizing_paste = false,
@@ -75,6 +77,7 @@ end
 
 local function clear_input()
 	state.parts = {}
+	autocomplete.reset(state)
 	slash_commands.reset(state)
 	mentions.reset(state)
 	set_input_text("")
@@ -146,6 +149,7 @@ local function history_prev()
 		return
 	end
 	state.parts = {}
+	autocomplete.reset(state)
 	slash_commands.reset(state)
 	mentions.reset(state)
 	set_input_text(text)
@@ -157,6 +161,7 @@ local function history_next()
 		return
 	end
 	state.parts = {}
+	autocomplete.reset(state)
 	slash_commands.reset(state)
 	mentions.reset(state)
 	set_input_text(text)
@@ -181,6 +186,7 @@ local function restore_input()
 	end
 
 	state.parts = parts
+	autocomplete.reset(state)
 	slash_commands.reset(state)
 	mentions.reset(state)
 	set_input_text(text)
@@ -201,8 +207,8 @@ local function mount_input(chat_winid, float_dims, cfg)
 	state.mentions = {
 		parts = {},
 	}
+	state.autocomplete = {}
 	state.slash_commands = {}
-	mentions.enable_native_complete(state)
 
 	vim.api.nvim_buf_set_var(state.bufnr, "completion", false)
 end
@@ -225,6 +231,7 @@ function M.show(opts)
 
 	history.configure(cfg)
 	history.load()
+	autocomplete.setup_highlights()
 	info_bar.setup_highlights()
 	mentions.setup_highlights()
 
@@ -239,26 +246,13 @@ function M.show(opts)
 	autocmds.setup(state, {
 		schedule_resize = schedule_resize_input,
 		input_changed = function()
-			if slash_commands.refresh(state) then
-				return
-			end
-			mentions.refresh(state)
+			autocomplete.refresh(state)
 		end,
 		cursor_moved = function()
-			if slash_commands.refresh(state) then
-				return
-			end
-			mentions.refresh(state)
-		end,
-		complete_done = function()
-			if slash_commands.complete_done(state) then
-				return
-			end
-			mentions.complete_done(state)
+			autocomplete.refresh(state)
 		end,
 		insert_leave = function()
-			slash_commands.close_completion(state)
-			mentions.close_completion(state)
+			autocomplete.close(state)
 		end,
 		lock_scroll = function()
 			layout.lock_scroll(state)
@@ -273,6 +267,25 @@ function M.show(opts)
 		cancel = cancel_input,
 		history_prev = history_prev,
 		history_next = history_next,
+		autocomplete_visible = function()
+			return autocomplete.is_visible(state)
+		end,
+		autocomplete_next = function()
+			return autocomplete.select_next(state)
+		end,
+		autocomplete_prev = function()
+			return autocomplete.select_prev(state)
+		end,
+		autocomplete_confirm = function()
+			local ok = autocomplete.confirm(state)
+			if ok then
+				schedule_resize_input()
+			end
+			return ok
+		end,
+		autocomplete_close = function()
+			autocomplete.close(state)
+		end,
 		paste = function()
 			M.paste_clipboard()
 		end,
@@ -297,9 +310,6 @@ function M.show(opts)
 	end
 	if text and text ~= "" then
 		set_input_text(text)
-		if not slash_commands.refresh(state) then
-			mentions.refresh(state)
-		end
 	end
 
 	vim.cmd("startinsert!")
@@ -314,6 +324,7 @@ function M.close(save_draft)
 		history.set_pending(get_input_text(), state.parts)
 	end
 
+	autocomplete.clear(state)
 	slash_commands.clear(state)
 	mentions.clear(state)
 	focus_parent_before_unmount()
@@ -328,6 +339,7 @@ function M.close(save_draft)
 	state.info_bufnr = nil
 	state.layout = nil
 	state.parts = {}
+	state.autocomplete = nil
 	state.mentions = nil
 	state.slash_commands = nil
 	state.on_send = nil
@@ -366,6 +378,7 @@ end
 function M.clear_history()
 	history.clear()
 	state.parts = {}
+	autocomplete.reset(state)
 	slash_commands.reset(state)
 	mentions.reset(state)
 end
@@ -391,6 +404,7 @@ function M.set_pending_text(text)
 	end
 
 	if state.visible then
+		autocomplete.reset(state)
 		slash_commands.reset(state)
 		mentions.reset(state)
 		set_input_text(content)

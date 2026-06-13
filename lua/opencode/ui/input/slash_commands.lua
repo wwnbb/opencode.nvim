@@ -1,10 +1,8 @@
--- opencode.nvim - Input native /command completion
+-- opencode.nvim - Input /command completion support
 
 local M = {}
 
 local slash = require("opencode.slash")
-
-local COMPLETION_SOURCE = "opencode_slash_command"
 
 local function valid_buf(bufnr)
 	return bufnr and vim.api.nvim_buf_is_valid(bufnr)
@@ -14,23 +12,12 @@ local function valid_win(winid)
 	return winid and vim.api.nvim_win_is_valid(winid)
 end
 
-local function ensure_state(state)
-	state.slash_commands = state.slash_commands or {}
-	return state.slash_commands
-end
-
-local function set_completion_var(state, value)
-	if valid_buf(state and state.bufnr) then
-		pcall(vim.api.nvim_buf_set_var, state.bufnr, "completion", value == true)
-	end
-end
-
-local function command_name(command)
+function M.command_name(command)
 	local name = type(command) == "table" and command.name or nil
 	return type(name) == "string" and name or ""
 end
 
-local function command_description(command)
+function M.command_description(command)
 	local description = type(command) == "table" and command.description or nil
 	return type(description) == "string" and description or ""
 end
@@ -65,7 +52,7 @@ function M.detect_trigger_in_line(line, col, row)
 	}
 end
 
-local function detect_trigger(state)
+function M.detect_trigger(state)
 	if not valid_buf(state and state.bufnr) or not valid_win(state.winid) then
 		return nil
 	end
@@ -89,12 +76,12 @@ local function matches_command(command, needle)
 		return true
 	end
 
-	local name = command_name(command):lower()
+	local name = M.command_name(command):lower()
 	if name:find(needle, 1, true) ~= nil then
 		return true
 	end
 
-	local description = command_description(command):lower()
+	local description = M.command_description(command):lower()
 	if description:find(needle, 1, true) ~= nil then
 		return true
 	end
@@ -116,7 +103,7 @@ function M.filter_commands(commands, query)
 	local needle = tostring(query or ""):lower()
 
 	for _, command in ipairs(commands or {}) do
-		if command_name(command) ~= "" and matches_command(command, needle) then
+		if M.command_name(command) ~= "" and matches_command(command, needle) then
 			table.insert(filtered, command)
 		end
 	end
@@ -124,89 +111,8 @@ function M.filter_commands(commands, query)
 	return filtered
 end
 
-local function completion_user_data(command)
-	return vim.json.encode({
-		source = COMPLETION_SOURCE,
-		name = command_name(command),
-	})
-end
-
-local function completion_items(commands)
-	local items = {}
-	for _, command in ipairs(commands or {}) do
-		local name = command_name(command)
-		if name ~= "" then
-			table.insert(items, {
-				word = "/" .. name,
-				abbr = "/" .. name,
-				dup = 1,
-				user_data = completion_user_data(command),
-			})
-		end
-	end
-	return items
-end
-
-local function close_native_menu(state)
-	set_completion_var(state, false)
-	if vim.fn.mode():sub(1, 1) == "i" and vim.fn.pumvisible() == 1 then
-		local keys = vim.api.nvim_replace_termcodes("<C-e>", true, false, true)
-		vim.api.nvim_feedkeys(keys, "n", false)
-	end
-end
-
-function M.close_completion(state)
-	close_native_menu(state)
-end
-
----@param state table
----@return boolean opened
-function M.refresh(state)
-	if not state or not state.visible then
-		close_native_menu(state)
-		return false
-	end
-	if vim.fn.mode():sub(1, 1) ~= "i" then
-		close_native_menu(state)
-		return false
-	end
-
-	local trigger = detect_trigger(state)
-	if not trigger then
-		close_native_menu(state)
-		return false
-	end
-
-	local items = completion_items(M.filter_commands(slash.get_commands(), trigger.query))
-	if #items == 0 then
-		close_native_menu(state)
-		return false
-	end
-
-	ensure_state(state).trigger = trigger
-	set_completion_var(state, true)
-	pcall(vim.fn.complete, trigger.start_col + 1, items)
-	return true
-end
-
-local function decoded_completion_item()
-	local item = vim.v.completed_item
-	if type(item) ~= "table" or item.word == nil or item.word == "" then
-		return nil
-	end
-
-	local ok, data = pcall(vim.json.decode, item.user_data or "")
-	if not ok or type(data) ~= "table" or data.source ~= COMPLETION_SOURCE then
-		return nil
-	end
-	if type(data.name) ~= "string" or data.name == "" then
-		return nil
-	end
-
-	return {
-		word = tostring(item.word),
-		name = data.name,
-	}
+function M.available_commands(query)
+	return M.filter_commands(slash.get_commands(), query)
 end
 
 local function char_after(line, col)
@@ -216,50 +122,37 @@ local function char_after(line, col)
 	return line:sub(col + 1, col + 1)
 end
 
-local function append_trailing_space(state, item)
+function M.insert_command(state, trigger, command)
 	if not valid_buf(state and state.bufnr) or not valid_win(state.winid) then
 		return false
 	end
+	if type(trigger) ~= "table" or type(command) ~= "table" then
+		return false
+	end
 
-	local cursor = vim.api.nvim_win_get_cursor(state.winid)
-	local row = cursor[1] - 1
-	local col = cursor[2]
+	local name = M.command_name(command)
+	if name == "" then
+		return false
+	end
+
+	local row = trigger.row or (vim.api.nvim_win_get_cursor(state.winid)[1] - 1)
 	local line = vim.api.nvim_buf_get_lines(state.bufnr, row, row + 1, false)[1] or ""
-	local start_col = col - #item.word
-	if start_col < 0 or line:sub(start_col + 1, col) ~= item.word then
-		return false
-	end
+	local command_value = "/" .. name
+	local suffix = char_after(line, trigger.end_col):match("%s") and "" or " "
+	local inserted = command_value .. suffix
 
-	if char_after(line, col):match("%s") then
-		return true
-	end
-
-	vim.api.nvim_buf_set_text(state.bufnr, row, col, row, col, { " " })
-	vim.api.nvim_win_set_cursor(state.winid, { row + 1, col + 1 })
-	return true
-end
-
-function M.complete_done(state)
-	set_completion_var(state, false)
-
-	local item = decoded_completion_item()
-	if not item then
-		return false
-	end
-
-	append_trailing_space(state, item)
+	vim.api.nvim_buf_set_text(state.bufnr, row, trigger.start_col, row, trigger.end_col, { inserted })
+	vim.api.nvim_win_set_cursor(state.winid, { row + 1, trigger.start_col + #inserted })
 	return true
 end
 
 function M.clear(state)
-	close_native_menu(state)
 	if state then
 		state.slash_commands = nil
 	end
 end
 
 function M.reset(state)
-	close_native_menu(state)
 	if state then
 		state.slash_commands = {}
 	end

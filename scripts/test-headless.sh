@@ -20,6 +20,7 @@ if [ "$#" -eq 0 ]; then
 		"scripts/test-input-mentions.lua"
 		"scripts/test-input-slash-commands.lua"
 		"scripts/smoke-require.lua"
+		"scripts/smoke-chat-new-session-skill-render.lua"
 		"scripts/integration-chat-tabs.lua"
 		"scripts/integration-chat-render-freshness.lua"
 	)

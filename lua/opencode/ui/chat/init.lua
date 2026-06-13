@@ -319,6 +319,7 @@ function M.create()
 				return
 			end
 			if not state.visible or not state.bufnr or not vim.api.nvim_buf_is_valid(state.bufnr) then
+				state.force_full_render = true
 				return
 			end
 			local current_session = require("opencode.state").get_session()
@@ -332,7 +333,7 @@ function M.create()
 					field = data and data.field,
 				})
 			then
-				M.schedule_render()
+				M.schedule_render({ force = true })
 			end
 		end)
 	end)

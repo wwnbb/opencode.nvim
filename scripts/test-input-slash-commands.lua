@@ -124,44 +124,28 @@ local function set_one_line(line, col)
 	vim.api.nvim_win_set_cursor(winid, { 1, col })
 end
 
-vim.cmd("startinsert!")
 set_one_line("/ztest_alpha", #"/ztest_alpha")
-vim.v.completed_item = {
-	word = "/ztest_alpha",
-	user_data = vim.json.encode({ source = "opencode_slash_command", name = "ztest_alpha" }),
-}
-assert_truthy(slash_commands.complete_done(state), "slash CompleteDone should be handled")
+local trigger = slash_commands.detect_trigger_in_line("/ztest_alpha", #"/ztest_alpha", 0)
+trigger.row = 0
+trigger.line = "/ztest_alpha"
+assert_truthy(slash_commands.insert_command(state, trigger, { name = "ztest_alpha" }), "slash insert should succeed")
 assert_eq(
 	vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)[1],
 	"/ztest_alpha ",
-	"slash CompleteDone should add a trailing space"
+	"slash insert should add a trailing space"
 )
 
 set_one_line("/ztest_alpha args", #"/ztest_alpha")
-vim.v.completed_item = {
-	word = "/ztest_alpha",
-	user_data = vim.json.encode({ source = "opencode_slash_command", name = "ztest_alpha" }),
-}
-assert_truthy(slash_commands.complete_done(state), "slash CompleteDone before existing args should be handled")
+trigger = slash_commands.detect_trigger_in_line("/ztest_alpha args", #"/ztest_alpha", 0)
+trigger.row = 0
+trigger.line = "/ztest_alpha args"
+assert_truthy(slash_commands.insert_command(state, trigger, { name = "ztest_alpha" }), "slash insert before args should succeed")
 assert_eq(
 	vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)[1],
 	"/ztest_alpha args",
-	"slash CompleteDone should not duplicate existing whitespace"
+	"slash insert should not duplicate existing whitespace"
 )
 
-set_one_line("@agent", #"@agent")
-vim.v.completed_item = {
-	word = "@agent",
-	user_data = vim.json.encode({ source = "opencode_agent_mention", name = "agent" }),
-}
-assert_eq(slash_commands.complete_done(state), false, "non-slash completion should not be handled")
-assert_eq(
-	vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)[1],
-	"@agent",
-	"non-slash completion should not mutate the input"
-)
-
-vim.cmd("stopinsert")
 slash_commands.clear(state)
 vim.api.nvim_buf_delete(bufnr, { force = true })
 for _, name in ipairs(cleanup) do

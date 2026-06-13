@@ -41,7 +41,6 @@ export function diffLines(oldStr: string, newStr: string): DiffChange[] {
     }
   }
 
-  // Backtrack to find the edit path
   let x = N
   let y = M
   const edits: Array<{ type: "equal" | "insert" | "delete"; line: string }> = []
@@ -74,7 +73,6 @@ export function diffLines(oldStr: string, newStr: string): DiffChange[] {
     }
   }
 
-  // Merge consecutive edits of the same type into DiffChange objects
   const changes: DiffChange[] = []
   for (const edit of edits) {
     const last = changes[changes.length - 1]
@@ -115,12 +113,9 @@ export function createTwoFilesPatch(
 ): string {
   const changes = diffLines(oldStr, newStr)
 
-  // Build annotated lines: each line has a prefix (+, -, or space)
   const annotated: Array<{ prefix: string; line: string }> = []
   for (const change of changes) {
     const lines = change.value.split("\n")
-    // diffLines merges lines with \n, but each entry was built line-by-line
-    // so we split back out. However our diffLines joins with \n, so re-split.
     if (change.added) {
       for (const l of lines) annotated.push({ prefix: "+", line: l })
     } else if (change.removed) {
@@ -137,45 +132,35 @@ export function createTwoFilesPatch(
     )
   }
 
-  // Group into hunks with context (3 lines)
   const contextSize = 3
   const hunks: string[] = []
   let i = 0
 
   while (i < annotated.length) {
-    // Find next changed line
     while (i < annotated.length && annotated[i].prefix === " ") i++
     if (i >= annotated.length) break
 
-    // Start hunk with context before
     const hunkStart = Math.max(0, i - contextSize)
     let hunkEnd = i
 
-    // Extend to include all nearby changes (merge hunks separated by <= 2*context lines)
     while (hunkEnd < annotated.length) {
-      // Skip past current change block
       while (hunkEnd < annotated.length && annotated[hunkEnd].prefix !== " ") hunkEnd++
-      // Count context lines
       let contextCount = 0
       const contextStart = hunkEnd
       while (hunkEnd < annotated.length && annotated[hunkEnd].prefix === " ") {
         hunkEnd++
         contextCount++
       }
-      // If next change is within context merge range, continue
       if (hunkEnd < annotated.length && contextCount <= 2 * contextSize) continue
-      // Otherwise, end hunk with trailing context
       hunkEnd = Math.min(contextStart + contextSize, annotated.length)
       break
     }
 
-    // Count old/new lines in this hunk
     let oldStart = 1
     let oldCount = 0
     let newStart = 1
     let newCount = 0
 
-    // Calculate oldStart/newStart from lines before hunkStart
     let oLine = 0
     let nLine = 0
     for (let j = 0; j < hunkStart; j++) {

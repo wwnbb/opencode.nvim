@@ -1,6 +1,6 @@
-# Todo List API
+# Guessing Game API
 
-A small FastAPI todo-list application with in-memory storage.
+A small FastAPI guessing game application with in-memory game state.
 
 ## Install
 
@@ -32,13 +32,16 @@ python -m pytest tests -q
 
 ```sh
 curl http://127.0.0.1:8000/
-curl http://127.0.0.1:8000/todos
-curl -X POST http://127.0.0.1:8000/todos \
+
+curl -X POST http://127.0.0.1:8000/game/start \
   -H 'Content-Type: application/json' \
-  -d '{"title":"Buy milk"}'
-curl http://127.0.0.1:8000/todos/1
-curl -X PATCH http://127.0.0.1:8000/todos/1 \
+  -d '{"min_number":1,"max_number":100,"max_attempts":10}'
+
+curl http://127.0.0.1:8000/game
+
+curl -X POST http://127.0.0.1:8000/game/guess \
   -H 'Content-Type: application/json' \
-  -d '{"completed":true}'
-curl -X DELETE http://127.0.0.1:8000/todos/1
+  -d '{"guess":42}'
 ```
+
+Starting a game accepts optional `min_number`, `max_number`, `max_attempts`, and `secret_number` fields. The secret number is never returned by the API.

@@ -37,6 +37,9 @@ local state = {
 
 -- Event callbacks registry
 local listeners = {}
+local seen_event_ids = {}
+local seen_event_order = {}
+local MAX_SEEN_EVENT_IDS = 512
 
 local function stop_reconnect_timer()
 	if not state.reconnect_timer then
@@ -96,6 +99,15 @@ local function normalize_directory(directory)
 	return (normalized:gsub("/+$", ""))
 end
 
+---@return string|nil
+local function current_directory()
+	local cwd = vim.fn.getcwd()
+	if not cwd or cwd == "" then
+		return state.directory
+	end
+	return normalize_directory(cwd) or state.directory
+end
+
 ---@param data any
 ---@return boolean
 local function should_accept_global_event(data)
@@ -108,11 +120,12 @@ local function should_accept_global_event(data)
 		return true
 	end
 
-	local current = state.directory
+	local current = current_directory()
 	if not current or current == "" then
 		return true
 	end
 
+	state.directory = current
 	return normalize_directory(directory) == current
 end
 
@@ -226,23 +239,94 @@ local function handle_stream_closed(reason)
 	schedule_reconnect()
 end
 
+---@param event_type string|nil
+---@return string|nil
+local function strip_sync_version(event_type)
+	if type(event_type) ~= "string" then
+		return event_type
+	end
+	return event_type:gsub("%.%d+$", "")
+end
+
+---@param event_id string|nil
+---@return boolean
+local function already_seen_event(event_id)
+	if not event_id or event_id == "" then
+		return false
+	end
+
+	if seen_event_ids[event_id] then
+		return true
+	end
+
+	seen_event_ids[event_id] = true
+	table.insert(seen_event_order, event_id)
+
+	while #seen_event_order > MAX_SEEN_EVENT_IDS do
+		local oldest = table.remove(seen_event_order, 1)
+		if oldest then
+			seen_event_ids[oldest] = nil
+		end
+	end
+
+	return false
+end
+
+---@param payload table
+---@param fallback_event_id string|nil
+---@return string|nil
+local function payload_event_id(payload, fallback_event_id)
+	if type(payload) ~= "table" then
+		return fallback_event_id
+	end
+	if payload.type == "sync" and type(payload.syncEvent) == "table" then
+		return payload.syncEvent.id or payload.id or fallback_event_id
+	end
+	return payload.id or fallback_event_id
+end
+
+---@param target any
+---@param data table
+local function attach_global_metadata(target, data)
+	if type(target) ~= "table" then
+		return
+	end
+	target._directory = data.directory
+	target._workspace = data.workspace
+end
+
 -- Emit event to all listeners
 function M.emit(event_type, data, event_id)
 	-- Handle wrapped global event format: {directory, payload: {type, properties}}
 	local actual_type = event_type
 	local actual_data = data
+	local actual_event_id = event_id
 
 	if type(data) == "table" and data.payload and data.payload.type then
 		if not should_accept_global_event(data) then
 			return
 		end
-		if data.payload.type == "sync" then
+		actual_event_id = payload_event_id(data.payload, event_id)
+		if already_seen_event(actual_event_id) then
 			return
 		end
-		actual_type = data.payload.type
-		actual_data = data.payload.properties or {}
-		actual_data._directory = data.directory
-		actual_data._workspace = data.workspace
+		if data.payload.type == "sync" then
+			local sync_event = data.payload.syncEvent
+			if type(sync_event) ~= "table" then
+				return
+			end
+			actual_type = strip_sync_version(sync_event.type)
+			actual_data = sync_event.data or {}
+			if type(actual_data) == "table" then
+				actual_data._sync_event_id = sync_event.id
+				actual_data._sync_seq = sync_event.seq
+				actual_data._sync_aggregate_id = sync_event.aggregateID
+			end
+		else
+			actual_type = data.payload.type
+			actual_data = data.payload.properties or {}
+		end
+		attach_global_metadata(actual_data, data)
 	elseif type(data) == "table" and data.type and data.properties then
 		-- Session-scoped /event payload format: { type, properties }
 		actual_type = data.type
@@ -251,7 +335,7 @@ function M.emit(event_type, data, event_id)
 
 	local callbacks = listeners[actual_type] or {}
 	for _, cb in ipairs(callbacks) do
-		local ok, err = pcall(cb, actual_data, event_id)
+		local ok, err = pcall(cb, actual_data, actual_event_id)
 		if not ok then
 			vim.notify("SSE listener error: " .. tostring(err), vim.log.levels.ERROR)
 		end
@@ -260,7 +344,7 @@ function M.emit(event_type, data, event_id)
 	-- Also emit to wildcard listeners
 	local wildcards = listeners["*"] or {}
 	for _, cb in ipairs(wildcards) do
-		local ok, err = pcall(cb, actual_type, actual_data, event_id)
+		local ok, err = pcall(cb, actual_type, actual_data, actual_event_id)
 		if not ok then
 			vim.notify("SSE wildcard listener error: " .. tostring(err), vim.log.levels.ERROR)
 		end
@@ -291,6 +375,8 @@ end
 -- Clear all listeners
 function M.clear_listeners()
 	listeners = {}
+	seen_event_ids = {}
+	seen_event_order = {}
 end
 
 -- Start SSE connection
