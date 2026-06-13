@@ -7,11 +7,16 @@ local function map(bufnr, modes, lhs, rhs, opts)
 		return
 	end
 
-	vim.keymap.set(modes, lhs, rhs, vim.tbl_extend("force", {
-		buffer = bufnr,
-		noremap = true,
-		silent = true,
-	}, opts or {}))
+	vim.keymap.set(
+		modes,
+		lhs,
+		rhs,
+		vim.tbl_extend("force", {
+			buffer = bufnr,
+			noremap = true,
+			silent = true,
+		}, opts or {})
+	)
 end
 
 local function is_escape_key(lhs)
@@ -117,8 +122,6 @@ function M.setup(bufnr, cfg, handlers)
 	end, { expr = true, replace_keycodes = false })
 
 	map(bufnr, { "i", "n" }, keys.paste, handlers.paste)
-	map(bufnr, { "i", "n" }, keys.stash, handlers.stash)
-	map(bufnr, { "i", "n" }, keys.restore, handlers.restore)
 
 	map(bufnr, { "i", "n" }, keys.variant_cycle, handlers.cycle_variant)
 	map(bufnr, { "i", "n" }, keys.agent_cycle, handlers.cycle_agent)

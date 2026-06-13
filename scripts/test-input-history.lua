@@ -51,32 +51,6 @@ assert_eq(pending_copy[1].filename, "original.png", "pending parts should copy i
 pending_copy[1].filename = "copy-mutated.png"
 assert_eq(history.get_pending_parts()[1].filename, "original.png", "pending parts should copy output tables")
 
-local stash_parts = {
-	{
-		type = "file",
-		filename = "stash.png",
-		source = {
-			type = "file",
-			path = "stash.png",
-			text = { value = "[Image 1]" },
-		},
-	},
-}
-
-history.set_stash("stashed", stash_parts)
-stash_parts[1].filename = "mutated-stash.png"
-
-local text, restored_parts = history.take_stash()
-assert_eq(text, "stashed", "stash should restore text")
-assert_eq(restored_parts[1].filename, "stash.png", "stashed parts should copy input tables")
-
-restored_parts[1].filename = "copy-mutated-stash.png"
-history.set_stash("stashed-again", restored_parts)
-restored_parts[1].filename = "mutated-after-restash.png"
-
-local _, restored_again = history.take_stash()
-assert_eq(restored_again[1].filename, "copy-mutated-stash.png", "stashed parts should copy output tables")
-
 history.clear()
 os.remove(history_file)
 

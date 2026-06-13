@@ -11,15 +11,8 @@ function M.show(config)
 
 	config = config or state.config
 
-	local todo_toggle = config
-		and config.todo
-		and config.todo.keymaps
-		and config.todo.keymaps.toggle
-		or "T"
-	local close_session_key = config
-		and config.keymaps
-		and config.keymaps.close_session
-		or "x"
+	local todo_toggle = config and config.todo and config.todo.keymaps and config.todo.keymaps.toggle or "T"
+	local close_session_key = config and config.keymaps and config.keymaps.close_session or "x"
 
 	local lines = {
 		"Chat Buffer Keymaps",
@@ -46,8 +39,6 @@ function M.show(config)
 		"<C-v>      Paste clipboard",
 		"<Esc>      Cancel",
 		"↑/↓        Navigate history",
-		"<C-s>      Stash input",
-		"<C-r>      Restore input",
 		"",
 		"Tool Calls",
 		"O          Toggle task expand (tool I/O in subagent view only)",

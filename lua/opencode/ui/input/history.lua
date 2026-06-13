@@ -11,8 +11,6 @@ local store = {
 	loaded_file = nil,
 	pending = nil,
 	pending_parts = nil,
-	stashed = nil,
-	stashed_parts = nil,
 }
 
 local function positive_int(value, fallback)
@@ -131,27 +129,6 @@ end
 
 ---@param text string|nil
 ---@param parts table[]|nil
-function M.set_stash(text, parts)
-	store.stashed = text or ""
-	store.stashed_parts = M.copy_parts(parts)
-end
-
----@return string|nil text
----@return table[] parts
-function M.take_stash()
-	if store.stashed == nil then
-		return nil, {}
-	end
-
-	local text = store.stashed
-	local parts = M.copy_parts(store.stashed_parts)
-	store.stashed = nil
-	store.stashed_parts = nil
-	return text, parts
-end
-
----@param text string|nil
----@param parts table[]|nil
 function M.set_pending(text, parts)
 	local content = text or ""
 	store.pending = content ~= "" and content or nil
@@ -196,8 +173,6 @@ function M.clear()
 	store.index = 1
 	store.pending = nil
 	store.pending_parts = nil
-	store.stashed = nil
-	store.stashed_parts = nil
 	store.loaded = true
 	store.loaded_file = store.history_file
 	os.remove(store.history_file)

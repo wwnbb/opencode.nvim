@@ -167,31 +167,6 @@ local function history_next()
 	set_input_text(text)
 end
 
-local function stash_input()
-	local text = get_input_text()
-	if text == "" and #state.parts == 0 then
-		return
-	end
-
-	history.set_stash(text, state.parts)
-	clear_input()
-	vim.notify("Input stashed (restore with <C-r>)", vim.log.levels.INFO)
-end
-
-local function restore_input()
-	local text, parts = history.take_stash()
-	if text == nil then
-		vim.notify("No stashed input", vim.log.levels.WARN)
-		return
-	end
-
-	state.parts = parts
-	autocomplete.reset(state)
-	slash_commands.reset(state)
-	mentions.reset(state)
-	set_input_text(text)
-end
-
 local function insert_text_at_cursor(text)
 	return attachments.insert_text_at_cursor(state, text, schedule_resize_input)
 end
@@ -289,8 +264,6 @@ function M.show(opts)
 		paste = function()
 			M.paste_clipboard()
 		end,
-		stash = stash_input,
-		restore = restore_input,
 		cycle_variant = function()
 			info_bar.cycle_variant(state)
 		end,
@@ -442,7 +415,7 @@ function M.append_pending_text(text, opts)
 		next_text = extra
 	elseif separator == "" then
 		next_text = current .. extra
-	elseif current:sub(- #separator) == separator then
+	elseif current:sub(-#separator) == separator then
 		next_text = current .. extra
 	else
 		next_text = current .. separator .. extra
