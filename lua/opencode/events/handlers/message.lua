@@ -217,83 +217,153 @@ function M.setup(events)
 		end
 	end
 
-	-- Handle message.updated - the PRIMARY way messages are added/updated (like TUI sync.tsx:228-265)
-	-- This is the ONLY place where messages get added to the store
-	events.on("message_updated", function(data)
-		vim.schedule(function()
-			local done = perf.start("events.message_updated")
-			local info = data.info
-			if not info then
-				logger.debug("Message update ignored", {
-					reason = "missing_info",
-				})
-				done({ skipped = true, reason = "missing_info" })
-				return
-			end
+	---@param data any
+	---@return table|nil
+	local function extract_message_info(data)
+		if type(data) ~= "table" then
+			return nil
+		end
+		return data.info or data.message or data
+	end
 
-			-- Update sync store first (like TUI does)
-			sync.handle_message_updated(info)
-			local current_session = state.get_session()
-			if info.sessionID and (current_session.id == info.sessionID or state.is_runtime_session(info.sessionID)) then
-				local count = #sync.get_messages(info.sessionID)
-				if current_session.id == info.sessionID then
-					state.set_message_count(count)
+	---@param data any
+	---@return table|nil
+	local function extract_message_parts(data)
+		if type(data) ~= "table" then
+			return nil
+		end
+		if type(data.parts) == "table" then
+			return data.parts
+		end
+		if type(data.message) == "table" and type(data.message.parts) == "table" then
+			return data.message.parts
+		end
+		return nil
+	end
+
+	---@param data any
+	---@param action string
+	---@param opts? table
+	local function handle_message_payload(data, action, opts)
+		opts = opts or {}
+		local reason = opts.reason or "message_updated"
+		local label = opts.label or "Message update"
+		local done = perf.start(opts.perf_name or "events.message_updated")
+		local info = extract_message_info(data)
+		if type(info) ~= "table" or not info.id then
+			local skip_reason = type(info) == "table" and "missing_id" or "missing_info"
+			logger.debug(label .. " ignored", {
+				reason = skip_reason,
+			})
+			done({ skipped = true, reason = skip_reason })
+			return
+		end
+
+		if type(data) == "table" then
+			info.sessionID = info.sessionID or data.sessionID
+		end
+
+		local message_changed = sync.handle_message_updated(info)
+		local part_count = 0
+		local parts_changed_count = 0
+		local parts = extract_message_parts(data)
+		if type(parts) == "table" and info.sessionID then
+			for _, part in ipairs(parts) do
+				if type(part) == "table" and part.id then
+					part.messageID = part.messageID or info.id
+					part.sessionID = part.sessionID or info.sessionID
+					if sync.handle_part_updated(part) then
+						parts_changed_count = parts_changed_count + 1
+					end
+					part_count = part_count + 1
 				end
-				session_actions.remember({
-					id = info.sessionID,
-					message_count = count,
-					messageCount = count,
-				}, {
-					touch = current_session.id == info.sessionID and state.is_runtime_session(info.sessionID),
-					reason = "message_updated",
-				})
 			end
+		end
 
-			mark_session_idle_after_completed_message(info)
-
-			local render_session_id = resolve_render_session_id(current_session, info.sessionID, info.id)
-			if not render_session_id then
-				logger.debug("Message update stored outside current session", {
-					message_session = info.sessionID,
-					current_session = current_session.id,
-					messageID = info.id,
-					role = info.role,
-				})
-				done({
-					message_id = info.id,
-					session_id = info.sessionID,
-					role = info.role,
-					current = false,
-				})
-				return
+		local current_session = state.get_session()
+		if info.sessionID and (current_session.id == info.sessionID or state.is_runtime_session(info.sessionID)) then
+			local count = #sync.get_messages(info.sessionID)
+			if current_session.id == info.sessionID then
+				state.set_message_count(count)
 			end
+			session_actions.remember({
+				id = info.sessionID,
+				message_count = count,
+				messageCount = count,
+			}, {
+				touch = current_session.id == info.sessionID and state.is_runtime_session(info.sessionID),
+				reason = reason,
+			})
+		end
+		mark_session_idle_after_completed_message(info)
 
-			logger.debug("Message update stored for visible session", {
-				sessionID = info.sessionID,
-				render_session_id = render_session_id,
+		local render_session_id = resolve_render_session_id(current_session, info.sessionID, info.id)
+		if not render_session_id then
+			logger.debug(label .. " stored outside current session", {
+				message_session = info.sessionID,
+				current_session = current_session.id,
 				messageID = info.id,
 				role = info.role,
-				agent = info.agent,
-				providerID = info.providerID,
-				modelID = info.modelID,
-				completed = info.time and info.time.completed ~= nil or false,
-			})
-
-			-- Note: User messages now come from the server (not added locally)
-			-- so we process them like any other message to trigger re-render
-
-			events.emit("sync_changed", {
-				kind = "message",
-				action = "updated",
-				session_id = render_session_id,
-				message_id = info.id,
+				parts = part_count,
 			})
 			done({
 				message_id = info.id,
 				session_id = info.sessionID,
-				render_session_id = render_session_id,
 				role = info.role,
-				current = render_session_id == current_session.id,
+				parts = part_count,
+				changed = message_changed or parts_changed_count > 0,
+				current = false,
+			})
+			return
+		end
+
+		logger.debug(label .. " stored for visible session", {
+			sessionID = info.sessionID,
+			render_session_id = render_session_id,
+			messageID = info.id,
+			role = info.role,
+			agent = info.agent,
+			providerID = info.providerID,
+			modelID = info.modelID,
+			completed = info.time and info.time.completed ~= nil or false,
+			parts = part_count,
+		})
+
+		events.emit("sync_changed", {
+			kind = "message",
+			action = action,
+			session_id = render_session_id,
+			message_id = info.id,
+		})
+		done({
+			message_id = info.id,
+			session_id = info.sessionID,
+			render_session_id = render_session_id,
+			role = info.role,
+			parts = part_count,
+			changed = message_changed or parts_changed_count > 0,
+			current = render_session_id == current_session.id,
+		})
+	end
+
+	-- message.created is mapped to the local "message" event.
+	events.on("message", function(data)
+		vim.schedule(function()
+			handle_message_payload(data, "created", {
+				reason = "message_created",
+				label = "Message created",
+				perf_name = "events.message_created",
+			})
+		end)
+	end)
+
+	-- Handle message.updated - the primary way messages are added/updated (like TUI sync.tsx:228-265)
+	events.on("message_updated", function(data)
+		vim.schedule(function()
+			handle_message_payload(data, "updated", {
+				reason = "message_updated",
+				label = "Message update",
+				perf_name = "events.message_updated",
 			})
 		end)
 	end)

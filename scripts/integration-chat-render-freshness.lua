@@ -159,14 +159,36 @@ session_actions.remember({ id = "fresh-b", title = "Fresh B" }, { touch = true }
 
 chat.open()
 wait_for_buffer_contains("ALPHA_ONLY_RENDER_TEXT", "initial session A text should render")
+events.emit("message", {
+	info = {
+		id = "created-msg",
+		sessionID = "fresh-a",
+		role = "assistant",
+		time = { created = 100 },
+	},
+	parts = {
+		{
+			id = "created-part",
+			messageID = "created-msg",
+			type = "text",
+			text = "MESSAGE_CREATED_VISIBLE_TEXT",
+		},
+	},
+})
+wait_for_buffer_contains(
+	"MESSAGE_CREATED_VISIBLE_TEXT",
+	"local message.created event should render without switching tabs or reopening chat"
+)
 assert_not_contains(buffer_text(), "BRAVO_ONLY_RENDER_TEXT", "initial render should not include session B")
 
 switch_to("fresh-b", "Fresh B")
 wait_for_buffer_contains("BRAVO_ONLY_RENDER_TEXT", "switching to B should render cached B text")
 assert_not_contains(buffer_text(), "ALPHA_ONLY_RENDER_TEXT", "switching to B should remove stale A text")
+assert_not_contains(buffer_text(), "MESSAGE_CREATED_VISIBLE_TEXT", "switching to B should remove message.created text from A")
 
 switch_to("fresh-a", "Fresh A")
 wait_for_buffer_contains("ALPHA_ONLY_RENDER_TEXT", "switching back to A should render cached A text")
+wait_for_buffer_contains("MESSAGE_CREATED_VISIBLE_TEXT", "switching back to A should preserve message.created text")
 assert_not_contains(buffer_text(), "BRAVO_ONLY_RENDER_TEXT", "switching back to A should remove stale B text")
 
 chat.close()
