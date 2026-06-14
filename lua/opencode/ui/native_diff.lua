@@ -11,7 +11,7 @@ local actions = require("opencode.actions")
 local state = {
 	active = false,
 	permission_id = nil,
-	files = {},      -- Array of {filePath, before, after, type, relativePath, diff}
+	files = {},      -- Array of {filePath, before, after, type, relativePath, diff, edit_file_index?}
 	current_file_index = 1,
 	original_buf = nil, -- Buffer for the actual file (RIGHT side, editable)
 	proposed_buf = nil, -- Scratch buffer with proposed content (LEFT side, readonly)
@@ -445,11 +445,15 @@ end
 --- This is used by <C-a> / <C-s> so manual edits are never overwritten.
 ---@param action "resolve"|"reject"
 local function sync_edit_action(action)
-	if not state.edit_id or not state.edit_file_index then
+	if not state.edit_id then
 		return
 	end
 	local edit_id = state.edit_id
-	local file_index = state.edit_file_index
+	local current_file = state.files[state.current_file_index]
+	local file_index = current_file and current_file.edit_file_index or state.edit_file_index
+	if not file_index then
+		return
+	end
 
 	vim.schedule(function()
 		local ok_es, edit_state = pcall(require, "opencode.edit.state")
@@ -622,7 +626,11 @@ function M.show(permission_id, files, opts)
 	state.active = true
 	state.permission_id = permission_id
 	state.files = files
-	state.current_file_index = 1
+	local start_index = math.floor(tonumber(opts.start_index) or 1)
+	if start_index < 1 or start_index > #files then
+		start_index = 1
+	end
+	state.current_file_index = start_index
 	state.file_snapshots = {}
 	state.edit_id = opts.edit_id or nil
 	state.edit_file_index = opts.file_index or nil
@@ -641,8 +649,8 @@ function M.show(permission_id, files, opts)
 		file_count = #files,
 	})
 
-	-- Show the first file
-	M._show_file(1)
+	-- Show the requested file
+	M._show_file(state.current_file_index)
 end
 
 --- Check if the native diff view is active

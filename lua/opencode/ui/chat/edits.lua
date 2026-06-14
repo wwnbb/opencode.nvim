@@ -932,24 +932,34 @@ function M.handle_edit_diff_tab()
 		warn_readonly_once(eid, "diff", "Readonly edit review does not support opening diff editors.")
 		return
 	end
-	local file = estate.files[estate.selected_file]
-	if not file then
+	local files = {}
+	local start_index = nil
+	for index, file in ipairs(estate.files or {}) do
+		if file.status == "pending" then
+			table.insert(files, {
+				filePath = file.filepath,
+				relativePath = file.relative_path,
+				before = file.before,
+				after = file.after,
+				type = file.file_type,
+				edit_file_index = index,
+			})
+			if index == estate.selected_file then
+				start_index = #files
+			end
+		end
+	end
+	if #files == 0 then
+		vim.notify("No pending files to review in diff", vim.log.levels.INFO)
 		return
 	end
 
 	local native_diff = require("opencode.ui.native_diff")
-	native_diff.show(nil, {
-		{
-			filePath = file.filepath,
-			relativePath = file.relative_path,
-			before = file.before,
-			after = file.after,
-			type = file.file_type,
-		},
-	}, {
+	native_diff.show(nil, files, {
 		-- Pass back-reference so the diff tab can sync status to the chat widget
 		edit_id = eid,
 		file_index = estate.selected_file,
+		start_index = start_index or 1,
 	})
 end
 
