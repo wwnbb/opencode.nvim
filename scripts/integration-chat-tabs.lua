@@ -11,6 +11,12 @@ local function assert_eq(actual, expected, message)
 	end
 end
 
+local function assert_lte(actual, expected, message)
+	if actual > expected then
+		fail(string.format("%s: expected %s <= %s", message, vim.inspect(actual), vim.inspect(expected)))
+	end
+end
+
 local function assert_true(value, message)
 	if not value then
 		fail(message)
@@ -65,6 +71,14 @@ local function tab_line(chat_view)
 	assert_true(chat_view.session_tabs_bufnr and vim.api.nvim_buf_is_valid(chat_view.session_tabs_bufnr), "tab buffer exists")
 	local lines = vim.api.nvim_buf_get_lines(chat_view.session_tabs_bufnr, 0, -1, false)
 	return lines[1] or ""
+end
+
+local function assert_tab_line_fits(chat_view, label)
+	local text = tab_line(chat_view)
+	local line_width = vim.fn.strdisplaywidth(text)
+	local tabbar_width = vim.api.nvim_win_get_config(chat_view.session_tabs_winid).width
+	assert_lte(line_width, tabbar_width, label .. " fits in tabbar window")
+	return text, line_width, tabbar_width
 end
 
 local function find_target(chat_view, predicate)
@@ -324,5 +338,53 @@ app_state.upsert_session({
 chat.update_winbar()
 local unicode_line = tab_line(chat_view)
 assert_contains(unicode_line, "Комиссия по сим...", "unicode tab title truncates on character boundaries")
+
+for index = 1, 5 do
+	app_state.upsert_session({
+		id = "session-" .. index,
+		title = "Tab " .. index,
+		name = "Tab " .. index,
+	}, { touch = false })
+	app_state.set_session_status("session-" .. index, "idle")
+	app_state.set_session_pending_counts("session-" .. index, {})
+end
+
+chat_view.config.session_tabs.auto_fit = true
+chat_view.config.session_tabs.max_tabs = 3
+chat_view.session_tabs_start = nil
+chat_view.session_tabs_current_id = nil
+chat_view.float_dims.width = 100
+chat.update_winbar()
+local auto_full_line = assert_tab_line_fits(chat_view, "auto-fit wide tab strip")
+assert_eq(vim.api.nvim_win_get_config(chat_view.session_tabs_winid).width, 98, "auto-fit wide tabbar width")
+assert_eq(visible_title_count(auto_full_line), 5, "auto-fit wide view shows all session tabs")
+assert_eq(ellipsis_count(auto_full_line), 0, "auto-fit wide view has no overflow ellipsis")
+
+chat_view.session_tabs_start = nil
+chat_view.session_tabs_current_id = nil
+chat_view.float_dims.width = 37
+chat.update_winbar()
+local auto_narrow_line = assert_tab_line_fits(chat_view, "auto-fit narrow tab strip")
+assert_eq(vim.api.nvim_win_get_config(chat_view.session_tabs_winid).width, 35, "auto-fit narrow tabbar width")
+assert_eq(visible_title_count(auto_narrow_line), 2, "auto-fit narrow view shows the largest fitting tab count")
+assert_eq(ellipsis_count(auto_narrow_line), 2, "auto-fit narrow view keeps overflow ellipses")
+assert_eq(label_count(auto_narrow_line, "...1"), 1, "auto-fit narrow view keeps left overflow count")
+assert_eq(label_count(auto_narrow_line, "...2"), 1, "auto-fit narrow view keeps right overflow count")
+
+chat_view.config.session_tabs.auto_fit = false
+chat_view.config.session_tabs.max_tabs = "auto"
+app_state.set_session_status("session-2", "busy")
+app_state.set_session_pending_counts("session-4", { questions = 1 })
+chat_view.session_tabs_start = nil
+chat_view.session_tabs_current_id = nil
+chat_view.float_dims.width = 46
+chat.update_winbar()
+local auto_busy_line = assert_tab_line_fits(chat_view, "auto-fit busy tab strip")
+assert_eq(vim.api.nvim_win_get_config(chat_view.session_tabs_winid).width, 44, "auto-fit busy tabbar width")
+assert_eq(visible_title_count(auto_busy_line), 2, "auto max_tabs alias reserves marker width")
+assert_contains(auto_busy_line, "R1", "auto-fit keeps running marker summary")
+assert_contains(auto_busy_line, "W1", "auto-fit keeps waiting marker summary")
+assert_eq(label_count(auto_busy_line, "...1"), 1, "auto-fit busy view keeps left overflow count")
+assert_eq(label_count(auto_busy_line, "...2"), 1, "auto-fit busy view keeps right overflow count")
 
 print("Chat tab integration passed")

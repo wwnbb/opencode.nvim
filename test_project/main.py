@@ -26,6 +26,7 @@ def _model_dump(model: BaseModel, **kwargs) -> dict[str, object]:
 
 def create_app() -> FastAPI:
     app = FastAPI(title="Todo List API")
+    # Store todos in memory so each app instance stays isolated.
     todos: dict[int, Todo] = {}
     next_id = 1
 

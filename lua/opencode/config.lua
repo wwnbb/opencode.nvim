@@ -58,6 +58,7 @@ M.defaults = {
 		},
 		session_tabs = {
 			enabled = true,
+			auto_fit = false,
 			max_tabs = 3,
 			separator = " │ ",
 			colors = {},

@@ -10,6 +10,7 @@ def client():
 
 
 def assert_secret_hidden(payload):
+    # The secret should remain server-side in every public response.
     assert "secret_number" not in payload
 
 

@@ -230,7 +230,6 @@ end
 
 local function navigate_file(delta)
 	local next_index = state.current_file_index + delta
-	vim.print(state.files)
 	if next_index < 1 then
 		vim.notify("Already at the first file", vim.log.levels.INFO)
 		return

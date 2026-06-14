@@ -29,6 +29,7 @@ local defaults = {
 	},
 	session_tabs = {
 		enabled = true,
+		auto_fit = false,
 		max_tabs = 3,
 		separator = " │ ",
 		colors = {},
@@ -285,11 +286,14 @@ local function centered_session_tabs_start(session_count, max_tabs, current_inde
 	return clamp(start_index, 1, max_start)
 end
 
-local function visible_session_tabs_start(sessions, max_tabs, current_index, current_session_id)
+local function visible_session_tabs_start(sessions, max_tabs, current_index, current_session_id, commit)
+	commit = commit == true
 	local session_count = #sessions
 	if session_count <= max_tabs then
-		state.session_tabs_start = nil
-		state.session_tabs_current_id = current_session_id
+		if commit then
+			state.session_tabs_start = nil
+			state.session_tabs_current_id = current_session_id
+		end
 		return 1
 	end
 
@@ -297,25 +301,35 @@ local function visible_session_tabs_start(sessions, max_tabs, current_index, cur
 	local stored_start = tonumber(state.session_tabs_start)
 	if stored_start and state.session_tabs_current_id == current_session_id then
 		local start_index = clamp(math.floor(stored_start), 1, max_start)
-		state.session_tabs_start = start_index
+		if commit then
+			state.session_tabs_start = start_index
+		end
 		return start_index
 	end
 
 	local start_index = centered_session_tabs_start(session_count, max_tabs, current_index)
-	state.session_tabs_start = start_index
-	state.session_tabs_current_id = current_session_id
+	if commit then
+		state.session_tabs_start = start_index
+		state.session_tabs_current_id = current_session_id
+	end
 	return start_index
 end
 
-local function build_session_tabs(tabs_cfg, current_session)
-	ensure_winbar_highlights(tabs_cfg)
+local function session_tabs_auto_fit_enabled(tabs_cfg)
+	tabs_cfg = type(tabs_cfg) == "table" and tabs_cfg or {}
+	local max_tabs = tabs_cfg.max_tabs
+	return tabs_cfg.auto_fit == true or (type(max_tabs) == "string" and max_tabs:lower() == "auto")
+end
 
-	local sessions = selectors.get_active_session_views()
-	local current_view = selectors.get_current_session_view()
-	local active_session = current_session or (current_view and current_view:to_record()) or {}
-	local current_root_session_id = selectors.get_current_runtime_root_id()
+local function numeric_session_tabs_max(tabs_cfg)
+	tabs_cfg = type(tabs_cfg) == "table" and tabs_cfg or {}
+	return math.max(1, tonumber(tabs_cfg.max_tabs) or 3)
+end
 
-	local max_tabs = math.max(1, tonumber(tabs_cfg.max_tabs) or 3)
+local function build_session_tabs_line(tabs_cfg, sessions, active_session, current_root_session_id, max_tabs, opts)
+	opts = opts or {}
+	local preview = opts.preview == true
+	max_tabs = math.max(1, tonumber(max_tabs) or 1)
 	local separator = tabs_cfg.separator or " │ "
 	local icons = tabs_cfg.icons or {}
 	local parts = {}
@@ -323,11 +337,15 @@ local function build_session_tabs(tabs_cfg, current_session)
 	local has_tabs = false
 	local display_col = 0
 	local target_id = 0
-	state.winbar_targets = {}
-	state.session_tabs_mouse_targets = {}
+	local winbar_targets = {}
+	local mouse_targets = {}
+	if not preview then
+		state.winbar_targets = winbar_targets
+		state.session_tabs_mouse_targets = mouse_targets
+	end
 
 	local current_index, current_session_id = current_session_tab_index(sessions, active_session, current_root_session_id)
-	local start_index = visible_session_tabs_start(sessions, max_tabs, current_index, current_session_id)
+	local start_index = visible_session_tabs_start(sessions, max_tabs, current_index, current_session_id, not preview)
 	local end_index = math.min(#sessions, start_index + max_tabs - 1)
 	local max_start = math.max(1, #sessions - max_tabs + 1)
 
@@ -344,15 +362,20 @@ local function build_session_tabs(tabs_cfg, current_session)
 
 	local function register_target(target)
 		target_id = target_id + 1
-		state.winbar_targets[target_id] = target
+		if not preview then
+			winbar_targets[target_id] = target
+		end
 		return target_id
 	end
 
 	local function register_mouse_target(id, start_col, end_col)
+		if preview then
+			return
+		end
 		if end_col < start_col then
 			return
 		end
-		table.insert(state.session_tabs_mouse_targets, {
+		table.insert(mouse_targets, {
 			target = id,
 			start_col = start_col,
 			end_col = end_col,
@@ -438,6 +461,46 @@ local function build_session_tabs(tabs_cfg, current_session)
 		separator = separator,
 		has_tabs = has_tabs,
 	}
+end
+
+local function resolve_session_tabs_max(tabs_cfg, sessions, active_session, current_root_session_id, available_width)
+	if not session_tabs_auto_fit_enabled(tabs_cfg) then
+		return numeric_session_tabs_max(tabs_cfg)
+	end
+
+	local session_count = #sessions
+	if session_count <= 0 then
+		return 1
+	end
+
+	local width = tonumber(available_width) or 0
+	if width <= 0 then
+		return 1
+	end
+
+	for candidate = session_count, 1, -1 do
+		local preview = build_session_tabs_line(tabs_cfg, sessions, active_session, current_root_session_id, candidate, {
+			preview = true,
+		})
+		if vim.fn.strdisplaywidth(preview.line:content()) <= width then
+			return candidate
+		end
+	end
+
+	return 1
+end
+
+local function build_session_tabs(tabs_cfg, current_session, opts)
+	opts = opts or {}
+	ensure_winbar_highlights(tabs_cfg)
+
+	local sessions = selectors.get_active_session_views()
+	local current_view = selectors.get_current_session_view()
+	local active_session = current_session or (current_view and current_view:to_record()) or {}
+	local current_root_session_id = selectors.get_current_runtime_root_id()
+	local max_tabs = resolve_session_tabs_max(tabs_cfg, sessions, active_session, current_root_session_id, opts.available_width)
+
+	return build_session_tabs_line(tabs_cfg, sessions, active_session, current_root_session_id, max_tabs)
 end
 
 local function session_tabs_window_is_valid()
@@ -607,15 +670,14 @@ local function update_float_session_tabs_window(tabs_cfg, current_session)
 		return false
 	end
 
-	local tabs = build_session_tabs(tabs_cfg, current_session)
-	if not tabs.has_tabs then
+	local win_config = calculate_session_tabs_window_config(state.float_dims)
+	if not win_config then
 		M.close_float_window()
 		return false
 	end
 
-	local tab_width = vim.fn.strdisplaywidth(tabs.line:content())
-	local win_config = calculate_session_tabs_window_config(state.float_dims, tab_width)
-	if not win_config then
+	local tabs = build_session_tabs(tabs_cfg, current_session, { available_width = win_config.width })
+	if not tabs.has_tabs then
 		M.close_float_window()
 		return false
 	end
@@ -670,7 +732,7 @@ function M.update_winbar()
 	end
 
 	M.close_float_window()
-	local tabs = build_session_tabs(tabs_cfg)
+	local tabs = build_session_tabs(tabs_cfg, nil, { available_width = vim.api.nvim_win_get_width(state.winid) })
 
 	pcall(function()
 		vim.wo[state.winid].winbar = table.concat(tabs.parts, escape_winbar_text(tabs.separator))
@@ -792,6 +854,16 @@ function M.setup_refresh_autocmds()
 		pattern = "background",
 		callback = emit_refresh,
 		desc = "Refresh OpenCode session tabs after background changes",
+	})
+	vim.api.nvim_create_autocmd("VimResized", {
+		group = session_tabs_augroup,
+		callback = emit_refresh,
+		desc = "Refresh OpenCode session tabs after editor resize",
+	})
+	pcall(vim.api.nvim_create_autocmd, "WinResized", {
+		group = session_tabs_augroup,
+		callback = emit_refresh,
+		desc = "Refresh OpenCode session tabs after window resize",
 	})
 end
 
