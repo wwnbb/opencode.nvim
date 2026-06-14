@@ -48,7 +48,7 @@ function M.show(config)
 		"gD         View diff",
 		"",
 		"Todos",
-		string.format("%-10s Toggle todo window", todo_toggle),
+		string.format("%-10s Cycle todo window", todo_toggle),
 		"",
 		"Question Tool",
 		"1-9        Select option by number",

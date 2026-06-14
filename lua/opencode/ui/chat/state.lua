@@ -29,6 +29,7 @@ M.state = {
 	expanded_tools = {},    -- Toggle set: { [part_id] = true }
 	todo_bufnr = nil,       -- Live todo window buffer
 	todo_winid = nil,       -- Live todo window id
+	todo_dock_display = {}, -- Manual display by session: { [session_id] = "full"|"compact"|"hidden" }
 	todo_dock_collapsed = {}, -- Toggle set by session: { [session_id] = boolean }
 	session_tabs_bufnr = nil, -- Float session tabs window buffer
 	session_tabs_winid = nil, -- Float session tabs window id

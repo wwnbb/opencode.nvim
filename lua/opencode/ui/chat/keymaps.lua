@@ -58,7 +58,7 @@ function M.setup_buffer(bufnr, opts)
 	if todo_keymap and todo_keymap ~= "" then
 		vim.keymap.set("n", todo_keymap, function()
 			chat_todos.toggle_current_dock()
-		end, vim.tbl_extend("force", keymap_opts, { desc = "Toggle todo window" }))
+		end, vim.tbl_extend("force", keymap_opts, { desc = "Cycle todo window" }))
 	end
 
 	vim.keymap.set("n", "?", function()

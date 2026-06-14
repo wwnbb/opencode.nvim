@@ -410,6 +410,39 @@ assert_eq(state.get_session_status("complete_root").type, "busy", "tool-call com
 
 state.reset()
 sync.clear_all()
+session_actions.set_active("view_root", "View Root", { preserve_cache = true })
+session_actions.set_session_status("view_root", { type = "retry", attempt = 2 }, { reason = "test_view" })
+state.set_session_pending_counts("view_root", { question = 1, edit = 1 })
+state.set_session_message_cache("view_root", { count = 3, loaded = true })
+local view = selectors.get_current_session_view()
+assert_true(view ~= nil, "current session selector should return a view")
+assert_eq(getmetatable(view), "SessionView", "selector session result should be a SessionView")
+assert_eq(view.id, "view_root", "SessionView should expose scalar id")
+assert_eq(view:status_label(), "retry #2", "SessionView should format retry status labels")
+assert_eq(view:pending_total(), 2, "SessionView pending total should include questions and edits")
+assert_eq(view:message_count(), 3, "SessionView message count should use fresh message cache")
+assert_eq(view.messageCount, 3, "SessionView should expose scalar messageCount")
+local pending_copy = view.pending
+pending_copy.questions = 99
+assert_eq(view.pending.questions, 1, "SessionView pending table reads should be defensive copies")
+local cache_copy = view.cached_messages
+cache_copy.count = 99
+assert_eq(view.cached_messages.count, 3, "SessionView cache reads should be defensive copies")
+local record_copy = view.record
+record_copy.name = "Mutated"
+assert_eq(view.name, "View Root", "SessionView record reads should be defensive copies")
+local assign_ok = pcall(function()
+	view.name = "Mutated"
+end)
+assert_true(not assign_ok, "SessionView direct assignment should fail")
+local active_views = selectors.get_active_session_views()
+assert_eq(getmetatable(active_views[1]), "SessionView", "active session selector should return SessionViews")
+assert_eq(active_views[1]:message_count(), 3, "active SessionView should expose fresh cache count")
+local snapshot = state.get_full_state()
+assert_eq(getmetatable(snapshot.sessions.by_id.view_root), nil, "state session records should stay plain tables")
+
+state.reset()
+sync.clear_all()
 permission_state.clear_all()
 question_state.clear_all()
 edit_state.clear_all()
@@ -454,6 +487,28 @@ assert_eq(
 	state.get_session_pending_counts("permission_idle").permissions,
 	1,
 	"unrelated root permission should remain isolated"
+)
+question_state.add_question("question_waiting_child", "permission_child", {
+	{ prompt = "Continue?", options = { { label = "Yes", value = "yes" } } },
+})
+edit_state.add_edit("edit_waiting_root", "permission_waiting", {
+	{ filePath = "README.md", before = "a", after = "b" },
+}, { review_mode = "readonly" })
+session_actions.recount_pending()
+assert_eq(
+	state.get_session_pending_counts("permission_waiting").questions,
+	1,
+	"child questions should roll up to owning root session"
+)
+assert_eq(
+	state.get_session_pending_counts("permission_waiting").edits,
+	1,
+	"root edits should count on owning root session"
+)
+assert_eq(
+	state.get_session_pending_counts("permission_idle").questions,
+	0,
+	"unrelated root should not inherit child question count"
 )
 
 bus.clear()
@@ -747,7 +802,7 @@ assert_eq(sync.get_task_parent_session("session_close_child"), "session_close_a"
 permission_state.add_permission("close_perm_a", "session_close_a", "bash", {})
 permission_state.add_permission("close_perm_child", "session_close_child", "bash", {})
 permission_state.add_permission("close_perm_other", "session_close_b", "bash", {})
-assert_true(session_actions.close("session_close_a", { silent = true }), "session.close should succeed for the runtime session")
+assert_true(session_actions.close("session_close_child", { silent = true }), "session.close should resolve a child session to its runtime root")
 wait_for(function()
 	return #close_replies == 2
 		and not permission_state.has_permission("close_perm_a")

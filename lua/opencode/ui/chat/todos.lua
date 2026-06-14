@@ -17,6 +17,7 @@ local PANEL_PREFIX = tool_panel.PANEL_PREFIX
 local PANEL_BORDER_HL = "OpenCodeTodoMuted"
 local TODO_READ_TOOLS = { todoread = true, todolist = true }
 local TODO_WRITE_TOOLS = { todowrite = true }
+local VALID_DOCK_DISPLAY = { full = true, compact = true, hidden = true }
 
 local panel_helpers = tool_panel.create_panel({
 	border_hl = PANEL_BORDER_HL,
@@ -505,10 +506,12 @@ end
 ---@param todos OpenCodeTodo[]
 ---@param cfg OpenCodeTodoConfig|nil
 ---@return boolean
-function M.is_dock_collapsed(session_id, todos, cfg)
-	local explicit = state.todo_dock_collapsed[session_id]
-	if explicit ~= nil then
-		return explicit == true
+local function is_derived_dock_collapsed(session_id, todos, cfg)
+	if type(state.todo_dock_collapsed) == "table" then
+		local explicit = state.todo_dock_collapsed[session_id]
+		if explicit ~= nil then
+			return explicit == true
+		end
 	end
 
 	cfg = cfg or M.get_config()
@@ -516,6 +519,41 @@ function M.is_dock_collapsed(session_id, todos, cfg)
 		return false
 	end
 	return cfg.default_collapsed == true
+end
+
+---@param session_id string
+---@return "full"|"compact"|"hidden"|nil
+local function get_manual_dock_display(session_id)
+	if type(state.todo_dock_display) ~= "table" then
+		return nil
+	end
+
+	local display = state.todo_dock_display[session_id]
+	if VALID_DOCK_DISPLAY[display] then
+		return display
+	end
+	return nil
+end
+
+---@param session_id string
+---@param todos OpenCodeTodo[]
+---@param cfg OpenCodeTodoConfig|nil
+---@return "full"|"compact"|"hidden"
+local function resolve_dock_display(session_id, todos, cfg)
+	local manual = get_manual_dock_display(session_id)
+	if manual then
+		return manual
+	end
+
+	return is_derived_dock_collapsed(session_id, todos, cfg) and "compact" or "full"
+end
+
+---@param session_id string
+---@param todos OpenCodeTodo[]
+---@param cfg OpenCodeTodoConfig|nil
+---@return boolean
+function M.is_dock_collapsed(session_id, todos, cfg)
+	return resolve_dock_display(session_id, todos, cfg) == "compact"
 end
 
 ---@param todos OpenCodeTodo[]
@@ -609,7 +647,12 @@ function M.render_dock(session_id, todos, opts)
 		return nil
 	end
 
-	local collapsed = M.is_dock_collapsed(session_id, normalized, cfg)
+	local display = resolve_dock_display(session_id, normalized, cfg)
+	if display == "hidden" then
+		return nil
+	end
+
+	local collapsed = display == "compact"
 	local result = { lines = {}, highlights = {}, collapsed = collapsed }
 	local summary = format_summary(normalized)
 	local header_hl = "OpenCodeTodoHeader"
@@ -888,6 +931,12 @@ function M.update_window()
 
 	local cfg = M.get_config()
 	local todos = M.normalize_todos(sync.get_todos(session_id))
+	if resolve_dock_display(session_id, todos, cfg) == "hidden" then
+		M.close_window()
+		done({ session_id = session_id, todos = #todos, skipped = true, reason = "manual_hidden" })
+		return
+	end
+
 	if not M.should_show_dock(todos, cfg) then
 		M.close_window()
 		done({ session_id = session_id, todos = #todos, skipped = true, reason = "hidden" })
@@ -968,7 +1017,15 @@ function M.toggle_dock(session_id)
 	end
 
 	local cfg = M.get_config()
-	state.todo_dock_collapsed[session_id] = not M.is_dock_collapsed(session_id, todos, cfg)
+	local display = resolve_dock_display(session_id, todos, cfg)
+	local next_display = display == "full" and "compact" or display == "compact" and "hidden" or "full"
+	if type(state.todo_dock_display) ~= "table" then
+		state.todo_dock_display = {}
+	end
+	state.todo_dock_display[session_id] = next_display
+	if type(state.todo_dock_collapsed) == "table" and next_display ~= "hidden" then
+		state.todo_dock_collapsed[session_id] = next_display == "compact"
+	end
 
 	M.update_window()
 end

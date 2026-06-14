@@ -3,9 +3,8 @@ local M = {}
 local NuiLine = require("nui.line")
 
 local actions = require("opencode.actions")
-local event_util = require("opencode.events.util")
 local panel = require("opencode.ui.panel")
-local session_util = require("opencode.util.session")
+local selectors = require("opencode.selectors")
 
 local state = require("opencode.ui.chat.state").state
 
@@ -184,21 +183,14 @@ local function escape_winbar_text(text)
 	return escaped
 end
 
-local function pending_total(pending)
-	pending = pending or {}
-	return (pending.permissions or 0) + (pending.questions or 0) + (pending.edits or 0)
-end
-
 local function session_tab_icon(session, icons)
-	local status = session.status or {}
-	local status_type = type(status) == "table" and status.type or status
-	if pending_total(session.pending) > 0 then
+	if session:is_waiting() then
 		return icons.waiting or "◈", "OpenCodeWinbarWaiting"
 	end
-	if status_type == "busy" or status_type == "retry" or status_type == "streaming" then
+	if session:is_busy() then
 		return icons.running or "●", "OpenCodeWinbarRunning"
 	end
-	if status_type == "error" then
+	if session:is_error() then
 		return icons.error or "✕", "OpenCodeWinbarError"
 	end
 	return icons.idle or "○", "OpenCodeWinbarIdle"
@@ -268,7 +260,12 @@ end
 
 local function current_session_tab_index(sessions, active_session, current_root_session_id)
 	for index, session in ipairs(sessions) do
-		if session.is_current or session.id == active_session.id or session.id == current_root_session_id then
+		if
+			session:is_current_session()
+			or session:is_current_root()
+			or session.id == active_session.id
+			or session.id == current_root_session_id
+		then
 			return index, session.id
 		end
 	end
@@ -313,18 +310,10 @@ end
 local function build_session_tabs(tabs_cfg, current_session)
 	ensure_winbar_highlights(tabs_cfg)
 
-	local app_state = require("opencode.state")
-	local sessions = app_state.get_active_sessions()
-	local active_session = current_session or app_state.get_session() or {}
-	local current_root_session_id = nil
-	if active_session.id and not app_state.is_runtime_session(active_session.id) then
-		for _, session in ipairs(sessions) do
-			if event_util.session_owns_task_child(session.id, active_session.id) then
-				current_root_session_id = session.id
-				break
-			end
-		end
-	end
+	local sessions = selectors.get_active_session_views()
+	local current_view = selectors.get_current_session_view()
+	local active_session = current_session or (current_view and current_view:to_record()) or {}
+	local current_root_session_id = selectors.get_current_runtime_root_id()
 
 	local max_tabs = math.max(1, tonumber(tabs_cfg.max_tabs) or 3)
 	local separator = tabs_cfg.separator or " │ "
@@ -392,9 +381,12 @@ local function build_session_tabs(tabs_cfg, current_session)
 	for index = start_index, end_index do
 		local session = sessions[index]
 		local icon, icon_hl = session_tab_icon(session, icons)
-		local title = session_util.displayTitle(session.title or session.name) or session.id
+		local title = session:title() or session.id
 		local display_title = truncate_title(title, 18)
-		local is_current = session.is_current or active_session.id == session.id or current_root_session_id == session.id
+		local is_current = session:is_current_session()
+			or session:is_current_root()
+			or active_session.id == session.id
+			or current_root_session_id == session.id
 		local label_hl = is_current and "OpenCodeWinbarCurrent" or "OpenCodeWinbar"
 		local display_icon = is_current and (" " .. icon) or icon
 		local display_label = is_current and (" " .. display_title .. " ") or (" " .. display_title)
@@ -419,12 +411,10 @@ local function build_session_tabs(tabs_cfg, current_session)
 	local running = 0
 	local waiting = 0
 	for _, session in ipairs(sessions) do
-		local status = session.status or {}
-		local status_type = type(status) == "table" and status.type or status
-		if status_type == "busy" or status_type == "retry" or status_type == "streaming" then
+		if session:is_busy() then
 			running = running + 1
 		end
-		if pending_total(session.pending) > 0 then
+		if session:is_waiting() then
 			waiting = waiting + 1
 		end
 	end
@@ -703,8 +693,8 @@ function M.select_winbar_session(target)
 		M.focus_chat_window()
 		return
 	end
-	local app_state = require("opencode.state")
-	local record = app_state.get_session_record(session_id) or { id = session_id }
+	local view = selectors.get_session_view(session_id)
+	local record = view and view:to_record() or { id = session_id }
 	actions.switch_session(record, {
 		notify = false,
 		reason = "winbar",
@@ -717,13 +707,13 @@ local function switch_to_session_tab(target, current_session)
 		return false
 	end
 
-	local current = current_session or require("opencode.state").get_session() or {}
+	local current_view = selectors.get_current_session_view()
+	local current = current_session or (current_view and current_view:to_record()) or {}
 	if target.id == current.id then
 		return false
 	end
 
-	local app_state = require("opencode.state")
-	local record = app_state.get_session_record(target.id) or target
+	local record = type(target.to_record) == "function" and target:to_record() or target
 	actions.switch_session(record, {
 		notify = false,
 		reason = "winbar",
@@ -746,30 +736,30 @@ function M.go_to_session_tab(index)
 		return false
 	end
 
-	local app_state = require("opencode.state")
-	local sessions = app_state.get_active_sessions()
-	return switch_to_session_tab(sessions[target_index], app_state.get_session())
+	local sessions = selectors.get_active_session_views()
+	local current_view = selectors.get_current_session_view()
+	return switch_to_session_tab(sessions[target_index], current_view and current_view:to_record() or {})
 end
 
 function M.cycle_session(direction)
-	local app_state = require("opencode.state")
-	local sessions = app_state.get_active_sessions()
+	local sessions = selectors.get_active_session_views()
 	if #sessions <= 1 then
 		return false
 	end
 
-	local current = app_state.get_session() or {}
+	local current_view = selectors.get_current_session_view()
+	local current = current_view and current_view:to_record() or {}
 	local current_index = nil
 	for index, session in ipairs(sessions) do
-		if session.id == current.id or session.is_current then
+		if session.id == current.id or session:is_current_session() then
 			current_index = index
 			break
 		end
 	end
 
-	if not current_index and current.id then
+	if not current_index then
 		for index, session in ipairs(sessions) do
-			if event_util.session_owns_task_child(session.id, current.id) then
+			if session:is_current_root() then
 				current_index = index
 				break
 			end

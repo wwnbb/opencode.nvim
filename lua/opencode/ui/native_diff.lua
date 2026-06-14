@@ -11,17 +11,17 @@ local actions = require("opencode.actions")
 local state = {
 	active = false,
 	permission_id = nil,
-	files = {},      -- Array of {filePath, before, after, type, relativePath, diff}
+	files = {}, -- Array of {filePath, before, after, type, relativePath, diff}
 	current_file_index = 1,
 	original_buf = nil, -- Buffer for the actual file (RIGHT side, editable)
 	proposed_buf = nil, -- Scratch buffer with proposed content (LEFT side, readonly)
 	original_win = nil,
 	proposed_win = nil,
-	tab_page = nil,     -- Tab page for the diff view (keeps chat untouched)
+	tab_page = nil, -- Tab page for the diff view (keeps chat untouched)
 	previous_winid = nil, -- To restore focus on close
 	file_snapshots = {}, -- {[index] = original_content} for undo on reject
 	-- Back-reference to the chat edit widget (set when launched from dt)
-	edit_id = nil,      -- permission_id of the originating edit
+	edit_id = nil, -- permission_id of the originating edit
 	edit_file_index = nil, -- which file index in the edit widget was opened
 }
 
@@ -49,7 +49,11 @@ local function focus_diff_window(winid)
 	if not target or not vim.api.nvim_win_is_valid(target) then
 		target = state.original_win
 	end
-	if (not target or not vim.api.nvim_win_is_valid(target)) and state.proposed_win and vim.api.nvim_win_is_valid(state.proposed_win) then
+	if
+		(not target or not vim.api.nvim_win_is_valid(target))
+		and state.proposed_win
+		and vim.api.nvim_win_is_valid(state.proposed_win)
+	then
 		target = state.proposed_win
 	end
 	if target and vim.api.nvim_win_is_valid(target) then
@@ -129,16 +133,21 @@ local function send_reply(reply)
 	end
 
 	local message = get_note()
-	actions.respond_permission(state.permission_id, reply, { message = message ~= "" and message or nil }, function(err, result)
-		vim.schedule(function()
-			if err then
-				vim.notify("Failed to send reply to server: " .. vim.inspect(err), vim.log.levels.WARN)
-				logger.warn("native_diff: reply error", { error = err })
-			else
-				logger.info("native_diff: reply sent", { reply = reply, result = result })
-			end
-		end)
-	end)
+	actions.respond_permission(
+		state.permission_id,
+		reply,
+		{ message = message ~= "" and message or nil },
+		function(err, result)
+			vim.schedule(function()
+				if err then
+					vim.notify("Failed to send reply to server: " .. vim.inspect(err), vim.log.levels.WARN)
+					logger.warn("native_diff: reply error", { error = err })
+				else
+					logger.info("native_diff: reply sent", { reply = reply, result = result })
+				end
+			end)
+		end
+	)
 end
 
 --- Close the diff view and clean up
@@ -211,6 +220,32 @@ local function close_diff_windows()
 	state.tab_page = nil
 end
 
+local function save_current_original_buffer()
+	if state.original_buf and vim.api.nvim_buf_is_valid(state.original_buf) then
+		vim.api.nvim_buf_call(state.original_buf, function()
+			vim.cmd("silent! write")
+		end)
+	end
+end
+
+local function navigate_file(delta)
+	local next_index = state.current_file_index + delta
+	vim.print(state.files)
+	if next_index < 1 then
+		vim.notify("Already at the first file", vim.log.levels.INFO)
+		return
+	end
+	if next_index > #state.files then
+		vim.notify("Already at the last file", vim.log.levels.INFO)
+		return
+	end
+
+	save_current_original_buffer()
+	close_diff_windows()
+	state.current_file_index = next_index
+	M._show_file(state.current_file_index)
+end
+
 --- Set up keymaps on both buffers
 local function setup_keymaps()
 	local bufs = {}
@@ -223,22 +258,6 @@ local function setup_keymaps()
 
 	for _, buf in ipairs(bufs) do
 		local opts = { buffer = buf, noremap = true, silent = true }
-
-		-- <C-a>: Confirm current file (save as-is, auto-classify, advance)
-		-- Does NOT overwrite manual edits — file is classified by comparing disk state to before/after.
-		vim.keymap.set("n", "<C-a>", function()
-			M._confirm_current()
-		end, opts)
-
-		-- <C-s>: Alias for <C-a> — explicit "save my manual edits and mark as resolved"
-		vim.keymap.set("n", "<C-s>", function()
-			M._confirm_current()
-		end, opts)
-
-		-- <C-x>: Reject current file (revert to original + advance)
-		vim.keymap.set("n", "<C-x>", function()
-			M._reject_current()
-		end, opts)
 
 		-- <C-y>: Apply all remaining proposed hunks at once (diffget from proposed)
 		vim.keymap.set("n", "<C-y>", function()
@@ -255,35 +274,21 @@ local function setup_keymaps()
 			end
 		end, opts)
 
-		-- <C-n>: Confirm current + next file (multi-file shortcut)
-		vim.keymap.set("n", "<C-n>", function()
-			M._confirm_current()
+		-- File navigation only; does not resolve, reject, or send the edit.
+		vim.keymap.set("n", "<leader>on", function()
+			navigate_file(1)
+		end, opts)
+		vim.keymap.set("n", "<leader>op", function()
+			navigate_file(-1)
 		end, opts)
 
 		vim.keymap.set("n", "m", function()
 			edit_note()
 		end, opts)
 
-		-- <C-p>: Go to previous file
-		vim.keymap.set("n", "<C-p>", function()
-			if state.current_file_index > 1 then
-				-- Save current file state before going back
-				if state.original_win and vim.api.nvim_win_is_valid(state.original_win) then
-					vim.api.nvim_win_call(state.original_win, function()
-						vim.cmd("silent! write")
-					end)
-				end
-				close_diff_windows()
-				state.current_file_index = state.current_file_index - 1
-				M._show_file(state.current_file_index)
-			else
-				vim.notify("Already at the first file", vim.log.levels.INFO)
-			end
-		end, opts)
-
-		-- q: Reject all and close
+		-- q: Close diff view
 		vim.keymap.set("n", "q", function()
-			M._reject_all()
+			M.close()
 		end, opts)
 
 		-- ?: Show help
@@ -296,17 +301,13 @@ local function setup_keymaps()
 				"  ]c       - Jump to next change",
 				"  [c       - Jump to previous change",
 				"  <C-y>    - Apply ALL remaining proposed hunks at once",
-				"  <C-a>    - Save file as-is and advance (auto-classifies: accepted/resolved)",
-				"  <C-s>    - Same as <C-a> (save manual edits and mark as resolved)",
-				"  <C-x>    - Reject current file (revert to original and advance)",
-				"  <C-n>    - Same as <C-a> (confirm + next)",
-				"  <C-p>    - Go to previous file",
+				"  <leader>on - Go to next file",
+				"  <leader>op - Go to previous file",
 				"  m        - Add or edit note",
-				"  q        - Reject ALL files and close",
+				"  q        - Close diff view",
 				"  ?        - Show this help",
 				"",
-				"Tip: use <C-y> to apply all proposed changes, then <C-a> to confirm.",
-				"     Or edit manually and press <C-s> / <C-a> to keep your edits.",
+				"Tip: use <C-y> to apply all proposed changes in the current file.",
 			}
 			vim.notify(table.concat(help, "\n"), vim.log.levels.INFO)
 		end, opts)
@@ -425,16 +426,13 @@ function M._show_file(index)
 	local status_msg
 	if total > 1 then
 		status_msg = string.format(
-			"[%d/%d] %s | <C-a>=confirm  <C-x>=reject  m=note  do=get hunk  ?=help",
+			"[%d/%d] %s | <leader>on/<leader>op=file nav  <C-y>=apply all  m=note  do=get hunk  ?=help",
 			index,
 			total,
 			relative
 		)
 	else
-		status_msg = string.format(
-			"%s | <C-a>=confirm  <C-x>=reject  m=note  do=get hunk  ?=help",
-			relative
-		)
+		status_msg = string.format("%s | <C-y>=apply all  m=note  do=get hunk  ?=help", relative)
 	end
 	vim.notify(status_msg, vim.log.levels.INFO)
 end
@@ -442,7 +440,7 @@ end
 --- Sync the chat edit widget status after a confirm/reject/resolve action.
 --- "resolve" reads the current disk state and auto-classifies
 --- (accepted if matches 'after', rejected if matches 'before', resolved otherwise).
---- This is used by <C-a> / <C-s> so manual edits are never overwritten.
+--- This preserves manual edits when an explicit resolve action runs.
 ---@param action "resolve"|"reject"
 local function sync_edit_action(action)
 	if not state.edit_id or not state.edit_file_index then

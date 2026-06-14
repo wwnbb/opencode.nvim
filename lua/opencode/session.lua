@@ -6,6 +6,10 @@ local M = {}
 local state = require("opencode.state")
 local session_util = require("opencode.util.session")
 local event_util = require("opencode.events.util")
+local navigation = require("opencode.session.navigation")
+local pending_helper = require("opencode.session.pending")
+local status_helper = require("opencode.session.status")
+local navigation_ctx = { state = state, event_util = event_util }
 
 ---@param event_type string
 ---@param data table
@@ -24,94 +28,6 @@ local function request_chat_render(data)
 			force = true,
 		}))
 	end
-end
-
----@param status any
----@return table
-local function normalize_session_status(status)
-	if type(status) == "table" then
-		return vim.deepcopy(status)
-	end
-	if type(status) == "string" and status ~= "" then
-		return { type = status }
-	end
-	return { type = "idle" }
-end
-
----@param status any
----@return string
-local function session_status_to_global(status)
-	local status_type = type(status) == "table" and status.type or status
-	if status_type == "busy" or status_type == "retry" or status_type == "streaming" then
-		return "streaming"
-	end
-	if status_type == "error" then
-		return "error"
-	end
-	return "idle"
-end
-
----@param status string
----@return table
-local function global_status_to_session(status)
-	if status == "streaming" or status == "thinking" then
-		return { type = "busy" }
-	end
-	if status == "error" then
-		return { type = "error" }
-	end
-	return { type = "idle" }
-end
-
----@param session_id string|nil
----@return string|nil
-local function runtime_session_id(session_id)
-	if not session_id or session_id == "" then
-		return nil
-	end
-	if state.is_runtime_session(session_id) then
-		return session_id
-	end
-	return event_util.runtime_root_for_session(session_id)
-end
-
----@param close_id string
----@return table|nil
-local function next_session_after_close(close_id)
-	local sessions = state.get_active_sessions()
-	local close_index = nil
-	local remaining = {}
-
-	for index, session in ipairs(sessions) do
-		if session.id == close_id then
-			close_index = index
-		else
-			table.insert(remaining, session)
-		end
-	end
-
-	if #remaining == 0 then
-		return nil
-	end
-	if not close_index then
-		return remaining[1]
-	end
-
-	local next_index = math.min(close_index, #remaining)
-	return remaining[next_index]
-end
-
----@param root_session_id string
----@param session_id string|nil
----@return boolean
-local function session_owned_by_root(root_session_id, session_id)
-	if not root_session_id or root_session_id == "" or not session_id or session_id == "" then
-		return false
-	end
-	if session_id == root_session_id then
-		return true
-	end
-	return event_util.runtime_root_for_session(session_id) == root_session_id
 end
 
 ---@param kind string
@@ -190,14 +106,11 @@ local function close_pending_interactions_for_session(root_session_id)
 
 	local ok_perm, perm_state = pcall(require, "opencode.permission.state")
 	if ok_perm and type(perm_state.get_all) == "function" and type(perm_state.remove_permission) == "function" then
-		local owned = {}
-		for _, pstate in ipairs(perm_state.get_all()) do
-			if session_owned_by_root(root_session_id, pstate.session_id) then
-				table.insert(owned, pstate)
-			end
-		end
+		local owned = pending_helper.collect_owned(perm_state.get_all(), root_session_id, function(root, session_id)
+			return navigation.session_owned_by_root(root, session_id, navigation_ctx)
+		end)
 		for _, pstate in ipairs(owned) do
-			if pstate.status == "pending" then
+			if pending_helper.is_pending_permission(pstate) then
 				reject_permission_request(pstate.permission_id)
 				if type(perm_state.mark_rejected) == "function" then
 					perm_state.mark_rejected(pstate.permission_id)
@@ -226,14 +139,11 @@ local function close_pending_interactions_for_session(root_session_id)
 		and type(question_state.get_all) == "function"
 		and type(question_state.remove_question) == "function"
 	then
-		local owned = {}
-		for _, qstate in ipairs(question_state.get_all()) do
-			if session_owned_by_root(root_session_id, qstate.session_id) then
-				table.insert(owned, qstate)
-			end
-		end
+		local owned = pending_helper.collect_owned(question_state.get_all(), root_session_id, function(root, session_id)
+			return navigation.session_owned_by_root(root, session_id, navigation_ctx)
+		end)
 		for _, qstate in ipairs(owned) do
-			if qstate.status == "pending" or qstate.status == "confirming" then
+			if pending_helper.is_pending_question(qstate) then
 				reject_question_request(qstate.session_id, qstate.request_id)
 			end
 			if question_state.remove_question(qstate.request_id) then
@@ -254,14 +164,11 @@ local function close_pending_interactions_for_session(root_session_id)
 
 	local ok_edit, edit_state = pcall(require, "opencode.edit.state")
 	if ok_edit and type(edit_state.get_all) == "function" and type(edit_state.remove_edit) == "function" then
-		local owned = {}
-		for _, estate in ipairs(edit_state.get_all()) do
-			if session_owned_by_root(root_session_id, estate.session_id) then
-				table.insert(owned, estate)
-			end
-		end
+		local owned = pending_helper.collect_owned(edit_state.get_all(), root_session_id, function(root, session_id)
+			return navigation.session_owned_by_root(root, session_id, navigation_ctx)
+		end)
 		for _, estate in ipairs(owned) do
-			if estate.status == "pending" then
+			if pending_helper.is_pending_edit(estate) then
 				if type(edit_state.reject_all) == "function" then
 					local call_ok, rejected, reject_err = pcall(edit_state.reject_all, estate.permission_id)
 					if not call_ok or not rejected then
@@ -347,7 +254,7 @@ local function mirror_active_status(session_id, raw_status, opts)
 	if not session_id or current.id ~= session_id then
 		return
 	end
-	local global_status = session_status_to_global(raw_status)
+	local global_status = status_helper.session_status_to_global(raw_status)
 	set_global_status(global_status, {
 		reason = opts and opts.reason or "session_status",
 		session_id = session_id,
@@ -398,7 +305,7 @@ function M.set_status(status, opts)
 	local previous_status = nil
 	local session_status = nil
 	if opts.session_id then
-		session_status = global_status_to_session(status)
+		session_status = status_helper.global_status_to_session(status)
 		previous_status = state.set_session_status(opts.session_id, session_status)
 	end
 
@@ -431,7 +338,7 @@ function M.set_session_status(session_id, status, opts)
 		return nil
 	end
 
-	local normalized = normalize_session_status(status)
+	local normalized = status_helper.normalize_session_status(status)
 	local previous = state.set_session_status(session_id, normalized)
 	mirror_active_status(session_id, normalized, {
 		reason = opts.reason or "session_status",
@@ -475,7 +382,7 @@ end
 function M.close(session_id, opts)
 	opts = opts or {}
 	local current = state.get_session()
-	local target_id = runtime_session_id(session_id or current.id)
+	local target_id = navigation.runtime_session_id(session_id or current.id, navigation_ctx)
 	if not target_id then
 		if not opts.silent then
 			vim.notify("No active OpenCode session tab to close", vim.log.levels.WARN)
@@ -490,8 +397,8 @@ function M.close(session_id, opts)
 		return false
 	end
 
-	local current_root = runtime_session_id(current.id)
-	local next_session = next_session_after_close(target_id)
+	local current_root = navigation.runtime_session_id(current.id, navigation_ctx)
+	local next_session = navigation.next_session_after_close(target_id, nil, navigation_ctx)
 	close_pending_interactions_for_session(target_id)
 	local closed = state.close_runtime_session(target_id)
 	local title = session_util.displayTitle(closed and (closed.title or closed.name)) or target_id
@@ -529,7 +436,7 @@ function M.close(session_id, opts)
 	})
 	emit("session_pending_change", {
 		session_id = target_id,
-		pending = { permissions = 0, questions = 0, edits = 0 },
+		pending = pending_helper.zero_counts(),
 	})
 	emit("sessions_changed", { reason = opts.reason or "session_close", session_id = target_id })
 	emit("sync_changed", {
@@ -577,22 +484,12 @@ local function collect_pending_counts()
 
 	---@param session_id string|nil
 	---@return string|nil
-	local function root_session_for_pending(session_id)
-		if not session_id or session_id == "" then
-			return nil
-		end
-		if state.is_runtime_session(session_id) then
-			return session_id
-		end
-		return event_util.runtime_root_for_session(session_id)
-	end
-
 	local function ensure(session_id)
-		local root_session_id = root_session_for_pending(session_id)
+		local root_session_id = navigation.runtime_session_id(session_id, navigation_ctx)
 		if not root_session_id then
 			return nil
 		end
-		counts[root_session_id] = counts[root_session_id] or { permissions = 0, questions = 0, edits = 0 }
+		counts[root_session_id] = counts[root_session_id] or pending_helper.zero_counts()
 		return counts[root_session_id]
 	end
 
@@ -609,7 +506,7 @@ local function collect_pending_counts()
 	local ok_questions, questions = pcall(require, "opencode.question.state")
 	if ok_questions and type(questions.get_all) == "function" then
 		for _, item in ipairs(questions.get_all()) do
-			if item.status == "pending" or item.status == "confirming" then
+			if pending_helper.is_pending_question(item) then
 				local entry = ensure(item.session_id)
 				if entry then
 					entry.questions = entry.questions + 1
@@ -644,7 +541,7 @@ function M.recount_pending()
 	end
 
 	for session_id, _ in pairs(seen) do
-		local next_counts = counts[session_id] or { permissions = 0, questions = 0, edits = 0 }
+		local next_counts = counts[session_id] or pending_helper.zero_counts()
 		state.set_session_pending_counts(session_id, next_counts)
 		emit("session_pending_change", {
 			session_id = session_id,

@@ -3,6 +3,9 @@
 
 local M = {}
 
+local SessionView = require("opencode.session.view")
+local navigation = require("opencode.session.navigation")
+
 local function logger()
 	local ok, mod = pcall(require, "opencode.logger")
 	return ok and mod or nil
@@ -95,6 +98,184 @@ end
 ---@return string
 function M.current_status()
 	return require("opencode.state").get_status()
+end
+
+local function sessions_snapshot(state_mod)
+	local snapshot = state_mod.get_full_state()
+	return snapshot.sessions or {}, snapshot.session or {}
+end
+
+local function runtime_lookup(sessions)
+	local lookup = {}
+	for _, id in ipairs(sessions.runtime_order or {}) do
+		if type(id) == "string" and id ~= "" then
+			lookup[id] = true
+		end
+	end
+	return lookup
+end
+
+local function current_root_id(state_mod, current)
+	return navigation.runtime_session_id(current and current.id, { state = state_mod })
+end
+
+local function record_for_session(sessions, current, runtime_ids, session_id)
+	if not session_id or session_id == "" then
+		return nil
+	end
+	local record = sessions.by_id and sessions.by_id[session_id] or nil
+	if record then
+		record = vim.deepcopy(record)
+	elseif current and current.id == session_id then
+		record = {
+			id = current.id,
+			title = current.name,
+			name = current.name,
+			message_count = current.message_count,
+			messageCount = current.message_count,
+		}
+	elseif runtime_ids[session_id] then
+		record = {
+			id = session_id,
+			title = session_id,
+			name = session_id,
+			message_count = 0,
+			messageCount = 0,
+		}
+	else
+		return nil
+	end
+
+	if current and current.id == session_id then
+		record.name = current.name or record.name
+		if current.message_count ~= nil then
+			record.message_count = current.message_count
+			record.messageCount = current.message_count
+		end
+	end
+	return record
+end
+
+local function view_for_record(record, sessions, current, runtime_ids, root_id)
+	if type(record) ~= "table" or not record.id then
+		return nil
+	end
+	return SessionView.from_record(record, {
+		status = sessions.status and sessions.status[record.id] or nil,
+		pending = sessions.pending and sessions.pending[record.id] or nil,
+		cached_messages = sessions.message_cache and sessions.message_cache[record.id] or nil,
+		is_current = current and current.id == record.id,
+		is_runtime = runtime_ids[record.id] == true,
+		current_root_id = root_id,
+	})
+end
+
+local function build_session_view(session_id)
+	local state_mod = require("opencode.state")
+	local sessions, current = sessions_snapshot(state_mod)
+	local runtime_ids = runtime_lookup(sessions)
+	local root_id = current_root_id(state_mod, current)
+	local record = record_for_session(sessions, current, runtime_ids, session_id)
+	return view_for_record(record, sessions, current, runtime_ids, root_id)
+end
+
+---@return table|nil
+function M.get_current_session_view()
+	local current = require("opencode.state").get_session()
+	if not current.id then
+		return nil
+	end
+	return build_session_view(current.id)
+end
+
+---@param session_id string|nil
+---@return table|nil
+function M.get_session_view(session_id)
+	return build_session_view(session_id)
+end
+
+---@return string|nil
+function M.get_current_runtime_root_id()
+	local state_mod = require("opencode.state")
+	local current = state_mod.get_session()
+	return current_root_id(state_mod, current)
+end
+
+---@return table[]
+function M.get_active_session_views()
+	local state_mod = require("opencode.state")
+	local sessions, current = sessions_snapshot(state_mod)
+	local runtime_ids = runtime_lookup(sessions)
+	local root_id = current_root_id(state_mod, current)
+	local result = {}
+	local seen = {}
+
+	for _, id in ipairs(sessions.runtime_order or {}) do
+		if not seen[id] then
+			local record = record_for_session(sessions, current, runtime_ids, id)
+			local view = view_for_record(record, sessions, current, runtime_ids, root_id)
+			if view then
+				table.insert(result, view)
+				seen[id] = true
+			end
+		end
+	end
+
+	return result
+end
+
+---@return table[]
+function M.get_recent_session_views()
+	local state_mod = require("opencode.state")
+	local sessions, current = sessions_snapshot(state_mod)
+	local runtime_ids = runtime_lookup(sessions)
+	local root_id = current_root_id(state_mod, current)
+	local result = {}
+	local seen = {}
+
+	local function add(id, allow_fallback)
+		if not id or id == "" or seen[id] then
+			return
+		end
+		local record = allow_fallback and record_for_session(sessions, current, runtime_ids, id)
+			or (sessions.by_id and sessions.by_id[id] and vim.deepcopy(sessions.by_id[id]) or nil)
+		local view = view_for_record(record, sessions, current, runtime_ids, root_id)
+		if view then
+			table.insert(result, view)
+			seen[id] = true
+		end
+	end
+
+	for _, id in ipairs(sessions.recent_order or {}) do
+		add(id, false)
+	end
+	if current.id and runtime_ids[current.id] and not seen[current.id] then
+		local record = record_for_session(sessions, current, runtime_ids, current.id)
+		local view = view_for_record(record, sessions, current, runtime_ids, root_id)
+		if view then
+			table.insert(result, 1, view)
+		end
+	end
+
+	return result
+end
+
+---@return table
+function M.get_active_session_counts()
+	local counts = { running = 0, waiting = 0, error = 0, total = 0 }
+	for _, view in ipairs(M.get_active_session_views()) do
+		counts.total = counts.total + 1
+		if view:is_busy() then
+			counts.running = counts.running + 1
+		end
+		if view:is_waiting() then
+			counts.waiting = counts.waiting + 1
+		end
+		if view:is_error() then
+			counts.error = counts.error + 1
+		end
+	end
+	return counts
 end
 
 ---@return table|nil

@@ -3,13 +3,15 @@
 
 local M = {}
 
+local pending_helper = require("opencode.session.pending")
+local session_status = require("opencode.session.status")
 local session_util = require("opencode.util.session")
 
 -- Internal state store
 local state = {
 	-- Connection lifecycle
 	connection = "idle", -- "idle" | "starting" | "connecting" | "connected" | "error"
-	
+
 	-- Server info
 	server = {
 		pid = nil,
@@ -18,7 +20,7 @@ local state = {
 		port = nil,
 		version = nil,
 	},
-	
+
 	-- Current session
 	session = {
 		id = nil,
@@ -35,20 +37,20 @@ local state = {
 		pending = {},
 		message_cache = {},
 	},
-	
-		-- Streaming/thinking status
-		status = "idle", -- "idle" | "streaming" | "thinking" | "paused" | "error"
+
+	-- Streaming/thinking status
+	status = "idle", -- "idle" | "streaming" | "thinking" | "paused" | "error"
 
 	-- Danger mode: auto-approve permission requests while enabled.
 	danger_mode = false,
-	
+
 	-- Pending changes from edits
 	pending_changes = {
 		files = {},
 		total_additions = 0,
 		total_deletions = 0,
 	},
-	
+
 	-- Configuration reference
 	config = nil,
 }
@@ -65,7 +67,7 @@ local function emit_change(key, old_val, new_val)
 			vim.notify("State listener error: " .. tostring(err), vim.log.levels.ERROR)
 		end
 	end
-	
+
 	-- Also emit to wildcard listeners
 	local wildcards = listeners["*"] or {}
 	for _, cb in ipairs(wildcards) do
@@ -80,16 +82,16 @@ end
 local function set(key, value, path)
 	local old_val
 	local target = path and state[path] or state
-	
+
 	if target then
 		old_val = target[key]
 		target[key] = value
 	end
-	
+
 	if old_val ~= value then
 		emit_change(path and (path .. "." .. key) or key, old_val, value)
 	end
-	
+
 	return old_val
 end
 
@@ -203,37 +205,6 @@ local function upsert_session_record(session)
 	return record
 end
 
----@param status any
----@return table
-local function normalize_session_status(status)
-	if type(status) == "table" then
-		return vim.deepcopy(status)
-	end
-	if type(status) == "string" and status ~= "" then
-		return { type = status }
-	end
-	return { type = "idle" }
-end
-
-local function zero_pending_counts()
-	return {
-		permissions = 0,
-		questions = 0,
-		edits = 0,
-	}
-end
-
----@param counts table|nil
----@return table
-local function normalize_pending_counts(counts)
-	counts = counts or {}
-	return {
-		permissions = tonumber(counts.permissions or counts.permission or 0) or 0,
-		questions = tonumber(counts.questions or counts.question or 0) or 0,
-		edits = tonumber(counts.edits or counts.edit or 0) or 0,
-	}
-end
-
 -- Connection state
 
 function M.set_connection(status)
@@ -273,7 +244,7 @@ end
 function M.set_server_info(info)
 	local old_host = state.server.host
 	local old_port = state.server.port
-	
+
 	if info.host then
 		set("host", info.host, "server")
 	end
@@ -283,7 +254,7 @@ function M.set_server_info(info)
 	if info.version then
 		set("version", info.version, "server")
 	end
-	
+
 	return { host = old_host, port = old_port }
 end
 
@@ -326,7 +297,7 @@ function M.set_session(id, name, opts)
 	else
 		set("message_count", 0, "session")
 	end
-	
+
 	return { id = old_id, name = old_name }
 end
 
@@ -540,7 +511,7 @@ function M.set_session_status(session_id, status)
 		return nil
 	end
 	local old = state.sessions.status[session_id]
-	local next_status = normalize_session_status(status)
+	local next_status = session_status.normalize_session_status(status)
 	state.sessions.status[session_id] = next_status
 	emit_change("sessions.status." .. session_id, old, next_status)
 	return old and vim.deepcopy(old) or nil
@@ -573,7 +544,7 @@ function M.set_session_pending_counts(session_id, counts)
 		return nil
 	end
 	local old = state.sessions.pending[session_id]
-	local normalized = normalize_pending_counts(counts)
+	local normalized = pending_helper.normalize_counts(counts)
 	state.sessions.pending[session_id] = normalized
 	emit_change("sessions.pending." .. session_id, old, normalized)
 	return old and vim.deepcopy(old) or nil
@@ -583,9 +554,9 @@ end
 ---@return table
 function M.get_session_pending_counts(session_id)
 	if not session_id or session_id == "" then
-		return zero_pending_counts()
+		return pending_helper.zero_counts()
 	end
-	return vim.deepcopy(state.sessions.pending[session_id] or zero_pending_counts())
+	return vim.deepcopy(state.sessions.pending[session_id] or pending_helper.zero_counts())
 end
 
 ---@param session_id string
@@ -652,14 +623,14 @@ function M.get_active_sessions()
 	end
 
 	for id, status in pairs(state.sessions.status or {}) do
-		local status_type = type(status) == "table" and status.type or status
-		if M.is_runtime_session(id) and state.sessions.by_id[id] and status_type and status_type ~= "idle" then
+		local status_type = session_status.status_type(status)
+		if M.is_runtime_session(id) and state.sessions.by_id[id] and status_type ~= "idle" then
 			add_session(id)
 		end
 	end
 
 	for id, pending in pairs(state.sessions.pending or {}) do
-		local counts = normalize_pending_counts(pending)
+		local counts = pending_helper.normalize_counts(pending)
 		if
 			M.is_runtime_session(id)
 			and state.sessions.by_id[id]
@@ -749,14 +720,14 @@ function M.add_pending_change(file_path, change_data)
 		additions = change_data.additions or 0,
 		deletions = change_data.deletions or 0,
 	}
-	
+
 	state.pending_changes.total_additions = state.pending_changes.total_additions + (change_data.additions or 0)
 	state.pending_changes.total_deletions = state.pending_changes.total_deletions + (change_data.deletions or 0)
-	
+
 	emit_change("pending_changes.files." .. file_path, nil, state.pending_changes.files[file_path])
 	emit_change("pending_changes.total_additions", nil, state.pending_changes.total_additions)
 	emit_change("pending_changes.total_deletions", nil, state.pending_changes.total_deletions)
-	
+
 	return true
 end
 
@@ -801,7 +772,7 @@ function M.update_pending_change_status(file_path, hunk_index, status)
 	if not change then
 		return nil
 	end
-	
+
 	if hunk_index then
 		local hunk = change.hunks[hunk_index]
 		if hunk then
@@ -810,9 +781,9 @@ function M.update_pending_change_status(file_path, hunk_index, status)
 	else
 		change.status = status
 	end
-	
+
 	emit_change("pending_changes.files." .. file_path .. ".status", nil, status)
-	
+
 	return change
 end
 
@@ -822,12 +793,12 @@ function M.remove_pending_change(file_path)
 		state.pending_changes.total_additions = state.pending_changes.total_additions - change.additions
 		state.pending_changes.total_deletions = state.pending_changes.total_deletions - change.deletions
 		state.pending_changes.files[file_path] = nil
-		
+
 		emit_change("pending_changes.files." .. file_path, change, nil)
 		emit_change("pending_changes.total_additions", nil, state.pending_changes.total_additions)
 		emit_change("pending_changes.total_deletions", nil, state.pending_changes.total_deletions)
 	end
-	
+
 	return change
 end
 
@@ -838,9 +809,9 @@ function M.clear_all_pending_changes()
 		total_additions = 0,
 		total_deletions = 0,
 	}
-	
+
 	emit_change("pending_changes", old, state.pending_changes)
-	
+
 	return old
 end
 
@@ -865,7 +836,7 @@ end
 
 function M.reset()
 	local old = vim.deepcopy(state)
-	
+
 	state.connection = "idle"
 	state.server = {
 		pid = nil,
@@ -894,9 +865,9 @@ function M.reset()
 		total_additions = 0,
 		total_deletions = 0,
 	}
-	
+
 	emit_change("*", old, state)
-	
+
 	return old
 end
 
@@ -944,7 +915,8 @@ function M.get_status_summary()
 		session = state.session.name,
 		message_count = state.session.message_count,
 		session_status = state.session.id and M.get_session_status(state.session.id) or { type = "idle" },
-		session_pending = state.session.id and M.get_session_pending_counts(state.session.id) or zero_pending_counts(),
+		session_pending = state.session.id and M.get_session_pending_counts(state.session.id)
+			or pending_helper.zero_counts(),
 		active_sessions = M.get_active_sessions(),
 		danger_mode = state.danger_mode,
 		diff_stats = M.get_pending_changes_stats(),

@@ -1,5 +1,7 @@
 local M = {}
 
+local pending_helper = require("opencode.session.pending")
+
 local opts = {
 	enabled = true,
 	show_attention = true,
@@ -275,22 +277,13 @@ local function diff_stats_component(stats)
 	)
 end
 
----@param pending table|nil
----@return number
-local function pending_total(pending)
-	pending = pending or {}
-	return (tonumber(pending.permissions or 0) or 0)
-		+ (tonumber(pending.questions or 0) or 0)
-		+ (tonumber(pending.edits or 0) or 0)
-end
-
 ---@param summary table
 ---@return number
 local function attention_count(summary)
 	local count = 0
 	if type(summary.active_sessions) == "table" then
 		for _, session in ipairs(summary.active_sessions) do
-			if pending_total(session.pending) > 0 then
+			if pending_helper.has_pending(session.pending) then
 				count = count + 1
 			end
 		end
@@ -298,7 +291,7 @@ local function attention_count(summary)
 	if count > 0 then
 		return count
 	end
-	return pending_total(summary.session_pending) > 0 and 1 or 0
+	return pending_helper.has_pending(summary.session_pending) and 1 or 0
 end
 
 ---@param summary table
