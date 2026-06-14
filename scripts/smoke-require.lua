@@ -2267,6 +2267,41 @@ do
 	end
 	assert(type(native_state) == "table", "native diff state upvalue should be available")
 	assert(type(sync_edit_action) == "function", "native diff sync action upvalue should be available")
+
+	local original_native_show = native_diff.show
+	local captured_native_show
+	native_diff.show = function(permission_id, files, opts)
+		captured_native_show = {
+			permission_id = permission_id,
+			files = files,
+			opts = opts,
+		}
+	end
+
+	local native_multifile_paths = make_edit("edit_native_multifile", 3)
+	select_file("edit_native_multifile", 2)
+	chat_edits.handle_edit_diff_tab()
+	assert(captured_native_show, "native diff tab should open through native_diff.show")
+	assert(#captured_native_show.files == 3, "native diff tab should include every pending edit file")
+	assert(captured_native_show.opts.edit_id == "edit_native_multifile", "native diff should keep edit id")
+	assert(captured_native_show.opts.file_index == 2, "native diff should keep selected edit file fallback")
+	assert(captured_native_show.opts.start_index == 2, "native diff should start on selected file")
+	assert(captured_native_show.files[2].edit_file_index == 2, "native diff files should keep original edit indices")
+	cleanup(native_multifile_paths)
+
+	captured_native_show = nil
+	local native_pending_paths = make_edit("edit_native_pending_filter", 3)
+	local native_pending_edit = edit_state.get_edit("edit_native_pending_filter")
+	native_pending_edit.files[1].status = "accepted"
+	select_file("edit_native_pending_filter", 2)
+	chat_edits.handle_edit_diff_tab()
+	assert(captured_native_show, "native diff tab should open when selected file is pending")
+	assert(#captured_native_show.files == 2, "native diff tab should include only pending files")
+	assert(captured_native_show.opts.start_index == 1, "native diff start index should be relative to pending files")
+	assert(captured_native_show.files[1].edit_file_index == 2, "pending filtered native diff should keep original indices")
+	native_diff.show = original_native_show
+	cleanup(native_pending_paths)
+
 	local native_paths = make_edit("edit_native_refresh", 2)
 	local refresh_calls = 0
 	chat_edits.refresh_edit = function(edit_id)
@@ -2275,13 +2310,23 @@ do
 	end
 	native_state.edit_id = "edit_native_refresh"
 	native_state.edit_file_index = 1
+	native_state.files = {
+		{ edit_file_index = 1 },
+		{ edit_file_index = 2 },
+	}
+	native_state.current_file_index = 2
 	sync_edit_action("resolve")
 	wait_until(function()
 		return refresh_calls == 1
 	end, "native diff sync should refresh through shared edit path")
 	assert(calls.last_refreshed == "edit_native_refresh", "native diff refresh should target originating edit")
+	local native_refresh_edit = edit_state.get_edit("edit_native_refresh")
+	assert(native_refresh_edit.files[1].status == "pending", "native diff sync should not resolve fallback index")
+	assert(native_refresh_edit.files[2].status ~= "pending", "native diff sync should resolve current native file index")
 	native_state.edit_id = nil
 	native_state.edit_file_index = nil
+	native_state.files = {}
+	native_state.current_file_index = 1
 	cleanup(native_paths)
 
 	chat_edits.finalize_edit = original_finalize
