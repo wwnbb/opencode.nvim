@@ -4,13 +4,5 @@
 	"permission": {
 		"neovim_edit": "ask",
 		"neovim_apply_patch": "ask"
-	},
-    "agent": {
-        "build": {
-            "disable": true
-        },
-        "plan": {
-            "disable": true
-        }
-    }
+	}
 }

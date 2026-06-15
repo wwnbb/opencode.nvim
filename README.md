@@ -23,8 +23,9 @@ Install and configure opencode.nvim in this Neovim config.
 Follow these steps:
 1. Inspect the current Neovim config first. Identify the plugin manager, config structure, existing keymap style, colors/highlight setup, and any existing OpenCode or AI-assistant config.
 2. Ask targeted questions only when a choice is not obvious. Ask, for example, which plugin manager to use if it is unclear, which keymap should toggle/open opencode, whether session tabs should use a fixed max count or dynamic auto-fit, and whether the chat layout should be vertical, horizontal, or float.
-3. Add opencode.nvim through the existing plugin manager. Include dependencies: MunifTanjim/nui.nvim and nvim-lua/plenary.nvim.
-4. Configure `require("opencode").setup()` using only supported options:
+3. Add opencode.nvim through the existing plugin manager. Include dependencies: MunifTanjim/nui.nvim and nvim-lua/plenary.nvim. If the config uses lazy.nvim, ask whether I want you to install/sync the plugin now by running `nvim --headless "+Lazy! sync" +qa`; run it only if I confirm.
+4. Configure the plugin manager build/install hook to run `scripts/install-tools.sh` at least once so the bundled opencode.nvim config/tools are installed. If the plugin manager has no build hook, run `scripts/install-tools.sh` manually from the plugin root. After install, run `opencode debug config` to verify the OpenCode config is correct.
+5. Configure `require("opencode").setup()` using only supported options:
    - `server.command`, `server.auto_start`, `server.reuse_running`, `server.config_dir`, `server.env`
    - `session.default_agent`, `session.default_model.providerID`, `session.default_model.modelID`, `session.parallel.enabled`, `session.parallel.use_prompt_async`
    - `chat.layout` (`vertical`, `horizontal`, or `float`), `chat.position`, `chat.width`, `chat.height`, `chat.float.width`, `chat.float.height`, `chat.float.border`, `chat.close_on_focus_lost`
@@ -33,9 +34,26 @@ Follow these steps:
    - `input.keymaps.send`, `input.keymaps.cancel`, `input.keymaps.paste`, `input.keymaps.variant_cycle`, `input.keymaps.agent_cycle`, `input.keymaps.model_cycle`
    - `lualine.enabled`, `notifications.enabled`
    - Keep `danger_mode = false`; do not enable it unless I explicitly request the security tradeoff.
-5. Configure colors/highlights to match the existing colorscheme. Prefer `chat.session_tabs.colors` for session tab colors and `vim.api.nvim_set_hl` for existing `OpenCode*` highlight groups when needed.
-6. Configure keybindings consistently with the rest of this config, avoiding collisions.
-7. Verify by loading/requiring the edited config if possible, such as with a headless Neovim require check or the config's existing lightweight validation command.
+6. Configure colors/highlights to match the existing colorscheme. Prefer `chat.session_tabs.colors` for session tab colors and `vim.api.nvim_set_hl` for existing `OpenCode*` highlight groups when needed.
+7. Configure keybindings consistently with the rest of this config, avoiding collisions.
+8. If this config already has an `nvim-tree` toggle/explore keymap that should take over the side panel, ask whether opening `nvim-tree` through that toggle should hide opencode.nvim first. If the user wants that behavior, suggest this optional keymap helper. Keep the user's existing path/argument logic and replace `"<arg>"` with whatever that keymap currently passes.
+
+```lua
+local function hide_opencode_chat()
+  local ok, opencode = pcall(require, "opencode")
+  if ok and type(opencode.close) == "function" then
+    opencode.close()
+  end
+end
+
+local function explore()
+  -- path = vim.fn.expand("%")
+  hide_opencode_chat()
+  api.tree.toggle({ find_file = true, focus = true, path = "<arg>" })
+end
+```
+
+9. Verify by loading/requiring the edited config if possible, such as with a headless Neovim require check or the config's existing lightweight validation command.
 
 Compact setup example to adapt after registering the plugin with the existing plugin manager:
 
