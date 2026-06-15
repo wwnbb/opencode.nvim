@@ -24,7 +24,7 @@ Install and configure opencode.nvim in this Neovim config.
 Follow these steps:
 1. Inspect the current Neovim config first. Identify the plugin manager, config structure, existing keymap style, colors/highlight setup, and any existing OpenCode or AI-assistant config.
 2. Ask targeted questions only when a choice is not obvious. Ask, for example, which plugin manager to use if it is unclear, which keymap should toggle/open opencode, whether session tabs should use a fixed max count or dynamic auto-fit, and whether the chat layout should be vertical, horizontal, or float.
-3. Add opencode.nvim through the existing plugin manager. Include dependencies: MunifTanjim/nui.nvim and nvim-lua/plenary.nvim. If the config uses lazy.nvim, ask whether I want you to install/sync the plugin now by running `nvim --headless "+Lazy! sync" +qa`; run it only if I confirm.
+3. Add `wwnbb/opencode.nvim` through the existing plugin manager. Include dependencies: MunifTanjim/nui.nvim and nvim-lua/plenary.nvim. If the config uses lazy.nvim, ask whether I want you to install/sync the plugin now by running `nvim --headless "+Lazy! sync" +qa`; run it only if I confirm.
 4. Configure the plugin manager build/install hook to run `scripts/install-tools.sh` at least once so the bundled opencode.nvim config/tools are installed. If the plugin manager has no build hook, run `scripts/install-tools.sh` manually from the plugin root. After install, run `opencode debug config` to verify the OpenCode config is correct.
 5. Configure `require("opencode").setup()` using only supported options:
    - `server.command`, `server.auto_start`, `server.reuse_running`, `server.config_dir`, `server.env`
