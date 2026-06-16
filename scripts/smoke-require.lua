@@ -182,6 +182,45 @@ local thinking_hl_ok, thinking_hl = pcall(thinking.get_highlights, 0)
 assert(thinking_hl_ok, "thinking highlights should not crash: " .. tostring(thinking_hl))
 assert(thinking_hl[1].hl_group == "Title", "thinking highlights should default header highlight")
 
+do
+	require("opencode.ui.input.info_bar").setup_highlights()
+	local user_bg = vim.api.nvim_get_hl(0, { name = "OpenCodeUserMessageBg" })
+	local input_bg = vim.api.nvim_get_hl(0, { name = "OpenCodeInputBg" })
+	assert(user_bg.link == "CursorLine", "user message background should default to CursorLine")
+	assert(input_bg.link == "OpenCodeUserMessageBg", "input background should default to user message background")
+
+	local popups = require("opencode.ui.input.popups")
+	local popup_obj, info_popup_obj = popups.mount({
+		popup = {
+			relative = "editor",
+			position = { row = 1, col = 1 },
+			size = { width = 20, height = 1 },
+		},
+		info = {
+			relative = "editor",
+			position = { row = 2, col = 1 },
+			size = { width = 20, height = 1 },
+		},
+	})
+	local popup_winhighlight = popup_obj.opts.win_options.winhighlight
+	local info_winhighlight = info_popup_obj.opts.win_options.winhighlight
+	assert(
+		popup_winhighlight:find("Normal:OpenCodeInputBg", 1, true)
+			and popup_winhighlight:find("EndOfBuffer:OpenCodeInputBg", 1, true),
+		"input popup normal and empty cells should use the shared input background"
+	)
+	assert(
+		info_winhighlight:find("Normal:OpenCodeInputBg", 1, true)
+			and info_winhighlight:find("EndOfBuffer:OpenCodeInputBg", 1, true),
+		"input info popup normal and empty cells should use the shared input background"
+	)
+	assert(
+		popup_winhighlight:find("FloatBorder:OpenCodeInputBorderAgent", 1, true)
+			and info_winhighlight:find("FloatBorder:OpenCodeInputBorderAgent", 1, true),
+		"input popup border should keep the agent-specific highlight"
+	)
+end
+
 local sync = require("opencode.sync")
 sync.clear_all()
 sync.handle_part_updated({

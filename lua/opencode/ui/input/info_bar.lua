@@ -3,9 +3,10 @@
 local M = {}
 
 local NS_INFO = vim.api.nvim_create_namespace("opencode_input_info")
+local highlights = require("opencode.ui.highlights")
 
 function M.setup_highlights()
-	vim.api.nvim_set_hl(0, "OpenCodeInputBg", { link = "NormalFloat", default = true })
+	highlights.setup_message_backgrounds()
 	vim.api.nvim_set_hl(0, "OpenCodeInputBorder", { link = "Special", default = true })
 	vim.api.nvim_set_hl(0, "OpenCodeInputBorderAgent", { link = "Special", default = true })
 	vim.api.nvim_set_hl(0, "OpenCodeInputInfo", { link = "Comment", default = true })

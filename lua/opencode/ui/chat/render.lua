@@ -12,6 +12,7 @@ local locale = require("opencode.util.locale")
 local sync = require("opencode.sync")
 local syntax = require("opencode.ui.syntax")
 local perf = require("opencode.perf")
+local highlights = require("opencode.ui.highlights")
 
 local cs = require("opencode.ui.chat.state")
 local state = cs.state
@@ -20,7 +21,7 @@ local UI_HIGHLIGHT_PRIORITY = 4200
 local PANEL_PREFIX_HL_PRIORITY = UI_HIGHLIGHT_PRIORITY + 1
 
 local function ensure_user_message_highlights()
-	vim.api.nvim_set_hl(0, "OpenCodeUserMessageBg", { link = "CursorLine", default = true })
+	highlights.setup_message_backgrounds()
 end
 
 ---@return number width

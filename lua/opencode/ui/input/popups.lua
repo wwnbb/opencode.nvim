@@ -53,7 +53,7 @@ function M.mount(frame)
 			bufhidden = "wipe",
 		},
 		win_options = {
-			winhighlight = "Normal:OpenCodeInputBg,EndOfBuffer:OpenCodeInputInfo,FloatBorder:OpenCodeInputBorderAgent",
+			winhighlight = "Normal:OpenCodeInputBg,EndOfBuffer:OpenCodeInputBg,FloatBorder:OpenCodeInputBorderAgent",
 			signcolumn = "no",
 			number = false,
 			relativenumber = false,

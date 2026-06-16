@@ -3,9 +3,10 @@ local M = {}
 local Popup = require("nui.popup")
 
 local state = require("opencode.ui.chat.state").state
+local highlights = require("opencode.ui.highlights")
 
 function M.show(config)
-	vim.api.nvim_set_hl(0, "OpenCodeInputBg", { link = "NormalFloat", default = true })
+	highlights.setup_message_backgrounds()
 	vim.api.nvim_set_hl(0, "OpenCodeInputBorder", { link = "Special", default = true })
 	vim.api.nvim_set_hl(0, "OpenCodeInputInfo", { link = "Comment", default = true })
 
