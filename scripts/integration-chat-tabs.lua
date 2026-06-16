@@ -238,6 +238,19 @@ end), "background change refreshes dynamic session tab colors")
 assert_eq(hl_fg("OpenCodeWinbarCurrentIdle"), 0x444444, "dynamic light active idle icon")
 assert_true(dynamic_color_calls >= 2, "dynamic session tab colors are reevaluated")
 
+local configured_tab_colors = chat_view.config.session_tabs.colors
+vim.api.nvim_set_hl(0, "TabLine", { fg = "#123456", bg = "#abcdef" })
+vim.api.nvim_set_hl(0, "TabLineSel", { fg = "#fedcba", bg = "#654321" })
+chat_view.config.session_tabs.colors = {}
+chat.update_winbar()
+assert_eq(hl_fg("OpenCodeWinbar"), 0x123456, "default inactive tab foreground inherits TabLine")
+assert_eq(hl_bg("OpenCodeWinbar"), 0xabcdef, "default inactive tab background inherits TabLine")
+assert_eq(hl_fg("OpenCodeWinbarCurrent"), 0xfedcba, "default active tab foreground inherits TabLineSel")
+assert_eq(hl_bg("OpenCodeWinbarCurrent"), 0x654321, "default active tab background inherits TabLineSel")
+assert_eq(hl_fg("OpenCodeWinbarCurrentIdle"), 0xfedcba, "default active idle icon inherits TabLineSel")
+chat_view.config.session_tabs.colors = configured_tab_colors
+chat.update_winbar()
+
 assert_true(chat_view.session_tabs_winid and vim.api.nvim_win_is_valid(chat_view.session_tabs_winid), "float tab window stays open")
 assert_true(vim.api.nvim_win_is_valid(winid), "chat window stays open")
 assert_eq(vim.api.nvim_win_get_config(chat_view.session_tabs_winid).focusable, true, "float tab window is focusable")

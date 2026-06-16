@@ -102,16 +102,22 @@ local function ensure_winbar_highlights(tabs_cfg)
 
 	local colors = resolve_tab_colors(type(tabs_cfg) == "table" and tabs_cfg.colors or nil)
 	local normal = get_hl("Normal")
+	local tabline = get_hl("TabLine")
+	local tabline_fill = get_hl("TabLineFill")
+	local tab_selected = get_hl("TabLineSel")
+	local statusline = get_hl("StatusLine")
+	local statusline_nc = get_hl("StatusLineNC")
 	local selected = get_hl("PmenuSel")
 	local visual = get_hl("Visual")
-	local tab_selected = get_hl("TabLineSel")
 	local search = get_hl("Search")
-	local fallback_active_bg = selected.bg or visual.bg or tab_selected.bg or search.bg or "#2d5f87"
-	local fallback_active_fg = selected.fg or normal.fg or tab_selected.fg or "#ffffff"
+	local fallback_inactive_bg = tabline.bg or tabline_fill.bg or statusline_nc.bg or statusline.bg
+	local fallback_inactive_fg = tabline.fg or statusline_nc.fg or statusline.fg or normal.fg
+	local fallback_active_bg = tab_selected.bg or selected.bg or visual.bg or search.bg or normal.bg or "#2d5f87"
+	local fallback_active_fg = tab_selected.fg or selected.fg or normal.fg or "#ffffff"
 	local active_bg = tab_color(colors, { "active_bg", "current_bg" }, fallback_active_bg)
 	local active_fg = tab_color(colors, { "active_fg", "current_fg" }, fallback_active_fg)
-	local inactive_bg = tab_color(colors, { "inactive_bg" }, nil)
-	local inactive_fg = tab_color(colors, { "inactive_fg" }, nil)
+	local inactive_bg = tab_color(colors, { "inactive_bg" }, fallback_inactive_bg)
+	local inactive_fg = tab_color(colors, { "inactive_fg" }, fallback_inactive_fg)
 	local running_fg = tab_color(colors, { "running_fg" }, nil)
 	local waiting_fg = tab_color(colors, { "waiting_fg" }, nil)
 	local error_fg = tab_color(colors, { "error_fg" }, nil)
@@ -126,9 +132,9 @@ local function ensure_winbar_highlights(tabs_cfg)
 	}
 
 	if has_highlight_options(inactive_opts) then
-		set_winbar_hl("OpenCodeWinbar", inactive_opts, { link = "StatusLine", default = true })
+		set_winbar_hl("OpenCodeWinbar", inactive_opts, { link = "TabLine", default = true })
 	else
-		set_winbar_hl("OpenCodeWinbar", { link = "StatusLine", default = true })
+		set_winbar_hl("OpenCodeWinbar", { link = "TabLine", default = true })
 	end
 
 	local function set_status_hl(name, source, fg)
@@ -176,7 +182,7 @@ local function ensure_winbar_highlights(tabs_cfg)
 	set_active_icon_hl("OpenCodeWinbarCurrentRunning", "DiagnosticOk", active_running_fg)
 	set_active_icon_hl("OpenCodeWinbarCurrentWaiting", "DiagnosticWarn", active_waiting_fg)
 	set_active_icon_hl("OpenCodeWinbarCurrentError", "DiagnosticError", active_error_fg)
-	set_active_icon_hl("OpenCodeWinbarCurrentIdle", "Normal", active_idle_fg)
+	set_active_icon_hl("OpenCodeWinbarCurrentIdle", "TabLineSel", active_idle_fg)
 end
 
 local function escape_winbar_text(text)

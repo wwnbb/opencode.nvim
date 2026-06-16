@@ -6,16 +6,19 @@ class Todo(BaseModel):
     id: int
     title: str
     completed: bool = False
+    finished: bool = False
 
 
 class TodoCreate(BaseModel):
     title: str
     completed: bool = False
+    finished: bool = False
 
 
 class TodoUpdate(BaseModel):
     title: str | None = None
     completed: bool | None = None
+    finished: bool | None = None
 
 
 def _model_dump(model: BaseModel, **kwargs) -> dict[str, object]:
@@ -47,7 +50,7 @@ def create_app() -> FastAPI:
     @app.post("/todos", response_model=Todo, status_code=status.HTTP_201_CREATED)
     def create_todo(payload: TodoCreate) -> Todo:
         nonlocal next_id
-        todo = Todo(id=next_id, title=payload.title, completed=payload.completed)
+        todo = Todo(id=next_id, title=payload.title, completed=payload.completed, finished=payload.finished)
         todos[next_id] = todo
         next_id += 1
         return todo

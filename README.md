@@ -35,7 +35,7 @@ Follow these steps:
    - `input.keymaps.send`, `input.keymaps.cancel`, `input.keymaps.paste`, `input.keymaps.variant_cycle`, `input.keymaps.agent_cycle`, `input.keymaps.model_cycle`
    - `lualine.enabled`, `notifications.enabled`
    - Keep `danger_mode = false`; do not enable it unless I explicitly request the security tradeoff.
-6. Configure colors/highlights to match the existing colorscheme. Prefer `chat.session_tabs.colors` for session tab colors and `vim.api.nvim_set_hl` for existing `OpenCode*` highlight groups when needed.
+6. Configure colors/highlights to match the existing colorscheme. Session tabs inherit Neovim's `TabLine`, `TabLineSel`, and `TabLineFill` groups by default; use `chat.session_tabs.colors` only when custom tab colors are needed, and `vim.api.nvim_set_hl` for existing `OpenCode*` highlight groups when needed.
 7. Configure keybindings consistently with the rest of this config, avoiding collisions.
 8. Suggest optional keymaps for adding the current line or visual selection to the opencode.nvim chat context. Adapt the mappings and keymap helper to the user's existing config style, for example:
 
