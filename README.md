@@ -37,7 +37,18 @@ Follow these steps:
    - Keep `danger_mode = false`; do not enable it unless I explicitly request the security tradeoff.
 6. Configure colors/highlights to match the existing colorscheme. Prefer `chat.session_tabs.colors` for session tab colors and `vim.api.nvim_set_hl` for existing `OpenCode*` highlight groups when needed.
 7. Configure keybindings consistently with the rest of this config, avoiding collisions.
-8. If this config already has an `nvim-tree` toggle/explore keymap that should take over the side panel, ask whether opening `nvim-tree` through that toggle should hide opencode.nvim first. If the user wants that behavior, suggest this optional keymap helper. Keep the user's existing path/argument logic and replace `"<arg>"` with whatever that keymap currently passes.
+8. Suggest optional keymaps for adding the current line or visual selection to the opencode.nvim chat context. Adapt the mappings and keymap helper to the user's existing config style, for example:
+
+```lua
+local oc = require("opencode")
+
+keyset("n", "<leader>oe", oc.add_current_line_and_open_input, {})
+keyset("x", "<leader>oe", oc.add_visual_selection_and_open_input, {})
+keyset("n", "<leader>oa", oc.add_current_line, {})
+keyset("x", "<leader>oa", oc.add_visual_selection, {})
+```
+
+9. If this config already has an `nvim-tree` toggle/explore keymap that should take over the side panel, ask whether opening `nvim-tree` should hide opencode.nvim first. If the user wants that behavior, suggest one of these optional helpers. Use the keymap wrapper when only that toggle should hide opencode.nvim; keep the user's existing path/argument logic and replace `"<arg>"` with whatever that keymap currently passes.
 
 ```lua
 local function hide_opencode_chat()
@@ -54,7 +65,26 @@ local function explore()
 end
 ```
 
-9. Verify by loading/requiring the edited config if possible, such as with a headless Neovim require check or the config's existing lightweight validation command.
+Alternatively, use a `FileType` autocmd when opencode.nvim should hide whenever any `NvimTree` window opens:
+
+```lua
+local function hide_opencode_chat()
+  local ok, opencode = pcall(require, "opencode")
+  if ok and type(opencode.close) == "function" then
+    opencode.close()
+  end
+end
+
+vim.api.nvim_create_autocmd("FileType", {
+  group = vim.api.nvim_create_augroup("NvimTreeHideOpenCode", { clear = true }),
+  pattern = "NvimTree",
+  callback = function()
+    vim.schedule(hide_opencode_chat)
+  end,
+})
+```
+
+10. Verify by loading/requiring the edited config if possible, such as with a headless Neovim require check or the config's existing lightweight validation command.
 
 Compact setup example to adapt after registering the plugin with the existing plugin manager:
 
