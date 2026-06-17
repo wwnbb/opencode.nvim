@@ -1,5 +1,5 @@
 -- Headless checks for opencode input @agent mentions.
--- Run with: nvim --headless --clean --cmd "set rtp+=." -l scripts/test-input-mentions.lua
+-- Run with: nvim --headless --clean --cmd "set rtp+=." -l tests/test-input-mentions.lua
 
 vim.opt.runtimepath:append(vim.fn.getcwd())
 

@@ -1,5 +1,5 @@
 -- Dynamic state ownership checks.
--- Run with: nvim --headless --clean --cmd "set rtp+=." -l scripts/check-state-ownership.lua
+-- Run with: nvim --headless --clean --cmd "set rtp+=." -l tests/check-state-ownership.lua
 
 local function stub_module(name, value)
 	package.preload[name] = package.preload[name] or function()

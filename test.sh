@@ -10,7 +10,7 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PLUGIN_ROOT="$SCRIPT_DIR"
-source "$SCRIPT_DIR/scripts/nvim-test-deps.sh"
+source "$SCRIPT_DIR/tests/nvim-test-deps.sh"
 resolve_nvim_test_deps
 
 # Parse arguments

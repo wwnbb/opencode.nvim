@@ -1,5 +1,5 @@
 -- Headless integration coverage for chat session tabs with real nui.nvim/plenary.nvim.
--- Run with: ./scripts/test-headless.sh scripts/integration-chat-tabs.lua
+-- Run with: ./tests/test-headless.sh tests/integration-chat-tabs.lua
 
 local function fail(message)
 	error(message, 0)

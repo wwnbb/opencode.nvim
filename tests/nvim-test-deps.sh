@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Shared dependency lookup for opencode.nvim Neovim tests.
+# Shared dependency lookup for opencode.nvim headless Neovim tests.
 
 find_nvim_test_dep() {
 	local name="$1"

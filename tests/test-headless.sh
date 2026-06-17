@@ -12,17 +12,18 @@ cd "$PLUGIN_ROOT"
 
 if [ "$#" -eq 0 ]; then
 	TEST_SCRIPTS=(
-		"scripts/check-architecture.lua"
-		"scripts/check-state-ownership.lua"
-		"scripts/check-send-flow.lua"
-		"scripts/check-transport.lua"
-		"scripts/test-input-history.lua"
-		"scripts/test-input-mentions.lua"
-		"scripts/test-input-slash-commands.lua"
-		"scripts/smoke-require.lua"
-		"scripts/smoke-chat-new-session-skill-render.lua"
-		"scripts/integration-chat-tabs.lua"
-		"scripts/integration-chat-render-freshness.lua"
+		"tests/check-architecture.lua"
+		"tests/check-state-ownership.lua"
+		"tests/check-send-flow.lua"
+		"tests/check-transport.lua"
+		"tests/test-input-history.lua"
+		"tests/test-input-mentions.lua"
+		"tests/test-input-slash-commands.lua"
+		"tests/test-input-autocomplete.lua"
+		"tests/smoke-require.lua"
+		"tests/smoke-chat-new-session-skill-render.lua"
+		"tests/integration-chat-tabs.lua"
+		"tests/integration-chat-render-freshness.lua"
 	)
 else
 	TEST_SCRIPTS=("$@")

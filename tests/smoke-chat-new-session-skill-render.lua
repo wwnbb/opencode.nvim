@@ -2,7 +2,7 @@
 -- starting a new session and loading a skill.
 --
 -- Run with:
---   ./scripts/test-headless.sh scripts/smoke-chat-new-session-skill-render.lua
+--   ./tests/test-headless.sh tests/smoke-chat-new-session-skill-render.lua
 
 local function fail(message)
 	error(message, 0)

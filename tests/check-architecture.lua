@@ -1,5 +1,5 @@
 -- Static architecture guardrails for opencode.nvim.
--- Run with: nvim --headless --clean --cmd "set rtp+=." -l scripts/check-architecture.lua
+-- Run with: nvim --headless --clean --cmd "set rtp+=." -l tests/check-architecture.lua
 
 local function read_file(path)
 	local file = assert(io.open(path, "r"))

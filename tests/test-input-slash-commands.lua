@@ -1,5 +1,5 @@
 -- Headless checks for opencode input /command completion.
--- Run with: nvim --headless --clean --cmd "set rtp+=." -l scripts/test-input-slash-commands.lua
+-- Run with: nvim --headless --clean --cmd "set rtp+=." -l tests/test-input-slash-commands.lua
 
 vim.opt.runtimepath:append(vim.fn.getcwd())
 

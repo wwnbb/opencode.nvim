@@ -1,5 +1,5 @@
 -- Transport checks for shared TCP lifecycle and HTTP body decoding.
--- Run with: nvim --headless --clean --cmd "set rtp+=." -l scripts/check-transport.lua
+-- Run with: nvim --headless --clean --cmd "set rtp+=." -l tests/check-transport.lua
 
 vim.opt.runtimepath:append(vim.fn.getcwd())
 

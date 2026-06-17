@@ -1,6 +1,6 @@
 -- Headless regression coverage for chat buffer freshness across tab switches,
 -- close/reopen, and ambiguous parallel streaming.
--- Run with: ./scripts/test-headless.sh scripts/integration-chat-render-freshness.lua
+-- Run with: ./tests/test-headless.sh tests/integration-chat-render-freshness.lua
 
 local function fail(message)
 	error(message, 0)

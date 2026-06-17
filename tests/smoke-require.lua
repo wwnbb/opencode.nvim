@@ -1,5 +1,5 @@
 -- Headless module-load smoke test for opencode.nvim.
--- Run with: nvim --headless --clean --cmd "set rtp+=." -l scripts/smoke-require.lua
+-- Run with: nvim --headless --clean --cmd "set rtp+=." -l tests/smoke-require.lua
 
 vim.opt.runtimepath:append(vim.fn.getcwd())
 

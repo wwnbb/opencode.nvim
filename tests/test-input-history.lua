@@ -1,5 +1,5 @@
 -- Headless checks for opencode input history ownership.
--- Run with: nvim --headless --clean --cmd "set rtp+=." -l scripts/test-input-history.lua
+-- Run with: nvim --headless --clean --cmd "set rtp+=." -l tests/test-input-history.lua
 
 vim.opt.runtimepath:append(vim.fn.getcwd())
 

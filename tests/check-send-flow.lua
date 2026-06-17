@@ -1,5 +1,5 @@
 -- Deterministic send-flow checks for opencode.nvim.
--- Run with: nvim --headless --clean --cmd "set rtp+=." -l scripts/check-send-flow.lua
+-- Run with: nvim --headless --clean --cmd "set rtp+=." -l tests/check-send-flow.lua
 
 vim.opt.runtimepath:append(vim.fn.getcwd())
 

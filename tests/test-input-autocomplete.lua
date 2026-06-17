@@ -1,5 +1,5 @@
 -- Headless checks for opencode input autocomplete widget selection.
--- Run with: nvim --headless --clean --cmd "set rtp+=." -l scripts/test-input-autocomplete.lua
+-- Run with: nvim --headless --clean --cmd "set rtp+=." -l tests/test-input-autocomplete.lua
 
 vim.opt.runtimepath:append(vim.fn.getcwd())
 

@@ -205,9 +205,9 @@ nvim --headless -u test.lua --cmd "set rtp+=/Users/admin/work/lua/opencode.nvim"
 If changing architecture or state boundaries, run matching repo scripts:
 
 ```bash
-nvim --headless -u test.lua --cmd "set rtp+=/Users/admin/work/lua/opencode.nvim" -l scripts/smoke-require.lua
-nvim --headless -u test.lua --cmd "set rtp+=/Users/admin/work/lua/opencode.nvim" -l scripts/check-architecture.lua
-nvim --headless -u test.lua --cmd "set rtp+=/Users/admin/work/lua/opencode.nvim" -l scripts/check-state-ownership.lua
+nvim --headless -u test.lua --cmd "set rtp+=/Users/admin/work/lua/opencode.nvim" -l tests/smoke-require.lua
+nvim --headless -u test.lua --cmd "set rtp+=/Users/admin/work/lua/opencode.nvim" -l tests/check-architecture.lua
+nvim --headless -u test.lua --cmd "set rtp+=/Users/admin/work/lua/opencode.nvim" -l tests/check-state-ownership.lua
 ```
 
 Use `./test.sh --minimal` for manual UI inspection when rendering, cursor behavior, or keymaps changed. Test pending, running, completed, error, empty-output, long-output, and narrow-window cases.
