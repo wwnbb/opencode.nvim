@@ -263,10 +263,23 @@ function M.setup(events)
 			info.sessionID = info.sessionID or data.sessionID
 		end
 
+		local parts = extract_message_parts(data)
+		if not info.sessionID and type(parts) == "table" then
+			for _, part in ipairs(parts) do
+				if
+					type(part) == "table"
+					and part.sessionID
+					and (not part.messageID or part.messageID == info.id)
+				then
+					info.sessionID = part.sessionID
+					break
+				end
+			end
+		end
+
 		local message_changed = sync.handle_message_updated(info)
 		local part_count = 0
 		local parts_changed_count = 0
-		local parts = extract_message_parts(data)
 		if type(parts) == "table" and info.sessionID then
 			for _, part in ipairs(parts) do
 				if type(part) == "table" and part.id then

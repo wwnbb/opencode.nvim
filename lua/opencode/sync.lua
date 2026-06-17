@@ -909,6 +909,7 @@ function M.handle_session_messages(session_id, messages)
 			if type(msg_with_parts.parts) == "table" then
 				for _, part in ipairs(msg_with_parts.parts) do
 					if type(part) == "table" then
+						part.messageID = part.messageID or (info and info.id)
 						part.sessionID = part.sessionID or (info and info.sessionID) or session_id
 						if M.handle_part_updated(part) then
 							changed_count = changed_count + 1
