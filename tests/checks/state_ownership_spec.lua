@@ -1,6 +1,8 @@
 -- Dynamic state ownership checks.
--- Run with: nvim --headless --clean --cmd "set rtp+=." -l tests/check-state-ownership.lua
+-- Run with: ./tests/run.sh checks
 
+describe("opencode state ownership", function()
+	it("keeps stores, events, state, and UI boundaries explicit", function()
 local function stub_module(name, value)
 	package.preload[name] = package.preload[name] or function()
 		return value
@@ -1057,3 +1059,5 @@ assert_true(has_diff_add, "file edit result should highlight additions")
 assert_true(has_diff_delete, "file edit result should highlight deletions")
 
 print("State ownership checks passed")
+	end)
+end)

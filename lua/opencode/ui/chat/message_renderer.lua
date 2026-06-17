@@ -11,6 +11,7 @@ local thinking = require("opencode.ui.thinking")
 local spinner = require("opencode.ui.spinner")
 local widget_renderer = require("opencode.ui.chat.widget_renderer")
 local tool_renderer = require("opencode.ui.chat.tool_renderer")
+local widget_support = require("opencode.ui.chat.widget_support")
 local perf = require("opencode.perf")
 
 local EDIT_WIDGET_TOOL_ROWS = {
@@ -211,6 +212,25 @@ local function render_hidden_history_notice(ctx, skipped_messages)
 	history_line:append(NuiText(string.format("... %d earlier messages hidden", skipped_messages), "Comment"))
 	ctx:add_line(history_line)
 	ctx:add_raw_line("")
+end
+
+local function register_message_range(message, start_line, end_line, source)
+	if type(message) ~= "table" or not message.role then
+		return
+	end
+	if type(start_line) ~= "number" or type(end_line) ~= "number" or end_line < start_line then
+		return
+	end
+
+	table.insert(state.message_positions, widget_support.mark_render_generation({
+		id = message.id,
+		role = message.role,
+		agent = message.agent or message.mode,
+		kind = message.kind,
+		source = source or "message",
+		start_line = start_line,
+		end_line = end_line,
+	}))
 end
 
 local function render_retry_status_if_needed(ctx, messages, msg_idx)
@@ -435,6 +455,10 @@ local function render_messages(ctx, index, all_messages, messages, skipped_messa
 			end
 		end
 
+		if should_render then
+			register_message_range(message, message_start_line, ctx:line_count() - 1)
+		end
+
 		done_message({
 			message_id = message.id,
 			role = message.role,
@@ -499,6 +523,7 @@ local function render_local_notices(ctx, index, all_messages, max_user_message_l
 	local done_local_notices = perf.start("chat.render.local_notices")
 
 	for _, message in ipairs(state.local_notices) do
+		local message_start_line = ctx:line_count()
 		if message.id and index:is_local_notice_rendered(message.id) then
 			goto continue_local_message
 		end
@@ -526,6 +551,7 @@ local function render_local_notices(ctx, index, all_messages, max_user_message_l
 				ctx:add_line(nl)
 			end
 			ctx:add_raw_line("")
+			register_message_range(message, message_start_line, ctx:line_count() - 1, "local_notice")
 			goto continue_local_message
 		end
 
@@ -536,6 +562,7 @@ local function render_local_notices(ctx, index, all_messages, max_user_message_l
 				ctx:add_nui_lines(render.render_content(message.content))
 			end
 			ctx:add_raw_line("")
+			register_message_range(message, message_start_line, ctx:line_count() - 1, "local_notice")
 		end
 		::continue_local_message::
 	end

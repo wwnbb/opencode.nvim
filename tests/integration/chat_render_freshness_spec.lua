@@ -1,7 +1,9 @@
 -- Headless regression coverage for chat buffer freshness across tab switches,
 -- close/reopen, and ambiguous parallel streaming.
--- Run with: ./tests/test-headless.sh tests/integration-chat-render-freshness.lua
+-- Run with: ./tests/run.sh integration
 
+describe("opencode chat render freshness", function()
+	it("keeps buffers fresh across tab switches and parallel streams", function()
 local function fail(message)
 	error(message, 0)
 end
@@ -738,3 +740,5 @@ assert_not_contains(buffer_text(), "STREAM_A_VISIBLE_TEXT", "stream B render sho
 
 chat.close()
 print("Chat render freshness integration passed")
+	end)
+end)

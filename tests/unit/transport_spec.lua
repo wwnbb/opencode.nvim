@@ -1,6 +1,8 @@
--- Transport checks for shared TCP lifecycle and HTTP body decoding.
--- Run with: nvim --headless --clean --cmd "set rtp+=." -l tests/check-transport.lua
+-- Unit checks for shared TCP lifecycle and HTTP body decoding.
+-- Run with: ./tests/run.sh unit
 
+describe("opencode transport", function()
+	it("handles shared TCP lifecycle and HTTP bodies", function()
 vim.opt.runtimepath:append(vim.fn.getcwd())
 
 local uv = vim.uv
@@ -280,3 +282,5 @@ do
 end
 
 print("Transport checks passed")
+	end)
+end)

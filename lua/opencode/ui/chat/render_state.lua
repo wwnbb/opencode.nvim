@@ -54,6 +54,7 @@ function M.reset_chat_surface(opts)
 	state.questions = {}
 	state.permissions = {}
 	state.edits = {}
+	state.message_positions = {}
 	state.tasks = {}
 	state.task_child_cache = {}
 	state.task_child_loading = {}

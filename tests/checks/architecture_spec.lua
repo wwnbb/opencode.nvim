@@ -1,6 +1,8 @@
 -- Static architecture guardrails for opencode.nvim.
--- Run with: nvim --headless --clean --cmd "set rtp+=." -l tests/check-architecture.lua
+-- Run with: ./tests/run.sh checks
 
+describe("opencode architecture guardrails", function()
+	it("enforces module dependencies and layer boundaries", function()
 local function read_file(path)
 	local file = assert(io.open(path, "r"))
 	local content = file:read("*all")
@@ -207,7 +209,9 @@ if #unreachable > 0 then
 end
 
 if failed then
-	os.exit(1)
+	error("Architecture checks failed", 0)
 end
 
 print("Architecture checks passed")
+	end)
+end)

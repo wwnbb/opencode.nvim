@@ -1,6 +1,8 @@
--- Headless module-load smoke test for opencode.nvim.
--- Run with: nvim --headless --clean --cmd "set rtp+=." -l tests/smoke-require.lua
+-- Module-load smoke coverage for opencode.nvim.
+-- Run with: ./tests/run.sh smoke
 
+describe("opencode.nvim smoke require", function()
+	it("loads modules and exercises setup", function()
 vim.opt.runtimepath:append(vim.fn.getcwd())
 
 local function stub_module(name, value)
@@ -107,7 +109,7 @@ if #failures > 0 then
 	for _, failure in ipairs(failures) do
 		print("  " .. failure)
 	end
-	os.exit(1)
+	error("Smoke require failures:\n  " .. table.concat(failures, "\n  "), 0)
 end
 
 local event_util = require("opencode.events.util")
@@ -2609,7 +2611,9 @@ end)
 if not setup_ok then
 	print("Smoke setup failure:")
 	print("  " .. tostring(setup_err))
-	os.exit(1)
+	error("Smoke setup failure: " .. tostring(setup_err), 0)
 end
 
 print("Smoke require/setup passed")
+	end)
+end)

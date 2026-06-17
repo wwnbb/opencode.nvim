@@ -1,6 +1,8 @@
--- Deterministic send-flow checks for opencode.nvim.
--- Run with: nvim --headless --clean --cmd "set rtp+=." -l tests/check-send-flow.lua
+-- Unit checks for deterministic send-flow behavior.
+-- Run with: ./tests/run.sh unit
 
+describe("opencode send flow", function()
+	it("handles session creation and send variants", function()
 vim.opt.runtimepath:append(vim.fn.getcwd())
 
 local calls = {}
@@ -353,3 +355,5 @@ assert_eq(#calls.chat_messages, 1, "failed send should append system chat error"
 assert_eq(calls.chat_messages[1].opts.session_id, "session_fail", "failed send chat error should target session")
 
 print("Send flow checks passed")
+	end)
+end)

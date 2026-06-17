@@ -13,6 +13,30 @@ projects, and prompts without leaving the editor.
 The goal of opencode.nvim is to make OpenCode feel lightweight, scriptable, keyboard-friendly,
 and naturally integrated into the Neovim workflow.
 
+# Testing
+
+Install pinned Neovim test dependencies once:
+
+```sh
+./scripts/bootstrap-test-deps.sh
+```
+
+Run the Plenary/Busted test suite:
+
+```sh
+./tests/run.sh              # all specs
+./tests/run.sh unit         # unit specs
+./tests/run.sh checks       # architecture/state guardrails
+./tests/run.sh integration  # integration specs
+./tests/run.sh smoke        # smoke specs
+```
+
+You can also run a single spec file:
+
+```sh
+./tests/run.sh tests/unit/input_history_spec.lua
+```
+
 # Installation
 
 Paste the prompt below into your AI coding agent while it is working in your Neovim config directory.

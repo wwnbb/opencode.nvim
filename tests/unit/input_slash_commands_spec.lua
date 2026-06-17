@@ -1,6 +1,8 @@
--- Headless checks for opencode input /command completion.
--- Run with: nvim --headless --clean --cmd "set rtp+=." -l tests/test-input-slash-commands.lua
+-- Unit checks for opencode input /command completion.
+-- Run with: ./tests/run.sh unit
 
+describe("opencode input slash commands", function()
+	it("detects, filters, ranks, and formats slash completions", function()
 vim.opt.runtimepath:append(vim.fn.getcwd())
 
 local slash = require("opencode.slash")
@@ -153,3 +155,5 @@ for _, name in ipairs(cleanup) do
 end
 
 print("Input slash command checks passed")
+	end)
+end)

@@ -1,6 +1,8 @@
--- Headless checks for opencode input @agent mentions.
--- Run with: nvim --headless --clean --cmd "set rtp+=." -l tests/test-input-mentions.lua
+-- Unit checks for opencode input @agent mentions.
+-- Run with: ./tests/run.sh unit
 
+describe("opencode input mentions", function()
+	it("detects and serializes agent mentions", function()
 vim.opt.runtimepath:append(vim.fn.getcwd())
 
 local sync = require("opencode.sync")
@@ -144,3 +146,5 @@ vim.api.nvim_buf_delete(bufnr, { force = true })
 sync.clear_all()
 
 print("Input mention checks passed")
+	end)
+end)

@@ -21,6 +21,7 @@ M.state = {
 	edits = {},             -- Track edit widget positions: { [permission_id] = { start_line, end_line } }
 	focus_edit = nil,       -- permission_id to focus cursor on after render
 	focus_edit_line = nil,
+	message_positions = {}, -- Ordered visible message ranges for chat-local navigation
 	tasks = {},             -- Track task positions: { [part_id] = { start_line, end_line, tool_part } }
 	expanded_tasks = {},    -- Toggle set: { [part_id] = true }
 	task_child_cache = {},  -- Loaded child-session markers: { [part_id] = true }

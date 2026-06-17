@@ -1604,6 +1604,16 @@ local function shift_all_after(anchor_start, delta, skip_task_id, skip_tool_id)
 			state.tools[id].end_line = tlpos.end_line + delta
 		end
 	end
+	for _, mpos in ipairs(state.message_positions or {}) do
+		if mpos.start_line and mpos.end_line then
+			if mpos.start_line > anchor_start then
+				mpos.start_line = mpos.start_line + delta
+				mpos.end_line = mpos.end_line + delta
+			elseif mpos.end_line >= anchor_start then
+				mpos.end_line = mpos.end_line + delta
+			end
+		end
+	end
 end
 
 ---@param pos table

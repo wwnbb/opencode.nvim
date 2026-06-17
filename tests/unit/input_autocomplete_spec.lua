@@ -1,6 +1,8 @@
--- Headless checks for opencode input autocomplete widget selection.
--- Run with: nvim --headless --clean --cmd "set rtp+=." -l tests/test-input-autocomplete.lua
+-- Unit checks for opencode input autocomplete widget selection.
+-- Run with: ./tests/run.sh unit
 
+describe("opencode input autocomplete", function()
+	it("confirms slash commands and mentions", function()
 vim.opt.runtimepath:append(vim.fn.getcwd())
 
 local autocomplete = require("opencode.ui.input.autocomplete")
@@ -89,3 +91,5 @@ autocomplete.clear(state)
 vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { "" })
 
 print("Input autocomplete checks passed")
+	end)
+end)

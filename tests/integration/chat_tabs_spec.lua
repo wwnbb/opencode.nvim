@@ -1,6 +1,8 @@
 -- Headless integration coverage for chat session tabs with real nui.nvim/plenary.nvim.
--- Run with: ./tests/test-headless.sh tests/integration-chat-tabs.lua
+-- Run with: ./tests/run.sh integration
 
+describe("opencode chat tabs", function()
+	it("renders and navigates session tabs", function()
 local function fail(message)
 	error(message, 0)
 end
@@ -401,3 +403,5 @@ assert_eq(label_count(auto_busy_line, "...1"), 1, "auto-fit busy view keeps left
 assert_eq(label_count(auto_busy_line, "...2"), 1, "auto-fit busy view keeps right overflow count")
 
 print("Chat tab integration passed")
+	end)
+end)

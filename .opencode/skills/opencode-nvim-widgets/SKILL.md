@@ -202,12 +202,11 @@ Run a focused Lua load check after adding or changing modules:
 nvim --headless -u test.lua --cmd "set rtp+=/Users/admin/work/lua/opencode.nvim" +qa
 ```
 
-If changing architecture or state boundaries, run matching repo scripts:
+If changing architecture or state boundaries, run matching repo specs:
 
 ```bash
-nvim --headless -u test.lua --cmd "set rtp+=/Users/admin/work/lua/opencode.nvim" -l tests/smoke-require.lua
-nvim --headless -u test.lua --cmd "set rtp+=/Users/admin/work/lua/opencode.nvim" -l tests/check-architecture.lua
-nvim --headless -u test.lua --cmd "set rtp+=/Users/admin/work/lua/opencode.nvim" -l tests/check-state-ownership.lua
+./tests/run.sh smoke
+./tests/run.sh checks
 ```
 
 Use `./test.sh --minimal` for manual UI inspection when rendering, cursor behavior, or keymaps changed. Test pending, running, completed, error, empty-output, long-output, and narrow-window cases.

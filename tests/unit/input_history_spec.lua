@@ -1,6 +1,8 @@
--- Headless checks for opencode input history ownership.
--- Run with: nvim --headless --clean --cmd "set rtp+=." -l tests/test-input-history.lua
+-- Unit checks for opencode input history ownership.
+-- Run with: ./tests/run.sh unit
 
+describe("opencode input history", function()
+	it("loads, deduplicates, persists, and clears history", function()
 vim.opt.runtimepath:append(vim.fn.getcwd())
 
 local history = require("opencode.ui.input.history")
@@ -55,3 +57,5 @@ history.clear()
 os.remove(history_file)
 
 print("input history checks passed")
+	end)
+end)

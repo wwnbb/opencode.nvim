@@ -151,6 +151,17 @@ function M.shift_tracked_lines(old_end, delta, opts)
 	render.shift_line_map(state.tasks, old_end, delta)
 	render.shift_line_map(state.tools, old_end, delta)
 
+	for _, pos in ipairs(state.message_positions or {}) do
+		if pos and pos.start_line and pos.end_line then
+			if pos.start_line > old_end then
+				pos.start_line = pos.start_line + delta
+				pos.end_line = pos.end_line + delta
+			elseif pos.end_line >= old_end then
+				pos.end_line = pos.end_line + delta
+			end
+		end
+	end
+
 	for block_key, pos in pairs(state.stream_blocks) do
 		if
 			block_key ~= opts.skip_stream_block_key

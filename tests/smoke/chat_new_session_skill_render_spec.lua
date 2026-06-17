@@ -2,8 +2,10 @@
 -- starting a new session and loading a skill.
 --
 -- Run with:
---   ./tests/test-headless.sh tests/smoke-chat-new-session-skill-render.lua
+--   ./tests/run.sh smoke
 
+describe("opencode real server smoke", function()
+	it("renders a loaded skill after starting a new chat session", function()
 local function fail(message)
 	error(message, 0)
 end
@@ -144,3 +146,5 @@ if not ok then
 end
 
 print("Real OpenCode new-session skill render smoke passed")
+	end)
+end)
