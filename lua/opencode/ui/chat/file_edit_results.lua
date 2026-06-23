@@ -825,6 +825,8 @@ local function normalize_model(tool_part)
 	return nil
 end
 
+M.normalize_model = normalize_model
+
 ---@param model OpenCodeFileEditResult
 ---@return table
 local function render_collapsed(model)

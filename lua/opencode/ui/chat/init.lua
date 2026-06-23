@@ -29,6 +29,7 @@ local render_state = require("opencode.ui.chat.render_state")
 local render_context = require("opencode.ui.chat.render_context")
 local widget_index = require("opencode.ui.chat.widget_index")
 local message_renderer = require("opencode.ui.chat.message_renderer")
+local edit_previews = require("opencode.ui.chat.edit_previews")
 local chat_cursor = require("opencode.ui.chat.cursor")
 local chat_tasks = require("opencode.ui.chat.tasks")
 local chat_todos = require("opencode.ui.chat.todos")
@@ -985,6 +986,8 @@ function M.render()
 	-- otherwise make cursor-driven widget selection target removed widgets.
 	ctx:reset_tracking()
 
+	edit_previews.sync_session(current_session.id)
+
 	local index = widget_index.new({
 		current_session = current_session,
 		in_child_session_view = ctx.in_child_session_view,
@@ -1455,6 +1458,7 @@ M.handle_permission_reject = chat_permissions.handle_permission_reject
 -- Edits
 M.add_edit_message = chat_edits.add_edit_message
 M.get_edit_at_cursor = chat_edits.get_edit_at_cursor
+M.get_diffable_edit_at_cursor = chat_edits.get_diffable_edit_at_cursor
 M.rerender_edit = chat_edits.rerender_edit
 M.finalize_edit = chat_edits.finalize_edit
 M.handle_edit_accept_file = chat_edits.handle_edit_accept_file

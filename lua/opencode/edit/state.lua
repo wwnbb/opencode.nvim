@@ -220,11 +220,12 @@ end
 ---@param permission_id string
 ---@param session_id string
 ---@param files_data table Array of file data from metadata.files
----@param opts table { data, metadata, message_id, call_id, timestamp }
+---@param opts table { data, metadata, message_id, call_id, timestamp, status, file_statuses, preview }
 function M.add_edit(permission_id, session_id, files_data, opts)
 	opts = opts or {}
 	local review_mode = opts.review_mode or "interactive"
 	local changes = require("opencode.artifact.changes")
+	local file_statuses = type(opts.file_statuses) == "table" and opts.file_statuses or {}
 
 	local files = {}
 	for i, fd in ipairs(files_data) do
@@ -259,7 +260,7 @@ function M.add_edit(permission_id, session_id, files_data, opts)
 			before = before,
 			after = after,
 			change_id = change_id,
-			status = "pending",
+			status = file_statuses[i] or "pending",
 			stats = { added = additions, removed = deletions },
 			diff_lines = parse_diff_lines(fd.diff),
 			file_type = fd.type or "update",
@@ -274,9 +275,10 @@ function M.add_edit(permission_id, session_id, files_data, opts)
 		files = files,
 		selected_file = 1,
 		expanded_files = {},
-		status = "pending",
+		status = opts.status or "pending",
 		message = "",
 		review_mode = review_mode,
+		preview = opts.preview == true,
 		timestamp = opts.timestamp or os.time(),
 		data = opts.data or {},
 		metadata = opts.metadata or {},
@@ -413,6 +415,23 @@ end
 function M.move_selection_to(permission_id, index)
 	local estate = active_edits[permission_id]
 	if not estate or estate.status ~= "pending" then
+		return false
+	end
+
+	if index < 1 or index > #estate.files then
+		return false
+	end
+
+	estate.selected_file = index
+	return true
+end
+
+---@param permission_id string
+---@param index number
+---@return boolean
+function M.set_selection(permission_id, index)
+	local estate = active_edits[permission_id]
+	if not estate then
 		return false
 	end
 

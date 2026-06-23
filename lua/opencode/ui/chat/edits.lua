@@ -558,7 +558,7 @@ end
 ---@param widget_line number
 ---@return number|nil
 local function map_widget_line_to_file_index(estate, pos, widget_line)
-	if not estate or estate.status ~= "pending" then
+	if not estate then
 		return nil
 	end
 
@@ -623,9 +623,36 @@ local function get_pending_edit_context_at_cursor()
 	return nil, nil, nil, nil
 end
 
+---@return string|nil, table|nil, table|nil, number|nil
+local function get_diffable_edit_context_at_cursor()
+	if not state.winid or not vim.api.nvim_win_is_valid(state.winid) then
+		return nil, nil, nil, nil
+	end
+
+	local cursor = vim.api.nvim_win_get_cursor(state.winid)
+	local cursor_line = cursor[1] - 1
+
+	for eid, pos in pairs(state.edits) do
+		if cursor_line >= pos.start_line and cursor_line <= pos.end_line then
+			local estate = edit_state.get_edit(eid)
+			if estate and (estate.status == "pending" or estate.status == "sent") then
+				return eid, estate, pos, cursor_line
+			end
+		end
+	end
+
+	return nil, nil, nil, nil
+end
+
 ---@return string|nil permission_id
 function M.get_edit_at_cursor()
 	local eid = get_pending_edit_context_at_cursor()
+	return eid
+end
+
+---@return string|nil permission_id
+function M.get_diffable_edit_at_cursor()
+	local eid = get_diffable_edit_context_at_cursor()
 	return eid
 end
 
@@ -671,7 +698,7 @@ function M.rerender_edit(edit_id)
 
 	local e_lines, e_highlights, e_meta
 	if estate.status == "sent" then
-		e_lines, e_highlights = edit_widget.get_resolved_lines(edit_id, estate)
+		e_lines, e_highlights, e_meta = edit_widget.get_resolved_lines(edit_id, estate)
 	else
 		e_lines, e_highlights, e_meta = edit_widget.get_lines_for_edit(edit_id, estate)
 	end
@@ -901,15 +928,15 @@ function M.handle_edit_message()
 end
 
 function M.handle_edit_toggle_diff()
-	M.sync_selected_file_from_cursor()
-
-	local eid = M.get_edit_at_cursor()
-	if not eid then
+	local eid, estate, pos, cursor_line = get_diffable_edit_context_at_cursor()
+	if not eid or not estate or not pos or not cursor_line then
 		return
 	end
-	local estate = edit_state.get_edit(eid)
-	if not estate then
-		return
+
+	local widget_line = cursor_line - pos.start_line
+	local file_index = map_widget_line_to_file_index(estate, pos, widget_line)
+	if file_index then
+		edit_state.set_selection(eid, file_index)
 	end
 	edit_state.toggle_inline_diff(eid, estate.selected_file)
 	M.rerender_edit(eid)

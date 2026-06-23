@@ -658,7 +658,7 @@ end
 --- Get formatted lines for a resolved edit (all files accepted/rejected, reply sent).
 ---@param permission_id string
 ---@param edit_state table Edit state from edit/state.lua
----@return table lines, table highlights
+---@return table lines, table highlights, OpenCodeWidgetMeta meta
 function M.get_resolved_lines(permission_id, edit_state)
 	ensure_highlights()
 
@@ -691,8 +691,22 @@ function M.get_resolved_lines(permission_id, edit_state)
 		add_panel_blank(result)
 	end
 
-	for _, file in ipairs(edit_state.files or {}) do
-		append_file_line(result, file, false, false)
+	local first_file_line = #result.lines
+	local file_ranges = {}
+	local selected = edit_state.selected_file or 1
+	local expanded_files = edit_state.expanded_files or {}
+	for i, file in ipairs(edit_state.files or {}) do
+		local file_start, file_end = append_file_line(result, file, i == selected, expanded_files[i] == true)
+		if expanded_files[i] and file.diff_lines and #file.diff_lines > 0 then
+			add_panel_blank(result)
+			local _, diff_end = append_inline_diff(result, file)
+			file_end = diff_end or file_end
+		end
+		table.insert(file_ranges, {
+			index = i,
+			start_line = file_start,
+			end_line = file_end,
+		})
 	end
 
 	if #(edit_state.files or {}) == 0 then
@@ -701,7 +715,11 @@ function M.get_resolved_lines(permission_id, edit_state)
 
 	add_panel_blank(result)
 	add_trailing_separator(result)
-	return result.lines, result.highlights
+	return result.lines, result.highlights, widget_base.make_meta({
+		interactive_count = #(edit_state.files or {}),
+		first_interactive_line = first_file_line,
+		file_ranges = file_ranges,
+	})
 end
 
 return M
