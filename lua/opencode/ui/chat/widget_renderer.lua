@@ -105,8 +105,8 @@ function M.render_single_edit(ctx, _index, estate)
 	local e_lines, e_highlights, e_meta
 
 	if estatus == "sent" then
-		e_lines, e_highlights = edit_widget.get_resolved_lines(eid, estate)
-		e_meta = widget_base.make_meta()
+		e_lines, e_highlights, e_meta = edit_widget.get_resolved_lines(eid, estate)
+		e_meta = e_meta or widget_base.make_meta()
 	else
 		e_lines, e_highlights, e_meta = edit_widget.get_lines_for_edit(eid, estate)
 	end

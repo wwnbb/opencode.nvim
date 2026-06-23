@@ -193,7 +193,7 @@ function M.setup_buffer(bufnr, opts)
 	end, keymap_opts)
 
 	vim.keymap.set("n", "=", function()
-		local eid = chat_edits.get_edit_at_cursor()
+		local eid = chat_edits.get_diffable_edit_at_cursor()
 		if eid then
 			chat_edits.handle_edit_toggle_diff()
 		else

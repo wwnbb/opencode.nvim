@@ -1560,6 +1560,86 @@ do
 		callID = "call_edit",
 		state = { status = "pending", input = {} },
 	})
+	sync.handle_part_updated({
+		id = "m4_patch_tool",
+		messageID = "m4",
+		sessionID = "render_contract_session",
+		type = "tool",
+		tool = "apply_patch",
+		callID = "call_patch",
+		state = {
+			status = "completed",
+			metadata = {
+				status = "success",
+				files = {
+					{
+						filePath = "render-patch.txt",
+						type = "update",
+						diff = table.concat({
+							"--- a/render-patch.txt",
+							"+++ b/render-patch.txt",
+							"@@ -1 +1 @@",
+							"-old line",
+							"+new line",
+						}, "\n"),
+					},
+				},
+			},
+		},
+	})
+	sync.handle_part_updated({
+		id = "m4_neovim_edit_tool",
+		messageID = "m4",
+		sessionID = "render_contract_session",
+		type = "tool",
+		tool = "neovim_edit",
+		callID = "call_neovim_edit",
+		state = {
+			status = "completed",
+			metadata = {
+				status = "success",
+				filediff = {
+					file = "render-neovim-edit.txt",
+					status = "applied",
+					diff = table.concat({
+						"--- a/render-neovim-edit.txt",
+						"+++ b/render-neovim-edit.txt",
+						"@@ -1 +1 @@",
+						"-old neovim edit",
+						"+new neovim edit",
+					}, "\n"),
+				},
+			},
+		},
+	})
+	sync.handle_part_updated({
+		id = "m4_neovim_patch_tool",
+		messageID = "m4",
+		sessionID = "render_contract_session",
+		type = "tool",
+		tool = "neovim_apply_patch",
+		callID = "call_neovim_patch",
+		state = {
+			status = "completed",
+			metadata = {
+				status = "success",
+				files = {
+					{
+						filePath = "render-neovim-patch.txt",
+						type = "update",
+						status = "applied",
+						diff = table.concat({
+							"--- a/render-neovim-patch.txt",
+							"+++ b/render-neovim-patch.txt",
+							"@@ -1 +1 @@",
+							"-old neovim patch",
+							"+new neovim patch",
+						}, "\n"),
+					},
+				},
+			},
+		},
+	})
 
 	question_state.add_question("q_anchor", "render_contract_session", {
 		{ question = "Anchor?", options = { { label = "Yes", value = "yes" } } },
@@ -1593,8 +1673,51 @@ do
 	assert(chat_state.questions.q_tool, "tool-call question should be tracked")
 	assert(chat_state.permissions.perm_orphan, "orphan permission should be tracked")
 	assert(chat_state.edits.edit_tool, "tool-call edit should be tracked")
+	local preview_edit_id = "tool-preview:render_contract_session:m4:m4_patch_tool"
+	local preview_edit = edit_state.get_edit(preview_edit_id)
+	assert(preview_edit and preview_edit.preview == true, "completed apply_patch should create preview edit state")
+	assert(preview_edit.status == "sent", "completed apply_patch preview should not be pending")
+	assert(chat_state.edits[preview_edit_id], "completed apply_patch preview should be tracked")
+	local neovim_edit_preview_id = "tool-preview:render_contract_session:m4:m4_neovim_edit_tool"
+	local neovim_edit_preview = edit_state.get_edit(neovim_edit_preview_id)
+	assert(neovim_edit_preview and neovim_edit_preview.preview == true, "approved neovim_edit should create preview edit state")
+	assert(chat_state.edits[neovim_edit_preview_id], "approved neovim_edit preview should be tracked")
+	local neovim_patch_preview_id = "tool-preview:render_contract_session:m4:m4_neovim_patch_tool"
+	local neovim_patch_preview = edit_state.get_edit(neovim_patch_preview_id)
+	assert(
+		neovim_patch_preview and neovim_patch_preview.preview == true,
+		"approved neovim_apply_patch should create preview edit state"
+	)
+	assert(chat_state.edits[neovim_patch_preview_id], "approved neovim_apply_patch preview should be tracked")
 	assert(chat_state.tools.m4_question_tool == nil, "question tool row should be suppressed by widget")
 	assert(chat_state.tools.m4_edit_tool == nil, "edit tool row should be suppressed by widget")
+	assert(chat_state.tools.m4_patch_tool == nil, "apply_patch tool row should be suppressed by preview widget")
+	assert(chat_state.tools.m4_neovim_edit_tool == nil, "neovim_edit tool row should be suppressed by preview widget")
+	assert(chat_state.tools.m4_neovim_patch_tool == nil, "neovim_apply_patch tool row should be suppressed by preview widget")
+
+	edit_state.toggle_inline_diff(preview_edit_id, 1)
+	local preview_lines = require("opencode.ui.edit_widget").get_resolved_lines(preview_edit_id, preview_edit)
+	local preview_text = table.concat(preview_lines, "\n")
+	assert(preview_text:find("old line", 1, true), "apply_patch preview should expand removed diff text")
+	assert(preview_text:find("new line", 1, true), "apply_patch preview should expand added diff text")
+	edit_state.toggle_inline_diff(neovim_edit_preview_id, 1)
+	local neovim_edit_lines =
+		require("opencode.ui.edit_widget").get_resolved_lines(neovim_edit_preview_id, neovim_edit_preview)
+	local neovim_edit_text = table.concat(neovim_edit_lines, "\n")
+	assert(neovim_edit_text:find("old neovim edit", 1, true), "neovim_edit preview should expand removed diff text")
+	assert(neovim_edit_text:find("new neovim edit", 1, true), "neovim_edit preview should expand added diff text")
+	edit_state.toggle_inline_diff(neovim_patch_preview_id, 1)
+	local neovim_patch_lines =
+		require("opencode.ui.edit_widget").get_resolved_lines(neovim_patch_preview_id, neovim_patch_preview)
+	local neovim_patch_text = table.concat(neovim_patch_lines, "\n")
+	assert(
+		neovim_patch_text:find("old neovim patch", 1, true),
+		"neovim_apply_patch preview should expand removed diff text"
+	)
+	assert(
+		neovim_patch_text:find("new neovim patch", 1, true),
+		"neovim_apply_patch preview should expand added diff text"
+	)
 
 	local block_key = render_state.stream_block_key("render_contract_session", "m4", "m4_text", "text")
 	assert(chat_state.stream_blocks[block_key], "full render should register streaming text block")
