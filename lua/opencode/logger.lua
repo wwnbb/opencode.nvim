@@ -6,8 +6,6 @@ local M = {}
 -- Log storage
 local logs = {}
 local DEFAULT_MAX_ENTRIES = 1000
-local LOG_DIR = vim.fn.expand("~/.opencode/logs")
-local LOG_FILE = LOG_DIR .. "/opencode.nvim.log"
 
 -- Log levels
 M.levels = {
@@ -20,10 +18,6 @@ M.levels = {
 -- Get current timestamp string
 local function timestamp()
 	return os.date("%H:%M:%S")
-end
-
-local function file_timestamp()
-	return os.date("%Y-%m-%d %H:%M:%S")
 end
 
 ---@return integer
@@ -50,46 +44,6 @@ local function trim_logs()
 	end
 end
 
-local function append_to_log_file(header, body)
-	pcall(vim.fn.mkdir, LOG_DIR, "p")
-
-	local ok, file = pcall(io.open, LOG_FILE, "a")
-	if not ok or not file then
-		return
-	end
-
-	file:write(header)
-	file:write("\n")
-	if body ~= nil and body ~= "" then
-		local text = tostring(body)
-		file:write(text)
-		if text:sub(-1) ~= "\n" then
-			file:write("\n")
-		end
-	end
-	file:close()
-end
-
-local function write_file_log(entry)
-	local parts = {
-		string.format("[%s] [%s] %s", file_timestamp(), tostring(entry.level), tostring(entry.message)),
-	}
-
-	if entry.data ~= nil then
-		table.insert(parts, vim.inspect(entry.data))
-	end
-
-	append_to_log_file(table.concat(parts, "\n"))
-end
-
-function M.raw_server(source, body, meta)
-	local header = string.format("[%s] [SERVER RAW] %s", file_timestamp(), tostring(source or "server"))
-	if meta ~= nil then
-		header = header .. " " .. vim.inspect(meta)
-	end
-	append_to_log_file(header, body)
-end
-
 -- Add a log entry
 ---@param level string Log level (DEBUG, INFO, WARN, ERROR)
 ---@param message string Log message
@@ -105,7 +59,6 @@ function M.add(level, message, data)
 
 	table.insert(logs, entry)
 	trim_logs()
-	write_file_log(entry)
 
 	-- Notify log viewer of new entry if visible
 	local viewer_ok, viewer = pcall(require, "opencode.ui.log_viewer")
@@ -167,10 +120,6 @@ function M.count_by_level(level)
 		end
 	end
 	return count
-end
-
-function M.get_log_file()
-	return LOG_FILE
 end
 
 return M

@@ -41,6 +41,12 @@ local function wait_for(predicate, message)
 	assert_true(vim.wait(500, predicate, 10), message)
 end
 
+local function pause(ms)
+	vim.wait(ms, function()
+		return false
+	end, 10)
+end
+
 vim.o.columns = 120
 vim.o.lines = 36
 
@@ -77,8 +83,13 @@ local event_util = require("opencode.events.util")
 local spinner = require("opencode.ui.spinner")
 local question_state = require("opencode.question.state")
 
-client.get_messages = function(_, _, callback)
+local default_get_messages = function(_, _, callback)
 	callback(nil, {})
+end
+client.get_messages = default_get_messages
+
+local function reset_get_messages()
+	client.get_messages = default_get_messages
 end
 
 local function seed_selection()
@@ -96,6 +107,14 @@ local function seed_selection()
 	})
 	local_state.agent.set("coder_v2")
 	local_state.model.set({ providerID = "openai", modelID = "gpt-5.5" })
+end
+
+local function reset_case()
+	reset_get_messages()
+	sync.clear_all()
+	question_state.clear_all()
+	app_state.reset()
+	seed_selection()
 end
 
 local function seed_assistant(session_id, message_id, part_id, text, created)
@@ -687,6 +706,369 @@ end, "stream fallback should request a render when no in-place block exists")
 chat.update_stream_part_block = original_update_stream_part_block
 chat.schedule_render = original_schedule_render
 assert_true(fallback_force, "stream fallback should force a full render")
+
+reset_case()
+session_actions.set_active("reconcile-a", "Reconcile A", { preserve_cache = true })
+session_actions.remember({ id = "reconcile-b", title = "Reconcile B" }, { touch = true })
+session_actions.set_session_status("reconcile-a", { type = "busy" }, { reason = "test_reconcile" })
+session_actions.set_session_status("reconcile-b", { type = "busy" }, { reason = "test_reconcile" })
+chat.open()
+local part_reconcile_calls = {}
+client.get_messages = function(session_id, opts, callback)
+	assert_eq(session_id, "reconcile-a", "part reconciliation should only snapshot the current candidate")
+	assert_eq(opts and opts.limit, 100, "part reconciliation should request bounded snapshot")
+	part_reconcile_calls[session_id] = (part_reconcile_calls[session_id] or 0) + 1
+	local attempt = part_reconcile_calls[session_id]
+	vim.defer_fn(function()
+		if attempt == 1 then
+			callback(nil, {})
+			return
+		end
+		callback(nil, {
+			{
+				info = {
+					id = "orphan-msg",
+					sessionID = "reconcile-a",
+					role = "assistant",
+					time = { created = 1000 },
+				},
+				parts = {
+					{
+						id = "orphan-part",
+						messageID = "orphan-msg",
+						sessionID = "reconcile-a",
+						type = "text",
+						text = "SAFE_RECONCILED_TEXT",
+					},
+				},
+			},
+		})
+	end, 1)
+end
+events.emit("message_part_updated", {
+	part = {
+		id = "orphan-part",
+		messageID = "orphan-msg",
+		type = "text",
+		text = "SAFE_RECONCILED_TEXT",
+	},
+})
+wait_for_buffer_contains("SAFE_RECONCILED_TEXT", "orphan part should render after HTTP snapshot confirms session A")
+assert_true(sync.get_message("reconcile-a", "orphan-msg") ~= nil, "reconciled message should be registered in A")
+assert_eq(count_occurrences(buffer_text(), "SAFE_RECONCILED_TEXT"), 1, "reconciled part text should not duplicate")
+assert_true((part_reconcile_calls["reconcile-a"] or 0) <= 2, "part reconciliation should stay bounded")
+reset_get_messages()
+
+reset_case()
+session_actions.set_active("delta-a", "Delta A", { preserve_cache = true })
+session_actions.remember({ id = "delta-b", title = "Delta B" }, { touch = true })
+session_actions.set_session_status("delta-a", { type = "busy" }, { reason = "test_delta_reconcile" })
+session_actions.set_session_status("delta-b", { type = "busy" }, { reason = "test_delta_reconcile" })
+chat.open()
+local delta_reconcile_calls = 0
+client.get_messages = function(session_id, opts, callback)
+	assert_eq(session_id, "delta-a", "delta reconciliation should only snapshot the current candidate")
+	assert_eq(opts and opts.limit, 100, "delta reconciliation should request bounded snapshot")
+	delta_reconcile_calls = delta_reconcile_calls + 1
+	vim.defer_fn(function()
+		callback(nil, {
+			{
+				info = {
+					id = "delta-orphan-msg",
+					sessionID = "delta-a",
+					role = "assistant",
+					time = { created = 1010 },
+				},
+				parts = {
+					{
+						id = "delta-orphan-part",
+						messageID = "delta-orphan-msg",
+						sessionID = "delta-a",
+						type = "text",
+					},
+				},
+			},
+		})
+	end, 1)
+end
+events.emit("message_part_delta", {
+	messageID = "delta-orphan-msg",
+	partID = "delta-orphan-part",
+	field = "text",
+	delta = "DELTA_RECONCILED_TEXT",
+})
+wait_for_buffer_contains("DELTA_RECONCILED_TEXT", "orphan delta should render after snapshot confirms session A")
+assert_eq(sync.get_message_text("delta-orphan-msg"), "DELTA_RECONCILED_TEXT", "buffered delta should materialize once")
+assert_eq(count_occurrences(buffer_text(), "DELTA_RECONCILED_TEXT"), 1, "reconciliation should not replay delta")
+assert_true(delta_reconcile_calls <= 1, "delta reconciliation should not retry after success")
+reset_get_messages()
+
+reset_case()
+session_actions.set_active("negative-a", "Negative A", { preserve_cache = true })
+session_actions.remember({ id = "negative-b", title = "Negative B" }, { touch = true })
+session_actions.set_session_status("negative-a", { type = "busy" }, { reason = "test_negative_reconcile" })
+session_actions.set_session_status("negative-b", { type = "busy" }, { reason = "test_negative_reconcile" })
+chat.open()
+local negative_reconcile_calls = 0
+client.get_messages = function(session_id, opts, callback)
+	assert_eq(opts and opts.limit, 100, "negative reconciliation should request bounded snapshot")
+	if session_id == "negative-a" then
+		negative_reconcile_calls = negative_reconcile_calls + 1
+	end
+	vim.defer_fn(function()
+		callback(nil, {})
+	end, 1)
+end
+events.emit("message_part_updated", {
+	part = {
+		id = "negative-part",
+		messageID = "negative-msg",
+		type = "text",
+		text = "NEGATIVE_B_ONLY_TEXT",
+	},
+})
+wait_for(function()
+	return negative_reconcile_calls >= 1
+end, "negative reconciliation should attempt a bounded snapshot")
+assert_not_contains(buffer_text(), "NEGATIVE_B_ONLY_TEXT", "snapshot miss must not render orphan text in A")
+assert_eq(sync.get_message("negative-a", "negative-msg"), nil, "snapshot miss must not create message row in A")
+events.emit("message_updated", {
+	info = {
+		id = "negative-msg",
+		sessionID = "negative-b",
+		role = "assistant",
+		time = { created = 1020 },
+	},
+})
+wait_for(function()
+	return sync.get_message("negative-b", "negative-msg") ~= nil
+end, "authoritative owner should resolve to B")
+assert_not_contains(buffer_text(), "NEGATIVE_B_ONLY_TEXT", "B-owned orphan text should stay hidden while A is open")
+assert_eq(sync.get_message("negative-a", "negative-msg"), nil, "A should not contain B-owned message")
+switch_to("negative-b", "Negative B")
+wait_for_buffer_contains("NEGATIVE_B_ONLY_TEXT", "B-owned orphan text should render after switching to B")
+reset_get_messages()
+
+reset_case()
+session_actions.set_active("coalesce-a", "Coalesce A", { preserve_cache = true })
+session_actions.remember({ id = "coalesce-b", title = "Coalesce B" }, { touch = true })
+session_actions.set_session_status("coalesce-a", { type = "busy" }, { reason = "test_coalesce" })
+session_actions.set_session_status("coalesce-b", { type = "busy" }, { reason = "test_coalesce" })
+chat.open()
+local coalesce_calls = 0
+client.get_messages = function(session_id, opts, callback)
+	assert_eq(session_id, "coalesce-a", "coalesced reconciliation should snapshot A once")
+	assert_eq(opts and opts.limit, 100, "coalesced reconciliation should request bounded snapshot")
+	coalesce_calls = coalesce_calls + 1
+	vim.defer_fn(function()
+		callback(nil, {
+			{
+				info = {
+					id = "coalesce-msg",
+					sessionID = "coalesce-a",
+					role = "assistant",
+					time = { created = 1030 },
+				},
+				parts = {
+					{
+						id = "coalesce-part-1",
+						messageID = "coalesce-msg",
+						sessionID = "coalesce-a",
+						type = "text",
+						text = "COALESCE_ONE_",
+					},
+					{
+						id = "coalesce-part-2",
+						messageID = "coalesce-msg",
+						sessionID = "coalesce-a",
+						type = "text",
+						text = "COALESCE_TWO_",
+					},
+				},
+			},
+		})
+	end, 80)
+end
+events.emit("message_part_updated", {
+	part = {
+		id = "coalesce-part-1",
+		messageID = "coalesce-msg",
+		type = "text",
+		text = "COALESCE_ONE_",
+	},
+})
+events.emit("message_part_updated", {
+	part = {
+		id = "coalesce-part-2",
+		messageID = "coalesce-msg",
+		type = "text",
+		text = "COALESCE_TWO_",
+	},
+})
+events.emit("message_part_delta", {
+	messageID = "coalesce-msg",
+	partID = "coalesce-part-1",
+	field = "text",
+	delta = "PLUS_",
+})
+wait_for(function()
+	return coalesce_calls == 1
+end, "coalesced reconciliation should start one request")
+events.emit("message_part_delta", {
+	messageID = "coalesce-msg",
+	partID = "coalesce-part-2",
+	field = "text",
+	delta = "MORE_",
+})
+pause(20)
+assert_eq(coalesce_calls, 1, "events while reconciliation is in-flight should not start another request")
+wait_for_buffer_contains("COALESCE_ONE_PLUS_", "coalesced first part should render after success")
+wait_for_buffer_contains("COALESCE_TWO_MORE_", "coalesced second part should render after success")
+assert_eq(coalesce_calls, 1, "successful coalesced reconciliation should clear pending without retry")
+events.emit("message_updated", {
+	info = {
+		id = "coalesce-msg",
+		sessionID = "coalesce-a",
+		role = "assistant",
+		time = { created = 1030, completed = 1031 },
+	},
+})
+pause(80)
+assert_eq(coalesce_calls, 1, "explicit owner event should not schedule reconciliation")
+reset_get_messages()
+
+reset_case()
+seed_assistant("switch-b", "switch-b-msg", "switch-b-part", "SWITCH_B_BASELINE_TEXT", 1040)
+session_actions.set_active("switch-a", "Switch A", { preserve_cache = true })
+session_actions.remember({ id = "switch-b", title = "Switch B" }, { touch = true })
+session_actions.set_session_status("switch-a", { type = "busy" }, { reason = "test_switch_reconcile" })
+session_actions.set_session_status("switch-b", { type = "busy" }, { reason = "test_switch_reconcile" })
+chat.open()
+local switch_a_calls = 0
+local switch_reconcile_callback = nil
+client.get_messages = function(session_id, opts, callback)
+	assert_eq(opts and opts.limit, 100, "session switch test should keep bounded message fetches")
+	if session_id == "switch-a" then
+		switch_a_calls = switch_a_calls + 1
+		if switch_a_calls == 1 then
+			switch_reconcile_callback = callback
+		else
+			callback(nil, {})
+		end
+	else
+		callback(nil, {})
+	end
+end
+events.emit("message_part_updated", {
+	part = {
+		id = "switch-part",
+		messageID = "switch-msg",
+		type = "text",
+		text = "SWITCH_RECONCILED_TEXT",
+	},
+})
+wait_for(function()
+	return switch_reconcile_callback ~= nil
+end, "switch reconciliation request should start before callback")
+switch_to("switch-b", "Switch B")
+wait_for_buffer_contains("SWITCH_B_BASELINE_TEXT", "switch target should render before delayed reconciliation callback")
+switch_reconcile_callback(nil, {
+	{
+		info = {
+			id = "switch-msg",
+			sessionID = "switch-a",
+			role = "assistant",
+			time = { created = 1050 },
+		},
+		parts = {
+			{
+				id = "switch-part",
+				messageID = "switch-msg",
+				sessionID = "switch-a",
+				type = "text",
+				text = "SWITCH_RECONCILED_TEXT",
+			},
+		},
+	},
+})
+wait_for(function()
+	return sync.get_message("switch-a", "switch-msg") ~= nil
+end, "delayed callback should hydrate A cache")
+pause(80)
+assert_not_contains(buffer_text(), "SWITCH_RECONCILED_TEXT", "delayed A snapshot must not render into B buffer")
+switch_to("switch-a", "Switch A")
+wait_for_buffer_contains("SWITCH_RECONCILED_TEXT", "switching back to A should show reconciled cache")
+reset_get_messages()
+
+reset_case()
+session_actions.set_active("fast-a", "Fast A", { preserve_cache = true })
+session_actions.remember({ id = "fast-b", title = "Fast B" }, { touch = true })
+session_actions.set_session_status("fast-a", { type = "busy" }, { reason = "test_fast_path" })
+session_actions.set_session_status("fast-b", { type = "busy" }, { reason = "test_fast_path" })
+chat.open()
+local fast_path_calls = 0
+client.get_messages = function(_, _, callback)
+	fast_path_calls = fast_path_calls + 1
+	callback(nil, {})
+end
+events.emit("message_part_updated", {
+	part = {
+		id = "fast-part",
+		messageID = "fast-msg",
+		sessionID = "fast-a",
+		type = "text",
+		text = "EXPLICIT_FAST_PATH_TEXT",
+	},
+})
+wait_for_buffer_contains("EXPLICIT_FAST_PATH_TEXT", "explicit session ID should render through existing fast path")
+pause(80)
+assert_eq(fast_path_calls, 0, "explicit session ID should not trigger reconciliation snapshot")
+reset_get_messages()
+
+reset_case()
+session_actions.set_active("norm-a", "Normalize A", { preserve_cache = true })
+session_actions.remember({ id = "norm-b", title = "Normalize B" }, { touch = true })
+session_actions.set_session_status("norm-a", { type = "busy" }, { reason = "test_normalize" })
+session_actions.set_session_status("norm-b", { type = "busy" }, { reason = "test_normalize" })
+chat.open()
+local normalization_calls = 0
+client.get_messages = function(session_id, opts, callback)
+	assert_eq(session_id, "norm-a", "normalization orphan should only snapshot A")
+	assert_eq(opts and opts.limit, 100, "normalization orphan should request bounded snapshot")
+	normalization_calls = normalization_calls + 1
+	callback(nil, {})
+end
+events.emit("message_part_updated", {
+	session_id = "norm-a",
+	part = {
+		id = "norm-part",
+		messageID = "norm-msg",
+		type = "text",
+		text = "TOP_LEVEL_ALIAS_TEXT",
+	},
+})
+wait_for_buffer_contains("TOP_LEVEL_ALIAS_TEXT", "top-level session_id alias should transfer into part")
+assert_eq(sync.get_part("norm-msg", "norm-part").sessionID, "norm-a", "part should keep normalized top-level session ID")
+pause(80)
+assert_eq(normalization_calls, 0, "top-level alias should not trigger reconciliation")
+events.emit("message_part_updated", {
+	sessionID = vim.NIL,
+	part = {
+		id = "nil-part",
+		messageID = "nil-msg",
+		type = "text",
+		text = "VIM_NIL_NOT_SESSION_TEXT",
+	},
+})
+pause(80)
+assert_true(normalization_calls >= 1, "vim.NIL session ID should be treated as missing and reconciled")
+assert_not_contains(buffer_text(), "VIM_NIL_NOT_SESSION_TEXT", "vim.NIL session ID must not fast-path render")
+events.emit("message_removed", {
+	sessionID = "norm-a",
+	messageID = "nil-msg",
+})
+pause(30)
+reset_get_messages()
 
 sync.clear_all()
 app_state.reset()

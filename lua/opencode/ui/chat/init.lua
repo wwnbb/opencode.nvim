@@ -39,7 +39,6 @@ local chat_edits = require("opencode.ui.chat.edits")
 local chat_interactions = require("opencode.ui.chat.interactions")
 local chat_nav = require("opencode.ui.chat.nav")
 local widget_support = require("opencode.ui.chat.widget_support")
-local perf = require("opencode.perf")
 
 chat_messages.set_schedule_render(function(opts)
 	M.schedule_render(opts)
@@ -813,7 +812,6 @@ function M.update_stream_part_block(session_id, message_id, part_id, opts)
 		return false
 	end
 
-	local done_stream = perf.start("chat.stream.update_part_block")
 	local widget_cursor = capture_widget_cursor_context()
 	local should_scroll = should_auto_scroll(widget_cursor)
 	local chat_width = render.get_chat_text_width()
@@ -866,7 +864,6 @@ function M.update_stream_part_block(session_id, message_id, part_id, opts)
 			return false
 		end
 
-		local done_set_text = perf.start("chat.stream.plain_text_append.set_text")
 		vim.bo[state.bufnr].modifiable = true
 		local ok = pcall(
 			vim.api.nvim_buf_set_text,
@@ -878,7 +875,6 @@ function M.update_stream_part_block(session_id, message_id, part_id, opts)
 			{ delta }
 		)
 		vim.bo[state.bufnr].modifiable = false
-		done_set_text({ ok = ok, delta_bytes = #delta, line = block.end_line })
 		if not ok then
 			return false
 		end
@@ -886,14 +882,6 @@ function M.update_stream_part_block(session_id, message_id, part_id, opts)
 		block.text_length = #content
 		block.chat_width = chat_width
 		local result = finish_stream_update()
-		done_stream({
-			path = "plain_text_append",
-			result = result,
-			part_id = part_id,
-			message_id = message_id,
-			delta_bytes = #delta,
-			text_bytes = #content,
-		})
 		return result
 	end
 
@@ -901,7 +889,6 @@ function M.update_stream_part_block(session_id, message_id, part_id, opts)
 		return true
 	end
 
-	local done_stream_render = perf.start("chat.stream.render_replacement")
 	local content = part.text or ""
 	local content_lines
 	if part.type == "reasoning" then
@@ -915,20 +902,12 @@ function M.update_stream_part_block(session_id, message_id, part_id, opts)
 		content_lines = { empty }
 	end
 	local replacement = render.extract_lines(content_lines)
-	done_stream_render({
-		part_id = part_id,
-		message_id = message_id,
-		type = part.type,
-		text_bytes = #content,
-		lines = #replacement,
-	})
 
 	local old_end = block.end_line
 	local old_count = old_end - block.start_line + 1
 	local new_count = #replacement
 	local delta = new_count - old_count
 
-	local done_stream_apply = perf.start("chat.stream.apply_replacement")
 	vim.bo[state.bufnr].modifiable = true
 	vim.api.nvim_buf_set_lines(state.bufnr, block.start_line, old_end + 1, false, replacement)
 
@@ -936,13 +915,6 @@ function M.update_stream_part_block(session_id, message_id, part_id, opts)
 	clear_chat_highlights(state.bufnr, block.start_line, clear_end)
 	render.apply_highlights(content_lines, state.bufnr, chat_hl_ns, block.start_line)
 	vim.bo[state.bufnr].modifiable = false
-	done_stream_apply({
-		part_id = part_id,
-		message_id = message_id,
-		old_lines = old_count,
-		new_lines = new_count,
-		delta = delta,
-	})
 
 	block.end_line = block.start_line + new_count - 1
 	block.text_length = #content
@@ -950,17 +922,6 @@ function M.update_stream_part_block(session_id, message_id, part_id, opts)
 	shift_tracked_lines(old_end, delta, block_key)
 
 	local result = finish_stream_update()
-	done_stream({
-		path = "replacement",
-		result = result,
-		part_id = part_id,
-		message_id = message_id,
-		type = part.type,
-		text_bytes = #content,
-		old_lines = old_count,
-		new_lines = new_count,
-		delta = delta,
-	})
 	return result
 end
 
@@ -973,7 +934,6 @@ function M.render()
 		return {}, {}, {}
 	end
 
-	local done_render_total = perf.start("chat.render.total")
 	local app_state = require("opencode.state")
 	local current_session = app_state.get_session()
 	local ctx = render_context.new({
@@ -995,94 +955,71 @@ function M.render()
 	local stats = message_renderer.render(ctx, index)
 	local stream_block_count = ctx:commit_stream_blocks()
 
-	done_render_total({
-		session_id = current_session.id,
-		messages = #(stats.all_messages or {}),
-		rendered_messages = #(stats.rendered_messages or {}),
-		skipped_messages = stats.skipped_messages or 0,
-		lines = #ctx.raw_lines,
-		highlights = #ctx.content_highlights,
-		stream_blocks = stream_block_count,
-	})
 	return ctx.raw_lines, ctx.nui_lines, ctx.content_highlights
 end
 
 -- ─── Render engine ────────────────────────────────────────────────────────────
 
 function M.update_spinner_only()
-	local done = perf.start("chat.update_spinner_only")
 	if not state.bufnr or not vim.api.nvim_buf_is_valid(state.bufnr) then
-		done({ skipped = true, reason = "invalid_buffer" })
 		return
 	end
 	if not state.visible then
-		done({ skipped = true, reason = "hidden" })
 		return
 	end
 	if not spinner.is_active() then
-		done({ skipped = true, reason = "inactive" })
 		return
 	end
 
 	local footer_line = state.spinner_footer_line
 	if type(footer_line) ~= "number" then
-		done({ skipped = true, reason = "missing_footer" })
 		return
 	end
 
 	local buf_lines = vim.api.nvim_buf_line_count(state.bufnr)
 	if footer_line < 0 or footer_line >= buf_lines then
-		done({ skipped = true, reason = "footer_out_of_range", footer_line = footer_line, buf_lines = buf_lines })
 		return
 	end
 
 	local current_line = vim.api.nvim_buf_get_lines(state.bufnr, footer_line, footer_line + 1, false)[1] or ""
 	if current_line == "" then
-		done({ skipped = true, reason = "empty_line", footer_line = footer_line })
 		return
 	end
 
 	local second_char = vim.fn.strcharpart(current_line, 1, 1)
 	if second_char ~= " " then
-		done({ skipped = true, reason = "unexpected_line", footer_line = footer_line })
 		return
 	end
 
 	local next_frame = spinner.get_frame()
 	if next_frame == "" then
-		done({ skipped = true, reason = "empty_frame" })
 		return
 	end
 
 	local current_frame = vim.fn.strcharpart(current_line, 0, 1)
 	if current_frame == next_frame then
-		done({ skipped = true, reason = "same_frame" })
 		return
 	end
 
 	local current_frame_bytes = #current_frame
 	if current_frame_bytes <= 0 then
-		done({ skipped = true, reason = "invalid_frame" })
 		return
 	end
 
 	vim.bo[state.bufnr].modifiable = true
 	vim.api.nvim_buf_set_text(state.bufnr, footer_line, 0, footer_line, current_frame_bytes, { next_frame })
 	vim.bo[state.bufnr].modifiable = false
-	done({ footer_line = footer_line, buf_lines = buf_lines })
 end
 
 local RENDER_THROTTLE_MS = 16
 
 ---@param opts? table { force?: boolean }
 function M.schedule_render(opts)
-	local done = perf.start("chat.schedule_render")
 	opts = opts or {}
 	if opts.force then
 		state.force_full_render = true
 	end
 	if state.render_scheduled then
-		done({ skipped = true, reason = "already_scheduled", force = opts.force == true })
 		return
 	end
 
@@ -1091,7 +1028,6 @@ function M.schedule_render(opts)
 
 	if elapsed >= RENDER_THROTTLE_MS then
 		state.last_render_time = now
-		done({ path = "immediate", elapsed_since_last_ms = elapsed, force = opts.force == true })
 		M.do_render()
 	else
 		state.render_scheduled = true
@@ -1101,7 +1037,6 @@ function M.schedule_render(opts)
 			state.last_render_time = vim.uv.now()
 			M.do_render()
 		end, delay)
-		done({ path = "deferred", delay_ms = delay, elapsed_since_last_ms = elapsed, force = opts.force == true })
 	end
 end
 
@@ -1118,7 +1053,6 @@ function M.do_render()
 	if not state.bufnr or not vim.api.nvim_buf_is_valid(state.bufnr) then
 		return
 	end
-	local done_total = perf.start("chat.do_render.total")
 	local render_generation = (state.render_generation or 0) + 1
 	state.render_generation = render_generation
 	state.render_in_progress = true
@@ -1132,42 +1066,24 @@ function M.do_render()
 	chat_tasks.clear_animation_extmarks(state.bufnr)
 	local force_full_render = state.force_full_render == true
 	state.force_full_render = false
-	local done_winbar = perf.start("chat.do_render.update_winbar")
 	M.update_winbar()
-	done_winbar({ force_full_render = force_full_render })
 
-	local done_cursor_capture = perf.start("chat.do_render.capture_cursor")
 	local widget_cursor = capture_widget_cursor_context()
 	local should_scroll = should_auto_scroll(widget_cursor)
-	done_cursor_capture({ should_scroll = should_scroll })
 
-	local done_render_call = perf.start("chat.do_render.render_call")
 	local new_lines, nui_lines, content_highlights = M.render()
-	done_render_call({
-		lines = #new_lines,
-		nui_lines = #nui_lines,
-		highlights = #content_highlights,
-	})
-	local done_todos = perf.start("chat.do_render.todos_update")
 	chat_todos.update_window()
-	done_todos({ lines = #new_lines })
-	local done_animation_timers = perf.start("chat.do_render.resume_animation_timers")
 	resume_render_animation_timers()
-	done_animation_timers()
 	local highlight_signature = nil
 	local function current_highlight_signature()
 		if highlight_signature == nil then
-			local done_highlight_signature = perf.start("chat.do_render.highlight_signature")
 			highlight_signature = render_highlight_signature(content_highlights)
-			done_highlight_signature({ highlights = #content_highlights })
 		end
 		return highlight_signature
 	end
 
 	local function apply_render_highlights(changed_start)
-		local done_apply = perf.start("chat.do_render.apply_render_highlights")
 		if not state.bufnr or not vim.api.nvim_buf_is_valid(state.bufnr) then
-			done_apply({ skipped = true, reason = "invalid_buffer" })
 			return
 		end
 
@@ -1178,19 +1094,15 @@ function M.do_render()
 		end
 
 		local buf_line_count = vim.api.nvim_buf_line_count(state.bufnr)
-		local done_clear = perf.start("chat.do_render.apply_render_highlights.clear")
 		local clear_start = highlight_clear_start(requested_start, content_highlights)
 		clear_chat_highlights(state.bufnr, clear_start, -1)
-		done_clear({ clear_start = clear_start, buf_line_count = buf_line_count })
 
-		local done_nui_highlights = perf.start("chat.do_render.apply_render_highlights.nui_lines")
 		for i = clear_start + 1, #nui_lines do
 			local nui_line = nui_lines[i]
 			if i <= buf_line_count then
 				nui_line:highlight(state.bufnr, chat_hl_ns, i)
 			end
 		end
-		done_nui_highlights({ clear_start = clear_start, lines = #nui_lines })
 
 		local function apply_widget_extmarks(line_map)
 			for _, pos in pairs(line_map) do
@@ -1203,94 +1115,64 @@ function M.do_render()
 			end
 		end
 
-		local done_widget_extmarks = perf.start("chat.do_render.apply_render_highlights.widget_extmarks")
 		apply_widget_extmarks(state.questions)
 		apply_widget_extmarks(state.permissions)
 		apply_widget_extmarks(state.edits)
 		apply_widget_extmarks(state.tasks)
 		apply_widget_extmarks(state.tools)
-		done_widget_extmarks()
-		local done_content_extmarks = perf.start("chat.do_render.apply_render_highlights.content_extmarks")
 		render.apply_extmark_highlights(state.bufnr, chat_hl_ns, content_highlights, 0, {
 			min_line = clear_start,
 			max_line = buf_line_count,
 		})
-		done_content_extmarks({ highlights = #content_highlights, clear_start = clear_start })
 		state.last_render_highlight_signature = current_highlight_signature()
 		state.render_highlights_dirty_start = nil
-		done_apply({
-			changed_start = changed_start,
-			requested_start = requested_start,
-			clear_start = clear_start,
-			lines = #nui_lines,
-			content_highlights = #content_highlights,
-		})
 	end
 
 	if #new_lines == 0 or #nui_lines == 0 then
-		local done_empty_apply = perf.start("chat.do_render.empty_set_lines")
 		vim.bo[state.bufnr].modifiable = true
 		vim.api.nvim_buf_set_lines(state.bufnr, 0, -1, false, new_lines)
 		clear_chat_highlights(state.bufnr, 0, -1)
 		vim.bo[state.bufnr].modifiable = false
-		done_empty_apply({ lines = #new_lines })
 		state.last_render_highlight_signature = nil
 		state.render_highlights_dirty_start = nil
 		if apply_widget_focus_cursor() then
 			vim.cmd("redraw")
 		end
 		mark_render_applied()
-		done_total({ path = "empty", lines = #new_lines, force_full_render = force_full_render })
 		return
 	end
 
-	local done_get_old_lines = perf.start("chat.do_render.get_old_lines")
 	local old_lines = vim.api.nvim_buf_get_lines(state.bufnr, 0, -1, false)
 	local buf_line_count = vim.api.nvim_buf_line_count(state.bufnr)
-	done_get_old_lines({ old_lines = #old_lines, buf_line_count = buf_line_count })
 
 	if force_full_render then
-		local done_full_set_lines = perf.start("chat.do_render.full_set_lines")
 		vim.bo[state.bufnr].modifiable = true
 		vim.api.nvim_buf_set_lines(state.bufnr, 0, -1, false, new_lines)
 		apply_render_highlights(0)
 		vim.bo[state.bufnr].modifiable = false
-		done_full_set_lines({ lines = #new_lines })
 
 		if apply_widget_focus_cursor() then
-			local done_redraw = perf.start("chat.do_render.redraw")
 			vim.cmd("redraw")
-			done_redraw({ path = "force_focus" })
 			mark_render_applied()
-			done_total({ path = "force_focus", lines = #new_lines, force_full_render = true })
 			return
 		end
 
 		if restore_widget_cursor_context(widget_cursor) then
-			local done_redraw = perf.start("chat.do_render.redraw")
 			vim.cmd("redraw")
-			done_redraw({ path = "force_restore_cursor" })
 			mark_render_applied()
-			done_total({ path = "force_restore_cursor", lines = #new_lines, force_full_render = true })
 			return
 		end
 
 		if should_scroll and state.visible and state.winid and vim.api.nvim_win_is_valid(state.winid) then
-			local done_scroll = perf.start("chat.do_render.scroll")
 			local buf_lines = vim.api.nvim_buf_line_count(state.bufnr)
 			vim.api.nvim_win_set_cursor(state.winid, { buf_lines, 0 })
-			done_scroll({ buf_lines = buf_lines, path = "force" })
 		end
 
-		local done_redraw = perf.start("chat.do_render.redraw")
 		vim.cmd("redraw")
-		done_redraw({ path = "force" })
 		mark_render_applied()
-		done_total({ path = "force", lines = #new_lines, force_full_render = true })
 		return
 	end
 
-	local done_diff_scan = perf.start("chat.do_render.diff_scan")
 	local first_diff = nil
 	local min_len = math.min(#old_lines, #new_lines)
 	for i = 1, min_len do
@@ -1299,7 +1181,6 @@ function M.do_render()
 			break
 		end
 	end
-	done_diff_scan({ old_lines = #old_lines, new_lines = #new_lines, first_diff = first_diff, min_len = min_len })
 
 	if first_diff == nil then
 		if #old_lines == #new_lines then
@@ -1307,12 +1188,9 @@ function M.do_render()
 				apply_render_highlights(state.render_highlights_dirty_start or 0)
 			end
 			if apply_widget_focus_cursor() then
-				local done_redraw = perf.start("chat.do_render.redraw")
 				vim.cmd("redraw")
-				done_redraw({ path = "no_line_diff_focus" })
 			end
 			mark_render_applied()
-			done_total({ path = "no_line_diff", lines = #new_lines, force_full_render = false })
 			return
 		end
 		first_diff = min_len
@@ -1323,73 +1201,36 @@ function M.do_render()
 		first_diff = 0
 	end
 
-	local done_build_replacement = perf.start("chat.do_render.build_replacement")
 	local replacement = {}
 	for i = first_diff + 1, #new_lines do
 		table.insert(replacement, new_lines[i])
 	end
-	done_build_replacement({
-		first_diff = first_diff,
-		replacement_lines = #replacement,
-		new_lines = #new_lines,
-	})
 
-	local done_set_lines = perf.start("chat.do_render.set_lines")
 	vim.bo[state.bufnr].modifiable = true
 	vim.api.nvim_buf_set_lines(state.bufnr, first_diff, -1, false, replacement)
-	done_set_lines({ first_diff = first_diff, replacement_lines = #replacement })
 
 	apply_render_highlights(first_diff)
 	vim.bo[state.bufnr].modifiable = false
 
 	if apply_widget_focus_cursor() then
-		local done_redraw = perf.start("chat.do_render.redraw")
 		vim.cmd("redraw")
-		done_redraw({ path = "focus" })
 		mark_render_applied()
-		done_total({
-			path = "focus",
-			lines = #new_lines,
-			first_diff = first_diff,
-			replacement_lines = #replacement,
-			force_full_render = false,
-		})
 		return
 	end
 
 	if restore_widget_cursor_context(widget_cursor) then
-		local done_redraw = perf.start("chat.do_render.redraw")
 		vim.cmd("redraw")
-		done_redraw({ path = "restore_cursor" })
 		mark_render_applied()
-		done_total({
-			path = "restore_cursor",
-			lines = #new_lines,
-			first_diff = first_diff,
-			replacement_lines = #replacement,
-			force_full_render = false,
-		})
 		return
 	end
 
 	if should_scroll and state.visible and state.winid and vim.api.nvim_win_is_valid(state.winid) then
-		local done_scroll = perf.start("chat.do_render.scroll")
 		local buf_lines = vim.api.nvim_buf_line_count(state.bufnr)
 		vim.api.nvim_win_set_cursor(state.winid, { buf_lines, 0 })
-		done_scroll({ buf_lines = buf_lines })
 	end
 
-	local done_redraw = perf.start("chat.do_render.redraw")
 	vim.cmd("redraw")
-	done_redraw({ path = "normal" })
 	mark_render_applied()
-	done_total({
-		path = "normal",
-		lines = #new_lines,
-		first_diff = first_diff,
-		replacement_lines = #replacement,
-		force_full_render = false,
-	})
 end
 
 -- ─── Cross-domain key routers ─────────────────────────────────────────────────

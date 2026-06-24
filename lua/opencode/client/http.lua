@@ -52,28 +52,11 @@ local function merge_headers(additional)
 end
 
 -- Handle HTTP response
-local function log_raw_response(response, request_meta)
-	if not response then
-		return
-	end
-
-	local ok, logger = pcall(require, "opencode.logger")
-	if ok and type(logger.raw_server) == "function" then
-		logger.raw_server(
-			string.format("HTTP %s %s", request_meta.method, request_meta.path),
-			response.body or "",
-			{ status = response.status, headers = response.headers }
-		)
-	end
-end
-
 local function handle_response(response, callback, request_meta)
 	if not response then
 		schedule_callback(callback, { error = "No response from server", message = "No response from server" }, nil)
 		return
 	end
-
-	log_raw_response(response, request_meta)
 
 	if response.status >= 400 then
 		local err = {

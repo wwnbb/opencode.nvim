@@ -3,7 +3,6 @@
 -- Uses binary search for efficient lookups like the TUI implementation
 
 local M = {}
-local perf = require("opencode.perf")
 
 ---@class SyncStore
 ---@field message table<string, Message[]> Messages by sessionID
@@ -111,6 +110,15 @@ end
 -- Get message ID from message
 local function get_message_id(msg)
 	return msg.id
+end
+
+---@param value any
+---@return string|nil
+local function nonempty_string(value)
+	if type(value) ~= "string" or value == "" then
+		return nil
+	end
+	return value
 end
 
 local find_message_session_id
@@ -221,6 +229,10 @@ end
 -- Find owning session for a message ID.
 -- Returns sessionID string or nil.
 function find_message_session_id(message_id)
+	message_id = nonempty_string(message_id)
+	if not message_id then
+		return nil
+	end
 	local indexed = store.message_session[message_id]
 	if indexed then
 		return indexed
@@ -238,17 +250,18 @@ end
 -- Ensure a message row exists for a part update.
 -- This lets streaming text render even if message.updated arrives slightly later.
 local function ensure_message_for_part(part)
-	local message_id = part.messageID
+	local message_id = nonempty_string(part.messageID)
 	if not message_id then
 		return
 	end
 
-	local session_id = part.sessionID or find_message_session_id(message_id)
+	part.messageID = message_id
+	local session_id = nonempty_string(part.sessionID) or find_message_session_id(message_id)
 	if not session_id then
 		return
 	end
 
-	part.sessionID = part.sessionID or session_id
+	part.sessionID = nonempty_string(part.sessionID) or session_id
 
 	local placeholder = {
 		id = message_id,
@@ -404,12 +417,10 @@ end
 ---@param parts Part[]|nil
 ---@return Part[]
 local function materialize_parts(parts)
-	local done = perf.start("sync.materialize_parts")
 	for _, part in ipairs(parts or {}) do
 		materialize_part(part)
 	end
 	local result = parts or {}
-	done({ parts = #result })
 	return result
 end
 
@@ -646,6 +657,33 @@ local function index_task_child(part)
 end
 
 ---@param message_id string|nil
+---@param session_id string|nil
+---@return boolean changed
+local function adopt_orphan_parts(message_id, session_id)
+	message_id = nonempty_string(message_id)
+	session_id = nonempty_string(session_id)
+	if not message_id or not session_id then
+		return false
+	end
+
+	local parts = store.part[message_id]
+	if type(parts) ~= "table" then
+		return false
+	end
+
+	local changed = false
+	for _, part in ipairs(parts) do
+		if type(part) == "table" and not nonempty_string(part.sessionID) then
+			part.sessionID = session_id
+			index_task_child(part)
+			bump_part_revision(message_id, part.id, session_id)
+			changed = true
+		end
+	end
+	return changed
+end
+
+---@param message_id string|nil
 clear_task_child_indices_for_message = function(message_id)
 	if not message_id then
 		return
@@ -667,10 +705,13 @@ end
 ---@param info Message
 ---@return boolean changed
 function M.handle_message_updated(info)
-	local session_id = info.sessionID
-	if not session_id then
+	local session_id = type(info) == "table" and nonempty_string(info.sessionID) or nil
+	local message_id = type(info) == "table" and nonempty_string(info.id) or nil
+	if not session_id or not message_id then
 		return false
 	end
+	info.sessionID = session_id
+	info.id = message_id
 
 	local messages = store.message[session_id]
 	local changed = false
@@ -685,6 +726,7 @@ function M.handle_message_updated(info)
 		store.message[session_id] = { info }
 		index_message_session(session_id, info.id)
 		bump_message_revision(info.id, session_id)
+		adopt_orphan_parts(info.id, session_id)
 		return true
 	end
 
@@ -698,14 +740,17 @@ function M.handle_message_updated(info)
 		changed = values_changed(current, merged)
 		messages[result.index] = merged
 		index_message_session(session_id, info.id)
+		local adopted_parts = adopt_orphan_parts(info.id, session_id)
 		if changed then
 			bump_message_revision(info.id, session_id)
 		end
+		changed = changed or adopted_parts
 	else
 		-- Insert new message at correct position (maintains sorted order)
 		table.insert(messages, result.index, info)
 		index_message_session(session_id, info.id)
 		bump_message_revision(info.id, session_id)
+		adopt_orphan_parts(info.id, session_id)
 		changed = true
 
 		-- Limit to 100 messages per session (like TUI)
@@ -754,8 +799,14 @@ end
 ---@param part Part
 ---@return boolean changed
 function M.handle_part_updated(part)
-	local message_id = part.messageID
+	local message_id = nonempty_string(part.messageID)
 	if not message_id then
+		return false
+	end
+	part.messageID = message_id
+	part.id = nonempty_string(part.id)
+	part.sessionID = nonempty_string(part.sessionID)
+	if not part.id then
 		return false
 	end
 
@@ -814,18 +865,16 @@ end
 ---@param part_delta PartDelta
 ---@return Part|nil
 function M.handle_part_delta(part_delta)
-	local done = perf.start("sync.handle_part_delta")
-	local message_id = part_delta.messageID
-	local part_id = part_delta.partID
-	local field = part_delta.field
+	local message_id = nonempty_string(part_delta.messageID)
+	local part_id = nonempty_string(part_delta.partID)
+	local field = nonempty_string(part_delta.field)
 	local delta = part_delta.delta
 
 	if not message_id or not part_id or not field or type(delta) ~= "string" then
-		done({ ignored = true })
 		return nil
 	end
 
-	local session_id = part_delta.sessionID or find_message_session_id(message_id)
+	local session_id = nonempty_string(part_delta.sessionID) or find_message_session_id(message_id)
 	local parts = store.part[message_id]
 	if not parts then
 		parts = {}
@@ -845,18 +894,11 @@ function M.handle_part_delta(part_delta)
 	end
 
 	local part = parts[result.index]
-	if part_delta.sessionID and not part.sessionID then
-		part.sessionID = part_delta.sessionID
+	if session_id and not nonempty_string(part.sessionID) then
+		part.sessionID = session_id
 	end
 	buffer_part_delta(message_id, part_id, field, delta)
 	bump_part_revision(message_id, part_id, part.sessionID)
-	done({
-		message_id = message_id,
-		part_id = part_id,
-		field = field,
-		delta_bytes = #delta,
-		parts = #parts,
-	})
 	return part
 end
 
@@ -897,9 +939,11 @@ function M.handle_session_messages(session_id, messages)
 
 	for _, msg_with_parts in ipairs(messages) do
 		if type(msg_with_parts) == "table" then
-			local info = msg_with_parts.info or msg_with_parts
-			if type(info) == "table" and info.id then
-				info.sessionID = info.sessionID or session_id
+			local info = type(msg_with_parts.info) == "table" and msg_with_parts.info or msg_with_parts
+			local info_id = type(info) == "table" and nonempty_string(info.id) or nil
+			if type(info) == "table" and info_id then
+				info.id = info_id
+				info.sessionID = nonempty_string(info.sessionID) or session_id
 				if M.handle_message_updated(info) then
 					changed_count = changed_count + 1
 				end
@@ -909,8 +953,10 @@ function M.handle_session_messages(session_id, messages)
 			if type(msg_with_parts.parts) == "table" then
 				for _, part in ipairs(msg_with_parts.parts) do
 					if type(part) == "table" then
-						part.messageID = part.messageID or (info and info.id)
-						part.sessionID = part.sessionID or (info and info.sessionID) or session_id
+						part.messageID = nonempty_string(part.messageID) or info_id
+						part.sessionID = nonempty_string(part.sessionID)
+							or (type(info) == "table" and nonempty_string(info.sessionID))
+							or session_id
 						if M.handle_part_updated(part) then
 							changed_count = changed_count + 1
 						end
@@ -1003,9 +1049,7 @@ end
 ---@param message_id string
 ---@return Part[]
 function M.get_parts(message_id)
-	local done = perf.start("sync.get_parts")
 	local parts = materialize_parts(store.part[message_id])
-	done({ message_id = message_id, parts = #parts })
 	return parts
 end
 
@@ -1032,7 +1076,6 @@ end
 ---@param opts? { include_synthetic?: boolean }
 ---@return { content: string, reasoning: string, tool_parts: Part[], parts: Part[], message_revision: number, part_revisions: table<string, number> }
 function M.get_message_render_parts(message_id, opts)
-	local done = perf.start("sync.get_message_render_parts")
 	opts = opts or {}
 	local parts = materialize_parts(store.part[message_id])
 	local text_parts = {}
@@ -1062,15 +1105,6 @@ function M.get_message_render_parts(message_id, opts)
 		message_revision = store.message_revision[message_id] or 0,
 		part_revisions = part_revisions,
 	}
-	done({
-		message_id = message_id,
-		parts = #parts,
-		text_parts = #text_parts,
-		reasoning_parts = #reasoning_parts,
-		tool_parts = #tool_parts,
-		content_bytes = #result.content,
-		reasoning_bytes = #result.reasoning,
-	})
 	return result
 end
 

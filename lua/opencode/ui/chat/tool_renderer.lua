@@ -3,11 +3,9 @@ local M = {}
 local state = require("opencode.ui.chat.state").state
 local chat_tasks = require("opencode.ui.chat.tasks")
 local widget_support = require("opencode.ui.chat.widget_support")
-local perf = require("opencode.perf")
 
 function M.render_tool_part(ctx, tool_part, message_revision, part_revisions)
 	local tool_name = tostring(tool_part and tool_part.tool or "unknown")
-	local done = perf.start("chat.render.tool_part." .. tool_name)
 	local part_revision = tool_part.id and part_revisions and part_revisions[tool_part.id] or 0
 
 	if tool_part.tool == "task" then
@@ -36,14 +34,6 @@ function M.render_tool_part(ctx, tool_part, message_revision, part_revisions)
 			highlights = result.highlights,
 		})
 		chat_tasks.ensure_task_child_loaded(tool_part)
-		done({
-			tool = tool_name,
-			part_id = tool_part.id,
-			expanded = is_expanded == true,
-			lines = #(result.lines or {}),
-			highlights = #(result.highlights or {}),
-			cacheable = cache_key ~= nil,
-		})
 		return
 	end
 
@@ -70,14 +60,6 @@ function M.render_tool_part(ctx, tool_part, message_revision, part_revisions)
 		end_line = base_line + #result.lines - 1,
 		tool_part = tool_part,
 		highlights = result.highlights,
-	})
-	done({
-		tool = tool_name,
-		part_id = tool_part.id,
-		expanded = is_expanded == true,
-		lines = #(result.lines or {}),
-		highlights = #(result.highlights or {}),
-		cacheable = cache_key ~= nil,
 	})
 end
 
