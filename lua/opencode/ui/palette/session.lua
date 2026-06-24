@@ -47,95 +47,95 @@ function M.register(palette)
 		category = "session",
 		keybind = "<leader>os",
 		action = function()
-				local directory = vim.fn.fnamemodify(vim.fn.getcwd(), ":p")
-				if vim.fs and vim.fs.normalize then
-					directory = vim.fs.normalize(directory)
+			local directory = vim.fn.fnamemodify(vim.fn.getcwd(), ":p")
+			if vim.fs and vim.fs.normalize then
+				directory = vim.fs.normalize(directory)
+			end
+
+			actions.list_sessions({ roots = true, directory = directory }, function(err, sessions)
+				if err then
+					vim.notify("Failed to list sessions: " .. tostring(err.message or err), vim.log.levels.ERROR)
+					return
+				end
+				if not sessions or #sessions == 0 then
+					vim.notify("No sessions found", vim.log.levels.INFO)
+					return
 				end
 
-				actions.list_sessions({ roots = true, directory = directory }, function(err, sessions)
-						if err then
-							vim.notify("Failed to list sessions: " .. tostring(err.message or err), vim.log.levels.ERROR)
-							return
-						end
-							if not sessions or #sessions == 0 then
-								vim.notify("No sessions found", vim.log.levels.INFO)
-								return
-						end
+				local menu = require("opencode.ui.menu")
+				local current = state.get_session()
 
-						local menu = require("opencode.ui.menu")
-						local current = state.get_session()
+				-- Sort sessions by update time (most recent first, like TUI)
+				table.sort(sessions, function(a, b)
+					local a_time = a.time and a.time.updated or 0
+					local b_time = b.time and b.time.updated or 0
+					return a_time > b_time
+				end)
 
-						-- Sort sessions by update time (most recent first, like TUI)
-						table.sort(sessions, function(a, b)
-							local a_time = a.time and a.time.updated or 0
-							local b_time = b.time and b.time.updated or 0
-							return a_time > b_time
-						end)
+				-- Format relative time helper (timestamp is ms from JS Date.now())
+				local function format_relative_time(timestamp)
+					if not timestamp then
+						return ""
+					end
+					-- Convert ms -> seconds for comparison with os.time()
+					local ts_sec = math.floor(timestamp / 1000)
+					local now = os.time()
+					local diff = now - ts_sec
+					if diff < 60 then
+						return "just now"
+					elseif diff < 3600 then
+						return math.floor(diff / 60) .. "m ago"
+					elseif diff < 7200 then
+						return "1h ago"
+					elseif diff < 86400 then
+						return math.floor(diff / 3600) .. "h ago"
+					elseif diff < 172800 then
+						return "Yesterday"
+					else
+						return os.date("%b %d", ts_sec)
+					end
+				end
 
-						-- Format relative time helper (timestamp is ms from JS Date.now())
-						local function format_relative_time(timestamp)
-							if not timestamp then
-								return ""
-							end
-							-- Convert ms -> seconds for comparison with os.time()
-							local ts_sec = math.floor(timestamp / 1000)
-							local now = os.time()
-							local diff = now - ts_sec
-							if diff < 60 then
-								return "just now"
-							elseif diff < 3600 then
-								return math.floor(diff / 60) .. "m ago"
-							elseif diff < 7200 then
-								return "1h ago"
-							elseif diff < 86400 then
-								return math.floor(diff / 3600) .. "h ago"
-							elseif diff < 172800 then
-								return "Yesterday"
-							else
-								return os.date("%b %d", ts_sec)
-							end
-						end
+				-- Build items for searchable menu (same as model switch)
+				local items = {}
+				for _, session in ipairs(sessions) do
+					local is_current = current.id == session.id
+					local title = session_util.displayTitle(session.title) or "New session"
+					local msg_count = session.messageCount or 0
+					local time_str = format_relative_time(session.time and session.time.updated)
+					local msg_str = msg_count > 0 and ("(" .. msg_count .. " msgs)") or ""
+					local current_marker = is_current and "● " or "  "
 
-						-- Build items for searchable menu (same as model switch)
-						local items = {}
-						for _, session in ipairs(sessions) do
-							local is_current = current.id == session.id
-							local title = session_util.displayTitle(session.title) or "New session"
-							local msg_count = session.messageCount or 0
-							local time_str = format_relative_time(session.time and session.time.updated)
-							local msg_str = msg_count > 0 and ("(" .. msg_count .. " msgs)") or ""
-							local current_marker = is_current and "● " or "  "
+					table.insert(items, {
+						label = current_marker .. title .. " " .. msg_str,
+						value = session.id,
+						session = session,
+						description = time_str,
+						-- sort_key carries the ms timestamp for time-based ordering
+						sort_key = session.time and session.time.updated or 0,
+					})
+				end
 
-							table.insert(items, {
-								label = current_marker .. title .. " " .. msg_str,
-								value = session.id,
-								session = session,
-								description = time_str,
-								-- sort_key carries the ms timestamp for time-based ordering
-								sort_key = session.time and session.time.updated or 0,
-							})
-						end
-
-						menu.open({
-							items = items,
-							title = " Switch Session ",
-							width = 70,
-							searchable = true,
-							sort = function(a, b)
-								-- Most recently updated first (matches TUI: toSorted((a,b) => b.time.updated - a.time.updated))
-								return (a.sort_key or 0) > (b.sort_key or 0)
-							end,
-							on_select = function(item)
-								local session = item.session
-								actions.switch_session(session, {
-									notify = true,
-									reason = "session_switch",
-								})
-							end,
+				menu.open({
+					items = items,
+					title = " Switch Session ",
+					width = 70,
+					searchable = true,
+					sort = function(a, b)
+						-- Most recently updated first (matches TUI: toSorted((a,b) => b.time.updated - a.time.updated))
+						return (a.sort_key or 0) > (b.sort_key or 0)
+					end,
+					on_select = function(item)
+						local session = item.session
+						actions.switch_session(session, {
+							notify = true,
+							reason = "session_switch",
 						})
-					end)
-			end,
-		})
+					end,
+				})
+			end)
+		end,
+	})
 	palette.register({
 		id = "session.fork",
 		title = "Fork Session",
@@ -149,18 +149,21 @@ function M.register(palette)
 				return
 			end
 
-				actions.fork_session(current.id, {}, function(err, session)
-						if err then
-							vim.notify("Failed to fork session: " .. tostring(err.message or err), vim.log.levels.ERROR)
-							return
-						end
-						actions.set_active_session(session.id, session.title or "Forked Session", {
-							reason = "session_fork",
-							preserve_cache = true,
-						})
-						vim.notify("Forked session: " .. (session_util.displayTitle(session.title) or session.id), vim.log.levels.INFO)
-					end)
-			end,
+			actions.fork_session(current.id, {}, function(err, session)
+				if err then
+					vim.notify("Failed to fork session: " .. tostring(err.message or err), vim.log.levels.ERROR)
+					return
+				end
+				actions.set_active_session(session.id, session.title or "Forked Session", {
+					reason = "session_fork",
+					preserve_cache = true,
+				})
+				vim.notify(
+					"Forked session: " .. (session_util.displayTitle(session.title) or session.id),
+					vim.log.levels.INFO
+				)
+			end)
+		end,
 		enabled = function()
 			return state.get_session().id ~= nil
 		end,
@@ -218,6 +221,58 @@ function M.register(palette)
 		end,
 	})
 	palette.register({
+		id = "session.copy_raw",
+		title = "Copy Raw Session Object",
+		description = "Copy full in-memory session object (messages, parts, tool calls) to clipboard",
+		category = "session",
+		action = function()
+			local session_id = state.get_session().id
+			if not session_id then
+				vim.notify("No active session", vim.log.levels.WARN)
+				return
+			end
+
+			local record = state.get_session_record(session_id)
+			local store = sync.get_store()
+			local messages = vim.deepcopy(store.message[session_id] or {})
+			local parts = {}
+			local part_delta_buffer = {}
+			for _, msg in ipairs(messages) do
+				parts[msg.id] = vim.deepcopy(store.part[msg.id] or {})
+				local prefix = msg.id .. "\0"
+				for key, value in pairs(store.part_delta_buffer) do
+					if key:sub(1, #prefix) == prefix then
+						part_delta_buffer[key] = vim.deepcopy(value)
+					end
+				end
+			end
+			local session_status = vim.deepcopy(store.session_status[session_id])
+			local todos = vim.deepcopy(store.todo[session_id] or {})
+
+			local snapshot = {
+				session = record,
+				messages = messages,
+				parts = parts,
+				part_delta_buffer = part_delta_buffer,
+				session_status = session_status,
+				todos = todos,
+			}
+
+			local json = vim.fn.json_encode(snapshot)
+			if not json then
+				vim.notify("Failed to encode session object", vim.log.levels.ERROR)
+				return
+			end
+
+			vim.fn.setreg("+", json)
+			vim.fn.setreg("*", json)
+			vim.notify("Raw session object copied to clipboard", vim.log.levels.INFO)
+		end,
+		enabled = function()
+			return state.get_session().id ~= nil
+		end,
+	})
+	palette.register({
 		id = "session.delete",
 		title = "Delete Session",
 		description = "Delete current session",
@@ -233,23 +288,26 @@ function M.register(palette)
 				prompt = "Delete session '" .. (session_util.displayTitle(session.name) or session.id) .. "'?",
 			}, function(choice)
 				if choice == "Yes" then
-						actions.delete_session(session.id, function(err)
-								if err then
-									vim.notify("Failed to delete session: " .. tostring(err.message or err), vim.log.levels.ERROR)
-									return
-								end
-								actions.set_active_session(nil, nil, {
-									reason = "session_delete",
-									preserve_cache = true,
-								})
-								actions.forget_session(session.id, {
-									reason = "session_delete",
-								})
-								actions.clear_session_data(session.id)
-								vim.notify("Session deleted", vim.log.levels.INFO)
-							end)
-					end
-				end)
+					actions.delete_session(session.id, function(err)
+						if err then
+							vim.notify(
+								"Failed to delete session: " .. tostring(err.message or err),
+								vim.log.levels.ERROR
+							)
+							return
+						end
+						actions.set_active_session(nil, nil, {
+							reason = "session_delete",
+							preserve_cache = true,
+						})
+						actions.forget_session(session.id, {
+							reason = "session_delete",
+						})
+						actions.clear_session_data(session.id)
+						vim.notify("Session deleted", vim.log.levels.INFO)
+					end)
+				end
+			end)
 		end,
 		enabled = function()
 			return state.get_session().id ~= nil
