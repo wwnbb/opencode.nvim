@@ -1,7 +1,6 @@
 -- Best-effort Treesitter syntax helpers for chat-rendered code snippets.
 
 local M = {}
-local perf = require("opencode.perf")
 
 local DEFAULT_CONFIG = {
 	enabled = true,
@@ -368,33 +367,27 @@ end
 ---@param opts? table
 ---@return table[] highlights
 function M.highlight_text(text, language, opts)
-	local done = perf.start("syntax.highlight_text." .. tostring(language or "unknown"))
 	opts = opts or {}
 	text = type(text) == "string" and text or tostring(text or "")
 	if text == "" or not M.is_enabled(opts.scope or "tools") or not within_limits(text, opts) then
-		done({ bytes = #text, language = language, skipped = true })
 		return {}
 	end
 	if too_small_for_syntax(text, opts) then
-		done({ bytes = #text, language = language, skipped = true, reason = "too_small" })
 		return {}
 	end
 
 	local lang = M.normalize_language(language)
 	if not lang or not has_parser(lang) then
-		done({ bytes = #text, language = language, normalized_language = lang, skipped = true, reason = "no_parser" })
 		return {}
 	end
 
 	local query = get_query(lang)
 	if not query then
-		done({ bytes = #text, language = language, normalized_language = lang, skipped = true, reason = "no_query" })
 		return {}
 	end
 
 	local ok_parser, parser = pcall(vim.treesitter.get_string_parser, text, lang)
 	if not ok_parser or not parser then
-		done({ bytes = #text, language = language, normalized_language = lang, skipped = true, reason = "parser_failed" })
 		return {}
 	end
 
@@ -402,7 +395,6 @@ function M.highlight_text(text, language, opts)
 		return parser:parse()
 	end)
 	if not ok_parse or type(trees) ~= "table" then
-		done({ bytes = #text, language = language, normalized_language = lang, skipped = true, reason = "parse_failed" })
 		return {}
 	end
 
@@ -448,19 +440,11 @@ function M.highlight_text(text, language, opts)
 				end
 			end)
 			if not ok_loop then
-				done({ bytes = #text, language = language, normalized_language = lang, failed = true, reason = "capture_loop" })
 				return {}
 			end
 		end
 	end
 
-	done({
-		bytes = #text,
-		language = language,
-		normalized_language = lang,
-		lines = line_count,
-		highlights = #highlights,
-	})
 	return highlights
 end
 
@@ -470,7 +454,6 @@ end
 ---@param opts? table
 ---@return table[] highlights
 function M.add_highlights(result, text, language, opts)
-	local done = perf.start("syntax.add_highlights." .. tostring(language or "unknown"))
 	opts = opts or {}
 	result.highlights = result.highlights or {}
 
@@ -481,13 +464,6 @@ function M.add_highlights(result, text, language, opts)
 	for _, hl in ipairs(highlights) do
 		append_offset_highlight(result.highlights, source_lines, hl, line_start, col_offset)
 	end
-	done({
-		bytes = #(text or ""),
-		language = language,
-		highlights = #highlights,
-		result_highlights = #result.highlights,
-		line_start = line_start,
-	})
 	return highlights
 end
 
@@ -511,17 +487,14 @@ end
 ---@param opts? table
 ---@return table[] highlights
 function M.highlight_markdown_fenced_blocks(text, opts)
-	local done = perf.start("syntax.highlight_markdown_fenced_blocks")
 	opts = opts or {}
 	text = type(text) == "string" and text or tostring(text or "")
 	if text == "" or not M.is_enabled(opts.scope or "assistant_markdown") then
-		done({ bytes = #text, skipped = true })
 		return {}
 	end
 	if opts.compat_markdown ~= false then
 		local full_config = get_full_config()
 		if full_config.markdown and full_config.markdown.enable_code_highlight == false then
-			done({ bytes = #text, skipped = true, reason = "markdown_disabled" })
 			return {}
 		end
 	end
@@ -558,7 +531,6 @@ function M.highlight_markdown_fenced_blocks(text, opts)
 		end
 	end
 
-	done({ bytes = #text, lines = #lines, highlights = #highlights })
 	return highlights
 end
 
@@ -567,7 +539,6 @@ end
 ---@param opts? table
 ---@return table[] highlights
 function M.add_markdown_highlights(result, text, opts)
-	local done = perf.start("syntax.add_markdown_highlights")
 	opts = opts or {}
 	result.highlights = result.highlights or {}
 
@@ -583,12 +554,6 @@ function M.add_markdown_highlights(result, text, opts)
 			priority = hl.priority,
 		})
 	end
-	done({
-		bytes = #(text or ""),
-		highlights = #highlights,
-		result_highlights = #result.highlights,
-		line_start = line_start,
-	})
 	return highlights
 end
 

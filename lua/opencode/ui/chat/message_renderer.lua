@@ -12,7 +12,6 @@ local spinner = require("opencode.ui.spinner")
 local widget_renderer = require("opencode.ui.chat.widget_renderer")
 local tool_renderer = require("opencode.ui.chat.tool_renderer")
 local widget_support = require("opencode.ui.chat.widget_support")
-local perf = require("opencode.perf")
 
 local EDIT_WIDGET_TOOL_ROWS = {
 	write = true,
@@ -69,7 +68,6 @@ local function render_session_chrome(ctx)
 end
 
 local function select_messages(ctx, index)
-	local done_get_messages = perf.start("chat.render.get_messages")
 	local all_messages = ctx.current_session.id and sync.get_messages(ctx.current_session.id) or {}
 	local messages = all_messages
 	local max_rendered_messages = tonumber((ctx.chat_config or {}).max_rendered_messages) or 0
@@ -114,12 +112,6 @@ local function select_messages(ctx, index)
 		end
 	end
 
-	done_get_messages({
-		session_id = ctx.current_session.id,
-		messages = #all_messages,
-		rendered_messages = #messages,
-		skipped_messages = skipped_messages,
-	})
 	return all_messages, messages, skipped_messages
 end
 
@@ -417,10 +409,8 @@ local function render_messages(ctx, index, all_messages, messages, skipped_messa
 
 	render_hidden_history_notice(ctx, skipped_messages)
 
-	local done_messages_loop = perf.start("chat.render.messages_loop")
 	for msg_idx, message in ipairs(messages) do
 		local message_start_line = ctx:line_count()
-		local done_message = perf.start("chat.render.message." .. tostring(message.role or "unknown"))
 		local render_parts = ctx:get_message_render_parts(
 			message.id,
 			message.role == "user" and { include_synthetic = false } or nil
@@ -458,24 +448,7 @@ local function render_messages(ctx, index, all_messages, messages, skipped_messa
 		if should_render then
 			register_message_range(message, message_start_line, ctx:line_count() - 1)
 		end
-
-		done_message({
-			message_id = message.id,
-			role = message.role,
-			should_render = should_render,
-			parts = #(render_parts.parts or {}),
-			tool_parts = #(render_parts.tool_parts or {}),
-			content_bytes = #(render_parts.content or ""),
-			reasoning_bytes = #(render_parts.reasoning or ""),
-			lines = ctx:line_count() - message_start_line,
-		})
 	end
-	done_messages_loop({
-		messages = #all_messages,
-		rendered_messages = #messages,
-		skipped_messages = skipped_messages,
-		lines = ctx:line_count(),
-	})
 
 	return {
 		spinner_active = spinner_active,
@@ -520,7 +493,6 @@ end
 
 local function render_local_notices(ctx, index, all_messages, max_user_message_lines)
 	local has_server_user_echo = make_server_user_echo_checker(ctx, all_messages)
-	local done_local_notices = perf.start("chat.render.local_notices")
 
 	for _, message in ipairs(state.local_notices) do
 		local message_start_line = ctx:line_count()
@@ -566,8 +538,6 @@ local function render_local_notices(ctx, index, all_messages, max_user_message_l
 		end
 		::continue_local_message::
 	end
-
-	done_local_notices({ notices = #state.local_notices, lines = ctx:line_count() })
 end
 
 local function render_orphan_widgets(ctx, index, all_messages)
@@ -576,14 +546,7 @@ local function render_orphan_widgets(ctx, index, all_messages)
 		session_msg_ids[message.id] = true
 	end
 
-	local done_orphan_widgets = perf.start("chat.render.orphan_widgets")
 	widget_renderer.render_orphan_widgets(ctx, index, session_msg_ids)
-	done_orphan_widgets({
-		questions = #index.all_questions,
-		permissions = #index.all_permissions,
-		edits = #index.all_edits,
-		lines = ctx:line_count(),
-	})
 end
 
 local function render_fallback_spinner_footer(ctx, render_metadata_footer_line)

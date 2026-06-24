@@ -4,9 +4,55 @@ function M.setup(events)
 	local state = require("opencode.state")
 	local session_actions = require("opencode.session")
 	local sync = require("opencode.sync")
+	local client = require("opencode.client")
 	local logger = require("opencode.logger")
 	local event_util = require("opencode.events.util")
-	local perf = require("opencode.perf")
+	local ORPHAN_RECONCILE_DELAYS_MS = { 40, 150, 400, 1000 }
+	local ORPHAN_RECONCILE_MESSAGE_LIMIT = 100
+	local orphan_reconciles = {}
+
+	---@param value any
+	---@return string|nil
+	local function nonempty_string(value)
+		if type(value) ~= "string" or value == "" then
+			return nil
+		end
+		return value
+	end
+
+	---@param payload any
+	---@return string|nil
+	local function payload_session_id(payload)
+		if type(payload) ~= "table" then
+			return nil
+		end
+		return nonempty_string(payload.sessionID)
+			or nonempty_string(payload.sessionId)
+			or nonempty_string(payload.session_id)
+	end
+
+	---@param payload any
+	---@return string|nil
+	local function payload_message_id(payload)
+		if type(payload) ~= "table" then
+			return nil
+		end
+		return nonempty_string(payload.messageID)
+			or nonempty_string(payload.messageId)
+			or nonempty_string(payload.message_id)
+	end
+
+	---@param payload any
+	---@return string|nil
+	local function payload_part_id(payload)
+		if type(payload) ~= "table" then
+			return nil
+		end
+		return nonempty_string(payload.partID)
+			or nonempty_string(payload.partId)
+			or nonempty_string(payload.part_id)
+			or nonempty_string(payload.id)
+	end
 
 	---@param session_id string|nil
 	---@param reason string
@@ -113,7 +159,7 @@ function M.setup(events)
 	---@param current_session table
 	---@return string|nil
 	local function resolve_part_session_id(part, current_session)
-		local resolved_session_id = part.sessionID
+		local resolved_session_id = payload_session_id(part)
 
 		if not resolved_session_id and part.messageID then
 			resolved_session_id = sync.find_message_session_id(part.messageID)
@@ -157,6 +203,212 @@ function M.setup(events)
 	---@return string|nil
 	local function resolve_part_render_session_id(part, current_session, resolved_session_id)
 		return resolve_render_session_id(current_session, resolved_session_id or part.sessionID, part.messageID)
+	end
+
+	---@param session_id string
+	---@param message_id string
+	---@return string
+	local function orphan_reconcile_key(session_id, message_id)
+		return session_id .. "\0" .. message_id
+	end
+
+	---@param entry table
+	---@param result string
+	local function finish_orphan_reconcile(entry, result)
+		if orphan_reconciles[entry.key] ~= entry then
+			return
+		end
+		orphan_reconciles[entry.key] = nil
+		if result == "exhausted" then
+			logger.debug("Orphan message reconciliation exhausted", {
+				message_id = entry.message_id,
+				candidate_session_id = entry.session_id,
+				attempts = entry.attempt,
+				elapsed_ms = vim.uv.now() - entry.created_at,
+			})
+		end
+	end
+
+	---@param entry table
+	local function schedule_orphan_reconcile_attempt(entry)
+		if orphan_reconciles[entry.key] ~= entry then
+			return
+		end
+		local delay_ms = ORPHAN_RECONCILE_DELAYS_MS[entry.attempt + 1]
+		if not delay_ms then
+			finish_orphan_reconcile(entry, "exhausted")
+			return
+		end
+
+		entry.scheduled = true
+		logger.debug("Orphan message reconciliation scheduled", {
+			message_id = entry.message_id,
+			candidate_session_id = entry.session_id,
+			reason = entry.reason,
+			delay_ms = delay_ms,
+		})
+		vim.defer_fn(function()
+			if orphan_reconciles[entry.key] ~= entry then
+				return
+			end
+			entry.scheduled = false
+			if entry.in_flight then
+				return
+			end
+
+			entry.attempt = entry.attempt + 1
+			entry.in_flight = true
+			logger.debug("Orphan message reconciliation request started", {
+				message_id = entry.message_id,
+				candidate_session_id = entry.session_id,
+				attempt = entry.attempt,
+				max_attempts = #ORPHAN_RECONCILE_DELAYS_MS,
+			})
+
+			client.get_messages(entry.session_id, { limit = ORPHAN_RECONCILE_MESSAGE_LIMIT }, function(err, messages)
+				vim.schedule(function()
+					if orphan_reconciles[entry.key] ~= entry then
+						return
+					end
+					entry.in_flight = false
+
+					if err then
+						logger.debug("Orphan message reconciliation HTTP error", {
+							message_id = entry.message_id,
+							candidate_session_id = entry.session_id,
+							attempt = entry.attempt,
+							error = err.message or err.error or tostring(err),
+						})
+						schedule_orphan_reconcile_attempt(entry)
+						return
+					end
+
+					local returned_messages = type(messages) == "table" and #messages or 0
+					local _, _, changed_count = sync.handle_session_messages(entry.session_id, messages)
+					local owned = sync.get_message(entry.session_id, entry.message_id) ~= nil
+					if owned then
+						orphan_reconciles[entry.key] = nil
+
+						local current_session = state.get_session()
+						local count = #sync.get_messages(entry.session_id)
+						if current_session.id == entry.session_id then
+							state.set_message_count(count)
+						end
+
+						local render_session_id = resolve_render_session_id(
+							current_session,
+							entry.session_id,
+							entry.message_id
+						)
+						logger.debug("Orphan message reconciliation resolved", {
+							message_id = entry.message_id,
+							candidate_session_id = entry.session_id,
+							attempt = entry.attempt,
+							render_session_id = render_session_id,
+							changed_count = changed_count,
+						})
+						if render_session_id then
+							events.emit("sync_changed", {
+								kind = "message",
+								action = "reconciled",
+								session_id = render_session_id,
+								message_id = entry.message_id,
+							})
+						end
+						return
+					end
+
+					local known_owner = sync.find_message_session_id(entry.message_id)
+					if known_owner and known_owner ~= entry.session_id then
+						logger.debug("Orphan message resolved in another session", {
+							message_id = entry.message_id,
+							candidate_session_id = entry.session_id,
+							actual_owner = known_owner,
+						})
+						orphan_reconciles[entry.key] = nil
+						return
+					end
+
+					logger.debug("Orphan message reconciliation snapshot miss", {
+						message_id = entry.message_id,
+						candidate_session_id = entry.session_id,
+						attempt = entry.attempt,
+						returned_messages = returned_messages,
+						known_owner = known_owner,
+					})
+					schedule_orphan_reconcile_attempt(entry)
+				end)
+			end)
+		end, delay_ms)
+	end
+
+	---@param session_id string|nil
+	---@param message_id string|nil
+	---@param reason string
+	local function schedule_orphan_reconcile(session_id, message_id, reason)
+		session_id = nonempty_string(session_id)
+		message_id = nonempty_string(message_id)
+		if not session_id or not message_id then
+			return
+		end
+		if sync.find_message_session_id(message_id) then
+			return
+		end
+
+		local key = orphan_reconcile_key(session_id, message_id)
+		local now = vim.uv.now()
+		local existing = orphan_reconciles[key]
+		if existing then
+			logger.debug("Orphan message reconciliation coalesced", {
+				message_id = message_id,
+				candidate_session_id = session_id,
+				previous_reason = existing.reason,
+				new_reason = reason,
+			})
+			existing.reason = reason
+			existing.last_seen_at = now
+			return
+		end
+
+		local entry = {
+			key = key,
+			session_id = session_id,
+			message_id = message_id,
+			attempt = 0,
+			reason = reason,
+			created_at = now,
+			last_seen_at = now,
+			in_flight = false,
+			scheduled = false,
+		}
+		orphan_reconciles[key] = entry
+		schedule_orphan_reconcile_attempt(entry)
+	end
+
+	---@param message_id string|nil
+	local function cancel_orphan_reconciles_for_message(message_id)
+		message_id = nonempty_string(message_id)
+		if not message_id then
+			return
+		end
+		for key, entry in pairs(orphan_reconciles) do
+			if entry.message_id == message_id then
+				orphan_reconciles[key] = nil
+			end
+		end
+	end
+
+	---@param session_id string|nil
+	local function cancel_orphan_reconciles_for_session(session_id)
+		session_id = nonempty_string(session_id)
+		if not session_id then
+			return
+		end
+		for key, entry in pairs(orphan_reconciles) do
+			if entry.session_id == session_id then
+				orphan_reconciles[key] = nil
+			end
+		end
 	end
 
 	---@param part table
@@ -223,7 +475,13 @@ function M.setup(events)
 		if type(data) ~= "table" then
 			return nil
 		end
-		return data.info or data.message or data
+		if type(data.info) == "table" then
+			return data.info
+		end
+		if type(data.message) == "table" then
+			return data.message
+		end
+		return data
 	end
 
 	---@param data any
@@ -248,43 +506,52 @@ function M.setup(events)
 		opts = opts or {}
 		local reason = opts.reason or "message_updated"
 		local label = opts.label or "Message update"
-		local done = perf.start(opts.perf_name or "events.message_updated")
 		local info = extract_message_info(data)
 		if type(info) ~= "table" or not info.id then
 			local skip_reason = type(info) == "table" and "missing_id" or "missing_info"
 			logger.debug(label .. " ignored", {
 				reason = skip_reason,
 			})
-			done({ skipped = true, reason = skip_reason })
 			return
 		end
 
-		if type(data) == "table" then
-			info.sessionID = info.sessionID or data.sessionID
+		info.id = nonempty_string(info.id)
+		if not info.id then
+			logger.debug(label .. " ignored", {
+				reason = "missing_id",
+			})
+			return
 		end
+
+		info.sessionID = payload_session_id(info) or payload_session_id(data)
 
 		local parts = extract_message_parts(data)
 		if not info.sessionID and type(parts) == "table" then
 			for _, part in ipairs(parts) do
+				local part_session_id = payload_session_id(part)
+				local part_message_id = payload_message_id(part)
 				if
 					type(part) == "table"
-					and part.sessionID
-					and (not part.messageID or part.messageID == info.id)
+					and part_session_id
+					and (not part_message_id or part_message_id == info.id)
 				then
-					info.sessionID = part.sessionID
+					info.sessionID = part_session_id
 					break
 				end
 			end
+		end
+		if not info.sessionID then
+			info.sessionID = sync.find_message_session_id(info.id)
 		end
 
 		local message_changed = sync.handle_message_updated(info)
 		local part_count = 0
 		local parts_changed_count = 0
-		if type(parts) == "table" and info.sessionID then
+		if type(parts) == "table" then
 			for _, part in ipairs(parts) do
-				if type(part) == "table" and part.id then
-					part.messageID = part.messageID or info.id
-					part.sessionID = part.sessionID or info.sessionID
+				if type(part) == "table" and nonempty_string(part.id) then
+					part.messageID = payload_message_id(part) or info.id
+					part.sessionID = payload_session_id(part) or info.sessionID
 					if sync.handle_part_updated(part) then
 						parts_changed_count = parts_changed_count + 1
 					end
@@ -294,6 +561,11 @@ function M.setup(events)
 		end
 
 		local current_session = state.get_session()
+		if info.sessionID then
+			cancel_orphan_reconciles_for_message(info.id)
+		else
+			schedule_orphan_reconcile(current_session.id, info.id, reason)
+		end
 		if info.sessionID and (current_session.id == info.sessionID or state.is_runtime_session(info.sessionID)) then
 			local count = #sync.get_messages(info.sessionID)
 			if current_session.id == info.sessionID then
@@ -319,14 +591,6 @@ function M.setup(events)
 				role = info.role,
 				parts = part_count,
 			})
-			done({
-				message_id = info.id,
-				session_id = info.sessionID,
-				role = info.role,
-				parts = part_count,
-				changed = message_changed or parts_changed_count > 0,
-				current = false,
-			})
 			return
 		end
 
@@ -348,15 +612,6 @@ function M.setup(events)
 			session_id = render_session_id,
 			message_id = info.id,
 		})
-		done({
-			message_id = info.id,
-			session_id = info.sessionID,
-			render_session_id = render_session_id,
-			role = info.role,
-			parts = part_count,
-			changed = message_changed or parts_changed_count > 0,
-			current = render_session_id == current_session.id,
-		})
 	end
 
 	-- message.created is mapped to the local "message" event.
@@ -365,7 +620,6 @@ function M.setup(events)
 			handle_message_payload(data, "created", {
 				reason = "message_created",
 				label = "Message created",
-				perf_name = "events.message_created",
 			})
 		end)
 	end)
@@ -376,7 +630,6 @@ function M.setup(events)
 			handle_message_payload(data, "updated", {
 				reason = "message_updated",
 				label = "Message update",
-				perf_name = "events.message_updated",
 			})
 		end)
 	end)
@@ -384,16 +637,19 @@ function M.setup(events)
 	-- Handle message.removed (like TUI sync.tsx:267-279)
 	events.on("message_removed", function(data)
 		vim.schedule(function()
-			if data.sessionID and data.messageID then
-				sync.handle_message_removed(data.sessionID, data.messageID)
+			local session_id = payload_session_id(data)
+			local message_id = payload_message_id(data)
+			cancel_orphan_reconciles_for_message(message_id)
+			if session_id and message_id then
+				sync.handle_message_removed(session_id, message_id)
 
 				local current_session = state.get_session()
-				if current_session.id == data.sessionID then
+				if current_session.id == session_id then
 					events.emit("sync_changed", {
 						kind = "message",
 						action = "removed",
 						session_id = current_session.id,
-						message_id = data.messageID,
+						message_id = message_id,
 					})
 				end
 			end
@@ -404,21 +660,37 @@ function M.setup(events)
 	-- Parts contain the actual content (text, reasoning, tool calls)
 	events.on("message_part_updated", function(data)
 		vim.schedule(function()
-			local done = perf.start("events.message_part_updated")
-			local part = data.part
-			if not part then
+			local part = type(data) == "table" and data.part or nil
+			if type(part) ~= "table" then
 				logger.debug("Part update ignored", {
 					reason = "missing_part",
 				})
-				done({ skipped = true, reason = "missing_part" })
 				return
 			end
+
+			local part_id = payload_part_id(part)
+			local message_id = payload_message_id(part) or payload_message_id(data)
+			if not part_id or not message_id then
+				logger.debug("Part update ignored", {
+					reason = "malformed",
+					partID = part_id,
+					messageID = message_id,
+				})
+				return
+			end
+
+			part.id = part_id
+			part.messageID = message_id
+			part.sessionID = payload_session_id(part) or payload_session_id(data)
 
 			local current_session = state.get_session()
 			local resolved_session_id = resolve_part_session_id(part, current_session)
 
 			-- Update sync store first (like TUI does)
 			sync.handle_part_updated(part)
+			if not resolved_session_id then
+				schedule_orphan_reconcile(current_session.id, part.messageID, "message_part_updated")
+			end
 
 			local render_session_id = resolve_part_render_session_id(part, current_session, resolved_session_id)
 			if not render_session_id then
@@ -428,13 +700,6 @@ function M.setup(events)
 					partID = part.id,
 					messageID = part.messageID,
 					type = part.type,
-				})
-				done({
-					part_id = part.id,
-					message_id = part.messageID,
-					type = part.type,
-					session_id = resolved_session_id,
-					current = false,
 				})
 				return
 			end
@@ -449,41 +714,26 @@ function M.setup(events)
 			emit_part_events(part, current_session, resolved_session_id, {
 				render_session_id = render_session_id,
 			})
-			done({
-				part_id = part.id,
-				message_id = part.messageID,
-				type = part.type,
-				tool = part.tool,
-				session_id = resolved_session_id,
-				render_session_id = render_session_id,
-				current = render_session_id == current_session.id,
-			})
 		end)
 	end)
 
 	-- Handle message.part.delta - incremental token/chunk updates while streaming.
 	events.on("message_part_delta", function(data)
 		vim.schedule(function()
-			local done = perf.start("events.message_part_delta")
-			if not data then
+			if type(data) ~= "table" then
 				logger.debug("Part delta ignored", {
 					reason = "missing_data",
 				})
-				done({ skipped = true, reason = "missing_data" })
 				return
 			end
-			if not data.messageID or not data.partID or not data.field or type(data.delta) ~= "string" then
+			local message_id = payload_message_id(data)
+			local part_id = payload_part_id(data)
+			local field = nonempty_string(data.field)
+			if not message_id or not part_id or not field or type(data.delta) ~= "string" then
 				logger.debug("Part delta ignored", {
 					reason = "malformed",
-					messageID = data.messageID,
-					partID = data.partID,
-					field = data.field,
-				})
-				done({
-					skipped = true,
-					reason = "malformed",
-					message_id = data.messageID,
-					part_id = data.partID,
+					messageID = message_id,
+					partID = part_id,
 					field = data.field,
 				})
 				return
@@ -491,32 +741,27 @@ function M.setup(events)
 
 			local current_session = state.get_session()
 			local part_hint = {
-				id = data.partID,
-				messageID = data.messageID,
-				sessionID = data.sessionID,
+				id = part_id,
+				messageID = message_id,
+				sessionID = payload_session_id(data),
 			}
 			local resolved_session_id = resolve_part_session_id(part_hint, current_session)
 			local part = sync.handle_part_delta({
-				messageID = data.messageID,
-				partID = data.partID,
-				field = data.field,
+				messageID = message_id,
+				partID = part_id,
+				field = field,
 				delta = data.delta,
 				sessionID = resolved_session_id,
 			})
+			if not resolved_session_id then
+				schedule_orphan_reconcile(current_session.id, message_id, "message_part_delta")
+			end
 			if not part then
 				logger.debug("Part delta ignored", {
 					reason = "part_not_found",
-					partID = data.partID,
-					messageID = data.messageID,
+					partID = part_id,
+					messageID = message_id,
 					sessionID = resolved_session_id,
-				})
-				done({
-					skipped = true,
-					reason = "part_not_found",
-					message_id = data.messageID,
-					part_id = data.partID,
-					field = data.field,
-					delta_bytes = #data.delta,
 				})
 				return
 			end
@@ -530,15 +775,6 @@ function M.setup(events)
 					messageID = part.messageID,
 					type = part.type,
 				})
-				done({
-					part_id = part.id,
-					message_id = part.messageID,
-					type = part.type,
-					session_id = resolved_session_id,
-					field = data.field,
-					delta_bytes = #data.delta,
-					current = false,
-				})
 				return
 			end
 
@@ -547,23 +783,13 @@ function M.setup(events)
 				render_session_id = render_session_id,
 				partID = part.id,
 				messageID = part.messageID,
-				field = data.field,
+				field = field,
 				delta_length = #data.delta,
 			})
 			emit_part_events(part, current_session, resolved_session_id, {
 				render_session_id = render_session_id,
 				delta = data.delta,
-				field = data.field,
-			})
-			done({
-				part_id = part.id,
-				message_id = part.messageID,
-				type = part.type,
-				session_id = resolved_session_id,
-				render_session_id = render_session_id,
-				field = data.field,
-				delta_bytes = #data.delta,
-				current = render_session_id == current_session.id,
+				field = field,
 			})
 		end)
 	end)
@@ -583,6 +809,12 @@ function M.setup(events)
 					part_id = data.partID,
 				})
 			end
+		end)
+	end)
+
+	events.on("session.closed", function(data)
+		vim.schedule(function()
+			cancel_orphan_reconciles_for_session(payload_session_id(data))
 		end)
 	end)
 

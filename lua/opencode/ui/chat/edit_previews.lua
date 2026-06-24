@@ -3,7 +3,6 @@ local M = {}
 local edit_state = require("opencode.edit.state")
 local file_edit_results = require("opencode.ui.chat.file_edit_results")
 local sync = require("opencode.sync")
-local perf = require("opencode.perf")
 
 local PREVIEW_TOOLS = {
 	edit = true,
@@ -167,7 +166,6 @@ function M.sync_session(session_id)
 		return 0
 	end
 
-	local done = perf.start("chat.edit_previews.sync_session")
 	local created = 0
 	for _, message in ipairs(sync.get_messages(session_id)) do
 		if message.id then
@@ -179,7 +177,6 @@ function M.sync_session(session_id)
 			end
 		end
 	end
-	done({ session_id = session_id, created = created })
 	return created
 end
 

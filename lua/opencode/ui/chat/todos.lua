@@ -9,7 +9,6 @@ local cs = require("opencode.ui.chat.state")
 local state = cs.state
 local panel = require("opencode.ui.panel")
 local text_util = require("opencode.util.text")
-local perf = require("opencode.perf")
 local todo_hl_ns = vim.api.nvim_create_namespace("opencode_todo_hl")
 local PANEL_PREFIX_HL_PRIORITY = 4201
 local MAX_COLLAPSED_OUTPUT_LINES = 10
@@ -679,16 +678,13 @@ end
 ---@param is_expanded boolean
 ---@return table|nil result
 function M.render_tool(tool_part, is_expanded)
-	local done = perf.start("chat.todos.render_tool")
 	local cfg = M.get_config()
 	if not M.is_enabled(cfg) or type(tool_part) ~= "table" then
-		done({ skipped = true })
 		return nil
 	end
 
 	local tool_name = tool_part.tool
 	if not M.is_todo_tool(tool_name) then
-		done({ tool = tool_name, skipped = true })
 		return nil
 	end
 
@@ -709,14 +705,6 @@ function M.render_tool(tool_part, is_expanded)
 	if #result.lines > 0 then
 		table.insert(result.lines, "")
 	end
-	done({
-		tool = tool_name,
-		status = tool_status,
-		todos = #todos,
-		expanded = is_expanded == true,
-		lines = #(result.lines or {}),
-		highlights = #(result.highlights or {}),
-	})
 	return result
 end
 
@@ -917,7 +905,6 @@ function M.close_window()
 end
 
 function M.update_window()
-	local done = perf.start("chat.todos.update_window")
 	local app_state = require("opencode.state")
 	local sync = require("opencode.sync")
 	local current = app_state.get_session()
@@ -925,7 +912,6 @@ function M.update_window()
 	local frame = get_chat_frame()
 	if not frame or not session_id then
 		M.close_window()
-		done({ skipped = true, reason = "no_frame_or_session" })
 		return
 	end
 
@@ -933,34 +919,29 @@ function M.update_window()
 	local todos = M.normalize_todos(sync.get_todos(session_id))
 	if resolve_dock_display(session_id, todos, cfg) == "hidden" then
 		M.close_window()
-		done({ session_id = session_id, todos = #todos, skipped = true, reason = "manual_hidden" })
 		return
 	end
 
 	if not M.should_show_dock(todos, cfg) then
 		M.close_window()
-		done({ session_id = session_id, todos = #todos, skipped = true, reason = "hidden" })
 		return
 	end
 
 	local preliminary = calculate_window_config(frame, #todos + 1)
 	if not preliminary then
 		M.close_window()
-		done({ session_id = session_id, todos = #todos, skipped = true, reason = "no_preliminary_config" })
 		return
 	end
 
 	local result = M.render_dock(session_id, todos, { width = preliminary.width })
 	if not result or #result.lines == 0 then
 		M.close_window()
-		done({ session_id = session_id, todos = #todos, skipped = true, reason = "empty_render" })
 		return
 	end
 
 	local win_config = calculate_window_config(frame, #result.lines)
 	if not win_config then
 		M.close_window()
-		done({ session_id = session_id, todos = #todos, lines = #result.lines, skipped = true, reason = "no_window_config" })
 		return
 	end
 
@@ -982,13 +963,6 @@ function M.update_window()
 	end
 
 	setup_todo_window_options(state.todo_winid)
-	done({
-		session_id = session_id,
-		todos = #todos,
-		lines = #result.lines,
-		highlights = #(result.highlights or {}),
-		buffer_changed = buffer_changed,
-	})
 end
 
 ---@return string|nil session_id

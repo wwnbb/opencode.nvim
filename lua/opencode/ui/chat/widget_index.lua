@@ -4,7 +4,6 @@ local question_state = require("opencode.question.state")
 local permission_state = require("opencode.permission.state")
 local edit_state = require("opencode.edit.state")
 local widget_support = require("opencode.ui.chat.widget_support")
-local perf = require("opencode.perf")
 
 local Index = {}
 Index.__index = Index
@@ -34,7 +33,6 @@ end
 
 function M.new(opts)
 	opts = opts or {}
-	local done = perf.start("chat.render.index_interactions")
 	local self = setmetatable({
 		current_session = opts.current_session or {},
 		in_child_session_view = opts.in_child_session_view == true,
@@ -73,11 +71,6 @@ function M.new(opts)
 		add_to_map(self.edits_by_session, estate.session_id, estate)
 	end
 
-	done({
-		questions = #self.all_questions,
-		permissions = #self.all_permissions,
-		edits = #self.all_edits,
-	})
 	return self
 end
 
