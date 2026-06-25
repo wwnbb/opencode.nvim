@@ -14,6 +14,7 @@ function M.setup(events)
 		["message.part.removed"] = "message_part_removed",
 		["session.updated"] = "session_updated",
 		["session.status"] = "session_status",
+		["session.idle"] = "session_status",
 		["session.error"] = "session_error",
 		["session.diff"] = "session_diff",
 		["todo.updated"] = "todo_updated",

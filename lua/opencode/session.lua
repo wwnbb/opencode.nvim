@@ -328,6 +328,44 @@ function M.set_status(status, opts)
 	return previous
 end
 
+---@param status table|string|nil
+---@return boolean
+local function is_busy_status_for_idle(status)
+	local status_type = type(status) == "table" and status.type or status
+	return status_type == "busy"
+		or status_type == "streaming"
+		or status_type == "thinking"
+		or status_type == "retry"
+end
+
+local busy_watchdog_scheduled = false
+
+local function schedule_busy_watchdog()
+	if busy_watchdog_scheduled then
+		return
+	end
+	busy_watchdog_scheduled = true
+	vim.defer_fn(function()
+		busy_watchdog_scheduled = false
+		local any_busy = false
+		for _, session_id in ipairs(state.get_session_status_ids()) do
+			if state.is_runtime_session(session_id) then
+				local current = state.get_session_status(session_id)
+				if is_busy_status_for_idle(current) then
+					M.reconcile_busy_session_idle(session_id, { reason = "watchdog" })
+					local after = state.get_session_status(session_id)
+					if is_busy_status_for_idle(after) then
+						any_busy = true
+					end
+				end
+			end
+		end
+		if any_busy then
+			schedule_busy_watchdog()
+		end
+	end, 15000)
+end
+
 ---@param session_id string
 ---@param status table|string
 ---@param opts? table { reason?: string }
@@ -351,7 +389,78 @@ function M.set_session_status(session_id, status, opts)
 		reason = opts.reason,
 	})
 	emit("sessions_changed", { reason = opts.reason, session_id = session_id })
+
+	if is_busy_status_for_idle(normalized) then
+		schedule_busy_watchdog()
+	end
 	return previous
+end
+
+---@param info table  message info with sessionID, id, role, time, finish
+---@param opts? table  { reason?: string }
+---@return boolean  true if session was idled
+function M.maybe_idle_from_message(info, opts)
+	opts = opts or {}
+	if type(info) ~= "table" or not info.sessionID or not info.id then
+		return false
+	end
+	if info.role ~= "assistant" then
+		return false
+	end
+	if type(info.time) ~= "table" or info.time.completed == nil then
+		return false
+	end
+	if info.finish == "tool-calls" then
+		return false
+	end
+
+	local ok_sync, sync = pcall(require, "opencode.sync")
+	if not ok_sync or type(sync.get_messages) ~= "function" then
+		return false
+	end
+	local messages = sync.get_messages(info.sessionID)
+	local latest = messages and messages[#messages] or nil
+	if type(latest) ~= "table" or latest.id ~= info.id then
+		return false
+	end
+
+	local current_status = state.get_session_status(info.sessionID)
+	if not is_busy_status_for_idle(current_status) then
+		return false
+	end
+
+	local idle_status = { type = "idle" }
+	if type(sync.handle_session_status) == "function" then
+		sync.handle_session_status(info.sessionID, idle_status)
+	end
+	M.set_session_status(info.sessionID, idle_status, {
+		reason = opts.reason or "message_completed",
+	})
+	return true
+end
+
+---@param session_id string
+---@param opts? table  { reason?: string }
+function M.reconcile_busy_session_idle(session_id, opts)
+	opts = opts or {}
+	if not session_id or session_id == "" then
+		return
+	end
+
+	local current_status = state.get_session_status(session_id)
+	if not is_busy_status_for_idle(current_status) then
+		return
+	end
+
+	local ok_sync, sync = pcall(require, "opencode.sync")
+	if not ok_sync or type(sync.get_messages) ~= "function" then
+		return
+	end
+	local messages = sync.get_messages(session_id)
+	local latest = messages and messages[#messages] or nil
+	if type(latest) == "table" then
+		M.maybe_idle_from_message(latest, opts)
+	end
 end
 
 ---@param session table
@@ -692,6 +801,7 @@ function M.switch_to(session, opts)
 				M.set_message_cache(session.id, messages, {
 					reason = "session_switch",
 				})
+				M.reconcile_busy_session_idle(session.id, { reason = "session_switch" })
 			end
 			if state.get_session().id == session.id then
 				request_chat_render({

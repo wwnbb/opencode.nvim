@@ -223,6 +223,7 @@ local function sync_session_messages(session_id, reason, callback)
 		session_actions.set_message_cache(session_id, messages, {
 			reason = reason,
 		})
+		session_actions.reconcile_busy_session_idle(session_id, { reason = reason })
 
 		logger.debug("Session messages synced", {
 			session_id = session_id,
@@ -253,6 +254,7 @@ local function handle_prompt_response(session_id, response)
 	end
 
 	sync().handle_session_messages(session_id, { response })
+	session_actions.reconcile_busy_session_idle(session_id, { reason = "prompt_response" })
 	emit("sync_changed", {
 		kind = "message",
 		action = "prompt_response",
