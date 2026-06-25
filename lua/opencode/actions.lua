@@ -214,6 +214,7 @@ function M.load_session_messages(session_id, opts, callback)
 						end
 					end
 				end
+				require("opencode.session").reconcile_busy_session_idle(session_id, { reason = "load_messages" })
 			end
 			schedule_callback(callback, err, response)
 		end)

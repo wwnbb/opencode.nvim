@@ -1058,6 +1058,70 @@ end
 assert_true(has_diff_add, "file edit result should highlight additions")
 assert_true(has_diff_delete, "file edit result should highlight deletions")
 
+-- HTTP-sync idle reconciliation
+bus.clear()
+bus.clear_history()
+state.reset()
+sync.clear_all()
+permission_state.clear_all()
+question_state.clear_all()
+edit_state.clear_all()
+state.set_session("reconcile_root", "Reconcile Root")
+state.set_session("reconcile_other", "Reconcile Other")
+session_actions.set_session_status("reconcile_root", { type = "busy" }, { reason = "test_reconcile_busy" })
+session_actions.set_session_status("reconcile_other", { type = "busy" }, { reason = "test_reconcile_busy" })
+
+sync.handle_session_messages("reconcile_root", {
+	{
+		info = {
+			id = "reconcile_assistant",
+			sessionID = "reconcile_root",
+			role = "assistant",
+			time = { created = 1, completed = 2 },
+			finish = "stop",
+		},
+		parts = {},
+	},
+})
+session_actions.reconcile_busy_session_idle("reconcile_root", { reason = "test" })
+assert_eq(state.get_session_status("reconcile_root").type, "idle", "HTTP-sync completed assistant message should idle owning session")
+assert_eq(state.get_session_status("reconcile_other").type, "busy", "HTTP-sync idle reconcile should not affect unrelated session")
+
+-- HTTP-sync with finish=tool-calls should stay busy
+state.reset()
+sync.clear_all()
+state.set_session("toolcall_root", "ToolCall Root")
+session_actions.set_session_status("toolcall_root", { type = "busy" }, { reason = "test_toolcall_busy" })
+sync.handle_session_messages("toolcall_root", {
+	{
+		info = {
+			id = "toolcall_assistant",
+			sessionID = "toolcall_root",
+			role = "assistant",
+			time = { created = 1, completed = 2 },
+			finish = "tool-calls",
+		},
+		parts = {},
+	},
+})
+session_actions.reconcile_busy_session_idle("toolcall_root", { reason = "test" })
+assert_eq(state.get_session_status("toolcall_root").type, "busy", "tool-call completion should not idle session via reconcile")
+
+-- session.idle SSE event (no status field) should idle a busy session
+state.reset()
+sync.clear_all()
+state.set_session("idle_event_root", "Idle Event Root")
+session_actions.set_session_status("idle_event_root", { type = "busy" }, { reason = "test_idle_event_busy" })
+require("opencode.events.handlers.message").setup(bus)
+bus.emit("session_status", { sessionID = "idle_event_root" })
+wait_for(function()
+	return state.get_session_status("idle_event_root").type == "idle"
+end, "session.idle event without status field should set session idle")
+
+-- reconcile on already-idle session should be a no-op (no error)
+session_actions.reconcile_busy_session_idle("idle_event_root", { reason = "noop_test" })
+assert_eq(state.get_session_status("idle_event_root").type, "idle", "reconcile on idle session should be a no-op")
+
 print("State ownership checks passed")
 	end)
 end)
