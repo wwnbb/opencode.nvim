@@ -611,6 +611,49 @@ assert_eq(missing_id, nil, "decoder should reject missing request id")
 local missing_session = permission_request.decode({ requestID = "decoder_missing_session", permission = "bash" })
 assert_eq(missing_session, nil, "decoder should reject missing session id")
 
+-- decode() callID fallback: recover message_id from sync tool parts
+sync.clear_all()
+sync.handle_message_updated({
+	id = "call_fallback_message",
+	sessionID = "call_fallback_session",
+	role = "assistant",
+	time = { created = 1 },
+})
+sync.handle_part_updated({
+	id = "call_fallback_part",
+	messageID = "call_fallback_message",
+	sessionID = "call_fallback_session",
+	type = "tool",
+	tool = "bash",
+	callID = "call_fallback_call",
+})
+local decoded_call_fallback = assert(permission_request.decode({
+	requestID = "call_fallback_perm",
+	permission = "bash",
+	sessionID = "call_fallback_session",
+	callID = "call_fallback_call",
+	time = { created = 1000 },
+}))
+assert_eq(
+	decoded_call_fallback.message_id,
+	"call_fallback_message",
+	"decode should recover message_id from callID via sync lookup"
+)
+assert_eq(decoded_call_fallback.call_id, "call_fallback_call", "decode should preserve call_id")
+
+local decoded_call_miss = permission_request.decode({
+	requestID = "call_miss_perm",
+	permission = "bash",
+	sessionID = "call_fallback_session",
+	callID = "nonexistent_call",
+	time = { created = 1000 },
+})
+assert_eq(
+	decoded_call_miss and decoded_call_miss.message_id,
+	nil,
+	"decode should leave message_id nil when callID has no matching tool part"
+)
+
 bus.clear()
 bus.clear_history()
 state.reset()
