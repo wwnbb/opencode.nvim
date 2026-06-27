@@ -247,6 +247,31 @@ function find_message_session_id(message_id)
 	return nil
 end
 
+-- Find owning message for a tool call ID within a session.
+-- Returns messageID string or nil.
+local function find_message_id_by_call_id(session_id, call_id)
+	session_id = nonempty_string(session_id)
+	call_id = nonempty_string(call_id)
+	if not session_id or not call_id then
+		return nil
+	end
+	local messages = store.message[session_id]
+	if not messages then
+		return nil
+	end
+	for _, message in ipairs(messages) do
+		local message_id = get_message_id(message)
+		if message_id then
+			for _, part in ipairs(M.get_message_tools(message_id)) do
+				if part.callID == call_id then
+					return part.messageID or message_id
+				end
+			end
+		end
+	end
+	return nil
+end
+
 -- Ensure a message row exists for a part update.
 -- This lets streaming text render even if message.updated arrives slightly later.
 local function ensure_message_for_part(part)
@@ -1023,6 +1048,14 @@ end
 ---@return string|nil
 function M.find_message_session_id(message_id)
 	return find_message_session_id(message_id)
+end
+
+---Find the owning message ID for a tool call ID within a session
+---@param session_id string
+---@param call_id string
+---@return string|nil
+function M.find_message_id_by_call_id(session_id, call_id)
+	return find_message_id_by_call_id(session_id, call_id)
 end
 
 ---@param session_id string

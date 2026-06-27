@@ -1,6 +1,7 @@
 local M = {}
 
 local util = require("opencode.events.util")
+local sync = require("opencode.sync")
 
 local EDIT_PERMISSION_TYPES = {
 	diff_review = true,
@@ -245,6 +246,10 @@ function M.decode(data)
 	local session_id = resolve_session_id(data, metadata, message_id)
 	if not session_id then
 		return nil, "permission payload missing session id"
+	end
+
+	if not message_id and call_id then
+		message_id = sync.find_message_id_by_call_id(session_id, call_id)
 	end
 
 	local is_native_diff = metadata.opencode_native_diff == true or EDIT_PERMISSION_TYPES[permission_type] == true
