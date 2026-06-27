@@ -310,6 +310,7 @@ function Index:orphan_groups(session_msg_ids)
 		if
 			not self.rendered_edit_ids[estate.permission_id]
 			and not (estate.message_id and session_msg_ids[estate.message_id])
+			and edit_state.get_resolution(estate.permission_id) == "pending"
 			and self:should_render_session_widget(estate.session_id, estate.status)
 		then
 			table.insert(groups.edits, estate)
