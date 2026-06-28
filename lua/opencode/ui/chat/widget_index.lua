@@ -301,6 +301,7 @@ function Index:orphan_groups(session_msg_ids)
 		if
 			not self.rendered_perm_ids[pstate.permission_id]
 			and not (pstate.message_id and session_msg_ids[pstate.message_id])
+			and (pstate.status == nil or pstate.status == "pending")
 			and self:should_render_session_widget(pstate.session_id, pstate.status)
 		then
 			table.insert(groups.permissions, pstate)

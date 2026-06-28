@@ -1763,6 +1763,7 @@ do
 	local chat_state = require("opencode.ui.chat.state").state
 	local app_state = require("opencode.state")
 	local edit_state = require("opencode.edit.state")
+	local permission_state = require("opencode.permission.state")
 
 	local previous_buf = vim.api.nvim_get_current_buf()
 	local previous_session = app_state.get_session()
@@ -1806,6 +1807,7 @@ do
 
 	sync.clear_all()
 	edit_state.clear_all()
+	permission_state.clear_all()
 	app_state.set_session("orphan_resolved_session", "Orphan Resolved")
 
 	edit_state.add_edit("edit_orphan_resolved", "orphan_resolved_session", {
@@ -1822,6 +1824,16 @@ do
 		review_mode = "readonly",
 	})
 
+	permission_state.add_permission("perm_orphan_resolved", "orphan_resolved_session", "bash", {
+		timestamp = 3,
+		tool_input = { command = "echo resolved" },
+	})
+	permission_state.mark_approved("perm_orphan_resolved", "once")
+	permission_state.add_permission("perm_orphan_pending", "orphan_resolved_session", "bash", {
+		timestamp = 4,
+		tool_input = { command = "echo pending" },
+	})
+
 	chat.render()
 	assert(
 		chat_state.edits.edit_orphan_resolved == nil,
@@ -1831,9 +1843,18 @@ do
 		chat_state.edits.edit_orphan_pending,
 		"pending orphan edit owned by current session should render at the orphan tail"
 	)
+	assert(
+		chat_state.permissions.perm_orphan_resolved == nil,
+		"resolved orphan permission owned by current session should not render at the orphan tail"
+	)
+	assert(
+		chat_state.permissions.perm_orphan_pending,
+		"pending orphan permission owned by current session should render at the orphan tail"
+	)
 
 	sync.clear_all()
 	edit_state.clear_all()
+	permission_state.clear_all()
 	app_state.remove_session("orphan_resolved_session")
 	if previous_session and previous_session.id then
 		app_state.set_session(previous_session.id, previous_session.name, {
