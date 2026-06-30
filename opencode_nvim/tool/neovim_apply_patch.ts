@@ -78,7 +78,13 @@ function parseAddFileContent(lines: string[], start: number) {
   const content: string[] = []
   let index = start
   while (index < lines.length && !lines[index].startsWith("***")) {
-    if (lines[index].startsWith("+")) content.push(lines[index].slice(1))
+    const line = lines[index]
+    if (!line.startsWith("+")) {
+      throw new Error(
+        `Invalid Add File content at line ${index + 1}: every content line must start with '+', including blank lines (write '+' alone)`,
+      )
+    }
+    content.push(line.slice(1))
     index++
   }
   return { content: content.join("\n"), next: index }
@@ -150,8 +156,14 @@ function parsePatch(patchText: string): Hunk[] {
   const lines = cleaned.split("\n")
   const begin = lines.findIndex((line) => line.trim() === "*** Begin Patch")
   const end = lines.findIndex((line) => line.trim() === "*** End Patch")
-  if (begin === -1 || end === -1 || begin >= end) {
-    throw new Error("Invalid patch format: missing Begin/End markers")
+  if (begin === -1) {
+    throw new Error("Invalid patch format: missing *** Begin Patch marker")
+  }
+  if (end === -1) {
+    throw new Error("Invalid patch format: missing *** End Patch marker")
+  }
+  if (begin >= end) {
+    throw new Error("Invalid patch format: *** End Patch appears before *** Begin Patch")
   }
 
   const hunks: Hunk[] = []

@@ -29,7 +29,8 @@ Rules:
 - Treat user review edits as intentional, not mistakes. Do not "fix" or revert them unless user explicitly asks.
 - Never auto-retry `rejected`/`partial`/user-edited result unless user asks.
 - Always include file header.
-- Added lines need `+`, including new files. Content starts immediately after `+`.
+- Added lines need `+`, including new files. Content starts immediately after `+`. Every line in an `*** Add File` block must start with `+`, including blank lines (write `+` alone); non-`+` lines are rejected with an error rather than silently dropped.
+- `*** Add File` content stops at the first line beginning with `***`, so file content cannot start with `***`.
 - Updates: copy old and new lines exactly, whitespace included. A line written as `+foo` is written at column 0; use `+    foo` for an indented line.
 - Replacements that remove leading indentation are rejected by default. Set `allowIndentChange=true` only when intentionally dedenting code.
 - Hunk header = `@@` + optional literal anchor line, e.g. `@@ def greet():`. For an indented anchor, include a separator space plus the real indentation, e.g. `@@     if ready:`. To replace anchor too, repeat it as `-` line. Avoid unified ranges like `@@ -12,3 +12,3 @@`.
