@@ -292,6 +292,7 @@ function Index:orphan_groups(session_msg_ids)
 		if
 			not self.rendered_question_ids[qstate.request_id]
 			and not (qstate.message_id and session_msg_ids[qstate.message_id])
+			and (qstate.status == "pending" or qstate.status == "confirming")
 			and self:should_render_session_widget(qstate.session_id, qstate.status)
 		then
 			table.insert(groups.questions, qstate)
