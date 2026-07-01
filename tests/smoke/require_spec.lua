@@ -1887,6 +1887,134 @@ end
 
 do
 	local chat = require("opencode.ui.chat")
+	local chat_state = require("opencode.ui.chat.state").state
+	local app_state = require("opencode.state")
+	local question_state = require("opencode.question.state")
+
+	local previous_buf = vim.api.nvim_get_current_buf()
+	local previous_session = app_state.get_session()
+	local previous_view = {
+		bufnr = chat_state.bufnr,
+		winid = chat_state.winid,
+		visible = chat_state.visible,
+		config = chat_state.config,
+		local_notices = chat_state.local_notices,
+		session_stack = chat_state.session_stack,
+		auto_scroll = chat_state.auto_scroll,
+		stream_blocks = chat_state.stream_blocks,
+		spinner_footer_line = chat_state.spinner_footer_line,
+		questions = chat_state.questions,
+		permissions = chat_state.permissions,
+		edits = chat_state.edits,
+		tasks = chat_state.tasks,
+		tools = chat_state.tools,
+	}
+
+	local bufnr = vim.api.nvim_create_buf(false, true)
+	local winid = vim.api.nvim_get_current_win()
+	vim.api.nvim_win_set_buf(winid, bufnr)
+	chat_state.bufnr = bufnr
+	chat_state.winid = winid
+	chat_state.visible = true
+	chat_state.config = {
+		max_rendered_messages = 20,
+		session_tabs = { enabled = false },
+	}
+	chat_state.local_notices = {}
+	chat_state.session_stack = {}
+	chat_state.auto_scroll = false
+	chat_state.stream_blocks = {}
+	chat_state.spinner_footer_line = nil
+	chat_state.questions = {}
+	chat_state.permissions = {}
+	chat_state.edits = {}
+	chat_state.tasks = {}
+	chat_state.tools = {}
+
+	sync.clear_all()
+	question_state.clear_all()
+	app_state.set_session("orphan_question_session", "Orphan Question")
+
+	question_state.add_question("q_orphan_pending", "orphan_question_session", {
+		{ header = "Pick", question = "Choose one", options = { { label = "A", value = "a" } } },
+	}, {
+		timestamp = 1,
+		message_id = "msg_orphan_question",
+	})
+	question_state.add_question("q_orphan_confirming", "orphan_question_session", {
+		{ header = "Pick", question = "Choose one", options = { { label = "B", value = "b" } } },
+	}, {
+		timestamp = 2,
+		message_id = "msg_orphan_question",
+	})
+	question_state.set_confirming("q_orphan_confirming")
+	question_state.add_question("q_orphan_answered", "orphan_question_session", {
+		{ header = "Pick", question = "Choose one", options = { { label = "C", value = "c" } } },
+	}, {
+		timestamp = 3,
+		message_id = "msg_orphan_question",
+	})
+	question_state.mark_answered("q_orphan_answered")
+	question_state.add_question("q_orphan_rejected", "orphan_question_session", {
+		{ header = "Pick", question = "Choose one", options = { { label = "D", value = "d" } } },
+	}, {
+		timestamp = 4,
+		message_id = "msg_orphan_question",
+	})
+	question_state.mark_rejected("q_orphan_rejected")
+
+	chat.render()
+	assert(
+		chat_state.questions.q_orphan_pending,
+		"pending orphan question owned by current session should render at the orphan tail"
+	)
+	assert(
+		chat_state.questions.q_orphan_confirming,
+		"confirming orphan question owned by current session should render at the orphan tail"
+	)
+	assert(
+		chat_state.questions.q_orphan_answered == nil,
+		"answered orphan question owned by current session should not render at the orphan tail"
+	)
+	assert(
+		chat_state.questions.q_orphan_rejected == nil,
+		"rejected orphan question owned by current session should not render at the orphan tail"
+	)
+
+	sync.clear_all()
+	question_state.clear_all()
+	app_state.remove_session("orphan_question_session")
+	if previous_session and previous_session.id then
+		app_state.set_session(previous_session.id, previous_session.name, {
+			runtime = previous_session.runtime,
+		})
+	else
+		app_state.set_session(nil, nil)
+	end
+	chat_state.bufnr = previous_view.bufnr
+	chat_state.winid = previous_view.winid
+	chat_state.visible = previous_view.visible
+	chat_state.config = previous_view.config
+	chat_state.local_notices = previous_view.local_notices
+	chat_state.session_stack = previous_view.session_stack
+	chat_state.auto_scroll = previous_view.auto_scroll
+	chat_state.stream_blocks = previous_view.stream_blocks
+	chat_state.spinner_footer_line = previous_view.spinner_footer_line
+	chat_state.questions = previous_view.questions
+	chat_state.permissions = previous_view.permissions
+	chat_state.edits = previous_view.edits
+	chat_state.tasks = previous_view.tasks
+	chat_state.tools = previous_view.tools
+	if vim.api.nvim_buf_is_valid(previous_buf) then
+		vim.api.nvim_win_set_buf(winid, previous_buf)
+	end
+	if vim.api.nvim_buf_is_valid(bufnr) then
+		vim.api.nvim_buf_delete(bufnr, { force = true })
+	end
+end
+
+do
+	local chat = require("opencode.ui.chat")
 	local chat_state_mod = require("opencode.ui.chat.state")
 	local chat_state = chat_state_mod.state
 	local app_state = require("opencode.state")
