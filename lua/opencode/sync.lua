@@ -1003,6 +1003,83 @@ function M.handle_session_status(session_id, status)
 	bump_session_revision(session_id)
 end
 
+---Force-close in-flight tool parts and uncompleted assistant messages for a session.
+---Use when the session goes idle/aborted/errored but the SSE stream dropped the
+---terminal events (e.g. user aborted mid-tool). Without this, tool parts stay
+---"running" and the assistant message stays unfinished, so the UI keeps spinning.
+---@param session_id string
+---@param opts? { finish?: string, tool_status?: string, reason?: string }
+---@return integer finalized_parts, integer finalized_messages
+function M.finalize_inflight(session_id, opts)
+	opts = opts or {}
+	session_id = nonempty_string(session_id)
+	if not session_id then
+		return 0, 0
+	end
+
+	local finish = nonempty_string(opts.finish) or "stop"
+	local tool_status = nonempty_string(opts.tool_status) or "interrupted"
+	local now = vim.uv.now()
+
+	local messages = store.message[session_id]
+	if not messages then
+		return 0, 0
+	end
+
+	local finalized_parts = 0
+	local finalized_messages = 0
+
+	for _, message in ipairs(messages) do
+		if
+			type(message) == "table"
+			and message.role == "assistant"
+			and type(message.time) == "table"
+			and message.time.completed == nil
+		then
+			message.time.completed = now
+			if not nonempty_string(message.finish) then
+				message.finish = finish
+			end
+			bump_message_revision(message.id, session_id)
+			finalized_messages = finalized_messages + 1
+		end
+	end
+
+	for message_id, parts in pairs(store.part) do
+		if type(parts) == "table" then
+			local owner_session = find_message_session_id(message_id)
+			if owner_session == session_id then
+				for _, part in ipairs(parts) do
+					if
+						type(part) == "table"
+						and part.type == "tool"
+						and type(part.state) == "table"
+						and part.state.status == "running"
+					then
+						part.state.status = tool_status
+						if
+							type(part.state.time) == "table"
+							and part.state.time.start ~= nil
+							and part.state.time["end"] == nil
+						then
+							part.state.time["end"] = now
+						end
+						clear_part_delta_buffers(message_id, part.id)
+						bump_part_revision(message_id, part.id, session_id)
+						finalized_parts = finalized_parts + 1
+					end
+				end
+			end
+		end
+	end
+
+	if finalized_parts > 0 or finalized_messages > 0 then
+		bump_session_revision(session_id)
+	end
+
+	return finalized_parts, finalized_messages
+end
+
 ---Handle todo.updated event (mirrors TUI sync.tsx todo store updates)
 ---@param session_id string
 ---@param todos OpenCodeTodo[]|nil
