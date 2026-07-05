@@ -891,6 +891,27 @@ function M.setup(events)
 				session_actions.set_session_status(data.sessionID, data.status, {
 					reason = "session_status",
 				})
+
+				-- When the session leaves the busy state, any tool parts still
+				-- "running" or assistant messages still uncompleted are stale:
+				-- the server dropped the terminal SSE events (abort, disconnect,
+				-- crash). Force-close them so the UI stops spinning.
+				local status_type = type(data.status) == "table" and data.status.type or data.status
+				if status_type == "idle" or status_type == "error" then
+					local finalized_parts, finalized_messages = sync.finalize_inflight(data.sessionID, {
+						finish = status_type == "error" and "error" or "stop",
+						tool_status = status_type == "error" and "error" or "interrupted",
+						reason = "session_status_" .. status_type,
+					})
+					if finalized_parts > 0 or finalized_messages > 0 then
+						logger.debug("Finalized stale in-flight parts after session status", {
+							sessionID = data.sessionID,
+							status = status_type,
+							finalized_parts = finalized_parts,
+							finalized_messages = finalized_messages,
+						})
+					end
+				end
 			end
 
 			local current_session = state.get_session()
@@ -953,22 +974,34 @@ function M.setup(events)
 			local session_id = (data and data.sessionID) or current_session.id
 			local err = data and data.error
 
-			if event_util.is_abort_error(err) then
-				logger.debug("Session abort ignored", {
-					sessionID = data and data.sessionID or nil,
+		if event_util.is_abort_error(err) then
+			logger.debug("Session abort ignored", {
+				sessionID = data and data.sessionID or nil,
+			})
+			if session_id then
+				local finalized_parts, finalized_messages = sync.finalize_inflight(session_id, {
+					finish = "stop",
+					tool_status = "interrupted",
+					reason = "session_abort",
 				})
-				if session_id then
-					session_actions.set_session_status(session_id, { type = "idle" }, {
-						reason = "session_abort",
-					})
-					events.emit("sync_changed", {
-						kind = "session_error",
-						action = "aborted",
-						session_id = session_id,
+				if finalized_parts > 0 or finalized_messages > 0 then
+					logger.debug("Finalized stale in-flight parts after abort", {
+						sessionID = session_id,
+						finalized_parts = finalized_parts,
+						finalized_messages = finalized_messages,
 					})
 				end
-				return
+				session_actions.set_session_status(session_id, { type = "idle" }, {
+					reason = "session_abort",
+				})
+				events.emit("sync_changed", {
+					kind = "session_error",
+					action = "aborted",
+					session_id = session_id,
+				})
 			end
+			return
+		end
 
 			local message = event_util.format_session_error(err, { fallback = "unknown error" })
 			if session_id then
