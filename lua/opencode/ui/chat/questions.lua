@@ -4,15 +4,12 @@ local M = {}
 
 local cs = require("opencode.ui.chat.state")
 local state = cs.state
-local chat_hl_ns = cs.chat_hl_ns
 
 local question_widget = require("opencode.ui.question_widget")
 local widget_base = require("opencode.ui.widget_base")
 local question_state = require("opencode.question.state")
 local widget_support = require("opencode.ui.chat.widget_support")
 local render_coordinator = require("opencode.ui.chat.render_coordinator")
-local render = require("opencode.ui.chat.render")
-local render_state = require("opencode.ui.chat.render_state")
 local actions = require("opencode.actions")
 
 local function schedule_render()
@@ -209,23 +206,10 @@ function M.rerender_question(request_id)
 
 	local lines, highlights, _ =
 		question_widget.get_lines_for_question(request_id, { questions = questions }, qstate, qstate.status)
-	local old_end = pos.end_line
-	local old_count = old_end - pos.start_line + 1
-	local new_count = #lines
-	local delta = new_count - old_count
 
-	vim.bo[state.bufnr].modifiable = true
-	vim.api.nvim_buf_set_lines(state.bufnr, pos.start_line, pos.end_line + 1, false, lines)
-	local clear_end = pos.start_line + math.max(old_count, new_count)
-	render_state.clear_chat_highlights(state.bufnr, pos.start_line, clear_end)
-	render.apply_extmark_highlights(state.bufnr, chat_hl_ns, highlights, pos.start_line)
-
-	vim.bo[state.bufnr].modifiable = false
-
-	widget_support.shift_tracked_lines(old_end, delta)
-	state.questions[request_id].end_line = pos.start_line + #lines - 1
-	state.questions[request_id].highlights = highlights
-	state.questions[request_id].status = qstate.status
+	if widget_support.replace_rendered_block(pos, { lines = lines, highlights = highlights }) then
+		pos.status = qstate.status
+	end
 end
 
 -- ─── Submit ───────────────────────────────────────────────────────────────────

@@ -4,6 +4,9 @@ local cs = require("opencode.ui.chat.state")
 local state = cs.state
 local render = require("opencode.ui.chat.render")
 local event_util = require("opencode.events.util")
+local chat_hl_ns = cs.chat_hl_ns
+local chat_anim_ns = cs.chat_anim_ns
+local render_state = require("opencode.ui.chat.render_state")
 
 local FOCUS_ORDER = { "question", "permission", "edit" }
 
@@ -188,6 +191,49 @@ function M.shift_tracked_lines(old_end, delta, opts)
 	if state.focus_edit_line and (state.focus_edit_line - 1) > old_end then
 		state.focus_edit_line = state.focus_edit_line + delta
 	end
+end
+
+---@param bufnr number|nil
+---@param start_line number|nil
+---@param end_line number|nil
+function M.clear_animation_extmarks(bufnr, start_line, end_line)
+	bufnr = bufnr or state.bufnr
+	if not bufnr or not vim.api.nvim_buf_is_valid(bufnr) then
+		return
+	end
+	pcall(vim.api.nvim_buf_clear_namespace, bufnr, chat_anim_ns, start_line or 0, end_line or -1)
+end
+
+---@param pos table
+---@param result table { lines: string[], highlights: table[] }
+---@return boolean updated
+function M.replace_rendered_block(pos, result)
+	if not M.can_update_in_place(pos) then
+		return false
+	end
+	result = result or {}
+	result.lines = result.lines or {}
+	for i, line in ipairs(result.lines) do
+		result.lines[i] = render.sanitize_buffer_line(line)
+	end
+	local old_end = pos.end_line
+	local old_line_count = old_end - pos.start_line + 1
+	local new_line_count = #result.lines
+	local delta = new_line_count - old_line_count
+
+	vim.bo[state.bufnr].modifiable = true
+	M.clear_animation_extmarks(state.bufnr, pos.start_line, pos.end_line + 1)
+	render_state.clear_chat_highlights(state.bufnr, pos.start_line, pos.end_line + 1)
+	vim.api.nvim_buf_set_lines(state.bufnr, pos.start_line, pos.end_line + 1, false, result.lines)
+	render_state.clear_chat_highlights(state.bufnr, pos.start_line, pos.start_line + new_line_count)
+	render.apply_extmark_highlights(state.bufnr, chat_hl_ns, result.highlights, pos.start_line)
+	vim.bo[state.bufnr].modifiable = false
+
+	M.shift_tracked_lines(old_end, delta)
+	pos.end_line = pos.start_line + new_line_count - 1
+	pos.highlights = result.highlights
+	M.mark_applied_render_generation(pos)
+	return true
 end
 
 return M

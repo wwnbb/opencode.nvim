@@ -4,15 +4,12 @@ local M = {}
 
 local cs = require("opencode.ui.chat.state")
 local state = cs.state
-local chat_hl_ns = cs.chat_hl_ns
 
 local permission_widget = require("opencode.ui.permission_widget")
 local widget_base = require("opencode.ui.widget_base")
 local permission_state = require("opencode.permission.state")
 local widget_support = require("opencode.ui.chat.widget_support")
 local render_coordinator = require("opencode.ui.chat.render_coordinator")
-local render = require("opencode.ui.chat.render")
-local render_state = require("opencode.ui.chat.render_state")
 local actions = require("opencode.actions")
 
 local function schedule_render()
@@ -157,22 +154,8 @@ function M.rerender_permission(perm_id)
 	end
 
 	local p_lines, p_highlights = permission_widget.get_lines_for_permission(perm_id, pstate)
-	local old_end = pos.end_line
-	local old_count = old_end - pos.start_line + 1
-	local new_count = #p_lines
-	local delta = new_count - old_count
 
-	vim.bo[state.bufnr].modifiable = true
-	vim.api.nvim_buf_set_lines(state.bufnr, pos.start_line, pos.end_line + 1, false, p_lines)
-	local clear_end = pos.start_line + math.max(old_count, new_count)
-	render_state.clear_chat_highlights(state.bufnr, pos.start_line, clear_end)
-	render.apply_extmark_highlights(state.bufnr, chat_hl_ns, p_highlights, pos.start_line)
-
-	vim.bo[state.bufnr].modifiable = false
-
-	widget_support.shift_tracked_lines(old_end, delta)
-	state.permissions[perm_id].end_line = pos.start_line + #p_lines - 1
-	state.permissions[perm_id].highlights = p_highlights
+	widget_support.replace_rendered_block(pos, { lines = p_lines, highlights = p_highlights })
 end
 
 -- ─── Handlers ─────────────────────────────────────────────────────────────────
