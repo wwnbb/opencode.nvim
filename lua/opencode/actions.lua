@@ -402,7 +402,34 @@ function M.toggle_mcp(name, connected, callback)
 end
 
 function M.respond_permission(permission_id, reply, opts, callback)
-	return client().respond_permission(permission_id, reply, opts or {}, function(err, result)
+	opts = vim.tbl_extend("force", opts or {}, {})
+	-- Scope the reply to the permission's session directory when the caller
+	-- did not supply one. Without this, cross-project replies hit the cwd
+	-- server instance and never reach the agent waiting in another project.
+	if type(opts.directory) ~= "string" or opts.directory == "" then
+		local dir = require("opencode.state").get_session_directory
+		local session_id
+		local perm_ok, perm_state = pcall(require, "opencode.permission.state")
+		if perm_ok and perm_state.get_permission then
+			local pstate = perm_state.get_permission(permission_id)
+			if pstate then
+				session_id = pstate.session_id
+			end
+		end
+		if not session_id then
+			local edit_ok, edit_state = pcall(require, "opencode.edit.state")
+			if edit_ok and edit_state.get_edit then
+				local estate = edit_state.get_edit(permission_id)
+				if estate then
+					session_id = estate.session_id
+				end
+			end
+		end
+		if session_id then
+			opts.directory = dir(session_id)
+		end
+	end
+	return client().respond_permission(permission_id, reply, opts, function(err, result)
 		schedule_callback(callback, err, result)
 	end)
 end

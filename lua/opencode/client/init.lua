@@ -239,11 +239,33 @@ end
 -- reply: "once" (approve this time), "always" (approve and remember), "reject" (deny)
 ---@param permission_id string The permission request ID (e.g., "per_xxx")
 ---@param reply string "once" | "always" | "reject"
----@param opts? table { message? string } Optional rejection message
+---@param opts? table { message? string, directory? string } Optional rejection message or target session directory
 ---@param callback function(err, success)
 function M.respond_permission(permission_id, reply, opts, callback)
 	opts = opts or {}
-	http.post("/permission/" .. permission_id .. "/reply", { reply = reply, message = opts.message }, callback)
+	local request_opts
+	if type(opts.directory) == "string" and opts.directory ~= "" then
+		request_opts = { headers = { ["x-opencode-directory"] = opts.directory } }
+	end
+	http.post("/permission/" .. permission_id .. "/reply", { reply = reply, message = opts.message }, callback, request_opts)
+end
+
+-- Get all pending permission requests across all sessions
+---@param opts? table|function { directory?: string } or callback for backward compatibility
+---@param callback? function(err, permissions)
+function M.list_permissions(opts, callback)
+	if type(opts) == "function" then
+		callback = opts
+		opts = nil
+	end
+	local request_opts
+	if opts and type(opts.directory) == "string" and opts.directory ~= "" then
+		request_opts = {
+			headers = { ["x-opencode-directory"] = opts.directory },
+			query = { directory = opts.directory },
+		}
+	end
+	http.get("/permission", callback, request_opts)
 end
 
 -- Reply to a question with selected answers

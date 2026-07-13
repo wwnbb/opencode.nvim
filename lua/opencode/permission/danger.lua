@@ -82,7 +82,16 @@ function M.approve(permission_id, opts)
 	end
 
 	replied_permissions[permission_id] = true
-	client.respond_permission(permission_id, "once", { message = opts.message }, function(err)
+	-- Scope the auto-approval to the permission's session directory so
+	-- cross-project danger-mode approvals reach the correct instance.
+	local reply_opts = { message = opts.message }
+	if opts.session_id then
+		local state_ok, state = pcall(require, "opencode.state")
+		if state_ok and type(state.get_session_directory) == "function" then
+			reply_opts.directory = state.get_session_directory(opts.session_id)
+		end
+	end
+	client.respond_permission(permission_id, "once", reply_opts, function(err)
 		vim.schedule(function()
 			local log = logger()
 			if err then
