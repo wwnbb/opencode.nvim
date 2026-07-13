@@ -84,7 +84,6 @@ local function main()
 			command = opencode_command,
 			auto_start = true,
 			lazy = true,
-			reuse_running = false,
 			startup_timeout = 30000,
 			health_check_interval = 250,
 			shutdown_on_exit = true,

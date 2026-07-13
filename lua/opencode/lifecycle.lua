@@ -24,7 +24,6 @@ M.opts = {
 	startup_timeout = 10000,
 	health_check_interval = 1000,
 	shutdown_on_exit = true,
-	reuse_running = true,
 	use_shell_env = true,
 	env = {},
 	config_dir = nil,
@@ -170,7 +169,7 @@ local function resolve_command(command, env)
 	return command
 end
 
--- Check if OpenCode server is already running at configured host:port
+-- Health-check the freshly spawned server
 check_existing_server = function(callback)
 	local server_info = state.get_server_info()
 	if not server_info.port then
@@ -454,7 +453,7 @@ function M.ensure_connected(callback)
 	return false
 end
 
--- Start server and connect (or connect to existing)
+-- Start server and connect
 function M.start()
 	if not M.opts.auto_start then
 		vim.notify("OpenCode auto-start is disabled", vim.log.levels.WARN)
@@ -465,38 +464,12 @@ function M.start()
 		return false -- Already starting/connecting/connected
 	end
 
-	if M.opts.reuse_running then
-		-- First check if there's already a server running
-		state.set_connection("starting")
-
-		check_existing_server(function(running, version)
-			if running then
-				-- Connect to existing server
-				state.set_server_managed(false)
-				vim.schedule(function()
-					connect_to_server(version)
-				end)
-			else
-				-- Start our own server
-				vim.schedule(function()
-					spawn_server(function(err)
-						if err then
-							state.set_connection("error")
-							vim.notify("Failed to start OpenCode server: " .. err.error, vim.log.levels.ERROR)
-						end
-					end)
-				end)
-			end
-		end)
-	else
-		-- Always start our own server
-		spawn_server(function(err)
-			if err then
-				state.set_connection("error")
-				vim.notify("Failed to start OpenCode server: " .. err.error, vim.log.levels.ERROR)
-			end
-		end)
-	end
+	spawn_server(function(err)
+		if err then
+			state.set_connection("error")
+			vim.notify("Failed to start OpenCode server: " .. err.error, vim.log.levels.ERROR)
+		end
+	end)
 
 	return true
 end

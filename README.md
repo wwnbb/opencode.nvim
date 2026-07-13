@@ -51,7 +51,7 @@ Follow these steps:
 3. Add `wwnbb/opencode.nvim` through the existing plugin manager. Include dependencies: MunifTanjim/nui.nvim and nvim-lua/plenary.nvim. If the config uses lazy.nvim, ask whether I want you to install/sync the plugin now by running `nvim --headless "+Lazy! sync" +qa`; run it only if I confirm.
 4. Configure the plugin manager build/install hook to run `scripts/install-tools.sh` at least once so the bundled opencode.nvim config/tools are installed. If the plugin manager has no build hook, run `scripts/install-tools.sh` manually from the plugin root. After install, run `opencode debug config` to verify the OpenCode config is correct.
 5. Configure `require("opencode").setup()` using only supported options:
-   - `server.command`, `server.auto_start`, `server.reuse_running`, `server.config_dir`, `server.env`
+   - `server.command`, `server.auto_start`, `server.config_dir`, `server.env`
    - `session.default_agent`, `session.default_model.providerID`, `session.default_model.modelID`, `session.parallel.enabled`, `session.parallel.use_prompt_async`
    - `chat.layout` (`vertical`, `horizontal`, or `float`), `chat.position`, `chat.width`, `chat.height`, `chat.float.width`, `chat.float.height`, `chat.float.border`, `chat.close_on_focus_lost`
    - `chat.session_tabs.enabled`, `chat.session_tabs.auto_fit`, `chat.session_tabs.max_tabs`, `chat.session_tabs.separator`, `chat.session_tabs.icons`, `chat.session_tabs.colors`
@@ -117,7 +117,6 @@ require("opencode").setup({
   server = {
     command = "opencode",
     auto_start = true,
-    reuse_running = true,
   },
   session = {
     default_agent = "build",
