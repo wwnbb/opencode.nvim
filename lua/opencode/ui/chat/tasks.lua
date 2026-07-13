@@ -87,13 +87,7 @@ local function tick_task_anim_frame()
 	end
 end
 
-function M.clear_animation_extmarks(bufnr, start_line, end_line)
-	bufnr = bufnr or state.bufnr
-	if not bufnr or not vim.api.nvim_buf_is_valid(bufnr) then
-		return
-	end
-	pcall(vim.api.nvim_buf_clear_namespace, bufnr, chat_anim_ns, start_line or 0, end_line or -1)
-end
+M.clear_animation_extmarks = widget_support.clear_animation_extmarks
 
 ---@param tool_name string|nil
 ---@return boolean
@@ -1531,81 +1525,6 @@ function M.update_active_animations_in_place()
 	return updated
 end
 
-local function shift_all_after(anchor_start, delta, skip_task_id, skip_tool_id)
-	if delta == 0 then
-		return
-	end
-	for id, qpos in pairs(state.questions) do
-		if qpos.start_line > anchor_start then
-			state.questions[id].start_line = qpos.start_line + delta
-			state.questions[id].end_line = qpos.end_line + delta
-		end
-	end
-	for id, ppos in pairs(state.permissions) do
-		if ppos.start_line > anchor_start then
-			state.permissions[id].start_line = ppos.start_line + delta
-			state.permissions[id].end_line = ppos.end_line + delta
-		end
-	end
-	for id, epos in pairs(state.edits) do
-		if epos.start_line > anchor_start then
-			state.edits[id].start_line = epos.start_line + delta
-			state.edits[id].end_line = epos.end_line + delta
-		end
-	end
-	for id, tpos in pairs(state.tasks) do
-		if id ~= skip_task_id and tpos.start_line > anchor_start then
-			state.tasks[id].start_line = tpos.start_line + delta
-			state.tasks[id].end_line = tpos.end_line + delta
-		end
-	end
-	for id, tlpos in pairs(state.tools) do
-		if id ~= skip_tool_id and tlpos.start_line > anchor_start then
-			state.tools[id].start_line = tlpos.start_line + delta
-			state.tools[id].end_line = tlpos.end_line + delta
-		end
-	end
-	for _, mpos in ipairs(state.message_positions or {}) do
-		if mpos.start_line and mpos.end_line then
-			if mpos.start_line > anchor_start then
-				mpos.start_line = mpos.start_line + delta
-				mpos.end_line = mpos.end_line + delta
-			elseif mpos.end_line >= anchor_start then
-				mpos.end_line = mpos.end_line + delta
-			end
-		end
-	end
-end
-
----@param pos table
----@param result table
----@param skip_task_id string|nil
----@param skip_tool_id string|nil
-local function replace_rendered_block(pos, result, skip_task_id, skip_tool_id)
-	if not widget_support.can_update_in_place(pos) then
-		return false
-	end
-	result = sanitize_result_lines(result)
-	local old_line_count = pos.end_line - pos.start_line + 1
-	local new_line_count = #result.lines
-	local delta = new_line_count - old_line_count
-	local clear_end = math.max(pos.end_line + 1, pos.start_line + new_line_count)
-
-	vim.bo[state.bufnr].modifiable = true
-	M.clear_animation_extmarks(state.bufnr, pos.start_line, clear_end)
-	render_state.clear_chat_highlights(state.bufnr, pos.start_line, clear_end)
-	vim.api.nvim_buf_set_lines(state.bufnr, pos.start_line, pos.end_line + 1, false, result.lines)
-	render_state.clear_chat_highlights(state.bufnr, pos.start_line, clear_end)
-	apply_result_highlights(result, pos)
-	vim.bo[state.bufnr].modifiable = false
-
-	pos.end_line = pos.start_line + new_line_count - 1
-	pos.highlights = result.highlights
-	widget_support.mark_applied_render_generation(pos)
-	shift_all_after(pos.start_line, delta, skip_task_id, skip_tool_id)
-	return true
-end
-
 ---Re-render a task widget in place (expand/collapse).
 ---@param part_id string
 function M.rerender_task(part_id)
@@ -1619,7 +1538,7 @@ function M.rerender_task(part_id)
 	end
 
 	local is_expanded = state.expanded_tasks[part_id] or false
-	if not replace_rendered_block(pos, M.render_task_tool(pos.tool_part, is_expanded), part_id, nil) then
+	if not widget_support.replace_rendered_block(pos, M.render_task_tool(pos.tool_part, is_expanded)) then
 		return
 	end
 end
@@ -1685,7 +1604,7 @@ function M.rerender_tool(part_id)
 	end
 
 	local is_expanded = state.expanded_tools[part_id] or false
-	if not replace_rendered_block(pos, M.render_regular_tool(pos.tool_part, is_expanded), nil, part_id) then
+	if not widget_support.replace_rendered_block(pos, M.render_regular_tool(pos.tool_part, is_expanded)) then
 		return
 	end
 end
