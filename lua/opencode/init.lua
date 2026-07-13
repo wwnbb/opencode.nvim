@@ -267,7 +267,6 @@ function M.setup(opts)
 		startup_timeout = M._config.server.startup_timeout,
 		health_check_interval = M._config.server.health_check_interval,
 		shutdown_on_exit = M._config.server.shutdown_on_exit,
-		reuse_running = M._config.server.reuse_running,
 		use_shell_env = M._config.server.use_shell_env,
 		env = M._config.server.env,
 		auth = M._config.server.auth,
