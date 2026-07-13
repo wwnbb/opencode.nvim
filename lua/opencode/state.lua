@@ -414,6 +414,39 @@ function M.get_session_record(session_id)
 	return record and vim.deepcopy(record) or nil
 end
 
+-- Normalize a directory path for comparison/storage: resolve symlinks/dot
+-- segments via vim.fs.normalize (when available) and strip trailing slashes.
+---@param directory string|nil
+---@return string|nil
+function M.normalize_directory(directory)
+	if not directory or directory == "" then
+		return nil
+	end
+	local normalized = directory
+	if vim.fs and vim.fs.normalize then
+		normalized = vim.fs.normalize(normalized)
+	end
+	return (normalized:gsub("/+$", ""))
+end
+
+-- Resolve the project directory for a session by looking up its record.
+-- Returns the normalized directory string or nil when the session is
+-- unknown or has no directory field. Used to scope permission/question
+-- HTTP requests to the correct server instance when the active session
+-- belongs to a different project than vim.fn.getcwd().
+---@param session_id string|nil
+---@return string|nil
+function M.get_session_directory(session_id)
+	if not session_id or session_id == "" then
+		return nil
+	end
+	local record = state.sessions.by_id[session_id]
+	if not record or type(record.directory) ~= "string" then
+		return nil
+	end
+	return M.normalize_directory(record.directory)
+end
+
 ---@param session_id string|nil
 ---@return table|nil removed
 function M.remove_session(session_id)

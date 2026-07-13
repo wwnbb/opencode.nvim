@@ -109,13 +109,48 @@ local function should_accept_global_event(data)
 		return true
 	end
 
+	local event_dir = normalize_directory(directory)
+
+	-- Accept events for the current working directory.
 	local current = current_directory()
-	if not current or current == "" then
-		return true
+	if current and current ~= "" then
+		state.directory = current
+		if event_dir == current then
+			return true
+		end
 	end
 
-	state.directory = current
-	return normalize_directory(directory) == current
+	-- Also accept events for the active session's directory. When the user
+	-- switches to a session belonging to another project, the session's
+	-- directory differs from vim.fn.getcwd(). Without this, permission and
+	-- question events for that session are silently dropped, leaving the
+	-- agent stuck waiting for a reply the user can never see.
+	local ok_state, state_mod = pcall(require, "opencode.state")
+	if ok_state and state_mod.get_session and state_mod.get_session_directory then
+		local active = state_mod.get_session()
+		if active and active.id then
+			local session_dir = state_mod.get_session_directory(active.id)
+			if session_dir and session_dir ~= "" and session_dir == event_dir then
+				return true
+			end
+		end
+	end
+
+	-- Debug-log dropped events so directory mismatches are traceable.
+	pcall(function()
+		local logger = require("opencode.logger")
+		local active = ok_state
+			and state_mod.get_session
+			and state_mod.get_session()
+			or nil
+		logger.debug("SSE event dropped: directory mismatch", {
+			event_directory = event_dir,
+			cwd = current,
+			session_id = active and active.id or nil,
+		})
+	end)
+
+	return false
 end
 
 local function emit_current_event()
@@ -481,5 +516,8 @@ function M.status()
 		has_stream = state.stream ~= nil,
 	}
 end
+
+-- Expose internal filter for testing.
+M._should_accept = should_accept_global_event
 
 return M

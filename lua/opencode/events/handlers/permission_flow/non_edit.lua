@@ -27,6 +27,10 @@ function M.handle(events, request, current_session, logger)
 	end
 
 	local permission_state = require("opencode.permission.state")
+	if permission_state.has_permission(request.id) then
+		logger.debug("Permission already tracked", { permission_id = request.id })
+		return
+	end
 	permission_state.add_permission(request.id, request.session_id, request.type, {
 		metadata = request.metadata,
 		patterns = request.patterns,

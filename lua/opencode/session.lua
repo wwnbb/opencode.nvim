@@ -52,8 +52,35 @@ local function reject_permission_request(permission_id)
 	if not ok_client or type(client.respond_permission) ~= "function" then
 		return
 	end
+	-- Resolve the session directory so the reject reaches the instance
+	-- that owns the permission (may differ from cwd for cross-project
+	-- sessions).
+	local reply_opts = { message = "Session closed" }
+	local session_id
+	local perm_ok, perm_state = pcall(require, "opencode.permission.state")
+	if perm_ok and perm_state.get_permission then
+		local pstate = perm_state.get_permission(permission_id)
+		if pstate then
+			session_id = pstate.session_id
+		end
+	end
+	if not session_id then
+		local edit_ok, edit_state = pcall(require, "opencode.edit.state")
+		if edit_ok and edit_state.get_edit then
+			local estate = edit_state.get_edit(permission_id)
+			if estate then
+				session_id = estate.session_id
+			end
+		end
+	end
+	if session_id then
+		local state_ok, state = pcall(require, "opencode.state")
+		if state_ok and type(state.get_session_directory) == "function" then
+			reply_opts.directory = state.get_session_directory(session_id)
+		end
+	end
 	pcall(function()
-		client.respond_permission(permission_id, "reject", { message = "Session closed" }, function(err)
+		client.respond_permission(permission_id, "reject", reply_opts, function(err)
 			log_close_reject_error("permission", permission_id, err)
 		end)
 	end)
