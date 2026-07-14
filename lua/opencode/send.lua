@@ -448,6 +448,7 @@ local function create_session_and_send(message, opts)
 		end
 
 		vim.schedule(function()
+			session_actions.remember(session)
 			session_actions.set_active(session.id, session.title or "New session", {
 				reason = "send_create_session",
 				preserve_cache = true,

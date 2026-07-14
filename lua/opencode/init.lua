@@ -705,6 +705,7 @@ function M.new_session(opts)
 					return
 				end
 
+				session_actions.remember(session)
 				session_actions.set_active(session.id, session.title or "New session", {
 					reason = "new_session",
 					preserve_cache = preserve_cache,

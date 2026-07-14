@@ -835,7 +835,8 @@ function M.setup(events)
 
 			local title = data.info.title
 			local parent_id = data.info.parentID or data.info.parentId or data.info.parent_id
-			if (title == nil or title == vim.NIL) and (parent_id == nil or parent_id == vim.NIL) then
+			local directory = data.info.directory
+			if (title == nil or title == vim.NIL) and (parent_id == nil or parent_id == vim.NIL) and (directory == nil or directory == vim.NIL) then
 				return
 			end
 
@@ -845,6 +846,7 @@ function M.setup(events)
 				name = title,
 				time = data.info.time,
 				parentID = parent_id,
+				directory = directory,
 			}, {
 				touch = session_id == current_session.id and state.is_runtime_session(session_id),
 				reason = "session_updated",
