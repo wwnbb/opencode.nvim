@@ -792,6 +792,21 @@ function M.is_streaming()
 	return state.get_status() == "streaming"
 end
 
+--- Get the project directory for the active session, falling back to the
+--- current working directory when no session is active or the session has
+--- no directory recorded.
+---@return string directory Absolute directory path
+function M.get_directory()
+	local session = state.get_session()
+	if session and session.id then
+		local dir = state.get_session_directory(session.id)
+		if dir and dir ~= "" then
+			return dir
+		end
+	end
+	return vim.fn.getcwd()
+end
+
 ---@param enabled boolean
 ---@param opts? { silent?: boolean }
 ---@return boolean enabled Current danger mode state
