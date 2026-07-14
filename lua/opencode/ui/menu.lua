@@ -163,7 +163,8 @@ function M.open(opts)
 	local searchable = opts.searchable == true
 	local multi_select = opts.multi_select == true
 	local width = opts.width or (searchable and 60 or 40)
-	local list_height = opts.list_height or math.min(math.max(#items, 1), searchable and 15 or 20)
+	local list_height = opts.list_height
+		or math.max(math.min(math.max(#items, 1), searchable and 15 or 20), searchable and 8 or 1)
 	local total_width = width + 2
 	local total_height = searchable and (list_height + 5) or (list_height + 2)
 	local relative, row, col, zindex = float_context.resolve_centered_placement(total_width, total_height)
