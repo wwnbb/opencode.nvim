@@ -32,6 +32,8 @@ function M.handle(events, request, current_session, logger)
 		return
 	end
 
+	local edit_state = require("opencode.edit.state")
+
 	if require("opencode.state").is_danger_mode_enabled() then
 		local handled = auto_approve.approve(request.id, {
 			permission_type = request.type,
@@ -39,11 +41,27 @@ function M.handle(events, request, current_session, logger)
 			kind = "edit",
 		})
 		if handled then
+			if not edit_state.get_edit(request.id) and #(request.files or {}) > 0 then
+				local file_statuses = {}
+				for _ = 1, #(request.files or {}) do
+					table.insert(file_statuses, "accepted")
+				end
+				edit_state.add_edit(request.id, request.session_id, request.files, {
+					data = request.data,
+					metadata = request.metadata,
+					message_id = request.message_id,
+					call_id = request.call_id,
+					review_mode = "readonly",
+					status = "sent",
+					file_statuses = file_statuses,
+					preview = true,
+					timestamp = request.timestamp,
+				})
+			end
 			return
 		end
 	end
 
-	local edit_state = require("opencode.edit.state")
 	if edit_state.get_edit(request.id) then
 		logger.debug("edit permission already handled, skipping", {
 			id = request.id,

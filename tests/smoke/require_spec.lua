@@ -1759,6 +1759,160 @@ do
 end
 
 do
+	local app_state = require("opencode.state")
+	local edit_state = require("opencode.edit.state")
+	local edit_widget = require("opencode.ui.edit_widget")
+	local danger = require("opencode.permission.danger")
+	local edit_handler = require("opencode.events.handlers.permission_flow.edit")
+	local edit_previews = require("opencode.ui.chat.edit_previews")
+	local client = require("opencode.client")
+
+	local previous_danger = app_state.is_danger_mode_enabled()
+	local original_respond_permission = client.respond_permission
+
+	-- Stub the HTTP reply so danger auto-approval is recorded locally
+	-- without contacting a server or scheduling deferred callbacks.
+	client.respond_permission = function() end
+
+	sync.clear_all()
+	edit_state.clear_all()
+	danger.clear()
+
+	-- Danger-capture: an auto-approved `write` carries a server diff on
+	-- request.files that must be retained as a readonly/sent edit estate so
+	-- the edit widget's `=` inline diff renders with correct stats.
+	local session_id = "danger_capture_session"
+	local emitted = {}
+	local fake_events = {
+		emit = function(name, payload)
+			table.insert(emitted, { name = name, payload = payload })
+		end,
+	}
+	local fake_logger = {
+		debug = function() end,
+		info = function() end,
+		warn = function() end,
+		error = function() end,
+	}
+	local write_diff = table.concat({
+		"--- a/danger-write.txt",
+		"+++ b/danger-write.txt",
+		"@@ -1 +1 @@",
+		"-old line",
+		"+new line",
+	}, "\n")
+	local request = {
+		id = "perm_danger_write",
+		type = "write",
+		session_id = session_id,
+		message_id = "m_danger",
+		call_id = "call_danger_write",
+		timestamp = 9000,
+		metadata = {},
+		data = {},
+		review_mode = "interactive",
+		files = {
+			{
+				filePath = "danger-write.txt",
+				relativePath = "danger-write.txt",
+				before = "old line",
+				after = "new line",
+				diff = write_diff,
+				additions = 1,
+				deletions = 1,
+				type = "update",
+			},
+		},
+	}
+
+	app_state.set_danger_mode(true)
+	edit_handler.handle(fake_events, request, { id = session_id }, fake_logger)
+
+	local estate = edit_state.get_edit(request.id)
+	assert(estate, "danger mode should capture a readonly edit estate for the write tool")
+	assert(estate.review_mode == "readonly", "danger-captured estate should be readonly")
+	assert(estate.status == "sent", "danger-captured estate should be marked sent")
+	assert(estate.preview == true, "danger-captured estate should be a preview")
+	assert(estate.message_id == "m_danger", "danger-captured estate should carry message_id")
+	assert(estate.call_id == "call_danger_write", "danger-captured estate should carry call_id")
+	assert(#estate.files == 1, "danger-captured estate should have one file")
+	local dfile = estate.files[1]
+	assert(#dfile.diff_lines > 0, "danger-captured estate should parse diff lines from request.files")
+	assert(dfile.stats.added == 1 and dfile.stats.removed == 1, "danger-captured estate stats should be non-zero")
+	assert(dfile.status == "accepted", "danger-captured file should be marked accepted")
+
+	local emitted_pending = false
+	for _, ev in ipairs(emitted) do
+		if ev.name == "edit_pending" then
+			emitted_pending = true
+		end
+	end
+	assert(not emitted_pending, "danger-captured edit should not emit edit_pending")
+
+	edit_state.toggle_inline_diff(request.id, 1)
+	local danger_lines = edit_widget.get_resolved_lines(request.id, estate)
+	local danger_text = table.concat(danger_lines, "\n")
+	assert(danger_text:find("old line", 1, true), "danger-captured widget should expand removed diff text")
+	assert(danger_text:find("new line", 1, true), "danger-captured widget should expand added diff text")
+	assert(danger_text:find("(approved)", 1, true), "danger-captured widget should show approved resolution label")
+
+	app_state.set_danger_mode(previous_danger)
+	danger.clear()
+	edit_state.clear_all()
+
+	-- Empty-string compute: a `write` with before="" / after="content" and
+	-- no diff should compute a non-empty vim.diff so add/delete previews work.
+	local compute_session = "compute_session"
+	sync.handle_message_updated({
+		id = "m_compute",
+		sessionID = compute_session,
+		role = "assistant",
+		time = { created = 1000, completed = 1500 },
+	})
+	sync.handle_part_updated({
+		id = "m_write_compute",
+		messageID = "m_compute",
+		sessionID = compute_session,
+		type = "tool",
+		tool = "write",
+		callID = "call_write_compute",
+		state = {
+			status = "completed",
+			metadata = {
+				status = "success",
+				filepath = "compute-write.txt",
+				filediff = {
+					file = "compute-write.txt",
+					before = "",
+					after = "content line",
+				},
+			},
+		},
+	})
+
+	local created = edit_previews.sync_session(compute_session)
+	assert(created == 1, "empty-string before/after should create a preview edit via computed diff")
+	local compute_id = "tool-preview:" .. compute_session .. ":m_compute:m_write_compute"
+	local compute_estate = edit_state.get_edit(compute_id)
+	assert(compute_estate, "empty-string compute path should create an edit estate")
+	assert(#compute_estate.files == 1, "compute estate should have one file")
+	local cfile = compute_estate.files[1]
+	assert(#cfile.diff_lines > 0, "empty-string before/after should compute a non-empty diff")
+	assert(cfile.stats.added > 0, "computed diff should report non-zero additions")
+	assert(cfile.before == "", "compute estate should preserve empty before content")
+	assert(cfile.after == "content line", "compute estate should preserve after content")
+
+	edit_state.toggle_inline_diff(compute_id, 1)
+	local compute_lines = edit_widget.get_resolved_lines(compute_id, compute_estate)
+	local compute_text = table.concat(compute_lines, "\n")
+	assert(compute_text:find("content line", 1, true), "computed diff widget should expand added content")
+
+	sync.clear_all()
+	edit_state.clear_all()
+	client.respond_permission = original_respond_permission
+end
+
+do
 	local chat = require("opencode.ui.chat")
 	local chat_state = require("opencode.ui.chat.state").state
 	local app_state = require("opencode.state")
