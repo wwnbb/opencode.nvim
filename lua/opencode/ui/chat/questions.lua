@@ -214,6 +214,60 @@ end
 
 -- ─── Submit ───────────────────────────────────────────────────────────────────
 
+-- Detect a "question not found" server error: the question request no longer
+-- exists on the server (already resolved, expired, aborted, or the terminal
+-- SSE event was missed). In that case the local "pending" copy is stale and
+-- must be cleaned up, otherwise it stays locked in the UI forever.
+---@param err table|nil
+---@return boolean
+function M.is_question_not_found_error(err)
+	if type(err) ~= "table" then
+		return false
+	end
+	local body = err.error or err.message or ""
+	if type(body) ~= "string" then
+		body = tostring(body)
+	end
+	local lower = body:lower()
+	local has_tag = lower:find("questionnotfound") ~= nil or lower:find("question request not found") ~= nil
+	-- Require the QuestionNotFoundError tag/message in the body, not just a
+	-- bare 404, so proxy/gateway 404s don't silently discard a valid question.
+	return has_tag and err.status == 404
+end
+
+-- Clean up a stale pending question that the server no longer knows about.
+-- Marks it rejected locally so the widget stops being interactive, emits the
+-- usual lifecycle events, and triggers a re-render.
+---@param request_id string
+function M.handle_stale_question(request_id)
+	local qstate = question_state.get_question(request_id)
+	if not qstate then
+		return
+	end
+	if qstate.status == "rejected" or qstate.status == "answered" then
+		return
+	end
+
+	local logger = require("opencode.logger")
+	logger.warn("Cleaning up stale question no longer known to server", {
+		request_id = request_id:sub(1, 10),
+		session_id = qstate.session_id,
+	})
+
+	question_state.mark_rejected(request_id)
+	emit("question_rejected", {
+		request_id = request_id,
+		session_id = qstate.session_id,
+	})
+	emit("interaction_changed", {
+		kind = "question",
+		action = "rejected",
+		id = request_id,
+		session_id = qstate.session_id,
+	})
+	M.update_question_status(request_id, "rejected")
+end
+
 ---@param request_id string
 function M.submit_question_answers(request_id)
 	local answers = question_state.get_answers(request_id)
@@ -221,6 +275,14 @@ function M.submit_question_answers(request_id)
 	actions.reply_to_question(request_id, answers, function(err)
 		vim.schedule(function()
 			if err then
+				if M.is_question_not_found_error(err) then
+					vim.notify(
+						"Question no longer available on the server (already resolved, expired, or aborted).",
+						vim.log.levels.WARN
+					)
+					M.handle_stale_question(request_id)
+					return
+				end
 				vim.notify("Failed to submit answer: " .. vim.inspect(err), vim.log.levels.ERROR)
 				return
 			end

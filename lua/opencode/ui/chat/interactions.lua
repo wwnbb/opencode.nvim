@@ -270,6 +270,14 @@ function M.handle_question_cancel()
 		actions.reject_question(session_id, request_id, function(err)
 			vim.schedule(function()
 				if err then
+					if chat_questions.is_question_not_found_error(err) then
+						vim.notify(
+							"Question no longer available on the server (already resolved, expired, or aborted).",
+							vim.log.levels.WARN
+						)
+						chat_questions.handle_stale_question(request_id)
+						return
+					end
 					vim.notify("Failed to cancel question: " .. tostring(err), vim.log.levels.ERROR)
 					return
 				end
