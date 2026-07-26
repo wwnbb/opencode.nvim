@@ -475,6 +475,21 @@ local function request_focus_for_pending_widgets()
 	return false
 end
 
+---@return table|nil
+local function get_relevant_question()
+	local current_session = require("opencode.state").get_session()
+	local in_child_session_view = #state.session_stack > 0
+	for _, qstate in ipairs(question_state.get_all()) do
+		if
+			(qstate.status == "pending" or qstate.status == "confirming")
+			and widget_support.should_render(qstate.session_id, qstate.status, current_session.id, in_child_session_view)
+		then
+			return qstate
+		end
+	end
+	return nil
+end
+
 function M.open()
 	if M.is_visible() then
 		return
@@ -696,6 +711,16 @@ function M.focus_input()
 		M.open()
 	end
 	M.focus()
+	local qstate = get_relevant_question()
+	if qstate then
+		local pos = state.questions[qstate.request_id]
+		if pos and state.winid and vim.api.nvim_win_is_valid(state.winid) then
+			local line_count = vim.api.nvim_buf_line_count(state.bufnr)
+			vim.api.nvim_win_set_cursor(state.winid, { math.min(pos.start_line + 1, line_count), 0 })
+		end
+		vim.notify("Answer or cancel the pending question before opening chat input.", vim.log.levels.INFO)
+		return false
+	end
 
 	input.show({
 		winid = state.winid,
@@ -717,6 +742,7 @@ function M.focus_input()
 			M.focus()
 		end,
 	})
+	return true
 end
 
 function M.setup(opts)

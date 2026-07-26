@@ -14,6 +14,8 @@ local active_questions = {}
 --   current_tab = number (current question index),
 --   selections = { [tab_index] = { selected_indices = {}, custom_input = "", message = "", is_answered = false, ready_to_advance = false } },
 --   status = "pending" | "answered" | "rejected" | "confirming",
+--   submitting = boolean,
+--   submission_kind = "reply" | "reject" | nil,
 --   last_tab_before_confirm = number (tab to return to on cancel),
 --   timestamp = number,
 -- }
@@ -37,6 +39,15 @@ end
 
 M.is_multi_question = is_multi_question
 
+---@param qstate table|nil
+---@return boolean
+local function can_interact(qstate)
+	return qstate ~= nil
+		and not qstate.submitting
+		and qstate.status ~= "answered"
+		and qstate.status ~= "rejected"
+end
+
 -- Add a new question to track
 ---@param request_id string The question request ID from server
 ---@param session_id string Session ID
@@ -53,6 +64,8 @@ function M.add_question(request_id, session_id, questions_data, opts)
 		current_tab = 1,
 		selections = {},
 		status = "pending",
+		submitting = false,
+		submission_kind = nil,
 		timestamp = opts.timestamp or os.time(),
 	}
 
@@ -113,7 +126,7 @@ end
 function M.get_all_active()
 	local result = {}
 	for _, qstate in pairs(active_questions) do
-		if qstate.status == "pending" then
+		if qstate.status == "pending" or qstate.status == "confirming" then
 			table.insert(result, qstate)
 		end
 	end
@@ -164,7 +177,7 @@ end
 ---@param selected_indices table Array of selected option indices
 function M.update_selection(request_id, tab_index, selected_indices)
 	local qstate = active_questions[request_id]
-	if not qstate then
+	if not can_interact(qstate) then
 		return false
 	end
 
@@ -183,7 +196,7 @@ end
 ---@param text string Custom input text
 function M.set_custom_input(request_id, tab_index, text)
 	local qstate = active_questions[request_id]
-	if not qstate then
+	if not can_interact(qstate) then
 		return false
 	end
 
@@ -206,7 +219,7 @@ end
 ---@param text string
 function M.set_message(request_id, tab_index, text)
 	local qstate = active_questions[request_id]
-	if not qstate then
+	if not can_interact(qstate) then
 		return false
 	end
 
@@ -224,7 +237,7 @@ end
 ---@param option_index number 1-based option index
 function M.select_option(request_id, option_index)
 	local qstate = active_questions[request_id]
-	if not qstate then
+	if not can_interact(qstate) then
 		return false
 	end
 
@@ -267,7 +280,7 @@ end
 ---@param option_index number 1-based option index
 function M.toggle_multi_select(request_id, option_index)
 	local qstate = active_questions[request_id]
-	if not qstate then
+	if not can_interact(qstate) then
 		return false
 	end
 
@@ -303,7 +316,7 @@ end
 ---@param direction "up" | "down"
 function M.move_selection(request_id, direction)
 	local qstate = active_questions[request_id]
-	if not qstate then
+	if not can_interact(qstate) then
 		return false
 	end
 
@@ -366,7 +379,7 @@ end
 ---@param tab_index number
 function M.set_tab(request_id, tab_index)
 	local qstate = active_questions[request_id]
-	if not qstate then
+	if not can_interact(qstate) then
 		return false
 	end
 
@@ -384,7 +397,7 @@ end
 ---@return boolean
 function M.is_ready_to_advance(request_id)
 	local qstate = active_questions[request_id]
-	if not qstate then
+	if not can_interact(qstate) then
 		return false
 	end
 
@@ -401,7 +414,7 @@ end
 ---@param request_id string
 function M.mark_ready_to_advance(request_id)
 	local qstate = active_questions[request_id]
-	if not qstate then
+	if not can_interact(qstate) then
 		return false
 	end
 
@@ -461,14 +474,14 @@ end
 ---@param request_id string
 function M.set_confirming(request_id)
 	local qstate = active_questions[request_id]
-	if not qstate then
+	if not can_interact(qstate) or qstate.status ~= "pending" then
 		return false
 	end
-	
+
 	-- Remember which tab we were on so cancel returns here
 	qstate.last_tab_before_confirm = qstate.current_tab
 	qstate.status = "confirming"
-	
+
 	-- Initialize a temporary selection for the confirmation options (1 = Yes, 2 = No)
 	-- We'll use the current_tab as a temporary holder
 	local temp_tab_idx = #qstate.questions + 1
@@ -479,7 +492,7 @@ function M.set_confirming(request_id)
 		is_answered = true,
 	}
 	qstate.current_tab = temp_tab_idx
-	
+
 	return true
 end
 
@@ -487,26 +500,26 @@ end
 ---@param request_id string
 function M.cancel_confirmation(request_id)
 	local qstate = active_questions[request_id]
-	if not qstate then
+	if not can_interact(qstate) or qstate.status ~= "confirming" then
 		return false
 	end
-	
+
 	qstate.status = "pending"
-	
+
 	-- Remove temporary confirmation selection
 	local temp_tab_idx = #qstate.questions + 1
 	qstate.selections[temp_tab_idx] = nil
-	
+
 	-- Return to the tab we were on before confirming (not Q1)
 	local return_tab = qstate.last_tab_before_confirm or #qstate.questions
 	qstate.current_tab = return_tab
 	qstate.last_tab_before_confirm = nil
-	
+
 	-- Clear ready_to_advance on that tab so it takes two Enters again
 	if qstate.selections[return_tab] then
 		qstate.selections[return_tab].ready_to_advance = false
 	end
-	
+
 	return true
 end
 
@@ -560,16 +573,47 @@ function M.get_answers(request_id)
 	return answers
 end
 
+-- Lock a question while its reply or rejection request is in flight.
+---@param request_id string
+---@param kind? "reply"|"reject"
+---@return boolean
+function M.begin_submission(request_id, kind)
+	local qstate = active_questions[request_id]
+	if not can_interact(qstate) then
+		return false
+	end
+
+	qstate.submitting = true
+	qstate.submission_kind = kind == "reject" and "reject" or "reply"
+	return true
+end
+
+-- Restore the current pending/confirmation view after an HTTP failure.
+---@param request_id string
+---@return boolean
+function M.restore_submission(request_id)
+	local qstate = active_questions[request_id]
+	if not qstate or not qstate.submitting or qstate.status == "answered" or qstate.status == "rejected" then
+		return false
+	end
+
+	qstate.submitting = false
+	qstate.submission_kind = nil
+	return true
+end
+
 -- Mark question as answered
 ---@param request_id string
 ---@param answers table Optional answers array
 function M.mark_answered(request_id, answers)
 	local qstate = active_questions[request_id]
-	if not qstate then
+	if not qstate or qstate.status == "answered" or qstate.status == "rejected" then
 		return false
 	end
 
 	qstate.status = "answered"
+	qstate.submitting = false
+	qstate.submission_kind = nil
 	qstate.answers = answers or M.get_answers(request_id)
 	qstate.answered_at = os.time()
 
@@ -580,11 +624,13 @@ end
 ---@param request_id string
 function M.mark_rejected(request_id)
 	local qstate = active_questions[request_id]
-	if not qstate then
+	if not qstate or qstate.status == "answered" or qstate.status == "rejected" then
 		return false
 	end
 
 	qstate.status = "rejected"
+	qstate.submitting = false
+	qstate.submission_kind = nil
 	qstate.rejected_at = os.time()
 
 	return true

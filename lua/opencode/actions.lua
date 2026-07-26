@@ -434,14 +434,45 @@ function M.respond_permission(permission_id, reply, opts, callback)
 	end)
 end
 
-function M.reply_to_question(request_id, answers, callback)
-	return client().reply_to_question(request_id, answers, function(err, result)
+---@param request_id string
+---@param answers table
+---@param opts_or_callback? table|function
+---@param callback? function
+function M.reply_to_question(request_id, answers, opts_or_callback, callback)
+	local opts = opts_or_callback
+	if type(opts_or_callback) == "function" then
+		callback = opts_or_callback
+		opts = nil
+	end
+	opts = vim.tbl_extend("force", opts or {}, {})
+	if type(opts.directory) ~= "string" or opts.directory == "" then
+		local qstate = require("opencode.question.state").get_question(request_id)
+		if qstate then
+			opts.directory = require("opencode.state").get_session_directory(qstate.session_id)
+		end
+	end
+	return client().reply_to_question(request_id, answers, opts, function(err, result)
 		schedule_callback(callback, err, result)
 	end)
 end
 
-function M.reject_question(session_id, request_id, callback)
-	return client().reject_question(session_id, request_id, function(err, result)
+---@param session_id string|nil
+---@param request_id string
+---@param opts_or_callback? table|function
+---@param callback? function
+function M.reject_question(session_id, request_id, opts_or_callback, callback)
+	local opts = opts_or_callback
+	if type(opts_or_callback) == "function" then
+		callback = opts_or_callback
+		opts = nil
+	end
+	opts = vim.tbl_extend("force", opts or {}, {})
+	if type(opts.directory) ~= "string" or opts.directory == "" then
+		local qstate = require("opencode.question.state").get_question(request_id)
+		local owner_session_id = qstate and qstate.session_id or session_id
+		opts.directory = require("opencode.state").get_session_directory(owner_session_id)
+	end
+	return client().reject_question(session_id or "", request_id, opts, function(err, result)
 		schedule_callback(callback, err, result)
 	end)
 end
