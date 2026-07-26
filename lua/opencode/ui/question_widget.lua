@@ -127,6 +127,24 @@ local function is_multi_question(question)
 	return type(question) == "table" and (question.type == "multi" or question.multiple == true)
 end
 
+---@param question table|nil
+---@return boolean
+local function allows_custom_answer(question)
+	if type(question) ~= "table" then
+		return false
+	end
+	if question.custom ~= nil then
+		return question.custom ~= false
+	end
+	if question.allow_custom ~= nil then
+		return question.allow_custom == true
+	end
+	if question.allowCustom ~= nil then
+		return question.allowCustom == true
+	end
+	return true
+end
+
 ---@param result table
 ---@param title string
 ---@param status string
@@ -186,6 +204,7 @@ end
 
 ---@param option_count number
 ---@param is_multi boolean
+---@param direct_submit boolean
 ---@param allow_custom boolean
 ---@param ready_to_advance boolean
 ---@param has_multiple boolean
@@ -195,6 +214,7 @@ end
 local function format_hint(
 	option_count,
 	is_multi,
+	direct_submit,
 	allow_custom,
 	ready_to_advance,
 	has_multiple,
@@ -202,7 +222,13 @@ local function format_hint(
 	total_count
 )
 	local parts = {}
-	if ready_to_advance then
+	if direct_submit then
+		if option_count > 0 then
+			table.insert(parts, string.format("1-%d submit", math.min(option_count, 9)))
+			table.insert(parts, "↑↓ select")
+		end
+		table.insert(parts, "Enter submit")
+	elseif ready_to_advance then
 		table.insert(parts, "Enter again to continue")
 	else
 		if option_count > 0 then
@@ -214,7 +240,7 @@ local function format_hint(
 		if is_multi then
 			table.insert(parts, "Space toggle")
 		end
-		table.insert(parts, "Enter twice submit")
+		table.insert(parts, "Enter twice continue")
 	end
 
 	if has_multiple then
@@ -304,6 +330,9 @@ end
 ---@return table lines, table highlights, OpenCodeWidgetMeta meta
 function M.get_lines_for_question(_request_id, question_data, selection_state, status)
 	ensure_highlights()
+	if selection_state.submitting then
+		return M.get_submitting_lines(_request_id, question_data, selection_state)
+	end
 	if status == "confirming" then
 		return M.get_confirmation_lines(_request_id, question_data, selection_state)
 	end
@@ -347,7 +376,7 @@ function M.get_lines_for_question(_request_id, question_data, selection_state, s
 	local first_option_line = #result.lines
 	local selected_indices = selections.selected_indices or {}
 	local is_multi = is_multi_question(current_question)
-	local allow_custom = current_question.allow_custom or current_question.allowCustom
+	local allow_custom = allows_custom_answer(current_question)
 
 	if current_question.options and #current_question.options > 0 then
 		option_count = #current_question.options
@@ -403,6 +432,7 @@ function M.get_lines_for_question(_request_id, question_data, selection_state, s
 			format_hint(
 				option_count,
 				is_multi,
+				#questions == 1 and not is_multi,
 				allow_custom,
 				selections.ready_to_advance == true,
 				#questions > 1,
@@ -422,6 +452,30 @@ function M.get_lines_for_question(_request_id, question_data, selection_state, s
 			interactive_count = option_count,
 			first_interactive_line = first_option_line,
 		})
+end
+
+-- Format the non-interactive state shown while the HTTP request is in flight.
+---@param _request_id string
+---@param question_data table
+---@param selection_state table
+---@return table lines, table highlights, OpenCodeWidgetMeta meta
+function M.get_submitting_lines(_request_id, question_data, selection_state)
+	ensure_highlights()
+
+	local result = { lines = {}, highlights = {} }
+	local questions = get_questions(question_data)
+	local current_tab = math.min(selection_state.current_tab or 1, #questions)
+	local title = get_question_title(questions[current_tab], "Question")
+	local rejecting = selection_state.submission_kind == "reject"
+
+	add_panel_blank(result)
+	add_header(result, title, "pending", rejecting and "cancelling" or "submitting")
+	add_panel_blank(result)
+	add_panel_line(result, rejecting and "Cancelling question..." or "Submitting answer...", "OpenCodeQuestionMuted")
+	add_panel_blank(result)
+	add_trailing_separator(result)
+
+	return result.lines, result.highlights, widget_base.make_meta()
 end
 
 -- Format answered question display.

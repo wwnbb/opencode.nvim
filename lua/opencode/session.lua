@@ -94,7 +94,9 @@ local function reject_question_request(session_id, request_id)
 		return
 	end
 	pcall(function()
-		client.reject_question(session_id or "", request_id, function(err)
+		client.reject_question(session_id or "", request_id, {
+			directory = state.get_session_directory(session_id),
+		}, function(err)
 			log_close_reject_error("question", request_id, err)
 		end)
 	end)

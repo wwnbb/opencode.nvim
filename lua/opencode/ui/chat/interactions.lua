@@ -88,9 +88,12 @@ function M.handle_question_number_select(number)
 	local request_id = chat_questions.get_question_at_cursor()
 	if request_id then
 		local qstate = question_state.get_question(request_id)
-		local current_question = qstate and qstate.questions and qstate.questions[qstate.current_tab]
+		if not qstate or qstate.submitting then
+			return
+		end
+		local current_question = qstate.questions and qstate.questions[qstate.current_tab]
 		local changed
-		if qstate and qstate.status ~= "confirming" and question_state.is_multi_question(current_question) then
+		if qstate.status ~= "confirming" and question_state.is_multi_question(current_question) then
 			changed = question_state.toggle_multi_select(request_id, number)
 		else
 			changed = question_state.select_option(request_id, number)
@@ -98,7 +101,7 @@ function M.handle_question_number_select(number)
 		if changed then
 			emit("question_selection_changed", {
 				request_id = request_id,
-				tab_index = qstate and qstate.current_tab or nil,
+				tab_index = qstate.current_tab,
 				selected = question_state.get_current_selection(request_id),
 			})
 			emit("interaction_changed", {
@@ -107,7 +110,16 @@ function M.handle_question_number_select(number)
 				id = request_id,
 			})
 		end
-		chat_questions.rerender_question(request_id)
+		if
+			changed
+			and qstate.status ~= "confirming"
+			and #qstate.questions == 1
+			and not question_state.is_multi_question(current_question)
+		then
+			chat_questions.submit_question_answers(request_id)
+		else
+			chat_questions.rerender_question(request_id)
+		end
 		return
 	end
 
@@ -156,6 +168,9 @@ function M.handle_question_confirm()
 
 	local request_id, qstate = chat_questions.get_question_at_cursor()
 	if request_id then
+		if qstate.submitting then
+			return
+		end
 		if qstate.status == "confirming" then
 			local current_selection = question_state.get_current_selection(request_id)
 			local choice = current_selection and current_selection[1] or 1
@@ -177,6 +192,7 @@ function M.handle_question_confirm()
 		local total_count = #qstate.questions
 		local current_selection = qstate.selections[current_tab]
 		local is_current_answered = current_selection and current_selection.is_answered
+		local current_question = qstate.questions[current_tab]
 
 		if not is_current_answered then
 			local _, total = question_state.get_answered_count(request_id)
@@ -193,6 +209,10 @@ function M.handle_question_confirm()
 			else
 				vim.notify("Please select an answer before submitting.", vim.log.levels.WARN)
 			end
+			return
+		end
+		if total_count == 1 and not question_state.is_multi_question(current_question) then
+			chat_questions.submit_question_answers(request_id)
 			return
 		end
 
@@ -215,7 +235,7 @@ function M.handle_question_confirm()
 			return
 		end
 
-		if total_count > 1 then
+		if total_count > 1 or question_state.is_multi_question(current_question) then
 			question_state.set_confirming(request_id)
 			emit("question_confirming", {
 				request_id = request_id,
@@ -254,6 +274,9 @@ end
 function M.handle_question_cancel()
 	local request_id, qstate = chat_questions.get_question_at_cursor()
 	if request_id then
+		if qstate.submitting then
+			return
+		end
 		if qstate.status == "confirming" then
 			question_state.cancel_confirmation(request_id)
 			emit("interaction_changed", {
@@ -267,21 +290,30 @@ function M.handle_question_cancel()
 
 		local current_session = require("opencode.state").get_session()
 		local session_id = qstate.session_id or current_session.id
+		if not question_state.begin_submission(request_id, "reject") then
+			return
+		end
+		chat_questions.rerender_question(request_id)
 		actions.reject_question(session_id, request_id, function(err)
 			vim.schedule(function()
 				if err then
+					if not question_state.restore_submission(request_id) then
+						return
+					end
+					chat_questions.rerender_question(request_id)
 					if chat_questions.is_question_not_found_error(err) then
 						vim.notify(
-							"Question no longer available on the server (already resolved, expired, or aborted).",
+							"Question cancellation was not accepted by the server. You can retry.",
 							vim.log.levels.WARN
 						)
-						chat_questions.handle_stale_question(request_id)
 						return
 					end
 					vim.notify("Failed to cancel question: " .. tostring(err), vim.log.levels.ERROR)
 					return
 				end
-				question_state.mark_rejected(request_id)
+				if not question_state.mark_rejected(request_id) then
+					return
+				end
 				emit("interaction_changed", {
 					kind = "question",
 					action = "rejected",
