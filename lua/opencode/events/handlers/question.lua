@@ -268,7 +268,7 @@ local function sync_question_from_tool(events, state, question_state, data, atte
 		return
 	end
 
-	client.list_questions(function(err, response)
+	local function handle_response(err, response)
 		pending_tool_question_sync[key] = nil
 		local logger = require("opencode.logger")
 		if err then
@@ -298,7 +298,14 @@ local function sync_question_from_tool(events, state, question_state, data, atte
 				sync_question_from_tool(events, state, question_state, data, attempt + 1)
 			end, delay)
 		end
-	end)
+	end
+
+	local directory = state.get_session_directory(data.session_id)
+	if directory then
+		client.list_questions({ directory = directory }, handle_response)
+	else
+		client.list_questions(handle_response)
+	end
 end
 
 function M.setup(events)
@@ -349,8 +356,9 @@ function M.setup(events)
 				return
 			end
 
-			-- Mark as answered
-			question_state.mark_answered(request_id, data.answers)
+			if not question_state.mark_answered(request_id, data.answers) then
+				return
+			end
 			events.emit("question_answered", {
 				request_id = request_id,
 				answers = data.answers,
@@ -379,8 +387,9 @@ function M.setup(events)
 				return
 			end
 
-			-- Mark as rejected
-			question_state.mark_rejected(request_id)
+			if not question_state.mark_rejected(request_id) then
+				return
+			end
 			events.emit("interaction_changed", {
 				kind = "question",
 				action = "rejected",

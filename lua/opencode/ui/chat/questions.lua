@@ -12,6 +12,24 @@ local widget_support = require("opencode.ui.chat.widget_support")
 local render_coordinator = require("opencode.ui.chat.render_coordinator")
 local actions = require("opencode.actions")
 
+---@param question table|nil
+---@return boolean
+local function allows_custom_answer(question)
+	if type(question) ~= "table" then
+		return false
+	end
+	if question.custom ~= nil then
+		return question.custom ~= false
+	end
+	if question.allow_custom ~= nil then
+		return question.allow_custom == true
+	end
+	if question.allowCustom ~= nil then
+		return question.allowCustom == true
+	end
+	return true
+end
+
 local function schedule_render()
 	render_coordinator.request({ kind = "question" })
 end
@@ -146,6 +164,9 @@ function M.sync_selected_option_from_cursor()
 	if not request_id or not qstate or not pos or not cursor_line then
 		return nil, false
 	end
+	if qstate.submitting then
+		return request_id, false
+	end
 
 	local option_index = get_option_index_at_cursor(request_id, qstate, pos, cursor_line)
 	if not option_index then
@@ -214,10 +235,8 @@ end
 
 -- ─── Submit ───────────────────────────────────────────────────────────────────
 
--- Detect a "question not found" server error: the question request no longer
--- exists on the server (already resolved, expired, aborted, or the terminal
--- SSE event was missed). In that case the local "pending" copy is stale and
--- must be cleaned up, otherwise it stays locked in the UI forever.
+-- Detect a tagged "question not found" response so the retryable failure can
+-- be explained without treating it as a user cancellation.
 ---@param err table|nil
 ---@return boolean
 function M.is_question_not_found_error(err)
@@ -235,58 +254,34 @@ function M.is_question_not_found_error(err)
 	return has_tag and err.status == 404
 end
 
--- Clean up a stale pending question that the server no longer knows about.
--- Marks it rejected locally so the widget stops being interactive, emits the
--- usual lifecycle events, and triggers a re-render.
----@param request_id string
-function M.handle_stale_question(request_id)
-	local qstate = question_state.get_question(request_id)
-	if not qstate then
-		return
-	end
-	if qstate.status == "rejected" or qstate.status == "answered" then
-		return
-	end
-
-	local logger = require("opencode.logger")
-	logger.warn("Cleaning up stale question no longer known to server", {
-		request_id = request_id:sub(1, 10),
-		session_id = qstate.session_id,
-	})
-
-	question_state.mark_rejected(request_id)
-	emit("question_rejected", {
-		request_id = request_id,
-		session_id = qstate.session_id,
-	})
-	emit("interaction_changed", {
-		kind = "question",
-		action = "rejected",
-		id = request_id,
-		session_id = qstate.session_id,
-	})
-	M.update_question_status(request_id, "rejected")
-end
-
 ---@param request_id string
 function M.submit_question_answers(request_id)
+	if not question_state.begin_submission(request_id, "reply") then
+		return false
+	end
 	local answers = question_state.get_answers(request_id)
+	M.rerender_question(request_id)
 
 	actions.reply_to_question(request_id, answers, function(err)
 		vim.schedule(function()
 			if err then
+				if not question_state.restore_submission(request_id) then
+					return
+				end
+				M.rerender_question(request_id)
 				if M.is_question_not_found_error(err) then
 					vim.notify(
-						"Question no longer available on the server (already resolved, expired, or aborted).",
+						"Question reply was not accepted by the server. You can retry.",
 						vim.log.levels.WARN
 					)
-					M.handle_stale_question(request_id)
 					return
 				end
 				vim.notify("Failed to submit answer: " .. vim.inspect(err), vim.log.levels.ERROR)
 				return
 			end
-			question_state.mark_answered(request_id, answers)
+			if not question_state.mark_answered(request_id, answers) then
+				return
+			end
 			emit("question_answered", {
 				request_id = request_id,
 				answers = answers,
@@ -299,6 +294,7 @@ function M.submit_question_answers(request_id)
 			M.update_question_status(request_id, "answered", answers)
 		end)
 	end)
+	return true
 end
 
 -- ─── Per-question handlers ────────────────────────────────────────────────────
@@ -306,7 +302,7 @@ end
 ---@param request_id string
 function M.handle_question_next_tab(request_id)
 	local qstate = question_state.get_question(request_id)
-	if not qstate or qstate.status == "confirming" then
+	if not qstate or qstate.status == "confirming" or qstate.submitting then
 		return
 	end
 
@@ -326,7 +322,7 @@ end
 ---@param request_id string
 function M.handle_question_prev_tab(request_id)
 	local qstate = question_state.get_question(request_id)
-	if not qstate or qstate.status == "confirming" then
+	if not qstate or qstate.status == "confirming" or qstate.submitting then
 		return
 	end
 
@@ -346,7 +342,7 @@ end
 ---@param request_id string
 function M.handle_question_custom_input(request_id)
 	local qstate = question_state.get_question(request_id)
-	if not qstate or qstate.status == "confirming" then
+	if not qstate or qstate.status == "confirming" or qstate.submitting then
 		return
 	end
 
@@ -354,7 +350,7 @@ function M.handle_question_custom_input(request_id)
 	local question = qstate.questions[current_tab]
 	local selection = qstate.selections[current_tab] or {}
 
-	if not question.allow_custom and not question.allowCustom then
+	if not allows_custom_answer(question) then
 		vim.notify("Custom input not allowed for this question", vim.log.levels.WARN)
 		return
 	end
@@ -372,7 +368,11 @@ function M.handle_question_custom_input(request_id)
 				if not question_state.is_multi_question(question) then
 					question_state.update_selection(request_id, current_tab, {})
 				end
-				M.rerender_question(request_id)
+				if #qstate.questions == 1 and not question_state.is_multi_question(question) then
+					M.submit_question_answers(request_id)
+				else
+					M.rerender_question(request_id)
+				end
 				require("opencode.ui.chat").focus()
 			end
 		end,
@@ -385,7 +385,7 @@ end
 ---@param request_id string
 function M.handle_question_message(request_id)
 	local qstate = question_state.get_question(request_id)
-	if not qstate or qstate.status == "confirming" then
+	if not qstate or qstate.status == "confirming" or qstate.submitting then
 		return
 	end
 
@@ -414,7 +414,7 @@ end
 ---@param request_id string
 function M.handle_question_toggle(request_id)
 	local qstate = question_state.get_question(request_id)
-	if not qstate or qstate.status == "confirming" then
+	if not qstate or qstate.status == "confirming" or qstate.submitting then
 		return
 	end
 

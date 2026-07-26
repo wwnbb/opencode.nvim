@@ -272,24 +272,63 @@ end
 -- API endpoint: /question/:requestID/reply
 ---@param request_id string Question request ID
 ---@param answers table Array of answer arrays, e.g., {{"label1"}, {"label2"}}
----@param callback function(err, success)
-function M.reply_to_question(request_id, answers, callback)
-	http.post("/question/" .. request_id .. "/reply", { answers = answers }, callback)
+---@param opts_or_callback? table|function { directory?: string } or callback for backward compatibility
+---@param callback? function(err, success)
+function M.reply_to_question(request_id, answers, opts_or_callback, callback)
+	local opts = opts_or_callback
+	if type(opts_or_callback) == "function" then
+		callback = opts_or_callback
+		opts = nil
+	end
+	local request_opts
+	if opts and type(opts.directory) == "string" and opts.directory ~= "" then
+		request_opts = {
+			headers = { ["x-opencode-directory"] = opts.directory },
+			query = { directory = opts.directory },
+		}
+	end
+	http.post("/question/" .. request_id .. "/reply", { answers = answers }, callback, request_opts)
 end
 
 -- Get all pending question requests
----@param callback function(err, questions)
-function M.list_questions(callback)
-	http.get("/question", callback)
+---@param opts_or_callback? table|function { directory?: string } or callback for backward compatibility
+---@param callback? function(err, questions)
+function M.list_questions(opts_or_callback, callback)
+	local opts = opts_or_callback
+	if type(opts_or_callback) == "function" then
+		callback = opts_or_callback
+		opts = nil
+	end
+	local request_opts
+	if opts and type(opts.directory) == "string" and opts.directory ~= "" then
+		request_opts = {
+			headers = { ["x-opencode-directory"] = opts.directory },
+			query = { directory = opts.directory },
+		}
+	end
+	http.get("/question", callback, request_opts)
 end
 
 -- Reject/cancel a question request
 -- API endpoint: /question/:requestID/reject
 ---@param session_id string Session ID (unused, kept for API compatibility)
 ---@param request_id string Question request ID
----@param callback function(err, success)
-function M.reject_question(session_id, request_id, callback)
-	http.post("/question/" .. request_id .. "/reject", {}, callback)
+---@param opts_or_callback? table|function { directory?: string } or callback for backward compatibility
+---@param callback? function(err, success)
+function M.reject_question(session_id, request_id, opts_or_callback, callback)
+	local opts = opts_or_callback
+	if type(opts_or_callback) == "function" then
+		callback = opts_or_callback
+		opts = nil
+	end
+	local request_opts
+	if opts and type(opts.directory) == "string" and opts.directory ~= "" then
+		request_opts = {
+			headers = { ["x-opencode-directory"] = opts.directory },
+			query = { directory = opts.directory },
+		}
+	end
+	http.post("/question/" .. request_id .. "/reject", {}, callback, request_opts)
 end
 
 -- Get list of providers (basic list with all/connected/default info)

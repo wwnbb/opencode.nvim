@@ -901,10 +901,11 @@ client.respond_permission = function(permission_id, reply, opts, callback)
 		callback(nil, true)
 	end
 end
-client.reject_question = function(session_id, request_id, callback)
+client.reject_question = function(session_id, request_id, opts, callback)
 	table.insert(rejected_questions, {
 		session_id = session_id,
 		request_id = request_id,
+		opts = opts,
 	})
 	if callback then
 		callback(nil, true)
@@ -916,6 +917,10 @@ client.get_session_todos = function(_, callback)
 	end
 end
 
+local close_root_directory = "/tmp/__opencode_close_root__"
+local close_child_directory = "/tmp/__opencode_close_child__"
+state.upsert_session({ id = "close_root", directory = close_root_directory }, { touch = false })
+state.upsert_session({ id = "close_child", directory = close_child_directory }, { touch = false })
 state.set_session("close_root", "Close Root")
 state.set_session("keep_root", "Keep Root")
 state.set_session("close_root", "Close Root")
@@ -967,6 +972,20 @@ assert_true(edit_state.get_edit("edit_close_child") == nil, "close should clear 
 assert_true(edit_state.get_edit("edit_keep_root") ~= nil, "close should preserve unrelated edit")
 assert_eq(#rejected_permissions, 4, "close should reject root and child permissions/edits")
 assert_eq(#rejected_questions, 2, "close should reject root and child questions")
+local rejected_questions_by_id = {}
+for _, rejection in ipairs(rejected_questions) do
+	rejected_questions_by_id[rejection.request_id] = rejection
+end
+assert_eq(
+	rejected_questions_by_id.question_close_root.opts.directory,
+	state.normalize_directory(close_root_directory),
+	"close should reject the root question in its owning directory"
+)
+assert_eq(
+	rejected_questions_by_id.question_close_child.opts.directory,
+	state.normalize_directory(close_child_directory),
+	"close should reject the child question in its owning directory"
+)
 
 client.respond_permission = original_respond_permission_for_close
 client.reject_question = original_reject_question_for_close
