@@ -60,7 +60,7 @@ function M.add_message(role, content, opts)
 	if opts.render == false then
 		schedule_render()
 	else
-		M.render_message(message)
+		schedule_render({ force = true })
 	end
 	return message.id
 end

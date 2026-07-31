@@ -14,6 +14,28 @@ local permission_state = require("opencode.permission.state")
 local edit_state = require("opencode.edit.state")
 local actions = require("opencode.actions")
 
+---@param question table|nil
+---@return boolean
+local function is_custom_only_question(question)
+	if type(question) ~= "table" then
+		return false
+	end
+
+	if type(question.options) == "table" and #question.options > 0 then
+		return false
+	end
+	if question.custom ~= nil then
+		return question.custom ~= false
+	end
+	if question.allow_custom ~= nil then
+		return question.allow_custom == true
+	end
+	if question.allowCustom ~= nil then
+		return question.allowCustom == true
+	end
+	return true
+end
+
 ---@param event_type string
 ---@param data table
 local function emit(event_type, data)
@@ -193,6 +215,11 @@ function M.handle_question_confirm()
 		local current_selection = qstate.selections[current_tab]
 		local is_current_answered = current_selection and current_selection.is_answered
 		local current_question = qstate.questions[current_tab]
+
+		if not is_current_answered and is_custom_only_question(current_question) then
+			chat_questions.handle_question_custom_input(request_id)
+			return
+		end
 
 		if not is_current_answered then
 			local _, total = question_state.get_answered_count(request_id)

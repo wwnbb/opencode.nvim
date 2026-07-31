@@ -356,6 +356,30 @@ assert_truthy(
 assert_eq(#calls.chat_messages, 1, "failed send should append system chat error")
 assert_eq(calls.chat_messages[1].opts.session_id, "session_fail", "failed send chat error should target session")
 
+reset_world(false)
+session_actions.set_active("session_sync_fail", "Sync Fail", { preserve_cache = true })
+client_stub.next_send_error = { message = "sync boom" }
+fresh_calls()
+
+opencode.send("hello sync failure")
+
+assert_eq(#calls.send_sync, 1, "failing sync send should still attempt request")
+assert_eq(state.get_status(), "idle", "failed sync send should return status to idle")
+assert_eq(#calls.notifications, 1, "failed sync send should notify")
+assert_eq(#calls.chat_messages, 1, "failed sync send should append one system chat error")
+assert_eq(calls.chat_messages[1].opts.session_id, "session_sync_fail", "failed sync error should target session")
+
+reset_world(true)
+client_stub.next_create_error = { message = "create boom" }
+fresh_calls()
+
+opencode.send("hello create failure")
+
+assert_eq(#calls.create_sessions, 1, "failing session creation should attempt request")
+assert_eq(#calls.notifications, 1, "failed session creation should notify")
+assert_eq(#calls.chat_messages, 1, "failed session creation should append one system chat error")
+assert_eq(calls.chat_messages[1].message, "Error: Failed to create session", "session creation error notice should be canonical")
+
 reset_world(true)
 session_actions.set_active("session_child", "Child", { preserve_cache = true })
 session_lock.set("session_child", {

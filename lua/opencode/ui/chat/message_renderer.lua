@@ -308,6 +308,7 @@ local function render_reasoning_part(ctx, message, part, part_idx, render_parts,
 	local reasoning_start = ctx:line_count()
 	local cache_key = nil
 	if not incomplete_assistant then
+		local thinking_config = thinking.get_config()
 		cache_key = ctx:render_cache_key(
 			"reasoning",
 			ctx.current_session.id,
@@ -315,7 +316,13 @@ local function render_reasoning_part(ctx, message, part, part_idx, render_parts,
 			part.id or part_idx,
 			render_parts.message_revision,
 			part.id and render_parts.part_revisions[part.id] or 0,
-			ctx.chat_width
+			ctx.chat_width,
+			thinking_config.enabled,
+			thinking_config.max_height,
+			thinking_config.truncate,
+			thinking_config.icon,
+			thinking_config.highlight,
+			thinking_config.header_highlight
 		)
 	end
 	local reasoning_lines = ctx:cached_nui_lines(cache_key, function()

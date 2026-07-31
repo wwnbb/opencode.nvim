@@ -136,17 +136,23 @@ end
 
 -- Get merged config
 local function get_config()
+	local cfg = vim.deepcopy(defaults)
+
+	-- The app state contains the merged public setup configuration.
+	local ok, app_state = pcall(require, "opencode.state")
+	if ok and type(app_state.get_config) == "function" then
+		local app_config = app_state.get_config()
+		if type(app_config) == "table" and type(app_config.logs) == "table" then
+			cfg = vim.tbl_deep_extend("force", cfg, vim.deepcopy(app_config.logs))
+		end
+	end
+
+	-- Explicit viewer setup overrides the app configuration.
 	if state.config then
-		return state.config
+		cfg = vim.tbl_deep_extend("force", cfg, vim.deepcopy(state.config))
 	end
 
-	-- Try to get config from main module
-	local ok, config_module = pcall(require, "opencode.config")
-	if ok and config_module.defaults and config_module.defaults.logs then
-		return vim.tbl_deep_extend("force", defaults, config_module.defaults.logs)
-	end
-
-	return defaults
+	return cfg
 end
 
 ---------------------------------------------------------------
@@ -511,7 +517,6 @@ function M.open(opts)
 	if opts.height then
 		cfg.height = opts.height
 	end
-	state.config = cfg
 
 	local opened = false
 	local open_err = nil
@@ -671,7 +676,7 @@ end
 
 -- Setup with user config
 function M.setup(opts)
-	state.config = vim.tbl_deep_extend("force", defaults, opts or {})
+	state.config = type(opts) == "table" and vim.deepcopy(opts) or nil
 end
 
 return M

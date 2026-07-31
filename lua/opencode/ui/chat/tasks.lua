@@ -30,6 +30,32 @@ local REGULAR_TOOL_RENDERERS = {
 	chat_file_edit_results.render_tool,
 }
 
+---@param position table|nil
+---@return table|nil
+function M.resolve_tool_part(position)
+	if type(position) ~= "table" then
+		return nil
+	end
+
+	local fallback = type(position.tool_part) == "table" and position.tool_part or position
+	local message_id = position.message_id or fallback.messageID
+	local part_id = position.part_id or fallback.id
+	if message_id and part_id then
+		local ok_sync, sync = pcall(require, "opencode.sync")
+		if ok_sync and type(sync.get_part) == "function" then
+			local ok_part, current = pcall(sync.get_part, message_id, part_id)
+			if ok_part and type(current) == "table" then
+				if position.tool_part then
+					position.tool_part = current
+				end
+				return current
+			end
+		end
+	end
+
+	return fallback
+end
+
 -- ─── Animation ────────────────────────────────────────────────────────────────
 
 local TASK_ANIM_FRAMES = { "⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏" }
@@ -102,6 +128,7 @@ end
 ---@param tool_part table|nil
 ---@return boolean
 function M.is_animating_tool_part(tool_part)
+	tool_part = M.resolve_tool_part(tool_part)
 	if type(tool_part) ~= "table" then
 		return false
 	end
@@ -128,12 +155,12 @@ end
 
 function M.has_active_task_rows()
 	for _, pos in pairs(state.tasks) do
-		if M.is_animating_tool_part(pos and pos.tool_part) then
+		if M.is_animating_tool_part(M.resolve_tool_part(pos)) then
 			return true
 		end
 	end
 	for _, pos in pairs(state.tools) do
-		if M.is_animating_tool_part(pos and pos.tool_part) then
+		if M.is_animating_tool_part(M.resolve_tool_part(pos)) then
 			return true
 		end
 	end
@@ -528,6 +555,7 @@ end
 
 -- Format a single tool display line (matches TUI InlineTool style).
 function M.format_tool_line(tool_part)
+	tool_part = M.resolve_tool_part(tool_part)
 	local tool_name = tool_part.tool or "unknown"
 	local tool_status = tool_part.state and tool_part.state.status or "pending"
 	local icon = get_tool_icon(tool_name)
@@ -639,6 +667,10 @@ end
 ---@param tool_part table
 ---@return string|nil
 local function get_task_child_session_id(tool_part)
+	tool_part = M.resolve_tool_part(tool_part)
+	if type(tool_part) ~= "table" then
+		return nil
+	end
 	local ok_sync, sync = pcall(require, "opencode.sync")
 	if ok_sync and type(sync.get_task_child_session_for_part) == "function" then
 		local indexed = sync.get_task_child_session_for_part(tool_part)
@@ -667,6 +699,7 @@ end
 ---@param tool_part table|nil
 ---@return string|nil
 local function get_task_parent_session_id(tool_part)
+	tool_part = M.resolve_tool_part(tool_part)
 	if type(tool_part) ~= "table" then
 		return nil
 	end
@@ -695,6 +728,7 @@ local schedule_task_child_resolution
 ---@param tool_part table|nil
 ---@param opts? table
 function M.ensure_task_child_loaded(tool_part, opts)
+	tool_part = M.resolve_tool_part(tool_part)
 	if type(tool_part) ~= "table" or tool_part.tool ~= "task" then
 		return
 	end
@@ -763,6 +797,10 @@ end
 --     ↳ Grep nvim_create_user_command
 --
 function M.render_task_tool(tool_part, expanded)
+	tool_part = M.resolve_tool_part(tool_part)
+	if type(tool_part) ~= "table" then
+		return { lines = {}, highlights = {} }
+	end
 	local input = tool_part.state and tool_part.state.input or {}
 	local metadata = render.get_tool_metadata(tool_part)
 	local tool_status = tool_part.state and tool_part.state.status or "pending"
@@ -978,6 +1016,10 @@ end
 ---@param is_expanded boolean
 ---@return table { lines: string[], highlights: table[] }
 function M.render_regular_tool(tool_part, is_expanded)
+	tool_part = M.resolve_tool_part(tool_part)
+	if type(tool_part) ~= "table" then
+		return { lines = {}, highlights = {} }
+	end
 	local tool_name = tostring(tool_part and tool_part.tool or "unknown")
 	for _, render_tool in ipairs(REGULAR_TOOL_RENDERERS) do
 		local result = render_tool(tool_part, is_expanded)
@@ -1013,6 +1055,7 @@ end
 ---@param parent_session_id string
 ---@return table
 local function task_resolution_item(tool_part, parent_session_id)
+	tool_part = M.resolve_tool_part(tool_part)
 	local tool_state = type(tool_part.state) == "table" and tool_part.state or {}
 	local input = type(tool_state.input) == "table" and tool_state.input or {}
 	return {
@@ -1166,7 +1209,7 @@ end
 local function collect_unresolved_task_items(parent_session_id)
 	local items = {}
 	for _, pos in pairs(state.tasks) do
-		local tool_part = pos and pos.tool_part
+		local tool_part = M.resolve_tool_part(pos)
 		if
 			type(tool_part) == "table"
 			and tool_part.tool == "task"
@@ -1196,6 +1239,13 @@ end
 local function record_resolved_children(parent_session_id, items, children)
 	local ok_sync, sync = pcall(require, "opencode.sync")
 	local excluded = {}
+	for index, item in ipairs(items or {}) do
+		local pos = item and state.tasks[item.part_id]
+		local current = M.resolve_tool_part(pos or (item and item.tool_part))
+		if current then
+			items[index] = task_resolution_item(current, parent_session_id)
+		end
+	end
 	if ok_sync and type(sync.get_task_parent_session) == "function" then
 		for _, child in ipairs(children or {}) do
 			if type(child) == "table" and type(child.id) == "string" then
@@ -1215,7 +1265,7 @@ local function record_resolved_children(parent_session_id, items, children)
 			actions.record_task_child_session(parent_session_id, item.message_id, item.part_id, child.id)
 			local pos = state.tasks[item.part_id]
 			if pos then
-				M.ensure_task_child_loaded(pos.tool_part)
+				M.ensure_task_child_loaded(pos)
 				M.rerender_task(item.part_id)
 			end
 		end
@@ -1262,6 +1312,7 @@ end
 ---@param tool_part table
 ---@param callback function(err: any, child_session_id: string|nil)
 function M.resolve_task_child_session_id(tool_part, callback)
+	tool_part = M.resolve_tool_part(tool_part)
 	local child_session_id = get_task_child_session_id(tool_part)
 	if child_session_id then
 		callback(nil, child_session_id)
@@ -1479,12 +1530,13 @@ local function update_animating_blocks(positions, top_line, bottom_line, render_
 	local updated = false
 
 	for part_id, pos in pairs(positions) do
+		local tool_part = M.resolve_tool_part(pos)
 		if
-			M.is_animating_tool_part(pos and pos.tool_part)
+			M.is_animating_tool_part(tool_part)
 			and widget_support.position_generation_is_current(pos)
 			and block_is_visible(pos, top_line, bottom_line)
 		then
-			local result = render_block(part_id, pos)
+			local result = render_block(part_id, pos, tool_part)
 			if result == nil then
 				goto continue
 			end
@@ -1510,15 +1562,15 @@ function M.update_active_animations_in_place()
 		return false
 	end
 	local top_line, bottom_line = get_visible_line_range()
-	local tasks_updated = update_animating_blocks(state.tasks, top_line, bottom_line, function(part_id, pos)
-		return M.render_task_tool(pos.tool_part, state.expanded_tasks[part_id] or false)
+	local tasks_updated = update_animating_blocks(state.tasks, top_line, bottom_line, function(part_id, pos, tool_part)
+		return M.render_task_tool(tool_part, state.expanded_tasks[part_id] or false)
 	end, M.rerender_task)
 
-	local tools_updated = update_animating_blocks(state.tools, top_line, bottom_line, function(part_id, pos)
+	local tools_updated = update_animating_blocks(state.tools, top_line, bottom_line, function(part_id, pos, tool_part)
 		if (pos.end_line - pos.start_line + 1) > MAX_REGULAR_TOOL_ANIMATION_RENDER_LINES then
 			return nil
 		end
-		return M.render_regular_tool(pos.tool_part, state.expanded_tools[part_id] or false)
+		return M.render_regular_tool(tool_part, state.expanded_tools[part_id] or false)
 	end, M.rerender_tool)
 
 	local updated = tasks_updated or tools_updated
@@ -1538,7 +1590,8 @@ function M.rerender_task(part_id)
 	end
 
 	local is_expanded = state.expanded_tasks[part_id] or false
-	if not widget_support.replace_rendered_block(pos, M.render_task_tool(pos.tool_part, is_expanded)) then
+	local tool_part = M.resolve_tool_part(pos)
+	if not tool_part or not widget_support.replace_rendered_block(pos, M.render_task_tool(tool_part, is_expanded)) then
 		return
 	end
 end
@@ -1566,7 +1619,7 @@ function M.handle_task_toggle(part_id)
 
 	M.rerender_task(part_id)
 
-	M.resolve_task_child_session_id(pos.tool_part, function(err, child_session_id)
+	M.resolve_task_child_session_id(pos, function(err, child_session_id)
 		if not state.expanded_tasks[part_id] then
 			return
 		end
@@ -1604,7 +1657,8 @@ function M.rerender_tool(part_id)
 	end
 
 	local is_expanded = state.expanded_tools[part_id] or false
-	if not widget_support.replace_rendered_block(pos, M.render_regular_tool(pos.tool_part, is_expanded)) then
+	local tool_part = M.resolve_tool_part(pos)
+	if not tool_part or not widget_support.replace_rendered_block(pos, M.render_regular_tool(tool_part, is_expanded)) then
 		return
 	end
 end
@@ -1676,9 +1730,10 @@ function M.update_animation_frames_in_place()
 
 	-- Update task blocks: header frame at col 0, and "  ↳ " summary frames
 	for _, pos in pairs(state.tasks) do
+		local tool_part = M.resolve_tool_part(pos)
 		if
 			pos
-			and M.is_animating_tool_part(pos.tool_part)
+			and M.is_animating_tool_part(tool_part)
 			and widget_support.position_generation_is_current(pos)
 			and block_is_visible(pos, top_line, bottom_line)
 			and pos.start_line >= 0
@@ -1711,9 +1766,10 @@ function M.update_animation_frames_in_place()
 
 	-- Update regular tool blocks: classic spinner at end of header line
 	for _, pos in pairs(state.tools) do
+		local tool_part = M.resolve_tool_part(pos)
 		if
 			pos
-			and M.is_animating_tool_part(pos.tool_part)
+			and M.is_animating_tool_part(tool_part)
 			and widget_support.position_generation_is_current(pos)
 			and block_is_visible(pos, top_line, bottom_line)
 		then
