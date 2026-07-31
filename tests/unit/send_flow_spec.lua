@@ -211,6 +211,8 @@ opencode.setup({
 local state = require("opencode.state")
 local sync = require("opencode.sync")
 local session_actions = require("opencode.session")
+local selectors = require("opencode.selectors")
+local session_lock = require("opencode.session.lock")
 
 local function reset_world(use_prompt_async)
 	state.reset()
@@ -353,6 +355,54 @@ assert_truthy(
 )
 assert_eq(#calls.chat_messages, 1, "failed send should append system chat error")
 assert_eq(calls.chat_messages[1].opts.session_id, "session_fail", "failed send chat error should target session")
+
+reset_world(true)
+session_actions.set_active("session_child", "Child", { preserve_cache = true })
+session_lock.set("session_child", {
+		agent = "Explore",
+		model = { providerID = "p1", modelID = "m1" },
+		variant = "locked",
+})
+fresh_calls()
+
+local locked_selection = selectors.send_selection({
+	agent = "Build",
+	model = { providerID = "p1", modelID = "m1" },
+	variant = "global",
+})
+assert_eq(locked_selection.agent, "Explore", "child lock should override explicit agent")
+assert_eq(locked_selection.model.modelID, "m1", "child lock should override explicit model")
+assert_eq(locked_selection.variant, "locked", "child lock should override explicit variant")
+
+opencode.send("locked child send", {
+	agent = "Build",
+	model = { providerID = "p1", modelID = "m1" },
+	variant = "global",
+})
+assert_eq(#calls.send_async, 1, "known child lock should create one request")
+assert_eq(calls.send_async[1].payload.agent, "Explore", "child request should use the locked agent")
+assert_eq(calls.send_async[1].payload.model.modelID, "m1", "child request should use the locked model")
+assert_eq(calls.send_async[1].payload.variant, "locked", "child request should use the locked variant")
+assert_eq(#calls.notifications, 0, "known child lock should not notify")
+
+session_lock.set("session_child", {
+	agent = "Explore",
+	error = "Unable to determine the subagent execution model",
+})
+opencode.send("unknown child model")
+assert_eq(#calls.send_async, 1, "unknown child model should not create another request")
+assert_eq(#calls.send_sync, 0, "unknown child model should not create a sync request")
+assert_eq(#calls.notifications, 1, "unknown child model should notify")
+assert_truthy(
+	calls.notifications[1].message:find("execution model", 1, true) ~= nil,
+	"unknown child model notification should explain the blocked send"
+)
+session_lock.clear_all()
+session_lock.set("parent_child", { agent = "Parent", model = { providerID = "p1", modelID = "m1" } })
+session_lock.set("nested_child", { agent = "Nested", model = { providerID = "p1", modelID = "m1" } })
+assert_eq(session_lock.get("parent_child").agent, "Parent", "nested locks should preserve the parent lock")
+assert_eq(session_lock.get("nested_child").agent, "Nested", "nested locks should preserve the child lock")
+session_lock.clear_all()
 
 print("Send flow checks passed")
 	end)

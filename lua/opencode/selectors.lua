@@ -5,6 +5,7 @@ local M = {}
 
 local SessionView = require("opencode.session.view")
 local navigation = require("opencode.session.navigation")
+local session_lock = require("opencode.session.lock")
 
 local function logger()
 	local ok, mod = pcall(require, "opencode.logger")
@@ -333,12 +334,49 @@ function M.changes_stats()
 end
 
 ---@param opts? table { model?: table, agent?: string, variant?: string }
----@return { model: table|nil, agent: string|nil, variant: string|nil, sources: table }
+---@return { model: table|nil, agent: string|nil, variant: string|nil, blocked?: boolean, error?: string, sources: table }
 function M.send_selection(opts)
 	opts = opts or {}
 	local sync_ok, sync = pcall(require, "opencode.sync")
 	if not sync_ok then
 		sync = nil
+	end
+
+	local current_session = require("opencode.state").get_session()
+	local locked = session_lock.get(current_session.id)
+	if locked then
+		local selection = {
+			model = nil,
+			agent = locked.agent,
+			variant = locked.variant,
+			sources = {
+				agent = "child_lock",
+				model = "child_lock",
+				variant = "child_lock",
+			},
+		}
+		if locked.pending then
+			selection.blocked = true
+			selection.error = locked.error or "Subagent execution selection is still resolving"
+			return selection
+		end
+		if type(selection.agent) ~= "string" or selection.agent == "" then
+			selection.blocked = true
+			selection.error = "Subagent agent could not be determined"
+			return selection
+		end
+		if type(locked.model) ~= "table" or type(locked.model.providerID) ~= "string" or type(locked.model.modelID) ~= "string"
+			or locked.model.providerID == "" or locked.model.modelID == ""
+		then
+			selection.blocked = true
+			selection.error = locked.error or "Subagent execution model could not be determined"
+			return selection
+		end
+		selection.model = {
+			providerID = locked.model.providerID,
+			modelID = locked.model.modelID,
+		}
+		return selection
 	end
 
 	local config = require("opencode.state").get_config() or {}

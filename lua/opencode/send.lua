@@ -129,12 +129,15 @@ end
 
 ---@param message string
 ---@param opts? table
----@return table payload
+---@return table|nil payload
 ---@return table selection
 local function build_payload(message, opts)
 	opts = opts or {}
 
 	local selection = selectors.send_selection(opts)
+	if selection.blocked then
+		return nil, selection
+	end
 	local prompt_message_id = ascending_id("msg")
 	local prompt_part_id = ascending_id("prt")
 	local payload = {
@@ -394,6 +397,10 @@ end
 ---@param opts? table
 local function send_existing_session(session_id, message, opts)
 	local payload, selection = build_payload(message, opts)
+	if selection.blocked then
+		vim.notify("Cannot send message: " .. tostring(selection.error or "selection is unavailable"), vim.log.levels.ERROR)
+		return false
+	end
 	logger.debug("Resolved prompt payload", {
 		session_id = session_id,
 		agent = selection.agent,
@@ -422,6 +429,7 @@ local function send_existing_session(session_id, message, opts)
 	end
 
 	schedule_session_sync_watchdogs(session_id, before_message_count, before_assistant_count)
+	return true
 end
 
 ---@param err any
@@ -464,9 +472,9 @@ function M.send(message, opts)
 	opts = opts or {}
 	local session_id = state.get_session().id
 	if session_id then
-		send_existing_session(session_id, message, opts)
+		return send_existing_session(session_id, message, opts)
 	else
-		create_session_and_send(message, opts)
+		return create_session_and_send(message, opts)
 	end
 end
 

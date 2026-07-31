@@ -4,6 +4,7 @@ local M = {}
 
 local NS_INFO = vim.api.nvim_create_namespace("opencode_input_info")
 local highlights = require("opencode.ui.highlights")
+local session_lock = require("opencode.session.lock")
 
 function M.setup_highlights()
 	highlights.setup_message_backgrounds()
@@ -32,7 +33,36 @@ local function local_state()
 	return lc
 end
 
+local function active_session_lock()
+	local ok, app_state = pcall(require, "opencode.state")
+	if not ok then
+		return nil
+	end
+	local session = app_state.get_session()
+	return session_lock.get(session and session.id)
+end
+
 local function info_parts()
+	local locked = active_session_lock()
+	if locked then
+		local lc = local_state()
+		local model = locked.model or {}
+		local model_info = nil
+		local provider_info = nil
+		local sync_ok, sync = pcall(require, "opencode.sync")
+		if sync_ok and type(sync.get_model) == "function" then
+			model_info = sync.get_model(model.providerID, model.modelID)
+			if type(sync.get_provider) == "function" then
+				provider_info = sync.get_provider(model.providerID)
+			end
+		end
+		local agent_name = locked.agent or "Subagent"
+		local model_name = model_info and model_info.name or model.modelID or "Unavailable"
+		local provider_name = model_info and model_info.provider or provider_info and provider_info.name or model.providerID or ""
+		local agent_hl = lc and lc.agent and lc.agent.color and lc.agent.color(agent_name) or "OpenCodeInputAgent"
+		return agent_name, model_name, provider_name, locked.variant, agent_hl
+	end
+
 	local lc = local_state()
 	if not lc then
 		return "Code", "", "", nil, "OpenCodeInputAgent"
@@ -106,6 +136,9 @@ function M.update(state)
 end
 
 function M.cycle_variant(state)
+	if active_session_lock() then
+		return
+	end
 	local lc = local_state()
 	if lc then
 		lc.variant.cycle()
@@ -114,6 +147,9 @@ function M.cycle_variant(state)
 end
 
 function M.cycle_agent(state)
+	if active_session_lock() then
+		return
+	end
 	local lc = local_state()
 	if lc then
 		lc.agent.move(1)
@@ -122,6 +158,9 @@ function M.cycle_agent(state)
 end
 
 function M.cycle_model(state)
+	if active_session_lock() then
+		return
+	end
 	local lc = local_state()
 	if lc then
 		lc.model.cycle(1)
