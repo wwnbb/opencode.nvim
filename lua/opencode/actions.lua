@@ -229,6 +229,14 @@ function M.get_session_children(session_id, callback)
 	end)
 end
 
+function M.get_session(session_id, callback)
+	return with_connection(function()
+		client().get_session(session_id, function(err, session)
+			schedule_callback(callback, err, session)
+		end)
+	end)
+end
+
 ---@param parent_session_id string
 ---@param message_id string
 ---@param part_id string
