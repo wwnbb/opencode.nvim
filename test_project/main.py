@@ -1,6 +1,7 @@
 from fastapi import FastAPI, HTTPException, Response, status
 from pydantic import BaseModel
 
+# The application keeps its data data files local to each app instance.
 
 class Todo(BaseModel):
     id: int

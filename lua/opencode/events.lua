@@ -3,6 +3,7 @@
 local M = {}
 
 local bus = require("opencode.events.bus")
+local setup_listener_generation = nil
 
 for _, name in ipairs({
 	"on",
@@ -13,6 +14,7 @@ for _, name in ipairs({
 	"clear_history",
 	"clear",
 	"listener_count",
+	"get_generation",
 	"list_event_types",
 }) do
 	M[name] = bus[name]
@@ -47,6 +49,11 @@ local function setup_module(spec)
 end
 
 function M.setup()
+	local listener_generation = type(M.get_generation) == "function" and M.get_generation() or nil
+	if listener_generation ~= nil and setup_listener_generation == listener_generation then
+		return
+	end
+	setup_listener_generation = listener_generation
 	for _, spec in ipairs(setup_modules) do
 		setup_module(spec)
 	end

@@ -1,7 +1,15 @@
 local M = {}
+local registered_events = nil
+local registered_client = nil
 
 function M.setup(events)
 	local client = require("opencode.client")
+	if registered_events == events and registered_client == client then
+		return
+	end
+	registered_events = events
+	registered_client = client
+
 	local logger = require("opencode.logger")
 
 	-- Map SSE events to local events

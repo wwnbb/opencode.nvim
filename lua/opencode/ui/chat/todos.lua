@@ -159,6 +159,10 @@ local function ensure_highlights(cfg)
 	set_dock_hl("OpenCodeTodoDockError", "DiagnosticError", "ErrorMsg")
 end
 
+function M.refresh_highlights()
+	ensure_highlights(M.get_config())
+end
+
 ---@param cfg OpenCodeTodoConfig|nil
 ---@return boolean
 function M.is_enabled(cfg)
@@ -380,6 +384,20 @@ end
 ---@param result table
 ---@param text string
 ---@param hl_group string|nil
+---@param width number
+local function add_wrapped_line(result, text, hl_group, width)
+	local wrapped = render.wrap_text(text, math.max(1, width), { initial_col = 0 })
+	if #wrapped == 0 then
+		wrapped = { "" }
+	end
+	for _, line in ipairs(wrapped) do
+		add_line(result, line, hl_group)
+	end
+end
+
+---@param result table
+---@param text string
+---@param hl_group string|nil
 ---@param prefix string
 ---@param prefix_hl_group string|nil
 local function add_prefixed_line(result, text, hl_group, prefix, prefix_hl_group)
@@ -470,7 +488,9 @@ local function add_todo_item(result, todo, cfg, opts)
 	local first_prefix = prefix .. icon .. " "
 	local continuation_prefix = prefix .. string.rep(" ", vim.fn.strdisplaywidth(icon) + 1)
 	local available = math.max(8, width - vim.fn.strdisplaywidth(first_prefix))
-	local wrapped = render.wrap_text(todo.content, available)
+	local wrapped = render.wrap_text(todo.content, available, {
+		initial_col = vim.fn.strdisplaywidth(first_prefix),
+	})
 	if #wrapped == 0 then
 		wrapped = { "" }
 	end
@@ -653,22 +673,23 @@ function M.render_dock(session_id, todos, opts)
 
 	local collapsed = display == "compact"
 	local result = { lines = {}, highlights = {}, collapsed = collapsed }
+	local width = math.max(1, opts.width or tool_panel.chat_width())
 	local summary = format_summary(normalized)
 	local header_hl = "OpenCodeTodoHeader"
 	local header = collapsed and ("▶ Todos " .. summary) or ("▼ Todos " .. summary)
-	add_line(result, header, header_hl)
+	add_wrapped_line(result, header, header_hl, width)
 
 	if collapsed then
 		local preview = active_preview_todo(normalized)
 		if preview then
-			add_todo_item(result, preview, cfg, { width = opts.width or tool_panel.chat_width() })
+			add_todo_item(result, preview, cfg, { width = width })
 		end
 		add_line(result, "", "OpenCodeTodoOutput")
 		return result
 	end
 
 	for _, todo in ipairs(normalized) do
-		add_todo_item(result, todo, cfg, { width = opts.width or tool_panel.chat_width() })
+		add_todo_item(result, todo, cfg, { width = width })
 	end
 	add_line(result, "", "OpenCodeTodoOutput")
 	return result
@@ -808,7 +829,7 @@ local function setup_todo_window_options(winid)
 
 	local wo = vim.wo[winid]
 	wo.fillchars = "eob: "
-	wo.wrap = true
+	wo.wrap = false
 	wo.number = false
 	wo.relativenumber = false
 	wo.signcolumn = "no"

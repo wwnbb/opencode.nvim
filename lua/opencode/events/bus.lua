@@ -14,6 +14,7 @@ local once_listeners = {}
 local event_history = {}
 
 local max_history = 100
+local listener_generation = 0
 
 -- Get or create listener list for an event type
 local function get_listeners(event_type)
@@ -128,6 +129,7 @@ end
 -- Clear all listeners for an event type (or all events if nil)
 ---@param event_type? string Specific event type, or nil for all
 function M.clear(event_type)
+	listener_generation = listener_generation + 1
 	if event_type then
 		listeners[event_type] = {}
 		once_listeners[event_type] = {}
@@ -135,6 +137,12 @@ function M.clear(event_type)
 		listeners = {}
 		once_listeners = {}
 	end
+end
+
+---Return the listener registry generation. It changes whenever clear() removes listeners.
+---@return number
+function M.get_generation()
+	return listener_generation
 end
 
 function M.listener_count(event_type)
