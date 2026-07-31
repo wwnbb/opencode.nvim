@@ -153,9 +153,19 @@ function M.rerender_permission(perm_id)
 		return
 	end
 
-	local p_lines, p_highlights = permission_widget.get_lines_for_permission(perm_id, pstate)
+	local p_lines, p_highlights
+	local status = pstate.status or "pending"
+	if status == "approved" then
+		p_lines, p_highlights = permission_widget.get_approved_lines(perm_id, pstate)
+	elseif status == "rejected" then
+		p_lines, p_highlights = permission_widget.get_rejected_lines(perm_id, pstate)
+	else
+		p_lines, p_highlights = permission_widget.get_lines_for_permission(perm_id, pstate)
+	end
 
-	widget_support.replace_rendered_block(pos, { lines = p_lines, highlights = p_highlights })
+	if widget_support.replace_rendered_block(pos, { lines = p_lines, highlights = p_highlights }) then
+		pos.status = status
+	end
 end
 
 -- ─── Handlers ─────────────────────────────────────────────────────────────────

@@ -5,6 +5,7 @@ local M = {}
 
 local Popup = require("nui.popup")
 local event = require("nui.utils.autocmd").event
+local app_state = require("opencode.state")
 local hl_ns = vim.api.nvim_create_namespace("opencode_palette")
 
 -- Configuration
@@ -40,15 +41,37 @@ local categories = {
 
 -- Category lookup
 local category_order = {}
-for i, cat in ipairs(categories) do
-	category_order[cat.id] = i
-end
 
 -- Load user configuration
 local function load_config()
 	local cfg = require("opencode.config")
-	if cfg.defaults and cfg.defaults.palette then
-		config = vim.tbl_deep_extend("force", config, cfg.defaults.palette)
+	local full_config = app_state.get_config() or {}
+	local defaults = cfg.defaults and cfg.defaults.palette or {}
+	local user_palette = type(full_config.palette) == "table" and full_config.palette or {}
+
+	-- Merge into a new table so neither defaults nor state config can be mutated.
+	config = vim.tbl_deep_extend("force", {}, defaults, user_palette)
+
+	-- Configured categories define the preferred order. Keep other registered
+	-- categories visible after them instead of silently filtering commands.
+	category_order = {}
+	local seen = {}
+	local next_order = 1
+	if type(config.categories) == "table" then
+		for _, category_id in ipairs(config.categories) do
+			if type(category_id) == "string" and not seen[category_id] then
+				category_order[category_id] = next_order
+				seen[category_id] = true
+				next_order = next_order + 1
+			end
+		end
+	end
+	for _, cat in ipairs(categories) do
+		if not seen[cat.id] then
+			category_order[cat.id] = next_order
+			seen[cat.id] = true
+			next_order = next_order + 1
+		end
 	end
 end
 
@@ -302,6 +325,45 @@ local function format_keybind(keybind)
 	return display
 end
 
+-- Truncate text without splitting a multibyte character and fit it by display width.
+local function truncate_display_width(text, max_width)
+	text = tostring(text or "")
+	max_width = math.max(0, max_width)
+	if vim.fn.strdisplaywidth(text) <= max_width then
+		return text
+	end
+
+	local low = 0
+	local high = vim.fn.strchars(text)
+	local best = 0
+	while low <= high do
+		local middle = math.floor((low + high) / 2)
+		local candidate = vim.fn.strcharpart(text, 0, middle)
+		if vim.fn.strdisplaywidth(candidate) <= max_width then
+			best = middle
+			low = middle + 1
+		else
+			high = middle - 1
+		end
+	end
+
+	return vim.fn.strcharpart(text, 0, best)
+end
+
+local function truncate_with_ellipsis(text, max_width)
+	if vim.fn.strdisplaywidth(text) <= max_width then
+		return text
+	end
+
+	local ellipsis = "..."
+	local ellipsis_width = vim.fn.strdisplaywidth(ellipsis)
+	if max_width <= ellipsis_width then
+		return truncate_display_width(ellipsis, max_width)
+	end
+
+	return truncate_display_width(text, max_width - ellipsis_width) .. ellipsis
+end
+
 -- Highlight groups
 local highlights = {
 	PaletteNormal = { link = "Normal" },
@@ -394,6 +456,7 @@ local function render_list()
 	end
 
 	local buf = state.popup.bufnr
+	vim.api.nvim_buf_clear_namespace(buf, hl_ns, 0, -1)
 	vim.bo[buf].modifiable = true
 
 	local lines = {}
@@ -420,15 +483,16 @@ local function render_list()
 
 		-- Format command line
 		local keybind_str = format_keybind(cmd.keybind)
-		local keybind_len = #keybind_str
-		local available = max_width - keybind_len - 6 -- padding
+		local keybind_width = vim.fn.strdisplaywidth(keybind_str)
+		local available = max_width - keybind_width - 6 -- padding
 
 		local title = cmd.title
-		if #title > available then
-			title = title:sub(1, available - 3) .. "..."
+		if vim.fn.strdisplaywidth(title) > available then
+			title = truncate_with_ellipsis(title, available)
 		end
 
-		local padding = max_width - #title - keybind_len - 4
+		local title_width = vim.fn.strdisplaywidth(title)
+		local padding = max_width - title_width - keybind_width - 4
 		local line = string.format("  %s%s%s", title, string.rep(" ", math.max(1, padding)), keybind_str)
 
 		table.insert(lines, line)
@@ -440,8 +504,9 @@ local function render_list()
 		if i == state.selected then
 			table.insert(highlights_to_apply, { #lines, "OpenCodePaletteSelected", 0, -1 })
 		end
-		if keybind_len > 0 then
-			table.insert(highlights_to_apply, { #lines, "OpenCodePaletteKeybind", #line - keybind_len, -1 })
+		if keybind_width > 0 then
+			-- Extmark columns are byte offsets even though layout uses display width.
+			table.insert(highlights_to_apply, { #lines, "OpenCodePaletteKeybind", #line - #keybind_str, -1 })
 		end
 	end
 

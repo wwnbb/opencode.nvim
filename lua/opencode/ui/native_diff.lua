@@ -19,6 +19,7 @@ local state = {
 	proposed_win = nil,
 	tab_page = nil, -- Tab page for the diff view (keeps chat untouched)
 	previous_winid = nil, -- To restore focus on close
+	original_is_scratch = false, -- Missing add-file target opened without touching disk
 	file_snapshots = {}, -- {[index] = original_content} for undo on reject
 	-- Back-reference to the chat edit widget (set when launched from dt)
 	edit_id = nil, -- permission_id of the originating edit
@@ -150,6 +151,12 @@ local function send_reply(reply)
 	)
 end
 
+local function delete_scratch_original_buffer()
+	if state.original_is_scratch and state.original_buf and vim.api.nvim_buf_is_valid(state.original_buf) then
+		pcall(vim.api.nvim_buf_delete, state.original_buf, { force = true })
+	end
+end
+
 --- Close the diff view and clean up
 function M.close()
 	if not state.active then
@@ -166,6 +173,7 @@ function M.close()
 	if state.proposed_buf and vim.api.nvim_buf_is_valid(state.proposed_buf) then
 		vim.api.nvim_buf_delete(state.proposed_buf, { force = true })
 	end
+	delete_scratch_original_buffer()
 
 	-- Capture previous_winid BEFORE resetting state (state reset nils it)
 	local prev_win = state.previous_winid
@@ -182,6 +190,7 @@ function M.close()
 	state.tab_page = nil
 	state.file_snapshots = {}
 	state.previous_winid = nil
+	state.original_is_scratch = false
 	state.edit_id = nil
 	state.edit_file_index = nil
 
@@ -212,16 +221,30 @@ local function close_diff_windows()
 	if state.proposed_buf and vim.api.nvim_buf_is_valid(state.proposed_buf) then
 		vim.api.nvim_buf_delete(state.proposed_buf, { force = true })
 	end
+	delete_scratch_original_buffer()
 
 	state.original_buf = nil
 	state.proposed_buf = nil
 	state.original_win = nil
 	state.proposed_win = nil
 	state.tab_page = nil
+	state.original_is_scratch = false
 end
 
-local function save_current_original_buffer()
+local function save_current_original_buffer(force)
 	if state.original_buf and vim.api.nvim_buf_is_valid(state.original_buf) then
+		if state.original_is_scratch and not force then
+			return
+		end
+
+		if state.original_is_scratch then
+			local file = state.files[state.current_file_index]
+			local filepath = file and (file.filePath or file.filepath or file.path)
+			if filepath then
+				vim.fn.mkdir(vim.fn.fnamemodify(filepath, ":h"), "p")
+			end
+		end
+
 		vim.api.nvim_buf_call(state.original_buf, function()
 			vim.cmd("silent! write")
 		end)
@@ -273,6 +296,10 @@ local function setup_keymaps()
 			end
 		end, opts)
 
+		vim.keymap.set("n", "<C-a>", M._confirm_current, opts)
+		vim.keymap.set("n", "<C-x>", M._reject_current, opts)
+		vim.keymap.set("n", "<C-S-x>", M._reject_all, opts)
+
 		-- File navigation only; does not resolve, reject, or send the edit.
 		vim.keymap.set("n", "<leader>on", function()
 			navigate_file(1)
@@ -300,13 +327,16 @@ local function setup_keymaps()
 				"  ]c       - Jump to next change",
 				"  [c       - Jump to previous change",
 				"  <C-y>    - Apply ALL remaining proposed hunks at once",
+				"  <C-a>    - Confirm current file and continue",
+				"  <C-x>    - Reject current file and restore the original content",
+				"  <C-S-x>  - Reject all files and close",
 				"  <leader>on - Go to next file",
 				"  <leader>op - Go to previous file",
 				"  m        - Add or edit note",
 				"  q        - Close diff view",
 				"  ?        - Show this help",
 				"",
-				"Tip: use <C-y> to apply all proposed changes in the current file.",
+				"Tip: use <C-y> to apply all proposed changes in the current file, then <C-a> to confirm.",
 			}
 			vim.notify(table.concat(help, "\n"), vim.log.levels.INFO)
 		end, opts)
@@ -355,21 +385,25 @@ function M._show_file(index)
 		return
 	end
 
-	-- For add type: write the file first so we can open it
-	if file_type == "add" and before == "" then
-		-- Ensure parent directory exists and create the file with empty content
-		-- (the proposed content will be shown on the left for the user to apply)
-		write_file(filepath, "")
+	-- Open the actual file in a new tab (keeps the chat buffer untouched). A
+	-- missing add target gets a named scratch buffer so opening review does not
+	-- touch the filesystem; confirmation creates it via :write.
+	local missing_add = file_type == "add" and before == "" and vim.uv.fs_stat(filepath) == nil
+	if missing_add then
+		vim.cmd("tabnew")
+		state.original_buf = vim.api.nvim_get_current_buf()
+		state.original_is_scratch = true
+		vim.bo[state.original_buf].bufhidden = "wipe"
+		vim.bo[state.original_buf].swapfile = false
+		vim.bo[state.original_buf].buflisted = false
+		vim.api.nvim_buf_set_name(state.original_buf, filepath)
+	else
+		vim.cmd("tabnew " .. vim.fn.fnameescape(filepath))
+		state.original_buf = vim.api.nvim_get_current_buf()
+		state.original_is_scratch = false
 	end
-
-	-- Open the actual file in a new tab (keeps the chat buffer untouched)
-	vim.cmd("tabnew " .. vim.fn.fnameescape(filepath))
-	state.original_buf = vim.api.nvim_get_current_buf()
 	state.original_win = vim.api.nvim_get_current_win()
 	state.tab_page = vim.api.nvim_get_current_tabpage()
-
-	-- For 'add' type with empty file: set the buffer content to empty
-	-- For 'update' type: the file already has the 'before' content on disk
 
 	-- Create vertical split LEFT for proposed content
 	vim.cmd("leftabove vsplit")
@@ -493,12 +527,8 @@ end
 --- (accepted if all hunks applied, rejected if reverted, resolved if partially edited).
 --- Manual edits are NEVER overwritten.
 function M._confirm_current()
-	-- Save the file buffer as-is (preserves any manual edits)
-	if state.original_win and vim.api.nvim_win_is_valid(state.original_win) then
-		vim.api.nvim_win_call(state.original_win, function()
-			vim.cmd("silent! write")
-		end)
-	end
+	-- Save the file buffer as-is (preserves any manual edits).
+	save_current_original_buffer(true)
 	sync_edit_action("resolve")
 	M._advance_or_finish()
 end
@@ -629,14 +659,15 @@ function M.show(permission_id, files, opts)
 	end
 	state.current_file_index = start_index
 	state.file_snapshots = {}
+	state.original_is_scratch = false
 	state.edit_id = opts.edit_id or nil
 	state.edit_file_index = opts.file_index or nil
 
 	-- Stop spinner if active
 	local spinner_ok, spinner = pcall(require, "opencode.ui.spinner")
 	if spinner_ok and spinner.is_active then
-		local is_active = pcall(spinner.is_active)
-		if is_active then
+		local ok_active, is_active = pcall(spinner.is_active)
+		if ok_active and is_active then
 			pcall(spinner.stop)
 		end
 	end

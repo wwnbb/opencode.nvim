@@ -253,56 +253,26 @@ local function find_tool_part(message_id, call_id)
 	return nil
 end
 
----@param permission_id string
----@param perm_state table
----@param tool_name string
-local function persist_tool_name(permission_id, perm_state, tool_name)
-	if tool_name == "" or perm_state.tool_name == tool_name then
-		return
-	end
-
-	local ok_state, permission_state = pcall(require, "opencode.permission.state")
-	if ok_state and type(permission_state.set_tool_name) == "function" then
-		permission_state.set_tool_name(permission_id, tool_name)
-	else
-		perm_state.tool_name = tool_name
-	end
-end
-
----@param permission_id string
 ---@param perm_state table
 ---@return table
-local function resolve_tool_input(permission_id, perm_state)
+local function resolve_tool_input(perm_state)
 	local current = type(perm_state.tool_input) == "table" and perm_state.tool_input or {}
 	local part = find_tool_part(perm_state.message_id, perm_state.call_id)
 	if not part then
-		return current
+		return vim.tbl_deep_extend("force", {}, current)
 	end
-
-	persist_tool_name(permission_id, perm_state, extract_tool_name(part))
 
 	local fresh = extract_tool_input(part)
 	if not next(fresh) then
-		return current
+		return vim.tbl_deep_extend("force", {}, current)
 	end
 
-	local merged = vim.tbl_deep_extend("force", {}, current, fresh)
-	if not vim.deep_equal(current, merged) then
-		local ok_state, permission_state = pcall(require, "opencode.permission.state")
-		if ok_state and type(permission_state.merge_tool_input) == "function" then
-			permission_state.merge_tool_input(permission_id, fresh)
-		else
-			perm_state.tool_input = merged
-		end
-	end
-
-	return merged
+	return vim.tbl_deep_extend("force", {}, current, fresh)
 end
 
----@param permission_id string
 ---@param perm_state table
 ---@return string
-local function resolve_tool_name(permission_id, perm_state)
+local function resolve_tool_name(perm_state)
 	local tool_name = first_non_empty(perm_state.tool_name)
 	if tool_name ~= "" then
 		return tool_name
@@ -311,25 +281,18 @@ local function resolve_tool_name(permission_id, perm_state)
 	local metadata = type(perm_state.metadata) == "table" and perm_state.metadata or {}
 	tool_name = first_non_empty(metadata.tool, metadata.tool_name, metadata.toolName)
 	if tool_name ~= "" then
-		persist_tool_name(permission_id, perm_state, tool_name)
 		return tool_name
 	end
 
 	local part = find_tool_part(perm_state.message_id, perm_state.call_id)
 	tool_name = extract_tool_name(part)
-	if tool_name ~= "" then
-		persist_tool_name(permission_id, perm_state, tool_name)
-		return tool_name
-	end
-
-	return ""
+	return tool_name
 end
 
----@param permission_id string
 ---@param perm_state table
 ---@return string
-local function permission_header_title(permission_id, perm_state)
-	local tool_name = format_tool_name(resolve_tool_name(permission_id, perm_state))
+local function permission_header_title(perm_state)
+	local tool_name = format_tool_name(resolve_tool_name(perm_state))
 	return tool_name ~= "" and ("for " .. tool_name) or ""
 end
 
@@ -710,8 +673,8 @@ function M.get_lines_for_permission(permission_id, perm_state)
 	ensure_highlights()
 
 	local result = { lines = {}, highlights = {} }
-	local tool_input = resolve_tool_input(permission_id, perm_state)
-	local header_title = permission_header_title(permission_id, perm_state)
+	local tool_input = resolve_tool_input(perm_state)
+	local header_title = permission_header_title(perm_state)
 	local desc_lines = get_permission_description(perm_state.permission_type, tool_input, perm_state)
 
 	add_panel_blank(result)
@@ -759,8 +722,8 @@ function M.get_approved_lines(permission_id, perm_state)
 
 	local reply_suffix = perm_state.reply == "always" and "(always)" or "(once)"
 	local result = { lines = {}, highlights = {} }
-	local tool_input = resolve_tool_input(permission_id, perm_state)
-	local header_title = permission_header_title(permission_id, perm_state)
+	local tool_input = resolve_tool_input(perm_state)
+	local header_title = permission_header_title(perm_state)
 	local desc_lines = get_permission_description(perm_state.permission_type, tool_input, perm_state)
 
 	add_panel_blank(result)
@@ -781,8 +744,8 @@ function M.get_rejected_lines(permission_id, perm_state)
 	ensure_highlights()
 
 	local result = { lines = {}, highlights = {} }
-	local tool_input = resolve_tool_input(permission_id, perm_state)
-	local header_title = permission_header_title(permission_id, perm_state)
+	local tool_input = resolve_tool_input(perm_state)
+	local header_title = permission_header_title(perm_state)
 	local desc_lines = get_permission_description(perm_state.permission_type, tool_input, perm_state)
 
 	add_panel_blank(result)

@@ -192,6 +192,30 @@ describe("opencode question flow", function()
 		assert_true(question_state.get_question("question-custom").submitting, "custom reply should lock while in flight")
 	end)
 
+	it("opens custom input from Enter for custom-only questions", function()
+		local shown
+		local calls = 0
+		input.show = function(opts)
+			shown = opts
+		end
+		actions.reply_to_question = function()
+			calls = calls + 1
+		end
+
+		add_question("question-custom-enter", {
+			{ question = "Describe it", custom = true, options = {} },
+		})
+		mount_question("question-custom-enter")
+		interactions.handle_question_confirm()
+
+		assert_true(shown and type(shown.on_send) == "function", "Enter should open custom input for custom-only questions")
+		assert_eq(calls, 0, "opening custom input must not submit before an answer")
+
+		question_state.set_custom_input("question-custom-enter", 1, "already answered")
+		interactions.handle_question_confirm()
+		assert_eq(calls, 1, "an already-answered custom-only question should submit on Enter")
+	end)
+
 	it("keeps multi-select and multi-question flows behind confirmation", function()
 		local calls = 0
 		actions.reply_to_question = function()
@@ -333,6 +357,47 @@ describe("opencode question flow", function()
 		assert_true(buffer_text():find("Cancelling question", 1, true) ~= nil, "reject should render cancellation progress")
 		assert_true(not buffer_text():find("Submitting answer", 1, true), "reject must not render answer submission text")
 		assert_true(callback ~= nil, "reject should issue the HTTP request")
+	end)
+
+	it("renders custom-only questions and uses terminal layouts on direct rerender", function()
+		add_question("question-custom-only", {
+			{ question = "Describe it", custom = true, options = {} },
+		})
+		mount_question("question-custom-only")
+
+		local qstate = question_state.get_question("question-custom-only")
+		local lines, _, meta = question_widget.get_lines_for_question(
+			"question-custom-only",
+			{ questions = qstate.questions },
+			qstate,
+			qstate.status
+		)
+		assert_true(buffer_text():find("Custom answer...", 1, true) ~= nil, "custom-only questions should render a custom row")
+		assert_eq(meta.option_count, 0, "custom-only focus must not report a numbered option")
+		assert_eq(meta.interactive_count, 1, "custom-only questions should expose one focusable row")
+		assert_eq(meta.first_interactive_line, meta.custom_interactive_line, "custom row should be the focus target")
+		assert_eq(lines[meta.custom_interactive_line + 1]:find("Custom answer...", 1, true) ~= nil, true, "focus metadata should point at the custom row")
+
+		vim.api.nvim_win_set_cursor(chat_state.winid, { meta.custom_interactive_line + 1, 0 })
+		local _, changed = chat_questions.sync_selected_option_from_cursor()
+		assert_true(not changed, "custom row must not select a nonexistent option")
+		assert_eq(#qstate.selections[1].selected_indices, 0, "custom row must leave option selection empty")
+
+		question_state.set_custom_input("question-custom-only", 1, "free form")
+		question_state.mark_answered("question-custom-only", { { "free form" } })
+		chat_questions.rerender_question("question-custom-only")
+		assert_true(buffer_text():find("Describe it: free form", 1, true) ~= nil, "direct answered rerender should use the answered layout")
+		assert_true(buffer_text():find("Custom answer...", 1, true) == nil, "answered rerender must not show interactive custom options")
+
+		question_state.clear_all()
+		add_question("question-custom-only-rejected", {
+			{ question = "Cancel custom", custom = true, options = {} },
+		})
+		mount_question("question-custom-only-rejected")
+		question_state.mark_rejected("question-custom-only-rejected")
+		chat_questions.rerender_question("question-custom-only-rejected")
+		assert_true(buffer_text():find("Cancelled", 1, true) ~= nil, "direct rejected rerender should use the rejected layout")
+		assert_true(buffer_text():find("Custom answer...", 1, true) == nil, "rejected rerender must not show interactive custom options")
 	end)
 
 	it("restores reject interactivity after 404 and other errors without cancellation", function()

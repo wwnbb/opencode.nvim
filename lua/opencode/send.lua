@@ -101,6 +101,19 @@ local function error_text(err)
 	return tostring(err)
 end
 
+---@param role string
+---@param content string
+---@param opts? table
+local function add_chat_notice(role, content, opts)
+	local chat_module = chat()
+	if type(chat_module.get_bufnr) == "function" then
+		chat_module.get_bufnr()
+	elseif type(chat_module.create) == "function" then
+		chat_module.create()
+	end
+	chat_module.add_message(role, content, opts)
+end
+
 ---@param messages table[]|nil
 ---@return number
 local function count_assistant_messages(messages)
@@ -274,7 +287,7 @@ local function handle_send_error(session_id, err)
 			session_id = session_id,
 		})
 		vim.notify("Failed to send message: " .. error_text(err), vim.log.levels.ERROR)
-		chat().add_message("system", "Error: Failed to send message", {
+		add_chat_notice("system", "Error: Failed to send message", {
 			session_id = session_id,
 		})
 	end)
@@ -437,7 +450,7 @@ local function handle_create_session_error(err)
 	vim.schedule(function()
 		local message = err and error_text(err) or "unknown"
 		vim.notify("Failed to create session: " .. tostring(message), vim.log.levels.ERROR)
-		chat().add_message("system", "Error: Failed to create session")
+		add_chat_notice("system", "Error: Failed to create session")
 	end)
 end
 

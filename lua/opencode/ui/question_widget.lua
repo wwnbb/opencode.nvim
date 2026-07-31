@@ -374,6 +374,7 @@ function M.get_lines_for_question(_request_id, question_data, selection_state, s
 
 	local option_count = 0
 	local first_option_line = #result.lines
+	local custom_interactive_line
 	local selected_indices = selections.selected_indices or {}
 	local is_multi = is_multi_question(current_question)
 	local allow_custom = allows_custom_answer(current_question)
@@ -401,20 +402,21 @@ function M.get_lines_for_question(_request_id, question_data, selection_state, s
 				highlight_panel_text(result, rows, marker, "OpenCodeQuestionSelectedMarker")
 			end
 		end
-
-		if allow_custom then
+	end
+	if allow_custom then
+		if option_count > 0 then
 			add_panel_blank(result)
-			local custom_text = selections.custom_input or ""
-			local custom_selected = custom_text ~= ""
-			local custom_marker = custom_selected and icons.selected or icons.unselected
-			local custom_line = custom_selected and (custom_marker .. " Custom: " .. custom_text)
-				or (custom_marker .. " Custom answer...")
-			add_panel_line(
-				result,
-				custom_line,
-				custom_selected and "OpenCodeQuestionSelected" or "OpenCodeQuestionMuted"
-			)
 		end
+		local custom_text = selections.custom_input or ""
+		local custom_selected = custom_text ~= ""
+		local custom_marker = custom_selected and icons.selected or icons.unselected
+		local custom_line = custom_selected and (custom_marker .. " Custom: " .. custom_text)
+			or (custom_marker .. " Custom answer...")
+		custom_interactive_line = add_panel_line(
+			result,
+			custom_line,
+			custom_selected and "OpenCodeQuestionSelected" or "OpenCodeQuestionMuted"
+		)
 	end
 
 	if status == "pending" then
@@ -446,11 +448,20 @@ function M.get_lines_for_question(_request_id, question_data, selection_state, s
 	add_panel_blank(result)
 	add_trailing_separator(result)
 
+	local interactive_count = option_count
+	local first_interactive_line = first_option_line
+	if option_count == 0 and custom_interactive_line ~= nil then
+		interactive_count = 1
+		first_interactive_line = custom_interactive_line
+	end
+
 	return result.lines,
 		result.highlights,
 		widget_base.make_meta({
-			interactive_count = option_count,
-			first_interactive_line = first_option_line,
+			interactive_count = interactive_count,
+			first_interactive_line = first_interactive_line,
+			option_count = option_count,
+			custom_interactive_line = custom_interactive_line,
 		})
 end
 

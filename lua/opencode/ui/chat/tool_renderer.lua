@@ -5,8 +5,14 @@ local chat_tasks = require("opencode.ui.chat.tasks")
 local widget_support = require("opencode.ui.chat.widget_support")
 
 function M.render_tool_part(ctx, tool_part, message_revision, part_revisions)
+	tool_part = chat_tasks.resolve_tool_part(tool_part)
 	local tool_name = tostring(tool_part and tool_part.tool or "unknown")
 	local part_revision = tool_part.id and part_revisions and part_revisions[tool_part.id] or 0
+	local position_ids = {
+		session_id = tool_part.sessionID or tool_part.sessionId or tool_part.session_id or ctx.current_session.id,
+		message_id = tool_part.messageID,
+		part_id = tool_part.id,
+	}
 
 	if tool_part.tool == "task" then
 		local is_expanded = state.expanded_tasks[tool_part.id] or false
@@ -27,12 +33,12 @@ function M.render_tool_part(ctx, tool_part, message_revision, part_revisions)
 			return chat_tasks.render_task_tool(tool_part, is_expanded)
 		end)
 		local base_line = ctx:add_render_result(result, "tool")
-		state.tasks[tool_part.id] = widget_support.mark_render_generation({
+		state.tasks[tool_part.id] = widget_support.mark_render_generation(vim.tbl_extend("force", position_ids, {
 			start_line = base_line,
 			end_line = base_line + #result.lines - 1,
 			tool_part = tool_part,
 			highlights = result.highlights,
-		})
+		}))
 		chat_tasks.ensure_task_child_loaded(tool_part)
 		return
 	end
@@ -55,12 +61,12 @@ function M.render_tool_part(ctx, tool_part, message_revision, part_revisions)
 		return chat_tasks.render_regular_tool(tool_part, is_expanded)
 	end)
 	local base_line = ctx:add_render_result(result, "tool")
-	state.tools[tool_part.id] = widget_support.mark_render_generation({
+	state.tools[tool_part.id] = widget_support.mark_render_generation(vim.tbl_extend("force", position_ids, {
 		start_line = base_line,
 		end_line = base_line + #result.lines - 1,
 		tool_part = tool_part,
 		highlights = result.highlights,
-	})
+	}))
 end
 
 return M

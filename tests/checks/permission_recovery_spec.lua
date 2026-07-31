@@ -148,6 +148,65 @@ describe("opencode permission recovery", function()
 		permission_state.clear_all()
 	end)
 
+	it("keeps permission builders pure and terminal rerenders status-aware", function()
+		local permission_state = require("opencode.permission.state")
+		local permission_widget = require("opencode.ui.permission_widget")
+		local sync = require("opencode.sync")
+		local chat_state = require("opencode.ui.chat.state").state
+		local chat_permissions = require("opencode.ui.chat.permissions")
+
+		permission_state.clear_all()
+		sync.clear_all()
+		sync.handle_part_updated({
+			id = "permission_purity_part",
+			messageID = "permission_purity_message",
+			sessionID = "permission_purity_session",
+			type = "tool",
+			tool = "bash",
+			callID = "permission_purity_call",
+			state = { status = "pending", input = { command = "echo resolved" } },
+		})
+
+		local pstate = permission_state.add_permission("permission_purity", "permission_purity_session", "bash", {
+			message_id = "permission_purity_message",
+			call_id = "permission_purity_call",
+		})
+		local before = vim.deepcopy(pstate)
+		permission_widget.get_lines_for_permission("permission_purity", pstate)
+		permission_widget.get_approved_lines("permission_purity", pstate)
+		permission_widget.get_rejected_lines("permission_purity", pstate)
+		assert_true(vim.deep_equal(pstate, before), "permission builders must not mutate permission state")
+
+		local pending_lines = permission_widget.get_lines_for_permission("permission_purity", pstate)
+		local bufnr = vim.api.nvim_create_buf(false, true)
+		local old_bufnr = chat_state.bufnr
+		local old_permissions = chat_state.permissions
+		chat_state.bufnr = bufnr
+		chat_state.permissions = {
+			permission_purity = { start_line = 0, end_line = #pending_lines - 1, status = "pending" },
+		}
+		vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, pending_lines)
+		permission_state.mark_approved("permission_purity", "once")
+		chat_permissions.rerender_permission("permission_purity")
+		local approved_text = table.concat(vim.api.nvim_buf_get_lines(bufnr, 0, -1, false), "\n")
+		assert_true(approved_text:find("Permission allowed", 1, true) ~= nil, "approved rerender should use approved builder")
+		assert_true(approved_text:find("Allow once", 1, true) == nil, "approved rerender should not show pending options")
+		assert_eq(chat_state.permissions.permission_purity.status, "approved", "approved rerender should update position status")
+
+		permission_state.mark_rejected("permission_purity")
+		chat_permissions.rerender_permission("permission_purity")
+		local rejected_text = table.concat(vim.api.nvim_buf_get_lines(bufnr, 0, -1, false), "\n")
+		assert_true(rejected_text:find("Permission rejected", 1, true) ~= nil, "rejected rerender should use rejected builder")
+		assert_true(rejected_text:find("Allow always", 1, true) == nil, "rejected rerender should not show pending options")
+		assert_eq(chat_state.permissions.permission_purity.status, "rejected", "rejected rerender should update position status")
+
+		vim.api.nvim_buf_delete(bufnr, { force = true })
+		chat_state.bufnr = old_bufnr
+		chat_state.permissions = old_permissions
+		permission_state.clear_all()
+		sync.clear_all()
+	end)
+
 	it("list_permissions scopes to directory header and query", function()
 		local http = require("opencode.client.http")
 		local client = require("opencode.client")

@@ -152,7 +152,16 @@ end
 
 ---@return number
 local function get_tabstop()
-	local value = tonumber(vim.bo.tabstop) or tonumber(vim.o.tabstop) or 8
+	local value
+	if state.bufnr and vim.api.nvim_buf_is_valid(state.bufnr) then
+		local ok, tabstop = pcall(function()
+			return vim.bo[state.bufnr].tabstop
+		end)
+		if ok then
+			value = tonumber(tabstop)
+		end
+	end
+	value = value or tonumber(vim.bo.tabstop) or tonumber(vim.o.tabstop) or 8
 	if value <= 0 then
 		return 8
 	end
@@ -590,25 +599,58 @@ end
 ---@return NuiLine[]
 function M.render_reasoning(reasoning)
 	local lines = {}
-	if not reasoning or reasoning == "" or not thinking.is_enabled() then
+	if not reasoning or reasoning == "" then
+		return lines
+	end
+	local formatted = thinking.format_reasoning(reasoning)
+	if #formatted == 0 then
 		return lines
 	end
 
-	local reasoning_lines = vim.split(reasoning, "\n", { plain = true })
-	for i, rline in ipairs(reasoning_lines) do
-		local line = NuiLine()
-		if i == 1 then
-			line:append(NuiText("Thinking: ", "WarningMsg"))
-			line:append(NuiText(rline, "Comment"))
-		else
-			line:append(NuiText("          " .. rline, "Comment"))
-		end
-		table.insert(lines, line)
+	local highlight_by_line = {}
+	for _, highlight in ipairs(thinking.get_highlights(0, #formatted)) do
+		highlight_by_line[highlight.line] = highlight.hl_group
 	end
 
-	if #lines > 0 then
-		table.insert(lines, NuiLine())
+	local width = get_chat_text_width()
+	local content_prefix = "  "
+	local content_prefix_width = safe_display_width(content_prefix)
+	local function wrap_reasoning_line(text, line_index)
+		text = M.sanitize_buffer_line(text)
+		if
+			width > content_prefix_width
+			and line_index >= 2
+			and line_index < #formatted - 1
+			and text:sub(1, #content_prefix) == content_prefix
+		then
+			local body = text:sub(#content_prefix + 1)
+			local body_width = math.max(1, width - content_prefix_width)
+			local wrapped_body = M.wrap_text(body, body_width, {
+				initial_col = content_prefix_width,
+			})
+			local wrapped = {}
+			for _, chunk in ipairs(wrapped_body) do
+				table.insert(wrapped, content_prefix .. chunk)
+			end
+			return wrapped
+		end
+		return M.wrap_text(text, width)
 	end
+
+	for index, text in ipairs(formatted) do
+		local hl_group = highlight_by_line[index - 1]
+		for _, wrapped_text in ipairs(wrap_reasoning_line(text, index - 1)) do
+			local line = NuiLine()
+			if hl_group then
+				line:append(NuiText(wrapped_text, hl_group))
+			else
+				line:append(wrapped_text)
+			end
+			table.insert(lines, line)
+		end
+	end
+
+	table.insert(lines, NuiLine())
 	return lines
 end
 

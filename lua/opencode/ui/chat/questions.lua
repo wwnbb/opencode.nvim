@@ -137,6 +137,10 @@ local function get_option_index_at_cursor(request_id, qstate, pos, cursor_line)
 
 	local _, _, meta = question_widget.get_lines_for_question(request_id, { questions = questions }, qstate, qstate.status)
 	local option_count = meta and meta.interactive_count or 0
+	if qstate.status ~= "confirming" then
+		local current_question = qstate.questions and qstate.questions[qstate.current_tab]
+		option_count = current_question and #(current_question.options or {}) or 0
+	end
 	local first_option_line = widget_base.get_focus_offset(meta)
 	if option_count <= 0 or first_option_line == nil then
 		return nil
@@ -225,11 +229,25 @@ function M.rerender_question(request_id)
 		return
 	end
 
-	local lines, highlights, _ =
-		question_widget.get_lines_for_question(request_id, { questions = questions }, qstate, qstate.status)
+	local status = qstate.status or "pending"
+	local lines, highlights
+	if status == "answered" then
+		lines, highlights = question_widget.get_answered_lines(
+			request_id,
+			{ questions = questions, timestamp = qstate.timestamp },
+			qstate.answers
+		)
+	elseif status == "rejected" then
+		lines, highlights = question_widget.get_rejected_lines(request_id, {
+			questions = questions,
+			timestamp = qstate.timestamp,
+		})
+	else
+		lines, highlights = question_widget.get_lines_for_question(request_id, { questions = questions }, qstate, status)
+	end
 
 	if widget_support.replace_rendered_block(pos, { lines = lines, highlights = highlights }) then
-		pos.status = qstate.status
+		pos.status = status
 	end
 end
 

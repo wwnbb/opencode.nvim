@@ -4,6 +4,8 @@
 local M = {}
 
 local hl_ns = vim.api.nvim_create_namespace("opencode_thinking")
+local app_state = require("opencode.state")
+local config_module = require("opencode.config")
 
 -- State storage for reasoning content per message
 local reasoning_store = {}
@@ -11,10 +13,12 @@ local reasoning_store = {}
 -- Throttling
 local last_update = 0
 
--- Get config from main config module
+-- Read merged app state with defaults for callers that render before setup.
 local function get_config()
-	local config_module = require("opencode.config")
-	return config_module.defaults.thinking or {}
+	local defaults = config_module.defaults.thinking or {}
+	local active_config = app_state.get_config() or {}
+	local configured = type(active_config.thinking) == "table" and active_config.thinking or {}
+	return vim.tbl_deep_extend("force", vim.deepcopy(defaults), configured)
 end
 
 -- Initialize (called on module load to sync with main config)
@@ -60,9 +64,10 @@ end
 function M.format_reasoning(text, opts)
 	opts = opts or {}
 	local config = get_config()
-	local max_lines = opts.max_height or config.max_height or 15
+	local max_lines = tonumber(opts.max_height or config.max_height) or 15
+	max_lines = math.max(0, math.floor(max_lines))
 
-	if not text or text == "" then
+	if config.enabled == false or not text or text == "" then
 		return {}
 	end
 
@@ -121,9 +126,10 @@ function M.format_reasoning(text, opts)
 end
 
 -- Get highlight configuration for rendering
-function M.get_highlights(start_line)
+function M.get_highlights(start_line, line_count)
 	local config = get_config()
 	local highlights = {}
+	start_line = tonumber(start_line) or 0
 
 	-- Header highlight
 	table.insert(highlights, {
@@ -133,9 +139,19 @@ function M.get_highlights(start_line)
 		hl_group = config.header_highlight or "Title",
 	})
 
-	-- Content highlights (apply Comment highlight to all content lines)
-	-- Note: actual line count depends on formatted content
-	-- This is handled by the caller after formatting
+	-- The formatter always emits a header, separator, content, and separator.
+	-- Accepting the line count keeps this useful to both buffer and NuiLine
+	-- renderers without duplicating the layout rules.
+	if type(line_count) == "number" then
+		for offset = 2, line_count - 2 do
+			table.insert(highlights, {
+				line = start_line + offset,
+				col_start = 0,
+				col_end = -1,
+				hl_group = config.highlight or "Comment",
+			})
+		end
+	end
 
 	return highlights
 end
@@ -146,19 +162,13 @@ function M.apply_highlights(bufnr, start_line, line_count)
 		return
 	end
 
-	local config = get_config()
-	local header_hl = config.header_highlight or "Title"
-	local content_hl = config.highlight or "Comment"
-
-	-- Header line gets title highlight
-	local header_text = vim.api.nvim_buf_get_lines(bufnr, start_line, start_line + 1, false)[1] or ""
-	vim.api.nvim_buf_set_extmark(bufnr, hl_ns, start_line, 0, { end_col = #header_text, hl_group = header_hl })
-
-	-- Content lines get comment highlight
-	for i = 1, line_count - 3 do -- Skip header, separator, and bottom separator
-		local line_num = start_line + i + 1 -- +1 to skip header and first separator
+	for _, highlight in ipairs(M.get_highlights(start_line, line_count)) do
+		local line_num = highlight.line
 		local line_text = vim.api.nvim_buf_get_lines(bufnr, line_num, line_num + 1, false)[1] or ""
-		vim.api.nvim_buf_set_extmark(bufnr, hl_ns, line_num, 0, { end_col = #line_text, hl_group = content_hl })
+		vim.api.nvim_buf_set_extmark(bufnr, hl_ns, line_num, highlight.col_start or 0, {
+			end_col = highlight.col_end == -1 and #line_text or highlight.col_end,
+			hl_group = highlight.hl_group,
+		})
 	end
 end
 

@@ -108,6 +108,47 @@ local function has_permission_for_tool(message_id, call_id)
 	return false
 end
 
+---@param events table
+---@param data table|nil
+local function enrich_permission_from_tool(events, data)
+	if type(data) ~= "table" then
+		return
+	end
+
+	local call_id = data.call_id
+	local message_id = data.message_id
+	local call_is_present = type(call_id) == "string" and call_id ~= ""
+	local message_is_present = type(message_id) == "string" and message_id ~= ""
+	local ok_state, permission_state = pcall(require, "opencode.permission.state")
+	if not ok_state or type(permission_state.get_all) ~= "function" then
+		return
+	end
+
+	for _, pstate in ipairs(permission_state.get_all()) do
+		local matches = false
+		if call_is_present then
+			matches = pstate.call_id == call_id
+				and (not message_is_present or not pstate.message_id or pstate.message_id == message_id)
+		elseif not pstate.call_id and message_is_present then
+			matches = pstate.message_id == message_id
+		end
+
+		if matches
+			and permission_state.enrich_permission(
+				pstate.permission_id,
+				{ tool_name = data.tool_name, tool_input = data.input }
+			)
+		then
+			events.emit("interaction_changed", {
+				kind = "permission",
+				action = "updated",
+				id = pstate.permission_id,
+				session_id = pstate.session_id,
+			})
+		end
+	end
+end
+
 ---@param data table
 ---@return string
 local function tool_sync_key(data)
@@ -267,6 +308,7 @@ function M.setup(events)
 	events.on("tool_update", scheduled(function(data)
 		local logger = require("opencode.logger")
 		artifacts.handle_tool_update(data, logger)
+		enrich_permission_from_tool(events, data)
 		sync_permission_from_tool(events, data)
 	end))
 
