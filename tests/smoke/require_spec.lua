@@ -1208,6 +1208,26 @@ do
 	assert(full_render_count == 1, "part deltas should not force a full render")
 
 	bus.clear()
+	render_coordinator.setup(bus)
+	full_render_count = 0
+	stream_render_count = 0
+	bus.on("chat_render", function()
+		full_render_count = full_render_count + 1
+	end)
+	bus.on("chat_stream_part_updated", function()
+		stream_render_count = stream_render_count + 1
+	end)
+	bus.emit("sync_changed", {
+		kind = "session",
+		action = "updated",
+		session_id = "rebound_session",
+	})
+	wait_until(function()
+		return full_render_count == 1
+	end, "render coordinator should rebind after bus.clear")
+	assert(stream_render_count == 0, "rebound snapshot should remain a full render")
+
+	bus.clear()
 	bus.clear_history()
 end
 
@@ -1243,8 +1263,10 @@ do
 	})
 
 	local todo_update_count = 0
+	local last_todo_update
 	bus.on("todo_update", function(data)
 		todo_update_count = todo_update_count + 1
+		last_todo_update = data
 		assert(data.session_id ~= "todo_filter_unrelated", "unrelated todo updates should not request chat render")
 	end)
 
@@ -1260,9 +1282,32 @@ do
 		sessionID = "todo_filter_child",
 		todos = { { content = "child", status = "in_progress" } },
 	})
+	assert(vim.wait(100, function()
+		return sync.get_todos("todo_filter_child")[1] ~= nil
+	end, 10), "child todo update should be stored")
+	assert(vim.wait(100, function()
+		return todo_update_count > 0
+	end, 10) == false, "parent-visible child todo update should not request chat render")
+
+	app_state.set_session("todo_filter_child", "Todo Filter Child")
+	bus.emit("todo_updated", {
+		sessionID = "todo_filter_child",
+		todos = { { content = "child visible", status = "completed" } },
+	})
 	wait_until(function()
 		return todo_update_count == 1
-	end, "task-child todo update should request chat render")
+	end, "child-visible todo update should request chat render")
+	assert(last_todo_update.session_id == "todo_filter_child", "child-visible todo update should route to the child")
+
+	app_state.set_session("todo_filter_parent", "Todo Filter Parent")
+	bus.emit("todo_updated", {
+		sessionID = "todo_filter_parent",
+		todos = { { content = "parent", status = "pending" } },
+	})
+	wait_until(function()
+		return todo_update_count == 2
+	end, "parent-visible todo update should request chat render")
+	assert(last_todo_update.session_id == "todo_filter_parent", "parent-visible todo update should route to the parent")
 
 	sync.clear_all()
 	if previous_session and previous_session.id then
@@ -1274,6 +1319,181 @@ do
 	end
 	bus.clear()
 	bus.clear_history()
+end
+
+do
+	local bus = require("opencode.events.bus")
+	local events = require("opencode.events")
+	local app_state = require("opencode.state")
+	local saved_client = package.loaded["opencode.client"]
+	local pending = {}
+	local todo_updates = {}
+	local sse_listeners = {}
+
+	package.loaded["opencode.client"] = {
+		get_session_todos = function(session_id, callback)
+			table.insert(pending, { session_id = session_id, callback = callback })
+		end,
+		on_event = function(event_type, callback)
+			table.insert(sse_listeners, { event_type = event_type, callback = callback })
+		end,
+	}
+
+	bus.clear()
+	bus.clear_history()
+	events.setup()
+	local sse_listener_count = #sse_listeners
+	assert(sse_listener_count > 0, "initial events setup should register SSE listeners")
+	local todo_listener_count = bus.listener_count("todo_updated")
+	events.setup()
+	assert(#sse_listeners == sse_listener_count, "repeated plugin setup should not duplicate SSE listeners")
+	assert(
+		bus.listener_count("todo_updated") == todo_listener_count,
+		string.format("repeated plugin setup should not duplicate todo handlers: %d ~= %d", bus.listener_count("todo_updated"), todo_listener_count)
+	)
+	assert(bus.listener_count("todo_updated") == todo_listener_count, "repeated message setup should not duplicate todo handlers")
+	bus.clear()
+	events.setup()
+	assert(
+		#sse_listeners == sse_listener_count,
+		"SSE bridge should not duplicate listeners after bus.clear"
+	)
+	assert(bus.listener_count("todo_updated") == todo_listener_count, "message setup should rebind after bus.clear")
+	bus.on("todo_update", function(data)
+		table.insert(todo_updates, data)
+	end)
+
+	local previous_session = app_state.get_session()
+	local function set_current_session(session_id)
+		app_state.set_session(session_id, session_id)
+	end
+	local function emit_sse_event(event_type, data)
+		for _, listener in ipairs(sse_listeners) do
+			if listener.event_type == event_type then
+				listener.callback(data)
+			end
+		end
+	end
+	set_current_session("todo_bridge_rebind")
+	emit_sse_event("todo.updated", {
+		sessionID = "todo_bridge_rebind",
+		todos = { { content = "rebound", status = "pending" } },
+	})
+	wait_until(function()
+		return #todo_updates == 1
+	end, "SSE bridge should route one event through rebound local handlers")
+	assert(sync.get_todos("todo_bridge_rebind")[1].content == "rebound", "rebound local todo handler should process mapped SSE events")
+
+	local function assert_no_new_updates(previous_count, message)
+		assert(vim.wait(100, function()
+			return #todo_updates > previous_count
+		end, 10) == false, message)
+	end
+
+	-- A transient error must preserve existing data and emit no render request.
+	local error_session = "todo_fetch_error"
+	set_current_session(error_session)
+	sync.handle_todo_updated(error_session, { { content = "existing", status = "pending" } })
+	local error_updates = #todo_updates
+	bus.emit("session_change", { id = error_session })
+	assert(#pending == 1, "error hydration should create one HTTP request")
+	pending[1].callback({ message = "temporary failure" })
+	assert_no_new_updates(error_updates, "HTTP todo errors should not emit todo_update")
+	assert(sync.get_todos(error_session)[1].content == "existing", "HTTP todo errors should preserve stored todos")
+
+	-- An SSE update invalidates an already-started HTTP hydration.
+	local sse_session = "todo_fetch_sse"
+	set_current_session(sse_session)
+	local sse_updates = #todo_updates
+	bus.emit("session_change", { id = sse_session })
+	local sse_request = #pending
+	bus.emit("todo_updated", {
+		sessionID = sse_session,
+		todos = { { content = "from SSE", status = "in_progress" } },
+	})
+	wait_until(function()
+		return #todo_updates == sse_updates + 1
+	end, "SSE todo update should render before the stale HTTP response")
+	pending[sse_request].callback(nil, { { content = "stale HTTP", status = "pending" } })
+	assert_no_new_updates(sse_updates + 1, "stale HTTP todo response should not emit todo_update after SSE")
+	assert(sync.get_todos(sse_session)[1].content == "from SSE", "SSE todos should win over stale HTTP data")
+
+	-- The newest of two overlapping HTTP requests is the only response accepted.
+	local overlap_session = "todo_fetch_overlap"
+	set_current_session(overlap_session)
+	local overlap_updates = #todo_updates
+	bus.emit("session_change", { id = overlap_session })
+	bus.emit("session_change", { id = overlap_session })
+	local first_request = #pending - 1
+	local second_request = #pending
+	pending[first_request].callback(nil, { { content = "old HTTP", status = "pending" } })
+	assert_no_new_updates(overlap_updates, "older overlapping HTTP response should be ignored")
+	pending[second_request].callback(nil, { { content = "new HTTP", status = "completed" } })
+	wait_until(function()
+		return #todo_updates == overlap_updates + 1
+	end, "newest HTTP todo response should emit todo_update")
+	assert(sync.get_todos(overlap_session)[1].content == "new HTTP", "newest HTTP todos should win")
+
+	-- An accepted child response updates its cache without rendering the visible parent.
+	local parent_session = "todo_fetch_parent"
+	local child_session = "todo_fetch_child"
+	set_current_session(parent_session)
+	sync.handle_message_updated({
+		id = "todo_fetch_parent_message",
+		sessionID = parent_session,
+		role = "assistant",
+		time = { created = 1 },
+	})
+	sync.handle_part_updated({
+		id = "todo_fetch_child_part",
+		messageID = "todo_fetch_parent_message",
+		sessionID = parent_session,
+		type = "tool",
+		tool = "task",
+		state = {
+			status = "running",
+			metadata = { sessionId = child_session },
+		},
+	})
+	local child_updates = #todo_updates
+	bus.emit("session_change", { id = child_session })
+	local child_request = #pending
+	pending[child_request].callback(nil, { { content = "child background", status = "pending" } })
+	assert_no_new_updates(child_updates, "parent-visible child HTTP response should not emit todo_update")
+	assert(sync.get_todos(child_session)[1].content == "child background", "child HTTP hydration should update its cache")
+
+	-- An accepted response for a session that is no longer visible updates only its cache.
+	local inactive_session = "todo_fetch_inactive"
+	local visible_session = "todo_fetch_visible"
+	set_current_session(inactive_session)
+	local inactive_updates = #todo_updates
+	bus.emit("session_change", { id = inactive_session })
+	local inactive_request = #pending
+	set_current_session(visible_session)
+	pending[inactive_request].callback(nil, { { content = "background", status = "pending" } })
+	assert_no_new_updates(inactive_updates, "inactive-session HTTP response should not emit todo_update")
+	assert(sync.get_todos(inactive_session)[1].content == "background", "inactive-session hydration should update its cache")
+
+	local cleared_session = "todo_fetch_cleared"
+	set_current_session(cleared_session)
+	bus.emit("session_change", { id = cleared_session })
+	local cleared_request = #pending
+	sync.clear_all()
+	pending[cleared_request].callback(nil, { { content = "cleared", status = "pending" } })
+	assert_no_new_updates(#todo_updates, "clear_all should invalidate pending todo hydration")
+	assert(sync.get_todos(cleared_session)[1] == nil, "clear_all should prune todo fetch generation state")
+
+	package.loaded["opencode.client"] = saved_client
+	bus.clear()
+	bus.clear_history()
+	sync.clear_all()
+	if previous_session and previous_session.id then
+		app_state.set_session(previous_session.id, previous_session.name, {
+			runtime = previous_session.runtime,
+		})
+	else
+		app_state.set_session(nil, nil)
+	end
 end
 
 do

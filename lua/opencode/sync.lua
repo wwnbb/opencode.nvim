@@ -3,12 +3,14 @@
 -- Uses binary search for efficient lookups like the TUI implementation
 
 local M = {}
+local todo_fetch_cleanup = nil
 
 ---@class SyncStore
 ---@field message table<string, Message[]> Messages by sessionID
 ---@field part table<string, Part[]> Parts by messageID
 ---@field session_status table<string, SessionStatus> Status by sessionID
 ---@field todo table<string, OpenCodeTodo[]> Todos by sessionID
+---@field todo_revision table<string, number> Todo revisions by sessionID
 
 ---@class OpenCodeTodo
 ---@field content string Brief task description
@@ -51,6 +53,7 @@ local store = {
 	part_delta_buffer = {}, -- { [messageID .. "\0" .. partID .. "\0" .. field] = { string, ... } }
 	session_status = {}, -- { [sessionID] = { type = "idle" | "busy" } }
 	todo = {},          -- { [sessionID] = { Todo, ... } }
+	todo_revision = {}, -- { [sessionID] = number }
 	task_child_parent = {}, -- { [child_session_id] = parent_session_id }
 	task_child_owner = {}, -- { [child_session_id] = messageID .. "\0" .. partID }
 	task_part_child = {}, -- { [messageID .. "\0" .. partID] = child_session_id }
@@ -68,6 +71,11 @@ local store = {
 	config = {},        -- Global config
 	mcp = {},           -- MCP server status
 }
+
+---@param callback fun(session_id?: string)
+function M._register_todo_fetch_cleanup(callback)
+	todo_fetch_cleanup = callback
+end
 
 local UTILITY_AGENT_NAMES = {
 	compaction = true,
@@ -1089,10 +1097,12 @@ function M.handle_todo_updated(session_id, todos)
 	end
 	if type(todos) ~= "table" then
 		store.todo[session_id] = {}
+		bump_revision(store.todo_revision, session_id)
 		return
 	end
 
 	store.todo[session_id] = vim.deepcopy(todos)
+	bump_revision(store.todo_revision, session_id)
 	bump_session_revision(session_id)
 end
 
@@ -1304,6 +1314,13 @@ function M.get_todos(session_id)
 	return store.todo[session_id] or {}
 end
 
+---Get the todo revision for a session.
+---@param session_id string
+---@return number
+function M.get_todo_revision(session_id)
+	return store.todo_revision[session_id] or 0
+end
+
 ---Check if session is busy
 ---@param session_id string
 ---@return boolean
@@ -1315,6 +1332,10 @@ end
 ---Clear all data for a session
 ---@param session_id string
 function M.clear_session(session_id)
+	if todo_fetch_cleanup then
+		todo_fetch_cleanup(session_id)
+	end
+
 	-- Remove all parts for messages in this session
 	local messages = store.message[session_id] or {}
 	for _, msg in ipairs(messages) do
@@ -1334,6 +1355,7 @@ function M.clear_session(session_id)
 
 	-- Remove todos
 	store.todo[session_id] = nil
+	bump_revision(store.todo_revision, session_id)
 end
 
 ---Clear only messages/parts for a session, preserving status and todos.
@@ -1353,12 +1375,17 @@ end
 
 ---Clear all data
 function M.clear_all()
+	if todo_fetch_cleanup then
+		todo_fetch_cleanup()
+	end
+
 	store.message = {}
 	store.message_session = {}
 	store.part = {}
 	store.part_delta_buffer = {}
 	store.session_status = {}
 	store.todo = {}
+	store.todo_revision = {}
 	store.task_child_parent = {}
 	store.task_child_owner = {}
 	store.task_part_child = {}

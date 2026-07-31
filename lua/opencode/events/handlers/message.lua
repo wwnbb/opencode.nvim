@@ -1,9 +1,60 @@
 local M = {}
 
+local registered_events = nil
+local registered_listener_generation = nil
+local todo_fetch_generations = {}
+local todo_fetch_sequence = 0
+
+---@param events table
+---@param event_type string
+---@return any
+local function get_listener_generation(events, event_type)
+	if type(events.get_generation) == "function" then
+		return events.get_generation()
+	end
+	if type(events.listener_count) == "function" then
+		return events.listener_count(event_type)
+	end
+	return nil
+end
+
+---@param session_id string|nil
+---@param token table|nil
+local function clear_todo_fetch_generation(session_id, token)
+	if not session_id then
+		return
+	end
+	if token == nil or todo_fetch_generations[session_id] == token then
+		todo_fetch_generations[session_id] = nil
+	end
+end
+
+local function clear_all_todo_fetch_generations(session_id)
+	if session_id then
+		clear_todo_fetch_generation(session_id)
+	else
+		todo_fetch_generations = {}
+	end
+end
+
 function M.setup(events)
+	local listener_generation = get_listener_generation(events, "todo_updated")
+	if
+		registered_events == events
+		and (
+			(type(events.get_generation) == "function" and listener_generation == registered_listener_generation)
+			or (type(events.get_generation) ~= "function" and (type(events.listener_count) ~= "function" or listener_generation > 0))
+		)
+	then
+		return
+	end
+	registered_events = events
+	registered_listener_generation = listener_generation
+
 	local state = require("opencode.state")
 	local session_actions = require("opencode.session")
 	local sync = require("opencode.sync")
+	sync._register_todo_fetch_cleanup(clear_all_todo_fetch_generations)
 	local client = require("opencode.client")
 	local logger = require("opencode.logger")
 	local event_util = require("opencode.events.util")
@@ -66,21 +117,59 @@ function M.setup(events)
 			return
 		end
 
+		todo_fetch_sequence = todo_fetch_sequence + 1
+		local fetch_generation = { sequence = todo_fetch_sequence }
+		todo_fetch_generations[session_id] = fetch_generation
+		local starting_todo_revision = sync.get_todo_revision(session_id)
+
 		client.get_session_todos(session_id, function(err, todos)
 			vim.schedule(function()
 				if err then
+					clear_todo_fetch_generation(session_id, fetch_generation)
 					logger.debug("Session todo sync failed", {
 						session_id = session_id,
 						reason = reason,
 						error = err.message or err.error or tostring(err),
 					})
-					todos = {}
+					return
 				end
 
-				sync.handle_todo_updated(session_id, todos or {})
+				if todo_fetch_generations[session_id] ~= fetch_generation then
+					logger.debug("Stale session todo response ignored", {
+						session_id = session_id,
+						reason = reason,
+						kind = "generation",
+					})
+					return
+				end
+				if sync.get_todo_revision(session_id) ~= starting_todo_revision then
+					clear_todo_fetch_generation(session_id, fetch_generation)
+					logger.debug("Stale session todo response ignored", {
+						session_id = session_id,
+						reason = reason,
+						kind = "revision",
+					})
+					return
+				end
+				clear_todo_fetch_generation(session_id, fetch_generation)
+
+				local hydrated_todos = type(todos) == "table" and todos or {}
+				sync.handle_todo_updated(session_id, hydrated_todos)
+
+				local current_session = state.get_session()
+				local current_session_id = current_session and current_session.id
+				if not current_session_id or session_id ~= current_session_id then
+					logger.debug("Session todo sync stored outside current session", {
+						session_id = session_id,
+						current_session = current_session_id,
+						count = #hydrated_todos,
+					})
+					return
+				end
+
 				events.emit("todo_update", {
 					session_id = session_id,
-					todos = todos or {},
+					todos = hydrated_todos,
 				})
 			end)
 		end)
@@ -775,7 +864,9 @@ function M.setup(events)
 
 	events.on("session.closed", function(data)
 		vim.schedule(function()
-			cancel_orphan_reconciles_for_session(payload_session_id(data))
+			local session_id = payload_session_id(data)
+			cancel_orphan_reconciles_for_session(session_id)
+			clear_all_todo_fetch_generations(session_id)
 		end)
 	end)
 
@@ -793,11 +884,11 @@ function M.setup(events)
 			sync.handle_todo_updated(data.sessionID, todos)
 
 			local current_session = state.get_session()
-			local relevant = event_util.permission_session_is_relevant(current_session and current_session.id, data.sessionID)
-			if not relevant then
+			local current_session_id = current_session and current_session.id
+			if not current_session_id or data.sessionID ~= current_session_id then
 				logger.debug("Todo update stored outside current session", {
 					sessionID = data.sessionID,
-					current_session = current_session and current_session.id or nil,
+					current_session = current_session_id,
 					count = #todos,
 				})
 				return
@@ -1051,6 +1142,9 @@ function M.setup(events)
 	events.on("session_change", function(data)
 		local sync = require("opencode.sync")
 		local reason = data and data.reason
+		if data and data.previous_id and not data.preserve_cache and (reason == "clear" or reason == "disconnect") then
+			clear_all_todo_fetch_generations(data.previous_id)
+		end
 		if data and data.previous_id and not data.preserve_cache and (reason == "clear" or reason == "disconnect") then
 			sync.clear_session(data.previous_id)
 		end

@@ -124,6 +124,129 @@ local stream_block_key = render_state.stream_block_key
 local render_highlight_signature = render_state.render_highlight_signature
 local highlight_clear_start = render_state.highlight_clear_start
 local clear_chat_highlights = render_state.clear_chat_highlights
+local chat_event_handlers_setup = false
+local chat_event_handlers_events = nil
+local chat_event_handlers_generation = nil
+local config_refresh_scheduled = false
+local colorscheme_refresh_scheduled = false
+local resize_refresh_autocmds_setup = false
+local resize_refresh_scheduled = false
+
+local function chat_surface_is_visible()
+	return state.visible
+		and state.bufnr
+		and vim.api.nvim_buf_is_valid(state.bufnr)
+		and state.winid
+		and vim.api.nvim_win_is_valid(state.winid)
+		and (not state.tabpage or state.tabpage == vim.api.nvim_get_current_tabpage())
+end
+
+local function invalidate_cached_render_state()
+	render_state.clear_render_cache()
+	render_state.invalidate_render_highlights(0)
+	state.todo_dock_signature = nil
+	state.force_full_render = true
+end
+
+local function apply_config_change()
+	state.config = get_config()
+	invalidate_cached_render_state()
+	if chat_surface_is_visible() then
+		M.schedule_render({ force = true })
+	end
+end
+
+local function schedule_config_refresh()
+	if config_refresh_scheduled then
+		return
+	end
+	config_refresh_scheduled = true
+	vim.schedule(function()
+		config_refresh_scheduled = false
+		apply_config_change()
+	end)
+end
+
+function M.handle_colorscheme()
+	if colorscheme_refresh_scheduled then
+		return
+	end
+	colorscheme_refresh_scheduled = true
+	vim.schedule(function()
+		colorscheme_refresh_scheduled = false
+		chat_todos.refresh_highlights()
+		invalidate_cached_render_state()
+		if chat_surface_is_visible() then
+			M.schedule_render({ force = true })
+		end
+	end)
+end
+
+local function resolve_resize_event_windows(args, event)
+	event = event or vim.v.event
+	if type(event) == "table" and type(event.windows) == "table" then
+		return event.windows
+	end
+
+	local data = args and args.data
+	if type(data) == "table" and type(data.windows) == "table" then
+		return data.windows
+	end
+	return nil
+end
+
+local function resize_event_affects_chat(windows)
+	if type(windows) ~= "table" then
+		return true
+	end
+
+	for _, winid in ipairs(windows) do
+		if winid == state.winid then
+			return true
+		end
+	end
+	return false
+end
+
+local function schedule_resize_refresh(args, windows)
+	if not chat_surface_is_visible() or not resize_event_affects_chat(windows) or resize_refresh_scheduled then
+		return
+	end
+	resize_refresh_scheduled = true
+	vim.schedule(function()
+		resize_refresh_scheduled = false
+		if chat_surface_is_visible() then
+			M.schedule_render({ force = true })
+		end
+	end)
+end
+
+local function schedule_window_resize_refresh(args, event)
+	local windows = resolve_resize_event_windows(args, event)
+	schedule_resize_refresh(args, windows)
+end
+
+-- Keep the callback's event source testable without exposing a user-facing API.
+M._schedule_window_resize_refresh_for_test = schedule_window_resize_refresh
+
+local function setup_resize_refresh_autocmds()
+	if resize_refresh_autocmds_setup then
+		return
+	end
+	resize_refresh_autocmds_setup = true
+
+	local group = vim.api.nvim_create_augroup("OpenCodeChatResize", { clear = false })
+	vim.api.nvim_create_autocmd("VimResized", {
+		group = group,
+		callback = schedule_resize_refresh,
+		desc = "Refresh OpenCode chat and todo dock after editor resize",
+	})
+	pcall(vim.api.nvim_create_autocmd, "WinResized", {
+		group = group,
+		callback = schedule_window_resize_refresh,
+		desc = "Refresh OpenCode chat and todo dock after window resize",
+	})
+end
 
 local capture_widget_cursor_context = chat_cursor.capture_widget_cursor_context
 local restore_widget_cursor_context = chat_cursor.restore_widget_cursor_context
@@ -284,24 +407,50 @@ function M.show_help()
 end
 
 function M.create()
-	if state.bufnr and vim.api.nvim_buf_is_valid(state.bufnr) then
+	local events = require("opencode.events")
+	local listener_generation
+	if type(events.get_generation) == "function" then
+		listener_generation = events.get_generation()
+	elseif type(events.listener_count) == "function" then
+		listener_generation = events.listener_count("chat_render")
+	end
+	local buffer_exists = state.bufnr and vim.api.nvim_buf_is_valid(state.bufnr)
+	if
+		buffer_exists
+		and chat_event_handlers_setup
+		and chat_event_handlers_events == events
+		and (
+			(type(events.get_generation) == "function" and listener_generation == chat_event_handlers_generation)
+			or (type(events.get_generation) ~= "function" and (type(events.listener_count) ~= "function" or listener_generation > 0))
+		)
+	then
 		return state.bufnr
 	end
 
 	state.config = get_config()
 	chat_session_tabs.setup_refresh_autocmds()
-	state.bufnr = create_buffer()
+	setup_resize_refresh_autocmds()
+	if not buffer_exists then
+		state.bufnr = create_buffer()
+	end
 	state.local_notices = {}
 	reset_chat_surface()
 
-	local events = require("opencode.events")
-
+	if
+		not chat_event_handlers_setup
+		or chat_event_handlers_events ~= events
+		or chat_event_handlers_generation ~= listener_generation
+	then
 	events.on("chat_render", function(data)
 		vim.schedule(function()
 			M.schedule_render({
 				force = type(data) == "table" and data.force == true,
 			})
 		end)
+	end)
+
+	events.on("config_change", function()
+		schedule_config_refresh()
 	end)
 
 	events.on("chat_stream_part_updated", function(data)
@@ -439,6 +588,10 @@ function M.create()
 			chat_todos.update_window()
 		end)
 	end)
+	chat_event_handlers_setup = true
+	chat_event_handlers_events = events
+	chat_event_handlers_generation = listener_generation
+	end
 
 	M.do_render()
 

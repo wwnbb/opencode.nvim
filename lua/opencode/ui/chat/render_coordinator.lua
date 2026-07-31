@@ -9,6 +9,21 @@ local pending_data = nil
 local stream_pending = false
 local stream_updates = {}
 local STREAM_UPDATE_DELAY_MS = 16
+local setup_events_ref = nil
+local setup_listener_generation = nil
+
+---@param events table
+---@param event_type string
+---@return any
+local function get_listener_generation(events, event_type)
+	if type(events.get_generation) == "function" then
+		return events.get_generation()
+	end
+	if type(events.listener_count) == "function" then
+		return events.listener_count(event_type)
+	end
+	return nil
+end
 
 ---@param data table|nil
 local function merge_pending(data)
@@ -126,6 +141,18 @@ end
 
 ---@param events table
 function M.setup(events)
+	local generation = get_listener_generation(events, "sync_changed")
+	if
+		setup_events_ref == events
+		and (
+			(type(events.get_generation) == "function" and generation == setup_listener_generation)
+			or (type(events.get_generation) ~= "function" and (type(events.listener_count) ~= "function" or generation > 0))
+		)
+	then
+		return
+	end
+	setup_events_ref = events
+	setup_listener_generation = generation
 	events_ref = events
 
 	events.on("sync_changed", function(data)
