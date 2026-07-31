@@ -3,6 +3,7 @@ from fastapi.testclient import TestClient
 
 from main import create_app
 
+# Each test receives a fresh application instance.
 
 @pytest.fixture
 def client():

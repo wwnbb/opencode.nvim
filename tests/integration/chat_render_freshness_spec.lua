@@ -156,6 +156,21 @@ local function count_chat_highlights(hl_group)
 	return count
 end
 
+local todo_hl_ns = vim.api.nvim_create_namespace("opencode_todo_hl")
+local function count_buffer_highlights(bufnr, namespace, hl_group)
+	if not bufnr or not vim.api.nvim_buf_is_valid(bufnr) then
+		return 0
+	end
+	local count = 0
+	for _, mark in ipairs(vim.api.nvim_buf_get_extmarks(bufnr, namespace, 0, -1, { details = true })) do
+		local details = mark[4] or {}
+		if details.hl_group == hl_group then
+			count = count + 1
+		end
+	end
+	return count
+end
+
 local function wait_for_buffer_contains(needle, message)
 	wait_for(function()
 		return buffer_text():find(needle, 1, true) ~= nil
@@ -308,6 +323,10 @@ sync.handle_part_updated({
 		},
 	},
 })
+sync.handle_todo_updated("highlight-refresh", {
+	{ content = "Dock completed", status = "completed" },
+	{ content = "Dock pending", status = "pending" },
+})
 chat.open()
 wait_for_buffer_contains("USER_HIGHLIGHT_REFRESH_TEXT", "highlight refresh baseline should render user message")
 wait_for_buffer_contains("Keep panel background", "highlight refresh baseline should render todo widget")
@@ -347,6 +366,79 @@ assert_eq(count_chat_highlights("OpenCodeTodoHeader"), 0, "test should clear tod
 chat.do_render()
 assert_true(count_chat_highlights("OpenCodeUserMessageBg") > 0, "no-diff render should restore user background")
 assert_true(count_chat_highlights("OpenCodeTodoHeader") > 0, "no-diff render should restore todo panel background")
+
+local todo_part_revision = sync.get_part_revision("highlight-assistant", "highlight-todos")
+local original_config = app_state.get_config()
+local changed_config = vim.deepcopy(original_config)
+changed_config.chat.todo.icons.completed = "[DONE]"
+changed_config.chat.todo.highlights.completed = "OpenCodeTestTodoSource"
+vim.api.nvim_set_hl(0, "OpenCodeTestTodoSource", { fg = 0xff5500 })
+app_state.set_config(changed_config)
+wait_for(function()
+	return buffer_text():find("[DONE]", 1, true) ~= nil
+end, "runtime todo icon config should rebuild an unchanged widget")
+assert_eq(
+	sync.get_part_revision("highlight-assistant", "highlight-todos"),
+	todo_part_revision,
+	"runtime todo config test should not change the part revision"
+)
+assert_true(count_chat_highlights("OpenCodeTodoCompleted") > 0, "runtime todo config should restore chat todo highlights")
+assert_true(
+	chat_state.todo_bufnr and count_buffer_highlights(chat_state.todo_bufnr, todo_hl_ns, "OpenCodeTodoDockCompleted") > 0,
+	"runtime todo config should update dock todo highlights"
+)
+
+local original_tabpage = vim.api.nvim_get_current_tabpage()
+vim.cmd("tabnew")
+local hidden_tab_render_generation = chat_state.render_generation or 0
+chat_state.force_full_render = false
+local hidden_tab_config = vim.deepcopy(changed_config)
+hidden_tab_config.chat.todo.icons.pending = "[HIDDEN]"
+app_state.set_config(hidden_tab_config)
+wait_for(function()
+	return chat_state.force_full_render == true
+end, "hidden-tab config invalidation should mark the chat surface stale")
+assert_eq(chat_state.config.todo.icons.pending, "[HIDDEN]", "hidden-tab config should refresh chat config")
+assert_eq(
+	chat_state.render_generation or 0,
+	hidden_tab_render_generation,
+	"hidden-tab config invalidation should not render an inactive chat surface"
+)
+vim.cmd("tabclose!")
+assert_true(vim.api.nvim_get_current_tabpage() == original_tabpage, "hidden-tab config test should restore the original tab")
+chat.do_render()
+wait_for_buffer_contains("[HIDDEN]", "returning to chat should render hidden-tab config changes")
+
+local disabled_config = vim.deepcopy(changed_config)
+disabled_config.chat.todo.enabled = false
+app_state.set_config(disabled_config)
+wait_for(function()
+	return buffer_text():find("Keep panel background", 1, true) == nil
+end, "runtime todo enabled config should rebuild an unchanged widget")
+
+app_state.set_config(changed_config)
+wait_for(function()
+	return buffer_text():find("[DONE]", 1, true) ~= nil
+end, "re-enabling todos should rebuild the cached widget")
+
+local dock_bufnr = chat_state.todo_bufnr
+assert_true(dock_bufnr and vim.api.nvim_buf_is_valid(dock_bufnr), "todo dock should be visible for colorscheme refresh")
+vim.api.nvim_set_hl(0, "OpenCodeTodoCompleted", {})
+vim.api.nvim_set_hl(0, "OpenCodeTodoDockCompleted", {})
+vim.api.nvim_exec_autocmds("ColorScheme", { modeline = false })
+wait_for(function()
+	local chat_hl = vim.api.nvim_get_hl(0, { name = "OpenCodeTodoCompleted", link = false })
+	local dock_hl = vim.api.nvim_get_hl(0, { name = "OpenCodeTodoDockCompleted", link = false })
+	return chat_hl.fg == 0xff5500
+		and dock_hl.fg == 0xff5500
+		and count_chat_highlights("OpenCodeTodoCompleted") > 0
+		and count_buffer_highlights(dock_bufnr, todo_hl_ns, "OpenCodeTodoDockCompleted") > 0
+end, "ColorScheme should recreate todo highlight groups and visible extmarks")
+
+app_state.set_config(original_config)
+wait_for(function()
+	return chat_state.config.todo.enabled == original_config.chat.todo.enabled
+end, "todo config should restore after invalidation regression")
 
 sync.clear_all()
 app_state.reset()
@@ -1119,6 +1211,11 @@ assert_not_contains(buffer_text(), "AMBIGUOUS_PARALLEL_STREAM_TEXT", "resolved s
 switch_to("stream-b", "Stream B")
 wait_for_buffer_contains("AMBIGUOUS_PARALLEL_STREAM_TEXT", "resolved ambiguous chunk should render in stream B")
 assert_not_contains(buffer_text(), "STREAM_A_VISIBLE_TEXT", "stream B render should not include stream A text")
+
+local chat_listener_count = events.listener_count("chat_render")
+events.clear()
+chat.create()
+assert_eq(events.listener_count("chat_render"), chat_listener_count, "chat.create should rebind handlers after bus.clear")
 
 chat.close()
 print("Chat render freshness integration passed")

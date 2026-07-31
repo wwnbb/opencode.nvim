@@ -374,13 +374,24 @@ function M.setup(opts)
   end
 
   -- Set up initially and on colorscheme change
+  local highlight_augroup = vim.api.nvim_create_augroup("OpenCodeHighlights", { clear = true })
+  local function refresh_highlights_after_colorscheme()
+    setup_hidden_cursor_highlight()
+    local chat = package.loaded["opencode.ui.chat"]
+    if chat and type(chat.handle_colorscheme) == "function" then
+      chat.handle_colorscheme()
+    end
+  end
+
   setup_hidden_cursor_highlight()
   vim.api.nvim_create_autocmd("ColorScheme", {
-    callback = setup_hidden_cursor_highlight,
-    desc = "Update OpenCode hidden cursor highlight on colorscheme change",
+    group = highlight_augroup,
+    callback = refresh_highlights_after_colorscheme,
+    desc = "Update OpenCode highlights on colorscheme change",
   })
 
   vim.api.nvim_create_autocmd("FileType", {
+    group = highlight_augroup,
     pattern = "opencode",
     callback = function()
       -- Hide cursor in opencode buffers using transparent highlight

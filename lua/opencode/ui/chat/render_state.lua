@@ -58,6 +58,7 @@ function M.reset_chat_surface(opts)
 	state.task_child_cache = {}
 	state.task_child_loading = {}
 	state.tools = {}
+	state.todo_dock_signature = nil
 	if opts.reset_expansions then
 		state.expanded_tasks = {}
 		state.expanded_tools = {}
