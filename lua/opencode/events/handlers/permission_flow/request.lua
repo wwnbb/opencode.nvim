@@ -223,6 +223,50 @@ function M.resolve_tool_input(request)
 	})
 end
 
+---@param request table
+---@return string
+function M.resolve_tool_name(request)
+	local data = type(request.data) == "table" and request.data or {}
+	local metadata = type(request.metadata) == "table" and request.metadata or {}
+
+	if request.message_id and request.call_id then
+		for _, part in ipairs(sync.get_parts(request.message_id)) do
+			local part_call_id = part.callID or part.call_id or part.callId
+			if part_call_id == request.call_id then
+				local tool_state = type(part.state) == "table" and part.state or {}
+				local part_metadata = type(part.metadata) == "table" and part.metadata or {}
+				local state_metadata = type(tool_state.metadata) == "table" and tool_state.metadata or {}
+				local name = first_non_empty(
+					part.tool,
+					part.tool_name,
+					part.toolName,
+					tool_state.tool,
+					tool_state.tool_name,
+					tool_state.toolName,
+					part_metadata.tool,
+					part_metadata.tool_name,
+					part_metadata.toolName,
+					state_metadata.tool,
+					state_metadata.tool_name,
+					state_metadata.toolName
+				)
+				if name then
+					return name
+				end
+			end
+		end
+	end
+
+	return first_non_empty(
+		data.tool,
+		data.tool_name,
+		data.toolName,
+		metadata.tool,
+		metadata.tool_name,
+		metadata.toolName
+	) or ""
+end
+
 ---@param data table|nil
 ---@return table|nil, string|nil
 function M.decode(data)

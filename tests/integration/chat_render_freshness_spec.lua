@@ -77,11 +77,13 @@ local chat = require("opencode.ui.chat")
 local chat_state_mod = require("opencode.ui.chat.state")
 local chat_state = chat_state_mod.state
 local render_state = require("opencode.ui.chat.render_state")
+local chat_tasks = require("opencode.ui.chat.tasks")
 local client = require("opencode.client")
 local events = require("opencode.events")
 local event_util = require("opencode.events.util")
 local spinner = require("opencode.ui.spinner")
 local question_state = require("opencode.question.state")
+local logger = require("opencode.logger")
 
 local default_get_messages = function(_, _, callback)
 	callback(nil, {})
@@ -1212,10 +1214,128 @@ switch_to("stream-b", "Stream B")
 wait_for_buffer_contains("AMBIGUOUS_PARALLEL_STREAM_TEXT", "resolved ambiguous chunk should render in stream B")
 assert_not_contains(buffer_text(), "STREAM_A_VISIBLE_TEXT", "stream B render should not include stream A text")
 
+chat.close()
+reset_case()
+session_actions.set_active("fresh-tool", "Fresh Tool", { preserve_cache = true })
+session_actions.set_session_status("fresh-tool", { type = "busy" }, { reason = "test_tool_freshness" })
+sync.handle_message_updated({
+	id = "fresh-tool-msg",
+	sessionID = "fresh-tool",
+	role = "assistant",
+	time = { created = 1100 },
+	finish = "tool-calls",
+})
+sync.handle_part_updated({
+	id = "fresh-tool-part",
+	messageID = "fresh-tool-msg",
+	sessionID = "fresh-tool",
+	type = "tool",
+	tool = "bash",
+	state = {
+		status = "running",
+		input = { command = "printf old", description = "Old running command" },
+		time = { start = 1101 },
+	},
+})
+chat.open()
+wait_for_buffer_contains("Old running command", "running tool should render before freshness update")
+local fresh_tool_pos = chat_state.tools["fresh-tool-part"]
+assert_true(fresh_tool_pos ~= nil, "running tool should have a tracked position")
+assert_eq(fresh_tool_pos.session_id, "fresh-tool", "tool position should retain its session identifier")
+assert_eq(fresh_tool_pos.message_id, "fresh-tool-msg", "tool position should retain its message identifier")
+assert_eq(fresh_tool_pos.part_id, "fresh-tool-part", "tool position should retain its part identifier")
+local stale_tool_part = fresh_tool_pos.tool_part
+sync.handle_part_updated({
+	id = "fresh-tool-part",
+	messageID = "fresh-tool-msg",
+	sessionID = "fresh-tool",
+	type = "tool",
+	tool = "bash",
+	state = {
+		status = "completed",
+		input = { command = "printf completed", description = "Completed command" },
+		output = "FRESH_COMPLETED_OUTPUT",
+		time = { start = 1101, ["end"] = 1102 },
+	},
+})
+assert_eq(stale_tool_part.state.status, "running", "test should retain the replaced stale tool reference")
+assert_true(not chat_tasks.is_animating_tool_part(stale_tool_part), "animation predicate should resolve the completed part")
+chat_state.expanded_tools["fresh-tool-part"] = true
+chat_tasks.rerender_tool("fresh-tool-part")
+wait_for_buffer_contains("FRESH_COMPLETED_OUTPUT", "in-place tool rerender should use completed sync output")
+assert_not_contains(buffer_text(), "Old running command", "in-place tool rerender should remove stale running output")
+
+local original_render = chat.render
+local previous_error_count = logger.count_by_level(logger.levels.ERROR)
+local render_attempts = 0
+chat_state.force_full_render = false
+vim.bo[chat.get_bufnr()].modifiable = true
+chat.render = function()
+	render_attempts = render_attempts + 1
+	if render_attempts > 1 then
+		return original_render()
+	end
+	chat_state.questions = { partial = {} }
+	chat_state.permissions = { partial = {} }
+	chat_state.edits = { partial = {} }
+	chat_state.tasks = { partial = {} }
+	chat_state.tools = { partial = {} }
+	chat_state.message_positions = { partial = {} }
+	chat_state.stream_blocks = { partial = {} }
+	chat_state.spinner_footer_line = 7
+	error("chat render recovery sentinel")
+end
+local render_ok = pcall(chat.do_render)
+assert_true(render_ok, "render failure should be contained after cleanup")
+assert_eq(chat_state.render_in_progress, false, "render failure should clear render_in_progress")
+assert_eq(vim.bo[chat.get_bufnr()].modifiable, false, "render failure should restore buffer immutability")
+assert_true(chat_state.force_full_render, "render failure should force the next full render")
+assert_true(next(chat_state.questions) == nil, "render failure should clear question tracking")
+assert_true(next(chat_state.permissions) == nil, "render failure should clear permission tracking")
+assert_true(next(chat_state.edits) == nil, "render failure should clear edit tracking")
+assert_true(next(chat_state.tasks) == nil, "render failure should clear task tracking")
+assert_true(next(chat_state.tools) == nil, "render failure should clear tool tracking")
+assert_true(#chat_state.message_positions == 0, "render failure should clear message tracking")
+assert_true(next(chat_state.stream_blocks) == nil, "render failure should clear stream tracking")
+assert_eq(chat_state.spinner_footer_line, nil, "render failure should clear spinner tracking")
+assert_eq(
+	logger.count_by_level(logger.levels.ERROR),
+	previous_error_count + 1,
+	"render failure should be logged once"
+)
+wait_for(function()
+	return render_attempts >= 2 and chat_state.force_full_render == false
+end, "failed render should schedule one automatic recovery render")
+chat.render = original_render
+assert_eq(chat_state.render_in_progress, false, "successful recovery render should clear render_in_progress")
+assert_eq(chat_state.force_full_render, false, "successful recovery render should consume the forced frame")
+wait_for_buffer_contains("FRESH_COMPLETED_OUTPUT", "next full render should recover after a failed frame")
+
+local retry_attempts = 0
+chat.render = function()
+	retry_attempts = retry_attempts + 1
+	error("chat render retry sentinel")
+end
+local retry_ok = pcall(chat.do_render)
+assert_true(retry_ok, "repeated render failure should remain contained")
+wait_for(function()
+	return retry_attempts >= 2
+end, "repeated render failure should consume the bounded retry")
+pause(50)
+assert_eq(retry_attempts, 2, "repeated render failure should not schedule an infinite retry loop")
+assert_true(chat_state.force_full_render, "repeated render failure should keep the next frame forced")
+assert_eq(chat_state.render_in_progress, false, "repeated render failure should clear render_in_progress")
+assert_eq(vim.bo[chat.get_bufnr()].modifiable, false, "repeated render failure should restore buffer immutability")
+chat.render = original_render
+chat.do_render()
+assert_eq(chat_state.force_full_render, false, "successful render should reset the retry budget")
+
 local chat_listener_count = events.listener_count("chat_render")
+chat.add_message("system", "CREATE_PRESERVED_LOCAL_NOTICE", { render = false })
 events.clear()
 chat.create()
 assert_eq(events.listener_count("chat_render"), chat_listener_count, "chat.create should rebind handlers after bus.clear")
+wait_for_buffer_contains("CREATE_PRESERVED_LOCAL_NOTICE", "chat.create should preserve local notices")
 
 chat.close()
 print("Chat render freshness integration passed")

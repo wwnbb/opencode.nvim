@@ -16,6 +16,7 @@ local spinner = require("opencode.ui.spinner")
 local locale = require("opencode.util.locale")
 local event_util = require("opencode.events.util")
 local actions = require("opencode.actions")
+local logger = require("opencode.logger")
 
 -- ─── Shared state & sub-modules ──────────────────────────────────────────────
 
@@ -131,6 +132,8 @@ local config_refresh_scheduled = false
 local colorscheme_refresh_scheduled = false
 local resize_refresh_autocmds_setup = false
 local resize_refresh_scheduled = false
+local render_retry_used = false
+local render_retry_token = 0
 
 local function chat_surface_is_visible()
 	return state.visible
@@ -433,7 +436,6 @@ function M.create()
 	if not buffer_exists then
 		state.bufnr = create_buffer()
 	end
-	state.local_notices = {}
 	reset_chat_surface()
 
 	if
@@ -1239,95 +1241,159 @@ function M.do_render()
 		if state.render_generation == render_generation then
 			state.applied_render_generation = render_generation
 		end
+		render_retry_used = false
+		render_retry_token = render_retry_token + 1
 		state.render_in_progress = false
 	end
 
-	chat_tasks.clear_animation_extmarks(state.bufnr)
-	local force_full_render = state.force_full_render == true
-	state.force_full_render = false
-	M.update_winbar()
+	local ok, render_error = xpcall(function()
+		chat_tasks.clear_animation_extmarks(state.bufnr)
+		local force_full_render = state.force_full_render == true
+		state.force_full_render = false
+		M.update_winbar()
 
-	local widget_cursor = capture_widget_cursor_context()
-	local should_scroll = should_auto_scroll(widget_cursor)
+		local widget_cursor = capture_widget_cursor_context()
+		local should_scroll = should_auto_scroll(widget_cursor)
 
-	local new_lines, nui_lines, content_highlights = M.render()
-	chat_todos.update_window()
-	resume_render_animation_timers()
-	local highlight_signature = nil
-	local function current_highlight_signature()
-		if highlight_signature == nil then
-			highlight_signature = render_highlight_signature(content_highlights)
+		local new_lines, nui_lines, content_highlights = M.render()
+		chat_todos.update_window()
+		resume_render_animation_timers()
+		local highlight_signature = nil
+		local function current_highlight_signature()
+			if highlight_signature == nil then
+				highlight_signature = render_highlight_signature(content_highlights)
+			end
+			return highlight_signature
 		end
-		return highlight_signature
-	end
 
-	local function apply_render_highlights(changed_start)
-		if not state.bufnr or not vim.api.nvim_buf_is_valid(state.bufnr) then
+		local function apply_render_highlights(changed_start)
+			if not state.bufnr or not vim.api.nvim_buf_is_valid(state.bufnr) then
+				return
+			end
+
+			local requested_start = tonumber(changed_start) or 0
+			local dirty_start = tonumber(state.render_highlights_dirty_start)
+			if dirty_start then
+				requested_start = math.min(requested_start, dirty_start)
+			end
+
+			local buf_line_count = vim.api.nvim_buf_line_count(state.bufnr)
+			local clear_start = highlight_clear_start(requested_start, content_highlights)
+			clear_chat_highlights(state.bufnr, clear_start, -1)
+
+			for i = clear_start + 1, #nui_lines do
+				local nui_line = nui_lines[i]
+				if i <= buf_line_count then
+					nui_line:highlight(state.bufnr, chat_hl_ns, i)
+				end
+			end
+
+			local function apply_widget_extmarks(line_map)
+				for _, pos in pairs(line_map) do
+					if pos.highlights then
+						render.apply_extmark_highlights(state.bufnr, chat_hl_ns, pos.highlights, pos.start_line, {
+							min_line = clear_start,
+							max_line = buf_line_count,
+						})
+					end
+				end
+			end
+
+			apply_widget_extmarks(state.questions)
+			apply_widget_extmarks(state.permissions)
+			apply_widget_extmarks(state.edits)
+			apply_widget_extmarks(state.tasks)
+			apply_widget_extmarks(state.tools)
+			render.apply_extmark_highlights(state.bufnr, chat_hl_ns, content_highlights, 0, {
+				min_line = clear_start,
+				max_line = buf_line_count,
+			})
+			state.last_render_highlight_signature = current_highlight_signature()
+			state.render_highlights_dirty_start = nil
+		end
+
+		if #new_lines == 0 or #nui_lines == 0 then
+			vim.bo[state.bufnr].modifiable = true
+			vim.api.nvim_buf_set_lines(state.bufnr, 0, -1, false, new_lines)
+			clear_chat_highlights(state.bufnr, 0, -1)
+			vim.bo[state.bufnr].modifiable = false
+			state.last_render_highlight_signature = nil
+			state.render_highlights_dirty_start = nil
+			if apply_widget_focus_cursor() then
+				vim.cmd("redraw")
+			end
+			mark_render_applied()
 			return
 		end
 
-		local requested_start = tonumber(changed_start) or 0
-		local dirty_start = tonumber(state.render_highlights_dirty_start)
-		if dirty_start then
-			requested_start = math.min(requested_start, dirty_start)
-		end
-
+		local old_lines = vim.api.nvim_buf_get_lines(state.bufnr, 0, -1, false)
 		local buf_line_count = vim.api.nvim_buf_line_count(state.bufnr)
-		local clear_start = highlight_clear_start(requested_start, content_highlights)
-		clear_chat_highlights(state.bufnr, clear_start, -1)
 
-		for i = clear_start + 1, #nui_lines do
-			local nui_line = nui_lines[i]
-			if i <= buf_line_count then
-				nui_line:highlight(state.bufnr, chat_hl_ns, i)
+		if force_full_render then
+			vim.bo[state.bufnr].modifiable = true
+			vim.api.nvim_buf_set_lines(state.bufnr, 0, -1, false, new_lines)
+			apply_render_highlights(0)
+			vim.bo[state.bufnr].modifiable = false
+
+			if apply_widget_focus_cursor() then
+				vim.cmd("redraw")
+				mark_render_applied()
+				return
 			end
-		end
 
-		local function apply_widget_extmarks(line_map)
-			for _, pos in pairs(line_map) do
-				if pos.highlights then
-					render.apply_extmark_highlights(state.bufnr, chat_hl_ns, pos.highlights, pos.start_line, {
-						min_line = clear_start,
-						max_line = buf_line_count,
-					})
-				end
+			if restore_widget_cursor_context(widget_cursor) then
+				vim.cmd("redraw")
+				mark_render_applied()
+				return
 			end
-		end
 
-		apply_widget_extmarks(state.questions)
-		apply_widget_extmarks(state.permissions)
-		apply_widget_extmarks(state.edits)
-		apply_widget_extmarks(state.tasks)
-		apply_widget_extmarks(state.tools)
-		render.apply_extmark_highlights(state.bufnr, chat_hl_ns, content_highlights, 0, {
-			min_line = clear_start,
-			max_line = buf_line_count,
-		})
-		state.last_render_highlight_signature = current_highlight_signature()
-		state.render_highlights_dirty_start = nil
-	end
+			if should_scroll and state.visible and state.winid and vim.api.nvim_win_is_valid(state.winid) then
+				local buf_lines = vim.api.nvim_buf_line_count(state.bufnr)
+				vim.api.nvim_win_set_cursor(state.winid, { buf_lines, 0 })
+			end
 
-	if #new_lines == 0 or #nui_lines == 0 then
-		vim.bo[state.bufnr].modifiable = true
-		vim.api.nvim_buf_set_lines(state.bufnr, 0, -1, false, new_lines)
-		clear_chat_highlights(state.bufnr, 0, -1)
-		vim.bo[state.bufnr].modifiable = false
-		state.last_render_highlight_signature = nil
-		state.render_highlights_dirty_start = nil
-		if apply_widget_focus_cursor() then
 			vim.cmd("redraw")
+			mark_render_applied()
+			return
 		end
-		mark_render_applied()
-		return
-	end
 
-	local old_lines = vim.api.nvim_buf_get_lines(state.bufnr, 0, -1, false)
-	local buf_line_count = vim.api.nvim_buf_line_count(state.bufnr)
+		local first_diff = nil
+		local min_len = math.min(#old_lines, #new_lines)
+		for i = 1, min_len do
+			if old_lines[i] ~= new_lines[i] then
+				first_diff = i - 1
+				break
+			end
+		end
 
-	if force_full_render then
+		if first_diff == nil then
+			if #old_lines == #new_lines then
+				if state.last_render_highlight_signature ~= current_highlight_signature() then
+					apply_render_highlights(state.render_highlights_dirty_start or 0)
+				end
+				if apply_widget_focus_cursor() then
+					vim.cmd("redraw")
+				end
+				mark_render_applied()
+				return
+			end
+			first_diff = min_len
+		end
+
+		first_diff = math.min(first_diff, buf_line_count - 1)
+		if first_diff < 0 then
+			first_diff = 0
+		end
+
+		local replacement = {}
+		for i = first_diff + 1, #new_lines do
+			table.insert(replacement, new_lines[i])
+		end
+
 		vim.bo[state.bufnr].modifiable = true
-		vim.api.nvim_buf_set_lines(state.bufnr, 0, -1, false, new_lines)
-		apply_render_highlights(0)
+		vim.api.nvim_buf_set_lines(state.bufnr, first_diff, -1, false, replacement)
+
+		apply_render_highlights(first_diff)
 		vim.bo[state.bufnr].modifiable = false
 
 		if apply_widget_focus_cursor() then
@@ -1349,67 +1415,29 @@ function M.do_render()
 
 		vim.cmd("redraw")
 		mark_render_applied()
-		return
-	end
+	end, function(err)
+		return err
+	end)
 
-	local first_diff = nil
-	local min_len = math.min(#old_lines, #new_lines)
-	for i = 1, min_len do
-		if old_lines[i] ~= new_lines[i] then
-			first_diff = i - 1
-			break
+	if not ok then
+		reset_chat_surface()
+		state.force_full_render = true
+		logger.error("Chat render failed", { error = render_error })
+		if not render_retry_used then
+			render_retry_used = true
+			render_retry_token = render_retry_token + 1
+			local retry_token = render_retry_token
+			vim.schedule(function()
+				if render_retry_token == retry_token and render_retry_used then
+					M.schedule_render({ force = true })
+				end
+			end)
 		end
 	end
-
-	if first_diff == nil then
-		if #old_lines == #new_lines then
-			if state.last_render_highlight_signature ~= current_highlight_signature() then
-				apply_render_highlights(state.render_highlights_dirty_start or 0)
-			end
-			if apply_widget_focus_cursor() then
-				vim.cmd("redraw")
-			end
-			mark_render_applied()
-			return
-		end
-		first_diff = min_len
+	if state.bufnr and vim.api.nvim_buf_is_valid(state.bufnr) then
+		vim.bo[state.bufnr].modifiable = false
 	end
-
-	first_diff = math.min(first_diff, buf_line_count - 1)
-	if first_diff < 0 then
-		first_diff = 0
-	end
-
-	local replacement = {}
-	for i = first_diff + 1, #new_lines do
-		table.insert(replacement, new_lines[i])
-	end
-
-	vim.bo[state.bufnr].modifiable = true
-	vim.api.nvim_buf_set_lines(state.bufnr, first_diff, -1, false, replacement)
-
-	apply_render_highlights(first_diff)
-	vim.bo[state.bufnr].modifiable = false
-
-	if apply_widget_focus_cursor() then
-		vim.cmd("redraw")
-		mark_render_applied()
-		return
-	end
-
-	if restore_widget_cursor_context(widget_cursor) then
-		vim.cmd("redraw")
-		mark_render_applied()
-		return
-	end
-
-	if should_scroll and state.visible and state.winid and vim.api.nvim_win_is_valid(state.winid) then
-		local buf_lines = vim.api.nvim_buf_line_count(state.bufnr)
-		vim.api.nvim_win_set_cursor(state.winid, { buf_lines, 0 })
-	end
-
-	vim.cmd("redraw")
-	mark_render_applied()
+	state.render_in_progress = false
 end
 
 -- ─── Cross-domain key routers ─────────────────────────────────────────────────

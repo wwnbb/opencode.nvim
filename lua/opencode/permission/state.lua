@@ -159,13 +159,51 @@ function M.merge_tool_input(permission_id, tool_input)
 		return false
 	end
 
-	pstate.tool_input = vim.tbl_deep_extend(
+	local merged = vim.tbl_deep_extend(
 		"force",
 		{},
 		type(pstate.tool_input) == "table" and pstate.tool_input or {},
 		tool_input
 	)
+	if vim.deep_equal(pstate.tool_input, merged) then
+		return false
+	end
+
+	pstate.tool_input = merged
 	return true
+end
+
+-- Enrich a permission from a decoded request or tool update without replacing
+-- values already supplied by the permission payload.
+---@param permission_id string
+---@param enrichment table { tool_name?, tool_input? }
+---@return boolean changed
+function M.enrich_permission(permission_id, enrichment)
+	local pstate = active_permissions[permission_id]
+	if not pstate or type(enrichment) ~= "table" then
+		return false
+	end
+
+	local changed = false
+	local tool_name = enrichment.tool_name
+	if type(tool_name) == "string" then
+		tool_name = vim.trim(tool_name)
+		if tool_name ~= "" and (type(pstate.tool_name) ~= "string" or vim.trim(pstate.tool_name) == "") then
+			pstate.tool_name = tool_name
+			changed = true
+		end
+	end
+
+	if type(enrichment.tool_input) == "table" then
+		local current = type(pstate.tool_input) == "table" and pstate.tool_input or {}
+		local merged = vim.tbl_deep_extend("force", {}, enrichment.tool_input, current)
+		if not vim.deep_equal(current, merged) then
+			pstate.tool_input = merged
+			changed = true
+		end
+	end
+
+	return changed
 end
 
 -- Set the tool name that triggered a permission request.
@@ -180,6 +218,10 @@ function M.set_tool_name(permission_id, tool_name)
 
 	local trimmed = vim.trim(tool_name)
 	if trimmed == "" then
+		return false
+	end
+
+	if pstate.tool_name == trimmed then
 		return false
 	end
 

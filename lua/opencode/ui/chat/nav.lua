@@ -7,6 +7,7 @@ local state = cs.state
 local render_coordinator = require("opencode.ui.chat.render_coordinator")
 local actions = require("opencode.actions")
 local session_lock = require("opencode.session.lock")
+local chat_tasks = require("opencode.ui.chat.tasks")
 
 local WIDGET_LINE_MAPS = {
 	{ kind = "question", map = "questions" },
@@ -311,6 +312,7 @@ local function resolve_child_lock(child_session_id, tool_part, callback)
 
 		actions.load_session_messages(child_session_id, { limit = 100 }, function(messages_error, response)
 			local sync = require("opencode.sync")
+			local current_tool_part = chat_tasks.resolve_tool_part(tool_part) or tool_part
 			local messages = sync.get_messages(child_session_id)
 			if #messages == 0 and type(response) == "table" then
 				messages = {}
@@ -319,8 +321,8 @@ local function resolve_child_lock(child_session_id, tool_part, callback)
 				end
 			end
 
-			local model, variant = resolve_child_model(tool_part, child_session, messages)
-			local agent = resolve_child_agent(tool_part, child_session, messages)
+			local model, variant = resolve_child_model(current_tool_part, child_session, messages)
+			local agent = resolve_child_agent(current_tool_part, child_session, messages)
 			local errors = {}
 			if not model then
 				table.insert(
@@ -338,7 +340,7 @@ local function resolve_child_lock(child_session_id, tool_part, callback)
 				model = model,
 				variant = variant,
 				child_session = child_session or { id = child_session_id },
-				task = vim.deepcopy(tool_part),
+				task = vim.deepcopy(current_tool_part),
 			}
 			if #errors > 0 then
 				record.error = table.concat(errors, "; ")
@@ -357,8 +359,11 @@ function M.enter_child_session(part_id)
 		return
 	end
 
-	local chat_tasks = require("opencode.ui.chat.tasks")
-	chat_tasks.resolve_task_child_session_id(pos.tool_part, function(err, child_session_id)
+	local tool_part = chat_tasks.resolve_tool_part(pos)
+	if not tool_part then
+		return
+	end
+	chat_tasks.resolve_task_child_session_id(pos, function(err, child_session_id)
 		if err then
 			vim.notify("Failed to resolve child session: " .. tostring(err), vim.log.levels.WARN)
 			return
@@ -374,7 +379,8 @@ function M.enter_child_session(part_id)
 			return
 		end
 
-		resolve_child_lock(child_session_id, pos.tool_part, function(lock_err, record)
+		local current_tool_part = chat_tasks.resolve_tool_part(pos) or tool_part
+		resolve_child_lock(child_session_id, current_tool_part, function(lock_err, record)
 			if lock_err or not record then
 				session_lock.clear(child_session_id)
 				vim.notify("Cannot enter subagent session: " .. tostring(lock_err or "unknown metadata error"), vim.log.levels.ERROR)
@@ -388,7 +394,8 @@ function M.enter_child_session(part_id)
 				runtime = app_state.is_runtime_session(current.id),
 			})
 
-			local input = pos.tool_part.state and pos.tool_part.state.input or {}
+			current_tool_part = chat_tasks.resolve_tool_part(pos) or current_tool_part
+			local input = current_tool_part.state and current_tool_part.state.input or {}
 			actions.set_active_session(child_session_id, record.child_session.title or record.child_session.name or input.description or "Subagent", {
 				reason = "child_navigation",
 				preserve_cache = true,

@@ -140,17 +140,17 @@ function Index:items_for_message(message_id)
 end
 
 function Index:has_question_widget_for_tool_call(message_id, call_id)
+	if type(call_id) ~= "string" or call_id == "" then
+		return false
+	end
+
 	for _, qstate in ipairs(self.questions_by_message[message_id] or {}) do
 		if
-			(not qstate.call_id or qstate.call_id == call_id)
+			qstate.call_id == call_id
 			and self:should_render_session_widget(qstate.session_id, qstate.status)
 		then
 			return true
 		end
-	end
-
-	if type(call_id) ~= "string" or call_id == "" then
-		return false
 	end
 
 	for _, qstate in ipairs(self.questions_by_call[call_id] or {}) do
@@ -167,17 +167,17 @@ function Index:has_question_widget_for_tool_call(message_id, call_id)
 end
 
 function Index:has_edit_widget_for_tool_call(message_id, call_id)
+	if type(call_id) ~= "string" or call_id == "" then
+		return false
+	end
+
 	for _, estate in ipairs(self.edits_by_message[message_id] or {}) do
 		if
-			(not estate.call_id or estate.call_id == call_id)
+			estate.call_id == call_id
 			and self:should_render_session_widget(estate.session_id, estate.status)
 		then
 			return true
 		end
-	end
-
-	if type(call_id) ~= "string" or call_id == "" then
-		return false
 	end
 
 	for _, estate in ipairs(self.edits_by_call[call_id] or {}) do

@@ -27,15 +27,26 @@ function M.handle(events, request, current_session, logger)
 	end
 
 	local permission_state = require("opencode.permission.state")
+	local tool_input = request_util.resolve_tool_input(request)
+	local tool_name = request_util.resolve_tool_name(request)
 	if permission_state.has_permission(request.id) then
 		logger.debug("Permission already tracked", { permission_id = request.id })
+		if permission_state.enrich_permission(request.id, { tool_input = tool_input, tool_name = tool_name }) then
+			events.emit("interaction_changed", {
+				kind = "permission",
+				action = "updated",
+				id = request.id,
+				session_id = request.session_id,
+			})
+		end
 		return
 	end
 	permission_state.add_permission(request.id, request.session_id, request.type, {
 		metadata = request.metadata,
 		patterns = request.patterns,
 		always = request.always,
-		tool_input = request_util.resolve_tool_input(request),
+		tool_input = tool_input,
+		tool_name = tool_name,
 		message_id = request.message_id,
 		call_id = request.call_id,
 		timestamp = request.timestamp,
