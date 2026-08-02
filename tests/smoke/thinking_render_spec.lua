@@ -47,6 +47,7 @@ describe("thinking rendering", function()
 			local config = thinking.get_config()
 			assert(config.throttle_ms == 100, "thinking config should retain default fields")
 
+			-- Formatter helpers keep icon/topic/truncation behavior for non-chat callers.
 			local formatted = thinking.format_reasoning(
 				"**Plan**\nthis is a deliberately long reasoning line that must wrap\nsecond line"
 			)
@@ -63,18 +64,20 @@ describe("thinking rendering", function()
 			vim.bo[chat_bufnr].tabstop = 2
 			vim.bo[foreign_bufnr].tabstop = 8
 
-			local wrapped = render.render_reasoning(
+			-- Chat display uses the legacy plain Thinking: style (no icon/separators).
+			local rendered = render.render_reasoning(
 				"**Plan**\nthis is a deliberately long reasoning line that must wrap\nsecond line"
 			)
-			local wrapped_lines = render.extract_lines(wrapped)
-			assert(#wrapped_lines > #formatted, "reasoning should wrap to the chat width")
-			assert(table.concat(wrapped_lines, "\n"):find("R> Plan", 1, true), "wrapped reasoning lost its custom header")
-			for _, line in ipairs(wrapped_lines) do
-				assert(
-					vim.fn.strdisplaywidth(line) <= render.get_chat_text_width(),
-					"reasoning line exceeded the chat display width"
-				)
-			end
+			local rendered_lines = render.extract_lines(rendered)
+			assert(rendered_lines[1] == "Thinking: **Plan**", "legacy first line should keep raw markdown asterisks")
+			assert(
+				rendered_lines[2] == "          this is a deliberately long reasoning line that must wrap",
+				"legacy continuation indentation was lost"
+			)
+			assert(rendered_lines[3] == "          second line", "legacy second continuation line was lost")
+			assert(rendered_lines[4] == "", "legacy reasoning block should end with a blank line")
+			assert(not table.concat(rendered_lines, "\n"):find("R>", 1, true), "chat reasoning should not use formatter icons")
+			assert(not table.concat(rendered_lines, "\n"):find("─", 1, true), "chat reasoning should not draw separator rows")
 
 			local chat_tabbed = render.wrap_text_with_ranges("a\tb", 4)
 			assert(#chat_tabbed == 1, "wrapping should use the chat buffer tabstop, not the current buffer")
