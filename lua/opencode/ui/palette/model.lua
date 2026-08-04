@@ -422,6 +422,7 @@ function M.register(palette)
 											model.name or model_id
 										),
 										value = model_id,
+										key = provider.id .. "/" .. model_id,
 										provider = provider.id,
 										model = model,
 										description = is_connected and "Connected" or nil,
