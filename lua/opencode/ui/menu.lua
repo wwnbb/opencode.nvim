@@ -49,7 +49,7 @@ end
 
 local function item_key(item)
 	if type(item) == "table" then
-		local value = item.value or item.label
+		local value = item.key or item.value or item.label
 		if value ~= nil then
 			return tostring(value)
 		end
