@@ -81,6 +81,51 @@ describe("thinking rendering", function()
 
 			local chat_tabbed = render.wrap_text_with_ranges("a\tb", 4)
 			assert(#chat_tabbed == 1, "wrapping should use the chat buffer tabstop, not the current buffer")
+			local panel = require("opencode.ui.panel").create_helpers({ prefix = "▏  " })
+			vim.bo[chat_bufnr].tabstop = 8
+			vim.bo[foreign_bufnr].tabstop = 2
+			local panel_prefix = "▏  "
+			local function assert_panel_rows(rows, label)
+				assert(#rows > 1, label .. " should wrap")
+				for _, row in ipairs(rows) do
+					assert(row.line:sub(1, #panel_prefix) == panel_prefix, label .. " lost its panel prefix")
+					local row_width
+					vim.api.nvim_buf_call(chat_bufnr, function()
+						row_width = vim.fn.strdisplaywidth(row.line)
+					end)
+					assert(row_width <= render.get_chat_text_width(), label .. " row should fit the chat buffer width")
+				end
+			end
+			local tabbed_line = "Testing:\t/Users/admin/work/lua/opencode.nvim/tests/unit/transport_spec.lua"
+			local panel_result = { lines = {}, highlights = {} }
+			local _, _, panel_rows = panel.add_line(panel_result, tabbed_line, nil, { width = render.get_chat_text_width() })
+			assert_panel_rows(panel_rows, "add_line tabbed output")
+
+			local raw_result = { lines = {}, highlights = {} }
+			local _, _, raw_rows = panel.add_raw_line(raw_result, tabbed_line, nil, {
+				width = render.get_chat_text_width(),
+				body_prefix = "$ ",
+			})
+			assert_panel_rows(raw_rows, "add_raw_line tabbed output")
+
+			local large_result = { lines = {}, highlights = {} }
+			local _, _, large_rows = panel.add_raw_line(large_result, string.rep("x", 4096), nil, {
+				width = render.get_chat_text_width(),
+			})
+			assert(#large_rows > 1, "large panel output should produce wrapped rows")
+			for _, row in ipairs(large_rows) do
+				assert(row.line:sub(1, #panel_prefix) == panel_prefix, "large output lost its panel prefix")
+			end
+
+			local initial_col_chunks = render.wrap_text_with_ranges("\tX", 5, { initial_col = 3 })
+			assert(#initial_col_chunks == 2, "tab width should honor the supplied initial column")
+			assert(initial_col_chunks[1].byte_end == 1 and initial_col_chunks[2].byte_start == 1, "tab byte ranges changed")
+			local unicode_chunks = render.wrap_text_with_ranges("a界éb", 3)
+			assert(unicode_chunks[1].text == "a界", "wide Unicode characters should retain their display width")
+			assert(unicode_chunks[2].text == "éb", "combining characters should retain their byte range")
+
+			vim.bo[chat_bufnr].tabstop = 2
+			vim.bo[foreign_bufnr].tabstop = 8
 			chat_state.bufnr = nil
 			local fallback_tabbed = render.wrap_text_with_ranges("a\tb", 4)
 			assert(#fallback_tabbed > 1, "tabstop lookup should have a safe current-buffer fallback")
