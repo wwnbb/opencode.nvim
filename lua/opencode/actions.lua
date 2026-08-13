@@ -366,7 +366,8 @@ function M.dispose_server(callback)
 		-- Fail-open: clear local state even on err. A dying instance may not
 		-- deliver the HTTP response, but local sync/chat/permission state must
 		-- still be reset so the next ensure_connected starts clean.
-		-- Consumers (palette/model.lua:350,683) already ignore err in callbacks.
+		-- Consumers may receive err but local state is already reset (fail-open above);
+		-- err only means the dispose was not confirmed by the server.
 		cleanup().clear_transient({ reset_state = false, clear_chat = true })
 		state().set_connection("idle")
 		schedule_callback(callback, err, result)
