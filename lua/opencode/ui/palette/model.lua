@@ -43,6 +43,8 @@ local function connect_provider_with_method(provider, method, method_index)
 							return
 						end
 
+						actions.remember_provider(provider.id)
+
 						-- Dispose and reconnect to refresh provider list
 							actions.dispose_server(function(dispose_err)
 								if dispose_err then
@@ -98,6 +100,8 @@ local function connect_provider_with_method(provider, method, method_index)
 										)
 										return
 									end
+
+										actions.remember_provider(provider.id)
 
 										actions.dispose_server(function(dispose_err)
 											if dispose_err then
@@ -356,6 +360,8 @@ show_oauth_auto_dialog = function(opts)
 				return
 			end
 
+				actions.remember_provider(provider.id)
+
 				actions.dispose_server(function(dispose_err)
 					if dispose_err then
 						vim.notify(
@@ -541,6 +547,7 @@ function M.register(palette)
 									connected_set[cid] = true
 								end
 							end
+							require("opencode.provider.state").prune_connected(connected_set)
 
 							-- Provider priority for sorting (like TUI)
 							local provider_priority = {
@@ -650,6 +657,7 @@ function M.register(palette)
 								connected_set[cid] = true
 							end
 						end
+						require("opencode.provider.state").prune_connected(connected_set)
 
 						local provider_list = response and response.all or {}
 						local items = {}
@@ -693,7 +701,7 @@ function M.register(palette)
 												end
 
 												-- Remove all models from this provider from recent/favorite lists
-												actions.remove_provider_models(item.provider.id)
+												actions.forget_provider(item.provider.id)
 
 												-- Dispose to refresh state
 												actions.dispose_server(function(dispose_err)
@@ -719,6 +727,16 @@ function M.register(palette)
 			-- Only enable if there are connected providers
 			-- This is a simple check - could be made more accurate with async check
 			return true
+		end,
+	})
+	palette.register({
+		id = "provider.clear_pending_disconnects",
+		title = "Clear Pending Disconnect Marks",
+		description = "Reset optimistic disconnect visibility for providers",
+		category = "model",
+		action = function()
+			actions.clear_pending_disconnects()
+			vim.notify("Cleared pending-disconnect marks", vim.log.levels.INFO)
 		end,
 	})
 end
