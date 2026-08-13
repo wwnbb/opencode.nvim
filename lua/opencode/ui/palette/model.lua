@@ -44,12 +44,17 @@ local function connect_provider_with_method(provider, method, method_index)
 						end
 
 						-- Dispose and reconnect to refresh provider list
-							actions.dispose_server(function()
-								vim.notify("Connected to " .. (provider.name or provider.id), vim.log.levels.INFO)
-
-							-- Now show model selection for this provider
-							show_provider_models(provider)
-						end)
+							actions.dispose_server(function(dispose_err)
+								if dispose_err then
+									vim.notify(
+										"Connected, but failed to refresh state: " .. tostring(dispose_err.message or dispose_err),
+										vim.log.levels.WARN
+									)
+								else
+									vim.notify("Connected to " .. (provider.name or provider.id), vim.log.levels.INFO)
+								end
+								show_provider_models(provider)
+							end)
 					end)
 				end)
 			end,
@@ -94,13 +99,17 @@ local function connect_provider_with_method(provider, method, method_index)
 										return
 									end
 
-										actions.dispose_server(function()
-										vim.notify(
-											"Connected to " .. (provider.name or provider.id),
-											vim.log.levels.INFO
-										)
-										show_provider_models(provider)
-									end)
+										actions.dispose_server(function(dispose_err)
+											if dispose_err then
+												vim.notify(
+													"Connected, but failed to refresh state: " .. tostring(dispose_err.message or dispose_err),
+													vim.log.levels.WARN
+												)
+											else
+												vim.notify("Connected to " .. (provider.name or provider.id), vim.log.levels.INFO)
+											end
+											show_provider_models(provider)
+										end)
 								end)
 							end)
 						end,
@@ -347,10 +356,17 @@ show_oauth_auto_dialog = function(opts)
 				return
 			end
 
-				actions.dispose_server(function()
-				vim.notify("Connected to " .. (provider.name or provider.id), vim.log.levels.INFO)
-				show_provider_models(provider)
-			end)
+				actions.dispose_server(function(dispose_err)
+					if dispose_err then
+						vim.notify(
+							"Connected, but failed to refresh state: " .. tostring(dispose_err.message or dispose_err),
+							vim.log.levels.WARN
+						)
+					else
+						vim.notify("Connected to " .. (provider.name or provider.id), vim.log.levels.INFO)
+					end
+					show_provider_models(provider)
+				end)
 		end)
 	end)
 
@@ -680,11 +696,15 @@ function M.register(palette)
 												actions.remove_provider_models(item.provider.id)
 
 												-- Dispose to refresh state
-												actions.dispose_server(function()
-													vim.notify(
-														"Disconnected from " .. (item.provider.name or item.provider.id),
-														vim.log.levels.INFO
-													)
+												actions.dispose_server(function(dispose_err)
+													if dispose_err then
+														vim.notify(
+															"Disconnected, but server did not confirm: " .. tostring(dispose_err.message or dispose_err),
+															vim.log.levels.WARN
+														)
+													return
+													end
+													vim.notify("Disconnected from " .. (item.provider.name or item.provider.id), vim.log.levels.INFO)
 												end)
 											end)
 										end)
