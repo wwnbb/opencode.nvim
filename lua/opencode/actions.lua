@@ -28,6 +28,14 @@ local function local_state()
 	return require("opencode.local")
 end
 
+local function state()
+	return require("opencode.state")
+end
+
+local function cleanup()
+	return require("opencode.cleanup")
+end
+
 ---@param event_type string
 ---@param data table
 local function emit(event_type, data)
@@ -349,7 +357,18 @@ function M.oauth_callback(provider_id, method_index, code, callback)
 end
 
 function M.dispose_server(callback)
-	return client().dispose(function(err, result)
+	local c = client()
+	-- Suppress SSE reconnect BEFORE dispose: handle_stream_closed (sse.lua:245)
+	-- schedules reconnect unless manual_disconnect is true. The instance we are
+	-- about to kill will tear down the stream, so reconnect would race.
+	c.disconnect_events()
+	return c.dispose(function(err, result)
+		-- Fail-open: clear local state even on err. A dying instance may not
+		-- deliver the HTTP response, but local sync/chat/permission state must
+		-- still be reset so the next ensure_connected starts clean.
+		-- Consumers (palette/model.lua:350,683) already ignore err in callbacks.
+		cleanup().clear_transient({ reset_state = false, clear_chat = true })
+		state().set_connection("idle")
 		schedule_callback(callback, err, result)
 	end)
 end

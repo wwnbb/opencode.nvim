@@ -550,7 +550,7 @@ end
 -- Dispose instance
 ---@param callback function(err, success)
 function M.dispose(callback)
-	http.post("/global/dispose", {}, callback)
+	http.post("/instance/dispose", {}, callback)
 end
 
 -- SSE Event handling
