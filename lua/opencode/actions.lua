@@ -28,6 +28,10 @@ local function local_state()
 	return require("opencode.local")
 end
 
+local function provider_state()
+	return require("opencode.provider.state")
+end
+
 local function state()
 	return require("opencode.state")
 end
@@ -389,6 +393,19 @@ end
 
 function M.remove_provider_models(provider_id)
 	return local_state().model.remove_provider_models(provider_id)
+end
+
+function M.forget_provider(provider_id)
+	M.remove_provider_models(provider_id)
+	provider_state().mark(provider_id)
+end
+
+function M.remember_provider(provider_id)
+	provider_state().remember(provider_id)
+end
+
+function M.clear_pending_disconnects()
+	provider_state().clear_all()
 end
 
 function M.compact_session(session_id, opts, callback)
