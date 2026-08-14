@@ -108,7 +108,6 @@ M.defaults = {
 			cancel = "<Esc>",
 			history_prev = "<Up>",
 			history_next = "<Down>",
-			paste = "<C-v>",
 			variant_cycle = "<C-t>",
 			agent_cycle = "<C-a>",
 			model_cycle = "<C-e>",

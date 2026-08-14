@@ -121,8 +121,6 @@ function M.setup(bufnr, cfg, handlers)
 		return termcodes("<CR>")
 	end, { expr = true, replace_keycodes = false })
 
-	map(bufnr, { "i", "n" }, keys.paste, handlers.paste)
-
 	map(bufnr, { "i", "n" }, keys.variant_cycle, handlers.cycle_variant)
 	map(bufnr, { "i", "n" }, keys.agent_cycle, handlers.cycle_agent)
 	map(bufnr, { "i", "n" }, keys.model_cycle, handlers.cycle_model)
