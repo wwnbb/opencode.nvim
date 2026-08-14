@@ -261,9 +261,6 @@ function M.show(opts)
 		autocomplete_close = function()
 			autocomplete.close(state)
 		end,
-		paste = function()
-			M.paste_clipboard()
-		end,
 		cycle_variant = function()
 			info_bar.cycle_variant(state)
 		end,

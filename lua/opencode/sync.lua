@@ -1,6 +1,6 @@
 -- opencode.nvim - Sync module (mirrors TUI's sync.tsx)
 -- Centralized store for messages, parts, sessions, and other sync data
--- Uses binary search for efficient lookups like the TUI implementation
+-- Parts use binary search by ID; messages use chronological ordering
 
 local M = {}
 local todo_fetch_cleanup = nil
@@ -118,6 +118,63 @@ end
 -- Get message ID from message
 local function get_message_id(msg)
 	return msg.id
+end
+
+local function get_message_created(message)
+	local time = type(message) == "table" and message.time or nil
+	local created = type(time) == "table" and time.created or nil
+	if
+		type(created) == "number"
+		and created == created
+		and created ~= math.huge
+		and created ~= -math.huge
+	then
+		return created
+	end
+	return nil
+end
+
+-- Valid timestamps sort first. Messages without valid timestamps use ID order.
+local function message_before(left, right)
+	local left_created = get_message_created(left)
+	local right_created = get_message_created(right)
+
+	if left_created ~= nil and right_created ~= nil then
+		if left_created ~= right_created then
+			return left_created < right_created
+		end
+	elseif left_created ~= nil then
+		return true
+	elseif right_created ~= nil then
+		return false
+	end
+
+	return left.id < right.id
+end
+
+local function message_insert_index(messages, message)
+	local left = 1
+	local right = #messages
+
+	while left <= right do
+		local mid = math.floor((left + right) / 2)
+		if message_before(message, messages[mid]) then
+			right = mid - 1
+		else
+			left = mid + 1
+		end
+	end
+
+	return left
+end
+
+local function find_message_index(messages, message_id)
+	for index, message in ipairs(messages) do
+		if get_message_id(message) == message_id then
+			return index
+		end
+	end
+	return nil
 end
 
 ---@param value any
@@ -246,8 +303,7 @@ function find_message_session_id(message_id)
 		return indexed
 	end
 	for session_id, messages in pairs(store.message) do
-		local result = binary_search(messages, message_id, get_message_id)
-		if result.found then
+		if find_message_index(messages, message_id) then
 			index_message_session(session_id, message_id)
 			return session_id
 		end
@@ -312,12 +368,11 @@ local function ensure_message_for_part(part)
 		return
 	end
 
-	local result = binary_search(messages, message_id, get_message_id)
-	if result.found then
+	if find_message_index(messages, message_id) then
 		return
 	end
 
-	table.insert(messages, result.index, placeholder)
+	table.insert(messages, message_insert_index(messages, placeholder), placeholder)
 	index_message_session(session_id, message_id)
 
 	-- Keep the same 100 message cap behavior as regular message updates.
@@ -497,9 +552,9 @@ local function get_message_by_id(message_id)
 		return nil
 	end
 
-	local result = binary_search(messages, message_id, get_message_id)
-	if result.found then
-		return messages[result.index]
+	local message_index = find_message_index(messages, message_id)
+	if message_index then
+		return messages[message_index]
 	end
 	return nil
 end
@@ -763,15 +818,16 @@ function M.handle_message_updated(info)
 		return true
 	end
 
-	-- Binary search for existing message
-	local result = binary_search(messages, info.id, get_message_id)
+	-- Locate by ID; message ordering is independent of message ID.
+	local message_index = find_message_index(messages, info.id)
 
-	if result.found then
+	if message_index then
 		-- Update existing message (reconcile)
-		local current = messages[result.index]
+		local current = messages[message_index]
 		local merged = vim.tbl_deep_extend("force", current, info)
 		changed = values_changed(current, merged)
-		messages[result.index] = merged
+		table.remove(messages, message_index)
+		table.insert(messages, message_insert_index(messages, merged), merged)
 		index_message_session(session_id, info.id)
 		local adopted_parts = adopt_orphan_parts(info.id, session_id)
 		if changed then
@@ -780,7 +836,7 @@ function M.handle_message_updated(info)
 		changed = changed or adopted_parts
 	else
 		-- Insert new message at correct position (maintains sorted order)
-		table.insert(messages, result.index, info)
+		table.insert(messages, message_insert_index(messages, info), info)
 		index_message_session(session_id, info.id)
 		bump_message_revision(info.id, session_id)
 		adopt_orphan_parts(info.id, session_id)
@@ -815,9 +871,9 @@ function M.handle_message_removed(session_id, message_id)
 		return
 	end
 
-	local result = binary_search(messages, message_id, get_message_id)
-	if result.found then
-		table.remove(messages, result.index)
+	local message_index = find_message_index(messages, message_id)
+	if message_index then
+		table.remove(messages, message_index)
 		-- Also remove parts
 		clear_part_delta_buffers_for_message(message_id)
 		clear_task_child_indices_for_message(message_id)
@@ -1123,9 +1179,9 @@ function M.get_message(session_id, message_id)
 		return nil
 	end
 
-	local result = binary_search(messages, message_id, get_message_id)
-	if result.found then
-		return messages[result.index]
+	local message_index = find_message_index(messages, message_id)
+	if message_index then
+		return messages[message_index]
 	end
 	return nil
 end

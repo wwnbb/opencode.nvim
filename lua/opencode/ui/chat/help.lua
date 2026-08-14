@@ -40,7 +40,6 @@ function M.show(config)
 		"",
 		"Input Mode",
 		"<C-g>      Send message",
-		"<C-v>      Paste clipboard",
 		"<Esc>      Cancel",
 		"↑/↓        Navigate history",
 		"",
