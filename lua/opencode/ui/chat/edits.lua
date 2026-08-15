@@ -558,44 +558,36 @@ end
 
 ---@return string|nil, table|nil, table|nil, number|nil
 local function get_pending_edit_context_at_cursor()
-	if not state.winid or not vim.api.nvim_win_is_valid(state.winid) then
+	local eid, pos = widget_support.find_widget_context_at_cursor(state.edits, state.winid, function(pos)
+		return pos.status == "pending"
+	end)
+	if not eid or not pos then
 		return nil, nil, nil, nil
 	end
-
+	local estate = edit_state.get_edit(eid)
+	if not estate or estate.status ~= "pending" then
+		return nil, nil, nil, nil
+	end
 	local cursor = vim.api.nvim_win_get_cursor(state.winid)
 	local cursor_line = cursor[1] - 1
-
-	for eid, pos in pairs(state.edits) do
-		if cursor_line >= pos.start_line and cursor_line <= pos.end_line and pos.status == "pending" then
-			local estate = edit_state.get_edit(eid)
-			if estate and estate.status == "pending" then
-				return eid, estate, pos, cursor_line
-			end
-		end
-	end
-
-	return nil, nil, nil, nil
+	return eid, estate, pos, cursor_line
 end
 
 ---@return string|nil, table|nil, table|nil, number|nil
 local function get_diffable_edit_context_at_cursor()
-	if not state.winid or not vim.api.nvim_win_is_valid(state.winid) then
+	local eid, pos = widget_support.find_widget_context_at_cursor(state.edits, state.winid, function(pos)
+		return pos.status == "pending" or pos.status == "sent"
+	end)
+	if not eid or not pos then
 		return nil, nil, nil, nil
 	end
-
+	local estate = edit_state.get_edit(eid)
+	if not estate or not (estate.status == "pending" or estate.status == "sent") then
+		return nil, nil, nil, nil
+	end
 	local cursor = vim.api.nvim_win_get_cursor(state.winid)
 	local cursor_line = cursor[1] - 1
-
-	for eid, pos in pairs(state.edits) do
-		if cursor_line >= pos.start_line and cursor_line <= pos.end_line then
-			local estate = edit_state.get_edit(eid)
-			if estate and (estate.status == "pending" or estate.status == "sent") then
-				return eid, estate, pos, cursor_line
-			end
-		end
-	end
-
-	return nil, nil, nil, nil
+	return eid, estate, pos, cursor_line
 end
 
 ---@return string|nil permission_id
