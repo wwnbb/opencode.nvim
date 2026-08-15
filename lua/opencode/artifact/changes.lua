@@ -30,6 +30,27 @@ local DEFAULTS = {
 
 local defaults = vim.deepcopy(DEFAULTS)
 
+local BOM = "\xEF\xBB\xBF"
+
+---@param content string|nil
+---@return string
+local function strip_bom(content)
+	if content and content:sub(1, 3) == BOM then
+		return content:sub(4)
+	end
+	return content or ""
+end
+
+---@param content string|nil
+---@param bom boolean|nil
+---@return string
+local function join_bom(content, bom)
+	if bom then
+		return BOM .. (content or "")
+	end
+	return content or ""
+end
+
 ---@enum OpenCodeChangeStatus
 M.STATUS = {
 	PENDING = "pending",
@@ -118,7 +139,7 @@ local function write_file(filepath, content)
 		vim.fn.mkdir(dir, "p")
 	end
 
-	local file, open_err = io.open(filepath, "w")
+	local file, open_err = io.open(filepath, "wb")
 	if not file then
 		return false, open_err or ("Cannot open file for writing: " .. filepath)
 	end
@@ -333,8 +354,10 @@ function M.add_change(filepath, original_content, modified_content, opts)
 	end
 
 	local change_id = generate_id()
-	local original = original_content or ""
-	local modified = modified_content or ""
+	local raw_original = original_content or ""
+	local raw_modified = modified_content or ""
+	local original = strip_bom(raw_original)
+	local modified = strip_bom(raw_modified)
 	local original_lines = vim.split(original, "\n", { plain = true })
 	local modified_lines = vim.split(modified, "\n", { plain = true })
 	local change = {
@@ -351,6 +374,7 @@ function M.add_change(filepath, original_content, modified_content, opts)
 		status = M.STATUS.PENDING,
 		timestamp = os.time(),
 		requires_confirm = needs_confirmation(filepath),
+		bom = raw_original:sub(1, 3) == BOM or opts.bom == true,
 		metadata = opts.metadata or {},
 	}
 
@@ -405,7 +429,7 @@ function M.accept(id, opts)
 		return false, "Confirmation required"
 	end
 
-	local ok, err = write_file(change.filepath, change.modified_content)
+	local ok, err = write_file(change.filepath, join_bom(change.modified_content, change.bom))
 	if not ok then
 		M.update_status(id, M.STATUS.FAILED, { message = err })
 		emit_change_event("Failed", id, { status = M.STATUS.FAILED, error = err })
@@ -430,7 +454,7 @@ function M.reject(id)
 		return false, "Change already resolved"
 	end
 
-	local ok, err = write_file(change.filepath, change.original_content)
+	local ok, err = write_file(change.filepath, join_bom(change.original_content, change.bom))
 	if not ok then
 		M.update_status(id, M.STATUS.FAILED, { message = err })
 		emit_change_event("Failed", id, { status = M.STATUS.FAILED, error = err })
