@@ -46,7 +46,6 @@ M.state = {
 	render_highlights_dirty_start = nil,
 	force_full_render = false, -- Next render must replace the whole chat buffer
 	session_stack = {},     -- Stack of { id, name } for parent session navigation
-	navigating = false,     -- Compatibility flag for older callers; session actions carry navigation metadata
 	last_render_time = 0,
 	render_scheduled = false,
 	render_in_progress = false,
