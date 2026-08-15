@@ -481,30 +481,6 @@ local function show_inline_diff_help()
 	vim.notify(table.concat(help, "\n"), vim.log.levels.INFO)
 end
 
--- ─── Add ─────────────────────────────────────────────────────────────────────
-
----@param permission_id string
----@param edit_data table
----@param status "pending" | "sent"
-function M.add_edit_message(permission_id, edit_data, status)
-	local logger = require("opencode.logger")
-
-	logger.debug("add_edit_message called", {
-		permission_id = permission_id,
-		visible = state.visible,
-	})
-
-	local estate = edit_state.get_edit(permission_id)
-	if not estate then
-		logger.warn("Edit state not found", { permission_id = permission_id })
-		return
-	end
-
-	widget_support.request_focus("edit", permission_id, status)
-
-	render_coordinator.request({ kind = "edit" })
-end
-
 -- ─── Cursor query ─────────────────────────────────────────────────────────────
 
 ---@param estate table

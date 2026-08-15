@@ -20,28 +20,6 @@ end
 -- ─── Add / update ─────────────────────────────────────────────────────────────
 
 ---@param permission_id string
----@param perm_data table  (kept for API compatibility, unused)
----@param status "pending" | "approved" | "rejected"
-function M.add_permission_message(permission_id, perm_data, status)
-	local logger = require("opencode.logger")
-
-	logger.debug("add_permission_message called", {
-		permission_id = permission_id,
-		visible = state.visible,
-	})
-
-	local pstate = permission_state.get_permission(permission_id)
-	if not pstate then
-		logger.warn("Permission state not found", { permission_id = permission_id })
-		return
-	end
-
-	widget_support.request_focus("permission", permission_id, status)
-
-	schedule_render()
-end
-
----@param permission_id string
 ---@param status "approved" | "rejected"
 function M.update_permission_status(permission_id, status)
 	local logger = require("opencode.logger")
