@@ -165,82 +165,30 @@ function M.setup_buffer(bufnr, opts)
 		chat_interactions.handle_question_toggle()
 	end, keymap_opts)
 
-	vim.keymap.set("n", "<C-a>", function()
-		local eid = chat_edits.get_edit_at_cursor()
-		if eid then
-			chat_edits.handle_edit_accept_file()
-		else
-			vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<C-a>", true, false, true), "n", false)
+	local function dispatch_edit(key, handler, with_fallback, get_cursor)
+		return function()
+			local eid = (get_cursor or chat_edits.get_edit_at_cursor)()
+			if eid then
+				handler()
+			elseif with_fallback ~= false then
+				local key_to_feed = key
+				if key:find("<") then
+					key_to_feed = vim.api.nvim_replace_termcodes(key, true, false, true)
+				end
+				vim.api.nvim_feedkeys(key_to_feed, "n", false)
+			end
 		end
-	end, keymap_opts)
+	end
 
-	vim.keymap.set("n", "<C-x>", function()
-		local eid = chat_edits.get_edit_at_cursor()
-		if eid then
-			chat_edits.handle_edit_reject_file()
-		else
-			vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<C-x>", true, false, true), "n", false)
-		end
-	end, keymap_opts)
-
-	vim.keymap.set("n", "<C-m>", function()
-		local eid = chat_edits.get_edit_at_cursor()
-		if eid then
-			chat_edits.handle_edit_resolve_file()
-		else
-			vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<C-m>", true, false, true), "n", false)
-		end
-	end, keymap_opts)
-
-	vim.keymap.set("n", "=", function()
-		local eid = chat_edits.get_diffable_edit_at_cursor()
-		if eid then
-			chat_edits.handle_edit_toggle_diff()
-		else
-			vim.api.nvim_feedkeys("=", "n", false)
-		end
-	end, keymap_opts)
-
-	vim.keymap.set("n", "A", function()
-		local eid = chat_edits.get_edit_at_cursor()
-		if eid then
-			chat_edits.handle_edit_accept_all()
-		else
-			vim.api.nvim_feedkeys("A", "n", false)
-		end
-	end, keymap_opts)
-
-	vim.keymap.set("n", "X", function()
-		local eid = chat_edits.get_edit_at_cursor()
-		if eid then
-			chat_edits.handle_edit_reject_all()
-		else
-			vim.api.nvim_feedkeys("X", "n", false)
-		end
-	end, keymap_opts)
-
-	vim.keymap.set("n", "M", function()
-		local eid = chat_edits.get_edit_at_cursor()
-		if eid then
-			chat_edits.handle_edit_resolve_all()
-		else
-			vim.api.nvim_feedkeys("M", "n", false)
-		end
-	end, keymap_opts)
-
-	vim.keymap.set("n", "dt", function()
-		local eid = chat_edits.get_edit_at_cursor()
-		if eid then
-			chat_edits.handle_edit_diff_tab()
-		end
-	end, vim.tbl_extend("force", keymap_opts, { nowait = true }))
-
-	vim.keymap.set("n", "dv", function()
-		local eid = chat_edits.get_edit_at_cursor()
-		if eid then
-			chat_edits.handle_edit_diff_split()
-		end
-	end, vim.tbl_extend("force", keymap_opts, { nowait = true }))
+	vim.keymap.set("n", "<C-a>", dispatch_edit("<C-a>", chat_edits.handle_edit_accept_file), keymap_opts)
+	vim.keymap.set("n", "<C-x>", dispatch_edit("<C-x>", chat_edits.handle_edit_reject_file), keymap_opts)
+	vim.keymap.set("n", "<C-m>", dispatch_edit("<C-m>", chat_edits.handle_edit_resolve_file), keymap_opts)
+	vim.keymap.set("n", "=", dispatch_edit("=", chat_edits.handle_edit_toggle_diff, true, chat_edits.get_diffable_edit_at_cursor), keymap_opts)
+	vim.keymap.set("n", "A", dispatch_edit("A", chat_edits.handle_edit_accept_all), keymap_opts)
+	vim.keymap.set("n", "X", dispatch_edit("X", chat_edits.handle_edit_reject_all), keymap_opts)
+	vim.keymap.set("n", "M", dispatch_edit("M", chat_edits.handle_edit_resolve_all), keymap_opts)
+	vim.keymap.set("n", "dt", dispatch_edit("dt", chat_edits.handle_edit_diff_tab, false), vim.tbl_extend("force", keymap_opts, { nowait = true }))
+	vim.keymap.set("n", "dv", dispatch_edit("dv", chat_edits.handle_edit_diff_split, false), vim.tbl_extend("force", keymap_opts, { nowait = true }))
 
 	vim.keymap.set("n", "gd", function()
 		local task_part_id = chat_tasks.get_task_at_cursor()
