@@ -3,6 +3,7 @@
 local M = {}
 
 local render = require("opencode.ui.chat.render")
+local text_util = require("opencode.util.text")
 
 ---@class OpenCodeFileEditResultFile
 ---@field filePath string
@@ -62,30 +63,6 @@ local TYPE_LABEL = {
 	move = "renamed",
 	write = "wrote",
 }
-
----@param value any
----@return boolean
-local function is_nil(value)
-	return value == nil or value == vim.NIL
-end
-
----@param value any
----@return boolean
-local function is_present(value)
-	return not is_nil(value) and tostring(value) ~= ""
-end
-
----@param ... any
----@return string|nil
-local function first_string(...)
-	for i = 1, select("#", ...) do
-		local value = select(i, ...)
-		if type(value) == "string" and value ~= "" then
-			return value
-		end
-	end
-	return nil
-end
 
 ---@param value any
 ---@return number|nil
@@ -233,7 +210,7 @@ end
 ---@param path string|nil
 ---@return string
 local function display_path(path)
-	if not is_present(path) then
+	if not text_util.is_present(path) then
 		return "unknown"
 	end
 
@@ -247,8 +224,8 @@ end
 ---@param file OpenCodeFileEditResultFile
 ---@return string
 local function file_display_path(file)
-	local path = display_path(first_string(file.relativePath, file.filePath))
-	if file.type == "move" and is_present(file.movePath) then
+	local path = display_path(text_util.first_string(file.relativePath, file.filePath))
+	if file.type == "move" and text_util.is_present(file.movePath) then
 		return path .. " -> " .. display_path(file.movePath)
 	end
 	return path
@@ -299,7 +276,7 @@ local function get_raw_file_key(raw)
 	if type(raw) ~= "table" then
 		return nil
 	end
-	return first_string(raw.filePath, raw.filepath, raw.file_path, raw.file, raw.path, raw.relativePath, raw.relative_path)
+	return text_util.first_string(raw.filePath, raw.filepath, raw.file_path, raw.file, raw.path, raw.relativePath, raw.relative_path)
 end
 
 ---@param raw_files any
@@ -332,7 +309,7 @@ local function normalize_file(raw, opts)
 	end
 
 	local proposed = type(opts.proposed) == "table" and opts.proposed or {}
-	local file_path = first_string(
+	local file_path = text_util.first_string(
 		source.filePath,
 		source.filepath,
 		source.file_path,
@@ -340,18 +317,18 @@ local function normalize_file(raw, opts)
 		source.path,
 		opts.filePath
 	)
-	local relative_path = first_string(
+	local relative_path = text_util.first_string(
 		source.relativePath,
 		source.relative_path,
 		opts.relativePath,
 		file_path and display_path(file_path) or nil
 	)
-	if not is_present(file_path) and not is_present(relative_path) then
+	if not text_util.is_present(file_path) and not text_util.is_present(relative_path) then
 		return nil
 	end
 
-	local diff = first_string(source.diff, opts.diff)
-	local proposed_diff = first_string(
+	local diff = text_util.first_string(source.diff, opts.diff)
+	local proposed_diff = text_util.first_string(
 		source.proposedDiff,
 		source.proposed_diff,
 		proposed.diff,
@@ -393,7 +370,7 @@ local function normalize_file(raw, opts)
 		deletions = deletions or 0,
 		diff = diff,
 		proposedDiff = proposed_diff,
-		movePath = first_string(source.movePath, source.move_path, source.newPath, source.new_path, proposed.movePath),
+		movePath = text_util.first_string(source.movePath, source.move_path, source.newPath, source.new_path, proposed.movePath),
 		diagnostics = source.diagnostics or opts.diagnostics,
 	}
 end
@@ -403,7 +380,7 @@ end
 ---@return string
 local function get_title(tool_part, metadata)
 	local tool_state = get_tool_state(tool_part)
-	local output = first_string(tool_state.output, tool_part.output)
+	local output = text_util.first_string(tool_state.output, tool_part.output)
 	local output_title = nil
 	if output then
 		for _, line in ipairs(vim.split(output, "\n", { plain = true })) do
@@ -415,7 +392,7 @@ local function get_title(tool_part, metadata)
 		end
 	end
 
-	local explicit = first_string(tool_state.title, metadata.title, output_title)
+	local explicit = text_util.first_string(tool_state.title, metadata.title, output_title)
 	if explicit then
 		return explicit
 	end
@@ -522,7 +499,7 @@ local function diagnostic_count(value)
 	for _, item in pairs(value) do
 		if type(item) == "table" and is_list(item) then
 			count = count + #item
-		elseif not is_nil(item) then
+		elseif not text_util.is_nil(item) then
 			count = count + 1
 		end
 	end
@@ -608,7 +585,7 @@ local function normalize_write(tool_part, metadata)
 	local input = get_input(tool_part)
 	local tool_state = get_tool_state(tool_part)
 	local status = normalize_result_status(metadata.status) or normalize_result_status(tool_state.status) or "unknown"
-	local filepath = first_string(
+	local filepath = text_util.first_string(
 		metadata.filepath,
 		metadata.filePath,
 		metadata.file_path,
@@ -619,11 +596,11 @@ local function normalize_write(tool_part, metadata)
 		return nil
 	end
 
-	local diff = first_string(metadata.diff)
+	local diff = text_util.first_string(metadata.diff)
 	local additions, deletions = parse_diff_stats(diff)
 	local file = normalize_file({
 		filePath = filepath,
-		relativePath = first_string(metadata.relativePath, metadata.relative_path),
+		relativePath = text_util.first_string(metadata.relativePath, metadata.relative_path),
 		type = is_false(metadata.exists) and "add" or "write",
 		status = status,
 		diff = diff,
@@ -658,7 +635,7 @@ local function normalize_edit(tool_part, metadata)
 
 	if type(metadata.filediff) == "table" then
 		raw = metadata.filediff
-		diff = first_string(raw.diff, metadata.diff)
+		diff = text_util.first_string(raw.diff, metadata.diff)
 	elseif type(metadata.filediff) == "string" and metadata.filediff ~= "" then
 		diff = metadata.filediff
 	elseif type(metadata.diff) == "string" and metadata.diff ~= "" then
@@ -671,8 +648,8 @@ local function normalize_edit(tool_part, metadata)
 
 	raw = raw or {}
 	local file = normalize_file(raw, {
-		filePath = first_string(metadata.filepath, metadata.filePath, metadata.file_path, input.filePath, input.file_path),
-		relativePath = first_string(metadata.relativePath, metadata.relative_path),
+		filePath = text_util.first_string(metadata.filepath, metadata.filePath, metadata.file_path, input.filePath, input.file_path),
+		relativePath = text_util.first_string(metadata.relativePath, metadata.relative_path),
 		type = raw.before == "" and "add" or "update",
 		status = file_status,
 		diff = diff,
@@ -705,7 +682,7 @@ local function normalize_neovim_edit(tool_part, metadata)
 		or normalize_result_status(tool_state.status)
 		or "unknown"
 	local file = normalize_file(metadata.filediff, {
-		filePath = first_string(metadata.filediff.file, metadata.filepath, metadata.filePath),
+		filePath = text_util.first_string(metadata.filediff.file, metadata.filepath, metadata.filePath),
 		type = metadata.filediff.before == "" and "add" or "update",
 		status = file_status,
 		diff = metadata.diff,
@@ -721,7 +698,7 @@ local function normalize_neovim_edit(tool_part, metadata)
 		title = get_title(tool_part, metadata),
 		status = derive_overall_status({ file }, tool_state.status),
 		files = { file },
-		hasProposed = is_present(metadata.proposed_diff),
+		hasProposed = text_util.is_present(metadata.proposed_diff),
 	}
 end
 
@@ -799,7 +776,7 @@ local function normalize_neovim_apply_patch(tool_part, metadata)
 		title = get_title(tool_part, metadata),
 		status = derive_overall_status(files, tool_state.status),
 		files = files,
-		hasProposed = is_present(metadata.proposed_diff) or #normalize_file_list(metadata.proposed_files) > 0,
+		hasProposed = text_util.is_present(metadata.proposed_diff) or #normalize_file_list(metadata.proposed_files) > 0,
 	}
 end
 
@@ -912,8 +889,8 @@ local function render_expanded(model)
 			add_line(result, "    failed", "ErrorMsg")
 		elseif status == "partial" then
 			if
-				is_present(file.proposedDiff)
-				and is_present(file.diff)
+				text_util.is_present(file.proposedDiff)
+				and text_util.is_present(file.diff)
 				and vim.trim(file.proposedDiff) ~= vim.trim(file.diff)
 			then
 				add_line(result, "    actual differs from proposed", "Comment")

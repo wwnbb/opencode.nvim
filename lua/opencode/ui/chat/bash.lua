@@ -27,15 +27,9 @@ local function ensure_highlights()
 end
 
 ---@param value any
----@return boolean
-local function is_nil(value)
-	return text_util.is_nil(value)
-end
-
----@param value any
 ---@return string
 local function stringify(value)
-	if is_nil(value) then
+	if text_util.is_nil(value) then
 		return ""
 	end
 	if type(value) == "string" then
@@ -72,11 +66,7 @@ local function first_nonempty_trimmed_text(...)
 	return text_util.first_nonempty_trimmed_text(stringify, ...)
 end
 
----@param text string
----@return string
-local function trim_edge_newlines(text)
-	return text_util.trim_edge_newlines(text)
-end
+local trim_edge_newlines = text_util.trim_edge_newlines
 
 ---@param lines string[]
 ---@param start_index number

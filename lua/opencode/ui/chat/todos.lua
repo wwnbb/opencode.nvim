@@ -171,15 +171,9 @@ function M.is_enabled(cfg)
 end
 
 ---@param value any
----@return boolean
-local function is_nil(value)
-	return text_util.is_nil(value)
-end
-
----@param value any
 ---@return string
 local function stringify(value)
-	if is_nil(value) then
+	if text_util.is_nil(value) then
 		return ""
 	end
 	if type(value) == "string" then

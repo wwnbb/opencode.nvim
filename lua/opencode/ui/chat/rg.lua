@@ -30,21 +30,9 @@ local function ensure_highlights()
 end
 
 ---@param value any
----@return boolean
-local function is_nil(value)
-	return text_util.is_nil(value)
-end
-
----@param value any
----@return boolean
-local function is_present(value)
-	return text_util.is_present(value)
-end
-
----@param value any
 ---@return string
 local function stringify(value)
-	if is_nil(value) then
+	if text_util.is_nil(value) then
 		return ""
 	end
 	if type(value) == "string" then
@@ -80,28 +68,9 @@ local function first_nonempty_trimmed_text(...)
 	return text_util.first_nonempty_trimmed_text(stringify, ...)
 end
 
----@param text string
----@return string
-local function trim_edge_newlines(text)
-	return text_util.trim_edge_newlines(text)
-end
+local trim_edge_newlines = text_util.trim_edge_newlines
 
----@param path string
----@return string
-local function normalize_path(path)
-	if not is_present(path) then
-		return ""
-	end
-
-	local normalized = tostring(path)
-	if normalized:match("^file://") then
-		local ok, filepath = pcall(vim.uri_to_fname, normalized)
-		if ok and filepath and filepath ~= "" then
-			normalized = filepath
-		end
-	end
-	return vim.fn.fnamemodify(normalized, ":~:.")
-end
+local normalize_path = text_util.normalize_path
 
 ---@param raw any
 ---@return string
