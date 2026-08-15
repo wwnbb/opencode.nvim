@@ -94,27 +94,19 @@ end
 ---@return table|nil pos
 ---@return number|nil cursor_line
 local function get_pending_question_context_at_cursor()
-	if not state.winid or not vim.api.nvim_win_is_valid(state.winid) then
+	local request_id, pos = widget_support.find_widget_context_at_cursor(state.questions, state.winid, function(pos)
+		return pos.status == "pending" or pos.status == "confirming"
+	end)
+	if not request_id or not pos then
 		return nil, nil, nil, nil
 	end
-
+	local qstate = question_state.get_question(request_id)
+	if not qstate or not (qstate.status == "pending" or qstate.status == "confirming") then
+		return nil, nil, nil, nil
+	end
 	local cursor = vim.api.nvim_win_get_cursor(state.winid)
 	local cursor_line = cursor[1] - 1
-
-	for request_id, pos in pairs(state.questions) do
-		if
-			cursor_line >= pos.start_line
-			and cursor_line <= pos.end_line
-			and (pos.status == "pending" or pos.status == "confirming")
-		then
-			local qstate = question_state.get_question(request_id)
-			if qstate and (qstate.status == "pending" or qstate.status == "confirming") then
-				return request_id, qstate, pos, cursor_line
-			end
-		end
-	end
-
-	return nil, nil, nil, nil
+	return request_id, qstate, pos, cursor_line
 end
 
 ---@param request_id string

@@ -67,23 +67,19 @@ end
 ---@return table|nil pos
 ---@return number|nil cursor_line
 local function get_pending_permission_context_at_cursor()
-	if not state.winid or not vim.api.nvim_win_is_valid(state.winid) then
+	local permission_id, pos = widget_support.find_widget_context_at_cursor(state.permissions, state.winid, function(pos)
+		return pos.status == "pending"
+	end)
+	if not permission_id or not pos then
 		return nil, nil, nil, nil
 	end
-
+	local pstate = permission_state.get_permission(permission_id)
+	if not pstate or pstate.status ~= "pending" then
+		return nil, nil, nil, nil
+	end
 	local cursor = vim.api.nvim_win_get_cursor(state.winid)
 	local cursor_line = cursor[1] - 1
-
-	for permission_id, pos in pairs(state.permissions) do
-		if cursor_line >= pos.start_line and cursor_line <= pos.end_line and pos.status == "pending" then
-			local pstate = permission_state.get_permission(permission_id)
-			if pstate and pstate.status == "pending" then
-				return permission_id, pstate, pos, cursor_line
-			end
-		end
-	end
-
-	return nil, nil, nil, nil
+	return permission_id, pstate, pos, cursor_line
 end
 
 ---@return string|nil permission_id
