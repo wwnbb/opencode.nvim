@@ -2,13 +2,12 @@ local M = {}
 
 local cs = require("opencode.ui.chat.state")
 local state = cs.state
-local chat_hl_ns = cs.chat_hl_ns
 
 local spinner = require("opencode.ui.spinner")
 local chat_todos = require("opencode.ui.chat.todos")
 local chat_tasks = require("opencode.ui.chat.tasks")
-local events = require("opencode.events")
 local render_state = require("opencode.ui.chat.render_state")
+local events = require("opencode.events")
 
 local schedule_render = function() end
 
@@ -55,82 +54,6 @@ function M.add_message(role, content, opts)
 		schedule_render({ force = true })
 	end
 	return message.id
-end
-
----@param message table
-function M.render_message(message)
-	if not state.bufnr or not vim.api.nvim_buf_is_valid(state.bufnr) then
-		return
-	end
-
-	local lines = {}
-	local highlights = {}
-
-	if
-		message.role == "assistant"
-		and (not message.content or message.content == "")
-		and (not message.reasoning or message.reasoning == "")
-	then
-		return
-	end
-
-	local role_display = message.role == "user" and "You" or (message.role == "assistant" and "Assistant" or "System")
-	local time_str = os.date("%H:%M", message.timestamp)
-	local id_display = message.id or "??????"
-	local header_padding = string.rep(" ", math.max(1, 50 - #role_display - #time_str - #id_display - 3))
-	local header_text = string.format(
-		"%s [%s] %s%s",
-		role_display,
-		id_display,
-		header_padding,
-		time_str
-	)
-	table.insert(lines, header_text)
-	table.insert(highlights, {
-		line = #lines - 1,
-		col_start = 0,
-		col_end = #role_display,
-		hl_group = message.role == "user" and "Identifier" or "Constant",
-	})
-
-	table.insert(lines, string.rep("─", 60))
-
-	local content_lines = vim.split(message.content or "", "\n", { plain = true })
-	for _, line in ipairs(content_lines) do
-		table.insert(lines, line)
-	end
-
-	table.insert(lines, "")
-
-	vim.bo[state.bufnr].modifiable = true
-	local line_count = vim.api.nvim_buf_line_count(state.bufnr)
-	vim.api.nvim_buf_set_lines(state.bufnr, line_count, line_count, false, lines)
-
-	for _, hl in ipairs(highlights) do
-		local end_col = hl.col_end
-		if end_col == -1 then
-			local l = vim.api.nvim_buf_get_lines(state.bufnr, line_count + hl.line, line_count + hl.line + 1, false)[1]
-			end_col = l and #l or 0
-		end
-		vim.api.nvim_buf_set_extmark(
-			state.bufnr,
-			chat_hl_ns,
-			line_count + hl.line,
-			hl.col_start,
-			{ end_col = end_col, hl_group = hl.hl_group }
-		)
-	end
-
-	vim.bo[state.bufnr].modifiable = false
-
-	if state.auto_scroll and state.visible and state.winid then
-		local cursor = vim.api.nvim_win_get_cursor(state.winid)
-		local win_height = vim.api.nvim_win_get_height(state.winid)
-		local buf_lines = vim.api.nvim_buf_line_count(state.bufnr)
-		if cursor[1] >= buf_lines - win_height - 1 then
-			vim.api.nvim_win_set_cursor(state.winid, { buf_lines, 0 })
-		end
-	end
 end
 
 function M.clear()

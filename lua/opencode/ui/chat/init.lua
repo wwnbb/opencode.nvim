@@ -105,15 +105,6 @@ local defaults = {
 	},
 }
 
----@param event_type string
----@param data table
-local function emit(event_type, data)
-	local ok, events = pcall(require, "opencode.events")
-	if ok and events and type(events.emit) == "function" then
-		events.emit(event_type, data)
-	end
-end
-
 local function get_config()
 	local app_state = require("opencode.state")
 	local full_config = app_state.get_config() or {}
@@ -229,9 +220,6 @@ local function schedule_window_resize_refresh(args, event)
 	schedule_resize_refresh(args, windows)
 end
 
--- Keep the callback's event source testable without exposing a user-facing API.
-M._schedule_window_resize_refresh_for_test = schedule_window_resize_refresh
-
 local function setup_resize_refresh_autocmds()
 	if resize_refresh_autocmds_setup then
 		return
@@ -308,10 +296,6 @@ end
 
 function M.select_winbar_session(target)
 	return chat_session_tabs.select_winbar_session(target)
-end
-
-function M.go_to_session_tab(index)
-	return chat_session_tabs.go_to_session_tab(index)
 end
 
 function M.cycle_session(direction)
@@ -913,10 +897,6 @@ function M.add_message(role, content, opts)
 	return chat_messages.add_message(role, content, opts)
 end
 
-function M.render_message(message)
-	return chat_messages.render_message(message)
-end
-
 function M.clear()
 	return chat_messages.clear()
 end
@@ -1446,46 +1426,13 @@ function M.sync_widget_selection_from_cursor()
 	return chat_interactions.sync_widget_selection_from_cursor()
 end
 
-function M.handle_question_navigation(direction)
-	return chat_interactions.handle_question_navigation(direction)
-end
-
-function M.handle_question_number_select(number)
-	return chat_interactions.handle_question_number_select(number)
-end
-
-function M.handle_question_confirm()
-	return chat_interactions.handle_question_confirm()
-end
-
-function M.handle_question_cancel()
-	return chat_interactions.handle_question_cancel()
-end
-
-function M.handle_question_next_tab()
-	return chat_interactions.handle_question_next_tab()
-end
-
-function M.handle_question_prev_tab()
-	return chat_interactions.handle_question_prev_tab()
-end
-
-function M.handle_question_custom_input()
-	return chat_interactions.handle_question_custom_input()
-end
-
 function M.handle_widget_message()
 	return chat_interactions.handle_widget_message()
-end
-
-function M.handle_question_toggle()
-	return chat_interactions.handle_question_toggle()
 end
 
 -- ─── Re-exports from sub-modules ─────────────────────────────────────────────
 
 -- Questions
-M.add_question_message = chat_questions.add_question_message
 M.update_question_status = chat_questions.update_question_status
 M.get_question_at_cursor = chat_questions.get_question_at_cursor
 M.rerender_question = chat_questions.rerender_question
@@ -1496,7 +1443,6 @@ M.get_pending_question_count = chat_questions.get_pending_question_count
 M.has_pending_questions = chat_questions.has_pending_questions
 
 -- Permissions
-M.add_permission_message = chat_permissions.add_permission_message
 M.update_permission_status = chat_permissions.update_permission_status
 M.get_permission_at_cursor = chat_permissions.get_permission_at_cursor
 M.rerender_permission = chat_permissions.rerender_permission
@@ -1504,32 +1450,20 @@ M.handle_permission_confirm = chat_permissions.handle_permission_confirm
 M.handle_permission_reject = chat_permissions.handle_permission_reject
 
 -- Edits
-M.add_edit_message = chat_edits.add_edit_message
 M.get_edit_at_cursor = chat_edits.get_edit_at_cursor
 M.get_diffable_edit_at_cursor = chat_edits.get_diffable_edit_at_cursor
 M.rerender_edit = chat_edits.rerender_edit
 M.finalize_edit = chat_edits.finalize_edit
-M.handle_edit_accept_file = chat_edits.handle_edit_accept_file
-M.handle_edit_reject_file = chat_edits.handle_edit_reject_file
-M.handle_edit_accept_all = chat_edits.handle_edit_accept_all
-M.handle_edit_reject_all = chat_edits.handle_edit_reject_all
-M.handle_edit_resolve_file = chat_edits.handle_edit_resolve_file
-M.handle_edit_resolve_all = chat_edits.handle_edit_resolve_all
-M.handle_edit_toggle_diff = chat_edits.handle_edit_toggle_diff
-M.handle_edit_diff_tab = chat_edits.handle_edit_diff_tab
-M.handle_edit_diff_split = chat_edits.handle_edit_diff_split
 M.open_inline_diff_split = chat_edits.open_inline_diff_split
 
 -- Tasks / tools
 M.get_task_at_cursor = chat_tasks.get_task_at_cursor
 M.get_tool_at_cursor = chat_tasks.get_tool_at_cursor
-M.rerender_task = chat_tasks.rerender_task
 M.handle_task_toggle = chat_tasks.handle_task_toggle
 M.rerender_tool = chat_tasks.rerender_tool
 M.handle_tool_toggle = chat_tasks.handle_tool_toggle
 
 -- Session navigation
-M.is_navigating = chat_nav.is_navigating
 M.enter_child_session = chat_nav.enter_child_session
 M.leave_child_session = chat_nav.leave_child_session
 
