@@ -61,4 +61,33 @@ function M.trim_edge_newlines(text)
 	return (text or ""):gsub("^\n+", ""):gsub("\n+$", "")
 end
 
+---@param path string|nil
+---@return string
+function M.normalize_path(path)
+	if not M.is_present(path) then
+		return ""
+	end
+
+	local normalized = tostring(path)
+	if normalized:match("^file://") then
+		local ok, filepath = pcall(vim.uri_to_fname, normalized)
+		if ok and filepath and filepath ~= "" then
+			normalized = filepath
+		end
+	end
+	return vim.fn.fnamemodify(normalized, ":~:.")
+end
+
+---@param ... any
+---@return string|nil
+function M.first_string(...)
+	for i = 1, select("#", ...) do
+		local value = select(i, ...)
+		if type(value) == "string" and value ~= "" then
+			return value
+		end
+	end
+	return nil
+end
+
 return M
