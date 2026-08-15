@@ -4,6 +4,7 @@ local edit_state = require("opencode.edit.state")
 local file_edit_results = require("opencode.ui.chat.file_edit_results")
 local render = require("opencode.ui.chat.render")
 local sync = require("opencode.sync")
+local text_util = require("opencode.util.text")
 
 local PREVIEW_TOOLS = {
 	edit = true,
@@ -23,20 +24,8 @@ local RESULT_TO_EDIT_STATUS = {
 
 ---@param value any
 ---@return boolean
-local function is_present(value)
+local function is_nonempty_string(value)
 	return type(value) == "string" and value ~= ""
-end
-
----@param ... any
----@return string|nil
-local function first_string(...)
-	for i = 1, select("#", ...) do
-		local value = select(i, ...)
-		if type(value) == "string" and value ~= "" then
-			return value
-		end
-	end
-	return nil
 end
 
 ---Return the first value at `raw[key]` for the given keys that is a string
@@ -101,7 +90,7 @@ local function raw_filediff_lookup(metadata)
 
 	if type(metadata.filediff) == "table" then
 		local filediff = metadata.filediff
-		local filediff_path = first_string(
+		local filediff_path = text_util.first_string(
 			filediff.file,
 			filediff.filePath,
 			filediff.filepath,
@@ -113,7 +102,7 @@ local function raw_filediff_lookup(metadata)
 				return filediff
 			end
 			if model_file and filediff_path then
-				local model_path = first_string(model_file.filePath, model_file.relativePath)
+				local model_path = text_util.first_string(model_file.filePath, model_file.relativePath)
 				if model_path and model_path == filediff_path then
 					return filediff
 				end
@@ -127,7 +116,7 @@ local function raw_filediff_lookup(metadata)
 		local by_path = {}
 		for i, raw in ipairs(metadata.files) do
 			by_index[i] = raw
-			local key = first_string(raw.filePath, raw.filepath, raw.file_path, raw.file, raw.path)
+			local key = text_util.first_string(raw.filePath, raw.filepath, raw.file_path, raw.file, raw.path)
 			if key then
 				by_path[key] = raw
 			end
@@ -224,13 +213,13 @@ local function model_to_edit_files(model, part)
 
 	for i, file in ipairs(model.files or {}) do
 		local diff = file.diff
-		if not is_present(diff) then
+		if not is_nonempty_string(diff) then
 			diff = file.proposedDiff
 		end
 
 		local raw = lookup and lookup(file, i)
-		if not is_present(diff) and raw then
-			diff = first_string(raw.patch)
+		if not is_nonempty_string(diff) and raw then
+			diff = text_util.first_string(raw.patch)
 		end
 
 		local before, after = extract_before_after(raw)
@@ -238,7 +227,7 @@ local function model_to_edit_files(model, part)
 		local additions = file.additions
 		local deletions = file.deletions
 
-		if not is_present(diff) and before ~= nil and after ~= nil and before ~= after then
+		if not is_nonempty_string(diff) and before ~= nil and after ~= nil and before ~= after then
 			local ok, computed = pcall(vim.diff, before, after, { result_type = "unified" })
 			if ok and type(computed) == "string" and computed ~= "" then
 				diff = computed
