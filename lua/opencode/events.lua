@@ -20,6 +20,12 @@ for _, name in ipairs({
 	M[name] = bus[name]
 end
 
+---@param event_name string
+---@param ... any
+function M.safe_emit(event_name, ...)
+	pcall(M.emit, event_name, ...)
+end
+
 local setup_modules = {
 	{ name = "state bridge", load = function() return require("opencode.events.state_bridge") end },
 	{ name = "SSE bridge", load = function() return require("opencode.events.sse_bridge") end },

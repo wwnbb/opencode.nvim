@@ -11,18 +11,10 @@ local permission_state = require("opencode.permission.state")
 local widget_support = require("opencode.ui.chat.widget_support")
 local render_coordinator = require("opencode.ui.chat.render_coordinator")
 local actions = require("opencode.actions")
+local events = require("opencode.events")
 
 local function schedule_render()
 	render_coordinator.request({ kind = "permission" })
-end
-
----@param event_type string
----@param data table
-local function emit(event_type, data)
-	local ok, events = pcall(require, "opencode.events")
-	if ok and events and type(events.emit) == "function" then
-		events.emit(event_type, data)
-	end
 end
 
 -- ─── Add / update ─────────────────────────────────────────────────────────────
@@ -118,11 +110,11 @@ function M.sync_selected_option_from_cursor()
 		return permission_id, false
 	end
 
-	emit("permission_selection_changed", {
+	events.safe_emit("permission_selection_changed", {
 		permission_id = permission_id,
 		selected = option_index,
 	})
-	emit("interaction_changed", {
+	events.safe_emit("interaction_changed", {
 		kind = "permission",
 		action = "selection_changed",
 		id = permission_id,
@@ -186,19 +178,19 @@ function M.handle_permission_confirm(perm_id, pstate)
 			end
 			if reply == "reject" then
 				permission_state.mark_rejected(perm_id)
-				emit("permission_rejected", {
+				events.safe_emit("permission_rejected", {
 					permission_id = perm_id,
 				})
 				M.update_permission_status(perm_id, "rejected")
 			else
 				permission_state.mark_approved(perm_id, reply)
-				emit("permission_approved", {
+				events.safe_emit("permission_approved", {
 					permission_id = perm_id,
 					reply = reply,
 				})
 				M.update_permission_status(perm_id, "approved")
 			end
-			emit("interaction_changed", {
+			events.safe_emit("interaction_changed", {
 				kind = "permission",
 				action = reply == "reject" and "rejected" or "approved",
 				id = perm_id,
@@ -217,10 +209,10 @@ function M.handle_permission_reject(perm_id)
 				return
 			end
 			permission_state.mark_rejected(perm_id)
-			emit("permission_rejected", {
+			events.safe_emit("permission_rejected", {
 				permission_id = perm_id,
 			})
-			emit("interaction_changed", {
+			events.safe_emit("interaction_changed", {
 				kind = "permission",
 				action = "rejected",
 				id = perm_id,

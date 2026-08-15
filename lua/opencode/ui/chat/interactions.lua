@@ -13,6 +13,7 @@ local question_state = require("opencode.question.state")
 local permission_state = require("opencode.permission.state")
 local edit_state = require("opencode.edit.state")
 local actions = require("opencode.actions")
+local events = require("opencode.events")
 
 ---@param question table|nil
 ---@return boolean
@@ -34,15 +35,6 @@ local function is_custom_only_question(question)
 		return question.allowCustom == true
 	end
 	return true
-end
-
----@param event_type string
----@param data table
-local function emit(event_type, data)
-	local ok, events = pcall(require, "opencode.events")
-	if ok and events and type(events.emit) == "function" then
-		events.emit(event_type, data)
-	end
 end
 
 ---@param kind "question" | "permission" | "edit"
@@ -121,12 +113,12 @@ function M.handle_question_number_select(number)
 			changed = question_state.select_option(request_id, number)
 		end
 		if changed then
-			emit("question_selection_changed", {
+			events.safe_emit("question_selection_changed", {
 				request_id = request_id,
 				tab_index = qstate.current_tab,
 				selected = question_state.get_current_selection(request_id),
 			})
-			emit("interaction_changed", {
+			events.safe_emit("interaction_changed", {
 				kind = "question",
 				action = "selection_changed",
 				id = request_id,
@@ -148,11 +140,11 @@ function M.handle_question_number_select(number)
 	local perm_id = chat_permissions.get_permission_at_cursor()
 	if perm_id and number >= 1 and number <= 3 then
 		if permission_state.select_option(perm_id, number) then
-			emit("permission_selection_changed", {
+			events.safe_emit("permission_selection_changed", {
 				permission_id = perm_id,
 				selected = number,
 			})
-			emit("interaction_changed", {
+			events.safe_emit("interaction_changed", {
 				kind = "permission",
 				action = "selection_changed",
 				id = perm_id,
@@ -200,7 +192,7 @@ function M.handle_question_confirm()
 				chat_questions.submit_question_answers(request_id)
 			else
 				question_state.cancel_confirmation(request_id)
-				emit("interaction_changed", {
+				events.safe_emit("interaction_changed", {
 					kind = "question",
 					action = "confirmation_cancelled",
 					id = request_id,
@@ -253,7 +245,7 @@ function M.handle_question_confirm()
 		if not all_answered then
 			if #unanswered_indices > 0 then
 				question_state.set_tab(request_id, unanswered_indices[1])
-				emit("question_tab_changed", {
+				events.safe_emit("question_tab_changed", {
 					request_id = request_id,
 					tab_index = unanswered_indices[1],
 				})
@@ -264,7 +256,7 @@ function M.handle_question_confirm()
 
 		if total_count > 1 or question_state.is_multi_question(current_question) then
 			question_state.set_confirming(request_id)
-			emit("question_confirming", {
+			events.safe_emit("question_confirming", {
 				request_id = request_id,
 			})
 			chat_questions.rerender_question(request_id)
@@ -306,7 +298,7 @@ function M.handle_question_cancel()
 		end
 		if qstate.status == "confirming" then
 			question_state.cancel_confirmation(request_id)
-			emit("interaction_changed", {
+			events.safe_emit("interaction_changed", {
 				kind = "question",
 				action = "confirmation_cancelled",
 				id = request_id,
@@ -341,7 +333,7 @@ function M.handle_question_cancel()
 				if not question_state.mark_rejected(request_id) then
 					return
 				end
-				emit("interaction_changed", {
+				events.safe_emit("interaction_changed", {
 					kind = "question",
 					action = "rejected",
 					id = request_id,

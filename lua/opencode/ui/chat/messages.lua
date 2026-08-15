@@ -7,21 +7,13 @@ local chat_hl_ns = cs.chat_hl_ns
 local spinner = require("opencode.ui.spinner")
 local chat_todos = require("opencode.ui.chat.todos")
 local chat_tasks = require("opencode.ui.chat.tasks")
+local events = require("opencode.events")
 local render_state = require("opencode.ui.chat.render_state")
 
 local schedule_render = function() end
 
 function M.set_schedule_render(fn)
 	schedule_render = type(fn) == "function" and fn or function() end
-end
-
----@param event_type string
----@param data table
-local function emit(event_type, data)
-	local ok, events = pcall(require, "opencode.events")
-	if ok and events and type(events.emit) == "function" then
-		events.emit(event_type, data)
-	end
 end
 
 local function stop_spinner_animation_timer()
@@ -164,19 +156,19 @@ function M.clear()
 	local ok, qs = pcall(require, "opencode.question.state")
 	if ok then
 		for _, request_id in ipairs(qs.clear_all() or {}) do
-			emit("question_removed", { request_id = request_id })
+			events.safe_emit("question_removed", { request_id = request_id })
 		end
 	end
 	local ok2, ps = pcall(require, "opencode.permission.state")
 	if ok2 then
 		for _, permission_id in ipairs(ps.clear_all() or {}) do
-			emit("permission_removed", { permission_id = permission_id })
+			events.safe_emit("permission_removed", { permission_id = permission_id })
 		end
 	end
 	local ok3, es = pcall(require, "opencode.edit.state")
 	if ok3 then
 		for _, permission_id in ipairs(es.clear_all() or {}) do
-			emit("edit_removed", { permission_id = permission_id })
+			events.safe_emit("edit_removed", { permission_id = permission_id })
 		end
 	end
 end
