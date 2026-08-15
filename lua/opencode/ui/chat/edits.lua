@@ -378,31 +378,6 @@ local function clear_readonly_warnings(permission_id)
 	readonly_warning_state.diff[permission_id] = nil
 end
 
----@param filepath string
----@param content string
----@return boolean, string|nil
-local function write_file(filepath, content)
-	local dir = vim.fn.fnamemodify(filepath, ":h")
-	if dir and dir ~= "" then
-		vim.fn.mkdir(dir, "p")
-	end
-
-	local fd, err = io.open(filepath, "w")
-	if not fd then
-		return false, err
-	end
-
-	local ok, write_err = pcall(function()
-		fd:write(content)
-	end)
-	fd:close()
-	if not ok then
-		return false, tostring(write_err)
-	end
-
-	return true
-end
-
 ---@return string|nil, number|nil, table|nil, table|nil
 local function get_inline_diff_edit_context()
 	local edit_id = inline_diff_state.edit_id
@@ -459,22 +434,9 @@ local function reject_inline_diff_file()
 		return
 	end
 
-	local filepath = file.filepath
-	local before = file.before or ""
-	local file_type = file.file_type or "update"
-	local ok = true
-	local err
-
-	if file_type == "add" and before == "" then
-		if vim.fn.filereadable(filepath) == 1 then
-			ok, err = os.remove(filepath)
-		end
-	else
-		ok, err = write_file(filepath, before)
-	end
-
-	if not ok then
-		vim.notify("Failed to reject file: " .. tostring(err or "unknown"), vim.log.levels.ERROR)
+	local reject_ok, reject_err = edit_state.reject_file(edit_id, file_index)
+	if not reject_ok then
+		vim.notify("Failed to reject file: " .. (reject_err or "unknown"), vim.log.levels.ERROR)
 		return
 	end
 
@@ -482,12 +444,6 @@ local function reject_inline_diff_file()
 		pcall(vim.api.nvim_buf_call, inline_diff_state.actual_buf, function()
 			vim.cmd("silent! edit!")
 		end)
-	end
-
-	local reject_ok, reject_err = edit_state.reject_file(edit_id, file_index)
-	if not reject_ok then
-		vim.notify("Failed to reject file: " .. (reject_err or "unknown"), vim.log.levels.ERROR)
-		return
 	end
 
 	M.close_inline_diff_split({ silent = true })

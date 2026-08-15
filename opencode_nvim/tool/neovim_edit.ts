@@ -23,6 +23,7 @@ import {
 const schema = tool.schema
 
 type Status = "applied" | "partial" | "rejected" | "failed"
+type Divergence = "none" | "external" | "client_applied" | "client_resolved"
 
 function replaceExact(
   content: string,
@@ -66,9 +67,15 @@ function replaceExact(
   return content.slice(0, first) + newString + content.slice(first + oldString.length)
 }
 
-function statusLabel(status: Status): string {
+function statusLabel(status: Status, divergence: Divergence = "none"): string {
   if (status === "applied") return "Edit applied successfully."
   if (status === "rejected") return "Edit rejected. No changes applied."
+  if (status === "partial" && divergence === "client_resolved") {
+    return "File was modified during review; the proposed edit was not applied. Re-read the file before retrying."
+  }
+  if (status === "partial" && divergence === "external") {
+    return "File changed on disk while applying the edit; verify the result and re-read the file."
+  }
   if (status === "partial") return "Edit partially applied by user review."
   return "Edit failed."
 }
@@ -120,6 +127,8 @@ export default tool({
       additions: proposedStats.additions,
       deletions: proposedStats.deletions,
       status: "pending",
+      bom: desiredBom,
+      eol: ending,
     }
 
     callMetadata(context, {
@@ -161,21 +170,52 @@ export default tool({
     }
 
     let current = await readState(filePath)
+    let wrote = false
+    let writeError: string | undefined
     if (approved && sameState(current, before)) {
-      await writeState(filePath, after.content, after.bom)
-      current = await readState(filePath)
+      try {
+        await writeState(filePath, after.content, after.bom)
+        wrote = true
+        current = await readState(filePath)
+      } catch (error) {
+        writeError = String(error)
+      }
     } else if (!approved) {
       await removeEmptyCreatedFile(filePath, before, current)
       current = await readState(filePath)
     }
 
     let status: Status
-    if (current.exists && sameContent(current.content, after.content)) {
+    if (writeError) {
+      status = "failed"
+    } else if (approved && !wrote && sameState(current, before)) {
+      status = "failed"
+    } else if (current.exists && sameContent(current.content, after.content)) {
       status = "applied"
     } else if (sameState(current, before)) {
       status = "rejected"
     } else {
       status = "partial"
+    }
+
+    let divergence: Divergence = "none"
+    if (approved) {
+      if (wrote && status !== "applied") {
+        divergence = "external"
+      } else if (!wrote && sameContent(current.content, after.content)) {
+        divergence = "client_applied"
+      } else if (!wrote && !sameState(current, before)) {
+        divergence = "client_resolved"
+      }
+    }
+
+    let output: string
+    if (writeError) {
+      output = "Edit failed: " + writeError
+    } else if (status === "failed") {
+      output = "Edit failed: approved write was not applied."
+    } else {
+      output = statusLabel(status, divergence)
     }
 
     const finalContent = current.exists ? current.content : ""
@@ -193,9 +233,12 @@ export default tool({
 
     return {
       title: relativePath,
-      output: statusLabel(status),
+      output,
       metadata: {
         status,
+        wrote,
+        applied: status === "applied",
+        divergence,
         filepath: filePath,
         relativePath,
         diff: finalDiff,
