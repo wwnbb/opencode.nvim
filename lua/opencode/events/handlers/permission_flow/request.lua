@@ -130,6 +130,7 @@ local function normalize_file(file)
 		additions = type(file.additions) == "number" and file.additions or parsed_additions,
 		deletions = type(file.deletions) == "number" and file.deletions or parsed_deletions,
 		type = file.type or "update",
+		bom = file.bom == true,
 	}
 end
 

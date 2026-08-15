@@ -64,17 +64,32 @@ local function normalize_line_endings(text)
 	return (text or ""):gsub("\r\n", "\n")
 end
 
----@param filepath string
+local BOM = "\xEF\xBB\xBF"
+
+---@param content string
 ---@return string
-local function read_file_content(filepath)
-	local file = io.open(filepath, "r")
+local function strip_bom(content)
+	if content and content:sub(1, 3) == BOM then
+		return content:sub(4)
+	end
+	return content or ""
+end
+
+---@param filepath string
+---@return table|nil state {exists=boolean, content=string}
+---@return string|nil err
+local function read_file_state(filepath)
+	local file, open_err = io.open(filepath, "rb")
 	if not file then
-		return ""
+		if vim.loop.fs_stat(filepath) == nil then
+			return { exists = false, content = "" }, nil
+		end
+		return nil, open_err or ("Cannot open file for reading: " .. filepath)
 	end
 
 	local content = file:read("*all") or ""
 	file:close()
-	return content
+	return { exists = true, content = strip_bom(content) }, nil
 end
 
 ---@param filepath string
@@ -84,24 +99,38 @@ local function flush_modified_buffer(filepath)
 		return true
 	end
 
-	local bufnr = vim.fn.bufnr(filepath)
-	if bufnr == -1 or not vim.api.nvim_buf_is_valid(bufnr) then
-		return true
+	local target = vim.fn.resolve(vim.fn.fnamemodify(filepath, ":p"))
+	local ok = true
+	for _, bufnr in ipairs(vim.api.nvim_list_bufs()) do
+		if vim.api.nvim_buf_is_valid(bufnr) and vim.bo[bufnr].buftype == "" then
+			local name = vim.api.nvim_buf_get_name(bufnr)
+			if name ~= "" and vim.fn.resolve(vim.fn.fnamemodify(name, ":p")) == target then
+				if vim.bo[bufnr].modified then
+					local wrote = pcall(vim.api.nvim_buf_call, bufnr, function()
+						vim.cmd("silent write")
+					end)
+					ok = ok and wrote
+				end
+			end
+		end
 	end
 
-	if not vim.bo[bufnr].modified then
-		return true
-	end
-
-	return pcall(vim.api.nvim_buf_call, bufnr, function()
-		vim.cmd("silent write")
-	end)
+	return ok
 end
 
 ---@param file table
 ---@return "accepted"|"rejected"|"resolved"
 local function classify_manual_resolution(file)
-	local actual = normalize_line_endings(read_file_content(file.filepath))
+	local disk = read_file_state(file.filepath)
+	if not disk then
+		return "resolved"
+	end
+
+	if not disk.exists then
+		return (file.before == "" or file.file_type == "add") and "rejected" or "resolved"
+	end
+
+	local actual = normalize_line_endings(disk.content)
 	local before = normalize_line_endings(file.before)
 	local after = normalize_line_endings(file.after)
 
@@ -116,20 +145,40 @@ local function classify_manual_resolution(file)
 	return "resolved"
 end
 
+---@param file table
+---@return boolean
+local function before_exists(file)
+	return file.file_type ~= "add"
+end
+
+---@param disk table
+---@param file table
+---@param field "before"|"after"
+---@return boolean
+local function disk_matches_snapshot(disk, file, field)
+	local snapshot_exists = true
+	if field == "before" then
+		snapshot_exists = before_exists(file)
+	end
+	if disk.exists ~= snapshot_exists then
+		return false
+	end
+	if not disk.exists then
+		return true
+	end
+	return normalize_line_endings(disk.content) == normalize_line_endings(file[field] or "")
+end
+
 local FILE_ACTIONS = {
 	accept = {
+		kind = "accept",
 		status = "accepted",
 		verb = "accept",
-		apply = function(changes, change_id)
-			return changes.accept(change_id, { force = true })
-		end,
 	},
 	reject = {
+		kind = "reject",
 		status = "rejected",
 		verb = "reject",
-		apply = function(changes, change_id)
-			return changes.reject(change_id)
-		end,
 	},
 }
 
@@ -173,9 +222,62 @@ local function apply_file_action(estate, file, action)
 	end
 
 	local changes = require("opencode.artifact.changes")
-	local ok, err = action.apply(changes, file.change_id)
-	if not ok then
-		return false, err or "unknown error"
+
+	local disk, read_err = read_file_state(file.filepath)
+	if not disk then
+		return false, read_err or "failed to read file"
+	end
+
+	if action.kind == "accept" then
+		if not disk_matches_snapshot(disk, file, "before") then
+			changes.resolve_manually(file.change_id)
+			file.status = classify_manual_resolution(file)
+			vim.notify(
+				"File changed during review; proposed edit not overwritten: " .. describe_file(file),
+				vim.log.levels.WARN
+			)
+			return true, nil
+		end
+
+		local ok, err = changes.accept(file.change_id, { force = true })
+		if not ok then
+			return false, err or "unknown error"
+		end
+	elseif not before_exists(file) then
+		-- New file: reject must never delete or truncate user content
+		if not disk.exists then
+			changes.resolve_manually(file.change_id)
+			file.status = "rejected"
+		elseif normalize_line_endings(disk.content) == normalize_line_endings(file.after or "") then
+			changes.resolve_manually(file.change_id)
+			os.remove(file.filepath)
+			file.status = "rejected"
+		else
+			changes.resolve_manually(file.change_id)
+			file.status = "rejected"
+			vim.notify(
+				"New file was modified during review; not deleted: " .. describe_file(file),
+				vim.log.levels.WARN
+			)
+		end
+		return true, nil
+	elseif disk.exists and normalize_line_endings(disk.content) == normalize_line_endings(file.after or "") then
+		-- Disk holds exactly our proposal: undo it by restoring before
+		local ok, err = changes.reject(file.change_id)
+		if not ok then
+			return false, err or "unknown error"
+		end
+	else
+		-- Diverged (or already back at before): nothing safe to undo on disk
+		changes.resolve_manually(file.change_id)
+		file.status = "rejected"
+		if not disk_matches_snapshot(disk, file, "before") then
+			vim.notify(
+				"File changed during review; original not restored: " .. describe_file(file),
+				vim.log.levels.WARN
+			)
+		end
+		return true, nil
 	end
 
 	file.status = action.status
@@ -245,6 +347,7 @@ function M.add_edit(permission_id, session_id, files_data, opts)
 		local change_id = nil
 		if review_mode ~= "readonly" then
 			change_id = changes.add_change(filepath, before, after, {
+				bom = fd.bom == true,
 				metadata = {
 					source = "edit_widget",
 					permission_id = permission_id,
