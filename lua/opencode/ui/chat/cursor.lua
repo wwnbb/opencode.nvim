@@ -39,23 +39,6 @@ local function is_widget_cursor_target(kind, pos)
 	return pos.status ~= "sent"
 end
 
----@return number|nil min_line
----@return number|nil max_line
-local function interactive_widget_bounds()
-	local min_line = nil
-	local max_line = nil
-	local widget_kinds = { "question", "permission", "edit" }
-	for _, kind in ipairs(widget_kinds) do
-		for _, pos in pairs(get_widget_positions(kind)) do
-			if is_widget_cursor_target(kind, pos) then
-				min_line = min_line and math.min(min_line, pos.start_line) or pos.start_line
-				max_line = max_line and math.max(max_line, pos.end_line) or pos.end_line
-			end
-		end
-	end
-	return min_line, max_line
-end
-
 ---@return OpenCodeWidgetCursorContext|nil
 local function capture_widget_cursor_context()
 	if not state.visible or not state.winid or not vim.api.nvim_win_is_valid(state.winid) then
@@ -135,7 +118,6 @@ end
 
 M.get_widget_positions = get_widget_positions
 M.is_widget_cursor_target = is_widget_cursor_target
-M.interactive_widget_bounds = interactive_widget_bounds
 M.capture_widget_cursor_context = capture_widget_cursor_context
 M.restore_widget_cursor_context = restore_widget_cursor_context
 M.should_auto_scroll = should_auto_scroll

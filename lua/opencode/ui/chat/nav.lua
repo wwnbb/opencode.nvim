@@ -155,11 +155,6 @@ local function jump_ranges(items, direction)
 	return true
 end
 
----@return boolean
-function M.is_navigating()
-	return state.navigating
-end
-
 ---@param direction 1|-1
 function M.jump_user_message(direction)
 	return jump_ranges(collect_messages("user"), direction)
