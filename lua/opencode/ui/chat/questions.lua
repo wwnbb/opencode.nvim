@@ -11,6 +11,7 @@ local question_state = require("opencode.question.state")
 local widget_support = require("opencode.ui.chat.widget_support")
 local render_coordinator = require("opencode.ui.chat.render_coordinator")
 local actions = require("opencode.actions")
+local events = require("opencode.events")
 
 ---@param question table|nil
 ---@return boolean
@@ -32,15 +33,6 @@ end
 
 local function schedule_render()
 	render_coordinator.request({ kind = "question" })
-end
-
----@param event_type string
----@param data table
-local function emit(event_type, data)
-	local ok, events = pcall(require, "opencode.events")
-	if ok and events and type(events.emit) == "function" then
-		events.emit(event_type, data)
-	end
 end
 
 -- ─── Add / update ─────────────────────────────────────────────────────────────
@@ -184,12 +176,12 @@ function M.sync_selected_option_from_cursor()
 		return request_id, false
 	end
 
-	emit("question_selection_changed", {
+	events.safe_emit("question_selection_changed", {
 		request_id = request_id,
 		tab_index = qstate.current_tab,
 		selected = { option_index },
 	})
-	emit("interaction_changed", {
+	events.safe_emit("interaction_changed", {
 		kind = "question",
 		action = "selection_changed",
 		id = request_id,
@@ -292,11 +284,11 @@ function M.submit_question_answers(request_id)
 			if not question_state.mark_answered(request_id, answers) then
 				return
 			end
-			emit("question_answered", {
+			events.safe_emit("question_answered", {
 				request_id = request_id,
 				answers = answers,
 			})
-			emit("interaction_changed", {
+			events.safe_emit("interaction_changed", {
 				kind = "question",
 				action = "answered",
 				id = request_id,
@@ -322,7 +314,7 @@ function M.handle_question_next_tab(request_id)
 	end
 
 	question_state.set_tab(request_id, next_tab)
-	emit("question_tab_changed", {
+	events.safe_emit("question_tab_changed", {
 		request_id = request_id,
 		tab_index = next_tab,
 	})
@@ -342,7 +334,7 @@ function M.handle_question_prev_tab(request_id)
 	end
 
 	question_state.set_tab(request_id, prev_tab)
-	emit("question_tab_changed", {
+	events.safe_emit("question_tab_changed", {
 		request_id = request_id,
 		tab_index = prev_tab,
 	})
@@ -445,12 +437,12 @@ function M.handle_question_toggle(request_id)
 	local current_selection = question_state.get_current_selection(request_id)
 	local current_idx = option_index or (current_selection and current_selection[1]) or 1
 	question_state.toggle_multi_select(request_id, current_idx)
-	emit("question_selection_changed", {
+	events.safe_emit("question_selection_changed", {
 		request_id = request_id,
 		tab_index = qstate.current_tab,
 		selected = question_state.get_current_selection(request_id),
 	})
-	emit("interaction_changed", {
+	events.safe_emit("interaction_changed", {
 		kind = "question",
 		action = "selection_changed",
 		id = request_id,
