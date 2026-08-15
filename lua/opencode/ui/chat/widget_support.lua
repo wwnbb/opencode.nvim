@@ -93,6 +93,30 @@ function M.apply_focus_cursor()
 	return nil, nil
 end
 
+---@param state_table table maps part_id (string) -> position info { start_line, end_line, ... }
+---@param winid number|nil window id to check cursor position in
+---@param predicate? fun(pos: table, part_id: string): boolean optional filter
+---@return string|nil part_id
+---@return table|nil pos
+function M.find_widget_context_at_cursor(state_table, winid, predicate)
+	if not winid or not vim.api.nvim_win_is_valid(winid) then
+		return nil, nil
+	end
+
+	local cursor = vim.api.nvim_win_get_cursor(winid)
+	local cursor_line = cursor[1] - 1
+
+	for part_id, pos in pairs(state_table) do
+		if cursor_line >= pos.start_line and cursor_line <= pos.end_line then
+			if predicate == nil or predicate(pos, part_id) then
+				return part_id, pos
+			end
+		end
+	end
+
+	return nil, nil
+end
+
 ---@return number
 function M.current_render_generation()
 	return state.render_generation or 0
@@ -234,6 +258,174 @@ function M.replace_rendered_block(pos, result)
 	pos.highlights = result.highlights
 	M.mark_applied_render_generation(pos)
 	return true
+end
+
+-- ─── In-place block updates ──────────────────────────────────────────────────
+
+function M.apply_result_highlights(result, pos)
+	render.apply_extmark_highlights(state.bufnr, chat_hl_ns, result.highlights, pos.start_line)
+end
+
+function M.sanitize_result_lines(result)
+	result.lines = result.lines or {}
+	for i, line in ipairs(result.lines) do
+		result.lines[i] = render.sanitize_buffer_line(line)
+	end
+	return result
+end
+
+---@return number|nil top_line
+---@return number|nil bottom_line
+function M.get_visible_line_range()
+	if not state.winid or not vim.api.nvim_win_is_valid(state.winid) then
+		return nil, nil
+	end
+	local ok, range = pcall(vim.api.nvim_win_call, state.winid, function()
+		return { vim.fn.line("w0") - 1, vim.fn.line("w$") - 1 }
+	end)
+	if not ok or type(range) ~= "table" then
+		return nil, nil
+	end
+	return range[1], range[2]
+end
+
+---@param pos table|nil
+---@param top_line number|nil
+---@param bottom_line number|nil
+---@return boolean
+function M.block_is_visible(pos, top_line, bottom_line)
+	if not pos or type(pos.start_line) ~= "number" or type(pos.end_line) ~= "number" then
+		return false
+	end
+	if top_line == nil or bottom_line == nil then
+		return true
+	end
+	return pos.end_line >= top_line and pos.start_line <= bottom_line
+end
+
+---@param highlights table[]|nil
+---@return string
+function M.highlight_signature(highlights)
+	if type(highlights) ~= "table" then
+		return ""
+	end
+	local parts = {}
+	for _, hl in ipairs(highlights) do
+		if type(hl) == "table" then
+			table.insert(
+				parts,
+				table.concat({
+					tostring(hl.line or 0),
+					tostring(hl.end_line or ""),
+					tostring(hl.col_start or 0),
+					tostring(hl.col_end or hl.end_col or ""),
+					tostring(hl.hl_group or ""),
+					tostring(hl.priority or ""),
+					tostring(hl.hl_eol or ""),
+				}, ":")
+			)
+		end
+	end
+	return table.concat(parts, "|")
+end
+
+---@param pos table
+---@param result table
+---@return boolean updated
+function M.update_block_lines_in_place(pos, result)
+	if not state.bufnr or not vim.api.nvim_buf_is_valid(state.bufnr) then
+		return false
+	end
+	result = M.sanitize_result_lines(result)
+	local new_lines = result.lines or {}
+	local old_count = pos.end_line - pos.start_line + 1
+	if old_count ~= #new_lines then
+		return false
+	end
+
+	local old_lines = vim.api.nvim_buf_get_lines(state.bufnr, pos.start_line, pos.end_line + 1, false)
+	local changed = false
+	for i, line in ipairs(new_lines) do
+		if old_lines[i] ~= line then
+			changed = true
+			break
+		end
+	end
+
+	local old_highlight_signature = M.highlight_signature(pos.highlights)
+	local new_highlight_signature = M.highlight_signature(result.highlights)
+	if not changed and old_highlight_signature == new_highlight_signature then
+		return false
+	end
+
+	vim.bo[state.bufnr].modifiable = true
+	if changed then
+		M.clear_animation_extmarks(state.bufnr, pos.start_line, pos.end_line + 1)
+		local range_start = nil
+		local replacement = {}
+		local function flush_range(before_index)
+			if not range_start then
+				return
+			end
+			vim.api.nvim_buf_set_lines(
+				state.bufnr,
+				pos.start_line + range_start - 1,
+				pos.start_line + before_index - 1,
+				false,
+				replacement
+			)
+			range_start = nil
+			replacement = {}
+		end
+
+		for i, line in ipairs(new_lines) do
+			if old_lines[i] ~= line then
+				range_start = range_start or i
+				table.insert(replacement, line)
+			else
+				flush_range(i)
+			end
+		end
+		flush_range(#new_lines + 1)
+	end
+
+	render_state.clear_chat_highlights(state.bufnr, pos.start_line, pos.end_line + 1)
+	M.apply_result_highlights(result, pos)
+	vim.bo[state.bufnr].modifiable = false
+	pos.highlights = result.highlights
+	return true
+end
+
+---@param positions table
+---@param top_line number|nil
+---@param bottom_line number|nil
+---@param fns table { resolve, is_animating, render, rerender }
+---@return boolean updated
+function M.update_animating_blocks(positions, top_line, bottom_line, fns)
+	local updated = false
+
+	for part_id, pos in pairs(positions) do
+		local tool_part = fns.resolve(pos)
+		if
+			fns.is_animating(tool_part)
+			and M.position_generation_is_current(pos)
+			and M.block_is_visible(pos, top_line, bottom_line)
+		then
+			local result = fns.render(part_id, pos, tool_part)
+			if result == nil then
+				goto continue
+			end
+			if #result.lines ~= (pos.end_line - pos.start_line + 1) then
+				fns.rerender(part_id)
+				updated = true
+			else
+				updated = M.update_block_lines_in_place(pos, result) or updated
+			end
+		end
+		::continue::
+	end
+
+	return updated
 end
 
 return M
