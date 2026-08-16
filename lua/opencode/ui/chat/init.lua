@@ -26,6 +26,7 @@ local chat_hl_ns = cs.chat_hl_ns
 local FLOAT_CHAT_TOP_PADDING = 2
 
 local render = require("opencode.ui.chat.render")
+local chat_highlights = require("opencode.ui.chat.highlights")
 local render_state = require("opencode.ui.chat.render_state")
 local render_context = require("opencode.ui.chat.render_context")
 local widget_index = require("opencode.ui.chat.widget_index")
@@ -1074,7 +1075,7 @@ function M.update_stream_part_block(session_id, message_id, part_id, opts)
 
 	local clear_end = math.max(old_end + 1, block.start_line + new_count)
 	clear_chat_highlights(state.bufnr, block.start_line, clear_end)
-	render.apply_highlights(content_lines, state.bufnr, chat_hl_ns, block.start_line)
+	chat_highlights.apply_highlights(content_lines, state.bufnr, chat_hl_ns, block.start_line)
 	vim.bo[state.bufnr].modifiable = false
 
 	block.end_line = block.start_line + new_count - 1
@@ -1261,17 +1262,15 @@ function M.do_render()
 			local clear_start = highlight_clear_start(requested_start, content_highlights)
 			clear_chat_highlights(state.bufnr, clear_start, -1)
 
-			for i = clear_start + 1, #nui_lines do
-				local nui_line = nui_lines[i]
-				if i <= buf_line_count then
-					nui_line:highlight(state.bufnr, chat_hl_ns, i)
-				end
-			end
+			chat_highlights.apply_nui_line_highlights(nui_lines, state.bufnr, chat_hl_ns, 0, {
+				min_line = clear_start,
+				max_line = buf_line_count,
+			})
 
 			local function apply_widget_extmarks(line_map)
 				for _, pos in pairs(line_map) do
 					if pos.highlights then
-						render.apply_extmark_highlights(state.bufnr, chat_hl_ns, pos.highlights, pos.start_line, {
+						chat_highlights.apply_extmark_highlights(state.bufnr, chat_hl_ns, pos.highlights, pos.start_line, {
 							min_line = clear_start,
 							max_line = buf_line_count,
 						})
@@ -1284,7 +1283,7 @@ function M.do_render()
 			apply_widget_extmarks(state.edits)
 			apply_widget_extmarks(state.tasks)
 			apply_widget_extmarks(state.tools)
-			render.apply_extmark_highlights(state.bufnr, chat_hl_ns, content_highlights, 0, {
+			chat_highlights.apply_extmark_highlights(state.bufnr, chat_hl_ns, content_highlights, 0, {
 				min_line = clear_start,
 				max_line = buf_line_count,
 			})

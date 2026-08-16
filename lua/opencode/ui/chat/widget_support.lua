@@ -3,6 +3,7 @@ local M = {}
 local cs = require("opencode.ui.chat.state")
 local state = cs.state
 local render = require("opencode.ui.chat.render")
+local chat_highlights = require("opencode.ui.chat.highlights")
 local event_util = require("opencode.events.util")
 local chat_hl_ns = cs.chat_hl_ns
 local chat_anim_ns = cs.chat_anim_ns
@@ -250,7 +251,7 @@ function M.replace_rendered_block(pos, result)
 	render_state.clear_chat_highlights(state.bufnr, pos.start_line, pos.end_line + 1)
 	vim.api.nvim_buf_set_lines(state.bufnr, pos.start_line, pos.end_line + 1, false, result.lines)
 	render_state.clear_chat_highlights(state.bufnr, pos.start_line, pos.start_line + new_line_count)
-	render.apply_extmark_highlights(state.bufnr, chat_hl_ns, result.highlights, pos.start_line)
+	chat_highlights.apply_extmark_highlights(state.bufnr, chat_hl_ns, result.highlights, pos.start_line)
 	vim.bo[state.bufnr].modifiable = false
 
 	M.shift_tracked_lines(old_end, delta)
@@ -263,7 +264,7 @@ end
 -- ─── In-place block updates ──────────────────────────────────────────────────
 
 function M.apply_result_highlights(result, pos)
-	render.apply_extmark_highlights(state.bufnr, chat_hl_ns, result.highlights, pos.start_line)
+	chat_highlights.apply_extmark_highlights(state.bufnr, chat_hl_ns, result.highlights, pos.start_line)
 end
 
 function M.sanitize_result_lines(result)
