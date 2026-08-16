@@ -673,6 +673,7 @@ do
 end
 
 local render = require("opencode.ui.chat.render")
+local chat_highlights = require("opencode.ui.chat.highlights")
 local binary_line = "PAR1" .. string.char(0) .. "data"
 assert(render.sanitize_buffer_line(binary_line) == "PAR1<NUL>data", "NUL byte was not sanitized")
 assert(render.sanitize_buffer_line("one\ntwo\r\nthree") == "one ↵ two ↵ three", "newlines were not sanitized")
@@ -968,7 +969,7 @@ do
 
 	local rendered_task = chat_tasks.render_task_tool(task_part, false)
 	vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, rendered_task.lines)
-	render.apply_extmark_highlights(bufnr, chat_state_mod.chat_hl_ns, rendered_task.highlights, 0)
+	chat_highlights.apply_extmark_highlights(bufnr, chat_state_mod.chat_hl_ns, rendered_task.highlights, 0)
 	chat_state.tasks[task_part.id] = {
 		start_line = 0,
 		end_line = #rendered_task.lines - 1,
