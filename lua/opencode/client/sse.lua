@@ -2,6 +2,7 @@
 -- Handles real-time event streaming from OpenCode server
 
 local M = {}
+local auth = require("opencode.client.auth")
 local transport = require("opencode.client.transport")
 local uv = vim.uv
 
@@ -55,15 +56,6 @@ local function stop_reconnect_timer()
 		end)
 	end
 	state.reconnect_timer = nil
-end
-
-local function auth_header()
-	if not M.opts.auth.password then
-		return nil
-	end
-	local credentials = string.format("%s:%s", M.opts.auth.username, M.opts.auth.password)
-	local encoded = vim.fn.base64encode(credentials)
-	return "Basic " .. encoded
 end
 
 local function reset_current_event()
@@ -405,7 +397,7 @@ end
 -- Start SSE connection
 function M.connect()
 	if state.stream then
-		return -- Already connected or connecting
+		return true -- Already connected or connecting
 	end
 
 	state.manual_disconnect = false
@@ -416,9 +408,14 @@ function M.connect()
 		Accept = "text/event-stream",
 		["Cache-Control"] = "no-cache",
 	}
-	local auth = auth_header()
-	if auth then
-		headers.Authorization = auth
+	local authorization, auth_err = auth.header(M.opts.auth.username, M.opts.auth.password)
+	if auth_err then
+		stop_reconnect_timer()
+		M.emit("error", auth_err)
+		return false, auth_err
+	end
+	if authorization then
+		headers.Authorization = authorization
 	end
 
 	-- Send current working directory so the server scopes this
@@ -479,10 +476,11 @@ function M.connect()
 		local message = err and (err.message or err.error) or "Failed to open SSE stream"
 		M.emit("error", message)
 		schedule_reconnect()
-		return
+		return false, message
 	end
 
 	state.stream = stream
+	return true
 end
 
 -- Disconnect from SSE stream

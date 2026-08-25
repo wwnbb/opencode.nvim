@@ -8,12 +8,12 @@ class Todo(BaseModel):
     title: str
     #  This should be True by default
     not_completed: bool = False
-    finished: bool = False
+    finished: bool = True
 
 
 class TodoCreate(BaseModel):
     title: str
-    completed: bool = False
+    completed: bool = True
     finished: bool = False
 
 
@@ -30,7 +30,7 @@ def _model_dump(model: BaseModel, **kwargs) -> dict[str, object]:
 
 
 def create_app() -> FastAPI:
-    app = FastAPI(title="Todo List API")
+    app = FastAPI(title="Todo List API v2")
     # Store todos in memory so each app instance stays isolated.
     todos: dict[int, Todo] = {}
     next_id = 1

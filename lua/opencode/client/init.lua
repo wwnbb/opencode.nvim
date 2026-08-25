@@ -562,26 +562,14 @@ function M.on_event(event_type, callback)
 	sse.on(event_type, callback)
 end
 
--- Unsubscribe from SSE events
----@param event_type string
----@param callback function
-function M.off_event(event_type, callback)
-	sse.off(event_type, callback)
-end
-
 -- Start SSE connection
 function M.connect_events()
-	sse.connect()
+	return sse.connect()
 end
 
 -- Stop SSE connection
 function M.disconnect_events()
 	sse.disconnect()
-end
-
--- Check SSE connection status
-function M.is_event_stream_connected()
-	return sse.is_connected()
 end
 
 -- Expose raw clients for advanced usage

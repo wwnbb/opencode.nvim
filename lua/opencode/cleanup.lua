@@ -16,6 +16,9 @@ function M.clear_transient(opts)
 	call("opencode.permission.state", "clear_all")
 	call("opencode.question.state", "clear_all")
 	call("opencode.edit.state", "clear_all")
+	call("opencode.artifact.changes", "clear")
+	call("opencode.state", "clear_all_pending_changes")
+	call("opencode.session.lock", "clear_all")
 	call("opencode.permission.danger", "clear")
 
 	if opts.clear_chat ~= false then
@@ -25,6 +28,8 @@ function M.clear_transient(opts)
 	if opts.reset_state == true then
 		call("opencode.state", "reset")
 	end
+
+	call("opencode.events", "clear_history")
 end
 
 function M.reset_all()

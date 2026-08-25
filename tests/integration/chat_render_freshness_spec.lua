@@ -766,6 +766,7 @@ wait_for(function()
 	return late_parent_sync_events >= 3
 end, "late child part update should request a parent render")
 
+pause(30)
 local before_late_stream_generation = chat_state.render_generation or 0
 events.emit("chat_stream_part_updated", {
 	session_id = "late-child",
@@ -774,9 +775,12 @@ events.emit("chat_stream_part_updated", {
 	delta = "STREAM",
 	field = "text",
 })
-wait_for(function()
-	return (chat_state.render_generation or 0) > before_late_stream_generation
-end, "late child stream update should schedule a parent render")
+pause(30)
+assert_eq(
+	chat_state.render_generation or 0,
+	before_late_stream_generation,
+	"nested child text stream should not rerender an unchanged parent summary"
+)
 
 local original_update_stream_part_block = chat.update_stream_part_block
 local original_schedule_render = chat.schedule_render
@@ -799,7 +803,7 @@ wait_for(function()
 end, "stream fallback should request a render when no in-place block exists")
 chat.update_stream_part_block = original_update_stream_part_block
 chat.schedule_render = original_schedule_render
-assert_true(fallback_force, "stream fallback should force a full render")
+assert_eq(fallback_force, false, "stream fallback should request a non-forced render")
 
 reset_case()
 session_actions.set_active("reconcile-a", "Reconcile A", { preserve_cache = true })

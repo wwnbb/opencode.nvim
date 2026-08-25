@@ -980,10 +980,13 @@ function M.setup(events)
 
 			-- Update sync store first
 			if data.sessionID and data.status then
-				sync.handle_session_status(data.sessionID, data.status)
+				local status_changed = sync.handle_session_status(data.sessionID, data.status)
 				session_actions.set_session_status(data.sessionID, data.status, {
 					reason = "session_status",
 				})
+				if not status_changed then
+					return
+				end
 
 				-- When the session leaves the busy state, any tool parts still
 				-- "running" or assistant messages still uncompleted are stale:

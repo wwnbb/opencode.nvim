@@ -11,6 +11,7 @@ local todo_fetch_cleanup = nil
 ---@field session_status table<string, SessionStatus> Status by sessionID
 ---@field todo table<string, OpenCodeTodo[]> Todos by sessionID
 ---@field todo_revision table<string, number> Todo revisions by sessionID
+---@field task_summary_revision table<string, number> Task-summary revisions by child sessionID
 
 ---@class OpenCodeTodo
 ---@field content string Brief task description
@@ -60,6 +61,8 @@ local store = {
 	message_revision = {}, -- { [messageID] = number } internal render invalidation
 	part_revision = {}, -- { [messageID .. "\0" .. partID] = number } internal render invalidation
 	session_revision = {}, -- { [sessionID] = number } internal render invalidation
+	task_summary_revision = {}, -- { [sessionID] = number } task summary/prompt invalidation
+	task_summary_revision_counter = 0,
 	provider_revision = 0, -- internal render invalidation for model metadata
 	agent_revision = 0,    -- internal render invalidation for agent colors
 	-- Provider/agent/model data (like TUI's sync.tsx)
@@ -189,6 +192,8 @@ end
 local find_message_session_id
 local clear_part_delta_buffers_for_message
 local clear_task_child_indices_for_message
+local bump_task_summary_revision_for_message
+local bump_task_summary_revision_for_part_change
 
 local function index_message_session(session_id, message_id)
 	if session_id and message_id and message_id ~= "" then
@@ -250,6 +255,14 @@ end
 ---@param session_id string|nil
 local function bump_session_revision(session_id)
 	bump_revision(store.session_revision, session_id)
+end
+
+local function bump_task_summary_revision(session_id)
+	if not session_id or session_id == "" then
+		return
+	end
+	store.task_summary_revision_counter = store.task_summary_revision_counter + 1
+	store.task_summary_revision[session_id] = store.task_summary_revision_counter
 end
 
 ---@param message_id string|nil
@@ -378,6 +391,7 @@ local function ensure_message_for_part(part)
 	-- Keep the same 100 message cap behavior as regular message updates.
 	if #messages > 100 then
 		local oldest = messages[1]
+		bump_task_summary_revision_for_message(oldest.id, session_id)
 		table.remove(messages, 1)
 		clear_part_delta_buffers_for_message(oldest.id)
 		clear_task_child_indices_for_message(oldest.id)
@@ -557,6 +571,62 @@ local function get_message_by_id(message_id)
 		return messages[message_index]
 	end
 	return nil
+end
+
+---@param part table|nil
+---@param role string|nil
+---@return boolean
+local function part_affects_task_summary(part, role)
+	return type(part) == "table"
+		and ((role == "assistant" and part.type == "tool") or (role == "user" and part.type == "text"))
+end
+
+---@param message table|nil
+---@return boolean
+local function message_has_task_summary_data(message)
+	if type(message) ~= "table" then
+		return false
+	end
+	for _, part in ipairs(store.part[message.id] or {}) do
+		if part_affects_task_summary(part, message.role) then
+			return true
+		end
+	end
+	return false
+end
+
+---@param current table
+---@param merged table
+---@return boolean
+local function message_change_affects_task_summary(current, merged)
+	if current.role ~= merged.role then
+		return message_has_task_summary_data(current) or message_has_task_summary_data(merged)
+	end
+	return merged.role == "user"
+		and get_message_created(current) ~= get_message_created(merged)
+		and message_has_task_summary_data(merged)
+end
+
+bump_task_summary_revision_for_message = function(message_id, session_id)
+	local message = get_message_by_id(message_id)
+	if not message_has_task_summary_data(message) then
+		return false
+	end
+	bump_task_summary_revision(session_id or message.sessionID or find_message_session_id(message_id))
+	return true
+end
+
+bump_task_summary_revision_for_part_change = function(previous_part, next_part)
+	local part = next_part or previous_part
+	if type(part) ~= "table" then
+		return
+	end
+	local message = get_message_by_id(part.messageID)
+	local role = message and message.role or nil
+	if not part_affects_task_summary(previous_part, role) and not part_affects_task_summary(next_part, role) then
+		return
+	end
+	bump_task_summary_revision(part.sessionID or (message and message.sessionID) or find_message_session_id(part.messageID))
 end
 
 ---@param message_id string|nil
@@ -815,6 +885,7 @@ function M.handle_message_updated(info)
 		index_message_session(session_id, info.id)
 		bump_message_revision(info.id, session_id)
 		adopt_orphan_parts(info.id, session_id)
+		bump_task_summary_revision_for_message(info.id, session_id)
 		return true
 	end
 
@@ -832,6 +903,12 @@ function M.handle_message_updated(info)
 		local adopted_parts = adopt_orphan_parts(info.id, session_id)
 		if changed then
 			bump_message_revision(info.id, session_id)
+			if message_change_affects_task_summary(current, merged) then
+				bump_task_summary_revision(session_id)
+			end
+		end
+		if adopted_parts then
+			bump_task_summary_revision_for_message(info.id, session_id)
 		end
 		changed = changed or adopted_parts
 	else
@@ -840,11 +917,13 @@ function M.handle_message_updated(info)
 		index_message_session(session_id, info.id)
 		bump_message_revision(info.id, session_id)
 		adopt_orphan_parts(info.id, session_id)
+		bump_task_summary_revision_for_message(info.id, session_id)
 		changed = true
 
 		-- Limit to 100 messages per session (like TUI)
 		if #messages > 100 then
 			local oldest = messages[1]
+			bump_task_summary_revision_for_message(oldest.id, session_id)
 			table.remove(messages, 1)
 			-- Also remove parts for oldest message
 			clear_part_delta_buffers_for_message(oldest.id)
@@ -873,6 +952,7 @@ function M.handle_message_removed(session_id, message_id)
 
 	local message_index = find_message_index(messages, message_id)
 	if message_index then
+		bump_task_summary_revision_for_message(message_id, session_id)
 		table.remove(messages, message_index)
 		-- Also remove parts
 		clear_part_delta_buffers_for_message(message_id)
@@ -909,6 +989,7 @@ function M.handle_part_updated(part)
 		clear_part_delta_buffers(message_id, part.id)
 		index_task_child(part)
 		bump_part_revision(message_id, part.id, part.sessionID)
+		bump_task_summary_revision_for_part_change(nil, part)
 		return true
 	end
 
@@ -937,6 +1018,7 @@ function M.handle_part_updated(part)
 		index_task_child(merged)
 		if changed then
 			bump_part_revision(message_id, part.id, part.sessionID)
+			bump_task_summary_revision_for_part_change(dest, merged)
 		end
 		return changed
 	else
@@ -945,6 +1027,7 @@ function M.handle_part_updated(part)
 		clear_part_delta_buffers(message_id, part.id)
 		index_task_child(part)
 		bump_part_revision(message_id, part.id, part.sessionID)
+		bump_task_summary_revision_for_part_change(nil, part)
 		return true
 	end
 end
@@ -988,6 +1071,7 @@ function M.handle_part_delta(part_delta)
 	end
 	buffer_part_delta(message_id, part_id, field, delta)
 	bump_part_revision(message_id, part_id, part.sessionID)
+	bump_task_summary_revision_for_part_change(part, part)
 	return part
 end
 
@@ -1006,8 +1090,10 @@ function M.handle_part_removed(message_id, part_id)
 	clear_task_child_index(message_id, part_id)
 	local result = binary_search(parts, part_id, get_part_id)
 	if result.found then
+		local removed_part = parts[result.index]
 		table.remove(parts, result.index)
 		bump_part_revision(message_id, part_id, find_message_session_id(message_id))
+		bump_task_summary_revision_for_part_change(removed_part, nil)
 	end
 end
 
@@ -1062,9 +1148,14 @@ end
 ---Handle session.status event (mirrors TUI sync.tsx:223-225)
 ---@param session_id string
 ---@param status table
+---@return boolean changed
 function M.handle_session_status(session_id, status)
+	if vim.deep_equal(store.session_status[session_id], status) then
+		return false
+	end
 	store.session_status[session_id] = status
 	bump_session_revision(session_id)
+	return true
 end
 
 ---Force-close in-flight tool parts and uncompleted assistant messages for a session.
@@ -1140,6 +1231,9 @@ function M.finalize_inflight(session_id, opts)
 	if finalized_parts > 0 or finalized_messages > 0 then
 		bump_session_revision(session_id)
 	end
+	if finalized_parts > 0 then
+		bump_task_summary_revision(session_id)
+	end
 
 	return finalized_parts, finalized_messages
 end
@@ -1201,24 +1295,18 @@ function M.find_message_id_by_call_id(session_id, call_id)
 	return find_message_id_by_call_id(session_id, call_id)
 end
 
----@param session_id string
----@return number
-function M.get_session_revision(session_id)
-	return store.session_revision[session_id] or 0
-end
-
----@param message_id string
----@return number
-function M.get_message_revision(message_id)
-	return store.message_revision[message_id] or 0
-end
-
 ---@param message_id string
 ---@param part_id string
 ---@return number
 function M.get_part_revision(message_id, part_id)
 	local key = part_revision_key(message_id, part_id)
 	return key and store.part_revision[key] or 0
+end
+
+---@param session_id string
+---@return number
+function M.get_task_summary_revision(session_id)
+	return store.task_summary_revision[session_id] or store.task_summary_revision_counter or 0
 end
 
 ---Get parts for a message
@@ -1377,14 +1465,6 @@ function M.get_todo_revision(session_id)
 	return store.todo_revision[session_id] or 0
 end
 
----Check if session is busy
----@param session_id string
----@return boolean
-function M.is_session_busy(session_id)
-	local status = store.session_status[session_id]
-	return status and status.type == "busy"
-end
-
 ---Clear all data for a session
 ---@param session_id string
 function M.clear_session(session_id)
@@ -1405,6 +1485,7 @@ function M.clear_session(session_id)
 	-- Remove messages
 	store.message[session_id] = nil
 	store.session_revision[session_id] = nil
+	bump_task_summary_revision(session_id)
 
 	-- Remove status
 	store.session_status[session_id] = nil
@@ -1426,6 +1507,7 @@ function M.clear_session_messages(session_id)
 		clear_message_revisions(msg.id)
 	end
 	store.message[session_id] = nil
+	bump_task_summary_revision(session_id)
 	bump_session_revision(session_id)
 end
 
@@ -1448,6 +1530,8 @@ function M.clear_all()
 	store.message_revision = {}
 	store.part_revision = {}
 	store.session_revision = {}
+	store.task_summary_revision = {}
+	store.task_summary_revision_counter = (store.task_summary_revision_counter or 0) + 1
 	store.provider_revision = 0
 	store.agent_revision = 0
 	store.provider = {}

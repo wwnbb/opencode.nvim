@@ -13,7 +13,6 @@ local chat_messages = require("opencode.ui.chat.messages")
 local chat_keymaps = require("opencode.ui.chat.keymaps")
 local chat_session_tabs = require("opencode.ui.chat.session_tabs")
 local spinner = require("opencode.ui.spinner")
-local locale = require("opencode.util.locale")
 local event_util = require("opencode.events.util")
 local actions = require("opencode.actions")
 local logger = require("opencode.logger")
@@ -454,13 +453,19 @@ function M.create()
 			if not message_id or not part_id then
 				return
 			end
-			if not state.visible or not state.bufnr or not vim.api.nvim_buf_is_valid(state.bufnr) then
-				state.force_full_render = true
-				return
-			end
 			local current_session = require("opencode.state").get_session()
 			local render_session_id = event_util.render_target_session_id(current_session.id, session_id)
 			if not render_session_id then
+				return
+			end
+			local nested_child = session_id and session_id ~= current_session.id
+			local part_type = part and part.type
+			local field = data and data.field
+			if nested_child and (part_type == "text" or part_type == "reasoning" or field == "text" or field == "reasoning") then
+				return
+			end
+			if not state.visible or not state.bufnr or not vim.api.nvim_buf_is_valid(state.bufnr) then
+				state.force_full_render = true
 				return
 			end
 			if
@@ -469,7 +474,7 @@ function M.create()
 					field = data and data.field,
 				})
 			then
-				M.schedule_render({ force = true })
+				M.schedule_render()
 			end
 		end)
 	end)
@@ -630,6 +635,41 @@ local function get_relevant_question()
 	return nil
 end
 
+-- Shared teardown for a directly closed chat window (float or split).
+-- Idempotent: safe to run again from M.close() after WinClosed fired mid-close.
+local function handle_chat_window_closed(closed_winid)
+	if state.winid ~= closed_winid then
+		return
+	end
+	chat_float_focus.clear()
+	chat_todos.close_window()
+	chat_session_tabs.close_float_window()
+	state.visible = false
+	state.winid = nil
+	state.tabpage = nil
+	state.layout = nil
+	state.float_dims = nil
+	reset_chat_surface()
+	stop_spinner_animation_timer()
+	chat_tasks.stop_task_animation_timer()
+end
+
+-- Register one-shot WinClosed teardown for the chat window in the given layout.
+-- Split layouts need this too: without it state.visible stays true and the
+-- animation timers keep mutating a buffer with no window.
+local function register_chat_window_closed_autocmd(winid)
+	if not winid or not vim.api.nvim_win_is_valid(winid) then
+		return
+	end
+	vim.api.nvim_create_autocmd("WinClosed", {
+		pattern = tostring(winid),
+		once = true,
+		callback = function()
+			handle_chat_window_closed(winid)
+		end,
+	})
+end
+
 function M.open()
 	if M.is_visible() then
 		return
@@ -693,28 +733,7 @@ function M.open()
 			end
 		state.float_dims = dims
 
-		local popup_winid = popup.winid
-		if popup_winid and vim.api.nvim_win_is_valid(popup_winid) then
-			vim.api.nvim_create_autocmd("WinClosed", {
-				pattern = tostring(popup_winid),
-				once = true,
-			callback = function()
-				if state.winid == popup_winid then
-					chat_float_focus.clear()
-					chat_todos.close_window()
-					chat_session_tabs.close_float_window()
-						state.visible = false
-						state.winid = nil
-						state.tabpage = nil
-						state.layout = nil
-						state.float_dims = nil
-						reset_chat_surface()
-						stop_spinner_animation_timer()
-						chat_tasks.stop_task_animation_timer()
-					end
-				end,
-			})
-		end
+		register_chat_window_closed_autocmd(popup.winid)
 	else
 		local split_cmd = "split"
 		local split_opts = {}
@@ -741,6 +760,7 @@ function M.open()
 		vim.wo[state.winid].winfixwidth = cfg.layout == "vertical"
 		vim.wo[state.winid].winfixheight = cfg.layout == "horizontal"
 		setup_chat_window_options(state.winid)
+		register_chat_window_closed_autocmd(state.winid)
 		M.update_winbar()
 	end
 

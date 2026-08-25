@@ -206,29 +206,6 @@ function M.enrich_permission(permission_id, enrichment)
 	return changed
 end
 
--- Set the tool name that triggered a permission request.
----@param permission_id string
----@param tool_name string
----@return boolean
-function M.set_tool_name(permission_id, tool_name)
-	local pstate = active_permissions[permission_id]
-	if not pstate or type(tool_name) ~= "string" or tool_name == "" then
-		return false
-	end
-
-	local trimmed = vim.trim(tool_name)
-	if trimmed == "" then
-		return false
-	end
-
-	if pstate.tool_name == trimmed then
-		return false
-	end
-
-	pstate.tool_name = trimmed
-	return true
-end
-
 -- Move selection up/down
 ---@param permission_id string
 ---@param direction "up" | "down"

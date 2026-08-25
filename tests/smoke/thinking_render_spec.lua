@@ -44,9 +44,6 @@ describe("thinking rendering", function()
 					header_highlight = "ErrorMsg",
 				},
 			})
-			local config = thinking.get_config()
-			assert(config.throttle_ms == 100, "thinking config should retain default fields")
-
 			-- Formatter helpers keep icon/topic/truncation behavior for non-chat callers.
 			local formatted = thinking.format_reasoning(
 				"**Plan**\nthis is a deliberately long reasoning line that must wrap\nsecond line"

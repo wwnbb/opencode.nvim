@@ -506,6 +506,7 @@ end
 function M.clear()
 	state.changes = {}
 	state.active_change_id = nil
+	state.next_id = 1
 	emit_change_event("Cleared", "", {})
 	return true
 end

@@ -77,4 +77,71 @@ describe("opencode sync message ordering", function()
 
 		sync.clear_all()
 	end)
+
+	it("invalidates task summaries only for visible child summary data", function()
+		local sync = require("opencode.sync")
+		sync.clear_all()
+
+		local session_id = "task_summary_revision"
+		sync.handle_message_updated({
+			id = "assistant_message",
+			sessionID = session_id,
+			role = "assistant",
+			time = { created = 1 },
+		})
+		local revision = sync.get_task_summary_revision(session_id)
+
+		sync.handle_part_updated({
+			id = "assistant_text",
+			messageID = "assistant_message",
+			sessionID = session_id,
+			type = "text",
+			text = "streamed answer",
+		})
+		assert(sync.get_task_summary_revision(session_id) == revision, "assistant text should not invalidate task summaries")
+
+		sync.handle_part_updated({
+			id = "assistant_reasoning",
+			messageID = "assistant_message",
+			sessionID = session_id,
+			type = "reasoning",
+			text = "private reasoning",
+		})
+		assert(
+			sync.get_task_summary_revision(session_id) == revision,
+			"assistant reasoning should not invalidate task summaries"
+		)
+
+		sync.handle_part_updated({
+			id = "assistant_tool",
+			messageID = "assistant_message",
+			sessionID = session_id,
+			type = "tool",
+			tool = "read",
+			state = { status = "running", input = {} },
+		})
+		revision = sync.get_task_summary_revision(session_id)
+		assert(revision > 0, "assistant tools should invalidate task summaries")
+
+		sync.handle_message_updated({
+			id = "user_message",
+			sessionID = session_id,
+			role = "user",
+			time = { created = 2 },
+		})
+		local before_user_text = sync.get_task_summary_revision(session_id)
+		sync.handle_part_updated({
+			id = "user_text",
+			messageID = "user_message",
+			sessionID = session_id,
+			type = "text",
+			text = "task prompt",
+		})
+		assert(
+			sync.get_task_summary_revision(session_id) > before_user_text,
+			"user text should invalidate the cached task prompt"
+		)
+
+		sync.clear_all()
+	end)
 end)

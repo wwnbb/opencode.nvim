@@ -5,7 +5,6 @@ local M = {}
 
 local Popup = require("nui.popup")
 local float_context = require("opencode.ui.float_context")
-local hl_ns = vim.api.nvim_create_namespace("opencode_float")
 
 -- Create a centered floating popup with standard styling
 function M.create_centered_popup(opts)
@@ -37,114 +36,12 @@ function M.create_centered_popup(opts)
 	return popup, popup.bufnr
 end
 
--- Create a popup at specific position
-function M.create_popup_at(position, size, opts)
-	opts = opts or {}
-
-	local popup = Popup({
-		enter = opts.enter ~= false,
-		focusable = opts.focusable ~= false,
-		border = {
-			style = opts.border or "single",
-			text = opts.title and {
-				top = " " .. opts.title .. " ",
-				top_align = "center",
-			} or nil,
-		},
-		position = position,
-		size = size,
-	})
-
-	return popup, popup.bufnr
-end
-
 -- Setup standard keymaps for a popup (q to close, Esc to close)
 function M.setup_close_keymaps(bufnr, close_fn)
 	local opts = { buffer = bufnr, noremap = true, silent = true }
 
 	vim.keymap.set("n", "q", close_fn, opts)
 	vim.keymap.set("n", "<Esc>", close_fn, opts)
-end
-
--- Create loading spinner popup
-function M.show_loading(message, opts)
-	opts = opts or {}
-
-	local popup, bufnr = M.create_centered_popup({
-		width = opts.width or 40,
-		height = 3,
-		border = "rounded",
-		title = " Loading ",
-	})
-
-	popup:mount()
-
-	vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, {
-		"",
-		"  " .. (message or "Loading..."),
-		"",
-	})
-
-	vim.bo[bufnr].modifiable = false
-
-	-- Return close function
-	return function()
-		popup:unmount()
-	end
-end
-
--- Show notification popup (auto-closing)
-function M.show_notification(message, level, timeout)
-	level = level or vim.log.levels.INFO
-	timeout = timeout or 3000
-
-	local width = math.min(50, #message + 10)
-	local height = 3
-
-	local ui_list = vim.api.nvim_list_uis()
-	local ui = ui_list and ui_list[1] or { width = 80, height = 24 }
-
-	local row = 1 -- Top of screen
-	local col = ui.width - width - 2 -- Right aligned
-
-	local popup = Popup({
-		enter = false,
-		focusable = false,
-		border = "rounded",
-		position = { row = row, col = col },
-		size = { width = width, height = height },
-	})
-
-	popup:mount()
-
-	local bufnr = popup.bufnr
-	local hl_group = "Normal"
-	if level == vim.log.levels.ERROR then
-		hl_group = "ErrorMsg"
-	elseif level == vim.log.levels.WARN then
-		hl_group = "WarningMsg"
-	elseif level == vim.log.levels.INFO then
-		hl_group = "MoreMsg"
-	end
-
-	vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, {
-		"",
-		"  " .. message,
-		"",
-	})
-
-	local msg_text = vim.api.nvim_buf_get_lines(bufnr, 1, 2, false)[1] or ""
-	vim.api.nvim_buf_set_extmark(bufnr, hl_ns, 1, 0, { end_col = #msg_text, hl_group = hl_group })
-	vim.bo[bufnr].modifiable = false
-
-	-- Auto close
-	vim.defer_fn(function()
-		pcall(function()
-			popup:unmount()
-		end)
-	end, timeout)
-
-	return popup
 end
 
 -- Create input popup for text entry (API keys, codes, etc.)
