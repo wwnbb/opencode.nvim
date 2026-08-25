@@ -35,7 +35,7 @@ local function resolve_opencode_command()
 		return home_cmd
 	end
 
-	fail("opencode executable not found")
+	return nil
 end
 
 local function buffer_text(chat)
@@ -65,6 +65,10 @@ vim.o.lines = 36
 vim.opt.runtimepath:append(vim.fn.getcwd())
 
 local opencode_command = resolve_opencode_command()
+if not opencode_command then
+	print("opencode executable not found; skipping real server smoke")
+	return
+end
 
 local opencode = require("opencode")
 local lifecycle = require("opencode.lifecycle")

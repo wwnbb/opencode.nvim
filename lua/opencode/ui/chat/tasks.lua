@@ -8,6 +8,7 @@ local M = {}
 local cs = require("opencode.ui.chat.state")
 local state = cs.state
 local render = require("opencode.ui.chat.render")
+local render_state = require("opencode.ui.chat.render_state")
 local chat_todos = require("opencode.ui.chat.todos")
 local chat_bash = require("opencode.ui.chat.bash")
 local chat_read = require("opencode.ui.chat.read")
@@ -64,6 +65,56 @@ M.ensure_task_child_loaded = task_children.ensure_task_child_loaded
 M.resolve_missing_task_children = task_children.resolve_missing_task_children
 M.resolve_task_child_session_id = task_children.resolve_task_child_session_id
 
+---@param child_session_id string
+---@return table|nil summary
+---@return string|nil prompt
+local function derive_task_child_data(child_session_id)
+	local ok_sync, sync = pcall(require, "opencode.sync")
+	if not ok_sync then
+		return nil, nil
+	end
+
+	local revision = sync.get_task_summary_revision(child_session_id)
+	local cached_summary, cached_prompt, found = render_state.task_summary_cache_get(child_session_id, revision)
+	if found then
+		return cached_summary, cached_prompt
+	end
+
+	local derived = {}
+	local child_user_prompt = nil
+	for _, message in ipairs(sync.get_messages(child_session_id)) do
+		if message.role == "assistant" then
+			for _, part in ipairs(sync.get_message_tools(message.id)) do
+				local part_state = part.state or {}
+				local metadata = render.get_tool_metadata(part)
+				table.insert(derived, {
+					id = part.id,
+					tool = part.tool,
+					state = {
+						status = part_state.status or "pending",
+						title = part_state.title,
+						input = part_state.input or {},
+						metadata = metadata,
+					},
+					metadata = metadata,
+				})
+			end
+		end
+		if message.role == "user" and not child_user_prompt then
+			local text = sync.get_message_text(message.id)
+			if text ~= "" then
+				child_user_prompt = text
+			end
+		end
+	end
+	table.sort(derived, function(a, b)
+		return tostring(a.id or "") < tostring(b.id or "")
+	end)
+
+	render_state.task_summary_cache_put(child_session_id, revision, derived, child_user_prompt)
+	return derived, child_user_prompt
+end
+
 -- Render a task tool part as a compact TUI-style subagent summary.
 --
 -- Layout (collapsed, running):
@@ -98,43 +149,10 @@ function M.render_task_tool(tool_part, expanded)
 	local child_session_id = task_children.get_task_child_session_id(tool_part)
 	local child_user_prompt = nil
 	if child_session_id then
-		local ok_sync, sync = pcall(require, "opencode.sync")
-		if ok_sync then
-			local derived = {}
-			local messages = sync.get_messages(child_session_id)
-			for _, message in ipairs(messages) do
-				if message.role == "assistant" then
-					local tools = sync.get_message_tools(message.id)
-					for _, part in ipairs(tools) do
-						local part_state = part.state or {}
-						local status = part_state.status or "pending"
-						table.insert(derived, {
-							id = part.id,
-							tool = part.tool,
-							state = {
-								status = status,
-								title = part_state.title,
-								input = part_state.input or {},
-								metadata = render.get_tool_metadata(part),
-							},
-							metadata = render.get_tool_metadata(part),
-						})
-					end
-				end
-				if message.role == "user" and not child_user_prompt then
-					-- First user message with non-empty text → the task prompt
-					local text = sync.get_message_text(message.id)
-					if text ~= "" then
-						child_user_prompt = text
-					end
-				end
-			end
-			if #derived > 0 then
-				table.sort(derived, function(a, b)
-					return tostring(a.id or "") < tostring(b.id or "")
-				end)
-				summary = derived
-			end
+		local derived
+		derived, child_user_prompt = derive_task_child_data(child_session_id)
+		if derived and #derived > 0 then
+			summary = derived
 		end
 	end
 

@@ -2,6 +2,7 @@
 -- Uses vim.uv sockets for async HTTP requests
 
 local M = {}
+local auth = require("opencode.client.auth")
 local transport = require("opencode.client.transport")
 local schedule_callback = require("opencode.util.schedule").schedule_callback
 
@@ -15,22 +16,15 @@ M.opts = {
 	timeout = 30000,
 }
 
--- Build authentication header
-local function auth_header()
-	if not M.opts.auth.password then
-		return nil
-	end
-	local credentials = string.format("%s:%s", M.opts.auth.username, M.opts.auth.password)
-	local encoded = vim.fn.base64encode(credentials)
-	return "Basic " .. encoded
-end
-
 -- Merge headers
 local function merge_headers(additional)
 	local headers = {}
-	local auth = auth_header()
-	if auth then
-		headers.Authorization = auth
+	local authorization, auth_err = auth.header(M.opts.auth.username, M.opts.auth.password)
+	if auth_err then
+		return nil, auth_err
+	end
+	if authorization then
+		headers.Authorization = authorization
 	end
 	headers["Content-Type"] = "application/json"
 	headers["Accept"] = "application/json"
@@ -133,13 +127,21 @@ end
 local function request(method, path, callback, opts, body)
 	opts = opts or {}
 	local request_path = build_path(path, opts.query)
+	local headers, headers_err = merge_headers(opts.headers)
+	if headers_err then
+		schedule_callback(callback, {
+			error = headers_err,
+			message = headers_err,
+		}, nil)
+		return
+	end
 
 	transport.request({
 		host = M.opts.host,
 		port = M.opts.port,
 		method = method,
 		path = request_path,
-		headers = merge_headers(opts.headers),
+		headers = headers,
 		timeout = opts.timeout or M.opts.timeout,
 		body = body,
 	}, function(err, response)

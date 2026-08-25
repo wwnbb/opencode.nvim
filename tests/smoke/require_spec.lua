@@ -2855,6 +2855,7 @@ do
 
 	local function make_edit(edit_id, file_count, opts)
 		edit_state.clear_all()
+		opts = opts or {}
 		changes.clear()
 		local files = {}
 		local paths = {}
@@ -2862,7 +2863,13 @@ do
 			local path = vim.fn.tempname()
 			local before = "before " .. tostring(index) .. "\n"
 			local after = "after " .. tostring(index) .. "\n"
-			vim.fn.writefile(vim.split(before, "\n", { plain = true }), path)
+			-- writefile appends a newline per list item, so drop the trailing
+			-- empty split element to keep disk bytes equal to the snapshot.
+			local disk_lines = vim.split(opts.disk == "after" and after or before, "\n", { plain = true })
+			if disk_lines[#disk_lines] == "" then
+				table.remove(disk_lines)
+			end
+			vim.fn.writefile(disk_lines, path)
 			table.insert(paths, path)
 			table.insert(files, {
 				filePath = path,
@@ -2870,7 +2877,7 @@ do
 				after = after,
 			})
 		end
-		edit_state.add_edit(edit_id, "session_edit_lifecycle", files, opts or {})
+		edit_state.add_edit(edit_id, "session_edit_lifecycle", files, opts)
 		local ranges = {}
 		for index = 1, file_count do
 			table.insert(ranges, {
@@ -2911,9 +2918,9 @@ do
 		chat_state.edits = {}
 	end
 
-	local function run_single_file_flow(label, handler)
+	local function run_single_file_flow(label, handler, opts)
 		local edit_id = "edit_single_" .. label
-		local paths = make_edit(edit_id, 2)
+		local paths = make_edit(edit_id, 2, opts)
 		reset_calls()
 		select_file(edit_id, 1)
 		handler()
@@ -2928,12 +2935,12 @@ do
 	end
 
 	run_single_file_flow("accept", chat_edits.handle_edit_accept_file)
-	run_single_file_flow("reject", chat_edits.handle_edit_reject_file)
+	run_single_file_flow("reject", chat_edits.handle_edit_reject_file, { disk = "after" })
 	run_single_file_flow("resolve", chat_edits.handle_edit_resolve_file)
 
-	local function run_all_file_flow(label, handler)
+	local function run_all_file_flow(label, handler, opts)
 		local edit_id = "edit_all_" .. label
-		local paths = make_edit(edit_id, 2)
+		local paths = make_edit(edit_id, 2, opts)
 		reset_calls()
 		select_file(edit_id, 1)
 		handler()
@@ -2943,7 +2950,7 @@ do
 	end
 
 	run_all_file_flow("accept", chat_edits.handle_edit_accept_all)
-	run_all_file_flow("reject", chat_edits.handle_edit_reject_all)
+	run_all_file_flow("reject", chat_edits.handle_edit_reject_all, { disk = "after" })
 	run_all_file_flow("resolve", chat_edits.handle_edit_resolve_all)
 
 	local original_accept = changes.accept
@@ -2968,7 +2975,7 @@ do
 	changes.accept = original_accept
 	cleanup(accept_failure_paths)
 
-	local reject_failure_paths = make_edit("edit_reject_partial_failure", 3)
+	local reject_failure_paths = make_edit("edit_reject_partial_failure", 3, { disk = "after" })
 	local reject_failure_edit = edit_state.get_edit("edit_reject_partial_failure")
 	local failed_reject_change = reject_failure_edit.files[2].change_id
 	changes.reject = function(change_id)
@@ -2987,7 +2994,7 @@ do
 	changes.reject = original_reject
 	cleanup(reject_failure_paths)
 
-	local reject_file_failure_paths = make_edit("edit_reject_file_failure", 1)
+	local reject_file_failure_paths = make_edit("edit_reject_file_failure", 1, { disk = "after" })
 	local reject_file_edit = edit_state.get_edit("edit_reject_file_failure")
 	changes.reject = function()
 		return false, "single reject failed"

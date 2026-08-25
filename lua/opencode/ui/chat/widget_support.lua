@@ -233,6 +233,9 @@ end
 ---@param result table { lines: string[], highlights: table[] }
 ---@return boolean updated
 function M.replace_rendered_block(pos, result)
+	if not state.bufnr or not vim.api.nvim_buf_is_valid(state.bufnr) then
+		return false
+	end
 	if not M.can_update_in_place(pos) then
 		return false
 	end
@@ -246,13 +249,23 @@ function M.replace_rendered_block(pos, result)
 	local new_line_count = #result.lines
 	local delta = new_line_count - old_line_count
 
-	vim.bo[state.bufnr].modifiable = true
-	M.clear_animation_extmarks(state.bufnr, pos.start_line, pos.end_line + 1)
-	render_state.clear_chat_highlights(state.bufnr, pos.start_line, pos.end_line + 1)
-	vim.api.nvim_buf_set_lines(state.bufnr, pos.start_line, pos.end_line + 1, false, result.lines)
-	render_state.clear_chat_highlights(state.bufnr, pos.start_line, pos.start_line + new_line_count)
-	chat_highlights.apply_extmark_highlights(state.bufnr, chat_hl_ns, result.highlights, pos.start_line)
-	vim.bo[state.bufnr].modifiable = false
+	local ok = pcall(function()
+		vim.bo[state.bufnr].modifiable = true
+		M.clear_animation_extmarks(state.bufnr, pos.start_line, pos.end_line + 1)
+		render_state.clear_chat_highlights(state.bufnr, pos.start_line, pos.end_line + 1)
+		vim.api.nvim_buf_set_lines(state.bufnr, pos.start_line, pos.end_line + 1, false, result.lines)
+		render_state.clear_chat_highlights(state.bufnr, pos.start_line, pos.start_line + new_line_count)
+		chat_highlights.apply_extmark_highlights(state.bufnr, chat_hl_ns, result.highlights, pos.start_line)
+	end)
+	-- Restore immutability even when a mutation above threw; a failed block
+	-- update falls back to the next full render instead of corrupting state.
+	pcall(function()
+		vim.bo[state.bufnr].modifiable = false
+	end)
+	if not ok then
+		state.force_full_render = true
+		return false
+	end
 
 	M.shift_tracked_lines(old_end, delta)
 	pos.end_line = pos.start_line + new_line_count - 1
@@ -359,40 +372,48 @@ function M.update_block_lines_in_place(pos, result)
 		return false
 	end
 
-	vim.bo[state.bufnr].modifiable = true
-	if changed then
-		M.clear_animation_extmarks(state.bufnr, pos.start_line, pos.end_line + 1)
-		local range_start = nil
-		local replacement = {}
-		local function flush_range(before_index)
-			if not range_start then
-				return
+	local ok = pcall(function()
+		vim.bo[state.bufnr].modifiable = true
+		if changed then
+			M.clear_animation_extmarks(state.bufnr, pos.start_line, pos.end_line + 1)
+			local range_start = nil
+			local replacement = {}
+			local function flush_range(before_index)
+				if not range_start then
+					return
+				end
+				vim.api.nvim_buf_set_lines(
+					state.bufnr,
+					pos.start_line + range_start - 1,
+					pos.start_line + before_index - 1,
+					false,
+					replacement
+				)
+				range_start = nil
+				replacement = {}
 			end
-			vim.api.nvim_buf_set_lines(
-				state.bufnr,
-				pos.start_line + range_start - 1,
-				pos.start_line + before_index - 1,
-				false,
-				replacement
-			)
-			range_start = nil
-			replacement = {}
+
+			for i, line in ipairs(new_lines) do
+				if old_lines[i] ~= line then
+					range_start = range_start or i
+					table.insert(replacement, line)
+				else
+					flush_range(i)
+				end
+			end
+			flush_range(#new_lines + 1)
 		end
 
-		for i, line in ipairs(new_lines) do
-			if old_lines[i] ~= line then
-				range_start = range_start or i
-				table.insert(replacement, line)
-			else
-				flush_range(i)
-			end
-		end
-		flush_range(#new_lines + 1)
+		render_state.clear_chat_highlights(state.bufnr, pos.start_line, pos.end_line + 1)
+		M.apply_result_highlights(result, pos)
+	end)
+	pcall(function()
+		vim.bo[state.bufnr].modifiable = false
+	end)
+	if not ok then
+		state.force_full_render = true
+		return false
 	end
-
-	render_state.clear_chat_highlights(state.bufnr, pos.start_line, pos.end_line + 1)
-	M.apply_result_highlights(result, pos)
-	vim.bo[state.bufnr].modifiable = false
 	pos.highlights = result.highlights
 	return true
 end

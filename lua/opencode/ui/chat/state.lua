@@ -26,6 +26,7 @@ M.state = {
 	expanded_tasks = {},    -- Toggle set: { [part_id] = true }
 	task_child_cache = {},  -- Loaded child-session markers: { [part_id] = true }
 	task_child_loading = {}, -- In-flight child-session loads: { [part_id] = true }
+	task_summary_cache = { entries = {}, order = {} }, -- Derived child summaries keyed by summary revision
 	tools = {},             -- Track tool positions: { [part_id] = { start_line, end_line, tool_part } }
 	expanded_tools = {},    -- Toggle set: { [part_id] = true }
 	todo_bufnr = nil,       -- Live todo window buffer

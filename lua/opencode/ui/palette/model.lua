@@ -215,7 +215,6 @@ end
 -- Shows URL, device code, and waits for user to complete auth in browser
 ---@param opts table { provider, method, method_index, authorization, device_code }
 show_oauth_auto_dialog = function(opts)
-	local float = require("opencode.ui.float")
 	local Popup = require("nui.popup")
 	local event = require("nui.utils.autocmd").event
 

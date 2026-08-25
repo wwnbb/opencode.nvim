@@ -1,6 +1,6 @@
-# Guessing Game API
+# Guessing Game API v2
 
-A small FastAPI guessing game application with in-memory game state.
+A small FastAPI guessing game application with in-memory game state (v2).
 
 ## Install
 

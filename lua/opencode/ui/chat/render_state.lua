@@ -4,6 +4,7 @@ local cs = require("opencode.ui.chat.state")
 local state = cs.state
 
 local RENDER_CACHE_MAX_BLOCKS = 1000
+local TASK_SUMMARY_CACHE_MAX_ENTRIES = 100
 
 function M.ensure_render_cache()
 	if type(state.render_cache) ~= "table" then
@@ -17,6 +18,48 @@ end
 function M.clear_render_cache()
 	state.render_cache = { blocks = {}, order = {} }
 	state.last_render_highlight_signature = nil
+end
+
+local function ensure_task_summary_cache()
+	if type(state.task_summary_cache) ~= "table" then
+		state.task_summary_cache = { entries = {}, order = {} }
+	end
+	state.task_summary_cache.entries = state.task_summary_cache.entries or {}
+	state.task_summary_cache.order = state.task_summary_cache.order or {}
+	return state.task_summary_cache
+end
+
+---@param child_session_id string
+---@param revision number
+---@return table|nil summary
+---@return string|nil prompt
+---@return boolean found
+function M.task_summary_cache_get(child_session_id, revision)
+	local entry = ensure_task_summary_cache().entries[child_session_id]
+	if entry and entry.revision == revision then
+		return entry.summary, entry.prompt, true
+	end
+	return nil, nil, false
+end
+
+---@param child_session_id string
+---@param revision number
+---@param summary table
+---@param prompt string|nil
+function M.task_summary_cache_put(child_session_id, revision, summary, prompt)
+	local cache = ensure_task_summary_cache()
+	if cache.entries[child_session_id] == nil then
+		table.insert(cache.order, child_session_id)
+	end
+	cache.entries[child_session_id] = {
+		revision = revision,
+		summary = summary,
+		prompt = prompt,
+	}
+	while #cache.order > TASK_SUMMARY_CACHE_MAX_ENTRIES do
+		local oldest = table.remove(cache.order, 1)
+		cache.entries[oldest] = nil
+	end
 end
 
 local function normalize_line(line)
@@ -57,6 +100,7 @@ function M.reset_chat_surface(opts)
 	state.tasks = {}
 	state.task_child_cache = {}
 	state.task_child_loading = {}
+	state.task_summary_cache = { entries = {}, order = {} }
 	state.tools = {}
 	state.todo_dock_signature = nil
 	if opts.reset_expansions then

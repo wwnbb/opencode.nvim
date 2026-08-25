@@ -3,7 +3,6 @@ local M = {}
 local NuiLine = require("nui.line")
 
 local actions = require("opencode.actions")
-local panel = require("opencode.ui.panel")
 local selectors = require("opencode.selectors")
 
 local state = require("opencode.ui.chat.state").state

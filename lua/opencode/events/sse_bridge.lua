@@ -21,6 +21,7 @@ function M.setup(events)
 		["message.part.delta"] = "message_part_delta",
 		["message.part.removed"] = "message_part_removed",
 		["session.updated"] = "session_updated",
+		["session.deleted"] = "session_deleted",
 		["session.status"] = "session_status",
 		["session.idle"] = "session_status",
 		["session.error"] = "session_error",

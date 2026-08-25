@@ -4,18 +4,26 @@
 local M = {}
 
 local Job = require("plenary.job")
-local config = require("opencode.config")
 local state = require("opencode.state")
+local uv = vim.uv or vim.loop
 
 -- Pending callbacks queue for lazy initialization
 local pending_callbacks = {}
 
--- Lifecycle timers
-local check_timer = nil
+-- A managed process remains owned until its exit is observed, including after
+-- startup failure or a successful termination signal.
+local attempt_generation = 0
+local current_attempt = nil
+local listener_clients = setmetatable({}, { __mode = "k" })
 
 -- Forward declarations for functions that need to be called before their definition
 local connect_to_server
 local check_existing_server
+local complete_connection
+local fail_startup
+local begin_health_checks
+local continue_startup
+local setup_event_listeners
 
 -- Default configuration
 M.opts = {
@@ -169,28 +177,173 @@ local function resolve_command(command, env)
 	return command
 end
 
--- Health-check the freshly spawned server
-check_existing_server = function(callback)
-	local server_info = state.get_server_info()
-	if not server_info.port then
-		callback(false)
+local function error_detail(err)
+	if type(err) == "table" then
+		return tostring(err.message or err.error or err.code or "unknown error")
+	end
+	return tostring(err or "unknown error")
+end
+
+local function is_current_attempt(attempt)
+	return current_attempt == attempt
+end
+
+local function stop_attempt_timer(attempt, key)
+	local timer = attempt[key]
+	attempt[key] = nil
+	if not timer then
 		return
 	end
 
-	local http = require("opencode.client.http")
+	if type(timer.stop) == "function" then
+		pcall(timer.stop, timer)
+	end
+	if type(timer.close) == "function" then
+		local closing = false
+		if uv and uv.is_closing then
+			local ok, result = pcall(uv.is_closing, timer)
+			closing = ok and result or false
+		end
+		if not closing then
+			pcall(timer.close, timer)
+		end
+	end
+end
 
-	http.health(function(err, data)
-		if err or not data then
-			callback(false)
+local function cancel_attempt_timers(attempt)
+	stop_attempt_timer(attempt, "timeout_timer")
+	stop_attempt_timer(attempt, "health_timer")
+	stop_attempt_timer(attempt, "exit_timer")
+end
+
+local function signal_succeeded(ok, result, err)
+	return ok and result ~= false and not (result == nil and err ~= nil)
+end
+
+local function signal_process(job, pid)
+	local handle = job and job.handle
+	if handle and type(handle.kill) == "function" then
+		local closing = false
+		if uv and uv.is_closing then
+			local ok, result = pcall(uv.is_closing, handle)
+			closing = ok and result or false
+		end
+		if not closing then
+			local ok, result, err = pcall(handle.kill, handle, 15)
+			if signal_succeeded(ok, result, err) then
+				return true
+			end
+		end
+	end
+
+	if pid and uv and type(uv.kill) == "function" then
+		local ok, result, err = pcall(uv.kill, pid, 15)
+		if signal_succeeded(ok, result, err) then
+			return true
+		end
+	end
+
+	return false
+end
+
+local function signal_attempt(attempt)
+	if attempt.exited or attempt.signal_sent then
+		return true
+	end
+
+	local signaled = signal_process(attempt.job, attempt.pid)
+	if signaled then
+		attempt.signal_sent = true
+	end
+	return signaled
+end
+
+local function take_pending_callbacks()
+	local callbacks = pending_callbacks
+	pending_callbacks = {}
+	return callbacks
+end
+
+local function remove_pending_callback(callback)
+	for index = #pending_callbacks, 1, -1 do
+		if pending_callbacks[index] == callback then
+			table.remove(pending_callbacks, index)
 			return
 		end
+	end
+end
 
-		if data.healthy then
-			callback(true, data.version)
-		else
-			callback(false)
+local function process_callbacks(callbacks)
+	for _, callback in ipairs(callbacks or {}) do
+		local ok, err = pcall(callback)
+		if not ok then
+			vim.notify("Pending callback error: " .. tostring(err), vim.log.levels.ERROR)
 		end
-	end)
+	end
+end
+
+local function run_stop_waiters(waiters)
+	for _, callback in ipairs(waiters or {}) do
+		local ok, err = pcall(callback)
+		if not ok then
+			vim.notify("Stop callback error: " .. tostring(err), vim.log.levels.ERROR)
+		end
+	end
+end
+
+local function release_attempt(attempt, connection)
+	if not is_current_attempt(attempt) then
+		return {}
+	end
+
+	cancel_attempt_timers(attempt)
+	attempt.connection_token = attempt.connection_token + 1
+	attempt.connecting = false
+	pending_callbacks = {}
+
+	local waiters = attempt.stop_waiters or {}
+	attempt.stop_waiters = {}
+	current_attempt = nil
+
+	state.set_server_pid(nil)
+	state.set_server_managed(false)
+	state.set_connection(connection)
+	return waiters
+end
+
+local function has_owned_process(attempt)
+	return attempt.pid ~= nil or (attempt.job and attempt.job.handle ~= nil)
+end
+
+local function connection_is_current(attempt, token, startup)
+	if not is_current_attempt(attempt) then
+		return false
+	end
+	if not attempt.connecting or attempt.connection_token ~= token then
+		return false
+	end
+	if attempt.disconnected or attempt.phase == "stopping" or attempt.phase == "stop_error" then
+		return false
+	end
+	if startup then
+		return not attempt.startup_done
+	end
+	return attempt.startup_done and attempt.phase == "ready"
+end
+
+local function arm_startup_timeout(attempt)
+	if not is_current_attempt(attempt) or attempt.startup_done or attempt.phase ~= "starting" then
+		return
+	end
+
+	stop_attempt_timer(attempt, "timeout_timer")
+	attempt.timeout_timer = vim.defer_fn(function()
+		if not is_current_attempt(attempt) or attempt.startup_done or attempt.phase ~= "starting" then
+			return
+		end
+		attempt.timeout_timer = nil
+		fail_startup(attempt, "OpenCode server startup timed out")
+	end, M.opts.startup_timeout)
 end
 
 -- Parse server URL from output line
@@ -218,8 +371,187 @@ local function parse_server_url(line)
 	return nil
 end
 
+fail_startup = function(attempt, message)
+	if not is_current_attempt(attempt) or attempt.startup_done then
+		return false
+	end
+
+	attempt.startup_done = true
+	attempt.connecting = false
+	attempt.connection_token = attempt.connection_token + 1
+	attempt.disconnected = false
+	attempt.stop_reason = "failure"
+	pending_callbacks = {}
+	cancel_attempt_timers(attempt)
+	state.set_connection("error")
+
+	if attempt.exited or not has_owned_process(attempt) then
+		local waiters = release_attempt(attempt, "error")
+		vim.notify(message, vim.log.levels.ERROR)
+		run_stop_waiters(waiters)
+		return true
+	end
+
+	if signal_attempt(attempt) then
+		attempt.phase = "stopping"
+		vim.notify(message, vim.log.levels.ERROR)
+	else
+		attempt.phase = "stop_error"
+		vim.notify(message .. "; failed to terminate managed server", vim.log.levels.ERROR)
+	end
+	return true
+end
+
+check_existing_server = function(attempt, token, startup, callback)
+	if not connection_is_current(attempt, token, startup) then
+		return
+	end
+
+	local server_info = state.get_server_info()
+	if not server_info.port then
+		callback(false)
+		return
+	end
+
+	local http = require("opencode.client.http")
+	http.health(function(err, data)
+		if not connection_is_current(attempt, token, startup) then
+			return
+		end
+		if err or not data or not data.healthy then
+			callback(false)
+			return
+		end
+		callback(true, data.version)
+	end)
+end
+
+complete_connection = function(attempt, token, startup, success, version, failure_message)
+	if not connection_is_current(attempt, token, startup) then
+		return false
+	end
+
+	attempt.connecting = false
+	stop_attempt_timer(attempt, "health_timer")
+
+	if not success then
+		pending_callbacks = {}
+		if startup then
+			return fail_startup(attempt, failure_message)
+		end
+		state.set_connection("error")
+		vim.notify(failure_message, vim.log.levels.ERROR)
+		return true
+	end
+
+	if startup then
+		attempt.startup_done = true
+		attempt.phase = "ready"
+		stop_attempt_timer(attempt, "timeout_timer")
+	end
+
+	state.set_connection("connected")
+	state.set_server_info({ version = version })
+
+	local callbacks = take_pending_callbacks()
+	vim.schedule(function()
+		process_callbacks(callbacks)
+	end)
+	vim.notify("OpenCode connected (server v" .. (version or "unknown") .. ")", vim.log.levels.INFO)
+	return true
+end
+
+begin_health_checks = function(attempt, startup)
+	if not is_current_attempt(attempt) then
+		return false
+	end
+	if attempt.phase == "stopping" or attempt.phase == "stop_error" then
+		return false
+	end
+
+	attempt.connection_token = attempt.connection_token + 1
+	attempt.connecting = true
+	local token = attempt.connection_token
+
+	local function check(retry)
+		if not connection_is_current(attempt, token, startup) then
+			return
+		end
+
+		check_existing_server(attempt, token, startup, function(running, version)
+			if not connection_is_current(attempt, token, startup) then
+				return
+			end
+			if running then
+				connect_to_server(attempt, token, startup, version)
+			elseif retry then
+				complete_connection(
+					attempt,
+					token,
+					startup,
+					false,
+					nil,
+					"OpenCode server health check failed"
+				)
+			else
+				attempt.health_timer = vim.defer_fn(function()
+					if not connection_is_current(attempt, token, startup) then
+						return
+					end
+					attempt.health_timer = nil
+					check(true)
+				end, 500)
+			end
+		end)
+	end
+
+	check(false)
+	return true
+end
+
+continue_startup = function(attempt)
+	if not is_current_attempt(attempt) then
+		return false
+	end
+	if attempt.startup_done or attempt.phase ~= "starting" or attempt.disconnected or attempt.connecting then
+		return false
+	end
+
+	local server_info = attempt.listening_info
+	if not server_info then
+		return true
+	end
+
+	if not attempt.configured then
+		state.set_server_info({
+			host = server_info.host,
+			port = server_info.port,
+		})
+
+		local http = require("opencode.client.http")
+		http.setup({
+			host = server_info.host,
+			port = server_info.port,
+		})
+
+		local sse = require("opencode.client.sse")
+		sse.setup({
+			host = server_info.host,
+			port = server_info.port,
+		})
+
+		attempt.configured = true
+		if M.opts.debug then
+			vim.notify("OpenCode server started on " .. server_info.url, vim.log.levels.DEBUG)
+		end
+	end
+
+	state.set_connection("connecting")
+	return begin_health_checks(attempt, true)
+end
+
 -- Start OpenCode server process
-local function spawn_server(callback)
+local function spawn_server()
 	local host = state.get_server_info().host
 	local env = build_server_env()
 
@@ -233,163 +565,154 @@ local function spawn_server(callback)
 		"--port",
 	}
 
+	attempt_generation = attempt_generation + 1
+	local attempt = {
+		id = attempt_generation,
+		phase = "starting",
+		startup_done = false,
+		connecting = false,
+		connection_token = 0,
+		disconnected = false,
+		exited = false,
+		signal_sent = false,
+		stop_waiters = {},
+	}
+	current_attempt = attempt
+
 	state.set_connection("starting")
 	state.set_server_managed(true)
+	state.set_server_pid(nil)
 
-	local server_ready = false
-	local server_job
+	local ok, server_job = pcall(function()
+		return Job:new({
+			command = cmd,
+			args = args,
+			env = env,
+			on_stdout = function(_, data)
+				if not is_current_attempt(attempt) or attempt.startup_done or attempt.phase ~= "starting" or not data then
+					return
+				end
 
-	server_job = Job:new({
-		command = cmd,
-		args = args,
-		env = env,
-		on_stdout = function(_, data)
-			if data then
-				-- Try to parse server URL from output
 				local server_info = parse_server_url(data)
-				if server_info and not server_ready then
-					server_ready = true
-
+				if server_info and not attempt.listening_info then
+					attempt.listening_info = server_info
 					vim.schedule(function()
-						-- Update state and HTTP client with actual port
-						state.set_server_info({
-							host = server_info.host,
-							port = server_info.port,
-						})
-
-						-- Update HTTP client configuration
-						local http = require("opencode.client.http")
-						http.setup({
-							host = server_info.host,
-							port = server_info.port,
-						})
-
-						-- Update SSE client configuration
-						local sse = require("opencode.client.sse")
-						sse.setup({
-							host = server_info.host,
-							port = server_info.port,
-						})
-
-						if M.opts.debug then
-							vim.notify("OpenCode server started on " .. server_info.url, vim.log.levels.DEBUG)
+						if not is_current_attempt(attempt) then
+							return
 						end
-
-						-- Now connect to the server
-						state.set_connection("connecting")
-						check_existing_server(function(running, version)
-							if running then
-								connect_to_server(version)
-							else
-								-- Server reported listening but health check failed, retry
-								vim.defer_fn(function()
-									check_existing_server(function(retry_running, retry_version)
-										if retry_running then
-											connect_to_server(retry_version)
-										else
-											state.set_connection("error")
-											vim.notify("OpenCode server health check failed", vim.log.levels.ERROR)
-											callback({ error = "Health check failed" })
-										end
-									end)
-								end, 500)
-							end
-						end)
+						continue_startup(attempt)
 					end)
 				elseif M.opts.debug then
 					vim.schedule(function()
+						if not is_current_attempt(attempt) or attempt.startup_done then
+							return
+						end
 						vim.notify("OpenCode server: " .. data, vim.log.levels.DEBUG)
 					end)
 				end
-			end
-		end,
-		on_stderr = function(_, data)
-			-- Server errors/warnings (including "Warning: OPENCODE_SERVER_PASSWORD is not set")
-			if data then
+			end,
+			on_stderr = function(_, data)
+				if not is_current_attempt(attempt) or attempt.startup_done or not data then
+					return
+				end
 				vim.schedule(function()
+					if not is_current_attempt(attempt) or attempt.startup_done then
+						return
+					end
 					if M.opts.debug then
 						vim.notify("OpenCode server stderr: " .. data, vim.log.levels.DEBUG)
 					end
 				end)
-			end
-		end,
-		on_exit = function(_, code)
-			vim.schedule(function()
-				if state.is_server_managed() then
-					state.set_server_pid(nil)
-					state.set_connection("idle")
+			end,
+			on_exit = function(_, code, signal)
+				if not is_current_attempt(attempt) then
+					return
+				end
+				attempt.exited = true
+				attempt.exit_code = code
+				attempt.exit_signal = signal
 
+				vim.schedule(function()
+					if not is_current_attempt(attempt) then
+						return
+					end
+
+					if attempt.stop_reason then
+						local reason = attempt.stop_reason
+						local connection = reason == "failure" and "error" or "idle"
+						local waiters = release_attempt(attempt, connection)
+						if reason == "stop" then
+							vim.notify("OpenCode server stopped", vim.log.levels.INFO)
+						end
+						run_stop_waiters(waiters)
+						return
+					end
+
+					if not attempt.startup_done then
+						fail_startup(
+							attempt,
+							"OpenCode server exited before readiness with code: " .. tostring(code)
+						)
+						return
+					end
+
+					local waiters = release_attempt(attempt, "idle")
 					if code ~= 0 and code ~= 143 then -- 143 is SIGTERM
 						vim.notify("OpenCode server exited with code: " .. code, vim.log.levels.WARN)
 					end
-				end
-			end)
-		end,
-	})
+					run_stop_waiters(waiters)
+				end)
+			end,
+		})
+	end)
 
-	-- Start the server
-	server_job:start()
-
-	-- Get PID (may take a moment)
-	vim.defer_fn(function()
-		local pid = server_job.pid
-		if pid then
-			state.set_server_pid(pid)
-		end
-	end, 100)
-
-	-- Timeout handler - if we don't get the "listening on" message in time
-	local start_time = vim.uv.now()
-	local timeout = M.opts.startup_timeout
-
-	local function check_timeout()
-		if server_ready then
-			return -- Already connected
-		end
-
-		local elapsed = vim.uv.now() - start_time
-		if elapsed >= timeout then
-			state.set_connection("error")
-			vim.schedule(function()
-				vim.notify("OpenCode server startup timed out", vim.log.levels.ERROR)
-				callback({ error = "Startup timeout" })
-			end)
-			return
-		end
-
-		-- Check again
-		check_timer = vim.defer_fn(check_timeout, M.opts.health_check_interval)
+	if not ok then
+		fail_startup(attempt, "Failed to start OpenCode server: " .. error_detail(server_job))
+		return false
 	end
 
-	-- Start timeout check
-	check_timer = vim.defer_fn(check_timeout, M.opts.health_check_interval)
-end
+	attempt.job = server_job
+	arm_startup_timeout(attempt)
 
--- Process queued callbacks after connection
-local function process_pending_callbacks()
-	while #pending_callbacks > 0 do
-		local cb = table.remove(pending_callbacks, 1)
-		local ok, err = pcall(cb)
-		if not ok then
-			vim.notify("Pending callback error: " .. tostring(err), vim.log.levels.ERROR)
-		end
+	local started, start_err = pcall(function()
+		server_job:start()
+	end)
+	attempt.pid = server_job.pid
+	if attempt.pid and is_current_attempt(attempt) then
+		state.set_server_pid(attempt.pid)
 	end
+
+	if not started then
+		fail_startup(attempt, "Failed to start OpenCode server: " .. error_detail(start_err))
+		return false
+	end
+
+	return is_current_attempt(attempt) and (attempt.phase == "starting" or attempt.phase == "ready")
 end
 
 -- Setup SSE event listeners
-local function setup_event_listeners(client)
+setup_event_listeners = function(client)
+	if listener_clients[client] then
+		return
+	end
 	-- Connection events (SSE-level)
 	client.on_event("connected", function()
 		-- SSE connected, server.connected event will follow
 	end)
 
 	client.on_event("disconnected", function(reason)
+		if current_attempt and current_attempt.phase == "stop_error" then
+			return
+		end
 		state.set_connection("idle")
 		vim.notify("OpenCode disconnected: " .. (reason or "unknown"), vim.log.levels.WARN)
 	end)
 
 	-- Server connection event (from server, not SSE level)
 	client.on_event("server.connected", function()
+		if current_attempt and (current_attempt.phase == "stopping" or current_attempt.phase == "stop_error") then
+			return
+		end
 		state.set_connection("connected")
 	end)
 
@@ -405,25 +728,38 @@ local function setup_event_listeners(client)
 
 	-- File edit events are handled by events.lua edit handler
 	-- which integrates with changes module and diff viewer
+listener_clients[client] = true
 end
 
 -- Connect to running server
-connect_to_server = function(version)
+connect_to_server = function(attempt, token, startup, version)
+	if not connection_is_current(attempt, token, startup) then
+		return false
+	end
+
 	local client = require("opencode.client")
-
-	state.set_connection("connected")
-	state.set_server_info({ version = version })
-
-	-- Start event stream
-	client.connect_events()
-
-	-- Setup event listeners
 	setup_event_listeners(client)
 
-	-- Process any pending callbacks
-	vim.schedule(process_pending_callbacks)
+	local ok, connected, connect_err = pcall(function()
+		return client.connect_events()
+	end)
+	if not ok then
+		connect_err = connected
+		connected = false
+	end
 
-	vim.notify("OpenCode connected (server v" .. (version or "unknown") .. ")", vim.log.levels.INFO)
+	if connected ~= true then
+		return complete_connection(
+			attempt,
+			token,
+			startup,
+			false,
+			nil,
+			"Failed to connect OpenCode event stream: " .. error_detail(connect_err)
+		)
+	end
+
+	return complete_connection(attempt, token, startup, true, version)
 end
 
 -- Ensure server is connected (lazy initialization entry point)
@@ -440,7 +776,9 @@ function M.ensure_connected(callback)
 	if connection == "idle" or connection == "error" then
 		-- Need to start/connect
 		table.insert(pending_callbacks, callback)
-		M.start()
+		if not M.start() then
+			remove_pending_callback(callback)
+		end
 		return false
 	end
 
@@ -460,63 +798,167 @@ function M.start()
 		return false
 	end
 
-	if state.get_connection() ~= "idle" and state.get_connection() ~= "error" then
+	local connection = state.get_connection()
+	if connection ~= "idle" and connection ~= "error" then
 		return false -- Already starting/connecting/connected
 	end
 
-	spawn_server(function(err)
-		if err then
-			state.set_connection("error")
-			vim.notify("Failed to start OpenCode server: " .. err.error, vim.log.levels.ERROR)
+	if current_attempt then
+		local attempt = current_attempt
+		if attempt.phase == "ready" then
+			attempt.disconnected = false
+			state.set_connection("connecting")
+			return begin_health_checks(attempt, false)
 		end
-	end)
+		if attempt.phase == "starting" and not attempt.startup_done then
+			attempt.disconnected = false
+			state.set_connection("starting")
+			arm_startup_timeout(attempt)
+			if attempt.listening_info then
+				return continue_startup(attempt)
+			end
+			return true
+		end
+		return false
+	end
 
-	return true
+	return spawn_server()
+end
+
+local function pid_is_running(pid)
+	if not pid or not uv or type(uv.kill) ~= "function" then
+		return nil
+	end
+
+	local ok, result, err = pcall(uv.kill, pid, 0)
+	if not ok then
+		return nil
+	end
+	if signal_succeeded(ok, result, err) then
+		return true
+	end
+
+	local detail = tostring(err or result or ""):lower()
+	if detail:find("esrch", 1, true) or detail:find("no such process", 1, true) then
+		return false
+	end
+	return nil
+end
+
+local function observe_untracked_exit(attempt)
+	if not is_current_attempt(attempt) or not attempt.untracked or attempt.phase ~= "stopping" then
+		return
+	end
+
+	local started_at = uv and uv.now and uv.now() or math.floor(os.clock() * 1000)
+	local interval = math.max(50, tonumber(M.opts.health_check_interval) or 100)
+
+	local function check()
+		if not is_current_attempt(attempt) or attempt.phase ~= "stopping" then
+			return
+		end
+
+		if pid_is_running(attempt.pid) == false then
+			attempt.exited = true
+			local waiters = release_attempt(attempt, "idle")
+			vim.notify("OpenCode server stopped", vim.log.levels.INFO)
+			run_stop_waiters(waiters)
+			return
+		end
+
+		local now = uv and uv.now and uv.now() or math.floor(os.clock() * 1000)
+		if now - started_at >= M.opts.startup_timeout then
+			attempt.phase = "stop_error"
+			state.set_connection("error")
+			vim.notify("OpenCode server did not exit after termination signal", vim.log.levels.ERROR)
+			return
+		end
+
+		attempt.exit_timer = vim.defer_fn(function()
+			if not is_current_attempt(attempt) then
+				return
+			end
+			attempt.exit_timer = nil
+			check()
+		end, interval)
+	end
+
+	check()
 end
 
 -- Stop server (only if we started it)
-function M.stop()
+function M.stop(on_stopped)
 	if not state.is_server_managed() then
 		vim.notify("Cannot stop external OpenCode server", vim.log.levels.WARN)
 		return false
 	end
 
-	local pid = state.get_server_pid()
-	if not pid then
+	local attempt = current_attempt
+	local pid = state.get_server_pid() or (attempt and attempt.pid)
+	if not attempt then
+		if not pid then
+			vim.notify("No OpenCode server PID found", vim.log.levels.WARN)
+			return false
+		end
+
+		attempt_generation = attempt_generation + 1
+		attempt = {
+			id = attempt_generation,
+			phase = "ready",
+			startup_done = true,
+			connecting = false,
+			connection_token = 0,
+			disconnected = false,
+			exited = false,
+			signal_sent = false,
+			stop_waiters = {},
+			pid = pid,
+			untracked = true,
+		}
+		current_attempt = attempt
+	end
+
+	if type(on_stopped) == "function" then
+		table.insert(attempt.stop_waiters, on_stopped)
+	end
+
+	if attempt.phase == "stopping" then
+		return true
+	end
+	if not pid and not (attempt.job and attempt.job.handle) then
 		vim.notify("No OpenCode server PID found", vim.log.levels.WARN)
 		return false
 	end
 
-	-- Kill the server process
-	local kill_job = Job:new({
-		command = "kill",
-		args = { tostring(pid) },
-		on_exit = function(_, code)
-			vim.schedule(function()
-				if code == 0 then
-					state.set_server_pid(nil)
-					state.set_server_managed(false)
-					state.set_connection("idle")
-					vim.notify("OpenCode server stopped", vim.log.levels.INFO)
-				else
-					vim.notify("Failed to stop OpenCode server (exit code: " .. code .. ")", vim.log.levels.ERROR)
-				end
-			end)
-		end,
-	})
+	attempt.startup_done = true
+	attempt.connecting = false
+	attempt.connection_token = attempt.connection_token + 1
+	attempt.disconnected = true
+	attempt.stop_reason = "stop"
+	pending_callbacks = {}
+	cancel_attempt_timers(attempt)
 
-	kill_job:start()
+	if not signal_attempt(attempt) then
+		attempt.phase = "stop_error"
+		state.set_connection("error")
+		vim.notify("Failed to stop OpenCode server", vim.log.levels.ERROR)
+		return false
+	end
+
+	attempt.phase = "stopping"
+	state.set_connection("idle")
+	if attempt.untracked then
+		observe_untracked_exit(attempt)
+	end
 	return true
 end
 
 -- Restart server
 function M.restart()
 	if state.is_server_managed() then
-		M.stop()
-		-- Wait a moment then start again
-		vim.defer_fn(function()
+		M.stop(function()
 			M.start()
-		end, 1000)
+		end)
 	else
 		-- For external servers, just reconnect
 		local client = require("opencode.client")
@@ -533,21 +975,29 @@ end
 function M.disconnect()
 	local client = require("opencode.client")
 	local cleanup = require("opencode.cleanup")
+	local attempt = current_attempt
+
+	if attempt then
+		attempt.connection_token = attempt.connection_token + 1
+		attempt.connecting = false
+		attempt.disconnected = true
+		stop_attempt_timer(attempt, "health_timer")
+		if not attempt.startup_done then
+			stop_attempt_timer(attempt, "timeout_timer")
+		end
+	end
 
 	client.disconnect_events()
 	cleanup.clear_transient({
 		clear_chat = true,
 		reset_state = false,
 	})
-	state.set_connection("idle")
-
 	-- Clear any pending callbacks
 	pending_callbacks = {}
-
-	-- Stop check timer if running
-	if check_timer then
-		check_timer:stop()
-		check_timer = nil
+	if attempt and attempt.phase == "stop_error" then
+		state.set_connection("error")
+	else
+		state.set_connection("idle")
 	end
 
 	vim.notify("OpenCode disconnected", vim.log.levels.INFO)

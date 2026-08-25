@@ -52,6 +52,21 @@ function M.setup(events)
 	events.on("session_change", function()
 		vim.schedule(refresh_all)
 	end)
+
+	-- Server-side session deletion (SSE session.deleted).
+	-- Tolerates sessions this client never tracked (foreign project deletes).
+	events.on("session_deleted", function(data)
+		vim.schedule(function()
+			local info = type(data) == "table" and data.info or nil
+			local session_id = (type(data) == "table" and (data.sessionID or data.sessionId))
+				or (type(info) == "table" and info.id)
+				or nil
+			if not session_id or session_id == "" then
+				return
+			end
+			session_actions.handle_deleted(session_id, { reason = "session_deleted" })
+		end)
+	end)
 end
 
 return M

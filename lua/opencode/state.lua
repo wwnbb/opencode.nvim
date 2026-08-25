@@ -354,45 +354,6 @@ function M.set_recent_sessions(sessions, limit)
 	emit_change("sessions.recent_order", old, state.sessions.recent_order)
 end
 
----@return table[]
-function M.get_recent_sessions()
-	local result = {}
-	local seen = {}
-	for _, id in ipairs(state.sessions.recent_order or {}) do
-		local record = state.sessions.by_id[id]
-		if record and not seen[id] then
-			table.insert(result, vim.deepcopy(record))
-			seen[id] = true
-		end
-	end
-
-	if state.session.id and M.is_runtime_session(state.session.id) and not seen[state.session.id] then
-		table.insert(result, 1, {
-			id = state.session.id,
-			title = state.session.name,
-			name = state.session.name,
-			message_count = state.session.message_count,
-		})
-	end
-
-	return result
-end
-
----@return table[]
-function M.get_runtime_sessions()
-	local result = {}
-	local seen = {}
-	for _, id in ipairs(state.sessions.runtime_order or {}) do
-		local record = state.sessions.by_id[id]
-		if record and not seen[id] then
-			table.insert(result, vim.deepcopy(record))
-			seen[id] = true
-		end
-	end
-
-	return result
-end
-
 ---@param session_id string|nil
 ---@return boolean
 function M.is_runtime_session(session_id)
@@ -539,15 +500,19 @@ end
 ---@param session_id string
 ---@param status table|string
 ---@return table|nil previous
+---@return boolean changed
 function M.set_session_status(session_id, status)
 	if not session_id or session_id == "" then
-		return nil
+		return nil, false
 	end
 	local old = state.sessions.status[session_id]
 	local next_status = session_status.normalize_session_status(status)
+	if vim.deep_equal(old, next_status) then
+		return old and vim.deepcopy(old) or nil, false
+	end
 	state.sessions.status[session_id] = next_status
 	emit_change("sessions.status." .. session_id, old, next_status)
-	return old and vim.deepcopy(old) or nil
+	return old and vim.deepcopy(old) or nil, true
 end
 
 ---@param session_id string|nil
@@ -691,12 +656,6 @@ function M.get_message_count()
 	return get("message_count", "session") or 0
 end
 
-function M.increment_message_count()
-	local current = M.get_message_count()
-	M.set_message_count(current + 1)
-	return current + 1
-end
-
 -- Status
 
 function M.set_status(status)
@@ -774,18 +733,6 @@ function M.get_pending_change(file_path)
 		end
 	end
 	return state.pending_changes.files[file_path] and vim.deepcopy(state.pending_changes.files[file_path]) or nil
-end
-
-function M.get_all_pending_changes()
-	local ok, changes = pcall(require, "opencode.artifact.changes")
-	if ok and changes.get_pending then
-		local result = {}
-		for _, change in ipairs(changes.get_pending()) do
-			result[change.filepath] = change
-		end
-		return result
-	end
-	return vim.deepcopy(state.pending_changes.files)
 end
 
 function M.get_pending_changes_stats()

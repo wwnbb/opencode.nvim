@@ -180,18 +180,6 @@ function M.register(cmd)
 	}
 end
 
--- Unregister a command
----@param id string Command ID
-function M.unregister(id)
-	commands[id] = nil
-end
-
--- Get all registered commands
----@return table
-function M.get_commands()
-	return vim.deepcopy(commands)
-end
-
 -- Check if command is enabled
 local function is_enabled(cmd)
 	if cmd.enabled == nil then

@@ -225,60 +225,6 @@ function M.get_active_session_views()
 	return result
 end
 
----@return table[]
-function M.get_recent_session_views()
-	local state_mod = require("opencode.state")
-	local sessions, current = sessions_snapshot(state_mod)
-	local runtime_ids = runtime_lookup(sessions)
-	local root_id = current_root_id(state_mod, current)
-	local result = {}
-	local seen = {}
-
-	local function add(id, allow_fallback)
-		if not id or id == "" or seen[id] then
-			return
-		end
-		local record = allow_fallback and record_for_session(sessions, current, runtime_ids, id)
-			or (sessions.by_id and sessions.by_id[id] and vim.deepcopy(sessions.by_id[id]) or nil)
-		local view = view_for_record(record, sessions, current, runtime_ids, root_id)
-		if view then
-			table.insert(result, view)
-			seen[id] = true
-		end
-	end
-
-	for _, id in ipairs(sessions.recent_order or {}) do
-		add(id, false)
-	end
-	if current.id and runtime_ids[current.id] and not seen[current.id] then
-		local record = record_for_session(sessions, current, runtime_ids, current.id)
-		local view = view_for_record(record, sessions, current, runtime_ids, root_id)
-		if view then
-			table.insert(result, 1, view)
-		end
-	end
-
-	return result
-end
-
----@return table
-function M.get_active_session_counts()
-	local counts = { running = 0, waiting = 0, error = 0, total = 0 }
-	for _, view in ipairs(M.get_active_session_views()) do
-		counts.total = counts.total + 1
-		if view:is_busy() then
-			counts.running = counts.running + 1
-		end
-		if view:is_waiting() then
-			counts.waiting = counts.waiting + 1
-		end
-		if view:is_error() then
-			counts.error = counts.error + 1
-		end
-	end
-	return counts
-end
-
 ---@return table|nil
 function M.current_agent()
 	local ok, local_state = pcall(require, "opencode.local")
@@ -295,15 +241,6 @@ function M.current_model()
 		return nil
 	end
 	return local_state.model.parsed()
-end
-
----@return string|nil
-function M.current_variant()
-	local ok, local_state = pcall(require, "opencode.local")
-	if not ok or not local_state.variant or type(local_state.variant.current) ~= "function" then
-		return nil
-	end
-	return local_state.variant.current()
 end
 
 ---@return table

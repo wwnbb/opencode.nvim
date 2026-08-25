@@ -13,7 +13,6 @@ M.defaults = {
 			username = "opencode",
 			password = nil,
 		},
-		lazy = true,
 		auto_start = true,
 		startup_timeout = 10000,
 		health_check_interval = 1000,
@@ -25,8 +24,6 @@ M.defaults = {
 
 	-- Session
 	session = {
-		auto_create = true,
-		auto_restore = true,
 		default_agent = "build",
 		default_model = {
 			providerID = "github-copilot",
@@ -117,9 +114,6 @@ M.defaults = {
 	-- Markdown rendering
 	markdown = {
 		enable_code_highlight = true,
-		max_code_lines = 50,
-		enable_inline_code = true,
-		code_languages = {},
 	},
 
 	-- Best-effort syntax highlighting for code-like chat surfaces
@@ -134,14 +128,6 @@ M.defaults = {
 		languages = {},
 	},
 
-	-- Tool calls
-	tools = {
-		enable_display = true,
-		icons = {},
-		status_icons = {},
-		auto_expand_errors = true,
-	},
-
 	-- Thinking/reasoning display
 	thinking = {
 		enabled = true,
@@ -150,24 +136,6 @@ M.defaults = {
 		icon = "💭",
 		highlight = "Comment",
 		header_highlight = "Title",
-		throttle_ms = 100,
-	},
-
-	-- Context attachment
-	context = {
-		max_attachments = 10,
-		max_file_size = 1024 * 1024,
-		excluded_patterns = {
-			"%.git/",
-			"node_modules/",
-			"%.lock$",
-			"%-lock%.",
-		},
-		preview = {
-			enabled = true,
-			height = 10,
-			width = 60,
-		},
 	},
 
 	-- Artifact changes
@@ -204,20 +172,6 @@ M.defaults = {
 		diff_stats_cache_ms = 2000,
 		diff_stats_include_untracked = true,
 		diff_stats_max_untracked_file_size = 1024 * 1024,
-	},
-
-	-- Question tool
-	question = {
-		enabled = true,
-		icon_pending = "💭",
-		icon_answered = "✓",
-		icon_rejected = "✗",
-		highlight_header = "Title",
-		highlight_selected = "CursorLine",
-		highlight_option = "Normal",
-		max_height = 10,
-		show_keymap_hint = true,
-		auto_focus = true,
 	},
 
 	-- Command Palette
