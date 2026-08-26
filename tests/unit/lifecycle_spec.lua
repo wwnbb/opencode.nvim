@@ -66,6 +66,15 @@ describe("opencode lifecycle", function()
 		return job
 	end
 
+	local function last_active_timer()
+		for index = #timers, 1, -1 do
+			if timers[index].active then
+				return timers[index]
+			end
+		end
+		return nil
+	end
+
 	before_each(function()
 		saved_modules = {}
 		for _, name in ipairs(module_names) do
@@ -304,17 +313,16 @@ describe("opencode lifecycle", function()
 
 	it("waits for delayed process exit before restarting", function()
 		local first_job = complete_start(nil, 4201)
-		local timer_count = #timers
 
 		lifecycle.restart()
 
 		assert_eq(first_job.signal_count, 1, "restart signal dispatch")
 		assert_eq(first_job.last_signal, 15, "restart signal")
 		assert_eq(#jobs, 1, "restart before exit")
-		assert_eq(#timers, timer_count, "restart must not use a fixed delay")
+		assert_eq(client.disconnect_calls, 1, "restart disconnects SSE before teardown")
 
 		flush_scheduled()
-		assert_eq(#jobs, 1, "restart remains pending")
+		assert_eq(#jobs, 1, "restart remains pending until observed exit")
 
 		first_job.opts.on_exit(first_job, 0, 15)
 		flush_scheduled()
@@ -453,14 +461,44 @@ describe("opencode lifecycle", function()
 
 		assert_eq(lifecycle.stop(), true, "first stop")
 		assert_eq(job.signal_count, 1, "first stop signal")
+		assert_eq(job.last_signal, 15, "first stop SIGTERM")
+		assert_eq(client.disconnect_calls, 1, "stop disconnects SSE")
 		assert_eq(#jobs, 1, "stop kill job count")
 		assert_eq(lifecycle.stop(), true, "repeated stop")
 		assert_eq(job.signal_count, 1, "repeated stop signal")
+		assert_eq(client.disconnect_calls, 1, "repeated stop does not disconnect twice")
 		assert_eq(state_data.server.managed, true, "managed before exit")
 
 		job.opts.on_exit(job, 0, 15)
 		flush_scheduled()
 		assert_eq(state_data.server.managed, false, "managed after exit")
+	end)
+
+	it("escalates a hung stop to SIGKILL then releases ownership", function()
+		local job = complete_start(nil, 4701)
+
+		assert_eq(lifecycle.stop(), true, "hung stop")
+		assert_eq(job.last_signal, 15, "hung stop SIGTERM")
+		assert_eq(lifecycle.start(), false, "start blocked while stopping")
+
+		local term_timer = last_active_timer()
+		assert(term_timer, "stop timeout must be armed")
+		fire_timer(term_timer)
+
+		assert_eq(job.signal_count, 2, "SIGKILL dispatch")
+		assert_eq(job.last_signal, 9, "hung stop SIGKILL")
+		assert_eq(lifecycle.start(), false, "start blocked after SIGKILL")
+		assert_eq(state_data.server.managed, true, "owned after SIGKILL")
+
+		local kill_timer = last_active_timer()
+		assert(kill_timer, "SIGKILL wait must be armed")
+		fire_timer(kill_timer)
+		flush_scheduled()
+
+		assert_eq(state_data.server.managed, false, "released after SIGKILL timeout")
+		assert_eq(state_data.connection, "error", "error after SIGKILL timeout")
+		assert_eq(lifecycle.start(), true, "start after hang release")
+		assert_eq(#jobs, 2, "replacement job after hang release")
 	end)
 
 	it("does not retain callbacks when auto-start is disabled", function()

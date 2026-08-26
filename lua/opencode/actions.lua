@@ -213,7 +213,7 @@ function M.load_session_messages(session_id, opts, callback)
 			if not err and response and type(response) == "table" then
 				local store = sync()
 				if type(store.handle_session_messages) == "function" then
-					store.handle_session_messages(session_id, response)
+					store.handle_session_messages(session_id, response, { reconcile = true })
 				else
 					for _, msg_with_parts in ipairs(response) do
 						local info = msg_with_parts.info
