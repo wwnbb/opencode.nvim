@@ -164,7 +164,22 @@ end
 
 local function get_current_session_status(ctx)
 	if ctx.current_session.id then
-		return app_state.get_session_status(ctx.current_session.id)
+		local state_status = app_state.get_session_status(ctx.current_session.id)
+		-- The state store is normally mirrored from the same session.status SSE
+		-- event as sync. During an SSE/hydration race it may briefly still be
+		-- idle while sync already has the server's busy status. Do not lose the
+		-- processing footer in that window: a busy sync status is sufficient to
+		-- keep the active session visibly animated.
+		if processing_footer.is_processing(state_status) then
+			return state_status
+		end
+
+		local sync_status = sync.get_session_status(ctx.current_session.id)
+		if processing_footer.is_processing(sync_status) then
+			return sync_status
+		end
+
+		return state_status
 	end
 	return app_state.get_status()
 end

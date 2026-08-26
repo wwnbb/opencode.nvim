@@ -111,24 +111,45 @@ local function default_sort(a, b)
 end
 
 local function default_filter(item, query)
-	if query == "" then
+	local terms = {}
+	for term in query:gmatch("%S+") do
+		table.insert(terms, term)
+	end
+	if #terms == 0 then
 		return true
 	end
 
-	local label = item_label(item):lower()
-	if label:find(query, 1, true) then
-		return true
-	end
-
+	local searchable_text = { item_label(item):lower() }
 	local description = item_description(item)
-	if description and description:lower():find(query, 1, true) then
-		return true
+	if description then
+		table.insert(searchable_text, description:lower())
+	end
+	if type(item) == "table" then
+		if item.value ~= nil then
+			table.insert(searchable_text, tostring(item.value):lower())
+		end
+		if item.key ~= nil then
+			table.insert(searchable_text, tostring(item.key):lower())
+		end
 	end
 
-	if type(item) == "table" and item.value ~= nil then
-		return tostring(item.value):lower():find(query, 1, true) ~= nil
+	-- Treat whitespace-separated words as an AND query. This lets users narrow
+	-- model lists with both a provider and model name, even when the label has
+	-- punctuation or other text between them.
+	for _, term in ipairs(terms) do
+		local found = false
+		for _, text in ipairs(searchable_text) do
+			if text:find(term, 1, true) then
+				found = true
+				break
+			end
+		end
+		if not found then
+			return false
+		end
 	end
-	return false
+
+	return true
 end
 
 local function format_item_line(item, selected, selected_items, multi_select, width)
