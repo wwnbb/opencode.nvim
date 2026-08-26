@@ -1544,6 +1544,7 @@ do
 		winid = chat_state.winid,
 		visible = chat_state.visible,
 		stream_blocks = chat_state.stream_blocks,
+		spinner_footer_line = chat_state.spinner_footer_line,
 		auto_scroll = chat_state.auto_scroll,
 	}
 
@@ -1571,8 +1572,13 @@ do
 		text = "hello",
 	})
 	vim.bo[bufnr].modifiable = true
-	vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { "hello" })
+	vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { "hello", "\\ Coder_v2 · GPT-5.5" })
 	vim.bo[bufnr].modifiable = false
+	vim.api.nvim_buf_set_extmark(bufnr, require("opencode.ui.chat.state").chat_hl_ns, 1, 2, {
+		end_col = 10,
+		hl_group = "OpenCodeAgent_coder_v2",
+	})
+	chat_state.spinner_footer_line = 1
 
 	local block_key = render_state.stream_block_key("stream_session", "stream_message", "stream_part", "text")
 	chat_state.stream_blocks[block_key] = {
@@ -1620,15 +1626,49 @@ do
 		"newline stream delta should fall back to block replacement"
 	)
 	local updated_stream_lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
-	assert(#updated_stream_lines == 2, "newline stream delta should grow rendered block")
+	assert(#updated_stream_lines == 3, "newline stream delta should grow rendered block without losing footer")
 	assert(updated_stream_lines[1] == "hello world", "newline fallback should preserve first line")
 	assert(updated_stream_lines[2] == "next", "newline fallback should render next line")
+	assert(updated_stream_lines[3]:find("Coder_v2", 1, true), "stream growth should preserve footer text")
+	assert(chat_state.spinner_footer_line == 2, "stream growth should shift tracked footer line")
+	local footer_marks = vim.api.nvim_buf_get_extmarks(
+		bufnr,
+		require("opencode.ui.chat.state").chat_hl_ns,
+		{ 2, 0 },
+		{ 2, -1 },
+		{ details = true }
+	)
+	assert(#footer_marks == 1, "stream growth should preserve footer agent highlight")
+	assert(footer_marks[1][4].hl_group == "OpenCodeAgent_coder_v2", "wrong footer highlight after stream growth")
+
+	sync.get_part("stream_message", "stream_part").text = "short"
+	assert(
+		chat.update_stream_part_block("stream_session", "stream_message", "stream_part"),
+		"stream replacement should shrink rendered block"
+	)
+	updated_stream_lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+	assert(
+		#updated_stream_lines == 2,
+		"stream shrink should keep footer immediately after content: " .. vim.inspect(updated_stream_lines)
+	)
+	assert(updated_stream_lines[1] == "short", "stream shrink should render replacement text")
+	assert(updated_stream_lines[2]:find("Coder_v2", 1, true), "stream shrink should preserve footer text")
+	assert(chat_state.spinner_footer_line == 1, "stream shrink should shift tracked footer line back")
+	footer_marks = vim.api.nvim_buf_get_extmarks(
+		bufnr,
+		require("opencode.ui.chat.state").chat_hl_ns,
+		{ 1, 0 },
+		{ 1, -1 },
+		{ details = true }
+	)
+	assert(#footer_marks == 1, "stream shrink should preserve footer agent highlight")
 
 	sync.clear_all()
 	chat_state.bufnr = previous_state.bufnr
 	chat_state.winid = previous_state.winid
 	chat_state.visible = previous_state.visible
 	chat_state.stream_blocks = previous_state.stream_blocks
+	chat_state.spinner_footer_line = previous_state.spinner_footer_line
 	chat_state.auto_scroll = previous_state.auto_scroll
 	if previous_session and previous_session.id then
 		app_state.set_session(previous_session.id, previous_session.name, {
@@ -1653,7 +1693,6 @@ do
 	local question_state = require("opencode.question.state")
 	local permission_state = require("opencode.permission.state")
 	local edit_state = require("opencode.edit.state")
-	local spinner = require("opencode.ui.spinner")
 
 	local previous_buf = vim.api.nvim_get_current_buf()
 	local previous_session = app_state.get_session()
@@ -1881,7 +1920,6 @@ do
 		review_mode = "readonly",
 	})
 
-	spinner.start()
 	local raw_lines = chat.render()
 	local rendered = table.concat(raw_lines, "\n")
 	local echo_count = 0
@@ -1942,9 +1980,9 @@ do
 
 	local block_key = render_state.stream_block_key("render_contract_session", "m4", "m4_text", "text")
 	assert(chat_state.stream_blocks[block_key], "full render should register streaming text block")
-	assert(type(chat_state.spinner_footer_line) == "number", "full render should register spinner footer line")
+	assert(chat_state.spinner_footer_line == nil, "pending interaction should not register an animated footer line")
+	assert(rendered:find("▣ ", 1, true), "pending interaction should retain a static processing footer")
 
-	spinner.stop()
 	sync.clear_all()
 	question_state.clear_all()
 	permission_state.clear_all()

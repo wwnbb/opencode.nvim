@@ -1,14 +1,7 @@
 local M = {}
 
 local auto_approve = require("opencode.permission.danger")
-local interaction = require("opencode.events.handlers.permission_flow.interaction")
 local request_util = require("opencode.events.handlers.permission_flow.request")
-
----@param current_session table|nil
----@return string|nil
-local function current_session_id(current_session)
-	return type(current_session) == "table" and current_session.id or nil
-end
 
 ---@param events table
 ---@param request table
@@ -65,7 +58,6 @@ function M.handle(events, request, current_session, logger)
 		session_id = request.session_id,
 	})
 
-	interaction.stop_spinner_if_visible(current_session_id(current_session), request.session_id, logger, "permission")
 	logger.info("Permission request added", {
 		permission_id = request.id,
 		type = request.type,

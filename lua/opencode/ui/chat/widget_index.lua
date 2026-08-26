@@ -83,6 +83,34 @@ function Index:should_render_session_widget(owner_session_id, widget_status)
 	)
 end
 
+function Index:has_pending_interaction()
+	for _, qstate in ipairs(self.all_questions) do
+		if
+			(qstate.status == "pending" or qstate.status == "confirming")
+			and self:should_render_session_widget(qstate.session_id, qstate.status)
+		then
+			return true
+		end
+	end
+	for _, pstate in ipairs(self.all_permissions) do
+		if
+			(pstate.status == nil or pstate.status == "pending")
+			and self:should_render_session_widget(pstate.session_id, pstate.status)
+		then
+			return true
+		end
+	end
+	for _, estate in ipairs(self.all_edits) do
+		if
+			(estate.status == nil or estate.status == "pending")
+			and self:should_render_session_widget(estate.session_id, estate.status)
+		then
+			return true
+		end
+	end
+	return false
+end
+
 function Index:is_rendered(kind, id)
 	if kind == "question" then
 		return self.rendered_question_ids[id] == true

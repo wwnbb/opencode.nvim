@@ -90,6 +90,46 @@ function M.clear_chat_highlights(bufnr, start_line, end_line)
 	M.invalidate_render_highlights(clear_start)
 end
 
+---Replace a rendered half-open line range without clearing extmarks that shift
+---from the following block. Highlights owned by the old range are always
+---removed before the buffer mutation.
+---@param opts table { bufnr: number, start_line: number, end_line: number, lines: string[], clear_animation?: boolean, apply_highlights?: function }
+---@return boolean updated
+---@return any error
+function M.replace_chat_range(opts)
+	opts = opts or {}
+	local bufnr = opts.bufnr
+	if not bufnr or not vim.api.nvim_buf_is_valid(bufnr) then
+		return false, "invalid buffer"
+	end
+	local start_line = normalize_line(opts.start_line)
+	local end_line = normalize_line(opts.end_line)
+	if end_line < start_line then
+		return false, "invalid line range"
+	end
+
+	local ok, err = xpcall(function()
+		vim.bo[bufnr].modifiable = true
+		if opts.clear_animation then
+			vim.api.nvim_buf_clear_namespace(bufnr, cs.chat_anim_ns, start_line, end_line)
+		end
+		M.clear_chat_highlights(bufnr, start_line, end_line)
+		vim.api.nvim_buf_set_lines(bufnr, start_line, end_line, false, opts.lines or {})
+		if type(opts.apply_highlights) == "function" then
+			opts.apply_highlights()
+		end
+	end, debug.traceback)
+
+	pcall(function()
+		vim.bo[bufnr].modifiable = false
+	end)
+	if not ok then
+		state.force_full_render = true
+		return false, err
+	end
+	return true
+end
+
 ---@param opts? table { reset_expansions?: boolean, preserve_render_cache?: boolean, force_full_render?: boolean }
 function M.reset_chat_surface(opts)
 	opts = opts or {}

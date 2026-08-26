@@ -3,158 +3,95 @@ from fastapi.testclient import TestClient
 
 from main import create_app
 
-# Each test receives a fresh application instance.
 
 @pytest.fixture
 def client():
     return TestClient(create_app())
 
 
-def assert_secret_hidden(payload):
-    # The secret should remain server-side in every public response.
-    assert "secret_number" not in payload
-
-
-def test_root_and_missing_game(client):
+def test_root_message(client):
     response = client.get("/")
     assert response.status_code == 200
-    assert response.json() == {"message": "Guessing Game API"}
-
-    game_response = client.get("/game")
-    assert game_response.status_code == 404
-    assert game_response.json() == {"detail": "Game has not started"}
-
-    guess_response = client.post("/game/guess", json={"guess": 50})
-    assert guess_response.status_code == 404
-    assert guess_response.json() == {"detail": "Game has not started"}
+    assert response.json() == {"message": "Todo List API"}
 
 
-def test_start_game_returns_public_state(client):
-    response = client.post("/game/start", json={"min_number": 1, "max_number": 10, "max_attempts": 3, "secret_number": 5})
+def test_create_returns_201_with_defaults(client):
+    response = client.post("/todos", json={"title": "Write docs"})
     assert response.status_code == 201
     assert response.json() == {
-        "min_number": 1,
-        "max_number": 10,
-        "max_attempts": 3,
-        "attempts_used": 0,
-        "remaining_attempts": 3,
-        "status": "in_progress",
+        "id": 1,
+        "title": "Write docs",
+        "completed": False,
+        "finished": True,
     }
-    assert_secret_hidden(response.json())
-
-    game_response = client.get("/game")
-    assert game_response.status_code == 200
-    assert game_response.json() == response.json()
-    assert_secret_hidden(game_response.json())
 
 
-def test_start_game_defaults_do_not_expose_secret(client):
-    response = client.post("/game/start", json={})
+def test_create_ignores_extra_finished_field(client):
+    response = client.post("/todos", json={"title": "Legacy client", "finished": False})
     assert response.status_code == 201
-    assert response.json() == {
-        "min_number": 1,
-        "max_number": 100,
-        "max_attempts": 10,
-        "attempts_used": 0,
-        "remaining_attempts": 10,
-        "status": "in_progress",
-    }
-    assert_secret_hidden(response.json())
+    assert response.json()["finished"] is True
 
 
-def test_guess_too_low_too_high_and_correct(client):
-    client.post("/game/start", json={"min_number": 1, "max_number": 10, "max_attempts": 3, "secret_number": 5})
+def test_list_is_empty_initially_and_preserves_order(client):
+    empty_response = client.get("/todos")
+    assert empty_response.status_code == 200
+    assert empty_response.json() == []
 
-    low_response = client.post("/game/guess", json={"guess": 3})
-    assert low_response.status_code == 200
-    assert low_response.json() == {
-        "guess": 3,
-        "result": "too_low",
-        "attempts_used": 1,
-        "remaining_attempts": 2,
-        "status": "in_progress",
-        "message": "Too low. Try again.",
-    }
-    assert_secret_hidden(low_response.json())
+    client.post("/todos", json={"title": "First"})
+    client.post("/todos", json={"title": "Second"})
+    client.post("/todos", json={"title": "Third"})
 
-    high_response = client.post("/game/guess", json={"guess": 7})
-    assert high_response.status_code == 200
-    assert high_response.json() == {
-        "guess": 7,
-        "result": "too_high",
-        "attempts_used": 2,
-        "remaining_attempts": 1,
-        "status": "in_progress",
-        "message": "Too high. Try again.",
-    }
-
-    correct_response = client.post("/game/guess", json={"guess": 5})
-    assert correct_response.status_code == 200
-    assert correct_response.json() == {
-        "guess": 5,
-        "result": "correct",
-        "attempts_used": 3,
-        "remaining_attempts": 0,
-        "status": "won",
-        "message": "Correct! You won the game.",
-    }
-
-    after_game_response = client.post("/game/guess", json={"guess": 5})
-    assert after_game_response.status_code == 400
-    assert after_game_response.json() == {"detail": "Game is already over"}
+    listed = client.get("/todos")
+    assert listed.status_code == 200
+    assert [todo["title"] for todo in listed.json()] == ["First", "Second", "Third"]
 
 
-def test_out_of_range_guess_does_not_use_attempt(client):
-    client.post("/game/start", json={"min_number": 1, "max_number": 10, "max_attempts": 2, "secret_number": 5})
+def test_patch_completed_leaves_title_untouched(client):
+    created = client.post("/todos", json={"title": "Original"}).json()
 
-    response = client.post("/game/guess", json={"guess": 11})
-    assert response.status_code == 400
-    assert response.json() == {"detail": "Guess must be between 1 and 10"}
+    patched = client.patch(f"/todos/{created['id']}", json={"completed": True})
 
-    game_response = client.get("/game")
-    assert game_response.json() == {
-        "min_number": 1,
-        "max_number": 10,
-        "max_attempts": 2,
-        "attempts_used": 0,
-        "remaining_attempts": 2,
-        "status": "in_progress",
-    }
+    assert patched.status_code == 200
+    body = patched.json()
+    assert body["title"] == "Original"
+    assert body["completed"] is True
 
 
-def test_loses_on_last_wrong_attempt(client):
-    client.post("/game/start", json={"min_number": 1, "max_number": 10, "max_attempts": 2, "secret_number": 5})
-
-    first_response = client.post("/game/guess", json={"guess": 1})
-    assert first_response.status_code == 200
-    assert first_response.json()["status"] == "in_progress"
-    assert first_response.json()["remaining_attempts"] == 1
-
-    last_response = client.post("/game/guess", json={"guess": 2})
-    assert last_response.status_code == 200
-    assert last_response.json() == {
-        "guess": 2,
-        "result": "too_low",
-        "attempts_used": 2,
-        "remaining_attempts": 0,
-        "status": "lost",
-        "message": "Too low. No attempts remaining. You lost.",
-    }
-
-    after_game_response = client.post("/game/guess", json={"guess": 5})
-    assert after_game_response.status_code == 400
-    assert after_game_response.json() == {"detail": "Game is already over"}
+def test_get_missing_todo_returns_404(client):
+    response = client.get("/todos/99")
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Todo not found"}
 
 
-def test_start_game_validation(client):
-    range_response = client.post("/game/start", json={"min_number": 10, "max_number": 10})
-    assert range_response.status_code == 400
-    assert range_response.json() == {"detail": "min_number must be less than max_number"}
+def test_patch_missing_todo_returns_404(client):
+    response = client.patch("/todos/99", json={"completed": True})
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Todo not found"}
 
-    attempts_response = client.post("/game/start", json={"max_attempts": 0})
-    assert attempts_response.status_code == 400
-    assert attempts_response.json() == {"detail": "max_attempts must be greater than 0"}
 
-    secret_response = client.post("/game/start", json={"min_number": 1, "max_number": 5, "secret_number": 6})
-    assert secret_response.status_code == 400
-    assert secret_response.json() == {"detail": "secret_number must be between 1 and 5"}
+def test_delete_missing_todo_returns_404(client):
+    response = client.delete("/todos/99")
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Todo not found"}
+
+
+def test_delete_then_get_returns_404(client):
+    created = client.post("/todos", json={"title": "Doomed"}).json()
+
+    deleted = client.delete(f"/todos/{created['id']}")
+    assert deleted.status_code == 204
+
+    follow_up = client.get(f"/todos/{created['id']}")
+    assert follow_up.status_code == 404
+    assert follow_up.json() == {"detail": "Todo not found"}
+
+
+def test_ids_increment_after_delete(client):
+    first = client.post("/todos", json={"title": "one"}).json()
+    second = client.post("/todos", json={"title": "two"}).json()
+    assert (first["id"], second["id"]) == (1, 2)
+
+    assert client.delete("/todos/1").status_code == 204
+
+    third = client.post("/todos", json={"title": "three"}).json()
+    assert third["id"] == 3

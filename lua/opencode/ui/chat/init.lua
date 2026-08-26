@@ -325,7 +325,7 @@ local function create_buffer()
 	return bufnr
 end
 
-local SPINNER_ANIM_INTERVAL_MS = 80
+local SPINNER_ANIM_INTERVAL_MS = spinner.get_interval_ms()
 
 local function stop_spinner_animation_timer()
 	if not state.spinner_anim_timer then
@@ -344,7 +344,7 @@ local function start_spinner_animation_timer()
 	if state.spinner_anim_timer then
 		return
 	end
-	if not state.visible or not spinner.is_active() then
+	if not state.visible then
 		return
 	end
 	if type(state.spinner_footer_line) ~= "number" then
@@ -361,7 +361,7 @@ local function start_spinner_animation_timer()
 		SPINNER_ANIM_INTERVAL_MS,
 		SPINNER_ANIM_INTERVAL_MS,
 		vim.schedule_wrap(function()
-			if not state.visible or not spinner.is_active() or type(state.spinner_footer_line) ~= "number" then
+			if not state.visible or type(state.spinner_footer_line) ~= "number" then
 				stop_spinner_animation_timer()
 				return
 			end
@@ -374,8 +374,10 @@ local function resume_render_animation_timers()
 	if not state.visible then
 		return
 	end
-	if spinner.is_active() and type(state.spinner_footer_line) == "number" then
+	if type(state.spinner_footer_line) == "number" then
 		start_spinner_animation_timer()
+	else
+		stop_spinner_animation_timer()
 	end
 	if chat_tasks.has_active_task_rows() then
 		chat_tasks.start_task_animation_timer()
@@ -493,64 +495,14 @@ function M.create()
 		end)
 	end)
 
-	local function has_pending_interaction()
-		local current_session = require("opencode.state").get_session()
-		local in_child_session_view = #state.session_stack > 0
-
-		local question_ok, question_state_mod = pcall(require, "opencode.question.state")
-		if question_ok and question_state_mod.get_all_active then
-			for _, qstate in ipairs(question_state_mod.get_all_active()) do
-				if widget_support.should_render(qstate.session_id, qstate.status, current_session.id, in_child_session_view) then
-					return true
-				end
-			end
-		end
-
-		local perm_ok, perm_state_mod = pcall(require, "opencode.permission.state")
-		if perm_ok and perm_state_mod.get_all_active then
-			for _, pstate in ipairs(perm_state_mod.get_all_active()) do
-				if widget_support.should_render(pstate.session_id, pstate.status, current_session.id, in_child_session_view) then
-					return true
-				end
-			end
-		end
-
-		local edit_ok, edit_state_mod = pcall(require, "opencode.edit.state")
-		if edit_ok and edit_state_mod.get_all_active then
-			for _, estate in ipairs(edit_state_mod.get_all_active()) do
-				if widget_support.should_render(estate.session_id, estate.status, current_session.id, in_child_session_view) then
-					return true
-				end
-			end
-		end
-
-		return false
-	end
-
 	events.on("status_change", function(data)
 		vim.schedule(function()
 			local new_status = data and data.status
 			if new_status == "streaming" or new_status == "thinking" then
-				if has_pending_interaction() then
-					if spinner.is_active() then
-						spinner.stop()
-					end
-					stop_spinner_animation_timer()
-					return
-				end
-
-				if not spinner.is_active() then
-					spinner.start()
-				end
 				if state.visible then
-					start_spinner_animation_timer()
 					chat_tasks.start_task_animation_timer()
 				end
 			else
-				if spinner.is_active() then
-					spinner.stop()
-				end
-				stop_spinner_animation_timer()
 				chat_tasks.stop_task_animation_timer()
 			end
 		end)
@@ -561,10 +513,7 @@ function M.create()
 		local reason = data and data.reason
 		local changed_session = data and data.previous_id ~= data.id
 		vim.schedule(function()
-			if not preserve_cache then
-				if spinner.is_active() then
-					spinner.stop()
-				end
+			if not preserve_cache or changed_session then
 				stop_spinner_animation_timer()
 				chat_tasks.stop_task_animation_timer()
 			end
@@ -773,9 +722,6 @@ function M.open()
 		if ok_state then
 			local status = app_state.get_status()
 			if status == "streaming" or status == "thinking" then
-				if spinner.is_active() then
-					start_spinner_animation_timer()
-				end
 				chat_tasks.start_task_animation_timer()
 			end
 		end
@@ -1090,13 +1036,18 @@ function M.update_stream_part_block(session_id, message_id, part_id, opts)
 	local new_count = #replacement
 	local delta = new_count - old_count
 
-	vim.bo[state.bufnr].modifiable = true
-	vim.api.nvim_buf_set_lines(state.bufnr, block.start_line, old_end + 1, false, replacement)
-
-	local clear_end = math.max(old_end + 1, block.start_line + new_count)
-	clear_chat_highlights(state.bufnr, block.start_line, clear_end)
-	chat_highlights.apply_highlights(content_lines, state.bufnr, chat_hl_ns, block.start_line)
-	vim.bo[state.bufnr].modifiable = false
+	local replaced = render_state.replace_chat_range({
+		bufnr = state.bufnr,
+		start_line = block.start_line,
+		end_line = old_end + 1,
+		lines = replacement,
+		apply_highlights = function()
+			chat_highlights.apply_highlights(content_lines, state.bufnr, chat_hl_ns, block.start_line)
+		end,
+	})
+	if not replaced then
+		return false
+	end
 
 	block.end_line = block.start_line + new_count - 1
 	block.text_length = #content
@@ -1149,10 +1100,6 @@ function M.update_spinner_only()
 	if not state.visible then
 		return
 	end
-	if not spinner.is_active() then
-		return
-	end
-
 	local footer_line = state.spinner_footer_line
 	if type(footer_line) ~= "number" then
 		return
