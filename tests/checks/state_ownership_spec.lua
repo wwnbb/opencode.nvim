@@ -522,7 +522,6 @@ question_state.clear_all()
 session_actions.set_active("visible_session", "Visible Session", { preserve_cache = true })
 require("opencode.events.handlers.permission").setup(bus)
 require("opencode.events.handlers.question").setup(bus)
-local spinner = require("opencode.ui.spinner")
 
 bus.emit("permission", {
 	id = "perm_missing_session",
@@ -535,15 +534,15 @@ assert_true(
 	"permission without session or message identity should be dropped"
 )
 
-spinner.start()
 bus.emit("permission", {
 	id = "perm_other_session",
 	permission = "bash",
 	sessionID = "other_session",
 	time = { created = 1 },
 })
-vim.wait(50)
-assert_true(spinner.is_active(), "permission in another root session should not stop visible spinner")
+wait_for(function()
+	return permission_state.has_permission("perm_other_session")
+end, "permission in another root session should remain independently tracked")
 
 bus.emit("permission", {
 	id = "perm_visible_session",
@@ -552,10 +551,9 @@ bus.emit("permission", {
 	time = { created = 2 },
 })
 wait_for(function()
-	return not spinner.is_active()
-end, "permission in visible session should stop spinner")
+	return permission_state.has_permission("perm_visible_session")
+end, "permission in visible session should be tracked")
 
-spinner.start()
 bus.emit("question_asked", {
 	requestID = "question_other_session",
 	sessionID = "other_session",
@@ -564,8 +562,9 @@ bus.emit("question_asked", {
 	},
 	time = { created = 3 },
 })
-vim.wait(50)
-assert_true(spinner.is_active(), "question in another root session should not stop visible spinner")
+wait_for(function()
+	return question_state.has_question("question_other_session")
+end, "question in another root session should remain independently tracked")
 
 bus.emit("question_asked", {
 	requestID = "question_visible_session",
@@ -576,8 +575,8 @@ bus.emit("question_asked", {
 	time = { created = 4 },
 })
 wait_for(function()
-	return not spinner.is_active()
-end, "question in visible session should stop spinner")
+	return question_state.has_question("question_visible_session")
+end, "question in visible session should be tracked")
 
 local permission_request = require("opencode.events.handlers.permission_flow.request")
 local decoded_wire = assert(permission_request.decode({

@@ -663,15 +663,6 @@ function M.show(permission_id, files, opts)
 	state.edit_id = opts.edit_id or nil
 	state.edit_file_index = opts.file_index or nil
 
-	-- Stop spinner if active
-	local spinner_ok, spinner = pcall(require, "opencode.ui.spinner")
-	if spinner_ok and spinner.is_active then
-		local ok_active, is_active = pcall(spinner.is_active)
-		if ok_active and is_active then
-			pcall(spinner.stop)
-		end
-	end
-
 	logger.info("native_diff: starting review", {
 		permission_id = permission_id,
 		file_count = #files,

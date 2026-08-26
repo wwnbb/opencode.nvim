@@ -2,7 +2,6 @@ local M = {}
 
 local util = require("opencode.events.util")
 local auto_approve = require("opencode.permission.danger")
-local interaction = require("opencode.events.handlers.permission_flow.interaction")
 
 ---@param current_session table|nil
 ---@return string|nil
@@ -92,7 +91,6 @@ function M.handle(events, request, current_session, logger)
 		session_id = request.session_id,
 	})
 
-	interaction.stop_spinner_if_visible(current_session_id(current_session), request.session_id, logger, "edit")
 end
 
 return M

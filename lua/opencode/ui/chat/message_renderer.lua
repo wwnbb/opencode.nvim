@@ -9,6 +9,7 @@ local sync = require("opencode.sync")
 local app_state = require("opencode.state")
 local thinking = require("opencode.ui.thinking")
 local spinner = require("opencode.ui.spinner")
+local processing_footer = require("opencode.ui.chat.processing_footer")
 local widget_renderer = require("opencode.ui.chat.widget_renderer")
 local tool_renderer = require("opencode.ui.chat.tool_renderer")
 local widget_support = require("opencode.ui.chat.widget_support")
@@ -20,14 +21,6 @@ local EDIT_WIDGET_TOOL_ROWS = {
 	neovim_edit = true,
 	neovim_apply_patch = true,
 }
-
-local function is_processing_status(status)
-	local status_type = type(status) == "table" and status.type or status
-	return status_type == "busy"
-		or status_type == "streaming"
-		or status_type == "thinking"
-		or status_type == "retry"
-end
 
 local function ensure_session_title_highlight()
 	local ok, title_hl = pcall(vim.api.nvim_get_hl, 0, { name = "Title", link = false })
@@ -169,11 +162,11 @@ local function make_metadata_footer_renderer(ctx, all_messages, user_created_by_
 	end
 end
 
-local function get_current_session_processing(ctx)
+local function get_current_session_status(ctx)
 	if ctx.current_session.id then
-		return is_processing_status(app_state.get_session_status(ctx.current_session.id))
+		return app_state.get_session_status(ctx.current_session.id)
 	end
-	return is_processing_status(app_state.get_status())
+	return app_state.get_status()
 end
 
 local function find_last_assistant(messages)
@@ -183,17 +176,6 @@ local function find_last_assistant(messages)
 		end
 	end
 	return nil, nil
-end
-
-local function should_activate_spinner(current_session_processing, messages, last_assistant)
-	local last_message = messages[#messages]
-	local last_assistant_completed = last_assistant and last_assistant.time and last_assistant.time.completed ~= nil
-	local last_assistant_waiting_on_tools = last_assistant and last_assistant.finish == "tool-calls"
-	local has_pending_response_gap = not last_message
-		or last_message.role ~= "assistant"
-		or not last_assistant_completed
-		or last_assistant_waiting_on_tools
-	return spinner.is_active() and current_session_processing and has_pending_response_gap
 end
 
 local function render_hidden_history_notice(ctx, skipped_messages)
@@ -393,26 +375,24 @@ local function render_assistant_message(ctx, index, message, render_parts, opts)
 
 	widget_renderer.render_widgets_for_message(ctx, index, message.id)
 
-	if opts.force_processing_render or render.should_show_footer(message, opts.is_last_assistant) then
+	if not opts.suppress_footer and render.should_show_footer(message, opts.is_last_assistant) then
 		ctx:ensure_single_blank_separator()
-		local footer_line_idx = ctx:line_count()
-		local show_spinner = opts.spinner_active and opts.is_last_assistant and opts.incomplete_assistant
-		local spinner_frame = show_spinner and spinner.get_frame() or nil
-		ctx:add_line(opts.render_metadata_footer_line(message, spinner_frame, render_parts.message_revision))
-		if show_spinner then
-			ctx:set_spinner_footer_line(footer_line_idx)
-			opts.spinner_footer_rendered.value = true
-		end
+		ctx:add_line(opts.render_metadata_footer_line(message, nil, render_parts.message_revision))
 		ctx:add_raw_line("")
 	end
 end
 
-local function render_messages(ctx, index, all_messages, messages, skipped_messages, render_metadata_footer_line)
-	local current_session_processing = get_current_session_processing(ctx)
-	local last_assistant_idx, last_assistant = find_last_assistant(messages)
-	local spinner_active = should_activate_spinner(current_session_processing, messages, last_assistant)
+local function render_messages(
+	ctx,
+	index,
+	messages,
+	skipped_messages,
+	render_metadata_footer_line,
+	processing_presentation
+)
+	local current_session_processing = processing_footer.is_processing(get_current_session_status(ctx))
+	local last_assistant_idx = find_last_assistant(messages)
 	local max_user_message_lines = tonumber((ctx.chat_config or {}).max_user_message_lines) or 0
-	local spinner_footer_rendered = { value = false }
 
 	render_hidden_history_notice(ctx, skipped_messages)
 
@@ -429,12 +409,10 @@ local function render_messages(ctx, index, all_messages, messages, skipped_messa
 		local has_reasoning = render_parts.reasoning and render_parts.reasoning ~= ""
 		local has_tools = #render_parts.tool_parts > 0
 		local is_last_assistant = (msg_idx == last_assistant_idx)
-		local force_processing_render = spinner_active and is_last_assistant and incomplete_assistant
 		local should_render = message.role ~= "assistant"
 			or has_content
 			or has_reasoning
 			or has_tools
-			or force_processing_render
 
 		if should_render then
 			if message.role == "user" then
@@ -444,9 +422,7 @@ local function render_messages(ctx, index, all_messages, messages, skipped_messa
 					incomplete_assistant = incomplete_assistant,
 					render_as_plain_stream = render_as_plain_stream,
 					is_last_assistant = is_last_assistant,
-					force_processing_render = force_processing_render,
-					spinner_active = spinner_active,
-					spinner_footer_rendered = spinner_footer_rendered,
+					suppress_footer = processing_presentation ~= nil and is_last_assistant,
 					render_metadata_footer_line = render_metadata_footer_line,
 				})
 			end
@@ -458,8 +434,6 @@ local function render_messages(ctx, index, all_messages, messages, skipped_messa
 	end
 
 	return {
-		spinner_active = spinner_active,
-		spinner_footer_rendered = spinner_footer_rendered.value,
 		max_user_message_lines = max_user_message_lines,
 	}
 end
@@ -556,7 +530,7 @@ local function render_orphan_widgets(ctx, index, all_messages)
 	widget_renderer.render_orphan_widgets(ctx, index, session_msg_ids)
 end
 
-local function render_fallback_spinner_footer(ctx, render_metadata_footer_line)
+local function build_fallback_metadata_message()
 	local fallback_agent = "assistant"
 	local fallback_model_id = nil
 	local fallback_provider_id = nil
@@ -573,18 +547,31 @@ local function render_fallback_spinner_footer(ctx, render_metadata_footer_line)
 		end
 	end
 
-	local fallback_message = {
+	return {
 		role = "assistant",
 		agent = fallback_agent,
 		mode = fallback_agent,
 		modelID = fallback_model_id,
 		providerID = fallback_provider_id,
 	}
+end
 
+local function render_processing_footer(ctx, presentation, render_metadata_footer_line)
+	if not presentation then
+		return
+	end
+	local message = presentation.message
+	local message_revision = nil
+	if message and message.id then
+		message_revision = ctx:get_message_render_parts(message.id).message_revision
+	end
 	ctx:ensure_single_blank_separator()
 	local footer_line_idx = ctx:line_count()
-	ctx:add_line(render_metadata_footer_line(fallback_message, spinner.get_frame()))
-	ctx:set_spinner_footer_line(footer_line_idx)
+	local spinner_frame = presentation.animated and spinner.get_frame() or nil
+	ctx:add_line(render_metadata_footer_line(message, spinner_frame, message_revision))
+	if presentation.animated then
+		ctx:set_spinner_footer_line(footer_line_idx)
+	end
 	ctx:add_raw_line("")
 end
 
@@ -607,14 +594,24 @@ function M.render(ctx, index)
 	local all_messages, messages, skipped_messages = select_messages(ctx, index)
 	local user_created_by_id = build_user_created_by_id(all_messages)
 	local render_metadata_footer_line = make_metadata_footer_renderer(ctx, all_messages, user_created_by_id)
-	local message_stats = render_messages(ctx, index, all_messages, messages, skipped_messages, render_metadata_footer_line)
+	local processing_presentation = processing_footer.derive({
+		status = get_current_session_status(ctx),
+		messages = all_messages,
+		waiting_for_interaction = index:has_pending_interaction(),
+		fallback_message = build_fallback_metadata_message(),
+	})
+	local message_stats = render_messages(
+		ctx,
+		index,
+		messages,
+		skipped_messages,
+		render_metadata_footer_line,
+		processing_presentation
+	)
 
 	render_local_notices(ctx, index, all_messages, message_stats.max_user_message_lines)
 	render_orphan_widgets(ctx, index, all_messages)
-
-	if message_stats.spinner_active and not message_stats.spinner_footer_rendered then
-		render_fallback_spinner_footer(ctx, render_metadata_footer_line)
-	end
+	render_processing_footer(ctx, processing_presentation, render_metadata_footer_line)
 
 	render_empty_state(ctx)
 

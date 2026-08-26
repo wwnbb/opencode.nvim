@@ -81,7 +81,6 @@ local chat_tasks = require("opencode.ui.chat.tasks")
 local client = require("opencode.client")
 local events = require("opencode.events")
 local event_util = require("opencode.events.util")
-local spinner = require("opencode.ui.spinner")
 local question_state = require("opencode.question.state")
 local logger = require("opencode.logger")
 
@@ -105,7 +104,7 @@ local function seed_selection()
 		},
 	})
 	sync.handle_agents({
-		{ id = "coder_v2", name = "coder_v2" },
+		{ id = "coder_v2", name = "coder_v2", color = "#268bd2" },
 	})
 	local_state.agent.set("coder_v2")
 	local_state.model.set({ providerID = "openai", modelID = "gpt-5.5" })
@@ -156,6 +155,31 @@ local function count_chat_highlights(hl_group)
 		end
 	end
 	return count
+end
+
+local function footer_agent_highlight_group(agent_name)
+	local bufnr = chat.get_bufnr()
+	local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+	for row = #lines, 1, -1 do
+		local start_col = lines[row]:find(agent_name, 1, true)
+		if start_col then
+			start_col = start_col - 1
+			local end_col = start_col + #agent_name
+			for _, mark in ipairs(vim.api.nvim_buf_get_extmarks(
+				bufnr,
+				chat_state_mod.chat_hl_ns,
+				{ row - 1, 0 },
+				{ row - 1, -1 },
+				{ details = true }
+			)) do
+				local details = mark[4] or {}
+				if mark[3] <= start_col and (details.end_col or mark[3]) >= end_col then
+					return details.hl_group
+				end
+			end
+		end
+	end
+	return nil
 end
 
 local todo_hl_ns = vim.api.nvim_create_namespace("opencode_todo_hl")
@@ -272,12 +296,87 @@ sync.handle_part_updated({
 	type = "text",
 	text = "IDLE_SPINNER_DONE_TEXT",
 })
-spinner.start()
 chat.open()
 wait_for_buffer_contains("IDLE_SPINNER_DONE_TEXT", "idle spinner regression baseline should render")
 assert_not_contains(buffer_text(), "| Coder_v2", "idle completed session should not render a live fallback spinner")
 assert_eq(count_occurrences(buffer_text(), "Coder_v2"), 1, "idle completed session should render one assistant footer")
-spinner.stop()
+
+sync.clear_all()
+app_state.reset()
+seed_selection()
+session_actions.set_active("tool-gap", "Tool Gap", { preserve_cache = true })
+session_actions.set_session_status("tool-gap", { type = "busy" }, { reason = "test_tool_gap" })
+sync.handle_message_updated({
+	id = "tool-gap-assistant",
+	sessionID = "tool-gap",
+	role = "assistant",
+	time = { created = 50, completed = 51 },
+	agent = "coder_v2",
+	mode = "coder_v2",
+	modelID = "gpt-5.5",
+	providerID = "openai",
+	finish = "tool-calls",
+})
+sync.handle_part_updated({
+	id = "tool-gap-part",
+	messageID = "tool-gap-assistant",
+	sessionID = "tool-gap",
+	type = "tool",
+	tool = "bash",
+	callID = "tool-gap-call",
+	state = {
+		status = "running",
+		input = { command = "sleep 4" },
+	},
+})
+-- The next assistant can exist as a metadata-free placeholder while parts and
+-- message.updated race on the SSE stream.
+sync.handle_part_updated({
+	id = "tool-gap-placeholder-part",
+	messageID = "tool-gap-placeholder",
+	sessionID = "tool-gap",
+	type = "reasoning",
+	text = "waiting for tool result",
+})
+chat.close()
+chat.open()
+wait_for_buffer_contains("Coder_v2", "running tool should render its processing footer")
+assert_true(chat_state.tools["tool-gap-part"] ~= nil, "running tool should remain tracked before the footer")
+assert_eq(count_occurrences(buffer_text(), "Coder_v2"), 1, "tool gap should render exactly one active footer")
+assert_eq(
+	count_chat_highlights("OpenCodeAgent_coder_v2"),
+	1,
+	"tool gap footer should retain the configured agent highlight"
+)
+assert_true(type(chat_state.spinner_footer_line) == "number", "tool gap footer should be animated")
+assert_true(chat_state.spinner_anim_timer ~= nil, "busy tool gap should own an animation timer")
+
+chat.close()
+assert_eq(chat_state.spinner_anim_timer, nil, "closing chat should stop the animation timer")
+chat.open()
+wait_for(function()
+	return type(chat_state.spinner_footer_line) == "number" and chat_state.spinner_anim_timer ~= nil
+end, "reopening a busy session should derive and restart footer animation")
+assert_eq(count_occurrences(buffer_text(), "Coder_v2"), 1, "reopen should not duplicate the active footer")
+
+question_state.add_question("foreign-question", "other-session", {
+	{ prompt = "Foreign", options = { { label = "A", value = "a" } } },
+})
+events.emit("interaction_changed", {
+	kind = "question",
+	action = "pending",
+	id = "foreign-question",
+	session_id = "other-session",
+})
+wait_for(function()
+	return type(chat_state.spinner_footer_line) == "number" and chat_state.spinner_anim_timer ~= nil
+end, "interaction in another root session should not pause the active footer")
+question_state.remove_question("foreign-question")
+
+session_actions.set_session_status("tool-gap", { type = "idle" }, { reason = "test_tool_gap_idle" })
+wait_for(function()
+	return chat_state.spinner_footer_line == nil and chat_state.spinner_anim_timer == nil
+end, "busy to idle should remove animation tracking and stop its timer")
 
 sync.clear_all()
 app_state.reset()
@@ -611,7 +710,6 @@ client.list_questions = function(callback)
 		},
 	})
 end
-spinner.start()
 chat.open()
 events.emit("tool_update", {
 	session_id = "question-tool",
@@ -626,9 +724,28 @@ events.emit("tool_update", {
 wait_for_buffer_contains("Function behavior", "question tool recovery should render the widget")
 assert_not_contains(buffer_text(), "Input:", "question widget should hide the raw expanded tool input")
 assert_not_contains(buffer_text(), " question", "question widget should hide the raw running tool row")
-assert_true(not spinner.is_active(), "question tool recovery should stop the visible spinner")
+assert_eq(chat_state.spinner_footer_line, nil, "pending question should render a static processing footer")
+assert_eq(count_occurrences(buffer_text(), "Coder_v2"), 1, "pending question should retain one agent footer")
+assert_contains(buffer_text(), "▣ Coder_v2", "pending question should use the static footer prefix")
+local pending_agent_hl = footer_agent_highlight_group("Coder_v2")
+assert_true(
+	pending_agent_hl ~= nil and pending_agent_hl ~= "Comment",
+	"pending question should retain an agent-colored footer highlight, got " .. vim.inspect(pending_agent_hl)
+)
+assert_eq(chat_state.spinner_anim_timer, nil, "pending question should stop only the animation timer")
+
+question_state.remove_question("que_question_tool")
+events.emit("interaction_changed", {
+	kind = "question",
+	action = "resolved",
+	id = "que_question_tool",
+	session_id = "question-tool",
+})
+wait_for(function()
+	return type(chat_state.spinner_footer_line) == "number" and chat_state.spinner_anim_timer ~= nil
+end, "resolving an interaction should resume animation without another status event")
+assert_eq(count_occurrences(buffer_text(), "Coder_v2"), 1, "resolving interaction should not duplicate footer")
 client.list_questions = original_list_questions
-spinner.stop()
 
 sync.clear_all()
 question_state.clear_all()

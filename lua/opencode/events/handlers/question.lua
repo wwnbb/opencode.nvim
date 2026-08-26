@@ -4,23 +4,6 @@ local util = require("opencode.events.util")
 local pending_tool_question_sync = {}
 local TOOL_SYNC_RETRY_DELAYS_MS = { 120, 300, 700 }
 
-local function stop_spinner_for_current_question(current_session_id, question_session_id, logger)
-	if not util.permission_session_is_relevant(current_session_id, question_session_id) then
-		return
-	end
-
-	local spinner_ok, spinner = pcall(require, "opencode.ui.spinner")
-	if spinner_ok and spinner.is_active and spinner.is_active() then
-		spinner.stop()
-		if logger then
-			logger.debug("Stopped spinner for question interaction", {
-				session_id = question_session_id,
-				current_session_id = current_session_id,
-			})
-		end
-	end
-end
-
 ---@param data table|nil
 ---@return string|nil
 local function get_request_id(data)
@@ -223,8 +206,6 @@ local function add_or_update_question_request(events, state, question_state, req
 		id = request_id,
 		session_id = session_id,
 	})
-
-	stop_spinner_for_current_question(current_session and current_session.id, session_id, logger)
 
 	if logger then
 		logger.info("Question added", { request_id = request_id:sub(1, 10), count = #questions })
