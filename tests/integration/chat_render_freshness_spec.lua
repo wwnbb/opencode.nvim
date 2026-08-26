@@ -378,6 +378,40 @@ wait_for(function()
 	return chat_state.spinner_footer_line == nil and chat_state.spinner_anim_timer == nil
 end, "busy to idle should remove animation tracking and stop its timer")
 
+-- The sync store can receive session.status before the mirrored state store
+-- during connection hydration. The footer must still animate for that active
+-- server session rather than falling back to the static metadata footer.
+sync.clear_all()
+app_state.reset()
+seed_selection()
+session_actions.set_active("sync-busy", "Sync Busy", { preserve_cache = true })
+sync.handle_session_status("sync-busy", { type = "busy" })
+sync.handle_message_updated({
+	id = "sync-busy-assistant",
+	sessionID = "sync-busy",
+	role = "assistant",
+	time = { created = 90 },
+	agent = "coder_v2",
+	mode = "coder_v2",
+	modelID = "gpt-5.5",
+	providerID = "openai",
+})
+chat.close()
+chat.open()
+wait_for(function()
+	return type(chat_state.spinner_footer_line) == "number" and chat_state.spinner_anim_timer ~= nil
+end, "sync busy status should animate while mirrored state is still idle")
+assert_contains(buffer_text(), "Coder_v2", "sync busy footer should use the assistant metadata")
+sync.handle_session_status("sync-busy", { type = "idle" })
+events.emit("sync_changed", {
+	kind = "session_status",
+	action = "updated",
+	session_id = "sync-busy",
+})
+wait_for(function()
+	return chat_state.spinner_footer_line == nil and chat_state.spinner_anim_timer == nil
+end, "idle sync status should stop the fallback animation")
+
 sync.clear_all()
 app_state.reset()
 seed_selection()
