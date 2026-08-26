@@ -284,4 +284,62 @@ describe("opencode client Basic auth", function()
 		assert_eq(status.has_stream, false, "SSE open stream state")
 		assert_eq(status.reconnect_count, 1, "SSE open reconnect count")
 	end)
+
+	it("resets SSE reconnect_count on disconnect", function()
+		stub_auth("Basic encoded", nil)
+		open_stream_handler = function()
+			return nil, { message = "dial failed" }
+		end
+
+		local client = setup_client("secret")
+		client.connect_events()
+		assert_eq(client.sse.status().reconnect_count, 1, "failed open increments reconnect")
+
+		client.disconnect_events()
+		assert_eq(client.sse.status().reconnect_count, 0, "disconnect resets reconnect")
+	end)
+
+	it("emits an error when SSE reconnect gives up", function()
+		stub_auth("Basic encoded", nil)
+		open_stream_handler = function()
+			return nil, { message = "dial failed" }
+		end
+
+		local client = require("opencode.client")
+		client.setup({
+			host = "localhost",
+			port = 4096,
+			auth = { username = "alice", password = "secret" },
+			reconnect = true,
+			reconnect_delay = 60000,
+			max_reconnects = 0,
+		})
+		local errors = {}
+		client.on_event("error", function(message)
+			table.insert(errors, message)
+		end)
+
+		client.connect_events()
+		local found = false
+		for _, message in ipairs(errors) do
+			if tostring(message):find("gave up", 1, true) then
+				found = true
+			end
+		end
+		assert_true(found, "give-up error")
+	end)
+
+	it("ignores a stale SSE close after a newer stream is connected", function()
+		stub_auth("Basic encoded", nil)
+		local client = setup_client("secret")
+
+		assert_eq(client.connect_events(), true, "first stream")
+		local first_on_close = stream_calls[1].on_close
+		client.disconnect_events()
+		assert_eq(client.connect_events(), true, "second stream")
+		assert_eq(#stream_calls, 2, "second stream opened")
+
+		first_on_close("stale close")
+		assert_true(client.sse.status().has_stream, "new stream survives stale close")
+	end)
 end)

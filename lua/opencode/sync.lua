@@ -1097,20 +1097,108 @@ function M.handle_part_removed(message_id, part_id)
 	end
 end
 
+---True when `message` sorts inside the inclusive [oldest, newest] snapshot window.
+---Older history and newer in-flight rows stay; only holes inside the fetched
+---newest-N page are treated as ghosts. GET /message?limit=100 is not a full session.
+---@param message table
+---@param oldest table
+---@param newest table
+---@return boolean
+local function message_in_snapshot_window(message, oldest, newest)
+	if message_before(message, oldest) then
+		return false
+	end
+	if message_before(newest, message) then
+		return false
+	end
+	return true
+end
+
+---Remove store records that this snapshot page no longer contains.
+---Does not delete messages older than the page (limit=100 tail) or newer
+---than the page (in-flight SSE). Never pass a single prompt-response wrapper.
+---@param session_id string
+---@param snapshot_messages table[]
+---@param snapshot_message_ids table<string, boolean>
+---@param snapshot_parts_by_message table<string, table<string, boolean>>
+---@return number removed_count
+local function reconcile_session_snapshot(
+	session_id,
+	snapshot_messages,
+	snapshot_message_ids,
+	snapshot_parts_by_message
+)
+	local removed_count = 0
+	local oldest = snapshot_messages[1]
+	local newest = snapshot_messages[1]
+	for index = 2, #snapshot_messages do
+		local message = snapshot_messages[index]
+		if message_before(message, oldest) then
+			oldest = message
+		end
+		if message_before(newest, message) then
+			newest = message
+		end
+	end
+
+	local messages = store.message[session_id]
+	if type(messages) == "table" and oldest and newest then
+		local stale_message_ids = {}
+		for _, message in ipairs(messages) do
+			local message_id = type(message) == "table" and nonempty_string(message.id) or nil
+			if
+				message_id
+				and not snapshot_message_ids[message_id]
+				and message_in_snapshot_window(message, oldest, newest)
+			then
+				table.insert(stale_message_ids, message_id)
+			end
+		end
+		for _, message_id in ipairs(stale_message_ids) do
+			M.handle_message_removed(session_id, message_id)
+			removed_count = removed_count + 1
+		end
+	end
+
+	for message_id, part_ids in pairs(snapshot_parts_by_message) do
+		local parts = store.part[message_id]
+		if type(parts) == "table" then
+			local stale_part_ids = {}
+			for _, part in ipairs(parts) do
+				local part_id = type(part) == "table" and nonempty_string(part.id) or nil
+				if part_id and not part_ids[part_id] then
+					table.insert(stale_part_ids, part_id)
+				end
+			end
+			for _, part_id in ipairs(stale_part_ids) do
+				M.handle_part_removed(message_id, part_id)
+				removed_count = removed_count + 1
+			end
+		end
+	end
+
+	return removed_count
+end
+
 ---Hydrate messages and parts from /session/:id/message (mirrors TUI session.sync)
 ---@param session_id string
 ---@param messages table[]|nil
+---@param opts? { reconcile?: boolean }
 ---@return number message_count
 ---@return number part_count
 ---@return number changed_count
-function M.handle_session_messages(session_id, messages)
+function M.handle_session_messages(session_id, messages, opts)
 	if type(messages) ~= "table" then
 		return 0, 0, 0
 	end
+	opts = type(opts) == "table" and opts or {}
 
 	local message_count = 0
 	local part_count = 0
 	local changed_count = 0
+	local snapshot_message_ids = {}
+	local snapshot_messages = {}
+	local snapshot_parts_by_message = {}
 
 	for _, msg_with_parts in ipairs(messages) do
 		if type(msg_with_parts) == "table" then
@@ -1119,6 +1207,8 @@ function M.handle_session_messages(session_id, messages)
 			if type(info) == "table" and info_id then
 				info.id = info_id
 				info.sessionID = nonempty_string(info.sessionID) or session_id
+				snapshot_message_ids[info_id] = true
+				table.insert(snapshot_messages, info)
 				if M.handle_message_updated(info) then
 					changed_count = changed_count + 1
 				end
@@ -1126,12 +1216,19 @@ function M.handle_session_messages(session_id, messages)
 			end
 
 			if type(msg_with_parts.parts) == "table" then
+				if info_id and snapshot_parts_by_message[info_id] == nil then
+					snapshot_parts_by_message[info_id] = {}
+				end
 				for _, part in ipairs(msg_with_parts.parts) do
 					if type(part) == "table" then
 						part.messageID = nonempty_string(part.messageID) or info_id
 						part.sessionID = nonempty_string(part.sessionID)
 							or (type(info) == "table" and nonempty_string(info.sessionID))
 							or session_id
+						local part_id = nonempty_string(part.id)
+						if info_id and part_id then
+							snapshot_parts_by_message[info_id][part_id] = true
+						end
 						if M.handle_part_updated(part) then
 							changed_count = changed_count + 1
 						end
@@ -1140,6 +1237,16 @@ function M.handle_session_messages(session_id, messages)
 				end
 			end
 		end
+	end
+
+	if opts.reconcile then
+		changed_count = changed_count
+			+ reconcile_session_snapshot(
+				session_id,
+				snapshot_messages,
+				snapshot_message_ids,
+				snapshot_parts_by_message
+			)
 	end
 
 	return message_count, part_count, changed_count

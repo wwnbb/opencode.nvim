@@ -235,7 +235,8 @@ local function sync_session_messages(session_id, reason, callback)
 			return
 		end
 
-		local message_count, part_count, changed_count = sync().handle_session_messages(session_id, messages)
+		local message_count, part_count, changed_count =
+			sync().handle_session_messages(session_id, messages, { reconcile = true })
 		session_actions.set_message_cache(session_id, messages, {
 			reason = reason,
 		})

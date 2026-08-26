@@ -144,4 +144,83 @@ describe("opencode sync message ordering", function()
 
 		sync.clear_all()
 	end)
+
+	it("keeps extra messages unless full-session reconcile is requested", function()
+		local sync = require("opencode.sync")
+		sync.clear_all()
+
+		local session_id = "session_hydrate_ghosts"
+		local function seed(id, created)
+			sync.handle_message_updated({
+				id = id,
+				sessionID = session_id,
+				role = "assistant",
+				time = { created = created },
+			})
+		end
+		seed("history", 10)
+		seed("window_old", 20)
+		seed("ghost", 25)
+		seed("window_new", 30)
+		seed("inflight", 40)
+		sync.handle_part_updated({
+			id = "window_old_part",
+			messageID = "window_old",
+			sessionID = session_id,
+			type = "text",
+			text = "hello",
+		})
+		sync.handle_part_updated({
+			id = "stale_part",
+			messageID = "window_old",
+			sessionID = session_id,
+			type = "text",
+			text = "removed on server",
+		})
+
+		local snapshot = {
+			{
+				info = {
+					id = "window_old",
+					sessionID = session_id,
+					role = "assistant",
+					time = { created = 20 },
+				},
+				parts = {
+					{
+						id = "window_old_part",
+						messageID = "window_old",
+						sessionID = session_id,
+						type = "text",
+						text = "hello",
+					},
+				},
+			},
+			{
+				info = {
+					id = "window_new",
+					sessionID = session_id,
+					role = "assistant",
+					time = { created = 30 },
+				},
+				parts = {},
+			},
+		}
+
+		sync.handle_session_messages(session_id, snapshot)
+		assert(sync.get_message(session_id, "ghost") ~= nil, "upsert-only hydrate must keep ghost messages")
+		assert(sync.get_part("window_old", "stale_part") ~= nil, "upsert-only hydrate must keep ghost parts")
+
+		sync.handle_session_messages(session_id, snapshot, { reconcile = true })
+
+		assert(sync.get_message(session_id, "history") ~= nil, "reconcile must keep messages older than the page")
+		assert(sync.get_message(session_id, "window_old") ~= nil, "reconcile must keep snapshot messages")
+		assert(sync.get_message(session_id, "window_new") ~= nil, "reconcile must keep snapshot messages")
+		assert(sync.get_message(session_id, "ghost") == nil, "reconcile must drop holes inside the page window")
+		assert(sync.get_message(session_id, "inflight") ~= nil, "reconcile must keep messages newer than the page")
+		assert(sync.get_part("window_old", "window_old_part") ~= nil, "reconcile must keep snapshot parts")
+		assert(sync.get_part("window_old", "stale_part") == nil, "reconcile must drop ghost parts")
+
+		sync.clear_all()
+	end)
 end)

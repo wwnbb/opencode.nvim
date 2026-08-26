@@ -214,13 +214,15 @@ local function cancel_attempt_timers(attempt)
 	stop_attempt_timer(attempt, "timeout_timer")
 	stop_attempt_timer(attempt, "health_timer")
 	stop_attempt_timer(attempt, "exit_timer")
+	stop_attempt_timer(attempt, "stop_timer")
 end
 
 local function signal_succeeded(ok, result, err)
 	return ok and result ~= false and not (result == nil and err ~= nil)
 end
 
-local function signal_process(job, pid)
+local function signal_process(job, pid, signal)
+	signal = signal or 15
 	local handle = job and job.handle
 	if handle and type(handle.kill) == "function" then
 		local closing = false
@@ -229,7 +231,7 @@ local function signal_process(job, pid)
 			closing = ok and result or false
 		end
 		if not closing then
-			local ok, result, err = pcall(handle.kill, handle, 15)
+			local ok, result, err = pcall(handle.kill, handle, signal)
 			if signal_succeeded(ok, result, err) then
 				return true
 			end
@@ -237,7 +239,7 @@ local function signal_process(job, pid)
 	end
 
 	if pid and uv and type(uv.kill) == "function" then
-		local ok, result, err = pcall(uv.kill, pid, 15)
+		local ok, result, err = pcall(uv.kill, pid, signal)
 		if signal_succeeded(ok, result, err) then
 			return true
 		end
@@ -246,16 +248,34 @@ local function signal_process(job, pid)
 	return false
 end
 
-local function signal_attempt(attempt)
-	if attempt.exited or attempt.signal_sent then
+local function signal_attempt(attempt, signal)
+	signal = signal or 15
+	if attempt.exited then
+		return true
+	end
+	if signal == 15 and attempt.signal_sent then
+		return true
+	end
+	if signal == 9 and attempt.kill_sent then
 		return true
 	end
 
-	local signaled = signal_process(attempt.job, attempt.pid)
+	local signaled = signal_process(attempt.job, attempt.pid, signal)
 	if signaled then
-		attempt.signal_sent = true
+		if signal == 9 then
+			attempt.kill_sent = true
+		else
+			attempt.signal_sent = true
+		end
 	end
 	return signaled
+end
+
+local function disconnect_events()
+	local ok, client = pcall(require, "opencode.client")
+	if ok and client and type(client.disconnect_events) == "function" then
+		client.disconnect_events()
+	end
 end
 
 local function take_pending_callbacks()
@@ -309,6 +329,37 @@ local function release_attempt(attempt, connection)
 	state.set_server_managed(false)
 	state.set_connection(connection)
 	return waiters
+end
+
+local function arm_stop_timeout(attempt)
+	if not is_current_attempt(attempt) or attempt.phase ~= "stopping" or attempt.exited then
+		return
+	end
+
+	stop_attempt_timer(attempt, "stop_timer")
+	attempt.stop_timer = vim.defer_fn(function()
+		if not is_current_attempt(attempt) or attempt.phase ~= "stopping" or attempt.exited then
+			return
+		end
+		attempt.stop_timer = nil
+
+		if attempt.kill_sent then
+			vim.notify("OpenCode server did not exit after SIGKILL; releasing ownership", vim.log.levels.ERROR)
+			local waiters = release_attempt(attempt, "error")
+			run_stop_waiters(waiters)
+			return
+		end
+
+		vim.notify("OpenCode server did not exit; sending SIGKILL", vim.log.levels.WARN)
+		if signal_attempt(attempt, 9) then
+			arm_stop_timeout(attempt)
+			return
+		end
+
+		attempt.phase = "stop_error"
+		state.set_connection("error")
+		vim.notify("Failed to stop OpenCode server", vim.log.levels.ERROR)
+	end, M.opts.startup_timeout)
 end
 
 local function has_owned_process(attempt)
@@ -392,8 +443,10 @@ fail_startup = function(attempt, message)
 		return true
 	end
 
+	disconnect_events()
 	if signal_attempt(attempt) then
 		attempt.phase = "stopping"
+		arm_stop_timeout(attempt)
 		vim.notify(message, vim.log.levels.ERROR)
 	else
 		attempt.phase = "stop_error"
@@ -575,6 +628,7 @@ local function spawn_server()
 		disconnected = false,
 		exited = false,
 		signal_sent = false,
+		kill_sent = false,
 		stop_waiters = {},
 	}
 	current_attempt = attempt
@@ -701,7 +755,10 @@ setup_event_listeners = function(client)
 	end)
 
 	client.on_event("disconnected", function(reason)
-		if current_attempt and current_attempt.phase == "stop_error" then
+		if
+			current_attempt
+			and (current_attempt.phase == "stopping" or current_attempt.phase == "stop_error")
+		then
 			return
 		end
 		state.set_connection("idle")
@@ -850,7 +907,6 @@ local function observe_untracked_exit(attempt)
 		return
 	end
 
-	local started_at = uv and uv.now and uv.now() or math.floor(os.clock() * 1000)
 	local interval = math.max(50, tonumber(M.opts.health_check_interval) or 100)
 
 	local function check()
@@ -863,14 +919,6 @@ local function observe_untracked_exit(attempt)
 			local waiters = release_attempt(attempt, "idle")
 			vim.notify("OpenCode server stopped", vim.log.levels.INFO)
 			run_stop_waiters(waiters)
-			return
-		end
-
-		local now = uv and uv.now and uv.now() or math.floor(os.clock() * 1000)
-		if now - started_at >= M.opts.startup_timeout then
-			attempt.phase = "stop_error"
-			state.set_connection("error")
-			vim.notify("OpenCode server did not exit after termination signal", vim.log.levels.ERROR)
 			return
 		end
 
@@ -911,6 +959,7 @@ function M.stop(on_stopped)
 			disconnected = false,
 			exited = false,
 			signal_sent = false,
+			kill_sent = false,
 			stop_waiters = {},
 			pid = pid,
 			untracked = true,
@@ -937,6 +986,7 @@ function M.stop(on_stopped)
 	attempt.stop_reason = "stop"
 	pending_callbacks = {}
 	cancel_attempt_timers(attempt)
+	disconnect_events()
 
 	if not signal_attempt(attempt) then
 		attempt.phase = "stop_error"
@@ -947,6 +997,7 @@ function M.stop(on_stopped)
 
 	attempt.phase = "stopping"
 	state.set_connection("idle")
+	arm_stop_timeout(attempt)
 	if attempt.untracked then
 		observe_untracked_exit(attempt)
 	end

@@ -208,6 +208,7 @@ local function schedule_reconnect()
 		return
 	end
 	if state.reconnect_count >= M.opts.max_reconnects then
+		M.emit("error", "SSE reconnect gave up after " .. tostring(M.opts.max_reconnects) .. " attempts")
 		return
 	end
 
@@ -234,7 +235,11 @@ local function schedule_reconnect()
 	)
 end
 
-local function handle_stream_closed(reason)
+local function handle_stream_closed(reason, closed_stream)
+	if closed_stream ~= nil and closed_stream ~= state.stream then
+		return
+	end
+
 	emit_current_event()
 	stop_reconnect_timer()
 
@@ -436,7 +441,9 @@ function M.connect()
 		endpoint = endpoint .. "?directory=" .. encoded
 	end
 
-	local stream, err = transport.open_stream({
+	local stream
+	local err
+	stream, err = transport.open_stream({
 		host = M.opts.host,
 		port = M.opts.port,
 		method = "GET",
@@ -468,7 +475,7 @@ function M.connect()
 			M.emit("error", message)
 		end,
 		on_close = function(reason)
-			handle_stream_closed(reason)
+			handle_stream_closed(reason, stream)
 		end,
 	})
 
@@ -487,6 +494,7 @@ end
 function M.disconnect()
 	stop_reconnect_timer()
 	state.manual_disconnect = true
+	state.reconnect_count = 0
 	if state.stream and state.stream.close then
 		state.stream.close()
 		state.stream = nil

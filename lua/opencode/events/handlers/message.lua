@@ -334,7 +334,8 @@ function M.setup(events)
 					end
 
 					local returned_messages = type(messages) == "table" and #messages or 0
-					local _, _, changed_count = sync.handle_session_messages(entry.session_id, messages)
+					local _, _, changed_count =
+						sync.handle_session_messages(entry.session_id, messages, { reconcile = true })
 					local owned = sync.get_message(entry.session_id, entry.message_id) ~= nil
 					if owned then
 						orphan_reconciles[entry.key] = nil

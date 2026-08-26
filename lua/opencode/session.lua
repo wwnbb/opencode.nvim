@@ -918,7 +918,10 @@ function M.switch_to(session, opts)
 					vim.log.levels.WARN
 				)
 			end
-			if ok_sync and messages and type(sync.handle_session_messages) == "function" then
+			if not err and ok_sync and type(messages) == "table" and type(sync.handle_session_messages) == "function" then
+				-- Upsert-only: a session switch fetch can be empty/unrelated while local
+				-- cache is still authoritative. Full-window reconcile happens on explicit
+				-- load/sync paths instead.
 				sync.handle_session_messages(session.id, messages)
 				M.set_message_cache(session.id, messages, {
 					reason = "session_switch",
