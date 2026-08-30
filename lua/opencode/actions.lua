@@ -192,7 +192,12 @@ function M.clear_session_data(session_id)
 	if not session_id then
 		return
 	end
-	sync().clear_session(session_id)
+	local store = sync()
+	if type(store.clear_session_tree) == "function" then
+		store.clear_session_tree(session_id)
+	else
+		store.clear_session(session_id)
+	end
 	local ok, chat = pcall(require, "opencode.ui.chat")
 	if ok and type(chat.clear_session_view) == "function" then
 		chat.clear_session_view(session_id)

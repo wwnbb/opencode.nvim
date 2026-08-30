@@ -1542,6 +1542,50 @@ function M.get_task_child_session_for_part(tool_part)
 	return M.get_task_child_session(tool_part.messageID, tool_part.id) or resolve_task_child_session_id(tool_part)
 end
 
+---@param parent_session_id string|nil
+---@return string[] child_session_ids
+function M.get_task_child_sessions(parent_session_id)
+	if not parent_session_id or parent_session_id == "" then
+		return {}
+	end
+	local children = {}
+	for child_session_id, parent_id in pairs(store.task_child_parent) do
+		if parent_id == parent_session_id then
+			table.insert(children, child_session_id)
+		end
+	end
+	return children
+end
+
+---Collect a session and all its task-child descendants (subagents), depth-first.
+---Must run before any clearing: clear_session() drops the child->parent index.
+---@param session_id string|nil
+---@return string[] session_ids Root first, then descendants.
+function M.collect_session_tree(session_id)
+	local ids = {}
+	local visited = {}
+	local function visit(id)
+		if not id or id == "" or visited[id] then
+			return
+		end
+		visited[id] = true
+		table.insert(ids, id)
+		for _, child_id in ipairs(M.get_task_child_sessions(id)) do
+			visit(child_id)
+		end
+	end
+	visit(session_id)
+	return ids
+end
+
+---Clear all data for a session and every task-child descendant.
+---@param session_id string|nil
+function M.clear_session_tree(session_id)
+	for _, id in ipairs(M.collect_session_tree(session_id)) do
+		M.clear_session(id)
+	end
+end
+
 ---@param parent_session_id string
 ---@param message_id string
 ---@param part_id string

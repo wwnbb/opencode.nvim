@@ -554,7 +554,9 @@ function M.handle_deleted(session_id, opts)
 	end
 
 	local ok_sync, sync = pcall(require, "opencode.sync")
-	if ok_sync and type(sync.clear_session) == "function" then
+	if ok_sync and type(sync.clear_session_tree) == "function" then
+		sync.clear_session_tree(session_id)
+	elseif ok_sync and type(sync.clear_session) == "function" then
 		sync.clear_session(session_id)
 	end
 
@@ -635,7 +637,12 @@ function M.close(session_id, opts)
 	local title = session_util.displayTitle(closed and (closed.title or closed.name)) or target_id
 
 	local ok_sync, sync = pcall(require, "opencode.sync")
-	if ok_sync and type(sync.clear_session) == "function" then
+	if ok_sync and type(sync.clear_session_tree) == "function" then
+		-- Clear the closed tab's data plus any subagent child sessions
+		-- that were loaded into sync (e.g. via `gd`). Their messages are
+		-- only reachable through the parent tab, so they leak otherwise.
+		sync.clear_session_tree(target_id)
+	elseif ok_sync and type(sync.clear_session) == "function" then
 		sync.clear_session(target_id)
 	end
 
