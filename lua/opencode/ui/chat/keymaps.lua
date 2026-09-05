@@ -99,7 +99,41 @@ function M.setup_buffer(bufnr, opts)
 		end, vim.tbl_extend("force", keymap_opts, { desc = "Close current OpenCode session tab" }))
 	end
 
+	-- Session tab switching by index: digits accumulate a pending count that the
+	-- next `gt` consumes (`5gt`, `12gt`, `0gt` for the first session). The count
+	-- lives in Lua instead of literal `Ngt` mappings so digit presses never wait
+	-- on 'timeoutlen' disambiguation. Inside question/permission/edit widgets,
+	-- digits select options immediately and drop any pending count.
+	local pending_tab_count ---@type string|nil
+	local pending_tab_timer ---@type integer|nil
+
+	local function clear_pending_tab_count()
+		pending_tab_count = nil
+		if pending_tab_timer then
+			vim.fn.timer_stop(pending_tab_timer)
+			pending_tab_timer = nil
+		end
+	end
+
+	local function arm_pending_tab_timer()
+		if pending_tab_timer then
+			vim.fn.timer_stop(pending_tab_timer)
+			pending_tab_timer = nil
+		end
+		local timeout_ms = vim.api.nvim_get_option_value("timeoutlen", {})
+		if type(timeout_ms) ~= "number" or timeout_ms <= 0 then
+			return
+		end
+		pending_tab_timer = vim.fn.timer_start(timeout_ms, clear_pending_tab_count)
+	end
+
 	vim.keymap.set("n", "gt", function()
+		if pending_tab_count ~= nil then
+			local count = tonumber(pending_tab_count) or 0
+			clear_pending_tab_count()
+			chat_session_tabs.go_to_session_tab(count)
+			return
+		end
 		local count = tonumber(vim.v.count) or 0
 		if count > 0 then
 			chat_session_tabs.go_to_session_tab(count)
@@ -108,20 +142,30 @@ function M.setup_buffer(bufnr, opts)
 		chat_session_tabs.cycle_session(1)
 	end, vim.tbl_extend("force", keymap_opts, { desc = "Next or counted OpenCode session" }))
 
-	vim.keymap.set("n", "0gt", function()
-		chat_session_tabs.go_to_session_tab(0)
-	end, vim.tbl_extend("force", keymap_opts, { desc = "First OpenCode session" }))
-
-	for i = 1, SESSION_TAB_COUNT_MAPPING_LIMIT do
-		local index = i
-		vim.keymap.set("n", tostring(index) .. "gt", function()
-			chat_session_tabs.go_to_session_tab(index)
-		end, vim.tbl_extend("force", keymap_opts, { desc = string.format("OpenCode session %d", index) }))
-	end
-
 	vim.keymap.set("n", "gT", function()
+		clear_pending_tab_count()
 		chat_session_tabs.cycle_session(-1)
 	end, vim.tbl_extend("force", keymap_opts, { desc = "Previous OpenCode session" }))
+
+	for i = 0, 9 do
+		local digit = i
+		vim.keymap.set("n", tostring(digit), function()
+			if digit >= 1 and chat_interactions.handle_question_number_select(digit) then
+				clear_pending_tab_count()
+				return
+			end
+			if pending_tab_count == nil and digit == 0 then
+				-- Bare `0` keeps vanilla behavior (first column) while still
+				-- arming count 0 so `0gt` jumps to the first session.
+				vim.api.nvim_feedkeys("0", "n", false)
+			end
+			pending_tab_count = (pending_tab_count or "0") .. tostring(digit)
+			if (tonumber(pending_tab_count) or 0) > SESSION_TAB_COUNT_MAPPING_LIMIT then
+				pending_tab_count = tostring(digit)
+			end
+			arm_pending_tab_timer()
+		end, keymap_opts)
+	end
 
 	vim.keymap.set("n", "j", function()
 		chat_interactions.handle_question_navigation("down")
@@ -146,12 +190,6 @@ function M.setup_buffer(bufnr, opts)
 	vim.keymap.set("n", "<S-Tab>", function()
 		chat_interactions.handle_question_prev_tab()
 	end, keymap_opts)
-
-	for i = 1, 9 do
-		vim.keymap.set("n", tostring(i), function()
-			chat_interactions.handle_question_number_select(i)
-		end, keymap_opts)
-	end
 
 	vim.keymap.set("n", "c", function()
 		chat_interactions.handle_question_custom_input()

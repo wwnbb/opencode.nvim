@@ -193,8 +193,9 @@ app_state.set_session("session-1", "Tab 1")
 
 local chat_bufnr = chat.create()
 vim.api.nvim_set_current_buf(chat_bufnr)
-assert_true(has_keymap(chat_bufnr, "n", "0gt"), "chat buffer maps 0gt to the first session tab")
-assert_true(has_keymap(chat_bufnr, "n", "5gt"), "chat buffer maps counted gt navigation")
+assert_true(has_keymap(chat_bufnr, "n", "gt"), "chat buffer maps gt to cycle or counted sessions")
+assert_true(has_keymap(chat_bufnr, "n", "5"), "digit keys map directly for question option selection")
+assert_true(not has_keymap(chat_bufnr, "n", "5gt"), "no literal Ngt mapping so digit presses never wait on timeout")
 
 vim.api.nvim_feedkeys("5gt", "mx", false)
 assert_eq(app_state.get_session().id, "session-5", "5gt jumps to the fifth session tab")
