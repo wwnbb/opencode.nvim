@@ -98,12 +98,13 @@ function M.handle_question_navigation(direction)
 end
 
 ---@param number number
+---@return boolean consumed True when an interactive widget consumed the digit.
 function M.handle_question_number_select(number)
 	local request_id = chat_questions.get_question_at_cursor()
 	if request_id then
 		local qstate = question_state.get_question(request_id)
 		if not qstate or qstate.submitting then
-			return
+			return true
 		end
 		local current_question = qstate.questions and qstate.questions[qstate.current_tab]
 		local changed
@@ -134,7 +135,7 @@ function M.handle_question_number_select(number)
 		else
 			chat_questions.rerender_question(request_id)
 		end
-		return
+		return true
 	end
 
 	local perm_id = chat_permissions.get_permission_at_cursor()
@@ -151,7 +152,7 @@ function M.handle_question_number_select(number)
 			})
 		end
 		chat_permissions.rerender_permission(perm_id)
-		return
+		return true
 	end
 
 	local eid = chat_edits.get_edit_at_cursor()
@@ -161,10 +162,10 @@ function M.handle_question_number_select(number)
 			edit_state.move_selection_to(eid, number)
 			chat_edits.rerender_edit(eid)
 		end
-		return
+		return true
 	end
 
-	vim.api.nvim_feedkeys(tostring(number), "n", false)
+	return false
 end
 
 function M.handle_question_confirm()
