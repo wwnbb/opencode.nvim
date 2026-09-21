@@ -222,6 +222,7 @@ end
 ---@param reason string
 ---@param callback? function
 local function sync_session_messages(session_id, reason, callback)
+	local snapshot = sync().capture_session_snapshot(session_id)
 	client().get_messages(session_id, { limit = 100 }, function(fetch_err, messages)
 		if fetch_err then
 			logger.debug("Session message sync failed", {
@@ -236,7 +237,7 @@ local function sync_session_messages(session_id, reason, callback)
 		end
 
 		local message_count, part_count, changed_count =
-			sync().handle_session_messages(session_id, messages, { reconcile = true })
+			sync().handle_session_messages(session_id, messages, { reconcile = true, snapshot = snapshot })
 		session_actions.set_message_cache(session_id, messages, {
 			reason = reason,
 		})

@@ -23,12 +23,17 @@ Install pinned Neovim test dependencies once:
 
 Run the Plenary/Busted test suite:
 
+The full suite also runs the bundled TypeScript tool tests with Bun. Install Bun
+or set `OPENCODE_NVIM_BUN` to its executable path; no additional npm packages are
+needed for these tests.
+
 ```sh
 ./tests/run.sh              # all specs
 ./tests/run.sh unit         # unit specs
 ./tests/run.sh checks       # architecture/state guardrails
 ./tests/run.sh integration  # integration specs
 ./tests/run.sh smoke        # smoke specs
+./tests/run.sh tools        # Bun tool tests, including the Neovim edit-review path
 ```
 
 You can also run a single spec file:

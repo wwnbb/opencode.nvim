@@ -1114,6 +1114,22 @@ local function message_in_snapshot_window(message, oldest, newest)
 	return true
 end
 
+---Capture freshness before requesting a session's messages over HTTP.
+---@param session_id string
+---@return table
+function M.capture_session_snapshot(session_id)
+	local revisions = {}
+	for _, message in ipairs(store.message[session_id] or {}) do
+		revisions[message.id] = store.message_revision[message.id] or 0
+	end
+	return {
+		session_id = session_id,
+		message_store = store.message,
+		session_messages = store.message[session_id],
+		revisions = revisions,
+	}
+end
+
 ---Remove store records that this snapshot page no longer contains.
 ---Does not delete messages older than the page (limit=100 tail) or newer
 ---than the page (in-flight SSE). Never pass a single prompt-response wrapper.
@@ -1126,7 +1142,9 @@ local function reconcile_session_snapshot(
 	session_id,
 	snapshot_messages,
 	snapshot_message_ids,
-	snapshot_parts_by_message
+	snapshot_parts_by_message,
+	protected_messages,
+	has_snapshot
 )
 	local removed_count = 0
 	local oldest = snapshot_messages[1]
@@ -1148,6 +1166,7 @@ local function reconcile_session_snapshot(
 			local message_id = type(message) == "table" and nonempty_string(message.id) or nil
 			if
 				message_id
+				and not protected_messages[message_id]
 				and not snapshot_message_ids[message_id]
 				and message_in_snapshot_window(message, oldest, newest)
 			then
@@ -1162,7 +1181,10 @@ local function reconcile_session_snapshot(
 
 	for message_id, part_ids in pairs(snapshot_parts_by_message) do
 		local parts = store.part[message_id]
-		if type(parts) == "table" then
+		if type(parts) == "table"
+			and not protected_messages[message_id]
+			and (has_snapshot or not is_incomplete_assistant_message(message_id))
+		then
 			local stale_part_ids = {}
 			for _, part in ipairs(parts) do
 				local part_id = type(part) == "table" and nonempty_string(part.id) or nil
@@ -1183,7 +1205,7 @@ end
 ---Hydrate messages and parts from /session/:id/message (mirrors TUI session.sync)
 ---@param session_id string
 ---@param messages table[]|nil
----@param opts? { reconcile?: boolean }
+---@param opts? { reconcile?: boolean, snapshot?: table }
 ---@return number message_count
 ---@return number part_count
 ---@return number changed_count
@@ -1192,6 +1214,28 @@ function M.handle_session_messages(session_id, messages, opts)
 		return 0, 0, 0
 	end
 	opts = type(opts) == "table" and opts or {}
+	local snapshot = opts.snapshot
+	local protected_messages = {}
+	if snapshot then
+		if snapshot.session_id ~= session_id
+			or snapshot.message_store ~= store.message
+			or (snapshot.session_messages and snapshot.session_messages ~= store.message[session_id])
+		then
+			return 0, 0, 0
+		end
+		-- Compare before any upserts change revisions. Protect deletions as well
+		-- as additions/updates delivered by SSE while the request was in flight.
+		for message_id, revision in pairs(snapshot.revisions) do
+			if store.message_revision[message_id] ~= revision then
+				protected_messages[message_id] = true
+			end
+		end
+		for _, message in ipairs(store.message[session_id] or {}) do
+			if snapshot.revisions[message.id] ~= store.message_revision[message.id] then
+				protected_messages[message.id] = true
+			end
+		end
+	end
 
 	local message_count = 0
 	local part_count = 0
@@ -1209,13 +1253,13 @@ function M.handle_session_messages(session_id, messages, opts)
 				info.sessionID = nonempty_string(info.sessionID) or session_id
 				snapshot_message_ids[info_id] = true
 				table.insert(snapshot_messages, info)
-				if M.handle_message_updated(info) then
+				if not protected_messages[info_id] and M.handle_message_updated(info) then
 					changed_count = changed_count + 1
 				end
 				message_count = message_count + 1
 			end
 
-			if type(msg_with_parts.parts) == "table" then
+			if type(msg_with_parts.parts) == "table" and not protected_messages[info_id] then
 				if info_id and snapshot_parts_by_message[info_id] == nil then
 					snapshot_parts_by_message[info_id] = {}
 				end
@@ -1245,7 +1289,9 @@ function M.handle_session_messages(session_id, messages, opts)
 				session_id,
 				snapshot_messages,
 				snapshot_message_ids,
-				snapshot_parts_by_message
+				snapshot_parts_by_message,
+				protected_messages,
+				snapshot ~= nil
 			)
 	end
 

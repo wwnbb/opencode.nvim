@@ -315,6 +315,7 @@ function M.setup(events)
 				max_attempts = #ORPHAN_RECONCILE_DELAYS_MS,
 			})
 
+			local snapshot = sync.capture_session_snapshot(entry.session_id)
 			client.get_messages(entry.session_id, { limit = ORPHAN_RECONCILE_MESSAGE_LIMIT }, function(err, messages)
 				vim.schedule(function()
 					if orphan_reconciles[entry.key] ~= entry then
@@ -335,7 +336,7 @@ function M.setup(events)
 
 					local returned_messages = type(messages) == "table" and #messages or 0
 					local _, _, changed_count =
-						sync.handle_session_messages(entry.session_id, messages, { reconcile = true })
+						sync.handle_session_messages(entry.session_id, messages, { reconcile = true, snapshot = snapshot })
 					local owned = sync.get_message(entry.session_id, entry.message_id) ~= nil
 					if owned then
 						orphan_reconciles[entry.key] = nil

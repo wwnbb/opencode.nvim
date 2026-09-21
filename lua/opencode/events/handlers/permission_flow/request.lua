@@ -131,6 +131,7 @@ local function normalize_file(file)
 		deletions = type(file.deletions) == "number" and file.deletions or parsed_deletions,
 		type = file.type or "update",
 		bom = file.bom == true,
+		before_bom = file.before_bom,
 	}
 end
 
