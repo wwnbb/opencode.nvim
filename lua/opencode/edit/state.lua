@@ -127,6 +127,9 @@ local function classify_manual_resolution(file)
 	end
 
 	if not disk.exists then
+		if file.file_type == "delete" then
+			return "accepted"
+		end
 		return (file.before == "" or file.file_type == "add") and "rejected" or "resolved"
 	end
 
@@ -134,7 +137,7 @@ local function classify_manual_resolution(file)
 	local before = normalize_line_endings(file.before)
 	local after = normalize_line_endings(file.after)
 
-	if actual == after then
+	if file.file_type ~= "delete" and actual == after then
 		return "accepted"
 	end
 
@@ -159,6 +162,8 @@ local function disk_matches_snapshot(disk, file, field)
 	local snapshot_exists = true
 	if field == "before" then
 		snapshot_exists = before_exists(file)
+	elseif file.file_type == "delete" then
+		snapshot_exists = false
 	end
 	if disk.exists ~= snapshot_exists then
 		return false
@@ -261,7 +266,7 @@ local function apply_file_action(estate, file, action)
 			)
 		end
 		return true, nil
-	elseif disk.exists and normalize_line_endings(disk.content) == normalize_line_endings(file.after or "") then
+	elseif disk_matches_snapshot(disk, file, "after") then
 		-- Disk holds exactly our proposal: undo it by restoring before
 		local ok, err = changes.reject(file.change_id)
 		if not ok then
@@ -348,6 +353,8 @@ function M.add_edit(permission_id, session_id, files_data, opts)
 		if review_mode ~= "readonly" then
 			change_id = changes.add_change(filepath, before, after, {
 				bom = fd.bom == true,
+				before_bom = fd.before_bom,
+				file_type = fd.type or "update",
 				metadata = {
 					source = "edit_widget",
 					permission_id = permission_id,

@@ -54,6 +54,10 @@ case "$TARGET" in
 		run_directory "tests/checks"
 		run_directory "tests/integration"
 		run_directory "tests/smoke"
+		bash "$SCRIPT_DIR/run-tools.sh"
+		;;
+	tools)
+		bash "$SCRIPT_DIR/run-tools.sh"
 		;;
 	unit | checks | integration | smoke)
 		run_directory "tests/$TARGET"

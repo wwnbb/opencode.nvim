@@ -96,6 +96,25 @@ local function get_max_changes()
 	return math.max(1, math.floor(max_changes))
 end
 
+-- The history budget applies to resolved records. Pending reviews retain their IDs.
+local function trim_history()
+	local resolved = 0
+	for _, change in ipairs(state.changes) do
+		if change.status ~= M.STATUS.PENDING then
+			resolved = resolved + 1
+		end
+	end
+	local index = 1
+	while resolved > get_max_changes() do
+		if state.changes[index].status == M.STATUS.PENDING then
+			index = index + 1
+		else
+			table.remove(state.changes, index)
+			resolved = resolved - 1
+		end
+	end
+end
+
 ---@param filepath string
 ---@return boolean
 local function needs_confirmation(filepath)
@@ -252,6 +271,7 @@ function M.update_status(id, status, opts)
 	if opts.hunk_index and change.hunks and change.hunks[opts.hunk_index] then
 		change.hunks[opts.hunk_index].status = status
 	end
+	trim_history()
 	return true
 end
 
@@ -348,11 +368,6 @@ function M.add_change(filepath, original_content, modified_content, opts)
 		return nil
 	end
 
-	local max_changes = get_max_changes()
-	while #state.changes >= max_changes do
-		table.remove(state.changes, 1)
-	end
-
 	local change_id = generate_id()
 	local raw_original = original_content or ""
 	local raw_modified = modified_content or ""
@@ -360,6 +375,10 @@ function M.add_change(filepath, original_content, modified_content, opts)
 	local modified = strip_bom(raw_modified)
 	local original_lines = vim.split(original, "\n", { plain = true })
 	local modified_lines = vim.split(modified, "\n", { plain = true })
+	local original_bom = opts.before_bom
+	if original_bom == nil then
+		original_bom = raw_original:sub(1, 3) == BOM or opts.bom == true
+	end
 	local change = {
 		id = change_id,
 		filepath = filepath,
@@ -375,6 +394,8 @@ function M.add_change(filepath, original_content, modified_content, opts)
 		timestamp = os.time(),
 		requires_confirm = needs_confirmation(filepath),
 		bom = raw_original:sub(1, 3) == BOM or opts.bom == true,
+		original_bom = original_bom,
+		file_type = opts.file_type or "update",
 		metadata = opts.metadata or {},
 	}
 
@@ -429,7 +450,12 @@ function M.accept(id, opts)
 		return false, "Confirmation required"
 	end
 
-	local ok, err = write_file(change.filepath, join_bom(change.modified_content, change.bom))
+	local ok, err
+	if change.file_type == "delete" then
+		ok, err = os.remove(change.filepath)
+	else
+		ok, err = write_file(change.filepath, join_bom(change.modified_content, change.bom))
+	end
 	if not ok then
 		M.update_status(id, M.STATUS.FAILED, { message = err })
 		emit_change_event("Failed", id, { status = M.STATUS.FAILED, error = err })
@@ -454,7 +480,7 @@ function M.reject(id)
 		return false, "Change already resolved"
 	end
 
-	local ok, err = write_file(change.filepath, join_bom(change.original_content, change.bom))
+	local ok, err = write_file(change.filepath, join_bom(change.original_content, change.original_bom))
 	if not ok then
 		M.update_status(id, M.STATUS.FAILED, { message = err })
 		emit_change_event("Failed", id, { status = M.STATUS.FAILED, error = err })

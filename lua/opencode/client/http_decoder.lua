@@ -140,20 +140,22 @@ function M.new(opts)
 				state.chunk_size = parsed_size
 				state.chunk_buffer = state.chunk_buffer:sub(line_end + 2)
 
-				if state.chunk_size == 0 then
-					local trailer_end = state.chunk_buffer:find("\r\n\r\n", 1, true)
-					if trailer_end then
-						state.chunk_buffer = state.chunk_buffer:sub(trailer_end + 4)
-						state.chunk_done = true
-						return true
-					end
-					if state.chunk_buffer:sub(1, 2) == "\r\n" then
-						state.chunk_buffer = state.chunk_buffer:sub(3)
-						state.chunk_done = true
-						return true
-					end
-					return false
+			end
+
+			-- Keep reading trailers after a split zero-size chunk header.
+			if state.chunk_size == 0 then
+				if state.chunk_buffer:sub(1, 2) == "\r\n" then
+					state.chunk_buffer = state.chunk_buffer:sub(3)
+					state.chunk_done = true
+					return true
 				end
+				local trailer_end = state.chunk_buffer:find("\r\n\r\n", 1, true)
+				if trailer_end then
+					state.chunk_buffer = state.chunk_buffer:sub(trailer_end + 4)
+					state.chunk_done = true
+					return true
+				end
+				return false
 			end
 
 			local needed = state.chunk_size + 2

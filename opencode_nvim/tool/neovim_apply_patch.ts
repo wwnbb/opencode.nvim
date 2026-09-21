@@ -382,6 +382,8 @@ function reviewFilesForChange(change: FileChange) {
         type: change.type,
         before: change.before.content,
         after: change.newContent,
+        bom: change.bom,
+        before_bom: change.before.bom,
         diff: change.proposedDiff,
         patch: change.proposedDiff,
         additions: change.additions,
@@ -401,6 +403,8 @@ function reviewFilesForChange(change: FileChange) {
       type: "delete",
       before: change.before.content,
       after: "",
+      bom: change.before.bom,
+      before_bom: change.before.bom,
       diff: deleteDiff,
       patch: deleteDiff,
       additions: stats(change.before.content, "").additions,
@@ -410,9 +414,11 @@ function reviewFilesForChange(change: FileChange) {
     {
       filePath: change.movePath,
       relativePath: change.moveRelativePath,
-      type: "add",
+      type: destinationBefore.exists ? "update" : "add",
       before: destinationBefore.content,
       after: change.newContent,
+      bom: change.bom,
+      before_bom: destinationBefore.bom,
       diff: addDiff,
       patch: addDiff,
       additions: stats(destinationBefore.content, change.newContent).additions,
@@ -449,10 +455,6 @@ async function classifyChange(change: FileChange): Promise<Status> {
 
   if (change.type === "delete") {
     if (!source.exists) return "applied"
-    if (source.exists && source.content === "") {
-      await removePath(change.filePath)
-      return "applied"
-    }
     if (sameState(source, change.before)) return "rejected"
     return "partial"
   }
@@ -461,31 +463,12 @@ async function classifyChange(change: FileChange): Promise<Status> {
     const destination = await readState(change.movePath)
     const destinationBefore = change.destinationBefore ?? { exists: false, content: "", bom: false }
     if (!source.exists && destination.exists && sameContent(destination.content, change.newContent)) return "applied"
-    if (
-      source.exists &&
-      source.content === "" &&
-      destination.exists &&
-      sameContent(destination.content, change.newContent)
-    ) {
-      await removePath(change.filePath)
-      return "applied"
-    }
     if (sameState(source, change.before) && sameState(destination, destinationBefore)) return "rejected"
-    if (source.exists && source.content === "" && change.before.content !== "") {
-      await removePath(change.filePath)
-    }
-    if (!destinationBefore.exists && destination.exists && destination.content === "") {
-      await removePath(change.movePath)
-    }
     return "partial"
   }
 
   if (source.exists && sameContent(source.content, change.newContent)) return "applied"
   if (sameState(source, change.before)) return "rejected"
-  if (!change.before.exists && source.exists && source.content === "") {
-    await removePath(change.filePath)
-    return "rejected"
-  }
   return "partial"
 }
 
@@ -626,13 +609,6 @@ export default tool({
       const unchanged = await Promise.all(changes.map(currentMatchesBefore))
       if (unchanged.every(Boolean)) {
         for (const change of changes) await applyChange(change)
-      }
-    } else {
-      for (const change of changes) {
-        if (!change.before.exists) {
-          const current = await readState(change.filePath)
-          if (current.exists && current.content === "") await removePath(change.filePath)
-        }
       }
     }
 

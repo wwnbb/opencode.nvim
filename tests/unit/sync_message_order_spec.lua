@@ -211,7 +211,10 @@ describe("opencode sync message ordering", function()
 		assert(sync.get_message(session_id, "ghost") ~= nil, "upsert-only hydrate must keep ghost messages")
 		assert(sync.get_part("window_old", "stale_part") ~= nil, "upsert-only hydrate must keep ghost parts")
 
-		sync.handle_session_messages(session_id, snapshot, { reconcile = true })
+		sync.handle_session_messages(session_id, snapshot, {
+			reconcile = true,
+			snapshot = sync.capture_session_snapshot(session_id),
+		})
 
 		assert(sync.get_message(session_id, "history") ~= nil, "reconcile must keep messages older than the page")
 		assert(sync.get_message(session_id, "window_old") ~= nil, "reconcile must keep snapshot messages")

@@ -112,11 +112,8 @@ local function should_accept_global_event(data)
 		end
 	end
 
-	-- Also accept events for the active session's directory. When the user
-	-- switches to a session belonging to another project, the session's
-	-- directory differs from vim.fn.getcwd(). Without this, permission and
-	-- question events for that session are silently dropped, leaving the
-	-- agent stuck waiting for a reply the user can never see.
+	-- Open tabs keep receiving events while another project has focus.
+	-- The active view may also be a child session outside the runtime tab list.
 	local ok_state, state_mod = pcall(require, "opencode.state")
 	if ok_state and state_mod.get_session and state_mod.get_session_directory then
 		local active = state_mod.get_session()
@@ -124,6 +121,13 @@ local function should_accept_global_event(data)
 			local session_dir = state_mod.get_session_directory(active.id)
 			if session_dir and session_dir ~= "" and session_dir == event_dir then
 				return true
+			end
+		end
+		if type(state_mod.get_active_sessions) == "function" then
+			for _, session in ipairs(state_mod.get_active_sessions()) do
+				if state_mod.get_session_directory(session.id) == event_dir then
+					return true
+				end
 			end
 		end
 	end

@@ -214,11 +214,13 @@ function M.load_session_messages(session_id, opts, callback)
 		request_opts.limit = 100
 	end
 	return with_connection(function()
+		local store = sync()
+		local snapshot = store.capture_session_snapshot and store.capture_session_snapshot(session_id)
 		client().get_messages(session_id, request_opts, function(err, response)
 			if not err and response and type(response) == "table" then
 				local store = sync()
 				if type(store.handle_session_messages) == "function" then
-					store.handle_session_messages(session_id, response, { reconcile = true })
+					store.handle_session_messages(session_id, response, { reconcile = true, snapshot = snapshot })
 				else
 					for _, msg_with_parts in ipairs(response) do
 						local info = msg_with_parts.info

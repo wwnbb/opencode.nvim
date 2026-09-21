@@ -834,35 +834,43 @@ function M.refresh_status(callback)
 		return
 	end
 
-	local directory = vim.fn.fnamemodify(vim.fn.getcwd(), ":p")
-	if vim.fs and vim.fs.normalize then
-		directory = vim.fs.normalize(directory)
+	local cwd = state.normalize_directory(vim.fn.getcwd())
+	local groups = { [cwd] = {} }
+	for _, session in ipairs(state.get_active_sessions()) do
+		local directory = state.get_session_directory(session.id) or cwd
+		groups[directory] = groups[directory] or {}
+		table.insert(groups[directory], session.id)
 	end
-
-	client.get_session_statuses({ directory = directory }, function(err, statuses)
-		if not err and type(statuses) == "table" then
-			local seen = {}
-			for session_id, status in pairs(statuses) do
-				if state.is_runtime_session(session_id) then
-					seen[session_id] = true
-					M.set_session_status(session_id, status, { reason = "refresh_status" })
+	local directories = vim.tbl_keys(groups)
+	local pending = #directories
+	local combined, first_error = {}, nil
+	for _, directory in ipairs(directories) do
+		client.get_session_statuses({ directory = directory }, function(err, statuses)
+			first_error = first_error or err
+			if not err and type(statuses) == "table" then
+				for _, session_id in ipairs(groups[directory]) do
+					if state.is_runtime_session(session_id)
+						and (state.get_session_directory(session_id) or cwd) == directory
+					then
+						local status = statuses[session_id]
+						if status then
+							combined[session_id] = status
+							M.set_session_status(session_id, status, { reason = "refresh_status" })
+						else
+							local current = state.get_session_status(session_id)
+							if current.type == "busy" or current.type == "retry" then
+								M.set_session_status(session_id, { type = "idle" }, { reason = "refresh_status" })
+							end
+						end
+					end
 				end
 			end
-			for _, session_id in ipairs(state.get_session_status_ids()) do
-				local current_status = state.get_session_status(session_id)
-				if
-					state.is_runtime_session(session_id)
-					and not seen[session_id]
-					and (current_status.type == "busy" or current_status.type == "retry")
-				then
-					M.set_session_status(session_id, { type = "idle" }, { reason = "refresh_status" })
-				end
+			pending = pending - 1
+			if pending == 0 and callback then
+				callback(first_error, combined)
 			end
-		end
-		if callback then
-			callback(err, statuses)
-		end
-	end)
+		end)
+	end
 end
 
 ---@param session table
@@ -917,6 +925,7 @@ function M.switch_to(session, opts)
 		return
 	end
 
+	local snapshot = ok_sync and sync.capture_session_snapshot and sync.capture_session_snapshot(session.id)
 	client.get_messages(session.id, { limit = 100 }, function(err, messages)
 		vim.schedule(function()
 			if err and opts.notify then
@@ -929,7 +938,7 @@ function M.switch_to(session, opts)
 				-- Upsert-only: a session switch fetch can be empty/unrelated while local
 				-- cache is still authoritative. Full-window reconcile happens on explicit
 				-- load/sync paths instead.
-				sync.handle_session_messages(session.id, messages)
+				sync.handle_session_messages(session.id, messages, { snapshot = snapshot })
 				M.set_message_cache(session.id, messages, {
 					reason = "session_switch",
 				})
