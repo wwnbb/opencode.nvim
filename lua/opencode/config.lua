@@ -126,6 +126,7 @@ M.defaults = {
 		max_lines = 500,
 		max_bytes = 200 * 1024,
 		assistant_markdown = true,
+		user_markdown = true,
 		tools = true,
 		diffs = true,
 		languages = {},

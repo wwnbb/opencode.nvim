@@ -61,12 +61,13 @@ describe("v2 history projection", function()
 	end)
 
 	it("preserves every native service message without creating a user turn", function()
+		local hidden_types = { idle = true, ["agent-switched"] = true, ["model-switched"] = true }
 		for _, kind in ipairs({ "synthetic", "system", "skill", "shell", "agent-switched", "model-switched", "location-switched", "compaction", "idle" }) do
 			local native = { id = "msg_" .. kind, type = kind, time = { created = 1 }, metadata = { custom = false } }
 			local projected = projection.project("ses_test", native)
 			assert.equals("system", projected.info.role)
 			assert.same(native, projected.info._v2)
-			assert.equals(kind == "idle", projected.info.hidden)
+			assert.equals(hidden_types[kind] == true, projected.info.hidden)
 		end
 	end)
 end)

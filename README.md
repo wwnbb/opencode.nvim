@@ -13,6 +13,42 @@ projects, and prompts without leaving the editor.
 The goal of opencode.nvim is to make OpenCode feel lightweight, scriptable, keyboard-friendly,
 and naturally integrated into the Neovim workflow.
 
+# Code highlighting
+
+Fenced code blocks in user messages and assistant replies use the installed
+Tree-sitter parser and highlight queries for their language. Open fences and
+incomplete code are highlighted while the answer streams. The same highlighting
+is used when loading history, with source positions preserved through wrapping
+and shortened user messages. Fence delimiters remain visible.
+
+```lua
+require("opencode").setup({
+  syntax = {
+    enabled = true,
+    user_markdown = true,
+    assistant_markdown = true, -- includes streaming replies
+    max_lines = 500,           -- per code block
+    max_bytes = 200 * 1024,
+    languages = {},            -- optional language aliases
+  },
+})
+```
+
+For example, a `rust` fence needs a Rust parser and `highlights.scm` queries on
+Neovim's runtimepath. Missing parsers/queries, unknown languages and blocks over
+the limits fall back to plain text; parsers are not installed automatically.
+Explicitly labelled fences also highlight snippets shorter than `syntax.min_bytes`.
+The legacy `markdown.enable_code_highlight = false` disables fenced-code
+highlighting for both roles. Standalone backtick/tilde fences are supported;
+nested Markdown containers such as block quotes are not parsed by this renderer.
+
+The current-line and visual-selection helpers (including the suggested
+`<leader>oe` and `<leader>oa` mappings below) add code in a fenced Markdown block.
+The language comes from the source buffer's `filetype`, with filename detection
+as a fallback; unknown languages leave the fence unlabelled. The `@file#lines`
+reference stays above the block. Selections containing backtick fences use a
+longer outer fence so the selected text remains intact.
+
 # Testing
 
 Install pinned Neovim and server-plugin test dependencies once (Node.js and npm required):

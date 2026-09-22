@@ -166,77 +166,12 @@ local function add_code_entry(result, text, hl_group)
 	return body, rows
 end
 
----@param result table
----@param row table
----@param source_start number
----@param source_end number
----@param hl_group string
----@param priority number|nil
-local function add_wrapped_row_highlight(result, row, source_start, source_end, hl_group, priority)
-	local row_start = row.byte_start or 0
-	local row_end = row.byte_end or (row_start + #(row.text or ""))
-	local overlap_start = math.max(source_start, row_start)
-	local overlap_end = math.min(source_end, row_end)
-	if overlap_start >= overlap_end then
-		return
-	end
-
-	local prefix_len = #(row.prefix or "")
-	local highlight = {
-		line = row.line_index,
-		col_start = prefix_len + overlap_start - row_start,
-		col_end = prefix_len + overlap_end - row_start,
-		hl_group = hl_group,
-	}
-	if priority then
-		highlight.priority = priority
-	end
-	table.insert(result.highlights, highlight)
-end
-
----@param result table
----@param rows table[]|nil
----@param source_start number
----@param source_end number
----@param hl_group string
----@param priority number|nil
-local function add_wrapped_line_highlight(result, rows, source_start, source_end, hl_group, priority)
-	if source_end <= source_start then
-		return
-	end
-	for _, row in ipairs(rows or {}) do
-		add_wrapped_row_highlight(result, row, source_start, source_end, hl_group, priority)
-	end
-end
-
----@param result table
----@param text string
----@param lang string
----@param row_map table[]
 local function add_wrapped_syntax_highlights(result, text, lang, row_map)
-	local source_lines = vim.split(text, "\n", { plain = true })
-	for _, hl in ipairs(syntax.highlight_text(text, lang, { scope = "tools" })) do
-		local first_line = hl.line or 0
-		local last_line = hl.end_line or first_line
-		local max_line = math.max(0, #source_lines - 1)
-		if first_line <= max_line then
-			last_line = math.min(last_line, max_line)
-			for source_line = first_line, last_line do
-				local line_text = source_lines[source_line + 1] or ""
-				local source_start = source_line == first_line and (hl.col_start or 0) or 0
-				local source_end
-				if source_line == last_line then
-					source_end = hl.end_col or hl.col_end or hl.col_start or #line_text
-				else
-					source_end = #line_text
-				end
-				if source_end == -1 then
-					source_end = #line_text
-				end
-				add_wrapped_line_highlight(result, row_map[source_line + 1], source_start, source_end, hl.hl_group, hl.priority)
-			end
-		end
-	end
+	vim.list_extend(result.highlights, syntax.project_highlights(
+		syntax.highlight_text(text, lang, { scope = "tools" }),
+		vim.split(text, "\n", { plain = true }),
+		row_map
+	))
 end
 
 ---@param tool_part table
