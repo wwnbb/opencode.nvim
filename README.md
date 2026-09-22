@@ -13,6 +13,17 @@ projects, and prompts without leaving the editor.
 The goal of opencode.nvim is to make OpenCode feel lightweight, scriptable, keyboard-friendly,
 and naturally integrated into the Neovim workflow.
 
+# Thought and Explore
+
+Reasoning appears as a collapsed `+ Thought · 216ms` row. Press `O` or `Enter`
+on it to show the full reasoning behind a left border. Consecutive reasoning
+parts share a row, with their step count and combined duration.
+
+Consecutive Read, Glob, and Grep calls appear as `→ Explored — 1 read, 2 searches`.
+Expand the row to see file paths and search summaries. Active groups animate as
+`Thinking` or `Exploring`; failures remain visible when collapsed, and permission
+requests stay accessible. Expansion is preserved while streaming. Set `thinking.enabled = false` to hide reasoning.
+
 # Tokens per second
 
 Assistant footers show average generation speed, for example `42.7 tok/s`.

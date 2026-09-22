@@ -61,20 +61,18 @@ describe("thinking rendering", function()
 			vim.bo[chat_bufnr].tabstop = 2
 			vim.bo[foreign_bufnr].tabstop = 8
 
-			-- Chat display uses the legacy plain Thinking: style (no icon/separators).
-			local rendered = render.render_reasoning(
-				"**Plan**\nthis is a deliberately long reasoning line that must wrap\nsecond line"
-			)
+			-- Chat thoughts are collapsed by default, independently of the legacy formatter.
+			local rendered = render.render_reasoning("**Plan**\n\nthis is a deliberately long reasoning line that must wrap\nsecond line", {
+				time = { created = 100, completed = 316 },
+			})
 			local rendered_lines = render.extract_lines(rendered)
-			assert(rendered_lines[1] == "Thinking: **Plan**", "legacy first line should keep raw markdown asterisks")
-			assert(
-				rendered_lines[2] == "          this is a deliberately long reasoning line that must wrap",
-				"legacy continuation indentation was lost"
-			)
-			assert(rendered_lines[3] == "          second line", "legacy second continuation line was lost")
-			assert(rendered_lines[4] == "", "legacy reasoning block should end with a blank line")
-			assert(not table.concat(rendered_lines, "\n"):find("R>", 1, true), "chat reasoning should not use formatter icons")
-			assert(not table.concat(rendered_lines, "\n"):find("─", 1, true), "chat reasoning should not draw separator rows")
+			assert(vim.trim(rendered_lines[1]) == "+ Thought: Plan · 216ms", "collapsed thought should show topic and duration")
+			assert(#rendered_lines == 2, "collapsed thought should hide its body")
+			local expanded = render.render_reasoning("a deliberately long reasoning line that must wrap\nsecond line", { expanded = true })
+			local expanded_lines = render.extract_lines(expanded)
+			assert(vim.trim(expanded_lines[1]) == "- Thought", "expanded thought should use the minus marker")
+			assert(expanded_lines[3]:find("▏  ", 1, true) == 1, "expanded reasoning needs a left border")
+			assert(table.concat(expanded_lines, "\n"):find("second line", 1, true), "expanded thought must not truncate content")
 
 			local chat_tabbed = render.wrap_text_with_ranges("a\tb", 4)
 			assert(#chat_tabbed == 1, "wrapping should use the chat buffer tabstop, not the current buffer")

@@ -112,7 +112,7 @@ function M.is_animating_tool_part(tool_part)
 	if tool_part.tool == "task" then
 		return M.is_task_working(M.task_status(tool_part))
 	end
-	return is_animated_regular_tool(tool_part.tool) and M.is_task_working(status)
+	return (tool_part.activity_group ~= nil or is_animated_regular_tool(tool_part.tool)) and M.is_task_working(status)
 end
 
 function M.stop_task_animation_timer()
@@ -314,6 +314,13 @@ function M.update_animation_frames_in_place()
 			and widget_support.block_is_visible(pos, top_line, bottom_line)
 		then
 			local block_updated = false
+			if pos.activity_group then
+				local line = vim.api.nvim_buf_get_lines(bufnr, pos.start_line, pos.start_line + 1, false)[1] or ""
+				if is_animation_frame(vim.fn.strcharpart(line, 0, 1), TASK_ANIM_FRAMES) then
+					block_updated = set_frame_overlay(bufnr, pos.start_line, 0, task_frame, "OpenCodeActivityRunning")
+					updated = block_updated or updated
+				end
+			end
 			local candidates = { pos.start_line + 1, pos.start_line }
 			for _, line_nr in ipairs(candidates) do
 				if block_updated then

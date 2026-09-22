@@ -928,6 +928,26 @@ function M.update_stream_part_block(session_id, message_id, part_id, opts)
 		return false
 	end
 
+	if part.type == "reasoning" then
+		for id, pos in pairs(state.tools) do
+			if pos.activity_group and pos.session_id == effective_session_id then
+				for _, ref in ipairs(pos.activity_group.refs) do
+					if ref.part.id == part_id and ref.message.id == message_id then
+						local cursor = capture_widget_cursor_context()
+						local scroll = should_auto_scroll(cursor)
+						local updated = chat_tasks.rerender_tool(id)
+						if updated then
+							if not restore_widget_cursor_context(cursor) and scroll then chat_cursor.scroll_to_bottom() end
+							redraw()
+						end
+						return updated
+					end
+				end
+			end
+		end
+		return false
+	end
+
 	local block_key = stream_block_key(effective_session_id, message_id, part_id, part.type)
 	local block = block_key and state.stream_blocks[block_key]
 	if not block then

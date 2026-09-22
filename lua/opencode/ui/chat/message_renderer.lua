@@ -7,7 +7,7 @@ local state = require("opencode.ui.chat.state").state
 local render = require("opencode.ui.chat.render")
 local sync = require("opencode.sync")
 local app_state = require("opencode.state")
-local thinking = require("opencode.ui.thinking")
+local activity = require("opencode.ui.chat.activity")
 local spinner = require("opencode.ui.spinner")
 local processing_footer = require("opencode.ui.chat.processing_footer")
 local throughput = require("opencode.ui.chat.throughput")
@@ -312,39 +312,17 @@ local function render_user_message(ctx, message, render_parts, msg_idx, messages
 	ctx:add_raw_line("")
 end
 
-local function render_reasoning_part(ctx, message, part, part_idx, render_parts, incomplete_assistant)
-	if not thinking.is_enabled() then
-		return
-	end
-	local reasoning_start = ctx:line_count()
-	local cache_key = nil
-	if not incomplete_assistant then
-		local thinking_config = thinking.get_config()
-		cache_key = ctx:render_cache_key(
-			"reasoning",
-			ctx.current_session.id,
-			message.id,
-			part.id or part_idx,
-			render_parts.message_revision,
-			part.id and render_parts.part_revisions[part.id] or 0,
-			ctx.chat_width,
-			thinking_config.enabled,
-			thinking_config.max_height,
-			thinking_config.truncate,
-			thinking_config.icon,
-			thinking_config.highlight,
-			thinking_config.header_highlight
-		)
-	end
-	local reasoning_lines = ctx:cached_nui_lines(cache_key, function()
-		return render.render_reasoning(part.text)
-	end)
-	for _, nl in ipairs(reasoning_lines) do
-		ctx:add_line(nl)
-	end
-	if incomplete_assistant and #reasoning_lines > 0 and part.id then
-		ctx:register_stream_block(message.id, part, "reasoning", reasoning_start)
-	end
+local function render_activity(ctx, group)
+	local expanded = state.expanded_tools[group.id] == true
+	local result = activity.render(group, expanded)
+	local base_line = ctx:add_render_result(result, "activity")
+	state.tools[group.id] = widget_support.mark_render_generation({
+		start_line = base_line,
+		end_line = base_line + #result.lines - 1,
+		activity_group = group,
+		session_id = ctx.current_session.id,
+		highlights = result.highlights,
+	})
 end
 
 local function render_text_part(ctx, message, part, part_idx, render_parts, incomplete_assistant)
@@ -372,8 +350,11 @@ end
 
 local function render_assistant_message(ctx, index, message, render_parts, opts)
 	for part_idx, part in ipairs(render_parts.parts) do
-		if part.type == "reasoning" and part.text and part.text ~= "" then
-			render_reasoning_part(ctx, message, part, part_idx, render_parts, opts.incomplete_assistant)
+		local group = opts.activities[part.id]
+		if group then
+			if group.id == part.id then render_activity(ctx, group) end
+		elseif part.type == "reasoning" then
+			-- Empty/redacted/disabled reasoning has no visible row.
 		elseif part.type == "text" and part.text and part.text ~= "" then
 			render_text_part(
 				ctx,
@@ -422,6 +403,10 @@ local function render_messages(
 )
 	local last_assistant_idx = find_last_assistant(messages)
 	local max_user_message_lines = tonumber((ctx.chat_config or {}).max_user_message_lines) or 0
+	local activities = activity.collect(messages, function(id) return ctx:get_message_render_parts(id) end, function(message, part)
+		return #index:items_for_tool_call(message.id, part.callID) > 0
+			or #index:items_for_message(message.id) > 0
+	end)
 
 	render_hidden_history_notice(ctx, skipped_messages)
 
@@ -448,6 +433,7 @@ local function render_messages(
 				render_user_message(ctx, message, render_parts, msg_idx, messages, max_user_message_lines)
 			else
 				render_assistant_message(ctx, index, message, render_parts, {
+					activities = activities,
 					incomplete_assistant = incomplete_assistant,
 					is_last_assistant = is_last_assistant,
 					suppress_footer = processing_presentation ~= nil and is_last_assistant,
