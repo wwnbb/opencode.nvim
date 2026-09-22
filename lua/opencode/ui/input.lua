@@ -320,7 +320,6 @@ function M.close(save_draft)
 	state.add_history = true
 	state.normalizing_paste = false
 	state.resize_scheduled = false
-	state.reflow_geometry = nil
 
 	vim.cmd("stopinsert")
 end

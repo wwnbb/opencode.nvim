@@ -2,9 +2,20 @@
 
 local M = {}
 
+local function parent_geometry(winid)
+	local position = vim.api.nvim_win_get_position(winid)
+	return {
+		row = position[1],
+		col = position[2],
+		width = vim.api.nvim_win_get_width(winid),
+		height = vim.api.nvim_win_get_height(winid),
+	}
+end
+
 function M.build(chat_winid, float_dims, cfg)
 	local height = cfg.min_height
 	local info_height = 1
+	local parent = parent_geometry(chat_winid)
 
 	if float_dims then
 		local info_top_pad = 1
@@ -16,7 +27,8 @@ function M.build(chat_winid, float_dims, cfg)
 		return {
 			layout = {
 				is_float = true,
-				float_dims = float_dims,
+				float_dims = vim.deepcopy(float_dims),
+				parent_geometry = parent,
 				col = float_col,
 				row = row,
 				info_height = info_height + info_top_pad,
@@ -42,8 +54,8 @@ function M.build(chat_winid, float_dims, cfg)
 		}
 	end
 
-	local chat_win_width = vim.api.nvim_win_get_width(chat_winid)
-	local chat_win_height = vim.api.nvim_win_get_height(chat_winid)
+	local chat_win_width = parent.width
+	local chat_win_height = parent.height
 	local padding_rows = 1
 	local padding_cols = 1
 	local total_height = height + padding_rows * 3 + info_height
@@ -55,6 +67,7 @@ function M.build(chat_winid, float_dims, cfg)
 	return {
 		layout = {
 			is_float = false,
+			parent_geometry = parent,
 			chat_row = 0,
 			chat_height = chat_win_height,
 			col = col,
@@ -164,11 +177,22 @@ end
 function M.reflow(state)
 	if not state.visible or not state.parent_winid or not vim.api.nvim_win_is_valid(state.parent_winid)
 		or not state.popup or not state.info_popup then return end
-	local frame = M.build(state.parent_winid, nil, state.config)
-	local geometry = { width = frame.layout.content_width, row = frame.layout.row, col = frame.layout.col,
-		parent = state.parent_winid }
-	if vim.deep_equal(geometry, state.reflow_geometry) then return end
-	state.reflow_geometry = geometry
+	local current_layout = state.layout
+	local parent = parent_geometry(state.parent_winid)
+	local previous_parent = current_layout.parent_geometry
+	-- Growing the draft also emits WinResized. Only reflow when the parent changed.
+	if vim.deep_equal(parent, previous_parent) then return end
+
+	local float_dims
+	if current_layout.is_float then
+		-- Preserve the float's original padding and editor-relative anchor while
+		-- following actual parent movement/resizing (including Neovim clamping).
+		float_dims = vim.deepcopy(current_layout.float_dims)
+		for key, value in pairs(parent) do
+			float_dims[key] = float_dims[key] + value - previous_parent[key]
+		end
+	end
+	local frame = M.build(state.parent_winid, float_dims, state.config)
 	state.layout = frame.layout
 	state.popup:update_layout(frame.popup)
 	state.info_popup:update_layout(frame.info)
