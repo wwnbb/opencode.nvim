@@ -10,6 +10,7 @@ local app_state = require("opencode.state")
 local thinking = require("opencode.ui.thinking")
 local spinner = require("opencode.ui.spinner")
 local processing_footer = require("opencode.ui.chat.processing_footer")
+local throughput = require("opencode.ui.chat.throughput")
 local widget_renderer = require("opencode.ui.chat.widget_renderer")
 local tool_renderer = require("opencode.ui.chat.tool_renderer")
 local widget_support = require("opencode.ui.chat.widget_support")
@@ -127,6 +128,7 @@ local function build_user_created_by_id(all_messages)
 end
 
 local function make_metadata_footer_renderer(ctx, all_messages, user_created_by_id)
+	local rates = (ctx.chat_config or {}).tps ~= false and throughput.by_message(all_messages) or {}
 	local function metadata_footer_duration(message)
 		if not message or not message.time or type(message.time.completed) ~= "number" then
 			return nil
@@ -140,6 +142,7 @@ local function make_metadata_footer_renderer(ctx, all_messages, user_created_by_
 
 	return function(message, spinner_frame, message_revision)
 		local duration_ms = metadata_footer_duration(message)
+		local tokens_per_second = message and message.id and rates[message.id] or nil
 		local cache_key = message
 			and message.id
 			and ctx:render_cache_key(
@@ -150,6 +153,7 @@ local function make_metadata_footer_renderer(ctx, all_messages, user_created_by_
 				ctx.metadata_provider_revision,
 				ctx.metadata_agent_revision,
 				duration_ms or "",
+				tokens_per_second or "",
 				spinner_frame or ""
 			)
 		if cache_key then
@@ -158,6 +162,7 @@ local function make_metadata_footer_renderer(ctx, all_messages, user_created_by_
 					spinner_frame = spinner_frame,
 					duration_ms = duration_ms,
 					duration_calculated = true,
+					tokens_per_second = tokens_per_second,
 				})
 			end)
 		end
@@ -166,6 +171,7 @@ local function make_metadata_footer_renderer(ctx, all_messages, user_created_by_
 			spinner_frame = spinner_frame,
 			duration_ms = duration_ms,
 			duration_calculated = true,
+			tokens_per_second = tokens_per_second,
 		})
 	end
 end

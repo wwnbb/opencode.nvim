@@ -12,6 +12,7 @@ local layout = require("opencode.ui.input.layout")
 local mentions = require("opencode.ui.input.mentions")
 local popups = require("opencode.ui.input.popups")
 local slash_commands = require("opencode.ui.input.slash_commands")
+local syntax = require("opencode.ui.input.syntax")
 
 local state = {
 	bufnr = nil,
@@ -186,6 +187,7 @@ local function mount_input(chat_winid, float_dims, cfg)
 	state.slash_commands = {}
 
 	vim.api.nvim_buf_set_var(state.bufnr, "completion", false)
+	syntax.attach(state.bufnr)
 end
 
 function M.show(opts)

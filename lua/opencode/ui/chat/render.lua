@@ -1084,7 +1084,7 @@ end
 ---Render metadata footer for an assistant message.
 ---@param message table
 ---@param messages table[]
----@param opts? table { spinner_frame?: string|nil, duration_ms?: number|nil, duration_calculated?: boolean }
+---@param opts? table { spinner_frame?: string|nil, duration_ms?: number|nil, duration_calculated?: boolean, tokens_per_second?: number }
 ---@return NuiLine
 function M.render_metadata_footer(message, messages, opts)
 	opts = opts or {}
@@ -1127,6 +1127,11 @@ function M.render_metadata_footer(message, messages, opts)
 			line:append(NuiText(" · ", "Comment"))
 			line:append(NuiText(locale.duration(duration_ms), agent_hl))
 		end
+	end
+	local tokens_per_second = _numeric(opts.tokens_per_second)
+	if tokens_per_second and tokens_per_second > 0 then
+		line:append(NuiText(" · ", "Comment"))
+		line:append(NuiText(string.format("%.1f tok/s", tokens_per_second), "Comment"))
 	end
 	if interrupted then
 		line:append(NuiText(" · ", "Comment"))
