@@ -1,0 +1,255 @@
+{
+  "file": "two\n",
+  "history": {
+    "data": [
+      {
+        "id": "msg_0c63a2f4e00113zluS6skZFwAE",
+        "time": {
+          "created": 1790032097102
+        },
+        "type": "idle",
+        "outcome": "succeeded"
+      },
+      {
+        "id": "msg_0c63a096e001zqqpHnuJAZgWPj",
+        "time": {
+          "created": 1790032087430,
+          "streamed": 1790032097074,
+          "completed": 1790032097099
+        },
+        "type": "assistant",
+        "agent": "build",
+        "model": {
+          "id": "mimo-v2.5-free",
+          "providerID": "opencode",
+          "variant": "default"
+        },
+        "content": [
+          {
+            "type": "reasoning",
+            "text": "Done. The file now contains \"two\".",
+            "state": {
+              "reasoningField": "reasoning_content",
+              "reasoningDetails": [
+                {
+                  "type": "reasoning.text",
+                  "text": "Done. The file now contains \"two\".",
+                  "format": "unknown",
+                  "index": 0
+                }
+              ]
+            },
+            "time": {
+              "created": 1790032096961,
+              "completed": 1790032097071
+            }
+          },
+          {
+            "type": "text",
+            "text": "Done."
+          }
+        ],
+        "snapshot": {
+          "start": "7b23a13773ca4be933db1bed9d5fa46eebff2ad0",
+          "end": "7b23a13773ca4be933db1bed9d5fa46eebff2ad0",
+          "files": []
+        },
+        "finish": "stop",
+        "rawFinish": "stop",
+        "cost": 0,
+        "tokens": {
+          "input": 124,
+          "output": 14,
+          "reasoning": 0,
+          "cache": {
+            "read": 6912,
+            "write": 0
+          }
+        }
+      },
+      {
+        "id": "msg_0c639fbfb00167Qf2kUa25OrWh",
+        "time": {
+          "created": 1790032083989,
+          "streamed": 1790032087322,
+          "completed": 1790032087400
+        },
+        "type": "assistant",
+        "agent": "build",
+        "model": {
+          "id": "mimo-v2.5-free",
+          "providerID": "opencode",
+          "variant": "default"
+        },
+        "content": [
+          {
+            "type": "reasoning",
+            "text": "The file contains \"one\". I need to replace \"one\" with \"two\" and preserve the final newline.",
+            "state": {
+              "reasoningField": "reasoning_content",
+              "reasoningDetails": [
+                {
+                  "type": "reasoning.text",
+                  "text": "The file contains \"one\". I need to replace \"one\" with \"two\" and preserve the final newline.",
+                  "format": "unknown",
+                  "index": 0
+                }
+              ]
+            },
+            "time": {
+              "created": 1790032086743,
+              "completed": 1790032087314
+            }
+          },
+          {
+            "type": "tool",
+            "id": "call_d59ee77d5fb0408087df64ad",
+            "name": "edit",
+            "executed": false,
+            "state": {
+              "status": "completed",
+              "input": {
+                "path": "counter.txt",
+                "oldString": "one",
+                "newString": "two"
+              },
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Edited counter.txt (1 replacement)"
+                }
+              ],
+              "metadata": {
+                "files": [
+                  {
+                    "file": "counter.txt",
+                    "patch": "Index: counter.txt\n===================================================================\n--- counter.txt\n+++ counter.txt\n@@ -1,1 +1,1 @@\n-one\n+two\n",
+                    "status": "modified",
+                    "additions": 1,
+                    "deletions": 1
+                  }
+                ],
+                "truncated": false
+              }
+            },
+            "time": {
+              "created": 1790032086939,
+              "ran": 1790032087320,
+              "completed": 1790032087328
+            }
+          }
+        ],
+        "snapshot": {
+          "start": "97772d4c462ce40d1da0edb7d07033b2eeab11a7",
+          "end": "7b23a13773ca4be933db1bed9d5fa46eebff2ad0",
+          "files": [
+            "counter.txt"
+          ]
+        },
+        "finish": "tool-calls",
+        "rawFinish": "tool_calls",
+        "cost": 0,
+        "tokens": {
+          "input": 105,
+          "output": 65,
+          "reasoning": 0,
+          "cache": {
+            "read": 6848,
+            "write": 0
+          }
+        }
+      },
+      {
+        "id": "msg_0c639ebbd001UpUfQFt8Cs4x47",
+        "time": {
+          "created": 1790032079857,
+          "streamed": 1790032083921,
+          "completed": 1790032083956
+        },
+        "type": "assistant",
+        "agent": "build",
+        "model": {
+          "id": "mimo-v2.5-free",
+          "providerID": "opencode",
+          "variant": "default"
+        },
+        "content": [
+          {
+            "type": "reasoning",
+            "text": "Let me read the counter.txt file first to see its current content.",
+            "state": {
+              "reasoningField": "reasoning_content",
+              "reasoningDetails": [
+                {
+                  "type": "reasoning.text",
+                  "text": "Let me read the counter.txt file first to see its current content.",
+                  "format": "unknown",
+                  "index": 0
+                }
+              ]
+            },
+            "time": {
+              "created": 1790032083663,
+              "completed": 1790032083913
+            }
+          },
+          {
+            "type": "tool",
+            "id": "call_b9d0644262994ee7a24ecbbf",
+            "name": "read",
+            "executed": false,
+            "state": {
+              "status": "completed",
+              "input": {
+                "path": "counter.txt"
+              },
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Read file counter.txt, lines 1-1\n1: one"
+                }
+              ],
+              "metadata": {
+                "truncated": false
+              }
+            },
+            "time": {
+              "created": 1790032083758,
+              "ran": 1790032083919,
+              "completed": 1790032083927
+            }
+          }
+        ],
+        "snapshot": {
+          "start": "97772d4c462ce40d1da0edb7d07033b2eeab11a7",
+          "end": "97772d4c462ce40d1da0edb7d07033b2eeab11a7",
+          "files": []
+        },
+        "finish": "tool-calls",
+        "rawFinish": "tool_calls",
+        "cost": 0,
+        "tokens": {
+          "input": 6891,
+          "output": 36,
+          "reasoning": 0,
+          "cache": {
+            "read": 0,
+            "write": 0
+          }
+        }
+      },
+      {
+        "id": "msg_0c639eba9001NZHv4a3XJX6cy6",
+        "time": {
+          "created": 1790032079801
+        },
+        "text": "Use your file editing tool to replace one with two in counter.txt. Pass the relative path counter.txt exactly. Preserve the final newline. Do not change any other file. Then reply Done.",
+        "type": "user"
+      }
+    ],
+    "cursor": {
+      "previous": "eyJpZCI6Im1zZ18wYzYzYTJmNGUwMDExM3psdVM2c2taRndBRSIsIm9yZGVyIjoiZGVzYyIsImRpcmVjdGlvbiI6InByZXZpb3VzIn0",
+      "next": "eyJpZCI6Im1zZ18wYzYzOWViYTkwMDFOWkh2NGEzWEpYNmN5NiIsIm9yZGVyIjoiZGVzYyIsImRpcmVjdGlvbiI6Im5leHQifQ"
+    }
+  }
+}

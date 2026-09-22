@@ -122,7 +122,7 @@ function M.setup(events)
 		todo_fetch_generations[session_id] = fetch_generation
 		local starting_todo_revision = sync.get_todo_revision(session_id)
 
-		client.get_session_todos(session_id, function(err, todos)
+		client.get_session_todos(session_id, function(err, todos, record)
 			vim.schedule(function()
 				if err then
 					clear_todo_fetch_generation(session_id, fetch_generation)
@@ -142,7 +142,7 @@ function M.setup(events)
 					})
 					return
 				end
-				if sync.get_todo_revision(session_id) ~= starting_todo_revision then
+				if not record and sync.get_todo_revision(session_id) ~= starting_todo_revision then
 					clear_todo_fetch_generation(session_id, fetch_generation)
 					logger.debug("Stale session todo response ignored", {
 						session_id = session_id,
@@ -154,7 +154,9 @@ function M.setup(events)
 				clear_todo_fetch_generation(session_id, fetch_generation)
 
 				local hydrated_todos = type(todos) == "table" and todos or {}
-				sync.handle_todo_updated(session_id, hydrated_todos)
+				if record then
+					if not sync.handle_todo_record(record, state.get_session_directory(session_id)) then return end
+				else sync.handle_todo_updated(session_id, hydrated_todos) end
 
 				local current_session = state.get_session()
 				local current_session_id = current_session and current_session.id
@@ -873,6 +875,13 @@ function M.setup(events)
 	end)
 
 	-- Handle todo.updated (OpenCode session todo state)
+	events.on("v2_interaction", function(event)
+		if event.type ~= "rpc.opencode_nvim.todoUpdated" then return end
+		local record = event.data and event.data.todo
+		local sid = record and record.sessionID
+		if not sid or not (state.get_session().id == sid or event_util.runtime_root_for_session(sid)) then return end
+		events.emit("todo_updated", record)
+	end)
 	events.on("todo_updated", function(data)
 		vim.schedule(function()
 			if type(data) ~= "table" or not data.sessionID then
@@ -883,7 +892,9 @@ function M.setup(events)
 			end
 
 			local todos = type(data.todos) == "table" and data.todos or {}
-			sync.handle_todo_updated(data.sessionID, todos)
+			if data.protocolVersion then
+				if not sync.handle_todo_record(data, state.get_session_directory(data.sessionID)) then return end
+			else sync.handle_todo_updated(data.sessionID, todos) end
 
 			local current_session = state.get_session()
 			local current_session_id = current_session and current_session.id

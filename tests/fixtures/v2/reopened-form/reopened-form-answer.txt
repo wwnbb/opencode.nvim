@@ -1,0 +1,40 @@
+                                       │ ○ Reopened native...                                                           
+~                                      │Agent: build                                                                    
+~                                      │┃                                                                               
+~                                      │┃  Call the direct top-level question tool exactly once. Ask one question with  
+~                                      │┃  header "History", prompt "Pick a stored answer", and two options: label "Red 
+~                                      │┃  answer" description "First choice", label "Blue answer" description "Second  
+~                                      │┃  choice". Wait for my answer. After the answer, reply exactly                 
+~                                      │┃  FORM_HISTORY_DONE. Do not use any other tools.                               
+~                                      │┃                                                                               
+~                                      │                                                                                
+~                                      │Thinking: The user wants me to call the question tool exactly once with         
+~                                      │specific parameters.                                                            
+~                                      │                                                                                
+~                                      │▏                                                                               
+~                                      │▏  # Question answered                                                          
+~                                      │▏                                                                               
+~                                      │▏  History: Blue answer                                                         
+~                                      │▏                                                                               
+~                                      │                                                                                
+~                                      │Thinking: The user selected "Blue answer". Now I need to reply exactly          
+~                                      │"FORM_HISTORY_DONE".                                                            
+~                                      │                                                                                
+~                                      │FORM_HISTORY_DONE                                                               
+~                                      │                                                                                
+~                                      │▣ Build · mimo-v2.5-free · 9.3k tok · 12.5s                                     
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+[No Name]            0,0-1          All opencode [-]                                                  12,1           All
+OpenCode connected (server v2.0.11)                                                                                     

@@ -2,6 +2,7 @@ describe("opencode edit review storage", function()
 	local changes = require("opencode.artifact.changes")
 	local edits = require("opencode.edit.state")
 	local root
+	local original_open
 	local function write(path, content)
 		local file = assert(io.open(path, "wb"))
 		assert(file:write(content))
@@ -14,6 +15,7 @@ describe("opencode edit review storage", function()
 		return content
 	end
 	before_each(function()
+		original_open = io.open
 		root = vim.fn.tempname()
 		vim.fn.mkdir(root, "p")
 		changes.setup({ auto_backup = false })
@@ -21,6 +23,7 @@ describe("opencode edit review storage", function()
 		edits.clear_all()
 	end)
 	after_each(function()
+		io.open = original_open
 		edits.clear_all()
 		changes.clear()
 		changes.setup({})
@@ -83,5 +86,45 @@ describe("opencode edit review storage", function()
 		write(path, "\xEF\xBB\xBFafter\n")
 		assert.is_true(edits.reject_file("bom", 1))
 		assert.equals("before\n", read(path))
+	end)
+
+	for _, action in ipairs({ "accept", "reject" }) do
+		it("retries a failed " .. action .. " without losing the review to history trimming", function()
+			local path = root .. "/retry"
+			write(path, "before\n")
+			local estate = edits.add_edit("retry", "session", {
+				{ filePath = path, before = "before\n", after = "after\n", type = "update" },
+			})
+			if action == "reject" then write(path, "after\n") end
+			io.open = function(name, mode)
+				if name == path and mode == "wb" then return nil, "temporary write failure" end
+				return original_open(name, mode)
+			end
+			local ok, err = edits[action .. "_file"]("retry", 1)
+			assert.is_false(ok)
+			assert.equals("temporary write failure", err)
+			assert.equals("pending", estate.files[1].status)
+			io.open = original_open
+			changes.setup({ auto_backup = false, max_changes = 1 })
+			for index = 1, 3 do
+				local id = changes.add_change(root .. "/history" .. index, "", "value")
+				assert.is_true(changes.resolve_manually(id))
+			end
+			assert.equals(1, #changes.get_pending())
+			assert.is_true(edits[action .. "_file"]("retry", 1))
+			assert.equals(action == "accept" and "after\n" or "before\n", read(path))
+			assert.equals(action == "accept" and "accepted" or "rejected", estate.files[1].status)
+		end)
+	end
+
+	it("reports non-throwing write errors and permits manual resolution afterwards", function()
+		local id = changes.add_change(root .. "/failed", "before", "after")
+		io.open = function()
+			return { write = function() return nil, "disk full" end, close = function() return true end }
+		end
+		local ok, err = changes.accept(id)
+		assert.is_false(ok)
+		assert.equals("disk full", err)
+		assert.is_true(changes.resolve_manually(id))
 	end)
 end)

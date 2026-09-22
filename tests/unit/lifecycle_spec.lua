@@ -44,17 +44,15 @@ describe("opencode lifecycle", function()
 	end
 
 	local function emit_listening(job, port)
-		job.opts.on_stdout(nil, "opencode server listening on http://127.0.0.1:" .. tostring(port), job)
+		job.opts.on_stdout(nil, "server listening on http://127.0.0.1:" .. tostring(port), job)
 		flush_scheduled()
 	end
 
 	local function respond_health(index, healthy, version)
 		local callback = health_callbacks[index]
 		assert(callback, "health callback " .. tostring(index) .. " must exist")
-		callback(nil, {
-			healthy = healthy,
-			version = version or "1.0.0",
-		})
+		if not healthy then callback({ message = "Not ready" }); return end
+		callback(nil, { version = version or "2.0.11", pid = 1000, urls = {}, paths = { tmp = "/tmp" } })
 	end
 
 	local function complete_start(callback, port)
@@ -130,6 +128,10 @@ describe("opencode lifecycle", function()
 			end,
 			get_server_info = function()
 				return vim.deepcopy(state_data.server)
+			end,
+			clear_server_endpoint = function()
+				state_data.server.port = nil
+				state_data.server.version = nil
 			end,
 			set_server_info = function(info)
 				for key, value in pairs(info or {}) do
@@ -238,6 +240,31 @@ describe("opencode lifecycle", function()
 		for _, name in ipairs(module_names) do
 			package.loaded[name] = saved_modules[name]
 		end
+	end)
+
+	it("recognizes the actual unbracketed IPv6 listening line from CLI 2.0.11", function()
+		local connected = false
+		lifecycle.ensure_connected(function() connected = true end)
+		local job = jobs[1]
+		job.opts.on_stdout(nil, "server listening on http://::1:4096", job)
+		flush_scheduled()
+		assert_eq(state_data.server.host, "::1", "IPv6 host")
+		assert_eq(state_data.server.port, 4096, "IPv6 port")
+		respond_health(1, true); flush_scheduled()
+		assert_eq(connected, true, "IPv6 readiness")
+	end)
+
+	it("shares one ephemeral credential between the owned process, HTTP and SSE", function()
+		lifecycle.ensure_connected(function() end)
+		local job = jobs[1]
+		local password = job.opts.env.OPENCODE_SERVER_PASSWORD
+		assert_eq(type(password), "string", "owned credential type")
+		assert_eq(#password, 64, "owned credential length")
+		emit_listening(job, 4096)
+		assert_eq(state_data.http_setup.auth.password, password, "HTTP credential")
+		assert_eq(state_data.sse_setup.auth.password, password, "SSE credential")
+		assert_eq(job.opts.enable_recording, false, "no raw startup-output retention")
+		assert_eq(lifecycle.opts.auth, nil, "generated secret does not become user configuration")
 	end)
 
 	it("drops queued actions when event connection fails", function()
@@ -499,6 +526,38 @@ describe("opencode lifecycle", function()
 		assert_eq(state_data.connection, "error", "error after SIGKILL timeout")
 		assert_eq(lifecycle.start(), true, "start after hang release")
 		assert_eq(#jobs, 2, "replacement job after hang release")
+	end)
+
+	it("uses explicit port zero for a private server", function()
+		local job = complete_start()
+		assert.same({ "serve", "--hostname", "localhost", "--port", "0" }, job.opts.args)
+	end)
+
+	it("connects an external endpoint with auto-start disabled and never stops it", function()
+		lifecycle.setup({ auto_start = false, port = 4096 })
+		state_data.server.port = 4096
+		local runs = 0
+		lifecycle.ensure_connected(function() runs = runs + 1 end)
+		assert.equals(0, #jobs)
+		respond_health(1, true)
+		flush_scheduled()
+		assert.equals(1, runs)
+		assert.is_false(state_data.server.managed)
+		assert.is_nil(state_data.server.pid)
+		assert.is_false(lifecycle.stop())
+		lifecycle.disconnect()
+		assert.equals(4096, state_data.server.port)
+	end)
+
+	it("does not spawn a private server after an external auth failure", function()
+		lifecycle.setup({ port = 4096 })
+		state_data.server.port = 4096
+		lifecycle.ensure_connected(function() error("unauthorized") end)
+		health_callbacks[1]({ status = 401, message = "Unauthorized" })
+		flush_scheduled()
+		assert.equals("error", state_data.connection)
+		assert.equals(0, #jobs)
+		assert.equals(0, lifecycle.status().pending_callbacks)
 	end)
 
 	it("does not retain callbacks when auto-start is disabled", function()

@@ -412,12 +412,6 @@ local function confirm_inline_diff_file()
 		return
 	end
 
-	if is_valid_window(inline_diff_state.actual_win) then
-		vim.api.nvim_win_call(inline_diff_state.actual_win, function()
-			vim.cmd("silent! write")
-		end)
-	end
-
 	local ok, err = edit_state.resolve_file(edit_id, file_index)
 	if not ok then
 		vim.notify("Failed to confirm file: " .. (err or "unknown"), vim.log.levels.ERROR)
@@ -1012,8 +1006,13 @@ function M.close_inline_diff_split(opts)
 			reusable_buf = nil
 		end
 	else
+		local estate = inline_diff_state.edit_id and edit_state.get_edit(inline_diff_state.edit_id)
 		for _, winid in ipairs(ordered_wins) do
-			if is_valid_window(winid) then
+			if winid == actual_win and estate and estate.transport == "review_rpc" then
+				-- The actual pane was an existing editor window. Preserve it when
+				-- dismissing the proposal, together with its manual file buffer.
+				reusable_win, reusable_buf, close_err = normalize_surviving_inline_diff_window(winid)
+			elseif is_valid_window(winid) then
 				local ok_close, err = close_window(winid, true)
 				if not ok_close then
 					local is_actual = is_valid_window(actual_win) and winid == actual_win
@@ -1053,6 +1052,10 @@ end
 ---@param opts? table { edit_id?: string, file_index?: number }
 function M.open_inline_diff_split(file, opts)
 	opts = opts or {}
+	if file.apply_mode == "server" then
+		vim.notify("Local diff requires server.shared_filesystem=true and access to the server files. Use = for the inline proposal.", vim.log.levels.WARN)
+		return
+	end
 	ensure_inline_diff_state()
 	local ok_close, _, reusable_win = M.close_inline_diff_split({
 		check_unsaved = true,

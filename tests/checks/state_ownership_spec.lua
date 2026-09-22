@@ -177,7 +177,7 @@ local fallback = selectors.send_selection({
 })
 assert_eq(fallback.model.providerID, "p2", "invalid opts model should fall back to local provider")
 assert_eq(fallback.model.modelID, "m2", "invalid opts model should fall back to local model")
-assert_eq(fallback.agent, "Plan", "local agent should be selected")
+assert_eq(fallback.agent, "plan", "local agent should be selected")
 assert_eq(selectors.current_model().providerID, "p2", "selectors should expose local provider selection")
 assert_eq(selectors.current_model().modelID, "m2", "selectors should expose local model selection")
 assert_eq(selectors.current_agent().name, "Plan", "selectors should expose local agent selection")
@@ -187,6 +187,7 @@ bus.clear_history()
 local client = require("opencode.client")
 local original_get_config_providers = client.get_config_providers
 local original_list_agents = client.list_agents
+local original_list_commands = client.list_commands
 local original_get_config = client.get_config
 local original_list_skills = client.list_skills
 local original_get_mcp_status = client.get_mcp_status
@@ -239,6 +240,7 @@ client.get_config = function(callback)
 		command = { sync_command = { template = "echo sync" } },
 	})
 end
+client.list_commands = function(callback) callback(nil, { sync_command = { template = "echo sync" } }) end
 client.list_skills = function(callback)
 	callback(nil, { { name = "sync-skill" } })
 end
@@ -280,6 +282,7 @@ end
 client.get_config = function(callback)
 	callback(nil, { command = { failure_command = { template = "echo still runs" } } })
 end
+client.list_commands = function(callback) callback(nil, { failure_command = { template = "echo still runs" } }) end
 client.list_skills = function(callback)
 	callback(nil, { { name = "skill-after-failure" } })
 end
@@ -302,7 +305,7 @@ wait_for(function()
 		and sync_changed.skills == 1
 end, "one initial sync failure should not prevent other fetches")
 assert_true(
-	local_notices[1].content:find("Failed to fetch config providers: providers failed", 1, true) ~= nil,
+	local_notices[1].content:find("Failed to fetch providers: providers failed", 1, true) ~= nil,
 	"initial sync local notice should include the failing fetch"
 )
 assert_eq(loaded.providers, 0, "failed providers fetch should not emit providers_loaded")
@@ -317,6 +320,7 @@ for index = notification_baseline + 1, #notifications do
 end
 client.get_config_providers = original_get_config_providers
 client.list_agents = original_list_agents
+client.list_commands = original_list_commands
 client.get_config = original_get_config
 client.list_skills = original_list_skills
 client.get_mcp_status = original_get_mcp_status
@@ -1032,7 +1036,9 @@ wait_for(function()
 end, "danger mode should auto-reply to permission requests")
 assert_eq(replies[1].permission_id, "danger_perm", "danger mode reply should target permission")
 assert_eq(replies[1].reply, "once", "danger mode should use one-shot approval")
-assert_true(not permission_state.has_permission("danger_perm"), "danger mode should skip pending permission widget")
+wait_for(function()
+	return permission_state.get_permission("danger_perm").status == "approved"
+end, "danger mode should resolve pending permission widget after confirmation")
 
 client.respond_permission = original_respond_permission
 state.set_danger_mode(false)

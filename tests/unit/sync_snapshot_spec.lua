@@ -68,4 +68,27 @@ describe("opencode HTTP snapshot freshness", function()
 		sync.handle_session_messages(sid, { { info = message(), parts = {} } }, { reconcile = true })
 		assert.equals("text", sync.get_part(mid, "streaming").text)
 	end)
+
+	for _, clear in ipairs({ "clear_session", "clear_session_messages", "clear_all" }) do
+		it("invalidates an initially empty snapshot on " .. clear, function()
+			local snapshot = sync.capture_session_snapshot(sid)
+			sync[clear](sid)
+			sync.handle_session_messages(sid, { { info = message(), parts = { part("old", "stale") } } }, {
+				snapshot = snapshot, reconcile = true,
+			})
+			assert.equals(0, #sync.get_messages(sid))
+			assert.is_nil(sync.get_part(mid, "old"))
+			-- A request made after clearing must still be allowed to hydrate the session.
+			local fresh = sync.capture_session_snapshot(sid)
+			sync.handle_session_messages(sid, { { info = message(), parts = {} } }, { snapshot = fresh })
+			assert.equals(1, #sync.get_messages(sid))
+		end)
+	end
+
+	it("does not invalidate another session's request when clearing a session", function()
+		local snapshot = sync.capture_session_snapshot(sid)
+		sync.clear_session("other")
+		sync.handle_session_messages(sid, { { info = message(), parts = {} } }, { snapshot = snapshot })
+		assert.equals(1, #sync.get_messages(sid))
+	end)
 end)

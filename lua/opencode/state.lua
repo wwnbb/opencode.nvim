@@ -34,6 +34,7 @@ local state = {
 		recent_order = {},
 		by_id = {},
 		status = {},
+		status_revision = {},
 		pending = {},
 		message_cache = {},
 	},
@@ -172,6 +173,7 @@ local function upsert_session_record(session)
 	local record = old and vim.deepcopy(old) or { id = id }
 
 	for key, value in pairs(session) do
+		if key == "revert" and value == vim.NIL then record.revert = nil end
 		if value ~= nil and value ~= vim.NIL then
 			record[key] = value
 		end
@@ -260,6 +262,11 @@ end
 
 function M.get_server_info()
 	return vim.deepcopy(state.server)
+end
+
+function M.clear_server_endpoint()
+	set("port", nil, "server")
+	set("version", nil, "server")
 end
 
 -- Session
@@ -505,6 +512,7 @@ function M.set_session_status(session_id, status)
 	if not session_id or session_id == "" then
 		return nil, false
 	end
+	state.sessions.status_revision[session_id] = (state.sessions.status_revision[session_id] or 0) + 1
 	local old = state.sessions.status[session_id]
 	local next_status = session_status.normalize_session_status(status)
 	if vim.deep_equal(old, next_status) then
@@ -513,6 +521,10 @@ function M.set_session_status(session_id, status)
 	state.sessions.status[session_id] = next_status
 	emit_change("sessions.status." .. session_id, old, next_status)
 	return old and vim.deepcopy(old) or nil, true
+end
+
+function M.get_session_status_revision(session_id)
+	return state.sessions.status_revision[session_id] or 0
 end
 
 ---@param session_id string|nil
@@ -835,6 +847,7 @@ function M.reset()
 		recent_order = {},
 		by_id = {},
 		status = {},
+		status_revision = {},
 		pending = {},
 		message_cache = {},
 	}

@@ -1,0 +1,18 @@
+{
+  "status": 200,
+  "response": {
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "attemptID": "con_0c62eb8e10015mFEs6srAxDIcV",
+      "url": "https://example.invalid/authorize",
+      "instructions": "Use the public test code",
+      "mode": "code",
+      "time": {
+        "created": 1790031345889,
+        "expires": 1790031405889
+      }
+    }
+  }
+}

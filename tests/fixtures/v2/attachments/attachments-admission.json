@@ -1,0 +1,56 @@
+{
+  "status": 200,
+  "response": {
+    "data": {
+      "id": "msg_0c654845b001q26JhYFsIUmdrM",
+      "sessionID": "ses_f39ab7c6effeBny4b67iiVrVHU",
+      "time": {
+        "created": 1790033822819
+      },
+      "type": "user",
+      "payload": {
+        "text": "猫🙂é\n[File 1] [Image 1] @build\nRead the attached text and reply with its first line exactly. Do not call tools or delegate tasks.",
+        "files": [
+          {
+            "data": "QVRUQUNITUVOVF9WMl9PSwpzZWNvbmQgbGluZQo=",
+            "mime": "text/plain",
+            "source": {
+              "type": "uri",
+              "uri": "file://<PROFILE>/project%20%D0%BF%D1%80%D0%BE%D0%B1%D0%B5%D0%BB%20%25%23/%D1%82%D0%B5%D0%BA%D1%81%D1%82%20with%20%25%23.txt"
+            },
+            "name": "текст with %#.txt",
+            "mention": {
+              "start": 6,
+              "end": 14,
+              "text": "[File 1]"
+            }
+          },
+          {
+            "data": "iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAEElEQVR4nGP4z8AARAwQCgAf7gP9i18U1AAAAABJRU5ErkJggg==",
+            "mime": "image/png",
+            "source": {
+              "type": "inline"
+            },
+            "name": "clipboard.png",
+            "mention": {
+              "start": 15,
+              "end": 24,
+              "text": "[Image 1]"
+            }
+          }
+        ],
+        "agents": [
+          {
+            "name": "build",
+            "mention": {
+              "start": 25,
+              "end": 31,
+              "text": "@build"
+            }
+          }
+        ]
+      },
+      "delivery": "queue"
+    }
+  }
+}

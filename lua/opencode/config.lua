@@ -14,6 +14,9 @@ M.defaults = {
 			password = nil,
 		},
 		auto_start = true,
+		-- External servers apply review decisions on the server. Set true only
+		-- when their paths refer to the same files accessible by this Neovim.
+		shared_filesystem = nil,
 		startup_timeout = 10000,
 		health_check_interval = 1000,
 		shutdown_on_exit = true,

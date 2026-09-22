@@ -1,0 +1,1103 @@
+{
+  "history": [
+    {
+      "info": {
+        "role": "user",
+        "sessionID": "ses_f393ee0cdffe1Cc2cDfNXM1QDY",
+        "protocol": "v2",
+        "hidden": false,
+        "text": "Reply exactly SELECTED_AGENT_READY. Do not call any tools.",
+        "time": {
+          "created": 1790040956068
+        },
+        "id": "msg_0c6c11fa5001nhak5eLjQZ73yh",
+        "_v2": {
+          "time": {
+            "created": 1790040956068
+          },
+          "id": "msg_0c6c11fa5001nhak5eLjQZ73yh",
+          "text": "Reply exactly SELECTED_AGENT_READY. Do not call any tools.",
+          "type": "user"
+        },
+        "type": "user"
+      },
+      "parts": [
+        {
+          "ordinal": 0,
+          "content_order": 1,
+          "sessionID": "ses_f393ee0cdffe1Cc2cDfNXM1QDY",
+          "protocol": "v2",
+          "messageID": "msg_0c6c11fa5001nhak5eLjQZ73yh",
+          "type": "text",
+          "text": "Reply exactly SELECTED_AGENT_READY. Do not call any tools.",
+          "id": "v2:30:ses_f393ee0cdffe1Cc2cDfNXM1QDY:30:msg_0c6c11fa5001nhak5eLjQZ73yh:text:0"
+        }
+      ]
+    },
+    {
+      "info": {
+        "_v2": {
+          "time": {
+            "created": 1790040940458
+          },
+          "previous": "build",
+          "agent": "plan",
+          "type": "agent-switched",
+          "id": "msg_0c6c11faa001bR5G6QnVoihMlT"
+        },
+        "sessionID": "ses_f393ee0cdffe1Cc2cDfNXM1QDY",
+        "protocol": "v2",
+        "hidden": false,
+        "time": {
+          "created": 1790040940458
+        },
+        "previous": "build",
+        "agent": "plan",
+        "role": "system",
+        "id": "msg_0c6c11faa001bR5G6QnVoihMlT",
+        "type": "agent-switched"
+      },
+      "parts": [
+        {
+          "synthetic": true,
+          "sessionID": "ses_f393ee0cdffe1Cc2cDfNXM1QDY",
+          "protocol": "v2",
+          "text": "Agent: plan",
+          "ordinal": 0,
+          "content_order": 1,
+          "messageID": "msg_0c6c11faa001bR5G6QnVoihMlT",
+          "id": "v2:30:ses_f393ee0cdffe1Cc2cDfNXM1QDY:30:msg_0c6c11faa001bR5G6QnVoihMlT:text:0",
+          "type": "text"
+        }
+      ]
+    },
+    {
+      "info": {
+        "role": "system",
+        "sessionID": "ses_f393ee0cdffe1Cc2cDfNXM1QDY",
+        "protocol": "v2",
+        "hidden": false,
+        "text": "<system-reminder>\nYou are in Plan mode. Discuss the plan with the user directly in the conversation. Do not create or update plan files unless the user explicitly asks you to; when they do, write them only in:\n<PROFILE>/home/.opencode/plan\n\nDo not modify any other files or ask a subagent to do so.\n\nYou remain in Plan mode until the user switches agents. If the user asks you to implement changes, do not do so. Tell them they need to switch agents.\n</system-reminder>",
+        "time": {
+          "created": 1790040940482
+        },
+        "id": "msg_0c6c11fac001KyiSC8mHiUPhjI",
+        "_v2": {
+          "time": {
+            "created": 1790040940482
+          },
+          "id": "msg_0c6c11fac001KyiSC8mHiUPhjI",
+          "text": "<system-reminder>\nYou are in Plan mode. Discuss the plan with the user directly in the conversation. Do not create or update plan files unless the user explicitly asks you to; when they do, write them only in:\n<PROFILE>/home/.opencode/plan\n\nDo not modify any other files or ask a subagent to do so.\n\nYou remain in Plan mode until the user switches agents. If the user asks you to implement changes, do not do so. Tell them they need to switch agents.\n</system-reminder>",
+          "type": "synthetic"
+        },
+        "type": "synthetic"
+      },
+      "parts": [
+        {
+          "synthetic": true,
+          "sessionID": "ses_f393ee0cdffe1Cc2cDfNXM1QDY",
+          "protocol": "v2",
+          "text": "<system-reminder>\nYou are in Plan mode. Discuss the plan with the user directly in the conversation. Do not create or update plan files unless the user explicitly asks you to; when they do, write them only in:\n<PROFILE>/home/.opencode/plan\n\nDo not modify any other files or ask a subagent to do so.\n\nYou remain in Plan mode until the user switches agents. If the user asks you to implement changes, do not do so. Tell them they need to switch agents.\n</system-reminder>",
+          "ordinal": 0,
+          "content_order": 1,
+          "messageID": "msg_0c6c11fac001KyiSC8mHiUPhjI",
+          "id": "v2:30:ses_f393ee0cdffe1Cc2cDfNXM1QDY:30:msg_0c6c11fac001KyiSC8mHiUPhjI:text:0",
+          "type": "text"
+        }
+      ]
+    },
+    {
+      "info": {
+        "role": "assistant",
+        "modelID": "mimo-v2.5-free",
+        "cost": 0,
+        "model": {
+          "providerID": "opencode",
+          "variant": "default",
+          "id": "mimo-v2.5-free"
+        },
+        "variant": "default",
+        "rawFinish": "stop",
+        "snapshot": {
+          "files": [],
+          "start": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+          "end": "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
+        },
+        "agent": "plan",
+        "tokens": {
+          "output": 40,
+          "input": 9231,
+          "reasoning": 0,
+          "cache": {
+            "write": 0,
+            "read": 0
+          }
+        },
+        "content": [
+          {
+            "time": {
+              "created": 1790040955458,
+              "completed": 1790040956034
+            },
+            "state": {
+              "reasoningField": "reasoning_content",
+              "reasoningDetails": [
+                {
+                  "format": "unknown",
+                  "index": 0,
+                  "text": "The user is in plan mode and hasn't provided any instructions yet. Let me wait for their input.",
+                  "type": "reasoning.text"
+                }
+              ]
+            },
+            "text": "The user is in plan mode and hasn't provided any instructions yet. Let me wait for their input.",
+            "type": "reasoning"
+          },
+          {
+            "text": "I'm ready to help you plan. What would you like to work on?",
+            "type": "text"
+          }
+        ],
+        "protocol": "v2",
+        "hidden": false,
+        "time": {
+          "streamed": 1790040956038,
+          "created": 1790040940541,
+          "completed": 1790040956062
+        },
+        "finish": "stop",
+        "providerID": "opencode",
+        "type": "assistant",
+        "sessionID": "ses_f393ee0cdffe1Cc2cDfNXM1QDY",
+        "_v2": {
+          "tokens": {
+            "output": 40,
+            "input": 9231,
+            "reasoning": 0,
+            "cache": {
+              "write": 0,
+              "read": 0
+            }
+          },
+          "content": [
+            {
+              "time": {
+                "created": 1790040955458,
+                "completed": 1790040956034
+              },
+              "state": {
+                "reasoningField": "reasoning_content",
+                "reasoningDetails": [
+                  {
+                    "format": "unknown",
+                    "index": 0,
+                    "text": "The user is in plan mode and hasn't provided any instructions yet. Let me wait for their input.",
+                    "type": "reasoning.text"
+                  }
+                ]
+              },
+              "text": "The user is in plan mode and hasn't provided any instructions yet. Let me wait for their input.",
+              "type": "reasoning"
+            },
+            {
+              "text": "I'm ready to help you plan. What would you like to work on?",
+              "type": "text"
+            }
+          ],
+          "cost": 0,
+          "model": {
+            "providerID": "opencode",
+            "variant": "default",
+            "id": "mimo-v2.5-free"
+          },
+          "rawFinish": "stop",
+          "time": {
+            "streamed": 1790040956038,
+            "created": 1790040940541,
+            "completed": 1790040956062
+          },
+          "finish": "stop",
+          "agent": "plan",
+          "id": "msg_0c6c11fc7001ZGeat2HAyNjoi6",
+          "snapshot": {
+            "files": [],
+            "start": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+            "end": "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
+          },
+          "type": "assistant"
+        },
+        "id": "msg_0c6c11fc7001ZGeat2HAyNjoi6"
+      },
+      "parts": [
+        {
+          "sessionID": "ses_f393ee0cdffe1Cc2cDfNXM1QDY",
+          "protocol": "v2",
+          "text": "The user is in plan mode and hasn't provided any instructions yet. Let me wait for their input.",
+          "time": {
+            "created": 1790040955458,
+            "completed": 1790040956034
+          },
+          "content_order": 1,
+          "ordinal": 0,
+          "messageID": "msg_0c6c11fc7001ZGeat2HAyNjoi6",
+          "state": {
+            "reasoningField": "reasoning_content",
+            "reasoningDetails": [
+              {
+                "format": "unknown",
+                "index": 0,
+                "text": "The user is in plan mode and hasn't provided any instructions yet. Let me wait for their input.",
+                "type": "reasoning.text"
+              }
+            ]
+          },
+          "type": "reasoning",
+          "id": "v2:30:ses_f393ee0cdffe1Cc2cDfNXM1QDY:30:msg_0c6c11fc7001ZGeat2HAyNjoi6:reasoning:0"
+        },
+        {
+          "ordinal": 0,
+          "content_order": 2,
+          "sessionID": "ses_f393ee0cdffe1Cc2cDfNXM1QDY",
+          "protocol": "v2",
+          "messageID": "msg_0c6c11fc7001ZGeat2HAyNjoi6",
+          "type": "text",
+          "text": "I'm ready to help you plan. What would you like to work on?",
+          "id": "v2:30:ses_f393ee0cdffe1Cc2cDfNXM1QDY:30:msg_0c6c11fc7001ZGeat2HAyNjoi6:text:0"
+        }
+      ]
+    },
+    {
+      "info": {
+        "role": "assistant",
+        "modelID": "mimo-v2.5-free",
+        "cost": 0,
+        "model": {
+          "providerID": "opencode",
+          "variant": "default",
+          "id": "mimo-v2.5-free"
+        },
+        "variant": "default",
+        "rawFinish": "stop",
+        "snapshot": {
+          "files": [],
+          "start": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+          "end": "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
+        },
+        "agent": "plan",
+        "tokens": {
+          "output": 26,
+          "input": 75,
+          "reasoning": 0,
+          "cache": {
+            "write": 0,
+            "read": 9216
+          }
+        },
+        "content": [
+          {
+            "time": {
+              "created": 1790040957711,
+              "completed": 1790040957946
+            },
+            "state": {
+              "reasoningField": "reasoning_content",
+              "reasoningDetails": [
+                {
+                  "format": "unknown",
+                  "index": 0,
+                  "text": "The user wants me to reply with exactly \"SELECTED_AGENT_READY\" without calling any tools.",
+                  "type": "reasoning.text"
+                }
+              ]
+            },
+            "text": "The user wants me to reply with exactly \"SELECTED_AGENT_READY\" without calling any tools.",
+            "type": "reasoning"
+          },
+          {
+            "text": "SELECTED_AGENT_READY",
+            "type": "text"
+          }
+        ],
+        "protocol": "v2",
+        "hidden": false,
+        "time": {
+          "streamed": 1790040957949,
+          "created": 1790040956097,
+          "completed": 1790040957976
+        },
+        "finish": "stop",
+        "providerID": "opencode",
+        "type": "assistant",
+        "sessionID": "ses_f393ee0cdffe1Cc2cDfNXM1QDY",
+        "_v2": {
+          "tokens": {
+            "output": 26,
+            "input": 75,
+            "reasoning": 0,
+            "cache": {
+              "write": 0,
+              "read": 9216
+            }
+          },
+          "content": [
+            {
+              "time": {
+                "created": 1790040957711,
+                "completed": 1790040957946
+              },
+              "state": {
+                "reasoningField": "reasoning_content",
+                "reasoningDetails": [
+                  {
+                    "format": "unknown",
+                    "index": 0,
+                    "text": "The user wants me to reply with exactly \"SELECTED_AGENT_READY\" without calling any tools.",
+                    "type": "reasoning.text"
+                  }
+                ]
+              },
+              "text": "The user wants me to reply with exactly \"SELECTED_AGENT_READY\" without calling any tools.",
+              "type": "reasoning"
+            },
+            {
+              "text": "SELECTED_AGENT_READY",
+              "type": "text"
+            }
+          ],
+          "cost": 0,
+          "model": {
+            "providerID": "opencode",
+            "variant": "default",
+            "id": "mimo-v2.5-free"
+          },
+          "rawFinish": "stop",
+          "time": {
+            "streamed": 1790040957949,
+            "created": 1790040956097,
+            "completed": 1790040957976
+          },
+          "finish": "stop",
+          "agent": "plan",
+          "id": "msg_0c6c15ca90014UJFvS71w7mIdc",
+          "snapshot": {
+            "files": [],
+            "start": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+            "end": "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
+          },
+          "type": "assistant"
+        },
+        "id": "msg_0c6c15ca90014UJFvS71w7mIdc"
+      },
+      "parts": [
+        {
+          "sessionID": "ses_f393ee0cdffe1Cc2cDfNXM1QDY",
+          "protocol": "v2",
+          "text": "The user wants me to reply with exactly \"SELECTED_AGENT_READY\" without calling any tools.",
+          "time": {
+            "created": 1790040957711,
+            "completed": 1790040957946
+          },
+          "content_order": 1,
+          "ordinal": 0,
+          "messageID": "msg_0c6c15ca90014UJFvS71w7mIdc",
+          "state": {
+            "reasoningField": "reasoning_content",
+            "reasoningDetails": [
+              {
+                "format": "unknown",
+                "index": 0,
+                "text": "The user wants me to reply with exactly \"SELECTED_AGENT_READY\" without calling any tools.",
+                "type": "reasoning.text"
+              }
+            ]
+          },
+          "type": "reasoning",
+          "id": "v2:30:ses_f393ee0cdffe1Cc2cDfNXM1QDY:30:msg_0c6c15ca90014UJFvS71w7mIdc:reasoning:0"
+        },
+        {
+          "ordinal": 0,
+          "content_order": 2,
+          "sessionID": "ses_f393ee0cdffe1Cc2cDfNXM1QDY",
+          "protocol": "v2",
+          "messageID": "msg_0c6c15ca90014UJFvS71w7mIdc",
+          "type": "text",
+          "text": "SELECTED_AGENT_READY",
+          "id": "v2:30:ses_f393ee0cdffe1Cc2cDfNXM1QDY:30:msg_0c6c15ca90014UJFvS71w7mIdc:text:0"
+        }
+      ]
+    },
+    {
+      "info": {
+        "role": "system",
+        "sessionID": "ses_f393ee0cdffe1Cc2cDfNXM1QDY",
+        "protocol": "v2",
+        "hidden": true,
+        "time": {
+          "created": 1790040957978
+        },
+        "id": "msg_0c6c1641a002tgcTg5XdMgGNNR",
+        "type": "idle",
+        "_v2": {
+          "time": {
+            "created": 1790040957978
+          },
+          "id": "msg_0c6c1641a002tgcTg5XdMgGNNR",
+          "type": "idle",
+          "outcome": "succeeded"
+        },
+        "outcome": "succeeded"
+      },
+      "parts": []
+    },
+    {
+      "info": {
+        "_v2": {
+          "time": {
+            "created": 1790040958161
+          },
+          "previous": {
+            "providerID": "opencode",
+            "variant": "default",
+            "id": "mimo-v2.5-free"
+          },
+          "model": {
+            "providerID": "opencode",
+            "variant": "minimal",
+            "id": "muse-spark-1.3-contributor-free"
+          },
+          "type": "model-switched",
+          "id": "msg_0c6c164d10017eMlzdof25Whvw"
+        },
+        "modelID": "muse-spark-1.3-contributor-free",
+        "sessionID": "ses_f393ee0cdffe1Cc2cDfNXM1QDY",
+        "protocol": "v2",
+        "model": {
+          "providerID": "opencode",
+          "variant": "minimal",
+          "id": "muse-spark-1.3-contributor-free"
+        },
+        "variant": "minimal",
+        "time": {
+          "created": 1790040958161
+        },
+        "previous": {
+          "providerID": "opencode",
+          "variant": "default",
+          "id": "mimo-v2.5-free"
+        },
+        "providerID": "opencode",
+        "hidden": false,
+        "role": "system",
+        "id": "msg_0c6c164d10017eMlzdof25Whvw",
+        "type": "model-switched"
+      },
+      "parts": [
+        {
+          "synthetic": true,
+          "sessionID": "ses_f393ee0cdffe1Cc2cDfNXM1QDY",
+          "protocol": "v2",
+          "text": "Model: opencode/muse-spark-1.3-contributor-free",
+          "ordinal": 0,
+          "content_order": 1,
+          "messageID": "msg_0c6c164d10017eMlzdof25Whvw",
+          "id": "v2:30:ses_f393ee0cdffe1Cc2cDfNXM1QDY:30:msg_0c6c164d10017eMlzdof25Whvw:text:0",
+          "type": "text"
+        }
+      ]
+    },
+    {
+      "info": {
+        "_v2": {
+          "time": {
+            "created": 1790040958231
+          },
+          "previous": {
+            "providerID": "opencode",
+            "variant": "minimal",
+            "id": "muse-spark-1.3-contributor-free"
+          },
+          "model": {
+            "providerID": "opencode",
+            "variant": "low",
+            "id": "muse-spark-1.3-contributor-free"
+          },
+          "type": "model-switched",
+          "id": "msg_0c6c16517001OqPfTpoGzsnmI9"
+        },
+        "modelID": "muse-spark-1.3-contributor-free",
+        "sessionID": "ses_f393ee0cdffe1Cc2cDfNXM1QDY",
+        "protocol": "v2",
+        "model": {
+          "providerID": "opencode",
+          "variant": "low",
+          "id": "muse-spark-1.3-contributor-free"
+        },
+        "variant": "low",
+        "time": {
+          "created": 1790040958231
+        },
+        "previous": {
+          "providerID": "opencode",
+          "variant": "minimal",
+          "id": "muse-spark-1.3-contributor-free"
+        },
+        "providerID": "opencode",
+        "hidden": false,
+        "role": "system",
+        "id": "msg_0c6c16517001OqPfTpoGzsnmI9",
+        "type": "model-switched"
+      },
+      "parts": [
+        {
+          "synthetic": true,
+          "sessionID": "ses_f393ee0cdffe1Cc2cDfNXM1QDY",
+          "protocol": "v2",
+          "text": "Model: opencode/muse-spark-1.3-contributor-free",
+          "ordinal": 0,
+          "content_order": 1,
+          "messageID": "msg_0c6c16517001OqPfTpoGzsnmI9",
+          "id": "v2:30:ses_f393ee0cdffe1Cc2cDfNXM1QDY:30:msg_0c6c16517001OqPfTpoGzsnmI9:text:0",
+          "type": "text"
+        }
+      ]
+    },
+    {
+      "info": {
+        "role": "user",
+        "sessionID": "ses_f393ee0cdffe1Cc2cDfNXM1QDY",
+        "protocol": "v2",
+        "hidden": false,
+        "text": "Reply exactly ORIGINAL_AGENT_READY. Do not call any tools.",
+        "time": {
+          "created": 1790040961234
+        },
+        "id": "msg_0c6c165a2001AyHLTgZnSBeDa8",
+        "_v2": {
+          "time": {
+            "created": 1790040961234
+          },
+          "id": "msg_0c6c165a2001AyHLTgZnSBeDa8",
+          "text": "Reply exactly ORIGINAL_AGENT_READY. Do not call any tools.",
+          "type": "user"
+        },
+        "type": "user"
+      },
+      "parts": [
+        {
+          "ordinal": 0,
+          "content_order": 1,
+          "sessionID": "ses_f393ee0cdffe1Cc2cDfNXM1QDY",
+          "protocol": "v2",
+          "messageID": "msg_0c6c165a2001AyHLTgZnSBeDa8",
+          "type": "text",
+          "text": "Reply exactly ORIGINAL_AGENT_READY. Do not call any tools.",
+          "id": "v2:30:ses_f393ee0cdffe1Cc2cDfNXM1QDY:30:msg_0c6c165a2001AyHLTgZnSBeDa8:text:0"
+        }
+      ]
+    },
+    {
+      "info": {
+        "_v2": {
+          "time": {
+            "created": 1790040958374
+          },
+          "previous": "plan",
+          "agent": "build",
+          "type": "agent-switched",
+          "id": "msg_0c6c165a60011SY2OR1msaxqhA"
+        },
+        "sessionID": "ses_f393ee0cdffe1Cc2cDfNXM1QDY",
+        "protocol": "v2",
+        "hidden": false,
+        "time": {
+          "created": 1790040958374
+        },
+        "previous": "plan",
+        "agent": "build",
+        "role": "system",
+        "id": "msg_0c6c165a60011SY2OR1msaxqhA",
+        "type": "agent-switched"
+      },
+      "parts": [
+        {
+          "synthetic": true,
+          "sessionID": "ses_f393ee0cdffe1Cc2cDfNXM1QDY",
+          "protocol": "v2",
+          "text": "Agent: build",
+          "ordinal": 0,
+          "content_order": 1,
+          "messageID": "msg_0c6c165a60011SY2OR1msaxqhA",
+          "id": "v2:30:ses_f393ee0cdffe1Cc2cDfNXM1QDY:30:msg_0c6c165a60011SY2OR1msaxqhA:text:0",
+          "type": "text"
+        }
+      ]
+    },
+    {
+      "info": {
+        "role": "system",
+        "sessionID": "ses_f393ee0cdffe1Cc2cDfNXM1QDY",
+        "protocol": "v2",
+        "hidden": false,
+        "text": "<system-reminder>\nYou are NO LONGER in Plan mode. The previous Plan restrictions no longer apply. Any Plan mode instructions from earlier in this conversation are no longer active.\n</system-reminder>",
+        "time": {
+          "created": 1790040958386
+        },
+        "id": "msg_0c6c165a7001qK5PRlTQu5amEL",
+        "_v2": {
+          "time": {
+            "created": 1790040958386
+          },
+          "id": "msg_0c6c165a7001qK5PRlTQu5amEL",
+          "text": "<system-reminder>\nYou are NO LONGER in Plan mode. The previous Plan restrictions no longer apply. Any Plan mode instructions from earlier in this conversation are no longer active.\n</system-reminder>",
+          "type": "synthetic"
+        },
+        "type": "synthetic"
+      },
+      "parts": [
+        {
+          "synthetic": true,
+          "sessionID": "ses_f393ee0cdffe1Cc2cDfNXM1QDY",
+          "protocol": "v2",
+          "text": "<system-reminder>\nYou are NO LONGER in Plan mode. The previous Plan restrictions no longer apply. Any Plan mode instructions from earlier in this conversation are no longer active.\n</system-reminder>",
+          "ordinal": 0,
+          "content_order": 1,
+          "messageID": "msg_0c6c165a7001qK5PRlTQu5amEL",
+          "id": "v2:30:ses_f393ee0cdffe1Cc2cDfNXM1QDY:30:msg_0c6c165a7001qK5PRlTQu5amEL:text:0",
+          "type": "text"
+        }
+      ]
+    },
+    {
+      "info": {
+        "_v2": {
+          "time": {
+            "created": 1790040958377
+          },
+          "previous": {
+            "providerID": "opencode",
+            "variant": "low",
+            "id": "muse-spark-1.3-contributor-free"
+          },
+          "model": {
+            "providerID": "opencode",
+            "id": "mimo-v2.5-free"
+          },
+          "type": "model-switched",
+          "id": "msg_0c6c165a9001bfab0a8mu8zR2Z"
+        },
+        "modelID": "mimo-v2.5-free",
+        "sessionID": "ses_f393ee0cdffe1Cc2cDfNXM1QDY",
+        "protocol": "v2",
+        "model": {
+          "providerID": "opencode",
+          "id": "mimo-v2.5-free"
+        },
+        "time": {
+          "created": 1790040958377
+        },
+        "previous": {
+          "providerID": "opencode",
+          "variant": "low",
+          "id": "muse-spark-1.3-contributor-free"
+        },
+        "providerID": "opencode",
+        "hidden": false,
+        "role": "system",
+        "id": "msg_0c6c165a9001bfab0a8mu8zR2Z",
+        "type": "model-switched"
+      },
+      "parts": [
+        {
+          "synthetic": true,
+          "sessionID": "ses_f393ee0cdffe1Cc2cDfNXM1QDY",
+          "protocol": "v2",
+          "text": "Model: opencode/mimo-v2.5-free",
+          "ordinal": 0,
+          "content_order": 1,
+          "messageID": "msg_0c6c165a9001bfab0a8mu8zR2Z",
+          "id": "v2:30:ses_f393ee0cdffe1Cc2cDfNXM1QDY:30:msg_0c6c165a9001bfab0a8mu8zR2Z:text:0",
+          "type": "text"
+        }
+      ]
+    },
+    {
+      "info": {
+        "role": "assistant",
+        "modelID": "mimo-v2.5-free",
+        "cost": 0,
+        "model": {
+          "providerID": "opencode",
+          "variant": "default",
+          "id": "mimo-v2.5-free"
+        },
+        "variant": "default",
+        "rawFinish": "stop",
+        "snapshot": {
+          "files": [],
+          "start": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+          "end": "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
+        },
+        "agent": "build",
+        "tokens": {
+          "output": 45,
+          "input": 85,
+          "reasoning": 0,
+          "cache": {
+            "write": 0,
+            "read": 9280
+          }
+        },
+        "content": [
+          {
+            "time": {
+              "created": 1790040960673,
+              "completed": 1790040961206
+            },
+            "state": {
+              "reasoningField": "reasoning_content",
+              "reasoningDetails": [
+                {
+                  "format": "unknown",
+                  "index": 0,
+                  "text": "The user has switched me out of plan mode. I'm now ready to help with implementation. What would you like me to do?",
+                  "type": "reasoning.text"
+                }
+              ]
+            },
+            "text": "The user has switched me out of plan mode. I'm now ready to help with implementation. What would you like me to do?",
+            "type": "reasoning"
+          },
+          {
+            "text": "I'm ready to help! What would you like me to work on?",
+            "type": "text"
+          }
+        ],
+        "protocol": "v2",
+        "hidden": false,
+        "time": {
+          "streamed": 1790040961208,
+          "created": 1790040958414,
+          "completed": 1790040961230
+        },
+        "finish": "stop",
+        "providerID": "opencode",
+        "type": "assistant",
+        "sessionID": "ses_f393ee0cdffe1Cc2cDfNXM1QDY",
+        "_v2": {
+          "tokens": {
+            "output": 45,
+            "input": 85,
+            "reasoning": 0,
+            "cache": {
+              "write": 0,
+              "read": 9280
+            }
+          },
+          "content": [
+            {
+              "time": {
+                "created": 1790040960673,
+                "completed": 1790040961206
+              },
+              "state": {
+                "reasoningField": "reasoning_content",
+                "reasoningDetails": [
+                  {
+                    "format": "unknown",
+                    "index": 0,
+                    "text": "The user has switched me out of plan mode. I'm now ready to help with implementation. What would you like me to do?",
+                    "type": "reasoning.text"
+                  }
+                ]
+              },
+              "text": "The user has switched me out of plan mode. I'm now ready to help with implementation. What would you like me to do?",
+              "type": "reasoning"
+            },
+            {
+              "text": "I'm ready to help! What would you like me to work on?",
+              "type": "text"
+            }
+          ],
+          "cost": 0,
+          "model": {
+            "providerID": "opencode",
+            "variant": "default",
+            "id": "mimo-v2.5-free"
+          },
+          "rawFinish": "stop",
+          "time": {
+            "streamed": 1790040961208,
+            "created": 1790040958414,
+            "completed": 1790040961230
+          },
+          "finish": "stop",
+          "agent": "build",
+          "id": "msg_0c6c165b5001neo7RDbTr2Ow04",
+          "snapshot": {
+            "files": [],
+            "start": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+            "end": "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
+          },
+          "type": "assistant"
+        },
+        "id": "msg_0c6c165b5001neo7RDbTr2Ow04"
+      },
+      "parts": [
+        {
+          "sessionID": "ses_f393ee0cdffe1Cc2cDfNXM1QDY",
+          "protocol": "v2",
+          "text": "The user has switched me out of plan mode. I'm now ready to help with implementation. What would you like me to do?",
+          "time": {
+            "created": 1790040960673,
+            "completed": 1790040961206
+          },
+          "content_order": 1,
+          "ordinal": 0,
+          "messageID": "msg_0c6c165b5001neo7RDbTr2Ow04",
+          "state": {
+            "reasoningField": "reasoning_content",
+            "reasoningDetails": [
+              {
+                "format": "unknown",
+                "index": 0,
+                "text": "The user has switched me out of plan mode. I'm now ready to help with implementation. What would you like me to do?",
+                "type": "reasoning.text"
+              }
+            ]
+          },
+          "type": "reasoning",
+          "id": "v2:30:ses_f393ee0cdffe1Cc2cDfNXM1QDY:30:msg_0c6c165b5001neo7RDbTr2Ow04:reasoning:0"
+        },
+        {
+          "ordinal": 0,
+          "content_order": 2,
+          "sessionID": "ses_f393ee0cdffe1Cc2cDfNXM1QDY",
+          "protocol": "v2",
+          "messageID": "msg_0c6c165b5001neo7RDbTr2Ow04",
+          "type": "text",
+          "text": "I'm ready to help! What would you like me to work on?",
+          "id": "v2:30:ses_f393ee0cdffe1Cc2cDfNXM1QDY:30:msg_0c6c165b5001neo7RDbTr2Ow04:text:0"
+        }
+      ]
+    },
+    {
+      "info": {
+        "role": "assistant",
+        "modelID": "mimo-v2.5-free",
+        "cost": 0,
+        "model": {
+          "providerID": "opencode",
+          "variant": "default",
+          "id": "mimo-v2.5-free"
+        },
+        "variant": "default",
+        "rawFinish": "stop",
+        "snapshot": {
+          "files": [],
+          "start": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+          "end": "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
+        },
+        "agent": "build",
+        "tokens": {
+          "output": 25,
+          "input": 85,
+          "reasoning": 0,
+          "cache": {
+            "write": 0,
+            "read": 9344
+          }
+        },
+        "content": [
+          {
+            "time": {
+              "created": 1790040962994,
+              "completed": 1790040963234
+            },
+            "state": {
+              "reasoningField": "reasoning_content",
+              "reasoningDetails": [
+                {
+                  "format": "unknown",
+                  "index": 0,
+                  "text": "The user is asking me to reply with exactly \"ORIGINAL_AGENT_READY\" without calling any tools.",
+                  "type": "reasoning.text"
+                }
+              ]
+            },
+            "text": "The user is asking me to reply with exactly \"ORIGINAL_AGENT_READY\" without calling any tools.",
+            "type": "reasoning"
+          },
+          {
+            "text": "ORIGINAL_AGENT_READY",
+            "type": "text"
+          }
+        ],
+        "protocol": "v2",
+        "hidden": false,
+        "time": {
+          "streamed": 1790040963236,
+          "created": 1790040961264,
+          "completed": 1790040963258
+        },
+        "finish": "stop",
+        "providerID": "opencode",
+        "type": "assistant",
+        "sessionID": "ses_f393ee0cdffe1Cc2cDfNXM1QDY",
+        "_v2": {
+          "tokens": {
+            "output": 25,
+            "input": 85,
+            "reasoning": 0,
+            "cache": {
+              "write": 0,
+              "read": 9344
+            }
+          },
+          "content": [
+            {
+              "time": {
+                "created": 1790040962994,
+                "completed": 1790040963234
+              },
+              "state": {
+                "reasoningField": "reasoning_content",
+                "reasoningDetails": [
+                  {
+                    "format": "unknown",
+                    "index": 0,
+                    "text": "The user is asking me to reply with exactly \"ORIGINAL_AGENT_READY\" without calling any tools.",
+                    "type": "reasoning.text"
+                  }
+                ]
+              },
+              "text": "The user is asking me to reply with exactly \"ORIGINAL_AGENT_READY\" without calling any tools.",
+              "type": "reasoning"
+            },
+            {
+              "text": "ORIGINAL_AGENT_READY",
+              "type": "text"
+            }
+          ],
+          "cost": 0,
+          "model": {
+            "providerID": "opencode",
+            "variant": "default",
+            "id": "mimo-v2.5-free"
+          },
+          "rawFinish": "stop",
+          "time": {
+            "streamed": 1790040963236,
+            "created": 1790040961264,
+            "completed": 1790040963258
+          },
+          "finish": "stop",
+          "agent": "build",
+          "id": "msg_0c6c170d6001FErEbKkxueG0pX",
+          "snapshot": {
+            "files": [],
+            "start": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+            "end": "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
+          },
+          "type": "assistant"
+        },
+        "id": "msg_0c6c170d6001FErEbKkxueG0pX"
+      },
+      "parts": [
+        {
+          "sessionID": "ses_f393ee0cdffe1Cc2cDfNXM1QDY",
+          "protocol": "v2",
+          "text": "The user is asking me to reply with exactly \"ORIGINAL_AGENT_READY\" without calling any tools.",
+          "time": {
+            "created": 1790040962994,
+            "completed": 1790040963234
+          },
+          "content_order": 1,
+          "ordinal": 0,
+          "messageID": "msg_0c6c170d6001FErEbKkxueG0pX",
+          "state": {
+            "reasoningField": "reasoning_content",
+            "reasoningDetails": [
+              {
+                "format": "unknown",
+                "index": 0,
+                "text": "The user is asking me to reply with exactly \"ORIGINAL_AGENT_READY\" without calling any tools.",
+                "type": "reasoning.text"
+              }
+            ]
+          },
+          "type": "reasoning",
+          "id": "v2:30:ses_f393ee0cdffe1Cc2cDfNXM1QDY:30:msg_0c6c170d6001FErEbKkxueG0pX:reasoning:0"
+        },
+        {
+          "ordinal": 0,
+          "content_order": 2,
+          "sessionID": "ses_f393ee0cdffe1Cc2cDfNXM1QDY",
+          "protocol": "v2",
+          "messageID": "msg_0c6c170d6001FErEbKkxueG0pX",
+          "type": "text",
+          "text": "ORIGINAL_AGENT_READY",
+          "id": "v2:30:ses_f393ee0cdffe1Cc2cDfNXM1QDY:30:msg_0c6c170d6001FErEbKkxueG0pX:text:0"
+        }
+      ]
+    },
+    {
+      "info": {
+        "role": "system",
+        "sessionID": "ses_f393ee0cdffe1Cc2cDfNXM1QDY",
+        "protocol": "v2",
+        "hidden": true,
+        "time": {
+          "created": 1790040963260
+        },
+        "id": "msg_0c6c178bc002OFKESniFAkkQuA",
+        "type": "idle",
+        "_v2": {
+          "time": {
+            "created": 1790040963260
+          },
+          "id": "msg_0c6c178bc002OFKESniFAkkQuA",
+          "type": "idle",
+          "outcome": "succeeded"
+        },
+        "outcome": "succeeded"
+      },
+      "parts": []
+    }
+  ],
+  "variants": [
+    {
+      "native_model": {
+        "providerID": "opencode",
+        "variant": "minimal",
+        "id": "muse-spark-1.3-contributor-free"
+      },
+      "variant": "minimal"
+    },
+    {
+      "native_model": {
+        "providerID": "opencode",
+        "variant": "low",
+        "id": "muse-spark-1.3-contributor-free"
+      },
+      "variant": "low"
+    }
+  ],
+  "other_agent": "plan",
+  "original_agent": "build",
+  "variant_model": {
+    "providerID": "opencode",
+    "modelID": "muse-spark-1.3-contributor-free",
+    "variants": [
+      "minimal",
+      "low",
+      "medium",
+      "high",
+      "xhigh"
+    ],
+    "name": "Muse Spark 1.3 Free"
+  },
+  "keyboard_cycles": true,
+  "variant_generation": false,
+  "historical_selection_preserved": true,
+  "version": "2.0.11"
+}

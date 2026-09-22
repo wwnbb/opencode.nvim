@@ -1,0 +1,2676 @@
+[
+  {
+    "id": "evt_0c6e85049001etkF3XgqXvQdvm",
+    "type": "server.connected",
+    "data": {}
+  },
+  {
+    "id": "evt_0c6e8506d001im20ClZaPTx14c",
+    "created": 1790043508845,
+    "type": "worktree.resolved",
+    "data": {
+      "projectID": "global",
+      "directory": "<PROFILE>/project пробел %#",
+      "previous": "global"
+    },
+    "durable": {
+      "aggregateID": "global",
+      "seq": 0,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c6e854a6001EQf3W4w1PqdGJT",
+    "created": 1790043509926,
+    "type": "models-dev.refreshed",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {}
+  },
+  {
+    "id": "evt_0c6e8553a001wVup9xEGQHkaCr",
+    "created": 1790043510074,
+    "type": "integration.updated",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {}
+  },
+  {
+    "id": "evt_0c6e8553d00124pIMKeGxsoReK",
+    "created": 1790043510077,
+    "type": "provider.updated",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {}
+  },
+  {
+    "id": "evt_0c6e85542001kmoPj6FgmtnoKF",
+    "created": 1790043510082,
+    "type": "model.updated",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {}
+  },
+  {
+    "id": "evt_0c6e85560001Pc7hoYGqadHPbL",
+    "created": 1790043510112,
+    "type": "vcs.branch.updated",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "branch": "master"
+    }
+  },
+  {
+    "id": "evt_0c6e855610013UmoeoC9wO45fc",
+    "created": 1790043510113,
+    "type": "agent.updated",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {}
+  },
+  {
+    "id": "evt_0c6e85561002EtefpRJ0fmf1qK",
+    "created": 1790043510113,
+    "type": "command.updated",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {}
+  },
+  {
+    "id": "evt_0c6e85561003Ad9MxOqVf0qUeP",
+    "created": 1790043510113,
+    "type": "skill.updated",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {}
+  },
+  {
+    "id": "evt_0c6e85563001hWOBE3tXIepUdw",
+    "created": 1790043510115,
+    "type": "websearch.updated",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {}
+  },
+  {
+    "id": "evt_0c6e85563003ZH0TBAVWLHb6L9",
+    "created": 1790043510115,
+    "type": "reference.updated",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {}
+  },
+  {
+    "id": "evt_0c6e8556e0011dsQDssn2S1P5k",
+    "created": 1790043510126,
+    "type": "plugin.updated",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {}
+  },
+  {
+    "id": "evt_0c6e855e5001gjb9jLSoGClN6k",
+    "created": 1790043510245,
+    "type": "session.created",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f3917aa39ffe4s8cirfPFkw6l6",
+      "slug": "neon-circuit",
+      "version": "2.0.11",
+      "projectID": "global",
+      "location": {
+        "directory": "<PROFILE>/project пробел %#"
+      },
+      "subpath": "",
+      "model": {
+        "id": "deepseek-v4-flash",
+        "providerID": "opencode-go"
+      }
+    },
+    "durable": {
+      "aggregateID": "ses_f3917aa39ffe4s8cirfPFkw6l6",
+      "seq": 0,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c6e856080015F4T52IaZAe8FQ",
+    "created": 1790043510280,
+    "type": "session.agent.selected",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f3917aa39ffe4s8cirfPFkw6l6",
+      "agent": "build"
+    },
+    "durable": {
+      "aggregateID": "ses_f3917aa39ffe4s8cirfPFkw6l6",
+      "seq": 1,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c6e85615001suUIw9TP2LpGR5",
+    "created": 1790043510293,
+    "type": "session.inbox.enqueued",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "inboxID": "msg_0c6e855f1001nhak5eLjQZ73yh",
+      "sessionID": "ses_f3917aa39ffe4s8cirfPFkw6l6",
+      "item": {
+        "type": "user",
+        "payload": {
+          "text": "This is a background delegation test. Use the direct subagent tool twice with background=true and agent=\"general\". Both calls must have exactly description=\"Small test\" and model=\"opencode-go/deepseek-v4-flash\". Launch both without waiting for the first. First child prompt: Call shell once with command \"sleep 20\", then reply exactly CHILD_ONE. Second child prompt: Call shell once with command \"sleep 20\", then reply exactly CHILD_TWO. These are two independent test tasks. Do not read or modify files. After both launches reply PARENT_LAUNCHED. When completion notifications arrive, acknowledge them without any further tool calls."
+        },
+        "delivery": "queue"
+      }
+    },
+    "durable": {
+      "aggregateID": "ses_f3917aa39ffe4s8cirfPFkw6l6",
+      "seq": 2,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c6e85617001KFFCKS7iVPn61p",
+    "created": 1790043510295,
+    "type": "session.execution.started",
+    "data": {
+      "sessionID": "ses_f3917aa39ffe4s8cirfPFkw6l6"
+    },
+    "durable": {
+      "aggregateID": "ses_f3917aa39ffe4s8cirfPFkw6l6",
+      "seq": 3,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c6e856250016IXkWZyvF6DHHq",
+    "created": 1790043510309,
+    "metadata": {
+      "instructions": {
+        "initial": true
+      }
+    },
+    "type": "session.instructions.updated",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f3917aa39ffe4s8cirfPFkw6l6",
+      "delta": {
+        "core/environment": "8438811df79844c415ee110599c64546b2cf8695829a0ed0feaa93bdb26c1426",
+        "core/date": "6a76aa89fcc8086f3abb8b9dc2b9ceafa3405dd2b3cdc263b339d36120433008",
+        "core/codemode": "cf52fcbcde861ccfefdc6633ee3cb84036524f86c72f976a7315e05dc01a15e1",
+        "core/skill-guidance": "8394362d28c82fa4d13c7a9f5568c05680f6687e07db8f426a0e3c92f3027dc9"
+      }
+    },
+    "durable": {
+      "aggregateID": "ses_f3917aa39ffe4s8cirfPFkw6l6",
+      "seq": 4,
+      "version": 2
+    }
+  },
+  {
+    "id": "evt_0c6e85627001Asjq89WkdnL26F",
+    "created": 1790043510311,
+    "type": "session.inbox.delivered",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f3917aa39ffe4s8cirfPFkw6l6",
+      "inboxID": "msg_0c6e855f1001nhak5eLjQZ73yh"
+    },
+    "durable": {
+      "aggregateID": "ses_f3917aa39ffe4s8cirfPFkw6l6",
+      "seq": 5,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c6e85ad1001NFOklc6eN6D2Dr",
+    "created": 1790043511505,
+    "type": "session.step.started",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f3917aa39ffe4s8cirfPFkw6l6",
+      "agent": "build",
+      "model": {
+        "id": "deepseek-v4-flash",
+        "providerID": "opencode-go",
+        "variant": "default"
+      },
+      "assistantMessageID": "msg_0c6e85630001Sgvqh2yLr2ZHk0",
+      "snapshot": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+      "started": 1790043510378
+    },
+    "durable": {
+      "aggregateID": "ses_f3917aa39ffe4s8cirfPFkw6l6",
+      "seq": 6,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c6e85ad2001ttTWqx1obSRpmY",
+    "created": 1790043511506,
+    "type": "session.reasoning.started",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f3917aa39ffe4s8cirfPFkw6l6",
+      "assistantMessageID": "msg_0c6e85630001Sgvqh2yLr2ZHk0",
+      "ordinal": 0,
+      "state": {
+        "reasoningField": "reasoning_content"
+      }
+    },
+    "durable": {
+      "aggregateID": "ses_f3917aa39ffe4s8cirfPFkw6l6",
+      "seq": 7,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c6e85b38001PvoxT9PFsqoR0Y",
+    "created": 1790043511608,
+    "type": "session.reasoning.delta",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f3917aa39ffe4s8cirfPFkw6l6",
+      "assistantMessageID": "msg_0c6e85630001Sgvqh2yLr2ZHk0",
+      "ordinal": 0,
+      "delta": "Let"
+    }
+  },
+  {
+    "id": "evt_0c6e85b56001EkNlqapR4ftS1M",
+    "created": 1790043511638,
+    "type": "session.usage.updated",
+    "data": {
+      "sessionID": "ses_f3917aa39ffe4s8cirfPFkw6l6",
+      "cost": 0.00014240000000000002,
+      "tokens": {
+        "input": 646,
+        "output": 11,
+        "reasoning": 0,
+        "cache": {
+          "read": 0,
+          "write": 0
+        }
+      }
+    }
+  },
+  {
+    "id": "evt_0c6e85b57001YnyRM2NYQxf4xK",
+    "created": 1790043511639,
+    "type": "session.renamed",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f3917aa39ffe4s8cirfPFkw6l6",
+      "title": "Background delegation test with two child tasks"
+    },
+    "durable": {
+      "aggregateID": "ses_f3917aa39ffe4s8cirfPFkw6l6",
+      "seq": 9,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c6e85bef001rowYGGWlsWEWdn",
+    "created": 1790043511791,
+    "type": "session.reasoning.delta",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f3917aa39ffe4s8cirfPFkw6l6",
+      "assistantMessageID": "msg_0c6e85630001Sgvqh2yLr2ZHk0",
+      "ordinal": 0,
+      "delta": " me launch both background sub"
+    }
+  },
+  {
+    "id": "evt_0c6e85db1001vfh6wV3dTidf1D",
+    "created": 1790043512241,
+    "type": "session.text.started",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f3917aa39ffe4s8cirfPFkw6l6",
+      "assistantMessageID": "msg_0c6e85630001Sgvqh2yLr2ZHk0",
+      "ordinal": 0
+    },
+    "durable": {
+      "aggregateID": "ses_f3917aa39ffe4s8cirfPFkw6l6",
+      "seq": 10,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c6e85e15001FajQCKcB0ciM23",
+    "created": 1790043512341,
+    "type": "session.reasoning.delta",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f3917aa39ffe4s8cirfPFkw6l6",
+      "assistantMessageID": "msg_0c6e85630001Sgvqh2yLr2ZHk0",
+      "ordinal": 0,
+      "delta": "agents as requested."
+    }
+  },
+  {
+    "id": "evt_0c6e85e19001qJQMiDiusEKVvw",
+    "created": 1790043512345,
+    "type": "session.text.delta",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f3917aa39ffe4s8cirfPFkw6l6",
+      "assistantMessageID": "msg_0c6e85630001Sgvqh2yLr2ZHk0",
+      "ordinal": 0,
+      "delta": "\n\n"
+    }
+  },
+  {
+    "id": "evt_0c6e85e27001ylS7EmnJ6qx4uk",
+    "created": 1790043512359,
+    "type": "session.tool.input.started",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f3917aa39ffe4s8cirfPFkw6l6",
+      "assistantMessageID": "msg_0c6e85630001Sgvqh2yLr2ZHk0",
+      "id": "call_f12c74f41fdb4726afa73de2",
+      "name": "subagent"
+    },
+    "durable": {
+      "aggregateID": "ses_f3917aa39ffe4s8cirfPFkw6l6",
+      "seq": 11,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c6e86082001lfcVG8tF3OMeSt",
+    "created": 1790043512962,
+    "type": "session.tool.input.started",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f3917aa39ffe4s8cirfPFkw6l6",
+      "assistantMessageID": "msg_0c6e85630001Sgvqh2yLr2ZHk0",
+      "id": "call_32a3de748dc449a382a46a45",
+      "name": "subagent"
+    },
+    "durable": {
+      "aggregateID": "ses_f3917aa39ffe4s8cirfPFkw6l6",
+      "seq": 12,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c6e86225001mlkf0lt2wlSCxY",
+    "created": 1790043513381,
+    "type": "session.reasoning.ended",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f3917aa39ffe4s8cirfPFkw6l6",
+      "assistantMessageID": "msg_0c6e85630001Sgvqh2yLr2ZHk0",
+      "ordinal": 0,
+      "text": "Let me launch both background subagents as requested.",
+      "state": {
+        "reasoningField": "reasoning_content"
+      }
+    },
+    "durable": {
+      "aggregateID": "ses_f3917aa39ffe4s8cirfPFkw6l6",
+      "seq": 13,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c6e86227001HEmb0uOCF414Cl",
+    "created": 1790043513383,
+    "type": "session.tool.input.ended",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f3917aa39ffe4s8cirfPFkw6l6",
+      "assistantMessageID": "msg_0c6e85630001Sgvqh2yLr2ZHk0",
+      "id": "call_f12c74f41fdb4726afa73de2",
+      "text": "{\"agent\": \"general\", \"description\": \"Small test\", \"model\": \"opencode-go/deepseek-v4-flash\", \"background\": true, \"prompt\": \"Call shell once with command \\\"sleep 20\\\", then reply exactly CHILD_ONE.\"}"
+    },
+    "durable": {
+      "aggregateID": "ses_f3917aa39ffe4s8cirfPFkw6l6",
+      "seq": 14,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c6e86227002OyHkAaA6ygDpZs",
+    "created": 1790043513383,
+    "type": "session.tool.called",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f3917aa39ffe4s8cirfPFkw6l6",
+      "assistantMessageID": "msg_0c6e85630001Sgvqh2yLr2ZHk0",
+      "id": "call_f12c74f41fdb4726afa73de2",
+      "input": {
+        "agent": "general",
+        "description": "Small test",
+        "model": "opencode-go/deepseek-v4-flash",
+        "background": true,
+        "prompt": "Call shell once with command \"sleep 20\", then reply exactly CHILD_ONE."
+      },
+      "executed": false
+    },
+    "durable": {
+      "aggregateID": "ses_f3917aa39ffe4s8cirfPFkw6l6",
+      "seq": 15,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c6e86229001bcK6vs9ciA1gWJ",
+    "created": 1790043513385,
+    "type": "session.tool.input.ended",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f3917aa39ffe4s8cirfPFkw6l6",
+      "assistantMessageID": "msg_0c6e85630001Sgvqh2yLr2ZHk0",
+      "id": "call_32a3de748dc449a382a46a45",
+      "text": "{\"agent\": \"general\", \"description\": \"Small test\", \"model\": \"opencode-go/deepseek-v4-flash\", \"background\": true, \"prompt\": \"Call shell once with command \\\"sleep 20\\\", then reply exactly CHILD_TWO.\"}"
+    },
+    "durable": {
+      "aggregateID": "ses_f3917aa39ffe4s8cirfPFkw6l6",
+      "seq": 16,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c6e8622a001DlSauBBoTx7s41",
+    "created": 1790043513386,
+    "type": "session.tool.called",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f3917aa39ffe4s8cirfPFkw6l6",
+      "assistantMessageID": "msg_0c6e85630001Sgvqh2yLr2ZHk0",
+      "id": "call_32a3de748dc449a382a46a45",
+      "input": {
+        "agent": "general",
+        "description": "Small test",
+        "model": "opencode-go/deepseek-v4-flash",
+        "background": true,
+        "prompt": "Call shell once with command \"sleep 20\", then reply exactly CHILD_TWO."
+      },
+      "executed": false
+    },
+    "durable": {
+      "aggregateID": "ses_f3917aa39ffe4s8cirfPFkw6l6",
+      "seq": 17,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c6e8622b001l7hNonYdjJIVpb",
+    "created": 1790043513387,
+    "type": "session.text.ended",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f3917aa39ffe4s8cirfPFkw6l6",
+      "assistantMessageID": "msg_0c6e85630001Sgvqh2yLr2ZHk0",
+      "ordinal": 0,
+      "text": "\n\n"
+    },
+    "durable": {
+      "aggregateID": "ses_f3917aa39ffe4s8cirfPFkw6l6",
+      "seq": 18,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c6e8622c001S0OEHG6UwsU3iF",
+    "created": 1790043513388,
+    "type": "session.step.streamed",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f3917aa39ffe4s8cirfPFkw6l6",
+      "assistantMessageID": "msg_0c6e85630001Sgvqh2yLr2ZHk0"
+    },
+    "durable": {
+      "aggregateID": "ses_f3917aa39ffe4s8cirfPFkw6l6",
+      "seq": 19,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c6e86254001nl3UXAygT849VI",
+    "created": 1790043513428,
+    "type": "session.created",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f39179dccffe7qsD5VBXdxe9A3",
+      "slug": "gentle-falcon",
+      "version": "2.0.11",
+      "projectID": "global",
+      "parentID": "ses_f3917aa39ffe4s8cirfPFkw6l6",
+      "location": {
+        "directory": "<PROFILE>/project пробел %#"
+      },
+      "subpath": "",
+      "title": "Small test",
+      "agent": "general",
+      "model": {
+        "id": "deepseek-v4-flash",
+        "providerID": "opencode-go"
+      }
+    },
+    "durable": {
+      "aggregateID": "ses_f39179dccffe7qsD5VBXdxe9A3",
+      "seq": 0,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c6e86255001VZ6qMFFngcv8me",
+    "created": 1790043513429,
+    "type": "session.tool.progress",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f3917aa39ffe4s8cirfPFkw6l6",
+      "assistantMessageID": "msg_0c6e85630001Sgvqh2yLr2ZHk0",
+      "id": "call_32a3de748dc449a382a46a45",
+      "metadata": {
+        "sessionID": "ses_f39179dccffe7qsD5VBXdxe9A3",
+        "status": "running"
+      }
+    }
+  },
+  {
+    "id": "evt_0c6e86256001MHQMUxNguy7snl",
+    "created": 1790043513430,
+    "type": "session.inbox.enqueued",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "inboxID": "msg_0c6e86255002793fIsNCRfaC0R",
+      "sessionID": "ses_f39179dccffe7qsD5VBXdxe9A3",
+      "item": {
+        "type": "user",
+        "payload": {
+          "text": "You are a subagent spawned by another session.\nCall shell once with command \"sleep 20\", then reply exactly CHILD_TWO."
+        },
+        "delivery": "steer"
+      }
+    },
+    "durable": {
+      "aggregateID": "ses_f39179dccffe7qsD5VBXdxe9A3",
+      "seq": 1,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c6e86257002u7mppbkVGWxeSG",
+    "created": 1790043513431,
+    "type": "session.tool.success",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f3917aa39ffe4s8cirfPFkw6l6",
+      "assistantMessageID": "msg_0c6e85630001Sgvqh2yLr2ZHk0",
+      "id": "call_32a3de748dc449a382a46a45",
+      "content": [
+        {
+          "type": "text",
+          "text": "The subagent is working in the background (sessionID: ses_f39179dccffe7qsD5VBXdxe9A3). You will be notified automatically when it finishes.\nDO NOT sleep, poll for progress, ask the subagent for status, or duplicate this subagent's work; avoid working with the same files or topics it is using.\nWork on non-overlapping tasks, or briefly tell the user what you launched and end your response."
+        }
+      ],
+      "metadata": {
+        "sessionID": "ses_f39179dccffe7qsD5VBXdxe9A3",
+        "status": "running",
+        "truncated": false
+      },
+      "executed": false
+    },
+    "durable": {
+      "aggregateID": "ses_f3917aa39ffe4s8cirfPFkw6l6",
+      "seq": 20,
+      "version": 2
+    }
+  },
+  {
+    "id": "evt_0c6e86259001m2brpEp7SSiQR0",
+    "created": 1790043513433,
+    "type": "session.created",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f39179dcdffeP4LJNVt7vCOU2y",
+      "slug": "nimble-rocket",
+      "version": "2.0.11",
+      "projectID": "global",
+      "parentID": "ses_f3917aa39ffe4s8cirfPFkw6l6",
+      "location": {
+        "directory": "<PROFILE>/project пробел %#"
+      },
+      "subpath": "",
+      "title": "Small test",
+      "agent": "general",
+      "model": {
+        "id": "deepseek-v4-flash",
+        "providerID": "opencode-go"
+      }
+    },
+    "durable": {
+      "aggregateID": "ses_f39179dcdffeP4LJNVt7vCOU2y",
+      "seq": 0,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c6e8625a001H2vNPZMHq1SjMb",
+    "created": 1790043513434,
+    "type": "session.tool.progress",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f3917aa39ffe4s8cirfPFkw6l6",
+      "assistantMessageID": "msg_0c6e85630001Sgvqh2yLr2ZHk0",
+      "id": "call_f12c74f41fdb4726afa73de2",
+      "metadata": {
+        "sessionID": "ses_f39179dcdffeP4LJNVt7vCOU2y",
+        "status": "running"
+      }
+    }
+  },
+  {
+    "id": "evt_0c6e8625b00101wzQdmd1tRrkP",
+    "created": 1790043513435,
+    "type": "session.inbox.enqueued",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "inboxID": "msg_0c6e8625a002fFbYB6RY2VOJxT",
+      "sessionID": "ses_f39179dcdffeP4LJNVt7vCOU2y",
+      "item": {
+        "type": "user",
+        "payload": {
+          "text": "You are a subagent spawned by another session.\nCall shell once with command \"sleep 20\", then reply exactly CHILD_ONE."
+        },
+        "delivery": "steer"
+      }
+    },
+    "durable": {
+      "aggregateID": "ses_f39179dcdffeP4LJNVt7vCOU2y",
+      "seq": 1,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c6e8625c0016vW0LciW2s6Kvu",
+    "created": 1790043513436,
+    "type": "session.tool.success",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f3917aa39ffe4s8cirfPFkw6l6",
+      "assistantMessageID": "msg_0c6e85630001Sgvqh2yLr2ZHk0",
+      "id": "call_f12c74f41fdb4726afa73de2",
+      "content": [
+        {
+          "type": "text",
+          "text": "The subagent is working in the background (sessionID: ses_f39179dcdffeP4LJNVt7vCOU2y). You will be notified automatically when it finishes.\nDO NOT sleep, poll for progress, ask the subagent for status, or duplicate this subagent's work; avoid working with the same files or topics it is using.\nWork on non-overlapping tasks, or briefly tell the user what you launched and end your response."
+        }
+      ],
+      "metadata": {
+        "sessionID": "ses_f39179dcdffeP4LJNVt7vCOU2y",
+        "status": "running",
+        "truncated": false
+      },
+      "executed": false
+    },
+    "durable": {
+      "aggregateID": "ses_f3917aa39ffe4s8cirfPFkw6l6",
+      "seq": 21,
+      "version": 2
+    }
+  },
+  {
+    "id": "evt_0c6e8625d001NK1ud4ASJoEcId",
+    "created": 1790043513437,
+    "type": "session.execution.started",
+    "data": {
+      "sessionID": "ses_f39179dccffe7qsD5VBXdxe9A3"
+    },
+    "durable": {
+      "aggregateID": "ses_f39179dccffe7qsD5VBXdxe9A3",
+      "seq": 2,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c6e86261001RH7J5S46PC37Um",
+    "created": 1790043513441,
+    "metadata": {
+      "instructions": {
+        "initial": true
+      }
+    },
+    "type": "session.instructions.updated",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f39179dccffe7qsD5VBXdxe9A3",
+      "delta": {
+        "core/environment": "2d233c24dcbb14513f68a3e0befbd3bae3406e0de2350acc51ec8848af6fa8fb",
+        "core/date": "6a76aa89fcc8086f3abb8b9dc2b9ceafa3405dd2b3cdc263b339d36120433008",
+        "core/codemode": "cf52fcbcde861ccfefdc6633ee3cb84036524f86c72f976a7315e05dc01a15e1",
+        "core/skill-guidance": "8394362d28c82fa4d13c7a9f5568c05680f6687e07db8f426a0e3c92f3027dc9"
+      }
+    },
+    "durable": {
+      "aggregateID": "ses_f39179dccffe7qsD5VBXdxe9A3",
+      "seq": 3,
+      "version": 2
+    }
+  },
+  {
+    "id": "evt_0c6e86262001Y1GFQpvC5XPFfW",
+    "created": 1790043513442,
+    "type": "session.inbox.delivered",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f39179dccffe7qsD5VBXdxe9A3",
+      "inboxID": "msg_0c6e86255002793fIsNCRfaC0R"
+    },
+    "durable": {
+      "aggregateID": "ses_f39179dccffe7qsD5VBXdxe9A3",
+      "seq": 4,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c6e86269001LOAB0Lhq3Ijc2Q",
+    "created": 1790043513449,
+    "type": "session.execution.started",
+    "data": {
+      "sessionID": "ses_f39179dcdffeP4LJNVt7vCOU2y"
+    },
+    "durable": {
+      "aggregateID": "ses_f39179dcdffeP4LJNVt7vCOU2y",
+      "seq": 2,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c6e8626d0017dWXXsQW1S3LUU",
+    "created": 1790043513453,
+    "metadata": {
+      "instructions": {
+        "initial": true
+      }
+    },
+    "type": "session.instructions.updated",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f39179dcdffeP4LJNVt7vCOU2y",
+      "delta": {
+        "core/environment": "5c6d86222ee70901039a8536bc3b9d769c5696492267ece576a48332589d3558",
+        "core/date": "6a76aa89fcc8086f3abb8b9dc2b9ceafa3405dd2b3cdc263b339d36120433008",
+        "core/codemode": "cf52fcbcde861ccfefdc6633ee3cb84036524f86c72f976a7315e05dc01a15e1",
+        "core/skill-guidance": "8394362d28c82fa4d13c7a9f5568c05680f6687e07db8f426a0e3c92f3027dc9"
+      }
+    },
+    "durable": {
+      "aggregateID": "ses_f39179dcdffeP4LJNVt7vCOU2y",
+      "seq": 3,
+      "version": 2
+    }
+  },
+  {
+    "id": "evt_0c6e8626e001re2NamLKIwiQsu",
+    "created": 1790043513454,
+    "type": "session.inbox.delivered",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f39179dcdffeP4LJNVt7vCOU2y",
+      "inboxID": "msg_0c6e8625a002fFbYB6RY2VOJxT"
+    },
+    "durable": {
+      "aggregateID": "ses_f39179dcdffeP4LJNVt7vCOU2y",
+      "seq": 4,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c6e8628c001JzBjeD4dgyn7sh",
+    "created": 1790043513484,
+    "type": "session.step.ended",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f3917aa39ffe4s8cirfPFkw6l6",
+      "assistantMessageID": "msg_0c6e85630001Sgvqh2yLr2ZHk0",
+      "finish": "tool-calls",
+      "rawFinish": "tool_calls",
+      "cost": 0.001398918,
+      "tokens": {
+        "input": 8253,
+        "output": 267,
+        "reasoning": 0,
+        "cache": {
+          "read": 256,
+          "write": 0
+        }
+      },
+      "snapshot": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+      "files": []
+    },
+    "durable": {
+      "aggregateID": "ses_f3917aa39ffe4s8cirfPFkw6l6",
+      "seq": 22,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c6e8628e001C3iuGU2TSxhaQX",
+    "created": 1790043513486,
+    "type": "session.usage.updated",
+    "data": {
+      "sessionID": "ses_f3917aa39ffe4s8cirfPFkw6l6",
+      "cost": 0.001541318,
+      "tokens": {
+        "input": 8899,
+        "output": 278,
+        "reasoning": 0,
+        "cache": {
+          "read": 256,
+          "write": 0
+        }
+      }
+    }
+  },
+  {
+    "id": "evt_0c6e8679b001hWxRVirrS0VExB",
+    "created": 1790043514779,
+    "type": "session.step.started",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f3917aa39ffe4s8cirfPFkw6l6",
+      "agent": "build",
+      "model": {
+        "id": "deepseek-v4-flash",
+        "providerID": "opencode-go",
+        "variant": "default"
+      },
+      "assistantMessageID": "msg_0c6e86293001dZ2Hx2m3EK3GOX",
+      "snapshot": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+      "started": 1790043513516
+    },
+    "durable": {
+      "aggregateID": "ses_f3917aa39ffe4s8cirfPFkw6l6",
+      "seq": 23,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c6e8679f0014GiTiSp0vliqAG",
+    "created": 1790043514783,
+    "type": "session.text.started",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f3917aa39ffe4s8cirfPFkw6l6",
+      "assistantMessageID": "msg_0c6e86293001dZ2Hx2m3EK3GOX",
+      "ordinal": 0
+    },
+    "durable": {
+      "aggregateID": "ses_f3917aa39ffe4s8cirfPFkw6l6",
+      "seq": 24,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c6e867bb001vNSZYT5aS82MaV",
+    "created": 1790043514811,
+    "type": "session.text.delta",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f3917aa39ffe4s8cirfPFkw6l6",
+      "assistantMessageID": "msg_0c6e86293001dZ2Hx2m3EK3GOX",
+      "ordinal": 0,
+      "delta": "PARENT_LAUNCHED"
+    }
+  },
+  {
+    "id": "evt_0c6e867bb002p5MrfCYy63aLwP",
+    "created": 1790043514811,
+    "type": "session.text.ended",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f3917aa39ffe4s8cirfPFkw6l6",
+      "assistantMessageID": "msg_0c6e86293001dZ2Hx2m3EK3GOX",
+      "ordinal": 0,
+      "text": "PARENT_LAUNCHED"
+    },
+    "durable": {
+      "aggregateID": "ses_f3917aa39ffe4s8cirfPFkw6l6",
+      "seq": 25,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c6e867bd001IxrpS8LJBHJUIl",
+    "created": 1790043514813,
+    "type": "session.step.streamed",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f3917aa39ffe4s8cirfPFkw6l6",
+      "assistantMessageID": "msg_0c6e86293001dZ2Hx2m3EK3GOX"
+    },
+    "durable": {
+      "aggregateID": "ses_f3917aa39ffe4s8cirfPFkw6l6",
+      "seq": 26,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c6e867d5001Pav56Xjv4VUp7D",
+    "created": 1790043514837,
+    "type": "session.step.ended",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f3917aa39ffe4s8cirfPFkw6l6",
+      "assistantMessageID": "msg_0c6e86293001dZ2Hx2m3EK3GOX",
+      "finish": "stop",
+      "rawFinish": "stop",
+      "cost": 0.000110844,
+      "tokens": {
+        "input": 534,
+        "output": 9,
+        "reasoning": 0,
+        "cache": {
+          "read": 8448,
+          "write": 0
+        }
+      },
+      "snapshot": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+      "files": []
+    },
+    "durable": {
+      "aggregateID": "ses_f3917aa39ffe4s8cirfPFkw6l6",
+      "seq": 27,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c6e867d7001iOTiTNxoWnfmo1",
+    "created": 1790043514839,
+    "type": "session.usage.updated",
+    "data": {
+      "sessionID": "ses_f3917aa39ffe4s8cirfPFkw6l6",
+      "cost": 0.001652162,
+      "tokens": {
+        "input": 9433,
+        "output": 287,
+        "reasoning": 0,
+        "cache": {
+          "read": 8704,
+          "write": 0
+        }
+      }
+    }
+  },
+  {
+    "id": "evt_0c6e867d7002HHAVYletDQ1EY5",
+    "created": 1790043514839,
+    "type": "session.execution.succeeded",
+    "data": {
+      "sessionID": "ses_f3917aa39ffe4s8cirfPFkw6l6"
+    },
+    "durable": {
+      "aggregateID": "ses_f3917aa39ffe4s8cirfPFkw6l6",
+      "seq": 28,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c6e867e1001yJRT2Kew4s0QtS",
+    "created": 1790043514849,
+    "type": "session.step.started",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f39179dcdffeP4LJNVt7vCOU2y",
+      "agent": "general",
+      "model": {
+        "id": "deepseek-v4-flash",
+        "providerID": "opencode-go",
+        "variant": "default"
+      },
+      "assistantMessageID": "msg_0c6e86271001MiDL5BtN1Izr5z",
+      "snapshot": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+      "started": 1790043513596
+    },
+    "durable": {
+      "aggregateID": "ses_f39179dcdffeP4LJNVt7vCOU2y",
+      "seq": 5,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c6e867e2001l87TOUS0DvmL17",
+    "created": 1790043514850,
+    "type": "session.reasoning.started",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f39179dcdffeP4LJNVt7vCOU2y",
+      "assistantMessageID": "msg_0c6e86271001MiDL5BtN1Izr5z",
+      "ordinal": 0,
+      "state": {
+        "reasoningField": "reasoning_content"
+      }
+    },
+    "durable": {
+      "aggregateID": "ses_f39179dcdffeP4LJNVt7vCOU2y",
+      "seq": 6,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c6e86848001nQ2RJUUzcR49M0",
+    "created": 1790043514952,
+    "type": "session.reasoning.delta",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f39179dcdffeP4LJNVt7vCOU2y",
+      "assistantMessageID": "msg_0c6e86271001MiDL5BtN1Izr5z",
+      "ordinal": 0,
+      "delta": "The user wants me to call shell once with command \"sleep 20\", then reply exactly CHILD_ONE. The command"
+    }
+  },
+  {
+    "id": "evt_0c6e868c80015FNTY6RJrdeIdY",
+    "created": 1790043515080,
+    "type": "session.reasoning.delta",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f39179dcdffeP4LJNVt7vCOU2y",
+      "assistantMessageID": "msg_0c6e86271001MiDL5BtN1Izr5z",
+      "ordinal": 0,
+      "delta": " \"sleep 20\" doesn't contain separators like `&&` or `;` —"
+    }
+  },
+  {
+    "id": "evt_0c6e8692f001emnwU6VnZ3EmMy",
+    "created": 1790043515183,
+    "type": "session.reasoning.delta",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f39179dcdffeP4LJNVt7vCOU2y",
+      "assistantMessageID": "msg_0c6e86271001MiDL5BtN1Izr5z",
+      "ordinal": 0,
+      "delta": " it's a simple command. Let me run it.\n\nWait, the working directory contains spaces and special"
+    }
+  },
+  {
+    "id": "evt_0c6e86941001oKN5xtdRy61cox",
+    "created": 1790043515201,
+    "type": "session.step.started",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f39179dccffe7qsD5VBXdxe9A3",
+      "agent": "general",
+      "model": {
+        "id": "deepseek-v4-flash",
+        "providerID": "opencode-go",
+        "variant": "default"
+      },
+      "assistantMessageID": "msg_0c6e86264001zlu2lKDWiNuOxz",
+      "snapshot": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+      "started": 1790043513543
+    },
+    "durable": {
+      "aggregateID": "ses_f39179dccffe7qsD5VBXdxe9A3",
+      "seq": 5,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c6e86944001PTSsHGs1EqNP9c",
+    "created": 1790043515204,
+    "type": "session.reasoning.started",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f39179dccffe7qsD5VBXdxe9A3",
+      "assistantMessageID": "msg_0c6e86264001zlu2lKDWiNuOxz",
+      "ordinal": 0,
+      "state": {
+        "reasoningField": "reasoning_content"
+      }
+    },
+    "durable": {
+      "aggregateID": "ses_f39179dccffe7qsD5VBXdxe9A3",
+      "seq": 6,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c6e869a9001BipZ3Ki11nAflI",
+    "created": 1790043515306,
+    "type": "session.reasoning.delta",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f39179dccffe7qsD5VBXdxe9A3",
+      "assistantMessageID": "msg_0c6e86264001zlu2lKDWiNuOxz",
+      "ordinal": 0,
+      "delta": "The"
+    }
+  },
+  {
+    "id": "evt_0c6e869c2001qGn4PZ1Y8vGtBX",
+    "created": 1790043515330,
+    "type": "session.reasoning.delta",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f39179dcdffeP4LJNVt7vCOU2y",
+      "assistantMessageID": "msg_0c6e86271001MiDL5BtN1Izr5z",
+      "ordinal": 0,
+      "delta": " characters, but the"
+    }
+  },
+  {
+    "id": "evt_0c6e86a44001zgSS700V52j9mR",
+    "created": 1790043515460,
+    "type": "session.reasoning.delta",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f39179dcdffeP4LJNVt7vCOU2y",
+      "assistantMessageID": "msg_0c6e86271001MiDL5BtN1Izr5z",
+      "ordinal": 0,
+      "delta": " command is just \"sleep 20\" which doesn't need a workdir. Let me call shell"
+    }
+  },
+  {
+    "id": "evt_0c6e86a8b001XrUQ4zjX099oM1",
+    "created": 1790043515531,
+    "type": "session.tool.input.started",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f39179dcdffeP4LJNVt7vCOU2y",
+      "assistantMessageID": "msg_0c6e86271001MiDL5BtN1Izr5z",
+      "id": "call_524aadd891f349f28362889c",
+      "name": "shell"
+    },
+    "durable": {
+      "aggregateID": "ses_f39179dcdffeP4LJNVt7vCOU2y",
+      "seq": 7,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c6e86aaa001rbEkoMvPmCjsmE",
+    "created": 1790043515562,
+    "type": "session.reasoning.delta",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f39179dcdffeP4LJNVt7vCOU2y",
+      "assistantMessageID": "msg_0c6e86271001MiDL5BtN1Izr5z",
+      "ordinal": 0,
+      "delta": " with command \"sleep 20\"."
+    }
+  },
+  {
+    "id": "evt_0c6e86af8001g2Zl7oiGvvuqgK",
+    "created": 1790043515640,
+    "type": "session.reasoning.ended",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f39179dcdffeP4LJNVt7vCOU2y",
+      "assistantMessageID": "msg_0c6e86271001MiDL5BtN1Izr5z",
+      "ordinal": 0,
+      "text": "The user wants me to call shell once with command \"sleep 20\", then reply exactly CHILD_ONE. The command \"sleep 20\" doesn't contain separators like `&&` or `;` — it's a simple command. Let me run it.\n\nWait, the working directory contains spaces and special characters, but the command is just \"sleep 20\" which doesn't need a workdir. Let me call shell with command \"sleep 20\".",
+      "state": {
+        "reasoningField": "reasoning_content"
+      }
+    },
+    "durable": {
+      "aggregateID": "ses_f39179dcdffeP4LJNVt7vCOU2y",
+      "seq": 8,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c6e86afc001tggZ9CRIGEjv2P",
+    "created": 1790043515644,
+    "type": "session.tool.input.ended",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f39179dcdffeP4LJNVt7vCOU2y",
+      "assistantMessageID": "msg_0c6e86271001MiDL5BtN1Izr5z",
+      "id": "call_524aadd891f349f28362889c",
+      "text": "{\"command\": \"sleep 20\"}"
+    },
+    "durable": {
+      "aggregateID": "ses_f39179dcdffeP4LJNVt7vCOU2y",
+      "seq": 9,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c6e86afd001q4Kt1loetXRYHv",
+    "created": 1790043515645,
+    "type": "session.tool.called",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f39179dcdffeP4LJNVt7vCOU2y",
+      "assistantMessageID": "msg_0c6e86271001MiDL5BtN1Izr5z",
+      "id": "call_524aadd891f349f28362889c",
+      "input": {
+        "command": "sleep 20"
+      },
+      "executed": false
+    },
+    "durable": {
+      "aggregateID": "ses_f39179dcdffeP4LJNVt7vCOU2y",
+      "seq": 10,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c6e86afe001wzUsS7O3lVz0a2",
+    "created": 1790043515646,
+    "type": "session.step.streamed",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f39179dcdffeP4LJNVt7vCOU2y",
+      "assistantMessageID": "msg_0c6e86271001MiDL5BtN1Izr5z"
+    },
+    "durable": {
+      "aggregateID": "ses_f39179dcdffeP4LJNVt7vCOU2y",
+      "seq": 11,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c6e86b0f001btJ3NoN6miAX5T",
+    "created": 1790043515663,
+    "type": "shell.created",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "info": {
+        "id": "sh_0c6e86b0d001R689Z243XIJpFE",
+        "status": "running",
+        "command": "sleep 20",
+        "cwd": "<PROFILE>/project пробел %#",
+        "shell": "/bin/zsh",
+        "file": "<PROFILE>/data/opencode/shell/global/sh_0c6e86b0d001R689Z243XIJpFE.out",
+        "metadata": {
+          "sessionID": "ses_f39179dcdffeP4LJNVt7vCOU2y"
+        },
+        "time": {
+          "started": 1790043515661
+        }
+      }
+    }
+  },
+  {
+    "id": "evt_0c6e86b0f002xK2xMsR19h2iPp",
+    "created": 1790043515663,
+    "type": "session.tool.progress",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f39179dcdffeP4LJNVt7vCOU2y",
+      "assistantMessageID": "msg_0c6e86271001MiDL5BtN1Izr5z",
+      "id": "call_524aadd891f349f28362889c",
+      "metadata": {
+        "shellID": "sh_0c6e86b0d001R689Z243XIJpFE"
+      }
+    }
+  },
+  {
+    "id": "evt_0c6e86ddc001S8cSxTvc218U2Q",
+    "created": 1790043516380,
+    "type": "session.text.started",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f39179dccffe7qsD5VBXdxe9A3",
+      "assistantMessageID": "msg_0c6e86264001zlu2lKDWiNuOxz",
+      "ordinal": 0
+    },
+    "durable": {
+      "aggregateID": "ses_f39179dccffe7qsD5VBXdxe9A3",
+      "seq": 7,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c6e86df20016kaJQSvjl2iDIM",
+    "created": 1790043516402,
+    "type": "session.reasoning.delta",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f39179dccffe7qsD5VBXdxe9A3",
+      "assistantMessageID": "msg_0c6e86264001zlu2lKDWiNuOxz",
+      "ordinal": 0,
+      "delta": " user wants me to call shell once with command \"sleep 20\", then reply exactly CHILD_TWO."
+    }
+  },
+  {
+    "id": "evt_0c6e86e0b001iu7UkZfrd23Id2",
+    "created": 1790043516427,
+    "type": "session.tool.input.started",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f39179dccffe7qsD5VBXdxe9A3",
+      "assistantMessageID": "msg_0c6e86264001zlu2lKDWiNuOxz",
+      "id": "call_cbe6b8e7dcd7468d8ff00661",
+      "name": "shell"
+    },
+    "durable": {
+      "aggregateID": "ses_f39179dccffe7qsD5VBXdxe9A3",
+      "seq": 8,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c6e86e46001WwmChq7HVycSn7",
+    "created": 1790043516486,
+    "type": "session.text.delta",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f39179dccffe7qsD5VBXdxe9A3",
+      "assistantMessageID": "msg_0c6e86264001zlu2lKDWiNuOxz",
+      "ordinal": 0,
+      "delta": "\n\n"
+    }
+  },
+  {
+    "id": "evt_0c6e86e6f001bOz2qKCa6WEO5V",
+    "created": 1790043516527,
+    "type": "session.reasoning.ended",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f39179dccffe7qsD5VBXdxe9A3",
+      "assistantMessageID": "msg_0c6e86264001zlu2lKDWiNuOxz",
+      "ordinal": 0,
+      "text": "The user wants me to call shell once with command \"sleep 20\", then reply exactly CHILD_TWO.",
+      "state": {
+        "reasoningField": "reasoning_content"
+      }
+    },
+    "durable": {
+      "aggregateID": "ses_f39179dccffe7qsD5VBXdxe9A3",
+      "seq": 9,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c6e86e71001j6VlwfAKd9eeiP",
+    "created": 1790043516529,
+    "type": "session.tool.input.ended",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f39179dccffe7qsD5VBXdxe9A3",
+      "assistantMessageID": "msg_0c6e86264001zlu2lKDWiNuOxz",
+      "id": "call_cbe6b8e7dcd7468d8ff00661",
+      "text": "{\"command\": \"sleep 20\"}"
+    },
+    "durable": {
+      "aggregateID": "ses_f39179dccffe7qsD5VBXdxe9A3",
+      "seq": 10,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c6e86e72001Ct0l58nNSo2fnw",
+    "created": 1790043516530,
+    "type": "session.tool.called",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f39179dccffe7qsD5VBXdxe9A3",
+      "assistantMessageID": "msg_0c6e86264001zlu2lKDWiNuOxz",
+      "id": "call_cbe6b8e7dcd7468d8ff00661",
+      "input": {
+        "command": "sleep 20"
+      },
+      "executed": false
+    },
+    "durable": {
+      "aggregateID": "ses_f39179dccffe7qsD5VBXdxe9A3",
+      "seq": 11,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c6e86e72002stLqXMoZZ42OpU",
+    "created": 1790043516530,
+    "type": "session.text.ended",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f39179dccffe7qsD5VBXdxe9A3",
+      "assistantMessageID": "msg_0c6e86264001zlu2lKDWiNuOxz",
+      "ordinal": 0,
+      "text": "\n\n"
+    },
+    "durable": {
+      "aggregateID": "ses_f39179dccffe7qsD5VBXdxe9A3",
+      "seq": 12,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c6e86e730012P3kyb8ZB9szFN",
+    "created": 1790043516531,
+    "type": "session.step.streamed",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f39179dccffe7qsD5VBXdxe9A3",
+      "assistantMessageID": "msg_0c6e86264001zlu2lKDWiNuOxz"
+    },
+    "durable": {
+      "aggregateID": "ses_f39179dccffe7qsD5VBXdxe9A3",
+      "seq": 13,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c6e86e77001XE0PEmya1kM8LB",
+    "created": 1790043516535,
+    "type": "shell.created",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "info": {
+        "id": "sh_0c6e86e75001gxtqCevlIpr3iT",
+        "status": "running",
+        "command": "sleep 20",
+        "cwd": "<PROFILE>/project пробел %#",
+        "shell": "/bin/zsh",
+        "file": "<PROFILE>/data/opencode/shell/global/sh_0c6e86e75001gxtqCevlIpr3iT.out",
+        "metadata": {
+          "sessionID": "ses_f39179dccffe7qsD5VBXdxe9A3"
+        },
+        "time": {
+          "started": 1790043516534
+        }
+      }
+    }
+  },
+  {
+    "id": "evt_0c6e86e770023foVZXwafZ79DR",
+    "created": 1790043516535,
+    "type": "session.tool.progress",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f39179dccffe7qsD5VBXdxe9A3",
+      "assistantMessageID": "msg_0c6e86264001zlu2lKDWiNuOxz",
+      "id": "call_cbe6b8e7dcd7468d8ff00661",
+      "metadata": {
+        "shellID": "sh_0c6e86e75001gxtqCevlIpr3iT"
+      }
+    }
+  },
+  {
+    "id": "evt_0c6e8b936001HdP3efocrOMBoB",
+    "created": 1790043535670,
+    "type": "session.tool.success",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f39179dcdffeP4LJNVt7vCOU2y",
+      "assistantMessageID": "msg_0c6e86271001MiDL5BtN1Izr5z",
+      "id": "call_524aadd891f349f28362889c",
+      "content": [
+        {
+          "type": "text",
+          "text": "(no output)"
+        },
+        {
+          "type": "text",
+          "text": "Command exited with code 0."
+        }
+      ],
+      "metadata": {
+        "status": "completed",
+        "truncated": false,
+        "exit": 0
+      },
+      "executed": false
+    },
+    "durable": {
+      "aggregateID": "ses_f39179dcdffeP4LJNVt7vCOU2y",
+      "seq": 12,
+      "version": 2
+    }
+  },
+  {
+    "id": "evt_0c6e8b9380012LbKyKo5PiNGZd",
+    "created": 1790043535672,
+    "type": "shell.exited",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "id": "sh_0c6e86b0d001R689Z243XIJpFE",
+      "exit": 0,
+      "status": "exited"
+    }
+  },
+  {
+    "id": "evt_0c6e8b94d001dmO2XfiljrgczL",
+    "created": 1790043535693,
+    "type": "session.step.ended",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f39179dcdffeP4LJNVt7vCOU2y",
+      "assistantMessageID": "msg_0c6e86271001MiDL5BtN1Izr5z",
+      "finish": "tool-calls",
+      "rawFinish": "tool_calls",
+      "cost": 0.0012019499999999998,
+      "tokens": {
+        "input": 7449,
+        "output": 141,
+        "reasoning": 0,
+        "cache": {
+          "read": 0,
+          "write": 0
+        }
+      },
+      "snapshot": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+      "files": []
+    },
+    "durable": {
+      "aggregateID": "ses_f39179dcdffeP4LJNVt7vCOU2y",
+      "seq": 13,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c6e8b94f0010I2iZroVO2Qj9q",
+    "created": 1790043535695,
+    "type": "session.usage.updated",
+    "data": {
+      "sessionID": "ses_f39179dcdffeP4LJNVt7vCOU2y",
+      "cost": 0.0012019499999999998,
+      "tokens": {
+        "input": 7449,
+        "output": 141,
+        "reasoning": 0,
+        "cache": {
+          "read": 0,
+          "write": 0
+        }
+      }
+    }
+  },
+  {
+    "id": "evt_0c6e8bca2001q51o4UBx245bw1",
+    "created": 1790043536546,
+    "type": "session.tool.success",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f39179dccffe7qsD5VBXdxe9A3",
+      "assistantMessageID": "msg_0c6e86264001zlu2lKDWiNuOxz",
+      "id": "call_cbe6b8e7dcd7468d8ff00661",
+      "content": [
+        {
+          "type": "text",
+          "text": "(no output)"
+        },
+        {
+          "type": "text",
+          "text": "Command exited with code 0."
+        }
+      ],
+      "metadata": {
+        "status": "completed",
+        "truncated": false,
+        "exit": 0
+      },
+      "executed": false
+    },
+    "durable": {
+      "aggregateID": "ses_f39179dccffe7qsD5VBXdxe9A3",
+      "seq": 14,
+      "version": 2
+    }
+  },
+  {
+    "id": "evt_0c6e8bca3001OkAP8lvqW34x0s",
+    "created": 1790043536547,
+    "type": "shell.exited",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "id": "sh_0c6e86e75001gxtqCevlIpr3iT",
+      "exit": 0,
+      "status": "exited"
+    }
+  },
+  {
+    "id": "evt_0c6e8bcb9001dEY7UcVrADNvJk",
+    "created": 1790043536569,
+    "type": "session.step.ended",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f39179dccffe7qsD5VBXdxe9A3",
+      "assistantMessageID": "msg_0c6e86264001zlu2lKDWiNuOxz",
+      "finish": "tool-calls",
+      "rawFinish": "tool_calls",
+      "cost": 0.0011586,
+      "tokens": {
+        "input": 7448,
+        "output": 69,
+        "reasoning": 0,
+        "cache": {
+          "read": 0,
+          "write": 0
+        }
+      },
+      "snapshot": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+      "files": []
+    },
+    "durable": {
+      "aggregateID": "ses_f39179dccffe7qsD5VBXdxe9A3",
+      "seq": 15,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c6e8bcbb001BwKeTKzaDruQf6",
+    "created": 1790043536571,
+    "type": "session.usage.updated",
+    "data": {
+      "sessionID": "ses_f39179dccffe7qsD5VBXdxe9A3",
+      "cost": 0.0011586,
+      "tokens": {
+        "input": 7448,
+        "output": 69,
+        "reasoning": 0,
+        "cache": {
+          "read": 0,
+          "write": 0
+        }
+      }
+    }
+  },
+  {
+    "id": "evt_0c6e8c1250016QM2nauBWbUUU1",
+    "created": 1790043537701,
+    "type": "session.step.started",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f39179dccffe7qsD5VBXdxe9A3",
+      "agent": "general",
+      "model": {
+        "id": "deepseek-v4-flash",
+        "providerID": "opencode-go",
+        "variant": "default"
+      },
+      "assistantMessageID": "msg_0c6e8bcc0001xV26zHZP20eWh1",
+      "snapshot": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+      "started": 1790043536602
+    },
+    "durable": {
+      "aggregateID": "ses_f39179dccffe7qsD5VBXdxe9A3",
+      "seq": 16,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c6e8c127001wTeNCLBIKpaHEn",
+    "created": 1790043537703,
+    "type": "session.text.started",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f39179dccffe7qsD5VBXdxe9A3",
+      "assistantMessageID": "msg_0c6e8bcc0001xV26zHZP20eWh1",
+      "ordinal": 0
+    },
+    "durable": {
+      "aggregateID": "ses_f39179dccffe7qsD5VBXdxe9A3",
+      "seq": 17,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c6e8c129001maBV6uKvc9A4cM",
+    "created": 1790043537705,
+    "type": "session.text.delta",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f39179dccffe7qsD5VBXdxe9A3",
+      "assistantMessageID": "msg_0c6e8bcc0001xV26zHZP20eWh1",
+      "ordinal": 0,
+      "delta": "CHILD_TWO"
+    }
+  },
+  {
+    "id": "evt_0c6e8c12a001RT6j2j89mE1g6j",
+    "created": 1790043537706,
+    "type": "session.text.ended",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f39179dccffe7qsD5VBXdxe9A3",
+      "assistantMessageID": "msg_0c6e8bcc0001xV26zHZP20eWh1",
+      "ordinal": 0,
+      "text": "CHILD_TWO"
+    },
+    "durable": {
+      "aggregateID": "ses_f39179dccffe7qsD5VBXdxe9A3",
+      "seq": 18,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c6e8c12b001yZwQE51Cs2GA6v",
+    "created": 1790043537707,
+    "type": "session.step.streamed",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f39179dccffe7qsD5VBXdxe9A3",
+      "assistantMessageID": "msg_0c6e8bcc0001xV26zHZP20eWh1"
+    },
+    "durable": {
+      "aggregateID": "ses_f39179dccffe7qsD5VBXdxe9A3",
+      "seq": 19,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c6e8c144001GG2WNRwyjVPpPZ",
+    "created": 1790043537732,
+    "type": "session.step.ended",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f39179dccffe7qsD5VBXdxe9A3",
+      "assistantMessageID": "msg_0c6e8bcc0001xV26zHZP20eWh1",
+      "finish": "stop",
+      "rawFinish": "stop",
+      "cost": 4.2822000000000004e-05,
+      "tokens": {
+        "input": 113,
+        "output": 6,
+        "reasoning": 0,
+        "cache": {
+          "read": 7424,
+          "write": 0
+        }
+      },
+      "snapshot": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+      "files": []
+    },
+    "durable": {
+      "aggregateID": "ses_f39179dccffe7qsD5VBXdxe9A3",
+      "seq": 20,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c6e8c146001xKfuRhMQyHpyqB",
+    "created": 1790043537734,
+    "type": "session.usage.updated",
+    "data": {
+      "sessionID": "ses_f39179dccffe7qsD5VBXdxe9A3",
+      "cost": 0.0012014220000000002,
+      "tokens": {
+        "input": 7561,
+        "output": 75,
+        "reasoning": 0,
+        "cache": {
+          "read": 7424,
+          "write": 0
+        }
+      }
+    }
+  },
+  {
+    "id": "evt_0c6e8c1470011uS60CGONrJh0J",
+    "created": 1790043537735,
+    "type": "session.execution.succeeded",
+    "data": {
+      "sessionID": "ses_f39179dccffe7qsD5VBXdxe9A3"
+    },
+    "durable": {
+      "aggregateID": "ses_f39179dccffe7qsD5VBXdxe9A3",
+      "seq": 21,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c6e8c149001pNRE4b4r3zgIZ3",
+    "created": 1790043537737,
+    "type": "session.inbox.enqueued",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "inboxID": "msg_0c6e86257001EYxDpce56BYNxd",
+      "sessionID": "ses_f3917aa39ffe4s8cirfPFkw6l6",
+      "item": {
+        "type": "synthetic",
+        "payload": {
+          "text": "<subagent sessionID=\"ses_f39179dccffe7qsD5VBXdxe9A3\" state=\"completed\" description=\"Small test\">\nCHILD_TWO\n</subagent>",
+          "description": "Small test",
+          "metadata": {
+            "source": "subagent",
+            "childID": "ses_f39179dccffe7qsD5VBXdxe9A3",
+            "agent": "General",
+            "state": "completed"
+          }
+        },
+        "delivery": "steer"
+      }
+    },
+    "durable": {
+      "aggregateID": "ses_f3917aa39ffe4s8cirfPFkw6l6",
+      "seq": 29,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c6e8c14a001C9gTFEGOo6NSek",
+    "created": 1790043537738,
+    "type": "session.execution.started",
+    "data": {
+      "sessionID": "ses_f3917aa39ffe4s8cirfPFkw6l6"
+    },
+    "durable": {
+      "aggregateID": "ses_f3917aa39ffe4s8cirfPFkw6l6",
+      "seq": 30,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c6e8c14f001Ue6KUoEP8xMihS",
+    "created": 1790043537743,
+    "type": "session.inbox.delivered",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f3917aa39ffe4s8cirfPFkw6l6",
+      "inboxID": "msg_0c6e86257001EYxDpce56BYNxd"
+    },
+    "durable": {
+      "aggregateID": "ses_f3917aa39ffe4s8cirfPFkw6l6",
+      "seq": 31,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c6e8c4ce001dL90qJBM7SY8vl",
+    "created": 1790043538638,
+    "type": "session.step.started",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f3917aa39ffe4s8cirfPFkw6l6",
+      "agent": "build",
+      "model": {
+        "id": "deepseek-v4-flash",
+        "providerID": "opencode-go",
+        "variant": "default"
+      },
+      "assistantMessageID": "msg_0c6e8c152001v7nIysWStiBQVD",
+      "snapshot": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+      "started": 1790043537774
+    },
+    "durable": {
+      "aggregateID": "ses_f3917aa39ffe4s8cirfPFkw6l6",
+      "seq": 32,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c6e8c4d2001gDaolF5m139zrH",
+    "created": 1790043538642,
+    "type": "session.reasoning.started",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f3917aa39ffe4s8cirfPFkw6l6",
+      "assistantMessageID": "msg_0c6e8c152001v7nIysWStiBQVD",
+      "ordinal": 0,
+      "state": {
+        "reasoningField": "reasoning_content"
+      }
+    },
+    "durable": {
+      "aggregateID": "ses_f3917aa39ffe4s8cirfPFkw6l6",
+      "seq": 33,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c6e8c505001XOcqWoWSQ3y2QU",
+    "created": 1790043538693,
+    "type": "session.step.started",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f39179dcdffeP4LJNVt7vCOU2y",
+      "agent": "general",
+      "model": {
+        "id": "deepseek-v4-flash",
+        "providerID": "opencode-go",
+        "variant": "default"
+      },
+      "assistantMessageID": "msg_0c6e8b953001neCpjgHNIwX96x",
+      "snapshot": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+      "started": 1790043535726
+    },
+    "durable": {
+      "aggregateID": "ses_f39179dcdffeP4LJNVt7vCOU2y",
+      "seq": 14,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c6e8c509001dJ7OijIcFkiqye",
+    "created": 1790043538697,
+    "type": "session.text.started",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f39179dcdffeP4LJNVt7vCOU2y",
+      "assistantMessageID": "msg_0c6e8b953001neCpjgHNIwX96x",
+      "ordinal": 0
+    },
+    "durable": {
+      "aggregateID": "ses_f39179dcdffeP4LJNVt7vCOU2y",
+      "seq": 15,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c6e8c50b001tWTIwIS6gzSlPX",
+    "created": 1790043538699,
+    "type": "session.text.delta",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f39179dcdffeP4LJNVt7vCOU2y",
+      "assistantMessageID": "msg_0c6e8b953001neCpjgHNIwX96x",
+      "ordinal": 0,
+      "delta": "CHILD_ONE"
+    }
+  },
+  {
+    "id": "evt_0c6e8c50b002v0fSuzwDwGXICh",
+    "created": 1790043538699,
+    "type": "session.text.ended",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f39179dcdffeP4LJNVt7vCOU2y",
+      "assistantMessageID": "msg_0c6e8b953001neCpjgHNIwX96x",
+      "ordinal": 0,
+      "text": "CHILD_ONE"
+    },
+    "durable": {
+      "aggregateID": "ses_f39179dcdffeP4LJNVt7vCOU2y",
+      "seq": 16,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c6e8c50c0019YHx5f7UBQlH5k",
+    "created": 1790043538700,
+    "type": "session.step.streamed",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f39179dcdffeP4LJNVt7vCOU2y",
+      "assistantMessageID": "msg_0c6e8b953001neCpjgHNIwX96x"
+    },
+    "durable": {
+      "aggregateID": "ses_f39179dcdffeP4LJNVt7vCOU2y",
+      "seq": 17,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c6e8c5230011QPvuTgCo5LqI0",
+    "created": 1790043538723,
+    "type": "session.step.ended",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f39179dcdffeP4LJNVt7vCOU2y",
+      "assistantMessageID": "msg_0c6e8b953001neCpjgHNIwX96x",
+      "finish": "stop",
+      "rawFinish": "stop",
+      "cost": 5.3772000000000006e-05,
+      "tokens": {
+        "input": 186,
+        "output": 6,
+        "reasoning": 0,
+        "cache": {
+          "read": 7424,
+          "write": 0
+        }
+      },
+      "snapshot": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+      "files": []
+    },
+    "durable": {
+      "aggregateID": "ses_f39179dcdffeP4LJNVt7vCOU2y",
+      "seq": 18,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c6e8c524001Gnl0LJo8b0TRP9",
+    "created": 1790043538724,
+    "type": "session.usage.updated",
+    "data": {
+      "sessionID": "ses_f39179dcdffeP4LJNVt7vCOU2y",
+      "cost": 0.001255722,
+      "tokens": {
+        "input": 7635,
+        "output": 147,
+        "reasoning": 0,
+        "cache": {
+          "read": 7424,
+          "write": 0
+        }
+      }
+    }
+  },
+  {
+    "id": "evt_0c6e8c525001IjL0Kq3uoxgECc",
+    "created": 1790043538725,
+    "type": "session.execution.succeeded",
+    "data": {
+      "sessionID": "ses_f39179dcdffeP4LJNVt7vCOU2y"
+    },
+    "durable": {
+      "aggregateID": "ses_f39179dcdffeP4LJNVt7vCOU2y",
+      "seq": 19,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c6e8c526001Sc9PJVIYqe3PMi",
+    "created": 1790043538726,
+    "type": "session.inbox.enqueued",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "inboxID": "msg_0c6e8625b002XHW13RaZYZMe6o",
+      "sessionID": "ses_f3917aa39ffe4s8cirfPFkw6l6",
+      "item": {
+        "type": "synthetic",
+        "payload": {
+          "text": "<subagent sessionID=\"ses_f39179dcdffeP4LJNVt7vCOU2y\" state=\"completed\" description=\"Small test\">\nCHILD_ONE\n</subagent>",
+          "description": "Small test",
+          "metadata": {
+            "source": "subagent",
+            "childID": "ses_f39179dcdffeP4LJNVt7vCOU2y",
+            "agent": "General",
+            "state": "completed"
+          }
+        },
+        "delivery": "steer"
+      }
+    },
+    "durable": {
+      "aggregateID": "ses_f3917aa39ffe4s8cirfPFkw6l6",
+      "seq": 34,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c6e8c538001o3JvO30BTWU9mo",
+    "created": 1790043538744,
+    "type": "session.reasoning.delta",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f3917aa39ffe4s8cirfPFkw6l6",
+      "assistantMessageID": "msg_0c6e8c152001v7nIysWStiBQVD",
+      "ordinal": 0,
+      "delta": "The second child completed with CHILD_TWO. I should acknowledge it without"
+    }
+  },
+  {
+    "id": "evt_0c6e8c59f0019WL558jvGOruzf",
+    "created": 1790043538848,
+    "type": "session.reasoning.delta",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f3917aa39ffe4s8cirfPFkw6l6",
+      "assistantMessageID": "msg_0c6e8c152001v7nIysWStiBQVD",
+      "ordinal": 0,
+      "delta": " any further tool calls. I'm still waiting for the first child (CHILD_ONE)."
+    }
+  },
+  {
+    "id": "evt_0c6e8c5c5001Y6WUZK6nssv71K",
+    "created": 1790043538885,
+    "type": "session.text.started",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f3917aa39ffe4s8cirfPFkw6l6",
+      "assistantMessageID": "msg_0c6e8c152001v7nIysWStiBQVD",
+      "ordinal": 0
+    },
+    "durable": {
+      "aggregateID": "ses_f3917aa39ffe4s8cirfPFkw6l6",
+      "seq": 35,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c6e8c605001i8eLNdmyMqEiD7",
+    "created": 1790043538949,
+    "type": "session.reasoning.ended",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f3917aa39ffe4s8cirfPFkw6l6",
+      "assistantMessageID": "msg_0c6e8c152001v7nIysWStiBQVD",
+      "ordinal": 0,
+      "text": "The second child completed with CHILD_TWO. I should acknowledge it without any further tool calls. I'm still waiting for the first child (CHILD_ONE).",
+      "state": {
+        "reasoningField": "reasoning_content"
+      }
+    },
+    "durable": {
+      "aggregateID": "ses_f3917aa39ffe4s8cirfPFkw6l6",
+      "seq": 36,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c6e8c606001WPOOWms3ubHQ3k",
+    "created": 1790043538950,
+    "type": "session.text.delta",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f3917aa39ffe4s8cirfPFkw6l6",
+      "assistantMessageID": "msg_0c6e8c152001v7nIysWStiBQVD",
+      "ordinal": 0,
+      "delta": "Acknowledged: CHILD_TWO completed. Still awaiting the first child (CHILD_ONE)."
+    }
+  },
+  {
+    "id": "evt_0c6e8c6060027PS9j15ciuJKDJ",
+    "created": 1790043538950,
+    "type": "session.text.ended",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f3917aa39ffe4s8cirfPFkw6l6",
+      "assistantMessageID": "msg_0c6e8c152001v7nIysWStiBQVD",
+      "ordinal": 0,
+      "text": "Acknowledged: CHILD_TWO completed. Still awaiting the first child (CHILD_ONE)."
+    },
+    "durable": {
+      "aggregateID": "ses_f3917aa39ffe4s8cirfPFkw6l6",
+      "seq": 37,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c6e8c607001HmhphtoIwJXZr0",
+    "created": 1790043538951,
+    "type": "session.step.streamed",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f3917aa39ffe4s8cirfPFkw6l6",
+      "assistantMessageID": "msg_0c6e8c152001v7nIysWStiBQVD"
+    },
+    "durable": {
+      "aggregateID": "ses_f3917aa39ffe4s8cirfPFkw6l6",
+      "seq": 38,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c6e8c61f001LDoTjsO12T7O9I",
+    "created": 1790043538975,
+    "type": "session.step.ended",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f3917aa39ffe4s8cirfPFkw6l6",
+      "assistantMessageID": "msg_0c6e8c152001v7nIysWStiBQVD",
+      "finish": "stop",
+      "rawFinish": "stop",
+      "cost": 7.263e-05,
+      "tokens": {
+        "input": 77,
+        "output": 57,
+        "reasoning": 0,
+        "cache": {
+          "read": 8960,
+          "write": 0
+        }
+      },
+      "snapshot": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+      "files": []
+    },
+    "durable": {
+      "aggregateID": "ses_f3917aa39ffe4s8cirfPFkw6l6",
+      "seq": 39,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c6e8c620001eH9SDviaqs2tTp",
+    "created": 1790043538976,
+    "type": "session.usage.updated",
+    "data": {
+      "sessionID": "ses_f3917aa39ffe4s8cirfPFkw6l6",
+      "cost": 0.001724792,
+      "tokens": {
+        "input": 9510,
+        "output": 344,
+        "reasoning": 0,
+        "cache": {
+          "read": 17664,
+          "write": 0
+        }
+      }
+    }
+  },
+  {
+    "id": "evt_0c6e8c624001xmyvdd86XmhSkb",
+    "created": 1790043538980,
+    "type": "session.inbox.delivered",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f3917aa39ffe4s8cirfPFkw6l6",
+      "inboxID": "msg_0c6e8625b002XHW13RaZYZMe6o"
+    },
+    "durable": {
+      "aggregateID": "ses_f3917aa39ffe4s8cirfPFkw6l6",
+      "seq": 40,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c6e8c92c0015Y0MRU5aH2EaaG",
+    "created": 1790043539756,
+    "type": "session.step.started",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f3917aa39ffe4s8cirfPFkw6l6",
+      "agent": "build",
+      "model": {
+        "id": "deepseek-v4-flash",
+        "providerID": "opencode-go",
+        "variant": "default"
+      },
+      "assistantMessageID": "msg_0c6e8c627001mjL6bCdxXTEfso",
+      "snapshot": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+      "started": 1790043539010
+    },
+    "durable": {
+      "aggregateID": "ses_f3917aa39ffe4s8cirfPFkw6l6",
+      "seq": 41,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c6e8c92e001kSQszuJU1l50IV",
+    "created": 1790043539758,
+    "type": "session.text.started",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f3917aa39ffe4s8cirfPFkw6l6",
+      "assistantMessageID": "msg_0c6e8c627001mjL6bCdxXTEfso",
+      "ordinal": 0
+    },
+    "durable": {
+      "aggregateID": "ses_f3917aa39ffe4s8cirfPFkw6l6",
+      "seq": 42,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c6e8c994001CC7aVbj700i4sr",
+    "created": 1790043539860,
+    "type": "session.text.delta",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f3917aa39ffe4s8cirfPFkw6l6",
+      "assistantMessageID": "msg_0c6e8c627001mjL6bCdxXTEfso",
+      "ordinal": 0,
+      "delta": "Acknowledged: CHILD_ONE completed."
+    }
+  },
+  {
+    "id": "evt_0c6e8ca30001z34ITNwJhRSJqO",
+    "created": 1790043540016,
+    "type": "session.text.delta",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f3917aa39ffe4s8cirfPFkw6l6",
+      "assistantMessageID": "msg_0c6e8c627001mjL6bCdxXTEfso",
+      "ordinal": 0,
+      "delta": " Both background subagents are done."
+    }
+  },
+  {
+    "id": "evt_0c6e8ca30002wCRLfa9cRxy7ZR",
+    "created": 1790043540016,
+    "type": "session.text.ended",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f3917aa39ffe4s8cirfPFkw6l6",
+      "assistantMessageID": "msg_0c6e8c627001mjL6bCdxXTEfso",
+      "ordinal": 0,
+      "text": "Acknowledged: CHILD_ONE completed. Both background subagents are done."
+    },
+    "durable": {
+      "aggregateID": "ses_f3917aa39ffe4s8cirfPFkw6l6",
+      "seq": 43,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c6e8ca33001DrybwloEmg9iDF",
+    "created": 1790043540019,
+    "type": "session.step.streamed",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f3917aa39ffe4s8cirfPFkw6l6",
+      "assistantMessageID": "msg_0c6e8c627001mjL6bCdxXTEfso"
+    },
+    "durable": {
+      "aggregateID": "ses_f3917aa39ffe4s8cirfPFkw6l6",
+      "seq": 44,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c6e8ca4c001uFpgb8h12EpjLG",
+    "created": 1790043540044,
+    "type": "session.step.ended",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f3917aa39ffe4s8cirfPFkw6l6",
+      "assistantMessageID": "msg_0c6e8c627001mjL6bCdxXTEfso",
+      "finish": "stop",
+      "rawFinish": "stop",
+      "cost": 6.542999999999999e-05,
+      "tokens": {
+        "input": 181,
+        "output": 19,
+        "reasoning": 0,
+        "cache": {
+          "read": 8960,
+          "write": 0
+        }
+      },
+      "snapshot": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+      "files": []
+    },
+    "durable": {
+      "aggregateID": "ses_f3917aa39ffe4s8cirfPFkw6l6",
+      "seq": 45,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c6e8ca4e001ap7bs3cLHiEq2Q",
+    "created": 1790043540046,
+    "type": "session.usage.updated",
+    "data": {
+      "sessionID": "ses_f3917aa39ffe4s8cirfPFkw6l6",
+      "cost": 0.001790222,
+      "tokens": {
+        "input": 9691,
+        "output": 363,
+        "reasoning": 0,
+        "cache": {
+          "read": 26624,
+          "write": 0
+        }
+      }
+    }
+  },
+  {
+    "id": "evt_0c6e8ca50001yAaUQh8qUl0QXc",
+    "created": 1790043540048,
+    "type": "session.execution.succeeded",
+    "data": {
+      "sessionID": "ses_f3917aa39ffe4s8cirfPFkw6l6"
+    },
+    "durable": {
+      "aggregateID": "ses_f3917aa39ffe4s8cirfPFkw6l6",
+      "seq": 46,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c6e8cab7001z5KIWnMz5qDFEx",
+    "created": 1790043540151,
+    "type": "session.created",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f39173563ffeZktLBGQAdVAi36",
+      "slug": "happy-mountain",
+      "version": "2.0.11",
+      "projectID": "global",
+      "location": {
+        "directory": "<PROFILE>/project пробел %#"
+      },
+      "subpath": "",
+      "title": "opencode.nvim v2 runtime fixture",
+      "model": {
+        "id": "deepseek-v4-flash",
+        "providerID": "opencode-go"
+      }
+    },
+    "durable": {
+      "aggregateID": "ses_f39173563ffeZktLBGQAdVAi36",
+      "seq": 0,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c6e8cabc001pLehwsDhJ9WvAq",
+    "created": 1790043540156,
+    "type": "session.deleted",
+    "data": {
+      "sessionID": "ses_f39173563ffeZktLBGQAdVAi36"
+    },
+    "durable": {
+      "aggregateID": "ses_f39173563ffeZktLBGQAdVAi36",
+      "seq": 1,
+      "version": 2
+    }
+  }
+]

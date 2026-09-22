@@ -1,0 +1,70 @@
+{
+  "data": [
+    {
+      "id": "ses_f39c11620ffePmMjsDuQDadzVr",
+      "parentID": "ses_f39c13c07ffemDaDpWAm8BL9Bm",
+      "projectID": "global",
+      "agent": "explore",
+      "model": {
+        "id": "mimo-v2.5-free",
+        "providerID": "opencode",
+        "variant": "default"
+      },
+      "cost": 0,
+      "tokens": {
+        "input": 0,
+        "output": 0,
+        "reasoning": 0,
+        "cache": {
+          "read": 0,
+          "write": 0
+        }
+      },
+      "outcome": "failed",
+      "time": {
+        "created": 1790032407073,
+        "updated": 1790032407074,
+        "idle": 1790032407848
+      },
+      "title": "Small test",
+      "location": {
+        "directory": "<PROFILE>/project пробел %#"
+      }
+    },
+    {
+      "id": "ses_f39c11623ffeI1BsHI1nnbor9W",
+      "parentID": "ses_f39c13c07ffemDaDpWAm8BL9Bm",
+      "projectID": "global",
+      "agent": "explore",
+      "model": {
+        "id": "mimo-v2.5-free",
+        "providerID": "opencode",
+        "variant": "default"
+      },
+      "cost": 0,
+      "tokens": {
+        "input": 0,
+        "output": 0,
+        "reasoning": 0,
+        "cache": {
+          "read": 0,
+          "write": 0
+        }
+      },
+      "outcome": "failed",
+      "time": {
+        "created": 1790032407045,
+        "updated": 1790032407059,
+        "idle": 1790032407732
+      },
+      "title": "Small test",
+      "location": {
+        "directory": "<PROFILE>/project пробел %#"
+      }
+    }
+  ],
+  "cursor": {
+    "previous": "eyJwYXJlbnRJRCI6InNlc19mMzljMTNjMDdmZmVtRGFEcFdBbThCTDlCbSIsImFuY2hvciI6eyJpZCI6InNlc19mMzljMTE2MjBmZmVQbU1qc0R1UURhZHpWciIsInRpbWUiOjE3OTAwMzI0MDcwNzQsImRpcmVjdGlvbiI6InByZXZpb3VzIn19",
+    "next": "eyJwYXJlbnRJRCI6InNlc19mMzljMTNjMDdmZmVtRGFEcFdBbThCTDlCbSIsImFuY2hvciI6eyJpZCI6InNlc19mMzljMTE2MjNmZmVJMUJzSEkxbm5ib3I5VyIsInRpbWUiOjE3OTAwMzI0MDcwNTksImRpcmVjdGlvbiI6Im5leHQifX0"
+  }
+}

@@ -1,0 +1,40 @@
+                                       │ ○ rg runtime matrix                                                            
+~                                      │Agent: build                                                                    
+~                                      │┃                                                                               
+~                                      │┃  Call the direct top-level rg function three times. These are independent     
+~                                      │┃  tests and may run together, each with path="search fixture.txt":             
+~                                      │┃  1. pattern="-needle", fixed_strings=true, max_results=1.                     
+~                                      │┃  2. pattern="ABSENT_TOKEN_783".                                               
+~                                      │┃  3. pattern="[" (an intentionally invalid regex).                             
+~                                      │┃  Do not use execute or any other tool, do not correct or retry the invalid    
+~                                      │┃  regex. After the third call, reply briefly that the test is complete.        
+~                                      │┃                                                                               
+~                                      │                                                                                
+~                                      │Thinking: The user wants me to call the top-level `rg` tool three times with    
+~                                      │specific parameters. Let me make all three calls in parallel since they're      
+~                                      │independent.                                                                    
+~                                      │                                                                                
+~                                      │▏                                                                               
+~                                      │▏  # Ripgrep "-needle" in search fixture.txt                                    
+~                                      │▏  fixed                                                                        
+~                                      │▏                                                                               
+~                                      │▏  1:-needle                                                                    
+~                                      │▏                                                                               
+~                                      │▏  --- Truncated. Narrow the pattern, file types or search paths. ---           
+~                                      │▏                                                                               
+~                                      │                                                                                
+~                                      │▏                                                                               
+~                                      │▏  # Ripgrep "ABSENT_TOKEN_783" in search fixture.txt                           
+~                                      │▏                                                                               
+~                                      │▏  No matches found.                                                            
+~                                      │▏                                                                               
+~                                      │                                                                                
+~                                      │▏                                                                               
+~                                      │▏  # Ripgrep "[" in search fixture.txt                                          
+~                                      │▏                                                                               
+~                                      │▏  ripgrep failed (2): rg: regex parse error:                                   
+~                                      │▏      (?:[)                                                                    
+~                                      │▏         ^                                                                     
+~                                      │▏  error: unclosed character class                                              
+[No Name]            0,0-1          All opencode [-]                                                  4,1            Top
+rg runtime matrix: Session done                                                                                         

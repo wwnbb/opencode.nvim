@@ -1,0 +1,14 @@
+{
+  "status": 200,
+  "response": {
+    "data": [
+      {
+        "file": "counter.txt",
+        "patch": "diff --git a/counter.txt b/counter.txt\nindex 5626abf..2bdf67a 100644\n--- a/counter.txt\n+++ b/counter.txt\n@@ -1 +1 @@\n-one\n+three\n",
+        "additions": 1,
+        "deletions": 1,
+        "status": "modified"
+      }
+    ]
+  }
+}

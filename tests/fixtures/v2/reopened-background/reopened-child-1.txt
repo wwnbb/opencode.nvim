@@ -1,0 +1,40 @@
+                                       │○ Reopened native... │  ○ Small test  │ ○ Small test                            
+~                                      │Reopened native history > Small test                                            
+~                                      │<BS> Go back                                                                    
+~                                      │                                                                                
+~                                      │Small test                                                                      
+~                                      │                                                                                
+~                                      │┃                                                                               
+~                                      │┃  You are a subagent spawned by another session.                               
+~                                      │┃  Call shell once with command "sleep 20", then reply exactly CHILD_ONE.       
+~                                      │┃                                                                               
+~                                      │                                                                                
+~                                      │Thinking: The user wants me to call shell once with command "sleep 20", then    
+~                                      │reply exactly CHILD_ONE. The command "sleep 20" doesn't contain separators like 
+~                                      │`&&` or `;` — it's a simple command. Let me run it.                             
+~                                      │                                                                                
+~                                      │          Wait, the working directory contains spaces and special characters,   
+~                                      │          but the command is just "sleep 20" which doesn't need a workdir. Let  
+~                                      │          me call shell with command "sleep 20".                                
+~                                      │                                                                                
+~                                      │▏                                                                               
+~                                      │▏  # Shell                                                                      
+~                                      │▏                                                                               
+~                                      │▏  $ sleep 20                                                                   
+~                                      │▏                                                                               
+~                                      │▏  (no output)                                                                  
+~                                      │▏  Command exited with code 0.                                                  
+~                                      │▏                                                                               
+~                                      │                                                                                
+~                                      │CHILD_ONE                                                                       
+~                                      │                                                                                
+~                                      │▣ General · deepseek-v4-flash · 7.6k tok · 25.3s                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+[No Name]            0,0-1          All opencode [-]                                                  16,1           All
+OpenCode connected (server v2.0.11)                                                                                     

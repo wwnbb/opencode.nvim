@@ -49,6 +49,17 @@ end
 function M.create_input_popup(opts)
 	opts = opts or {}
 
+	if opts.password then
+		-- inputsecret does not echo or record text in input history or a buffer.
+		vim.fn.inputsave()
+		local ok, value = pcall(vim.fn.inputsecret, (opts.prompt or "Secret:") .. " ")
+		vim.fn.inputrestore()
+		if ok and value ~= "" then
+			if opts.on_submit then opts.on_submit(value) end
+		elseif opts.on_cancel then opts.on_cancel() end
+		return { close = function() end }
+	end
+
 	local NuiInput = require("nui.input")
 	local event = require("nui.utils.autocmd").event
 

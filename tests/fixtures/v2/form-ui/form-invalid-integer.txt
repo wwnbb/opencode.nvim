@@ -1,0 +1,40 @@
+                                       │ ◈ Typed forms  │ ●0 ◈1                                                         
+~                                      │▏                                                                               
+~                                      │▏  # Question retries (3/5)                                                     
+~                                      │▏                                                                               
+~                                      │▏   1 target ✓   2 checks ✓  [3 retries ✓]  4 ratio ✓   5 confirm ✓             
+~                                      │▏                                                                               
+~                                      │▏                                                                               
+~                                      │▏  ❯ Custom: 2.5                                                                
+~                                      │▏  Enter a whole number                                                         
+~                                      │▏                                                                               
+~                                      │▏  select an answer · Enter twice continue · 5/5 answered · Tab/S-Tab review ·  
+~                                      │▏  c custom · m message · Esc cancel                                            
+~                                      │▏                                                                               
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+[No Name]            0,0-1          All opencode [-]                                                  1,1            All
+                                                                                                                        

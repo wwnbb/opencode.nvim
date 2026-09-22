@@ -1,0 +1,13 @@
+{
+  "location": {
+    "directory": "<PROFILE>/project пробел %#"
+  },
+  "data": [
+    {
+      "name": "test-mcp",
+      "status": {
+        "status": "connected"
+      }
+    }
+  ]
+}

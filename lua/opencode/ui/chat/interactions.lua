@@ -205,10 +205,18 @@ function M.handle_question_confirm()
 
 		local current_tab = qstate.current_tab
 		local total_count = #qstate.questions
+		if qstate.protocol == "v2" and total_count == 0 then
+			chat_questions.submit_question_answers(request_id)
+			return
+		end
 		local current_selection = qstate.selections[current_tab]
 		local is_current_answered = current_selection and current_selection.is_answered
 		local current_question = qstate.questions[current_tab]
 
+		if current_question and current_question.field_type == "external" then
+			chat_questions.handle_question_custom_input(request_id)
+			return
+		end
 		if not is_current_answered and is_custom_only_question(current_question) then
 			chat_questions.handle_question_custom_input(request_id)
 			return

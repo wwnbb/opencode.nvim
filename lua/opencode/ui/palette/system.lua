@@ -5,6 +5,16 @@ local M = {}
 local actions = require("opencode.actions")
 local state = require("opencode.state")
 function M.register(palette)
+	palette.register({ id = "system.reload", title = "Reload Server Configuration", category = "system",
+		description = "Reload all locations and cancel pending interactions", action = function()
+			vim.ui.select({ "Reload all locations", "Cancel" }, { prompt = "Reload cancels pending forms, permissions and plugin reviews in every project." }, function(choice)
+				if choice ~= "Reload all locations" then return end
+				actions.reload_locations(function(err)
+					vim.notify(err and ("Reload was not confirmed: " .. err.message) or "Server configuration reloaded", err and vim.log.levels.ERROR or vim.log.levels.INFO)
+				end)
+			end)
+		end })
+
 	palette.register({
 		id = "system.restart",
 		title = "Restart Server",

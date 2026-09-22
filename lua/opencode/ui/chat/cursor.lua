@@ -122,4 +122,13 @@ M.capture_widget_cursor_context = capture_widget_cursor_context
 M.restore_widget_cursor_context = restore_widget_cursor_context
 M.should_auto_scroll = should_auto_scroll
 
+function M.scroll_to_bottom()
+	if not state.bufnr or not vim.api.nvim_buf_is_valid(state.bufnr)
+		or not state.winid or not vim.api.nvim_win_is_valid(state.winid) then return end
+	vim.api.nvim_win_set_cursor(state.winid, { vim.api.nvim_buf_line_count(state.bufnr), 0 })
+	-- A shorter session can clamp the old topline to its trailing blank line.
+	-- Align the viewport too, so switching from a long parent does not look empty.
+	vim.api.nvim_win_call(state.winid, function() vim.cmd("normal! zb") end)
+end
+
 return M

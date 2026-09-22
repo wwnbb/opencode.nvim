@@ -78,4 +78,53 @@ function M.prune_connected(set)
 	return set
 end
 
+-- Live integration attempts hold routing context only, never keys or authorization codes.
+local attempts, serial = {}, 0
+function M.begin_attempt(integration_id, kind, directory, listener)
+	serial = serial + 1
+	local record = { id = serial, integration_id = integration_id, kind = kind, directory = directory,
+		stamp = get_identity(), token = require("opencode.session.pending").token(), status = "starting", listener = listener }
+	attempts[serial] = record
+	return record
+end
+
+function M.attempt_current(record)
+	return attempts[record.id] == record and record.stamp == get_identity()
+		and require("opencode.session.pending").is_current(record.token)
+end
+
+function M.update_attempt(record, patch)
+	if not M.attempt_current(record) then return false end
+	for key, value in pairs(patch) do record[key] = value end
+	if record.listener then record.listener(M.attempt_view(record)) end
+	return true
+end
+
+function M.attempt_view(record)
+	local result = {}
+	for _, key in ipairs({ "id", "integration_id", "kind", "directory", "status", "attempt_id", "url", "instructions", "mode", "expires", "error" }) do
+		result[key] = record[key]
+	end
+	return result
+end
+
+function M.get_attempt(id) return attempts[id] end
+function M.stop_attempt(record)
+	if record.timer then record.timer:stop(); record.timer:close(); record.timer = nil end
+end
+function M.release_attempt(record)
+	M.stop_attempt(record)
+	record.listener = nil
+	attempts[record.id] = nil
+end
+function M.clear_attempts()
+	for _, record in pairs(attempts) do
+		M.stop_attempt(record)
+		record.status, record.error = "cancelled", "Server connection changed"
+		if record.listener then record.listener(M.attempt_view(record)) end
+		record.listener = nil
+	end
+	attempts = {}
+end
+
 return M

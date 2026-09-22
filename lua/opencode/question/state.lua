@@ -5,6 +5,12 @@ local M = {}
 
 -- Active questions storage: { [request_id] = question_state }
 local active_questions = {}
+local generation = 0
+
+---Invalidates recovery requests when transient question state is reset.
+function M.get_generation()
+	return generation
+end
 
 -- Question state structure:
 -- {
@@ -678,12 +684,95 @@ end
 
 -- Clear all questions (e.g., on session change)
 function M.clear_all()
+	generation = generation + 1
 	local removed = {}
 	for request_id, _ in pairs(active_questions) do
 		table.insert(removed, request_id)
 	end
 	active_questions = {}
 	return removed
+end
+
+-- Native forms share this owner and the established widget navigation. Drafts
+-- are indexed by field key; the visible tab list is only a projection.
+local forms = require("opencode.question.forms")
+function M.add_form(form, context)
+	local current = active_questions[form.id]
+	if current then return current end
+	local item = M.add_question(form.id, form.sessionID, {}, context)
+	forms.init(item, form, context)
+	return item
+end
+
+for _, method in ipairs({ "update_selection", "select_option", "toggle_multi_select", "move_selection", "set_custom_input" }) do
+	local original = M[method]
+	M[method] = function(id, ...)
+		local item = active_questions[id]
+		if not item or item.protocol ~= "v2" then return original(id, ...) end
+		local args = { ... }
+		local key = method == "set_custom_input" and item.questions[args[1]] and item.questions[args[1]].key
+		local changed = original(id, ...)
+		if changed and item.status ~= "confirming" then
+			if key then item.form_selections[key].custom_present = true end
+			forms.pull(item)
+			forms.rebuild(item)
+			item.server_error = nil
+		end
+		return changed
+	end
+end
+
+local old_get_answers, old_are_all_answered = M.get_answers, M.are_all_answered
+function M.get_answers(id)
+	local item = active_questions[id]
+	if item and item.protocol == "v2" then return forms.answer(item) end
+	return old_get_answers(id)
+end
+
+function M.validate_form(id)
+	local item = active_questions[id]
+	if not item or item.protocol ~= "v2" then return true end
+	return forms.validate(item)
+end
+
+function M.are_all_answered(id)
+	local item = active_questions[id]
+	if not item or item.protocol ~= "v2" then return old_are_all_answered(id) end
+	local valid, errors = forms.validate(item)
+	local indices = {}
+	for index, q in ipairs(item.questions) do if errors[q.key] then indices[#indices + 1] = index end end
+	return valid, indices
+end
+
+local old_begin, old_mark = M.begin_submission, M.mark_answered
+function M.begin_submission(id, kind)
+	if kind ~= "reject" and not M.validate_form(id) then return false end
+	return old_begin(id, kind)
+end
+
+function M.mark_answered(id, answer)
+	local item = active_questions[id]
+	local changed = old_mark(id, answer)
+	if changed and item.protocol == "v2" then
+		item.native_state = { status = "answered", answer = vim.deepcopy(item.answers) }
+		item.display_answers = forms.display_answers(item, item.answers)
+	end
+	return changed
+end
+
+function M.set_form_error(id, err)
+	local item = active_questions[id]
+	if not item or item.protocol ~= "v2" or item.status == "answered" or item.status == "rejected" then return end
+	item.server_error = type(err) == "table" and err.message or tostring(err)
+	M.restore_submission(id)
+end
+
+function M.apply_form_detail(detail)
+	local item = M.add_form(detail)
+	item.native_state = vim.deepcopy(detail.state)
+	if detail.state.status == "answered" then M.mark_answered(detail.id, detail.state.answer)
+	elseif detail.state.status == "cancelled" then M.mark_rejected(detail.id) end
+	return item
 end
 
 return M

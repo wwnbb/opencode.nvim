@@ -5,6 +5,9 @@ local M = {}
 
 -- Active permissions storage: { [permission_id] = permission_state }
 local active_permissions = {}
+local generation = 0
+
+function M.get_generation() return generation end
 
 -- Permission state structure:
 -- {
@@ -36,6 +39,10 @@ function M.add_permission(permission_id, session_id, permission_type, opts)
 	opts = opts or {}
 	local pstate = {
 		permission_id = permission_id,
+		protocol = opts.protocol,
+		native = opts.native,
+		location = opts.location,
+		transport = "permission",
 		session_id = session_id,
 		message_id = opts.message_id, -- messageID that triggered this permission
 		call_id = opts.call_id,
@@ -235,10 +242,11 @@ end
 ---@return boolean
 function M.mark_approved(permission_id, reply)
 	local pstate = active_permissions[permission_id]
-	if not pstate then
+	if not pstate or pstate.status ~= "pending" then
 		return false
 	end
 
+	pstate.submitting = false
 	pstate.status = "approved"
 	pstate.reply = reply
 	pstate.resolved_at = os.time()
@@ -251,10 +259,11 @@ end
 ---@return boolean
 function M.mark_rejected(permission_id)
 	local pstate = active_permissions[permission_id]
-	if not pstate then
+	if not pstate or pstate.status ~= "pending" then
 		return false
 	end
 
+	pstate.submitting = false
 	pstate.status = "rejected"
 	pstate.reply = "reject"
 	pstate.resolved_at = os.time()
@@ -295,6 +304,7 @@ end
 
 -- Clear all permissions (e.g., on session change)
 function M.clear_all()
+	generation = generation + 1
 	local removed = {}
 	for permission_id, _ in pairs(active_permissions) do
 		table.insert(removed, permission_id)
@@ -341,6 +351,27 @@ function M.clear_pending_for_session(session_id)
 	return M.clear_pending_matching(function(pstate)
 		return pstate.session_id == session_id
 	end)
+end
+
+function M.begin_submission(id)
+	local item = active_permissions[id]
+	if not item or item.status ~= "pending" or item.submitting then return false end
+	item.submitting, item.error = true, nil
+	return true
+end
+
+function M.restore_submission(id, err)
+	local item = active_permissions[id]
+	if not item or item.status ~= "pending" or not item.submitting then return false end
+	item.submitting, item.error = false, err
+	return true
+end
+
+function M.mark_unavailable(id)
+	local item = active_permissions[id]
+	if not item or item.status ~= "pending" then return false end
+	item.status, item.submitting = "unavailable", false
+	return true
 end
 
 return M

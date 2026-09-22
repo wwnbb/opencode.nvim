@@ -1,0 +1,40 @@
+                                       │ ○ Compatibility c...                                                           
+~                                      │ Press 'i' to focus input                                                       
+~                                      │ Press '<C-p>' for command palette                                              
+~                                      │ Press '?' for help                                                             
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+[No Name]            0,0-1          All opencode [-]                                                  4,0-1          All
+OpenCode: bundled server plugin unavailable or outdated. Run scripts/install-tools.sh for this server's config, then rec
+onnect. File review and persistent todos require plugin 2.0.11-2; history remains readable.                             
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        

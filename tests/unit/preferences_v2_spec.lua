@@ -1,0 +1,40 @@
+describe("v2 model preferences", function()
+	local preferences = require("opencode.preferences")
+	local directory
+	before_each(function() directory = vim.fn.tempname(); vim.fn.mkdir(directory, "p") end)
+	after_each(function() vim.fn.delete(directory, "rf") end)
+	it("backs up legacy bytes and atomically preserves unavailable favorites and unknown settings", function()
+		local path = directory .. "/prefs.json"
+		local original = '{"favorite":[{"providerID":"offline","modelID":"old"}],"custom":"preserve"}'
+		vim.fn.writefile({ original }, path, "b")
+		local owner = preferences.open(path)
+		assert.is_true(owner.save({ agent = "stable-id" }))
+		assert.equals(original, table.concat(vim.fn.readfile(path .. ".v1.bak", "b"), "\n"))
+		local loaded = preferences.open(path).data
+		assert.equals(2, loaded.version)
+		assert.equals("old", loaded.favorite[1].modelID)
+		assert.equals("preserve", loaded.custom)
+		assert.equals("stable-id", loaded.agent)
+		assert.is_true(owner.save({ agent = "other" }))
+		assert.equals(original, table.concat(vim.fn.readfile(path .. ".v1.bak", "b"), "\n"))
+	end)
+	it("only maps an unambiguous upstream alias within its provider", function()
+		local model = { providerID = "p", modelID = "upstream" }
+		assert.equals("logical", preferences.canonical_model(model, { models = { logical = { upstream_model_id = "upstream" } } }).modelID)
+		assert.same(model, preferences.canonical_model(model, { models = { a = { upstream_model_id = "upstream" }, b = { upstream_model_id = "upstream" } } }))
+		assert.same(model, preferences.canonical_model(model, nil))
+	end)
+	it("separates two identically named agents and does not invent a default model", function()
+		package.loaded["opencode.local"] = nil
+		local local_state, sync = require("opencode.local"), require("opencode.sync")
+		sync.clear_all()
+		sync.handle_agents({ { id = "a", name = "Same" }, { id = "b", name = "Same" } })
+		sync.handle_providers({ { id = "p", models = { one = {}, two = {} } } })
+		assert.is_nil(local_state.model.current())
+		local_state.agent.set("a"); local_state.model.set({ providerID = "p", modelID = "one" })
+		local_state.agent.set("b"); local_state.model.set({ providerID = "p", modelID = "two" })
+		local_state.agent.set("a"); assert.equals("one", local_state.model.current().modelID)
+		local_state.agent.set("b"); assert.equals("two", local_state.model.current().modelID)
+		sync.clear_all(); package.loaded["opencode.local"] = nil
+	end)
+end)

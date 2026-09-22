@@ -8,16 +8,6 @@ local request_util = require("opencode.events.handlers.permission_flow.request")
 ---@param current_session table|nil
 ---@param logger table
 function M.handle(events, request, current_session, logger)
-	if require("opencode.state").is_danger_mode_enabled() then
-		local handled = auto_approve.approve(request.id, {
-			permission_type = request.type,
-			session_id = request.session_id,
-			kind = "permission",
-		})
-		if handled then
-			return
-		end
-	end
 
 	local permission_state = require("opencode.permission.state")
 	local tool_input = request_util.resolve_tool_input(request)
@@ -36,6 +26,9 @@ function M.handle(events, request, current_session, logger)
 	end
 	permission_state.add_permission(request.id, request.session_id, request.type, {
 		metadata = request.metadata,
+		protocol = request.protocol,
+		native = request.data,
+		location = request.location,
 		patterns = request.patterns,
 		always = request.always,
 		tool_input = tool_input,
@@ -44,6 +37,17 @@ function M.handle(events, request, current_session, logger)
 		call_id = request.call_id,
 		timestamp = request.timestamp,
 	})
+	if require("opencode.state").is_danger_mode_enabled() then
+		local handled = auto_approve.approve(request.id, {
+			permission_type = request.type,
+			session_id = request.session_id,
+			kind = "permission",
+		})
+		if handled then
+			return
+		end
+	end
+
 	events.emit("permission_pending", {
 		permission_id = request.id,
 		permission_type = request.type,

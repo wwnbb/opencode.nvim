@@ -1,0 +1,11 @@
+OpenCode.nvim v0.1.0 loaded
+OpenCode server started on http://[::1]:56937
+OpenCode connected (server v2.0.11)
+OpenCode server stopped
+OpenCode server started on http://[::1]:56951
+OpenCode connected (server v2.0.11)
+OpenCode server stopped
+OpenCode connected (server v2.0.11)
+OpenCode connected (server v2.0.11)
+OpenCode disconnected
+Owned startup/restart/stop and external reconnect/disconnect passed

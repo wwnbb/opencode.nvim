@@ -1,0 +1,985 @@
+[
+  {
+    "id": "evt_0c6dd30610016Rplx6rkALWjC4",
+    "type": "server.connected",
+    "data": {}
+  },
+  {
+    "id": "evt_0c6dd30810011NFX3IP1CoT0Fu",
+    "created": 1790042779777,
+    "type": "worktree.resolved",
+    "data": {
+      "projectID": "global",
+      "directory": "<PROFILE>/project пробел %#",
+      "previous": "global"
+    },
+    "durable": {
+      "aggregateID": "global",
+      "seq": 0,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c6dd34770010Y4ZvKZbbXDG5U",
+    "created": 1790042780791,
+    "type": "models-dev.refreshed",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {}
+  },
+  {
+    "id": "evt_0c6dd3500001g8SCG872D32AfJ",
+    "created": 1790042780928,
+    "type": "integration.updated",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {}
+  },
+  {
+    "id": "evt_0c6dd3502001y9dAeRT7syyP2P",
+    "created": 1790042780930,
+    "type": "provider.updated",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {}
+  },
+  {
+    "id": "evt_0c6dd3506001x11A1IO3XP94qg",
+    "created": 1790042780934,
+    "type": "model.updated",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {}
+  },
+  {
+    "id": "evt_0c6dd35230018dkHpLBg18drob",
+    "created": 1790042780963,
+    "type": "vcs.branch.updated",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "branch": "master"
+    }
+  },
+  {
+    "id": "evt_0c6dd3524001c978KgcBq5hijV",
+    "created": 1790042780964,
+    "type": "agent.updated",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {}
+  },
+  {
+    "id": "evt_0c6dd3524002fLzzmvoE4bFhbX",
+    "created": 1790042780964,
+    "type": "command.updated",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {}
+  },
+  {
+    "id": "evt_0c6dd352400302ynqqAiskdOpj",
+    "created": 1790042780964,
+    "type": "skill.updated",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {}
+  },
+  {
+    "id": "evt_0c6dd35260018KIZ016Nq9BN55",
+    "created": 1790042780966,
+    "type": "websearch.updated",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {}
+  },
+  {
+    "id": "evt_0c6dd3526003aoTESov1SONO2p",
+    "created": 1790042780966,
+    "type": "reference.updated",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {}
+  },
+  {
+    "id": "evt_0c6dd3531001aeYuu7VQ2G2J7i",
+    "created": 1790042780977,
+    "type": "plugin.updated",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {}
+  },
+  {
+    "id": "evt_0c6dd35af001lJgPGO1wfZSJd1",
+    "created": 1790042781103,
+    "type": "session.created",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f3922ca6dffemWohNH90eD4Olr",
+      "slug": "gentle-circuit",
+      "version": "2.0.11",
+      "projectID": "global",
+      "location": {
+        "directory": "<PROFILE>/project пробел %#"
+      },
+      "subpath": "",
+      "permissions": [
+        {
+          "action": "question",
+          "resource": "*",
+          "effect": "allow"
+        }
+      ],
+      "model": {
+        "id": "mimo-v2.5-free",
+        "providerID": "opencode"
+      }
+    },
+    "durable": {
+      "aggregateID": "ses_f3922ca6dffemWohNH90eD4Olr",
+      "seq": 0,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c6dd35d3001JV8gSpIEh2wvmp",
+    "created": 1790042781139,
+    "type": "session.agent.selected",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f3922ca6dffemWohNH90eD4Olr",
+      "agent": "build"
+    },
+    "durable": {
+      "aggregateID": "ses_f3922ca6dffemWohNH90eD4Olr",
+      "seq": 1,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c6dd35d9001CRLy494gnnQZ70",
+    "created": 1790042781145,
+    "type": "session.inbox.enqueued",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "inboxID": "msg_0c6dd35ba001nhak5eLjQZ73yh",
+      "sessionID": "ses_f3922ca6dffemWohNH90eD4Olr",
+      "item": {
+        "type": "user",
+        "payload": {
+          "text": "Call the direct top-level question tool exactly once. Ask one question with header \"History\", prompt \"Pick a stored answer\", and two options: label \"Red answer\" description \"First choice\", label \"Blue answer\" description \"Second choice\". Wait for my answer. After the answer, reply exactly FORM_HISTORY_DONE. Do not use any other tools."
+        },
+        "delivery": "queue"
+      }
+    },
+    "durable": {
+      "aggregateID": "ses_f3922ca6dffemWohNH90eD4Olr",
+      "seq": 2,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c6dd35db001UhjhnSmwcO0ndm",
+    "created": 1790042781147,
+    "type": "session.execution.started",
+    "data": {
+      "sessionID": "ses_f3922ca6dffemWohNH90eD4Olr"
+    },
+    "durable": {
+      "aggregateID": "ses_f3922ca6dffemWohNH90eD4Olr",
+      "seq": 3,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c6dd35e8001ZlxNEbOC9C3SnL",
+    "created": 1790042781160,
+    "metadata": {
+      "instructions": {
+        "initial": true
+      }
+    },
+    "type": "session.instructions.updated",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f3922ca6dffemWohNH90eD4Olr",
+      "delta": {
+        "core/environment": "c1fb88712795b83a359d7a0a91dca0144c15eb70eed67c292e2fa6162ac2d0d2",
+        "core/date": "6a76aa89fcc8086f3abb8b9dc2b9ceafa3405dd2b3cdc263b339d36120433008",
+        "core/codemode": "cf52fcbcde861ccfefdc6633ee3cb84036524f86c72f976a7315e05dc01a15e1",
+        "core/skill-guidance": "8394362d28c82fa4d13c7a9f5568c05680f6687e07db8f426a0e3c92f3027dc9"
+      }
+    },
+    "durable": {
+      "aggregateID": "ses_f3922ca6dffemWohNH90eD4Olr",
+      "seq": 4,
+      "version": 2
+    }
+  },
+  {
+    "id": "evt_0c6dd35ea0011J2k7LV1yy1BFF",
+    "created": 1790042781162,
+    "type": "session.inbox.delivered",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f3922ca6dffemWohNH90eD4Olr",
+      "inboxID": "msg_0c6dd35ba001nhak5eLjQZ73yh"
+    },
+    "durable": {
+      "aggregateID": "ses_f3922ca6dffemWohNH90eD4Olr",
+      "seq": 5,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c6dd5153001ykJp4hvl6gDGdT",
+    "created": 1790042788179,
+    "type": "session.step.started",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f3922ca6dffemWohNH90eD4Olr",
+      "agent": "build",
+      "model": {
+        "id": "mimo-v2.5-free",
+        "providerID": "opencode",
+        "variant": "default"
+      },
+      "assistantMessageID": "msg_0c6dd35f2001cP0XfcNvNx01Js",
+      "snapshot": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+      "started": 1790042781220
+    },
+    "durable": {
+      "aggregateID": "ses_f3922ca6dffemWohNH90eD4Olr",
+      "seq": 6,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c6dd5157001avVsCOL6v8PYIf",
+    "created": 1790042788184,
+    "type": "session.reasoning.started",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f3922ca6dffemWohNH90eD4Olr",
+      "assistantMessageID": "msg_0c6dd35f2001cP0XfcNvNx01Js",
+      "ordinal": 0,
+      "state": {
+        "reasoningField": "reasoning_content"
+      }
+    },
+    "durable": {
+      "aggregateID": "ses_f3922ca6dffemWohNH90eD4Olr",
+      "seq": 7,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c6dd51c0001pvydHyGG3pof5E",
+    "created": 1790042788288,
+    "type": "session.reasoning.delta",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f3922ca6dffemWohNH90eD4Olr",
+      "assistantMessageID": "msg_0c6dd35f2001cP0XfcNvNx01Js",
+      "ordinal": 0,
+      "delta": "The user wants me to call"
+    }
+  },
+  {
+    "id": "evt_0c6dd525100171HUcQFdjotwz2",
+    "created": 1790042788434,
+    "type": "session.reasoning.delta",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f3922ca6dffemWohNH90eD4Olr",
+      "assistantMessageID": "msg_0c6dd35f2001cP0XfcNvNx01Js",
+      "ordinal": 0,
+      "delta": " the question tool exactly once with"
+    }
+  },
+  {
+    "id": "evt_0c6dd52e80013c4xHMMozvUHfv",
+    "created": 1790042788584,
+    "type": "session.reasoning.delta",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f3922ca6dffemWohNH90eD4Olr",
+      "assistantMessageID": "msg_0c6dd35f2001cP0XfcNvNx01Js",
+      "ordinal": 0,
+      "delta": " specific parameters, then wait for"
+    }
+  },
+  {
+    "id": "evt_0c6dd54210015J76aMt2ipkTh4",
+    "created": 1790042788897,
+    "type": "session.reasoning.delta",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f3922ca6dffemWohNH90eD4Olr",
+      "assistantMessageID": "msg_0c6dd35f2001cP0XfcNvNx01Js",
+      "ordinal": 0,
+      "delta": " their answer and reply with \""
+    }
+  },
+  {
+    "id": "evt_0c6dd54d4001IC0YG2dGxSGq05",
+    "created": 1790042789076,
+    "type": "session.tool.input.started",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f3922ca6dffemWohNH90eD4Olr",
+      "assistantMessageID": "msg_0c6dd35f2001cP0XfcNvNx01Js",
+      "id": "call_26080be56c964bea84364fb7",
+      "name": "question"
+    },
+    "durable": {
+      "aggregateID": "ses_f3922ca6dffemWohNH90eD4Olr",
+      "seq": 8,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c6dd552f001zLeuQAbskR5fc0",
+    "created": 1790042789167,
+    "type": "session.reasoning.delta",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f3922ca6dffemWohNH90eD4Olr",
+      "assistantMessageID": "msg_0c6dd35f2001cP0XfcNvNx01Js",
+      "ordinal": 0,
+      "delta": "FORM_HISTORY_DONE\"."
+    }
+  },
+  {
+    "id": "evt_0c6dd5bb3001cTNrqdi923K8yO",
+    "created": 1790042790835,
+    "type": "session.reasoning.ended",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f3922ca6dffemWohNH90eD4Olr",
+      "assistantMessageID": "msg_0c6dd35f2001cP0XfcNvNx01Js",
+      "ordinal": 0,
+      "text": "The user wants me to call the question tool exactly once with specific parameters, then wait for their answer and reply with \"FORM_HISTORY_DONE\".",
+      "state": {
+        "reasoningField": "reasoning_content",
+        "reasoningDetails": [
+          {
+            "type": "reasoning.text",
+            "text": "The user wants me to call the question tool exactly once with specific parameters, then wait for their answer and reply with \"FORM_HISTORY_DONE\".",
+            "format": "unknown",
+            "index": 0
+          }
+        ]
+      }
+    },
+    "durable": {
+      "aggregateID": "ses_f3922ca6dffemWohNH90eD4Olr",
+      "seq": 9,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c6dd5bb6001I1ONaUWsc1Sh7Z",
+    "created": 1790042790838,
+    "type": "session.tool.input.ended",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f3922ca6dffemWohNH90eD4Olr",
+      "assistantMessageID": "msg_0c6dd35f2001cP0XfcNvNx01Js",
+      "id": "call_26080be56c964bea84364fb7",
+      "text": "{\"questions\": [{\"question\": \"Pick a stored answer\", \"header\": \"History\", \"options\": [{\"label\": \"Red answer\", \"description\": \"First choice\"}, {\"label\": \"Blue answer\", \"description\": \"Second choice\"}]}]}"
+    },
+    "durable": {
+      "aggregateID": "ses_f3922ca6dffemWohNH90eD4Olr",
+      "seq": 10,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c6dd5bb7001krCKMxw8LIho5j",
+    "created": 1790042790839,
+    "type": "session.tool.called",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f3922ca6dffemWohNH90eD4Olr",
+      "assistantMessageID": "msg_0c6dd35f2001cP0XfcNvNx01Js",
+      "id": "call_26080be56c964bea84364fb7",
+      "input": {
+        "questions": [
+          {
+            "question": "Pick a stored answer",
+            "header": "History",
+            "options": [
+              {
+                "label": "Red answer",
+                "description": "First choice"
+              },
+              {
+                "label": "Blue answer",
+                "description": "Second choice"
+              }
+            ]
+          }
+        ]
+      },
+      "executed": false
+    },
+    "durable": {
+      "aggregateID": "ses_f3922ca6dffemWohNH90eD4Olr",
+      "seq": 11,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c6dd5bb9001Ed2mpxdrDLBPrB",
+    "created": 1790042790841,
+    "type": "session.step.streamed",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f3922ca6dffemWohNH90eD4Olr",
+      "assistantMessageID": "msg_0c6dd35f2001cP0XfcNvNx01Js"
+    },
+    "durable": {
+      "aggregateID": "ses_f3922ca6dffemWohNH90eD4Olr",
+      "seq": 12,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c6dd5bbd001KKwU5mhNlJZXgB",
+    "created": 1790042790845,
+    "type": "form.created",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "form": {
+        "id": "frm_0c6dd5bbc001CkW7nEahd2wLoH",
+        "sessionID": "ses_f3922ca6dffemWohNH90eD4Olr",
+        "title": "Questions",
+        "metadata": {
+          "kind": "question",
+          "tool": {
+            "messageID": "msg_0c6dd35f2001cP0XfcNvNx01Js",
+            "id": "call_26080be56c964bea84364fb7"
+          }
+        },
+        "fields": [
+          {
+            "key": "q0",
+            "title": "History",
+            "description": "Pick a stored answer",
+            "type": "string",
+            "options": [
+              {
+                "value": "Red answer",
+                "label": "Red answer",
+                "description": "First choice"
+              },
+              {
+                "value": "Blue answer",
+                "label": "Blue answer",
+                "description": "Second choice"
+              }
+            ],
+            "custom": true
+          }
+        ]
+      }
+    }
+  },
+  {
+    "id": "evt_0c6dd5bc8001ZGeuoNMUuarwb7",
+    "created": 1790042790856,
+    "type": "form.replied",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "id": "frm_0c6dd5bbc001CkW7nEahd2wLoH",
+      "sessionID": "ses_f3922ca6dffemWohNH90eD4Olr",
+      "answer": {
+        "q0": "Blue answer"
+      }
+    }
+  },
+  {
+    "id": "evt_0c6dd5bc80023DFZ2shA6BI7cY",
+    "created": 1790042790856,
+    "type": "session.tool.success",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f3922ca6dffemWohNH90eD4Olr",
+      "assistantMessageID": "msg_0c6dd35f2001cP0XfcNvNx01Js",
+      "id": "call_26080be56c964bea84364fb7",
+      "content": [
+        {
+          "type": "text",
+          "text": "User has answered your questions: \"Pick a stored answer\"=\"Blue answer\". You can now continue with the user's answers in mind."
+        }
+      ],
+      "metadata": {
+        "answers": [
+          [
+            "Blue answer"
+          ]
+        ],
+        "truncated": false
+      },
+      "executed": false
+    },
+    "durable": {
+      "aggregateID": "ses_f3922ca6dffemWohNH90eD4Olr",
+      "seq": 13,
+      "version": 2
+    }
+  },
+  {
+    "id": "evt_0c6dd5be60016EusR7F2ElU8v8",
+    "created": 1790042790886,
+    "type": "session.step.ended",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f3922ca6dffemWohNH90eD4Olr",
+      "assistantMessageID": "msg_0c6dd35f2001cP0XfcNvNx01Js",
+      "finish": "tool-calls",
+      "rawFinish": "tool_calls",
+      "cost": 0,
+      "tokens": {
+        "input": 9146,
+        "output": 68,
+        "reasoning": 29,
+        "cache": {
+          "read": 0,
+          "write": 0
+        }
+      },
+      "snapshot": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+      "files": []
+    },
+    "durable": {
+      "aggregateID": "ses_f3922ca6dffemWohNH90eD4Olr",
+      "seq": 14,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c6dd5be8001raCMnnIPT0o5Qj",
+    "created": 1790042790888,
+    "type": "session.usage.updated",
+    "data": {
+      "sessionID": "ses_f3922ca6dffemWohNH90eD4Olr",
+      "cost": 0,
+      "tokens": {
+        "input": 9146,
+        "output": 68,
+        "reasoning": 29,
+        "cache": {
+          "read": 0,
+          "write": 0
+        }
+      }
+    }
+  },
+  {
+    "id": "evt_0c6dd6310001YIgsXzy7ChukPt",
+    "created": 1790042792720,
+    "type": "session.step.started",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f3922ca6dffemWohNH90eD4Olr",
+      "agent": "build",
+      "model": {
+        "id": "mimo-v2.5-free",
+        "providerID": "opencode",
+        "variant": "default"
+      },
+      "assistantMessageID": "msg_0c6dd5bee001OMaQK7NBfzK73j",
+      "snapshot": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+      "started": 1790042790919
+    },
+    "durable": {
+      "aggregateID": "ses_f3922ca6dffemWohNH90eD4Olr",
+      "seq": 15,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c6dd6312001IfZwSOyLQaJ50u",
+    "created": 1790042792722,
+    "type": "session.reasoning.started",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f3922ca6dffemWohNH90eD4Olr",
+      "assistantMessageID": "msg_0c6dd5bee001OMaQK7NBfzK73j",
+      "ordinal": 0,
+      "state": {
+        "reasoningField": "reasoning_content"
+      }
+    },
+    "durable": {
+      "aggregateID": "ses_f3922ca6dffemWohNH90eD4Olr",
+      "seq": 16,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c6dd6378001AR1WwptIXQMus9",
+    "created": 1790042792824,
+    "type": "session.reasoning.delta",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f3922ca6dffemWohNH90eD4Olr",
+      "assistantMessageID": "msg_0c6dd5bee001OMaQK7NBfzK73j",
+      "ordinal": 0,
+      "delta": "The user selected \"Blue answer"
+    }
+  },
+  {
+    "id": "evt_0c6dd643900155ZkMrsq2UpqGX",
+    "created": 1790042793017,
+    "type": "session.reasoning.delta",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f3922ca6dffemWohNH90eD4Olr",
+      "assistantMessageID": "msg_0c6dd5bee001OMaQK7NBfzK73j",
+      "ordinal": 0,
+      "delta": "\". Now I need to reply"
+    }
+  },
+  {
+    "id": "evt_0c6dd649f0017fMK4p13KB46qg",
+    "created": 1790042793119,
+    "type": "session.reasoning.delta",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f3922ca6dffemWohNH90eD4Olr",
+      "assistantMessageID": "msg_0c6dd5bee001OMaQK7NBfzK73j",
+      "ordinal": 0,
+      "delta": " exactly \"FORM_HISTORY_DONE"
+    }
+  },
+  {
+    "id": "evt_0c6dd64c0001cRF7L5QtTq7eaK",
+    "created": 1790042793152,
+    "type": "session.text.started",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f3922ca6dffemWohNH90eD4Olr",
+      "assistantMessageID": "msg_0c6dd5bee001OMaQK7NBfzK73j",
+      "ordinal": 0
+    },
+    "durable": {
+      "aggregateID": "ses_f3922ca6dffemWohNH90eD4Olr",
+      "seq": 17,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c6dd6531001O0IRURTLQuDwWA",
+    "created": 1790042793265,
+    "type": "session.reasoning.delta",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f3922ca6dffemWohNH90eD4Olr",
+      "assistantMessageID": "msg_0c6dd5bee001OMaQK7NBfzK73j",
+      "ordinal": 0,
+      "delta": "\"."
+    }
+  },
+  {
+    "id": "evt_0c6dd6532001RzjlkJVPHTTowe",
+    "created": 1790042793266,
+    "type": "session.text.delta",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f3922ca6dffemWohNH90eD4Olr",
+      "assistantMessageID": "msg_0c6dd5bee001OMaQK7NBfzK73j",
+      "ordinal": 0,
+      "delta": "FORM"
+    }
+  },
+  {
+    "id": "evt_0c6dd65a30012aghz6uidBdP4I",
+    "created": 1790042793379,
+    "type": "session.usage.updated",
+    "data": {
+      "sessionID": "ses_f3922ca6dffemWohNH90eD4Olr",
+      "cost": 0,
+      "tokens": {
+        "input": 9736,
+        "output": 1273,
+        "reasoning": 29,
+        "cache": {
+          "read": 0,
+          "write": 0
+        }
+      }
+    }
+  },
+  {
+    "id": "evt_0c6dd65a4001OfPScyyfL3iV03",
+    "created": 1790042793380,
+    "type": "session.renamed",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f3922ca6dffemWohNH90eD4Olr",
+      "title": "History answer selection prompt"
+    },
+    "durable": {
+      "aggregateID": "ses_f3922ca6dffemWohNH90eD4Olr",
+      "seq": 19,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c6dd66330013SZyUiXPL4CdyN",
+    "created": 1790042793523,
+    "type": "session.reasoning.ended",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f3922ca6dffemWohNH90eD4Olr",
+      "assistantMessageID": "msg_0c6dd5bee001OMaQK7NBfzK73j",
+      "ordinal": 0,
+      "text": "The user selected \"Blue answer\". Now I need to reply exactly \"FORM_HISTORY_DONE\".",
+      "state": {
+        "reasoningField": "reasoning_content",
+        "reasoningDetails": [
+          {
+            "type": "reasoning.text",
+            "text": "The user selected \"Blue answer\". Now I need to reply exactly \"FORM_HISTORY_DONE\".",
+            "format": "unknown",
+            "index": 0
+          }
+        ]
+      }
+    },
+    "durable": {
+      "aggregateID": "ses_f3922ca6dffemWohNH90eD4Olr",
+      "seq": 20,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c6dd6635001HSbiquG9xsj7f2",
+    "created": 1790042793525,
+    "type": "session.text.delta",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f3922ca6dffemWohNH90eD4Olr",
+      "assistantMessageID": "msg_0c6dd5bee001OMaQK7NBfzK73j",
+      "ordinal": 0,
+      "delta": "_HISTORY_DONE"
+    }
+  },
+  {
+    "id": "evt_0c6dd6635002uEM9RM7hT2vcYq",
+    "created": 1790042793525,
+    "type": "session.text.ended",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f3922ca6dffemWohNH90eD4Olr",
+      "assistantMessageID": "msg_0c6dd5bee001OMaQK7NBfzK73j",
+      "ordinal": 0,
+      "text": "FORM_HISTORY_DONE"
+    },
+    "durable": {
+      "aggregateID": "ses_f3922ca6dffemWohNH90eD4Olr",
+      "seq": 21,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c6dd6636001R3FAISNftD44K0",
+    "created": 1790042793526,
+    "type": "session.step.streamed",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f3922ca6dffemWohNH90eD4Olr",
+      "assistantMessageID": "msg_0c6dd5bee001OMaQK7NBfzK73j"
+    },
+    "durable": {
+      "aggregateID": "ses_f3922ca6dffemWohNH90eD4Olr",
+      "seq": 22,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c6dd664f001Z4EUAsZtQPn6up",
+    "created": 1790042793551,
+    "type": "session.step.ended",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f3922ca6dffemWohNH90eD4Olr",
+      "assistantMessageID": "msg_0c6dd5bee001OMaQK7NBfzK73j",
+      "finish": "stop",
+      "rawFinish": "stop",
+      "cost": 0,
+      "tokens": {
+        "input": 194,
+        "output": 5,
+        "reasoning": 19,
+        "cache": {
+          "read": 9088,
+          "write": 0
+        }
+      },
+      "snapshot": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+      "files": []
+    },
+    "durable": {
+      "aggregateID": "ses_f3922ca6dffemWohNH90eD4Olr",
+      "seq": 23,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c6dd6651001FIz6Al2tVEeO4g",
+    "created": 1790042793553,
+    "type": "session.usage.updated",
+    "data": {
+      "sessionID": "ses_f3922ca6dffemWohNH90eD4Olr",
+      "cost": 0,
+      "tokens": {
+        "input": 9930,
+        "output": 1278,
+        "reasoning": 48,
+        "cache": {
+          "read": 9088,
+          "write": 0
+        }
+      }
+    }
+  },
+  {
+    "id": "evt_0c6dd6651002RAPCwFfNXAxVec",
+    "created": 1790042793553,
+    "type": "session.execution.succeeded",
+    "data": {
+      "sessionID": "ses_f3922ca6dffemWohNH90eD4Olr"
+    },
+    "durable": {
+      "aggregateID": "ses_f3922ca6dffemWohNH90eD4Olr",
+      "seq": 24,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c6dd66b80019Yjnx9O7y4dLtz",
+    "created": 1790042793656,
+    "type": "session.created",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f3922996affeExSe9GTk2T3EhW",
+      "slug": "glowing-mountain",
+      "version": "2.0.11",
+      "projectID": "global",
+      "location": {
+        "directory": "<PROFILE>/project пробел %#"
+      },
+      "subpath": "",
+      "title": "opencode.nvim v2 runtime fixture",
+      "model": {
+        "id": "mimo-v2.5-free",
+        "providerID": "opencode"
+      }
+    },
+    "durable": {
+      "aggregateID": "ses_f3922996affeExSe9GTk2T3EhW",
+      "seq": 0,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c6dd66c0001X6QRzb8uVca5k7",
+    "created": 1790042793664,
+    "type": "session.deleted",
+    "data": {
+      "sessionID": "ses_f3922996affeExSe9GTk2T3EhW"
+    },
+    "durable": {
+      "aggregateID": "ses_f3922996affeExSe9GTk2T3EhW",
+      "seq": 1,
+      "version": 2
+    }
+  }
+]

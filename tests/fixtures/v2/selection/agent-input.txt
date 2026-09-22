@@ -1,0 +1,40 @@
+                                       │ ○ Selection                                                                    
+~                                      │ Press 'i' to focus input                                                       
+~                                      │ Press '<C-p>' for command palette                                              
+~                                      │ Press '?' for help                                                             
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │┃                                                                               
+~                                      │┃                                                                               
+~                                      │┃                                                                               
+~                                      │┃ Plan MiMo V2.5 Free OpenCode Zen                                              
+~                                      │┃                                                                               
+[No Name]            0,0-1          All opencode [-]                                                  4,0-1          All
+                                                                                                      0,0-1         All 

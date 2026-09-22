@@ -686,37 +686,6 @@ question_state.clear_all()
 app_state.reset()
 session_actions.set_active("question-tool", "Question Tool", { preserve_cache = true })
 session_actions.set_session_status("question-tool", { type = "busy" }, { reason = "test_question_tool" })
-local question_payload = {
-	{
-		header = "Function behavior",
-		question = "What should hello_world do?",
-		multiple = false,
-		options = {
-			{
-				label = "Return string",
-				description = "Return a reusable greeting.",
-			},
-			{
-				label = "Print message",
-				description = "Write the greeting to stdout.",
-			},
-		},
-	},
-}
-local question_tool_part = {
-	id = "question-part",
-	messageID = "question-msg",
-	sessionID = "question-tool",
-	type = "tool",
-	tool = "question",
-	callID = "question-call",
-	state = {
-		status = "running",
-		input = {
-			questions = question_payload,
-		},
-	},
-}
 sync.handle_message_updated({
 	id = "question-msg",
 	sessionID = "question-tool",
@@ -728,34 +697,17 @@ sync.handle_message_updated({
 	providerID = "openai",
 	finish = "tool-calls",
 })
-sync.handle_part_updated(question_tool_part)
-chat_state.expanded_tools["question-part"] = true
 local original_list_questions = client.list_questions
-client.list_questions = function(callback)
-	callback(nil, {
-		{
-			id = "que_question_tool",
-			sessionID = "question-tool",
-			questions = question_payload,
-			tool = {
-				messageID = "question-msg",
-				callID = "question-call",
-			},
-		},
-	})
+client.list_questions = function(opts, callback)
+	callback(nil, { {
+		id = "que_question_tool", sessionID = "question-tool", title = "Function behavior",
+		fields = { { key = "behavior", type = "string", title = "Function behavior", description = "What should hello_world do?",
+			options = { { label = "Return string", value = "return" }, { label = "Print message", value = "print" } } } },
+	} })
 end
 chat.open()
-events.emit("tool_update", {
-	session_id = "question-tool",
-	message_id = "question-msg",
-	tool_name = "question",
-	call_id = "question-call",
-	status = "running",
-	input = {
-		questions = question_payload,
-	},
-})
-wait_for_buffer_contains("Function behavior", "question tool recovery should render the widget")
+events.emit("interaction_reconcile", { session_id = "question-tool" })
+wait_for_buffer_contains("Function behavior", "native form recovery should render the widget")
 assert_not_contains(buffer_text(), "Input:", "question widget should hide the raw expanded tool input")
 assert_not_contains(buffer_text(), " question", "question widget should hide the raw running tool row")
 assert_eq(chat_state.spinner_footer_line, nil, "pending question should render a static processing footer")

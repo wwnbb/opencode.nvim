@@ -1,0 +1,9 @@
+{
+  "status": 404,
+  "response": {
+    "_tag": "IntegrationAttemptNotFoundError",
+    "integrationID": "groq",
+    "attemptID": "con_0c62eba76001UHpX50BE0jcKv2",
+    "message": "OAuth attempt not found: con_0c62eba76001UHpX50BE0jcKv2"
+  }
+}

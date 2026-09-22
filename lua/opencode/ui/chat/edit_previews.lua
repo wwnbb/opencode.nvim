@@ -244,6 +244,7 @@ local function model_to_edit_files(model, part)
 			additions = additions,
 			deletions = deletions,
 			type = file.type,
+			movePath = file.movePath,
 		})
 		table.insert(statuses, RESULT_TO_EDIT_STATUS[file.status or model.status] or "resolved")
 	end

@@ -1,0 +1,36 @@
+                                       │ ○ New session                                                                  
+~                                      │Agent: build                                                                    
+~                                      │Model: opencode/mimo-v2.5-free                                                  
+~                                      │┃                                                                               
+~                                      │┃  Use these skills: smoke-native                                               
+~                                      │┃  skill smoke-native                                                           
+~                                      │┃                                                                               
+~                                      │                                                                                
+~                                      │Thinking: The user has activated the "smoke-native" skill. According to the     
+~                                      │skill instructions, when this skill is activated, I should reply exactly        
+~                                      │"SKILL_V2_READY" without calling tools.                                         
+~                                      │                                                                                
+~                                      │SKILL_V2_READY                                                                  
+~                                      │                                                                                
+~                                      │▣ Build · MiMo V2.5 Free · 9.3k/200k tok · 2.0s                                 
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+[No Name]            0,0-1          All opencode [-]                                                  4,1            All
+New session: Session done                                                                                               

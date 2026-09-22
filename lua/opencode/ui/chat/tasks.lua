@@ -24,6 +24,7 @@ local actions = require("opencode.actions")
 local tool_part = require("opencode.ui.chat.tool_part")
 
 local REGULAR_TOOL_RENDERERS = {
+	require("opencode.ui.chat.question_result").render_tool,
 	chat_todos.render_tool,
 	chat_bash.render_tool,
 	chat_read.render_tool,
@@ -140,7 +141,7 @@ function M.render_task_tool(tool_part, expanded)
 	end
 	local input = tool_part.state and tool_part.state.input or {}
 	local metadata = render.get_tool_metadata(tool_part)
-	local tool_status = tool_part.state and tool_part.state.status or "pending"
+	local tool_status = task_animation.task_status(tool_part)
 	local subagent = input.subagent_type or "unknown"
 	local desc = input.description or ""
 	local summary = render.normalize_task_summary(metadata.summary)

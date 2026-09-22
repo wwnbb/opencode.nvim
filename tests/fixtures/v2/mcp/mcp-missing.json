@@ -1,0 +1,8 @@
+{
+  "status": 404,
+  "response": {
+    "_tag": "McpServerNotFoundError",
+    "server": "test-mcp",
+    "message": "MCP server not found: test-mcp"
+  }
+}

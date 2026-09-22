@@ -1,0 +1,30 @@
+describe("native assistant error history", function()
+	it("shows a recorded provider failure with no content, including after reopen", function()
+		local fixture = vim.json.decode(table.concat(vim.fn.readfile("tests/fixtures/v2/subagent/subagent-child-0.json"), "\n"))
+		local app, sync, chat = require("opencode"), require("opencode.sync"), require("opencode.ui.chat")
+		local session = require("opencode.session")
+		app.setup({ server = { auto_start = false }, lualine = { enabled = false } })
+		local sid = fixture.session.id
+		session.set_active("long-parent", "Parent", { preserve_cache = true })
+		sync.handle_session_messages("long-parent", { require("opencode.protocol.v2.messages").project("long-parent", {
+			id = "long-answer", type = "assistant", content = { { type = "text", text = string.rep("Long parent answer\n", 100) } },
+		}) })
+		chat.open(); chat.focus(); chat.do_render()
+		vim.api.nvim_win_call(chat.get_winid(), function() vim.cmd("normal! Gzt") end)
+		session.remember(fixture.session); session.set_active(sid, "Recorded provider error", { preserve_cache = true })
+		sync.handle_session_messages(sid, require("opencode.protocol.v2.messages").page(sid, fixture.history.data))
+		local function check()
+			chat.open(); chat.do_render()
+			assert.is_true(vim.wait(500, function()
+				local text = table.concat(vim.api.nvim_buf_get_lines(chat.get_bufnr(), 0, -1, false), "\n")
+				local _, count = text:gsub("free tier", "")
+				return count == 1
+			end, 10))
+			vim.cmd("redraw")
+			assert.equals(1, vim.api.nvim_win_call(chat.get_winid(), vim.fn.winsaveview).topline)
+			chat.close()
+		end
+		check(); check()
+		require("opencode.cleanup").reset_all()
+	end)
+end)

@@ -96,17 +96,21 @@ local function get_max_changes()
 	return math.max(1, math.floor(max_changes))
 end
 
--- The history budget applies to resolved records. Pending reviews retain their IDs.
+local function is_unresolved(change)
+	return change.status == M.STATUS.PENDING or change.status == M.STATUS.FAILED
+end
+
+-- Failed writes remain retryable, so only resolved reviews count toward the budget.
 local function trim_history()
 	local resolved = 0
 	for _, change in ipairs(state.changes) do
-		if change.status ~= M.STATUS.PENDING then
+		if not is_unresolved(change) then
 			resolved = resolved + 1
 		end
 	end
 	local index = 1
 	while resolved > get_max_changes() do
-		if state.changes[index].status == M.STATUS.PENDING then
+		if is_unresolved(state.changes[index]) then
 			index = index + 1
 		else
 			table.remove(state.changes, index)
@@ -163,11 +167,12 @@ local function write_file(filepath, content)
 		return false, open_err or ("Cannot open file for writing: " .. filepath)
 	end
 
-	local ok, write_err = pcall(function()
-		file:write(content or "")
-	end)
+	local ok, written, write_err = pcall(file.write, file, content or "")
 	local close_ok, close_err = file:close()
 	if not ok then
+		return false, tostring(written)
+	end
+	if not written then
 		return false, tostring(write_err)
 	end
 	if not close_ok then
@@ -414,7 +419,7 @@ end
 function M.get_pending()
 	local pending = {}
 	for _, change in ipairs(state.changes) do
-		if change.status == M.STATUS.PENDING then
+		if is_unresolved(change) then
 			table.insert(pending, vim.deepcopy(change))
 		end
 	end
@@ -443,7 +448,7 @@ function M.accept(id, opts)
 	if not change then
 		return false, "Change not found"
 	end
-	if change.status ~= M.STATUS.PENDING then
+	if not is_unresolved(change) then
 		return false, "Change already resolved"
 	end
 	if change.requires_confirm and defaults.confirm_destructive and not opts.force then
@@ -476,7 +481,7 @@ function M.reject(id)
 	if not change then
 		return false, "Change not found"
 	end
-	if change.status ~= M.STATUS.PENDING then
+	if not is_unresolved(change) then
 		return false, "Change already resolved"
 	end
 
@@ -503,7 +508,7 @@ function M.resolve_manually(id)
 	if not change then
 		return false, "Change not found"
 	end
-	if change.status ~= M.STATUS.PENDING then
+	if not is_unresolved(change) then
 		return false, "Change already resolved"
 	end
 

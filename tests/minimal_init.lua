@@ -1,3 +1,6 @@
+-- Tests must not write swap or ShaDa into the user profile.
+vim.opt.swapfile = false
+vim.opt.shadafile = "NONE"
 local source = debug.getinfo(1, "S").source:gsub("^@", "")
 local tests_dir = vim.fn.fnamemodify(source, ":p:h")
 local plugin_root = vim.fn.fnamemodify(tests_dir, ":h")

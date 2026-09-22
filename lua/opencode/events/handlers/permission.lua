@@ -27,6 +27,7 @@ local function handle_permission(events, data)
 	local logger = require("opencode.logger")
 	logger.debug("Permission event received", { data = data })
 
+	if events.protocol == "v2" and data and data.action then return end
 	local permission_request, err = request.decode(data)
 	if not permission_request then
 		logger.debug("Permission event ignored", {
@@ -177,38 +178,6 @@ local function normalize_permission_list(response)
 	return {}
 end
 
----@param perm_data table
----@param tool_data table
----@return boolean
-local function permission_matches_tool(perm_data, tool_data)
-	local perm_message_id = util.resolve_event_message_id(perm_data)
-	local perm_call_id = util.resolve_event_call_id(perm_data)
-	local tool_message_id = tool_data.message_id
-	local tool_call_id = tool_data.call_id
-
-	local tool_has_call_id = type(tool_call_id) == "string" and tool_call_id ~= ""
-	local perm_has_call_id = type(perm_call_id) == "string" and perm_call_id ~= ""
-
-	-- Require call_id match when the tool has one.
-	if tool_has_call_id then
-		if perm_call_id == tool_call_id then
-			return not tool_message_id or not perm_message_id or perm_message_id == tool_message_id
-		end
-		return false
-	end
-
-	-- Only use message_id-only match when call_id is absent on BOTH sides.
-	if not perm_has_call_id
-		and type(tool_message_id) == "string"
-		and tool_message_id ~= ""
-		and perm_message_id == tool_message_id
-	then
-		return true
-	end
-
-	return false
-end
-
 ---@param events table
 ---@param data table
 ---@param attempt number|nil
@@ -248,7 +217,7 @@ local function sync_permission_from_tool(events, data, attempt)
 		end
 
 		for _, perm_data in ipairs(normalize_permission_list(response)) do
-			if permission_matches_tool(perm_data, data) then
+			if util.match_tool_request(perm_data, data) == true then
 				handle_permission(events, perm_data)
 				return
 			end
@@ -309,7 +278,7 @@ function M.setup(events)
 		local logger = require("opencode.logger")
 		artifacts.handle_tool_update(data, logger)
 		enrich_permission_from_tool(events, data)
-		sync_permission_from_tool(events, data)
+		if events.protocol ~= "v2" then sync_permission_from_tool(events, data) end
 	end))
 
 	events.on("permission", scheduled(function(data)
@@ -325,13 +294,13 @@ function M.setup(events)
 
 	events.on("session.selected", function()
 		vim.schedule(function()
-			reconcile_pending_permissions(events)
+			if events.protocol ~= "v2" then reconcile_pending_permissions(events) end
 		end)
 	end)
 
 	events.on("connected", function()
 		vim.schedule(function()
-			reconcile_pending_permissions(events)
+			if events.protocol ~= "v2" then reconcile_pending_permissions(events) end
 		end)
 	end)
 

@@ -1,0 +1,40 @@
+ ○ Render fixture                                                                                                       
+┃                                                                                                                       
+┃  Inspect the parser and preserve Unicode: Привет, Neovim.                                                             
+┃                                                                                                                       
+                                                                                                                        
+Streaming text keeps widget identity and readable wrapping. Streaming text keeps widget identity and readable wrapping. 
+Streaming text keeps widget identity and readable wrapping. Streaming text keeps widget identity and readable wrapping. 
+Streaming text keeps widget identity and readable wrapping. Streaming text keeps widget identity and readable wrapping. 
+Streaming text keeps widget identity and readable wrapping. Streaming text keeps widget identity and readable wrapping. 
+Streaming text keeps widget identity and readable wrapping. Streaming text keeps widget identity and readable wrapping. 
+Streaming text keeps widget identity and readable wrapping. Streaming text keeps widget identity and readable wrapping. 
+┃                                                                                                                       
+┃  Inspect the parser and preserve Unicode: Привет, Neovim.                                                             
+┃                                                                                                                       
+                                                                                                                        
+Streaming text keeps widget identity and readable wrapping. Streaming text keeps widget identity and readable wrapping. 
+Streaming text keeps widget identity and readable wrapping. Streaming text keeps widget identity and readable wrapping. 
+Streaming text keeps widget identity and readable wrapping. Streaming text keeps widget identity and readable wrapping. 
+Streaming text keeps widget identity and readable wrapping. Streaming text keeps widget identity and readable wrapping. 
+Streaming text keeps widget identity and readable wrapping. Streaming text keeps widget identity and readable wrapping. 
+Streaming text keeps widget identity and readable wrapping. Streaming text keeps widget identity and readable wrapping. 
+                                                                                                                        
+▣ Build · Fixture Model · 1.3k/200k tok                                                                                 
+                                                                                                                        
+opencode [-]                                                                                          155,0-1        Bot
+                                                                                                                        
+~                                                                                                                       
+~                                                                                                                       
+~                                                                                                                       
+~                                                                                                                       
+~                                                                                                                       
+~                                                                                                                       
+~                                                                                                                       
+~                                                                                                                       
+~                                                                                                                       
+~                                                                                                                       
+~                                                                                                                       
+~                                                                                                                       
+[No Name]                                                                                             0,0-1          All
+OpenCode.nvim v0.1.0 loaded                                                                                             

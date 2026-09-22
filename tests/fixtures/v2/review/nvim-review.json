@@ -1,0 +1,191 @@
+{
+  "tool": {
+    "files": [],
+    "time": {
+      "start": 1790029645618,
+      "end": 1790029645648
+    },
+    "content": [
+      {
+        "type": "text",
+        "text": "Edit applied successfully."
+      }
+    ],
+    "input": {
+      "filePath": "<PROFILE>/project пробел %#/review.txt",
+      "oldString": "before",
+      "newString": "after"
+    },
+    "output": "Edit applied successfully.",
+    "metadata": {
+      "diagnostics": {},
+      "relativePath": "<PROFILE>/project пробел %#/review.txt",
+      "divergence": "client_applied",
+      "status": "applied",
+      "title": "<PROFILE>/project пробел %#/review.txt",
+      "diff": "--- <PROFILE>/project пробел %#/review.txt\n+++ <PROFILE>/project пробел %#/review.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+      "applied": true,
+      "wrote": false,
+      "filepath": "<PROFILE>/project пробел %#/review.txt",
+      "filediff": {
+        "relativePath": "<PROFILE>/project пробел %#/review.txt",
+        "additions": 1,
+        "deletions": 1,
+        "after": "after\n",
+        "type": "update",
+        "bom": false,
+        "filePath": "<PROFILE>/project пробел %#/review.txt",
+        "diff": "--- <PROFILE>/project пробел %#/review.txt\n+++ <PROFILE>/project пробел %#/review.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+        "patch": "--- <PROFILE>/project пробел %#/review.txt\n+++ <PROFILE>/project пробел %#/review.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+        "status": "applied",
+        "before_bom": false,
+        "file": "<PROFILE>/project пробел %#/review.txt",
+        "before": "before\n",
+        "eol": "\n"
+      },
+      "truncated": false,
+      "proposed_diff": "--- <PROFILE>/project пробел %#/review.txt\n+++ <PROFILE>/project пробел %#/review.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n "
+    },
+    "status": "completed"
+  },
+  "denied": {
+    "bytes": "before\n",
+    "tool": {
+      "files": [],
+      "time": {
+        "start": 1790029656624,
+        "end": 1790029656632
+      },
+      "input": {
+        "filePath": "denied-review.txt",
+        "oldString": "before",
+        "newString": "after"
+      },
+      "error": "Native permission denied the tool operation",
+      "output": "",
+      "status": "error",
+      "native_error": {
+        "message": "Native permission denied the tool operation",
+        "type": "tool.execution"
+      }
+    }
+  },
+  "interrupted": {
+    "bytes": "before\n",
+    "late_error": {
+      "rpc_type": "conflict",
+      "status": 400,
+      "error": "Review has already completed or was cancelled",
+      "retryable": false,
+      "message": "Review has already completed or was cancelled",
+      "code": "RpcError"
+    },
+    "status": "cancelled"
+  },
+  "version": "2.0.11",
+  "native_permission_first": true,
+  "review": {
+    "sessionID": "ses_f39eb4e65ffeG6hQfM8YCh4mxi",
+    "reviewID": "rev_e8c113edde229ad9111c303dc2bf72fe",
+    "outcome": {
+      "diagnostics": {},
+      "relativePath": "<PROFILE>/project пробел %#/review.txt",
+      "divergence": "client_applied",
+      "status": "applied",
+      "title": "<PROFILE>/project пробел %#/review.txt",
+      "diff": "--- <PROFILE>/project пробел %#/review.txt\n+++ <PROFILE>/project пробел %#/review.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+      "filediff": {
+        "relativePath": "<PROFILE>/project пробел %#/review.txt",
+        "additions": 1,
+        "deletions": 1,
+        "after": "after\n",
+        "type": "update",
+        "bom": false,
+        "eol": "\n",
+        "diff": "--- <PROFILE>/project пробел %#/review.txt\n+++ <PROFILE>/project пробел %#/review.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+        "before_bom": false,
+        "status": "applied",
+        "before": "before\n",
+        "file": "<PROFILE>/project пробел %#/review.txt",
+        "patch": "--- <PROFILE>/project пробел %#/review.txt\n+++ <PROFILE>/project пробел %#/review.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+        "filePath": "<PROFILE>/project пробел %#/review.txt"
+      },
+      "proposed_diff": "--- <PROFILE>/project пробел %#/review.txt\n+++ <PROFILE>/project пробел %#/review.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+      "wrote": false,
+      "filepath": "<PROFILE>/project пробел %#/review.txt",
+      "applied": true
+    },
+    "status": "settled",
+    "revision": 1,
+    "messageID": "msg_0c614b20b001AX4rCjKKdJm7ih",
+    "agent": "build",
+    "directory": "<PROFILE>/project пробел %#",
+    "files": [
+      {
+        "relativePath": "<PROFILE>/project пробел %#/review.txt",
+        "additions": 1,
+        "deletions": 1,
+        "after": "after\n",
+        "type": "update",
+        "eol": "\n",
+        "bom": false,
+        "before_bom": false,
+        "diff": "--- <PROFILE>/project пробел %#/review.txt\n+++ <PROFILE>/project пробел %#/review.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+        "status": "pending",
+        "patch": "--- <PROFILE>/project пробел %#/review.txt\n+++ <PROFILE>/project пробел %#/review.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+        "fileID": "file_0_d8f8a51c2c9c",
+        "file": "<PROFILE>/project пробел %#/review.txt",
+        "before": "before\n",
+        "filePath": "<PROFILE>/project пробел %#/review.txt"
+      }
+    ],
+    "tool": "neovim_edit",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "metadata": {
+      "sessionID": "ses_f39eb4e65ffeG6hQfM8YCh4mxi",
+      "relativePath": "<PROFILE>/project пробел %#/review.txt",
+      "messageID": "msg_0c614b20b001AX4rCjKKdJm7ih",
+      "agent": "build",
+      "diff": "--- <PROFILE>/project пробел %#/review.txt\n+++ <PROFILE>/project пробел %#/review.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+      "files": [
+        {
+          "relativePath": "<PROFILE>/project пробел %#/review.txt",
+          "additions": 1,
+          "deletions": 1,
+          "after": "after\n",
+          "type": "update",
+          "bom": false,
+          "eol": "\n",
+          "diff": "--- <PROFILE>/project пробел %#/review.txt\n+++ <PROFILE>/project пробел %#/review.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+          "before_bom": false,
+          "status": "pending",
+          "before": "before\n",
+          "file": "<PROFILE>/project пробел %#/review.txt",
+          "patch": "--- <PROFILE>/project пробел %#/review.txt\n+++ <PROFILE>/project пробел %#/review.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+          "filePath": "<PROFILE>/project пробел %#/review.txt"
+        }
+      ],
+      "filepath": "<PROFILE>/project пробел %#/review.txt",
+      "proposed_diff": "--- <PROFILE>/project пробел %#/review.txt\n+++ <PROFILE>/project пробел %#/review.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+      "opencode_native_diff": true,
+      "operation": "neovim_edit"
+    },
+    "protocolVersion": 1,
+    "callID": "call_bb69a69e550e4a998539909d",
+    "decisions": [
+      {
+        "observed": {
+          "exists": true,
+          "sha256": "7b9a72466d3960eb2aacccfc848939453490db0678bd4725def3f789b891c919"
+        },
+        "fileID": "file_0_d8f8a51c2c9c",
+        "apply": "client",
+        "status": "accepted"
+      }
+    ],
+    "created": 1790029645636
+  },
+  "bytes": "after\n"
+}

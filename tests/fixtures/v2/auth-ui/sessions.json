@@ -1,0 +1,30 @@
+{
+  "data": [
+    {
+      "id": "ses_f3939939affe6l5YN98xeGJ51P",
+      "projectID": "global",
+      "cost": 0,
+      "tokens": {
+        "input": 0,
+        "output": 0,
+        "reasoning": 0,
+        "cache": {
+          "read": 0,
+          "write": 0
+        }
+      },
+      "time": {
+        "created": 1790041287819,
+        "updated": 1790041287819
+      },
+      "title": "opencode.nvim v2 runtime fixture",
+      "location": {
+        "directory": "<PROFILE>/project пробел %#"
+      }
+    }
+  ],
+  "cursor": {
+    "previous": "eyJwYXJlbnRJRCI6Im51bGwiLCJhbmNob3IiOnsiaWQiOiJzZXNfZjM5Mzk5MzlhZmZlNmw1WU45OHhlR0o1MVAiLCJ0aW1lIjoxNzkwMDQxMjg3ODE5LCJkaXJlY3Rpb24iOiJwcmV2aW91cyJ9fQ",
+    "next": "eyJwYXJlbnRJRCI6Im51bGwiLCJhbmNob3IiOnsiaWQiOiJzZXNfZjM5Mzk5MzlhZmZlNmw1WU45OHhlR0o1MVAiLCJ0aW1lIjoxNzkwMDQxMjg3ODE5LCJkaXJlY3Rpb24iOiJuZXh0In19"
+  }
+}

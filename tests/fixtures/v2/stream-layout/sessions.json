@@ -1,0 +1,35 @@
+{
+  "data": [
+    {
+      "id": "ses_f391ebd09ffeENAOoaSgQ58llr",
+      "projectID": "global",
+      "model": {
+        "id": "mimo-v2.5-free",
+        "providerID": "opencode",
+        "variant": "default"
+      },
+      "cost": 0,
+      "tokens": {
+        "input": 0,
+        "output": 0,
+        "reasoning": 0,
+        "cache": {
+          "read": 0,
+          "write": 0
+        }
+      },
+      "time": {
+        "created": 1790043046675,
+        "updated": 1790043046675
+      },
+      "title": "opencode.nvim v2 runtime fixture",
+      "location": {
+        "directory": "<PROFILE>/project пробел %#"
+      }
+    }
+  ],
+  "cursor": {
+    "previous": "eyJwYXJlbnRJRCI6Im51bGwiLCJhbmNob3IiOnsiaWQiOiJzZXNfZjM5MWViZDA5ZmZlRU5BT29hU2dRNThsbHIiLCJ0aW1lIjoxNzkwMDQzMDQ2Njc1LCJkaXJlY3Rpb24iOiJwcmV2aW91cyJ9fQ",
+    "next": "eyJwYXJlbnRJRCI6Im51bGwiLCJhbmNob3IiOnsiaWQiOiJzZXNfZjM5MWViZDA5ZmZlRU5BT29hU2dRNThsbHIiLCJ0aW1lIjoxNzkwMDQzMDQ2Njc1LCJkaXJlY3Rpb24iOiJuZXh0In19"
+  }
+}

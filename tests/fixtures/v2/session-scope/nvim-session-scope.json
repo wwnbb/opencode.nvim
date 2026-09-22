@@ -1,0 +1,877 @@
+{
+  "version": "2.0.11",
+  "histories": [
+    [
+      {
+        "info": {
+          "_v2": {
+            "time": {
+              "created": 1790037947068
+            },
+            "text": "Return exactly SCOPE_REPLY_1 in chat. Do not use tools or create files.",
+            "type": "user",
+            "id": "msg_0c6937268001nhak5eLjQZ73yh"
+          },
+          "text": "Return exactly SCOPE_REPLY_1 in chat. Do not use tools or create files.",
+          "time": {
+            "created": 1790037947068
+          },
+          "hidden": false,
+          "id": "msg_0c6937268001nhak5eLjQZ73yh",
+          "role": "user",
+          "protocol": "v2",
+          "type": "user",
+          "sessionID": "ses_f396c8e84ffejAs72STnsge6Ja"
+        },
+        "parts": [
+          {
+            "type": "text",
+            "ordinal": 0,
+            "messageID": "msg_0c6937268001nhak5eLjQZ73yh",
+            "id": "v2:30:ses_f396c8e84ffejAs72STnsge6Ja:30:msg_0c6937268001nhak5eLjQZ73yh:text:0",
+            "protocol": "v2",
+            "content_order": 1,
+            "text": "Return exactly SCOPE_REPLY_1 in chat. Do not use tools or create files.",
+            "sessionID": "ses_f396c8e84ffejAs72STnsge6Ja"
+          }
+        ]
+      },
+      {
+        "info": {
+          "_v2": {
+            "agent": "build",
+            "time": {
+              "created": 1790037946991
+            },
+            "type": "agent-switched",
+            "id": "msg_0c693726f001SZ22zMFQr3PdZz"
+          },
+          "time": {
+            "created": 1790037946991
+          },
+          "hidden": false,
+          "protocol": "v2",
+          "id": "msg_0c693726f001SZ22zMFQr3PdZz",
+          "role": "system",
+          "agent": "build",
+          "type": "agent-switched",
+          "sessionID": "ses_f396c8e84ffejAs72STnsge6Ja"
+        },
+        "parts": [
+          {
+            "messageID": "msg_0c693726f001SZ22zMFQr3PdZz",
+            "synthetic": true,
+            "text": "Agent: build",
+            "ordinal": 0,
+            "id": "v2:30:ses_f396c8e84ffejAs72STnsge6Ja:30:msg_0c693726f001SZ22zMFQr3PdZz:text:0",
+            "protocol": "v2",
+            "content_order": 1,
+            "type": "text",
+            "sessionID": "ses_f396c8e84ffejAs72STnsge6Ja"
+          }
+        ]
+      },
+      {
+        "info": {
+          "_v2": {
+            "snapshot": {
+              "start": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+              "files": [],
+              "end": "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
+            },
+            "tokens": {
+              "reasoning": 24,
+              "input": 9101,
+              "cache": {
+                "read": 0,
+                "write": 0
+              },
+              "output": 7
+            },
+            "content": [
+              {
+                "state": {
+                  "reasoningField": "reasoning_content",
+                  "reasoningDetails": [
+                    {
+                      "type": "reasoning.text",
+                      "index": 0,
+                      "text": "The user wants me to return exactly \"SCOPE_REPLY_1\" in chat without using tools or creating files.",
+                      "format": "unknown"
+                    }
+                  ]
+                },
+                "type": "reasoning",
+                "text": "The user wants me to return exactly \"SCOPE_REPLY_1\" in chat without using tools or creating files.",
+                "time": {
+                  "created": 1790037949565,
+                  "completed": 1790037950399
+                }
+              },
+              {
+                "type": "text",
+                "text": "SCOPE_REPLY_1"
+              }
+            ],
+            "time": {
+              "streamed": 1790037950401,
+              "completed": 1790037950425,
+              "created": 1790037947176
+            },
+            "cost": 0,
+            "finish": "stop",
+            "id": "msg_0c69372c2001t8Dg14SuQYaazB",
+            "agent": "build",
+            "model": {
+              "providerID": "opencode",
+              "variant": "default",
+              "id": "mimo-v2.5-free"
+            },
+            "type": "assistant",
+            "rawFinish": "stop"
+          },
+          "content": [
+            {
+              "state": {
+                "reasoningField": "reasoning_content",
+                "reasoningDetails": [
+                  {
+                    "type": "reasoning.text",
+                    "index": 0,
+                    "text": "The user wants me to return exactly \"SCOPE_REPLY_1\" in chat without using tools or creating files.",
+                    "format": "unknown"
+                  }
+                ]
+              },
+              "type": "reasoning",
+              "text": "The user wants me to return exactly \"SCOPE_REPLY_1\" in chat without using tools or creating files.",
+              "time": {
+                "created": 1790037949565,
+                "completed": 1790037950399
+              }
+            },
+            {
+              "type": "text",
+              "text": "SCOPE_REPLY_1"
+            }
+          ],
+          "rawFinish": "stop",
+          "cost": 0,
+          "id": "msg_0c69372c2001t8Dg14SuQYaazB",
+          "agent": "build",
+          "snapshot": {
+            "start": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+            "files": [],
+            "end": "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
+          },
+          "modelID": "mimo-v2.5-free",
+          "providerID": "opencode",
+          "model": {
+            "providerID": "opencode",
+            "variant": "default",
+            "id": "mimo-v2.5-free"
+          },
+          "time": {
+            "streamed": 1790037950401,
+            "completed": 1790037950425,
+            "created": 1790037947176
+          },
+          "hidden": false,
+          "variant": "default",
+          "finish": "stop",
+          "tokens": {
+            "reasoning": 24,
+            "input": 9101,
+            "cache": {
+              "read": 0,
+              "write": 0
+            },
+            "output": 7
+          },
+          "role": "assistant",
+          "protocol": "v2",
+          "type": "assistant",
+          "sessionID": "ses_f396c8e84ffejAs72STnsge6Ja"
+        },
+        "parts": [
+          {
+            "messageID": "msg_0c69372c2001t8Dg14SuQYaazB",
+            "state": {
+              "reasoningField": "reasoning_content",
+              "reasoningDetails": [
+                {
+                  "type": "reasoning.text",
+                  "index": 0,
+                  "text": "The user wants me to return exactly \"SCOPE_REPLY_1\" in chat without using tools or creating files.",
+                  "format": "unknown"
+                }
+              ]
+            },
+            "text": "The user wants me to return exactly \"SCOPE_REPLY_1\" in chat without using tools or creating files.",
+            "time": {
+              "created": 1790037949565,
+              "completed": 1790037950399
+            },
+            "ordinal": 0,
+            "id": "v2:30:ses_f396c8e84ffejAs72STnsge6Ja:30:msg_0c69372c2001t8Dg14SuQYaazB:reasoning:0",
+            "protocol": "v2",
+            "content_order": 1,
+            "type": "reasoning",
+            "sessionID": "ses_f396c8e84ffejAs72STnsge6Ja"
+          },
+          {
+            "type": "text",
+            "ordinal": 0,
+            "messageID": "msg_0c69372c2001t8Dg14SuQYaazB",
+            "id": "v2:30:ses_f396c8e84ffejAs72STnsge6Ja:30:msg_0c69372c2001t8Dg14SuQYaazB:text:0",
+            "protocol": "v2",
+            "content_order": 2,
+            "text": "SCOPE_REPLY_1",
+            "sessionID": "ses_f396c8e84ffejAs72STnsge6Ja"
+          }
+        ]
+      },
+      {
+        "info": {
+          "_v2": {
+            "time": {
+              "created": 1790037950427
+            },
+            "outcome": "succeeded",
+            "type": "idle",
+            "id": "msg_0c6937fdb001n5CEXIWcq8FJ2u"
+          },
+          "outcome": "succeeded",
+          "hidden": true,
+          "time": {
+            "created": 1790037950427
+          },
+          "id": "msg_0c6937fdb001n5CEXIWcq8FJ2u",
+          "role": "system",
+          "protocol": "v2",
+          "type": "idle",
+          "sessionID": "ses_f396c8e84ffejAs72STnsge6Ja"
+        },
+        "parts": []
+      }
+    ],
+    [
+      {
+        "info": {
+          "_v2": {
+            "time": {
+              "created": 1790037947221
+            },
+            "text": "Return exactly SCOPE_REPLY_2 in chat. Do not use tools or create files.",
+            "type": "user",
+            "id": "msg_0c69372d2001AyHLTgZnSBeDa8"
+          },
+          "text": "Return exactly SCOPE_REPLY_2 in chat. Do not use tools or create files.",
+          "time": {
+            "created": 1790037947221
+          },
+          "hidden": false,
+          "id": "msg_0c69372d2001AyHLTgZnSBeDa8",
+          "role": "user",
+          "protocol": "v2",
+          "type": "user",
+          "sessionID": "ses_f396c8e52ffeEVReTGwTfLy3Jz"
+        },
+        "parts": [
+          {
+            "type": "text",
+            "ordinal": 0,
+            "messageID": "msg_0c69372d2001AyHLTgZnSBeDa8",
+            "id": "v2:30:ses_f396c8e52ffeEVReTGwTfLy3Jz:30:msg_0c69372d2001AyHLTgZnSBeDa8:text:0",
+            "protocol": "v2",
+            "content_order": 1,
+            "text": "Return exactly SCOPE_REPLY_2 in chat. Do not use tools or create files.",
+            "sessionID": "ses_f396c8e52ffeEVReTGwTfLy3Jz"
+          }
+        ]
+      },
+      {
+        "info": {
+          "_v2": {
+            "agent": "build",
+            "time": {
+              "created": 1790037947112
+            },
+            "type": "agent-switched",
+            "id": "msg_0c69372e8001b5bmAOsZIGEq06"
+          },
+          "time": {
+            "created": 1790037947112
+          },
+          "hidden": false,
+          "protocol": "v2",
+          "id": "msg_0c69372e8001b5bmAOsZIGEq06",
+          "role": "system",
+          "agent": "build",
+          "type": "agent-switched",
+          "sessionID": "ses_f396c8e52ffeEVReTGwTfLy3Jz"
+        },
+        "parts": [
+          {
+            "messageID": "msg_0c69372e8001b5bmAOsZIGEq06",
+            "synthetic": true,
+            "text": "Agent: build",
+            "ordinal": 0,
+            "id": "v2:30:ses_f396c8e52ffeEVReTGwTfLy3Jz:30:msg_0c69372e8001b5bmAOsZIGEq06:text:0",
+            "protocol": "v2",
+            "content_order": 1,
+            "type": "text",
+            "sessionID": "ses_f396c8e52ffeEVReTGwTfLy3Jz"
+          }
+        ]
+      },
+      {
+        "info": {
+          "_v2": {
+            "snapshot": {
+              "start": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+              "files": [],
+              "end": "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
+            },
+            "tokens": {
+              "reasoning": 25,
+              "input": 9102,
+              "cache": {
+                "read": 0,
+                "write": 0
+              },
+              "output": 7
+            },
+            "content": [
+              {
+                "state": {
+                  "reasoningField": "reasoning_content",
+                  "reasoningDetails": [
+                    {
+                      "type": "reasoning.text",
+                      "index": 0,
+                      "text": "The user is asking me to return exactly \"SCOPE_REPLY_2\" in chat without using tools or creating files.",
+                      "format": "unknown"
+                    }
+                  ]
+                },
+                "type": "reasoning",
+                "text": "The user is asking me to return exactly \"SCOPE_REPLY_2\" in chat without using tools or creating files.",
+                "time": {
+                  "created": 1790037951133,
+                  "completed": 1790037951997
+                }
+              },
+              {
+                "type": "text",
+                "text": "SCOPE_REPLY_2"
+              }
+            ],
+            "time": {
+              "streamed": 1790037952000,
+              "completed": 1790037952020,
+              "created": 1790037947335
+            },
+            "cost": 0,
+            "finish": "stop",
+            "id": "msg_0c693735a001yMdM3sBcAujuFJ",
+            "agent": "build",
+            "model": {
+              "providerID": "opencode",
+              "variant": "default",
+              "id": "mimo-v2.5-free"
+            },
+            "type": "assistant",
+            "rawFinish": "stop"
+          },
+          "content": [
+            {
+              "state": {
+                "reasoningField": "reasoning_content",
+                "reasoningDetails": [
+                  {
+                    "type": "reasoning.text",
+                    "index": 0,
+                    "text": "The user is asking me to return exactly \"SCOPE_REPLY_2\" in chat without using tools or creating files.",
+                    "format": "unknown"
+                  }
+                ]
+              },
+              "type": "reasoning",
+              "text": "The user is asking me to return exactly \"SCOPE_REPLY_2\" in chat without using tools or creating files.",
+              "time": {
+                "created": 1790037951133,
+                "completed": 1790037951997
+              }
+            },
+            {
+              "type": "text",
+              "text": "SCOPE_REPLY_2"
+            }
+          ],
+          "rawFinish": "stop",
+          "cost": 0,
+          "id": "msg_0c693735a001yMdM3sBcAujuFJ",
+          "agent": "build",
+          "snapshot": {
+            "start": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+            "files": [],
+            "end": "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
+          },
+          "modelID": "mimo-v2.5-free",
+          "providerID": "opencode",
+          "model": {
+            "providerID": "opencode",
+            "variant": "default",
+            "id": "mimo-v2.5-free"
+          },
+          "time": {
+            "streamed": 1790037952000,
+            "completed": 1790037952020,
+            "created": 1790037947335
+          },
+          "hidden": false,
+          "variant": "default",
+          "finish": "stop",
+          "tokens": {
+            "reasoning": 25,
+            "input": 9102,
+            "cache": {
+              "read": 0,
+              "write": 0
+            },
+            "output": 7
+          },
+          "role": "assistant",
+          "protocol": "v2",
+          "type": "assistant",
+          "sessionID": "ses_f396c8e52ffeEVReTGwTfLy3Jz"
+        },
+        "parts": [
+          {
+            "messageID": "msg_0c693735a001yMdM3sBcAujuFJ",
+            "state": {
+              "reasoningField": "reasoning_content",
+              "reasoningDetails": [
+                {
+                  "type": "reasoning.text",
+                  "index": 0,
+                  "text": "The user is asking me to return exactly \"SCOPE_REPLY_2\" in chat without using tools or creating files.",
+                  "format": "unknown"
+                }
+              ]
+            },
+            "text": "The user is asking me to return exactly \"SCOPE_REPLY_2\" in chat without using tools or creating files.",
+            "time": {
+              "created": 1790037951133,
+              "completed": 1790037951997
+            },
+            "ordinal": 0,
+            "id": "v2:30:ses_f396c8e52ffeEVReTGwTfLy3Jz:30:msg_0c693735a001yMdM3sBcAujuFJ:reasoning:0",
+            "protocol": "v2",
+            "content_order": 1,
+            "type": "reasoning",
+            "sessionID": "ses_f396c8e52ffeEVReTGwTfLy3Jz"
+          },
+          {
+            "type": "text",
+            "ordinal": 0,
+            "messageID": "msg_0c693735a001yMdM3sBcAujuFJ",
+            "id": "v2:30:ses_f396c8e52ffeEVReTGwTfLy3Jz:30:msg_0c693735a001yMdM3sBcAujuFJ:text:0",
+            "protocol": "v2",
+            "content_order": 2,
+            "text": "SCOPE_REPLY_2",
+            "sessionID": "ses_f396c8e52ffeEVReTGwTfLy3Jz"
+          }
+        ]
+      },
+      {
+        "info": {
+          "_v2": {
+            "time": {
+              "created": 1790037952022
+            },
+            "outcome": "succeeded",
+            "type": "idle",
+            "id": "msg_0c6938616001tH1rGyUTk0TzU4"
+          },
+          "outcome": "succeeded",
+          "hidden": true,
+          "time": {
+            "created": 1790037952022
+          },
+          "id": "msg_0c6938616001tH1rGyUTk0TzU4",
+          "role": "system",
+          "protocol": "v2",
+          "type": "idle",
+          "sessionID": "ses_f396c8e52ffeEVReTGwTfLy3Jz"
+        },
+        "parts": []
+      }
+    ],
+    [
+      {
+        "info": {
+          "_v2": {
+            "time": {
+              "created": 1790037947325
+            },
+            "text": "Return exactly SCOPE_REPLY_3 in chat. Do not use tools or create files.",
+            "type": "user",
+            "id": "msg_0c693738b001pa1p3pcpBFvJ4M"
+          },
+          "text": "Return exactly SCOPE_REPLY_3 in chat. Do not use tools or create files.",
+          "time": {
+            "created": 1790037947325
+          },
+          "hidden": false,
+          "id": "msg_0c693738b001pa1p3pcpBFvJ4M",
+          "role": "user",
+          "protocol": "v2",
+          "type": "user",
+          "sessionID": "ses_f396c8e26ffe10TYfERJkbRNOa"
+        },
+        "parts": [
+          {
+            "type": "text",
+            "ordinal": 0,
+            "messageID": "msg_0c693738b001pa1p3pcpBFvJ4M",
+            "id": "v2:30:ses_f396c8e26ffe10TYfERJkbRNOa:30:msg_0c693738b001pa1p3pcpBFvJ4M:text:0",
+            "protocol": "v2",
+            "content_order": 1,
+            "text": "Return exactly SCOPE_REPLY_3 in chat. Do not use tools or create files.",
+            "sessionID": "ses_f396c8e26ffe10TYfERJkbRNOa"
+          }
+        ]
+      },
+      {
+        "info": {
+          "_v2": {
+            "agent": "build",
+            "time": {
+              "created": 1790037947278
+            },
+            "type": "agent-switched",
+            "id": "msg_0c693738e001zmIhOa1PUu64Ue"
+          },
+          "time": {
+            "created": 1790037947278
+          },
+          "hidden": false,
+          "protocol": "v2",
+          "id": "msg_0c693738e001zmIhOa1PUu64Ue",
+          "role": "system",
+          "agent": "build",
+          "type": "agent-switched",
+          "sessionID": "ses_f396c8e26ffe10TYfERJkbRNOa"
+        },
+        "parts": [
+          {
+            "messageID": "msg_0c693738e001zmIhOa1PUu64Ue",
+            "synthetic": true,
+            "text": "Agent: build",
+            "ordinal": 0,
+            "id": "v2:30:ses_f396c8e26ffe10TYfERJkbRNOa:30:msg_0c693738e001zmIhOa1PUu64Ue:text:0",
+            "protocol": "v2",
+            "content_order": 1,
+            "type": "text",
+            "sessionID": "ses_f396c8e26ffe10TYfERJkbRNOa"
+          }
+        ]
+      },
+      {
+        "info": {
+          "_v2": {
+            "snapshot": {
+              "start": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+              "files": [],
+              "end": "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
+            },
+            "tokens": {
+              "reasoning": 24,
+              "input": 9102,
+              "cache": {
+                "read": 0,
+                "write": 0
+              },
+              "output": 7
+            },
+            "content": [
+              {
+                "state": {
+                  "reasoningField": "reasoning_content",
+                  "reasoningDetails": [
+                    {
+                      "type": "reasoning.text",
+                      "index": 0,
+                      "text": "The user is asking me to return \"SCOPE_REPLY_3\" in chat without using tools or creating files.",
+                      "format": "unknown"
+                    }
+                  ]
+                },
+                "type": "reasoning",
+                "text": "The user is asking me to return \"SCOPE_REPLY_3\" in chat without using tools or creating files.",
+                "time": {
+                  "created": 1790037950710,
+                  "completed": 1790037951514
+                }
+              },
+              {
+                "type": "text",
+                "text": "SCOPE_REPLY_3"
+              }
+            ],
+            "time": {
+              "streamed": 1790037951519,
+              "completed": 1790037951543,
+              "created": 1790037947387
+            },
+            "cost": 0,
+            "finish": "stop",
+            "id": "msg_0c69373c2001TCycLEY9quNcLc",
+            "agent": "build",
+            "model": {
+              "providerID": "opencode",
+              "variant": "default",
+              "id": "mimo-v2.5-free"
+            },
+            "type": "assistant",
+            "rawFinish": "stop"
+          },
+          "content": [
+            {
+              "state": {
+                "reasoningField": "reasoning_content",
+                "reasoningDetails": [
+                  {
+                    "type": "reasoning.text",
+                    "index": 0,
+                    "text": "The user is asking me to return \"SCOPE_REPLY_3\" in chat without using tools or creating files.",
+                    "format": "unknown"
+                  }
+                ]
+              },
+              "type": "reasoning",
+              "text": "The user is asking me to return \"SCOPE_REPLY_3\" in chat without using tools or creating files.",
+              "time": {
+                "created": 1790037950710,
+                "completed": 1790037951514
+              }
+            },
+            {
+              "type": "text",
+              "text": "SCOPE_REPLY_3"
+            }
+          ],
+          "rawFinish": "stop",
+          "cost": 0,
+          "id": "msg_0c69373c2001TCycLEY9quNcLc",
+          "agent": "build",
+          "snapshot": {
+            "start": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+            "files": [],
+            "end": "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
+          },
+          "modelID": "mimo-v2.5-free",
+          "providerID": "opencode",
+          "model": {
+            "providerID": "opencode",
+            "variant": "default",
+            "id": "mimo-v2.5-free"
+          },
+          "time": {
+            "streamed": 1790037951519,
+            "completed": 1790037951543,
+            "created": 1790037947387
+          },
+          "hidden": false,
+          "variant": "default",
+          "finish": "stop",
+          "tokens": {
+            "reasoning": 24,
+            "input": 9102,
+            "cache": {
+              "read": 0,
+              "write": 0
+            },
+            "output": 7
+          },
+          "role": "assistant",
+          "protocol": "v2",
+          "type": "assistant",
+          "sessionID": "ses_f396c8e26ffe10TYfERJkbRNOa"
+        },
+        "parts": [
+          {
+            "messageID": "msg_0c69373c2001TCycLEY9quNcLc",
+            "state": {
+              "reasoningField": "reasoning_content",
+              "reasoningDetails": [
+                {
+                  "type": "reasoning.text",
+                  "index": 0,
+                  "text": "The user is asking me to return \"SCOPE_REPLY_3\" in chat without using tools or creating files.",
+                  "format": "unknown"
+                }
+              ]
+            },
+            "text": "The user is asking me to return \"SCOPE_REPLY_3\" in chat without using tools or creating files.",
+            "time": {
+              "created": 1790037950710,
+              "completed": 1790037951514
+            },
+            "ordinal": 0,
+            "id": "v2:30:ses_f396c8e26ffe10TYfERJkbRNOa:30:msg_0c69373c2001TCycLEY9quNcLc:reasoning:0",
+            "protocol": "v2",
+            "content_order": 1,
+            "type": "reasoning",
+            "sessionID": "ses_f396c8e26ffe10TYfERJkbRNOa"
+          },
+          {
+            "type": "text",
+            "ordinal": 0,
+            "messageID": "msg_0c69373c2001TCycLEY9quNcLc",
+            "id": "v2:30:ses_f396c8e26ffe10TYfERJkbRNOa:30:msg_0c69373c2001TCycLEY9quNcLc:text:0",
+            "protocol": "v2",
+            "content_order": 2,
+            "text": "SCOPE_REPLY_3",
+            "sessionID": "ses_f396c8e26ffe10TYfERJkbRNOa"
+          }
+        ]
+      },
+      {
+        "info": {
+          "_v2": {
+            "time": {
+              "created": 1790037951546
+            },
+            "outcome": "succeeded",
+            "type": "idle",
+            "id": "msg_0c6938439001w8s2MaMspXcCxm"
+          },
+          "outcome": "succeeded",
+          "hidden": true,
+          "time": {
+            "created": 1790037951546
+          },
+          "id": "msg_0c6938439001w8s2MaMspXcCxm",
+          "role": "system",
+          "protocol": "v2",
+          "type": "idle",
+          "sessionID": "ses_f396c8e26ffe10TYfERJkbRNOa"
+        },
+        "parts": []
+      }
+    ]
+  ],
+  "sessions": [
+    {
+      "projectID": "global",
+      "tokens": {
+        "reasoning": 0,
+        "input": 0,
+        "cache": {
+          "read": 0,
+          "write": 0
+        },
+        "output": 0
+      },
+      "model": {
+        "providerID": "opencode",
+        "variant": "default",
+        "id": "mimo-v2.5-free"
+      },
+      "time": {
+        "updated": 1790037946777,
+        "created": 1790037946777
+      },
+      "cost": 0,
+      "id": "ses_f396c8e84ffejAs72STnsge6Ja",
+      "revert": null,
+      "location": {
+        "directory": "<PROFILE>/project пробел %#/scope 1"
+      },
+      "permissions": [
+        {
+          "resource": "*",
+          "effect": "ask",
+          "action": "scope_fixture"
+        }
+      ],
+      "directory": "<PROFILE>/project пробел %#/scope 1"
+    },
+    {
+      "projectID": "global",
+      "tokens": {
+        "reasoning": 0,
+        "input": 0,
+        "cache": {
+          "read": 0,
+          "write": 0
+        },
+        "output": 0
+      },
+      "model": {
+        "providerID": "opencode",
+        "variant": "default",
+        "id": "mimo-v2.5-free"
+      },
+      "time": {
+        "updated": 1790037946824,
+        "created": 1790037946824
+      },
+      "cost": 0,
+      "id": "ses_f396c8e52ffeEVReTGwTfLy3Jz",
+      "revert": null,
+      "location": {
+        "directory": "<PROFILE>/project пробел %#/scope 2"
+      },
+      "permissions": [
+        {
+          "resource": "*",
+          "effect": "ask",
+          "action": "scope_fixture"
+        }
+      ],
+      "directory": "<PROFILE>/project пробел %#/scope 2"
+    },
+    {
+      "projectID": "global",
+      "tokens": {
+        "reasoning": 0,
+        "input": 0,
+        "cache": {
+          "read": 0,
+          "write": 0
+        },
+        "output": 0
+      },
+      "model": {
+        "providerID": "opencode",
+        "variant": "default",
+        "id": "mimo-v2.5-free"
+      },
+      "time": {
+        "updated": 1790037946910,
+        "created": 1790037946910
+      },
+      "cost": 0,
+      "id": "ses_f396c8e26ffe10TYfERJkbRNOa",
+      "revert": null,
+      "location": {
+        "directory": "<PROFILE>/project пробел %#/scope 3"
+      },
+      "permissions": [
+        {
+          "resource": "*",
+          "effect": "ask",
+          "action": "scope_fixture"
+        }
+      ],
+      "directory": "<PROFILE>/project пробел %#/scope 3"
+    }
+  ],
+  "three_projects": true,
+  "owner_permission": true,
+  "stale_deleted_callback_ignored": true
+}

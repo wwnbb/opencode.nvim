@@ -50,6 +50,11 @@ local permission_state = require("opencode.permission.state")
 local edit_state = require("opencode.edit.state")
 local apply_widget_focus_cursor
 
+-- Headless consumers inspect buffers; screen redraw has no target there.
+local function redraw()
+	if #vim.api.nvim_list_uis() > 0 then vim.cmd("redraw") end
+end
+
 -- ─── Configuration ────────────────────────────────────────────────────────────
 
 local defaults = {
@@ -526,6 +531,11 @@ function M.create()
 			if not preserve_cache or (changed_session and reason ~= "child_navigation") then
 				state.session_stack = {}
 			end
+			if changed_session and state.winid and vim.api.nvim_win_is_valid(state.winid) then
+				vim.api.nvim_win_call(state.winid, function()
+					vim.fn.winrestview({ topline = 1, leftcol = 0, skipcol = 0 })
+				end)
+			end
 			chat_todos.update_window()
 		end)
 	end)
@@ -754,6 +764,14 @@ function M.close()
 		state.layout:unmount()
 	else
 		if state.winid and vim.api.nvim_win_is_valid(state.winid) then
+			local normal_windows = 0
+			for _, winid in ipairs(vim.api.nvim_tabpage_list_wins(vim.api.nvim_win_get_tabpage(state.winid))) do
+				if vim.api.nvim_win_get_config(winid).relative == "" then normal_windows = normal_windows + 1 end
+			end
+			if normal_windows == 1 then
+				-- Closing a diff can leave chat as the tab's only normal window.
+				vim.api.nvim_win_call(state.winid, function() vim.cmd("leftabove new") end)
+			end
 			vim.api.nvim_win_close(state.winid, true)
 		end
 	end
@@ -946,21 +964,20 @@ function M.update_stream_part_block(session_id, message_id, part_id, opts)
 
 	local function finish_stream_update()
 		if apply_widget_focus_cursor and apply_widget_focus_cursor() then
-			vim.cmd("redraw")
+			redraw()
 			return true
 		end
 
 		if restore_widget_cursor_context(widget_cursor) then
-			vim.cmd("redraw")
+			redraw()
 			return true
 		end
 
 		if should_scroll and state.visible and state.winid and vim.api.nvim_win_is_valid(state.winid) then
-			local buf_lines = vim.api.nvim_buf_line_count(state.bufnr)
-			vim.api.nvim_win_set_cursor(state.winid, { buf_lines, 0 })
+			chat_cursor.scroll_to_bottom()
 		end
 
-		vim.cmd("redraw")
+		redraw()
 		return true
 	end
 
@@ -1266,7 +1283,7 @@ function M.do_render()
 			state.last_render_highlight_signature = nil
 			state.render_highlights_dirty_start = nil
 			if apply_widget_focus_cursor() then
-				vim.cmd("redraw")
+				redraw()
 			end
 			mark_render_applied()
 			return
@@ -1282,23 +1299,22 @@ function M.do_render()
 			vim.bo[state.bufnr].modifiable = false
 
 			if apply_widget_focus_cursor() then
-				vim.cmd("redraw")
+				redraw()
 				mark_render_applied()
 				return
 			end
 
 			if restore_widget_cursor_context(widget_cursor) then
-				vim.cmd("redraw")
+				redraw()
 				mark_render_applied()
 				return
 			end
 
 			if should_scroll and state.visible and state.winid and vim.api.nvim_win_is_valid(state.winid) then
-				local buf_lines = vim.api.nvim_buf_line_count(state.bufnr)
-				vim.api.nvim_win_set_cursor(state.winid, { buf_lines, 0 })
+				chat_cursor.scroll_to_bottom()
 			end
 
-			vim.cmd("redraw")
+			redraw()
 			mark_render_applied()
 			return
 		end
@@ -1318,7 +1334,7 @@ function M.do_render()
 					apply_render_highlights(state.render_highlights_dirty_start or 0)
 				end
 				if apply_widget_focus_cursor() then
-					vim.cmd("redraw")
+					redraw()
 				end
 				mark_render_applied()
 				return
@@ -1343,23 +1359,22 @@ function M.do_render()
 		vim.bo[state.bufnr].modifiable = false
 
 		if apply_widget_focus_cursor() then
-			vim.cmd("redraw")
+			redraw()
 			mark_render_applied()
 			return
 		end
 
 		if restore_widget_cursor_context(widget_cursor) then
-			vim.cmd("redraw")
+			redraw()
 			mark_render_applied()
 			return
 		end
 
 		if should_scroll and state.visible and state.winid and vim.api.nvim_win_is_valid(state.winid) then
-			local buf_lines = vim.api.nvim_buf_line_count(state.bufnr)
-			vim.api.nvim_win_set_cursor(state.winid, { buf_lines, 0 })
+			chat_cursor.scroll_to_bottom()
 		end
 
-		vim.cmd("redraw")
+		redraw()
 		mark_render_applied()
 	end, function(err)
 		return err

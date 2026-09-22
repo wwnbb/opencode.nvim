@@ -1,0 +1,25 @@
+{
+  "location": {
+    "directory": "<PROFILE>/project пробел %#"
+  },
+  "data": [
+    {
+      "id": "groq",
+      "integrationID": "groq",
+      "name": "Groq",
+      "activation": "auto",
+      "package": "@opencode/ai/providers/groq"
+    },
+    {
+      "id": "opencode",
+      "integrationID": "opencode",
+      "name": "OpenCode Zen",
+      "activation": "enabled",
+      "package": "@opencode/ai/providers/openai-compatible",
+      "settings": {
+        "apiKey": "public",
+        "baseURL": "https://opencode.ai/zen/v1"
+      }
+    }
+  ]
+}

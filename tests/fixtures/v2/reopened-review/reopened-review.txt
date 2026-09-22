@@ -1,0 +1,40 @@
+                                       │ ○ Reopened native...                                                           
+~                                      │▏                                                                               
+~                                      │▏  # Edit 7 files +4 -4 (partial)                                               
+~                                      │▏                                                                               
+~                                      │▏  ✓ M accepted.txt  +1 -1                                                      
+~                                      │▏  ✗ M rejected.txt  +0 -0                                                      
+~                                      │▏  ◆ M manual.txt  +1 -1                                                        
+~                                      │▏  ✓ A added.txt  +1 -0                                                         
+~                                      │▏  ✓ D deleted.txt  +0 -1                                                       
+~                                      │▏  ✓ R moved.txt -> renamed.txt  +1 -1                                          
+~                                      │▏  ◆ M bom.txt  +0 -0                                                           
+~                                      │▏                                                                               
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │Thinking: The patch was applied with some rejections and partial results. Let   
+~                                      │me summarize for the user:                                                      
+~                                      │                                                                                
+~                                      │          - **accepted.txt**: Modified ✓                                        
+~                                      │          - **rejected.txt**: Rejected ✗                                        
+~                                      │          - **manual.txt**: Partial⚠️                                           
+~                                      │          - **added.txt**: Added ✓                                              
+~                                      │          - **deleted.txt**: Deleted ✓                                          
+~                                      │          - **moved.txt → renamed.txt**: Renamed ✓                              
+~                                      │          - **bom.txt**: Partial ⚠️                                             
+~                                      │                                                                                
+~                                      │          I should reply briefly as requested.                                  
+~                                      │                                                                                
+~                                      │Patch applied with partial results:                                             
+~                                      │                                                                                
+~                                      │| File | Status |                                                               
+~                                      │|---|---|                                                                       
+~                                      │| accepted.txt | ✓ Modified |                                                   
+~                                      │| rejected.txt | ✗ Rejected |                                                   
+~                                      │| manual.txt | ⚠️ Partial |                                                     
+~                                      │| added.txt | ✓ Added |                                                         
+~                                      │| deleted.txt | ✓ Deleted |                                                     
+~                                      │| moved.txt → renamed.txt | ✓ Renamed |                                         
+~                                      │| bom.txt | ⚠️ Partial |                                                        
+[No Name]            0,0-1          All opencode [-]                                                  36,1           92%
+OpenCode connected (server v2.0.11)                                                                                     

@@ -1,0 +1,828 @@
+{
+  "version": "2.0.11",
+  "cancelled": "msg_0c6baf87e001AyHLTgZnSBeDa8",
+  "steered": "msg_0c6bb205b001slheq03lPxzNIG",
+  "reconnect_preserves_queue": true,
+  "history": [
+    {
+      "parts": [
+        {
+          "content_order": 1,
+          "ordinal": 0,
+          "sessionID": "ses_f394528ecffeS0Uw7KyoBElC5R",
+          "messageID": "msg_0c6bad74b001nhak5eLjQZ73yh",
+          "id": "v2:30:ses_f394528ecffeS0Uw7KyoBElC5R:30:msg_0c6bad74b001nhak5eLjQZ73yh:text:0",
+          "type": "text",
+          "text": "Call direct top-level rg once with pattern=\"needle\" and path=\"<PROFILE>/project пробел %#/queue.fifo\". This is an intentionally waiting FIFO fixture. Do not use other tools, do not change the path, do not retry. After it completes reply FIFO_DONE.",
+          "protocol": "v2"
+        }
+      ],
+      "info": {
+        "role": "user",
+        "_v2": {
+          "id": "msg_0c6bad74b001nhak5eLjQZ73yh",
+          "type": "user",
+          "time": {
+            "created": 1790040528864
+          },
+          "text": "Call direct top-level rg once with pattern=\"needle\" and path=\"<PROFILE>/project пробел %#/queue.fifo\". This is an intentionally waiting FIFO fixture. Do not use other tools, do not change the path, do not retry. After it completes reply FIFO_DONE."
+        },
+        "time": {
+          "created": 1790040528864
+        },
+        "protocol": "v2",
+        "sessionID": "ses_f394528ecffeS0Uw7KyoBElC5R",
+        "id": "msg_0c6bad74b001nhak5eLjQZ73yh",
+        "type": "user",
+        "text": "Call direct top-level rg once with pattern=\"needle\" and path=\"<PROFILE>/project пробел %#/queue.fifo\". This is an intentionally waiting FIFO fixture. Do not use other tools, do not change the path, do not retry. After it completes reply FIFO_DONE.",
+        "hidden": false
+      }
+    },
+    {
+      "parts": [
+        {
+          "content_order": 1,
+          "messageID": "msg_0c6bad77e001rz2FD1SvdbIwfh",
+          "protocol": "v2",
+          "synthetic": true,
+          "sessionID": "ses_f394528ecffeS0Uw7KyoBElC5R",
+          "id": "v2:30:ses_f394528ecffeS0Uw7KyoBElC5R:30:msg_0c6bad77e001rz2FD1SvdbIwfh:text:0",
+          "type": "text",
+          "text": "Agent: build",
+          "ordinal": 0
+        }
+      ],
+      "info": {
+        "role": "system",
+        "_v2": {
+          "id": "msg_0c6bad77e001rz2FD1SvdbIwfh",
+          "type": "agent-switched",
+          "time": {
+            "created": 1790040528766
+          },
+          "agent": "build"
+        },
+        "time": {
+          "created": 1790040528766
+        },
+        "protocol": "v2",
+        "sessionID": "ses_f394528ecffeS0Uw7KyoBElC5R",
+        "id": "msg_0c6bad77e001rz2FD1SvdbIwfh",
+        "type": "agent-switched",
+        "hidden": false,
+        "agent": "build"
+      }
+    },
+    {
+      "parts": [
+        {
+          "content_order": 1,
+          "messageID": "msg_0c6bad7f7001BJEOdyrb3mMLAQ",
+          "protocol": "v2",
+          "ordinal": 0,
+          "sessionID": "ses_f394528ecffeS0Uw7KyoBElC5R",
+          "time": {
+            "completed": 1790040537087,
+            "created": 1790040532964
+          },
+          "id": "v2:30:ses_f394528ecffeS0Uw7KyoBElC5R:30:msg_0c6bad7f7001BJEOdyrb3mMLAQ:reasoning:0",
+          "type": "reasoning",
+          "text": "The user wants me to call the `rg` tool with pattern=\"needle\" and path=\"<PROFILE>/project пробел %#/queue.fifo\".",
+          "state": {
+            "reasoningField": "reasoning_content",
+            "reasoningDetails": [
+              {
+                "format": "unknown",
+                "type": "reasoning.text",
+                "text": "The user wants me to call the `rg` tool with pattern=\"needle\" and path=\"<PROFILE>/project пробел %#/queue.fifo\".",
+                "index": 0
+              }
+            ]
+          }
+        },
+        {
+          "content_order": 2,
+          "raw_tool": "rg",
+          "messageID": "msg_0c6bad7f7001BJEOdyrb3mMLAQ",
+          "tool": "rg",
+          "time": {
+            "ran": 1790040537090,
+            "completed": 1790040537260,
+            "created": 1790040535093
+          },
+          "protocol": "v2",
+          "ordinal": 0,
+          "callID": "call_ad0feb5d352b473ea1874173",
+          "sessionID": "ses_f394528ecffeS0Uw7KyoBElC5R",
+          "name": "rg",
+          "id": "v2:30:ses_f394528ecffeS0Uw7KyoBElC5R:30:msg_0c6bad7f7001BJEOdyrb3mMLAQ:tool:call_ad0feb5d352b473ea1874173",
+          "type": "tool",
+          "state": {
+            "input": {
+              "path": "<PROFILE>/project пробел %#/queue.fifo",
+              "pattern": "needle"
+            },
+            "output": "",
+            "files": [],
+            "error": "Tool execution interrupted",
+            "native_error": {
+              "type": "aborted",
+              "message": "Tool execution interrupted"
+            },
+            "time": {
+              "start": 1790040537090,
+              "end": 1790040537260
+            },
+            "status": "error"
+          },
+          "executed": false
+        }
+      ],
+      "info": {
+        "error_message": "Step interrupted",
+        "_v2": {
+          "model": {
+            "id": "mimo-v2.5-free",
+            "variant": "default",
+            "providerID": "opencode"
+          },
+          "snapshot": {
+            "end": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+            "start": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+            "files": []
+          },
+          "time": {
+            "streamed": 1790040537092,
+            "completed": 1790040537285,
+            "created": 1790040528992
+          },
+          "finish": "error",
+          "agent": "build",
+          "cost": 0,
+          "rawFinish": "tool_calls",
+          "tokens": {
+            "reasoning": 70,
+            "input": 9169,
+            "cache": {
+              "write": 0,
+              "read": 0
+            },
+            "output": 78
+          },
+          "error": {
+            "type": "aborted",
+            "message": "Step interrupted"
+          },
+          "type": "assistant",
+          "id": "msg_0c6bad7f7001BJEOdyrb3mMLAQ",
+          "content": [
+            {
+              "text": "The user wants me to call the `rg` tool with pattern=\"needle\" and path=\"<PROFILE>/project пробел %#/queue.fifo\".",
+              "type": "reasoning",
+              "time": {
+                "completed": 1790040537087,
+                "created": 1790040532964
+              },
+              "state": {
+                "reasoningField": "reasoning_content",
+                "reasoningDetails": [
+                  {
+                    "format": "unknown",
+                    "type": "reasoning.text",
+                    "text": "The user wants me to call the `rg` tool with pattern=\"needle\" and path=\"<PROFILE>/project пробел %#/queue.fifo\".",
+                    "index": 0
+                  }
+                ]
+              }
+            },
+            {
+              "executed": false,
+              "state": {
+                "error": {
+                  "type": "aborted",
+                  "message": "Tool execution interrupted"
+                },
+                "input": {
+                  "path": "<PROFILE>/project пробел %#/queue.fifo",
+                  "pattern": "needle"
+                },
+                "status": "error"
+              },
+              "id": "call_ad0feb5d352b473ea1874173",
+              "type": "tool",
+              "time": {
+                "ran": 1790040537090,
+                "completed": 1790040537260,
+                "created": 1790040535093
+              },
+              "name": "rg"
+            }
+          ]
+        },
+        "time": {
+          "streamed": 1790040537092,
+          "completed": 1790040537285,
+          "created": 1790040528992
+        },
+        "protocol": "v2",
+        "cost": 0,
+        "type": "assistant",
+        "providerID": "opencode",
+        "modelID": "mimo-v2.5-free",
+        "variant": "default",
+        "role": "assistant",
+        "snapshot": {
+          "end": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+          "start": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+          "files": []
+        },
+        "hidden": false,
+        "finish": "error",
+        "content": [
+          {
+            "text": "The user wants me to call the `rg` tool with pattern=\"needle\" and path=\"<PROFILE>/project пробел %#/queue.fifo\".",
+            "type": "reasoning",
+            "time": {
+              "completed": 1790040537087,
+              "created": 1790040532964
+            },
+            "state": {
+              "reasoningField": "reasoning_content",
+              "reasoningDetails": [
+                {
+                  "format": "unknown",
+                  "type": "reasoning.text",
+                  "text": "The user wants me to call the `rg` tool with pattern=\"needle\" and path=\"<PROFILE>/project пробел %#/queue.fifo\".",
+                  "index": 0
+                }
+              ]
+            }
+          },
+          {
+            "executed": false,
+            "state": {
+              "error": {
+                "type": "aborted",
+                "message": "Tool execution interrupted"
+              },
+              "input": {
+                "path": "<PROFILE>/project пробел %#/queue.fifo",
+                "pattern": "needle"
+              },
+              "status": "error"
+            },
+            "id": "call_ad0feb5d352b473ea1874173",
+            "type": "tool",
+            "time": {
+              "ran": 1790040537090,
+              "completed": 1790040537260,
+              "created": 1790040535093
+            },
+            "name": "rg"
+          }
+        ],
+        "id": "msg_0c6bad7f7001BJEOdyrb3mMLAQ",
+        "sessionID": "ses_f394528ecffeS0Uw7KyoBElC5R",
+        "tokens": {
+          "reasoning": 70,
+          "input": 9169,
+          "cache": {
+            "write": 0,
+            "read": 0
+          },
+          "output": 78
+        },
+        "rawFinish": "tool_calls",
+        "error": {
+          "type": "aborted",
+          "message": "Step interrupted"
+        },
+        "agent": "build",
+        "model": {
+          "id": "mimo-v2.5-free",
+          "variant": "default",
+          "providerID": "opencode"
+        }
+      }
+    },
+    {
+      "parts": [],
+      "info": {
+        "role": "system",
+        "_v2": {
+          "id": "msg_0c6baf8c7002p2QI3Ox0uKuRmp",
+          "type": "idle",
+          "time": {
+            "created": 1790040537287
+          },
+          "outcome": "interrupted"
+        },
+        "time": {
+          "created": 1790040537287
+        },
+        "protocol": "v2",
+        "sessionID": "ses_f394528ecffeS0Uw7KyoBElC5R",
+        "id": "msg_0c6baf8c7002p2QI3Ox0uKuRmp",
+        "type": "idle",
+        "hidden": true,
+        "outcome": "interrupted"
+      }
+    },
+    {
+      "parts": [
+        {
+          "content_order": 1,
+          "ordinal": 0,
+          "sessionID": "ses_f394528ecffeS0Uw7KyoBElC5R",
+          "messageID": "msg_0c6bafbbe001v1fkY782UgVr8I",
+          "id": "v2:30:ses_f394528ecffeS0Uw7KyoBElC5R:30:msg_0c6bafbbe001v1fkY782UgVr8I:text:0",
+          "type": "text",
+          "text": "Call direct top-level rg once with pattern=\"needle\" and path=\"<PROFILE>/project пробел %#/queue.fifo\". This is an intentionally waiting FIFO fixture. Do not use other tools, do not change the path, do not retry. After it completes reply FIFO_DONE.",
+          "protocol": "v2"
+        }
+      ],
+      "info": {
+        "role": "user",
+        "_v2": {
+          "id": "msg_0c6bafbbe001v1fkY782UgVr8I",
+          "type": "user",
+          "time": {
+            "created": 1790040538088
+          },
+          "text": "Call direct top-level rg once with pattern=\"needle\" and path=\"<PROFILE>/project пробел %#/queue.fifo\". This is an intentionally waiting FIFO fixture. Do not use other tools, do not change the path, do not retry. After it completes reply FIFO_DONE."
+        },
+        "time": {
+          "created": 1790040538088
+        },
+        "protocol": "v2",
+        "sessionID": "ses_f394528ecffeS0Uw7KyoBElC5R",
+        "id": "msg_0c6bafbbe001v1fkY782UgVr8I",
+        "type": "user",
+        "text": "Call direct top-level rg once with pattern=\"needle\" and path=\"<PROFILE>/project пробел %#/queue.fifo\". This is an intentionally waiting FIFO fixture. Do not use other tools, do not change the path, do not retry. After it completes reply FIFO_DONE.",
+        "hidden": false
+      }
+    },
+    {
+      "parts": [
+        {
+          "content_order": 1,
+          "messageID": "msg_0c6bafbec001lYZIem9pg9OiWF",
+          "protocol": "v2",
+          "ordinal": 0,
+          "sessionID": "ses_f394528ecffeS0Uw7KyoBElC5R",
+          "time": {
+            "completed": 1790040547330,
+            "created": 1790040540804
+          },
+          "id": "v2:30:ses_f394528ecffeS0Uw7KyoBElC5R:30:msg_0c6bafbec001lYZIem9pg9OiWF:reasoning:0",
+          "type": "reasoning",
+          "text": "The user wants me to call the `rg` tool with pattern=\"needle\" and path=\"<PROFILE>/project пробел %#/queue.fifo\". They say it's a FIFO fixture that is \"intentionally waiting\" - meaning it will block until something writes to it.\n\nThe user says \"Do not use other tools, do not change the path, do not retry. After it completes reply FIFO_DONE.\"\n\nThe last call was interrupted/aborted. The user is asking me to call it again. Let me do it.",
+          "state": {
+            "reasoningField": "reasoning_content",
+            "reasoningDetails": [
+              {
+                "format": "unknown",
+                "type": "reasoning.text",
+                "text": "The user wants me to call the `rg` tool with pattern=\"needle\" and path=\"<PROFILE>/project пробел %#/queue.fifo\". They say it's a FIFO fixture that is \"intentionally waiting\" - meaning it will block until something writes to it.\n\nThe user says \"Do not use other tools, do not change the path, do not retry. After it completes reply FIFO_DONE.\"\n\nThe last call was interrupted/aborted. The user is asking me to call it again. Let me do it.",
+                "index": 0
+              }
+            ]
+          }
+        },
+        {
+          "content_order": 2,
+          "raw_tool": "rg",
+          "messageID": "msg_0c6bafbec001lYZIem9pg9OiWF",
+          "tool": "rg",
+          "time": {
+            "ran": 1790040547333,
+            "completed": 1790040547439,
+            "created": 1790040545490
+          },
+          "protocol": "v2",
+          "ordinal": 0,
+          "callID": "call_1e026524eb4a4f7caa50d614",
+          "sessionID": "ses_f394528ecffeS0Uw7KyoBElC5R",
+          "name": "rg",
+          "id": "v2:30:ses_f394528ecffeS0Uw7KyoBElC5R:30:msg_0c6bafbec001lYZIem9pg9OiWF:tool:call_1e026524eb4a4f7caa50d614",
+          "type": "tool",
+          "state": {
+            "content": [
+              {
+                "text": "1:needle",
+                "type": "text"
+              }
+            ],
+            "status": "completed",
+            "output": "1:needle",
+            "metadata": {
+              "exitCode": 0,
+              "truncated": false
+            },
+            "files": [],
+            "time": {
+              "start": 1790040547333,
+              "end": 1790040547439
+            },
+            "input": {
+              "path": "<PROFILE>/project пробел %#/queue.fifo",
+              "pattern": "needle"
+            }
+          },
+          "executed": false
+        }
+      ],
+      "info": {
+        "_v2": {
+          "model": {
+            "id": "mimo-v2.5-free",
+            "variant": "default",
+            "providerID": "opencode"
+          },
+          "snapshot": {
+            "end": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+            "start": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+            "files": []
+          },
+          "time": {
+            "streamed": 1790040547334,
+            "completed": 1790040547462,
+            "created": 1790040538127
+          },
+          "finish": "tool-calls",
+          "content": [
+            {
+              "text": "The user wants me to call the `rg` tool with pattern=\"needle\" and path=\"<PROFILE>/project пробел %#/queue.fifo\". They say it's a FIFO fixture that is \"intentionally waiting\" - meaning it will block until something writes to it.\n\nThe user says \"Do not use other tools, do not change the path, do not retry. After it completes reply FIFO_DONE.\"\n\nThe last call was interrupted/aborted. The user is asking me to call it again. Let me do it.",
+              "type": "reasoning",
+              "time": {
+                "completed": 1790040547330,
+                "created": 1790040540804
+              },
+              "state": {
+                "reasoningField": "reasoning_content",
+                "reasoningDetails": [
+                  {
+                    "format": "unknown",
+                    "type": "reasoning.text",
+                    "text": "The user wants me to call the `rg` tool with pattern=\"needle\" and path=\"<PROFILE>/project пробел %#/queue.fifo\". They say it's a FIFO fixture that is \"intentionally waiting\" - meaning it will block until something writes to it.\n\nThe user says \"Do not use other tools, do not change the path, do not retry. After it completes reply FIFO_DONE.\"\n\nThe last call was interrupted/aborted. The user is asking me to call it again. Let me do it.",
+                    "index": 0
+                  }
+                ]
+              }
+            },
+            {
+              "executed": false,
+              "state": {
+                "status": "completed",
+                "input": {
+                  "path": "<PROFILE>/project пробел %#/queue.fifo",
+                  "pattern": "needle"
+                },
+                "content": [
+                  {
+                    "text": "1:needle",
+                    "type": "text"
+                  }
+                ],
+                "metadata": {
+                  "exitCode": 0,
+                  "truncated": false
+                }
+              },
+              "id": "call_1e026524eb4a4f7caa50d614",
+              "type": "tool",
+              "time": {
+                "ran": 1790040547333,
+                "completed": 1790040547439,
+                "created": 1790040545490
+              },
+              "name": "rg"
+            }
+          ],
+          "agent": "build",
+          "tokens": {
+            "reasoning": 147,
+            "input": 362,
+            "cache": {
+              "write": 0,
+              "read": 9152
+            },
+            "output": 78
+          },
+          "id": "msg_0c6bafbec001lYZIem9pg9OiWF",
+          "type": "assistant",
+          "rawFinish": "tool_calls",
+          "cost": 0
+        },
+        "hidden": false,
+        "protocol": "v2",
+        "content": [
+          {
+            "text": "The user wants me to call the `rg` tool with pattern=\"needle\" and path=\"<PROFILE>/project пробел %#/queue.fifo\". They say it's a FIFO fixture that is \"intentionally waiting\" - meaning it will block until something writes to it.\n\nThe user says \"Do not use other tools, do not change the path, do not retry. After it completes reply FIFO_DONE.\"\n\nThe last call was interrupted/aborted. The user is asking me to call it again. Let me do it.",
+            "type": "reasoning",
+            "time": {
+              "completed": 1790040547330,
+              "created": 1790040540804
+            },
+            "state": {
+              "reasoningField": "reasoning_content",
+              "reasoningDetails": [
+                {
+                  "format": "unknown",
+                  "type": "reasoning.text",
+                  "text": "The user wants me to call the `rg` tool with pattern=\"needle\" and path=\"<PROFILE>/project пробел %#/queue.fifo\". They say it's a FIFO fixture that is \"intentionally waiting\" - meaning it will block until something writes to it.\n\nThe user says \"Do not use other tools, do not change the path, do not retry. After it completes reply FIFO_DONE.\"\n\nThe last call was interrupted/aborted. The user is asking me to call it again. Let me do it.",
+                  "index": 0
+                }
+              ]
+            }
+          },
+          {
+            "executed": false,
+            "state": {
+              "status": "completed",
+              "input": {
+                "path": "<PROFILE>/project пробел %#/queue.fifo",
+                "pattern": "needle"
+              },
+              "content": [
+                {
+                  "text": "1:needle",
+                  "type": "text"
+                }
+              ],
+              "metadata": {
+                "exitCode": 0,
+                "truncated": false
+              }
+            },
+            "id": "call_1e026524eb4a4f7caa50d614",
+            "type": "tool",
+            "time": {
+              "ran": 1790040547333,
+              "completed": 1790040547439,
+              "created": 1790040545490
+            },
+            "name": "rg"
+          }
+        ],
+        "type": "assistant",
+        "providerID": "opencode",
+        "modelID": "mimo-v2.5-free",
+        "variant": "default",
+        "role": "assistant",
+        "snapshot": {
+          "end": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+          "start": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+          "files": []
+        },
+        "agent": "build",
+        "cost": 0,
+        "rawFinish": "tool_calls",
+        "sessionID": "ses_f394528ecffeS0Uw7KyoBElC5R",
+        "tokens": {
+          "reasoning": 147,
+          "input": 362,
+          "cache": {
+            "write": 0,
+            "read": 9152
+          },
+          "output": 78
+        },
+        "id": "msg_0c6bafbec001lYZIem9pg9OiWF",
+        "finish": "tool-calls",
+        "time": {
+          "streamed": 1790040547334,
+          "completed": 1790040547462,
+          "created": 1790040538127
+        },
+        "model": {
+          "id": "mimo-v2.5-free",
+          "variant": "default",
+          "providerID": "opencode"
+        }
+      }
+    },
+    {
+      "parts": [
+        {
+          "content_order": 1,
+          "ordinal": 0,
+          "sessionID": "ses_f394528ecffeS0Uw7KyoBElC5R",
+          "messageID": "msg_0c6bb205b001slheq03lPxzNIG",
+          "id": "v2:30:ses_f394528ecffeS0Uw7KyoBElC5R:30:msg_0c6bb205b001slheq03lPxzNIG:text:0",
+          "type": "text",
+          "text": "Additional instruction: after the pending rg completes, reply exactly STEERING_APPLIED. Do not call any more tools.",
+          "protocol": "v2"
+        }
+      ],
+      "info": {
+        "role": "user",
+        "_v2": {
+          "id": "msg_0c6bb205b001slheq03lPxzNIG",
+          "type": "user",
+          "time": {
+            "created": 1790040547467
+          },
+          "text": "Additional instruction: after the pending rg completes, reply exactly STEERING_APPLIED. Do not call any more tools."
+        },
+        "time": {
+          "created": 1790040547467
+        },
+        "protocol": "v2",
+        "sessionID": "ses_f394528ecffeS0Uw7KyoBElC5R",
+        "id": "msg_0c6bb205b001slheq03lPxzNIG",
+        "type": "user",
+        "text": "Additional instruction: after the pending rg completes, reply exactly STEERING_APPLIED. Do not call any more tools.",
+        "hidden": false
+      }
+    },
+    {
+      "parts": [
+        {
+          "content_order": 1,
+          "messageID": "msg_0c6bb208e0010KCdKzp5y1HG8o",
+          "protocol": "v2",
+          "ordinal": 0,
+          "sessionID": "ses_f394528ecffeS0Uw7KyoBElC5R",
+          "time": {
+            "completed": 1790040551911,
+            "created": 1790040551120
+          },
+          "id": "v2:30:ses_f394528ecffeS0Uw7KyoBElC5R:30:msg_0c6bb208e0010KCdKzp5y1HG8o:reasoning:0",
+          "type": "reasoning",
+          "text": "The user wants me to reply exactly \"STEERING_APPLIED\" after the rg completes.",
+          "state": {
+            "reasoningField": "reasoning_content",
+            "reasoningDetails": [
+              {
+                "format": "unknown",
+                "type": "reasoning.text",
+                "text": "The user wants me to reply exactly \"STEERING_APPLIED\" after the rg completes.",
+                "index": 0
+              }
+            ]
+          }
+        },
+        {
+          "content_order": 2,
+          "ordinal": 0,
+          "sessionID": "ses_f394528ecffeS0Uw7KyoBElC5R",
+          "messageID": "msg_0c6bb208e0010KCdKzp5y1HG8o",
+          "id": "v2:30:ses_f394528ecffeS0Uw7KyoBElC5R:30:msg_0c6bb208e0010KCdKzp5y1HG8o:text:0",
+          "type": "text",
+          "text": "STEERING_APPLIED",
+          "protocol": "v2"
+        }
+      ],
+      "info": {
+        "_v2": {
+          "model": {
+            "id": "mimo-v2.5-free",
+            "variant": "default",
+            "providerID": "opencode"
+          },
+          "snapshot": {
+            "end": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+            "start": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+            "files": []
+          },
+          "time": {
+            "streamed": 1790040551914,
+            "completed": 1790040551934,
+            "created": 1790040547496
+          },
+          "finish": "stop",
+          "content": [
+            {
+              "text": "The user wants me to reply exactly \"STEERING_APPLIED\" after the rg completes.",
+              "type": "reasoning",
+              "time": {
+                "completed": 1790040551911,
+                "created": 1790040551120
+              },
+              "state": {
+                "reasoningField": "reasoning_content",
+                "reasoningDetails": [
+                  {
+                    "format": "unknown",
+                    "type": "reasoning.text",
+                    "text": "The user wants me to reply exactly \"STEERING_APPLIED\" after the rg completes.",
+                    "index": 0
+                  }
+                ]
+              }
+            },
+            {
+              "text": "STEERING_APPLIED",
+              "type": "text"
+            }
+          ],
+          "agent": "build",
+          "tokens": {
+            "reasoning": 19,
+            "input": 309,
+            "cache": {
+              "write": 0,
+              "read": 9472
+            },
+            "output": 6
+          },
+          "id": "msg_0c6bb208e0010KCdKzp5y1HG8o",
+          "type": "assistant",
+          "rawFinish": "stop",
+          "cost": 0
+        },
+        "hidden": false,
+        "protocol": "v2",
+        "content": [
+          {
+            "text": "The user wants me to reply exactly \"STEERING_APPLIED\" after the rg completes.",
+            "type": "reasoning",
+            "time": {
+              "completed": 1790040551911,
+              "created": 1790040551120
+            },
+            "state": {
+              "reasoningField": "reasoning_content",
+              "reasoningDetails": [
+                {
+                  "format": "unknown",
+                  "type": "reasoning.text",
+                  "text": "The user wants me to reply exactly \"STEERING_APPLIED\" after the rg completes.",
+                  "index": 0
+                }
+              ]
+            }
+          },
+          {
+            "text": "STEERING_APPLIED",
+            "type": "text"
+          }
+        ],
+        "type": "assistant",
+        "providerID": "opencode",
+        "modelID": "mimo-v2.5-free",
+        "variant": "default",
+        "role": "assistant",
+        "snapshot": {
+          "end": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+          "start": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+          "files": []
+        },
+        "agent": "build",
+        "cost": 0,
+        "rawFinish": "stop",
+        "sessionID": "ses_f394528ecffeS0Uw7KyoBElC5R",
+        "tokens": {
+          "reasoning": 19,
+          "input": 309,
+          "cache": {
+            "write": 0,
+            "read": 9472
+          },
+          "output": 6
+        },
+        "id": "msg_0c6bb208e0010KCdKzp5y1HG8o",
+        "finish": "stop",
+        "time": {
+          "streamed": 1790040551914,
+          "completed": 1790040551934,
+          "created": 1790040547496
+        },
+        "model": {
+          "id": "mimo-v2.5-free",
+          "variant": "default",
+          "providerID": "opencode"
+        }
+      }
+    },
+    {
+      "parts": [],
+      "info": {
+        "role": "system",
+        "_v2": {
+          "id": "msg_0c6bb320100177daGikS9sZJ9d",
+          "type": "idle",
+          "time": {
+            "created": 1790040551937
+          },
+          "outcome": "succeeded"
+        },
+        "time": {
+          "created": 1790040551937
+        },
+        "protocol": "v2",
+        "sessionID": "ses_f394528ecffeS0Uw7KyoBElC5R",
+        "id": "msg_0c6bb320100177daGikS9sZJ9d",
+        "type": "idle",
+        "hidden": true,
+        "outcome": "succeeded"
+      }
+    }
+  ],
+  "retained": "msg_0c6baf8a1001pa1p3pcpBFvJ4M",
+  "explicit_steering": true,
+  "keyboard_queue": true,
+  "palette_cancel": true,
+  "interrupt_preserves_queue": true
+}

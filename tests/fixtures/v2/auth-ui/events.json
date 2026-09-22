@@ -1,0 +1,205 @@
+[
+  {
+    "id": "evt_0c6c65765001N21ssr6DkFw0pk",
+    "type": "server.connected",
+    "data": {}
+  },
+  {
+    "id": "evt_0c6c6578c001Bzr7Hh1iueUE3Y",
+    "created": 1790041282444,
+    "type": "worktree.resolved",
+    "data": {
+      "projectID": "global",
+      "directory": "<PROFILE>/project пробел %#",
+      "previous": "global"
+    },
+    "durable": {
+      "aggregateID": "global",
+      "seq": 0,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c6c65cf3001EpwWH2HRhy3fbe",
+    "created": 1790041283827,
+    "type": "models-dev.refreshed",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {}
+  },
+  {
+    "id": "evt_0c6c65dac001ZNHQ51GqOedPF2",
+    "created": 1790041284012,
+    "type": "integration.updated",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {}
+  },
+  {
+    "id": "evt_0c6c65daf0013dVX3FShydx7v5",
+    "created": 1790041284015,
+    "type": "provider.updated",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {}
+  },
+  {
+    "id": "evt_0c6c65db40017f7ElIqYj6kbXA",
+    "created": 1790041284020,
+    "type": "model.updated",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {}
+  },
+  {
+    "id": "evt_0c6c65de0001sYpHMAwnem4bz4",
+    "created": 1790041284064,
+    "type": "vcs.branch.updated",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "branch": "master"
+    }
+  },
+  {
+    "id": "evt_0c6c65de1001M1EvsKC6tqMYqS",
+    "created": 1790041284065,
+    "type": "agent.updated",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {}
+  },
+  {
+    "id": "evt_0c6c65de1002qBoPGgOoXvlej6",
+    "created": 1790041284065,
+    "type": "command.updated",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {}
+  },
+  {
+    "id": "evt_0c6c65de20018bDet4YzgxY4tx",
+    "created": 1790041284066,
+    "type": "skill.updated",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {}
+  },
+  {
+    "id": "evt_0c6c65de4001fPkNG0vrFfxdDF",
+    "created": 1790041284068,
+    "type": "websearch.updated",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {}
+  },
+  {
+    "id": "evt_0c6c65de5002JYXrnPQc33BoVh",
+    "created": 1790041284069,
+    "type": "reference.updated",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {}
+  },
+  {
+    "id": "evt_0c6c65df1001hxzYn7GS5Gi6Co",
+    "created": 1790041284081,
+    "type": "plugin.updated",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {}
+  },
+  {
+    "id": "evt_0c6c65f190016AsycTmZp5k4RL",
+    "created": 1790041284377,
+    "type": "credential.updated",
+    "data": {}
+  },
+  {
+    "id": "evt_0c6c65f1b001SqiqvV3FolEzYd",
+    "created": 1790041284379,
+    "type": "credential.switched",
+    "data": {
+      "integrationID": "groq",
+      "credentialID": "cred_0c6c65f17001TrLhPL4u44QGBC"
+    }
+  },
+  {
+    "id": "evt_0c6c65fa0002lva4W0mqyHhOjJ",
+    "created": 1790041284512,
+    "type": "credential.updated",
+    "data": {}
+  },
+  {
+    "id": "evt_0c6c65fa1001amwjszQjRG82TN",
+    "created": 1790041284513,
+    "type": "credential.switched",
+    "data": {
+      "integrationID": "groq",
+      "credentialID": "cred_0c6c65fa0001XczQvyWBzj2CtC"
+    }
+  },
+  {
+    "id": "evt_0c6c66c20001grnmZdU1pi4lZV",
+    "created": 1790041287712,
+    "type": "credential.updated",
+    "data": {}
+  },
+  {
+    "id": "evt_0c6c66c21001SMfcD6w8m4wklY",
+    "created": 1790041287713,
+    "type": "credential.switched",
+    "data": {
+      "integrationID": "groq",
+      "credentialID": "cred_0c6c65f17001TrLhPL4u44QGBC"
+    }
+  },
+  {
+    "id": "evt_0c6c66c8b001UPM6SUtwKVqNhi",
+    "created": 1790041287819,
+    "type": "session.created",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f3939939affe6l5YN98xeGJ51P",
+      "slug": "mighty-lagoon",
+      "version": "2.0.11",
+      "projectID": "global",
+      "location": {
+        "directory": "<PROFILE>/project пробел %#"
+      },
+      "subpath": "",
+      "title": "opencode.nvim v2 runtime fixture"
+    },
+    "durable": {
+      "aggregateID": "ses_f3939939affe6l5YN98xeGJ51P",
+      "seq": 0,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c6c66c9b001tI3WCNrHvvXVGv",
+    "created": 1790041287835,
+    "type": "session.deleted",
+    "data": {
+      "sessionID": "ses_f3939939affe6l5YN98xeGJ51P"
+    },
+    "durable": {
+      "aggregateID": "ses_f3939939affe6l5YN98xeGJ51P",
+      "seq": 1,
+      "version": 2
+    }
+  }
+]

@@ -683,10 +683,21 @@ function M.get_lines_for_permission(permission_id, perm_state)
 	append_description(result, desc_lines)
 	add_panel_blank(result)
 
+	if perm_state.status == "unavailable" or perm_state.submitting then
+		add_panel_line(result, perm_state.submitting and "Sending decision…" or "Request is no longer pending", "OpenCodePermissionMuted")
+		add_trailing_separator(result)
+		return result.lines, result.highlights, widget_base.make_meta()
+	end
+	if perm_state.error then
+		add_panel_line(result, perm_state.error.message or "Unable to confirm decision", "OpenCodePermissionError")
+	end
 	local first_option_line = #result.lines
 	local selected = perm_state.selected_option or 1
 
 	for i, label in ipairs(OPTION_LABELS) do
+		if i == 2 and perm_state.protocol == "v2" and #(perm_state.always or {}) == 0 then
+			label = "Allow (no rule to save)"
+		end
 		local is_selected = i == selected
 		local indicator = is_selected and icons.selected or icons.unselected
 		local option_text = string.format("%s %d. %s", indicator, i, label)
@@ -720,7 +731,8 @@ end
 function M.get_approved_lines(permission_id, perm_state)
 	ensure_highlights()
 
-	local reply_suffix = perm_state.reply == "always" and "(always)" or "(once)"
+	local saved = perm_state.reply == "always" and (perm_state.protocol ~= "v2" or #(perm_state.always or {}) > 0)
+	local reply_suffix = saved and "(always)" or "(once)"
 	local result = { lines = {}, highlights = {} }
 	local tool_input = resolve_tool_input(perm_state)
 	local header_title = permission_header_title(perm_state)

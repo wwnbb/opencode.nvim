@@ -58,6 +58,7 @@ end
 function M.clear()
 	chat_todos.close_window()
 	state.local_notices = {}
+	state.full_history_sessions = {}
 	render_state.reset_chat_surface({ reset_expansions = true })
 	state.last_render_time = 0
 	state.render_scheduled = false

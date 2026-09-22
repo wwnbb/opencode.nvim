@@ -1,0 +1,91 @@
+{
+  "data": {
+    "id": "frm_0c5edf201001YO2Elkq2BCWNWJ",
+    "sessionID": "ses_f3a120e32ffefHuzIAG86oLGFP",
+    "title": "Typed form fixture",
+    "fields": [
+      {
+        "key": "target",
+        "required": true,
+        "type": "string",
+        "options": [
+          {
+            "value": "a",
+            "label": "Same"
+          },
+          {
+            "value": "b",
+            "label": "Same"
+          }
+        ]
+      },
+      {
+        "key": "checks",
+        "type": "multiselect",
+        "options": [
+          {
+            "value": "unit",
+            "label": "Unit"
+          },
+          {
+            "value": "integration",
+            "label": "Integration"
+          }
+        ],
+        "minItems": 1,
+        "maxItems": 2
+      },
+      {
+        "key": "retries",
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 3,
+        "default": 0
+      },
+      {
+        "key": "ratio",
+        "type": "number",
+        "minimum": 0,
+        "maximum": 1
+      },
+      {
+        "key": "confirm",
+        "required": true,
+        "type": "boolean",
+        "default": false
+      },
+      {
+        "key": "note",
+        "required": true,
+        "when": [
+          {
+            "key": "confirm",
+            "op": "eq",
+            "value": true
+          }
+        ],
+        "type": "string"
+      },
+      {
+        "key": "hidden",
+        "required": true,
+        "hidden": true,
+        "type": "string",
+        "default": "secret-default"
+      }
+    ],
+    "state": {
+      "status": "answered",
+      "answer": {
+        "target": "b",
+        "checks": [
+          "unit"
+        ],
+        "retries": 0,
+        "ratio": 0,
+        "confirm": false,
+        "hidden": "secret-default"
+      }
+    }
+  }
+}

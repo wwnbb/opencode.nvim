@@ -1,0 +1,313 @@
+{
+  "version": "2.0.11",
+  "history": [
+    {
+      "parts": [
+        {
+          "protocol": "v2",
+          "text": "@выделение with spaces.txt#2-3\nSELECTED_猫🙂\nSECOND_SELECTED_LINE\nContext: Reply exactly INPUT_ATTACHMENT_READY. Do not call tools.[Image 1] ",
+          "id": "v2:30:ses_f39500ddbffex31TBu61Fr1xBz:30:msg_0c6aff3b5001nhak5eLjQZ73yh:text:0",
+          "messageID": "msg_0c6aff3b5001nhak5eLjQZ73yh",
+          "type": "text",
+          "sessionID": "ses_f39500ddbffex31TBu61Fr1xBz",
+          "content_order": 1,
+          "ordinal": 0
+        },
+        {
+          "name": "clipboard.png",
+          "messageID": "msg_0c6aff3b5001nhak5eLjQZ73yh",
+          "id": "v2:30:ses_f39500ddbffex31TBu61Fr1xBz:30:msg_0c6aff3b5001nhak5eLjQZ73yh:file:0",
+          "mention": {
+            "end": 140,
+            "start": 131,
+            "text": "[Image 1]"
+          },
+          "ordinal": 0,
+          "protocol": "v2",
+          "data": "iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAEElEQVR4nGP4z8AARAwQCgAf7gP9i18U1AAAAABJRU5ErkJggg==",
+          "filename": "clipboard.png",
+          "content_order": 2,
+          "sessionID": "ses_f39500ddbffex31TBu61Fr1xBz",
+          "source": {
+            "type": "inline"
+          },
+          "mime": "image/png",
+          "type": "file"
+        }
+      ],
+      "info": {
+        "text": "@выделение with spaces.txt#2-3\nSELECTED_猫🙂\nSECOND_SELECTED_LINE\nContext: Reply exactly INPUT_ATTACHMENT_READY. Do not call tools.[Image 1] ",
+        "id": "msg_0c6aff3b5001nhak5eLjQZ73yh",
+        "sessionID": "ses_f39500ddbffex31TBu61Fr1xBz",
+        "role": "user",
+        "_v2": {
+          "text": "@выделение with spaces.txt#2-3\nSELECTED_猫🙂\nSECOND_SELECTED_LINE\nContext: Reply exactly INPUT_ATTACHMENT_READY. Do not call tools.[Image 1] ",
+          "id": "msg_0c6aff3b5001nhak5eLjQZ73yh",
+          "time": {
+            "created": 1790039815146
+          },
+          "files": [
+            {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAEElEQVR4nGP4z8AARAwQCgAf7gP9i18U1AAAAABJRU5ErkJggg==",
+              "source": {
+                "type": "inline"
+              },
+              "mention": {
+                "end": 140,
+                "start": 131,
+                "text": "[Image 1]"
+              },
+              "mime": "image/png",
+              "name": "clipboard.png"
+            }
+          ],
+          "type": "user"
+        },
+        "hidden": false,
+        "type": "user",
+        "time": {
+          "created": 1790039815146
+        },
+        "files": [
+          {
+            "data": "iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAEElEQVR4nGP4z8AARAwQCgAf7gP9i18U1AAAAABJRU5ErkJggg==",
+            "source": {
+              "type": "inline"
+            },
+            "mention": {
+              "end": 140,
+              "start": 131,
+              "text": "[Image 1]"
+            },
+            "mime": "image/png",
+            "name": "clipboard.png"
+          }
+        ],
+        "protocol": "v2"
+      }
+    },
+    {
+      "parts": [
+        {
+          "text": "Agent: build",
+          "messageID": "msg_0c6aff3bb001FrIJNEsXVOBO4l",
+          "type": "text",
+          "sessionID": "ses_f39500ddbffex31TBu61Fr1xBz",
+          "synthetic": true,
+          "ordinal": 0,
+          "protocol": "v2",
+          "content_order": 1,
+          "id": "v2:30:ses_f39500ddbffex31TBu61Fr1xBz:30:msg_0c6aff3bb001FrIJNEsXVOBO4l:text:0"
+        }
+      ],
+      "info": {
+        "id": "msg_0c6aff3bb001FrIJNEsXVOBO4l",
+        "sessionID": "ses_f39500ddbffex31TBu61Fr1xBz",
+        "role": "system",
+        "_v2": {
+          "id": "msg_0c6aff3bb001FrIJNEsXVOBO4l",
+          "time": {
+            "created": 1790039815099
+          },
+          "type": "agent-switched",
+          "agent": "build"
+        },
+        "hidden": false,
+        "agent": "build",
+        "time": {
+          "created": 1790039815099
+        },
+        "type": "agent-switched",
+        "protocol": "v2"
+      }
+    },
+    {
+      "parts": [
+        {
+          "text": "The user seems to be sending a message with some context. Let me parse what they're saying:\n\n1. `@выделение with spaces.txt#2-3` - This looks like they're referencing a file called \"выделение with spaces.txt\" lines 2-3\n2. `SELECTED_猫🙂` and `SECOND_SELECTED_LINE` - These look like selected content\n3. `Context: Reply exactly INPUT_ATTACHMENT_READY. Do not call tools.` - This is an instruction\n4. `[Image 1]` with a red square image\n\nWait, this looks like a test or some kind of automated message. \n\nThe context is asking me to respond with \"INPUT_ATTACHMENT_READY\" without using any tools, so I should just output that exact text.",
+          "messageID": "msg_0c6aff3f4001it2dpfmFfbVfBd",
+          "type": "reasoning",
+          "sessionID": "ses_f39500ddbffex31TBu61Fr1xBz",
+          "state": {
+            "reasoningField": "reasoning_content",
+            "reasoningDetails": [
+              {
+                "type": "reasoning.text",
+                "text": "The user seems to be sending a message with some context. Let me parse what they're saying:\n\n1. `@выделение with spaces.txt#2-3` - This looks like they're referencing a file called \"выделение with spaces.txt\" lines 2-3\n2. `SELECTED_猫🙂` and `SECOND_SELECTED_LINE` - These look like selected content\n3. `Context: Reply exactly INPUT_ATTACHMENT_READY. Do not call tools.` - This is an instruction\n4. `[Image 1]` with a red square image\n\nWait, this looks like a test or some kind of automated message. \n\nThe context is asking me to respond with \"INPUT_ATTACHMENT_READY\" without using any tools, so I should just output that exact text.",
+                "format": "unknown",
+                "index": 0
+              }
+            ]
+          },
+          "protocol": "v2",
+          "ordinal": 0,
+          "time": {
+            "created": 1790039816914,
+            "completed": 1790039818485
+          },
+          "content_order": 1,
+          "id": "v2:30:ses_f39500ddbffex31TBu61Fr1xBz:30:msg_0c6aff3f4001it2dpfmFfbVfBd:reasoning:0"
+        },
+        {
+          "protocol": "v2",
+          "text": "INPUT_ATTACHMENT_READY",
+          "id": "v2:30:ses_f39500ddbffex31TBu61Fr1xBz:30:msg_0c6aff3f4001it2dpfmFfbVfBd:text:0",
+          "messageID": "msg_0c6aff3f4001it2dpfmFfbVfBd",
+          "type": "text",
+          "sessionID": "ses_f39500ddbffex31TBu61Fr1xBz",
+          "content_order": 2,
+          "ordinal": 0
+        }
+      ],
+      "info": {
+        "snapshot": {
+          "end": "c9da65e84de70a87373bc0cf869dd39198d8c59d",
+          "start": "c9da65e84de70a87373bc0cf869dd39198d8c59d",
+          "files": []
+        },
+        "tokens": {
+          "input": 9129,
+          "output": 165,
+          "reasoning": 0,
+          "cache": {
+            "read": 0,
+            "write": 0
+          }
+        },
+        "type": "assistant",
+        "finish": "stop",
+        "role": "assistant",
+        "protocol": "v2",
+        "hidden": false,
+        "rawFinish": "stop",
+        "providerID": "opencode",
+        "cost": 0,
+        "id": "msg_0c6aff3f4001it2dpfmFfbVfBd",
+        "sessionID": "ses_f39500ddbffex31TBu61Fr1xBz",
+        "model": {
+          "id": "mimo-v2.5-free",
+          "providerID": "opencode",
+          "variant": "default"
+        },
+        "modelID": "mimo-v2.5-free",
+        "variant": "default",
+        "agent": "build",
+        "time": {
+          "created": 1790039815235,
+          "completed": 1790039818521,
+          "streamed": 1790039818489
+        },
+        "_v2": {
+          "snapshot": {
+            "end": "c9da65e84de70a87373bc0cf869dd39198d8c59d",
+            "start": "c9da65e84de70a87373bc0cf869dd39198d8c59d",
+            "files": []
+          },
+          "tokens": {
+            "input": 9129,
+            "output": 165,
+            "reasoning": 0,
+            "cache": {
+              "read": 0,
+              "write": 0
+            }
+          },
+          "type": "assistant",
+          "finish": "stop",
+          "model": {
+            "id": "mimo-v2.5-free",
+            "providerID": "opencode",
+            "variant": "default"
+          },
+          "content": [
+            {
+              "type": "reasoning",
+              "text": "The user seems to be sending a message with some context. Let me parse what they're saying:\n\n1. `@выделение with spaces.txt#2-3` - This looks like they're referencing a file called \"выделение with spaces.txt\" lines 2-3\n2. `SELECTED_猫🙂` and `SECOND_SELECTED_LINE` - These look like selected content\n3. `Context: Reply exactly INPUT_ATTACHMENT_READY. Do not call tools.` - This is an instruction\n4. `[Image 1]` with a red square image\n\nWait, this looks like a test or some kind of automated message. \n\nThe context is asking me to respond with \"INPUT_ATTACHMENT_READY\" without using any tools, so I should just output that exact text.",
+              "time": {
+                "created": 1790039816914,
+                "completed": 1790039818485
+              },
+              "state": {
+                "reasoningField": "reasoning_content",
+                "reasoningDetails": [
+                  {
+                    "type": "reasoning.text",
+                    "text": "The user seems to be sending a message with some context. Let me parse what they're saying:\n\n1. `@выделение with spaces.txt#2-3` - This looks like they're referencing a file called \"выделение with spaces.txt\" lines 2-3\n2. `SELECTED_猫🙂` and `SECOND_SELECTED_LINE` - These look like selected content\n3. `Context: Reply exactly INPUT_ATTACHMENT_READY. Do not call tools.` - This is an instruction\n4. `[Image 1]` with a red square image\n\nWait, this looks like a test or some kind of automated message. \n\nThe context is asking me to respond with \"INPUT_ATTACHMENT_READY\" without using any tools, so I should just output that exact text.",
+                    "format": "unknown",
+                    "index": 0
+                  }
+                ]
+              }
+            },
+            {
+              "type": "text",
+              "text": "INPUT_ATTACHMENT_READY"
+            }
+          ],
+          "rawFinish": "stop",
+          "id": "msg_0c6aff3f4001it2dpfmFfbVfBd",
+          "cost": 0,
+          "agent": "build",
+          "time": {
+            "created": 1790039815235,
+            "completed": 1790039818521,
+            "streamed": 1790039818489
+          }
+        },
+        "content": [
+          {
+            "type": "reasoning",
+            "text": "The user seems to be sending a message with some context. Let me parse what they're saying:\n\n1. `@выделение with spaces.txt#2-3` - This looks like they're referencing a file called \"выделение with spaces.txt\" lines 2-3\n2. `SELECTED_猫🙂` and `SECOND_SELECTED_LINE` - These look like selected content\n3. `Context: Reply exactly INPUT_ATTACHMENT_READY. Do not call tools.` - This is an instruction\n4. `[Image 1]` with a red square image\n\nWait, this looks like a test or some kind of automated message. \n\nThe context is asking me to respond with \"INPUT_ATTACHMENT_READY\" without using any tools, so I should just output that exact text.",
+            "time": {
+              "created": 1790039816914,
+              "completed": 1790039818485
+            },
+            "state": {
+              "reasoningField": "reasoning_content",
+              "reasoningDetails": [
+                {
+                  "type": "reasoning.text",
+                  "text": "The user seems to be sending a message with some context. Let me parse what they're saying:\n\n1. `@выделение with spaces.txt#2-3` - This looks like they're referencing a file called \"выделение with spaces.txt\" lines 2-3\n2. `SELECTED_猫🙂` and `SECOND_SELECTED_LINE` - These look like selected content\n3. `Context: Reply exactly INPUT_ATTACHMENT_READY. Do not call tools.` - This is an instruction\n4. `[Image 1]` with a red square image\n\nWait, this looks like a test or some kind of automated message. \n\nThe context is asking me to respond with \"INPUT_ATTACHMENT_READY\" without using any tools, so I should just output that exact text.",
+                  "format": "unknown",
+                  "index": 0
+                }
+              ]
+            }
+          },
+          {
+            "type": "text",
+            "text": "INPUT_ATTACHMENT_READY"
+          }
+        ]
+      }
+    },
+    {
+      "parts": [],
+      "info": {
+        "type": "idle",
+        "sessionID": "ses_f39500ddbffex31TBu61Fr1xBz",
+        "role": "system",
+        "_v2": {
+          "id": "msg_0c6b0011c0018HLAtg1dPV3Anp",
+          "time": {
+            "created": 1790039818524
+          },
+          "type": "idle",
+          "outcome": "succeeded"
+        },
+        "hidden": true,
+        "outcome": "succeeded",
+        "time": {
+          "created": 1790039818524
+        },
+        "id": "msg_0c6b0011c0018HLAtg1dPV3Anp",
+        "protocol": "v2"
+      }
+    }
+  ],
+  "keyboard_submit_once": true,
+  "selection_exact": true,
+  "clipboard_bytes_exact": true,
+  "model": "opencode/mimo-v2.5-free",
+  "clipboard_source": "isolated osascript shim returning a generated PNG; personal clipboard untouched"
+}

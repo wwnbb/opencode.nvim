@@ -1,0 +1,40 @@
+                                       │ ◈ Completed nativ...  │ ●1 ◈1                                                  
+~                                      │Agent: build                                                                    
+~                                      │┃                                                                               
+~                                      │┃  Call the direct top-level question tool exactly once. Ask one question with  
+~                                      │┃  header "History", prompt "Pick a stored answer", and two options: label "Red 
+~                                      │┃  answer" description "First choice", label "Blue answer" description "Second  
+~                                      │┃  choice". Wait for my answer. After the answer, reply exactly                 
+~                                      │┃  FORM_HISTORY_DONE. Do not use any other tools.                               
+~                                      │┃                                                                               
+~                                      │                                                                                
+~                                      │Thinking: The user wants me to call the question tool exactly once with         
+~                                      │specific parameters, then wait for their answer and reply with                  
+~                                      │"FORM_HISTORY_DONE".                                                            
+~                                      │                                                                                
+~                                      │▸ ◐ question                                                                    
+~                                      │                                                                                
+~                                      │▏                                                                               
+~                                      │▏  # Question History                                                           
+~                                      │▏                                                                               
+~                                      │▏  Pick a stored answer                                                         
+~                                      │▏                                                                               
+~                                      │▏    1. Red answer                                                              
+~                                      │▏    2. Blue answer                                                             
+~                                      │▏                                                                               
+~                                      │▏    Custom answer...                                                           
+~                                      │▏                                                                               
+~                                      │▏  1-2 submit · ↑↓ select · Enter submit · c custom · m message · Esc cancel    
+~                                      │▏                                                                               
+~                                      │                                                                                
+~                                      │▣ Build · MiMo V2.5 Free                                                        
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+[No Name]            0,0-1          All opencode [-]                                                  14,1           All
+OpenCode connected (server v2.0.11)                                                                                     

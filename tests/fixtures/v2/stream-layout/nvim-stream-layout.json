@@ -1,0 +1,299 @@
+{
+  "history": [
+    {
+      "info": {
+        "role": "user",
+        "time": {
+          "created": 1790043037259
+        },
+        "text": "Reply directly with exactly 160 lines numbered ROW001 through ROW160. Each line must be: ROWnnn: Unicode Привет — streaming resize fixture. Replace nnn by its three-digit number. No tools, no introduction, no code fence.",
+        "type": "user",
+        "hidden": false,
+        "id": "msg_0c6e11e2a001nhak5eLjQZ73yh",
+        "_v2": {
+          "id": "msg_0c6e11e2a001nhak5eLjQZ73yh",
+          "type": "user",
+          "time": {
+            "created": 1790043037259
+          },
+          "text": "Reply directly with exactly 160 lines numbered ROW001 through ROW160. Each line must be: ROWnnn: Unicode Привет — streaming resize fixture. Replace nnn by its three-digit number. No tools, no introduction, no code fence."
+        },
+        "sessionID": "ses_f391ee1faffeCOfsN7vYW7HGHq",
+        "protocol": "v2"
+      },
+      "parts": [
+        {
+          "messageID": "msg_0c6e11e2a001nhak5eLjQZ73yh",
+          "type": "text",
+          "id": "v2:30:ses_f391ee1faffeCOfsN7vYW7HGHq:30:msg_0c6e11e2a001nhak5eLjQZ73yh:text:0",
+          "text": "Reply directly with exactly 160 lines numbered ROW001 through ROW160. Each line must be: ROWnnn: Unicode Привет — streaming resize fixture. Replace nnn by its three-digit number. No tools, no introduction, no code fence.",
+          "sessionID": "ses_f391ee1faffeCOfsN7vYW7HGHq",
+          "content_order": 1,
+          "ordinal": 0,
+          "protocol": "v2"
+        }
+      ]
+    },
+    {
+      "info": {
+        "role": "system",
+        "time": {
+          "created": 1790043037238
+        },
+        "type": "agent-switched",
+        "hidden": false,
+        "id": "msg_0c6e11e36001WQG5EgJR0598E3",
+        "agent": "build",
+        "_v2": {
+          "id": "msg_0c6e11e36001WQG5EgJR0598E3",
+          "type": "agent-switched",
+          "time": {
+            "created": 1790043037238
+          },
+          "agent": "build"
+        },
+        "sessionID": "ses_f391ee1faffeCOfsN7vYW7HGHq",
+        "protocol": "v2"
+      },
+      "parts": [
+        {
+          "text": "Agent: build",
+          "synthetic": true,
+          "messageID": "msg_0c6e11e36001WQG5EgJR0598E3",
+          "type": "text",
+          "sessionID": "ses_f391ee1faffeCOfsN7vYW7HGHq",
+          "id": "v2:30:ses_f391ee1faffeCOfsN7vYW7HGHq:30:msg_0c6e11e36001WQG5EgJR0598E3:text:0",
+          "content_order": 1,
+          "ordinal": 0,
+          "protocol": "v2"
+        }
+      ]
+    },
+    {
+      "info": {
+        "_v2": {
+          "time": {
+            "completed": 1790043046546,
+            "streamed": 1790043046518,
+            "created": 1790043037315
+          },
+          "tokens": {
+            "reasoning": 0,
+            "input": 9132,
+            "output": 2312,
+            "cache": {
+              "write": 0,
+              "read": 0
+            }
+          },
+          "content": [
+            {
+              "state": {
+                "reasoningField": "reasoning_content",
+                "reasoningDetails": [
+                  {
+                    "index": 0,
+                    "type": "reasoning.text",
+                    "format": "unknown",
+                    "text": "The user wants me to reply with exactly 160 lines, each numbered ROW001 through ROW160, each containing \"ROWnnn: Unicode Привет — streaming resize fixture.\" where nnn is replaced by the three-digit number. No tools, no introduction, no code fence.\n\nLet me generate this directly."
+                  }
+                ]
+              },
+              "type": "reasoning",
+              "time": {
+                "completed": 1790043046512,
+                "created": 1790043039329
+              },
+              "text": "The user wants me to reply with exactly 160 lines, each numbered ROW001 through ROW160, each containing \"ROWnnn: Unicode Привет — streaming resize fixture.\" where nnn is replaced by the three-digit number. No tools, no introduction, no code fence.\n\nLet me generate this directly."
+            },
+            {
+              "type": "text",
+              "text": "ROW001: Unicode Привет — streaming resize fixture.\nROW002: Unicode Привет — streaming resize fixture.\nROW003: Unicode Привет — streaming resize fixture.\nROW004: Unicode Привет — streaming resize fixture.\nROW005: Unicode Привет — streaming resize fixture.\nROW006: Unicode Привет — streaming resize fixture.\nROW007: Unicode Привет — streaming resize fixture.\nROW008: Unicode Привет — streaming resize fixture.\nROW009: Unicode Привет — streaming resize fixture.\nROW010: Unicode Привет — streaming resize fixture.\nROW011: Unicode Привет — streaming resize fixture.\nROW012: Unicode Привет — streaming resize fixture.\nROW013: Unicode Привет — streaming resize fixture.\nROW014: Unicode Привет — streaming resize fixture.\nROW015: Unicode Привет — streaming resize fixture.\nROW016: Unicode Привет — streaming resize fixture.\nROW017: Unicode Привет — streaming resize fixture.\nROW018: Unicode Привет — streaming resize fixture.\nROW019: Unicode Привет — streaming resize fixture.\nROW020: Unicode Привет — streaming resize fixture.\nROW021: Unicode Привет — streaming resize fixture.\nROW022: Unicode Привет — streaming resize fixture.\nROW023: Unicode Привет — streaming resize fixture.\nROW024: Unicode Привет — streaming resize fixture.\nROW025: Unicode Привет — streaming resize fixture.\nROW026: Unicode Привет — streaming resize fixture.\nROW027: Unicode Привет — streaming resize fixture.\nROW028: Unicode Привет — streaming resize fixture.\nROW029: Unicode Привет — streaming resize fixture.\nROW030: Unicode Привет — streaming resize fixture.\nROW031: Unicode Привет — streaming resize fixture.\nROW032: Unicode Привет — streaming resize fixture.\nROW033: Unicode Привет — streaming resize fixture.\nROW034: Unicode Привет — streaming resize fixture.\nROW035: Unicode Привет — streaming resize fixture.\nROW036: Unicode Привет — streaming resize fixture.\nROW037: Unicode Привет — streaming resize fixture.\nROW038: Unicode Привет — streaming resize fixture.\nROW039: Unicode Привет — streaming resize fixture.\nROW040: Unicode Привет — streaming resize fixture.\nROW041: Unicode Привет — streaming resize fixture.\nROW042: Unicode Привет — streaming resize fixture.\nROW043: Unicode Привет — streaming resize fixture.\nROW044: Unicode Привет — streaming resize fixture.\nROW045: Unicode Привет — streaming resize fixture.\nROW046: Unicode Привет — streaming resize fixture.\nROW047: Unicode Привет — streaming resize fixture.\nROW048: Unicode Привет — streaming resize fixture.\nROW049: Unicode Привет — streaming resize fixture.\nROW050: Unicode Привет — streaming resize fixture.\nROW051: Unicode Привет — streaming resize fixture.\nROW052: Unicode Привет — streaming resize fixture.\nROW053: Unicode Привет — streaming resize fixture.\nROW054: Unicode Привет — streaming resize fixture.\nROW055: Unicode Привет — streaming resize fixture.\nROW056: Unicode Привет — streaming resize fixture.\nROW057: Unicode Привет — streaming resize fixture.\nROW058: Unicode Привет — streaming resize fixture.\nROW059: Unicode Привет — streaming resize fixture.\nROW060: Unicode Привет — streaming resize fixture.\nROW061: Unicode Привет — streaming resize fixture.\nROW062: Unicode Привет — streaming resize fixture.\nROW063: Unicode Привет — streaming resize fixture.\nROW064: Unicode Привет — streaming resize fixture.\nROW065: Unicode Привет — streaming resize fixture.\nROW066: Unicode Привет — streaming resize fixture.\nROW067: Unicode Привет — streaming resize fixture.\nROW068: Unicode Привет — streaming resize fixture.\nROW069: Unicode Привет — streaming resize fixture.\nROW070: Unicode Привет — streaming resize fixture.\nROW071: Unicode Привет — streaming resize fixture.\nROW072: Unicode Привет — streaming resize fixture.\nROW073: Unicode Привет — streaming resize fixture.\nROW074: Unicode Привет — streaming resize fixture.\nROW075: Unicode Привет — streaming resize fixture.\nROW076: Unicode Привет — streaming resize fixture.\nROW077: Unicode Привет — streaming resize fixture.\nROW078: Unicode Привет — streaming resize fixture.\nROW079: Unicode Привет — streaming resize fixture.\nROW080: Unicode Привет — streaming resize fixture.\nROW081: Unicode Привет — streaming resize fixture.\nROW082: Unicode Привет — streaming resize fixture.\nROW083: Unicode Привет — streaming resize fixture.\nROW084: Unicode Привет — streaming resize fixture.\nROW085: Unicode Привет — streaming resize fixture.\nROW086: Unicode Привет — streaming resize fixture.\nROW087: Unicode Привет — streaming resize fixture.\nROW088: Unicode Привет — streaming resize fixture.\nROW089: Unicode Привет — streaming resize fixture.\nROW090: Unicode Привет — streaming resize fixture.\nROW091: Unicode Привет — streaming resize fixture.\nROW092: Unicode Привет — streaming resize fixture.\nROW093: Unicode Привет — streaming resize fixture.\nROW094: Unicode Привет — streaming resize fixture.\nROW095: Unicode Привет — streaming resize fixture.\nROW096: Unicode Привет — streaming resize fixture.\nROW097: Unicode Привет — streaming resize fixture.\nROW098: Unicode Привет — streaming resize fixture.\nROW099: Unicode Привет — streaming resize fixture.\nROW100: Unicode Привет — streaming resize fixture.\nROW101: Unicode Привет — streaming resize fixture.\nROW102: Unicode Привет — streaming resize fixture.\nROW103: Unicode Привет — streaming resize fixture.\nROW104: Unicode Привет — streaming resize fixture.\nROW105: Unicode Привет — streaming resize fixture.\nROW106: Unicode Привет — streaming resize fixture.\nROW107: Unicode Привет — streaming resize fixture.\nROW108: Unicode Привет — streaming resize fixture.\nROW109: Unicode Привет — streaming resize fixture.\nROW110: Unicode Привет — streaming resize fixture.\nROW111: Unicode Привет — streaming resize fixture.\nROW112: Unicode Привет — streaming resize fixture.\nROW113: Unicode Привет — streaming resize fixture.\nROW114: Unicode Привет — streaming resize fixture.\nROW115: Unicode Привет — streaming resize fixture.\nROW116: Unicode Привет — streaming resize fixture.\nROW117: Unicode Привет — streaming resize fixture.\nROW118: Unicode Привет — streaming resize fixture.\nROW119: Unicode Привет — streaming resize fixture.\nROW120: Unicode Привет — streaming resize fixture.\nROW121: Unicode Привет — streaming resize fixture.\nROW122: Unicode Привет — streaming resize fixture.\nROW123: Unicode Привет — streaming resize fixture.\nROW124: Unicode Привет — streaming resize fixture.\nROW125: Unicode Привет — streaming resize fixture.\nROW126: Unicode Привет — streaming resize fixture.\nROW127: Unicode Привет — streaming resize fixture.\nROW128: Unicode Привет — streaming resize fixture.\nROW129: Unicode Привет — streaming resize fixture.\nROW130: Unicode Привет — streaming resize fixture.\nROW131: Unicode Привет — streaming resize fixture.\nROW132: Unicode Привет — streaming resize fixture.\nROW133: Unicode Привет — streaming resize fixture.\nROW134: Unicode Привет — streaming resize fixture.\nROW135: Unicode Привет — streaming resize fixture.\nROW136: Unicode Привет — streaming resize fixture.\nROW137: Unicode Привет — streaming resize fixture.\nROW138: Unicode Привет — streaming resize fixture.\nROW139: Unicode Привет — streaming resize fixture.\nROW140: Unicode Привет — streaming resize fixture.\nROW141: Unicode Привет — streaming resize fixture.\nROW142: Unicode Привет — streaming resize fixture.\nROW143: Unicode Привет — streaming resize fixture.\nROW144: Unicode Привет — streaming resize fixture.\nROW145: Unicode Привет — streaming resize fixture.\nROW146: Unicode Привет — streaming resize fixture.\nROW147: Unicode Привет — streaming resize fixture.\nROW148: Unicode Привет — streaming resize fixture.\nROW149: Unicode Привет — streaming resize fixture.\nROW150: Unicode Привет — streaming resize fixture.\nROW151: Unicode Привет — streaming resize fixture.\nROW152: Unicode Привет — streaming resize fixture.\nROW153: Unicode Привет — streaming resize fixture.\nROW154: Unicode Привет — streaming resize fixture.\nROW155: Unicode Привет — streaming resize fixture.\nROW156: Unicode Привет — streaming resize fixture.\nROW157: Unicode Привет — streaming resize fixture.\nROW158: Unicode Привет — streaming resize fixture.\nROW159: Unicode Привет — streaming resize fixture.\nROW160: Unicode Привет — streaming resize fixture."
+            }
+          ],
+          "cost": 0,
+          "type": "assistant",
+          "id": "msg_0c6e11e52001vy8U29GdMPZFGT",
+          "snapshot": {
+            "files": [],
+            "end": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+            "start": "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
+          },
+          "model": {
+            "providerID": "opencode",
+            "variant": "default",
+            "id": "mimo-v2.5-free"
+          },
+          "finish": "stop",
+          "rawFinish": "stop",
+          "agent": "build"
+        },
+        "time": {
+          "completed": 1790043046546,
+          "streamed": 1790043046518,
+          "created": 1790043037315
+        },
+        "content": [
+          {
+            "state": {
+              "reasoningField": "reasoning_content",
+              "reasoningDetails": [
+                {
+                  "index": 0,
+                  "type": "reasoning.text",
+                  "format": "unknown",
+                  "text": "The user wants me to reply with exactly 160 lines, each numbered ROW001 through ROW160, each containing \"ROWnnn: Unicode Привет — streaming resize fixture.\" where nnn is replaced by the three-digit number. No tools, no introduction, no code fence.\n\nLet me generate this directly."
+                }
+              ]
+            },
+            "type": "reasoning",
+            "time": {
+              "completed": 1790043046512,
+              "created": 1790043039329
+            },
+            "text": "The user wants me to reply with exactly 160 lines, each numbered ROW001 through ROW160, each containing \"ROWnnn: Unicode Привет — streaming resize fixture.\" where nnn is replaced by the three-digit number. No tools, no introduction, no code fence.\n\nLet me generate this directly."
+          },
+          {
+            "type": "text",
+            "text": "ROW001: Unicode Привет — streaming resize fixture.\nROW002: Unicode Привет — streaming resize fixture.\nROW003: Unicode Привет — streaming resize fixture.\nROW004: Unicode Привет — streaming resize fixture.\nROW005: Unicode Привет — streaming resize fixture.\nROW006: Unicode Привет — streaming resize fixture.\nROW007: Unicode Привет — streaming resize fixture.\nROW008: Unicode Привет — streaming resize fixture.\nROW009: Unicode Привет — streaming resize fixture.\nROW010: Unicode Привет — streaming resize fixture.\nROW011: Unicode Привет — streaming resize fixture.\nROW012: Unicode Привет — streaming resize fixture.\nROW013: Unicode Привет — streaming resize fixture.\nROW014: Unicode Привет — streaming resize fixture.\nROW015: Unicode Привет — streaming resize fixture.\nROW016: Unicode Привет — streaming resize fixture.\nROW017: Unicode Привет — streaming resize fixture.\nROW018: Unicode Привет — streaming resize fixture.\nROW019: Unicode Привет — streaming resize fixture.\nROW020: Unicode Привет — streaming resize fixture.\nROW021: Unicode Привет — streaming resize fixture.\nROW022: Unicode Привет — streaming resize fixture.\nROW023: Unicode Привет — streaming resize fixture.\nROW024: Unicode Привет — streaming resize fixture.\nROW025: Unicode Привет — streaming resize fixture.\nROW026: Unicode Привет — streaming resize fixture.\nROW027: Unicode Привет — streaming resize fixture.\nROW028: Unicode Привет — streaming resize fixture.\nROW029: Unicode Привет — streaming resize fixture.\nROW030: Unicode Привет — streaming resize fixture.\nROW031: Unicode Привет — streaming resize fixture.\nROW032: Unicode Привет — streaming resize fixture.\nROW033: Unicode Привет — streaming resize fixture.\nROW034: Unicode Привет — streaming resize fixture.\nROW035: Unicode Привет — streaming resize fixture.\nROW036: Unicode Привет — streaming resize fixture.\nROW037: Unicode Привет — streaming resize fixture.\nROW038: Unicode Привет — streaming resize fixture.\nROW039: Unicode Привет — streaming resize fixture.\nROW040: Unicode Привет — streaming resize fixture.\nROW041: Unicode Привет — streaming resize fixture.\nROW042: Unicode Привет — streaming resize fixture.\nROW043: Unicode Привет — streaming resize fixture.\nROW044: Unicode Привет — streaming resize fixture.\nROW045: Unicode Привет — streaming resize fixture.\nROW046: Unicode Привет — streaming resize fixture.\nROW047: Unicode Привет — streaming resize fixture.\nROW048: Unicode Привет — streaming resize fixture.\nROW049: Unicode Привет — streaming resize fixture.\nROW050: Unicode Привет — streaming resize fixture.\nROW051: Unicode Привет — streaming resize fixture.\nROW052: Unicode Привет — streaming resize fixture.\nROW053: Unicode Привет — streaming resize fixture.\nROW054: Unicode Привет — streaming resize fixture.\nROW055: Unicode Привет — streaming resize fixture.\nROW056: Unicode Привет — streaming resize fixture.\nROW057: Unicode Привет — streaming resize fixture.\nROW058: Unicode Привет — streaming resize fixture.\nROW059: Unicode Привет — streaming resize fixture.\nROW060: Unicode Привет — streaming resize fixture.\nROW061: Unicode Привет — streaming resize fixture.\nROW062: Unicode Привет — streaming resize fixture.\nROW063: Unicode Привет — streaming resize fixture.\nROW064: Unicode Привет — streaming resize fixture.\nROW065: Unicode Привет — streaming resize fixture.\nROW066: Unicode Привет — streaming resize fixture.\nROW067: Unicode Привет — streaming resize fixture.\nROW068: Unicode Привет — streaming resize fixture.\nROW069: Unicode Привет — streaming resize fixture.\nROW070: Unicode Привет — streaming resize fixture.\nROW071: Unicode Привет — streaming resize fixture.\nROW072: Unicode Привет — streaming resize fixture.\nROW073: Unicode Привет — streaming resize fixture.\nROW074: Unicode Привет — streaming resize fixture.\nROW075: Unicode Привет — streaming resize fixture.\nROW076: Unicode Привет — streaming resize fixture.\nROW077: Unicode Привет — streaming resize fixture.\nROW078: Unicode Привет — streaming resize fixture.\nROW079: Unicode Привет — streaming resize fixture.\nROW080: Unicode Привет — streaming resize fixture.\nROW081: Unicode Привет — streaming resize fixture.\nROW082: Unicode Привет — streaming resize fixture.\nROW083: Unicode Привет — streaming resize fixture.\nROW084: Unicode Привет — streaming resize fixture.\nROW085: Unicode Привет — streaming resize fixture.\nROW086: Unicode Привет — streaming resize fixture.\nROW087: Unicode Привет — streaming resize fixture.\nROW088: Unicode Привет — streaming resize fixture.\nROW089: Unicode Привет — streaming resize fixture.\nROW090: Unicode Привет — streaming resize fixture.\nROW091: Unicode Привет — streaming resize fixture.\nROW092: Unicode Привет — streaming resize fixture.\nROW093: Unicode Привет — streaming resize fixture.\nROW094: Unicode Привет — streaming resize fixture.\nROW095: Unicode Привет — streaming resize fixture.\nROW096: Unicode Привет — streaming resize fixture.\nROW097: Unicode Привет — streaming resize fixture.\nROW098: Unicode Привет — streaming resize fixture.\nROW099: Unicode Привет — streaming resize fixture.\nROW100: Unicode Привет — streaming resize fixture.\nROW101: Unicode Привет — streaming resize fixture.\nROW102: Unicode Привет — streaming resize fixture.\nROW103: Unicode Привет — streaming resize fixture.\nROW104: Unicode Привет — streaming resize fixture.\nROW105: Unicode Привет — streaming resize fixture.\nROW106: Unicode Привет — streaming resize fixture.\nROW107: Unicode Привет — streaming resize fixture.\nROW108: Unicode Привет — streaming resize fixture.\nROW109: Unicode Привет — streaming resize fixture.\nROW110: Unicode Привет — streaming resize fixture.\nROW111: Unicode Привет — streaming resize fixture.\nROW112: Unicode Привет — streaming resize fixture.\nROW113: Unicode Привет — streaming resize fixture.\nROW114: Unicode Привет — streaming resize fixture.\nROW115: Unicode Привет — streaming resize fixture.\nROW116: Unicode Привет — streaming resize fixture.\nROW117: Unicode Привет — streaming resize fixture.\nROW118: Unicode Привет — streaming resize fixture.\nROW119: Unicode Привет — streaming resize fixture.\nROW120: Unicode Привет — streaming resize fixture.\nROW121: Unicode Привет — streaming resize fixture.\nROW122: Unicode Привет — streaming resize fixture.\nROW123: Unicode Привет — streaming resize fixture.\nROW124: Unicode Привет — streaming resize fixture.\nROW125: Unicode Привет — streaming resize fixture.\nROW126: Unicode Привет — streaming resize fixture.\nROW127: Unicode Привет — streaming resize fixture.\nROW128: Unicode Привет — streaming resize fixture.\nROW129: Unicode Привет — streaming resize fixture.\nROW130: Unicode Привет — streaming resize fixture.\nROW131: Unicode Привет — streaming resize fixture.\nROW132: Unicode Привет — streaming resize fixture.\nROW133: Unicode Привет — streaming resize fixture.\nROW134: Unicode Привет — streaming resize fixture.\nROW135: Unicode Привет — streaming resize fixture.\nROW136: Unicode Привет — streaming resize fixture.\nROW137: Unicode Привет — streaming resize fixture.\nROW138: Unicode Привет — streaming resize fixture.\nROW139: Unicode Привет — streaming resize fixture.\nROW140: Unicode Привет — streaming resize fixture.\nROW141: Unicode Привет — streaming resize fixture.\nROW142: Unicode Привет — streaming resize fixture.\nROW143: Unicode Привет — streaming resize fixture.\nROW144: Unicode Привет — streaming resize fixture.\nROW145: Unicode Привет — streaming resize fixture.\nROW146: Unicode Привет — streaming resize fixture.\nROW147: Unicode Привет — streaming resize fixture.\nROW148: Unicode Привет — streaming resize fixture.\nROW149: Unicode Привет — streaming resize fixture.\nROW150: Unicode Привет — streaming resize fixture.\nROW151: Unicode Привет — streaming resize fixture.\nROW152: Unicode Привет — streaming resize fixture.\nROW153: Unicode Привет — streaming resize fixture.\nROW154: Unicode Привет — streaming resize fixture.\nROW155: Unicode Привет — streaming resize fixture.\nROW156: Unicode Привет — streaming resize fixture.\nROW157: Unicode Привет — streaming resize fixture.\nROW158: Unicode Привет — streaming resize fixture.\nROW159: Unicode Привет — streaming resize fixture.\nROW160: Unicode Привет — streaming resize fixture."
+          }
+        ],
+        "cost": 0,
+        "providerID": "opencode",
+        "hidden": false,
+        "id": "msg_0c6e11e52001vy8U29GdMPZFGT",
+        "rawFinish": "stop",
+        "tokens": {
+          "reasoning": 0,
+          "input": 9132,
+          "output": 2312,
+          "cache": {
+            "write": 0,
+            "read": 0
+          }
+        },
+        "parentID": "msg_0c6e11e2a001nhak5eLjQZ73yh",
+        "modelID": "mimo-v2.5-free",
+        "snapshot": {
+          "files": [],
+          "end": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+          "start": "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
+        },
+        "variant": "default",
+        "sessionID": "ses_f391ee1faffeCOfsN7vYW7HGHq",
+        "agent": "build",
+        "finish": "stop",
+        "model": {
+          "providerID": "opencode",
+          "variant": "default",
+          "id": "mimo-v2.5-free"
+        },
+        "type": "assistant",
+        "role": "assistant",
+        "protocol": "v2"
+      },
+      "parts": [
+        {
+          "time": {
+            "completed": 1790043046512,
+            "created": 1790043039329
+          },
+          "text": "The user wants me to reply with exactly 160 lines, each numbered ROW001 through ROW160, each containing \"ROWnnn: Unicode Привет — streaming resize fixture.\" where nnn is replaced by the three-digit number. No tools, no introduction, no code fence.\n\nLet me generate this directly.",
+          "state": {
+            "reasoningField": "reasoning_content",
+            "reasoningDetails": [
+              {
+                "index": 0,
+                "type": "reasoning.text",
+                "format": "unknown",
+                "text": "The user wants me to reply with exactly 160 lines, each numbered ROW001 through ROW160, each containing \"ROWnnn: Unicode Привет — streaming resize fixture.\" where nnn is replaced by the three-digit number. No tools, no introduction, no code fence.\n\nLet me generate this directly."
+              }
+            ]
+          },
+          "messageID": "msg_0c6e11e52001vy8U29GdMPZFGT",
+          "type": "reasoning",
+          "sessionID": "ses_f391ee1faffeCOfsN7vYW7HGHq",
+          "id": "v2:30:ses_f391ee1faffeCOfsN7vYW7HGHq:30:msg_0c6e11e52001vy8U29GdMPZFGT:reasoning:0",
+          "content_order": 1,
+          "ordinal": 0,
+          "protocol": "v2"
+        },
+        {
+          "messageID": "msg_0c6e11e52001vy8U29GdMPZFGT",
+          "type": "text",
+          "id": "v2:30:ses_f391ee1faffeCOfsN7vYW7HGHq:30:msg_0c6e11e52001vy8U29GdMPZFGT:text:0",
+          "text": "ROW001: Unicode Привет — streaming resize fixture.\nROW002: Unicode Привет — streaming resize fixture.\nROW003: Unicode Привет — streaming resize fixture.\nROW004: Unicode Привет — streaming resize fixture.\nROW005: Unicode Привет — streaming resize fixture.\nROW006: Unicode Привет — streaming resize fixture.\nROW007: Unicode Привет — streaming resize fixture.\nROW008: Unicode Привет — streaming resize fixture.\nROW009: Unicode Привет — streaming resize fixture.\nROW010: Unicode Привет — streaming resize fixture.\nROW011: Unicode Привет — streaming resize fixture.\nROW012: Unicode Привет — streaming resize fixture.\nROW013: Unicode Привет — streaming resize fixture.\nROW014: Unicode Привет — streaming resize fixture.\nROW015: Unicode Привет — streaming resize fixture.\nROW016: Unicode Привет — streaming resize fixture.\nROW017: Unicode Привет — streaming resize fixture.\nROW018: Unicode Привет — streaming resize fixture.\nROW019: Unicode Привет — streaming resize fixture.\nROW020: Unicode Привет — streaming resize fixture.\nROW021: Unicode Привет — streaming resize fixture.\nROW022: Unicode Привет — streaming resize fixture.\nROW023: Unicode Привет — streaming resize fixture.\nROW024: Unicode Привет — streaming resize fixture.\nROW025: Unicode Привет — streaming resize fixture.\nROW026: Unicode Привет — streaming resize fixture.\nROW027: Unicode Привет — streaming resize fixture.\nROW028: Unicode Привет — streaming resize fixture.\nROW029: Unicode Привет — streaming resize fixture.\nROW030: Unicode Привет — streaming resize fixture.\nROW031: Unicode Привет — streaming resize fixture.\nROW032: Unicode Привет — streaming resize fixture.\nROW033: Unicode Привет — streaming resize fixture.\nROW034: Unicode Привет — streaming resize fixture.\nROW035: Unicode Привет — streaming resize fixture.\nROW036: Unicode Привет — streaming resize fixture.\nROW037: Unicode Привет — streaming resize fixture.\nROW038: Unicode Привет — streaming resize fixture.\nROW039: Unicode Привет — streaming resize fixture.\nROW040: Unicode Привет — streaming resize fixture.\nROW041: Unicode Привет — streaming resize fixture.\nROW042: Unicode Привет — streaming resize fixture.\nROW043: Unicode Привет — streaming resize fixture.\nROW044: Unicode Привет — streaming resize fixture.\nROW045: Unicode Привет — streaming resize fixture.\nROW046: Unicode Привет — streaming resize fixture.\nROW047: Unicode Привет — streaming resize fixture.\nROW048: Unicode Привет — streaming resize fixture.\nROW049: Unicode Привет — streaming resize fixture.\nROW050: Unicode Привет — streaming resize fixture.\nROW051: Unicode Привет — streaming resize fixture.\nROW052: Unicode Привет — streaming resize fixture.\nROW053: Unicode Привет — streaming resize fixture.\nROW054: Unicode Привет — streaming resize fixture.\nROW055: Unicode Привет — streaming resize fixture.\nROW056: Unicode Привет — streaming resize fixture.\nROW057: Unicode Привет — streaming resize fixture.\nROW058: Unicode Привет — streaming resize fixture.\nROW059: Unicode Привет — streaming resize fixture.\nROW060: Unicode Привет — streaming resize fixture.\nROW061: Unicode Привет — streaming resize fixture.\nROW062: Unicode Привет — streaming resize fixture.\nROW063: Unicode Привет — streaming resize fixture.\nROW064: Unicode Привет — streaming resize fixture.\nROW065: Unicode Привет — streaming resize fixture.\nROW066: Unicode Привет — streaming resize fixture.\nROW067: Unicode Привет — streaming resize fixture.\nROW068: Unicode Привет — streaming resize fixture.\nROW069: Unicode Привет — streaming resize fixture.\nROW070: Unicode Привет — streaming resize fixture.\nROW071: Unicode Привет — streaming resize fixture.\nROW072: Unicode Привет — streaming resize fixture.\nROW073: Unicode Привет — streaming resize fixture.\nROW074: Unicode Привет — streaming resize fixture.\nROW075: Unicode Привет — streaming resize fixture.\nROW076: Unicode Привет — streaming resize fixture.\nROW077: Unicode Привет — streaming resize fixture.\nROW078: Unicode Привет — streaming resize fixture.\nROW079: Unicode Привет — streaming resize fixture.\nROW080: Unicode Привет — streaming resize fixture.\nROW081: Unicode Привет — streaming resize fixture.\nROW082: Unicode Привет — streaming resize fixture.\nROW083: Unicode Привет — streaming resize fixture.\nROW084: Unicode Привет — streaming resize fixture.\nROW085: Unicode Привет — streaming resize fixture.\nROW086: Unicode Привет — streaming resize fixture.\nROW087: Unicode Привет — streaming resize fixture.\nROW088: Unicode Привет — streaming resize fixture.\nROW089: Unicode Привет — streaming resize fixture.\nROW090: Unicode Привет — streaming resize fixture.\nROW091: Unicode Привет — streaming resize fixture.\nROW092: Unicode Привет — streaming resize fixture.\nROW093: Unicode Привет — streaming resize fixture.\nROW094: Unicode Привет — streaming resize fixture.\nROW095: Unicode Привет — streaming resize fixture.\nROW096: Unicode Привет — streaming resize fixture.\nROW097: Unicode Привет — streaming resize fixture.\nROW098: Unicode Привет — streaming resize fixture.\nROW099: Unicode Привет — streaming resize fixture.\nROW100: Unicode Привет — streaming resize fixture.\nROW101: Unicode Привет — streaming resize fixture.\nROW102: Unicode Привет — streaming resize fixture.\nROW103: Unicode Привет — streaming resize fixture.\nROW104: Unicode Привет — streaming resize fixture.\nROW105: Unicode Привет — streaming resize fixture.\nROW106: Unicode Привет — streaming resize fixture.\nROW107: Unicode Привет — streaming resize fixture.\nROW108: Unicode Привет — streaming resize fixture.\nROW109: Unicode Привет — streaming resize fixture.\nROW110: Unicode Привет — streaming resize fixture.\nROW111: Unicode Привет — streaming resize fixture.\nROW112: Unicode Привет — streaming resize fixture.\nROW113: Unicode Привет — streaming resize fixture.\nROW114: Unicode Привет — streaming resize fixture.\nROW115: Unicode Привет — streaming resize fixture.\nROW116: Unicode Привет — streaming resize fixture.\nROW117: Unicode Привет — streaming resize fixture.\nROW118: Unicode Привет — streaming resize fixture.\nROW119: Unicode Привет — streaming resize fixture.\nROW120: Unicode Привет — streaming resize fixture.\nROW121: Unicode Привет — streaming resize fixture.\nROW122: Unicode Привет — streaming resize fixture.\nROW123: Unicode Привет — streaming resize fixture.\nROW124: Unicode Привет — streaming resize fixture.\nROW125: Unicode Привет — streaming resize fixture.\nROW126: Unicode Привет — streaming resize fixture.\nROW127: Unicode Привет — streaming resize fixture.\nROW128: Unicode Привет — streaming resize fixture.\nROW129: Unicode Привет — streaming resize fixture.\nROW130: Unicode Привет — streaming resize fixture.\nROW131: Unicode Привет — streaming resize fixture.\nROW132: Unicode Привет — streaming resize fixture.\nROW133: Unicode Привет — streaming resize fixture.\nROW134: Unicode Привет — streaming resize fixture.\nROW135: Unicode Привет — streaming resize fixture.\nROW136: Unicode Привет — streaming resize fixture.\nROW137: Unicode Привет — streaming resize fixture.\nROW138: Unicode Привет — streaming resize fixture.\nROW139: Unicode Привет — streaming resize fixture.\nROW140: Unicode Привет — streaming resize fixture.\nROW141: Unicode Привет — streaming resize fixture.\nROW142: Unicode Привет — streaming resize fixture.\nROW143: Unicode Привет — streaming resize fixture.\nROW144: Unicode Привет — streaming resize fixture.\nROW145: Unicode Привет — streaming resize fixture.\nROW146: Unicode Привет — streaming resize fixture.\nROW147: Unicode Привет — streaming resize fixture.\nROW148: Unicode Привет — streaming resize fixture.\nROW149: Unicode Привет — streaming resize fixture.\nROW150: Unicode Привет — streaming resize fixture.\nROW151: Unicode Привет — streaming resize fixture.\nROW152: Unicode Привет — streaming resize fixture.\nROW153: Unicode Привет — streaming resize fixture.\nROW154: Unicode Привет — streaming resize fixture.\nROW155: Unicode Привет — streaming resize fixture.\nROW156: Unicode Привет — streaming resize fixture.\nROW157: Unicode Привет — streaming resize fixture.\nROW158: Unicode Привет — streaming resize fixture.\nROW159: Unicode Привет — streaming resize fixture.\nROW160: Unicode Привет — streaming resize fixture.",
+          "sessionID": "ses_f391ee1faffeCOfsN7vYW7HGHq",
+          "content_order": 2,
+          "ordinal": 0,
+          "protocol": "v2"
+        }
+      ]
+    },
+    {
+      "info": {
+        "role": "system",
+        "time": {
+          "created": 1790043046549
+        },
+        "type": "idle",
+        "outcome": "succeeded",
+        "hidden": true,
+        "id": "msg_0c6e14295001M3BRIYCsRc4o1F",
+        "_v2": {
+          "time": {
+            "created": 1790043046549
+          },
+          "type": "idle",
+          "outcome": "succeeded",
+          "id": "msg_0c6e14295001M3BRIYCsRc4o1F"
+        },
+        "sessionID": "ses_f391ee1faffeCOfsN7vYW7HGHq",
+        "protocol": "v2"
+      },
+      "parts": []
+    }
+  ],
+  "delta_count": 38,
+  "input_focus_and_draft": true,
+  "manual_cursor_preserved": true,
+  "session": {
+    "directory": "<PROFILE>/project пробел %#",
+    "time": {
+      "updated": 1790043037215,
+      "created": 1790043037215
+    },
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "projectID": "global",
+    "cost": 0,
+    "tokens": {
+      "reasoning": 0,
+      "input": 0,
+      "output": 0,
+      "cache": {
+        "write": 0,
+        "read": 0
+      }
+    },
+    "model": {
+      "providerID": "opencode",
+      "variant": "default",
+      "id": "mimo-v2.5-free"
+    },
+    "revert": null,
+    "id": "ses_f391ee1faffeCOfsN7vYW7HGHq"
+  },
+  "themes": [
+    "light",
+    "dark"
+  ],
+  "live_equals_cold": true,
+  "auto_scroll_preserved": true,
+  "narrow_stream_layouts": [
+    "vertical",
+    "horizontal",
+    "float"
+  ]
+}

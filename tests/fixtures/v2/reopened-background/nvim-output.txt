@@ -1,0 +1,1 @@
+Captured native UI: /private/tmp/opencode-v2-runtime/reopened-background-capture-3/reopened-child-1.png, /private/tmp/opencode-v2-runtime/reopened-background-capture-3/reopened-child-2.png, /private/tmp/opencode-v2-runtime/reopened-background-capture-3/reopened-parent.png

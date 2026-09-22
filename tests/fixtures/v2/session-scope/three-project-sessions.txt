@@ -1,0 +1,40 @@
+                                       │○ Scope 1 │ ○ Scope 2 │  ○ Scope 3                                              
+~                                      │Agent: build                                                                    
+~                                      │┃                                                                               
+~                                      │┃  Return exactly SCOPE_REPLY_3 in chat. Do not use tools or create files.      
+~                                      │┃                                                                               
+~                                      │                                                                                
+~                                      │Thinking: The user is asking me to return "SCOPE_REPLY_3" in chat without using 
+~                                      │tools or creating files.                                                        
+~                                      │                                                                                
+~                                      │SCOPE_REPLY_3                                                                   
+~                                      │                                                                                
+~                                      │▣ Build · MiMo V2.5 Free · 9.1k/200k tok · 4.2s                                 
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+[No Name]            0,0-1          All opencode [-]                                                  4,1            All
+Scope 1: Permission needs input                                                                                         

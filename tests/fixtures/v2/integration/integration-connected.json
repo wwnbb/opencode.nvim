@@ -1,0 +1,89 @@
+{
+  "location": {
+    "directory": "<PROFILE>/project пробел %#"
+  },
+  "data": {
+    "id": "groq",
+    "name": "Neovim disposable auth fixture",
+    "methods": [
+      {
+        "type": "env",
+        "names": [
+          "OPENCODE_NVIM_TEST_INTEGRATION_ENV"
+        ]
+      },
+      {
+        "type": "key",
+        "label": "Test key",
+        "form": [
+          {
+            "key": "region",
+            "title": "Region",
+            "required": true,
+            "type": "string",
+            "options": [
+              {
+                "value": "test",
+                "label": "Test"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "test-code",
+        "type": "oauth",
+        "label": "Test code"
+      },
+      {
+        "id": "test-auto",
+        "type": "oauth",
+        "label": "Test auto"
+      },
+      {
+        "id": "test-cancel",
+        "type": "oauth",
+        "label": "Test cancel"
+      },
+      {
+        "id": "test-expired",
+        "type": "oauth",
+        "label": "Test expired"
+      },
+      {
+        "id": "test-command",
+        "type": "command",
+        "label": "Test command",
+        "command": [
+          "/usr/bin/printf",
+          "{\"type\":\"key\",\"key\":\"public-command-key\"}"
+        ]
+      },
+      {
+        "id": "test-command-cancel",
+        "type": "command",
+        "label": "Test command cancel",
+        "command": [
+          "/bin/sleep",
+          "30"
+        ]
+      }
+    ],
+    "connections": [
+      {
+        "type": "credential",
+        "id": "cred_0c62eb8d0001UR1NEbQmK3DjhP",
+        "label": "account-two"
+      },
+      {
+        "type": "credential",
+        "id": "cred_0c62eb8bf001TGzeT61zD0hHkz",
+        "label": "account-one"
+      },
+      {
+        "type": "env",
+        "name": "OPENCODE_NVIM_TEST_INTEGRATION_ENV"
+      }
+    ]
+  }
+}

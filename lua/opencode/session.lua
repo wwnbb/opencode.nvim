@@ -397,6 +397,7 @@ local function schedule_busy_watchdog()
 			end
 		end
 		if any_busy then
+			if state.get_connection() == "connected" then M.refresh_status() end
 			schedule_busy_watchdog()
 		end
 	end, 15000)
@@ -444,6 +445,8 @@ function M.maybe_idle_from_message(info, opts)
 	if type(info) ~= "table" or not info.sessionID or not info.id then
 		return false
 	end
+	-- Native steps may complete while more tools or queued inputs are running.
+	if info.protocol == "v2" then return false end
 	if info.role ~= "assistant" then
 		return false
 	end
@@ -554,6 +557,7 @@ function M.handle_deleted(session_id, opts)
 	end
 
 	local ok_sync, sync = pcall(require, "opencode.sync")
+	local deleted_ids = ok_sync and type(sync.collect_session_tree) == "function" and sync.collect_session_tree(session_id) or { session_id }
 	if ok_sync and type(sync.clear_session_tree) == "function" then
 		sync.clear_session_tree(session_id)
 	elseif ok_sync and type(sync.clear_session) == "function" then
@@ -591,11 +595,15 @@ function M.handle_deleted(session_id, opts)
 		end
 	end
 
-	state.remove_session(session_id)
+	for _, id in ipairs(deleted_ids) do
+		require("opencode.cleanup").clear_session(id)
+		state.remove_session(id)
+	end
 
 	emit("session.closed", {
 		sessionID = session_id,
 		session_id = session_id,
+		session_ids = deleted_ids,
 		nextSessionID = next_session and next_session.id or nil,
 		next_session_id = next_session and next_session.id or nil,
 		reason = opts.reason or "session_deleted",
@@ -834,43 +842,33 @@ function M.refresh_status(callback)
 		return
 	end
 
-	local cwd = state.normalize_directory(vim.fn.getcwd())
-	local groups = { [cwd] = {} }
-	for _, session in ipairs(state.get_active_sessions()) do
-		local directory = state.get_session_directory(session.id) or cwd
-		groups[directory] = groups[directory] or {}
-		table.insert(groups[directory], session.id)
+	-- /api/session/active is global. A newer event or submission wins over
+	-- this snapshot, including a repeated busy event with the same value.
+	local snapshots = {}
+	local sync = require("opencode.sync")
+	for _, info in ipairs(state.get_active_sessions()) do
+		for _, id in ipairs(sync.collect_session_tree(info.id)) do
+			snapshots[id] = { token = pending_helper.token(id), revision = state.get_session_status_revision(id) }
+		end
 	end
-	local directories = vim.tbl_keys(groups)
-	local pending = #directories
-	local combined, first_error = {}, nil
-	for _, directory in ipairs(directories) do
-		client.get_session_statuses({ directory = directory }, function(err, statuses)
-			first_error = first_error or err
-			if not err and type(statuses) == "table" then
-				for _, session_id in ipairs(groups[directory]) do
-					if state.is_runtime_session(session_id)
-						and (state.get_session_directory(session_id) or cwd) == directory
-					then
-						local status = statuses[session_id]
-						if status then
-							combined[session_id] = status
-							M.set_session_status(session_id, status, { reason = "refresh_status" })
-						else
-							local current = state.get_session_status(session_id)
-							if current.type == "busy" or current.type == "retry" then
-								M.set_session_status(session_id, { type = "idle" }, { reason = "refresh_status" })
-							end
-						end
+	client.get_session_statuses({}, function(err, statuses)
+		if not err and type(statuses) == "table" then
+			for sid, snapshot in pairs(snapshots) do
+				if pending_helper.is_current(snapshot.token) and require("opencode.events.util").runtime_root_for_session(sid)
+					and state.get_session_status_revision(sid) == snapshot.revision then
+					local status = statuses[sid] or { type = "idle" }
+					if not statuses[sid] then
+						local messages = sync.get_messages(sid)
+						local last = messages[#messages]
+						if last and last.type == "idle" then status.outcome = last.outcome end
 					end
+					sync.handle_session_status(sid, status)
+					M.set_session_status(sid, status, { reason = "refresh_status" })
 				end
 			end
-			pending = pending - 1
-			if pending == 0 and callback then
-				callback(first_error, combined)
-			end
-		end)
-	end
+		end
+		if callback then callback(err, statuses) end
+	end)
 end
 
 ---@param session table
@@ -925,9 +923,11 @@ function M.switch_to(session, opts)
 		return
 	end
 
+	local token = pending_helper.token(session.id)
 	local snapshot = ok_sync and sync.capture_session_snapshot and sync.capture_session_snapshot(session.id)
 	client.get_messages(session.id, { limit = 100 }, function(err, messages)
 		vim.schedule(function()
+			if not pending_helper.is_current(token) then return end
 			if err and opts.notify then
 				vim.notify(
 					"Failed to load session messages: " .. tostring(err.message or err.error or err),
@@ -943,6 +943,7 @@ function M.switch_to(session, opts)
 					reason = "session_switch",
 				})
 				M.reconcile_busy_session_idle(session.id, { reason = "session_switch" })
+				M.refresh_status()
 			end
 			if state.get_session().id == session.id then
 				request_chat_render({

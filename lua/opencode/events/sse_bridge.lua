@@ -40,6 +40,7 @@ function M.setup(events)
 
 	for sse_event, local_event in pairs(sse_to_local) do
 		client.on_event(sse_event, function(data)
+			if type(data) == "table" and data._v2_envelope then return end
 			logger.debug("SSE event mapped", {
 				sse_event = sse_event,
 				local_event = local_event,
@@ -53,6 +54,9 @@ function M.setup(events)
 			events.emit(local_event, data)
 		end)
 	end
+	client.on_event("*", function(_, data)
+		if type(data) == "table" and data._v2_envelope then events.emit("v2_event", data._v2_envelope) end
+	end)
 	end
 
 return M

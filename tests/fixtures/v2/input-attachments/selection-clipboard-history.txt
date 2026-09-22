@@ -1,0 +1,40 @@
+OUTSIDE_SELECTION                      │ ○ Input attachments                                                            
+SELECTED_猫🙂                          │Agent: build                                                                    
+SECOND_SELECTED_LINE                   │┃                                                                               
+ALSO_OUTSIDE                           │┃  @выделение with spaces.txt#2-3                                               
+~                                      │┃  SELECTED_猫🙂                                                                
+~                                      │┃  SECOND_SELECTED_LINE                                                         
+~                                      │┃  Context: Reply exactly INPUT_ATTACHMENT_READY. Do not call tools.[Image 1]   
+~                                      │┃  img clipboard.png                                                            
+~                                      │┃                                                                               
+~                                      │                                                                                
+~                                      │Thinking: The user seems to be sending a message with some context. Let me      
+~                                      │parse what they're saying:                                                      
+~                                      │                                                                                
+~                                      │          1. `@выделение with spaces.txt#2-3` - This looks like they're         
+~                                      │          referencing a file called "выделение with spaces.txt" lines 2-3       
+~                                      │          2. `SELECTED_猫🙂` and `SECOND_SELECTED_LINE` - These look like       
+~                                      │          selected content                                                      
+~                                      │          3. `Context: Reply exactly INPUT_ATTACHMENT_READY. Do not call tools. 
+~                                      │          ` - This is an instruction                                            
+~                                      │          4. `[Image 1]` with a red square image                                
+~                                      │                                                                                
+~                                      │          Wait, this looks like a test or some kind of automated message.       
+~                                      │                                                                                
+~                                      │          The context is asking me to respond with "INPUT_ATTACHMENT_READY"     
+~                                      │          without using any tools, so I should just output that exact text.     
+~                                      │                                                                                
+~                                      │INPUT_ATTACHMENT_READY                                                          
+~                                      │                                                                                
+~                                      │▣ Build · MiMo V2.5 Free · 9.3k/200k tok · 3.4s                                 
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+<ие with spaces.txt  3,1            All opencode [-]                                                  4,1            All
+Input attachments: Session done                                                                                         

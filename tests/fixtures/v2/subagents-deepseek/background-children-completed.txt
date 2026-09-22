@@ -1,0 +1,40 @@
+                                       │ ○ Background dele...                                                           
+~                                      │Agent: build                                                                    
+~                                      │┃                                                                               
+~                                      │┃  This is a background delegation test. Use the direct subagent tool twice     
+~                                      │┃  with background=true and agent="general". Both calls must have exactly       
+~                                      │┃  description="Small test" and model="opencode-go/deepseek-v4-flash". Launch   
+~                                      │┃  both without waiting for the first. First child prompt: Call shell once with 
+~                                      │┃  command "sleep 20", then reply exactly CHILD_ONE. Second child prompt: Call  
+~                                      │┃  shell once with command "sleep 20", then reply exactly CHILD_TWO. These are  
+~                                      │┃  two independent test tasks. Do not read or modify files. After both launches 
+~                                      │┃  reply PARENT_LAUNCHED. When completion notifications arrive, acknowledge     
+~                                      │┃  them without any further tool calls.                                         
+~                                      │┃                                                                               
+~                                      │                                                                                
+~                                      │Thinking: Let me launch both background subagents as requested.                 
+~                                      │                                                                                
+~                                      │✓ General Task – Small test                                                     
+~                                      │  └ 1 toolcall · 53s                                                            
+~                                      │                                                                                
+~                                      │✓ General Task – Small test                                                     
+~                                      │  └ 1 toolcall · 45s                                                            
+~                                      │                                                                                
+~                                      │PARENT_LAUNCHED                                                                 
+~                                      │                                                                                
+~                                      │▣ Build · DeepSeek V4 Flash · 9k/1m tok · 4.5s                                  
+~                                      │                                                                                
+~                                      │<subagent sessionID="ses_f39179dccffe7qsD5VBXdxe9A3" state="completed"          
+~                                      │description="Small test">                                                       
+~                                      │CHILD_TWO                                                                       
+~                                      │</subagent>                                                                     
+~                                      │Thinking: The second child completed with CHILD_TWO. I should acknowledge it    
+~                                      │without any further tool calls. I'm still waiting for the first child           
+~                                      │(CHILD_ONE).                                                                    
+~                                      │                                                                                
+~                                      │Acknowledged: CHILD_TWO completed. Still awaiting the first child (CHILD_ONE).  
+~                                      │                                                                                
+~                                      │▣ Build · DeepSeek V4 Flash · 9.1k/1m tok · 28.7s                               
+~                                      │                                                                                
+[No Name]            0,0-1          All opencode [-]                                                  16,1           Top
+Background delegation test with two child tasks: Session done                                                           

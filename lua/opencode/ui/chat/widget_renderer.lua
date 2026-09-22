@@ -39,7 +39,7 @@ function M.render_single_question(ctx, index, qstate)
 		q_lines, q_highlights = question_widget.get_answered_lines(
 			request_id,
 			{ questions = qstate.questions, timestamp = qstate.timestamp },
-			qstate.answers
+			qstate.display_answers or qstate.answers
 		)
 		q_meta = widget_base.make_meta()
 	elseif status == "rejected" then

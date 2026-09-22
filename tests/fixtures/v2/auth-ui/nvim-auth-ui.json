@@ -1,0 +1,182 @@
+{
+  "version": "2.0.11",
+  "activation_ui": true,
+  "deletion_ui": true,
+  "secret_not_in_buffers": true,
+  "notifications": [
+    "OpenCode.nvim v0.1.0 loaded",
+    "OpenCode connected (server v2.0.11)",
+    "Connected to Neovim disposable auth fixture",
+    "Connected to Neovim disposable auth fixture",
+    "Account updated",
+    "Account disconnected"
+  ],
+  "accounts_after_delete": {
+    "name": "Neovim disposable auth fixture",
+    "id": "groq",
+    "connections": [
+      {
+        "id": "cred_0c6c65f17001TrLhPL4u44QGBC",
+        "label": "Neovim disposable auth fixture",
+        "type": "credential"
+      },
+      {
+        "name": "OPENCODE_NVIM_TEST_INTEGRATION_ENV",
+        "type": "env"
+      }
+    ],
+    "methods": [
+      {
+        "names": [
+          "OPENCODE_NVIM_TEST_INTEGRATION_ENV"
+        ],
+        "type": "env"
+      },
+      {
+        "label": "Test key",
+        "form": [
+          {
+            "required": true,
+            "title": "Region",
+            "key": "region",
+            "options": [
+              {
+                "value": "test",
+                "label": "Test"
+              }
+            ],
+            "type": "string"
+          }
+        ],
+        "type": "key"
+      },
+      {
+        "id": "test-code",
+        "label": "Test code",
+        "type": "oauth"
+      },
+      {
+        "id": "test-auto",
+        "label": "Test auto",
+        "type": "oauth"
+      },
+      {
+        "id": "test-cancel",
+        "label": "Test cancel",
+        "type": "oauth"
+      },
+      {
+        "id": "test-expired",
+        "label": "Test expired",
+        "type": "oauth"
+      },
+      {
+        "command": [
+          "/usr/bin/printf",
+          "{\"type\":\"key\",\"key\":\"public-command-key\"}"
+        ],
+        "id": "test-command",
+        "label": "Test command",
+        "type": "command"
+      },
+      {
+        "command": [
+          "/bin/sleep",
+          "30"
+        ],
+        "id": "test-command-cancel",
+        "label": "Test command cancel",
+        "type": "command"
+      }
+    ]
+  },
+  "key_ui": true,
+  "oauth_code_ui": true,
+  "authorization_url_dispatch": true,
+  "personal_browser_opened": false,
+  "expired_ui": true,
+  "accounts_before_delete": {
+    "name": "Neovim disposable auth fixture",
+    "id": "groq",
+    "connections": [
+      {
+        "id": "cred_0c6c65fa0001XczQvyWBzj2CtC",
+        "label": "Neovim disposable auth fixture 2",
+        "type": "credential"
+      },
+      {
+        "id": "cred_0c6c65f17001TrLhPL4u44QGBC",
+        "label": "Neovim disposable auth fixture",
+        "type": "credential"
+      },
+      {
+        "name": "OPENCODE_NVIM_TEST_INTEGRATION_ENV",
+        "type": "env"
+      }
+    ],
+    "methods": [
+      {
+        "names": [
+          "OPENCODE_NVIM_TEST_INTEGRATION_ENV"
+        ],
+        "type": "env"
+      },
+      {
+        "label": "Test key",
+        "form": [
+          {
+            "required": true,
+            "title": "Region",
+            "key": "region",
+            "options": [
+              {
+                "value": "test",
+                "label": "Test"
+              }
+            ],
+            "type": "string"
+          }
+        ],
+        "type": "key"
+      },
+      {
+        "id": "test-code",
+        "label": "Test code",
+        "type": "oauth"
+      },
+      {
+        "id": "test-auto",
+        "label": "Test auto",
+        "type": "oauth"
+      },
+      {
+        "id": "test-cancel",
+        "label": "Test cancel",
+        "type": "oauth"
+      },
+      {
+        "id": "test-expired",
+        "label": "Test expired",
+        "type": "oauth"
+      },
+      {
+        "command": [
+          "/usr/bin/printf",
+          "{\"type\":\"key\",\"key\":\"public-command-key\"}"
+        ],
+        "id": "test-command",
+        "label": "Test command",
+        "type": "command"
+      },
+      {
+        "command": [
+          "/bin/sleep",
+          "30"
+        ],
+        "id": "test-command-cancel",
+        "label": "Test command cancel",
+        "type": "command"
+      }
+    ]
+  }
+}

@@ -120,17 +120,9 @@ end
 ---@param tool_data table
 ---@return boolean
 local function request_matches_tool(request, tool_data)
-	local request_message_id = util.resolve_event_message_id(request)
-	local request_call_id = util.resolve_event_call_id(request)
-	local tool_message_id = tool_data.message_id
-	local tool_call_id = tool_data.call_id
-
-	if type(tool_call_id) == "string" and tool_call_id ~= "" and request_call_id == tool_call_id then
-		return not tool_message_id or not request_message_id or request_message_id == tool_message_id
-	end
-
-	if type(tool_message_id) == "string" and tool_message_id ~= "" and request_message_id == tool_message_id then
-		return true
+	local matches = util.match_tool_request(request, tool_data)
+	if matches ~= nil then
+		return matches
 	end
 
 	local request_session_id = get_request_session_id(request)
@@ -289,9 +281,74 @@ local function sync_question_from_tool(events, state, question_state, data, atte
 	end
 end
 
+---Recover waiting questions without depending on a fresh tool SSE event.
+local function reconcile_pending_questions(events, state, question_state)
+	local ok_client, client = pcall(require, "opencode.client")
+	if not ok_client or type(client.list_questions) ~= "function" then
+		return
+	end
+	local generation = question_state.get_generation()
+	local directories = {}
+	local function add_session(session_id)
+		if session_id then
+			local directory = state.get_session_directory(session_id) or state.normalize_directory(vim.fn.getcwd())
+			directories[directory] = true
+		end
+	end
+	add_session(state.get_session().id)
+	for _, session in ipairs(state.get_active_sessions()) do
+		add_session(session.id)
+	end
+	for directory in pairs(directories) do
+		-- A reply can arrive before this request's pending-list snapshot.
+		local resolved = {}
+		local function record_resolution(data)
+			local request_id = get_request_id(data)
+			if request_id then
+				resolved[request_id] = true
+			end
+		end
+		events.on("question_replied", record_resolution)
+		events.on("question_rejected", record_resolution)
+		client.list_questions({ directory = directory }, function(err, response)
+			vim.schedule(function()
+				events.off("question_replied", record_resolution)
+				events.off("question_rejected", record_resolution)
+				if generation ~= question_state.get_generation() then
+					return
+				end
+				local logger = require("opencode.logger")
+				if err then
+					logger.debug("Pending question reconciliation failed", { directory = directory, error = err })
+					return
+				end
+				local current_id = state.get_session().id
+				for _, request in ipairs(normalize_question_list(response)) do
+					local session_id = get_request_session_id(request)
+					if session_id and not resolved[get_request_id(request)]
+						and (session_id == current_id or util.runtime_root_for_session(session_id))
+					then
+						add_or_update_question_request(events, state, question_state, request, {}, logger)
+					end
+				end
+			end)
+		end)
+	end
+end
+
 function M.setup(events)
 	local state = require("opencode.state")
 	local question_state = require("opencode.question.state")
+	for _, event_type in ipairs({ "connected", "session.selected" }) do
+		events.on(event_type, function()
+			local generation = question_state.get_generation()
+			vim.schedule(function()
+				if events.protocol ~= "v2" and generation == question_state.get_generation() then
+					reconcile_pending_questions(events, state, question_state)
+				end
+			end)
+		end)
+	end
 
 	-- Handle question.asked - store question and trigger UI update
 	events.on("question_asked", function(data)
@@ -319,7 +376,7 @@ function M.setup(events)
 	-- the pending /question list when the running question tool part appears.
 	events.on("tool_update", function(data)
 		vim.schedule(function()
-			sync_question_from_tool(events, state, question_state, data)
+			if events.protocol ~= "v2" then sync_question_from_tool(events, state, question_state, data) end
 		end)
 	end)
 

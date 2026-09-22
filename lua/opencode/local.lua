@@ -8,13 +8,14 @@ local logger = require("opencode.logger")
 
 -- Persistent state file path
 local state_file = vim.fn.stdpath("data") .. "/opencode_local.json"
+local persistence
 
 -- Internal state (like TUI's modelStore/agentStore)
 local state = {
 	ready = false,
-	-- Current agent name
+	-- Current stable agent ID
 	agent = nil,
-	-- Per-agent model selection: { [agentName] = { providerID, modelID } }
+	-- Per-agent model selection: { [agentID] = { providerID, modelID } }
 	model = {},
 	-- Recent models (most recent first)
 	recent = {},
@@ -73,6 +74,9 @@ end
 ---@param old_val any
 ---@param new_val any
 local function emit(key, old_val, new_val)
+	if key == "agent" or key == "model" or key == "variant" then
+		require("opencode.session.selection").choose(require("opencode.state").get_session().id, key, new_val)
+	end
 	for _, cb in ipairs(listeners) do
 		pcall(cb, key, new_val, old_val)
 	end
@@ -80,23 +84,17 @@ end
 
 ---Load persistent state from file
 local function load_state()
-	local file = io.open(state_file, "r")
-	if file then
-		local content = file:read("*all")
-		file:close()
-		local ok, data = pcall(vim.json.decode, content)
-		if ok and type(data) == "table" then
-			if type(data.recent) == "table" then
-				state.recent = data.recent
-			end
-			if type(data.favorite) == "table" then
-				state.favorite = data.favorite
-			end
-			if type(data.variant) == "table" then
-				state.variant = data.variant
-			end
+	persistence = require("opencode.preferences").open(state_file)
+	local data = persistence.data
+	for _, key in ipairs({ "recent", "favorite", "variant", "model" }) do
+		if type(data[key]) == "table" then state[key] = data[key] end
+	end
+	if data.version == nil then
+		for _, list in ipairs({ state.recent, state.favorite, state.model }) do
+			for _, model in pairs(list) do if type(model) == "table" then model.legacy_upstream_id = true end end
 		end
 	end
+	if type(data.agent) == "string" then state.agent = data.agent end
 	state.ready = true
 end
 
@@ -105,17 +103,9 @@ local function save_state()
 	if not state.ready then
 		return
 	end
-	local dir = vim.fn.fnamemodify(state_file, ":h")
-	vim.fn.mkdir(dir, "p")
-	local file = io.open(state_file, "w")
-	if file then
-		local data = {
-			recent = state.recent,
-			favorite = state.favorite,
-			variant = state.variant,
-		}
-		file:write(vim.json.encode(data))
-		file:close()
+	if not persistence.save({ recent = state.recent, favorite = state.favorite, variant = state.variant,
+		model = state.model, agent = state.agent }) then
+		logger.warn("Could not save model preferences; original file preserved")
 	end
 end
 
@@ -147,18 +137,21 @@ end
 
 ---Get current agent
 ---@return table|nil
-function M.agent.current()
+function M.agent.current(opts)
 	local agents = M.agent.list()
 	if #agents == 0 then
 		return nil
 	end
 	-- Find current agent or return first
-	if state.agent then
+	local scoped = not (opts and opts.unscoped) and require("opencode.session.selection").current(require("opencode.state").get_session().id)
+	local selected = scoped and scoped.agent or state.agent
+	if selected then
 		for _, agent in ipairs(agents) do
-			if agent.name == state.agent then
+			if (agent.id or agent.name) == selected or agent.name == selected then
 				return agent
 			end
 		end
+		if scoped and scoped.agent then return { id = selected, name = selected, unavailable = true } end
 	end
 	-- Default to first agent
 	return agents[1]
@@ -171,7 +164,8 @@ function M.agent.set(name)
 	-- Validate agent exists
 	local found = false
 	for _, agent in ipairs(agents) do
-		if agent.name == name then
+		if (agent.id or agent.name) == name or agent.name == name then
+			name = agent.id or agent.name
 			found = true
 			break
 		end
@@ -182,6 +176,7 @@ function M.agent.set(name)
 	end
 	local old = state.agent
 	state.agent = name
+	save_state()
 	emit("agent", old, name)
 end
 
@@ -198,9 +193,10 @@ function M.agent.move(direction, opts)
 		return
 	end
 	local current_idx = 1
-	if state.agent then
+	local current = M.agent.current()
+	if current then
 		for i, agent in ipairs(agents) do
-			if agent.name == state.agent then
+			if (agent.id or agent.name) == (current.id or current.name) then
 				current_idx = i
 				break
 			end
@@ -213,7 +209,8 @@ function M.agent.move(direction, opts)
 		next_idx = 1
 	end
 	local old = state.agent
-	state.agent = agents[next_idx].name
+	state.agent = agents[next_idx].id or agents[next_idx].name
+	save_state()
 	emit("agent", old, state.agent)
 	-- If agent has a configured model, switch to it
 	local agent = agents[next_idx]
@@ -253,7 +250,7 @@ function M.agent.color(agent_name)
 	local found_agent = nil
 	local found_index = -1
 	for i, a in ipairs(all_agents) do
-		if a.name == agent_name then
+		if (a.id or a.name) == agent_name or a.name == agent_name then
 			found_agent = a
 			found_index = i
 			break
@@ -362,21 +359,7 @@ local function get_fallback_model(opts)
 				})
 			end
 		end
-		-- Try first model
-		if provider.models then
-			for model_id, _ in pairs(provider.models) do
-				local m = { providerID = provider.id, modelID = model_id }
-				if is_model_valid(m) then
-					if log then
-						logger.debug("Fallback model selected", {
-							source = "first_provider_model",
-							model = model_summary(m),
-						})
-					end
-					return m
-				end
-			end
-		end
+
 	end
 
 	if log then
@@ -444,8 +427,10 @@ end
 
 ---Get current model key for the current agent
 ---@return { providerID: string, modelID: string }|nil
-function M.model.current()
-	local agent = M.agent.current()
+function M.model.current(opts)
+	local scoped = not (opts and opts.unscoped) and require("opencode.session.selection").current(require("opencode.state").get_session().id)
+	if scoped and scoped.model then return scoped.model end
+	local agent = M.agent.current(opts)
 	if not agent then
 		local key = table.concat({
 			"no_visible_agent",
@@ -465,7 +450,7 @@ function M.model.current()
 	local candidates = {
 		{
 			source = "agent_state",
-			model = state.model[agent.name],
+			model = state.model[agent.id or agent.name],
 		},
 		{
 			source = "agent_config",
@@ -649,7 +634,7 @@ function M.model.set(model, opts)
 	end
 	local agent = M.agent.current()
 	if agent then
-		state.model[agent.name] = { providerID = model.providerID, modelID = model.modelID }
+		state.model[agent.id or agent.name] = { providerID = model.providerID, modelID = model.modelID }
 	end
 	if opts.recent then
 		-- Add to recent, remove duplicates
@@ -663,46 +648,31 @@ function M.model.set(model, opts)
 			end
 		end
 		state.recent = new_recent
-		save_state()
 	end
+	save_state()
 	emit("model", nil, model)
 end
 
----Clean up invalid models from recent and favorite lists (run on startup)
+---Catalog availability is temporary; never delete saved preferences here.
 function M.model.cleanup()
-	-- Don't clean up if no providers are loaded yet (user may connect later)
-	local providers = sync.get_providers()
-	if #providers == 0 then
-		return
-	end
-
-	local removed = 0
-
-	-- Clean up recent
-	local new_recent = {}
-	for _, item in ipairs(state.recent) do
-		if is_model_valid(item) then
-			table.insert(new_recent, item)
-		else
-			removed = removed + 1
+	local canonical = require("opencode.preferences").canonical_model
+	local changed = false
+	for _, list in ipairs({ state.recent, state.favorite, state.model }) do
+		for key, model in pairs(list) do
+			local provider = type(model) == "table" and sync.get_provider(model.providerID)
+			local result = type(model) == "table" and model.legacy_upstream_id and canonical(model, provider) or model
+			if type(model) == "table" and model.legacy_upstream_id and provider and provider.models
+				and provider.models[result.modelID] then
+				result = vim.deepcopy(result); result.legacy_upstream_id = nil
+			end
+			if result ~= model then
+				list[key], changed = result, true
+				local old_key, new_key = model.providerID .. "/" .. model.modelID, result.providerID .. "/" .. result.modelID
+				if state.variant[old_key] and not state.variant[new_key] then state.variant[new_key] = state.variant[old_key] end
+			end
 		end
 	end
-	state.recent = new_recent
-
-	-- Clean up favorites
-	local new_favorite = {}
-	for _, item in ipairs(state.favorite) do
-		if is_model_valid(item) then
-			table.insert(new_favorite, item)
-		else
-			removed = removed + 1
-		end
-	end
-	state.favorite = new_favorite
-
-	if removed > 0 then
-		save_state()
-	end
+	if changed then save_state() end
 end
 
 ---Cycle through favorite or recent models
@@ -819,8 +789,10 @@ end
 
 ---Get current variant for current model
 ---@return string|nil
-function M.variant.current()
-	local model = M.model.current()
+function M.variant.current(opts)
+	local scoped = not (opts and opts.unscoped) and require("opencode.session.selection").current(require("opencode.state").get_session().id)
+	if scoped and scoped.model then return scoped.variant ~= "default" and scoped.variant or nil end
+	local model = M.model.current(opts)
 	if not model then
 		return nil
 	end
@@ -828,7 +800,7 @@ function M.variant.current()
 	if not selected or selected == "default" then
 		return nil
 	end
-	for _, variant in ipairs(M.variant.list()) do
+	for _, variant in ipairs(M.variant.list(opts)) do
 		if variant == selected then
 			return selected
 		end
@@ -843,8 +815,8 @@ end
 
 ---Get available variants for current model
 ---@return string[]
-function M.variant.list()
-	local model = M.model.current()
+function M.variant.list(opts)
+	local model = M.model.current(opts)
 	if not model then
 		return {}
 	end
@@ -856,6 +828,7 @@ function M.variant.list()
 	if not model_info or not model_info.variants then
 		return {}
 	end
+	if model_info.variant_order then return vim.deepcopy(model_info.variant_order) end
 	local variants = {}
 	for name, _ in pairs(model_info.variants) do
 		table.insert(variants, name)

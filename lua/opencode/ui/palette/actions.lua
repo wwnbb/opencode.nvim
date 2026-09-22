@@ -79,19 +79,7 @@ function M.register(palette)
 				return
 			end
 
-				local compact_opts = {}
-				local current_model = selectors.current_model()
-				if current_model and current_model.providerID and current_model.modelID then
-					compact_opts.providerID = current_model.providerID
-					compact_opts.modelID = current_model.modelID
-				end
-
-			if not compact_opts.providerID or not compact_opts.modelID then
-				vim.notify("No model selected for compaction", vim.log.levels.WARN)
-				return
-			end
-
-				opencode_actions.compact_session(session.id, compact_opts, function(err)
+				opencode_actions.compact_session(session.id, {}, function(err)
 					if err then
 						vim.notify("Failed to compact session: " .. tostring(err.message or err), vim.log.levels.ERROR)
 						return
@@ -190,53 +178,18 @@ function M.register(palette)
 						end
 					end
 
-					-- LSP Servers: [{id, name, root, status}]
-					if server_status and server_status.lsp and #server_status.lsp > 0 then
-						add_section("LSP Servers", #server_status.lsp)
-						for _, lsp in ipairs(server_status.lsp) do
-							local name = lsp.name or lsp.id or "unknown"
-							local status_hl = lsp.status == "connected" and "DiagnosticOk" or "DiagnosticWarn"
-							add_line("• " .. name, status_hl)
-						end
-					end
-
-					-- Formatters: [{name, extensions, enabled}]
-					if server_status and server_status.formatters then
-						-- Filter to only enabled formatters
-						local enabled_formatters = {}
-						for _, fmt in ipairs(server_status.formatters) do
-							if fmt.enabled ~= false then
-								table.insert(enabled_formatters, fmt)
-							end
-						end
-
-						if #enabled_formatters > 0 then
-							add_section("Formatters", #enabled_formatters)
-							for _, fmt in ipairs(enabled_formatters) do
-								add_line("• " .. (fmt.name or "unknown"))
-							end
-						end
-					end
-
-					-- Plugins: ["name@version", "file:///path/to/plugin", ...]
 					if server_status and server_status.plugins and #server_status.plugins > 0 then
 						add_section("Plugins", #server_status.plugins)
-						for _, plugin_str in ipairs(server_status.plugins) do
-							local name, version
-							if plugin_str:match("^file://") then
-								-- Extract name from file path
-								name = plugin_str:match("([^/]+)$") or plugin_str
-								version = nil
-							elseif plugin_str:find("@") then
-								-- Split name@version
-								name, version = plugin_str:match("^(.+)@(.+)$")
-							else
-								name = plugin_str
-								version = "latest"
-							end
-							local display = version and (name .. " @" .. version) or name
-							add_line("• " .. display)
+						for _, plugin in ipairs(server_status.plugins) do
+							local source, status = plugin.source or {}, plugin.state or {}
+							local name = plugin.id or source.target or source.path or source.type or "unknown"
+							local version = source.version and (" @" .. source.version) or ""
+							add_line("• " .. name .. version .. " — " .. (status.status or "unknown"))
+							if status.error then add_line("  " .. status.error, "DiagnosticError") end
 						end
+					end
+					for domain, message in pairs(server_status and server_status.errors or {}) do
+						add_line(domain .. ": " .. message, "DiagnosticWarn")
 					end
 
 					-- If server didn't return any data, show local state

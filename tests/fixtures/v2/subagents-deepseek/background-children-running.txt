@@ -1,0 +1,40 @@
+                                       │ ● Background dele...  │ ●1 ◈0                                                  
+~                                      │Agent: build                                                                    
+~                                      │┃                                                                               
+~                                      │┃  This is a background delegation test. Use the direct subagent tool twice     
+~                                      │┃  with background=true and agent="general". Both calls must have exactly       
+~                                      │┃  description="Small test" and model="opencode-go/deepseek-v4-flash". Launch   
+~                                      │┃  both without waiting for the first. First child prompt: Call shell once with 
+~                                      │┃  command "sleep 20", then reply exactly CHILD_ONE. Second child prompt: Call  
+~                                      │┃  shell once with command "sleep 20", then reply exactly CHILD_TWO. These are  
+~                                      │┃  two independent test tasks. Do not read or modify files. After both launches 
+~                                      │┃  reply PARENT_LAUNCHED. When completion notifications arrive, acknowledge     
+~                                      │┃  them without any further tool calls.                                         
+~                                      │┃                                                                               
+~                                      │                                                                                
+~                                      │Thinking: Let me launch both background subagents as requested.                 
+~                                      │                                                                                
+~                                      │⠋ General Task – Small test                                                     
+~                                      │⠋ General Task – Small test                                                     
+~                                      │                                                                                
+~                                      │| Build · DeepSeek V4 Flash                                                     
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+[No Name]            0,0-1          All opencode [-]                                                  4,1            All
+OpenCode connected (server v2.0.11)                                                                                     

@@ -1,0 +1,40 @@
+                                       │ No active session                                                              
+~                                      │ Press 'i' to focus input                                                       
+~                                      │ Press '<C-p>' for command palette                                              
+~                                      │ Press '?' for help                                                             
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │┃                                                                               
+~                                      │┃                                                                               
+~                                      │┃                                                                               
+~                                      │┃ Code  Loading...                                                              
+~                                      │┃                                                                               
+~                                      │                                                                                
+[No Name]            0,0-1          All opencode [-]                                                  5,0-1          All
+-- (insert) --                                                                                        0,0-1         All 

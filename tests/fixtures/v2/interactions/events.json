@@ -1,0 +1,173 @@
+[
+  {
+    "id": "evt_0c5edf201002Uw6c16NyEyxm9B",
+    "created": 1790027100673,
+    "type": "form.created",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "form": {
+        "id": "frm_0c5edf201001YO2Elkq2BCWNWJ",
+        "sessionID": "ses_f3a120e32ffefHuzIAG86oLGFP",
+        "title": "Typed form fixture",
+        "fields": [
+          {
+            "key": "target",
+            "required": true,
+            "type": "string",
+            "options": [
+              {
+                "value": "a",
+                "label": "Same"
+              },
+              {
+                "value": "b",
+                "label": "Same"
+              }
+            ]
+          },
+          {
+            "key": "checks",
+            "type": "multiselect",
+            "options": [
+              {
+                "value": "unit",
+                "label": "Unit"
+              },
+              {
+                "value": "integration",
+                "label": "Integration"
+              }
+            ],
+            "minItems": 1,
+            "maxItems": 2
+          },
+          {
+            "key": "retries",
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 3,
+            "default": 0
+          },
+          {
+            "key": "ratio",
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          {
+            "key": "confirm",
+            "required": true,
+            "type": "boolean",
+            "default": false
+          },
+          {
+            "key": "note",
+            "required": true,
+            "when": [
+              {
+                "key": "confirm",
+                "op": "eq",
+                "value": true
+              }
+            ],
+            "type": "string"
+          },
+          {
+            "key": "hidden",
+            "required": true,
+            "hidden": true,
+            "type": "string",
+            "default": "secret-default"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "id": "evt_0c5edf206001cD7YR0LclQ7LO9",
+    "created": 1790027100678,
+    "type": "form.replied",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "id": "frm_0c5edf201001YO2Elkq2BCWNWJ",
+      "sessionID": "ses_f3a120e32ffefHuzIAG86oLGFP",
+      "answer": {
+        "target": "b",
+        "checks": [
+          "unit"
+        ],
+        "retries": 0,
+        "ratio": 0,
+        "confirm": false,
+        "hidden": "secret-default"
+      }
+    }
+  },
+  {
+    "id": "evt_0c5edf20a0021zXiK51dS3RrbS",
+    "created": 1790027100682,
+    "type": "form.created",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "form": {
+        "id": "frm_0c5edf20a0011lZ14cXtnD4dG5",
+        "sessionID": "ses_f3a120e32ffefHuzIAG86oLGFP",
+        "title": "External step",
+        "fields": [
+          {
+            "key": "auth",
+            "type": "external",
+            "url": "https://example.com/auth"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "id": "evt_0c5edf20b001zZHl4BY1YgYGn7",
+    "created": 1790027100683,
+    "type": "form.cancelled",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "id": "frm_0c5edf20a0011lZ14cXtnD4dG5",
+      "sessionID": "ses_f3a120e32ffefHuzIAG86oLGFP"
+    }
+  },
+  {
+    "id": "evt_0c5edf213002pseFOMar2jaMfD",
+    "created": 1790027100691,
+    "type": "permission.asked",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "id": "per_0c5edf213001OOkTf7ROYixQmH",
+      "sessionID": "ses_f3a120e32ffefHuzIAG86oLGFP",
+      "action": "fixture",
+      "resources": [
+        "fixture-resource"
+      ]
+    }
+  },
+  {
+    "id": "evt_0c5edf2170014NQHIM6XY1P5kC",
+    "created": 1790027100695,
+    "type": "permission.replied",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f3a120e32ffefHuzIAG86oLGFP",
+      "requestID": "per_0c5edf213001OOkTf7ROYixQmH",
+      "reply": "once"
+    }
+  }
+]

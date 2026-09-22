@@ -1,0 +1,572 @@
+[
+  {
+    "id": "evt_0c69d0a37001m4XIFrAew4z18i",
+    "type": "server.connected",
+    "data": {}
+  },
+  {
+    "id": "evt_0c69d0a58001YhFRAVjBj8R9tf",
+    "created": 1790038575704,
+    "type": "worktree.resolved",
+    "data": {
+      "projectID": "global",
+      "directory": "<PROFILE>/project пробел %#",
+      "previous": "global"
+    },
+    "durable": {
+      "aggregateID": "global",
+      "seq": 0,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c69d0e31001gcjJSkfUZ3nZ5W",
+    "created": 1790038576689,
+    "type": "models-dev.refreshed",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {}
+  },
+  {
+    "id": "evt_0c69d0eb0001JCjmxgr39y2olK",
+    "created": 1790038576816,
+    "type": "integration.updated",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {}
+  },
+  {
+    "id": "evt_0c69d0eb3001BurMBoQu85NY63",
+    "created": 1790038576819,
+    "type": "provider.updated",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {}
+  },
+  {
+    "id": "evt_0c69d0eb7001N6ftvwImlCjlXs",
+    "created": 1790038576823,
+    "type": "model.updated",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {}
+  },
+  {
+    "id": "evt_0c69d0ed6001snl56pQlKBUEBA",
+    "created": 1790038576854,
+    "type": "vcs.branch.updated",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "branch": "master"
+    }
+  },
+  {
+    "id": "evt_0c69d0ed6002Y2WNInFl6fuZ5J",
+    "created": 1790038576854,
+    "type": "agent.updated",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {}
+  },
+  {
+    "id": "evt_0c69d0ed6003tiWFMAOu3PsoHT",
+    "created": 1790038576854,
+    "type": "command.updated",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {}
+  },
+  {
+    "id": "evt_0c69d0ed70014Ybd0DyUQt3lG5",
+    "created": 1790038576855,
+    "type": "skill.updated",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {}
+  },
+  {
+    "id": "evt_0c69d0ed9001OmBPxVyMM0W6Jx",
+    "created": 1790038576857,
+    "type": "websearch.updated",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {}
+  },
+  {
+    "id": "evt_0c69d0ed9003w5CjadUMpye52Q",
+    "created": 1790038576857,
+    "type": "reference.updated",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {}
+  },
+  {
+    "id": "evt_0c69d0ee3001TAkXU0rMveZOtN",
+    "created": 1790038576867,
+    "type": "plugin.updated",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {}
+  },
+  {
+    "id": "evt_0c69d0f53001w28adN6uKPmgMW",
+    "created": 1790038576979,
+    "type": "session.created",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f3962f0c8ffevJqzc8Mh3GW3jE",
+      "slug": "clever-forest",
+      "version": "2.0.11",
+      "projectID": "global",
+      "location": {
+        "directory": "<PROFILE>/project пробел %#"
+      },
+      "subpath": "",
+      "permissions": [
+        {
+          "action": "form_ui_once",
+          "resource": "*",
+          "effect": "ask"
+        },
+        {
+          "action": "form_ui_always",
+          "resource": "*",
+          "effect": "ask"
+        },
+        {
+          "action": "form_ui_reject",
+          "resource": "*",
+          "effect": "ask"
+        }
+      ]
+    },
+    "durable": {
+      "aggregateID": "ses_f3962f0c8ffevJqzc8Mh3GW3jE",
+      "seq": 0,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c69d0f6a0021sMCkmPzOVGyOP",
+    "created": 1790038577002,
+    "type": "form.created",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "form": {
+        "id": "frm_0c69d0f6a001omlCySeCVwIl8K",
+        "sessionID": "ses_f3962f0c8ffevJqzc8Mh3GW3jE",
+        "title": "Typed keyboard form",
+        "fields": [
+          {
+            "key": "target",
+            "required": true,
+            "type": "string",
+            "options": [
+              {
+                "value": "a",
+                "label": "Same"
+              },
+              {
+                "value": "b",
+                "label": "Same"
+              }
+            ]
+          },
+          {
+            "key": "checks",
+            "required": true,
+            "type": "multiselect",
+            "options": [
+              {
+                "value": "unit",
+                "label": "Unit"
+              },
+              {
+                "value": "integration",
+                "label": "Integration"
+              }
+            ],
+            "minItems": 1
+          },
+          {
+            "key": "retries",
+            "required": true,
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 3
+          },
+          {
+            "key": "ratio",
+            "required": true,
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          {
+            "key": "confirm",
+            "required": true,
+            "type": "boolean"
+          },
+          {
+            "key": "note",
+            "required": true,
+            "when": [
+              {
+                "key": "confirm",
+                "op": "eq",
+                "value": true
+              }
+            ],
+            "type": "string"
+          },
+          {
+            "key": "hidden",
+            "required": true,
+            "hidden": true,
+            "type": "string",
+            "default": "preserved-default"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "id": "evt_0c69d0fbe001V3iqX7JJVOnSdd",
+    "created": 1790038577086,
+    "type": "form.replied",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "id": "frm_0c69d0f6a001omlCySeCVwIl8K",
+      "sessionID": "ses_f3962f0c8ffevJqzc8Mh3GW3jE",
+      "answer": {
+        "retries": 0,
+        "checks": [
+          "unit",
+          "integration"
+        ],
+        "hidden": "preserved-default",
+        "target": "b",
+        "ratio": 0,
+        "confirm": false
+      }
+    }
+  },
+  {
+    "id": "evt_0c69d0fc3002cxHdBYkqhJzoVb",
+    "created": 1790038577091,
+    "type": "form.created",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "form": {
+        "id": "frm_0c69d0fc3001xRc3T8oPpscCQl",
+        "sessionID": "ses_f3962f0c8ffevJqzc8Mh3GW3jE",
+        "title": "Server validation",
+        "fields": [
+          {
+            "key": "code",
+            "required": true,
+            "type": "string",
+            "pattern": "^OK-[0-9]+$"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "id": "evt_0c69d100200149O3OL10hZqSQx",
+    "created": 1790038577154,
+    "type": "form.replied",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "id": "frm_0c69d0fc3001xRc3T8oPpscCQl",
+      "sessionID": "ses_f3962f0c8ffevJqzc8Mh3GW3jE",
+      "answer": {
+        "code": "OK-42"
+      }
+    }
+  },
+  {
+    "id": "evt_0c69d1004002OOo5iX3MHY6Kz2",
+    "created": 1790038577156,
+    "type": "form.created",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "form": {
+        "id": "frm_0c69d1004001WHd0c1WmvSyeOS",
+        "sessionID": "ses_f3962f0c8ffevJqzc8Mh3GW3jE",
+        "title": "Second client reply",
+        "fields": [
+          {
+            "key": "text",
+            "required": true,
+            "type": "string"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "id": "evt_0c69d1011001ajydpx1M7dAPkT",
+    "created": 1790038577169,
+    "type": "form.replied",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "id": "frm_0c69d1004001WHd0c1WmvSyeOS",
+      "sessionID": "ses_f3962f0c8ffevJqzc8Mh3GW3jE",
+      "answer": {
+        "text": "authoritative second client"
+      }
+    }
+  },
+  {
+    "id": "evt_0c69d1027002ciGKSBp5dOosHo",
+    "created": 1790038577191,
+    "type": "form.created",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "form": {
+        "id": "frm_0c69d1027001ayKZTpcx12DHoa",
+        "sessionID": "ses_f3962f0c8ffevJqzc8Mh3GW3jE",
+        "title": "External step",
+        "fields": [
+          {
+            "key": "auth",
+            "type": "external",
+            "url": "http://127.0.0.1:52251/api/info"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "id": "evt_0c69d1036001G3UBphxt3edRiM",
+    "created": 1790038577206,
+    "type": "form.cancelled",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "id": "frm_0c69d1027001ayKZTpcx12DHoa",
+      "sessionID": "ses_f3962f0c8ffevJqzc8Mh3GW3jE"
+    }
+  },
+  {
+    "id": "evt_0c69d103a002r4ssTwx9D8Rnmm",
+    "created": 1790038577210,
+    "type": "permission.asked",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "id": "per_0c69d103a001eCKmmownH6HXQv",
+      "sessionID": "ses_f3962f0c8ffevJqzc8Mh3GW3jE",
+      "action": "form_ui_once",
+      "resources": [
+        "fixture-resource"
+      ],
+      "save": [
+        "fixture-resource"
+      ]
+    }
+  },
+  {
+    "id": "evt_0c69d103f001PIWd3ezlOThCY8",
+    "created": 1790038577215,
+    "type": "permission.replied",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f3962f0c8ffevJqzc8Mh3GW3jE",
+      "requestID": "per_0c69d103a001eCKmmownH6HXQv",
+      "reply": "once"
+    }
+  },
+  {
+    "id": "evt_0c69d1041002GOtPzwOxC1nJTw",
+    "created": 1790038577217,
+    "type": "permission.asked",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "id": "per_0c69d1041001CY8bEt5kn1TmBQ",
+      "sessionID": "ses_f3962f0c8ffevJqzc8Mh3GW3jE",
+      "action": "form_ui_once",
+      "resources": [
+        "fixture-resource"
+      ]
+    }
+  },
+  {
+    "id": "evt_0c69d104d001i82hSyo2BAWU10",
+    "created": 1790038577229,
+    "type": "permission.replied",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f3962f0c8ffevJqzc8Mh3GW3jE",
+      "requestID": "per_0c69d1041001CY8bEt5kn1TmBQ",
+      "reply": "reject"
+    }
+  },
+  {
+    "id": "evt_0c69d1051002DZaAHWy84y5SHs",
+    "created": 1790038577233,
+    "type": "permission.asked",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "id": "per_0c69d1051001o3CQpHzagyykqh",
+      "sessionID": "ses_f3962f0c8ffevJqzc8Mh3GW3jE",
+      "action": "form_ui_always",
+      "resources": [
+        "fixture-resource"
+      ],
+      "save": [
+        "fixture-resource"
+      ]
+    }
+  },
+  {
+    "id": "evt_0c69d109d001mwyST4LntGJg0B",
+    "created": 1790038577309,
+    "type": "permission.replied",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f3962f0c8ffevJqzc8Mh3GW3jE",
+      "requestID": "per_0c69d1051001o3CQpHzagyykqh",
+      "reply": "always"
+    }
+  },
+  {
+    "id": "evt_0c69d10a1002tOEwlBxc2x3Bmu",
+    "created": 1790038577313,
+    "type": "permission.asked",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "id": "per_0c69d10a1001XGkYYbhzLbmHbd",
+      "sessionID": "ses_f3962f0c8ffevJqzc8Mh3GW3jE",
+      "action": "form_ui_reject",
+      "resources": [
+        "fixture-resource"
+      ],
+      "save": [
+        "fixture-resource"
+      ]
+    }
+  },
+  {
+    "id": "evt_0c69d10a9001meT0qUCe6OiPAd",
+    "created": 1790038577321,
+    "type": "permission.replied",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f3962f0c8ffevJqzc8Mh3GW3jE",
+      "requestID": "per_0c69d10a1001XGkYYbhzLbmHbd",
+      "reply": "reject"
+    }
+  },
+  {
+    "id": "evt_0c69d10ac002prebcPdC2BXeHa",
+    "created": 1790038577324,
+    "type": "permission.asked",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "id": "per_0c69d10ac001PBrGrVRG9NksW3",
+      "sessionID": "ses_f3962f0c8ffevJqzc8Mh3GW3jE",
+      "action": "form_ui_reject",
+      "resources": [
+        "fixture-resource"
+      ]
+    }
+  },
+  {
+    "id": "evt_0c69d10b8001Fg4rHgKVqOs79e",
+    "created": 1790038577336,
+    "type": "permission.replied",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f3962f0c8ffevJqzc8Mh3GW3jE",
+      "requestID": "per_0c69d10ac001PBrGrVRG9NksW3",
+      "reply": "reject"
+    }
+  },
+  {
+    "id": "evt_0c69d110a001MjZ4KTe2nyxdj0",
+    "created": 1790038577418,
+    "type": "session.created",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f3962ef11ffelcZDtEC4Jx144C",
+      "slug": "shiny-orchid",
+      "version": "2.0.11",
+      "projectID": "global",
+      "location": {
+        "directory": "<PROFILE>/project пробел %#"
+      },
+      "subpath": "",
+      "title": "opencode.nvim v2 runtime fixture"
+    },
+    "durable": {
+      "aggregateID": "ses_f3962ef11ffelcZDtEC4Jx144C",
+      "seq": 0,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c69d1110001B5aN6lkFmOnR4h",
+    "created": 1790038577424,
+    "type": "session.deleted",
+    "data": {
+      "sessionID": "ses_f3962ef11ffelcZDtEC4Jx144C"
+    },
+    "durable": {
+      "aggregateID": "ses_f3962ef11ffelcZDtEC4Jx144C",
+      "seq": 1,
+      "version": 2
+    }
+  }
+]
