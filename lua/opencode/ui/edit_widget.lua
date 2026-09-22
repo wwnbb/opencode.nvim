@@ -430,61 +430,10 @@ local function display_width_spaces(text)
 	return string.rep(" ", vim.fn.strdisplaywidth(text))
 end
 
----@param result table
----@param row table
----@param source_start number
----@param source_end number
----@param hl_group string
----@param priority number|nil
-local function add_wrapped_row_highlight(result, row, source_start, source_end, hl_group, priority)
-	local row_start = row.byte_start or 0
-	local row_end = row.byte_end or (row_start + #(row.text or ""))
-	local overlap_start = math.max(source_start, row_start)
-	local overlap_end = math.min(source_end, row_end)
-	if overlap_start >= overlap_end then
-		return
-	end
-
-	add_highlight(
-		result,
-		row.line_index,
-		#(row.prefix or "") + overlap_start - row_start,
-		#(row.prefix or "") + overlap_end - row_start,
-		hl_group,
-		priority
-	)
-end
-
----@param result table
----@param rows table[]|nil
----@param source_start number
----@param source_end number
----@param hl_group string
----@param priority number|nil
-local function add_wrapped_line_highlight(result, rows, source_start, source_end, hl_group, priority)
-	if source_end <= source_start then
-		return
-	end
-	for _, row in ipairs(rows or {}) do
-		add_wrapped_row_highlight(result, row, source_start, source_end, hl_group, priority)
-	end
-end
-
----@param result table
----@param rows table[]
----@param text string
----@param lang string
 local function add_wrapped_syntax_highlights(result, rows, text, lang)
-	for _, hl in ipairs(syntax.highlight_text(text, lang, { scope = "diffs" })) do
-		if (hl.line or 0) == 0 then
-			local source_start = hl.col_start or 0
-			local source_end = hl.end_col or hl.col_end or hl.col_start or #text
-			if source_end == -1 then
-				source_end = #text
-			end
-			add_wrapped_line_highlight(result, rows, source_start, source_end, hl.hl_group, hl.priority)
-		end
-	end
+	local captures = vim.tbl_filter(function(hl) return (hl.line or 0) == 0 end,
+		syntax.highlight_text(text, lang, { scope = "diffs" }))
+	vim.list_extend(result.highlights, syntax.project_highlights(captures, { text }, { rows }))
 end
 
 ---@param result table

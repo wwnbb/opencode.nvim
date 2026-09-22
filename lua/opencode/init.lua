@@ -103,6 +103,24 @@ local function _focus_input_window_when_ready(input, max_attempts, delay, attemp
 	end, delay)
 end
 
+---@param bufnr number
+---@param text string
+---@return string
+local function _fence_code(bufnr, text)
+	local language = vim.bo[bufnr].filetype
+	if language == "" then
+		language = vim.filetype.match({ filename = vim.api.nvim_buf_get_name(bufnr) }) or ""
+	end
+
+	-- Keep Markdown snippets containing their own fences inside a single block.
+	local fence_length = 3
+	for run in text:gmatch("`+") do
+		fence_length = math.max(fence_length, #run + 1)
+	end
+	local fence = string.rep("`", fence_length)
+	return fence .. language .. "\n" .. text .. "\n" .. fence
+end
+
 ---@param opts? { context?: string }
 ---@return string|nil
 local function _build_current_line_prompt(opts)
@@ -124,10 +142,8 @@ local function _build_current_line_prompt(opts)
 
 	local parts = {
 		string.format("@%s#%d", display_path, line_num),
+		_fence_code(bufnr, line_text),
 	}
-	if line_text ~= "" then
-		table.insert(parts, line_text)
-	end
 
 	local context = opts.context and vim.trim(opts.context) or ""
 	if context ~= "" then
@@ -202,7 +218,7 @@ local function _build_visual_selection_prompt(opts)
 
 	local parts = {
 		string.format("@%s#%s", display_path, line_ref),
-		table.concat(lines, "\n"),
+		_fence_code(bufnr, table.concat(lines, "\n")),
 	}
 
 	local context = opts.context and vim.trim(opts.context) or ""

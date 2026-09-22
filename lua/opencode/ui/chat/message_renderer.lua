@@ -290,12 +290,11 @@ local function render_user_message(ctx, message, render_parts, msg_idx, messages
 		function()
 			return render.render_user_message(render_parts.content, message.agent, file_parts, {
 				max_lines = max_user_message_lines,
+				highlight_code = ctx:code_highlighter(message.id),
 			})
 		end
 	)
-	for _, nl in ipairs(msg_lines) do
-		ctx:add_line(nl)
-	end
+	ctx:add_nui_lines(msg_lines)
 	local prompt_status = require("opencode.selectors").prompt_status(ctx.current_session.id, message.id)
 	if prompt_status then
 		local status_line = NuiLine()
@@ -342,7 +341,7 @@ local function render_reasoning_part(ctx, message, part, part_idx, render_parts,
 	end
 end
 
-local function render_text_part(ctx, message, part, part_idx, render_parts, incomplete_assistant, render_as_plain_stream)
+local function render_text_part(ctx, message, part, part_idx, render_parts, incomplete_assistant)
 	local content_start = ctx:line_count()
 	local cache_key = nil
 	if not incomplete_assistant then
@@ -353,16 +352,15 @@ local function render_text_part(ctx, message, part, part_idx, render_parts, inco
 			part.id or part_idx,
 			render_parts.message_revision,
 			part.id and render_parts.part_revisions[part.id] or 0,
-			ctx.chat_width,
-			render_as_plain_stream
+			ctx.chat_width
 		)
 	end
 	local content_lines = ctx:cached_nui_lines(cache_key, function()
-		return render.render_content(part.text, { stream_plain = render_as_plain_stream })
+		return render.render_content(part.text, { highlight_code = ctx:code_highlighter(message.id, part.id or part_idx) })
 	end)
 	ctx:add_nui_lines(content_lines)
 	if incomplete_assistant and #content_lines > 0 and part.id then
-		ctx:register_stream_block(message.id, part, "text", content_start)
+		ctx:register_stream_block(message.id, part, "text", content_start, content_lines)
 	end
 end
 
@@ -377,8 +375,7 @@ local function render_assistant_message(ctx, index, message, render_parts, opts)
 				part,
 				part_idx,
 				render_parts,
-				opts.incomplete_assistant,
-				opts.render_as_plain_stream
+				opts.incomplete_assistant
 			)
 		elseif part.type == "tool" then
 			local skip_tool_row = false
@@ -417,7 +414,6 @@ local function render_messages(
 	render_metadata_footer_line,
 	processing_presentation
 )
-	local current_session_processing = processing_footer.is_processing(get_current_session_status(ctx))
 	local last_assistant_idx = find_last_assistant(messages)
 	local max_user_message_lines = tonumber((ctx.chat_config or {}).max_user_message_lines) or 0
 
@@ -430,7 +426,6 @@ local function render_messages(
 			message.role == "user" and { include_synthetic = false } or nil
 		)
 		local incomplete_assistant = message.role == "assistant" and not (message.time and message.time.completed)
-		local render_as_plain_stream = current_session_processing and incomplete_assistant
 
 		local has_content = render_parts.content and render_parts.content ~= ""
 		local has_reasoning = render_parts.reasoning and render_parts.reasoning ~= ""
@@ -448,7 +443,6 @@ local function render_messages(
 			else
 				render_assistant_message(ctx, index, message, render_parts, {
 					incomplete_assistant = incomplete_assistant,
-					render_as_plain_stream = render_as_plain_stream,
 					is_last_assistant = is_last_assistant,
 					suppress_footer = processing_presentation ~= nil and is_last_assistant,
 					render_metadata_footer_line = render_metadata_footer_line,
@@ -527,10 +521,9 @@ local function render_local_notices(ctx, index, all_messages, max_user_message_l
 			end
 			local msg_lines = render.render_user_message(message.content or "", message.agent, nil, {
 				max_lines = max_user_message_lines,
+				highlight_code = ctx:code_highlighter(message.id),
 			})
-			for _, nl in ipairs(msg_lines) do
-				ctx:add_line(nl)
-			end
+			ctx:add_nui_lines(msg_lines)
 			ctx:add_raw_line("")
 			register_message_range(message, message_start_line, ctx:line_count() - 1, "local_notice")
 			goto continue_local_message

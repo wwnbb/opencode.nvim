@@ -45,7 +45,8 @@ function M.project(session_id, message)
 	info.protocol = "v2"
 	info.sessionID = session_id
 	info.role = (message.type == "user" or message.type == "assistant") and message.type or "system"
-	info.hidden = message.type == "idle"
+	-- Selection is already shown in the input bar and assistant metadata footers.
+	info.hidden = message.type == "idle" or message.type == "agent-switched" or message.type == "model-switched"
 	if message.error then info.error_message = M.error_text(message.error) end
 	if message.model then
 		info.modelID, info.providerID, info.variant = message.model.id, message.model.providerID, message.model.variant

@@ -13,6 +13,7 @@ local thinking = require("opencode.ui.thinking")
 local locale = require("opencode.util.locale")
 local sync = require("opencode.sync")
 local syntax = require("opencode.ui.syntax")
+local code_blocks = require("opencode.ui.code_blocks")
 local highlights = require("opencode.ui.highlights")
 
 local cs = require("opencode.ui.chat.state")
@@ -586,33 +587,40 @@ end
 ---@param content string|nil
 ---@param agent_name string|nil
 ---@param files? table[]
----@param opts? { max_lines?: number }
+---@param opts? { max_lines?: number, highlight_code?: function }
 ---@return NuiLine[]
 function M.render_user_message(content, agent_name, files, opts)
 	opts = opts or {}
 	ensure_user_message_highlights()
 
 	local lines = {}
-	local content_lines = vim.split(content or "", "\n", { plain = true })
-	local original_content_lines = #content_lines
+	content = code_blocks.normalize_text(content)
+	local source_lines = vim.split(content, "\n", { plain = true })
+	local content_lines, source_indices, row_map = {}, {}, {}
+	for index, text in ipairs(source_lines) do
+		content_lines[index], source_indices[index] = text, index
+	end
 	local max_lines = tonumber(opts.max_lines) or 0
 	local hidden_content_lines = 0
 	if max_lines > 0 and #content_lines > max_lines then
 		local visible_budget = math.max(1, max_lines - 1)
 		local head_lines = math.max(1, math.floor(visible_budget * 0.75))
 		local tail_lines = math.max(0, visible_budget - head_lines)
-		local compacted = {}
+		local compacted, indices = {}, {}
 		for i = 1, head_lines do
+			indices[#compacted + 1] = i
 			compacted[#compacted + 1] = content_lines[i] or ""
 		end
 		hidden_content_lines = #content_lines - head_lines - tail_lines
+		indices[#compacted + 1] = false
 		compacted[#compacted + 1] = "... (" .. tostring(hidden_content_lines) .. " lines hidden)"
 		for i = #content_lines - tail_lines + 1, #content_lines do
 			if i > head_lines then
+				indices[#compacted + 1] = i
 				compacted[#compacted + 1] = content_lines[i] or ""
 			end
 		end
-		content_lines = compacted
+		content_lines, source_indices = compacted, indices
 	end
 	local border_hl = M.get_agent_hl(agent_name or "unknown")
 
@@ -637,14 +645,23 @@ function M.render_user_message(content, agent_name, files, opts)
 
 	add_block_line("")
 
-	for _, text in ipairs(content_lines) do
-		local wrapped = M.wrap_text(text, content_width, {
+	for index, text in ipairs(content_lines) do
+		local wrapped = M.wrap_text_with_ranges(text, content_width, {
 			initial_col = safe_display_width("┃  "),
 		})
-		for _, wline in ipairs(wrapped) do
-			add_block_line("  " .. wline)
+		local rows = {}
+		for _, chunk in ipairs(wrapped) do
+			rows[#rows + 1] = { line_index = #lines, byte_start = chunk.byte_start,
+				byte_end = chunk.byte_end, prefix = "┃  " }
+			add_block_line("  " .. chunk.text)
 		end
+		if source_indices[index] then row_map[source_indices[index]] = rows end
 	end
+	local captures, _, retry = syntax.highlight_markdown_fenced_blocks(content, {
+		scope = "user_markdown", highlight_code = opts.highlight_code,
+	})
+	lines._opencode_highlights = syntax.project_highlights(captures, source_lines, row_map)
+	lines._opencode_syntax_retry = retry
 
 	for _, file in ipairs(files or {}) do
 		local mime = file.mime or "file"
@@ -691,7 +708,7 @@ function M.render_reasoning(reasoning)
 	return lines
 end
 
----Render content using plain text lines only.
+---Render source text and syntax ranges, including unfinished streamed fences.
 ---@param content string|nil
 ---@param _opts? table
 ---@return NuiLine[]
@@ -701,21 +718,15 @@ function M.render_content(content, _opts)
 	if not content or content == "" then
 		return lines
 	end
-
-	local content_lines = vim.split(content, "\n", { plain = true })
-	for _, text in ipairs(content_lines) do
+	content = code_blocks.normalize_text(content)
+	for _, text in ipairs(vim.split(content, "\n", { plain = true })) do
 		local line = NuiLine()
 		line:append(text)
 		table.insert(lines, line)
 	end
-
-	if not opts.stream_plain and syntax.is_enabled("assistant_markdown") then
-		lines._opencode_highlights = syntax.highlight_markdown_fenced_blocks(content, {
-			scope = "assistant_markdown",
-			compat_markdown = true,
-		})
-	end
-
+	lines._opencode_highlights, lines._opencode_plain_append, lines._opencode_syntax_retry = syntax.highlight_markdown_fenced_blocks(content, {
+		scope = "assistant_markdown", highlight_code = opts.highlight_code,
+	})
 	return lines
 end
 

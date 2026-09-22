@@ -23,8 +23,13 @@ describe("v2 stream render scheduling", function()
 			for _ = 1, 400 do event("text.delta", { delta = "a" }) end
 			flush(scheduled); assert.equals(baseline, full)
 			flush(timers); assert.equals(1, updates); assert.equals(string.rep("a", 400), last.delta)
-			assert.equals("text", last.field)
-			event("text.ended", { text = "AUTHORITATIVE FINAL" }); flush(scheduled)
+				assert.equals("text", last.field)
+				local code = { "\n`", "``lu", "a\n", "return ", "1" }
+				for _, delta in ipairs(code) do event("text.delta", { delta = delta }) end
+				flush(scheduled); assert.equals(baseline, full)
+				flush(timers); assert.equals(2, updates)
+				assert.equals(table.concat(code), last.delta)
+				event("text.ended", { text = "AUTHORITATIVE FINAL" }); flush(scheduled)
 			assert.equals(baseline + 1, full)
 			assert.equals("AUTHORITATIVE FINAL", sync.get_part("m", last.part_id).text)
 		end)

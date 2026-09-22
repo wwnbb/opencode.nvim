@@ -1,6 +1,7 @@
 -- Best-effort Treesitter syntax helpers for chat-rendered code snippets.
 
 local M = {}
+local code_blocks = require("opencode.ui.code_blocks")
 
 local DEFAULT_CONFIG = {
 	enabled = true,
@@ -8,6 +9,7 @@ local DEFAULT_CONFIG = {
 	max_lines = 500,
 	max_bytes = 200 * 1024,
 	assistant_markdown = true,
+	user_markdown = true,
 	tools = true,
 	diffs = true,
 	languages = {},
@@ -15,6 +17,11 @@ local DEFAULT_CONFIG = {
 
 local DEFAULT_EXTMARK_PRIORITY = 4100
 local syntax_hl_cache = {}
+local generation = 0
+
+function M.get_generation()
+	return generation
+end
 
 local LANGUAGE_ALIASES = {
 	csharp = "c_sharp",
@@ -48,6 +55,7 @@ local function encode_hl_name(name)
 end
 
 local function clear_syntax_hl_cache()
+	generation = generation + 1
 	for key in pairs(syntax_hl_cache) do
 		syntax_hl_cache[key] = nil
 	end
@@ -144,7 +152,7 @@ function M.get_config()
 	return vim.tbl_deep_extend("force", DEFAULT_CONFIG, full_config.syntax or {})
 end
 
----@param scope "assistant_markdown"|"tools"|"diffs"|nil
+---@param scope "assistant_markdown"|"user_markdown"|"tools"|"diffs"|nil
 ---@return boolean
 function M.is_enabled(scope)
 	local cfg = M.get_config()
@@ -161,18 +169,6 @@ end
 ---@return string
 local function trim(text)
 	return vim.trim(text or "")
-end
-
----@param lines string[]
----@param first number
----@param last number
----@return string
-local function join_range(lines, first, last)
-	local out = {}
-	for i = first, last do
-		table.insert(out, lines[i] or "")
-	end
-	return table.concat(out, "\n")
 end
 
 ---@param text string
@@ -408,7 +404,13 @@ function M.highlight_text(text, language, opts)
 					local capture_name = query.captures[capture]
 					if type(capture_name) == "string" and capture_name:sub(1, 1) ~= "_" then
 						local hl_group = syntax_hl_group("@" .. capture_name .. "." .. lang)
-						local range_ok, range = pcall(vim.treesitter.get_range, node, text, metadata and metadata[capture])
+						local capture_metadata = metadata and metadata[capture]
+						local range_ok, range
+						-- Most captures have no offset/trim directives. Avoid allocating
+						-- a range table and a protected call for every streamed token.
+						if capture_metadata then
+							range_ok, range = pcall(vim.treesitter.get_range, node, text, capture_metadata)
+						end
 						local row_start, col_start, row_end, col_end
 						if range_ok and type(range) == "table" then
 							if #range >= 6 then
@@ -448,6 +450,40 @@ function M.highlight_text(text, language, opts)
 	return highlights
 end
 
+---Map source captures to decorated/wrapped rows. row_map is indexed by
+---one-based source line; each row uses zero-based, end-exclusive byte ranges.
+---Missing rows are hidden. Prefixes and padding never receive code highlights.
+function M.project_highlights(highlights, source_lines, row_map)
+	local result = {}
+	for _, hl in ipairs(highlights or {}) do
+		local first = hl.line or 0
+		local last = hl.end_line or first
+		for source_line = first, math.min(last, #source_lines - 1) do
+			local text = source_lines[source_line + 1]
+			local start_col = source_line == first and (hl.col_start or 0) or 0
+			local end_col = source_line == last and (hl.end_col or hl.col_end) or #text
+			end_col = normalize_end_col(end_col, text)
+			for _, row in ipairs(row_map[source_line + 1] or {}) do
+				local row_start = row.byte_start or 0
+				local row_end = row.byte_end or (row_start + #(row.text or ""))
+				local overlap_start = math.max(start_col, row_start)
+				local overlap_end = math.min(end_col, row_end, #text)
+				if overlap_end > overlap_start then
+					local offset = row.col_offset or #(row.prefix or "")
+					result[#result + 1] = {
+						line = row.line_index,
+						col_start = offset + overlap_start - row_start,
+						col_end = offset + overlap_end - row_start,
+						hl_group = hl.hl_group,
+						priority = hl.priority,
+					}
+				end
+			end
+		end
+	end
+	return result
+end
+
 ---@param result table
 ---@param text string
 ---@param language string|nil
@@ -467,71 +503,46 @@ function M.add_highlights(result, text, language, opts)
 	return highlights
 end
 
----@param fence string
----@return string
-local function close_pattern(fence)
-	local marker = fence:sub(1, 1)
-	local escaped = marker == "`" and "`" or "~"
-	return "^%s*" .. escaped .. escaped .. escaped .. "+%s*$"
-end
-
----@param info string|nil
----@return string|nil
-local function language_from_fence_info(info)
-	info = trim(info or "")
-	local lang = info:match("^([^%s{]+)")
-	return M.normalize_language(lang)
-end
-
----@param text string
----@param opts? table
----@return table[] highlights
+---Highlight fences in source coordinates. The optional callback owns caching;
+---this module never depends on chat state or rendered line positions.
 function M.highlight_markdown_fenced_blocks(text, opts)
 	opts = opts or {}
 	text = type(text) == "string" and text or tostring(text or "")
+	local blocks, plain_append = code_blocks.parse(text)
 	if text == "" or not M.is_enabled(opts.scope or "assistant_markdown") then
-		return {}
+		return {}, plain_append
 	end
 	if opts.compat_markdown ~= false then
 		local full_config = get_full_config()
 		if full_config.markdown and full_config.markdown.enable_code_highlight == false then
-			return {}
+			return {}, plain_append
 		end
 	end
 
-	local lines = split_lines(text)
-	local highlights = {}
-	local i = 1
-	while i <= #lines do
-		local fence, info = lines[i]:match("^%s*(```+)%s*(.-)%s*$")
-		if not fence then
-			fence, info = lines[i]:match("^%s*(~~~+)%s*(.-)%s*$")
-		end
-		if not fence then
-			i = i + 1
-		else
-			local lang = language_from_fence_info(info)
-			local code_start = i + 1
-			i = i + 1
-			while i <= #lines and not lines[i]:match(close_pattern(fence)) do
-				i = i + 1
+	local highlights, retry = {}, false
+	local highlight_opts = vim.tbl_extend("force", opts, {
+		scope = opts.scope or "assistant_markdown",
+		min_bytes = 0,
+	})
+	for _, block in ipairs(blocks) do
+		local lang = M.normalize_language(block.info:match("^([^%s{]+)"))
+		if lang and #block.lines > 0 then
+			local code = table.concat(block.lines, "\n")
+			local captures = (opts.highlight_code or M.highlight_text)(code, lang, highlight_opts, block)
+			retry = retry or #captures == 0
+			local rows = {}
+			for index, line in ipairs(block.lines) do
+				rows[index] = { {
+					line_index = block.start_line + index - 1,
+					byte_start = 0,
+					byte_end = #line,
+					col_offset = block.offsets[index],
+				} }
 			end
-			local code_end = i - 1
-			if lang and code_end >= code_start then
-				local code = join_range(lines, code_start, code_end)
-				local code_lines = split_lines(code)
-				local highlight_opts = vim.tbl_extend("force", opts, {
-					scope = opts.scope or "assistant_markdown",
-				})
-				for _, hl in ipairs(M.highlight_text(code, lang, highlight_opts)) do
-					append_offset_highlight(highlights, code_lines, hl, code_start - 1, 0)
-				end
-			end
-			i = i + 1
+			vim.list_extend(highlights, M.project_highlights(captures, block.lines, rows))
 		end
 	end
-
-	return highlights
+	return highlights, plain_append, retry
 end
 
 ---@param result table

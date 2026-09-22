@@ -142,6 +142,7 @@ end
 
 local function invalidate_cached_render_state()
 	render_state.clear_render_cache()
+	render_state.clear_code_cache()
 	render_state.invalidate_render_highlights(0)
 	state.todo_dock_signature = nil
 	state.force_full_render = true
@@ -982,6 +983,7 @@ function M.update_stream_part_block(session_id, message_id, part_id, opts)
 	end
 
 	local function try_plain_text_append()
+		if block.plain_append ~= true then return false end
 		local delta = opts.delta
 		if part.type ~= "text" or opts.field ~= "text" or type(delta) ~= "string" or delta == "" then
 			return false
@@ -1004,8 +1006,9 @@ function M.update_stream_part_block(session_id, message_id, part_id, opts)
 			return false
 		end
 
-		local last_line = vim.api.nvim_buf_get_lines(state.bufnr, block.end_line, block.end_line + 1, false)[1]
-		if type(last_line) ~= "string" then
+		local append_line = block.end_line - (block.trailing_separator and 1 or 0)
+		local last_line = vim.api.nvim_buf_get_lines(state.bufnr, append_line, append_line + 1, false)[1]
+		if type(last_line) ~= "string" or require("opencode.ui.code_blocks").is_fence_candidate(last_line .. delta) then
 			return false
 		end
 
@@ -1013,9 +1016,9 @@ function M.update_stream_part_block(session_id, message_id, part_id, opts)
 		local ok = pcall(
 			vim.api.nvim_buf_set_text,
 			state.bufnr,
-			block.end_line,
+			append_line,
 			#last_line,
-			block.end_line,
+			append_line,
 			#last_line,
 			{ delta }
 		)
@@ -1039,12 +1042,20 @@ function M.update_stream_part_block(session_id, message_id, part_id, opts)
 	if part.type == "reasoning" then
 		content_lines = render.render_reasoning(content)
 	else
-		content_lines = render.render_content(content, { stream_plain = true })
+		content_lines = render.render_content(content, {
+			highlight_code = render_state.code_highlighter(render_state.render_cache_key(effective_session_id, message_id, part_id)),
+		})
 	end
 	if #content_lines == 0 then
 		local empty = NuiLine()
 		empty:append("")
 		content_lines = { empty }
+	end
+	if block.trailing_separator then
+		while #content_lines > 0 and content_lines[#content_lines]:content() == "" do
+			table.remove(content_lines)
+		end
+		table.insert(content_lines, NuiLine())
 	end
 	local replacement = render.extract_lines(content_lines)
 
@@ -1066,6 +1077,7 @@ function M.update_stream_part_block(session_id, message_id, part_id, opts)
 		return false
 	end
 
+	block.plain_append = content_lines._opencode_plain_append == true
 	block.end_line = block.start_line + new_count - 1
 	block.text_length = #content
 	block.chat_width = chat_width

@@ -39,6 +39,10 @@ function M.new(opts)
 	}, Context)
 end
 
+function Context:code_highlighter(message_id, part_id)
+	return render_state.code_highlighter(render_state.render_cache_key(self.current_session.id, message_id, part_id or "user"))
+end
+
 function Context:render_cache_key(...)
 	return render_state.render_cache_key(...)
 end
@@ -49,7 +53,7 @@ function Context:cached_nui_lines(key, build)
 		return cached.nui_lines
 	end
 	local lines = build()
-	if key then
+	if key and not lines._opencode_syntax_retry then
 		render_state.render_cache_put(key, { nui_lines = lines })
 	end
 	return lines
@@ -98,6 +102,7 @@ function Context:push_line(text, nui_line)
 end
 
 function Context:ensure_single_blank_separator()
+	local old_count = #self.raw_lines
 	while #self.raw_lines > 0 and self.raw_lines[#self.raw_lines] == "" do
 		table.remove(self.raw_lines)
 		table.remove(self.nui_lines)
@@ -105,6 +110,14 @@ function Context:ensure_single_blank_separator()
 	local line = NuiLine()
 	line:append("")
 	self:push_line("", line)
+	-- The trailing separator belongs to the preceding streaming range. Otherwise
+	-- replacing a part ending in a newline duplicates this row on every delta.
+	for _, block in pairs(self.next_stream_blocks) do
+		if block.end_line >= #self.raw_lines - 2 and block.end_line < old_count then
+			block.end_line = #self.raw_lines - 1
+			block.trailing_separator = true
+		end
+	end
 end
 
 function Context:normalize_block_transition(next_kind)
@@ -173,7 +186,7 @@ function Context:add_render_result(result, kind)
 	return base_line
 end
 
-function Context:register_stream_block(message_id, part, kind, start_line)
+function Context:register_stream_block(message_id, part, kind, start_line, lines)
 	local session_id = self.current_session and self.current_session.id
 	local part_id = part and part.id
 	local block_key = render_state.stream_block_key(session_id, message_id, part_id, kind)
@@ -189,6 +202,7 @@ function Context:register_stream_block(message_id, part, kind, start_line)
 		kind = kind,
 		chat_width = self.chat_width,
 		text_length = #(part.text or ""),
+		plain_append = lines and lines._opencode_plain_append == true,
 	})
 end
 
