@@ -181,6 +181,11 @@ function M.setup_buffer(bufnr, opts)
 	end, keymap_opts)
 
 	vim.keymap.set("n", "<CR>", function()
+		local id, pos = chat_tasks.get_tool_at_cursor()
+		if pos and pos.activity_group then
+			chat_tasks.handle_tool_toggle(id)
+			return
+		end
 		chat_interactions.handle_question_confirm()
 	end, keymap_opts)
 

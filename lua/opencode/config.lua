@@ -141,7 +141,7 @@ M.defaults = {
 		truncate = true,
 		icon = "💭",
 		highlight = "Comment",
-		header_highlight = "Title",
+		header_highlight = "WarningMsg",
 	},
 
 	-- Artifact changes

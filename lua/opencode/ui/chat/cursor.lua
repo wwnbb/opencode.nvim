@@ -6,13 +6,14 @@ local state = cs.state
 local chat_interactions = require("opencode.ui.chat.interactions")
 
 ---@class OpenCodeWidgetCursorContext
----@field kind "question" | "permission" | "edit"
+---@field kind "question" | "permission" | "edit" | "activity"
 ---@field id string
 ---@field relative_line number
 
----@param kind "question" | "permission" | "edit"
+---@param kind "question" | "permission" | "edit" | "activity"
 ---@return table
 local function get_widget_positions(kind)
+	if kind == "activity" then return state.tools end
 	if kind == "question" then
 		return state.questions
 	end
@@ -22,7 +23,7 @@ local function get_widget_positions(kind)
 	return state.edits
 end
 
----@param kind "question" | "permission" | "edit"
+---@param kind "question" | "permission" | "edit" | "activity"
 ---@param pos table|nil
 ---@return boolean
 local function is_widget_cursor_target(kind, pos)
@@ -30,6 +31,7 @@ local function is_widget_cursor_target(kind, pos)
 		return false
 	end
 
+	if kind == "activity" then return pos.activity_group ~= nil end
 	if kind == "question" then
 		return pos.status == "pending" or pos.status == "confirming"
 	end
@@ -46,7 +48,7 @@ local function capture_widget_cursor_context()
 	end
 
 	local cursor_line = vim.api.nvim_win_get_cursor(state.winid)[1] - 1
-	local widget_kinds = { "question", "permission", "edit" }
+	local widget_kinds = { "question", "permission", "edit", "activity" }
 
 	for _, kind in ipairs(widget_kinds) do
 		for widget_id, pos in pairs(get_widget_positions(kind)) do

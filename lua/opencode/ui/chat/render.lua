@@ -684,27 +684,20 @@ end
 ---Render reasoning using NuiLine.
 ---@param reasoning string|nil
 ---@return NuiLine[]
-function M.render_reasoning(reasoning)
+function M.render_reasoning(reasoning, opts)
+	if not reasoning or vim.trim(reasoning) == "" or not thinking.is_enabled() then return {} end
+	opts = opts or {}
+	local part = opts.part or { type = "reasoning", text = reasoning, time = opts.time }
+	local group = { kind = "thought", completed = opts.completed ~= false,
+		refs = { { part = part, message = opts.message or {} } } }
+	local result = require("opencode.ui.chat.activity").render(group, opts.expanded == true)
 	local lines = {}
-	if not reasoning or reasoning == "" or not thinking.is_enabled() then
-		return lines
-	end
-
-	local reasoning_lines = vim.split(reasoning, "\n", { plain = true })
-	for i, rline in ipairs(reasoning_lines) do
+	for _, text in ipairs(result.lines) do
 		local line = NuiLine()
-		if i == 1 then
-			line:append(NuiText("Thinking: ", "WarningMsg"))
-			line:append(NuiText(rline, "Comment"))
-		else
-			line:append(NuiText("          " .. rline, "Comment"))
-		end
-		table.insert(lines, line)
+		line:append(text)
+		lines[#lines + 1] = line
 	end
-
-	if #lines > 0 then
-		table.insert(lines, NuiLine())
-	end
+	lines._opencode_highlights = result.highlights
 	return lines
 end
 

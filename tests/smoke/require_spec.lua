@@ -182,7 +182,7 @@ local thinking = require("opencode.ui.thinking")
 assert(thinking.extract_topic("**Planning** next") == "Planning", "thinking topic extraction should trim markdown header")
 local thinking_hl_ok, thinking_hl = pcall(thinking.get_highlights, 0)
 assert(thinking_hl_ok, "thinking highlights should not crash: " .. tostring(thinking_hl))
-assert(thinking_hl[1].hl_group == "Title", "thinking highlights should default header highlight")
+assert(thinking_hl[1].hl_group == "WarningMsg", "thinking highlights should default header highlight")
 
 do
 	require("opencode.ui.input.info_bar").setup_highlights()
