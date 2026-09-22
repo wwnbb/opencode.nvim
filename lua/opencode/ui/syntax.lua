@@ -1,4 +1,4 @@
--- Best-effort Treesitter syntax helpers for chat-rendered code snippets.
+-- Best-effort Treesitter syntax helpers for chat and input code snippets.
 
 local M = {}
 local code_blocks = require("opencode.ui.code_blocks")
@@ -10,6 +10,7 @@ local DEFAULT_CONFIG = {
 	max_bytes = 200 * 1024,
 	assistant_markdown = true,
 	user_markdown = true,
+	input_markdown = true,
 	tools = true,
 	diffs = true,
 	languages = {},
@@ -152,7 +153,7 @@ function M.get_config()
 	return vim.tbl_deep_extend("force", DEFAULT_CONFIG, full_config.syntax or {})
 end
 
----@param scope "assistant_markdown"|"user_markdown"|"tools"|"diffs"|nil
+---@param scope "assistant_markdown"|"user_markdown"|"input_markdown"|"tools"|"diffs"|nil
 ---@return boolean
 function M.is_enabled(scope)
 	local cfg = M.get_config()
@@ -346,16 +347,18 @@ end
 
 ---@param metadata table|nil
 ---@param capture number
+---@param base_priority number|nil
 ---@return number
-local function capture_priority(metadata, capture)
+local function capture_priority(metadata, capture, base_priority)
+	base_priority = base_priority or DEFAULT_EXTMARK_PRIORITY
 	local meta = metadata or {}
 	local raw_priority = tonumber(meta.priority or (meta[capture] and meta[capture].priority))
 	if not raw_priority then
-		return DEFAULT_EXTMARK_PRIORITY
+		return base_priority
 	end
 
 	local ts_priority = vim.hl and vim.hl.priorities and vim.hl.priorities.treesitter or 100
-	return DEFAULT_EXTMARK_PRIORITY + (raw_priority - ts_priority)
+	return base_priority + (raw_priority - ts_priority)
 end
 
 ---@param text string
@@ -435,7 +438,7 @@ function M.highlight_text(text, language, opts)
 								end_line = row_end,
 								end_col = col_end,
 								hl_group = hl_group,
-								priority = capture_priority(metadata, capture),
+								priority = capture_priority(metadata, capture, opts.priority),
 							})
 						end
 					end

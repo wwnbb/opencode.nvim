@@ -61,8 +61,12 @@ function M.setup(state, callbacks)
 		callback = callbacks.lock_scroll,
 	})
 
+	local bufnr = state.bufnr
 	state.popup:on(event.BufLeave, function()
 		vim.schedule(function()
+			if not state.visible or state.bufnr ~= bufnr then
+				return
+			end
 			local ok, native_diff = pcall(require, "opencode.ui.native_diff")
 			if ok and native_diff.is_active and native_diff.is_active() then
 				return

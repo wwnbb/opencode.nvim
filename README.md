@@ -13,6 +13,20 @@ projects, and prompts without leaving the editor.
 The goal of opencode.nvim is to make OpenCode feel lightweight, scriptable, keyboard-friendly,
 and naturally integrated into the Neovim workflow.
 
+# Tokens per second
+
+Assistant footers show average generation speed, for example `42.7 tok/s`.
+Like OpenCode v2, this sums output and reasoning tokens across the current turn
+and divides by the total model request time (`time.streamed - time.created`).
+Tool execution time is excluded. The value appears when the server supplies
+stream timing and token usage, including when loading session history.
+
+TPS is enabled by default. Set `chat.tps = false` to hide it:
+
+```lua
+require("opencode").setup({ chat = { tps = false } })
+```
+
 # Code highlighting
 
 Fenced code blocks in user messages and assistant replies use the installed
@@ -27,6 +41,7 @@ require("opencode").setup({
     enabled = true,
     user_markdown = true,
     assistant_markdown = true, -- includes streaming replies
+    input_markdown = true,     -- includes open fences while editing the draft
     max_lines = 500,           -- per code block
     max_bytes = 200 * 1024,
     languages = {},            -- optional language aliases
@@ -39,7 +54,7 @@ Neovim's runtimepath. Missing parsers/queries, unknown languages and blocks over
 the limits fall back to plain text; parsers are not installed automatically.
 Explicitly labelled fences also highlight snippets shorter than `syntax.min_bytes`.
 The legacy `markdown.enable_code_highlight = false` disables fenced-code
-highlighting for both roles. Standalone backtick/tilde fences are supported;
+highlighting in messages and the input. Standalone backtick/tilde fences are supported;
 nested Markdown containers such as block quotes are not parsed by this renderer.
 
 The current-line and visual-selection helpers (including the suggested
@@ -48,6 +63,11 @@ The language comes from the source buffer's `filetype`, with filename detection
 as a fallback; unknown languages leave the fence unlabelled. The `@file#lines`
 reference stays above the block. Selections containing backtick fences use a
 longer outer fence so the selected text remains intact.
+
+Fenced code also highlights in the input widget while typing, pasting, undoing
+edits and restoring drafts or history, including blocks without a closing fence.
+It uses the same language parsers and per-block limits as chat. Set
+`syntax.input_markdown = false` to disable highlighting only in the input.
 
 # Testing
 
