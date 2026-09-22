@@ -263,6 +263,7 @@ function M.setup(opts)
 
 	lifecycle.setup({
 		command = M._config.server.command,
+		port = M._config.server.port,
 		auto_start = M._config.server.auto_start,
 		startup_timeout = M._config.server.startup_timeout,
 		health_check_interval = M._config.server.health_check_interval,
@@ -610,8 +611,13 @@ function M.send(message, opts)
 		return
 	end
 
+	local captured = vim.deepcopy(opts or {})
+	captured.session_id = captured.session_id or state.get_session().id or false
+	captured.directory = captured.directory or state.get_session_directory(captured.session_id) or vim.fn.getcwd()
+	captured._token = require("opencode.session.pending").token(captured.session_id or nil)
+	captured._selection = require("opencode.selectors").send_selection(captured)
 	lifecycle.ensure_connected(function()
-		require("opencode.send").send(message, opts)
+		require("opencode.send").send(message, captured)
 	end)
 end
 
@@ -629,25 +635,17 @@ function M.abort()
 		return
 	end
 
-	local current_status = state.get_status()
-	if current_status ~= "streaming" then
-		vim.notify("Not currently streaming", vim.log.levels.INFO)
-		return
-	end
-
-	local client = require("opencode.client")
-	client.abort_session(session_id, function(err, result)
-		vim.schedule(function()
-			if err then
-				vim.notify("Failed to abort: " .. tostring(err.message or err.error or err), vim.log.levels.ERROR)
-				return
-			end
-
-			session_actions.set_status("idle", {
-				reason = "abort",
-				session_id = session_id,
-			})
-		end)
+	local pending = require("opencode.session.pending")
+	local token = pending.token(session_id)
+	require("opencode.client").abort_session(session_id, function(err)
+		if not pending.is_current(token) then return end
+		if err then
+			vim.notify("Failed to interrupt: " .. tostring(err.message or err.error or err), vim.log.levels.ERROR)
+		end
+		-- Interrupt acknowledges a request; SSE and active recovery establish
+		-- completion. Queued inbox items remain pending (resume=false).
+		require("opencode.events").emit("v2_reconcile", { session_id = session_id })
+		session_actions.refresh_status()
 	end)
 end
 

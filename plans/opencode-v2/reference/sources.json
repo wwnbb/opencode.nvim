@@ -1,0 +1,207 @@
+{
+  "research_date": "2026-09-21",
+  "target_version": "2.0.11",
+  "language": "ru",
+  "status": "Планы подготовлены; миграция и исполнение сервера 2.0.11 в этой задаче не выполнены.",
+  "repository_baseline": {
+    "head": "58fcf3cec7ea7ef17f886e05174aa2dd630cefb4",
+    "includes_preexisting_uncommitted_changes": true,
+    "note": "Проверялся рабочий checkout. Существующие изменения Lua/тестов не заменялись и не входят в результат подготовки планов."
+  },
+  "cli_release": {
+    "name": "@opencode/cli",
+    "registry_url": "https://registry.npmjs.org/@opencode%2fcli",
+    "latest_observed": "2.0.11",
+    "published_at": "2026-09-20T08:57:16.764Z",
+    "tarball_url": "https://registry.npmjs.org/@opencode/cli/-/cli-2.0.11.tgz",
+    "npm_integrity": "sha512-7hnjVw7+zlcjt34hXFQ+aWuLiG20iq/nKq3O9SRwq2Dahch5RNI+Q3mbj5X3db5l1Cn1U6WcvEF2u7kQFo7JLw==",
+    "binary_executed": false,
+    "note": "Версия подтверждена registry metadata; bootstrap-пакет и целевой бинарник не исполнялись."
+  },
+  "http_openapi": {
+    "url": "https://opencode.ai/v2/openapi.json",
+    "retrieved_date": "2026-09-21",
+    "sha256": "1362671d8cfdcb925b3a9fd61eaa20152e4c587746445a0b03504674b25c88ec",
+    "bytes": 532235,
+    "info": {
+      "title": "opencode HttpApi",
+      "version": "0.0.1",
+      "description": "Experimental HttpApi surface for selected instance routes."
+    },
+    "version_pinned": false,
+    "note": "Rolling schema. Поле info.version не является версией CLI. Сверять используемые маршруты с client 2.0.11 и фактическим сервером."
+  },
+  "packages": [
+    {
+      "name": "@opencode/client",
+      "version": "2.0.11",
+      "registry_url": "https://registry.npmjs.org/@opencode%2fclient/2.0.11",
+      "tarball_url": "https://registry.npmjs.org/@opencode/client/-/client-2.0.11.tgz",
+      "npm_integrity": "sha512-cx9/P1AlUm1wvEAk6Tjt1B7bILzFIw/sUncJRvyVpLkW6oooZBmgkmVi/9isHnr+LPcRkFnkqwmvqhlxlFsLFw==",
+      "npm_shasum": "45e5655ad3aff84fd587d49adc025ef3800e3269",
+      "download_sha256": "a6470584a9b71b5b465963ae605a4a4db0e1a03ea1b7b98ebc3a0ebb30c1cad0",
+      "integrity_verified": true,
+      "inspected_files": [
+        {
+          "path": "dist/promise/generated/types.d.ts",
+          "url": "https://unpkg.com/@opencode/client@2.0.11/dist/promise/generated/types.d.ts",
+          "sha256": "2a3189f29951523c7d20598192eb733b53b4a922c784a8601ffe671b8b1ae6f5"
+        },
+        {
+          "path": "dist/promise/generated/client.d.ts",
+          "url": "https://unpkg.com/@opencode/client@2.0.11/dist/promise/generated/client.d.ts",
+          "sha256": "911a04c944f052601993dc0446ee9ff47a73079f38306b093d3d8eaa35e5e1a1"
+        },
+        {
+          "path": "dist/promise/generated/client.js",
+          "url": "https://unpkg.com/@opencode/client@2.0.11/dist/promise/generated/client.js",
+          "sha256": "16e6e1a80250f5ea9341a46bbbf7cf5eb193654d30a8b24274644f31b162625b"
+        },
+        {
+          "path": "dist/promise/service.js",
+          "url": "https://unpkg.com/@opencode/client@2.0.11/dist/promise/service.js",
+          "sha256": "4cb00f072e654c8e55f77efded13bbfcd813711b51904e2dae6567515ae4e4b6"
+        },
+        {
+          "path": "dist/chunks/service-atpwm825.js",
+          "url": "https://unpkg.com/@opencode/client@2.0.11/dist/chunks/service-atpwm825.js",
+          "sha256": "ed4d88d252f4571096045183e3304bb31e0e33c4615b6de06994700680f7f06d"
+        },
+        {
+          "path": "dist/chunks/service-5mmhmmk7.js",
+          "url": "https://unpkg.com/@opencode/client@2.0.11/dist/chunks/service-5mmhmmk7.js",
+          "sha256": "84d1b6c37e90c9f0275f167c9c7c70c0b39fa7a15ea4815c7a818a90125178cc"
+        }
+      ]
+    },
+    {
+      "name": "@opencode/plugin",
+      "version": "2.0.11",
+      "registry_url": "https://registry.npmjs.org/@opencode%2fplugin/2.0.11",
+      "tarball_url": "https://registry.npmjs.org/@opencode/plugin/-/plugin-2.0.11.tgz",
+      "npm_integrity": "sha512-LqagVqieE/HWW71fCKrXbeyi5xe4DW4xwW45VNRcc5zLVVmjqjFp102Jd6n0BMXr5f8f2NsR+gLNhdOvM9xM2w==",
+      "npm_shasum": "b4daff73be2dc3099a94929164ae4d29cbfe36fb",
+      "download_sha256": "93f9e663413c4cad8af6d3847371838189fd945fb1f9cfd0a8e0457f9f0dc473",
+      "integrity_verified": true,
+      "inspected_files": [
+        {
+          "path": "dist/promise/plugin.d.ts",
+          "url": "https://unpkg.com/@opencode/plugin@2.0.11/dist/promise/plugin.d.ts",
+          "sha256": "ad8e00e94b4c94587800db750132a44754f42fe322d5cfb6da9fb0168ced09f1"
+        },
+        {
+          "path": "dist/promise/tool.d.ts",
+          "url": "https://unpkg.com/@opencode/plugin@2.0.11/dist/promise/tool.d.ts",
+          "sha256": "4c54a68f96f2c4c6ed281b1bb0249b0c9ea5d585364ee0073a1ffaa8f864a879"
+        },
+        {
+          "path": "dist/promise/permission.d.ts",
+          "url": "https://unpkg.com/@opencode/plugin@2.0.11/dist/promise/permission.d.ts",
+          "sha256": "533417da01f54839b003909e11863916b171d7641d0efe47f30d347e5e45a5e3"
+        },
+        {
+          "path": "dist/promise/session.d.ts",
+          "url": "https://unpkg.com/@opencode/plugin@2.0.11/dist/promise/session.d.ts",
+          "sha256": "5547fcb055794670b6ce0e5187b91e32bf3e89b1c4bed4581e39cf8fd63f5e6d"
+        },
+        {
+          "path": "dist/promise/rpc.d.ts",
+          "url": "https://unpkg.com/@opencode/plugin@2.0.11/dist/promise/rpc.d.ts",
+          "sha256": "a8286171def24eb35f35ed6d4149a7d4ac4993d7457a97465e2ed0f726e51283"
+        },
+        {
+          "path": "dist/promise/adapter.js",
+          "url": "https://unpkg.com/@opencode/plugin@2.0.11/dist/promise/adapter.js",
+          "sha256": "84351c010e9c7151a5e0a3830e4c163671e5e23e1c8775410a763adad5d5f3de"
+        },
+        {
+          "path": "dist/effect/tool.d.ts",
+          "url": "https://unpkg.com/@opencode/plugin@2.0.11/dist/effect/tool.d.ts",
+          "sha256": "84a4655b80d5dce02b55939dd4937d267b469e4aeb1a86d7bbbce88c1671cb2e"
+        }
+      ]
+    },
+    {
+      "name": "@opencode/schema",
+      "version": "2.0.11",
+      "registry_url": "https://registry.npmjs.org/@opencode%2fschema/2.0.11",
+      "tarball_url": "https://registry.npmjs.org/@opencode/schema/-/schema-2.0.11.tgz",
+      "npm_integrity": "sha512-AlJB2iyXDMuzxlEm2ies6vp1IIjhQxBpT6hJdWvqcuxKwFQMbbmvCpKFZU/j8iN1RW8qkaD0v9h7LwnalVqZGg==",
+      "npm_shasum": "bd668831d3171da3c4fe1bc38b8cf584ffffc24b",
+      "download_sha256": "58f1b598ed2c9a7d9b68488f84c3c73e15ed2b084fe55443a22f39d6d8599a9f",
+      "integrity_verified": true,
+      "inspected_files": [
+        {
+          "path": "dist/tool.d.ts",
+          "url": "https://unpkg.com/@opencode/schema@2.0.11/dist/tool.d.ts",
+          "sha256": "d2f905f306d3e04be9a743e16ef326ee93130c7fa9436e75874a492cea51d020"
+        },
+        {
+          "path": "dist/permission.d.ts",
+          "url": "https://unpkg.com/@opencode/schema@2.0.11/dist/permission.d.ts",
+          "sha256": "a5bf4d83891a6314df85060402185e8cfbcb06d76ef84759e0cd120f6bd6540a"
+        }
+      ]
+    }
+  ],
+  "documentation": [
+    {
+      "id": "migration",
+      "url": "https://opencode.ai/v2/docs/migrate-v1",
+      "version_pinned": false
+    },
+    {
+      "id": "http_api",
+      "url": "https://opencode.ai/v2/docs/api",
+      "version_pinned": false
+    },
+    {
+      "id": "client",
+      "url": "https://opencode.ai/v2/docs/build/client/",
+      "version_pinned": false
+    },
+    {
+      "id": "plugin_overview",
+      "url": "https://opencode.ai/v2/docs/build/plugins/",
+      "version_pinned": false
+    },
+    {
+      "id": "plugin_migration",
+      "url": "https://opencode.ai/v2/docs/build/plugins/migrate-v1",
+      "version_pinned": false
+    },
+    {
+      "id": "plugin_rpc",
+      "url": "https://opencode.ai/v2/docs/build/plugins/rpc/",
+      "version_pinned": false
+    },
+    {
+      "id": "cli_commands",
+      "url": "https://opencode.ai/v2/docs/cli/commands/",
+      "version_pinned": false
+    }
+  ],
+  "evidence_limits": [
+    "Наличие DTO в generated types не означает его присутствия в live V2Event union.",
+    "Полный сетевой клиент и ограниченный Plugin.Context имеют разные методы.",
+    "Задекларированные поля не доказывают runtime-семантику cancellation, retry, URI и snapshot ordering.",
+    "Копии upstream исходников в docs/ устарели относительно версии 2.0.11."
+  ],
+  "runtime_checks": {
+    "R1": "CLI/private service readiness, flags, auth and config directory",
+    "R2": "Prompt ID retry and admission deduplication",
+    "R3": "Content ordinal, snapshot/stream ordering, retries and durable/live differences",
+    "R4": "Native permission policy, hooks, cancellation and custom review UX",
+    "R5": "Actual tool cancellation, runtime and description loading",
+    "R6": "Subagent metadata and durable todo source",
+    "R7": "File/image URI and Unicode mention offsets",
+    "R8": "Forms validation, conditional/external fields and concurrent replies",
+    "R9": "Fork/revert semantics and migration of existing server history"
+  },
+  "proposed_not_native": [
+    "client/v2.lua and protocol/v2 Lua modules",
+    "opencode_nvim RPC with capabilities/reviewList/reviewGet/reviewReply",
+    "reviewCreated/reviewSettled/reviewCancelled events",
+    "optional todo extension via the same plugin RPC"
+  ]
+}

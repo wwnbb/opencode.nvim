@@ -40,7 +40,7 @@ function M.register(palette)
 					width = 60,
 					searchable = true,
 					on_select = function(item)
-						actions.select_agent(item.agent.name)
+						actions.select_agent(item.agent.id or item.agent.name)
 					end,
 				})
 			end)

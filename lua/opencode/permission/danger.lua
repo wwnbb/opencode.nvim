@@ -71,6 +71,12 @@ function M.approve(permission_id, opts)
 	if type(permission_id) ~= "string" or permission_id == "" then
 		return false, false
 	end
+	local edit = require("opencode.edit.state").get_edit(permission_id)
+	if edit and edit.transport == "review_rpc" then
+		return true, require("opencode.review").reply(permission_id, function(err)
+			if err then vim.notify("OpenCode review failed: " .. (err.message or "unknown error"), vim.log.levels.ERROR) end
+		end)
+	end
 	if replied_permissions[permission_id] then
 		return true, false
 	end
@@ -84,15 +90,19 @@ function M.approve(permission_id, opts)
 	replied_permissions[permission_id] = true
 	-- Scope the auto-approval to the permission's session directory so
 	-- cross-project danger-mode approvals reach the correct instance.
-	local reply_opts = { message = opts.message }
+	local reply_opts = { message = opts.message, session_id = opts.session_id }
 	if opts.session_id then
 		local state_ok, state = pcall(require, "opencode.state")
 		if state_ok and type(state.get_session_directory) == "function" then
 			reply_opts.directory = state.get_session_directory(opts.session_id)
 		end
 	end
+	local token = require("opencode.session.pending").token(opts.session_id)
 	client.respond_permission(permission_id, "once", reply_opts, function(err)
 		vim.schedule(function()
+			if not require("opencode.session.pending").is_current(token) then return end
+			local current = require("opencode.permission.state").get_permission(permission_id)
+			if current and current.protocol == "v2" and current.status ~= "pending" then return end
 			local log = logger()
 			if err then
 				replied_permissions[permission_id] = nil

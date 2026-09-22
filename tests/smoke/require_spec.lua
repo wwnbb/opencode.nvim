@@ -585,19 +585,19 @@ do
 	local saved_client = package.loaded["opencode.client"]
 	local saved_http = package.loaded["opencode.client.http"]
 	local saved_sse = package.loaded["opencode.client.sse"]
+	local saved_v2 = package.loaded["opencode.client.v2"]
+	package.loaded["opencode.client.v2"] = nil
 	package.loaded["opencode.client"] = nil
 	package.loaded["opencode.client.http"] = {
-		health = function(callback)
-			callback(nil, { version = "test-version" })
-		end,
 		get = function(path, callback)
-			if path == "/global/config" then
-				callback(nil, { plugin = { "test-plugin" } })
-			else
-				callback(nil, {})
-			end
+			if path == "/api/info" then
+				callback(nil, { version = "2.0.11", pid = 1, urls = {}, paths = {} })
+			elseif path == "/api/plugin" then
+				callback(nil, { location = { directory = "/test" }, data = { { id = "test-plugin", source = { type = "local", path = "/test/plugin" }, state = { status = "active" } } } })
+			else callback(nil, { location = { directory = "/test" }, data = {} }) end
 		end,
 	}
+
 	package.loaded["opencode.client.sse"] = {
 		setup = noop,
 	}
@@ -612,13 +612,14 @@ do
 	end)
 	assert(status_calls == 1, "client.get_status should call callback exactly once with synchronous HTTP callbacks")
 	assert(
-		status_result and status_result.plugins and status_result.plugins[1] == "test-plugin",
-		"client.get_status should include plugins from global config"
+		status_result and status_result.plugins and status_result.plugins[1].id == "test-plugin",
+		"client.get_status should include plugins from the v2 runtime catalog"
 	)
 
 	package.loaded["opencode.client"] = saved_client
 	package.loaded["opencode.client.http"] = saved_http
 	package.loaded["opencode.client.sse"] = saved_sse
+	package.loaded["opencode.client.v2"] = saved_v2
 end
 
 do

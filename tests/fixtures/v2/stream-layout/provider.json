@@ -1,0 +1,29 @@
+{
+  "location": {
+    "directory": "<PROFILE>/project пробел %#"
+  },
+  "data": [
+    {
+      "id": "opencode",
+      "integrationID": "opencode",
+      "name": "OpenCode Zen",
+      "activation": "enabled",
+      "package": "@opencode/ai/providers/openai-compatible",
+      "settings": {
+        "apiKey": "public",
+        "baseURL": "https://opencode.ai/zen/v1"
+      }
+    },
+    {
+      "id": "ollama",
+      "name": "Ollama",
+      "activation": "enabled",
+      "package": "@opencode/ai/providers/openai-compatible",
+      "settings": {
+        "apiKey": "",
+        "baseURL": "http://127.0.0.1:11434/v1",
+        "provider": "ollama"
+      }
+    }
+  ]
+}

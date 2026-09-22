@@ -124,7 +124,11 @@ end
 ---@param file table
 ---@return string
 local function file_path(file)
-	return normalize_path(file and (file.relative_path or file.filepath) or nil)
+	local path = normalize_path(file and (file.relative_path or file.filepath) or nil)
+	if file and file.file_type == "move" and type(file.move_path) == "string" and file.move_path ~= "" then
+		return path .. " -> " .. normalize_path(file.move_path)
+	end
+	return path
 end
 
 ---@param file table
@@ -167,6 +171,7 @@ local function file_type_label(file)
 	if file_type == "delete" or file_type == "remove" then
 		return "D"
 	end
+	if file_type == "move" then return "R" end
 	return "M"
 end
 
@@ -643,6 +648,10 @@ function M.get_lines_for_edit(permission_id, edit_state)
 
 	if #(edit_state.files or {}) == 0 then
 		add_panel_line(result, "No file changes detected.", "OpenCodeEditMuted")
+	end
+	if edit_state.apply_mode == "server" then
+		add_panel_blank(result)
+		add_panel_line(result, "Accepted changes apply on the server after all files are reviewed.", "OpenCodeEditMuted")
 	end
 
 	add_panel_blank(result)

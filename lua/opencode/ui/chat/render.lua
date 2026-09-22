@@ -403,7 +403,7 @@ function M.add_panel_line(result, text, hl_group, opts)
 	result.highlights = result.highlights or {}
 
 	local prefix = opts.prefix or "▏  "
-	local width = opts.width or get_chat_text_width()
+	local width = opts.width or result.width or get_chat_text_width()
 	local width_context = new_width_context()
 	local prefix_width = safe_display_width(prefix, 0, width_context)
 	local body_width = math.max(1, width - prefix_width)
@@ -445,7 +445,7 @@ function M.add_panel_raw_line(result, text, hl_group, opts)
 	result.highlights = result.highlights or {}
 
 	local prefix = opts.prefix or "▏  "
-	local width = opts.width or get_chat_text_width()
+	local width = opts.width or result.width or get_chat_text_width()
 	local width_context = new_width_context()
 	local body = M.sanitize_buffer_line(text)
 	local body_prefix = opts.body_prefix or ""
@@ -515,7 +515,7 @@ function M.add_panel_blank(result, hl_group, opts)
 	result.highlights = result.highlights or {}
 
 	local prefix = opts.prefix or "▏"
-	local width = opts.width or get_chat_text_width()
+	local width = opts.width or result.width or get_chat_text_width()
 	local width_context = new_width_context()
 	local prefix_width = safe_display_width(prefix, 0, width_context)
 	local line = pad_to_width_with_current(prefix, width, prefix_width)
@@ -648,7 +648,8 @@ function M.render_user_message(content, agent_name, files, opts)
 
 	for _, file in ipairs(files or {}) do
 		local mime = file.mime or "file"
-		local label = mime:match("^image/") and "img" or (mime == "application/pdf" and "pdf" or "file")
+		local label = (file.type == "skill" or file.type == "agent") and file.type
+			or (mime:match("^image/") and "img" or (mime == "application/pdf" and "pdf" or "file"))
 		local filename = file.filename or file.name or file.uri or "attachment"
 		local display = label .. " " .. filename
 		local wrapped = M.wrap_text(display, content_width, {

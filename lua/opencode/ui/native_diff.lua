@@ -251,6 +251,26 @@ local function save_current_original_buffer(force)
 	end
 end
 
+local function rpc_review()
+	local edit = state.edit_id and require("opencode.edit.state").get_edit(state.edit_id)
+	return edit and edit.transport == "review_rpc" and edit or nil
+end
+
+local function rpc_file_action(action)
+	local edit = rpc_review()
+	if not edit then return false end
+	local file = state.files[state.current_file_index]
+	local index = file and file.edit_file_index or state.edit_file_index
+	local edits = require("opencode.edit.state")
+	local ok, err = edits[action .. "_file"](state.edit_id, index)
+	if not ok then
+		vim.notify("Review action failed: " .. (err or "unknown error"), vim.log.levels.WARN)
+		return false
+	end
+	require("opencode.ui.chat.edits").refresh_edit(state.edit_id)
+	return true
+end
+
 local function navigate_file(delta)
 	local next_index = state.current_file_index + delta
 	if next_index < 1 then
@@ -262,7 +282,14 @@ local function navigate_file(delta)
 		return
 	end
 
-	save_current_original_buffer()
+	if rpc_review() then
+		if state.original_buf and vim.api.nvim_buf_is_valid(state.original_buf) and vim.bo[state.original_buf].modified then
+			vim.notify("Confirm or save your manual changes before switching review files.", vim.log.levels.WARN)
+			return
+		end
+	else
+		save_current_original_buffer()
+	end
 	close_diff_windows()
 	state.current_file_index = next_index
 	M._show_file(state.current_file_index)
@@ -372,6 +399,11 @@ function M._show_file(index)
 		vim.ui.select({ "Yes, delete", "No, keep" }, {
 			prompt = "Delete file: " .. filepath .. "?",
 		}, function(choice)
+			if rpc_review() then
+				if not choice then return end
+				if rpc_file_action(choice == "Yes, delete" and "accept" or "reject") then M._advance_or_finish() end
+				return
+			end
 			if choice == "Yes, delete" then
 				-- Delete the file
 				local ok, err = pcall(os.remove, filepath)
@@ -527,6 +559,10 @@ end
 --- (accepted if all hunks applied, rejected if reverted, resolved if partially edited).
 --- Manual edits are NEVER overwritten.
 function M._confirm_current()
+	if rpc_review() then
+		if rpc_file_action("resolve") then M._advance_or_finish() end
+		return
+	end
 	-- Save the file buffer as-is (preserves any manual edits).
 	save_current_original_buffer(true)
 	sync_edit_action("resolve")
@@ -535,6 +571,10 @@ end
 
 --- Reject current file: revert to original snapshot and advance
 function M._reject_current()
+	if rpc_review() then
+		if rpc_file_action("reject") then M._advance_or_finish() end
+		return
+	end
 	local index = state.current_file_index
 	local file = state.files[index]
 	local snapshot = state.file_snapshots[index]
@@ -565,6 +605,13 @@ end
 
 --- Reject all files and close
 function M._reject_all()
+	if rpc_review() then
+		local ok, err = require("opencode.edit.state").reject_all(state.edit_id)
+		if not ok then vim.notify("Review rejection failed: " .. (err or "unknown error"), vim.log.levels.WARN); return end
+		require("opencode.ui.chat.edits").refresh_edit(state.edit_id)
+		M.close()
+		return
+	end
 	-- Revert all files to their snapshots
 	for i, file in ipairs(state.files) do
 		local snapshot = state.file_snapshots[i]
@@ -634,6 +681,11 @@ end
 ---@param opts? table Options
 function M.show(permission_id, files, opts)
 	opts = opts or {}
+	local edit = opts.edit_id and require("opencode.edit.state").get_edit(opts.edit_id)
+	if edit and edit.apply_mode == "server" then
+		vim.notify("Local diff requires server.shared_filesystem=true and access to the server files. Use = for the inline proposal.", vim.log.levels.WARN)
+		return
+	end
 
 	if state.active then
 		M.close()

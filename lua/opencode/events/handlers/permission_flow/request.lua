@@ -282,13 +282,14 @@ function M.decode(data)
 		return nil, "permission payload missing request id"
 	end
 
-	local permission_type = first_non_empty(data.permission, data.type)
+	local permission_type = first_non_empty(data.action, data.permission, data.type)
 	if not permission_type then
 		return nil, "permission payload missing permission type"
 	end
 
-	local message_id = util.resolve_event_message_id(data)
-	local call_id = util.resolve_event_call_id(data)
+	local source = type(data.source) == "table" and data.source or {}
+	local message_id = source.type == "tool" and source.messageID or util.resolve_event_message_id(data)
+	local call_id = source.type == "tool" and source.id or util.resolve_event_call_id(data)
 	local session_id = resolve_session_id(data, metadata, message_id)
 	if not session_id then
 		return nil, "permission payload missing session id"
@@ -300,6 +301,8 @@ function M.decode(data)
 
 	local is_native_diff = metadata.opencode_native_diff == true or EDIT_PERMISSION_TYPES[permission_type] == true
 	local kind = (is_native_diff or permission_type == "edit") and "edit" or "permission"
+	-- Native v2 permission policy is not the bundled diff-review protocol.
+	if data.action then kind = "permission" end
 	local review_mode = nil
 	if kind == "edit" then
 		review_mode = permission_type == "edit" and not is_native_diff and "readonly" or "interactive"
@@ -316,8 +319,10 @@ function M.decode(data)
 		kind = kind,
 		review_mode = review_mode,
 		data = data,
-		patterns = type(data.patterns) == "table" and data.patterns or {},
-		always = type(data.always) == "table" and data.always or {},
+		protocol = data.action and "v2" or nil,
+		location = data._location,
+		patterns = data.resources or (type(data.patterns) == "table" and data.patterns or {}),
+		always = data.save or (type(data.always) == "table" and data.always or {}),
 	}
 
 	if kind == "edit" then

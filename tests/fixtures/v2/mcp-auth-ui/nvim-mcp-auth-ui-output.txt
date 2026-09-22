@@ -1,0 +1,1 @@
+Captured native UI: /private/tmp/opencode-v2-runtime/mcp-auth-ui-capture-2/mcp-needs-auth.png, /private/tmp/opencode-v2-runtime/mcp-auth-ui-capture-2/mcp-auth-info.png, /private/tmp/opencode-v2-runtime/mcp-auth-ui-capture-2/mcp-linked-auth.png

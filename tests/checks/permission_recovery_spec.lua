@@ -193,6 +193,8 @@ describe("opencode permission recovery", function()
 		assert_true(approved_text:find("Allow once", 1, true) == nil, "approved rerender should not show pending options")
 		assert_eq(chat_state.permissions.permission_purity.status, "approved", "approved rerender should update position status")
 
+		-- Start a distinct pending lifecycle before checking the rejected view.
+		permission_state.add_permission("permission_purity", "permission_purity_session", "bash", {})
 		permission_state.mark_rejected("permission_purity")
 		chat_permissions.rerender_permission("permission_purity")
 		local rejected_text = table.concat(vim.api.nvim_buf_get_lines(bufnr, 0, -1, false), "\n")
@@ -207,81 +209,24 @@ describe("opencode permission recovery", function()
 		sync.clear_all()
 	end)
 
-	it("list_permissions scopes to directory header and query", function()
-		local http = require("opencode.client.http")
-		local client = require("opencode.client")
-
-		local captured_with_dir = {}
-		local captured_without_dir = {}
-		local call_count = 0
-		local original_get = http.get
-		http.get = function(path, callback, opts)
-			call_count = call_count + 1
-			if call_count == 1 then
-				captured_with_dir = { path = path, opts = opts, has_callback = callback ~= nil }
-			elseif call_count == 2 then
-				captured_without_dir = { path = path, opts = opts, has_callback = callback ~= nil }
-			end
-		end
-
-		client.list_permissions({ directory = "/tmp/__opencode_test_scope__" }, function() end)
+	it("scopes permission lists and replies to the immutable session ID", function()
+		local http, client = require("opencode.client.http"), require("opencode.client")
+		local old_get, old_post = http.get, http.post
+		local gets, posts = {}, {}
+		http.get = function(path, cb, opts) gets[#gets + 1] = { path = path, opts = opts } end
+		http.post = function(path, body, cb, opts) posts[#posts + 1] = { path = path, body = body, opts = opts } end
+		client.list_permissions({ session_id = "ses/a" }, function() end)
 		client.list_permissions(function() end)
-
-		http.get = original_get
-
-		assert_eq(captured_with_dir.path, "/permission", "list_permissions should target /permission")
-		assert_eq(
-			captured_with_dir.opts.headers["x-opencode-directory"],
-			"/tmp/__opencode_test_scope__",
-			"should pass directory header"
-		)
-		assert_eq(
-			captured_with_dir.opts.query.directory,
-			"/tmp/__opencode_test_scope__",
-			"should pass directory query param"
-		)
-		assert_true(captured_with_dir.has_callback, "should pass callback")
-
-		assert_eq(captured_without_dir.path, "/permission", "backward-compat list_permissions should target /permission")
-		assert_eq(captured_without_dir.opts, nil, "backward-compat list_permissions should not pass request opts")
-		assert_true(captured_without_dir.has_callback, "backward-compat list_permissions should pass callback")
-	end)
-
-	it("respond_permission scopes to directory header", function()
-		local http = require("opencode.client.http")
-		local client = require("opencode.client")
-
-		local captured_with_dir = {}
-		local captured_without_dir = {}
-		local call_count = 0
-		local original_post = http.post
-		http.post = function(path, body, callback, opts)
-			call_count = call_count + 1
-			if call_count == 1 then
-				captured_with_dir = { path = path, body = body, opts = opts, has_callback = callback ~= nil }
-			elseif call_count == 2 then
-				captured_without_dir = { path = path, body = body, opts = opts, has_callback = callback ~= nil }
-			end
-		end
-
-		client.respond_permission("perm_test", "once", { directory = "/tmp/__opencode_test_reply__" }, function() end)
-		client.respond_permission("perm_test2", "reject", { message = "no" }, function() end)
-
-		http.post = original_post
-
-		assert_eq(captured_with_dir.path, "/permission/perm_test/reply", "respond_permission should target /permission/:id/reply")
-		assert_eq(
-			captured_with_dir.opts.headers["x-opencode-directory"],
-			"/tmp/__opencode_test_reply__",
-			"should pass directory header"
-		)
-		assert_eq(captured_with_dir.body.reply, "once", "should pass reply in body")
-		assert_true(captured_with_dir.has_callback, "should pass callback")
-
-		assert_eq(captured_without_dir.path, "/permission/perm_test2/reply", "respond_permission without dir should target /permission/:id/reply")
-		assert_eq(captured_without_dir.opts, nil, "respond_permission without dir should not pass request opts")
-		assert_eq(captured_without_dir.body.reply, "reject", "should pass reply in body without dir")
-		assert_eq(captured_without_dir.body.message, "no", "should pass message in body without dir")
+		client.respond_permission("per/a", "once", { session_id = "ses/a" }, function() end)
+		client.respond_permission("per_b", "reject", { session_id = "ses_b", message = "no" }, function() end)
+		http.get, http.post = old_get, old_post
+		assert.equals("/api/session/ses%2Fa/permission", gets[1].path)
+		assert.equals("/api/permission/request", gets[2].path)
+		assert.is_nil(gets[1].opts.headers)
+		assert.equals("/api/session/ses%2Fa/permission/per%2Fa/reply", posts[1].path)
+		assert.same({ decision = "once" }, posts[1].body)
+		assert.same({ decision = "reject", message = "no" }, posts[2].body)
+		assert.is_nil(posts[1].opts.headers)
 	end)
 
 	it("permission_matches_tool requires call_id when present", function()

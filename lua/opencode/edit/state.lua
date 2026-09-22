@@ -89,7 +89,7 @@ local function read_file_state(filepath)
 
 	local content = file:read("*all") or ""
 	file:close()
-	return { exists = true, content = strip_bom(content) }, nil
+	return { exists = true, content = strip_bom(content), bom = content:sub(1, 3) == BOM }, nil
 end
 
 ---@param filepath string
@@ -133,6 +133,11 @@ local function classify_manual_resolution(file)
 		return (file.before == "" or file.file_type == "add") and "rejected" or "resolved"
 	end
 
+	if file.exact_bytes then
+		if file.file_type ~= "delete" and disk.content == file.after and disk.bom == file.bom then return "accepted" end
+		if disk.content == file.before and disk.bom == file.before_bom then return "rejected" end
+		return "resolved"
+	end
 	local actual = normalize_line_endings(disk.content)
 	local before = normalize_line_endings(file.before)
 	local after = normalize_line_endings(file.after)
@@ -170,6 +175,10 @@ local function disk_matches_snapshot(disk, file, field)
 	end
 	if not disk.exists then
 		return true
+	end
+	if file.exact_bytes then
+		local bom = field == "before" and file.before_bom or (field == "after" and file.bom or false)
+		return disk.content == (file[field] or "") and disk.bom == bom
 	end
 	return normalize_line_endings(disk.content) == normalize_line_endings(file[field] or "")
 end
@@ -221,13 +230,31 @@ end
 ---@return boolean ok
 ---@return string|nil err
 local function apply_file_action(estate, file, action)
+	if estate.transport == "review_rpc" and not require("opencode.state").is_connected() then
+		return false, "Reconnect before changing files in this review"
+	end
+	if estate.transport == "review_rpc" and (estate.status ~= "pending" or estate.submitting) then
+		return false, "Review is no longer editable"
+	end
 	if estate.review_mode == "readonly" then
+		file.status = action.status
+		return true, nil
+	end
+	if estate.apply_mode == "server" then
 		file.status = action.status
 		return true, nil
 	end
 
 	local changes = require("opencode.artifact.changes")
 
+	if estate.transport == "review_rpc" then
+		for _, bufnr in ipairs(vim.api.nvim_list_bufs()) do
+			if vim.api.nvim_buf_is_valid(bufnr) and vim.bo[bufnr].modified
+				and vim.fn.resolve(vim.api.nvim_buf_get_name(bufnr)) == vim.fn.resolve(file.filepath) then
+				return false, "Save or resolve manual buffer changes before accepting or rejecting this file"
+			end
+		end
+	end
 	local disk, read_err = read_file_state(file.filepath)
 	if not disk then
 		return false, read_err or "failed to read file"
@@ -331,6 +358,13 @@ end
 function M.add_edit(permission_id, session_id, files_data, opts)
 	opts = opts or {}
 	local review_mode = opts.review_mode or "interactive"
+	local apply_mode = "client"
+	if opts.transport == "review_rpc" then
+		local state = require("opencode.state")
+		local config = state.get_config() or {}
+		local shared = config.server and config.server.shared_filesystem
+		if shared ~= true and (shared == false or not state.is_server_managed()) then apply_mode = "server" end
+	end
 	local changes = require("opencode.artifact.changes")
 	local file_statuses = type(opts.file_statuses) == "table" and opts.file_statuses or {}
 
@@ -350,7 +384,7 @@ function M.add_edit(permission_id, session_id, files_data, opts)
 
 		-- Create change record for accept/reject file writing
 		local change_id = nil
-		if review_mode ~= "readonly" then
+		if review_mode ~= "readonly" and apply_mode == "client" then
 			change_id = changes.add_change(filepath, before, after, {
 				bom = fd.bom == true,
 				before_bom = fd.before_bom,
@@ -365,8 +399,14 @@ function M.add_edit(permission_id, session_id, files_data, opts)
 
 		table.insert(files, {
 			index = i,
+			file_id = fd.fileID,
+			apply_mode = apply_mode,
+			exact_bytes = opts.transport == "review_rpc",
+			before_bom = fd.before_bom == true,
+			bom = fd.bom == true,
 			filepath = filepath,
 			relative_path = relative_path,
+			move_path = fd.movePath,
 			before = before,
 			after = after,
 			change_id = change_id,
@@ -379,6 +419,12 @@ function M.add_edit(permission_id, session_id, files_data, opts)
 
 	local estate = {
 		permission_id = permission_id,
+		transport = opts.transport or "permission",
+		apply_mode = apply_mode,
+		review_id = opts.review_id,
+		revision = opts.revision,
+		location = opts.location,
+		native_review = opts.native_review,
 		session_id = session_id,
 		message_id = opts.message_id,
 		call_id = opts.call_id,
@@ -665,6 +711,12 @@ function M.resolve_file(permission_id, file_index)
 	if not estate then
 		return false, "Edit not found"
 	end
+	if estate.apply_mode == "server" then
+		return false, "Manual review requires server.shared_filesystem=true and access to the server files"
+	end
+	if estate.transport == "review_rpc" and not require("opencode.state").is_connected() then
+		return false, "Reconnect before resolving this review"
+	end
 
 	local file = estate.files[file_index]
 	if not file then
@@ -675,7 +727,7 @@ function M.resolve_file(permission_id, file_index)
 		return false, "File already resolved"
 	end
 
-	if estate.review_mode == "readonly" then
+	if estate.review_mode == "readonly" or (estate.transport == "review_rpc" and (estate.status ~= "pending" or estate.submitting)) then
 		return false, "Readonly edit cannot be resolved manually"
 	end
 
@@ -699,8 +751,10 @@ function M.resolve_all(permission_id)
 	if not estate then
 		return false
 	end
+	if estate.apply_mode == "server" then return false end
+	if estate.transport == "review_rpc" and not require("opencode.state").is_connected() then return false end
 
-	if estate.review_mode == "readonly" then
+	if estate.review_mode == "readonly" or (estate.transport == "review_rpc" and (estate.status ~= "pending" or estate.submitting)) then
 		return false
 	end
 
@@ -838,6 +892,42 @@ function M.clear_session(session_id)
 		end
 	end
 	return removed
+end
+
+function M.begin_review_submission(id)
+	local item = active_edits[id]
+	if not item or item.status ~= "pending" or item.submitting then return false end
+	for _, file in ipairs(item.files) do if file.status == "pending" then return false end end
+	item.submitting, item.error = true, nil
+	return true
+end
+
+function M.restore_review_submission(id, err)
+	local item = active_edits[id]
+	if not item or item.status ~= "pending" then return false end
+	item.submitting, item.error = false, err
+	return true
+end
+
+function M.set_review_record(record)
+	local item = active_edits[record.reviewID]
+	if not item or item.transport ~= "review_rpc" then return false end
+	if record.sessionID ~= item.session_id or record.revision ~= item.revision then return false end
+	local previous = item.native_review and item.native_review.status
+	if previous == "cancelled" or previous == "settled" then return false end
+	if previous == "decided" and record.status == "pending" then return false end
+	item.native_review = vim.deepcopy(record)
+	if record.status == "cancelled" then
+		item.cancelled, item.submitting, item.status = true, false, "sent"
+	elseif record.status == "decided" or record.status == "settled" then
+		local choices = {}
+		for _, decision in ipairs(record.decisions or {}) do choices[decision.fileID] = decision.status end
+		for _, file in ipairs(item.files) do file.status = choices[file.file_id] or file.status end
+		item.submitting = false
+		M.mark_sent(record.reviewID)
+	end
+	if record.outcome then item.metadata = vim.deepcopy(record.outcome) end
+	return true
 end
 
 return M

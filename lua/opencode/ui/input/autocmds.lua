@@ -6,6 +6,22 @@ local event = require("nui.utils.autocmd").event
 
 function M.setup(state, callbacks)
 	callbacks = callbacks or {}
+	local resize_group = vim.api.nvim_create_augroup("OpenCodeInputResize", { clear = true })
+	if callbacks.reflow then
+		local scheduled = false
+		vim.api.nvim_create_autocmd({ "VimResized", "WinResized" }, {
+			group = resize_group,
+			callback = function()
+				if scheduled then return end
+				scheduled = true
+				vim.schedule(function() scheduled = false; callbacks.reflow() end)
+			end,
+		})
+		vim.api.nvim_create_autocmd("BufWipeout", {
+			buffer = state.bufnr, once = true,
+			callback = function() vim.api.nvim_clear_autocmds({ group = resize_group }) end,
+		})
+	end
 
 	vim.api.nvim_create_autocmd({ "TextChanged", "TextChangedI" }, {
 		buffer = state.bufnr,

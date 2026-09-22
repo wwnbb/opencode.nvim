@@ -9,7 +9,7 @@ local uv = vim.uv
 -- Configuration
 M.opts = {
 	host = "localhost",
-	endpoint = "/global/event", -- Matches TUI's global event stream
+	endpoint = "/api/event", -- V2 live stream covers all locations.
 	auth = {
 		username = "opencode",
 		password = nil,
@@ -186,20 +186,20 @@ local function process_buffer()
 			emit_current_event()
 		elseif line:sub(1, 1) == ":" then
 			-- Comment line, ignore.
-		elseif line:sub(1, 7) == "event:" then
-			-- Some runtimes may drop SSE separators; flush when a new event begins.
-			if #state.current_event.data_lines > 0 then
-				emit_current_event()
+		else
+			local field, value = line:match("^([^:]+):(.*)$")
+			field, value = field or line, value or ""
+			-- SSE removes at most one space after the colon. Fields may follow data.
+			value = value:gsub("^ ", "", 1)
+			if field == "event" then
+				state.current_event.event = value ~= "" and value or "message"
+			elseif field == "id" then
+				if not value:find("\0", 1, true) then
+					state.current_event.id = value ~= "" and value or nil
+				end
+			elseif field == "data" then
+				table.insert(state.current_event.data_lines, value)
 			end
-			state.current_event.event = line:sub(8):match("^%s*(.+)$") or "message"
-		elseif line:sub(1, 4) == "id:" then
-			if #state.current_event.data_lines > 0 then
-				emit_current_event()
-			end
-			state.current_event.id = line:sub(5):match("^%s*(.+)$")
-		elseif line:sub(1, 5) == "data:" then
-			local value = line:sub(6):match("^%s*(.*)$") or ""
-			table.insert(state.current_event.data_lines, value)
 		end
 	end
 end
@@ -326,7 +326,17 @@ function M.emit(event_type, data, event_id)
 	local actual_data = data
 	local actual_event_id = event_id
 
-	if type(data) == "table" and data.payload and data.payload.type then
+	if type(data) == "table" and data.type and data.data ~= nil then
+		local decoded, decode_err = require("opencode.protocol.v2.events").decode(data)
+		if not decoded then
+			M.emit("error", decode_err)
+			return
+		end
+		if not should_accept_global_event({ directory = decoded.location and decoded.location.directory, payload = data }) then return end
+		actual_event_id = decoded.id or event_id
+		if already_seen_event(actual_event_id) then return end
+		actual_type, actual_data = decoded.type, decoded.payload
+	elseif type(data) == "table" and data.payload and data.payload.type then
 		if not should_accept_global_event(data) then
 			return
 		end
@@ -411,6 +421,7 @@ function M.connect()
 
 	state.manual_disconnect = false
 	state.event_buffer = ""
+	reset_current_event()
 	state.connected = false
 
 	local headers = {
@@ -427,23 +438,10 @@ function M.connect()
 		headers.Authorization = authorization
 	end
 
-	-- Send current working directory so the server scopes this
-	-- SSE stream to the correct project context
+	-- The stream is global; directory is only a local relevance filter.
 	local cwd = vim.fn.getcwd()
-	if cwd and cwd ~= "" then
-		headers["x-opencode-directory"] = cwd
-	end
-
-	-- Build endpoint path with directory query param for robustness
-	local endpoint = M.opts.endpoint or "/event"
+	local endpoint = M.opts.endpoint or "/api/event"
 	state.directory = normalize_directory(cwd)
-	if endpoint ~= "/global/event" and cwd and cwd ~= "" then
-		-- Percent-encode the directory for safe URL query param
-		local encoded = cwd:gsub("[^A-Za-z0-9%-_.~]", function(c)
-			return string.format("%%%02X", c:byte())
-		end)
-		endpoint = endpoint .. "?directory=" .. encoded
-	end
 
 	local stream
 	local err

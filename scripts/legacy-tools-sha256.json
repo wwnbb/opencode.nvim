@@ -1,0 +1,13 @@
+{
+  "tool/lib/context.ts": "38aed2c93a4cb4f843304994794c4e8bc6776baacd3dff0711460dd361f55161",
+  "tool/lib/diff.ts": "a7f8c535f270e21ec4d925cf70f5cc7e7aab5078a5e152fff78b8c70df0a956c",
+  "tool/lib/file_state.ts": "b0170fff8a78580f3927ee780fc3b78d7fde95962382f4f3ff8a6bf92c999d23",
+  "tool/lib/text.ts": "b776cb7bf635801b2d5aae1e6c19de4e1ec785769fd38673a3fd7838069363a1",
+  "tool/neovim_apply_patch.ts": "08207a6bbdc29d822102359c33a12c28142b494e99a7e36f6f0d4d556fd6b576",
+  "tool/neovim_apply_patch.txt": "c4ca459b6880de2f5d4f0ee6b1d70c52103a8334e2258e1e6f928c9dbfef49a0",
+  "tool/neovim_edit.ts": "c27e46e31b4fee71294b47338e1ed78fff6ac7372bcb683c02783fa88aeff926",
+  "tool/neovim_edit.txt": "6c4632eb95235ce28265dc16727db9ce5e80b68984769ff67c046af2fd40f6ff",
+  "tool/rg.ts": "f0a247489d7616a71dac3cc52ed2b775360c3f8355bb2cd2472b300f2197a857",
+  "tool/rg.txt": "f7b18537c1ceb829bdf7b44cfdfe49fcd22fe6e07877d1ff17192dc985c5e2d9",
+  "commands/load_skills.md": "fa804e9e510c929c50840a41f817088d2096dc7d3956e901317838ad81f68562"
+}

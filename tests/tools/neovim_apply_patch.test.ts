@@ -1,41 +1,40 @@
-import { afterEach, beforeEach, expect, mock, test } from "bun:test"
+import { afterEach, beforeEach, expect, test } from "bun:test"
 import * as fs from "node:fs/promises"
 import * as os from "node:os"
 import * as path from "node:path"
 
-// The SDK factory only registers the schema and execute function. Keep tests
-// independent of the user's OpenCode installation; execute the real tool below.
-const field = { describe() { return this }, optional() { return this } }
-mock.module("@opencode-ai/plugin", () => ({
-  tool: Object.assign((definition: unknown) => definition, {
-    schema: { string: () => field, boolean: () => field },
-  }),
-}))
-const { default: patch } = await import("../../opencode_nvim/tool/neovim_apply_patch")
+const { default: patch } = await import("../../opencode_nvim/plugins/opencode-nvim/tools/neovim_apply_patch")
 const root = path.resolve(import.meta.dir, "../..")
 let directory: string
 beforeEach(async () => { directory = await fs.mkdtemp(path.join(os.tmpdir(), "opencode-patch-test-")) })
 afterEach(async () => { await fs.rm(directory, { recursive: true, force: true }) })
 
-function rejected(): never {
-  const error = new Error("The user rejected permission to use this specific tool call.")
-  error.name = "PermissionRejectedError"
-  throw error
-}
+function rejected(): never { throw new Error("review rejected") }
 
-function context(ask: (request: any) => Promise<void>) {
-  return { directory, worktree: directory, sessionID: "test", messageID: "test", agent: "build", metadata() {}, ask } as any
+function context(review: (request: any) => Promise<any>) {
+  return { directory, worktree: directory, sessionID: "test", messageID: "test", id: "call", agent: "build",
+    signal: new AbortController().signal, async authorize() {}, async progress() {}, async review(request: any) {
+      let result: any
+      try { result = await review(request) } catch (error: any) {
+        if (error.message !== "review rejected") throw error
+        result = request.metadata.files.map(() => "reject")
+      }
+      return { files: request.metadata.files.map((file: any, index: number) => ({
+        fileID: String(index), path: file.filePath, status: result?.[index] === "reject" ? "rejected" : "accepted",
+        apply: result ? "client" : "server",
+      })) }
+    } } as any
 }
 
 async function review(request: any, actions: string[]) {
   const payload = path.join(directory, "review.json")
-  await fs.writeFile(payload, JSON.stringify({ request: { ...request, id: "review", sessionID: "test" }, actions }))
+  await fs.writeFile(payload, JSON.stringify({ request: { ...request, permission: request.tool, id: "review", sessionID: "test" }, actions }))
   const result = Bun.spawnSync(["nvim", "--headless", "-i", "NONE", "-u", "NONE", "-l", path.join(import.meta.dir, "review.lua")], {
     env: { ...process.env, OPENCODE_TEST_ROOT: root, OPENCODE_TEST_REVIEW: payload, NVIM_LOG_FILE: path.join(directory, "nvim.log") },
   })
   expect(result.stderr.toString()).not.toContain("E5113")
   expect(result.exitCode).toBe(0)
-  if (actions.every((action) => action === "reject")) rejected()
+  return actions
 }
 
 async function exists(file: string) {

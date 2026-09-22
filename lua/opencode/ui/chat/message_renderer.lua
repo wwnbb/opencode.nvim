@@ -62,8 +62,16 @@ end
 
 local function select_messages(ctx, index)
 	local all_messages = ctx.current_session.id and sync.get_messages(ctx.current_session.id) or {}
+	local record = app_state.get_session_record(ctx.current_session.id)
+	local revert = record and record.revert
+	if type(revert) == "table" then
+		all_messages = vim.tbl_filter(function(message) return message.id < revert.messageID end, all_messages)
+		ctx:add_raw_line("Undo staged · /redo restores the turn")
+		ctx:add_raw_line("")
+	end
 	local messages = all_messages
-	local max_rendered_messages = tonumber((ctx.chat_config or {}).max_rendered_messages) or 0
+	local max_rendered_messages = (state.full_history_sessions or {})[ctx.current_session.id] and 0
+		or tonumber((ctx.chat_config or {}).max_rendered_messages) or 0
 	local skipped_messages = 0
 
 	if max_rendered_messages > 0 and #all_messages > max_rendered_messages then
@@ -198,7 +206,7 @@ local function render_hidden_history_notice(ctx, skipped_messages)
 		return
 	end
 	local history_line = NuiLine()
-	history_line:append(NuiText(string.format("... %d earlier messages hidden", skipped_messages), "Comment"))
+	history_line:append(NuiText(string.format("... %d earlier messages hidden · use Load Full Session History in the palette", skipped_messages), "Comment"))
 	ctx:add_line(history_line)
 	ctx:add_raw_line("")
 end
@@ -264,14 +272,9 @@ end
 local function render_user_message(ctx, message, render_parts, msg_idx, messages, max_user_message_lines)
 	local file_parts = {}
 	for _, part in ipairs(render_parts.parts or {}) do
-		if
-			part.type == "file"
-			and not part.synthetic
-			and part.mime ~= "text/plain"
-			and part.mime ~= "application/x-directory"
-		then
-			table.insert(file_parts, part)
-		end
+		local native_attachment = part.protocol == "v2" and vim.tbl_contains({ "file", "skill", "agent" }, part.type)
+		local legacy_attachment = part.type == "file" and part.mime ~= "text/plain" and part.mime ~= "application/x-directory"
+		if not part.synthetic and (native_attachment or legacy_attachment) then file_parts[#file_parts + 1] = part end
 	end
 
 	local msg_lines = ctx:cached_nui_lines(
@@ -292,6 +295,12 @@ local function render_user_message(ctx, message, render_parts, msg_idx, messages
 	)
 	for _, nl in ipairs(msg_lines) do
 		ctx:add_line(nl)
+	end
+	local prompt_status = require("opencode.selectors").prompt_status(ctx.current_session.id, message.id)
+	if prompt_status then
+		local status_line = NuiLine()
+		status_line:append(NuiText(prompt_status, "Comment"))
+		ctx:add_line(status_line)
 	end
 
 	render_retry_status_if_needed(ctx, messages, msg_idx)
@@ -389,6 +398,9 @@ local function render_assistant_message(ctx, index, message, render_parts, opts)
 	end
 
 	widget_renderer.render_widgets_for_message(ctx, index, message.id)
+	if message.error_message then
+		widget_renderer.render_session_error_notice(ctx, { content = message.error_message })
+	end
 
 	if not opts.suppress_footer and render.should_show_footer(message, opts.is_last_assistant) then
 		ctx:ensure_single_blank_separator()
@@ -424,10 +436,11 @@ local function render_messages(
 		local has_reasoning = render_parts.reasoning and render_parts.reasoning ~= ""
 		local has_tools = #render_parts.tool_parts > 0
 		local is_last_assistant = (msg_idx == last_assistant_idx)
-		local should_render = message.role ~= "assistant"
+		local should_render = not message.hidden and (message.role ~= "assistant"
 			or has_content
 			or has_reasoning
 			or has_tools
+			or message.error_message ~= nil)
 
 		if should_render then
 			if message.role == "user" then

@@ -472,51 +472,35 @@ describe("opencode question flow", function()
 		assert_eq(question_state.get_question("question-answer-first").status, "answered", "late rejection must not render cancellation")
 	end)
 
-	it("scopes question client and action requests to the owner directory", function()
-		local http = require("opencode.client.http")
-		local client = require("opencode.client")
-		local original_post = http.post
-		local original_get = http.get
-		local posts = {}
-		local gets = {}
-		http.post = function(path, body, callback, opts)
-			table.insert(posts, { path = path, body = body, callback = callback, opts = opts })
-		end
-		http.get = function(path, callback, opts)
-			table.insert(gets, { path = path, callback = callback, opts = opts })
-		end
-
-		client.reply_to_question("question-client", { { "a" } }, { directory = "/tmp/question-client" }, function() end)
-		client.reply_to_question("question-client-compat", { { "b" } }, function() end)
-		client.list_questions({ directory = "/tmp/question-list" }, function() end)
+	it("scopes form clients and actions to the owning session", function()
+		local http, client = require("opencode.client.http"), require("opencode.client")
+		local old_get, old_post, old_delete = http.get, http.post, http.delete
+		local gets, posts, deletes = {}, {}, {}
+		http.get = function(path) gets[#gets + 1] = path end
+		http.post = function(path, body) posts[#posts + 1] = { path = path, body = body } end
+		http.delete = function(path) deletes[#deletes + 1] = path end
+		client.reply_to_question("frm_a", { answer = false }, { session_id = "ses_a" }, function() end)
+		client.list_questions({ session_id = "ses_a" }, function() end)
 		client.list_questions(function() end)
-		client.reject_question("session", "question-reject", { directory = "/tmp/question-reject" }, function() end)
-		client.reject_question("session", "question-reject-compat", function() end)
-
-		http.post = original_post
-		http.get = original_get
-		assert_eq(posts[1].opts.headers["x-opencode-directory"], "/tmp/question-client", "reply should send directory header")
-		assert_eq(posts[1].opts.query.directory, "/tmp/question-client", "reply should send directory query")
-		assert_eq(posts[2].opts, nil, "callback-only reply should remain compatible")
-		assert_eq(gets[1].opts.headers["x-opencode-directory"], "/tmp/question-list", "list should send directory header")
-		assert_eq(gets[1].opts.query.directory, "/tmp/question-list", "list should send directory query")
-		assert_eq(gets[2].opts, nil, "callback-only list should remain compatible")
-		assert_eq(posts[3].opts.headers["x-opencode-directory"], "/tmp/question-reject", "reject should send directory header")
-		assert_eq(posts[3].opts.query.directory, "/tmp/question-reject", "reject should send directory query")
-		assert_eq(posts[4].opts, nil, "callback-only reject should remain compatible")
+		client.reject_question("ses_a", "frm_a", function() end)
+		http.get, http.post, http.delete = old_get, old_post, old_delete
+		assert.equals("/api/session/ses_a/form/frm_a/reply", posts[1].path)
+		assert.same({ answer = { answer = false } }, posts[1].body)
+		assert.same({ "/api/session/ses_a/form", "/api/form" }, gets)
+		assert.same({ "/api/session/ses_a/form/frm_a" }, deletes)
 
 		add_question("question-action", {
 			{ question = "Owner?", options = { { label = "Yes", value = "yes" } } },
 		})
 		local reply_opts
-		local reject_opts
+		local reject_opts, reject_session
 		local original_client_reply = client.reply_to_question
 		local original_client_reject = client.reject_question
 		client.reply_to_question = function(_, _, opts)
 			reply_opts = opts
 		end
-		client.reject_question = function(_, _, opts)
-			reject_opts = opts
+		client.reject_question = function(sid, _, opts)
+			reject_session, reject_opts = sid, opts
 		end
 		actions.reply_to_question("question-action", { { "yes" } }, function() end)
 		actions.reject_question("wrong-session", "question-action", function() end)
@@ -524,6 +508,8 @@ describe("opencode question flow", function()
 		client.reject_question = original_client_reject
 
 		local owner_directory = app_state.get_session_directory("question-session")
+		assert_eq(reply_opts.session_id, "question-session", "reply owns session")
+		assert_eq(reject_session, "question-session", "cancel owns session")
 		assert_eq(reply_opts.directory, owner_directory, "reply action should use question owner directory")
 		assert_eq(reject_opts.directory, owner_directory, "reject action should prefer question owner over fallback session")
 	end)

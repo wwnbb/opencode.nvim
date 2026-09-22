@@ -159,4 +159,20 @@ function M.schedule_resize(state)
 	end)
 end
 
+-- Parent/window dimensions can change without the draft changing its height.
+-- Anchor both input surfaces to the current parent so the info bar stays visible.
+function M.reflow(state)
+	if not state.visible or not state.parent_winid or not vim.api.nvim_win_is_valid(state.parent_winid)
+		or not state.popup or not state.info_popup then return end
+	local frame = M.build(state.parent_winid, nil, state.config)
+	local geometry = { width = frame.layout.content_width, row = frame.layout.row, col = frame.layout.col,
+		parent = state.parent_winid }
+	if vim.deep_equal(geometry, state.reflow_geometry) then return end
+	state.reflow_geometry = geometry
+	state.layout = frame.layout
+	state.popup:update_layout(frame.popup)
+	state.info_popup:update_layout(frame.info)
+	M.resize(state)
+end
+
 return M

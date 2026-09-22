@@ -15,7 +15,7 @@ and naturally integrated into the Neovim workflow.
 
 # Testing
 
-Install pinned Neovim test dependencies once:
+Install pinned Neovim and server-plugin test dependencies once (Node.js and npm required):
 
 ```sh
 ./scripts/bootstrap-test-deps.sh
@@ -24,8 +24,8 @@ Install pinned Neovim test dependencies once:
 Run the Plenary/Busted test suite:
 
 The full suite also runs the bundled TypeScript tool tests with Bun. Install Bun
-or set `OPENCODE_NVIM_BUN` to its executable path; no additional npm packages are
-needed for these tests.
+or set `OPENCODE_NVIM_BUN` to its executable path. Bootstrap installs the exact
+OpenCode 2.0.11 API dependencies and TypeScript compiler used by the tool suite.
 
 ```sh
 ./tests/run.sh              # all specs
@@ -44,6 +44,65 @@ You can also run a single spec file:
 
 # Installation
 
+The backend targets **OpenCode 2.0.11**; this checkout does not provide a v1
+backend. See [migration progress](plans/opencode-v2/PROGRESS.md) for the remaining
+validation work. Keep your previous plugin checkout and configuration when
+upgrading; reverting the Neovim plugin does not reverse server database migration.
+
+Run `./scripts/install-tools.sh` to install the bundled v2 server plugin into
+`$XDG_CONFIG_HOME/nvim/opencode` (or `~/.config/nvim/opencode`). Pass a directory
+argument when `server.config_dir` uses a different location. Node.js and npm are
+required to install the pinned runtime dependencies. The installer preserves
+user commands and JSONC comments, adds its plugin entry, migrates legacy
+permission rules, and keeps backups under `opencode-nvim-backups`. Only unchanged,
+identified v1 tool files are retired; modified files are retained.
+
+The bundled tools use two distinct decisions: native OpenCode permission rules
+authorize the operation, then Neovim reviews each proposed file. `allow` on a tool
+does not accept its diff. The tools wait for the Neovim connection and never
+accept edits merely because no UI is connected.
+
+Review of an external server applies accepted files on that server after all
+files have a decision. Local native diff and manual resolution require
+`server.shared_filesystem = true`: set this only when Neovim sees the same files
+at the server's paths. A server started by this plugin shares the local filesystem
+automatically. Inline proposals (`=`), acceptance and rejection also work without
+shared files. Disconnected or cancelled reviews cannot apply or flush files.
+
+Bundled plugin **2.0.11-2** provides file review protocol 1 and persistent
+`todoread`/`todowrite` tools. Update it together with the Lua plugin. `/skill`
+and the skill palette send native attachments; the unchanged legacy
+`load_skills` command is backed up and retired by the installer.
+
+Model preferences use format 2 in `opencode_local.json`; the first format
+conversion preserves the original as `opencode_local.json.v1.bak`. Unavailable
+favorites are retained. Existing sessions keep their own model, agent and
+variant until you explicitly change them.
+
+Prompts sent while a response is running are queued and labelled in the chat.
+Use **Cancel Pending Input** in the palette to remove one queued prompt. Chat
+`<C-c>` interrupts the current execution and leaves queued inputs pending.
+Scripts can explicitly request steering with `send(text, { delivery = "steer" })`;
+it is applied at the server's next delivery boundary, without aborting a running tool.
+After a connection loss, an unknown delivery outcome stays visible while it is
+reconciled with the server; it is never automatically resent.
+
+Current transport supports HTTP and Basic authentication, without direct TLS.
+For an owned server without a configured password, the plugin generates an
+ephemeral password and uses it for both HTTP and SSE. External servers require
+their configured credentials. File URI attachments refer to files accessible to the server; clipboard
+images use inline data URIs. OpenCode 2.0.11 does not run LSP diagnostics and
+does not expose MCP tool definitions through its public catalog. MCP status,
+connection and linked integration authentication remain available.
+
+Runtime validation uses isolated profiles: MiMo V2.5 Free from OpenCode Zen
+for the main matrix and DeepSeek V4 Flash from OpenCode Go for successful
+parallel background agents, reconnect and fresh-client history. Zen Free
+rejected child-agent requests with a provider restriction. See
+[the validation report](plans/opencode-v2/FINAL-VALIDATION.md) for evidence and limits.
+Importing old v1 conversation history is outside this migration’s scope.
+
+
 Paste the prompt below into your AI coding agent while it is working in your Neovim config directory.
 It will inspect your setup, install opencode.nvim with your existing plugin manager, and configure safe defaults.
 
@@ -54,7 +113,7 @@ Follow these steps:
 1. Inspect the current Neovim config first. Identify the plugin manager, config structure, existing keymap style, colors/highlight setup, and any existing OpenCode or AI-assistant config.
 2. Ask targeted questions only when a choice is not obvious. Ask, for example, which plugin manager to use if it is unclear, which keymap should toggle/open opencode, whether session tabs should use a fixed max count or dynamic auto-fit, and whether the chat layout should be vertical, horizontal, or float.
 3. Add `wwnbb/opencode.nvim` through the existing plugin manager. Include dependencies: MunifTanjim/nui.nvim and nvim-lua/plenary.nvim. If the config uses lazy.nvim, ask whether I want you to install/sync the plugin now by running `nvim --headless "+Lazy! sync" +qa`; run it only if I confirm.
-4. Configure the plugin manager build/install hook to run `scripts/install-tools.sh` at least once so the bundled opencode.nvim config/tools are installed. If the plugin manager has no build hook, run `scripts/install-tools.sh` manually from the plugin root. After install, run `opencode debug config` to verify the OpenCode config is correct.
+4. Configure the plugin manager build/install hook to run `scripts/install-tools.sh` so the bundled opencode.nvim server plugin is updated with the Lua plugin. If the plugin manager has no build hook, run the script manually from the plugin root. Verify `opencode --version` reports 2.0.11, then connect and inspect Server Status in the command palette.
 5. Configure `require("opencode").setup()` using only supported options:
    - `server.command`, `server.auto_start`, `server.config_dir`, `server.env`
    - `session.default_agent`, `session.default_model.providerID`, `session.default_model.modelID`, `session.parallel.enabled`, `session.parallel.use_prompt_async`

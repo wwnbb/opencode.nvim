@@ -1,0 +1,40 @@
+                                       │ ◈ Typed forms  │ ●0 ◈1                                                         
+~                                      │▏                                                                               
+~                                      │▏  # Question code                                                              
+~                                      │▏                                                                               
+~                                      │▏                                                                               
+~                                      │▏  ❯ Custom: bad-draft                                                          
+~                                      │▏  Form field does not match pattern: code                                      
+~                                      │▏                                                                               
+~                                      │▏  Enter submit · c custom · m message · Esc cancel                             
+~                                      │▏                                                                               
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+[No Name]            0,0-1          All opencode [-]                                                  1,1            All
+                                                                                                                        

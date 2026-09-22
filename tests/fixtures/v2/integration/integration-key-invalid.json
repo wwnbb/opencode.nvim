@@ -1,0 +1,8 @@
+{
+  "status": 400,
+  "response": {
+    "_tag": "InvalidRequestError",
+    "message": "Missing required form field: region",
+    "kind": "integration_authorization"
+  }
+}

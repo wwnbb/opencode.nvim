@@ -1,0 +1,36 @@
+                                       │ ○ Todo smoke                                                                   
+~                                      │A┌────────────────────────────────────────────────────────────────────────────┐ 
+~                                      │┃│▼ Todos 1/2 done · 1 pending                                                │ 
+~                                      │┃│[✓] Read fixture                                                            │ 
+~                                      │┃│[ ] Check persistent dock                                                   │ 
+~                                      │┃│                                                                            │ 
+~                                      │┃└────────────────────────────────────────────────────────────────────────────┘ 
+~                                      │┃  not use the execute wrapper, tools namespace, shell or any other tool.       
+~                                      │┃  Finally say TODO_READY.                                                      
+~                                      │┃                                                                               
+~                                      │                                                                                
+~                                      │Thinking: The user wants me to call the todowrite tool directly (top-level)     
+~                                      │with revision=0 and a specific todos array, then call the todoread tool         
+~                                      │directly. Let me do both calls.                                                 
+~                                      │                                                                                
+~                                      │▏                                                                               
+~                                      │▏  # Updated todos 1/2 done · 1 pending                                         
+~                                      │▏                                                                               
+~                                      │▏  [✓] Read fixture                                                             
+~                                      │▏  [ ] Check persistent dock                                                    
+~                                      │▏                                                                               
+~                                      │                                                                                
+~                                      │Thinking: Good, the todowrite was successful. Now I need to call todoread.      
+~                                      │                                                                                
+~                                      │▏                                                                               
+~                                      │▏  # Read todos 1/2 done · 1 pending                                            
+~                                      │▏                                                                               
+~                                      │▏  [✓] Read fixture                                                             
+~                                      │▏  [ ] Check persistent dock                                                    
+~                                      │▏                                                                               
+~                                      │                                                                                
+~                                      │Thinking: Both calls completed successfully. The user wants me to say           
+~                                      │TODO_READY.                                                                     
+~                                      │                                                                                
+[No Name]            0,0-1          All opencode [-]                                                  4,1            Top
+Todo smoke: Session done                                                                                                

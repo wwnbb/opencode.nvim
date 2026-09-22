@@ -1,0 +1,44 @@
+                                                                                 │ ○ Streaming resize                                       
+~                                                                                │Agent: build                                              
+~                                                                                │┃                                                         
+~                                                                                │┃  Reply directly with exactly 160 lines numbered ROW001  
+~                                                                                │┃  through ROW160. Each line must be: ROWnnn: Unicode     
+~                                                                                │┃  Привет — streaming resize fixture. Replace nnn by its  
+~                                                                                │┃  three-digit number. No tools, no introduction, no code 
+~                                                                                │┃  fence.                                                 
+~                                                                                │┃                                                         
+~                                                                                │                                                          
+~                                                                                │Thinking: The user wants me to reply with exactly 160     
+~                                                                                │lines, each numbered ROW001 through ROW160, each          
+~                                                                                │containing "ROWnnn: Unicode Привет — streaming resize     
+~                                                                                │fixture." where nnn is replaced by the three-digit        
+~                                                                                │number. No tools, no introduction, no code fence.         
+~                                                                                │                                                          
+~                                                                                │          Let me generate this directly.                  
+~                                                                                │                                                          
+~                                                                                │ROW001: Unicode Привет — streaming resize fixture.        
+~                                                                                │ROW002: Unicode Привет — streaming resize fixture.        
+~                                                                                │ROW003: Unicode Привет — streaming resize fixture.        
+~                                                                                │ROW004: Unicode Привет — streaming resize fixture.        
+~                                                                                │ROW005: Unicode Привет — streaming resize fixture.        
+~                                                                                │ROW006: Unicode Привет — streaming resize fixture.        
+~                                                                                │ROW007: Unicode Привет — streaming resize fixture.        
+~                                                                                │ROW008: Unicode Привет — streaming resize fixture.        
+~                                                                                │ROW009: Unicode Привет — streaming resize fixture.        
+~                                                                                │ROW010: Unicode Привет — streaming resize fixture.        
+~                                                                                │ROW011: Unicode Привет — streaming resize fixture.        
+~                                                                                │ROW012: Unicode Привет — streaming resize fixture.        
+~                                                                                │ROW013: Unicode Привет — streaming resize fixture.        
+~                                                                                │ROW014: Unicode Привет — streaming resize fixture.        
+~                                                                                │ROW015: Unicode Привет — streaming resize fixture.        
+~                                                                                │ROW016: Unicode Привет — streaming resize fixture.        
+~                                                                                │ROW017: Unicode Привет — streaming resize fixture.        
+~                                                                                │ROW018: Unicode Привет — streaming resize fixture.        
+~                                                                                │ROW019: Unicode Привет — streaming resize fixture.        
+~                                                                                │ROW020: Unicode Привет — streaming resize fixture.        
+~                                                                                │ROW021: Unicode Привет — streaming resize fixture.        
+~                                                                                │ROW022: Unicode Привет — streaming resize fixture.        
+~                                                                                │ROW023: Unicode Привет — streaming resize fixture.        
+~                                                                                │ROW024: Unicode Привет — streaming resize fixture.        
+[No Name]                                                      0,0-1          All opencode [-]                            3,1            Top
+Streaming resize: Session done                                                                                                              

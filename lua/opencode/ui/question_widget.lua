@@ -26,7 +26,7 @@ local panel_helpers = panel.create_helpers({
 local get_hl = panel_helpers.get_hl
 local add_panel_line = panel_helpers.add_line
 local add_panel_raw_line = function(result, text, hl_group)
-	return panel_helpers.add_raw_line(result, text, hl_group, { wrap = false })
+	return panel_helpers.add_raw_line(result, text, hl_group, { wrap = result.width ~= nil })
 end
 local add_panel_blank = panel_helpers.add_blank
 local add_trailing_separator = panel_helpers.add_separator
@@ -328,7 +328,7 @@ end
 ---@param selection_state table
 ---@param status "pending"|"answered"|"rejected"|"confirming"
 ---@return table lines, table highlights, OpenCodeWidgetMeta meta
-function M.get_lines_for_question(_request_id, question_data, selection_state, status)
+function M.get_lines_for_question(_request_id, question_data, selection_state, status, opts)
 	ensure_highlights()
 	if selection_state.submitting then
 		return M.get_submitting_lines(_request_id, question_data, selection_state)
@@ -337,13 +337,16 @@ function M.get_lines_for_question(_request_id, question_data, selection_state, s
 		return M.get_confirmation_lines(_request_id, question_data, selection_state)
 	end
 
-	local result = { lines = {}, highlights = {} }
+	local result = { lines = {}, highlights = {}, width = opts and opts.width }
+	local option_lines = {}
 	local questions = get_questions(question_data)
 	local current_tab = selection_state.current_tab or 1
 	local current_question = questions[current_tab]
 	local selections = selection_state.selections and selection_state.selections[current_tab] or {}
 
 	if not current_question then
+		add_panel_line(result, "Form: " .. ((selection_state.form or {}).title or "Waiting"), "OpenCodeQuestionTitle")
+		add_panel_line(result, selection_state.server_error or next(selection_state.field_errors or {}) and select(2, next(selection_state.field_errors)) or "Enter to submit form defaults", "OpenCodeQuestionMuted")
 		return result.lines, result.highlights, widget_base.make_meta()
 	end
 
@@ -393,6 +396,7 @@ function M.get_lines_for_question(_request_id, question_data, selection_state, s
 			end
 
 			local option_text = string.format("%s %d. %s", marker, i, option_label)
+			option_lines[i] = #result.lines
 			local _, _, rows = add_panel_raw_line(
 				result,
 				option_text,
@@ -419,7 +423,13 @@ function M.get_lines_for_question(_request_id, question_data, selection_state, s
 		)
 	end
 
-	if status == "pending" then
+	local error_text = (selection_state.field_errors or {})[current_question.key] or selection_state.server_error
+	if error_text then add_panel_line(result, error_text, "OpenCodeQuestionError") end
+	if current_question.field_type == "external" then
+		add_panel_line(result, current_question.url or "", "OpenCodeQuestionOutput")
+		add_panel_line(result, "Enter: open link · waiting for external completion", "OpenCodeQuestionMuted")
+	end
+	if status == "pending" and current_question.field_type ~= "external" then
 		local answered_count = 0
 		for i = 1, #questions do
 			local selection = selection_state.selections and selection_state.selections[i]
@@ -431,7 +441,7 @@ function M.get_lines_for_question(_request_id, question_data, selection_state, s
 		add_panel_blank(result)
 		add_panel_line(
 			result,
-			format_hint(
+			selection_state.hint or format_hint(
 				option_count,
 				is_multi,
 				#questions == 1 and not is_multi,
@@ -461,6 +471,7 @@ function M.get_lines_for_question(_request_id, question_data, selection_state, s
 			interactive_count = interactive_count,
 			first_interactive_line = first_interactive_line,
 			option_count = option_count,
+			option_lines = option_lines,
 			custom_interactive_line = custom_interactive_line,
 		})
 end
@@ -558,6 +569,8 @@ function M.get_confirmation_lines(_request_id, question_data, selection_state)
 
 	add_panel_blank(result)
 	add_header(result, "ready to submit", "pending")
+	if selection_state.server_error then add_panel_line(result, selection_state.server_error, "OpenCodeQuestionError") end
+	for key, err in pairs(selection_state.field_errors or {}) do add_panel_line(result, key .. ": " .. err, "OpenCodeQuestionError") end
 	add_panel_blank(result)
 
 	for i, question in ipairs(questions) do

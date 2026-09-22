@@ -220,6 +220,7 @@ function M.show(opts)
 
 	autocmds.setup(state, {
 		schedule_resize = schedule_resize_input,
+		reflow = function() layout.reflow(state) end,
 		input_changed = function()
 			autocomplete.refresh(state)
 		end,
@@ -319,6 +320,7 @@ function M.close(save_draft)
 	state.add_history = true
 	state.normalizing_paste = false
 	state.resize_scheduled = false
+	state.reflow_geometry = nil
 
 	vim.cmd("stopinsert")
 end

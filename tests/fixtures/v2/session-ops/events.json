@@ -1,0 +1,2498 @@
+[
+  {
+    "id": "evt_0c639e71f00115h8OlLf50FICU",
+    "type": "server.connected",
+    "data": {}
+  },
+  {
+    "id": "evt_0c639e73e001q0jaF6r6gG7AFF",
+    "created": 1790032078654,
+    "type": "worktree.resolved",
+    "data": {
+      "projectID": "53eec6409d93a85ecc1316ce7364ed97ed605a4c",
+      "directory": "<PROFILE>/project-session-ops",
+      "previous": "global"
+    },
+    "durable": {
+      "aggregateID": "53eec6409d93a85ecc1316ce7364ed97ed605a4c",
+      "seq": 0,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c639ea8c0016RMAMpb10jhPpx",
+    "created": 1790032079500,
+    "type": "integration.updated",
+    "location": {
+      "directory": "<PROFILE>/project-session-ops"
+    },
+    "data": {}
+  },
+  {
+    "id": "evt_0c639ea8f001WrFuonRe8yHxqk",
+    "created": 1790032079503,
+    "type": "provider.updated",
+    "location": {
+      "directory": "<PROFILE>/project-session-ops"
+    },
+    "data": {}
+  },
+  {
+    "id": "evt_0c639ea94001FG09RuIIaU1lqB",
+    "created": 1790032079508,
+    "type": "model.updated",
+    "location": {
+      "directory": "<PROFILE>/project-session-ops"
+    },
+    "data": {}
+  },
+  {
+    "id": "evt_0c639eab0001zfsh27uhfM5Yx1",
+    "created": 1790032079536,
+    "type": "vcs.branch.updated",
+    "location": {
+      "directory": "<PROFILE>/project-session-ops"
+    },
+    "data": {
+      "branch": "master"
+    }
+  },
+  {
+    "id": "evt_0c639eab0002Z76fTULTxwcKVB",
+    "created": 1790032079536,
+    "type": "agent.updated",
+    "location": {
+      "directory": "<PROFILE>/project-session-ops"
+    },
+    "data": {}
+  },
+  {
+    "id": "evt_0c639eab0003GNuw89z3ZseKRr",
+    "created": 1790032079536,
+    "type": "command.updated",
+    "location": {
+      "directory": "<PROFILE>/project-session-ops"
+    },
+    "data": {}
+  },
+  {
+    "id": "evt_0c639eab1001RewhpQzXXpAxM4",
+    "created": 1790032079537,
+    "type": "skill.updated",
+    "location": {
+      "directory": "<PROFILE>/project-session-ops"
+    },
+    "data": {}
+  },
+  {
+    "id": "evt_0c639eab2001Nd5D1A2SnbQYLj",
+    "created": 1790032079538,
+    "type": "websearch.updated",
+    "location": {
+      "directory": "<PROFILE>/project-session-ops"
+    },
+    "data": {}
+  },
+  {
+    "id": "evt_0c639eab3002WEpKVp3yWb04XZ",
+    "created": 1790032079539,
+    "type": "reference.updated",
+    "location": {
+      "directory": "<PROFILE>/project-session-ops"
+    },
+    "data": {}
+  },
+  {
+    "id": "evt_0c639eabd001EK1M57ECBjw1bp",
+    "created": 1790032079549,
+    "type": "plugin.updated",
+    "location": {
+      "directory": "<PROFILE>/project-session-ops"
+    },
+    "data": {}
+  },
+  {
+    "id": "evt_0c639eb300012aGps7RiVd9OUc",
+    "created": 1790032079664,
+    "type": "models-dev.refreshed",
+    "location": {
+      "directory": "<PROFILE>/project-session-ops"
+    },
+    "data": {}
+  },
+  {
+    "id": "evt_0c639eb5a001PsZ102xLhnMlcj",
+    "created": 1790032079706,
+    "type": "integration.updated",
+    "location": {
+      "directory": "<PROFILE>/project-session-ops"
+    },
+    "data": {}
+  },
+  {
+    "id": "evt_0c639eb81001mQXhuT07zGHjay",
+    "created": 1790032079745,
+    "type": "provider.updated",
+    "location": {
+      "directory": "<PROFILE>/project-session-ops"
+    },
+    "data": {}
+  },
+  {
+    "id": "evt_0c639eb85001N4Us9ZQDAxoC7N",
+    "created": 1790032079749,
+    "type": "model.updated",
+    "location": {
+      "directory": "<PROFILE>/project-session-ops"
+    },
+    "data": {}
+  },
+  {
+    "id": "evt_0c639eb910017uEduL6rEP6FL4",
+    "created": 1790032079761,
+    "type": "session.created",
+    "location": {
+      "directory": "<PROFILE>/project-session-ops"
+    },
+    "data": {
+      "sessionID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "slug": "crisp-cactus",
+      "version": "2.0.11",
+      "projectID": "53eec6409d93a85ecc1316ce7364ed97ed605a4c",
+      "location": {
+        "directory": "<PROFILE>/project-session-ops"
+      },
+      "subpath": "",
+      "title": "opencode.nvim v2 runtime fixture",
+      "model": {
+        "id": "mimo-v2.5-free",
+        "providerID": "opencode"
+      }
+    },
+    "durable": {
+      "aggregateID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "seq": 0,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c639ebaa001tQ2gUWrxuMJKyR",
+    "created": 1790032079786,
+    "type": "session.inbox.enqueued",
+    "location": {
+      "directory": "<PROFILE>/project-session-ops"
+    },
+    "data": {
+      "inboxID": "msg_0c639eba9001NZHv4a3XJX6cy6",
+      "sessionID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "item": {
+        "type": "user",
+        "payload": {
+          "text": "Use your file editing tool to replace one with two in counter.txt. Pass the relative path counter.txt exactly. Preserve the final newline. Do not change any other file. Then reply Done."
+        },
+        "delivery": "queue"
+      }
+    },
+    "durable": {
+      "aggregateID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "seq": 1,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c639ebab0012RF3BdYZU5DrVM",
+    "created": 1790032079787,
+    "type": "session.execution.started",
+    "data": {
+      "sessionID": "ses_f39c61526ffegKEYOt0vVpYsCt"
+    },
+    "durable": {
+      "aggregateID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "seq": 2,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c639ebb7001TPi8UChA9PfS3U",
+    "created": 1790032079799,
+    "metadata": {
+      "instructions": {
+        "initial": true
+      }
+    },
+    "type": "session.instructions.updated",
+    "location": {
+      "directory": "<PROFILE>/project-session-ops"
+    },
+    "data": {
+      "sessionID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "delta": {
+        "core/environment": "457e1ba1aff23e1442baaccfda42db3c1392ee2c8d79b121e0375f6d9aeac1cc",
+        "core/date": "6a76aa89fcc8086f3abb8b9dc2b9ceafa3405dd2b3cdc263b339d36120433008",
+        "core/codemode": "cf52fcbcde861ccfefdc6633ee3cb84036524f86c72f976a7315e05dc01a15e1",
+        "core/skill-guidance": "8394362d28c82fa4d13c7a9f5568c05680f6687e07db8f426a0e3c92f3027dc9"
+      }
+    },
+    "durable": {
+      "aggregateID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "seq": 3,
+      "version": 2
+    }
+  },
+  {
+    "id": "evt_0c639ebb90015wHR8XaNNIVrJQ",
+    "created": 1790032079801,
+    "type": "session.inbox.delivered",
+    "location": {
+      "directory": "<PROFILE>/project-session-ops"
+    },
+    "data": {
+      "sessionID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "inboxID": "msg_0c639eba9001NZHv4a3XJX6cy6"
+    },
+    "durable": {
+      "aggregateID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "seq": 4,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c639facd001Y77Vo5ZhCyTsIV",
+    "created": 1790032083661,
+    "type": "session.step.started",
+    "location": {
+      "directory": "<PROFILE>/project-session-ops"
+    },
+    "data": {
+      "sessionID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "agent": "build",
+      "model": {
+        "id": "mimo-v2.5-free",
+        "providerID": "opencode",
+        "variant": "default"
+      },
+      "assistantMessageID": "msg_0c639ebbd001UpUfQFt8Cs4x47",
+      "snapshot": "97772d4c462ce40d1da0edb7d07033b2eeab11a7",
+      "started": 1790032079857
+    },
+    "durable": {
+      "aggregateID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "seq": 5,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c639facf001ol3GB4Gtbk93Yp",
+    "created": 1790032083663,
+    "type": "session.reasoning.started",
+    "location": {
+      "directory": "<PROFILE>/project-session-ops"
+    },
+    "data": {
+      "sessionID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "assistantMessageID": "msg_0c639ebbd001UpUfQFt8Cs4x47",
+      "ordinal": 0,
+      "state": {
+        "reasoningField": "reasoning_content"
+      }
+    },
+    "durable": {
+      "aggregateID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "seq": 6,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c639fb2e001Qi72Bb0J4hQizs",
+    "created": 1790032083758,
+    "type": "session.tool.input.started",
+    "location": {
+      "directory": "<PROFILE>/project-session-ops"
+    },
+    "data": {
+      "sessionID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "assistantMessageID": "msg_0c639ebbd001UpUfQFt8Cs4x47",
+      "id": "call_b9d0644262994ee7a24ecbbf",
+      "name": "read"
+    },
+    "durable": {
+      "aggregateID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "seq": 7,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c639fb36001tJ7dAEQc36P7js",
+    "created": 1790032083766,
+    "type": "session.reasoning.delta",
+    "location": {
+      "directory": "<PROFILE>/project-session-ops"
+    },
+    "data": {
+      "sessionID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "assistantMessageID": "msg_0c639ebbd001UpUfQFt8Cs4x47",
+      "ordinal": 0,
+      "delta": "Let me read the counter.txt file first to see its current content."
+    }
+  },
+  {
+    "id": "evt_0c639fbc9001y20H679K896AMR",
+    "created": 1790032083913,
+    "type": "session.reasoning.ended",
+    "location": {
+      "directory": "<PROFILE>/project-session-ops"
+    },
+    "data": {
+      "sessionID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "assistantMessageID": "msg_0c639ebbd001UpUfQFt8Cs4x47",
+      "ordinal": 0,
+      "text": "Let me read the counter.txt file first to see its current content.",
+      "state": {
+        "reasoningField": "reasoning_content",
+        "reasoningDetails": [
+          {
+            "type": "reasoning.text",
+            "text": "Let me read the counter.txt file first to see its current content.",
+            "format": "unknown",
+            "index": 0
+          }
+        ]
+      }
+    },
+    "durable": {
+      "aggregateID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "seq": 8,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c639fbcd00130Su8jsbgXRTWs",
+    "created": 1790032083917,
+    "type": "session.tool.input.ended",
+    "location": {
+      "directory": "<PROFILE>/project-session-ops"
+    },
+    "data": {
+      "sessionID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "assistantMessageID": "msg_0c639ebbd001UpUfQFt8Cs4x47",
+      "id": "call_b9d0644262994ee7a24ecbbf",
+      "text": "{\"path\": \"counter.txt\"}"
+    },
+    "durable": {
+      "aggregateID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "seq": 9,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c639fbcf001qXwxTHRNWSS7T0",
+    "created": 1790032083919,
+    "type": "session.tool.called",
+    "location": {
+      "directory": "<PROFILE>/project-session-ops"
+    },
+    "data": {
+      "sessionID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "assistantMessageID": "msg_0c639ebbd001UpUfQFt8Cs4x47",
+      "id": "call_b9d0644262994ee7a24ecbbf",
+      "input": {
+        "path": "counter.txt"
+      },
+      "executed": false
+    },
+    "durable": {
+      "aggregateID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "seq": 10,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c639fbd1001VmvwK0MSEh9Rcd",
+    "created": 1790032083921,
+    "type": "session.step.streamed",
+    "location": {
+      "directory": "<PROFILE>/project-session-ops"
+    },
+    "data": {
+      "sessionID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "assistantMessageID": "msg_0c639ebbd001UpUfQFt8Cs4x47"
+    },
+    "durable": {
+      "aggregateID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "seq": 11,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c639fbd7001soKDkBMXBF3e6k",
+    "created": 1790032083927,
+    "type": "session.tool.success",
+    "location": {
+      "directory": "<PROFILE>/project-session-ops"
+    },
+    "data": {
+      "sessionID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "assistantMessageID": "msg_0c639ebbd001UpUfQFt8Cs4x47",
+      "id": "call_b9d0644262994ee7a24ecbbf",
+      "content": [
+        {
+          "type": "text",
+          "text": "Read file counter.txt, lines 1-1\n1: one"
+        }
+      ],
+      "metadata": {
+        "truncated": false
+      },
+      "executed": false
+    },
+    "durable": {
+      "aggregateID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "seq": 12,
+      "version": 2
+    }
+  },
+  {
+    "id": "evt_0c639fbf4001EZvS116zN8Ws7p",
+    "created": 1790032083956,
+    "type": "session.step.ended",
+    "location": {
+      "directory": "<PROFILE>/project-session-ops"
+    },
+    "data": {
+      "sessionID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "assistantMessageID": "msg_0c639ebbd001UpUfQFt8Cs4x47",
+      "finish": "tool-calls",
+      "rawFinish": "tool_calls",
+      "cost": 0,
+      "tokens": {
+        "input": 6891,
+        "output": 36,
+        "reasoning": 0,
+        "cache": {
+          "read": 0,
+          "write": 0
+        }
+      },
+      "snapshot": "97772d4c462ce40d1da0edb7d07033b2eeab11a7",
+      "files": []
+    },
+    "durable": {
+      "aggregateID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "seq": 13,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c639fbf5001ee7kpibMtXeUZ8",
+    "created": 1790032083957,
+    "type": "session.usage.updated",
+    "data": {
+      "sessionID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "cost": 0,
+      "tokens": {
+        "input": 6891,
+        "output": 36,
+        "reasoning": 0,
+        "cache": {
+          "read": 0,
+          "write": 0
+        }
+      }
+    }
+  },
+  {
+    "id": "evt_0c63a06d10014ErSr6FA7ocsdA",
+    "created": 1790032086737,
+    "type": "session.step.started",
+    "location": {
+      "directory": "<PROFILE>/project-session-ops"
+    },
+    "data": {
+      "sessionID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "agent": "build",
+      "model": {
+        "id": "mimo-v2.5-free",
+        "providerID": "opencode",
+        "variant": "default"
+      },
+      "assistantMessageID": "msg_0c639fbfb00167Qf2kUa25OrWh",
+      "snapshot": "97772d4c462ce40d1da0edb7d07033b2eeab11a7",
+      "started": 1790032083989
+    },
+    "durable": {
+      "aggregateID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "seq": 14,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c63a06d7001asFUOpIzfaIPwf",
+    "created": 1790032086743,
+    "type": "session.reasoning.started",
+    "location": {
+      "directory": "<PROFILE>/project-session-ops"
+    },
+    "data": {
+      "sessionID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "assistantMessageID": "msg_0c639fbfb00167Qf2kUa25OrWh",
+      "ordinal": 0,
+      "state": {
+        "reasoningField": "reasoning_content"
+      }
+    },
+    "durable": {
+      "aggregateID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "seq": 15,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c63a073d001Yn3tjIeG2a3AnX",
+    "created": 1790032086845,
+    "type": "session.reasoning.delta",
+    "location": {
+      "directory": "<PROFILE>/project-session-ops"
+    },
+    "data": {
+      "sessionID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "assistantMessageID": "msg_0c639fbfb00167Qf2kUa25OrWh",
+      "ordinal": 0,
+      "delta": "The file contains \"one\"."
+    }
+  },
+  {
+    "id": "evt_0c63a079a001cQR2mykm3BYFKs",
+    "created": 1790032086939,
+    "type": "session.tool.input.started",
+    "location": {
+      "directory": "<PROFILE>/project-session-ops"
+    },
+    "data": {
+      "sessionID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "assistantMessageID": "msg_0c639fbfb00167Qf2kUa25OrWh",
+      "id": "call_d59ee77d5fb0408087df64ad",
+      "name": "edit"
+    },
+    "durable": {
+      "aggregateID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "seq": 16,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c63a07b4001sqgts2elG3RlXK",
+    "created": 1790032086964,
+    "type": "session.reasoning.delta",
+    "location": {
+      "directory": "<PROFILE>/project-session-ops"
+    },
+    "data": {
+      "sessionID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "assistantMessageID": "msg_0c639fbfb00167Qf2kUa25OrWh",
+      "ordinal": 0,
+      "delta": " I need to replace \"one\" with \"two\" and preserve the final newline."
+    }
+  },
+  {
+    "id": "evt_0c63a0912001dlOKBtfrjUgQmV",
+    "created": 1790032087314,
+    "type": "session.reasoning.ended",
+    "location": {
+      "directory": "<PROFILE>/project-session-ops"
+    },
+    "data": {
+      "sessionID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "assistantMessageID": "msg_0c639fbfb00167Qf2kUa25OrWh",
+      "ordinal": 0,
+      "text": "The file contains \"one\". I need to replace \"one\" with \"two\" and preserve the final newline.",
+      "state": {
+        "reasoningField": "reasoning_content",
+        "reasoningDetails": [
+          {
+            "type": "reasoning.text",
+            "text": "The file contains \"one\". I need to replace \"one\" with \"two\" and preserve the final newline.",
+            "format": "unknown",
+            "index": 0
+          }
+        ]
+      }
+    },
+    "durable": {
+      "aggregateID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "seq": 17,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c63a09170018GZuBA7g7XVZJl",
+    "created": 1790032087319,
+    "type": "session.tool.input.ended",
+    "location": {
+      "directory": "<PROFILE>/project-session-ops"
+    },
+    "data": {
+      "sessionID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "assistantMessageID": "msg_0c639fbfb00167Qf2kUa25OrWh",
+      "id": "call_d59ee77d5fb0408087df64ad",
+      "text": "{\"path\": \"counter.txt\", \"oldString\": \"one\", \"newString\": \"two\"}"
+    },
+    "durable": {
+      "aggregateID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "seq": 18,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c63a0918001nlu31wsaie5NQU",
+    "created": 1790032087320,
+    "type": "session.tool.called",
+    "location": {
+      "directory": "<PROFILE>/project-session-ops"
+    },
+    "data": {
+      "sessionID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "assistantMessageID": "msg_0c639fbfb00167Qf2kUa25OrWh",
+      "id": "call_d59ee77d5fb0408087df64ad",
+      "input": {
+        "path": "counter.txt",
+        "oldString": "one",
+        "newString": "two"
+      },
+      "executed": false
+    },
+    "durable": {
+      "aggregateID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "seq": 19,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c63a091a001ubM12k7Ol7emkm",
+    "created": 1790032087322,
+    "type": "session.step.streamed",
+    "location": {
+      "directory": "<PROFILE>/project-session-ops"
+    },
+    "data": {
+      "sessionID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "assistantMessageID": "msg_0c639fbfb00167Qf2kUa25OrWh"
+    },
+    "durable": {
+      "aggregateID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "seq": 20,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c63a0920001c2EmuWWTcGLRmL",
+    "created": 1790032087328,
+    "type": "session.tool.success",
+    "location": {
+      "directory": "<PROFILE>/project-session-ops"
+    },
+    "data": {
+      "sessionID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "assistantMessageID": "msg_0c639fbfb00167Qf2kUa25OrWh",
+      "id": "call_d59ee77d5fb0408087df64ad",
+      "content": [
+        {
+          "type": "text",
+          "text": "Edited counter.txt (1 replacement)"
+        }
+      ],
+      "metadata": {
+        "files": [
+          {
+            "file": "counter.txt",
+            "patch": "Index: counter.txt\n===================================================================\n--- counter.txt\n+++ counter.txt\n@@ -1,1 +1,1 @@\n-one\n+two\n",
+            "status": "modified",
+            "additions": 1,
+            "deletions": 1
+          }
+        ],
+        "truncated": false
+      },
+      "executed": false
+    },
+    "durable": {
+      "aggregateID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "seq": 21,
+      "version": 2
+    }
+  },
+  {
+    "id": "evt_0c63a0968001xs0VfJGzUZTmVX",
+    "created": 1790032087400,
+    "type": "session.step.ended",
+    "location": {
+      "directory": "<PROFILE>/project-session-ops"
+    },
+    "data": {
+      "sessionID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "assistantMessageID": "msg_0c639fbfb00167Qf2kUa25OrWh",
+      "finish": "tool-calls",
+      "rawFinish": "tool_calls",
+      "cost": 0,
+      "tokens": {
+        "input": 105,
+        "output": 65,
+        "reasoning": 0,
+        "cache": {
+          "read": 6848,
+          "write": 0
+        }
+      },
+      "snapshot": "7b23a13773ca4be933db1bed9d5fa46eebff2ad0",
+      "files": [
+        "counter.txt"
+      ]
+    },
+    "durable": {
+      "aggregateID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "seq": 22,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c63a0969001aackIkoKce9fwP",
+    "created": 1790032087401,
+    "type": "session.usage.updated",
+    "data": {
+      "sessionID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "cost": 0,
+      "tokens": {
+        "input": 6996,
+        "output": 101,
+        "reasoning": 0,
+        "cache": {
+          "read": 6848,
+          "write": 0
+        }
+      }
+    }
+  },
+  {
+    "id": "evt_0c63a2ebd001DZjbRBtSyvVDpS",
+    "created": 1790032096957,
+    "type": "session.step.started",
+    "location": {
+      "directory": "<PROFILE>/project-session-ops"
+    },
+    "data": {
+      "sessionID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "agent": "build",
+      "model": {
+        "id": "mimo-v2.5-free",
+        "providerID": "opencode",
+        "variant": "default"
+      },
+      "assistantMessageID": "msg_0c63a096e001zqqpHnuJAZgWPj",
+      "snapshot": "7b23a13773ca4be933db1bed9d5fa46eebff2ad0",
+      "started": 1790032087430
+    },
+    "durable": {
+      "aggregateID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "seq": 23,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c63a2ec1001O2OzykwGY6NI4P",
+    "created": 1790032096961,
+    "type": "session.reasoning.started",
+    "location": {
+      "directory": "<PROFILE>/project-session-ops"
+    },
+    "data": {
+      "sessionID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "assistantMessageID": "msg_0c63a096e001zqqpHnuJAZgWPj",
+      "ordinal": 0,
+      "state": {
+        "reasoningField": "reasoning_content"
+      }
+    },
+    "durable": {
+      "aggregateID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "seq": 24,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c63a2f27001uEj6fVwY566iQA",
+    "created": 1790032097063,
+    "type": "session.reasoning.delta",
+    "location": {
+      "directory": "<PROFILE>/project-session-ops"
+    },
+    "data": {
+      "sessionID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "assistantMessageID": "msg_0c63a096e001zqqpHnuJAZgWPj",
+      "ordinal": 0,
+      "delta": "Done. The file now contains \"two\"."
+    }
+  },
+  {
+    "id": "evt_0c63a2f2a001yqTw5TLr7Hcz2M",
+    "created": 1790032097066,
+    "type": "session.text.started",
+    "location": {
+      "directory": "<PROFILE>/project-session-ops"
+    },
+    "data": {
+      "sessionID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "assistantMessageID": "msg_0c63a096e001zqqpHnuJAZgWPj",
+      "ordinal": 0
+    },
+    "durable": {
+      "aggregateID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "seq": 25,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c63a2f2f001JHOeupGVnQfopI",
+    "created": 1790032097071,
+    "type": "session.reasoning.ended",
+    "location": {
+      "directory": "<PROFILE>/project-session-ops"
+    },
+    "data": {
+      "sessionID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "assistantMessageID": "msg_0c63a096e001zqqpHnuJAZgWPj",
+      "ordinal": 0,
+      "text": "Done. The file now contains \"two\".",
+      "state": {
+        "reasoningField": "reasoning_content",
+        "reasoningDetails": [
+          {
+            "type": "reasoning.text",
+            "text": "Done. The file now contains \"two\".",
+            "format": "unknown",
+            "index": 0
+          }
+        ]
+      }
+    },
+    "durable": {
+      "aggregateID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "seq": 26,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c63a2f30001f6WojttcUgcOt3",
+    "created": 1790032097072,
+    "type": "session.text.delta",
+    "location": {
+      "directory": "<PROFILE>/project-session-ops"
+    },
+    "data": {
+      "sessionID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "assistantMessageID": "msg_0c63a096e001zqqpHnuJAZgWPj",
+      "ordinal": 0,
+      "delta": "Done."
+    }
+  },
+  {
+    "id": "evt_0c63a2f30002UH1p8GINs2yCCW",
+    "created": 1790032097072,
+    "type": "session.text.ended",
+    "location": {
+      "directory": "<PROFILE>/project-session-ops"
+    },
+    "data": {
+      "sessionID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "assistantMessageID": "msg_0c63a096e001zqqpHnuJAZgWPj",
+      "ordinal": 0,
+      "text": "Done."
+    },
+    "durable": {
+      "aggregateID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "seq": 27,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c63a2f320015db4GzG6ucev24",
+    "created": 1790032097074,
+    "type": "session.step.streamed",
+    "location": {
+      "directory": "<PROFILE>/project-session-ops"
+    },
+    "data": {
+      "sessionID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "assistantMessageID": "msg_0c63a096e001zqqpHnuJAZgWPj"
+    },
+    "durable": {
+      "aggregateID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "seq": 28,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c63a2f4b0010pPs343YrRA67C",
+    "created": 1790032097099,
+    "type": "session.step.ended",
+    "location": {
+      "directory": "<PROFILE>/project-session-ops"
+    },
+    "data": {
+      "sessionID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "assistantMessageID": "msg_0c63a096e001zqqpHnuJAZgWPj",
+      "finish": "stop",
+      "rawFinish": "stop",
+      "cost": 0,
+      "tokens": {
+        "input": 124,
+        "output": 14,
+        "reasoning": 0,
+        "cache": {
+          "read": 6912,
+          "write": 0
+        }
+      },
+      "snapshot": "7b23a13773ca4be933db1bed9d5fa46eebff2ad0",
+      "files": []
+    },
+    "durable": {
+      "aggregateID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "seq": 29,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c63a2f4d001XCbM11oSCciJEA",
+    "created": 1790032097101,
+    "type": "session.usage.updated",
+    "data": {
+      "sessionID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "cost": 0,
+      "tokens": {
+        "input": 7120,
+        "output": 115,
+        "reasoning": 0,
+        "cache": {
+          "read": 13760,
+          "write": 0
+        }
+      }
+    }
+  },
+  {
+    "id": "evt_0c63a2f4e00113zluS6skZFwAE",
+    "created": 1790032097102,
+    "type": "session.execution.succeeded",
+    "data": {
+      "sessionID": "ses_f39c61526ffegKEYOt0vVpYsCt"
+    },
+    "durable": {
+      "aggregateID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "seq": 30,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c63a300c001ZQyvwyylh9e8q9",
+    "created": 1790032097292,
+    "type": "session.inbox.enqueued",
+    "location": {
+      "directory": "<PROFILE>/project-session-ops"
+    },
+    "data": {
+      "inboxID": "msg_0c63a300b001df2r2Zzctg11OR",
+      "sessionID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "item": {
+        "type": "user",
+        "payload": {
+          "text": "Use your file editing tool to replace two with three in counter.txt. Pass the relative path counter.txt exactly. Preserve the final newline. Do not change any other file. Then reply Done."
+        },
+        "delivery": "queue"
+      }
+    },
+    "durable": {
+      "aggregateID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "seq": 31,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c63a300e001in63Yy3jCIQDCn",
+    "created": 1790032097294,
+    "type": "session.execution.started",
+    "data": {
+      "sessionID": "ses_f39c61526ffegKEYOt0vVpYsCt"
+    },
+    "durable": {
+      "aggregateID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "seq": 32,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c63a3015001e5roIdNfWmnifV",
+    "created": 1790032097301,
+    "type": "session.inbox.delivered",
+    "location": {
+      "directory": "<PROFILE>/project-session-ops"
+    },
+    "data": {
+      "sessionID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "inboxID": "msg_0c63a300b001df2r2Zzctg11OR"
+    },
+    "durable": {
+      "aggregateID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "seq": 33,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c63a46cf0017Tof9JTtVTuOs9",
+    "created": 1790032103119,
+    "type": "session.step.started",
+    "location": {
+      "directory": "<PROFILE>/project-session-ops"
+    },
+    "data": {
+      "sessionID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "agent": "build",
+      "model": {
+        "id": "mimo-v2.5-free",
+        "providerID": "opencode",
+        "variant": "default"
+      },
+      "assistantMessageID": "msg_0c63a301a001F1teBx7nCdEy24",
+      "snapshot": "7b23a13773ca4be933db1bed9d5fa46eebff2ad0",
+      "started": 1790032097340
+    },
+    "durable": {
+      "aggregateID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "seq": 34,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c63a46d100167WBFRPf09Kkke",
+    "created": 1790032103121,
+    "type": "session.reasoning.started",
+    "location": {
+      "directory": "<PROFILE>/project-session-ops"
+    },
+    "data": {
+      "sessionID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "assistantMessageID": "msg_0c63a301a001F1teBx7nCdEy24",
+      "ordinal": 0,
+      "state": {
+        "reasoningField": "reasoning_content"
+      }
+    },
+    "durable": {
+      "aggregateID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "seq": 35,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c63a4736001k37dR6a6fYfwA8",
+    "created": 1790032103222,
+    "type": "session.reasoning.delta",
+    "location": {
+      "directory": "<PROFILE>/project-session-ops"
+    },
+    "data": {
+      "sessionID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "assistantMessageID": "msg_0c63a301a001F1teBx7nCdEy24",
+      "ordinal": 0,
+      "delta": "Let me read the counter.txt file first"
+    }
+  },
+  {
+    "id": "evt_0c63a4745001ZjcAMzxyoKd5ft",
+    "created": 1790032103237,
+    "type": "session.tool.input.started",
+    "location": {
+      "directory": "<PROFILE>/project-session-ops"
+    },
+    "data": {
+      "sessionID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "assistantMessageID": "msg_0c63a301a001F1teBx7nCdEy24",
+      "id": "call_46ce9715c064428ea5501dd8",
+      "name": "read"
+    },
+    "durable": {
+      "aggregateID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "seq": 36,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c63a47aa00119jUZa2SdIEf01",
+    "created": 1790032103338,
+    "type": "session.reasoning.delta",
+    "location": {
+      "directory": "<PROFILE>/project-session-ops"
+    },
+    "data": {
+      "sessionID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "assistantMessageID": "msg_0c63a301a001F1teBx7nCdEy24",
+      "ordinal": 0,
+      "delta": " to see its current content."
+    }
+  },
+  {
+    "id": "evt_0c63a47b6001BsAMNGxsn9H4Kr",
+    "created": 1790032103350,
+    "type": "session.reasoning.ended",
+    "location": {
+      "directory": "<PROFILE>/project-session-ops"
+    },
+    "data": {
+      "sessionID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "assistantMessageID": "msg_0c63a301a001F1teBx7nCdEy24",
+      "ordinal": 0,
+      "text": "Let me read the counter.txt file first to see its current content.",
+      "state": {
+        "reasoningField": "reasoning_content",
+        "reasoningDetails": [
+          {
+            "type": "reasoning.text",
+            "text": "Let me read the counter.txt file first to see its current content.",
+            "format": "unknown",
+            "index": 0
+          }
+        ]
+      }
+    },
+    "durable": {
+      "aggregateID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "seq": 37,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c63a47b7001ktV6uZhlfBdtok",
+    "created": 1790032103351,
+    "type": "session.tool.input.ended",
+    "location": {
+      "directory": "<PROFILE>/project-session-ops"
+    },
+    "data": {
+      "sessionID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "assistantMessageID": "msg_0c63a301a001F1teBx7nCdEy24",
+      "id": "call_46ce9715c064428ea5501dd8",
+      "text": "{\"path\": \"counter.txt\"}"
+    },
+    "durable": {
+      "aggregateID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "seq": 38,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c63a47b8001qDlfAnKNEKaKF7",
+    "created": 1790032103352,
+    "type": "session.tool.called",
+    "location": {
+      "directory": "<PROFILE>/project-session-ops"
+    },
+    "data": {
+      "sessionID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "assistantMessageID": "msg_0c63a301a001F1teBx7nCdEy24",
+      "id": "call_46ce9715c064428ea5501dd8",
+      "input": {
+        "path": "counter.txt"
+      },
+      "executed": false
+    },
+    "durable": {
+      "aggregateID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "seq": 39,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c63a47b80022X5Wh6mKP8cD5e",
+    "created": 1790032103352,
+    "type": "session.step.streamed",
+    "location": {
+      "directory": "<PROFILE>/project-session-ops"
+    },
+    "data": {
+      "sessionID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "assistantMessageID": "msg_0c63a301a001F1teBx7nCdEy24"
+    },
+    "durable": {
+      "aggregateID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "seq": 40,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c63a47bb001K6IUhdTc06hER4",
+    "created": 1790032103355,
+    "type": "session.tool.success",
+    "location": {
+      "directory": "<PROFILE>/project-session-ops"
+    },
+    "data": {
+      "sessionID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "assistantMessageID": "msg_0c63a301a001F1teBx7nCdEy24",
+      "id": "call_46ce9715c064428ea5501dd8",
+      "content": [
+        {
+          "type": "text",
+          "text": "Read file counter.txt, lines 1-1\n1: two"
+        }
+      ],
+      "metadata": {
+        "truncated": false
+      },
+      "executed": false
+    },
+    "durable": {
+      "aggregateID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "seq": 41,
+      "version": 2
+    }
+  },
+  {
+    "id": "evt_0c63a47d0001VHafnY7xK5O6ct",
+    "created": 1790032103376,
+    "type": "session.step.ended",
+    "location": {
+      "directory": "<PROFILE>/project-session-ops"
+    },
+    "data": {
+      "sessionID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "assistantMessageID": "msg_0c63a301a001F1teBx7nCdEy24",
+      "finish": "tool-calls",
+      "rawFinish": "tool_calls",
+      "cost": 0,
+      "tokens": {
+        "input": 119,
+        "output": 36,
+        "reasoning": 0,
+        "cache": {
+          "read": 6976,
+          "write": 0
+        }
+      },
+      "snapshot": "7b23a13773ca4be933db1bed9d5fa46eebff2ad0",
+      "files": []
+    },
+    "durable": {
+      "aggregateID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "seq": 42,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c63a47d2001yNm67v460r4H1U",
+    "created": 1790032103378,
+    "type": "session.usage.updated",
+    "data": {
+      "sessionID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "cost": 0,
+      "tokens": {
+        "input": 7239,
+        "output": 151,
+        "reasoning": 0,
+        "cache": {
+          "read": 20736,
+          "write": 0
+        }
+      }
+    }
+  },
+  {
+    "id": "evt_0c63a5f04001Wv85KzfvzwJ5rl",
+    "created": 1790032109316,
+    "type": "session.step.started",
+    "location": {
+      "directory": "<PROFILE>/project-session-ops"
+    },
+    "data": {
+      "sessionID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "agent": "build",
+      "model": {
+        "id": "mimo-v2.5-free",
+        "providerID": "opencode",
+        "variant": "default"
+      },
+      "assistantMessageID": "msg_0c63a47d6001TqsIlf0pOOtg1Z",
+      "snapshot": "7b23a13773ca4be933db1bed9d5fa46eebff2ad0",
+      "started": 1790032103407
+    },
+    "durable": {
+      "aggregateID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "seq": 43,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c63a5f05001n6XxyXB9AoERqh",
+    "created": 1790032109317,
+    "type": "session.reasoning.started",
+    "location": {
+      "directory": "<PROFILE>/project-session-ops"
+    },
+    "data": {
+      "sessionID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "assistantMessageID": "msg_0c63a47d6001TqsIlf0pOOtg1Z",
+      "ordinal": 0,
+      "state": {
+        "reasoningField": "reasoning_content"
+      }
+    },
+    "durable": {
+      "aggregateID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "seq": 44,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c63a5f27001Ve0ani1wjLIvyU",
+    "created": 1790032109351,
+    "type": "session.tool.input.started",
+    "location": {
+      "directory": "<PROFILE>/project-session-ops"
+    },
+    "data": {
+      "sessionID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "assistantMessageID": "msg_0c63a47d6001TqsIlf0pOOtg1Z",
+      "id": "call_b81e2e1ea05b471cb0b67d69",
+      "name": "edit"
+    },
+    "durable": {
+      "aggregateID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "seq": 45,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c63a5f6b0013xMLXtepmxzfSg",
+    "created": 1790032109419,
+    "type": "session.reasoning.delta",
+    "location": {
+      "directory": "<PROFILE>/project-session-ops"
+    },
+    "data": {
+      "sessionID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "assistantMessageID": "msg_0c63a47d6001TqsIlf0pOOtg1Z",
+      "ordinal": 0,
+      "delta": "The file contains \"two\". I need to replace \"two\" with \"three\" and preserve the final newline."
+    }
+  },
+  {
+    "id": "evt_0c63a601a001nHZLSgOSFAychn",
+    "created": 1790032109594,
+    "type": "session.reasoning.ended",
+    "location": {
+      "directory": "<PROFILE>/project-session-ops"
+    },
+    "data": {
+      "sessionID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "assistantMessageID": "msg_0c63a47d6001TqsIlf0pOOtg1Z",
+      "ordinal": 0,
+      "text": "The file contains \"two\". I need to replace \"two\" with \"three\" and preserve the final newline.",
+      "state": {
+        "reasoningField": "reasoning_content",
+        "reasoningDetails": [
+          {
+            "type": "reasoning.text",
+            "text": "The file contains \"two\". I need to replace \"two\" with \"three\" and preserve the final newline.",
+            "format": "unknown",
+            "index": 0
+          }
+        ]
+      }
+    },
+    "durable": {
+      "aggregateID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "seq": 46,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c63a601b001ShFoZgYEVS4hAz",
+    "created": 1790032109595,
+    "type": "session.tool.input.ended",
+    "location": {
+      "directory": "<PROFILE>/project-session-ops"
+    },
+    "data": {
+      "sessionID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "assistantMessageID": "msg_0c63a47d6001TqsIlf0pOOtg1Z",
+      "id": "call_b81e2e1ea05b471cb0b67d69",
+      "text": "{\"path\": \"counter.txt\", \"oldString\": \"two\", \"newString\": \"three\"}"
+    },
+    "durable": {
+      "aggregateID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "seq": 47,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c63a601c001Ix4SLVlNMisV0n",
+    "created": 1790032109596,
+    "type": "session.tool.called",
+    "location": {
+      "directory": "<PROFILE>/project-session-ops"
+    },
+    "data": {
+      "sessionID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "assistantMessageID": "msg_0c63a47d6001TqsIlf0pOOtg1Z",
+      "id": "call_b81e2e1ea05b471cb0b67d69",
+      "input": {
+        "path": "counter.txt",
+        "oldString": "two",
+        "newString": "three"
+      },
+      "executed": false
+    },
+    "durable": {
+      "aggregateID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "seq": 48,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c63a601d001nSSWGAshgs2wmh",
+    "created": 1790032109597,
+    "type": "session.step.streamed",
+    "location": {
+      "directory": "<PROFILE>/project-session-ops"
+    },
+    "data": {
+      "sessionID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "assistantMessageID": "msg_0c63a47d6001TqsIlf0pOOtg1Z"
+    },
+    "durable": {
+      "aggregateID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "seq": 49,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c63a60200011x0WXufRjiBsJP",
+    "created": 1790032109600,
+    "type": "session.tool.success",
+    "location": {
+      "directory": "<PROFILE>/project-session-ops"
+    },
+    "data": {
+      "sessionID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "assistantMessageID": "msg_0c63a47d6001TqsIlf0pOOtg1Z",
+      "id": "call_b81e2e1ea05b471cb0b67d69",
+      "content": [
+        {
+          "type": "text",
+          "text": "Edited counter.txt (1 replacement)"
+        }
+      ],
+      "metadata": {
+        "files": [
+          {
+            "file": "counter.txt",
+            "patch": "Index: counter.txt\n===================================================================\n--- counter.txt\n+++ counter.txt\n@@ -1,1 +1,1 @@\n-two\n+three\n",
+            "status": "modified",
+            "additions": 1,
+            "deletions": 1
+          }
+        ],
+        "truncated": false
+      },
+      "executed": false
+    },
+    "durable": {
+      "aggregateID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "seq": 50,
+      "version": 2
+    }
+  },
+  {
+    "id": "evt_0c63a605f001rNz5hJg8r2upqT",
+    "created": 1790032109663,
+    "type": "session.step.ended",
+    "location": {
+      "directory": "<PROFILE>/project-session-ops"
+    },
+    "data": {
+      "sessionID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "assistantMessageID": "msg_0c63a47d6001TqsIlf0pOOtg1Z",
+      "finish": "tool-calls",
+      "rawFinish": "tool_calls",
+      "cost": 0,
+      "tokens": {
+        "input": 117,
+        "output": 65,
+        "reasoning": 0,
+        "cache": {
+          "read": 7040,
+          "write": 0
+        }
+      },
+      "snapshot": "78a71f578944354041af7b7f627ffb322a8b4711",
+      "files": [
+        "counter.txt"
+      ]
+    },
+    "durable": {
+      "aggregateID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "seq": 51,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c63a6060001MYWbGaUR9NEO4h",
+    "created": 1790032109664,
+    "type": "session.usage.updated",
+    "data": {
+      "sessionID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "cost": 0,
+      "tokens": {
+        "input": 7356,
+        "output": 216,
+        "reasoning": 0,
+        "cache": {
+          "read": 27776,
+          "write": 0
+        }
+      }
+    }
+  },
+  {
+    "id": "evt_0c63a778f001m4h4gyIZy5BELH",
+    "created": 1790032115599,
+    "type": "session.step.started",
+    "location": {
+      "directory": "<PROFILE>/project-session-ops"
+    },
+    "data": {
+      "sessionID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "agent": "build",
+      "model": {
+        "id": "mimo-v2.5-free",
+        "providerID": "opencode",
+        "variant": "default"
+      },
+      "assistantMessageID": "msg_0c63a6065001kv978J8H1Ubk37",
+      "snapshot": "78a71f578944354041af7b7f627ffb322a8b4711",
+      "started": 1790032109694
+    },
+    "durable": {
+      "aggregateID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "seq": 52,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c63a7791001910Vt31sHf18Wg",
+    "created": 1790032115601,
+    "type": "session.reasoning.started",
+    "location": {
+      "directory": "<PROFILE>/project-session-ops"
+    },
+    "data": {
+      "sessionID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "assistantMessageID": "msg_0c63a6065001kv978J8H1Ubk37",
+      "ordinal": 0,
+      "state": {
+        "reasoningField": "reasoning_content"
+      }
+    },
+    "durable": {
+      "aggregateID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "seq": 53,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c63a77b3001CJR7YGPbOFcoGk",
+    "created": 1790032115635,
+    "type": "session.text.started",
+    "location": {
+      "directory": "<PROFILE>/project-session-ops"
+    },
+    "data": {
+      "sessionID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "assistantMessageID": "msg_0c63a6065001kv978J8H1Ubk37",
+      "ordinal": 0
+    },
+    "durable": {
+      "aggregateID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "seq": 54,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c63a77cd001wEJUiLC8VQSKqa",
+    "created": 1790032115661,
+    "type": "session.reasoning.delta",
+    "location": {
+      "directory": "<PROFILE>/project-session-ops"
+    },
+    "data": {
+      "sessionID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "assistantMessageID": "msg_0c63a6065001kv978J8H1Ubk37",
+      "ordinal": 0,
+      "delta": "Done."
+    }
+  },
+  {
+    "id": "evt_0c63a77ce00103FEXAwrh4aR5w",
+    "created": 1790032115662,
+    "type": "session.reasoning.ended",
+    "location": {
+      "directory": "<PROFILE>/project-session-ops"
+    },
+    "data": {
+      "sessionID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "assistantMessageID": "msg_0c63a6065001kv978J8H1Ubk37",
+      "ordinal": 0,
+      "text": "Done.",
+      "state": {
+        "reasoningField": "reasoning_content",
+        "reasoningDetails": [
+          {
+            "type": "reasoning.text",
+            "text": "Done.",
+            "format": "unknown",
+            "index": 0
+          }
+        ]
+      }
+    },
+    "durable": {
+      "aggregateID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "seq": 55,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c63a77cf001TBCsWJbpYUG4D6",
+    "created": 1790032115663,
+    "type": "session.text.delta",
+    "location": {
+      "directory": "<PROFILE>/project-session-ops"
+    },
+    "data": {
+      "sessionID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "assistantMessageID": "msg_0c63a6065001kv978J8H1Ubk37",
+      "ordinal": 0,
+      "delta": "Done."
+    }
+  },
+  {
+    "id": "evt_0c63a77cf002WJ15EmyXhsJJik",
+    "created": 1790032115663,
+    "type": "session.text.ended",
+    "location": {
+      "directory": "<PROFILE>/project-session-ops"
+    },
+    "data": {
+      "sessionID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "assistantMessageID": "msg_0c63a6065001kv978J8H1Ubk37",
+      "ordinal": 0,
+      "text": "Done."
+    },
+    "durable": {
+      "aggregateID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "seq": 56,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c63a77d00011H5N4Ep5TVEF9F",
+    "created": 1790032115664,
+    "type": "session.step.streamed",
+    "location": {
+      "directory": "<PROFILE>/project-session-ops"
+    },
+    "data": {
+      "sessionID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "assistantMessageID": "msg_0c63a6065001kv978J8H1Ubk37"
+    },
+    "durable": {
+      "aggregateID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "seq": 57,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c63a77e6001Ekvb1ks2OdxbIe",
+    "created": 1790032115686,
+    "type": "session.step.ended",
+    "location": {
+      "directory": "<PROFILE>/project-session-ops"
+    },
+    "data": {
+      "sessionID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "assistantMessageID": "msg_0c63a6065001kv978J8H1Ubk37",
+      "finish": "stop",
+      "rawFinish": "stop",
+      "cost": 0,
+      "tokens": {
+        "input": 136,
+        "output": 7,
+        "reasoning": 0,
+        "cache": {
+          "read": 7104,
+          "write": 0
+        }
+      },
+      "snapshot": "78a71f578944354041af7b7f627ffb322a8b4711",
+      "files": []
+    },
+    "durable": {
+      "aggregateID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "seq": 58,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c63a77e8001ReayFR34ueMn64",
+    "created": 1790032115688,
+    "type": "session.usage.updated",
+    "data": {
+      "sessionID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "cost": 0,
+      "tokens": {
+        "input": 7492,
+        "output": 223,
+        "reasoning": 0,
+        "cache": {
+          "read": 34880,
+          "write": 0
+        }
+      }
+    }
+  },
+  {
+    "id": "evt_0c63a77e80023TDnjXgpv7FHkk",
+    "created": 1790032115688,
+    "type": "session.execution.succeeded",
+    "data": {
+      "sessionID": "ses_f39c61526ffegKEYOt0vVpYsCt"
+    },
+    "durable": {
+      "aggregateID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "seq": 59,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c63a78d9001sF6C1bTBAXEsZD",
+    "created": 1790032115929,
+    "type": "session.forked",
+    "location": {
+      "directory": "<PROFILE>/project-session-ops"
+    },
+    "data": {
+      "sessionID": "ses_f39c58727ffefbEPzz7X1fq5ZS",
+      "parentID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "boundary": {
+        "type": "before",
+        "messageID": "msg_0c63a300b001df2r2Zzctg11OR"
+      },
+      "instructions": {
+        "core/environment": "457e1ba1aff23e1442baaccfda42db3c1392ee2c8d79b121e0375f6d9aeac1cc",
+        "core/date": "6a76aa89fcc8086f3abb8b9dc2b9ceafa3405dd2b3cdc263b339d36120433008",
+        "core/codemode": "cf52fcbcde861ccfefdc6633ee3cb84036524f86c72f976a7315e05dc01a15e1",
+        "core/skill-guidance": "8394362d28c82fa4d13c7a9f5568c05680f6687e07db8f426a0e3c92f3027dc9"
+      },
+      "instructionEntries": []
+    },
+    "durable": {
+      "aggregateID": "ses_f39c58727ffefbEPzz7X1fq5ZS",
+      "seq": 0,
+      "version": 2
+    }
+  },
+  {
+    "id": "evt_0c63a7935001zzJY51N74z5IC9",
+    "created": 1790032116021,
+    "type": "session.revert.staged",
+    "location": {
+      "directory": "<PROFILE>/project-session-ops"
+    },
+    "data": {
+      "sessionID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "revert": {
+        "messageID": "msg_0c63a300b001df2r2Zzctg11OR",
+        "snapshot": "78a71f578944354041af7b7f627ffb322a8b4711",
+        "files": [
+          {
+            "file": "counter.txt",
+            "status": "modified",
+            "additions": 1,
+            "deletions": 1,
+            "patch": "diff --git a/counter.txt b/counter.txt\nindex 2bdf67a..f719efd 100644\n--- a/counter.txt\n+++ b/counter.txt\n@@ -1 +1 @@\n-three\n+two\n"
+          }
+        ]
+      }
+    },
+    "durable": {
+      "aggregateID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "seq": 60,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c63a794f001V86Vwp2XvKzyv4",
+    "created": 1790032116047,
+    "type": "session.revert.cleared",
+    "location": {
+      "directory": "<PROFILE>/project-session-ops"
+    },
+    "data": {
+      "sessionID": "ses_f39c61526ffegKEYOt0vVpYsCt"
+    },
+    "durable": {
+      "aggregateID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "seq": 61,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c63a79510013iaiSk4LdMoItf",
+    "created": 1790032116049,
+    "type": "session.execution.started",
+    "data": {
+      "sessionID": "ses_f39c61526ffegKEYOt0vVpYsCt"
+    },
+    "durable": {
+      "aggregateID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "seq": 62,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c63a7952001lBS35ahgzUvG3C",
+    "created": 1790032116050,
+    "type": "session.execution.succeeded",
+    "data": {
+      "sessionID": "ses_f39c61526ffegKEYOt0vVpYsCt"
+    },
+    "durable": {
+      "aggregateID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "seq": 63,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c63a79ab001ZnPZfUxwPR4OQq",
+    "created": 1790032116139,
+    "type": "session.revert.staged",
+    "location": {
+      "directory": "<PROFILE>/project-session-ops"
+    },
+    "data": {
+      "sessionID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "revert": {
+        "messageID": "msg_0c63a300b001df2r2Zzctg11OR",
+        "snapshot": "78a71f578944354041af7b7f627ffb322a8b4711",
+        "files": [
+          {
+            "file": "counter.txt",
+            "status": "modified",
+            "additions": 1,
+            "deletions": 1,
+            "patch": "diff --git a/counter.txt b/counter.txt\nindex 2bdf67a..f719efd 100644\n--- a/counter.txt\n+++ b/counter.txt\n@@ -1 +1 @@\n-three\n+two\n"
+          }
+        ]
+      }
+    },
+    "durable": {
+      "aggregateID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "seq": 64,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c63a79ae001FqqcS1YaO5DiRZ",
+    "created": 1790032116142,
+    "type": "session.revert.committed",
+    "location": {
+      "directory": "<PROFILE>/project-session-ops"
+    },
+    "data": {
+      "sessionID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "to": "msg_0c63a300b001df2r2Zzctg11OR"
+    },
+    "durable": {
+      "aggregateID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "seq": 65,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c63a79b4001FOQdpSwQacC7oS",
+    "created": 1790032116148,
+    "type": "session.inbox.enqueued",
+    "location": {
+      "directory": "<PROFILE>/project-session-ops"
+    },
+    "data": {
+      "inboxID": "msg_0c63a79b3001L8Azuir5GSFweq",
+      "sessionID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "item": {
+        "type": "compaction",
+        "payload": {},
+        "delivery": "queue"
+      }
+    },
+    "durable": {
+      "aggregateID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "seq": 66,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c63a79b5001LFlzZHLHnvg1H1",
+    "created": 1790032116149,
+    "type": "session.execution.started",
+    "data": {
+      "sessionID": "ses_f39c61526ffegKEYOt0vVpYsCt"
+    },
+    "durable": {
+      "aggregateID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "seq": 67,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c63a79b7001QWh9703QEUDi7A",
+    "created": 1790032116151,
+    "type": "session.inbox.delivered",
+    "location": {
+      "directory": "<PROFILE>/project-session-ops"
+    },
+    "data": {
+      "sessionID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "inboxID": "msg_0c63a79b3001L8Azuir5GSFweq"
+    },
+    "durable": {
+      "aggregateID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "seq": 68,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c63a79b7002a8tXG67Z4bUwp6",
+    "created": 1790032116151,
+    "type": "session.compaction.started",
+    "location": {
+      "directory": "<PROFILE>/project-session-ops"
+    },
+    "data": {
+      "sessionID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "reason": "manual",
+      "recent": "",
+      "inputID": "msg_0c63a79b3001L8Azuir5GSFweq"
+    },
+    "durable": {
+      "aggregateID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "seq": 69,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c63a801e001XVKqBn4Ax1xhWn",
+    "created": 1790032117790,
+    "type": "session.compaction.delta",
+    "location": {
+      "directory": "<PROFILE>/project-session-ops"
+    },
+    "data": {
+      "sessionID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "text": "## Objective\n-"
+    }
+  },
+  {
+    "id": "evt_0c63a801e002dBk8m62G21FaE5",
+    "created": 1790032117790,
+    "type": "session.compaction.delta",
+    "location": {
+      "directory": "<PROFILE>/project-session-ops"
+    },
+    "data": {
+      "sessionID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "text": " Replace the word"
+    }
+  },
+  {
+    "id": "evt_0c63a801f001RcVu7OvtTmDdVe",
+    "created": 1790032117791,
+    "type": "session.compaction.delta",
+    "location": {
+      "directory": "<PROFILE>/project-session-ops"
+    },
+    "data": {
+      "sessionID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "text": " \"one\" with \"two\" in"
+    }
+  },
+  {
+    "id": "evt_0c63a80db001PIeSIqZuhKLIjm",
+    "created": 1790032117979,
+    "type": "session.compaction.delta",
+    "location": {
+      "directory": "<PROFILE>/project-session-ops"
+    },
+    "data": {
+      "sessionID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "text": " `counter.txt`,"
+    }
+  },
+  {
+    "id": "evt_0c63a80db002nrKAoxD1DuZsdE",
+    "created": 1790032117979,
+    "type": "session.compaction.delta",
+    "location": {
+      "directory": "<PROFILE>/project-session-ops"
+    },
+    "data": {
+      "sessionID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "text": " preserving the final newline and"
+    }
+  },
+  {
+    "id": "evt_0c63a80dd0017v5aam5o20E777",
+    "created": 1790032117981,
+    "type": "session.compaction.delta",
+    "location": {
+      "directory": "<PROFILE>/project-session-ops"
+    },
+    "data": {
+      "sessionID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "text": " not changing"
+    }
+  },
+  {
+    "id": "evt_0c63a80dd002xYG0p9gEVqwj5o",
+    "created": 1790032117981,
+    "type": "session.compaction.delta",
+    "location": {
+      "directory": "<PROFILE>/project-session-ops"
+    },
+    "data": {
+      "sessionID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "text": " any other file.\n\n## Requirements\n-"
+    }
+  },
+  {
+    "id": "evt_0c63a80de001wJ3ntQwRYbPyuZ",
+    "created": 1790032117982,
+    "type": "session.compaction.delta",
+    "location": {
+      "directory": "<PROFILE>/project-session-ops"
+    },
+    "data": {
+      "sessionID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "text": " Pass"
+    }
+  },
+  {
+    "id": "evt_0c63a80ed001uKWl3uxHDC3tcJ",
+    "created": 1790032117997,
+    "type": "session.compaction.delta",
+    "location": {
+      "directory": "<PROFILE>/project-session-ops"
+    },
+    "data": {
+      "sessionID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "text": " the relative path `counter.txt` exactly"
+    }
+  },
+  {
+    "id": "evt_0c63a80ed0021D7HsJbqAmWoCZ",
+    "created": 1790032117997,
+    "type": "session.compaction.delta",
+    "location": {
+      "directory": "<PROFILE>/project-session-ops"
+    },
+    "data": {
+      "sessionID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "text": " as"
+    }
+  },
+  {
+    "id": "evt_0c63a80f2001lau1u37Lb7iU0v",
+    "created": 1790032118002,
+    "type": "session.compaction.delta",
+    "location": {
+      "directory": "<PROFILE>/project-session-ops"
+    },
+    "data": {
+      "sessionID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "text": " specified"
+    }
+  },
+  {
+    "id": "evt_0c63a80f2002FNYxf47KYv9v3E",
+    "created": 1790032118002,
+    "type": "session.compaction.delta",
+    "location": {
+      "directory": "<PROFILE>/project-session-ops"
+    },
+    "data": {
+      "sessionID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "text": "\n"
+    }
+  },
+  {
+    "id": "evt_0c63a8158001uCDgaJsZMeKnUN",
+    "created": 1790032118104,
+    "type": "session.compaction.delta",
+    "location": {
+      "directory": "<PROFILE>/project-session-ops"
+    },
+    "data": {
+      "sessionID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "text": "- Preserve the final newline in"
+    }
+  },
+  {
+    "id": "evt_0c63a8159001S0W3YsVbOS3cpW",
+    "created": 1790032118105,
+    "type": "session.compaction.delta",
+    "location": {
+      "directory": "<PROFILE>/project-session-ops"
+    },
+    "data": {
+      "sessionID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "text": " the file\n- Do not change any"
+    }
+  },
+  {
+    "id": "evt_0c63a81590024RmygGvxo5gHOX",
+    "created": 1790032118105,
+    "type": "session.compaction.delta",
+    "location": {
+      "directory": "<PROFILE>/project-session-ops"
+    },
+    "data": {
+      "sessionID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "text": " other file\n\n## Decisions"
+    }
+  },
+  {
+    "id": "evt_0c63a81590036v5HmwBVyYFK7m",
+    "created": 1790032118105,
+    "type": "session.compaction.delta",
+    "location": {
+      "directory": "<PROFILE>/project-session-ops"
+    },
+    "data": {
+      "sessionID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "text": "\n- (none)\n\n## Work State"
+    }
+  },
+  {
+    "id": "evt_0c63a81a6001EBR8kExV6CzL5V",
+    "created": 1790032118182,
+    "type": "session.compaction.delta",
+    "location": {
+      "directory": "<PROFILE>/project-session-ops"
+    },
+    "data": {
+      "sessionID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "text": "\n### Completed\n- Read"
+    }
+  },
+  {
+    "id": "evt_0c63a81a9001vdt72mtDEqIkbk",
+    "created": 1790032118185,
+    "type": "session.compaction.delta",
+    "location": {
+      "directory": "<PROFILE>/project-session-ops"
+    },
+    "data": {
+      "sessionID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "text": " `counter.txt` ("
+    }
+  },
+  {
+    "id": "evt_0c63a81aa001QH8dYLDY7z2Zra",
+    "created": 1790032118186,
+    "type": "session.compaction.delta",
+    "location": {
+      "directory": "<PROFILE>/project-session-ops"
+    },
+    "data": {
+      "sessionID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "text": "contained \"one"
+    }
+  },
+  {
+    "id": "evt_0c63a81aa002Z0ts5tvkBMAL63",
+    "created": 1790032118186,
+    "type": "session.compaction.delta",
+    "location": {
+      "directory": "<PROFILE>/project-session-ops"
+    },
+    "data": {
+      "sessionID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "text": "\")\n"
+    }
+  },
+  {
+    "id": "evt_0c63a81ff001gJjEc2kpEgUMGl",
+    "created": 1790032118271,
+    "type": "session.compaction.delta",
+    "location": {
+      "directory": "<PROFILE>/project-session-ops"
+    },
+    "data": {
+      "sessionID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "text": "- Replaced \""
+    }
+  },
+  {
+    "id": "evt_0c63a82160012RARCxMwSWKq6e",
+    "created": 1790032118294,
+    "type": "session.compaction.delta",
+    "location": {
+      "directory": "<PROFILE>/project-session-ops"
+    },
+    "data": {
+      "sessionID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "text": "one\" with \"two\" using"
+    }
+  },
+  {
+    "id": "evt_0c63a8217001Gs52o4BW9Ak93N",
+    "created": 1790032118295,
+    "type": "session.compaction.delta",
+    "location": {
+      "directory": "<PROFILE>/project-session-ops"
+    },
+    "data": {
+      "sessionID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "text": " the"
+    }
+  },
+  {
+    "id": "evt_0c63a82180014a6BurdKm4LTba",
+    "created": 1790032118296,
+    "type": "session.compaction.delta",
+    "location": {
+      "directory": "<PROFILE>/project-session-ops"
+    },
+    "data": {
+      "sessionID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "text": " edit tool\n\n"
+    }
+  },
+  {
+    "id": "evt_0c63a82570014ywyNhkhGdmtEY",
+    "created": 1790032118359,
+    "type": "session.compaction.delta",
+    "location": {
+      "directory": "<PROFILE>/project-session-ops"
+    },
+    "data": {
+      "sessionID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "text": "### Active\n- (none)\n\n"
+    }
+  },
+  {
+    "id": "evt_0c63a8258001J2R4duidzUPPx1",
+    "created": 1790032118360,
+    "type": "session.compaction.delta",
+    "location": {
+      "directory": "<PROFILE>/project-session-ops"
+    },
+    "data": {
+      "sessionID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "text": "### Blocked\n- (none)\n\n##"
+    }
+  },
+  {
+    "id": "evt_0c63a8259001w6Qq5xCQI0Ko1G",
+    "created": 1790032118361,
+    "type": "session.compaction.delta",
+    "location": {
+      "directory": "<PROFILE>/project-session-ops"
+    },
+    "data": {
+      "sessionID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "text": " Next Move\n- (none)\n\n##"
+    }
+  },
+  {
+    "id": "evt_0c63a825900269pCQb7H2aYG4n",
+    "created": 1790032118361,
+    "type": "session.compaction.delta",
+    "location": {
+      "directory": "<PROFILE>/project-session-ops"
+    },
+    "data": {
+      "sessionID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "text": " Relevant Files\n- `counter.txt`:"
+    }
+  },
+  {
+    "id": "evt_0c63a82c5001GKVuPlWqHdlvaL",
+    "created": 1790032118469,
+    "type": "session.compaction.delta",
+    "location": {
+      "directory": "<PROFILE>/project-session-ops"
+    },
+    "data": {
+      "sessionID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "text": " file"
+    }
+  },
+  {
+    "id": "evt_0c63a82c6001Cdmg29iLXcpgm5",
+    "created": 1790032118470,
+    "type": "session.compaction.delta",
+    "location": {
+      "directory": "<PROFILE>/project-session-ops"
+    },
+    "data": {
+      "sessionID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "text": " that was"
+    }
+  },
+  {
+    "id": "evt_0c63a82c60020OaSUFClyeI9L6",
+    "created": 1790032118470,
+    "type": "session.compaction.delta",
+    "location": {
+      "directory": "<PROFILE>/project-session-ops"
+    },
+    "data": {
+      "sessionID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "text": " edited ("
+    }
+  },
+  {
+    "id": "evt_0c63a82c6003Y0biriqOb9JC66",
+    "created": 1790032118470,
+    "type": "session.compaction.delta",
+    "location": {
+      "directory": "<PROFILE>/project-session-ops"
+    },
+    "data": {
+      "sessionID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "text": "re"
+    }
+  },
+  {
+    "id": "evt_0c63a830c001YEecKoWC45NTzO",
+    "created": 1790032118540,
+    "type": "session.compaction.delta",
+    "location": {
+      "directory": "<PROFILE>/project-session-ops"
+    },
+    "data": {
+      "sessionID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "text": "placed \"one\" with \"two\")\n\n"
+    }
+  },
+  {
+    "id": "evt_0c63a830d0014jIKPOixW2JcR7",
+    "created": 1790032118541,
+    "type": "session.compaction.delta",
+    "location": {
+      "directory": "<PROFILE>/project-session-ops"
+    },
+    "data": {
+      "sessionID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "text": "## Important Context\n- (none)"
+    }
+  },
+  {
+    "id": "evt_0c63a8316001MkWlzN51sn0p0k",
+    "created": 1790032118550,
+    "type": "session.usage.updated",
+    "data": {
+      "sessionID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "cost": 0,
+      "tokens": {
+        "input": 8130,
+        "output": 392,
+        "reasoning": 0,
+        "cache": {
+          "read": 41856,
+          "write": 0
+        }
+      }
+    }
+  },
+  {
+    "id": "evt_0c63a8316002xMF2B2M1Dr1mIK",
+    "created": 1790032118550,
+    "type": "session.compaction.ended",
+    "location": {
+      "directory": "<PROFILE>/project-session-ops"
+    },
+    "data": {
+      "sessionID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "reason": "manual",
+      "model": {
+        "id": "mimo-v2.5-free",
+        "providerID": "opencode",
+        "variant": "default"
+      },
+      "text": "## Objective\n- Replace the word \"one\" with \"two\" in `counter.txt`, preserving the final newline and not changing any other file.\n\n## Requirements\n- Pass the relative path `counter.txt` exactly as specified\n- Preserve the final newline in the file\n- Do not change any other file\n\n## Decisions\n- (none)\n\n## Work State\n### Completed\n- Read `counter.txt` (contained \"one\")\n- Replaced \"one\" with \"two\" using the edit tool\n\n### Active\n- (none)\n\n### Blocked\n- (none)\n\n## Next Move\n- (none)\n\n## Relevant Files\n- `counter.txt`: file that was edited (replaced \"one\" with \"two\")\n\n## Important Context\n- (none)",
+      "recent": "",
+      "tokens": {
+        "input": 638,
+        "output": 169,
+        "reasoning": 0,
+        "cache": {
+          "read": 6976,
+          "write": 0
+        }
+      },
+      "cost": 0
+    },
+    "durable": {
+      "aggregateID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "seq": 71,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c63a83170010VnNByKodr0a6w",
+    "created": 1790032118551,
+    "type": "session.execution.succeeded",
+    "data": {
+      "sessionID": "ses_f39c61526ffegKEYOt0vVpYsCt"
+    },
+    "durable": {
+      "aggregateID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "seq": 72,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c63a83d3001HgOSrdEH9fg9Sq",
+    "created": 1790032118739,
+    "type": "session.deleted",
+    "data": {
+      "sessionID": "ses_f39c58727ffefbEPzz7X1fq5ZS"
+    },
+    "durable": {
+      "aggregateID": "ses_f39c58727ffefbEPzz7X1fq5ZS",
+      "seq": 31,
+      "version": 2
+    }
+  },
+  {
+    "id": "evt_0c63a83dd001FN3yx4gzie0DQN",
+    "created": 1790032118749,
+    "type": "session.deleted",
+    "data": {
+      "sessionID": "ses_f39c61526ffegKEYOt0vVpYsCt"
+    },
+    "durable": {
+      "aggregateID": "ses_f39c61526ffegKEYOt0vVpYsCt",
+      "seq": 73,
+      "version": 2
+    }
+  }
+]

@@ -10,6 +10,7 @@ M.state = {
 	tabpage = nil,
 	layout = nil,
 	visible = false,
+	full_history_sessions = {}, -- Explicitly expanded history by session ID
 	local_notices = {},     -- Local user/system notices not backed by the server
 	config = nil,
 	questions = {},         -- Track question positions: { [request_id] = { start_line, end_line } }

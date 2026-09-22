@@ -1,0 +1,40 @@
+                                       │ ● FIFO search wit...  │ ●1 ◈0                                                  
+~                                      │Agent: build                                                                    
+~                                      │┃                                                                               
+~                                      │┃  Call direct top-level rg once with pattern="needle" and                      
+~                                      │┃  path="/private/var/folders/wt/dsm_lvf55rqg8541j_v_7rmm0000gn/T/opencode-nvim-
+~                                      │┃  v2-oonqrhh7/project пробел %#/queue.fifo". This is an intentionally waiting  
+~                                      │┃  FIFO fixture. Do not use other tools, do not change the path, do not retry.  
+~                                      │┃  After it completes reply FIFO_DONE.                                          
+~                                      │┃                                                                               
+~                                      │                                                                                
+~                                      │Thinking: The user wants me to call the `rg` tool with pattern="needle" and     
+~                                      │path="/private/var/folders/wt/dsm_lvf55rqg8541j_v_7rmm0000gn/T/opencode-nvim-v2-
+~                                      │oonqrhh7/project пробел %#/queue.fifo".                                         
+~                                      │                                                                                
+~                                      │▏                                                                               
+~                                      │▏  # Ripgrep "needle" in queue.fifo |                                           
+~                                      │▏                                                                               
+~                                      │                                                                                
+~                                      │┃                                                                               
+~                                      │┃  CANCELLED_MUST_NOT_RUN                                                       
+~                                      │┃                                                                               
+~                                      │Queued · cancel from the palette                                                
+~                                      │                                                                                
+~                                      │- Build · MiMo V2.5 Free                                                        
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+[No Name]            0,0-1          All opencode [-]                                                  4,1            All
+                                                                                                                        

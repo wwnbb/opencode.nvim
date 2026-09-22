@@ -1,0 +1,40 @@
+                                       │ ○ History answer ...                                                           
+~                                      │Agent: build                                                                    
+~                                      │┃                                                                               
+~                                      │┃  Call the direct top-level question tool exactly once. Ask one question with  
+~                                      │┃  header "History", prompt "Pick a stored answer", and two options: label "Red 
+~                                      │┃  answer" description "First choice", label "Blue answer" description "Second  
+~                                      │┃  choice". Wait for my answer. After the answer, reply exactly                 
+~                                      │┃  FORM_HISTORY_DONE. Do not use any other tools.                               
+~                                      │┃                                                                               
+~                                      │                                                                                
+~                                      │Thinking: The user wants me to call the question tool exactly once with         
+~                                      │specific parameters, then wait for their answer and reply with                  
+~                                      │"FORM_HISTORY_DONE".                                                            
+~                                      │                                                                                
+~                                      │▏                                                                               
+~                                      │▏  # Question answered                                                          
+~                                      │▏                                                                               
+~                                      │▏  History: Blue answer                                                         
+~                                      │▏                                                                               
+~                                      │                                                                                
+~                                      │Thinking: The user selected "Blue answer". Now I need to reply exactly          
+~                                      │"FORM_HISTORY_DONE".                                                            
+~                                      │                                                                                
+~                                      │FORM_HISTORY_DONE                                                               
+~                                      │                                                                                
+~                                      │▣ Build · MiMo V2.5 Free · 9.3k/200k tok · 12.4s                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+[No Name]            0,0-1          All opencode [-]                                                  14,1           All
+History answer selection prompt: Session done                                                                           

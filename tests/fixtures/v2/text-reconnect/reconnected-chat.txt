@@ -1,0 +1,40 @@
+                                       │ ○ Reconnect smoke                                                              
+~                                      │Agent: build                                                                    
+~                                      │┃                                                                               
+~                                      │┃  This is a chat streaming test. Return exactly 40 lines directly in your      
+~                                      │┃  final chat response, numbered ROW01 through ROW40, each followed by ':       
+~                                      │┃  reconnect fixture'. Do not create or edit files. Do not call any tools. The  
+~                                      │┃  complete 40 lines must appear as plain text in your response. No             
+~                                      │┃  introduction.                                                                
+~                                      │┃                                                                               
+~                                      │                                                                                
+~                                      │Thinking: The user wants me to return exactly 40 lines, numbered ROW01 through  
+~                                      │ROW40, each followed by ": reconnect fixture". No tools, no files, just plain   
+~                                      │text in my response.                                                            
+~                                      │                                                                                
+~                                      │ROW01: reconnect fixture                                                        
+~                                      │ROW02: reconnect fixture                                                        
+~                                      │ROW03: reconnect fixture                                                        
+~                                      │ROW04: reconnect fixture                                                        
+~                                      │ROW05: reconnect fixture                                                        
+~                                      │ROW06: reconnect fixture                                                        
+~                                      │ROW07: reconnect fixture                                                        
+~                                      │ROW08: reconnect fixture                                                        
+~                                      │ROW09: reconnect fixture                                                        
+~                                      │ROW10: reconnect fixture                                                        
+~                                      │ROW11: reconnect fixture                                                        
+~                                      │ROW12: reconnect fixture                                                        
+~                                      │ROW13: reconnect fixture                                                        
+~                                      │ROW14: reconnect fixture                                                        
+~                                      │ROW15: reconnect fixture                                                        
+~                                      │ROW16: reconnect fixture                                                        
+~                                      │ROW17: reconnect fixture                                                        
+~                                      │ROW18: reconnect fixture                                                        
+~                                      │ROW19: reconnect fixture                                                        
+~                                      │ROW20: reconnect fixture                                                        
+~                                      │ROW21: reconnect fixture                                                        
+~                                      │ROW22: reconnect fixture                                                        
+~                                      │ROW23: reconnect fixture                                                        
+~                                      │ROW24: reconnect fixture                                                        
+[No Name]            0,0-1          All opencode [-]                                                  4,1            Top
+Reconnect smoke: Session done                                                                                           

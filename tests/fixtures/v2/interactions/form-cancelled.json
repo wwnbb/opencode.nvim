@@ -1,0 +1,17 @@
+{
+  "data": {
+    "id": "frm_0c5edf20a0011lZ14cXtnD4dG5",
+    "sessionID": "ses_f3a120e32ffefHuzIAG86oLGFP",
+    "title": "External step",
+    "fields": [
+      {
+        "key": "auth",
+        "type": "external",
+        "url": "https://example.com/auth"
+      }
+    ],
+    "state": {
+      "status": "cancelled"
+    }
+  }
+}

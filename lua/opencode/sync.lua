@@ -3,6 +3,10 @@
 -- Parts use binary search by ID; messages use chronological ordering
 
 local M = {}
+
+function M.handle_v2_event(event)
+	return require("opencode.sync.v2").apply(M, event)
+end
 local todo_fetch_cleanup = nil
 
 ---@class SyncStore
@@ -55,18 +59,23 @@ local store = {
 	session_status = {}, -- { [sessionID] = { type = "idle" | "busy" } }
 	todo = {},          -- { [sessionID] = { Todo, ... } }
 	todo_revision = {}, -- { [sessionID] = number }
+	todo_server_revision = {},
 	task_child_parent = {}, -- { [child_session_id] = parent_session_id }
 	task_child_owner = {}, -- { [child_session_id] = messageID .. "\0" .. partID }
 	task_part_child = {}, -- { [messageID .. "\0" .. partID] = child_session_id }
 	message_revision = {}, -- { [messageID] = number } internal render invalidation
 	part_revision = {}, -- { [messageID .. "\0" .. partID] = number } internal render invalidation
 	session_revision = {}, -- { [sessionID] = number } internal render invalidation
+	session_generation = {}, -- Invalidates HTTP snapshots even before the first message arrives.
+	snapshot_generation = 0,
 	task_summary_revision = {}, -- { [sessionID] = number } task summary/prompt invalidation
 	task_summary_revision_counter = 0,
 	provider_revision = 0, -- internal render invalidation for model metadata
 	agent_revision = 0,    -- internal render invalidation for agent colors
 	-- Provider/agent/model data (like TUI's sync.tsx)
 	provider = {},      -- Array of connected provider info
+	catalogs = {},      -- Location -> domain -> last successful data and load state.
+	catalog_location = nil,
 	provider_default = {}, -- { [providerID] = default_modelID }
 	agent = {},         -- Array of available agents
 	command = {},       -- Array of custom commands
@@ -895,7 +904,7 @@ function M.handle_message_updated(info)
 	if message_index then
 		-- Update existing message (reconcile)
 		local current = messages[message_index]
-		local merged = vim.tbl_deep_extend("force", current, info)
+		local merged = info.protocol == "v2" and info or vim.tbl_deep_extend("force", current, info)
 		changed = values_changed(current, merged)
 		table.remove(messages, message_index)
 		table.insert(messages, message_insert_index(messages, merged), merged)
@@ -921,7 +930,7 @@ function M.handle_message_updated(info)
 		changed = true
 
 		-- Limit to 100 messages per session (like TUI)
-		if #messages > 100 then
+		if #messages > 100 and info.protocol ~= "v2" then
 			local oldest = messages[1]
 			bump_task_summary_revision_for_message(oldest.id, session_id)
 			table.remove(messages, 1)
@@ -1001,16 +1010,18 @@ function M.handle_part_updated(part)
 		local dest = parts[result.index]
 		materialize_part(dest)
 		local src = part
-		local merged = vim.tbl_deep_extend("force", dest, src)
+		local merged = part.protocol == "v2" and part or vim.tbl_deep_extend("force", dest, src)
 
 		-- During streaming, /message snapshots and part.updated events can lag
 		-- behind accumulated deltas. Do not let a stale shorter snapshot erase
 		-- text that will be restored only after the final full update.
-		preserve_streaming_text(dest, src, merged)
+		if part.protocol ~= "v2" then preserve_streaming_text(dest, src, merged) end
 
 		-- Preserve task summary arrays when backend sends an empty dictionary in partial updates.
-		preserve_summary_path(dest, src, merged, { "state", "metadata", "summary" })
-		preserve_summary_path(dest, src, merged, { "metadata", "summary" })
+		if part.protocol ~= "v2" then
+			preserve_summary_path(dest, src, merged, { "state", "metadata", "summary" })
+			preserve_summary_path(dest, src, merged, { "metadata", "summary" })
+		end
 
 		local changed = values_changed(dest, merged)
 		parts[result.index] = merged
@@ -1124,8 +1135,8 @@ function M.capture_session_snapshot(session_id)
 	end
 	return {
 		session_id = session_id,
-		message_store = store.message,
-		session_messages = store.message[session_id],
+		generation = store.snapshot_generation,
+		session_generation = store.session_generation[session_id] or 0,
 		revisions = revisions,
 	}
 end
@@ -1144,7 +1155,9 @@ local function reconcile_session_snapshot(
 	snapshot_message_ids,
 	snapshot_parts_by_message,
 	protected_messages,
-	has_snapshot
+	has_snapshot,
+	partial_page,
+	complete
 )
 	local removed_count = 0
 	local oldest = snapshot_messages[1]
@@ -1160,7 +1173,7 @@ local function reconcile_session_snapshot(
 	end
 
 	local messages = store.message[session_id]
-	if type(messages) == "table" and oldest and newest then
+	if not partial_page and type(messages) == "table" and (complete or (oldest and newest)) then
 		local stale_message_ids = {}
 		for _, message in ipairs(messages) do
 			local message_id = type(message) == "table" and nonempty_string(message.id) or nil
@@ -1168,7 +1181,7 @@ local function reconcile_session_snapshot(
 				message_id
 				and not protected_messages[message_id]
 				and not snapshot_message_ids[message_id]
-				and message_in_snapshot_window(message, oldest, newest)
+				and (complete or message_in_snapshot_window(message, oldest, newest))
 			then
 				table.insert(stale_message_ids, message_id)
 			end
@@ -1218,8 +1231,8 @@ function M.handle_session_messages(session_id, messages, opts)
 	local protected_messages = {}
 	if snapshot then
 		if snapshot.session_id ~= session_id
-			or snapshot.message_store ~= store.message
-			or (snapshot.session_messages and snapshot.session_messages ~= store.message[session_id])
+			or snapshot.generation ~= store.snapshot_generation
+			or snapshot.session_generation ~= (store.session_generation[session_id] or 0)
 		then
 			return 0, 0, 0
 		end
@@ -1243,10 +1256,12 @@ function M.handle_session_messages(session_id, messages, opts)
 	local snapshot_message_ids = {}
 	local snapshot_messages = {}
 	local snapshot_parts_by_message = {}
+	local partial_page = opts.partial == true
 
 	for _, msg_with_parts in ipairs(messages) do
 		if type(msg_with_parts) == "table" then
 			local info = type(msg_with_parts.info) == "table" and msg_with_parts.info or msg_with_parts
+			partial_page = partial_page or (info.protocol == "v2" and opts.complete ~= true)
 			local info_id = type(info) == "table" and nonempty_string(info.id) or nil
 			if type(info) == "table" and info_id then
 				info.id = info_id
@@ -1279,6 +1294,15 @@ function M.handle_session_messages(session_id, messages, opts)
 						part_count = part_count + 1
 					end
 				end
+				-- Each v2 content array is a full message snapshot, even when the
+				-- containing history page is partial. Replace only its own parts.
+				if info.protocol == "v2" then
+					local stale = {}
+					for _, part in ipairs(store.part[info_id] or {}) do
+						if not snapshot_parts_by_message[info_id][part.id] then stale[#stale + 1] = part.id end
+					end
+					for _, id in ipairs(stale) do M.handle_part_removed(info_id, id); changed_count = changed_count + 1 end
+				end
 			end
 		end
 	end
@@ -1291,10 +1315,21 @@ function M.handle_session_messages(session_id, messages, opts)
 				snapshot_message_ids,
 				snapshot_parts_by_message,
 				protected_messages,
-				snapshot ~= nil
+				snapshot ~= nil,
+				partial_page,
+				opts.complete == true
 			)
 	end
 
+	-- Derive turn linkage from confirmed chronology, never lexical ID proximity.
+	local user_id
+	for _, message in ipairs(store.message[session_id] or {}) do
+		if message.role == "user" then user_id = message.id
+		elseif message.protocol == "v2" and message.role == "assistant" and message.parentID ~= user_id then
+			message.parentID = user_id
+			bump_message_revision(message.id, session_id)
+		end
+	end
 	return message_count, part_count, changed_count
 end
 
@@ -1409,6 +1444,18 @@ function M.handle_todo_updated(session_id, todos)
 	bump_session_revision(session_id)
 end
 
+-- Plugin snapshots and events share one monotonic revision, independent of the
+-- local revision used to invalidate rendered widgets.
+function M.handle_todo_record(record, directory)
+	if not require("opencode.protocol.v2.todos").valid(record, record and record.sessionID, directory) then return false end
+	local sid = record.sessionID
+	local revision = store.todo_server_revision[sid]
+	if revision and record.revision <= revision then return false end
+	store.todo_server_revision[sid] = record.revision
+	M.handle_todo_updated(sid, record.todos)
+	return true
+end
+
 ---Get messages for a session
 ---@param session_id string
 ---@return Message[]
@@ -1467,6 +1514,10 @@ end
 ---@return Part[]
 function M.get_parts(message_id)
 	local parts = materialize_parts(store.part[message_id])
+	if parts[1] and parts[1].protocol == "v2" then
+		parts = vim.list_extend({}, parts)
+		table.sort(parts, function(a, b) return a.content_order < b.content_order end)
+	end
 	return parts
 end
 
@@ -1494,7 +1545,7 @@ end
 ---@return { content: string, reasoning: string, tool_parts: Part[], parts: Part[], message_revision: number, part_revisions: table<string, number> }
 function M.get_message_render_parts(message_id, opts)
 	opts = opts or {}
-	local parts = materialize_parts(store.part[message_id])
+	local parts = M.get_parts(message_id)
 	local text_parts = {}
 	local reasoning_parts = {}
 	local tool_parts = {}
@@ -1665,6 +1716,7 @@ end
 ---Clear all data for a session
 ---@param session_id string
 function M.clear_session(session_id)
+	bump_revision(store.session_generation, session_id)
 	if todo_fetch_cleanup then
 		todo_fetch_cleanup(session_id)
 	end
@@ -1689,12 +1741,14 @@ function M.clear_session(session_id)
 
 	-- Remove todos
 	store.todo[session_id] = nil
+	store.todo_server_revision[session_id] = nil
 	bump_revision(store.todo_revision, session_id)
 end
 
 ---Clear only messages/parts for a session, preserving status and todos.
 ---@param session_id string
 function M.clear_session_messages(session_id)
+	bump_revision(store.session_generation, session_id)
 	local messages = store.message[session_id] or {}
 	for _, msg in ipairs(messages) do
 		clear_part_delta_buffers_for_message(msg.id)
@@ -1710,6 +1764,8 @@ end
 
 ---Clear all data
 function M.clear_all()
+	store.snapshot_generation = store.snapshot_generation + 1
+	store.session_generation = {}
 	if todo_fetch_cleanup then
 		todo_fetch_cleanup()
 	end
@@ -1721,6 +1777,7 @@ function M.clear_all()
 	store.session_status = {}
 	store.todo = {}
 	store.todo_revision = {}
+	store.todo_server_revision = {}
 	store.task_child_parent = {}
 	store.task_child_owner = {}
 	store.task_part_child = {}
@@ -1732,6 +1789,8 @@ function M.clear_all()
 	store.provider_revision = 0
 	store.agent_revision = 0
 	store.provider = {}
+	store.catalogs = {}
+	store.catalog_location = nil
 	store.provider_default = {}
 	store.agent = {}
 	store.command = {}
@@ -1741,6 +1800,46 @@ function M.clear_all()
 end
 
 -- Provider management (mirrors TUI sync.tsx)
+
+function M.get_location_catalog(directory, domain)
+	local entry = store.catalogs[directory] and store.catalogs[directory][domain]
+	return entry and vim.deepcopy(entry) or nil
+end
+
+function M.get_catalog_location()
+	return store.catalog_location
+end
+
+local function apply_catalog(domain, data)
+	if domain == "providers" then
+		M.handle_providers(data.providers)
+		M.handle_provider_defaults(data.default)
+	elseif domain == "agents" then M.handle_agents(data)
+	elseif domain == "commands" then M.handle_commands(data)
+	elseif domain == "skills" then M.handle_skills(data)
+	elseif domain == "mcp" then M.handle_mcp(data)
+	elseif domain == "config" then M.handle_config(data) end
+end
+
+function M.handle_location_catalog(directory, domain, data, err)
+	store.catalogs[directory] = store.catalogs[directory] or {}
+	local previous = store.catalogs[directory][domain]
+	local entry = { status = err and "failed" or "loaded", error = err,
+		data = err and previous and previous.data or data }
+	store.catalogs[directory][domain] = entry
+	if not err and store.catalog_location == directory then apply_catalog(domain, data) end
+end
+
+function M.select_catalog_location(directory)
+	if store.catalog_location == directory then return end
+	store.catalog_location = directory
+	store.provider, store.provider_default, store.agent, store.command, store.skill, store.mcp, store.config = {}, {}, {}, {}, {}, {}, {}
+	for domain, entry in pairs(store.catalogs[directory] or {}) do
+		if entry.data then apply_catalog(domain, entry.data) end
+	end
+	bump_store_counter("provider_revision")
+	bump_store_counter("agent_revision")
+end
 
 ---Handle provider data update
 ---@param providers table[] Array of provider objects
@@ -1901,6 +2000,9 @@ end
 ---@param name string
 ---@return table|nil
 function M.get_agent(name)
+	for _, agent in ipairs(store.agent) do
+		if agent.id == name then return agent end
+	end
 	for _, agent in ipairs(store.agent) do
 		if agent.name == name then
 			return agent

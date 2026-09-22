@@ -247,6 +247,33 @@ function M.resolve_event_call_id(payload)
 	return nil
 end
 
+---Match request identity before considering any content-based fallback.
+---A nil result means there is insufficient identity; false is a definite mismatch.
+---@param request table
+---@param tool_data table
+---@return boolean|nil
+function M.match_tool_request(request, tool_data)
+	local request_session = nonempty_string(request.sessionID or request.session_id or request.sessionId)
+	local tool_session = nonempty_string(tool_data.session_id or tool_data.sessionID or tool_data.sessionId)
+	if request_session and tool_session and request_session ~= tool_session then
+		return false
+	end
+	local request_message = M.resolve_event_message_id(request)
+	local tool_message = M.resolve_event_message_id(tool_data)
+	if request_message and tool_message and request_message ~= tool_message then
+		return false
+	end
+	local request_call = M.resolve_event_call_id(request)
+	local tool_call = M.resolve_event_call_id(tool_data)
+	if request_call and tool_call then
+		return request_call == tool_call
+	end
+	if not request_call and not tool_call and request_message and tool_message then
+		return true
+	end
+	return nil
+end
+
 ---@param tool_part table|nil
 ---@return string|nil
 function M.resolve_task_child_session_id(tool_part)

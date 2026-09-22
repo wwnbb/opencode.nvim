@@ -7,6 +7,19 @@ local session_util = require("opencode.util.session")
 local state = require("opencode.state")
 local sync = require("opencode.sync")
 function M.register(palette)
+	palette.register({ id = "session.history", title = "Load Full Session History", category = "session",
+		description = "Fetch every history page", action = function()
+			local sid = state.get_session().id
+			if not sid then return end
+			actions.load_session_messages(sid, { all = true }, function(err, messages)
+				if not err then
+					require("opencode.ui.chat.state").state.full_history_sessions[sid] = true
+					require("opencode.ui.chat.render_coordinator").request({ session_id = sid, reason = "full_history" })
+				end
+				vim.notify(err and ("Could not load history: " .. err.message) or ("Loaded " .. #messages .. " messages"), err and vim.log.levels.ERROR or vim.log.levels.INFO)
+			end)
+		end })
+
 	palette.register({
 		id = "session.new",
 		title = "New Session",

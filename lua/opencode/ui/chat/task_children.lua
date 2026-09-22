@@ -360,7 +360,7 @@ function M.ensure_task_child_loaded(tool_part, opts)
 	if not part_id then
 		return
 	end
-	local tool_status = tool_part.state and tool_part.state.status or "pending"
+	local tool_status = task_animation.task_status(tool_part)
 	if not task_animation.is_task_working(tool_status) then
 		return
 	end

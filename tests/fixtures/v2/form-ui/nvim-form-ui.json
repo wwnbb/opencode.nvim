@@ -1,0 +1,114 @@
+{
+  "version": "2.0.11",
+  "typed_form": {
+    "id": "frm_0c69d0f6a001omlCySeCVwIl8K",
+    "sessionID": "ses_f3962f0c8ffevJqzc8Mh3GW3jE",
+    "title": "Typed keyboard form",
+    "state": {
+      "status": "answered",
+      "answer": {
+        "retries": 0,
+        "checks": [
+          "unit",
+          "integration"
+        ],
+        "hidden": "preserved-default",
+        "target": "b",
+        "ratio": 0,
+        "confirm": false
+      }
+    },
+    "fields": [
+      {
+        "key": "target",
+        "required": true,
+        "options": [
+          {
+            "label": "Same",
+            "value": "a"
+          },
+          {
+            "label": "Same",
+            "value": "b"
+          }
+        ],
+        "type": "string"
+      },
+      {
+        "key": "checks",
+        "type": "multiselect",
+        "required": true,
+        "options": [
+          {
+            "label": "Unit",
+            "value": "unit"
+          },
+          {
+            "label": "Integration",
+            "value": "integration"
+          }
+        ],
+        "minItems": 1
+      },
+      {
+        "key": "retries",
+        "minimum": 0,
+        "type": "integer",
+        "required": true,
+        "maximum": 3
+      },
+      {
+        "key": "ratio",
+        "minimum": 0,
+        "type": "number",
+        "required": true,
+        "maximum": 1
+      },
+      {
+        "key": "confirm",
+        "required": true,
+        "type": "boolean"
+      },
+      {
+        "key": "note",
+        "required": true,
+        "type": "string",
+        "when": [
+          {
+            "key": "confirm",
+            "op": "eq",
+            "value": true
+          }
+        ]
+      },
+      {
+        "key": "hidden",
+        "hidden": true,
+        "type": "string",
+        "required": true,
+        "default": "preserved-default"
+      }
+    ]
+  },
+  "permissions": {
+    "always": {
+      "status": "approved",
+      "subsequent_effect": "allow"
+    },
+    "once": {
+      "status": "approved",
+      "subsequent_effect": "ask"
+    },
+    "reject": {
+      "status": "rejected",
+      "subsequent_effect": "ask"
+    }
+  },
+  "external_dispatch_only": true,
+  "external_cancelled": true,
+  "conditional_draft": true,
+  "invalid_integer_preserved": true,
+  "server_validation_retry": true,
+  "input_focus_restored": true,
+  "second_client_reconnect": true
+}

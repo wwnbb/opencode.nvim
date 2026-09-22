@@ -29,13 +29,6 @@ local function merge_headers(additional)
 	headers["Content-Type"] = "application/json"
 	headers["Accept"] = "application/json"
 
-	-- Always send the current working directory so the server uses
-	-- the correct project context for this Neovim instance
-	local cwd = vim.fn.getcwd()
-	if cwd and cwd ~= "" then
-		headers["x-opencode-directory"] = cwd
-	end
-
 	if additional then
 		for k, v in pairs(additional) do
 			headers[k] = v
@@ -52,19 +45,39 @@ local function handle_response(response, callback, request_meta)
 		return
 	end
 
-	if response.status >= 400 then
-		local err = {
-			status = response.status,
-			message = response.body or "HTTP error",
-			error = response.body or "HTTP error",
-		}
-		schedule_callback(callback, err, nil)
+	local meta = { status = response.status, headers = response.headers or {} }
+	if response.status < 200 or response.status >= 300 then
+		local ok, detail = pcall(vim.json.decode, response.body or "")
+		local message = "HTTP " .. tostring(response.status)
+		local code
+		if ok and type(detail) == "table" then
+			code = detail._tag or detail.code or detail.name
+			if type(detail.message) == "string" then
+				message = detail.message
+			end
+		end
+		-- Do not surface arbitrary HTML or credentials in server error responses.
+		local password = M.opts.auth.password
+		if type(password) == "string" and password ~= "" then
+			message = message:gsub(password:gsub("([^%w])", "%%%1"), "[redacted]")
+		end
+		schedule_callback(callback, {
+			status = response.status, code = code, message = message, error = message,
+			rpc_type = code == "RpcError" and type(detail.type) == "string" and detail.type or nil,
+			retryable = response.status == 429 or response.status >= 500,
+		}, nil, meta)
 		return
 	end
 
 	-- Handle empty body (e.g., 204 No Content)
 	if not response.body or response.body == "" then
-		schedule_callback(callback, nil, true)
+		schedule_callback(callback, nil, true, meta)
+		return
+	end
+	local content_type = meta.headers["content-type"] or meta.headers["Content-Type"]
+	if content_type and not content_type:lower():match("^application/[%w.+-]*json") then
+		schedule_callback(callback, { status = response.status, code = "invalid_content_type",
+			message = "Expected a JSON response", retryable = false }, nil, meta)
 		return
 	end
 
@@ -72,13 +85,13 @@ local function handle_response(response, callback, request_meta)
 	local ok, body = pcall(vim.json.decode, response.body)
 	if not ok then
 		schedule_callback(callback, {
-			error = "Failed to parse JSON: " .. tostring(body),
-			message = "Failed to parse JSON: " .. tostring(body),
-		}, nil)
+			status = response.status, code = "invalid_json", retryable = false,
+			error = "Failed to parse JSON response", message = "Failed to parse JSON response",
+		}, nil, meta)
 		return
 	end
 
-	schedule_callback(callback, nil, body)
+	schedule_callback(callback, nil, body, meta)
 end
 
 -- Configure the HTTP client
@@ -104,19 +117,26 @@ local function build_path(path, query)
 	end
 
 	local query_parts = {}
-	for key, value in pairs(query) do
-		table.insert(query_parts, string.format(
-			"%s=%s",
-			urlencode(key),
-			urlencode(value)
-		))
+	local function append(key, value)
+		if type(value) == "table" then
+			for _, child in ipairs(vim.tbl_keys(value)) do
+				append(key .. "[" .. child .. "]", value[child])
+			end
+		elseif value ~= nil then
+			local encoded = value == vim.NIL and "null" or tostring(value)
+			table.insert(query_parts, urlencode(key) .. "=" .. urlencode(encoded))
+		end
 	end
+	for key, value in pairs(query) do
+		append(key, value)
+	end
+	table.sort(query_parts)
 
 	if #query_parts == 0 then
 		return path
 	end
 
-	return path .. "?" .. table.concat(query_parts, "&")
+	return path .. (path:find("?", 1, true) and "&" or "?") .. table.concat(query_parts, "&")
 end
 
 ---@param method string
@@ -228,9 +248,9 @@ function M.put(path, body, callback, opts)
 end
 
 -- Check server health
----@param callback function(err, data) data = { healthy = true, version = string }
+---@param callback function(err, data) data = v2 ServerInfo
 function M.health(callback)
-	M.get("/global/health", callback, { timeout = 5000 })
+	require("opencode.client.v2").request("info", { timeout = 5000 }, callback)
 end
 
 -- Test connection synchronously (for startup checks)
@@ -248,7 +268,7 @@ function M.test_connection()
 			return
 		end
 
-		if not data or not data.healthy then
+		if not data or not data.version then
 			error_message = "Health check failed"
 			done = true
 			return

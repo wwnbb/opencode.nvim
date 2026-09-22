@@ -1,0 +1,1667 @@
+[
+  {
+    "method": "GET",
+    "path": "/api/info",
+    "request": null,
+    "status": 200,
+    "response": {
+      "version": "2.0.11",
+      "pid": 11665,
+      "urls": [
+        "http://127.0.0.1:49892"
+      ],
+      "paths": {
+        "tmp": "<PROFILE>/tmp/opencode"
+      }
+    }
+  },
+  {
+    "method": "GET",
+    "path": "/api/info",
+    "request": null,
+    "status": 401,
+    "response": null
+  },
+  {
+    "method": "GET",
+    "path": "/api/agent?location%5Bdirectory%5D=%2Fprivate%2Fvar%2Ffolders%2Fwt%2Fdsm_lvf55rqg8541j_v_7rmm0000gn%2FT%2Fopencode-nvim-v2-6svoo_d_%2Fproject+%D0%BF%D1%80%D0%BE%D0%B1%D0%B5%D0%BB+%25%23",
+    "request": null,
+    "status": 200,
+    "response": {
+      "location": {
+        "directory": "<PROFILE>/project пробел %#"
+      },
+      "data": []
+    }
+  },
+  {
+    "method": "GET",
+    "path": "/api/agent?location%5Bdirectory%5D=%2Fprivate%2Fvar%2Ffolders%2Fwt%2Fdsm_lvf55rqg8541j_v_7rmm0000gn%2FT%2Fopencode-nvim-v2-6svoo_d_%2Fproject+%D0%BF%D1%80%D0%BE%D0%B1%D0%B5%D0%BB+%25%23",
+    "request": null,
+    "status": 200,
+    "response": {
+      "location": {
+        "directory": "<PROFILE>/project пробел %#"
+      },
+      "data": [
+        {
+          "id": "build",
+          "name": "Build",
+          "request": {
+            "settings": {},
+            "headers": {},
+            "body": {}
+          },
+          "description": "The default agent. Executes tools based on configured permissions.",
+          "mode": "primary",
+          "hidden": false,
+          "permissions": [
+            {
+              "action": "*",
+              "resource": "*",
+              "effect": "allow"
+            },
+            {
+              "action": "external_directory",
+              "resource": "*",
+              "effect": "ask"
+            },
+            {
+              "action": "read",
+              "resource": "*.env",
+              "effect": "ask"
+            },
+            {
+              "action": "read",
+              "resource": "*.env.*",
+              "effect": "ask"
+            },
+            {
+              "action": "read",
+              "resource": "*.env.example",
+              "effect": "allow"
+            },
+            {
+              "action": "external_directory",
+              "resource": "<PROFILE>/data/opencode/shell/*/*",
+              "effect": "allow"
+            },
+            {
+              "action": "external_directory",
+              "resource": "<PROFILE>/data/opencode/tool-output/*",
+              "effect": "allow"
+            },
+            {
+              "action": "external_directory",
+              "resource": "<PROFILE>/tmp/opencode/*",
+              "effect": "allow"
+            },
+            {
+              "action": "external_directory",
+              "resource": "<PROFILE>/config/opencode/*",
+              "effect": "allow"
+            },
+            {
+              "action": "question",
+              "resource": "*",
+              "effect": "allow"
+            }
+          ]
+        },
+        {
+          "id": "general",
+          "name": "General",
+          "request": {
+            "settings": {},
+            "headers": {},
+            "body": {}
+          },
+          "description": "General-purpose agent for researching complex questions and executing multi-step tasks. Use this agent to execute multiple units of work in parallel.",
+          "mode": "subagent",
+          "hidden": false,
+          "permissions": [
+            {
+              "action": "*",
+              "resource": "*",
+              "effect": "allow"
+            },
+            {
+              "action": "external_directory",
+              "resource": "*",
+              "effect": "ask"
+            },
+            {
+              "action": "read",
+              "resource": "*.env",
+              "effect": "ask"
+            },
+            {
+              "action": "read",
+              "resource": "*.env.*",
+              "effect": "ask"
+            },
+            {
+              "action": "read",
+              "resource": "*.env.example",
+              "effect": "allow"
+            },
+            {
+              "action": "external_directory",
+              "resource": "<PROFILE>/data/opencode/shell/*/*",
+              "effect": "allow"
+            },
+            {
+              "action": "external_directory",
+              "resource": "<PROFILE>/data/opencode/tool-output/*",
+              "effect": "allow"
+            },
+            {
+              "action": "external_directory",
+              "resource": "<PROFILE>/tmp/opencode/*",
+              "effect": "allow"
+            },
+            {
+              "action": "external_directory",
+              "resource": "<PROFILE>/config/opencode/*",
+              "effect": "allow"
+            },
+            {
+              "action": "question",
+              "resource": "*",
+              "effect": "deny"
+            },
+            {
+              "action": "subagent",
+              "resource": "*",
+              "effect": "deny"
+            }
+          ]
+        },
+        {
+          "id": "explore",
+          "name": "Explore",
+          "request": {
+            "settings": {},
+            "headers": {},
+            "body": {}
+          },
+          "system": "You are a file search specialist. You excel at thoroughly navigating and exploring codebases.\n\nYour strengths:\n- Rapidly finding files using glob patterns\n- Searching code and text with powerful regex patterns\n- Reading and analyzing file contents\n\nGuidelines:\n- Use Glob for broad file pattern matching\n- Use Grep for searching file contents with regex\n- Use Read when you know the specific file path you need to read\n- Adapt your search approach based on the thoroughness level specified by the caller\n- Return file paths as absolute paths in your final response\n- For clear communication, avoid using emojis\n- Do not create any files, or run bash commands that modify the user's system state in any way\n\nComplete the user's search request efficiently and report your findings clearly.",
+          "description": "Fast agent specialized for exploring codebases. Use this when you need to quickly find files by patterns (eg. \"src/components/**/*.tsx\"), search code for keywords (eg. \"API endpoints\"), or answer questions about the codebase (eg. \"how do API endpoints work?\"). When calling this agent, specify the desired thoroughness level: \"quick\" for basic searches, \"medium\" for moderate exploration, or \"very thorough\" for comprehensive analysis across multiple locations and naming conventions.",
+          "mode": "subagent",
+          "hidden": false,
+          "permissions": [
+            {
+              "action": "*",
+              "resource": "*",
+              "effect": "allow"
+            },
+            {
+              "action": "external_directory",
+              "resource": "*",
+              "effect": "ask"
+            },
+            {
+              "action": "read",
+              "resource": "*.env",
+              "effect": "ask"
+            },
+            {
+              "action": "read",
+              "resource": "*.env.*",
+              "effect": "ask"
+            },
+            {
+              "action": "read",
+              "resource": "*.env.example",
+              "effect": "allow"
+            },
+            {
+              "action": "external_directory",
+              "resource": "<PROFILE>/data/opencode/shell/*/*",
+              "effect": "allow"
+            },
+            {
+              "action": "external_directory",
+              "resource": "<PROFILE>/data/opencode/tool-output/*",
+              "effect": "allow"
+            },
+            {
+              "action": "external_directory",
+              "resource": "<PROFILE>/tmp/opencode/*",
+              "effect": "allow"
+            },
+            {
+              "action": "external_directory",
+              "resource": "<PROFILE>/config/opencode/*",
+              "effect": "allow"
+            },
+            {
+              "action": "*",
+              "resource": "*",
+              "effect": "deny"
+            },
+            {
+              "action": "grep",
+              "resource": "*",
+              "effect": "allow"
+            },
+            {
+              "action": "glob",
+              "resource": "*",
+              "effect": "allow"
+            },
+            {
+              "action": "webfetch",
+              "resource": "*",
+              "effect": "allow"
+            },
+            {
+              "action": "websearch",
+              "resource": "*",
+              "effect": "allow"
+            },
+            {
+              "action": "read",
+              "resource": "*",
+              "effect": "allow"
+            },
+            {
+              "action": "read",
+              "resource": "*.env",
+              "effect": "ask"
+            },
+            {
+              "action": "read",
+              "resource": "*.env.*",
+              "effect": "ask"
+            },
+            {
+              "action": "read",
+              "resource": "*.env.example",
+              "effect": "allow"
+            },
+            {
+              "action": "subagent",
+              "resource": "*",
+              "effect": "deny"
+            },
+            {
+              "action": "external_directory",
+              "resource": "*",
+              "effect": "ask"
+            },
+            {
+              "action": "external_directory",
+              "resource": "<PROFILE>/data/opencode/shell/*/*",
+              "effect": "allow"
+            },
+            {
+              "action": "external_directory",
+              "resource": "<PROFILE>/data/opencode/tool-output/*",
+              "effect": "allow"
+            },
+            {
+              "action": "external_directory",
+              "resource": "<PROFILE>/tmp/opencode/*",
+              "effect": "allow"
+            },
+            {
+              "action": "external_directory",
+              "resource": "<PROFILE>/config/opencode/*",
+              "effect": "allow"
+            }
+          ]
+        },
+        {
+          "id": "compaction",
+          "name": "Compaction",
+          "request": {
+            "settings": {},
+            "headers": {},
+            "body": {}
+          },
+          "mode": "primary",
+          "hidden": true,
+          "permissions": [
+            {
+              "action": "*",
+              "resource": "*",
+              "effect": "allow"
+            },
+            {
+              "action": "external_directory",
+              "resource": "*",
+              "effect": "ask"
+            },
+            {
+              "action": "read",
+              "resource": "*.env",
+              "effect": "ask"
+            },
+            {
+              "action": "read",
+              "resource": "*.env.*",
+              "effect": "ask"
+            },
+            {
+              "action": "read",
+              "resource": "*.env.example",
+              "effect": "allow"
+            },
+            {
+              "action": "external_directory",
+              "resource": "<PROFILE>/data/opencode/shell/*/*",
+              "effect": "allow"
+            },
+            {
+              "action": "external_directory",
+              "resource": "<PROFILE>/data/opencode/tool-output/*",
+              "effect": "allow"
+            },
+            {
+              "action": "external_directory",
+              "resource": "<PROFILE>/tmp/opencode/*",
+              "effect": "allow"
+            },
+            {
+              "action": "external_directory",
+              "resource": "<PROFILE>/config/opencode/*",
+              "effect": "allow"
+            }
+          ]
+        },
+        {
+          "id": "title",
+          "name": "Title",
+          "request": {
+            "settings": {},
+            "headers": {},
+            "body": {}
+          },
+          "system": "You are a title generator. You output ONLY a thread title. Nothing else.\n\n<task>\nGenerate a brief title that would help the user find this conversation later.\n\nFollow all rules in <rules>\nUse the <examples> so you know what a good title looks like.\nYour output must be:\n- A single line\n- <=50 characters\n- No explanations\n</task>\n\n<rules>\n- you MUST use the same language as the user message you are summarizing\n- Title must be grammatically correct and read naturally - no word salad\n- Never include tool names in the title (e.g. \"read tool\", \"bash tool\", \"edit tool\")\n- Focus on the main topic or question the user needs to retrieve\n- Vary your phrasing - avoid repetitive patterns like always starting with \"Analyzing\"\n- When a file is mentioned, focus on WHAT the user wants to do WITH the file, not just that they shared it\n- Keep exact: technical terms, numbers, filenames, HTTP codes\n- Remove: the, this, my, a, an\n- Never assume tech stack\n- Never use tools\n- NEVER respond to questions, just generate a title for the conversation\n- The title should NEVER include \"summarizing\" or \"generating\" when generating a title\n- DO NOT SAY YOU CANNOT GENERATE A TITLE OR COMPLAIN ABOUT THE INPUT\n- Always output something meaningful, even if the input is minimal.\n- If the user message is short or conversational (e.g. \"hello\", \"lol\", \"what's up\", \"hey\"):\n  -> create a title that reflects the user's tone or intent (such as Greeting, Quick check-in, Light chat, Intro message, etc.)\n</rules>\n\n<examples>\n\"debug 500 errors in production\" -> Debugging production 500 errors\n\"refactor user service\" -> Refactoring user service\n\"why is app.js failing\" -> app.js failure investigation\n\"implement rate limiting\" -> Rate limiting implementation\n\"how do I connect postgres to my API\" -> Postgres API connection\n\"best practices for React hooks\" -> React hooks best practices\n\"@src/credential.ts can you add refresh token support\" -> Credential refresh token support\n\"@utils/parser.ts this is broken\" -> Parser bug fix\n\"look at @config.json\" -> Config review\n\"@App.tsx add dark mode toggle\" -> Dark mode toggle in App\n</examples>",
+          "mode": "primary",
+          "hidden": true,
+          "permissions": [
+            {
+              "action": "*",
+              "resource": "*",
+              "effect": "allow"
+            },
+            {
+              "action": "external_directory",
+              "resource": "*",
+              "effect": "ask"
+            },
+            {
+              "action": "read",
+              "resource": "*.env",
+              "effect": "ask"
+            },
+            {
+              "action": "read",
+              "resource": "*.env.*",
+              "effect": "ask"
+            },
+            {
+              "action": "read",
+              "resource": "*.env.example",
+              "effect": "allow"
+            },
+            {
+              "action": "external_directory",
+              "resource": "<PROFILE>/data/opencode/shell/*/*",
+              "effect": "allow"
+            },
+            {
+              "action": "external_directory",
+              "resource": "<PROFILE>/data/opencode/tool-output/*",
+              "effect": "allow"
+            },
+            {
+              "action": "external_directory",
+              "resource": "<PROFILE>/tmp/opencode/*",
+              "effect": "allow"
+            },
+            {
+              "action": "external_directory",
+              "resource": "<PROFILE>/config/opencode/*",
+              "effect": "allow"
+            },
+            {
+              "action": "*",
+              "resource": "*",
+              "effect": "deny"
+            }
+          ]
+        },
+        {
+          "id": "summary",
+          "name": "Summary",
+          "request": {
+            "settings": {},
+            "headers": {},
+            "body": {}
+          },
+          "system": "Summarize what was done in this conversation. Write like a pull request description.\n\nRules:\n- 2-3 sentences max\n- Describe the changes made, not the process\n- Do not mention running tests, builds, or other validation steps\n- Do not explain what the user asked for\n- Write in first person (I added..., I fixed...)\n- Never ask questions or add new questions\n- If the conversation ends with an unanswered question to the user, preserve that exact question\n- If the conversation ends with an imperative statement or request to the user (e.g. \"Now please run the command and paste the console output\"), always include that exact request in the summary",
+          "mode": "primary",
+          "hidden": true,
+          "permissions": [
+            {
+              "action": "*",
+              "resource": "*",
+              "effect": "allow"
+            },
+            {
+              "action": "external_directory",
+              "resource": "*",
+              "effect": "ask"
+            },
+            {
+              "action": "read",
+              "resource": "*.env",
+              "effect": "ask"
+            },
+            {
+              "action": "read",
+              "resource": "*.env.*",
+              "effect": "ask"
+            },
+            {
+              "action": "read",
+              "resource": "*.env.example",
+              "effect": "allow"
+            },
+            {
+              "action": "external_directory",
+              "resource": "<PROFILE>/data/opencode/shell/*/*",
+              "effect": "allow"
+            },
+            {
+              "action": "external_directory",
+              "resource": "<PROFILE>/data/opencode/tool-output/*",
+              "effect": "allow"
+            },
+            {
+              "action": "external_directory",
+              "resource": "<PROFILE>/tmp/opencode/*",
+              "effect": "allow"
+            },
+            {
+              "action": "external_directory",
+              "resource": "<PROFILE>/config/opencode/*",
+              "effect": "allow"
+            },
+            {
+              "action": "*",
+              "resource": "*",
+              "effect": "deny"
+            }
+          ]
+        },
+        {
+          "id": "plan",
+          "name": "Plan",
+          "request": {
+            "settings": {},
+            "headers": {},
+            "body": {}
+          },
+          "description": "Read-only agent for exploring the codebase and planning work before implementation.",
+          "mode": "primary",
+          "hidden": false,
+          "permissions": [
+            {
+              "action": "*",
+              "resource": "*",
+              "effect": "allow"
+            },
+            {
+              "action": "external_directory",
+              "resource": "*",
+              "effect": "ask"
+            },
+            {
+              "action": "read",
+              "resource": "*.env",
+              "effect": "ask"
+            },
+            {
+              "action": "read",
+              "resource": "*.env.*",
+              "effect": "ask"
+            },
+            {
+              "action": "read",
+              "resource": "*.env.example",
+              "effect": "allow"
+            },
+            {
+              "action": "external_directory",
+              "resource": "<PROFILE>/data/opencode/shell/*/*",
+              "effect": "allow"
+            },
+            {
+              "action": "external_directory",
+              "resource": "<PROFILE>/data/opencode/tool-output/*",
+              "effect": "allow"
+            },
+            {
+              "action": "external_directory",
+              "resource": "<PROFILE>/tmp/opencode/*",
+              "effect": "allow"
+            },
+            {
+              "action": "external_directory",
+              "resource": "<PROFILE>/config/opencode/*",
+              "effect": "allow"
+            },
+            {
+              "action": "question",
+              "resource": "*",
+              "effect": "allow"
+            },
+            {
+              "action": "edit",
+              "resource": "*",
+              "effect": "deny"
+            },
+            {
+              "action": "edit",
+              "resource": "<PROFILE>/home/.opencode/plan/*",
+              "effect": "allow"
+            },
+            {
+              "action": "external_directory",
+              "resource": "<PROFILE>/home/.opencode/plan/*",
+              "effect": "allow"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "method": "GET",
+    "path": "/api/model?location%5Bdirectory%5D=%2Fprivate%2Fvar%2Ffolders%2Fwt%2Fdsm_lvf55rqg8541j_v_7rmm0000gn%2FT%2Fopencode-nvim-v2-6svoo_d_%2Fproject+%D0%BF%D1%80%D0%BE%D0%B1%D0%B5%D0%BB+%25%23",
+    "request": null,
+    "status": 200,
+    "response": {
+      "location": {
+        "directory": "<PROFILE>/project пробел %#"
+      },
+      "data": [
+        {
+          "id": "mimo-v2.6-flash-free",
+          "modelID": "mimo-v2.6-flash-free",
+          "providerID": "opencode",
+          "family": "mimo",
+          "name": "MiMo-V2.6-Flash Free",
+          "compatibility": {
+            "reasoningField": "reasoning_content"
+          },
+          "package": "@opencode/ai/providers/openai-compatible",
+          "settings": {
+            "apiKey": "public",
+            "baseURL": "https://opencode.ai/zen/v1",
+            "provider": "opencode"
+          },
+          "capabilities": {
+            "tools": true,
+            "input": [
+              "text",
+              "image",
+              "audio",
+              "video",
+              "pdf"
+            ],
+            "output": [
+              "text"
+            ]
+          },
+          "variants": [],
+          "time": {
+            "released": 1790035200000
+          },
+          "cost": [
+            {
+              "input": 0,
+              "output": 0,
+              "cache": {
+                "read": 0,
+                "write": 0
+              }
+            }
+          ],
+          "status": "active",
+          "enabled": true,
+          "limit": {
+            "context": 200000,
+            "output": 32000
+          }
+        },
+        {
+          "id": "muse-spark-1.3-contributor-free",
+          "modelID": "muse-spark-1.3-contributor-free",
+          "providerID": "opencode",
+          "family": "muse-free",
+          "name": "Muse Spark 1.3 Free",
+          "package": "@opencode/ai/providers/openai",
+          "settings": {
+            "apiKey": "public",
+            "baseURL": "https://opencode.ai/zen/v1"
+          },
+          "capabilities": {
+            "tools": true,
+            "input": [
+              "text",
+              "image",
+              "video",
+              "pdf",
+              "audio"
+            ],
+            "output": [
+              "text"
+            ]
+          },
+          "variants": [
+            {
+              "id": "minimal",
+              "settings": {
+                "reasoningEffort": "minimal",
+                "reasoningSummary": "auto",
+                "include": [
+                  "reasoning.encrypted_content"
+                ]
+              }
+            },
+            {
+              "id": "low",
+              "settings": {
+                "reasoningEffort": "low",
+                "reasoningSummary": "auto",
+                "include": [
+                  "reasoning.encrypted_content"
+                ]
+              }
+            },
+            {
+              "id": "medium",
+              "settings": {
+                "reasoningEffort": "medium",
+                "reasoningSummary": "auto",
+                "include": [
+                  "reasoning.encrypted_content"
+                ]
+              }
+            },
+            {
+              "id": "high",
+              "settings": {
+                "reasoningEffort": "high",
+                "reasoningSummary": "auto",
+                "include": [
+                  "reasoning.encrypted_content"
+                ]
+              }
+            },
+            {
+              "id": "xhigh",
+              "settings": {
+                "reasoningEffort": "xhigh",
+                "reasoningSummary": "auto",
+                "include": [
+                  "reasoning.encrypted_content"
+                ]
+              }
+            }
+          ],
+          "time": {
+            "released": 1788307200000
+          },
+          "cost": [
+            {
+              "input": 0,
+              "output": 0,
+              "cache": {
+                "read": 0,
+                "write": 0
+              }
+            }
+          ],
+          "status": "active",
+          "enabled": true,
+          "limit": {
+            "context": 1048576,
+            "output": 131072
+          }
+        },
+        {
+          "id": "ling-3.0-flash-fin-free",
+          "modelID": "ling-3.0-flash-fin-free",
+          "providerID": "opencode",
+          "family": "ling",
+          "name": "Ling 3.0 Flash Fin Free",
+          "package": "@opencode/ai/providers/openai-compatible",
+          "settings": {
+            "apiKey": "public",
+            "baseURL": "https://opencode.ai/zen/v1",
+            "provider": "opencode"
+          },
+          "capabilities": {
+            "tools": true,
+            "input": [
+              "text"
+            ],
+            "output": [
+              "text"
+            ]
+          },
+          "variants": [],
+          "time": {
+            "released": 1787788800000
+          },
+          "cost": [
+            {
+              "input": 0,
+              "output": 0,
+              "cache": {
+                "read": 0,
+                "write": 0
+              }
+            }
+          ],
+          "status": "active",
+          "enabled": true,
+          "limit": {
+            "context": 262144,
+            "output": 32768
+          }
+        },
+        {
+          "id": "nemotron-3.5-lightning-free",
+          "modelID": "nemotron-3.5-lightning-free",
+          "providerID": "opencode",
+          "family": "nemotron-free",
+          "name": "Nemotron 3.5 Lightning Free",
+          "compatibility": {
+            "reasoningField": "reasoning_content"
+          },
+          "package": "@opencode/ai/providers/openai-compatible",
+          "settings": {
+            "apiKey": "public",
+            "baseURL": "https://opencode.ai/zen/v1",
+            "provider": "opencode"
+          },
+          "capabilities": {
+            "tools": true,
+            "input": [
+              "text"
+            ],
+            "output": [
+              "text"
+            ]
+          },
+          "variants": [],
+          "time": {
+            "released": 1786406400000
+          },
+          "cost": [
+            {
+              "input": 0,
+              "output": 0,
+              "cache": {
+                "read": 0,
+                "write": 0
+              }
+            }
+          ],
+          "status": "active",
+          "enabled": true,
+          "limit": {
+            "context": 262144,
+            "output": 262144
+          }
+        },
+        {
+          "id": "muse-spark-1.2-contributor-free",
+          "modelID": "muse-spark-1.2-contributor-free",
+          "providerID": "opencode",
+          "family": "muse-free",
+          "name": "Muse Spark 1.2 Free",
+          "package": "@opencode/ai/providers/openai",
+          "settings": {
+            "apiKey": "public",
+            "baseURL": "https://opencode.ai/zen/v1"
+          },
+          "capabilities": {
+            "tools": true,
+            "input": [
+              "text",
+              "image",
+              "video",
+              "pdf",
+              "audio"
+            ],
+            "output": [
+              "text"
+            ]
+          },
+          "variants": [
+            {
+              "id": "minimal",
+              "settings": {
+                "reasoningEffort": "minimal",
+                "reasoningSummary": "auto",
+                "include": [
+                  "reasoning.encrypted_content"
+                ]
+              }
+            },
+            {
+              "id": "low",
+              "settings": {
+                "reasoningEffort": "low",
+                "reasoningSummary": "auto",
+                "include": [
+                  "reasoning.encrypted_content"
+                ]
+              }
+            },
+            {
+              "id": "medium",
+              "settings": {
+                "reasoningEffort": "medium",
+                "reasoningSummary": "auto",
+                "include": [
+                  "reasoning.encrypted_content"
+                ]
+              }
+            },
+            {
+              "id": "high",
+              "settings": {
+                "reasoningEffort": "high",
+                "reasoningSummary": "auto",
+                "include": [
+                  "reasoning.encrypted_content"
+                ]
+              }
+            },
+            {
+              "id": "xhigh",
+              "settings": {
+                "reasoningEffort": "xhigh",
+                "reasoningSummary": "auto",
+                "include": [
+                  "reasoning.encrypted_content"
+                ]
+              }
+            }
+          ],
+          "time": {
+            "released": 1785888000000
+          },
+          "cost": [
+            {
+              "input": 0,
+              "output": 0,
+              "cache": {
+                "read": 0,
+                "write": 0
+              }
+            }
+          ],
+          "status": "active",
+          "enabled": true,
+          "limit": {
+            "context": 1048576,
+            "output": 131072
+          }
+        },
+        {
+          "id": "nemotron-3-ultra-free",
+          "modelID": "nemotron-3-ultra-free",
+          "providerID": "opencode",
+          "family": "nemotron-free",
+          "name": "Nemotron 3 Ultra Free",
+          "compatibility": {
+            "reasoningField": "reasoning_content"
+          },
+          "package": "@opencode/ai/providers/openai-compatible",
+          "settings": {
+            "apiKey": "public",
+            "baseURL": "https://opencode.ai/zen/v1",
+            "provider": "opencode"
+          },
+          "capabilities": {
+            "tools": true,
+            "input": [
+              "text"
+            ],
+            "output": [
+              "text"
+            ]
+          },
+          "variants": [],
+          "time": {
+            "released": 1780531200000
+          },
+          "cost": [
+            {
+              "input": 0,
+              "output": 0,
+              "cache": {
+                "read": 0,
+                "write": 0
+              }
+            }
+          ],
+          "status": "active",
+          "enabled": true,
+          "limit": {
+            "context": 1000000,
+            "output": 128000
+          }
+        },
+        {
+          "id": "mimo-v2.5-free",
+          "modelID": "mimo-v2.5-free",
+          "providerID": "opencode",
+          "family": "mimo-v2.5-free",
+          "name": "MiMo V2.5 Free",
+          "compatibility": {
+            "reasoningField": "reasoning_content"
+          },
+          "package": "@opencode/ai/providers/openai-compatible",
+          "settings": {
+            "apiKey": "public",
+            "baseURL": "https://opencode.ai/zen/v1",
+            "provider": "opencode"
+          },
+          "capabilities": {
+            "tools": true,
+            "input": [
+              "text",
+              "image",
+              "audio",
+              "video"
+            ],
+            "output": [
+              "text"
+            ]
+          },
+          "variants": [],
+          "time": {
+            "released": 1776988800000
+          },
+          "cost": [
+            {
+              "input": 0,
+              "output": 0,
+              "cache": {
+                "read": 0,
+                "write": 0
+              }
+            }
+          ],
+          "status": "active",
+          "enabled": true,
+          "limit": {
+            "context": 200000,
+            "output": 32000
+          }
+        },
+        {
+          "id": "big-pickle",
+          "modelID": "big-pickle",
+          "providerID": "opencode",
+          "family": "big-pickle",
+          "name": "Big Pickle",
+          "compatibility": {
+            "reasoningField": "reasoning_content"
+          },
+          "package": "@opencode/ai/providers/openai-compatible",
+          "settings": {
+            "apiKey": "public",
+            "baseURL": "https://opencode.ai/zen/v1",
+            "provider": "opencode"
+          },
+          "capabilities": {
+            "tools": true,
+            "input": [
+              "text"
+            ],
+            "output": [
+              "text"
+            ]
+          },
+          "variants": [],
+          "time": {
+            "released": 1760659200000
+          },
+          "cost": [
+            {
+              "input": 0,
+              "output": 0,
+              "cache": {
+                "read": 0,
+                "write": 0
+              }
+            }
+          ],
+          "status": "active",
+          "enabled": true,
+          "limit": {
+            "context": 200000,
+            "input": 160000,
+            "output": 32000
+          }
+        }
+      ]
+    }
+  },
+  {
+    "method": "GET",
+    "path": "/api/model/default?location%5Bdirectory%5D=%2Fprivate%2Fvar%2Ffolders%2Fwt%2Fdsm_lvf55rqg8541j_v_7rmm0000gn%2FT%2Fopencode-nvim-v2-6svoo_d_%2Fproject+%D0%BF%D1%80%D0%BE%D0%B1%D0%B5%D0%BB+%25%23",
+    "request": null,
+    "status": 200,
+    "response": {
+      "location": {
+        "directory": "<PROFILE>/project пробел %#"
+      },
+      "data": {
+        "id": "mimo-v2.6-flash-free",
+        "modelID": "mimo-v2.6-flash-free",
+        "providerID": "opencode",
+        "family": "mimo",
+        "name": "MiMo-V2.6-Flash Free",
+        "compatibility": {
+          "reasoningField": "reasoning_content"
+        },
+        "package": "@opencode/ai/providers/openai-compatible",
+        "settings": {
+          "apiKey": "public",
+          "baseURL": "https://opencode.ai/zen/v1",
+          "provider": "opencode"
+        },
+        "capabilities": {
+          "tools": true,
+          "input": [
+            "text",
+            "image",
+            "audio",
+            "video",
+            "pdf"
+          ],
+          "output": [
+            "text"
+          ]
+        },
+        "variants": [],
+        "time": {
+          "released": 1790035200000
+        },
+        "cost": [
+          {
+            "input": 0,
+            "output": 0,
+            "cache": {
+              "read": 0,
+              "write": 0
+            }
+          }
+        ],
+        "status": "active",
+        "enabled": true,
+        "limit": {
+          "context": 200000,
+          "output": 32000
+        }
+      }
+    }
+  },
+  {
+    "method": "GET",
+    "path": "/api/provider?location%5Bdirectory%5D=%2Fprivate%2Fvar%2Ffolders%2Fwt%2Fdsm_lvf55rqg8541j_v_7rmm0000gn%2FT%2Fopencode-nvim-v2-6svoo_d_%2Fproject+%D0%BF%D1%80%D0%BE%D0%B1%D0%B5%D0%BB+%25%23",
+    "request": null,
+    "status": 200,
+    "response": {
+      "location": {
+        "directory": "<PROFILE>/project пробел %#"
+      },
+      "data": [
+        {
+          "id": "opencode",
+          "integrationID": "opencode",
+          "name": "OpenCode Zen",
+          "activation": "enabled",
+          "package": "@opencode/ai/providers/openai-compatible",
+          "settings": {
+            "apiKey": "public",
+            "baseURL": "https://opencode.ai/zen/v1"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "method": "GET",
+    "path": "/api/plugin?location%5Bdirectory%5D=%2Fprivate%2Fvar%2Ffolders%2Fwt%2Fdsm_lvf55rqg8541j_v_7rmm0000gn%2FT%2Fopencode-nvim-v2-6svoo_d_%2Fproject+%D0%BF%D1%80%D0%BE%D0%B1%D0%B5%D0%BB+%25%23",
+    "request": null,
+    "status": 200,
+    "response": {
+      "location": {
+        "directory": "<PROFILE>/project пробел %#"
+      },
+      "data": []
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/api/rpc/opencode_nvim/capabilities?location%5Bdirectory%5D=%2Fprivate%2Fvar%2Ffolders%2Fwt%2Fdsm_lvf55rqg8541j_v_7rmm0000gn%2FT%2Fopencode-nvim-v2-6svoo_d_%2Fproject+%D0%BF%D1%80%D0%BE%D0%B1%D0%B5%D0%BB+%25%23",
+    "request": {
+      "input": {}
+    },
+    "status": 200,
+    "response": {
+      "output": {
+        "protocolVersion": 1,
+        "pluginVersion": "2.0.11-2",
+        "tools": [
+          "neovim_edit",
+          "neovim_apply_patch",
+          "rg",
+          "todoread",
+          "todowrite"
+        ],
+        "review": true,
+        "todo": true
+      }
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/api/session",
+    "request": {
+      "title": "opencode.nvim v2 runtime fixture",
+      "location": {
+        "directory": "<PROFILE>/project пробел %#"
+      },
+      "model": {
+        "providerID": "opencode",
+        "id": "mimo-v2.5-free"
+      }
+    },
+    "status": 200,
+    "response": {
+      "data": {
+        "id": "ses_f396c7935ffe4YuZOq5Ve3XutS",
+        "projectID": "global",
+        "model": {
+          "id": "mimo-v2.5-free",
+          "providerID": "opencode",
+          "variant": "default"
+        },
+        "cost": 0,
+        "tokens": {
+          "input": 0,
+          "output": 0,
+          "reasoning": 0,
+          "cache": {
+            "read": 0,
+            "write": 0
+          }
+        },
+        "time": {
+          "created": 1790037952229,
+          "updated": 1790037952229
+        },
+        "title": "opencode.nvim v2 runtime fixture",
+        "location": {
+          "directory": "<PROFILE>/project пробел %#"
+        }
+      }
+    }
+  },
+  {
+    "method": "GET",
+    "path": "/api/session?limit=1&parentID=null",
+    "request": null,
+    "status": 200,
+    "response": {
+      "data": [
+        {
+          "id": "ses_f396c7935ffe4YuZOq5Ve3XutS",
+          "projectID": "global",
+          "model": {
+            "id": "mimo-v2.5-free",
+            "providerID": "opencode",
+            "variant": "default"
+          },
+          "cost": 0,
+          "tokens": {
+            "input": 0,
+            "output": 0,
+            "reasoning": 0,
+            "cache": {
+              "read": 0,
+              "write": 0
+            }
+          },
+          "time": {
+            "created": 1790037952229,
+            "updated": 1790037952229
+          },
+          "title": "opencode.nvim v2 runtime fixture",
+          "location": {
+            "directory": "<PROFILE>/project пробел %#"
+          }
+        }
+      ],
+      "cursor": {
+        "previous": "eyJwYXJlbnRJRCI6Im51bGwiLCJhbmNob3IiOnsiaWQiOiJzZXNfZjM5NmM3OTM1ZmZlNFl1Wk9xNVZlM1h1dFMiLCJ0aW1lIjoxNzkwMDM3OTUyMjI5LCJkaXJlY3Rpb24iOiJwcmV2aW91cyJ9fQ",
+        "next": "eyJwYXJlbnRJRCI6Im51bGwiLCJhbmNob3IiOnsiaWQiOiJzZXNfZjM5NmM3OTM1ZmZlNFl1Wk9xNVZlM1h1dFMiLCJ0aW1lIjoxNzkwMDM3OTUyMjI5LCJkaXJlY3Rpb24iOiJuZXh0In19"
+      }
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/api/session/ses_f396c7935ffe4YuZOq5Ve3XutS/prompt",
+    "request": {
+      "id": "msg_nvim_v2_fixture",
+      "text": "Reply with exactly: Привет, Neovim!",
+      "delivery": "queue"
+    },
+    "status": 200,
+    "response": {
+      "data": {
+        "id": "msg_nvim_v2_fixture",
+        "sessionID": "ses_f396c7935ffe4YuZOq5Ve3XutS",
+        "time": {
+          "created": 1790037952233
+        },
+        "type": "user",
+        "payload": {
+          "text": "Reply with exactly: Привет, Neovim!"
+        },
+        "delivery": "queue"
+      }
+    }
+  },
+  {
+    "method": "GET",
+    "path": "/api/session/ses_f396c7935ffe4YuZOq5Ve3XutS/message",
+    "request": null,
+    "status": 200,
+    "response": {
+      "data": [
+        {
+          "id": "msg_nvim_v2_fixture",
+          "time": {
+            "created": 1790037952243
+          },
+          "text": "Reply with exactly: Привет, Neovim!",
+          "type": "user"
+        }
+      ],
+      "cursor": {
+        "previous": "eyJpZCI6Im1zZ19udmltX3YyX2ZpeHR1cmUiLCJvcmRlciI6ImRlc2MiLCJkaXJlY3Rpb24iOiJwcmV2aW91cyJ9",
+        "next": "eyJpZCI6Im1zZ19udmltX3YyX2ZpeHR1cmUiLCJvcmRlciI6ImRlc2MiLCJkaXJlY3Rpb24iOiJuZXh0In0"
+      }
+    }
+  },
+  {
+    "method": "GET",
+    "path": "/api/session/ses_f396c7935ffe4YuZOq5Ve3XutS/message",
+    "request": null,
+    "status": 200,
+    "response": {
+      "data": [
+        {
+          "id": "msg_nvim_v2_fixture",
+          "time": {
+            "created": 1790037952243
+          },
+          "text": "Reply with exactly: Привет, Neovim!",
+          "type": "user"
+        }
+      ],
+      "cursor": {
+        "previous": "eyJpZCI6Im1zZ19udmltX3YyX2ZpeHR1cmUiLCJvcmRlciI6ImRlc2MiLCJkaXJlY3Rpb24iOiJwcmV2aW91cyJ9",
+        "next": "eyJpZCI6Im1zZ19udmltX3YyX2ZpeHR1cmUiLCJvcmRlciI6ImRlc2MiLCJkaXJlY3Rpb24iOiJuZXh0In0"
+      }
+    }
+  },
+  {
+    "method": "GET",
+    "path": "/api/session/ses_f396c7935ffe4YuZOq5Ve3XutS/message",
+    "request": null,
+    "status": 200,
+    "response": {
+      "data": [
+        {
+          "id": "msg_nvim_v2_fixture",
+          "time": {
+            "created": 1790037952243
+          },
+          "text": "Reply with exactly: Привет, Neovim!",
+          "type": "user"
+        }
+      ],
+      "cursor": {
+        "previous": "eyJpZCI6Im1zZ19udmltX3YyX2ZpeHR1cmUiLCJvcmRlciI6ImRlc2MiLCJkaXJlY3Rpb24iOiJwcmV2aW91cyJ9",
+        "next": "eyJpZCI6Im1zZ19udmltX3YyX2ZpeHR1cmUiLCJvcmRlciI6ImRlc2MiLCJkaXJlY3Rpb24iOiJuZXh0In0"
+      }
+    }
+  },
+  {
+    "method": "GET",
+    "path": "/api/session/ses_f396c7935ffe4YuZOq5Ve3XutS/message",
+    "request": null,
+    "status": 200,
+    "response": {
+      "data": [
+        {
+          "id": "msg_nvim_v2_fixture",
+          "time": {
+            "created": 1790037952243
+          },
+          "text": "Reply with exactly: Привет, Neovim!",
+          "type": "user"
+        }
+      ],
+      "cursor": {
+        "previous": "eyJpZCI6Im1zZ19udmltX3YyX2ZpeHR1cmUiLCJvcmRlciI6ImRlc2MiLCJkaXJlY3Rpb24iOiJwcmV2aW91cyJ9",
+        "next": "eyJpZCI6Im1zZ19udmltX3YyX2ZpeHR1cmUiLCJvcmRlciI6ImRlc2MiLCJkaXJlY3Rpb24iOiJuZXh0In0"
+      }
+    }
+  },
+  {
+    "method": "GET",
+    "path": "/api/session/ses_f396c7935ffe4YuZOq5Ve3XutS/message",
+    "request": null,
+    "status": 200,
+    "response": {
+      "data": [
+        {
+          "id": "msg_nvim_v2_fixture",
+          "time": {
+            "created": 1790037952243
+          },
+          "text": "Reply with exactly: Привет, Neovim!",
+          "type": "user"
+        }
+      ],
+      "cursor": {
+        "previous": "eyJpZCI6Im1zZ19udmltX3YyX2ZpeHR1cmUiLCJvcmRlciI6ImRlc2MiLCJkaXJlY3Rpb24iOiJwcmV2aW91cyJ9",
+        "next": "eyJpZCI6Im1zZ19udmltX3YyX2ZpeHR1cmUiLCJvcmRlciI6ImRlc2MiLCJkaXJlY3Rpb24iOiJuZXh0In0"
+      }
+    }
+  },
+  {
+    "method": "GET",
+    "path": "/api/session/ses_f396c7935ffe4YuZOq5Ve3XutS/message",
+    "request": null,
+    "status": 200,
+    "response": {
+      "data": [
+        {
+          "id": "msg_nvim_v2_fixture",
+          "time": {
+            "created": 1790037952243
+          },
+          "text": "Reply with exactly: Привет, Neovim!",
+          "type": "user"
+        }
+      ],
+      "cursor": {
+        "previous": "eyJpZCI6Im1zZ19udmltX3YyX2ZpeHR1cmUiLCJvcmRlciI6ImRlc2MiLCJkaXJlY3Rpb24iOiJwcmV2aW91cyJ9",
+        "next": "eyJpZCI6Im1zZ19udmltX3YyX2ZpeHR1cmUiLCJvcmRlciI6ImRlc2MiLCJkaXJlY3Rpb24iOiJuZXh0In0"
+      }
+    }
+  },
+  {
+    "method": "GET",
+    "path": "/api/session/ses_f396c7935ffe4YuZOq5Ve3XutS/message",
+    "request": null,
+    "status": 200,
+    "response": {
+      "data": [
+        {
+          "id": "msg_nvim_v2_fixture",
+          "time": {
+            "created": 1790037952243
+          },
+          "text": "Reply with exactly: Привет, Neovim!",
+          "type": "user"
+        }
+      ],
+      "cursor": {
+        "previous": "eyJpZCI6Im1zZ19udmltX3YyX2ZpeHR1cmUiLCJvcmRlciI6ImRlc2MiLCJkaXJlY3Rpb24iOiJwcmV2aW91cyJ9",
+        "next": "eyJpZCI6Im1zZ19udmltX3YyX2ZpeHR1cmUiLCJvcmRlciI6ImRlc2MiLCJkaXJlY3Rpb24iOiJuZXh0In0"
+      }
+    }
+  },
+  {
+    "method": "GET",
+    "path": "/api/session/ses_f396c7935ffe4YuZOq5Ve3XutS/message",
+    "request": null,
+    "status": 200,
+    "response": {
+      "data": [
+        {
+          "id": "msg_0c69386f6001EW9k6L1G4xALCz",
+          "time": {
+            "created": 1790037952303
+          },
+          "type": "assistant",
+          "agent": "build",
+          "model": {
+            "id": "mimo-v2.5-free",
+            "providerID": "opencode",
+            "variant": "default"
+          },
+          "content": [
+            {
+              "type": "reasoning",
+              "text": "",
+              "state": {
+                "reasoningField": "reasoning_content"
+              },
+              "time": {
+                "created": 1790037955746
+              }
+            }
+          ]
+        },
+        {
+          "id": "msg_nvim_v2_fixture",
+          "time": {
+            "created": 1790037952243
+          },
+          "text": "Reply with exactly: Привет, Neovim!",
+          "type": "user"
+        }
+      ],
+      "cursor": {
+        "previous": "eyJpZCI6Im1zZ18wYzY5Mzg2ZjYwMDFFVzlrNkwxRzR4QUxDeiIsIm9yZGVyIjoiZGVzYyIsImRpcmVjdGlvbiI6InByZXZpb3VzIn0",
+        "next": "eyJpZCI6Im1zZ19udmltX3YyX2ZpeHR1cmUiLCJvcmRlciI6ImRlc2MiLCJkaXJlY3Rpb24iOiJuZXh0In0"
+      }
+    }
+  },
+  {
+    "method": "GET",
+    "path": "/api/session/ses_f396c7935ffe4YuZOq5Ve3XutS/message",
+    "request": null,
+    "status": 200,
+    "response": {
+      "data": [
+        {
+          "id": "msg_0c69386f6001EW9k6L1G4xALCz",
+          "time": {
+            "created": 1790037952303
+          },
+          "type": "assistant",
+          "agent": "build",
+          "model": {
+            "id": "mimo-v2.5-free",
+            "providerID": "opencode",
+            "variant": "default"
+          },
+          "content": [
+            {
+              "type": "reasoning",
+              "text": "",
+              "state": {
+                "reasoningField": "reasoning_content"
+              },
+              "time": {
+                "created": 1790037955746
+              }
+            },
+            {
+              "type": "text",
+              "text": ""
+            }
+          ]
+        },
+        {
+          "id": "msg_nvim_v2_fixture",
+          "time": {
+            "created": 1790037952243
+          },
+          "text": "Reply with exactly: Привет, Neovim!",
+          "type": "user"
+        }
+      ],
+      "cursor": {
+        "previous": "eyJpZCI6Im1zZ18wYzY5Mzg2ZjYwMDFFVzlrNkwxRzR4QUxDeiIsIm9yZGVyIjoiZGVzYyIsImRpcmVjdGlvbiI6InByZXZpb3VzIn0",
+        "next": "eyJpZCI6Im1zZ19udmltX3YyX2ZpeHR1cmUiLCJvcmRlciI6ImRlc2MiLCJkaXJlY3Rpb24iOiJuZXh0In0"
+      }
+    }
+  },
+  {
+    "method": "GET",
+    "path": "/api/session/ses_f396c7935ffe4YuZOq5Ve3XutS/message",
+    "request": null,
+    "status": 200,
+    "response": {
+      "data": [
+        {
+          "id": "msg_0c693971e001OfsKmokYi7g6Iv",
+          "time": {
+            "created": 1790037956382
+          },
+          "type": "idle",
+          "outcome": "succeeded"
+        },
+        {
+          "id": "msg_0c69386f6001EW9k6L1G4xALCz",
+          "time": {
+            "created": 1790037952303,
+            "streamed": 1790037956351,
+            "completed": 1790037956380
+          },
+          "type": "assistant",
+          "agent": "build",
+          "model": {
+            "id": "mimo-v2.5-free",
+            "providerID": "opencode",
+            "variant": "default"
+          },
+          "content": [
+            {
+              "type": "reasoning",
+              "text": "The user wants me to reply with exactly \"Привет, Neovim!\".",
+              "state": {
+                "reasoningField": "reasoning_content",
+                "reasoningDetails": [
+                  {
+                    "type": "reasoning.text",
+                    "text": "The user wants me to reply with exactly \"Привет, Neovim!\".",
+                    "format": "unknown",
+                    "index": 0
+                  }
+                ]
+              },
+              "time": {
+                "created": 1790037955746,
+                "completed": 1790037956346
+              }
+            },
+            {
+              "type": "text",
+              "text": "Привет, Neovim!"
+            }
+          ],
+          "finish": "stop",
+          "rawFinish": "stop",
+          "cost": 0,
+          "tokens": {
+            "input": 9088,
+            "output": 10,
+            "reasoning": 18,
+            "cache": {
+              "read": 0,
+              "write": 0
+            }
+          }
+        },
+        {
+          "id": "msg_nvim_v2_fixture",
+          "time": {
+            "created": 1790037952243
+          },
+          "text": "Reply with exactly: Привет, Neovim!",
+          "type": "user"
+        }
+      ],
+      "cursor": {
+        "previous": "eyJpZCI6Im1zZ18wYzY5Mzk3MWUwMDFPZnNLbW9rWWk3ZzZJdiIsIm9yZGVyIjoiZGVzYyIsImRpcmVjdGlvbiI6InByZXZpb3VzIn0",
+        "next": "eyJpZCI6Im1zZ19udmltX3YyX2ZpeHR1cmUiLCJvcmRlciI6ImRlc2MiLCJkaXJlY3Rpb24iOiJuZXh0In0"
+      }
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/api/session/ses_f396c7935ffe4YuZOq5Ve3XutS/prompt",
+    "request": {
+      "id": "msg_nvim_v2_fixture",
+      "text": "Reply with exactly: Привет, Neovim!",
+      "delivery": "queue"
+    },
+    "status": 200,
+    "response": {
+      "data": {
+        "id": "msg_nvim_v2_fixture",
+        "sessionID": "ses_f396c7935ffe4YuZOq5Ve3XutS",
+        "time": {
+          "created": 1790037952243
+        },
+        "type": "user",
+        "payload": {
+          "text": "Reply with exactly: Привет, Neovim!"
+        },
+        "delivery": "queue"
+      }
+    }
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/session/ses_f396c7935ffe4YuZOq5Ve3XutS",
+    "request": null,
+    "status": 204,
+    "response": null
+  },
+  {
+    "method": "GET",
+    "path": "/api/session/ses_f396c7935ffe4YuZOq5Ve3XutS",
+    "request": null,
+    "status": 404,
+    "response": {
+      "_tag": "SessionNotFoundError",
+      "sessionID": "ses_f396c7935ffe4YuZOq5Ve3XutS",
+      "message": "Session not found: ses_f396c7935ffe4YuZOq5Ve3XutS"
+    }
+  }
+]

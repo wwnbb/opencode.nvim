@@ -263,60 +263,7 @@ function M.register_defaults()
 				return
 			end
 
-			local function resolve_load_skills_command()
-				local ok, sync = pcall(require, "opencode.sync")
-				if not ok or type(sync.get_commands) ~= "function" then
-					return nil
-				end
-
-				local candidates = {
-					load_skills = true,
-					loadskills = true,
-				}
-				local commands = sync.get_commands() or {}
-				for key, cmd in pairs(commands) do
-					if candidates[key] then
-						return key
-					end
-					if type(cmd) == "table" and candidates[cmd.name] then
-						return cmd.name
-					end
-				end
-
-				return nil
-			end
-
-	local function run_skills_via_tool()
-		local joined = table.concat(names, ", ")
-		actions.send("load_skill [" .. joined .. "]")
-		vim.notify("Requested skills via tool: " .. joined, vim.log.levels.INFO)
-	end
-
-			lifecycle.ensure_connected(function()
-				local client = require("opencode.client")
-				local command_name = resolve_load_skills_command()
-				if not command_name then
-					run_skills_via_tool()
-					return
-				end
-
-				local joined = table.concat(names, ", ")
-				client.execute_command(session.id, command_name, joined, {}, function(err)
-					vim.schedule(function()
-						if err then
-							local err_text = tostring(err.message or err.error or err)
-							local lower = err_text:lower()
-							if lower:find("command") and (lower:find("not found") or lower:find("unknown")) then
-								run_skills_via_tool()
-								return
-							end
-							vim.notify("Failed to run skills: " .. err_text, vim.log.levels.ERROR)
-							return
-						end
-						vim.notify("Running skills: " .. joined, vim.log.levels.INFO)
-					end)
-				end)
-			end)
+			actions.run_skills(names, { session_id = session.id })
 		end,
 		enabled = function()
 			return state.get_session().id ~= nil and state.is_connected()
@@ -479,13 +426,13 @@ function M.register_defaults()
 				return
 			end
 			
-			client.revert_message(session_id, last_user_msg.id, {}, function(err)
+			actions.revert_message(session_id, last_user_msg.id, {}, function(err)
 				vim.schedule(function()
 					if err then
 						vim.notify("Failed to undo: " .. tostring(err.message or err), vim.log.levels.ERROR)
 						return
 					end
-					vim.notify("Undone last message", vim.log.levels.INFO)
+					vim.notify("Undo staged. Use /redo to restore the turn.", vim.log.levels.INFO)
 				end)
 			end)
 		end,
@@ -497,6 +444,15 @@ function M.register_defaults()
 		end,
 	})
 	
+	M.register({ name = "redo", description = "Clear staged undo and restore the turn", category = "session",
+		handler = function()
+			local sid = state.get_session().id
+			if not sid then return end
+			actions.clear_revert(sid, function(err)
+				vim.notify(err and ("Could not restore turn: " .. err.message) or "Staged undo cleared", err and vim.log.levels.ERROR or vim.log.levels.INFO)
+			end)
+		end })
+
 	-- /share - Share current session
 	M.register({
 		name = "share",
@@ -510,7 +466,7 @@ function M.register_defaults()
 			end
 			
 			local client = require("opencode.client")
-			client.execute_command(session_id, "share", {}, {}, function(err, result)
+			actions.execute_command(session_id, "share", {}, {}, function(err, result)
 				vim.schedule(function()
 					if err then
 						vim.notify("Failed to share: " .. tostring(err.message or err), vim.log.levels.ERROR)

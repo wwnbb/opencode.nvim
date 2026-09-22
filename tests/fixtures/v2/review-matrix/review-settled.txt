@@ -1,0 +1,40 @@
+manual result                          │ ○ Mixed patch review                                                           
+~                                      │┃  *** Update File: accepted.txt                                                
+~                                      │┃  @@                                                                           
+~                                      │┃  -before                                                                      
+~                                      │┃  +after                                                                       
+~                                      │┃  *** Update File: rejected.txt                                                
+~                                      │┃  @@                                                                           
+~                                      │┃  -before                                                                      
+~                                      │┃  +after                                                                       
+~                                      │┃  *** Update File: manual.txt                                                  
+~                                      │┃  @@                                                                           
+~                                      │┃  -before                                                                      
+~                                      │┃  +after                                                                       
+~                                      │┃  *** Add File: added.txt                                                      
+~                                      │┃  +new file                                                                    
+~                                      │┃  *** Delete File: deleted.txt                                                 
+~                                      │┃  *** Update File: moved.txt                                                   
+~                                      │┃  *** Move to: renamed.txt                                                     
+~                                      │┃  @@                                                                           
+~                                      │┃  -move me                                                                     
+~                                      │┃  +moved                                                                       
+~                                      │┃  *** Update File: bom.txt                                                     
+~                                      │┃  @@                                                                           
+~                                      │┃  -before                                                                      
+~                                      │┃  +after                                                                       
+~                                      │┃  *** End Patch                                                                
+~                                      │┃                                                                               
+~                                      │                                                                                
+~                                      │Thinking: The user wants me to call the top-level `neovim_apply_patch` tool     
+~                                      │directly with the given patch text. I should not call any other tool. Let me do 
+~                                      │that.                                                                           
+~                                      │                                                                                
+~                                      │▏                                                                               
+~                                      │▏  # Edit 8 files +6 -6 (partial)                                               
+~                                      │▏                                                                               
+~                                      │▏  ✓ M accepted.txt  +1 -1                                                      
+~                                      │▏  ✗ M rejected.txt  +1 -1                                                      
+~                                      │▏  ◆ M manual.txt  +1 -1                                                        
+<обел %#/manual.txt  1,1            All opencode [-]                                                  40,1           15%
+Mixed patch review: Session done                                                                                        

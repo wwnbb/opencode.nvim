@@ -1,0 +1,8 @@
+{
+  "version": "2.0.11",
+  "owned_stop": true,
+  "external_reconnect": true,
+  "external_disconnect_preserved_process": true,
+  "owned_restart": true,
+  "owned_start": true
+}

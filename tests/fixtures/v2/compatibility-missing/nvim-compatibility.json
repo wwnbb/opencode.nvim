@@ -1,0 +1,28 @@
+{
+  "mode": "missing",
+  "native_history_readable": true,
+  "version_probe": {
+    "no_spawn_no_sse": true,
+    "requests": [
+      "GET /api/info HTTP/1.1"
+    ],
+    "fixture_version": "1.9.0",
+    "simulated_info_only": true,
+    "notices": [
+      "OpenCode.nvim v0.1.0 loaded",
+      "OpenCode server health check failed: OpenCode 2.0.11 or newer 2.x is required (server: 1.9.0)"
+    ]
+  },
+  "notices": [
+    "OpenCode: bundled server plugin unavailable or outdated. Run scripts/install-tools.sh for this server's config, then reconnect. File review and persistent todos require plugin 2.0.11-2; history remains readable."
+  ],
+  "capability_error": {
+    "error": "RPC is unavailable: opencode_nvim",
+    "message": "RPC is unavailable: opencode_nvim",
+    "retryable": false,
+    "status": 400,
+    "rpc_type": "rpc.unavailable",
+    "code": "RpcError"
+  },
+  "version": "2.0.11"
+}

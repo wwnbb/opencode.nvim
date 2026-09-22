@@ -84,6 +84,23 @@ local function is_animated_regular_tool(tool_name)
 		or tool_name == "grep"
 end
 
+-- A completed delegation call may have left a child running in the background.
+function M.task_status(tool_part)
+	local tool_state = tool_part.state or {}
+	local status = tool_state.status or "pending"
+	if status == "error" or status == "cancelled" then return status end
+	local child = require("opencode.events.util").resolve_task_child_session_id(tool_part)
+	if child then
+		local child_status = require("opencode.sync").get_session_status(child)
+		if child_status then
+			if child_status.type == "busy" or child_status.type == "retry" then return "running" end
+			if child_status.outcome == "failed" then return "error" end
+			if child_status.type == "idle" then return status == "completed" and "completed" or status end
+		elseif status == "completed" and (tool_state.metadata or {}).status == "running" then return "running" end
+	end
+	return status
+end
+
 ---@param tool_part table|nil
 ---@return boolean
 function M.is_animating_tool_part(tool_part)
@@ -93,7 +110,7 @@ function M.is_animating_tool_part(tool_part)
 	end
 	local status = tool_part.state and tool_part.state.status or "pending"
 	if tool_part.tool == "task" then
-		return M.is_task_working(status)
+		return M.is_task_working(M.task_status(tool_part))
 	end
 	return is_animated_regular_tool(tool_part.tool) and M.is_task_working(status)
 end
