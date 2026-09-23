@@ -23,6 +23,7 @@ local state = {
 	favorite = {},
 	-- Per-model variant selection: { ["providerID/modelID"] = variantName }
 	variant = {},
+	message_agents = {}, -- { [sessionID] = { [messageID] = agentID } }
 }
 
 -- State change listeners
@@ -95,6 +96,7 @@ local function load_state()
 		end
 	end
 	if type(data.agent) == "string" then state.agent = data.agent end
+	state.message_agents = type(data.message_agents) == "table" and data.message_agents or {}
 	state.ready = true
 end
 
@@ -104,7 +106,7 @@ local function save_state()
 		return
 	end
 	if not persistence.save({ recent = state.recent, favorite = state.favorite, variant = state.variant,
-		model = state.model, agent = state.agent }) then
+		model = state.model, agent = state.agent, message_agents = state.message_agents }) then
 		logger.warn("Could not save model preferences; original file preserved")
 	end
 end
@@ -128,6 +130,40 @@ end
 
 -- Agent module (like TUI's agent in local.tsx)
 M.agent = {}
+
+-- Native user messages do not include the agent used when they were sent.
+-- Keep the resolved send selection separately from replaceable server DTOs.
+M.message_agent = {}
+
+function M.message_agent.get(session_id, message_id)
+	local by_session = state.message_agents[session_id]
+	local agent = type(by_session) == "table" and by_session[message_id] or nil
+	return type(agent) == "string" and agent ~= "" and agent or nil
+end
+
+function M.message_agent.set(session_id, message_id, agent)
+	if type(session_id) ~= "string" or session_id == ""
+		or type(message_id) ~= "string" or message_id == ""
+		or type(agent) ~= "string" or agent == "" then return end
+	state.message_agents[session_id] = state.message_agents[session_id] or {}
+	if state.message_agents[session_id][message_id] == agent then return end
+	state.message_agents[session_id][message_id] = agent
+	save_state()
+end
+
+function M.message_agent.remove(session_id, message_id)
+	local by_session = state.message_agents[session_id]
+	if type(by_session) ~= "table" or by_session[message_id] == nil then return end
+	by_session[message_id] = nil
+	if next(by_session) == nil then state.message_agents[session_id] = nil end
+	save_state()
+end
+
+function M.message_agent.clear_session(session_id)
+	if state.message_agents[session_id] == nil then return end
+	state.message_agents[session_id] = nil
+	save_state()
+end
 
 ---Get list of available agents (excluding subagents and hidden)
 ---@return table[]

@@ -4,10 +4,14 @@ local chat = require("opencode.ui.chat")
 local state = require("opencode.ui.chat.state").state
 local projection = require("opencode.protocol.v2.messages")
 local render_state = require("opencode.ui.chat.render_state")
+local local_state = require("opencode.local")
+local chat_hl_ns = require("opencode.ui.chat.state").chat_hl_ns
 
 describe("chat message boundaries", function()
 	local session = "message-spacing"
 	local original_buffer
+	local preferences = require("opencode.preferences")
+	local original_open, temporary_preferences
 
 	local function update(messages)
 		sync.handle_session_messages(session, projection.page(session, messages))
@@ -59,7 +63,55 @@ describe("chat message boundaries", function()
 		state.local_notices = {}
 		render_state.reset_chat_surface({ reset_expansions = true })
 		sync.clear_all()
+		if original_open then
+			local_state.message_agent.clear_session(session)
+			preferences.open = original_open
+			local_state.setup()
+			vim.fn.delete(temporary_preferences)
+			original_open, temporary_preferences = nil, nil
+		end
 		app.reset()
+	end)
+
+	it("keeps each user message's sent agent color after selection and history changes", function()
+		original_open, temporary_preferences = preferences.open, vim.fn.tempname()
+		preferences.open = function() return original_open(temporary_preferences) end
+		local_state.setup()
+		sync.handle_agents({
+			{ id = "coder", name = "Coder", color = "#0098dd" },
+			{ id = "planner", name = "Planner", color = "#cc8800" },
+		})
+		local function border_color(id)
+			local row = position(id).start_line
+			for _, mark in ipairs(vim.api.nvim_buf_get_extmarks(state.bufnr, chat_hl_ns,
+				{ row, 0 }, { row, -1 }, { details = true })) do
+				local details = mark[4]
+				if mark[3] == 0 and details.end_col == #"┃" then
+					return vim.api.nvim_get_hl(0, { name = details.hl_group, link = false }).fg
+				end
+			end
+		end
+		local first = { id = "u1", type = "user", text = "First", time = { created = 1 } }
+		local second = { id = "u2", type = "user", text = "Second", time = { created = 3 } }
+		local older = { id = "u0", type = "user", text = "Older", time = { created = -1 } }
+		local older_reply = { id = "a0", type = "assistant", parentID = "u0", agent = "coder",
+			time = { created = 0, completed = 0 }, content = { { type = "text", text = "Reply" } } }
+		local_state.message_agent.set(session, "u1", "coder")
+		update({ older, older_reply, first })
+		render()
+		assert.equals(0x0098dd, border_color("u0"))
+		assert.equals(0x0098dd, border_color("u1"))
+		app.upsert_session({ id = session, agent = "planner" })
+		local_state.message_agent.set(session, "u2", "planner")
+		update({ older, older_reply, first, second }) -- server history contains no user agent
+		render()
+		assert.equals(0x0098dd, border_color("u0"))
+		assert.equals(0x0098dd, border_color("u1"))
+		assert.equals(0xcc8800, border_color("u2"))
+		local_state.setup() -- persisted bindings survive a reload
+		render()
+		assert.equals(0x0098dd, border_color("u1"))
+		assert.equals(0xcc8800, border_color("u2"))
 	end)
 
 	it("keeps the completed footer in place throughout the next response gap", function()

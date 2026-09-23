@@ -174,7 +174,10 @@ function M.setup(events)
 		end
 		if effect.delivered then pending.update(sid, effect.delivered, { status = "delivered" }) end
 		if effect.delivered or effect.inbox then changed(sid, "inbox") end
-		if effect.cancelled then pending.update(sid, effect.cancelled, { status = "cancelled" }) end
+		if effect.cancelled then
+			pending.update(sid, effect.cancelled, { status = "cancelled" })
+			require("opencode.local").message_agent.remove(sid, effect.cancelled)
+		end
 		if effect.status then sessions.set_session_status(sid, effect.status, { reason = kind }) end
 		if effect.changed then
 			local content_kind = kind:match("^session%.(text)%.delta$") or kind:match("^session%.(reasoning)%.delta$")

@@ -7,6 +7,7 @@ local state = require("opencode.ui.chat.state").state
 local render = require("opencode.ui.chat.render")
 local sync = require("opencode.sync")
 local app_state = require("opencode.state")
+local local_state = require("opencode.local")
 local activity = require("opencode.ui.chat.activity")
 local spinner = require("opencode.ui.spinner")
 local processing_footer = require("opencode.ui.chat.processing_footer")
@@ -134,6 +135,30 @@ local function build_user_created_by_id(all_messages)
 		end
 	end
 	return user_created_by_id
+end
+
+-- Native v2 user messages have no agent. For history that predates our local
+-- binding, the following assistant (or an explicit switch) is the best hint.
+local function infer_user_agents(all_messages)
+	local agents = {}
+	local from_response = {}
+	local active_agent, latest_user_id
+	for _, message in ipairs(all_messages) do
+		if message.type == "agent-switched" and message.agent then
+			active_agent = message.agent
+		elseif message.role == "user" then
+			latest_user_id = message.id
+			if active_agent and message.id then agents[message.id] = active_agent end
+		elseif message.role == "assistant" and message.agent then
+			local user_id = message.parentID or latest_user_id
+			if user_id and not from_response[user_id] then
+				agents[user_id] = message.agent
+				from_response[user_id] = true
+			end
+			active_agent = message.agent
+		end
+	end
+	return agents
 end
 
 local function make_metadata_footer_renderer(ctx, all_messages, user_created_by_id)
@@ -286,6 +311,11 @@ end
 
 local function render_user_message(ctx, message, render_parts, msg_idx, messages, max_user_message_lines)
 	local start_line = ctx:line_count()
+	local agent = message.agent or local_state.message_agent.get(ctx.current_session.id, message.id)
+		or ctx.inferred_user_agents[message.id] or "unknown"
+	ctx.content_highlights._opencode_signature = ctx:render_cache_key(
+		ctx.content_highlights._opencode_signature, message.id, agent
+	)
 	local file_parts = {}
 	for _, part in ipairs(render_parts.parts or {}) do
 		local native_attachment = part.protocol == "v2" and vim.tbl_contains({ "file", "skill", "agent" }, part.type)
@@ -300,11 +330,12 @@ local function render_user_message(ctx, message, render_parts, msg_idx, messages
 			message.id,
 			render_parts.message_revision,
 			ctx.chat_width,
-			message.agent or "",
+			agent or "",
+			ctx.metadata_agent_revision,
 			max_user_message_lines
 		),
 		function()
-			return render.render_user_message(render_parts.content, message.agent, file_parts, {
+			return render.render_user_message(render_parts.content, agent, file_parts, {
 				max_lines = max_user_message_lines,
 				highlight_code = ctx:code_highlighter(message.id),
 			})
@@ -546,7 +577,12 @@ local function render_local_notices(ctx, index, all_messages, max_user_message_l
 			end
 			if ctx:line_count() > 0 then ctx:ensure_single_blank_separator() end
 			message_start_line = ctx:line_count()
-			local msg_lines = render.render_user_message(message.content or "", message.agent, nil, {
+			local agent = message.agent or local_state.message_agent.get(ctx.current_session.id, message.id)
+				or "unknown"
+			ctx.content_highlights._opencode_signature = ctx:render_cache_key(
+				ctx.content_highlights._opencode_signature, message.id, agent
+			)
+			local msg_lines = render.render_user_message(message.content or "", agent, nil, {
 				max_lines = max_user_message_lines,
 				highlight_code = ctx:code_highlighter(message.id),
 			})
@@ -640,6 +676,7 @@ function M.render(ctx, index)
 	render_session_chrome(ctx)
 
 	local all_messages, messages, skipped_messages, pending_messages = select_messages(ctx, index)
+	ctx.inferred_user_agents = infer_user_agents(all_messages)
 	local user_created_by_id = build_user_created_by_id(all_messages)
 	local render_metadata_footer_line = make_metadata_footer_renderer(ctx, all_messages, user_created_by_id)
 	local processing_presentation = processing_footer.derive({
