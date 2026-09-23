@@ -2,7 +2,6 @@ local M = {}
 
 local actions = require("opencode.actions")
 local chat_tasks = require("opencode.ui.chat.tasks")
-local chat_todos = require("opencode.ui.chat.todos")
 local chat_edits = require("opencode.ui.chat.edits")
 local chat_interactions = require("opencode.ui.chat.interactions")
 local chat_nav = require("opencode.ui.chat.nav")
@@ -85,13 +84,6 @@ function M.setup_buffer(bufnr, opts)
 			opts.toggle_auto_scroll()
 		end
 	end, vim.tbl_extend("force", keymap_opts, { desc = "Toggle auto-scroll" }))
-
-	local todo_keymap = cfg.todo and cfg.todo.keymaps and cfg.todo.keymaps.toggle
-	if todo_keymap and todo_keymap ~= "" then
-		vim.keymap.set("n", todo_keymap, function()
-			chat_todos.toggle_current_dock()
-		end, vim.tbl_extend("force", keymap_opts, { desc = "Cycle todo window" }))
-	end
 
 	vim.keymap.set("n", "?", function()
 		if type(opts.show_help) == "function" then

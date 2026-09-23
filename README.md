@@ -112,8 +112,8 @@ You can also run a single spec file:
 # Installation
 
 The backend targets **OpenCode 2.0.11**; this checkout does not provide a v1
-backend. See [migration progress](plans/opencode-v2/PROGRESS.md) for the remaining
-validation work. Keep your previous plugin checkout and configuration when
+backend. See [migration notes](plans/opencode-v2/PROGRESS.md) for the validation
+record. Keep your previous plugin checkout and configuration when
 upgrading; reverting the Neovim plugin does not reverse server database migration.
 
 Run `./scripts/install-tools.sh` to install the bundled v2 server plugin into
@@ -136,8 +136,8 @@ at the server's paths. A server started by this plugin shares the local filesyst
 automatically. Inline proposals (`=`), acceptance and rejection also work without
 shared files. Disconnected or cancelled reviews cannot apply or flush files.
 
-Bundled plugin **2.0.11-3** provides file review protocol 2 and persistent
-`todoread`/`todowrite` tools. Update it together with the Lua plugin. `/skill`
+Bundled plugin **2.0.11-4** provides file review protocol 2. Update it
+together with the Lua plugin. `/skill`
 and the skill palette send native attachments; the unchanged legacy
 `load_skills` command is backed up and retired by the installer.
 

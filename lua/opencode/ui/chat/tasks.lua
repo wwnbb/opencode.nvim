@@ -9,7 +9,6 @@ local cs = require("opencode.ui.chat.state")
 local state = cs.state
 local render = require("opencode.ui.chat.render")
 local render_state = require("opencode.ui.chat.render_state")
-local chat_todos = require("opencode.ui.chat.todos")
 local chat_bash = require("opencode.ui.chat.bash")
 local chat_read = require("opencode.ui.chat.read")
 local chat_skill = require("opencode.ui.chat.skill")
@@ -25,7 +24,6 @@ local tool_part = require("opencode.ui.chat.tool_part")
 
 local REGULAR_TOOL_RENDERERS = {
 	require("opencode.ui.chat.question_result").render_tool,
-	chat_todos.render_tool,
 	chat_bash.render_tool,
 	chat_read.render_tool,
 	chat_skill.render_tool,

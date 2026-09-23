@@ -20,10 +20,10 @@ Replace the deprecated `finished` flag with a new `archived: bool` field everywh
 
 ## S3 — Implement FileStore
 
-- Surfaces: edit widget, todo dock.
+- Surfaces: edit widget.
 
 ```
-Unskip the three tests in tests/test_file_store.py, then implement FileStore in store.py so those tests pass. Keep the method signatures identical to MemoryStore, persist todos as JSON at the given path, and plan the work as todos before executing.
+Unskip the three tests in tests/test_file_store.py, then implement FileStore in store.py so those tests pass. Keep the method signatures identical to MemoryStore, persist todos as JSON at the given path, and outline the steps before executing.
 ```
 
 ## S4 — Ambiguous feature
@@ -56,7 +56,7 @@ Remove all cached artifacts (__pycache__ and .pytest_cache) in this project, the
 
 ## S7 — Planned migration
 
-- Surfaces: todo dock.
+- Surfaces: edit widget.
 
 ```
 Plan first, then execute: add a use_file_store: bool = False keyword argument to create_app() in main.py. When True, wire FileStore("todos.json") into both routers instead of MemoryStore. Default behavior must stay identical; add a test covering both modes.

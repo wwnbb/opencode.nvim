@@ -13,7 +13,7 @@ function M.kind(part)
 	if part.type == "reasoning" and reasoning_text(part) ~= "" and thinking.is_enabled() then
 		return "thought"
 	end
-	if part.type == "tool" and vim.tbl_contains({ "read", "glob", "grep", "rg" }, part.tool) then
+	if part.type == "tool" and vim.tbl_contains({ "read", "glob", "grep" }, part.tool) then
 		return "explore"
 	end
 end

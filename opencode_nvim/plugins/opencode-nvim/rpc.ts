@@ -1,9 +1,8 @@
 import { z } from "zod"
 import { Rpc } from "@opencode/plugin/effect"
-import { todo, todoRecord } from "./todos"
 
 export const protocolVersion = 2 as const
-export const pluginVersion = "2.0.11-3"
+export const pluginVersion = "2.0.11-4"
 export const location = z.object({ directory: z.string() }).passthrough()
 export const observed = z.object({ exists: z.boolean(), sha256: z.string().optional() })
 export const file = z.object({
@@ -40,19 +39,15 @@ export type Policy = z.infer<typeof policy>
 export const definition = Rpc.define({
   id: "opencode_nvim",
   methods: {
-    todoGet: { input: z.object({ sessionID: z.string() }), output: todoRecord, errors: { unavailable: z.object({ message: z.string() }) } },
-    todoSet: { input: z.object({ protocolVersion: z.literal(1), sessionID: z.string(), revision: z.number().int().nonnegative(), todos: z.array(todo) }), output: todoRecord,
-      errors: { conflict: z.object({ current: todoRecord }), unavailable: z.object({ message: z.string() }) } },
     policyList: { input: z.object({ sessionID: z.string() }), output: z.array(policy) },
     policyConfirm: { input: z.object({ sessionID: z.string(), gateID: z.string(), denied: z.boolean().optional() }), output: policy,
       errors: { conflict: z.object({ message: z.string() }) } },
-    capabilities: { input: z.object({}), output: z.object({ protocolVersion: z.literal(protocolVersion), pluginVersion: z.string(), tools: z.array(z.string()), review: z.literal(true), todo: z.literal(true) }) },
+    capabilities: { input: z.object({}), output: z.object({ protocolVersion: z.literal(protocolVersion), pluginVersion: z.string(), tools: z.array(z.string()), review: z.literal(true) }) },
     reviewList: { input: z.object({ sessionID: z.string().optional() }), output: z.object({ protocolVersion: z.literal(protocolVersion), reviews: z.array(review) }) },
     reviewGet: { input: identity, output: review, errors: { not_found: z.object({ reviewID: z.string() }) } },
     reviewReply: { input: replyInput, output: review, errors: { conflict: z.object({ review: review.optional() }), not_found: z.object({ reviewID: z.string() }) } },
   },
   events: {
-    todoUpdated: { schema: z.object({ todo: todoRecord }) },
     policyRequested: { schema: z.object({ policy }) },
     policySettled: { schema: z.object({ policy }) },
     reviewCreated: { schema: z.object({ review }) },

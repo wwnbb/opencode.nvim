@@ -261,7 +261,6 @@ function M.register(palette)
 				end
 			end
 			local session_status = vim.deepcopy(store.session_status[session_id])
-			local todos = vim.deepcopy(store.todo[session_id] or {})
 
 			local snapshot = {
 				session = record,
@@ -269,7 +268,6 @@ function M.register(palette)
 				parts = parts,
 				part_delta_buffer = part_delta_buffer,
 				session_status = session_status,
-				todos = todos,
 			}
 
 			local json = vim.fn.json_encode(snapshot)

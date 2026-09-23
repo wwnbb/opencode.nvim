@@ -75,10 +75,10 @@ function M.setup(events)
 		local token = pending.token(sid)
 		client.review_rpc("capabilities", vim.empty_dict(), directory, function(err, capability)
 			if not pending.is_current(token) then return end
-			if err or type(capability) ~= "table" or capability.protocolVersion ~= 2 or capability.review ~= true or capability.todo ~= true then
+			if err or type(capability) ~= "table" or capability.protocolVersion ~= 2 or capability.review ~= true then
 				if not capability_notices[directory] then
 					capability_notices[directory] = true
-					vim.notify("OpenCode: bundled server plugin unavailable or outdated. Run scripts/install-tools.sh for this server's config, then reconnect. File review and persistent todos require plugin 2.0.11-3; history remains readable.", vim.log.levels.WARN)
+					vim.notify("OpenCode: bundled server plugin unavailable or outdated. Run scripts/install-tools.sh for this server's config, then reconnect. File review requires the bundled plugin; history remains readable.", vim.log.levels.WARN)
 				end
 				return
 			end

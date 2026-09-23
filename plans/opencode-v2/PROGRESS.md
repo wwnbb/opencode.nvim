@@ -1,6 +1,9 @@
 # Ход миграции на OpenCode 2.0.11
 
-Состояние на 21 сентября 2026 (локальное время). Исходный HEAD — `58fcf3c`;
+Ниже сохранён отчёт о миграции на 21 сентября 2026 (локальное время).
+Функциональность todo tools, persistent store и dock удалена 23 сентября 2026;
+упоминания в исходных планах и сохранённых снимках относятся к прежнему состоянию.
+Исходный HEAD — `58fcf3c`;
 исходные незакоммиченные исправления сохранены. **Согласованный объём миграции выполнен.**
 Итоговая сверка семи планов и границы доказательств — [FINAL-VALIDATION.md](FINAL-VALIDATION.md).
 Перенос старой server history исключён пользователем; текущая v2 history проверена.
@@ -23,8 +26,7 @@
   `allow` инструмента не принимает diff. Проверены ask/apply, deny, interruption,
   pending recovery и mixed multi-file review с настоящим native diff.
 - E: integrations/key/OAuth/command и отдельные credentials, MCP status/mutations,
-  команды, native skill attachments, fork/diff/revert/compact. TODO хранится в
-  persistent server storage с CAS revision, Lua использует native RPC/events.
+  команды, native skill attachments, fork/diff/revert/compact.
   Preferences format 2 сохраняет `.v1.bak`, недоступные favorites и неизвестные
   настройки; legacy aliases преобразуются только однозначно.
 - F: установщик сохраняет пользовательский JSONC/commands, убирает только
@@ -63,8 +65,7 @@
 | first-toggle | Первый toggle запускает сервер, i фокусирует input; restart/stop/external ownership |
 | reopened-navigation | Новый Neovim: gd/BS для двух native children, delete tree при поздних HTTP callbacks |
 | reopened-review | Новый Neovim/сервер: final mixed review, readonly inline diff, disk bytes не изменены |
-| todos | Native tools, stale revision, location reload и reopen recovery |
-| ui | N keymap, /skill, real Nui chat и TODO dock |
+| ui | N keymap, /skill и real Nui chat |
 | text-reconnect | Разрыв ответа из 40 строк: live == HTTP == cold render |
 | ui-baseline | Общая fixture before/after и renderer timings |
 | subagent | Исходная отрицательная проверка ограничения Zen |
@@ -157,7 +158,7 @@ python3 tests/runtime/capture_v2.py \
 
 Для attached UI нужны Python msgpack/Pillow и macOS Menlo. Без флага — headless.
 Другие флаги: `--nvim-smoke`, `--nvim-interactions`, `--nvim-form-ui`, `--nvim-input-attachments`, `--auth`, `--nvim-review`,
-`--nvim-server-review`, `--nvim-ui`, `--nvim-todos`, `--nvim-reconnect`,
+`--nvim-server-review`, `--nvim-ui`, `--nvim-reconnect`,
 `--nvim-lifecycle`, `--nvim-rg`, `--nvim-queue`, `--nvim-selection`, `--nvim-auth-ui`, `--nvim-session-scope`, `--attachments`, `--commands`, `--session-ops`, `--mcp`.
 `--install-tools` устанавливает plugin в чистый профиль. В sandbox транспортным
 тестам нужен loopback TCP; EPERM без этого доступа не считается полным прогоном.
@@ -175,7 +176,7 @@ python3 tests/runtime/capture_v2.py \
 | E09–E10 | Edit/mixed patch/manual/BOM/EOL проверены; server-apply и idempotent повтор проверены |
 | E11 | Реальный rg success/empty/error, running subprocess cancel и UI проверены |
 | E12 | Go/DeepSeek: два background children с одинаковым названием, одновременное исполнение, shell success, spinner, gd/BS, reconnect и обе parent notifications; cold reopen также прошёл |
-| E13 | TODO create/update/reload/reopen и dock проверены |
+| E13 | Удалено 23 сентября 2026 вместе с todo tools и dock |
 | E14 | Text/review/manual diff/running rg reconnect; 160-line resize/theme/layout run сохранил cursor, focus, draft и auto-scroll; live == cold |
 | E15 | Три directories одновременно: send, selection, catalog, history, permission и смена вкладок прошли runtime |
 | E16 | Fork/diff/revert/compact проверены |
@@ -200,7 +201,6 @@ Background tasks, narrow/resize/theme/focus во время streaming и фин�
 - Plugin.Context 2.0.11 не предоставляет permission.create. Lua вызывает native
   HTTP endpoint для exact policy RPC request; plugin ждёт native evaluate hook
   или asked/replied. RPC boolean allow не обходит policy.
-- Native TODO API/store отсутствует; используется persistent server plugin CAS.
 - MCP catalog и public ctx.tool.list после reload не раскрывают MCP tool definitions.
   Палитра сообщает это явно; status/auth доступны. Runtime LSP отсутствует.
 - File URI относится к server filesystem; clipboard image — inline data. Native

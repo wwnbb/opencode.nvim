@@ -12,7 +12,6 @@ function M.show(config)
 
 	config = config or state.config
 
-	local todo_toggle = config and config.todo and config.todo.keymaps and config.todo.keymaps.toggle or "T"
 	local close_session_key = config and config.keymaps and config.keymaps.close_session or "x"
 	local keys = config.keymaps or {}
 	local function pending_key(name)
@@ -57,9 +56,6 @@ function M.show(config)
 		"gd         Enter subagent output",
 		"<BS>       Go back to parent",
 		"gD         View diff",
-		"",
-		"Todos",
-		string.format("%-10s Cycle todo window", todo_toggle),
 		"",
 		"Question Tool",
 		"1-9        Select option by number",
@@ -124,7 +120,6 @@ function M.show(config)
 		["Chat Buffer Keymaps"] = true,
 		["Input Mode"] = true,
 		["Tool Calls"] = true,
-		["Todos"] = true,
 		["Question Tool"] = true,
 		["Permissions"] = true,
 		["Edit Review"] = true,

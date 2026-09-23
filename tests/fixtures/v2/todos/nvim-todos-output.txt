@@ -1,9 +1,0 @@
-OpenCode.nvim v0.1.0 loaded
-OpenCode connected (server v2.0.11)todo: created
-todo: remembered
-todo: active
-todo: opened
-
-Todo smoke: Session done
-OpenCode disconnected
-Persistent todo tools, conflict, plugin reload and reopened dock passed

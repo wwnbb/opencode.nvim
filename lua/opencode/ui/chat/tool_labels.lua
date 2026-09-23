@@ -5,7 +5,6 @@
 local M = {}
 
 local render = require("opencode.ui.chat.render")
-local chat_todos = require("opencode.ui.chat.todos")
 local task_animation = require("opencode.ui.chat.task_animation")
 local tool_part_resolver = require("opencode.ui.chat.tool_part")
 
@@ -24,9 +23,6 @@ local TOOL_ICONS = {
 	websearch = "◈",
 	codesearch = "◇",
 	task = "◉",
-	todolist = "⊙",
-	todowrite = "⚙",
-	todoread = "⊙",
 	question = "→",
 	apply_patch = "%",
 	skill = "→",
@@ -70,22 +66,6 @@ end
 ---@return string
 function M.format_toolcall_count(count)
 	return tostring(count) .. " " .. (count == 1 and "toolcall" or "toolcalls")
-end
-
----@param tool_part table
----@return string|nil progress
-local function format_todo_progress(tool_part)
-	local todos = chat_todos.extract_tool_todos(tool_part)
-	if #todos == 0 then
-		return nil
-	end
-	local completed = 0
-	for _, todo in ipairs(todos) do
-		if todo.status == "completed" then
-			completed = completed + 1
-		end
-	end
-	return string.format("%d/%d done", completed, #todos)
 end
 
 ---@param metadata table
@@ -234,12 +214,6 @@ function M.format_summary_item_label(item)
 		input = {}
 	end
 	local input_table = type(input) == "table" and input or {}
-	if chat_todos.is_todo_tool(tool_name) then
-		local progress = format_todo_progress(item)
-		local action = chat_todos.is_todo_read_tool(tool_name) and "Read Todos" or "Update Todos"
-		return progress and (action .. " " .. progress) or action
-	end
-
 	-- Prefer the server-supplied title while it describes visible activity.
 	local title = (item_status == "completed" or item_status == "running") and trim_string(item_state.title) or ""
 	if title and title ~= "" then
@@ -423,14 +397,6 @@ function M.format_tool_line(tool_part)
 			return string.format("# %s", desc)
 		end
 		return "~ Writing command..."
-	elseif chat_todos.is_todo_tool(tool_name) then
-		if tool_status == "completed" then
-			local progress = format_todo_progress(tool_part)
-			local action = chat_todos.is_todo_read_tool(tool_name) and "Read Todos" or "Updated Todos"
-			return progress and string.format("%s %s %s", icon, action, progress)
-				or string.format("%s %s", icon, action)
-		end
-		return chat_todos.is_todo_read_tool(tool_name) and "~ Reading todos..." or "~ Updating todos..."
 	elseif tool_name == "skill" then
 		local raw = tool_part.state and tool_part.state.raw or nil
 		local title = tool_part.state and tool_part.state.title or nil

@@ -46,7 +46,6 @@ def main():
     parser.add_argument("--nvim-compatibility", choices=["missing", "obsolete"])
     parser.add_argument("--nvim-session-scope", action="store_true")
     parser.add_argument("--nvim-ui", action="store_true")
-    parser.add_argument("--nvim-todos", action="store_true")
     parser.add_argument("--nvim-lifecycle", action="store_true")
     parser.add_argument("--nvim-reconnect", action="store_true")
     parser.add_argument("--attached-ui", action="store_true", help="Capture native Neovim line grids; requires Python msgpack and Pillow")
@@ -264,12 +263,11 @@ def main():
                                           (args.nvim_selection, "v2_selection.lua", "nvim-selection"),
                                           (args.nvim_session_scope, "v2_session_scope.lua", "nvim-session-scope"),
                                           (args.nvim_ui, "v2_ui.lua", "nvim-ui"),
-                                          (args.nvim_todos, "v2_todos.lua", "nvim-todos"),
                                           (args.nvim_lifecycle, "v2_lifecycle.lua", "nvim-lifecycle"),
                                           (args.nvim_reconnect, "v2_reconnect.lua", "nvim-reconnect")]:
                 if not enabled:
                     continue
-                if script in ["v2_smoke.lua", "v2_input_attachments.lua", "v2_review.lua", "v2_review_matrix.lua", "v2_server_review.lua", "v2_rg.lua", "v2_queue.lua", "v2_selection.lua", "v2_session_scope.lua", "v2_ui.lua", "v2_todos.lua", "v2_reconnect.lua"]:
+                if script in ["v2_smoke.lua", "v2_input_attachments.lua", "v2_review.lua", "v2_review_matrix.lua", "v2_server_review.lua", "v2_rg.lua", "v2_queue.lua", "v2_selection.lua", "v2_session_scope.lua", "v2_ui.lua", "v2_reconnect.lua"]:
                     assert args.model, "--nvim-smoke requires an explicitly selected --model"
                 repo = Path(__file__).resolve().parents[2]
                 nvim_env = dict(env, OPENCODE_V2_SERVER_URL=url, OPENCODE_V2_PROJECT=str(project), OPENCODE_V2_CLI=cli,

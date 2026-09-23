@@ -75,29 +75,6 @@ M.defaults = {
 			edit_pending = "E",
 			steer_pending = "S",
 		},
-		todo = {
-			enabled = true,
-			show_dock = true,
-			hide_when_done = true,
-			default_collapsed = false,
-			keymaps = {
-				toggle = "T",
-			},
-			icons = {
-				pending = "[ ]",
-				in_progress = "[•]",
-				completed = "[✓]",
-				cancelled = "[ ]",
-			},
-			highlights = {
-				pending = "Comment",
-				in_progress = "WarningMsg",
-				completed = "DiagnosticOk",
-				cancelled = "Comment",
-				header = "Title",
-				border = "Comment",
-			},
-		},
 	},
 
 	-- Input

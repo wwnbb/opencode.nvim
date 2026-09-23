@@ -891,7 +891,6 @@ question_state.clear_all()
 edit_state.clear_all()
 local original_respond_permission_for_close = client.respond_permission
 local original_reject_question_for_close = client.reject_question
-local original_get_session_todos_for_close = client.get_session_todos
 local rejected_permissions = {}
 local rejected_questions = {}
 client.respond_permission = function(permission_id, reply, opts, callback)
@@ -912,11 +911,6 @@ client.reject_question = function(session_id, request_id, opts, callback)
 	})
 	if callback then
 		callback(nil, true)
-	end
-end
-client.get_session_todos = function(_, callback)
-	if callback then
-		callback(nil, {})
 	end
 end
 
@@ -992,7 +986,6 @@ assert_eq(
 
 client.respond_permission = original_respond_permission_for_close
 client.reject_question = original_reject_question_for_close
-client.get_session_todos = original_get_session_todos_for_close
 
 bus.clear()
 bus.clear_history()
