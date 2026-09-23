@@ -16,6 +16,8 @@ function M.clear_session(session_id)
 	call("opencode.session.lock", "clear", session_id)
 	call("opencode.session.selection", "clear_session", session_id)
 	call("opencode.session.pending", "clear_session", session_id)
+	local ok, local_state = pcall(require, "opencode.local")
+	if ok then local_state.message_agent.clear_session(session_id) end
 end
 
 ---@param opts? { reset_state?: boolean, clear_chat?: boolean }

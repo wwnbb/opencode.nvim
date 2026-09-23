@@ -133,6 +133,7 @@ end
 local function submit(session_id, payload, selection, text, opts, known_session)
 	local token = pending.token(session_id)
 	local previous_status = state.get_session_status(session_id)
+	require("opencode.local").message_agent.set(session_id, payload.id, selection.agent)
 	pending.begin({ session_id = session_id, message_id = payload.id, status = "submitting",
 		text = text, options = opts, payload = payload, selection = selection, token = token })
 	seed(session_id, payload)
@@ -144,6 +145,7 @@ local function submit(session_id, payload, selection, text, opts, known_session)
 			local definite = not submitted or (err.status and err.status >= 400 and err.status < 500)
 			local record = pending.update(session_id, payload.id, { status = definite and "failed" or "uncertain", error = err })
 			if record and record.status == "failed" then
+				require("opencode.local").message_agent.remove(session_id, payload.id)
 				restore_draft(text, opts)
 				if previous_status.type == "idle" then session_actions.set_session_status(session_id, previous_status, { reason = "send_failed" }) end
 			end
@@ -288,6 +290,7 @@ function M.cancel_input(session_id, message_id, callback)
 		if not pending.is_current(token) then return end
 		if not err then
 			pending.update(session_id, message_id, { status = "cancelled" })
+			require("opencode.local").message_agent.remove(session_id, message_id)
 			sync().handle_message_removed(session_id, message_id)
 			emit("sync_changed", { kind = "inbox", action = "cancelled", session_id = session_id, message_id = message_id })
 		end

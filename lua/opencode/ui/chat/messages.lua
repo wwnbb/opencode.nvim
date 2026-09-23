@@ -32,6 +32,10 @@ end
 ---@param opts? table
 function M.add_message(role, content, opts)
 	opts = opts or {}
+	local agent = opts.agent
+	if role == "user" and not agent then
+		agent = require("opencode.selectors").send_selection({ session_id = opts.session_id }).agent
+	end
 
 	local message = {
 		role = role,
@@ -39,7 +43,7 @@ function M.add_message(role, content, opts)
 		timestamp = opts.timestamp or os.time(),
 		id = opts.id or tostring(os.time()) .. "_" .. #state.local_notices,
 		session_id = opts.session_id,
-		agent = opts.agent,
+		agent = agent,
 		kind = opts.kind,
 		child_session_id = opts.child_session_id,
 		optimistic = opts.optimistic,
