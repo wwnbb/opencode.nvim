@@ -308,6 +308,10 @@ function M.cancel_input(session_id, inbox_id, callback)
 	v2.request("inbox_delete", { path = { sessionID = session_id, inboxID = inbox_id } }, callback)
 end
 
+function M.set_input_delivery(session_id, inbox_id, delivery, callback)
+	v2.request("inbox_update", { path = { sessionID = session_id, inboxID = inbox_id }, body = { delivery = delivery } }, callback)
+end
+
 -- Native diff defaults to the last user turn. Explicit from/to cover a range.
 function M.get_diff(session_id, opts, callback)
 	opts = opts or {}

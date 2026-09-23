@@ -12,7 +12,7 @@ describe("opencode v2 send flow", function()
 	local function accepted(index)
 		local call = calls[index or #calls]
 		callbacks.prompt(nil, { id = call.body.id, sessionID = call.sid, type = "user",
-			payload = { text = call.body.text }, delivery = "queue", time = { created = 20 } })
+			payload = { text = call.body.text }, delivery = call.body.delivery, time = { created = 20 } })
 	end
 	before_each(function()
 		state.reset(); sync.clear_all(); pending.clear_all(); history.clear_pending()
@@ -30,6 +30,9 @@ describe("opencode v2 send flow", function()
 			return { agent = opts.agent or "build", model = opts.model or model(), variant = opts.variant }
 		end, pending_input = selectors.pending_input }
 		package.loaded["opencode.client"] = {
+			set_input_delivery = function(sid, id, delivery, cb)
+				calls[#calls + 1] = { method = "delivery", sid = sid, id = id, delivery = delivery }; callbacks.delivery = cb
+			end,
 			cancel_input = function(sid, id, cb)
 				calls[#calls + 1] = { method = "cancel", sid = sid, id = id }; callbacks.cancel = cb
 			end,
@@ -76,6 +79,107 @@ describe("opencode v2 send flow", function()
 		assert.equals("queued", pending.get("ses_a", payload.id).status)
 		assert.equals("busy", state.get_session_status("ses_a").type)
 		assert.equals(1, #sync.get_messages("ses_a"))
+	end)
+
+	for _, status in ipairs({ "idle", "busy", "retry" }) do
+		it("queues by default when session is " .. status .. " until delivery is confirmed", function()
+			state.set_session_status("ses_a", { type = status })
+			assert.is_true(send.send("стой", {}))
+			callbacks.get(nil, { id = "ses_a", agent = "build", model = model() })
+			local payload = calls[2].body
+			assert.equals("queue", payload.delivery)
+			assert.equals("Sending…", selectors.prompt_status("ses_a", payload.id))
+			accepted()
+			assert.equals("queued", pending.get("ses_a", payload.id).status)
+			assert.equals("Queued", selectors.prompt_status("ses_a", payload.id))
+			assert.is_true(sync.get_message("ses_a", payload.id).provisional)
+			local effect = sync.handle_v2_event({ id = "evt_delivery", created = 30, type = "session.inbox.delivered",
+				data = { sessionID = "ses_a", inboxID = payload.id } })
+			pending.update("ses_a", effect.delivered, { status = "delivered" })
+			assert.is_nil(selectors.prompt_status("ses_a", payload.id))
+			assert.is_nil(sync.get_message("ses_a", payload.id).provisional)
+			assert.equals(1, #sync.get_messages("ses_a"))
+		end)
+	end
+
+	it("keeps explicit queue delivery while an agent is busy", function()
+		state.set_session_status("ses_a", { type = "busy" })
+		assert.is_true(send.send("After this turn", { delivery = "queue", resume = false }))
+		callbacks.get(nil, { id = "ses_a", agent = "build", model = model() })
+		local payload = calls[2].body
+		assert.equals("queue", payload.delivery)
+		assert.is_false(payload.resume)
+		accepted()
+		assert.equals("queued", pending.get("ses_a", payload.id).status)
+		assert.equals("Queued", selectors.prompt_status("ses_a", payload.id))
+		assert.equals("busy", state.get_session_status("ses_a").type)
+	end)
+
+	it("promotes the existing inbox item without resending or changing its attachments", function()
+		send.send("стой", { parts = { { type = "file", url = "file:///tmp/context" } } })
+		callbacks.get(nil, { id = "ses_a", agent = "build", model = model() }); accepted()
+		local id = calls[2].body.id
+		assert.is_true(send.steer_input("ses_a", id))
+		assert.same({ method = "delivery", sid = "ses_a", id = id, delivery = "steer" }, calls[3])
+		assert.equals("Queued", selectors.prompt_status("ses_a", id))
+		state.set_session("ses_b", "B")
+		callbacks.delivery(nil)
+		assert.equals("Steering pending", selectors.prompt_status("ses_a", id))
+		assert.equals("steer", pending.get("ses_a", id).inbox.delivery)
+		assert.equals("file:///tmp/context", sync.get_parts(id)[2].url)
+		assert.equals(1, #sync.get_messages("ses_a"))
+		assert.equals(0, #sync.get_messages("ses_b"))
+		assert.equals(3, #calls)
+	end)
+
+	it("keeps queue state when a steering request fails", function()
+		send.send("Queued", {})
+		callbacks.get(nil, { id = "ses_a", agent = "build", model = model() }); accepted()
+		local id, failure = calls[2].body.id
+		send.steer_input("ses_a", id, function(err) failure = err end)
+		callbacks.delivery({ status = 409, message = "Already delivered" })
+		assert.equals(409, failure.status)
+		assert.equals("queued", pending.get("ses_a", id).status)
+		assert.is_not_nil(sync.get_message("ses_a", id))
+		assert.equals(3, #calls)
+	end)
+
+	for _, terminal in ipairs({ "delivered", "cancelled" }) do
+		it("does not regress " .. terminal .. " when steering completes late", function()
+			send.send("Queued", {})
+			callbacks.get(nil, { id = "ses_a", agent = "build", model = model() }); accepted()
+			local id = calls[2].body.id
+			send.steer_input("ses_a", id)
+			pending.update("ses_a", id, { status = terminal })
+			callbacks.delivery(nil)
+			assert.equals(terminal, pending.get("ses_a", id).status)
+			assert.is_nil(selectors.prompt_status("ses_a", id))
+			assert.is_false(send.steer_input("ses_a", id))
+			assert.equals(3, #calls)
+		end)
+	end
+
+	it("ignores a steering response after disconnect or session deletion", function()
+		send.send("Queued", {})
+		callbacks.get(nil, { id = "ses_a", agent = "build", model = model() }); accepted()
+		local id, called = calls[2].body.id, false
+		send.steer_input("ses_a", id, function() called = true end)
+		pending.clear_session("ses_a")
+		callbacks.delivery(nil)
+		assert.is_nil(pending.get("ses_a", id))
+		assert.is_false(called)
+	end)
+
+	it("keeps a confirmed steering change when the original admission arrives late", function()
+		send.send("Queued", {})
+		callbacks.get(nil, { id = "ses_a", agent = "build", model = model() })
+		local payload = calls[2].body
+		pending.admit({ sessionID = "ses_a", id = payload.id, type = "user", delivery = "queue", payload = { text = payload.text } })
+		send.steer_input("ses_a", payload.id)
+		callbacks.delivery(nil)
+		accepted(2)
+		assert.equals("steer", pending.get("ses_a", payload.id).inbox.delivery)
+		assert.equals("Steering pending", selectors.prompt_status("ses_a", payload.id))
 	end)
 
 	it("stops after a failed selection change and preserves the draft", function()

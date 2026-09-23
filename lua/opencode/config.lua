@@ -73,6 +73,7 @@ M.defaults = {
 			close_session = "x",
 			cancel_pending = "C",
 			edit_pending = "E",
+			steer_pending = "S",
 		},
 		todo = {
 			enabled = true,
@@ -217,6 +218,8 @@ M.defaults = {
 	keymaps = {
 		toggle = "<leader>oo",
 		command_palette = "<leader>op",
+		toggle_logs = "<leader>ol",
+		close_session = "<leader>oq",
 		abort = "<leader>ox",
 		active_sessions = "<leader>oS",
 	},

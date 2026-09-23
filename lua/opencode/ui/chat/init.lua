@@ -103,6 +103,7 @@ local defaults = {
 		close_session = "x",
 		cancel_pending = "C",
 		edit_pending = "E",
+		steer_pending = "S",
 		focus_input = "i",
 		scroll_up = "<C-u>",
 		scroll_down = "<C-d>",

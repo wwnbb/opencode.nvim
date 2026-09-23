@@ -289,6 +289,12 @@ function M.edit_pending_input(session_id, message_id, callback)
 	end)
 end
 
+function M.steer_pending_input(session_id, message_id, callback)
+	return with_connection(function()
+		require("opencode.send").steer_input(session_id, message_id, callback)
+	end)
+end
+
 function M.list_agents(callback)
 	return with_connection(function()
 		client().list_agents(function(err, agents)

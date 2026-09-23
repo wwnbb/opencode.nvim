@@ -15,7 +15,7 @@ local projection = require("opencode.protocol.v2.messages")
 local render_state = require("opencode.ui.chat.render_state")
 
 describe("queued inputs in the chat buffer", function()
-	local original_buffer, saved, cancels, sent, notices, fallbacks
+	local original_buffer, saved, cancels, steers, sent, notices, fallbacks
 	local function text()
 		return table.concat(vim.api.nvim_buf_get_lines(state.bufnr, 0, -1, false), "\n")
 	end
@@ -28,9 +28,9 @@ describe("queued inputs in the chat buffer", function()
 		vim.api.nvim_feedkeys = feedkeys
 		assert.is_true(ok, err)
 	end
-	local function seed(id, value, files)
+	local function seed(id, value, files, delivery)
 		local effect = sync.handle_v2_event({ id = "evt_" .. id, created = 10, type = "session.inbox.enqueued",
-			data = { sessionID = "queue-test", inboxID = id, item = { type = "user", delivery = "queue",
+			data = { sessionID = "queue-test", inboxID = id, item = { type = "user", delivery = delivery or "queue",
 				payload = { text = value, files = files } } } })
 		pending.admit(effect.inbox)
 	end
@@ -59,12 +59,15 @@ describe("queued inputs in the chat buffer", function()
 		state.winid, state.visible = vim.api.nvim_get_current_win(), true
 		vim.api.nvim_win_set_buf(state.winid, state.bufnr)
 		keymaps.setup_buffer(state.bufnr, {})
-		saved = { cancel = client.cancel_input, messages = client.get_messages, send = actions.send,
+		saved = { cancel = client.cancel_input, delivery = client.set_input_delivery, messages = client.get_messages, send = actions.send,
 			connect = lifecycle.ensure_connected, refresh = sessions.refresh_status, notify = vim.notify }
-		cancels, sent, notices, fallbacks = {}, {}, {}, {}
+		cancels, steers, sent, notices, fallbacks = {}, {}, {}, {}, {}
 		lifecycle.ensure_connected = function(cb) cb() end
 		sessions.refresh_status = function() end
 		client.cancel_input = function(sid, id, cb) cancels[#cancels + 1] = { sid = sid, id = id, callback = cb } end
+		client.set_input_delivery = function(sid, id, delivery, cb)
+			steers[#steers + 1] = { sid = sid, id = id, delivery = delivery, callback = cb }
+		end
 		actions.send = function(value, opts) sent[#sent + 1] = { text = value, opts = opts } end
 		vim.notify = function(value) notices[#notices + 1] = value end
 	end)
@@ -72,6 +75,7 @@ describe("queued inputs in the chat buffer", function()
 		input.close(false)
 		history.clear_pending()
 		client.cancel_input, client.get_messages, actions.send = saved.cancel, saved.messages, saved.send
+		client.set_input_delivery = saved.delivery
 		lifecycle.ensure_connected, sessions.refresh_status, vim.notify = saved.connect, saved.refresh, saved.notify
 		require("opencode.ui.chat.tasks").stop_task_animation_timer()
 		vim.api.nvim_win_set_buf(state.winid, original_buffer)
@@ -79,6 +83,96 @@ describe("queued inputs in the chat buffer", function()
 		state.bufnr, state.winid, state.visible = nil, nil, false
 		render_state.reset_chat_surface({ reset_expansions = true })
 		bus.clear(); pending.clear_all(); sync.clear_all(); app.reset()
+	end)
+
+	it("pins queued inputs below later assistant output and the processing footer", function()
+		seed("q", "First pending"); seed("q2", "Second pending")
+		sync.handle_session_messages("queue-test", projection.page("queue-test", {
+			{ id = "assistant", type = "assistant", agent = "active-agent", time = { created = 20 },
+				content = { { type = "text", text = "Agent is still working" } } },
+		}))
+		chat.do_render()
+		assert.is_true(text():find("Agent is still working", 1, true) < text():find("First pending", 1, true))
+		assert.is_true(state.spinner_footer_line < state.pending_inputs.q.start_line)
+		assert.is_true(state.pending_inputs.q.end_line < state.pending_inputs.q2.start_line)
+		assert.equals("q", sync.get_messages("queue-test")[1].id)
+		local part = vim.deepcopy(sync.get_parts("assistant")[1])
+		part.text = "Agent is still working\nAnother line"
+		sync.handle_part_updated(part)
+		assert.is_true(chat.update_stream_part_block("queue-test", "assistant", part.id))
+		assert.is_true(text():find("Another line", 1, true) < text():find("First pending", 1, true))
+		focus("q2"); key("C")
+		assert.equals("q2", cancels[1].id)
+	end)
+
+	it("keeps old pending inputs visible outside the history render limit", function()
+		seed("q", "Old pending")
+		sync.handle_session_messages("queue-test", projection.page("queue-test", {
+			{ id = "a1", type = "assistant", time = { created = 20, completed = 21 }, content = { { type = "text", text = "Older output" } } },
+			{ id = "a2", type = "assistant", time = { created = 30 }, content = { { type = "text", text = "Newest output" } } },
+		}))
+		chat.setup({ max_rendered_messages = 1 })
+		chat.do_render()
+		assert.is_nil(text():find("Older output", 1, true))
+		assert.is_true(text():find("Newest output", 1, true) < text():find("Old pending", 1, true))
+		assert.is_not_nil(state.pending_inputs.q)
+	end)
+
+	it("moves delivered inputs back into history while other inputs remain at the bottom", function()
+		seed("q", "Delivered input"); seed("q2", "Remaining pending")
+		sync.handle_v2_event({ id = "evt_delivery", created = 20, type = "session.inbox.delivered",
+			data = { sessionID = "queue-test", inboxID = "q" } })
+		pending.update("queue-test", "q", { status = "delivered" })
+		sync.handle_session_messages("queue-test", projection.page("queue-test", {
+			{ id = "assistant", type = "assistant", time = { created = 30 }, content = { { type = "text", text = "Response after delivery" } } },
+		}))
+		chat.do_render()
+		assert.is_true(text():find("Delivered input", 1, true) < text():find("Response after delivery", 1, true))
+		assert.is_true(text():find("Response after delivery", 1, true) < text():find("Remaining pending", 1, true))
+		assert.is_nil(state.pending_inputs.q)
+		assert.is_not_nil(state.pending_inputs.q2)
+	end)
+
+	it("steers only the queued item at the cursor after confirmation without resending", function()
+		seed("q", "First"); seed("q2", "Second"); chat.do_render()
+		assert.equals("", vim.fn.maparg("s", "n"))
+		assert.is_truthy(text():find("Queued · C cancel · E edit · S steer", 1, true))
+		focus("q2"); key("S")
+		assert.equals("q2", steers[1].id)
+		assert.equals("queue-test", steers[1].sid)
+		assert.equals("steer", steers[1].delivery)
+		assert.equals("queued", pending.get("queue-test", "q2").status)
+		steers[1].callback({ message = "Unavailable" })
+		assert.equals("queued", pending.get("queue-test", "q2").status)
+		assert.equals(1, #notices)
+		key("S"); steers[2].callback(nil); chat.do_render()
+		assert.equals("queued", pending.get("queue-test", "q").status)
+		assert.equals("accepted", pending.get("queue-test", "q2").status)
+		assert.equals(2, #sync.get_messages("queue-test"))
+		assert.is_truthy(text():find("Steering pending · C cancel · E edit", 1, true))
+		focus("q2"); key("S")
+		assert.equals(2, #steers)
+		assert.equals(0, #sent)
+		assert.equals(0, #cancels)
+	end)
+
+	it("keeps steering visibly pending while the active agent continues, until delivery", function()
+		seed("steer", "стой", nil, "steer")
+		chat.do_render()
+		assert.is_truthy(text():find("Steering pending · C cancel · E edit", 1, true))
+		assert.is_nil(text():find("Queued", 1, true))
+		sync.handle_v2_event({ id = "evt_step", created = 15, type = "session.step.started",
+			data = { sessionID = "queue-test", assistantMessageID = "assistant", started = 15 } })
+		chat.do_render()
+		assert.is_truthy(text():find("Steering pending · C cancel · E edit", 1, true))
+		assert.is_not_nil(state.pending_inputs.steer)
+		sync.handle_v2_event({ id = "evt_delivered", created = 20, type = "session.inbox.delivered",
+			data = { sessionID = "queue-test", inboxID = "steer" } })
+		pending.update("queue-test", "steer", { status = "delivered" })
+		chat.do_render()
+		assert.is_nil(text():find("Steering pending", 1, true))
+		assert.is_nil(state.pending_inputs.steer)
+		assert.is_truthy(text():find("стой", 1, true))
 	end)
 
 	it("removes the queue badge from a delivered message without removing its text", function()
@@ -133,15 +227,16 @@ describe("queued inputs in the chat buffer", function()
 		local pos = state.pending_inputs.q
 		-- The blank separator after the queue status belongs to no widget.
 		vim.api.nvim_win_set_cursor(state.winid, { pos.end_line + 2, 0 })
-		key("C"); key("E")
-		focus("assistant"); key("C"); key("E")
+		key("C"); key("E"); key("S")
+		focus("assistant"); key("C"); key("E"); key("S")
 		assert.equals(0, #cancels)
+		assert.equals(0, #steers)
 		assert.equals(0, #notices)
-		assert.equals(4, #fallbacks)
+		assert.equals(6, #fallbacks)
 		vim.api.nvim_win_set_cursor(state.winid, { pos.end_line + 1, 0 })
 		key("C")
 		assert.equals("q", cancels[1].id)
-		assert.equals(4, #fallbacks)
+		assert.equals(6, #fallbacks)
 	end)
 
 	it("keeps native E motion outside the queued widget", function()
@@ -228,14 +323,30 @@ describe("queued inputs in the chat buffer", function()
 		for _, mapping in ipairs(vim.api.nvim_buf_get_keymap(state.bufnr, "n")) do
 			vim.keymap.del("n", mapping.lhs, { buffer = state.bufnr })
 		end
-		chat.setup({ keymaps = { cancel_pending = "gC", edit_pending = false } })
+		app.set_config(vim.tbl_deep_extend("force", app.get_config(), {
+			chat = { keymaps = { cancel_pending = "gC", edit_pending = false, steer_pending = "gs" } },
+		}))
+		chat.setup({})
 		keymaps.setup_buffer(state.bufnr, {})
 		seed("q", "Queued"); chat.do_render(); focus("q")
 		assert.is_truthy(text():find("Queued · gC cancel", 1, true))
 		assert.is_nil(text():find("E edit", 1, true))
+		assert.is_truthy(text():find("gs steer", 1, true))
 		assert.equals("", vim.fn.maparg("C", "n"))
 		assert.equals("", vim.fn.maparg("E", "n"))
+		assert.equals("", vim.fn.maparg("S", "n"))
+		key("gs")
+		assert.equals("q", steers[1].id)
 		key("gC")
 		assert.equals("q", cancels[1].id)
+	end)
+
+	it("can disable the steering key and hint", function()
+		vim.keymap.del("n", "S", { buffer = state.bufnr })
+		chat.setup({ keymaps = { steer_pending = false } })
+		keymaps.setup_buffer(state.bufnr, {})
+		seed("q", "Queued"); chat.do_render()
+		assert.equals("", vim.fn.maparg("S", "n"))
+		assert.is_nil(text():find("S steer", 1, true))
 	end)
 end)

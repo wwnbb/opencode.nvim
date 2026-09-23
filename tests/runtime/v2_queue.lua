@@ -1,4 +1,4 @@
--- Native busy queue and explicit steering, including actual input/palette keys.
+-- Default busy queue and explicit steering, including actual input/palette keys.
 local app, client = require("opencode"), require("opencode.client")
 local state, sync, chat = require("opencode.state"), require("opencode.sync"), require("opencode.ui.chat")
 local session, lifecycle = require("opencode.session"), require("opencode.lifecycle")
@@ -86,10 +86,12 @@ assert(text():find("INTERRUPT_MUST_KEEP_QUEUED", 1, true), "Reconnect lost queue
 assert(text():find("Queued · C cancel · E edit", 1, true), "Reconnect lost queue badge")
 shot("queue-after-interrupt-reconnect"); cancel_menu(retained)
 child = start_fifo()
-assert(require("opencode.send").send("Additional instruction: after the pending rg completes, reply exactly STEERING_APPLIED. Do not call any more tools.", { delivery = "steer" }))
-local steered
+local steered = keyboard_send("Additional instruction: after the pending rg completes, reply exactly STEERING_APPLIED. Do not call any more tools.")
+local pos = assert(require("opencode.ui.chat.state").state.pending_inputs[steered])
+vim.api.nvim_win_set_cursor(chat.get_winid(), { pos.end_line + 1, 0 }); key("S")
 wait(function()
-	for id, item in pairs(pending.list(info.id)) do if item.payload and item.payload.delivery == "steer" and item.status == "accepted" then steered = id; return true end end
+	local item = pending.get(info.id, steered)
+	return item and item.inbox and item.inbox.delivery == "steer" and item.status == "accepted"
 end, "Steering not admitted")
 assert(text():find("Steering pending", 1, true), "Steering badge missing")
 assert(vim.uv.kill(child, 0), "Steering unexpectedly interrupted the running tool")
@@ -109,6 +111,6 @@ assert(not text():find("Steering pending", 1, true) and not text():find("Queued 
 shot("steering-completed")
 vim.fn.writefile({ vim.json.encode({ version = "2.0.11", history = history, cancelled = cancelled, retained = retained,
 	steered = steered, keyboard_queue = true, palette_cancel = true, interrupt_preserves_queue = true,
-	reconnect_preserves_queue = true, explicit_steering = true }) }, assert(vim.env.OPENCODE_V2_OUTPUT))
+	reconnect_preserves_queue = true, keyboard_steering = true }) }, assert(vim.env.OPENCODE_V2_OUTPUT))
 chat.close(); lifecycle.disconnect()
 print("Actual queue, palette cancel, interrupt, reconnect and steering passed")
