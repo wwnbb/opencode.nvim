@@ -159,7 +159,10 @@ local function submit(session_id, payload, selection, text, opts, known_session)
 			client().send_message(session_id, payload, function(err, item)
 				if not pending.is_current(token) then done(); return end
 				if err then fail(err); return end
-				pending.admit(item)
+				-- SSE or a delivery-mode change may already provide newer inbox
+				-- evidence than this initial admission response.
+				local record = pending.get(session_id, payload.id)
+				if not record or not record.inbox then pending.admit(item) end
 				-- A delayed HTTP callback must not replace the delivered timestamp or
 				-- regress state already confirmed by the event stream.
 				emit("sync_changed", { kind = "inbox", action = "accepted", session_id = session_id, message_id = payload.id })
@@ -291,6 +294,31 @@ function M.cancel_input(session_id, message_id, callback)
 		emit("v2_reconcile", { session_id = session_id })
 		if callback then callback(err) end
 	end)
+end
+
+-- Change the existing inbox item instead of cancelling and resending it. Its
+-- ID, attachments and delivery confirmation remain owned by the server.
+function M.steer_input(session_id, message_id, callback)
+	local record = selectors.pending_input(session_id, message_id)
+	if not record or record.status ~= "queued" then
+		if callback then callback({ message = "This input is no longer queued" }) end
+		return false
+	end
+	local token = pending.token(session_id)
+	client().set_input_delivery(session_id, message_id, "steer", function(err)
+		if not pending.is_current(token) then return end
+		if not err then
+			local current = pending.get(session_id, message_id)
+			if current and current.inbox then
+				current.inbox.delivery = "steer"
+				pending.admit(current.inbox)
+			end
+			emit("sync_changed", { kind = "inbox", action = "steered", session_id = session_id, message_id = message_id })
+		end
+		emit("v2_reconcile", { session_id = session_id })
+		if callback then callback(err) end
+	end)
+	return true
 end
 
 -- Editing first removes the inbox item. Only a confirmed cancellation returns

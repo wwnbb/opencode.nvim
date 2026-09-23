@@ -1,4 +1,4 @@
--- opencode.nvim - User commands and default loader keymaps.
+-- opencode.nvim - User commands and global keymaps.
 
 local M = {}
 
@@ -234,31 +234,53 @@ local function create_commands()
 	})
 end
 
-local function create_default_keymaps()
-	vim.keymap.set("n", "<leader>oo", function()
-		actions.toggle()
-	end, { desc = "Toggle OpenCode", noremap = true, silent = true })
+local global_keymaps = {
+	{ key = "toggle", action = actions.toggle, desc = "Toggle OpenCode" },
+	{ key = "command_palette", action = actions.command_palette, desc = "OpenCode command palette" },
+	{ key = "toggle_logs", action = actions.toggle_logs, desc = "Toggle OpenCode logs" },
+	{ key = "active_sessions", action = actions.active_sessions, desc = "OpenCode active sessions" },
+	{
+		key = "close_session",
+		action = function()
+			actions.close_session({ notify = true })
+		end,
+		desc = "Close OpenCode session tab",
+	},
+}
 
-	vim.keymap.set("n", "<leader>op", function()
-		actions.command_palette()
-	end, { desc = "OpenCode command palette", noremap = true, silent = true })
+local installed_keymaps = {}
 
-	vim.keymap.set("n", "<leader>ol", function()
-		actions.toggle_logs()
-	end, { desc = "Toggle OpenCode logs", noremap = true, silent = true })
+--- Replace only keymaps still owned by this plugin. A user may have replaced
+--- a loader mapping before setup() applies their configuration.
+function M.configure_keymaps(keymaps)
+	local installed_callbacks = {}
+	for _, callback in ipairs(installed_keymaps) do
+		installed_callbacks[callback] = true
+	end
+	for _, mapping in ipairs(vim.api.nvim_get_keymap("n")) do
+		if installed_callbacks[mapping.callback] then
+			vim.keymap.del("n", mapping.lhs)
+		end
+	end
+	installed_keymaps = {}
 
-	vim.keymap.set("n", "<leader>oS", function()
-		actions.active_sessions()
-	end, { desc = "OpenCode active sessions", noremap = true, silent = true })
-
-	vim.keymap.set("n", "<leader>oq", function()
-		actions.close_session({ notify = true })
-	end, { desc = "Close OpenCode session tab", noremap = true, silent = true })
+	for _, spec in ipairs(global_keymaps) do
+		local lhs = keymaps and keymaps[spec.key]
+		if type(lhs) == "string" and lhs ~= "" then
+			local action = spec.action
+			local callback = function()
+				action()
+			end
+			vim.keymap.set("n", lhs, callback, { desc = spec.desc, noremap = true, silent = true })
+			table.insert(installed_keymaps, callback)
+		end
+	end
 end
 
 function M.setup()
 	create_commands()
-	create_default_keymaps()
+	local current_config = require("opencode.state").get_config()
+	M.configure_keymaps((current_config and current_config.keymaps) or require("opencode.config").defaults.keymaps)
 end
 
 return M

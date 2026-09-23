@@ -43,6 +43,7 @@ function M.show(config)
 		"[p/]p      Prev/next pending permission",
 		string.format("%-10s Cancel queued input at cursor", pending_key("cancel_pending")),
 		string.format("%-10s Edit queued input at cursor", pending_key("edit_pending")),
+		string.format("%-10s Steer queued input at cursor", pending_key("steer_pending")),
 		"?          Show this help",
 		"",
 		"Input Mode",

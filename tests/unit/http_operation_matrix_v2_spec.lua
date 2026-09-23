@@ -70,6 +70,7 @@ local cases = {
 	{ "session_model", "POST", "/api/session/{sessionID}/model", "empty", { model = model } },
 	{ "interrupt", "POST", "/api/session/{sessionID}/interrupt", "interrupt", nil, { resume = false } },
 	{ "inbox_list", "GET", "/api/session/{sessionID}/inbox", "list" },
+	{ "inbox_update", "PATCH", "/api/session/{sessionID}/inbox/{inboxID}", "empty", { delivery = "steer" } },
 	{ "inbox_delete", "DELETE", "/api/session/{sessionID}/inbox/{inboxID}", "empty" },
 	{ "permission_all", "GET", "/api/permission/request", "list" },
 	{ "permission_list", "GET", "/api/session/{sessionID}/permission", "list" },

@@ -5,6 +5,7 @@ local M = {}
 local actions = require("opencode.actions")
 local state = require("opencode.state")
 function M.register(palette)
+	local keymaps = (state.get_config() or require("opencode.config").defaults).keymaps or {}
 	palette.register({ id = "system.reload", title = "Reload Server Configuration", category = "system",
 		description = "Reload all locations and cancel pending interactions", action = function()
 			vim.ui.select({ "Reload all locations", "Cancel" }, { prompt = "Reload cancels pending forms, permissions and plugin reviews in every project." }, function(choice)
@@ -56,6 +57,7 @@ function M.register(palette)
 		title = "View Logs",
 		description = "Open the log viewer",
 		category = "system",
+		keybind = keymaps.toggle_logs,
 		action = function()
 			actions.toggle_logs()
 		end,

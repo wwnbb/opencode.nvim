@@ -234,6 +234,7 @@ end
 function M.setup(opts)
 	-- Merge user config with defaults
 	M._config = config.merge(opts)
+	require("opencode.commands").configure_keymaps(M._config.keymaps)
 
 	-- Initialize state with config
 	state.set_config(M._config)
@@ -345,34 +346,14 @@ function M.setup(opts)
     vim.notify("Failed to load slash commands: " .. tostring(slash), vim.log.levels.WARN)
   end
 
-  -- Apply keymaps from user config (only if user explicitly configures them)
-  -- Users who want keymaps should add them to their config, e.g.:
-  -- keymaps = { toggle = "<leader>oo", command_palette = "<leader>op" }
+  -- The five loader keymaps are replaced from the merged config above.
   local km = M._config.keymaps or {}
   local map_opts = { noremap = true, silent = true }
-  
-  if km.toggle then
-    vim.keymap.set("n", km.toggle, function()
-      require("opencode").toggle()
-    end, vim.tbl_extend("force", map_opts, { desc = "Toggle OpenCode" }))
-  end
-
-  if km.command_palette then
-    vim.keymap.set("n", km.command_palette, function()
-      require("opencode").command_palette()
-    end, vim.tbl_extend("force", map_opts, { desc = "OpenCode command palette" }))
-  end
 
   if km.abort then
     vim.keymap.set("n", km.abort, function()
       require("opencode").abort()
     end, vim.tbl_extend("force", map_opts, { desc = "Abort OpenCode request" }))
-  end
-
-  if km.active_sessions then
-    vim.keymap.set("n", km.active_sessions, function()
-      require("opencode").active_sessions()
-    end, vim.tbl_extend("force", map_opts, { desc = "OpenCode active sessions" }))
   end
 
   -- Setup cursor hiding for opencode buffers

@@ -46,6 +46,16 @@ function M.cancel()
 	return true
 end
 
+function M.steer()
+	local sid, id = at_cursor()
+	if not id then return false end
+	if selectors.pending_input(sid, id).status ~= "queued" then return true end
+	actions.steer_pending_input(sid, id, function(err)
+		if err then vim.notify("Could not steer input: " .. tostring(err.message or err), vim.log.levels.ERROR) end
+	end)
+	return true
+end
+
 -- Deferred edits resume through the normal input entry point, never through a
 -- widget key pressed over an unrelated message or empty space.
 function M.resume_edit()

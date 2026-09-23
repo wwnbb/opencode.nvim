@@ -7,6 +7,7 @@ local session_util = require("opencode.util.session")
 local state = require("opencode.state")
 local sync = require("opencode.sync")
 function M.register(palette)
+	local keymaps = (state.get_config() or require("opencode.config").defaults).keymaps or {}
 	palette.register({ id = "session.history", title = "Load Full Session History", category = "session",
 		description = "Fetch every history page", action = function()
 			local sid = state.get_session().id
@@ -35,7 +36,7 @@ function M.register(palette)
 		title = "Active Sessions",
 		description = "Show running, waiting, and recent sessions",
 		category = "session",
-		keybind = "<leader>oS",
+		keybind = keymaps.active_sessions,
 		action = function()
 			actions.active_sessions()
 		end,
@@ -45,7 +46,7 @@ function M.register(palette)
 		title = "Close Session Tab",
 		description = "Close the current active tab without deleting the session",
 		category = "session",
-		keybind = "x",
+		keybind = keymaps.close_session,
 		action = function()
 			actions.close_session({ notify = true })
 		end,

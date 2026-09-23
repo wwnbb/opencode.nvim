@@ -69,6 +69,7 @@ function M.setup_buffer(bufnr, opts)
 	for _, mapping in ipairs({
 		{ "cancel_pending", "cancel", "Cancel pending input at cursor" },
 		{ "edit_pending", "edit", "Edit pending input at cursor" },
+		{ "steer_pending", "steer", "Steer queued input at cursor" },
 	}) do
 		local key = cfg.keymaps[mapping[1]]
 		if type(key) == "string" and key ~= "" then

@@ -160,23 +160,27 @@ conversion preserves the original as `opencode_local.json.v1.bak`. Unavailable
 favorites are retained. Existing sessions keep their own model, agent and
 variant until you explicitly change them.
 
-Prompts sent while a response is running are queued and labelled in the chat.
-On a queued message, press `C` to cancel it or `E` to remove it from the queue
+Prompts sent while a response is running are queued by default. Pending inputs
+stay at the bottom of the chat, below the current response and its status footer,
+until delivery is confirmed. They then move into the conversation history.
+Press `S` on a queued message to steer the active agent with that same input.
+Its label changes to **Steering pending** after the server confirms the change;
+it is applied between agent steps, without aborting a running tool.
+On a pending message, press `C` to cancel it or `E` to remove it from the inbox
 and edit its text and attachments in the input. Send the edited draft with `<C-g>`.
-These keys act on the queued widget under the cursor (including its status line);
+These keys act on the pending widget under the cursor (including its status line);
 outside it they keep their normal Neovim behavior.
-The queue label disappears once delivery is confirmed. **Cancel Pending Input**
+The pending label disappears once delivery is confirmed. **Cancel Pending Input**
 is also available in the palette. Configure or disable these chat keys with:
 
 ```lua
 require("opencode").setup({
-  chat = { keymaps = { cancel_pending = "C", edit_pending = "E" } }, -- false or "" disables a key
+  chat = { keymaps = { cancel_pending = "C", edit_pending = "E", steer_pending = "S" } }, -- false or "" disables a key
 })
 ```
 
-Chat `<C-c>` interrupts the current execution and leaves queued inputs pending.
-Scripts can explicitly request steering with `send(text, { delivery = "steer" })`;
-it is applied at the server's next delivery boundary, without aborting a running tool.
+Chat `<C-c>` interrupts the current execution and leaves inbox inputs pending.
+Scripts can explicitly request steering with `send(text, { delivery = "steer" })`.
 After a connection loss, an unknown delivery outcome stays visible while it is
 reconciled with the server; it is never automatically resent.
 
@@ -212,7 +216,7 @@ Follow these steps:
    - `session.default_agent`, `session.default_model.providerID`, `session.default_model.modelID`, `session.parallel.enabled`, `session.parallel.use_prompt_async`
    - `chat.layout` (`vertical`, `horizontal`, or `float`), `chat.position`, `chat.width`, `chat.height`, `chat.float.width`, `chat.float.height`, `chat.float.border`, `chat.close_on_focus_lost`
    - `chat.session_tabs.enabled`, `chat.session_tabs.auto_fit`, `chat.session_tabs.max_tabs`, `chat.session_tabs.separator`, `chat.session_tabs.icons`, `chat.session_tabs.colors`
-   - top-level `keymaps.toggle`, `keymaps.command_palette`, `keymaps.abort`, `keymaps.active_sessions`
+   - top-level `keymaps.toggle`, `keymaps.command_palette`, `keymaps.toggle_logs`, `keymaps.close_session`, `keymaps.abort`, `keymaps.active_sessions`
    - `input.keymaps.send`, `input.keymaps.cancel`, `input.keymaps.variant_cycle`, `input.keymaps.agent_cycle`, `input.keymaps.model_cycle`
    - `lualine.enabled`, `notifications.enabled`
    - Keep `danger_mode = false`; do not enable it unless I explicitly request the security tradeoff.
@@ -307,6 +311,8 @@ require("opencode").setup({
   keymaps = {
     toggle = "<leader>oo",
     command_palette = "<leader>op",
+    toggle_logs = "<leader>ol",
+    close_session = "<leader>oq",
     abort = "<leader>ox",
     active_sessions = "<leader>oS",
   },
@@ -324,4 +330,7 @@ require("opencode").setup({
   danger_mode = false,
 })
 ```
+For the five global OpenCode mappings (`toggle`, `command_palette`, `toggle_logs`,
+`close_session`, and `active_sessions`), use `false` or `""` to disable a key.
+Changing a key removes the previous plugin mapping.
 ````

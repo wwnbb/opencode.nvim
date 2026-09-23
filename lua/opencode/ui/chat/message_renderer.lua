@@ -71,6 +71,14 @@ local function select_messages(ctx, index)
 		ctx:add_raw_line("Undo staged · /redo restores the turn")
 		ctx:add_raw_line("")
 	end
+	-- Inbox echoes are not conversation history yet. Keep them below all
+	-- output, independently of their timestamps and the history render limit.
+	local history_messages, pending_messages = {}, {}
+	for _, message in ipairs(all_messages) do
+		local target = message.role == "user" and message.provisional and pending_messages or history_messages
+		target[#target + 1] = message
+	end
+	all_messages = history_messages
 	local messages = all_messages
 	local max_rendered_messages = (state.full_history_sessions or {})[ctx.current_session.id] and 0
 		or tonumber((ctx.chat_config or {}).max_rendered_messages) or 0
@@ -115,7 +123,7 @@ local function select_messages(ctx, index)
 		end
 	end
 
-	return all_messages, messages, skipped_messages
+	return all_messages, messages, skipped_messages, pending_messages
 end
 
 local function build_user_created_by_id(all_messages)
@@ -308,7 +316,9 @@ local function render_user_message(ctx, message, render_parts, msg_idx, messages
 	if prompt_status then
 		if pending_input then
 			local keymaps = (ctx.chat_config or {}).keymaps or {}
-			for _, action in ipairs({ { "cancel_pending", "cancel" }, { "edit_pending", "edit" } }) do
+			local actions = { { "cancel_pending", "cancel" }, { "edit_pending", "edit" } }
+			if pending_input.status == "queued" then actions[#actions + 1] = { "steer_pending", "steer" } end
+			for _, action in ipairs(actions) do
 				local key = keymaps[action[1]]
 				if type(key) == "string" and key ~= "" then prompt_status = prompt_status .. " · " .. key .. " " .. action[2] end
 			end
@@ -325,7 +335,7 @@ local function render_user_message(ctx, message, render_parts, msg_idx, messages
 		})
 	end
 
-	render_retry_status_if_needed(ctx, messages, msg_idx)
+	if not message.provisional then render_retry_status_if_needed(ctx, messages, msg_idx) end
 	ctx:add_raw_line("")
 end
 
@@ -629,7 +639,7 @@ end
 function M.render(ctx, index)
 	render_session_chrome(ctx)
 
-	local all_messages, messages, skipped_messages = select_messages(ctx, index)
+	local all_messages, messages, skipped_messages, pending_messages = select_messages(ctx, index)
 	local user_created_by_id = build_user_created_by_id(all_messages)
 	local render_metadata_footer_line = make_metadata_footer_renderer(ctx, all_messages, user_created_by_id)
 	local processing_presentation = processing_footer.derive({
@@ -650,6 +660,15 @@ function M.render(ctx, index)
 	render_local_notices(ctx, index, all_messages, message_stats.max_user_message_lines)
 	render_orphan_widgets(ctx, index, all_messages)
 	render_processing_footer(ctx, processing_presentation, render_metadata_footer_line)
+	for msg_idx, message in ipairs(pending_messages) do
+		if not message.hidden then
+			if ctx:line_count() > 0 then ctx:ensure_single_blank_separator() end
+			local start_line = ctx:line_count()
+			local parts = ctx:get_message_render_parts(message.id, { include_synthetic = false })
+			render_user_message(ctx, message, parts, msg_idx, pending_messages, message_stats.max_user_message_lines)
+			register_message_range(message, start_line, ctx:line_count() - 1)
+		end
+	end
 
 	render_empty_state(ctx)
 

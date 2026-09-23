@@ -160,7 +160,6 @@ function M.register(palette)
 		title = "MCP Servers",
 		description = "List and toggle MCP servers",
 		category = "mcp",
-		keybind = "<leader>oS",
 		action = function()
 			local opts = location_options()
 			actions.get_mcp_status(function(err, status)
