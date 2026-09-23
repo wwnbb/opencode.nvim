@@ -217,6 +217,7 @@ function M.load_session_messages(session_id, opts, callback)
 		local function done(err, response, meta)
 			if not pending.is_current(token) then return end
 			if not err then
+				pending.reconcile_history(session_id, response)
 				store.handle_session_messages(session_id, response, { reconcile = complete, complete = complete, snapshot = snapshot })
 				require("opencode.session").set_message_cache(session_id, store.get_messages(session_id), { reason = "load_messages" })
 				require("opencode.session").reconcile_busy_session_idle(session_id, { reason = "load_messages" })
@@ -279,6 +280,12 @@ end
 function M.cancel_pending_input(session_id, message_id, callback)
 	return with_connection(function()
 		require("opencode.send").cancel_input(session_id, message_id, callback)
+	end)
+end
+
+function M.edit_pending_input(session_id, message_id, callback)
+	return with_connection(function()
+		require("opencode.send").edit_input(session_id, message_id, callback)
 	end)
 end
 

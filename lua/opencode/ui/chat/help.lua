@@ -14,6 +14,11 @@ function M.show(config)
 
 	local todo_toggle = config and config.todo and config.todo.keymaps and config.todo.keymaps.toggle or "T"
 	local close_session_key = config and config.keymaps and config.keymaps.close_session or "x"
+	local keys = config.keymaps or {}
+	local function pending_key(name)
+		local key = keys[name]
+		return type(key) == "string" and key ~= "" and key or "(disabled)"
+	end
 
 	local lines = {
 		"Chat Buffer Keymaps",
@@ -36,6 +41,8 @@ function M.show(config)
 		"[a/]a      Prev/next user message",
 		"[m/]m      Prev/next message or widget",
 		"[p/]p      Prev/next pending permission",
+		string.format("%-10s Cancel queued input at cursor", pending_key("cancel_pending")),
+		string.format("%-10s Edit queued input at cursor", pending_key("edit_pending")),
 		"?          Show this help",
 		"",
 		"Input Mode",

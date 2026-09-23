@@ -178,6 +178,7 @@ function M.shift_tracked_lines(old_end, delta, opts)
 	render.shift_line_map(state.edits, old_end, delta)
 	render.shift_line_map(state.tasks, old_end, delta)
 	render.shift_line_map(state.tools, old_end, delta)
+	render.shift_line_map(state.pending_inputs, old_end, delta)
 
 	for _, pos in ipairs(state.message_positions or {}) do
 		if pos and pos.start_line and pos.end_line then

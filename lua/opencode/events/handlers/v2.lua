@@ -44,11 +44,11 @@ function M.setup(events)
 				if not pending.is_current(token) or recovery[sid] ~= entry then return end
 				local delivered, queued = {}, {}
 				if not history_err then
+					pending.reconcile_history(sid, messages)
 					for _, message in ipairs(messages) do
 						local info = message.info
 						if info and info.role == "user" then
 							delivered[info.id] = true
-							if pending.get(sid, info.id) then pending.update(sid, info.id, { status = "delivered" }) end
 						end
 					end
 				end

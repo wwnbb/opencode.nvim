@@ -71,6 +71,8 @@ M.defaults = {
 		},
 		keymaps = {
 			close_session = "x",
+			cancel_pending = "C",
+			edit_pending = "E",
 		},
 		todo = {
 			enabled = true,

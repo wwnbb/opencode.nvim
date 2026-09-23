@@ -58,7 +58,7 @@ local function keyboard_send(value)
 			if item.text == value and item.status == "queued" then id = candidate; return true end
 		end
 	end, "Input not queued")
-	chat.focus(); assert(text():find("Queued · cancel from the palette", 1, true), "Queue badge missing")
+	chat.focus(); assert(text():find("Queued · C cancel · E edit", 1, true), "Queue badge missing")
 	return id
 end
 local function cancel_menu(id)
@@ -83,7 +83,7 @@ wait(state.is_connected, "No reconnect")
 -- Allow the full history recovery to finish before checking the pending input.
 vim.wait(700, function() return false end, 20)
 assert(text():find("INTERRUPT_MUST_KEEP_QUEUED", 1, true), "Reconnect lost queued message")
-assert(text():find("Queued · cancel from the palette", 1, true), "Reconnect lost queue badge")
+assert(text():find("Queued · C cancel · E edit", 1, true), "Reconnect lost queue badge")
 shot("queue-after-interrupt-reconnect"); cancel_menu(retained)
 child = start_fifo()
 assert(require("opencode.send").send("Additional instruction: after the pending rg completes, reply exactly STEERING_APPLIED. Do not call any more tools.", { delivery = "steer" }))

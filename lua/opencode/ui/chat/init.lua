@@ -101,6 +101,8 @@ local defaults = {
 	keymaps = {
 		close = "q",
 		close_session = "x",
+		cancel_pending = "C",
+		edit_pending = "E",
 		focus_input = "i",
 		scroll_up = "<C-u>",
 		scroll_down = "<C-d>",
@@ -846,6 +848,7 @@ function M.focus_input()
 		vim.notify("Answer or cancel the pending question before opening chat input.", vim.log.levels.INFO)
 		return false
 	end
+	if require("opencode.ui.chat.pending_inputs").resume_edit() then return true end
 
 	input.show({
 		winid = state.winid,
