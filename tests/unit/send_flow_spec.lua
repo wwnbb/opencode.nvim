@@ -3,6 +3,7 @@ local state = require("opencode.state")
 local sync = require("opencode.sync")
 local pending = require("opencode.session.pending")
 local history = require("opencode.ui.input.history")
+local selectors = require("opencode.selectors")
 
 describe("opencode v2 send flow", function()
 	local saved, old_schedule, old_notify, calls, callbacks, send
@@ -27,7 +28,7 @@ describe("opencode v2 send flow", function()
 		package.loaded["opencode.events"] = { emit = function() end }
 		package.loaded["opencode.selectors"] = { send_selection = function(opts)
 			return { agent = opts.agent or "build", model = opts.model or model(), variant = opts.variant }
-		end }
+		end, pending_input = selectors.pending_input }
 		package.loaded["opencode.client"] = {
 			cancel_input = function(sid, id, cb)
 				calls[#calls + 1] = { method = "cancel", sid = sid, id = id }; callbacks.cancel = cb
@@ -116,6 +117,64 @@ describe("opencode v2 send flow", function()
 		pending.clear_session("ses_a")
 		callbacks.cancel(nil)
 		assert.is_false(called)
+	end)
+
+	it("edits only after confirmed cancellation and preserves the original send context", function()
+		local parts = { { type = "file", url = "data:image/png;base64,AAAA", filename = "shot.png", _marker = "[Image 1]" } }
+		send.send("Edit\n[Image 1]", { parts = parts, directory = "/original", resume = false })
+		callbacks.get(nil, { id = "ses_a", agent = "build", model = model() }); accepted()
+		local id, draft = calls[#calls].body.id
+		send.edit_input("ses_a", id, function(err, result) assert.is_nil(err); draft = result end)
+		assert.is_nil(draft)
+		state.set_session("ses_b", "B")
+		callbacks.cancel(nil)
+		assert.equals("Edit\n[Image 1]", draft.text)
+		assert.same(parts, draft.parts)
+		assert.equals("ses_a", draft.options.session_id)
+		assert.equals("/original", draft.options.directory)
+		assert.equals(false, draft.options.resume)
+		assert.equals("cancelled", pending.get("ses_a", id).status)
+		assert.is_nil(sync.get_message("ses_a", id))
+	end)
+
+	it("restores native inbox attachments after reconnect for editing", function()
+		pending.admit({ sessionID = "ses_a", id = "restored", delivery = "steer", type = "user", payload = {
+			text = "Native draft", files = { { uri = "file:///tmp/file", name = "file" } },
+			agents = { { name = "explore" } }, skills = { { id = "review" } },
+		} })
+		local draft
+		send.edit_input("ses_a", "restored", function(err, result) assert.is_nil(err); draft = result end)
+		callbacks.cancel(nil)
+		local payload = require("opencode.protocol.v2.requests").prompt(draft.text, { parts = draft.parts }, "new")
+		assert.same({ { uri = "file:///tmp/file", name = "file" } }, payload.files)
+		assert.same({ { name = "explore" } }, payload.agents)
+		assert.same({ { id = "review" } }, payload.skills)
+		assert.equals("steer", draft.options.delivery)
+	end)
+
+	it("uses a fresh admission attempt when editing a prompt across a reconnect", function()
+		send.send("Reconnect draft", { _token = pending.token("ses_a"), _catalog_ready = true, _catalog_deadline = 1 })
+		callbacks.get(nil, { id = "ses_a", agent = "build", model = model() }); accepted()
+		local id, draft = calls[#calls].body.id
+		pending.invalidate()
+		send.edit_input("ses_a", id, function(err, value) assert.is_nil(err); draft = value end)
+		callbacks.cancel(nil)
+		assert.is_nil(draft.options._token)
+		assert.is_nil(draft.options._catalog_ready)
+		assert.is_nil(draft.options._catalog_deadline)
+		assert.is_true(send.send(draft.text, draft.options))
+	end)
+
+	it("does not open an edit draft when cancellation loses to delivery", function()
+		send.send("Keep delivered", {})
+		callbacks.get(nil, { id = "ses_a", agent = "build", model = model() }); accepted()
+		local id, error, draft = calls[#calls].body.id
+		send.edit_input("ses_a", id, function(err, result) error, draft = err, result end)
+		pending.update("ses_a", id, { status = "delivered" })
+		callbacks.cancel({ status = 404, message = "Already delivered" })
+		assert.is_not_nil(error)
+		assert.is_nil(draft)
+		assert.is_not_nil(sync.get_message("ses_a", id))
 	end)
 
 	it("records an uncertain timeout without another POST or a false idle", function()

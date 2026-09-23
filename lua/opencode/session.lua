@@ -938,6 +938,7 @@ function M.switch_to(session, opts)
 				-- Upsert-only: a session switch fetch can be empty/unrelated while local
 				-- cache is still authoritative. Full-window reconcile happens on explicit
 				-- load/sync paths instead.
+				pending_helper.reconcile_history(session.id, messages)
 				sync.handle_session_messages(session.id, messages, { snapshot = snapshot })
 				M.set_message_cache(session.id, messages, {
 					reason = "session_switch",

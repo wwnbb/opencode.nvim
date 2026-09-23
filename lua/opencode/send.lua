@@ -293,4 +293,41 @@ function M.cancel_input(session_id, message_id, callback)
 	end)
 end
 
+-- Editing first removes the inbox item. Only a confirmed cancellation returns
+-- a draft, so a delivery race cannot send the same prompt twice.
+function M.edit_input(session_id, message_id, callback)
+	local record = selectors.pending_input(session_id, message_id)
+	if not record then
+		callback({ message = "This input is no longer pending" })
+		return
+	end
+	local opts = vim.deepcopy(record.options or {})
+	local payload = (record.inbox or {}).payload or record.payload or {}
+	local text = record.text or payload.text or ""
+	local parts = vim.deepcopy(opts.parts or {})
+	if record.text == nil then
+		for _, group in ipairs({ { "files", "file" }, { "agents", "agent" }, { "skills", "skill" } }) do
+			for _, attachment in ipairs(payload[group[1]] or {}) do
+				local part = vim.deepcopy(attachment)
+				part.type = group[2]
+				if part.type == "skill" then part.skillID = part.id end
+				if part.mention then part.source = { text = { value = part.mention.text } } end
+				parts[#parts + 1] = part
+			end
+		end
+	end
+	opts.parts = nil
+	-- Admission retries belong to the original send attempt. In particular its
+	-- connection token may have expired while the input waited in the inbox.
+	opts._token, opts._catalog_ready, opts._catalog_retry, opts._catalog_deadline = nil, nil, nil, nil
+	opts.session_id = session_id
+	opts.directory = opts.directory or state.get_session_directory(session_id)
+	opts.delivery = (record.inbox or {}).delivery or opts.delivery
+	opts._selection = record.selection or opts._selection
+	M.cancel_input(session_id, message_id, function(err)
+		if err then callback(err); return end
+		callback(nil, { text = text, parts = parts, options = opts })
+	end)
+end
+
 return M

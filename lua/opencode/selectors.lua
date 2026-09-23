@@ -392,13 +392,24 @@ function M.send_selection(opts)
 end
 
 -- Admission is separate from execution; delivered messages need no queue badge.
+local function prompt_record(session_id, message_id)
+	local message = require("opencode.sync").get_message(session_id, message_id)
+	if message and message.protocol == "v2" and message.role == "user" and not message.provisional then return nil end
+	return require("opencode.session.pending").get(session_id, message_id)
+end
+
+function M.pending_input(session_id, message_id)
+	local record = prompt_record(session_id, message_id)
+	if record and (record.status == "queued" or record.status == "accepted") then return record end
+end
+
 function M.prompt_status(session_id, message_id)
-	local record = require("opencode.session.pending").get(session_id, message_id)
+	local record = prompt_record(session_id, message_id)
 	if record and record.delivery_missing and record.status ~= "delivered" and record.status ~= "cancelled" then
 		return "Delivery unknown · reconnect to check"
 	end
 	local labels = {
-		submitting = "Sending…", queued = "Queued · cancel from the palette",
+		submitting = "Sending…", queued = "Queued",
 		accepted = "Steering pending", uncertain = "Delivery unknown · reconnect to check",
 		failed = "Send failed · draft preserved",
 	}

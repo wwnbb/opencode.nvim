@@ -219,6 +219,7 @@ function Context:reset_tracking()
 	state.permissions = {}
 	state.edits = {}
 	state.message_positions = {}
+	state.pending_inputs = {}
 	state.tasks = {}
 	state.tools = {}
 	state.spinner_footer_line = nil

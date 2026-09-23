@@ -277,6 +277,7 @@ local function render_retry_status_if_needed(ctx, messages, msg_idx)
 end
 
 local function render_user_message(ctx, message, render_parts, msg_idx, messages, max_user_message_lines)
+	local start_line = ctx:line_count()
 	local file_parts = {}
 	for _, part in ipairs(render_parts.parts or {}) do
 		local native_attachment = part.protocol == "v2" and vim.tbl_contains({ "file", "skill", "agent" }, part.type)
@@ -303,10 +304,25 @@ local function render_user_message(ctx, message, render_parts, msg_idx, messages
 	)
 	ctx:add_nui_lines(msg_lines)
 	local prompt_status = require("opencode.selectors").prompt_status(ctx.current_session.id, message.id)
+	local pending_input = require("opencode.selectors").pending_input(ctx.current_session.id, message.id)
 	if prompt_status then
+		if pending_input then
+			local keymaps = (ctx.chat_config or {}).keymaps or {}
+			for _, action in ipairs({ { "cancel_pending", "cancel" }, { "edit_pending", "edit" } }) do
+				local key = keymaps[action[1]]
+				if type(key) == "string" and key ~= "" then prompt_status = prompt_status .. " · " .. key .. " " .. action[2] end
+			end
+		end
 		local status_line = NuiLine()
 		status_line:append(NuiText(prompt_status, "Comment"))
 		ctx:add_line(status_line)
+	end
+	if pending_input then
+		state.pending_inputs[message.id] = widget_support.mark_render_generation({
+			session_id = ctx.current_session.id,
+			start_line = start_line,
+			end_line = ctx:line_count() - 1,
+		})
 	end
 
 	render_retry_status_if_needed(ctx, messages, msg_idx)

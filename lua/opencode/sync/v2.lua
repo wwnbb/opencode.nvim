@@ -21,8 +21,9 @@ function M.apply(sync, event)
 	local sid = data.sessionID
 	if not sid then return {} end
 	local result = { session_id = sid }
-	local function commit(message)
+	local function commit(message, provisional)
 		local projected = projection.project(sid, message)
+		projected.info.provisional = provisional
 		local _, _, changed = sync.handle_session_messages(sid, { projected })
 		result.changed = result.changed or changed > 0
 	end
@@ -44,9 +45,14 @@ function M.apply(sync, event)
 		result.inbox = { id = data.inboxID, sessionID = sid, type = item.type, payload = item.payload,
 			delivery = item.delivery, time = { created = event.created } }
 		if item.type == "user" then
-			local message = vim.deepcopy(item.payload)
-			message.id, message.type, message.time = data.inboxID, "user", { created = event.created }
-			commit(message)
+			local existing = sync.get_message(sid, data.inboxID)
+			if existing and existing.protocol == "v2" and not existing.provisional then
+				result.inbox, result.delivered = nil, data.inboxID
+			else
+				local message = vim.deepcopy(item.payload)
+				message.id, message.type, message.time = data.inboxID, "user", { created = event.created }
+				commit(message, true)
+			end
 		end
 	elseif kind == "session.inbox.delivered" then
 		result.delivered = data.inboxID

@@ -51,6 +51,17 @@ function M.admit(item)
 	return M.update(item.sessionID, item.id, { status = item.delivery == "queue" and "queued" or "accepted", inbox = item, delivery_missing = false })
 end
 
+-- Native history contains only delivered messages, unlike local/inbox echoes.
+-- Record even previously unknown IDs so late admission cannot resurrect them.
+function M.reconcile_history(session_id, messages)
+	for _, message in ipairs(messages or {}) do
+		local info = message.info or message
+		if info.protocol == "v2" and info.role == "user" and not info.provisional then
+			M.update(session_id, info.id, { status = "delivered", delivery_missing = false })
+		end
+	end
+end
+
 -- Serialize selection changes and admission per session, not across sessions.
 function M.serialize(session_id, task)
 	local queue = queues[session_id]

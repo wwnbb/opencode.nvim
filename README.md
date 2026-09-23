@@ -161,8 +161,20 @@ favorites are retained. Existing sessions keep their own model, agent and
 variant until you explicitly change them.
 
 Prompts sent while a response is running are queued and labelled in the chat.
-Use **Cancel Pending Input** in the palette to remove one queued prompt. Chat
-`<C-c>` interrupts the current execution and leaves queued inputs pending.
+On a queued message, press `C` to cancel it or `E` to remove it from the queue
+and edit its text and attachments in the input. Send the edited draft with `<C-g>`.
+These keys act on the queued widget under the cursor (including its status line);
+outside it they keep their normal Neovim behavior.
+The queue label disappears once delivery is confirmed. **Cancel Pending Input**
+is also available in the palette. Configure or disable these chat keys with:
+
+```lua
+require("opencode").setup({
+  chat = { keymaps = { cancel_pending = "C", edit_pending = "E" } }, -- false or "" disables a key
+})
+```
+
+Chat `<C-c>` interrupts the current execution and leaves queued inputs pending.
 Scripts can explicitly request steering with `send(text, { delivery = "steer" })`;
 it is applied at the server's next delivery boundary, without aborting a running tool.
 After a connection loss, an unknown delivery outcome stays visible while it is

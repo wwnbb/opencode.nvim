@@ -66,6 +66,19 @@ function M.setup_buffer(bufnr, opts)
 		actions.abort()
 	end, vim.tbl_extend("force", keymap_opts, { desc = "Stop current generation" }))
 
+	for _, mapping in ipairs({
+		{ "cancel_pending", "cancel", "Cancel pending input at cursor" },
+		{ "edit_pending", "edit", "Edit pending input at cursor" },
+	}) do
+		local key = cfg.keymaps[mapping[1]]
+		if type(key) == "string" and key ~= "" then
+			vim.keymap.set("n", key, function()
+				if require("opencode.ui.chat.pending_inputs")[mapping[2]]() then return end
+				vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes(key, true, false, true), "n", false)
+			end, vim.tbl_extend("force", keymap_opts, { desc = mapping[3] }))
+		end
+	end
+
 	vim.keymap.set("n", "a", function()
 		if type(opts.toggle_auto_scroll) == "function" then
 			opts.toggle_auto_scroll()
