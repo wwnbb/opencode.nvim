@@ -20,7 +20,8 @@ local EDIT_WIDGET_TOOL_ROWS = {
 	edit = true,
 	apply_patch = true,
 	neovim_edit = true,
-	neovim_apply_patch = true,
+	neovim_patch = true,
+	neovim_apply_patch = true, -- Historical tool calls.
 }
 
 local function ensure_session_title_highlight()

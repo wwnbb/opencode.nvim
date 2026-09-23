@@ -55,9 +55,9 @@ local patch = [[*** Begin Patch
 +after
 *** End Patch]]
 local info = await(function(cb) client.create_session({ location = { directory = directory }, model = { providerID = provider, id = model },
-	permissions = { { action = "neovim_apply_patch", resource = "*", effect = "allow" } } }, cb) end)
+	permissions = { { action = "neovim_patch", resource = "*", effect = "allow" } } }, cb) end)
 session.remember(info); session.set_active(info.id, "Mixed patch review", { preserve_cache = true }); chat.open(); chat.focus()
-assert(require("opencode.send").send("Call the direct top-level neovim_apply_patch function exactly once with the following patchText. Do not call execute or any other tool. Wait for the review decision, then reply briefly.\n" .. patch, {}))
+assert(require("opencode.send").send("Call the direct top-level neovim_patch function exactly once with the following patchText. Do not call execute or any other tool. Wait for the review decision, then reply briefly.\n" .. patch, {}))
 local review
 wait(function()
 	for _, item in ipairs(edits.get_all_active()) do if item.session_id == info.id then review = item; return true end end
@@ -117,7 +117,7 @@ for name, bytes in pairs(expected) do assert(read(name) == bytes, "Wrong final b
 local history = await(function(cb) client.get_all_messages(info.id, cb) end)
 local tool
 for _, message in ipairs(history) do for _, part in ipairs(message.parts) do
-	if part.type == "tool" and part.tool == "neovim_apply_patch" then tool = part.state end
+	if part.type == "tool" and part.tool == "neovim_patch" then tool = part.state end
 end end
 assert(tool and tool.status == "completed" and tool.metadata.status == "partial", vim.inspect(tool))
 chat.do_render(); chat.focus(); snapshot("review-settled")

@@ -69,6 +69,7 @@ local TOOL_DISPLAY_NAMES = {
 	glob = "Glob",
 	grep = "Grep",
 	list = "List",
+	neovim_patch = "Neovim Patch",
 	neovim_apply_patch = "Neovim Apply Patch",
 	neovim_edit = "Neovim Edit",
 	read = "Read",

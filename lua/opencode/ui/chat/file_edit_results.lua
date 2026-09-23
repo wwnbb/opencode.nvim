@@ -29,7 +29,8 @@ local SUPPORTED_TOOLS = {
 	edit = true,
 	apply_patch = true,
 	neovim_edit = true,
-	neovim_apply_patch = true,
+	neovim_patch = true,
+	neovim_apply_patch = true, -- Historical tool calls.
 }
 
 local STATUS_ICON = {
@@ -403,7 +404,7 @@ local function get_title(tool_part, metadata)
 		return "Edit completed"
 	elseif tool_part.tool == "apply_patch" then
 		return "Patch applied"
-	elseif tool_part.tool == "neovim_apply_patch" then
+	elseif tool_part.tool == "neovim_patch" or tool_part.tool == "neovim_apply_patch" then
 		return "Patch review completed"
 	end
 	return "File changes completed"
@@ -741,7 +742,7 @@ end
 ---@param tool_part table
 ---@param metadata table
 ---@return OpenCodeFileEditResult|nil
-local function normalize_neovim_apply_patch(tool_part, metadata)
+local function normalize_neovim_patch(tool_part, metadata)
 	local tool_state = get_tool_state(tool_part)
 	local raw_files = normalize_file_list(metadata.files)
 	if #raw_files == 0 then
@@ -796,8 +797,8 @@ local function normalize_model(tool_part)
 		return normalize_apply_patch(tool_part, metadata)
 	elseif tool_part.tool == "neovim_edit" then
 		return normalize_neovim_edit(tool_part, metadata)
-	elseif tool_part.tool == "neovim_apply_patch" then
-		return normalize_neovim_apply_patch(tool_part, metadata)
+	elseif tool_part.tool == "neovim_patch" or tool_part.tool == "neovim_apply_patch" then
+		return normalize_neovim_patch(tool_part, metadata)
 	end
 	return nil
 end

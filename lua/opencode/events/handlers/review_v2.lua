@@ -11,7 +11,7 @@ function M.setup(events)
 	end
 	local review_terminal = {}
 	local function upsert(record)
-		if type(record) ~= "table" or record.protocolVersion ~= 1 or not relevant(record.sessionID) then return end
+		if type(record) ~= "table" or record.protocolVersion ~= 2 or not relevant(record.sessionID) then return end
 		if record.status == "pending" and review_terminal[record.reviewID] then return end
 		if record.status == "cancelled" or record.status == "settled" or record.status == "decided" then review_terminal[record.reviewID] = true end
 		if not edits.get_edit(record.reviewID) then
@@ -35,7 +35,7 @@ function M.setup(events)
 	local policy_busy, policy_terminal = {}, {}
 	local capability_notices = {}
 	local function policy(record)
-		if type(record) ~= "table" or record.protocolVersion ~= 1 or not relevant(record.sessionID) then return end
+		if type(record) ~= "table" or record.protocolVersion ~= 2 or not relevant(record.sessionID) then return end
 		local id, sid = record.gateID, record.sessionID
 		if record.status ~= "pending" then policy_terminal[id] = true; policy_busy[id] = nil; return end
 		if policy_terminal[id] or policy_busy[id] then return end
@@ -75,10 +75,10 @@ function M.setup(events)
 		local token = pending.token(sid)
 		client.review_rpc("capabilities", vim.empty_dict(), directory, function(err, capability)
 			if not pending.is_current(token) then return end
-			if err or type(capability) ~= "table" or capability.protocolVersion ~= 1 or capability.review ~= true or capability.todo ~= true then
+			if err or type(capability) ~= "table" or capability.protocolVersion ~= 2 or capability.review ~= true or capability.todo ~= true then
 				if not capability_notices[directory] then
 					capability_notices[directory] = true
-					vim.notify("OpenCode: bundled server plugin unavailable or outdated. Run scripts/install-tools.sh for this server's config, then reconnect. File review and persistent todos require plugin 2.0.11-2; history remains readable.", vim.log.levels.WARN)
+					vim.notify("OpenCode: bundled server plugin unavailable or outdated. Run scripts/install-tools.sh for this server's config, then reconnect. File review and persistent todos require plugin 2.0.11-3; history remains readable.", vim.log.levels.WARN)
 				end
 				return
 			end

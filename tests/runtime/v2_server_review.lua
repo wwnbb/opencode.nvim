@@ -23,7 +23,7 @@ local function bytes() return table.concat(vim.fn.readfile(path, "b"), "\n") end
 local info = await(function(cb) client.create_session({ location = { directory = directory }, model = { providerID = provider, id = model },
 	permissions = { { action = "neovim_edit", resource = "*", effect = "allow" } } }, cb) end)
 session.remember(info); session.set_active(info.id, "Server apply review", { preserve_cache = true }); chat.open()
-assert(require("opencode.send").send('Call the direct top-level neovim_edit tool exactly once with filePath="server-reviewed.txt", oldString="before", newString="after". Do not use execute or any other tool. Wait for review then reply briefly.', {}))
+assert(require("opencode.send").send('Call the direct top-level neovim_edit tool exactly once with path="server-reviewed.txt", oldString="before", newString="after". Do not use execute or any other tool. Wait for review then reply briefly.', {}))
 local review
 wait(function()
 	for _, item in ipairs(edits.get_all_active()) do if item.session_id == info.id then review = item; return true end end
@@ -43,7 +43,7 @@ local record = await(function(cb) client.review_rpc("reviewGet", { sessionID = i
 assert(record.status == "settled" and record.outcome.wrote == true)
 assert(record.decisions[1].apply == "server" and record.decisions[1].observed == nil)
 vim.fn.writefile({ "external after settlement" }, path)
-local duplicate = await(function(cb) client.review_rpc("reviewReply", { protocolVersion = 1, sessionID = info.id, reviewID = review.review_id,
+local duplicate = await(function(cb) client.review_rpc("reviewReply", { protocolVersion = 2, sessionID = info.id, reviewID = review.review_id,
 	revision = record.revision, decisions = record.decisions }, directory, cb) end)
 assert(duplicate.status == "settled" and bytes() == "external after settlement\n", "Duplicate reply reapplied the proposal")
 vim.fn.writefile({ vim.json.encode({ version = "2.0.11", before = "before\n", after = "after\n", duplicate_bytes = bytes(),

@@ -14,8 +14,9 @@ config.mkdir()
 original = '''{
   // Keep this user's comment.
   "plugins": ["example-user-plugin"],
-  "permission": { "rg": "deny", "neovim_edit": { "*.lua": "ask" } },
+  "permission": { "rg": "deny", "neovim_edit": { "*.lua": "ask" }, "neovim_apply_patch": "deny" },
   "permissions": [{ "action": "read", "resource": "*.env", "effect": "deny" }],
+  "agents": { "build": { "permissions": [{ "action": "neovim_apply_patch", "resource": "*.md", "effect": "ask" }] } },
   "commands": { "mine": { "description": "User command", "template": "Keep me" } },
   "mcp": {},
 }
@@ -37,8 +38,12 @@ for run in range(2):
     assert value["permissions"] == [
         {"action": "rg", "resource": "*", "effect": "deny"},
         {"action": "neovim_edit", "resource": "*.lua", "effect": "ask"},
+        {"action": "neovim_patch", "resource": "*", "effect": "deny"},
         {"action": "read", "resource": "*.env", "effect": "deny"},
     ]
+    assert value["agents"]["build"]["permissions"] == [{"action": "neovim_patch", "resource": "*.md", "effect": "ask"}]
+    assert (config / "plugins/opencode-nvim/tools/neovim_patch.ts").exists()
+    assert not (config / "plugins/opencode-nvim/tools/neovim_apply_patch.ts").exists()
     assert "Keep this user's comment" in (config / "opencode.jsonc").read_text()
     assert value["commands"]["mine"]["template"] == "Keep me"
     assert (config / "commands/load_skills.md").read_text() == "User's edited command\n"

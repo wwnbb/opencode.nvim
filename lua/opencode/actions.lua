@@ -466,13 +466,20 @@ function M.toggle_mcp(name, connected, callback, opts)
 	return fn(name, function(err, result) schedule_callback(callback, err, result) end, catalog_options(opts))
 end
 
+function M.reply_review(review_id, callback)
+	return require("opencode.review").reply(review_id, callback)
+end
+
 function M.respond_permission(permission_id, reply, opts, callback)
 	opts = vim.tbl_extend("force", {}, opts or {})
 	local owner = require("opencode.permission.state")
 	local item = owner.get_permission(permission_id) or require("opencode.edit.state").get_edit(permission_id)
 	opts.session_id = opts.session_id or (item and item.session_id)
 	opts.directory = opts.directory or require("opencode.state").get_session_directory(opts.session_id)
-	if item and item.transport == "review_rpc" then return require("opencode.review").reply(permission_id, callback) end
+	if item and item.transport == "review_rpc" then
+		if callback then callback({ message = "Use reply_review for file review decisions" }) end
+		return false
+	end
 	local native = item and item.protocol == "v2"
 	if native and not owner.begin_submission(permission_id) then return false end
 	local token = require("opencode.session.pending").token(opts.session_id)

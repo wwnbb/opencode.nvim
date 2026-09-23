@@ -6,7 +6,7 @@ import * as path from "node:path"
 import { Reviews } from "../../opencode_nvim/plugins/opencode-nvim/review"
 import { replyInput } from "../../opencode_nvim/plugins/opencode-nvim/rpc"
 import edit from "../../opencode_nvim/plugins/opencode-nvim/tools/neovim_edit"
-import patch from "../../opencode_nvim/plugins/opencode-nvim/tools/neovim_apply_patch"
+import patch from "../../opencode_nvim/plugins/opencode-nvim/tools/neovim_patch"
 import rg from "../../opencode_nvim/plugins/opencode-nvim/tools/rg"
 let directory: string, reviews: Reviews, controller: AbortController, events: any[], context: any
 beforeEach(async () => {
@@ -25,14 +25,14 @@ async function pending() {
   }
   throw new Error("Missing review")
 }
-function reply(record: any, decisions: any[]) {
-  return replyInput.parse({ protocolVersion: 1, sessionID: "s", reviewID: record.reviewID, revision: record.revision, decisions })
+function reply(record: any, decisions: any[], message?: string) {
+  return replyInput.parse({ protocolVersion: 2, sessionID: "s", reviewID: record.reviewID, revision: record.revision, decisions, message })
 }
 const sha = (bytes: string) => createHash("sha256").update(bytes).digest("hex")
 
 test("RPC reply validates scope, revision and exact file IDs before settlement", async () => {
   await fs.writeFile(path.join(directory, "a"), "before")
-  const execution = edit.execute({ filePath: "a", oldString: "before", newString: "after" }, context)
+  const execution = edit.execute({ path: "a", oldString: "before", newString: "after" }, context)
   const record = await pending()
   const input = reply(record, [{ fileID: record.files[0].fileID, status: "accepted", apply: "server" }])
   await expect(reviews.reply({ ...input, sessionID: "other" })).rejects.toMatchObject({ code: "not_found" })
@@ -54,7 +54,7 @@ test("RPC reply validates scope, revision and exact file IDs before settlement",
 test("interruption while awaiting review rejects late replies and cannot write files", async () => {
   const file = path.join(directory, "a")
   await fs.writeFile(file, "\ufeffbefore\r\n")
-  const execution = edit.execute({ filePath: "a", oldString: "before", newString: "after" }, context)
+  const execution = edit.execute({ path: "a", oldString: "before", newString: "after" }, context)
   void execution.catch(() => {})
   const record = await pending()
   controller.abort()
@@ -83,7 +83,7 @@ test("mixed explicit decisions apply only accepted files and preserve rejected f
 test("manual resolution requires matching observed bytes and is never overwritten", async () => {
   const file = path.join(directory, "a")
   await fs.writeFile(file, "before")
-  const execution = edit.execute({ filePath: "a", oldString: "before", newString: "after" }, context)
+  const execution = edit.execute({ path: "a", oldString: "before", newString: "after" }, context)
   const record = await pending()
   const choice = { fileID: record.files[0].fileID, status: "resolved", observed: { exists: true, sha256: sha("manual") } }
   await expect(reviews.reply(reply(record, [choice]))).rejects.toMatchObject({ code: "conflict" })
@@ -96,7 +96,7 @@ test("manual resolution requires matching observed bytes and is never overwritte
 })
 
 test("rejected add preserves an externally created empty file", async () => {
-  const execution = edit.execute({ filePath: "new", oldString: "", newString: "proposed" }, context)
+  const execution = patch.execute({ patchText: "*** Begin Patch\n*** Add File: new\n+proposed\n*** End Patch" }, context)
   const record = await pending()
   await fs.writeFile(path.join(directory, "new"), "")
   await reviews.reply(reply(record, [{ fileID: record.files[0].fileID, status: "rejected" }]))
@@ -107,7 +107,7 @@ test("rejected add preserves an externally created empty file", async () => {
 test("an external BOM/EOL-only change prevents server overwrite", async () => {
   const file = path.join(directory, "a")
   await fs.writeFile(file, "before\n")
-  const execution = edit.execute({ filePath: "a", oldString: "before", newString: "after" }, context)
+  const execution = edit.execute({ path: "a", oldString: "before", newString: "after" }, context)
   const record = await pending()
   await fs.writeFile(file, "\ufeffbefore\r\n")
   await reviews.reply(reply(record, [{ fileID: record.files[0].fileID, status: "accepted", apply: "server" }]))
@@ -190,4 +190,89 @@ test("native allow continues, explicit deny without a hook and interruption fail
   await expect(interrupted).rejects.toThrow("cancelled")
   expect(policies.confirm({ sessionID: "s", gateID: record.gateID }).status).toBe("cancelled")
   policies.dispose()
+})
+
+for (const name of ["neovim_edit", "neovim_patch"] as const) {
+  for (const status of ["accepted", "rejected", "resolved"] as const) {
+    test(`${name} returns ${status} review feedback to the model and history exactly once`, async () => {
+      const file = path.join(directory, "notes.txt")
+      await fs.writeFile(file, "before\n")
+      const execution = name === "neovim_edit"
+        ? edit.execute({ path: "notes.txt", oldString: "before", newString: "after" }, context)
+        : patch.execute({ patchText: "*** Begin Patch\n*** Update File: notes.txt\n@@\n-before\n+after\n*** End Patch" }, context)
+      const record = await pending()
+      expect(record.tool).toBe(name)
+      expect(await fs.readFile(file, "utf8")).toBe("before\n")
+      const message = "смешные, можешь еще парочку добавить?\nСохрани мои правки."
+      if (status === "resolved") await fs.writeFile(file, "manual\n")
+      const input = reply(record, [{ fileID: record.files[0].fileID, status,
+        apply: status === "resolved" ? "client" : "server",
+        ...(status === "resolved" ? { observed: { exists: true, sha256: sha("manual\n") } } : {}),
+      }], `  ${message}  `)
+      expect(input.message).toBe(message)
+      const admission = await reviews.reply(input)
+      expect(await reviews.reply(input)).toEqual(admission)
+      await expect(reviews.reply({ ...input, message: "different feedback" })).rejects.toMatchObject({ code: "conflict" })
+      const result = await execution
+      expect(result.content.split(message)).toHaveLength(2)
+      expect(result.metadata.review_message).toBe(message)
+      expect(result.metadata.status).toBe(status === "accepted" ? "applied" : status === "resolved" ? "partial" : "rejected")
+      expect(await fs.readFile(file, "utf8")).toBe(status === "accepted" ? "after\n" : status === "resolved" ? "manual\n" : "before\n")
+      await reviews.finish("s", "call", result.metadata)
+      const settled = reviews.get("s", record.reviewID)
+      expect(settled.message).toBe(message)
+      expect(settled.outcome?.review_message).toBe(message)
+      expect(settled).toStrictEqual(JSON.parse(JSON.stringify(settled)))
+      expect(events.filter(e => e.type === "reviewSettled")).toHaveLength(1)
+    })
+  }
+}
+
+test("mixed patch decisions retain feedback", async () => {
+  const execution = patch.execute({ patchText: "*** Begin Patch\n*** Add File: a\n+one\n*** Add File: b\n+two\n*** End Patch" }, context)
+  const record = await pending()
+  await reviews.reply(reply(record, record.files.map((f, i) => ({ fileID: f.fileID, status: i === 0 ? "accepted" : "rejected", apply: "server" })), "keep only a"))
+  const result = await execution
+  expect(result.metadata.status).toBe("partial")
+  expect(result.content).toContain("keep only a")
+  expect(await fs.readFile(path.join(directory, "a"), "utf8")).toBe("one\n")
+  expect(await fs.access(path.join(directory, "b")).then(() => true, () => false)).toBe(false)
+})
+
+test("whitespace-only feedback is absent and protocol 1 cannot silently lose notes", async () => {
+  await fs.writeFile(path.join(directory, "a"), "before")
+  const execution = edit.execute({ path: "a", oldString: "before", newString: "after" }, context)
+  const record = await pending()
+  const input = reply(record, [{ fileID: record.files[0].fileID, status: "accepted", apply: "server" }], "  \n ")
+  expect(() => replyInput.parse({ ...input, protocolVersion: 1, message: "do not drop" })).toThrow()
+  await reviews.reply(input)
+  const result = await execution
+  expect(result.metadata.review_message).toBeUndefined()
+  expect(result.content).not.toContain("User feedback")
+  expect(reviews.get("s", record.reviewID).message).toBeUndefined()
+})
+
+test("v2 edit accepts path and refuses creation, empty matches, no-ops and ambiguous matches before review", async () => {
+  expect(edit.input.safeParse({ path: "a", oldString: "before", newString: "after" }).success).toBe(true)
+  expect(edit.input.safeParse({ filePath: "a", oldString: "before", newString: "after" }).success).toBe(false)
+  expect(edit.input.safeParse({ path: "a", oldString: "", newString: "after" }).success).toBe(false)
+  await expect(edit.execute({ path: "new", oldString: "before", newString: "after" }, context)).rejects.toThrow("not found")
+  await expect(edit.execute({ path: "new", oldString: "", newString: "after" }, context)).rejects.toThrow("oldString must not be empty")
+  await fs.writeFile(path.join(directory, "a"), "before before")
+  await expect(edit.execute({ path: "a", oldString: "", newString: "overwrite" }, context)).rejects.toThrow("oldString must not be empty")
+  await expect(edit.execute({ path: "a", oldString: "before", newString: "before" }, context)).rejects.toThrow("identical")
+  await expect(edit.execute({ path: "a", oldString: "before", newString: "after" }, context)).rejects.toThrow("multiple matches")
+  expect(reviews.list("s")).toHaveLength(0)
+  expect(await fs.readFile(path.join(directory, "a"), "utf8")).toBe("before before")
+  expect(await fs.access(path.join(directory, "new")).then(() => true, () => false)).toBe(false)
+})
+
+test("v2 edit replaceAll preserves literal replacement text, BOM and CRLF", async () => {
+  const file = path.join(directory, "a")
+  await fs.writeFile(file, "\ufeffbefore\r\nbefore\r\n")
+  const execution = edit.execute({ path: "a", oldString: "before\n", newString: "$&after\n", replaceAll: true }, context)
+  const record = await pending()
+  await reviews.reply(reply(record, [{ fileID: record.files[0].fileID, status: "accepted", apply: "server" }]))
+  expect((await execution).metadata.status).toBe("applied")
+  expect(await fs.readFile(file, "utf8")).toBe("\ufeff$&after\r\n$&after\r\n")
 })

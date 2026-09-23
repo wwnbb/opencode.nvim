@@ -63,7 +63,7 @@ assert(vim.wait(5000, client.sse.is_connected, 10))
 state.set_connection("connected")
 assert(vim.wait(10000, function() return edits.get_edit(review_id) ~= nil end, 20), "Pending review did not recover")
 assert(edits.accept_all(review_id))
-actions.respond_permission(review_id, "once", {}, function(err) assert(not err, vim.inspect(err)); reply_done = true end)
+actions.reply_review(review_id, function(err) assert(not err, vim.inspect(err)); reply_done = true end)
 assert(vim.wait(90000, function()
 	for _, message in ipairs(sync.get_messages(created.id)) do if message.type == "idle" then return true end end
 	return false
@@ -91,7 +91,7 @@ local function start_case(name, rules)
 	session.remember(info); session.set_active(info.id, name, { preserve_cache = true })
 	local target = directory .. "/" .. name .. ".txt"
 	vim.fn.writefile({ "before" }, target)
-	local text = 'Call neovim_edit exactly once with filePath=' .. vim.json.encode(name .. ".txt")
+	local text = 'Call neovim_edit exactly once with path=' .. vim.json.encode(name .. ".txt")
 		.. ', oldString="before", newString="after". Use the direct top-level neovim_edit function, never the execute wrapper or tools.neovim_edit. Do not call any other tool. If permission is denied, stop and reply briefly. Do not retry.'
 	assert(require("opencode.send").send(text, { agent = "build", model = { providerID = provider, id = model } }))
 	return info.id, target
@@ -112,7 +112,7 @@ assert(vim.wait(10000, function()
 	return cancelled and cancelled.status == "cancelled"
 end, 20), "Effect scope did not cancel review")
 local late_done, late_error
-client.review_rpc("reviewReply", { protocolVersion = 1, sessionID = interrupted, reviewID = cancelled.reviewID,
+client.review_rpc("reviewReply", { protocolVersion = 2, sessionID = interrupted, reviewID = cancelled.reviewID,
 	revision = cancelled.revision, decisions = { { fileID = cancelled.files[1].fileID, status = "accepted", apply = "server" } },
 }, directory, function(err) late_error, late_done = err, true end)
 assert(vim.wait(10000, function() return late_done end, 10))

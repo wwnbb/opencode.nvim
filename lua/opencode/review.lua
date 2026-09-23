@@ -34,8 +34,10 @@ function M.reply(id, callback)
 		choices[#choices + 1] = choice
 	end
 	local token = pending.token(item.session_id)
+	local message = vim.trim(item.message or "")
 	require("opencode.client").review_rpc("reviewReply", {
-		protocolVersion = 1, sessionID = item.session_id, reviewID = id, revision = item.revision, decisions = choices,
+		protocolVersion = 2, sessionID = item.session_id, reviewID = id, revision = item.revision, decisions = choices,
+		message = message ~= "" and message or nil,
 	}, item.location.directory, function(err, record)
 		if not pending.is_current(token) or edits.get_edit(id) ~= item then return end
 		if item.status == "sent" then
