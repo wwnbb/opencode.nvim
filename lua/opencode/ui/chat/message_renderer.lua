@@ -447,13 +447,19 @@ local function render_messages(
 
 		if should_render then
 			if message.role == "user" then
+				if ctx:line_count() > 0 then ctx:ensure_single_blank_separator() end
+				message_start_line = ctx:line_count()
 				render_user_message(ctx, message, render_parts, msg_idx, messages, max_user_message_lines)
 			else
 				render_assistant_message(ctx, index, message, render_parts, {
 					activities = activities,
 					incomplete_assistant = incomplete_assistant,
 					is_last_assistant = is_last_assistant,
-					suppress_footer = processing_presentation ~= nil and is_last_assistant,
+					-- A new user turn may be waiting for its first assistant message.
+					-- Its processing footer must not replace the previous turn's footer.
+					suppress_footer = processing_presentation ~= nil
+						and is_last_assistant
+						and processing_presentation.source_message == message,
 					render_metadata_footer_line = render_metadata_footer_line,
 				})
 			end
@@ -528,6 +534,8 @@ local function render_local_notices(ctx, index, all_messages, max_user_message_l
 			if has_server_user_echo(message) then
 				goto continue_local_message
 			end
+			if ctx:line_count() > 0 then ctx:ensure_single_blank_separator() end
+			message_start_line = ctx:line_count()
 			local msg_lines = render.render_user_message(message.content or "", message.agent, nil, {
 				max_lines = max_user_message_lines,
 				highlight_code = ctx:code_highlighter(message.id),
