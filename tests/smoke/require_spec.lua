@@ -1878,7 +1878,7 @@ do
 		messageID = "m4",
 		sessionID = "render_contract_session",
 		type = "tool",
-		tool = "neovim_apply_patch",
+		tool = "neovim_patch",
 		callID = "call_neovim_patch",
 		state = {
 			status = "completed",
@@ -1946,14 +1946,14 @@ do
 	local neovim_patch_preview = edit_state.get_edit(neovim_patch_preview_id)
 	assert(
 		neovim_patch_preview and neovim_patch_preview.preview == true,
-		"approved neovim_apply_patch should create preview edit state"
+		"approved neovim_patch should create preview edit state"
 	)
-	assert(chat_state.edits[neovim_patch_preview_id], "approved neovim_apply_patch preview should be tracked")
+	assert(chat_state.edits[neovim_patch_preview_id], "approved neovim_patch preview should be tracked")
 	assert(chat_state.tools.m4_question_tool == nil, "question tool row should be suppressed by widget")
 	assert(chat_state.tools.m4_edit_tool == nil, "edit tool row should be suppressed by widget")
 	assert(chat_state.tools.m4_patch_tool == nil, "apply_patch tool row should be suppressed by preview widget")
 	assert(chat_state.tools.m4_neovim_edit_tool == nil, "neovim_edit tool row should be suppressed by preview widget")
-	assert(chat_state.tools.m4_neovim_patch_tool == nil, "neovim_apply_patch tool row should be suppressed by preview widget")
+	assert(chat_state.tools.m4_neovim_patch_tool == nil, "neovim_patch tool row should be suppressed by preview widget")
 
 	edit_state.toggle_inline_diff(preview_edit_id, 1)
 	local preview_lines = require("opencode.ui.edit_widget").get_resolved_lines(preview_edit_id, preview_edit)
@@ -1972,11 +1972,11 @@ do
 	local neovim_patch_text = table.concat(neovim_patch_lines, "\n")
 	assert(
 		neovim_patch_text:find("old neovim patch", 1, true),
-		"neovim_apply_patch preview should expand removed diff text"
+		"neovim_patch preview should expand removed diff text"
 	)
 	assert(
 		neovim_patch_text:find("new neovim patch", 1, true),
-		"neovim_apply_patch preview should expand added diff text"
+		"neovim_patch preview should expand added diff text"
 	)
 
 	local block_key = render_state.stream_block_key("render_contract_session", "m4", "m4_text", "text")

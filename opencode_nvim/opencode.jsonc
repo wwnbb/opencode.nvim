@@ -2,6 +2,6 @@
   // Native policy authorizes the operation; Neovim separately reviews its diff.
   "permissions": [
     { "action": "neovim_edit", "resource": "*", "effect": "ask" },
-    { "action": "neovim_apply_patch", "resource": "*", "effect": "ask" }
+    { "action": "neovim_patch", "resource": "*", "effect": "ask" }
   ]
 }

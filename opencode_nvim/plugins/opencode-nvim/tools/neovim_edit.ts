@@ -1,7 +1,7 @@
 import { tool } from "./lib/definition"
 import { readFileSync } from "node:fs"
 const DESCRIPTION = readFileSync(new URL("./neovim_edit.txt", import.meta.url), "utf8")
-import { reviewDecision, publishProgress } from "./lib/context"
+import { reviewDecision, publishProgress, reviewResult } from "./lib/context"
 import {
   displayPath,
   readState,
@@ -37,7 +37,7 @@ function replaceExact(
     throw new Error("No changes to apply: oldString and newString are identical.")
   }
 
-  if (oldString === "") return newString
+  if (oldString === "") throw new Error("oldString must not be empty. Use neovim_patch to create a file.")
 
   let count = 0
   let index = content.indexOf(oldString)
@@ -83,20 +83,22 @@ function statusLabel(status: Status, divergence: Divergence = "none"): string {
 export default tool({
   description: DESCRIPTION,
   args: {
-    filePath: schema.string().describe("The absolute or project-relative path to the file to modify"),
-    oldString: schema.string().describe("The exact text to replace"),
+    path: schema.string().min(1).describe("The absolute or location-relative path to an existing file"),
+    oldString: schema.string().min(1).describe("The non-empty exact text to replace"),
     newString: schema.string().describe("The replacement text"),
     replaceAll: schema.boolean().optional().describe("Replace all occurrences of oldString"),
     allowIndentChange: schema.boolean().optional().describe("Allow replacement lines to remove leading indentation"),
   },
   async execute(args, context) {
-    const filePath = resolveFilePath(context.directory, args.filePath)
+    if (!args.oldString) throw new Error("oldString must not be empty. Use neovim_patch to create a file.")
+    if (args.oldString === args.newString) throw new Error("No changes to apply: oldString and newString are identical.")
+    const filePath = resolveFilePath(context.directory, args.path)
     await context.authorize("neovim_edit", [filePath])
     const before = await readState(filePath)
     const nextInput = splitBom(args.newString)
     const desiredBom = before.bom || nextInput.bom
 
-    if (!before.exists && args.oldString !== "") {
+    if (!before.exists) {
       throw new Error(`File ${filePath} not found`)
     }
 
@@ -120,7 +122,7 @@ export default tool({
       filePath,
       relativePath,
       file: filePath,
-      type: before.exists ? "update" : "add",
+      type: "update",
       before: before.content,
       after: after.content,
       diff: proposedDiff,
@@ -225,7 +227,7 @@ export default tool({
       status,
     }
 
-    return {
+    return reviewResult(decision, {
       title: relativePath,
       content: output,
       metadata: {
@@ -240,6 +242,6 @@ export default tool({
         filediff,
         diagnostics: {},
       },
-    }
+    })
   },
 })

@@ -9,7 +9,7 @@ import { definition, protocolVersion, pluginVersion } from "./rpc"
 import { Policies } from "./policy"
 import { Reviews, ReviewError } from "./review"
 import edit from "./tools/neovim_edit"
-import patch from "./tools/neovim_apply_patch"
+import patch from "./tools/neovim_patch"
 import rg from "./tools/rg"
 
 export default Plugin.define({
@@ -37,7 +37,7 @@ export default Plugin.define({
           : call.error("unavailable", "Todo storage unavailable", { message: "Todo storage unavailable" }))),
       policyList: input => Effect.sync(() => policies.list(input.sessionID)),
       policyConfirm: (input, call) => Effect.try({ try: () => policies.confirm(input), catch: error => call.error("conflict", String(error), { message: String(error) }) }),
-      capabilities: () => Effect.succeed({ protocolVersion, pluginVersion, tools: ["neovim_edit", "neovim_apply_patch", "rg", "todoread", "todowrite"], review: true as const, todo: true as const }),
+      capabilities: () => Effect.succeed({ protocolVersion, pluginVersion, tools: ["neovim_edit", "neovim_patch", "rg", "todoread", "todowrite"], review: true as const, todo: true as const }),
       reviewList: (input) => Effect.sync(() => ({ protocolVersion, reviews: reviews.list(input.sessionID) })),
       reviewGet: (input, call) => Effect.try({ try: () => reviews.get(input.sessionID, input.reviewID),
         catch: () => call.error("not_found", "Review not found", { reviewID: input.reviewID }) }),
@@ -63,7 +63,7 @@ export default Plugin.define({
           }, catch: error => error })), Effect.mapError(error => new Tool.Error({ message: error instanceof Error ? error.message : String(error) }))),
         })
       }
-      for (const [name, core] of Object.entries({ neovim_edit: edit, neovim_apply_patch: patch, rg })) {
+      for (const [name, core] of Object.entries({ neovim_edit: edit, neovim_patch: patch, rg })) {
         editor.add({ name, description: "Call this top-level tool directly by name. It is not available inside the execute tool or tools.* namespace.\n\n" + core.description, input: core.input,
           options: { permission: name, codemode: false },
           execute: (input: any, context) => Effect.gen(function* () {

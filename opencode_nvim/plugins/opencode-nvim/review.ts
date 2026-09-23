@@ -46,11 +46,12 @@ export class Reviews {
     if (record.status === "pending") await this.emit("reviewCreated", structuredClone(record))
     return promise
   }
-  async reply(input: { sessionID: string; reviewID: string; revision: number; decisions: Decision[] }) {
+  async reply(input: { sessionID: string; reviewID: string; revision: number; decisions: Decision[]; message?: string }) {
     const current = this.get(input.sessionID, input.reviewID)
     const entry = this.entries.get(input.reviewID)!
     const decisions = [...input.decisions].sort((a, b) => a.fileID.localeCompare(b.fileID))
-    const signature = JSON.stringify(decisions)
+    const message = input.message?.trim() || undefined
+    const signature = JSON.stringify({ decisions, message })
     const conflict = (message: string): never => { throw new ReviewError("conflict", message, structuredClone(entry.record)) }
     if (input.revision !== current.revision) conflict("Review revision changed")
     if (entry.record.status !== "pending") {
@@ -78,7 +79,8 @@ export class Reviews {
     entry.reply = signature
     entry.record.status = "decided"
     entry.record.decisions = decisions
-    entry.resolve({ files: decisions.map(d => ({ ...d, path: current.files.find(f => f.fileID === d.fileID)!.filePath })) })
+    if (message) entry.record.message = message
+    entry.resolve({ message, files: decisions.map(d => ({ ...d, path: current.files.find(f => f.fileID === d.fileID)!.filePath })) })
     return structuredClone(entry.record)
   }
   async finish(sessionID: string, callID: string, outcome: Record<string, unknown>) {

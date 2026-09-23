@@ -30,7 +30,7 @@ end
 ---@param tool_name string
 ---@return boolean
 local function is_edit_tool(tool_name)
-	if tool_name == "neovim_edit" or tool_name == "neovim_apply_patch" then
+	if tool_name == "neovim_edit" or tool_name == "neovim_patch" or tool_name == "neovim_apply_patch" then
 		return false
 	end
 

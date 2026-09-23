@@ -2,8 +2,8 @@ import { z } from "zod"
 import { Rpc } from "@opencode/plugin/effect"
 import { todo, todoRecord } from "./todos"
 
-export const protocolVersion = 1 as const
-export const pluginVersion = "2.0.11-2"
+export const protocolVersion = 2 as const
+export const pluginVersion = "2.0.11-3"
 export const location = z.object({ directory: z.string() }).passthrough()
 export const observed = z.object({ exists: z.boolean(), sha256: z.string().optional() })
 export const file = z.object({
@@ -19,11 +19,15 @@ export const review = z.object({
   sessionID: z.string(), messageID: z.string(), callID: z.string(), tool: z.string(), agent: z.string(),
   directory: z.string(), location, files: z.array(file), metadata: z.record(z.string(), z.unknown()),
   decisions: z.array(decision).optional(), outcome: z.record(z.string(), z.unknown()).optional(),
+  message: z.string().optional(),
 })
 export type Review = z.infer<typeof review>
 export type Decision = z.infer<typeof decision>
 const identity = z.object({ sessionID: z.string(), reviewID: z.string() })
-export const replyInput = identity.extend({ protocolVersion: z.literal(protocolVersion), revision: z.number().int(), decisions: z.array(decision) })
+export const replyInput = identity.extend({
+  protocolVersion: z.literal(protocolVersion), revision: z.number().int(), decisions: z.array(decision),
+  message: z.string().trim().optional(),
+})
 export const policy = z.object({
   protocolVersion: z.literal(protocolVersion), gateID: z.string(), sessionID: z.string(), location,
   status: z.enum(["pending", "allowed", "denied", "cancelled"]),

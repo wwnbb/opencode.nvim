@@ -136,10 +136,24 @@ at the server's paths. A server started by this plugin shares the local filesyst
 automatically. Inline proposals (`=`), acceptance and rejection also work without
 shared files. Disconnected or cancelled reviews cannot apply or flush files.
 
-Bundled plugin **2.0.11-2** provides file review protocol 1 and persistent
+Bundled plugin **2.0.11-3** provides file review protocol 2 and persistent
 `todoread`/`todowrite` tools. Update it together with the Lua plugin. `/skill`
 and the skill palette send native attachments; the unchanged legacy
 `load_skills` command is backed up and retired by the installer.
+
+`neovim_edit` follows the v2 edit input: `path`, non-empty `oldString`,
+`newString`, and optional `replaceAll`. It only changes existing files.
+Use `neovim_patch` (renamed from `neovim_apply_patch`) with `patchText` to add,
+update, move, or delete files. Both retain preview, per-file accept/reject, manual
+diff editing, and the optional `allowIndentChange` guard override. User review
+comments accompany the tool's model-visible result and persist in chat history.
+
+The installer renames exact `neovim_apply_patch` permission actions to
+`neovim_patch`, including agent rules, preserving their resources and ordering.
+Permissions remain scoped to `neovim_edit` and `neovim_patch`; they are not
+broadened to cover all built-in `edit` operations. Old tool calls still render
+in history. Reinstall the bundled server plugin and reconnect when updating:
+protocol 2 prevents an older server from silently dropping review comments.
 
 Model preferences use format 2 in `opencode_local.json`; the first format
 conversion preserves the original as `opencode_local.json.v1.bak`. Unavailable

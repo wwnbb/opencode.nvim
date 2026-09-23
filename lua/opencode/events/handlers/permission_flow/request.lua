@@ -6,7 +6,8 @@ local sync = require("opencode.sync")
 local EDIT_PERMISSION_TYPES = {
 	diff_review = true,
 	neovim_edit = true,
-	neovim_apply_patch = true,
+	neovim_patch = true,
+	neovim_apply_patch = true, -- Historical tool calls.
 }
 
 ---@param value any

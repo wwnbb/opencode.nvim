@@ -432,7 +432,7 @@ function M.add_edit(permission_id, session_id, files_data, opts)
 		selected_file = 1,
 		expanded_files = {},
 		status = opts.status or "pending",
-		message = "",
+		message = type(opts.message) == "string" and opts.message or "",
 		review_mode = review_mode,
 		preview = opts.preview == true,
 		timestamp = opts.timestamp or os.time(),
@@ -605,7 +605,7 @@ end
 ---@return boolean
 function M.set_message(permission_id, text)
 	local estate = active_edits[permission_id]
-	if not estate then
+	if not estate or estate.status ~= "pending" or estate.submitting then
 		return false
 	end
 
@@ -897,6 +897,7 @@ end
 function M.begin_review_submission(id)
 	local item = active_edits[id]
 	if not item or item.status ~= "pending" or item.submitting then return false end
+	if not require("opencode.state").is_connected() then return false end
 	for _, file in ipairs(item.files) do if file.status == "pending" then return false end end
 	item.submitting, item.error = true, nil
 	return true
@@ -920,6 +921,7 @@ function M.set_review_record(record)
 	if record.status == "cancelled" then
 		item.cancelled, item.submitting, item.status = true, false, "sent"
 	elseif record.status == "decided" or record.status == "settled" then
+		item.message = record.message or ""
 		local choices = {}
 		for _, decision in ipairs(record.decisions or {}) do choices[decision.fileID] = decision.status end
 		for _, file in ipairs(item.files) do file.status = choices[file.file_id] or file.status end

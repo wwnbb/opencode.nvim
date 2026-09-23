@@ -3,7 +3,7 @@ import * as fs from "node:fs/promises"
 import * as os from "node:os"
 import * as path from "node:path"
 
-const { default: patch } = await import("../../opencode_nvim/plugins/opencode-nvim/tools/neovim_apply_patch")
+const { default: patch } = await import("../../opencode_nvim/plugins/opencode-nvim/tools/neovim_patch")
 const root = path.resolve(import.meta.dir, "../..")
 let directory: string
 beforeEach(async () => { directory = await fs.mkdtemp(path.join(os.tmpdir(), "opencode-patch-test-")) })

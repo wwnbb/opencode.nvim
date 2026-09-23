@@ -13,6 +13,7 @@ export interface ReviewProposal {
 }
 export interface ReviewDecision {
   files: Array<{ fileID: string; path: string; status: "accepted" | "rejected" | "resolved"; apply?: "client" | "server" }>
+  message?: string
 }
 export async function publishProgress(context: RuntimeContext, proposal: { title: string; metadata: Record<string, unknown> }) {
   context.signal.throwIfAborted()
@@ -23,4 +24,18 @@ export async function reviewDecision(context: RuntimeContext, proposal: ReviewPr
   const reply = await context.review(proposal)
   context.signal.throwIfAborted()
   return reply
+}
+
+// Both tools return review feedback in model-visible content and durable tool
+// metadata, so reconnect/history rendering can recover the same user note.
+export function reviewResult<T extends Record<string, unknown>>(
+  decision: ReviewDecision,
+  result: { title: string; content: string; metadata: T },
+) {
+  const message = decision.message?.trim()
+  return {
+    ...result,
+    content: message ? `${result.content}\n\nUser feedback from review:\n${message}` : result.content,
+    metadata: { ...result.metadata, ...(message ? { review_message: message } : {}) },
+  }
 }

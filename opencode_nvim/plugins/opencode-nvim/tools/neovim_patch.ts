@@ -1,7 +1,7 @@
 import { tool } from "./lib/definition"
 import { readFileSync } from "node:fs"
-const DESCRIPTION = readFileSync(new URL("./neovim_apply_patch.txt", import.meta.url), "utf8")
-import { reviewDecision, publishProgress } from "./lib/context"
+const DESCRIPTION = readFileSync(new URL("./neovim_patch.txt", import.meta.url), "utf8")
+import { reviewDecision, publishProgress, reviewResult } from "./lib/context"
 import {
   type FileState,
   displayPath,
@@ -547,7 +547,7 @@ export default tool({
       throw new Error("apply_patch verification failed: no hunks found")
     }
 
-    await context.authorize("neovim_apply_patch", [...new Set(hunks.flatMap(hunk =>
+    await context.authorize("neovim_patch", [...new Set(hunks.flatMap(hunk =>
       [resolveFilePath(context.directory, hunk.path), ...(hunk.type === "update" && hunk.move_path ? [resolveFilePath(context.directory, hunk.move_path)] : [])]
     ))])
     const changes = await buildChanges(hunks, context.directory, context.worktree, args.allowIndentChange)
@@ -586,10 +586,10 @@ export default tool({
     })
 
     const decision = await reviewDecision(context, {
-        tool: "neovim_apply_patch",
+        tool: "neovim_patch",
         metadata: {
           opencode_native_diff: true,
-          operation: "neovim_apply_patch",
+          operation: "neovim_patch",
           agent: context.agent,
           sessionID: context.sessionID,
           messageID: context.messageID,
@@ -625,7 +625,7 @@ export default tool({
     const status = overallStatus(statuses)
     const finalDiff = files.map((file) => file.diff).join("\n")
 
-    return {
+    return reviewResult(decision, {
       title: status === "applied" ? "Patch applied" : "Patch review completed",
       content: outputFor(status, files),
       metadata: {
@@ -636,6 +636,6 @@ export default tool({
         proposed_files: proposedFiles,
         diagnostics: {},
       },
-    }
+    })
   },
 })
