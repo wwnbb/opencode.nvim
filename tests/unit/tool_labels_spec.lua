@@ -66,20 +66,6 @@ assert_line({
 }, "~ Writing command...", "bash pending")
 
 assert_line({
-	tool = "todowrite",
-	state = {
-		status = "completed",
-		input = {
-			todos = {
-				{ content = "A", status = "completed" },
-				{ content = "B", status = "pending" },
-				{ content = "C", status = "completed" },
-			},
-		},
-	},
-}, "⚙ Updated Todos 2/3 done", "todowrite completed")
-
-assert_line({
 	tool = "task",
 	state = { status = "running", input = { subagent_type = "explore", description = "Find stuff" } },
 }, "⠋ Explore Task – Find stuff", "task running")
@@ -137,19 +123,6 @@ assert_label({
 	state = { status = "completed", input = { pattern = "fn" }, metadata = { matchCount = 5 } },
 }, "Ripgrep fn (5 matches)", "rg matchCount fallback suffix")
 
-assert_label({
-	tool = "todowrite",
-	state = {
-		status = "completed",
-		input = {
-			todos = {
-				{ content = "A", status = "completed" },
-				{ content = "B", status = "pending" },
-				{ content = "C", status = "completed" },
-			},
-		},
-	},
-}, "Update Todos 2/3 done", "todo progress label")
 	end)
 
 	it("format_state_duration formats durations across units", function()

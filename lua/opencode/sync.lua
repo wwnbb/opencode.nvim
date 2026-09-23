@@ -7,20 +7,11 @@ local M = {}
 function M.handle_v2_event(event)
 	return require("opencode.sync.v2").apply(M, event)
 end
-local todo_fetch_cleanup = nil
-
 ---@class SyncStore
 ---@field message table<string, Message[]> Messages by sessionID
 ---@field part table<string, Part[]> Parts by messageID
 ---@field session_status table<string, SessionStatus> Status by sessionID
----@field todo table<string, OpenCodeTodo[]> Todos by sessionID
----@field todo_revision table<string, number> Todo revisions by sessionID
 ---@field task_summary_revision table<string, number> Task-summary revisions by child sessionID
-
----@class OpenCodeTodo
----@field content string Brief task description
----@field status "pending"|"in_progress"|"completed"|"cancelled"
----@field priority? "high"|"medium"|"low"
 
 ---@class Message
 ---@field id string
@@ -57,9 +48,6 @@ local store = {
 	part = {},          -- { [messageID] = { Part, ... } }
 	part_delta_buffer = {}, -- { [messageID .. "\0" .. partID .. "\0" .. field] = { string, ... } }
 	session_status = {}, -- { [sessionID] = { type = "idle" | "busy" } }
-	todo = {},          -- { [sessionID] = { Todo, ... } }
-	todo_revision = {}, -- { [sessionID] = number }
-	todo_server_revision = {},
 	task_child_parent = {}, -- { [child_session_id] = parent_session_id }
 	task_child_owner = {}, -- { [child_session_id] = messageID .. "\0" .. partID }
 	task_part_child = {}, -- { [messageID .. "\0" .. partID] = child_session_id }
@@ -83,11 +71,6 @@ local store = {
 	config = {},        -- Global config
 	mcp = {},           -- MCP server status
 }
-
----@param callback fun(session_id?: string)
-function M._register_todo_fetch_cleanup(callback)
-	todo_fetch_cleanup = callback
-end
 
 local UTILITY_AGENT_NAMES = {
 	compaction = true,
@@ -1426,36 +1409,6 @@ function M.finalize_inflight(session_id, opts)
 	return finalized_parts, finalized_messages
 end
 
----Handle todo.updated event (mirrors TUI sync.tsx todo store updates)
----@param session_id string
----@param todos OpenCodeTodo[]|nil
-function M.handle_todo_updated(session_id, todos)
-	if not session_id or session_id == "" then
-		return
-	end
-	if type(todos) ~= "table" then
-		store.todo[session_id] = {}
-		bump_revision(store.todo_revision, session_id)
-		return
-	end
-
-	store.todo[session_id] = vim.deepcopy(todos)
-	bump_revision(store.todo_revision, session_id)
-	bump_session_revision(session_id)
-end
-
--- Plugin snapshots and events share one monotonic revision, independent of the
--- local revision used to invalidate rendered widgets.
-function M.handle_todo_record(record, directory)
-	if not require("opencode.protocol.v2.todos").valid(record, record and record.sessionID, directory) then return false end
-	local sid = record.sessionID
-	local revision = store.todo_server_revision[sid]
-	if revision and record.revision <= revision then return false end
-	store.todo_server_revision[sid] = record.revision
-	M.handle_todo_updated(sid, record.todos)
-	return true
-end
-
 ---Get messages for a session
 ---@param session_id string
 ---@return Message[]
@@ -1699,28 +1652,10 @@ function M.get_session_status(session_id)
 	return store.session_status[session_id]
 end
 
----Get todos for a session
----@param session_id string
----@return OpenCodeTodo[]
-function M.get_todos(session_id)
-	return store.todo[session_id] or {}
-end
-
----Get the todo revision for a session.
----@param session_id string
----@return number
-function M.get_todo_revision(session_id)
-	return store.todo_revision[session_id] or 0
-end
-
 ---Clear all data for a session
 ---@param session_id string
 function M.clear_session(session_id)
 	bump_revision(store.session_generation, session_id)
-	if todo_fetch_cleanup then
-		todo_fetch_cleanup(session_id)
-	end
-
 	-- Remove all parts for messages in this session
 	local messages = store.message[session_id] or {}
 	for _, msg in ipairs(messages) do
@@ -1739,13 +1674,9 @@ function M.clear_session(session_id)
 	-- Remove status
 	store.session_status[session_id] = nil
 
-	-- Remove todos
-	store.todo[session_id] = nil
-	store.todo_server_revision[session_id] = nil
-	bump_revision(store.todo_revision, session_id)
 end
 
----Clear only messages/parts for a session, preserving status and todos.
+---Clear only messages/parts for a session, preserving status.
 ---@param session_id string
 function M.clear_session_messages(session_id)
 	bump_revision(store.session_generation, session_id)
@@ -1766,18 +1697,11 @@ end
 function M.clear_all()
 	store.snapshot_generation = store.snapshot_generation + 1
 	store.session_generation = {}
-	if todo_fetch_cleanup then
-		todo_fetch_cleanup()
-	end
-
 	store.message = {}
 	store.message_session = {}
 	store.part = {}
 	store.part_delta_buffer = {}
 	store.session_status = {}
-	store.todo = {}
-	store.todo_revision = {}
-	store.todo_server_revision = {}
 	store.task_child_parent = {}
 	store.task_child_owner = {}
 	store.task_part_child = {}

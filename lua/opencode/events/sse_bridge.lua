@@ -26,7 +26,6 @@ function M.setup(events)
 		["session.idle"] = "session_status",
 		["session.error"] = "session_error",
 		["session.diff"] = "session_diff",
-		["todo.updated"] = "todo_updated",
 		["file.edited"] = "edit",
 		["permission.requested"] = "permission",
 		["permission.asked"] = "permission", -- Server sends permission.asked

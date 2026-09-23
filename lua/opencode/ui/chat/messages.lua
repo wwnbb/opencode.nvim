@@ -3,7 +3,6 @@ local M = {}
 local cs = require("opencode.ui.chat.state")
 local state = cs.state
 
-local chat_todos = require("opencode.ui.chat.todos")
 local chat_tasks = require("opencode.ui.chat.tasks")
 local render_state = require("opencode.ui.chat.render_state")
 local events = require("opencode.events")
@@ -60,7 +59,6 @@ function M.add_message(role, content, opts)
 end
 
 function M.clear()
-	chat_todos.close_window()
 	state.local_notices = {}
 	state.full_history_sessions = {}
 	render_state.reset_chat_surface({ reset_expansions = true })

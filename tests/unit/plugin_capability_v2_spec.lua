@@ -1,5 +1,5 @@
 describe("bundled plugin capability warnings", function()
-	for _, response in ipairs({ false, { protocolVersion = 1, review = true, todo = true } }) do
+	for _, response in ipairs({ false, { protocolVersion = 1, review = true } }) do
 		it("rejects obsolete capabilities " .. vim.inspect(response), function()
 			local state, bus = require("opencode.state"), require("opencode.events.bus")
 			local client = require("opencode.client")
@@ -20,7 +20,7 @@ describe("bundled plugin capability warnings", function()
 				assert.is_true(vim.wait(500, function() return #notices == 1 end, 10))
 				assert.same({ "capabilities" }, methods)
 				assert.is_truthy(notices[1]:find("scripts/install-tools.sh", 1, true))
-				assert.is_truthy(notices[1]:find("2.0.11-3", 1, true))
+				assert.is_truthy(notices[1]:find("File review requires the bundled plugin", 1, true))
 				bus.emit("session_change", { id = "first" })
 				assert.equals(1, #notices)
 			end)

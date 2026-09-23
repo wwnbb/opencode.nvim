@@ -33,7 +33,6 @@ local message_renderer = require("opencode.ui.chat.message_renderer")
 local edit_previews = require("opencode.ui.chat.edit_previews")
 local chat_cursor = require("opencode.ui.chat.cursor")
 local chat_tasks = require("opencode.ui.chat.tasks")
-local chat_todos = require("opencode.ui.chat.todos")
 local chat_questions = require("opencode.ui.chat.questions")
 local chat_permissions = require("opencode.ui.chat.permissions")
 local chat_edits = require("opencode.ui.chat.edits")
@@ -74,29 +73,6 @@ local defaults = {
 	},
 	message_display = {
 		user_prefix = "> ",
-	},
-	todo = {
-		enabled = true,
-		show_dock = true,
-		hide_when_done = true,
-		default_collapsed = false,
-		keymaps = {
-			toggle = "T",
-		},
-		icons = {
-			pending = "[ ]",
-			in_progress = "[•]",
-			completed = "[✓]",
-			cancelled = "[ ]",
-		},
-		highlights = {
-			pending = "Comment",
-			in_progress = "WarningMsg",
-			completed = "DiagnosticOk",
-			cancelled = "Comment",
-			header = "Title",
-			border = "Comment",
-		},
 	},
 	keymaps = {
 		close = "q",
@@ -147,7 +123,6 @@ local function invalidate_cached_render_state()
 	render_state.clear_render_cache()
 	render_state.clear_code_cache()
 	render_state.invalidate_render_highlights(0)
-	state.todo_dock_signature = nil
 	state.force_full_render = true
 end
 
@@ -177,7 +152,6 @@ function M.handle_colorscheme()
 	colorscheme_refresh_scheduled = true
 	vim.schedule(function()
 		colorscheme_refresh_scheduled = false
-		chat_todos.refresh_highlights()
 		invalidate_cached_render_state()
 		if chat_surface_is_visible() then
 			M.schedule_render({ force = true })
@@ -239,12 +213,12 @@ local function setup_resize_refresh_autocmds()
 	vim.api.nvim_create_autocmd("VimResized", {
 		group = group,
 		callback = schedule_resize_refresh,
-		desc = "Refresh OpenCode chat and todo dock after editor resize",
+		desc = "Refresh OpenCode chat after editor resize",
 	})
 	pcall(vim.api.nvim_create_autocmd, "WinResized", {
 		group = group,
 		callback = schedule_window_resize_refresh,
-		desc = "Refresh OpenCode chat and todo dock after window resize",
+		desc = "Refresh OpenCode chat after window resize",
 	})
 end
 
@@ -540,7 +514,6 @@ function M.create()
 					vim.fn.winrestview({ topline = 1, leftcol = 0, skipcol = 0 })
 				end)
 			end
-			chat_todos.update_window()
 		end)
 	end)
 	chat_event_handlers_setup = true
@@ -605,7 +578,6 @@ local function handle_chat_window_closed(closed_winid)
 		return
 	end
 	chat_float_focus.clear()
-	chat_todos.close_window()
 	chat_session_tabs.close_float_window()
 	state.visible = false
 	state.winid = nil
@@ -749,7 +721,6 @@ end
 
 function M.close()
 	if not state.visible then
-		chat_todos.close_window()
 		chat_session_tabs.close_float_window()
 		reset_chat_surface()
 		return
@@ -757,7 +728,6 @@ function M.close()
 
 	reset_chat_surface()
 	chat_float_focus.clear()
-	chat_todos.close_window()
 	chat_session_tabs.close_float_window()
 
 	if input.is_visible() then
@@ -1257,7 +1227,6 @@ function M.do_render()
 		local should_scroll = should_auto_scroll(widget_cursor)
 
 		local new_lines, nui_lines, content_highlights = M.render()
-		chat_todos.update_window()
 		resume_render_animation_timers()
 		local highlight_signature = nil
 		local function current_highlight_signature()

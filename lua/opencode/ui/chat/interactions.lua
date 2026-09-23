@@ -4,7 +4,6 @@ local cs = require("opencode.ui.chat.state")
 local state = cs.state
 
 local chat_tasks = require("opencode.ui.chat.tasks")
-local chat_todos = require("opencode.ui.chat.todos")
 local chat_questions = require("opencode.ui.chat.questions")
 local chat_permissions = require("opencode.ui.chat.permissions")
 local chat_edits = require("opencode.ui.chat.edits")
@@ -169,12 +168,6 @@ function M.handle_question_number_select(number)
 end
 
 function M.handle_question_confirm()
-	local todo_session_id = chat_todos.get_dock_at_cursor()
-	if todo_session_id then
-		chat_todos.toggle_dock(todo_session_id)
-		return
-	end
-
 	local task_part_id = chat_tasks.get_task_at_cursor()
 	if task_part_id then
 		chat_tasks.handle_task_toggle(task_part_id)

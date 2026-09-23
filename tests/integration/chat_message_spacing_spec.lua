@@ -47,7 +47,7 @@ describe("chat message boundaries", function()
 		app.set_session_status(session, { type = "idle" })
 		render_state.reset_chat_surface({ reset_expansions = true })
 		state.local_notices, state.session_stack = {}, {}
-		chat.setup({ session_tabs = { enabled = true }, todo = { enabled = false }, auto_scroll = false })
+		chat.setup({ session_tabs = { enabled = true }, auto_scroll = false })
 		original_buffer = vim.api.nvim_get_current_buf()
 		state.bufnr = vim.api.nvim_create_buf(false, true)
 		state.winid, state.visible = vim.api.nvim_get_current_win(), true

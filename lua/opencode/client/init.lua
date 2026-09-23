@@ -218,22 +218,6 @@ function M.get_messages(session_id, opts, callback)
 	end)
 end
 
--- Get session todos
----@param session_id string
----@param callback function(err, todos)
-function M.get_session_todos(session_id, callback)
-	local directory = require("opencode.state").get_session_directory(session_id)
-	local generation = configuration_generation
-	M.review_rpc("todoGet", { sessionID = session_id }, directory, function(err, record)
-		if generation ~= configuration_generation then callback({ code = "stale_connection", message = "Server connection changed" }); return end
-		if err then callback(err); return end
-		if not require("opencode.protocol.v2.todos").valid(record, session_id, directory) then
-			callback({ code = "incompatible_response", message = "Update the bundled opencode-nvim plugin: todo protocol 1 required" }); return
-		end
-		callback(nil, record.todos, record)
-	end)
-end
-
 -- Traverse both opaque cursor directions. Only this complete snapshot may prune
 -- absent v2 messages; ordinary pages remain merge-only.
 function M.get_all_messages(session_id, callback)

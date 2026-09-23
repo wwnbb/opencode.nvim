@@ -33,7 +33,7 @@ describe("activity widgets in the chat buffer", function()
 		render_state.reset_chat_surface({ reset_expansions = true })
 		state.render_scheduled = false
 		state.session_stack = {}
-		chat.setup({ session_tabs = { enabled = true }, todo = { enabled = false } })
+		chat.setup({ session_tabs = { enabled = true } })
 		original_buffer = vim.api.nvim_get_current_buf()
 		state.bufnr = vim.api.nvim_create_buf(false, true)
 		state.winid = vim.api.nvim_get_current_win()

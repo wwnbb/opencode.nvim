@@ -31,12 +31,6 @@ M.state = {
 	task_summary_cache = { entries = {}, order = {} }, -- Derived child summaries keyed by summary revision
 	tools = {},             -- Track tool positions: { [part_id] = { start_line, end_line, tool_part } }
 	expanded_tools = {},    -- Toggle set: { [part_id] = true }
-	todo_bufnr = nil,       -- Live todo window buffer
-	todo_winid = nil,       -- Live todo window id
-	---@type string|nil
-	todo_dock_signature = nil, -- Last rendered dock content/highlight signature
-	todo_dock_display = {}, -- Manual display by session: { [session_id] = "full"|"compact"|"hidden" }
-	todo_dock_collapsed = {}, -- Toggle set by session: { [session_id] = boolean }
 	session_tabs_bufnr = nil, -- Float session tabs window buffer
 	session_tabs_winid = nil, -- Float session tabs window id
 	session_tabs_start = nil, -- First active-session index shown in the tab strip

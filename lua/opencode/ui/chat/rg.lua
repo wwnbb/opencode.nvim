@@ -3,6 +3,7 @@
 local M = {}
 
 local tool_panel = require("opencode.ui.chat.tool_panel")
+local render = require("opencode.ui.chat.render")
 local syntax = require("opencode.ui.syntax")
 local text_util = require("opencode.util.text")
 
@@ -22,11 +23,18 @@ local highlight_text = panel_helpers.highlight_text
 
 local function ensure_highlights()
 	panel_helpers.set_hl("OpenCodeRgMuted", "Comment", "Normal")
-	panel_helpers.set_hl("OpenCodeRgPattern", "String", "Normal", { bold = true })
 	panel_helpers.set_hl("OpenCodeRgPath", "Directory", "Normal")
-	panel_helpers.set_hl("OpenCodeRgFlag", "Special", "Normal")
 	panel_helpers.set_hl("OpenCodeRgOutput", "Normal", nil)
 	panel_helpers.set_hl("OpenCodeRgError", "DiagnosticError", "ErrorMsg")
+	-- Inline arguments use the chat background and plain text, like the TUI.
+	for name, source in pairs({
+		OpenCodeRgLabel = "Comment",
+		OpenCodeRgValue = "Normal",
+		OpenCodeRgFailure = "DiagnosticError",
+	}) do
+		local hl = panel_helpers.get_hl(source)
+		vim.api.nvim_set_hl(0, name, { fg = hl.fg, italic = false })
+	end
 end
 
 ---@param value any
@@ -62,119 +70,76 @@ local function first_nonempty_text(...)
 	return text_util.first_nonempty_text(stringify, ...)
 end
 
----@param ... any
----@return string
-local function first_nonempty_trimmed_text(...)
-	return text_util.first_nonempty_trimmed_text(stringify, ...)
-end
-
 local trim_edge_newlines = text_util.trim_edge_newlines
 
-local normalize_path = text_util.normalize_path
-
----@param raw any
----@return string
-local function display_paths(raw)
-	local text = vim.trim(normalize_text(raw))
-	if text == "" then
-		return ""
+-- Lua tables do not retain the server's argument order. Keep the common search
+-- fields first, followed by every other supplied option in a stable order.
+local function arguments(input, metadata)
+	local values = type(input) == "table" and vim.deepcopy(input) or {}
+	if type(input) == "string" then
+		values.pattern = input
 	end
-
-	local paths = {}
-	for _, path in ipairs(vim.split(text, "\n", { plain = true })) do
-		path = vim.trim(path)
-		if path ~= "" then
-			table.insert(paths, normalize_path(path))
+	for _, key in ipairs({ "pattern", "path" }) do
+		if text_util.is_nil(values[key]) then
+			values[key] = metadata[key]
 		end
 	end
-	return table.concat(paths, ", ")
+
+	local result, seen = {}, {}
+	local function add(key)
+		seen[key] = true
+		if text_util.is_nil(values[key]) then
+			return
+		end
+		result[#result + 1] = { key = key, value = normalize_text(values[key]) }
+	end
+	for _, key in ipairs({ "pattern", "path", "glob", "max_results" }) do
+		add(key)
+	end
+	local keys = {}
+	for key in pairs(values) do
+		if type(key) == "string" and not seen[key] then
+			keys[#keys + 1] = key
+		end
+	end
+	table.sort(keys)
+	for _, key in ipairs(keys) do
+		add(key)
+	end
+	return result
 end
 
----@param input table|string
----@param key string
----@return any
-local function input_value(input, key)
-	if type(input) == "table" then
-		return input[key]
+local function render_arguments(result, input, metadata, status, has_error)
+	local args, summary = arguments(input, metadata), {}
+	for _, arg in ipairs(args) do
+		summary[#summary + 1] = arg.key .. "=" .. arg.value:gsub("\n", "\\n")
 	end
-	if key == "pattern" and type(input) == "string" then
-		return input
+	local header = "∴ rg" .. (#summary > 0 and " [" .. table.concat(summary, ", ") .. "]" or "")
+	local header_hl = has_error and "OpenCodeRgFailure"
+		or (status == "completed" and "OpenCodeRgLabel" or "OpenCodeRgValue")
+	render.add_panel_line(result, header, header_hl, {
+		prefix = "",
+	})
+	for _, arg in ipairs(args) do
+		local label = arg.key .. ": "
+		local lines = vim.split(arg.value, "\n", { plain = true })
+		for i, line in ipairs(lines) do
+			local _, _, rows = render.add_panel_raw_line(result, line, "OpenCodeRgValue", {
+				prefix = "  ",
+				body_prefix = i == 1 and label or string.rep(" ", #label),
+				continuation_prefix = string.rep(" ", #label),
+			})
+			if i == 1 then
+				highlight_text(result, rows, label, "OpenCodeRgLabel")
+			end
+		end
 	end
-	return nil
 end
 
 ---@param count number
 ---@return string
 local function format_match_count(count)
 	return tostring(count) .. " " .. (count == 1 and "match" or "matches")
-end
-
----@param text string
----@return number
-local function count_extra_patterns(text)
-	local count = 0
-	for _, pattern in ipairs(vim.split(text or "", "\n", { plain = true })) do
-		if vim.trim(pattern) ~= "" then
-			count = count + 1
-		end
-	end
-	return count
-end
-
----@param input table|string
----@return table
-local function build_details(input)
-	local details = {}
-	local function add_value(label, value)
-		local text = first_nonempty_trimmed_text(value)
-		if text ~= "" then
-			table.insert(details, label .. "=" .. text:gsub("\n", ","))
-		end
-	end
-	local function add_flag(label, value)
-		if value == true then
-			table.insert(details, label)
-		end
-	end
-	local function add_number(label, value)
-		local number = tool_panel.normalize_number(value)
-		if number and number > 0 then
-			table.insert(details, label .. "=" .. tostring(number))
-		end
-	end
-
-	add_value("type", input_value(input, "type"))
-	add_value("exclude_type", input_value(input, "exclude_type"))
-	add_value("glob", input_value(input, "glob"))
-	add_number("context", input_value(input, "context"))
-	add_number("before", input_value(input, "before_context"))
-	add_number("after", input_value(input, "after_context"))
-	add_flag("files", input_value(input, "files_only"))
-	add_flag("without-match", input_value(input, "files_without_match"))
-	add_flag("counts", input_value(input, "count"))
-	add_flag("only-match", input_value(input, "only_matching"))
-	add_flag("columns", input_value(input, "column"))
-	add_flag("invert", input_value(input, "invert"))
-	add_flag("fixed", input_value(input, "fixed_strings"))
-	add_flag("word", input_value(input, "word"))
-	add_flag("line", input_value(input, "line_match"))
-	add_flag("smart-case", input_value(input, "smart_case"))
-	add_flag("ignore-case", input_value(input, "case_insensitive"))
-	add_flag("hidden", input_value(input, "hidden"))
-	add_flag("follow", input_value(input, "follow"))
-	add_flag("binary", input_value(input, "binary"))
-	add_flag("no-ignore", input_value(input, "no_ignore"))
-	add_flag("no-ignore-vcs", input_value(input, "no_ignore_vcs"))
-	add_flag("multiline", input_value(input, "multiline"))
-	add_flag("pcre2", input_value(input, "pcre2"))
-	add_number("max-count", input_value(input, "max_count"))
-
-	local extra = count_extra_patterns(first_nonempty_text(input_value(input, "extra_patterns")))
-	if extra > 0 then
-		table.insert(details, "extra=" .. tostring(extra))
-	end
-
-	return details
 end
 
 ---@param metadata table
@@ -280,9 +245,6 @@ function M.render_tool(tool_part, expanded)
 	local input = ctx.input
 	local metadata = ctx.metadata
 	local status = ctx.status
-	local working = ctx.working
-	local pattern = first_nonempty_trimmed_text(input_value(input, "pattern"), metadata.pattern)
-	local display_path = display_paths(first_nonempty_text(input_value(input, "path"), metadata.path))
 	local output = first_nonempty_text(ctx.output)
 	local error_body = trim_edge_newlines(first_nonempty_text(ctx.error))
 	local body = trim_edge_newlines(output)
@@ -307,53 +269,22 @@ function M.render_tool(tool_part, expanded)
 	})
 	tool_panel.append_error_entries(entries, error_body, "OpenCodeRgError", "OpenCodeRgOutput")
 
-	local has_overflow = #entries > MAX_COLLAPSED_OUTPUT_LINES
-	local display_pattern = pattern ~= "" and pattern or "..."
-	local extra_patterns = count_extra_patterns(first_nonempty_text(input_value(input, "extra_patterns")))
-	local header = '# Ripgrep "' .. display_pattern .. '"'
-	if extra_patterns > 0 then
-		header = header .. " +" .. tostring(extra_patterns)
-	end
-	if display_path ~= "" then
-		header = header .. " in " .. display_path
-	end
-	if count ~= nil then
-		header = header .. " (" .. format_match_count(count) .. ")"
-	end
-	header = tool_panel.header(header, {
-		fold = has_overflow or expanded,
-		expanded = expanded,
-		working = working,
-	})
-
-	local header_hl = "OpenCodeRgMuted"
-	if has_error then
-		header_hl = "OpenCodeRgError"
-	elseif working then
-		header_hl = "OpenCodeRgPattern"
-	end
-
 	local result = panel_helpers.result()
-	add_panel_blank(result)
-	local _, _, header_rows = add_panel_line(result, header, header_hl)
-	highlight_text(result, header_rows, '"' .. display_pattern .. '"', "OpenCodeRgPattern")
-	highlight_text(result, header_rows, display_path, "OpenCodeRgPath")
+	render_arguments(result, input, metadata, status, has_error)
 
-	local details = build_details(input)
-	if #details > 0 then
-		local _, _, detail_rows = add_panel_line(result, table.concat(details, " · "), "OpenCodeRgMuted")
-		for _, detail in ipairs(details) do
-			local label = detail:match("^[^=]+") or detail
-			highlight_text(result, detail_rows, label, "OpenCodeRgFlag")
-		end
-	end
-
-	if #entries == 0 then
-		add_panel_blank(result)
+	-- Keep successful output behind the existing expand action. Failures remain
+	-- visible without opening the tool, so a compact call never hides an error.
+	if #entries == 0 or (not expanded and not has_error) then
 		add_trailing_separator(result)
 		return result
 	end
 
+	add_panel_blank(result)
+	local header = "▾ rg output"
+	if count ~= nil then
+		header = header .. " (" .. format_match_count(count) .. ")"
+	end
+	add_panel_line(result, header, has_error and "OpenCodeRgError" or "OpenCodeRgMuted")
 	add_panel_blank(result)
 
 	panel_helpers.render_entries(result, entries, {
