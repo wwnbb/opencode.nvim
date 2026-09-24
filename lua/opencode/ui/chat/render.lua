@@ -143,6 +143,26 @@ local function safe_display_width(text, initial_col, width_context)
 	return display_width_from_col(safe_text, tonumber(initial_col) or 0, width_context or new_width_context())
 end
 
+---Expand a display line before wrapping and syntax highlighting. Literal tabs
+---can grow under 'linebreak' when panel padding follows them.
+---@param text string
+---@param initial_col? number Display column after the panel/command prefix
+---@return string
+function M.expand_tabs(text, initial_col)
+	text = M.sanitize_buffer_line(text)
+	if not text:find("\t", 1, true) then
+		return text
+	end
+	local width_context = new_width_context()
+	local col = tonumber(initial_col) or 0
+	return (text:gsub("([^\t]*)\t", function(piece)
+		col = col + display_width_from_col(piece, col, width_context)
+		local spaces = char_display_width(width_context, "\t", col)
+		col = col + spaces
+		return piece .. string.rep(" ", spaces)
+	end))
+end
+
 -- ─── Agent highlight ─────────────────────────────────────────────────────────
 
 ---@param agent_name string
