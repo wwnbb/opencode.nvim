@@ -16,7 +16,7 @@ describe("exploration list presentation", function()
 	after_each(function() syntax.highlight_text = highlight_text end)
 
 	it("keeps tool headers stable while opening output with compact bordered output", function()
-		for _, tool in ipairs({ "read", "glob", "grep", "rg" }) do
+		for _, tool in ipairs({ "read", "glob", "grep" }) do
 			local item = part(tool, { path = "sample.txt", pattern = "needle" }, "unique output")
 			local closed = exploration.render(item, false)
 			local opened = exploration.render(item, true)

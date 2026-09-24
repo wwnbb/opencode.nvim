@@ -4,6 +4,7 @@ local M = {}
 
 local tool_panel = require("opencode.ui.chat.tool_panel")
 local text_util = require("opencode.util.text")
+local output_style = require("opencode.ui.chat.exploration_style")
 
 local panel_helpers = tool_panel.create_panel({
 	prefix = "  ",
@@ -87,11 +88,11 @@ end
 
 -- Align multiline values and wrapped rows after the field label. Raw panel
 -- rendering preserves ripgrep's indentation, context separators and blank lines.
-local function render_field(panel, result, key, value, hl_group)
+local function render_field(result, key, value, hl_group)
 	local label = key .. ": "
 	local indent = string.rep(" ", #label)
 	for i, line in ipairs(vim.split(value, "\n", { plain = true })) do
-		local _, _, rows = panel.add_raw_line(result, line, hl_group, {
+		local _, _, rows = panel_helpers.add_raw_line(result, line, hl_group, {
 			body_prefix = i == 1 and label or indent,
 			continuation_prefix = indent,
 		})
@@ -101,19 +102,26 @@ local function render_field(panel, result, key, value, hl_group)
 	end
 end
 
-local function render_header(result, args, status, has_error, style)
+local function render_header(result, args, status, has_error)
 	local summary = {}
 	for _, arg in ipairs(args) do
 		summary[#summary + 1] = arg.key .. "=" .. arg.value:gsub("\n", "\\n")
 	end
-	local icon = (not style and has_error) and "✗" or "✱"
+	local icon = has_error and "✗" or "✱"
 	local header = icon .. " rg" .. (#summary > 0 and " [" .. table.concat(summary, ", ") .. "]" or "")
 	local header_hl = has_error and "OpenCodeRgFailure"
 		or (status == "completed" and "OpenCodeRgLabel" or "OpenCodeRgValue")
-	if style then
-		header_hl = has_error and style.error_hl or style.header_hl
-	end
 	panel_helpers.add_line(result, header, header_hl, { prefix = " " })
+end
+
+local function render_output(result, body, has_error)
+	panel_helpers.add_line(result, "output:", "OpenCodeRgLabel")
+	output_style.add_border(result)
+	for _, line in ipairs(vim.split(body, "\n", { plain = true })) do
+		output_style.panel.add_raw_line(result, line, has_error and output_style.body_error_hl or nil)
+	end
+	output_style.add_border(result, true)
+	output_style.contain_background(result)
 end
 
 ---@param tool_part table
@@ -125,9 +133,6 @@ function M.render_tool(tool_part, expanded, opts)
 		return nil
 	end
 
-	local style = opts and opts.exploration and require("opencode.ui.chat.exploration_style") or nil
-	local panel = style and style.panel or panel_helpers
-	local failure_hl = style and style.body_error_hl or "OpenCodeRgFailure"
 	local ctx = tool_panel.context(tool_part)
 	local body = text_util.trim_edge_newlines(normalize_text(ctx.output))
 	local error_body = text_util.trim_edge_newlines(normalize_text(ctx.error))
@@ -136,27 +141,24 @@ function M.render_tool(tool_part, expanded, opts)
 
 	local result = panel_helpers.result()
 	local args = arguments(ctx.input, ctx.metadata)
-	render_header(result, args, ctx.status, has_error, style)
+	render_header(result, args, ctx.status, has_error)
 	-- The collapsed custom tool is only its summary. Opening it reveals all
 	-- fields, with the complete output aligned below the arguments.
 	if expanded then
-		if style then style.add_border(result) end
 		for _, arg in ipairs(args) do
-			render_field(panel, result, arg.key, arg.value)
+			render_field(result, arg.key, arg.value)
 		end
 		if body == "" and ctx.status == "completed" and not has_error then
 			body = "No matches found."
 		end
 		if body ~= "" then
-			render_field(panel, result, "output", body, output_is_error and failure_hl or nil)
+			render_output(result, body, output_is_error)
 		end
 		if error_body ~= "" then
-			render_field(panel, result, "error", error_body, failure_hl)
+			render_field(result, "error", error_body, "OpenCodeRgFailure")
 		end
-		if style then style.add_border(result, true) end
 	end
-	if not style then panel_helpers.add_separator(result) end
-	if style then style.contain_background(result) end
+	if not (opts and opts.exploration) then panel_helpers.add_separator(result) end
 	return result
 end
 

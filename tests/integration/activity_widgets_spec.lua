@@ -145,7 +145,7 @@ describe("activity widgets in the chat buffer", function()
 		vim.api.nvim_win_set_cursor(state.winid, { state.tools[parent_id].start_line + 1, 0 })
 		key("O")
 		assert.is_truthy(text():find("\n ✱ rg [pattern=Expr, path=src]", 1, true))
-		assert.is_nil(text():find("   │ pattern: Expr", 1, true))
+		assert.is_nil(text():find("  pattern: Expr", 1, true))
 		assert.is_nil(state.expanded_tools[rg_id])
 		assert.is_not_nil(state.tools[parent_id].children[rg_id])
 		focus(rg_id)
@@ -153,14 +153,14 @@ describe("activity widgets in the chat buffer", function()
 		key("<CR>")
 		assert.is_true(state.expanded_tools[parent_id])
 		assert.is_true(state.expanded_tools[rg_id])
-		assert.is_truthy(text():find("   │ pattern: Expr", 1, true))
-		assert.is_truthy(text():find("   │ output: src/ast.rs:17:    Expr::Num(n) => *n,", 1, true))
-		assert.is_truthy(text():find("   │         src/parser.rs:37:parse()", 1, true))
+		assert.is_truthy(text():find("  pattern: Expr", 1, true))
+		assert.is_truthy(text():find("   │ src/ast.rs:17:    Expr::Num(n) => *n,", 1, true))
+		assert.is_truthy(text():find("   │ src/parser.rs:37:parse()", 1, true))
 		chat.do_render()
 		assert.is_true(state.expanded_tools[parent_id])
 		local output_line
 		for i, line in ipairs(vim.api.nvim_buf_get_lines(state.bufnr, 0, -1, false)) do
-			if line:find("   │ output: ", 1, true) then output_line = i - 1 end
+			if line:find("  output:", 1, true) then output_line = i - 1 end
 		end
 		assert.is_number(output_line)
 		local marks = vim.api.nvim_buf_get_extmarks(state.bufnr, cs.chat_hl_ns,
@@ -276,7 +276,7 @@ describe("activity widgets in the chat buffer", function()
 		updated.state.output = "live search result"
 		sync.handle_part_updated(updated)
 		assert.is_true(tasks.rerender_tool(child))
-		assert.is_truthy(text():find("output: live search result", 1, true))
+		assert.is_truthy(text():find("   │ live search result", 1, true))
 		assert.equals(child, tasks.get_tool_at_cursor())
 		chat.do_render()
 		assert.equals(child, tasks.get_tool_at_cursor())
