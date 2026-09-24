@@ -69,7 +69,7 @@ vim.api.nvim_exec_autocmds("WinResized", { data = { windows = { chat.get_winid()
 vim.wait(100, function() return false end, 10)
 chat.do_render()
 event("text.delta", { delta = "\n// поток продолжается" })
-assert(chat.update_stream_part_block("code-visual", "assistant", text_id, { field = "text", delta = "\n// поток продолжается" }))
+assert(chat.update_stream_part_block("code-visual", "assistant", text_id))
 assert(vim.api.nvim_get_current_win() == input_win, "Stream stole input focus")
 assert(vim.api.nvim_buf_get_lines(input_buf, 0, -1, false)[1] == "Unsent draft Привет", "Draft changed")
 assert(vim.deep_equal(cursor, vim.api.nvim_win_get_cursor(chat.get_winid())), "Manual cursor moved")
@@ -100,7 +100,7 @@ for _, size in ipairs({ 224, 500 }) do
 	for _ = 1, 20 do
 		event("text.delta", { delta = "1" })
 		local start = vim.uv.hrtime()
-		assert(chat.update_stream_part_block("code-visual", "assistant", text_id, { field = "text", delta = "1" }))
+		assert(chat.update_stream_part_block("code-visual", "assistant", text_id))
 		times[#times + 1] = (vim.uv.hrtime() - start) / 1e6
 	end
 	syntax.highlight_text = original

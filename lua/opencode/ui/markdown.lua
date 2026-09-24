@@ -1,4 +1,4 @@
--- Assistant text follows OpenCode TextPart + OpenTUI Markdown's top-level mode.
+-- Chat text follows OpenCode TextPart + OpenTUI Markdown's top-level mode.
 -- See docs/opencode_source_code/opencode/packages/tui/src/routes/session/index.tsx
 -- and docs/opentui/packages/core/src/renderables/{Markdown,TextTable}.ts.
 local M = {}
@@ -7,7 +7,6 @@ local syntax = require("opencode.ui.syntax")
 local inline = require("opencode.ui.markdown.inline")
 local wrap = require("opencode.ui.markdown.wrap")
 local code_blocks = require("opencode.ui.code_blocks")
-
 
 local function children(node, kind)
 	local result = {}
@@ -94,29 +93,30 @@ end
 
 function M.render(content, opts, render)
 	opts = opts or {}
-	local result = { _opencode_highlights = {}, _opencode_plain_append = false }
+	local result = { _opencode_highlights = {} }
 	local source = vim.trim(code_blocks.normalize_text(content))
 	if source == "" then return result end
 	-- The block grammar requires a terminating newline (notably for H1 at EOF).
 	-- This is parser input only; block renderers strip their terminal newline.
 	source = source .. "\n"
-	local width = math.max(1, render.get_chat_text_width() - 3)
+	local width = math.max(1, opts.width or render.get_chat_text_width())
+	local scope = opts.scope or "assistant_markdown"
 	local retry, references = false, {}
-	local function add(text_value, spans, prefix, continuation, max_width)
-		prefix, continuation = prefix or "", continuation or prefix or ""
+	local function add(text_value, spans, prefix)
+		prefix = prefix or ""
 		local rows = {}
-		local chunks = wrap.ranges(text_value, max_width or math.max(1, width - vim.fn.strdisplaywidth(prefix)))
-		for i, chunk in ipairs(chunks) do
-			local decoration = "   " .. (i == 1 and prefix or continuation)
+		local chunks = wrap.ranges(text_value, math.max(1, width - vim.fn.strdisplaywidth(prefix)))
+		for _, chunk in ipairs(chunks) do
 			local line = NuiLine()
-			line:append(decoration .. chunk.text)
+			line:append(prefix .. chunk.text)
+			line._opencode_preserve_blank = line:content() == ""
 			rows[#rows + 1] = { line_index = #result, byte_start = chunk.byte_start,
-				byte_end = chunk.byte_end, col_offset = #decoration }
+				byte_end = chunk.byte_end, col_offset = #prefix }
 			local row_index = #result
 			result[#result + 1] = line
 			local cursor = 1
 			while true do
-				local column = decoration:find("│", cursor, true)
+				local column = prefix:find("│", cursor, true)
 				if not column then break end
 				result._opencode_highlights[#result._opencode_highlights + 1] = {
 					line = row_index, col_start = column - 1, col_end = column - 1 + #"│", hl_group = "OpenCodeMarkdownBorder",
@@ -128,7 +128,11 @@ function M.render(content, opts, render)
 		return rows
 	end
 	local function blank()
-		if #result > 0 and result[#result]:content() ~= "" then result[#result + 1] = NuiLine() end
+		-- An empty code row is content, distinct from inter-block spacing.
+		local last = result[#result]
+		if last and (last:content() ~= "" or last._opencode_preserve_blank) then
+			result[#result + 1] = NuiLine()
+		end
 	end
 	local function prose(value, base, prefix, language)
 		local chunks, unavailable = inline.parse(value, base or ((prefix or ""):find("│", 1, true) and "OpenCodeMarkdownQuote" or nil), language)
@@ -150,12 +154,12 @@ function M.render(content, opts, render)
 	local function code(value, lang, prefix, open_line)
 		value = value:gsub("\t", "  ")
 		local source_lines = vim.split(value, "\n", { plain = true })
-		local start, rows = #result, {}
+		local rows = {}
 		for i, line in ipairs(source_lines) do rows[i] = add(line, {}, prefix) end
 		lang = syntax.normalize_language(lang)
-		if lang and syntax.is_enabled("assistant_markdown") then
+		if lang and syntax.is_enabled(scope) then
 			local captures = (opts.highlight_code or syntax.highlight_text)(value, lang,
-				{ scope = "assistant_markdown", min_bytes = 0 }, { open_line = open_line or start })
+				{ scope = scope, min_bytes = 0 }, { open_line = open_line })
 			retry = retry or #captures == 0
 			vim.list_extend(result._opencode_highlights, syntax.project_highlights(captures, source_lines, rows))
 		end
@@ -176,7 +180,8 @@ function M.render(content, opts, render)
 				end
 				if cursor <= #raw then values[#values + 1] = raw:sub(cursor) end
 				for i, cell in ipairs(values) do
-					local chunks = inline.table(vim.trim(cell), references)
+					local chunks, unavailable = inline.table(vim.trim(cell), references)
+					retry = retry or unavailable
 					if #data == 0 then for _, chunk in ipairs(chunks) do chunk.hl = "OpenCodeMarkdownHeading" end end
 					local value, spans = flatten(chunks)
 					cells[i] = { text = value, spans = spans }
@@ -204,8 +209,8 @@ function M.render(content, opts, render)
 				height = math.max(height, #wrapped[ci])
 			end
 			for y = 1, height do
-				local line, byte = NuiLine(), 3 + #(prefix or "")
-				line:append("   " .. (prefix or ""))
+				local line, byte = NuiLine(), #(prefix or "")
+				line:append(prefix or "")
 				local function vertical_border()
 					line:append("│")
 					result._opencode_highlights[#result._opencode_highlights + 1] = {
@@ -332,7 +337,7 @@ function M.render(content, opts, render)
 				end
 				if not result[first] then add("", {}, body_prefix) end
 				local line = result[first]:content()
-				local offset = 3 + #(prefix or "")
+				local offset = #(prefix or "")
 				local replacement = NuiLine(); replacement:append(line:sub(1, offset))
 				replacement:append(marker); replacement:append(line:sub(offset + #marker + 1))
 				result[first] = replacement
@@ -345,7 +350,7 @@ function M.render(content, opts, render)
 			prose(container_text(node, source):gsub("\n+$", ""), nil, prefix, "markdown")
 		end
 	end
-	blocks(trees[1]:root(), "", true)
+	blocks(trees[1]:root(), "")
 	result._opencode_syntax_retry = retry
 	return result
 end

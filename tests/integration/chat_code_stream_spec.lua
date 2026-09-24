@@ -82,7 +82,7 @@ describe("live fenced code highlights", function()
 			local function delta(text)
 				local before_tool = cs.state.tools[tool_id] and cs.state.tools[tool_id].start_line
 				event("text.delta", { delta = text })
-				assert.is_true(chat.update_stream_part_block("code-session", "assistant", text_id, { field = "text", delta = text }))
+				assert.is_true(chat.update_stream_part_block("code-session", "assistant", text_id))
 				if before_tool then assert.is_true(cs.state.tools[tool_id].start_line > cs.state.stream_blocks[key].end_line) end
 				assert_cold_equal()
 			end
@@ -119,7 +119,7 @@ describe("live fenced code highlights", function()
 			assert_cold_equal()
 			assert.is_true(assistant_marks() > 0)
 			local before = snapshot()
-			assert.is_false(chat.update_stream_part_block("foreign-session", "assistant", text_id, { field = "text", delta = "x" }))
+			assert.is_false(chat.update_stream_part_block("foreign-session", "assistant", text_id))
 			assert.same(before, snapshot())
 			state.set_session("foreign-session", "Other chat"); chat.do_render()
 			local foreign = snapshot()

@@ -41,15 +41,16 @@ describe("chat code highlighting", function()
 	it("highlights short open blocks and deindents fences in source coordinates", function()
 		local lines = render.render_content("  ```lua\r\n  return 1")
 		assert.is_true(highlighted_text(lines, "@keyword"):find("return", 1, true) ~= nil)
-		assert.is_false(lines._opencode_plain_append)
-		assert.equals("     return 1", lines[1]:content())
+		assert.equals("  return 1", lines[1]:content())
 	end)
 
 	it("maps user code through wrapping and truncation without highlighting the placeholder", function()
 		local source = "@example.lua\n```lua\n--[[\nhidden one\nhidden two\nhidden three\nhidden four\nhidden five\nПривет 世界 😀 comment\n]]\nreturn 1\n```"
 		for _, width in ipairs({ 40, 80, 120 }) do
 			vim.api.nvim_win_set_config(winid, { width = width })
-			local lines = render.render_user_message(source, "build", nil, { max_lines = 10 })
+			local lines = render.render_user_message(source, "build", nil, { max_lines = 8 })
+			assert.is_truthy(table.concat(render.extract_lines(lines), "\n"):find("lines hidden", 1, true))
+			for _, line in ipairs(lines) do assert.is_true(vim.fn.strdisplaywidth(line:content()) <= width) end
 			assert.is_true(highlighted_text(lines, "@keyword"):find("return", 1, true) ~= nil)
 			assert.is_true(highlighted_text(lines, "@comment"):find("]]", 1, true) ~= nil)
 			for _, hl in ipairs(lines._opencode_highlights) do
@@ -59,6 +60,27 @@ describe("chat code highlighting", function()
 			local wrapped = render.render_user_message("```lua\n\tlocal value = \"Привет 世界 😀 " .. string.rep("long ", 24) .. "\"\n```", "build")
 			assert.is_true(highlighted_text(wrapped, "@keyword"):find("local", 1, true) ~= nil)
 			assert.is_true(highlighted_text(wrapped, "@string"):find("Привет", 1, true) ~= nil)
+		end
+	end)
+
+	it("renders user Markdown inside the message box with matching style ranges", function()
+		local source = "## Title\n\n**bold** and [link](https://example.com)\n\n```lua\nreturn 1\n```"
+		for _, width in ipairs({ 25, 80 }) do
+			vim.api.nvim_win_set_config(winid, { width = width })
+			local body = render.render_content(source, { width = width - 3 })
+			local user = render.render_user_message(source, "build", { { name = "notes.md", mime = "text/plain" } })
+			for index, line in ipairs(body) do
+				local visible = user[index + 1]:content()
+				assert.equals(("┃  " .. line:content()):gsub("%s+$", ""), visible:gsub("%s+$", ""), "row " .. index)
+			end
+			assert.equals("bold", highlighted_text(user, "Strong"))
+			assert.equals("Title", highlighted_text(user, "Heading"))
+			assert.equals("return", highlighted_text(user, "@keyword"))
+			assert.is_truthy(user[#user - 1]:content():find("file notes.md", 1, true))
+			for _, span in ipairs(user._opencode_highlights) do
+				assert.is_true(span.col_start >= #"┃  ")
+				assert.is_true(span.col_end <= #user[span.line + 1]:content())
+			end
 		end
 	end)
 

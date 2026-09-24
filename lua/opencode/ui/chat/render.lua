@@ -12,7 +12,6 @@ local NuiText = require("nui.text")
 local locale = require("opencode.util.locale")
 local sync = require("opencode.sync")
 local syntax = require("opencode.ui.syntax")
-local code_blocks = require("opencode.ui.code_blocks")
 local highlights = require("opencode.ui.highlights")
 
 local cs = require("opencode.ui.chat.state")
@@ -592,14 +591,20 @@ function M.render_user_message(content, agent_name, files, opts)
 	ensure_user_message_highlights()
 
 	local lines = {}
-	content = code_blocks.normalize_text(content)
-	local source_lines = vim.split(content, "\n", { plain = true })
-	local content_lines, source_indices, row_map = {}, {}, {}
-	for index, text in ipairs(source_lines) do
-		content_lines[index], source_indices[index] = text, index
+	local text_width = get_chat_text_width()
+	local content_width = math.max(1, text_width - 3) -- User box border and inner spacing.
+	local body = M.render_content(content, {
+		width = content_width,
+		scope = "user_markdown",
+		highlight_code = opts.highlight_code,
+	})
+	-- Shorten rendered rows, so hidden fences cannot break Markdown parsing.
+	local body_lines = M.extract_lines(body)
+	local content_lines, body_indices, row_map = {}, {}, {}
+	for index, text in ipairs(body_lines) do
+		content_lines[index], body_indices[index] = text, index
 	end
 	local max_lines = tonumber(opts.max_lines) or 0
-	local hidden_content_lines = 0
 	if max_lines > 0 and #content_lines > max_lines then
 		local visible_budget = math.max(1, max_lines - 1)
 		local head_lines = math.max(1, math.floor(visible_budget * 0.75))
@@ -609,7 +614,7 @@ function M.render_user_message(content, agent_name, files, opts)
 			indices[#compacted + 1] = i
 			compacted[#compacted + 1] = content_lines[i] or ""
 		end
-		hidden_content_lines = #content_lines - head_lines - tail_lines
+		local hidden_content_lines = #content_lines - head_lines - tail_lines
 		indices[#compacted + 1] = false
 		compacted[#compacted + 1] = "... (" .. tostring(hidden_content_lines) .. " lines hidden)"
 		for i = #content_lines - tail_lines + 1, #content_lines do
@@ -618,13 +623,9 @@ function M.render_user_message(content, agent_name, files, opts)
 				compacted[#compacted + 1] = content_lines[i] or ""
 			end
 		end
-		content_lines, source_indices = compacted, indices
+		content_lines, body_indices = compacted, indices
 	end
 	local border_hl = M.get_agent_hl(agent_name or "unknown")
-
-	local text_width = get_chat_text_width()
-	local bg_width = math.max(1, text_width - 1)
-	local content_width = math.max(1, bg_width - 2)
 
 	local function pad_after_prefix(prefix, text, width)
 		local current = safe_display_width(prefix .. text)
@@ -644,22 +645,17 @@ function M.render_user_message(content, agent_name, files, opts)
 	add_block_line("")
 
 	for index, text in ipairs(content_lines) do
-		local wrapped = M.wrap_text_with_ranges(text, content_width, {
-			initial_col = safe_display_width("┃  "),
-		})
-		local rows = {}
-		for _, chunk in ipairs(wrapped) do
-			rows[#rows + 1] = { line_index = #lines, byte_start = chunk.byte_start,
-				byte_end = chunk.byte_end, prefix = "┃  " }
-			add_block_line("  " .. chunk.text)
+		if body_indices[index] then
+			row_map[body_indices[index]] = { {
+				line_index = #lines, byte_start = 0, byte_end = #text, prefix = "┃  ",
+			} }
+			add_block_line("  " .. text)
+		else
+			for _, line in ipairs(M.wrap_text(text, content_width)) do add_block_line("  " .. line) end
 		end
-		if source_indices[index] then row_map[source_indices[index]] = rows end
 	end
-	local captures, _, retry = syntax.highlight_markdown_fenced_blocks(content, {
-		scope = "user_markdown", highlight_code = opts.highlight_code,
-	})
-	lines._opencode_highlights = syntax.project_highlights(captures, source_lines, row_map)
-	lines._opencode_syntax_retry = retry
+	lines._opencode_highlights = syntax.project_highlights(body._opencode_highlights, body_lines, row_map)
+	lines._opencode_syntax_retry = body._opencode_syntax_retry
 
 	for _, file in ipairs(files or {}) do
 		local mime = file.mime or "file"
@@ -679,9 +675,9 @@ function M.render_user_message(content, agent_name, files, opts)
 	return lines
 end
 
----Render assistant Markdown using the reference TUI's block layout.
+---Render chat Markdown using the reference TUI's block layout.
 ---@param content string|nil
----@param opts? table
+---@param opts? { width?: number, scope?: string, highlight_code?: function }
 ---@return NuiLine[]
 function M.render_content(content, opts)
 	return require("opencode.ui.markdown").render(content, opts, M)

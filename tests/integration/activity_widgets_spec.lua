@@ -106,7 +106,7 @@ describe("activity widgets in the chat buffer", function()
 		sync.handle_part_updated({ id = "following", messageID = "message", sessionID = "activity-test",
 			protocol = "v2", type = "text", text = "Following text\nupdated", content_order = 2 })
 		assert.is_true(chat.update_stream_part_block("activity-test", "message", "following"))
-		assert.is_truthy(text():find("Following text\n   updated", 1, true))
+		assert.is_truthy(text():find("Following text\nupdated", 1, true))
 		key("O")
 		local marks = vim.api.nvim_buf_get_extmarks(state.bufnr, cs.chat_hl_ns, 0, -1, { details = true })
 		assert.is_true(vim.iter(marks):any(function(mark) return mark[4].hl_group == "OpenCodeThoughtBody" end))

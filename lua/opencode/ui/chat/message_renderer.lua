@@ -404,8 +404,8 @@ local function render_text_part(ctx, message, part, part_idx, render_parts, inco
 	ctx:ensure_single_blank_separator()
 	local content_start = ctx:line_count()
 	ctx:add_nui_lines(content_lines)
-	if incomplete_assistant and #content_lines > 0 and part.id then
-		ctx:register_stream_block(message.id, part, "text", content_start, content_lines)
+	if incomplete_assistant and part.id then
+		ctx:register_stream_block(message.id, part, "text", content_start)
 	end
 end
 

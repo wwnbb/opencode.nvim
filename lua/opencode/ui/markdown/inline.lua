@@ -111,7 +111,7 @@ end
 function M.table(source, references)
 	references = references or {}
 	local ok, root = pcall(parse, source, "markdown_inline")
-	if not ok then return { { text = source } } end
+	if not ok then return { { text = source } }, true end
 	local chunks, rows = {}, offsets(source)
 	local function bounds(node)
 		local sr, sc, er, ec = node:range()
@@ -194,7 +194,7 @@ function M.table(source, references)
 		text_chunk(source:sub(cursor + 1, last), groups)
 	end
 	visit(root, {})
-	return chunks
+	return chunks, false
 end
 
 return M

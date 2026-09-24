@@ -12,7 +12,6 @@ describe("reference TUI Markdown layout", function()
 	end
 	local function body(source)
 		local result = lines(source)
-		for i, line in ipairs(result) do result[i] = line:sub(1, 3) == "   " and line:sub(4) or line end
 		return table.concat(result, "\n")
 	end
 	local function styled(source, group)
@@ -35,10 +34,10 @@ describe("reference TUI Markdown layout", function()
 			"---", "", "## Определение узлов AST",
 		}, "\n")
 		assert.same({
-			"   Что такое AST", "", "   AST — Abstract Syntax Tree, дерево операций.", "", "   Например:", "",
-			"   1 + 2 * 3", "", "   Парсер строит AST:", "", "           Add", "          /   \\",
-			"       Num(1) Mul", "              /  \\", "           Num(2) Num(3)", "", "   В Rust это выглядит так:", "",
-			"   Expr::Add(", "       Box::new(Expr::Num(1.0)),", "   )", "", "   " .. string.rep("─", 77), "", "   Определение узлов AST",
+			"Что такое AST", "", "AST — Abstract Syntax Tree, дерево операций.", "", "Например:", "",
+			"1 + 2 * 3", "", "Парсер строит AST:", "", "        Add", "       /   \\",
+			"    Num(1) Mul", "           /  \\", "        Num(2) Num(3)", "", "В Rust это выглядит так:", "",
+			"Expr::Add(", "    Box::new(Expr::Num(1.0)),", ")", "", string.rep("─", 80), "", "Определение узлов AST",
 		}, lines(source))
 		assert.equals("Что такое ASTОпределение узлов AST", styled(source, "OpenCodeMarkdownHeading"))
 		assert.equals("Abstract Syntax Tree", styled(source, "OpenCodeMarkdownStrong"))
@@ -82,10 +81,10 @@ describe("reference TUI Markdown layout", function()
 	it("renders quotes, lists, full-width grid tables and empty cells", function()
 		assert.equals("│ Note\n│ continued\n│ \n│ next", body("> **Note**\n> continued\n>\n> next"))
 		assert.equals(" 9. one\n10. two", body("9) one\n9) two"))
-		render.get_chat_text_width = function() return 14 end
+		render.get_chat_text_width = function() return 11 end
 		assert.equals("┌─────┬───┐\n│Name │Age│\n├─────┼───┤\n│Alice│30 │\n├─────┼───┤\n│Bob  │5  │\n└─────┴───┘",
 			body("| Name | Age |\n|---|---|\n| Alice | 30 |\n| Bob | 5 |"))
-		render.get_chat_text_width = function() return 8 end
+		render.get_chat_text_width = function() return 5 end
 		assert.equals("┌─┬─┐\n│A│B│\n├─┼─┤\n│X│ │\n├─┼─┤\n│ │Y│\n└─┴─┘", body("| A | B |\n|---|---|\n| X | |\n| | Y |"))
 		render.get_chat_text_width = old_width
 		assert.equals("| Only | Header |\n|---|---|", body("| Only | Header |\n|---|---|"))
@@ -98,7 +97,7 @@ describe("reference TUI Markdown layout", function()
 		for _, line in ipairs(result) do assert.is_true(vim.fn.strdisplaywidth(line:content()) <= 18) end
 		assert.is_truthy(styled(source, "OpenCodeMarkdownStrong"):find("Привет", 1, true))
 		for _, span in ipairs(result._opencode_highlights) do
-			assert.is_true(span.col_start >= 3)
+			assert.is_true(span.col_start >= 0)
 			assert.is_true(span.col_end <= #result[span.line + 1]:content())
 		end
 	end)
@@ -130,7 +129,24 @@ describe("reference TUI Markdown layout", function()
 		local ok, result = pcall(render.render_content, "# Hello\n\n**world**")
 		vim.treesitter.get_string_parser = original
 		assert.is_true(ok, result)
-		assert.same({ "   # Hello", "   ", "   **world**" }, render.extract_lines(result))
+		assert.same({ "# Hello", "", "**world**" }, render.extract_lines(result))
 		assert.is_true(result._opencode_syntax_retry)
+	end)
+
+	it("does not cache unformatted table cells when the inline parser is unavailable", function()
+		local original = vim.treesitter.get_string_parser
+		vim.treesitter.get_string_parser = function(source, language, opts)
+			if language == "markdown_inline" then error("missing inline parser") end
+			return original(source, language, opts)
+		end
+		local source = "| Header |\n|---|\n| **value** |"
+		local ok, result = pcall(render.render_content, source)
+		vim.treesitter.get_string_parser = original
+		assert.is_true(ok, result)
+		assert.is_truthy(table.concat(render.extract_lines(result), "\n"):find("**value**", 1, true))
+		assert.is_true(result._opencode_syntax_retry)
+		local recovered = render.render_content(source)
+		assert.is_false(recovered._opencode_syntax_retry)
+		assert.equals("value", styled(source, "OpenCodeMarkdownStrong"))
 	end)
 end)
