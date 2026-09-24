@@ -34,19 +34,35 @@ local function render_summary(part, expanded)
 		if first then
 			label = label .. " · lines " .. first .. "–" .. last
 		else
-			if input.offset then label = label .. " offset=" .. tostring(input.offset) end
-			if input.limit then label = label .. " limit=" .. tostring(input.limit) end
+			if input.offset then
+				label = label .. " offset=" .. tostring(input.offset)
+			end
+			if input.limit then
+				label = label .. " limit=" .. tostring(input.limit)
+			end
 		end
 	else
-		label = (expanded and '⭘ ' or '● ') .. (part.tool == "glob" and "Glob" or "Grep") .. ' "' .. tostring(input.pattern or metadata.pattern or "") .. '"'
-		if input.path then label = label .. " in " .. path(input.path) end
-		if input.include then label = label .. " include=" .. tostring(input.include) end
+		label = (expanded and "○ " or "● ")
+			.. (part.tool == "glob" and "Glob" or "Grep")
+			.. ' "'
+			.. tostring(input.pattern or metadata.pattern or "")
+			.. '"'
+		if input.path then
+			label = label .. " in " .. path(input.path)
+		end
+		if input.include then
+			label = label .. " include=" .. tostring(input.include)
+		end
 		local count = tonumber(metadata.matches or metadata.count or state.matches or state.count)
-		if count then label = label .. string.format(" (%d %s)", count, count == 1 and "match" or "matches") end
+		if count then
+			label = label .. string.format(" (%d %s)", count, count == 1 and "match" or "matches")
+		end
 	end
 	local failed = state.status == "error" or state.error ~= nil
 	add_line(result, label, failed and style.error_hl or style.header_hl)
-	if expanded then return result end
+	if expanded then
+		return result
+	end
 	if failed then
 		local err = type(state.error) == "table" and state.error.message or state.error
 		for _, line in ipairs(vim.split(tostring(err or "Tool failed"), "\n", { plain = true })) do
@@ -55,7 +71,9 @@ local function render_summary(part, expanded)
 	end
 	if state.status == "completed" then
 		for _, loaded in ipairs(type(metadata.loaded) == "table" and metadata.loaded or {}) do
-			if type(loaded) == "string" then add_line(result, "↳ Loaded " .. path(loaded), style.header_hl, "    ") end
+			if type(loaded) == "string" then
+				add_line(result, "↳ Loaded " .. path(loaded), style.header_hl, "    ")
+			end
 		end
 	end
 	return result
@@ -63,12 +81,16 @@ end
 
 function M.render(part, expanded)
 	local renderer = renderers[part.tool]
-	if not renderer then return nil end
+	if not renderer then
+		return nil
+	end
 	if part.tool == "rg" then
 		return renderer(part, expanded, { exploration = true })
 	end
 	local result = render_summary(part, expanded)
-	if not expanded then return result end
+	if not expanded then
+		return result
+	end
 	local body = renderer(part, true, { body_only = true })
 	style.add_border(result)
 	local offset = #result.lines
@@ -76,7 +98,9 @@ function M.render(part, expanded)
 	for _, hl in ipairs(body.highlights) do
 		local shifted = vim.tbl_extend("force", {}, hl)
 		shifted.line = offset + (hl.line or 0)
-		if hl.end_line then shifted.end_line = offset + hl.end_line end
+		if hl.end_line then
+			shifted.end_line = offset + hl.end_line
+		end
 		result.highlights[#result.highlights + 1] = shifted
 	end
 	style.add_border(result, true)

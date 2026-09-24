@@ -107,7 +107,7 @@ local function render_header(result, args, status, has_error, expanded)
 	for _, arg in ipairs(args) do
 		summary[#summary + 1] = arg.key .. "=" .. arg.value:gsub("\n", "\\n")
 	end
-	local icon = expanded and "⭘" or "●"
+	local icon = expanded and "○" or "●"
 	local header = icon .. " rg" .. (#summary > 0 and " [" .. table.concat(summary, ", ") .. "]" or "")
 	local header_hl = has_error and "OpenCodeRgFailure"
 		or (status == "completed" and "OpenCodeRgLabel" or "OpenCodeRgValue")
@@ -158,7 +158,9 @@ function M.render_tool(tool_part, expanded, opts)
 			render_field(result, "error", error_body, "OpenCodeRgFailure")
 		end
 	end
-	if not (opts and opts.exploration) then panel_helpers.add_separator(result) end
+	if not (opts and opts.exploration) then
+		panel_helpers.add_separator(result)
+	end
 	return result
 end
 
