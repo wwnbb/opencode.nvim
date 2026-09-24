@@ -21,7 +21,7 @@ describe("exploration list presentation", function()
 			local closed = exploration.render(item, false)
 			local opened = exploration.render(item, true)
 			assert.equals(1, #closed.lines)
-			assert.equals(closed.lines[1], opened.lines[1])
+			assert.equals(closed.lines[1]:gsub("●", "⭘"):gsub("→", "↘"), opened.lines[1])
 			assert.equals(style.header_hl, closed.highlights[1].hl_group)
 			assert.equals(style.header_hl, opened.highlights[1].hl_group)
 			assert.is_truthy(opened.lines[2]:find("   ┌", 1, true))
@@ -43,7 +43,7 @@ describe("exploration list presentation", function()
 		end
 		local item = part("read", { path = "sample.lua" }, "Read file sample.lua, lines 1-1\n1: " .. source)
 		local rendered = exploration.render(item, true)
-		assert.equals(" → Read sample.lua · lines 1–1", lines(rendered)[1])
+		assert.equals(" ↘ Read sample.lua · lines 1–1", lines(rendered)[1])
 		assert.is_nil(table.concat(rendered.lines):find("Read file", 1, true))
 		local captured, count = {}, 0
 		for _, hl in ipairs(rendered.highlights) do
