@@ -15,6 +15,7 @@ local throughput = require("opencode.ui.chat.throughput")
 local widget_renderer = require("opencode.ui.chat.widget_renderer")
 local tool_renderer = require("opencode.ui.chat.tool_renderer")
 local widget_support = require("opencode.ui.chat.widget_support")
+local tree = require("opencode.ui.chat.widget_tree")
 
 local EDIT_WIDGET_TOOL_ROWS = {
 	write = true,
@@ -370,12 +371,15 @@ end
 
 local function render_activity(ctx, group)
 	local expanded = state.expanded_tools[group.id] == true
-	local result = activity.render(group, expanded)
+	local result = activity.render(group, expanded, state.expanded_tools)
 	local base_line = ctx:add_render_result(result, "activity")
 	state.tools[group.id] = widget_support.mark_render_generation({
+		id = group.id,
+		kind = "activity",
 		start_line = base_line,
 		end_line = base_line + #result.lines - 1,
 		activity_group = group,
+		children = tree.positions(result.children, base_line, state.render_generation),
 		session_id = ctx.current_session.id,
 		highlights = result.highlights,
 	})
@@ -413,7 +417,7 @@ local function render_assistant_message(ctx, index, message, render_parts, opts)
 	for part_idx, part in ipairs(render_parts.parts) do
 		local group = opts.activities[part.id]
 		if group then
-			if group.id == part.id then render_activity(ctx, group) end
+			if group.first_part_id == part.id then render_activity(ctx, group) end
 		elseif part.type == "reasoning" then
 			-- Empty/redacted/disabled reasoning has no visible row.
 		elseif part.type == "text" and part.text and part.text ~= "" then
