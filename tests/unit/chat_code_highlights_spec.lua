@@ -42,7 +42,7 @@ describe("chat code highlighting", function()
 		local lines = render.render_content("  ```lua\r\n  return 1")
 		assert.is_true(highlighted_text(lines, "@keyword"):find("return", 1, true) ~= nil)
 		assert.is_false(lines._opencode_plain_append)
-		assert.equals("  return 1", lines[2]:content())
+		assert.equals("     return 1", lines[1]:content())
 	end)
 
 	it("maps user code through wrapping and truncation without highlighting the placeholder", function()

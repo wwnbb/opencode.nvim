@@ -247,10 +247,10 @@ describe("queued inputs in the chat buffer", function()
 		}))
 		chat.do_render()
 		for row, line in ipairs(vim.api.nvim_buf_get_lines(state.bufnr, 0, -1, false)) do
-			if line == "First word next" then
+			if line == "   First word next" then
 				vim.api.nvim_win_set_cursor(state.winid, { row, 0 })
 				vim.api.nvim_feedkeys("E", "xt", false)
-				assert.same({ row, 4 }, vim.api.nvim_win_get_cursor(state.winid))
+				assert.same({ row, 7 }, vim.api.nvim_win_get_cursor(state.winid))
 				assert.equals(0, #cancels)
 				assert.equals(0, #notices)
 				return

@@ -679,26 +679,12 @@ function M.render_user_message(content, agent_name, files, opts)
 	return lines
 end
 
----Render source text and syntax ranges, including unfinished streamed fences.
+---Render assistant Markdown using the reference TUI's block layout.
 ---@param content string|nil
----@param _opts? table
+---@param opts? table
 ---@return NuiLine[]
-function M.render_content(content, _opts)
-	local opts = _opts or {}
-	local lines = {}
-	if not content or content == "" then
-		return lines
-	end
-	content = code_blocks.normalize_text(content)
-	for _, text in ipairs(vim.split(content, "\n", { plain = true })) do
-		local line = NuiLine()
-		line:append(text)
-		table.insert(lines, line)
-	end
-	lines._opencode_highlights, lines._opencode_plain_append, lines._opencode_syntax_retry = syntax.highlight_markdown_fenced_blocks(content, {
-		scope = "assistant_markdown", highlight_code = opts.highlight_code,
-	})
-	return lines
+function M.render_content(content, opts)
+	return require("opencode.ui.markdown").render(content, opts, M)
 end
 
 ---Render a single tool line (fold icon + status + tool name, optional expanded body).

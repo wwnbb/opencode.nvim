@@ -83,7 +83,7 @@ describe("live fenced code highlights", function()
 				local before_tool = cs.state.tools[tool_id] and cs.state.tools[tool_id].start_line
 				event("text.delta", { delta = text })
 				assert.is_true(chat.update_stream_part_block("code-session", "assistant", text_id, { field = "text", delta = text }))
-				if before_tool then assert.is_true(cs.state.tools[tool_id].start_line >= before_tool) end
+				if before_tool then assert.is_true(cs.state.tools[tool_id].start_line > cs.state.stream_blocks[key].end_line) end
 				assert_cold_equal()
 			end
 			for _, text in ipairs({ "`", "`", "lu", "a", "\n", "local value = 1", "2", "\n--[[", "\nПривет 😀", "\n]]",

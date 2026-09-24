@@ -1029,11 +1029,9 @@ function M.update_stream_part_block(session_id, message_id, part_id, opts)
 	content_lines = render.render_content(content, {
 		highlight_code = render_state.code_highlighter(render_state.render_cache_key(effective_session_id, message_id, part_id)),
 	})
-	if #content_lines == 0 then
-		local empty = NuiLine()
-		empty:append("")
-		content_lines = { empty }
-	end
+	-- An authoritative replacement can remove the entire Markdown part.
+	-- Rebuild its surrounding margins/ranges rather than leaving a phantom row.
+	if #content_lines == 0 then return false end
 	if block.trailing_separator then
 		while #content_lines > 0 and content_lines[#content_lines]:content() == "" do
 			table.remove(content_lines)
