@@ -314,7 +314,7 @@ function M.render_regular_tool(tool_part, is_expanded)
 		return activity.render(tool_part.activity_group, is_expanded)
 	end
 	if activity.kind(tool_part) == "explore" then
-		local result = activity.render_exploration_tool(tool_part)
+		local result = activity.render_exploration_tool(tool_part, nil, is_expanded)
 		result.lines[#result.lines + 1] = ""
 		return result
 	end

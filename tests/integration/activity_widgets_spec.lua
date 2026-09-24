@@ -112,6 +112,45 @@ describe("activity widgets in the chat buffer", function()
 		assert.is_true(vim.iter(marks):any(function(mark) return mark[4].hl_group == "OpenCodeThoughtBody" end))
 	end)
 
+	it("expands grouped rg arguments and output through O and retains highlights and following text", function()
+		seed({
+			{ type = "tool", id = "read", name = "read", state = { status = "completed", input = { path = "src/ast.rs" } } },
+			{ type = "tool", id = "rg", name = "rg", state = { status = "completed",
+				input = { pattern = "Expr", path = "src" },
+				content = { { type = "text", text = "src/ast.rs:17:    Expr::Num(n) => *n,\n--\nsrc/parser.rs:37:parse()" } },
+			} },
+			{ type = "text", text = "Final answer" },
+		}, 500)
+		chat.do_render()
+		local parts = sync.get_parts("message")
+		local group_id = parts[1].id
+		assert.is_truthy(text():find("Explored — 1 read, 1 search", 1, true))
+		assert.is_nil(text():find("✓ rg", 1, true))
+		assert.is_nil(state.tools[parts[2].id], "rg should belong to the group, not a separate widget")
+		vim.api.nvim_win_set_cursor(state.winid, { state.tools[group_id].start_line + 1, 0 })
+		key("O")
+		assert.is_truthy(text():find("✓ rg [pattern=Expr, path=src]", 1, true))
+		assert.is_truthy(text():find("  pattern: Expr", 1, true))
+		assert.is_truthy(text():find("  output: src/ast.rs:17:    Expr::Num(n) => *n,", 1, true))
+		assert.is_truthy(text():find("          src/parser.rs:37:parse()", 1, true))
+		chat.do_render()
+		assert.is_true(state.expanded_tools[group_id])
+		local output_line
+		for i, line in ipairs(vim.api.nvim_buf_get_lines(state.bufnr, 0, -1, false)) do
+			if line:find("  output: ", 1, true) then output_line = i - 1 end
+		end
+		assert.is_number(output_line)
+		local marks = vim.api.nvim_buf_get_extmarks(state.bufnr, cs.chat_hl_ns,
+			{ output_line, 0 }, { output_line, -1 }, { details = true })
+		assert.is_true(vim.iter(marks):any(function(mark) return mark[4].hl_group == "OpenCodeRgLabel" end))
+		vim.api.nvim_win_set_cursor(state.winid, { output_line + 1, 0 })
+		assert.equals(group_id, tasks.get_tool_at_cursor())
+		key("O")
+		assert.is_nil(text():find("output:", 1, true))
+		assert.is_truthy(text():find("Final answer", 1, true))
+		assert.equals(group_id, tasks.get_tool_at_cursor())
+	end)
+
 	it("keeps a read permission visible beside collapsed exploration", function()
 		local permissions = require("opencode.permission.state")
 		seed({
