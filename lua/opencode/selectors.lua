@@ -389,28 +389,27 @@ function M.send_selection(opts)
 end
 
 -- Admission is separate from execution; delivered messages need no queue badge.
-local function prompt_record(session_id, message_id)
+local PROMPT_LABELS = {
+	submitting = "Sending…", queued = "Queued", accepted = "Steering pending",
+	uncertain = "Delivery unknown · reconnect to check", failed = "Send failed · draft preserved",
+}
+
+-- Return both the display label and the actionable record from one snapshot.
+function M.prompt_status(session_id, message_id)
 	local message = require("opencode.sync").get_message(session_id, message_id)
 	if message and message.role == "user" and not message.provisional then return nil end
-	return require("opencode.session.pending").get(session_id, message_id)
+	local record = require("opencode.session.pending").get(session_id, message_id)
+	if not record then return nil end
+	local label = PROMPT_LABELS[record.status]
+	if record.delivery_missing and record.status ~= "delivered" and record.status ~= "cancelled" then
+		label = PROMPT_LABELS.uncertain
+	end
+	return label, (record.status == "queued" or record.status == "accepted") and record or nil
 end
 
 function M.pending_input(session_id, message_id)
-	local record = prompt_record(session_id, message_id)
-	if record and (record.status == "queued" or record.status == "accepted") then return record end
-end
-
-function M.prompt_status(session_id, message_id)
-	local record = prompt_record(session_id, message_id)
-	if record and record.delivery_missing and record.status ~= "delivered" and record.status ~= "cancelled" then
-		return "Delivery unknown · reconnect to check"
-	end
-	local labels = {
-		submitting = "Sending…", queued = "Queued",
-		accepted = "Steering pending", uncertain = "Delivery unknown · reconnect to check",
-		failed = "Send failed · draft preserved",
-	}
-	return record and labels[record.status] or nil
+	local _, record = M.prompt_status(session_id, message_id)
+	return record
 end
 
 return M

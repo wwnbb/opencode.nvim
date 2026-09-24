@@ -1,4 +1,10 @@
-local M = {}
+local M = {
+	commands = {
+		{ name = "cancel", description = "Cancel pending input at cursor" },
+		{ name = "edit", description = "Edit pending input at cursor" },
+		{ name = "steer", description = "Steer queued input at cursor" },
+	},
+}
 
 local state = require("opencode.ui.chat.state").state
 local app_state = require("opencode.state")
@@ -30,30 +36,8 @@ local function at_cursor()
 	local id = widget_support.find_widget_context_at_cursor(state.pending_inputs or {}, state.winid, function(item)
 		return item.session_id == sid and widget_support.position_generation_is_current(item)
 	end)
-	if id and selectors.pending_input(sid, id) then return sid, id end
-end
-
-local function notify_error(err)
-	vim.notify("Could not cancel input: " .. tostring(type(err) == "table" and err.message or err), vim.log.levels.ERROR)
-end
-
-function M.cancel()
-	local sid, id = at_cursor()
-	if not id then return false end
-	actions.cancel_pending_input(sid, id, function(err)
-		if err then notify_error(err) end
-	end)
-	return true
-end
-
-function M.steer()
-	local sid, id = at_cursor()
-	if not id then return false end
-	if selectors.pending_input(sid, id).status ~= "queued" then return true end
-	actions.steer_pending_input(sid, id, function(err)
-		if err then vim.notify("Could not steer input: " .. tostring(err.message or err), vim.log.levels.ERROR) end
-	end)
-	return true
+	local record = id and selectors.pending_input(sid, id)
+	if record then return sid, id, record end
 end
 
 -- Deferred edits resume through the normal input entry point, never through a
@@ -68,15 +52,20 @@ function M.resume_edit()
 	return true
 end
 
-function M.edit()
-	local sid, id = at_cursor()
+function M.handle(action)
+	local sid, id, record = at_cursor()
 	if not id then return false end
-	if has_draft() then
+	if action == "steer" and record.status ~= "queued" then return true end
+	if action == "edit" and has_draft() then
 		vim.notify("Finish the current draft before editing a queued input", vim.log.levels.INFO)
 		return true
 	end
-	actions.edit_pending_input(sid, id, function(err, draft)
-		if err then notify_error(err); return end
+	actions[action .. "_pending_input"](sid, id, function(err, draft)
+		if err then
+			vim.notify("Could not " .. action .. " input: " .. tostring(type(err) == "table" and err.message or err), vim.log.levels.ERROR)
+			return
+		end
+		if not draft then return end
 		-- Cancellation is asynchronous: do not overwrite a draft opened meanwhile
 		-- or silently drop this one when input.show() finds another editor open.
 		if has_draft() or app_state.get_session().id ~= sid or not state.visible then
