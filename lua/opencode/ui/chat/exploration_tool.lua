@@ -29,7 +29,7 @@ local function render_summary(part, expanded)
 	local metadata = require("opencode.ui.chat.render").get_tool_metadata(part)
 	local label
 	if part.tool == "read" then
-		label = "→ Read " .. path(input.filePath or input.path or metadata.path)
+		label = (expanded and "↘ Read " or "→ Read ") .. path(input.filePath or input.path or metadata.path)
 		local first, last = require("opencode.ui.chat.read").output_range(state.output)
 		if first then
 			label = label .. " · lines " .. first .. "–" .. last
@@ -38,7 +38,7 @@ local function render_summary(part, expanded)
 			if input.limit then label = label .. " limit=" .. tostring(input.limit) end
 		end
 	else
-		label = '✱ ' .. (part.tool == "glob" and "Glob" or "Grep") .. ' "' .. tostring(input.pattern or metadata.pattern or "") .. '"'
+		label = (expanded and '⭘ ' or '● ') .. (part.tool == "glob" and "Glob" or "Grep") .. ' "' .. tostring(input.pattern or metadata.pattern or "") .. '"'
 		if input.path then label = label .. " in " .. path(input.path) end
 		if input.include then label = label .. " include=" .. tostring(input.include) end
 		local count = tonumber(metadata.matches or metadata.count or state.matches or state.count)

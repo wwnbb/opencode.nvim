@@ -1965,7 +1965,7 @@ do
 			output = "lua/opencode/init.lua:12:3:local M = {}",
 		},
 	}, false)
-	assert(rg_result and table.concat(rg_result.lines, "\n"):find("✱ rg", 1, true), "rg widget should render")
+	assert(rg_result and table.concat(rg_result.lines, "\n"):find("● rg", 1, true), "rg widget should render")
 
 	local rg_lines = {}
 	for i = 1, 11 do

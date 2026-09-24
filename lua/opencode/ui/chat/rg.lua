@@ -102,12 +102,12 @@ local function render_field(result, key, value, hl_group)
 	end
 end
 
-local function render_header(result, args, status, has_error)
+local function render_header(result, args, status, has_error, expanded)
 	local summary = {}
 	for _, arg in ipairs(args) do
 		summary[#summary + 1] = arg.key .. "=" .. arg.value:gsub("\n", "\\n")
 	end
-	local icon = has_error and "✗" or "✱"
+	local icon = expanded and "⭘" or "●"
 	local header = icon .. " rg" .. (#summary > 0 and " [" .. table.concat(summary, ", ") .. "]" or "")
 	local header_hl = has_error and "OpenCodeRgFailure"
 		or (status == "completed" and "OpenCodeRgLabel" or "OpenCodeRgValue")
@@ -141,7 +141,7 @@ function M.render_tool(tool_part, expanded, opts)
 
 	local result = panel_helpers.result()
 	local args = arguments(ctx.input, ctx.metadata)
-	render_header(result, args, ctx.status, has_error)
+	render_header(result, args, ctx.status, has_error, expanded)
 	-- The collapsed custom tool is only its summary. Opening it reveals all
 	-- fields, with the complete output aligned below the arguments.
 	if expanded then
