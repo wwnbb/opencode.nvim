@@ -27,10 +27,10 @@ describe("OpenTUI 0.4.1 text-renderer oracle", function()
 
 	for _, case in ipairs(fixture.cases) do
 		it(case.name .. " at " .. case.width .. " columns", function()
-			render.get_chat_text_width = function() return case.width + 3 end
+			render.get_chat_text_width = function() return case.width end
 			local result = render.render_content(case.source)
 			local actual = {}
-			for _, line in ipairs(result) do actual[#actual + 1] = line:content():sub(4):gsub("%s+$", "") end
+			for _, line in ipairs(result) do actual[#actual + 1] = line:content():gsub("%s+$", "") end
 			while actual[#actual] == "" do table.remove(actual) end
 			if #actual == 0 then actual[1] = "" end
 			assert.same(case.lines, actual)
@@ -40,7 +40,7 @@ describe("OpenTUI 0.4.1 text-renderer oracle", function()
 				local row = span.line + 1
 				styles[row] = styles[row] or {}
 				local value = { attrs.fg or 0xeeeeee, (attrs.bold and 1 or 0) + (attrs.italic and 4 or 0) + (attrs.underline and 8 or 0) }
-				for col = span.col_start - 2, span.col_end - 3 do styles[row][col] = value end
+				for col = span.col_start + 1, span.col_end do styles[row][col] = value end
 			end
 			for row, spans in ipairs(case.styles) do
 				local column, byte = 0, 1

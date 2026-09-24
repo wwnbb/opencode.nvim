@@ -247,10 +247,10 @@ describe("queued inputs in the chat buffer", function()
 		}))
 		chat.do_render()
 		for row, line in ipairs(vim.api.nvim_buf_get_lines(state.bufnr, 0, -1, false)) do
-			if line == "   First word next" then
+			if line == "First word next" then
 				vim.api.nvim_win_set_cursor(state.winid, { row, 0 })
 				vim.api.nvim_feedkeys("E", "xt", false)
-				assert.same({ row, 7 }, vim.api.nvim_win_get_cursor(state.winid))
+				assert.same({ row, 4 }, vim.api.nvim_win_get_cursor(state.winid))
 				assert.equals(0, #cancels)
 				assert.equals(0, #notices)
 				return
@@ -277,12 +277,16 @@ describe("queued inputs in the chat buffer", function()
 	end)
 
 	it("edits multiline text with attachments and sends back to its original session", function()
-		seed("q", "Line one\nLine two", { { uri = "file:///tmp/fixture.txt", name = "fixture.txt" } })
-		chat.do_render(); focus("q"); key("E")
+		local original = "## Title\n\n**Line one**\n\n```lua\nreturn 1\n```"
+		seed("q", original, { { uri = "file:///tmp/fixture.txt", name = "fixture.txt" } })
+		chat.do_render()
+		assert.is_nil(text():find("```lua", 1, true))
+		assert.is_nil(text():find("**Line one**", 1, true))
+		focus("q"); key("E")
 		assert.is_false(input.is_visible())
 		cancels[1].callback(nil)
 		assert.is_true(input.is_visible())
-		assert.equals("Line one\nLine two", input.get_pending_text())
+		assert.equals(original, input.get_pending_text())
 		input.set_pending_text("Edited\nmessage")
 		app.set_session("other", "Other")
 		key("<C-g>")

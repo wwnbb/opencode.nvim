@@ -5,12 +5,6 @@ function M.normalize_text(text)
 	return ((text or ""):gsub("\r\n", "\n"):gsub("\r", " ↵ "):gsub("%z", "<NUL>"))
 end
 
--- A partial opening/closing fence must not take the plain stream append path.
-function M.is_fence_candidate(line)
-	local indent, rest = line:match("^( *)(.*)$")
-	return #indent <= 3 and (rest == "" or rest:sub(1, 1) == "`" or rest:sub(1, 1) == "~")
-end
-
 local function opening(line)
 	local indent, fence, info = line:match("^( *)(```+)(.*)$")
 	if not fence then
@@ -31,7 +25,6 @@ end
 ---for the indentation removed before parsing. No UI prefixes enter the parser.
 ---@param text string normalized source text
 ---@return table[] blocks
----@return boolean plain_append_safe
 function M.parse(text)
 	local lines = vim.split(text, "\n", { plain = true })
 	local blocks, active = {}, nil
@@ -58,7 +51,7 @@ function M.parse(text)
 			end
 		end
 	end
-	return blocks, active == nil and not M.is_fence_candidate(lines[#lines])
+	return blocks
 end
 
 return M

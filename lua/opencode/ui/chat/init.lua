@@ -452,12 +452,7 @@ function M.create()
 				state.force_full_render = true
 				return
 			end
-			if
-				not M.update_stream_part_block(render_session_id, message_id, part_id, {
-					delta = data and data.delta,
-					field = data and data.field,
-				})
-			then
+			if not M.update_stream_part_block(render_session_id, message_id, part_id) then
 				M.schedule_render()
 			end
 		end)
@@ -873,8 +868,7 @@ local function shift_tracked_lines(old_end, delta, skip_stream_block_key)
 	})
 end
 
-function M.update_stream_part_block(session_id, message_id, part_id, opts)
-	opts = opts or {}
+function M.update_stream_part_block(session_id, message_id, part_id)
 	if not session_id or not message_id then
 		return false
 	end
@@ -948,7 +942,6 @@ function M.update_stream_part_block(session_id, message_id, part_id, opts)
 
 	local widget_cursor = capture_widget_cursor_context()
 	local should_scroll = should_auto_scroll(widget_cursor)
-	local chat_width = render.get_chat_text_width()
 
 	local function finish_stream_update()
 		if apply_widget_focus_cursor and apply_widget_focus_cursor() then
@@ -969,71 +962,16 @@ function M.update_stream_part_block(session_id, message_id, part_id, opts)
 		return true
 	end
 
-	local function try_plain_text_append()
-		if block.plain_append ~= true then return false end
-		local delta = opts.delta
-		if part.type ~= "text" or opts.field ~= "text" or type(delta) ~= "string" or delta == "" then
-			return false
-		end
-		if delta:find("\r", 1, true) or delta:find("\0", 1, true) then
-			return false
-		end
-		if delta:find("\n", 1, true) then
-			return false
-		end
-		if block.chat_width ~= chat_width then
-			return false
-		end
-		if type(block.text_length) ~= "number" then
-			return false
-		end
-
-		local content = part.text or ""
-		if #content ~= block.text_length + #delta then
-			return false
-		end
-
-		local append_line = block.end_line - (block.trailing_separator and 1 or 0)
-		local last_line = vim.api.nvim_buf_get_lines(state.bufnr, append_line, append_line + 1, false)[1]
-		if type(last_line) ~= "string" or require("opencode.ui.code_blocks").is_fence_candidate(last_line .. delta) then
-			return false
-		end
-
-		vim.bo[state.bufnr].modifiable = true
-		local ok = pcall(
-			vim.api.nvim_buf_set_text,
-			state.bufnr,
-			append_line,
-			#last_line,
-			append_line,
-			#last_line,
-			{ delta }
-		)
-		vim.bo[state.bufnr].modifiable = false
-		if not ok then
-			return false
-		end
-
-		block.text_length = #content
-		block.chat_width = chat_width
-		local result = finish_stream_update()
-		return result
-	end
-
-	if try_plain_text_append() then
-		return true
-	end
-
 	local content = part.text or ""
-	local content_lines
-	content_lines = render.render_content(content, {
+	local content_lines = render.render_content(content, {
 		highlight_code = render_state.code_highlighter(render_state.render_cache_key(effective_session_id, message_id, part_id)),
 	})
 	-- An authoritative replacement can remove the entire Markdown part.
 	-- Rebuild its surrounding margins/ranges rather than leaving a phantom row.
 	if #content_lines == 0 then return false end
 	if block.trailing_separator then
-		while #content_lines > 0 and content_lines[#content_lines]:content() == "" do
+		while #content_lines > 0 and content_lines[#content_lines]:content() == ""
+			and not content_lines[#content_lines]._opencode_preserve_blank do
 			table.remove(content_lines)
 		end
 		table.insert(content_lines, NuiLine())
@@ -1058,10 +996,7 @@ function M.update_stream_part_block(session_id, message_id, part_id, opts)
 		return false
 	end
 
-	block.plain_append = content_lines._opencode_plain_append == true
 	block.end_line = block.start_line + new_count - 1
-	block.text_length = #content
-	block.chat_width = chat_width
 	shift_tracked_lines(old_end, delta, block_key)
 
 	local result = finish_stream_update()

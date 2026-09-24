@@ -103,7 +103,8 @@ end
 
 function Context:ensure_single_blank_separator()
 	local old_count = #self.raw_lines
-	while #self.raw_lines > 0 and self.raw_lines[#self.raw_lines] == "" do
+	while #self.raw_lines > 0 and self.raw_lines[#self.raw_lines] == ""
+		and not self.nui_lines[#self.nui_lines]._opencode_preserve_blank do
 		table.remove(self.raw_lines)
 		table.remove(self.nui_lines)
 	end
@@ -186,7 +187,7 @@ function Context:add_render_result(result, kind)
 	return base_line
 end
 
-function Context:register_stream_block(message_id, part, kind, start_line, lines)
+function Context:register_stream_block(message_id, part, kind, start_line)
 	local session_id = self.current_session and self.current_session.id
 	local part_id = part and part.id
 	local block_key = render_state.stream_block_key(session_id, message_id, part_id, kind)
@@ -200,9 +201,6 @@ function Context:register_stream_block(message_id, part, kind, start_line, lines
 		message_id = message_id,
 		part_id = part_id,
 		kind = kind,
-		chat_width = self.chat_width,
-		text_length = #(part.text or ""),
-		plain_append = lines and lines._opencode_plain_append == true,
 	})
 end
 

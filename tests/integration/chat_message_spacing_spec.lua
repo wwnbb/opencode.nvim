@@ -190,7 +190,7 @@ describe("chat message boundaries", function()
 				local widget = state.edits.review
 				assert.is_not_nil(widget, tool .. " widget should render")
 				assert.equals("", rendered[widget.start_line], "one blank row should precede " .. tool)
-				assert.equals("   Before widget", rendered[widget.start_line - 1], "extra rows should be collapsed")
+				assert.equals("Before widget", rendered[widget.start_line - 1], "extra rows should be collapsed")
 			end
 		end
 	end)
@@ -208,7 +208,7 @@ describe("chat message boundaries", function()
 		for seq, delta in ipairs({ " continues", "\nAnother line", "\n", "\n", "Last line" }) do
 			sync.handle_v2_event({ id = "evt_spacing_" .. seq, created = seq + 3,
 				type = "session.text.delta", data = { sessionID = session, assistantMessageID = "a", ordinal = 0, delta = delta } })
-			assert.is_true(chat.update_stream_part_block(session, "a", part.id, { field = "text", delta = delta }))
+			assert.is_true(chat.update_stream_part_block(session, "a", part.id))
 			assert_user_separator("u")
 			local streamed = lines()
 			state.force_full_render = true
@@ -233,13 +233,18 @@ describe("chat message boundaries", function()
 				end
 			end
 			table.sort(marks, function(a, b) return vim.inspect(a) < vim.inspect(b) end)
-			return { lines = lines(), marks = marks, following = vim.deepcopy(position("u")) }
+			local current_lines = lines()
+			if state.spinner_footer_line then
+				local row = state.spinner_footer_line + 1
+				current_lines[row] = current_lines[row]:gsub("^.", "*")
+			end
+			return { lines = current_lines, marks = marks, following = vim.deepcopy(position("u")) }
 		end
 		for seq, delta in ipairs({ "# Heading", "\n\nA **bold", " value** with `code", "`", "\n\n```lu", "a\nreturn 1", "\n```",
 			"\n\n- one\n  - nested", "\n\n| A | B |\n|---|---|", "\n| x | **y** |", "\n\n> quote\n> continued", "\n\n---" }) do
 			sync.handle_v2_event({ id = "evt_markdown_" .. seq, created = seq + 3, type = "session.text.delta",
 				data = { sessionID = session, assistantMessageID = "a", ordinal = 0, delta = delta } })
-			assert.is_true(chat.update_stream_part_block(session, "a", part.id, { field = "text", delta = delta }))
+			assert.is_true(chat.update_stream_part_block(session, "a", part.id))
 			assert_user_separator("u")
 			local live = snapshot()
 			state.force_full_render = true

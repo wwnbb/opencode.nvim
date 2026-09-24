@@ -511,9 +511,9 @@ end
 function M.highlight_markdown_fenced_blocks(text, opts)
 	opts = opts or {}
 	text = type(text) == "string" and text or tostring(text or "")
-	local blocks, plain_append = code_blocks.parse(text)
+	local blocks = code_blocks.parse(text)
 	if text == "" or not M.is_enabled(opts.scope or "assistant_markdown") then
-		return {}, plain_append
+		return {}, false
 	end
 	local highlights, retry = {}, false
 	local highlight_opts = vim.tbl_extend("force", opts, {
@@ -538,7 +538,7 @@ function M.highlight_markdown_fenced_blocks(text, opts)
 			vim.list_extend(highlights, M.project_highlights(captures, block.lines, rows))
 		end
 	end
-	return highlights, plain_append, retry
+	return highlights, retry
 end
 
 ---@param result table

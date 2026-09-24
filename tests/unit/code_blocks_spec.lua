@@ -2,9 +2,8 @@ local blocks = require("opencode.ui.code_blocks")
 
 describe("fenced source blocks", function()
 	it("keeps incomplete code and accepts only a matching sufficiently long closing fence", function()
-		local parsed, safe = blocks.parse("before\n````rust\nfn main() {\n```\n~~~\n}")
+		local parsed = blocks.parse("before\n````rust\nfn main() {\n```\n~~~\n}")
 		assert.equals(1, #parsed)
-		assert.is_false(safe)
 		assert.is_false(parsed[1].closed)
 		assert.same({ "fn main() {", "```", "~~~", "}" }, parsed[1].lines)
 		assert.equals(2, parsed[1].start_line)
@@ -26,10 +25,9 @@ describe("fenced source blocks", function()
 		local source = "```lua\nreturn 1\n```\nafter"
 		for ending = 1, #source do
 			local snapshot = source:sub(1, ending)
-			local parsed, safe = blocks.parse(snapshot)
+			local parsed = blocks.parse(snapshot)
 			if ending >= 3 then assert.equals(1, #parsed) end
 			if ending >= 8 and ending < 17 then assert.is_false(parsed[1].closed) end
-			if snapshot:sub(-1) == "`" then assert.is_false(safe) end
 		end
 		local closed = blocks.parse("```lua\nreturn 1\n```")
 		assert.is_true(closed[1].closed)

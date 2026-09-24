@@ -44,12 +44,14 @@ Fenced code blocks in user messages and assistant replies use the installed
 Tree-sitter parser and highlight queries for their language. Open fences and
 incomplete code are highlighted while the answer streams. The same highlighting
 is used when loading history, with source positions preserved through wrapping
-and shortened user messages. User messages and the input keep fence delimiters
-visible; assistant replies hide them, as in the OpenCode TUI.
+and shortened user messages. Sent user messages and assistant replies render
+Markdown and hide fence delimiters; the input keeps the original editable source
+visible.
 
-Assistant replies follow OpenTUI's top-level Markdown layout: three columns of
-left padding, block-specific spacing, styled headings/emphasis, concealed
-inline markers, literal code blocks, nested lists, quote borders, horizontal
+Chat messages share OpenTUI's top-level Markdown renderer, using Neovim's
+window padding and the existing user-message box: block-specific spacing, styled
+headings/emphasis, concealed inline markers, literal code blocks, nested lists,
+quote borders, horizontal
 rules and full-width grid tables. This uses the `markdown` and `markdown_inline`
 Tree-sitter parsers (bundled with current Neovim); if unavailable, source text
 remains readable. Streaming and history use the same renderer.
@@ -80,7 +82,7 @@ Neovim's runtimepath. Missing parsers/queries, unknown languages and blocks over
 the limits fall back to plain text; parsers are not installed automatically.
 Explicitly labelled fences also highlight snippets shorter than `syntax.min_bytes`.
 Set `syntax.enabled = false` to disable fenced-code highlighting. Standalone
-backtick/tilde fences are supported in all surfaces; assistant replies also
+backtick/tilde fences are supported in all surfaces; sent messages also
 parse nested Markdown containers.
 
 The current-line and visual-selection helpers (including the suggested
