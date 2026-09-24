@@ -1965,13 +1965,13 @@ do
 			output = "lua/opencode/init.lua:12:3:local M = {}",
 		},
 	}, false)
-	assert(rg_result and table.concat(rg_result.lines, "\n"):find("∴ rg", 1, true), "rg widget should render")
+	assert(rg_result and table.concat(rg_result.lines, "\n"):find("✓ rg", 1, true), "rg widget should render")
 
 	local rg_lines = {}
 	for i = 1, 11 do
 		table.insert(rg_lines, "lua/opencode/init.lua:" .. tostring(i) .. ":local value_" .. tostring(i))
 	end
-	local rg_collapsed = rg.render_tool({
+	local rg_part = {
 		tool = "rg",
 		state = {
 			status = "completed",
@@ -1979,17 +1979,11 @@ do
 			output = table.concat(rg_lines, "\n"),
 		},
 		metadata = { matches = 11 },
-	}, false)
-	local rg_expanded = rg.render_tool({
-		tool = "rg",
-		state = {
-			status = "completed",
-			input = { pattern = "value", path = "lua" },
-			output = table.concat(rg_lines, "\n"),
-		},
-		metadata = { matches = 11 },
-	}, true)
+	}
+	local rg_collapsed = rg.render_tool(rg_part, false)
+	local rg_expanded = rg.render_tool(rg_part, true)
 	assert(not render_text(rg_collapsed):find("value_1", 1, true), "collapsed rg widget should hide successful output")
+	assert(not render_text(rg_collapsed):find("pattern: ", 1, true), "collapsed rg widget should hide argument fields")
 	assert(render_text(rg_expanded):find("value_1", 1, true), "expanded rg widget should show output")
 
 	local skill_result = skill.render_tool({
