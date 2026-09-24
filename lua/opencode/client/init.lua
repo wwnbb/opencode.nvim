@@ -71,11 +71,6 @@ end
 ---@param opts? table { roots?, directory?, search?, limit?, start? }
 ---@param callback function(err, sessions)
 function M.list_sessions(opts, callback)
-	if type(opts) == "function" then
-		-- backwards compatibility: list_sessions(callback)
-		callback = opts
-		opts = nil
-	end
 	local query = vim.deepcopy(opts or {})
 	if query.roots then query.parentID = "null" end
 	query.roots = nil
@@ -249,24 +244,10 @@ end
 
 -- Send message to session
 ---@param session_id string
----@param message table { parts, model?, agent?, noReply?, system?, tools?, messageID? }
----@param opts_or_callback? table|function
----@param callback? function(err, response)
-function M.send_message(session_id, message, opts_or_callback, callback)
-	local opts = opts_or_callback
-	if type(opts_or_callback) == "function" then
-		callback = opts_or_callback
-		opts = nil
-	end
-	v2.request("prompt", { path = { sessionID = session_id }, body = message, timeout = opts and opts.timeout }, callback)
-end
-
--- Send async message (no wait for response)
----@param session_id string
----@param message table
----@param callback function(err)
-function M.send_message_async(session_id, message, callback)
-	M.send_message(session_id, message, callback)
+---@param message table Native v2 prompt payload.
+---@param callback function(err, response)
+function M.send_message(session_id, message, callback)
+	v2.request("prompt", { path = { sessionID = session_id }, body = message }, callback)
 end
 
 -- Abort session

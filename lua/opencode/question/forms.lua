@@ -48,12 +48,12 @@ function M.rebuild(item)
 end
 
 function M.init(item, form, context)
-	item.protocol, item.form = "v2", vim.deepcopy(form)
+	item.form = vim.deepcopy(form)
 	item.location = context and vim.deepcopy(context.location)
 	item.values, item.form_selections, item.field_errors = {}, {}, {}
 	for _, field in ipairs(form.fields) do
 		local value = field.default
-		local selection = { selected_indices = {}, custom_input = "", message = "",
+		local selection = { selected_indices = {}, custom_input = "",
 			is_answered = field.required ~= true and field.type ~= "external", ready_to_advance = false }
 		if value ~= nil then
 			item.values[field.key], selection.is_answered = vim.deepcopy(value), true

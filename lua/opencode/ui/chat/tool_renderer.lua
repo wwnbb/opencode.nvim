@@ -9,7 +9,7 @@ function M.render_tool_part(ctx, tool_part, message_revision, part_revisions)
 	local tool_name = tostring(tool_part and tool_part.tool or "unknown")
 	local part_revision = tool_part.id and part_revisions and part_revisions[tool_part.id] or 0
 	local position_ids = {
-		session_id = tool_part.sessionID or tool_part.sessionId or tool_part.session_id or ctx.current_session.id,
+		session_id = tool_part.sessionID or ctx.current_session.id,
 		message_id = tool_part.messageID,
 		part_id = tool_part.id,
 	}

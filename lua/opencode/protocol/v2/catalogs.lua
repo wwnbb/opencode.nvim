@@ -4,7 +4,7 @@ function M.providers(providers, models, default)
 	local result, by_id = {}, {}
 	for _, provider in ipairs(providers) do
 		local value = vim.deepcopy(provider)
-		value._v2, value.models = vim.deepcopy(provider), {}
+		value.models = {}
 		by_id[value.id] = value
 		result[#result + 1] = value
 	end
@@ -12,7 +12,7 @@ function M.providers(providers, models, default)
 		local provider = by_id[model.providerID]
 		if provider and model.enabled == true then
 			local value = vim.deepcopy(model)
-			value._v2, value.upstream_model_id = vim.deepcopy(model), model.modelID
+			value.upstream_model_id = model.modelID
 			-- Existing internal modelID references mean logical catalog IDs.
 			value.modelID = model.id
 			value.variants, value.variant_order = {}, {}
@@ -39,7 +39,6 @@ end
 function M.agents(agents)
 	local result = vim.deepcopy(agents)
 	for _, agent in ipairs(result) do
-		agent._v2 = vim.deepcopy(agent)
 		if type(agent.model) == "table" then agent.model.modelID = agent.model.id end
 	end
 	return result
@@ -49,7 +48,6 @@ function M.mcp(records)
 	local result = {}
 	for _, record in ipairs(records) do
 		result[record.name] = vim.tbl_extend("force", vim.deepcopy(record), vim.deepcopy(record.status))
-		result[record.name]._v2 = vim.deepcopy(record)
 	end
 	return result
 end

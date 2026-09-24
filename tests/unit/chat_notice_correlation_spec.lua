@@ -39,12 +39,14 @@ describe("opencode chat notices and widget correlation", function()
 		question_state.clear_all()
 		edit_state.clear_all()
 
-		question_state.add_question("question_message_only", "widget_session", {
-			{ prompt = "Continue?", options = { { label = "Yes", value = "yes" } } },
-		}, { message_id = "widget_message" })
-		question_state.add_question("question_call_a", "widget_session", {
-			{ prompt = "Continue?", options = { { label = "Yes", value = "yes" } } },
-		}, { message_id = "widget_message", call_id = "call-a" })
+		local field = { key = "continue", type = "string", title = "Continue?",
+			options = { { label = "Yes", value = "yes" } } }
+		question_state.add_form({ id = "question_message_only", sessionID = "widget_session",
+			fields = { field }, metadata = { tool = { messageID = "widget_message" } },
+		})
+		question_state.add_form({ id = "question_call_a", sessionID = "widget_session",
+			fields = { field }, metadata = { tool = { messageID = "widget_message", id = "call-a" } },
+		})
 		edit_state.add_edit("edit_message_only", "widget_session", {
 			{ filePath = "message-only.lua", before = "a", after = "b" },
 		}, { message_id = "widget_message", review_mode = "readonly" })

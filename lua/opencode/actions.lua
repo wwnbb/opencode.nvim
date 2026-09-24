@@ -220,7 +220,6 @@ function M.load_session_messages(session_id, opts, callback)
 				pending.reconcile_history(session_id, response)
 				store.handle_session_messages(session_id, response, { reconcile = complete, complete = complete, snapshot = snapshot })
 				require("opencode.session").set_message_cache(session_id, store.get_messages(session_id), { reason = "load_messages" })
-				require("opencode.session").reconcile_busy_session_idle(session_id, { reason = "load_messages" })
 				require("opencode.session").refresh_status()
 				require("opencode.events").emit("sync_changed", { kind = "message", session_id = session_id })
 			end
@@ -486,25 +485,23 @@ end
 function M.respond_permission(permission_id, reply, opts, callback)
 	opts = vim.tbl_extend("force", {}, opts or {})
 	local owner = require("opencode.permission.state")
-	local item = owner.get_permission(permission_id) or require("opencode.edit.state").get_edit(permission_id)
-	opts.session_id = opts.session_id or (item and item.session_id)
-	opts.directory = opts.directory or require("opencode.state").get_session_directory(opts.session_id)
-	if item and item.transport == "review_rpc" then
+	local item = owner.get_permission(permission_id)
+	local review = require("opencode.edit.state").get_edit(permission_id)
+	if review and review.transport == "review_rpc" then
 		if callback then callback({ message = "Use reply_review for file review decisions" }) end
 		return false
 	end
-	local native = item and item.protocol == "v2"
-	if native and not owner.begin_submission(permission_id) then return false end
+	opts.session_id = opts.session_id or (item and item.session_id)
+	opts.directory = opts.directory or require("opencode.state").get_session_directory(opts.session_id)
+	if not item or not owner.begin_submission(permission_id) then return false end
 	local token = require("opencode.session.pending").token(opts.session_id)
 	return client().respond_permission(permission_id, reply, opts, function(err, result)
 		if not require("opencode.session.pending").is_current(token) then return end
-		if native then
-			local current = owner.get_permission(permission_id)
-			if current ~= item or current.status ~= "pending" then return end
-			if err then
-				owner.restore_submission(permission_id, err)
-				require("opencode.events").emit("interaction_reconcile", { session_id = opts.session_id })
-			end
+		local current = owner.get_permission(permission_id)
+		if current ~= item or current.status ~= "pending" then return end
+		if err then
+			owner.restore_submission(permission_id, err)
+			require("opencode.events").emit("interaction_reconcile", { session_id = opts.session_id })
 		end
 		schedule_callback(callback, err, result)
 	end)

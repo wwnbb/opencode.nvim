@@ -124,25 +124,13 @@ end
 ---@param question table|nil
 ---@return boolean
 local function is_multi_question(question)
-	return type(question) == "table" and (question.type == "multi" or question.multiple == true)
+	return type(question) == "table" and question.multiple == true
 end
 
 ---@param question table|nil
 ---@return boolean
 local function allows_custom_answer(question)
-	if type(question) ~= "table" then
-		return false
-	end
-	if question.custom ~= nil then
-		return question.custom ~= false
-	end
-	if question.allow_custom ~= nil then
-		return question.allow_custom == true
-	end
-	if question.allowCustom ~= nil then
-		return question.allowCustom == true
-	end
-	return true
+	return type(question) == "table" and question.custom == true
 end
 
 ---@param result table
@@ -185,20 +173,6 @@ local function append_text_lines(result, text, hl_group)
 		else
 			add_panel_line(result, line, hl_group)
 		end
-	end
-end
-
----@param result table
----@param text string|nil
-local function append_message_lines(result, text)
-	local message = trim_string(text)
-	if message == "" then
-		return
-	end
-
-	for i, part in ipairs(vim.split(message, "\n", { plain = true })) do
-		local prefix = i == 1 and "Message: " or "         "
-		add_panel_line(result, prefix .. part, "OpenCodeQuestionMuted")
 	end
 end
 
@@ -250,7 +224,6 @@ local function format_hint(
 	if allow_custom then
 		table.insert(parts, "c custom")
 	end
-	table.insert(parts, "m message")
 	table.insert(parts, "Esc cancel")
 	return table.concat(parts, " · ")
 end
@@ -315,10 +288,6 @@ local function collect_selection_answers(selection, question)
 		table.insert(answer_parts, selection.custom_input)
 	end
 
-	local message = trim_string(selection.message)
-	if message ~= "" then
-		table.insert(answer_parts, "Message: " .. message:gsub("%s*\n%s*", " / "))
-	end
 	return answer_parts
 end
 
@@ -366,11 +335,6 @@ function M.get_lines_for_question(_request_id, question_data, selection_state, s
 		append_text_lines(result, current_question.question, "OpenCodeQuestionOutput")
 	elseif body == "" and title ~= "" then
 		add_panel_line(result, title, "OpenCodeQuestionTitle")
-	end
-
-	if selections.message and selections.message ~= "" then
-		add_panel_blank(result)
-		append_message_lines(result, selections.message)
 	end
 
 	add_panel_blank(result)

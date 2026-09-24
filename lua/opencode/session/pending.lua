@@ -56,7 +56,7 @@ end
 function M.reconcile_history(session_id, messages)
 	for _, message in ipairs(messages or {}) do
 		local info = message.info or message
-		if info.protocol == "v2" and info.role == "user" and not info.provisional then
+		if info.role == "user" and not info.provisional then
 			M.update(session_id, info.id, { status = "delivered", delivery_missing = false })
 		end
 	end
@@ -116,9 +116,9 @@ end
 function M.normalize_counts(counts)
 	counts = type(counts) == "table" and counts or {}
 	return {
-		permissions = tonumber(counts.permissions or counts.permission or 0) or 0,
-		questions = tonumber(counts.questions or counts.question or 0) or 0,
-		edits = tonumber(counts.edits or counts.edit or 0) or 0,
+		permissions = tonumber(counts.permissions or 0) or 0,
+		questions = tonumber(counts.questions or 0) or 0,
+		edits = tonumber(counts.edits or 0) or 0,
 	}
 end
 
@@ -146,7 +146,7 @@ function M.collect_owned(items, root_session_id, owns_session)
 	end
 
 	for _, item in ipairs(items or {}) do
-		if type(item) == "table" and owns_session(root_session_id, item.session_id or item.sessionID) then
+		if type(item) == "table" and owns_session(root_session_id, item.session_id) then
 			table.insert(owned, item)
 		end
 	end

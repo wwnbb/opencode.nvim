@@ -70,7 +70,6 @@ local TOOL_DISPLAY_NAMES = {
 	grep = "Grep",
 	list = "List",
 	neovim_patch = "Neovim Patch",
-	neovim_apply_patch = "Neovim Apply Patch",
 	neovim_edit = "Neovim Edit",
 	read = "Read",
 	rg = "Ripgrep",
@@ -171,7 +170,6 @@ local function extract_tool_input(part)
 	local tool_state = type(part.state) == "table" and part.state or {}
 
 	merge_tool_input_source(fresh, render.get_tool_metadata(part))
-	merge_tool_input_source(fresh, part.input)
 	merge_tool_input_source(fresh, tool_state.input)
 
 	return fresh
@@ -694,7 +692,7 @@ function M.get_lines_for_permission(permission_id, perm_state)
 	local selected = perm_state.selected_option or 1
 
 	for i, label in ipairs(OPTION_LABELS) do
-		if i == 2 and perm_state.protocol == "v2" and #(perm_state.always or {}) == 0 then
+		if i == 2 and #(perm_state.always or {}) == 0 then
 			label = "Allow (no rule to save)"
 		end
 		local is_selected = i == selected
@@ -730,7 +728,7 @@ end
 function M.get_approved_lines(permission_id, perm_state)
 	ensure_highlights()
 
-	local saved = perm_state.reply == "always" and (perm_state.protocol ~= "v2" or #(perm_state.always or {}) > 0)
+	local saved = perm_state.reply == "always" and #(perm_state.always or {}) > 0
 	local reply_suffix = saved and "(always)" or "(once)"
 	local result = { lines = {}, highlights = {} }
 	local tool_input = resolve_tool_input(perm_state)

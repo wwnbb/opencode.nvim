@@ -5,9 +5,8 @@ local request_util = require("opencode.events.handlers.permission_flow.request")
 
 ---@param events table
 ---@param request table
----@param current_session table|nil
 ---@param logger table
-function M.handle(events, request, current_session, logger)
+function M.handle(events, request, logger)
 
 	local permission_state = require("opencode.permission.state")
 	local tool_input = request_util.resolve_tool_input(request)
@@ -26,8 +25,6 @@ function M.handle(events, request, current_session, logger)
 	end
 	permission_state.add_permission(request.id, request.session_id, request.type, {
 		metadata = request.metadata,
-		protocol = request.protocol,
-		native = request.data,
 		location = request.location,
 		patterns = request.patterns,
 		always = request.always,

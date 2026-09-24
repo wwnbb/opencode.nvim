@@ -8,7 +8,7 @@ describe("native v2 review file actions", function()
 		vim.fn.writefile({ "before" }, path)
 		edits.add_edit("r", "s", { { fileID = "f", filePath = path, before = "before\n", after = "after\n", type = kind or "update" } },
 			{ transport = "review_rpc", revision = 1, native_review = { status = "pending" } })
-		native.show(nil, { { filePath = path, before = "before\n", after = "after\n", type = kind or "update", edit_file_index = 1 } }, { edit_id = "r" })
+		native.show({ { filePath = path, before = "before\n", after = "after\n", type = kind or "update", edit_file_index = 1 } }, { edit_id = "r" })
 	end
 	before_each(function()
 		path = vim.fn.tempname(); notify, select_ui = vim.notify, vim.ui.select

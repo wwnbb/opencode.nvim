@@ -78,15 +78,12 @@ local trim_edge_newlines = text_util.trim_edge_newlines
 
 local normalize_path = text_util.normalize_path
 
----@param input table|string
+---@param input table
 ---@param key string
 ---@return any
 local function input_value(input, key)
 	if type(input) == "table" then
 		return input[key]
-	end
-	if key == "pattern" and type(input) == "string" then
-		return input
 	end
 	return nil
 end

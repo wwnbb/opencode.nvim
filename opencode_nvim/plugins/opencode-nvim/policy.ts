@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto"
 import type { PermissionEvaluation } from "@opencode/plugin/effect/permission"
 import { protocolVersion, type Policy } from "./rpc"
-import type { RuntimeContext } from "./tools/lib/definition"
+import type { RuntimeContext } from "./tools/lib/context"
 
 type Gate = { record: Policy; evaluation?: PermissionEvaluation; asked: boolean; detach(): void;
   resolve(): void; reject(error: Error): void }

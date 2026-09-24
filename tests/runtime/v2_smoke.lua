@@ -30,7 +30,7 @@ state.set_config({ session = { default_agent = "build", default_model = { provid
 require("opencode.events.sse_bridge").setup(events)
 require("opencode.events.handlers.v2").setup(events)
 -- The send flow uses the facade; keep it on the same bus without initializing
--- unrelated UI/interaction modules before their own migration checks.
+-- unrelated UI/interaction modules before their own runtime checks.
 package.loaded["opencode.events"] = events
 assert(client.connect_events())
 assert(vim.wait(5000, client.sse.is_connected, 10), "SSE connection timeout")

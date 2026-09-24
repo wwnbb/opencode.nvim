@@ -2,7 +2,7 @@
 local M = {}
 
 function M.render_tool(part)
-	if part.protocol ~= "v2" or part.tool ~= "question" then return nil end
+	if part.tool ~= "question" then return nil end
 	local state = part.state or {}
 	local questions = (state.input or {}).questions
 	local answers = (state.metadata or {}).answers

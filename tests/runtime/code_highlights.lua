@@ -4,11 +4,19 @@ for path in (vim.env.OPENCODE_CODE_RTP or ""):gmatch("[^:]+") do vim.opt.runtime
 assert(pcall(vim.treesitter.language.add, "rust"), "Rust parser required")
 assert(vim.treesitter.query.get("rust", "highlights"), "Rust highlight queries required")
 local app = require("opencode")
-app.setup({ server = { auto_start = false, lazy = true }, lualine = { enabled = false },
+app.setup({ server = { auto_start = false }, lualine = { enabled = false },
 	chat = { layout = "vertical", width = 92, close_on_focus_lost = false } })
 local state, sync, chat = require("opencode.state"), require("opencode.sync"), require("opencode.ui.chat")
 local cs = require("opencode.ui.chat.state")
 local cache = require("opencode.ui.chat.render_state")
+local event_seq = 0
+local function event(kind, data)
+	event_seq = event_seq + 1
+	return sync.handle_v2_event({ id = "evt_visual_" .. event_seq, created = event_seq + 2,
+		type = "session." .. kind, data = vim.tbl_extend("force", {
+			sessionID = "code-visual", assistantMessageID = "assistant", ordinal = 0,
+		}, data or {}) })
+end
 require("opencode.client").get_messages = function(_, _, cb) cb(nil, {}) end
 state.set_session("code-visual", "Rust code highlights")
 state.set_session_status("code-visual", { type = "busy" })
@@ -32,11 +40,12 @@ local function shot(name)
 	vim.rpcnotify(1, "opencode_screenshot", name)
 end
 shot("rust-user-dark")
-sync.handle_message_updated({ id = "assistant", sessionID = "code-visual", role = "assistant", time = { created = 2 } })
-sync.handle_part_updated({ id = "text", sessionID = "code-visual", messageID = "assistant", type = "text",
-	text = "```rust\n" .. rust })
+event("step.started", { started = 2, agent = "build", model = { providerID = "test", id = "test" } })
+event("text.started")
+event("text.delta", { delta = "```rust\n" .. rust })
+local text_id = sync.get_parts("assistant")[1].id
 chat.do_render()
-local key = cache.stream_block_key("code-visual", "assistant", "text", "text")
+local key = cache.stream_block_key("code-visual", "assistant", text_id, "text")
 local function count_syntax()
 	local block, count = cs.state.stream_blocks[key], 0
 	for _, mark in ipairs(vim.api.nvim_buf_get_extmarks(chat.get_bufnr(), cs.chat_hl_ns, 0, -1, { details = true })) do
@@ -59,8 +68,8 @@ vim.api.nvim_win_set_width(chat.get_winid(), 54)
 vim.api.nvim_exec_autocmds("WinResized", { data = { windows = { chat.get_winid() } } })
 vim.wait(100, function() return false end, 10)
 chat.do_render()
-sync.handle_part_delta({ sessionID = "code-visual", messageID = "assistant", partID = "text", field = "text", delta = "\n// поток продолжается" })
-assert(chat.update_stream_part_block("code-visual", "assistant", "text"))
+event("text.delta", { delta = "\n// поток продолжается" })
+assert(chat.update_stream_part_block("code-visual", "assistant", text_id, { field = "text", delta = "\n// поток продолжается" }))
 assert(vim.api.nvim_get_current_win() == input_win, "Stream stole input focus")
 assert(vim.api.nvim_buf_get_lines(input_buf, 0, -1, false)[1] == "Unsent draft Привет", "Draft changed")
 assert(vim.deep_equal(cursor, vim.api.nvim_win_get_cursor(chat.get_winid())), "Manual cursor moved")
@@ -76,8 +85,7 @@ for _, size in ipairs({ 224, 500 }) do
 	local code = { "fn example() {" }
 	for i = 2, size - 1 do code[#code + 1] = string.format('    let value_%d = "Привет";', i) end
 	code[#code + 1] = "    let tail = 1"
-	sync.handle_part_updated({ id = "text", sessionID = "code-visual", messageID = "assistant", type = "text",
-		text = "```rust\n" .. table.concat(code, "\n") })
+	event("message.content.updated", { content = { { type = "text", text = "```rust\n" .. table.concat(code, "\n") } } })
 	chat.do_render()
 	local times, parses, parse_ms = {}, 0, 0
 	local syntax = require("opencode.ui.syntax")
@@ -90,9 +98,9 @@ for _, size in ipairs({ 224, 500 }) do
 		return hls
 	end
 	for _ = 1, 20 do
-		sync.handle_part_delta({ sessionID = "code-visual", messageID = "assistant", partID = "text", field = "text", delta = "1" })
+		event("text.delta", { delta = "1" })
 		local start = vim.uv.hrtime()
-		assert(chat.update_stream_part_block("code-visual", "assistant", "text", { field = "text", delta = "1" }))
+		assert(chat.update_stream_part_block("code-visual", "assistant", text_id, { field = "text", delta = "1" }))
 		times[#times + 1] = (vim.uv.hrtime() - start) / 1e6
 	end
 	syntax.highlight_text = original

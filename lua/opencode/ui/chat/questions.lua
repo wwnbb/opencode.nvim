@@ -16,19 +16,7 @@ local events = require("opencode.events")
 ---@param question table|nil
 ---@return boolean
 local function allows_custom_answer(question)
-	if type(question) ~= "table" then
-		return false
-	end
-	if question.custom ~= nil then
-		return question.custom ~= false
-	end
-	if question.allow_custom ~= nil then
-		return question.allow_custom == true
-	end
-	if question.allowCustom ~= nil then
-		return question.allowCustom == true
-	end
-	return true
+	return type(question) == "table" and question.custom == true
 end
 
 local function schedule_render()
@@ -360,35 +348,6 @@ function M.handle_question_custom_input(request_id)
 		on_cancel = function()
 			require("opencode.ui.chat").focus()
 		end,
-	})
-end
-
----@param request_id string
-function M.handle_question_message(request_id)
-	local qstate = question_state.get_question(request_id)
-	if not qstate or qstate.status == "confirming" or qstate.submitting then
-		return
-	end
-
-	local current_tab = qstate.current_tab
-	local selection = qstate.selections[current_tab] or {}
-	local input_ui = require("opencode.ui.input")
-	local chat = require("opencode.ui.chat")
-
-	local function finish(text)
-		question_state.set_message(request_id, current_tab, text or "")
-		M.rerender_question(request_id)
-		chat.focus()
-	end
-
-	input_ui.show({
-		winid = state.winid,
-		float_dims = state.float_dims,
-		text = selection.message or "",
-		persist_pending = false,
-		add_history = false,
-		on_send = finish,
-		on_cancel = finish,
 	})
 end
 

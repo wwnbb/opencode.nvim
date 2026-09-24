@@ -179,10 +179,8 @@ local rg_render = rg.render_tool({
 assert(render_text(rg_render):find("path:with:colon/file.lua-12-local x = 1", 1, true), "rg widget should render context lines with colon-containing paths")
 
 local thinking = require("opencode.ui.thinking")
-assert(thinking.extract_topic("**Planning** next") == "Planning", "thinking topic extraction should trim markdown header")
-local thinking_hl_ok, thinking_hl = pcall(thinking.get_highlights, 0)
-assert(thinking_hl_ok, "thinking highlights should not crash: " .. tostring(thinking_hl))
-assert(thinking_hl[1].hl_group == "WarningMsg", "thinking highlights should default header highlight")
+assert(thinking.is_enabled(), "Thought display should be enabled by default")
+assert(thinking.get_config().header_highlight == "WarningMsg", "Thought header should use the configured highlight")
 
 do
 	require("opencode.ui.input.info_bar").setup_highlights()
@@ -316,112 +314,23 @@ do
 end
 
 do
-	sync.handle_message_updated({
-		id = "msg_buffered_delta",
-		sessionID = "session_buffered_delta",
-		role = "assistant",
-		time = { created = 1 },
-	})
-	sync.handle_part_updated({
-		id = "text_part",
-		messageID = "msg_buffered_delta",
-		sessionID = "session_buffered_delta",
-		type = "text",
-		text = "",
-	})
-	for _, delta in ipairs({ "hel", "lo", " world" }) do
-		sync.handle_part_delta({
-			messageID = "msg_buffered_delta",
-			partID = "text_part",
-			field = "text",
-			delta = delta,
-			sessionID = "session_buffered_delta",
-		})
+	local seq = 0
+	local function event(kind, data)
+		seq = seq + 1
+		return sync.handle_v2_event({ id = "evt_stream_smoke_" .. seq, created = seq,
+			type = "session." .. kind, data = vim.tbl_extend("force", {
+				sessionID = "session_stream", assistantMessageID = "msg_stream", ordinal = 0,
+			}, data or {}) })
 	end
-	assert(sync.get_part("msg_buffered_delta", "text_part").text == "hello world", "get_part should materialize deltas")
-
-	sync.handle_part_updated({
-		id = "parts_text",
-		messageID = "msg_buffered_delta",
-		sessionID = "session_buffered_delta",
-		type = "text",
-		text = "",
-	})
-	sync.handle_part_delta({
-		messageID = "msg_buffered_delta",
-		partID = "parts_text",
-		field = "text",
-		delta = "from parts",
-		sessionID = "session_buffered_delta",
-	})
-	local parts = sync.get_parts("msg_buffered_delta")
-	local saw_parts_text = false
-	for _, part in ipairs(parts) do
-		saw_parts_text = saw_parts_text or (part.id == "parts_text" and part.text == "from parts")
-	end
-	assert(saw_parts_text, "get_parts should materialize deltas")
-
-	sync.handle_part_updated({
-		id = "reason_part",
-		messageID = "msg_buffered_delta",
-		sessionID = "session_buffered_delta",
-		type = "reasoning",
-		text = "",
-	})
-	sync.handle_part_delta({
-		messageID = "msg_buffered_delta",
-		partID = "reason_part",
-		field = "text",
-		delta = "because",
-		sessionID = "session_buffered_delta",
-	})
-	assert(sync.get_message_reasoning("msg_buffered_delta") == "because", "reasoning should materialize deltas")
-
-	sync.handle_part_updated({
-		id = "updated_part",
-		messageID = "msg_buffered_delta",
-		sessionID = "session_buffered_delta",
-		type = "text",
-		text = "base",
-	})
-	sync.handle_part_delta({
-		messageID = "msg_buffered_delta",
-		partID = "updated_part",
-		field = "text",
-		delta = " plus",
-		sessionID = "session_buffered_delta",
-	})
-	sync.handle_part_updated({
-		id = "updated_part",
-		messageID = "msg_buffered_delta",
-		sessionID = "session_buffered_delta",
-		type = "text",
-		text = "base plus",
-	})
-	assert(sync.get_part("msg_buffered_delta", "updated_part").text == "base plus", "part.updated should not double append")
-
-	sync.handle_part_updated({
-		id = "stale_part",
-		messageID = "msg_buffered_delta",
-		sessionID = "session_buffered_delta",
-		type = "text",
-		text = "fresh",
-	})
-	sync.handle_part_delta({
-		messageID = "msg_buffered_delta",
-		partID = "stale_part",
-		field = "text",
-		delta = " text",
-		sessionID = "session_buffered_delta",
-	})
-	sync.handle_part_updated({
-		id = "stale_part",
-		messageID = "msg_buffered_delta",
-		sessionID = "session_buffered_delta",
-		type = "text",
-		text = "fresh",
-	})
-	assert(sync.get_message_text("msg_buffered_delta"):find("fresh text", 1, true), "stale part update erased buffered text")
+	event("step.started", { started = 1, agent = "build", model = { providerID = "test", id = "test" } })
+	event("text.started")
+	for _, delta in ipairs({ "hel", "lo", " world" }) do event("text.delta", { delta = delta }) end
+	assert(sync.get_parts("msg_stream")[1].text == "hello world", "v2 text deltas should accumulate")
+	event("text.ended", { text = "authoritative" })
+	assert(sync.get_parts("msg_stream")[1].text == "authoritative", "v2 ended text should replace deltas")
+	event("reasoning.started")
+	event("reasoning.delta", { delta = "because" })
+	assert(sync.get_message_render_parts("msg_stream").reasoning == "because", "v2 reasoning should stream")
 	sync.clear_all()
 end
 
@@ -643,8 +552,8 @@ do
 	logger.debug("new update", { data = { part = { messageID = "msg_log_rebuild" } } })
 	log_viewer.open({ position = "bottom", height = 8 })
 	local log_text = table.concat(vim.api.nvim_buf_get_lines(1, 0, -1, false), "\n")
-	assert(log_text:find("new update", 1, true), "log viewer rebuild should render latest part update")
-	assert(not log_text:find("old update", 1, true), "log viewer rebuild should replace older part update")
+	assert(log_text:find("new update", 1, true), "log viewer should render the latest log entry")
+	assert(log_text:find("old update", 1, true), "log viewer should retain distinct log entries")
 	log_viewer.close()
 	logger.clear()
 end
@@ -809,7 +718,7 @@ do
 					subagent_type = "grep_slave",
 					description = desc,
 				},
-				time = { start = 1000 + i * 1000 },
+				metadata = i ~= 3 and { sessionID = "parallel_child_" .. i } or {},
 			},
 		}
 		tasks[i] = task_part
@@ -839,19 +748,22 @@ do
 		})
 	end
 
-	local children = {
-		{ id = "parallel_child_3", title = "@grep_slave subagent - " .. descriptions[3], time = { created = 5000 } },
-		{ id = "parallel_child_1", title = "@grep_slave subagent - " .. descriptions[1], time = { created = 3000 } },
-		{ id = "parallel_child_5", title = "@grep_slave subagent - " .. descriptions[5], time = { created = 7000 } },
-		{ id = "parallel_child_2", title = "@grep_slave subagent - " .. descriptions[2], time = { created = 4000 } },
-		{ id = "parallel_child_4", title = "@grep_slave subagent - " .. descriptions[4], time = { created = 6000 } },
-	}
-	local assignments = chat_tasks.resolve_missing_task_children("parallel_parent", children)
-	assert(#assignments == 5, "parallel child resolver should assign all uniquely matched children")
+	local before_metadata
+	chat_tasks.resolve_task_child_session_id(tasks[3], function(err, id)
+		assert(not err)
+		before_metadata = id or false
+	end)
+	assert(before_metadata == false, "task should not guess a child from matching title or timing")
+	tasks[3].state.metadata = { sessionId = "parallel_child_3" }
+	sync.handle_part_updated(tasks[3])
 
 	local seen_children = {}
 	for i, task_part in ipairs(tasks) do
-		local child_id = sync.get_task_child_session("parallel_parent_msg", task_part.id)
+		local child_id
+		chat_tasks.resolve_task_child_session_id(task_part, function(err, id)
+			assert(not err)
+			child_id = id
+		end)
 		assert(child_id == "parallel_child_" .. i, "parallel task mapped to the wrong child: " .. tostring(child_id))
 		assert(not seen_children[child_id], "parallel child was reused across tasks: " .. tostring(child_id))
 		seen_children[child_id] = true
@@ -1006,12 +918,10 @@ end
 
 local generic_tool = render.render_tool_line({
 	tool = "custom",
-	input = {
-		description = "Generated\nheader",
-	},
 	state = {
 		status = "running",
 		input = {
+			description = "Generated\nheader",
 			payload = "body\nvalue",
 		},
 		output = "output\r\nvalue",
@@ -1028,142 +938,22 @@ end
 do
 	local sse = require("opencode.client.sse")
 	sse.clear_listeners()
-
-	local delta_count = 0
-	local delta_payload = nil
-	local delta_event_id = nil
-	sse.on("message.part.delta", function(data, event_id)
-		delta_count = delta_count + 1
-		delta_payload = data
-		delta_event_id = event_id
+	local received = {}
+	sse.on("session.text.delta", function(data, event_id)
+		received[#received + 1] = { data = data, event_id = event_id }
 	end)
-
-	local sync_delta = {
-		directory = vim.fn.getcwd(),
-		workspace = "smoke-workspace",
-		payload = {
-			type = "sync",
-			syncEvent = {
-				id = "evt_sync_delta",
-				type = "message.part.delta.1",
-				seq = 42,
-				aggregateID = "ses_sync_delta",
-				data = {
-					sessionID = "ses_sync_delta",
-					messageID = "msg_sync_delta",
-					partID = "prt_sync_delta",
-					field = "text",
-					delta = "hello",
-				},
-			},
-		},
+	local native = {
+		id = "evt_text_delta", created = 1000, type = "session.text.delta",
+		location = { directory = vim.fn.getcwd() },
+		data = { sessionID = "ses_stream", assistantMessageID = "msg_stream", ordinal = 0, delta = "hello" },
 	}
-	sse.emit("message", sync_delta)
-	assert(delta_count == 1, "sync-only message.part.delta.1 should reach message.part.delta listeners")
-	assert(delta_event_id == "evt_sync_delta", "sync event id should be forwarded")
-	assert(delta_payload.sessionID == "ses_sync_delta", "sync delta sessionID should be preserved")
-	assert(delta_payload.messageID == "msg_sync_delta", "sync delta messageID should be preserved")
-	assert(delta_payload.partID == "prt_sync_delta", "sync delta partID should be preserved")
-	assert(delta_payload.delta == "hello", "sync delta text should be preserved")
-	assert(delta_payload._sync_seq == 42, "sync metadata seq should be attached")
-	assert(delta_payload._sync_aggregate_id == "ses_sync_delta", "sync aggregate id should be attached")
-	assert(delta_payload._directory == vim.fn.getcwd(), "global event directory should be attached")
-	assert(delta_payload._workspace == "smoke-workspace", "global event workspace should be attached")
-
-	sse.emit("message", {
-		directory = vim.fn.getcwd(),
-		payload = {
-			id = "evt_sync_delta",
-			type = "message.part.delta",
-			properties = {
-				sessionID = "ses_sync_delta",
-				messageID = "msg_sync_delta",
-				partID = "prt_sync_delta",
-				field = "text",
-				delta = "hello",
-			},
-		},
-	})
-	assert(delta_count == 1, "legacy duplicate after sync event should not double-emit deltas")
-
-	local update_count = 0
-	local update_payload = nil
-	local part_update_count = 0
-	local part_update_payload = nil
-	sse.clear_listeners()
-	sse.on("message.updated", function(data)
-		update_count = update_count + 1
-		update_payload = data
-	end)
-	sse.on("message.part.updated", function(data)
-		part_update_count = part_update_count + 1
-		part_update_payload = data
-	end)
-
-	sse.emit("message", {
-		directory = vim.fn.getcwd(),
-		payload = {
-			id = "evt_legacy_update",
-			type = "message.updated",
-			properties = {
-				sessionID = "ses_sync_shape",
-				info = {
-					id = "msg_sync_shape",
-					sessionID = "ses_sync_shape",
-					role = "assistant",
-				},
-			},
-		},
-	})
-	sse.emit("message", {
-		directory = vim.fn.getcwd(),
-		payload = {
-			type = "sync",
-			syncEvent = {
-				id = "evt_legacy_update",
-				type = "message.updated.1",
-				seq = 1,
-				aggregateID = "ses_sync_shape",
-				data = {
-					sessionID = "ses_sync_shape",
-					info = {
-						id = "msg_sync_shape",
-						sessionID = "ses_sync_shape",
-						role = "assistant",
-					},
-				},
-			},
-		},
-	})
-	assert(update_count == 1, "sync duplicate after legacy event should not double-emit message.updated")
-	assert(update_payload.info.id == "msg_sync_shape", "message.updated info shape should be preserved")
-
-	sse.emit("message", {
-		directory = vim.fn.getcwd(),
-		payload = {
-			type = "sync",
-			syncEvent = {
-				id = "evt_sync_part_update",
-				type = "message.part.updated.1",
-				seq = 2,
-				aggregateID = "ses_sync_shape",
-				data = {
-					sessionID = "ses_sync_shape",
-					part = {
-						id = "prt_sync_shape",
-						messageID = "msg_sync_shape",
-						sessionID = "ses_sync_shape",
-						type = "text",
-						text = "assistant text",
-					},
-				},
-			},
-		},
-	})
-	assert(part_update_count == 1, "sync message.part.updated.1 should reach message.part.updated listeners")
-	assert(part_update_payload.part.id == "prt_sync_shape", "message.part.updated part shape should be preserved")
-	assert(part_update_payload.part.text == "assistant text", "message.part.updated text should be preserved")
-
+	sse.emit("message", native)
+	sse.emit("message", native)
+	assert(#received == 1, "native event ID should deduplicate SSE replay")
+	assert(received[1].event_id == "evt_text_delta", "native event ID should be forwarded")
+	assert(received[1].data.delta == "hello", "native delta should be preserved")
+	assert(received[1].data._v2_envelope.type == "session.text.delta", "native envelope should reach the event bridge")
+	assert(received[1].data._directory == vim.fn.getcwd(), "native location should be attached")
 	sse.clear_listeners()
 end
 
@@ -1249,23 +1039,23 @@ do
 	bus.clear_history()
 	events.setup()
 	local sse_listener_count = #sse_listeners
-	local message_listener_count = bus.listener_count("message_updated")
+	local event_listener_count = bus.listener_count("v2_event")
 	assert(sse_listener_count > 0, "initial events setup should register SSE listeners")
-	assert(message_listener_count > 0, "initial events setup should register message handlers")
+	assert(event_listener_count > 0, "initial events setup should register native event handlers")
 
 	events.setup()
 	assert(#sse_listeners == sse_listener_count, "repeated plugin setup should not duplicate SSE listeners")
 	assert(
-		bus.listener_count("message_updated") == message_listener_count,
-		"repeated plugin setup should not duplicate message handlers"
+		bus.listener_count("v2_event") == event_listener_count,
+		"repeated plugin setup should not duplicate native handlers"
 	)
 
 	bus.clear()
 	events.setup()
 	assert(#sse_listeners == sse_listener_count, "SSE bridge should not duplicate listeners after bus.clear")
 	assert(
-		bus.listener_count("message_updated") == message_listener_count,
-		"message setup should rebind after bus.clear"
+		bus.listener_count("v2_event") == event_listener_count,
+		"native handlers should rebind after bus.clear"
 	)
 
 	package.loaded["opencode.client"] = saved_client
@@ -1335,19 +1125,12 @@ do
 	chat_state.stream_blocks = {}
 	app_state.set_session("stream_session", "Stream Session")
 	sync.clear_all()
-	sync.handle_message_updated({
-		id = "stream_message",
-		sessionID = "stream_session",
-		role = "assistant",
+	local projection = require("opencode.protocol.v2.messages")
+	local stream_part_id = projection.part_id("stream_session", "stream_message", "text", 0)
+	sync.handle_session_messages("stream_session", { projection.project("stream_session", {
+		id = "stream_message", type = "assistant", content = { { type = "text", text = "hello" } },
 		time = { created = 1 },
-	})
-	sync.handle_part_updated({
-		id = "stream_part",
-		messageID = "stream_message",
-		sessionID = "stream_session",
-		type = "text",
-		text = "hello",
-	})
+	}) })
 	vim.bo[bufnr].modifiable = true
 	vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { "hello", "\\ Coder_v2 · GPT-5.5" })
 	vim.bo[bufnr].modifiable = false
@@ -1357,26 +1140,21 @@ do
 	})
 	chat_state.spinner_footer_line = 1
 
-	local block_key = render_state.stream_block_key("stream_session", "stream_message", "stream_part", "text")
+	local block_key = render_state.stream_block_key("stream_session", "stream_message", stream_part_id, "text")
 	chat_state.stream_blocks[block_key] = {
 		start_line = 0,
 		end_line = 0,
 		session_id = "stream_session",
 		message_id = "stream_message",
-		part_id = "stream_part",
+		part_id = stream_part_id,
 		kind = "text",
 		chat_width = chat_render.get_chat_text_width(),
 		text_length = #"hello",
 	}
-	sync.handle_part_delta({
-		messageID = "stream_message",
-		partID = "stream_part",
-		field = "text",
-		delta = " world",
-		sessionID = "stream_session",
-	})
+	sync.handle_v2_event({ id = "evt_stream_world", created = 2, type = "session.text.delta",
+		data = { sessionID = "stream_session", assistantMessageID = "stream_message", ordinal = 0, delta = " world" } })
 	assert(
-		chat.update_stream_part_block("stream_session", "stream_message", "stream_part", {
+		chat.update_stream_part_block("stream_session", "stream_message", stream_part_id, {
 			field = "text",
 			delta = " world",
 		}),
@@ -1388,15 +1166,10 @@ do
 	)
 	assert(chat_state.stream_blocks[block_key].end_line == 0, "same-line stream delta should not grow block")
 
-	sync.handle_part_delta({
-		messageID = "stream_message",
-		partID = "stream_part",
-		field = "text",
-		delta = "\nnext",
-		sessionID = "stream_session",
-	})
+	sync.handle_v2_event({ id = "evt_stream_next", created = 3, type = "session.text.delta",
+		data = { sessionID = "stream_session", assistantMessageID = "stream_message", ordinal = 0, delta = "\nnext" } })
 	assert(
-		chat.update_stream_part_block("stream_session", "stream_message", "stream_part", {
+		chat.update_stream_part_block("stream_session", "stream_message", stream_part_id, {
 			field = "text",
 			delta = "\nnext",
 		}),
@@ -1418,9 +1191,10 @@ do
 	assert(#footer_marks == 1, "stream growth should preserve footer agent highlight")
 	assert(footer_marks[1][4].hl_group == "OpenCodeAgent_coder_v2", "wrong footer highlight after stream growth")
 
-	sync.get_part("stream_message", "stream_part").text = "short"
+	sync.handle_v2_event({ id = "evt_stream_end", created = 4, type = "session.text.ended",
+		data = { sessionID = "stream_session", assistantMessageID = "stream_message", ordinal = 0, text = "short" } })
 	assert(
-		chat.update_stream_part_block("stream_session", "stream_message", "stream_part"),
+		chat.update_stream_part_block("stream_session", "stream_message", stream_part_id),
 		"stream replacement should shrink rendered block"
 	)
 	updated_stream_lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
@@ -1678,12 +1452,14 @@ do
 		},
 	})
 
-	question_state.add_question("q_anchor", "render_contract_session", {
-		{ question = "Anchor?", options = { { label = "Yes", value = "yes" } } },
-	}, { message_id = "m1", timestamp = 1 })
-	question_state.add_question("q_tool", "render_contract_session", {
-		{ question = "Tool question?", options = { { label = "Yes", value = "yes" } } },
-	}, { message_id = "m4", call_id = "call_question", timestamp = 5 })
+	question_state.add_form({ id = "q_anchor", sessionID = "render_contract_session",
+		fields = { { key = "anchor", type = "string", title = "Anchor?", options = { { label = "Yes", value = "yes" } } } },
+		metadata = { tool = { messageID = "m1" } },
+	}, { timestamp = 1 })
+	question_state.add_form({ id = "q_tool", sessionID = "render_contract_session",
+		fields = { { key = "tool", type = "string", title = "Tool question?", options = { { label = "Yes", value = "yes" } } } },
+		metadata = { tool = { messageID = "m4", id = "call_question" } },
+	}, { timestamp = 5 })
 	permission_state.add_permission("perm_orphan", "render_contract_session", "bash", {
 		timestamp = 6,
 		tool_input = { command = "pwd" },
@@ -1795,105 +1571,11 @@ do
 end
 
 do
-	local app_state = require("opencode.state")
 	local edit_state = require("opencode.edit.state")
 	local edit_widget = require("opencode.ui.edit_widget")
-	local danger = require("opencode.permission.danger")
-	local edit_handler = require("opencode.events.handlers.permission_flow.edit")
 	local edit_previews = require("opencode.ui.chat.edit_previews")
-	local client = require("opencode.client")
-
-	local previous_danger = app_state.is_danger_mode_enabled()
-	local original_respond_permission = client.respond_permission
-
-	-- Stub the HTTP reply so danger auto-approval is recorded locally
-	-- without contacting a server or scheduling deferred callbacks.
-	client.respond_permission = function() end
 
 	sync.clear_all()
-	edit_state.clear_all()
-	danger.clear()
-
-	-- Danger-capture: an auto-approved `write` carries a server diff on
-	-- request.files that must be retained as a readonly/sent edit estate so
-	-- the edit widget's `=` inline diff renders with correct stats.
-	local session_id = "danger_capture_session"
-	local emitted = {}
-	local fake_events = {
-		emit = function(name, payload)
-			table.insert(emitted, { name = name, payload = payload })
-		end,
-	}
-	local fake_logger = {
-		debug = function() end,
-		info = function() end,
-		warn = function() end,
-		error = function() end,
-	}
-	local write_diff = table.concat({
-		"--- a/danger-write.txt",
-		"+++ b/danger-write.txt",
-		"@@ -1 +1 @@",
-		"-old line",
-		"+new line",
-	}, "\n")
-	local request = {
-		id = "perm_danger_write",
-		type = "write",
-		session_id = session_id,
-		message_id = "m_danger",
-		call_id = "call_danger_write",
-		timestamp = 9000,
-		metadata = {},
-		data = {},
-		review_mode = "interactive",
-		files = {
-			{
-				filePath = "danger-write.txt",
-				relativePath = "danger-write.txt",
-				before = "old line",
-				after = "new line",
-				diff = write_diff,
-				additions = 1,
-				deletions = 1,
-				type = "update",
-			},
-		},
-	}
-
-	app_state.set_danger_mode(true)
-	edit_handler.handle(fake_events, request, { id = session_id }, fake_logger)
-
-	local estate = edit_state.get_edit(request.id)
-	assert(estate, "danger mode should capture a readonly edit estate for the write tool")
-	assert(estate.review_mode == "readonly", "danger-captured estate should be readonly")
-	assert(estate.status == "sent", "danger-captured estate should be marked sent")
-	assert(estate.preview == true, "danger-captured estate should be a preview")
-	assert(estate.message_id == "m_danger", "danger-captured estate should carry message_id")
-	assert(estate.call_id == "call_danger_write", "danger-captured estate should carry call_id")
-	assert(#estate.files == 1, "danger-captured estate should have one file")
-	local dfile = estate.files[1]
-	assert(#dfile.diff_lines > 0, "danger-captured estate should parse diff lines from request.files")
-	assert(dfile.stats.added == 1 and dfile.stats.removed == 1, "danger-captured estate stats should be non-zero")
-	assert(dfile.status == "accepted", "danger-captured file should be marked accepted")
-
-	local emitted_pending = false
-	for _, ev in ipairs(emitted) do
-		if ev.name == "edit_pending" then
-			emitted_pending = true
-		end
-	end
-	assert(not emitted_pending, "danger-captured edit should not emit edit_pending")
-
-	edit_state.toggle_inline_diff(request.id, 1)
-	local danger_lines = edit_widget.get_resolved_lines(request.id, estate)
-	local danger_text = table.concat(danger_lines, "\n")
-	assert(danger_text:find("old line", 1, true), "danger-captured widget should expand removed diff text")
-	assert(danger_text:find("new line", 1, true), "danger-captured widget should expand added diff text")
-	assert(danger_text:find("(approved)", 1, true), "danger-captured widget should show approved resolution label")
-
-	app_state.set_danger_mode(previous_danger)
-	danger.clear()
 	edit_state.clear_all()
 
 	-- Empty-string compute: a `write` with before="" / after="content" and
@@ -1945,7 +1627,6 @@ do
 
 	sync.clear_all()
 	edit_state.clear_all()
-	client.respond_permission = original_respond_permission
 end
 
 do
@@ -2125,32 +1806,19 @@ do
 	question_state.clear_all()
 	app_state.set_session("orphan_question_session", "Orphan Question")
 
-	question_state.add_question("q_orphan_pending", "orphan_question_session", {
-		{ header = "Pick", question = "Choose one", options = { { label = "A", value = "a" } } },
-	}, {
-		timestamp = 1,
-		message_id = "msg_orphan_question",
-	})
-	question_state.add_question("q_orphan_confirming", "orphan_question_session", {
-		{ header = "Pick", question = "Choose one", options = { { label = "B", value = "b" } } },
-	}, {
-		timestamp = 2,
-		message_id = "msg_orphan_question",
-	})
+	local function add_orphan_form(id, label, timestamp)
+		question_state.add_form({ id = id, sessionID = "orphan_question_session",
+			fields = { { key = "choice", type = "string", title = "Pick", description = "Choose one",
+				options = { { label = label, value = label:lower() } } } },
+			metadata = { tool = { messageID = "msg_orphan_question" } },
+		}, { timestamp = timestamp })
+	end
+	add_orphan_form("q_orphan_pending", "A", 1)
+	add_orphan_form("q_orphan_confirming", "B", 2)
 	question_state.set_confirming("q_orphan_confirming")
-	question_state.add_question("q_orphan_answered", "orphan_question_session", {
-		{ header = "Pick", question = "Choose one", options = { { label = "C", value = "c" } } },
-	}, {
-		timestamp = 3,
-		message_id = "msg_orphan_question",
-	})
+	add_orphan_form("q_orphan_answered", "C", 3)
 	question_state.mark_answered("q_orphan_answered")
-	question_state.add_question("q_orphan_rejected", "orphan_question_session", {
-		{ header = "Pick", question = "Choose one", options = { { label = "D", value = "d" } } },
-	}, {
-		timestamp = 4,
-		message_id = "msg_orphan_question",
-	})
+	add_orphan_form("q_orphan_rejected", "D", 4)
 	question_state.mark_rejected("q_orphan_rejected")
 
 	chat.render()
@@ -2271,7 +1939,7 @@ do
 		tool = "read",
 		state = {
 			status = "completed",
-			input = { filePath = "lua/opencode/init.lua" },
+			input = { path = "lua/opencode/init.lua" },
 			output = table.concat(read_output, "\n"),
 		},
 	}, false)
@@ -2279,11 +1947,11 @@ do
 		tool = "read",
 		state = {
 			status = "completed",
-			input = { filePath = "lua/opencode/init.lua" },
+			input = { path = "lua/opencode/init.lua" },
 			output = table.concat(read_output, "\n"),
 		},
 	}, true)
-	assert(render_text(read_collapsed):find("Read lua/opencode/init.lua", 1, true), "read widget should render state.input.filePath")
+	assert(render_text(read_collapsed):find("Read lua/opencode/init.lua", 1, true), "read widget should render native state.input.path")
 	assert(render_text(read_collapsed):find("more lines", 1, true), "read widget should show collapsed overflow")
 	assert(not render_text(read_expanded):find("more lines", 1, true), "read widget should hide overflow when expanded")
 
@@ -2306,7 +1974,7 @@ do
 			output = "lua/opencode/init.lua:12:3:local M = {}",
 		},
 	}, false)
-	assert(rg_result and table.concat(rg_result.lines, "\n"):find("Ripgrep", 1, true), "rg widget should render")
+	assert(rg_result and table.concat(rg_result.lines, "\n"):find("∴ rg", 1, true), "rg widget should render")
 
 	local rg_lines = {}
 	for i = 1, 11 do
@@ -2330,8 +1998,8 @@ do
 		},
 		metadata = { matches = 11 },
 	}, true)
-	assert(render_text(rg_collapsed):find("more lines", 1, true), "rg widget should show collapsed overflow")
-	assert(not render_text(rg_expanded):find("more lines", 1, true), "rg widget should hide overflow when expanded")
+	assert(not render_text(rg_collapsed):find("value_1", 1, true), "collapsed rg widget should hide successful output")
+	assert(render_text(rg_expanded):find("value_1", 1, true), "expanded rg widget should show output")
 
 	local skill_result = skill.render_tool({
 		tool = "skill",
@@ -2632,39 +2300,10 @@ do
 	cleanup(readonly_reject_paths)
 
 	local native_diff = require("opencode.ui.native_diff")
-	local native_state
-	for index = 1, math.huge do
-		local name, value = debug.getupvalue(native_diff.show, index)
-		if not name then
-			break
-		end
-		if name == "state" then
-			native_state = value
-			break
-		end
-	end
-	local sync_edit_action
-	for index = 1, math.huge do
-		local name, value = debug.getupvalue(native_diff._confirm_current, index)
-		if not name then
-			break
-		end
-		if name == "sync_edit_action" then
-			sync_edit_action = value
-			break
-		end
-	end
-	assert(type(native_state) == "table", "native diff state upvalue should be available")
-	assert(type(sync_edit_action) == "function", "native diff sync action upvalue should be available")
-
 	local original_native_show = native_diff.show
 	local captured_native_show
-	native_diff.show = function(permission_id, files, opts)
-		captured_native_show = {
-			permission_id = permission_id,
-			files = files,
-			opts = opts,
-		}
+	native_diff.show = function(files, opts)
+		captured_native_show = { files = files, opts = opts }
 	end
 
 	local native_multifile_paths = make_edit("edit_native_multifile", 3)
@@ -2690,33 +2329,6 @@ do
 	assert(captured_native_show.files[1].edit_file_index == 2, "pending filtered native diff should keep original indices")
 	native_diff.show = original_native_show
 	cleanup(native_pending_paths)
-
-	local native_paths = make_edit("edit_native_refresh", 2)
-	local refresh_calls = 0
-	chat_edits.refresh_edit = function(edit_id)
-		refresh_calls = refresh_calls + 1
-		calls.last_refreshed = edit_id
-	end
-	native_state.edit_id = "edit_native_refresh"
-	native_state.edit_file_index = 1
-	native_state.files = {
-		{ edit_file_index = 1 },
-		{ edit_file_index = 2 },
-	}
-	native_state.current_file_index = 2
-	sync_edit_action("resolve")
-	wait_until(function()
-		return refresh_calls == 1
-	end, "native diff sync should refresh through shared edit path")
-	assert(calls.last_refreshed == "edit_native_refresh", "native diff refresh should target originating edit")
-	local native_refresh_edit = edit_state.get_edit("edit_native_refresh")
-	assert(native_refresh_edit.files[1].status == "pending", "native diff sync should not resolve fallback index")
-	assert(native_refresh_edit.files[2].status ~= "pending", "native diff sync should resolve current native file index")
-	native_state.edit_id = nil
-	native_state.edit_file_index = nil
-	native_state.files = {}
-	native_state.current_file_index = 1
-	cleanup(native_paths)
 
 	chat_edits.finalize_edit = original_finalize
 	chat_edits.rerender_edit = original_rerender
@@ -2879,11 +2491,11 @@ local setup_ok, setup_err = pcall(function()
 	end
 	assert(slash_commands.close ~= nil, "/close is not registered")
 	app_state.set_recent_sessions({
-		{ id = "historical-session", title = "Historical Session", messageCount = 5 },
+		{ id = "historical-session", title = "Historical Session", message_count = 5 },
 	}, 30)
 	assert(
 		app_state.get_session_record("historical-session").message_count == 5,
-		"backend messageCount did not update session record"
+		"backend message_count did not update session record"
 	)
 	app_state.upsert_session({ id = "remembered-session", title = "Remembered Session" }, { touch = false })
 	local active_by_id = {}

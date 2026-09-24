@@ -39,8 +39,6 @@ function M.add_permission(permission_id, session_id, permission_type, opts)
 	opts = opts or {}
 	local pstate = {
 		permission_id = permission_id,
-		protocol = opts.protocol,
-		native = opts.native,
 		location = opts.location,
 		transport = "permission",
 		session_id = session_id,

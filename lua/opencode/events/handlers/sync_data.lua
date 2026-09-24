@@ -38,7 +38,6 @@ function M.setup(events)
 				return
 			end
 			if sync.get_catalog_location() ~= directory then return end
-			if domain == "providers" then require("opencode.local").model.cleanup() end
 			events.emit(domain .. "_loaded", domain == "providers" and data.providers or data)
 			events.emit("sync_changed", { kind = domain, action = "loaded" })
 			local ok, input = pcall(require, "opencode.ui.input")

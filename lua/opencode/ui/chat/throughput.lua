@@ -15,10 +15,10 @@ end
 ---@param messages table[] Chronological session history, including hidden idle messages
 ---@return table<string, number>
 function M.by_message(messages)
-	local legacy_turns = true
+	local partial_history_turns = true
 	for _, message in ipairs(messages) do
 		if kind(message) == "idle" then
-			legacy_turns = false
+			partial_history_turns = false
 			break
 		end
 	end
@@ -31,9 +31,9 @@ function M.by_message(messages)
 		if message_kind == "idle" then
 			tokens, duration, valid, has_prompt = 0, 0, true, false
 		elseif message_kind == "user" or message_kind == "synthetic" then
-			-- Native turns can contain steering prompts. Without idle boundaries,
-			-- use the most recent prompt, matching OpenCode's legacy history path.
-			if legacy_turns or not has_prompt then
+			-- Native turns can contain steering prompts. When a loaded page has no
+			-- idle boundary, use the most recent prompt as the visible turn start.
+			if partial_history_turns or not has_prompt then
 				tokens, duration, valid = 0, 0, true
 			end
 			has_prompt = true

@@ -54,7 +54,7 @@ Remove all cached artifacts (__pycache__ and .pytest_cache) in this project, the
 
 (The rm step should surface a destructive-command approval.)
 
-## S7 — Planned migration
+## S7 — Planned storage change
 
 - Surfaces: edit widget.
 

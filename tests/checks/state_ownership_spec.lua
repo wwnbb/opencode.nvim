@@ -85,14 +85,20 @@ package.loaded["opencode.events"] = nil
 local permission_state = require("opencode.permission.state")
 local question_state = require("opencode.question.state")
 local edit_state = require("opencode.edit.state")
+local function add_form(id, session_id, title)
+	return question_state.add_form({
+		id = id, sessionID = session_id,
+		fields = { { key = "choice", type = "string", title = title,
+			options = { { label = "Yes", value = "yes" } } } },
+		state = { status = "pending" },
+	})
+end
 require("opencode.local")
 assert_eq(package.loaded["opencode.events"], nil, "stores should not load event facade")
 
 permission_state.add_permission("perm_store", "session_a", "bash", {})
 permission_state.select_option("perm_store", 2)
-question_state.add_question("question_store", "session_a", {
-	{ prompt = "Pick", options = { { label = "A", value = "a" } } },
-})
+add_form("question_store", "session_a", "Pick")
 question_state.select_option("question_store", 1)
 edit_state.add_edit("edit_store", "session_a", {
 	{ filePath = "README.md", before = "a", after = "b" },
@@ -108,20 +114,10 @@ local selectors = require("opencode.selectors")
 bus.clear()
 bus.clear_history()
 require("opencode.events.state_bridge").setup(bus)
-local changes_sync_count = 0
-bus.on("sync_changed", function(data)
-	if type(data) == "table" and data.kind == "changes" and data.action == "updated" then
-		changes_sync_count = changes_sync_count + 1
-	end
-end)
-state.add_pending_change("bridge_state_change.lua", {
-	original = "",
-	modified = "changed",
-	additions = 1,
-	deletions = 0,
-})
-assert_eq(changes_sync_count, 1, "pending file changes should request sync_changed changes update")
-state.clear_all_pending_changes()
+local config_change_count = 0
+bus.on("config_change", function() config_change_count = config_change_count + 1 end)
+state.set_config({ bridge_test = true })
+assert_eq(config_change_count, 1, "state config changes should cross the state/event bridge")
 bus.clear()
 bus.clear_history()
 
@@ -348,77 +344,47 @@ assert_eq(logger.count(), first_log_count, "unchanged model selection reads shou
 bus.clear()
 bus.clear_history()
 state.reset()
+sync.clear_all()
 local session_actions = require("opencode.session")
 session_actions.set_active("session_status", "Status Session", { preserve_cache = true })
-session_actions.set_status("idle", { reason = "test", session_id = "session_status" })
-require("opencode.events.handlers.message").setup(bus)
+require("opencode.events.handlers.v2").setup(bus)
+local function emit_native(kind, sid, id, data)
+	local payload = vim.tbl_extend("force", { sessionID = sid }, data or {})
+	bus.emit("v2_event", { id = id, type = kind, data = payload, created = 10 })
+end
+emit_native("session.execution.started", "session_status", "evt-status-start")
+wait_for(function() return state.get_status() == "streaming" end,
+	"native execution start should set streaming")
 
-bus.emit("message_updated", {
-	info = {
-		id = "msg_status",
-		sessionID = "session_status",
-		role = "assistant",
-		time = { created = 1 },
-	},
-})
-vim.wait(50)
-assert_eq(state.get_status(), "idle", "message update alone should not change global status")
-
-bus.emit("session_status", {
-	sessionID = "session_status",
-	status = { type = "busy" },
-})
-wait_for(function()
-	return state.get_status() == "streaming"
-end, "busy session.status should set streaming")
-
-bus.emit("session_status", {
-	sessionID = "session_status",
-	status = { type = "idle" },
-})
-wait_for(function()
-	return state.get_status() == "idle"
-end, "idle session.status should set idle")
+sync.handle_session_messages("session_status", {
+	{ info = { id = "completed_step", sessionID = "session_status", role = "assistant",
+		time = { created = 1, completed = 2 }, finish = "stop" }, parts = {} },
+}, { complete = true })
+assert_eq(state.get_session_status("session_status").type, "busy",
+	"completed assistant snapshot alone should not infer idle")
+emit_native("session.execution.succeeded", "session_status", "evt-status-stop")
+wait_for(function() return state.get_status() == "idle" end,
+	"native execution success should set idle")
 
 state.reset()
 sync.clear_all()
-bus.clear_history()
 state.set_session("running_root", "Running Root")
 state.set_session("complete_root", "Complete Root")
 session_actions.set_session_status("running_root", { type = "busy" }, { reason = "test_busy" })
 session_actions.set_session_status("complete_root", { type = "busy" }, { reason = "test_busy" })
-bus.emit("message_updated", {
-	info = {
-		id = "complete_assistant",
-		sessionID = "complete_root",
-		role = "assistant",
-		time = { created = 1, completed = 2 },
-	},
-})
-wait_for(function()
-	return state.get_session_status("complete_root").type == "idle"
-end, "completed assistant message should clear only its owning session status")
+emit_native("session.execution.succeeded", "complete_root", "evt-complete-root")
+wait_for(function() return state.get_session_status("complete_root").type == "idle" end,
+	"native terminal event should idle only its owning session")
 assert_eq(state.get_session_status("running_root").type, "busy", "unrelated running session should stay busy")
-assert_eq(state.get_status(), "idle", "active completed session should mirror idle globally")
-
-session_actions.set_session_status("complete_root", { type = "busy" }, { reason = "test_tool_calls" })
-bus.emit("message_updated", {
-	info = {
-		id = "tool_call_assistant",
-		sessionID = "complete_root",
-		role = "assistant",
-		finish = "tool-calls",
-		time = { created = 3, completed = 4 },
-	},
-})
-vim.wait(50)
-assert_eq(state.get_session_status("complete_root").type, "busy", "tool-call completions should not mark session idle")
+require("opencode.events.handlers.v2").clear()
+bus.clear()
+bus.clear_history()
 
 state.reset()
 sync.clear_all()
 session_actions.set_active("view_root", "View Root", { preserve_cache = true })
 session_actions.set_session_status("view_root", { type = "retry", attempt = 2 }, { reason = "test_view" })
-state.set_session_pending_counts("view_root", { question = 1, edit = 1 })
+state.set_session_pending_counts("view_root", { questions = 1, edits = 1 })
 state.set_session_message_cache("view_root", { count = 3, loaded = true })
 local view = selectors.get_current_session_view()
 assert_true(view ~= nil, "current session selector should return a view")
@@ -427,7 +393,6 @@ assert_eq(view.id, "view_root", "SessionView should expose scalar id")
 assert_eq(view:status_label(), "retry #2", "SessionView should format retry status labels")
 assert_eq(view:pending_total(), 2, "SessionView pending total should include questions and edits")
 assert_eq(view:message_count(), 3, "SessionView message count should use fresh message cache")
-assert_eq(view.messageCount, 3, "SessionView should expose scalar messageCount")
 local pending_copy = view.pending
 pending_copy.questions = 99
 assert_eq(view.pending.questions, 1, "SessionView pending table reads should be defensive copies")
@@ -494,9 +459,7 @@ assert_eq(
 	1,
 	"unrelated root permission should remain isolated"
 )
-question_state.add_question("question_waiting_child", "permission_child", {
-	{ prompt = "Continue?", options = { { label = "Yes", value = "yes" } } },
-})
+add_form("question_waiting_child", "permission_child", "Continue?")
 edit_state.add_edit("edit_waiting_root", "permission_waiting", {
 	{ filePath = "README.md", before = "a", after = "b" },
 }, { review_mode = "readonly" })
@@ -523,247 +486,62 @@ state.reset()
 sync.clear_all()
 permission_state.clear_all()
 question_state.clear_all()
+session_actions.set_active("other_session", "Other Session", { preserve_cache = true })
 session_actions.set_active("visible_session", "Visible Session", { preserve_cache = true })
-require("opencode.events.handlers.permission").setup(bus)
-require("opencode.events.handlers.question").setup(bus)
+require("opencode.events.handlers.interactions_v2").setup(bus)
 
-bus.emit("permission", {
-	id = "perm_missing_session",
-	permission = "bash",
-	time = { created = 0 },
-})
-vim.wait(50)
-assert_true(
-	not permission_state.has_permission("perm_missing_session"),
-	"permission without session or message identity should be dropped"
-)
-
-bus.emit("permission", {
-	id = "perm_other_session",
-	permission = "bash",
-	sessionID = "other_session",
-	time = { created = 1 },
-})
-wait_for(function()
-	return permission_state.has_permission("perm_other_session")
-end, "permission in another root session should remain independently tracked")
-
-bus.emit("permission", {
-	id = "perm_visible_session",
-	permission = "bash",
-	sessionID = "visible_session",
-	time = { created = 2 },
-})
-wait_for(function()
-	return permission_state.has_permission("perm_visible_session")
-end, "permission in visible session should be tracked")
-
-bus.emit("question_asked", {
-	requestID = "question_other_session",
-	sessionID = "other_session",
-	questions = {
-		{ prompt = "Pick", options = { { label = "A", value = "a" } } },
-	},
-	time = { created = 3 },
-})
-wait_for(function()
-	return question_state.has_question("question_other_session")
-end, "question in another root session should remain independently tracked")
-
-bus.emit("question_asked", {
-	requestID = "question_visible_session",
-	sessionID = "visible_session",
-	questions = {
-		{ prompt = "Pick", options = { { label = "A", value = "a" } } },
-	},
-	time = { created = 4 },
-})
-wait_for(function()
-	return question_state.has_question("question_visible_session")
-end, "question in visible session should be tracked")
-
-local permission_request = require("opencode.events.handlers.permission_flow.request")
-local decoded_wire = assert(permission_request.decode({
-	requestID = "decoder_wire",
-	permission = "bash",
-	sessionID = "decoder_session",
-	messageID = "decoder_message",
-	callID = "decoder_call",
-	time = { created = 1000 },
+local request = require("opencode.events.handlers.permission_flow.request")
+local decoded = assert(request.decode({
+	id = "decoder_wire", action = "shell", sessionID = "visible_session",
+	source = { type = "tool", messageID = "decoder_message", callID = "decoder_call" },
+	resources = { "*.lua" }, time = { created = 1000 },
 }))
-assert_eq(decoded_wire.id, "decoder_wire", "decoder should accept wire request id")
-assert_eq(decoded_wire.type, "bash", "decoder should accept wire permission type")
-assert_eq(decoded_wire.session_id, "decoder_session", "decoder should accept wire session id")
-assert_eq(decoded_wire.message_id, "decoder_message", "decoder should accept wire message id")
-assert_eq(decoded_wire.call_id, "decoder_call", "decoder should accept wire call id")
+assert_eq(decoded.id, "decoder_wire", "decoder should accept native request id")
+assert_eq(decoded.type, "shell", "decoder should accept native action")
+assert_eq(decoded.session_id, "visible_session", "decoder should accept native session id")
+assert_eq(decoded.message_id, "decoder_message", "decoder should accept native source message id")
+assert_eq(decoded.call_id, "decoder_call", "decoder should accept native source callID")
+assert_eq(decoded.patterns[1], "*.lua", "decoder should preserve native resource patterns")
+assert_eq(request.decode({ action = "shell", sessionID = "visible_session" }), nil,
+	"decoder should reject missing request id")
+assert_eq(request.decode({ id = "missing_session", action = "shell" }), nil,
+	"decoder should reject missing session id")
 
-local decoded_internal = assert(permission_request.decode({
-	request_id = "decoder_internal",
-	type = "grep",
-	session_id = "decoder_internal_session",
-	message_id = "decoder_internal_message",
-	call_id = "decoder_internal_call",
-}))
-assert_eq(decoded_internal.id, "decoder_internal", "decoder should accept internal request id")
-assert_eq(decoded_internal.session_id, "decoder_internal_session", "decoder should accept internal session id")
-assert_eq(decoded_internal.message_id, "decoder_internal_message", "decoder should accept internal message id")
-assert_eq(decoded_internal.call_id, "decoder_internal_call", "decoder should accept internal call id")
+sync.handle_message_updated({ id = "permission_tool_message", sessionID = "visible_session",
+	role = "assistant", time = { created = 1 } })
+sync.handle_part_updated({ id = "permission_tool_part", messageID = "permission_tool_message",
+	sessionID = "visible_session", type = "tool", tool = "bash", callID = "tool_call",
+	state = { input = { command = "from sync" } } })
+bus.emit("v2_interaction", { id = "evt-permission-visible", type = "permission.asked",
+	data = { id = "perm_visible_session", action = "shell", sessionID = "visible_session",
+		source = { type = "tool", messageID = "permission_tool_message", callID = "tool_call" },
+		metadata = { input = { command = "from metadata" } } }, created = 1000 })
+wait_for(function() return permission_state.has_permission("perm_visible_session") end,
+	"native permission in visible session should be tracked")
+assert_eq(permission_state.get_permission("perm_visible_session").tool_input.command, "from sync",
+	"native permission should prefer synchronized tool input")
 
-local missing_id = permission_request.decode({ permission = "bash", sessionID = "decoder_session" })
-assert_eq(missing_id, nil, "decoder should reject missing request id")
-local missing_session = permission_request.decode({ requestID = "decoder_missing_session", permission = "bash" })
-assert_eq(missing_session, nil, "decoder should reject missing session id")
+bus.emit("v2_interaction", { id = "evt-permission-other", type = "permission.asked",
+	data = { id = "perm_other_session", action = "shell", sessionID = "other_session",
+		metadata = { input = { command = "other" } } }, created = 1001 })
+wait_for(function() return permission_state.has_permission("perm_other_session") end,
+	"permission in another runtime tab should remain independently tracked")
+bus.emit("v2_interaction", { id = "evt-permission-foreign", type = "permission.asked",
+	data = { id = "perm_foreign", action = "shell", sessionID = "foreign_session" }, created = 1002 })
+assert_true(not permission_state.has_permission("perm_foreign"),
+	"permission outside runtime sessions should be ignored")
 
--- decode() callID fallback: recover message_id from sync tool parts
-sync.clear_all()
-sync.handle_message_updated({
-	id = "call_fallback_message",
-	sessionID = "call_fallback_session",
-	role = "assistant",
-	time = { created = 1 },
-})
-sync.handle_part_updated({
-	id = "call_fallback_part",
-	messageID = "call_fallback_message",
-	sessionID = "call_fallback_session",
-	type = "tool",
-	tool = "bash",
-	callID = "call_fallback_call",
-})
-local decoded_call_fallback = assert(permission_request.decode({
-	requestID = "call_fallback_perm",
-	permission = "bash",
-	sessionID = "call_fallback_session",
-	callID = "call_fallback_call",
-	time = { created = 1000 },
-}))
-assert_eq(
-	decoded_call_fallback.message_id,
-	"call_fallback_message",
-	"decode should recover message_id from callID via sync lookup"
-)
-assert_eq(decoded_call_fallback.call_id, "call_fallback_call", "decode should preserve call_id")
-
-local decoded_call_miss = permission_request.decode({
-	requestID = "call_miss_perm",
-	permission = "bash",
-	sessionID = "call_fallback_session",
-	callID = "nonexistent_call",
-	time = { created = 1000 },
-})
-assert_eq(
-	decoded_call_miss and decoded_call_miss.message_id,
-	nil,
-	"decode should leave message_id nil when callID has no matching tool part"
-)
-
-bus.clear()
-bus.clear_history()
-state.reset()
-sync.clear_all()
-permission_state.clear_all()
-edit_state.clear_all()
-session_actions.set_active("flow_visible", "Flow Visible", { preserve_cache = true })
-require("opencode.events.handlers.permission").setup(bus)
-
-sync.handle_message_updated({
-	id = "flow_message",
-	sessionID = "flow_visible",
-	role = "assistant",
-	time = { created = 10 },
-})
-sync.handle_part_updated({
-	id = "flow_tool_part",
-	messageID = "flow_message",
-	sessionID = "flow_visible",
-	type = "tool",
-	tool = "bash",
-	callID = "flow_call",
-	state = { input = { command = "from sync" } },
-})
-bus.emit("permission", {
-	requestID = "flow_perm_sync",
-	permission = "bash",
-	messageID = "flow_message",
-	callID = "flow_call",
-	metadata = { input = { command = "from metadata" } },
-})
-wait_for(function()
-	return permission_state.has_permission("flow_perm_sync")
-end, "non-edit permission should be stored")
-assert_eq(
-	permission_state.get_permission("flow_perm_sync").tool_input.command,
-	"from sync",
-	"non-edit permission should prefer sync tool input"
-)
-
-bus.emit("permission", {
-	requestID = "flow_perm_metadata",
-	permission = "grep",
-	sessionID = "flow_visible",
-	metadata = { input = { query = "from metadata" } },
-})
-wait_for(function()
-	return permission_state.has_permission("flow_perm_metadata")
-end, "non-edit permission should use metadata input")
-assert_eq(
-	permission_state.get_permission("flow_perm_metadata").tool_input.query,
-	"from metadata",
-	"non-edit permission should retain metadata tool input"
-)
-
-bus.emit("permission", {
-	requestID = "flow_edit_native",
-	type = "neovim_edit",
-	sessionID = "flow_visible",
-	metadata = {
-		files = {
-			{ filePath = "README.md", before = "a", after = "b" },
-		},
-	},
-})
-wait_for(function()
-	return edit_state.get_edit("flow_edit_native") ~= nil
-end, "native edit permission should create edit state")
-assert_eq(edit_state.get_edit("flow_edit_native").review_mode, "interactive", "native edit should be interactive")
-
-bus.emit("permission", {
-	requestID = "flow_edit_readonly",
-	type = "edit",
-	sessionID = "flow_visible",
-	path = "README.md",
-	before = "a",
-	after = "b",
-})
-wait_for(function()
-	return edit_state.get_edit("flow_edit_readonly") ~= nil
-end, "plain edit permission should create edit state")
-assert_eq(edit_state.get_edit("flow_edit_readonly").review_mode, "readonly", "plain edit should be readonly")
-
-local function count_history(event_type, permission_id)
-	local count = 0
-	for _, entry in ipairs(bus.get_history()) do
-		if entry.type == event_type and type(entry.data) == "table" then
-			if entry.data.permission_id == permission_id or entry.data.id == permission_id then
-				count = count + 1
-			end
-		end
-	end
-	return count
+local function emit_form(id, sid)
+	bus.emit("v2_interaction", { id = "evt-" .. id, type = "form.created", created = 1003,
+		data = { form = { id = id, sessionID = sid, state = { status = "pending" },
+			fields = { { key = "choice", type = "string", title = "Pick",
+				options = { { label = "A", value = "a" } } } } } } })
 end
-
-bus.emit("permission", {
-	requestID = "flow_edit_native",
-	type = "neovim_edit",
-	sessionID = "flow_visible",
-	metadata = {
-		files = {
-			{ filePath = "README.md", before = "a", after = "b" },
-		},
-	},
-})
-vim.wait(50)
-assert_eq(count_history("edit_pending", "flow_edit_native"), 1, "duplicate edit permission should be ignored")
+emit_form("form_other_session", "other_session")
+emit_form("form_visible_session", "visible_session")
+wait_for(function() return question_state.has_question("form_other_session")
+	and question_state.has_question("form_visible_session") end,
+	"native forms should be retained for each runtime tab")
 
 bus.clear()
 bus.clear_history()
@@ -784,9 +562,7 @@ bus.clear_history()
 state.reset()
 session_actions.set_active("session_hidden", "Hidden Widget", { preserve_cache = true })
 question_state.clear_all()
-question_state.add_question("hidden_question", "session_hidden", {
-	{ question = "Hidden?", options = { { label = "Yes", value = "yes" } } },
-})
+add_form("hidden_question", "session_hidden", "Hidden?")
 local chat = require("opencode.ui.chat")
 chat.create()
 local lines = chat.render()
@@ -799,8 +575,7 @@ permission_state.add_permission("preserve_perm", "session_hidden", "bash", {})
 edit_state.add_edit("preserve_edit", "session_hidden", {
 	{ filePath = "README.md", before = "a", after = "b" },
 }, { review_mode = "readonly" })
-require("opencode.events.handlers.permission").setup(bus)
-require("opencode.events.handlers.question").setup(bus)
+require("opencode.events.handlers.session_store").setup(bus)
 bus.emit("session_change", {
 	id = "child",
 	previous_id = "session_hidden",
@@ -869,10 +644,14 @@ local function history_has(event_type, permission_id)
 	return false
 end
 
-assert_eq(close_replies[1].reply, "reject", "session.close should reject permissions")
-assert_eq(close_replies[1].opts.message, "Session closed", "session.close should use the close message")
-assert_eq(close_replies[2].reply, "reject", "session.close should reject child permissions")
-assert_eq(close_replies[2].opts.message, "Session closed", "session.close should use the close message for child permissions")
+local close_replies_by_id = {}
+for _, reply in ipairs(close_replies) do
+	assert_eq(reply.reply, "reject", "session.close should reject native permissions")
+	assert_eq(reply.opts.message, "Session closed", "session.close should use the close message")
+	close_replies_by_id[reply.permission_id] = reply
+end
+assert_eq(close_replies_by_id.close_perm_a.opts.session_id, "session_close_a", "session.close should pass the native permission owner")
+assert_eq(close_replies_by_id.close_perm_child.opts.session_id, "session_close_child", "session.close should pass the child permission owner")
 assert_true(history_has("permission_rejected", "close_perm_a"), "session.close should emit permission_rejected for the root permission")
 assert_true(history_has("permission_removed", "close_perm_a"), "session.close should emit permission_removed for the root permission")
 assert_true(history_has("interaction_changed", "close_perm_a"), "session.close should emit interaction_changed for the root permission")
@@ -938,15 +717,9 @@ sync.handle_part_updated({
 permission_state.add_permission("perm_close_root", "close_root", "bash", {})
 permission_state.add_permission("perm_close_child", "close_child", "bash", {})
 permission_state.add_permission("perm_keep_root", "keep_root", "bash", {})
-question_state.add_question("question_close_root", "close_root", {
-	{ prompt = "Close root?", options = { { label = "Yes", value = "yes" } } },
-})
-question_state.add_question("question_close_child", "close_child", {
-	{ prompt = "Close child?", options = { { label = "Yes", value = "yes" } } },
-})
-question_state.add_question("question_keep_root", "keep_root", {
-	{ prompt = "Keep root?", options = { { label = "Yes", value = "yes" } } },
-})
+add_form("question_close_root", "close_root", "Close root?")
+add_form("question_close_child", "close_child", "Close child?")
+add_form("question_keep_root", "keep_root", "Keep root?")
 edit_state.add_edit("edit_close_root", "close_root", {
 	{ filePath = "README.md", before = "a", after = "b" },
 }, { review_mode = "readonly" })
@@ -967,7 +740,11 @@ assert_true(question_state.has_question("question_keep_root"), "close should pre
 assert_true(edit_state.get_edit("edit_close_root") == nil, "close should clear root edit")
 assert_true(edit_state.get_edit("edit_close_child") == nil, "close should clear child edit")
 assert_true(edit_state.get_edit("edit_keep_root") ~= nil, "close should preserve unrelated edit")
-assert_eq(#rejected_permissions, 4, "close should reject root and child permissions/edits")
+assert_eq(#rejected_permissions, 2, "close should reject root and child native permissions")
+local rejected_permissions_by_id = {}
+for _, rejection in ipairs(rejected_permissions) do rejected_permissions_by_id[rejection.permission_id] = rejection end
+assert_eq(rejected_permissions_by_id.perm_close_root.opts.session_id, "close_root", "root permission owner")
+assert_eq(rejected_permissions_by_id.perm_close_child.opts.session_id, "close_child", "child permission owner")
 assert_eq(#rejected_questions, 2, "close should reject root and child questions")
 local rejected_questions_by_id = {}
 for _, rejection in ipairs(rejected_questions) do
@@ -1007,11 +784,12 @@ client.respond_permission = function(permission_id, reply, opts, callback)
 	end
 end
 
-require("opencode.events.handlers.permission").setup(bus)
-bus.emit("permission", {
+session_actions.set_active("session_hidden", "Hidden Widget", { preserve_cache = true })
+require("opencode.events.handlers.interactions_v2").setup(bus)
+bus.emit("v2_interaction", { id = "evt-danger-missing", type = "permission.asked", data = {
 	id = "danger_missing_session",
-	permission = "bash",
-})
+	action = "shell",
+}, created = 1000 })
 vim.wait(50)
 assert_eq(#replies, 0, "danger mode should not auto-reply to permission without session identity")
 assert_true(
@@ -1019,11 +797,11 @@ assert_true(
 	"danger mode should drop permission without session identity"
 )
 
-bus.emit("permission", {
+bus.emit("v2_interaction", { id = "evt-danger-perm", type = "permission.asked", data = {
 	id = "danger_perm",
-	permission = "bash",
+	action = "shell",
 	sessionID = "session_hidden",
-})
+}, created = 1001 })
 wait_for(function()
 	return #replies == 1
 end, "danger mode should auto-reply to permission requests")
@@ -1064,9 +842,7 @@ sync.handle_message_updated({
 	time = { created = 1 },
 })
 permission_state.add_permission("cleanup_perm", "cleanup_session", "bash", {})
-question_state.add_question("cleanup_question", "cleanup_session", {
-	{ prompt = "Cleanup?", options = { { label = "Yes", value = "yes" } } },
-})
+add_form("cleanup_question", "cleanup_session", "Cleanup?")
 edit_state.add_edit("cleanup_edit", "cleanup_session", {
 	{ filePath = "cleanup.lua", before = "a", after = "b" },
 }, { review_mode = "readonly" })
@@ -1118,69 +894,24 @@ end
 assert_true(has_diff_add, "file edit result should highlight additions")
 assert_true(has_diff_delete, "file edit result should highlight deletions")
 
--- HTTP-sync idle reconciliation
+-- A completed HTTP history page must not overwrite live busy status. The
+-- watchdog uses /api/session/active; only native execution events mark idle.
 bus.clear()
 bus.clear_history()
 state.reset()
 sync.clear_all()
-permission_state.clear_all()
-question_state.clear_all()
-edit_state.clear_all()
 state.set_session("reconcile_root", "Reconcile Root")
 state.set_session("reconcile_other", "Reconcile Other")
-session_actions.set_session_status("reconcile_root", { type = "busy" }, { reason = "test_reconcile_busy" })
-session_actions.set_session_status("reconcile_other", { type = "busy" }, { reason = "test_reconcile_busy" })
-
+session_actions.set_session_status("reconcile_root", { type = "busy" }, { reason = "test_busy" })
+session_actions.set_session_status("reconcile_other", { type = "busy" }, { reason = "test_busy" })
 sync.handle_session_messages("reconcile_root", {
-	{
-		info = {
-			id = "reconcile_assistant",
-			sessionID = "reconcile_root",
-			role = "assistant",
-			time = { created = 1, completed = 2 },
-			finish = "stop",
-		},
-		parts = {},
-	},
-})
-session_actions.reconcile_busy_session_idle("reconcile_root", { reason = "test" })
-assert_eq(state.get_session_status("reconcile_root").type, "idle", "HTTP-sync completed assistant message should idle owning session")
-assert_eq(state.get_session_status("reconcile_other").type, "busy", "HTTP-sync idle reconcile should not affect unrelated session")
-
--- HTTP-sync with finish=tool-calls should stay busy
-state.reset()
-sync.clear_all()
-state.set_session("toolcall_root", "ToolCall Root")
-session_actions.set_session_status("toolcall_root", { type = "busy" }, { reason = "test_toolcall_busy" })
-sync.handle_session_messages("toolcall_root", {
-	{
-		info = {
-			id = "toolcall_assistant",
-			sessionID = "toolcall_root",
-			role = "assistant",
-			time = { created = 1, completed = 2 },
-			finish = "tool-calls",
-		},
-		parts = {},
-	},
-})
-session_actions.reconcile_busy_session_idle("toolcall_root", { reason = "test" })
-assert_eq(state.get_session_status("toolcall_root").type, "busy", "tool-call completion should not idle session via reconcile")
-
--- session.idle SSE event (no status field) should idle a busy session
-state.reset()
-sync.clear_all()
-state.set_session("idle_event_root", "Idle Event Root")
-session_actions.set_session_status("idle_event_root", { type = "busy" }, { reason = "test_idle_event_busy" })
-require("opencode.events.handlers.message").setup(bus)
-bus.emit("session_status", { sessionID = "idle_event_root" })
-wait_for(function()
-	return state.get_session_status("idle_event_root").type == "idle"
-end, "session.idle event without status field should set session idle")
-
--- reconcile on already-idle session should be a no-op (no error)
-session_actions.reconcile_busy_session_idle("idle_event_root", { reason = "noop_test" })
-assert_eq(state.get_session_status("idle_event_root").type, "idle", "reconcile on idle session should be a no-op")
+	{ info = { id = "reconcile_assistant", sessionID = "reconcile_root", role = "assistant",
+		time = { created = 1, completed = 2 }, finish = "stop" }, parts = {} },
+}, { complete = true })
+assert_eq(state.get_session_status("reconcile_root").type, "busy",
+	"completed HTTP history must not infer idle for its session")
+assert_eq(state.get_session_status("reconcile_other").type, "busy",
+	"completed HTTP history must not affect another session")
 
 print("State ownership checks passed")
 	end)

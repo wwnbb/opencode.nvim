@@ -31,28 +31,38 @@ assert_line({
 }, '✱ Grep "TODO" (2 matches)', "grep completed")
 
 assert_line({
+	tool = "glob",
+	state = { status = "completed", input = { pattern = "*.lua" } },
+}, '✱ Glob "*.lua"', "glob without server count")
+
+assert_line({
+	tool = "grep",
+	state = { status = "completed", input = { pattern = "TODO" } },
+}, '✱ Grep "TODO"', "grep without server count")
+
+assert_line({
 	tool = "rg",
 	state = { status = "completed", input = { pattern = "fn" }, metadata = { matchCount = 5 } },
 }, '✱ Ripgrep "fn" (5 matches)', "rg completed")
 
 assert_line({
 	tool = "read",
-	state = { status = "completed", input = { filePath = string.rep("x", 60) } },
+	state = { status = "completed", input = { path = string.rep("x", 60) } },
 }, "→ Read ..." .. string.rep("x", 37), "read completed with 60-char path")
 
 assert_line({
 	tool = "read",
-	state = { status = "pending", input = { filePath = "short.lua" } },
+	state = { status = "pending", input = { path = "short.lua" } },
 }, "~ Reading file...", "read pending")
 
 assert_line({
 	tool = "write",
-	state = { status = "completed", input = { filePath = string.rep("y", 20) } },
+	state = { status = "completed", input = { path = string.rep("y", 20) } },
 }, "← Wrote " .. string.rep("y", 20), "write completed with 20-char path")
 
 assert_line({
 	tool = "edit",
-	state = { status = "completed", input = { filePath = string.rep("z", 50) } },
+	state = { status = "completed", input = { path = string.rep("z", 50) } },
 }, "← Edit ..." .. string.rep("z", 37), "edit completed with 50-char path")
 
 assert_line({
@@ -77,7 +87,7 @@ assert_line({
 
 assert_line({
 	tool = "skill",
-	state = { status = "completed", input = {}, raw = "my-skill" },
+	state = { status = "completed", input = { name = "my-skill" } },
 }, '→ Skill "my-skill"', "skill completed")
 
 assert_line({
@@ -115,7 +125,7 @@ assert_label({
 
 assert_label({
 	tool = "read",
-	state = { status = "completed", input = { filePath = string.rep("a", 41) } },
+	state = { status = "completed", input = { path = string.rep("a", 41) } },
 }, "Read ..." .. string.rep("a", 37), "read fallback path truncation at 41 chars")
 
 assert_label({

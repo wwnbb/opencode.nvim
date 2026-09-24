@@ -1,7 +1,7 @@
 -- Task and tool widget facade for the chat buffer.
 -- Rendering dispatch + task widget + expand/collapse toggles + cursor queries.
 -- Animation lives in task_animation.lua, labels in tool_labels.lua,
--- child-session resolution in task_children.lua, block updates in widget_support.lua.
+-- child-session navigation in task_children.lua, block updates in widget_support.lua.
 
 local M = {}
 
@@ -61,7 +61,6 @@ M.format_tool_line = tool_labels.format_tool_line
 -- ─── Child session resolution (facade — implementation in task_children.lua) ──
 
 M.ensure_task_child_loaded = task_children.ensure_task_child_loaded
-M.resolve_missing_task_children = task_children.resolve_missing_task_children
 M.resolve_task_child_session_id = task_children.resolve_task_child_session_id
 
 ---@param child_session_id string

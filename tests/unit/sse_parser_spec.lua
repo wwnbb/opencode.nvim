@@ -1,6 +1,16 @@
-describe("opencode SSE parser", function()
+describe("opencode native v2 SSE parser", function()
 	local transport = require("opencode.client.transport")
 	local original_open, original_sse, sse, stream, received
+
+	local function envelope(id, value)
+		return {
+			id = id,
+			created = 1,
+			type = "session.text.delta",
+			location = { directory = vim.fn.getcwd() },
+			data = { sessionID = "sse-session", delta = value },
+		}
+	end
 
 	before_each(function()
 		original_open = transport.open_stream
@@ -27,35 +37,56 @@ describe("opencode SSE parser", function()
 	end)
 
 	for _, separator in ipairs({ ":", ": " }) do
-		it("reads named events and IDs using " .. vim.inspect(separator), function()
-			local frame = "event" .. separator .. "custom\r\nid" .. separator .. "event-123\r\ndata: {\"value\":1}\r\n\r\n"
-			-- Split every byte, including CRLF and field names, across transport callbacks.
+		it("reads native envelopes split at every byte using " .. vim.inspect(separator), function()
+			local frame = "event" .. separator .. "message\r\nid" .. separator .. "frame-123\r\ndata: "
+				.. vim.json.encode(envelope("event-123", "chunk")) .. "\r\n\r\n"
 			for index = 1, #frame do stream.on_data(frame:sub(index, index)) end
-			assert.same({ { kind = "custom", id = "event-123", data = { value = 1 } } }, received)
+			assert.equals(1, #received)
+			assert.equals("session.text.delta", received[1].kind)
+			assert.equals("event-123", received[1].id)
+			assert.equals("chunk", received[1].data.delta)
+			assert.equals("event-123", received[1].data._v2_envelope.id)
 		end)
 	end
 
-	it("keeps fields after data in the same event and preserves multiline whitespace", function()
-		stream.on_data(": comment\ndata: first\ndata:  second\nevent: custom\nid: last\n")
+	it("joins multiline JSON data and retains later fields", function()
+		local frame = ': comment\ndata: {"type":"session.text.delta",\ndata:  "data":{"sessionID":"sse-session","delta":"two"}}\nid: frame-last\n'
+		stream.on_data(frame)
 		assert.equals(0, #received)
 		stream.on_data("\n")
-		assert.same({ { kind = "custom", id = "last", data = "first\n second" } }, received)
+		assert.equals("session.text.delta", received[1].kind)
+		assert.equals("frame-last", received[1].id)
+		assert.equals("two", received[1].data.delta)
 	end)
 
-	it("supports empty fields and ignores invalid IDs without splitting events", function()
-		stream.on_data("event: custom\nevent\nid: valid\nid: bad\0id\ndata\ndata: tail\n\n")
-		assert.same({ { kind = "message", id = "valid", data = "\ntail" } }, received)
-		stream.on_data("id: old\nid:\ndata: next\n\n")
-		assert.same({ kind = "message", data = "next" }, received[2])
+	it("ignores invalid frame IDs and empty fields", function()
+		local frame = "event: ignored\nevent\nid: valid\nid: bad\0id\ndata: "
+			.. vim.json.encode(envelope("event-valid", "first")) .. "\n\n"
+		stream.on_data(frame)
+		assert.equals("event-valid", received[1].id)
+		stream.on_data("id: old\nid:\ndata: " .. vim.json.encode(envelope(nil, "next")) .. "\n\n")
+		assert.equals("session.text.delta", received[2].kind)
+		assert.is_nil(received[2].id)
 	end)
 
-	it("uses frame IDs to deduplicate wrapped global events", function()
-		local payload = vim.json.encode({ directory = "global", payload = { type = "custom", properties = { value = 1 } } })
-		local frame = "id: unique\ndata: " .. payload .. "\n\n"
+	it("deduplicates native event IDs across reconnects", function()
+		local frame = "data: " .. vim.json.encode(envelope("unique", "once")) .. "\n\n"
 		stream.on_data(frame .. frame)
 		assert.equals(1, #received)
-		assert.equals("custom", received[1].kind)
-		assert.equals("unique", received[1].id)
+		sse.disconnect()
+		assert.is_true(sse.connect())
+		stream.on_data(frame)
+		assert.equals(1, #received)
+	end)
+
+	it("rejects old properties and syncEvent envelopes", function()
+		stream.on_data('data: {"payload":{"type":"message.updated","properties":{}}}\n\n')
+		stream.on_data('data: {"payload":{"type":"sync","syncEvent":{}}}\n\n')
+		stream.on_data('data: {"type":"message.updated","properties":{}}\n\n')
+		assert.equals(3, #received)
+		assert.equals("error", received[1].kind)
+		assert.equals("error", received[2].kind)
+		assert.equals("error", received[3].kind)
 	end)
 
 	it("resets unfinished fields when connecting a new stream", function()
@@ -63,7 +94,8 @@ describe("opencode SSE parser", function()
 		sse.disconnect()
 		assert.is_true(sse.connect())
 		received = {}
-		stream.on_data("data: next\n\n")
-		assert.same({ { kind = "message", data = "next" } }, received)
+		stream.on_data("data: " .. vim.json.encode(envelope(nil, "next")) .. "\n\n")
+		assert.equals("session.text.delta", received[1].kind)
+		assert.is_nil(received[1].id)
 	end)
 end)

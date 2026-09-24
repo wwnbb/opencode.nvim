@@ -24,16 +24,7 @@ local function is_custom_only_question(question)
 	if type(question.options) == "table" and #question.options > 0 then
 		return false
 	end
-	if question.custom ~= nil then
-		return question.custom ~= false
-	end
-	if question.allow_custom ~= nil then
-		return question.allow_custom == true
-	end
-	if question.allowCustom ~= nil then
-		return question.allowCustom == true
-	end
-	return true
+	return question.custom == true
 end
 
 ---@param kind "question" | "permission" | "edit"
@@ -198,7 +189,7 @@ function M.handle_question_confirm()
 
 		local current_tab = qstate.current_tab
 		local total_count = #qstate.questions
-		if qstate.protocol == "v2" and total_count == 0 then
+		if total_count == 0 then
 			chat_questions.submit_question_answers(request_id)
 			return
 		end
@@ -389,11 +380,7 @@ function M.handle_question_custom_input()
 end
 
 function M.handle_widget_message()
-	local request_id = chat_questions.get_question_at_cursor()
-	if request_id then
-		chat_questions.handle_question_message(request_id)
-		return
-	end
+	if chat_questions.get_question_at_cursor() then return end
 
 	local perm_id = chat_permissions.get_permission_at_cursor()
 	if perm_id then

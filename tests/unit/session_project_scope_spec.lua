@@ -26,11 +26,25 @@ describe("opencode session project scope", function()
 	end)
 
 	it("accepts background project events but drops closed and unrelated projects", function()
-		local event = { directory = other .. "/", payload = { type = "question.asked", properties = { sessionID = "b" } } }
+		local event = { location = { directory = other .. "/" }, type = "form.created", data = { sessionID = "b" } }
 		assert.is_true(sse._should_accept(event))
-		assert.is_false(sse._should_accept({ directory = cwd .. "/foreign", payload = { type = "test" } }))
+		assert.is_false(sse._should_accept({ location = { directory = cwd .. "/foreign" }, type = "test", data = {} }))
 		state.close_runtime_session("b")
 		assert.is_false(sse._should_accept(event))
+	end)
+
+	it("filters decoded native events before delivering them", function()
+		sse.clear_listeners()
+		local seen = 0
+		sse.on("form.created", function() seen = seen + 1 end)
+		sse.emit("message", { id = "scope-a", type = "form.created", location = { directory = other },
+			data = { sessionID = "b", form = { id = "f", sessionID = "b", fields = {} } } })
+		assert.equals(1, seen)
+		state.close_runtime_session("b")
+		sse.emit("message", { id = "scope-b", type = "form.created", location = { directory = other },
+			data = { sessionID = "b", form = { id = "f2", sessionID = "b", fields = {} } } })
+		assert.equals(1, seen)
+		sse.clear_listeners()
 	end)
 
 	it("fetches one global active snapshot across directories", function()

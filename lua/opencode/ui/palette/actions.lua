@@ -8,6 +8,52 @@ local selectors = require("opencode.selectors")
 local state = require("opencode.state")
 
 local hl_ns = vim.api.nvim_create_namespace("opencode_palette")
+
+local function revert_pending_changes(pending, force)
+	local edits = require("opencode.edit.state")
+	local reverted = 0
+	local conflicts = {}
+	local issues = {}
+	local refreshed = {}
+
+	-- Undo newer proposals first when several reviews touch the same file.
+	for index = #pending, 1, -1 do
+		local change = pending[index]
+		local ok, err, reason, permission_id = edits.revert_change(change.id, { force = force })
+		if ok then
+			reverted = reverted + 1
+			if permission_id then refreshed[permission_id] = true end
+		elseif reason == "conflict" then
+			table.insert(conflicts, err or change.filepath)
+		else
+			table.insert(issues, "Could not revert " .. change.filepath .. ": " .. tostring(err or "unknown error"))
+		end
+	end
+
+	local ok_chat, chat_edits = pcall(require, "opencode.ui.chat.edits")
+	for permission_id in pairs(refreshed) do
+		local estate = edits.get_edit(permission_id)
+		local rpc = estate and estate.transport == "review_rpc"
+		local ok, result = false, chat_edits
+		if ok_chat then
+			ok, result = pcall(rpc and chat_edits.refresh_edit or chat_edits.rerender_edit, permission_id)
+		end
+		if not ok or (rpc and not result) then
+			local label = rpc and "Review reply not sent for " or "Review UI could not refresh for "
+			table.insert(issues, label .. permission_id .. ": " .. (not ok and tostring(result) or "retry from review widget"))
+		end
+	end
+
+	local summary = string.format("Reverted %d of %d pending changes", reverted, #pending)
+	if #conflicts > 0 then
+		summary = summary .. "\nPreserved files changed since review:\n" .. table.concat(conflicts, "\n")
+	end
+	if #issues > 0 then summary = summary .. "\n" .. table.concat(issues, "\n") end
+	local level = #issues > 0 and vim.log.levels.ERROR
+		or (#conflicts > 0 and vim.log.levels.WARN or vim.log.levels.INFO)
+	vim.notify(summary, level)
+end
+
 function M.register(palette)
 	palette.register({
 		id = "action.abort",
@@ -94,7 +140,7 @@ function M.register(palette)
 	palette.register({
 		id = "action.revert",
 		title = "Revert Changes",
-		description = "Revert all pending changes",
+		description = "Revert pending changes safely or force overwrite current files",
 		category = "actions",
 		action = function()
 			local pending = changes.get_pending()
@@ -103,14 +149,22 @@ function M.register(palette)
 				return
 			end
 
-			vim.ui.select({ "Yes", "No" }, {
-				prompt = "Revert all " .. #pending .. " pending changes?",
+			local safe_choice = "Revert safely (keep later edits)"
+			local force_choice = "Force overwrite changed files..."
+			local force_confirm = "Yes, overwrite or delete current files"
+			vim.ui.select({ safe_choice, force_choice, "Cancel" }, {
+				prompt = "Revert " .. #pending .. " pending changes?",
 			}, function(choice)
-				if choice == "Yes" then
-					for _, change in ipairs(pending) do
-						changes.reject(change.id)
-					end
-					vim.notify("Reverted all changes", vim.log.levels.INFO)
+				if choice == safe_choice then
+					revert_pending_changes(pending, false)
+				elseif choice == force_choice then
+					vim.ui.select({ force_confirm, "Cancel" }, {
+						prompt = "Are you sure? This discards saved edits made after review in up to " .. #pending .. " files.",
+					}, function(confirmation)
+						if confirmation == force_confirm then
+							revert_pending_changes(pending, true)
+						end
+					end)
 				end
 			end)
 		end,

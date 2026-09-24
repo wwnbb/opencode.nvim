@@ -178,8 +178,9 @@ describe("chat message boundaries", function()
 		render()
 		assert_user_separator("u")
 		local part = sync.get_parts("a")[1]
-		for _, delta in ipairs({ " continues", "\nAnother line", "\n", "\n", "Last line" }) do
-			sync.handle_part_delta({ sessionID = session, messageID = "a", partID = part.id, field = "text", delta = delta })
+		for seq, delta in ipairs({ " continues", "\nAnother line", "\n", "\n", "Last line" }) do
+			sync.handle_v2_event({ id = "evt_spacing_" .. seq, created = seq + 3,
+				type = "session.text.delta", data = { sessionID = session, assistantMessageID = "a", ordinal = 0, delta = delta } })
 			assert.is_true(chat.update_stream_part_block(session, "a", part.id, { field = "text", delta = delta }))
 			assert_user_separator("u")
 			local streamed = lines()

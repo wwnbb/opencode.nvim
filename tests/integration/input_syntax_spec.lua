@@ -102,7 +102,7 @@ describe("input code highlighting", function()
 		wait_for(function() return #marks() > 0 end)
 		for _, setting in ipairs({
 			{ "syntax", "input_markdown", false }, { "syntax", "enabled", false },
-			{ "markdown", "enable_code_highlight", false }, { "syntax", "max_lines", 1 },
+			{ "syntax", "max_lines", 1 },
 			{ "syntax", "max_bytes", 3 },
 		}) do
 			local section, key, value = unpack(setting)

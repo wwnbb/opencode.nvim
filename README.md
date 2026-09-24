@@ -64,8 +64,8 @@ For example, a `rust` fence needs a Rust parser and `highlights.scm` queries on
 Neovim's runtimepath. Missing parsers/queries, unknown languages and blocks over
 the limits fall back to plain text; parsers are not installed automatically.
 Explicitly labelled fences also highlight snippets shorter than `syntax.min_bytes`.
-The legacy `markdown.enable_code_highlight = false` disables fenced-code
-highlighting in messages and the input. Standalone backtick/tilde fences are supported;
+Set `syntax.enabled = false` to disable fenced-code highlighting. Standalone
+backtick/tilde fences are supported;
 nested Markdown containers such as block quotes are not parsed by this renderer.
 
 The current-line and visual-selection helpers (including the suggested
@@ -111,18 +111,16 @@ You can also run a single spec file:
 
 # Installation
 
-The backend targets **OpenCode 2.0.11**; this checkout does not provide a v1
-backend. See [migration notes](plans/opencode-v2/PROGRESS.md) for the validation
-record. Keep your previous plugin checkout and configuration when
-upgrading; reverting the Neovim plugin does not reverse server database migration.
+The backend requires **OpenCode 2.0.11 or newer**.
 
 Run `./scripts/install-tools.sh` to install the bundled v2 server plugin into
 `$XDG_CONFIG_HOME/nvim/opencode` (or `~/.config/nvim/opencode`). Pass a directory
 argument when `server.config_dir` uses a different location. Node.js and npm are
 required to install the pinned runtime dependencies. The installer preserves
-user commands and JSONC comments, adds its plugin entry, migrates legacy
-permission rules, and keeps backups under `opencode-nvim-backups`. Only unchanged,
-identified v1 tool files are retired; modified files are retained.
+user commands and JSONC comments, adds its v2 plugin entry, and keeps backups
+under `opencode-nvim-backups` on reinstall. It checks for unsupported config
+entries and tool files before changing the profile; resolve any reported path
+and rerun the installer.
 
 The bundled tools use two distinct decisions: native OpenCode permission rules
 authorize the operation, then Neovim reviews each proposed file. `allow` on a tool
@@ -137,28 +135,27 @@ automatically. Inline proposals (`=`), acceptance and rejection also work withou
 shared files. Disconnected or cancelled reviews cannot apply or flush files.
 
 Bundled plugin **2.0.11-4** provides file review protocol 2. Update it
-together with the Lua plugin. `/skill`
-and the skill palette send native attachments; the unchanged legacy
-`load_skills` command is backed up and retired by the installer.
+together with the Lua plugin. `/skill` and the skill palette send native
+attachments.
 
 `neovim_edit` follows the v2 edit input: `path`, non-empty `oldString`,
 `newString`, and optional `replaceAll`. It only changes existing files.
-Use `neovim_patch` (renamed from `neovim_apply_patch`) with `patchText` to add,
+Use `neovim_patch` with `patchText` to add,
 update, move, or delete files. Both retain preview, per-file accept/reject, manual
 diff editing, and the optional `allowIndentChange` guard override. User review
 comments accompany the tool's model-visible result and persist in chat history.
 
-The installer renames exact `neovim_apply_patch` permission actions to
-`neovim_patch`, including agent rules, preserving their resources and ordering.
 Permissions remain scoped to `neovim_edit` and `neovim_patch`; they are not
-broadened to cover all built-in `edit` operations. Old tool calls still render
-in history. Reinstall the bundled server plugin and reconnect when updating:
-protocol 2 prevents an older server from silently dropping review comments.
+broadened to cover all built-in `edit` operations. Unknown historical tool calls
+render through the generic tool view without review actions. Reinstall the bundled
+server plugin and reconnect when updating: protocol 2 prevents an older server
+from silently dropping review comments.
 
-Model preferences use format 2 in `opencode_local.json`; the first format
-conversion preserves the original as `opencode_local.json.v1.bak`. Unavailable
-favorites are retained. Existing sessions keep their own model, agent and
-variant until you explicitly change them.
+Model preferences use format 2 in `opencode_local.json`. A versionless file is
+left untouched and is not loaded; move it aside and reselect preferences in the
+UI, or manually convert its model IDs and add `"version": 2`. Unavailable
+favorites in a version 2 file are retained. Existing sessions keep their own
+model, agent and variant until you explicitly change them.
 
 Prompts sent while a response is running are queued by default. Pending inputs
 stay at the bottom of the chat, below the current response and its status footer,
@@ -192,14 +189,6 @@ images use inline data URIs. OpenCode 2.0.11 does not run LSP diagnostics and
 does not expose MCP tool definitions through its public catalog. MCP status,
 connection and linked integration authentication remain available.
 
-Runtime validation uses isolated profiles: MiMo V2.5 Free from OpenCode Zen
-for the main matrix and DeepSeek V4 Flash from OpenCode Go for successful
-parallel background agents, reconnect and fresh-client history. Zen Free
-rejected child-agent requests with a provider restriction. See
-[the validation report](plans/opencode-v2/FINAL-VALIDATION.md) for evidence and limits.
-Importing old v1 conversation history is outside this migration’s scope.
-
-
 Paste the prompt below into your AI coding agent while it is working in your Neovim config directory.
 It will inspect your setup, install opencode.nvim with your existing plugin manager, and configure safe defaults.
 
@@ -210,10 +199,10 @@ Follow these steps:
 1. Inspect the current Neovim config first. Identify the plugin manager, config structure, existing keymap style, colors/highlight setup, and any existing OpenCode or AI-assistant config.
 2. Ask targeted questions only when a choice is not obvious. Ask, for example, which plugin manager to use if it is unclear, which keymap should toggle/open opencode, whether session tabs should use a fixed max count or dynamic auto-fit, and whether the chat layout should be vertical, horizontal, or float.
 3. Add `wwnbb/opencode.nvim` through the existing plugin manager. Include dependencies: MunifTanjim/nui.nvim and nvim-lua/plenary.nvim. If the config uses lazy.nvim, ask whether I want you to install/sync the plugin now by running `nvim --headless "+Lazy! sync" +qa`; run it only if I confirm.
-4. Configure the plugin manager build/install hook to run `scripts/install-tools.sh` so the bundled opencode.nvim server plugin is updated with the Lua plugin. If the plugin manager has no build hook, run the script manually from the plugin root. Verify `opencode --version` reports 2.0.11, then connect and inspect Server Status in the command palette.
+4. Configure the plugin manager build/install hook to run `scripts/install-tools.sh` so the bundled opencode.nvim server plugin is updated with the Lua plugin. If the plugin manager has no build hook, run the script manually from the plugin root. Verify `opencode --version` reports 2.0.11 or newer, then connect and inspect Server Status in the command palette.
 5. Configure `require("opencode").setup()` using only supported options:
    - `server.command`, `server.auto_start`, `server.config_dir`, `server.env`
-   - `session.default_agent`, `session.default_model.providerID`, `session.default_model.modelID`, `session.parallel.enabled`, `session.parallel.use_prompt_async`
+   - `session.default_agent`, `session.default_model.providerID`, `session.default_model.modelID`, `session.parallel.enabled`
    - `chat.layout` (`vertical`, `horizontal`, or `float`), `chat.position`, `chat.width`, `chat.height`, `chat.float.width`, `chat.float.height`, `chat.float.border`, `chat.close_on_focus_lost`
    - `chat.session_tabs.enabled`, `chat.session_tabs.auto_fit`, `chat.session_tabs.max_tabs`, `chat.session_tabs.separator`, `chat.session_tabs.icons`, `chat.session_tabs.colors`
    - top-level `keymaps.toggle`, `keymaps.command_palette`, `keymaps.toggle_logs`, `keymaps.close_session`, `keymaps.abort`, `keymaps.active_sessions`
@@ -287,7 +276,6 @@ require("opencode").setup({
     },
     parallel = {
       enabled = true,
-      use_prompt_async = true,
     },
   },
   chat = {

@@ -1,5 +1,5 @@
 -- opencode.nvim - Edit state management module
--- Tracks active edit permission requests (fugitive-style file review widget)
+-- Tracks active v2 file reviews and read-only tool previews.
 
 local M = {}
 
@@ -371,6 +371,7 @@ function M.add_edit(permission_id, session_id, files_data, opts)
 	local files = {}
 	for i, fd in ipairs(files_data) do
 		local filepath = fd.filePath or fd.filepath or fd.file_path or fd.file or fd.path or ""
+		local file_type = changes.normalize_file_type(fd.type)
 		local relative_path = fd.relativePath or fd.relative_path or vim.fn.fnamemodify(filepath, ":.")
 		local before = fd.before or ""
 		local after = fd.after or ""
@@ -388,7 +389,7 @@ function M.add_edit(permission_id, session_id, files_data, opts)
 			change_id = changes.add_change(filepath, before, after, {
 				bom = fd.bom == true,
 				before_bom = fd.before_bom,
-				file_type = fd.type or "update",
+				file_type = file_type,
 				metadata = {
 					source = "edit_widget",
 					permission_id = permission_id,
@@ -413,13 +414,13 @@ function M.add_edit(permission_id, session_id, files_data, opts)
 			status = file_statuses[i] or "pending",
 			stats = { added = additions, removed = deletions },
 			diff_lines = parse_diff_lines(fd.diff),
-			file_type = fd.type or "update",
+			file_type = file_type,
 		})
 	end
 
 	local estate = {
 		permission_id = permission_id,
-		transport = opts.transport or "permission",
+		transport = opts.transport or (review_mode == "readonly" and "preview" or "local"),
 		apply_mode = apply_mode,
 		review_id = opts.review_id,
 		revision = opts.revision,
@@ -682,6 +683,37 @@ function M.reject_file(permission_id, file_index)
 
 	local ok, err = apply_file_action(estate, file, FILE_ACTIONS.reject)
 	return ok, err, nil
+end
+
+---Revert a tracked change from the palette while keeping its review file in sync.
+---@param change_id string
+---@param opts? { force?: boolean }
+---@return boolean ok
+---@return string|nil err
+---@return string|nil reason
+---@return string|nil permission_id
+function M.revert_change(change_id, opts)
+	local changes = require("opencode.artifact.changes")
+	local change = changes.get(change_id)
+	if not change then return false, "Change not found", "not_found" end
+
+	local metadata = change.metadata or {}
+	local permission_id = metadata.source == "edit_widget" and metadata.permission_id or nil
+	local estate = permission_id and active_edits[permission_id]
+	local file = estate and estate.files[metadata.file_index]
+	if not file or file.change_id ~= change_id then file = nil end -- Widget may have been cleared with its session.
+	if file then
+		if file.status ~= "pending" or estate.status ~= "pending" or estate.submitting or estate.review_mode == "readonly" then
+			return false, "Edit review is no longer editable", "already_resolved"
+		end
+		if estate.transport == "review_rpc" and not require("opencode.state").is_connected() then
+			return false, "Reconnect before reverting this review", "disconnected"
+		end
+	end
+
+	local ok, err, reason = changes.reject(change_id, opts)
+	if ok and file then file.status = "rejected" end
+	return ok, err, reason, file and permission_id or nil
 end
 
 --- Accept all pending files

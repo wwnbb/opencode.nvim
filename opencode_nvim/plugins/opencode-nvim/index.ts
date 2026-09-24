@@ -52,7 +52,7 @@ export default Plugin.define({
                 },
                 progress: (metadata: Record<string, unknown>) => Effect.runPromise(context.progress(jsonValue(metadata)), { signal }),
                 review: (proposal: any) => reviews.wait(runtime, proposal) }
-              const result = await core.execute(input, runtime)
+              const result: { content: string; title?: string; metadata: Record<string, unknown> } = await core.execute(input, runtime)
               signal.throwIfAborted()
               const metadata = jsonValue({ ...result.metadata, title: result.title ?? result.metadata?.title })
               await reviews.finish(context.sessionID, context.id, metadata)

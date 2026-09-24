@@ -71,7 +71,7 @@ end
 local function ended(ref)
 	local part = ref.part
 	local time = part.type == "tool" and (part.state or {}).time or part.time or {}
-	return time and (time.completed or time["end"])
+	return time and time.completed
 		or (part.type == "reasoning" and (ref.message.time or {}).completed)
 		or (part.type == "tool" and vim.tbl_contains({ "completed", "error", "cancelled", "canceled" }, (part.state or {}).status))
 end
@@ -153,7 +153,7 @@ function M.render(group, expanded)
 		local duration, title = 0, nil
 		for _, ref in ipairs(refs) do
 			local time = ref.part.time or {}
-			local start, stop = time.created or time.start, time.completed or time["end"]
+			local start, stop = time.created, time.completed
 			if type(start) == "number" and type(stop) == "number" then duration = duration + math.max(0, stop - start) end
 			local candidate, rest = reasoning_text(ref.part):match("^%*%*([^*\r\n]+)%*%*(.*)$")
 			title = candidate and (rest == "" or rest:sub(1, 2) == "\n\n" or rest:sub(1, 4) == "\r\n\r\n")

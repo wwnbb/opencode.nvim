@@ -1,4 +1,4 @@
--- Shared pre/post-migration renderer fixture: common UI data, no network/model.
+-- Shared native renderer fixture: common UI data, no network/model.
 if vim.env.OPENCODE_V2_BASELINE then vim.opt.runtimepath:prepend(vim.env.OPENCODE_V2_BASELINE) end
 local app, chat, sync = require("opencode"), require("opencode.ui.chat"), require("opencode.sync")
 local session = require("opencode.session")

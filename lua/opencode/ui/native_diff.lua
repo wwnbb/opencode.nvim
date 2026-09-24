@@ -6,11 +6,9 @@
 local M = {}
 
 local syntax = require("opencode.ui.syntax")
-local actions = require("opencode.actions")
 
 local state = {
 	active = false,
-	permission_id = nil,
 	files = {}, -- Array of {filePath, before, after, type, relativePath, diff, edit_file_index?}
 	current_file_index = 1,
 	original_buf = nil, -- Buffer for the actual file (RIGHT side, editable)
@@ -20,29 +18,14 @@ local state = {
 	tab_page = nil, -- Tab page for the diff view (keeps chat untouched)
 	previous_winid = nil, -- To restore focus on close
 	original_is_scratch = false, -- Missing add-file target opened without touching disk
-	file_snapshots = {}, -- {[index] = original_content} for undo on reject
 	-- Back-reference to the chat edit widget (set when launched from dt)
-	edit_id = nil, -- permission_id of the originating edit
+	edit_id = nil, -- ID of the originating v2 review
 	edit_file_index = nil, -- which file index in the edit widget was opened
 }
 
 local logger_ok, logger = pcall(require, "opencode.logger")
 if not logger_ok then
 	logger = { debug = function() end, info = function() end, warn = function() end }
-end
-
-local function get_note()
-	if not state.edit_id then
-		return ""
-	end
-
-	local ok, edit_state = pcall(require, "opencode.edit.state")
-	if not ok then
-		return ""
-	end
-
-	local estate = edit_state.get_edit(state.edit_id)
-	return estate and vim.trim(estate.message or "") or ""
 end
 
 local function focus_diff_window(winid)
@@ -112,45 +95,6 @@ local function get_filetype(filepath)
 	return ft or ext
 end
 
---- Write content to a file
----@param filepath string
----@param content string
-local function write_file(filepath, content)
-	local dir = vim.fn.fnamemodify(filepath, ":h")
-	vim.fn.mkdir(dir, "p")
-	local f = io.open(filepath, "w")
-	if f then
-		f:write(content)
-		f:close()
-	end
-end
-
---- Send permission reply to server
----@param reply string "once" | "reject"
-local function send_reply(reply)
-	if not state.permission_id then
-		logger.warn("native_diff: No permission_id to reply to")
-		return
-	end
-
-	local message = get_note()
-	actions.respond_permission(
-		state.permission_id,
-		reply,
-		{ message = message ~= "" and message or nil },
-		function(err, result)
-			vim.schedule(function()
-				if err then
-					vim.notify("Failed to send reply to server: " .. vim.inspect(err), vim.log.levels.WARN)
-					logger.warn("native_diff: reply error", { error = err })
-				else
-					logger.info("native_diff: reply sent", { reply = reply, result = result })
-				end
-			end)
-		end
-	)
-end
-
 local function delete_scratch_original_buffer()
 	if state.original_is_scratch and state.original_buf and vim.api.nvim_buf_is_valid(state.original_buf) then
 		pcall(vim.api.nvim_buf_delete, state.original_buf, { force = true })
@@ -180,7 +124,6 @@ function M.close()
 
 	-- Reset state
 	state.active = false
-	state.permission_id = nil
 	state.files = {}
 	state.current_file_index = 1
 	state.original_buf = nil
@@ -188,7 +131,6 @@ function M.close()
 	state.original_win = nil
 	state.proposed_win = nil
 	state.tab_page = nil
-	state.file_snapshots = {}
 	state.previous_winid = nil
 	state.original_is_scratch = false
 	state.edit_id = nil
@@ -231,26 +173,6 @@ local function close_diff_windows()
 	state.original_is_scratch = false
 end
 
-local function save_current_original_buffer(force)
-	if state.original_buf and vim.api.nvim_buf_is_valid(state.original_buf) then
-		if state.original_is_scratch and not force then
-			return
-		end
-
-		if state.original_is_scratch then
-			local file = state.files[state.current_file_index]
-			local filepath = file and (file.filePath or file.filepath or file.path)
-			if filepath then
-				vim.fn.mkdir(vim.fn.fnamemodify(filepath, ":h"), "p")
-			end
-		end
-
-		vim.api.nvim_buf_call(state.original_buf, function()
-			vim.cmd("silent! write")
-		end)
-	end
-end
-
 local function rpc_review()
 	local edit = state.edit_id and require("opencode.edit.state").get_edit(state.edit_id)
 	return edit and edit.transport == "review_rpc" and edit or nil
@@ -282,13 +204,9 @@ local function navigate_file(delta)
 		return
 	end
 
-	if rpc_review() then
-		if state.original_buf and vim.api.nvim_buf_is_valid(state.original_buf) and vim.bo[state.original_buf].modified then
-			vim.notify("Confirm or save your manual changes before switching review files.", vim.log.levels.WARN)
-			return
-		end
-	else
-		save_current_original_buffer()
+	if state.original_buf and vim.api.nvim_buf_is_valid(state.original_buf) and vim.bo[state.original_buf].modified then
+		vim.notify("Confirm or save your manual changes before switching review files.", vim.log.levels.WARN)
+		return
 	end
 	close_diff_windows()
 	state.current_file_index = next_index
@@ -384,9 +302,6 @@ function M._show_file(index)
 	local after = file.after or ""
 	local file_type = file.type or "update"
 
-	-- Store snapshot of original content for undo on reject
-	state.file_snapshots[index] = before
-
 	logger.debug("native_diff: showing file", {
 		index = index,
 		total = #state.files,
@@ -399,20 +314,8 @@ function M._show_file(index)
 		vim.ui.select({ "Yes, delete", "No, keep" }, {
 			prompt = "Delete file: " .. filepath .. "?",
 		}, function(choice)
-			if rpc_review() then
-				if not choice then return end
-				if rpc_file_action(choice == "Yes, delete" and "accept" or "reject") then M._advance_or_finish() end
-				return
-			end
-			if choice == "Yes, delete" then
-				-- Delete the file
-				local ok, err = pcall(os.remove, filepath)
-				if not ok then
-					logger.warn("native_diff: failed to delete file", { filepath = filepath, error = err })
-				end
-			end
-			-- Advance to next or finish
-			M._advance_or_finish()
+			if not choice then return end
+			if rpc_file_action(choice == "Yes, delete" and "accept" or "reject") then M._advance_or_finish() end
 		end)
 		return
 	end
@@ -502,153 +405,23 @@ function M._show_file(index)
 	vim.notify(status_msg, vim.log.levels.INFO)
 end
 
---- Sync the chat edit widget status after a confirm/reject/resolve action.
---- "resolve" reads the current disk state and auto-classifies
---- (accepted if matches 'after', rejected if matches 'before', resolved otherwise).
---- This preserves manual edits when an explicit resolve action runs.
----@param action "resolve"|"reject"
-local function sync_edit_action(action)
-	if not state.edit_id then
-		return
-	end
-	local edit_id = state.edit_id
-	local current_file = state.files[state.current_file_index]
-	local file_index = current_file and current_file.edit_file_index or state.edit_file_index
-	if not file_index then
-		return
-	end
-
-	vim.schedule(function()
-		local ok_es, edit_state = pcall(require, "opencode.edit.state")
-		if not ok_es then
-			return
-		end
-
-		local estate = edit_state.get_edit(edit_id)
-		if not estate or estate.status ~= "pending" then
-			return
-		end
-
-		local file = estate.files[file_index]
-		if not file or file.status ~= "pending" then
-			return
-		end
-
-		if action == "resolve" then
-			-- Auto-classify: reads disk, compares to before/after, sets status accordingly.
-			-- This preserves whatever the user saved manually.
-			edit_state.resolve_file(edit_id, file_index)
-		else -- "reject"
-			local rejected, reject_err = edit_state.reject_file(edit_id, file_index)
-			if not rejected then
-				vim.notify("Failed to reject file: " .. (reject_err or "unknown error"), vim.log.levels.ERROR)
-				return
-			end
-		end
-
-		-- Trigger rerender or finalization in the chat
-		local ok_edits, chat_edits = pcall(require, "opencode.ui.chat.edits")
-		if ok_edits and chat_edits.refresh_edit then
-			chat_edits.refresh_edit(edit_id)
-		end
-	end)
-end
-
---- Confirm current file: save current buffer state and advance.
---- Uses "resolve" so the file is auto-classified based on its current disk content
---- (accepted if all hunks applied, rejected if reverted, resolved if partially edited).
---- Manual edits are NEVER overwritten.
+---Confirm current file using the review RPC state.
 function M._confirm_current()
-	if rpc_review() then
-		if rpc_file_action("resolve") then M._advance_or_finish() end
-		return
-	end
-	-- Save the file buffer as-is (preserves any manual edits).
-	save_current_original_buffer(true)
-	sync_edit_action("resolve")
-	M._advance_or_finish()
+	if rpc_file_action("resolve") then M._advance_or_finish() end
 end
 
---- Reject current file: revert to original snapshot and advance
+---Reject current file through the review RPC state.
 function M._reject_current()
-	if rpc_review() then
-		if rpc_file_action("reject") then M._advance_or_finish() end
-		return
-	end
-	local index = state.current_file_index
-	local file = state.files[index]
-	local snapshot = state.file_snapshots[index]
-
-	if file and snapshot ~= nil then
-		local filepath = file.filePath or file.filepath or file.path
-		local file_type = file.type or "update"
-
-		if file_type == "add" and snapshot == "" then
-			-- For new files that were rejected, remove the file
-			pcall(os.remove, filepath)
-		else
-			-- Revert to original content
-			write_file(filepath, snapshot)
-		end
-
-		-- Reload the buffer if it's still open
-		if state.original_buf and vim.api.nvim_buf_is_valid(state.original_buf) then
-			vim.api.nvim_buf_call(state.original_buf, function()
-				vim.cmd("silent! edit!")
-			end)
-		end
-	end
-
-	sync_edit_action("reject")
-	M._advance_or_finish()
+	if rpc_file_action("reject") then M._advance_or_finish() end
 end
 
 --- Reject all files and close
 function M._reject_all()
-	if rpc_review() then
-		local ok, err = require("opencode.edit.state").reject_all(state.edit_id)
-		if not ok then vim.notify("Review rejection failed: " .. (err or "unknown error"), vim.log.levels.WARN); return end
-		require("opencode.ui.chat.edits").refresh_edit(state.edit_id)
-		M.close()
-		return
-	end
-	-- Revert all files to their snapshots
-	for i, file in ipairs(state.files) do
-		local snapshot = state.file_snapshots[i]
-		if file and snapshot ~= nil then
-			local filepath = file.filePath or file.filepath or file.path
-			local file_type = file.type or "update"
-
-			if file_type == "add" and snapshot == "" then
-				pcall(os.remove, filepath)
-			elseif file_type ~= "delete" then
-				write_file(filepath, snapshot)
-			end
-		end
-	end
-
-	-- Send rejection reply
-	if state.edit_id then
-		local ok_state, edit_state = pcall(require, "opencode.edit.state")
-		if ok_state then
-			local rejected, reject_err = edit_state.reject_all(state.edit_id)
-			if not rejected then
-				vim.notify("Failed to reject edit: " .. (reject_err or "unknown error"), vim.log.levels.ERROR)
-				return
-			end
-		end
-		local ok_edits, chat_edits = pcall(require, "opencode.ui.chat.edits")
-		if ok_edits and chat_edits.finalize_edit then
-			chat_edits.finalize_edit(state.edit_id)
-		end
-	else
-		send_reply("reject")
-	end
-
-	-- Close the diff view
-	close_diff_windows()
+	if not rpc_review() then return end
+	local ok, err = require("opencode.edit.state").reject_all(state.edit_id)
+	if not ok then vim.notify("Review rejection failed: " .. (err or "unknown error"), vim.log.levels.WARN); return end
+	require("opencode.ui.chat.edits").refresh_edit(state.edit_id)
 	M.close()
-
 	vim.notify("All changes rejected", vim.log.levels.INFO)
 end
 
@@ -663,11 +436,6 @@ function M._advance_or_finish()
 			M._show_file(state.current_file_index)
 		end)
 	else
-		-- All files reviewed — send approval reply and close
-		if not state.edit_id then
-			send_reply("once")
-		end
-
 		vim.schedule(function()
 			M.close()
 			vim.notify("All files reviewed and applied", vim.log.levels.INFO)
@@ -675,13 +443,13 @@ function M._advance_or_finish()
 	end
 end
 
---- Show the native diff view for a permission request
----@param permission_id string The permission request ID
+---Show the native diff view for a v2 review.
 ---@param files table Array of {filePath, before, after, type, relativePath, diff}
 ---@param opts? table Options
-function M.show(permission_id, files, opts)
+function M.show(files, opts)
 	opts = opts or {}
 	local edit = opts.edit_id and require("opencode.edit.state").get_edit(opts.edit_id)
+	if not edit or edit.transport ~= "review_rpc" then return false end
 	if edit and edit.apply_mode == "server" then
 		vim.notify("Local diff requires server.shared_filesystem=true and access to the server files. Use = for the inline proposal.", vim.log.levels.WARN)
 		return
@@ -703,25 +471,24 @@ function M.show(permission_id, files, opts)
 
 	-- Initialize state
 	state.active = true
-	state.permission_id = permission_id
 	state.files = files
 	local start_index = math.floor(tonumber(opts.start_index) or 1)
 	if start_index < 1 or start_index > #files then
 		start_index = 1
 	end
 	state.current_file_index = start_index
-	state.file_snapshots = {}
 	state.original_is_scratch = false
 	state.edit_id = opts.edit_id or nil
 	state.edit_file_index = opts.file_index or nil
 
 	logger.info("native_diff: starting review", {
-		permission_id = permission_id,
+		review_id = opts.edit_id,
 		file_count = #files,
 	})
 
 	-- Show the requested file
 	M._show_file(state.current_file_index)
+	return true
 end
 
 --- Check if the native diff view is active

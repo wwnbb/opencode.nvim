@@ -515,13 +515,6 @@ function M.highlight_markdown_fenced_blocks(text, opts)
 	if text == "" or not M.is_enabled(opts.scope or "assistant_markdown") then
 		return {}, plain_append
 	end
-	if opts.compat_markdown ~= false then
-		local full_config = get_full_config()
-		if full_config.markdown and full_config.markdown.enable_code_highlight == false then
-			return {}, plain_append
-		end
-	end
-
 	local highlights, retry = {}, false
 	local highlight_opts = vim.tbl_extend("force", opts, {
 		scope = opts.scope or "assistant_markdown",

@@ -397,12 +397,13 @@ end
 ---@param edit_id string
 function M.refresh_edit(edit_id)
 	if not edit_id then
-		return
+		return false
 	end
 	if edit_state.are_all_resolved(edit_id) then
-		M.finalize_edit(edit_id)
+		return M.finalize_edit(edit_id)
 	else
 		M.rerender_edit(edit_id)
+		return true
 	end
 end
 
@@ -629,9 +630,7 @@ end
 ---@param permission_id string
 function M.finalize_edit(permission_id)
 	local estate = edit_state.get_edit(permission_id)
-	if not estate then
-		return
-	end
+	if not estate or estate.transport ~= "review_rpc" then return false end
 
 	local function on_reply(err)
 		vim.schedule(function()
@@ -644,13 +643,7 @@ function M.finalize_edit(permission_id)
 			schedule_render()
 		end)
 	end
-	if estate.transport == "review_rpc" then
-		return actions.reply_review(permission_id, on_reply)
-	end
-	local resolution = edit_state.get_resolution(permission_id)
-	local reply = (resolution == "all_rejected") and "reject" or "once"
-	local message = vim.trim(estate.message or "")
-	return actions.respond_permission(permission_id, reply, { message = message ~= "" and message or nil }, on_reply)
+	return actions.reply_review(permission_id, on_reply)
 end
 
 ---@param edit_id string
@@ -889,7 +882,7 @@ function M.handle_edit_diff_tab()
 	end
 
 	local native_diff = require("opencode.ui.native_diff")
-	native_diff.show(nil, files, {
+	native_diff.show(files, {
 		-- Pass back-reference so the diff tab can sync status to the chat widget
 		edit_id = eid,
 		file_index = estate.selected_file,

@@ -3,7 +3,7 @@
 for path in (vim.env.OPENCODE_CODE_RTP or ""):gmatch("[^:]+") do vim.opt.runtimepath:append(path) end
 local port = assert(tonumber(vim.env.OPENCODE_CODE_SSE_PORT))
 local app, client = require("opencode"), require("opencode.client")
-app.setup({ server = { host = "127.0.0.1", port = port, auto_start = false, lazy = true,
+app.setup({ server = { host = "127.0.0.1", port = port, auto_start = false,
 	auth = { username = "opencode", password = "fixture-only" } },
 	chat = { width = 92, close_on_focus_lost = false }, lualine = { enabled = false } })
 client.setup({ host = "127.0.0.1", port = port, reconnect = false, auth = { password = "fixture-only" } })

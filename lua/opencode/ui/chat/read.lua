@@ -75,7 +75,7 @@ local function get_read_path(input)
 	if type(input) ~= "table" then
 		return nil
 	end
-	return input.filePath
+	return input.path or input.filePath
 end
 
 ---@param text string

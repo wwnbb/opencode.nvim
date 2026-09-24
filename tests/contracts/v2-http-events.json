@@ -1,10 +1,9 @@
 {
   "target_version": "2.0.11",
   "research_date": "2026-09-21",
-  "sources": "sources.json",
   "warning": "HTTP paths extracted from rolling OpenAPI; events extracted from pinned @opencode/client 2.0.11. Это реестр, а не полный валидатор DTO и не доказательство runtime-поведения.",
-  "http_path_count": 113,
-  "http_operation_count": 136,
+  "http_path_count": 112,
+  "http_operation_count": 135,
   "http_paths": {
     "/api/info": [
       "GET"
@@ -348,9 +347,6 @@
     ],
     "/api/debug/location": [
       "DELETE",
-      "GET"
-    ],
-    "/api/experimental/migration/v1": [
       "GET"
     ],
     "/api/websearch/provider": [

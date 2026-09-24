@@ -273,7 +273,6 @@ function M.render_tool(tool_part, expanded)
 				scope = "tools",
 				line_start = output_start_line,
 				col_offset = #PANEL_PREFIX,
-				compat_markdown = false,
 			})
 		else
 			syntax.add_highlights(result, output_text, output_lang, {

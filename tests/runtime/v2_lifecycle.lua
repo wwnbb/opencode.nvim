@@ -24,7 +24,7 @@ local chat, input = require("opencode.ui.chat"), require("opencode.ui.input")
 app.toggle()
 wait(function() return state.is_connected() and client.sse.is_connected() and chat.is_visible() end, "First toggle startup timeout")
 local first = health()
-assert(first.version == "2.0.11" and state.is_server_managed() and first.pid == state.get_server_pid())
+assert(not require("opencode.client.v2").validate_info(first) and state.is_server_managed() and first.pid == state.get_server_pid())
 assert(type(client.http.opts.auth.password) == "string" and #client.http.opts.auth.password == 64, "Missing ephemeral owned-server authentication")
 chat.focus()
 assert(type(vim.fn.maparg("i", "n", false, true).callback) == "function")
@@ -53,7 +53,7 @@ wait(function() return state.is_connected() end, "External reconnect timeout")
 assert(health().pid == external.pid, "External reconnect replaced the server")
 lifecycle.disconnect()
 assert(health().pid == external.pid, "Disconnect stopped external server")
-vim.fn.writefile({ vim.json.encode({ version = "2.0.11", owned_start = true, owned_restart = true, owned_stop = true,
+vim.fn.writefile({ vim.json.encode({ version = first.version, owned_start = true, owned_restart = true, owned_stop = true,
 	first_toggle_input = true,
 	external_reconnect = true, external_disconnect_preserved_process = true }) }, assert(vim.env.OPENCODE_V2_OUTPUT))
 print("Owned startup/restart/stop and external reconnect/disconnect passed")

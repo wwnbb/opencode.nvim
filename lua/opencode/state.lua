@@ -45,13 +45,6 @@ local state = {
 	-- Danger mode: auto-approve permission requests while enabled.
 	danger_mode = false,
 
-	-- Pending changes from edits
-	pending_changes = {
-		files = {},
-		total_additions = 0,
-		total_deletions = 0,
-	},
-
 	-- Configuration reference
 	config = nil,
 }
@@ -181,17 +174,9 @@ local function upsert_session_record(session)
 
 	local title = display_session_title(record.title or record.name)
 	local message_count = session.message_count
-	if message_count == nil or message_count == vim.NIL then
-		message_count = session.messageCount
-	end
-	if message_count == nil or message_count == vim.NIL then
-		message_count = record.message_count
-	end
-	if message_count == nil or message_count == vim.NIL then
-		message_count = record.messageCount
-	end
+	if message_count == nil or message_count == vim.NIL then message_count = record.message_count end
 
-	local updated_at = session.updated_at or session.updatedAt
+	local updated_at = session.updated_at
 	if updated_at == nil and type(session.time) == "table" then
 		updated_at = session.time.updated or session.time.created
 	end
@@ -199,7 +184,6 @@ local function upsert_session_record(session)
 	record.title = title or record.title or record.name or id
 	record.name = display_session_title(record.name or record.title) or record.title or id
 	record.message_count = tonumber(message_count) or 0
-	record.messageCount = record.message_count
 	record.updated_at = updated_at or record.updated_at or os.time() * 1000
 
 	state.sessions.by_id[id] = record
@@ -584,7 +568,6 @@ function M.set_session_message_cache(session_id, cache)
 		upsert_session_record({
 			id = session_id,
 			message_count = normalized.count,
-			messageCount = normalized.count,
 		})
 	end
 	emit_change("sessions.message_cache." .. session_id, old, normalized)
@@ -620,7 +603,7 @@ function M.get_active_sessions()
 		record.status = M.get_session_status(id)
 		record.pending = pending
 		record.cached_messages = cache
-		record.message_count = record.message_count or record.messageCount or cache.count or 0
+		record.message_count = record.message_count or cache.count or 0
 		record.name = display_session_title(record.name or record.title) or record.title or id
 		record.title = display_session_title(record.title or record.name) or record.name or id
 		record.is_current = state.session.id == id
@@ -713,100 +696,6 @@ function M.toggle_danger_mode()
 	return state.danger_mode
 end
 
--- Pending changes
-
-function M.add_pending_change(file_path, change_data)
-	state.pending_changes.files[file_path] = {
-		original = change_data.original,
-		modified = change_data.modified,
-		hunks = change_data.hunks or {},
-		status = "pending",
-		additions = change_data.additions or 0,
-		deletions = change_data.deletions or 0,
-	}
-
-	state.pending_changes.total_additions = state.pending_changes.total_additions + (change_data.additions or 0)
-	state.pending_changes.total_deletions = state.pending_changes.total_deletions + (change_data.deletions or 0)
-
-	emit_change("pending_changes.files." .. file_path, nil, state.pending_changes.files[file_path])
-	emit_change("pending_changes.total_additions", nil, state.pending_changes.total_additions)
-	emit_change("pending_changes.total_deletions", nil, state.pending_changes.total_deletions)
-
-	return true
-end
-
-function M.get_pending_change(file_path)
-	local ok, changes = pcall(require, "opencode.artifact.changes")
-	if ok and changes.get_all then
-		for _, change in ipairs(changes.get_all()) do
-			if change.filepath == file_path then
-				return change
-			end
-		end
-	end
-	return state.pending_changes.files[file_path] and vim.deepcopy(state.pending_changes.files[file_path]) or nil
-end
-
-function M.get_pending_changes_stats()
-	local ok, selectors = pcall(require, "opencode.selectors")
-	if ok and selectors.changes_stats then
-		return selectors.changes_stats()
-	end
-	return {
-		total_files = vim.tbl_count(state.pending_changes.files),
-		total_additions = state.pending_changes.total_additions,
-		total_deletions = state.pending_changes.total_deletions,
-	}
-end
-
-function M.update_pending_change_status(file_path, hunk_index, status)
-	local change = state.pending_changes.files[file_path]
-	if not change then
-		return nil
-	end
-
-	if hunk_index then
-		local hunk = change.hunks[hunk_index]
-		if hunk then
-			hunk.status = status
-		end
-	else
-		change.status = status
-	end
-
-	emit_change("pending_changes.files." .. file_path .. ".status", nil, status)
-
-	return change
-end
-
-function M.remove_pending_change(file_path)
-	local change = state.pending_changes.files[file_path]
-	if change then
-		state.pending_changes.total_additions = state.pending_changes.total_additions - change.additions
-		state.pending_changes.total_deletions = state.pending_changes.total_deletions - change.deletions
-		state.pending_changes.files[file_path] = nil
-
-		emit_change("pending_changes.files." .. file_path, change, nil)
-		emit_change("pending_changes.total_additions", nil, state.pending_changes.total_additions)
-		emit_change("pending_changes.total_deletions", nil, state.pending_changes.total_deletions)
-	end
-
-	return change
-end
-
-function M.clear_all_pending_changes()
-	local old = vim.deepcopy(state.pending_changes)
-	state.pending_changes = {
-		files = {},
-		total_additions = 0,
-		total_deletions = 0,
-	}
-
-	emit_change("pending_changes", old, state.pending_changes)
-
-	return old
-end
-
 -- Configuration
 
 function M.set_config(config)
@@ -853,11 +742,6 @@ function M.reset()
 	}
 	state.status = "idle"
 	state.danger_mode = false
-	state.pending_changes = {
-		files = {},
-		total_additions = 0,
-		total_deletions = 0,
-	}
 
 	emit_change("*", old, state)
 
@@ -912,7 +796,8 @@ function M.get_status_summary()
 			or pending_helper.zero_counts(),
 		active_sessions = M.get_active_sessions(),
 		danger_mode = state.danger_mode,
-		diff_stats = M.get_pending_changes_stats(),
+		diff_stats = ok and type(selectors.changes_stats) == "function" and selectors.changes_stats()
+			or { total_files = 0, total_additions = 0, total_deletions = 0 },
 	}
 end
 
