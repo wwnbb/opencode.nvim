@@ -112,6 +112,7 @@ function M.render_single_edit(ctx, _index, estate)
 	end
 
 	if e_lines then
+		if ctx:line_count() > 0 then ctx:ensure_single_blank_separator() end
 		local edit_start = ctx:prepare_widget_start()
 		capture_widget_focus("edit", eid, edit_start, e_meta)
 		for _, line_text in ipairs(e_lines) do

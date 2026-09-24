@@ -335,7 +335,7 @@ function M.edit_input(session_id, message_id, callback)
 	local opts = vim.deepcopy(record.options or {})
 	local payload = (record.inbox or {}).payload or record.payload or {}
 	local text = record.text or payload.text or ""
-	local parts = vim.deepcopy(opts.parts or {})
+	local parts = opts.parts or {}
 	if record.text == nil then
 		for _, group in ipairs({ { "files", "file" }, { "agents", "agent" }, { "skills", "skill" } }) do
 			for _, attachment in ipairs(payload[group[1]] or {}) do

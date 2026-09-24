@@ -341,16 +341,15 @@ local function render_user_message(ctx, message, render_parts, msg_idx, messages
 		end
 	)
 	ctx:add_nui_lines(msg_lines)
-	local prompt_status = require("opencode.selectors").prompt_status(ctx.current_session.id, message.id)
-	local pending_input = require("opencode.selectors").pending_input(ctx.current_session.id, message.id)
+	local prompt_status, pending_input = require("opencode.selectors").prompt_status(ctx.current_session.id, message.id)
 	if prompt_status then
 		if pending_input then
 			local keymaps = (ctx.chat_config or {}).keymaps or {}
-			local actions = { { "cancel_pending", "cancel" }, { "edit_pending", "edit" } }
-			if pending_input.status == "queued" then actions[#actions + 1] = { "steer_pending", "steer" } end
-			for _, action in ipairs(actions) do
-				local key = keymaps[action[1]]
-				if type(key) == "string" and key ~= "" then prompt_status = prompt_status .. " · " .. key .. " " .. action[2] end
+			for _, command in ipairs(require("opencode.ui.chat.pending_inputs").commands) do
+				local key = keymaps[command.name .. "_pending"]
+				if type(key) == "string" and key ~= "" and (command.name ~= "steer" or pending_input.status == "queued") then
+					prompt_status = prompt_status .. " · " .. key .. " " .. command.name
+				end
 			end
 		end
 		local status_line = NuiLine()

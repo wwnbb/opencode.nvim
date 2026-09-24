@@ -5,6 +5,7 @@ local state = require("opencode.ui.chat.state").state
 local projection = require("opencode.protocol.v2.messages")
 local render_state = require("opencode.ui.chat.render_state")
 local local_state = require("opencode.local")
+local edit_state = require("opencode.edit.state")
 local chat_hl_ns = require("opencode.ui.chat.state").chat_hl_ns
 
 describe("chat message boundaries", function()
@@ -41,6 +42,7 @@ describe("chat message boundaries", function()
 
 	before_each(function()
 		sync.clear_all()
+		edit_state.clear_all()
 		app.reset()
 		app.set_config(vim.deepcopy(require("opencode.config").defaults))
 		app.set_session(session, "Message spacing")
@@ -63,6 +65,7 @@ describe("chat message boundaries", function()
 		state.local_notices = {}
 		render_state.reset_chat_surface({ reset_expansions = true })
 		sync.clear_all()
+		edit_state.clear_all()
 		if original_open then
 			local_state.message_agent.clear_session(session)
 			preferences.open = original_open
@@ -165,6 +168,30 @@ describe("chat message boundaries", function()
 			render()
 			assert.equals(2, position("u").start_line, "exactly one blank should separate the messages")
 			assert_user_separator("u")
+		end
+	end)
+
+	it("separates assistant text from neovim edit and patch widgets", function()
+		for _, tool in ipairs({ "neovim_edit", "neovim_patch" }) do
+			for _, suffix in ipairs({ "", "\n", "\n\n" }) do
+				sync.clear_all()
+				edit_state.clear_all()
+				update({ {
+					id = "assistant", type = "assistant", time = { created = 1, completed = 2 },
+					content = {
+						{ type = "text", text = "Before widget" .. suffix },
+						{ type = "tool", id = "edit-call", name = tool, state = { status = "pending" } },
+					},
+				} })
+				edit_state.add_edit("review", session, { { filePath = "example.txt", before = "before", after = "after" } }, {
+					message_id = "assistant", call_id = "edit-call", review_mode = "readonly",
+				})
+				local rendered = render()
+				local widget = state.edits.review
+				assert.is_not_nil(widget, tool .. " widget should render")
+				assert.equals("", rendered[widget.start_line], "one blank row should precede " .. tool)
+				assert.equals("Before widget", rendered[widget.start_line - 1], "extra rows should be collapsed")
+			end
 		end
 	end)
 
