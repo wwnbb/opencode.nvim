@@ -13,7 +13,7 @@ function M.kind(part)
 	if part.type == "reasoning" and reasoning_text(part) ~= "" and thinking.is_enabled() then
 		return "thought"
 	end
-	if part.type == "tool" and vim.tbl_contains({ "read", "glob", "grep" }, part.tool) then
+	if part.type == "tool" and vim.tbl_contains({ "read", "glob", "grep", "rg" }, part.tool) then
 		return "explore"
 	end
 end
@@ -109,8 +109,11 @@ local function path(value)
 	return type(value) == "string" and vim.fn.fnamemodify(value, ":~:.") or "unknown"
 end
 
-function M.render_exploration_tool(part, result)
+function M.render_exploration_tool(part, result, expanded)
 	result = result or { lines = {}, highlights = {} }
+	if part.tool == "rg" then
+		return require("opencode.ui.chat.rg").render_tool(part, expanded, result)
+	end
 	local state = part.state or {}
 	local input = type(state.input) == "table" and state.input or {}
 	local metadata = require("opencode.ui.chat.render").get_tool_metadata(part)
@@ -183,7 +186,7 @@ function M.render(group, expanded)
 		add_line(result, (frame or "→") .. (working and " Exploring — " or " Explored — ") .. table.concat(labels, ", "), "OpenCodeExplore")
 		for _, ref in ipairs(refs) do
 			-- Keep failures visible even while the successful operations are folded.
-			if expanded or (ref.part.state or {}).status == "error" then M.render_exploration_tool(ref.part, result) end
+			if expanded or (ref.part.state or {}).status == "error" then M.render_exploration_tool(ref.part, result, true) end
 		end
 	end
 	result.lines[#result.lines + 1] = ""

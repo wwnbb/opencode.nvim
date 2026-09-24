@@ -63,6 +63,36 @@ describe("Thought and Explore groups", function()
 		for _, id in ipairs({ "a", "b", "c", "d", "e" }) do assert.equals(id, groups[id].id) end
 	end)
 
+	it("includes rg in consecutive exploration across assistant steps", function()
+		local groups = collect({
+			{ parts = { tool("read", "read"), tool("rg", "rg", "running", { pattern = "main" }) } },
+			{ parts = { tool("glob", "glob"), tool("grep", "grep") } },
+		})
+		assert.equals(groups.read, groups.rg)
+		assert.equals(groups.rg, groups.grep)
+		assert.is_truthy(text(groups.read):find("Exploring — 1 read, 3 searches", 1, true))
+		assert.is_nil(text(groups.read):find("main", 1, true))
+	end)
+
+	it("keeps rg permission requests outside exploration groups", function()
+		local groups = collect({ { parts = {
+			tool("before", "read"), tool("pending", "rg", "pending"), tool("after", "rg"),
+		} } }, function(_, part) return part.id == "pending" end)
+		assert.is_nil(groups.pending)
+		assert.equals("before", groups.before.id)
+		assert.equals("after", groups.after.id)
+	end)
+
+	it("keeps rg errors visible in collapsed exploration", function()
+		local failed = tool("rg", "rg", "error", { pattern = "[" })
+		failed.state.error = "ripgrep failed: invalid regex"
+		local groups = collect({ { parts = { tool("read", "read"), failed } } })
+		local rendered = text(groups.read)
+		assert.is_truthy(rendered:find("Explored — 1 read, 1 search", 1, true))
+		assert.is_truthy(rendered:find("✗ rg [pattern=[]", 1, true))
+		assert.is_truthy(rendered:find("error: ripgrep failed: invalid regex", 1, true))
+	end)
+
 	it("does not hide permissions or suppress reasoning beside an interaction", function()
 		local groups = collect({ { parts = { thought("t"), tool("pending", "read", "pending"), tool("done", "read") } } },
 			function(_, part) return part.id == "pending" end)
