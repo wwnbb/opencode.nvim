@@ -29,6 +29,8 @@ local function ensure_highlights()
 	panel_helpers.set_hl("OpenCodeSkillError", "DiagnosticError", "ErrorMsg")
 end
 
+require("opencode.ui.highlights").register("opencode.ui.chat.skill", ensure_highlights)
+
 ---@param value any
 ---@return string
 local function stringify(value)
@@ -306,7 +308,6 @@ function M.render_tool(tool_part, expanded)
 	if type(tool_part) ~= "table" or tool_part.tool ~= "skill" then
 		return nil
 	end
-	ensure_highlights()
 
 	local ctx = tool_panel.context(tool_part)
 	local input = ctx.input

@@ -52,6 +52,8 @@ local function ensure_highlights()
 	})
 end
 
+require("opencode.ui.highlights").register("opencode.ui.question_widget", ensure_highlights)
+
 ---@param value any
 ---@return string
 local function trim_string(value)
@@ -298,7 +300,6 @@ end
 ---@param status "pending"|"answered"|"rejected"|"confirming"
 ---@return table lines, table highlights, OpenCodeWidgetMeta meta
 function M.get_lines_for_question(_request_id, question_data, selection_state, status, opts)
-	ensure_highlights()
 	if selection_state.submitting then
 		return M.get_submitting_lines(_request_id, question_data, selection_state)
 	end
@@ -446,8 +447,6 @@ end
 ---@param selection_state table
 ---@return table lines, table highlights, OpenCodeWidgetMeta meta
 function M.get_submitting_lines(_request_id, question_data, selection_state)
-	ensure_highlights()
-
 	local result = { lines = {}, highlights = {} }
 	local questions = get_questions(question_data)
 	local current_tab = math.min(selection_state.current_tab or 1, #questions)
@@ -470,8 +469,6 @@ end
 ---@param answers table
 ---@return table lines, table highlights
 function M.get_answered_lines(_request_id, question_data, answers)
-	ensure_highlights()
-
 	local result = { lines = {}, highlights = {} }
 	local questions = get_questions(question_data)
 	add_panel_blank(result)
@@ -504,8 +501,6 @@ end
 ---@param question_data table
 ---@return table lines, table highlights
 function M.get_rejected_lines(_request_id, question_data)
-	ensure_highlights()
-
 	local result = { lines = {}, highlights = {} }
 	local questions = get_questions(question_data)
 	local title = questions[1] and get_question_title(questions[1], "Question") or "Question"
@@ -526,8 +521,6 @@ end
 ---@param selection_state table
 ---@return table lines, table highlights, OpenCodeWidgetMeta meta
 function M.get_confirmation_lines(_request_id, question_data, selection_state)
-	ensure_highlights()
-
 	local result = { lines = {}, highlights = {} }
 	local questions = get_questions(question_data)
 

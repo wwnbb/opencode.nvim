@@ -96,6 +96,8 @@ local function ensure_highlights()
 	})
 end
 
+require("opencode.ui.highlights").register("opencode.ui.edit_widget", ensure_highlights)
+
 ---@param text string|nil
 ---@return string
 local function normalize_path(text)
@@ -562,8 +564,6 @@ end
 ---@param edit_state table Edit state from edit/state.lua
 ---@return table lines, table highlights, OpenCodeWidgetMeta meta
 function M.get_lines_for_edit(permission_id, edit_state)
-	ensure_highlights()
-
 	local result = { lines = {}, highlights = {} }
 	local header, target, stats = build_header(edit_state)
 	add_panel_blank(result)
@@ -618,8 +618,6 @@ end
 ---@param edit_state table Edit state from edit/state.lua
 ---@return table lines, table highlights, OpenCodeWidgetMeta meta
 function M.get_resolved_lines(permission_id, edit_state)
-	ensure_highlights()
-
 	local result = { lines = {}, highlights = {} }
 	local edit_state_mod = require("opencode.edit.state")
 	local resolution = edit_state_mod.get_resolution(permission_id)
