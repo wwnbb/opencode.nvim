@@ -9,12 +9,22 @@ end
 
 describe("rg custom tool rendering", function()
 	it("frames only output inside Explore and preserves the plain argument and error fields", function()
-		local result = require("opencode.ui.chat.exploration_tool").render({ tool = "rg", state = {
-			status = "error", input = { pattern = "needle", hidden = false },
-			output = "partial match\n  indented context", error = "Search interrupted",
-		} }, true)
-		local lines = vim.tbl_map(function(line) return line:gsub(" +$", "") end, result.lines)
-		assert.equals(" ⭘ rg [pattern=needle, hidden=false]", lines[1])
+		local result = require("opencode.ui.chat.exploration_tool").render(
+			{
+				tool = "rg",
+				state = {
+					status = "error",
+					input = { pattern = "needle", hidden = false },
+					output = "partial match\n  indented context",
+					error = "Search interrupted",
+				},
+			},
+			true
+		)
+		local lines = vim.tbl_map(function(line)
+			return line:gsub(" +$", "")
+		end, result.lines)
+		assert.equals(" ○ rg [pattern=needle, hidden=false]", lines[1])
 		assert.equals("  pattern: needle", lines[2])
 		assert.equals("  hidden: false", lines[3])
 		assert.equals("  output:", lines[4])
@@ -43,7 +53,7 @@ describe("rg custom tool rendering", function()
 			output = table.concat(output, "\n"),
 		}
 		local lines = lines_for(state, true)
-		assert.equals(" ⭘ rg [pattern=Expr, path=src]", lines[1])
+		assert.equals(" ○ rg [pattern=Expr, path=src]", lines[1])
 		assert.equals("  pattern: Expr", lines[2])
 		assert.equals("  path: src", lines[3])
 		assert.equals("  output:", lines[4])
@@ -79,12 +89,17 @@ describe("rg custom tool rendering", function()
 			assert.same({ " ● rg", "" }, lines_for({ status = status }))
 		end
 		local lines, result = lines_for({ status = "error", error = "ripgrep failed (2):\n    invalid regex" }, true)
-		assert.same({ " ⭘ rg", "  error: ripgrep failed (2):", "             invalid regex", "" }, lines)
-		assert.is_true(vim.tbl_contains(vim.tbl_map(function(hl)
-			return hl.hl_group
-		end, result.highlights), "OpenCodeRgFailure"))
-		assert.same({ " ⭘ rg", "  error: Tool execution interrupted", "" },
-			lines_for({ status = "error", error = "Tool execution interrupted" }, true))
+		assert.same({ " ○ rg", "  error: ripgrep failed (2):", "             invalid regex", "" }, lines)
+		assert.is_true(vim.tbl_contains(
+			vim.tbl_map(function(hl)
+				return hl.hl_group
+			end, result.highlights),
+			"OpenCodeRgFailure"
+		))
+		assert.same(
+			{ " ○ rg", "  error: Tool execution interrupted", "" },
+			lines_for({ status = "error", error = "Tool execution interrupted" }, true)
+		)
 		assert.same({ " ● rg", "" }, lines_for({ status = "error", error = "Tool execution interrupted" }, false))
 	end)
 
@@ -93,7 +108,7 @@ describe("rg custom tool rendering", function()
 		for _, state in ipairs(fixture.results) do
 			local lines = lines_for(state, true)
 			local text = table.concat(lines, "\n")
-			assert.equals("⭘", vim.fn.strcharpart(lines[1], 1, 1))
+			assert.equals("○", vim.fn.strcharpart(lines[1], 1, 1))
 			assert.is_truthy(text:find(state.status == "error" and "  error: " or "  output:", 1, true))
 		end
 	end)

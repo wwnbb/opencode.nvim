@@ -7,13 +7,19 @@ local function part(tool, input, output)
 end
 
 local function lines(result)
-	return vim.tbl_map(function(line) return line:gsub(" +$", "") end, result.lines)
+	return vim.tbl_map(function(line)
+		return line:gsub(" +$", "")
+	end, result.lines)
 end
 
 describe("exploration list presentation", function()
 	local highlight_text
-	before_each(function() highlight_text = syntax.highlight_text end)
-	after_each(function() syntax.highlight_text = highlight_text end)
+	before_each(function()
+		highlight_text = syntax.highlight_text
+	end)
+	after_each(function()
+		syntax.highlight_text = highlight_text
+	end)
 
 	it("keeps tool headers stable while opening output with compact bordered output", function()
 		for _, tool in ipairs({ "read", "glob", "grep" }) do
@@ -21,7 +27,7 @@ describe("exploration list presentation", function()
 			local closed = exploration.render(item, false)
 			local opened = exploration.render(item, true)
 			assert.equals(1, #closed.lines)
-			assert.equals(closed.lines[1]:gsub("●", "⭘"):gsub("→", "↘"), opened.lines[1])
+			assert.equals(closed.lines[1]:gsub("●", "○"):gsub("→", "↘"), opened.lines[1])
 			assert.equals(style.header_hl, closed.highlights[1].hl_group)
 			assert.equals(style.header_hl, opened.highlights[1].hl_group)
 			assert.is_truthy(opened.lines[2]:find("   ┌", 1, true))
@@ -55,7 +61,9 @@ describe("exploration list presentation", function()
 		assert.is_true(count > 1)
 		assert.equals(source, table.concat(captured))
 		local width = require("opencode.ui.chat.render").get_chat_text_width()
-		for _, line in ipairs(rendered.lines) do assert.is_true(vim.fn.strdisplaywidth(line) <= width) end
+		for _, line in ipairs(rendered.lines) do
+			assert.is_true(vim.fn.strdisplaywidth(line) <= width)
+		end
 	end)
 
 	it("shortens glob paths within the project and retains read loaded-file details", function()
@@ -64,7 +72,9 @@ describe("exploration list presentation", function()
 		local read = part("read", { path = "sample.txt" }, "content")
 		read.state.metadata = { loaded = { "AGENTS.md" } }
 		for _, expanded in ipairs({ false, true }) do
-			assert.is_truthy(table.concat(exploration.render(read, expanded).lines):find("↳ Loaded AGENTS.md", 1, true))
+			assert.is_truthy(
+				table.concat(exploration.render(read, expanded).lines):find("↳ Loaded AGENTS.md", 1, true)
+			)
 		end
 	end)
 
