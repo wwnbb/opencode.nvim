@@ -1161,7 +1161,7 @@ do
 		"same-line stream delta should update in place"
 	)
 	assert(
-		vim.api.nvim_buf_get_lines(bufnr, 0, 1, false)[1] == "hello world",
+		vim.api.nvim_buf_get_lines(bufnr, 0, 1, false)[1] == "   hello world",
 		"same-line stream delta did not append visibly"
 	)
 	assert(chat_state.stream_blocks[block_key].end_line == 0, "same-line stream delta should not grow block")
@@ -1177,8 +1177,8 @@ do
 	)
 	local updated_stream_lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
 	assert(#updated_stream_lines == 3, "newline stream delta should grow rendered block without losing footer")
-	assert(updated_stream_lines[1] == "hello world", "newline fallback should preserve first line")
-	assert(updated_stream_lines[2] == "next", "newline fallback should render next line")
+	assert(updated_stream_lines[1] == "   hello world", "newline fallback should preserve first line")
+	assert(updated_stream_lines[2] == "   next", "newline fallback should render next line")
 	assert(updated_stream_lines[3]:find("Coder_v2", 1, true), "stream growth should preserve footer text")
 	assert(chat_state.spinner_footer_line == 2, "stream growth should shift tracked footer line")
 	local footer_marks = vim.api.nvim_buf_get_extmarks(
@@ -1202,7 +1202,7 @@ do
 		#updated_stream_lines == 2,
 		"stream shrink should keep footer immediately after content: " .. vim.inspect(updated_stream_lines)
 	)
-	assert(updated_stream_lines[1] == "short", "stream shrink should render replacement text")
+	assert(updated_stream_lines[1] == "   short", "stream shrink should render replacement text")
 	assert(updated_stream_lines[2]:find("Coder_v2", 1, true), "stream shrink should preserve footer text")
 	assert(chat_state.spinner_footer_line == 1, "stream shrink should shift tracked footer line back")
 	footer_marks = vim.api.nvim_buf_get_extmarks(

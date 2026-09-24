@@ -44,7 +44,22 @@ Fenced code blocks in user messages and assistant replies use the installed
 Tree-sitter parser and highlight queries for their language. Open fences and
 incomplete code are highlighted while the answer streams. The same highlighting
 is used when loading history, with source positions preserved through wrapping
-and shortened user messages. Fence delimiters remain visible.
+and shortened user messages. User messages and the input keep fence delimiters
+visible; assistant replies hide them, as in the OpenCode TUI.
+
+Assistant replies follow OpenTUI's top-level Markdown layout: three columns of
+left padding, block-specific spacing, styled headings/emphasis, concealed
+inline markers, literal code blocks, nested lists, quote borders, horizontal
+rules and full-width grid tables. This uses the `markdown` and `markdown_inline`
+Tree-sitter parsers (bundled with current Neovim); if unavailable, source text
+remains readable. Streaming and history use the same renderer.
+
+`OpenCodeMarkdownHeading`, `OpenCodeMarkdownHeading1`, `OpenCodeMarkdownStrong`,
+`OpenCodeMarkdownEmphasis`, `OpenCodeMarkdownCode`, `OpenCodeMarkdownLink`,
+`OpenCodeMarkdownLinkText`, `OpenCodeMarkdownQuote`, `OpenCodeMarkdownBorder`,
+`OpenCodeMarkdownList` and `OpenCodeMarkdownStrike` control Markdown styles.
+Their defaults use the current Neovim colorscheme; exact RGB colors and code
+syntax colors depend on that colorscheme and the installed language queries.
 
 ```lua
 require("opencode").setup({
@@ -65,8 +80,8 @@ Neovim's runtimepath. Missing parsers/queries, unknown languages and blocks over
 the limits fall back to plain text; parsers are not installed automatically.
 Explicitly labelled fences also highlight snippets shorter than `syntax.min_bytes`.
 Set `syntax.enabled = false` to disable fenced-code highlighting. Standalone
-backtick/tilde fences are supported;
-nested Markdown containers such as block quotes are not parsed by this renderer.
+backtick/tilde fences are supported in all surfaces; assistant replies also
+parse nested Markdown containers.
 
 The current-line and visual-selection helpers (including the suggested
 `<leader>oe` and `<leader>oa` mappings below) add code in a fenced Markdown block.

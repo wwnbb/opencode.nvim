@@ -382,7 +382,6 @@ local function render_activity(ctx, group)
 end
 
 local function render_text_part(ctx, message, part, part_idx, render_parts, incomplete_assistant)
-	local content_start = ctx:line_count()
 	local cache_key = nil
 	if not incomplete_assistant then
 		cache_key = ctx:render_cache_key(
@@ -398,6 +397,12 @@ local function render_text_part(ctx, message, part, part_idx, render_parts, inco
 	local content_lines = ctx:cached_nui_lines(cache_key, function()
 		return render.render_content(part.text, { highlight_code = ctx:code_highlighter(message.id, part.id or part_idx) })
 	end)
+	if #content_lines == 0 then return end
+	-- TextPart has marginTop=1 even between adjacent text parts. Capture the
+	-- streaming range after the separator, which belongs to the prior block.
+	ctx:normalize_block_transition("non_tool")
+	ctx:ensure_single_blank_separator()
+	local content_start = ctx:line_count()
 	ctx:add_nui_lines(content_lines)
 	if incomplete_assistant and #content_lines > 0 and part.id then
 		ctx:register_stream_block(message.id, part, "text", content_start, content_lines)

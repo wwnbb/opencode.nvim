@@ -166,7 +166,7 @@ describe("chat message boundaries", function()
 				{ id = "u", type = "user", text = "Follow up", time = { created = 3 } },
 			})
 			render()
-			assert.equals(2, position("u").start_line, "exactly one blank should separate the messages")
+			assert.equals(3, position("u").start_line, "exactly one blank should separate the messages")
 			assert_user_separator("u")
 		end
 	end)
@@ -190,7 +190,7 @@ describe("chat message boundaries", function()
 				local widget = state.edits.review
 				assert.is_not_nil(widget, tool .. " widget should render")
 				assert.equals("", rendered[widget.start_line], "one blank row should precede " .. tool)
-				assert.equals("Before widget", rendered[widget.start_line - 1], "extra rows should be collapsed")
+				assert.equals("   Before widget", rendered[widget.start_line - 1], "extra rows should be collapsed")
 			end
 		end
 	end)
@@ -216,6 +216,41 @@ describe("chat message boundaries", function()
 		end
 	end)
 
+	it("keeps Markdown stream rows, highlights and following message ranges equal to history", function()
+		app.set_session_status(session, { type = "busy" })
+		update({
+			{ id = "a", type = "assistant", time = { created = 1 }, content = { { type = "text", text = "#" } } },
+			{ id = "u", type = "user", text = "Follow up", time = { created = 3 } },
+		})
+		render()
+		local part = sync.get_parts("a")[1]
+		local function snapshot()
+			local marks = {}
+			for _, mark in ipairs(vim.api.nvim_buf_get_extmarks(state.bufnr, chat_hl_ns, 0, -1, { details = true })) do
+				local d = mark[4]
+				if d.hl_group and (d.hl_group:find("OpenCodeMarkdown", 1, true) or d.hl_group:sub(1, 1) == "@") then
+					marks[#marks + 1] = { mark[2], mark[3], d.end_row, d.end_col, d.hl_group, d.priority }
+				end
+			end
+			table.sort(marks, function(a, b) return vim.inspect(a) < vim.inspect(b) end)
+			return { lines = lines(), marks = marks, following = vim.deepcopy(position("u")) }
+		end
+		for seq, delta in ipairs({ "# Heading", "\n\nA **bold", " value** with `code", "`", "\n\n```lu", "a\nreturn 1", "\n```",
+			"\n\n- one\n  - nested", "\n\n| A | B |\n|---|---|", "\n| x | **y** |", "\n\n> quote\n> continued", "\n\n---" }) do
+			sync.handle_v2_event({ id = "evt_markdown_" .. seq, created = seq + 3, type = "session.text.delta",
+				data = { sessionID = session, assistantMessageID = "a", ordinal = 0, delta = delta } })
+			assert.is_true(chat.update_stream_part_block(session, "a", part.id, { field = "text", delta = delta }))
+			assert_user_separator("u")
+			local live = snapshot()
+			state.force_full_render = true
+			render()
+			local cold = snapshot()
+			-- Generation identifiers intentionally advance on full renders.
+			live.following.render_generation, cold.following.render_generation = nil, nil
+			assert.same(live, cold, "Markdown diverged after delta: " .. delta)
+		end
+	end)
+
 	it("separates local user notices from assistant text without a footer", function()
 		update({ { id = "a", type = "assistant", time = { created = 1, completed = 2 },
 			content = { { type = "text", text = "Answer without metadata" } } } })
@@ -223,6 +258,6 @@ describe("chat message boundaries", function()
 			content = "Local follow up", timestamp = 3 } }
 		render()
 		assert_user_separator("local-user")
-		assert.equals(2, position("local-user").start_line)
+		assert.equals(3, position("local-user").start_line)
 	end)
 end)
