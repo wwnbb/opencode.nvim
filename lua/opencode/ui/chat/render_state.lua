@@ -5,6 +5,56 @@ local state = cs.state
 
 local RENDER_CACHE_MAX_BLOCKS = 1000
 local TASK_SUMMARY_CACHE_MAX_ENTRIES = 100
+local CODE_CACHE_MAX_ENTRIES = 128
+local CODE_CACHE_MAX_BYTES = 8 * 1024 * 1024
+local code_cache = { entries = {}, order = {}, bytes = 0 }
+
+function M.clear_code_cache()
+	code_cache = { entries = {}, order = {}, bytes = 0 }
+end
+
+function M.code_cache_stats()
+	return { entries = #code_cache.order, bytes = code_cache.bytes,
+		max_entries = CODE_CACHE_MAX_ENTRIES, max_bytes = CODE_CACHE_MAX_BYTES }
+end
+
+---Cache source coordinates, not width-dependent layout. A growing block
+---replaces its entry instead of retaining every streamed revision.
+function M.code_highlighter(owner)
+	local syntax = require("opencode.ui.syntax")
+	local config_signature = vim.inspect(syntax.get_config()) .. ":" .. syntax.get_generation()
+	return function(text, lang, opts, block)
+		local key = M.render_cache_key(owner, block.open_line, lang)
+		local signature = M.render_cache_key(config_signature, opts.scope, opts.min_bytes, opts.max_bytes, opts.max_lines)
+		local entry = code_cache.entries[key]
+		if entry and entry.text == text and entry.signature == signature then
+			return entry.highlights
+		end
+		local captures = syntax.highlight_text(text, lang, opts)
+		if entry then
+			code_cache.bytes = code_cache.bytes - entry.bytes
+			code_cache.entries[key] = nil
+			for index, cached_key in ipairs(code_cache.order) do
+				if cached_key == key then table.remove(code_cache.order, index); break end
+			end
+		end
+		-- Do not permanently cache missing parsers, queries or parse failures.
+		if #captures == 0 then return captures end
+		-- Conservative accounting includes table storage and capture strings.
+		local bytes = 512 + #key + #signature + #text
+		for _, capture in ipairs(captures) do bytes = bytes + 384 + #(capture.hl_group or "") end
+		if bytes > CODE_CACHE_MAX_BYTES then return captures end
+		while #code_cache.order >= CODE_CACHE_MAX_ENTRIES or code_cache.bytes + bytes > CODE_CACHE_MAX_BYTES do
+			local oldest = table.remove(code_cache.order, 1)
+			code_cache.bytes = code_cache.bytes - code_cache.entries[oldest].bytes
+			code_cache.entries[oldest] = nil
+		end
+		code_cache.entries[key] = { text = text, signature = signature, highlights = captures, bytes = bytes }
+		code_cache.order[#code_cache.order + 1] = key
+		code_cache.bytes = code_cache.bytes + bytes
+		return captures
+	end
+end
 
 function M.ensure_render_cache()
 	if type(state.render_cache) ~= "table" then
@@ -137,12 +187,12 @@ function M.reset_chat_surface(opts)
 	state.permissions = {}
 	state.edits = {}
 	state.message_positions = {}
+	state.pending_inputs = {}
 	state.tasks = {}
 	state.task_child_cache = {}
 	state.task_child_loading = {}
 	state.task_summary_cache = { entries = {}, order = {} }
 	state.tools = {}
-	state.todo_dock_signature = nil
 	if opts.reset_expansions then
 		state.expanded_tasks = {}
 		state.expanded_tools = {}
@@ -156,6 +206,7 @@ function M.reset_chat_surface(opts)
 	end
 	if not opts.preserve_render_cache then
 		M.clear_render_cache()
+		M.clear_code_cache()
 	end
 end
 

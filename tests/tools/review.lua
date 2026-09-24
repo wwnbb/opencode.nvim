@@ -1,11 +1,20 @@
--- Exercise the real permission decoding and review path from the Bun tool tests.
+-- Exercise native v2 file review decisions from the Bun tool tests.
 vim.opt.runtimepath:append(assert(vim.env.OPENCODE_TEST_ROOT))
 local payload = vim.json.decode(table.concat(vim.fn.readfile(assert(vim.env.OPENCODE_TEST_REVIEW)), "\n"))
-local request = require("opencode.events.handlers.permission_flow.request").decode(payload.request)
-assert(request and request.kind == "edit")
+local request = payload.request
+assert(request and request.id and request.sessionID and type(request.metadata) == "table")
+assert(type(request.metadata.files) == "table")
 require("opencode.artifact.changes").setup({ auto_backup = false })
+local state = require("opencode.state")
+state.set_config({ server = { shared_filesystem = true } })
+state.set_connection("connected")
 local edits = require("opencode.edit.state")
-edits.add_edit(request.id, request.session_id, request.files, { review_mode = request.review_mode })
+edits.add_edit(request.id, request.sessionID, request.metadata.files, {
+	transport = "review_rpc",
+	review_id = request.id,
+	revision = 1,
+	native_review = { status = "pending", protocolVersion = 2 },
+})
 for index, action in ipairs(payload.actions) do
 	local ok, err = edits[action .. "_file"](request.id, index)
 	assert(ok, err)

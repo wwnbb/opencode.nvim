@@ -2,7 +2,6 @@ local M = {}
 
 local actions = require("opencode.actions")
 local chat_tasks = require("opencode.ui.chat.tasks")
-local chat_todos = require("opencode.ui.chat.todos")
 local chat_edits = require("opencode.ui.chat.edits")
 local chat_interactions = require("opencode.ui.chat.interactions")
 local chat_nav = require("opencode.ui.chat.nav")
@@ -66,18 +65,22 @@ function M.setup_buffer(bufnr, opts)
 		actions.abort()
 	end, vim.tbl_extend("force", keymap_opts, { desc = "Stop current generation" }))
 
+	local pending_inputs = require("opencode.ui.chat.pending_inputs")
+	for _, command in ipairs(pending_inputs.commands) do
+		local key = cfg.keymaps[command.name .. "_pending"]
+		if type(key) == "string" and key ~= "" then
+			vim.keymap.set("n", key, function()
+				if pending_inputs.handle(command.name) then return end
+				vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes(key, true, false, true), "n", false)
+			end, vim.tbl_extend("force", keymap_opts, { desc = command.description }))
+		end
+	end
+
 	vim.keymap.set("n", "a", function()
 		if type(opts.toggle_auto_scroll) == "function" then
 			opts.toggle_auto_scroll()
 		end
 	end, vim.tbl_extend("force", keymap_opts, { desc = "Toggle auto-scroll" }))
-
-	local todo_keymap = cfg.todo and cfg.todo.keymaps and cfg.todo.keymaps.toggle
-	if todo_keymap and todo_keymap ~= "" then
-		vim.keymap.set("n", todo_keymap, function()
-			chat_todos.toggle_current_dock()
-		end, vim.tbl_extend("force", keymap_opts, { desc = "Cycle todo window" }))
-	end
 
 	vim.keymap.set("n", "?", function()
 		if type(opts.show_help) == "function" then
@@ -181,6 +184,11 @@ function M.setup_buffer(bufnr, opts)
 	end, keymap_opts)
 
 	vim.keymap.set("n", "<CR>", function()
+		local id, pos = chat_tasks.get_tool_at_cursor()
+		if pos and (pos.activity_group or pos.kind == "tool") then
+			chat_tasks.handle_tool_toggle(id)
+			return
+		end
 		chat_interactions.handle_question_confirm()
 	end, keymap_opts)
 

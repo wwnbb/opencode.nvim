@@ -27,7 +27,6 @@ describe("opencode chat window close", function()
 		opencode.setup({
 			server = {
 				auto_start = false,
-				lazy = true,
 			},
 			chat = {
 				layout = "vertical",
@@ -94,8 +93,12 @@ describe("opencode chat window close", function()
 		assert_eq(chat_state.winid, nil, "explicit close should clear the window id")
 
 		chat.open()
+		vim.api.nvim_set_current_win(chat_state.winid)
+		vim.cmd("only")
+		assert_eq(#vim.api.nvim_tabpage_list_wins(0), 1, "fixture should leave chat as the only normal window")
 		chat.close()
 		assert_eq(chat_state.visible, false, "second close cycle should remain clean")
 		assert_eq(chat_state.winid, nil, "second close cycle should clear the window id")
+		assert_eq(#vim.api.nvim_tabpage_list_wins(0), 1, "closing the last chat leaves an editor window")
 	end)
 end)

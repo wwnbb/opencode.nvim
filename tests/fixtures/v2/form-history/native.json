@@ -1,0 +1,813 @@
+{
+  "native": {
+    "cursor": {
+      "next": "eyJpZCI6Im1zZ18wYzZkNzc2MzAwMDF4bkMyb1lhOElZRmx1ViIsIm9yZGVyIjoiZGVzYyIsImRpcmVjdGlvbiI6Im5leHQifQ",
+      "previous": "eyJpZCI6Im1zZ18wYzZkN2E2ZjEwMDFjYTBVdTVwTzlIWTh1MyIsIm9yZGVyIjoiZGVzYyIsImRpcmVjdGlvbiI6InByZXZpb3VzIn0"
+    },
+    "data": [
+      {
+        "time": {
+          "created": 1790042416881
+        },
+        "id": "msg_0c6d7a6f1001ca0Uu5pO9HY8u3",
+        "outcome": "succeeded",
+        "type": "idle"
+      },
+      {
+        "time": {
+          "streamed": 1790042416852,
+          "completed": 1790042416879,
+          "created": 1790042407624
+        },
+        "id": "msg_0c6d782b1001o2DDDGqMmRwnKR",
+        "tokens": {
+          "output": 24,
+          "cache": {
+            "write": 0,
+            "read": 9088
+          },
+          "reasoning": 0,
+          "input": 182
+        },
+        "snapshot": {
+          "start": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+          "files": [],
+          "end": "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
+        },
+        "type": "assistant",
+        "agent": "build",
+        "finish": "stop",
+        "model": {
+          "providerID": "opencode",
+          "variant": "default",
+          "id": "mimo-v2.5-free"
+        },
+        "cost": 0,
+        "content": [
+          {
+            "state": {
+              "reasoningField": "reasoning_content",
+              "reasoningDetails": [
+                {
+                  "format": "unknown",
+                  "type": "reasoning.text",
+                  "index": 0,
+                  "text": "The user selected \"Blue answer\". Now I need to reply exactly \"FORM_HISTORY_DONE\"."
+                }
+              ]
+            },
+            "time": {
+              "completed": 1790042416848,
+              "created": 1790042416777
+            },
+            "type": "reasoning",
+            "text": "The user selected \"Blue answer\". Now I need to reply exactly \"FORM_HISTORY_DONE\"."
+          },
+          {
+            "text": "FORM_HISTORY_DONE",
+            "type": "text"
+          }
+        ],
+        "rawFinish": "stop"
+      },
+      {
+        "time": {
+          "streamed": 1790042407555,
+          "completed": 1790042407594,
+          "created": 1790042404474
+        },
+        "id": "msg_0c6d7764c001QcfyEfC9dqGDdh",
+        "tokens": {
+          "output": 84,
+          "cache": {
+            "write": 0,
+            "read": 0
+          },
+          "reasoning": 0,
+          "input": 9147
+        },
+        "snapshot": {
+          "start": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+          "files": [],
+          "end": "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
+        },
+        "type": "assistant",
+        "agent": "build",
+        "finish": "tool-calls",
+        "model": {
+          "providerID": "opencode",
+          "variant": "default",
+          "id": "mimo-v2.5-free"
+        },
+        "cost": 0,
+        "content": [
+          {
+            "state": {
+              "reasoningField": "reasoning_content",
+              "reasoningDetails": [
+                {
+                  "format": "unknown",
+                  "type": "reasoning.text",
+                  "index": 0,
+                  "text": "The user wants me to call the question tool exactly once with specific parameters."
+                }
+              ]
+            },
+            "time": {
+              "completed": 1790042407548,
+              "created": 1790042407092
+            },
+            "type": "reasoning",
+            "text": "The user wants me to call the question tool exactly once with specific parameters."
+          },
+          {
+            "name": "question",
+            "id": "call_447ec6d43e584a2f94cc9511",
+            "time": {
+              "ran": 1790042407552,
+              "completed": 1790042407571,
+              "created": 1790042407533
+            },
+            "state": {
+              "metadata": {
+                "truncated": false,
+                "answers": [
+                  [
+                    "Blue answer"
+                  ]
+                ]
+              },
+              "status": "completed",
+              "content": [
+                {
+                  "text": "User has answered your questions: \"Pick a stored answer\"=\"Blue answer\". You can now continue with the user's answers in mind.",
+                  "type": "text"
+                }
+              ],
+              "input": {
+                "questions": [
+                  {
+                    "question": "Pick a stored answer",
+                    "options": [
+                      {
+                        "label": "Red answer",
+                        "description": "First choice"
+                      },
+                      {
+                        "label": "Blue answer",
+                        "description": "Second choice"
+                      }
+                    ],
+                    "header": "History"
+                  }
+                ]
+              }
+            },
+            "type": "tool",
+            "executed": false
+          }
+        ],
+        "rawFinish": "tool_calls"
+      },
+      {
+        "time": {
+          "created": 1790042404420
+        },
+        "id": "msg_0c6d77622001nhak5eLjQZ73yh",
+        "type": "user",
+        "text": "Call the direct top-level question tool exactly once. Ask one question with header \"History\", prompt \"Pick a stored answer\", and two options: label \"Red answer\" description \"First choice\", label \"Blue answer\" description \"Second choice\". Wait for my answer. After the answer, reply exactly FORM_HISTORY_DONE. Do not use any other tools."
+      },
+      {
+        "time": {
+          "created": 1790042404400
+        },
+        "id": "msg_0c6d77630001xnC2oYa8IYFluV",
+        "agent": "build",
+        "type": "agent-switched"
+      }
+    ]
+  },
+  "form": {
+    "metadata": {
+      "tool": {
+        "id": "call_447ec6d43e584a2f94cc9511",
+        "messageID": "msg_0c6d7764c001QcfyEfC9dqGDdh"
+      },
+      "kind": "question"
+    },
+    "sessionID": "ses_f39288a02ffeZHhV3QHYsJPFIn",
+    "state": {
+      "answer": {
+        "q0": "Blue answer"
+      },
+      "status": "answered"
+    },
+    "title": "Questions",
+    "fields": [
+      {
+        "key": "q0",
+        "custom": true,
+        "description": "Pick a stored answer",
+        "title": "History",
+        "options": [
+          {
+            "description": "First choice",
+            "value": "Red answer",
+            "label": "Red answer"
+          },
+          {
+            "description": "Second choice",
+            "value": "Blue answer",
+            "label": "Blue answer"
+          }
+        ],
+        "type": "string"
+      }
+    ],
+    "id": "frm_0c6d78287001sIU65MiRfNRoCL"
+  },
+  "rendered": "Agent: build\n┃                                                                               \n┃  Call the direct top-level question tool exactly once. Ask one question with  \n┃  header \"History\", prompt \"Pick a stored answer\", and two options: label \"Red \n┃  answer\" description \"First choice\", label \"Blue answer\" description \"Second  \n┃  choice\". Wait for my answer. After the answer, reply exactly                 \n┃  FORM_HISTORY_DONE. Do not use any other tools.                               \n┃                                                                               \n\nThinking: The user wants me to call the question tool exactly once with specific parameters.\n\n▸ ● question\n\nThinking: The user selected \"Blue answer\". Now I need to reply exactly \"FORM_HISTORY_DONE\".\n\nFORM_HISTORY_DONE\n\n▣ Build · MiMo V2.5 Free · 9.3k/200k tok · 12.5s\n",
+  "session": {
+    "time": {
+      "updated": 1790042404376,
+      "created": 1790042404376
+    },
+    "id": "ses_f39288a02ffeZHhV3QHYsJPFIn",
+    "tokens": {
+      "output": 0,
+      "reasoning": 0,
+      "cache": {
+        "write": 0,
+        "read": 0
+      },
+      "input": 0
+    },
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "projectID": "global",
+    "directory": "<PROFILE>/project пробел %#",
+    "cost": 0,
+    "revert": null,
+    "model": {
+      "providerID": "opencode",
+      "variant": "default",
+      "id": "mimo-v2.5-free"
+    },
+    "permissions": [
+      {
+        "resource": "*",
+        "effect": "allow",
+        "action": "question"
+      }
+    ]
+  },
+  "history": [
+    {
+      "info": {
+        "time": {
+          "created": 1790042404420
+        },
+        "id": "msg_0c6d77622001nhak5eLjQZ73yh",
+        "_v2": {
+          "time": {
+            "created": 1790042404420
+          },
+          "id": "msg_0c6d77622001nhak5eLjQZ73yh",
+          "text": "Call the direct top-level question tool exactly once. Ask one question with header \"History\", prompt \"Pick a stored answer\", and two options: label \"Red answer\" description \"First choice\", label \"Blue answer\" description \"Second choice\". Wait for my answer. After the answer, reply exactly FORM_HISTORY_DONE. Do not use any other tools.",
+          "type": "user"
+        },
+        "type": "user",
+        "sessionID": "ses_f39288a02ffeZHhV3QHYsJPFIn",
+        "protocol": "v2",
+        "role": "user",
+        "hidden": false,
+        "text": "Call the direct top-level question tool exactly once. Ask one question with header \"History\", prompt \"Pick a stored answer\", and two options: label \"Red answer\" description \"First choice\", label \"Blue answer\" description \"Second choice\". Wait for my answer. After the answer, reply exactly FORM_HISTORY_DONE. Do not use any other tools."
+      },
+      "parts": [
+        {
+          "ordinal": 0,
+          "id": "v2:30:ses_f39288a02ffeZHhV3QHYsJPFIn:30:msg_0c6d77622001nhak5eLjQZ73yh:text:0",
+          "protocol": "v2",
+          "messageID": "msg_0c6d77622001nhak5eLjQZ73yh",
+          "content_order": 1,
+          "sessionID": "ses_f39288a02ffeZHhV3QHYsJPFIn",
+          "type": "text",
+          "text": "Call the direct top-level question tool exactly once. Ask one question with header \"History\", prompt \"Pick a stored answer\", and two options: label \"Red answer\" description \"First choice\", label \"Blue answer\" description \"Second choice\". Wait for my answer. After the answer, reply exactly FORM_HISTORY_DONE. Do not use any other tools."
+        }
+      ]
+    },
+    {
+      "info": {
+        "time": {
+          "created": 1790042404400
+        },
+        "id": "msg_0c6d77630001xnC2oYa8IYFluV",
+        "_v2": {
+          "time": {
+            "created": 1790042404400
+          },
+          "id": "msg_0c6d77630001xnC2oYa8IYFluV",
+          "agent": "build",
+          "type": "agent-switched"
+        },
+        "type": "agent-switched",
+        "agent": "build",
+        "sessionID": "ses_f39288a02ffeZHhV3QHYsJPFIn",
+        "protocol": "v2",
+        "role": "system",
+        "hidden": false
+      },
+      "parts": [
+        {
+          "id": "v2:30:ses_f39288a02ffeZHhV3QHYsJPFIn:30:msg_0c6d77630001xnC2oYa8IYFluV:text:0",
+          "messageID": "msg_0c6d77630001xnC2oYa8IYFluV",
+          "ordinal": 0,
+          "type": "text",
+          "sessionID": "ses_f39288a02ffeZHhV3QHYsJPFIn",
+          "protocol": "v2",
+          "content_order": 1,
+          "synthetic": true,
+          "text": "Agent: build"
+        }
+      ]
+    },
+    {
+      "info": {
+        "id": "msg_0c6d7764c001QcfyEfC9dqGDdh",
+        "tokens": {
+          "output": 84,
+          "reasoning": 0,
+          "cache": {
+            "write": 0,
+            "read": 0
+          },
+          "input": 9147
+        },
+        "snapshot": {
+          "files": [],
+          "start": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+          "end": "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
+        },
+        "agent": "build",
+        "sessionID": "ses_f39288a02ffeZHhV3QHYsJPFIn",
+        "protocol": "v2",
+        "finish": "tool-calls",
+        "role": "assistant",
+        "time": {
+          "completed": 1790042407594,
+          "streamed": 1790042407555,
+          "created": 1790042404474
+        },
+        "_v2": {
+          "time": {
+            "completed": 1790042407594,
+            "streamed": 1790042407555,
+            "created": 1790042404474
+          },
+          "id": "msg_0c6d7764c001QcfyEfC9dqGDdh",
+          "tokens": {
+            "output": 84,
+            "reasoning": 0,
+            "cache": {
+              "write": 0,
+              "read": 0
+            },
+            "input": 9147
+          },
+          "snapshot": {
+            "files": [],
+            "start": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+            "end": "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
+          },
+          "type": "assistant",
+          "agent": "build",
+          "finish": "tool-calls",
+          "model": {
+            "providerID": "opencode",
+            "variant": "default",
+            "id": "mimo-v2.5-free"
+          },
+          "rawFinish": "tool_calls",
+          "content": [
+            {
+              "state": {
+                "reasoningField": "reasoning_content",
+                "reasoningDetails": [
+                  {
+                    "format": "unknown",
+                    "text": "The user wants me to call the question tool exactly once with specific parameters.",
+                    "index": 0,
+                    "type": "reasoning.text"
+                  }
+                ]
+              },
+              "text": "The user wants me to call the question tool exactly once with specific parameters.",
+              "time": {
+                "created": 1790042407092,
+                "completed": 1790042407548
+              },
+              "type": "reasoning"
+            },
+            {
+              "name": "question",
+              "id": "call_447ec6d43e584a2f94cc9511",
+              "executed": false,
+              "state": {
+                "metadata": {
+                  "answers": [
+                    [
+                      "Blue answer"
+                    ]
+                  ],
+                  "truncated": false
+                },
+                "input": {
+                  "questions": [
+                    {
+                      "header": "History",
+                      "options": [
+                        {
+                          "label": "Red answer",
+                          "description": "First choice"
+                        },
+                        {
+                          "label": "Blue answer",
+                          "description": "Second choice"
+                        }
+                      ],
+                      "question": "Pick a stored answer"
+                    }
+                  ]
+                },
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "User has answered your questions: \"Pick a stored answer\"=\"Blue answer\". You can now continue with the user's answers in mind."
+                  }
+                ],
+                "status": "completed"
+              },
+              "time": {
+                "completed": 1790042407571,
+                "ran": 1790042407552,
+                "created": 1790042407533
+              },
+              "type": "tool"
+            }
+          ],
+          "cost": 0
+        },
+        "rawFinish": "tool_calls",
+        "variant": "default",
+        "type": "assistant",
+        "cost": 0,
+        "modelID": "mimo-v2.5-free",
+        "providerID": "opencode",
+        "model": {
+          "providerID": "opencode",
+          "variant": "default",
+          "id": "mimo-v2.5-free"
+        },
+        "content": [
+          {
+            "state": {
+              "reasoningField": "reasoning_content",
+              "reasoningDetails": [
+                {
+                  "format": "unknown",
+                  "text": "The user wants me to call the question tool exactly once with specific parameters.",
+                  "index": 0,
+                  "type": "reasoning.text"
+                }
+              ]
+            },
+            "text": "The user wants me to call the question tool exactly once with specific parameters.",
+            "time": {
+              "created": 1790042407092,
+              "completed": 1790042407548
+            },
+            "type": "reasoning"
+          },
+          {
+            "name": "question",
+            "id": "call_447ec6d43e584a2f94cc9511",
+            "executed": false,
+            "state": {
+              "metadata": {
+                "answers": [
+                  [
+                    "Blue answer"
+                  ]
+                ],
+                "truncated": false
+              },
+              "input": {
+                "questions": [
+                  {
+                    "header": "History",
+                    "options": [
+                      {
+                        "label": "Red answer",
+                        "description": "First choice"
+                      },
+                      {
+                        "label": "Blue answer",
+                        "description": "Second choice"
+                      }
+                    ],
+                    "question": "Pick a stored answer"
+                  }
+                ]
+              },
+              "content": [
+                {
+                  "type": "text",
+                  "text": "User has answered your questions: \"Pick a stored answer\"=\"Blue answer\". You can now continue with the user's answers in mind."
+                }
+              ],
+              "status": "completed"
+            },
+            "time": {
+              "completed": 1790042407571,
+              "ran": 1790042407552,
+              "created": 1790042407533
+            },
+            "type": "tool"
+          }
+        ],
+        "hidden": false
+      },
+      "parts": [
+        {
+          "time": {
+            "created": 1790042407092,
+            "completed": 1790042407548
+          },
+          "id": "v2:30:ses_f39288a02ffeZHhV3QHYsJPFIn:30:msg_0c6d7764c001QcfyEfC9dqGDdh:reasoning:0",
+          "messageID": "msg_0c6d7764c001QcfyEfC9dqGDdh",
+          "ordinal": 0,
+          "type": "reasoning",
+          "state": {
+            "reasoningField": "reasoning_content",
+            "reasoningDetails": [
+              {
+                "format": "unknown",
+                "text": "The user wants me to call the question tool exactly once with specific parameters.",
+                "index": 0,
+                "type": "reasoning.text"
+              }
+            ]
+          },
+          "sessionID": "ses_f39288a02ffeZHhV3QHYsJPFIn",
+          "protocol": "v2",
+          "content_order": 1,
+          "text": "The user wants me to call the question tool exactly once with specific parameters."
+        },
+        {
+          "name": "question",
+          "id": "v2:30:ses_f39288a02ffeZHhV3QHYsJPFIn:30:msg_0c6d7764c001QcfyEfC9dqGDdh:tool:call_447ec6d43e584a2f94cc9511",
+          "tool": "question",
+          "messageID": "msg_0c6d7764c001QcfyEfC9dqGDdh",
+          "ordinal": 0,
+          "callID": "call_447ec6d43e584a2f94cc9511",
+          "executed": false,
+          "state": {
+            "metadata": {
+              "answers": [
+                [
+                  "Blue answer"
+                ]
+              ],
+              "truncated": false
+            },
+            "files": [],
+            "input": {
+              "questions": [
+                {
+                  "header": "History",
+                  "options": [
+                    {
+                      "label": "Red answer",
+                      "description": "First choice"
+                    },
+                    {
+                      "label": "Blue answer",
+                      "description": "Second choice"
+                    }
+                  ],
+                  "question": "Pick a stored answer"
+                }
+              ]
+            },
+            "output": "User has answered your questions: \"Pick a stored answer\"=\"Blue answer\". You can now continue with the user's answers in mind.",
+            "time": {
+              "end": 1790042407571,
+              "start": 1790042407552
+            },
+            "content": [
+              {
+                "type": "text",
+                "text": "User has answered your questions: \"Pick a stored answer\"=\"Blue answer\". You can now continue with the user's answers in mind."
+              }
+            ],
+            "status": "completed"
+          },
+          "sessionID": "ses_f39288a02ffeZHhV3QHYsJPFIn",
+          "protocol": "v2",
+          "raw_tool": "question",
+          "content_order": 2,
+          "type": "tool",
+          "time": {
+            "completed": 1790042407571,
+            "ran": 1790042407552,
+            "created": 1790042407533
+          }
+        }
+      ]
+    },
+    {
+      "info": {
+        "id": "msg_0c6d782b1001o2DDDGqMmRwnKR",
+        "tokens": {
+          "output": 24,
+          "reasoning": 0,
+          "cache": {
+            "write": 0,
+            "read": 9088
+          },
+          "input": 182
+        },
+        "snapshot": {
+          "files": [],
+          "start": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+          "end": "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
+        },
+        "agent": "build",
+        "sessionID": "ses_f39288a02ffeZHhV3QHYsJPFIn",
+        "protocol": "v2",
+        "finish": "stop",
+        "role": "assistant",
+        "time": {
+          "completed": 1790042416879,
+          "streamed": 1790042416852,
+          "created": 1790042407624
+        },
+        "_v2": {
+          "time": {
+            "completed": 1790042416879,
+            "streamed": 1790042416852,
+            "created": 1790042407624
+          },
+          "id": "msg_0c6d782b1001o2DDDGqMmRwnKR",
+          "tokens": {
+            "output": 24,
+            "reasoning": 0,
+            "cache": {
+              "write": 0,
+              "read": 9088
+            },
+            "input": 182
+          },
+          "snapshot": {
+            "files": [],
+            "start": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+            "end": "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
+          },
+          "type": "assistant",
+          "agent": "build",
+          "finish": "stop",
+          "model": {
+            "providerID": "opencode",
+            "variant": "default",
+            "id": "mimo-v2.5-free"
+          },
+          "rawFinish": "stop",
+          "content": [
+            {
+              "state": {
+                "reasoningField": "reasoning_content",
+                "reasoningDetails": [
+                  {
+                    "format": "unknown",
+                    "text": "The user selected \"Blue answer\". Now I need to reply exactly \"FORM_HISTORY_DONE\".",
+                    "index": 0,
+                    "type": "reasoning.text"
+                  }
+                ]
+              },
+              "text": "The user selected \"Blue answer\". Now I need to reply exactly \"FORM_HISTORY_DONE\".",
+              "time": {
+                "created": 1790042416777,
+                "completed": 1790042416848
+              },
+              "type": "reasoning"
+            },
+            {
+              "type": "text",
+              "text": "FORM_HISTORY_DONE"
+            }
+          ],
+          "cost": 0
+        },
+        "rawFinish": "stop",
+        "variant": "default",
+        "type": "assistant",
+        "cost": 0,
+        "modelID": "mimo-v2.5-free",
+        "providerID": "opencode",
+        "model": {
+          "providerID": "opencode",
+          "variant": "default",
+          "id": "mimo-v2.5-free"
+        },
+        "content": [
+          {
+            "state": {
+              "reasoningField": "reasoning_content",
+              "reasoningDetails": [
+                {
+                  "format": "unknown",
+                  "text": "The user selected \"Blue answer\". Now I need to reply exactly \"FORM_HISTORY_DONE\".",
+                  "index": 0,
+                  "type": "reasoning.text"
+                }
+              ]
+            },
+            "text": "The user selected \"Blue answer\". Now I need to reply exactly \"FORM_HISTORY_DONE\".",
+            "time": {
+              "created": 1790042416777,
+              "completed": 1790042416848
+            },
+            "type": "reasoning"
+          },
+          {
+            "type": "text",
+            "text": "FORM_HISTORY_DONE"
+          }
+        ],
+        "hidden": false
+      },
+      "parts": [
+        {
+          "time": {
+            "created": 1790042416777,
+            "completed": 1790042416848
+          },
+          "id": "v2:30:ses_f39288a02ffeZHhV3QHYsJPFIn:30:msg_0c6d782b1001o2DDDGqMmRwnKR:reasoning:0",
+          "messageID": "msg_0c6d782b1001o2DDDGqMmRwnKR",
+          "ordinal": 0,
+          "type": "reasoning",
+          "state": {
+            "reasoningField": "reasoning_content",
+            "reasoningDetails": [
+              {
+                "format": "unknown",
+                "text": "The user selected \"Blue answer\". Now I need to reply exactly \"FORM_HISTORY_DONE\".",
+                "index": 0,
+                "type": "reasoning.text"
+              }
+            ]
+          },
+          "sessionID": "ses_f39288a02ffeZHhV3QHYsJPFIn",
+          "protocol": "v2",
+          "content_order": 1,
+          "text": "The user selected \"Blue answer\". Now I need to reply exactly \"FORM_HISTORY_DONE\"."
+        },
+        {
+          "ordinal": 0,
+          "id": "v2:30:ses_f39288a02ffeZHhV3QHYsJPFIn:30:msg_0c6d782b1001o2DDDGqMmRwnKR:text:0",
+          "protocol": "v2",
+          "messageID": "msg_0c6d782b1001o2DDDGqMmRwnKR",
+          "content_order": 2,
+          "sessionID": "ses_f39288a02ffeZHhV3QHYsJPFIn",
+          "type": "text",
+          "text": "FORM_HISTORY_DONE"
+        }
+      ]
+    },
+    {
+      "info": {
+        "time": {
+          "created": 1790042416881
+        },
+        "id": "msg_0c6d7a6f1001ca0Uu5pO9HY8u3",
+        "_v2": {
+          "time": {
+            "created": 1790042416881
+          },
+          "id": "msg_0c6d7a6f1001ca0Uu5pO9HY8u3",
+          "outcome": "succeeded",
+          "type": "idle"
+        },
+        "type": "idle",
+        "sessionID": "ses_f39288a02ffeZHhV3QHYsJPFIn",
+        "protocol": "v2",
+        "role": "system",
+        "hidden": true,
+        "outcome": "succeeded"
+      },
+      "parts": []
+    }
+  ]
+}

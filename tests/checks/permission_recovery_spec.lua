@@ -79,73 +79,52 @@ describe("opencode permission recovery", function()
 		state.upsert_session({ id = "sse-filter-session", directory = session_dir })
 		state.set_session("sse-filter-session", "SSE Filter Session")
 
-		-- Event without payload should always be accepted
-		assert_true(sse._should_accept({ type = "test" }), "non-payload event should be accepted")
+		-- Global native events without a location apply to all projects.
+		assert_true(sse._should_accept({ type = "test", data = {} }), "location-free event should be accepted")
 
 		-- Event with nil directory should be accepted
-		assert_true(sse._should_accept({ payload = { type = "test" } }), "nil directory event should be accepted")
+		assert_true(sse._should_accept({ location = {}, type = "test", data = {} }), "nil directory event should be accepted")
 
 		-- Event matching cwd should be accepted
 		assert_true(
-			sse._should_accept({ directory = cwd, payload = { type = "test" } }),
+			sse._should_accept({ location = { directory = cwd }, type = "test", data = {} }),
 			"cwd-matched event should be accepted"
 		)
 
 		-- Event matching active session directory should be accepted
 		assert_true(
-			sse._should_accept({ directory = session_dir, payload = { type = "test" } }),
+			sse._should_accept({ location = { directory = session_dir }, type = "test", data = {} }),
 			"active session directory event should be accepted"
 		)
 
 		-- Foreign directory event should be rejected
 		assert_true(
-			not sse._should_accept({ directory = foreign_dir, payload = { type = "test" } }),
+			not sse._should_accept({ location = { directory = foreign_dir }, type = "test", data = {} }),
 			"foreign directory event should be rejected"
 		)
 
 		state.reset()
 	end)
 
-	it("tracks a permission once despite duplicate events", function()
+	it("tracks a native permission once despite duplicate events", function()
 		local bus = require("opencode.events.bus")
-		bus.clear()
-		bus.clear_history()
-
 		local state = require("opencode.state")
 		local permission_state = require("opencode.permission.state")
-		state.reset()
-		permission_state.clear_all()
-
+		bus.clear(); bus.clear_history(); state.reset(); permission_state.clear_all()
 		state.set_session("recovery_test_session", "Recovery Test")
-
-		require("opencode.events.handlers.permission").setup(bus)
-
+		require("opencode.events.handlers.interactions_v2").setup(bus)
 		local pending_count = 0
-		bus.on("permission_pending", function()
-			pending_count = pending_count + 1
-		end)
-
-		local perm_data = {
-			requestID = "perm_recovery_idempotent",
-			permission = "bash",
-			sessionID = "recovery_test_session",
-			time = { created = os.time() },
-		}
-
-		bus.emit("permission", perm_data)
-		bus.emit("permission", perm_data)
-
-		wait_for(function()
-			return permission_state.has_permission("perm_recovery_idempotent")
-		end, "permission should be tracked after first event")
-
-		assert_true(permission_state.has_permission("perm_recovery_idempotent"), "permission should be tracked")
-		assert_eq(pending_count, 1, "duplicate permission event should emit permission_pending once")
-
-		bus.clear()
-		bus.clear_history()
-		state.reset()
-		permission_state.clear_all()
+		bus.on("permission_pending", function() pending_count = pending_count + 1 end)
+		local event = { id = "evt_perm", type = "permission.asked", created = 1000, data = {
+			id = "perm_recovery_idempotent", action = "bash", sessionID = "recovery_test_session",
+			source = { type = "tool", messageID = "msg", callID = "call" },
+		} }
+		bus.emit("v2_interaction", event)
+		bus.emit("v2_interaction", event)
+		assert_true(permission_state.has_permission("perm_recovery_idempotent"), "native permission should be tracked")
+		assert_eq(permission_state.get_permission("perm_recovery_idempotent").call_id, "call", "source.callID should be retained")
+		assert_eq(pending_count, 1, "duplicate native permission should emit once")
+		bus.clear(); bus.clear_history(); state.reset(); permission_state.clear_all()
 	end)
 
 	it("keeps permission builders pure and terminal rerenders status-aware", function()
@@ -193,6 +172,8 @@ describe("opencode permission recovery", function()
 		assert_true(approved_text:find("Allow once", 1, true) == nil, "approved rerender should not show pending options")
 		assert_eq(chat_state.permissions.permission_purity.status, "approved", "approved rerender should update position status")
 
+		-- Start a distinct pending lifecycle before checking the rejected view.
+		permission_state.add_permission("permission_purity", "permission_purity_session", "bash", {})
 		permission_state.mark_rejected("permission_purity")
 		chat_permissions.rerender_permission("permission_purity")
 		local rejected_text = table.concat(vim.api.nvim_buf_get_lines(bufnr, 0, -1, false), "\n")
@@ -207,144 +188,41 @@ describe("opencode permission recovery", function()
 		sync.clear_all()
 	end)
 
-	it("list_permissions scopes to directory header and query", function()
-		local http = require("opencode.client.http")
-		local client = require("opencode.client")
-
-		local captured_with_dir = {}
-		local captured_without_dir = {}
-		local call_count = 0
-		local original_get = http.get
-		http.get = function(path, callback, opts)
-			call_count = call_count + 1
-			if call_count == 1 then
-				captured_with_dir = { path = path, opts = opts, has_callback = callback ~= nil }
-			elseif call_count == 2 then
-				captured_without_dir = { path = path, opts = opts, has_callback = callback ~= nil }
-			end
-		end
-
-		client.list_permissions({ directory = "/tmp/__opencode_test_scope__" }, function() end)
+	it("scopes permission lists and replies to the immutable session ID", function()
+		local http, client = require("opencode.client.http"), require("opencode.client")
+		local old_get, old_post = http.get, http.post
+		local gets, posts = {}, {}
+		http.get = function(path, cb, opts) gets[#gets + 1] = { path = path, opts = opts } end
+		http.post = function(path, body, cb, opts) posts[#posts + 1] = { path = path, body = body, opts = opts } end
+		client.list_permissions({ session_id = "ses/a" }, function() end)
 		client.list_permissions(function() end)
-
-		http.get = original_get
-
-		assert_eq(captured_with_dir.path, "/permission", "list_permissions should target /permission")
-		assert_eq(
-			captured_with_dir.opts.headers["x-opencode-directory"],
-			"/tmp/__opencode_test_scope__",
-			"should pass directory header"
-		)
-		assert_eq(
-			captured_with_dir.opts.query.directory,
-			"/tmp/__opencode_test_scope__",
-			"should pass directory query param"
-		)
-		assert_true(captured_with_dir.has_callback, "should pass callback")
-
-		assert_eq(captured_without_dir.path, "/permission", "backward-compat list_permissions should target /permission")
-		assert_eq(captured_without_dir.opts, nil, "backward-compat list_permissions should not pass request opts")
-		assert_true(captured_without_dir.has_callback, "backward-compat list_permissions should pass callback")
+		client.respond_permission("per/a", "once", { session_id = "ses/a" }, function() end)
+		client.respond_permission("per_b", "reject", { session_id = "ses_b", message = "no" }, function() end)
+		http.get, http.post = old_get, old_post
+		assert.equals("/api/session/ses%2Fa/permission", gets[1].path)
+		assert.equals("/api/permission/request", gets[2].path)
+		assert.is_nil(gets[1].opts.headers)
+		assert.equals("/api/session/ses%2Fa/permission/per%2Fa/reply", posts[1].path)
+		assert.same({ decision = "once" }, posts[1].body)
+		assert.same({ decision = "reject", message = "no" }, posts[2].body)
+		assert.is_nil(posts[1].opts.headers)
 	end)
 
-	it("respond_permission scopes to directory header", function()
-		local http = require("opencode.client.http")
-		local client = require("opencode.client")
-
-		local captured_with_dir = {}
-		local captured_without_dir = {}
-		local call_count = 0
-		local original_post = http.post
-		http.post = function(path, body, callback, opts)
-			call_count = call_count + 1
-			if call_count == 1 then
-				captured_with_dir = { path = path, body = body, opts = opts, has_callback = callback ~= nil }
-			elseif call_count == 2 then
-				captured_without_dir = { path = path, body = body, opts = opts, has_callback = callback ~= nil }
-			end
-		end
-
-		client.respond_permission("perm_test", "once", { directory = "/tmp/__opencode_test_reply__" }, function() end)
-		client.respond_permission("perm_test2", "reject", { message = "no" }, function() end)
-
-		http.post = original_post
-
-		assert_eq(captured_with_dir.path, "/permission/perm_test/reply", "respond_permission should target /permission/:id/reply")
-		assert_eq(
-			captured_with_dir.opts.headers["x-opencode-directory"],
-			"/tmp/__opencode_test_reply__",
-			"should pass directory header"
-		)
-		assert_eq(captured_with_dir.body.reply, "once", "should pass reply in body")
-		assert_true(captured_with_dir.has_callback, "should pass callback")
-
-		assert_eq(captured_without_dir.path, "/permission/perm_test2/reply", "respond_permission without dir should target /permission/:id/reply")
-		assert_eq(captured_without_dir.opts, nil, "respond_permission without dir should not pass request opts")
-		assert_eq(captured_without_dir.body.reply, "reject", "should pass reply in body without dir")
-		assert_eq(captured_without_dir.body.message, "no", "should pass message in body without dir")
-	end)
-
-	it("permission_matches_tool requires call_id when present", function()
+	it("keeps native permissions from concurrent tool calls distinct", function()
 		local bus = require("opencode.events.bus")
-		bus.clear()
-		bus.clear_history()
-
 		local state = require("opencode.state")
 		local permission_state = require("opencode.permission.state")
-		local sync = require("opencode.sync")
-		state.reset()
-		permission_state.clear_all()
-		sync.clear_all()
-
+		bus.clear(); bus.clear_history(); state.reset(); permission_state.clear_all()
 		state.set_session("match_test_session", "Match Test")
-
-		sync.handle_message_updated({
-			id = "match_msg",
-			sessionID = "match_test_session",
-			role = "assistant",
-			time = { created = 1 },
-		})
-
-		require("opencode.events.handlers.permission").setup(bus)
-
-		local pending_ids = {}
-		bus.on("permission_pending", function(data)
-			table.insert(pending_ids, data.permission_id)
-		end)
-
-		bus.emit("permission", {
-			requestID = "perm_a",
-			permission = "bash",
-			sessionID = "match_test_session",
-			messageID = "match_msg",
-			callID = "call_a",
-			time = { created = 10 },
-		})
-		wait_for(function()
-			return permission_state.has_permission("perm_a")
-		end, "permission A should be tracked")
-
-		bus.emit("permission", {
-			requestID = "perm_b",
-			permission = "bash",
-			sessionID = "match_test_session",
-			messageID = "match_msg",
-			callID = "call_b",
-			time = { created = 20 },
-		})
-		wait_for(function()
-			return permission_state.has_permission("perm_b")
-		end, "permission B should be tracked")
-
-		assert_eq(#pending_ids, 2, "both permissions should be pending")
-		assert_eq(pending_ids[1], "perm_a", "first permission should be perm_a")
-		assert_eq(pending_ids[2], "perm_b", "second permission should be perm_b")
-
-		bus.clear()
-		bus.clear_history()
-		state.reset()
-		permission_state.clear_all()
-		sync.clear_all()
+		require("opencode.events.handlers.interactions_v2").setup(bus)
+		for _, call in ipairs({ "call_a", "call_b" }) do
+			bus.emit("v2_interaction", { id = "event_" .. call, type = "permission.asked", created = 1000,
+				data = { id = "perm_" .. call, action = "bash", sessionID = "match_test_session",
+					source = { type = "tool", messageID = "match_msg", callID = call } } })
+		end
+		assert_eq(permission_state.get_permission("perm_call_a").call_id, "call_a", "first call owns its permission")
+		assert_eq(permission_state.get_permission("perm_call_b").call_id, "call_b", "second call owns its permission")
+		bus.clear(); bus.clear_history(); state.reset(); permission_state.clear_all()
 	end)
 
 	it("actions.respond_permission resolves reply directory from session", function()

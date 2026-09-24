@@ -62,6 +62,12 @@ M.STATUS = {
 	CONFLICT = "conflict",
 }
 
+function M.normalize_file_type(kind)
+	if kind == "create" or kind == "new" then return "add" end
+	if kind == "remove" then return "delete" end
+	return kind or "update"
+end
+
 ---@param fn function
 local function schedule(fn)
 	if vim.in_fast_event and vim.in_fast_event() then
@@ -96,17 +102,21 @@ local function get_max_changes()
 	return math.max(1, math.floor(max_changes))
 end
 
--- The history budget applies to resolved records. Pending reviews retain their IDs.
+local function is_unresolved(change)
+	return change.status == M.STATUS.PENDING or change.status == M.STATUS.FAILED
+end
+
+-- Failed writes remain retryable, so only resolved reviews count toward the budget.
 local function trim_history()
 	local resolved = 0
 	for _, change in ipairs(state.changes) do
-		if change.status ~= M.STATUS.PENDING then
+		if not is_unresolved(change) then
 			resolved = resolved + 1
 		end
 	end
 	local index = 1
 	while resolved > get_max_changes() do
-		if state.changes[index].status == M.STATUS.PENDING then
+		if is_unresolved(state.changes[index]) then
 			index = index + 1
 		else
 			table.remove(state.changes, index)
@@ -134,14 +144,54 @@ end
 ---@return string|nil content
 ---@return string|nil err
 local function read_file(filepath)
-	local file, err = io.open(filepath, "r")
+	local file, err = io.open(filepath, "rb")
 	if not file then
 		return nil, err
 	end
 
-	local content = file:read("*all") or ""
-	file:close()
+	local content, read_err = file:read("*all")
+	local close_ok, close_err = file:close()
+	if content == nil or not close_ok then
+		return nil, read_err or close_err or ("Cannot read file: " .. filepath)
+	end
 	return content, nil
+end
+
+---@param filepath string
+---@return table|nil disk { exists: boolean, content: string|nil, kind: string }
+---@return string|nil err
+local function read_disk_bytes(filepath)
+	local stat, stat_err, stat_code = vim.uv.fs_lstat(filepath)
+	if not stat then
+		if stat_code == "ENOENT" or (type(stat_err) == "string" and stat_err:match("^ENOENT")) then
+			return { exists = false, content = "", kind = "missing" }, nil
+		end
+		return nil, stat_err or ("Cannot inspect file: " .. filepath)
+	end
+	if stat.type ~= "file" then
+		return { exists = true, kind = stat.type }, nil
+	end
+
+	local content, read_err = read_file(filepath)
+	if content == nil then
+		return nil, read_err
+	end
+	return { exists = true, content = content, kind = "file" }, nil
+end
+
+---@param filepath string
+---@return boolean
+local function has_modified_buffer(filepath)
+	local target = vim.fn.resolve(vim.fn.fnamemodify(filepath, ":p"))
+	for _, bufnr in ipairs(vim.api.nvim_list_bufs()) do
+		if vim.api.nvim_buf_is_valid(bufnr) and vim.bo[bufnr].modified then
+			local name = vim.api.nvim_buf_get_name(bufnr)
+			if name ~= "" and vim.fn.resolve(vim.fn.fnamemodify(name, ":p")) == target then
+				return true
+			end
+		end
+	end
+	return false
 end
 
 ---@param filepath string
@@ -163,11 +213,12 @@ local function write_file(filepath, content)
 		return false, open_err or ("Cannot open file for writing: " .. filepath)
 	end
 
-	local ok, write_err = pcall(function()
-		file:write(content or "")
-	end)
+	local ok, written, write_err = pcall(file.write, file, content or "")
 	local close_ok, close_err = file:close()
 	if not ok then
+		return false, tostring(written)
+	end
+	if not written then
 		return false, tostring(write_err)
 	end
 	if not close_ok then
@@ -377,7 +428,11 @@ function M.add_change(filepath, original_content, modified_content, opts)
 	local modified_lines = vim.split(modified, "\n", { plain = true })
 	local original_bom = opts.before_bom
 	if original_bom == nil then
-		original_bom = raw_original:sub(1, 3) == BOM or opts.bom == true
+		original_bom = raw_original:sub(1, 3) == BOM
+	end
+	local modified_bom = opts.bom
+	if modified_bom == nil then
+		modified_bom = raw_modified:sub(1, 3) == BOM or raw_original:sub(1, 3) == BOM
 	end
 	local change = {
 		id = change_id,
@@ -393,9 +448,9 @@ function M.add_change(filepath, original_content, modified_content, opts)
 		status = M.STATUS.PENDING,
 		timestamp = os.time(),
 		requires_confirm = needs_confirmation(filepath),
-		bom = raw_original:sub(1, 3) == BOM or opts.bom == true,
+		bom = modified_bom,
 		original_bom = original_bom,
-		file_type = opts.file_type or "update",
+		file_type = M.normalize_file_type(opts.file_type),
 		metadata = opts.metadata or {},
 	}
 
@@ -414,7 +469,7 @@ end
 function M.get_pending()
 	local pending = {}
 	for _, change in ipairs(state.changes) do
-		if change.status == M.STATUS.PENDING then
+		if is_unresolved(change) then
 			table.insert(pending, vim.deepcopy(change))
 		end
 	end
@@ -443,7 +498,7 @@ function M.accept(id, opts)
 	if not change then
 		return false, "Change not found"
 	end
-	if change.status ~= M.STATUS.PENDING then
+	if not is_unresolved(change) then
 		return false, "Change already resolved"
 	end
 	if change.requires_confirm and defaults.confirm_destructive and not opts.force then
@@ -469,22 +524,53 @@ function M.accept(id, opts)
 end
 
 ---@param id string
+---@param opts? { force?: boolean } Force discards disk changes made since the review; modified buffers and non-regular paths remain protected.
 ---@return boolean ok
 ---@return string|nil err
-function M.reject(id)
+---@return string|nil reason
+function M.reject(id, opts)
+	opts = opts or {}
 	local change = find_change(id)
 	if not change then
-		return false, "Change not found"
+		return false, "Change not found", "not_found"
 	end
-	if change.status ~= M.STATUS.PENDING then
-		return false, "Change already resolved"
+	if not is_unresolved(change) then
+		return false, "Change already resolved", "already_resolved"
+	end
+	if has_modified_buffer(change.filepath) then
+		return false, "Save or discard unsaved buffer changes before reverting " .. change.filepath, "modified_buffer"
 	end
 
-	local ok, err = write_file(change.filepath, join_bom(change.original_content, change.original_bom))
+	local disk, read_err = read_disk_bytes(change.filepath)
+	if not disk then
+		return false, read_err, "read_error"
+	end
+	if disk.kind ~= "file" and disk.kind ~= "missing" then
+		local reason = opts.force and "unsafe_path" or "conflict"
+		return false, "Path is now a " .. disk.kind .. "; current path preserved: " .. change.filepath, reason
+	end
+
+	local original = join_bom(change.original_content, change.original_bom)
+	local proposed = join_bom(change.modified_content, change.bom)
+	local file_type = change.file_type
+	local before_exists = file_type ~= "add"
+	local after_exists = file_type ~= "delete"
+	local matches_before = disk.exists == before_exists and (not disk.exists or disk.content == original)
+	local matches_after = disk.exists == after_exists and (not disk.exists or disk.content == proposed)
+	if not opts.force and not matches_before and not matches_after then
+		return false, "File changed since review; current content preserved: " .. change.filepath, "conflict"
+	end
+
+	local ok, err = true, nil
+	if file_type == "add" and disk.exists then
+		ok, err = os.remove(change.filepath)
+	elseif file_type ~= "add" and not matches_before then
+		ok, err = write_file(change.filepath, original)
+	end
 	if not ok then
 		M.update_status(id, M.STATUS.FAILED, { message = err })
 		emit_change_event("Failed", id, { status = M.STATUS.FAILED, error = err })
-		return false, err
+		return false, err, "write_error"
 	end
 
 	M.update_status(id, M.STATUS.REJECTED)
@@ -503,7 +589,7 @@ function M.resolve_manually(id)
 	if not change then
 		return false, "Change not found"
 	end
-	if change.status ~= M.STATUS.PENDING then
+	if not is_unresolved(change) then
 		return false, "Change already resolved"
 	end
 

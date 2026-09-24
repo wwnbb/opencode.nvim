@@ -192,10 +192,6 @@ function M.setup(events)
 		M.request(data)
 	end)
 
-	events.on("todo_update", function(data)
-		M.request(data)
-	end)
-
 	events.on("status_change", function(data)
 		if status_event_relevant(data) then
 			M.request(data)

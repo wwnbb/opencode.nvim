@@ -35,3 +35,6 @@ install_dep \
 	"${NUI_REF:-de740991c12411b663994b2860f1a4fd0937c130}"
 
 echo "Neovim test dependencies installed in $DEPS_ROOT"
+
+# The tool suite compiles against the same pinned public server API.
+npm ci --prefix "$PLUGIN_ROOT/opencode_nvim/plugins/opencode-nvim" --ignore-scripts --no-audit --no-fund

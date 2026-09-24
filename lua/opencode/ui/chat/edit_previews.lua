@@ -10,7 +10,7 @@ local PREVIEW_TOOLS = {
 	edit = true,
 	apply_patch = true,
 	neovim_edit = true,
-	neovim_apply_patch = true,
+	neovim_patch = true,
 	write = true,
 }
 
@@ -244,6 +244,7 @@ local function model_to_edit_files(model, part)
 			additions = additions,
 			deletions = deletions,
 			type = file.type,
+			movePath = file.movePath,
 		})
 		table.insert(statuses, RESULT_TO_EDIT_STATUS[file.status or model.status] or "resolved")
 	end
@@ -287,6 +288,7 @@ local function sync_tool_part(session_id, message, part)
 	end
 
 	edit_state.add_edit(id, session_id, files, {
+		message = render.get_tool_metadata(part).review_message,
 		message_id = message_id,
 		call_id = call_id,
 		review_mode = "readonly",

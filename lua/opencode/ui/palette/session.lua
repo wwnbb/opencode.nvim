@@ -7,6 +7,20 @@ local session_util = require("opencode.util.session")
 local state = require("opencode.state")
 local sync = require("opencode.sync")
 function M.register(palette)
+	local keymaps = (state.get_config() or require("opencode.config").defaults).keymaps or {}
+	palette.register({ id = "session.history", title = "Load Full Session History", category = "session",
+		description = "Fetch every history page", action = function()
+			local sid = state.get_session().id
+			if not sid then return end
+			actions.load_session_messages(sid, { all = true }, function(err, messages)
+				if not err then
+					require("opencode.ui.chat.state").state.full_history_sessions[sid] = true
+					require("opencode.ui.chat.render_coordinator").request({ session_id = sid, reason = "full_history" })
+				end
+				vim.notify(err and ("Could not load history: " .. err.message) or ("Loaded " .. #messages .. " messages"), err and vim.log.levels.ERROR or vim.log.levels.INFO)
+			end)
+		end })
+
 	palette.register({
 		id = "session.new",
 		title = "New Session",
@@ -22,7 +36,7 @@ function M.register(palette)
 		title = "Active Sessions",
 		description = "Show running, waiting, and recent sessions",
 		category = "session",
-		keybind = "<leader>oS",
+		keybind = keymaps.active_sessions,
 		action = function()
 			actions.active_sessions()
 		end,
@@ -32,7 +46,7 @@ function M.register(palette)
 		title = "Close Session Tab",
 		description = "Close the current active tab without deleting the session",
 		category = "session",
-		keybind = "x",
+		keybind = keymaps.close_session,
 		action = function()
 			actions.close_session({ notify = true })
 		end,
@@ -101,7 +115,7 @@ function M.register(palette)
 				for _, session in ipairs(sessions) do
 					local is_current = current.id == session.id
 					local title = session_util.displayTitle(session.title) or "New session"
-					local msg_count = session.messageCount or 0
+					local msg_count = session.message_count or 0
 					local time_str = format_relative_time(session.time and session.time.updated)
 					local msg_str = msg_count > 0 and ("(" .. msg_count .. " msgs)") or ""
 					local current_marker = is_current and "● " or "  "
@@ -236,26 +250,16 @@ function M.register(palette)
 			local store = sync.get_store()
 			local messages = vim.deepcopy(store.message[session_id] or {})
 			local parts = {}
-			local part_delta_buffer = {}
 			for _, msg in ipairs(messages) do
 				parts[msg.id] = vim.deepcopy(store.part[msg.id] or {})
-				local prefix = msg.id .. "\0"
-				for key, value in pairs(store.part_delta_buffer) do
-					if key:sub(1, #prefix) == prefix then
-						part_delta_buffer[key] = vim.deepcopy(value)
-					end
-				end
 			end
 			local session_status = vim.deepcopy(store.session_status[session_id])
-			local todos = vim.deepcopy(store.todo[session_id] or {})
 
 			local snapshot = {
 				session = record,
 				messages = messages,
 				parts = parts,
-				part_delta_buffer = part_delta_buffer,
 				session_status = session_status,
-				todos = todos,
 			}
 
 			local json = vim.fn.json_encode(snapshot)

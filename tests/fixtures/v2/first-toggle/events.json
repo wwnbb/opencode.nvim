@@ -1,0 +1,160 @@
+[
+  {
+    "id": "evt_0c69b7e4e001dJMbn4Vg5IfV7P",
+    "type": "server.connected",
+    "data": {}
+  },
+  {
+    "id": "evt_0c69b7e70001CfTNykxxmSn14L",
+    "created": 1790038474352,
+    "type": "worktree.resolved",
+    "data": {
+      "projectID": "global",
+      "directory": "<PROFILE>/project пробел %#",
+      "previous": "global"
+    },
+    "durable": {
+      "aggregateID": "global",
+      "seq": 0,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c69b827e0014R9GIror72TkPr",
+    "created": 1790038475390,
+    "type": "models-dev.refreshed",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {}
+  },
+  {
+    "id": "evt_0c69b8318001j3fGkcy5u0walz",
+    "created": 1790038475544,
+    "type": "integration.updated",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {}
+  },
+  {
+    "id": "evt_0c69b8329001HJ1Gv98I1JLEN0",
+    "created": 1790038475561,
+    "type": "provider.updated",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {}
+  },
+  {
+    "id": "evt_0c69b8330001vBHG3fxj05EOTw",
+    "created": 1790038475568,
+    "type": "model.updated",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {}
+  },
+  {
+    "id": "evt_0c69b834c0016RdtgE3K6UeNJy",
+    "created": 1790038475596,
+    "type": "vcs.branch.updated",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "branch": "master"
+    }
+  },
+  {
+    "id": "evt_0c69b834c00202ifgYU2sh3bnh",
+    "created": 1790038475596,
+    "type": "agent.updated",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {}
+  },
+  {
+    "id": "evt_0c69b834c003FafH5mi1V5qJud",
+    "created": 1790038475596,
+    "type": "command.updated",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {}
+  },
+  {
+    "id": "evt_0c69b834d001g0QNzm6UPLWpaq",
+    "created": 1790038475597,
+    "type": "skill.updated",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {}
+  },
+  {
+    "id": "evt_0c69b834e001PUXaSKU6zXFAi7",
+    "created": 1790038475599,
+    "type": "websearch.updated",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {}
+  },
+  {
+    "id": "evt_0c69b834f0025zM1s6PbO9nObx",
+    "created": 1790038475599,
+    "type": "reference.updated",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {}
+  },
+  {
+    "id": "evt_0c69b83580015rofKtXoRZ7lBP",
+    "created": 1790038475608,
+    "type": "plugin.updated",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {}
+  },
+  {
+    "id": "evt_0c69b88d9001eD7ed8VaAYskTY",
+    "created": 1790038477017,
+    "type": "session.created",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f3964774affet0dAvrxGXUJWfv",
+      "slug": "curious-orchid",
+      "version": "2.0.11",
+      "projectID": "global",
+      "location": {
+        "directory": "<PROFILE>/project пробел %#"
+      },
+      "subpath": "",
+      "title": "opencode.nvim v2 runtime fixture"
+    },
+    "durable": {
+      "aggregateID": "ses_f3964774affet0dAvrxGXUJWfv",
+      "seq": 0,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c69b88e20013JDrtw8FoR8D8v",
+    "created": 1790038477026,
+    "type": "session.deleted",
+    "data": {
+      "sessionID": "ses_f3964774affet0dAvrxGXUJWfv"
+    },
+    "durable": {
+      "aggregateID": "ses_f3964774affet0dAvrxGXUJWfv",
+      "seq": 1,
+      "version": 2
+    }
+  }
+]

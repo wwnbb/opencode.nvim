@@ -12,8 +12,8 @@ function M.show(config)
 
 	config = config or state.config
 
-	local todo_toggle = config and config.todo and config.todo.keymaps and config.todo.keymaps.toggle or "T"
 	local close_session_key = config and config.keymaps and config.keymaps.close_session or "x"
+	local keys = config.keymaps or {}
 
 	local lines = {
 		"Chat Buffer Keymaps",
@@ -36,6 +36,12 @@ function M.show(config)
 		"[a/]a      Prev/next user message",
 		"[m/]m      Prev/next message or widget",
 		"[p/]p      Prev/next pending permission",
+	}
+	for _, command in ipairs(require("opencode.ui.chat.pending_inputs").commands) do
+		local key = keys[command.name .. "_pending"]
+		lines[#lines + 1] = string.format("%-10s %s", type(key) == "string" and key ~= "" and key or "(disabled)", command.description)
+	end
+	vim.list_extend(lines, {
 		"?          Show this help",
 		"",
 		"Input Mode",
@@ -44,14 +50,11 @@ function M.show(config)
 		"↑/↓        Navigate history",
 		"",
 		"Tool Calls",
-		"O          Toggle task expand (tool I/O in subagent view only)",
-		"<CR>       Toggle details",
+		"O          Expand/collapse tool or activity",
+		"<CR>       Expand/collapse Thought or Explore",
 		"gd         Enter subagent output",
 		"<BS>       Go back to parent",
 		"gD         View diff",
-		"",
-		"Todos",
-		string.format("%-10s Cycle todo window", todo_toggle),
 		"",
 		"Question Tool",
 		"1-9        Select option by number",
@@ -83,7 +86,7 @@ function M.show(config)
 		"1-9        Jump to file N",
 		"",
 		"Press any key to close",
-	}
+	})
 
 	local width = 42
 	local height = #lines
@@ -116,7 +119,6 @@ function M.show(config)
 		["Chat Buffer Keymaps"] = true,
 		["Input Mode"] = true,
 		["Tool Calls"] = true,
-		["Todos"] = true,
 		["Question Tool"] = true,
 		["Permissions"] = true,
 		["Edit Review"] = true,

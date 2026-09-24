@@ -16,19 +16,7 @@ local events = require("opencode.events")
 ---@param question table|nil
 ---@return boolean
 local function allows_custom_answer(question)
-	if type(question) ~= "table" then
-		return false
-	end
-	if question.custom ~= nil then
-		return question.custom ~= false
-	end
-	if question.allow_custom ~= nil then
-		return question.allow_custom == true
-	end
-	if question.allowCustom ~= nil then
-		return question.allowCustom == true
-	end
-	return true
+	return type(question) == "table" and question.custom == true
 end
 
 local function schedule_render()
@@ -191,7 +179,7 @@ function M.rerender_question(request_id)
 		lines, highlights = question_widget.get_answered_lines(
 			request_id,
 			{ questions = questions, timestamp = qstate.timestamp },
-			qstate.answers
+			qstate.display_answers or qstate.answers
 		)
 	elseif status == "rejected" then
 		lines, highlights = question_widget.get_rejected_lines(request_id, {
@@ -231,6 +219,7 @@ end
 ---@param request_id string
 function M.submit_question_answers(request_id)
 	if not question_state.begin_submission(request_id, "reply") then
+		M.rerender_question(request_id)
 		return false
 	end
 	local answers = question_state.get_answers(request_id)
@@ -242,6 +231,7 @@ function M.submit_question_answers(request_id)
 				if not question_state.restore_submission(request_id) then
 					return
 				end
+				question_state.set_form_error(request_id, err)
 				M.rerender_question(request_id)
 				if M.is_question_not_found_error(err) then
 					vim.notify(
@@ -324,6 +314,11 @@ function M.handle_question_custom_input(request_id)
 	local question = qstate.questions[current_tab]
 	local selection = qstate.selections[current_tab] or {}
 
+	if question.field_type == "external" then
+		vim.ui.open(question.url)
+		actions.refresh_form(request_id)
+		return
+	end
 	if not allows_custom_answer(question) then
 		vim.notify("Custom input not allowed for this question", vim.log.levels.WARN)
 		return
@@ -337,7 +332,7 @@ function M.handle_question_custom_input(request_id)
 		persist_pending = false,
 		add_history = false,
 		on_send = function(text)
-			if text and text ~= "" then
+			if text ~= nil then
 				question_state.set_custom_input(request_id, current_tab, text)
 				if not question_state.is_multi_question(question) then
 					question_state.update_selection(request_id, current_tab, {})
@@ -353,35 +348,6 @@ function M.handle_question_custom_input(request_id)
 		on_cancel = function()
 			require("opencode.ui.chat").focus()
 		end,
-	})
-end
-
----@param request_id string
-function M.handle_question_message(request_id)
-	local qstate = question_state.get_question(request_id)
-	if not qstate or qstate.status == "confirming" or qstate.submitting then
-		return
-	end
-
-	local current_tab = qstate.current_tab
-	local selection = qstate.selections[current_tab] or {}
-	local input_ui = require("opencode.ui.input")
-	local chat = require("opencode.ui.chat")
-
-	local function finish(text)
-		question_state.set_message(request_id, current_tab, text or "")
-		M.rerender_question(request_id)
-		chat.focus()
-	end
-
-	input_ui.show({
-		winid = state.winid,
-		float_dims = state.float_dims,
-		text = selection.message or "",
-		persist_pending = false,
-		add_history = false,
-		on_send = finish,
-		on_cancel = finish,
 	})
 end
 

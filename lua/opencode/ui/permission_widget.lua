@@ -69,14 +69,12 @@ local TOOL_DISPLAY_NAMES = {
 	glob = "Glob",
 	grep = "Grep",
 	list = "List",
-	neovim_apply_patch = "Neovim Apply Patch",
+	neovim_patch = "Neovim Patch",
 	neovim_edit = "Neovim Edit",
 	read = "Read",
 	rg = "Ripgrep",
 	skill = "Skill",
 	task = "Task",
-	todoread = "Read Todos",
-	todowrite = "Update Todos",
 	webfetch = "WebFetch",
 	websearch = "Web Search",
 	write = "Write",
@@ -107,6 +105,8 @@ local function ensure_highlights()
 		bold = true,
 	})
 end
+
+require("opencode.ui.highlights").register("opencode.ui.permission_widget", ensure_highlights)
 
 ---@param ... any
 ---@return string
@@ -172,7 +172,6 @@ local function extract_tool_input(part)
 	local tool_state = type(part.state) == "table" and part.state or {}
 
 	merge_tool_input_source(fresh, render.get_tool_metadata(part))
-	merge_tool_input_source(fresh, part.input)
 	merge_tool_input_source(fresh, tool_state.input)
 
 	return fresh
@@ -670,8 +669,6 @@ end
 ---@param perm_state table Permission state from permission/state.lua
 ---@return table lines, table highlights, OpenCodeWidgetMeta meta
 function M.get_lines_for_permission(permission_id, perm_state)
-	ensure_highlights()
-
 	local result = { lines = {}, highlights = {} }
 	local tool_input = resolve_tool_input(perm_state)
 	local header_title = permission_header_title(perm_state)
@@ -683,10 +680,21 @@ function M.get_lines_for_permission(permission_id, perm_state)
 	append_description(result, desc_lines)
 	add_panel_blank(result)
 
+	if perm_state.status == "unavailable" or perm_state.submitting then
+		add_panel_line(result, perm_state.submitting and "Sending decision…" or "Request is no longer pending", "OpenCodePermissionMuted")
+		add_trailing_separator(result)
+		return result.lines, result.highlights, widget_base.make_meta()
+	end
+	if perm_state.error then
+		add_panel_line(result, perm_state.error.message or "Unable to confirm decision", "OpenCodePermissionError")
+	end
 	local first_option_line = #result.lines
 	local selected = perm_state.selected_option or 1
 
 	for i, label in ipairs(OPTION_LABELS) do
+		if i == 2 and #(perm_state.always or {}) == 0 then
+			label = "Allow (no rule to save)"
+		end
 		local is_selected = i == selected
 		local indicator = is_selected and icons.selected or icons.unselected
 		local option_text = string.format("%s %d. %s", indicator, i, label)
@@ -718,9 +726,8 @@ end
 ---@param perm_state table
 ---@return table lines, table highlights
 function M.get_approved_lines(permission_id, perm_state)
-	ensure_highlights()
-
-	local reply_suffix = perm_state.reply == "always" and "(always)" or "(once)"
+	local saved = perm_state.reply == "always" and #(perm_state.always or {}) > 0
+	local reply_suffix = saved and "(always)" or "(once)"
 	local result = { lines = {}, highlights = {} }
 	local tool_input = resolve_tool_input(perm_state)
 	local header_title = permission_header_title(perm_state)
@@ -741,8 +748,6 @@ end
 ---@param perm_state table
 ---@return table lines, table highlights
 function M.get_rejected_lines(permission_id, perm_state)
-	ensure_highlights()
-
 	local result = { lines = {}, highlights = {} }
 	local tool_input = resolve_tool_input(perm_state)
 	local header_title = permission_header_title(perm_state)

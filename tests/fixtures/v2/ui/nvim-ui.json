@@ -1,0 +1,8 @@
+{
+  "rendered": "Agent: build\nModel: opencode/mimo-v2.5-free\n┃                                                                             \n┃  Use these skills: smoke-native                                             \n┃  skill smoke-native                                                         \n┃                                                                             \n\nThinking: The user has activated the smoke-native skill. According to the instructions, when this skill is activated, I should reply exactly SKILL_V2_READY and not call tools.\n\nSKILL_V2_READY\n\n▣ Build · MiMo V2.5 Free · 7.1k/200k tok · 2.1s\n",
+  "version": "2.0.11",
+  "model": "opencode/mimo-v2.5-free",
+  "sessionID": "ses_f39c34ae4ffe6AYIY6FTYjT0ir",
+  "new_session_keymap": true,
+  "native_skill_attachment": true
+}

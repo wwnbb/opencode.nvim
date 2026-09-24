@@ -84,6 +84,23 @@ local function is_animated_regular_tool(tool_name)
 		or tool_name == "grep"
 end
 
+-- A completed delegation call may have left a child running in the background.
+function M.task_status(tool_part)
+	local tool_state = tool_part.state or {}
+	local status = tool_state.status or "pending"
+	if status == "error" or status == "cancelled" then return status end
+	local child = require("opencode.events.util").resolve_task_child_session_id(tool_part)
+	if child then
+		local child_status = require("opencode.sync").get_session_status(child)
+		if child_status then
+			if child_status.type == "busy" or child_status.type == "retry" then return "running" end
+			if child_status.outcome == "failed" then return "error" end
+			if child_status.type == "idle" then return status == "completed" and "completed" or status end
+		elseif status == "completed" and (tool_state.metadata or {}).status == "running" then return "running" end
+	end
+	return status
+end
+
 ---@param tool_part table|nil
 ---@return boolean
 function M.is_animating_tool_part(tool_part)
@@ -93,9 +110,9 @@ function M.is_animating_tool_part(tool_part)
 	end
 	local status = tool_part.state and tool_part.state.status or "pending"
 	if tool_part.tool == "task" then
-		return M.is_task_working(status)
+		return M.is_task_working(M.task_status(tool_part))
 	end
-	return is_animated_regular_tool(tool_part.tool) and M.is_task_working(status)
+	return (tool_part.activity_group ~= nil or is_animated_regular_tool(tool_part.tool)) and M.is_task_working(status)
 end
 
 function M.stop_task_animation_timer()
@@ -297,6 +314,14 @@ function M.update_animation_frames_in_place()
 			and widget_support.block_is_visible(pos, top_line, bottom_line)
 		then
 			local block_updated = false
+			if pos.activity_group then
+				local line = vim.api.nvim_buf_get_lines(bufnr, pos.start_line, pos.start_line + 1, false)[1] or ""
+				if is_animation_frame(vim.fn.strcharpart(line, 0, 1), TASK_ANIM_FRAMES) then
+					local hl = pos.activity_group.kind == "thought" and "OpenCodeThought" or "OpenCodeActivityRunning"
+					block_updated = set_frame_overlay(bufnr, pos.start_line, 0, task_frame, hl)
+					updated = block_updated or updated
+				end
+			end
 			local candidates = { pos.start_line + 1, pos.start_line }
 			for _, line_nr in ipairs(candidates) do
 				if block_updated then

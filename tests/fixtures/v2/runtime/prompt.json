@@ -1,0 +1,14 @@
+{
+  "data": {
+    "id": "msg_nvim_v2_fixture",
+    "sessionID": "ses_f3a33b25affeHIMxyXdG3NkAGh",
+    "time": {
+      "created": 1790024895922
+    },
+    "type": "user",
+    "payload": {
+      "text": "Reply with exactly: Привет, Neovim!"
+    },
+    "delivery": "queue"
+  }
+}

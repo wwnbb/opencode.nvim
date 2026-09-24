@@ -29,7 +29,7 @@ local SUPPORTED_TOOLS = {
 	edit = true,
 	apply_patch = true,
 	neovim_edit = true,
-	neovim_apply_patch = true,
+	neovim_patch = true,
 }
 
 local STATUS_ICON = {
@@ -119,9 +119,6 @@ local function get_input(tool_part)
 	local tool_state = get_tool_state(tool_part)
 	if type(tool_state.input) == "table" then
 		return tool_state.input
-	end
-	if type(tool_part.input) == "table" then
-		return tool_part.input
 	end
 	return {}
 end
@@ -327,7 +324,7 @@ local function normalize_file(raw, opts)
 		return nil
 	end
 
-	local diff = text_util.first_string(source.diff, opts.diff)
+	local diff = text_util.first_string(source.diff, source.patch, opts.diff)
 	local proposed_diff = text_util.first_string(
 		source.proposedDiff,
 		source.proposed_diff,
@@ -352,7 +349,7 @@ local function normalize_file(raw, opts)
 		deletions = status == "rejected" and 0 or diff_deletions
 	end
 
-	local file_type = normalize_type(source.type) or opts.type
+	local file_type = normalize_type(source.type) or normalize_type(source.status) or opts.type
 	if not file_type then
 		if source.before == "" or source.oldContent == "" then
 			file_type = "add"
@@ -380,7 +377,7 @@ end
 ---@return string
 local function get_title(tool_part, metadata)
 	local tool_state = get_tool_state(tool_part)
-	local output = text_util.first_string(tool_state.output, tool_part.output)
+	local output = text_util.first_string(tool_state.output)
 	local output_title = nil
 	if output then
 		for _, line in ipairs(vim.split(output, "\n", { plain = true })) do
@@ -403,7 +400,7 @@ local function get_title(tool_part, metadata)
 		return "Edit completed"
 	elseif tool_part.tool == "apply_patch" then
 		return "Patch applied"
-	elseif tool_part.tool == "neovim_apply_patch" then
+	elseif tool_part.tool == "neovim_patch" then
 		return "Patch review completed"
 	end
 	return "File changes completed"
@@ -586,6 +583,9 @@ local function normalize_write(tool_part, metadata)
 	local tool_state = get_tool_state(tool_part)
 	local status = normalize_result_status(metadata.status) or normalize_result_status(tool_state.status) or "unknown"
 	local filepath = text_util.first_string(
+		input.path,
+		metadata.target,
+		metadata.resource,
 		metadata.filepath,
 		metadata.filePath,
 		metadata.file_path,
@@ -601,7 +601,7 @@ local function normalize_write(tool_part, metadata)
 	local file = normalize_file({
 		filePath = filepath,
 		relativePath = text_util.first_string(metadata.relativePath, metadata.relative_path),
-		type = is_false(metadata.exists) and "add" or "write",
+		type = (is_false(metadata.existed) or is_false(metadata.exists)) and "add" or "write",
 		status = status,
 		diff = diff,
 		additions = normalize_number(metadata.additions) or additions,
@@ -630,6 +630,27 @@ local function normalize_edit(tool_part, metadata)
 	local file_status = normalize_result_status(metadata.status)
 		or normalize_result_status(tool_state.status)
 		or "unknown"
+	local native_files = normalize_file_list(metadata.files)
+	if #native_files > 0 then
+		local files = {}
+		for _, raw in ipairs(native_files) do
+			local file = normalize_file(raw, {
+				filePath = text_util.first_string(input.path, input.filePath, input.file_path),
+				type = "update",
+				status = file_status,
+				diff = #native_files == 1 and metadata.diff or nil,
+			})
+			if file then files[#files + 1] = file end
+		end
+		if #files == 0 then return nil end
+		return {
+			tool = tool_part.tool,
+			title = get_title(tool_part, metadata),
+			status = derive_overall_status(files, tool_state.status),
+			files = files,
+			hasProposed = false,
+		}
+	end
 	local diff = nil
 	local raw = nil
 
@@ -648,7 +669,7 @@ local function normalize_edit(tool_part, metadata)
 
 	raw = raw or {}
 	local file = normalize_file(raw, {
-		filePath = text_util.first_string(metadata.filepath, metadata.filePath, metadata.file_path, input.filePath, input.file_path),
+		filePath = text_util.first_string(metadata.filepath, metadata.filePath, metadata.file_path, input.path, input.filePath, input.file_path),
 		relativePath = text_util.first_string(metadata.relativePath, metadata.relative_path),
 		type = raw.before == "" and "add" or "update",
 		status = file_status,
@@ -741,7 +762,7 @@ end
 ---@param tool_part table
 ---@param metadata table
 ---@return OpenCodeFileEditResult|nil
-local function normalize_neovim_apply_patch(tool_part, metadata)
+local function normalize_neovim_patch(tool_part, metadata)
 	local tool_state = get_tool_state(tool_part)
 	local raw_files = normalize_file_list(metadata.files)
 	if #raw_files == 0 then
@@ -796,8 +817,8 @@ local function normalize_model(tool_part)
 		return normalize_apply_patch(tool_part, metadata)
 	elseif tool_part.tool == "neovim_edit" then
 		return normalize_neovim_edit(tool_part, metadata)
-	elseif tool_part.tool == "neovim_apply_patch" then
-		return normalize_neovim_apply_patch(tool_part, metadata)
+	elseif tool_part.tool == "neovim_patch" then
+		return normalize_neovim_patch(tool_part, metadata)
 	end
 	return nil
 end

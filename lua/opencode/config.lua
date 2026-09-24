@@ -14,6 +14,9 @@ M.defaults = {
 			password = nil,
 		},
 		auto_start = true,
+		-- External servers apply review decisions on the server. Set true only
+		-- when their paths refer to the same files accessible by this Neovim.
+		shared_filesystem = nil,
 		startup_timeout = 10000,
 		health_check_interval = 1000,
 		shutdown_on_exit = true,
@@ -32,7 +35,6 @@ M.defaults = {
 		parallel = {
 			enabled = true,
 			recent_limit = 30,
-			use_prompt_async = true,
 		},
 	},
 
@@ -48,10 +50,7 @@ M.defaults = {
 		max_rendered_messages = 60,
 		max_user_message_lines = 120,
 		close_on_focus_lost = true,
-		message_display = {
-			user_prefix = "> ",
-			multiline_prefix = true,
-		},
+		tps = true, -- Show average output + reasoning tokens per second per turn
 		session_tabs = {
 			enabled = true,
 			auto_fit = false,
@@ -67,29 +66,9 @@ M.defaults = {
 		},
 		keymaps = {
 			close_session = "x",
-		},
-		todo = {
-			enabled = true,
-			show_dock = true,
-			hide_when_done = true,
-			default_collapsed = false,
-			keymaps = {
-				toggle = "T",
-			},
-			icons = {
-				pending = "[ ]",
-				in_progress = "[•]",
-				completed = "[✓]",
-				cancelled = "[ ]",
-			},
-			highlights = {
-				pending = "Comment",
-				in_progress = "WarningMsg",
-				completed = "DiagnosticOk",
-				cancelled = "Comment",
-				header = "Title",
-				border = "Comment",
-			},
+			cancel_pending = "C",
+			edit_pending = "E",
+			steer_pending = "S",
 		},
 	},
 
@@ -111,11 +90,6 @@ M.defaults = {
 		},
 	},
 
-	-- Markdown rendering
-	markdown = {
-		enable_code_highlight = true,
-	},
-
 	-- Best-effort syntax highlighting for code-like chat surfaces
 	syntax = {
 		enabled = true,
@@ -123,6 +97,8 @@ M.defaults = {
 		max_lines = 500,
 		max_bytes = 200 * 1024,
 		assistant_markdown = true,
+		user_markdown = true,
+		input_markdown = true,
 		tools = true,
 		diffs = true,
 		languages = {},
@@ -131,11 +107,8 @@ M.defaults = {
 	-- Thinking/reasoning display
 	thinking = {
 		enabled = true,
-		max_height = 15,
-		truncate = true,
-		icon = "💭",
 		highlight = "Comment",
-		header_highlight = "Title",
+		header_highlight = "WarningMsg",
 	},
 
 	-- Artifact changes
@@ -209,6 +182,8 @@ M.defaults = {
 	keymaps = {
 		toggle = "<leader>oo",
 		command_palette = "<leader>op",
+		toggle_logs = "<leader>ol",
+		close_session = "<leader>oq",
 		abort = "<leader>ox",
 		active_sessions = "<leader>oS",
 	},
@@ -218,7 +193,27 @@ M.defaults = {
 ---@param opts table|nil User configuration
 ---@return table Merged configuration
 function M.merge(opts)
-	-- Deep merge user configuration with defaults
+	-- Unsupported options must fail visibly instead of silently surviving the
+	-- deep merge and giving the impression that they still affect the plugin.
+	local removed = {
+		{ "session", "parallel", "use_prompt_async" },
+		{ "chat", "message_display" },
+		{ "thinking", "max_height" },
+		{ "thinking", "truncate" },
+		{ "thinking", "icon" },
+		{ "markdown", "enable_code_highlight" },
+		{ "server", "lazy" },
+		{ "diff" },
+	}
+	for _, path in ipairs(removed) do
+		local value = opts
+		for _, key in ipairs(path) do
+			if type(value) == "table" then value = rawget(value, key) else value = nil end
+		end
+		if value ~= nil then
+			error("opencode.nvim: unsupported setup option " .. table.concat(path, ".") .. "; update your configuration", 2)
+		end
+	end
 	return vim.tbl_deep_extend("force", M.defaults, opts or {})
 end
 

@@ -1,0 +1,40 @@
+                                       │ ◈ Typed forms  │ ●0 ◈1                                                         
+~                                      │▏                                                                               
+~                                      │▏  # Permission required                                                        
+~                                      │▏                                                                               
+~                                      │▏  form_ui_reject                                                               
+~                                      │▏  Path: fixture-resource                                                       
+~                                      │▏                                                                               
+~                                      │▏    1. Allow once                                                              
+~                                      │▏    2. Allow always                                                            
+~                                      │▏  ❯ 3. Reject                                                                  
+~                                      │▏                                                                               
+~                                      │▏  1-3 select · ↑↓ move · Enter confirm · Esc reject · m message                
+~                                      │▏                                                                               
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+[No Name]            0,0-1          All opencode [-]                                                  1,1            All
+Typed forms: Permission needs input                                                                                     

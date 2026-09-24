@@ -29,45 +29,12 @@ local function ensure_highlights()
 	panel_helpers.set_hl("OpenCodeSkillError", "DiagnosticError", "ErrorMsg")
 end
 
+require("opencode.ui.highlights").register("opencode.ui.chat.skill", ensure_highlights)
+
 ---@param value any
 ---@return string
 local function stringify(value)
-	if text_util.is_nil(value) then
-		return ""
-	end
-	if type(value) == "string" then
-		return value
-	end
-	if type(value) == "table" then
-		if type(value.output) == "string" then
-			return value.output
-		end
-		if type(value.text) == "string" then
-			return value.text
-		end
-		if type(value.content) == "string" then
-			return value.content
-		end
-		if #value > 0 then
-			local lines = {}
-			for _, item in ipairs(value) do
-				local text
-				if type(item) == "table" and item.type == "text" and type(item.text) == "string" then
-					text = item.text
-				elseif type(item) == "table" and item.type == "file" then
-					text = "[file " .. tostring(item.name or item.uri or item.url or "") .. "]"
-				else
-					text = stringify(item)
-				end
-				if text ~= "" then
-					table.insert(lines, text)
-				end
-			end
-			return table.concat(lines, "\n")
-		end
-		return vim.inspect(value)
-	end
-	return tostring(value)
+	return type(value) == "string" and value or ""
 end
 
 ---@param ... any
@@ -94,88 +61,13 @@ local function unquote(text)
 	return text
 end
 
----@param names string[]
----@param seen table<string, boolean>
----@param value any
-local function add_skill_name(names, seen, value)
-	if type(value) ~= "string" then
-		return
-	end
-
-	local name = unquote(value)
-	name = name:gsub("^%[", ""):gsub("%]$", "")
-	if name == "" or seen[name] then
-		return
-	end
-
-	seen[name] = true
-	table.insert(names, name)
-end
-
----@param names string[]
----@param seen table<string, boolean>
----@param value any
-local function add_skill_names(names, seen, value)
-	if type(value) == "table" then
-		for _, key in ipairs({ "name", "skill", "skillName", "skill_name", "value", "label" }) do
-			add_skill_names(names, seen, value[key])
-		end
-		for _, key in ipairs({ "names", "skills" }) do
-			if type(value[key]) == "table" then
-				for _, item in ipairs(value[key]) do
-					add_skill_names(names, seen, item)
-				end
-			else
-				add_skill_names(names, seen, value[key])
-			end
-		end
-		return
-	end
-
-	if type(value) ~= "string" then
-		return
-	end
-
-	local text = vim.trim(value)
-	if text == "" then
-		return
-	end
-
-	local json_name = text:match('"name"%s*:%s*"([^"]+)"') or text:match("'name'%s*:%s*'([^']+)'")
-	if json_name then
-		add_skill_name(names, seen, json_name)
-		return
-	end
-	if text:sub(1, 1) == "{" then
-		return
-	end
-
-	local load_args = text:match("^load_skill%s+%[(.-)%]$") or text:match("^load_skill%s+(.+)$")
-	if load_args then
-		text = load_args
-	end
-
-	if text:find(",", 1, true) then
-		for part in text:gmatch("[^,]+") do
-			add_skill_name(names, seen, part)
-		end
-		return
-	end
-
-	add_skill_name(names, seen, text)
-end
-
----@param input table|string
+---@param input table
 ---@param metadata table
 ---@return string[]
 local function get_input_names(input, metadata)
-	local names = {}
-	local seen = {}
-	add_skill_names(names, seen, input)
-	add_skill_names(names, seen, metadata.name)
-	add_skill_names(names, seen, metadata.skill)
-	add_skill_names(names, seen, metadata.skills)
-	return names
+	local name = type(input) == "table" and input.name or nil
+	if type(name) ~= "string" or name == "" then name = metadata.name end
+	return type(name) == "string" and name ~= "" and { vim.trim(name) } or {}
 end
 
 ---@param value any
@@ -416,7 +308,6 @@ function M.render_tool(tool_part, expanded)
 	if type(tool_part) ~= "table" or tool_part.tool ~= "skill" then
 		return nil
 	end
-	ensure_highlights()
 
 	local ctx = tool_panel.context(tool_part)
 	local input = ctx.input
@@ -537,7 +428,6 @@ function M.render_tool(tool_part, expanded)
 				scope = "tools",
 				line_start = body_start_line,
 				col_offset = #PANEL_PREFIX,
-				compat_markdown = false,
 			})
 		else
 			syntax.add_highlights(result, body_text, body_lang, {

@@ -2,4 +2,5 @@ llm_context*
 .firecrawl*
 .deps/
 docs/*
-
+__pycache__/
+*.pyc

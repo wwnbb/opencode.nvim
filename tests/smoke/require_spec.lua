@@ -179,10 +179,8 @@ local rg_render = rg.render_tool({
 assert(render_text(rg_render):find("path:with:colon/file.lua-12-local x = 1", 1, true), "rg widget should render context lines with colon-containing paths")
 
 local thinking = require("opencode.ui.thinking")
-assert(thinking.extract_topic("**Planning** next") == "Planning", "thinking topic extraction should trim markdown header")
-local thinking_hl_ok, thinking_hl = pcall(thinking.get_highlights, 0)
-assert(thinking_hl_ok, "thinking highlights should not crash: " .. tostring(thinking_hl))
-assert(thinking_hl[1].hl_group == "Title", "thinking highlights should default header highlight")
+assert(thinking.is_enabled(), "Thought display should be enabled by default")
+assert(thinking.get_config().header_highlight == "WarningMsg", "Thought header should use the configured highlight")
 
 do
 	require("opencode.ui.input.info_bar").setup_highlights()
@@ -294,7 +292,7 @@ do
 			start_line = 10,
 			end_line = 20,
 			highlights = {
-				{ line = 1, col_start = 0, col_end = 10, hl_group = "OpenCodeTodoHeader" },
+				{ line = 1, col_start = 0, col_end = 10, hl_group = "PanelHeaderTest" },
 			},
 		},
 	}
@@ -316,112 +314,23 @@ do
 end
 
 do
-	sync.handle_message_updated({
-		id = "msg_buffered_delta",
-		sessionID = "session_buffered_delta",
-		role = "assistant",
-		time = { created = 1 },
-	})
-	sync.handle_part_updated({
-		id = "text_part",
-		messageID = "msg_buffered_delta",
-		sessionID = "session_buffered_delta",
-		type = "text",
-		text = "",
-	})
-	for _, delta in ipairs({ "hel", "lo", " world" }) do
-		sync.handle_part_delta({
-			messageID = "msg_buffered_delta",
-			partID = "text_part",
-			field = "text",
-			delta = delta,
-			sessionID = "session_buffered_delta",
-		})
+	local seq = 0
+	local function event(kind, data)
+		seq = seq + 1
+		return sync.handle_v2_event({ id = "evt_stream_smoke_" .. seq, created = seq,
+			type = "session." .. kind, data = vim.tbl_extend("force", {
+				sessionID = "session_stream", assistantMessageID = "msg_stream", ordinal = 0,
+			}, data or {}) })
 	end
-	assert(sync.get_part("msg_buffered_delta", "text_part").text == "hello world", "get_part should materialize deltas")
-
-	sync.handle_part_updated({
-		id = "parts_text",
-		messageID = "msg_buffered_delta",
-		sessionID = "session_buffered_delta",
-		type = "text",
-		text = "",
-	})
-	sync.handle_part_delta({
-		messageID = "msg_buffered_delta",
-		partID = "parts_text",
-		field = "text",
-		delta = "from parts",
-		sessionID = "session_buffered_delta",
-	})
-	local parts = sync.get_parts("msg_buffered_delta")
-	local saw_parts_text = false
-	for _, part in ipairs(parts) do
-		saw_parts_text = saw_parts_text or (part.id == "parts_text" and part.text == "from parts")
-	end
-	assert(saw_parts_text, "get_parts should materialize deltas")
-
-	sync.handle_part_updated({
-		id = "reason_part",
-		messageID = "msg_buffered_delta",
-		sessionID = "session_buffered_delta",
-		type = "reasoning",
-		text = "",
-	})
-	sync.handle_part_delta({
-		messageID = "msg_buffered_delta",
-		partID = "reason_part",
-		field = "text",
-		delta = "because",
-		sessionID = "session_buffered_delta",
-	})
-	assert(sync.get_message_reasoning("msg_buffered_delta") == "because", "reasoning should materialize deltas")
-
-	sync.handle_part_updated({
-		id = "updated_part",
-		messageID = "msg_buffered_delta",
-		sessionID = "session_buffered_delta",
-		type = "text",
-		text = "base",
-	})
-	sync.handle_part_delta({
-		messageID = "msg_buffered_delta",
-		partID = "updated_part",
-		field = "text",
-		delta = " plus",
-		sessionID = "session_buffered_delta",
-	})
-	sync.handle_part_updated({
-		id = "updated_part",
-		messageID = "msg_buffered_delta",
-		sessionID = "session_buffered_delta",
-		type = "text",
-		text = "base plus",
-	})
-	assert(sync.get_part("msg_buffered_delta", "updated_part").text == "base plus", "part.updated should not double append")
-
-	sync.handle_part_updated({
-		id = "stale_part",
-		messageID = "msg_buffered_delta",
-		sessionID = "session_buffered_delta",
-		type = "text",
-		text = "fresh",
-	})
-	sync.handle_part_delta({
-		messageID = "msg_buffered_delta",
-		partID = "stale_part",
-		field = "text",
-		delta = " text",
-		sessionID = "session_buffered_delta",
-	})
-	sync.handle_part_updated({
-		id = "stale_part",
-		messageID = "msg_buffered_delta",
-		sessionID = "session_buffered_delta",
-		type = "text",
-		text = "fresh",
-	})
-	assert(sync.get_message_text("msg_buffered_delta"):find("fresh text", 1, true), "stale part update erased buffered text")
+	event("step.started", { started = 1, agent = "build", model = { providerID = "test", id = "test" } })
+	event("text.started")
+	for _, delta in ipairs({ "hel", "lo", " world" }) do event("text.delta", { delta = delta }) end
+	assert(sync.get_parts("msg_stream")[1].text == "hello world", "v2 text deltas should accumulate")
+	event("text.ended", { text = "authoritative" })
+	assert(sync.get_parts("msg_stream")[1].text == "authoritative", "v2 ended text should replace deltas")
+	event("reasoning.started")
+	event("reasoning.delta", { delta = "because" })
+	assert(sync.get_message_render_parts("msg_stream").reasoning == "because", "v2 reasoning should stream")
 	sync.clear_all()
 end
 
@@ -585,19 +494,19 @@ do
 	local saved_client = package.loaded["opencode.client"]
 	local saved_http = package.loaded["opencode.client.http"]
 	local saved_sse = package.loaded["opencode.client.sse"]
+	local saved_v2 = package.loaded["opencode.client.v2"]
+	package.loaded["opencode.client.v2"] = nil
 	package.loaded["opencode.client"] = nil
 	package.loaded["opencode.client.http"] = {
-		health = function(callback)
-			callback(nil, { version = "test-version" })
-		end,
 		get = function(path, callback)
-			if path == "/global/config" then
-				callback(nil, { plugin = { "test-plugin" } })
-			else
-				callback(nil, {})
-			end
+			if path == "/api/info" then
+				callback(nil, { version = "2.0.11", pid = 1, urls = {}, paths = {} })
+			elseif path == "/api/plugin" then
+				callback(nil, { location = { directory = "/test" }, data = { { id = "test-plugin", source = { type = "local", path = "/test/plugin" }, state = { status = "active" } } } })
+			else callback(nil, { location = { directory = "/test" }, data = {} }) end
 		end,
 	}
+
 	package.loaded["opencode.client.sse"] = {
 		setup = noop,
 	}
@@ -612,13 +521,14 @@ do
 	end)
 	assert(status_calls == 1, "client.get_status should call callback exactly once with synchronous HTTP callbacks")
 	assert(
-		status_result and status_result.plugins and status_result.plugins[1] == "test-plugin",
-		"client.get_status should include plugins from global config"
+		status_result and status_result.plugins and status_result.plugins[1].id == "test-plugin",
+		"client.get_status should include plugins from the v2 runtime catalog"
 	)
 
 	package.loaded["opencode.client"] = saved_client
 	package.loaded["opencode.client.http"] = saved_http
 	package.loaded["opencode.client.sse"] = saved_sse
+	package.loaded["opencode.client.v2"] = saved_v2
 end
 
 do
@@ -642,8 +552,8 @@ do
 	logger.debug("new update", { data = { part = { messageID = "msg_log_rebuild" } } })
 	log_viewer.open({ position = "bottom", height = 8 })
 	local log_text = table.concat(vim.api.nvim_buf_get_lines(1, 0, -1, false), "\n")
-	assert(log_text:find("new update", 1, true), "log viewer rebuild should render latest part update")
-	assert(not log_text:find("old update", 1, true), "log viewer rebuild should replace older part update")
+	assert(log_text:find("new update", 1, true), "log viewer should render the latest log entry")
+	assert(log_text:find("old update", 1, true), "log viewer should retain distinct log entries")
 	log_viewer.close()
 	logger.clear()
 end
@@ -808,7 +718,7 @@ do
 					subagent_type = "grep_slave",
 					description = desc,
 				},
-				time = { start = 1000 + i * 1000 },
+				metadata = i ~= 3 and { sessionID = "parallel_child_" .. i } or {},
 			},
 		}
 		tasks[i] = task_part
@@ -838,19 +748,22 @@ do
 		})
 	end
 
-	local children = {
-		{ id = "parallel_child_3", title = "@grep_slave subagent - " .. descriptions[3], time = { created = 5000 } },
-		{ id = "parallel_child_1", title = "@grep_slave subagent - " .. descriptions[1], time = { created = 3000 } },
-		{ id = "parallel_child_5", title = "@grep_slave subagent - " .. descriptions[5], time = { created = 7000 } },
-		{ id = "parallel_child_2", title = "@grep_slave subagent - " .. descriptions[2], time = { created = 4000 } },
-		{ id = "parallel_child_4", title = "@grep_slave subagent - " .. descriptions[4], time = { created = 6000 } },
-	}
-	local assignments = chat_tasks.resolve_missing_task_children("parallel_parent", children)
-	assert(#assignments == 5, "parallel child resolver should assign all uniquely matched children")
+	local before_metadata
+	chat_tasks.resolve_task_child_session_id(tasks[3], function(err, id)
+		assert(not err)
+		before_metadata = id or false
+	end)
+	assert(before_metadata == false, "task should not guess a child from matching title or timing")
+	tasks[3].state.metadata = { sessionId = "parallel_child_3" }
+	sync.handle_part_updated(tasks[3])
 
 	local seen_children = {}
 	for i, task_part in ipairs(tasks) do
-		local child_id = sync.get_task_child_session("parallel_parent_msg", task_part.id)
+		local child_id
+		chat_tasks.resolve_task_child_session_id(task_part, function(err, id)
+			assert(not err)
+			child_id = id
+		end)
 		assert(child_id == "parallel_child_" .. i, "parallel task mapped to the wrong child: " .. tostring(child_id))
 		assert(not seen_children[child_id], "parallel child was reused across tasks: " .. tostring(child_id))
 		seen_children[child_id] = true
@@ -1005,12 +918,10 @@ end
 
 local generic_tool = render.render_tool_line({
 	tool = "custom",
-	input = {
-		description = "Generated\nheader",
-	},
 	state = {
 		status = "running",
 		input = {
+			description = "Generated\nheader",
 			payload = "body\nvalue",
 		},
 		output = "output\r\nvalue",
@@ -1027,142 +938,22 @@ end
 do
 	local sse = require("opencode.client.sse")
 	sse.clear_listeners()
-
-	local delta_count = 0
-	local delta_payload = nil
-	local delta_event_id = nil
-	sse.on("message.part.delta", function(data, event_id)
-		delta_count = delta_count + 1
-		delta_payload = data
-		delta_event_id = event_id
+	local received = {}
+	sse.on("session.text.delta", function(data, event_id)
+		received[#received + 1] = { data = data, event_id = event_id }
 	end)
-
-	local sync_delta = {
-		directory = vim.fn.getcwd(),
-		workspace = "smoke-workspace",
-		payload = {
-			type = "sync",
-			syncEvent = {
-				id = "evt_sync_delta",
-				type = "message.part.delta.1",
-				seq = 42,
-				aggregateID = "ses_sync_delta",
-				data = {
-					sessionID = "ses_sync_delta",
-					messageID = "msg_sync_delta",
-					partID = "prt_sync_delta",
-					field = "text",
-					delta = "hello",
-				},
-			},
-		},
+	local native = {
+		id = "evt_text_delta", created = 1000, type = "session.text.delta",
+		location = { directory = vim.fn.getcwd() },
+		data = { sessionID = "ses_stream", assistantMessageID = "msg_stream", ordinal = 0, delta = "hello" },
 	}
-	sse.emit("message", sync_delta)
-	assert(delta_count == 1, "sync-only message.part.delta.1 should reach message.part.delta listeners")
-	assert(delta_event_id == "evt_sync_delta", "sync event id should be forwarded")
-	assert(delta_payload.sessionID == "ses_sync_delta", "sync delta sessionID should be preserved")
-	assert(delta_payload.messageID == "msg_sync_delta", "sync delta messageID should be preserved")
-	assert(delta_payload.partID == "prt_sync_delta", "sync delta partID should be preserved")
-	assert(delta_payload.delta == "hello", "sync delta text should be preserved")
-	assert(delta_payload._sync_seq == 42, "sync metadata seq should be attached")
-	assert(delta_payload._sync_aggregate_id == "ses_sync_delta", "sync aggregate id should be attached")
-	assert(delta_payload._directory == vim.fn.getcwd(), "global event directory should be attached")
-	assert(delta_payload._workspace == "smoke-workspace", "global event workspace should be attached")
-
-	sse.emit("message", {
-		directory = vim.fn.getcwd(),
-		payload = {
-			id = "evt_sync_delta",
-			type = "message.part.delta",
-			properties = {
-				sessionID = "ses_sync_delta",
-				messageID = "msg_sync_delta",
-				partID = "prt_sync_delta",
-				field = "text",
-				delta = "hello",
-			},
-		},
-	})
-	assert(delta_count == 1, "legacy duplicate after sync event should not double-emit deltas")
-
-	local update_count = 0
-	local update_payload = nil
-	local part_update_count = 0
-	local part_update_payload = nil
-	sse.clear_listeners()
-	sse.on("message.updated", function(data)
-		update_count = update_count + 1
-		update_payload = data
-	end)
-	sse.on("message.part.updated", function(data)
-		part_update_count = part_update_count + 1
-		part_update_payload = data
-	end)
-
-	sse.emit("message", {
-		directory = vim.fn.getcwd(),
-		payload = {
-			id = "evt_legacy_update",
-			type = "message.updated",
-			properties = {
-				sessionID = "ses_sync_shape",
-				info = {
-					id = "msg_sync_shape",
-					sessionID = "ses_sync_shape",
-					role = "assistant",
-				},
-			},
-		},
-	})
-	sse.emit("message", {
-		directory = vim.fn.getcwd(),
-		payload = {
-			type = "sync",
-			syncEvent = {
-				id = "evt_legacy_update",
-				type = "message.updated.1",
-				seq = 1,
-				aggregateID = "ses_sync_shape",
-				data = {
-					sessionID = "ses_sync_shape",
-					info = {
-						id = "msg_sync_shape",
-						sessionID = "ses_sync_shape",
-						role = "assistant",
-					},
-				},
-			},
-		},
-	})
-	assert(update_count == 1, "sync duplicate after legacy event should not double-emit message.updated")
-	assert(update_payload.info.id == "msg_sync_shape", "message.updated info shape should be preserved")
-
-	sse.emit("message", {
-		directory = vim.fn.getcwd(),
-		payload = {
-			type = "sync",
-			syncEvent = {
-				id = "evt_sync_part_update",
-				type = "message.part.updated.1",
-				seq = 2,
-				aggregateID = "ses_sync_shape",
-				data = {
-					sessionID = "ses_sync_shape",
-					part = {
-						id = "prt_sync_shape",
-						messageID = "msg_sync_shape",
-						sessionID = "ses_sync_shape",
-						type = "text",
-						text = "assistant text",
-					},
-				},
-			},
-		},
-	})
-	assert(part_update_count == 1, "sync message.part.updated.1 should reach message.part.updated listeners")
-	assert(part_update_payload.part.id == "prt_sync_shape", "message.part.updated part shape should be preserved")
-	assert(part_update_payload.part.text == "assistant text", "message.part.updated text should be preserved")
-
+	sse.emit("message", native)
+	sse.emit("message", native)
+	assert(#received == 1, "native event ID should deduplicate SSE replay")
+	assert(received[1].event_id == "evt_text_delta", "native event ID should be forwarded")
+	assert(received[1].data.delta == "hello", "native delta should be preserved")
+	assert(received[1].data._v2_envelope.type == "session.text.delta", "native envelope should reach the event bridge")
+	assert(received[1].data._directory == vim.fn.getcwd(), "native location should be attached")
 	sse.clear_listeners()
 end
 
@@ -1234,107 +1025,11 @@ end
 
 do
 	local bus = require("opencode.events.bus")
-	local message_handler = require("opencode.events.handlers.message")
-	local app_state = require("opencode.state")
-	local previous_session = app_state.get_session()
-
-	bus.clear()
-	bus.clear_history()
-	message_handler.setup(bus)
-
-	sync.clear_all()
-	app_state.set_session("todo_filter_parent", "Todo Filter Parent")
-	sync.handle_message_updated({
-		id = "todo_filter_msg",
-		sessionID = "todo_filter_parent",
-		role = "assistant",
-		time = { created = 1 },
-	})
-	sync.handle_part_updated({
-		id = "todo_filter_task",
-		messageID = "todo_filter_msg",
-		sessionID = "todo_filter_parent",
-		type = "tool",
-		tool = "task",
-		state = {
-			status = "running",
-			input = { subagent_type = "build", description = "child" },
-			metadata = { sessionId = "todo_filter_child" },
-		},
-	})
-
-	local todo_update_count = 0
-	local last_todo_update
-	bus.on("todo_update", function(data)
-		todo_update_count = todo_update_count + 1
-		last_todo_update = data
-		assert(data.session_id ~= "todo_filter_unrelated", "unrelated todo updates should not request chat render")
-	end)
-
-	bus.emit("todo_updated", {
-		sessionID = "todo_filter_unrelated",
-		todos = { { content = "ignore", status = "pending" } },
-	})
-	assert(vim.wait(100, function()
-		return todo_update_count > 0
-	end, 10) == false, "unrelated todo update should be filtered")
-
-	bus.emit("todo_updated", {
-		sessionID = "todo_filter_child",
-		todos = { { content = "child", status = "in_progress" } },
-	})
-	assert(vim.wait(100, function()
-		return sync.get_todos("todo_filter_child")[1] ~= nil
-	end, 10), "child todo update should be stored")
-	assert(vim.wait(100, function()
-		return todo_update_count > 0
-	end, 10) == false, "parent-visible child todo update should not request chat render")
-
-	app_state.set_session("todo_filter_child", "Todo Filter Child")
-	bus.emit("todo_updated", {
-		sessionID = "todo_filter_child",
-		todos = { { content = "child visible", status = "completed" } },
-	})
-	wait_until(function()
-		return todo_update_count == 1
-	end, "child-visible todo update should request chat render")
-	assert(last_todo_update.session_id == "todo_filter_child", "child-visible todo update should route to the child")
-
-	app_state.set_session("todo_filter_parent", "Todo Filter Parent")
-	bus.emit("todo_updated", {
-		sessionID = "todo_filter_parent",
-		todos = { { content = "parent", status = "pending" } },
-	})
-	wait_until(function()
-		return todo_update_count == 2
-	end, "parent-visible todo update should request chat render")
-	assert(last_todo_update.session_id == "todo_filter_parent", "parent-visible todo update should route to the parent")
-
-	sync.clear_all()
-	if previous_session and previous_session.id then
-		app_state.set_session(previous_session.id, previous_session.name, {
-			runtime = previous_session.runtime,
-		})
-	else
-		app_state.set_session(nil, nil)
-	end
-	bus.clear()
-	bus.clear_history()
-end
-
-do
-	local bus = require("opencode.events.bus")
 	local events = require("opencode.events")
-	local app_state = require("opencode.state")
 	local saved_client = package.loaded["opencode.client"]
-	local pending = {}
-	local todo_updates = {}
 	local sse_listeners = {}
 
 	package.loaded["opencode.client"] = {
-		get_session_todos = function(session_id, callback)
-			table.insert(pending, { session_id = session_id, callback = callback })
-		end,
 		on_event = function(event_type, callback)
 			table.insert(sse_listeners, { event_type = event_type, callback = callback })
 		end,
@@ -1344,157 +1039,29 @@ do
 	bus.clear_history()
 	events.setup()
 	local sse_listener_count = #sse_listeners
+	local event_listener_count = bus.listener_count("v2_event")
 	assert(sse_listener_count > 0, "initial events setup should register SSE listeners")
-	local todo_listener_count = bus.listener_count("todo_updated")
+	assert(event_listener_count > 0, "initial events setup should register native event handlers")
+
 	events.setup()
 	assert(#sse_listeners == sse_listener_count, "repeated plugin setup should not duplicate SSE listeners")
 	assert(
-		bus.listener_count("todo_updated") == todo_listener_count,
-		string.format("repeated plugin setup should not duplicate todo handlers: %d ~= %d", bus.listener_count("todo_updated"), todo_listener_count)
+		bus.listener_count("v2_event") == event_listener_count,
+		"repeated plugin setup should not duplicate native handlers"
 	)
-	assert(bus.listener_count("todo_updated") == todo_listener_count, "repeated message setup should not duplicate todo handlers")
+
 	bus.clear()
 	events.setup()
+	assert(#sse_listeners == sse_listener_count, "SSE bridge should not duplicate listeners after bus.clear")
 	assert(
-		#sse_listeners == sse_listener_count,
-		"SSE bridge should not duplicate listeners after bus.clear"
+		bus.listener_count("v2_event") == event_listener_count,
+		"native handlers should rebind after bus.clear"
 	)
-	assert(bus.listener_count("todo_updated") == todo_listener_count, "message setup should rebind after bus.clear")
-	bus.on("todo_update", function(data)
-		table.insert(todo_updates, data)
-	end)
-
-	local previous_session = app_state.get_session()
-	local function set_current_session(session_id)
-		app_state.set_session(session_id, session_id)
-	end
-	local function emit_sse_event(event_type, data)
-		for _, listener in ipairs(sse_listeners) do
-			if listener.event_type == event_type then
-				listener.callback(data)
-			end
-		end
-	end
-	set_current_session("todo_bridge_rebind")
-	emit_sse_event("todo.updated", {
-		sessionID = "todo_bridge_rebind",
-		todos = { { content = "rebound", status = "pending" } },
-	})
-	wait_until(function()
-		return #todo_updates == 1
-	end, "SSE bridge should route one event through rebound local handlers")
-	assert(sync.get_todos("todo_bridge_rebind")[1].content == "rebound", "rebound local todo handler should process mapped SSE events")
-
-	local function assert_no_new_updates(previous_count, message)
-		assert(vim.wait(100, function()
-			return #todo_updates > previous_count
-		end, 10) == false, message)
-	end
-
-	-- A transient error must preserve existing data and emit no render request.
-	local error_session = "todo_fetch_error"
-	set_current_session(error_session)
-	sync.handle_todo_updated(error_session, { { content = "existing", status = "pending" } })
-	local error_updates = #todo_updates
-	bus.emit("session_change", { id = error_session })
-	assert(#pending == 1, "error hydration should create one HTTP request")
-	pending[1].callback({ message = "temporary failure" })
-	assert_no_new_updates(error_updates, "HTTP todo errors should not emit todo_update")
-	assert(sync.get_todos(error_session)[1].content == "existing", "HTTP todo errors should preserve stored todos")
-
-	-- An SSE update invalidates an already-started HTTP hydration.
-	local sse_session = "todo_fetch_sse"
-	set_current_session(sse_session)
-	local sse_updates = #todo_updates
-	bus.emit("session_change", { id = sse_session })
-	local sse_request = #pending
-	bus.emit("todo_updated", {
-		sessionID = sse_session,
-		todos = { { content = "from SSE", status = "in_progress" } },
-	})
-	wait_until(function()
-		return #todo_updates == sse_updates + 1
-	end, "SSE todo update should render before the stale HTTP response")
-	pending[sse_request].callback(nil, { { content = "stale HTTP", status = "pending" } })
-	assert_no_new_updates(sse_updates + 1, "stale HTTP todo response should not emit todo_update after SSE")
-	assert(sync.get_todos(sse_session)[1].content == "from SSE", "SSE todos should win over stale HTTP data")
-
-	-- The newest of two overlapping HTTP requests is the only response accepted.
-	local overlap_session = "todo_fetch_overlap"
-	set_current_session(overlap_session)
-	local overlap_updates = #todo_updates
-	bus.emit("session_change", { id = overlap_session })
-	bus.emit("session_change", { id = overlap_session })
-	local first_request = #pending - 1
-	local second_request = #pending
-	pending[first_request].callback(nil, { { content = "old HTTP", status = "pending" } })
-	assert_no_new_updates(overlap_updates, "older overlapping HTTP response should be ignored")
-	pending[second_request].callback(nil, { { content = "new HTTP", status = "completed" } })
-	wait_until(function()
-		return #todo_updates == overlap_updates + 1
-	end, "newest HTTP todo response should emit todo_update")
-	assert(sync.get_todos(overlap_session)[1].content == "new HTTP", "newest HTTP todos should win")
-
-	-- An accepted child response updates its cache without rendering the visible parent.
-	local parent_session = "todo_fetch_parent"
-	local child_session = "todo_fetch_child"
-	set_current_session(parent_session)
-	sync.handle_message_updated({
-		id = "todo_fetch_parent_message",
-		sessionID = parent_session,
-		role = "assistant",
-		time = { created = 1 },
-	})
-	sync.handle_part_updated({
-		id = "todo_fetch_child_part",
-		messageID = "todo_fetch_parent_message",
-		sessionID = parent_session,
-		type = "tool",
-		tool = "task",
-		state = {
-			status = "running",
-			metadata = { sessionId = child_session },
-		},
-	})
-	local child_updates = #todo_updates
-	bus.emit("session_change", { id = child_session })
-	local child_request = #pending
-	pending[child_request].callback(nil, { { content = "child background", status = "pending" } })
-	assert_no_new_updates(child_updates, "parent-visible child HTTP response should not emit todo_update")
-	assert(sync.get_todos(child_session)[1].content == "child background", "child HTTP hydration should update its cache")
-
-	-- An accepted response for a session that is no longer visible updates only its cache.
-	local inactive_session = "todo_fetch_inactive"
-	local visible_session = "todo_fetch_visible"
-	set_current_session(inactive_session)
-	local inactive_updates = #todo_updates
-	bus.emit("session_change", { id = inactive_session })
-	local inactive_request = #pending
-	set_current_session(visible_session)
-	pending[inactive_request].callback(nil, { { content = "background", status = "pending" } })
-	assert_no_new_updates(inactive_updates, "inactive-session HTTP response should not emit todo_update")
-	assert(sync.get_todos(inactive_session)[1].content == "background", "inactive-session hydration should update its cache")
-
-	local cleared_session = "todo_fetch_cleared"
-	set_current_session(cleared_session)
-	bus.emit("session_change", { id = cleared_session })
-	local cleared_request = #pending
-	sync.clear_all()
-	pending[cleared_request].callback(nil, { { content = "cleared", status = "pending" } })
-	assert_no_new_updates(#todo_updates, "clear_all should invalidate pending todo hydration")
-	assert(sync.get_todos(cleared_session)[1] == nil, "clear_all should prune todo fetch generation state")
 
 	package.loaded["opencode.client"] = saved_client
 	bus.clear()
 	bus.clear_history()
 	sync.clear_all()
-	if previous_session and previous_session.id then
-		app_state.set_session(previous_session.id, previous_session.name, {
-			runtime = previous_session.runtime,
-		})
-	else
-		app_state.set_session(nil, nil)
-	end
 end
 
 do
@@ -1535,7 +1102,6 @@ do
 	local chat = require("opencode.ui.chat")
 	local chat_state = require("opencode.ui.chat.state").state
 	local render_state = require("opencode.ui.chat.render_state")
-	local chat_render = require("opencode.ui.chat.render")
 	local app_state = require("opencode.state")
 	local previous_session = app_state.get_session()
 	local previous_buf = vim.api.nvim_get_current_buf()
@@ -1558,19 +1124,12 @@ do
 	chat_state.stream_blocks = {}
 	app_state.set_session("stream_session", "Stream Session")
 	sync.clear_all()
-	sync.handle_message_updated({
-		id = "stream_message",
-		sessionID = "stream_session",
-		role = "assistant",
+	local projection = require("opencode.protocol.v2.messages")
+	local stream_part_id = projection.part_id("stream_session", "stream_message", "text", 0)
+	sync.handle_session_messages("stream_session", { projection.project("stream_session", {
+		id = "stream_message", type = "assistant", content = { { type = "text", text = "hello" } },
 		time = { created = 1 },
-	})
-	sync.handle_part_updated({
-		id = "stream_part",
-		messageID = "stream_message",
-		sessionID = "stream_session",
-		type = "text",
-		text = "hello",
-	})
+	}) })
 	vim.bo[bufnr].modifiable = true
 	vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { "hello", "\\ Coder_v2 · GPT-5.5" })
 	vim.bo[bufnr].modifiable = false
@@ -1580,29 +1139,19 @@ do
 	})
 	chat_state.spinner_footer_line = 1
 
-	local block_key = render_state.stream_block_key("stream_session", "stream_message", "stream_part", "text")
+	local block_key = render_state.stream_block_key("stream_session", "stream_message", stream_part_id, "text")
 	chat_state.stream_blocks[block_key] = {
 		start_line = 0,
 		end_line = 0,
 		session_id = "stream_session",
 		message_id = "stream_message",
-		part_id = "stream_part",
+		part_id = stream_part_id,
 		kind = "text",
-		chat_width = chat_render.get_chat_text_width(),
-		text_length = #"hello",
 	}
-	sync.handle_part_delta({
-		messageID = "stream_message",
-		partID = "stream_part",
-		field = "text",
-		delta = " world",
-		sessionID = "stream_session",
-	})
+	sync.handle_v2_event({ id = "evt_stream_world", created = 2, type = "session.text.delta",
+		data = { sessionID = "stream_session", assistantMessageID = "stream_message", ordinal = 0, delta = " world" } })
 	assert(
-		chat.update_stream_part_block("stream_session", "stream_message", "stream_part", {
-			field = "text",
-			delta = " world",
-		}),
+		chat.update_stream_part_block("stream_session", "stream_message", stream_part_id),
 		"same-line stream delta should update in place"
 	)
 	assert(
@@ -1611,19 +1160,11 @@ do
 	)
 	assert(chat_state.stream_blocks[block_key].end_line == 0, "same-line stream delta should not grow block")
 
-	sync.handle_part_delta({
-		messageID = "stream_message",
-		partID = "stream_part",
-		field = "text",
-		delta = "\nnext",
-		sessionID = "stream_session",
-	})
+	sync.handle_v2_event({ id = "evt_stream_next", created = 3, type = "session.text.delta",
+		data = { sessionID = "stream_session", assistantMessageID = "stream_message", ordinal = 0, delta = "\nnext" } })
 	assert(
-		chat.update_stream_part_block("stream_session", "stream_message", "stream_part", {
-			field = "text",
-			delta = "\nnext",
-		}),
-		"newline stream delta should fall back to block replacement"
+		chat.update_stream_part_block("stream_session", "stream_message", stream_part_id),
+		"newline stream delta should replace the rendered block"
 	)
 	local updated_stream_lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
 	assert(#updated_stream_lines == 3, "newline stream delta should grow rendered block without losing footer")
@@ -1641,9 +1182,10 @@ do
 	assert(#footer_marks == 1, "stream growth should preserve footer agent highlight")
 	assert(footer_marks[1][4].hl_group == "OpenCodeAgent_coder_v2", "wrong footer highlight after stream growth")
 
-	sync.get_part("stream_message", "stream_part").text = "short"
+	sync.handle_v2_event({ id = "evt_stream_end", created = 4, type = "session.text.ended",
+		data = { sessionID = "stream_session", assistantMessageID = "stream_message", ordinal = 0, text = "short" } })
 	assert(
-		chat.update_stream_part_block("stream_session", "stream_message", "stream_part"),
+		chat.update_stream_part_block("stream_session", "stream_message", stream_part_id),
 		"stream replacement should shrink rendered block"
 	)
 	updated_stream_lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
@@ -1877,7 +1419,7 @@ do
 		messageID = "m4",
 		sessionID = "render_contract_session",
 		type = "tool",
-		tool = "neovim_apply_patch",
+		tool = "neovim_patch",
 		callID = "call_neovim_patch",
 		state = {
 			status = "completed",
@@ -1901,12 +1443,14 @@ do
 		},
 	})
 
-	question_state.add_question("q_anchor", "render_contract_session", {
-		{ question = "Anchor?", options = { { label = "Yes", value = "yes" } } },
-	}, { message_id = "m1", timestamp = 1 })
-	question_state.add_question("q_tool", "render_contract_session", {
-		{ question = "Tool question?", options = { { label = "Yes", value = "yes" } } },
-	}, { message_id = "m4", call_id = "call_question", timestamp = 5 })
+	question_state.add_form({ id = "q_anchor", sessionID = "render_contract_session",
+		fields = { { key = "anchor", type = "string", title = "Anchor?", options = { { label = "Yes", value = "yes" } } } },
+		metadata = { tool = { messageID = "m1" } },
+	}, { timestamp = 1 })
+	question_state.add_form({ id = "q_tool", sessionID = "render_contract_session",
+		fields = { { key = "tool", type = "string", title = "Tool question?", options = { { label = "Yes", value = "yes" } } } },
+		metadata = { tool = { messageID = "m4", id = "call_question" } },
+	}, { timestamp = 5 })
 	permission_state.add_permission("perm_orphan", "render_contract_session", "bash", {
 		timestamp = 6,
 		tool_input = { command = "pwd" },
@@ -1945,14 +1489,14 @@ do
 	local neovim_patch_preview = edit_state.get_edit(neovim_patch_preview_id)
 	assert(
 		neovim_patch_preview and neovim_patch_preview.preview == true,
-		"approved neovim_apply_patch should create preview edit state"
+		"approved neovim_patch should create preview edit state"
 	)
-	assert(chat_state.edits[neovim_patch_preview_id], "approved neovim_apply_patch preview should be tracked")
+	assert(chat_state.edits[neovim_patch_preview_id], "approved neovim_patch preview should be tracked")
 	assert(chat_state.tools.m4_question_tool == nil, "question tool row should be suppressed by widget")
 	assert(chat_state.tools.m4_edit_tool == nil, "edit tool row should be suppressed by widget")
 	assert(chat_state.tools.m4_patch_tool == nil, "apply_patch tool row should be suppressed by preview widget")
 	assert(chat_state.tools.m4_neovim_edit_tool == nil, "neovim_edit tool row should be suppressed by preview widget")
-	assert(chat_state.tools.m4_neovim_patch_tool == nil, "neovim_apply_patch tool row should be suppressed by preview widget")
+	assert(chat_state.tools.m4_neovim_patch_tool == nil, "neovim_patch tool row should be suppressed by preview widget")
 
 	edit_state.toggle_inline_diff(preview_edit_id, 1)
 	local preview_lines = require("opencode.ui.edit_widget").get_resolved_lines(preview_edit_id, preview_edit)
@@ -1971,11 +1515,11 @@ do
 	local neovim_patch_text = table.concat(neovim_patch_lines, "\n")
 	assert(
 		neovim_patch_text:find("old neovim patch", 1, true),
-		"neovim_apply_patch preview should expand removed diff text"
+		"neovim_patch preview should expand removed diff text"
 	)
 	assert(
 		neovim_patch_text:find("new neovim patch", 1, true),
-		"neovim_apply_patch preview should expand added diff text"
+		"neovim_patch preview should expand added diff text"
 	)
 
 	local block_key = render_state.stream_block_key("render_contract_session", "m4", "m4_text", "text")
@@ -2018,105 +1562,11 @@ do
 end
 
 do
-	local app_state = require("opencode.state")
 	local edit_state = require("opencode.edit.state")
 	local edit_widget = require("opencode.ui.edit_widget")
-	local danger = require("opencode.permission.danger")
-	local edit_handler = require("opencode.events.handlers.permission_flow.edit")
 	local edit_previews = require("opencode.ui.chat.edit_previews")
-	local client = require("opencode.client")
-
-	local previous_danger = app_state.is_danger_mode_enabled()
-	local original_respond_permission = client.respond_permission
-
-	-- Stub the HTTP reply so danger auto-approval is recorded locally
-	-- without contacting a server or scheduling deferred callbacks.
-	client.respond_permission = function() end
 
 	sync.clear_all()
-	edit_state.clear_all()
-	danger.clear()
-
-	-- Danger-capture: an auto-approved `write` carries a server diff on
-	-- request.files that must be retained as a readonly/sent edit estate so
-	-- the edit widget's `=` inline diff renders with correct stats.
-	local session_id = "danger_capture_session"
-	local emitted = {}
-	local fake_events = {
-		emit = function(name, payload)
-			table.insert(emitted, { name = name, payload = payload })
-		end,
-	}
-	local fake_logger = {
-		debug = function() end,
-		info = function() end,
-		warn = function() end,
-		error = function() end,
-	}
-	local write_diff = table.concat({
-		"--- a/danger-write.txt",
-		"+++ b/danger-write.txt",
-		"@@ -1 +1 @@",
-		"-old line",
-		"+new line",
-	}, "\n")
-	local request = {
-		id = "perm_danger_write",
-		type = "write",
-		session_id = session_id,
-		message_id = "m_danger",
-		call_id = "call_danger_write",
-		timestamp = 9000,
-		metadata = {},
-		data = {},
-		review_mode = "interactive",
-		files = {
-			{
-				filePath = "danger-write.txt",
-				relativePath = "danger-write.txt",
-				before = "old line",
-				after = "new line",
-				diff = write_diff,
-				additions = 1,
-				deletions = 1,
-				type = "update",
-			},
-		},
-	}
-
-	app_state.set_danger_mode(true)
-	edit_handler.handle(fake_events, request, { id = session_id }, fake_logger)
-
-	local estate = edit_state.get_edit(request.id)
-	assert(estate, "danger mode should capture a readonly edit estate for the write tool")
-	assert(estate.review_mode == "readonly", "danger-captured estate should be readonly")
-	assert(estate.status == "sent", "danger-captured estate should be marked sent")
-	assert(estate.preview == true, "danger-captured estate should be a preview")
-	assert(estate.message_id == "m_danger", "danger-captured estate should carry message_id")
-	assert(estate.call_id == "call_danger_write", "danger-captured estate should carry call_id")
-	assert(#estate.files == 1, "danger-captured estate should have one file")
-	local dfile = estate.files[1]
-	assert(#dfile.diff_lines > 0, "danger-captured estate should parse diff lines from request.files")
-	assert(dfile.stats.added == 1 and dfile.stats.removed == 1, "danger-captured estate stats should be non-zero")
-	assert(dfile.status == "accepted", "danger-captured file should be marked accepted")
-
-	local emitted_pending = false
-	for _, ev in ipairs(emitted) do
-		if ev.name == "edit_pending" then
-			emitted_pending = true
-		end
-	end
-	assert(not emitted_pending, "danger-captured edit should not emit edit_pending")
-
-	edit_state.toggle_inline_diff(request.id, 1)
-	local danger_lines = edit_widget.get_resolved_lines(request.id, estate)
-	local danger_text = table.concat(danger_lines, "\n")
-	assert(danger_text:find("old line", 1, true), "danger-captured widget should expand removed diff text")
-	assert(danger_text:find("new line", 1, true), "danger-captured widget should expand added diff text")
-	assert(danger_text:find("(approved)", 1, true), "danger-captured widget should show approved resolution label")
-
-	app_state.set_danger_mode(previous_danger)
-	danger.clear()
 	edit_state.clear_all()
 
 	-- Empty-string compute: a `write` with before="" / after="content" and
@@ -2168,7 +1618,6 @@ do
 
 	sync.clear_all()
 	edit_state.clear_all()
-	client.respond_permission = original_respond_permission
 end
 
 do
@@ -2348,32 +1797,19 @@ do
 	question_state.clear_all()
 	app_state.set_session("orphan_question_session", "Orphan Question")
 
-	question_state.add_question("q_orphan_pending", "orphan_question_session", {
-		{ header = "Pick", question = "Choose one", options = { { label = "A", value = "a" } } },
-	}, {
-		timestamp = 1,
-		message_id = "msg_orphan_question",
-	})
-	question_state.add_question("q_orphan_confirming", "orphan_question_session", {
-		{ header = "Pick", question = "Choose one", options = { { label = "B", value = "b" } } },
-	}, {
-		timestamp = 2,
-		message_id = "msg_orphan_question",
-	})
+	local function add_orphan_form(id, label, timestamp)
+		question_state.add_form({ id = id, sessionID = "orphan_question_session",
+			fields = { { key = "choice", type = "string", title = "Pick", description = "Choose one",
+				options = { { label = label, value = label:lower() } } } },
+			metadata = { tool = { messageID = "msg_orphan_question" } },
+		}, { timestamp = timestamp })
+	end
+	add_orphan_form("q_orphan_pending", "A", 1)
+	add_orphan_form("q_orphan_confirming", "B", 2)
 	question_state.set_confirming("q_orphan_confirming")
-	question_state.add_question("q_orphan_answered", "orphan_question_session", {
-		{ header = "Pick", question = "Choose one", options = { { label = "C", value = "c" } } },
-	}, {
-		timestamp = 3,
-		message_id = "msg_orphan_question",
-	})
+	add_orphan_form("q_orphan_answered", "C", 3)
 	question_state.mark_answered("q_orphan_answered")
-	question_state.add_question("q_orphan_rejected", "orphan_question_session", {
-		{ header = "Pick", question = "Choose one", options = { { label = "D", value = "d" } } },
-	}, {
-		timestamp = 4,
-		message_id = "msg_orphan_question",
-	})
+	add_orphan_form("q_orphan_rejected", "D", 4)
 	question_state.mark_rejected("q_orphan_rejected")
 
 	chat.render()
@@ -2427,198 +1863,6 @@ do
 end
 
 do
-	local chat = require("opencode.ui.chat")
-	local chat_state_mod = require("opencode.ui.chat.state")
-	local chat_state = chat_state_mod.state
-	local app_state = require("opencode.state")
-	local previous_buf = vim.api.nvim_get_current_buf()
-	local previous_session = app_state.get_session()
-	local previous_config = app_state.get_config()
-	local previous_bufnr = chat_state.bufnr
-	local previous_winid = chat_state.winid
-	local previous_visible = chat_state.visible
-	local previous_chat_config = chat_state.config
-	local previous_local_notices = chat_state.local_notices
-	local previous_session_stack = chat_state.session_stack
-	local previous_auto_scroll = chat_state.auto_scroll
-	local previous_stream_blocks = chat_state.stream_blocks
-	local previous_spinner_footer_line = chat_state.spinner_footer_line
-	local previous_questions = chat_state.questions
-	local previous_permissions = chat_state.permissions
-	local previous_edits = chat_state.edits
-	local previous_tasks = chat_state.tasks
-	local previous_tools = chat_state.tools
-	local previous_force_full_render = chat_state.force_full_render
-	local previous_render_scheduled = chat_state.render_scheduled
-	local previous_render_in_progress = chat_state.render_in_progress
-	local previous_render_generation = chat_state.render_generation
-	local previous_applied_render_generation = chat_state.applied_render_generation
-	local previous_last_render_highlight_signature = chat_state.last_render_highlight_signature
-	local previous_render_highlights_dirty_start = chat_state.render_highlights_dirty_start
-
-	local bufnr = vim.api.nvim_create_buf(false, true)
-	local winid = vim.api.nvim_get_current_win()
-	vim.api.nvim_win_set_buf(winid, bufnr)
-	chat_state.bufnr = bufnr
-	chat_state.winid = winid
-	chat_state.visible = true
-	chat_state.config = {
-		max_rendered_messages = 20,
-		session_tabs = { enabled = false },
-	}
-	chat_state.local_notices = {}
-	chat_state.session_stack = {}
-	chat_state.auto_scroll = false
-	chat_state.stream_blocks = {}
-	chat_state.spinner_footer_line = nil
-	chat_state.questions = {}
-	chat_state.permissions = {}
-	chat_state.edits = {}
-	chat_state.tasks = {}
-	chat_state.tools = {}
-	chat_state.force_full_render = true
-	chat_state.render_scheduled = false
-	chat_state.render_in_progress = false
-	chat_state.render_generation = 0
-	chat_state.applied_render_generation = 0
-	chat_state.last_render_highlight_signature = nil
-	chat_state.render_highlights_dirty_start = nil
-
-	app_state.set_config({ chat = { todo = { show_dock = false } } })
-	sync.clear_all()
-	app_state.set_session("todo_widget_parent", "Todo Widget Parent")
-	app_state.set_session_status("todo_widget_parent", { type = "busy" })
-	sync.handle_message_updated({
-		id = "todo_widget_msg",
-		sessionID = "todo_widget_parent",
-		role = "assistant",
-		time = { created = 1 },
-		finish = "tool-calls",
-	})
-	sync.handle_part_updated({
-		id = "todo_widget_task",
-		messageID = "todo_widget_msg",
-		sessionID = "todo_widget_parent",
-		type = "tool",
-		tool = "task",
-		state = {
-			status = "completed",
-			input = { subagent_type = "grep_slave", description = "child todos" },
-			metadata = { sessionId = "todo_widget_child" },
-		},
-	})
-	sync.handle_part_updated({
-		id = "todo_widget_tool",
-		messageID = "todo_widget_msg",
-		sessionID = "todo_widget_parent",
-		type = "tool",
-		tool = "todowrite",
-		state = {
-			status = "running",
-			input = {
-				todos = {
-					{ content = "Keep first", status = "in_progress" },
-					{ content = "Remove second", status = "pending" },
-					{ content = "Remove third", status = "pending" },
-				},
-			},
-		},
-	})
-
-	chat.do_render()
-	assert(chat_state.tools.todo_widget_tool, "todowrite widget should be tracked after render")
-
-	for i = 1, 12 do
-		sync.handle_todo_updated("todo_widget_child", {
-			{ content = "child tick " .. tostring(i), status = i == 12 and "completed" or "in_progress" },
-		})
-		chat.do_render()
-	end
-
-	local rendered_before = table.concat(vim.api.nvim_buf_get_lines(bufnr, 0, -1, false), "\n")
-	local header_count = 0
-	for _ in rendered_before:gmatch("Updating todos%.%.%.") do
-		header_count = header_count + 1
-	end
-	assert(header_count == 1, "child todo churn should not duplicate the parent todowrite widget")
-
-	sync.handle_part_updated({
-		id = "todo_widget_tool",
-		messageID = "todo_widget_msg",
-		sessionID = "todo_widget_parent",
-		type = "tool",
-		tool = "todowrite",
-		state = {
-			status = "completed",
-			input = {
-				todos = {
-					{ content = "Keep first", status = "completed" },
-				},
-			},
-		},
-	})
-	chat_state.tools.todo_widget_tool.tool_part = sync.get_part("todo_widget_msg", "todo_widget_tool")
-	chat.rerender_tool("todo_widget_tool")
-
-	local rendered_after = table.concat(vim.api.nvim_buf_get_lines(bufnr, 0, -1, false), "\n")
-	assert(rendered_after:find("Keep first", 1, true), "shrunk todowrite widget should keep current todo")
-	assert(not rendered_after:find("Remove second", 1, true), "shrunk todowrite widget should remove stale todo text")
-	assert(not rendered_after:find("Remove third", 1, true), "shrunk todowrite widget should remove stale trailing todo text")
-
-	local todo_pos = chat_state.tools.todo_widget_tool
-	assert(todo_pos and todo_pos.start_line <= todo_pos.end_line, "shrunk todowrite widget should keep valid range")
-	for _, mark in ipairs(vim.api.nvim_buf_get_extmarks(bufnr, chat_state_mod.chat_hl_ns, 0, -1, { details = true })) do
-		local row = mark[2]
-		local details = mark[4] or {}
-		local hl_group = details.hl_group
-		if type(hl_group) == "string" and hl_group:find("^OpenCodeTodo") then
-			assert(
-				row >= todo_pos.start_line and row <= todo_pos.end_line,
-				"todo highlight extmark leaked outside the current widget range"
-			)
-		end
-	end
-
-	require("opencode.ui.chat.tasks").stop_task_animation_timer()
-	sync.clear_all()
-	app_state.set_config(previous_config)
-	if previous_session and previous_session.id then
-		app_state.set_session(previous_session.id, previous_session.name, {
-			runtime = previous_session.runtime,
-		})
-	else
-		app_state.set_session(nil, nil)
-	end
-	chat_state.bufnr = previous_bufnr
-	chat_state.winid = previous_winid
-	chat_state.visible = previous_visible
-	chat_state.config = previous_chat_config
-	chat_state.local_notices = previous_local_notices
-	chat_state.session_stack = previous_session_stack
-	chat_state.auto_scroll = previous_auto_scroll
-	chat_state.stream_blocks = previous_stream_blocks
-	chat_state.spinner_footer_line = previous_spinner_footer_line
-	chat_state.questions = previous_questions
-	chat_state.permissions = previous_permissions
-	chat_state.edits = previous_edits
-	chat_state.tasks = previous_tasks
-	chat_state.tools = previous_tools
-	chat_state.force_full_render = previous_force_full_render
-	chat_state.render_scheduled = previous_render_scheduled
-	chat_state.render_in_progress = previous_render_in_progress
-	chat_state.render_generation = previous_render_generation
-	chat_state.applied_render_generation = previous_applied_render_generation
-	chat_state.last_render_highlight_signature = previous_last_render_highlight_signature
-	chat_state.render_highlights_dirty_start = previous_render_highlights_dirty_start
-	if vim.api.nvim_buf_is_valid(previous_buf) then
-		vim.api.nvim_win_set_buf(winid, previous_buf)
-	end
-	if vim.api.nvim_buf_is_valid(bufnr) then
-		vim.api.nvim_buf_delete(bufnr, { force = true })
-	end
-end
-
-do
 	local panel = require("opencode.ui.panel")
 	local helpers = panel.create_helpers({
 		prefix = "| ",
@@ -2654,7 +1898,6 @@ do
 	local bash = require("opencode.ui.chat.bash")
 	local read = require("opencode.ui.chat.read")
 	local skill = require("opencode.ui.chat.skill")
-	local todos = require("opencode.ui.chat.todos")
 
 	local bash_result = bash.render_tool({
 		tool = "bash",
@@ -2687,7 +1930,7 @@ do
 		tool = "read",
 		state = {
 			status = "completed",
-			input = { filePath = "lua/opencode/init.lua" },
+			input = { path = "lua/opencode/init.lua" },
 			output = table.concat(read_output, "\n"),
 		},
 	}, false)
@@ -2695,11 +1938,11 @@ do
 		tool = "read",
 		state = {
 			status = "completed",
-			input = { filePath = "lua/opencode/init.lua" },
+			input = { path = "lua/opencode/init.lua" },
 			output = table.concat(read_output, "\n"),
 		},
 	}, true)
-	assert(render_text(read_collapsed):find("Read lua/opencode/init.lua", 1, true), "read widget should render state.input.filePath")
+	assert(render_text(read_collapsed):find("Read lua/opencode/init.lua", 1, true), "read widget should render native state.input.path")
 	assert(render_text(read_collapsed):find("more lines", 1, true), "read widget should show collapsed overflow")
 	assert(not render_text(read_expanded):find("more lines", 1, true), "read widget should hide overflow when expanded")
 
@@ -2722,13 +1965,13 @@ do
 			output = "lua/opencode/init.lua:12:3:local M = {}",
 		},
 	}, false)
-	assert(rg_result and table.concat(rg_result.lines, "\n"):find("Ripgrep", 1, true), "rg widget should render")
+	assert(rg_result and table.concat(rg_result.lines, "\n"):find("● rg", 1, true), "rg widget should render")
 
 	local rg_lines = {}
 	for i = 1, 11 do
 		table.insert(rg_lines, "lua/opencode/init.lua:" .. tostring(i) .. ":local value_" .. tostring(i))
 	end
-	local rg_collapsed = rg.render_tool({
+	local rg_part = {
 		tool = "rg",
 		state = {
 			status = "completed",
@@ -2736,18 +1979,12 @@ do
 			output = table.concat(rg_lines, "\n"),
 		},
 		metadata = { matches = 11 },
-	}, false)
-	local rg_expanded = rg.render_tool({
-		tool = "rg",
-		state = {
-			status = "completed",
-			input = { pattern = "value", path = "lua" },
-			output = table.concat(rg_lines, "\n"),
-		},
-		metadata = { matches = 11 },
-	}, true)
-	assert(render_text(rg_collapsed):find("more lines", 1, true), "rg widget should show collapsed overflow")
-	assert(not render_text(rg_expanded):find("more lines", 1, true), "rg widget should hide overflow when expanded")
+	}
+	local rg_collapsed = rg.render_tool(rg_part, false)
+	local rg_expanded = rg.render_tool(rg_part, true)
+	assert(not render_text(rg_collapsed):find("value_1", 1, true), "collapsed rg widget should hide successful output")
+	assert(not render_text(rg_collapsed):find("pattern: ", 1, true), "collapsed rg widget should hide argument fields")
+	assert(render_text(rg_expanded):find("value_1", 1, true), "expanded rg widget should show output")
 
 	local skill_result = skill.render_tool({
 		tool = "skill",
@@ -2758,40 +1995,6 @@ do
 		},
 	}, false)
 	assert(render_text(skill_result):find('Skill "opencode-nvim-widgets"', 1, true), "skill widget should render")
-
-	local todo_write_result = todos.render_tool({
-		tool = "todowrite",
-		state = {
-			status = "completed",
-			input = {
-				todos = {
-					{ content = "Write helper", status = "completed", priority = "high" },
-					{ content = "Use helper", status = "in_progress" },
-				},
-			},
-		},
-	}, false)
-	assert(render_text(todo_write_result):find("Updated todos", 1, true), "todowrite widget should render")
-	assert(
-		not chat_tasks.is_animating_tool_part({
-			tool = "todowrite",
-			state = { status = "running" },
-		}),
-		"todowrite widget should use scheduled renders instead of animation in-place updates"
-	)
-
-	local todo_read_result = todos.render_tool({
-		tool = "todoread",
-		state = {
-			status = "completed",
-			output = {
-				todos = {
-					{ content = "Read helper", status = "pending" },
-				},
-			},
-		},
-	}, false)
-	assert(render_text(todo_read_result):find("Read todos", 1, true), "todoread widget should render")
 
 	local question_lines = require("opencode.ui.question_widget").get_lines_for_question("question_panel_test", {
 		{ header = "Pick", question = "Choose one", options = { { label = "A", value = "a" } } },
@@ -3082,39 +2285,10 @@ do
 	cleanup(readonly_reject_paths)
 
 	local native_diff = require("opencode.ui.native_diff")
-	local native_state
-	for index = 1, math.huge do
-		local name, value = debug.getupvalue(native_diff.show, index)
-		if not name then
-			break
-		end
-		if name == "state" then
-			native_state = value
-			break
-		end
-	end
-	local sync_edit_action
-	for index = 1, math.huge do
-		local name, value = debug.getupvalue(native_diff._confirm_current, index)
-		if not name then
-			break
-		end
-		if name == "sync_edit_action" then
-			sync_edit_action = value
-			break
-		end
-	end
-	assert(type(native_state) == "table", "native diff state upvalue should be available")
-	assert(type(sync_edit_action) == "function", "native diff sync action upvalue should be available")
-
 	local original_native_show = native_diff.show
 	local captured_native_show
-	native_diff.show = function(permission_id, files, opts)
-		captured_native_show = {
-			permission_id = permission_id,
-			files = files,
-			opts = opts,
-		}
+	native_diff.show = function(files, opts)
+		captured_native_show = { files = files, opts = opts }
 	end
 
 	local native_multifile_paths = make_edit("edit_native_multifile", 3)
@@ -3140,33 +2314,6 @@ do
 	assert(captured_native_show.files[1].edit_file_index == 2, "pending filtered native diff should keep original indices")
 	native_diff.show = original_native_show
 	cleanup(native_pending_paths)
-
-	local native_paths = make_edit("edit_native_refresh", 2)
-	local refresh_calls = 0
-	chat_edits.refresh_edit = function(edit_id)
-		refresh_calls = refresh_calls + 1
-		calls.last_refreshed = edit_id
-	end
-	native_state.edit_id = "edit_native_refresh"
-	native_state.edit_file_index = 1
-	native_state.files = {
-		{ edit_file_index = 1 },
-		{ edit_file_index = 2 },
-	}
-	native_state.current_file_index = 2
-	sync_edit_action("resolve")
-	wait_until(function()
-		return refresh_calls == 1
-	end, "native diff sync should refresh through shared edit path")
-	assert(calls.last_refreshed == "edit_native_refresh", "native diff refresh should target originating edit")
-	local native_refresh_edit = edit_state.get_edit("edit_native_refresh")
-	assert(native_refresh_edit.files[1].status == "pending", "native diff sync should not resolve fallback index")
-	assert(native_refresh_edit.files[2].status ~= "pending", "native diff sync should resolve current native file index")
-	native_state.edit_id = nil
-	native_state.edit_file_index = nil
-	native_state.files = {}
-	native_state.current_file_index = 1
-	cleanup(native_paths)
 
 	chat_edits.finalize_edit = original_finalize
 	chat_edits.rerender_edit = original_rerender
@@ -3329,11 +2476,11 @@ local setup_ok, setup_err = pcall(function()
 	end
 	assert(slash_commands.close ~= nil, "/close is not registered")
 	app_state.set_recent_sessions({
-		{ id = "historical-session", title = "Historical Session", messageCount = 5 },
+		{ id = "historical-session", title = "Historical Session", message_count = 5 },
 	}, 30)
 	assert(
 		app_state.get_session_record("historical-session").message_count == 5,
-		"backend messageCount did not update session record"
+		"backend message_count did not update session record"
 	)
 	app_state.upsert_session({ id = "remembered-session", title = "Remembered Session" }, { touch = false })
 	local active_by_id = {}

@@ -1,0 +1,40 @@
+                                       │ ○ Selection                                                                    
+~                                      │Agent: plan                                                                     
+~                                      │<system-reminder>                                                               
+~                                      │You are in Plan mode. Discuss the plan with the user directly in the            
+~                                      │conversation. Do not create or update plan files unless the user explicitly     
+~                                      │asks you to; when they do, write them only in:                                  
+~                                      │/private/var/folders/wt/dsm_lvf55rqg8541j_v_7rmm0000gn/T/opencode-nvim-v2-      
+~                                      │0cgrc8c2/home/.opencode/plan                                                    
+~                                      │                                                                                
+~                                      │Do not modify any other files or ask a subagent to do so.                       
+~                                      │                                                                                
+~                                      │You remain in Plan mode until the user switches agents. If the user asks you to 
+~                                      │implement changes, do not do so. Tell them they need to switch agents.          
+~                                      │</system-reminder>                                                              
+~                                      │Thinking: The user is in plan mode and hasn't provided any instructions yet.    
+~                                      │Let me wait for their input.                                                    
+~                                      │                                                                                
+~                                      │I'm ready to help you plan. What would you like to work on?                     
+~                                      │                                                                                
+~                                      │▣ Plan · MiMo V2.5 Free · 9.3k/200k tok                                         
+~                                      │                                                                                
+~                                      │┃                                                                               
+~                                      │┃  Reply exactly SELECTED_AGENT_READY. Do not call any tools.                   
+~                                      │┃                                                                               
+~                                      │                                                                                
+~                                      │Thinking: The user wants me to reply with exactly "SELECTED_AGENT_READY"        
+~                                      │without calling any tools.                                                      
+~                                      │                                                                                
+~                                      │SELECTED_AGENT_READY                                                            
+~                                      │                                                                                
+~                                      │▣ Plan · MiMo V2.5 Free · 9.3k/200k tok · 1.9s                                  
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │┃                                                                               
+~                                      │┃                                                                               
+~                                      │┃                                                                               
+~                                      │┃ Plan Muse Spark 1.3 Free OpenCode Zen · minimal                               
+~                                      │┃                                                                               
+[No Name]            0,0-1          All opencode [-]                                                  4,102-108      All
+Variant: minimal                                                                                      0,0-1         All 

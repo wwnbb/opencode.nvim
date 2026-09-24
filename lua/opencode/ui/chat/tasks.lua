@@ -1,7 +1,7 @@
 -- Task and tool widget facade for the chat buffer.
 -- Rendering dispatch + task widget + expand/collapse toggles + cursor queries.
 -- Animation lives in task_animation.lua, labels in tool_labels.lua,
--- child-session resolution in task_children.lua, block updates in widget_support.lua.
+-- child-session navigation in task_children.lua, block updates in widget_support.lua.
 
 local M = {}
 
@@ -9,7 +9,6 @@ local cs = require("opencode.ui.chat.state")
 local state = cs.state
 local render = require("opencode.ui.chat.render")
 local render_state = require("opencode.ui.chat.render_state")
-local chat_todos = require("opencode.ui.chat.todos")
 local chat_bash = require("opencode.ui.chat.bash")
 local chat_read = require("opencode.ui.chat.read")
 local chat_skill = require("opencode.ui.chat.skill")
@@ -22,9 +21,10 @@ local tool_labels = require("opencode.ui.chat.tool_labels")
 local task_children = require("opencode.ui.chat.task_children")
 local actions = require("opencode.actions")
 local tool_part = require("opencode.ui.chat.tool_part")
+local tree = require("opencode.ui.chat.widget_tree")
 
 local REGULAR_TOOL_RENDERERS = {
-	chat_todos.render_tool,
+	require("opencode.ui.chat.question_result").render_tool,
 	chat_bash.render_tool,
 	chat_read.render_tool,
 	chat_skill.render_tool,
@@ -62,7 +62,6 @@ M.format_tool_line = tool_labels.format_tool_line
 -- ─── Child session resolution (facade — implementation in task_children.lua) ──
 
 M.ensure_task_child_loaded = task_children.ensure_task_child_loaded
-M.resolve_missing_task_children = task_children.resolve_missing_task_children
 M.resolve_task_child_session_id = task_children.resolve_task_child_session_id
 
 ---@param child_session_id string
@@ -140,7 +139,7 @@ function M.render_task_tool(tool_part, expanded)
 	end
 	local input = tool_part.state and tool_part.state.input or {}
 	local metadata = render.get_tool_metadata(tool_part)
-	local tool_status = tool_part.state and tool_part.state.status or "pending"
+	local tool_status = task_animation.task_status(tool_part)
 	local subagent = input.subagent_type or "unknown"
 	local desc = input.description or ""
 	local summary = render.normalize_task_summary(metadata.summary)
@@ -311,6 +310,16 @@ function M.render_regular_tool(tool_part, is_expanded)
 	if type(tool_part) ~= "table" then
 		return { lines = {}, highlights = {} }
 	end
+	local activity = require("opencode.ui.chat.activity")
+	if tool_part.activity_group then
+		return activity.render(tool_part.activity_group, is_expanded, state.expanded_tools)
+	end
+	if activity.kind(tool_part) == "explore" then
+		local result = require("opencode.ui.chat.exploration_tool").render(tool_part, is_expanded)
+		result.lines[#result.lines + 1] = ""
+		return result
+	end
+
 	local tool_name = tostring(tool_part and tool_part.tool or "unknown")
 	for _, render_tool in ipairs(REGULAR_TOOL_RENDERERS) do
 		local result = render_tool(tool_part, is_expanded)
@@ -412,32 +421,39 @@ function M.rerender_tool(part_id)
 		return
 	end
 
-	local pos = state.tools[part_id]
+	local _, root_id = tree.find(state.tools, part_id)
+	local pos = root_id and state.tools[root_id]
 	if not pos then
 		return
 	end
 
-	local is_expanded = state.expanded_tools[part_id] or false
+	local is_expanded = state.expanded_tools[root_id] or false
 	local tool_part = M.resolve_tool_part(pos)
-	if not tool_part or not widget_support.replace_rendered_block(pos, M.render_regular_tool(tool_part, is_expanded)) then
-		return
-	end
+	local cursor = pos.activity_group and require("opencode.ui.chat.cursor").capture_widget_cursor_context()
+	local updated = tool_part ~= nil and widget_support.replace_rendered_block(pos, M.render_regular_tool(tool_part, is_expanded))
+	if updated and cursor then require("opencode.ui.chat.cursor").restore_widget_cursor_context(cursor) end
+	return updated
 end
 
 ---Handle tool toggle (expand/collapse tool input/output).
 ---@param part_id string
 function M.handle_tool_toggle(part_id)
-	local pos = state.tools[part_id]
+	local pos = tree.find(state.tools, part_id)
 	if not pos then
 		return
 	end
 
 	if state.expanded_tools[part_id] then
 		state.expanded_tools[part_id] = nil
+		-- Collapsing a container closes its descendants as well. Merely hiding
+		-- the chat or rebuilding its render surface does not change expansion.
+		tree.collapse(pos.children, state.expanded_tools)
 	else
 		state.expanded_tools[part_id] = true
 	end
-	M.rerender_tool(part_id)
+	if not M.rerender_tool(part_id) then
+		require("opencode.ui.chat.render_coordinator").request({ reason = "tool_toggle" })
+	end
 end
 
 return M

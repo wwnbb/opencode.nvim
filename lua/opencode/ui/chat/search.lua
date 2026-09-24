@@ -27,11 +27,6 @@ local panel_helpers = tool_panel.create_panel({
 	border_hl = PANEL_BORDER_HL,
 	default_hl = "OpenCodeSearchOutput",
 })
-local add_panel_line = panel_helpers.add_line
-local add_panel_raw_line = panel_helpers.add_raw_line
-local add_panel_blank = panel_helpers.add_blank
-local add_trailing_separator = panel_helpers.add_separator
-local highlight_text = panel_helpers.highlight_text
 
 local function ensure_highlights()
 	panel_helpers.set_hl("OpenCodeSearchMuted", "Comment", "Normal")
@@ -40,6 +35,8 @@ local function ensure_highlights()
 	panel_helpers.set_hl("OpenCodeSearchOutput", "Normal", nil)
 	panel_helpers.set_hl("OpenCodeSearchError", "DiagnosticError", "ErrorMsg")
 end
+
+require("opencode.ui.highlights").register("opencode.ui.chat.search", ensure_highlights)
 
 ---@param value any
 ---@return string
@@ -78,15 +75,12 @@ local trim_edge_newlines = text_util.trim_edge_newlines
 
 local normalize_path = text_util.normalize_path
 
----@param input table|string
+---@param input table
 ---@param key string
 ---@return any
 local function input_value(input, key)
 	if type(input) == "table" then
 		return input[key]
-	end
-	if key == "pattern" and type(input) == "string" then
-		return input
 	end
 	return nil
 end
@@ -121,13 +115,18 @@ end
 
 ---@param tool_part table
 ---@param expanded boolean
+---@param opts? table { body_only?: boolean }
 ---@return table|nil result
-function M.render_tool(tool_part, expanded)
+function M.render_tool(tool_part, expanded, opts)
 	if type(tool_part) ~= "table" or (tool_part.tool ~= "glob" and tool_part.tool ~= "grep") then
 		return nil
 	end
-	ensure_highlights()
 
+	opts = opts or {}
+	local style = opts.body_only and require("opencode.ui.chat.exploration_style") or nil
+	local panel = style and style.panel or panel_helpers
+	local output_hl = style and style.output_hl or "OpenCodeSearchOutput"
+	local error_hl = style and style.body_error_hl or "OpenCodeSearchError"
 	local ctx = tool_panel.context(tool_part)
 	local input = ctx.input
 	local metadata = ctx.metadata
@@ -151,8 +150,8 @@ function M.render_tool(tool_part, expanded)
 	end
 
 	local entries = {}
-	tool_panel.append_entries(entries, body, "OpenCodeSearchOutput")
-	tool_panel.append_error_entries(entries, error_body, "OpenCodeSearchError", "OpenCodeSearchOutput")
+	tool_panel.append_entries(entries, body, output_hl)
+	tool_panel.append_error_entries(entries, error_body, error_hl, output_hl)
 
 	local has_overflow = #entries > MAX_COLLAPSED_OUTPUT_LINES
 	local display_pattern = pattern ~= "" and pattern or "..."
@@ -179,49 +178,53 @@ function M.render_tool(tool_part, expanded)
 		header_hl = "OpenCodeSearchPattern"
 	end
 
-	local result = panel_helpers.result()
-	add_panel_blank(result)
-	local _, _, header_rows = add_panel_line(result, header, header_hl)
-	highlight_text(result, header_rows, '"' .. display_pattern .. '"', "OpenCodeSearchPattern")
-	highlight_text(result, header_rows, display_path, "OpenCodeSearchPath")
-
+	local result = panel.result()
+	if not style then
+		panel.add_blank(result)
+		local _, _, header_rows = panel.add_line(result, header, header_hl)
+		panel.highlight_text(result, header_rows, '"' .. display_pattern .. '"', "OpenCodeSearchPattern")
+		panel.highlight_text(result, header_rows, display_path, "OpenCodeSearchPath")
+		panel.add_blank(result)
+	end
 	if #entries == 0 then
-		add_panel_blank(result)
-		add_trailing_separator(result)
+		if not style then panel.add_separator(result) end
 		return result
 	end
 
-	add_panel_blank(result)
-
-	panel_helpers.render_entries(result, entries, {
+	panel.render_entries(result, entries, {
 		expanded = expanded,
 		max = MAX_COLLAPSED_OUTPUT_LINES,
 		overflow_hl = "OpenCodeSearchMuted",
 		render_entry = function(_, entry)
+			if style and tool_part.tool == "glob" and entry.hl_group == output_hl and entry.text:sub(1, 1) == "/" then
+				entry.text = vim.fn.fnamemodify(entry.text, ":~:.")
+			end
 			local grep_path, grep_body, body_col = nil, nil, nil
 			local grep_lang = nil
-			if tool_part.tool == "grep" and entry.hl_group == "OpenCodeSearchOutput" then
+			if tool_part.tool == "grep" and entry.hl_group == output_hl then
 				grep_path, grep_body, body_col = parse_grep_line(entry.text)
 				grep_lang = grep_path and syntax.language_for_path(grep_path) or nil
 			end
 
 			if grep_lang and grep_body and grep_body ~= "" and body_col then
-				local line_index, _, rows = add_panel_raw_line(result, entry.text, entry.hl_group)
+				local line_index, _, rows = panel.add_raw_line(result, entry.text, entry.hl_group)
 				if #rows == 1 then
 					syntax.add_highlights(result, grep_body, grep_lang, {
 						scope = "tools",
 						line_start = line_index,
-						col_offset = (#PANEL_PREFIX) + body_col,
+						col_offset = #(style and style.prefix or PANEL_PREFIX) + body_col,
 					})
 				end
 			else
-				panel_helpers.add_entry(result, entry)
+				panel.add_entry(result, entry)
 			end
 		end,
 	})
 
-	add_panel_blank(result)
-	add_trailing_separator(result)
+	if not style then
+		panel.add_blank(result)
+		panel.add_separator(result)
+	end
 	return result
 end
 

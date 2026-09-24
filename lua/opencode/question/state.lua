@@ -1,10 +1,16 @@
--- opencode.nvim - Question state management module
--- Tracks active questions, selections, and user answers
+-- Native v2 form state and widget navigation.
 
 local M = {}
+local forms = require("opencode.question.forms")
 
 -- Active questions storage: { [request_id] = question_state }
 local active_questions = {}
+local generation = 0
+
+---Invalidates recovery requests when transient question state is reset.
+function M.get_generation()
+	return generation
+end
 
 -- Question state structure:
 -- {
@@ -12,7 +18,7 @@ local active_questions = {}
 --   session_id = string,
 --   questions = array of question objects,
 --   current_tab = number (current question index),
---   selections = { [tab_index] = { selected_indices = {}, custom_input = "", message = "", is_answered = false, ready_to_advance = false } },
+--   selections = { [tab_index] = { selected_indices = {}, custom_input = "", is_answered = false, ready_to_advance = false } },
 --   status = "pending" | "answered" | "rejected" | "confirming",
 --   submitting = boolean,
 --   submission_kind = "reply" | "reject" | nil,
@@ -20,21 +26,10 @@ local active_questions = {}
 --   timestamp = number,
 -- }
 
----@param text string|nil
----@return string
-local function format_message_answer(text)
-	local message = vim.trim(text or "")
-	if message == "" then
-		return ""
-	end
-
-	return "Message: " .. message:gsub("%s*\n%s*", " / ")
-end
-
 ---@param question table|nil
 ---@return boolean
 local function is_multi_question(question)
-	return type(question) == "table" and (question.type == "multi" or question.multiple == true)
+	return type(question) == "table" and question.multiple == true
 end
 
 M.is_multi_question = is_multi_question
@@ -48,41 +43,34 @@ local function can_interact(qstate)
 		and qstate.status ~= "rejected"
 end
 
--- Add a new question to track
----@param request_id string The question request ID from server
----@param session_id string Session ID
----@param questions_data table Array of question objects from server
----@param opts? table { timestamp?: number, message_id?: string|nil, call_id?: string|nil }
-function M.add_question(request_id, session_id, questions_data, opts)
-	opts = opts or {}
+local function new_form_state(form, context)
+	local tool = type(form.metadata) == "table" and form.metadata.tool or nil
 	local qstate = {
-		request_id = request_id,
-		session_id = session_id,
-		message_id = opts.message_id,
-		call_id = opts.call_id,
-		questions = questions_data,
+		request_id = form.id,
+		session_id = form.sessionID,
+		message_id = type(tool) == "table" and tool.messageID or nil,
+		call_id = type(tool) == "table" and (tool.id or tool.callID) or nil,
+		questions = {},
 		current_tab = 1,
 		selections = {},
 		status = "pending",
 		submitting = false,
 		submission_kind = nil,
-		timestamp = opts.timestamp or os.time(),
+		timestamp = context and context.timestamp or os.time(),
 	}
-
-	-- Initialize selections for each question without pre-selecting any option
-	for i = 1, #questions_data do
-		qstate.selections[i] = {
-			selected_indices = {},
-			custom_input = "",
-			message = "",
-			is_answered = false,
-			ready_to_advance = false,
-		}
-	end
-
-	active_questions[request_id] = qstate
-
+	forms.init(qstate, form, context)
+	active_questions[form.id] = qstate
 	return qstate
+end
+
+local function sync_draft(qstate, custom_key)
+	if qstate.status ~= "confirming" then
+		if custom_key then qstate.form_selections[custom_key].custom_present = true end
+		forms.pull(qstate)
+		forms.rebuild(qstate)
+		qstate.server_error = nil
+	end
+	return true
 end
 
 -- Get a question state by request ID
@@ -90,35 +78,6 @@ end
 ---@return table|nil
 function M.get_question(request_id)
 	return active_questions[request_id]
-end
-
----@param request_id string
----@param opts table { session_id?: string|nil, message_id?: string|nil, call_id?: string|nil, timestamp?: number|nil }
----@return boolean changed
-function M.set_context(request_id, opts)
-	local qstate = active_questions[request_id]
-	if not qstate or type(opts) ~= "table" then
-		return false
-	end
-
-	local changed = false
-	if opts.session_id and opts.session_id ~= "" and qstate.session_id ~= opts.session_id then
-		qstate.session_id = opts.session_id
-		changed = true
-	end
-	if opts.message_id and opts.message_id ~= "" and qstate.message_id ~= opts.message_id then
-		qstate.message_id = opts.message_id
-		changed = true
-	end
-	if opts.call_id and opts.call_id ~= "" and qstate.call_id ~= opts.call_id then
-		qstate.call_id = opts.call_id
-		changed = true
-	end
-	if opts.timestamp and qstate.timestamp ~= opts.timestamp then
-		qstate.timestamp = opts.timestamp
-		changed = true
-	end
-	return changed
 end
 
 -- Get all active questions
@@ -144,33 +103,6 @@ function M.get_all()
 	return result
 end
 
--- Get all questions for a specific messageID (for inline rendering)
----@param message_id string
----@return table Array of question states associated with this message
-function M.get_questions_for_message(message_id)
-	local result = {}
-	for _, qstate in pairs(active_questions) do
-		if qstate.message_id == message_id then
-			table.insert(result, qstate)
-		end
-	end
-	table.sort(result, function(a, b) return a.timestamp < b.timestamp end)
-	return result
-end
-
--- Get all questions without a messageID (orphan questions, rendered at end)
----@return table Array of question states without associated messages
-function M.get_orphan_questions()
-	local result = {}
-	for _, qstate in pairs(active_questions) do
-		if not qstate.message_id then
-			table.insert(result, qstate)
-		end
-	end
-	table.sort(result, function(a, b) return a.timestamp < b.timestamp end)
-	return result
-end
-
 -- Update selection for a specific question tab
 ---@param request_id string
 ---@param tab_index number
@@ -187,7 +119,7 @@ function M.update_selection(request_id, tab_index, selected_indices)
 
 	qstate.selections[tab_index].selected_indices = selected_indices
 	qstate.selections[tab_index].ready_to_advance = false
-	return true
+	return sync_draft(qstate)
 end
 
 -- Set custom input for a specific question tab
@@ -204,32 +136,14 @@ function M.set_custom_input(request_id, tab_index, text)
 		return false
 	end
 
+	local field = qstate.questions[tab_index]
 	qstate.selections[tab_index].custom_input = text
 	qstate.selections[tab_index].ready_to_advance = false
 	-- Mark as answered if custom input is provided
 	if text and text ~= "" then
 		qstate.selections[tab_index].is_answered = true
 	end
-	return true
-end
-
--- Set message for a specific question tab
----@param request_id string
----@param tab_index number
----@param text string
-function M.set_message(request_id, tab_index, text)
-	local qstate = active_questions[request_id]
-	if not can_interact(qstate) then
-		return false
-	end
-
-	if not qstate.selections[tab_index] then
-		return false
-	end
-
-	qstate.selections[tab_index].message = vim.trim(text or "")
-	qstate.selections[tab_index].ready_to_advance = false
-	return true
+	return sync_draft(qstate, field and field.key)
 end
 
 -- Select a single option (for single-select questions)
@@ -272,7 +186,7 @@ function M.select_option(request_id, option_index)
 	qstate.selections[tab_index].is_answered = true
 	qstate.selections[tab_index].ready_to_advance = false
 
-	return true
+	return sync_draft(qstate)
 end
 
 -- Toggle multi-select option
@@ -308,7 +222,7 @@ function M.toggle_multi_select(request_id, option_index)
 	qstate.selections[tab_index].is_answered = #selected > 0
 	qstate.selections[tab_index].ready_to_advance = false
 
-	return true
+	return sync_draft(qstate)
 end
 
 -- Move selection up/down
@@ -354,7 +268,7 @@ function M.move_selection(request_id, direction)
 		qstate.selections[tab_index].ready_to_advance = false
 	end
 
-	return true
+	return sync_draft(qstate)
 end
 
 -- Get current selection for a question
@@ -437,16 +351,12 @@ function M.are_all_answered(request_id)
 	if not qstate then
 		return false, {}
 	end
-
-	local unanswered = {}
-	for i = 1, #qstate.questions do
-		local selection = qstate.selections[i]
-		if not selection or not selection.is_answered then
-			table.insert(unanswered, i)
-		end
+	local valid, errors = forms.validate(qstate)
+	local indices = {}
+	for index, question in ipairs(qstate.questions) do
+		if errors[question.key] then indices[#indices + 1] = index end
 	end
-
-	return #unanswered == 0, unanswered
+	return valid, indices
 end
 
 -- Get count of answered questions
@@ -488,7 +398,6 @@ function M.set_confirming(request_id)
 	qstate.selections[temp_tab_idx] = {
 		selected_indices = { 1 }, -- Default to "Yes"
 		custom_input = "",
-		message = "",
 		is_answered = true,
 	}
 	qstate.current_tab = temp_tab_idx
@@ -531,46 +440,13 @@ function M.get_answers(request_id)
 	if not qstate then
 		return nil
 	end
+	return forms.answer(qstate)
+end
 
-	local answers = {}
-
-	for i, question in ipairs(qstate.questions) do
-		local selection = qstate.selections[i]
-		if not selection then
-			goto continue
-		end
-
-		local answer = {}
-
-		-- Add selected options
-		for _, idx in ipairs(selection.selected_indices) do
-			local option = question.options[idx]
-			if option then
-				table.insert(answer, option.value or option.label or option)
-			end
-		end
-
-		-- Add custom input if present
-		if selection.custom_input and selection.custom_input ~= "" then
-			table.insert(answer, selection.custom_input)
-		end
-
-		local message = format_message_answer(selection.message)
-		if message ~= "" then
-			table.insert(answer, message)
-		end
-
-		-- Default to empty answer if nothing selected
-		if #answer == 0 then
-			answer = { "" }
-		end
-
-		table.insert(answers, answer)
-
-		::continue::
-	end
-
-	return answers
+function M.validate_form(request_id)
+	local qstate = active_questions[request_id]
+	if not qstate then return false end
+	return forms.validate(qstate)
 end
 
 -- Lock a question while its reply or rejection request is in flight.
@@ -582,6 +458,7 @@ function M.begin_submission(request_id, kind)
 	if not can_interact(qstate) then
 		return false
 	end
+	if kind ~= "reject" and not M.validate_form(request_id) then return false end
 
 	qstate.submitting = true
 	qstate.submission_kind = kind == "reject" and "reject" or "reply"
@@ -616,6 +493,8 @@ function M.mark_answered(request_id, answers)
 	qstate.submission_kind = nil
 	qstate.answers = answers or M.get_answers(request_id)
 	qstate.answered_at = os.time()
+	qstate.native_state = { status = "answered", answer = vim.deepcopy(qstate.answers) }
+	qstate.display_answers = forms.display_answers(qstate, qstate.answers)
 
 	return true
 end
@@ -678,12 +557,36 @@ end
 
 -- Clear all questions (e.g., on session change)
 function M.clear_all()
+	generation = generation + 1
 	local removed = {}
 	for request_id, _ in pairs(active_questions) do
 		table.insert(removed, request_id)
 	end
 	active_questions = {}
 	return removed
+end
+
+-- Native forms share this owner and the established widget navigation. Drafts
+-- are indexed by field key; the visible tab list is only a projection.
+function M.add_form(form, context)
+	local current = active_questions[form.id]
+	if current then return current end
+	return new_form_state(form, context)
+end
+
+function M.set_form_error(id, err)
+	local item = active_questions[id]
+	if not item or item.status == "answered" or item.status == "rejected" then return end
+	item.server_error = type(err) == "table" and err.message or tostring(err)
+	M.restore_submission(id)
+end
+
+function M.apply_form_detail(detail)
+	local item = M.add_form(detail)
+	item.native_state = vim.deepcopy(detail.state)
+	if detail.state.status == "answered" then M.mark_answered(detail.id, detail.state.answer)
+	elseif detail.state.status == "cancelled" then M.mark_rejected(detail.id) end
+	return item
 end
 
 return M

@@ -9,7 +9,6 @@ local M = {}
 
 local NuiLine = require("nui.line")
 local NuiText = require("nui.text")
-local thinking = require("opencode.ui.thinking")
 local locale = require("opencode.util.locale")
 local sync = require("opencode.sync")
 local syntax = require("opencode.ui.syntax")
@@ -141,6 +140,26 @@ end
 local function safe_display_width(text, initial_col, width_context)
 	local safe_text = M.sanitize_buffer_line(text)
 	return display_width_from_col(safe_text, tonumber(initial_col) or 0, width_context or new_width_context())
+end
+
+---Expand a display line before wrapping and syntax highlighting. Literal tabs
+---can grow under 'linebreak' when panel padding follows them.
+---@param text string
+---@param initial_col? number Display column after the panel/command prefix
+---@return string
+function M.expand_tabs(text, initial_col)
+	text = M.sanitize_buffer_line(text)
+	if not text:find("\t", 1, true) then
+		return text
+	end
+	local width_context = new_width_context()
+	local col = tonumber(initial_col) or 0
+	return (text:gsub("([^\t]*)\t", function(piece)
+		col = col + display_width_from_col(piece, col, width_context)
+		local spaces = char_display_width(width_context, "\t", col)
+		col = col + spaces
+		return piece .. string.rep(" ", spaces)
+	end))
 end
 
 -- ─── Agent highlight ─────────────────────────────────────────────────────────
@@ -403,7 +422,7 @@ function M.add_panel_line(result, text, hl_group, opts)
 	result.highlights = result.highlights or {}
 
 	local prefix = opts.prefix or "▏  "
-	local width = opts.width or get_chat_text_width()
+	local width = opts.width or result.width or get_chat_text_width()
 	local width_context = new_width_context()
 	local prefix_width = safe_display_width(prefix, 0, width_context)
 	local body_width = math.max(1, width - prefix_width)
@@ -445,7 +464,7 @@ function M.add_panel_raw_line(result, text, hl_group, opts)
 	result.highlights = result.highlights or {}
 
 	local prefix = opts.prefix or "▏  "
-	local width = opts.width or get_chat_text_width()
+	local width = opts.width or result.width or get_chat_text_width()
 	local width_context = new_width_context()
 	local body = M.sanitize_buffer_line(text)
 	local body_prefix = opts.body_prefix or ""
@@ -515,7 +534,7 @@ function M.add_panel_blank(result, hl_group, opts)
 	result.highlights = result.highlights or {}
 
 	local prefix = opts.prefix or "▏"
-	local width = opts.width or get_chat_text_width()
+	local width = opts.width or result.width or get_chat_text_width()
 	local width_context = new_width_context()
 	local prefix_width = safe_display_width(prefix, 0, width_context)
 	local line = pad_to_width_with_current(prefix, width, prefix_width)
@@ -559,66 +578,54 @@ function M.highlight_panel_text(result, rows, text, hl_group)
 	return false
 end
 
--- ─── User message display config ─────────────────────────────────────────────
-
----@return string prompt, boolean multiline_prefix
-function M.get_user_message_display()
-	local app_state = require("opencode.state")
-	local full_config = app_state.get_config() or {}
-	local display_cfg = full_config.chat and full_config.chat.message_display or {}
-	local message_prefix = display_cfg and display_cfg.user_prefix
-	local prompt
-	if type(message_prefix) == "string" then
-		prompt = message_prefix
-	else
-		prompt = "> "
-	end
-	local multiline_prefix = display_cfg and display_cfg.multiline_prefix
-	if type(multiline_prefix) ~= "boolean" then
-		multiline_prefix = true
-	end
-	return prompt, multiline_prefix
-end
-
 -- ─── NuiLine renderers ────────────────────────────────────────────────────────
 
 ---Render a user message using NuiLine.
 ---@param content string|nil
 ---@param agent_name string|nil
 ---@param files? table[]
----@param opts? { max_lines?: number }
+---@param opts? { max_lines?: number, highlight_code?: function }
 ---@return NuiLine[]
 function M.render_user_message(content, agent_name, files, opts)
 	opts = opts or {}
 	ensure_user_message_highlights()
 
 	local lines = {}
-	local content_lines = vim.split(content or "", "\n", { plain = true })
-	local original_content_lines = #content_lines
+	local text_width = get_chat_text_width()
+	local content_width = math.max(1, text_width - 3) -- User box border and inner spacing.
+	local body = M.render_content(content, {
+		width = content_width,
+		scope = "user_markdown",
+		highlight_code = opts.highlight_code,
+	})
+	-- Shorten rendered rows, so hidden fences cannot break Markdown parsing.
+	local body_lines = M.extract_lines(body)
+	local content_lines, body_indices, row_map = {}, {}, {}
+	for index, text in ipairs(body_lines) do
+		content_lines[index], body_indices[index] = text, index
+	end
 	local max_lines = tonumber(opts.max_lines) or 0
-	local hidden_content_lines = 0
 	if max_lines > 0 and #content_lines > max_lines then
 		local visible_budget = math.max(1, max_lines - 1)
 		local head_lines = math.max(1, math.floor(visible_budget * 0.75))
 		local tail_lines = math.max(0, visible_budget - head_lines)
-		local compacted = {}
+		local compacted, indices = {}, {}
 		for i = 1, head_lines do
+			indices[#compacted + 1] = i
 			compacted[#compacted + 1] = content_lines[i] or ""
 		end
-		hidden_content_lines = #content_lines - head_lines - tail_lines
+		local hidden_content_lines = #content_lines - head_lines - tail_lines
+		indices[#compacted + 1] = false
 		compacted[#compacted + 1] = "... (" .. tostring(hidden_content_lines) .. " lines hidden)"
 		for i = #content_lines - tail_lines + 1, #content_lines do
 			if i > head_lines then
+				indices[#compacted + 1] = i
 				compacted[#compacted + 1] = content_lines[i] or ""
 			end
 		end
-		content_lines = compacted
+		content_lines, body_indices = compacted, indices
 	end
 	local border_hl = M.get_agent_hl(agent_name or "unknown")
-
-	local text_width = get_chat_text_width()
-	local bg_width = math.max(1, text_width - 1)
-	local content_width = math.max(1, bg_width - 2)
 
 	local function pad_after_prefix(prefix, text, width)
 		local current = safe_display_width(prefix .. text)
@@ -637,18 +644,23 @@ function M.render_user_message(content, agent_name, files, opts)
 
 	add_block_line("")
 
-	for _, text in ipairs(content_lines) do
-		local wrapped = M.wrap_text(text, content_width, {
-			initial_col = safe_display_width("┃  "),
-		})
-		for _, wline in ipairs(wrapped) do
-			add_block_line("  " .. wline)
+	for index, text in ipairs(content_lines) do
+		if body_indices[index] then
+			row_map[body_indices[index]] = { {
+				line_index = #lines, byte_start = 0, byte_end = #text, prefix = "┃  ",
+			} }
+			add_block_line("  " .. text)
+		else
+			for _, line in ipairs(M.wrap_text(text, content_width)) do add_block_line("  " .. line) end
 		end
 	end
+	lines._opencode_highlights = syntax.project_highlights(body._opencode_highlights, body_lines, row_map)
+	lines._opencode_syntax_retry = body._opencode_syntax_retry
 
 	for _, file in ipairs(files or {}) do
 		local mime = file.mime or "file"
-		local label = mime:match("^image/") and "img" or (mime == "application/pdf" and "pdf" or "file")
+		local label = (file.type == "skill" or file.type == "agent") and file.type
+			or (mime:match("^image/") and "img" or (mime == "application/pdf" and "pdf" or "file"))
 		local filename = file.filename or file.name or file.uri or "attachment"
 		local display = label .. " " .. filename
 		local wrapped = M.wrap_text(display, content_width, {
@@ -663,59 +675,12 @@ function M.render_user_message(content, agent_name, files, opts)
 	return lines
 end
 
----Render reasoning using NuiLine.
----@param reasoning string|nil
----@return NuiLine[]
-function M.render_reasoning(reasoning)
-	local lines = {}
-	if not reasoning or reasoning == "" or not thinking.is_enabled() then
-		return lines
-	end
-
-	local reasoning_lines = vim.split(reasoning, "\n", { plain = true })
-	for i, rline in ipairs(reasoning_lines) do
-		local line = NuiLine()
-		if i == 1 then
-			line:append(NuiText("Thinking: ", "WarningMsg"))
-			line:append(NuiText(rline, "Comment"))
-		else
-			line:append(NuiText("          " .. rline, "Comment"))
-		end
-		table.insert(lines, line)
-	end
-
-	if #lines > 0 then
-		table.insert(lines, NuiLine())
-	end
-	return lines
-end
-
----Render content using plain text lines only.
+---Render chat Markdown using the reference TUI's block layout.
 ---@param content string|nil
----@param _opts? table
+---@param opts? { width?: number, scope?: string, highlight_code?: function }
 ---@return NuiLine[]
-function M.render_content(content, _opts)
-	local opts = _opts or {}
-	local lines = {}
-	if not content or content == "" then
-		return lines
-	end
-
-	local content_lines = vim.split(content, "\n", { plain = true })
-	for _, text in ipairs(content_lines) do
-		local line = NuiLine()
-		line:append(text)
-		table.insert(lines, line)
-	end
-
-	if not opts.stream_plain and syntax.is_enabled("assistant_markdown") then
-		lines._opencode_highlights = syntax.highlight_markdown_fenced_blocks(content, {
-			scope = "assistant_markdown",
-			compat_markdown = true,
-		})
-	end
-
-	return lines
+function M.render_content(content, opts)
+	return require("opencode.ui.markdown").render(content, opts, M)
 end
 
 ---Render a single tool line (fold icon + status + tool name, optional expanded body).
@@ -757,13 +722,13 @@ function M.render_tool_line(tool_part, is_expanded)
 
 	local fold_icon = is_expanded and "▾" or "▸"
 	local header = fold_icon .. " " .. status_symbol .. " " .. tool_name
-	if tool_part.input and tool_part.input.description then
-		header = header .. " - " .. tool_part.input.description
+	local tool_state_data = tool_part.state or {}
+	if type(tool_state_data.input) == "table" and tool_state_data.input.description then
+		header = header .. " - " .. tool_state_data.input.description
 	end
 	add_hl_line(header, status_hl)
 
 	if is_expanded then
-		local tool_state_data = tool_part.state or {}
 		local tool_input = tool_state_data.input
 		local tool_output = tool_state_data.output
 		local tool_error = tool_state_data.error
@@ -782,7 +747,6 @@ function M.render_tool_line(tool_part, is_expanded)
 						scope = "tools",
 						line_start = input_start,
 						col_offset = 4,
-						compat_markdown = false,
 					})
 				else
 					syntax.add_highlights({ highlights = result_highlights }, input_str, input_lang, {
@@ -808,7 +772,6 @@ function M.render_tool_line(tool_part, is_expanded)
 					scope = "tools",
 					line_start = output_start,
 					col_offset = 4,
-					compat_markdown = false,
 				})
 			elseif output_lang then
 				syntax.add_highlights({ highlights = result_highlights }, output_str, output_lang, {
@@ -858,6 +821,7 @@ function M.shift_line_map(line_map, old_end, delta)
 			pos.start_line = pos.start_line + delta
 			pos.end_line = pos.end_line + delta
 		end
+		if pos and pos.children then M.shift_line_map(pos.children, old_end, delta) end
 	end
 end
 
@@ -1072,7 +1036,7 @@ end
 ---Render metadata footer for an assistant message.
 ---@param message table
 ---@param messages table[]
----@param opts? table { spinner_frame?: string|nil, duration_ms?: number|nil, duration_calculated?: boolean }
+---@param opts? table { spinner_frame?: string|nil, duration_ms?: number|nil, duration_calculated?: boolean, tokens_per_second?: number }
 ---@return NuiLine
 function M.render_metadata_footer(message, messages, opts)
 	opts = opts or {}
@@ -1115,6 +1079,11 @@ function M.render_metadata_footer(message, messages, opts)
 			line:append(NuiText(" · ", "Comment"))
 			line:append(NuiText(locale.duration(duration_ms), agent_hl))
 		end
+	end
+	local tokens_per_second = _numeric(opts.tokens_per_second)
+	if tokens_per_second and tokens_per_second > 0 then
+		line:append(NuiText(" · ", "Comment"))
+		line:append(NuiText(string.format("%.1f tok/s", tokens_per_second), "Comment"))
 	end
 	if interrupted then
 		line:append(NuiText(" · ", "Comment"))

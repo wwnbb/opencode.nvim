@@ -2,17 +2,20 @@ local M = {}
 
 local cs = require("opencode.ui.chat.state")
 local state = cs.state
+local tree = require("opencode.ui.chat.widget_tree")
 
 local chat_interactions = require("opencode.ui.chat.interactions")
 
 ---@class OpenCodeWidgetCursorContext
----@field kind "question" | "permission" | "edit"
+---@field kind "question" | "permission" | "edit" | "activity"
 ---@field id string
+---@field root_id string
 ---@field relative_line number
 
----@param kind "question" | "permission" | "edit"
+---@param kind "question" | "permission" | "edit" | "activity"
 ---@return table
 local function get_widget_positions(kind)
+	if kind == "activity" then return state.tools end
 	if kind == "question" then
 		return state.questions
 	end
@@ -22,7 +25,7 @@ local function get_widget_positions(kind)
 	return state.edits
 end
 
----@param kind "question" | "permission" | "edit"
+---@param kind "question" | "permission" | "edit" | "activity"
 ---@param pos table|nil
 ---@return boolean
 local function is_widget_cursor_target(kind, pos)
@@ -30,6 +33,7 @@ local function is_widget_cursor_target(kind, pos)
 		return false
 	end
 
+	if kind == "activity" then return pos.activity_group ~= nil or pos.kind == "tool" end
 	if kind == "question" then
 		return pos.status == "pending" or pos.status == "confirming"
 	end
@@ -46,21 +50,14 @@ local function capture_widget_cursor_context()
 	end
 
 	local cursor_line = vim.api.nvim_win_get_cursor(state.winid)[1] - 1
-	local widget_kinds = { "question", "permission", "edit" }
+	local widget_kinds = { "question", "permission", "edit", "activity" }
 
 	for _, kind in ipairs(widget_kinds) do
-		for widget_id, pos in pairs(get_widget_positions(kind)) do
-			if
-				is_widget_cursor_target(kind, pos)
-				and cursor_line >= pos.start_line
-				and cursor_line <= pos.end_line
-			then
-				return {
-					kind = kind,
-					id = widget_id,
-					relative_line = cursor_line - pos.start_line,
-				}
-			end
+		local widget_id, pos, root_id = tree.at_line(get_widget_positions(kind), cursor_line, function(node)
+			return is_widget_cursor_target(kind, node)
+		end)
+		if pos then
+			return { kind = kind, id = widget_id, root_id = root_id, relative_line = cursor_line - pos.start_line }
 		end
 	end
 
@@ -80,7 +77,14 @@ local function restore_widget_cursor_context(widget_cursor)
 		return false
 	end
 
-	local pos = get_widget_positions(widget_cursor.kind)[widget_cursor.id]
+	local positions = get_widget_positions(widget_cursor.kind)
+	local pos = tree.find(positions, widget_cursor.id)
+	-- A parent collapse may hide the focused leaf. Restore to the parent header.
+	local relative_line = widget_cursor.relative_line
+	if not pos or not pos.start_line then
+		pos = positions[widget_cursor.root_id]
+		relative_line = 0
+	end
 	if not is_widget_cursor_target(widget_cursor.kind, pos) then
 		return false
 	end
@@ -92,7 +96,7 @@ local function restore_widget_cursor_context(widget_cursor)
 		return false
 	end
 
-	local target_line = pos.start_line + widget_cursor.relative_line + 1
+	local target_line = pos.start_line + relative_line + 1
 	target_line = math.max(min_line, math.min(target_line, max_line))
 
 	vim.api.nvim_win_set_cursor(state.winid, { target_line, 0 })
@@ -121,5 +125,14 @@ M.is_widget_cursor_target = is_widget_cursor_target
 M.capture_widget_cursor_context = capture_widget_cursor_context
 M.restore_widget_cursor_context = restore_widget_cursor_context
 M.should_auto_scroll = should_auto_scroll
+
+function M.scroll_to_bottom()
+	if not state.bufnr or not vim.api.nvim_buf_is_valid(state.bufnr)
+		or not state.winid or not vim.api.nvim_win_is_valid(state.winid) then return end
+	vim.api.nvim_win_set_cursor(state.winid, { vim.api.nvim_buf_line_count(state.bufnr), 0 })
+	-- A shorter session can clamp the old topline to its trailing blank line.
+	-- Align the viewport too, so switching from a long parent does not look empty.
+	vim.api.nvim_win_call(state.winid, function() vim.cmd("normal! zb") end)
+end
 
 return M

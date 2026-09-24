@@ -103,6 +103,24 @@ local function _focus_input_window_when_ready(input, max_attempts, delay, attemp
 	end, delay)
 end
 
+---@param bufnr number
+---@param text string
+---@return string
+local function _fence_code(bufnr, text)
+	local language = vim.bo[bufnr].filetype
+	if language == "" then
+		language = vim.filetype.match({ filename = vim.api.nvim_buf_get_name(bufnr) }) or ""
+	end
+
+	-- Keep Markdown snippets containing their own fences inside a single block.
+	local fence_length = 3
+	for run in text:gmatch("`+") do
+		fence_length = math.max(fence_length, #run + 1)
+	end
+	local fence = string.rep("`", fence_length)
+	return fence .. language .. "\n" .. text .. "\n" .. fence
+end
+
 ---@param opts? { context?: string }
 ---@return string|nil
 local function _build_current_line_prompt(opts)
@@ -124,10 +142,8 @@ local function _build_current_line_prompt(opts)
 
 	local parts = {
 		string.format("@%s#%d", display_path, line_num),
+		_fence_code(bufnr, line_text),
 	}
-	if line_text ~= "" then
-		table.insert(parts, line_text)
-	end
 
 	local context = opts.context and vim.trim(opts.context) or ""
 	if context ~= "" then
@@ -202,7 +218,7 @@ local function _build_visual_selection_prompt(opts)
 
 	local parts = {
 		string.format("@%s#%s", display_path, line_ref),
-		table.concat(lines, "\n"),
+		_fence_code(bufnr, table.concat(lines, "\n")),
 	}
 
 	local context = opts.context and vim.trim(opts.context) or ""
@@ -218,6 +234,7 @@ end
 function M.setup(opts)
 	-- Merge user config with defaults
 	M._config = config.merge(opts)
+	require("opencode.commands").configure_keymaps(M._config.keymaps)
 
 	-- Initialize state with config
 	state.set_config(M._config)
@@ -263,6 +280,7 @@ function M.setup(opts)
 
 	lifecycle.setup({
 		command = M._config.server.command,
+		port = M._config.server.port,
 		auto_start = M._config.server.auto_start,
 		startup_timeout = M._config.server.startup_timeout,
 		health_check_interval = M._config.server.health_check_interval,
@@ -328,34 +346,14 @@ function M.setup(opts)
     vim.notify("Failed to load slash commands: " .. tostring(slash), vim.log.levels.WARN)
   end
 
-  -- Apply keymaps from user config (only if user explicitly configures them)
-  -- Users who want keymaps should add them to their config, e.g.:
-  -- keymaps = { toggle = "<leader>oo", command_palette = "<leader>op" }
+  -- The five loader keymaps are replaced from the merged config above.
   local km = M._config.keymaps or {}
   local map_opts = { noremap = true, silent = true }
-  
-  if km.toggle then
-    vim.keymap.set("n", km.toggle, function()
-      require("opencode").toggle()
-    end, vim.tbl_extend("force", map_opts, { desc = "Toggle OpenCode" }))
-  end
-
-  if km.command_palette then
-    vim.keymap.set("n", km.command_palette, function()
-      require("opencode").command_palette()
-    end, vim.tbl_extend("force", map_opts, { desc = "OpenCode command palette" }))
-  end
 
   if km.abort then
     vim.keymap.set("n", km.abort, function()
       require("opencode").abort()
     end, vim.tbl_extend("force", map_opts, { desc = "Abort OpenCode request" }))
-  end
-
-  if km.active_sessions then
-    vim.keymap.set("n", km.active_sessions, function()
-      require("opencode").active_sessions()
-    end, vim.tbl_extend("force", map_opts, { desc = "OpenCode active sessions" }))
   end
 
   -- Setup cursor hiding for opencode buffers
@@ -610,8 +608,13 @@ function M.send(message, opts)
 		return
 	end
 
+	local captured = vim.deepcopy(opts or {})
+	captured.session_id = captured.session_id or state.get_session().id or false
+	captured.directory = captured.directory or state.get_session_directory(captured.session_id) or vim.fn.getcwd()
+	captured._token = require("opencode.session.pending").token(captured.session_id or nil)
+	captured._selection = require("opencode.selectors").send_selection(captured)
 	lifecycle.ensure_connected(function()
-		require("opencode.send").send(message, opts)
+		require("opencode.send").send(message, captured)
 	end)
 end
 
@@ -629,25 +632,17 @@ function M.abort()
 		return
 	end
 
-	local current_status = state.get_status()
-	if current_status ~= "streaming" then
-		vim.notify("Not currently streaming", vim.log.levels.INFO)
-		return
-	end
-
-	local client = require("opencode.client")
-	client.abort_session(session_id, function(err, result)
-		vim.schedule(function()
-			if err then
-				vim.notify("Failed to abort: " .. tostring(err.message or err.error or err), vim.log.levels.ERROR)
-				return
-			end
-
-			session_actions.set_status("idle", {
-				reason = "abort",
-				session_id = session_id,
-			})
-		end)
+	local pending = require("opencode.session.pending")
+	local token = pending.token(session_id)
+	require("opencode.client").abort_session(session_id, function(err)
+		if not pending.is_current(token) then return end
+		if err then
+			vim.notify("Failed to interrupt: " .. tostring(err.message or err.error or err), vim.log.levels.ERROR)
+		end
+		-- Interrupt acknowledges a request; SSE and active recovery establish
+		-- completion. Queued inbox items remain pending (resume=false).
+		require("opencode.events").emit("v2_reconcile", { session_id = session_id })
+		session_actions.refresh_status()
 	end)
 end
 

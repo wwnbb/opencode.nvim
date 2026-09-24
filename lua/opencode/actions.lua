@@ -166,7 +166,7 @@ end
 
 function M.list_sessions(opts, callback)
 	return with_connection(function()
-		client().list_sessions(opts, function(err, result)
+		client().get_all_sessions(opts, function(err, result)
 			schedule_callback(callback, err, result)
 		end)
 	end)
@@ -205,38 +205,27 @@ function M.clear_session_data(session_id)
 end
 
 function M.load_session_messages(session_id, opts, callback)
-	if type(opts) == "function" then
-		callback = opts
-		opts = nil
-	end
-	local request_opts = vim.tbl_extend("force", {}, opts or {})
-	if request_opts.limit == nil then
-		request_opts.limit = 100
-	end
+	if type(opts) == "function" then callback, opts = opts, nil end
+	local request_opts = vim.tbl_extend("force", { limit = 100 }, opts or {})
+	local complete = request_opts.all == true
+	request_opts.all = nil
 	return with_connection(function()
 		local store = sync()
-		local snapshot = store.capture_session_snapshot and store.capture_session_snapshot(session_id)
-		client().get_messages(session_id, request_opts, function(err, response)
-			if not err and response and type(response) == "table" then
-				local store = sync()
-				if type(store.handle_session_messages) == "function" then
-					store.handle_session_messages(session_id, response, { reconcile = true, snapshot = snapshot })
-				else
-					for _, msg_with_parts in ipairs(response) do
-						local info = msg_with_parts.info
-						if info then
-							info.sessionID = session_id
-							store.handle_message_updated(info)
-						end
-						for _, part in ipairs(msg_with_parts.parts or {}) do
-							store.handle_part_updated(part)
-						end
-					end
-				end
-				require("opencode.session").reconcile_busy_session_idle(session_id, { reason = "load_messages" })
+		local snapshot = store.capture_session_snapshot(session_id)
+		local pending = require("opencode.session.pending")
+		local token = pending.token(session_id)
+		local function done(err, response, meta)
+			if not pending.is_current(token) then return end
+			if not err then
+				pending.reconcile_history(session_id, response)
+				store.handle_session_messages(session_id, response, { reconcile = complete, complete = complete, snapshot = snapshot })
+				require("opencode.session").set_message_cache(session_id, store.get_messages(session_id), { reason = "load_messages" })
+				require("opencode.session").refresh_status()
+				require("opencode.events").emit("sync_changed", { kind = "message", session_id = session_id })
 			end
-			schedule_callback(callback, err, response)
-		end)
+			schedule_callback(callback, err, response, meta)
+		end
+		if complete then client().get_all_messages(session_id, done) else client().get_messages(session_id, request_opts, done) end
 	end)
 end
 
@@ -283,6 +272,28 @@ function M.send(message, opts)
 	return api().send(message, opts)
 end
 
+function M.list_pending_inputs(session_id, callback)
+	return with_connection(function() client().get_inbox(session_id, callback) end)
+end
+
+function M.cancel_pending_input(session_id, message_id, callback)
+	return with_connection(function()
+		require("opencode.send").cancel_input(session_id, message_id, callback)
+	end)
+end
+
+function M.edit_pending_input(session_id, message_id, callback)
+	return with_connection(function()
+		require("opencode.send").edit_input(session_id, message_id, callback)
+	end)
+end
+
+function M.steer_pending_input(session_id, message_id, callback)
+	return with_connection(function()
+		require("opencode.send").steer_input(session_id, message_id, callback)
+	end)
+end
+
 function M.list_agents(callback)
 	return with_connection(function()
 		client().list_agents(function(err, agents)
@@ -314,17 +325,45 @@ function M.get_config_providers(callback)
 	end)
 end
 
-function M.list_skills(callback)
+function M.list_skills(callback, opts)
+	opts = vim.deepcopy(opts or {})
+	opts.directory = opts.directory or state().get_session_directory(state().get_session().id) or vim.fn.getcwd()
+	local pending = require("opencode.session.pending")
+	local token = pending.token()
 	return client().list_skills(function(err, skills)
-		if not err then
-			sync().handle_skills(type(skills) == "table" and skills or {})
-		end
+		if not pending.is_current(token) then return end
+		sync().handle_location_catalog(opts.directory, "skills", skills, err)
 		schedule_callback(callback, err, skills)
-	end)
+	end, opts)
+end
+
+function M.run_skills(selected, opts)
+	opts = vim.deepcopy(opts or {})
+	opts.session_id = opts.session_id or state().get_session().id or false
+	opts.directory = opts.directory or state().get_session_directory(opts.session_id) or vim.fn.getcwd()
+	opts._selection = opts._selection or require("opencode.selectors").send_selection(opts)
+	local token = require("opencode.session.pending").token(opts.session_id or nil)
+	M.list_skills(function(err, skills)
+		if not require("opencode.session.pending").is_current(token) then return end
+		if err then vim.notify("Could not load skills: " .. err.message, vim.log.levels.ERROR); return end
+		local parts, names = {}, {}
+		for _, wanted in ipairs(selected) do
+			local found
+			for _, skill in ipairs(skills) do
+				if (type(wanted) == "table" and wanted.id == skill.id)
+					or (type(wanted) == "string" and (wanted == skill.id or wanted == skill.name)) then found = skill; break end
+			end
+			if not found then vim.notify("Skill is unavailable: " .. tostring(type(wanted) == "table" and wanted.name or wanted), vim.log.levels.WARN); return end
+			parts[#parts + 1] = { type = "skill", id = found.id }; names[#names + 1] = found.name
+		end
+		if #parts == 0 then return end
+		opts.parts = parts
+		require("opencode.send").send("Use these skills: " .. table.concat(names, ", "), opts)
+	end, opts)
 end
 
 function M.execute_command(session_id, command, args, opts, callback)
-	return client().execute_command(session_id, command, args, opts or {}, function(err, result)
+	return require("opencode.send").command(session_id, command, args, opts or {}, function(err, result)
 		schedule_callback(callback, err, result)
 	end)
 end
@@ -337,53 +376,43 @@ function M.list_providers(callback)
 	end)
 end
 
-function M.get_provider_auth(callback)
-	return client().get_provider_auth(function(err, auth_methods)
-		schedule_callback(callback, err, auth_methods)
+function M.list_integrations(callback, opts)
+	return with_connection(function()
+		client().list_integrations(function(err, integrations)
+			schedule_callback(callback, err, integrations)
+		end, opts)
 	end)
 end
 
-function M.set_provider_auth(provider_id, auth, callback)
-	return client().set_provider_auth(provider_id, auth, function(err, result)
+function M.connect_integration_key(integration_id, key, answer, opts, callback)
+	return require("opencode.provider.auth").connect_key(integration_id, key, answer, opts, callback)
+end
+function M.start_integration_attempt(integration_id, method, answer, opts, listener)
+	return require("opencode.provider.auth").start(integration_id, method, answer, opts, listener)
+end
+function M.complete_integration_attempt(id, code)
+	return require("opencode.provider.auth").complete(id, code)
+end
+function M.cancel_integration_attempt(id)
+	return require("opencode.provider.auth").cancel(id)
+end
+function M.change_credential(operation, integration_id, credential_id, body, opts, callback)
+	return require("opencode.provider.auth").credential(operation, integration_id, credential_id, body, opts, callback)
+end
+
+-- Explicit server-wide reload; authentication never calls this operation.
+function M.reload_locations(callback)
+	local token = require("opencode.session.pending").token()
+	return client().dispose(function(err, result)
+		if not require("opencode.session.pending").is_current(token) then return end
+		if not err then
+			cleanup().clear_transient({ reset_state = false, clear_chat = true })
+			require("opencode.events").emit("connected", {})
+		end
 		schedule_callback(callback, err, result)
 	end)
 end
-
-function M.remove_provider_auth(provider_id, callback)
-	return client().remove_provider_auth(provider_id, function(err, result)
-		schedule_callback(callback, err, result)
-	end)
-end
-
-function M.oauth_authorize(provider_id, method_index, callback)
-	return client().oauth_authorize(provider_id, method_index, function(err, authorization)
-		schedule_callback(callback, err, authorization)
-	end)
-end
-
-function M.oauth_callback(provider_id, method_index, code, callback)
-	return client().oauth_callback(provider_id, method_index, code, function(err, result)
-		schedule_callback(callback, err, result)
-	end)
-end
-
-function M.dispose_server(callback)
-	local c = client()
-	-- Suppress SSE reconnect BEFORE dispose: handle_stream_closed (sse.lua:245)
-	-- schedules reconnect unless manual_disconnect is true. The instance we are
-	-- about to kill will tear down the stream, so reconnect would race.
-	c.disconnect_events()
-	return c.dispose(function(err, result)
-		-- Fail-open: clear local state even on err. A dying instance may not
-		-- deliver the HTTP response, but local sync/chat/permission state must
-		-- still be reset so the next ensure_connected starts clean.
-		-- Consumers may receive err but local state is already reset (fail-open above);
-		-- err only means the dispose was not confirmed by the server.
-		cleanup().clear_transient({ reset_state = false, clear_chat = true })
-		state().set_connection("idle")
-		schedule_callback(callback, err, result)
-	end)
-end
+M.dispose_server = M.reload_locations
 
 function M.select_model(model, opts)
 	local_state().model.set(model, opts or {})
@@ -417,71 +446,63 @@ end
 
 function M.compact_session(session_id, opts, callback)
 	return with_connection(function()
-		local c = client()
-		c.summarize_session(session_id, opts or {}, function(err, result)
-			if err and type(err) == "table" and err.status == 404 then
-				c.execute_command(session_id, "compact", {}, {}, function(fallback_err, fallback_result)
-					schedule_callback(callback, fallback_err, fallback_result)
-				end)
-				return
-			end
+		client().summarize_session(session_id, opts or {}, function(err, result)
+			if not err then require("opencode.events").emit("v2_reconcile", { session_id = session_id }) end
 			schedule_callback(callback, err, result)
 		end)
 	end)
 end
 
+local function catalog_options(opts)
+	local app = require("opencode.state")
+	return vim.tbl_extend("keep", opts or {}, { directory = app.get_session_directory(app.get_session().id) or vim.fn.getcwd() })
+end
+
 function M.get_server_status(callback)
-	return client().get_status(function(err, status)
-		schedule_callback(callback, err, status)
-	end)
+	return client().get_status(function(err, status) schedule_callback(callback, err, status) end, catalog_options())
 end
 
-function M.get_mcp_status(callback)
+function M.get_mcp_status(callback, opts)
+	opts = catalog_options(opts)
+	local pending = require("opencode.session.pending")
+	local token = pending.token(require("opencode.state").get_session().id)
 	return client().get_mcp_status(function(err, status)
-		if not err and status then
-			sync().handle_mcp(status)
-		end
+		if pending.is_current(token) and not err and status then sync().handle_location_catalog(opts.directory, "mcp", status) end
 		schedule_callback(callback, err, status)
-	end)
+	end, opts)
 end
 
-function M.toggle_mcp(name, connected, callback)
+function M.toggle_mcp(name, connected, callback, opts)
 	local c = client()
 	local fn = connected and c.disconnect_mcp or c.connect_mcp
-	return fn(name, function(err, result)
-		schedule_callback(callback, err, result)
-	end)
+	return fn(name, function(err, result) schedule_callback(callback, err, result) end, catalog_options(opts))
+end
+
+function M.reply_review(review_id, callback)
+	return require("opencode.review").reply(review_id, callback)
 end
 
 function M.respond_permission(permission_id, reply, opts, callback)
-	opts = vim.tbl_extend("force", opts or {}, {})
-	-- Scope the reply to the permission's session directory when the caller
-	-- did not supply one. Without this, cross-project replies hit the cwd
-	-- server instance and never reach the agent waiting in another project.
-	if type(opts.directory) ~= "string" or opts.directory == "" then
-		local dir = require("opencode.state").get_session_directory
-		local session_id
-		local perm_ok, perm_state = pcall(require, "opencode.permission.state")
-		if perm_ok and perm_state.get_permission then
-			local pstate = perm_state.get_permission(permission_id)
-			if pstate then
-				session_id = pstate.session_id
-			end
-		end
-		if not session_id then
-			local edit_ok, edit_state = pcall(require, "opencode.edit.state")
-			if edit_ok and edit_state.get_edit then
-				local estate = edit_state.get_edit(permission_id)
-				if estate then
-					session_id = estate.session_id
-				end
-			end
-		end
-		if session_id then
-			opts.directory = dir(session_id)
-		end
+	opts = vim.tbl_extend("force", {}, opts or {})
+	local owner = require("opencode.permission.state")
+	local item = owner.get_permission(permission_id)
+	local review = require("opencode.edit.state").get_edit(permission_id)
+	if review and review.transport == "review_rpc" then
+		if callback then callback({ message = "Use reply_review for file review decisions" }) end
+		return false
 	end
+	opts.session_id = opts.session_id or (item and item.session_id)
+	opts.directory = opts.directory or require("opencode.state").get_session_directory(opts.session_id)
+	if not item or not owner.begin_submission(permission_id) then return false end
+	local token = require("opencode.session.pending").token(opts.session_id)
 	return client().respond_permission(permission_id, reply, opts, function(err, result)
+		if not require("opencode.session.pending").is_current(token) then return end
+		local current = owner.get_permission(permission_id)
+		if current ~= item or current.status ~= "pending" then return end
+		if err then
+			owner.restore_submission(permission_id, err)
+			require("opencode.events").emit("interaction_reconcile", { session_id = opts.session_id })
+		end
 		schedule_callback(callback, err, result)
 	end)
 end
@@ -503,7 +524,12 @@ function M.reply_to_question(request_id, answers, opts_or_callback, callback)
 			opts.directory = require("opencode.state").get_session_directory(qstate.session_id)
 		end
 	end
+	local qstate = require("opencode.question.state").get_question(request_id)
+	opts.session_id = qstate and qstate.session_id or opts.session_id
+	local token = require("opencode.session.pending").token(opts.session_id)
 	return client().reply_to_question(request_id, answers, opts, function(err, result)
+		if not require("opencode.session.pending").is_current(token) then return end
+		if err then require("opencode.events").emit("interaction_reconcile", { session_id = opts.session_id }) end
 		schedule_callback(callback, err, result)
 	end)
 end
@@ -518,15 +544,21 @@ function M.reject_question(session_id, request_id, opts_or_callback, callback)
 		callback = opts_or_callback
 		opts = nil
 	end
-	opts = vim.tbl_extend("force", opts or {}, {})
-	if type(opts.directory) ~= "string" or opts.directory == "" then
-		local qstate = require("opencode.question.state").get_question(request_id)
-		local owner_session_id = qstate and qstate.session_id or session_id
-		opts.directory = require("opencode.state").get_session_directory(owner_session_id)
-	end
-	return client().reject_question(session_id or "", request_id, opts, function(err, result)
+	opts = vim.tbl_extend("force", {}, opts or {})
+	local item = require("opencode.question.state").get_question(request_id)
+	local owner_session_id = item and item.session_id or session_id
+	opts.directory = opts.directory or require("opencode.state").get_session_directory(owner_session_id)
+	local token = require("opencode.session.pending").token(owner_session_id)
+	return client().reject_question(owner_session_id, request_id, opts, function(err, result)
+		if not require("opencode.session.pending").is_current(token) then return end
+		if err then require("opencode.events").emit("interaction_reconcile", { session_id = owner_session_id }) end
 		schedule_callback(callback, err, result)
 	end)
+end
+
+function M.refresh_form(id)
+	local item = require("opencode.question.state").get_question(id)
+	if item then require("opencode.events").emit("interaction_reconcile", { session_id = item.session_id }) end
 end
 
 function M.get_diff(session_id, opts, callback)
@@ -535,10 +567,20 @@ function M.get_diff(session_id, opts, callback)
 	end)
 end
 
-function M.revert_message(session_id, message_id, opts, callback)
-	return client().revert_message(session_id, message_id, opts or {}, function(err, result)
+local function reverted(session_id, callback)
+	return function(err, result)
+		if not err then require("opencode.events").emit("v2_reconcile", { session_id = session_id, complete = true }) end
 		schedule_callback(callback, err, result)
-	end)
+	end
+end
+function M.revert_message(session_id, message_id, opts, callback)
+	return client().revert_message(session_id, message_id, opts or {}, reverted(session_id, callback))
+end
+function M.clear_revert(session_id, callback)
+	return client().clear_revert(session_id, reverted(session_id, callback))
+end
+function M.commit_revert(session_id, callback)
+	return client().commit_revert(session_id, reverted(session_id, callback))
 end
 
 function M.paste_clipboard()

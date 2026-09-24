@@ -10,7 +10,6 @@ require("opencode").setup({
 		host = "localhost",
 		port = 9099,
 		auto_start = true,
-		lazy = true,
 	},
 
 	session = {
@@ -20,25 +19,8 @@ require("opencode").setup({
 		},
 	},
 
-	-- require("opencode").setup({
-	--     chat = {
-	--       layout = "vertical",  -- "vertical" | "horizontal" | "float"
-	--       position = "right",   -- "left" | "right" | "top" | "bottom"
-	--       width = 80,
-	--       height = 20,
-	--     },
-	--     float = {
-	--       width = 0.8,          -- % of editor width
-	--       height = 0.8,         -- % of editor height
-	--       border = "rounded",
-	--       title = " OpenCode ",
-	--       title_pos = "center",
-	--     },
-	--   })
-	--
 	chat = {
 		layout = "float",
-		-- position = "",
 		float = {
 			width = 0.9,
 			height = 0.9,
@@ -46,28 +28,13 @@ require("opencode").setup({
 			title = " OpenCode ",
 			title_pos = "center",
 		},
-		-- message_display = {
-		-- 	user_prefix = "| ",
-		-- },
 	},
-
-	-- chat = {
-	-- 	layout = "vertical", -- "vertical" | "horizontal" | "float"
-	-- 	position = "right", -- "left" | "right" | "top" | "bottom"
-	-- 	width = 80,
-	-- 	height = 20,
-	-- },
 
 	lualine = {
 		enabled = true,
 		show_attention = true,
 		attention_icon = "◈",
 		show_diff_stats = true,
-	},
-
-	diff = {
-		layout = "vertical",
-		file_list_width = 30,
 	},
 
 	keymaps = {

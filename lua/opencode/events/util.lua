@@ -191,62 +191,6 @@ function M.mark_recent_error(cache, key, ttl_ms)
 	return false
 end
 
-function M.event_time_to_seconds(raw_time)
-	if type(raw_time) ~= "number" then
-		return nil
-	end
-	if raw_time > 100000000000 then
-		return math.floor(raw_time / 1000)
-	end
-	return math.floor(raw_time)
-end
-
----@param payload table|nil
----@return string|nil
-function M.resolve_event_message_id(payload)
-	if type(payload) ~= "table" then
-		return nil
-	end
-
-	local tool = payload.tool
-	if type(tool) == "table" then
-		local nested = tool.messageID or tool.message_id or tool.messageId
-		if type(nested) == "string" and nested ~= "" then
-			return nested
-		end
-	end
-
-	local direct = payload.messageID or payload.message_id or payload.messageId
-	if type(direct) == "string" and direct ~= "" then
-		return direct
-	end
-
-	return nil
-end
-
----@param payload table|nil
----@return string|nil
-function M.resolve_event_call_id(payload)
-	if type(payload) ~= "table" then
-		return nil
-	end
-
-	local tool = payload.tool
-	if type(tool) == "table" then
-		local nested = tool.callID or tool.call_id or tool.callId
-		if type(nested) == "string" and nested ~= "" then
-			return nested
-		end
-	end
-
-	local direct = payload.callID or payload.call_id or payload.callId
-	if type(direct) == "string" and direct ~= "" then
-		return direct
-	end
-
-	return nil
-end
-
 ---@param tool_part table|nil
 ---@return string|nil
 function M.resolve_task_child_session_id(tool_part)
@@ -271,21 +215,8 @@ function M.resolve_task_child_session_id(tool_part)
 	local tool_state = type(tool_part.state) == "table" and tool_part.state or {}
 	local state_metadata = type(tool_state.metadata) == "table" and tool_state.metadata or {}
 
-	return state_metadata.sessionId
-		or state_metadata.sessionID
-		or state_metadata.session_id
-		or state_metadata.childSessionID
-		or state_metadata.childSessionId
-		or state_metadata.child_session_id
-		or part_metadata.sessionId
-		or part_metadata.sessionID
-		or part_metadata.session_id
-		or part_metadata.childSessionID
-		or part_metadata.childSessionId
-		or part_metadata.child_session_id
-		or tool_part.childSessionID
-		or tool_part.childSessionId
-		or tool_part.child_session_id
+	return state_metadata.sessionID or state_metadata.sessionId
+		or part_metadata.sessionID or part_metadata.sessionId
 end
 
 ---@param parent_session_id string|nil
@@ -311,9 +242,7 @@ function M.session_owns_task_child(parent_session_id, child_session_id)
 	local ok_state, state = pcall(require, "opencode.state")
 	if ok_state and type(state.get_session_record) == "function" then
 		local record = state.get_session_record(child_session_id)
-		local record_parent = type(record) == "table"
-			and (record.parentID or record.parentId or record.parent_id)
-			or nil
+		local record_parent = type(record) == "table" and record.parentID or nil
 		if record_parent then
 			return record_parent == parent_session_id
 		end

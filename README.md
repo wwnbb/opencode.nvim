@@ -13,9 +13,93 @@ projects, and prompts without leaving the editor.
 The goal of opencode.nvim is to make OpenCode feel lightweight, scriptable, keyboard-friendly,
 and naturally integrated into the Neovim workflow.
 
+# Thought and Explore
+
+Reasoning appears as a collapsed `+ Thought · 216ms` row. Press `O` or `Enter`
+on it to show the full reasoning behind a left border. Consecutive reasoning
+parts share a row, with their step count and combined duration.
+
+Consecutive Read, Glob, and Grep calls appear as `→ Explored — 1 read, 2 searches`.
+Expand the row to see file paths and search summaries. Active groups animate as
+`Thinking` or `Exploring`; failures remain visible when collapsed, and permission
+requests stay accessible. Expansion is preserved while streaming. Set `thinking.enabled = false` to hide reasoning.
+
+# Tokens per second
+
+Assistant footers show average generation speed, for example `42.7 tok/s`.
+Like OpenCode v2, this sums output and reasoning tokens across the current turn
+and divides by the total model request time (`time.streamed - time.created`).
+Tool execution time is excluded. The value appears when the server supplies
+stream timing and token usage, including when loading session history.
+
+TPS is enabled by default. Set `chat.tps = false` to hide it:
+
+```lua
+require("opencode").setup({ chat = { tps = false } })
+```
+
+# Code highlighting
+
+Fenced code blocks in user messages and assistant replies use the installed
+Tree-sitter parser and highlight queries for their language. Open fences and
+incomplete code are highlighted while the answer streams. The same highlighting
+is used when loading history, with source positions preserved through wrapping
+and shortened user messages. Sent user messages and assistant replies render
+Markdown and hide fence delimiters; the input keeps the original editable source
+visible.
+
+Chat messages share OpenTUI's top-level Markdown renderer, using Neovim's
+window padding and the existing user-message box: block-specific spacing, styled
+headings/emphasis, concealed inline markers, literal code blocks, nested lists,
+quote borders, horizontal
+rules and full-width grid tables. This uses the `markdown` and `markdown_inline`
+Tree-sitter parsers (bundled with current Neovim); if unavailable, source text
+remains readable. Streaming and history use the same renderer.
+
+`OpenCodeMarkdownHeading`, `OpenCodeMarkdownHeading1`, `OpenCodeMarkdownStrong`,
+`OpenCodeMarkdownEmphasis`, `OpenCodeMarkdownCode`, `OpenCodeMarkdownLink`,
+`OpenCodeMarkdownLinkText`, `OpenCodeMarkdownQuote`, `OpenCodeMarkdownBorder`,
+`OpenCodeMarkdownList` and `OpenCodeMarkdownStrike` control Markdown styles.
+Their defaults use the current Neovim colorscheme; exact RGB colors and code
+syntax colors depend on that colorscheme and the installed language queries.
+
+```lua
+require("opencode").setup({
+  syntax = {
+    enabled = true,
+    user_markdown = true,
+    assistant_markdown = true, -- includes streaming replies
+    input_markdown = true,     -- includes open fences while editing the draft
+    max_lines = 500,           -- per code block
+    max_bytes = 200 * 1024,
+    languages = {},            -- optional language aliases
+  },
+})
+```
+
+For example, a `rust` fence needs a Rust parser and `highlights.scm` queries on
+Neovim's runtimepath. Missing parsers/queries, unknown languages and blocks over
+the limits fall back to plain text; parsers are not installed automatically.
+Explicitly labelled fences also highlight snippets shorter than `syntax.min_bytes`.
+Set `syntax.enabled = false` to disable fenced-code highlighting. Standalone
+backtick/tilde fences are supported in all surfaces; sent messages also
+parse nested Markdown containers.
+
+The current-line and visual-selection helpers (including the suggested
+`<leader>oe` and `<leader>oa` mappings below) add code in a fenced Markdown block.
+The language comes from the source buffer's `filetype`, with filename detection
+as a fallback; unknown languages leave the fence unlabelled. The `@file#lines`
+reference stays above the block. Selections containing backtick fences use a
+longer outer fence so the selected text remains intact.
+
+Fenced code also highlights in the input widget while typing, pasting, undoing
+edits and restoring drafts or history, including blocks without a closing fence.
+It uses the same language parsers and per-block limits as chat. Set
+`syntax.input_markdown = false` to disable highlighting only in the input.
+
 # Testing
 
-Install pinned Neovim test dependencies once:
+Install pinned Neovim and server-plugin test dependencies once (Node.js and npm required):
 
 ```sh
 ./scripts/bootstrap-test-deps.sh
@@ -24,8 +108,8 @@ Install pinned Neovim test dependencies once:
 Run the Plenary/Busted test suite:
 
 The full suite also runs the bundled TypeScript tool tests with Bun. Install Bun
-or set `OPENCODE_NVIM_BUN` to its executable path; no additional npm packages are
-needed for these tests.
+or set `OPENCODE_NVIM_BUN` to its executable path. Bootstrap installs the exact
+OpenCode 2.0.11 API dependencies and TypeScript compiler used by the tool suite.
 
 ```sh
 ./tests/run.sh              # all specs
@@ -44,6 +128,84 @@ You can also run a single spec file:
 
 # Installation
 
+The backend requires **OpenCode 2.0.11 or newer**.
+
+Run `./scripts/install-tools.sh` to install the bundled v2 server plugin into
+`$XDG_CONFIG_HOME/nvim/opencode` (or `~/.config/nvim/opencode`). Pass a directory
+argument when `server.config_dir` uses a different location. Node.js and npm are
+required to install the pinned runtime dependencies. The installer preserves
+user commands and JSONC comments, adds its v2 plugin entry, and keeps backups
+under `opencode-nvim-backups` on reinstall. It checks for unsupported config
+entries and tool files before changing the profile; resolve any reported path
+and rerun the installer.
+
+The bundled tools use two distinct decisions: native OpenCode permission rules
+authorize the operation, then Neovim reviews each proposed file. `allow` on a tool
+does not accept its diff. The tools wait for the Neovim connection and never
+accept edits merely because no UI is connected.
+
+Review of an external server applies accepted files on that server after all
+files have a decision. Local native diff and manual resolution require
+`server.shared_filesystem = true`: set this only when Neovim sees the same files
+at the server's paths. A server started by this plugin shares the local filesystem
+automatically. Inline proposals (`=`), acceptance and rejection also work without
+shared files. Disconnected or cancelled reviews cannot apply or flush files.
+
+Bundled plugin **2.0.11-4** provides file review protocol 2. Update it
+together with the Lua plugin. `/skill` and the skill palette send native
+attachments.
+
+`neovim_edit` follows the v2 edit input: `path`, non-empty `oldString`,
+`newString`, and optional `replaceAll`. It only changes existing files.
+Use `neovim_patch` with `patchText` to add,
+update, move, or delete files. Both retain preview, per-file accept/reject, manual
+diff editing, and the optional `allowIndentChange` guard override. User review
+comments accompany the tool's model-visible result and persist in chat history.
+
+Permissions remain scoped to `neovim_edit` and `neovim_patch`; they are not
+broadened to cover all built-in `edit` operations. Unknown historical tool calls
+render through the generic tool view without review actions. Reinstall the bundled
+server plugin and reconnect when updating: protocol 2 prevents an older server
+from silently dropping review comments.
+
+Model preferences use format 2 in `opencode_local.json`. A versionless file is
+left untouched and is not loaded; move it aside and reselect preferences in the
+UI, or manually convert its model IDs and add `"version": 2`. Unavailable
+favorites in a version 2 file are retained. Existing sessions keep their own
+model, agent and variant until you explicitly change them.
+
+Prompts sent while a response is running are queued by default. Pending inputs
+stay at the bottom of the chat, below the current response and its status footer,
+until delivery is confirmed. They then move into the conversation history.
+Press `S` on a queued message to steer the active agent with that same input.
+Its label changes to **Steering pending** after the server confirms the change;
+it is applied between agent steps, without aborting a running tool.
+On a pending message, press `C` to cancel it or `E` to remove it from the inbox
+and edit its text and attachments in the input. Send the edited draft with `<C-g>`.
+These keys act on the pending widget under the cursor (including its status line);
+outside it they keep their normal Neovim behavior.
+The pending label disappears once delivery is confirmed. **Cancel Pending Input**
+is also available in the palette. Configure or disable these chat keys with:
+
+```lua
+require("opencode").setup({
+  chat = { keymaps = { cancel_pending = "C", edit_pending = "E", steer_pending = "S" } }, -- false or "" disables a key
+})
+```
+
+Chat `<C-c>` interrupts the current execution and leaves inbox inputs pending.
+Scripts can explicitly request steering with `send(text, { delivery = "steer" })`.
+After a connection loss, an unknown delivery outcome stays visible while it is
+reconciled with the server; it is never automatically resent.
+
+Current transport supports HTTP and Basic authentication, without direct TLS.
+For an owned server without a configured password, the plugin generates an
+ephemeral password and uses it for both HTTP and SSE. External servers require
+their configured credentials. File URI attachments refer to files accessible to the server; clipboard
+images use inline data URIs. OpenCode 2.0.11 does not run LSP diagnostics and
+does not expose MCP tool definitions through its public catalog. MCP status,
+connection and linked integration authentication remain available.
+
 Paste the prompt below into your AI coding agent while it is working in your Neovim config directory.
 It will inspect your setup, install opencode.nvim with your existing plugin manager, and configure safe defaults.
 
@@ -54,13 +216,13 @@ Follow these steps:
 1. Inspect the current Neovim config first. Identify the plugin manager, config structure, existing keymap style, colors/highlight setup, and any existing OpenCode or AI-assistant config.
 2. Ask targeted questions only when a choice is not obvious. Ask, for example, which plugin manager to use if it is unclear, which keymap should toggle/open opencode, whether session tabs should use a fixed max count or dynamic auto-fit, and whether the chat layout should be vertical, horizontal, or float.
 3. Add `wwnbb/opencode.nvim` through the existing plugin manager. Include dependencies: MunifTanjim/nui.nvim and nvim-lua/plenary.nvim. If the config uses lazy.nvim, ask whether I want you to install/sync the plugin now by running `nvim --headless "+Lazy! sync" +qa`; run it only if I confirm.
-4. Configure the plugin manager build/install hook to run `scripts/install-tools.sh` at least once so the bundled opencode.nvim config/tools are installed. If the plugin manager has no build hook, run `scripts/install-tools.sh` manually from the plugin root. After install, run `opencode debug config` to verify the OpenCode config is correct.
+4. Configure the plugin manager build/install hook to run `scripts/install-tools.sh` so the bundled opencode.nvim server plugin is updated with the Lua plugin. If the plugin manager has no build hook, run the script manually from the plugin root. Verify `opencode --version` reports 2.0.11 or newer, then connect and inspect Server Status in the command palette.
 5. Configure `require("opencode").setup()` using only supported options:
    - `server.command`, `server.auto_start`, `server.config_dir`, `server.env`
-   - `session.default_agent`, `session.default_model.providerID`, `session.default_model.modelID`, `session.parallel.enabled`, `session.parallel.use_prompt_async`
+   - `session.default_agent`, `session.default_model.providerID`, `session.default_model.modelID`, `session.parallel.enabled`
    - `chat.layout` (`vertical`, `horizontal`, or `float`), `chat.position`, `chat.width`, `chat.height`, `chat.float.width`, `chat.float.height`, `chat.float.border`, `chat.close_on_focus_lost`
    - `chat.session_tabs.enabled`, `chat.session_tabs.auto_fit`, `chat.session_tabs.max_tabs`, `chat.session_tabs.separator`, `chat.session_tabs.icons`, `chat.session_tabs.colors`
-   - top-level `keymaps.toggle`, `keymaps.command_palette`, `keymaps.abort`, `keymaps.active_sessions`
+   - top-level `keymaps.toggle`, `keymaps.command_palette`, `keymaps.toggle_logs`, `keymaps.close_session`, `keymaps.abort`, `keymaps.active_sessions`
    - `input.keymaps.send`, `input.keymaps.cancel`, `input.keymaps.variant_cycle`, `input.keymaps.agent_cycle`, `input.keymaps.model_cycle`
    - `lualine.enabled`, `notifications.enabled`
    - Keep `danger_mode = false`; do not enable it unless I explicitly request the security tradeoff.
@@ -131,7 +293,6 @@ require("opencode").setup({
     },
     parallel = {
       enabled = true,
-      use_prompt_async = true,
     },
   },
   chat = {
@@ -155,6 +316,8 @@ require("opencode").setup({
   keymaps = {
     toggle = "<leader>oo",
     command_palette = "<leader>op",
+    toggle_logs = "<leader>ol",
+    close_session = "<leader>oq",
     abort = "<leader>ox",
     active_sessions = "<leader>oS",
   },
@@ -172,4 +335,7 @@ require("opencode").setup({
   danger_mode = false,
 })
 ```
+For the five global OpenCode mappings (`toggle`, `command_palette`, `toggle_logs`,
+`close_session`, and `active_sessions`), use `false` or `""` to disable a key.
+Changing a key removes the previous plugin mapping.
 ````

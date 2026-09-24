@@ -1,0 +1,526 @@
+{
+  "target_version": "2.0.11",
+  "research_date": "2026-09-21",
+  "warning": "HTTP paths extracted from rolling OpenAPI; events extracted from pinned @opencode/client 2.0.11. Это реестр, а не полный валидатор DTO и не доказательство runtime-поведения.",
+  "http_path_count": 112,
+  "http_operation_count": 135,
+  "http_paths": {
+    "/api/info": [
+      "GET"
+    ],
+    "/api/location": [
+      "GET"
+    ],
+    "/api/location/reload": [
+      "POST"
+    ],
+    "/api/agent": [
+      "GET"
+    ],
+    "/api/agent/{agentID}": [
+      "GET"
+    ],
+    "/api/plugin": [
+      "GET"
+    ],
+    "/api/plugin/check": [
+      "POST"
+    ],
+    "/api/plugin/update": [
+      "POST"
+    ],
+    "/api/session": [
+      "GET",
+      "POST"
+    ],
+    "/api/experimental/session/stats": [
+      "GET"
+    ],
+    "/api/experimental/session/import": [
+      "POST"
+    ],
+    "/api/experimental/session/{sessionID}/export": [
+      "GET"
+    ],
+    "/api/session/active": [
+      "GET"
+    ],
+    "/api/session/{sessionID}": [
+      "DELETE",
+      "GET",
+      "PATCH"
+    ],
+    "/api/session/{sessionID}/fork": [
+      "POST"
+    ],
+    "/api/session/{sessionID}/agent": [
+      "POST"
+    ],
+    "/api/session/{sessionID}/model": [
+      "POST"
+    ],
+    "/api/session/{sessionID}/move": [
+      "POST"
+    ],
+    "/api/session/{sessionID}/prompt": [
+      "POST"
+    ],
+    "/api/session/{sessionID}/command": [
+      "POST"
+    ],
+    "/api/experimental/session/{sessionID}/skill": [
+      "POST"
+    ],
+    "/api/session/{sessionID}/synthetic": [
+      "POST"
+    ],
+    "/api/session/{sessionID}/shell": [
+      "POST"
+    ],
+    "/api/session/{sessionID}/compact": [
+      "POST"
+    ],
+    "/api/experimental/session/{sessionID}/wait": [
+      "POST"
+    ],
+    "/api/session/{sessionID}/revert/stage": [
+      "POST"
+    ],
+    "/api/session/{sessionID}/revert": [
+      "DELETE"
+    ],
+    "/api/session/{sessionID}/revert/commit": [
+      "POST"
+    ],
+    "/api/session/{sessionID}/context": [
+      "GET"
+    ],
+    "/api/session/{sessionID}/diff": [
+      "GET"
+    ],
+    "/api/session/{sessionID}/inbox": [
+      "GET"
+    ],
+    "/api/session/{sessionID}/inbox/{inboxID}": [
+      "DELETE",
+      "PATCH"
+    ],
+    "/api/experimental/session/{sessionID}/instructions/entries": [
+      "GET"
+    ],
+    "/api/experimental/session/{sessionID}/instructions/entries/{key}": [
+      "DELETE",
+      "PUT"
+    ],
+    "/api/session/{sessionID}/generate": [
+      "POST"
+    ],
+    "/api/experimental/session/{sessionID}/log": [
+      "GET"
+    ],
+    "/api/session/{sessionID}/interrupt": [
+      "POST"
+    ],
+    "/api/session/{sessionID}/background": [
+      "POST"
+    ],
+    "/api/session/{sessionID}/message/{messageID}": [
+      "GET"
+    ],
+    "/api/session/{sessionID}/form": [
+      "GET",
+      "POST"
+    ],
+    "/api/session/{sessionID}/form/{formID}": [
+      "DELETE",
+      "GET"
+    ],
+    "/api/session/{sessionID}/form/{formID}/reply": [
+      "POST"
+    ],
+    "/api/session/{sessionID}/environment": [
+      "PUT"
+    ],
+    "/api/session/{sessionID}/view": [
+      "POST"
+    ],
+    "/api/session/{sessionID}/message": [
+      "GET"
+    ],
+    "/api/model": [
+      "GET"
+    ],
+    "/api/model/default": [
+      "GET"
+    ],
+    "/api/experimental/generate": [
+      "POST"
+    ],
+    "/api/provider": [
+      "GET"
+    ],
+    "/api/provider/{providerID}": [
+      "GET"
+    ],
+    "/api/integration": [
+      "GET"
+    ],
+    "/api/integration/{integrationID}": [
+      "GET"
+    ],
+    "/api/experimental/integration/wellknown": [
+      "POST"
+    ],
+    "/api/integration/{integrationID}/connect/key": [
+      "POST"
+    ],
+    "/api/integration/{integrationID}/connect/oauth": [
+      "POST"
+    ],
+    "/api/integration/{integrationID}/connect/oauth/{attemptID}": [
+      "DELETE",
+      "GET"
+    ],
+    "/api/integration/{integrationID}/connect/oauth/{attemptID}/complete": [
+      "POST"
+    ],
+    "/api/integration/{integrationID}/connect/command": [
+      "POST"
+    ],
+    "/api/integration/{integrationID}/connect/command/{attemptID}": [
+      "DELETE",
+      "GET"
+    ],
+    "/api/mcp": [
+      "GET"
+    ],
+    "/api/experimental/mcp/{server}": [
+      "DELETE",
+      "PUT"
+    ],
+    "/api/experimental/mcp/{server}/connect": [
+      "POST"
+    ],
+    "/api/experimental/mcp/{server}/disconnect": [
+      "POST"
+    ],
+    "/api/mcp/resource": [
+      "GET"
+    ],
+    "/api/credential/{credentialID}": [
+      "DELETE",
+      "PATCH"
+    ],
+    "/api/credential/{credentialID}/activate": [
+      "POST"
+    ],
+    "/api/project": [
+      "GET"
+    ],
+    "/api/project/{projectID}": [
+      "PATCH"
+    ],
+    "/api/form": [
+      "GET"
+    ],
+    "/api/permission/request": [
+      "GET"
+    ],
+    "/api/permission/saved": [
+      "GET"
+    ],
+    "/api/permission/saved/{id}": [
+      "DELETE"
+    ],
+    "/api/session/{sessionID}/permission": [
+      "GET",
+      "POST"
+    ],
+    "/api/session/{sessionID}/permission/{requestID}": [
+      "GET"
+    ],
+    "/api/session/{sessionID}/permission/{requestID}/reply": [
+      "POST"
+    ],
+    "/api/fs/read/*": [
+      "GET"
+    ],
+    "/api/fs/list": [
+      "GET"
+    ],
+    "/api/fs/find": [
+      "GET"
+    ],
+    "/api/experimental/fs/write": [
+      "POST"
+    ],
+    "/api/command": [
+      "GET"
+    ],
+    "/api/skill": [
+      "GET"
+    ],
+    "/api/rpc/{rpcID}/{method}": [
+      "POST"
+    ],
+    "/api/event": [
+      "GET"
+    ],
+    "/api/pty": [
+      "GET",
+      "POST"
+    ],
+    "/api/pty/{ptyID}": [
+      "DELETE",
+      "GET",
+      "PUT"
+    ],
+    "/api/pty/{ptyID}/connect-token": [
+      "POST"
+    ],
+    "/api/pty/{ptyID}/connect": [
+      "GET"
+    ],
+    "/api/experimental/session/{sessionID}/terminal/read": [
+      "GET"
+    ],
+    "/api/experimental/session/{sessionID}/terminal": [
+      "GET",
+      "POST"
+    ],
+    "/api/experimental/persistent-pty/shutdown": [
+      "POST"
+    ],
+    "/api/experimental/persistent-pty/handoff": [
+      "POST"
+    ],
+    "/api/experimental/persistent-pty/{ptyID}": [
+      "DELETE",
+      "GET",
+      "PUT"
+    ],
+    "/api/experimental/persistent-pty/{ptyID}/snapshot": [
+      "GET"
+    ],
+    "/api/experimental/persistent-pty/{ptyID}/connect-token": [
+      "POST"
+    ],
+    "/api/experimental/persistent-pty/{ptyID}/connect": [
+      "GET"
+    ],
+    "/api/shell": [
+      "GET",
+      "POST"
+    ],
+    "/api/shell/{id}": [
+      "DELETE",
+      "GET"
+    ],
+    "/api/shell/{id}/output": [
+      "GET"
+    ],
+    "/api/reference": [
+      "GET"
+    ],
+    "/api/worktree": [
+      "DELETE",
+      "GET",
+      "POST"
+    ],
+    "/api/worktree/refresh": [
+      "POST"
+    ],
+    "/api/vcs": [
+      "GET"
+    ],
+    "/api/vcs/base": [
+      "GET"
+    ],
+    "/api/vcs/status": [
+      "GET"
+    ],
+    "/api/vcs/branch": [
+      "GET"
+    ],
+    "/api/vcs/diff": [
+      "GET"
+    ],
+    "/api/debug/location": [
+      "DELETE",
+      "GET"
+    ],
+    "/api/websearch/provider": [
+      "GET"
+    ],
+    "/api/websearch": [
+      "POST"
+    ],
+    "/api/config": [
+      "GET"
+    ],
+    "/api/config/shell": [
+      "GET"
+    ],
+    "/api/experimental/config": [
+      "PATCH"
+    ]
+  },
+  "live_event_types": [
+    "`${\"rpc.\"}${string}`",
+    "agent.updated",
+    "command.updated",
+    "config.updated",
+    "credential.switched",
+    "credential.updated",
+    "filesystem.changed",
+    "form.cancelled",
+    "form.created",
+    "form.replied",
+    "installation.update-available",
+    "installation.updated",
+    "integration.updated",
+    "location.shutdown",
+    "mcp.resources.changed",
+    "mcp.status.changed",
+    "model.updated",
+    "models-dev.refreshed",
+    "permission.asked",
+    "permission.replied",
+    "persistent-pty.added",
+    "persistent-pty.removed",
+    "plugin.updated",
+    "project.updated",
+    "provider.updated",
+    "pty.created",
+    "pty.deleted",
+    "pty.exited",
+    "pty.updated",
+    "reference.updated",
+    "server.connected",
+    "session.agent.selected",
+    "session.compaction.delta",
+    "session.compaction.ended",
+    "session.compaction.failed",
+    "session.compaction.started",
+    "session.created",
+    "session.deleted",
+    "session.execution.failed",
+    "session.execution.interrupted",
+    "session.execution.started",
+    "session.execution.succeeded",
+    "session.forked",
+    "session.idle",
+    "session.inbox.cancelled",
+    "session.inbox.delivered",
+    "session.inbox.delivery.changed",
+    "session.inbox.enqueued",
+    "session.instructions.updated",
+    "session.model.selected",
+    "session.moved",
+    "session.permissions",
+    "session.reasoning.delta",
+    "session.reasoning.ended",
+    "session.reasoning.started",
+    "session.renamed",
+    "session.retry.scheduled",
+    "session.revert.cleared",
+    "session.revert.committed",
+    "session.revert.staged",
+    "session.shell.ended",
+    "session.shell.started",
+    "session.skill.activated",
+    "session.status",
+    "session.step.ended",
+    "session.step.failed",
+    "session.step.started",
+    "session.step.streamed",
+    "session.synthetic",
+    "session.text.delta",
+    "session.text.ended",
+    "session.text.started",
+    "session.tool.called",
+    "session.tool.failed",
+    "session.tool.input.delta",
+    "session.tool.input.ended",
+    "session.tool.input.started",
+    "session.tool.progress",
+    "session.tool.success",
+    "session.usage.updated",
+    "session.viewed",
+    "shell.created",
+    "shell.deleted",
+    "shell.exited",
+    "skill.updated",
+    "tui.command.execute",
+    "tui.prompt.append",
+    "tui.session.select",
+    "tui.toast.show",
+    "vcs.branch.updated",
+    "websearch.updated",
+    "worktree.resolved",
+    "worktree.updated"
+  ],
+  "durable_event_types": [
+    "session.agent.selected",
+    "session.compaction.ended",
+    "session.compaction.failed",
+    "session.compaction.started",
+    "session.created",
+    "session.deleted",
+    "session.execution.failed",
+    "session.execution.interrupted",
+    "session.execution.started",
+    "session.execution.succeeded",
+    "session.forked",
+    "session.inbox.cancelled",
+    "session.inbox.delivered",
+    "session.inbox.delivery.changed",
+    "session.inbox.enqueued",
+    "session.instructions.updated",
+    "session.message.content.updated",
+    "session.model.selected",
+    "session.moved",
+    "session.permissions",
+    "session.reasoning.ended",
+    "session.reasoning.started",
+    "session.renamed",
+    "session.retry.scheduled",
+    "session.revert.cleared",
+    "session.revert.committed",
+    "session.revert.staged",
+    "session.shell.ended",
+    "session.shell.started",
+    "session.skill.activated",
+    "session.step.ended",
+    "session.step.failed",
+    "session.step.started",
+    "session.step.streamed",
+    "session.synthetic",
+    "session.text.ended",
+    "session.text.started",
+    "session.tool.called",
+    "session.tool.failed",
+    "session.tool.input.ended",
+    "session.tool.input.started",
+    "session.tool.success",
+    "session.usage.recorded",
+    "session.viewed"
+  ],
+  "durable_not_in_live_union": [
+    "session.message.content.updated",
+    "session.usage.recorded"
+  ],
+  "mcp_status_values": [
+    "connected",
+    "pending",
+    "disabled",
+    "failed",
+    "needs_auth"
+  ],
+  "plugin_permission_methods": [
+    "list",
+    "get",
+    "reply"
+  ],
+  "plugin_permission_has_create": false
+}

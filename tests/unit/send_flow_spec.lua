@@ -1,433 +1,404 @@
--- Unit checks for deterministic send-flow behavior.
--- Run with: ./tests/run.sh unit
-
-describe("opencode send flow", function()
-	it("handles session creation and send variants", function()
-vim.opt.runtimepath:append(vim.fn.getcwd())
-
-local calls = {}
-local deferred = {}
-
-local function fresh_calls()
-	calls = {
-		chat_messages = {},
-		create_sessions = {},
-		emitted = {},
-		get_messages = {},
-		notifications = {},
-		send_async = {},
-		send_sync = {},
-		warnings = {},
-		ensure_connected = 0,
-	}
-	deferred = {}
-end
-
-fresh_calls()
-
-vim.schedule = function(fn)
-	fn()
-end
-
-vim.defer_fn = function(fn, timeout)
-	table.insert(deferred, { fn = fn, timeout = timeout })
-end
-
-vim.notify = function(message, level)
-	table.insert(calls.notifications, { message = message, level = level })
-end
-
-local client_stub = {
-	next_async_error = nil,
-	next_create_error = nil,
-	next_create_session = nil,
-	next_messages = {},
-	next_messages_error = nil,
-	next_send_error = nil,
-	next_send_response = nil,
-}
-
-function client_stub.setup(opts)
-	calls.client_setup = opts
-end
-
-function client_stub.create_session(opts, callback)
-	table.insert(calls.create_sessions, opts)
-	callback(client_stub.next_create_error, client_stub.next_create_session or { id = "created", title = "Created" })
-end
-
-function client_stub.send_message_async(session_id, payload, callback)
-	table.insert(calls.send_async, { session_id = session_id, payload = payload })
-	callback(client_stub.next_async_error)
-end
-
-function client_stub.send_message(session_id, payload, opts, callback)
-	table.insert(calls.send_sync, { session_id = session_id, payload = payload, opts = opts })
-	callback(client_stub.next_send_error, client_stub.next_send_response)
-end
-
-function client_stub.get_messages(session_id, opts, callback)
-	table.insert(calls.get_messages, { session_id = session_id, opts = opts })
-	callback(client_stub.next_messages_error, client_stub.next_messages)
-end
-
-package.preload["opencode.client"] = function()
-	return client_stub
-end
-
-package.preload["opencode.lifecycle"] = function()
-	return {
-		setup = function(opts)
-			calls.lifecycle_setup = opts
-		end,
-		ensure_connected = function(callback)
-			calls.ensure_connected = calls.ensure_connected + 1
-			callback()
-		end,
-	}
-end
-
-package.preload["opencode.events"] = function()
-	return {
-		setup = function()
-			calls.events_setup = true
-		end,
-		emit = function(event_type, data)
-			table.insert(calls.emitted, { event_type = event_type, data = data })
-		end,
-	}
-end
-
-package.preload["opencode.ui.chat"] = function()
-	return {
-		add_message = function(role, message, opts)
-			table.insert(calls.chat_messages, { role = role, message = message, opts = opts })
-		end,
-	}
-end
-
-package.preload["opencode.ui.chat.render_coordinator"] = function()
-	return {
-		request = function() end,
-	}
-end
-
-package.preload["opencode.logger"] = function()
-	return {
-		debug = function() end,
-		warn = function(_, data)
-			table.insert(calls.warnings, data)
-		end,
-		error = function() end,
-	}
-end
-
-package.preload["opencode.local"] = function()
-	return {
-		setup = function() end,
-		agent = {
-			current = function()
-				return nil
-			end,
-		},
-		model = {
-			current = function()
-				return nil
-			end,
-			parsed = function()
-				return nil
-			end,
-		},
-		variant = {
-			current = function()
-				return nil
-			end,
-		},
-	}
-end
-
-package.preload["opencode.artifact.changes"] = function()
-	return {
-		setup = function() end,
-		get_pending = function()
-			return {}
-		end,
-	}
-end
-
-package.preload["opencode.ui.palette"] = function()
-	return {
-		setup = function() end,
-	}
-end
-
-package.preload["opencode.slash"] = function()
-	return {
-		register_defaults = function() end,
-	}
-end
-
-package.preload["opencode.components.lualine"] = function()
-	return {
-		setup = function() end,
-	}
-end
-
-local function assert_eq(actual, expected, message)
-	if actual ~= expected then
-		error(string.format("%s: expected %s, got %s", message, vim.inspect(expected), vim.inspect(actual)))
-	end
-end
-
-local function assert_truthy(value, message)
-	if not value then
-		error(message)
-	end
-end
-
-local function reset_client()
-	client_stub.next_async_error = nil
-	client_stub.next_create_error = nil
-	client_stub.next_create_session = nil
-	client_stub.next_messages = {}
-	client_stub.next_messages_error = nil
-	client_stub.next_send_error = nil
-	client_stub.next_send_response = nil
-end
-
-local opencode = require("opencode")
-opencode.setup({
-	lualine = { enabled = false },
-	session = {
-		default_agent = "Build",
-		default_model = { providerID = "p1", modelID = "m1" },
-		parallel = {
-			enabled = true,
-			use_prompt_async = true,
-		},
-	},
-})
-
+-- Admission, correlation, selection and session ownership checks for v2.
 local state = require("opencode.state")
 local sync = require("opencode.sync")
-local session_actions = require("opencode.session")
+local pending = require("opencode.session.pending")
+local history = require("opencode.ui.input.history")
 local selectors = require("opencode.selectors")
-local session_lock = require("opencode.session.lock")
 
-local function reset_world(use_prompt_async)
-	state.reset()
-	sync.clear_all()
-	sync.handle_providers({
-		{ id = "p1", name = "Provider 1", models = { m1 = { name = "Model 1" } } },
-	})
-	sync.handle_agents({
-		{ id = "build", name = "Build" },
-	})
-
-	local cfg = state.get_config()
-	cfg.session.default_agent = "Build"
-	cfg.session.default_model = { providerID = "p1", modelID = "m1" }
-	cfg.session.parallel = {
-		enabled = true,
-		use_prompt_async = use_prompt_async ~= false,
-	}
-	state.set_config(cfg)
-
-	reset_client()
-	fresh_calls()
-end
-
-local function has_event(event_type, action)
-	for _, emitted in ipairs(calls.emitted) do
-		if emitted.event_type == event_type and (not action or emitted.data.action == action) then
-			return true
-		end
+describe("opencode v2 send flow", function()
+	local saved, old_schedule, old_notify, calls, callbacks, send
+	local names = { "opencode.send", "opencode.client", "opencode.selectors", "opencode.events" }
+	local function model() return { providerID = "p", id = "catalog-id" } end
+	local function accepted(index)
+		local call = calls[index or #calls]
+		callbacks.prompt(nil, { id = call.body.id, sessionID = call.sid, type = "user",
+			payload = { text = call.body.text }, delivery = call.body.delivery, time = { created = 20 } })
 	end
-	return false
-end
-
-local function find_part(parts, predicate)
-	for _, part in ipairs(parts) do
-		if predicate(part) then
-			return part
-		end
-	end
-	return nil
-end
-
-reset_world(true)
-session_actions.set_active("session_async", "Async", { preserve_cache = true })
-fresh_calls()
-
-opencode.send("hello async", {
-	context = {
-		{ type = "text", text = "context", _marker = { row = 1 } },
-	},
-	parts = {
-		{ type = "file", mime = "image/png", filename = "shot.png", _marker = true },
-	},
-	variant = "fast",
-})
-
-assert_eq(calls.ensure_connected, 1, "public send should use lifecycle connection guard")
-assert_eq(#calls.send_async, 1, "default config should send through prompt_async")
-assert_eq(#calls.send_sync, 0, "async send should not call sync endpoint")
-
-local async_payload = calls.send_async[1].payload
-assert_truthy(async_payload.messageID:match("^msg_") ~= nil, "payload should include generated message id")
-assert_eq(#async_payload.parts, 3, "payload should include text, context, and attachment parts")
-assert_eq(async_payload.agent, "Build", "payload should use configured default agent")
-assert_eq(async_payload.model.providerID, "p1", "payload should use configured provider")
-assert_eq(async_payload.model.modelID, "m1", "payload should use configured model")
-assert_eq(async_payload.variant, "fast", "payload should pass variant")
-assert_eq(async_payload.parts[2]._marker, nil, "context markers should be stripped")
-assert_eq(async_payload.parts[3]._marker, nil, "attachment markers should be stripped")
-assert_truthy(async_payload.parts[2].id ~= nil, "context part should receive an id")
-assert_truthy(async_payload.parts[3].id ~= nil, "attachment part should receive an id")
-
-local async_messages = sync.get_messages("session_async")
-assert_eq(#async_messages, 1, "async send should seed one local user message")
-assert_eq(async_messages[1].id, async_payload.messageID, "seeded message id should match payload")
-assert_eq(async_messages[1].role, "user", "seeded message should be a user message")
-assert_eq(state.get_status(), "streaming", "async accepted send should remain streaming")
-assert_truthy(has_event("sync_changed", "seeded"), "async send should emit seeded sync_changed event")
-
-local async_parts = sync.get_parts(async_payload.messageID)
-assert_truthy(find_part(async_parts, function(part)
-	return part.text == "hello async" and part.sessionID == "session_async"
-end), "seeded text part should include session id")
-assert_truthy(find_part(async_parts, function(part)
-	return part.type == "file" and part.filename == "shot.png" and part.messageID == async_payload.messageID
-end), "seeded attachment should include message id")
-
-reset_world(false)
-session_actions.set_active("session_sync", "Sync", { preserve_cache = true })
-fresh_calls()
-
-client_stub.next_send_response = {
-	info = {
-		id = "msg_assistant_response",
-		role = "assistant",
-		time = { created = 2 },
-	},
-	parts = {
-		{ id = "prt_assistant_response", messageID = "msg_assistant_response", type = "text", text = "done" },
-	},
-}
-client_stub.next_messages = {
-	client_stub.next_send_response,
-}
-
-opencode.send("hello sync")
-
-assert_eq(#calls.send_sync, 1, "sync config should call /message endpoint")
-assert_eq(#calls.send_async, 0, "sync config should not call prompt_async")
-assert_eq(calls.send_sync[1].opts.timeout, 0, "sync send should keep unbounded response timeout")
-assert_eq(#calls.get_messages, 1, "sync send should refresh session messages after response")
-assert_eq(state.get_status(), "idle", "sync send should return status to idle after completion")
-assert_truthy(sync.get_message("session_sync", "msg_assistant_response") ~= nil, "sync response should hydrate assistant message")
-assert_truthy(has_event("sync_changed", "prompt_response"), "sync response should emit prompt_response sync_changed event")
-
-reset_world(true)
-client_stub.next_create_session = { id = "session_created", title = "Created Title" }
-
-opencode.send("hello new", { title = "Requested Title" })
-
-assert_eq(#calls.create_sessions, 1, "missing active session should create one")
-assert_eq(calls.create_sessions[1].title, "Requested Title", "created session should use requested title")
-assert_eq(state.get_session().id, "session_created", "created session should become active")
-assert_eq(#calls.send_async, 1, "created session should send after activation")
-assert_eq(calls.send_async[1].session_id, "session_created", "send should target created session")
-
-reset_world(true)
-session_actions.set_active("session_fail", "Fail", { preserve_cache = true })
-client_stub.next_async_error = { message = "boom" }
-fresh_calls()
-
-opencode.send("hello failure")
-
-assert_eq(#calls.send_async, 1, "failing async send should still attempt request")
-assert_eq(state.get_status(), "idle", "failed send should return status to idle")
-assert_eq(#calls.notifications, 1, "failed send should notify")
-assert_truthy(
-	calls.notifications[1].message:find("Failed to send message: boom", 1, true) ~= nil,
-	"failed send notification should include error"
-)
-assert_eq(#calls.chat_messages, 1, "failed send should append system chat error")
-assert_eq(calls.chat_messages[1].opts.session_id, "session_fail", "failed send chat error should target session")
-
-reset_world(false)
-session_actions.set_active("session_sync_fail", "Sync Fail", { preserve_cache = true })
-client_stub.next_send_error = { message = "sync boom" }
-fresh_calls()
-
-opencode.send("hello sync failure")
-
-assert_eq(#calls.send_sync, 1, "failing sync send should still attempt request")
-assert_eq(state.get_status(), "idle", "failed sync send should return status to idle")
-assert_eq(#calls.notifications, 1, "failed sync send should notify")
-assert_eq(#calls.chat_messages, 1, "failed sync send should append one system chat error")
-assert_eq(calls.chat_messages[1].opts.session_id, "session_sync_fail", "failed sync error should target session")
-
-reset_world(true)
-client_stub.next_create_error = { message = "create boom" }
-fresh_calls()
-
-opencode.send("hello create failure")
-
-assert_eq(#calls.create_sessions, 1, "failing session creation should attempt request")
-assert_eq(#calls.notifications, 1, "failed session creation should notify")
-assert_eq(#calls.chat_messages, 1, "failed session creation should append one system chat error")
-assert_eq(calls.chat_messages[1].message, "Error: Failed to create session", "session creation error notice should be canonical")
-
-reset_world(true)
-session_actions.set_active("session_child", "Child", { preserve_cache = true })
-session_lock.set("session_child", {
-		agent = "Explore",
-		model = { providerID = "p1", modelID = "m1" },
-		variant = "locked",
-})
-fresh_calls()
-
-local locked_selection = selectors.send_selection({
-	agent = "Build",
-	model = { providerID = "p1", modelID = "m1" },
-	variant = "global",
-})
-assert_eq(locked_selection.agent, "Explore", "child lock should override explicit agent")
-assert_eq(locked_selection.model.modelID, "m1", "child lock should override explicit model")
-assert_eq(locked_selection.variant, "locked", "child lock should override explicit variant")
-
-opencode.send("locked child send", {
-	agent = "Build",
-	model = { providerID = "p1", modelID = "m1" },
-	variant = "global",
-})
-assert_eq(#calls.send_async, 1, "known child lock should create one request")
-assert_eq(calls.send_async[1].payload.agent, "Explore", "child request should use the locked agent")
-assert_eq(calls.send_async[1].payload.model.modelID, "m1", "child request should use the locked model")
-assert_eq(calls.send_async[1].payload.variant, "locked", "child request should use the locked variant")
-assert_eq(#calls.notifications, 0, "known child lock should not notify")
-
-session_lock.set("session_child", {
-	agent = "Explore",
-	error = "Unable to determine the subagent execution model",
-})
-opencode.send("unknown child model")
-assert_eq(#calls.send_async, 1, "unknown child model should not create another request")
-assert_eq(#calls.send_sync, 0, "unknown child model should not create a sync request")
-assert_eq(#calls.notifications, 1, "unknown child model should notify")
-assert_truthy(
-	calls.notifications[1].message:find("execution model", 1, true) ~= nil,
-	"unknown child model notification should explain the blocked send"
-)
-session_lock.clear_all()
-session_lock.set("parent_child", { agent = "Parent", model = { providerID = "p1", modelID = "m1" } })
-session_lock.set("nested_child", { agent = "Nested", model = { providerID = "p1", modelID = "m1" } })
-assert_eq(session_lock.get("parent_child").agent, "Parent", "nested locks should preserve the parent lock")
-assert_eq(session_lock.get("nested_child").agent, "Nested", "nested locks should preserve the child lock")
-session_lock.clear_all()
-
-print("Send flow checks passed")
+	before_each(function()
+		state.reset(); sync.clear_all(); pending.clear_all(); history.clear_pending()
+		state.set_config({ session = { default_agent = "build" } })
+		sync.handle_providers({ { id = "p", models = { ["catalog-id"] = { variants = { fast = {} } } } } })
+		sync.handle_agents({ { id = "build", name = "Builder" } })
+		state.set_session("ses_a", "A")
+		calls, callbacks, saved = {}, {}, {}
+		for _, name in ipairs(names) do saved[name] = package.loaded[name]; package.loaded[name] = nil end
+		old_schedule, old_notify = vim.schedule, vim.notify
+		vim.schedule = function(fn) fn() end
+		vim.notify = function() end
+		package.loaded["opencode.events"] = { emit = function() end }
+		package.loaded["opencode.selectors"] = { send_selection = function(opts)
+			return { agent = opts.agent or "build", model = opts.model or model(), variant = opts.variant }
+		end, pending_input = selectors.pending_input }
+		package.loaded["opencode.client"] = {
+			set_input_delivery = function(sid, id, delivery, cb)
+				calls[#calls + 1] = { method = "delivery", sid = sid, id = id, delivery = delivery }; callbacks.delivery = cb
+			end,
+			cancel_input = function(sid, id, cb)
+				calls[#calls + 1] = { method = "cancel", sid = sid, id = id }; callbacks.cancel = cb
+			end,
+			get_session = function(sid, cb)
+				calls[#calls + 1] = { method = "get", sid = sid }; callbacks.get = cb
+			end,
+			switch_agent = function(sid, agent, cb)
+				calls[#calls + 1] = { method = "agent", sid = sid, agent = agent }; callbacks.agent = cb
+			end,
+			switch_model = function(sid, value, cb)
+				calls[#calls + 1] = { method = "model", sid = sid, body = value }; callbacks.model = cb
+			end,
+			send_message = function(sid, body, cb)
+				calls[#calls + 1] = { method = "prompt", sid = sid, body = body }; callbacks.prompt = cb
+			end,
+			execute_command = function(sid, name, text, opts, cb)
+				calls[#calls + 1] = { method = "command", sid = sid, name = name, text = text, options = opts }; callbacks.command = cb
+			end,
+			create_session = function(body, cb)
+				calls[#calls + 1] = { method = "create", body = body }; callbacks.create = cb
+			end,
+		}
+		send = require("opencode.send")
 	end)
+	after_each(function()
+		vim.schedule, vim.notify = old_schedule, old_notify
+		for _, name in ipairs(names) do package.loaded[name] = saved[name] end
+		pending.clear_all(); sync.clear_all(); state.reset(); history.clear_pending()
+	end)
+
+	it("serializes agent -> model -> prompt and never marks admission idle", function()
+		assert.is_true(send.send("Hello", { variant = "fast" }))
+		callbacks.get(nil, { id = "ses_a", agent = "other", model = model() })
+		assert.equals("agent", calls[2].method)
+		callbacks.agent(nil)
+		assert.equals("model", calls[3].method)
+		assert.same({ providerID = "p", id = "catalog-id", variant = "fast" }, calls[3].body)
+		callbacks.model(nil)
+		assert.equals("prompt", calls[4].method)
+		local payload = calls[4].body
+		assert.equals("build", require("opencode.local").message_agent.get("ses_a", payload.id))
+		assert.is_nil(payload.parts); assert.is_nil(payload.model); assert.is_nil(payload.agent)
+		assert.is_nil(payload.messageID); assert.equals("Hello", payload.text)
+		accepted()
+		assert.equals("queued", pending.get("ses_a", payload.id).status)
+		assert.equals("busy", state.get_session_status("ses_a").type)
+		assert.equals(1, #sync.get_messages("ses_a"))
+	end)
+
+	for _, status in ipairs({ "idle", "busy", "retry" }) do
+		it("queues by default when session is " .. status .. " until delivery is confirmed", function()
+			state.set_session_status("ses_a", { type = status })
+			assert.is_true(send.send("стой", {}))
+			callbacks.get(nil, { id = "ses_a", agent = "build", model = model() })
+			local payload = calls[2].body
+			assert.equals("queue", payload.delivery)
+			assert.equals("Sending…", selectors.prompt_status("ses_a", payload.id))
+			accepted()
+			assert.equals("queued", pending.get("ses_a", payload.id).status)
+			assert.equals("Queued", selectors.prompt_status("ses_a", payload.id))
+			assert.is_true(sync.get_message("ses_a", payload.id).provisional)
+			local effect = sync.handle_v2_event({ id = "evt_delivery", created = 30, type = "session.inbox.delivered",
+				data = { sessionID = "ses_a", inboxID = payload.id } })
+			pending.update("ses_a", effect.delivered, { status = "delivered" })
+			assert.is_nil(selectors.prompt_status("ses_a", payload.id))
+			assert.is_nil(sync.get_message("ses_a", payload.id).provisional)
+			assert.equals(1, #sync.get_messages("ses_a"))
+		end)
+	end
+
+	it("keeps explicit queue delivery while an agent is busy", function()
+		state.set_session_status("ses_a", { type = "busy" })
+		assert.is_true(send.send("After this turn", { delivery = "queue", resume = false }))
+		callbacks.get(nil, { id = "ses_a", agent = "build", model = model() })
+		local payload = calls[2].body
+		assert.equals("queue", payload.delivery)
+		assert.is_false(payload.resume)
+		accepted()
+		assert.equals("queued", pending.get("ses_a", payload.id).status)
+		assert.equals("Queued", selectors.prompt_status("ses_a", payload.id))
+		assert.equals("busy", state.get_session_status("ses_a").type)
+	end)
+
+	it("promotes the existing inbox item without resending or changing its attachments", function()
+		send.send("стой", { parts = { { type = "file", url = "file:///tmp/context" } } })
+		callbacks.get(nil, { id = "ses_a", agent = "build", model = model() }); accepted()
+		local id = calls[2].body.id
+		assert.is_true(send.steer_input("ses_a", id))
+		assert.same({ method = "delivery", sid = "ses_a", id = id, delivery = "steer" }, calls[3])
+		assert.equals("Queued", selectors.prompt_status("ses_a", id))
+		state.set_session("ses_b", "B")
+		callbacks.delivery(nil)
+		assert.equals("Steering pending", selectors.prompt_status("ses_a", id))
+		assert.equals("steer", pending.get("ses_a", id).inbox.delivery)
+		assert.equals("file:///tmp/context", sync.get_parts(id)[2].url)
+		assert.equals(1, #sync.get_messages("ses_a"))
+		assert.equals(0, #sync.get_messages("ses_b"))
+		assert.equals(3, #calls)
+	end)
+
+	it("keeps queue state when a steering request fails", function()
+		send.send("Queued", {})
+		callbacks.get(nil, { id = "ses_a", agent = "build", model = model() }); accepted()
+		local id, failure = calls[2].body.id
+		send.steer_input("ses_a", id, function(err) failure = err end)
+		callbacks.delivery({ status = 409, message = "Already delivered" })
+		assert.equals(409, failure.status)
+		assert.equals("queued", pending.get("ses_a", id).status)
+		assert.is_not_nil(sync.get_message("ses_a", id))
+		assert.equals(3, #calls)
+	end)
+
+	for _, terminal in ipairs({ "delivered", "cancelled" }) do
+		it("does not regress " .. terminal .. " when steering completes late", function()
+			send.send("Queued", {})
+			callbacks.get(nil, { id = "ses_a", agent = "build", model = model() }); accepted()
+			local id = calls[2].body.id
+			send.steer_input("ses_a", id)
+			pending.update("ses_a", id, { status = terminal })
+			callbacks.delivery(nil)
+			assert.equals(terminal, pending.get("ses_a", id).status)
+			assert.is_nil(selectors.prompt_status("ses_a", id))
+			assert.is_false(send.steer_input("ses_a", id))
+			assert.equals(3, #calls)
+		end)
+	end
+
+	it("ignores a steering response after disconnect or session deletion", function()
+		send.send("Queued", {})
+		callbacks.get(nil, { id = "ses_a", agent = "build", model = model() }); accepted()
+		local id, called = calls[2].body.id, false
+		send.steer_input("ses_a", id, function() called = true end)
+		pending.clear_session("ses_a")
+		callbacks.delivery(nil)
+		assert.is_nil(pending.get("ses_a", id))
+		assert.is_false(called)
+	end)
+
+	it("keeps a confirmed steering change when the original admission arrives late", function()
+		send.send("Queued", {})
+		callbacks.get(nil, { id = "ses_a", agent = "build", model = model() })
+		local payload = calls[2].body
+		pending.admit({ sessionID = "ses_a", id = payload.id, type = "user", delivery = "queue", payload = { text = payload.text } })
+		send.steer_input("ses_a", payload.id)
+		callbacks.delivery(nil)
+		accepted(2)
+		assert.equals("steer", pending.get("ses_a", payload.id).inbox.delivery)
+		assert.equals("Steering pending", selectors.prompt_status("ses_a", payload.id))
+	end)
+
+	it("stops after a failed selection change and preserves the draft", function()
+		send.send("Keep this", {})
+		callbacks.get(nil, { id = "ses_a", agent = "other" })
+		callbacks.agent({ status = 400, message = "Invalid agent" })
+		assert.equals(2, #calls)
+		assert.equals("Keep this", history.get_pending())
+		assert.equals("idle", state.get_session_status("ses_a").type)
+	end)
+
+	it("cancels only the confirmed inbox item and keeps the executing session busy", function()
+		send.send("Queued", {})
+		callbacks.get(nil, { id = "ses_a", agent = "build", model = model() }); accepted()
+		local id = calls[#calls].body.id
+		send.cancel_input("ses_a", id)
+		state.set_session("ses_b", "B")
+		callbacks.cancel(nil)
+		assert.equals("cancelled", pending.get("ses_a", id).status)
+		assert.is_nil(require("opencode.local").message_agent.get("ses_a", id))
+		assert.is_nil(sync.get_message("ses_a", id))
+		assert.equals("busy", state.get_session_status("ses_a").type)
+		assert.equals("idle", state.get_session_status("ses_b").type)
+	end)
+
+	it("does not erase a delivered message when cancellation loses the race", function()
+		send.send("Already delivered", {})
+		callbacks.get(nil, { id = "ses_a", agent = "build", model = model() }); accepted()
+		local id = calls[#calls].body.id
+		send.cancel_input("ses_a", id)
+		pending.update("ses_a", id, { status = "delivered" })
+		callbacks.cancel({ status = 404, message = "Inbox item not found" })
+		assert.equals("delivered", pending.get("ses_a", id).status)
+		assert.is_not_nil(sync.get_message("ses_a", id))
+	end)
+
+	it("ignores a cancellation callback after the session was deleted", function()
+		local called = false
+		send.cancel_input("ses_a", "gone", function() called = true end)
+		pending.clear_session("ses_a")
+		callbacks.cancel(nil)
+		assert.is_false(called)
+	end)
+
+	it("edits only after confirmed cancellation and preserves the original send context", function()
+		local parts = { { type = "file", url = "data:image/png;base64,AAAA", filename = "shot.png", _marker = "[Image 1]" } }
+		send.send("Edit\n[Image 1]", { parts = parts, directory = "/original", resume = false })
+		callbacks.get(nil, { id = "ses_a", agent = "build", model = model() }); accepted()
+		local id, draft = calls[#calls].body.id
+		send.edit_input("ses_a", id, function(err, result) assert.is_nil(err); draft = result end)
+		assert.is_nil(draft)
+		state.set_session("ses_b", "B")
+		callbacks.cancel(nil)
+		assert.equals("Edit\n[Image 1]", draft.text)
+		assert.same(parts, draft.parts)
+		assert.equals("ses_a", draft.options.session_id)
+		assert.equals("/original", draft.options.directory)
+		assert.equals(false, draft.options.resume)
+		assert.equals("cancelled", pending.get("ses_a", id).status)
+		assert.is_nil(sync.get_message("ses_a", id))
+	end)
+
+	it("restores native inbox attachments after reconnect for editing", function()
+		pending.admit({ sessionID = "ses_a", id = "restored", delivery = "steer", type = "user", payload = {
+			text = "Native draft", files = { { uri = "file:///tmp/file", name = "file" } },
+			agents = { { name = "explore" } }, skills = { { id = "review" } },
+		} })
+		local draft
+		send.edit_input("ses_a", "restored", function(err, result) assert.is_nil(err); draft = result end)
+		callbacks.cancel(nil)
+		local payload = require("opencode.protocol.v2.requests").prompt(draft.text, { parts = draft.parts }, "new")
+		assert.same({ { uri = "file:///tmp/file", name = "file" } }, payload.files)
+		assert.same({ { name = "explore" } }, payload.agents)
+		assert.same({ { id = "review" } }, payload.skills)
+		assert.equals("steer", draft.options.delivery)
+	end)
+
+	it("uses a fresh admission attempt when editing a prompt across a reconnect", function()
+		send.send("Reconnect draft", { _token = pending.token("ses_a"), _catalog_ready = true, _catalog_deadline = 1 })
+		callbacks.get(nil, { id = "ses_a", agent = "build", model = model() }); accepted()
+		local id, draft = calls[#calls].body.id
+		pending.invalidate()
+		send.edit_input("ses_a", id, function(err, value) assert.is_nil(err); draft = value end)
+		callbacks.cancel(nil)
+		assert.is_nil(draft.options._token)
+		assert.is_nil(draft.options._catalog_ready)
+		assert.is_nil(draft.options._catalog_deadline)
+		assert.is_true(send.send(draft.text, draft.options))
+	end)
+
+	it("does not open an edit draft when cancellation loses to delivery", function()
+		send.send("Keep delivered", {})
+		callbacks.get(nil, { id = "ses_a", agent = "build", model = model() }); accepted()
+		local id, error, draft = calls[#calls].body.id
+		send.edit_input("ses_a", id, function(err, result) error, draft = err, result end)
+		pending.update("ses_a", id, { status = "delivered" })
+		callbacks.cancel({ status = 404, message = "Already delivered" })
+		assert.is_not_nil(error)
+		assert.is_nil(draft)
+		assert.is_not_nil(sync.get_message("ses_a", id))
+	end)
+
+	it("records an uncertain timeout without another POST or a false idle", function()
+		send.send("Uncertain", {})
+		callbacks.get(nil, { id = "ses_a", agent = "build", model = model() })
+		local id = calls[2].body.id
+		callbacks.prompt({ message = "Connection reset" })
+		assert.equals("uncertain", pending.get("ses_a", id).status)
+		assert.equals(2, #calls)
+		assert.equals("busy", state.get_session_status("ses_a").type)
+	end)
+
+	it("does not regress delivery when HTTP completes after events", function()
+		send.send("Delivered", {})
+		callbacks.get(nil, { id = "ses_a", agent = "build", model = model() })
+		local id = calls[2].body.id
+		pending.update("ses_a", id, { status = "delivered" })
+		accepted()
+		assert.equals("delivered", pending.get("ses_a", id).status)
+		assert.equals(1, #sync.get_messages("ses_a"))
+	end)
+
+	it("keeps an operation in its original session across a tab change", function()
+		send.send("A", {})
+		state.set_session("ses_b", "B")
+		callbacks.get(nil, { id = "ses_a", agent = "build", model = model() })
+		assert.equals("ses_a", calls[2].sid)
+		accepted()
+		assert.equals("idle", state.get_session_status("ses_b").type)
+		assert.equals(0, #sync.get_messages("ses_b"))
+	end)
+
+	it("waits for a new location's initially empty catalogs without changing the send target", function()
+		local old_defer, retry = vim.defer_fn, nil
+		vim.defer_fn = function(fn) retry = fn end
+		local client = require("opencode.client")
+		local rounds = 0
+		client.get_config_providers = function(cb, opts)
+			assert.equals("/new-project", opts.directory)
+			rounds = rounds + 1
+			cb(nil, { providers = rounds == 1 and {} or { { id = "p", models = { ["catalog-id"] = {} } } } })
+		end
+		client.list_agents = function(cb) cb(nil, { { id = "build", name = "Builder" } }) end
+		sync.select_catalog_location("/old-project")
+		local ok, err = pcall(function()
+			assert.is_true(send.send("Keep original owner", { directory = "/new-project", session_id = "ses_a" }))
+			assert.equals(0, #calls); assert.equals(1, rounds); assert.is_function(retry)
+			state.set_session("ses_b", "B"); retry()
+			assert.equals(2, rounds); assert.equals("ses_a", calls[1].sid)
+			callbacks.get(nil, { id = "ses_a", agent = "build", model = model() })
+			assert.equals("prompt", calls[2].method); assert.equals("ses_a", calls[2].sid)
+		end)
+		vim.defer_fn = old_defer
+		assert.is_true(ok, err)
+	end)
+
+	it("invalidates callbacks on close/reset without resurrecting a prompt", function()
+		send.send("A", {})
+		pending.clear_session("ses_a")
+		callbacks.get(nil, { id = "ses_a", agent = "build", model = model() })
+		assert.equals(1, #calls)
+		assert.same({}, pending.list("ses_a"))
+	end)
+
+	it("serializes two rapid submissions with distinct stable IDs", function()
+		send.send("One", {}); send.send("Two", {})
+		assert.equals(1, #calls)
+		callbacks.get(nil, { id = "ses_a", agent = "build", model = model() })
+		local first = calls[2].body.id
+		accepted(2)
+		assert.equals("get", calls[3].method)
+		callbacks.get(nil, { id = "ses_a", agent = "build", model = model() })
+		assert.is_not.equals(first, calls[4].body.id)
+		assert.equals(2, #sync.get_messages("ses_a"))
+	end)
+
+	it("creates with captured location and selection, then sends to the created session", function()
+		state.set_session(nil)
+		send.send("New", { directory = "/tmp/project А" })
+		assert.same({ location = { directory = "/tmp/project А" }, agent = "build", model = model() }, calls[1].body)
+		state.set_session("ses_b", "B")
+		callbacks.create(nil, { id = "ses_new", agent = "build", model = model(), location = { directory = "/tmp/project А" } })
+		assert.equals("ses_new", calls[2].sid)
+		assert.equals("ses_b", state.get_session().id)
+	end)
+
+	it("converts attachments and explicitly rejects unsupported v1 options", function()
+		local parts = { { type = "file", url = "data:image/png;base64,AAAA", filename = "shot.png" },
+			{ type = "agent", name = "explore" }, { type = "skill", skillID = "review" } }
+		send.send("Привет 😀", { parts = parts, resume = false })
+		callbacks.get(nil, { id = "ses_a", agent = "build", model = model() })
+		assert.same({ { uri = "data:image/png;base64,AAAA", name = "shot.png" } }, calls[2].body.files)
+		assert.same({ { name = "explore" } }, calls[2].body.agents)
+		assert.same({ { id = "review" } }, calls[2].body.skills)
+		assert.equals(false, calls[2].body.resume)
+		assert.is_false(send.send("Unsupported", { system = "secret override" }))
+		assert.equals(2, #calls)
+	end)
+	it("serializes commands with prompts and does not fabricate a message from HTTP 204", function()
+		send.send("One", {})
+		local command_done = 0
+		assert.is_true(send.command("ses_a", "review", "--staged", { variant = "fast" }, function(err)
+			assert.is_nil(err); command_done = command_done + 1
+		end))
+		assert.equals(1, #calls)
+		callbacks.get(nil, { id = "ses_a", agent = "build", model = model() })
+		accepted()
+		assert.equals("get", calls[3].method)
+		state.set_session("ses_b", "B")
+		callbacks.get(nil, { id = "ses_a", agent = "build", model = model() })
+		assert.equals("model", calls[4].method)
+		callbacks.model(nil)
+		assert.equals("command", calls[5].method)
+		assert.equals("ses_a", calls[5].sid)
+		callbacks.command(nil, true)
+		assert.equals(1, command_done)
+		assert.equals(1, #sync.get_messages("ses_a"))
+		assert.equals("busy", state.get_session_status("ses_a").type)
+	end)
+
 end)

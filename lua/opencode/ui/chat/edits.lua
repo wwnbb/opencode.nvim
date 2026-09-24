@@ -397,12 +397,13 @@ end
 ---@param edit_id string
 function M.refresh_edit(edit_id)
 	if not edit_id then
-		return
+		return false
 	end
 	if edit_state.are_all_resolved(edit_id) then
-		M.finalize_edit(edit_id)
+		return M.finalize_edit(edit_id)
 	else
 		M.rerender_edit(edit_id)
+		return true
 	end
 end
 
@@ -410,12 +411,6 @@ local function confirm_inline_diff_file()
 	local edit_id, file_index, _, file = get_inline_diff_edit_context()
 	if not edit_id or not file_index or not file or file.status ~= "pending" then
 		return
-	end
-
-	if is_valid_window(inline_diff_state.actual_win) then
-		vim.api.nvim_win_call(inline_diff_state.actual_win, function()
-			vim.cmd("silent! write")
-		end)
 	end
 
 	local ok, err = edit_state.resolve_file(edit_id, file_index)
@@ -635,14 +630,9 @@ end
 ---@param permission_id string
 function M.finalize_edit(permission_id)
 	local estate = edit_state.get_edit(permission_id)
-	if not estate then
-		return
-	end
+	if not estate or estate.transport ~= "review_rpc" then return false end
 
-	local resolution = edit_state.get_resolution(permission_id)
-	local reply = (resolution == "all_rejected") and "reject" or "once"
-	local message = vim.trim((estate and estate.message) or "")
-	actions.respond_permission(permission_id, reply, { message = message ~= "" and message or nil }, function(err)
+	local function on_reply(err)
 		vim.schedule(function()
 			if err then
 				vim.notify("Failed to send edit reply: " .. vim.inspect(err), vim.log.levels.ERROR)
@@ -652,7 +642,8 @@ function M.finalize_edit(permission_id)
 			edit_state.mark_sent(permission_id)
 			schedule_render()
 		end)
-	end)
+	end
+	return actions.reply_review(permission_id, on_reply)
 end
 
 ---@param edit_id string
@@ -812,7 +803,7 @@ function M.handle_edit_message()
 	end
 
 	local estate = edit_state.get_edit(eid)
-	if not estate or estate.status ~= "pending" then
+	if not estate or estate.status ~= "pending" or estate.submitting then
 		return
 	end
 
@@ -891,7 +882,7 @@ function M.handle_edit_diff_tab()
 	end
 
 	local native_diff = require("opencode.ui.native_diff")
-	native_diff.show(nil, files, {
+	native_diff.show(files, {
 		-- Pass back-reference so the diff tab can sync status to the chat widget
 		edit_id = eid,
 		file_index = estate.selected_file,
@@ -1012,8 +1003,13 @@ function M.close_inline_diff_split(opts)
 			reusable_buf = nil
 		end
 	else
+		local estate = inline_diff_state.edit_id and edit_state.get_edit(inline_diff_state.edit_id)
 		for _, winid in ipairs(ordered_wins) do
-			if is_valid_window(winid) then
+			if winid == actual_win and estate and estate.transport == "review_rpc" then
+				-- The actual pane was an existing editor window. Preserve it when
+				-- dismissing the proposal, together with its manual file buffer.
+				reusable_win, reusable_buf, close_err = normalize_surviving_inline_diff_window(winid)
+			elseif is_valid_window(winid) then
 				local ok_close, err = close_window(winid, true)
 				if not ok_close then
 					local is_actual = is_valid_window(actual_win) and winid == actual_win
@@ -1053,6 +1049,10 @@ end
 ---@param opts? table { edit_id?: string, file_index?: number }
 function M.open_inline_diff_split(file, opts)
 	opts = opts or {}
+	if file.apply_mode == "server" then
+		vim.notify("Local diff requires server.shared_filesystem=true and access to the server files. Use = for the inline proposal.", vim.log.levels.WARN)
+		return
+	end
 	ensure_inline_diff_state()
 	local ok_close, _, reusable_win = M.close_inline_diff_split({
 		check_unsaved = true,

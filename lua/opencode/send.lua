@@ -52,445 +52,313 @@ local function ascending_id(prefix)
 	return prefix .. "_" .. table.concat(hex) .. random_base62(14)
 end
 
----@return table
-local function client()
-	return require("opencode.client")
+local pending = require("opencode.session.pending")
+local requests = require("opencode.protocol.v2.requests")
+local projection = require("opencode.protocol.v2.messages")
+
+local function client() return require("opencode.client") end
+local function sync() return require("opencode.sync") end
+local function emit(name, data) require("opencode.events").emit(name, data) end
+
+local function restore_draft(text, opts)
+	local history = require("opencode.ui.input.history")
+	if history.get_pending() == "" then history.set_pending(text, opts.parts) end
 end
 
----@return table
-local function sync()
-	return require("opencode.sync")
+local function fail_before_send(message, text, opts)
+	restore_draft(text, opts)
+	vim.notify("Cannot send message: " .. message, vim.log.levels.ERROR)
+	return false
 end
 
----@return table
-local function chat()
-	return require("opencode.ui.chat")
-end
-
----@param event_type string
----@param data table
-local function emit(event_type, data)
-	local ok, events = pcall(require, "opencode.events")
-	if ok and events and type(events.emit) == "function" then
-		events.emit(event_type, data)
+local function catalogs_empty(providers, agents)
+	if not providers or not providers.data or not agents or not agents.data or #agents.data == 0 then return true end
+	for _, provider in ipairs(providers.data.providers or {}) do
+		if next(provider.models or {}) ~= nil then return false end
 	end
-end
-
----@param ref any
----@return table
-local function summarize_model_ref(ref)
-	if type(ref) ~= "table" then
-		return {
-			kind = ref == vim.NIL and "vim.NIL" or type(ref),
-		}
-	end
-	return {
-		kind = "table",
-		providerID = ref.providerID,
-		modelID = ref.modelID,
-		variant = ref.variant,
-	}
-end
-
----@param err any
----@return string
-local function error_text(err)
-	if type(err) == "table" then
-		return tostring(err.message or err.error or err)
-	end
-	return tostring(err)
-end
-
----@param role string
----@param content string
----@param opts? table
-local function add_chat_notice(role, content, opts)
-	local chat_module = chat()
-	if type(chat_module.get_bufnr) == "function" then
-		chat_module.get_bufnr()
-	elseif type(chat_module.create) == "function" then
-		chat_module.create()
-	end
-	chat_module.add_message(role, content, opts)
-end
-
----@param messages table[]|nil
----@return number
-local function count_assistant_messages(messages)
-	local count = 0
-	for _, msg in ipairs(messages or {}) do
-		if msg.role == "assistant" then
-			count = count + 1
-		end
-	end
-	return count
-end
-
----@param part table
----@param payload table
-local function append_payload_part(part, payload)
-	if type(part) ~= "table" then
-		return
-	end
-	local prompt_part = vim.deepcopy(part)
-	prompt_part._marker = nil
-	if not prompt_part.id then
-		prompt_part.id = ascending_id("prt")
-	end
-	table.insert(payload.parts, prompt_part)
-end
-
----@param message string
----@param opts? table
----@return table|nil payload
----@return table selection
-local function build_payload(message, opts)
-	opts = opts or {}
-
-	local selection = selectors.send_selection(opts)
-	if selection.blocked then
-		return nil, selection
-	end
-	local prompt_message_id = ascending_id("msg")
-	local prompt_part_id = ascending_id("prt")
-	local payload = {
-		messageID = prompt_message_id,
-		parts = {
-			{ id = prompt_part_id, type = "text", text = message },
-		},
-		agent = selection.agent,
-		model = selection.model,
-		variant = selection.variant,
-	}
-
-	if type(opts.context) == "table" then
-		for _, ctx in ipairs(opts.context) do
-			append_payload_part(ctx, payload)
-		end
-	end
-
-	if type(opts.parts) == "table" then
-		for _, part in ipairs(opts.parts) do
-			append_payload_part(part, payload)
-		end
-	end
-
-	return payload, selection
-end
-
----@param session_id string
----@param payload table
-local function seed_local_message(session_id, payload)
-	local store = sync()
-	local info = {
-		id = payload.messageID,
-		sessionID = session_id,
-		role = "user",
-		time = {
-			created = current_time_ms(),
-		},
-		agent = payload.agent,
-	}
-
-	if payload.model then
-		info.model = {
-			providerID = payload.model.providerID,
-			modelID = payload.model.modelID,
-			variant = payload.variant,
-		}
-		info.providerID = payload.model.providerID
-		info.modelID = payload.model.modelID
-	end
-
-	store.handle_message_updated(info)
-	for _, part in ipairs(payload.parts) do
-		local seeded_part = vim.deepcopy(part)
-		seeded_part.messageID = payload.messageID
-		seeded_part.sessionID = session_id
-		store.handle_part_updated(seeded_part)
-	end
-
-	emit("sync_changed", {
-		kind = "message",
-		action = "seeded",
-		session_id = session_id,
-		message_id = payload.messageID,
-	})
-end
-
----@param session_id string
----@param reason string
----@param callback? function
-local function sync_session_messages(session_id, reason, callback)
-	local snapshot = sync().capture_session_snapshot(session_id)
-	client().get_messages(session_id, { limit = 100 }, function(fetch_err, messages)
-		if fetch_err then
-			logger.debug("Session message sync failed", {
-				session_id = session_id,
-				reason = reason,
-				error = error_text(fetch_err),
-			})
-			if callback then
-				callback()
-			end
-			return
-		end
-
-		local message_count, part_count, changed_count =
-			sync().handle_session_messages(session_id, messages, { reconcile = true, snapshot = snapshot })
-		session_actions.set_message_cache(session_id, messages, {
-			reason = reason,
-		})
-		session_actions.reconcile_busy_session_idle(session_id, { reason = reason })
-
-		logger.debug("Session messages synced", {
-			session_id = session_id,
-			reason = reason,
-			message_count = message_count,
-			part_count = part_count,
-			changed_count = changed_count,
-		})
-
-		if changed_count > 0 then
-			emit("sync_changed", {
-				kind = "session_messages",
-				action = reason,
-				session_id = session_id,
-			})
-		end
-		if callback then
-			callback()
-		end
-	end)
-end
-
----@param session_id string
----@param response table|nil
-local function handle_prompt_response(session_id, response)
-	if type(response) ~= "table" then
-		return
-	end
-
-	sync().handle_session_messages(session_id, { response })
-	session_actions.reconcile_busy_session_idle(session_id, { reason = "prompt_response" })
-	emit("sync_changed", {
-		kind = "message",
-		action = "prompt_response",
-		session_id = session_id,
-	})
-end
-
----@param session_id string
----@param err any
-local function handle_send_error(session_id, err)
-	vim.schedule(function()
-		session_actions.set_status("idle", {
-			reason = "send_failed",
-			session_id = session_id,
-		})
-		vim.notify("Failed to send message: " .. error_text(err), vim.log.levels.ERROR)
-		add_chat_notice("system", "Error: Failed to send message", {
-			session_id = session_id,
-		})
-	end)
-end
-
----@param session_id string
----@param payload table
----@param selection table
-local function send_async_prompt(session_id, payload, selection)
-	logger.debug("Sending async prompt request", {
-		route = "/session/:id/prompt_async",
-		session_id = session_id,
-		message_id = payload.messageID,
-	})
-
-	client().send_message_async(session_id, payload, function(err)
-		if err then
-			logger.debug("Async prompt request rejected", {
-				session_id = session_id,
-				error = error_text(err),
-			})
-			handle_send_error(session_id, err)
-			return
-		end
-
-		logger.debug("Async prompt accepted", {
-			session_id = session_id,
-			agent = selection.agent,
-			model = summarize_model_ref(selection.model),
-			variant = selection.variant,
-		})
-	end)
-end
-
----@param session_id string
----@param payload table
----@param selection table
-local function send_prompt(session_id, payload, selection)
-	logger.debug("Sending prompt request", {
-		route = "/session/:id/message",
-		session_id = session_id,
-		message_id = payload.messageID,
-	})
-
-	client().send_message(session_id, payload, { timeout = 0 }, function(err, response)
-		if err then
-			logger.debug("Prompt request rejected", {
-				session_id = session_id,
-				error = error_text(err),
-			})
-			handle_send_error(session_id, err)
-			return
-		end
-
-		logger.debug("Prompt request completed", {
-			session_id = session_id,
-			agent = selection.agent,
-			model = summarize_model_ref(selection.model),
-			variant = selection.variant,
-			has_response = type(response) == "table",
-			part_count = type(response) == "table" and type(response.parts) == "table" and #response.parts or nil,
-		})
-
-		vim.schedule(function()
-			handle_prompt_response(session_id, response)
-			sync_session_messages(session_id, "prompt_completed")
-			session_actions.set_status("idle", {
-				reason = "send_completed",
-				session_id = session_id,
-			})
-		end)
-	end)
-end
-
----@param session_id string
----@return number before_message_count
----@return number before_assistant_count
-local function message_counts_before_send(session_id)
-	local messages = sync().get_messages(session_id)
-	return #messages, count_assistant_messages(messages)
-end
-
----@param session_id string
----@param before_message_count number
----@param before_assistant_count number
-local function schedule_session_sync_watchdogs(session_id, before_message_count, before_assistant_count)
-	vim.defer_fn(function()
-		local session_status = state.get_session_status(session_id)
-		if session_status.type == "busy" or session_status.type == "retry" then
-			sync_session_messages(session_id, "prompt_started")
-		end
-	end, 500)
-
-	vim.defer_fn(function()
-		local session_status = state.get_session_status(session_id)
-		if session_status.type ~= "busy" and session_status.type ~= "retry" then
-			return
-		end
-
-		sync_session_messages(session_id, "prompt_watchdog", function()
-			local messages = sync().get_messages(session_id)
-			local assistant_count = count_assistant_messages(messages)
-			if assistant_count <= before_assistant_count then
-				logger.warn("No assistant message observed after prompt request", {
-					session_id = session_id,
-					wait_ms = 3000,
-					status = session_status.type,
-					before_message_count = before_message_count,
-					after_message_count = #messages,
-					before_assistant_count = before_assistant_count,
-					after_assistant_count = assistant_count,
-				})
-			end
-		end)
-	end, 3000)
-end
-
----@param session_id string
----@param message string
----@param opts? table
-local function send_existing_session(session_id, message, opts)
-	local payload, selection = build_payload(message, opts)
-	if selection.blocked then
-		vim.notify("Cannot send message: " .. tostring(selection.error or "selection is unavailable"), vim.log.levels.ERROR)
-		return false
-	end
-	logger.debug("Resolved prompt payload", {
-		session_id = session_id,
-		agent = selection.agent,
-		model = summarize_model_ref(selection.model),
-		variant = selection.variant,
-		message_id = payload.messageID,
-		text_length = type(message) == "string" and #message or nil,
-		part_count = #payload.parts,
-	})
-
-	local before_message_count, before_assistant_count = message_counts_before_send(session_id)
-	seed_local_message(session_id, payload)
-	session_actions.set_status("streaming", {
-		reason = "send_started",
-		session_id = session_id,
-	})
-
-	local cfg = state.get_config() or {}
-	local parallel = cfg.session and cfg.session.parallel or {}
-	local use_prompt_async = parallel.enabled ~= false and parallel.use_prompt_async ~= false
-
-	if use_prompt_async then
-		send_async_prompt(session_id, payload, selection)
-	else
-		send_prompt(session_id, payload, selection)
-	end
-
-	schedule_session_sync_watchdogs(session_id, before_message_count, before_assistant_count)
 	return true
 end
 
----@param err any
-local function handle_create_session_error(err)
-	vim.schedule(function()
-		local message = err and error_text(err) or "unknown"
-		vim.notify("Failed to create session: " .. tostring(message), vim.log.levels.ERROR)
-		add_chat_notice("system", "Error: Failed to create session")
-	end)
+local function resolve_selection(opts)
+	local selection = vim.deepcopy(opts._selection or selectors.send_selection(opts))
+	if selection.blocked then return nil, selection.error end
+	local providers = sync().get_location_catalog(opts.directory, "providers")
+	local agents = sync().get_location_catalog(opts.directory, "agents")
+	local function get_model(provider_id, model_id)
+		if not providers or not providers.data then return sync().get_model(provider_id, model_id) end
+		for _, provider in ipairs(providers.data.providers) do
+			if provider.id == provider_id then return provider.models[model_id] end
+		end
+	end
+	local function get_agent(id)
+		if not agents or not agents.data then return sync().get_agent(id) end
+		for _, agent in ipairs(agents.data) do if agent.id == id or agent.name == id then return agent end end
+	end
+	if opts.model and not get_model(opts.model.providerID, opts.model.id or opts.model.modelID) then
+		return nil, "The selected model is unavailable in this location"
+	end
+	if opts.model then selection.model = opts.model end
+	if not selection.model and providers and providers.data and type(providers.data.server_default) == "table" then
+		selection.model = providers.data.server_default
+	end
+	if not selection.model then return nil, "No model is available; select or connect a provider" end
+	local agent = selection.agent and get_agent(selection.agent)
+	if not agent and not opts.agent and agents and agents.data then
+		local configured = ((state.get_config() or {}).session or {}).default_agent
+		agent = configured and get_agent(configured)
+	end
+	if not agent then return nil, "The selected agent is unavailable in this location" end
+	selection.agent = agent.id or agent.name
+	local model, err = requests.model(selection.model, selection.variant)
+	if err then return nil, err end
+	local info = get_model(model.providerID, model.id)
+	if not info then return nil, "The selected model is unavailable in this location" end
+	if model.variant and (not info.variants or not info.variants[model.variant]) then
+		return nil, "The selected model variant is unavailable"
+	end
+	selection.model = model
+	return selection
 end
 
----@param message string
----@param opts table
-local function create_session_and_send(message, opts)
-	local session_opts = vim.empty_dict()
-	if type(opts.title) == "string" and opts.title ~= "" then
-		session_opts.title = opts.title
-	end
+local function seed(session_id, payload)
+	local native = vim.deepcopy(payload)
+	native.type, native.time = "user", { created = current_time_ms() }
+	native.delivery, native.resume = nil, nil
+	local projected = projection.project(session_id, native)
+	projected.info.provisional = true
+	sync().handle_session_messages(session_id, { projected })
+	emit("sync_changed", { kind = "message", action = "seeded", session_id = session_id, message_id = payload.id })
+end
 
-	client().create_session(session_opts, function(err, session)
-		if err or not session then
-			handle_create_session_error(err)
-			return
+local function submit(session_id, payload, selection, text, opts, known_session)
+	local token = pending.token(session_id)
+	local previous_status = state.get_session_status(session_id)
+	require("opencode.local").message_agent.set(session_id, payload.id, selection.agent)
+	pending.begin({ session_id = session_id, message_id = payload.id, status = "submitting",
+		text = text, options = opts, payload = payload, selection = selection, token = token })
+	seed(session_id, payload)
+	session_actions.set_status("streaming", { session_id = session_id, reason = "send_started" })
+	pending.serialize(session_id, function(done)
+		local submitted = false
+		local function fail(err)
+			if not pending.is_current(token) then done(); return end
+			local definite = not submitted or (err.status and err.status >= 400 and err.status < 500)
+			local record = pending.update(session_id, payload.id, { status = definite and "failed" or "uncertain", error = err })
+			if record and record.status == "failed" then
+				require("opencode.local").message_agent.remove(session_id, payload.id)
+				restore_draft(text, opts)
+				if previous_status.type == "idle" then session_actions.set_session_status(session_id, previous_status, { reason = "send_failed" }) end
+			end
+			local message = type(err) == "table" and (err.message or err.error) or tostring(err)
+			vim.notify("OpenCode prompt " .. (record and record.status or "failed") .. ": " .. tostring(message), vim.log.levels.ERROR)
+			emit("local_notice", { role = "system", session_id = session_id, content = "Prompt " .. (record and record.status or "failed") .. ": " .. tostring(message) })
+			emit("v2_reconcile", { session_id = session_id })
+			done()
 		end
+		local function prompt()
+			if not pending.is_current(token) then done(); return end
+			submitted = true
+			client().send_message(session_id, payload, function(err, item)
+				if not pending.is_current(token) then done(); return end
+				if err then fail(err); return end
+				-- SSE or a delivery-mode change may already provide newer inbox
+				-- evidence than this initial admission response.
+				local record = pending.get(session_id, payload.id)
+				if not record or not record.inbox then pending.admit(item) end
+				-- A delayed HTTP callback must not replace the delivered timestamp or
+				-- regress state already confirmed by the event stream.
+				emit("sync_changed", { kind = "inbox", action = "accepted", session_id = session_id, message_id = payload.id })
+				emit("v2_reconcile", { session_id = session_id })
+				done()
+			end)
+		end
+		require("opencode.session.selection").prepare(session_id, selection, token, function(err)
+			if err then fail(err) else prompt() end
+		end, known_session)
+	end)
+	return true
+end
 
-		vim.schedule(function()
-			session_actions.remember(session)
-			session_actions.set_active(session.id, session.title or "New session", {
-				reason = "send_create_session",
-				preserve_cache = true,
-			})
-			send_existing_session(session.id, message, opts)
+-- Both former sync/async modes return admission. Execution ends only through
+-- terminal events/reconciliation; a successful POST never sets the session idle.
+function M.send(text, opts)
+	opts = vim.deepcopy(opts or {})
+	local session_id = opts.session_id
+	if session_id == nil then session_id = state.get_session().id end
+	if session_id == false then session_id = nil end
+	local token = opts._token or pending.token(session_id)
+	if not pending.is_current(token) then return false end
+	local directory = opts.directory or (session_id and state.get_session_directory(session_id)) or vim.fn.getcwd()
+	opts.directory = state.normalize_directory(directory)
+	directory = opts.directory
+	local provider_cache = sync().get_location_catalog(directory, "providers")
+	local agent_cache = sync().get_location_catalog(directory, "agents")
+	if not opts._catalog_ready and sync().get_catalog_location() ~= nil and (opts._catalog_retry or catalogs_empty(provider_cache, agent_cache)) then
+		opts._selection = opts._selection or selectors.send_selection(opts)
+		opts.session_id, opts._token, opts._catalog_ready = session_id or false, token, true
+		opts._catalog_deadline = opts._catalog_deadline or (current_time_ms() + 5000)
+		local remaining, first_error = 2, nil
+		local function received(domain, err, data)
+			if not pending.is_current(token) then return end
+			first_error = first_error or err
+			sync().handle_location_catalog(directory, domain, data, err)
+			remaining = remaining - 1
+			if remaining == 0 then
+				if first_error then fail_before_send(first_error.message or "Catalog unavailable", text, opts)
+				elseif current_time_ms() < opts._catalog_deadline
+					and catalogs_empty(sync().get_location_catalog(directory, "providers"), sync().get_location_catalog(directory, "agents")) then
+					-- 2.0.11 can return empty catalogs while a newly visited
+					-- location loads its plugins. No prompt has been admitted yet.
+					opts._catalog_ready, opts._catalog_retry = false, true
+					vim.defer_fn(function()
+						if pending.is_current(token) then M.send(text, opts) end
+					end, 100)
+				else M.send(text, opts) end
+			end
+		end
+		client().get_config_providers(function(err, data) received("providers", err, data) end, { directory = directory })
+		client().list_agents(function(err, data) received("agents", err, data) end, { directory = directory })
+		return true
+	end
+	local selection, selection_err = resolve_selection(opts)
+	if not selection then return fail_before_send(selection_err, text, opts) end
+	local payload, payload_err = requests.prompt(text, opts, ascending_id("msg"))
+	if not payload then return fail_before_send(payload_err, text, opts) end
+	if session_id then return submit(session_id, payload, selection, text, opts) end
+	local body = { title = opts.title, location = { directory = directory }, agent = selection.agent, model = selection.model }
+	client().create_session(body, function(err, info)
+		if not pending.is_current(token) then return end
+		if err then fail_before_send(err.message or "Session creation failed", text, opts); return end
+		session_actions.remember(info)
+		if not state.get_session().id then
+			session_actions.set_active(info.id, info.title or "New session", { reason = "send_create_session", preserve_cache = true })
+		end
+		submit(info.id, payload, selection, text, opts, info)
+	end)
+	return true
+end
+
+-- Commands have no caller-supplied prompt ID and return HTTP 204. Freeze their
+-- selection, serialize with prompts, and never retry an uncertain admission.
+function M.command(session_id, name, text, opts, callback)
+	opts = vim.deepcopy(opts or {})
+	opts.session_id = session_id
+	opts.directory = state.normalize_directory(opts.directory or state.get_session_directory(session_id) or vim.fn.getcwd())
+	local token = opts._token or pending.token(session_id)
+	if not pending.is_current(token) then return false end
+	local providers = sync().get_location_catalog(opts.directory, "providers")
+	local agents = sync().get_location_catalog(opts.directory, "agents")
+	if not opts._catalog_ready and sync().get_catalog_location() ~= nil and (not providers or not providers.data or not agents or not agents.data) then
+		opts._selection = opts._selection or selectors.send_selection(opts)
+		opts._token, opts._catalog_ready = token, true
+		local remaining, failure = 2, nil
+		local function received(domain, err, data)
+			if not pending.is_current(token) then return end
+			failure = failure or err
+			sync().handle_location_catalog(opts.directory, domain, data, err)
+			remaining = remaining - 1
+			if remaining == 0 then
+				if failure then callback(failure) else M.command(session_id, name, text, opts, callback) end
+			end
+		end
+		client().get_config_providers(function(err, data) received("providers", err, data) end, { directory = opts.directory })
+		client().list_agents(function(err, data) received("agents", err, data) end, { directory = opts.directory })
+		return true
+	end
+	local selection, err = resolve_selection(opts)
+	if not selection then callback({ code = "invalid_selection", message = err }); return false end
+	pending.serialize(session_id, function(done)
+		require("opencode.session.selection").prepare(session_id, selection, token, function(prepare_err)
+			if not pending.is_current(token) then done(); return end
+			if prepare_err then callback(prepare_err); done(); return end
+			client().execute_command(session_id, name, text, opts, function(command_err, result)
+				if pending.is_current(token) then
+					callback(command_err, result)
+					emit("v2_reconcile", { session_id = session_id })
+				end
+				done()
+			end)
 		end)
 	end)
+	return true
 end
 
----@param message string
----@param opts? table
-function M.send(message, opts)
-	opts = opts or {}
-	local session_id = state.get_session().id
-	if session_id then
-		return send_existing_session(session_id, message, opts)
-	else
-		return create_session_and_send(message, opts)
+-- Removing an inbox item does not interrupt the currently executing response.
+function M.cancel_input(session_id, message_id, callback)
+	local token = pending.token(session_id)
+	client().cancel_input(session_id, message_id, function(err)
+		if not pending.is_current(token) then return end
+		if not err then
+			pending.update(session_id, message_id, { status = "cancelled" })
+			require("opencode.local").message_agent.remove(session_id, message_id)
+			sync().handle_message_removed(session_id, message_id)
+			emit("sync_changed", { kind = "inbox", action = "cancelled", session_id = session_id, message_id = message_id })
+		end
+		emit("v2_reconcile", { session_id = session_id })
+		if callback then callback(err) end
+	end)
+end
+
+-- Change the existing inbox item instead of cancelling and resending it. Its
+-- ID, attachments and delivery confirmation remain owned by the server.
+function M.steer_input(session_id, message_id, callback)
+	local record = selectors.pending_input(session_id, message_id)
+	if not record or record.status ~= "queued" then
+		if callback then callback({ message = "This input is no longer queued" }) end
+		return false
 	end
+	local token = pending.token(session_id)
+	client().set_input_delivery(session_id, message_id, "steer", function(err)
+		if not pending.is_current(token) then return end
+		if not err then
+			local current = pending.get(session_id, message_id)
+			if current and current.inbox then
+				current.inbox.delivery = "steer"
+				pending.admit(current.inbox)
+			end
+			emit("sync_changed", { kind = "inbox", action = "steered", session_id = session_id, message_id = message_id })
+		end
+		emit("v2_reconcile", { session_id = session_id })
+		if callback then callback(err) end
+	end)
+	return true
+end
+
+-- Editing first removes the inbox item. Only a confirmed cancellation returns
+-- a draft, so a delivery race cannot send the same prompt twice.
+function M.edit_input(session_id, message_id, callback)
+	local record = selectors.pending_input(session_id, message_id)
+	if not record then
+		callback({ message = "This input is no longer pending" })
+		return
+	end
+	local opts = vim.deepcopy(record.options or {})
+	local payload = (record.inbox or {}).payload or record.payload or {}
+	local text = record.text or payload.text or ""
+	local parts = opts.parts or {}
+	if record.text == nil then
+		for _, group in ipairs({ { "files", "file" }, { "agents", "agent" }, { "skills", "skill" } }) do
+			for _, attachment in ipairs(payload[group[1]] or {}) do
+				local part = vim.deepcopy(attachment)
+				part.type = group[2]
+				if part.type == "skill" then part.skillID = part.id end
+				if part.mention then part.source = { text = { value = part.mention.text } } end
+				parts[#parts + 1] = part
+			end
+		end
+	end
+	opts.parts = nil
+	-- Admission retries belong to the original send attempt. In particular its
+	-- connection token may have expired while the input waited in the inbox.
+	opts._token, opts._catalog_ready, opts._catalog_retry, opts._catalog_deadline = nil, nil, nil, nil
+	opts.session_id = session_id
+	opts.directory = opts.directory or state.get_session_directory(session_id)
+	opts.delivery = (record.inbox or {}).delivery or opts.delivery
+	opts._selection = record.selection or opts._selection
+	M.cancel_input(session_id, message_id, function(err)
+		if err then callback(err); return end
+		callback(nil, { text = text, parts = parts, options = opts })
+	end)
 end
 
 return M

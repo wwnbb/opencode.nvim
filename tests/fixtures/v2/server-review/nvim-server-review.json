@@ -1,0 +1,107 @@
+{
+  "version": "2.0.11",
+  "before": "before\n",
+  "manual_blocked": true,
+  "review": {
+    "protocolVersion": 1,
+    "revision": 1,
+    "status": "settled",
+    "outcome": {
+      "status": "applied",
+      "proposed_diff": "--- <PROFILE>/project пробел %#/server-reviewed.txt\n+++ <PROFILE>/project пробел %#/server-reviewed.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+      "filepath": "<PROFILE>/project пробел %#/server-reviewed.txt",
+      "diff": "--- <PROFILE>/project пробел %#/server-reviewed.txt\n+++ <PROFILE>/project пробел %#/server-reviewed.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+      "wrote": true,
+      "title": "server-reviewed.txt",
+      "filediff": {
+        "patch": "--- <PROFILE>/project пробел %#/server-reviewed.txt\n+++ <PROFILE>/project пробел %#/server-reviewed.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+        "filePath": "<PROFILE>/project пробел %#/server-reviewed.txt",
+        "relativePath": "server-reviewed.txt",
+        "after": "after\n",
+        "type": "update",
+        "eol": "\n",
+        "diff": "--- <PROFILE>/project пробел %#/server-reviewed.txt\n+++ <PROFILE>/project пробел %#/server-reviewed.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+        "before_bom": false,
+        "before": "before\n",
+        "bom": false,
+        "file": "<PROFILE>/project пробел %#/server-reviewed.txt",
+        "status": "applied",
+        "deletions": 1,
+        "additions": 1
+      },
+      "diagnostics": {},
+      "divergence": "none",
+      "relativePath": "server-reviewed.txt",
+      "applied": true
+    },
+    "decisions": [
+      {
+        "fileID": "file_0_42d2ab7275c6",
+        "status": "accepted",
+        "apply": "server"
+      }
+    ],
+    "sessionID": "ses_f397f50b4ffepXLbbv3oTFukWv",
+    "reviewID": "rev_25bea237f8f84b01878f9db4fbe72190",
+    "metadata": {
+      "operation": "neovim_edit",
+      "agent": "build",
+      "relativePath": "server-reviewed.txt",
+      "sessionID": "ses_f397f50b4ffepXLbbv3oTFukWv",
+      "diff": "--- <PROFILE>/project пробел %#/server-reviewed.txt\n+++ <PROFILE>/project пробел %#/server-reviewed.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+      "opencode_native_diff": true,
+      "files": [
+        {
+          "patch": "--- <PROFILE>/project пробел %#/server-reviewed.txt\n+++ <PROFILE>/project пробел %#/server-reviewed.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+          "filePath": "<PROFILE>/project пробел %#/server-reviewed.txt",
+          "relativePath": "server-reviewed.txt",
+          "after": "after\n",
+          "type": "update",
+          "eol": "\n",
+          "diff": "--- <PROFILE>/project пробел %#/server-reviewed.txt\n+++ <PROFILE>/project пробел %#/server-reviewed.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+          "before_bom": false,
+          "before": "before\n",
+          "bom": false,
+          "file": "<PROFILE>/project пробел %#/server-reviewed.txt",
+          "status": "pending",
+          "deletions": 1,
+          "additions": 1
+        }
+      ],
+      "messageID": "msg_0c680afa3001qG04FS27I1czRQ",
+      "proposed_diff": "--- <PROFILE>/project пробел %#/server-reviewed.txt\n+++ <PROFILE>/project пробел %#/server-reviewed.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+      "filepath": "<PROFILE>/project пробел %#/server-reviewed.txt"
+    },
+    "created": 1790036719903,
+    "callID": "call_a5ada78579f94bebbdc49478",
+    "directory": "<PROFILE>/project пробел %#",
+    "tool": "neovim_edit",
+    "messageID": "msg_0c680afa3001qG04FS27I1czRQ",
+    "files": [
+      {
+        "patch": "--- <PROFILE>/project пробел %#/server-reviewed.txt\n+++ <PROFILE>/project пробел %#/server-reviewed.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+        "filePath": "<PROFILE>/project пробел %#/server-reviewed.txt",
+        "eol": "\n",
+        "relativePath": "server-reviewed.txt",
+        "after": "after\n",
+        "type": "update",
+        "before_bom": false,
+        "diff": "--- <PROFILE>/project пробел %#/server-reviewed.txt\n+++ <PROFILE>/project пробел %#/server-reviewed.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+        "bom": false,
+        "before": "before\n",
+        "status": "pending",
+        "file": "<PROFILE>/project пробел %#/server-reviewed.txt",
+        "deletions": 1,
+        "additions": 1,
+        "fileID": "file_0_42d2ab7275c6"
+      }
+    ],
+    "agent": "build",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    }
+  },
+  "after": "after\n",
+  "duplicate_bytes": "external after settlement\n",
+  "frontend_did_not_write": true
+}

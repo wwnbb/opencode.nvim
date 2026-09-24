@@ -39,6 +39,10 @@ function M.new(opts)
 	}, Context)
 end
 
+function Context:code_highlighter(message_id, part_id)
+	return render_state.code_highlighter(render_state.render_cache_key(self.current_session.id, message_id, part_id or "user"))
+end
+
 function Context:render_cache_key(...)
 	return render_state.render_cache_key(...)
 end
@@ -49,7 +53,7 @@ function Context:cached_nui_lines(key, build)
 		return cached.nui_lines
 	end
 	local lines = build()
-	if key then
+	if key and not lines._opencode_syntax_retry then
 		render_state.render_cache_put(key, { nui_lines = lines })
 	end
 	return lines
@@ -98,13 +102,23 @@ function Context:push_line(text, nui_line)
 end
 
 function Context:ensure_single_blank_separator()
-	while #self.raw_lines > 0 and self.raw_lines[#self.raw_lines] == "" do
+	local old_count = #self.raw_lines
+	while #self.raw_lines > 0 and self.raw_lines[#self.raw_lines] == ""
+		and not self.nui_lines[#self.nui_lines]._opencode_preserve_blank do
 		table.remove(self.raw_lines)
 		table.remove(self.nui_lines)
 	end
 	local line = NuiLine()
 	line:append("")
 	self:push_line("", line)
+	-- The trailing separator belongs to the preceding streaming range. Otherwise
+	-- replacing a part ending in a newline duplicates this row on every delta.
+	for _, block in pairs(self.next_stream_blocks) do
+		if block.end_line >= #self.raw_lines - 2 and block.end_line < old_count then
+			block.end_line = #self.raw_lines - 1
+			block.trailing_separator = true
+		end
+	end
 end
 
 function Context:normalize_block_transition(next_kind)
@@ -187,8 +201,6 @@ function Context:register_stream_block(message_id, part, kind, start_line)
 		message_id = message_id,
 		part_id = part_id,
 		kind = kind,
-		chat_width = self.chat_width,
-		text_length = #(part.text or ""),
 	})
 end
 
@@ -205,6 +217,7 @@ function Context:reset_tracking()
 	state.permissions = {}
 	state.edits = {}
 	state.message_positions = {}
+	state.pending_inputs = {}
 	state.tasks = {}
 	state.tools = {}
 	state.spinner_footer_line = nil

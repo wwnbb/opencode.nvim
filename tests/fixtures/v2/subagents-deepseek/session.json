@@ -1,0 +1,29 @@
+{
+  "data": {
+    "id": "ses_f39173563ffeZktLBGQAdVAi36",
+    "projectID": "global",
+    "model": {
+      "id": "deepseek-v4-flash",
+      "providerID": "opencode-go",
+      "variant": "default"
+    },
+    "cost": 0,
+    "tokens": {
+      "input": 0,
+      "output": 0,
+      "reasoning": 0,
+      "cache": {
+        "read": 0,
+        "write": 0
+      }
+    },
+    "time": {
+      "created": 1790043540151,
+      "updated": 1790043540151
+    },
+    "title": "opencode.nvim v2 runtime fixture",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    }
+  }
+}

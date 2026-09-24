@@ -28,21 +28,6 @@ function M.setup(event_bus)
 		event_bus_ref.emit("config_change", { new = new_val, old = old_val })
 	end)
 
-	-- Bridge pending changes events. State listeners are exact-key, while
-	-- file-level changes include the file path in the emitted key.
-	state.on("*", function(changed_key)
-		if type(changed_key) ~= "string" then
-			return
-		end
-		if changed_key ~= "pending_changes" and not changed_key:match("^pending_changes%.files%.") then
-			return
-		end
-
-		event_bus_ref.emit("sync_changed", {
-			kind = "changes",
-			action = "updated",
-		})
-	end)
 end
 
 return M

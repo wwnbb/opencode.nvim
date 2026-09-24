@@ -10,6 +10,7 @@ M.state = {
 	tabpage = nil,
 	layout = nil,
 	visible = false,
+	full_history_sessions = {}, -- Explicitly expanded history by session ID
 	local_notices = {},     -- Local user/system notices not backed by the server
 	config = nil,
 	questions = {},         -- Track question positions: { [request_id] = { start_line, end_line } }
@@ -22,19 +23,14 @@ M.state = {
 	focus_edit = nil,       -- permission_id to focus cursor on after render
 	focus_edit_line = nil,
 	message_positions = {}, -- Ordered visible message ranges for chat-local navigation
+	pending_inputs = {},   -- Queued input widget ranges, excluding surrounding separators
 	tasks = {},             -- Track task positions: { [part_id] = { start_line, end_line, tool_part } }
 	expanded_tasks = {},    -- Toggle set: { [part_id] = true }
 	task_child_cache = {},  -- Loaded child-session markers: { [part_id] = true }
 	task_child_loading = {}, -- In-flight child-session loads: { [part_id] = true }
 	task_summary_cache = { entries = {}, order = {} }, -- Derived child summaries keyed by summary revision
-	tools = {},             -- Track tool positions: { [part_id] = { start_line, end_line, tool_part } }
-	expanded_tools = {},    -- Toggle set: { [part_id] = true }
-	todo_bufnr = nil,       -- Live todo window buffer
-	todo_winid = nil,       -- Live todo window id
-	---@type string|nil
-	todo_dock_signature = nil, -- Last rendered dock content/highlight signature
-	todo_dock_display = {}, -- Manual display by session: { [session_id] = "full"|"compact"|"hidden" }
-	todo_dock_collapsed = {}, -- Toggle set by session: { [session_id] = boolean }
+	tools = {},             -- Widget roots keyed by ID; containers own a children map of tool nodes
+	expanded_tools = {},    -- Per-node toggle set; activity IDs are distinct from tool part IDs
 	session_tabs_bufnr = nil, -- Float session tabs window buffer
 	session_tabs_winid = nil, -- Float session tabs window id
 	session_tabs_start = nil, -- First active-session index shown in the tab strip

@@ -1,0 +1,10 @@
+home       <PROFILE>/home
+data       <PROFILE>/data/opencode
+cache      <PROFILE>/cache/opencode
+config     <PROFILE>/config/opencode
+state      <PROFILE>/state/opencode
+tmp        /private<PROFILE>/tmp/opencode
+bin        <PROFILE>/cache/opencode/bin
+log        <PROFILE>/data/opencode/log
+repos      <PROFILE>/data/opencode/repos
+db         <PROFILE>/data/opencode/opencode.db

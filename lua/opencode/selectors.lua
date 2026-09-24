@@ -46,7 +46,7 @@ end
 ---@return { providerID: string, modelID: string }|nil
 local function resolve_model_ref(ref, source, sync)
 	local log = logger()
-	if type(ref) ~= "table" or type(ref.providerID) ~= "string" or type(ref.modelID) ~= "string" then
+	if type(ref) ~= "table" or type(ref.providerID) ~= "string" or type(ref.id or ref.modelID) ~= "string" then
 		if log then
 			log.debug("Model candidate skipped", {
 				source = source,
@@ -57,7 +57,8 @@ local function resolve_model_ref(ref, source, sync)
 		return nil
 	end
 
-	if ref.providerID == "" or ref.modelID == "" then
+	local model_id = ref.id or ref.modelID
+	if ref.providerID == "" or model_id == "" then
 		if log then
 			log.debug("Model candidate skipped", {
 				source = source,
@@ -68,7 +69,7 @@ local function resolve_model_ref(ref, source, sync)
 		return nil
 	end
 
-	if not sync or not sync.get_model(ref.providerID, ref.modelID) then
+	if not sync or not sync.get_model(ref.providerID, model_id) then
 		if log then
 			log.debug("Model candidate skipped", {
 				source = source,
@@ -87,7 +88,7 @@ local function resolve_model_ref(ref, source, sync)
 	end
 	return {
 		providerID = ref.providerID,
-		modelID = ref.modelID,
+		modelID = model_id,
 	}
 end
 
@@ -133,7 +134,6 @@ local function record_for_session(sessions, current, runtime_ids, session_id)
 			title = current.name,
 			name = current.name,
 			message_count = current.message_count,
-			messageCount = current.message_count,
 		}
 	elseif runtime_ids[session_id] then
 		record = {
@@ -141,7 +141,6 @@ local function record_for_session(sessions, current, runtime_ids, session_id)
 			title = session_id,
 			name = session_id,
 			message_count = 0,
-			messageCount = 0,
 		}
 	else
 		return nil
@@ -151,7 +150,6 @@ local function record_for_session(sessions, current, runtime_ids, session_id)
 		record.name = current.name or record.name
 		if current.message_count ~= nil then
 			record.message_count = current.message_count
-			record.messageCount = current.message_count
 		end
 	end
 	return record
@@ -280,7 +278,7 @@ function M.send_selection(opts)
 	end
 
 	local current_session = require("opencode.state").get_session()
-	local locked = session_lock.get(current_session.id)
+	local locked = session_lock.get(opts.session_id or current_session.id)
 	if locked then
 		local selection = {
 			model = nil,
@@ -336,24 +334,36 @@ function M.send_selection(opts)
 		selection.agent = opts.agent
 		selection.sources.agent = "opts"
 	end
+	local sid = opts.session_id
+	if sid == nil then sid = current_session.id end
+	local scoped = require("opencode.session.selection").current(sid)
+	if scoped then
+		if not selection.model and scoped.model then selection.model = scoped.model; selection.sources.model = "session" end
+		if not selection.agent and scoped.agent then selection.agent = scoped.agent; selection.sources.agent = "session" end
+		if opts.variant == nil then
+			if opts.model then selection.variant = opts.model.variant else selection.variant = scoped.variant end
+		end
+	end
 
 	local local_ok, local_state = pcall(require, "opencode.local")
+	local local_opts = { unscoped = sid == false or sid ~= current_session.id }
 	if local_ok then
 		if not selection.model and local_state.model and type(local_state.model.current) == "function" then
-			selection.model = resolve_model_ref(local_state.model.current(), "local_current", sync)
+			selection.model = resolve_model_ref(local_state.model.current(local_opts), "local_current", sync)
 			if selection.model then
 				selection.sources.model = "local_current"
 			end
 		end
 		if not selection.agent and local_state.agent and type(local_state.agent.current) == "function" then
-			local agent = local_state.agent.current()
+			local agent = local_state.agent.current(local_opts)
 			if type(agent) == "table" and type(agent.name) == "string" and agent.name ~= "" then
-				selection.agent = agent.name
+				selection.agent = agent.id or agent.name
 				selection.sources.agent = "local_current"
 			end
 		end
-		if selection.variant == nil and local_state.variant and type(local_state.variant.current) == "function" then
-			selection.variant = local_state.variant.current()
+		if selection.variant == nil and selection.sources.model ~= "session" and not opts.model
+			and local_state.variant and type(local_state.variant.current) == "function" then
+			selection.variant = local_state.variant.current(local_opts)
 			if selection.variant ~= nil then
 				selection.sources.variant = "local_current"
 			end
@@ -370,12 +380,36 @@ function M.send_selection(opts)
 	if not selection.agent and sync and type(session_config.default_agent) == "string" then
 		local configured = sync.get_agent(session_config.default_agent)
 		if configured and sync.is_visible_agent(configured) then
-			selection.agent = configured.name
+			selection.agent = configured.id or configured.name
 			selection.sources.agent = "plugin_config_default"
 		end
 	end
 
 	return selection
+end
+
+-- Admission is separate from execution; delivered messages need no queue badge.
+local PROMPT_LABELS = {
+	submitting = "Sending…", queued = "Queued", accepted = "Steering pending",
+	uncertain = "Delivery unknown · reconnect to check", failed = "Send failed · draft preserved",
+}
+
+-- Return both the display label and the actionable record from one snapshot.
+function M.prompt_status(session_id, message_id)
+	local message = require("opencode.sync").get_message(session_id, message_id)
+	if message and message.role == "user" and not message.provisional then return nil end
+	local record = require("opencode.session.pending").get(session_id, message_id)
+	if not record then return nil end
+	local label = PROMPT_LABELS[record.status]
+	if record.delivery_missing and record.status ~= "delivered" and record.status ~= "cancelled" then
+		label = PROMPT_LABELS.uncertain
+	end
+	return label, (record.status == "queued" or record.status == "accepted") and record or nil
+end
+
+function M.pending_input(session_id, message_id)
+	local _, record = M.prompt_status(session_id, message_id)
+	return record
 end
 
 return M

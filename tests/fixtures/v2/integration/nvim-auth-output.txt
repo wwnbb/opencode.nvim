@@ -1,0 +1,1 @@
+Native integration attempts passed through Neovim auth owner

@@ -1,0 +1,15 @@
+{
+  "status": 200,
+  "response": {
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "attemptID": "con_0c62eba33001lE7MoAJQI8H0X1",
+      "time": {
+        "created": 1790031346227,
+        "expires": 1790031946227
+      }
+    }
+  }
+}

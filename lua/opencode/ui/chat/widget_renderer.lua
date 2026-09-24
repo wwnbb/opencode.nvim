@@ -39,7 +39,7 @@ function M.render_single_question(ctx, index, qstate)
 		q_lines, q_highlights = question_widget.get_answered_lines(
 			request_id,
 			{ questions = qstate.questions, timestamp = qstate.timestamp },
-			qstate.answers
+			qstate.display_answers or qstate.answers
 		)
 		q_meta = widget_base.make_meta()
 	elseif status == "rejected" then
@@ -112,6 +112,7 @@ function M.render_single_edit(ctx, _index, estate)
 	end
 
 	if e_lines then
+		if ctx:line_count() > 0 then ctx:ensure_single_blank_separator() end
 		local edit_start = ctx:prepare_widget_start()
 		capture_widget_focus("edit", eid, edit_start, e_meta)
 		for _, line_text in ipairs(e_lines) do
