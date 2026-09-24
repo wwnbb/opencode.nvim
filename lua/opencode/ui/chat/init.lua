@@ -71,9 +71,6 @@ local defaults = {
 		title = " OpenCode ",
 		title_pos = "center",
 	},
-	message_display = {
-		user_prefix = "> ",
-	},
 	keymaps = {
 		close = "q",
 		close_session = "x",
@@ -848,7 +845,7 @@ function M.setup(opts)
 	state.config = vim.tbl_deep_extend("force", get_config(), opts or {})
 end
 
--- ─── Legacy message API ───────────────────────────────────────────────────────
+-- ─── Local notices and view reset ────────────────────────────────────────────
 
 ---@param role string
 ---@param content string
@@ -876,12 +873,7 @@ end
 
 function M.update_stream_part_block(session_id, message_id, part_id, opts)
 	opts = opts or {}
-	if part_id == nil then
-		part_id = message_id
-		message_id = session_id
-		session_id = nil
-	end
-	if not message_id then
+	if not session_id or not message_id then
 		return false
 	end
 	if not part_id then
@@ -896,9 +888,8 @@ function M.update_stream_part_block(session_id, message_id, part_id, opts)
 	if not part or (part.type ~= "text" and part.type ~= "reasoning") then
 		return false
 	end
-	local current_session = require("opencode.state").get_session()
-	local effective_session_id = session_id or part.sessionID or current_session.id
-	if part.sessionID and effective_session_id and part.sessionID ~= effective_session_id then
+	local effective_session_id = session_id
+	if part.sessionID and part.sessionID ~= effective_session_id then
 		return false
 	end
 
@@ -1033,13 +1024,9 @@ function M.update_stream_part_block(session_id, message_id, part_id, opts)
 
 	local content = part.text or ""
 	local content_lines
-	if part.type == "reasoning" then
-		content_lines = render.render_reasoning(content)
-	else
-		content_lines = render.render_content(content, {
-			highlight_code = render_state.code_highlighter(render_state.render_cache_key(effective_session_id, message_id, part_id)),
-		})
-	end
+	content_lines = render.render_content(content, {
+		highlight_code = render_state.code_highlighter(render_state.render_cache_key(effective_session_id, message_id, part_id)),
+	})
 	if #content_lines == 0 then
 		local empty = NuiLine()
 		empty:append("")

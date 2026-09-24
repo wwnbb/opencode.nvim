@@ -3,7 +3,7 @@ describe("chat throughput footer", function()
 		vim.o.columns, vim.o.lines = 140, 40
 		local app = require("opencode")
 		app.setup({
-			server = { auto_start = false, lazy = true },
+			server = { auto_start = false },
 			lualine = { enabled = false },
 			chat = { layout = "float", close_on_focus_lost = false, max_rendered_messages = 1 },
 		})

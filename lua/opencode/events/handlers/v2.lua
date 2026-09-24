@@ -132,7 +132,7 @@ function M.setup(events)
 		local data, kind = event.data, event.type
 		local sid = data.sessionID
 		if sid and deleted[sid] then return end
-		if kind == "server.connected" then events.emit("server_connected", {}); return end
+		if kind == "server.connected" then return end
 		if kind == "session.deleted" then
 			deleted[sid] = true
 			pending.clear_session(sid)

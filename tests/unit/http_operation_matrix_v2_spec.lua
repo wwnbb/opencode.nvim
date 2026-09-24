@@ -21,7 +21,7 @@ local responses = {
 	inbox = { data = { id = "inbox", sessionID = "s", type = "prompt", payload = { attachments = {} } } },
 	interrupt = { interrupted = false },
 	permission = { data = { id = "request", effect = "ask" } },
-	rpc = { output = { protocolVersion = 1, review = true } },
+	rpc = { output = { protocolVersion = 2, review = true } },
 }
 -- Operation, HTTP method, native path, envelope, optional request body/query.
 local cases = {
@@ -96,7 +96,7 @@ describe("v2 operation wire matrix", function()
 	end)
 	after_each(function() vim.schedule = schedule; for _, name in ipairs(names) do package.loaded[name] = saved[name] end end)
 	it("covers every registered operation and agrees with the pinned HTTP route inventory", function()
-		local inventory = vim.json.decode(table.concat(vim.fn.readfile("plans/opencode-v2/reference/contract-inventory.json"), "\n"))
+		local inventory = vim.json.decode(table.concat(vim.fn.readfile("tests/contracts/v2-http-events.json"), "\n"))
 		local covered = {}
 		for _, case in ipairs(cases) do
 			assert.is_true(vim.tbl_contains(inventory.http_paths[case[3]] or {}, case[2]), case[1])

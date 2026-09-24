@@ -35,7 +35,6 @@ M.defaults = {
 		parallel = {
 			enabled = true,
 			recent_limit = 30,
-			use_prompt_async = true,
 		},
 	},
 
@@ -52,10 +51,6 @@ M.defaults = {
 		max_user_message_lines = 120,
 		close_on_focus_lost = true,
 		tps = true, -- Show average output + reasoning tokens per second per turn
-		message_display = {
-			user_prefix = "> ",
-			multiline_prefix = true,
-		},
 		session_tabs = {
 			enabled = true,
 			auto_fit = false,
@@ -95,11 +90,6 @@ M.defaults = {
 		},
 	},
 
-	-- Markdown rendering
-	markdown = {
-		enable_code_highlight = true,
-	},
-
 	-- Best-effort syntax highlighting for code-like chat surfaces
 	syntax = {
 		enabled = true,
@@ -117,9 +107,6 @@ M.defaults = {
 	-- Thinking/reasoning display
 	thinking = {
 		enabled = true,
-		max_height = 15,
-		truncate = true,
-		icon = "💭",
 		highlight = "Comment",
 		header_highlight = "WarningMsg",
 	},
@@ -206,7 +193,27 @@ M.defaults = {
 ---@param opts table|nil User configuration
 ---@return table Merged configuration
 function M.merge(opts)
-	-- Deep merge user configuration with defaults
+	-- Unsupported options must fail visibly instead of silently surviving the
+	-- deep merge and giving the impression that they still affect the plugin.
+	local removed = {
+		{ "session", "parallel", "use_prompt_async" },
+		{ "chat", "message_display" },
+		{ "thinking", "max_height" },
+		{ "thinking", "truncate" },
+		{ "thinking", "icon" },
+		{ "markdown", "enable_code_highlight" },
+		{ "server", "lazy" },
+		{ "diff" },
+	}
+	for _, path in ipairs(removed) do
+		local value = opts
+		for _, key in ipairs(path) do
+			if type(value) == "table" then value = rawget(value, key) else value = nil end
+		end
+		if value ~= nil then
+			error("opencode.nvim: unsupported setup option " .. table.concat(path, ".") .. "; update your configuration", 2)
+		end
+	end
 	return vim.tbl_deep_extend("force", M.defaults, opts or {})
 end
 

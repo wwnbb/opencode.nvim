@@ -775,11 +775,6 @@ setup_event_listeners = function(client)
 	if listener_clients[client] then
 		return
 	end
-	-- Connection events (SSE-level)
-	client.on_event("connected", function()
-		-- SSE connected, server.connected event will follow
-	end)
-
 	client.on_event("disconnected", function(reason)
 		if
 			current_attempt
@@ -799,19 +794,7 @@ setup_event_listeners = function(client)
 		state.set_connection("connected")
 	end)
 
-	-- Message counts are updated by events.handlers.message after sync de-dupes updates.
-	client.on_event("message.updated", function(data)
-		return data
-	end)
-
-	-- Session status events are mirrored by events.handlers.message.
-	client.on_event("session.status", function(data)
-		return data
-	end)
-
-	-- File edit events are handled by events.lua edit handler
-	-- which integrates with changes module and diff viewer
-listener_clients[client] = true
+	listener_clients[client] = true
 end
 
 -- Connect to running server

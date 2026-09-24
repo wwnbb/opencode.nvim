@@ -427,11 +427,8 @@ describe("opencode lifecycle", function()
 		local retry_runs = 0
 		local job = complete_start(nil, 4501)
 		local event_types = {
-			"connected",
 			"disconnected",
 			"server.connected",
-			"message.updated",
-			"session.status",
 		}
 
 		for _, event_type in ipairs(event_types) do

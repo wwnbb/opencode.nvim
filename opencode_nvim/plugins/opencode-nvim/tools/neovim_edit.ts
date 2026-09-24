@@ -1,7 +1,7 @@
-import { tool } from "./lib/definition"
+import { z } from "zod"
 import { readFileSync } from "node:fs"
 const DESCRIPTION = readFileSync(new URL("./neovim_edit.txt", import.meta.url), "utf8")
-import { reviewDecision, publishProgress, reviewResult } from "./lib/context"
+import { reviewDecision, publishProgress, reviewResult, type RuntimeContext } from "./lib/context"
 import {
   displayPath,
   readState,
@@ -20,7 +20,13 @@ import {
   stats,
 } from "./lib/text"
 
-const schema = tool.schema
+const input = z.object({
+  path: z.string().min(1).describe("The absolute or location-relative path to an existing file"),
+  oldString: z.string().min(1).describe("The non-empty exact text to replace"),
+  newString: z.string().describe("The replacement text"),
+  replaceAll: z.boolean().optional().describe("Replace all occurrences of oldString"),
+  allowIndentChange: z.boolean().optional().describe("Allow replacement lines to remove leading indentation"),
+})
 
 type Status = "applied" | "partial" | "rejected" | "failed"
 type Divergence = "none" | "external" | "client_applied" | "client_resolved"
@@ -80,16 +86,10 @@ function statusLabel(status: Status, divergence: Divergence = "none"): string {
   return "Edit failed."
 }
 
-export default tool({
+export default {
   description: DESCRIPTION,
-  args: {
-    path: schema.string().min(1).describe("The absolute or location-relative path to an existing file"),
-    oldString: schema.string().min(1).describe("The non-empty exact text to replace"),
-    newString: schema.string().describe("The replacement text"),
-    replaceAll: schema.boolean().optional().describe("Replace all occurrences of oldString"),
-    allowIndentChange: schema.boolean().optional().describe("Allow replacement lines to remove leading indentation"),
-  },
-  async execute(args, context) {
+  input,
+  async execute(args: z.infer<typeof input>, context: RuntimeContext) {
     if (!args.oldString) throw new Error("oldString must not be empty. Use neovim_patch to create a file.")
     if (args.oldString === args.newString) throw new Error("No changes to apply: oldString and newString are identical.")
     const filePath = resolveFilePath(context.directory, args.path)
@@ -244,4 +244,4 @@ export default tool({
       },
     })
   },
-})
+}

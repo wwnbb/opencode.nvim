@@ -115,7 +115,7 @@ function M.register(palette)
 				for _, session in ipairs(sessions) do
 					local is_current = current.id == session.id
 					local title = session_util.displayTitle(session.title) or "New session"
-					local msg_count = session.messageCount or 0
+					local msg_count = session.message_count or 0
 					local time_str = format_relative_time(session.time and session.time.updated)
 					local msg_str = msg_count > 0 and ("(" .. msg_count .. " msgs)") or ""
 					local current_marker = is_current and "● " or "  "
@@ -250,15 +250,8 @@ function M.register(palette)
 			local store = sync.get_store()
 			local messages = vim.deepcopy(store.message[session_id] or {})
 			local parts = {}
-			local part_delta_buffer = {}
 			for _, msg in ipairs(messages) do
 				parts[msg.id] = vim.deepcopy(store.part[msg.id] or {})
-				local prefix = msg.id .. "\0"
-				for key, value in pairs(store.part_delta_buffer) do
-					if key:sub(1, #prefix) == prefix then
-						part_delta_buffer[key] = vim.deepcopy(value)
-					end
-				end
 			end
 			local session_status = vim.deepcopy(store.session_status[session_id])
 
@@ -266,7 +259,6 @@ function M.register(palette)
 				session = record,
 				messages = messages,
 				parts = parts,
-				part_delta_buffer = part_delta_buffer,
 				session_status = session_status,
 			}
 

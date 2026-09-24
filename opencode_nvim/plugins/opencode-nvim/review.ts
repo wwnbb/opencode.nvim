@@ -2,8 +2,7 @@ import { createHash, randomUUID } from "node:crypto"
 import { readFile } from "node:fs/promises"
 import { jsonValue } from "./json"
 import { protocolVersion, type Review, type Decision } from "./rpc"
-import type { RuntimeContext } from "./tools/lib/definition"
-import type { ReviewDecision, ReviewProposal } from "./tools/lib/context"
+import type { RuntimeContext, ReviewDecision, ReviewProposal } from "./tools/lib/context"
 
 export class ReviewError extends Error {
   constructor(readonly code: "conflict" | "not_found", message: string, readonly current?: Review) { super(message) }

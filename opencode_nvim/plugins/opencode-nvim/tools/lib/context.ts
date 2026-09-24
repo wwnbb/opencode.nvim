@@ -1,4 +1,15 @@
-import type { RuntimeContext } from "./definition"
+export interface RuntimeContext {
+  directory: string
+  worktree: string | undefined
+  sessionID: string
+  messageID: string
+  agent: string
+  id: string
+  signal: AbortSignal
+  authorize(action: string, resources: string[]): Promise<void>
+  progress(metadata: Record<string, unknown>): Promise<void>
+  review(proposal: ReviewProposal): Promise<ReviewDecision>
+}
 
 export interface ReviewFile {
   filePath: string

@@ -91,7 +91,7 @@ describe("review feedback in tool history", function()
 	before_each(function() edits.clear_all(); sync.clear_all() end)
 	after_each(function() edits.clear_all(); sync.clear_all() end)
 
-	for _, name in ipairs({ "neovim_patch", "neovim_apply_patch", "neovim_edit" }) do
+	for _, name in ipairs({ "neovim_patch", "neovim_edit" }) do
 		it("restores preview and feedback for " .. name, function()
 			local file = { filePath = "/history/a", relativePath = "a", before = "before\n", after = "manual\n",
 				type = "update", status = "partial", additions = 1, deletions = 1,
@@ -111,6 +111,18 @@ describe("review feedback in tool history", function()
 			assert.is_truthy(table.concat(lines, "\n"):find("смешные", 1, true))
 		end)
 	end
+
+	it("renders a historical patch call as a generic tool without review controls", function()
+		sync.handle_message_updated({ id = "m", sessionID = "s", role = "assistant", time = { created = 1 } })
+		local part = { id = "p", messageID = "m", sessionID = "s", type = "tool", tool = "neovim_apply_patch",
+			callID = "c", state = { status = "completed", input = { patchText = "*** Begin Patch" },
+				output = "Historical patch result", metadata = { files = { { filePath = "/history/a" } } } } }
+		sync.handle_part_updated(part)
+		assert.equals(0, require("opencode.ui.chat.edit_previews").sync_session("s"))
+		assert.is_nil(edits.get_edit("tool-preview:s:m:p"))
+		local rendered = require("opencode.ui.chat.tasks").render_regular_tool(part, true)
+		assert.is_truthy(table.concat(rendered.lines, "\n"):find("neovim_apply_patch", 1, true))
+	end)
 end)
 
 describe("review protocol 2 events", function()

@@ -16,6 +16,7 @@ local function await(register)
 	return result
 end
 client.setup({ host = host, port = tonumber(port), auth = { username = "opencode", password = "opencode-nvim-test-only" } })
+local server_info = await(function(cb) client.health(cb) end)
 state.set_config(require("opencode.config").merge({ server = { auto_start = false } }))
 events.setup()
 assert(client.connect_events())
@@ -50,7 +51,7 @@ local requested = await(function(cb) client.http.post(prefix .. "/permission", {
 assert(requested.effect == "ask", vim.inspect(requested))
 assert(vim.wait(5000, function() return permissions.get_permission(requested.id) ~= nil end, 10), "Missing permission SSE")
 local pstate = permissions.get_permission(requested.id)
-assert(pstate.session_id == created.id and pstate.protocol == "v2")
+assert(pstate.session_id == created.id and pstate.transport == "permission")
 -- Actions normally settles through the widget callback; SSE can win that race
 -- and intentionally suppress a stale callback, so observe authoritative state.
 actions.respond_permission(requested.id, "once", {}, function(err)
@@ -63,7 +64,7 @@ local cancel = await(function(cb) client.http.post(prefix .. "/form", { title = 
 assert(vim.wait(5000, function() return forms.get_question(cancel.id) ~= nil end, 10))
 await(function(cb) actions.reject_question(created.id, cancel.id, cb) end)
 assert(vim.wait(5000, function() return forms.get_question(cancel.id).status == "rejected" end, 10))
-vim.fn.writefile({ vim.json.encode({ version = "2.0.11", typed_form = true, owner_routing = true, permission_once = true, form_cancel = true }) }, assert(vim.env.OPENCODE_V2_OUTPUT))
+vim.fn.writefile({ vim.json.encode({ version = server_info.version, typed_form = true, owner_routing = true, permission_once = true, form_cancel = true }) }, assert(vim.env.OPENCODE_V2_OUTPUT))
 await(function(cb) client.delete_session(created.id, cb) end)
 await(function(cb) client.delete_session(other.id, cb) end)
 client.disconnect_events()

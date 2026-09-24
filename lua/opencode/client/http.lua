@@ -253,44 +253,4 @@ function M.health(callback)
 	require("opencode.client.v2").request("info", { timeout = 5000 }, callback)
 end
 
--- Test connection synchronously (for startup checks)
----@return boolean connected
----@return string|nil error
-function M.test_connection()
-	local done = false
-	local connected = false
-	local error_message = nil
-
-	M.health(function(err, data)
-		if err then
-			error_message = err.message or err.error or tostring(err)
-			done = true
-			return
-		end
-
-		if not data or not data.version then
-			error_message = "Health check failed"
-			done = true
-			return
-		end
-
-		connected = true
-		done = true
-	end)
-
-	local completed = vim.wait(5000, function()
-		return done
-	end, 20)
-
-	if not completed then
-		return false, "Connection timeout"
-	end
-
-	if not connected then
-		return false, error_message or "Connection failed"
-	end
-
-	return true, nil
-end
-
 return M

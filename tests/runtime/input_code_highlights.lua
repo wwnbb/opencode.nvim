@@ -6,7 +6,7 @@ assert(vim.treesitter.query.get("rust", "highlights"), "Rust highlight queries r
 
 local app = require("opencode")
 app.setup({
-	server = { auto_start = false, lazy = true },
+	server = { auto_start = false },
 	lualine = { enabled = false },
 	chat = { layout = "vertical", width = 86, close_on_focus_lost = false },
 	input = { max_height = 18, history_file = vim.fn.tempname() },

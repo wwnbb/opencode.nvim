@@ -22,7 +22,6 @@ local EDIT_WIDGET_TOOL_ROWS = {
 	apply_patch = true,
 	neovim_edit = true,
 	neovim_patch = true,
-	neovim_apply_patch = true, -- Historical tool calls.
 }
 
 local function ensure_session_title_highlight()
@@ -213,7 +212,7 @@ end
 local function get_current_session_status(ctx)
 	if ctx.current_session.id then
 		local state_status = app_state.get_session_status(ctx.current_session.id)
-		-- The state store is normally mirrored from the same session.status SSE
+		-- The state store is normally mirrored from session.execution SSE
 		-- event as sync. During an SSE/hydration race it may briefly still be
 		-- idle while sync already has the server's busy status. Do not lose the
 		-- processing footer in that window: a busy sync status is sufficient to
@@ -318,9 +317,9 @@ local function render_user_message(ctx, message, render_parts, msg_idx, messages
 	)
 	local file_parts = {}
 	for _, part in ipairs(render_parts.parts or {}) do
-		local native_attachment = part.protocol == "v2" and vim.tbl_contains({ "file", "skill", "agent" }, part.type)
-		local legacy_attachment = part.type == "file" and part.mime ~= "text/plain" and part.mime ~= "application/x-directory"
-		if not part.synthetic and (native_attachment or legacy_attachment) then file_parts[#file_parts + 1] = part end
+		if not part.synthetic and vim.tbl_contains({ "file", "skill", "agent" }, part.type) then
+			file_parts[#file_parts + 1] = part
+		end
 	end
 
 	local msg_lines = ctx:cached_nui_lines(

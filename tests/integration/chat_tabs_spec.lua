@@ -155,7 +155,6 @@ local opencode = require("opencode")
 opencode.setup({
 	server = {
 		auto_start = false,
-		lazy = true,
 	},
 	chat = {
 		layout = "float",

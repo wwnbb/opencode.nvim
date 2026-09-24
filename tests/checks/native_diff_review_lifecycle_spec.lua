@@ -47,6 +47,8 @@ end
 describe("native diff review lifecycle", function()
 	it("does not materialize an add target before confirmation", function()
 		local native_diff = require("opencode.ui.native_diff")
+		local edits = require("opencode.edit.state")
+		require("opencode.state").set_config({ server = { shared_filesystem = true } })
 		if native_diff.is_active() then
 			native_diff.close()
 		end
@@ -55,7 +57,7 @@ describe("native diff review lifecycle", function()
 		local filepath = parent .. "/new.lua"
 		pcall(os.remove, filepath)
 
-		native_diff.show("native_diff_lifecycle_permission", {
+		local files = {
 			{
 				filePath = filepath,
 				before = "",
@@ -63,7 +65,10 @@ describe("native diff review lifecycle", function()
 				type = "add",
 				relativePath = "new.lua",
 			},
-		})
+		}
+		edits.add_edit("review-add", "s", files, { transport = "review_rpc", revision = 1,
+			native_review = { status = "pending" } })
+		assert_true(native_diff.show(files, { edit_id = "review-add" }), "v2 review should open")
 
 		local state = get_native_state(native_diff)
 		assert_true(state and state.original_is_scratch, "missing add should use a scratch original buffer")
@@ -78,6 +83,7 @@ describe("native diff review lifecycle", function()
 		end
 
 		native_diff.close()
+		edits.clear_all()
 		assert_true(not native_diff.is_active(), "closing should deactivate native diff")
 		assert_eq(vim.fn.filereadable(filepath), 0, "closing an unaccepted add diff must not create the target")
 		assert_eq(vim.fn.isdirectory(parent), 0, "closing an unaccepted add diff must not create its parent directory")
@@ -85,6 +91,8 @@ describe("native diff review lifecycle", function()
 
 	it("does not write a modified scratch add while navigating files", function()
 		local native_diff = require("opencode.ui.native_diff")
+		local edits = require("opencode.edit.state")
+		require("opencode.state").set_config({ server = { shared_filesystem = true } })
 		if native_diff.is_active() then
 			native_diff.close()
 		end
@@ -95,7 +103,7 @@ describe("native diff review lifecycle", function()
 		pcall(os.remove, add_path)
 		pcall(os.remove, next_path)
 
-		native_diff.show(nil, {
+		local files = {
 			{
 				filePath = add_path,
 				before = "",
@@ -108,7 +116,10 @@ describe("native diff review lifecycle", function()
 				after = "next\n",
 				type = "update",
 			},
-		})
+		}
+		edits.add_edit("review-navigation", "s", files, { transport = "review_rpc", revision = 1,
+			native_review = { status = "pending" } })
+		assert_true(native_diff.show(files, { edit_id = "review-navigation" }), "v2 review should open")
 
 		local state = get_native_state(native_diff)
 		vim.api.nvim_buf_set_lines(state.original_buf, 0, -1, false, { "manual edit" })
@@ -119,11 +130,12 @@ describe("native diff review lifecycle", function()
 		assert_true(navigate, "next-file navigation keymap should be reachable")
 		navigate()
 
-		assert_eq(state.current_file_index, 2, "navigation should advance to the next file")
+		assert_eq(state.current_file_index, 1, "navigation should wait for the modified review buffer")
 		assert_eq(vim.fn.filereadable(add_path), 0, "navigation must not write a modified scratch add")
 		assert_eq(vim.fn.isdirectory(parent), 0, "navigation must not create a scratch add parent directory")
 
 		native_diff.close()
+		edits.clear_all()
 		pcall(os.remove, next_path)
 	end)
 end)

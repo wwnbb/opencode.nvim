@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Capture real OpenCode 2.0.11 HTTP/SSE in a disposable, credential-free profile.
+"""Capture real OpenCode 2.0.11+ HTTP/SSE in a disposable, credential-free profile.
 
 Pass --model provider/id to perform a real model request. No personal config or
 credentials are inherited. The output directory is an explicit, new directory.
@@ -159,11 +159,14 @@ def main():
             text = text.replace(secret, "<REDACTED_PROVIDER_KEY>")
         (output / name).write_text(text.replace(str(profile), "<PROFILE>"))
 
+    runtime_version = None
     for name, command in [("version", ["--version"]), ("serve-help", ["serve", "--help"]), ("paths", ["debug", "paths"])]:
         result = subprocess.run([cli, *command], env=env, cwd=project, capture_output=True, text=True, timeout=30, check=True)
         save(name + ".txt", result.stdout)
         if name == "version":
-            assert result.stdout.strip() == "opencode v2.0.11", result.stdout
+            match = re.fullmatch(r"opencode v(2)\.(\d+)\.(\d+)", result.stdout.strip())
+            assert match and (int(match[2]), int(match[3])) >= (0, 11), result.stdout
+            runtime_version = ".".join(match.groups())
         if name == "paths":
             for line in result.stdout.splitlines():
                 assert str(profile) in line, "Non-isolated runtime path: " + line
@@ -203,7 +206,7 @@ def main():
                     return response.status, data
 
             code, info = request("GET", "/api/info")
-            assert code == 200 and info["version"] == "2.0.11" and info["pid"] == process.pid
+            assert code == 200 and info["version"] == runtime_version and info["pid"] == process.pid
             save("info.json", info)
             code, _ = request("GET", "/api/info", authenticated=False)
             assert code == 401, "Configured Basic auth is not enforced"
@@ -243,7 +246,7 @@ def main():
             if args.server_plugin:
                 code, capability = request("POST", "/api/rpc/opencode_nvim/capabilities" + location, {"input": {}})
                 save("capabilities.json", {"status": code, "response": capability})
-                assert code == 200 and capability["output"]["protocolVersion"] == 1, capability
+                assert code == 200 and capability["output"]["protocolVersion"] == 2, capability
             for enabled, script, name in [(args.nvim_smoke, "v2_smoke.lua", "nvim"),
                                           (args.nvim_interactions, "v2_interactions.lua", "nvim-interactions"),
                                           (args.nvim_form_ui, "v2_form_ui.lua", "nvim-form-ui"),

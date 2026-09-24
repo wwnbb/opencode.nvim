@@ -42,7 +42,6 @@ function M.project(session_id, message)
 	assert(type(message) == "table" and type(message.id) == "string" and type(message.type) == "string", "Invalid v2 message")
 	local info = vim.deepcopy(message)
 	info._v2 = vim.deepcopy(message)
-	info.protocol = "v2"
 	info.sessionID = session_id
 	info.role = (message.type == "user" or message.type == "assistant") and message.type or "system"
 	-- Selection is already shown in the input bar and assistant metadata footers.
@@ -58,7 +57,7 @@ function M.project(session_id, message)
 		ordinals[kind] = ordinal + 1
 		local part = vim.deepcopy(content)
 		part.id = M.part_id(session_id, message.id, kind, kind == "tool" and content.id or ordinal)
-		part.messageID, part.sessionID, part.protocol = message.id, session_id, "v2"
+		part.messageID, part.sessionID = message.id, session_id
 		part.content_order = #parts + 1
 		part.ordinal = ordinal
 		if kind == "tool" then

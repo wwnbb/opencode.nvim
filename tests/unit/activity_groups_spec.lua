@@ -29,10 +29,10 @@ describe("Thought and Explore groups", function()
 		require("opencode.state").set_config({ thinking = { enabled = true } })
 	end)
 
-	it("groups consecutive reasoning across steps and sums native and legacy durations", function()
+	it("groups consecutive reasoning across steps and sums v2 durations", function()
 		local groups = collect({
 			{ parts = { thought("a", "first", { created = 100, completed = 316 }) } },
-			{ parts = { thought("b", "second", { start = 500, ["end"] = 4100 }) }, finish = "stop" },
+			{ parts = { thought("b", "second", { created = 500, completed = 4100 }) }, finish = "stop" },
 		})
 		assert.equals(groups.a, groups.b)
 		assert.is_truthy(text(groups.a):find("+ Thought · 2 steps · 3.8s", 1, true))

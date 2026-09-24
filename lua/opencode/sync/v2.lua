@@ -46,7 +46,7 @@ function M.apply(sync, event)
 			delivery = item.delivery, time = { created = event.created } }
 		if item.type == "user" then
 			local existing = sync.get_message(sid, data.inboxID)
-			if existing and existing.protocol == "v2" and not existing.provisional then
+			if existing and not existing.provisional then
 				result.inbox, result.delivered = nil, data.inboxID
 			else
 				local message = vim.deepcopy(item.payload)
@@ -75,10 +75,6 @@ function M.apply(sync, event)
 			commit({ id = event_message_id(event), type = "idle", time = { created = event.created }, outcome = outcome })
 		end
 		result.reconcile = true
-	elseif kind == "session.status" then
-		result.status = vim.deepcopy(data.status)
-	elseif kind == "session.idle" then
-		result.status = { type = "idle" }; result.reconcile = true
 	elseif kind == "session.step.started" then
 		local message = assistant()
 		message.agent, message.model = data.agent, vim.deepcopy(data.model)

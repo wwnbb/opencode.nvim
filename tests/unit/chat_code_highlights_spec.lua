@@ -62,7 +62,7 @@ describe("chat code highlighting", function()
 		end
 	end)
 
-	it("honors role switches, legacy switch and per-block limits", function()
+	it("honors syntax switches and per-block limits", function()
 		local source = "```lua\nreturn 1\n```"
 		local cfg = vim.deepcopy(defaults)
 		for _, disable in ipairs({ "user_markdown", "enabled" }) do
@@ -70,10 +70,10 @@ describe("chat code highlighting", function()
 			assert.same({}, render.render_user_message(source)._opencode_highlights)
 			cfg.syntax[disable] = true
 		end
-		cfg.markdown.enable_code_highlight = false; state.set_config(cfg)
+		cfg.syntax.assistant_markdown = false; state.set_config(cfg)
 		assert.same({}, render.render_content(source)._opencode_highlights)
-		assert.same({}, render.render_user_message(source)._opencode_highlights)
-		cfg.markdown.enable_code_highlight = true
+		assert.is_true(#render.render_user_message(source)._opencode_highlights > 0)
+		cfg.syntax.assistant_markdown = true
 		cfg.syntax.max_lines = 1; state.set_config(cfg)
 		assert.is_true(#render.render_content(source .. "\n" .. source)._opencode_highlights > 0)
 		assert.same({}, render.render_content("```lua\nreturn 1\nreturn 2")._opencode_highlights)

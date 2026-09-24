@@ -21,7 +21,7 @@ function M.setup(events)
 		data._location, data.time = location, { created = created }
 		local request = require("opencode.events.handlers.permission_flow.request").decode(data)
 		if request then
-			require("opencode.events.handlers.permission_flow.non_edit").handle(events, request, state.get_session(), require("opencode.logger"))
+			require("opencode.events.handlers.permission_flow.non_edit").handle(events, request, require("opencode.logger"))
 		end
 	end
 	local function add_form(data, location, created)
@@ -41,7 +41,7 @@ function M.setup(events)
 				if data.sessionID == sid then present[data.id] = true; add_permission(data) end
 			end
 			for _, item in ipairs(permissions.get_all_active()) do
-				if item.session_id == sid and item.protocol == "v2" and not present[item.permission_id] then
+				if item.session_id == sid and not present[item.permission_id] then
 					local id = item.permission_id
 					client.get_permission(sid, id, function(detail_err)
 						if current() and pg == permissions.get_generation() and detail_err and detail_err.status == 404 then
@@ -60,7 +60,7 @@ function M.setup(events)
 				if form.sessionID == sid then present[form.id] = true; add_form(form) end
 			end
 			for _, item in ipairs(forms.get_all_active()) do
-				if item.session_id == sid and item.protocol == "v2" and (not present[item.request_id] or item.submitting or item.server_error) then
+				if item.session_id == sid and (not present[item.request_id] or item.submitting or item.server_error) then
 					local id = item.request_id
 					client.get_form(sid, id, function(detail_err, detail)
 						if not current() or fg ~= forms.get_generation() or terminal[key("form", id)] then return end

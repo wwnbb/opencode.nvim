@@ -47,38 +47,17 @@ local function log_close_reject_error(kind, id, err)
 end
 
 ---@param permission_id string
-local function reject_permission_request(permission_id)
+---@param session_id string
+local function reject_permission_request(permission_id, session_id)
 	local ok_client, client = pcall(require, "opencode.client")
-	if not ok_client or type(client.respond_permission) ~= "function" then
+	if not session_id or not ok_client or type(client.respond_permission) ~= "function" then
 		return
 	end
-	-- Resolve the session directory so the reject reaches the instance
-	-- that owns the permission (may differ from cwd for cross-project
-	-- sessions).
-	local reply_opts = { message = "Session closed" }
-	local session_id
-	local perm_ok, perm_state = pcall(require, "opencode.permission.state")
-	if perm_ok and perm_state.get_permission then
-		local pstate = perm_state.get_permission(permission_id)
-		if pstate then
-			session_id = pstate.session_id
-		end
-	end
-	if not session_id then
-		local edit_ok, edit_state = pcall(require, "opencode.edit.state")
-		if edit_ok and edit_state.get_edit then
-			local estate = edit_state.get_edit(permission_id)
-			if estate then
-				session_id = estate.session_id
-			end
-		end
-	end
-	if session_id then
-		local state_ok, state = pcall(require, "opencode.state")
-		if state_ok and type(state.get_session_directory) == "function" then
-			reply_opts.directory = state.get_session_directory(session_id)
-		end
-	end
+	local reply_opts = {
+		session_id = session_id,
+		directory = state.get_session_directory(session_id),
+		message = "Session closed",
+	}
 	pcall(function()
 		client.respond_permission(permission_id, "reject", reply_opts, function(err)
 			log_close_reject_error("permission", permission_id, err)
@@ -140,7 +119,7 @@ local function close_pending_interactions_for_session(root_session_id)
 		end)
 		for _, pstate in ipairs(owned) do
 			if pending_helper.is_pending_permission(pstate) then
-				reject_permission_request(pstate.permission_id)
+				reject_permission_request(pstate.permission_id, pstate.session_id)
 				if type(perm_state.mark_rejected) == "function" then
 					perm_state.mark_rejected(pstate.permission_id)
 				end
@@ -197,19 +176,23 @@ local function close_pending_interactions_for_session(root_session_id)
 			return navigation.session_owned_by_root(root, session_id, navigation_ctx)
 		end)
 		for _, estate in ipairs(owned) do
-			if pending_helper.is_pending_edit(estate) then
-				if type(edit_state.reject_all) == "function" then
-					local call_ok, rejected, reject_err = pcall(edit_state.reject_all, estate.permission_id)
-					if not call_ok or not rejected then
-						vim.notify(
-							"Failed to reject edit before closing session: "
-								.. tostring((call_ok and reject_err) or rejected or "unknown error"),
-							vim.log.levels.ERROR
-						)
-					end
+			if pending_helper.is_pending_edit(estate) and estate.transport == "review_rpc" then
+				local call_ok, rejected, reject_err = pcall(edit_state.reject_all, estate.permission_id)
+				if call_ok and rejected then
+					local submitted = require("opencode.review").reply(estate.permission_id, function(err)
+						log_close_reject_error("review", estate.permission_id, err)
+					end)
+					if not submitted then reject_err = "review reply could not be submitted" end
+				else
+					reject_err = (call_ok and reject_err) or rejected or "unknown error"
 				end
-				reject_permission_request(estate.permission_id)
-				emit_permission_rejected_for_close(estate.permission_id, estate.session_id, "edit")
+				if reject_err then
+					vim.notify("Failed to reject review before closing session: " .. tostring(reject_err), vim.log.levels.ERROR)
+				end
+				emit("interaction_changed", {
+					kind = "edit", action = "rejected", id = estate.permission_id,
+					session_id = estate.session_id, reason = "session_close",
+				})
 			end
 			if edit_state.remove_edit(estate.permission_id) then
 				emit("edit_removed", {
@@ -388,11 +371,7 @@ local function schedule_busy_watchdog()
 			if state.is_runtime_session(session_id) then
 				local current = state.get_session_status(session_id)
 				if is_busy_status_for_idle(current) then
-					M.reconcile_busy_session_idle(session_id, { reason = "watchdog" })
-					local after = state.get_session_status(session_id)
-					if is_busy_status_for_idle(after) then
-						any_busy = true
-					end
+					any_busy = true
 				end
 			end
 		end
@@ -435,75 +414,6 @@ function M.set_session_status(session_id, status, opts)
 		schedule_busy_watchdog()
 	end
 	return previous
-end
-
----@param info table  message info with sessionID, id, role, time, finish
----@param opts? table  { reason?: string }
----@return boolean  true if session was idled
-function M.maybe_idle_from_message(info, opts)
-	opts = opts or {}
-	if type(info) ~= "table" or not info.sessionID or not info.id then
-		return false
-	end
-	-- Native steps may complete while more tools or queued inputs are running.
-	if info.protocol == "v2" then return false end
-	if info.role ~= "assistant" then
-		return false
-	end
-	if type(info.time) ~= "table" or info.time.completed == nil then
-		return false
-	end
-	if info.finish == "tool-calls" then
-		return false
-	end
-
-	local ok_sync, sync = pcall(require, "opencode.sync")
-	if not ok_sync or type(sync.get_messages) ~= "function" then
-		return false
-	end
-	local messages = sync.get_messages(info.sessionID)
-	local latest = messages and messages[#messages] or nil
-	if type(latest) ~= "table" or latest.id ~= info.id then
-		return false
-	end
-
-	local current_status = state.get_session_status(info.sessionID)
-	if not is_busy_status_for_idle(current_status) then
-		return false
-	end
-
-	local idle_status = { type = "idle" }
-	if type(sync.handle_session_status) == "function" then
-		sync.handle_session_status(info.sessionID, idle_status)
-	end
-	M.set_session_status(info.sessionID, idle_status, {
-		reason = opts.reason or "message_completed",
-	})
-	return true
-end
-
----@param session_id string
----@param opts? table  { reason?: string }
-function M.reconcile_busy_session_idle(session_id, opts)
-	opts = opts or {}
-	if not session_id or session_id == "" then
-		return
-	end
-
-	local current_status = state.get_session_status(session_id)
-	if not is_busy_status_for_idle(current_status) then
-		return
-	end
-
-	local ok_sync, sync = pcall(require, "opencode.sync")
-	if not ok_sync or type(sync.get_messages) ~= "function" then
-		return
-	end
-	local messages = sync.get_messages(session_id)
-	local latest = messages and messages[#messages] or nil
-	if type(latest) == "table" then
-		M.maybe_idle_from_message(latest, opts)
-	end
 end
 
 ---@param session table
@@ -943,7 +853,6 @@ function M.switch_to(session, opts)
 				M.set_message_cache(session.id, messages, {
 					reason = "session_switch",
 				})
-				M.reconcile_busy_session_idle(session.id, { reason = "session_switch" })
 				M.refresh_status()
 			end
 			if state.get_session().id == session.id then

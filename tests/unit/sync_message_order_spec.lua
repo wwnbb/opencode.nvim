@@ -42,11 +42,11 @@ describe("opencode sync message ordering", function()
 		sync.clear_all()
 	end)
 
-	it("reconciles a placeholder without duplicating the message", function()
+	it("stores a native part before its message without fabricating a placeholder", function()
 		local sync = require("opencode.sync")
 		sync.clear_all()
 
-		local session_id = "session_message_placeholder"
+		local session_id = "session_message_out_of_order"
 		sync.handle_message_updated({
 			id = "placeholder_anchor",
 			sessionID = session_id,
@@ -54,26 +54,28 @@ describe("opencode sync message ordering", function()
 			time = { created = 1 },
 		})
 		sync.handle_part_updated({
-			id = "placeholder_part",
-			messageID = "placeholder",
+			id = "late_part",
+			messageID = "late_message",
 			sessionID = session_id,
 			type = "text",
-			text = "",
+			text = "complete native content",
 		})
+		assert(#sync.get_messages(session_id) == 1, "a part update must not invent a message")
 		sync.handle_message_updated({
-			id = "placeholder",
+			id = "late_message",
 			sessionID = session_id,
 			role = "assistant",
 			time = { created = 0 },
 		})
 
 		local messages = sync.get_messages(session_id)
-		assert(#messages == 2, "placeholder reconciliation should not duplicate messages")
-		assert(messages[1].id == "placeholder", "reconciled message should be reinserted by created time")
+		assert(#messages == 2, "late native message should be inserted once")
+		assert(messages[1].id == "late_message", "late message should be inserted by created time")
 		assert(
-			sync.get_message(session_id, "placeholder") == messages[1],
-			"reconciled placeholder should remain discoverable by ID"
+			sync.get_message(session_id, "late_message") == messages[1],
+			"late message should be discoverable by ID"
 		)
+		assert(sync.get_part("late_message", "late_part").text == "complete native content")
 
 		sync.clear_all()
 	end)
@@ -145,7 +147,7 @@ describe("opencode sync message ordering", function()
 		sync.clear_all()
 	end)
 
-	it("keeps extra messages unless full-session reconcile is requested", function()
+	it("keeps extra messages during partial hydrate and removes them on complete reconcile", function()
 		local sync = require("opencode.sync")
 		sync.clear_all()
 
@@ -209,18 +211,19 @@ describe("opencode sync message ordering", function()
 
 		sync.handle_session_messages(session_id, snapshot)
 		assert(sync.get_message(session_id, "ghost") ~= nil, "upsert-only hydrate must keep ghost messages")
-		assert(sync.get_part("window_old", "stale_part") ~= nil, "upsert-only hydrate must keep ghost parts")
+		assert(sync.get_part("window_old", "stale_part") == nil, "native content replaces stale parts of its own message")
 
 		sync.handle_session_messages(session_id, snapshot, {
 			reconcile = true,
+			complete = true,
 			snapshot = sync.capture_session_snapshot(session_id),
 		})
 
-		assert(sync.get_message(session_id, "history") ~= nil, "reconcile must keep messages older than the page")
+		assert(sync.get_message(session_id, "history") == nil, "complete reconcile must remove absent history")
 		assert(sync.get_message(session_id, "window_old") ~= nil, "reconcile must keep snapshot messages")
 		assert(sync.get_message(session_id, "window_new") ~= nil, "reconcile must keep snapshot messages")
-		assert(sync.get_message(session_id, "ghost") == nil, "reconcile must drop holes inside the page window")
-		assert(sync.get_message(session_id, "inflight") ~= nil, "reconcile must keep messages newer than the page")
+		assert(sync.get_message(session_id, "ghost") == nil, "complete reconcile must remove absent messages")
+		assert(sync.get_message(session_id, "inflight") == nil, "complete reconcile must remove absent newer messages")
 		assert(sync.get_part("window_old", "window_old_part") ~= nil, "reconcile must keep snapshot parts")
 		assert(sync.get_part("window_old", "stale_part") == nil, "reconcile must drop ghost parts")
 

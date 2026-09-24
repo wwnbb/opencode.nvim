@@ -28,7 +28,6 @@ local state = {
 	visible = false,
 	auto_scroll = false,
 	config = nil,
-	-- Data layer: flat list of entries (message.part.updated replaces in-place)
 	entries = {}, -- log entry objects
 	entries_log_count = 0, -- raw log count consumed into entries
 	header_line_count = 0,
@@ -73,44 +72,6 @@ end
 -- Data layer
 ---------------------------------------------------------------
 
--- Check if entry is a message.part.updated SSE event.
--- Returns messageID string or nil.
-local function get_part_message_id(entry)
-	local d = entry.data and entry.data.data
-	if type(d) == "table" and d.part and d.part.messageID then
-		return d.part.messageID
-	end
-	return nil
-end
-
--- Search state.entries backwards (up to 100) for an entry with matching messageID.
--- Returns entry index or nil.
-local function find_entry_by_message_id(message_id)
-	for i = #state.entries, math.max(1, #state.entries - 99), -1 do
-		local mid = get_part_message_id(state.entries[i])
-		if mid == message_id then
-			return i
-		end
-	end
-	return nil
-end
-
--- Insert a new entry or replace the most recent message.part.updated entry
--- for the same messageID.
-local function upsert_entry(entry)
-	local mid = get_part_message_id(entry)
-	if mid then
-		local target = find_entry_by_message_id(mid)
-		if target then
-			state.entries[target] = entry
-			return "replace", target
-		end
-	end
-
-	table.insert(state.entries, entry)
-	return "append", #state.entries
-end
-
 -- Rebuild state.entries from raw logs (full rebuild)
 local function rebuild_entries()
 	local logger = require("opencode.logger")
@@ -118,16 +79,10 @@ local function rebuild_entries()
 	state.entries = {}
 
 	for i = log_start, #logs do
-		upsert_entry(logs[i])
+		state.entries[#state.entries + 1] = logs[i]
 	end
 
 	state.entries_log_count = #logs
-end
-
--- Ingest a single entry into state.entries incrementally.
--- Returns: action ("replace"|"append"), entry_index
-local function ingest_entry(entry)
-	return upsert_entry(entry)
 end
 
 ---------------------------------------------------------------
@@ -447,14 +402,8 @@ function M.render_entry(entry)
 	local bufnr = state.split.bufnr
 
 	-- Ingest into data layer
-	local action, _ = ingest_entry(entry)
+	state.entries[#state.entries + 1] = entry
 	state.entries_log_count = #logs
-
-	if action == "replace" then
-		-- Data changed in-place, just do full refresh
-		M.refresh()
-		return
-	end
 
 	-- New entry: append to buffer
 	vim.bo[bufnr].modifiable = true

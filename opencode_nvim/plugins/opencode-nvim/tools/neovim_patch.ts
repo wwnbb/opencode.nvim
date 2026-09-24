@@ -1,7 +1,7 @@
-import { tool } from "./lib/definition"
+import { z } from "zod"
 import { readFileSync } from "node:fs"
 const DESCRIPTION = readFileSync(new URL("./neovim_patch.txt", import.meta.url), "utf8")
-import { reviewDecision, publishProgress, reviewResult } from "./lib/context"
+import { reviewDecision, publishProgress, reviewResult, type RuntimeContext } from "./lib/context"
 import {
   type FileState,
   displayPath,
@@ -14,7 +14,10 @@ import {
 } from "./lib/file_state"
 import { assertNoAccidentalIndentRemoval, makeDiff, sameContent, stats } from "./lib/text"
 
-const schema = tool.schema
+const input = z.object({
+  patchText: z.string().describe("The full patch text that describes all changes to be made"),
+  allowIndentChange: z.boolean().optional().describe("Allow replacement lines to remove leading indentation"),
+})
 
 type Status = "applied" | "partial" | "rejected" | "failed"
 type ChangeType = "add" | "update" | "delete" | "move"
@@ -525,13 +528,10 @@ function outputFor(status: Status, files: ReturnType<typeof finalFile>[]) {
   return `Patch review completed with partial changes:\n${lines.join("\n")}`
 }
 
-export default tool({
+export default {
   description: DESCRIPTION,
-  args: {
-    patchText: schema.string().describe("The full patch text that describes all changes to be made"),
-    allowIndentChange: schema.boolean().optional().describe("Allow replacement lines to remove leading indentation"),
-  },
-  async execute(args, context) {
+  input,
+  async execute(args: z.infer<typeof input>, context: RuntimeContext) {
     if (!args.patchText) throw new Error("patchText is required")
 
     let hunks: Hunk[]
@@ -638,4 +638,4 @@ export default tool({
       },
     })
   },
-})
+}

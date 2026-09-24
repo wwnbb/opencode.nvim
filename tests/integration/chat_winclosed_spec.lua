@@ -27,7 +27,6 @@ describe("opencode chat window close", function()
 		opencode.setup({
 			server = {
 				auto_start = false,
-				lazy = true,
 			},
 			chat = {
 				layout = "vertical",

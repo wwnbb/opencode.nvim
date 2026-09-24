@@ -9,7 +9,6 @@ local M = {}
 
 local NuiLine = require("nui.line")
 local NuiText = require("nui.text")
-local thinking = require("opencode.ui.thinking")
 local locale = require("opencode.util.locale")
 local sync = require("opencode.sync")
 local syntax = require("opencode.ui.syntax")
@@ -560,27 +559,6 @@ function M.highlight_panel_text(result, rows, text, hl_group)
 	return false
 end
 
--- ─── User message display config ─────────────────────────────────────────────
-
----@return string prompt, boolean multiline_prefix
-function M.get_user_message_display()
-	local app_state = require("opencode.state")
-	local full_config = app_state.get_config() or {}
-	local display_cfg = full_config.chat and full_config.chat.message_display or {}
-	local message_prefix = display_cfg and display_cfg.user_prefix
-	local prompt
-	if type(message_prefix) == "string" then
-		prompt = message_prefix
-	else
-		prompt = "> "
-	end
-	local multiline_prefix = display_cfg and display_cfg.multiline_prefix
-	if type(multiline_prefix) ~= "boolean" then
-		multiline_prefix = true
-	end
-	return prompt, multiline_prefix
-end
-
 -- ─── NuiLine renderers ────────────────────────────────────────────────────────
 
 ---Render a user message using NuiLine.
@@ -681,26 +659,6 @@ function M.render_user_message(content, agent_name, files, opts)
 	return lines
 end
 
----Render reasoning using NuiLine.
----@param reasoning string|nil
----@return NuiLine[]
-function M.render_reasoning(reasoning, opts)
-	if not reasoning or vim.trim(reasoning) == "" or not thinking.is_enabled() then return {} end
-	opts = opts or {}
-	local part = opts.part or { type = "reasoning", text = reasoning, time = opts.time }
-	local group = { kind = "thought", completed = opts.completed ~= false,
-		refs = { { part = part, message = opts.message or {} } } }
-	local result = require("opencode.ui.chat.activity").render(group, opts.expanded == true)
-	local lines = {}
-	for _, text in ipairs(result.lines) do
-		local line = NuiLine()
-		line:append(text)
-		lines[#lines + 1] = line
-	end
-	lines._opencode_highlights = result.highlights
-	return lines
-end
-
 ---Render source text and syntax ranges, including unfinished streamed fences.
 ---@param content string|nil
 ---@param _opts? table
@@ -762,13 +720,13 @@ function M.render_tool_line(tool_part, is_expanded)
 
 	local fold_icon = is_expanded and "▾" or "▸"
 	local header = fold_icon .. " " .. status_symbol .. " " .. tool_name
-	if tool_part.input and tool_part.input.description then
-		header = header .. " - " .. tool_part.input.description
+	local tool_state_data = tool_part.state or {}
+	if type(tool_state_data.input) == "table" and tool_state_data.input.description then
+		header = header .. " - " .. tool_state_data.input.description
 	end
 	add_hl_line(header, status_hl)
 
 	if is_expanded then
-		local tool_state_data = tool_part.state or {}
 		local tool_input = tool_state_data.input
 		local tool_output = tool_state_data.output
 		local tool_error = tool_state_data.error
@@ -787,7 +745,6 @@ function M.render_tool_line(tool_part, is_expanded)
 						scope = "tools",
 						line_start = input_start,
 						col_offset = 4,
-						compat_markdown = false,
 					})
 				else
 					syntax.add_highlights({ highlights = result_highlights }, input_str, input_lang, {
@@ -813,7 +770,6 @@ function M.render_tool_line(tool_part, is_expanded)
 					scope = "tools",
 					line_start = output_start,
 					col_offset = 4,
-					compat_markdown = false,
 				})
 			elseif output_lang then
 				syntax.add_highlights({ highlights = result_highlights }, output_str, output_lang, {

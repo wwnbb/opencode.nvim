@@ -102,7 +102,7 @@ function M.approve(permission_id, opts)
 		vim.schedule(function()
 			if not require("opencode.session.pending").is_current(token) then return end
 			local current = require("opencode.permission.state").get_permission(permission_id)
-			if current and current.protocol == "v2" and current.status ~= "pending" then return end
+			if current and current.status ~= "pending" then return end
 			local log = logger()
 			if err then
 				replied_permissions[permission_id] = nil

@@ -134,7 +134,6 @@ local function record_for_session(sessions, current, runtime_ids, session_id)
 			title = current.name,
 			name = current.name,
 			message_count = current.message_count,
-			messageCount = current.message_count,
 		}
 	elseif runtime_ids[session_id] then
 		record = {
@@ -142,7 +141,6 @@ local function record_for_session(sessions, current, runtime_ids, session_id)
 			title = session_id,
 			name = session_id,
 			message_count = 0,
-			messageCount = 0,
 		}
 	else
 		return nil
@@ -152,7 +150,6 @@ local function record_for_session(sessions, current, runtime_ids, session_id)
 		record.name = current.name or record.name
 		if current.message_count ~= nil then
 			record.message_count = current.message_count
-			record.messageCount = current.message_count
 		end
 	end
 	return record
@@ -394,7 +391,7 @@ end
 -- Admission is separate from execution; delivered messages need no queue badge.
 local function prompt_record(session_id, message_id)
 	local message = require("opencode.sync").get_message(session_id, message_id)
-	if message and message.protocol == "v2" and message.role == "user" and not message.provisional then return nil end
+	if message and message.role == "user" and not message.provisional then return nil end
 	return require("opencode.session.pending").get(session_id, message_id)
 end
 

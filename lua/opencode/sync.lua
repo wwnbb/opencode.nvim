@@ -1,4 +1,4 @@
--- opencode.nvim - Sync module (mirrors TUI's sync.tsx)
+-- opencode.nvim - Native v2 message, part, session, and catalog store.
 -- Centralized store for messages, parts, sessions, and other sync data
 -- Parts use binary search by ID; messages use chronological ordering
 
@@ -34,19 +34,11 @@ end
 ---@field state? table
 ---@field synthetic? boolean
 
----@class PartDelta
----@field messageID string
----@field partID string
----@field field string
----@field delta string
----@field sessionID? string
-
 -- Internal store
 local store = {
 	message = {},       -- { [sessionID] = { Message, ... } }
 	message_session = {}, -- { [messageID] = sessionID }
 	part = {},          -- { [messageID] = { Part, ... } }
-	part_delta_buffer = {}, -- { [messageID .. "\0" .. partID .. "\0" .. field] = { string, ... } }
 	session_status = {}, -- { [sessionID] = { type = "idle" | "busy" } }
 	task_child_parent = {}, -- { [child_session_id] = parent_session_id }
 	task_child_owner = {}, -- { [child_session_id] = messageID .. "\0" .. partID }
@@ -182,7 +174,6 @@ local function nonempty_string(value)
 end
 
 local find_message_session_id
-local clear_part_delta_buffers_for_message
 local clear_task_child_indices_for_message
 local bump_task_summary_revision_for_message
 local bump_task_summary_revision_for_part_change
@@ -207,17 +198,6 @@ local function part_revision_key(message_id, part_id)
 		return nil
 	end
 	return message_id .. "\0" .. part_id
-end
-
----@param message_id string|nil
----@param part_id string|nil
----@param field string|nil
----@return string|nil
-local function part_delta_key(message_id, part_id, field)
-	if not message_id or not part_id or not field then
-		return nil
-	end
-	return message_id .. "\0" .. part_id .. "\0" .. field
 end
 
 ---@param message_id string|nil
@@ -341,208 +321,9 @@ local function find_message_id_by_call_id(session_id, call_id)
 	return nil
 end
 
--- Ensure a message row exists for a part update.
--- This lets streaming text render even if message.updated arrives slightly later.
-local function ensure_message_for_part(part)
-	local message_id = nonempty_string(part.messageID)
-	if not message_id then
-		return
-	end
-
-	part.messageID = message_id
-	local session_id = nonempty_string(part.sessionID) or find_message_session_id(message_id)
-	if not session_id then
-		return
-	end
-
-	part.sessionID = nonempty_string(part.sessionID) or session_id
-
-	local placeholder = {
-		id = message_id,
-		sessionID = session_id,
-		role = "assistant",
-		time = {
-			created = vim.uv.now(),
-		},
-	}
-
-	local messages = store.message[session_id]
-	if not messages then
-		store.message[session_id] = { placeholder }
-		index_message_session(session_id, message_id)
-		return
-	end
-
-	if find_message_index(messages, message_id) then
-		return
-	end
-
-	table.insert(messages, message_insert_index(messages, placeholder), placeholder)
-	index_message_session(session_id, message_id)
-
-	-- Keep the same 100 message cap behavior as regular message updates.
-	if #messages > 100 then
-		local oldest = messages[1]
-		bump_task_summary_revision_for_message(oldest.id, session_id)
-		table.remove(messages, 1)
-		clear_part_delta_buffers_for_message(oldest.id)
-		clear_task_child_indices_for_message(oldest.id)
-		store.part[oldest.id] = nil
-		unindex_message_session(oldest.id)
-		clear_message_revisions(oldest.id)
-	end
-end
-
 -- Get part ID from part
 local function get_part_id(part)
 	return part.id
-end
-
----@param root table
----@param path string[]
----@return any
-local function get_nested(root, path)
-	local node = root
-	for _, key in ipairs(path) do
-		if type(node) ~= "table" then
-			return nil
-		end
-		node = node[key]
-		if node == nil then
-			return nil
-		end
-	end
-	return node
-end
-
----@param root table
----@param path string[]
----@param value any
-local function set_nested(root, path, value)
-	if #path == 0 then
-		return
-	end
-
-	local node = root
-	for i = 1, #path - 1 do
-		local key = path[i]
-		if type(node[key]) ~= "table" then
-			node[key] = {}
-		end
-		node = node[key]
-	end
-	node[path[#path]] = value
-end
-
----@param field string
----@return string[]
-local function split_part_field(field)
-	if type(field) ~= "string" or field == "" then
-		return {}
-	end
-	return vim.split(field, ".", { plain = true, trimempty = true })
-end
-
----@param message_id string
----@param part_id string
----@param field string
----@param delta string
-local function buffer_part_delta(message_id, part_id, field, delta)
-	local key = part_delta_key(message_id, part_id, field)
-	if not key or delta == "" then
-		return
-	end
-	local chunks = store.part_delta_buffer[key]
-	if not chunks then
-		chunks = {}
-		store.part_delta_buffer[key] = chunks
-	end
-	table.insert(chunks, delta)
-end
-
----@param part Part
----@param field string
-local function materialize_part_field(part, field)
-	if type(part) ~= "table" then
-		return
-	end
-	local message_id = part.messageID
-	local part_id = part.id
-	local key = part_delta_key(message_id, part_id, field)
-	local chunks = key and store.part_delta_buffer[key]
-	if type(chunks) ~= "table" or #chunks == 0 then
-		if key then
-			store.part_delta_buffer[key] = nil
-		end
-		return
-	end
-
-	local path = split_part_field(field)
-	if #path == 0 then
-		store.part_delta_buffer[key] = nil
-		return
-	end
-
-	local current = get_nested(part, path)
-	if type(current) ~= "string" then
-		current = ""
-	end
-	set_nested(part, path, current .. table.concat(chunks))
-	store.part_delta_buffer[key] = nil
-end
-
----@param part Part
-local function materialize_part(part)
-	if type(part) ~= "table" or not part.messageID or not part.id then
-		return
-	end
-	local prefix = part.messageID .. "\0" .. part.id .. "\0"
-	local fields = {}
-	for key in pairs(store.part_delta_buffer) do
-		if key:sub(1, #prefix) == prefix then
-			table.insert(fields, key:sub(#prefix + 1))
-		end
-	end
-	for _, field in ipairs(fields) do
-		materialize_part_field(part, field)
-	end
-end
-
----@param parts Part[]|nil
----@return Part[]
-local function materialize_parts(parts)
-	for _, part in ipairs(parts or {}) do
-		materialize_part(part)
-	end
-	local result = parts or {}
-	return result
-end
-
----@param message_id string|nil
----@param part_id string|nil
-local function clear_part_delta_buffers(message_id, part_id)
-	if not message_id or not part_id then
-		return
-	end
-	local prefix = message_id .. "\0" .. part_id .. "\0"
-	for key in pairs(store.part_delta_buffer) do
-		if key:sub(1, #prefix) == prefix then
-			store.part_delta_buffer[key] = nil
-		end
-	end
-end
-
----@param message_id string|nil
-clear_part_delta_buffers_for_message = function(message_id)
-	if not message_id then
-		return
-	end
-	local prefix = message_id .. "\0"
-	for key in pairs(store.part_delta_buffer) do
-		if key:sub(1, #prefix) == prefix then
-			store.part_delta_buffer[key] = nil
-		end
-	end
 end
 
 ---@param message_id string|nil
@@ -623,53 +404,6 @@ end
 
 ---@param message_id string|nil
 ---@return boolean
-local function is_incomplete_assistant_message(message_id)
-	local message = get_message_by_id(message_id)
-	return message ~= nil and message.role == "assistant" and not (message.time and message.time.completed ~= nil)
-end
-
----@param dest table
----@param src table
----@param merged table
-local function preserve_streaming_text(dest, src, merged)
-	if not (src.type == "text" or src.type == "reasoning" or dest.type == "text" or dest.type == "reasoning") then
-		return
-	end
-	if not is_incomplete_assistant_message(dest.messageID or src.messageID) then
-		return
-	end
-
-	local dest_text = dest.text
-	local src_text = src.text
-	if type(dest_text) ~= "string" or type(src_text) ~= "string" then
-		return
-	end
-	if #src_text < #dest_text then
-		merged.text = dest_text
-	end
-end
-
----@param dest table
----@param src table
----@param merged table
----@param path string[]
-local function preserve_summary_path(dest, src, merged, path)
-	local src_summary = get_nested(src, path)
-	if src_summary == nil then
-		return
-	end
-
-	local dest_summary = get_nested(dest, path)
-	if type(src_summary) == "table" and next(src_summary) == nil then
-		if type(dest_summary) == "table" and next(dest_summary) ~= nil then
-			set_nested(merged, path, dest_summary)
-			return
-		end
-	end
-
-	set_nested(merged, path, src_summary)
-end
-
 ---@param tool_part table|nil
 ---@return string|nil
 local function resolve_task_child_session_id(tool_part)
@@ -681,21 +415,10 @@ local function resolve_task_child_session_id(tool_part)
 	local tool_state = type(tool_part.state) == "table" and tool_part.state or {}
 	local state_metadata = type(tool_state.metadata) == "table" and tool_state.metadata or {}
 
-	return state_metadata.sessionId
-		or state_metadata.sessionID
-		or state_metadata.session_id
-		or state_metadata.childSessionID
-		or state_metadata.childSessionId
-		or state_metadata.child_session_id
-		or part_metadata.sessionId
-		or part_metadata.sessionID
-		or part_metadata.session_id
-		or part_metadata.childSessionID
-		or part_metadata.childSessionId
-		or part_metadata.child_session_id
-		or tool_part.childSessionID
-		or tool_part.childSessionId
-		or tool_part.child_session_id
+	-- Both spellings occur in verified v2 runtimes: 2.0.11 emits sessionID,
+	-- while the current task tool source uses sessionId.
+	return state_metadata.sessionID or state_metadata.sessionId
+		or part_metadata.sessionID or part_metadata.sessionId
 end
 
 ---@param message_id string|nil
@@ -807,33 +530,6 @@ local function index_task_child(part)
 end
 
 ---@param message_id string|nil
----@param session_id string|nil
----@return boolean changed
-local function adopt_orphan_parts(message_id, session_id)
-	message_id = nonempty_string(message_id)
-	session_id = nonempty_string(session_id)
-	if not message_id or not session_id then
-		return false
-	end
-
-	local parts = store.part[message_id]
-	if type(parts) ~= "table" then
-		return false
-	end
-
-	local changed = false
-	for _, part in ipairs(parts) do
-		if type(part) == "table" and not nonempty_string(part.sessionID) then
-			part.sessionID = session_id
-			index_task_child(part)
-			bump_part_revision(message_id, part.id, session_id)
-			changed = true
-		end
-	end
-	return changed
-end
-
----@param message_id string|nil
 clear_task_child_indices_for_message = function(message_id)
 	if not message_id then
 		return
@@ -851,7 +547,7 @@ clear_task_child_indices_for_message = function(message_id)
 	end
 end
 
----Handle message.updated event (mirrors TUI sync.tsx:228-265)
+---Upsert a projected native message.
 ---@param info Message
 ---@return boolean changed
 function M.handle_message_updated(info)
@@ -876,7 +572,6 @@ function M.handle_message_updated(info)
 		store.message[session_id] = { info }
 		index_message_session(session_id, info.id)
 		bump_message_revision(info.id, session_id)
-		adopt_orphan_parts(info.id, session_id)
 		bump_task_summary_revision_for_message(info.id, session_id)
 		return true
 	end
@@ -887,54 +582,34 @@ function M.handle_message_updated(info)
 	if message_index then
 		-- Update existing message (reconcile)
 		local current = messages[message_index]
-		local merged = info.protocol == "v2" and info or vim.tbl_deep_extend("force", current, info)
+		local merged = info
 		changed = values_changed(current, merged)
 		table.remove(messages, message_index)
 		table.insert(messages, message_insert_index(messages, merged), merged)
 		index_message_session(session_id, info.id)
-		local adopted_parts = adopt_orphan_parts(info.id, session_id)
 		if changed then
 			bump_message_revision(info.id, session_id)
 			if message_change_affects_task_summary(current, merged) then
 				bump_task_summary_revision(session_id)
 			end
 		end
-		if adopted_parts then
-			bump_task_summary_revision_for_message(info.id, session_id)
-		end
-		changed = changed or adopted_parts
 	else
 		-- Insert new message at correct position (maintains sorted order)
 		table.insert(messages, message_insert_index(messages, info), info)
 		index_message_session(session_id, info.id)
 		bump_message_revision(info.id, session_id)
-		adopt_orphan_parts(info.id, session_id)
 		bump_task_summary_revision_for_message(info.id, session_id)
 		changed = true
-
-		-- Limit to 100 messages per session (like TUI)
-		if #messages > 100 and info.protocol ~= "v2" then
-			local oldest = messages[1]
-			bump_task_summary_revision_for_message(oldest.id, session_id)
-			table.remove(messages, 1)
-			-- Also remove parts for oldest message
-			clear_part_delta_buffers_for_message(oldest.id)
-			clear_task_child_indices_for_message(oldest.id)
-			store.part[oldest.id] = nil
-			unindex_message_session(oldest.id)
-			clear_message_revisions(oldest.id)
-		end
 	end
 	return changed
 end
 
----Handle message.removed event (mirrors TUI sync.tsx:267-279)
+---Remove a projected message and its parts.
 ---@param session_id string
 ---@param message_id string
 function M.handle_message_removed(session_id, message_id)
 	local messages = store.message[session_id]
 	if not messages then
-		clear_part_delta_buffers_for_message(message_id)
 		clear_task_child_indices_for_message(message_id)
 		store.part[message_id] = nil
 		unindex_message_session(message_id)
@@ -947,7 +622,6 @@ function M.handle_message_removed(session_id, message_id)
 		bump_task_summary_revision_for_message(message_id, session_id)
 		table.remove(messages, message_index)
 		-- Also remove parts
-		clear_part_delta_buffers_for_message(message_id)
 		clear_task_child_indices_for_message(message_id)
 		store.part[message_id] = nil
 		unindex_message_session(message_id)
@@ -956,7 +630,7 @@ function M.handle_message_removed(session_id, message_id)
 	end
 end
 
----Handle message.part.updated event (mirrors TUI sync.tsx:281-299)
+---Upsert a projected native part.
 ---@param part Part
 ---@return boolean changed
 function M.handle_part_updated(part)
@@ -971,14 +645,11 @@ function M.handle_part_updated(part)
 		return false
 	end
 
-	ensure_message_for_part(part)
-
 	local parts = store.part[message_id]
 
 	-- If no parts for this message, create array with this part
 	if not parts then
 		store.part[message_id] = { part }
-		clear_part_delta_buffers(message_id, part.id)
 		index_task_child(part)
 		bump_part_revision(message_id, part.id, part.sessionID)
 		bump_task_summary_revision_for_part_change(nil, part)
@@ -991,24 +662,10 @@ function M.handle_part_updated(part)
 	if result.found then
 		-- Update existing part (reconcile)
 		local dest = parts[result.index]
-		materialize_part(dest)
-		local src = part
-		local merged = part.protocol == "v2" and part or vim.tbl_deep_extend("force", dest, src)
-
-		-- During streaming, /message snapshots and part.updated events can lag
-		-- behind accumulated deltas. Do not let a stale shorter snapshot erase
-		-- text that will be restored only after the final full update.
-		if part.protocol ~= "v2" then preserve_streaming_text(dest, src, merged) end
-
-		-- Preserve task summary arrays when backend sends an empty dictionary in partial updates.
-		if part.protocol ~= "v2" then
-			preserve_summary_path(dest, src, merged, { "state", "metadata", "summary" })
-			preserve_summary_path(dest, src, merged, { "metadata", "summary" })
-		end
+		local merged = part
 
 		local changed = values_changed(dest, merged)
 		parts[result.index] = merged
-		clear_part_delta_buffers(message_id, part.id)
 		index_task_child(merged)
 		if changed then
 			bump_part_revision(message_id, part.id, part.sessionID)
@@ -1018,7 +675,6 @@ function M.handle_part_updated(part)
 	else
 		-- Insert new part at correct position
 		table.insert(parts, result.index, part)
-		clear_part_delta_buffers(message_id, part.id)
 		index_task_child(part)
 		bump_part_revision(message_id, part.id, part.sessionID)
 		bump_task_summary_revision_for_part_change(nil, part)
@@ -1026,61 +682,16 @@ function M.handle_part_updated(part)
 	end
 end
 
----Handle message.part.delta event by appending streamed text to an existing part field.
----Falls back to creating a text part if the part does not exist yet.
----@param part_delta PartDelta
----@return Part|nil
-function M.handle_part_delta(part_delta)
-	local message_id = nonempty_string(part_delta.messageID)
-	local part_id = nonempty_string(part_delta.partID)
-	local field = nonempty_string(part_delta.field)
-	local delta = part_delta.delta
-
-	if not message_id or not part_id or not field or type(delta) ~= "string" then
-		return nil
-	end
-
-	local session_id = nonempty_string(part_delta.sessionID) or find_message_session_id(message_id)
-	local parts = store.part[message_id]
-	if not parts then
-		parts = {}
-		store.part[message_id] = parts
-	end
-
-	local result = binary_search(parts, part_id, get_part_id)
-	if not result.found then
-		local new_part = {
-			id = part_id,
-			messageID = message_id,
-			sessionID = session_id,
-			type = "text",
-		}
-		ensure_message_for_part(new_part)
-		table.insert(parts, result.index, new_part)
-	end
-
-	local part = parts[result.index]
-	if session_id and not nonempty_string(part.sessionID) then
-		part.sessionID = session_id
-	end
-	buffer_part_delta(message_id, part_id, field, delta)
-	bump_part_revision(message_id, part_id, part.sessionID)
-	bump_task_summary_revision_for_part_change(part, part)
-	return part
-end
-
----Handle message.part.removed event (mirrors TUI sync.tsx:302-314)
+---Remove a projected native part.
 ---@param message_id string
 ---@param part_id string
 function M.handle_part_removed(message_id, part_id)
 	local parts = store.part[message_id]
 	if not parts then
-		clear_part_delta_buffers(message_id, part_id)
 		clear_task_child_index(message_id, part_id)
 		return
 	end
 
-	clear_part_delta_buffers(message_id, part_id)
 	clear_task_child_index(message_id, part_id)
 	local result = binary_search(parts, part_id, get_part_id)
 	if result.found then
@@ -1089,23 +700,6 @@ function M.handle_part_removed(message_id, part_id)
 		bump_part_revision(message_id, part_id, find_message_session_id(message_id))
 		bump_task_summary_revision_for_part_change(removed_part, nil)
 	end
-end
-
----True when `message` sorts inside the inclusive [oldest, newest] snapshot window.
----Older history and newer in-flight rows stay; only holes inside the fetched
----newest-N page are treated as ghosts. GET /message?limit=100 is not a full session.
----@param message table
----@param oldest table
----@param newest table
----@return boolean
-local function message_in_snapshot_window(message, oldest, newest)
-	if message_before(message, oldest) then
-		return false
-	end
-	if message_before(newest, message) then
-		return false
-	end
-	return true
 end
 
 ---Capture freshness before requesting a session's messages over HTTP.
@@ -1130,33 +724,16 @@ end
 ---@param session_id string
 ---@param snapshot_messages table[]
 ---@param snapshot_message_ids table<string, boolean>
----@param snapshot_parts_by_message table<string, table<string, boolean>>
 ---@return number removed_count
 local function reconcile_session_snapshot(
 	session_id,
-	snapshot_messages,
 	snapshot_message_ids,
-	snapshot_parts_by_message,
 	protected_messages,
-	has_snapshot,
-	partial_page,
 	complete
 )
 	local removed_count = 0
-	local oldest = snapshot_messages[1]
-	local newest = snapshot_messages[1]
-	for index = 2, #snapshot_messages do
-		local message = snapshot_messages[index]
-		if message_before(message, oldest) then
-			oldest = message
-		end
-		if message_before(newest, message) then
-			newest = message
-		end
-	end
-
 	local messages = store.message[session_id]
-	if not partial_page and type(messages) == "table" and (complete or (oldest and newest)) then
+	if complete and type(messages) == "table" then
 		local stale_message_ids = {}
 		for _, message in ipairs(messages) do
 			local message_id = type(message) == "table" and nonempty_string(message.id) or nil
@@ -1164,7 +741,6 @@ local function reconcile_session_snapshot(
 				message_id
 				and not protected_messages[message_id]
 				and not snapshot_message_ids[message_id]
-				and (complete or message_in_snapshot_window(message, oldest, newest))
 			then
 				table.insert(stale_message_ids, message_id)
 			end
@@ -1175,30 +751,10 @@ local function reconcile_session_snapshot(
 		end
 	end
 
-	for message_id, part_ids in pairs(snapshot_parts_by_message) do
-		local parts = store.part[message_id]
-		if type(parts) == "table"
-			and not protected_messages[message_id]
-			and (has_snapshot or not is_incomplete_assistant_message(message_id))
-		then
-			local stale_part_ids = {}
-			for _, part in ipairs(parts) do
-				local part_id = type(part) == "table" and nonempty_string(part.id) or nil
-				if part_id and not part_ids[part_id] then
-					table.insert(stale_part_ids, part_id)
-				end
-			end
-			for _, part_id in ipairs(stale_part_ids) do
-				M.handle_part_removed(message_id, part_id)
-				removed_count = removed_count + 1
-			end
-		end
-	end
-
 	return removed_count
 end
 
----Hydrate messages and parts from /session/:id/message (mirrors TUI session.sync)
+---Hydrate messages and parts from the native /api/session/:id/message page.
 ---@param session_id string
 ---@param messages table[]|nil
 ---@param opts? { reconcile?: boolean, snapshot?: table }
@@ -1237,20 +793,16 @@ function M.handle_session_messages(session_id, messages, opts)
 	local part_count = 0
 	local changed_count = 0
 	local snapshot_message_ids = {}
-	local snapshot_messages = {}
 	local snapshot_parts_by_message = {}
-	local partial_page = opts.partial == true
 
 	for _, msg_with_parts in ipairs(messages) do
 		if type(msg_with_parts) == "table" then
 			local info = type(msg_with_parts.info) == "table" and msg_with_parts.info or msg_with_parts
-			partial_page = partial_page or (info.protocol == "v2" and opts.complete ~= true)
 			local info_id = type(info) == "table" and nonempty_string(info.id) or nil
 			if type(info) == "table" and info_id then
 				info.id = info_id
 				info.sessionID = nonempty_string(info.sessionID) or session_id
 				snapshot_message_ids[info_id] = true
-				table.insert(snapshot_messages, info)
 				if not protected_messages[info_id] and M.handle_message_updated(info) then
 					changed_count = changed_count + 1
 				end
@@ -1279,13 +831,11 @@ function M.handle_session_messages(session_id, messages, opts)
 				end
 				-- Each v2 content array is a full message snapshot, even when the
 				-- containing history page is partial. Replace only its own parts.
-				if info.protocol == "v2" then
-					local stale = {}
-					for _, part in ipairs(store.part[info_id] or {}) do
-						if not snapshot_parts_by_message[info_id][part.id] then stale[#stale + 1] = part.id end
-					end
-					for _, id in ipairs(stale) do M.handle_part_removed(info_id, id); changed_count = changed_count + 1 end
+				local stale = {}
+				for _, part in ipairs(store.part[info_id] or {}) do
+					if not snapshot_parts_by_message[info_id][part.id] then stale[#stale + 1] = part.id end
 				end
+				for _, id in ipairs(stale) do M.handle_part_removed(info_id, id); changed_count = changed_count + 1 end
 			end
 		end
 	end
@@ -1294,13 +844,9 @@ function M.handle_session_messages(session_id, messages, opts)
 		changed_count = changed_count
 			+ reconcile_session_snapshot(
 				session_id,
-				snapshot_messages,
 				snapshot_message_ids,
-				snapshot_parts_by_message,
 				protected_messages,
-				snapshot ~= nil,
-				partial_page,
-				opts.complete == true
+				opts.complete == true and opts.partial ~= true
 			)
 	end
 
@@ -1308,7 +854,7 @@ function M.handle_session_messages(session_id, messages, opts)
 	local user_id
 	for _, message in ipairs(store.message[session_id] or {}) do
 		if message.role == "user" then user_id = message.id
-		elseif message.protocol == "v2" and message.role == "assistant" and message.parentID ~= user_id then
+		elseif message.role == "assistant" and message.parentID ~= user_id then
 			message.parentID = user_id
 			bump_message_revision(message.id, session_id)
 		end
@@ -1316,7 +862,7 @@ function M.handle_session_messages(session_id, messages, opts)
 	return message_count, part_count, changed_count
 end
 
----Handle session.status event (mirrors TUI sync.tsx:223-225)
+---Store a native session status update.
 ---@param session_id string
 ---@param status table
 ---@return boolean changed
@@ -1390,7 +936,6 @@ function M.finalize_inflight(session_id, opts)
 						then
 							part.state.time["end"] = now
 						end
-						clear_part_delta_buffers(message_id, part.id)
 						bump_part_revision(message_id, part.id, session_id)
 						finalized_parts = finalized_parts + 1
 					end
@@ -1466,8 +1011,8 @@ end
 ---@param message_id string
 ---@return Part[]
 function M.get_parts(message_id)
-	local parts = materialize_parts(store.part[message_id])
-	if parts[1] and parts[1].protocol == "v2" then
+	local parts = store.part[message_id] or {}
+	if parts[1] and parts[1].content_order ~= nil then
 		parts = vim.list_extend({}, parts)
 		table.sort(parts, function(a, b) return a.content_order < b.content_order end)
 	end
@@ -1486,7 +1031,6 @@ function M.get_part(message_id, part_id)
 
 	local result = binary_search(parts, part_id, get_part_id)
 	if result.found then
-		materialize_part(parts[result.index])
 		return parts[result.index]
 	end
 	return nil
@@ -1535,13 +1079,6 @@ end
 ---@return string
 function M.get_message_text(message_id, opts)
 	return M.get_message_render_parts(message_id, opts).content
-end
-
----Get reasoning text for a message (from all reasoning parts)
----@param message_id string
----@return string
-function M.get_message_reasoning(message_id)
-	return M.get_message_render_parts(message_id).reasoning
 end
 
 ---Get tool parts for a message
@@ -1659,7 +1196,6 @@ function M.clear_session(session_id)
 	-- Remove all parts for messages in this session
 	local messages = store.message[session_id] or {}
 	for _, msg in ipairs(messages) do
-		clear_part_delta_buffers_for_message(msg.id)
 		clear_task_child_indices_for_message(msg.id)
 		store.part[msg.id] = nil
 		unindex_message_session(msg.id)
@@ -1682,7 +1218,6 @@ function M.clear_session_messages(session_id)
 	bump_revision(store.session_generation, session_id)
 	local messages = store.message[session_id] or {}
 	for _, msg in ipairs(messages) do
-		clear_part_delta_buffers_for_message(msg.id)
 		clear_task_child_indices_for_message(msg.id)
 		store.part[msg.id] = nil
 		unindex_message_session(msg.id)
@@ -1700,7 +1235,6 @@ function M.clear_all()
 	store.message = {}
 	store.message_session = {}
 	store.part = {}
-	store.part_delta_buffer = {}
 	store.session_status = {}
 	store.task_child_parent = {}
 	store.task_child_owner = {}
@@ -1723,7 +1257,7 @@ function M.clear_all()
 	store.mcp = {}
 end
 
--- Provider management (mirrors TUI sync.tsx)
+-- Provider and catalog management.
 
 function M.get_location_catalog(directory, domain)
 	local entry = store.catalogs[directory] and store.catalogs[directory][domain]

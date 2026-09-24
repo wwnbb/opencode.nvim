@@ -11,7 +11,6 @@ local PREVIEW_TOOLS = {
 	apply_patch = true,
 	neovim_edit = true,
 	neovim_patch = true,
-	neovim_apply_patch = true, -- Historical tool calls.
 	write = true,
 }
 

@@ -90,11 +90,6 @@ local function load_state()
 	for _, key in ipairs({ "recent", "favorite", "variant", "model" }) do
 		if type(data[key]) == "table" then state[key] = data[key] end
 	end
-	if data.version == nil then
-		for _, list in ipairs({ state.recent, state.favorite, state.model }) do
-			for _, model in pairs(list) do if type(model) == "table" then model.legacy_upstream_id = true end end
-		end
-	end
 	if type(data.agent) == "string" then state.agent = data.agent end
 	state.message_agents = type(data.message_agents) == "table" and data.message_agents or {}
 	state.ready = true
@@ -687,28 +682,6 @@ function M.model.set(model, opts)
 	end
 	save_state()
 	emit("model", nil, model)
-end
-
----Catalog availability is temporary; never delete saved preferences here.
-function M.model.cleanup()
-	local canonical = require("opencode.preferences").canonical_model
-	local changed = false
-	for _, list in ipairs({ state.recent, state.favorite, state.model }) do
-		for key, model in pairs(list) do
-			local provider = type(model) == "table" and sync.get_provider(model.providerID)
-			local result = type(model) == "table" and model.legacy_upstream_id and canonical(model, provider) or model
-			if type(model) == "table" and model.legacy_upstream_id and provider and provider.models
-				and provider.models[result.modelID] then
-				result = vim.deepcopy(result); result.legacy_upstream_id = nil
-			end
-			if result ~= model then
-				list[key], changed = result, true
-				local old_key, new_key = model.providerID .. "/" .. model.modelID, result.providerID .. "/" .. result.modelID
-				if state.variant[old_key] and not state.variant[new_key] then state.variant[new_key] = state.variant[old_key] end
-			end
-		end
-	end
-	if changed then save_state() end
 end
 
 ---Cycle through favorite or recent models

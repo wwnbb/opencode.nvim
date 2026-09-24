@@ -92,11 +92,11 @@ end
 ---@param data any
 ---@return boolean
 local function should_accept_global_event(data)
-	if type(data) ~= "table" or not data.payload then
+	if type(data) ~= "table" then
 		return true
 	end
 
-	local directory = data.directory
+	local directory = type(data.location) == "table" and data.location.directory or nil
 	if not directory or directory == "" or directory == "global" then
 		return true
 	end
@@ -263,15 +263,6 @@ local function handle_stream_closed(reason, closed_stream)
 	schedule_reconnect()
 end
 
----@param event_type string|nil
----@return string|nil
-local function strip_sync_version(event_type)
-	if type(event_type) ~= "string" then
-		return event_type
-	end
-	return event_type:gsub("%.%d+$", "")
-end
-
 ---@param event_id string|nil
 ---@return boolean
 local function already_seen_event(event_id)
@@ -296,75 +287,22 @@ local function already_seen_event(event_id)
 	return false
 end
 
----@param payload table
----@param fallback_event_id string|nil
----@return string|nil
-local function payload_event_id(payload, fallback_event_id)
-	if type(payload) ~= "table" then
-		return fallback_event_id
-	end
-	if payload.type == "sync" and type(payload.syncEvent) == "table" then
-		return payload.syncEvent.id or payload.id or fallback_event_id
-	end
-	return payload.id or fallback_event_id
-end
-
----@param target any
----@param data table
-local function attach_global_metadata(target, data)
-	if type(target) ~= "table" then
-		return
-	end
-	target._directory = data.directory
-	target._workspace = data.workspace
-end
-
 -- Emit event to all listeners
 function M.emit(event_type, data, event_id)
-	-- Handle wrapped global event format: {directory, payload: {type, properties}}
 	local actual_type = event_type
 	local actual_data = data
 	local actual_event_id = event_id
 
-	if type(data) == "table" and data.type and data.data ~= nil then
+	if event_type ~= "connected" and event_type ~= "disconnected" and event_type ~= "error" then
 		local decoded, decode_err = require("opencode.protocol.v2.events").decode(data)
 		if not decoded then
 			M.emit("error", decode_err)
 			return
 		end
-		if not should_accept_global_event({ directory = decoded.location and decoded.location.directory, payload = data }) then return end
+		if not should_accept_global_event(data) then return end
 		actual_event_id = decoded.id or event_id
 		if already_seen_event(actual_event_id) then return end
 		actual_type, actual_data = decoded.type, decoded.payload
-	elseif type(data) == "table" and data.payload and data.payload.type then
-		if not should_accept_global_event(data) then
-			return
-		end
-		actual_event_id = payload_event_id(data.payload, event_id)
-		if already_seen_event(actual_event_id) then
-			return
-		end
-		if data.payload.type == "sync" then
-			local sync_event = data.payload.syncEvent
-			if type(sync_event) ~= "table" then
-				return
-			end
-			actual_type = strip_sync_version(sync_event.type)
-			actual_data = sync_event.data or {}
-			if type(actual_data) == "table" then
-				actual_data._sync_event_id = sync_event.id
-				actual_data._sync_seq = sync_event.seq
-				actual_data._sync_aggregate_id = sync_event.aggregateID
-			end
-		else
-			actual_type = data.payload.type
-			actual_data = data.payload.properties or {}
-		end
-		attach_global_metadata(actual_data, data)
-	elseif type(data) == "table" and data.type and data.properties then
-		-- Session-scoped /event payload format: { type, properties }
-		actual_type = data.type
-		actual_data = data.properties or {}
 	end
 
 	local callbacks = listeners[actual_type] or {}
