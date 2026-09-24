@@ -3,19 +3,21 @@
 local M = {}
 
 function M.find(nodes, id)
-	for key, node in pairs(nodes or {}) do
-		if key == id then return node, key end
+	if not nodes then return end
+	if nodes[id] then return nodes[id], id end
+	for key, node in pairs(nodes) do
 		local child = M.find(node.children, id)
 		if child then return child, key end
 	end
 end
 
+-- Return the owning root with the hit, so callers never need a second lookup.
 function M.at_line(nodes, line, predicate)
 	for id, node in pairs(nodes or {}) do
 		if node.start_line and line >= node.start_line and line <= node.end_line then
 			local child_id, child = M.at_line(node.children, line, predicate)
-			if child then return child_id, child end
-			if not predicate or predicate(node, id) then return id, node end
+			if child then return child_id, child, id end
+			if not predicate or predicate(node, id) then return id, node, id end
 		end
 	end
 end

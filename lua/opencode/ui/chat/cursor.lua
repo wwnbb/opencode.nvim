@@ -53,11 +53,10 @@ local function capture_widget_cursor_context()
 	local widget_kinds = { "question", "permission", "edit", "activity" }
 
 	for _, kind in ipairs(widget_kinds) do
-		local widget_id, pos = tree.at_line(get_widget_positions(kind), cursor_line, function(node)
+		local widget_id, pos, root_id = tree.at_line(get_widget_positions(kind), cursor_line, function(node)
 			return is_widget_cursor_target(kind, node)
 		end)
 		if pos then
-			local _, root_id = tree.find(get_widget_positions(kind), widget_id)
 			return { kind = kind, id = widget_id, root_id = root_id, relative_line = cursor_line - pos.start_line }
 		end
 	end

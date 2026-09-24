@@ -1,6 +1,18 @@
 -- Each exploration leaf owns its compact and expanded presentation.
 local M = {}
 
+local search = require("opencode.ui.chat.search")
+local renderers = {
+	read = require("opencode.ui.chat.read").render_tool,
+	glob = search.render_tool,
+	grep = search.render_tool,
+	rg = require("opencode.ui.chat.rg").render_tool,
+}
+
+function M.supports(tool)
+	return renderers[tool] ~= nil
+end
+
 local function add_line(result, text, hl, prefix)
 	require("opencode.ui.chat.render").add_panel_line(result, text, hl, { prefix = prefix or "" })
 end
@@ -40,16 +52,12 @@ local function render_summary(part)
 end
 
 function M.render(part, expanded)
-	local result
-	if part.tool == "rg" then
-		result = require("opencode.ui.chat.rg").render_tool(part, expanded)
-	elseif not expanded then
+	local renderer = renderers[part.tool]
+	if not renderer then return nil end
+	if not expanded and part.tool ~= "rg" then
 		return render_summary(part)
-	elseif part.tool == "read" then
-		result = require("opencode.ui.chat.read").render_tool(part, true)
-	else
-		result = require("opencode.ui.chat.search").render_tool(part, true)
 	end
+	local result = renderer(part, expanded)
 	-- Separators belong to the containing block, not individual tree leaves.
 	if result.lines[#result.lines] == "" then table.remove(result.lines) end
 	return result

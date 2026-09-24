@@ -15,7 +15,7 @@ function M.kind(part)
 	if part.type == "reasoning" and reasoning_text(part) ~= "" and thinking.is_enabled() then
 		return "thought"
 	end
-	if part.type == "tool" and vim.tbl_contains({ "read", "glob", "grep", "rg" }, part.tool) then
+	if part.type == "tool" and exploration_tool.supports(part.tool) then
 		return "explore"
 	end
 end
@@ -80,9 +80,10 @@ local function ended(ref)
 		or (part.type == "tool" and vim.tbl_contains({ "completed", "error", "cancelled", "canceled" }, (part.state or {}).status))
 end
 
-function M.is_working(group)
+-- Rendering can reuse its resolved members instead of querying sync twice.
+function M.is_working(group, refs)
 	if group.completed then return false end
-	for _, ref in ipairs(members(group)) do
+	for _, ref in ipairs(refs or members(group)) do
 		if not ended(ref) then return true end
 	end
 	return false
@@ -112,7 +113,8 @@ end
 function M.render(group, expanded, expansions)
 	expansions = expansions or {}
 	local result = { lines = {}, highlights = {} }
-	local refs, working = members(group), M.is_working(group)
+	local refs = members(group)
+	local working = M.is_working(group, refs)
 	local frame = working and require("opencode.ui.chat.task_animation").get_task_anim_frame() or nil
 	if group.kind == "thought" then
 		local duration, title = 0, nil
