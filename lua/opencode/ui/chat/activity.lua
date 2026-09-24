@@ -87,20 +87,16 @@ end
 local function ensure_highlights()
 	local config = thinking.get_config()
 	local header = vim.api.nvim_get_hl(0, { name = config.header_highlight, link = false })
-	local bg = vim.api.nvim_get_hl(0, { name = "Normal", link = false }).bg or 0
 	local fg = header.fg or 0xffaf00
-	local function dim(channel)
-		local shift = 256 ^ channel
-		return math.floor((math.floor(fg / shift) % 256) * 0.6 + (math.floor(bg / shift) % 256) * 0.4) * shift
-	end
 	vim.api.nvim_set_hl(0, "OpenCodeThought", { default = true, fg = fg, bold = true })
-	vim.api.nvim_set_hl(0, "OpenCodeThoughtCollapsed", { default = true, fg = dim(0) + dim(1) + dim(2), bold = true })
 	vim.api.nvim_set_hl(0, "OpenCodeThoughtBody", { default = true, link = config.highlight })
 	vim.api.nvim_set_hl(0, "OpenCodeThoughtBorder", { default = true, link = "NonText" })
 	vim.api.nvim_set_hl(0, "OpenCodeExplore", { default = true, link = "Comment" })
 	vim.api.nvim_set_hl(0, "OpenCodeActivityRunning", { default = true, link = "Normal" })
 	vim.api.nvim_set_hl(0, "OpenCodeActivityError", { default = true, link = "DiagnosticError" })
 end
+
+require("opencode.ui.highlights").register("opencode.ui.chat.activity", ensure_highlights)
 
 local function add_line(result, text, hl, prefix)
 	require("opencode.ui.chat.render").add_panel_line(result, text, hl, {
@@ -114,7 +110,6 @@ local function path(value)
 end
 
 function M.render_exploration_tool(part, result)
-	ensure_highlights()
 	result = result or { lines = {}, highlights = {} }
 	local state = part.state or {}
 	local input = type(state.input) == "table" and state.input or {}
@@ -145,7 +140,6 @@ function M.render_exploration_tool(part, result)
 end
 
 function M.render(group, expanded)
-	ensure_highlights()
 	local result = { lines = {}, highlights = {} }
 	local refs, working = members(group), M.is_working(group)
 	local frame = working and require("opencode.ui.chat.task_animation").get_task_anim_frame() or nil
@@ -165,7 +159,7 @@ function M.render(group, expanded)
 			if #refs > 1 then header = header .. " · " .. #refs .. " steps" end
 			if duration > 0 then header = header .. " · " .. locale.duration(duration) end
 		end
-		add_line(result, header, working and "OpenCodeActivityRunning" or expanded and "OpenCodeThought" or "OpenCodeThoughtCollapsed")
+		add_line(result, header, "OpenCodeThought")
 		if expanded then
 			for _, ref in ipairs(refs) do
 				result.lines[#result.lines + 1] = ""

@@ -106,6 +106,8 @@ local function ensure_highlights()
 	})
 end
 
+require("opencode.ui.highlights").register("opencode.ui.permission_widget", ensure_highlights)
+
 ---@param ... any
 ---@return string
 local function first_non_empty(...)
@@ -667,8 +669,6 @@ end
 ---@param perm_state table Permission state from permission/state.lua
 ---@return table lines, table highlights, OpenCodeWidgetMeta meta
 function M.get_lines_for_permission(permission_id, perm_state)
-	ensure_highlights()
-
 	local result = { lines = {}, highlights = {} }
 	local tool_input = resolve_tool_input(perm_state)
 	local header_title = permission_header_title(perm_state)
@@ -726,8 +726,6 @@ end
 ---@param perm_state table
 ---@return table lines, table highlights
 function M.get_approved_lines(permission_id, perm_state)
-	ensure_highlights()
-
 	local saved = perm_state.reply == "always" and #(perm_state.always or {}) > 0
 	local reply_suffix = saved and "(always)" or "(once)"
 	local result = { lines = {}, highlights = {} }
@@ -750,8 +748,6 @@ end
 ---@param perm_state table
 ---@return table lines, table highlights
 function M.get_rejected_lines(permission_id, perm_state)
-	ensure_highlights()
-
 	local result = { lines = {}, highlights = {} }
 	local tool_input = resolve_tool_input(perm_state)
 	local header_title = permission_header_title(perm_state)

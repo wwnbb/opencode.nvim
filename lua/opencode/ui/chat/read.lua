@@ -27,6 +27,8 @@ local function ensure_highlights()
 	panel_helpers.set_hl("OpenCodeReadError", "DiagnosticError", "ErrorMsg")
 end
 
+require("opencode.ui.highlights").register("opencode.ui.chat.read", ensure_highlights)
+
 ---@param value any
 ---@return string
 local function stringify(value)
@@ -181,7 +183,6 @@ function M.render_tool(tool_part, is_expanded)
 	if type(tool_part) ~= "table" or tool_part.tool ~= "read" then
 		return nil
 	end
-	ensure_highlights()
 
 	local ctx = tool_panel.context(tool_part)
 	local input = ctx.input

@@ -15,12 +15,22 @@ describe("v2 Thought rendering", function()
 				time = { created = 100, completed = 316 } }
 			local group = { id = part.id, kind = "thought", completed = true,
 				refs = { { part = part, message = { id = "message" } } } }
-			local collapsed = activity.render(group, false).lines
+			local collapsed_result = activity.render(group, false)
+			local collapsed = collapsed_result.lines
 			assert.equals("+ Thought: Plan · 216ms", vim.trim(collapsed[1]))
 			assert.equals(2, #collapsed)
-			local expanded = activity.render(group, true).lines
+			local expanded_result = activity.render(group, true)
+			local expanded = expanded_result.lines
 			assert.equals("- Thought · 216ms", vim.trim(expanded[1]))
 			assert.is_truthy(table.concat(expanded, "\n"):find("▏  second line", 1, true))
+			local active = { id = "active", type = "reasoning", text = "Still thinking", time = { created = 100 } }
+			local running = { id = active.id, kind = "thought", completed = false,
+				refs = { { part = active, message = { id = "active-message" } } } }
+			local running_result = activity.render(running, false)
+			assert.is_truthy(running_result.lines[1]:find("Thinking", 1, true))
+			for _, result in ipairs({ collapsed_result, expanded_result, running_result }) do
+				assert.equals("OpenCodeThought", result.highlights[1].hl_group)
+			end
 		end, debug.traceback)
 		app_state.set_config(previous)
 		if not ok then error(err, 0) end

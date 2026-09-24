@@ -26,6 +26,7 @@ local FLOAT_CHAT_TOP_PADDING = 2
 
 local render = require("opencode.ui.chat.render")
 local chat_highlights = require("opencode.ui.chat.highlights")
+local ui_highlights = require("opencode.ui.highlights")
 local render_state = require("opencode.ui.chat.render_state")
 local render_context = require("opencode.ui.chat.render_context")
 local widget_index = require("opencode.ui.chat.widget_index")
@@ -125,6 +126,7 @@ end
 
 local function apply_config_change()
 	state.config = get_config()
+	ui_highlights.refresh()
 	invalidate_cached_render_state()
 	if chat_surface_is_visible() then
 		M.schedule_render({ force = true })

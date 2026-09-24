@@ -317,7 +317,8 @@ function M.update_animation_frames_in_place()
 			if pos.activity_group then
 				local line = vim.api.nvim_buf_get_lines(bufnr, pos.start_line, pos.start_line + 1, false)[1] or ""
 				if is_animation_frame(vim.fn.strcharpart(line, 0, 1), TASK_ANIM_FRAMES) then
-					block_updated = set_frame_overlay(bufnr, pos.start_line, 0, task_frame, "OpenCodeActivityRunning")
+					local hl = pos.activity_group.kind == "thought" and "OpenCodeThought" or "OpenCodeActivityRunning"
+					block_updated = set_frame_overlay(bufnr, pos.start_line, 0, task_frame, hl)
 					updated = block_updated or updated
 				end
 			end
