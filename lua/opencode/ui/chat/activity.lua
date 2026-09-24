@@ -153,7 +153,9 @@ function M.render(group, expanded, expansions)
 			local count = counts[name]
 			labels[#labels + 1] = count .. " " .. (count == 1 and name or name == "search" and "searches" or "reads")
 		end
-		add_line(result, (frame or "→") .. (working and " Exploring — " or " Explored — ") .. table.concat(labels, ", "), "OpenCodeExplore")
+		local header = expanded and "↘" or "→"
+		if frame then header = header .. " " .. frame end
+		add_line(result, header .. (working and " Exploring — " or " Explored — ") .. table.concat(labels, ", "), "OpenCodeExplore")
 		for _, ref in ipairs(refs) do
 			local part = ref.part
 			local node = { id = part.id, kind = "tool", tool_part = part,

@@ -7,17 +7,12 @@ local syntax = require("opencode.ui.syntax")
 local text_util = require("opencode.util.text")
 
 local MAX_COLLAPSED_OUTPUT_LINES = 10
-local PANEL_PREFIX = tool_panel.PANEL_PREFIX
 local PANEL_BORDER_HL = "OpenCodeReadMuted"
 
 local panel_helpers = tool_panel.create_panel({
 	border_hl = PANEL_BORDER_HL,
 	default_hl = "OpenCodeReadOutput",
 })
-local add_panel_line = panel_helpers.add_line
-local add_panel_raw_line = panel_helpers.add_raw_line
-local add_panel_blank = panel_helpers.add_blank
-local add_trailing_separator = panel_helpers.add_separator
 
 local function ensure_highlights()
 	panel_helpers.set_hl("OpenCodeReadMuted", "Comment", "Normal")
@@ -154,14 +149,14 @@ end
 ---@param hl_group string
 ---@return string source_text
 ---@return table[] rows
-local function add_code_entry(result, text, hl_group)
+local function add_code_entry(panel, result, text, hl_group)
 	local gutter, body = split_line_number_gutter(text)
 	if not gutter then
-		local _, _, rows = add_panel_raw_line(result, text, hl_group)
+		local _, _, rows = panel.add_raw_line(result, text, hl_group)
 		return text, rows
 	end
 
-	local _, _, rows = add_panel_raw_line(result, body, hl_group, {
+	local _, _, rows = panel.add_raw_line(result, body, hl_group, {
 		body_prefix = gutter,
 		continuation_prefix = continuation_gutter(gutter),
 	})
@@ -176,14 +171,25 @@ local function add_wrapped_syntax_highlights(result, text, lang, row_map)
 	))
 end
 
+-- Native read output includes a descriptive banner before the numbered lines.
+function M.output_range(output)
+	return tostring(output or ""):match("^Read file [^\n]+, lines (%d+)%-(%d+)\n(.*)$")
+end
+
 ---@param tool_part table
 ---@param is_expanded boolean
+---@param opts? table { body_only?: boolean }
 ---@return table|nil result
-function M.render_tool(tool_part, is_expanded)
+function M.render_tool(tool_part, is_expanded, opts)
 	if type(tool_part) ~= "table" or tool_part.tool ~= "read" then
 		return nil
 	end
 
+	opts = opts or {}
+	local style = opts.body_only and require("opencode.ui.chat.exploration_style") or nil
+	local panel = style and style.panel or panel_helpers
+	local output_hl = style and style.output_hl or "OpenCodeReadOutput"
+	local error_hl = style and style.body_error_hl or "OpenCodeReadError"
 	local ctx = tool_panel.context(tool_part)
 	local input = ctx.input
 	local metadata = ctx.metadata
@@ -193,10 +199,14 @@ function M.render_tool(tool_part, is_expanded)
 	local output = first_nonempty_text(ctx.output)
 	local error_body = trim_edge_newlines(first_nonempty_text(ctx.error))
 	local body = extract_read_body(output)
+	if style then
+		local _, _, content = M.output_range(body)
+		body = content or body
+	end
 
 	local body_entries = {}
-	tool_panel.append_entries(body_entries, body, "OpenCodeReadOutput")
-	tool_panel.append_error_entries(body_entries, error_body, "OpenCodeReadError", "OpenCodeReadOutput")
+	tool_panel.append_entries(body_entries, body, output_hl)
+	tool_panel.append_error_entries(body_entries, error_body, error_hl, output_hl)
 
 	local loaded_entries = {}
 	if status == "completed" then
@@ -228,33 +238,32 @@ function M.render_tool(tool_part, is_expanded)
 		header_hl = "OpenCodeReadPath"
 	end
 
-	local result = panel_helpers.result()
-	add_panel_blank(result)
-	local _, _, header_rows = add_panel_line(result, header, header_hl)
-	panel_helpers.highlight_text(result, header_rows, display_path, "OpenCodeReadFilename")
-
+	local result = panel.result()
+	if not style then
+		panel.add_blank(result)
+		local _, _, header_rows = panel.add_line(result, header, header_hl)
+		panel.highlight_text(result, header_rows, display_path, "OpenCodeReadFilename")
+		panel.add_blank(result)
+	end
 	if #body_entries == 0 and #loaded_entries == 0 then
-		add_panel_blank(result)
-		add_trailing_separator(result)
+		if not style then panel.add_separator(result) end
 		return result
 	end
-
-	add_panel_blank(result)
 
 	local read_lang = syntax.language_for_path(filepath)
 	local code_lines = {}
 	local code_rows = {}
-	local _, render_overflow = panel_helpers.render_entries(result, body_entries, {
+	local _, render_overflow = panel.render_entries(result, body_entries, {
 		expanded = is_expanded,
 		max = MAX_COLLAPSED_OUTPUT_LINES,
 		overflow_hl = "OpenCodeReadMuted",
 		render_entry = function(_, entry)
-			if read_lang and entry.hl_group == "OpenCodeReadOutput" then
-				local source_text, rows = add_code_entry(result, entry.text, entry.hl_group)
+			if read_lang and entry.hl_group == output_hl then
+				local source_text, rows = add_code_entry(panel, result, entry.text, entry.hl_group)
 				table.insert(code_lines, source_text)
 				table.insert(code_rows, rows)
 			else
-				panel_helpers.add_entry(result, entry)
+				panel.add_entry(result, entry)
 			end
 		end,
 	})
@@ -264,15 +273,18 @@ function M.render_tool(tool_part, is_expanded)
 
 	if not render_overflow then
 		if #body_entries > 0 and #loaded_entries > 0 then
-			add_panel_blank(result)
+			panel.add_blank(result)
 		end
 		for _, entry in ipairs(loaded_entries) do
-			panel_helpers.add_entry(result, entry)
+			if style then entry.hl_group = style.border_hl end
+			panel.add_entry(result, entry)
 		end
 	end
 
-	add_panel_blank(result)
-	add_trailing_separator(result)
+	if not style then
+		panel.add_blank(result)
+		panel.add_separator(result)
+	end
 	return result
 end
 

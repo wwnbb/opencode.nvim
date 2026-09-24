@@ -19,14 +19,14 @@ describe("rg custom tool rendering", function()
 			output = table.concat(output, "\n"),
 		}
 		local lines = lines_for(state, true)
-		assert.equals("✓ rg [pattern=Expr, path=src]", lines[1])
+		assert.equals(" ✱ rg [pattern=Expr, path=src]", lines[1])
 		assert.equals("  pattern: Expr", lines[2])
 		assert.equals("  path: src", lines[3])
 		assert.equals("  output: " .. output[1], lines[4])
 		for i = 2, #output do
 			assert.equals(output[i] == "" and "" or "          " .. output[i], lines[i + 3])
 		end
-		assert.same({ "✓ rg [pattern=Expr, path=src]", "" }, lines_for(state, false))
+		assert.same({ " ✱ rg [pattern=Expr, path=src]", "" }, lines_for(state, false))
 	end)
 
 	it("wraps output under its value column without losing text", function()
@@ -49,16 +49,16 @@ describe("rg custom tool rendering", function()
 
 	it("shows running, failed and interrupted calls without a success marker", function()
 		for _, status in ipairs({ "pending", "running" }) do
-			assert.same({ "│ rg", "" }, lines_for({ status = status }))
+			assert.same({ " ✱ rg", "" }, lines_for({ status = status }))
 		end
 		local lines, result = lines_for({ status = "error", error = "ripgrep failed (2):\n    invalid regex" }, true)
-		assert.same({ "✗ rg", "  error: ripgrep failed (2):", "             invalid regex", "" }, lines)
+		assert.same({ " ✗ rg", "  error: ripgrep failed (2):", "             invalid regex", "" }, lines)
 		assert.is_true(vim.tbl_contains(vim.tbl_map(function(hl)
 			return hl.hl_group
 		end, result.highlights), "OpenCodeRgFailure"))
-		assert.same({ "✗ rg", "  error: Tool execution interrupted", "" },
+		assert.same({ " ✗ rg", "  error: Tool execution interrupted", "" },
 			lines_for({ status = "error", error = "Tool execution interrupted" }, true))
-		assert.same({ "✗ rg", "" }, lines_for({ status = "error", error = "Tool execution interrupted" }, false))
+		assert.same({ " ✗ rg", "" }, lines_for({ status = "error", error = "Tool execution interrupted" }, false))
 	end)
 
 	it("renders native recorded success, no matches and failure results", function()
@@ -66,7 +66,7 @@ describe("rg custom tool rendering", function()
 		for _, state in ipairs(fixture.results) do
 			local lines = lines_for(state, true)
 			local text = table.concat(lines, "\n")
-			assert.equals(state.status == "completed" and "✓" or "✗", vim.fn.strcharpart(lines[1], 0, 1))
+			assert.equals(state.status == "completed" and "✱" or "✗", vim.fn.strcharpart(lines[1], 1, 1))
 			assert.is_truthy(text:find(state.status == "error" and "  error: " or "  output: ", 1, true))
 		end
 	end)
