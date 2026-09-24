@@ -21,6 +21,7 @@ local tool_labels = require("opencode.ui.chat.tool_labels")
 local task_children = require("opencode.ui.chat.task_children")
 local actions = require("opencode.actions")
 local tool_part = require("opencode.ui.chat.tool_part")
+local tree = require("opencode.ui.chat.widget_tree")
 
 local REGULAR_TOOL_RENDERERS = {
 	require("opencode.ui.chat.question_result").render_tool,
@@ -311,10 +312,10 @@ function M.render_regular_tool(tool_part, is_expanded)
 	end
 	local activity = require("opencode.ui.chat.activity")
 	if tool_part.activity_group then
-		return activity.render(tool_part.activity_group, is_expanded)
+		return activity.render(tool_part.activity_group, is_expanded, state.expanded_tools)
 	end
 	if activity.kind(tool_part) == "explore" then
-		local result = activity.render_exploration_tool(tool_part, nil, is_expanded)
+		local result = require("opencode.ui.chat.exploration_tool").render(tool_part, is_expanded)
 		result.lines[#result.lines + 1] = ""
 		return result
 	end
@@ -420,12 +421,13 @@ function M.rerender_tool(part_id)
 		return
 	end
 
-	local pos = state.tools[part_id]
+	local _, root_id = tree.find(state.tools, part_id)
+	local pos = root_id and state.tools[root_id]
 	if not pos then
 		return
 	end
 
-	local is_expanded = state.expanded_tools[part_id] or false
+	local is_expanded = state.expanded_tools[root_id] or false
 	local tool_part = M.resolve_tool_part(pos)
 	local cursor = pos.activity_group and require("opencode.ui.chat.cursor").capture_widget_cursor_context()
 	local updated = tool_part ~= nil and widget_support.replace_rendered_block(pos, M.render_regular_tool(tool_part, is_expanded))
@@ -436,13 +438,16 @@ end
 ---Handle tool toggle (expand/collapse tool input/output).
 ---@param part_id string
 function M.handle_tool_toggle(part_id)
-	local pos = state.tools[part_id]
+	local pos = tree.find(state.tools, part_id)
 	if not pos then
 		return
 	end
 
 	if state.expanded_tools[part_id] then
 		state.expanded_tools[part_id] = nil
+		-- Collapsing a container closes its descendants as well. Merely hiding
+		-- the chat or rebuilding its render surface does not change expansion.
+		tree.collapse(pos.children, state.expanded_tools)
 	else
 		state.expanded_tools[part_id] = true
 	end

@@ -115,9 +115,8 @@ end
 
 ---@param tool_part table
 ---@param expanded boolean
----@param target? table Append to an existing block without adding a separator.
 ---@return table|nil result
-function M.render_tool(tool_part, expanded, target)
+function M.render_tool(tool_part, expanded)
 	if type(tool_part) ~= "table" or tool_part.tool ~= "rg" then
 		return nil
 	end
@@ -128,7 +127,7 @@ function M.render_tool(tool_part, expanded, target)
 	local output_is_error = body:match("^ripgrep error:") ~= nil
 	local has_error = ctx.status == "error" or error_body ~= "" or output_is_error
 
-	local result = target or panel_helpers.result()
+	local result = panel_helpers.result()
 	local args = arguments(ctx.input, ctx.metadata)
 	render_header(result, args, ctx.status, has_error)
 	-- The collapsed custom tool is only its summary. Opening it reveals all
@@ -147,7 +146,7 @@ function M.render_tool(tool_part, expanded, target)
 			render_field(result, "error", error_body, "OpenCodeRgFailure")
 		end
 	end
-	if not target then panel_helpers.add_separator(result) end
+	panel_helpers.add_separator(result)
 	return result
 end
 

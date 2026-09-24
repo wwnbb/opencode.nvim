@@ -821,6 +821,7 @@ function M.shift_line_map(line_map, old_end, delta)
 			pos.start_line = pos.start_line + delta
 			pos.end_line = pos.end_line + delta
 		end
+		if pos and pos.children then M.shift_line_map(pos.children, old_end, delta) end
 	end
 end
 

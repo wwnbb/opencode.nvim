@@ -8,6 +8,7 @@ local event_util = require("opencode.events.util")
 local chat_hl_ns = cs.chat_hl_ns
 local chat_anim_ns = cs.chat_anim_ns
 local render_state = require("opencode.ui.chat.render_state")
+local tree = require("opencode.ui.chat.widget_tree")
 
 local FOCUS_ORDER = { "question", "permission", "edit" }
 
@@ -107,15 +108,7 @@ function M.find_widget_context_at_cursor(state_table, winid, predicate)
 	local cursor = vim.api.nvim_win_get_cursor(winid)
 	local cursor_line = cursor[1] - 1
 
-	for part_id, pos in pairs(state_table) do
-		if cursor_line >= pos.start_line and cursor_line <= pos.end_line then
-			if predicate == nil or predicate(pos, part_id) then
-				return part_id, pos
-			end
-		end
-	end
-
-	return nil, nil
+	return tree.at_line(state_table, cursor_line, predicate)
 end
 
 ---@return number
@@ -267,6 +260,7 @@ function M.replace_rendered_block(pos, result)
 	M.shift_tracked_lines(old_end, delta)
 	pos.end_line = pos.start_line + new_line_count - 1
 	pos.highlights = result.highlights
+	pos.children = tree.positions(result.children, pos.start_line, pos.render_generation)
 	M.mark_applied_render_generation(pos)
 	return true
 end
@@ -383,6 +377,7 @@ function M.update_block_lines_in_place(pos, result)
 		return false
 	end
 	pos.highlights = result.highlights
+	pos.children = tree.positions(result.children, pos.start_line, pos.render_generation)
 	return true
 end
 

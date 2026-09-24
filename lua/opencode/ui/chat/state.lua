@@ -29,8 +29,8 @@ M.state = {
 	task_child_cache = {},  -- Loaded child-session markers: { [part_id] = true }
 	task_child_loading = {}, -- In-flight child-session loads: { [part_id] = true }
 	task_summary_cache = { entries = {}, order = {} }, -- Derived child summaries keyed by summary revision
-	tools = {},             -- Track tool positions: { [part_id] = { start_line, end_line, tool_part } }
-	expanded_tools = {},    -- Toggle set: { [part_id] = true }
+	tools = {},             -- Widget roots keyed by ID; containers own a children map of tool nodes
+	expanded_tools = {},    -- Per-node toggle set; activity IDs are distinct from tool part IDs
 	session_tabs_bufnr = nil, -- Float session tabs window buffer
 	session_tabs_winid = nil, -- Float session tabs window id
 	session_tabs_start = nil, -- First active-session index shown in the tab strip

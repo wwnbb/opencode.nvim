@@ -4,6 +4,8 @@ local M = {}
 
 local thinking = require("opencode.ui.thinking")
 local locale = require("opencode.util.locale")
+local tree = require("opencode.ui.chat.widget_tree")
+local exploration_tool = require("opencode.ui.chat.exploration_tool")
 
 local function reasoning_text(part)
 	return vim.trim((part.text or ""):gsub("%[REDACTED%]", "", 1))
@@ -19,7 +21,8 @@ function M.kind(part)
 end
 
 -- A group may span assistant steps, but never a visible message, text, other
--- tool, interaction, or final answer boundary. The first part is its stable ID.
+-- tool, interaction, or final answer boundary. Container IDs are distinct from
+-- their first child, so their expansion state can never collide.
 function M.collect(messages, get_parts, has_interaction)
 	has_interaction = has_interaction or function() return false end
 	local by_part, current = {}, nil
@@ -38,7 +41,8 @@ function M.collect(messages, get_parts, has_interaction)
 					if kind and (kind == "thought" or not interaction) then
 						if not current or current.kind ~= kind then
 							finish()
-							current = { id = part.id, kind = kind, refs = {}, completed = false }
+							current = { id = "activity:" .. kind .. ":" .. part.id, first_part_id = part.id,
+								kind = kind, refs = {}, completed = false }
 						end
 						current.refs[#current.refs + 1] = { part = part, message = message }
 						by_part[part.id] = current
@@ -105,44 +109,8 @@ local function add_line(result, text, hl, prefix)
 	})
 end
 
-local function path(value)
-	return type(value) == "string" and vim.fn.fnamemodify(value, ":~:.") or "unknown"
-end
-
-function M.render_exploration_tool(part, result, expanded)
-	result = result or { lines = {}, highlights = {} }
-	if part.tool == "rg" then
-		return require("opencode.ui.chat.rg").render_tool(part, expanded, result)
-	end
-	local state = part.state or {}
-	local input = type(state.input) == "table" and state.input or {}
-	local metadata = require("opencode.ui.chat.render").get_tool_metadata(part)
-	local label
-	if part.tool == "read" then
-		label = "→ Read " .. path(input.filePath or input.path or metadata.path)
-	else
-		label = '✱ ' .. (part.tool == "glob" and "Glob" or "Grep") .. ' "' .. tostring(input.pattern or "") .. '"'
-		if input.path then label = label .. " in " .. path(input.path) end
-		local count = tonumber(metadata.matches or metadata.count)
-		if count then label = label .. string.format(" (%d %s)", count, count == 1 and "match" or "matches") end
-	end
-	local failed = state.status == "error" or state.error ~= nil
-	add_line(result, label, failed and "OpenCodeActivityError" or "OpenCodeExplore")
-	if failed then
-		local err = type(state.error) == "table" and state.error.message or state.error
-		for _, line in ipairs(vim.split(tostring(err or "Tool failed"), "\n", { plain = true })) do
-			add_line(result, line, "OpenCodeActivityError", "   ")
-		end
-	end
-	if state.status == "completed" then
-		for _, loaded in ipairs(type(metadata.loaded) == "table" and metadata.loaded or {}) do
-			if type(loaded) == "string" then add_line(result, "↳ Loaded " .. path(loaded), "OpenCodeExplore", "   ") end
-		end
-	end
-	return result
-end
-
-function M.render(group, expanded)
+function M.render(group, expanded, expansions)
+	expansions = expansions or {}
 	local result = { lines = {}, highlights = {} }
 	local refs, working = members(group), M.is_working(group)
 	local frame = working and require("opencode.ui.chat.task_animation").get_task_anim_frame() or nil
@@ -185,8 +153,13 @@ function M.render(group, expanded)
 		end
 		add_line(result, (frame or "→") .. (working and " Exploring — " or " Explored — ") .. table.concat(labels, ", "), "OpenCodeExplore")
 		for _, ref in ipairs(refs) do
-			-- Keep failures visible even while the successful operations are folded.
-			if expanded or (ref.part.state or {}).status == "error" then M.render_exploration_tool(ref.part, result, true) end
+			local part = ref.part
+			local node = { id = part.id, kind = "tool", tool_part = part,
+				session_id = ref.message.sessionID, message_id = ref.message.id, part_id = part.id }
+			-- Keep failed calls discoverable while the group is closed; the leaf
+			-- still decides how much detail to display from its own state.
+			local visible = expanded or (part.state or {}).status == "error"
+			tree.append(result, node, visible and exploration_tool.render(part, expansions[part.id] == true) or nil)
 		end
 	end
 	result.lines[#result.lines + 1] = ""

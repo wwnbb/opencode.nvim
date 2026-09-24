@@ -60,7 +60,7 @@ describe("Thought and Explore groups", function()
 				tool("shell", "bash"), tool("c", "read") }, finish = "stop" },
 			{ parts = { tool("d", "read") } }, { role = "user" }, { parts = { tool("e", "read") } },
 		})
-		for _, id in ipairs({ "a", "b", "c", "d", "e" }) do assert.equals(id, groups[id].id) end
+		for _, id in ipairs({ "a", "b", "c", "d", "e" }) do assert.equals(id, groups[id].first_part_id) end
 	end)
 
 	it("includes rg in consecutive exploration across assistant steps", function()
@@ -79,18 +79,20 @@ describe("Thought and Explore groups", function()
 			tool("before", "read"), tool("pending", "rg", "pending"), tool("after", "rg"),
 		} } }, function(_, part) return part.id == "pending" end)
 		assert.is_nil(groups.pending)
-		assert.equals("before", groups.before.id)
-		assert.equals("after", groups.after.id)
+		assert.equals("before", groups.before.first_part_id)
+		assert.equals("after", groups.after.first_part_id)
 	end)
 
-	it("keeps rg errors visible in collapsed exploration", function()
+	it("keeps failed rg discoverable without forcing its details open", function()
 		local failed = tool("rg", "rg", "error", { pattern = "[" })
 		failed.state.error = "ripgrep failed: invalid regex"
 		local groups = collect({ { parts = { tool("read", "read"), failed } } })
 		local rendered = text(groups.read)
 		assert.is_truthy(rendered:find("Explored — 1 read, 1 search", 1, true))
 		assert.is_truthy(rendered:find("✗ rg [pattern=[]", 1, true))
-		assert.is_truthy(rendered:find("error: ripgrep failed: invalid regex", 1, true))
+		assert.is_nil(rendered:find("error: ripgrep failed: invalid regex", 1, true))
+		local opened = activity.render(groups.read, false, { rg = true })
+		assert.is_truthy(table.concat(opened.lines, "\n"):find("error: ripgrep failed: invalid regex", 1, true))
 	end)
 
 	it("does not hide permissions or suppress reasoning beside an interaction", function()
@@ -98,7 +100,7 @@ describe("Thought and Explore groups", function()
 			function(_, part) return part.id == "pending" end)
 		assert.is_not_nil(groups.t)
 		assert.is_nil(groups.pending)
-		assert.equals("done", groups.done.id)
+		assert.equals("done", groups.done.first_part_id)
 	end)
 
 	it("shows active status, retains errors while folded, and omits redacted thoughts", function()
