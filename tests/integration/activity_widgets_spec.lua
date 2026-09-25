@@ -292,4 +292,96 @@ describe("activity widgets in the chat buffer", function()
 		assert.is_nil(state.expanded_tools[child])
 		assert.is_nil(tree.find(state.tools, child).start_line)
 	end)
+
+	for _, example in ipairs({
+		{ name = "read", input = { path = "README.md" }, compact = " → Read README.md",
+			completed = "Explored — 1 read" },
+		{ name = "rg", input = { pattern = "needle" }, compact = " ● rg [pattern=needle]",
+			completed = "Explored — 1 search" },
+		{ name = "execute", input = { code = "return await tool();" }, compact = " → namespace.tool",
+			completed = "Executed — 1 call", metadata = {
+				toolCalls = { { tool = "namespace.tool", status = "running" } },
+			} },
+	}) do
+		it("animates only the group header for " .. example.name .. " without treating child text as a spinner", function()
+			seed({ { type = "tool", id = example.name, name = example.name, state = {
+				status = "running", input = example.input, metadata = example.metadata,
+			} } })
+			state.task_anim_frame = 1
+			chat.do_render()
+			local part_id = sync.get_parts("message")[1].id
+			local parent = group_id(part_id)
+			focus(parent)
+			key("O")
+			tasks.stop_task_animation_timer()
+			local position = state.tools[parent]
+			local before = vim.api.nvim_buf_get_lines(state.bufnr, 0, -1, false)
+			local leaf = tree.find(state.tools, part_id)
+			assert.equals(example.compact, before[leaf.start_line + 1]:gsub("%s+$", ""))
+			state.task_anim_frame = 2
+			assert.is_true(tasks.update_animation_frames_in_place())
+			local marks = vim.api.nvim_buf_get_extmarks(state.bufnr, cs.chat_anim_ns, 0, -1, { details = true })
+			assert.equals(1, #marks)
+			assert.equals(position.start_line, marks[1][2])
+			assert.equals(#"↘ ", marks[1][3])
+			assert.equals(tasks.get_task_anim_frame(), marks[1][4].virt_text[1][1])
+			assert.same(before, vim.api.nvim_buf_get_lines(state.bufnr, 0, -1, false))
+
+			-- A queued render may leave an old header visible after status changes.
+			-- With no header frame, a slash in the following label is still text.
+			vim.bo[state.bufnr].modifiable = true
+			vim.api.nvim_buf_set_lines(state.bufnr, position.start_line, position.start_line + 2, false, {
+				"↘ " .. example.completed, " → namespace.tool/",
+			})
+			vim.bo[state.bufnr].modifiable = false
+			assert.is_false(tasks.update_animation_frames_in_place())
+			assert.same({}, vim.api.nvim_buf_get_extmarks(state.bufnr, cs.chat_anim_ns, 0, -1, {}))
+		end)
+	end
+
+	it("gives standalone Explore and Execute leaves the same root navigation and expansion behavior", function()
+		seed({
+			{ type = "tool", id = "read", name = "read", state = {
+				status = "completed", input = { path = "README.md" },
+				content = { { type = "text", text = "STANDALONE_READ_RESULT" } },
+			} },
+			{ type = "tool", id = "execute", name = "execute", state = {
+				status = "completed", input = { code = "return await catalog.read();" },
+				content = { { type = "text", text = "STANDALONE_EXECUTE_RESULT" } },
+				metadata = { toolCalls = { { tool = "catalog.read", status = "completed" } } },
+			} },
+		}, 500)
+		-- Exercise the regular-tool path directly: interactions can exclude a
+		-- tool from activity grouping, but it must still be an interactive leaf.
+		local ctx = require("opencode.ui.chat.render_context").new({ current_session = { id = "activity-test" } })
+		local renderer = require("opencode.ui.chat.tool_renderer")
+		local parts = sync.get_parts("message")
+		for _, part in ipairs(parts) do renderer.render_tool_part(ctx, part, 1, {}) end
+		ctx:add_raw_line("Following answer", "non_tool")
+		vim.bo[state.bufnr].modifiable = true
+		vim.api.nvim_buf_set_lines(state.bufnr, 0, -1, false, ctx.raw_lines)
+		vim.bo[state.bufnr].modifiable = false
+		local original_second_start = state.tools[parts[2].id].start_line
+		for index, marker in ipairs({ "STANDALONE_READ_RESULT", "↳ ✓ catalog.read" }) do
+			local id = parts[index].id
+			assert.equals("tool", state.tools[id].kind)
+			assert.is_nil(state.tools[id].activity_group)
+			assert.is_nil(text():find(marker, 1, true))
+			focus(id)
+			assert.equals(id, tasks.get_tool_at_cursor())
+			key("<CR>")
+			assert.is_true(state.expanded_tools[id])
+			assert.equals(id, tasks.get_tool_at_cursor())
+			assert.is_truthy(text():find(marker, 1, true))
+			assert.is_truthy(text():find("Following answer", 1, true))
+			if index == 1 then
+				assert.is_true(state.tools[parts[2].id].start_line > original_second_start)
+			end
+			key("O")
+			assert.is_nil(state.expanded_tools[id])
+			assert.equals(id, tasks.get_tool_at_cursor())
+			assert.is_nil(text():find(marker, 1, true))
+		end
+		assert.equals(original_second_start, state.tools[parts[2].id].start_line)
+	end)
 end)

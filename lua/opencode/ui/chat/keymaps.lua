@@ -185,6 +185,7 @@ function M.setup_buffer(bufnr, opts)
 
 	vim.keymap.set("n", "<CR>", function()
 		local id, pos = chat_tasks.get_tool_at_cursor()
+		if chat_tasks.handle_tool_confirm(id, pos) then return end
 		if pos and (pos.activity_group or pos.kind == "tool") then
 			chat_tasks.handle_tool_toggle(id)
 			return

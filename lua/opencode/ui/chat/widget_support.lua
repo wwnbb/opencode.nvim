@@ -72,6 +72,7 @@ end
 
 ---@return string|nil, string|nil
 function M.apply_focus_cursor()
+	if not cs.is_chat_buffer_displayed() then return nil, nil end
 	if not state.bufnr or not vim.api.nvim_buf_is_valid(state.bufnr) then
 		return nil, nil
 	end
@@ -101,6 +102,7 @@ end
 ---@return string|nil part_id
 ---@return table|nil pos
 function M.find_widget_context_at_cursor(state_table, winid, predicate)
+	if winid == state.winid and not cs.is_chat_buffer_displayed() then return nil, nil end
 	if not winid or not vim.api.nvim_win_is_valid(winid) then
 		return nil, nil
 	end
@@ -282,6 +284,7 @@ end
 ---@return number|nil top_line
 ---@return number|nil bottom_line
 function M.get_visible_line_range()
+	if not cs.is_chat_buffer_displayed() then return nil, nil end
 	if not state.winid or not vim.api.nvim_win_is_valid(state.winid) then
 		return nil, nil
 	end

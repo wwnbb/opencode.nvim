@@ -5,7 +5,8 @@ local NuiLine = require("nui.line")
 local actions = require("opencode.actions")
 local selectors = require("opencode.selectors")
 
-local state = require("opencode.ui.chat.state").state
+local cs = require("opencode.ui.chat.state")
+local state = cs.state
 
 local session_tabs_hl_ns = vim.api.nvim_create_namespace("opencode_session_tabs_hl")
 local session_tabs_augroup = vim.api.nvim_create_augroup("OpenCodeSessionTabs", { clear = false })
@@ -714,6 +715,7 @@ function M.update_winbar()
 		M.close_float_window()
 		return
 	end
+	if state.bufnr and not cs.is_chat_buffer_displayed() then return end
 	local cfg = state.config or get_config()
 	local tabs_cfg = cfg.session_tabs or {}
 	if tabs_cfg.enabled == false then

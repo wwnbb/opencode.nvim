@@ -1,11 +1,10 @@
--- Compact Thought / Explore timeline groups, matching opencode2's session view.
+-- Compact Thought / Explore / Execute timeline groups.
 -- These are view-only widgets; their members are always resolved from sync.
 local M = {}
 
 local thinking = require("opencode.ui.thinking")
 local locale = require("opencode.util.locale")
-local tree = require("opencode.ui.chat.widget_tree")
-local exploration_tool = require("opencode.ui.chat.exploration_tool")
+local tool_group = require("opencode.ui.chat.tool_group")
 
 local function reasoning_text(part)
 	return vim.trim((part.text or ""):gsub("%[REDACTED%]", "", 1))
@@ -15,9 +14,7 @@ function M.kind(part)
 	if part.type == "reasoning" and reasoning_text(part) ~= "" and thinking.is_enabled() then
 		return "thought"
 	end
-	if part.type == "tool" and exploration_tool.supports(part.tool) then
-		return "explore"
-	end
+	if part.type == "tool" then return tool_group.kind(part) end
 end
 
 -- A group may span assistant steps, but never a visible message, text, other
@@ -72,19 +69,16 @@ local function members(group)
 	return result
 end
 
-local function ended(ref)
-	local part = ref.part
-	local time = part.type == "tool" and (part.state or {}).time or part.time or {}
-	return time and time.completed
-		or (part.type == "reasoning" and (ref.message.time or {}).completed)
-		or (part.type == "tool" and vim.tbl_contains({ "completed", "error", "cancelled", "canceled" }, (part.state or {}).status))
-end
-
--- Rendering can reuse its resolved members instead of querying sync twice.
+-- A boundary closes collection, not a running tool. Thought completion still
+-- follows the assistant step; tool status always follows the latest member data.
 function M.is_working(group, refs)
-	if group.completed then return false end
+	if group.kind == "thought" and group.completed then return false end
 	for _, ref in ipairs(refs or members(group)) do
-		if not ended(ref) then return true end
+		if group.kind == "thought" then
+			if not (ref.part.time or {}).completed and not (ref.message.time or {}).completed then return true end
+		elseif tool_group.is_working(ref.part) then
+			return true
+		end
 	end
 	return false
 end
@@ -96,9 +90,6 @@ local function ensure_highlights()
 	vim.api.nvim_set_hl(0, "OpenCodeThought", { default = true, fg = fg, bold = true })
 	vim.api.nvim_set_hl(0, "OpenCodeThoughtBody", { default = true, link = config.highlight })
 	vim.api.nvim_set_hl(0, "OpenCodeThoughtBorder", { default = true, link = "NonText" })
-	vim.api.nvim_set_hl(0, "OpenCodeExplore", { default = true, link = "Comment" })
-	vim.api.nvim_set_hl(0, "OpenCodeActivityRunning", { default = true, link = "Normal" })
-	vim.api.nvim_set_hl(0, "OpenCodeActivityError", { default = true, link = "DiagnosticError" })
 end
 
 require("opencode.ui.highlights").register("opencode.ui.chat.activity", ensure_highlights)
@@ -114,56 +105,31 @@ function M.render(group, expanded, expansions)
 	expansions = expansions or {}
 	local result = { lines = {}, highlights = {} }
 	local refs = members(group)
+	if group.kind ~= "thought" then return tool_group.render(group.kind, refs, expanded, expansions) end
 	local working = M.is_working(group, refs)
 	local frame = working and require("opencode.ui.chat.task_animation").get_task_anim_frame() or nil
-	if group.kind == "thought" then
-		local duration, title = 0, nil
+	local duration, title = 0, nil
+	for _, ref in ipairs(refs) do
+		local time = ref.part.time or {}
+		local start, stop = time.created, time.completed
+		if type(start) == "number" and type(stop) == "number" then duration = duration + math.max(0, stop - start) end
+		local candidate, rest = reasoning_text(ref.part):match("^%*%*([^*\r\n]+)%*%*(.*)$")
+		title = candidate and (rest == "" or rest:sub(1, 2) == "\n\n" or rest:sub(1, 4) == "\r\n\r\n")
+			and vim.trim(candidate) or nil
+	end
+	local header = (frame or (expanded and "-" or "+")) .. (working and " Thinking" or " Thought")
+	if title and (working or not expanded) then header = header .. ": " .. title end
+	if not working then
+		if #refs > 1 then header = header .. " · " .. #refs .. " steps" end
+		if duration > 0 then header = header .. " · " .. locale.duration(duration) end
+	end
+	add_line(result, header, "OpenCodeThought")
+	if expanded then
 		for _, ref in ipairs(refs) do
-			local time = ref.part.time or {}
-			local start, stop = time.created, time.completed
-			if type(start) == "number" and type(stop) == "number" then duration = duration + math.max(0, stop - start) end
-			local candidate, rest = reasoning_text(ref.part):match("^%*%*([^*\r\n]+)%*%*(.*)$")
-			title = candidate and (rest == "" or rest:sub(1, 2) == "\n\n" or rest:sub(1, 4) == "\r\n\r\n")
-				and vim.trim(candidate) or nil
-		end
-		local header = (frame or (expanded and "-" or "+")) .. (working and " Thinking" or " Thought")
-		if title and (working or not expanded) then header = header .. ": " .. title end
-		if not working then
-			if #refs > 1 then header = header .. " · " .. #refs .. " steps" end
-			if duration > 0 then header = header .. " · " .. locale.duration(duration) end
-		end
-		add_line(result, header, "OpenCodeThought")
-		if expanded then
-			for _, ref in ipairs(refs) do
-				result.lines[#result.lines + 1] = ""
-				for _, line in ipairs(vim.split(reasoning_text(ref.part), "\n", { plain = true })) do
-					add_line(result, line, "OpenCodeThoughtBody", line == "" and "▏" or "▏  ")
-				end
+			result.lines[#result.lines + 1] = ""
+			for _, line in ipairs(vim.split(reasoning_text(ref.part), "\n", { plain = true })) do
+				add_line(result, line, "OpenCodeThoughtBody", line == "" and "▏" or "▏  ")
 			end
-		end
-	else
-		local counts, order = {}, {}
-		for _, ref in ipairs(refs) do
-			local name = ref.part.tool == "read" and "read" or "search"
-			if not counts[name] then order[#order + 1] = name; counts[name] = 0 end
-			counts[name] = counts[name] + 1
-		end
-		local labels = {}
-		for _, name in ipairs(order) do
-			local count = counts[name]
-			labels[#labels + 1] = count .. " " .. (count == 1 and name or name == "search" and "searches" or "reads")
-		end
-		local header = expanded and "↘" or "→"
-		if frame then header = header .. " " .. frame end
-		add_line(result, header .. (working and " Exploring — " or " Explored — ") .. table.concat(labels, ", "), "OpenCodeExplore")
-		for _, ref in ipairs(refs) do
-			local part = ref.part
-			local node = { id = part.id, kind = "tool", tool_part = part,
-				session_id = ref.message.sessionID, message_id = ref.message.id, part_id = part.id }
-			-- Keep failed calls discoverable while the group is closed; the leaf
-			-- still decides how much detail to display from its own state.
-			local visible = expanded or (part.state or {}).status == "error"
-			tree.append(result, node, visible and exploration_tool.render(part, expansions[part.id] == true) or nil)
 		end
 	end
 	result.lines[#result.lines + 1] = ""

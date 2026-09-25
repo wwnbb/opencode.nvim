@@ -61,4 +61,13 @@ M.state = {
 M.chat_hl_ns = vim.api.nvim_create_namespace("opencode_chat_hl")
 M.chat_anim_ns = vim.api.nvim_create_namespace("opencode_chat_anim")
 
+-- A detail page may temporarily occupy the chat window while the transcript
+-- continues receiving updates in its own buffer.
+function M.is_chat_buffer_displayed()
+	local state = M.state
+	return state.bufnr ~= nil and state.winid ~= nil
+		and vim.api.nvim_win_is_valid(state.winid)
+		and vim.api.nvim_win_get_buf(state.winid) == state.bufnr
+end
+
 return M

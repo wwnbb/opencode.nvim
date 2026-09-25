@@ -78,10 +78,8 @@ end
 ---@return boolean
 local function is_animated_regular_tool(tool_name)
 	return tool_name == "bash"
-		or tool_name == "read"
 		or tool_name == "skill"
-		or tool_name == "glob"
-		or tool_name == "grep"
+		or tool_name == "webfetch"
 end
 
 -- A completed delegation call may have left a child running in the background.
@@ -112,6 +110,9 @@ function M.is_animating_tool_part(tool_part)
 	if tool_part.tool == "task" then
 		return M.is_task_working(M.task_status(tool_part))
 	end
+	local tool_group = require("opencode.ui.chat.tool_group")
+	if tool_group.kind(tool_part) then return tool_group.is_working(tool_part) end
+	if tool_part.tool == "webfetch" and status == "streaming" then return true end
 	return (tool_part.activity_group ~= nil or is_animated_regular_tool(tool_part.tool)) and M.is_task_working(status)
 end
 
@@ -316,13 +317,29 @@ function M.update_animation_frames_in_place()
 			local block_updated = false
 			if pos.activity_group then
 				local line = vim.api.nvim_buf_get_lines(bufnr, pos.start_line, pos.start_line + 1, false)[1] or ""
-				if is_animation_frame(vim.fn.strcharpart(line, 0, 1), TASK_ANIM_FRAMES) then
+				local offset = (line:sub(1, #"→ ") == "→ " or line:sub(1, #"↘ ") == "↘ ") and #"→ " or 0
+				if is_animation_frame(vim.fn.strcharpart(line:sub(offset + 1), 0, 1), TASK_ANIM_FRAMES) then
 					local hl = pos.activity_group.kind == "thought" and "OpenCodeThought" or "OpenCodeActivityRunning"
-					block_updated = set_frame_overlay(bufnr, pos.start_line, 0, task_frame, hl)
+					block_updated = set_frame_overlay(bufnr, pos.start_line, offset, task_frame, hl)
 					updated = block_updated or updated
 				end
 			end
-			local candidates = { pos.start_line + 1, pos.start_line }
+			local candidates = pos.activity_group and {} or { pos.start_line + 1, pos.start_line }
+			local tool_group = require("opencode.ui.chat.tool_group")
+			if tool_group.kind(tool_part) then
+				local line = tool_group.animation_line(tool_part)
+				candidates = line and { pos.start_line + line } or {}
+			end
+			if tool_part.tool == "webfetch" then
+				-- Its header precedes the panel and may wrap in narrow windows.
+				-- Only its last row ends in a spinner; body URLs may end in '/'.
+				candidates = {}
+				for line_nr = pos.start_line, math.min(pos.end_line, buf_lines - 1) do
+					local line = vim.api.nvim_buf_get_lines(bufnr, line_nr, line_nr + 1, false)[1] or ""
+					if line == "" or line:sub(1, #"▏") == "▏" then break end
+					candidates[1] = line_nr
+				end
+			end
 			for _, line_nr in ipairs(candidates) do
 				if block_updated then
 					break
