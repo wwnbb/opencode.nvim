@@ -4,7 +4,6 @@ local state = require("opencode.ui.chat.state").state
 local chat_tasks = require("opencode.ui.chat.tasks")
 local widget_support = require("opencode.ui.chat.widget_support")
 local tree = require("opencode.ui.chat.widget_tree")
-local tool_group = require("opencode.ui.chat.tool_group")
 
 function M.render_tool_part(ctx, tool_part, message_revision, part_revisions)
 	tool_part = chat_tasks.resolve_tool_part(tool_part)
@@ -48,7 +47,7 @@ function M.render_tool_part(ctx, tool_part, message_revision, part_revisions)
 	local cache_key = nil
 	if not chat_tasks.is_animating_tool_part(tool_part) then
 		cache_key = ctx:render_cache_key(
-			"tool",
+			tool_part.type == "skill" and "skill_attachment" or "tool",
 			ctx.current_session.id,
 			tool_part.messageID,
 			tool_part.id,
@@ -56,7 +55,7 @@ function M.render_tool_part(ctx, tool_part, message_revision, part_revisions)
 			part_revision,
 			ctx.chat_width,
 			is_expanded,
-			tool_group.cache_key(tool_part)
+			chat_tasks.tool_cache_key(tool_part)
 		)
 	end
 	local result = ctx:cached_render_result(cache_key, function()
@@ -64,7 +63,7 @@ function M.render_tool_part(ctx, tool_part, message_revision, part_revisions)
 	end)
 	local base_line = ctx:add_render_result(result, "tool")
 	state.tools[tool_part.id] = widget_support.mark_render_generation(vim.tbl_extend("force", position_ids, {
-		kind = tool_group.kind(tool_part) and "tool" or nil,
+		kind = chat_tasks.is_tool_leaf(tool_part) and "tool" or nil,
 		start_line = base_line,
 		end_line = base_line + #result.lines - 1,
 		tool_part = tool_part,
@@ -72,5 +71,9 @@ function M.render_tool_part(ctx, tool_part, message_revision, part_revisions)
 		children = tree.positions(result.children, base_line, state.render_generation),
 	}))
 end
+
+-- Attachments share leaf navigation and expansion, while retaining their native
+-- type and server-provided text in the sync store and rendered position.
+M.render_skill_attachment = M.render_tool_part
 
 return M

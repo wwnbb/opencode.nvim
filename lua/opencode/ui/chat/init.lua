@@ -799,6 +799,9 @@ function M.focus()
 end
 
 function M.focus_input()
+	-- Selecting a skill can focus an input that is already open. Focusing the
+	-- chat window first would trigger the input's WinLeave handler and close it.
+	if input.is_visible() and not get_relevant_question() then return input.focus() end
 	if not state.visible then
 		M.open()
 	end
@@ -818,13 +821,26 @@ function M.focus_input()
 	input.show({
 		winid = state.winid,
 		float_dims = state.float_dims,
+		allow_skill_picker = true,
 		on_send = function(text, parts)
 			local actions = require("opencode.actions")
 			local slash_ok, slash = pcall(require, "opencode.slash")
 			local has_parts = type(parts) == "table" and #parts > 0
-			if not has_parts and slash_ok and type(slash.parse) == "function" and type(slash.execute) == "function" then
+			if slash_ok and type(slash.parse) == "function" and type(slash.execute) == "function" then
 				local parsed = slash.parse(text)
-				if parsed then
+				if parsed and parsed.command == "skills" then
+					-- The input closes after on_send returns. Let it close before a
+					-- selected skill opens a new draft (or the skill picker).
+					local owner_session_id = require("opencode.state").get_session().id
+					vim.schedule(function()
+						if require("opencode.state").get_session().id == owner_session_id then
+							slash.execute(parsed)
+						end
+					end)
+					return
+				end
+				-- Other slash-like text with attachments is a prompt.
+				if parsed and not has_parts then
 					slash.execute(parsed)
 					return
 				end

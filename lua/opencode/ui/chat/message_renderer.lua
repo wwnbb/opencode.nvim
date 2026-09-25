@@ -316,10 +316,14 @@ local function render_user_message(ctx, message, render_parts, msg_idx, messages
 	ctx.content_highlights._opencode_signature = ctx:render_cache_key(
 		ctx.content_highlights._opencode_signature, message.id, agent
 	)
-	local file_parts = {}
+	local file_parts, skill_parts = {}, {}
 	for _, part in ipairs(render_parts.parts or {}) do
-		if not part.synthetic and vim.tbl_contains({ "file", "skill", "agent" }, part.type) then
-			file_parts[#file_parts + 1] = part
+		if not part.synthetic then
+			if part.type == "skill" then
+				skill_parts[#skill_parts + 1] = part
+			elseif part.type == "file" or part.type == "agent" then
+				file_parts[#file_parts + 1] = part
+			end
 		end
 	end
 
@@ -366,6 +370,11 @@ local function render_user_message(ctx, message, render_parts, msg_idx, messages
 	end
 
 	if not message.provisional then render_retry_status_if_needed(ctx, messages, msg_idx) end
+	-- Keep queued-input actions scoped to the prompt and its status. Expandable
+	-- attachment rows own their own ranges below that fixed block.
+	for _, part in ipairs(skill_parts) do
+		tool_renderer.render_skill_attachment(ctx, part, render_parts.message_revision, render_parts.part_revisions)
+	end
 	ctx:add_raw_line("")
 end
 

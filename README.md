@@ -33,7 +33,7 @@ Active groups show `Executing`; failed and cancelled invocations stay
 discoverable when the group is collapsed. Collapsing a group also closes its
 children.
 
-Explore and Execute share the same group renderer, status rules, error visibility,
+Explore, Execute, and Web share the same group renderer, status rules, error visibility,
 navigation, and expansion state. Their declarations in
 `lua/opencode/ui/chat/tool_group.lua` supply the labels, tool membership, count
 labels, and leaf renderer. Detailed tool widgets keep their own content.
@@ -48,6 +48,38 @@ script, and `4` the calls and their inputs. Normal search, scroll, and yank work
 `Tab` switches tabs; `q`, `Esc`, or `Backspace` returns to the chat. JSON strings
 are decoded for the readable view, while Raw retains the original output.
 The result belongs to the whole script.
+
+# Web search and fetch
+
+Consecutive `websearch` and `webfetch` requests share a compact
+`→ Browsed — 1 search, 2 fetches` row. Active requests show `Browsing` with one
+spinner for the group. Press `O` or `Enter` to list requests, then expand a
+request to read its response. Collapsing the group also closes its children;
+failed requests remain accessible and permission requests stay visible.
+
+Responses use the same framed panel as Read, without line numbers. Search
+results and Markdown pages retain their formatting; HTML and plain text keep
+their original content. Expanded requests show the full query or URL and
+request options, including details shortened in the compact row.
+
+# Skills
+
+Skill calls appear as a compact `→ Skill "name"` row. Press `O` or `Enter` to
+show the description, base directory, sampled files, and full instructions in
+the same framed panel as Read and Web, without line numbers. Markdown and code
+highlighting survive line wrapping. Each skill remains independently expandable;
+loading animates only its header, and failed calls expose their error on expansion.
+
+`/skills` and the command palette add native skill references to the
+current input draft and insert visible `@skill-id` mentions. Press Enter on the
+`/skills` completion to open the skill selector. You can keep editing
+the prompt or add more skills; selection alone does not send a message. Sending
+the draft loads the skills on the server. Each selected skill then appears below
+the user message as an independent expandable row. `Attached` means the server
+returned the instructions; a queued message still shows its own delivery status.
+Use `O` or `Enter` to inspect that message's saved instructions. If the server
+did not include the text, the row shows `Unconfirmed` and explains that the
+instructions are unavailable. These attachments do not create tool calls.
 
 # Tokens per second
 
@@ -177,8 +209,8 @@ automatically. Inline proposals (`=`), acceptance and rejection also work withou
 shared files. Disconnected or cancelled reviews cannot apply or flush files.
 
 Bundled plugin **2.0.11-4** provides file review protocol 2. Update it
-together with the Lua plugin. `/skill` and the skill palette send native
-attachments.
+together with the Lua plugin. `/skills` and the skill palette stage native
+attachments, which are sent with the prompt when you submit the input.
 
 `neovim_edit` follows the v2 edit input: `path`, non-empty `oldString`,
 `newString`, and optional `replaceAll`. It only changes existing files.

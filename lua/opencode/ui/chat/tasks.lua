@@ -22,15 +22,22 @@ local task_children = require("opencode.ui.chat.task_children")
 local actions = require("opencode.actions")
 local tool_part = require("opencode.ui.chat.tool_part")
 local tree = require("opencode.ui.chat.widget_tree")
+local tool_group = require("opencode.ui.chat.tool_group")
+
+-- Standalone leaves use the same navigation, cache and animation contracts as
+-- grouped tools, without creating an activity container.
+local TOOL_LEAF_RENDERERS = { skill = chat_skill }
+
+local function leaf_widget(part)
+	return part.type == "skill" and chat_skill or TOOL_LEAF_RENDERERS[part.tool]
+end
 
 local REGULAR_TOOL_RENDERERS = {
 	require("opencode.ui.chat.question_result").render_tool,
 	chat_bash.render_tool,
 	chat_read.render_tool,
-	chat_skill.render_tool,
 	chat_search.render_tool,
 	chat_rg.render_tool,
-	require("opencode.ui.chat.webfetch").render_tool,
 	chat_file_edit_results.render_tool,
 }
 
@@ -38,6 +45,23 @@ local REGULAR_TOOL_RENDERERS = {
 ---@return table|nil
 function M.resolve_tool_part(position)
 	return tool_part.resolve(position)
+end
+
+function M.is_tool_leaf(part)
+	return type(part) == "table" and (tool_group.kind(part) ~= nil or leaf_widget(part) ~= nil)
+end
+
+function M.tool_animation_line(part)
+	if part.type == "skill" then return nil end
+	local widget = leaf_widget(part)
+	if widget then return widget.animation_line end
+	return tool_group.animation_line(part)
+end
+
+function M.tool_cache_key(part)
+	local widget = leaf_widget(part)
+	if widget then return widget.cache_key and widget.cache_key(part) or "" end
+	return tool_group.cache_key(part)
 end
 
 -- ─── Animation (facade — implementation in task_animation.lua) ────────────────
@@ -315,7 +339,9 @@ function M.render_regular_tool(tool_part, is_expanded)
 	if tool_part.activity_group then
 		return activity.render(tool_part.activity_group, is_expanded, state.expanded_tools)
 	end
-	local result = require("opencode.ui.chat.tool_group").render_leaf(tool_part, is_expanded)
+	local widget = leaf_widget(tool_part)
+	local render_leaf = widget and (tool_part.type == "skill" and widget.render_attachment or widget.render_tool)
+	local result = render_leaf and render_leaf(tool_part, is_expanded) or tool_group.render_leaf(tool_part, is_expanded)
 	if result then
 		result.lines[#result.lines + 1] = ""
 		return result

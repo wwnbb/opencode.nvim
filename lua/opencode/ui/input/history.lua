@@ -31,6 +31,28 @@ function M.copy_parts(parts)
 	return copied
 end
 
+local function entry_text(entry)
+	return type(entry) == "table" and entry.text or entry
+end
+
+local function entry_parts(entry)
+	return M.copy_parts(type(entry) == "table" and entry.skills or {})
+end
+
+local function history_entry(text, parts)
+	local skills, seen = {}, {}
+	for _, part in ipairs(parts or {}) do
+		local id = part.skillID or part.id
+		if part.type == "skill" and type(id) == "string" and not seen[id] then
+			local source = type(part.source) == "table" and (part.source.text or part.source) or nil
+			skills[#skills + 1] = { type = "skill", id = id, name = type(part.name) == "string" and part.name or nil,
+				_marker = type(source) == "table" and source.value or part._marker }
+			seen[id] = true
+		end
+	end
+	return #skills > 0 and { text = text, skills = skills } or text
+end
+
 local function trim()
 	while #store.entries > store.max_entries do
 		table.remove(store.entries, 1)
@@ -88,16 +110,17 @@ function M.load()
 end
 
 ---@param text string|nil
-function M.add(text)
+function M.add(text, parts)
 	if not text or text == "" then
 		return
 	end
 
-	if #store.entries > 0 and store.entries[#store.entries] == text then
+	local entry = history_entry(text, parts)
+	if #store.entries > 0 and vim.deep_equal(store.entries[#store.entries], entry) then
 		return
 	end
 
-	table.insert(store.entries, text)
+	table.insert(store.entries, entry)
 	trim()
 	save()
 end
@@ -109,19 +132,19 @@ function M.previous()
 	end
 
 	store.index = store.index - 1
-	return store.entries[store.index]
+	return entry_text(store.entries[store.index]), entry_parts(store.entries[store.index])
 end
 
 ---@return string|nil
 function M.next()
 	if store.index < #store.entries then
 		store.index = store.index + 1
-		return store.entries[store.index]
+		return entry_text(store.entries[store.index]), entry_parts(store.entries[store.index])
 	end
 
 	if store.index == #store.entries then
 		store.index = store.index + 1
-		return ""
+		return "", {}
 	end
 
 	return nil
@@ -180,7 +203,7 @@ end
 
 ---@return table[]
 function M.entries()
-	return vim.deepcopy(store.entries)
+	return vim.tbl_map(entry_text, store.entries)
 end
 
 return M

@@ -421,7 +421,7 @@ function M.select_prev(state)
 	return move_selection(state, -1)
 end
 
-function M.confirm(state)
+function M.confirm(state, activate_slash)
 	local ac = state and state.autocomplete
 	if not ac or not ac.visible then
 		return false
@@ -433,15 +433,20 @@ function M.confirm(state)
 		return false
 	end
 
-	local ok = false
+	local ok, activated = false, nil
 	if item.kind == "slash" then
-		ok = slash_commands.insert_command(state, ac.trigger, item.command)
+		if activate_slash and slash_commands.command_name(item.command) == "skills" then
+			ok = slash_commands.consume_command(state, ac.trigger)
+			if ok then activated = "skills" end
+		else
+			ok = slash_commands.insert_command(state, ac.trigger, item.command)
+		end
 	elseif item.kind == "mention" then
 		ok = mentions.insert_mention(state, ac.trigger, item.agent)
 	end
 
 	M.close(state)
-	return ok
+	return ok, activated
 end
 
 return M

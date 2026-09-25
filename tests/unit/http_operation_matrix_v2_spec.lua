@@ -28,6 +28,7 @@ local cases = {
 	{ "info", "GET", "/api/info", "info" },
 	{ "location_reload", "POST", "/api/location/reload", "empty", nil, { location = location } },
 	{ "session_list", "GET", "/api/session", "page", nil, { parentID = vim.NIL, limit = 1 } },
+	{ "session_stats", "GET", "/api/experimental/session/stats", "object" },
 	{ "session_create", "POST", "/api/session", "session", { location = location, model = model } },
 	{ "session_get", "GET", "/api/session/{sessionID}", "session" },
 	{ "session_update", "PATCH", "/api/session/{sessionID}", "empty", { title = "renamed" } },

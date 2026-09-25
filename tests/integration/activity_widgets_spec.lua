@@ -205,6 +205,91 @@ describe("activity widgets in the chat buffer", function()
 		assert.is_true(ok, err)
 	end)
 
+	for _, name in ipairs({ "websearch", "webfetch" }) do
+		it("keeps a " .. name .. " permission visible beside collapsed browsing", function()
+			local permissions = require("opencode.permission.state")
+			local input = { query = "protected query", url = "https://example.com/protected" }
+			seed({
+				{ type = "tool", id = "done", name = "websearch", state = {
+					status = "completed", input = { query = "completed query" },
+				} },
+				{ type = "tool", id = "pending", name = name, state = { status = "pending", input = input } },
+			})
+			permissions.add_permission("permission", "activity-test", name, {
+				message_id = "message", call_id = "pending", tool_input = input,
+				patterns = { "https://example.com/protected" },
+			})
+			local ok, err = pcall(function()
+				chat.do_render()
+				local parts = sync.get_parts("message")
+				local parent = state.tools[group_id(parts[1].id)]
+				assert.is_truthy(text():find("Browsed — 1 search", 1, true))
+				assert.is_nil(parent.children[parts[2].id])
+				assert.is_not_nil(state.permissions.permission)
+				assert.equals("pending", state.permissions.permission.status)
+			end)
+			permissions.clear_all()
+			assert.is_true(ok, err)
+		end)
+	end
+
+	it("opens each web response independently and clears descendants when browsing collapses", function()
+		seed({
+			{ type = "tool", id = "search", name = "websearch", state = {
+				status = "completed", input = { query = "Lua coroutine" },
+				content = { { type = "text", text = "SEARCH_RESPONSE\nSecond search line" } },
+			} },
+			{ type = "tool", id = "fetch", name = "webfetch", state = {
+				status = "completed", input = { url = "https://example.com/lua" },
+				content = { { type = "text", text = "FETCH_RESPONSE\nSecond page line" } },
+			} },
+			{ type = "text", text = "Following answer" },
+		}, 500)
+		chat.do_render()
+		local parts = sync.get_parts("message")
+		local parent, search, fetch = group_id(parts[1].id), parts[1].id, parts[2].id
+		assert.are_not.equals(parent, search)
+		assert.is_truthy(text():find("Browsed — 1 search, 1 fetch", 1, true))
+		assert.is_nil(text():find("Lua coroutine", 1, true))
+		assert.is_nil(tree.find(state.tools, fetch).start_line)
+		focus(parent)
+		key("O")
+		assert.is_truthy(text():find("Lua coroutine", 1, true))
+		assert.is_truthy(text():find("example.com/lua", 1, true))
+		for _, marker in ipairs({ "SEARCH_RESPONSE", "FETCH_RESPONSE" }) do
+			assert.is_nil(text():find(marker, 1, true))
+		end
+		local fetch_start = tree.find(state.tools, fetch).start_line
+		focus(search)
+		key("<CR>")
+		assert.is_true(state.expanded_tools[parent])
+		assert.is_true(state.expanded_tools[search])
+		assert.is_nil(state.expanded_tools[fetch])
+		assert.is_truthy(text():find("SEARCH_RESPONSE", 1, true))
+		assert.is_nil(text():find("FETCH_RESPONSE", 1, true))
+		assert.is_true(tree.find(state.tools, fetch).start_line > fetch_start)
+		focus(fetch)
+		key("O")
+		assert.is_true(state.expanded_tools[fetch])
+		assert.is_truthy(text():find("FETCH_RESPONSE", 1, true))
+		chat.do_render()
+		assert.equals(fetch, tasks.get_tool_at_cursor())
+		assert.is_true(state.expanded_tools[search])
+		assert.is_true(state.expanded_tools[fetch])
+		-- Folding the container while focused in a response restores its header.
+		tasks.handle_tool_toggle(parent)
+		assert.equals(parent, tasks.get_tool_at_cursor())
+		for _, id in ipairs({ search, fetch }) do
+			assert.is_nil(state.expanded_tools[id])
+			assert.is_nil(tree.find(state.tools, id).start_line)
+		end
+		assert.is_truthy(text():find("Following answer", 1, true))
+		key("O")
+		assert.is_nil(text():find("SEARCH_RESPONSE", 1, true))
+		assert.is_nil(text():find("FETCH_RESPONSE", 1, true))
+		assert.equals(fetch_start, tree.find(state.tools, fetch).start_line)
+	end)
+
 	it("gives every exploration item its own state, including the first child", function()
 		local content = {}
 		for _, name in ipairs({ "rg", "read", "glob", "grep" }) do
@@ -254,44 +339,50 @@ describe("activity widgets in the chat buffer", function()
 		end
 	end)
 
-	it("keeps child state and cursor through live updates and shifts after an earlier widget", function()
-		seed({
-			{ type = "reasoning", text = "Plan\nMore details", time = { created = 1, completed = 2 } },
-			{ type = "tool", id = "rg", name = "rg", state = { status = "running", input = { pattern = "needle" } } },
-		})
-		chat.do_render()
-		local parts = sync.get_parts("message")
-		local thought, parent, child = group_id(parts[1].id), group_id(parts[2].id), parts[2].id
-		focus(parent)
-		key("O")
-		focus(child)
-		key("O")
-		local before = tree.find(state.tools, child).start_line
-		focus(thought)
-		key("O")
-		assert.is_true(tree.find(state.tools, child).start_line > before)
-		focus(child)
-		local updated = vim.deepcopy(sync.get_part("message", child))
-		updated.state.status = "completed"
-		updated.state.output = "live search result"
-		sync.handle_part_updated(updated)
-		assert.is_true(tasks.rerender_tool(child))
-		assert.is_truthy(text():find("   │ live search result", 1, true))
-		assert.equals(child, tasks.get_tool_at_cursor())
-		chat.do_render()
-		assert.equals(child, tasks.get_tool_at_cursor())
-		assert.is_true(state.expanded_tools[parent])
-		assert.is_true(state.expanded_tools[child])
-		key("O")
-		assert.is_nil(text():find("live search result", 1, true))
-		assert.is_true(state.expanded_tools[parent])
-		-- A parent can be collapsed through the action while focus is in a leaf.
-		key("O")
-		tasks.handle_tool_toggle(parent)
-		assert.equals(parent, tasks.get_tool_at_cursor())
-		assert.is_nil(state.expanded_tools[child])
-		assert.is_nil(tree.find(state.tools, child).start_line)
-	end)
+	for _, example in ipairs({
+		{ name = "rg", input = { pattern = "needle" } },
+		{ name = "websearch", input = { query = "needle" } },
+		{ name = "webfetch", input = { url = "https://example.com/needle" } },
+	}) do
+		it("keeps " .. example.name .. " state and cursor through live updates and earlier widget shifts", function()
+			seed({
+				{ type = "reasoning", text = "Plan\nMore details", time = { created = 1, completed = 2 } },
+				{ type = "tool", id = example.name, name = example.name, state = { status = "running", input = example.input } },
+			})
+			chat.do_render()
+			local parts = sync.get_parts("message")
+			local thought, parent, child = group_id(parts[1].id), group_id(parts[2].id), parts[2].id
+			focus(parent)
+			key("O")
+			focus(child)
+			key("O")
+			local before = tree.find(state.tools, child).start_line
+			focus(thought)
+			key("O")
+			assert.is_true(tree.find(state.tools, child).start_line > before)
+			focus(child)
+			local updated = vim.deepcopy(sync.get_part("message", child))
+			updated.state.status = "completed"
+			updated.state.output = "live search result"
+			sync.handle_part_updated(updated)
+			assert.is_true(tasks.rerender_tool(child))
+			assert.is_truthy(text():find("live search result", 1, true))
+			assert.equals(child, tasks.get_tool_at_cursor())
+			chat.do_render()
+			assert.equals(child, tasks.get_tool_at_cursor())
+			assert.is_true(state.expanded_tools[parent])
+			assert.is_true(state.expanded_tools[child])
+			key("O")
+			assert.is_nil(text():find("live search result", 1, true))
+			assert.is_true(state.expanded_tools[parent])
+			-- A parent can be collapsed through the action while focus is in a leaf.
+			key("O")
+			tasks.handle_tool_toggle(parent)
+			assert.equals(parent, tasks.get_tool_at_cursor())
+			assert.is_nil(state.expanded_tools[child])
+			assert.is_nil(tree.find(state.tools, child).start_line)
+		end)
+	end
 
 	for _, example in ipairs({
 		{ name = "read", input = { path = "README.md" }, compact = " → Read README.md",
@@ -302,6 +393,9 @@ describe("activity widgets in the chat buffer", function()
 			completed = "Executed — 1 call", metadata = {
 				toolCalls = { { tool = "namespace.tool", status = "running" } },
 			} },
+		{ name = "websearch", input = { query = "needle" }, compact_contains = "needle", completed = "Browsed — 1 search" },
+		{ name = "webfetch", input = { url = "https://example.com/needle" },
+			compact_contains = "example.com/needle", completed = "Browsed — 1 fetch" },
 	}) do
 		it("animates only the group header for " .. example.name .. " without treating child text as a spinner", function()
 			seed({ { type = "tool", id = example.name, name = example.name, state = {
@@ -317,7 +411,12 @@ describe("activity widgets in the chat buffer", function()
 			local position = state.tools[parent]
 			local before = vim.api.nvim_buf_get_lines(state.bufnr, 0, -1, false)
 			local leaf = tree.find(state.tools, part_id)
-			assert.equals(example.compact, before[leaf.start_line + 1]:gsub("%s+$", ""))
+			local compact = before[leaf.start_line + 1]:gsub("%s+$", "")
+			if example.compact then
+				assert.equals(example.compact, compact)
+			else
+				assert.is_truthy(compact:find(example.compact_contains, 1, true))
+			end
 			state.task_anim_frame = 2
 			assert.is_true(tasks.update_animation_frames_in_place())
 			local marks = vim.api.nvim_buf_get_extmarks(state.bufnr, cs.chat_anim_ns, 0, -1, { details = true })
@@ -339,7 +438,7 @@ describe("activity widgets in the chat buffer", function()
 		end)
 	end
 
-	it("gives standalone Explore and Execute leaves the same root navigation and expansion behavior", function()
+	it("gives all standalone tool group leaves the same root navigation and expansion behavior", function()
 		seed({
 			{ type = "tool", id = "read", name = "read", state = {
 				status = "completed", input = { path = "README.md" },
@@ -349,6 +448,14 @@ describe("activity widgets in the chat buffer", function()
 				status = "completed", input = { code = "return await catalog.read();" },
 				content = { { type = "text", text = "STANDALONE_EXECUTE_RESULT" } },
 				metadata = { toolCalls = { { tool = "catalog.read", status = "completed" } } },
+			} },
+			{ type = "tool", id = "websearch", name = "websearch", state = {
+				status = "completed", input = { query = "reference" },
+				content = { { type = "text", text = "STANDALONE_SEARCH_RESULT" } },
+			} },
+			{ type = "tool", id = "webfetch", name = "webfetch", state = {
+				status = "completed", input = { url = "https://example.com/reference" },
+				content = { { type = "text", text = "STANDALONE_FETCH_RESULT" } },
 			} },
 		}, 500)
 		-- Exercise the regular-tool path directly: interactions can exclude a
@@ -362,7 +469,9 @@ describe("activity widgets in the chat buffer", function()
 		vim.api.nvim_buf_set_lines(state.bufnr, 0, -1, false, ctx.raw_lines)
 		vim.bo[state.bufnr].modifiable = false
 		local original_second_start = state.tools[parts[2].id].start_line
-		for index, marker in ipairs({ "STANDALONE_READ_RESULT", "↳ ✓ catalog.read" }) do
+		for index, marker in ipairs({
+			"STANDALONE_READ_RESULT", "↳ ✓ catalog.read", "STANDALONE_SEARCH_RESULT", "STANDALONE_FETCH_RESULT",
+		}) do
 			local id = parts[index].id
 			assert.equals("tool", state.tools[id].kind)
 			assert.is_nil(state.tools[id].activity_group)

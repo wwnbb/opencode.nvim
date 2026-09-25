@@ -78,8 +78,6 @@ end
 ---@return boolean
 local function is_animated_regular_tool(tool_name)
 	return tool_name == "bash"
-		or tool_name == "skill"
-		or tool_name == "webfetch"
 end
 
 -- A completed delegation call may have left a child running in the background.
@@ -103,7 +101,7 @@ end
 ---@return boolean
 function M.is_animating_tool_part(tool_part)
 	tool_part = chat_tasks().resolve_tool_part(tool_part)
-	if type(tool_part) ~= "table" then
+	if type(tool_part) ~= "table" or tool_part.type == "skill" then
 		return false
 	end
 	local status = tool_part.state and tool_part.state.status or "pending"
@@ -111,8 +109,7 @@ function M.is_animating_tool_part(tool_part)
 		return M.is_task_working(M.task_status(tool_part))
 	end
 	local tool_group = require("opencode.ui.chat.tool_group")
-	if tool_group.kind(tool_part) then return tool_group.is_working(tool_part) end
-	if tool_part.tool == "webfetch" and status == "streaming" then return true end
+	if chat_tasks().is_tool_leaf(tool_part) then return tool_group.is_working(tool_part) end
 	return (tool_part.activity_group ~= nil or is_animated_regular_tool(tool_part.tool)) and M.is_task_working(status)
 end
 
@@ -325,20 +322,9 @@ function M.update_animation_frames_in_place()
 				end
 			end
 			local candidates = pos.activity_group and {} or { pos.start_line + 1, pos.start_line }
-			local tool_group = require("opencode.ui.chat.tool_group")
-			if tool_group.kind(tool_part) then
-				local line = tool_group.animation_line(tool_part)
+			if chat_tasks().is_tool_leaf(tool_part) then
+				local line = chat_tasks().tool_animation_line(tool_part)
 				candidates = line and { pos.start_line + line } or {}
-			end
-			if tool_part.tool == "webfetch" then
-				-- Its header precedes the panel and may wrap in narrow windows.
-				-- Only its last row ends in a spinner; body URLs may end in '/'.
-				candidates = {}
-				for line_nr = pos.start_line, math.min(pos.end_line, buf_lines - 1) do
-					local line = vim.api.nvim_buf_get_lines(bufnr, line_nr, line_nr + 1, false)[1] or ""
-					if line == "" or line:sub(1, #"▏") == "▏" then break end
-					candidates[1] = line_nr
-				end
 			end
 			for _, line_nr in ipairs(candidates) do
 				if block_updated then

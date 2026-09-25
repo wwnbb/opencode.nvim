@@ -45,8 +45,10 @@ function M.setup(bufnr, cfg, handlers)
 		return handlers.autocomplete_visible and handlers.autocomplete_visible()
 	end
 
-	local function confirm_autocomplete()
-		schedule(handlers.autocomplete_confirm)
+	local function confirm_autocomplete(activate_slash)
+		if handlers.autocomplete_confirm then
+			schedule(function() handlers.autocomplete_confirm(activate_slash) end)
+		end
 		return ""
 	end
 
@@ -116,7 +118,11 @@ function M.setup(bufnr, cfg, handlers)
 	end, { expr = true, replace_keycodes = false })
 	map(bufnr, "i", "<CR>", function()
 		if autocomplete_visible() then
-			return confirm_autocomplete()
+			return confirm_autocomplete(true)
+		end
+		if handlers.skills_command_enter and handlers.skills_command_enter() then
+			schedule(handlers.skills_command_confirm)
+			return ""
 		end
 		return termcodes("<CR>")
 	end, { expr = true, replace_keycodes = false })

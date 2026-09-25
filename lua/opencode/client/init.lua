@@ -86,6 +86,17 @@ function M.list_sessions(opts, callback)
 	end)
 end
 
+-- Aggregate usage statistics across sessions.
+---@param opts? table Query options supported by the server.
+---@param callback function(err, stats)
+function M.get_usage_stats(opts, callback)
+	if type(opts) == "function" then
+		callback = opts
+		opts = nil
+	end
+	v2.request("session_stats", { query = opts }, callback)
+end
+
 -- Get session details
 -- A session picker needs the full catalog, not the first default-sized page.
 function M.get_all_sessions(opts, callback)

@@ -146,6 +146,21 @@ function M.insert_command(state, trigger, command)
 	return true
 end
 
+-- Consume a selected local command without adding it to the prompt draft.
+function M.consume_command(state, trigger)
+	if not valid_buf(state and state.bufnr) or not valid_win(state.winid) or type(trigger) ~= "table" then
+		return false
+	end
+
+	local row = trigger.row or (vim.api.nvim_win_get_cursor(state.winid)[1] - 1)
+	local line = vim.api.nvim_buf_get_lines(state.bufnr, row, row + 1, false)[1] or ""
+	local end_col = trigger.end_col
+	if line:sub(end_col + 1, end_col + 1) == " " then end_col = end_col + 1 end
+	vim.api.nvim_buf_set_text(state.bufnr, row, trigger.start_col, row, end_col, { "" })
+	vim.api.nvim_win_set_cursor(state.winid, { row + 1, trigger.start_col })
+	return true
+end
+
 function M.clear(state)
 	if state then
 		state.slash_commands = nil
