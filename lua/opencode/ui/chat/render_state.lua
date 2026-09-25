@@ -183,6 +183,8 @@ end
 ---@param opts? table { reset_expansions?: boolean, preserve_render_cache?: boolean, force_full_render?: boolean }
 function M.reset_chat_surface(opts)
 	opts = opts or {}
+	local details = package.loaded["opencode.ui.chat.execute_details"]
+	if details then details.close({ restore_focus = false }) end
 	state.questions = {}
 	state.permissions = {}
 	state.edits = {}

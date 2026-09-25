@@ -30,6 +30,7 @@ local REGULAR_TOOL_RENDERERS = {
 	chat_skill.render_tool,
 	chat_search.render_tool,
 	chat_rg.render_tool,
+	require("opencode.ui.chat.webfetch").render_tool,
 	chat_file_edit_results.render_tool,
 }
 
@@ -314,8 +315,8 @@ function M.render_regular_tool(tool_part, is_expanded)
 	if tool_part.activity_group then
 		return activity.render(tool_part.activity_group, is_expanded, state.expanded_tools)
 	end
-	if activity.kind(tool_part) == "explore" then
-		local result = require("opencode.ui.chat.exploration_tool").render(tool_part, is_expanded)
+	local result = require("opencode.ui.chat.tool_group").render_leaf(tool_part, is_expanded)
+	if result then
 		result.lines[#result.lines + 1] = ""
 		return result
 	end
@@ -429,18 +430,29 @@ function M.rerender_tool(part_id)
 
 	local is_expanded = state.expanded_tools[root_id] or false
 	local tool_part = M.resolve_tool_part(pos)
-	local cursor = pos.activity_group and require("opencode.ui.chat.cursor").capture_widget_cursor_context()
+	local cursor = (pos.activity_group or pos.kind == "tool")
+		and require("opencode.ui.chat.cursor").capture_widget_cursor_context()
 	local updated = tool_part ~= nil and widget_support.replace_rendered_block(pos, M.render_regular_tool(tool_part, is_expanded))
-	if updated and cursor then require("opencode.ui.chat.cursor").restore_widget_cursor_context(cursor) end
+	if updated and cursor then
+		if not tree.find(state.tools, cursor.id) and tree.find(state.tools, part_id) then
+			cursor.id, cursor.relative_line = part_id, 0
+		end
+		require("opencode.ui.chat.cursor").restore_widget_cursor_context(cursor)
+	end
 	return updated
 end
 
 ---Handle tool toggle (expand/collapse tool input/output).
 ---@param part_id string
 function M.handle_tool_toggle(part_id)
-	local pos = tree.find(state.tools, part_id)
+	local pos, root_id = tree.find(state.tools, part_id)
 	if not pos then
 		return
+	end
+	-- Sections fold their own execute invocation, even inside an activity group.
+	if pos.execute_action then
+		part_id = pos.part_id or root_id
+		pos = tree.find(state.tools, part_id) or state.tools[root_id]
 	end
 
 	if state.expanded_tools[part_id] then
@@ -454,6 +466,16 @@ function M.handle_tool_toggle(part_id)
 	if not M.rerender_tool(part_id) then
 		require("opencode.ui.chat.render_coordinator").request({ reason = "tool_toggle" })
 	end
+end
+
+---Activate an execute section without changing the synchronized tool data.
+function M.handle_tool_confirm(part_id, pos)
+	if not pos or not pos.execute_action then return false end
+	local part = M.resolve_tool_part(pos)
+	if part then
+		require("opencode.ui.chat.execute_details").open(part, { view = pos.execute_action })
+	end
+	return true
 end
 
 return M

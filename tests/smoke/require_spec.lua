@@ -2492,7 +2492,9 @@ local setup_ok, setup_err = pcall(function()
 	assert(active_by_id["remembered-session"] ~= true, "untouched remembered session leaked into active sessions")
 	vim.cmd("new")
 	local winid = vim.api.nvim_get_current_win()
-	require("opencode.ui.chat.state").state.winid = winid
+	local chat_view = require("opencode.ui.chat.state").state
+	local previous_chat_bufnr, previous_chat_winid = chat_view.bufnr, chat_view.winid
+	chat_view.winid, chat_view.bufnr = winid, vim.api.nvim_win_get_buf(winid)
 	require("opencode.ui.chat").update_winbar()
 	assert(vim.wo[winid].winbar:match("Runtime Session"), "chat winbar did not render runtime session tab")
 	local current_tab_hl = vim.api.nvim_get_hl(0, { name = "OpenCodeWinbarCurrent", link = false })
@@ -2502,6 +2504,7 @@ local setup_ok, setup_err = pcall(function()
 	assert(running_tab_hl.fg == 0x22c55e, "configured running tab foreground was not applied")
 	assert(running_tab_hl.bg == 0x1f2937, "configured inactive tab background was not applied")
 	vim.cmd("bwipeout!")
+	chat_view.bufnr, chat_view.winid = previous_chat_bufnr, previous_chat_winid
 	app_state.set_session("second-session", "Second Session")
 	assert(opencode.close_session({ silent = true }) == true, "close_session did not close current tab")
 	assert(app_state.get_session().id == "runtime-session", "close_session did not activate neighboring tab")

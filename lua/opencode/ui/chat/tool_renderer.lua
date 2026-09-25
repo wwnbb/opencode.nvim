@@ -3,10 +3,11 @@ local M = {}
 local state = require("opencode.ui.chat.state").state
 local chat_tasks = require("opencode.ui.chat.tasks")
 local widget_support = require("opencode.ui.chat.widget_support")
+local tree = require("opencode.ui.chat.widget_tree")
+local tool_group = require("opencode.ui.chat.tool_group")
 
 function M.render_tool_part(ctx, tool_part, message_revision, part_revisions)
 	tool_part = chat_tasks.resolve_tool_part(tool_part)
-	local tool_name = tostring(tool_part and tool_part.tool or "unknown")
 	local part_revision = tool_part.id and part_revisions and part_revisions[tool_part.id] or 0
 	local position_ids = {
 		session_id = tool_part.sessionID or ctx.current_session.id,
@@ -54,7 +55,8 @@ function M.render_tool_part(ctx, tool_part, message_revision, part_revisions)
 			message_revision,
 			part_revision,
 			ctx.chat_width,
-			is_expanded
+			is_expanded,
+			tool_group.cache_key(tool_part)
 		)
 	end
 	local result = ctx:cached_render_result(cache_key, function()
@@ -62,10 +64,12 @@ function M.render_tool_part(ctx, tool_part, message_revision, part_revisions)
 	end)
 	local base_line = ctx:add_render_result(result, "tool")
 	state.tools[tool_part.id] = widget_support.mark_render_generation(vim.tbl_extend("force", position_ids, {
+		kind = tool_group.kind(tool_part) and "tool" or nil,
 		start_line = base_line,
 		end_line = base_line + #result.lines - 1,
 		tool_part = tool_part,
 		highlights = result.highlights,
+		children = tree.positions(result.children, base_line, state.render_generation),
 	}))
 end
 

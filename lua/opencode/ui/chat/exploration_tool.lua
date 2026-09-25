@@ -2,6 +2,7 @@
 local M = {}
 
 local style = require("opencode.ui.chat.exploration_style")
+local tool_group = require("opencode.ui.chat.tool_group")
 local search = require("opencode.ui.chat.search")
 local renderers = {
 	read = require("opencode.ui.chat.read").render_tool,
@@ -9,10 +10,6 @@ local renderers = {
 	grep = search.render_tool,
 	rg = require("opencode.ui.chat.rg").render_tool,
 }
-
-function M.supports(tool)
-	return renderers[tool] ~= nil
-end
 
 local function add_line(result, text, hl, prefix)
 	require("opencode.ui.chat.render").add_panel_line(result, text, hl, { prefix = " " .. (prefix or "") })
@@ -58,7 +55,7 @@ local function render_summary(part, expanded)
 			label = label .. string.format(" (%d %s)", count, count == 1 and "match" or "matches")
 		end
 	end
-	local failed = state.status == "error" or state.error ~= nil
+	local failed = tool_group.failed(part)
 	add_line(result, label, failed and style.error_hl or style.header_hl)
 	if expanded then
 		return result

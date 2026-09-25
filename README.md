@@ -24,6 +24,31 @@ Expand the row to see file paths and search summaries. Active groups animate as
 `Thinking` or `Exploring`; failures remain visible when collapsed, and permission
 requests stay accessible. Expansion is preserved while streaming. Set `thinking.enabled = false` to hide reasoning.
 
+# Execute / MCP tools
+
+Consecutive `execute` invocations share a compact `→ Executed — 3 calls` row,
+following the Explore interaction. Press `O` or `Enter` to show one line per
+invocation, then expand an individual line to see its MCP calls.
+Active groups show `Executing`; failed and cancelled invocations stay
+discoverable when the group is collapsed. Collapsing a group also closes its
+children.
+
+Explore and Execute share the same group renderer, status rules, error visibility,
+navigation, and expansion state. Their declarations in
+`lua/opencode/ui/chat/tool_group.lua` supply the labels, tool membership, count
+labels, and leaf renderer. Detailed tool widgets keep their own content.
+
+The expanded widget shows only its header and MCP calls on the chat background,
+without a panel frame or fill. It works with any MCP server.
+
+Press `Enter` on a recorded call to open the read-only inspector. The
+inspector replaces the chat content, with tabs in its top navigation. There,
+`1` shows the readable result, `2` the original raw output, `3` the
+script, and `4` the calls and their inputs. Normal search, scroll, and yank work;
+`Tab` switches tabs; `q`, `Esc`, or `Backspace` returns to the chat. JSON strings
+are decoded for the readable view, while Raw retains the original output.
+The result belongs to the whole script.
+
 # Tokens per second
 
 Assistant footers show average generation speed, for example `42.7 tok/s`.

@@ -74,6 +74,8 @@ local function sections(config)
 			{
 				{ "O", "Expand/collapse tool or activity" },
 				{ "<CR>", "Expand/collapse Thought or Explore" },
+				{ "<CR>", "Execute: expand group/call or inspect MCP calls" },
+				{ "1-4", "Execute details: Result / Raw / Code / Calls" },
 				{ "gd", "Enter subagent output" },
 				{ "<BS>", "Go back to parent" },
 				{ "gD", "View diff" },
