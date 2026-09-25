@@ -1,172 +1,329 @@
 local M = {}
 
 local Popup = require("nui.popup")
-
 local state = require("opencode.ui.chat.state").state
 local highlights = require("opencode.ui.highlights")
+local ns = vim.api.nvim_create_namespace("opencode_help")
+local active_popup
 
-function M.show(config)
+highlights.register("opencode.ui.chat.help", function()
 	highlights.setup_message_backgrounds()
 	vim.api.nvim_set_hl(0, "OpenCodeInputBorder", { link = "Special", default = true })
 	vim.api.nvim_set_hl(0, "OpenCodeInputInfo", { link = "Comment", default = true })
+end)
 
-	config = config or state.config
-
-	local close_session_key = config and config.keymaps and config.keymaps.close_session or "x"
+local function sections(config)
 	local keys = config.keymaps or {}
-
-	local lines = {
-		"Chat Buffer Keymaps",
-		"",
-		"q          Close chat",
-		"i          Focus input",
-		"a          Toggle auto-scroll",
-		"<C-c>      Stop generation",
-		"<C-p>      Command palette",
-		"N          Start new session",
-		string.format("%-10s Close current session tab", close_session_key),
-		"gt         Next session",
-		"Ngt        Go to session N",
-		"0gt        Go to first session",
-		"gT         Previous session",
-		"<C-u>      Scroll up",
-		"<C-d>      Scroll down",
-		"gg         Go to top",
-		"G          Go to bottom",
-		"[a/]a      Prev/next user message",
-		"[m/]m      Prev/next message or widget",
-		"[p/]p      Prev/next pending permission",
-	}
-	for _, command in ipairs(require("opencode.ui.chat.pending_inputs").commands) do
-		local key = keys[command.name .. "_pending"]
-		lines[#lines + 1] = string.format("%-10s %s", type(key) == "string" and key ~= "" and key or "(disabled)", command.description)
+	local function key(name, fallback)
+		local value = keys[name]
+		if value == nil then
+			return fallback
+		end
+		return type(value) == "string" and value ~= "" and value or "(disabled)"
 	end
-	vim.list_extend(lines, {
-		"?          Show this help",
-		"",
-		"Input Mode",
-		"<C-g>      Send message",
-		"<Esc>      Cancel",
-		"↑/↓        Navigate history",
-		"",
-		"Tool Calls",
-		"O          Expand/collapse tool or activity",
-		"<CR>       Expand/collapse Thought or Explore",
-		"gd         Enter subagent output",
-		"<BS>       Go back to parent",
-		"gD         View diff",
-		"",
-		"Question Tool",
-		"1-9        Select option by number",
-		"↑/↓ j/k    Move cursor (selection follows)",
-		"Space      Toggle multi-select",
-		"c          Custom input",
-		"<CR>       Confirm selection",
-		"<Esc>      Cancel question",
-		"<Tab>      Next question tab",
-		"<S-Tab>    Previous question tab",
-		"",
-		"Permissions",
-		"1-3        Select option by number",
-		"↑/↓ j/k    Move cursor (selection follows)",
-		"<CR>       Confirm permission",
-		"<Esc>      Reject permission",
-		"",
-		"Edit Review",
-		"<C-a>      Accept selected file",
-		"<C-x>      Reject selected file",
-		"<C-m>      Resolve file manually",
-		"=          Toggle inline diff",
-		"dt         Open diff in new tab",
-		"dv         Open diff vsplit",
-		"A          Accept all files",
-		"X          Reject all files",
-		"M          Resolve all manually",
-		"<CR>       Open file in editor",
-		"1-9        Jump to file N",
-		"",
-		"Press any key to close",
-	})
-
-	local width = 42
-	local height = #lines
-
-	local chat_winid = vim.api.nvim_get_current_win()
-	local chat_pos = vim.api.nvim_win_get_position(chat_winid)
-	local chat_win_width = vim.api.nvim_win_get_width(chat_winid)
-	local chat_win_height = vim.api.nvim_win_get_height(chat_winid)
-
-	local row = chat_pos[1] + math.floor((chat_win_height - height) / 2)
-	local col = chat_pos[2] + math.floor((chat_win_width - width) / 2)
-
-	local popup = Popup({
-		enter = true,
-		focusable = true,
-		border = { style = { "", "", "", "", "", "", "", "┃" } },
-		position = { row = row, col = col },
-		size = { width = width - 1, height = height },
-		win_options = {
-			winhighlight = "Normal:OpenCodeInputBg,EndOfBuffer:OpenCodeInputBg,FloatBorder:OpenCodeInputBorder",
+	local pending = {}
+	for _, command in ipairs(require("opencode.ui.chat.pending_inputs").commands) do
+		table.insert(pending, { key(command.name .. "_pending", "(disabled)"), command.description })
+	end
+	return {
+		{
+			"Chat",
+			{
+				{ key("close", "q"), "Close chat" },
+				{ key("focus_input", "i"), "Focus input" },
+				{ "a", "Toggle auto-scroll" },
+				{ key("abort", "<C-c>"), "Stop generation" },
+				{ "<C-p>", "Command palette" },
+				{ "?", "Show this help" },
+			},
 		},
-	})
-
-	popup:mount()
-	vim.api.nvim_buf_set_lines(popup.bufnr, 0, -1, false, lines)
-	vim.bo[popup.bufnr].modifiable = false
-
-	local ns = vim.api.nvim_create_namespace("opencode_help")
-	local section_headers = {
-		["Chat Buffer Keymaps"] = true,
-		["Input Mode"] = true,
-		["Tool Calls"] = true,
-		["Question Tool"] = true,
-		["Permissions"] = true,
-		["Edit Review"] = true,
+		{
+			"Sessions",
+			{
+				{ "N", "Start new session" },
+				{ key("close_session", "x"), "Close current session tab" },
+				{ "gt", "Next session" },
+				{ "Ngt", "Go to session N" },
+				{ "0gt", "Go to first session" },
+				{ "gT", "Previous session" },
+			},
+		},
+		{
+			"Navigation",
+			{
+				{ key("scroll_up", "<C-u>"), "Scroll up" },
+				{ key("scroll_down", "<C-d>"), "Scroll down" },
+				{ key("goto_top", "gg"), "Go to top" },
+				{ key("goto_bottom", "G"), "Go to bottom" },
+				{ "[a / ]a", "Prev/next user message" },
+				{ "[m / ]m", "Prev/next message or widget" },
+				{ "[p / ]p", "Prev/next pending permission" },
+			},
+		},
+		{ "Pending Input", pending },
+		{
+			"Input Mode",
+			{
+				{ "<C-g>", "Send message" },
+				{ "<Esc>", "Cancel" },
+				{ "↑ / ↓", "Navigate history" },
+			},
+		},
+		{
+			"Tool Calls",
+			{
+				{ "O", "Expand/collapse tool or activity" },
+				{ "<CR>", "Expand/collapse Thought or Explore" },
+				{ "gd", "Enter subagent output" },
+				{ "<BS>", "Go back to parent" },
+				{ "gD", "View diff" },
+			},
+		},
+		{
+			"Question Tool",
+			{
+				{ "1-9", "Select option by number" },
+				{ "↑/↓ j/k", "Move cursor (selection follows)" },
+				{ "Space", "Toggle multi-select" },
+				{ "c", "Custom input" },
+				{ "<CR>", "Confirm selection" },
+				{ "<Esc>", "Cancel question" },
+				{ "<Tab>", "Next question tab" },
+				{ "<S-Tab>", "Previous question tab" },
+			},
+		},
+		{
+			"Permissions",
+			{
+				{ "1-3", "Select option by number" },
+				{ "↑/↓ j/k", "Move cursor (selection follows)" },
+				{ "<CR>", "Confirm permission" },
+				{ "<Esc>", "Reject permission" },
+			},
+		},
+		{
+			"Edit Review",
+			{
+				{ "<C-a>", "Accept selected file" },
+				{ "<C-x>", "Reject selected file" },
+				{ "<C-m>", "Resolve file manually" },
+				{ "=", "Toggle inline diff" },
+				{ "dt", "Open diff in new tab" },
+				{ "dv", "Open diff vsplit" },
+				{ "A", "Accept all files" },
+				{ "X", "Reject all files" },
+				{ "M", "Resolve all manually" },
+				{ "<CR>", "Open file in editor" },
+				{ "1-9", "Jump to file N" },
+			},
+		},
 	}
-	for i, line in ipairs(lines) do
-		if section_headers[line] then
-			vim.api.nvim_buf_set_extmark(
-				popup.bufnr,
-				ns,
-				i - 1,
-				0,
-				{ end_col = #line, hl_group = "OpenCodeInputBorder" }
-			)
-		elseif line == "Press any key to close" then
-			vim.api.nvim_buf_set_extmark(popup.bufnr, ns, i - 1, 0, { end_col = #line, hl_group = "OpenCodeInputInfo" })
-		elseif line ~= "" then
-			local key_end = line:find("  ")
-			if key_end then
-				vim.api.nvim_buf_set_extmark(popup.bufnr, ns, i - 1, 0, { end_col = key_end - 1, hl_group = "Normal" })
-				vim.api.nvim_buf_set_extmark(
-					popup.bufnr,
-					ns,
-					i - 1,
-					key_end - 1,
-					{ end_col = #line, hl_group = "OpenCodeInputInfo" }
-				)
+end
+
+-- Wrap by display cells while keeping UTF-8 characters intact and descriptions
+-- in their own column, including continuations on narrow screens.
+local function wrap(text, width)
+	local result = {}
+	while vim.fn.strdisplaywidth(text) > width do
+		local count = 0
+		for i = 1, vim.fn.strchars(text) do
+			if vim.fn.strdisplaywidth(vim.fn.strcharpart(text, 0, i)) > width then
+				break
+			end
+			count = i
+		end
+		count = math.max(1, count)
+		local chunk = vim.fn.strcharpart(text, 0, count)
+		local space = chunk:match("^.*()%s")
+		if space and space > 1 then
+			table.insert(result, vim.trim(chunk:sub(1, space - 1)))
+			text = vim.trim(text:sub(space + 1))
+		else
+			table.insert(result, chunk)
+			text = vim.trim(vim.fn.strcharpart(text, count))
+		end
+	end
+	table.insert(result, text)
+	return result
+end
+
+local function render(buf, groups, width)
+	local lines, marks = {}, {}
+	local key_width = math.min(14, math.max(1, math.floor(width / 3)))
+	local description_width = math.max(1, width - key_width - 2)
+	for index, group in ipairs(groups) do
+		if index > 1 then
+			table.insert(lines, "")
+		end
+		for _, title in ipairs(wrap(group[1], width)) do
+			table.insert(lines, "   " .. title)
+			table.insert(marks, { #lines - 1, 3, #lines[#lines], "OpenCodeInputBorder" })
+		end
+		for _, entry in ipairs(group[2]) do
+			local key_lines, description_lines = wrap(entry[1], key_width), wrap(entry[2], description_width)
+			for i = 1, math.max(#key_lines, #description_lines) do
+				local key_text, description = key_lines[i] or "", description_lines[i] or ""
+				local left = "   " .. key_text .. string.rep(" ", key_width - vim.fn.strdisplaywidth(key_text) + 2)
+				table.insert(lines, left .. description)
+				table.insert(marks, { #lines - 1, 3, 3 + #key_text, "Normal" })
+				table.insert(marks, { #lines - 1, #left, #lines[#lines], "OpenCodeInputInfo" })
 			end
 		end
 	end
-
-	local close_keys = { "q", "<Esc>", "<CR>", "<Space>" }
-	for _, key in ipairs(close_keys) do
-		vim.keymap.set("n", key, function()
-			popup:unmount()
-		end, { buffer = popup.bufnr, noremap = true, silent = true })
+	vim.bo[buf].modifiable = true
+	vim.api.nvim_buf_clear_namespace(buf, ns, 0, -1)
+	vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+	for _, mark in ipairs(marks) do
+		vim.api.nvim_buf_set_extmark(buf, ns, mark[1], mark[2], { end_col = mark[3], hl_group = mark[4] })
 	end
+	vim.bo[buf].modifiable = false
+end
 
-	for i = 32, 126 do
-		local char = string.char(i)
-		if not char:match("[qQ]") then
-			pcall(function()
-				vim.keymap.set("n", char, function()
-					popup:unmount()
-				end, { buffer = popup.bufnr, noremap = true, silent = true, nowait = true })
-			end)
+function M.show(config)
+	if vim.o.lines - vim.o.cmdheight < 8 then
+		vim.notify("Not enough room to show OpenCode help", vim.log.levels.WARN)
+		return
+	end
+	if active_popup and active_popup.winid and vim.api.nvim_win_is_valid(active_popup.winid) then
+		vim.api.nvim_set_current_win(active_popup.winid)
+		return active_popup
+	end
+	config = config or state.config or require("opencode.config").defaults.chat
+	local groups = sections(config)
+	local previous_win = vim.api.nvim_get_current_win()
+	local target_win = state.winid and vim.api.nvim_win_is_valid(state.winid) and state.winid or previous_win
+	local function dimensions()
+		local screen_width, screen_height = vim.o.columns, vim.o.lines - vim.o.cmdheight
+		local pos, anchor_width, anchor_height = { 0, 0 }, screen_width, screen_height
+		if vim.api.nvim_win_is_valid(target_win) then
+			pos = vim.api.nvim_win_get_position(target_win)
+			anchor_width, anchor_height =
+				vim.api.nvim_win_get_width(target_win), vim.api.nvim_win_get_height(target_win)
+		end
+		if anchor_width < 28 or anchor_height < 12 then
+			pos, anchor_width, anchor_height = { 0, 0 }, screen_width, screen_height
+		end
+		local width = math.max(12, math.min(76, anchor_width - 4, screen_width - 2))
+		local height = math.max(8, math.min(32, anchor_height - 4, screen_height - 2))
+		local row = math.max(0, math.min(pos[1] + math.floor((anchor_height - height) / 2), screen_height - height))
+		local col = math.max(0, math.min(pos[2] + math.floor((anchor_width - width) / 2), screen_width - width))
+		return width, height, row, col
+	end
+	local width, height, row, col = dimensions()
+	local win_options = {
+		winhighlight = "Normal:OpenCodeInputBg,NormalNC:OpenCodeInputBg,EndOfBuffer:OpenCodeInputBg",
+		wrap = false,
+		cursorline = false,
+		winblend = 0,
+		scrolloff = 0,
+	}
+	local frame = Popup({
+		enter = false,
+		focusable = false,
+		relative = "editor",
+		zindex = 80,
+		border = "none",
+		position = { row = row, col = col },
+		size = { width = width, height = height },
+		buf_options = { filetype = "opencode_help" },
+		win_options = win_options,
+	})
+	frame:mount()
+	local popup = Popup({
+		enter = true,
+		focusable = true,
+		relative = { type = "win", winid = frame.winid },
+		zindex = 81,
+		border = "none",
+		position = { row = 3, col = 1 },
+		size = { width = width - 2, height = height - 6 },
+		buf_options = { filetype = "opencode_help" },
+		win_options = win_options,
+	})
+	popup:mount()
+	active_popup = popup
+	popup.frame = frame
+
+	local function redraw()
+		local next_width, next_height, next_row, next_col = dimensions()
+		frame:update_layout({
+			position = { row = next_row, col = next_col },
+			size = { width = next_width, height = next_height },
+		})
+		popup:update_layout({ size = { width = next_width - 2, height = next_height - 6 } })
+		local inset = next_width >= 20 and 4 or 1
+		local padding = string.rep(" ", inset)
+		local lines = { "", padding .. "Help" .. string.rep(" ", next_width - 7 - 2 * inset) .. "esc" .. padding }
+		for _ = 3, next_height do
+			table.insert(lines, "")
+		end
+		local footer = next_width >= 54 and "j/k scroll   Ctrl-u/d page   q/esc close"
+			or (next_width >= 30 and "j/k scroll  q/esc close" or "q close")
+		lines[next_height - 1] = "    " .. footer
+		local buf = frame.bufnr
+		vim.bo[buf].modifiable = true
+		vim.api.nvim_buf_clear_namespace(buf, ns, 0, -1)
+		vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+		vim.api.nvim_buf_set_extmark(buf, ns, 1, inset, { end_col = inset + 4, hl_group = "OpenCodeInputBorder" })
+		vim.api.nvim_buf_set_extmark(
+			buf,
+			ns,
+			1,
+			next_width - 7,
+			{ end_col = next_width - 4, hl_group = "OpenCodeInputInfo" }
+		)
+		vim.api.nvim_buf_set_extmark(
+			buf,
+			ns,
+			next_height - 2,
+			4,
+			{ end_col = #lines[next_height - 1], hl_group = "OpenCodeInputInfo" }
+		)
+		vim.bo[buf].modifiable = false
+		render(popup.bufnr, groups, next_width - 8)
+	end
+	redraw()
+
+	local closed = false
+	local unmount = popup.unmount
+	local function close(restore_focus)
+		if closed then
+			return
+		end
+		closed = true
+		active_popup = nil
+		unmount(popup)
+		frame:unmount()
+		if restore_focus and vim.api.nvim_win_is_valid(previous_win) then
+			vim.api.nvim_set_current_win(previous_win)
 		end
 	end
-
+	function popup:unmount()
+		close(true)
+	end
+	for _, key in ipairs({ "q", "<Esc>", "<CR>", "<Space>" }) do
+		vim.keymap.set("n", key, function()
+			close(true)
+		end, { buffer = popup.bufnr, noremap = true, silent = true })
+	end
+	-- Keep normal navigation available instead of closing on every printable key.
+	for _, key in ipairs({ "j", "k", "<Up>", "<Down>", "<C-u>", "<C-d>", "<C-b>", "<C-f>", "gg", "G" }) do
+		vim.keymap.set("n", key, key, { buffer = popup.bufnr, noremap = true, silent = true })
+	end
+	popup:on("VimResized", function()
+		if not closed then
+			if vim.o.lines - vim.o.cmdheight < 8 then
+				close(true)
+			else
+				redraw()
+			end
+		end
+	end)
+	popup:on("BufLeave", function()
+		vim.schedule(function()
+			close(false)
+		end)
+	end)
 	return popup
 end
 

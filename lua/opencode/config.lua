@@ -147,14 +147,14 @@ M.defaults = {
 		diff_stats_max_untracked_file_size = 1024 * 1024,
 	},
 
-	-- Command Palette
+	-- Command Palette (one borderless surface, using the current theme colors)
 	palette = {
-		width = 70,
-		height = 20,
-		border = "rounded",
+		width = 60, -- Total panel width, including the horizontal padding
+		height = 20, -- Maximum visible list rows; title/search use 7 additional rows
+		border = "none",
 		frecency = true,
 		show_keybinds = true,
-		show_icons = true,
+		show_icons = false,
 		categories = {
 			"session",
 			"model",
