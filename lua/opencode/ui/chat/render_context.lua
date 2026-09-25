@@ -65,7 +65,7 @@ function Context:cached_render_result(key, build)
 		return cached.result
 	end
 	local result = build()
-	if key then
+	if key and not result._opencode_syntax_retry then
 		render_state.render_cache_put(key, { result = result })
 	end
 	return result

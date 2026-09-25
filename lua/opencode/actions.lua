@@ -172,6 +172,14 @@ function M.list_sessions(opts, callback)
 	end)
 end
 
+function M.get_usage_stats(callback)
+	return with_connection(function()
+		client().get_usage_stats(require("opencode.stats").query(), function(err, result)
+			schedule_callback(callback, err, result)
+		end)
+	end)
+end
+
 function M.fork_session(session_id, opts, callback)
 	return with_connection(function()
 		client().fork_session(session_id, opts or {}, function(err, result)
@@ -337,29 +345,71 @@ function M.list_skills(callback, opts)
 	end, opts)
 end
 
-function M.run_skills(selected, opts)
+-- Add catalog skills to the current input draft. The server loads their
+-- instructions when the user sends that draft as a native prompt attachment.
+function M.stage_skills(selected, opts)
+	if type(selected) ~= "table" then return false end
 	opts = vim.deepcopy(opts or {})
-	opts.session_id = opts.session_id or state().get_session().id or false
+	opts.session_id = opts.session_id or state().get_session().id
+	if not opts.session_id then
+		vim.notify("Select a session before adding skills", vim.log.levels.WARN)
+		return false
+	end
 	opts.directory = opts.directory or state().get_session_directory(opts.session_id) or vim.fn.getcwd()
-	opts._selection = opts._selection or require("opencode.selectors").send_selection(opts)
-	local token = require("opencode.session.pending").token(opts.session_id or nil)
-	M.list_skills(function(err, skills)
+	local input = require("opencode.ui.input")
+	local draft_token = input.draft_token()
+	local token = require("opencode.session.pending").token(opts.session_id)
+	local function add_resolved(err, skills)
 		if not require("opencode.session.pending").is_current(token) then return end
-		if err then vim.notify("Could not load skills: " .. err.message, vim.log.levels.ERROR); return end
-		local parts, names = {}, {}
+		if state().get_session().id ~= opts.session_id then
+			vim.notify("Skill selection belongs to another session", vim.log.levels.WARN)
+			return
+		end
+		if input.draft_token() ~= draft_token then
+			vim.notify("The draft changed before skills could be added; select them again", vim.log.levels.WARN)
+			return
+		end
+		if err then
+			vim.notify("Could not list skills: " .. tostring(err.message or err), vim.log.levels.ERROR)
+			return
+		end
+		local parts, seen = {}, {}
+		skills = type(skills) == "table" and skills or {}
 		for _, wanted in ipairs(selected) do
 			local found
 			for _, skill in ipairs(skills) do
 				if (type(wanted) == "table" and wanted.id == skill.id)
 					or (type(wanted) == "string" and (wanted == skill.id or wanted == skill.name)) then found = skill; break end
 			end
-			if not found then vim.notify("Skill is unavailable: " .. tostring(type(wanted) == "table" and wanted.name or wanted), vim.log.levels.WARN); return end
-			parts[#parts + 1] = { type = "skill", id = found.id }; names[#names + 1] = found.name
+			if not found or type(found.id) ~= "string" or found.id == "" then
+				vim.notify("Skill is unavailable: " .. tostring(type(wanted) == "table" and wanted.name or wanted), vim.log.levels.WARN)
+				return
+			end
+			if not seen[found.id] then
+				seen[found.id] = true
+				parts[#parts + 1] = { type = "skill", id = found.id, name = found.name }
+			end
 		end
 		if #parts == 0 then return end
-		opts.parts = parts
-		require("opencode.send").send("Use these skills: " .. table.concat(names, ", "), opts)
-	end, opts)
+		local added, stage_error = input.stage_skills(parts, opts.session_id)
+		if not added then
+			vim.notify("Could not add skills to draft: " .. tostring(stage_error), vim.log.levels.WARN)
+			return
+		end
+		M.focus_input()
+	end
+	-- The picker already supplied catalog records. Re-fetching after selection
+	-- creates a gap in which the user can send the prompt without its skills.
+	local catalog_records = #selected > 0
+	for _, wanted in ipairs(selected) do
+		if type(wanted) ~= "table" or type(wanted.id) ~= "string" then catalog_records = false; break end
+	end
+	if catalog_records then
+		add_resolved(nil, selected)
+	else
+		M.list_skills(add_resolved, opts)
+	end
+	return true
 end
 
 function M.execute_command(session_id, command, args, opts, callback)

@@ -23,7 +23,7 @@ local function text(group, expanded)
 	return table.concat(activity.render(group, expanded).lines, "\n")
 end
 
-describe("Thought, Explore and Execute groups", function()
+describe("Thought, Explore, Execute and Web groups", function()
 	before_each(function()
 		sync.clear_all()
 		require("opencode.state").set_config({ thinking = { enabled = true } })
@@ -75,6 +75,44 @@ describe("Thought, Explore and Execute groups", function()
 		assert.is_nil(opened:find("↳ ✓ mcp.search", 1, true))
 		assert.is_nil(opened:find("second result", 1, true))
 		assert.is_nil(opened:find("first result", 1, true))
+	end)
+
+	it("groups web searches and fetches across steps and counts each request kind", function()
+		local first = tool("search", "websearch", "completed", { query = "Lua coroutine" })
+		local fetch = tool("fetch", "webfetch", "completed", { url = "https://example.com/lua" })
+		first.state.output, fetch.state.output = "private search result", "private page body"
+		local groups = collect({
+			{ parts = { first }, finish = "tool-calls" },
+			{ parts = { fetch, tool("search2", "websearch"), tool("fetch2", "webfetch") } },
+		})
+		assert.equals(groups.search, groups.fetch)
+		assert.equals(groups.search, groups.fetch2)
+		assert.equals("activity:web:search", groups.search.id)
+		assert.equals("→ Browsed — 2 searches, 2 fetches", vim.trim(text(groups.search)))
+		local collapsed = activity.render(groups.search, false)
+		assert.is_nil(collapsed.children.search.start_line)
+		assert.is_nil(collapsed.children.fetch.start_line)
+		local expanded = activity.render(groups.search, true, { fetch = true })
+		local body = table.concat(expanded.lines, "\n")
+		assert.is_truthy(body:find("Lua coroutine", 1, true))
+		assert.is_truthy(body:find("https://example.com/lua", 1, true))
+		assert.is_truthy(body:find("private page body", 1, true))
+		assert.is_nil(body:find("private search result", 1, true))
+	end)
+
+	it("keeps web requests separate from local exploration, execution and permissions", function()
+		local groups = collect({ { parts = {
+			tool("first", "websearch"), tool("read", "read"), tool("after_read", "webfetch"),
+			tool("execute", "execute"), tool("after_execute", "websearch"),
+			tool("permission", "webfetch", "pending"), tool("after_permission", "webfetch"),
+		} } }, function(_, part) return part.id == "permission" end)
+		assert.is_nil(groups.permission)
+		assert.equals("explore", groups.read.kind)
+		assert.equals("execute", groups.execute.kind)
+		for _, id in ipairs({ "first", "after_read", "after_execute", "after_permission" }) do
+			assert.equals("web", groups[id].kind)
+			assert.equals(id, groups[id].first_part_id)
+		end
 	end)
 
 	it("keeps execute permissions outside groups and running status across a text boundary", function()
@@ -167,20 +205,24 @@ describe("Thought, Explore and Execute groups", function()
 	end)
 end)
 
--- Both tool families must keep the same container behavior even though their
+-- All tool families must keep the same container behavior even though their
 -- leaf widgets format different inputs and results.
 for _, family in ipairs({
 	{ kind = "explore", tool = "read", done = "Explored", active = "Exploring", count = "reads" },
 	{ kind = "execute", tool = "execute", done = "Executed", active = "Executing", count = "calls" },
+	{ kind = "web", tool = "websearch", done = "Browsed", active = "Browsing", count = "searches" },
+	{ kind = "web", tool = "webfetch", done = "Browsed", active = "Browsing", count = "fetches" },
 }) do
-	describe(family.kind .. " shared tool group behavior", function()
+	describe(family.tool .. " shared tool group behavior", function()
 		before_each(function()
 			sync.clear_all()
 			require("opencode.state").set_config({ thinking = { enabled = true } })
 		end)
 
 		local function call(id, status)
-			local part = tool(id, family.tool, status, { path = id .. ".txt", code = "return 1" })
+			local part = tool(id, family.tool, status, {
+				path = id .. ".txt", code = "return 1", query = id, url = "https://example.com/" .. id,
+			})
 			part.state.output = "private-result-" .. id
 			if family.kind == "execute" then
 				part.state.metadata = { toolCalls = { { tool = "mcp." .. id, status = "completed" } } }

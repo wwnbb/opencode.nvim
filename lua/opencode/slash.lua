@@ -153,6 +153,26 @@ function M.register_defaults()
 			palette.trigger("session.list")
 		end,
 	})
+
+	M.register({
+		name = "stats",
+		description = "Usage statistics",
+		category = "session",
+		handler = function()
+			actions.get_usage_stats(function(err, data)
+				if err then
+					vim.notify("Could not load usage statistics: " .. tostring(err.message or err), vim.log.levels.ERROR)
+					return
+				end
+				local view, stats_error = require("opencode.stats").from_api(data)
+				if not view then
+					vim.notify("Could not show usage statistics: " .. stats_error, vim.log.levels.ERROR)
+					return
+				end
+				require("opencode.ui.stats").show(view)
+			end)
+		end,
+	})
 	
 	-- /new - Start new session
 	M.register({
@@ -210,60 +230,14 @@ function M.register_defaults()
 		end,
 	})
 
-	-- /skills - Select and run a skill
+	-- /skills - Select skills for the current prompt
 	M.register({
 		name = "skills",
-		description = "Select and run a skill",
+		description = "Add skills to the current prompt",
 		category = "actions",
 		handler = function()
 			local palette = require("opencode.ui.palette")
 			palette.trigger("action.skills")
-		end,
-		enabled = function()
-			return state.get_session().id ~= nil and state.is_connected()
-		end,
-	})
-
-	-- /skill <name>[, <name>...] - Run one or more specific skills
-	M.register({
-		name = "skill",
-		description = "Run one or more skills by name",
-		category = "actions",
-		handler = function(args)
-			local function parse_skill_names(input)
-				local names = {}
-				local seen = {}
-				local text = vim.trim(input or "")
-				text = text:gsub("^%[", ""):gsub("%]$", "")
-				if text == "" then
-					return names
-				end
-
-				local pattern = text:find(",", 1, true) and "[^,]+" or "%S+"
-				for part in text:gmatch(pattern) do
-					local name = vim.trim(part)
-					name = name:gsub("^['\"]", ""):gsub("['\"]$", "")
-					if name ~= "" and not seen[name] then
-						seen[name] = true
-						table.insert(names, name)
-					end
-				end
-				return names
-			end
-
-			local names = parse_skill_names(args)
-			if #names == 0 then
-				vim.notify("Usage: /skill <name>[, <name>...]", vim.log.levels.WARN)
-				return
-			end
-
-			local session = state.get_session()
-			if not session.id then
-				vim.notify("No active session", vim.log.levels.WARN)
-				return
-			end
-
-			actions.run_skills(names, { session_id = session.id })
 		end,
 		enabled = function()
 			return state.get_session().id ~= nil and state.is_connected()

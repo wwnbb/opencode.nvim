@@ -214,8 +214,10 @@ end
 ---@param tool_part table
 ---@return table
 function M.get_tool_metadata(tool_part)
-	local part_metadata = tool_part and tool_part.metadata or {}
-	local state_metadata = (tool_part and tool_part.state and tool_part.state.metadata) or {}
+	tool_part = type(tool_part) == "table" and tool_part or {}
+	local tool_state = type(tool_part.state) == "table" and tool_part.state or {}
+	local part_metadata = type(tool_part.metadata) == "table" and tool_part.metadata or {}
+	local state_metadata = type(tool_state.metadata) == "table" and tool_state.metadata or {}
 	return vim.tbl_deep_extend("force", {}, part_metadata, state_metadata)
 end
 

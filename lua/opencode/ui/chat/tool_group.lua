@@ -18,6 +18,15 @@ local definitions = {
 		tools = { execute = "call" }, plurals = { call = "calls" },
 		renderer = function() return require("opencode.ui.chat.execute") end,
 	},
+	web = {
+		active = "Browsing", completed = "Browsed",
+		tools = { websearch = "search", webfetch = "fetch" },
+		plurals = { search = "searches", fetch = "fetches" },
+		renderer = function(part)
+			if part.tool == "websearch" then return require("opencode.ui.chat.websearch") end
+			return require("opencode.ui.chat.webfetch")
+		end,
+	},
 }
 
 local by_tool = {}
@@ -31,7 +40,7 @@ end
 
 local function renderer(part)
 	local definition = definitions[M.kind(part)]
-	return definition and definition.renderer() or nil
+	return definition and definition.renderer(part) or nil
 end
 
 local failures = { error = true, cancelled = true, canceled = true, interrupted = true, aborted = true }
@@ -78,7 +87,7 @@ function M.animation_line(part)
 end
 
 require("opencode.ui.highlights").register("opencode.ui.chat.tool_group", function()
-	-- Preserve the existing theme override for both families.
+	-- Preserve the existing theme override for all tool families.
 	vim.api.nvim_set_hl(0, "OpenCodeExplore", { default = true, link = "Comment" })
 	vim.api.nvim_set_hl(0, "OpenCodeToolGroup", { default = true, link = "OpenCodeExplore" })
 	vim.api.nvim_set_hl(0, "OpenCodeActivityRunning", { default = true, link = "Normal" })

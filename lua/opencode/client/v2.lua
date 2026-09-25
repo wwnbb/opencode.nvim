@@ -14,6 +14,7 @@ local operations = {
 	revert_clear = { "DELETE", "/api/session/{sessionID}/revert", "empty" },
 	revert_commit = { "POST", "/api/session/{sessionID}/revert/commit", "empty" },
 	session_list = { "GET", "/api/session", "page" },
+	session_stats = { "GET", "/api/experimental/session/stats", "object" },
 	session_create = { "POST", "/api/session", "session" },
 	session_get = { "GET", "/api/session/{sessionID}", "session" },
 	session_update = { "PATCH", "/api/session/{sessionID}", "empty" },

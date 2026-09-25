@@ -27,14 +27,43 @@ wait(function() return state.get_session().id and state.get_session().id ~= prev
 local sid = state.get_session().id
 wait(function() return sync.get_catalog_location() == directory and #sync.get_skills() > 0 end, "Native skill catalog did not load")
 local slash = require("opencode.slash")
-assert(slash.execute(slash.parse("/skill smoke-native")), "Slash skill not handled")
+local input = require("opencode.ui.input")
+local menu = require("opencode.ui.menu")
+local messages_before_skill = #sync.get_messages(sid)
+local open_menu = menu.open
+local skill_picker
+menu.open = function(opts)
+	local picker = open_menu(opts)
+	if opts.title == " Select Skills " then skill_picker = picker end
+	return picker
+end
+assert(slash.execute(slash.parse("/skills")), "Slash skills picker not handled")
+wait(function() return skill_picker ~= nil end, "Skill picker did not open")
+menu.open = open_menu
+vim.api.nvim_buf_set_lines(skill_picker.input.bufnr, 0, 1, false, { "smoke-native" })
+vim.api.nvim_exec_autocmds("TextChangedI", { buffer = skill_picker.input.bufnr })
+wait(function()
+	local selected = skill_picker.current()
+	return selected and selected.label == "smoke-native"
+end, "Native test skill missing from picker")
+local confirmed = false
+for _, mapping in ipairs(vim.api.nvim_buf_get_keymap(skill_picker.input.bufnr, "i")) do
+	if mapping.lhs == "<CR>" then mapping.callback(); confirmed = true; break end
+end
+assert(confirmed, "Skill picker Enter keymap unavailable")
+wait(function() return input.is_visible() and input.get_pending_text():find("@", 1, true) end, "Skill was not staged in the composer")
+assert(#sync.get_messages(sid) == messages_before_skill, "Selecting a skill unexpectedly submitted a message")
+input.append_pending_text("Use the attached skill and reply with exactly SKILL_V2_READY.")
+local submit = vim.fn.maparg("<C-g>", "n", false, true)
+assert(type(submit.callback) == "function", "Input send keymap unavailable")
+submit.callback()
 wait(function()
 	for _, message in ipairs(sync.get_messages(sid)) do
 		if message.type == "idle" and message.outcome == "succeeded" then return true end
 	end
 	return false
 end, "Skill request did not finish", 100000)
-wait(function() return text():find("SKILL_V2_READY", 1, true) and text():find("skill smoke-native", 1, true) end, "Skill attachment/response missing from buffer")
+wait(function() return text():find("SKILL_V2_READY", 1, true) and text():find('Skill "smoke-native"', 1, true) end, "Skill attachment/response missing from buffer")
 local first_text = text()
 if vim.env.OPENCODE_V2_ATTACHED_UI then
 	vim.cmd("redraw")

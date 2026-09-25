@@ -24,21 +24,26 @@ function M.register(palette)
 					end })
 			end)
 		end })
-	palette.register({ id = "action.skills", title = "Run Skills", description = "Select and activate skills", category = "prompt", suggested = true,
-		action = function()
+	palette.register({ id = "action.skills", title = "Add Skills", description = "Add skills to the current prompt", category = "prompt", suggested = true,
+			action = function()
 			local session = state.get_session()
 			if not session.id or not state.is_connected() then vim.notify("Select a connected session first", vim.log.levels.WARN); return end
 			local opts = { session_id = session.id, directory = state.get_session_directory(session.id) or vim.fn.getcwd() }
-			opts._selection = require("opencode.selectors").send_selection(opts)
+			local input = require("opencode.ui.input")
+			input.capture_draft_cursor()
+			local draft_token = input.draft_token()
 			actions.list_skills(function(err, skills)
+				if state.get_session().id ~= opts.session_id or input.draft_token() ~= draft_token then return end
 				if err then vim.notify("Could not load skills", vim.log.levels.WARN); return end
 				local items = {}
 				for _, skill in ipairs(skills) do items[#items + 1] = { label = skill.name, value = skill.id, skill = skill, description = skill.description } end
 				if #items == 0 then vim.notify("No skills available", vim.log.levels.INFO); return end
 				require("opencode.ui.menu").open({ items = items, title = " Select Skills ", width = 60, searchable = true,
-					multi_select = true, confirm_label = "run", on_select = function(selected)
+					multi_select = true, confirm_label = "add", on_select = function(selected)
 						local chosen = {}; for _, item in ipairs(selected) do chosen[#chosen + 1] = item.skill end
-						actions.run_skills(chosen, opts)
+						-- The menu has just unmounted; let the input's BufLeave handler
+						-- save its draft and cursor before adding the selected skills.
+						vim.schedule(function() actions.stage_skills(chosen, opts) end)
 					end })
 			end, opts)
 		end })

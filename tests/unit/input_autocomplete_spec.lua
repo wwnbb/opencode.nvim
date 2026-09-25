@@ -54,6 +54,32 @@ state.autocomplete = {
 assert_truthy(autocomplete.confirm(state), "slash autocomplete confirm should insert command")
 assert_eq(vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)[1], "/help ", "slash autocomplete text")
 
+set_one_line("/ski", #"/ski")
+state.autocomplete = {
+	visible = true,
+	selected = 1,
+	trigger = slash_commands.detect_trigger_in_line("/ski", #"/ski", 0),
+	items = {
+		{ kind = "slash", label = "/skills", command = { name = "skills" } },
+	},
+}
+local consumed, activated = autocomplete.confirm(state, true)
+assert_truthy(consumed, "Enter on /skills should consume the command")
+assert_eq(activated, "skills", "Enter on /skills should request the picker")
+assert_eq(vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)[1], "", "skill command should not remain in the draft")
+
+set_one_line("/ski", #"/ski")
+state.autocomplete = {
+	visible = true,
+	selected = 1,
+	trigger = slash_commands.detect_trigger_in_line("/ski", #"/ski", 0),
+	items = {
+		{ kind = "slash", label = "/skills", command = { name = "skills" } },
+	},
+}
+assert_truthy(autocomplete.confirm(state), "Tab on /skills should complete the command")
+assert_eq(vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)[1], "/skills ", "Tab should keep /skills in the draft")
+
 set_one_line("@cod", #"@cod")
 state.autocomplete = {
 	visible = true,
@@ -86,6 +112,24 @@ assert_truthy(autocomplete.select_next(state), "select_next should move selectio
 assert_eq(state.autocomplete.selected, 2, "select_next selected index")
 assert_truthy(autocomplete.select_prev(state), "select_prev should move selection")
 assert_eq(state.autocomplete.selected, 1, "select_prev selected index")
+
+local confirmed = {}
+require("opencode.ui.input.keymaps").setup(bufnr, { keymaps = {} }, {
+	autocomplete_visible = function() return true end,
+	autocomplete_confirm = function(activate_slash)
+		confirmed[#confirmed + 1] = activate_slash == true
+	end,
+})
+local enter = vim.fn.maparg("<CR>", "i", false, true)
+assert_truthy(type(enter.callback) == "function", "input Enter mapping should exist")
+enter.callback()
+assert_truthy(vim.wait(100, function() return #confirmed == 1 end, 5), "Enter confirmation should run")
+assert_eq(confirmed[1], true, "Enter should activate the selected slash command")
+local tab = vim.fn.maparg("<Tab>", "i", false, true)
+assert_truthy(type(tab.callback) == "function", "input Tab mapping should exist")
+tab.callback()
+assert_truthy(vim.wait(100, function() return #confirmed == 2 end, 5), "Tab confirmation should run")
+assert_eq(confirmed[2], false, "Tab should only insert the selected completion")
 
 autocomplete.clear(state)
 vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { "" })

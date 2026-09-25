@@ -1,6 +1,8 @@
 local webfetch = require("opencode.ui.chat.webfetch")
 local render = require("opencode.ui.chat.render")
 local view = require("opencode.ui.chat.state").state
+local style = require("opencode.ui.chat.exploration_style")
+local syntax = require("opencode.ui.syntax")
 
 local function part(state)
 	return { id = "webfetch-1", type = "tool", tool = "webfetch", state = state }
@@ -17,8 +19,8 @@ end
 local function panel_text(result)
 	local lines = {}
 	for _, line in ipairs(result.lines) do
-		if line:sub(1, #"▏") == "▏" then
-			lines[#lines + 1] = line:gsub("^▏  ?", ""):gsub("^▏", ""):gsub(" +$", "")
+		if line:sub(1, #"   │") == "   │" then
+			lines[#lines + 1] = line:gsub("^   │ ?", ""):gsub(" +$", "")
 		end
 	end
 	return table.concat(lines, "\n")
@@ -26,9 +28,10 @@ end
 
 describe("webfetch custom tool rendering", function()
 	local view_fields = { "winid", "bufnr", "visible", "tasks", "tools", "task_anim_frame", "render_scheduled", "render_in_progress" }
-	local original_content, old_view, old_columns, bufnr, winid
+	local original_content, original_highlight, old_view, old_columns, bufnr, winid
 	before_each(function()
 		original_content, old_columns, old_view = render.render_content, vim.o.columns, {}
+		original_highlight = syntax.highlight_text
 		for _, field in ipairs(view_fields) do old_view[field] = view[field] end
 		vim.o.columns = 120
 		bufnr = vim.api.nvim_create_buf(false, true)
@@ -38,6 +41,7 @@ describe("webfetch custom tool rendering", function()
 
 	after_each(function()
 		render.render_content = original_content
+		syntax.highlight_text = original_highlight
 		for _, field in ipairs(view_fields) do view[field] = old_view[field] end
 		vim.api.nvim_win_close(winid, true)
 		vim.api.nvim_buf_delete(bufnr, { force = true })
@@ -73,7 +77,7 @@ describe("webfetch custom tool rendering", function()
 	it("distinguishes pending, running, HTTP failure and unknown failure", function()
 		local cases = {
 			{ status = "pending", expected = "Pending" },
-			{ status = "streaming", expected = "Pending" },
+			{ status = "streaming", expected = "Fetching" },
 			{ status = "running", expected = "Fetching" },
 			{ status = "error", error = "StatusCode: non 2xx status code (404 GET https://example.com/jobs)", expected = "HTTP 404" },
 			{ status = "error", expected = "Failed" },
@@ -117,7 +121,7 @@ describe("webfetch custom tool rendering", function()
 			if span.hl_group:find("Strong", 1, true) then
 				local line = result.lines[span.line + 1]
 				contains(line:sub(span.col_start + 1, span.col_end), "Senior engineer")
-				contains(line, "▏")
+				contains(line, style.prefix)
 				styled_body = true
 			end
 		end
@@ -187,6 +191,44 @@ describe("webfetch custom tool rendering", function()
 		assert.same(original, item)
 	end)
 
+	it("uses the read-style frame and background without adding line numbers", function()
+		local item = part({ status = "completed", input = { url = "https://example.com", format = "text" },
+			output = { url = "https://example.com", format = "text", output = "First row\nSecond row" } })
+		local closed, opened = webfetch.render_tool(item, false), webfetch.render_tool(item, true)
+		assert.equals(closed.lines[1]:gsub("→", "↘"), opened.lines[1])
+		assert.equals(style.header_hl, opened.highlights[1].hl_group)
+		contains(opened.lines[2], "   ┌")
+		contains(opened.lines[#opened.lines], "   └")
+		contains(text(opened), style.prefix .. "First row")
+		contains(text(opened), style.prefix .. "Second row")
+		for _, hl in ipairs(opened.highlights) do
+			if hl.hl_group == style.output_hl or hl.hl_group == style.border_hl then
+				assert.equals(3, hl.col_start)
+			end
+		end
+	end)
+
+	it("projects HTML syntax onto every wrapped body row", function()
+		local source = "<p>" .. string.rep("世界", 50) .. "</p>"
+		syntax.highlight_text = function(value, language, opts)
+			assert.equals(source, value)
+			assert.equals("html", language)
+			assert.equals("tools", opts.scope)
+			return { { line = 0, col_start = 0, col_end = #value, hl_group = "String" } }
+		end
+		local result = webfetch.render_tool(part({ status = "completed",
+			input = { url = "https://example.com", format = "html" }, output = source }), true)
+		local captured = {}
+		for _, hl in ipairs(result.highlights) do
+			if hl.hl_group == "String" then
+				assert.is_true(hl.col_start >= #style.prefix)
+				captured[#captured + 1] = result.lines[hl.line + 1]:sub(hl.col_start + 1, hl.col_end)
+			end
+		end
+		assert.is_true(#captured > 1)
+		assert.equals(source, table.concat(captured))
+	end)
+
 	it("tolerates incomplete and native null states while rejecting unrelated tools", function()
 		assert.is_nil(webfetch.render_tool(nil, false))
 		assert.is_nil(webfetch.render_tool({ tool = "bash" }, false))
@@ -215,11 +257,13 @@ describe("webfetch custom tool rendering", function()
 			output = "Dispatched body",
 		})
 		for _, expanded in ipairs({ false, true }) do
-			assert.same(webfetch.render_tool(item, expanded), tasks.render_regular_tool(item, expanded))
+			local expected = webfetch.render_tool(item, expanded)
+			expected.lines[#expected.lines + 1] = ""
+			assert.same(expected, tasks.render_regular_tool(item, expanded))
 		end
 	end)
 
-	it("animates only the last header row without overlaying a trailing URL slash", function()
+	it("keeps standalone animation on the compact header without overlaying a trailing URL slash", function()
 		local animation = require("opencode.ui.chat.task_animation")
 		local namespace = require("opencode.ui.chat.state").chat_anim_ns
 		local url = "https://example.com/"
@@ -232,22 +276,14 @@ describe("webfetch custom tool rendering", function()
 			local result = webfetch.render_tool(item, true)
 			vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, result.lines)
 			view.tools = { [item.id] = { start_line = 0, end_line = #result.lines - 1, tool_part = item } }
-			local first_panel_row
-			for i, line in ipairs(result.lines) do
-				if line:sub(1, #"▏") == "▏" then
-					first_panel_row = i - 1
-					break
-				end
-			end
-			assert.is_not_nil(first_panel_row)
-			if width == 12 then assert.is_true(first_panel_row > 1, "The narrow header must wrap") end
-			local last_header = result.lines[first_panel_row]:gsub(" +$", "")
+			contains(result.lines[2], "   ┌")
+			local last_header = result.lines[1]:gsub(" +$", "")
 			assert.equals("|", last_header:sub(-1))
 			view.task_anim_frame = 3
 			assert.is_true(animation.update_animation_frames_in_place())
 			local marks = vim.api.nvim_buf_get_extmarks(bufnr, namespace, 0, -1, { details = true })
 			assert.equals(1, #marks)
-			assert.equals(first_panel_row - 1, marks[1][2])
+			assert.equals(0, marks[1][2])
 			assert.equals(#last_header - 1, marks[1][3])
 			assert.equals("-", marks[1][4].virt_text[1][1])
 			assert.same(result.lines, vim.api.nvim_buf_get_lines(bufnr, 0, -1, false))

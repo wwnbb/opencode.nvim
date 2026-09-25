@@ -1171,8 +1171,7 @@
           "neovim_edit",
           "neovim_apply_patch",
           "rg",
-          "todoread",
-          "todowrite"
+          "todoread"
         ],
         "review": true,
         "todo": true

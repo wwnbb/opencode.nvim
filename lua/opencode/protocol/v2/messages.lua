@@ -77,6 +77,9 @@ function M.project(session_id, message)
 			part.state = state
 		elseif kind == "file" then
 			part.url, part.filename = content.uri, content.name
+		elseif kind == "skill" then
+			-- Keep the catalog identity separately from the projected UI part ID.
+			part.skillID = content.id
 		end
 		parts[#parts + 1] = part
 	end

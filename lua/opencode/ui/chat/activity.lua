@@ -1,4 +1,4 @@
--- Compact Thought / Explore / Execute timeline groups.
+-- Compact reasoning and tool activity timeline groups.
 -- These are view-only widgets; their members are always resolved from sync.
 local M = {}
 
