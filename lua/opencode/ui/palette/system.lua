@@ -7,7 +7,7 @@ local state = require("opencode.state")
 function M.register(palette)
 	local keymaps = (state.get_config() or require("opencode.config").defaults).keymaps or {}
 	palette.register({ id = "system.reload", title = "Reload Server Configuration", category = "system",
-		description = "Reload all locations and cancel pending interactions", action = function()
+		description = "Reload all locations and cancel pending interactions", run = function()
 			vim.ui.select({ "Reload all locations", "Cancel" }, { prompt = "Reload cancels pending forms, permissions and plugin reviews in every project." }, function(choice)
 				if choice ~= "Reload all locations" then return end
 				actions.reload_locations(function(err)
@@ -21,7 +21,7 @@ function M.register(palette)
 		title = "Restart Server",
 		description = "Restart the OpenCode server",
 		category = "system",
-		action = function()
+		run = function()
 			actions.restart()
 		end,
 	})
@@ -30,7 +30,7 @@ function M.register(palette)
 		title = "Disconnect",
 		description = "Disconnect from server (keep running)",
 		category = "system",
-		action = function()
+		run = function()
 			actions.disconnect()
 			vim.notify("Disconnected from OpenCode server", vim.log.levels.INFO)
 		end,
@@ -43,7 +43,7 @@ function M.register(palette)
 			title = "Reconnect",
 		description = "Reconnect to the OpenCode server",
 		category = "system",
-			action = function()
+			run = function()
 				actions.reconnect(function()
 					vim.notify("Reconnected to OpenCode server", vim.log.levels.INFO)
 				end)
@@ -58,7 +58,7 @@ function M.register(palette)
 		description = "Open the log viewer",
 		category = "system",
 		keybind = keymaps.toggle_logs,
-		action = function()
+		run = function()
 			actions.toggle_logs()
 		end,
 	})
@@ -68,7 +68,7 @@ function M.register(palette)
 		description = "Show keybinding help",
 		category = "system",
 		keybind = "?",
-		action = function()
+		run = function()
 			local chat_ok, chat = pcall(require, "opencode.ui.chat")
 			if chat_ok and chat.show_help then
 				chat.show_help()

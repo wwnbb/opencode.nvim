@@ -39,6 +39,7 @@ lua/opencode/client/sse.lua          → SSE streaming client with reconnect
 lua/opencode/client/transport.lua    → Raw libuv TCP transport
 lua/opencode/client/http_decoder.lua → Streaming HTTP response decoder
 lua/opencode/client/tcp_connection.lua → Shared libuv TCP connection lifecycle
+lua/opencode/command_registry.lua   → Shared built-in command definitions and dispatch
 lua/opencode/slash.lua               → Slash command system (/new, /models, etc.)
 lua/opencode/logger.lua              → Debug logging
 lua/opencode/clipboard.lua           → Clipboard helpers (text + images)
@@ -175,7 +176,7 @@ ui/chat/* → sync.lua (read only), state.lua (read only), selectors.lua (read o
 4. **Server data**: Add to `sync.lua` with `handle_*()` functions
 5. **Events**: Add handler in `events/handlers/`, register in `events.lua`
 6. **UI**: Add widget in `ui/chat/`, register in `ui/chat/init.lua`
-7. **Commands**: Register in `commands.lua` (vim commands) or `palette.lua` (fuzzy) or `slash.lua` (slash)
+7. **Commands**: Register built-in palette/slash actions once in the shared command registry; keep `commands.lua` for Neovim commands
 
 ### Adding a New Tool Widget
 
@@ -187,44 +188,25 @@ ui/chat/* → sync.lua (read only), state.lua (read only), selectors.lua (read o
 
 **Pattern to follow**: See `ui/chat/bash.lua` or `ui/chat/read.lua`
 
-### Adding a New Command Palette Command
+### Adding a Built-in Command
 
-In `ui/palette.lua`, add to `register_defaults()`:
+Register a command once in the relevant `ui/palette/` module. `palette.register()` adapts the definition to `command_registry.lua`; new definitions use `run(context)`. Add `slash` metadata to show the same command in input completion, and `on_select(context)` when choosing that completion should run immediately:
 
 ```lua
-M.register({
-    id = "category.action_name",
-    title = "Action Title",
-    description = "What it does",
-    category = "session", -- session|model|agent|actions|prompt|mcp|files|navigation|system
-    keybind = "<leader>ox", -- optional
-    action = function()
-        -- implementation
-    end,
-    enabled = function() -- optional
-        return true
-    end,
+palette.register({
+    id = "action.status",
+    title = "Show Status",
+    description = "Show current status",
+    category = "actions",
+    slash = { name = "status" },
+    run = function(context) show_status(context) end,
+    on_select = function(context) return context.run() end,
 })
 ```
 
-### Adding a New Slash Command
+`on_select` is optional. Without it, choosing the slash completion inserts `/name ` for later submission. Enter, Tab, and the send key use the same selection behavior while completion is open in the chat composer. Slash-only built-ins can register in `slash.lua`; the public `slash.register({ name, handler, ... })` and `palette.register({ action, ... })` forms remain compatibility adapters.
 
-In `slash.lua`, add to `register_defaults()`:
-
-```lua
-M.register({
-    name = "commandname",
-    aliases = { "alias1", "alias2" }, -- optional
-    description = "What it does",
-    category = "session",
-    handler = function(args, parsed)
-        -- implementation
-    end,
-    enabled = function() -- optional
-        return true
-    end,
-})
-```
+Neovim `:OpenCode*` commands remain entry points in `commands.lua`. Server custom commands use the server command API and are not part of the built-in registry.
 
 ### Adding a New Event
 

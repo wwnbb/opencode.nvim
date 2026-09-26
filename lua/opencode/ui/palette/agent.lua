@@ -12,7 +12,8 @@ function M.register(palette)
 		description = "Change the AI agent",
 		category = "agent",
 		keybind = "<leader>oa",
-		action = function()
+		slash = { name = "agents" },
+		run = function()
 			actions.list_agents(function(err)
 				if err then
 					vim.notify("Failed to list agents: " .. tostring(err.message or err), vim.log.levels.ERROR)

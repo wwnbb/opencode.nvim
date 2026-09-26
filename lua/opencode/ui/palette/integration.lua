@@ -149,7 +149,7 @@ function M.connections()
 end
 
 function M.register(palette)
-	palette.register({ id = "provider.connect", title = "Connect Provider", description = "Connect through an integration", category = "model", action = function() M.connect() end })
-	palette.register({ id = "provider.disconnect", title = "Manage Connections", description = "Activate, rename or disconnect an account", category = "model", action = M.connections })
+	palette.register({ id = "provider.connect", title = "Connect Provider", description = "Connect through an integration", category = "model", slash = { name = "connect" }, run = function() M.connect() end })
+	palette.register({ id = "provider.disconnect", title = "Manage Connections", description = "Activate, rename or disconnect an account", category = "model", run = M.connections })
 end
 return M

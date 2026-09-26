@@ -618,6 +618,38 @@ function M.send(message, opts)
 	end)
 end
 
+--- Ask a transient question using the active session's context and model.
+---@param question string
+---@param owner_session_id? string Session that opened a question dialog.
+---@return boolean
+function M.ask_btw(question, owner_session_id)
+	if not lifecycle then
+		vim.notify("OpenCode not initialized", vim.log.levels.ERROR)
+		return false
+	end
+	local session_id = owner_session_id or state.get_session().id
+	if not session_id then
+		vim.notify("No active session for /btw", vim.log.levels.WARN)
+		return false
+	end
+	if owner_session_id and not state.get_session_record(session_id) then
+		vim.notify("Session was deleted before /btw was submitted", vim.log.levels.WARN)
+		return false
+	end
+	if vim.trim(question or "") == "" then
+		vim.notify("Usage: /btw <question>", vim.log.levels.WARN)
+		return false
+	end
+	lifecycle.ensure_connected(function()
+		if not state.get_session_record(session_id) then
+			vim.notify("Session was deleted before /btw could start", vim.log.levels.WARN)
+			return
+		end
+		require("opencode.btw").ask(session_id, question)
+	end)
+	return true
+end
+
 --- Abort/stop the current generation
 --- Similar to pressing Escape or clicking stop in the TUI
 function M.abort()

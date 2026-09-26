@@ -22,7 +22,7 @@ local function revert_action()
 	require("opencode.ui.palette.actions").register({
 		register = function(command) commands[command.id] = command end,
 	})
-	return assert(commands["action.revert"]).action
+	return assert(commands["action.revert"]).run
 end
 
 describe("Revert Changes palette safety", function()

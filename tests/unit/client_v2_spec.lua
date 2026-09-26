@@ -1,5 +1,5 @@
 describe("OpenCode v2 HTTP contracts", function()
-	local names = { "opencode.client.v2", "opencode.client.http", "opencode.client.transport" }
+	local names = { "opencode.client", "opencode.client.v2", "opencode.client.http", "opencode.client.transport" }
 	local saved, schedule, requests, response, transport_error, v2, http
 	local function json(value, status)
 		response = { status = status or 200, headers = { ["content-type"] = "application/json" }, body = vim.json.encode(value) }
@@ -158,6 +158,26 @@ describe("OpenCode v2 HTTP contracts", function()
 		assert.same(args.body, vim.json.decode(requests[1].body))
 		json({ _tag = "CommandNotFoundError", message = "No such command" }, 404)
 		assert.equals("CommandNotFoundError", invoke("command", args).err.code)
+	end)
+
+	it("generates transient session text through the JSON endpoint without a request timeout", function()
+		json({ data = { text = "A concise answer" } })
+		local answer
+		require("opencode.client").generate_text("ses_1", "What changed?", function(err, text)
+			assert.is_nil(err)
+			answer = text
+		end)
+		assert.equals("A concise answer", answer)
+		assert.equals("POST", requests[1].method)
+		assert.equals("/api/session/ses_1/generate", requests[1].path)
+		assert.same({ prompt = "What changed?" }, vim.json.decode(requests[1].body))
+		assert.equals(0, requests[1].timeout)
+		for _, body in ipairs({ {}, { data = {} }, { data = { text = 123 } } }) do
+			json(body)
+			assert.equals("incompatible_response", invoke("generate", {
+				path = { sessionID = "ses_1" }, body = { prompt = "test" },
+			}).err.code)
+		end
 	end)
 
 	it("uses integration method and attempt IDs, validates status, and routes individual credentials", function()

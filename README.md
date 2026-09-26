@@ -71,8 +71,8 @@ highlighting survive line wrapping. Each skill remains independently expandable;
 loading animates only its header, and failed calls expose their error on expansion.
 
 `/skills` and the command palette add native skill references to the
-current input draft and insert visible `@skill-id` mentions. Press Enter on the
-`/skills` completion to open the skill selector. You can keep editing
+current input draft and insert visible `@skill-id` mentions. Select `/skills`
+with Enter, Tab, or the send key to open the skill selector. You can keep editing
 the prompt or add more skills; selection alone does not send a message. Sending
 the draft loads the skills on the server. Each selected skill then appears below
 the user message as an independent expandable row. `Attached` means the server
@@ -80,6 +80,22 @@ returned the instructions; a queued message still shows its own delivery status.
 Use `O` or `Enter` to inspect that message's saved instructions. If the server
 did not include the text, the row shows `Unconfirmed` and explains that the
 instructions are unavailable. These attachments do not create tool calls.
+
+# Status
+
+Select `/status` from completion with Enter, Tab, or the send key, or submit
+`/status`, to open the existing status popup. Closing it returns to the chat
+input with the remaining draft and attachments when that chat is still active.
+Use `/stats` for session usage statistics.
+
+# Side questions
+
+Type `/btw <question>` in the input and press Enter to ask using the current
+session context and model. The input closes while a `/btw` spinner appears in the
+session tab bar. The answer opens in a centered dialog and is not added to the
+conversation. Press `c` to copy the answer, use the arrow keys or Page Up/Down to
+scroll, and press `Esc` to dismiss it. Bare `/btw` or the command palette opens a
+short question prompt.
 
 # Tokens per second
 

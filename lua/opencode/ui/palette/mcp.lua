@@ -160,7 +160,7 @@ function M.register(palette)
 		title = "MCP Servers",
 		description = "List and toggle MCP servers",
 		category = "mcp",
-		action = function()
+		run = function()
 			local opts = location_options()
 			actions.get_mcp_status(function(err, status)
 				if err then
@@ -310,7 +310,7 @@ function M.register(palette)
 		end,
 	})
 	palette.register({ id = "mcp.tools", title = "MCP Tools", description = "MCP tool catalog availability", category = "mcp",
-		action = function()
+		run = function()
 			vim.notify("OpenCode 2.0.11 does not expose an MCP tool catalog. MCP Servers shows connection status.", vim.log.levels.INFO)
 		end })
 end

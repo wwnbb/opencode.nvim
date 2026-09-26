@@ -45,9 +45,9 @@ function M.setup(bufnr, cfg, handlers)
 		return handlers.autocomplete_visible and handlers.autocomplete_visible()
 	end
 
-	local function confirm_autocomplete(activate_slash)
+	local function confirm_autocomplete()
 		if handlers.autocomplete_confirm then
-			schedule(function() handlers.autocomplete_confirm(activate_slash) end)
+			schedule(handlers.autocomplete_confirm)
 		end
 		return ""
 	end
@@ -55,6 +55,10 @@ function M.setup(bufnr, cfg, handlers)
 	local function send_or_confirm()
 		if autocomplete_visible() then
 			return confirm_autocomplete()
+		end
+		if handlers.command_enter_mode and handlers.command_enter_mode() == "select" then
+			schedule(handlers.command_enter_select)
+			return ""
 		end
 		schedule(handlers.send)
 		return ""
@@ -118,10 +122,15 @@ function M.setup(bufnr, cfg, handlers)
 	end, { expr = true, replace_keycodes = false })
 	map(bufnr, "i", "<CR>", function()
 		if autocomplete_visible() then
-			return confirm_autocomplete(true)
+			return confirm_autocomplete()
 		end
-		if handlers.skills_command_enter and handlers.skills_command_enter() then
-			schedule(handlers.skills_command_confirm)
+		local command_mode = handlers.command_enter_mode and handlers.command_enter_mode()
+		if command_mode == "select" then
+			schedule(handlers.command_enter_select)
+			return ""
+		end
+		if command_mode == "submit" then
+			schedule(handlers.send)
 			return ""
 		end
 		return termcodes("<CR>")

@@ -821,28 +821,48 @@ function M.focus_input()
 	input.show({
 		winid = state.winid,
 		float_dims = state.float_dims,
-		allow_skill_picker = true,
+		allow_chat_commands = true,
 		on_send = function(text, parts)
 			local actions = require("opencode.actions")
 			local slash_ok, slash = pcall(require, "opencode.slash")
 			local has_parts = type(parts) == "table" and #parts > 0
 			if slash_ok and type(slash.parse) == "function" and type(slash.execute) == "function" then
 				local parsed = slash.parse(text)
-				if parsed and parsed.command == "skills" then
-					-- The input closes after on_send returns. Let it close before a
-					-- selected skill opens a new draft (or the skill picker).
-					local owner_session_id = require("opencode.state").get_session().id
-					vim.schedule(function()
-						if require("opencode.state").get_session().id == owner_session_id then
-							slash.execute(parsed)
+				if parsed then
+					local command = require("opencode.command_registry").get_slash(parsed.command)
+					if has_parts and command and command.with_parts == "reject" then
+						require("opencode.ui.input.history").set_pending(text, parts)
+						vim.notify(command.parts_error or ("/" .. parsed.command .. " does not support attachments"), vim.log.levels.WARN)
+						return
+					end
+					-- Slash-like text with attachments remains a prompt unless the
+					-- command explicitly accepts them as a draft-only action.
+					if not has_parts or (command and command.with_parts == "execute") then
+						local owner_session_id = require("opencode.state").get_session().id
+						local context = {
+							source = "slash_submit",
+							args = parsed.args,
+							parsed = parsed,
+							session_id = owner_session_id,
+							resume_input = function()
+								if require("opencode.state").get_session().id == owner_session_id and M.is_visible() then
+									M.focus_input()
+								end
+							end,
+						}
+						if command and command.on_select then
+							-- The input closes after on_send returns. Run actions that
+							-- open another view after its teardown.
+							vim.schedule(function()
+								if require("opencode.state").get_session().id == owner_session_id then
+									slash.execute(parsed, context)
+								end
+							end)
+						else
+							slash.execute(parsed, context)
 						end
-					end)
-					return
-				end
-				-- Other slash-like text with attachments is a prompt.
-				if parsed and not has_parts then
-					slash.execute(parsed)
-					return
+						return
+					end
 				end
 			end
 			actions.send(text, { parts = parts })

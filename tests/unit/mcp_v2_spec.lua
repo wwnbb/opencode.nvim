@@ -27,7 +27,7 @@ describe("v2 MCP palette", function()
 	it("freezes location, blocks duplicate toggles and waits for authoritative status", function()
 		local commands = {}
 		require("opencode.ui.palette.mcp").register({ register = function(command) commands[command.id] = command end })
-		commands["mcp.status"].action()
+		commands["mcp.status"].run()
 		local item = menu.items[1]
 		assert.equals("auth-id", item.server.integrationID)
 		state.upsert_session({ id = "other", directory = "/two" }); state.set_session("other", "Other")

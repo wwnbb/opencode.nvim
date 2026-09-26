@@ -112,6 +112,10 @@ function M.abort()
 	return api().abort()
 end
 
+function M.ask_btw(question, session_id)
+	return api().ask_btw(question, session_id)
+end
+
 function M.set_danger_mode(enabled, opts)
 	return api().set_danger_mode(enabled, opts)
 end
