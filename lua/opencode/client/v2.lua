@@ -47,6 +47,7 @@ local operations = {
 	config_list = { "GET", "/api/config", "array" },
 	command = { "POST", "/api/session/{sessionID}/command", "empty" },
 	prompt = { "POST", "/api/session/{sessionID}/prompt", "inbox" },
+	generate = { "POST", "/api/session/{sessionID}/generate", "generated_text" },
 	session_agent = { "POST", "/api/session/{sessionID}/agent", "empty" },
 	session_model = { "POST", "/api/session/{sessionID}/model", "empty" },
 	interrupt = { "POST", "/api/session/{sessionID}/interrupt", "interrupt" },
@@ -126,6 +127,11 @@ local function decode(shape, body, meta)
 		if not object(data) or type(data.id) ~= "string" or not vim.tbl_contains({ "allow", "ask", "deny" }, data.effect) then
 			return nil, "Invalid permission evaluation response"
 		end
+	elseif shape == "generated_text" then
+		if not object(data) or type(data.text) ~= "string" then
+			return nil, "Invalid session generation response"
+		end
+		return data.text
 	elseif shape == "inbox" then
 		if not object(data) or type(data.id) ~= "string" or type(data.sessionID) ~= "string"
 			or type(data.type) ~= "string" or not object(data.payload) then return nil, "Invalid prompt admission" end

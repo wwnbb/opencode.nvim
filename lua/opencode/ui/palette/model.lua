@@ -9,7 +9,8 @@ function M.register(palette)
 		description = "Change the AI model",
 		category = "model",
 		keybind = "<leader>om",
-		action = function()
+		slash = { name = "models" },
+		run = function()
 				-- Use /config/providers (like TUI) to get providers with models
 				actions.get_config_providers(function(err, response)
 						if err then

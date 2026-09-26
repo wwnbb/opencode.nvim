@@ -261,6 +261,14 @@ function M.send_message(session_id, message, callback)
 	v2.request("prompt", { path = { sessionID = session_id }, body = message }, callback)
 end
 
+-- Generate a one-shot answer from a session's context without changing its history.
+---@param session_id string
+---@param prompt string
+---@param callback function(err, text)
+function M.generate_text(session_id, prompt, callback)
+	v2.request("generate", { path = { sessionID = session_id }, body = { prompt = prompt }, timeout = 0 }, callback)
+end
+
 -- Abort session
 ---@param session_id string
 ---@param callback function(err, success)

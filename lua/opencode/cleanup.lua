@@ -10,6 +10,7 @@ end
 
 ---@param session_id string
 function M.clear_session(session_id)
+	call("opencode.btw", "clear_session", session_id)
 	call("opencode.permission.state", "clear_session", session_id)
 	call("opencode.question.state", "clear_session", session_id)
 	call("opencode.edit.state", "clear_session", session_id)
@@ -35,6 +36,7 @@ function M.clear_transient(opts)
 	call("opencode.session.pending", opts.reset_state and "clear_all" or "invalidate")
 	call("opencode.permission.danger", "clear")
 	call("opencode.provider.state", "clear_attempts")
+	call("opencode.btw", "reset")
 
 	if opts.clear_chat ~= false then
 		call("opencode.ui.chat", "clear")

@@ -6,6 +6,7 @@ local M = {}
 local Popup = require("nui.popup")
 local event = require("nui.utils.autocmd").event
 local app_state = require("opencode.state")
+local command_registry = require("opencode.command_registry")
 local hl_ns = vim.api.nvim_create_namespace("opencode_palette")
 
 -- Configuration
@@ -19,9 +20,6 @@ local config = {
 	frecency_file = vim.fn.stdpath("data") .. "/opencode_palette_frecency.json",
 	max_frecency_entries = 100,
 }
-
--- Command registry
-local commands = {}
 
 -- Frecency data: { [command_id] = { count = number, last_used = timestamp } }
 local frecency_data = {}
@@ -162,34 +160,17 @@ local function get_frecency_score(cmd_id)
 	return score
 end
 
--- Register a command
----@param cmd table { id, title, description?, category, keybind?, action, enabled?, suggested? }
+-- Compatibility adapter for palette.register({ action = function() ... end }).
+-- Built-ins and new callers use the same canonical registry record.
+---@param cmd table { id, title, description?, category, keybind?, action?, run?, enabled?, suggested?, slash?, on_select? }
 function M.register(cmd)
-	if not cmd.id or not cmd.title or not cmd.category or not cmd.action then
-		error("Command must have id, title, category, and action")
+	if not cmd.id or not cmd.title or not cmd.category or not (cmd.run or cmd.action) then
+		error("Command must have id, title, category, and run or action")
 	end
-	commands[cmd.id] = {
-		id = cmd.id,
-		title = cmd.title,
-		description = cmd.description or "",
-		category = cmd.category,
-		keybind = cmd.keybind,
-		action = cmd.action,
-		enabled = cmd.enabled,
-		suggested = cmd.suggested or false,
-	}
-end
-
--- Check if command is enabled
-local function is_enabled(cmd)
-	if cmd.enabled == nil then
-		return true
-	end
-	if type(cmd.enabled) == "function" then
-		local ok, result = pcall(cmd.enabled)
-		return ok and result
-	end
-	return cmd.enabled
+	local record = vim.tbl_extend("force", {}, cmd)
+	record.run = cmd.run or cmd.action
+	record.action = nil
+	return command_registry.register(record)
 end
 
 -- Simple fuzzy match function
@@ -239,8 +220,8 @@ end
 local function filter_commands(query)
 	local results = {}
 
-	for _, cmd in pairs(commands) do
-		if is_enabled(cmd) then
+	for _, cmd in ipairs(command_registry.all()) do
+		if cmd.palette ~= false and command_registry.enabled(cmd) then
 			-- Match against title, description, and category
 			local match_title, score_title = fuzzy_match(query, cmd.title)
 			local match_desc, score_desc = fuzzy_match(query, cmd.description)
@@ -582,13 +563,17 @@ end
 -- Execute selected command
 local function execute_selected()
 	local result = state.results[state.selected]
-	if result and result.cmd and result.cmd.action then
+	if result and result.cmd then
+		local command = command_registry.get(result.cmd.id)
+		if not command or command.palette == false or not command_registry.enabled(command) then
+			return
+		end
 		-- Track usage before hiding
-		track_command_usage(result.cmd.id)
+		track_command_usage(command.id)
 
 		M.hide()
 		vim.schedule(function()
-			local ok, err = pcall(result.cmd.action)
+			local ok, err = pcall(command_registry.run, command.id, { source = "palette" })
 			if not ok then
 				vim.notify("Command error: " .. tostring(err), vim.log.levels.ERROR)
 			end
@@ -882,10 +867,10 @@ end
 
 -- Trigger a command by ID
 function M.trigger(id)
-	local cmd = commands[id]
-	if cmd and is_enabled(cmd) and cmd.action then
+	local cmd = command_registry.get(id)
+	if cmd and cmd.palette ~= false and command_registry.enabled(cmd) then
 		track_command_usage(id)
-		local ok, err = pcall(cmd.action)
+		local ok, err = pcall(command_registry.run, id, { source = "palette" })
 		if not ok then
 			vim.notify("Command error: " .. tostring(err), vim.log.levels.ERROR)
 		end
@@ -917,7 +902,7 @@ local default_command_modules = {
 	end,
 }
 
-local function register_defaults()
+function M.register_defaults()
 	for _, load_module in ipairs(default_command_modules) do
 		load_module().register(M)
 	end
@@ -928,7 +913,7 @@ function M.setup()
 	load_config()
 	load_frecency()
 	setup_highlights()
-	register_defaults()
+	M.register_defaults()
 end
 
 return M

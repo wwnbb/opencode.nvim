@@ -4,6 +4,7 @@ local M = {}
 
 local mentions = require("opencode.ui.input.mentions")
 local slash_commands = require("opencode.ui.input.slash_commands")
+local command_registry = require("opencode.command_registry")
 local sync = require("opencode.sync")
 
 local NS = vim.api.nvim_create_namespace("opencode_input_autocomplete")
@@ -421,7 +422,17 @@ function M.select_prev(state)
 	return move_selection(state, -1)
 end
 
-function M.confirm(state, activate_slash)
+local function has_following_text(state, trigger)
+	local lines = vim.api.nvim_buf_get_lines(state.bufnr, trigger.row or 0, -1, false)
+	if #lines == 0 then return false end
+	if lines[1]:sub(trigger.end_col + 1):match("%S") then return true end
+	for index = 2, #lines do
+		if lines[index]:match("%S") then return true end
+	end
+	return false
+end
+
+function M.confirm(state)
 	local ac = state and state.autocomplete
 	if not ac or not ac.visible then
 		return false
@@ -433,20 +444,45 @@ function M.confirm(state, activate_slash)
 		return false
 	end
 
-	local ok, activated = false, nil
+	local ok, selection = false, nil
 	if item.kind == "slash" then
-		if activate_slash and slash_commands.command_name(item.command) == "skills" then
-			ok = slash_commands.consume_command(state, ac.trigger)
-			if ok then activated = "skills" end
+		local current = slash_commands.detect_trigger(state)
+		if not current or current.query ~= ac.trigger.query or current.end_col ~= ac.trigger.end_col then
+			M.close(state)
+			return false
+		end
+		local name = slash_commands.command_name(item.command)
+		local id = type(item.command) == "table" and item.command.id or nil
+		local command = id and command_registry.get(id) or command_registry.get_slash(name)
+		local generation = type(item.command) == "table" and item.command.generation or nil
+		if id and (not command or command_registry.get_slash(name) ~= command
+			or (generation and generation ~= command._serial) or not command_registry.enabled(command)) then
+			M.close(state)
+			vim.notify("Command not available: /" .. name, vim.log.levels.WARN)
+			return false
+		end
+		if state.allow_chat_commands and command and command.on_select and not has_following_text(state, current) then
+			if command_registry.get_slash(name) ~= command or not command_registry.enabled(command) then
+				M.close(state)
+				return false
+			end
+			if command.with_parts == "reject" and (#(state.parts or {}) > 0 or #mentions.active_parts(state) > 0) then
+				M.close(state)
+				vim.notify(command.parts_error or ("/" .. name .. " does not support attachments"), vim.log.levels.WARN)
+				return false
+			end
+			local original = table.concat(vim.api.nvim_buf_get_lines(state.bufnr, 0, -1, false), "\n")
+			ok = slash_commands.consume_command(state, current)
+			if ok then selection = { kind = "command", id = command.id, original = original } end
 		else
-			ok = slash_commands.insert_command(state, ac.trigger, item.command)
+			ok = slash_commands.insert_command(state, current, item.command)
 		end
 	elseif item.kind == "mention" then
 		ok = mentions.insert_mention(state, ac.trigger, item.agent)
 	end
 
 	M.close(state)
-	return ok, activated
+	return ok, selection
 end
 
 return M

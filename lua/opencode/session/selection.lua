@@ -34,6 +34,20 @@ function M.current(session_id)
 	return values
 end
 
+-- Return only explicit local changes that have not yet been prepared on the
+-- server. A transient generation must use these without replacing a newer
+-- selection made by another frontend when no local choice exists.
+function M.pending_values(session_id)
+	local entry = choices[session_id]
+	if not entry then return nil end
+	if not require("opencode.session.pending").is_current(entry.token) then
+		choices[session_id] = nil
+		return nil
+	end
+	if next(entry.values) == nil then return nil end
+	return vim.deepcopy(entry.values)
+end
+
 function M.clear_all() choices = {} end
 function M.clear_session(session_id) choices[session_id] = nil end
 

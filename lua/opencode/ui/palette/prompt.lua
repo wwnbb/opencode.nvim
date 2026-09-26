@@ -5,7 +5,7 @@ function M.register(palette)
 	palette.register({ id = "prompt.cancel_pending", title = "Cancel Pending Input", category = "prompt",
 		description = "Remove one queued input; keep the current response running",
 		enabled = function() return state.is_connected() and state.get_session().id ~= nil end,
-		action = function()
+		run = function()
 			local sid = state.get_session().id
 			if not sid then return end
 			actions.list_pending_inputs(sid, function(err, inputs)
@@ -25,7 +25,9 @@ function M.register(palette)
 			end)
 		end })
 	palette.register({ id = "action.skills", title = "Add Skills", description = "Add skills to the current prompt", category = "prompt", suggested = true,
-			action = function()
+		slash = { name = "skills" }, with_parts = "execute", on_select = function(ctx) return ctx.run() end,
+		enabled = function() return state.get_session().id ~= nil and state.is_connected() end,
+			run = function()
 			local session = state.get_session()
 			if not session.id or not state.is_connected() then vim.notify("Select a connected session first", vim.log.levels.WARN); return end
 			local opts = { session_id = session.id, directory = state.get_session_directory(session.id) or vim.fn.getcwd() }

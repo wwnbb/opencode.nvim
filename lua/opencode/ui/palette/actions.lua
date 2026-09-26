@@ -61,7 +61,7 @@ function M.register(palette)
 		description = "Stop the current AI request",
 		category = "actions",
 		keybind = "<leader>ox",
-		action = function()
+		run = function()
 			opencode_actions.abort()
 		end,
 		enabled = function()
@@ -75,7 +75,8 @@ function M.register(palette)
 		description = "Clear the current chat without switching sessions",
 		category = "actions",
 		keybind = "<leader>oc",
-		action = function()
+		slash = { name = "clear" },
+		run = function()
 			opencode_actions.clear()
 		end,
 	})
@@ -84,7 +85,7 @@ function M.register(palette)
 		title = "Enable Danger Mode",
 		description = "Auto-approve permission requests until disabled",
 		category = "actions",
-		action = function()
+		run = function()
 			opencode_actions.enable_danger_mode()
 		end,
 		enabled = function()
@@ -96,7 +97,7 @@ function M.register(palette)
 		title = "Disable Danger Mode",
 		description = "Stop auto-approving permission requests",
 		category = "actions",
-		action = function()
+		run = function()
 			opencode_actions.disable_danger_mode()
 		end,
 		enabled = function()
@@ -109,7 +110,7 @@ function M.register(palette)
 		description = "Paste text or attach a screenshot to the OpenCode input",
 		category = "actions",
 		keybind = "<C-v>",
-		action = function()
+		run = function()
 			opencode_actions.paste_clipboard()
 		end,
 	})
@@ -118,7 +119,8 @@ function M.register(palette)
 		title = "Compact Session",
 		description = "Compact session messages",
 		category = "actions",
-		action = function()
+		slash = { name = "compact", aliases = { "summarize" } },
+		run = function()
 			local session = state.get_session()
 			if not session.id then
 				vim.notify("No active session to compact", vim.log.levels.WARN)
@@ -142,7 +144,7 @@ function M.register(palette)
 		title = "Revert Changes",
 		description = "Revert pending changes safely or force overwrite current files",
 		category = "actions",
-		action = function()
+		run = function()
 			local pending = changes.get_pending()
 			if #pending == 0 then
 				vim.notify("No pending changes to revert", vim.log.levels.INFO)
@@ -177,7 +179,9 @@ function M.register(palette)
 		title = "Show Status",
 		description = "Show current session and connection status",
 		category = "actions",
-		action = function()
+		slash = { name = "status" },
+		on_select = function(ctx) return ctx.run() end,
+		run = function(ctx)
 			-- Fetch full status from server (combines multiple endpoints)
 				opencode_actions.get_server_status(function(err, server_status)
 				vim.schedule(function()
@@ -294,10 +298,17 @@ function M.register(palette)
 					vim.bo[bufnr].modifiable = false
 					vim.bo[bufnr].buftype = "nofile"
 
+					local closed = false
 					local close_fn = function()
-						popup:unmount()
+						if closed then return end
+						closed = true
+						pcall(function() popup:unmount() end)
+						if ctx and type(ctx.resume_input) == "function" then
+							vim.schedule(ctx.resume_input)
+						end
 					end
 					float.setup_close_keymaps(bufnr, close_fn)
+					vim.api.nvim_create_autocmd("BufWipeout", { buffer = bufnr, once = true, callback = close_fn })
 				end)
 			end)
 		end,

@@ -9,7 +9,7 @@ local sync = require("opencode.sync")
 function M.register(palette)
 	local keymaps = (state.get_config() or require("opencode.config").defaults).keymaps or {}
 	palette.register({ id = "session.history", title = "Load Full Session History", category = "session",
-		description = "Fetch every history page", action = function()
+		description = "Fetch every history page", run = function()
 			local sid = state.get_session().id
 			if not sid then return end
 			actions.load_session_messages(sid, { all = true }, function(err, messages)
@@ -27,8 +27,35 @@ function M.register(palette)
 		description = "Create a new chat session",
 		category = "session",
 		keybind = "<leader>on",
-		action = function()
+		slash = { name = "new" },
+		run = function()
 			actions.new_session()
+		end,
+	})
+	palette.register({
+		id = "session.aside",
+		title = "Ask a Side Question (/btw)",
+		description = "Ask using session context without adding a chat turn",
+		category = "session",
+		slash = { name = "btw" },
+		on_select = function(ctx) return ctx.run() end,
+		enter_with_args = true,
+		with_parts = "reject",
+		parts_error = "/btw supports text questions only",
+		run = function(ctx)
+			local args = ctx and ctx.args
+			if type(args) == "string" and vim.trim(args) ~= "" then
+				actions.ask_btw(args)
+				return
+			end
+			local session_id = state.get_session().id
+			if not session_id then
+				vim.notify("Open a session first", vim.log.levels.WARN)
+				return
+			end
+			require("opencode.ui.btw").prompt(function(question)
+				actions.ask_btw(question, session_id)
+			end)
 		end,
 	})
 	palette.register({
@@ -37,7 +64,7 @@ function M.register(palette)
 		description = "Show running, waiting, and recent sessions",
 		category = "session",
 		keybind = keymaps.active_sessions,
-		action = function()
+		run = function()
 			actions.active_sessions()
 		end,
 	})
@@ -47,7 +74,8 @@ function M.register(palette)
 		description = "Close the current active tab without deleting the session",
 		category = "session",
 		keybind = keymaps.close_session,
-		action = function()
+		slash = { name = "close", aliases = { "close-session", "close-tab" } },
+		run = function()
 			actions.close_session({ notify = true })
 		end,
 		enabled = function()
@@ -60,7 +88,8 @@ function M.register(palette)
 		description = "Switch to another session",
 		category = "session",
 		keybind = "<leader>os",
-		action = function()
+		slash = { name = "sessions", aliases = { "resume", "continue" } },
+		run = function()
 			local directory = vim.fn.fnamemodify(vim.fn.getcwd(), ":p")
 			if vim.fs and vim.fs.normalize then
 				directory = vim.fs.normalize(directory)
@@ -156,7 +185,7 @@ function M.register(palette)
 		description = "Fork current session",
 		category = "session",
 		keybind = "<leader>of",
-		action = function()
+		run = function()
 			local current = state.get_session()
 			if not current.id then
 				vim.notify("No active session to fork", vim.log.levels.WARN)
@@ -187,7 +216,11 @@ function M.register(palette)
 		title = "Copy Session Transcript",
 		description = "Copy current session transcript to clipboard",
 		category = "session",
-		action = function()
+		slash = { name = "copy" },
+		enabled = function()
+			return state.get_session().id ~= nil
+		end,
+		run = function()
 			local session_id = state.get_session().id
 			if not session_id then
 				vim.notify("No active session", vim.log.levels.WARN)
@@ -239,7 +272,7 @@ function M.register(palette)
 		title = "Copy Raw Session Object",
 		description = "Copy full in-memory session object (messages, parts, tool calls) to clipboard",
 		category = "session",
-		action = function()
+		run = function()
 			local session_id = state.get_session().id
 			if not session_id then
 				vim.notify("No active session", vim.log.levels.WARN)
@@ -281,7 +314,7 @@ function M.register(palette)
 		title = "Delete Session",
 		description = "Delete current session",
 		category = "session",
-		action = function()
+		run = function()
 			local session = state.get_session()
 			if not session.id then
 				vim.notify("No active session", vim.log.levels.WARN)

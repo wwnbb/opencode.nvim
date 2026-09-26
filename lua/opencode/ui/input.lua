@@ -5,6 +5,7 @@ local M = {}
 local attachments = require("opencode.ui.input.attachments")
 local autocomplete = require("opencode.ui.input.autocomplete")
 local autocmds = require("opencode.ui.input.autocmds")
+local command_registry = require("opencode.command_registry")
 local history = require("opencode.ui.input.history")
 local info_bar = require("opencode.ui.input.info_bar")
 local keymaps = require("opencode.ui.input.keymaps")
@@ -25,7 +26,7 @@ local state = {
 	on_send = nil,
 	on_cancel = nil,
 	close_on_send = true,
-	allow_skill_picker = false,
+	allow_chat_commands = false,
 	persist_pending = true,
 	add_history = true,
 	config = nil,
@@ -178,9 +179,45 @@ local function resolve_config()
 	return vim.tbl_deep_extend("force", vim.deepcopy(config_defaults), full_config.input or {})
 end
 
-local function open_skills_picker()
-	if not state.allow_skill_picker or state.session_id ~= current_session_id() then return false end
-	return require("opencode.slash").execute({ command = "skills", args = "", raw = "/skills" })
+local function resume_chat_input(session_id)
+	return function()
+		if current_session_id() ~= session_id then return end
+		local chat = require("opencode.ui.chat")
+		if chat.is_visible() then chat.focus_input() end
+	end
+end
+
+local function selected_command_context()
+	local session_id = state.session_id
+	return { source = "slash_select", session_id = session_id, args = "", resume_input = resume_chat_input(session_id) }
+end
+
+local function command_enter_mode()
+	if not state.allow_chat_commands or state.session_id ~= current_session_id() then return nil end
+	local parsed = require("opencode.slash").parse(get_input_text())
+	if not parsed then return nil end
+	local command = command_registry.get_slash(parsed.command)
+	if not command or not command_registry.enabled(command) then return nil end
+	local has_args = vim.trim(parsed.args or "") ~= ""
+	if not has_args and command.on_select then
+		if command.with_parts == "reject" and #draft_parts() > 0 then return "submit" end
+		return "select"
+	end
+	if has_args and command.enter_with_args then return "submit" end
+	return nil
+end
+
+local function select_typed_command()
+	if command_enter_mode() ~= "select" then return false end
+	local original = get_input_text()
+	local parsed = require("opencode.slash").parse(original)
+	local command = parsed and command_registry.get_slash(parsed.command)
+	if not command then return false end
+	set_input_text("")
+	autocomplete.close(state)
+	local ok = command_registry.select(command.id, selected_command_context())
+	if not ok and state.visible then set_input_text(original) end
+	return ok
 end
 
 local function send_message()
@@ -304,7 +341,7 @@ function M.show(opts)
 	state.on_send = opts.on_send
 	state.on_cancel = opts.on_cancel or function() end
 	state.close_on_send = opts.close_on_send ~= false
-	state.allow_skill_picker = opts.allow_skill_picker == true
+	state.allow_chat_commands = opts.allow_chat_commands == true or opts.allow_skill_picker == true
 	state.persist_pending = opts.persist_pending ~= false
 	state.add_history = opts.add_history ~= false
 	state.parts = opts.text ~= nil and copy_parts(opts.parts) or history.get_pending_parts()
@@ -371,24 +408,19 @@ function M.show(opts)
 		autocomplete_prev = function()
 			return autocomplete.select_prev(state)
 		end,
-		autocomplete_confirm = function(activate_slash)
-			local ok, activated = autocomplete.confirm(state, activate_slash and state.allow_skill_picker)
+		autocomplete_confirm = function()
+			local ok, selection = autocomplete.confirm(state)
 			if ok then
 				schedule_resize_input()
 			end
-			if ok and activated == "skills" then open_skills_picker() end
+			if ok and selection and selection.kind == "command" then
+				local selected = command_registry.select(selection.id, selected_command_context())
+				if not selected and state.visible then set_input_text(selection.original) end
+			end
 			return ok
 		end,
-		skills_command_enter = function()
-			return state.allow_skill_picker and state.session_id == current_session_id() and require("opencode.state").is_connected()
-				and get_input_text():match("^/skills%s*$") ~= nil
-		end,
-		skills_command_confirm = function()
-			if state.session_id == current_session_id() and get_input_text():match("^/skills%s*$") then
-				set_input_text("")
-				open_skills_picker()
-			end
-		end,
+		command_enter_mode = command_enter_mode,
+		command_enter_select = select_typed_command,
 		autocomplete_close = function()
 			autocomplete.close(state)
 		end,
@@ -452,7 +484,7 @@ function M.close(save_draft)
 	state.on_send = nil
 	state.on_cancel = nil
 	state.close_on_send = true
-	state.allow_skill_picker = false
+	state.allow_chat_commands = false
 	state.persist_pending = true
 	state.add_history = true
 	state.normalizing_paste = false

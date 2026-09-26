@@ -19,6 +19,7 @@ local responses = {
 	attempt_status = { data = { status = "pending", time = time }, location = location },
 	array = {},
 	inbox = { data = { id = "inbox", sessionID = "s", type = "prompt", payload = { attachments = {} } } },
+	generated_text = { data = { text = "Transient answer" } },
 	interrupt = { interrupted = false },
 	permission = { data = { id = "request", effect = "ask" } },
 	rpc = { output = { protocolVersion = 2, review = true } },
@@ -67,6 +68,7 @@ local cases = {
 	{ "config_list", "GET", "/api/config", "array", nil, { location = location } },
 	{ "command", "POST", "/api/session/{sessionID}/command", "empty", { name = "review", text = "--staged" } },
 	{ "prompt", "POST", "/api/session/{sessionID}/prompt", "inbox", { id = "msg_prompt", text = "Привет", files = {} } },
+	{ "generate", "POST", "/api/session/{sessionID}/generate", "generated_text", { prompt = "Quick question" } },
 	{ "session_agent", "POST", "/api/session/{sessionID}/agent", "empty", { agent = "build" } },
 	{ "session_model", "POST", "/api/session/{sessionID}/model", "empty", { model = model } },
 	{ "interrupt", "POST", "/api/session/{sessionID}/interrupt", "interrupt", nil, { resume = false } },
@@ -128,6 +130,7 @@ describe("v2 operation wire matrix", function()
 			if case[4] == "empty" then assert.is_true(result.data) end
 			if case[4] == "page" then assert.equals("opaque/+%", result.meta.cursor.previous) end
 			if case[4] == "interrupt" then assert.is_false(result.data.interrupted) end
+			if case[4] == "generated_text" then assert.equals("Transient answer", result.data) end
 			response = { status = 401, headers = { ["content-type"] = "application/json" }, body = vim.json.encode({ _tag = "UnauthorizedError", message = "Authentication required" }) }
 			invoke(); assert.equals(2, callbacks)
 			assert.is_nil(result.data); assert.equals(401, result.err.status); assert.equals("UnauthorizedError", result.err.code); assert.is_false(result.err.retryable)
