@@ -71,10 +71,10 @@ function M.from_api(data)
 
 	local tokens = data.tokens
 	local cache = type(tokens.cache) == "table" and tokens.cache or {}
-	local total = tokens.total and nonnegative(tokens.total) or (
-		nonnegative(tokens.input) + nonnegative(tokens.output) + nonnegative(tokens.reasoning)
+	-- The TUI headline sums these five categories; the server's aggregate
+	-- `total` can include a different scope and produce a different number.
+	local total = nonnegative(tokens.input) + nonnegative(tokens.output) + nonnegative(tokens.reasoning)
 		+ nonnegative(cache.read) + nonnegative(cache.write)
-	)
 	local daily = {}
 	for _, activity in ipairs(data.activity) do
 		if type(activity) == "table" and type(activity.date) == "string"
@@ -82,6 +82,8 @@ function M.from_api(data)
 			daily[activity.date] = (daily[activity.date] or 0) + nonnegative(activity.steps)
 		end
 	end
+	local range_start, range_end = tonumber(data.range.from), tonumber(data.range.to)
+	if range_end then range_end = math.max(range_start or range_end, range_end - 1) end
 
 	return {
 		total_tokens = total,
@@ -90,7 +92,7 @@ function M.from_api(data)
 		best_streak = nonnegative(data.streak),
 		daily = daily,
 		start_date = date_from_ms(data.range.from),
-		end_date = date_from_ms(data.range.to),
+		end_date = date_from_ms(range_end),
 	}
 end
 
