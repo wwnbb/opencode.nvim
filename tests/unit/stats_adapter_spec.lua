@@ -17,7 +17,7 @@ describe("usage statistics adapter", function()
 			sessions = 74,
 			activeDays = 5,
 			streak = 5,
-			tokens = { input = 40, output = 20, reasoning = 10, cache = { read = 8, write = 2 } },
+			tokens = { total = 999, input = 40, output = 20, reasoning = 10, cache = { read = 8, write = 2 } },
 			activity = {
 				{ date = "2026-09-23", steps = 3 },
 				{ date = "2026-09-23", steps = 2 },
@@ -39,5 +39,23 @@ describe("usage statistics adapter", function()
 		local view, err = stats.from_api({ tokens = {} })
 		assert.is_nil(view)
 		assert.equals("Invalid usage statistics response", err)
+	end)
+
+	it("treats the range end as exclusive at a month boundary", function()
+		local start = os.time({ year = 2026, month = 9, day = 1, hour = 0 }) * 1000
+		local finish = os.time({ year = 2026, month = 10, day = 1, hour = 0 }) * 1000
+		local view = stats.from_api({
+			range = { from = start, to = finish },
+			tokens = {},
+			activity = {},
+		})
+		assert.equals("2026-09-01", view.start_date)
+		assert.equals("2026-09-30", view.end_date)
+		local empty = stats.from_api({
+			range = { from = start, to = start },
+			tokens = {},
+			activity = {},
+		})
+		assert.equals("2026-09-01", empty.end_date)
 	end)
 end)
