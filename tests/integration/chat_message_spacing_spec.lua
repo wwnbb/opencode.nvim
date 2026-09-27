@@ -6,6 +6,8 @@ local projection = require("opencode.protocol.v2.messages")
 local render_state = require("opencode.ui.chat.render_state")
 local local_state = require("opencode.local")
 local edit_state = require("opencode.edit.state")
+local question_state = require("opencode.question.state")
+local permission_state = require("opencode.permission.state")
 local chat_hl_ns = require("opencode.ui.chat.state").chat_hl_ns
 
 describe("chat message boundaries", function()
@@ -43,6 +45,8 @@ describe("chat message boundaries", function()
 	before_each(function()
 		sync.clear_all()
 		edit_state.clear_all()
+		question_state.clear_all()
+		permission_state.clear_all()
 		app.reset()
 		app.set_config(vim.deepcopy(require("opencode.config").defaults))
 		app.set_session(session, "Message spacing")
@@ -66,6 +70,8 @@ describe("chat message boundaries", function()
 		render_state.reset_chat_surface({ reset_expansions = true })
 		sync.clear_all()
 		edit_state.clear_all()
+		question_state.clear_all()
+		permission_state.clear_all()
 		if original_open then
 			local_state.message_agent.clear_session(session)
 			preferences.open = original_open
@@ -192,6 +198,50 @@ describe("chat message boundaries", function()
 				assert.equals("", rendered[widget.start_line], "one blank row should precede " .. tool)
 				assert.equals("Before widget", rendered[widget.start_line - 1], "extra rows should be collapsed")
 			end
+		end
+	end)
+
+	it("separates assistant text from question widgets", function()
+		for _, suffix in ipairs({ "", "\n", "\n\n" }) do
+			sync.clear_all()
+			question_state.clear_all()
+			update({ {
+				id = "assistant", type = "assistant", time = { created = 1, completed = 2 },
+				content = {
+					{ type = "text", text = "Before widget" .. suffix },
+					{ type = "tool", id = "question-call", name = "question", state = { status = "pending" } },
+				},
+			} })
+			question_state.add_form({
+				id = "question-request", sessionID = session,
+				fields = { { key = "choice", type = "select", title = "Pick one",
+					options = { { label = "Yes", value = "yes" } } } },
+				metadata = { tool = { messageID = "assistant", id = "question-call" } },
+			})
+			local rendered = render()
+			local widget = state.questions["question-request"]
+			assert.is_not_nil(widget, "question widget should render")
+			assert.equals("", rendered[widget.start_line], "one blank row should precede question")
+			assert.equals("Before widget", rendered[widget.start_line - 1], "extra rows should be collapsed")
+		end
+	end)
+
+	it("separates assistant text from permission widgets", function()
+		for _, suffix in ipairs({ "", "\n", "\n\n" }) do
+			sync.clear_all()
+			permission_state.clear_all()
+			update({ {
+				id = "assistant", type = "assistant", time = { created = 1, completed = 2 },
+				content = { { type = "text", text = "Before widget" .. suffix } },
+			} })
+			permission_state.add_permission("permission-request", session, "bash", {
+				message_id = "assistant", tool_input = { command = "echo ok" },
+			})
+			local rendered = render()
+			local widget = state.permissions["permission-request"]
+			assert.is_not_nil(widget, "permission widget should render")
+			assert.equals("", rendered[widget.start_line], "one blank row should precede permission")
+			assert.equals("Before widget", rendered[widget.start_line - 1], "extra rows should be collapsed")
 		end
 	end)
 

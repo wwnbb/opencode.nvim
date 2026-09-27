@@ -172,7 +172,8 @@ function Context:add_nui_lines(lines, kind)
 end
 
 function Context:prepare_widget_start()
-	self:normalize_block_transition("non_tool")
+	if #self.raw_lines > 0 then self:ensure_single_blank_separator() end
+	self.last_block_kind = "non_tool"
 	return #self.raw_lines
 end
 
