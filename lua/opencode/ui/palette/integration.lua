@@ -14,14 +14,18 @@ end
 
 local function attempt(integration, method, answer, opts)
 	local float = require("opencode.ui.float")
-	local popup, bufnr = float.create_centered_popup({ title = " " .. integration.name .. " ", width = 76, height = 14 })
-	popup:mount()
 	local id, snapshot, closed
+	local popup, bufnr = float.create_centered_popup({
+		title = " " .. integration.name .. " ", width = 76, height = 14,
+		on_close = function()
+			if closed then return end
+			closed = true
+			if id then actions.cancel_integration_attempt(id) end
+		end,
+	})
+	popup:mount()
 	local function close()
-		if closed then return end
-		closed = true
-		if id then actions.cancel_integration_attempt(id) end
-		popup:unmount()
+		popup:close()
 	end
 	local function render(value)
 		snapshot, id = value, value.id
@@ -32,12 +36,10 @@ local function attempt(integration, method, answer, opts)
 		if value.error then lines[#lines + 1] = value.error end
 		lines[#lines + 1] = ""
 		lines[#lines + 1] = "o: open authorization URL   c: enter code   Esc: close / cancel"
-		vim.bo[bufnr].modifiable = true
-		vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, lines)
-		vim.bo[bufnr].modifiable = false
+		popup:render(lines)
 		if value.status == "complete" then notify("Connected to " .. integration.name); close() end
 	end
-	vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { "Starting authorization…", "Esc: cancel" })
+	popup:render({ "Starting authorization…", "Esc: cancel" })
 	local mapopts = { buffer = bufnr, silent = true }
 	vim.keymap.set("n", "<Esc>", close, mapopts)
 	vim.keymap.set("n", "q", close, mapopts)
@@ -49,7 +51,6 @@ local function attempt(integration, method, answer, opts)
 		float.create_input_popup({ title = " Authorization code ", prompt = "Authorization code:", password = true,
 			on_submit = function(code) if not closed then actions.complete_integration_attempt(id, code) end end })
 	end, mapopts)
-	vim.api.nvim_create_autocmd("BufWipeout", { buffer = bufnr, once = true, callback = close })
 	id = actions.start_integration_attempt(integration.id, method, answer, opts, render)
 end
 
@@ -139,9 +140,17 @@ function M.connections()
 						require("opencode.ui.float").create_input_popup({ title = " Account label ", default = connection.label,
 							on_submit = function(label) if label ~= "" then apply({ label = label }) end end })
 					elseif choice.value == "remove" then
-						vim.ui.select({ "Disconnect", "Cancel" }, { prompt = "Disconnect account " .. connection.label .. "?" }, function(value)
-							if value == "Disconnect" then apply(nil) end
-						end)
+						local prompt = "Disconnect account " .. connection.label .. "?"
+						require("opencode.ui.menu").open({
+							items = { "Disconnect", "Cancel" },
+							title = "Disconnect Account",
+							message = prompt,
+							width = vim.fn.strdisplaywidth(prompt) + 12,
+							sort = false,
+							on_select = function(value)
+								if value == "Disconnect" then apply(nil) end
+							end,
+						})
 					else apply(nil) end
 				end)
 		end)

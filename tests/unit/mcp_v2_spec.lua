@@ -27,6 +27,7 @@ describe("v2 MCP palette", function()
 	it("freezes location, blocks duplicate toggles and waits for authoritative status", function()
 		local commands = {}
 		require("opencode.ui.palette.mcp").register({ register = function(command) commands[command.id] = command end })
+		assert.is_nil(commands["mcp.tools"])
 		commands["mcp.status"].run()
 		local item = menu.items[1]
 		assert.equals("auth-id", item.server.integrationID)
@@ -45,5 +46,42 @@ describe("v2 MCP palette", function()
 		handler(ctx, item)
 		assert.equals(1, #toggle)
 		assert.equals("one: Connecting", messages[#messages])
+	end)
+	it("opens wrapped server details from the MCP list and closes cleanly", function()
+		local commands = {}
+		require("opencode.ui.palette.mcp").register({ register = function(command) commands[command.id] = command end })
+		commands["mcp.status"].run()
+		local item = menu.items[1]
+		item.server.error = string.rep("Long MCP authorization detail with spaces. ", 12)
+		menu.keys[1].handler({ close = function() end }, item)
+		local info_buf, info_win
+		assert.is_true(vim.wait(1000, function()
+			for _, win in ipairs(vim.api.nvim_list_wins()) do
+				local buf = vim.api.nvim_win_get_buf(win)
+				local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+				if lines[1] == "Name: one" then info_buf, info_win = buf, win; return true end
+			end
+			return false
+		end, 10))
+		local lines = vim.api.nvim_buf_get_lines(info_buf, 0, -1, false)
+		assert.equals("Status: Disabled", lines[2])
+		assert.is_true(#lines > 8)
+		for _, line in ipairs(lines) do
+			assert.is_true(vim.fn.strdisplaywidth(line) <= vim.api.nvim_win_get_width(info_win))
+		end
+		local original_columns = vim.o.columns
+		vim.o.columns = 54
+		vim.api.nvim_exec_autocmds("VimResized", {})
+		local narrower = vim.api.nvim_buf_get_lines(info_buf, 0, -1, false)
+		assert.is_true(#narrower > #lines)
+		for _, line in ipairs(narrower) do
+			assert.is_true(vim.fn.strdisplaywidth(line) <= vim.api.nvim_win_get_width(info_win))
+		end
+		vim.o.columns = original_columns
+		vim.api.nvim_exec_autocmds("VimResized", {})
+		for _, mapping in ipairs(vim.api.nvim_buf_get_keymap(info_buf, "n")) do
+			if mapping.lhs == "q" then mapping.callback(); break end
+		end
+		assert.is_false(vim.api.nvim_win_is_valid(info_win))
 	end)
 end)

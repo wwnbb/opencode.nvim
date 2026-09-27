@@ -321,30 +321,36 @@ function M.register(palette)
 				return
 			end
 
-			vim.ui.select({ "Yes", "No" }, {
-				prompt = "Delete session '" .. (session_util.displayTitle(session.name) or session.id) .. "'?",
-			}, function(choice)
-				if choice == "Yes" then
-					actions.delete_session(session.id, function(err)
-						if err then
-							vim.notify(
-								"Failed to delete session: " .. tostring(err.message or err),
-								vim.log.levels.ERROR
-							)
-							return
-						end
-						actions.set_active_session(nil, nil, {
-							reason = "session_delete",
-							preserve_cache = true,
-						})
-						actions.forget_session(session.id, {
-							reason = "session_delete",
-						})
-						actions.clear_session_data(session.id)
-						vim.notify("Session deleted", vim.log.levels.INFO)
-					end)
-				end
-			end)
+			local prompt = "Delete session '" .. (session_util.displayTitle(session.name) or session.id) .. "'?"
+			require("opencode.ui.menu").open({
+				items = { "Yes", "No" },
+				title = "Delete Session",
+				message = prompt,
+				width = vim.fn.strdisplaywidth(prompt) + 12,
+				sort = false,
+				on_select = function(choice)
+					if choice == "Yes" then
+						actions.delete_session(session.id, function(err)
+							if err then
+								vim.notify(
+									"Failed to delete session: " .. tostring(err.message or err),
+									vim.log.levels.ERROR
+								)
+								return
+							end
+							actions.set_active_session(nil, nil, {
+								reason = "session_delete",
+								preserve_cache = true,
+							})
+							actions.forget_session(session.id, {
+								reason = "session_delete",
+							})
+							actions.clear_session_data(session.id)
+							vim.notify("Session deleted", vim.log.levels.INFO)
+						end)
+					end
+				end,
+			})
 		end,
 		enabled = function()
 			return state.get_session().id ~= nil

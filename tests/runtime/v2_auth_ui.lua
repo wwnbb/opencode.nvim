@@ -108,10 +108,10 @@ search(target.label)
 search("Activate")
 wait(function() return notified("Account updated") end, "Account activation not confirmed")
 palette.trigger("provider.disconnect"); search(target.label)
-vim.defer_fn(function() vim.api.nvim_input("1\r") end, 100)
 search("Disconnect")
--- vim.ui.select uses Neovim's native numbered confirmation prompt in this profile.
--- The selection is injected through its normal input API, not by calling an action.
+wait(function() return screen_text():find("Disconnect account " .. target.label .. "?", 1, true) end,
+	"Account disconnect confirmation missing")
+key("<CR>")
 wait(function() return notified("Account disconnected") end, "Account removal not confirmed")
 local after = integration()
 assert(credential_count() == 1, "Wrong account count after removal")

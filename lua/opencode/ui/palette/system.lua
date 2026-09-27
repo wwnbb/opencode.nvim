@@ -8,12 +8,20 @@ function M.register(palette)
 	local keymaps = (state.get_config() or require("opencode.config").defaults).keymaps or {}
 	palette.register({ id = "system.reload", title = "Reload Server Configuration", category = "system",
 		description = "Reload all locations and cancel pending interactions", run = function()
-			vim.ui.select({ "Reload all locations", "Cancel" }, { prompt = "Reload cancels pending forms, permissions and plugin reviews in every project." }, function(choice)
-				if choice ~= "Reload all locations" then return end
-				actions.reload_locations(function(err)
-					vim.notify(err and ("Reload was not confirmed: " .. err.message) or "Server configuration reloaded", err and vim.log.levels.ERROR or vim.log.levels.INFO)
-				end)
-			end)
+			local prompt = "Reload cancels pending forms, permissions and plugin reviews in every project."
+			require("opencode.ui.menu").open({
+				items = { "Reload all locations", "Cancel" },
+				title = "Reload Server Configuration",
+				message = prompt,
+				width = vim.fn.strdisplaywidth(prompt) + 12,
+				sort = false,
+				on_select = function(choice)
+					if choice ~= "Reload all locations" then return end
+					actions.reload_locations(function(err)
+						vim.notify(err and ("Reload was not confirmed: " .. err.message) or "Server configuration reloaded", err and vim.log.levels.ERROR or vim.log.levels.INFO)
+					end)
+				end,
+			})
 		end })
 
 	palette.register({

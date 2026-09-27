@@ -1,9 +1,8 @@
 local M = {}
 
-local Popup = require("nui.popup")
+local Popup = require("opencode.ui.popup")
 local state = require("opencode.ui.chat.state").state
 local highlights = require("opencode.ui.highlights")
-local ns = vim.api.nvim_create_namespace("opencode_help")
 local active_popup
 
 highlights.register("opencode.ui.chat.help", function()
@@ -149,7 +148,7 @@ local function wrap(text, width)
 	return result
 end
 
-local function render(buf, groups, width)
+local function content_lines(groups, width)
 	local lines, marks = {}, {}
 	local key_width = math.min(14, math.max(1, math.floor(width / 3)))
 	local description_width = math.max(1, width - key_width - 2)
@@ -172,13 +171,13 @@ local function render(buf, groups, width)
 			end
 		end
 	end
-	vim.bo[buf].modifiable = true
-	vim.api.nvim_buf_clear_namespace(buf, ns, 0, -1)
-	vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+	local highlights = {}
 	for _, mark in ipairs(marks) do
-		vim.api.nvim_buf_set_extmark(buf, ns, mark[1], mark[2], { end_col = mark[3], hl_group = mark[4] })
+		highlights[#highlights + 1] = {
+			row = mark[1], col = mark[2], opts = { end_col = mark[3], hl_group = mark[4] },
+		}
 	end
-	vim.bo[buf].modifiable = false
+	return lines, highlights
 end
 
 function M.show(config)
@@ -219,40 +218,19 @@ function M.show(config)
 		winblend = 0,
 		scrolloff = 0,
 	}
-	local frame = Popup({
-		enter = false,
-		focusable = false,
-		relative = "editor",
-		zindex = 80,
-		border = "none",
-		position = { row = row, col = col },
-		size = { width = width, height = height },
-		buf_options = { filetype = "opencode_help" },
-		win_options = win_options,
-	})
-	frame:mount()
-	local popup = Popup({
-		enter = true,
-		focusable = true,
-		relative = { type = "win", winid = frame.winid },
-		zindex = 81,
-		border = "none",
-		position = { row = 3, col = 1 },
-		size = { width = width - 2, height = height - 6 },
-		buf_options = { filetype = "opencode_help" },
-		win_options = win_options,
-	})
-	popup:mount()
-	active_popup = popup
-	popup.frame = frame
-
+	local popup
 	local function redraw()
 		local next_width, next_height, next_row, next_col = dimensions()
-		frame:update_layout({
-			position = { row = next_row, col = next_col },
-			size = { width = next_width, height = next_height },
+		popup:resize({
+			frame = {
+				position = { row = next_row, col = next_col },
+				size = { width = next_width, height = next_height },
+			},
+			content = {
+				position = { row = next_row + 3, col = next_col + 1 },
+				size = { width = next_width - 2, height = next_height - 6 },
+			},
 		})
-		popup:update_layout({ size = { width = next_width - 2, height = next_height - 6 } })
 		local inset = next_width >= 20 and 4 or 1
 		local padding = string.rep(" ", inset)
 		local lines = { "", padding .. "Help" .. string.rep(" ", next_width - 7 - 2 * inset) .. "esc" .. padding }
@@ -262,70 +240,63 @@ function M.show(config)
 		local footer = next_width >= 54 and "j/k scroll   Ctrl-u/d page   q/esc close"
 			or (next_width >= 30 and "j/k scroll  q/esc close" or "q close")
 		lines[next_height - 1] = "    " .. footer
-		local buf = frame.bufnr
-		vim.bo[buf].modifiable = true
-		vim.api.nvim_buf_clear_namespace(buf, ns, 0, -1)
-		vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
-		vim.api.nvim_buf_set_extmark(buf, ns, 1, inset, { end_col = inset + 4, hl_group = "OpenCodeInputBorder" })
-		vim.api.nvim_buf_set_extmark(
-			buf,
-			ns,
-			1,
-			next_width - 7,
-			{ end_col = next_width - 4, hl_group = "OpenCodeInputInfo" }
-		)
-		vim.api.nvim_buf_set_extmark(
-			buf,
-			ns,
-			next_height - 2,
-			4,
-			{ end_col = #lines[next_height - 1], hl_group = "OpenCodeInputInfo" }
-		)
-		vim.bo[buf].modifiable = false
-		render(popup.bufnr, groups, next_width - 8)
+		popup:render(lines, {
+			{ row = 1, col = inset, opts = { end_col = inset + 4, hl_group = "OpenCodeInputBorder" } },
+			{ row = 1, col = next_width - 7, opts = { end_col = next_width - 4, hl_group = "OpenCodeInputInfo" } },
+			{
+				row = next_height - 2, col = 4,
+				opts = { end_col = #lines[next_height - 1], hl_group = "OpenCodeInputInfo" },
+			},
+		}, "frame")
+		local body_lines, body_marks = content_lines(groups, next_width - 8)
+		popup:render(body_lines, body_marks)
 	end
+	popup = Popup.new({
+		frame = {
+			enter = false,
+			focusable = false,
+			relative = "editor",
+			zindex = 80,
+			border = "none",
+			position = { row = row, col = col },
+			size = { width = width, height = height },
+			buf_options = { filetype = "opencode_help" },
+			win_options = win_options,
+		},
+		content = {
+			enter = true,
+			focusable = true,
+			relative = "editor",
+			zindex = 81,
+			border = "none",
+			position = { row = row + 3, col = col + 1 },
+			size = { width = width - 2, height = height - 6 },
+			buf_options = { filetype = "opencode_help" },
+			win_options = win_options,
+		},
+		focus_restore = "previous",
+		close_on_leave = true,
+		on_close = function() active_popup = nil end,
+		on_resize = function()
+			if vim.o.lines - vim.o.cmdheight < 8 then
+				popup:close()
+			else
+				redraw()
+			end
+		end,
+	})
+	popup:mount()
+	active_popup = popup
 	redraw()
-
-	local closed = false
-	local unmount = popup.unmount
-	local function close(restore_focus)
-		if closed then
-			return
-		end
-		closed = true
-		active_popup = nil
-		unmount(popup)
-		frame:unmount()
-		if restore_focus and vim.api.nvim_win_is_valid(previous_win) then
-			vim.api.nvim_set_current_win(previous_win)
-		end
-	end
-	function popup:unmount()
-		close(true)
-	end
 	for _, key in ipairs({ "q", "<Esc>", "<CR>", "<Space>" }) do
 		vim.keymap.set("n", key, function()
-			close(true)
+			popup:close()
 		end, { buffer = popup.bufnr, noremap = true, silent = true })
 	end
 	-- Keep normal navigation available instead of closing on every printable key.
 	for _, key in ipairs({ "j", "k", "<Up>", "<Down>", "<C-u>", "<C-d>", "<C-b>", "<C-f>", "gg", "G" }) do
 		vim.keymap.set("n", key, key, { buffer = popup.bufnr, noremap = true, silent = true })
 	end
-	popup:on("VimResized", function()
-		if not closed then
-			if vim.o.lines - vim.o.cmdheight < 8 then
-				close(true)
-			else
-				redraw()
-			end
-		end
-	end)
-	popup:on("BufLeave", function()
-		vim.schedule(function()
-			close(false)
-		end)
-	end)
 	return popup
 end
 

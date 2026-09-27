@@ -74,7 +74,7 @@ local function append_wrapped(lines, text, width, indent, continuation_indent)
 			local remaining = raw_line
 			local line_indent = indent
 			while remaining ~= "" do
-				local max_width = math.max(10, width - vim.fn.strdisplaywidth(line_indent))
+				local max_width = math.max(1, width - vim.fn.strdisplaywidth(line_indent))
 				local chunk, rest = split_line_at_width(remaining, max_width)
 				table.insert(lines, line_indent .. chunk)
 				remaining = rest
@@ -84,12 +84,7 @@ local function append_wrapped(lines, text, width, indent, continuation_indent)
 	end
 end
 
-local function show_mcp_server_info(item)
-	local float = require("opencode.ui.float")
-	local ui_list = vim.api.nvim_list_uis()
-	local ui = ui_list and ui_list[1] or { width = 80, height = 24 }
-	local width = math.max(20, math.min(90, ui.width - 8))
-	local content_width = math.max(20, width - 2)
+local function info_lines(item, content_width)
 	local server = type(item.server) == "table" and item.server or {}
 	local lines = {
 		"Name: " .. tostring(item.value),
@@ -124,16 +119,43 @@ local function show_mcp_server_info(item)
 			append_wrapped(lines, label .. (mcp_value_to_text(server[key]) or ""), content_width, "", "    ")
 		end
 	end
+	return lines
+end
 
-
-	local max_height = math.max(4, ui.height - 6)
+local function show_mcp_server_info(item)
+	local float = require("opencode.ui.float")
+	local width = math.max(12, math.min(90, vim.o.columns - 8))
+	local lines = info_lines(item, math.max(1, width - 2))
+	local max_height = math.max(4, vim.o.lines - vim.o.cmdheight - 6)
 	local height = math.min(math.max(8, #lines + 2), max_height)
-	local popup, bufnr = float.create_centered_popup({
+	local popup
+	local function redraw()
+		if not popup or not popup.winid or not vim.api.nvim_win_is_valid(popup.winid) then return end
+		local next_lines = info_lines(item, math.max(1, vim.api.nvim_win_get_width(popup.winid) - 2))
+		popup:render(next_lines)
+		local cursor = vim.api.nvim_win_get_cursor(popup.winid)
+		vim.api.nvim_win_set_cursor(popup.winid, { math.min(cursor[1], #next_lines), 0 })
+	end
+	popup = float.create_centered_popup({
 		title = " MCP Server Info ",
 		width = width,
 		height = height,
 		zindex = 90,
+		on_resize = function(self)
+			local next_width = math.max(12, math.min(90, vim.o.columns - 8))
+			local next_lines = info_lines(item, math.max(1, next_width - 2))
+			local next_height = math.min(math.max(8, #next_lines + 2), math.max(4, vim.o.lines - vim.o.cmdheight - 6))
+			self:resize({
+				position = {
+					row = math.max(0, math.floor((vim.o.lines - vim.o.cmdheight - next_height) / 2)),
+					col = math.max(0, math.floor((vim.o.columns - next_width) / 2)),
+				},
+				size = { width = next_width, height = next_height },
+			})
+			redraw()
+		end,
 	})
+	local bufnr = popup.bufnr
 	local close_fn = function()
 		pcall(function()
 			popup:unmount()
@@ -141,10 +163,8 @@ local function show_mcp_server_info(item)
 	end
 
 	popup:mount()
-	vim.bo[bufnr].modifiable = true
 	vim.bo[bufnr].filetype = "opencode_float"
-	vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, lines)
-	vim.bo[bufnr].modifiable = false
+	redraw()
 	if popup.winid and vim.api.nvim_win_is_valid(popup.winid) then
 		vim.wo[popup.winid].wrap = false
 		vim.wo[popup.winid].cursorline = false
@@ -309,9 +329,5 @@ function M.register(palette)
 			end, opts)
 		end,
 	})
-	palette.register({ id = "mcp.tools", title = "MCP Tools", description = "MCP tool catalog availability", category = "mcp",
-		run = function()
-			vim.notify("OpenCode 2.0.11 does not expose an MCP tool catalog. MCP Servers shows connection status.", vim.log.levels.INFO)
-		end })
 end
 return M
