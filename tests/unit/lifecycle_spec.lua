@@ -267,6 +267,134 @@ describe("opencode lifecycle", function()
 		assert_eq(lifecycle.opts.auth, nil, "generated secret does not become user configuration")
 	end)
 
+	it("installs completion options in the owned process and keeps its startup snapshot", function()
+		local completion = {
+			enabled = true, model = { providerID = "openai", modelID = "coder" },
+			options = { settings = { reasoningEffort = "none" } },
+		}
+		lifecycle.setup({ completion = completion, env = { OPENCODE_CONFIG_CONTENT = '{"model":"openai/chat"}' } })
+		local job = complete_start()
+		local overlay = vim.json.decode(job.opts.env.OPENCODE_CONFIG_CONTENT)
+		assert.equals("openai/chat", overlay.model)
+		local variant = overlay.providers.openai.models.coder.variants[1]
+		assert.same({ reasoningEffort = "none" }, variant.settings)
+		assert.equals(variant.id, lifecycle.resolve_completion_model(completion).variant)
+		completion.options.settings.reasoningEffort = "low"
+		lifecycle.setup({ completion = completion })
+		local model, err = lifecycle.resolve_completion_model(completion)
+		assert.is_nil(model)
+		assert.matches("restart", err, 1, true)
+		assert.equals(1, #jobs)
+		lifecycle.setup({ completion = { enabled = true, model = completion.model, variant = "fast" } })
+		assert.is_nil(lifecycle.opts.completion.options)
+	end)
+
+	it("installs independent completion and explanation profiles in one owned process", function()
+		local completion = {
+			enabled = true, model = { providerID = "openai", modelID = "coder" },
+			options = { body = { reasoning_effort = "none" } },
+		}
+		local explanation = vim.deepcopy(completion)
+		lifecycle.setup({
+			completion = completion,
+			explanation = explanation,
+			env = { OPENCODE_CONFIG_CONTENT = '{"model":"openai/chat"}' },
+		})
+		local job = complete_start()
+		local overlay = vim.json.decode(job.opts.env.OPENCODE_CONFIG_CONTENT)
+		local variants = overlay.providers.openai.models.coder.variants
+		assert.equals(2, #variants)
+		assert.equals("openai/chat", overlay.model)
+		assert.same({ reasoning_effort = "none" }, variants[1].body)
+		assert.same({ reasoning_effort = "none" }, variants[2].body)
+		assert.equals(variants[1].id, lifecycle.resolve_completion_model(completion).variant)
+		assert.equals(variants[2].id, lifecycle.resolve_explanation_model(explanation).variant)
+		assert.are_not.equals(variants[1].id, variants[2].id)
+		explanation.options.body.reasoning_effort = "low"
+		lifecycle.setup({ explanation = explanation })
+		assert.equals(variants[1].id, lifecycle.resolve_completion_model(completion).variant)
+		local model, err = lifecycle.resolve_explanation_model(explanation)
+		assert.is_nil(model)
+		assert.matches("restart", err, 1, true)
+		assert.equals(1, #jobs)
+	end)
+
+	it("keeps completion available when explanation overlay is invalid", function()
+		local completion = {
+			enabled = true, model = { providerID = "openai", modelID = "coder" },
+			options = { body = { max_tokens = 32 } },
+		}
+		local explanation = {
+			enabled = true, model = { providerID = "openai", modelID = "coder" },
+			variant = "brief", options = { body = { max_tokens = 64 } },
+		}
+		lifecycle.setup({ completion = completion, explanation = explanation })
+		local job = complete_start()
+		local variants = vim.json.decode(job.opts.env.OPENCODE_CONFIG_CONTENT).providers.openai.models.coder.variants
+		assert.equals(1, #variants)
+		assert.equals(variants[1].id, lifecycle.resolve_completion_model(completion).variant)
+		local model, err = lifecycle.resolve_explanation_model(explanation)
+		assert.is_nil(model)
+		assert.matches("not both", err, 1, true)
+	end)
+
+	it("isolates invalid completion options from ordinary startup", function()
+		local completion = {
+			enabled = true, model = { providerID = "openai", modelID = "coder" },
+			variant = "fast", options = {},
+		}
+		lifecycle.setup({ completion = completion, env = { OPENCODE_CONFIG_CONTENT = '{"model":"openai/chat"}' } })
+		local job = complete_start()
+		assert.equals('{"model":"openai/chat"}', job.opts.env.OPENCODE_CONFIG_CONTENT)
+		assert.equals("connected", state_data.connection)
+		local model, err = lifecycle.resolve_completion_model(completion)
+		assert.is_nil(model)
+		assert.matches("not both", err, 1, true)
+	end)
+
+	it("refreshes completion profiles only after a managed process is restarted", function()
+		local completion = { enabled = true, model = { providerID = "local", modelID = "coder" }, options = { body = { max_tokens = 32 } } }
+		lifecycle.setup({ completion = completion })
+		local first_job = complete_start()
+		local first_variant = lifecycle.resolve_completion_model(completion).variant
+		lifecycle.disconnect()
+		assert.equals(first_variant, lifecycle.resolve_completion_model(completion).variant)
+		lifecycle.ensure_connected(function() end)
+		respond_health(#health_callbacks, true)
+		flush_scheduled()
+		completion.options.body.max_tokens = 64
+		lifecycle.setup({ completion = completion })
+		assert.is_nil(lifecycle.resolve_completion_model(completion))
+		lifecycle.restart()
+		first_job.opts.on_exit(first_job, 0, 15)
+		flush_scheduled()
+		local second_job = jobs[2]
+		emit_listening(second_job, 4012)
+		respond_health(#health_callbacks, true)
+		flush_scheduled()
+		local variant = lifecycle.resolve_completion_model(completion).variant
+		assert.are_not.equals(first_variant, variant)
+		assert.equals(64, vim.json.decode(second_job.opts.env.OPENCODE_CONFIG_CONTENT).providers["local"].models.coder.variants[1].body.max_tokens)
+		lifecycle.stop()
+		second_job.opts.on_exit(second_job, 0, 15)
+		flush_scheduled()
+		assert.is_nil(lifecycle.resolve_completion_model(completion))
+	end)
+
+	it("rejects local completion options for an explicitly connected server", function()
+		local completion = { enabled = true, model = { providerID = "local", modelID = "coder" }, options = {} }
+		lifecycle.setup({ port = 4096, completion = completion })
+		state_data.server.port = 4096
+		lifecycle.ensure_connected(function() end)
+		respond_health(1, true)
+		flush_scheduled()
+		assert.equals(0, #jobs)
+		assert.equals("connected", state_data.connection)
+		local model, err = lifecycle.resolve_completion_model(completion)
+		assert.is_nil(model)
+		assert.matches("external server", err, 1, true)
+	end)
+
 	it("drops queued actions when event connection fails", function()
 		local old_runs = 0
 		local retry_runs = 0

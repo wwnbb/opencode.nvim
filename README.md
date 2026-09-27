@@ -97,6 +97,167 @@ conversation. Press `c` to copy the answer, use the arrow keys or Page Up/Down t
 scroll, and press `Esc` to dismiss it. Bare `/btw` or the command palette opens a
 short question prompt.
 
+# Inline code completion
+
+Enable manually requested ghost text in ordinary editable file buffers:
+
+```lua
+require("opencode").setup({
+  completion = {
+    enabled = true,
+    model = { providerID = "your-provider", modelID = "your-fast-model" },
+    -- variant = "completion", -- optional variant configured in OpenCode
+    keymaps = { trigger = "<C-l>", accept = "<Tab>" },
+    timeout_ms = 15000,
+    max_lines = 12,
+  },
+})
+```
+
+In Insert mode, **Ctrl+L** requests a suggestion and displays a spinner at the
+cursor. Press it again to cancel the pending request or ask for an alternative
+to the visible suggestion. **Tab** inserts the entire suggestion as a separate
+undo step. While waiting, or without a suggestion, Tab keeps its usual mapping.
+Typing, moving the cursor, leaving Insert mode, or switching buffers dismisses
+the suggestion. A late response cannot insert or display stale code.
+
+Completion inserts between the cursor and the existing text to its right; it
+never replaces that suffix. With a suffix, suggestions stay on one line. At the
+end of a line, they can contain a short block. Preview does not modify the file;
+long virtual lines are clipped to the window width. Inline virtual text requires
+Neovim 0.10 or newer. Customize `OpenCodeCompletion` and
+`OpenCodeCompletionSpinner` highlight groups with `nvim_set_hl`.
+
+The model must be configured explicitly; completion does not inherit the chat
+model. OpenCode 2.0.11–2.0.12 uses `/api/experimental/generate` for this buffered,
+sessionless request: no tools run and nothing is added to chat history. The
+spinner remains until the complete response arrives. Canceling closes this
+request's local connection; provider-side generation cancellation depends on
+OpenCode and the provider. On a cold server, completion allows up to two seconds
+for the separate base model catalog to initialize, within the overall timeout.
+Only explicit model/variant-unavailable rejections are retried; provider failures
+and uncertain requests are never automatically repeated.
+
+For a server launched by the plugin, configure provider-specific model options
+directly in Lua instead of selecting an existing variant:
+
+```lua
+completion = {
+  enabled = true,
+  model = { providerID = "openai", modelID = "your-fast-model" },
+  options = {
+    -- For a native OpenAI Responses model supporting reasoningEffort="none":
+    settings = { reasoningEffort = "none" },
+    body = { max_output_tokens = 256 },
+    -- headers = { ... },
+  },
+}
+```
+
+`settings`, `body`, and `headers` follow OpenCode's
+[model overlay format](https://opencode.ai/v2/docs/models#options). They are
+provider-specific: `none` is not supported by every reasoning model, and raw
+token-budget fields differ between provider APIs. Generic `settings.maxTokens`
+or `settings.temperature` are not translated into generation parameters by
+this endpoint. Choose a model without reasoning, or explicitly disable it using
+its supported options.
+
+The plugin installs an internal completion variant in the managed server's
+`OPENCODE_CONFIG_CONTENT` environment, preserving other JSON/JSONC configuration
+and model variants. It does not edit config files or change the chat default.
+Options take effect when that server starts; after changing them, use
+`:OpenCodeRestart`. The plugin never silently restarts an ongoing chat.
+`options` and `variant` are mutually exclusive. With an external server
+(`server.port`), configure the variant in that server's base/global configuration
+and set `completion.variant`; Lua `options` require a managed server. In
+OpenCode 2.0.11–2.0.12, sessionless generation uses the server's base
+configuration, so project-only model variants are insufficient.
+
+Context comes from the unsaved current buffer: cursor prefix/suffix, surrounding
+lines, file header, language, and indentation settings. It also includes up to
+two related, loaded file buffers from the same project, prioritizing referenced
+paths/names and then same-directory files of the same language. This feature
+does not scan file contents on disk or issue LSP requests. Limits are configurable:
+
+```lua
+completion = {
+  -- enabled/model/keymaps/options as above
+  context = {
+    max_bytes = 24576, -- entire serialized prompt, including instructions
+    before_lines = 150,
+    after_lines = 50,
+    header_lines = 60,
+    max_related_buffers = 2, -- use 0 for current-buffer context only
+    related_lines = 60,
+  },
+}
+```
+
+Set either completion keymap to `false` to integrate with your own mappings or
+completion framework. The public API is `require("opencode").complete()`,
+`accept_completion()` (returns whether acceptance was queued),
+`dismiss_completion()`, and `completion_visible()`. Acceptance is safe from an
+expression mapping; the actual insertion runs outside Neovim's textlock.
+The automatic Tab mapping exists only while ghost text is ready and restores
+previous buffer-local mappings when it disappears.
+
+# Explain a Visual selection
+
+Enable explanations separately from inline completion:
+
+```lua
+require("opencode").setup({
+  explanation = {
+    enabled = true, -- disabled by default
+    model = { providerID = "ollama-cloud", modelID = "deepseek-v4.1-flash" },
+    -- variant = "brief", -- use an existing OpenCode variant instead of options
+    options = { body = { reasoning_effort = "none" } },
+    language = "en",
+    -- prompt = "Explain these selected lines in {language} by logical block.",
+    keymaps = { trigger = "K" }, -- Visual mode only; false disables the mapping
+    timeout_ms = 60000,
+    context = {
+      max_bytes = 24576,
+      before_lines = 150,
+      after_lines = 50,
+      header_lines = 60,
+      max_related_buffers = 2,
+      related_lines = 60,
+    },
+  },
+})
+```
+
+Select code in Visual mode and press `K` (`<S-k>`). A scrollable popup opens
+immediately with a spinner, then shows the finished answer. The default
+prompt asks for concise Markdown explanations of consecutive logical blocks
+with exact source ranges, such as `L24–27 — …`, covering every nonempty part
+of the selection without repeating the code. It asks the model to wrap the
+final answer in `<answer>` markers. When those markers are present, the popup
+shows only the final answer; otherwise it shows the response as received.
+Press `c` to copy the answer; `q` or `Esc` closes the popup and cancels a pending
+request. Normal-mode `K` remains available for LSP hover. Call
+`require("opencode").explain_selection()` from your own Visual mapping if needed.
+
+Set `explanation.prompt` to replace the default instruction. The optional
+`{language}` placeholder uses `explanation.language`. The plugin appends the
+selection and context as JSON after either instruction; the custom prompt is
+included in the `max_bytes` budget. A custom prompt can request any response
+format; its response is shown unchanged. The plugin does not check line ranges.
+
+The request uses the unsaved source buffer, surrounding lines, file header, and
+related loaded buffers. The full selection has priority within `max_bytes`; if
+it alone exceeds the budget, the popup shows an error instead of truncating it.
+The source buffer is never edited. Generation uses the sessionless
+`/api/experimental/generate` endpoint without tools or chat history, and late
+answers are ignored after closing the popup or changing the source buffer.
+
+Explanation has its own model, variant, options, and context settings. For a
+server launched by the plugin, `options` creates a private variant independent
+of completion; apply changed options with `:OpenCodeRestart`. Set either
+`variant` or `options`, not both. With an external server, configure a named
+variant on that server and set `explanation.variant`.
+
 # Popup borders
 
 Set `popup.border` in `require("opencode").setup()` to style the outer edge of
@@ -212,6 +373,26 @@ OpenCode 2.0.11 API dependencies and TypeScript compiler used by the tool suite.
 ./tests/run.sh smoke        # smoke specs
 ./tests/run.sh tools        # Bun tool tests, including the Neovim edit-review path
 ```
+
+The runner uses temporary Neovim configuration, data, state, cache and log paths.
+Each Lua spec process has its own profile, removed when the run finishes. Tests
+use the real pinned Nui and Plenary dependencies.
+
+The live server/skill smoke test is reported as pending unless the runtime
+harness supplies its isolated server and explicit model. A normal suite run
+does not exercise a live model.
+
+Verify completion against an installed OpenCode binary and a loopback mock
+model (temporary configuration, no account credentials or paid requests):
+
+```sh
+python3 tests/runtime/completion_backend.py
+# Or select a minimum-version binary explicitly:
+python3 tests/runtime/completion_backend.py --cli /path/to/opencode-2.0.11
+```
+
+This checks the real stateless endpoint, model options, cold-catalog startup,
+history isolation, and whether cancellation reaches the mock provider.
 
 You can also run a single spec file:
 

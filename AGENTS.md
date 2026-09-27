@@ -27,6 +27,10 @@ lua/opencode/events.lua              → Event system facade
 lua/opencode/cleanup.lua             → Reset/teardown orchestration across modules
 lua/opencode/commands.lua            → User commands and default loader keymaps
 lua/opencode/send.lua                → Send-flow orchestration for prompts
+lua/opencode/completion/init.lua     → Sessionless editor completion lifecycle, cancellation, acceptance
+lua/opencode/completion/context.lua  → Bounded context from current and related loaded buffers
+lua/opencode/completion/profile.lua  → Model validation and managed-server variant overlay
+lua/opencode/ui/completion.lua       → Ghost text, spinner, and temporary acceptance mappings
 lua/opencode/events/bus.lua          → Pub/sub event bus
 lua/opencode/events/sse_bridge.lua   → Native SSE envelope → local event bus
 lua/opencode/events/state_bridge.lua → State ↔ event bridge

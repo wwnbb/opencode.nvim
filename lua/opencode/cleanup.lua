@@ -9,7 +9,15 @@ local function call(module_name, fn_name, ...)
 end
 
 ---@param session_id string
+function M.clear_session_memos(session_id)
+	call("opencode.ui.chat.render_state", "clear_session", session_id)
+	call("opencode.ui.chat.tool_group", "clear_session", session_id)
+	call("opencode.ui.chat.history_metadata", "clear_session", session_id)
+end
+
+---@param session_id string
 function M.clear_session(session_id)
+	M.clear_session_memos(session_id)
 	call("opencode.btw", "clear_session", session_id)
 	call("opencode.permission.state", "clear_session", session_id)
 	call("opencode.question.state", "clear_session", session_id)
@@ -24,8 +32,12 @@ end
 ---@param opts? { reset_state?: boolean, clear_chat?: boolean }
 function M.clear_transient(opts)
 	opts = opts or {}
+	call("opencode.completion", "dismiss")
+	call("opencode.explanation", "dismiss")
 
 	call("opencode.sync", "clear_all")
+	call("opencode.util.memo", "clear_all")
+	call("opencode.ui.chat.render_state", "clear_code_cache")
 	call("opencode.events.handlers.v2", "clear")
 	call("opencode.permission.state", "clear_all")
 	call("opencode.question.state", "clear_all")

@@ -157,53 +157,15 @@ end
 ---@return string|nil
 local function _build_visual_selection_prompt(opts)
 	opts = opts or {}
-
-	local bufnr = vim.api.nvim_get_current_buf()
-	local filepath = vim.api.nvim_buf_get_name(bufnr)
+	local selection, selection_err = require("opencode.util.visual_selection").capture()
+	if not selection then
+		vim.notify("OpenCode: " .. selection_err, vim.log.levels.WARN)
+		return nil
+	end
+	local bufnr, filepath = selection.bufnr, selection.path
 	if filepath == "" then
 		vim.notify("OpenCode: current buffer has no file path", vim.log.levels.WARN)
 		return nil
-	end
-
-	local start_pos = vim.fn.getpos("'<")
-	local end_pos = vim.fn.getpos("'>")
-	local start_line = start_pos[2]
-	local start_col = start_pos[3]
-	local end_line = end_pos[2]
-	local end_col = end_pos[3]
-
-	if start_line == 0 or end_line == 0 then
-		vim.notify("OpenCode: no visual selection found", vim.log.levels.WARN)
-		return nil
-	end
-
-	if start_line > end_line then
-		start_line, end_line = end_line, start_line
-		start_col, end_col = end_col, start_col
-	elseif start_line == end_line and start_col > end_col then
-		start_col, end_col = end_col, start_col
-	end
-
-	local lines = vim.api.nvim_buf_get_lines(bufnr, start_line - 1, end_line, false)
-	if #lines == 0 then
-		vim.notify("OpenCode: selected range is empty", vim.log.levels.WARN)
-		return nil
-	end
-
-	local visual_mode = vim.fn.visualmode()
-	if visual_mode == "\022" then
-		local col_start = math.min(start_col, end_col)
-		local col_end = math.max(start_col, end_col)
-		for i, line in ipairs(lines) do
-			lines[i] = line:sub(col_start, col_end)
-		end
-	elseif visual_mode ~= "V" then
-		if #lines == 1 then
-			lines[1] = lines[1]:sub(start_col, end_col)
-		else
-			lines[1] = lines[1]:sub(start_col)
-			lines[#lines] = lines[#lines]:sub(1, end_col)
-		end
 	end
 
 	local display_path = vim.fn.fnamemodify(filepath, ":~:.")
@@ -211,14 +173,14 @@ local function _build_visual_selection_prompt(opts)
 		display_path = filepath
 	end
 
-	local line_ref = tostring(start_line)
-	if start_line ~= end_line then
-		line_ref = string.format("%d-%d", start_line, end_line)
+	local line_ref = tostring(selection.start_line)
+	if selection.start_line ~= selection.end_line then
+		line_ref = string.format("%d-%d", selection.start_line, selection.end_line)
 	end
 
 	local parts = {
 		string.format("@%s#%s", display_path, line_ref),
-		_fence_code(bufnr, table.concat(lines, "\n")),
+		_fence_code(bufnr, selection.text),
 	}
 
 	local context = opts.context and vim.trim(opts.context) or ""
@@ -289,7 +251,11 @@ function M.setup(opts)
 		env = M._config.server.env,
 		auth = M._config.server.auth,
 		config_dir = M._config.server.config_dir,
+		completion = M._config.completion,
+		explanation = M._config.explanation,
 	})
+	require("opencode.completion").setup(M._config.completion)
+	require("opencode.explanation").setup(M._config.explanation)
 
 	-- Expose state module
 	M.state = state
@@ -616,6 +582,29 @@ function M.send(message, opts)
 	lifecycle.ensure_connected(function()
 		require("opencode.send").send(message, captured)
 	end)
+end
+
+--- Request a new inline code completion at the Insert-mode cursor.
+function M.complete()
+	return require("opencode.completion").complete()
+end
+
+--- Accept the visible suggestion; safe for expr/snippet completion mappings.
+function M.accept_completion()
+	return require("opencode.completion").accept()
+end
+
+function M.dismiss_completion()
+	return require("opencode.completion").dismiss()
+end
+
+function M.completion_visible()
+	return require("opencode.completion").visible()
+end
+
+--- Explain the current Visual selection in a temporary popup.
+function M.explain_selection()
+	return require("opencode.explanation").explain_selection()
 end
 
 --- Ask a transient question using the active session's context and model.

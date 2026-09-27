@@ -17,8 +17,10 @@ function M.providers(providers, models, default)
 			value.modelID = model.id
 			value.variants, value.variant_order = {}, {}
 			for _, variant in ipairs(model.variants or {}) do
-				value.variants[variant.id] = vim.deepcopy(variant)
-				value.variant_order[#value.variant_order + 1] = variant.id
+				if not require("opencode.completion.profile").is_private_variant(variant.id) then
+					value.variants[variant.id] = vim.deepcopy(variant)
+					value.variant_order[#value.variant_order + 1] = variant.id
+				end
 			end
 			value.cost_tiers = vim.deepcopy(model.cost or {})
 			value.cost = {}
