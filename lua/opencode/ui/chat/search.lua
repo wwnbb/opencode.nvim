@@ -38,37 +38,16 @@ end
 
 require("opencode.ui.highlights").register("opencode.ui.chat.search", ensure_highlights)
 
----@param value any
----@return string
-local function stringify(value)
-	if text_util.is_nil(value) then
-		return ""
-	end
-	if type(value) == "string" then
-		return value
-	end
-	if type(value) == "table" then
-		if type(value.output) == "string" then
-			return value.output
-		end
-		if type(value.content) == "string" then
-			return value.content
-		end
-		return vim.inspect(value)
-	end
-	return tostring(value)
-end
-
 ---@param ... any
 ---@return string
 local function first_nonempty_text(...)
-	return text_util.first_nonempty_text(stringify, ...)
+	return text_util.first_nonempty_text(tool_panel.stringify_output, ...)
 end
 
 ---@param ... any
 ---@return string
 local function first_nonempty_trimmed_text(...)
-	return text_util.first_nonempty_trimmed_text(stringify, ...)
+	return text_util.first_nonempty_trimmed_text(tool_panel.stringify_output, ...)
 end
 
 local trim_edge_newlines = text_util.trim_edge_newlines

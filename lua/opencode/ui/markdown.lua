@@ -101,6 +101,7 @@ function M.render(content, opts, render)
 	source = source .. "\n"
 	local width = math.max(1, opts.width or render.get_chat_text_width())
 	local scope = opts.scope or "assistant_markdown"
+	local inline_context = inline.new_context()
 	local retry, references = false, {}
 	local function add(text_value, spans, prefix)
 		prefix = prefix or ""
@@ -135,7 +136,12 @@ function M.render(content, opts, render)
 		end
 	end
 	local function prose(value, base, prefix, language)
-		local chunks, unavailable = inline.parse(value, base or ((prefix or ""):find("│", 1, true) and "OpenCodeMarkdownQuote" or nil), language)
+		local chunks, unavailable
+		do
+			local cacheable
+			chunks, unavailable, cacheable = inline.parse(value, base or ((prefix or ""):find("│", 1, true) and "OpenCodeMarkdownQuote" or nil), language, inline_context)
+			unavailable = unavailable or cacheable == false
+		end
 		retry = retry or unavailable
 		-- Inline ranges can cross source newlines; split chunks without losing styles.
 		local line_chunks = {}
@@ -158,9 +164,10 @@ function M.render(content, opts, render)
 		for i, line in ipairs(source_lines) do rows[i] = add(line, {}, prefix) end
 		lang = syntax.normalize_language(lang)
 		if lang and syntax.is_enabled(scope) then
-			local captures = (opts.highlight_code or syntax.highlight_text)(value, lang,
+			local captures, status = (opts.highlight_code or syntax.highlight_text)(value, lang,
 				{ scope = scope, min_bytes = 0 }, { open_line = open_line })
-			retry = retry or #captures == 0
+			inline.invalidate_context(inline_context)
+			retry = retry or syntax.needs_retry(captures, status)
 			vim.list_extend(result._opencode_highlights, syntax.project_highlights(captures, source_lines, rows))
 		end
 	end
@@ -180,7 +187,12 @@ function M.render(content, opts, render)
 				end
 				if cursor <= #raw then values[#values + 1] = raw:sub(cursor) end
 				for i, cell in ipairs(values) do
-					local chunks, unavailable = inline.table(vim.trim(cell), references)
+					local chunks, unavailable
+					do
+						local cacheable
+						chunks, unavailable, cacheable = inline.table(vim.trim(cell), references, inline_context)
+						unavailable = unavailable or cacheable == false
+					end
 					retry = retry or unavailable
 					if #data == 0 then for _, chunk in ipairs(chunks) do chunk.hl = "OpenCodeMarkdownHeading" end end
 					local value, spans = flatten(chunks)

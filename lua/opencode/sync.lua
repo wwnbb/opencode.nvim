@@ -3,9 +3,10 @@
 -- Parts use binary search by ID; messages use chronological ordering
 
 local M = {}
+local native_hooks = {}
 
 function M.handle_v2_event(event)
-	return require("opencode.sync.v2").apply(M, event)
+	return require("opencode.sync.v2").apply(M, event, native_hooks)
 end
 ---@class SyncStore
 ---@field message table<string, Message[]> Messages by sessionID
@@ -63,6 +64,67 @@ local store = {
 	config = {},        -- Global config
 	mcp = {},           -- MCP server status
 }
+
+-- Indexes and memo generations are deliberately absent from get_store(). The
+-- arrays and public revisions retain their existing ownership and semantics.
+local message_indexes = setmetatable({}, { __mode = "k" })
+local message_order_keys = {}
+local native_messages = {}
+local structure_generation, linked_generation = {}, {}
+local metadata_snapshots, history_generation = {}, {}
+local history_clock, history_reset_generation = 0, 0
+local metadata_depth, metadata_pending = 0, {}
+local parts_generation, parts_owners = {}, {}
+local parts_memo = require("opencode.util.memo").new("sync_render_parts", { max_entries = 10000 })
+
+local function invalidate_parts(message_id)
+	if not message_id then return end
+	parts_generation[message_id] = (parts_generation[message_id] or 0) + 1
+	local owner = parts_owners[message_id]
+	if owner then parts_memo:delete(owner) end
+	native_messages[message_id] = nil
+end
+
+local function clear_private_message(message_id)
+	invalidate_parts(message_id)
+	parts_generation[message_id], parts_owners[message_id] = nil, nil
+	metadata_snapshots[message_id] = nil
+	metadata_pending[message_id] = nil
+	message_order_keys[message_id] = nil
+end
+
+local function bump_history_generation(session_id)
+	if not session_id then return end
+	history_clock = history_clock + 1
+	history_generation[session_id] = history_clock
+end
+
+local function structure_changed(session_id)
+	structure_generation[session_id] = (structure_generation[session_id] or 0) + 1
+	bump_history_generation(session_id)
+end
+
+local function metadata_value(message)
+	return {
+		id = message.id, sessionID = message.sessionID, type = message.type,
+		role = message.role, agent = message.agent, parentID = message.parentID,
+		time = vim.deepcopy(message.time), tokens = vim.deepcopy(message.tokens),
+		provisional = message.provisional, hidden = message.hidden,
+	}
+end
+
+local function refresh_metadata(message)
+	local next_value = metadata_value(message)
+	if not vim.deep_equal(metadata_snapshots[message.id], next_value) then
+		metadata_snapshots[message.id] = next_value
+		bump_history_generation(message.sessionID)
+	end
+end
+
+local function track_metadata(message)
+	if metadata_depth > 0 then metadata_pending[message.id] = true
+	else refresh_metadata(message) end
+end
 
 local UTILITY_AGENT_NAMES = {
 	compaction = true,
@@ -155,13 +217,26 @@ local function message_insert_index(messages, message)
 	return left
 end
 
-local function find_message_index(messages, message_id)
-	for index, message in ipairs(messages) do
-		if get_message_id(message) == message_id then
-			return index
-		end
+local function reindex_messages(messages, start)
+	local index = message_indexes[messages]
+	if not index then index = {}; message_indexes[messages] = index end
+	for position = start or 1, #messages do
+		index[messages[position].id] = position
 	end
-	return nil
+end
+
+local function find_message_index(messages, message_id)
+	if not messages then return nil end
+	local index = message_indexes[messages]
+	if not index then reindex_messages(messages); index = message_indexes[messages] end
+	local position = index[message_id]
+	if position and (not messages[position] or messages[position].id ~= message_id) then
+		-- Tolerate a replaced/reordered backing array before rebuilding the index.
+		message_indexes[messages] = nil
+		reindex_messages(messages)
+		position = message_indexes[messages][message_id]
+	end
+	return position
 end
 
 ---@param value any
@@ -193,18 +268,11 @@ end
 ---@param message_id string|nil
 ---@param part_id string|nil
 ---@return string|nil
-local function part_revision_key(message_id, part_id)
+local function part_key(message_id, part_id)
 	if not message_id or not part_id then
 		return nil
 	end
 	return message_id .. "\0" .. part_id
-end
-
----@param message_id string|nil
----@param part_id string|nil
----@return string|nil
-local function part_key(message_id, part_id)
-	return part_revision_key(message_id, part_id)
 end
 
 ---@param map table
@@ -252,7 +320,7 @@ end
 ---@param session_id string|nil
 local function bump_part_revision(message_id, part_id, session_id)
 	bump_message_revision(message_id, session_id)
-	bump_revision(store.part_revision, part_revision_key(message_id, part_id))
+	bump_revision(store.part_revision, part_key(message_id, part_id))
 end
 
 ---@param old_value any
@@ -402,8 +470,6 @@ bump_task_summary_revision_for_part_change = function(previous_part, next_part)
 	bump_task_summary_revision(part.sessionID or (message and message.sessionID) or find_message_session_id(part.messageID))
 end
 
----@param message_id string|nil
----@return boolean
 ---@param tool_part table|nil
 ---@return string|nil
 local function resolve_task_child_session_id(tool_part)
@@ -430,6 +496,7 @@ local function clear_task_child_index(message_id, part_id)
 	end
 	local child_session_id = store.task_part_child[key]
 	if child_session_id then
+		native_messages[message_id] = nil
 		if store.task_child_owner[child_session_id] == key then
 			store.task_child_parent[child_session_id] = nil
 			store.task_child_owner[child_session_id] = nil
@@ -461,6 +528,7 @@ local function record_task_child_index(parent_session_id, message_id, part_id, c
 	if not key then
 		return false
 	end
+	native_messages[message_id] = nil
 
 	local changed = false
 	local existing_child = store.task_part_child[key]
@@ -474,6 +542,7 @@ local function record_task_child_index(parent_session_id, message_id, part_id, c
 		store.task_part_child[existing_owner] = nil
 		local old_message_id, old_part_id = existing_owner:match("^(.-)%z(.+)$")
 		if old_message_id and old_part_id then
+			native_messages[old_message_id] = nil
 			bump_part_revision(old_message_id, old_part_id, find_message_session_id(old_message_id))
 		end
 		changed = true
@@ -534,6 +603,7 @@ clear_task_child_indices_for_message = function(message_id)
 	if not message_id then
 		return
 	end
+	native_messages[message_id] = nil
 	local prefix = message_id .. "\0"
 	for key in pairs(store.task_part_child) do
 		if key:sub(1, #prefix) == prefix then
@@ -558,19 +628,25 @@ function M.handle_message_updated(info)
 	end
 	info.sessionID = session_id
 	info.id = message_id
+	native_messages[message_id] = nil
+	-- A standalone upsert may leave another assistant's derived parent stale.
+	-- Only the complete chronology pass can certify the session for deltas.
+	linked_generation[session_id] = nil
 
 	local messages = store.message[session_id]
-	local changed = false
 	local previous_session_id = store.message_session[info.id]
 	if previous_session_id and previous_session_id ~= session_id then
 		M.handle_message_removed(previous_session_id, info.id)
-		changed = true
 	end
 
 	-- If no messages for this session, create array with this message
 	if not messages then
 		store.message[session_id] = { info }
+		message_order_keys[message_id] = get_message_created(info) or false
+		reindex_messages(store.message[session_id])
 		index_message_session(session_id, info.id)
+		structure_changed(session_id)
+		track_metadata(info)
 		bump_message_revision(info.id, session_id)
 		bump_task_summary_revision_for_message(info.id, session_id)
 		return true
@@ -578,14 +654,27 @@ function M.handle_message_updated(info)
 
 	-- Locate by ID; message ordering is independent of message ID.
 	local message_index = find_message_index(messages, info.id)
+	local changed
 
 	if message_index then
 		-- Update existing message (reconcile)
 		local current = messages[message_index]
 		local merged = info
 		changed = values_changed(current, merged)
-		table.remove(messages, message_index)
-		table.insert(messages, message_insert_index(messages, merged), merged)
+		local previous_key = message_order_keys[message_id]
+		if previous_key == nil then previous_key = get_message_created(current) or false end
+		local previous_role = current.role
+		if metadata_snapshots[message_id] then previous_role = metadata_snapshots[message_id].role end
+		if previous_key == (get_message_created(merged) or false) then
+			messages[message_index] = merged
+			if previous_role ~= merged.role then structure_changed(session_id) end
+		else
+			table.remove(messages, message_index)
+			local next_index = message_insert_index(messages, merged)
+			table.insert(messages, next_index, merged)
+			reindex_messages(messages, math.min(message_index, next_index))
+			structure_changed(session_id)
+		end
 		index_message_session(session_id, info.id)
 		if changed then
 			bump_message_revision(info.id, session_id)
@@ -595,12 +684,17 @@ function M.handle_message_updated(info)
 		end
 	else
 		-- Insert new message at correct position (maintains sorted order)
-		table.insert(messages, message_insert_index(messages, info), info)
+		local next_index = message_insert_index(messages, info)
+		table.insert(messages, next_index, info)
+		reindex_messages(messages, next_index)
 		index_message_session(session_id, info.id)
+		structure_changed(session_id)
 		bump_message_revision(info.id, session_id)
 		bump_task_summary_revision_for_message(info.id, session_id)
 		changed = true
 	end
+	message_order_keys[message_id] = get_message_created(info) or false
+	track_metadata(info)
 	return changed
 end
 
@@ -614,6 +708,7 @@ function M.handle_message_removed(session_id, message_id)
 		store.part[message_id] = nil
 		unindex_message_session(message_id)
 		clear_message_revisions(message_id)
+		clear_private_message(message_id)
 		return
 	end
 
@@ -621,11 +716,15 @@ function M.handle_message_removed(session_id, message_id)
 	if message_index then
 		bump_task_summary_revision_for_message(message_id, session_id)
 		table.remove(messages, message_index)
+		message_indexes[messages][message_id] = nil
+		reindex_messages(messages, message_index)
 		-- Also remove parts
 		clear_task_child_indices_for_message(message_id)
 		store.part[message_id] = nil
 		unindex_message_session(message_id)
 		clear_message_revisions(message_id)
+		clear_private_message(message_id)
+		structure_changed(session_id)
 		bump_session_revision(session_id)
 	end
 end
@@ -644,6 +743,7 @@ function M.handle_part_updated(part)
 	if not part.id then
 		return false
 	end
+	invalidate_parts(message_id)
 
 	local parts = store.part[message_id]
 
@@ -695,6 +795,7 @@ function M.handle_part_removed(message_id, part_id)
 	clear_task_child_index(message_id, part_id)
 	local result = binary_search(parts, part_id, get_part_id)
 	if result.found then
+		invalidate_parts(message_id)
 		local removed_part = parts[result.index]
 		table.remove(parts, result.index)
 		bump_part_revision(message_id, part_id, find_message_session_id(message_id))
@@ -761,7 +862,7 @@ end
 ---@return number message_count
 ---@return number part_count
 ---@return number changed_count
-function M.handle_session_messages(session_id, messages, opts)
+local function handle_session_messages(session_id, messages, opts)
 	if type(messages) ~= "table" then
 		return 0, 0, 0
 	end
@@ -857,9 +958,150 @@ function M.handle_session_messages(session_id, messages, opts)
 		elseif message.role == "assistant" and message.parentID ~= user_id then
 			message.parentID = user_id
 			bump_message_revision(message.id, session_id)
+			track_metadata(message)
 		end
 	end
+	linked_generation[session_id] = structure_generation[session_id] or 0
 	return message_count, part_count, changed_count
+end
+
+function M.handle_session_messages(session_id, messages, opts)
+	-- The projection temporarily removes derived parentID. Compare metadata only
+	-- after the existing chronology pass restores it, including on partial pages.
+	metadata_depth = metadata_depth + 1
+	local ok, message_count, part_count, changed_count = pcall(handle_session_messages, session_id, messages, opts)
+	metadata_depth = metadata_depth - 1
+	if metadata_depth == 0 then
+		local pending = metadata_pending
+		metadata_pending = {}
+		for message_id in pairs(pending) do
+			local message = get_message_by_id(message_id)
+			if message then refresh_metadata(message) end
+		end
+	end
+	if not ok then error(message_count, 0) end
+	return message_count, part_count, changed_count
+end
+
+-- Only commits made by the native reducer establish this provenance. Sync
+-- getters are read-only: every supported mutator invalidates these private
+-- guards before changing data. Old returned objects remain fully detached.
+-- Direct projected upserts and ambiguous structures continue through projection.
+native_hooks.committed = function(session_id, projected)
+	local info = projected.info
+	local message_id = info and info.id
+	local native = info and info._v2
+	local parts = message_id and store.part[message_id]
+	if not message_id or get_message_by_id(message_id) ~= info
+		or info.sessionID ~= session_id or info.role ~= "assistant" or info.type ~= "assistant"
+		or info.provisional ~= nil or type(native) ~= "table" or native.type ~= "assistant"
+		or type(native.content) ~= "table" or type(info.content) ~= "table" or type(parts) ~= "table"
+		or #parts ~= #native.content or #info.content ~= #native.content then return end
+	local indexes, refs = {}, {}
+	for index, part in ipairs(parts) do
+		if indexes[part.id] or store.task_part_child[part_key(message_id, part.id)]
+			or resolve_task_child_session_id(part) then return end
+		indexes[part.id], refs[index] = index, part
+	end
+	local locators, ordinals = { text = {}, reasoning = {}, tool = {} }, {}
+	local count = 0
+	for index, content in ipairs(native.content) do
+		if type(content) ~= "table" or not locators[content.type] then return end
+		local kind = content.type
+		local ordinal = ordinals[kind] or 0
+		ordinals[kind] = ordinal + 1
+		local identity = kind == "tool" and content.id or ordinal
+		if kind == "tool" and not nonempty_string(identity) then return end
+		local part = projected.parts[index]
+		local position = part and indexes[part.id]
+		if not position or parts[position] ~= part or part.type ~= kind
+			or part.content_order ~= index or part.ordinal ~= ordinal
+			or locators[kind][identity] then return end
+		locators[kind][identity] = { native_index = index, part_index = position }
+		count = count + 1
+	end
+	-- Sparse/custom arrays are not native DTO arrays.
+	for key in pairs(native.content) do
+		if type(key) ~= "number" or key < 1 or key > count or key % 1 ~= 0 then return end
+	end
+	native_messages[message_id] = {
+		info = info, native = native, content = info.content, parts = parts, refs = refs,
+		native_content = native.content,
+		locators = locators, count = count, generation = parts_generation[message_id] or 0,
+		structure = structure_generation[session_id] or 0,
+	}
+end
+
+native_hooks.try_delta = function(event)
+	local kind = event.type
+	local content_kind = kind == "session.text.delta" and "text"
+		or kind == "session.reasoning.delta" and "reasoning"
+		or kind == "session.tool.input.delta" and "tool"
+	if not content_kind then return end
+	local data = event.data
+	if type(data) ~= "table" or type(data.delta) ~= "string" or data.delta == "" then return end
+	local session_id, message_id = data.sessionID, data.assistantMessageID
+	local entry = message_id and native_messages[message_id]
+	local messages = session_id and store.message[session_id]
+	if not entry or not messages or entry.info.sessionID ~= session_id
+		or entry.structure ~= (structure_generation[session_id] or 0)
+		or linked_generation[session_id] ~= entry.structure
+		or entry.generation ~= (parts_generation[message_id] or 0) then return end
+	local position = find_message_index(messages, message_id)
+	local current = position and messages[position]
+	local parts = store.part[message_id]
+	if current ~= entry.info or current._v2 ~= entry.native or current.content ~= entry.content
+		or current._v2.content ~= entry.native_content
+		or parts ~= entry.parts or #parts ~= entry.count
+		or #current._v2.content ~= entry.count or #current.content ~= entry.count then return end
+	local identity = content_kind == "tool" and data.id or (data.ordinal or 0)
+	local locator = entry.locators[content_kind][identity]
+	if not locator then return end
+	local native = current._v2.content[locator.native_index]
+	local content = current.content[locator.native_index]
+	local part = parts[locator.part_index]
+	if type(native) ~= "table" or type(content) ~= "table" or type(part) ~= "table"
+		or native.type ~= content_kind or content.type ~= content_kind or part.type ~= content_kind then return end
+	local value
+	if content_kind == "tool" then
+		if type(native.state) ~= "table" or type(content.state) ~= "table" or type(part.state) ~= "table"
+			or native.state.status ~= "streaming" or content.state.status ~= "streaming"
+			or part.state.status ~= "streaming" then return end
+		value = native.state.input
+		if type(value) ~= "string" or value ~= content.state.input or value ~= part.state.input then return end
+	else
+		value = native.text
+		if type(value) ~= "string" or value ~= content.text or value ~= part.text then return end
+	end
+	for index, sibling in ipairs(parts) do
+		if sibling ~= entry.refs[index] then return end
+	end
+
+	-- The full reducer detaches both native copies and every projected sibling,
+	-- including unchanged nested tool inputs. Preserve that observable contract.
+	local next_info = vim.deepcopy(current)
+	local next_parts = {}
+	for index, sibling in ipairs(parts) do next_parts[index] = vim.deepcopy(sibling) end
+	local next_value = value .. data.delta
+	local next_native = next_info._v2.content[locator.native_index]
+	local next_content = next_info.content[locator.native_index]
+	local next_part = next_parts[locator.part_index]
+	if content_kind == "tool" then
+		next_native.state.input, next_content.state.input, next_part.state.input = next_value, next_value, next_value
+	else next_native.text, next_content.text, next_part.text = next_value, next_value, next_value end
+	local restores_parent = current._v2.parentID ~= current.parentID
+	messages[position] = next_info
+	for index, sibling in ipairs(next_parts) do parts[index] = sibling end
+	invalidate_parts(message_id)
+	bump_message_revision(message_id, session_id)
+	bump_part_revision(message_id, next_part.id, session_id)
+	if content_kind == "tool" then bump_task_summary_revision(session_id) end
+	if restores_parent then bump_message_revision(message_id, session_id) end
+	entry.info, entry.native, entry.content = next_info, next_info._v2, next_info.content
+	entry.native_content = next_info._v2.content
+	entry.refs, entry.generation = next_parts, parts_generation[message_id]
+	native_messages[message_id] = entry
+	return { session_id = session_id, changed = true }
 end
 
 ---Store a native session status update.
@@ -913,6 +1155,8 @@ function M.finalize_inflight(session_id, opts)
 				message.finish = finish
 			end
 			bump_message_revision(message.id, session_id)
+			native_messages[message.id] = nil
+			track_metadata(message)
 			finalized_messages = finalized_messages + 1
 		end
 	end
@@ -937,6 +1181,7 @@ function M.finalize_inflight(session_id, opts)
 							part.state.time["end"] = now
 						end
 						bump_part_revision(message_id, part.id, session_id)
+						invalidate_parts(message_id)
 						finalized_parts = finalized_parts + 1
 					end
 				end
@@ -997,7 +1242,7 @@ end
 ---@param part_id string
 ---@return number
 function M.get_part_revision(message_id, part_id)
-	local key = part_revision_key(message_id, part_id)
+	local key = part_key(message_id, part_id)
 	return key and store.part_revision[key] or 0
 end
 
@@ -1007,16 +1252,52 @@ function M.get_task_summary_revision(session_id)
 	return store.task_summary_revision[session_id] or store.task_summary_revision_counter or 0
 end
 
+---Generation of scalar history metadata, excluding streamed part contents.
+---This private cache dependency is independent of public message revisions.
+function M.get_history_metadata_generation(session_id)
+	return history_generation[session_id] or history_reset_generation
+end
+
 ---Get parts for a message
 ---@param message_id string
 ---@return Part[]
+local EMPTY_PARTS = { order = {}, tools = {}, content = "", reasoning = "", without_synthetic = "" }
+
+local function derived_parts(message_id)
+	local parts = store.part[message_id]
+	if not parts or #parts == 0 then return EMPTY_PARTS end
+	local owner = parts_owners[message_id]
+	if not owner then owner = {}; parts_owners[message_id] = owner end
+	local generation = parts_generation[message_id] or 0
+	local cached = parts_memo:get(owner, generation)
+	if cached then return cached end
+	-- Retain positions and scalar text, not entire part object graphs. Besides
+	-- reducing memory, this makes each outward result bind current store objects.
+	local order, texts, visible, reasoning, tools = {}, {}, {}, {}, {}
+	for index = 1, #parts do order[index] = index end
+	if parts[1].content_order ~= nil then
+		table.sort(order, function(a, b) return parts[a].content_order < parts[b].content_order end)
+	end
+	for _, index in ipairs(order) do
+		local part = parts[index]
+		if part.type == "text" and part.text then
+			texts[#texts + 1] = part.text
+			if not part.synthetic then visible[#visible + 1] = part.text end
+		elseif part.type == "reasoning" and part.text then reasoning[#reasoning + 1] = part.text
+		elseif part.type == "tool" then tools[#tools + 1] = index end
+	end
+	local result = { order = order, tools = tools, content = table.concat(texts),
+		without_synthetic = table.concat(visible), reasoning = table.concat(reasoning) }
+	parts_memo:put(owner, generation, result)
+	return result
+end
+
 function M.get_parts(message_id)
 	local parts = store.part[message_id] or {}
-	if parts[1] and parts[1].content_order ~= nil then
-		parts = vim.list_extend({}, parts)
-		table.sort(parts, function(a, b) return a.content_order < b.content_order end)
-	end
-	return parts
+	if not parts[1] or parts[1].content_order == nil then return parts end
+	local result = {}
+	for _, index in ipairs(derived_parts(message_id).order) do result[#result + 1] = parts[index] end
+	return result
 end
 
 ---Get a specific part
@@ -1042,29 +1323,24 @@ end
 ---@return { content: string, reasoning: string, tool_parts: Part[], parts: Part[], message_revision: number, part_revisions: table<string, number> }
 function M.get_message_render_parts(message_id, opts)
 	opts = opts or {}
-	local parts = M.get_parts(message_id)
-	local text_parts = {}
-	local reasoning_parts = {}
-	local tool_parts = {}
-	local part_revisions = {}
-
-	for _, part in ipairs(parts) do
+	local source = store.part[message_id] or {}
+	local cached = derived_parts(message_id)
+	local native_order = source[1] and source[1].content_order ~= nil
+	local parts = native_order and {} or source
+	local tool_parts, part_revisions = {}, {}
+	for _, index in ipairs(cached.order) do
+		local part = source[index]
+		if native_order then parts[#parts + 1] = part end
 		if part.id then
-			local key = part_revision_key(message_id, part.id)
+			local key = part_key(message_id, part.id)
 			part_revisions[part.id] = key and store.part_revision[key] or 0
 		end
-		if part.type == "text" and part.text and (opts.include_synthetic ~= false or not part.synthetic) then
-			table.insert(text_parts, part.text)
-		elseif part.type == "reasoning" and part.text then
-			table.insert(reasoning_parts, part.text)
-		elseif part.type == "tool" then
-			table.insert(tool_parts, part)
-		end
 	end
+	for _, index in ipairs(cached.tools) do tool_parts[#tool_parts + 1] = source[index] end
 
 	local result = {
-		content = table.concat(text_parts, ""),
-		reasoning = table.concat(reasoning_parts, ""),
+		content = opts.include_synthetic == false and cached.without_synthetic or cached.content,
+		reasoning = cached.reasoning,
 		tool_parts = tool_parts,
 		parts = parts,
 		message_revision = store.message_revision[message_id] or 0,
@@ -1078,14 +1354,17 @@ end
 ---@param opts? { include_synthetic?: boolean }
 ---@return string
 function M.get_message_text(message_id, opts)
-	return M.get_message_render_parts(message_id, opts).content
+	local cached = derived_parts(message_id)
+	return opts and opts.include_synthetic == false and cached.without_synthetic or cached.content
 end
 
 ---Get tool parts for a message
 ---@param message_id string
 ---@return Part[]
 function M.get_message_tools(message_id)
-	return M.get_message_render_parts(message_id).tool_parts
+	local result, parts = {}, store.part[message_id] or {}
+	for _, index in ipairs(derived_parts(message_id).tools) do result[#result + 1] = parts[index] end
+	return result
 end
 
 ---@param child_session_id string|nil
@@ -1200,10 +1479,13 @@ function M.clear_session(session_id)
 		store.part[msg.id] = nil
 		unindex_message_session(msg.id)
 		clear_message_revisions(msg.id)
+		clear_private_message(msg.id)
 	end
 
 	-- Remove messages
 	store.message[session_id] = nil
+	structure_changed(session_id)
+	linked_generation[session_id] = nil
 	store.session_revision[session_id] = nil
 	bump_task_summary_revision(session_id)
 
@@ -1222,14 +1504,26 @@ function M.clear_session_messages(session_id)
 		store.part[msg.id] = nil
 		unindex_message_session(msg.id)
 		clear_message_revisions(msg.id)
+		clear_private_message(msg.id)
 	end
 	store.message[session_id] = nil
+	structure_changed(session_id)
+	linked_generation[session_id] = nil
 	bump_task_summary_revision(session_id)
 	bump_session_revision(session_id)
 end
 
 ---Clear all data
 function M.clear_all()
+	for _, owner in pairs(parts_owners) do parts_memo:delete(owner) end
+	message_indexes = setmetatable({}, { __mode = "k" })
+	message_order_keys, native_messages = {}, {}
+	structure_generation, linked_generation = {}, {}
+	metadata_snapshots, metadata_pending = {}, {}
+	parts_generation, parts_owners = {}, {}
+	history_clock = history_clock + 1
+	history_reset_generation = history_clock
+	history_generation = {}
 	store.snapshot_generation = store.snapshot_generation + 1
 	store.session_generation = {}
 	store.message = {}

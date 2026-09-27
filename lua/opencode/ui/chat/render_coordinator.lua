@@ -43,16 +43,48 @@ local function get_listener_generation(events, event_type)
 end
 
 ---@param data table|nil
-local function merge_pending(data)
-	data = data or {}
-	pending_data = pending_data or {}
+function M.merge_requests(existing, data)
+	data = type(data) == "table" and data or {}
+	local merged = existing or { _render_sessions = {} }
+	merged._render_sessions = merged._render_sessions or {}
+	local scoped = false
+	for session_id in pairs(data._render_sessions or {}) do
+		merged._render_sessions[session_id] = true
+		scoped = true
+	end
+	local session_id = data.session_id or data.sessionID or data.sessionId
+	if session_id and session_id ~= "" then
+		merged._render_sessions[session_id] = true
+		scoped = true
+	end
+	if data._render_global or not scoped then merged._render_global = true end
 	for key, value in pairs(data) do
 		if key == "force" then
-			pending_data.force = pending_data.force == true or value == true
-		elseif pending_data[key] == nil then
-			pending_data[key] = value
+			merged.force = merged.force == true or value == true
+		elseif key ~= "_render_sessions" and key ~= "_render_global" and merged[key] == nil then
+			merged[key] = value
 		end
 	end
+	return merged
+end
+
+---Evaluate at execution time: selection may have changed since the request.
+function M.request_relevant(data)
+	if type(data) ~= "table" or data._render_global then return true end
+	local current = app_state.get_session().id
+	local scoped = false
+	for session_id in pairs(data._render_sessions or {}) do
+		scoped = true
+		if event_util.render_target_session_id(current, session_id) then return true end
+	end
+	local session_id = data.session_id or data.sessionID or data.sessionId
+	if session_id and session_id ~= "" then
+		-- Merged requests already tested this scope above. Repeating the check
+		-- can scan the current history again while resolving an unknown child.
+		if data._render_sessions and data._render_sessions[session_id] then return false end
+		return event_util.render_target_session_id(current, session_id) ~= nil
+	end
+	return not scoped
 end
 
 local function events()
@@ -145,7 +177,7 @@ end
 
 ---@param data? table
 function M.request(data)
-	merge_pending(data)
+	pending_data = M.merge_requests(pending_data, data)
 	if pending then
 		return
 	end

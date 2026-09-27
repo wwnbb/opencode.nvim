@@ -118,8 +118,16 @@ end
 
 local function skill_names(state)
 	local names, seen = {}, {}
-	local text = state.bufnr and vim.api.nvim_buf_is_valid(state.bufnr)
-		and table.concat(vim.api.nvim_buf_get_lines(state.bufnr, 0, -1, false), "\n") or ""
+	local text
+	local function marker_present(marker)
+		if not state.marker_range then return false end
+		if text == nil then
+			-- Markers may occur anywhere in the draft; share one complete read.
+			text = state.bufnr and vim.api.nvim_buf_is_valid(state.bufnr)
+				and table.concat(vim.api.nvim_buf_get_lines(state.bufnr, 0, -1, false), "\n") or ""
+		end
+		return state.marker_range(text, marker)
+	end
 	local ok, sync = pcall(require, "opencode.sync")
 	local catalog = ok and sync.get_skills() or {}
 	local by_id = {}
@@ -129,7 +137,7 @@ local function skill_names(state)
 	for _, part in ipairs(state.parts or {}) do
 		local id = part.skillID or part.id
 		if part.type == "skill" and type(id) == "string" and not seen[id]
-			and (not part._marker or (state.marker_range and state.marker_range(text, part._marker))) then
+			and (not part._marker or marker_present(part._marker)) then
 			local name = by_id[id] or part.name or id
 			names[#names + 1] = type(name) == "string" and name or id
 			seen[id] = true

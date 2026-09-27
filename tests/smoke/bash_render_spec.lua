@@ -26,6 +26,18 @@ describe("shell panel tab rendering", function()
 		chat_state.bufnr, chat_state.winid = saved.bufnr, saved.winid
 	end)
 
+	it("strips echoed commands including output with no remaining body", function()
+		local function render(output)
+			return bash.render_tool({ tool = "bash", state = {
+				status = "completed", input = { command = "pwd", workdir = "/tmp" }, output = output,
+			} }, true)
+		end
+		for _, prefix in ipairs({ "pwd", "$ pwd", "/tmp pwd", "/tmp\npwd" }) do
+			assert.same(render(""), render(prefix))
+			assert.same(render("first\nsecond"), render(prefix .. "\nfirst\nsecond"))
+		end
+	end)
+
 	it("keeps Plenary output within panel rows with linebreak enabled", function()
 		local part = {
 			tool = "bash",

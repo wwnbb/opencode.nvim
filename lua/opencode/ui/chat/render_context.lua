@@ -8,6 +8,7 @@ local render = require("opencode.ui.chat.render")
 local render_state = require("opencode.ui.chat.render_state")
 local widget_support = require("opencode.ui.chat.widget_support")
 local sync = require("opencode.sync")
+local syntax = require("opencode.ui.syntax")
 
 local Context = {}
 Context.__index = Context
@@ -34,6 +35,7 @@ function M.new(opts)
 		chat_width = render.get_chat_text_width(),
 		metadata_provider_revision = metadata_provider_revision,
 		metadata_agent_revision = metadata_agent_revision,
+		syntax_generation = syntax.get_cache_generation(),
 		next_stream_blocks = {},
 		message_render_parts_cache = {},
 	}, Context)
@@ -47,34 +49,43 @@ function Context:render_cache_key(...)
 	return render_state.render_cache_key(...)
 end
 
-function Context:cached_nui_lines(key, build)
-	local cached = key and render_state.render_cache_get(key)
-	if cached and cached.nui_lines then
+-- Owner shape is fixed and independent of revisions. Avoid a second temporary
+-- vararg array for every cached block in an otherwise warm transcript.
+function Context:render_owner_key(kind, message_id, part_id)
+	return tostring(kind or "") .. "\0" .. tostring(self.current_session.id or "")
+		.. "\0" .. tostring(message_id or "") .. "\0" .. tostring(part_id or "")
+end
+
+function Context:cached_nui_lines(key, build, owner)
+	local cached = render_state.render_cache_get(key, owner)
+	if cached and cached.nui_lines and cached.syntax_generation == self.syntax_generation then
 		return cached.nui_lines
 	end
+	if cached then render_state.render_cache_delete(owner or key) end
 	local lines = build()
 	if key and not lines._opencode_syntax_retry then
-		render_state.render_cache_put(key, { nui_lines = lines })
+		render_state.render_cache_put(key, { nui_lines = lines, syntax_generation = self.syntax_generation }, owner)
 	end
 	return lines
 end
 
-function Context:cached_render_result(key, build)
-	local cached = key and render_state.render_cache_get(key)
-	if cached and cached.result then
+function Context:cached_render_result(key, build, owner)
+	local cached = render_state.render_cache_get(key, owner)
+	if cached and cached.result and cached.syntax_generation == self.syntax_generation then
 		return cached.result
 	end
+	if cached then render_state.render_cache_delete(owner or key) end
 	local result = build()
 	if key and not result._opencode_syntax_retry then
-		render_state.render_cache_put(key, { result = result })
+		render_state.render_cache_put(key, { result = result, syntax_generation = self.syntax_generation }, owner)
 	end
 	return result
 end
 
-function Context:cached_nui_line(key, build)
+function Context:cached_nui_line(key, build, owner)
 	local lines = self:cached_nui_lines(key, function()
 		return { build() }
-	end)
+	end, owner)
 	return lines[1]
 end
 

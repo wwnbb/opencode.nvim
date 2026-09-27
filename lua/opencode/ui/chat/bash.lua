@@ -72,17 +72,6 @@ end
 
 local trim_edge_newlines = text_util.trim_edge_newlines
 
----@param lines string[]
----@param start_index number
----@return string
-local function join_from(lines, start_index)
-	local out = {}
-	for i = start_index, #lines do
-		table.insert(out, lines[i])
-	end
-	return table.concat(out, "\n")
-end
-
 ---@param output string
 ---@param command string
 ---@param workdir string
@@ -99,33 +88,18 @@ local function strip_echoed_command(output, command, workdir)
 	local second = vim.trim(lines[2] or "")
 
 	if wd_raw ~= "" and (first == wd_raw) and second == cmd then
-		return trim_edge_newlines(join_from(lines, 3))
+		return trim_edge_newlines(table.concat(lines, "\n", 3))
 	end
 
 	if first == cmd or first == "$ " .. cmd then
-		return trim_edge_newlines(join_from(lines, 2))
+		return trim_edge_newlines(table.concat(lines, "\n", 2))
 	end
 
 	if wd_raw ~= "" and first == wd_raw .. " " .. cmd then
-		return trim_edge_newlines(join_from(lines, 2))
+		return trim_edge_newlines(table.concat(lines, "\n", 2))
 	end
 
 	return trim_edge_newlines(output)
-end
-
----@param value any
----@return number|nil
-local function normalize_exit_code(value)
-	if type(value) == "number" then
-		return value
-	end
-	if type(value) == "string" and value ~= "" then
-		local num = tonumber(value)
-		if num then
-			return num
-		end
-	end
-	return nil
 end
 
 ---@param result table
@@ -198,8 +172,8 @@ function M.render_tool(tool_part, expanded)
 		description = description .. " in " .. workdir
 	end
 
-	local exit_code = normalize_exit_code(metadata.exit)
-		or normalize_exit_code(tool_state.exit)
+	local exit_code = tool_panel.normalize_number(metadata.exit)
+		or tool_panel.normalize_number(tool_state.exit)
 	local output = first_nonempty_text(ctx.output)
 	local error_text = first_nonempty_text(ctx.error)
 	local output_body = strip_echoed_command(output, command, workdir)

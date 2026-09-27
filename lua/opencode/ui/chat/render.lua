@@ -708,6 +708,7 @@ function M.render_tool_line(tool_part, is_expanded)
 
 	local result_lines = {}
 	local result_highlights = {}
+	local result = { lines = result_lines, highlights = result_highlights }
 
 	local function add_hl_line(text, hl_group)
 		text = M.sanitize_buffer_line(text)
@@ -745,13 +746,13 @@ function M.render_tool_line(tool_part, is_expanded)
 			local input_lang = type(tool_input) == "table" and "json" or syntax.detect_output_language(input_str, nil)
 			if input_lang then
 				if input_lang == "markdown" then
-					syntax.add_markdown_highlights({ highlights = result_highlights }, input_str, {
+					syntax.add_markdown_highlights(result, input_str, {
 						scope = "tools",
 						line_start = input_start,
 						col_offset = 4,
 					})
 				else
-					syntax.add_highlights({ highlights = result_highlights }, input_str, input_lang, {
+					syntax.add_highlights(result, input_str, input_lang, {
 						scope = "tools",
 						line_start = input_start,
 						col_offset = 4,
@@ -770,13 +771,13 @@ function M.render_tool_line(tool_part, is_expanded)
 			local output_lang = type(tool_output) == "table" and "json"
 				or syntax.detect_output_language(output_str, M.get_tool_metadata(tool_part))
 			if output_lang == "markdown" then
-				syntax.add_markdown_highlights({ highlights = result_highlights }, output_str, {
+				syntax.add_markdown_highlights(result, output_str, {
 					scope = "tools",
 					line_start = output_start,
 					col_offset = 4,
 				})
 			elseif output_lang then
-				syntax.add_highlights({ highlights = result_highlights }, output_str, output_lang, {
+				syntax.add_highlights(result, output_str, output_lang, {
 					scope = "tools",
 					line_start = output_start,
 					col_offset = 4,
@@ -793,7 +794,6 @@ function M.render_tool_line(tool_part, is_expanded)
 		end
 	end
 
-	local result = { lines = result_lines, highlights = result_highlights }
 	return result
 end
 

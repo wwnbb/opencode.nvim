@@ -43,14 +43,7 @@ local function unquote(text)
 	return text
 end
 
----@param value any
----@return string|nil
-local function first_string(value)
-	if type(value) == "string" and value ~= "" then
-		return value
-	end
-	return nil
-end
+local first_string = text_util.first_string
 
 ---@param name string
 ---@return table|nil

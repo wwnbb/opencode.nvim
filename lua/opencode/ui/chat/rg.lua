@@ -27,26 +27,8 @@ require("opencode.ui.highlights").register("opencode.ui.chat.rg", ensure_highlig
 
 ---@param value any
 ---@return string
-local function stringify(value)
-	if text_util.is_nil(value) then
-		return ""
-	end
-	if type(value) == "table" then
-		if type(value.output) == "string" then
-			return value.output
-		end
-		if type(value.content) == "string" then
-			return value.content
-		end
-		return vim.inspect(value)
-	end
-	return tostring(value)
-end
-
----@param value any
----@return string
 local function normalize_text(value)
-	return text_util.normalize_text(value, stringify)
+	return text_util.normalize_text(value, tool_panel.stringify_output)
 end
 
 -- Lua tables do not retain the server's argument order. Keep the common search

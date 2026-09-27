@@ -31,7 +31,7 @@ function M.render_tool_part(ctx, tool_part, message_revision, part_revisions)
 		end
 		local result = ctx:cached_render_result(cache_key, function()
 			return chat_tasks.render_task_tool(tool_part, is_expanded)
-		end)
+		end, ctx:render_owner_key("task", tool_part.messageID, tool_part.id))
 		local base_line = ctx:add_render_result(result, "tool")
 		state.tasks[tool_part.id] = widget_support.mark_render_generation(vim.tbl_extend("force", position_ids, {
 			start_line = base_line,
@@ -60,7 +60,8 @@ function M.render_tool_part(ctx, tool_part, message_revision, part_revisions)
 	end
 	local result = ctx:cached_render_result(cache_key, function()
 		return chat_tasks.render_regular_tool(tool_part, is_expanded)
-	end)
+	end, ctx:render_owner_key(tool_part.type == "skill" and "skill_attachment" or "tool",
+		tool_part.messageID, tool_part.id))
 	local base_line = ctx:add_render_result(result, "tool")
 	state.tools[tool_part.id] = widget_support.mark_render_generation(vim.tbl_extend("force", position_ids, {
 		kind = chat_tasks.is_tool_leaf(tool_part) and "tool" or nil,

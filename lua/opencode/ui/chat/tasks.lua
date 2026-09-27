@@ -347,15 +347,13 @@ function M.render_regular_tool(tool_part, is_expanded)
 		return result
 	end
 
-	local tool_name = tostring(tool_part and tool_part.tool or "unknown")
 	for _, render_tool in ipairs(REGULAR_TOOL_RENDERERS) do
 		local result = render_tool(tool_part, is_expanded)
 		if result then
 			return result
 		end
 	end
-	local result = render.render_tool_line(tool_part, is_expanded)
-	return result
+	return render.render_tool_line(tool_part, is_expanded)
 end
 
 -- ─── Cursor position queries ──────────────────────────────────────────────────
