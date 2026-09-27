@@ -97,6 +97,26 @@ conversation. Press `c` to copy the answer, use the arrow keys or Page Up/Down t
 scroll, and press `Esc` to dismiss it. Bare `/btw` or the command palette opens a
 short question prompt.
 
+# Popup borders
+
+Set `popup.border` in `require("opencode").setup()` to style the outer edge of
+dialogs such as **Switch Session**, help, and `/btw`. The default is `"solid"`.
+The supported values are `"none"`, `"single"`, `"double"`, `"rounded"`,
+`"solid"`, or a custom Nui border character table. Inner list, search, and
+tab windows do not get their own border. With `"none"`, text normally placed
+on the border (such as a popup title) is hidden.
+
+```lua
+require("opencode").setup({
+  popup = { border = "rounded" },
+  chat = {
+    layout = "float",
+    float = { border = "solid" }, -- applies only to the floating chat
+  },
+  palette = { border = "none" }, -- command palette border is independent
+})
+```
+
 # Tokens per second
 
 Assistant footers show average generation speed, for example `42.7 tok/s`.
@@ -294,6 +314,7 @@ Follow these steps:
    - `server.command`, `server.auto_start`, `server.config_dir`, `server.env`
    - `session.default_agent`, `session.default_model.providerID`, `session.default_model.modelID`, `session.parallel.enabled`
    - `chat.layout` (`vertical`, `horizontal`, or `float`), `chat.position`, `chat.width`, `chat.height`, `chat.float.width`, `chat.float.height`, `chat.float.border`, `chat.close_on_focus_lost`
+   - `popup.border` (`none`, `single`, `double`, `rounded`, `solid`, or a Nui border character table)
    - `chat.session_tabs.enabled`, `chat.session_tabs.auto_fit`, `chat.session_tabs.max_tabs`, `chat.session_tabs.separator`, `chat.session_tabs.icons`, `chat.session_tabs.colors`
    - top-level `keymaps.toggle`, `keymaps.command_palette`, `keymaps.toggle_logs`, `keymaps.close_session`, `keymaps.abort`, `keymaps.active_sessions`
    - `input.keymaps.send`, `input.keymaps.cancel`, `input.keymaps.variant_cycle`, `input.keymaps.agent_cycle`, `input.keymaps.model_cycle`

@@ -1,11 +1,24 @@
 local btw = require("opencode.ui.btw")
+local config = require("opencode.config")
+local state = require("opencode.state")
+local Popup = require("opencode.ui.popup")
+
+local function assert_inside_screen(window_config)
+	local border_width, border_height = Popup.outer_insets()
+	assert.is_true(window_config.col >= 0 and window_config.col + window_config.width + border_width <= vim.o.columns)
+	assert.is_true(window_config.row >= 0
+		and window_config.row + window_config.height + border_height <= vim.o.lines - vim.o.cmdheight)
+end
 
 describe("/btw dialog", function()
 	local old_columns, old_lines
+	local old_config
 	local previous_win
 	local original_setreg, original_getreg, original_getmousepos
 
 	before_each(function()
+		old_config = state.get_config()
+		state.set_config(config.merge({}))
 		old_columns, old_lines = vim.o.columns, vim.o.lines
 		previous_win = vim.api.nvim_get_current_win()
 		original_setreg, original_getreg = vim.fn.setreg, vim.fn.getreg
@@ -15,25 +28,28 @@ describe("/btw dialog", function()
 
 	after_each(function()
 		btw.close()
+		state.set_config(old_config)
 		vim.fn.setreg, vim.fn.getreg, vim.fn.getmousepos = original_setreg, original_getreg, original_getmousepos
 		vim.o.columns, vim.o.lines = old_columns, old_lines
 		if vim.api.nvim_win_is_valid(previous_win) then vim.api.nvim_set_current_win(previous_win) end
 	end)
 
-	it("shows a centered borderless answer with fixed hints", function()
+	it("shows a centered answer with the configured outer border and fixed hints", function()
 		local answer = "Day good. Sun up, tokens flow."
 		local view = btw.show("how is your day", answer)
 		local cfg = vim.api.nvim_win_get_config(view.winid)
 		assert.is_true(btw.is_visible())
 		assert.equals(view.winid, vim.api.nvim_get_current_win())
 		assert.equals("editor", cfg.relative)
-		assert.equals("none", cfg.border)
+		assert.equals("solid", view.popup.content.border._.style)
+		assert.is_table(cfg.border)
 		assert.equals(88, cfg.width)
 		assert.is_true(cfg.height < vim.o.lines)
-		assert.equals(math.floor((vim.o.columns - cfg.width) / 2), cfg.col)
+		assert.equals(view.geometry.col, cfg.col)
+		assert_inside_screen(cfg)
 		local lines = vim.api.nvim_buf_get_lines(view.bufnr, 0, -1, false)
 		assert.equals(cfg.height, #lines)
-		assert.equals(math.floor((vim.o.lines - vim.o.cmdheight - cfg.height) / 2), cfg.row)
+		assert.equals(view.geometry.row, cfg.row)
 		assert.is_truthy(lines[2]:find("/btw", 1, true))
 		assert.is_truthy(lines[2]:find("esc", 1, true))
 		assert.is_truthy(lines[4]:find("how is your day", 1, true))
@@ -124,7 +140,8 @@ describe("/btw dialog", function()
 		vim.api.nvim_exec_autocmds("VimResized", {})
 		local cfg = vim.api.nvim_win_get_config(view.winid)
 		local resized = vim.api.nvim_buf_get_lines(view.bufnr, 0, -1, false)
-		assert.equals(math.floor((vim.o.columns - cfg.width) / 2), cfg.col)
+		assert.equals(view.geometry.col, cfg.col)
+		assert_inside_screen(cfg)
 		assert.equals(cfg.height, #resized)
 		assert.is_truthy(resized[#resized - 1]:find("c copy", 1, true))
 	end)
@@ -177,9 +194,10 @@ describe("/btw dialog", function()
 		assert.is_true(btw.is_visible())
 		assert.equals(view.input_winid, vim.api.nvim_get_current_win())
 		local prompt_cfg = vim.api.nvim_win_get_config(view.winid)
-		assert.equals("none", prompt_cfg.border)
+		assert.equals("solid", view.popup.content.border._.style)
+		assert.is_table(prompt_cfg.border)
 		assert.equals(60, prompt_cfg.width)
-		assert.equals(math.floor((vim.o.lines - vim.o.cmdheight) / 4), prompt_cfg.row)
+		assert.equals(view.geometry.row, prompt_cfg.row)
 		assert.equals("none", vim.api.nvim_win_get_config(view.input_winid).border)
 		local prompt_lines = vim.api.nvim_buf_get_lines(view.bufnr, 0, -1, false)
 		assert.is_truthy(prompt_lines[#prompt_lines - 1]:find("return submit", 1, true))
@@ -195,8 +213,9 @@ describe("/btw dialog", function()
 		local resized_panel = vim.api.nvim_win_get_config(view.winid)
 		local resized_input = vim.api.nvim_win_get_config(view.input_winid)
 		assert.equals(60, resized_panel.width)
-		assert.equals(resized_panel.row + 3, resized_input.row)
-		assert.equals(resized_panel.col + 2, resized_input.col)
+		assert.equals(view.winid, resized_input.win)
+		assert.equals(3, resized_input.row)
+		assert.equals(2, resized_input.col)
 		assert.equals(resized_panel.width - 4, resized_input.width)
 		vim.api.nvim_buf_set_lines(view.input_bufnr, 0, -1, false, { "  What is this?  " })
 		vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<CR>", true, false, true), "xt", false)

@@ -223,7 +223,8 @@ function M.open(opts)
 	local keys = normalize_keys(opts.keys)
 	local searchable = opts.searchable == true
 	local multi_select = opts.multi_select == true
-	local width = math.max(12, math.min(opts.width or (searchable and 60 or 40), vim.o.columns - 2))
+	local border_width, border_height = Popup.outer_insets()
+	local width = math.max(12, math.min(opts.width or (searchable and 60 or 40), vim.o.columns - border_width))
 	local footer = build_footer({
 		footer = opts.footer,
 		multi_select = multi_select,
@@ -237,13 +238,15 @@ function M.open(opts)
 		local next_frame_extra = next_list_row + #next_footer_lines + 2
 		local next_max_list_height = math.max(
 			1,
-			math.min(opts.list_height or (searchable and 15 or 20), vim.o.lines - vim.o.cmdheight - next_frame_extra - 2)
+			math.min(opts.list_height or (searchable and 15 or 20), vim.o.lines - vim.o.cmdheight - next_frame_extra - border_height)
 		)
 		return next_footer_lines, next_message_lines, next_list_row, next_frame_extra, next_max_list_height
 	end
 	local footer_lines, message_lines, list_row, frame_extra, max_list_height = layout_metrics(width)
 	local list_height = math.min(max_list_height, math.max(1, #items))
-	local relative, row, col, zindex = float_context.resolve_centered_placement(width, list_height + frame_extra)
+	local relative, row, col, zindex = float_context.resolve_centered_placement(
+		width + border_width, list_height + frame_extra + border_height
+	)
 	zindex = zindex or 80
 
 	local is_closed = false
@@ -621,11 +624,11 @@ function M.open(opts)
 			is_closed = true
 		end,
 		on_resize = function()
-			width = math.max(12, math.min(opts.width or (searchable and 60 or 40), vim.o.columns - 2))
+			width = math.max(12, math.min(opts.width or (searchable and 60 or 40), vim.o.columns - border_width))
 			footer_lines, message_lines, list_row, frame_extra, max_list_height = layout_metrics(width)
 			local _, next_row, next_col = float_context.resolve_centered_placement(
-				width,
-				math.min(max_list_height, math.max(1, #filtered_items)) + frame_extra
+				width + border_width,
+				math.min(max_list_height, math.max(1, #filtered_items)) + frame_extra + border_height
 			)
 			view:resize({ frame = { position = { row = next_row, col = next_col } } })
 			render_list()

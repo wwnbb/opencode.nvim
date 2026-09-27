@@ -168,6 +168,11 @@ M.defaults = {
 		max_frecency_entries = 100,
 	},
 
+	-- Outer border of popup dialogs (separate from chat.float and palette).
+	popup = {
+		border = "solid", -- "none" | "single" | "double" | "rounded" | "solid" | Nui style table
+	},
+
 	notifications = {
 		enabled = true,
 		permissions = true,
