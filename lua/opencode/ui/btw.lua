@@ -5,9 +5,8 @@ local M = {}
 
 local highlights = require("opencode.ui.highlights")
 local render = require("opencode.ui.chat.render")
-local float_context = require("opencode.ui.float_context")
+local Popup = require("opencode.ui.popup")
 
-local ns = vim.api.nvim_create_namespace("opencode_btw")
 local active
 local PROMPT_WIDTH = 60
 local ANSWER_WIDTH = 88
@@ -79,29 +78,17 @@ local function wrap_lines(text, width)
 	return result
 end
 
-local function mark(bufnr, line, start_col, end_col, group, priority)
-	local buffer_line = vim.api.nvim_buf_get_lines(bufnr, line, line + 1, false)[1]
+local function mark(marks, lines, line, start_col, end_col, group, priority)
+	local buffer_line = lines[line + 1]
 	if not buffer_line then return end
 	start_col = math.max(0, math.min(#buffer_line, tonumber(start_col) or 0))
 	end_col = math.max(0, math.min(#buffer_line, tonumber(end_col) or 0))
 	if end_col > start_col then
-		vim.api.nvim_buf_set_extmark(bufnr, ns, line, start_col, {
-			end_col = end_col,
-			hl_group = group,
-			priority = priority,
-		})
+		marks[#marks + 1] = {
+			row = line, col = start_col,
+			opts = { end_col = end_col, hl_group = group, priority = priority },
+		}
 	end
-end
-
-local function create_buffer(filetype, readonly)
-	local bufnr = vim.api.nvim_create_buf(false, true)
-	local options = vim.bo[bufnr]
-	options.buftype = "nofile"
-	options.bufhidden = "wipe"
-	options.swapfile = false
-	options.filetype = filetype
-	if readonly then options.modifiable = false end
-	return bufnr
 end
 
 local function prompt_input_geometry(geometry)
@@ -113,24 +100,14 @@ local function prompt_input_geometry(geometry)
 	}
 end
 
-local function open_window(bufnr, geometry, kind)
-	local winid = vim.api.nvim_open_win(bufnr, kind ~= "panel", {
-		relative = "editor",
-		row = geometry.row,
-		col = geometry.col,
-		width = geometry.width,
-		height = geometry.height,
-		style = "minimal",
-		border = "none",
-		focusable = true,
-		zindex = kind == "input" and 91 or 90,
-	})
-	local options = vim.wo[winid]
-	options.winhighlight = "Normal:OpenCodeBtwBackground,NormalNC:OpenCodeBtwBackground,NormalFloat:OpenCodeBtwBackground,EndOfBuffer:OpenCodeBtwBackground"
+local function window_options(kind)
+	local options = {
+		winhighlight = "Normal:OpenCodeBtwBackground,NormalNC:OpenCodeBtwBackground,NormalFloat:OpenCodeBtwBackground,EndOfBuffer:OpenCodeBtwBackground",
+		winblend = 0,
+	}
 	if kind == "answer" then
 		options.winhighlight = options.winhighlight .. ",Cursor:OpenCodeHiddenCursor,lCursor:OpenCodeHiddenCursor"
 	end
-	options.winblend = 0
 	if kind ~= "input" then options.fillchars = "eob: " end
 	if kind ~= "panel" then
 		options.wrap = false
@@ -143,17 +120,7 @@ local function open_window(bufnr, geometry, kind)
 		options.cursorline = false
 		options.scrolloff = 0
 	end
-	return winid
-end
-
-local function write_panel(view, lines)
-	local options = vim.bo[view.bufnr]
-	options.readonly = false
-	options.modifiable = true
-	vim.api.nvim_buf_set_lines(view.bufnr, 0, -1, false, lines)
-	options.modifiable = false
-	options.readonly = true
-	vim.api.nvim_buf_clear_namespace(view.bufnr, ns, 0, -1)
+	return options
 end
 
 local function render_answer(text, width)
@@ -216,18 +183,15 @@ local function draw(view)
 	for index = #lines + 1, height do lines[index] = "" end
 	view.footer_row = footer_row + 1 -- 1-based row for mouse hit testing
 
-	write_panel(view, lines)
+	local marks = {}
 	for row = raised_start, math.min(raised_end, height - 1) do
-		vim.api.nvim_buf_set_extmark(view.bufnr, ns, row, 0, {
-			line_hl_group = "OpenCodeBtwRaised",
-			priority = 1,
-		})
+		marks[#marks + 1] = { row = row, col = 0, opts = { line_hl_group = "OpenCodeBtwRaised", priority = 1 } }
 	end
-	mark(view.bufnr, header_row, 2, math.min(#heading, 6), "OpenCodeBtwTitle")
-	if has_esc then mark(view.bufnr, header_row, #heading - 5, #heading, "OpenCodeBtwMuted") end
+	mark(marks, lines, header_row, 2, math.min(#heading, 6), "OpenCodeBtwTitle")
+	if has_esc then mark(marks, lines, header_row, #heading - 5, #heading, "OpenCodeBtwMuted") end
 	for index = 1, question_count do
 		local row = question_start + index - 1
-		mark(view.bufnr, row, 2, #lines[row + 1], "OpenCodeBtwMuted")
+		mark(marks, lines, row, 2, #lines[row + 1], "OpenCodeBtwMuted")
 	end
 	for _, highlight in ipairs(answer_highlights) do
 		local first_line = tonumber(highlight.line) or 0
@@ -239,19 +203,20 @@ local function draw(view)
 				local start_col = source_row == first_line and (highlight.col_start or 0) or 0
 				local end_col = source_row == last_line and (highlight.end_col or highlight.col_end or #source_text)
 					or #source_text
-				mark(view.bufnr, row, 2 + start_col, 2 + end_col, highlight.hl_group, highlight.priority or 4100)
+				mark(marks, lines, row, 2 + start_col, 2 + end_col, highlight.hl_group, highlight.priority or 4100)
 			end
 		end
 	end
 	if view.copied then
-		mark(view.bufnr, footer_row, 2, math.min(#footer, 5), "OpenCodeBtwTitle")
-		mark(view.bufnr, footer_row, math.min(#footer, 5), #footer, "OpenCodeBtwMuted")
+		mark(marks, lines, footer_row, 2, math.min(#footer, 5), "OpenCodeBtwTitle")
+		mark(marks, lines, footer_row, math.min(#footer, 5), #footer, "OpenCodeBtwMuted")
 	elseif view.copy_failed then
-		mark(view.bufnr, footer_row, 2, #footer, "OpenCodeBtwMuted")
+		mark(marks, lines, footer_row, 2, #footer, "OpenCodeBtwMuted")
 	else
-		mark(view.bufnr, footer_row, 2, math.min(#footer, 3), "OpenCodeBtwTitle")
-		mark(view.bufnr, footer_row, math.min(#footer, 4), #footer, "OpenCodeBtwMuted")
+		mark(marks, lines, footer_row, 2, math.min(#footer, 3), "OpenCodeBtwTitle")
+		mark(marks, lines, footer_row, math.min(#footer, 4), #footer, "OpenCodeBtwMuted")
 	end
+	view.popup:render(lines, marks)
 	if view.winid and vim.api.nvim_win_is_valid(view.winid) then
 		vim.api.nvim_win_set_cursor(view.winid, { 1, 0 })
 	end
@@ -315,31 +280,11 @@ function M.close()
 	local view = active
 	if not view then return end
 	active = nil
-	if view.augroup then pcall(vim.api.nvim_del_augroup_by_id, view.augroup) end
-	local current_win = vim.api.nvim_get_current_win()
-	local focused = (view.winid and current_win == view.winid)
-		or (view.input_winid and current_win == view.input_winid)
-	if view.input_winid and vim.api.nvim_win_is_valid(view.input_winid) then
-		if current_win == view.input_winid then pcall(vim.cmd, "stopinsert") end
-		pcall(vim.api.nvim_win_close, view.input_winid, true)
+	if view.input_winid and vim.api.nvim_win_is_valid(view.input_winid)
+		and vim.api.nvim_get_current_win() == view.input_winid then
+		pcall(vim.cmd, "stopinsert")
 	end
-	if view.winid and vim.api.nvim_win_is_valid(view.winid) then
-		pcall(vim.api.nvim_win_close, view.winid, true)
-	end
-	if view.input_bufnr and vim.api.nvim_buf_is_valid(view.input_bufnr) then
-		pcall(vim.api.nvim_buf_delete, view.input_bufnr, { force = true })
-	end
-	if view.bufnr and vim.api.nvim_buf_is_valid(view.bufnr) then
-		pcall(vim.api.nvim_buf_delete, view.bufnr, { force = true })
-	end
-	if focused then
-		-- Match the shared menus: return to the chat before its float focus
-		-- handler can treat the underlying editor as a focus-loss close.
-		if not float_context.focus_chat_if_visible()
-			and view.previous_win and vim.api.nvim_win_is_valid(view.previous_win) then
-			pcall(vim.api.nvim_set_current_win, view.previous_win)
-		end
-	end
+	view.popup:close()
 end
 
 local function draw_prompt(view)
@@ -350,15 +295,12 @@ local function draw_prompt(view)
 	for index = 1, geometry.height do lines[index] = "" end
 	lines[2] = heading
 	lines[math.max(2, geometry.height - 1)] = clip("  return submit", geometry.width)
-	write_panel(view, lines)
-	mark(view.bufnr, 1, 2, math.min(#heading, 6), "OpenCodeBtwTitle")
-	if has_esc then mark(view.bufnr, 1, #heading - 5, #heading, "OpenCodeBtwMuted") end
+	local marks = {}
+	mark(marks, lines, 1, 2, math.min(#heading, 6), "OpenCodeBtwTitle")
+	if has_esc then mark(marks, lines, 1, #heading - 5, #heading, "OpenCodeBtwMuted") end
 	local footer_row = math.max(1, geometry.height - 2)
-	mark(view.bufnr, footer_row, 2, #lines[footer_row + 1], "OpenCodeBtwMuted")
-	if view.input_winid and vim.api.nvim_win_is_valid(view.input_winid) then
-		vim.api.nvim_win_set_config(view.input_winid,
-			vim.tbl_extend("force", { relative = "editor" }, prompt_input_geometry(geometry)))
-	end
+	mark(marks, lines, footer_row, 2, #lines[footer_row + 1], "OpenCodeBtwMuted")
+	view.popup:render(lines, marks)
 end
 
 local function prompt_click(view)
@@ -372,71 +314,102 @@ local function prompt_click(view)
 	end
 end
 
-local function install_lifecycle(view, resized_geometry, redraw)
-	view.augroup = vim.api.nvim_create_augroup("OpenCodeBtw_" .. view.bufnr, { clear = true })
-	vim.api.nvim_create_autocmd("VimResized", {
-		group = view.augroup,
-		callback = function()
+local function create_dialog(kind, geometry, resize_geometry, redraw)
+	local view
+	local previous_win = vim.api.nvim_get_current_win()
+	-- Close an active composer while its parent chat is still focused. Its
+	-- own BufLeave teardown would otherwise race the floating chat's focus
+	-- handler when the dialog is dismissed.
+	local ok, chat_input = pcall(require, "opencode.ui.input")
+	if ok and chat_input.is_visible() and chat_input.get_winids()[1] == previous_win then
+		chat_input.close()
+	end
+	local content = {
+		enter = kind == "answer",
+		focusable = true,
+		relative = "editor",
+		position = { row = geometry.row, col = geometry.col },
+		size = { width = geometry.width, height = geometry.height },
+		border = "none",
+		zindex = 90,
+		buf_options = { filetype = "opencode_btw" },
+		win_options = window_options(kind == "prompt" and "panel" or "answer"),
+	}
+	local input
+	if kind == "prompt" then
+		local input_geometry = prompt_input_geometry(geometry)
+		input = {
+			kind = "popup",
+			enter = true,
+			focusable = true,
+			relative = "editor",
+			position = { row = input_geometry.row, col = input_geometry.col },
+			size = { width = input_geometry.width, height = input_geometry.height },
+			border = "none",
+			zindex = 91,
+			buf_options = { filetype = "opencode_btw_input", modifiable = true },
+			win_options = window_options("input"),
+		}
+	end
+	local popup
+	popup = Popup.new({
+		content = content,
+		input = input,
+		focus_restore = "chat",
+		close_on_leave = true,
+		on_close = function()
+			if active == view then active = nil end
+		end,
+		on_resize = function()
 			if active ~= view or not vim.api.nvim_win_is_valid(view.winid) then return end
-			view.geometry = resized_geometry(view)
-			vim.api.nvim_win_set_config(view.winid, {
-				relative = "editor",
-				row = view.geometry.row,
-				col = view.geometry.col,
-				width = view.geometry.width,
-				height = view.geometry.height,
-			})
+			view.geometry = resize_geometry(view)
+			local layout = {
+				content = {
+					position = { row = view.geometry.row, col = view.geometry.col },
+					size = { width = view.geometry.width, height = view.geometry.height },
+				},
+			}
+			if view.input_winid then
+				local g = prompt_input_geometry(view.geometry)
+				layout.input = { position = { row = g.row, col = g.col }, size = { width = g.width, height = g.height } }
+			end
+			popup:resize(layout)
 			redraw(view)
 		end,
 	})
-	for _, winid in ipairs({ view.winid, view.input_winid }) do
-		vim.api.nvim_create_autocmd("WinClosed", {
-			group = view.augroup,
-			pattern = tostring(winid),
-			callback = function() if active == view then M.close() end end,
-		})
-	end
-	vim.api.nvim_create_autocmd("WinEnter", {
-		group = view.augroup,
-		callback = function()
-			vim.schedule(function()
-				if active ~= view then return end
-				local current = vim.api.nvim_get_current_win()
-				if current ~= view.winid and current ~= view.input_winid then M.close() end
-			end)
-		end,
-	})
+	popup:mount()
+	view = {
+		kind = kind,
+		popup = popup,
+		bufnr = popup.bufnr,
+		winid = popup.winid,
+		input_bufnr = popup.input and popup.input.bufnr or nil,
+		input_winid = popup.input and popup.input.winid or nil,
+		previous_win = previous_win,
+		geometry = geometry,
+	}
+	active = view
+	return view
 end
 
 function M.prompt(on_submit)
 	M.close()
 	local geometry = dimensions("prompt")
-	local previous_win = vim.api.nvim_get_current_win()
-	local bufnr = create_buffer("opencode_btw", true)
-	local winid = open_window(bufnr, geometry, "panel")
-	local input_bufnr = create_buffer("opencode_btw_input")
-	local input_winid = open_window(input_bufnr, prompt_input_geometry(geometry), "input")
-	local view = {
-		kind = "prompt",
-		bufnr = bufnr,
-		winid = winid,
-		input_bufnr = input_bufnr,
-		input_winid = input_winid,
-		previous_win = previous_win,
-		geometry = geometry,
-	}
-	active = view
+	local view = create_dialog("prompt", geometry, function() return dimensions("prompt") end, draw_prompt)
+	local input_bufnr, input_winid = view.input_bufnr, view.input_winid
 	draw_prompt(view)
-	local placeholder_ns = vim.api.nvim_create_namespace("opencode_btw_placeholder")
 	local function update_placeholder()
 		if active ~= view or not vim.api.nvim_buf_is_valid(input_bufnr) then return end
 		local value = table.concat(vim.api.nvim_buf_get_lines(input_bufnr, 0, -1, false), "\n")
-		vim.api.nvim_buf_clear_namespace(input_bufnr, placeholder_ns, 0, -1)
 		if value == "" then
-			vim.api.nvim_buf_set_extmark(input_bufnr, placeholder_ns, 0, 0, {
-				virt_text = { { "Ask anything", "OpenCodeBtwMuted" } },
-				virt_text_pos = "overlay",
-			})
+			view.popup:render(nil, {
+				{ row = 0, col = 0, opts = {
+					virt_text = { { "Ask anything", "OpenCodeBtwMuted" } },
+					virt_text_pos = "overlay",
+				} },
+			}, "input")
+		else
+			view.popup:render(nil, {}, "input")
 		end
 	end
 	local function submit()
@@ -451,21 +424,17 @@ function M.prompt(on_submit)
 	vim.keymap.set({ "i", "n" }, "<C-c>", function()
 		local value = table.concat(vim.api.nvim_buf_get_lines(input_bufnr, 0, -1, false), "\n")
 		if value == "" then M.close(); return end
-		vim.api.nvim_buf_set_lines(input_bufnr, 0, -1, false, { "" })
+		view.popup:render({ "" }, {}, "input")
 		vim.api.nvim_win_set_cursor(input_winid, { 1, 0 })
 		update_placeholder()
 	end, keyopts)
 	vim.keymap.set({ "i", "n" }, "<CR>", submit, keyopts)
 	vim.keymap.set("n", "q", M.close, keyopts)
 	vim.keymap.set("n", "<LeftMouse>", function() prompt_click(view) end,
-		{ buffer = bufnr, noremap = true, silent = true, nowait = true })
-	vim.keymap.set("n", "<Esc>", M.close, { buffer = bufnr, noremap = true, silent = true, nowait = true })
-	install_lifecycle(view, function() return dimensions("prompt") end, draw_prompt)
-	vim.api.nvim_create_autocmd({ "TextChanged", "TextChangedI" }, {
-		group = view.augroup,
-		buffer = input_bufnr,
-		callback = update_placeholder,
-	})
+		{ buffer = view.bufnr, noremap = true, silent = true, nowait = true })
+	vim.keymap.set("n", "<Esc>", M.close, { buffer = view.bufnr, noremap = true, silent = true, nowait = true })
+	view.popup:on("TextChanged", update_placeholder, "input")
+	view.popup:on("TextChangedI", update_placeholder, "input")
 	update_placeholder()
 	vim.cmd("startinsert")
 	return view
@@ -475,22 +444,10 @@ function M.show(question, answer)
 	M.close()
 	question, answer = tostring(question or ""), tostring(answer or "")
 	local geometry = result_dimensions(question)
-	local previous_win = vim.api.nvim_get_current_win()
-	local bufnr = create_buffer("opencode_btw", true)
-	local winid = open_window(bufnr, geometry, "answer")
-	local view = {
-		bufnr = bufnr,
-		winid = winid,
-		previous_win = previous_win,
-		question = question,
-		answer = answer,
-		geometry = geometry,
-		scroll = 0,
-		max_scroll = 0,
-	}
-	active = view
+	local view = create_dialog("answer", geometry, function(current) return result_dimensions(current.question) end, draw)
+	view.question, view.answer, view.scroll, view.max_scroll = question, answer, 0, 0
 	draw(view)
-	local keyopts = { buffer = bufnr, noremap = true, silent = true, nowait = true }
+	local keyopts = { buffer = view.bufnr, noremap = true, silent = true, nowait = true }
 	vim.keymap.set("n", "<Esc>", M.close, keyopts)
 	vim.keymap.set("n", "<C-c>", M.close, keyopts)
 	vim.keymap.set("n", "q", M.close, keyopts)
@@ -508,7 +465,6 @@ function M.show(question, answer)
 	vim.keymap.set("n", "<Home>", function() scroll(-view.max_scroll) end, keyopts)
 	vim.keymap.set("n", "G", function() scroll(view.max_scroll) end, keyopts)
 	vim.keymap.set("n", "gg", function() scroll(-view.max_scroll) end, keyopts)
-	install_lifecycle(view, function(current) return result_dimensions(current.question) end, draw)
 	return view
 end
 

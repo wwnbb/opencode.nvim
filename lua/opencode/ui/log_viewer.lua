@@ -561,7 +561,7 @@ function M.toggle_auto_scroll()
 	vim.notify(string.format("Auto-scroll %s", state.auto_scroll and "enabled" or "disabled"), vim.log.levels.INFO)
 end
 
--- Show help (preserved - already uses nui.popup)
+-- Show help for the split log viewer.
 function M.show_help()
 	local lines = {
 		" Log Viewer Keymaps ",
@@ -587,8 +587,7 @@ function M.show_help()
 	local row = math.floor((ui.height - height) / 2)
 	local col = math.floor((ui.width - width) / 2)
 
-	local Popup = require("nui.popup")
-	local popup = Popup({
+	local popup = require("opencode.ui.popup").new({
 		enter = true,
 		focusable = true,
 		border = {
@@ -600,14 +599,13 @@ function M.show_help()
 	})
 
 	popup:mount()
-	vim.api.nvim_buf_set_lines(popup.bufnr, 0, -1, false, lines)
-	vim.bo[popup.bufnr].modifiable = false
+	popup:render(lines)
 
 	-- Close on any key
 	local close_keys = { "q", "<Esc>", "<CR>", "<Space>" }
 	for _, key in ipairs(close_keys) do
 		vim.keymap.set("n", key, function()
-			popup:unmount()
+			popup:close()
 		end, { buffer = popup.bufnr, noremap = true, silent = true })
 	end
 
@@ -616,7 +614,7 @@ function M.show_help()
 		if not char:match("[qQ]") then
 			pcall(function()
 				vim.keymap.set("n", char, function()
-					popup:unmount()
+					popup:close()
 				end, { buffer = popup.bufnr, noremap = true, silent = true, nowait = true })
 			end)
 		end

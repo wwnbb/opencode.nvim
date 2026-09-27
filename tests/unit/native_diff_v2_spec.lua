@@ -1,8 +1,9 @@
 local native = require("opencode.ui.native_diff")
 local edits = require("opencode.edit.state")
 local state = require("opencode.state")
+local menu = require("opencode.ui.menu")
 describe("native v2 review file actions", function()
-	local path, notify, select_ui, chat_edits
+	local path, notify, menu_open, chat_edits
 	local function read() return table.concat(vim.fn.readfile(path, "b"), "\n") end
 	local function open(kind)
 		vim.fn.writefile({ "before" }, path)
@@ -11,7 +12,7 @@ describe("native v2 review file actions", function()
 		native.show({ { filePath = path, before = "before\n", after = "after\n", type = kind or "update", edit_file_index = 1 } }, { edit_id = "r" })
 	end
 	before_each(function()
-		path = vim.fn.tempname(); notify, select_ui = vim.notify, vim.ui.select
+		path = vim.fn.tempname(); notify, menu_open = vim.notify, menu.open
 		vim.notify = function() end
 		chat_edits = package.loaded["opencode.ui.chat.edits"]
 		package.loaded["opencode.ui.chat.edits"] = { refresh_edit = function() end }
@@ -22,7 +23,7 @@ describe("native v2 review file actions", function()
 		if buf >= 0 then vim.bo[buf].modified = false end
 		native.close(); edits.clear_all(); require("opencode.artifact.changes").clear()
 		if buf >= 0 and vim.api.nvim_buf_is_valid(buf) then vim.api.nvim_buf_delete(buf, { force = true }) end
-		vim.fn.delete(path); vim.notify, vim.ui.select = notify, select_ui
+		vim.fn.delete(path); vim.notify, menu.open = notify, menu_open
 		package.loaded["opencode.ui.chat.edits"] = chat_edits; state.set_connection("idle")
 	end)
 	it("does not flush a manual diff buffer after connection loss", function()
@@ -48,7 +49,11 @@ describe("native v2 review file actions", function()
 	end)
 	it("late delete confirmation cannot write after review cancellation", function()
 		local choose
-		vim.ui.select = function(_, _, callback) choose = callback end
+		menu.open = function(opts)
+			assert.same({ "Yes, delete", "No, keep" }, opts.items)
+			assert.is_false(opts.sort)
+			choose = opts.on_select
+		end
 		open("delete")
 		edits.set_review_record({ reviewID = "r", sessionID = "s", revision = 1, status = "cancelled" })
 		choose("Yes, delete")

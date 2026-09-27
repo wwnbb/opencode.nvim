@@ -311,12 +311,17 @@ function M._show_file(index)
 
 	-- Handle delete type with confirmation dialog
 	if file_type == "delete" then
-		vim.ui.select({ "Yes, delete", "No, keep" }, {
-			prompt = "Delete file: " .. filepath .. "?",
-		}, function(choice)
-			if not choice then return end
-			if rpc_file_action(choice == "Yes, delete" and "accept" or "reject") then M._advance_or_finish() end
-		end)
+		local prompt = "Delete file: " .. filepath .. "?"
+		require("opencode.ui.menu").open({
+			items = { "Yes, delete", "No, keep" },
+			title = "Delete File",
+			message = prompt,
+			width = vim.fn.strdisplaywidth(prompt) + 12,
+			sort = false,
+			on_select = function(choice)
+				if rpc_file_action(choice == "Yes, delete" and "accept" or "reject") then M._advance_or_finish() end
+			end,
+		})
 		return
 	end
 

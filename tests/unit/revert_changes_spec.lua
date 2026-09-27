@@ -2,6 +2,7 @@ local changes = require("opencode.artifact.changes")
 local edits = require("opencode.edit.state")
 local app = require("opencode.state")
 local actions = require("opencode.actions")
+local menu = require("opencode.ui.menu")
 
 local function write(path, bytes)
 	local file = assert(io.open(path, "wb"))
@@ -26,8 +27,8 @@ local function revert_action()
 end
 
 describe("Revert Changes palette safety", function()
-	local root, old_select, old_notify, old_remove, old_reply, modified_buf
-	local choices, prompts, notices
+	local root, old_menu_open, old_notify, old_remove, old_reply, modified_buf
+	local choices, prompts, notices, menu_calls
 
 	local function tracked(id, name, before, after, kind, opts)
 		local path = root .. "/" .. name
@@ -49,17 +50,19 @@ describe("Revert Changes palette safety", function()
 		changes.setup({ auto_backup = false })
 		changes.clear()
 		edits.clear_all()
-		old_select, old_notify, old_remove, old_reply = vim.ui.select, vim.notify, os.remove, actions.reply_review
-		choices, prompts, notices = {}, {}, {}
-		vim.ui.select = function(_, opts, callback)
-			table.insert(prompts, opts.prompt)
-			callback(table.remove(choices, 1))
+		old_menu_open, old_notify, old_remove, old_reply = menu.open, vim.notify, os.remove, actions.reply_review
+		choices, prompts, notices, menu_calls = {}, {}, {}, {}
+		menu.open = function(opts)
+			table.insert(prompts, opts.message or opts.title)
+			table.insert(menu_calls, opts)
+			local choice = table.remove(choices, 1)
+			if choice ~= nil then opts.on_select(choice) end
 		end
 		vim.notify = function(message) table.insert(notices, message) end
 	end)
 
 	after_each(function()
-		vim.ui.select, vim.notify, os.remove, actions.reply_review = old_select, old_notify, old_remove, old_reply
+		menu.open, vim.notify, os.remove, actions.reply_review = old_menu_open, old_notify, old_remove, old_reply
 		if modified_buf and vim.api.nvim_buf_is_valid(modified_buf) then
 			vim.api.nvim_buf_delete(modified_buf, { force = true })
 		end
@@ -82,6 +85,9 @@ describe("Revert Changes palette safety", function()
 		choose("Force overwrite changed files...", "Cancel")
 		assert.equals("manual\n", read(path))
 		assert.is_truthy(prompts[#prompts]:find("Are you sure?", 1, true))
+		assert.same({ "Revert safely (keep later edits)", "Force overwrite changed files...", "Cancel" }, menu_calls[2].items)
+		assert.is_false(menu_calls[2].sort)
+		assert.same({ "Yes, overwrite or delete current files", "Cancel" }, menu_calls[3].items)
 
 		choose("Force overwrite changed files...", "Yes, overwrite or delete current files")
 		assert.equals("before\n", read(path))

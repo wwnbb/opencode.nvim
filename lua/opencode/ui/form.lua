@@ -24,17 +24,10 @@ function M.open(fields, opts, callback)
 		forms.pull(item); forms.rebuild(item)
 		local lines, highlights, meta = widget.get_lines_for_question("integration", item.questions, item, "pending",
 			{ width = vim.api.nvim_win_get_width(popup.winid) })
-		vim.bo[bufnr].modifiable = true
-		vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, lines)
-		vim.bo[bufnr].modifiable = false
-		local ns = vim.api.nvim_create_namespace("opencode_form")
-		vim.api.nvim_buf_clear_namespace(bufnr, ns, 0, -1)
+		popup:render(lines, highlights)
 		if popup.winid and meta.option_count and meta.option_count > 0 then
 			local option = math.min(cursor, meta.option_count)
 			pcall(vim.api.nvim_win_set_cursor, popup.winid, { meta.option_lines[option] + 1, 0 })
-		end
-		for _, hl in ipairs(highlights) do
-			pcall(vim.api.nvim_buf_set_extmark, bufnr, ns, hl.line, hl.col_start, { end_col = hl.col_end, hl_group = hl.hl_group })
 		end
 	end
 	local function choose(index)

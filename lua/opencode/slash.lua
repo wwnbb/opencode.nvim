@@ -175,11 +175,10 @@ function M.register_defaults()
 			})
 			
 			popup:mount()
-			vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, lines)
-			vim.bo[bufnr].modifiable = false
+			popup:render(lines)
 			
 			float.setup_close_keymaps(bufnr, function()
-				popup:unmount()
+				popup:close()
 			end)
 		end,
 	})

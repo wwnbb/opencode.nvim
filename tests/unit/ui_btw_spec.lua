@@ -3,18 +3,19 @@ local btw = require("opencode.ui.btw")
 describe("/btw dialog", function()
 	local old_columns, old_lines
 	local previous_win
-	local original_setreg, original_getreg
+	local original_setreg, original_getreg, original_getmousepos
 
 	before_each(function()
 		old_columns, old_lines = vim.o.columns, vim.o.lines
 		previous_win = vim.api.nvim_get_current_win()
 		original_setreg, original_getreg = vim.fn.setreg, vim.fn.getreg
+		original_getmousepos = vim.fn.getmousepos
 		vim.o.columns, vim.o.lines = 100, 50
 	end)
 
 	after_each(function()
 		btw.close()
-		vim.fn.setreg, vim.fn.getreg = original_setreg, original_getreg
+		vim.fn.setreg, vim.fn.getreg, vim.fn.getmousepos = original_setreg, original_getreg, original_getmousepos
 		vim.o.columns, vim.o.lines = old_columns, old_lines
 		if vim.api.nvim_win_is_valid(previous_win) then vim.api.nvim_set_current_win(previous_win) end
 	end)
@@ -53,6 +54,7 @@ describe("/btw dialog", function()
 			assert.is_true(vim.fn.strdisplaywidth(line) <= cfg.width)
 		end
 		assert.is_truthy(vim.fn.maparg("<LeftMouse>", "n"):find("Lua", 1, true))
+		assert.equals(1, vim.fn.maparg("<Esc>", "n", false, true).buffer)
 		vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<Esc>", true, false, true), "xt", false)
 		assert.is_false(btw.is_visible())
 		assert.equals(previous_win, vim.api.nvim_get_current_win())
@@ -163,7 +165,7 @@ describe("/btw dialog", function()
 		assert.is_false(btw.is_visible())
 		local view = btw.show("question", "answer")
 		vim.api.nvim_set_current_win(previous_win)
-		vim.wait(100, function() return not btw.is_visible() end, 10)
+		assert.is_true(vim.wait(500, function() return not btw.is_visible() end, 10))
 		assert.is_false(btw.is_visible())
 		assert.is_false(vim.api.nvim_win_is_valid(view.winid))
 		assert.equals(previous_win, vim.api.nvim_get_current_win())
@@ -217,5 +219,30 @@ describe("/btw dialog", function()
 		assert.same({ "" }, vim.api.nvim_buf_get_lines(view.input_bufnr, 0, -1, false))
 		vim.api.nvim_feedkeys(ctrl_c, "xt", false)
 		assert.is_false(btw.is_visible())
+	end)
+
+	it("reopens through the shared popup and cleans both prompt windows", function()
+		local first = btw.prompt()
+		assert.is_not_nil(first.popup.input)
+		local panel_win, input_win = first.winid, first.input_winid
+		local panel_buf, input_buf = first.bufnr, first.input_bufnr
+		local second = btw.show("question", "answer")
+		assert.is_false(vim.api.nvim_win_is_valid(panel_win))
+		assert.is_false(vim.api.nvim_win_is_valid(input_win))
+		assert.is_false(vim.api.nvim_buf_is_valid(panel_buf))
+		assert.is_false(vim.api.nvim_buf_is_valid(input_buf))
+		assert.is_true(btw.is_visible())
+		second.popup:close()
+		assert.is_false(btw.is_visible())
+	end)
+
+	it("closes from the answer header mouse target", function()
+		local view = btw.show("question", "answer")
+		vim.fn.getmousepos = function()
+			return { winid = view.winid, winrow = 2, wincol = view.geometry.width - 3 }
+		end
+		vim.fn.maparg("<LeftMouse>", "n", false, true).callback()
+		assert.is_false(btw.is_visible())
+		assert.is_false(vim.api.nvim_win_is_valid(view.winid))
 	end)
 end)
