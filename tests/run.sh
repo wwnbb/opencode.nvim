@@ -8,6 +8,17 @@ PLUGIN_ROOT="$(dirname "$SCRIPT_DIR")"
 source "$SCRIPT_DIR/nvim-test-deps.sh"
 resolve_nvim_test_deps
 
+# Resolve installed dependencies first, then isolate preferences, logs and caches
+# from the user's Neovim profile. Each test process gets its own data directory.
+TEST_PROFILE="$(mktemp -d "${TMPDIR:-/tmp}/opencode-nvim-tests.XXXXXX")"
+trap 'rm -rf "$TEST_PROFILE"' EXIT
+export OPENCODE_NVIM_TEST_PROFILE="$TEST_PROFILE"
+export XDG_CONFIG_HOME="$TEST_PROFILE/config"
+export XDG_DATA_HOME="$TEST_PROFILE/data"
+export XDG_STATE_HOME="$TEST_PROFILE/state"
+export XDG_CACHE_HOME="$TEST_PROFILE/cache"
+export NVIM_LOG_FILE="$TEST_PROFILE/nvim.log"
+
 cd "$PLUGIN_ROOT"
 
 TARGET="${1:-all}"
@@ -49,6 +60,39 @@ run_directory() {
 }
 
 case "$TARGET" in
+	hot-paths)
+		export OPENCODE_NVIM_HOT_PATH_PREFLIGHT="$SCRIPT_DIR/hot_path_preflight.lua"
+		nvim --headless --noplugin -u "$SCRIPT_DIR/minimal_init.lua" \
+			-c "lua local ok, err = pcall(dofile, vim.env.OPENCODE_NVIM_HOT_PATH_PREFLIGHT); if not ok then vim.api.nvim_err_writeln(tostring(err)); vim.cmd('cquit 1') end" \
+			-c "qa!"
+		# Keep work counts and output equivalence deterministic; no timing gate.
+		for file in \
+			tests/unit/render_scope_merge_spec.lua \
+			tests/integration/render_scheduling_spec.lua \
+			tests/unit/activity_leaf_cache_spec.lua \
+			tests/unit/markdown_memo_spec.lua \
+			tests/unit/syntax_cache_status_spec.lua \
+			tests/unit/syntax_query_cache_spec.lua \
+			tests/unit/highlight_cache_equivalence_spec.lua \
+			tests/integration/hot_path_frame_equivalence_spec.lua \
+			tests/integration/input_syntax_reuse_spec.lua \
+			tests/integration/input_syntax_native_query_spec.lua \
+			tests/unit/sync_delta_equivalence_spec.lua \
+			tests/unit/sync_accessors_spec.lua \
+			tests/unit/sync_indexes_spec.lua \
+			tests/unit/sync_memo_spec.lua \
+			tests/unit/history_metadata_spec.lua \
+			tests/unit/completion_context_spec.lua \
+			tests/unit/context_budget_equivalence_spec.lua \
+			tests/unit/explanation_context_spec.lua \
+			tests/unit/memo_spec.lua \
+			tests/unit/render_memo_budget_spec.lua \
+			tests/unit/memo_teardown_spec.lua \
+			tests/unit/input_work_counts_spec.lua \
+			tests/integration/input_resize_spec.lua; do
+			run_file "$file"
+		done
+		;;
 	all)
 		run_directory "tests/unit"
 		run_directory "tests/checks"
