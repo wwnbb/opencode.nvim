@@ -626,13 +626,7 @@ end
 ---@param opts? table
 function M.setup(opts)
 	opts = opts or {}
-	local merged = vim.tbl_deep_extend("force", {}, DEFAULTS, opts)
-	for key in pairs(defaults) do
-		defaults[key] = nil
-	end
-	for key, value in pairs(merged) do
-		defaults[key] = value
-	end
+	defaults = vim.tbl_deep_extend("force", {}, DEFAULTS, opts)
 end
 
 return M

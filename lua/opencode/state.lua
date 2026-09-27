@@ -615,24 +615,6 @@ function M.get_active_sessions()
 		add_session(id)
 	end
 
-	for id, status in pairs(state.sessions.status or {}) do
-		local status_type = session_status.status_type(status)
-		if M.is_runtime_session(id) and state.sessions.by_id[id] and status_type ~= "idle" then
-			add_session(id)
-		end
-	end
-
-	for id, pending in pairs(state.sessions.pending or {}) do
-		local counts = pending_helper.normalize_counts(pending)
-		if
-			M.is_runtime_session(id)
-			and state.sessions.by_id[id]
-			and (counts.permissions > 0 or counts.questions > 0 or counts.edits > 0)
-		then
-			add_session(id)
-		end
-	end
-
 	return result
 end
 

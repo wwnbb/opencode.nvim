@@ -555,6 +555,7 @@ function M.close(session_id, opts)
 	local title = session_util.displayTitle(closed and (closed.title or closed.name)) or target_id
 
 	local ok_sync, sync = pcall(require, "opencode.sync")
+	local closed_ids = ok_sync and type(sync.collect_session_tree) == "function" and sync.collect_session_tree(target_id) or { target_id }
 	if ok_sync and type(sync.clear_session_tree) == "function" then
 		-- Clear the closed tab's data plus any subagent child sessions
 		-- that were loaded into sync (e.g. via `gd`). Their messages are
@@ -562,6 +563,9 @@ function M.close(session_id, opts)
 		sync.clear_session_tree(target_id)
 	elseif ok_sync and type(sync.clear_session) == "function" then
 		sync.clear_session(target_id)
+	end
+	for _, id in ipairs(closed_ids) do
+		require("opencode.cleanup").clear_session_memos(id)
 	end
 
 	if current_root == target_id then

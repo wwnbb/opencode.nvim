@@ -217,9 +217,6 @@ function M.register(palette)
 		description = "Copy current session transcript to clipboard",
 		category = "session",
 		slash = { name = "copy" },
-		enabled = function()
-			return state.get_session().id ~= nil
-		end,
 		run = function()
 			local session_id = state.get_session().id
 			if not session_id then
@@ -227,7 +224,6 @@ function M.register(palette)
 				return
 			end
 
-			local sync = require("opencode.sync")
 			local messages = sync.get_messages(session_id)
 			if #messages == 0 then
 				vim.notify("No messages to copy", vim.log.levels.INFO)
