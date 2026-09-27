@@ -94,10 +94,6 @@ local function date_epoch(date)
 	return epoch
 end
 
-local function date_at(epoch)
-	return os.date("%Y-%m-%d", epoch)
-end
-
 local function date_range(view)
 	local first, last = date_epoch(view.start_date), date_epoch(view.end_date)
 	if not first or not last then return nil end

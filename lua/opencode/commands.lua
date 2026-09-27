@@ -4,10 +4,10 @@ local M = {}
 
 local actions = require("opencode.actions")
 
-local function run_add_line_context_command(send_now, raw_context)
+local function run_add_context_command(action_name, send_now, raw_context)
 	local context = vim.trim(raw_context or "")
 	if context ~= "" then
-		actions.add_current_line_to_input({
+		actions[action_name]({
 			context = context,
 			send = send_now,
 		})
@@ -18,28 +18,7 @@ local function run_add_line_context_command(send_now, raw_context)
 		if input == nil then
 			return
 		end
-		actions.add_current_line_to_input({
-			context = vim.trim(input),
-			send = send_now,
-		})
-	end)
-end
-
-local function run_add_selection_context_command(send_now, raw_context)
-	local context = vim.trim(raw_context or "")
-	if context ~= "" then
-		actions.add_visual_selection_to_input({
-			context = context,
-			send = send_now,
-		})
-		return
-	end
-
-	vim.ui.input({ prompt = "OpenCode context: " }, function(input)
-		if input == nil then
-			return
-		end
-		actions.add_visual_selection_to_input({
+		actions[action_name]({
 			context = vim.trim(input),
 			send = send_now,
 		})
@@ -190,14 +169,14 @@ local function create_commands()
 	})
 
 	vim.api.nvim_create_user_command("OpenCodeAddLineContext", function(args)
-		run_add_line_context_command(false, args.args)
+		run_add_context_command("add_current_line_to_input", false, args.args)
 	end, {
 		nargs = "*",
 		desc = "Add current file/line plus extra context to OpenCode input draft",
 	})
 
 	vim.api.nvim_create_user_command("OpenCodeSendLineContext", function(args)
-		run_add_line_context_command(true, args.args)
+		run_add_context_command("add_current_line_to_input", true, args.args)
 	end, {
 		nargs = "*",
 		desc = "Add current file/line plus context and send immediately",
@@ -218,7 +197,7 @@ local function create_commands()
 	})
 
 	vim.api.nvim_create_user_command("OpenCodeAddSelectionContext", function(args)
-		run_add_selection_context_command(false, args.args)
+		run_add_context_command("add_visual_selection_to_input", false, args.args)
 	end, {
 		range = true,
 		nargs = "*",
@@ -226,7 +205,7 @@ local function create_commands()
 	})
 
 	vim.api.nvim_create_user_command("OpenCodeSendSelectionContext", function(args)
-		run_add_selection_context_command(true, args.args)
+		run_add_context_command("add_visual_selection_to_input", true, args.args)
 	end, {
 		range = true,
 		nargs = "*",

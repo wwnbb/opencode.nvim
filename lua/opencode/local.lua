@@ -123,6 +123,16 @@ local function is_model_valid(model)
 	return provider.models[model.modelID] ~= nil
 end
 
+local function valid_models(models)
+	local valid = {}
+	for _, model in ipairs(models) do
+		if is_model_valid(model) then
+			table.insert(valid, model)
+		end
+	end
+	return valid
+end
+
 -- Agent module (like TUI's agent in local.tsx)
 M.agent = {}
 
@@ -620,27 +630,17 @@ function M.model.remove_provider_models(provider_id)
 
 	local removed_count = 0
 
-	-- Remove from recent
-	local new_recent = {}
-	for _, item in ipairs(state.recent) do
-		if item.providerID ~= provider_id then
-			table.insert(new_recent, item)
-		else
-			removed_count = removed_count + 1
+	for _, key in ipairs({ "recent", "favorite" }) do
+		local kept = {}
+		for _, item in ipairs(state[key]) do
+			if item.providerID ~= provider_id then
+				table.insert(kept, item)
+			else
+				removed_count = removed_count + 1
+			end
 		end
+		state[key] = kept
 	end
-	state.recent = new_recent
-
-	-- Remove from favorites
-	local new_favorite = {}
-	for _, item in ipairs(state.favorite) do
-		if item.providerID ~= provider_id then
-			table.insert(new_favorite, item)
-		else
-			removed_count = removed_count + 1
-		end
-	end
-	state.favorite = new_favorite
 
 	if removed_count > 0 then
 		save_state()
@@ -698,30 +698,9 @@ function M.model.cycle(direction, opts)
 	end
 
 	-- Determine which list to use: favorites take priority over recents
-	local source_list
-	local list_name
-
-	-- Check favorites first
-	local valid_favorites = {}
-	for _, item in ipairs(state.favorite) do
-		if is_model_valid(item) then
-			table.insert(valid_favorites, item)
-		end
-	end
-
-	if #valid_favorites > 0 then
-		source_list = valid_favorites
-		list_name = "favorite"
-	else
-		-- Fall back to recents
-		local valid_recent = {}
-		for _, item in ipairs(state.recent) do
-			if is_model_valid(item) then
-				table.insert(valid_recent, item)
-			end
-		end
-		source_list = valid_recent
-		list_name = "recent"
+	local source_list = valid_models(state.favorite)
+	if #source_list == 0 then
+		source_list = valid_models(state.recent)
 	end
 
 	if #source_list == 0 then
@@ -873,11 +852,10 @@ function M.variant.cycle(opts)
 		return
 	end
 	local current = M.variant.current()
-	local new_variant = nil
+	local new_variant
 	if not current then
 		-- No variant selected, select first
 		new_variant = variants[1]
-		M.variant.set(new_variant)
 	else
 		-- Find current index
 		local current_idx = nil
@@ -889,14 +867,13 @@ function M.variant.cycle(opts)
 		end
 		if not current_idx or current_idx >= #variants then
 			-- At end or not found, reset to default (nil)
-			M.variant.set(nil)
 			new_variant = nil
 		else
 			-- Move to next
 			new_variant = variants[current_idx + 1]
-			M.variant.set(new_variant)
 		end
 	end
+	M.variant.set(new_variant)
 	-- Show feedback
 	if not opts.silent then
 		if new_variant then

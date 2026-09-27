@@ -6,6 +6,13 @@ local function client() return require("opencode.client") end
 local function refresh(directory)
 	require("opencode.events").emit("catalog_invalidated", { type = "integration.updated", location = { directory = directory } })
 end
+local function refresh_integration(integration_id, opts, token, callback)
+	client().integration("get", integration_id, nil, opts, function(err, integration)
+		if not pending.is_current(token) then callback({ message = "Server connection changed" }); return end
+		refresh(opts.directory)
+		callback(err, integration)
+	end)
+end
 local function options(record)
 	return { directory = record.directory, attempt_id = record.attempt_id }
 end
@@ -101,11 +108,7 @@ function M.connect_key(integration_id, key, answer, opts, callback)
 	client().integration("key", integration_id, { key = key, answer = answer, label = opts.label }, opts, function(err)
 		if not pending.is_current(token) then callback({ message = "Server connection changed" }); return end
 		if err then callback(err); return end
-		client().integration("get", integration_id, nil, opts, function(get_err, integration)
-			if not pending.is_current(token) then callback({ message = "Server connection changed" }); return end
-			refresh(opts.directory)
-			callback(get_err, integration)
-		end)
+		refresh_integration(integration_id, opts, token, callback)
 	end)
 end
 
@@ -118,11 +121,7 @@ function M.credential(operation, integration_id, credential_id, body, opts, call
 		owner.remember(key)
 		if not pending.is_current(token) then callback({ message = "Server connection changed" }); return end
 		if err then callback(err); return end
-		client().integration("get", integration_id, nil, opts, function(get_err, integration)
-			if not pending.is_current(token) then callback({ message = "Server connection changed" }); return end
-			refresh(opts.directory)
-			callback(get_err, integration)
-		end)
+		refresh_integration(integration_id, opts, token, callback)
 	end)
 end
 

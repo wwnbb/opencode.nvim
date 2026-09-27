@@ -5,7 +5,6 @@ local M = {}
 local state = require("opencode.state")
 local selectors = require("opencode.selectors")
 local session_actions = require("opencode.session")
-local logger = require("opencode.logger")
 
 local ID_CHARS = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
 local id_last_timestamp = 0

@@ -236,11 +236,7 @@ local function apply_file_action(estate, file, action)
 	if estate.transport == "review_rpc" and (estate.status ~= "pending" or estate.submitting) then
 		return false, "Review is no longer editable"
 	end
-	if estate.review_mode == "readonly" then
-		file.status = action.status
-		return true, nil
-	end
-	if estate.apply_mode == "server" then
+	if estate.review_mode == "readonly" or estate.apply_mode == "server" then
 		file.status = action.status
 		return true, nil
 	end
@@ -635,13 +631,11 @@ function M.is_readonly(permission_id)
 	return estate.review_mode == "readonly"
 end
 
---- Accept a file (write to disk via changes module)
 ---@param permission_id string
 ---@param file_index number
----@return boolean ok
----@return string|nil err
----@return table[]|nil errors
-function M.accept_file(permission_id, file_index)
+---@param action table
+---@return boolean ok, string|nil err, table[]|nil errors
+local function apply_single_file(permission_id, file_index, action)
 	local estate = active_edits[permission_id]
 	if not estate then
 		return false, "Edit not found", nil
@@ -656,8 +650,18 @@ function M.accept_file(permission_id, file_index)
 		return false, "File already resolved", nil
 	end
 
-	local ok, err = apply_file_action(estate, file, FILE_ACTIONS.accept)
+	local ok, err = apply_file_action(estate, file, action)
 	return ok, err, nil
+end
+
+--- Accept a file (write to disk via changes module)
+---@param permission_id string
+---@param file_index number
+---@return boolean ok
+---@return string|nil err
+---@return table[]|nil errors
+function M.accept_file(permission_id, file_index)
+	return apply_single_file(permission_id, file_index, FILE_ACTIONS.accept)
 end
 
 --- Reject a file
@@ -667,22 +671,7 @@ end
 ---@return string|nil err
 ---@return table[]|nil errors
 function M.reject_file(permission_id, file_index)
-	local estate = active_edits[permission_id]
-	if not estate then
-		return false, "Edit not found", nil
-	end
-
-	local file = estate.files[file_index]
-	if not file then
-		return false, "File not found", nil
-	end
-
-	if file.status ~= "pending" then
-		return false, "File already resolved", nil
-	end
-
-	local ok, err = apply_file_action(estate, file, FILE_ACTIONS.reject)
-	return ok, err, nil
+	return apply_single_file(permission_id, file_index, FILE_ACTIONS.reject)
 end
 
 ---Revert a tracked change from the palette while keeping its review file in sync.

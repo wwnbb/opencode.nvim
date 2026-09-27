@@ -4,7 +4,6 @@ local M = {}
 
 local opencode_actions = require("opencode.actions")
 local changes = require("opencode.artifact.changes")
-local selectors = require("opencode.selectors")
 local state = require("opencode.state")
 
 require("opencode.ui.highlights").register("opencode.ui.status", function()
