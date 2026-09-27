@@ -1,6 +1,5 @@
 import * as fs from "fs/promises"
 import * as path from "path"
-import { sameContent } from "./text"
 
 export type FileState = {
   exists: boolean

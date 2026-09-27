@@ -66,21 +66,23 @@ test("mixed review preserves a rejected empty file and applies the accepted edit
   expect(result.metadata.status).toBe("partial")
 })
 
-test("rejection does not remove an empty file created externally during review", async () => {
-  const result = await patch.execute({ patchText: "*** Begin Patch\n*** Add File: external\n+proposed\n*** End Patch" }, context(async () => {
-    await fs.writeFile(path.join(directory, "external"), "")
-    rejected()
-  }))
-  expect(await exists("external")).toBe(true)
-  expect(result.metadata.status).toBe("partial")
-})
+for (const ending of ["\n", "\r\n"]) {
+  test(`accepted update preserves BOM and ${JSON.stringify(ending)} through the Lua review path`, async () => {
+    await fs.writeFile(path.join(directory, "bom"), `\ufeffbefore${ending}keep${ending}`)
+    const result = await patch.execute({ patchText: "*** Begin Patch\n*** Update File: bom\n@@\n-before\n+after\n*** End Patch" }, context(async (request) => review(request, ["accept"])))
+    expect(await fs.readFile(path.join(directory, "bom"), "utf8")).toBe(`\ufeffafter${ending}keep${ending}`)
+    expect(result.metadata.status).toBe("applied")
+  })
+}
 
-test("accepted update preserves BOM through the Lua review path", async () => {
-  await fs.writeFile(path.join(directory, "bom"), "\ufeffbefore\n")
-  const result = await patch.execute({ patchText: "*** Begin Patch\n*** Update File: bom\n@@\n-before\n+after\n*** End Patch" }, context(async (request) => review(request, ["accept"])))
-  expect(await fs.readFile(path.join(directory, "bom"), "utf8")).toBe("\ufeffafter\n")
-  expect(result.metadata.status).toBe("applied")
-})
+for (const ending of ["\n", "\r\n"]) {
+  test(`server-applied patch preserves ${JSON.stringify(ending)} and untouched lone CR`, async () => {
+    await fs.writeFile(path.join(directory, "endings"), `before${ending}keep\rtail${ending}`)
+    const result = await patch.execute({ patchText: "*** Begin Patch\n*** Update File: endings\n@@\n-before\n+after\n*** End Patch" }, context(async () => {}))
+    expect(await fs.readFile(path.join(directory, "endings"), "utf8")).toBe(`after${ending}keep\rtail${ending}`)
+    expect(result.metadata.status).toBe("applied")
+  })
+}
 
 test("accepted move preserves source BOM when replacing an existing destination", async () => {
   await fs.writeFile(path.join(directory, "source"), "\ufeffbefore\n")

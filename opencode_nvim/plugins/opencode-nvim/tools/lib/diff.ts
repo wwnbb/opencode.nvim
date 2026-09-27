@@ -60,18 +60,21 @@ export function diffLines(oldStr: string, newStr: string): DiffChange[] {
     while (x > prevX && y > prevY) {
       x--
       y--
-      edits.unshift({ type: "equal", line: oldLines[x] })
+      edits.push({ type: "equal", line: oldLines[x] })
     }
     if (d > 0) {
       if (x === prevX) {
         y--
-        edits.unshift({ type: "insert", line: newLines[y] })
+        edits.push({ type: "insert", line: newLines[y] })
       } else {
         x--
-        edits.unshift({ type: "delete", line: oldLines[x] })
+        edits.push({ type: "delete", line: oldLines[x] })
       }
     }
   }
+
+  // Backtracking visits lines in reverse; restore their order once.
+  edits.reverse()
 
   const changes: DiffChange[] = []
   for (const edit of edits) {

@@ -12,7 +12,7 @@ import {
   splitBom,
   writeState,
 } from "./lib/file_state"
-import { assertNoAccidentalIndentRemoval, makeDiff, sameContent, stats } from "./lib/text"
+import { assertNoAccidentalIndentRemoval, convertToLineEnding, detectLineEnding, makeDiff, sameContent, stats } from "./lib/text"
 
 const input = z.object({
   patchText: z.string().describe("The full patch text that describes all changes to be made"),
@@ -296,7 +296,7 @@ function deriveNewContent(
     next.splice(start, oldLength, ...replacement)
   }
   if (next.length === 0 || next[next.length - 1] !== "") next.push("")
-  return next.join("\n")
+  return convertToLineEnding(next.join("\n").replaceAll("\r\n", "\n"), detectLineEnding(original))
 }
 
 async function buildChanges(
@@ -400,6 +400,8 @@ function reviewFilesForChange(change: FileChange) {
   const destinationBefore = change.destinationBefore ?? { exists: false, content: "", bom: false }
   const deleteDiff = makeDiff(change.filePath, change.before.content, "")
   const addDiff = makeDiff(change.movePath, destinationBefore.content, change.newContent)
+  const deleteStats = stats(change.before.content, "")
+  const addStats = stats(destinationBefore.content, change.newContent)
   return [
     {
       filePath: change.filePath,
@@ -411,8 +413,8 @@ function reviewFilesForChange(change: FileChange) {
       before_bom: change.before.bom,
       diff: deleteDiff,
       patch: deleteDiff,
-      additions: stats(change.before.content, "").additions,
-      deletions: stats(change.before.content, "").deletions,
+      additions: deleteStats.additions,
+      deletions: deleteStats.deletions,
       status: "pending",
     },
     {
@@ -425,8 +427,8 @@ function reviewFilesForChange(change: FileChange) {
       before_bom: destinationBefore.bom,
       diff: addDiff,
       patch: addDiff,
-      additions: stats(destinationBefore.content, change.newContent).additions,
-      deletions: stats(destinationBefore.content, change.newContent).deletions,
+      additions: addStats.additions,
+      deletions: addStats.deletions,
       status: "pending",
     },
   ]

@@ -34,7 +34,8 @@ test("RPC reply validates scope, revision and exact file IDs before settlement",
   await fs.writeFile(path.join(directory, "a"), "before")
   const execution = edit.execute({ path: "a", oldString: "before", newString: "after" }, context)
   const record = await pending()
-  const input = reply(record, [{ fileID: record.files[0].fileID, status: "accepted", apply: "server" }])
+  const input = reply(record, [{ fileID: record.files[0].fileID, status: "accepted", apply: "server" }], "  Keep this note.\n  ")
+  expect(input.message).toBe("Keep this note.")
   await expect(reviews.reply({ ...input, sessionID: "other" })).rejects.toMatchObject({ code: "not_found" })
   await expect(reviews.reply({ ...input, revision: 2 })).rejects.toMatchObject({ code: "conflict" })
   await expect(reviews.reply({ ...input, decisions: [] })).rejects.toMatchObject({ code: "conflict" })
@@ -42,6 +43,7 @@ test("RPC reply validates scope, revision and exact file IDs before settlement",
   const admission = await reviews.reply(input)
   const duplicate = await reviews.reply(input)
   expect(admission).toEqual(duplicate)
+  await expect(reviews.reply({ ...input, message: "different feedback" })).rejects.toMatchObject({ code: "conflict" })
   await expect(reviews.reply(reply(record, [{ fileID: record.files[0].fileID, status: "rejected" }]))).rejects.toMatchObject({ code: "conflict" })
   const result = await execution
   expect(result.metadata.status).toBe("applied")
@@ -100,7 +102,7 @@ test("rejected add preserves an externally created empty file", async () => {
   const record = await pending()
   await fs.writeFile(path.join(directory, "new"), "")
   await reviews.reply(reply(record, [{ fileID: record.files[0].fileID, status: "rejected" }]))
-  await execution
+  expect((await execution).metadata.status).toBe("partial")
   expect(await fs.readFile(path.join(directory, "new"), "utf8")).toBe("")
 })
 
@@ -208,11 +210,8 @@ for (const name of ["neovim_edit", "neovim_patch"] as const) {
       const input = reply(record, [{ fileID: record.files[0].fileID, status,
         apply: status === "resolved" ? "client" : "server",
         ...(status === "resolved" ? { observed: { exists: true, sha256: sha("manual\n") } } : {}),
-      }], `  ${message}  `)
-      expect(input.message).toBe(message)
-      const admission = await reviews.reply(input)
-      expect(await reviews.reply(input)).toEqual(admission)
-      await expect(reviews.reply({ ...input, message: "different feedback" })).rejects.toMatchObject({ code: "conflict" })
+      }], message)
+      await reviews.reply(input)
       const result = await execution
       expect(result.content.split(message)).toHaveLength(2)
       expect(result.metadata.review_message).toBe(message)
