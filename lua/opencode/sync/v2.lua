@@ -16,7 +16,13 @@ local function find_content(message, kind, ordinal, call_id)
 	end
 end
 
-function M.apply(sync, event)
+function M.apply(sync, event, hooks)
+	-- Omitting the private hooks retains the complete reducer as an equivalence
+	-- oracle and as the fallback for structural/out-of-order events.
+	if hooks and hooks.try_delta then
+		local result = hooks.try_delta(event)
+		if result then return result end
+	end
 	local data, kind = event.data, event.type
 	local sid = data.sessionID
 	if not sid then return {} end
@@ -26,6 +32,7 @@ function M.apply(sync, event)
 		projected.info.provisional = provisional
 		local _, _, changed = sync.handle_session_messages(sid, { projected })
 		result.changed = result.changed or changed > 0
+		if hooks and hooks.committed then hooks.committed(sid, projected) end
 	end
 	local function assistant()
 		local existing = sync.get_message(sid, data.assistantMessageID)
@@ -64,7 +71,8 @@ function M.apply(sync, event)
 		else result.reconcile = true end
 	elseif kind == "session.inbox.cancelled" then
 		result.cancelled = data.inboxID
-		result.changed = sync.handle_message_removed(sid, data.inboxID)
+		result.changed = sync.get_message(sid, data.inboxID) ~= nil
+		sync.handle_message_removed(sid, data.inboxID)
 	elseif kind == "session.execution.started" then
 		result.status = { type = "busy" }
 	elseif kind == "session.execution.succeeded" or kind == "session.execution.failed" or kind == "session.execution.interrupted" then

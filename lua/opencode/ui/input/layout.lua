@@ -131,7 +131,9 @@ function M.resize(state)
 		return
 	end
 
-	local lines = vim.api.nvim_buf_get_lines(state.bufnr, 0, -1, false)
+	-- Every physical line contributes at least one display row. Later lines
+	-- cannot change the height once the existing maximum is reached.
+	local lines = vim.api.nvim_buf_get_lines(state.bufnr, 0, cfg.max_height, false)
 	local win_width = math.max(1, vim.api.nvim_win_get_width(state.winid))
 	local display_lines = 0
 

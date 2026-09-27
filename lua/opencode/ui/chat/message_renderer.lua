@@ -11,7 +11,7 @@ local local_state = require("opencode.local")
 local activity = require("opencode.ui.chat.activity")
 local spinner = require("opencode.ui.spinner")
 local processing_footer = require("opencode.ui.chat.processing_footer")
-local throughput = require("opencode.ui.chat.throughput")
+local history_metadata = require("opencode.ui.chat.history_metadata")
 local widget_renderer = require("opencode.ui.chat.widget_renderer")
 local tool_renderer = require("opencode.ui.chat.tool_renderer")
 local widget_support = require("opencode.ui.chat.widget_support")
@@ -124,50 +124,15 @@ local function select_messages(ctx, index)
 		end
 	end
 
-	return all_messages, messages, skipped_messages, pending_messages
+	return all_messages, messages, skipped_messages, pending_messages, type(revert) == "table" and revert.messageID or nil
 end
 
-local function build_user_created_by_id(all_messages)
-	local user_created_by_id = {}
-	for _, msg in ipairs(all_messages) do
-		if msg.id and msg.role == "user" and msg.time and type(msg.time.created) == "number" then
-			user_created_by_id[msg.id] = msg.time.created
-		end
-	end
-	return user_created_by_id
-end
-
--- Native v2 user messages have no agent. For history that predates our local
--- binding, the following assistant (or an explicit switch) is the best hint.
-local function infer_user_agents(all_messages)
-	local agents = {}
-	local from_response = {}
-	local active_agent, latest_user_id
-	for _, message in ipairs(all_messages) do
-		if message.type == "agent-switched" and message.agent then
-			active_agent = message.agent
-		elseif message.role == "user" then
-			latest_user_id = message.id
-			if active_agent and message.id then agents[message.id] = active_agent end
-		elseif message.role == "assistant" and message.agent then
-			local user_id = message.parentID or latest_user_id
-			if user_id and not from_response[user_id] then
-				agents[user_id] = message.agent
-				from_response[user_id] = true
-			end
-			active_agent = message.agent
-		end
-	end
-	return agents
-end
-
-local function make_metadata_footer_renderer(ctx, all_messages, user_created_by_id)
-	local rates = (ctx.chat_config or {}).tps ~= false and throughput.by_message(all_messages) or {}
+local function make_metadata_footer_renderer(ctx, all_messages, metadata)
 	local function metadata_footer_duration(message)
 		if not message or not message.time or type(message.time.completed) ~= "number" then
 			return nil
 		end
-		local parent_created = message.parentID and user_created_by_id[message.parentID]
+		local parent_created = message.parentID and metadata.created(message.parentID)
 		if type(parent_created) ~= "number" then
 			return nil
 		end
@@ -176,7 +141,7 @@ local function make_metadata_footer_renderer(ctx, all_messages, user_created_by_
 
 	return function(message, spinner_frame, message_revision)
 		local duration_ms = metadata_footer_duration(message)
-		local tokens_per_second = message and message.id and rates[message.id] or nil
+		local tokens_per_second = message and message.id and metadata.rate(message.id) or nil
 		local cache_key = message
 			and message.id
 			and ctx:render_cache_key(
@@ -198,7 +163,7 @@ local function make_metadata_footer_renderer(ctx, all_messages, user_created_by_
 					duration_calculated = true,
 					tokens_per_second = tokens_per_second,
 				})
-			end)
+			end, ctx:render_owner_key("metadata_footer", message.id))
 		end
 
 		return render.render_metadata_footer(message, all_messages, {
@@ -312,7 +277,7 @@ end
 local function render_user_message(ctx, message, render_parts, msg_idx, messages, max_user_message_lines)
 	local start_line = ctx:line_count()
 	local agent = message.agent or local_state.message_agent.get(ctx.current_session.id, message.id)
-		or ctx.inferred_user_agents[message.id] or "unknown"
+		or ctx.history_metadata.agent(message.id) or "unknown"
 	ctx.content_highlights._opencode_signature = ctx:render_cache_key(
 		ctx.content_highlights._opencode_signature, message.id, agent
 	)
@@ -343,7 +308,8 @@ local function render_user_message(ctx, message, render_parts, msg_idx, messages
 				max_lines = max_user_message_lines,
 				highlight_code = ctx:code_highlighter(message.id),
 			})
-		end
+		end,
+		ctx:render_owner_key("user", message.id)
 	)
 	ctx:add_nui_lines(msg_lines)
 	local prompt_status, pending_input = require("opencode.selectors").prompt_status(ctx.current_session.id, message.id)
@@ -409,7 +375,7 @@ local function render_text_part(ctx, message, part, part_idx, render_parts, inco
 	end
 	local content_lines = ctx:cached_nui_lines(cache_key, function()
 		return render.render_content(part.text, { highlight_code = ctx:code_highlighter(message.id, part.id or part_idx) })
-	end)
+	end, ctx:render_owner_key("text", message.id, part.id or part_idx))
 	if #content_lines == 0 then return end
 	-- TextPart has marginTop=1 even between adjacent text parts. Capture the
 	-- streaming range after the separator, which belongs to the prior block.
@@ -691,10 +657,9 @@ end
 function M.render(ctx, index)
 	render_session_chrome(ctx)
 
-	local all_messages, messages, skipped_messages, pending_messages = select_messages(ctx, index)
-	ctx.inferred_user_agents = infer_user_agents(all_messages)
-	local user_created_by_id = build_user_created_by_id(all_messages)
-	local render_metadata_footer_line = make_metadata_footer_renderer(ctx, all_messages, user_created_by_id)
+	local all_messages, messages, skipped_messages, pending_messages, revert_message_id = select_messages(ctx, index)
+	ctx.history_metadata = history_metadata.get(ctx.current_session.id, all_messages, revert_message_id, (ctx.chat_config or {}).tps)
+	local render_metadata_footer_line = make_metadata_footer_renderer(ctx, all_messages, ctx.history_metadata)
 	local processing_presentation = processing_footer.derive({
 		status = get_current_session_status(ctx),
 		messages = all_messages,

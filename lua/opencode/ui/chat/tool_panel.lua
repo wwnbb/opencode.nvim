@@ -3,10 +3,31 @@ local M = {}
 local panel = require("opencode.ui.panel")
 local render = require("opencode.ui.chat.render")
 local chat_state = require("opencode.ui.chat.state").state
+local text_util = require("opencode.util.text")
 
 M.PANEL_PREFIX = "▏  "
 M.PANEL_BLANK_PREFIX = "▏"
 M.ANIM_FRAMES = { "|", "/", "-", "\\" }
+
+---Read/search results may arrive as text or as an output/content envelope.
+---An explicitly empty output still takes precedence over content.
+---@param value any
+---@return string
+function M.stringify_output(value)
+	if text_util.is_nil(value) then
+		return ""
+	end
+	if type(value) == "table" then
+		if type(value.output) == "string" then
+			return value.output
+		end
+		if type(value.content) == "string" then
+			return value.content
+		end
+		return vim.inspect(value)
+	end
+	return tostring(value)
+end
 
 ---@param opts table
 ---@return OpenCodePanelHelpers
@@ -62,8 +83,10 @@ function M.add_raw_body(result, body, opts)
 	end
 	if opts.language then
 		local syntax = require("opencode.ui.syntax")
+		local captures, status = syntax.highlight_text(table.concat(lines, "\n"), opts.language, { scope = "tools" })
+		if syntax.needs_retry(captures, status) then result._opencode_syntax_retry = true end
 		vim.list_extend(result.highlights, syntax.project_highlights(
-			syntax.highlight_text(table.concat(lines, "\n"), opts.language, { scope = "tools" }), lines, rows
+			captures, lines, rows
 		))
 	end
 end

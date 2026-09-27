@@ -89,6 +89,7 @@ function M.render(part, expanded)
 		return result
 	end
 	local body = renderer(part, true, { body_only = true })
+	if body._opencode_syntax_retry then result._opencode_syntax_retry = true end
 	style.add_border(result)
 	local offset = #result.lines
 	vim.list_extend(result.lines, body.lines)
