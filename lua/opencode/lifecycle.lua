@@ -629,6 +629,11 @@ local function spawn_server()
 		auth.password = (random:gsub(".", function(byte) return string.format("%02x", byte:byte()) end))
 	end
 	local env = build_server_env(auth)
+	local profile = require("opencode.completion.profile")
+	local overlay, completion_profile, completion_error = profile.prepare(M.opts.completion, env.OPENCODE_CONFIG_CONTENT)
+	local explanation_profile, explanation_error
+	overlay, explanation_profile, explanation_error = profile.prepare(M.opts.explanation, overlay, "explanation")
+	env.OPENCODE_CONFIG_CONTENT = overlay
 
 	-- Build opencode serve command
 	-- CLI 2.0.11 requires an integer. Zero requests an available OS port.
@@ -644,6 +649,10 @@ local function spawn_server()
 	attempt_generation = attempt_generation + 1
 	local attempt = {
 		id = attempt_generation,
+		completion_profile = completion_profile,
+		completion_error = completion_error,
+		explanation_profile = explanation_profile,
+		explanation_error = explanation_error,
 		auth = auth,
 		phase = "starting",
 		startup_done = false,
@@ -1082,6 +1091,10 @@ end
 function M.setup(opts)
 	opts = opts or {}
 	M.opts = vim.tbl_deep_extend("force", M.opts, opts)
+	-- Stateless feature options describe whole profiles. Deep merging retains
+	-- removed settings and can silently keep old variants after reconfiguration.
+	if opts.completion ~= nil then M.opts.completion = vim.deepcopy(opts.completion) end
+	if opts.explanation ~= nil then M.opts.explanation = vim.deepcopy(opts.explanation) end
 	shell_env_cache = nil
 
 	-- Store auth in opts for spawn_server
@@ -1100,6 +1113,24 @@ function M.setup(opts)
 			end,
 		})
 	end
+end
+
+---Return the selector for a profile installed in the connected server.
+local function resolve_feature_model(config, kind)
+	local attempt = current_attempt
+	return require("opencode.completion.profile").resolve(config, {
+		managed = attempt and not attempt.external or (attempt == nil and M.opts.port == nil),
+		active = attempt and attempt[kind .. "_profile"],
+		error = attempt and attempt[kind .. "_error"],
+	}, kind)
+end
+
+function M.resolve_completion_model(config)
+	return resolve_feature_model(config, "completion")
+end
+
+function M.resolve_explanation_model(config)
+	return resolve_feature_model(config, "explanation")
 end
 
 -- Get lifecycle status

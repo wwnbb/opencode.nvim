@@ -116,6 +116,26 @@ function M.ask_btw(question, session_id)
 	return api().ask_btw(question, session_id)
 end
 
+function M.complete()
+	return api().complete()
+end
+
+function M.accept_completion()
+	return api().accept_completion()
+end
+
+function M.dismiss_completion()
+	return api().dismiss_completion()
+end
+
+function M.completion_visible()
+	return api().completion_visible()
+end
+
+function M.explain_selection()
+	return api().explain_selection()
+end
+
 function M.set_danger_mode(enabled, opts)
 	return api().set_danger_mode(enabled, opts)
 end

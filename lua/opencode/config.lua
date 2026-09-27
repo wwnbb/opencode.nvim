@@ -41,6 +41,45 @@ M.defaults = {
 	-- Danger mode auto-approves permission requests while enabled.
 	danger_mode = false,
 
+	-- Manually requested inline code completion, independent of chat sessions.
+	completion = {
+		enabled = false,
+		model = nil,
+		variant = nil,
+		options = nil,
+		keymaps = { trigger = "<C-l>", accept = "<Tab>" },
+		timeout_ms = 15000,
+		max_lines = 12,
+		context = {
+			max_bytes = 24576,
+			before_lines = 150,
+			after_lines = 50,
+			header_lines = 60,
+			max_related_buffers = 2,
+			related_lines = 60,
+		},
+	},
+
+	-- One-shot explanation of a Visual selection, independent of chat and completion.
+	explanation = {
+		enabled = false,
+		model = nil,
+		variant = nil,
+		options = nil,
+		prompt = nil,
+		language = "en",
+		keymaps = { trigger = "K" },
+		timeout_ms = 60000,
+		context = {
+			max_bytes = 24576,
+			before_lines = 150,
+			after_lines = 50,
+			header_lines = 60,
+			max_related_buffers = 2,
+			related_lines = 60,
+		},
+	},
+
 	-- Chat
 	chat = {
 		layout = "vertical",
@@ -219,7 +258,64 @@ function M.merge(opts)
 			error("opencode.nvim: unsupported setup option " .. table.concat(path, ".") .. "; update your configuration", 2)
 		end
 	end
-	return vim.tbl_deep_extend("force", M.defaults, opts or {})
+	local merged = vim.tbl_deep_extend("force", M.defaults, opts or {})
+	local completion = merged.completion
+	if type(completion) ~= "table" or type(completion.enabled) ~= "boolean" then
+		error("opencode.nvim: completion.enabled must be a boolean", 2)
+	end
+	for _, key in ipairs({ "timeout_ms", "max_lines" }) do
+		local value = completion[key]
+		if type(value) ~= "number" or value < 1 or value % 1 ~= 0 then
+			error("opencode.nvim: completion." .. key .. " must be a positive integer", 2)
+		end
+	end
+	if type(completion.context) ~= "table" then error("opencode.nvim: completion.context must be a table", 2) end
+	for key in pairs(M.defaults.completion.context) do
+		local value = completion.context[key]
+		local minimum = key == "max_bytes" and 1024 or 0
+		if type(value) ~= "number" or value < minimum or value % 1 ~= 0 then
+			error("opencode.nvim: completion.context." .. key .. " must be an integer >= " .. minimum, 2)
+		end
+	end
+	if type(completion.keymaps) ~= "table" then error("opencode.nvim: completion.keymaps must be a table", 2) end
+	for _, key in ipairs({ "trigger", "accept" }) do
+		local value = completion.keymaps[key]
+		if value ~= false and (type(value) ~= "string" or value == "") then
+			error("opencode.nvim: completion.keymaps." .. key .. " must be a key sequence or false", 2)
+		end
+	end
+	if completion.keymaps.trigger and completion.keymaps.accept
+		and vim.api.nvim_replace_termcodes(completion.keymaps.trigger, true, false, true)
+			== vim.api.nvim_replace_termcodes(completion.keymaps.accept, true, false, true) then
+		error("opencode.nvim: completion trigger and accept keys must differ", 2)
+	end
+	local explanation = merged.explanation
+	if type(explanation) ~= "table" or type(explanation.enabled) ~= "boolean" then
+		error("opencode.nvim: explanation.enabled must be a boolean", 2)
+	end
+	if explanation.prompt ~= nil and (type(explanation.prompt) ~= "string" or not explanation.prompt:match("%S")) then
+		error("opencode.nvim: explanation.prompt must be a non-empty string", 2)
+	end
+	if type(explanation.language) ~= "string" or not explanation.language:match("%S") then
+		error("opencode.nvim: explanation.language must be a non-empty string", 2)
+	end
+	if type(explanation.timeout_ms) ~= "number" or explanation.timeout_ms < 1 or explanation.timeout_ms % 1 ~= 0 then
+		error("opencode.nvim: explanation.timeout_ms must be a positive integer", 2)
+	end
+	if type(explanation.context) ~= "table" then error("opencode.nvim: explanation.context must be a table", 2) end
+	for key in pairs(M.defaults.explanation.context) do
+		local value = explanation.context[key]
+		local minimum = key == "max_bytes" and 1024 or 0
+		if type(value) ~= "number" or value < minimum or value % 1 ~= 0 then
+			error("opencode.nvim: explanation.context." .. key .. " must be an integer >= " .. minimum, 2)
+		end
+	end
+	if type(explanation.keymaps) ~= "table" then error("opencode.nvim: explanation.keymaps must be a table", 2) end
+	local trigger = explanation.keymaps.trigger
+	if trigger ~= false and (type(trigger) ~= "string" or trigger == "") then
+		error("opencode.nvim: explanation.keymaps.trigger must be a key sequence or false", 2)
+	end
+	return merged
 end
 
 return M
