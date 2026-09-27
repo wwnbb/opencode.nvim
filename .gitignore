@@ -7,3 +7,6 @@ __pycache__/
 
 # Neovim runtime debug log
 .nvimlog
+
+# Local research/benchmark evidence (reports/ is intentionally untracked)
+reports/
