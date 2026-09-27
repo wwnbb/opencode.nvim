@@ -48,6 +48,7 @@ local operations = {
 	command = { "POST", "/api/session/{sessionID}/command", "empty" },
 	prompt = { "POST", "/api/session/{sessionID}/prompt", "inbox" },
 	generate = { "POST", "/api/session/{sessionID}/generate", "generated_text" },
+	completion = { "POST", "/api/experimental/generate", "generated_text" },
 	session_agent = { "POST", "/api/session/{sessionID}/agent", "empty" },
 	session_model = { "POST", "/api/session/{sessionID}/model", "empty" },
 	interrupt = { "POST", "/api/session/{sessionID}/interrupt", "interrupt" },
@@ -206,9 +207,9 @@ function M.request(name, args, callback)
 	end
 	local method = operation[1]:lower()
 	if method == "get" or method == "delete" then
-		http[method](path, done, opts)
+		return http[method](path, done, opts)
 	else
-		http[method](path, args.body or vim.empty_dict(), done, opts)
+		return http[method](path, args.body or vim.empty_dict(), done, opts)
 	end
 end
 

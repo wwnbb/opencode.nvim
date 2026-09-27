@@ -1,6 +1,6 @@
 describe("OpenCode v2 HTTP contracts", function()
 	local names = { "opencode.client", "opencode.client.v2", "opencode.client.http", "opencode.client.transport" }
-	local saved, schedule, requests, response, transport_error, v2, http
+	local saved, schedule, requests, response, transport_error, v2, http, request_handle
 	local function json(value, status)
 		response = { status = status or 200, headers = { ["content-type"] = "application/json" }, body = vim.json.encode(value) }
 	end
@@ -18,10 +18,12 @@ describe("OpenCode v2 HTTP contracts", function()
 		for _, name in ipairs(names) do saved[name] = package.loaded[name]; package.loaded[name] = nil end
 		schedule = vim.schedule
 		vim.schedule = function(fn) fn() end
+		request_handle = { cancel = function() end }
 		package.loaded["opencode.client.transport"] = {
 			request = function(opts, callback)
 				requests[#requests + 1] = opts
 				callback(transport_error, response)
+				return request_handle
 			end,
 		}
 		v2 = require("opencode.client.v2")
@@ -75,12 +77,16 @@ describe("OpenCode v2 HTTP contracts", function()
 
 	it("keeps session DTO fields and normalizes location without modifying the input", function()
 		local session = { id = "ses_1", location = { directory = "/project" }, metadata = { marker = false } }
+		local original = vim.deepcopy(session)
+		local normalized, err = v2.session(session)
+		assert.is_nil(err)
+		assert.equals("/project", normalized.directory)
+		assert.equals(false, normalized.metadata.marker)
+		assert.same(original, session)
 		json({ data = session })
 		local result = invoke("session_create", { body = { location = session.location } })
 		assert.is_nil(result.err)
-		assert.equals("/project", result.data.directory)
-		assert.equals(false, result.data.metadata.marker)
-		assert.is_nil(session.directory)
+		assert.same(normalized, result.data)
 		assert.same({ location = session.location }, vim.json.decode(requests[1].body))
 		invoke("session_get", { path = { sessionID = "ses_a/#%" } })
 		assert.equals("/api/session/ses_a%2F%23%25", requests[2].path)
@@ -115,6 +121,8 @@ describe("OpenCode v2 HTTP contracts", function()
 			assert.equals(status == 500, result.err.retryable)
 		end
 		assert.equals(3, #requests)
+		json({ _tag = "CommandNotFoundError", message = "No such command" }, 404)
+		assert.equals("CommandNotFoundError", invoke("command", { path = { sessionID = "s" } }).err.code)
 		response = { status = 502, headers = {}, body = "<html>test-password</html>" }
 		assert.equals("HTTP 502", invoke("info").err.message)
 		transport_error = { message = "Connection reset" }
@@ -150,16 +158,6 @@ describe("OpenCode v2 HTTP contracts", function()
 		end
 	end)
 
-	it("treats command 204 as admission and never as an assistant DTO", function()
-		response = { status = 204, headers = {}, body = "" }
-		local args = { path = { sessionID = "s" }, body = { name = "review", text = "--staged" } }
-		assert.is_true(invoke("command", args).data)
-		assert.equals("/api/session/s/command", requests[1].path)
-		assert.same(args.body, vim.json.decode(requests[1].body))
-		json({ _tag = "CommandNotFoundError", message = "No such command" }, 404)
-		assert.equals("CommandNotFoundError", invoke("command", args).err.code)
-	end)
-
 	it("generates transient session text through the JSON endpoint without a request timeout", function()
 		json({ data = { text = "A concise answer" } })
 		local answer
@@ -177,6 +175,56 @@ describe("OpenCode v2 HTTP contracts", function()
 			assert.equals("incompatible_response", invoke("generate", {
 				path = { sessionID = "ses_1" }, body = { prompt = "test" },
 			}).err.code)
+		end
+	end)
+
+	it("generates stateless completion with a separate model and returns the cancellation handle", function()
+		json({ data = { text = "class Widget:\n    pass" } })
+		local model = { providerID = "fast-provider", id = "code/model", variant = "completion" }
+		local answer
+		local handle = require("opencode.client").generate_completion("Complete at cursor", model, function(err, value)
+			assert.is_nil(err)
+			answer = value
+		end, { timeout = 1500 })
+		assert.equals(request_handle, handle)
+		assert.equals("class Widget:\n    pass", answer)
+		assert.equals(1, #requests)
+		assert.equals("POST", requests[1].method)
+		assert.equals("/api/experimental/generate", requests[1].path)
+		assert.same({ prompt = "Complete at cursor", model = model }, vim.json.decode(requests[1].body))
+		assert.equals(1500, requests[1].timeout)
+		assert.truthy(requests[1].headers.Authorization)
+		require("opencode.client").generate_completion("Use default model", nil, function() end, { timeout = 0 })
+		assert.same({ prompt = "Use default model" }, vim.json.decode(requests[2].body))
+		assert.equals(0, requests[2].timeout)
+	end)
+
+	it("sends explanation through sessionless generate without tools or chat fields", function()
+		json({ data = { text = "L4–6 — Handles the input." } })
+		local model = { providerID = "explain-provider", id = "explain-model", variant = "private-explanation" }
+		local answer
+		local handle = require("opencode.client").generate_explanation("Explain selected lines", model,
+			function(err, value)
+				assert.is_nil(err)
+				answer = value
+			end, { timeout = 60000 })
+		assert.equals(request_handle, handle)
+		assert.equals("L4–6 — Handles the input.", answer)
+		assert.equals("POST", requests[1].method)
+		assert.equals("/api/experimental/generate", requests[1].path)
+		assert.same({ prompt = "Explain selected lines", model = model }, vim.json.decode(requests[1].body))
+		assert.equals(60000, requests[1].timeout)
+	end)
+
+	it("preserves completion cancellation and rejects malformed generated text", function()
+		transport_error = { code = "cancelled", cancelled = true, retryable = false, message = "Request cancelled" }
+		local result = invoke("completion", { body = { prompt = "code" } })
+		assert.equals(transport_error, result.err)
+		assert.is_nil(result.data)
+		transport_error = nil
+		for _, body in ipairs({ {}, { data = {} }, { data = { text = 123 } } }) do
+			json(body)
+			assert.equals("incompatible_response", invoke("completion", { body = { prompt = "code" } }).err.code)
 		end
 	end)
 

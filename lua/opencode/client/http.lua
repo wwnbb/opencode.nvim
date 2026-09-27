@@ -39,7 +39,7 @@ local function merge_headers(additional)
 end
 
 -- Handle HTTP response
-local function handle_response(response, callback, request_meta)
+local function handle_response(response, callback)
 	if not response then
 		schedule_callback(callback, { error = "No response from server", message = "No response from server" }, nil)
 		return
@@ -156,7 +156,7 @@ local function request(method, path, callback, opts, body)
 		return
 	end
 
-	transport.request({
+	return transport.request({
 		host = M.opts.host,
 		port = M.opts.port,
 		method = method,
@@ -169,8 +169,21 @@ local function request(method, path, callback, opts, body)
 			schedule_callback(callback, err, nil)
 			return
 		end
-		handle_response(response, callback, { method = method, path = request_path })
+		handle_response(response, callback)
 	end)
+end
+
+local function request_json(method, path, body, callback, opts)
+	local ok, json_body = pcall(vim.json.encode, body)
+	if not ok then
+		schedule_callback(callback, {
+			error = "Failed to encode request body: " .. tostring(json_body),
+			message = "Failed to encode request body: " .. tostring(json_body),
+		}, nil)
+		return
+	end
+
+	return request(method, path, callback, opts, json_body)
 end
 
 -- GET request
@@ -178,7 +191,7 @@ end
 ---@param callback function(err, data)
 ---@param opts? table Optional request options (query params, headers)
 function M.get(path, callback, opts)
-	request("GET", path, callback, opts, nil)
+	return request("GET", path, callback, opts, nil)
 end
 
 -- POST request
@@ -187,16 +200,7 @@ end
 ---@param callback function(err, data)
 ---@param opts? table Optional request options
 function M.post(path, body, callback, opts)
-	local ok, json_body = pcall(vim.json.encode, body)
-	if not ok then
-		schedule_callback(callback, {
-			error = "Failed to encode request body: " .. tostring(json_body),
-			message = "Failed to encode request body: " .. tostring(json_body),
-		}, nil)
-		return
-	end
-
-	request("POST", path, callback, opts, json_body)
+	return request_json("POST", path, body, callback, opts)
 end
 
 -- PATCH request
@@ -205,16 +209,7 @@ end
 ---@param callback function(err, data)
 ---@param opts? table Optional request options
 function M.patch(path, body, callback, opts)
-	local ok, json_body = pcall(vim.json.encode, body)
-	if not ok then
-		schedule_callback(callback, {
-			error = "Failed to encode request body: " .. tostring(json_body),
-			message = "Failed to encode request body: " .. tostring(json_body),
-		}, nil)
-		return
-	end
-
-	request("PATCH", path, callback, opts, json_body)
+	return request_json("PATCH", path, body, callback, opts)
 end
 
 -- DELETE request
@@ -222,7 +217,7 @@ end
 ---@param callback function(err, data)
 ---@param opts? table Optional request options
 function M.delete(path, callback, opts)
-	request("DELETE", path, callback, opts, nil)
+	return request("DELETE", path, callback, opts, nil)
 end
 
 -- PUT request
@@ -231,26 +226,16 @@ end
 ---@param callback function(err, data)
 ---@param opts? table Optional request options
 function M.put(path, body, callback, opts)
-	local json_body = nil
-	if body ~= nil then
-		local ok, encoded = pcall(vim.json.encode, body)
-		if not ok then
-			schedule_callback(callback, {
-				error = "Failed to encode request body: " .. tostring(encoded),
-				message = "Failed to encode request body: " .. tostring(encoded),
-			}, nil)
-			return
-		end
-		json_body = encoded
+	if body == nil then
+		return request("PUT", path, callback, opts, nil)
 	end
-
-	request("PUT", path, callback, opts, json_body)
+	return request_json("PUT", path, body, callback, opts)
 end
 
 -- Check server health
 ---@param callback function(err, data) data = v2 ServerInfo
 function M.health(callback)
-	require("opencode.client.v2").request("info", { timeout = 5000 }, callback)
+	return require("opencode.client.v2").request("info", { timeout = 5000 }, callback)
 end
 
 return M
