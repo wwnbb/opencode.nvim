@@ -4,3 +4,6 @@ llm_context*
 docs/*
 __pycache__/
 *.pyc
+
+# Neovim runtime debug log
+.nvimlog
