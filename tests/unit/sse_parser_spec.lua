@@ -70,13 +70,23 @@ describe("opencode native v2 SSE parser", function()
 	end)
 
 	it("deduplicates native event IDs across reconnects", function()
+		local named = {}
+		sse.on("session.text.delta", function(data, id)
+			named[#named + 1] = { data = data, id = id }
+		end)
 		local frame = "data: " .. vim.json.encode(envelope("unique", "once")) .. "\n\n"
 		stream.on_data(frame .. frame)
 		assert.equals(1, #received)
+		assert.equals(1, #named)
+		assert.equals("unique", named[1].id)
+		assert.equals("once", named[1].data.delta)
+		assert.equals("session.text.delta", named[1].data._v2_envelope.type)
+		assert.equals(vim.fn.getcwd(), named[1].data._directory)
 		sse.disconnect()
 		assert.is_true(sse.connect())
 		stream.on_data(frame)
 		assert.equals(1, #received)
+		assert.equals(1, #named)
 	end)
 
 	it("rejects old properties and syncEvent envelopes", function()

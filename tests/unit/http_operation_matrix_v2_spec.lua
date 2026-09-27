@@ -69,6 +69,7 @@ local cases = {
 	{ "command", "POST", "/api/session/{sessionID}/command", "empty", { name = "review", text = "--staged" } },
 	{ "prompt", "POST", "/api/session/{sessionID}/prompt", "inbox", { id = "msg_prompt", text = "Привет", files = {} } },
 	{ "generate", "POST", "/api/session/{sessionID}/generate", "generated_text", { prompt = "Quick question" } },
+	{ "completion", "POST", "/api/experimental/generate", "generated_text", { prompt = "Complete at cursor", model = model } },
 	{ "session_agent", "POST", "/api/session/{sessionID}/agent", "empty", { agent = "build" } },
 	{ "session_model", "POST", "/api/session/{sessionID}/model", "empty", { model = model } },
 	{ "interrupt", "POST", "/api/session/{sessionID}/interrupt", "interrupt", nil, { resume = false } },
@@ -113,7 +114,7 @@ describe("v2 operation wire matrix", function()
 		end
 	end)
 	for _, case in ipairs(cases) do
-		it(case[1] .. " encodes its request, accepts the native envelope and preserves HTTP failure", function()
+		it(case[1] .. " encodes its request and accepts the native envelope", function()
 			local args = { path = {}, body = case[5], query = case[6] }
 			local route = case[3]:gsub("{([^}]+)}", function(key) args.path[key] = key .. "/%"; return key .. "%2F%25" end)
 			local body, status = responses[case[4]], case[4] == "empty" and 204 or 200
@@ -131,9 +132,21 @@ describe("v2 operation wire matrix", function()
 			if case[4] == "page" then assert.equals("opaque/+%", result.meta.cursor.previous) end
 			if case[4] == "interrupt" then assert.is_false(result.data.interrupted) end
 			if case[4] == "generated_text" then assert.equals("Transient answer", result.data) end
-			response = { status = 401, headers = { ["content-type"] = "application/json" }, body = vim.json.encode({ _tag = "UnauthorizedError", message = "Authentication required" }) }
-			invoke(); assert.equals(2, callbacks)
-			assert.is_nil(result.data); assert.equals(401, result.err.status); assert.equals("UnauthorizedError", result.err.code); assert.is_false(result.err.retryable)
 		end)
 	end
+	it("preserves HTTP failures across GET, POST, PATCH and DELETE", function()
+		response = { status = 401, headers = { ["content-type"] = "application/json" }, body = vim.json.encode({ _tag = "UnauthorizedError", message = "Authentication required" }) }
+		for _, operation in ipairs({ "session_get", "session_create", "session_update", "session_delete" }) do
+			local callbacks = 0
+			v2.request(operation, { path = { sessionID = "s" } }, function(err, data, meta)
+				callbacks = callbacks + 1
+				assert.is_nil(data)
+				assert.equals(401, err.status)
+				assert.equals("UnauthorizedError", err.code)
+				assert.is_false(err.retryable)
+				assert.equals(401, meta.status)
+			end)
+			assert.equals(1, callbacks)
+		end
+	end)
 end)

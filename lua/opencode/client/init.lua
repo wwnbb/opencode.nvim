@@ -29,15 +29,6 @@ local function normalize_directory(directory)
 	return absolute
 end
 
----@param segment string
----@return string
-local function encode_path_segment(segment)
-	local encoded = tostring(segment):gsub("[^A-Za-z0-9%-_.~]", function(c)
-		return string.format("%%%02X", c:byte())
-	end)
-	return encoded
-end
-
 -- Configure both clients
 ---@param opts table Configuration options
 function M.setup(opts)
@@ -140,7 +131,6 @@ end
 function M.get_session_statuses(opts, callback)
 	if type(opts) == "function" then
 		callback = opts
-		opts = nil
 	end
 	v2.request("session_active", {}, function(err, active, meta)
 		if err then callback(err, nil, meta); return end
@@ -267,6 +257,27 @@ end
 ---@param callback function(err, text)
 function M.generate_text(session_id, prompt, callback)
 	v2.request("generate", { path = { sessionID = session_id }, body = { prompt = prompt }, timeout = 0 }, callback)
+end
+
+-- Generate editor completion without creating or changing a session.
+---@param prompt string
+---@param model? table Native Model.Ref: { providerID, id, variant? }.
+---@param callback function(err, text)
+---@param opts? table { timeout?: number } Request timeout in milliseconds; zero disables it.
+---@return table|nil request Handle with cancel() and is_active().
+function M.generate_completion(prompt, model, callback, opts)
+	return v2.request("completion", {
+		body = { prompt = prompt, model = model },
+		timeout = opts and opts.timeout,
+	}, callback)
+end
+
+-- One-shot Visual explanation; no session ID, tools, or chat state is sent.
+function M.generate_explanation(prompt, model, callback, opts)
+	return v2.request("completion", {
+		body = { prompt = prompt, model = model },
+		timeout = opts and opts.timeout,
+	}, callback)
 end
 
 -- Abort session
