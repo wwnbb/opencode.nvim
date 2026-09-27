@@ -19,18 +19,24 @@ describe("v2 event notifications", function()
 	end)
 
 	it("deduplicates native form prompts and clears terminal IDs", function()
-		forms.add_form({ id = "form", sessionID = "notify-session", fields = {
+		local form = { id = "form", sessionID = "notify-session", fields = {
 			{ key = "ok", title = "Continue?", type = "boolean", required = true },
-		} })
+		} }
+		forms.add_form(form)
 		local pending = { kind = "question", action = "pending", id = "form", session_id = "notify-session" }
 		bus.emit("interaction_changed", pending)
 		bus.emit("interaction_changed", pending)
 		assert.is_true(vim.wait(500, function() return #notices == 1 end, 10))
-		bus.emit("interaction_changed", { kind = "question", action = "form.cancelled", id = "form", session_id = "notify-session" })
+		forms.mark_rejected("form")
+		bus.emit("interaction_changed", { kind = "question", action = "rejected", id = "form", session_id = "notify-session" })
 		forms.remove_question("form")
 		bus.emit("interaction_changed", pending)
 		vim.wait(30)
 		assert.equals(1, #notices)
+		-- Reintroducing the same ID makes stale notification dedupe observable.
+		forms.add_form(form)
+		bus.emit("interaction_changed", pending)
+		assert.is_true(vim.wait(500, function() return #notices == 2 end, 10))
 	end)
 
 	it("reports native execution failure without a false done notice", function()

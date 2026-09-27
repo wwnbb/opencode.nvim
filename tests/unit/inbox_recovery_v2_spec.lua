@@ -92,6 +92,24 @@ describe("v2 inbox/history recovery", function()
 		assert.equals("Queued text", sync.get_parts("q")[1].text)
 	end)
 
+	it("notifies render subscribers when cancellation removes a queued prompt", function()
+		bus.emit("v2_event", { id = "evt_queue", created = 10, type = "session.inbox.enqueued",
+			data = { sessionID = "s", inboxID = "q", item = item() } })
+		assert.is_not_nil(sync.get_message("s", "q"))
+		local updates = {}
+		bus.on("sync_changed", function(data) updates[#updates + 1] = data end)
+		local cancelled = { id = "evt_cancel", created = 20, type = "session.inbox.cancelled",
+			data = { sessionID = "s", inboxID = "q" } }
+		bus.emit("v2_event", cancelled)
+		assert.is_nil(sync.get_message("s", "q"))
+		assert.same({}, sync.get_parts("q"))
+		assert.equals("cancelled", pending.get("s", "q").status)
+		assert.equals(1, #updates)
+		assert.equals("s", updates[1].session_id)
+		bus.emit("v2_event", cancelled)
+		assert.equals(1, #updates, "duplicate cancellation should not report another content change")
+	end)
+
 	it("keeps an external steering change newer than the inbox read", function()
 		pending.admit(item()); start()
 		bus.emit("v2_event", { id = "evt_change", created = 20, type = "session.inbox.delivery.changed",

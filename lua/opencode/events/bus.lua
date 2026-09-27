@@ -44,10 +44,7 @@ end
 ---@param event_type string Event type
 ---@param callback function Callback to remove (must be same reference as passed to on())
 function M.off(event_type, callback)
-	local cbs = listeners[event_type]
-	if not cbs then
-		return
-	end
+	local cbs = listeners[event_type] or {}
 
 	for i, cb in ipairs(cbs) do
 		if cb == callback then

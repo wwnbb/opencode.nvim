@@ -14,29 +14,18 @@ function M.setup(events)
 		end)
 	end)
 
-	events.on("interaction_changed", function()
-		vim.schedule(refresh_all)
-	end)
-
-	events.on("permission_pending", function()
-		vim.schedule(refresh_all)
-	end)
-
-	events.on("edit_pending", function()
-		vim.schedule(refresh_all)
-	end)
-
-	events.on("permission_removed", function()
-		vim.schedule(refresh_all)
-	end)
-
-	events.on("question_removed", function()
-		vim.schedule(refresh_all)
-	end)
-
-	events.on("edit_removed", function()
-		vim.schedule(refresh_all)
-	end)
+	for _, event in ipairs({
+		"interaction_changed",
+		"permission_pending",
+		"edit_pending",
+		"permission_removed",
+		"question_removed",
+		"edit_removed",
+	}) do
+		events.on(event, function()
+			vim.schedule(refresh_all)
+		end)
+	end
 
 	events.on("session_change", function(data)
 		if not (data and data.preserve_cache) then
