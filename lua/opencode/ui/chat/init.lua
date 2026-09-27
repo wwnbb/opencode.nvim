@@ -14,7 +14,6 @@ local chat_keymaps = require("opencode.ui.chat.keymaps")
 local chat_session_tabs = require("opencode.ui.chat.session_tabs")
 local spinner = require("opencode.ui.spinner")
 local event_util = require("opencode.events.util")
-local actions = require("opencode.actions")
 local logger = require("opencode.logger")
 
 -- ─── Shared state & sub-modules ──────────────────────────────────────────────
@@ -29,6 +28,7 @@ local chat_highlights = require("opencode.ui.chat.highlights")
 local ui_highlights = require("opencode.ui.highlights")
 local render_state = require("opencode.ui.chat.render_state")
 local render_context = require("opencode.ui.chat.render_context")
+local render_coordinator = require("opencode.ui.chat.render_coordinator")
 local widget_index = require("opencode.ui.chat.widget_index")
 local message_renderer = require("opencode.ui.chat.message_renderer")
 local edit_previews = require("opencode.ui.chat.edit_previews")
@@ -93,7 +93,10 @@ local function get_config()
 	return vim.tbl_deep_extend("force", defaults, full_config.chat or {})
 end
 
-local reset_chat_surface = render_state.reset_chat_surface
+local function reset_chat_surface(opts)
+	render_state.reset_chat_surface(opts)
+	state.transcript_dirty = true
+end
 local stream_block_key = render_state.stream_block_key
 local render_highlight_signature = render_state.render_highlight_signature
 local highlight_clear_start = render_state.highlight_clear_start
@@ -107,14 +110,19 @@ local resize_refresh_autocmds_setup = false
 local resize_refresh_scheduled = false
 local render_retry_used = false
 local render_retry_token = 0
+local pending_render_data
+local render_schedule_token = 0
+local winbar_refresh_scheduled = false
+local opening = false
 
+-- Scheduling follows the transcript buffer in any window. Cursor/detail helpers
+-- still follow the owned chat window through cs.is_chat_buffer_displayed().
 local function chat_surface_is_visible()
-	return state.visible
-		and state.bufnr
-		and vim.api.nvim_buf_is_valid(state.bufnr)
-		and state.winid
-		and vim.api.nvim_win_is_valid(state.winid)
-		and (not state.tabpage or state.tabpage == vim.api.nvim_get_current_tabpage())
+	if not state.bufnr or not vim.api.nvim_buf_is_valid(state.bufnr) then return false end
+	for _, winid in ipairs(vim.api.nvim_list_wins()) do
+		if vim.api.nvim_win_get_buf(winid) == state.bufnr then return true end
+	end
+	return false
 end
 
 local function invalidate_cached_render_state()
@@ -122,6 +130,7 @@ local function invalidate_cached_render_state()
 	render_state.clear_code_cache()
 	render_state.invalidate_render_highlights(0)
 	state.force_full_render = true
+	state.transcript_dirty = true
 end
 
 local function apply_config_change()
@@ -177,7 +186,7 @@ local function resize_event_affects_chat(windows)
 	end
 
 	for _, winid in ipairs(windows) do
-		if winid == state.winid then
+		if vim.api.nvim_win_is_valid(winid) and vim.api.nvim_win_get_buf(winid) == state.bufnr then
 			return true
 		end
 	end
@@ -209,6 +218,16 @@ local function setup_resize_refresh_autocmds()
 	resize_refresh_autocmds_setup = true
 
 	local group = vim.api.nvim_create_augroup("OpenCodeChatResize", { clear = false })
+	vim.api.nvim_create_autocmd("BufWinEnter", {
+		group = group,
+		callback = function(args)
+			if args.buf == state.bufnr and not opening and not state.render_in_progress
+				and (state.transcript_dirty or state.force_full_render) then
+				M.do_render()
+			end
+		end,
+		desc = "Refresh dirty OpenCode transcript before displaying its buffer",
+	})
 	vim.api.nvim_create_autocmd("VimResized", {
 		group = group,
 		callback = schedule_resize_refresh,
@@ -413,11 +432,21 @@ function M.create()
 	then
 	events.on("chat_render", function(data)
 		vim.schedule(function()
-			M.schedule_render({
-				force = type(data) == "table" and data.force == true,
-			})
+			M.schedule_render(data)
 		end)
 	end)
+
+	local function refresh_winbar()
+		if winbar_refresh_scheduled then return end
+		winbar_refresh_scheduled = true
+		vim.schedule(function()
+			winbar_refresh_scheduled = false
+			M.update_winbar()
+		end)
+	end
+	for _, event in ipairs({ "sessions_changed", "session_pending_change", "session_status_change" }) do
+		events.on(event, refresh_winbar)
+	end
 
 	events.on("config_change", function()
 		schedule_config_refresh()
@@ -448,12 +477,13 @@ function M.create()
 			if nested_child and (part_type == "text" or part_type == "reasoning" or field == "text" or field == "reasoning") then
 				return
 			end
-			if not state.visible or not state.bufnr or not vim.api.nvim_buf_is_valid(state.bufnr) then
+			if not chat_surface_is_visible() then
+				state.transcript_dirty = true
 				state.force_full_render = true
 				return
 			end
-			if not M.update_stream_part_block(render_session_id, message_id, part_id) then
-				M.schedule_render()
+			if state.transcript_dirty or not M.update_stream_part_block(render_session_id, message_id, part_id) then
+				M.schedule_render(data)
 			end
 		end)
 	end)
@@ -610,6 +640,8 @@ function M.open()
 	if not state.bufnr or not vim.api.nvim_buf_is_valid(state.bufnr) then
 		M.create()
 	end
+	opening = true
+	local opened, open_error = xpcall(function()
 	reset_chat_surface()
 
 	local cfg = state.config
@@ -664,15 +696,12 @@ function M.open()
 
 		register_chat_window_closed_autocmd(popup.winid)
 	else
-		local split_cmd = "split"
-		local split_opts = {}
+		local split_cmd
 
 		if cfg.layout == "vertical" then
 			split_cmd = cfg.position == "right" and "botright vsplit" or "topleft vsplit"
-			split_opts.width = cfg.width
 		else
 			split_cmd = cfg.position == "bottom" and "botright split" or "topleft split"
-			split_opts.height = cfg.height
 		end
 
 		vim.cmd(split_cmd)
@@ -711,6 +740,9 @@ function M.open()
 	if line_count > 0 and not focused_pending_widget then
 		vim.api.nvim_win_set_cursor(state.winid or 0, { line_count, 0 })
 	end
+	end, debug.traceback)
+	opening = false
+	if not opened then error(open_error) end
 end
 
 function M.close()
@@ -1066,8 +1098,8 @@ function M.render()
 		current_session = current_session,
 		in_child_session_view = ctx.in_child_session_view,
 	})
-	local stats = message_renderer.render(ctx, index)
-	local stream_block_count = ctx:commit_stream_blocks()
+	message_renderer.render(ctx, index)
+	ctx:commit_stream_blocks()
 
 	return ctx.raw_lines, ctx.nui_lines, ctx.content_highlights
 end
@@ -1123,12 +1155,27 @@ end
 
 local RENDER_THROTTLE_MS = 16
 
+local function apply_scheduled_render()
+	local data = pending_render_data
+	pending_render_data = nil
+	if not render_coordinator.request_relevant(data) then
+		M.update_winbar()
+		return
+	end
+	if not chat_surface_is_visible() then
+		state.transcript_dirty = true
+		state.force_full_render = true
+		M.update_winbar()
+		return
+	end
+	if (data and data.force) or state.transcript_dirty then state.force_full_render = true end
+	state.last_render_time = vim.uv.now()
+	M.do_render()
+end
+
 ---@param opts? table { force?: boolean }
 function M.schedule_render(opts)
-	opts = opts or {}
-	if opts.force then
-		state.force_full_render = true
-	end
+	pending_render_data = render_coordinator.merge_requests(pending_render_data, opts)
 	if state.render_scheduled then
 		return
 	end
@@ -1137,15 +1184,16 @@ function M.schedule_render(opts)
 	local elapsed = now - state.last_render_time
 
 	if elapsed >= RENDER_THROTTLE_MS then
-		state.last_render_time = now
-		M.do_render()
+		apply_scheduled_render()
 	else
 		state.render_scheduled = true
+		render_schedule_token = render_schedule_token + 1
+		local token = render_schedule_token
 		local delay = RENDER_THROTTLE_MS - elapsed
 		vim.defer_fn(function()
+			if token ~= render_schedule_token then return end
 			state.render_scheduled = false
-			state.last_render_time = vim.uv.now()
-			M.do_render()
+			apply_scheduled_render()
 		end, delay)
 	end
 end
@@ -1163,6 +1211,11 @@ function M.do_render()
 	if not state.bufnr or not vim.api.nvim_buf_is_valid(state.bufnr) then
 		return
 	end
+	-- A synchronous refresh already includes all stored changes. An older
+	-- throttle callback must not consume requests queued after this refresh.
+	render_schedule_token = render_schedule_token + 1
+	pending_render_data = nil
+	state.render_scheduled = false
 	local render_generation = (state.render_generation or 0) + 1
 	state.render_generation = render_generation
 	state.render_in_progress = true
@@ -1173,6 +1226,7 @@ function M.do_render()
 		render_retry_used = false
 		render_retry_token = render_retry_token + 1
 		state.render_in_progress = false
+		state.transcript_dirty = false
 	end
 
 	local ok, render_error = xpcall(function()
