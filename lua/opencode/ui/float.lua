@@ -10,20 +10,13 @@ local float_context = require("opencode.ui.float_context")
 function M.create_centered_popup(opts)
 	opts = opts or {}
 
-	local function centered_layout()
+	local function centered_size()
 		local screen_width = math.max(1, vim.o.columns)
 		local screen_height = math.max(1, vim.o.lines - vim.o.cmdheight)
 		local width = opts.width or math.min(60, screen_width - 10)
 		local height = opts.height or math.min(20, screen_height - 6)
-		return {
-			position = {
-				row = math.floor((screen_height - height) / 2),
-				col = math.floor((screen_width - width) / 2),
-			},
-			size = { width = width, height = height },
-		}
+		return { width = width, height = height }
 	end
-	local layout = centered_layout()
 
 	local popup = Popup.new({
 		enter = opts.enter ~= false,
@@ -33,7 +26,7 @@ function M.create_centered_popup(opts)
 		focus_restore = opts.focus_restore == nil and "previous" or opts.focus_restore,
 		close_on_leave = opts.close_on_leave,
 		on_resize = opts.on_resize or function(current)
-			current:resize(centered_layout())
+			current:resize({ size = centered_size() })
 		end,
 		on_close = opts.on_close,
 		border = {
@@ -43,8 +36,7 @@ function M.create_centered_popup(opts)
 				top_align = "center",
 			} or nil,
 		},
-		position = layout.position,
-		size = layout.size,
+		size = centered_size(),
 	})
 
 	return popup, popup.bufnr
@@ -76,8 +68,9 @@ function M.create_input_popup(opts)
 
 	local width = opts.width or 50
 
-	local total_width = width + 2 -- border adds 2 to total width
-	local total_height = 3
+	local border_width, border_height = Popup.outer_insets()
+	local total_width = width + border_width
+	local total_height = 1 + border_height
 	local relative, row, col, zindex = float_context.resolve_centered_placement(total_width, total_height)
 
 	local popup = Popup.new({

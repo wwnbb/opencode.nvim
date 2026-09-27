@@ -16,6 +16,7 @@ end)
 local function show_status_popup(lines, highlights, ctx)
 	local Popup = require("opencode.ui.popup")
 	local float_context = require("opencode.ui.float_context")
+	local border_width, border_height = Popup.outer_insets()
 	local groups = {}
 	local longest = 0
 	for _, line in ipairs(lines) do
@@ -80,7 +81,9 @@ local function show_status_popup(lines, highlights, ctx)
 		local width = math.max(1, math.min(math.max(45, longest + 8), 88, available_width - 4))
 		local body_lines = wrap_body(width)
 		local height = math.max(7, math.min(#body_lines + 6, math.floor(available_height * 0.78)))
-		local relative, row, col, zindex = float_context.resolve_centered_placement(width, height)
+		local relative, row, col, zindex = float_context.resolve_centered_placement(
+			width + border_width, height + border_height
+		)
 		return width, height, relative, row, col, zindex or 80
 	end
 
@@ -139,8 +142,8 @@ local function show_status_popup(lines, highlights, ctx)
 				container_width = vim.api.nvim_win_get_width(relative.winid)
 				container_height = vim.api.nvim_win_get_height(relative.winid)
 			end
-			next_row = math.max(0, math.floor((container_height - next_height) / 2))
-			next_col = math.max(0, math.floor((container_width - next_width) / 2))
+			next_row = math.max(0, math.floor((container_height - next_height - border_height) / 2))
+			next_col = math.max(0, math.floor((container_width - next_width - border_width) / 2))
 		end
 		popup:resize({
 			relative = next_relative,

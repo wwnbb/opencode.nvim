@@ -582,10 +582,6 @@ function M.show_help()
 
 	local width = 38
 	local height = #lines
-	local ui_list = vim.api.nvim_list_uis()
-	local ui = ui_list and ui_list[1] or { width = 80, height = 24 }
-	local row = math.floor((ui.height - height) / 2)
-	local col = math.floor((ui.width - width) / 2)
 
 	local popup = require("opencode.ui.popup").new({
 		enter = true,
@@ -594,7 +590,6 @@ function M.show_help()
 			style = "rounded",
 			text = { top = " Help ", top_align = "center" },
 		},
-		position = { row = row, col = col },
 		size = { width = width, height = height },
 	})
 

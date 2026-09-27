@@ -31,8 +31,10 @@ describe("opencode command palette layout", function()
 			local state = require("opencode.state")
 			local palette = require("opencode.ui.palette")
 			local hl_ns = vim.api.nvim_create_namespace("opencode_palette")
+			local previous_config = state.get_config()
 
 			state.set_config(vim.tbl_deep_extend("force", {}, config.defaults, {
+				popup = { border = "double" },
 				palette = {
 					width = 36,
 					height = 8,
@@ -75,6 +77,9 @@ describe("opencode command palette layout", function()
 			local frame_config = vim.api.nvim_win_get_config(wins[3])
 			assert(frame_config.width == 36, "configured width includes the dialog gutters")
 			assert(frame_config.height == 12, "frame includes title, search, and bottom spacing")
+			assert(frame_config.border[1][1] == "┌", "palette.border should be independent of popup.border")
+			assert(vim.api.nvim_win_get_config(wins[1]).border == "none", "palette search should stay borderless")
+			assert(win_config.border == "none", "palette result list should stay borderless")
 			assert(win_config.win == wins[3], "results should be anchored inside the frame")
 			assert(win_config.row == 5 and win_config.col == 1, "list should use TUI spacing")
 			assert(vim.fn.prompt_getprompt(input_buf) == "", "search should have no prompt chevron")
@@ -122,6 +127,7 @@ describe("opencode command palette layout", function()
 			assert(keybind_mark[3] == byte_col, "keybind extmark should use its byte offset")
 
 			palette.hide()
+			state.set_config(previous_config)
 		end)
 	end)
 end)

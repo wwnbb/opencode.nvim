@@ -34,6 +34,93 @@ describe("opencode searchable menu", function()
 	end)
 end)
 
+describe("Switch Session popup border", function()
+	local config = require("opencode.config")
+	local state = require("opencode.state")
+	local old_config, old_columns, old_lines, old_win
+	local ctx
+	local function press(menu_ctx, key, mode)
+		local bufnr = menu_ctx.input and menu_ctx.input.bufnr or menu_ctx.popup.bufnr
+		for _, mapping in ipairs(vim.api.nvim_buf_get_keymap(bufnr, mode or "n")) do
+			if mapping.lhs == key then return mapping.callback() end
+		end
+		error("missing menu mapping " .. key)
+	end
+	local function search(menu_ctx, query)
+		vim.api.nvim_buf_set_lines(menu_ctx.input.bufnr, 0, 1, false, { query })
+		vim.api.nvim_exec_autocmds("TextChangedI", { buffer = menu_ctx.input.bufnr })
+	end
+
+	before_each(function()
+		old_config = state.get_config()
+		old_columns, old_lines = vim.o.columns, vim.o.lines
+		old_win = vim.api.nvim_get_current_win()
+		state.set_config(config.merge({ popup = { border = "rounded" } }))
+	end)
+
+	after_each(function()
+		if ctx then ctx.close() end
+		ctx = nil
+		state.set_config(old_config)
+		vim.o.columns, vim.o.lines = old_columns, old_lines
+		if vim.api.nvim_win_is_valid(old_win) then vim.api.nvim_set_current_win(old_win) end
+	end)
+
+	local function assert_outer_border(searchable)
+		assert.equals("rounded", ctx.frame.border._.style)
+		assert.equals("╭", vim.api.nvim_win_get_config(ctx.frame.winid).border[1][1])
+		assert.equals("none", vim.api.nvim_win_get_config(ctx.popup.winid).border)
+		assert.equals(ctx.frame.winid, vim.api.nvim_win_get_config(ctx.popup.winid).win)
+		if searchable then
+			assert.equals("none", vim.api.nvim_win_get_config(ctx.input.winid).border)
+			assert.equals(ctx.frame.winid, vim.api.nvim_win_get_config(ctx.input.winid).win)
+		else
+			assert.is_nil(ctx.input)
+		end
+	end
+
+	it("keeps search, selection, and resize inside one framed window", function()
+		local selected
+		vim.o.columns, vim.o.lines = 52, 22
+		ctx = require("opencode.ui.menu").open({
+			title = " Switch Session ", searchable = true, refocus_chat = false, sort = false,
+			items = { "First session", "Review session", "Third session" },
+			on_select = function(item) selected = item end,
+		})
+		assert_outer_border(true)
+		search(ctx, "Review")
+		assert.equals("Review session", ctx.current())
+		vim.o.columns, vim.o.lines = 38, 17
+		vim.api.nvim_exec_autocmds("VimResized", {})
+		assert_outer_border(true)
+		local frame = vim.api.nvim_win_get_config(ctx.frame.winid)
+		local list = vim.api.nvim_win_get_config(ctx.popup.winid)
+		local input = vim.api.nvim_win_get_config(ctx.input.winid)
+		assert.is_true(frame.row >= 0 and frame.row + frame.height + 2 <= vim.o.lines - vim.o.cmdheight)
+		assert.is_true(frame.col >= 0 and frame.col + frame.width + 2 <= vim.o.columns)
+		assert.is_true(list.row + list.height <= frame.height)
+		assert.is_true(input.row + input.height <= frame.height)
+		local frame_win, list_win, input_win = ctx.frame.winid, ctx.popup.winid, ctx.input.winid
+		press(ctx, "<CR>", "i")
+		assert.equals("Review session", selected)
+		for _, winid in ipairs({ frame_win, list_win, input_win }) do
+			assert.is_false(vim.api.nvim_win_is_valid(winid))
+		end
+	end)
+
+	it("keeps a plain selector's list borderless and closes on Escape", function()
+		ctx = require("opencode.ui.menu").open({
+			title = " Switch Session ", searchable = false, refocus_chat = false,
+			items = { "First session", "Second session" },
+		})
+		assert_outer_border(false)
+		local frame_win, list_win = ctx.frame.winid, ctx.popup.winid
+		press(ctx, "<Esc>")
+		assert.is_false(vim.api.nvim_win_is_valid(frame_win))
+		assert.is_false(vim.api.nvim_win_is_valid(list_win))
+	end)
+end)
+
 local function press(ctx, key, mode)
 	local bufnr = ctx.input and ctx.input.bufnr or ctx.popup.bufnr
 	for _, mapping in ipairs(vim.api.nvim_buf_get_keymap(bufnr, mode or "n")) do

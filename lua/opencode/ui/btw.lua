@@ -25,8 +25,9 @@ local function dimensions(kind, question_rows)
 	local is_prompt = kind == "prompt"
 	local columns = math.max(1, vim.o.columns)
 	local rows = math.max(1, vim.o.lines - vim.o.cmdheight)
-	local width = math.max(1, math.min(is_prompt and PROMPT_WIDTH or ANSWER_WIDTH, columns - 2))
-	local available_height = math.max(1, rows - 2)
+	local border_width, border_height = Popup.outer_insets()
+	local width = math.max(1, math.min(is_prompt and PROMPT_WIDTH or ANSWER_WIDTH, columns - border_width))
+	local available_height = math.max(1, rows - border_height)
 	local answer_rows = 0
 	local height
 	if is_prompt then
@@ -40,9 +41,9 @@ local function dimensions(kind, question_rows)
 	return {
 		width = width,
 		height = height,
-		row = is_prompt and math.min(math.floor(rows / 4), math.max(0, rows - height))
-			or math.floor((rows - height) / 2),
-		col = math.floor((columns - width) / 2),
+		row = is_prompt and math.min(math.floor(rows / 4), math.max(0, rows - height - border_height))
+			or math.floor((rows - height - border_height) / 2),
+		col = math.floor((columns - width - border_width) / 2),
 		answer_rows = answer_rows,
 		question_rows = question_rows,
 	}
@@ -93,8 +94,8 @@ end
 
 local function prompt_input_geometry(geometry)
 	return {
-		row = geometry.row + 3,
-		col = geometry.col + 2,
+		row = 3,
+		col = 2,
 		width = math.max(1, geometry.width - 4),
 		height = 1,
 	}
@@ -132,10 +133,11 @@ local function render_answer(text, width)
 end
 
 local function result_dimensions(question)
-	local width = math.max(1, math.min(ANSWER_WIDTH, vim.o.columns - 2))
+	local border_width, border_height = Popup.outer_insets()
+	local width = math.max(1, math.min(ANSWER_WIDTH, vim.o.columns - border_width))
 	local text_width = math.max(1, width - 4)
 	local question_count = #wrap_lines(question, text_width)
-	local available_height = math.max(1, vim.o.lines - vim.o.cmdheight - 2)
+	local available_height = math.max(1, vim.o.lines - vim.o.cmdheight - border_height)
 	-- Reserve one answer row and the fixed dialog spacing on short screens.
 	return dimensions("answer", math.min(question_count, math.max(1, available_height - 10)))
 end
@@ -342,7 +344,6 @@ local function create_dialog(kind, geometry, resize_geometry, redraw)
 			kind = "popup",
 			enter = true,
 			focusable = true,
-			relative = "editor",
 			position = { row = input_geometry.row, col = input_geometry.col },
 			size = { width = input_geometry.width, height = input_geometry.height },
 			border = "none",

@@ -181,7 +181,8 @@ local function content_lines(groups, width)
 end
 
 function M.show(config)
-	if vim.o.lines - vim.o.cmdheight < 8 then
+	local border_width, border_height = Popup.outer_insets()
+	if vim.o.lines - vim.o.cmdheight < 8 + border_height or vim.o.columns < 12 + border_width then
 		vim.notify("Not enough room to show OpenCode help", vim.log.levels.WARN)
 		return
 	end
@@ -204,10 +205,11 @@ function M.show(config)
 		if anchor_width < 28 or anchor_height < 12 then
 			pos, anchor_width, anchor_height = { 0, 0 }, screen_width, screen_height
 		end
-		local width = math.max(12, math.min(76, anchor_width - 4, screen_width - 2))
-		local height = math.max(8, math.min(32, anchor_height - 4, screen_height - 2))
-		local row = math.max(0, math.min(pos[1] + math.floor((anchor_height - height) / 2), screen_height - height))
-		local col = math.max(0, math.min(pos[2] + math.floor((anchor_width - width) / 2), screen_width - width))
+		local width = math.max(12, math.min(76, anchor_width - 4, screen_width - border_width))
+		local height = math.max(8, math.min(32, anchor_height - 4, screen_height - border_height))
+		local outer_width, outer_height = width + border_width, height + border_height
+		local row = math.max(0, math.min(pos[1] + math.floor((anchor_height - outer_height) / 2), screen_height - outer_height))
+		local col = math.max(0, math.min(pos[2] + math.floor((anchor_width - outer_width) / 2), screen_width - outer_width))
 		return width, height, row, col
 	end
 	local width, height, row, col = dimensions()
@@ -227,7 +229,7 @@ function M.show(config)
 				size = { width = next_width, height = next_height },
 			},
 			content = {
-				position = { row = next_row + 3, col = next_col + 1 },
+				position = { row = 3, col = 1 },
 				size = { width = next_width - 2, height = next_height - 6 },
 			},
 		})
@@ -266,10 +268,9 @@ function M.show(config)
 		content = {
 			enter = true,
 			focusable = true,
-			relative = "editor",
 			zindex = 81,
 			border = "none",
-			position = { row = row + 3, col = col + 1 },
+			position = { row = 3, col = 1 },
 			size = { width = width - 2, height = height - 6 },
 			buf_options = { filetype = "opencode_help" },
 			win_options = win_options,
@@ -278,7 +279,7 @@ function M.show(config)
 		close_on_leave = true,
 		on_close = function() active_popup = nil end,
 		on_resize = function()
-			if vim.o.lines - vim.o.cmdheight < 8 then
+			if vim.o.lines - vim.o.cmdheight < 8 + border_height or vim.o.columns < 12 + border_width then
 				popup:close()
 			else
 				redraw()

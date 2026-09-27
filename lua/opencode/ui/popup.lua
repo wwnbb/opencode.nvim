@@ -10,14 +10,59 @@ Popup.__index = Popup
 
 local next_id = 0
 
+local function configured_border_style()
+	local config = require("opencode.state").get_config()
+	local style = config and config.popup and config.popup.border
+	if style == nil then style = require("opencode.config").defaults.popup.border end
+	return style
+end
+
+local function border_char_width(char)
+	if char == nil then return 0 end
+	if type(char) == "table" then
+		if type(char.width) == "function" then return char:width() end
+		if type(char.content) == "function" then char = char:content()
+		else char = char[1] end
+	end
+	return type(char) == "string" and vim.fn.strdisplaywidth(char) or 0
+end
+
+local function style_insets(style)
+	if style == nil or style == "none" then return 0, 0 end
+	if type(style) == "string" then return 2, 2 end
+	if type(style) ~= "table" then return 0, 0 end
+	local function edge(name, index)
+		local char = style[name]
+		if char == nil and #style > 0 then char = style[((index - 1) % #style) + 1] end
+		return border_char_width(char) > 0 and 1 or 0
+	end
+	return edge("left", 8) + edge("right", 4), edge("top", 2) + edge("bottom", 6)
+end
+
+-- Total width and height contributed by the configured outer border. Callers
+-- use this before constructing a popup to size and center its outer surface.
+function M.outer_insets()
+	return style_insets(configured_border_style())
+end
+
 local function screen_size()
 	return math.max(1, vim.o.columns), math.max(1, vim.o.lines - vim.o.cmdheight)
 end
 
 local function border_insets(border)
-	if type(border) == "table" then border = border.style end
-	if border == "none" or border == nil then return 0, 0 end
-	return 2, 2
+	if type(border) ~= "table" then return style_insets(border) end
+	local width, height = style_insets(border.style)
+	local padding = border.padding
+	if type(padding) == "table" then
+		if #padding > 0 then
+			width = width + (padding[2] or padding[1] or 0) + (padding[4] or padding[2] or padding[1] or 0)
+			height = height + (padding[1] or 0) + (padding[3] or padding[1] or 0)
+		else
+			width = width + (padding.left or 0) + (padding.right or 0)
+			height = height + (padding.top or 0) + (padding.bottom or 0)
+		end
+	end
+	return width, height
 end
 
 local function container_size(relative)
@@ -54,6 +99,9 @@ local function geometry(spec, relative, component)
 		border_width, border_height = delta.width, delta.height
 		border_left = math.floor(delta.width / 2 + 0.5)
 		border_top = math.floor(delta.height / 2 + 0.5)
+	elseif border and border._ and border._.size_delta then
+		local delta = border._.size_delta
+		border_width, border_height = delta.width, delta.height
 	end
 	local requested_size = spec.size or {}
 	local max_width = math.max(1, container_width - border_width)
@@ -144,10 +192,31 @@ local function root_spec(opts)
 	return "content", vim.deepcopy(opts.content or opts)
 end
 
+local function apply_root_border(self)
+	local spec = self.specs[self.root_name]
+	if not spec then return end
+	for name, child in pairs(self.specs) do
+		if name ~= self.root_name then child.border = "none" end
+	end
+	local style = self.outer_border_style
+	if style == "none" then
+		-- Nui rejects border text on a borderless style. Dropping the whole
+		-- border also removes its former title, footer, and padding.
+		spec.border = "none"
+		return
+	end
+	local border = type(spec.border) == "table" and vim.deepcopy(spec.border) or {}
+	border.style = vim.deepcopy(style)
+	spec.border = border
+end
+
 local function child_relative(self, name)
 	local spec = self.specs[name]
 	if self.frame and name ~= "frame" and not spec.relative then
 		return { type = "win", winid = self.frame.winid }
+	end
+	if self.content and name == "input" and not spec.relative then
+		return { type = "win", winid = self.content.winid }
 	end
 	return spec.relative or "editor"
 end
@@ -278,6 +347,7 @@ function Popup:resize(layout)
 		local name = self.frame and "frame" or (self.content and "content" or "input")
 		self.specs[name] = vim.tbl_deep_extend("force", self.specs[name], layout)
 	end
+	apply_root_border(self)
 	for _, name in ipairs({ "frame", "content", "input" }) do
 		if self[name] then apply_layout(self, name) end
 	end
@@ -377,10 +447,12 @@ function M.new(opts)
 		close_on_leave = opts.close_on_leave == true,
 		on_resize = opts.on_resize,
 		on_close = opts.on_close,
+		outer_border_style = vim.deepcopy(configured_border_style()),
 		specs = {},
 		namespaces = {},
 	}, Popup)
 	local root_name, root = root_spec(opts)
+	self.root_name = opts.input_only and "input" or root_name
 	if not root.size then
 		root.size = { width = root.width or 60, height = root.height or 20 }
 	end
@@ -394,6 +466,7 @@ function M.new(opts)
 		self.specs.content = root
 	end
 	if opts.input and not opts.input_only then self.specs.input = vim.deepcopy(opts.input) end
+	apply_root_border(self)
 	for _, name in ipairs({ "frame", "content", "input" }) do
 		local spec = self.specs[name]
 		if spec then
