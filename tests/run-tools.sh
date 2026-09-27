@@ -13,4 +13,9 @@ if ! command -v "$TOOL_TEST_BUN" >/dev/null 2>&1; then
 fi
 
 cd "$(dirname "$SCRIPT_DIR")"
+if [ ! -d opencode_nvim/plugins/opencode-nvim/node_modules/@opencode/plugin ]; then
+	echo "Error: install pinned server dependencies with ./scripts/bootstrap-test-deps.sh" >&2
+	exit 2
+fi
+opencode_nvim/plugins/opencode-nvim/node_modules/.bin/tsc --noEmit -p opencode_nvim/plugins/opencode-nvim/tsconfig.json
 "$TOOL_TEST_BUN" test ./tests/tools

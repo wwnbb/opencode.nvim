@@ -3,25 +3,32 @@
 
 local M = {}
 
-local Popup = require("nui.popup")
+local Popup = require("opencode.ui.popup")
 local float_context = require("opencode.ui.float_context")
 
 -- Create a centered floating popup with standard styling
 function M.create_centered_popup(opts)
 	opts = opts or {}
 
-	local ui_list = vim.api.nvim_list_uis()
-	local ui = ui_list and ui_list[1] or { width = 80, height = 24 }
+	local function centered_size()
+		local screen_width = math.max(1, vim.o.columns)
+		local screen_height = math.max(1, vim.o.lines - vim.o.cmdheight)
+		local width = opts.width or math.min(60, screen_width - 10)
+		local height = opts.height or math.min(20, screen_height - 6)
+		return { width = width, height = height }
+	end
 
-	local width = opts.width or math.min(60, ui.width - 10)
-	local height = opts.height or math.min(20, ui.height - 6)
-	local row = math.floor((ui.height - height) / 2)
-	local col = math.floor((ui.width - width) / 2)
-
-	local popup = Popup({
+	local popup = Popup.new({
 		enter = opts.enter ~= false,
 		focusable = opts.focusable ~= false,
 		zindex = opts.zindex,
+		buf_options = { filetype = "opencode_float" },
+		focus_restore = opts.focus_restore == nil and "previous" or opts.focus_restore,
+		close_on_leave = opts.close_on_leave,
+		on_resize = opts.on_resize or function(current)
+			current:resize({ size = centered_size() })
+		end,
+		on_close = opts.on_close,
 		border = {
 			style = opts.border or "rounded",
 			text = opts.title and {
@@ -29,8 +36,7 @@ function M.create_centered_popup(opts)
 				top_align = "center",
 			} or nil,
 		},
-		position = { row = row, col = col },
-		size = { width = width, height = height },
+		size = centered_size(),
 	})
 
 	return popup, popup.bufnr
@@ -49,41 +55,58 @@ end
 function M.create_input_popup(opts)
 	opts = opts or {}
 
-	local NuiInput = require("nui.input")
-	local event = require("nui.utils.autocmd").event
+	if opts.password then
+		-- inputsecret does not echo or record text in input history or a buffer.
+		vim.fn.inputsave()
+		local ok, value = pcall(vim.fn.inputsecret, (opts.prompt or "Secret:") .. " ")
+		vim.fn.inputrestore()
+		if ok and value ~= "" then
+			if opts.on_submit then opts.on_submit(value) end
+		elseif opts.on_cancel then opts.on_cancel() end
+		return { close = function() end }
+	end
 
 	local width = opts.width or 50
 
-	local total_width = width + 2 -- border adds 2 to total width
-	local total_height = 3
+	local border_width, border_height = Popup.outer_insets()
+	local total_width = width + border_width
+	local total_height = 1 + border_height
 	local relative, row, col, zindex = float_context.resolve_centered_placement(total_width, total_height)
 
-	local input = NuiInput({
-		relative = relative,
-		position = { row = row, col = col },
-		size = { width = width },
-		zindex = zindex,
-		border = {
-			style = "rounded",
-			text = {
-				top = opts.title or " Input ",
-				top_align = "center",
-				bottom = " ⏎:submit  esc:cancel ",
-				bottom_align = "center",
+	local popup = Popup.new({
+		input_only = true,
+		focus_restore = opts.refocus_chat and "chat" or "previous",
+		close_on_leave = true,
+		on_resize = function(current)
+			local next_relative, next_row, next_col = float_context.resolve_centered_placement(total_width, total_height)
+			current:resize({ relative = next_relative, position = { row = next_row, col = next_col } })
+		end,
+		input = {
+			relative = relative,
+			position = { row = row, col = col },
+			size = { width = width, height = 1 },
+			zindex = zindex,
+			border = {
+				style = "rounded",
+				text = {
+					top = opts.title or " Input ",
+					top_align = "center",
+					bottom = " ⏎:submit  esc:cancel ",
+					bottom_align = "center",
+				},
 			},
+			buf_options = {
+				filetype = "opencode_float",
+			},
+			win_options = {
+				winhighlight = "Normal:Normal,FloatBorder:FloatBorder",
+			},
+			prompt = opts.prompt and (opts.prompt .. " ") or "> ",
+			default_value = opts.default or "",
 		},
-		buf_options = {
-			filetype = "opencode_float",
-		},
-		win_options = {
-			winhighlight = "Normal:Normal,FloatBorder:FloatBorder",
-		},
-	}, {
-		prompt = opts.prompt and (opts.prompt .. " ") or "> ",
-		default_value = opts.default or "",
 	})
-
-	input:mount()
+	popup:mount()
+	local input = popup.input
 
 	local is_closed = false
 	local function close()
@@ -91,12 +114,7 @@ function M.create_input_popup(opts)
 			return
 		end
 		is_closed = true
-		pcall(function()
-			input:unmount()
-		end)
-		if opts.refocus_chat then
-			float_context.focus_chat_if_visible()
-		end
+		popup:close()
 	end
 
 	-- Setup keymaps
@@ -130,11 +148,6 @@ function M.create_input_popup(opts)
 			opts.on_cancel()
 		end
 	end, keymap_opts)
-
-	-- Close on buffer leave
-	input:on(event.BufLeave, function()
-		vim.defer_fn(close, 100)
-	end)
 
 	-- Start in insert mode
 	vim.cmd("startinsert!")

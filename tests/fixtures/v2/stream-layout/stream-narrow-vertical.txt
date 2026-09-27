@@ -1,0 +1,30 @@
+                     │ ● Streaming resize  │ ●1 ◈0                              
+~                    │Agent: build                                              
+~                    │┃                                                         
+~                    │┃  Reply directly with exactly 160 lines numbered ROW001  
+~                    │┃  through ROW160. Each line must be: ROWnnn: Unicode     
+~                    │┃  Привет — streaming resize fixture. Replace nnn by its  
+~                    │┃  three-digit number. No tools, no introduction, no code 
+~                    │┃  fence.                                                 
+~                    │┃                                                         
+~                    │                                                          
+~                    │Thinking: The user wants me to reply with exactly 160     
+~                    │lines, each numbered ROW001 through ROW160, each          
+~                    │containing "ROWnnn: Unicode Привет — streaming resize     
+~                    │fixture." where nnn is replaced by the three-digit        
+~                    │number. No tools, no introduction, no code fence.         
+~                    │                                                          
+~                    │          Let me generate this directly.                  
+~                    │                                                          
+~                    │ROW001: Unicode Привет — streaming resize fixture.        
+~                    │ROW002: Unicode Привет — streaming resize fixture.        
+~                    │ROW003: Unicode Привет — streaming resize fixture.        
+~                    │ROW004: Unicode Привет — streaming resize fixture.        
+~                    │ROW005: Unicode Привет — streaming resize fixture.        
+~                    │ROW006: Unicode Привет — streaming resize fixture.        
+~                    │ROW007: Unicode Привет — streaming resize fixture.        
+~                    │ROW008: Unicode Привет — streaming resize fixture.        
+~                    │ROW009: Unicode Привет — streaming resize fixture.        
+~                    │ROW010: Unicode Привет — streaming resize fixture.        
+<  0,0-1          All opencode [-]                            3,1            Top
+                                                                                

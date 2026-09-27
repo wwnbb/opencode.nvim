@@ -1,0 +1,39 @@
+Apply a multi-file patch with Neovim preview, per-file decisions, and editable diff review.
+Supply `patchText`; relative paths resolve in the session's active location.
+
+Envelope:
+*** Begin Patch
+[file sections]
+*** End Patch
+
+File headers:
+- `*** Add File: <path>` create file; every content line starts `+`.
+- `*** Delete File: <path>` delete file; no body.
+- `*** Update File: <path>` patch file; optional next line `*** Move to: <path>`.
+
+Example:
+```
+*** Begin Patch
+*** Add File: hello.txt
++Hello world
+*** Update File: src/app.py
+*** Move to: src/main.py
+@@ def greet():
+-    print("Hi")
++    print("Hello, world!")
+*** Delete File: obsolete.txt
+*** End Patch
+```
+
+Rules:
+- User may edit during review. Final disk content wins. Re-read after review.
+- Treat user review edits as intentional, not mistakes. Do not "fix" or revert them unless user explicitly asks.
+- Never auto-retry `rejected`/`partial`/user-edited results unless the user asks. Follow any explicit user feedback returned with the result.
+- Always include file header.
+- Added lines need `+`, including new files. Content starts immediately after `+`. Every line in an `*** Add File` block must start with `+`, including blank lines (write `+` alone); non-`+` lines are rejected with an error rather than silently dropped.
+- `*** Add File` content stops at the first line beginning with `***`, so file content cannot start with `***`.
+- Updates: copy old and new lines exactly, whitespace included. A line written as `+foo` is written at column 0; use `+    foo` for an indented line.
+- Replacements that remove leading indentation are rejected by default. Set `allowIndentChange=true` only when intentionally dedenting code.
+- Hunk header = `@@` + optional literal anchor line, e.g. `@@ def greet():`. For an indented anchor, include a separator space plus the real indentation, e.g. `@@     if ready:`. To replace anchor too, repeat it as `-` line. Avoid unified ranges like `@@ -12,3 +12,3 @@`.
+- If context fails, `Read` exact surrounding lines before retry.
+- Output reports final state: `applied`, `rejected`, `partial`, or `failed`; trust it.

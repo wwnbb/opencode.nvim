@@ -1,0 +1,40 @@
+                                       │ ◈ Typed forms  │ ●0 ◈1                                                         
+~                                      │▏                                                                               
+~                                      │▏  # Question auth                                                              
+~                                      │▏                                                                               
+~                                      │▏                                                                               
+~                                      │▏  Waiting for the external step                                                
+~                                      │▏  http://127.0.0.1:52251/api/info                                              
+~                                      │▏  Enter: open link · waiting for external completion                           
+~                                      │▏                                                                               
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+[No Name]            0,0-1          All opencode [-]                                                  1,1            All
+                                                                                                                        

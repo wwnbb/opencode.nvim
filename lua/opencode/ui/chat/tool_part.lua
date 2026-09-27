@@ -8,6 +8,12 @@ function M.resolve(position)
 		return nil
 	end
 
+	local group = position.activity_group
+	if group then
+		return { id = group.id, tool = "activity", activity_group = group,
+			state = { status = require("opencode.ui.chat.activity").is_working(group) and "running" or "completed" } }
+	end
+
 	local fallback = type(position.tool_part) == "table" and position.tool_part or position
 	local message_id = position.message_id or fallback.messageID
 	local part_id = position.part_id or fallback.id

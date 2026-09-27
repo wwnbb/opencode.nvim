@@ -1,0 +1,9 @@
+{
+  "external_disconnect_preserved_process": true,
+  "owned_stop": true,
+  "owned_start": true,
+  "owned_restart": true,
+  "version": "2.0.11",
+  "first_toggle_input": true,
+  "external_reconnect": true
+}

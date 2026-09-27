@@ -2,42 +2,50 @@
 -- Handles /commands like TUI's slash commands
 
 local M = {}
-
--- Registered slash commands
-local commands = {}
+local registry = require("opencode.command_registry")
 
 -- Register a slash command
--- opts: { name, aliases, description, category, handler, enabled? }
+-- opts: { name, aliases, description, category, handler, enabled?, on_select? }
 function M.register(opts)
 	if not opts.name or not opts.handler then
 		error("Slash command must have name and handler")
 	end
-	
-	commands[opts.name] = {
-		name = opts.name,
-		aliases = opts.aliases or {},
+	return registry.register({
+		id = "slash." .. opts.name,
+		title = "/" .. opts.name,
 		description = opts.description or "",
 		category = opts.category or "general",
-		handler = opts.handler,
+		palette = false,
+		slash = { name = opts.name, aliases = opts.aliases or {} },
+		run = function(context)
+			return opts.handler(context.args or "", context.parsed)
+		end,
 		enabled = opts.enabled,
-	}
+		on_select = opts.on_select,
+		enter_with_args = opts.enter_with_args,
+		with_parts = opts.with_parts,
+	})
 end
 
 -- Unregister a slash command
 function M.unregister(name)
-	commands[name] = nil
-end
-
--- Check if command is enabled
-local function is_enabled(cmd)
-	if cmd.enabled == nil then
-		return true
+	local record = registry.get_slash(name)
+	if not record or record.slash.name ~= name then
+		return false
 	end
-	if type(cmd.enabled) == "function" then
-		local ok, result = pcall(cmd.enabled)
-		return ok and result
+	if record.palette == false then
+		return registry.unregister(record.id)
 	end
-	return cmd.enabled
+	-- A shared command may still be available in the palette after its
+	-- slash entry point is removed.
+	local replacement = {}
+	for key, value in pairs(record) do
+		if key ~= "slash" and key ~= "_serial" then
+			replacement[key] = value
+		end
+	end
+	registry.register(replacement)
+	return true
 end
 
 -- Parse slash command from text
@@ -54,7 +62,7 @@ function M.parse(text)
 	
 	-- Extract command name and arguments
 	-- Format: /command arg1 arg2 ...
-	local cmd_name, args_str = text:match("^/(%S+)%s*(.*)$")
+	local cmd_name, args_str = text:match("^/(%S+)%s*([%s%S]*)$")
 	if not cmd_name then
 		return nil
 	end
@@ -68,67 +76,33 @@ end
 
 -- Execute a slash command
 -- Returns: true if handled, false otherwise
-function M.execute(parsed)
+function M.execute(parsed, context)
 	if not parsed or not parsed.command then
 		return false
 	end
-	
-	-- Find command (check name and aliases)
-	local cmd = nil
-	for name, def in pairs(commands) do
-		if name == parsed.command then
-			cmd = def
-			break
-		end
-		for _, alias in ipairs(def.aliases or {}) do
-			if alias == parsed.command then
-				cmd = def
-				break
-			end
-		end
-		if cmd then break end
-	end
-	
-	if not cmd then
+	local record = registry.get_slash(parsed.command)
+	if not record then
 		vim.notify("Unknown command: /" .. parsed.command, vim.log.levels.WARN)
 		return false
 	end
-	
-	if not is_enabled(cmd) then
+	local command_context = {
+		source = "slash",
+		args = parsed.args or "",
+		parsed = parsed,
+	}
+	for key, value in pairs(context or {}) do
+		command_context[key] = value
+	end
+	if not registry.enabled(record, command_context) then
 		vim.notify("Command not available: /" .. parsed.command, vim.log.levels.WARN)
 		return false
 	end
-	
-	-- Execute handler
-	local ok, err = pcall(cmd.handler, parsed.args, parsed)
-	if not ok then
-		vim.notify("Command error: " .. tostring(err), vim.log.levels.ERROR)
-		return false
-	end
-	
-	return true
+	return registry.run(record.id, command_context)
 end
 
 -- Get all available commands (for completion)
 function M.get_commands()
-	local result = {}
-	for name, cmd in pairs(commands) do
-		if is_enabled(cmd) then
-			table.insert(result, {
-				name = name,
-				description = cmd.description,
-				category = cmd.category,
-				aliases = cmd.aliases,
-			})
-		end
-	end
-	
-	-- Sort by name
-	table.sort(result, function(a, b)
-		return a.name < b.name
-	end)
-	
-	return result
+	return registry.list_slash()
 end
 
 -- Check if text is a slash command
@@ -138,276 +112,42 @@ end
 
 -- Register default slash commands
 function M.register_defaults()
+	-- Palette definitions provide the shared slash and palette commands.
+	require("opencode.ui.palette").register_defaults()
 	local actions = require("opencode.actions")
-	local lifecycle = require("opencode.lifecycle")
 	local state = require("opencode.state")
-	
-	-- /sessions, /resume, /continue - List and switch sessions
-	M.register({
-		name = "sessions",
-		aliases = { "resume", "continue" },
-		description = "List and switch between sessions",
+
+	registry.register({
+		id = "session.stats",
+		title = "Usage Statistics",
+		description = "Usage statistics",
 		category = "session",
-		handler = function()
-			local palette = require("opencode.ui.palette")
-			palette.trigger("session.list")
-		end,
-	})
-	
-	-- /new - Start new session
-	M.register({
-		name = "new",
-		description = "Start a new session",
-		category = "session",
-		handler = function()
-			actions.new_session()
-		end,
-	})
-
-	-- /clear - Clear current chat without switching sessions
-	M.register({
-		name = "clear",
-		description = "Clear the current chat",
-		category = "session",
-		handler = function()
-			actions.clear()
-		end,
-	})
-
-	-- /close - Close current active session tab without deleting it
-	M.register({
-		name = "close",
-		aliases = { "close-session", "close-tab" },
-		description = "Close the current session tab",
-		category = "session",
-		handler = function()
-			actions.close_session({ notify = true })
-		end,
-		enabled = function()
-			return state.get_session().id ~= nil
-		end,
-	})
-	
-	-- /models - Switch model
-	M.register({
-		name = "models",
-		description = "Switch AI model",
-		category = "model",
-		handler = function()
-			local palette = require("opencode.ui.palette")
-			palette.trigger("model.switch")
-		end,
-	})
-	
-	-- /agents - Switch agent
-	M.register({
-		name = "agents",
-		description = "Switch AI agent",
-		category = "agent",
-		handler = function()
-			local palette = require("opencode.ui.palette")
-			palette.trigger("agent.switch")
-		end,
-	})
-
-	-- /skills - Select and run a skill
-	M.register({
-		name = "skills",
-		description = "Select and run a skill",
-		category = "actions",
-		handler = function()
-			local palette = require("opencode.ui.palette")
-			palette.trigger("action.skills")
-		end,
-		enabled = function()
-			return state.get_session().id ~= nil and state.is_connected()
-		end,
-	})
-
-	-- /skill <name>[, <name>...] - Run one or more specific skills
-	M.register({
-		name = "skill",
-		description = "Run one or more skills by name",
-		category = "actions",
-		handler = function(args)
-			local function parse_skill_names(input)
-				local names = {}
-				local seen = {}
-				local text = vim.trim(input or "")
-				text = text:gsub("^%[", ""):gsub("%]$", "")
-				if text == "" then
-					return names
-				end
-
-				local pattern = text:find(",", 1, true) and "[^,]+" or "%S+"
-				for part in text:gmatch(pattern) do
-					local name = vim.trim(part)
-					name = name:gsub("^['\"]", ""):gsub("['\"]$", "")
-					if name ~= "" and not seen[name] then
-						seen[name] = true
-						table.insert(names, name)
-					end
-				end
-				return names
-			end
-
-			local names = parse_skill_names(args)
-			if #names == 0 then
-				vim.notify("Usage: /skill <name>[, <name>...]", vim.log.levels.WARN)
-				return
-			end
-
-			local session = state.get_session()
-			if not session.id then
-				vim.notify("No active session", vim.log.levels.WARN)
-				return
-			end
-
-			local function resolve_load_skills_command()
-				local ok, sync = pcall(require, "opencode.sync")
-				if not ok or type(sync.get_commands) ~= "function" then
-					return nil
-				end
-
-				local candidates = {
-					load_skills = true,
-					loadskills = true,
-				}
-				local commands = sync.get_commands() or {}
-				for key, cmd in pairs(commands) do
-					if candidates[key] then
-						return key
-					end
-					if type(cmd) == "table" and candidates[cmd.name] then
-						return cmd.name
-					end
-				end
-
-				return nil
-			end
-
-	local function run_skills_via_tool()
-		local joined = table.concat(names, ", ")
-		actions.send("load_skill [" .. joined .. "]")
-		vim.notify("Requested skills via tool: " .. joined, vim.log.levels.INFO)
-	end
-
-			lifecycle.ensure_connected(function()
-				local client = require("opencode.client")
-				local command_name = resolve_load_skills_command()
-				if not command_name then
-					run_skills_via_tool()
+		palette = false,
+		slash = { name = "stats" },
+		run = function(_context)
+			actions.get_usage_stats(function(err, data)
+				if err then
+					vim.notify("Could not load usage statistics: " .. tostring(err.message or err), vim.log.levels.ERROR)
 					return
 				end
-
-				local joined = table.concat(names, ", ")
-				client.execute_command(session.id, command_name, joined, {}, function(err)
-					vim.schedule(function()
-						if err then
-							local err_text = tostring(err.message or err.error or err)
-							local lower = err_text:lower()
-							if lower:find("command") and (lower:find("not found") or lower:find("unknown")) then
-								run_skills_via_tool()
-								return
-							end
-							vim.notify("Failed to run skills: " .. err_text, vim.log.levels.ERROR)
-							return
-						end
-						vim.notify("Running skills: " .. joined, vim.log.levels.INFO)
-					end)
-				end)
+				local view, stats_error = require("opencode.stats").from_api(data)
+				if not view then
+					vim.notify("Could not show usage statistics: " .. stats_error, vim.log.levels.ERROR)
+					return
+				end
+				require("opencode.ui.stats").show(view)
 			end)
 		end,
-		enabled = function()
-			return state.get_session().id ~= nil and state.is_connected()
-		end,
 	})
-
-	-- /connect - Connect provider
-	M.register({
-		name = "connect",
-		description = "Connect an AI provider",
-		category = "provider",
-		handler = function()
-			local palette = require("opencode.ui.palette")
-			palette.trigger("provider.connect")
-		end,
-	})
-	
-	-- /compact - Compact session
-	M.register({
-		name = "compact",
-		aliases = { "summarize" },
-		description = "Compact session messages",
-		category = "session",
-		handler = function()
-			local palette = require("opencode.ui.palette")
-			palette.trigger("action.compact")
-		end,
-		enabled = function()
-			return state.get_session().id ~= nil
-		end,
-	})
-	
-	-- /copy - Copy session transcript
-	M.register({
-		name = "copy",
-		description = "Copy session transcript",
-		category = "session",
-		handler = function()
-			local session_id = state.get_session().id
-			if not session_id then
-				vim.notify("No active session", vim.log.levels.WARN)
-				return
-			end
-
-			local sync = require("opencode.sync")
-			local messages = sync.get_messages(session_id)
-			if #messages == 0 then
-				vim.notify("No messages to copy", vim.log.levels.INFO)
-				return
-			end
-
-			local lines = { "Session: " .. session_id, "" }
-			for _, message in ipairs(messages) do
-				if message.role == "user" then
-					table.insert(lines, "USER:")
-				else
-					table.insert(lines, "ASSISTANT:")
-				end
-
-				local text_parts = {}
-				for _, part in ipairs(sync.get_parts(message.id) or {}) do
-					if part.type == "text" and part.text and part.text ~= "" then
-						table.insert(text_parts, part.text)
-					end
-				end
-
-				if #text_parts > 0 then
-					table.insert(lines, table.concat(text_parts, "\n"))
-				else
-					table.insert(lines, "[No text content]")
-				end
-
-				table.insert(lines, "")
-			end
-
-			local transcript = table.concat(lines, "\n")
-			vim.fn.setreg("+", transcript)
-			vim.fn.setreg("*", transcript)
-			vim.notify("Session transcript copied to clipboard", vim.log.levels.INFO)
-		end,
-		enabled = function()
-			return state.get_session().id ~= nil
-		end,
-	})
-
 	-- /help - Show help
-	M.register({
-		name = "help",
+	registry.register({
+		id = "system.help",
+		title = "Slash Command Help",
 		description = "Show available commands",
 		category = "system",
-		handler = function()
+		palette = false,
+		slash = { name = "help" },
+		run = function(_context)
 			-- Create help buffer
 			local lines = { "Available Commands:", "" }
 			local current_category = nil
@@ -435,28 +175,29 @@ function M.register_defaults()
 			})
 			
 			popup:mount()
-			vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, lines)
-			vim.bo[bufnr].modifiable = false
+			popup:render(lines)
 			
 			float.setup_close_keymaps(bufnr, function()
-				popup:unmount()
+				popup:close()
 			end)
 		end,
 	})
 	
 	-- /undo - Undo last message
-	M.register({
-		name = "undo",
+	registry.register({
+		id = "session.undo",
+		title = "Undo Last Message",
 		description = "Undo last message and changes",
 		category = "session",
-		handler = function()
+		palette = false,
+		slash = { name = "undo" },
+		run = function(_context)
 			local session_id = state.get_session().id
 			if not session_id then
 				vim.notify("No active session", vim.log.levels.WARN)
 				return
 			end
 			
-			local client = require("opencode.client")
 			local sync = require("opencode.sync")
 			local messages = sync.get_messages(session_id)
 			
@@ -479,13 +220,13 @@ function M.register_defaults()
 				return
 			end
 			
-			client.revert_message(session_id, last_user_msg.id, {}, function(err)
+			actions.revert_message(session_id, last_user_msg.id, {}, function(err)
 				vim.schedule(function()
 					if err then
 						vim.notify("Failed to undo: " .. tostring(err.message or err), vim.log.levels.ERROR)
 						return
 					end
-					vim.notify("Undone last message", vim.log.levels.INFO)
+					vim.notify("Undo staged. Use /redo to restore the turn.", vim.log.levels.INFO)
 				end)
 			end)
 		end,
@@ -497,20 +238,32 @@ function M.register_defaults()
 		end,
 	})
 	
+	registry.register({ id = "session.redo", title = "Redo Staged Undo", description = "Clear staged undo and restore the turn", category = "session",
+		palette = false, slash = { name = "redo" },
+		run = function(_context)
+			local sid = state.get_session().id
+			if not sid then return end
+			actions.clear_revert(sid, function(err)
+				vim.notify(err and ("Could not restore turn: " .. err.message) or "Staged undo cleared", err and vim.log.levels.ERROR or vim.log.levels.INFO)
+			end)
+		end })
+
 	-- /share - Share current session
-	M.register({
-		name = "share",
+	registry.register({
+		id = "session.share",
+		title = "Share Session",
 		description = "Share current session",
 		category = "session",
-		handler = function()
+		palette = false,
+		slash = { name = "share" },
+		run = function(_context)
 			local session_id = state.get_session().id
 			if not session_id then
 				vim.notify("No active session to share", vim.log.levels.WARN)
 				return
 			end
 			
-			local client = require("opencode.client")
-			client.execute_command(session_id, "share", {}, {}, function(err, result)
+			actions.execute_command(session_id, "share", {}, {}, function(err, result)
 				vim.schedule(function()
 					if err then
 						vim.notify("Failed to share: " .. tostring(err.message or err), vim.log.levels.ERROR)

@@ -7,14 +7,55 @@ local session_util = require("opencode.util.session")
 local state = require("opencode.state")
 local sync = require("opencode.sync")
 function M.register(palette)
+	local keymaps = (state.get_config() or require("opencode.config").defaults).keymaps or {}
+	palette.register({ id = "session.history", title = "Load Full Session History", category = "session",
+		description = "Fetch every history page", run = function()
+			local sid = state.get_session().id
+			if not sid then return end
+			actions.load_session_messages(sid, { all = true }, function(err, messages)
+				if not err then
+					require("opencode.ui.chat.state").state.full_history_sessions[sid] = true
+					require("opencode.ui.chat.render_coordinator").request({ session_id = sid, reason = "full_history" })
+				end
+				vim.notify(err and ("Could not load history: " .. err.message) or ("Loaded " .. #messages .. " messages"), err and vim.log.levels.ERROR or vim.log.levels.INFO)
+			end)
+		end })
+
 	palette.register({
 		id = "session.new",
 		title = "New Session",
 		description = "Create a new chat session",
 		category = "session",
 		keybind = "<leader>on",
-		action = function()
+		slash = { name = "new" },
+		run = function()
 			actions.new_session()
+		end,
+	})
+	palette.register({
+		id = "session.aside",
+		title = "Ask a Side Question (/btw)",
+		description = "Ask using session context without adding a chat turn",
+		category = "session",
+		slash = { name = "btw" },
+		on_select = function(ctx) return ctx.run() end,
+		enter_with_args = true,
+		with_parts = "reject",
+		parts_error = "/btw supports text questions only",
+		run = function(ctx)
+			local args = ctx and ctx.args
+			if type(args) == "string" and vim.trim(args) ~= "" then
+				actions.ask_btw(args)
+				return
+			end
+			local session_id = state.get_session().id
+			if not session_id then
+				vim.notify("Open a session first", vim.log.levels.WARN)
+				return
+			end
+			require("opencode.ui.btw").prompt(function(question)
+				actions.ask_btw(question, session_id)
+			end)
 		end,
 	})
 	palette.register({
@@ -22,8 +63,8 @@ function M.register(palette)
 		title = "Active Sessions",
 		description = "Show running, waiting, and recent sessions",
 		category = "session",
-		keybind = "<leader>oS",
-		action = function()
+		keybind = keymaps.active_sessions,
+		run = function()
 			actions.active_sessions()
 		end,
 	})
@@ -32,8 +73,9 @@ function M.register(palette)
 		title = "Close Session Tab",
 		description = "Close the current active tab without deleting the session",
 		category = "session",
-		keybind = "x",
-		action = function()
+		keybind = keymaps.close_session,
+		slash = { name = "close", aliases = { "close-session", "close-tab" } },
+		run = function()
 			actions.close_session({ notify = true })
 		end,
 		enabled = function()
@@ -46,7 +88,8 @@ function M.register(palette)
 		description = "Switch to another session",
 		category = "session",
 		keybind = "<leader>os",
-		action = function()
+		slash = { name = "sessions", aliases = { "resume", "continue" } },
+		run = function()
 			local directory = vim.fn.fnamemodify(vim.fn.getcwd(), ":p")
 			if vim.fs and vim.fs.normalize then
 				directory = vim.fs.normalize(directory)
@@ -101,7 +144,7 @@ function M.register(palette)
 				for _, session in ipairs(sessions) do
 					local is_current = current.id == session.id
 					local title = session_util.displayTitle(session.title) or "New session"
-					local msg_count = session.messageCount or 0
+					local msg_count = session.message_count or 0
 					local time_str = format_relative_time(session.time and session.time.updated)
 					local msg_str = msg_count > 0 and ("(" .. msg_count .. " msgs)") or ""
 					local current_marker = is_current and "● " or "  "
@@ -142,7 +185,7 @@ function M.register(palette)
 		description = "Fork current session",
 		category = "session",
 		keybind = "<leader>of",
-		action = function()
+		run = function()
 			local current = state.get_session()
 			if not current.id then
 				vim.notify("No active session to fork", vim.log.levels.WARN)
@@ -173,14 +216,14 @@ function M.register(palette)
 		title = "Copy Session Transcript",
 		description = "Copy current session transcript to clipboard",
 		category = "session",
-		action = function()
+		slash = { name = "copy" },
+		run = function()
 			local session_id = state.get_session().id
 			if not session_id then
 				vim.notify("No active session", vim.log.levels.WARN)
 				return
 			end
 
-			local sync = require("opencode.sync")
 			local messages = sync.get_messages(session_id)
 			if #messages == 0 then
 				vim.notify("No messages to copy", vim.log.levels.INFO)
@@ -225,7 +268,7 @@ function M.register(palette)
 		title = "Copy Raw Session Object",
 		description = "Copy full in-memory session object (messages, parts, tool calls) to clipboard",
 		category = "session",
-		action = function()
+		run = function()
 			local session_id = state.get_session().id
 			if not session_id then
 				vim.notify("No active session", vim.log.levels.WARN)
@@ -236,26 +279,16 @@ function M.register(palette)
 			local store = sync.get_store()
 			local messages = vim.deepcopy(store.message[session_id] or {})
 			local parts = {}
-			local part_delta_buffer = {}
 			for _, msg in ipairs(messages) do
 				parts[msg.id] = vim.deepcopy(store.part[msg.id] or {})
-				local prefix = msg.id .. "\0"
-				for key, value in pairs(store.part_delta_buffer) do
-					if key:sub(1, #prefix) == prefix then
-						part_delta_buffer[key] = vim.deepcopy(value)
-					end
-				end
 			end
 			local session_status = vim.deepcopy(store.session_status[session_id])
-			local todos = vim.deepcopy(store.todo[session_id] or {})
 
 			local snapshot = {
 				session = record,
 				messages = messages,
 				parts = parts,
-				part_delta_buffer = part_delta_buffer,
 				session_status = session_status,
-				todos = todos,
 			}
 
 			local json = vim.fn.json_encode(snapshot)
@@ -277,37 +310,43 @@ function M.register(palette)
 		title = "Delete Session",
 		description = "Delete current session",
 		category = "session",
-		action = function()
+		run = function()
 			local session = state.get_session()
 			if not session.id then
 				vim.notify("No active session", vim.log.levels.WARN)
 				return
 			end
 
-			vim.ui.select({ "Yes", "No" }, {
-				prompt = "Delete session '" .. (session_util.displayTitle(session.name) or session.id) .. "'?",
-			}, function(choice)
-				if choice == "Yes" then
-					actions.delete_session(session.id, function(err)
-						if err then
-							vim.notify(
-								"Failed to delete session: " .. tostring(err.message or err),
-								vim.log.levels.ERROR
-							)
-							return
-						end
-						actions.set_active_session(nil, nil, {
-							reason = "session_delete",
-							preserve_cache = true,
-						})
-						actions.forget_session(session.id, {
-							reason = "session_delete",
-						})
-						actions.clear_session_data(session.id)
-						vim.notify("Session deleted", vim.log.levels.INFO)
-					end)
-				end
-			end)
+			local prompt = "Delete session '" .. (session_util.displayTitle(session.name) or session.id) .. "'?"
+			require("opencode.ui.menu").open({
+				items = { "Yes", "No" },
+				title = "Delete Session",
+				message = prompt,
+				width = vim.fn.strdisplaywidth(prompt) + 12,
+				sort = false,
+				on_select = function(choice)
+					if choice == "Yes" then
+						actions.delete_session(session.id, function(err)
+							if err then
+								vim.notify(
+									"Failed to delete session: " .. tostring(err.message or err),
+									vim.log.levels.ERROR
+								)
+								return
+							end
+							actions.set_active_session(nil, nil, {
+								reason = "session_delete",
+								preserve_cache = true,
+							})
+							actions.forget_session(session.id, {
+								reason = "session_delete",
+							})
+							actions.clear_session_data(session.id)
+							vim.notify("Session deleted", vim.log.levels.INFO)
+						end)
+					end
+				end,
+			})
 		end,
 		enabled = function()
 			return state.get_session().id ~= nil

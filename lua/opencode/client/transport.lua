@@ -47,6 +47,7 @@ end
 
 ---@param opts table
 ---@param callback function
+---@return table|nil request Handle with idempotent cancel() and is_active().
 function M.request(opts, callback)
 	opts = opts or {}
 	local host, port, target_err = tcp_connection.normalize_target(opts)
@@ -66,7 +67,7 @@ function M.request(opts, callback)
 
 	local function finish(err, result)
 		if done then
-			return
+			return false
 		end
 		done = true
 
@@ -76,6 +77,15 @@ function M.request(opts, callback)
 		end
 
 		schedule_callback(callback, err, result)
+		return true
+	end
+
+	local request = {}
+	function request.cancel()
+		return finish(make_error("Request cancelled", { code = "cancelled", cancelled = true, retryable = false }), nil)
+	end
+	function request.is_active()
+		return not done
 	end
 
 	local decoder = http_decoder.new({
@@ -144,7 +154,12 @@ function M.request(opts, callback)
 
 	if not connection then
 		finish(open_err or make_error("Failed to open connection"), nil)
+	elseif done then
+		-- A synchronous connection failure may finish before open() returns.
+		connection.close()
+		connection = nil
 	end
+	return request
 end
 
 ---@param opts table

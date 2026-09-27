@@ -125,15 +125,15 @@ local function promote_toolchain_bins(env)
 	env.PATH = path
 end
 
-local function build_server_env()
+local function build_server_env(auth)
 	local env = vim.tbl_extend(
 		"force",
 		vim.fn.environ(),
 		load_shell_env(),
 		type(M.opts.env) == "table" and M.opts.env or {},
 		{
-			OPENCODE_SERVER_USERNAME = M.opts.auth and M.opts.auth.username,
-			OPENCODE_SERVER_PASSWORD = M.opts.auth and M.opts.auth.password,
+			OPENCODE_SERVER_USERNAME = auth and auth.username,
+			OPENCODE_SERVER_PASSWORD = auth and auth.password,
 			OPENCODE_CONFIG_DIR = M.opts.config_dir,
 		}
 	)
@@ -327,6 +327,7 @@ local function release_attempt(attempt, connection)
 
 	state.set_server_pid(nil)
 	state.set_server_managed(false)
+	state.clear_server_endpoint()
 	state.set_connection(connection)
 	return waiters
 end
@@ -398,7 +399,7 @@ local function arm_startup_timeout(attempt)
 end
 
 -- Parse server URL from output line
--- Expected format: "opencode server listening on http://127.0.0.1:57168"
+-- Verified with CLI 2.0.11: "server listening on http://127.0.0.1:57168"
 local function parse_server_url(line)
 	if not line then
 		return nil
@@ -409,6 +410,16 @@ local function parse_server_url(line)
 		local host, port = url:match("^http://%[([^%]]+)%]:(%d+)$")
 		if not host then
 			host, port = url:match("^http://([^:/]+):(%d+)$")
+		end
+		-- CLI 2.0.11 on macOS prints its IPv6 localhost address without URL
+		-- brackets (http://::1:PORT). Parse only this CLI output convention;
+		-- keep the internal URL valid for subsequent consumers.
+		if not host then
+			local ipv6, native_port = url:match("^http://([%x:]+):(%d+)$")
+			if ipv6 and ipv6:find(":", 1, true) then
+				host, port = ipv6, native_port
+				url = "http://[" .. host .. "]:" .. port
+			end
 		end
 		if host and port then
 			return {
@@ -471,8 +482,8 @@ check_existing_server = function(attempt, token, startup, callback)
 		if not connection_is_current(attempt, token, startup) then
 			return
 		end
-		if err or not data or not data.healthy then
-			callback(false)
+		if err or not data or not data.version then
+			callback(false, nil, err)
 			return
 		end
 		callback(true, data.version)
@@ -531,20 +542,20 @@ begin_health_checks = function(attempt, startup)
 			return
 		end
 
-		check_existing_server(attempt, token, startup, function(running, version)
+		check_existing_server(attempt, token, startup, function(running, version, err)
 			if not connection_is_current(attempt, token, startup) then
 				return
 			end
 			if running then
 				connect_to_server(attempt, token, startup, version)
-			elseif retry then
+			elseif retry or (err and (err.status == 401 or err.code == "incompatible_response")) then
 				complete_connection(
 					attempt,
 					token,
 					startup,
 					false,
 					nil,
-					"OpenCode server health check failed"
+					"OpenCode server health check failed" .. (err and (": " .. error_detail(err)) or "")
 				)
 			else
 				attempt.health_timer = vim.defer_fn(function()
@@ -585,12 +596,14 @@ continue_startup = function(attempt)
 		http.setup({
 			host = server_info.host,
 			port = server_info.port,
+			auth = attempt.auth,
 		})
 
 		local sse = require("opencode.client.sse")
 		sse.setup({
 			host = server_info.host,
 			port = server_info.port,
+			auth = attempt.auth,
 		})
 
 		attempt.configured = true
@@ -606,21 +619,41 @@ end
 -- Start OpenCode server process
 local function spawn_server()
 	local host = state.get_server_info().host
-	local env = build_server_env()
+	local auth = vim.deepcopy(M.opts.auth or {})
+	auth.username = auth.username or "opencode"
+	if type(auth.password) ~= "string" or auth.password == "" then
+		-- v2 generates a password when omitted. Supply our own ephemeral secret
+		-- before spawning so HTTP/SSE can authenticate without scraping stdout.
+		local random, err = uv.random(32)
+		if not random then vim.notify("Could not initialize OpenCode server authentication: " .. tostring(err), vim.log.levels.ERROR); return false end
+		auth.password = (random:gsub(".", function(byte) return string.format("%02x", byte:byte()) end))
+	end
+	local env = build_server_env(auth)
+	local profile = require("opencode.completion.profile")
+	local overlay, completion_profile, completion_error = profile.prepare(M.opts.completion, env.OPENCODE_CONFIG_CONTENT)
+	local explanation_profile, explanation_error
+	overlay, explanation_profile, explanation_error = profile.prepare(M.opts.explanation, overlay, "explanation")
+	env.OPENCODE_CONFIG_CONTENT = overlay
 
 	-- Build opencode serve command
-	-- Use --port (without a value) to let opencode pick an available port
+	-- CLI 2.0.11 requires an integer. Zero requests an available OS port.
 	local cmd = resolve_command(M.opts.command, env)
 	local args = {
 		"serve",
 		"--hostname",
 		host,
 		"--port",
+		"0",
 	}
 
 	attempt_generation = attempt_generation + 1
 	local attempt = {
 		id = attempt_generation,
+		completion_profile = completion_profile,
+		completion_error = completion_error,
+		explanation_profile = explanation_profile,
+		explanation_error = explanation_error,
+		auth = auth,
 		phase = "starting",
 		startup_done = false,
 		connecting = false,
@@ -642,10 +675,12 @@ local function spawn_server()
 			command = cmd,
 			args = args,
 			env = env,
+			enable_recording = false,
 			on_stdout = function(_, data)
 				if not is_current_attempt(attempt) or attempt.startup_done or attempt.phase ~= "starting" or not data then
 					return
 				end
+				if data:match("^server password ") then return end
 
 				local server_info = parse_server_url(data)
 				if server_info and not attempt.listening_info then
@@ -749,11 +784,6 @@ setup_event_listeners = function(client)
 	if listener_clients[client] then
 		return
 	end
-	-- Connection events (SSE-level)
-	client.on_event("connected", function()
-		-- SSE connected, server.connected event will follow
-	end)
-
 	client.on_event("disconnected", function(reason)
 		if
 			current_attempt
@@ -773,19 +803,7 @@ setup_event_listeners = function(client)
 		state.set_connection("connected")
 	end)
 
-	-- Message counts are updated by events.handlers.message after sync de-dupes updates.
-	client.on_event("message.updated", function(data)
-		return data
-	end)
-
-	-- Session status events are mirrored by events.handlers.message.
-	client.on_event("session.status", function(data)
-		return data
-	end)
-
-	-- File edit events are handled by events.lua edit handler
-	-- which integrates with changes module and diff viewer
-listener_clients[client] = true
+	listener_clients[client] = true
 end
 
 -- Connect to running server
@@ -850,11 +868,6 @@ end
 
 -- Start server and connect
 function M.start()
-	if not M.opts.auto_start then
-		vim.notify("OpenCode auto-start is disabled", vim.log.levels.WARN)
-		return false
-	end
-
 	local connection = state.get_connection()
 	if connection ~= "idle" and connection ~= "error" then
 		return false -- Already starting/connecting/connected
@@ -879,6 +892,25 @@ function M.start()
 		return false
 	end
 
+	-- Explicit endpoints are external even when auto_start is enabled. An auth
+	-- or version failure must never replace them with a new managed server.
+	if M.opts.port then
+		attempt_generation = attempt_generation + 1
+		local attempt = {
+			id = attempt_generation, phase = "ready", startup_done = true,
+			connecting = false, connection_token = 0, disconnected = false,
+			external = true, stop_waiters = {},
+		}
+		current_attempt = attempt
+		state.set_server_managed(false)
+		state.set_server_pid(nil)
+		state.set_connection("connecting")
+		return begin_health_checks(attempt, false)
+	end
+	if not M.opts.auto_start then
+		vim.notify("OpenCode auto-start is disabled", vim.log.levels.WARN)
+		return false
+	end
 	return spawn_server()
 end
 
@@ -1059,6 +1091,10 @@ end
 function M.setup(opts)
 	opts = opts or {}
 	M.opts = vim.tbl_deep_extend("force", M.opts, opts)
+	-- Stateless feature options describe whole profiles. Deep merging retains
+	-- removed settings and can silently keep old variants after reconfiguration.
+	if opts.completion ~= nil then M.opts.completion = vim.deepcopy(opts.completion) end
+	if opts.explanation ~= nil then M.opts.explanation = vim.deepcopy(opts.explanation) end
 	shell_env_cache = nil
 
 	-- Store auth in opts for spawn_server
@@ -1077,6 +1113,24 @@ function M.setup(opts)
 			end,
 		})
 	end
+end
+
+---Return the selector for a profile installed in the connected server.
+local function resolve_feature_model(config, kind)
+	local attempt = current_attempt
+	return require("opencode.completion.profile").resolve(config, {
+		managed = attempt and not attempt.external or (attempt == nil and M.opts.port == nil),
+		active = attempt and attempt[kind .. "_profile"],
+		error = attempt and attempt[kind .. "_error"],
+	}, kind)
+end
+
+function M.resolve_completion_model(config)
+	return resolve_feature_model(config, "completion")
+end
+
+function M.resolve_explanation_model(config)
+	return resolve_feature_model(config, "explanation")
 end
 
 -- Get lifecycle status

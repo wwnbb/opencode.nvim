@@ -26,7 +26,7 @@ local panel_helpers = panel.create_helpers({
 local get_hl = panel_helpers.get_hl
 local add_panel_line = panel_helpers.add_line
 local add_panel_raw_line = function(result, text, hl_group)
-	return panel_helpers.add_raw_line(result, text, hl_group, { wrap = false })
+	return panel_helpers.add_raw_line(result, text, hl_group, { wrap = result.width ~= nil })
 end
 local add_panel_blank = panel_helpers.add_blank
 local add_trailing_separator = panel_helpers.add_separator
@@ -51,6 +51,8 @@ local function ensure_highlights()
 		bold = true,
 	})
 end
+
+require("opencode.ui.highlights").register("opencode.ui.question_widget", ensure_highlights)
 
 ---@param value any
 ---@return string
@@ -124,25 +126,13 @@ end
 ---@param question table|nil
 ---@return boolean
 local function is_multi_question(question)
-	return type(question) == "table" and (question.type == "multi" or question.multiple == true)
+	return type(question) == "table" and question.multiple == true
 end
 
 ---@param question table|nil
 ---@return boolean
 local function allows_custom_answer(question)
-	if type(question) ~= "table" then
-		return false
-	end
-	if question.custom ~= nil then
-		return question.custom ~= false
-	end
-	if question.allow_custom ~= nil then
-		return question.allow_custom == true
-	end
-	if question.allowCustom ~= nil then
-		return question.allowCustom == true
-	end
-	return true
+	return type(question) == "table" and question.custom == true
 end
 
 ---@param result table
@@ -185,20 +175,6 @@ local function append_text_lines(result, text, hl_group)
 		else
 			add_panel_line(result, line, hl_group)
 		end
-	end
-end
-
----@param result table
----@param text string|nil
-local function append_message_lines(result, text)
-	local message = trim_string(text)
-	if message == "" then
-		return
-	end
-
-	for i, part in ipairs(vim.split(message, "\n", { plain = true })) do
-		local prefix = i == 1 and "Message: " or "         "
-		add_panel_line(result, prefix .. part, "OpenCodeQuestionMuted")
 	end
 end
 
@@ -250,7 +226,6 @@ local function format_hint(
 	if allow_custom then
 		table.insert(parts, "c custom")
 	end
-	table.insert(parts, "m message")
 	table.insert(parts, "Esc cancel")
 	return table.concat(parts, " · ")
 end
@@ -315,10 +290,6 @@ local function collect_selection_answers(selection, question)
 		table.insert(answer_parts, selection.custom_input)
 	end
 
-	local message = trim_string(selection.message)
-	if message ~= "" then
-		table.insert(answer_parts, "Message: " .. message:gsub("%s*\n%s*", " / "))
-	end
 	return answer_parts
 end
 
@@ -328,8 +299,7 @@ end
 ---@param selection_state table
 ---@param status "pending"|"answered"|"rejected"|"confirming"
 ---@return table lines, table highlights, OpenCodeWidgetMeta meta
-function M.get_lines_for_question(_request_id, question_data, selection_state, status)
-	ensure_highlights()
+function M.get_lines_for_question(_request_id, question_data, selection_state, status, opts)
 	if selection_state.submitting then
 		return M.get_submitting_lines(_request_id, question_data, selection_state)
 	end
@@ -337,13 +307,16 @@ function M.get_lines_for_question(_request_id, question_data, selection_state, s
 		return M.get_confirmation_lines(_request_id, question_data, selection_state)
 	end
 
-	local result = { lines = {}, highlights = {} }
+	local result = { lines = {}, highlights = {}, width = opts and opts.width }
+	local option_lines = {}
 	local questions = get_questions(question_data)
 	local current_tab = selection_state.current_tab or 1
 	local current_question = questions[current_tab]
 	local selections = selection_state.selections and selection_state.selections[current_tab] or {}
 
 	if not current_question then
+		add_panel_line(result, "Form: " .. ((selection_state.form or {}).title or "Waiting"), "OpenCodeQuestionTitle")
+		add_panel_line(result, selection_state.server_error or next(selection_state.field_errors or {}) and select(2, next(selection_state.field_errors)) or "Enter to submit form defaults", "OpenCodeQuestionMuted")
 		return result.lines, result.highlights, widget_base.make_meta()
 	end
 
@@ -363,11 +336,6 @@ function M.get_lines_for_question(_request_id, question_data, selection_state, s
 		append_text_lines(result, current_question.question, "OpenCodeQuestionOutput")
 	elseif body == "" and title ~= "" then
 		add_panel_line(result, title, "OpenCodeQuestionTitle")
-	end
-
-	if selections.message and selections.message ~= "" then
-		add_panel_blank(result)
-		append_message_lines(result, selections.message)
 	end
 
 	add_panel_blank(result)
@@ -393,6 +361,7 @@ function M.get_lines_for_question(_request_id, question_data, selection_state, s
 			end
 
 			local option_text = string.format("%s %d. %s", marker, i, option_label)
+			option_lines[i] = #result.lines
 			local _, _, rows = add_panel_raw_line(
 				result,
 				option_text,
@@ -419,7 +388,13 @@ function M.get_lines_for_question(_request_id, question_data, selection_state, s
 		)
 	end
 
-	if status == "pending" then
+	local error_text = (selection_state.field_errors or {})[current_question.key] or selection_state.server_error
+	if error_text then add_panel_line(result, error_text, "OpenCodeQuestionError") end
+	if current_question.field_type == "external" then
+		add_panel_line(result, current_question.url or "", "OpenCodeQuestionOutput")
+		add_panel_line(result, "Enter: open link · waiting for external completion", "OpenCodeQuestionMuted")
+	end
+	if status == "pending" and current_question.field_type ~= "external" then
 		local answered_count = 0
 		for i = 1, #questions do
 			local selection = selection_state.selections and selection_state.selections[i]
@@ -431,7 +406,7 @@ function M.get_lines_for_question(_request_id, question_data, selection_state, s
 		add_panel_blank(result)
 		add_panel_line(
 			result,
-			format_hint(
+			selection_state.hint or format_hint(
 				option_count,
 				is_multi,
 				#questions == 1 and not is_multi,
@@ -461,6 +436,7 @@ function M.get_lines_for_question(_request_id, question_data, selection_state, s
 			interactive_count = interactive_count,
 			first_interactive_line = first_interactive_line,
 			option_count = option_count,
+			option_lines = option_lines,
 			custom_interactive_line = custom_interactive_line,
 		})
 end
@@ -471,8 +447,6 @@ end
 ---@param selection_state table
 ---@return table lines, table highlights, OpenCodeWidgetMeta meta
 function M.get_submitting_lines(_request_id, question_data, selection_state)
-	ensure_highlights()
-
 	local result = { lines = {}, highlights = {} }
 	local questions = get_questions(question_data)
 	local current_tab = math.min(selection_state.current_tab or 1, #questions)
@@ -495,8 +469,6 @@ end
 ---@param answers table
 ---@return table lines, table highlights
 function M.get_answered_lines(_request_id, question_data, answers)
-	ensure_highlights()
-
 	local result = { lines = {}, highlights = {} }
 	local questions = get_questions(question_data)
 	add_panel_blank(result)
@@ -529,8 +501,6 @@ end
 ---@param question_data table
 ---@return table lines, table highlights
 function M.get_rejected_lines(_request_id, question_data)
-	ensure_highlights()
-
 	local result = { lines = {}, highlights = {} }
 	local questions = get_questions(question_data)
 	local title = questions[1] and get_question_title(questions[1], "Question") or "Question"
@@ -551,13 +521,13 @@ end
 ---@param selection_state table
 ---@return table lines, table highlights, OpenCodeWidgetMeta meta
 function M.get_confirmation_lines(_request_id, question_data, selection_state)
-	ensure_highlights()
-
 	local result = { lines = {}, highlights = {} }
 	local questions = get_questions(question_data)
 
 	add_panel_blank(result)
 	add_header(result, "ready to submit", "pending")
+	if selection_state.server_error then add_panel_line(result, selection_state.server_error, "OpenCodeQuestionError") end
+	for key, err in pairs(selection_state.field_errors or {}) do add_panel_line(result, key .. ": " .. err, "OpenCodeQuestionError") end
 	add_panel_blank(result)
 
 	for i, question in ipairs(questions) do

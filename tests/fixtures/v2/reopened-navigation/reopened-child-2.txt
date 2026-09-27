@@ -1,0 +1,40 @@
+                                       │○ Reopened native... │  ○ Small test  │ ○ Small test                            
+~                                      │Reopened native history > Small test                                            
+~                                      │<BS> Go back                                                                    
+~                                      │                                                                                
+~                                      │Small test                                                                      
+~                                      │                                                                                
+~                                      │┃                                                                               
+~                                      │┃  You are a subagent spawned by another session.                               
+~                                      │┃  Reply CHILD_ONE without reading files or using other tools.                  
+~                                      │┃                                                                               
+~                                      │                                                                                
+~                                      │▏  Error from provider (Console): OpenCode's free tier can only be used from    
+~                                      │▏  within OpenCode                                                              
+~                                      │                                                                                
+~                                      │▣ Explore · MiMo V2.5 Free · 665ms                                              
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+[No Name]            0,0-1          All opencode [-]                                                  15,0-1         All
+OpenCode connected (server v2.0.11)                                                                                     

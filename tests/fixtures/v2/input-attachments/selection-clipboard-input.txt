@@ -1,0 +1,40 @@
+OUTSIDE_SELECTION                      │ ○ Input attachments                                                            
+SELECTED_猫🙂                          │ Press 'i' to focus input                                                       
+SECOND_SELECTED_LINE                   │ Press '<C-p>' for command palette                                              
+ALSO_OUTSIDE                           │ Press '?' for help                                                             
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │┃                                                                               
+~                                      │┃ @выделение with spaces.txt#2-3                                                
+~                                      │┃ SELECTED_猫🙂                                                                 
+~                                      │┃ SECOND_SELECTED_LINE                                                          
+~                                      │┃ Context: Reply exactly INPUT_ATTACHMENT_READY. Do not call tools.[Image 1]    
+~                                      │┃                                                                               
+~                                      │┃ Build MiMo V2.5 Free OpenCode Zen                                             
+~                                      │┃                                                                               
+<ие with spaces.txt  3,1            All opencode [-]                                                  4,0-1          All
+-- (insert) --                                                                                        4,76          All 

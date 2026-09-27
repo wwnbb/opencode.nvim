@@ -1,0 +1,40 @@
+                                       │ No active session                                                              
+~                                      │ Press 'i' to focus input                                                       
+~                                      │ Press '<C-p>' for command palette                                              
+~                                      │ Press '?' for help                                                             
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │      ╭────────────────  Neovim disposable auth fixture setup  ────────────────╮
+~                                      │      │▏                                                                       │
+~                                      │      │▏  # Question Region                                                    │
+~                                      │      │▏                                                                       │
+~                                      │      │▏                                                                       │
+~                                      │      │▏    1. Test                                                            │
+~                                      │      │▏                                                                       │
+~                                      │      │▏  1-9 select · Space toggle · c text · Tab/S-Tab field · Ctrl-g submit │
+~                                      │      │▏  · Esc cancel                                                         │
+~                                      │      │▏                                                                       │
+~                                      │      │                                                                        │
+~                                      │      │                                                                        │
+~                                      │      │                                                                        │
+~                                      │      │                                                                        │
+~                                      │      │                                                                        │
+~                                      │      │                                                                        │
+~                                      │      │                                                                        │
+~                                      │      │                                                                        │
+~                                      │      │                                                                        │
+~                                      │      │                                                                        │
+~                                      │      │                                                                        │
+~                                      │      ╰────────────────────────────────────────────────────────────────────────╯
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+[No Name]            0,0-1          All opencode [-]                                                  5,0-1          All
+                                                                                                      5,1           All 

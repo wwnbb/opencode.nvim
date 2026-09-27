@@ -3,6 +3,10 @@
 local M = {}
 
 local actions = require("opencode.actions")
+local function location_options()
+	local state = require("opencode.state")
+	return { directory = state.get_session_directory(state.get_session().id) or vim.fn.getcwd() }
+end
 
 local function mcp_value_to_text(value)
 	if value == nil or value == vim.NIL then
@@ -70,7 +74,7 @@ local function append_wrapped(lines, text, width, indent, continuation_indent)
 			local remaining = raw_line
 			local line_indent = indent
 			while remaining ~= "" do
-				local max_width = math.max(10, width - vim.fn.strdisplaywidth(line_indent))
+				local max_width = math.max(1, width - vim.fn.strdisplaywidth(line_indent))
 				local chunk, rest = split_line_at_width(remaining, max_width)
 				table.insert(lines, line_indent .. chunk)
 				remaining = rest
@@ -80,78 +84,7 @@ local function append_wrapped(lines, text, width, indent, continuation_indent)
 	end
 end
 
-local function opencode_log_dir()
-	local xdg_data = os.getenv("XDG_DATA_HOME")
-	if xdg_data and xdg_data ~= "" then
-		return xdg_data .. "/opencode/log"
-	end
-	local home = os.getenv("HOME")
-	if not home or home == "" then
-		return nil
-	end
-	return home .. "/.local/share/opencode/log"
-end
-
-local function recent_mcp_log_lines(server_name, limit)
-	limit = limit or 8
-	local dir = opencode_log_dir()
-	if not dir then
-		return {}
-	end
-
-	local uv = vim.uv or vim.loop
-	local handle = uv.fs_scandir(dir)
-	if not handle then
-		return {}
-	end
-
-	local files = {}
-	while true do
-		local name, kind = uv.fs_scandir_next(handle)
-		if not name then
-			break
-		end
-		if kind == "file" and name:match("%.log$") then
-			local path = dir .. "/" .. name
-			local stat = uv.fs_stat(path)
-			table.insert(files, { path = path, mtime = stat and stat.mtime and stat.mtime.sec or 0 })
-		end
-	end
-	table.sort(files, function(a, b)
-		return a.mtime > b.mtime
-	end)
-
-	local matches = {}
-	for i, file in ipairs(files) do
-		if i > 6 then
-			break
-		end
-		local fd = io.open(file.path, "r")
-		if fd then
-			for line in fd:lines() do
-				local is_mcp_line = line:find("service=mcp", 1, true)
-					and line:find("key=" .. tostring(server_name), 1, true)
-				local is_useful = line:find("mcp stderr:", 1, true) or line:find("ERROR", 1, true)
-				if is_mcp_line and is_useful then
-					table.insert(matches, line)
-					if #matches > limit then
-						table.remove(matches, 1)
-					end
-				end
-			end
-			fd:close()
-		end
-	end
-
-	return matches
-end
-
-local function show_mcp_server_info(item)
-	local float = require("opencode.ui.float")
-	local ui_list = vim.api.nvim_list_uis()
-	local ui = ui_list and ui_list[1] or { width = 80, height = 24 }
-	local width = math.max(20, math.min(90, ui.width - 8))
-	local content_width = math.max(20, width - 2)
+local function info_lines(item, content_width)
 	local server = type(item.server) == "table" and item.server or {}
 	local lines = {
 		"Name: " .. tostring(item.value),
@@ -186,24 +119,43 @@ local function show_mcp_server_info(item)
 			append_wrapped(lines, label .. (mcp_value_to_text(server[key]) or ""), content_width, "", "    ")
 		end
 	end
+	return lines
+end
 
-	local log_lines = recent_mcp_log_lines(item.value, 8)
-	if #log_lines > 0 then
-		table.insert(lines, "")
-		table.insert(lines, "Recent log:")
-		for _, line in ipairs(log_lines) do
-			append_wrapped(lines, line, content_width, "  ", "  ")
-		end
-	end
-
-	local max_height = math.max(4, ui.height - 6)
+local function show_mcp_server_info(item)
+	local float = require("opencode.ui.float")
+	local width = math.max(12, math.min(90, vim.o.columns - 8))
+	local lines = info_lines(item, math.max(1, width - 2))
+	local max_height = math.max(4, vim.o.lines - vim.o.cmdheight - 6)
 	local height = math.min(math.max(8, #lines + 2), max_height)
-	local popup, bufnr = float.create_centered_popup({
+	local popup
+	local function redraw()
+		if not popup or not popup.winid or not vim.api.nvim_win_is_valid(popup.winid) then return end
+		local next_lines = info_lines(item, math.max(1, vim.api.nvim_win_get_width(popup.winid) - 2))
+		popup:render(next_lines)
+		local cursor = vim.api.nvim_win_get_cursor(popup.winid)
+		vim.api.nvim_win_set_cursor(popup.winid, { math.min(cursor[1], #next_lines), 0 })
+	end
+	popup = float.create_centered_popup({
 		title = " MCP Server Info ",
 		width = width,
 		height = height,
 		zindex = 90,
+		on_resize = function(self)
+			local next_width = math.max(12, math.min(90, vim.o.columns - 8))
+			local next_lines = info_lines(item, math.max(1, next_width - 2))
+			local next_height = math.min(math.max(8, #next_lines + 2), math.max(4, vim.o.lines - vim.o.cmdheight - 6))
+			self:resize({
+				position = {
+					row = math.max(0, math.floor((vim.o.lines - vim.o.cmdheight - next_height) / 2)),
+					col = math.max(0, math.floor((vim.o.columns - next_width) / 2)),
+				},
+				size = { width = next_width, height = next_height },
+			})
+			redraw()
+		end,
 	})
+	local bufnr = popup.bufnr
 	local close_fn = function()
 		pcall(function()
 			popup:unmount()
@@ -211,10 +163,8 @@ local function show_mcp_server_info(item)
 	end
 
 	popup:mount()
-	vim.bo[bufnr].modifiable = true
 	vim.bo[bufnr].filetype = "opencode_float"
-	vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, lines)
-	vim.bo[bufnr].modifiable = false
+	redraw()
 	if popup.winid and vim.api.nvim_win_is_valid(popup.winid) then
 		vim.wo[popup.winid].wrap = false
 		vim.wo[popup.winid].cursorline = false
@@ -230,8 +180,8 @@ function M.register(palette)
 		title = "MCP Servers",
 		description = "List and toggle MCP servers",
 		category = "mcp",
-		keybind = "<leader>oS",
-		action = function()
+		run = function()
+			local opts = location_options()
 			actions.get_mcp_status(function(err, status)
 				if err then
 					vim.notify("Failed to get MCP status: " .. tostring(err.message or err), vim.log.levels.ERROR)
@@ -247,6 +197,7 @@ function M.register(palette)
 					if value == "connected" then
 						return "connected", "●", "Connected", 3
 					end
+					if value == "pending" then return "pending", "…", "Connecting", 2 end
 					if value == "disabled" then
 						return "disabled", "○", "Disabled", 2
 					end
@@ -307,10 +258,11 @@ function M.register(palette)
 							return
 						end
 						if refreshed then
-							update_item(item, refreshed[item.value] or { status = "disabled" })
+							update_item(item, refreshed[item.value] or { status = "unknown" })
 							ctx.refresh()
+							vim.notify(item.value .. ": " .. item.status_text, vim.log.levels.INFO)
 						end
-					end)
+					end, opts)
 				end
 
 				local menu = require("opencode.ui.menu")
@@ -344,8 +296,11 @@ function M.register(palette)
 							key = "t",
 							label = "t:toggle",
 							handler = function(ctx, item)
+								if item.pending or item.status == "pending" then return end
+								item.pending = true
 								local was_connected = item.status == "connected"
 								actions.toggle_mcp(item.value, was_connected, function(toggle_err)
+									item.pending = false
 									if toggle_err then
 										vim.notify(
 											"Failed to toggle MCP server "
@@ -357,81 +312,22 @@ function M.register(palette)
 										return
 									end
 									refresh_item(item, ctx)
-									vim.notify(
-										item.value .. (was_connected and " disabled" or " enabled"),
-										vim.log.levels.INFO
-									)
-								end)
+
+								end, opts)
 							end,
 						},
+						{ key = "a", label = "a:auth", handler = function(ctx, item)
+							local integration_id = item.server and item.server.integrationID
+							if not integration_id then vim.notify("This MCP server has no linked integration", vim.log.levels.INFO); return end
+							ctx.close()
+							require("opencode.ui.palette.integration").connect(integration_id, opts)
+						end },
+						{ key = "r", label = "r:refresh", handler = function(ctx, item) refresh_item(item, ctx) end },
+
 					},
 				})
-			end)
-		end,
-	})
-	palette.register({
-		id = "mcp.tools",
-		title = "MCP Tools",
-		description = "List available MCP tools",
-		category = "mcp",
-		action = function()
-			actions.get_mcp_status(function(err, status)
-				if err then
-					vim.schedule(function()
-						vim.notify("Failed to get MCP status: " .. tostring(err.message or err), vim.log.levels.ERROR)
-					end)
-					return
-				end
-				vim.schedule(function()
-					if not status then
-						vim.notify("No MCP servers configured", vim.log.levels.INFO)
-						return
-					end
-
-					-- Collect all tools from all servers
-					local all_tools = {}
-					for server_name, server in pairs(status) do
-						if server.tools then
-							for _, tool in ipairs(server.tools) do
-								table.insert(all_tools, {
-									name = tool.name,
-									description = tool.description,
-									server = server_name,
-								})
-							end
-						end
-					end
-
-					if #all_tools == 0 then
-						vim.notify("No MCP tools available", vim.log.levels.INFO)
-						return
-					end
-
-					-- Show tools in a menu
-					local items = {}
-					for _, tool in ipairs(all_tools) do
-						table.insert(items, {
-							label = string.format("%s: %s", tool.server, tool.name),
-							tool = tool,
-						})
-					end
-
-					local menu = require("opencode.ui.menu")
-					menu.open({
-						items = items,
-						title = " MCP Tools (" .. #all_tools .. ") ",
-						searchable = false,
-						on_select = function(item)
-							vim.notify(
-								string.format("Tool: %s - %s", item.tool.name, item.tool.description or "No description"),
-								vim.log.levels.INFO
-							)
-						end,
-					})
-				end)
-			end)
+			end, opts)
 		end,
 	})
 end
-
 return M

@@ -1,8 +1,7 @@
 {
-	"$schema": "https://opencode.ai/config.json",
-	"theme": "opencode",
-	"permission": {
-		"neovim_edit": "ask",
-		"neovim_apply_patch": "ask"
-	}
+  // Native policy authorizes the operation; Neovim separately reviews its diff.
+  "permissions": [
+    { "action": "neovim_edit", "resource": "*", "effect": "allow" },
+    { "action": "neovim_patch", "resource": "*", "effect": "allow" }
+  ]
 }

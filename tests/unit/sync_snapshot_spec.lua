@@ -1,5 +1,6 @@
 describe("opencode HTTP snapshot freshness", function()
 	local sync = require("opencode.sync")
+	local projection = require("opencode.protocol.v2.messages")
 	local sid, mid = "snapshot_session", "snapshot_message"
 	local function message(id, created, completed)
 		return { id = id or mid, sessionID = sid, role = "assistant", time = { created = created or 10, completed = completed } }
@@ -10,19 +11,24 @@ describe("opencode HTTP snapshot freshness", function()
 	before_each(function() sync.clear_all() end)
 	after_each(function() sync.clear_all() end)
 
-	it("preserves a new SSE part and its subsequent deltas", function()
-		sync.handle_message_updated(message())
-		sync.handle_part_updated(part("p1", "first"))
+	it("preserves native text events that arrived after the HTTP request started", function()
+		local native = { id = mid, type = "assistant", time = { created = 10 },
+			content = { { type = "text", text = "first" } } }
+		sync.handle_session_messages(sid, { projection.project(sid, native) })
 		local snapshot = sync.capture_session_snapshot(sid)
-		sync.handle_part_updated(part("p2", "Hello"))
-		sync.handle_session_messages(sid, { { info = message(), parts = { part("p1", "first") } } }, {
-			reconcile = true, snapshot = snapshot,
+		sync.handle_v2_event({ id = "evt-text-start", type = "session.text.started", created = 11,
+			data = { sessionID = sid, assistantMessageID = mid, ordinal = 1 } })
+		sync.handle_v2_event({ id = "evt-text-delta-1", type = "session.text.delta", created = 12,
+			data = { sessionID = sid, assistantMessageID = mid, ordinal = 1, delta = "Hello" } })
+		sync.handle_session_messages(sid, { projection.project(sid, native) }, {
+			reconcile = true, snapshot = snapshot, complete = true,
 		})
-		sync.handle_part_delta({ messageID = mid, sessionID = sid, partID = "p2", field = "text", delta = " world" })
-		assert.equals("Hello world", sync.get_part(mid, "p2").text)
+		sync.handle_v2_event({ id = "evt-text-delta-2", type = "session.text.delta", created = 13,
+			data = { sessionID = sid, assistantMessageID = mid, ordinal = 1, delta = " world" } })
+		assert.equals("Hello world", sync.get_part(mid, projection.part_id(sid, mid, "text", 1)).text)
 	end)
 
-	it("does not regress a completed tool or resurrect an SSE-deleted message", function()
+	it("does not regress a completed tool or resurrect a live-deleted message", function()
 		sync.handle_message_updated(message())
 		sync.handle_message_updated(message("removed", 20))
 		local tool = { id = "tool", messageID = mid, sessionID = sid, type = "tool", tool = "bash", state = { status = "running" } }
@@ -35,7 +41,7 @@ describe("opencode HTTP snapshot freshness", function()
 		sync.handle_message_removed(sid, "removed")
 		sync.handle_session_messages(sid, {
 			{ info = message(), parts = { tool } }, { info = message("removed", 20), parts = {} },
-		}, { reconcile = true, snapshot = snapshot })
+		}, { reconcile = true, snapshot = snapshot, complete = true })
 		assert.equals("completed", sync.get_part(mid, "tool").state.status)
 		assert.equals(30, sync.get_message(sid, mid).time.completed)
 		assert.is_nil(sync.get_message(sid, "removed"))
@@ -49,7 +55,7 @@ describe("opencode HTTP snapshot freshness", function()
 		local snapshot = sync.capture_session_snapshot(sid)
 		sync.handle_session_messages(sid, {
 			{ info = message(), parts = {} }, { info = message("last", 20), parts = {} },
-		}, { reconcile = true, snapshot = snapshot })
+		}, { reconcile = true, snapshot = snapshot, complete = true })
 		assert.is_nil(sync.get_message(sid, "ghost"))
 		assert.is_nil(sync.get_part(mid, "ghost_part"))
 	end)
@@ -62,10 +68,33 @@ describe("opencode HTTP snapshot freshness", function()
 		assert.equals(0, #sync.get_messages(sid))
 	end)
 
-	it("keeps streaming parts when freshness metadata is unavailable", function()
+	it("replaces a full v2 content array when freshness metadata is unavailable", function()
 		sync.handle_message_updated(message())
 		sync.handle_part_updated(part("streaming", "text"))
 		sync.handle_session_messages(sid, { { info = message(), parts = {} } }, { reconcile = true })
-		assert.equals("text", sync.get_part(mid, "streaming").text)
+		assert.is_nil(sync.get_part(mid, "streaming"))
+	end)
+
+	for _, clear in ipairs({ "clear_session", "clear_session_messages", "clear_all" }) do
+		it("invalidates an initially empty snapshot on " .. clear, function()
+			local snapshot = sync.capture_session_snapshot(sid)
+			sync[clear](sid)
+			sync.handle_session_messages(sid, { { info = message(), parts = { part("old", "stale") } } }, {
+				snapshot = snapshot, reconcile = true,
+			})
+			assert.equals(0, #sync.get_messages(sid))
+			assert.is_nil(sync.get_part(mid, "old"))
+			-- A request made after clearing must still be allowed to hydrate the session.
+			local fresh = sync.capture_session_snapshot(sid)
+			sync.handle_session_messages(sid, { { info = message(), parts = {} } }, { snapshot = fresh })
+			assert.equals(1, #sync.get_messages(sid))
+		end)
+	end
+
+	it("does not invalidate another session's request when clearing a session", function()
+		local snapshot = sync.capture_session_snapshot(sid)
+		sync.clear_session("other")
+		sync.handle_session_messages(sid, { { info = message(), parts = {} } }, { snapshot = snapshot })
+		assert.equals(1, #sync.get_messages(sid))
 	end)
 end)

@@ -14,6 +14,9 @@ M.defaults = {
 			password = nil,
 		},
 		auto_start = true,
+		-- External servers apply review decisions on the server. Set true only
+		-- when their paths refer to the same files accessible by this Neovim.
+		shared_filesystem = nil,
 		startup_timeout = 10000,
 		health_check_interval = 1000,
 		shutdown_on_exit = true,
@@ -32,12 +35,50 @@ M.defaults = {
 		parallel = {
 			enabled = true,
 			recent_limit = 30,
-			use_prompt_async = true,
 		},
 	},
 
 	-- Danger mode auto-approves permission requests while enabled.
 	danger_mode = false,
+
+	-- Manually requested inline code completion, independent of chat sessions.
+	completion = {
+		enabled = false,
+		model = nil,
+		variant = nil,
+		options = nil,
+		keymaps = { trigger = "<C-l>", accept = "<Tab>" },
+		timeout_ms = 15000,
+		max_lines = 12,
+		context = {
+			max_bytes = 24576,
+			before_lines = 150,
+			after_lines = 50,
+			header_lines = 60,
+			max_related_buffers = 2,
+			related_lines = 60,
+		},
+	},
+
+	-- One-shot explanation of a Visual selection, independent of chat and completion.
+	explanation = {
+		enabled = false,
+		model = nil,
+		variant = nil,
+		options = nil,
+		prompt = nil,
+		language = "en",
+		keymaps = { trigger = "K" },
+		timeout_ms = 60000,
+		context = {
+			max_bytes = 24576,
+			before_lines = 150,
+			after_lines = 50,
+			header_lines = 60,
+			max_related_buffers = 2,
+			related_lines = 60,
+		},
+	},
 
 	-- Chat
 	chat = {
@@ -48,10 +89,7 @@ M.defaults = {
 		max_rendered_messages = 60,
 		max_user_message_lines = 120,
 		close_on_focus_lost = true,
-		message_display = {
-			user_prefix = "> ",
-			multiline_prefix = true,
-		},
+		tps = true, -- Show average output + reasoning tokens per second per turn
 		session_tabs = {
 			enabled = true,
 			auto_fit = false,
@@ -67,29 +105,9 @@ M.defaults = {
 		},
 		keymaps = {
 			close_session = "x",
-		},
-		todo = {
-			enabled = true,
-			show_dock = true,
-			hide_when_done = true,
-			default_collapsed = false,
-			keymaps = {
-				toggle = "T",
-			},
-			icons = {
-				pending = "[ ]",
-				in_progress = "[•]",
-				completed = "[✓]",
-				cancelled = "[ ]",
-			},
-			highlights = {
-				pending = "Comment",
-				in_progress = "WarningMsg",
-				completed = "DiagnosticOk",
-				cancelled = "Comment",
-				header = "Title",
-				border = "Comment",
-			},
+			cancel_pending = "C",
+			edit_pending = "E",
+			steer_pending = "S",
 		},
 	},
 
@@ -111,11 +129,6 @@ M.defaults = {
 		},
 	},
 
-	-- Markdown rendering
-	markdown = {
-		enable_code_highlight = true,
-	},
-
 	-- Best-effort syntax highlighting for code-like chat surfaces
 	syntax = {
 		enabled = true,
@@ -123,6 +136,8 @@ M.defaults = {
 		max_lines = 500,
 		max_bytes = 200 * 1024,
 		assistant_markdown = true,
+		user_markdown = true,
+		input_markdown = true,
 		tools = true,
 		diffs = true,
 		languages = {},
@@ -131,11 +146,8 @@ M.defaults = {
 	-- Thinking/reasoning display
 	thinking = {
 		enabled = true,
-		max_height = 15,
-		truncate = true,
-		icon = "💭",
 		highlight = "Comment",
-		header_highlight = "Title",
+		header_highlight = "WarningMsg",
 	},
 
 	-- Artifact changes
@@ -174,14 +186,14 @@ M.defaults = {
 		diff_stats_max_untracked_file_size = 1024 * 1024,
 	},
 
-	-- Command Palette
+	-- Command Palette (one borderless surface, using the current theme colors)
 	palette = {
-		width = 70,
-		height = 20,
-		border = "rounded",
+		width = 60, -- Total panel width, including the horizontal padding
+		height = 20, -- Maximum visible list rows; title/search use 7 additional rows
+		border = "none",
 		frecency = true,
 		show_keybinds = true,
-		show_icons = true,
+		show_icons = false,
 		categories = {
 			"session",
 			"model",
@@ -193,6 +205,11 @@ M.defaults = {
 		},
 		frecency_file = vim.fn.stdpath("data") .. "/opencode_palette_frecency.json",
 		max_frecency_entries = 100,
+	},
+
+	-- Outer border of popup dialogs (separate from chat.float and palette).
+	popup = {
+		border = "solid", -- "none" | "single" | "double" | "rounded" | "solid" | Nui style table
 	},
 
 	notifications = {
@@ -209,6 +226,8 @@ M.defaults = {
 	keymaps = {
 		toggle = "<leader>oo",
 		command_palette = "<leader>op",
+		toggle_logs = "<leader>ol",
+		close_session = "<leader>oq",
 		abort = "<leader>ox",
 		active_sessions = "<leader>oS",
 	},
@@ -218,8 +237,85 @@ M.defaults = {
 ---@param opts table|nil User configuration
 ---@return table Merged configuration
 function M.merge(opts)
-	-- Deep merge user configuration with defaults
-	return vim.tbl_deep_extend("force", M.defaults, opts or {})
+	-- Unsupported options must fail visibly instead of silently surviving the
+	-- deep merge and giving the impression that they still affect the plugin.
+	local removed = {
+		{ "session", "parallel", "use_prompt_async" },
+		{ "chat", "message_display" },
+		{ "thinking", "max_height" },
+		{ "thinking", "truncate" },
+		{ "thinking", "icon" },
+		{ "markdown", "enable_code_highlight" },
+		{ "server", "lazy" },
+		{ "diff" },
+	}
+	for _, path in ipairs(removed) do
+		local value = opts
+		for _, key in ipairs(path) do
+			if type(value) == "table" then value = rawget(value, key) else value = nil end
+		end
+		if value ~= nil then
+			error("opencode.nvim: unsupported setup option " .. table.concat(path, ".") .. "; update your configuration", 2)
+		end
+	end
+	local merged = vim.tbl_deep_extend("force", M.defaults, opts or {})
+	local completion = merged.completion
+	if type(completion) ~= "table" or type(completion.enabled) ~= "boolean" then
+		error("opencode.nvim: completion.enabled must be a boolean", 2)
+	end
+	for _, key in ipairs({ "timeout_ms", "max_lines" }) do
+		local value = completion[key]
+		if type(value) ~= "number" or value < 1 or value % 1 ~= 0 then
+			error("opencode.nvim: completion." .. key .. " must be a positive integer", 2)
+		end
+	end
+	if type(completion.context) ~= "table" then error("opencode.nvim: completion.context must be a table", 2) end
+	for key in pairs(M.defaults.completion.context) do
+		local value = completion.context[key]
+		local minimum = key == "max_bytes" and 1024 or 0
+		if type(value) ~= "number" or value < minimum or value % 1 ~= 0 then
+			error("opencode.nvim: completion.context." .. key .. " must be an integer >= " .. minimum, 2)
+		end
+	end
+	if type(completion.keymaps) ~= "table" then error("opencode.nvim: completion.keymaps must be a table", 2) end
+	for _, key in ipairs({ "trigger", "accept" }) do
+		local value = completion.keymaps[key]
+		if value ~= false and (type(value) ~= "string" or value == "") then
+			error("opencode.nvim: completion.keymaps." .. key .. " must be a key sequence or false", 2)
+		end
+	end
+	if completion.keymaps.trigger and completion.keymaps.accept
+		and vim.api.nvim_replace_termcodes(completion.keymaps.trigger, true, false, true)
+			== vim.api.nvim_replace_termcodes(completion.keymaps.accept, true, false, true) then
+		error("opencode.nvim: completion trigger and accept keys must differ", 2)
+	end
+	local explanation = merged.explanation
+	if type(explanation) ~= "table" or type(explanation.enabled) ~= "boolean" then
+		error("opencode.nvim: explanation.enabled must be a boolean", 2)
+	end
+	if explanation.prompt ~= nil and (type(explanation.prompt) ~= "string" or not explanation.prompt:match("%S")) then
+		error("opencode.nvim: explanation.prompt must be a non-empty string", 2)
+	end
+	if type(explanation.language) ~= "string" or not explanation.language:match("%S") then
+		error("opencode.nvim: explanation.language must be a non-empty string", 2)
+	end
+	if type(explanation.timeout_ms) ~= "number" or explanation.timeout_ms < 1 or explanation.timeout_ms % 1 ~= 0 then
+		error("opencode.nvim: explanation.timeout_ms must be a positive integer", 2)
+	end
+	if type(explanation.context) ~= "table" then error("opencode.nvim: explanation.context must be a table", 2) end
+	for key in pairs(M.defaults.explanation.context) do
+		local value = explanation.context[key]
+		local minimum = key == "max_bytes" and 1024 or 0
+		if type(value) ~= "number" or value < minimum or value % 1 ~= 0 then
+			error("opencode.nvim: explanation.context." .. key .. " must be an integer >= " .. minimum, 2)
+		end
+	end
+	if type(explanation.keymaps) ~= "table" then error("opencode.nvim: explanation.keymaps must be a table", 2) end
+	local trigger = explanation.keymaps.trigger
+	if trigger ~= false and (type(trigger) ~= "string" or trigger == "") then
+		error("opencode.nvim: explanation.keymaps.trigger must be a key sequence or false", 2)
+	end
+	return merged
 end
 
 return M

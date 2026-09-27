@@ -2,4 +2,11 @@ llm_context*
 .firecrawl*
 .deps/
 docs/*
+__pycache__/
+*.pyc
 
+# Neovim runtime debug log
+.nvimlog
+
+# Local research/benchmark evidence (reports/ is intentionally untracked)
+reports/

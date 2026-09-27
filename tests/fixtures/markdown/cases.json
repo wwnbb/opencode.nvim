@@ -1,0 +1,225 @@
+[
+  {
+    "name": "paragraphs",
+    "source": "Paragraph one.\nsoft line\n\nParagraph two.\n\n\nThree."
+  },
+  {
+    "name": "heading-levels",
+    "source": "# H1\n## H2\n### H3\n#### H4\n##### H5\n###### H6\n####### literal\n\nSetext one\n===\n\nSetext two\n---"
+  },
+  {
+    "name": "heading-markup",
+    "source": "# **strong** *em* `code` [link](https://x.y) ##\n\n## More **bold**."
+  },
+  {
+    "name": "inline",
+    "source": "**bold** __strong__ *italic* _emphasis_ ~~strike~~ `code` a_b_c"
+  },
+  {
+    "name": "nested-inline",
+    "source": "***both*** **bold *italic*** *italic **bold*** ~~**strike**~~"
+  },
+  {
+    "name": "code-spans",
+    "source": "A ` one ` B `` `inside` `` C `line\nbreak` D `**literal**` E ``"
+  },
+  {
+    "name": "links",
+    "source": "[site](https://example.com \"title\") ![alt](a.png) <https://example.com> www.example.com\n\n[reference][id] [id][] [id]\n\n[id]: https://example.com \"ref\""
+  },
+  {
+    "name": "escapes-entities",
+    "source": "\\*literal\\* &lt; &gt; &amp; &quot; &nbsp; &ensp; &emsp; &copy; &#65; &#x41;"
+  },
+  {
+    "name": "hard-breaks",
+    "source": "one  \ntwo\\\nthree"
+  },
+  {
+    "name": "code-blocks",
+    "source": "Before\n```text\n**literal**\n    indent\n\nlast\n```\nafter\n~~~unknown\nhello\n~~~"
+  },
+  {
+    "name": "empty-code",
+    "source": "before\n```\n```\nafter"
+  },
+  {
+    "name": "open-code",
+    "source": "before\n```text\na\n\nb"
+  },
+  {
+    "name": "code-tabs",
+    "source": "text a\tb\n\n```text\n\tindented\na\tb\n```"
+  },
+  {
+    "name": "ordered",
+    "source": "9) Nine\n9) Ten\n9) Eleven"
+  },
+  {
+    "name": "unordered",
+    "source": "* one\n* two\n\n+ three\n+ four\n\n- five"
+  },
+  {
+    "name": "nested-list",
+    "source": "- main\n  - inner\n    1. sub one\n    2. sub two\n- next"
+  },
+  {
+    "name": "loose-list",
+    "source": "- one\n\n- two\n\n  para two\n\n  - nested\n- last"
+  },
+  {
+    "name": "list-continuation",
+    "source": "- first line\n  next line\n  last line\n- second"
+  },
+  {
+    "name": "list-task",
+    "source": "- [x] done\n- [ ] pending\n- [X] also\n- ordinary"
+  },
+  {
+    "name": "list-blocks",
+    "source": "- # Header\n\n  ```text\n  code\n  ```\n\n  > quote\n\n  ---\n- last"
+  },
+  {
+    "name": "quote",
+    "source": "before\n> quote\n> second\n>\n> next\nafter"
+  },
+  {
+    "name": "quote-heading",
+    "source": "> # Head\n>\n> **bold** and `code`\n>\n> - one\n> - two"
+  },
+  {
+    "name": "quote-nested",
+    "source": "> outer\n> > inner\n> >\n> > tail\n> outer tail"
+  },
+  {
+    "name": "quote-code",
+    "source": "> ```text\n> code\n> ```\n>\n> tail"
+  },
+  {
+    "name": "quote-table",
+    "source": "> | A | B |\n> |---|---|\n> | 1 | 2 |"
+  },
+  {
+    "name": "hr",
+    "source": "first\n\n---\n\n***\n\n___\n\nlast"
+  },
+  {
+    "name": "indent-code",
+    "source": "before\n\n    first\n      second\n\n    third\n\nafter"
+  },
+  {
+    "name": "grid",
+    "source": "|Name|Value|\n|---|---|\n|a|**bold**|\n|long text|`code`|"
+  },
+  {
+    "name": "grid-empty",
+    "source": "|A|B|C|\n|-|-|-|\n||x||\n|y|||\n|||z|"
+  },
+  {
+    "name": "grid-alignment",
+    "source": "|Left|Center|Right|\n|:---|:---:|---:|\n|A|B|C|\n|longer|x|y|"
+  },
+  {
+    "name": "grid-inline",
+    "source": "|**A**|`B`|\n|---|---|\n|[link](https://example.com)|![image](a.png)|\n|a\\|b|&#65; &amp;|"
+  },
+  {
+    "name": "grid-missing",
+    "source": "|A|B|C|\n|---|---|---|\n|one|\n|one|two|three|four|"
+  },
+  {
+    "name": "grid-header",
+    "source": "|A|B|\n|---|---|"
+  },
+  {
+    "name": "grid-no-outer",
+    "source": "A | B\n--- | ---\none | two"
+  },
+  {
+    "name": "html",
+    "source": "<div>\n**bold**\n\nparagraph\n</div>\n\n<!-- hidden? -->"
+  },
+  {
+    "name": "wrap-punctuation",
+    "source": "Long-path/with/slashes/and/segments.txt and a_long_identifier_with_underscores trailing words."
+  },
+  {
+    "name": "wrap-unicode",
+    "source": "Привет мир. 日本語の文章。 😀 👩🏽‍💻 café é 你好世界Привет мир. 日本語の文章。 😀 👩🏽‍💻 café é 你好世界Привет мир. 日本語の文章。 😀 👩🏽‍💻 café é 你好世界"
+  },
+  {
+    "name": "wrap-leading",
+    "source": "```text\n        first-long-token-and-more-words\n  one  two     three    four\n```"
+  },
+  {
+    "name": "empty-heading",
+    "source": "#\n\n##\n\ntext"
+  },
+  {
+    "name": "inline-incomplete",
+    "source": "**not closed\n\n[unfinished](https://example.com"
+  },
+  {
+    "name": "stream-inline",
+    "updates": [
+      "A *",
+      "bold",
+      "* and **",
+      "strong",
+      "** with `",
+      "code",
+      "` and [link]",
+      "(https://x.y)",
+      " &am",
+      "p;"
+    ]
+  },
+  {
+    "name": "stream-blocks",
+    "updates": [
+      "#",
+      " Hi",
+      " there",
+      "\n\n---",
+      "\n\n```te",
+      "xt",
+      "\n  **literal**",
+      "\n```",
+      "\n\n> quote",
+      "\n> **bold**",
+      "\n\n9. first",
+      "\n10. second"
+    ]
+  },
+  {
+    "name": "stream-table",
+    "updates": [
+      "| A | B |",
+      "\n|---|---|",
+      "\n| X |",
+      " Y |",
+      "\n| **bold** | a very long value in column two |",
+      "\n\nNext paragraph"
+    ]
+  },
+  {
+    "name": "table-links-rich",
+    "source": "| Links | Other |\n|---|---|\n| https://example.com | [**bold**](https://x.y) |\n| <me@example.com> | ![**alt**](x.png) |"
+  },
+  {
+    "name": "heading-unicode-eof",
+    "source": "# 😀"
+  },
+  {
+    "name": "table-nested-format",
+    "source": "| Text | Link |\n|---|---|\n| **outer *inner* outer** | [https://x.y](https://x.y) |\n| ~~strike **strong**~~ | <https://x.y> |"
+  },
+  {
+    "name": "table-reference-links",
+    "source": "[ref]: https://example.com \"title\"\n\n| Link | Image |\n|---|---|\n| [**bold**][ref] | ![alt][ref] |\n| [ref][] | [ref] |"
+  },
+  {
+    "name": "heading-astral",
+    "source": "# 😀a"
+  }
+]

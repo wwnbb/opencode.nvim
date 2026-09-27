@@ -1,0 +1,1 @@
+Captured native UI: /private/tmp/opencode-v2-runtime/first-toggle-capture/first-toggle-input.png

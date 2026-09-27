@@ -1,3 +1,12 @@
+-- Tests must not write swap or ShaDa into the user profile.
+vim.opt.swapfile = false
+vim.opt.shadafile = "NONE"
+if vim.env.OPENCODE_NVIM_TEST_PROFILE then
+	local profile = vim.env.OPENCODE_NVIM_TEST_PROFILE .. "/" .. vim.fn.getpid()
+	for _, kind in ipairs({ "CONFIG", "DATA", "STATE", "CACHE" }) do
+		vim.env["XDG_" .. kind .. "_HOME"] = profile .. "/" .. kind:lower()
+	end
+end
 local source = debug.getinfo(1, "S").source:gsub("^@", "")
 local tests_dir = vim.fn.fnamemodify(source, ":p:h")
 local plugin_root = vim.fn.fnamemodify(tests_dir, ":h")

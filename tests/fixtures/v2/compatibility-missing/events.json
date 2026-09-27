@@ -1,0 +1,210 @@
+[
+  {
+    "id": "evt_0c6ce2804001pO0gh9s1p40yK2",
+    "type": "server.connected",
+    "data": {}
+  },
+  {
+    "id": "evt_0c6ce2825001iOnweUch3A5AJ2",
+    "created": 1790041794597,
+    "type": "worktree.resolved",
+    "data": {
+      "projectID": "global",
+      "directory": "<PROFILE>/project пробел %#",
+      "previous": "global"
+    },
+    "durable": {
+      "aggregateID": "global",
+      "seq": 0,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c6ce2b2e001E12X3pFdLAypZT",
+    "created": 1790041795374,
+    "type": "integration.updated",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {}
+  },
+  {
+    "id": "evt_0c6ce2b31001ZM5oofPhLvFlL4",
+    "created": 1790041795377,
+    "type": "provider.updated",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {}
+  },
+  {
+    "id": "evt_0c6ce2b38001m7c1xN4DueTDe6",
+    "created": 1790041795384,
+    "type": "model.updated",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {}
+  },
+  {
+    "id": "evt_0c6ce2b56001Ytz1AWlQAUhyLM",
+    "created": 1790041795414,
+    "type": "vcs.branch.updated",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "branch": "master"
+    }
+  },
+  {
+    "id": "evt_0c6ce2b57001mWENB9EV0jeQlu",
+    "created": 1790041795415,
+    "type": "agent.updated",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {}
+  },
+  {
+    "id": "evt_0c6ce2b580017ScORfPBLzRbXQ",
+    "created": 1790041795416,
+    "type": "command.updated",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {}
+  },
+  {
+    "id": "evt_0c6ce2b58002uOWwV7UGTHXN6d",
+    "created": 1790041795416,
+    "type": "skill.updated",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {}
+  },
+  {
+    "id": "evt_0c6ce2b5a0010s6PkzX8FC9j7i",
+    "created": 1790041795418,
+    "type": "websearch.updated",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {}
+  },
+  {
+    "id": "evt_0c6ce2b5a003mkucKpRzSzXRFV",
+    "created": 1790041795418,
+    "type": "reference.updated",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {}
+  },
+  {
+    "id": "evt_0c6ce2b66001yQql07FmKztzaW",
+    "created": 1790041795430,
+    "type": "plugin.updated",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {}
+  },
+  {
+    "id": "evt_0c6ce2bc5001V9fjoU2gkaY17k",
+    "created": 1790041795525,
+    "type": "models-dev.refreshed",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {}
+  },
+  {
+    "id": "evt_0c6ce2bf7001VsCvy7uvfpPjAy",
+    "created": 1790041795575,
+    "type": "integration.updated",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {}
+  },
+  {
+    "id": "evt_0c6ce2c14001BbOghXDB6dER7k",
+    "created": 1790041795604,
+    "type": "provider.updated",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {}
+  },
+  {
+    "id": "evt_0c6ce2c18001OcQskKQNAg9w18",
+    "created": 1790041795608,
+    "type": "model.updated",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {}
+  },
+  {
+    "id": "evt_0c6ce2c55001ngpXV3h0rilKhR",
+    "created": 1790041795669,
+    "type": "session.created",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f3931d3ceffeJ7iZuAhqrgCcbx",
+      "slug": "tidy-river",
+      "version": "2.0.11",
+      "projectID": "global",
+      "location": {
+        "directory": "<PROFILE>/project пробел %#"
+      },
+      "subpath": ""
+    },
+    "durable": {
+      "aggregateID": "ses_f3931d3ceffeJ7iZuAhqrgCcbx",
+      "seq": 0,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c6ce2d050013W8KqpQrFmyahs",
+    "created": 1790041795845,
+    "type": "session.created",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f3931d315ffeMPuIeUM5r02RPQ",
+      "slug": "witty-squid",
+      "version": "2.0.11",
+      "projectID": "global",
+      "location": {
+        "directory": "<PROFILE>/project пробел %#"
+      },
+      "subpath": "",
+      "title": "opencode.nvim v2 runtime fixture"
+    },
+    "durable": {
+      "aggregateID": "ses_f3931d315ffeMPuIeUM5r02RPQ",
+      "seq": 0,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c6ce2d0b001uKpzFcsakw0jWw",
+    "created": 1790041795851,
+    "type": "session.deleted",
+    "data": {
+      "sessionID": "ses_f3931d315ffeMPuIeUM5r02RPQ"
+    },
+    "durable": {
+      "aggregateID": "ses_f3931d315ffeMPuIeUM5r02RPQ",
+      "seq": 1,
+      "version": 2
+    }
+  }
+]

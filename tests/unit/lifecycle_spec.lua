@@ -44,17 +44,15 @@ describe("opencode lifecycle", function()
 	end
 
 	local function emit_listening(job, port)
-		job.opts.on_stdout(nil, "opencode server listening on http://127.0.0.1:" .. tostring(port), job)
+		job.opts.on_stdout(nil, "server listening on http://127.0.0.1:" .. tostring(port), job)
 		flush_scheduled()
 	end
 
 	local function respond_health(index, healthy, version)
 		local callback = health_callbacks[index]
 		assert(callback, "health callback " .. tostring(index) .. " must exist")
-		callback(nil, {
-			healthy = healthy,
-			version = version or "1.0.0",
-		})
+		if not healthy then callback({ message = "Not ready" }); return end
+		callback(nil, { version = version or "2.0.11", pid = 1000, urls = {}, paths = { tmp = "/tmp" } })
 	end
 
 	local function complete_start(callback, port)
@@ -130,6 +128,10 @@ describe("opencode lifecycle", function()
 			end,
 			get_server_info = function()
 				return vim.deepcopy(state_data.server)
+			end,
+			clear_server_endpoint = function()
+				state_data.server.port = nil
+				state_data.server.version = nil
 			end,
 			set_server_info = function(info)
 				for key, value in pairs(info or {}) do
@@ -238,6 +240,159 @@ describe("opencode lifecycle", function()
 		for _, name in ipairs(module_names) do
 			package.loaded[name] = saved_modules[name]
 		end
+	end)
+
+	it("recognizes the actual unbracketed IPv6 listening line from CLI 2.0.11", function()
+		local connected = false
+		lifecycle.ensure_connected(function() connected = true end)
+		local job = jobs[1]
+		job.opts.on_stdout(nil, "server listening on http://::1:4096", job)
+		flush_scheduled()
+		assert_eq(state_data.server.host, "::1", "IPv6 host")
+		assert_eq(state_data.server.port, 4096, "IPv6 port")
+		respond_health(1, true); flush_scheduled()
+		assert_eq(connected, true, "IPv6 readiness")
+	end)
+
+	it("shares one ephemeral credential between the owned process, HTTP and SSE", function()
+		lifecycle.ensure_connected(function() end)
+		local job = jobs[1]
+		local password = job.opts.env.OPENCODE_SERVER_PASSWORD
+		assert_eq(type(password), "string", "owned credential type")
+		assert_eq(#password, 64, "owned credential length")
+		emit_listening(job, 4096)
+		assert_eq(state_data.http_setup.auth.password, password, "HTTP credential")
+		assert_eq(state_data.sse_setup.auth.password, password, "SSE credential")
+		assert_eq(job.opts.enable_recording, false, "no raw startup-output retention")
+		assert_eq(lifecycle.opts.auth, nil, "generated secret does not become user configuration")
+	end)
+
+	it("installs completion options in the owned process and keeps its startup snapshot", function()
+		local completion = {
+			enabled = true, model = { providerID = "openai", modelID = "coder" },
+			options = { settings = { reasoningEffort = "none" } },
+		}
+		lifecycle.setup({ completion = completion, env = { OPENCODE_CONFIG_CONTENT = '{"model":"openai/chat"}' } })
+		local job = complete_start()
+		local overlay = vim.json.decode(job.opts.env.OPENCODE_CONFIG_CONTENT)
+		assert.equals("openai/chat", overlay.model)
+		local variant = overlay.providers.openai.models.coder.variants[1]
+		assert.same({ reasoningEffort = "none" }, variant.settings)
+		assert.equals(variant.id, lifecycle.resolve_completion_model(completion).variant)
+		completion.options.settings.reasoningEffort = "low"
+		lifecycle.setup({ completion = completion })
+		local model, err = lifecycle.resolve_completion_model(completion)
+		assert.is_nil(model)
+		assert.matches("restart", err, 1, true)
+		assert.equals(1, #jobs)
+		lifecycle.setup({ completion = { enabled = true, model = completion.model, variant = "fast" } })
+		assert.is_nil(lifecycle.opts.completion.options)
+	end)
+
+	it("installs independent completion and explanation profiles in one owned process", function()
+		local completion = {
+			enabled = true, model = { providerID = "openai", modelID = "coder" },
+			options = { body = { reasoning_effort = "none" } },
+		}
+		local explanation = vim.deepcopy(completion)
+		lifecycle.setup({
+			completion = completion,
+			explanation = explanation,
+			env = { OPENCODE_CONFIG_CONTENT = '{"model":"openai/chat"}' },
+		})
+		local job = complete_start()
+		local overlay = vim.json.decode(job.opts.env.OPENCODE_CONFIG_CONTENT)
+		local variants = overlay.providers.openai.models.coder.variants
+		assert.equals(2, #variants)
+		assert.equals("openai/chat", overlay.model)
+		assert.same({ reasoning_effort = "none" }, variants[1].body)
+		assert.same({ reasoning_effort = "none" }, variants[2].body)
+		assert.equals(variants[1].id, lifecycle.resolve_completion_model(completion).variant)
+		assert.equals(variants[2].id, lifecycle.resolve_explanation_model(explanation).variant)
+		assert.are_not.equals(variants[1].id, variants[2].id)
+		explanation.options.body.reasoning_effort = "low"
+		lifecycle.setup({ explanation = explanation })
+		assert.equals(variants[1].id, lifecycle.resolve_completion_model(completion).variant)
+		local model, err = lifecycle.resolve_explanation_model(explanation)
+		assert.is_nil(model)
+		assert.matches("restart", err, 1, true)
+		assert.equals(1, #jobs)
+	end)
+
+	it("keeps completion available when explanation overlay is invalid", function()
+		local completion = {
+			enabled = true, model = { providerID = "openai", modelID = "coder" },
+			options = { body = { max_tokens = 32 } },
+		}
+		local explanation = {
+			enabled = true, model = { providerID = "openai", modelID = "coder" },
+			variant = "brief", options = { body = { max_tokens = 64 } },
+		}
+		lifecycle.setup({ completion = completion, explanation = explanation })
+		local job = complete_start()
+		local variants = vim.json.decode(job.opts.env.OPENCODE_CONFIG_CONTENT).providers.openai.models.coder.variants
+		assert.equals(1, #variants)
+		assert.equals(variants[1].id, lifecycle.resolve_completion_model(completion).variant)
+		local model, err = lifecycle.resolve_explanation_model(explanation)
+		assert.is_nil(model)
+		assert.matches("not both", err, 1, true)
+	end)
+
+	it("isolates invalid completion options from ordinary startup", function()
+		local completion = {
+			enabled = true, model = { providerID = "openai", modelID = "coder" },
+			variant = "fast", options = {},
+		}
+		lifecycle.setup({ completion = completion, env = { OPENCODE_CONFIG_CONTENT = '{"model":"openai/chat"}' } })
+		local job = complete_start()
+		assert.equals('{"model":"openai/chat"}', job.opts.env.OPENCODE_CONFIG_CONTENT)
+		assert.equals("connected", state_data.connection)
+		local model, err = lifecycle.resolve_completion_model(completion)
+		assert.is_nil(model)
+		assert.matches("not both", err, 1, true)
+	end)
+
+	it("refreshes completion profiles only after a managed process is restarted", function()
+		local completion = { enabled = true, model = { providerID = "local", modelID = "coder" }, options = { body = { max_tokens = 32 } } }
+		lifecycle.setup({ completion = completion })
+		local first_job = complete_start()
+		local first_variant = lifecycle.resolve_completion_model(completion).variant
+		lifecycle.disconnect()
+		assert.equals(first_variant, lifecycle.resolve_completion_model(completion).variant)
+		lifecycle.ensure_connected(function() end)
+		respond_health(#health_callbacks, true)
+		flush_scheduled()
+		completion.options.body.max_tokens = 64
+		lifecycle.setup({ completion = completion })
+		assert.is_nil(lifecycle.resolve_completion_model(completion))
+		lifecycle.restart()
+		first_job.opts.on_exit(first_job, 0, 15)
+		flush_scheduled()
+		local second_job = jobs[2]
+		emit_listening(second_job, 4012)
+		respond_health(#health_callbacks, true)
+		flush_scheduled()
+		local variant = lifecycle.resolve_completion_model(completion).variant
+		assert.are_not.equals(first_variant, variant)
+		assert.equals(64, vim.json.decode(second_job.opts.env.OPENCODE_CONFIG_CONTENT).providers["local"].models.coder.variants[1].body.max_tokens)
+		lifecycle.stop()
+		second_job.opts.on_exit(second_job, 0, 15)
+		flush_scheduled()
+		assert.is_nil(lifecycle.resolve_completion_model(completion))
+	end)
+
+	it("rejects local completion options for an explicitly connected server", function()
+		local completion = { enabled = true, model = { providerID = "local", modelID = "coder" }, options = {} }
+		lifecycle.setup({ port = 4096, completion = completion })
+		state_data.server.port = 4096
+		lifecycle.ensure_connected(function() end)
+		respond_health(1, true)
+		flush_scheduled()
+		assert.equals(0, #jobs)
+		assert.equals("connected", state_data.connection)
+		local model, err = lifecycle.resolve_completion_model(completion)
+		assert.is_nil(model)
+		assert.matches("external server", err, 1, true)
 	end)
 
 	it("drops queued actions when event connection fails", function()
@@ -400,11 +555,8 @@ describe("opencode lifecycle", function()
 		local retry_runs = 0
 		local job = complete_start(nil, 4501)
 		local event_types = {
-			"connected",
 			"disconnected",
 			"server.connected",
-			"message.updated",
-			"session.status",
 		}
 
 		for _, event_type in ipairs(event_types) do
@@ -499,6 +651,38 @@ describe("opencode lifecycle", function()
 		assert_eq(state_data.connection, "error", "error after SIGKILL timeout")
 		assert_eq(lifecycle.start(), true, "start after hang release")
 		assert_eq(#jobs, 2, "replacement job after hang release")
+	end)
+
+	it("uses explicit port zero for a private server", function()
+		local job = complete_start()
+		assert.same({ "serve", "--hostname", "localhost", "--port", "0" }, job.opts.args)
+	end)
+
+	it("connects an external endpoint with auto-start disabled and never stops it", function()
+		lifecycle.setup({ auto_start = false, port = 4096 })
+		state_data.server.port = 4096
+		local runs = 0
+		lifecycle.ensure_connected(function() runs = runs + 1 end)
+		assert.equals(0, #jobs)
+		respond_health(1, true)
+		flush_scheduled()
+		assert.equals(1, runs)
+		assert.is_false(state_data.server.managed)
+		assert.is_nil(state_data.server.pid)
+		assert.is_false(lifecycle.stop())
+		lifecycle.disconnect()
+		assert.equals(4096, state_data.server.port)
+	end)
+
+	it("does not spawn a private server after an external auth failure", function()
+		lifecycle.setup({ port = 4096 })
+		state_data.server.port = 4096
+		lifecycle.ensure_connected(function() error("unauthorized") end)
+		health_callbacks[1]({ status = 401, message = "Unauthorized" })
+		flush_scheduled()
+		assert.equals("error", state_data.connection)
+		assert.equals(0, #jobs)
+		assert.equals(0, lifecycle.status().pending_callbacks)
 	end)
 
 	it("does not retain callbacks when auto-start is disabled", function()

@@ -1,0 +1,18 @@
+{
+  "name": "opencode-nvim-server",
+  "version": "2.0.11-4",
+  "private": true,
+  "type": "module",
+  "exports": "./index.ts",
+  "dependencies": {
+    "@opencode/plugin": "2.0.11",
+    "@opencode/schema": "2.0.11",
+    "effect": "4.0.0-rc.112",
+    "jsonc-parser": "3.3.1",
+    "zod": "4.1.8"
+  },
+  "devDependencies": {
+    "@types/node": "24.12.2",
+    "typescript": "5.8.2"
+  }
+}

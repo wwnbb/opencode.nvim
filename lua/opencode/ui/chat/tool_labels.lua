@@ -5,7 +5,6 @@
 local M = {}
 
 local render = require("opencode.ui.chat.render")
-local chat_todos = require("opencode.ui.chat.todos")
 local task_animation = require("opencode.ui.chat.task_animation")
 local tool_part_resolver = require("opencode.ui.chat.tool_part")
 
@@ -17,16 +16,11 @@ local TOOL_ICONS = {
 	rg = "✱",
 	read = "→",
 	grep = "✱",
-	list = "→",
 	write = "←",
 	edit = "←",
 	webfetch = "%",
 	websearch = "◈",
-	codesearch = "◇",
 	task = "◉",
-	todolist = "⊙",
-	todowrite = "⚙",
-	todoread = "⊙",
 	question = "→",
 	apply_patch = "%",
 	skill = "→",
@@ -72,22 +66,6 @@ function M.format_toolcall_count(count)
 	return tostring(count) .. " " .. (count == 1 and "toolcall" or "toolcalls")
 end
 
----@param tool_part table
----@return string|nil progress
-local function format_todo_progress(tool_part)
-	local todos = chat_todos.extract_tool_todos(tool_part)
-	if #todos == 0 then
-		return nil
-	end
-	local completed = 0
-	for _, todo in ipairs(todos) do
-		if todo.status == "completed" then
-			completed = completed + 1
-		end
-	end
-	return string.format("%d/%d done", completed, #todos)
-end
-
 ---@param metadata table
 ---@return number|nil
 function M.get_metadata_toolcall_count(metadata)
@@ -120,55 +98,11 @@ end
 
 ---@param value any
 ---@return string
-local function skill_name_from_value(value)
-	if type(value) == "table" then
-		for _, key in ipairs({ "name", "skill", "skillName", "skill_name", "value", "label" }) do
-			local text = trim_string(value[key])
-			if text ~= "" then
-				return text
-			end
-		end
-		return ""
-	end
-	if type(value) ~= "string" then
-		return ""
-	end
-
-	local text = trim_string(value)
-	if text == "" then
-		return ""
-	end
-
-	return text:match('"name"%s*:%s*"([^"]+)"')
-		or text:match("'name'%s*:%s*'([^']+)'")
-		or (text:sub(1, 1) == "{" and "")
-		or text:match("^load_skill%s+%[(.-)%]$")
-		or text:match("^load_skill%s+(.+)$")
-		or text
-end
-
----@param input table|string
+---@param input table
 ---@param metadata table
----@param title string|nil
----@param raw string|nil
 ---@return string
-local function get_skill_name(input, metadata, title, raw)
-	local from_title = type(title) == "string" and title:match("Loaded skill:%s*(.+)") or nil
-	local name = skill_name_from_value(input)
-	if name == "" then
-		name = skill_name_from_value(metadata.name)
-	end
-	if name == "" then
-		name = skill_name_from_value(metadata.skill)
-	end
-	if name == "" then
-		name = trim_string(from_title)
-	end
-	if name == "" then
-		name = skill_name_from_value(raw)
-	end
-	name = name:gsub("^%[", ""):gsub("%]$", "")
-	return name
+local function get_skill_name(input, metadata)
+	return trim_string((type(input) == "table" and input.name) or metadata.name)
 end
 
 ---@param text string
@@ -234,12 +168,6 @@ function M.format_summary_item_label(item)
 		input = {}
 	end
 	local input_table = type(input) == "table" and input or {}
-	if chat_todos.is_todo_tool(tool_name) then
-		local progress = format_todo_progress(item)
-		local action = chat_todos.is_todo_read_tool(tool_name) and "Read Todos" or "Update Todos"
-		return progress and (action .. " " .. progress) or action
-	end
-
 	-- Prefer the server-supplied title while it describes visible activity.
 	local title = (item_status == "completed" or item_status == "running") and trim_string(item_state.title) or ""
 	if title and title ~= "" then
@@ -248,17 +176,17 @@ function M.format_summary_item_label(item)
 
 	-- Tool-specific fallback
 	if tool_name == "read" then
-		local fp = input_table.filePath or input_table.file_path or ""
+		local fp = input_table.path or input_table.filePath or input_table.file_path or ""
 		if fp ~= "" then
 			return "Read " .. truncate_path_end(fp)
 		end
 	elseif tool_name == "write" then
-		local fp = input_table.filePath or input_table.file_path or ""
+		local fp = input_table.path or input_table.filePath or input_table.file_path or ""
 		if fp ~= "" then
 			return "Write " .. truncate_path_end(fp)
 		end
 	elseif tool_name == "edit" then
-		local fp = input_table.filePath or input_table.file_path or ""
+		local fp = input_table.path or input_table.filePath or input_table.file_path or ""
 		if fp ~= "" then
 			return "Edit " .. truncate_path_end(fp)
 		end
@@ -298,7 +226,7 @@ function M.format_summary_item_label(item)
 			return render.format_title(agent) .. " Task" .. (d ~= "" and (" — " .. d) or "")
 		end
 	elseif tool_name == "skill" then
-		local name = get_skill_name(input, metadata, item_state.title, item_state.raw)
+		local name = get_skill_name(input, metadata)
 		if name ~= "" then
 			return 'Skill "' .. truncate_label(name, 40) .. '"'
 		end
@@ -374,16 +302,16 @@ function M.format_tool_line(tool_part)
 
 	if tool_name == "glob" then
 		local pattern = input.pattern or ""
-		local count = M.normalize_count(metadata.count) or 0
+		local count = M.normalize_count(metadata.count)
 		if tool_status == "completed" then
-			return string.format('%s Glob "%s" (%s)', icon, pattern, format_match_count(count))
+			return string.format('%s Glob "%s"%s', icon, pattern, count and (" (" .. format_match_count(count) .. ")") or "")
 		end
 		return "~ Finding files..."
 	elseif tool_name == "grep" then
 		local pattern = input.pattern or ""
-		local matches = M.normalize_count(metadata.matches) or 0
+		local matches = M.normalize_count(metadata.matches)
 		if tool_status == "completed" then
-			return string.format('%s Grep "%s" (%s)', icon, pattern, format_match_count(matches))
+			return string.format('%s Grep "%s"%s', icon, pattern, matches and (" (" .. format_match_count(matches) .. ")") or "")
 		end
 		return "~ Searching content..."
 	elseif tool_name == "rg" then
@@ -397,21 +325,21 @@ function M.format_tool_line(tool_part)
 		end
 		return "~ Searching content..."
 	elseif tool_name == "read" then
-		local filepath = input.filePath or input.file_path or ""
+		local filepath = input.path or input.filePath or input.file_path or ""
 		filepath = truncate_path_end(filepath)
 		if tool_status == "completed" then
 			return string.format("%s Read %s", icon, filepath)
 		end
 		return "~ Reading file..."
 	elseif tool_name == "write" then
-		local filepath = input.filePath or input.file_path or ""
+		local filepath = input.path or input.filePath or input.file_path or ""
 		filepath = truncate_path_end(filepath)
 		if tool_status == "completed" then
 			return string.format("%s Wrote %s", icon, filepath)
 		end
 		return "~ Preparing write..."
 	elseif tool_name == "edit" then
-		local filepath = input.filePath or input.file_path or ""
+		local filepath = input.path or input.filePath or input.file_path or ""
 		filepath = truncate_path_end(filepath)
 		if tool_status == "completed" then
 			return string.format("%s Edit %s", icon, filepath)
@@ -423,18 +351,8 @@ function M.format_tool_line(tool_part)
 			return string.format("# %s", desc)
 		end
 		return "~ Writing command..."
-	elseif chat_todos.is_todo_tool(tool_name) then
-		if tool_status == "completed" then
-			local progress = format_todo_progress(tool_part)
-			local action = chat_todos.is_todo_read_tool(tool_name) and "Read Todos" or "Updated Todos"
-			return progress and string.format("%s %s %s", icon, action, progress)
-				or string.format("%s %s", icon, action)
-		end
-		return chat_todos.is_todo_read_tool(tool_name) and "~ Reading todos..." or "~ Updating todos..."
 	elseif tool_name == "skill" then
-		local raw = tool_part.state and tool_part.state.raw or nil
-		local title = tool_part.state and tool_part.state.title or nil
-		local name = get_skill_name(input, metadata, title, raw)
+		local name = get_skill_name(input, metadata)
 		if tool_status == "completed" then
 			if name ~= "" then
 				return string.format('%s Skill "%s"', icon, name)

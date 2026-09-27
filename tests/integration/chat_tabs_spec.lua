@@ -155,7 +155,6 @@ local opencode = require("opencode")
 opencode.setup({
 	server = {
 		auto_start = false,
-		lazy = true,
 	},
 	chat = {
 		layout = "float",
@@ -402,6 +401,20 @@ assert_contains(auto_busy_line, "R1", "auto-fit keeps running marker summary")
 assert_contains(auto_busy_line, "W1", "auto-fit keeps waiting marker summary")
 assert_eq(label_count(auto_busy_line, "...1"), 1, "auto-fit busy view keeps left overflow count")
 assert_eq(label_count(auto_busy_line, "...2"), 1, "auto-fit busy view keeps right overflow count")
+
+local btw = require("opencode.btw")
+local original_pending_count = btw.pending_count
+btw.pending_count = function() return 1 end
+chat.update_winbar()
+local aside_line = assert_tab_line_fits(chat_view, "auto-fit side-question indicator")
+assert_contains(aside_line, "/btw", "side question progress appears in the tab strip")
+chat_view.config.session_tabs.enabled = false
+chat.update_winbar()
+local status_only_line = assert_tab_line_fits(chat_view, "side-question indicator with tabs disabled")
+assert_contains(status_only_line, "/btw", "side question stays visible with tabs disabled")
+chat_view.config.session_tabs.enabled = true
+btw.pending_count = original_pending_count
+chat.update_winbar()
 
 print("Chat tab integration passed")
 	end)

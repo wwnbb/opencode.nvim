@@ -3,10 +3,31 @@ local M = {}
 local panel = require("opencode.ui.panel")
 local render = require("opencode.ui.chat.render")
 local chat_state = require("opencode.ui.chat.state").state
+local text_util = require("opencode.util.text")
 
 M.PANEL_PREFIX = "▏  "
 M.PANEL_BLANK_PREFIX = "▏"
 M.ANIM_FRAMES = { "|", "/", "-", "\\" }
+
+---Read/search results may arrive as text or as an output/content envelope.
+---An explicitly empty output still takes precedence over content.
+---@param value any
+---@return string
+function M.stringify_output(value)
+	if text_util.is_nil(value) then
+		return ""
+	end
+	if type(value) == "table" then
+		if type(value.output) == "string" then
+			return value.output
+		end
+		if type(value.content) == "string" then
+			return value.content
+		end
+		return vim.inspect(value)
+	end
+	return tostring(value)
+end
 
 ---@param opts table
 ---@return OpenCodePanelHelpers
@@ -45,6 +66,49 @@ function M.create_panel(opts)
 	end
 
 	return helpers
+end
+
+-- Project source highlights through the panel's wrapped rows, including UTF-8
+-- byte offsets and indentation. Callers retain ownership of frame and spacing.
+---@param result table
+---@param body string
+---@param opts { panel: OpenCodePanelHelpers, prefix: string, hl_group?: string, language?: string }
+function M.add_raw_body(result, body, opts)
+	local lines, rows = {}, {}
+	for _, line in ipairs(vim.split(body, "\n", { plain = true })) do
+		line = render.expand_tabs(line, vim.fn.strdisplaywidth(opts.prefix))
+		lines[#lines + 1] = line
+		local _, _, mapped = opts.panel.add_raw_line(result, line, opts.hl_group)
+		rows[#rows + 1] = mapped
+	end
+	if opts.language then
+		local syntax = require("opencode.ui.syntax")
+		local captures, status = syntax.highlight_text(table.concat(lines, "\n"), opts.language, { scope = "tools" })
+		if syntax.needs_retry(captures, status) then result._opencode_syntax_retry = true end
+		vim.list_extend(result.highlights, syntax.project_highlights(
+			captures, lines, rows
+		))
+	end
+end
+
+---@param result table
+---@param body string
+---@param opts { panel: OpenCodePanelHelpers, prefix: string }
+function M.add_markdown_body(result, body, opts)
+	local rendered = render.render_content(body, {
+		width = math.max(1, render.get_chat_text_width() - vim.fn.strdisplaywidth(opts.prefix)),
+		scope = "tools",
+	})
+	if rendered._opencode_syntax_retry then result._opencode_syntax_retry = true end
+	local lines, rows = {}, {}
+	for _, line in ipairs(rendered) do
+		local content = line:content()
+		lines[#lines + 1] = content
+		local _, _, mapped = opts.panel.add_raw_line(result, content)
+		rows[#rows + 1] = mapped
+	end
+	local syntax = require("opencode.ui.syntax")
+	vim.list_extend(result.highlights, syntax.project_highlights(rendered._opencode_highlights, lines, rows))
 end
 
 ---@param tool_part table

@@ -1,0 +1,40 @@
+                                       │ ○ Restored tool h...                                                           
+~                                      │▏                                                                               
+~                                      │▏  ripgrep failed (2): rg: regex parse error:                                   
+~                                      │▏      (?:[)                                                                    
+~                                      │▏         ^                                                                     
+~                                      │▏  error: unclosed character class                                              
+~                                      │▏                                                                               
+~                                      │                                                                                
+~                                      │Thinking: All three calls completed. The test is done.                          
+~                                      │                                                                                
+~                                      │Test complete. All three `rg` calls ran as expected:                            
+~                                      │                                                                                
+~                                      │1. **`-needle`** (fixed_strings): matched one line.                             
+~                                      │2. **`ABSENT_TOKEN_783`**: no matches found.                                    
+~                                      │3. **`[`** (invalid regex): ripgrep returned a regex parse error (unclosed      
+~                                      │character class).                                                               
+~                                      │                                                                                
+~                                      │▣ Build · MiMo V2.5 Free · 9.5k/200k tok · 9.8s                                 
+~                                      │                                                                                
+~                                      │┃                                                                               
+~                                      │┃  Call the direct top-level rg exactly once with pattern="needle" and          
+~                                      │┃  path="<PROFILE>/project пробел %#/blocked-search.fifo". This is an           
+~                                      │┃  intentionally waiting FIFO fixture. Do not use other tools, do not change    
+~                                      │┃  the path, and do not retry.                                                  
+~                                      │┃                                                                               
+~                                      │                                                                                
+~                                      │Thinking: The user wants me to call the top-level `rg` tool once with the       
+~                                      │specified pattern and path. This is an intentionally blocking FIFO, so it will  
+~                                      │hang, but the user explicitly said not to retry or change the path.             
+~                                      │                                                                                
+~                                      │▏                                                                               
+~                                      │▏  # Ripgrep "needle" in <PROFILE>/project пробел %#/blocked-search.fifo        
+~                                      │▏                                                                               
+~                                      │▏  Tool execution interrupted                                                   
+~                                      │▏                                                                               
+~                                      │                                                                                
+~                                      │▣ Build · MiMo V2.5 Free · 9.7k/200k tok · 6.7s                                 
+~                                      │                                                                                
+[No Name]            0,0-1          All opencode [-]                                                  64,0-1         Bot
+OpenCode.nvim v0.1.0 loaded                                                                                             

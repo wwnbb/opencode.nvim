@@ -48,7 +48,7 @@ describe("opencode cleanup", function()
 		stub("opencode.question.state", { "clear_all" })
 		stub("opencode.edit.state", { "clear_all" })
 		stub("opencode.artifact.changes", { "clear" })
-		stub("opencode.state", { "clear_all_pending_changes", "reset" })
+		stub("opencode.state", { "reset" })
 		stub("opencode.session.lock", { "clear_all" })
 		stub("opencode.permission.danger", { "clear" })
 		stub("opencode.ui.chat", { "clear" })
@@ -71,7 +71,6 @@ describe("opencode cleanup", function()
 			"opencode.question.state.clear_all",
 			"opencode.edit.state.clear_all",
 			"opencode.artifact.changes.clear",
-			"opencode.state.clear_all_pending_changes",
 			"opencode.session.lock.clear_all",
 			"opencode.permission.danger.clear",
 			"opencode.ui.chat.clear",

@@ -2,31 +2,116 @@ local M = {}
 
 local cs = require("opencode.ui.chat.state")
 local state = cs.state
+local memo = require("opencode.util.memo")
 
 local RENDER_CACHE_MAX_BLOCKS = 1000
 local TASK_SUMMARY_CACHE_MAX_ENTRIES = 100
+local render_pool = memo.new("render", { max_entries = RENDER_CACHE_MAX_BLOCKS })
+local task_summary_pool = memo.new("task_summary", { max_entries = TASK_SUMMARY_CACHE_MAX_ENTRIES })
+local render_identity, task_summary_identity
+local CODE_CACHE_MAX_ENTRIES = 128
+local CODE_CACHE_MAX_BYTES = 8 * 1024 * 1024
+local code_cache = { entries = {}, order = {}, bytes = 0 }
 
-function M.ensure_render_cache()
-	if type(state.render_cache) ~= "table" then
-		state.render_cache = { blocks = {}, order = {} }
+function M.clear_code_cache()
+	code_cache = { entries = {}, order = {}, bytes = 0 }
+end
+
+function M.code_cache_stats()
+	return { entries = #code_cache.order, bytes = code_cache.bytes,
+		max_entries = CODE_CACHE_MAX_ENTRIES, max_bytes = CODE_CACHE_MAX_BYTES }
+end
+
+---Cache source coordinates, not width-dependent layout. A growing block
+---replaces its entry instead of retaining every streamed revision.
+function M.code_highlighter(owner)
+	local syntax = require("opencode.ui.syntax")
+	return function(text, lang, opts, block)
+		opts = opts or {}
+		local key = M.render_cache_key(owner, block.open_line, lang)
+		local signature = syntax.cache_signature(lang, opts)
+		local entry = code_cache.entries[key]
+		if entry and entry.text == text and entry.signature == signature then
+			return entry.highlights, entry.status
+		end
+		local captures, status = syntax.highlight_text(text, lang, opts)
+		if entry then
+			code_cache.bytes = code_cache.bytes - entry.bytes
+			code_cache.entries[key] = nil
+			for index, cached_key in ipairs(code_cache.order) do
+				if cached_key == key then table.remove(code_cache.order, index); break end
+			end
+		end
+		-- Do not permanently cache missing parsers, queries or parse failures.
+		if syntax.needs_retry(captures, status) then return captures, status end
+		-- Conservative accounting includes table storage and capture strings.
+		local bytes = 512 + #key + #signature + #text
+		for _, capture in ipairs(captures) do bytes = bytes + 384 + #(capture.hl_group or "") end
+		if bytes > CODE_CACHE_MAX_BYTES then return captures, status end
+		while #code_cache.order >= CODE_CACHE_MAX_ENTRIES or code_cache.bytes + bytes > CODE_CACHE_MAX_BYTES do
+			local oldest = table.remove(code_cache.order, 1)
+			code_cache.bytes = code_cache.bytes - code_cache.entries[oldest].bytes
+			code_cache.entries[oldest] = nil
+		end
+		code_cache.entries[key] = { text = text, signature = signature, highlights = captures, status = status, bytes = bytes }
+		code_cache.order[#code_cache.order + 1] = key
+		code_cache.bytes = code_cache.bytes + bytes
+		return captures, status
 	end
-	state.render_cache.blocks = state.render_cache.blocks or {}
-	state.render_cache.order = state.render_cache.order or {}
-	return state.render_cache
+end
+
+-- State fields are identity sentinels only. Keeping values there as well as in
+-- the pool would let an inspection table retain entries after shared eviction.
+local function ensure_render_pool()
+	if type(state.render_cache) ~= "table" or state.render_cache ~= render_identity then
+		render_pool:clear()
+		state.render_cache = { blocks = {}, order = {} }
+		render_identity = state.render_cache
+	end
+	return render_pool
+end
+
+local function ensure_task_summary_pool()
+	if type(state.task_summary_cache) ~= "table" or state.task_summary_cache ~= task_summary_identity then
+		task_summary_pool:clear()
+		state.task_summary_cache = { entries = {}, order = {} }
+		task_summary_identity = state.task_summary_cache
+	end
+	return task_summary_pool
+end
+
+---Return an inspection snapshot without retaining a second copy in state.
+function M.ensure_render_cache()
+	local pool = ensure_render_pool()
+	local snapshot = { blocks = {}, order = {} }
+	local entry = pool.first
+	while entry do
+		snapshot.blocks[entry.signature] = entry.value
+		snapshot.order[#snapshot.order + 1] = entry.signature
+		entry = entry.pool_next
+	end
+	return snapshot
 end
 
 function M.clear_render_cache()
+	render_pool:clear()
 	state.render_cache = { blocks = {}, order = {} }
+	render_identity = state.render_cache
 	state.last_render_highlight_signature = nil
 end
 
-local function ensure_task_summary_cache()
-	if type(state.task_summary_cache) ~= "table" then
-		state.task_summary_cache = { entries = {}, order = {} }
-	end
-	state.task_summary_cache.entries = state.task_summary_cache.entries or {}
-	state.task_summary_cache.order = state.task_summary_cache.order or {}
-	return state.task_summary_cache
+function M.render_cache_stats()
+	return ensure_render_pool():stats()
+end
+
+function M.clear_task_summary_cache()
+	task_summary_pool:clear()
+	state.task_summary_cache = { entries = {}, order = {} }
+	task_summary_identity = state.task_summary_cache
+end
+
+function M.task_summary_cache_stats()
+	return ensure_task_summary_pool():stats()
 end
 
 ---@param child_session_id string
@@ -35,10 +120,10 @@ end
 ---@return string|nil prompt
 ---@return boolean found
 function M.task_summary_cache_get(child_session_id, revision)
-	local entry = ensure_task_summary_cache().entries[child_session_id]
-	if entry and entry.revision == revision then
-		return entry.summary, entry.prompt, true
-	end
+	local pool = ensure_task_summary_pool()
+	local entry = pool:get(child_session_id, revision)
+	if entry then return entry.summary, entry.prompt, true end
+	pool:delete(child_session_id)
 	return nil, nil, false
 end
 
@@ -47,18 +132,30 @@ end
 ---@param summary table
 ---@param prompt string|nil
 function M.task_summary_cache_put(child_session_id, revision, summary, prompt)
-	local cache = ensure_task_summary_cache()
-	if cache.entries[child_session_id] == nil then
-		table.insert(cache.order, child_session_id)
+	ensure_task_summary_pool():put(child_session_id, revision, { summary = summary, prompt = prompt })
+end
+
+---Drop only the bounded cached entries owned by this session.
+function M.clear_session(session_id)
+	if type(session_id) ~= "string" or session_id == "" then return end
+	local pool = ensure_render_pool()
+	local session_field = session_id .. "\0"
+	for owner in pairs(pool.entries) do
+		if type(owner) == "string" then
+			local separator = owner:find("\0", 1, true)
+			if separator and owner:sub(separator + 1, separator + #session_field) == session_field then
+				pool:delete(owner)
+			end
+		end
 	end
-	cache.entries[child_session_id] = {
-		revision = revision,
-		summary = summary,
-		prompt = prompt,
-	}
-	while #cache.order > TASK_SUMMARY_CACHE_MAX_ENTRIES do
-		local oldest = table.remove(cache.order, 1)
-		cache.entries[oldest] = nil
+	ensure_task_summary_pool():delete(session_id)
+	for index = #code_cache.order, 1, -1 do
+		local key = code_cache.order[index]
+		if key:sub(1, #session_field) == session_field then
+			code_cache.bytes = code_cache.bytes - code_cache.entries[key].bytes
+			code_cache.entries[key] = nil
+			table.remove(code_cache.order, index)
+		end
 	end
 end
 
@@ -133,16 +230,18 @@ end
 ---@param opts? table { reset_expansions?: boolean, preserve_render_cache?: boolean, force_full_render?: boolean }
 function M.reset_chat_surface(opts)
 	opts = opts or {}
+	local details = package.loaded["opencode.ui.chat.execute_details"]
+	if details then details.close({ restore_focus = false }) end
 	state.questions = {}
 	state.permissions = {}
 	state.edits = {}
 	state.message_positions = {}
+	state.pending_inputs = {}
 	state.tasks = {}
 	state.task_child_cache = {}
 	state.task_child_loading = {}
-	state.task_summary_cache = { entries = {}, order = {} }
+	M.clear_task_summary_cache()
 	state.tools = {}
-	state.todo_dock_signature = nil
 	if opts.reset_expansions then
 		state.expanded_tasks = {}
 		state.expanded_tools = {}
@@ -156,6 +255,8 @@ function M.reset_chat_surface(opts)
 	end
 	if not opts.preserve_render_cache then
 		M.clear_render_cache()
+		M.clear_code_cache()
+		memo.clear_all()
 	end
 end
 
@@ -180,28 +281,30 @@ function M.stream_block_key(session_id, message_id, part_id, kind)
 	return M.render_cache_key("stream", session_id, message_id, part_id, kind)
 end
 
----@param key string|nil
-function M.render_cache_get(key)
-	local cache = M.ensure_render_cache()
-	local value = cache.blocks[key]
+---@param key string|nil Exact computation signature.
+---@param owner string|nil Stable owner; defaults to key for older callers.
+function M.render_cache_get(key, owner)
+	local pool = ensure_render_pool()
+	owner = owner or key
+	if not key then pool:delete(owner); return nil end
+	local value = pool:get(owner, key)
+	if value == nil then pool:delete(owner) end
 	return value
 end
 
----@param key string|nil
+---@param owner string|nil
+function M.render_cache_delete(owner)
+	ensure_render_pool():delete(owner)
+end
+
+---@param key string|nil Exact computation signature.
 ---@param value any
-function M.render_cache_put(key, value)
-	if not key or not value then
-		return value
-	end
-	local cache = M.ensure_render_cache()
-	if cache.blocks[key] == nil then
-		table.insert(cache.order, key)
-	end
-	cache.blocks[key] = value
-	while #cache.order > RENDER_CACHE_MAX_BLOCKS do
-		local oldest = table.remove(cache.order, 1)
-		cache.blocks[oldest] = nil
-	end
+---@param owner string|nil Stable owner; defaults to key for older callers.
+function M.render_cache_put(key, value, owner)
+	local pool = ensure_render_pool()
+	owner = owner or key
+	if not key or not value then pool:delete(owner); return value end
+	pool:put(owner, key, value)
 	return value
 end
 

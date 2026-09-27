@@ -1,0 +1,17 @@
+Replace exact text in an existing file, with Neovim preview and editable diff review.
+
+Review:
+- User may edit during review. Final disk content wins. Re-read after review.
+- Treat user review edits as intentional, not mistakes. Do not "fix" or revert them unless user explicitly asks.
+- Never auto-retry `rejected`/`partial`/user-edited results unless the user asks. Follow any explicit user feedback returned with the result.
+
+Usage:
+- Supply `path`, `oldString`, and a different `newString`. Relative paths resolve in the session's active location.
+- Read the file to obtain exact text. From numbered read output, copy only the content, preserving tabs/spaces.
+- `newString` is literal replacement text. Preserve indentation explicitly; if replacing `    foo()`, write `    bar()`, not `bar()`.
+- Replacements that remove leading indentation are rejected by default. Set `allowIndentChange=true` only when intentionally dedenting code.
+- The file must exist and `oldString` must not be empty. Use `neovim_patch` to create, delete, or move files.
+- `oldString` must match once. Missing => `oldString not found in content`. Multiple => add context or use `replaceAll`.
+- Use `replaceAll` for file-wide rename/replacement.
+- One replacement per call. For multiple edits, prefer `neovim_patch`.
+- Output/metadata describe final disk state: `applied`, `rejected`, `partial`, or `failed`; trust it.

@@ -14,7 +14,6 @@ local chat_keymaps = require("opencode.ui.chat.keymaps")
 local chat_session_tabs = require("opencode.ui.chat.session_tabs")
 local spinner = require("opencode.ui.spinner")
 local event_util = require("opencode.events.util")
-local actions = require("opencode.actions")
 local logger = require("opencode.logger")
 
 -- ─── Shared state & sub-modules ──────────────────────────────────────────────
@@ -26,14 +25,15 @@ local FLOAT_CHAT_TOP_PADDING = 2
 
 local render = require("opencode.ui.chat.render")
 local chat_highlights = require("opencode.ui.chat.highlights")
+local ui_highlights = require("opencode.ui.highlights")
 local render_state = require("opencode.ui.chat.render_state")
 local render_context = require("opencode.ui.chat.render_context")
+local render_coordinator = require("opencode.ui.chat.render_coordinator")
 local widget_index = require("opencode.ui.chat.widget_index")
 local message_renderer = require("opencode.ui.chat.message_renderer")
 local edit_previews = require("opencode.ui.chat.edit_previews")
 local chat_cursor = require("opencode.ui.chat.cursor")
 local chat_tasks = require("opencode.ui.chat.tasks")
-local chat_todos = require("opencode.ui.chat.todos")
 local chat_questions = require("opencode.ui.chat.questions")
 local chat_permissions = require("opencode.ui.chat.permissions")
 local chat_edits = require("opencode.ui.chat.edits")
@@ -49,6 +49,11 @@ local question_state = require("opencode.question.state")
 local permission_state = require("opencode.permission.state")
 local edit_state = require("opencode.edit.state")
 local apply_widget_focus_cursor
+
+-- Headless consumers inspect buffers; screen redraw has no target there.
+local function redraw()
+	if #vim.api.nvim_list_uis() > 0 then vim.cmd("redraw") end
+end
 
 -- ─── Configuration ────────────────────────────────────────────────────────────
 
@@ -67,35 +72,12 @@ local defaults = {
 		title = " OpenCode ",
 		title_pos = "center",
 	},
-	message_display = {
-		user_prefix = "> ",
-	},
-	todo = {
-		enabled = true,
-		show_dock = true,
-		hide_when_done = true,
-		default_collapsed = false,
-		keymaps = {
-			toggle = "T",
-		},
-		icons = {
-			pending = "[ ]",
-			in_progress = "[•]",
-			completed = "[✓]",
-			cancelled = "[ ]",
-		},
-		highlights = {
-			pending = "Comment",
-			in_progress = "WarningMsg",
-			completed = "DiagnosticOk",
-			cancelled = "Comment",
-			header = "Title",
-			border = "Comment",
-		},
-	},
 	keymaps = {
 		close = "q",
 		close_session = "x",
+		cancel_pending = "C",
+		edit_pending = "E",
+		steer_pending = "S",
 		focus_input = "i",
 		scroll_up = "<C-u>",
 		scroll_down = "<C-d>",
@@ -111,7 +93,10 @@ local function get_config()
 	return vim.tbl_deep_extend("force", defaults, full_config.chat or {})
 end
 
-local reset_chat_surface = render_state.reset_chat_surface
+local function reset_chat_surface(opts)
+	render_state.reset_chat_surface(opts)
+	state.transcript_dirty = true
+end
 local stream_block_key = render_state.stream_block_key
 local render_highlight_signature = render_state.render_highlight_signature
 local highlight_clear_start = render_state.highlight_clear_start
@@ -125,25 +110,32 @@ local resize_refresh_autocmds_setup = false
 local resize_refresh_scheduled = false
 local render_retry_used = false
 local render_retry_token = 0
+local pending_render_data
+local render_schedule_token = 0
+local winbar_refresh_scheduled = false
+local opening = false
 
+-- Scheduling follows the transcript buffer in any window. Cursor/detail helpers
+-- still follow the owned chat window through cs.is_chat_buffer_displayed().
 local function chat_surface_is_visible()
-	return state.visible
-		and state.bufnr
-		and vim.api.nvim_buf_is_valid(state.bufnr)
-		and state.winid
-		and vim.api.nvim_win_is_valid(state.winid)
-		and (not state.tabpage or state.tabpage == vim.api.nvim_get_current_tabpage())
+	if not state.bufnr or not vim.api.nvim_buf_is_valid(state.bufnr) then return false end
+	for _, winid in ipairs(vim.api.nvim_list_wins()) do
+		if vim.api.nvim_win_get_buf(winid) == state.bufnr then return true end
+	end
+	return false
 end
 
 local function invalidate_cached_render_state()
 	render_state.clear_render_cache()
+	render_state.clear_code_cache()
 	render_state.invalidate_render_highlights(0)
-	state.todo_dock_signature = nil
 	state.force_full_render = true
+	state.transcript_dirty = true
 end
 
 local function apply_config_change()
 	state.config = get_config()
+	ui_highlights.refresh()
 	invalidate_cached_render_state()
 	if chat_surface_is_visible() then
 		M.schedule_render({ force = true })
@@ -168,7 +160,6 @@ function M.handle_colorscheme()
 	colorscheme_refresh_scheduled = true
 	vim.schedule(function()
 		colorscheme_refresh_scheduled = false
-		chat_todos.refresh_highlights()
 		invalidate_cached_render_state()
 		if chat_surface_is_visible() then
 			M.schedule_render({ force = true })
@@ -195,7 +186,7 @@ local function resize_event_affects_chat(windows)
 	end
 
 	for _, winid in ipairs(windows) do
-		if winid == state.winid then
+		if vim.api.nvim_win_is_valid(winid) and vim.api.nvim_win_get_buf(winid) == state.bufnr then
 			return true
 		end
 	end
@@ -227,15 +218,25 @@ local function setup_resize_refresh_autocmds()
 	resize_refresh_autocmds_setup = true
 
 	local group = vim.api.nvim_create_augroup("OpenCodeChatResize", { clear = false })
+	vim.api.nvim_create_autocmd("BufWinEnter", {
+		group = group,
+		callback = function(args)
+			if args.buf == state.bufnr and not opening and not state.render_in_progress
+				and (state.transcript_dirty or state.force_full_render) then
+				M.do_render()
+			end
+		end,
+		desc = "Refresh dirty OpenCode transcript before displaying its buffer",
+	})
 	vim.api.nvim_create_autocmd("VimResized", {
 		group = group,
 		callback = schedule_resize_refresh,
-		desc = "Refresh OpenCode chat and todo dock after editor resize",
+		desc = "Refresh OpenCode chat after editor resize",
 	})
 	pcall(vim.api.nvim_create_autocmd, "WinResized", {
 		group = group,
 		callback = schedule_window_resize_refresh,
-		desc = "Refresh OpenCode chat and todo dock after window resize",
+		desc = "Refresh OpenCode chat after window resize",
 	})
 end
 
@@ -431,11 +432,21 @@ function M.create()
 	then
 	events.on("chat_render", function(data)
 		vim.schedule(function()
-			M.schedule_render({
-				force = type(data) == "table" and data.force == true,
-			})
+			M.schedule_render(data)
 		end)
 	end)
+
+	local function refresh_winbar()
+		if winbar_refresh_scheduled then return end
+		winbar_refresh_scheduled = true
+		vim.schedule(function()
+			winbar_refresh_scheduled = false
+			M.update_winbar()
+		end)
+	end
+	for _, event in ipairs({ "sessions_changed", "session_pending_change", "session_status_change" }) do
+		events.on(event, refresh_winbar)
+	end
 
 	events.on("config_change", function()
 		schedule_config_refresh()
@@ -466,17 +477,13 @@ function M.create()
 			if nested_child and (part_type == "text" or part_type == "reasoning" or field == "text" or field == "reasoning") then
 				return
 			end
-			if not state.visible or not state.bufnr or not vim.api.nvim_buf_is_valid(state.bufnr) then
+			if not chat_surface_is_visible() then
+				state.transcript_dirty = true
 				state.force_full_render = true
 				return
 			end
-			if
-				not M.update_stream_part_block(render_session_id, message_id, part_id, {
-					delta = data and data.delta,
-					field = data and data.field,
-				})
-			then
-				M.schedule_render()
+			if state.transcript_dirty or not M.update_stream_part_block(render_session_id, message_id, part_id) then
+				M.schedule_render(data)
 			end
 		end)
 	end)
@@ -526,7 +533,11 @@ function M.create()
 			if not preserve_cache or (changed_session and reason ~= "child_navigation") then
 				state.session_stack = {}
 			end
-			chat_todos.update_window()
+			if changed_session and state.winid and vim.api.nvim_win_is_valid(state.winid) then
+				vim.api.nvim_win_call(state.winid, function()
+					vim.fn.winrestview({ topline = 1, leftcol = 0, skipcol = 0 })
+				end)
+			end
 		end)
 	end)
 	chat_event_handlers_setup = true
@@ -591,7 +602,6 @@ local function handle_chat_window_closed(closed_winid)
 		return
 	end
 	chat_float_focus.clear()
-	chat_todos.close_window()
 	chat_session_tabs.close_float_window()
 	state.visible = false
 	state.winid = nil
@@ -630,6 +640,8 @@ function M.open()
 	if not state.bufnr or not vim.api.nvim_buf_is_valid(state.bufnr) then
 		M.create()
 	end
+	opening = true
+	local opened, open_error = xpcall(function()
 	reset_chat_surface()
 
 	local cfg = state.config
@@ -684,15 +696,12 @@ function M.open()
 
 		register_chat_window_closed_autocmd(popup.winid)
 	else
-		local split_cmd = "split"
-		local split_opts = {}
+		local split_cmd
 
 		if cfg.layout == "vertical" then
 			split_cmd = cfg.position == "right" and "botright vsplit" or "topleft vsplit"
-			split_opts.width = cfg.width
 		else
 			split_cmd = cfg.position == "bottom" and "botright split" or "topleft split"
-			split_opts.height = cfg.height
 		end
 
 		vim.cmd(split_cmd)
@@ -731,11 +740,13 @@ function M.open()
 	if line_count > 0 and not focused_pending_widget then
 		vim.api.nvim_win_set_cursor(state.winid or 0, { line_count, 0 })
 	end
+	end, debug.traceback)
+	opening = false
+	if not opened then error(open_error) end
 end
 
 function M.close()
 	if not state.visible then
-		chat_todos.close_window()
 		chat_session_tabs.close_float_window()
 		reset_chat_surface()
 		return
@@ -743,7 +754,6 @@ function M.close()
 
 	reset_chat_surface()
 	chat_float_focus.clear()
-	chat_todos.close_window()
 	chat_session_tabs.close_float_window()
 
 	if input.is_visible() then
@@ -754,6 +764,14 @@ function M.close()
 		state.layout:unmount()
 	else
 		if state.winid and vim.api.nvim_win_is_valid(state.winid) then
+			local normal_windows = 0
+			for _, winid in ipairs(vim.api.nvim_tabpage_list_wins(vim.api.nvim_win_get_tabpage(state.winid))) do
+				if vim.api.nvim_win_get_config(winid).relative == "" then normal_windows = normal_windows + 1 end
+			end
+			if normal_windows == 1 then
+				-- Closing a diff can leave chat as the tab's only normal window.
+				vim.api.nvim_win_call(state.winid, function() vim.cmd("leftabove new") end)
+			end
 			vim.api.nvim_win_close(state.winid, true)
 		end
 	end
@@ -813,6 +831,9 @@ function M.focus()
 end
 
 function M.focus_input()
+	-- Selecting a skill can focus an input that is already open. Focusing the
+	-- chat window first would trigger the input's WinLeave handler and close it.
+	if input.is_visible() and not get_relevant_question() then return input.focus() end
 	if not state.visible then
 		M.open()
 	end
@@ -827,19 +848,53 @@ function M.focus_input()
 		vim.notify("Answer or cancel the pending question before opening chat input.", vim.log.levels.INFO)
 		return false
 	end
+	if require("opencode.ui.chat.pending_inputs").resume_edit() then return true end
 
 	input.show({
 		winid = state.winid,
 		float_dims = state.float_dims,
+		allow_chat_commands = true,
 		on_send = function(text, parts)
 			local actions = require("opencode.actions")
 			local slash_ok, slash = pcall(require, "opencode.slash")
 			local has_parts = type(parts) == "table" and #parts > 0
-			if not has_parts and slash_ok and type(slash.parse) == "function" and type(slash.execute) == "function" then
+			if slash_ok and type(slash.parse) == "function" and type(slash.execute) == "function" then
 				local parsed = slash.parse(text)
 				if parsed then
-					slash.execute(parsed)
-					return
+					local command = require("opencode.command_registry").get_slash(parsed.command)
+					if has_parts and command and command.with_parts == "reject" then
+						require("opencode.ui.input.history").set_pending(text, parts)
+						vim.notify(command.parts_error or ("/" .. parsed.command .. " does not support attachments"), vim.log.levels.WARN)
+						return
+					end
+					-- Slash-like text with attachments remains a prompt unless the
+					-- command explicitly accepts them as a draft-only action.
+					if not has_parts or (command and command.with_parts == "execute") then
+						local owner_session_id = require("opencode.state").get_session().id
+						local context = {
+							source = "slash_submit",
+							args = parsed.args,
+							parsed = parsed,
+							session_id = owner_session_id,
+							resume_input = function()
+								if require("opencode.state").get_session().id == owner_session_id and M.is_visible() then
+									M.focus_input()
+								end
+							end,
+						}
+						if command and command.on_select then
+							-- The input closes after on_send returns. Run actions that
+							-- open another view after its teardown.
+							vim.schedule(function()
+								if require("opencode.state").get_session().id == owner_session_id then
+									slash.execute(parsed, context)
+								end
+							end)
+						else
+							slash.execute(parsed, context)
+						end
+						return
+					end
 				end
 			end
 			actions.send(text, { parts = parts })
@@ -855,7 +910,7 @@ function M.setup(opts)
 	state.config = vim.tbl_deep_extend("force", get_config(), opts or {})
 end
 
--- ─── Legacy message API ───────────────────────────────────────────────────────
+-- ─── Local notices and view reset ────────────────────────────────────────────
 
 ---@param role string
 ---@param content string
@@ -881,14 +936,8 @@ local function shift_tracked_lines(old_end, delta, skip_stream_block_key)
 	})
 end
 
-function M.update_stream_part_block(session_id, message_id, part_id, opts)
-	opts = opts or {}
-	if part_id == nil then
-		part_id = message_id
-		message_id = session_id
-		session_id = nil
-	end
-	if not message_id then
+function M.update_stream_part_block(session_id, message_id, part_id)
+	if not session_id or not message_id then
 		return false
 	end
 	if not part_id then
@@ -903,9 +952,28 @@ function M.update_stream_part_block(session_id, message_id, part_id, opts)
 	if not part or (part.type ~= "text" and part.type ~= "reasoning") then
 		return false
 	end
-	local current_session = require("opencode.state").get_session()
-	local effective_session_id = session_id or part.sessionID or current_session.id
-	if part.sessionID and effective_session_id and part.sessionID ~= effective_session_id then
+	local effective_session_id = session_id
+	if part.sessionID and part.sessionID ~= effective_session_id then
+		return false
+	end
+
+	if part.type == "reasoning" then
+		for id, pos in pairs(state.tools) do
+			if pos.activity_group and pos.session_id == effective_session_id then
+				for _, ref in ipairs(pos.activity_group.refs) do
+					if ref.part.id == part_id and ref.message.id == message_id then
+						local cursor = capture_widget_cursor_context()
+						local scroll = should_auto_scroll(cursor)
+						local updated = chat_tasks.rerender_tool(id)
+						if updated then
+							if not restore_widget_cursor_context(cursor) and scroll then chat_cursor.scroll_to_bottom() end
+							redraw()
+						end
+						return updated
+					end
+				end
+			end
+		end
 		return false
 	end
 
@@ -942,92 +1010,39 @@ function M.update_stream_part_block(session_id, message_id, part_id, opts)
 
 	local widget_cursor = capture_widget_cursor_context()
 	local should_scroll = should_auto_scroll(widget_cursor)
-	local chat_width = render.get_chat_text_width()
 
 	local function finish_stream_update()
 		if apply_widget_focus_cursor and apply_widget_focus_cursor() then
-			vim.cmd("redraw")
+			redraw()
 			return true
 		end
 
 		if restore_widget_cursor_context(widget_cursor) then
-			vim.cmd("redraw")
+			redraw()
 			return true
 		end
 
 		if should_scroll and state.visible and state.winid and vim.api.nvim_win_is_valid(state.winid) then
-			local buf_lines = vim.api.nvim_buf_line_count(state.bufnr)
-			vim.api.nvim_win_set_cursor(state.winid, { buf_lines, 0 })
+			chat_cursor.scroll_to_bottom()
 		end
 
-		vim.cmd("redraw")
-		return true
-	end
-
-	local function try_plain_text_append()
-		local delta = opts.delta
-		if part.type ~= "text" or opts.field ~= "text" or type(delta) ~= "string" or delta == "" then
-			return false
-		end
-		if delta:find("\r", 1, true) or delta:find("\0", 1, true) then
-			return false
-		end
-		if delta:find("\n", 1, true) then
-			return false
-		end
-		if block.chat_width ~= chat_width then
-			return false
-		end
-		if type(block.text_length) ~= "number" then
-			return false
-		end
-
-		local content = part.text or ""
-		if #content ~= block.text_length + #delta then
-			return false
-		end
-
-		local last_line = vim.api.nvim_buf_get_lines(state.bufnr, block.end_line, block.end_line + 1, false)[1]
-		if type(last_line) ~= "string" then
-			return false
-		end
-
-		vim.bo[state.bufnr].modifiable = true
-		local ok = pcall(
-			vim.api.nvim_buf_set_text,
-			state.bufnr,
-			block.end_line,
-			#last_line,
-			block.end_line,
-			#last_line,
-			{ delta }
-		)
-		vim.bo[state.bufnr].modifiable = false
-		if not ok then
-			return false
-		end
-
-		block.text_length = #content
-		block.chat_width = chat_width
-		local result = finish_stream_update()
-		return result
-	end
-
-	if try_plain_text_append() then
+		redraw()
 		return true
 	end
 
 	local content = part.text or ""
-	local content_lines
-	if part.type == "reasoning" then
-		content_lines = render.render_reasoning(content)
-	else
-		content_lines = render.render_content(content, { stream_plain = true })
-	end
-	if #content_lines == 0 then
-		local empty = NuiLine()
-		empty:append("")
-		content_lines = { empty }
+	local content_lines = render.render_content(content, {
+		highlight_code = render_state.code_highlighter(render_state.render_cache_key(effective_session_id, message_id, part_id)),
+	})
+	-- An authoritative replacement can remove the entire Markdown part.
+	-- Rebuild its surrounding margins/ranges rather than leaving a phantom row.
+	if #content_lines == 0 then return false end
+	if block.trailing_separator then
+		while #content_lines > 0 and content_lines[#content_lines]:content() == ""
+			and not content_lines[#content_lines]._opencode_preserve_blank do
+			table.remove(content_lines)
+		end
+		table.insert(content_lines, NuiLine())
 	end
 	local replacement = render.extract_lines(content_lines)
 
@@ -1050,8 +1065,6 @@ function M.update_stream_part_block(session_id, message_id, part_id, opts)
 	end
 
 	block.end_line = block.start_line + new_count - 1
-	block.text_length = #content
-	block.chat_width = chat_width
 	shift_tracked_lines(old_end, delta, block_key)
 
 	local result = finish_stream_update()
@@ -1085,8 +1098,8 @@ function M.render()
 		current_session = current_session,
 		in_child_session_view = ctx.in_child_session_view,
 	})
-	local stats = message_renderer.render(ctx, index)
-	local stream_block_count = ctx:commit_stream_blocks()
+	message_renderer.render(ctx, index)
+	ctx:commit_stream_blocks()
 
 	return ctx.raw_lines, ctx.nui_lines, ctx.content_highlights
 end
@@ -1142,12 +1155,27 @@ end
 
 local RENDER_THROTTLE_MS = 16
 
+local function apply_scheduled_render()
+	local data = pending_render_data
+	pending_render_data = nil
+	if not render_coordinator.request_relevant(data) then
+		M.update_winbar()
+		return
+	end
+	if not chat_surface_is_visible() then
+		state.transcript_dirty = true
+		state.force_full_render = true
+		M.update_winbar()
+		return
+	end
+	if (data and data.force) or state.transcript_dirty then state.force_full_render = true end
+	state.last_render_time = vim.uv.now()
+	M.do_render()
+end
+
 ---@param opts? table { force?: boolean }
 function M.schedule_render(opts)
-	opts = opts or {}
-	if opts.force then
-		state.force_full_render = true
-	end
+	pending_render_data = render_coordinator.merge_requests(pending_render_data, opts)
 	if state.render_scheduled then
 		return
 	end
@@ -1156,15 +1184,16 @@ function M.schedule_render(opts)
 	local elapsed = now - state.last_render_time
 
 	if elapsed >= RENDER_THROTTLE_MS then
-		state.last_render_time = now
-		M.do_render()
+		apply_scheduled_render()
 	else
 		state.render_scheduled = true
+		render_schedule_token = render_schedule_token + 1
+		local token = render_schedule_token
 		local delay = RENDER_THROTTLE_MS - elapsed
 		vim.defer_fn(function()
+			if token ~= render_schedule_token then return end
 			state.render_scheduled = false
-			state.last_render_time = vim.uv.now()
-			M.do_render()
+			apply_scheduled_render()
 		end, delay)
 	end
 end
@@ -1182,6 +1211,11 @@ function M.do_render()
 	if not state.bufnr or not vim.api.nvim_buf_is_valid(state.bufnr) then
 		return
 	end
+	-- A synchronous refresh already includes all stored changes. An older
+	-- throttle callback must not consume requests queued after this refresh.
+	render_schedule_token = render_schedule_token + 1
+	pending_render_data = nil
+	state.render_scheduled = false
 	local render_generation = (state.render_generation or 0) + 1
 	state.render_generation = render_generation
 	state.render_in_progress = true
@@ -1192,6 +1226,7 @@ function M.do_render()
 		render_retry_used = false
 		render_retry_token = render_retry_token + 1
 		state.render_in_progress = false
+		state.transcript_dirty = false
 	end
 
 	local ok, render_error = xpcall(function()
@@ -1204,7 +1239,6 @@ function M.do_render()
 		local should_scroll = should_auto_scroll(widget_cursor)
 
 		local new_lines, nui_lines, content_highlights = M.render()
-		chat_todos.update_window()
 		resume_render_animation_timers()
 		local highlight_signature = nil
 		local function current_highlight_signature()
@@ -1266,7 +1300,7 @@ function M.do_render()
 			state.last_render_highlight_signature = nil
 			state.render_highlights_dirty_start = nil
 			if apply_widget_focus_cursor() then
-				vim.cmd("redraw")
+				redraw()
 			end
 			mark_render_applied()
 			return
@@ -1282,23 +1316,22 @@ function M.do_render()
 			vim.bo[state.bufnr].modifiable = false
 
 			if apply_widget_focus_cursor() then
-				vim.cmd("redraw")
+				redraw()
 				mark_render_applied()
 				return
 			end
 
 			if restore_widget_cursor_context(widget_cursor) then
-				vim.cmd("redraw")
+				redraw()
 				mark_render_applied()
 				return
 			end
 
 			if should_scroll and state.visible and state.winid and vim.api.nvim_win_is_valid(state.winid) then
-				local buf_lines = vim.api.nvim_buf_line_count(state.bufnr)
-				vim.api.nvim_win_set_cursor(state.winid, { buf_lines, 0 })
+				chat_cursor.scroll_to_bottom()
 			end
 
-			vim.cmd("redraw")
+			redraw()
 			mark_render_applied()
 			return
 		end
@@ -1318,7 +1351,7 @@ function M.do_render()
 					apply_render_highlights(state.render_highlights_dirty_start or 0)
 				end
 				if apply_widget_focus_cursor() then
-					vim.cmd("redraw")
+					redraw()
 				end
 				mark_render_applied()
 				return
@@ -1343,23 +1376,22 @@ function M.do_render()
 		vim.bo[state.bufnr].modifiable = false
 
 		if apply_widget_focus_cursor() then
-			vim.cmd("redraw")
+			redraw()
 			mark_render_applied()
 			return
 		end
 
 		if restore_widget_cursor_context(widget_cursor) then
-			vim.cmd("redraw")
+			redraw()
 			mark_render_applied()
 			return
 		end
 
 		if should_scroll and state.visible and state.winid and vim.api.nvim_win_is_valid(state.winid) then
-			local buf_lines = vim.api.nvim_buf_line_count(state.bufnr)
-			vim.api.nvim_win_set_cursor(state.winid, { buf_lines, 0 })
+			chat_cursor.scroll_to_bottom()
 		end
 
-		vim.cmd("redraw")
+		redraw()
 		mark_render_applied()
 	end, function(err)
 		return err

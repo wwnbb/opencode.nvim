@@ -3,12 +3,14 @@
 local M = {}
 
 local tool_panel = require("opencode.ui.chat.tool_panel")
+local render = require("opencode.ui.chat.render")
 local syntax = require("opencode.ui.syntax")
 local text_util = require("opencode.util.text")
 
 local MAX_COLLAPSED_COMMAND_LINES = 12
 local MAX_COLLAPSED_OUTPUT_LINES = 10
 local PANEL_PREFIX = tool_panel.PANEL_PREFIX
+local PANEL_PREFIX_WIDTH = vim.api.nvim_strwidth(PANEL_PREFIX)
 local PANEL_BORDER_HL = "OpenCodeBashMuted"
 
 local panel_helpers = tool_panel.create_panel({
@@ -25,6 +27,8 @@ local function ensure_highlights()
 	panel_helpers.set_hl("OpenCodeBashOutput", "Normal", nil)
 	panel_helpers.set_hl("OpenCodeBashError", "DiagnosticError", "ErrorMsg")
 end
+
+require("opencode.ui.highlights").register("opencode.ui.chat.bash", ensure_highlights)
 
 ---@param value any
 ---@return string
@@ -68,17 +72,6 @@ end
 
 local trim_edge_newlines = text_util.trim_edge_newlines
 
----@param lines string[]
----@param start_index number
----@return string
-local function join_from(lines, start_index)
-	local out = {}
-	for i = start_index, #lines do
-		table.insert(out, lines[i])
-	end
-	return table.concat(out, "\n")
-end
-
 ---@param output string
 ---@param command string
 ---@param workdir string
@@ -95,33 +88,18 @@ local function strip_echoed_command(output, command, workdir)
 	local second = vim.trim(lines[2] or "")
 
 	if wd_raw ~= "" and (first == wd_raw) and second == cmd then
-		return trim_edge_newlines(join_from(lines, 3))
+		return trim_edge_newlines(table.concat(lines, "\n", 3))
 	end
 
 	if first == cmd or first == "$ " .. cmd then
-		return trim_edge_newlines(join_from(lines, 2))
+		return trim_edge_newlines(table.concat(lines, "\n", 2))
 	end
 
 	if wd_raw ~= "" and first == wd_raw .. " " .. cmd then
-		return trim_edge_newlines(join_from(lines, 2))
+		return trim_edge_newlines(table.concat(lines, "\n", 2))
 	end
 
 	return trim_edge_newlines(output)
-end
-
----@param value any
----@return number|nil
-local function normalize_exit_code(value)
-	if type(value) == "number" then
-		return value
-	end
-	if type(value) == "string" and value ~= "" then
-		local num = tonumber(value)
-		if num then
-			return num
-		end
-	end
-	return nil
 end
 
 ---@param result table
@@ -133,7 +111,7 @@ local function add_command(result, command_lines, expanded)
 	local limit = expanded and #command_lines or math.min(MAX_COLLAPSED_COMMAND_LINES, #command_lines)
 	local displayed_lines = {}
 	for i = 1, limit do
-		local line = command_lines[i] or ""
+		local line = render.expand_tabs(command_lines[i] or "", PANEL_PREFIX_WIDTH + 2)
 		table.insert(displayed_lines, line)
 		local prefix = i == 1 and "$ " or "  "
 		local line_index, _, rows = add_panel_raw_line(result, prefix .. line, "OpenCodeBashCommand")
@@ -167,7 +145,6 @@ function M.render_tool(tool_part, expanded)
 	if type(tool_part) ~= "table" or tool_part.tool ~= "bash" then
 		return nil
 	end
-	ensure_highlights()
 
 	local ctx = tool_panel.context(tool_part)
 	local tool_state = ctx.state
@@ -195,8 +172,8 @@ function M.render_tool(tool_part, expanded)
 		description = description .. " in " .. workdir
 	end
 
-	local exit_code = normalize_exit_code(metadata.exit)
-		or normalize_exit_code(tool_state.exit)
+	local exit_code = tool_panel.normalize_number(metadata.exit)
+		or tool_panel.normalize_number(tool_state.exit)
 	local output = first_nonempty_text(ctx.output)
 	local error_text = first_nonempty_text(ctx.error)
 	local output_body = strip_echoed_command(output, command, workdir)
@@ -210,6 +187,7 @@ function M.render_tool(tool_part, expanded)
 	local has_overflow = #entries > MAX_COLLAPSED_OUTPUT_LINES
 	local output_probe_lines = {}
 	for _, entry in ipairs(entries) do
+		entry.text = render.expand_tabs(entry.text, PANEL_PREFIX_WIDTH)
 		if entry.hl_group == "OpenCodeBashOutput" and entry.text ~= "" then
 			table.insert(output_probe_lines, entry.text)
 		end
@@ -233,7 +211,7 @@ function M.render_tool(tool_part, expanded)
 		header_hl = "OpenCodeBashCommand"
 	end
 
-	add_panel_line(result, header, header_hl)
+	add_panel_line(result, render.expand_tabs(header, PANEL_PREFIX_WIDTH), header_hl)
 	add_panel_blank(result)
 	add_command(result, command_lines, expanded)
 
@@ -273,7 +251,6 @@ function M.render_tool(tool_part, expanded)
 				scope = "tools",
 				line_start = output_start_line,
 				col_offset = #PANEL_PREFIX,
-				compat_markdown = false,
 			})
 		else
 			syntax.add_highlights(result, output_text, output_lang, {

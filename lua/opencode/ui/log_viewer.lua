@@ -28,7 +28,6 @@ local state = {
 	visible = false,
 	auto_scroll = false,
 	config = nil,
-	-- Data layer: flat list of entries (message.part.updated replaces in-place)
 	entries = {}, -- log entry objects
 	entries_log_count = 0, -- raw log count consumed into entries
 	header_line_count = 0,
@@ -73,44 +72,6 @@ end
 -- Data layer
 ---------------------------------------------------------------
 
--- Check if entry is a message.part.updated SSE event.
--- Returns messageID string or nil.
-local function get_part_message_id(entry)
-	local d = entry.data and entry.data.data
-	if type(d) == "table" and d.part and d.part.messageID then
-		return d.part.messageID
-	end
-	return nil
-end
-
--- Search state.entries backwards (up to 100) for an entry with matching messageID.
--- Returns entry index or nil.
-local function find_entry_by_message_id(message_id)
-	for i = #state.entries, math.max(1, #state.entries - 99), -1 do
-		local mid = get_part_message_id(state.entries[i])
-		if mid == message_id then
-			return i
-		end
-	end
-	return nil
-end
-
--- Insert a new entry or replace the most recent message.part.updated entry
--- for the same messageID.
-local function upsert_entry(entry)
-	local mid = get_part_message_id(entry)
-	if mid then
-		local target = find_entry_by_message_id(mid)
-		if target then
-			state.entries[target] = entry
-			return "replace", target
-		end
-	end
-
-	table.insert(state.entries, entry)
-	return "append", #state.entries
-end
-
 -- Rebuild state.entries from raw logs (full rebuild)
 local function rebuild_entries()
 	local logger = require("opencode.logger")
@@ -118,16 +79,10 @@ local function rebuild_entries()
 	state.entries = {}
 
 	for i = log_start, #logs do
-		upsert_entry(logs[i])
+		state.entries[#state.entries + 1] = logs[i]
 	end
 
 	state.entries_log_count = #logs
-end
-
--- Ingest a single entry into state.entries incrementally.
--- Returns: action ("replace"|"append"), entry_index
-local function ingest_entry(entry)
-	return upsert_entry(entry)
 end
 
 ---------------------------------------------------------------
@@ -447,14 +402,8 @@ function M.render_entry(entry)
 	local bufnr = state.split.bufnr
 
 	-- Ingest into data layer
-	local action, _ = ingest_entry(entry)
+	state.entries[#state.entries + 1] = entry
 	state.entries_log_count = #logs
-
-	if action == "replace" then
-		-- Data changed in-place, just do full refresh
-		M.refresh()
-		return
-	end
 
 	-- New entry: append to buffer
 	vim.bo[bufnr].modifiable = true
@@ -612,7 +561,7 @@ function M.toggle_auto_scroll()
 	vim.notify(string.format("Auto-scroll %s", state.auto_scroll and "enabled" or "disabled"), vim.log.levels.INFO)
 end
 
--- Show help (preserved - already uses nui.popup)
+-- Show help for the split log viewer.
 function M.show_help()
 	local lines = {
 		" Log Viewer Keymaps ",
@@ -633,32 +582,25 @@ function M.show_help()
 
 	local width = 38
 	local height = #lines
-	local ui_list = vim.api.nvim_list_uis()
-	local ui = ui_list and ui_list[1] or { width = 80, height = 24 }
-	local row = math.floor((ui.height - height) / 2)
-	local col = math.floor((ui.width - width) / 2)
 
-	local Popup = require("nui.popup")
-	local popup = Popup({
+	local popup = require("opencode.ui.popup").new({
 		enter = true,
 		focusable = true,
 		border = {
 			style = "rounded",
 			text = { top = " Help ", top_align = "center" },
 		},
-		position = { row = row, col = col },
 		size = { width = width, height = height },
 	})
 
 	popup:mount()
-	vim.api.nvim_buf_set_lines(popup.bufnr, 0, -1, false, lines)
-	vim.bo[popup.bufnr].modifiable = false
+	popup:render(lines)
 
 	-- Close on any key
 	local close_keys = { "q", "<Esc>", "<CR>", "<Space>" }
 	for _, key in ipairs(close_keys) do
 		vim.keymap.set("n", key, function()
-			popup:unmount()
+			popup:close()
 		end, { buffer = popup.bufnr, noremap = true, silent = true })
 	end
 
@@ -667,7 +609,7 @@ function M.show_help()
 		if not char:match("[qQ]") then
 			pcall(function()
 				vim.keymap.set("n", char, function()
-					popup:unmount()
+					popup:close()
 				end, { buffer = popup.bufnr, noremap = true, silent = true, nowait = true })
 			end)
 		end

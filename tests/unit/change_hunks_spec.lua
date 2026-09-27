@@ -1,0 +1,22 @@
+local changes = require("opencode.artifact.changes")
+
+describe("change hunks", function()
+	it("keeps insertions minimal instead of marking shifted lines", function()
+		local original = { "a", "b", "c" }
+		local top = changes.calculate_hunks(original, { "x", "a", "b", "c" })
+		assert.equals(1, #top)
+		assert.equals(1, top[1].line_count)
+		assert.same({ "" }, top[1].original_lines)
+		assert.same({ "x" }, top[1].modified_lines)
+		local middle = changes.calculate_hunks(original, { "a", "x", "b", "c" })
+		assert.equals(2, middle[1].start_line)
+		assert.equals(1, middle[1].line_count)
+	end)
+
+	it("represents a deletion with an empty modified side", function()
+		local hunks = changes.calculate_hunks({ "a", "b", "c" }, { "a", "c" })
+		assert.equals(2, hunks[1].start_line)
+		assert.same({ "b" }, hunks[1].original_lines)
+		assert.same({ "" }, hunks[1].modified_lines)
+	end)
+end)

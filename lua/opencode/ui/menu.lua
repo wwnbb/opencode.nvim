@@ -2,10 +2,22 @@
 
 local M = {}
 
-local Popup = require("nui.popup")
+local Popup = require("opencode.ui.popup")
 local float_context = require("opencode.ui.float_context")
 
-local hl_ns = vim.api.nvim_create_namespace("opencode_menu")
+require("opencode.ui.highlights").register("opencode.ui.menu", function()
+	for name, link in pairs({
+		Normal = "Normal",
+		Title = "Title",
+		Footer = "FloatBorder",
+		Selected = "PmenuSel",
+		Priority = "String",
+		Placeholder = "Question",
+		Message = "Normal",
+	}) do
+		vim.api.nvim_set_hl(0, "OpenCodeMenu" .. name, { link = link, default = true })
+	end
+end)
 
 local function display_width(text)
 	return vim.fn.strdisplaywidth(tostring(text or ""))
@@ -152,14 +164,13 @@ local function default_filter(item, query)
 	return true
 end
 
-local function format_item_line(item, selected, selected_items, multi_select, width)
-	local prefix = selected and "▸ " or "  "
+local function format_item_content(item, selected_items, multi_select, width)
 	local marker = ""
 	if multi_select then
 		marker = selected_items[item_key(item)] and "[x] " or "[ ] "
 	end
 
-	local left = prefix .. marker .. item_label(item)
+	local left = marker .. item_label(item)
 	local description = item_description(item)
 	if not description or description == "" then
 		return truncate_to_width(left, width)
@@ -167,13 +178,42 @@ local function format_item_line(item, selected, selected_items, multi_select, wi
 
 	local desc_width = display_width(description)
 	local left_width = width - desc_width - 2
-	if left_width <= display_width(prefix .. marker) + 4 then
+	if left_width <= display_width(marker) + 4 then
 		return truncate_to_width(left, width)
 	end
 
 	left = truncate_to_width(left, left_width)
 	local padding = math.max(2, width - display_width(left) - desc_width)
 	return left .. string.rep(" ", padding) .. description
+end
+
+local function format_item_line(item, selected_items, multi_select, width)
+	local content = format_item_content(item, selected_items, multi_select, math.max(0, width - 6))
+	return "   " .. content .. string.rep(" ", math.max(0, width - 3 - display_width(content)))
+end
+
+-- Keep every shortcut visible, including custom actions in narrow selectors.
+local function wrap_footer(text, width)
+	local lines, line = {}, ""
+	for word in vim.trim(text):gmatch("%S+") do
+		if line ~= "" and display_width(line .. " " .. word) > width then
+			table.insert(lines, line)
+			line = ""
+		end
+		while display_width(word) > width do
+			local count = 1
+			while count < vim.fn.strchars(word) and display_width(vim.fn.strcharpart(word, 0, count + 1)) <= width do
+				count = count + 1
+			end
+			table.insert(lines, vim.fn.strcharpart(word, 0, count))
+			word = vim.fn.strcharpart(word, count)
+		end
+		line = line == "" and word or (line .. " " .. word)
+	end
+	if line ~= "" then
+		table.insert(lines, line)
+	end
+	return lines
 end
 
 function M.open(opts)
@@ -183,27 +223,40 @@ function M.open(opts)
 	local keys = normalize_keys(opts.keys)
 	local searchable = opts.searchable == true
 	local multi_select = opts.multi_select == true
-	local width = opts.width or (searchable and 60 or 40)
-	local list_height = opts.list_height
-		or math.max(math.min(math.max(#items, 1), searchable and 15 or 20), searchable and 8 or 1)
-	local total_width = width + 2
-	local total_height = searchable and (list_height + 5) or (list_height + 2)
-	local relative, row, col, zindex = float_context.resolve_centered_placement(total_width, total_height)
+	local border_width, border_height = Popup.outer_insets()
+	local width = math.max(12, math.min(opts.width or (searchable and 60 or 40), vim.o.columns - border_width))
 	local footer = build_footer({
 		footer = opts.footer,
 		multi_select = multi_select,
 		confirm_label = opts.confirm_label,
 	}, keys)
+	local base_list_row = searchable and 5 or 3
+	local function layout_metrics(current_width)
+		local next_footer_lines = wrap_footer(footer, current_width - 8)
+		local next_message_lines = opts.message and wrap_footer(tostring(opts.message), current_width - 8) or {}
+		local next_list_row = base_list_row + (#next_message_lines > 0 and #next_message_lines + 1 or 0)
+		local next_frame_extra = next_list_row + #next_footer_lines + 2
+		local next_max_list_height = math.max(
+			1,
+			math.min(opts.list_height or (searchable and 15 or 20), vim.o.lines - vim.o.cmdheight - next_frame_extra - border_height)
+		)
+		return next_footer_lines, next_message_lines, next_list_row, next_frame_extra, next_max_list_height
+	end
+	local footer_lines, message_lines, list_row, frame_extra, max_list_height = layout_metrics(width)
+	local list_height = math.min(max_list_height, math.max(1, #items))
+	local relative, row, col, zindex = float_context.resolve_centered_placement(
+		width + border_width, list_height + frame_extra + border_height
+	)
+	zindex = zindex or 80
 
 	local is_closed = false
 	local filtered_items = {}
 	local selected_idx = 1
 	local search_text = ""
 	local selected_items = {}
-	local input_popup = nil
-	local list_popup = nil
-	local layout = nil
+	local view = nil
 	local ctx = {}
+	local last_layout_width, last_frame_height, last_list_height, last_list_row
 
 	local function current_item()
 		return filtered_items[selected_idx], selected_idx
@@ -245,16 +298,48 @@ function M.open(opts)
 			return
 		end
 		is_closed = true
-		pcall(function()
-			if layout then
-				layout:unmount()
-			elseif list_popup then
-				list_popup:unmount()
-			end
-		end)
-		if opts.refocus_chat ~= false then
-			float_context.focus_chat_if_visible()
+		if view then
+			view:close()
 		end
+	end
+
+	local function render_frame(height)
+		local frame_height = height + frame_extra
+		if last_layout_width ~= width or last_frame_height ~= frame_height or last_list_height ~= height
+			or last_list_row ~= list_row then
+			view:resize({
+				frame = { size = { width = width, height = frame_height } },
+				content = { size = { width = width - 2, height = height }, position = { row = list_row, col = 1 } },
+				input = searchable and { size = { width = width - 8 }, position = { row = 3, col = 4 } } or nil,
+			})
+			last_layout_width, last_frame_height, last_list_height, last_list_row = width, frame_height, height, list_row
+		end
+		local title = truncate_to_width(vim.trim(opts.title or (searchable and "Search" or "Select")), width - 12)
+		local header = "    " .. title .. string.rep(" ", math.max(1, width - display_width(title) - 11)) .. "esc    "
+		local lines = { "", header }
+		for _ = 3, list_row + height + 1 do
+			table.insert(lines, "")
+		end
+		for index, line in ipairs(message_lines) do
+			lines[base_list_row + index] = "    " .. line
+		end
+		for _, line in ipairs(footer_lines) do
+			table.insert(lines, "    " .. line)
+		end
+		table.insert(lines, "")
+		local marks = {
+			{ line = 1, col = 4, end_col = 4 + #title, hl_group = "OpenCodeMenuTitle" },
+			{ line = 1, col = #header - 7, end_col = #header - 4, hl_group = "OpenCodeMenuFooter" },
+		}
+		for index = 1, #message_lines do
+			local line = base_list_row + index - 1
+			table.insert(marks, { line = line, col = 4, end_col = #lines[line + 1], hl_group = "OpenCodeMenuMessage" })
+		end
+		for i = 1, #footer_lines do
+			local line = list_row + height + i
+			table.insert(marks, { line = line, col = 0, end_col = #lines[line + 1], hl_group = "OpenCodeMenuFooter" })
+		end
+		view:render(lines, marks, "frame")
 	end
 
 	local function render_list(render_opts)
@@ -286,32 +371,26 @@ function M.open(opts)
 		local lines = {}
 		local highlights = {}
 		if #filtered_items == 0 then
-			table.insert(lines, searchable and "  No matches found" or "  No items")
+			table.insert(lines, truncate_to_width(searchable and "   No matches found" or "   No items", width - 2))
 		else
 			for idx, item in ipairs(filtered_items) do
-				table.insert(lines, format_item_line(item, idx == selected_idx, selected_items, multi_select, width))
+				table.insert(lines, format_item_line(item, selected_items, multi_select, width - 2))
 				if type(item) == "table" and item.priority and item.priority > 0 then
-					table.insert(highlights, { line = idx, hl = "String" })
+					table.insert(highlights, {
+						line = idx - 1,
+						col = 0,
+						end_col = #lines[idx],
+						hl_group = "OpenCodeMenuPriority",
+					})
 				end
 			end
 		end
 
-		local bufnr = list_popup.bufnr
-		vim.bo[bufnr].modifiable = true
-		vim.api.nvim_buf_clear_namespace(bufnr, hl_ns, 0, -1)
-		vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, lines)
-		vim.bo[bufnr].modifiable = false
+		render_frame(math.min(max_list_height, #lines))
+		view:render(lines, highlights, "content")
 
-		for _, hl in ipairs(highlights) do
-			local line_text = vim.api.nvim_buf_get_lines(bufnr, hl.line - 1, hl.line, false)[1] or ""
-			vim.api.nvim_buf_set_extmark(bufnr, hl_ns, hl.line - 1, 0, {
-				end_col = #line_text,
-				hl_group = hl.hl,
-			})
-		end
-
-		if #filtered_items > 0 and list_popup.winid and vim.api.nvim_win_is_valid(list_popup.winid) then
-			vim.api.nvim_win_set_cursor(list_popup.winid, { selected_idx, 0 })
+		if #filtered_items > 0 and view.content.winid and vim.api.nvim_win_is_valid(view.content.winid) then
+			vim.api.nvim_win_set_cursor(view.content.winid, { selected_idx, 0 })
 		end
 	end
 
@@ -497,120 +576,103 @@ function M.open(opts)
 	end
 
 	local event = require("nui.utils.autocmd").event
-	if searchable then
-		local NuiInput = require("nui.input")
-		local NuiLayout = require("nui.layout")
-		input_popup = NuiInput({
+	local win_options = {
+		winhighlight = "Normal:OpenCodeMenuNormal,NormalNC:OpenCodeMenuNormal,EndOfBuffer:OpenCodeMenuNormal",
+		winblend = 0,
+		wrap = false,
+		cursorline = false,
+		scrolloff = 0,
+	}
+	view = Popup.new({
+		frame = {
 			relative = relative,
 			position = { row = row, col = col },
-			size = { width = width },
-			zindex = zindex and (zindex + 1) or nil,
-			border = {
-				style = "rounded",
-				text = {
-					top = opts.title or " Search ",
-					top_align = "center",
-				},
-			},
-			buf_options = {
-				filetype = "opencode_float",
-			},
-			win_options = {
-				winhighlight = "Normal:Normal,FloatBorder:FloatBorder",
-			},
-		}, {
-			prompt = " ",
-			default_value = "",
-		})
-
-		list_popup = Popup({
-			relative = relative,
-			position = { row = row + 3, col = col },
-			size = { width = width, height = list_height },
+			size = { width = width, height = list_height + frame_extra },
+			enter = false,
+			focusable = false,
 			zindex = zindex,
-			border = {
-				style = "rounded",
-				text = {
-					bottom = footer,
-					bottom_align = "center",
-				},
-			},
-			buf_options = {
-				filetype = "opencode_float",
-			},
-			win_options = {
+			border = "none",
+			buf_options = { filetype = "opencode_float", modifiable = false },
+			win_options = win_options,
+		},
+		content = {
+			position = { row = list_row, col = 1 },
+			size = { width = width - 2, height = list_height },
+			enter = not searchable,
+			focusable = true,
+			zindex = zindex + 1,
+			border = "none",
+			buf_options = { filetype = "opencode_float", modifiable = false },
+			win_options = vim.tbl_extend("force", win_options, {
 				cursorline = true,
-				winhighlight = "Normal:Normal,FloatBorder:FloatBorder,CursorLine:PmenuSel",
-			},
-		})
+				winhighlight = win_options.winhighlight .. ",CursorLine:OpenCodeMenuSelected",
+			}),
+		},
+		input = searchable and {
+			position = { row = 3, col = 4 },
+			size = { width = width - 8 },
+			zindex = zindex + 2,
+			border = "none",
+			buf_options = { filetype = "opencode_float" },
+			win_options = win_options,
+			prompt = "",
+			default_value = "",
+		} or nil,
+		focus_restore = opts.refocus_chat ~= false and "chat" or false,
+		close_on_leave = true,
+		on_close = function()
+			is_closed = true
+		end,
+		on_resize = function()
+			width = math.max(12, math.min(opts.width or (searchable and 60 or 40), vim.o.columns - border_width))
+			footer_lines, message_lines, list_row, frame_extra, max_list_height = layout_metrics(width)
+			local _, next_row, next_col = float_context.resolve_centered_placement(
+				width + border_width,
+				math.min(max_list_height, math.max(1, #filtered_items)) + frame_extra + border_height
+			)
+			view:resize({ frame = { position = { row = next_row, col = next_col } } })
+			render_list()
+		end,
+	})
+	view:mount()
 
-		layout = NuiLayout({
-			relative = relative,
-			position = { row = row, col = col },
-			size = {
-				width = width + 2,
-				height = list_height + 5,
-			},
-			zindex = zindex,
-		}, NuiLayout.Box({
-			NuiLayout.Box(input_popup, { size = { height = 3 } }),
-			NuiLayout.Box(list_popup, { size = { height = list_height } }),
-		}, { dir = "col" }))
-
-		layout:mount()
+	if searchable then
+		local function update_placeholder()
+			local marks = {}
+			if search_text == "" then
+				marks[1] = {
+					line = 0,
+					col = 0,
+					virt_text = { { "Search", "OpenCodeMenuPlaceholder" } },
+					virt_text_pos = "overlay",
+				}
+			end
+			view:render(nil, marks, "input")
+		end
+		update_placeholder()
 		render_list({ preserve_selection = false })
-		map_common_keys(input_popup.bufnr, { "i", "n" })
-		map_common_keys(list_popup.bufnr, { "n" })
+		map_common_keys(view.input.bufnr, { "i", "n" })
+		map_common_keys(view.content.bufnr, { "n" })
 
-		input_popup:on(event.TextChangedI, function()
-			local lines = vim.api.nvim_buf_get_lines(input_popup.bufnr, 0, 1, false)
+		view:on(event.TextChangedI, function()
+			local lines = vim.api.nvim_buf_get_lines(view.input.bufnr, 0, 1, false)
 			search_text = lines[1] or ""
+			update_placeholder()
 			render_list({ preserve_selection = false })
-		end)
-		input_popup:on(event.BufLeave, function()
-			vim.defer_fn(close, 100)
-		end)
+		end, "input")
 		vim.cmd("startinsert!")
 	else
-		list_popup = Popup({
-			relative = relative,
-			enter = true,
-			focusable = true,
-			zindex = zindex,
-			border = {
-				style = "rounded",
-				text = {
-					top = opts.title or " Select ",
-					top_align = "center",
-					bottom = footer,
-					bottom_align = "center",
-				},
-			},
-			position = { row = row, col = col },
-			size = { width = width, height = list_height },
-			buf_options = {
-				filetype = "opencode_float",
-			},
-			win_options = {
-				cursorline = true,
-				winhighlight = "Normal:Normal,FloatBorder:FloatBorder,CursorLine:PmenuSel",
-			},
-		})
-
-		list_popup:mount()
 		render_list({ preserve_selection = false })
-		map_common_keys(list_popup.bufnr, { "n" })
-		if list_popup.winid and vim.api.nvim_win_is_valid(list_popup.winid) and #filtered_items > 0 then
-			vim.api.nvim_win_set_cursor(list_popup.winid, { 1, 0 })
+		map_common_keys(view.content.bufnr, { "n" })
+		if view.content.winid and vim.api.nvim_win_is_valid(view.content.winid) and #filtered_items > 0 then
+			vim.api.nvim_win_set_cursor(view.content.winid, { 1, 0 })
 		end
-		list_popup:on(event.BufLeave, function()
-			vim.defer_fn(close, 100)
-		end)
 	end
 
-	ctx.popup = list_popup
-	ctx.input = input_popup
-	ctx.layout = layout
+	ctx.popup = view.content
+	ctx.input = view.input
+	ctx.frame = view.frame
+	ctx.layout = searchable and { unmount = close } or nil
 	return ctx
 end
 

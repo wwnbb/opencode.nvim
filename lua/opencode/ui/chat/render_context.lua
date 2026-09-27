@@ -8,6 +8,7 @@ local render = require("opencode.ui.chat.render")
 local render_state = require("opencode.ui.chat.render_state")
 local widget_support = require("opencode.ui.chat.widget_support")
 local sync = require("opencode.sync")
+local syntax = require("opencode.ui.syntax")
 
 local Context = {}
 Context.__index = Context
@@ -34,43 +35,57 @@ function M.new(opts)
 		chat_width = render.get_chat_text_width(),
 		metadata_provider_revision = metadata_provider_revision,
 		metadata_agent_revision = metadata_agent_revision,
+		syntax_generation = syntax.get_cache_generation(),
 		next_stream_blocks = {},
 		message_render_parts_cache = {},
 	}, Context)
+end
+
+function Context:code_highlighter(message_id, part_id)
+	return render_state.code_highlighter(render_state.render_cache_key(self.current_session.id, message_id, part_id or "user"))
 end
 
 function Context:render_cache_key(...)
 	return render_state.render_cache_key(...)
 end
 
-function Context:cached_nui_lines(key, build)
-	local cached = key and render_state.render_cache_get(key)
-	if cached and cached.nui_lines then
+-- Owner shape is fixed and independent of revisions. Avoid a second temporary
+-- vararg array for every cached block in an otherwise warm transcript.
+function Context:render_owner_key(kind, message_id, part_id)
+	return tostring(kind or "") .. "\0" .. tostring(self.current_session.id or "")
+		.. "\0" .. tostring(message_id or "") .. "\0" .. tostring(part_id or "")
+end
+
+function Context:cached_nui_lines(key, build, owner)
+	local cached = render_state.render_cache_get(key, owner)
+	if cached and cached.nui_lines and cached.syntax_generation == self.syntax_generation then
 		return cached.nui_lines
 	end
+	if cached then render_state.render_cache_delete(owner or key) end
 	local lines = build()
-	if key then
-		render_state.render_cache_put(key, { nui_lines = lines })
+	if key and not lines._opencode_syntax_retry then
+		render_state.render_cache_put(key, { nui_lines = lines, syntax_generation = self.syntax_generation }, owner)
 	end
 	return lines
 end
 
-function Context:cached_render_result(key, build)
-	local cached = key and render_state.render_cache_get(key)
-	if cached and cached.result then
+function Context:cached_render_result(key, build, owner)
+	local cached = render_state.render_cache_get(key, owner)
+	if cached and cached.result and cached.syntax_generation == self.syntax_generation then
 		return cached.result
 	end
+	if cached then render_state.render_cache_delete(owner or key) end
 	local result = build()
-	if key then
-		render_state.render_cache_put(key, { result = result })
+	if key and not result._opencode_syntax_retry then
+		render_state.render_cache_put(key, { result = result, syntax_generation = self.syntax_generation }, owner)
 	end
 	return result
 end
 
-function Context:cached_nui_line(key, build)
+function Context:cached_nui_line(key, build, owner)
 	local lines = self:cached_nui_lines(key, function()
 		return { build() }
-	end)
+	end, owner)
 	return lines[1]
 end
 
@@ -98,13 +113,23 @@ function Context:push_line(text, nui_line)
 end
 
 function Context:ensure_single_blank_separator()
-	while #self.raw_lines > 0 and self.raw_lines[#self.raw_lines] == "" do
+	local old_count = #self.raw_lines
+	while #self.raw_lines > 0 and self.raw_lines[#self.raw_lines] == ""
+		and not self.nui_lines[#self.nui_lines]._opencode_preserve_blank do
 		table.remove(self.raw_lines)
 		table.remove(self.nui_lines)
 	end
 	local line = NuiLine()
 	line:append("")
 	self:push_line("", line)
+	-- The trailing separator belongs to the preceding streaming range. Otherwise
+	-- replacing a part ending in a newline duplicates this row on every delta.
+	for _, block in pairs(self.next_stream_blocks) do
+		if block.end_line >= #self.raw_lines - 2 and block.end_line < old_count then
+			block.end_line = #self.raw_lines - 1
+			block.trailing_separator = true
+		end
+	end
 end
 
 function Context:normalize_block_transition(next_kind)
@@ -158,7 +183,8 @@ function Context:add_nui_lines(lines, kind)
 end
 
 function Context:prepare_widget_start()
-	self:normalize_block_transition("non_tool")
+	if #self.raw_lines > 0 then self:ensure_single_blank_separator() end
+	self.last_block_kind = "non_tool"
 	return #self.raw_lines
 end
 
@@ -187,8 +213,6 @@ function Context:register_stream_block(message_id, part, kind, start_line)
 		message_id = message_id,
 		part_id = part_id,
 		kind = kind,
-		chat_width = self.chat_width,
-		text_length = #(part.text or ""),
 	})
 end
 
@@ -205,6 +229,7 @@ function Context:reset_tracking()
 	state.permissions = {}
 	state.edits = {}
 	state.message_positions = {}
+	state.pending_inputs = {}
 	state.tasks = {}
 	state.tools = {}
 	state.spinner_footer_line = nil

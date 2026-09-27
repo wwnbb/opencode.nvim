@@ -1,0 +1,3 @@
+OpenCode.nvim v0.1.0 loaded
+OpenCode connected (server v2.0.11)Started new sessionNew session: Session doneOpenCode disconnected
+Neovim new-session/skill UI smoke passed

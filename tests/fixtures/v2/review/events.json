@@ -1,0 +1,3058 @@
+[
+  {
+    "id": "evt_0c614ac06001qxyJmGVH7n7idE",
+    "type": "server.connected",
+    "data": {}
+  },
+  {
+    "id": "evt_0c614ac2e0019BN7kNRTcSmOza",
+    "created": 1790029638702,
+    "type": "worktree.resolved",
+    "data": {
+      "projectID": "global",
+      "directory": "/private<PROFILE>/project пробел %#",
+      "previous": "global"
+    },
+    "durable": {
+      "aggregateID": "global",
+      "seq": 0,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c614b0b7001gHS2CAY7cBo4Qz",
+    "created": 1790029639863,
+    "type": "models-dev.refreshed",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {}
+  },
+  {
+    "id": "evt_0c614b1350019JRJtIXcmuEn1J",
+    "created": 1790029639989,
+    "type": "integration.updated",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {}
+  },
+  {
+    "id": "evt_0c614b138001BoUsuheglnOG60",
+    "created": 1790029639992,
+    "type": "provider.updated",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {}
+  },
+  {
+    "id": "evt_0c614b13b0018IegqhT3wy41jV",
+    "created": 1790029639995,
+    "type": "model.updated",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {}
+  },
+  {
+    "id": "evt_0c614b159001l76A6NWC5tMd4k",
+    "created": 1790029640025,
+    "type": "vcs.branch.updated",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "branch": "master"
+    }
+  },
+  {
+    "id": "evt_0c614b15a001kv01F2t3AvEkhf",
+    "created": 1790029640026,
+    "type": "agent.updated",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {}
+  },
+  {
+    "id": "evt_0c614b15a002RLCOCot6RbfqAF",
+    "created": 1790029640026,
+    "type": "command.updated",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {}
+  },
+  {
+    "id": "evt_0c614b15a003t9CnO3gcXzjSvk",
+    "created": 1790029640026,
+    "type": "skill.updated",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {}
+  },
+  {
+    "id": "evt_0c614b15c0017alFhUqm6GgJu5",
+    "created": 1790029640028,
+    "type": "websearch.updated",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {}
+  },
+  {
+    "id": "evt_0c614b15c003oIUAOZLTjpgyJ2",
+    "created": 1790029640028,
+    "type": "reference.updated",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {}
+  },
+  {
+    "id": "evt_0c614b166001u3d6hbaQOUqvfx",
+    "created": 1790029640038,
+    "type": "plugin.updated",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {}
+  },
+  {
+    "id": "evt_0c614b1b7001FtPN0DyaKyrKuo",
+    "created": 1790029640119,
+    "type": "session.created",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f39eb4e65ffeG6hQfM8YCh4mxi",
+      "slug": "crisp-nebula",
+      "version": "2.0.11",
+      "projectID": "global",
+      "location": {
+        "directory": "<PROFILE>/project пробел %#"
+      },
+      "subpath": "../../../../../../../..<PROFILE>/project пробел %#",
+      "permissions": [
+        {
+          "action": "neovim_edit",
+          "resource": "*",
+          "effect": "ask"
+        }
+      ],
+      "model": {
+        "id": "mimo-v2.5-free",
+        "providerID": "opencode"
+      }
+    },
+    "durable": {
+      "aggregateID": "ses_f39eb4e65ffeG6hQfM8YCh4mxi",
+      "seq": 0,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c614b1e8001ph4JnHWyCXhE3W",
+    "created": 1790029640168,
+    "type": "session.agent.selected",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f39eb4e65ffeG6hQfM8YCh4mxi",
+      "agent": "build"
+    },
+    "durable": {
+      "aggregateID": "ses_f39eb4e65ffeG6hQfM8YCh4mxi",
+      "seq": 1,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c614b1ee001Ce2QsP4RT1qV5N",
+    "created": 1790029640174,
+    "type": "session.inbox.enqueued",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "inboxID": "msg_0c614b1dd001nhak5eLjQZ73yh",
+      "sessionID": "ses_f39eb4e65ffeG6hQfM8YCh4mxi",
+      "item": {
+        "type": "user",
+        "payload": {
+          "text": "Use the neovim_edit tool exactly once to replace \"before\" with \"after\" in the existing file <PROFILE>/project пробел %#/review.txt. Use oldString=\"before\" and newString=\"after\". Do not use any other tool. Wait for the user review. Then reply with one short sentence."
+        },
+        "delivery": "queue"
+      }
+    },
+    "durable": {
+      "aggregateID": "ses_f39eb4e65ffeG6hQfM8YCh4mxi",
+      "seq": 2,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c614b1f00018YG76yZ8BiMqeD",
+    "created": 1790029640176,
+    "type": "session.execution.started",
+    "data": {
+      "sessionID": "ses_f39eb4e65ffeG6hQfM8YCh4mxi"
+    },
+    "durable": {
+      "aggregateID": "ses_f39eb4e65ffeG6hQfM8YCh4mxi",
+      "seq": 3,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c614b1ff001qAWdeSqZUZI5jB",
+    "created": 1790029640191,
+    "metadata": {
+      "instructions": {
+        "initial": true
+      }
+    },
+    "type": "session.instructions.updated",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f39eb4e65ffeG6hQfM8YCh4mxi",
+      "delta": {
+        "core/environment": "79c8c64cb9fe993870b06fa4bad6c59417791d8a8473ee1b5f3128e76c9033e1",
+        "core/date": "6a76aa89fcc8086f3abb8b9dc2b9ceafa3405dd2b3cdc263b339d36120433008",
+        "core/codemode": "cf52fcbcde861ccfefdc6633ee3cb84036524f86c72f976a7315e05dc01a15e1",
+        "core/skill-guidance": "8394362d28c82fa4d13c7a9f5568c05680f6687e07db8f426a0e3c92f3027dc9"
+      }
+    },
+    "durable": {
+      "aggregateID": "ses_f39eb4e65ffeG6hQfM8YCh4mxi",
+      "seq": 4,
+      "version": 2
+    }
+  },
+  {
+    "id": "evt_0c614b200001J3jJaMMCuwHU4a",
+    "created": 1790029640192,
+    "type": "session.inbox.delivered",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f39eb4e65ffeG6hQfM8YCh4mxi",
+      "inboxID": "msg_0c614b1dd001nhak5eLjQZ73yh"
+    },
+    "durable": {
+      "aggregateID": "ses_f39eb4e65ffeG6hQfM8YCh4mxi",
+      "seq": 5,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c614bcb6001N7Bek5hykT6h4a",
+    "created": 1790029642934,
+    "type": "session.step.started",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f39eb4e65ffeG6hQfM8YCh4mxi",
+      "agent": "build",
+      "model": {
+        "id": "mimo-v2.5-free",
+        "providerID": "opencode",
+        "variant": "default"
+      },
+      "assistantMessageID": "msg_0c614b20b001AX4rCjKKdJm7ih",
+      "started": 1790029640239
+    },
+    "durable": {
+      "aggregateID": "ses_f39eb4e65ffeG6hQfM8YCh4mxi",
+      "seq": 6,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c614bcb80010pzNPHQtI5rMzY",
+    "created": 1790029642936,
+    "type": "session.reasoning.started",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f39eb4e65ffeG6hQfM8YCh4mxi",
+      "assistantMessageID": "msg_0c614b20b001AX4rCjKKdJm7ih",
+      "ordinal": 0,
+      "state": {
+        "reasoningField": "reasoning_content"
+      }
+    },
+    "durable": {
+      "aggregateID": "ses_f39eb4e65ffeG6hQfM8YCh4mxi",
+      "seq": 7,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c614bd1e001epJnvyXefL4uaY",
+    "created": 1790029643038,
+    "type": "session.reasoning.delta",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f39eb4e65ffeG6hQfM8YCh4mxi",
+      "assistantMessageID": "msg_0c614b20b001AX4rCjKKdJm7ih",
+      "ordinal": 0,
+      "delta": "The user wants me to use"
+    }
+  },
+  {
+    "id": "evt_0c614bd9c001BmH2wZUyeyJWPY",
+    "created": 1790029643164,
+    "type": "session.reasoning.delta",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f39eb4e65ffeG6hQfM8YCh4mxi",
+      "assistantMessageID": "msg_0c614b20b001AX4rCjKKdJm7ih",
+      "ordinal": 0,
+      "delta": " the neovim_edit tool"
+    }
+  },
+  {
+    "id": "evt_0c614be77001kfU2KGPyAZekRC",
+    "created": 1790029643383,
+    "type": "session.reasoning.delta",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f39eb4e65ffeG6hQfM8YCh4mxi",
+      "assistantMessageID": "msg_0c614b20b001AX4rCjKKdJm7ih",
+      "ordinal": 0,
+      "delta": " exactly once to replace \"before\" with \"after\" in"
+    }
+  },
+  {
+    "id": "evt_0c614bf0f0019f0KbmJfFQvPLx",
+    "created": 1790029643535,
+    "type": "session.reasoning.delta",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f39eb4e65ffeG6hQfM8YCh4mxi",
+      "assistantMessageID": "msg_0c614b20b001AX4rCjKKdJm7ih",
+      "ordinal": 0,
+      "delta": " the specified file. Let"
+    }
+  },
+  {
+    "id": "evt_0c614bf8f001cUxlVgQ1GGaogu",
+    "created": 1790029643663,
+    "type": "session.reasoning.delta",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f39eb4e65ffeG6hQfM8YCh4mxi",
+      "assistantMessageID": "msg_0c614b20b001AX4rCjKKdJm7ih",
+      "ordinal": 0,
+      "delta": " me do that."
+    }
+  },
+  {
+    "id": "evt_0c614c0690013HiMMRaQ4vgvaU",
+    "created": 1790029643881,
+    "type": "session.tool.input.started",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f39eb4e65ffeG6hQfM8YCh4mxi",
+      "assistantMessageID": "msg_0c614b20b001AX4rCjKKdJm7ih",
+      "id": "call_bb69a69e550e4a998539909d",
+      "name": "neovim_edit"
+    },
+    "durable": {
+      "aggregateID": "ses_f39eb4e65ffeG6hQfM8YCh4mxi",
+      "seq": 8,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c614c72e001ptF6tJgDN7KCCi",
+    "created": 1790029645614,
+    "type": "session.reasoning.ended",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f39eb4e65ffeG6hQfM8YCh4mxi",
+      "assistantMessageID": "msg_0c614b20b001AX4rCjKKdJm7ih",
+      "ordinal": 0,
+      "text": "The user wants me to use the neovim_edit tool exactly once to replace \"before\" with \"after\" in the specified file. Let me do that.",
+      "state": {
+        "reasoningField": "reasoning_content",
+        "reasoningDetails": [
+          {
+            "type": "reasoning.text",
+            "text": "The user wants me to use the neovim_edit tool exactly once to replace \"before\" with \"after\" in the specified file. Let me do that.",
+            "format": "unknown",
+            "index": 0
+          }
+        ]
+      }
+    },
+    "durable": {
+      "aggregateID": "ses_f39eb4e65ffeG6hQfM8YCh4mxi",
+      "seq": 9,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c614c731001IgMvvG6xEAxYPi",
+    "created": 1790029645617,
+    "type": "session.tool.input.ended",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f39eb4e65ffeG6hQfM8YCh4mxi",
+      "assistantMessageID": "msg_0c614b20b001AX4rCjKKdJm7ih",
+      "id": "call_bb69a69e550e4a998539909d",
+      "text": "{\"filePath\": \"<PROFILE>/project пробел %#/review.txt\", \"oldString\": \"before\", \"newString\": \"after\"}"
+    },
+    "durable": {
+      "aggregateID": "ses_f39eb4e65ffeG6hQfM8YCh4mxi",
+      "seq": 10,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c614c732001u2v7tOfKa8Cu1T",
+    "created": 1790029645618,
+    "type": "session.tool.called",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f39eb4e65ffeG6hQfM8YCh4mxi",
+      "assistantMessageID": "msg_0c614b20b001AX4rCjKKdJm7ih",
+      "id": "call_bb69a69e550e4a998539909d",
+      "input": {
+        "filePath": "<PROFILE>/project пробел %#/review.txt",
+        "oldString": "before",
+        "newString": "after"
+      },
+      "executed": false
+    },
+    "durable": {
+      "aggregateID": "ses_f39eb4e65ffeG6hQfM8YCh4mxi",
+      "seq": 11,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c614c734001AZ1VFpuYQ5ufDS",
+    "created": 1790029645620,
+    "type": "session.step.streamed",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f39eb4e65ffeG6hQfM8YCh4mxi",
+      "assistantMessageID": "msg_0c614b20b001AX4rCjKKdJm7ih"
+    },
+    "durable": {
+      "aggregateID": "ses_f39eb4e65ffeG6hQfM8YCh4mxi",
+      "seq": 12,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c614c738001CZUgxJSv3D9KL1",
+    "created": 1790029645625,
+    "type": "rpc.opencode_nvim.policyRequested",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "policy": {
+        "protocolVersion": 1,
+        "gateID": "cfc5f5cd-d84a-4a2b-ab16-9d8f6ca8b265",
+        "sessionID": "ses_f39eb4e65ffeG6hQfM8YCh4mxi",
+        "location": {
+          "directory": "<PROFILE>/project пробел %#"
+        },
+        "status": "pending",
+        "request": {
+          "id": "per_64a608f141ee45d7bb257e18a75fca1f",
+          "action": "neovim_edit",
+          "resources": [
+            "<PROFILE>/project пробел %#/review.txt"
+          ],
+          "save": [
+            "<PROFILE>/project пробел %#/review.txt"
+          ],
+          "agent": "build",
+          "source": {
+            "type": "tool",
+            "messageID": "msg_0c614b20b001AX4rCjKKdJm7ih",
+            "id": "call_bb69a69e550e4a998539909d"
+          },
+          "metadata": {
+            "gateID": "cfc5f5cd-d84a-4a2b-ab16-9d8f6ca8b265"
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "evt_0c614c73e0011JCX1oBzRtxjKc",
+    "created": 1790029645630,
+    "type": "permission.asked",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "id": "per_64a608f141ee45d7bb257e18a75fca1f",
+      "sessionID": "ses_f39eb4e65ffeG6hQfM8YCh4mxi",
+      "action": "neovim_edit",
+      "resources": [
+        "<PROFILE>/project пробел %#/review.txt"
+      ],
+      "save": [
+        "<PROFILE>/project пробел %#/review.txt"
+      ],
+      "metadata": {
+        "gateID": "cfc5f5cd-d84a-4a2b-ab16-9d8f6ca8b265"
+      },
+      "source": {
+        "type": "tool",
+        "messageID": "msg_0c614b20b001AX4rCjKKdJm7ih",
+        "id": "call_bb69a69e550e4a998539909d"
+      }
+    }
+  },
+  {
+    "id": "evt_0c614c741001DmIOms9pvdFtE1",
+    "created": 1790029645633,
+    "type": "permission.replied",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f39eb4e65ffeG6hQfM8YCh4mxi",
+      "requestID": "per_64a608f141ee45d7bb257e18a75fca1f",
+      "reply": "once"
+    }
+  },
+  {
+    "id": "evt_0c614c7410021Fdhy2QBhGdoYA",
+    "created": 1790029645633,
+    "type": "rpc.opencode_nvim.policySettled",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "policy": {
+        "protocolVersion": 1,
+        "gateID": "cfc5f5cd-d84a-4a2b-ab16-9d8f6ca8b265",
+        "sessionID": "ses_f39eb4e65ffeG6hQfM8YCh4mxi",
+        "location": {
+          "directory": "<PROFILE>/project пробел %#"
+        },
+        "status": "allowed",
+        "request": {
+          "id": "per_64a608f141ee45d7bb257e18a75fca1f",
+          "action": "neovim_edit",
+          "resources": [
+            "<PROFILE>/project пробел %#/review.txt"
+          ],
+          "save": [
+            "<PROFILE>/project пробел %#/review.txt"
+          ],
+          "agent": "build",
+          "source": {
+            "type": "tool",
+            "messageID": "msg_0c614b20b001AX4rCjKKdJm7ih",
+            "id": "call_bb69a69e550e4a998539909d"
+          },
+          "metadata": {
+            "gateID": "cfc5f5cd-d84a-4a2b-ab16-9d8f6ca8b265"
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "evt_0c614c7430010Vda6lQr1YoRg4",
+    "created": 1790029645635,
+    "type": "session.tool.progress",
+    "data": {
+      "sessionID": "ses_f39eb4e65ffeG6hQfM8YCh4mxi",
+      "assistantMessageID": "msg_0c614b20b001AX4rCjKKdJm7ih",
+      "id": "call_bb69a69e550e4a998539909d",
+      "metadata": {
+        "opencode_native_diff": true,
+        "filepath": "<PROFILE>/project пробел %#/review.txt",
+        "relativePath": "<PROFILE>/project пробел %#/review.txt",
+        "diff": "--- <PROFILE>/project пробел %#/review.txt\n+++ <PROFILE>/project пробел %#/review.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+        "proposed_diff": "--- <PROFILE>/project пробел %#/review.txt\n+++ <PROFILE>/project пробел %#/review.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+        "filediff": {
+          "filePath": "<PROFILE>/project пробел %#/review.txt",
+          "relativePath": "<PROFILE>/project пробел %#/review.txt",
+          "file": "<PROFILE>/project пробел %#/review.txt",
+          "type": "update",
+          "before": "before\n",
+          "after": "after\n",
+          "diff": "--- <PROFILE>/project пробел %#/review.txt\n+++ <PROFILE>/project пробел %#/review.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+          "patch": "--- <PROFILE>/project пробел %#/review.txt\n+++ <PROFILE>/project пробел %#/review.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+          "additions": 1,
+          "deletions": 1,
+          "status": "pending",
+          "bom": false,
+          "before_bom": false,
+          "eol": "\n"
+        },
+        "files": [
+          {
+            "filePath": "<PROFILE>/project пробел %#/review.txt",
+            "relativePath": "<PROFILE>/project пробел %#/review.txt",
+            "file": "<PROFILE>/project пробел %#/review.txt",
+            "type": "update",
+            "before": "before\n",
+            "after": "after\n",
+            "diff": "--- <PROFILE>/project пробел %#/review.txt\n+++ <PROFILE>/project пробел %#/review.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+            "patch": "--- <PROFILE>/project пробел %#/review.txt\n+++ <PROFILE>/project пробел %#/review.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+            "additions": 1,
+            "deletions": 1,
+            "status": "pending",
+            "bom": false,
+            "before_bom": false,
+            "eol": "\n"
+          }
+        ],
+        "diagnostics": {},
+        "title": "<PROFILE>/project пробел %#/review.txt"
+      }
+    }
+  },
+  {
+    "id": "evt_0c614c745001qMORrHYfIxplcM",
+    "created": 1790029645637,
+    "type": "rpc.opencode_nvim.reviewCreated",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "review": {
+        "protocolVersion": 1,
+        "reviewID": "rev_e8c113edde229ad9111c303dc2bf72fe",
+        "revision": 1,
+        "status": "pending",
+        "created": 1790029645636,
+        "sessionID": "ses_f39eb4e65ffeG6hQfM8YCh4mxi",
+        "messageID": "msg_0c614b20b001AX4rCjKKdJm7ih",
+        "callID": "call_bb69a69e550e4a998539909d",
+        "tool": "neovim_edit",
+        "agent": "build",
+        "directory": "<PROFILE>/project пробел %#",
+        "location": {
+          "directory": "<PROFILE>/project пробел %#"
+        },
+        "files": [
+          {
+            "fileID": "file_0_d8f8a51c2c9c",
+            "filePath": "<PROFILE>/project пробел %#/review.txt",
+            "type": "update",
+            "before": "before\n",
+            "after": "after\n",
+            "relativePath": "<PROFILE>/project пробел %#/review.txt",
+            "file": "<PROFILE>/project пробел %#/review.txt",
+            "diff": "--- <PROFILE>/project пробел %#/review.txt\n+++ <PROFILE>/project пробел %#/review.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+            "patch": "--- <PROFILE>/project пробел %#/review.txt\n+++ <PROFILE>/project пробел %#/review.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+            "additions": 1,
+            "deletions": 1,
+            "status": "pending",
+            "bom": false,
+            "before_bom": false,
+            "eol": "\n"
+          }
+        ],
+        "metadata": {
+          "opencode_native_diff": true,
+          "operation": "neovim_edit",
+          "agent": "build",
+          "sessionID": "ses_f39eb4e65ffeG6hQfM8YCh4mxi",
+          "messageID": "msg_0c614b20b001AX4rCjKKdJm7ih",
+          "filepath": "<PROFILE>/project пробел %#/review.txt",
+          "relativePath": "<PROFILE>/project пробел %#/review.txt",
+          "diff": "--- <PROFILE>/project пробел %#/review.txt\n+++ <PROFILE>/project пробел %#/review.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+          "proposed_diff": "--- <PROFILE>/project пробел %#/review.txt\n+++ <PROFILE>/project пробел %#/review.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+          "files": [
+            {
+              "filePath": "<PROFILE>/project пробел %#/review.txt",
+              "relativePath": "<PROFILE>/project пробел %#/review.txt",
+              "file": "<PROFILE>/project пробел %#/review.txt",
+              "type": "update",
+              "before": "before\n",
+              "after": "after\n",
+              "diff": "--- <PROFILE>/project пробел %#/review.txt\n+++ <PROFILE>/project пробел %#/review.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+              "patch": "--- <PROFILE>/project пробел %#/review.txt\n+++ <PROFILE>/project пробел %#/review.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+              "additions": 1,
+              "deletions": 1,
+              "status": "pending",
+              "bom": false,
+              "before_bom": false,
+              "eol": "\n"
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "id": "evt_0c614c74f001KfngGCw50vq05B",
+    "created": 1790029645647,
+    "type": "rpc.opencode_nvim.reviewSettled",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "review": {
+        "protocolVersion": 1,
+        "reviewID": "rev_e8c113edde229ad9111c303dc2bf72fe",
+        "revision": 1,
+        "status": "settled",
+        "created": 1790029645636,
+        "sessionID": "ses_f39eb4e65ffeG6hQfM8YCh4mxi",
+        "messageID": "msg_0c614b20b001AX4rCjKKdJm7ih",
+        "callID": "call_bb69a69e550e4a998539909d",
+        "tool": "neovim_edit",
+        "agent": "build",
+        "directory": "<PROFILE>/project пробел %#",
+        "location": {
+          "directory": "<PROFILE>/project пробел %#"
+        },
+        "files": [
+          {
+            "fileID": "file_0_d8f8a51c2c9c",
+            "filePath": "<PROFILE>/project пробел %#/review.txt",
+            "type": "update",
+            "before": "before\n",
+            "after": "after\n",
+            "relativePath": "<PROFILE>/project пробел %#/review.txt",
+            "file": "<PROFILE>/project пробел %#/review.txt",
+            "diff": "--- <PROFILE>/project пробел %#/review.txt\n+++ <PROFILE>/project пробел %#/review.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+            "patch": "--- <PROFILE>/project пробел %#/review.txt\n+++ <PROFILE>/project пробел %#/review.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+            "additions": 1,
+            "deletions": 1,
+            "status": "pending",
+            "bom": false,
+            "before_bom": false,
+            "eol": "\n"
+          }
+        ],
+        "metadata": {
+          "opencode_native_diff": true,
+          "operation": "neovim_edit",
+          "agent": "build",
+          "sessionID": "ses_f39eb4e65ffeG6hQfM8YCh4mxi",
+          "messageID": "msg_0c614b20b001AX4rCjKKdJm7ih",
+          "filepath": "<PROFILE>/project пробел %#/review.txt",
+          "relativePath": "<PROFILE>/project пробел %#/review.txt",
+          "diff": "--- <PROFILE>/project пробел %#/review.txt\n+++ <PROFILE>/project пробел %#/review.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+          "proposed_diff": "--- <PROFILE>/project пробел %#/review.txt\n+++ <PROFILE>/project пробел %#/review.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+          "files": [
+            {
+              "filePath": "<PROFILE>/project пробел %#/review.txt",
+              "relativePath": "<PROFILE>/project пробел %#/review.txt",
+              "file": "<PROFILE>/project пробел %#/review.txt",
+              "type": "update",
+              "before": "before\n",
+              "after": "after\n",
+              "diff": "--- <PROFILE>/project пробел %#/review.txt\n+++ <PROFILE>/project пробел %#/review.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+              "patch": "--- <PROFILE>/project пробел %#/review.txt\n+++ <PROFILE>/project пробел %#/review.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+              "additions": 1,
+              "deletions": 1,
+              "status": "pending",
+              "bom": false,
+              "before_bom": false,
+              "eol": "\n"
+            }
+          ]
+        },
+        "decisions": [
+          {
+            "fileID": "file_0_d8f8a51c2c9c",
+            "status": "accepted",
+            "apply": "client",
+            "observed": {
+              "exists": true,
+              "sha256": "7b9a72466d3960eb2aacccfc848939453490db0678bd4725def3f789b891c919"
+            }
+          }
+        ],
+        "outcome": {
+          "status": "applied",
+          "wrote": false,
+          "applied": true,
+          "divergence": "client_applied",
+          "filepath": "<PROFILE>/project пробел %#/review.txt",
+          "relativePath": "<PROFILE>/project пробел %#/review.txt",
+          "diff": "--- <PROFILE>/project пробел %#/review.txt\n+++ <PROFILE>/project пробел %#/review.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+          "proposed_diff": "--- <PROFILE>/project пробел %#/review.txt\n+++ <PROFILE>/project пробел %#/review.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+          "filediff": {
+            "filePath": "<PROFILE>/project пробел %#/review.txt",
+            "relativePath": "<PROFILE>/project пробел %#/review.txt",
+            "file": "<PROFILE>/project пробел %#/review.txt",
+            "type": "update",
+            "before": "before\n",
+            "after": "after\n",
+            "diff": "--- <PROFILE>/project пробел %#/review.txt\n+++ <PROFILE>/project пробел %#/review.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+            "patch": "--- <PROFILE>/project пробел %#/review.txt\n+++ <PROFILE>/project пробел %#/review.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+            "additions": 1,
+            "deletions": 1,
+            "status": "applied",
+            "bom": false,
+            "before_bom": false,
+            "eol": "\n"
+          },
+          "diagnostics": {},
+          "title": "<PROFILE>/project пробел %#/review.txt"
+        }
+      }
+    }
+  },
+  {
+    "id": "evt_0c614c750001dXSUtoPWUY6DD3",
+    "created": 1790029645648,
+    "type": "session.tool.success",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f39eb4e65ffeG6hQfM8YCh4mxi",
+      "assistantMessageID": "msg_0c614b20b001AX4rCjKKdJm7ih",
+      "id": "call_bb69a69e550e4a998539909d",
+      "content": [
+        {
+          "type": "text",
+          "text": "Edit applied successfully."
+        }
+      ],
+      "metadata": {
+        "status": "applied",
+        "wrote": false,
+        "applied": true,
+        "divergence": "client_applied",
+        "filepath": "<PROFILE>/project пробел %#/review.txt",
+        "relativePath": "<PROFILE>/project пробел %#/review.txt",
+        "diff": "--- <PROFILE>/project пробел %#/review.txt\n+++ <PROFILE>/project пробел %#/review.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+        "proposed_diff": "--- <PROFILE>/project пробел %#/review.txt\n+++ <PROFILE>/project пробел %#/review.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+        "filediff": {
+          "filePath": "<PROFILE>/project пробел %#/review.txt",
+          "relativePath": "<PROFILE>/project пробел %#/review.txt",
+          "file": "<PROFILE>/project пробел %#/review.txt",
+          "type": "update",
+          "before": "before\n",
+          "after": "after\n",
+          "diff": "--- <PROFILE>/project пробел %#/review.txt\n+++ <PROFILE>/project пробел %#/review.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+          "patch": "--- <PROFILE>/project пробел %#/review.txt\n+++ <PROFILE>/project пробел %#/review.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+          "additions": 1,
+          "deletions": 1,
+          "status": "applied",
+          "bom": false,
+          "before_bom": false,
+          "eol": "\n"
+        },
+        "diagnostics": {},
+        "title": "<PROFILE>/project пробел %#/review.txt",
+        "truncated": false
+      },
+      "executed": false
+    },
+    "durable": {
+      "aggregateID": "ses_f39eb4e65ffeG6hQfM8YCh4mxi",
+      "seq": 13,
+      "version": 2
+    }
+  },
+  {
+    "id": "evt_0c614c751001uj9TsPP36iWz0H",
+    "created": 1790029645649,
+    "type": "session.step.ended",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f39eb4e65ffeG6hQfM8YCh4mxi",
+      "assistantMessageID": "msg_0c614b20b001AX4rCjKKdJm7ih",
+      "finish": "tool-calls",
+      "rawFinish": "tool_calls",
+      "cost": 0,
+      "tokens": {
+        "input": 8836,
+        "output": 90,
+        "reasoning": 34,
+        "cache": {
+          "read": 0,
+          "write": 0
+        }
+      }
+    },
+    "durable": {
+      "aggregateID": "ses_f39eb4e65ffeG6hQfM8YCh4mxi",
+      "seq": 14,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c614c753001XnvdSdtGnPY7r9",
+    "created": 1790029645651,
+    "type": "session.usage.updated",
+    "data": {
+      "sessionID": "ses_f39eb4e65ffeG6hQfM8YCh4mxi",
+      "cost": 0,
+      "tokens": {
+        "input": 8836,
+        "output": 90,
+        "reasoning": 34,
+        "cache": {
+          "read": 0,
+          "write": 0
+        }
+      }
+    }
+  },
+  {
+    "id": "evt_0c614ce22001R164FfkYjtTOXR",
+    "created": 1790029647394,
+    "type": "session.step.started",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f39eb4e65ffeG6hQfM8YCh4mxi",
+      "agent": "build",
+      "model": {
+        "id": "mimo-v2.5-free",
+        "providerID": "opencode",
+        "variant": "default"
+      },
+      "assistantMessageID": "msg_0c614c758001qn6ykyqFBUHpQE",
+      "started": 1790029645661
+    },
+    "durable": {
+      "aggregateID": "ses_f39eb4e65ffeG6hQfM8YCh4mxi",
+      "seq": 15,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c614ce24001670QsWWfn5W5bJ",
+    "created": 1790029647396,
+    "type": "session.reasoning.started",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f39eb4e65ffeG6hQfM8YCh4mxi",
+      "assistantMessageID": "msg_0c614c758001qn6ykyqFBUHpQE",
+      "ordinal": 0,
+      "state": {
+        "reasoningField": "reasoning_content"
+      }
+    },
+    "durable": {
+      "aggregateID": "ses_f39eb4e65ffeG6hQfM8YCh4mxi",
+      "seq": 16,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c614ce89001wXUl4lhgDudcat",
+    "created": 1790029647497,
+    "type": "session.reasoning.delta",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f39eb4e65ffeG6hQfM8YCh4mxi",
+      "assistantMessageID": "msg_0c614c758001qn6ykyqFBUHpQE",
+      "ordinal": 0,
+      "delta": "The edit was applied successfully. The"
+    }
+  },
+  {
+    "id": "evt_0c614cf13001q6CqZc0sPj2WQL",
+    "created": 1790029647635,
+    "type": "session.reasoning.delta",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f39eb4e65ffeG6hQfM8YCh4mxi",
+      "assistantMessageID": "msg_0c614c758001qn6ykyqFBUHpQE",
+      "ordinal": 0,
+      "delta": " user asked me to wait for their"
+    }
+  },
+  {
+    "id": "evt_0c614cf9e001L6zaR0hEd0QO8z",
+    "created": 1790029647774,
+    "type": "session.reasoning.delta",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f39eb4e65ffeG6hQfM8YCh4mxi",
+      "assistantMessageID": "msg_0c614c758001qn6ykyqFBUHpQE",
+      "ordinal": 0,
+      "delta": " review and then reply with one short sentence"
+    }
+  },
+  {
+    "id": "evt_0c614d005001D3faBmT8q0stn4",
+    "created": 1790029647877,
+    "type": "session.text.started",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f39eb4e65ffeG6hQfM8YCh4mxi",
+      "assistantMessageID": "msg_0c614c758001qn6ykyqFBUHpQE",
+      "ordinal": 0
+    },
+    "durable": {
+      "aggregateID": "ses_f39eb4e65ffeG6hQfM8YCh4mxi",
+      "seq": 17,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c614d00c0015XskAbYBQvWvfo",
+    "created": 1790029647884,
+    "type": "session.reasoning.delta",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f39eb4e65ffeG6hQfM8YCh4mxi",
+      "assistantMessageID": "msg_0c614c758001qn6ykyqFBUHpQE",
+      "ordinal": 0,
+      "delta": "."
+    }
+  },
+  {
+    "id": "evt_0c614d00d001RIwSDSGEzMpTMI",
+    "created": 1790029647885,
+    "type": "session.reasoning.ended",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f39eb4e65ffeG6hQfM8YCh4mxi",
+      "assistantMessageID": "msg_0c614c758001qn6ykyqFBUHpQE",
+      "ordinal": 0,
+      "text": "The edit was applied successfully. The user asked me to wait for their review and then reply with one short sentence.",
+      "state": {
+        "reasoningField": "reasoning_content",
+        "reasoningDetails": [
+          {
+            "type": "reasoning.text",
+            "text": "The edit was applied successfully. The user asked me to wait for their review and then reply with one short sentence.",
+            "format": "unknown",
+            "index": 0
+          }
+        ]
+      }
+    },
+    "durable": {
+      "aggregateID": "ses_f39eb4e65ffeG6hQfM8YCh4mxi",
+      "seq": 18,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c614d00e001TxHptVoH5iQbLR",
+    "created": 1790029647886,
+    "type": "session.text.delta",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f39eb4e65ffeG6hQfM8YCh4mxi",
+      "assistantMessageID": "msg_0c614c758001qn6ykyqFBUHpQE",
+      "ordinal": 0,
+      "delta": "Done."
+    }
+  },
+  {
+    "id": "evt_0c614d00e002i2YHy8noYW5a10",
+    "created": 1790029647886,
+    "type": "session.text.ended",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f39eb4e65ffeG6hQfM8YCh4mxi",
+      "assistantMessageID": "msg_0c614c758001qn6ykyqFBUHpQE",
+      "ordinal": 0,
+      "text": "Done."
+    },
+    "durable": {
+      "aggregateID": "ses_f39eb4e65ffeG6hQfM8YCh4mxi",
+      "seq": 19,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c614d00f0011k6bnDXraXZgd0",
+    "created": 1790029647887,
+    "type": "session.step.streamed",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f39eb4e65ffeG6hQfM8YCh4mxi",
+      "assistantMessageID": "msg_0c614c758001qn6ykyqFBUHpQE"
+    },
+    "durable": {
+      "aggregateID": "ses_f39eb4e65ffeG6hQfM8YCh4mxi",
+      "seq": 20,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c614d01000154ucz7PQivyCNO",
+    "created": 1790029647888,
+    "type": "session.step.ended",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f39eb4e65ffeG6hQfM8YCh4mxi",
+      "assistantMessageID": "msg_0c614c758001qn6ykyqFBUHpQE",
+      "finish": "stop",
+      "rawFinish": "stop",
+      "cost": 0,
+      "tokens": {
+        "input": 143,
+        "output": 4,
+        "reasoning": 24,
+        "cache": {
+          "read": 8832,
+          "write": 0
+        }
+      }
+    },
+    "durable": {
+      "aggregateID": "ses_f39eb4e65ffeG6hQfM8YCh4mxi",
+      "seq": 21,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c614d011001gshkmTgIz3gmhA",
+    "created": 1790029647889,
+    "type": "session.usage.updated",
+    "data": {
+      "sessionID": "ses_f39eb4e65ffeG6hQfM8YCh4mxi",
+      "cost": 0,
+      "tokens": {
+        "input": 8979,
+        "output": 94,
+        "reasoning": 58,
+        "cache": {
+          "read": 8832,
+          "write": 0
+        }
+      }
+    }
+  },
+  {
+    "id": "evt_0c614d012001Qc1QBhA1xE527z",
+    "created": 1790029647890,
+    "type": "session.execution.succeeded",
+    "data": {
+      "sessionID": "ses_f39eb4e65ffeG6hQfM8YCh4mxi"
+    },
+    "durable": {
+      "aggregateID": "ses_f39eb4e65ffeG6hQfM8YCh4mxi",
+      "seq": 22,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c614d01d001s4H0P1kCjc7QkI",
+    "created": 1790029647901,
+    "type": "session.deleted",
+    "data": {
+      "sessionID": "ses_f39eb4e65ffeG6hQfM8YCh4mxi"
+    },
+    "durable": {
+      "aggregateID": "ses_f39eb4e65ffeG6hQfM8YCh4mxi",
+      "seq": 23,
+      "version": 2
+    }
+  },
+  {
+    "id": "evt_0c614d060001mY4sXdlcKrVnqT",
+    "created": 1790029647968,
+    "type": "session.created",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f39eb2fbeffeeDNJBRvAqk7EAV",
+      "slug": "crisp-circuit",
+      "version": "2.0.11",
+      "projectID": "global",
+      "location": {
+        "directory": "<PROFILE>/project пробел %#"
+      },
+      "subpath": "../../../../../../../..<PROFILE>/project пробел %#",
+      "permissions": [
+        {
+          "action": "neovim_edit",
+          "resource": "*",
+          "effect": "allow"
+        }
+      ],
+      "model": {
+        "id": "mimo-v2.5-free",
+        "providerID": "opencode"
+      }
+    },
+    "durable": {
+      "aggregateID": "ses_f39eb2fbeffeeDNJBRvAqk7EAV",
+      "seq": 0,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c614d07a0014z5zki1VRxwsJJ",
+    "created": 1790029647994,
+    "type": "session.agent.selected",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f39eb2fbeffeeDNJBRvAqk7EAV",
+      "agent": "build"
+    },
+    "durable": {
+      "aggregateID": "ses_f39eb2fbeffeeDNJBRvAqk7EAV",
+      "seq": 1,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c614d07f001mOAXxrh8GuvZMk",
+    "created": 1790029647999,
+    "type": "session.inbox.enqueued",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "inboxID": "msg_0c614d077001AyHLTgZnSBeDa8",
+      "sessionID": "ses_f39eb2fbeffeeDNJBRvAqk7EAV",
+      "item": {
+        "type": "user",
+        "payload": {
+          "text": "Call neovim_edit exactly once with filePath=\"interrupted-review.txt\", oldString=\"before\", newString=\"after\". Use the direct top-level neovim_edit function, never the execute wrapper or tools.neovim_edit. Do not call any other tool. If permission is denied, stop and reply briefly. Do not retry."
+        },
+        "delivery": "queue"
+      }
+    },
+    "durable": {
+      "aggregateID": "ses_f39eb2fbeffeeDNJBRvAqk7EAV",
+      "seq": 2,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c614d080001d15xiYkNx0ADIC",
+    "created": 1790029648000,
+    "type": "session.execution.started",
+    "data": {
+      "sessionID": "ses_f39eb2fbeffeeDNJBRvAqk7EAV"
+    },
+    "durable": {
+      "aggregateID": "ses_f39eb2fbeffeeDNJBRvAqk7EAV",
+      "seq": 3,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c614d084001q9WV8K5jecj80u",
+    "created": 1790029648004,
+    "metadata": {
+      "instructions": {
+        "initial": true
+      }
+    },
+    "type": "session.instructions.updated",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f39eb2fbeffeeDNJBRvAqk7EAV",
+      "delta": {
+        "core/environment": "28df1114acb8020c58c9f93c19331207a977d8118dc2312c5c7bb7b1974835dd",
+        "core/date": "6a76aa89fcc8086f3abb8b9dc2b9ceafa3405dd2b3cdc263b339d36120433008",
+        "core/codemode": "cf52fcbcde861ccfefdc6633ee3cb84036524f86c72f976a7315e05dc01a15e1",
+        "core/skill-guidance": "8394362d28c82fa4d13c7a9f5568c05680f6687e07db8f426a0e3c92f3027dc9"
+      }
+    },
+    "durable": {
+      "aggregateID": "ses_f39eb2fbeffeeDNJBRvAqk7EAV",
+      "seq": 4,
+      "version": 2
+    }
+  },
+  {
+    "id": "evt_0c614d085001wa3AbqrJDJhULb",
+    "created": 1790029648005,
+    "type": "session.inbox.delivered",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f39eb2fbeffeeDNJBRvAqk7EAV",
+      "inboxID": "msg_0c614d077001AyHLTgZnSBeDa8"
+    },
+    "durable": {
+      "aggregateID": "ses_f39eb2fbeffeeDNJBRvAqk7EAV",
+      "seq": 5,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c614e459001N01pc4XKNCK9QO",
+    "created": 1790029653081,
+    "type": "session.step.started",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f39eb2fbeffeeDNJBRvAqk7EAV",
+      "agent": "build",
+      "model": {
+        "id": "mimo-v2.5-free",
+        "providerID": "opencode",
+        "variant": "default"
+      },
+      "assistantMessageID": "msg_0c614d08a0012d5Bj6iQnzU6Cw",
+      "started": 1790029648014
+    },
+    "durable": {
+      "aggregateID": "ses_f39eb2fbeffeeDNJBRvAqk7EAV",
+      "seq": 6,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c614e45b001JoTQPsS3Qof7ij",
+    "created": 1790029653083,
+    "type": "session.reasoning.started",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f39eb2fbeffeeDNJBRvAqk7EAV",
+      "assistantMessageID": "msg_0c614d08a0012d5Bj6iQnzU6Cw",
+      "ordinal": 0,
+      "state": {
+        "reasoningField": "reasoning_content"
+      }
+    },
+    "durable": {
+      "aggregateID": "ses_f39eb2fbeffeeDNJBRvAqk7EAV",
+      "seq": 7,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c614e4c1001n1glszqZ9C95Dj",
+    "created": 1790029653185,
+    "type": "session.reasoning.delta",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f39eb2fbeffeeDNJBRvAqk7EAV",
+      "assistantMessageID": "msg_0c614d08a0012d5Bj6iQnzU6Cw",
+      "ordinal": 0,
+      "delta": "The user wants me to call"
+    }
+  },
+  {
+    "id": "evt_0c614e531001Djx9rSJaRCs3om",
+    "created": 1790029653297,
+    "type": "session.reasoning.delta",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f39eb2fbeffeeDNJBRvAqk7EAV",
+      "assistantMessageID": "msg_0c614d08a0012d5Bj6iQnzU6Cw",
+      "ordinal": 0,
+      "delta": " neovim_edit exactly once"
+    }
+  },
+  {
+    "id": "evt_0c614e5a7001mN79oFduw176LC",
+    "created": 1790029653415,
+    "type": "session.reasoning.delta",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f39eb2fbeffeeDNJBRvAqk7EAV",
+      "assistantMessageID": "msg_0c614d08a0012d5Bj6iQnzU6Cw",
+      "ordinal": 0,
+      "delta": " with specific parameters. Let"
+    }
+  },
+  {
+    "id": "evt_0c614e618001xBlepIirI7v7ns",
+    "created": 1790029653528,
+    "type": "session.reasoning.delta",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f39eb2fbeffeeDNJBRvAqk7EAV",
+      "assistantMessageID": "msg_0c614d08a0012d5Bj6iQnzU6Cw",
+      "ordinal": 0,
+      "delta": " me do that."
+    }
+  },
+  {
+    "id": "evt_0c614e6db001Ja85AZvCwDjVK7",
+    "created": 1790029653723,
+    "type": "session.tool.input.started",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f39eb2fbeffeeDNJBRvAqk7EAV",
+      "assistantMessageID": "msg_0c614d08a0012d5Bj6iQnzU6Cw",
+      "id": "call_da221d955f014572b194aa44",
+      "name": "neovim_edit"
+    },
+    "durable": {
+      "aggregateID": "ses_f39eb2fbeffeeDNJBRvAqk7EAV",
+      "seq": 8,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c614e9ba001fRBMXyv0VxApki",
+    "created": 1790029654458,
+    "type": "session.reasoning.ended",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f39eb2fbeffeeDNJBRvAqk7EAV",
+      "assistantMessageID": "msg_0c614d08a0012d5Bj6iQnzU6Cw",
+      "ordinal": 0,
+      "text": "The user wants me to call neovim_edit exactly once with specific parameters. Let me do that.",
+      "state": {
+        "reasoningField": "reasoning_content",
+        "reasoningDetails": [
+          {
+            "type": "reasoning.text",
+            "text": "The user wants me to call neovim_edit exactly once with specific parameters. Let me do that.",
+            "format": "unknown",
+            "index": 0
+          }
+        ]
+      }
+    },
+    "durable": {
+      "aggregateID": "ses_f39eb2fbeffeeDNJBRvAqk7EAV",
+      "seq": 9,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c614e9bc0012d4Nd0R728aeET",
+    "created": 1790029654460,
+    "type": "session.tool.input.ended",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f39eb2fbeffeeDNJBRvAqk7EAV",
+      "assistantMessageID": "msg_0c614d08a0012d5Bj6iQnzU6Cw",
+      "id": "call_da221d955f014572b194aa44",
+      "text": "{\"filePath\": \"interrupted-review.txt\", \"oldString\": \"before\", \"newString\": \"after\"}"
+    },
+    "durable": {
+      "aggregateID": "ses_f39eb2fbeffeeDNJBRvAqk7EAV",
+      "seq": 10,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c614e9bc002DLH0YGPCD5hVFn",
+    "created": 1790029654460,
+    "type": "session.tool.called",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f39eb2fbeffeeDNJBRvAqk7EAV",
+      "assistantMessageID": "msg_0c614d08a0012d5Bj6iQnzU6Cw",
+      "id": "call_da221d955f014572b194aa44",
+      "input": {
+        "filePath": "interrupted-review.txt",
+        "oldString": "before",
+        "newString": "after"
+      },
+      "executed": false
+    },
+    "durable": {
+      "aggregateID": "ses_f39eb2fbeffeeDNJBRvAqk7EAV",
+      "seq": 11,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c614e9bd001CCQ2kXYJ7GufmE",
+    "created": 1790029654461,
+    "type": "session.step.streamed",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f39eb2fbeffeeDNJBRvAqk7EAV",
+      "assistantMessageID": "msg_0c614d08a0012d5Bj6iQnzU6Cw"
+    },
+    "durable": {
+      "aggregateID": "ses_f39eb2fbeffeeDNJBRvAqk7EAV",
+      "seq": 12,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c614e9c00012GiR2zhHgijZdy",
+    "created": 1790029654464,
+    "type": "rpc.opencode_nvim.policyRequested",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "policy": {
+        "protocolVersion": 1,
+        "gateID": "e830a124-23f9-4512-9735-d7825e9d76e1",
+        "sessionID": "ses_f39eb2fbeffeeDNJBRvAqk7EAV",
+        "location": {
+          "directory": "<PROFILE>/project пробел %#"
+        },
+        "status": "pending",
+        "request": {
+          "id": "per_00972f13e4db451fae4ec9d23415117b",
+          "action": "neovim_edit",
+          "resources": [
+            "<PROFILE>/project пробел %#/interrupted-review.txt"
+          ],
+          "save": [
+            "<PROFILE>/project пробел %#/interrupted-review.txt"
+          ],
+          "agent": "build",
+          "source": {
+            "type": "tool",
+            "messageID": "msg_0c614d08a0012d5Bj6iQnzU6Cw",
+            "id": "call_da221d955f014572b194aa44"
+          },
+          "metadata": {
+            "gateID": "e830a124-23f9-4512-9735-d7825e9d76e1"
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "evt_0c614e9c7001QoU8viwUU8kCMj",
+    "created": 1790029654471,
+    "type": "rpc.opencode_nvim.policySettled",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "policy": {
+        "protocolVersion": 1,
+        "gateID": "e830a124-23f9-4512-9735-d7825e9d76e1",
+        "sessionID": "ses_f39eb2fbeffeeDNJBRvAqk7EAV",
+        "location": {
+          "directory": "<PROFILE>/project пробел %#"
+        },
+        "status": "allowed",
+        "request": {
+          "id": "per_00972f13e4db451fae4ec9d23415117b",
+          "action": "neovim_edit",
+          "resources": [
+            "<PROFILE>/project пробел %#/interrupted-review.txt"
+          ],
+          "save": [
+            "<PROFILE>/project пробел %#/interrupted-review.txt"
+          ],
+          "agent": "build",
+          "source": {
+            "type": "tool",
+            "messageID": "msg_0c614d08a0012d5Bj6iQnzU6Cw",
+            "id": "call_da221d955f014572b194aa44"
+          },
+          "metadata": {
+            "gateID": "e830a124-23f9-4512-9735-d7825e9d76e1"
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "evt_0c614e9c8001lMJUNOZJOsY60N",
+    "created": 1790029654472,
+    "type": "session.tool.progress",
+    "data": {
+      "sessionID": "ses_f39eb2fbeffeeDNJBRvAqk7EAV",
+      "assistantMessageID": "msg_0c614d08a0012d5Bj6iQnzU6Cw",
+      "id": "call_da221d955f014572b194aa44",
+      "metadata": {
+        "opencode_native_diff": true,
+        "filepath": "<PROFILE>/project пробел %#/interrupted-review.txt",
+        "relativePath": "<PROFILE>/project пробел %#/interrupted-review.txt",
+        "diff": "--- <PROFILE>/project пробел %#/interrupted-review.txt\n+++ <PROFILE>/project пробел %#/interrupted-review.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+        "proposed_diff": "--- <PROFILE>/project пробел %#/interrupted-review.txt\n+++ <PROFILE>/project пробел %#/interrupted-review.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+        "filediff": {
+          "filePath": "<PROFILE>/project пробел %#/interrupted-review.txt",
+          "relativePath": "<PROFILE>/project пробел %#/interrupted-review.txt",
+          "file": "<PROFILE>/project пробел %#/interrupted-review.txt",
+          "type": "update",
+          "before": "before\n",
+          "after": "after\n",
+          "diff": "--- <PROFILE>/project пробел %#/interrupted-review.txt\n+++ <PROFILE>/project пробел %#/interrupted-review.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+          "patch": "--- <PROFILE>/project пробел %#/interrupted-review.txt\n+++ <PROFILE>/project пробел %#/interrupted-review.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+          "additions": 1,
+          "deletions": 1,
+          "status": "pending",
+          "bom": false,
+          "before_bom": false,
+          "eol": "\n"
+        },
+        "files": [
+          {
+            "filePath": "<PROFILE>/project пробел %#/interrupted-review.txt",
+            "relativePath": "<PROFILE>/project пробел %#/interrupted-review.txt",
+            "file": "<PROFILE>/project пробел %#/interrupted-review.txt",
+            "type": "update",
+            "before": "before\n",
+            "after": "after\n",
+            "diff": "--- <PROFILE>/project пробел %#/interrupted-review.txt\n+++ <PROFILE>/project пробел %#/interrupted-review.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+            "patch": "--- <PROFILE>/project пробел %#/interrupted-review.txt\n+++ <PROFILE>/project пробел %#/interrupted-review.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+            "additions": 1,
+            "deletions": 1,
+            "status": "pending",
+            "bom": false,
+            "before_bom": false,
+            "eol": "\n"
+          }
+        ],
+        "diagnostics": {},
+        "title": "<PROFILE>/project пробел %#/interrupted-review.txt"
+      }
+    }
+  },
+  {
+    "id": "evt_0c614e9c9001spMsU8nNGny4Nb",
+    "created": 1790029654473,
+    "type": "rpc.opencode_nvim.reviewCreated",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "review": {
+        "protocolVersion": 1,
+        "reviewID": "rev_f5002e73cda10b10716a5eef65fbbe2e",
+        "revision": 1,
+        "status": "pending",
+        "created": 1790029654473,
+        "sessionID": "ses_f39eb2fbeffeeDNJBRvAqk7EAV",
+        "messageID": "msg_0c614d08a0012d5Bj6iQnzU6Cw",
+        "callID": "call_da221d955f014572b194aa44",
+        "tool": "neovim_edit",
+        "agent": "build",
+        "directory": "<PROFILE>/project пробел %#",
+        "location": {
+          "directory": "<PROFILE>/project пробел %#"
+        },
+        "files": [
+          {
+            "fileID": "file_0_b4492c109dc5",
+            "filePath": "<PROFILE>/project пробел %#/interrupted-review.txt",
+            "type": "update",
+            "before": "before\n",
+            "after": "after\n",
+            "relativePath": "<PROFILE>/project пробел %#/interrupted-review.txt",
+            "file": "<PROFILE>/project пробел %#/interrupted-review.txt",
+            "diff": "--- <PROFILE>/project пробел %#/interrupted-review.txt\n+++ <PROFILE>/project пробел %#/interrupted-review.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+            "patch": "--- <PROFILE>/project пробел %#/interrupted-review.txt\n+++ <PROFILE>/project пробел %#/interrupted-review.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+            "additions": 1,
+            "deletions": 1,
+            "status": "pending",
+            "bom": false,
+            "before_bom": false,
+            "eol": "\n"
+          }
+        ],
+        "metadata": {
+          "opencode_native_diff": true,
+          "operation": "neovim_edit",
+          "agent": "build",
+          "sessionID": "ses_f39eb2fbeffeeDNJBRvAqk7EAV",
+          "messageID": "msg_0c614d08a0012d5Bj6iQnzU6Cw",
+          "filepath": "<PROFILE>/project пробел %#/interrupted-review.txt",
+          "relativePath": "<PROFILE>/project пробел %#/interrupted-review.txt",
+          "diff": "--- <PROFILE>/project пробел %#/interrupted-review.txt\n+++ <PROFILE>/project пробел %#/interrupted-review.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+          "proposed_diff": "--- <PROFILE>/project пробел %#/interrupted-review.txt\n+++ <PROFILE>/project пробел %#/interrupted-review.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+          "files": [
+            {
+              "filePath": "<PROFILE>/project пробел %#/interrupted-review.txt",
+              "relativePath": "<PROFILE>/project пробел %#/interrupted-review.txt",
+              "file": "<PROFILE>/project пробел %#/interrupted-review.txt",
+              "type": "update",
+              "before": "before\n",
+              "after": "after\n",
+              "diff": "--- <PROFILE>/project пробел %#/interrupted-review.txt\n+++ <PROFILE>/project пробел %#/interrupted-review.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+              "patch": "--- <PROFILE>/project пробел %#/interrupted-review.txt\n+++ <PROFILE>/project пробел %#/interrupted-review.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+              "additions": 1,
+              "deletions": 1,
+              "status": "pending",
+              "bom": false,
+              "before_bom": false,
+              "eol": "\n"
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "id": "evt_0c614e9ce001N6Qqz0k1OxsWLW",
+    "created": 1790029654478,
+    "type": "rpc.opencode_nvim.reviewCancelled",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "review": {
+        "protocolVersion": 1,
+        "reviewID": "rev_f5002e73cda10b10716a5eef65fbbe2e",
+        "revision": 1,
+        "status": "cancelled",
+        "created": 1790029654473,
+        "sessionID": "ses_f39eb2fbeffeeDNJBRvAqk7EAV",
+        "messageID": "msg_0c614d08a0012d5Bj6iQnzU6Cw",
+        "callID": "call_da221d955f014572b194aa44",
+        "tool": "neovim_edit",
+        "agent": "build",
+        "directory": "<PROFILE>/project пробел %#",
+        "location": {
+          "directory": "<PROFILE>/project пробел %#"
+        },
+        "files": [
+          {
+            "fileID": "file_0_b4492c109dc5",
+            "filePath": "<PROFILE>/project пробел %#/interrupted-review.txt",
+            "type": "update",
+            "before": "before\n",
+            "after": "after\n",
+            "relativePath": "<PROFILE>/project пробел %#/interrupted-review.txt",
+            "file": "<PROFILE>/project пробел %#/interrupted-review.txt",
+            "diff": "--- <PROFILE>/project пробел %#/interrupted-review.txt\n+++ <PROFILE>/project пробел %#/interrupted-review.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+            "patch": "--- <PROFILE>/project пробел %#/interrupted-review.txt\n+++ <PROFILE>/project пробел %#/interrupted-review.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+            "additions": 1,
+            "deletions": 1,
+            "status": "pending",
+            "bom": false,
+            "before_bom": false,
+            "eol": "\n"
+          }
+        ],
+        "metadata": {
+          "opencode_native_diff": true,
+          "operation": "neovim_edit",
+          "agent": "build",
+          "sessionID": "ses_f39eb2fbeffeeDNJBRvAqk7EAV",
+          "messageID": "msg_0c614d08a0012d5Bj6iQnzU6Cw",
+          "filepath": "<PROFILE>/project пробел %#/interrupted-review.txt",
+          "relativePath": "<PROFILE>/project пробел %#/interrupted-review.txt",
+          "diff": "--- <PROFILE>/project пробел %#/interrupted-review.txt\n+++ <PROFILE>/project пробел %#/interrupted-review.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+          "proposed_diff": "--- <PROFILE>/project пробел %#/interrupted-review.txt\n+++ <PROFILE>/project пробел %#/interrupted-review.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+          "files": [
+            {
+              "filePath": "<PROFILE>/project пробел %#/interrupted-review.txt",
+              "relativePath": "<PROFILE>/project пробел %#/interrupted-review.txt",
+              "file": "<PROFILE>/project пробел %#/interrupted-review.txt",
+              "type": "update",
+              "before": "before\n",
+              "after": "after\n",
+              "diff": "--- <PROFILE>/project пробел %#/interrupted-review.txt\n+++ <PROFILE>/project пробел %#/interrupted-review.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+              "patch": "--- <PROFILE>/project пробел %#/interrupted-review.txt\n+++ <PROFILE>/project пробел %#/interrupted-review.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+              "additions": 1,
+              "deletions": 1,
+              "status": "pending",
+              "bom": false,
+              "before_bom": false,
+              "eol": "\n"
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "id": "evt_0c614e9ce002XbvSYVHpV2CHl5",
+    "created": 1790029654478,
+    "type": "session.tool.failed",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f39eb2fbeffeeDNJBRvAqk7EAV",
+      "assistantMessageID": "msg_0c614d08a0012d5Bj6iQnzU6Cw",
+      "id": "call_da221d955f014572b194aa44",
+      "error": {
+        "type": "aborted",
+        "message": "Tool execution interrupted"
+      },
+      "metadata": {
+        "opencode_native_diff": true,
+        "filepath": "<PROFILE>/project пробел %#/interrupted-review.txt",
+        "relativePath": "<PROFILE>/project пробел %#/interrupted-review.txt",
+        "diff": "--- <PROFILE>/project пробел %#/interrupted-review.txt\n+++ <PROFILE>/project пробел %#/interrupted-review.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+        "proposed_diff": "--- <PROFILE>/project пробел %#/interrupted-review.txt\n+++ <PROFILE>/project пробел %#/interrupted-review.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+        "filediff": {
+          "filePath": "<PROFILE>/project пробел %#/interrupted-review.txt",
+          "relativePath": "<PROFILE>/project пробел %#/interrupted-review.txt",
+          "file": "<PROFILE>/project пробел %#/interrupted-review.txt",
+          "type": "update",
+          "before": "before\n",
+          "after": "after\n",
+          "diff": "--- <PROFILE>/project пробел %#/interrupted-review.txt\n+++ <PROFILE>/project пробел %#/interrupted-review.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+          "patch": "--- <PROFILE>/project пробел %#/interrupted-review.txt\n+++ <PROFILE>/project пробел %#/interrupted-review.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+          "additions": 1,
+          "deletions": 1,
+          "status": "pending",
+          "bom": false,
+          "before_bom": false,
+          "eol": "\n"
+        },
+        "files": [
+          {
+            "filePath": "<PROFILE>/project пробел %#/interrupted-review.txt",
+            "relativePath": "<PROFILE>/project пробел %#/interrupted-review.txt",
+            "file": "<PROFILE>/project пробел %#/interrupted-review.txt",
+            "type": "update",
+            "before": "before\n",
+            "after": "after\n",
+            "diff": "--- <PROFILE>/project пробел %#/interrupted-review.txt\n+++ <PROFILE>/project пробел %#/interrupted-review.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+            "patch": "--- <PROFILE>/project пробел %#/interrupted-review.txt\n+++ <PROFILE>/project пробел %#/interrupted-review.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+            "additions": 1,
+            "deletions": 1,
+            "status": "pending",
+            "bom": false,
+            "before_bom": false,
+            "eol": "\n"
+          }
+        ],
+        "diagnostics": {},
+        "title": "<PROFILE>/project пробел %#/interrupted-review.txt"
+      },
+      "executed": false
+    },
+    "durable": {
+      "aggregateID": "ses_f39eb2fbeffeeDNJBRvAqk7EAV",
+      "seq": 13,
+      "version": 2
+    }
+  },
+  {
+    "id": "evt_0c614e9d0001lplzVCqJAHzEeG",
+    "created": 1790029654480,
+    "type": "session.step.failed",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f39eb2fbeffeeDNJBRvAqk7EAV",
+      "assistantMessageID": "msg_0c614d08a0012d5Bj6iQnzU6Cw",
+      "error": {
+        "type": "aborted",
+        "message": "Step interrupted"
+      },
+      "rawFinish": "tool_calls",
+      "cost": 0,
+      "tokens": {
+        "input": 8797,
+        "output": 47,
+        "reasoning": 22,
+        "cache": {
+          "read": 0,
+          "write": 0
+        }
+      }
+    },
+    "durable": {
+      "aggregateID": "ses_f39eb2fbeffeeDNJBRvAqk7EAV",
+      "seq": 14,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c614e9d10012j1PFQtKAzKSkR",
+    "created": 1790029654481,
+    "type": "session.usage.updated",
+    "data": {
+      "sessionID": "ses_f39eb2fbeffeeDNJBRvAqk7EAV",
+      "cost": 0,
+      "tokens": {
+        "input": 8797,
+        "output": 47,
+        "reasoning": 22,
+        "cache": {
+          "read": 0,
+          "write": 0
+        }
+      }
+    }
+  },
+  {
+    "id": "evt_0c614e9d2001yC7optG9UZnsD3",
+    "created": 1790029654482,
+    "type": "session.execution.interrupted",
+    "data": {
+      "sessionID": "ses_f39eb2fbeffeeDNJBRvAqk7EAV",
+      "reason": "user"
+    },
+    "durable": {
+      "aggregateID": "ses_f39eb2fbeffeeDNJBRvAqk7EAV",
+      "seq": 15,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c614e9d9001L35JMNzZvMJpoE",
+    "created": 1790029654489,
+    "type": "session.deleted",
+    "data": {
+      "sessionID": "ses_f39eb2fbeffeeDNJBRvAqk7EAV"
+    },
+    "durable": {
+      "aggregateID": "ses_f39eb2fbeffeeDNJBRvAqk7EAV",
+      "seq": 16,
+      "version": 2
+    }
+  },
+  {
+    "id": "evt_0c614e9fa001n5l7uRrRq9jqOg",
+    "created": 1790029654522,
+    "type": "session.created",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f39eb1623ffe7E959bgwI5yUwE",
+      "slug": "lucky-river",
+      "version": "2.0.11",
+      "projectID": "global",
+      "location": {
+        "directory": "<PROFILE>/project пробел %#"
+      },
+      "subpath": "../../../../../../../..<PROFILE>/project пробел %#",
+      "permissions": [
+        {
+          "action": "neovim_edit",
+          "resource": "*",
+          "effect": "allow"
+        },
+        {
+          "action": "neovim_edit",
+          "resource": "<PROFILE>/project пробел %#/denied-review.txt",
+          "effect": "deny"
+        }
+      ],
+      "model": {
+        "id": "mimo-v2.5-free",
+        "providerID": "opencode"
+      }
+    },
+    "durable": {
+      "aggregateID": "ses_f39eb1623ffe7E959bgwI5yUwE",
+      "seq": 0,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c614ea08001h7deyCqHkjPNL4",
+    "created": 1790029654536,
+    "type": "session.agent.selected",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f39eb1623ffe7E959bgwI5yUwE",
+      "agent": "build"
+    },
+    "durable": {
+      "aggregateID": "ses_f39eb1623ffe7E959bgwI5yUwE",
+      "seq": 1,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c614ea0c001X81csBL7AU4baW",
+    "created": 1790029654540,
+    "type": "session.inbox.enqueued",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "inboxID": "msg_0c614ea05001pa1p3pcpBFvJ4M",
+      "sessionID": "ses_f39eb1623ffe7E959bgwI5yUwE",
+      "item": {
+        "type": "user",
+        "payload": {
+          "text": "Call neovim_edit exactly once with filePath=\"denied-review.txt\", oldString=\"before\", newString=\"after\". Use the direct top-level neovim_edit function, never the execute wrapper or tools.neovim_edit. Do not call any other tool. If permission is denied, stop and reply briefly. Do not retry."
+        },
+        "delivery": "queue"
+      }
+    },
+    "durable": {
+      "aggregateID": "ses_f39eb1623ffe7E959bgwI5yUwE",
+      "seq": 2,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c614ea0e001ehLtX4BQPhCXDv",
+    "created": 1790029654542,
+    "type": "session.execution.started",
+    "data": {
+      "sessionID": "ses_f39eb1623ffe7E959bgwI5yUwE"
+    },
+    "durable": {
+      "aggregateID": "ses_f39eb1623ffe7E959bgwI5yUwE",
+      "seq": 3,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c614ea12001z9SF4gfAKeVfn6",
+    "created": 1790029654546,
+    "metadata": {
+      "instructions": {
+        "initial": true
+      }
+    },
+    "type": "session.instructions.updated",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f39eb1623ffe7E959bgwI5yUwE",
+      "delta": {
+        "core/environment": "1bee114cc0a88f1596ec06e344e39be4804e6304953ba9abdd3bf324d705f04e",
+        "core/date": "6a76aa89fcc8086f3abb8b9dc2b9ceafa3405dd2b3cdc263b339d36120433008",
+        "core/codemode": "cf52fcbcde861ccfefdc6633ee3cb84036524f86c72f976a7315e05dc01a15e1",
+        "core/skill-guidance": "8394362d28c82fa4d13c7a9f5568c05680f6687e07db8f426a0e3c92f3027dc9"
+      }
+    },
+    "durable": {
+      "aggregateID": "ses_f39eb1623ffe7E959bgwI5yUwE",
+      "seq": 4,
+      "version": 2
+    }
+  },
+  {
+    "id": "evt_0c614ea13001HPFWSEjJ7QpPvA",
+    "created": 1790029654547,
+    "type": "session.inbox.delivered",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f39eb1623ffe7E959bgwI5yUwE",
+      "inboxID": "msg_0c614ea05001pa1p3pcpBFvJ4M"
+    },
+    "durable": {
+      "aggregateID": "ses_f39eb1623ffe7E959bgwI5yUwE",
+      "seq": 5,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c614f129001D0bWG5QfGsg74y",
+    "created": 1790029656361,
+    "type": "session.step.started",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f39eb1623ffe7E959bgwI5yUwE",
+      "agent": "build",
+      "model": {
+        "id": "mimo-v2.5-free",
+        "providerID": "opencode",
+        "variant": "default"
+      },
+      "assistantMessageID": "msg_0c614ea19001LoYnV5RpfN7QQB",
+      "started": 1790029654560
+    },
+    "durable": {
+      "aggregateID": "ses_f39eb1623ffe7E959bgwI5yUwE",
+      "seq": 6,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c614f12b001tabzK9sxGS4cnC",
+    "created": 1790029656363,
+    "type": "session.reasoning.started",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f39eb1623ffe7E959bgwI5yUwE",
+      "assistantMessageID": "msg_0c614ea19001LoYnV5RpfN7QQB",
+      "ordinal": 0,
+      "state": {
+        "reasoningField": "reasoning_content"
+      }
+    },
+    "durable": {
+      "aggregateID": "ses_f39eb1623ffe7E959bgwI5yUwE",
+      "seq": 7,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c614f190001mP9wk37HdShQy5",
+    "created": 1790029656465,
+    "type": "session.reasoning.delta",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f39eb1623ffe7E959bgwI5yUwE",
+      "assistantMessageID": "msg_0c614ea19001LoYnV5RpfN7QQB",
+      "ordinal": 0,
+      "delta": "The user wants me to call neovim_edit with specific parameters. Let me do exactly that"
+    }
+  },
+  {
+    "id": "evt_0c614f1b8001mZd29OzX44kqGu",
+    "created": 1790029656504,
+    "type": "session.tool.input.started",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f39eb1623ffe7E959bgwI5yUwE",
+      "assistantMessageID": "msg_0c614ea19001LoYnV5RpfN7QQB",
+      "id": "call_68fd97eddb5f47168cbf49c5",
+      "name": "neovim_edit"
+    },
+    "durable": {
+      "aggregateID": "ses_f39eb1623ffe7E959bgwI5yUwE",
+      "seq": 8,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c614f20b001vL3dXdDxxRtK6Z",
+    "created": 1790029656587,
+    "type": "session.reasoning.delta",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f39eb1623ffe7E959bgwI5yUwE",
+      "assistantMessageID": "msg_0c614ea19001LoYnV5RpfN7QQB",
+      "ordinal": 0,
+      "delta": "."
+    }
+  },
+  {
+    "id": "evt_0c614f22e001vYUW283Z6UtHf6",
+    "created": 1790029656622,
+    "type": "session.reasoning.ended",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f39eb1623ffe7E959bgwI5yUwE",
+      "assistantMessageID": "msg_0c614ea19001LoYnV5RpfN7QQB",
+      "ordinal": 0,
+      "text": "The user wants me to call neovim_edit with specific parameters. Let me do exactly that.",
+      "state": {
+        "reasoningField": "reasoning_content",
+        "reasoningDetails": [
+          {
+            "type": "reasoning.text",
+            "text": "The user wants me to call neovim_edit with specific parameters. Let me do exactly that.",
+            "format": "unknown",
+            "index": 0
+          }
+        ]
+      }
+    },
+    "durable": {
+      "aggregateID": "ses_f39eb1623ffe7E959bgwI5yUwE",
+      "seq": 9,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c614f22f001hRINs0Ce1ZXi2q",
+    "created": 1790029656623,
+    "type": "session.tool.input.ended",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f39eb1623ffe7E959bgwI5yUwE",
+      "assistantMessageID": "msg_0c614ea19001LoYnV5RpfN7QQB",
+      "id": "call_68fd97eddb5f47168cbf49c5",
+      "text": "{\"filePath\": \"denied-review.txt\", \"oldString\": \"before\", \"newString\": \"after\"}"
+    },
+    "durable": {
+      "aggregateID": "ses_f39eb1623ffe7E959bgwI5yUwE",
+      "seq": 10,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c614f23000114bt992aipK5Xk",
+    "created": 1790029656624,
+    "type": "session.tool.called",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f39eb1623ffe7E959bgwI5yUwE",
+      "assistantMessageID": "msg_0c614ea19001LoYnV5RpfN7QQB",
+      "id": "call_68fd97eddb5f47168cbf49c5",
+      "input": {
+        "filePath": "denied-review.txt",
+        "oldString": "before",
+        "newString": "after"
+      },
+      "executed": false
+    },
+    "durable": {
+      "aggregateID": "ses_f39eb1623ffe7E959bgwI5yUwE",
+      "seq": 11,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c614f231001RVga49ourUHGau",
+    "created": 1790029656625,
+    "type": "session.step.streamed",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f39eb1623ffe7E959bgwI5yUwE",
+      "assistantMessageID": "msg_0c614ea19001LoYnV5RpfN7QQB"
+    },
+    "durable": {
+      "aggregateID": "ses_f39eb1623ffe7E959bgwI5yUwE",
+      "seq": 12,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c614f232001L16frmcoY7m5Xk",
+    "created": 1790029656626,
+    "type": "rpc.opencode_nvim.policyRequested",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "policy": {
+        "protocolVersion": 1,
+        "gateID": "61d60a74-9cc1-4483-b75b-cccf9df78626",
+        "sessionID": "ses_f39eb1623ffe7E959bgwI5yUwE",
+        "location": {
+          "directory": "<PROFILE>/project пробел %#"
+        },
+        "status": "pending",
+        "request": {
+          "id": "per_2bad62dafda5499ebfc9f2981ccaa27b",
+          "action": "neovim_edit",
+          "resources": [
+            "<PROFILE>/project пробел %#/denied-review.txt"
+          ],
+          "save": [
+            "<PROFILE>/project пробел %#/denied-review.txt"
+          ],
+          "agent": "build",
+          "source": {
+            "type": "tool",
+            "messageID": "msg_0c614ea19001LoYnV5RpfN7QQB",
+            "id": "call_68fd97eddb5f47168cbf49c5"
+          },
+          "metadata": {
+            "gateID": "61d60a74-9cc1-4483-b75b-cccf9df78626"
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "evt_0c614f237001YK0mAjEcMJyz6v",
+    "created": 1790029656631,
+    "type": "rpc.opencode_nvim.policySettled",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "policy": {
+        "protocolVersion": 1,
+        "gateID": "61d60a74-9cc1-4483-b75b-cccf9df78626",
+        "sessionID": "ses_f39eb1623ffe7E959bgwI5yUwE",
+        "location": {
+          "directory": "<PROFILE>/project пробел %#"
+        },
+        "status": "denied",
+        "request": {
+          "id": "per_2bad62dafda5499ebfc9f2981ccaa27b",
+          "action": "neovim_edit",
+          "resources": [
+            "<PROFILE>/project пробел %#/denied-review.txt"
+          ],
+          "save": [
+            "<PROFILE>/project пробел %#/denied-review.txt"
+          ],
+          "agent": "build",
+          "source": {
+            "type": "tool",
+            "messageID": "msg_0c614ea19001LoYnV5RpfN7QQB",
+            "id": "call_68fd97eddb5f47168cbf49c5"
+          },
+          "metadata": {
+            "gateID": "61d60a74-9cc1-4483-b75b-cccf9df78626"
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "evt_0c614f238001oK414F79l1wX6T",
+    "created": 1790029656632,
+    "type": "session.tool.failed",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f39eb1623ffe7E959bgwI5yUwE",
+      "assistantMessageID": "msg_0c614ea19001LoYnV5RpfN7QQB",
+      "id": "call_68fd97eddb5f47168cbf49c5",
+      "error": {
+        "type": "tool.execution",
+        "message": "Native permission denied the tool operation"
+      },
+      "executed": false
+    },
+    "durable": {
+      "aggregateID": "ses_f39eb1623ffe7E959bgwI5yUwE",
+      "seq": 13,
+      "version": 2
+    }
+  },
+  {
+    "id": "evt_0c614f23a001FRIG3lEnPWtGzQ",
+    "created": 1790029656634,
+    "type": "session.step.ended",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f39eb1623ffe7E959bgwI5yUwE",
+      "assistantMessageID": "msg_0c614ea19001LoYnV5RpfN7QQB",
+      "finish": "tool-calls",
+      "rawFinish": "tool_calls",
+      "cost": 0,
+      "tokens": {
+        "input": 8802,
+        "output": 68,
+        "reasoning": 0,
+        "cache": {
+          "read": 0,
+          "write": 0
+        }
+      }
+    },
+    "durable": {
+      "aggregateID": "ses_f39eb1623ffe7E959bgwI5yUwE",
+      "seq": 14,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c614f23b0014EY1CvzJn2xY7x",
+    "created": 1790029656635,
+    "type": "session.usage.updated",
+    "data": {
+      "sessionID": "ses_f39eb1623ffe7E959bgwI5yUwE",
+      "cost": 0,
+      "tokens": {
+        "input": 8802,
+        "output": 68,
+        "reasoning": 0,
+        "cache": {
+          "read": 0,
+          "write": 0
+        }
+      }
+    }
+  },
+  {
+    "id": "evt_0c614f6c3001BsqpVWNmkmAN7Y",
+    "created": 1790029657795,
+    "type": "session.step.started",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f39eb1623ffe7E959bgwI5yUwE",
+      "agent": "build",
+      "model": {
+        "id": "mimo-v2.5-free",
+        "providerID": "opencode",
+        "variant": "default"
+      },
+      "assistantMessageID": "msg_0c614f23f001iLnz3SeVVjSykK",
+      "started": 1790029656643
+    },
+    "durable": {
+      "aggregateID": "ses_f39eb1623ffe7E959bgwI5yUwE",
+      "seq": 15,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c614f6c50013nptpXVvnYdJYo",
+    "created": 1790029657797,
+    "type": "session.reasoning.started",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f39eb1623ffe7E959bgwI5yUwE",
+      "assistantMessageID": "msg_0c614f23f001iLnz3SeVVjSykK",
+      "ordinal": 0,
+      "state": {
+        "reasoningField": "reasoning_content"
+      }
+    },
+    "durable": {
+      "aggregateID": "ses_f39eb1623ffe7E959bgwI5yUwE",
+      "seq": 16,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c614f72b001nC14xWMurWz339",
+    "created": 1790029657899,
+    "type": "session.reasoning.delta",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f39eb1623ffe7E959bgwI5yUwE",
+      "assistantMessageID": "msg_0c614f23f001iLnz3SeVVjSykK",
+      "ordinal": 0,
+      "delta": "The tool execution was denied by native"
+    }
+  },
+  {
+    "id": "evt_0c614f7a7001PGyOo8Ny0of1Qj",
+    "created": 1790029658023,
+    "type": "session.text.started",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f39eb1623ffe7E959bgwI5yUwE",
+      "assistantMessageID": "msg_0c614f23f001iLnz3SeVVjSykK",
+      "ordinal": 0
+    },
+    "durable": {
+      "aggregateID": "ses_f39eb1623ffe7E959bgwI5yUwE",
+      "seq": 17,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c614f7eb001uAZUvAiICGCcHW",
+    "created": 1790029658091,
+    "type": "session.reasoning.delta",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f39eb1623ffe7E959bgwI5yUwE",
+      "assistantMessageID": "msg_0c614f23f001iLnz3SeVVjSykK",
+      "ordinal": 0,
+      "delta": " permission. The user said if permission is denied, stop and reply briefly. So I'll do that."
+    }
+  },
+  {
+    "id": "evt_0c614f7ec001qey7DoNsrc37gG",
+    "created": 1790029658092,
+    "type": "session.reasoning.ended",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f39eb1623ffe7E959bgwI5yUwE",
+      "assistantMessageID": "msg_0c614f23f001iLnz3SeVVjSykK",
+      "ordinal": 0,
+      "text": "The tool execution was denied by native permission. The user said if permission is denied, stop and reply briefly. So I'll do that.",
+      "state": {
+        "reasoningField": "reasoning_content",
+        "reasoningDetails": [
+          {
+            "type": "reasoning.text",
+            "text": "The tool execution was denied by native permission. The user said if permission is denied, stop and reply briefly. So I'll do that.",
+            "format": "unknown",
+            "index": 0
+          }
+        ]
+      }
+    },
+    "durable": {
+      "aggregateID": "ses_f39eb1623ffe7E959bgwI5yUwE",
+      "seq": 18,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c614f7ed0012wR61NWeTxMbx4",
+    "created": 1790029658093,
+    "type": "session.text.delta",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f39eb1623ffe7E959bgwI5yUwE",
+      "assistantMessageID": "msg_0c614f23f001iLnz3SeVVjSykK",
+      "ordinal": 0,
+      "delta": "Permission denied — tool call was blocked. No retries attempted."
+    }
+  },
+  {
+    "id": "evt_0c614f7ed002AsiRm0oX9dbd6U",
+    "created": 1790029658093,
+    "type": "session.text.ended",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f39eb1623ffe7E959bgwI5yUwE",
+      "assistantMessageID": "msg_0c614f23f001iLnz3SeVVjSykK",
+      "ordinal": 0,
+      "text": "Permission denied — tool call was blocked. No retries attempted."
+    },
+    "durable": {
+      "aggregateID": "ses_f39eb1623ffe7E959bgwI5yUwE",
+      "seq": 19,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c614f7ee001jeLa9uVL3SSZAe",
+    "created": 1790029658094,
+    "type": "session.step.streamed",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f39eb1623ffe7E959bgwI5yUwE",
+      "assistantMessageID": "msg_0c614f23f001iLnz3SeVVjSykK"
+    },
+    "durable": {
+      "aggregateID": "ses_f39eb1623ffe7E959bgwI5yUwE",
+      "seq": 20,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c614f7ef001XGwTIYXwWCX84Y",
+    "created": 1790029658095,
+    "type": "session.step.ended",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f39eb1623ffe7E959bgwI5yUwE",
+      "assistantMessageID": "msg_0c614f23f001iLnz3SeVVjSykK",
+      "finish": "stop",
+      "rawFinish": "stop",
+      "cost": 0,
+      "tokens": {
+        "input": 134,
+        "output": 43,
+        "reasoning": 0,
+        "cache": {
+          "read": 8768,
+          "write": 0
+        }
+      }
+    },
+    "durable": {
+      "aggregateID": "ses_f39eb1623ffe7E959bgwI5yUwE",
+      "seq": 21,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c614f7f0001ZtaaJdTxhxc7VE",
+    "created": 1790029658096,
+    "type": "session.usage.updated",
+    "data": {
+      "sessionID": "ses_f39eb1623ffe7E959bgwI5yUwE",
+      "cost": 0,
+      "tokens": {
+        "input": 8936,
+        "output": 111,
+        "reasoning": 0,
+        "cache": {
+          "read": 8768,
+          "write": 0
+        }
+      }
+    }
+  },
+  {
+    "id": "evt_0c614f7f00024cLRnVX7HVK4rQ",
+    "created": 1790029658096,
+    "type": "session.execution.succeeded",
+    "data": {
+      "sessionID": "ses_f39eb1623ffe7E959bgwI5yUwE"
+    },
+    "durable": {
+      "aggregateID": "ses_f39eb1623ffe7E959bgwI5yUwE",
+      "seq": 22,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c614f7f600135hfQK11jxX5Nz",
+    "created": 1790029658102,
+    "type": "session.deleted",
+    "data": {
+      "sessionID": "ses_f39eb1623ffe7E959bgwI5yUwE"
+    },
+    "durable": {
+      "aggregateID": "ses_f39eb1623ffe7E959bgwI5yUwE",
+      "seq": 23,
+      "version": 2
+    }
+  },
+  {
+    "id": "evt_0c614f822001SmBMM0Mk7SusUn",
+    "created": 1790029658146,
+    "type": "session.created",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f39eb07faffeCGonKM2zWHw5nX",
+      "slug": "lucky-pixel",
+      "version": "2.0.11",
+      "projectID": "global",
+      "location": {
+        "directory": "<PROFILE>/project пробел %#"
+      },
+      "subpath": "../../../../../../../..<PROFILE>/project пробел %#",
+      "title": "opencode.nvim v2 runtime fixture",
+      "model": {
+        "id": "mimo-v2.5-free",
+        "providerID": "opencode"
+      }
+    },
+    "durable": {
+      "aggregateID": "ses_f39eb07faffeCGonKM2zWHw5nX",
+      "seq": 0,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c614f832001u6bOUC74k1Lk4p",
+    "created": 1790029658162,
+    "type": "session.inbox.enqueued",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "inboxID": "msg_nvim_v2_fixture",
+      "sessionID": "ses_f39eb07faffeCGonKM2zWHw5nX",
+      "item": {
+        "type": "user",
+        "payload": {
+          "text": "Reply with exactly: Привет, Neovim!"
+        },
+        "delivery": "queue"
+      }
+    },
+    "durable": {
+      "aggregateID": "ses_f39eb07faffeCGonKM2zWHw5nX",
+      "seq": 1,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c614f833001DGLTImWjS3C4gF",
+    "created": 1790029658163,
+    "type": "session.execution.started",
+    "data": {
+      "sessionID": "ses_f39eb07faffeCGonKM2zWHw5nX"
+    },
+    "durable": {
+      "aggregateID": "ses_f39eb07faffeCGonKM2zWHw5nX",
+      "seq": 2,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c614f836001d0JKEUNUdP9ET4",
+    "created": 1790029658166,
+    "metadata": {
+      "instructions": {
+        "initial": true
+      }
+    },
+    "type": "session.instructions.updated",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f39eb07faffeCGonKM2zWHw5nX",
+      "delta": {
+        "core/environment": "b1982c653f7474e4ba4a348556b224c12efcde9f834d272c32d622c9d13d65b9",
+        "core/date": "6a76aa89fcc8086f3abb8b9dc2b9ceafa3405dd2b3cdc263b339d36120433008",
+        "core/codemode": "cf52fcbcde861ccfefdc6633ee3cb84036524f86c72f976a7315e05dc01a15e1",
+        "core/skill-guidance": "8394362d28c82fa4d13c7a9f5568c05680f6687e07db8f426a0e3c92f3027dc9"
+      }
+    },
+    "durable": {
+      "aggregateID": "ses_f39eb07faffeCGonKM2zWHw5nX",
+      "seq": 3,
+      "version": 2
+    }
+  },
+  {
+    "id": "evt_0c614f8370013wPkLV1rGmbQ35",
+    "created": 1790029658167,
+    "type": "session.inbox.delivered",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f39eb07faffeCGonKM2zWHw5nX",
+      "inboxID": "msg_nvim_v2_fixture"
+    },
+    "durable": {
+      "aggregateID": "ses_f39eb07faffeCGonKM2zWHw5nX",
+      "seq": 4,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c614ffa1001hbWaYFmSBbVF4x",
+    "created": 1790029660065,
+    "type": "session.step.started",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f39eb07faffeCGonKM2zWHw5nX",
+      "agent": "build",
+      "model": {
+        "id": "mimo-v2.5-free",
+        "providerID": "opencode",
+        "variant": "default"
+      },
+      "assistantMessageID": "msg_0c614f839001V6ekw5OyIh7FkF",
+      "started": 1790029658174
+    },
+    "durable": {
+      "aggregateID": "ses_f39eb07faffeCGonKM2zWHw5nX",
+      "seq": 5,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c614ffa2001LcB0O3hQUi0M5g",
+    "created": 1790029660066,
+    "type": "session.reasoning.started",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f39eb07faffeCGonKM2zWHw5nX",
+      "assistantMessageID": "msg_0c614f839001V6ekw5OyIh7FkF",
+      "ordinal": 0,
+      "state": {
+        "reasoningField": "reasoning_content"
+      }
+    },
+    "durable": {
+      "aggregateID": "ses_f39eb07faffeCGonKM2zWHw5nX",
+      "seq": 6,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c6150008001YUkNMPrlg8rV5y",
+    "created": 1790029660168,
+    "type": "session.reasoning.delta",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f39eb07faffeCGonKM2zWHw5nX",
+      "assistantMessageID": "msg_0c614f839001V6ekw5OyIh7FkF",
+      "ordinal": 0,
+      "delta": "The user wants"
+    }
+  },
+  {
+    "id": "evt_0c6150024001iObnD99SirWqGc",
+    "created": 1790029660196,
+    "type": "session.text.started",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f39eb07faffeCGonKM2zWHw5nX",
+      "assistantMessageID": "msg_0c614f839001V6ekw5OyIh7FkF",
+      "ordinal": 0
+    },
+    "durable": {
+      "aggregateID": "ses_f39eb07faffeCGonKM2zWHw5nX",
+      "seq": 7,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c6150057001jwQ5DoyQ2EBsla",
+    "created": 1790029660247,
+    "type": "session.reasoning.delta",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f39eb07faffeCGonKM2zWHw5nX",
+      "assistantMessageID": "msg_0c614f839001V6ekw5OyIh7FkF",
+      "ordinal": 0,
+      "delta": " me to reply with exactly: \"Привет, Neovim!\""
+    }
+  },
+  {
+    "id": "evt_0c6150058001CyE4l6JeLDEMAy",
+    "created": 1790029660248,
+    "type": "session.reasoning.ended",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f39eb07faffeCGonKM2zWHw5nX",
+      "assistantMessageID": "msg_0c614f839001V6ekw5OyIh7FkF",
+      "ordinal": 0,
+      "text": "The user wants me to reply with exactly: \"Привет, Neovim!\"",
+      "state": {
+        "reasoningField": "reasoning_content",
+        "reasoningDetails": [
+          {
+            "type": "reasoning.text",
+            "text": "The user wants me to reply with exactly: \"Привет, Neovim!\"",
+            "format": "unknown",
+            "index": 0
+          }
+        ]
+      }
+    },
+    "durable": {
+      "aggregateID": "ses_f39eb07faffeCGonKM2zWHw5nX",
+      "seq": 8,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c6150059001RCRGGlVAiQXQQ4",
+    "created": 1790029660249,
+    "type": "session.text.delta",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f39eb07faffeCGonKM2zWHw5nX",
+      "assistantMessageID": "msg_0c614f839001V6ekw5OyIh7FkF",
+      "ordinal": 0,
+      "delta": "Привет, Neovim!"
+    }
+  },
+  {
+    "id": "evt_0c6150059002K25GO2skpdBcG6",
+    "created": 1790029660249,
+    "type": "session.text.ended",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f39eb07faffeCGonKM2zWHw5nX",
+      "assistantMessageID": "msg_0c614f839001V6ekw5OyIh7FkF",
+      "ordinal": 0,
+      "text": "Привет, Neovim!"
+    },
+    "durable": {
+      "aggregateID": "ses_f39eb07faffeCGonKM2zWHw5nX",
+      "seq": 9,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c615005a001gx4p6FF9oMzh6M",
+    "created": 1790029660250,
+    "type": "session.step.streamed",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f39eb07faffeCGonKM2zWHw5nX",
+      "assistantMessageID": "msg_0c614f839001V6ekw5OyIh7FkF"
+    },
+    "durable": {
+      "aggregateID": "ses_f39eb07faffeCGonKM2zWHw5nX",
+      "seq": 10,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c615005b001w7MIS0EX1nDrof",
+    "created": 1790029660251,
+    "type": "session.step.ended",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f39eb07faffeCGonKM2zWHw5nX",
+      "assistantMessageID": "msg_0c614f839001V6ekw5OyIh7FkF",
+      "finish": "stop",
+      "rawFinish": "stop",
+      "cost": 0,
+      "tokens": {
+        "input": 8742,
+        "output": 29,
+        "reasoning": 0,
+        "cache": {
+          "read": 0,
+          "write": 0
+        }
+      }
+    },
+    "durable": {
+      "aggregateID": "ses_f39eb07faffeCGonKM2zWHw5nX",
+      "seq": 11,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c615005c0012bZp9uRvokAvCN",
+    "created": 1790029660252,
+    "type": "session.usage.updated",
+    "data": {
+      "sessionID": "ses_f39eb07faffeCGonKM2zWHw5nX",
+      "cost": 0,
+      "tokens": {
+        "input": 8742,
+        "output": 29,
+        "reasoning": 0,
+        "cache": {
+          "read": 0,
+          "write": 0
+        }
+      }
+    }
+  },
+  {
+    "id": "evt_0c615005d0015N3qx1KV3fa3da",
+    "created": 1790029660253,
+    "type": "session.execution.succeeded",
+    "data": {
+      "sessionID": "ses_f39eb07faffeCGonKM2zWHw5nX"
+    },
+    "durable": {
+      "aggregateID": "ses_f39eb07faffeCGonKM2zWHw5nX",
+      "seq": 12,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c615021d001AbBSZrmcNvyKX2",
+    "created": 1790029660701,
+    "type": "session.execution.started",
+    "data": {
+      "sessionID": "ses_f39eb07faffeCGonKM2zWHw5nX"
+    },
+    "durable": {
+      "aggregateID": "ses_f39eb07faffeCGonKM2zWHw5nX",
+      "seq": 13,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c615021e001lJFvGb86BFgZzH",
+    "created": 1790029660702,
+    "type": "session.execution.succeeded",
+    "data": {
+      "sessionID": "ses_f39eb07faffeCGonKM2zWHw5nX"
+    },
+    "durable": {
+      "aggregateID": "ses_f39eb07faffeCGonKM2zWHw5nX",
+      "seq": 14,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c6150220001zF3YPSn7MXI6wf",
+    "created": 1790029660704,
+    "type": "session.deleted",
+    "data": {
+      "sessionID": "ses_f39eb07faffeCGonKM2zWHw5nX"
+    },
+    "durable": {
+      "aggregateID": "ses_f39eb07faffeCGonKM2zWHw5nX",
+      "seq": 15,
+      "version": 2
+    }
+  }
+]

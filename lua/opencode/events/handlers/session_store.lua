@@ -14,58 +14,37 @@ function M.setup(events)
 		end)
 	end)
 
-	events.on("interaction_changed", function()
-		vim.schedule(refresh_all)
-	end)
-
-	events.on("permission_pending", function()
-		vim.schedule(refresh_all)
-	end)
-
-	events.on("question_pending", function()
-		vim.schedule(refresh_all)
-	end)
-
-	events.on("edit_pending", function()
-		vim.schedule(refresh_all)
-	end)
-
-	events.on("permission_removed", function()
-		vim.schedule(refresh_all)
-	end)
-
-	events.on("question_removed", function()
-		vim.schedule(refresh_all)
-	end)
-
-	events.on("edit_removed", function()
-		vim.schedule(refresh_all)
-	end)
-
-	events.on("message_part_updated", function(data)
-		local part = data and data.part
-		if type(part) == "table" and part.type == "tool" and part.tool == "task" then
+	for _, event in ipairs({
+		"interaction_changed",
+		"permission_pending",
+		"edit_pending",
+		"permission_removed",
+		"question_removed",
+		"edit_removed",
+	}) do
+		events.on(event, function()
 			vim.schedule(refresh_all)
-		end
-	end)
-
-	events.on("session_change", function()
-		vim.schedule(refresh_all)
-	end)
-
-	-- Server-side session deletion (SSE session.deleted).
-	-- Tolerates sessions this client never tracked (foreign project deletes).
-	events.on("session_deleted", function(data)
-		vim.schedule(function()
-			local info = type(data) == "table" and data.info or nil
-			local session_id = (type(data) == "table" and (data.sessionID or data.sessionId))
-				or (type(info) == "table" and info.id)
-				or nil
-			if not session_id or session_id == "" then
-				return
-			end
-			session_actions.handle_deleted(session_id, { reason = "session_deleted" })
 		end)
+	end
+
+	events.on("session_change", function(data)
+		if not (data and data.preserve_cache) then
+			require("opencode.permission.danger").clear()
+			for _, id in ipairs(require("opencode.permission.state").clear_all() or {}) do
+				events.emit("permission_removed", { permission_id = id })
+			end
+			for _, id in ipairs(require("opencode.question.state").clear_all() or {}) do
+				events.emit("question_removed", { request_id = id })
+			end
+			for _, id in ipairs(require("opencode.edit.state").clear_all() or {}) do
+				events.emit("edit_removed", { permission_id = id })
+			end
+			local reason = data and data.reason
+			if data and data.previous_id and (reason == "clear" or reason == "disconnect") then
+				require("opencode.sync").clear_session(data.previous_id)
+			end
+		end
+		vim.schedule(refresh_all)
 	end)
 end
 

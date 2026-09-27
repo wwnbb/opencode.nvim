@@ -1,0 +1,9 @@
+{
+  "status": 404,
+  "response": {
+    "_tag": "IntegrationAttemptNotFoundError",
+    "integrationID": "groq",
+    "attemptID": "con_0c62eba7f001UWU6vvwPzdXRxG",
+    "message": "Command attempt not found: con_0c62eba7f001UWU6vvwPzdXRxG"
+  }
+}

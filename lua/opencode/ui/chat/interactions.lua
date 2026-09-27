@@ -4,7 +4,6 @@ local cs = require("opencode.ui.chat.state")
 local state = cs.state
 
 local chat_tasks = require("opencode.ui.chat.tasks")
-local chat_todos = require("opencode.ui.chat.todos")
 local chat_questions = require("opencode.ui.chat.questions")
 local chat_permissions = require("opencode.ui.chat.permissions")
 local chat_edits = require("opencode.ui.chat.edits")
@@ -25,16 +24,7 @@ local function is_custom_only_question(question)
 	if type(question.options) == "table" and #question.options > 0 then
 		return false
 	end
-	if question.custom ~= nil then
-		return question.custom ~= false
-	end
-	if question.allow_custom ~= nil then
-		return question.allow_custom == true
-	end
-	if question.allowCustom ~= nil then
-		return question.allowCustom == true
-	end
-	return true
+	return question.custom == true
 end
 
 ---@param kind "question" | "permission" | "edit"
@@ -169,12 +159,6 @@ function M.handle_question_number_select(number)
 end
 
 function M.handle_question_confirm()
-	local todo_session_id = chat_todos.get_dock_at_cursor()
-	if todo_session_id then
-		chat_todos.toggle_dock(todo_session_id)
-		return
-	end
-
 	local task_part_id = chat_tasks.get_task_at_cursor()
 	if task_part_id then
 		chat_tasks.handle_task_toggle(task_part_id)
@@ -205,10 +189,18 @@ function M.handle_question_confirm()
 
 		local current_tab = qstate.current_tab
 		local total_count = #qstate.questions
+		if total_count == 0 then
+			chat_questions.submit_question_answers(request_id)
+			return
+		end
 		local current_selection = qstate.selections[current_tab]
 		local is_current_answered = current_selection and current_selection.is_answered
 		local current_question = qstate.questions[current_tab]
 
+		if current_question and current_question.field_type == "external" then
+			chat_questions.handle_question_custom_input(request_id)
+			return
+		end
 		if not is_current_answered and is_custom_only_question(current_question) then
 			chat_questions.handle_question_custom_input(request_id)
 			return
@@ -388,11 +380,7 @@ function M.handle_question_custom_input()
 end
 
 function M.handle_widget_message()
-	local request_id = chat_questions.get_question_at_cursor()
-	if request_id then
-		chat_questions.handle_question_message(request_id)
-		return
-	end
+	if chat_questions.get_question_at_cursor() then return end
 
 	local perm_id = chat_permissions.get_permission_at_cursor()
 	if perm_id then

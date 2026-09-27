@@ -1,0 +1,40 @@
+                                       │ ◈ Mixed patch review  │ ●1 ◈1                                                  
+~                                      │Agent: build                                                                    
+~                                      │┃                                                                               
+~                                      │┃  Call the direct top-level neovim_apply_patch function exactly once with the  
+~                                      │┃  following patchText. Do not call execute or any other tool. Wait for the     
+~                                      │┃  review decision, then reply briefly.                                         
+~                                      │┃  *** Begin Patch                                                              
+~                                      │┃  *** Update File: accepted.txt                                                
+~                                      │┃  @@                                                                           
+~                                      │┃  -before                                                                      
+~                                      │┃  +after                                                                       
+~                                      │┃  *** Update File: rejected.txt                                                
+~                                      │┃  @@                                                                           
+~                                      │┃  -before                                                                      
+~                                      │┃  +after                                                                       
+~                                      │┃  *** Update File: manual.txt                                                  
+~                                      │┃  @@                                                                           
+~                                      │┃  -before                                                                      
+~                                      │┃  +after                                                                       
+~                                      │┃  *** Add File: added.txt                                                      
+~                                      │┃  +new file                                                                    
+~                                      │┃  *** Delete File: deleted.txt                                                 
+~                                      │┃  *** Update File: moved.txt                                                   
+~                                      │┃  *** Move to: renamed.txt                                                     
+~                                      │┃  @@                                                                           
+~                                      │┃  -move me                                                                     
+~                                      │┃  +moved                                                                       
+~                                      │┃  *** Update File: bom.txt                                                     
+~                                      │┃  @@                                                                           
+~                                      │┃  -before                                                                      
+~                                      │┃  +after                                                                       
+~                                      │┃  *** End Patch                                                                
+~                                      │┃                                                                               
+~                                      │                                                                                
+~                                      │Thinking: The user wants me to call the top-level `neovim_apply_patch` tool     
+~                                      │directly with the given patch text. I should not call any other tool. Let me do 
+~                                      │that.                                                                           
+~                                      │                                                                                
+[No Name]            0,0-1          All opencode [-]                                                  4,1            Top
+Mixed patch review: Edit review needs input (8 files)                                                                   

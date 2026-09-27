@@ -3,21 +3,12 @@
 local M = {}
 
 ---@param message string
----@param extras? table
 ---@return table
-local function make_error(message, extras)
-	local err = {
+local function make_error(message)
+	return {
 		error = message,
 		message = message,
 	}
-
-	if extras then
-		for key, value in pairs(extras) do
-			err[key] = value
-		end
-	end
-
-	return err
 end
 
 ---@param request_buffer string
@@ -218,6 +209,12 @@ function M.new(opts)
 
 	local function process_headers()
 		local parsed, remaining, parse_err = parse_headers(state.header_buffer)
+		-- Informational responses precede the final HTTP response. A 101 ends
+		-- HTTP framing instead; upgraded protocols are not decoded here.
+		while parsed and parsed.status >= 100 and parsed.status < 200 and parsed.status ~= 101 do
+			state.header_buffer = remaining
+			parsed, remaining, parse_err = parse_headers(state.header_buffer)
+		end
 		if parse_err then
 			emit_error(parse_err)
 			return

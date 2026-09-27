@@ -1,0 +1,183 @@
+[
+  {
+    "id": "evt_0c6cf3ffd001tfyQaAjrHmq8Px",
+    "type": "server.connected",
+    "data": {}
+  },
+  {
+    "id": "evt_0c6cf401f001uCALkJHpR7vrNq",
+    "created": 1790041866271,
+    "type": "worktree.resolved",
+    "data": {
+      "projectID": "global",
+      "directory": "<PROFILE>/project пробел %#",
+      "previous": "global"
+    },
+    "durable": {
+      "aggregateID": "global",
+      "seq": 0,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c6cf441e001JOLUNahLildKLI",
+    "created": 1790041867294,
+    "type": "models-dev.refreshed",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {}
+  },
+  {
+    "id": "evt_0c6cf449e001dNvbDHv8hxn7F6",
+    "created": 1790041867422,
+    "type": "integration.updated",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {}
+  },
+  {
+    "id": "evt_0c6cf44a0001sa6iltI2zuBjpn",
+    "created": 1790041867424,
+    "type": "provider.updated",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {}
+  },
+  {
+    "id": "evt_0c6cf44a4001HyPNojfFr9830b",
+    "created": 1790041867428,
+    "type": "model.updated",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {}
+  },
+  {
+    "id": "evt_0c6cf44c4001lj410YBTW1euM9",
+    "created": 1790041867460,
+    "type": "vcs.branch.updated",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "branch": "master"
+    }
+  },
+  {
+    "id": "evt_0c6cf44c4002wwhD9CAe0IqXTK",
+    "created": 1790041867460,
+    "type": "agent.updated",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {}
+  },
+  {
+    "id": "evt_0c6cf44c5001ivoIQVme0b29Vf",
+    "created": 1790041867461,
+    "type": "command.updated",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {}
+  },
+  {
+    "id": "evt_0c6cf44c5002ikNABvMCEabi0U",
+    "created": 1790041867461,
+    "type": "skill.updated",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {}
+  },
+  {
+    "id": "evt_0c6cf44c7001xyhPO3vN2H87lT",
+    "created": 1790041867463,
+    "type": "websearch.updated",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {}
+  },
+  {
+    "id": "evt_0c6cf44c7003ej3WlAiMmhPEHx",
+    "created": 1790041867463,
+    "type": "reference.updated",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {}
+  },
+  {
+    "id": "evt_0c6cf44d2001TNA7iDFbYuNDWk",
+    "created": 1790041867475,
+    "type": "plugin.updated",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {}
+  },
+  {
+    "id": "evt_0c6cf4504001QZTlsdaH4YzQC6",
+    "created": 1790041867524,
+    "type": "session.created",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f3930bb1bffe8X5UjpHEbnLkh5",
+      "slug": "glowing-eagle",
+      "version": "2.0.11",
+      "projectID": "global",
+      "location": {
+        "directory": "<PROFILE>/project пробел %#"
+      },
+      "subpath": ""
+    },
+    "durable": {
+      "aggregateID": "ses_f3930bb1bffe8X5UjpHEbnLkh5",
+      "seq": 0,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c6cf45650016BvioibFiaZM9x",
+    "created": 1790041867621,
+    "type": "session.created",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f3930bab5ffegvmlr00Znkoue5",
+      "slug": "witty-wolf",
+      "version": "2.0.11",
+      "projectID": "global",
+      "location": {
+        "directory": "<PROFILE>/project пробел %#"
+      },
+      "subpath": "",
+      "title": "opencode.nvim v2 runtime fixture"
+    },
+    "durable": {
+      "aggregateID": "ses_f3930bab5ffegvmlr00Znkoue5",
+      "seq": 0,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c6cf456d001H1SZcDx4kYh9Nh",
+    "created": 1790041867629,
+    "type": "session.deleted",
+    "data": {
+      "sessionID": "ses_f3930bab5ffegvmlr00Znkoue5"
+    },
+    "durable": {
+      "aggregateID": "ses_f3930bab5ffegvmlr00Znkoue5",
+      "seq": 1,
+      "version": 2
+    }
+  }
+]

@@ -109,7 +109,7 @@ describe("opencode session deleted handling", function()
 		sync.clear_all()
 	end)
 
-	it("wires the session_deleted event through the event bus", function()
+	it("wires native session.deleted through the event bus", function()
 		local state = require("opencode.state")
 		local sync = require("opencode.sync")
 		local session_actions = require("opencode.session")
@@ -117,30 +117,33 @@ describe("opencode session deleted handling", function()
 
 		state.reset()
 		sync.clear_all()
-		pcall(function()
-			events.setup()
-		end)
+		events.setup()
 
 		session_actions.set_active("del-event-a", "Event A", { reason = "test_setup" })
 		session_actions.set_active("del-event-b", "Event B", { reason = "test_setup" })
 
-		events.emit("session_deleted", {
-			sessionID = "del-event-b",
-			info = { id = "del-event-b", title = "Event B" },
+		events.emit("v2_event", {
+			id = "evt-delete-b",
+			type = "session.deleted",
+			data = { sessionID = "del-event-b" },
+			created = 1,
 		})
 
 		wait_for(function()
 			return state.get_session().id == "del-event-a"
-		end, "session_deleted event should switch the active view to the neighbor")
-		assert_eq(state.is_runtime_session("del-event-b"), false, "session_deleted event should prune the runtime tab")
+		end, "native session.deleted event should switch the active view to the neighbor")
+		assert_eq(state.is_runtime_session("del-event-b"), false, "native session.deleted event should prune the runtime tab")
 
-		events.emit("session_deleted", {
-			info = { id = "del-foreign" },
+		events.emit("v2_event", {
+			id = "evt-delete-foreign",
+			type = "session.deleted",
+			data = { sessionID = "del-foreign" },
+			created = 2,
 		})
 		vim.wait(100, function()
 			return false
 		end, 50)
-		assert_eq(state.get_session().id, "del-event-a", "foreign session_deleted events should be ignored")
+		assert_eq(state.get_session().id, "del-event-a", "foreign session.deleted events should be ignored")
 
 		state.reset()
 		sync.clear_all()

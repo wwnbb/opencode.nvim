@@ -3,7 +3,6 @@ local M = {}
 local cs = require("opencode.ui.chat.state")
 local state = cs.state
 
-local chat_todos = require("opencode.ui.chat.todos")
 local chat_tasks = require("opencode.ui.chat.tasks")
 local render_state = require("opencode.ui.chat.render_state")
 local events = require("opencode.events")
@@ -32,6 +31,10 @@ end
 ---@param opts? table
 function M.add_message(role, content, opts)
 	opts = opts or {}
+	local agent = opts.agent
+	if role == "user" and not agent then
+		agent = require("opencode.selectors").send_selection({ session_id = opts.session_id }).agent
+	end
 
 	local message = {
 		role = role,
@@ -39,7 +42,7 @@ function M.add_message(role, content, opts)
 		timestamp = opts.timestamp or os.time(),
 		id = opts.id or tostring(os.time()) .. "_" .. #state.local_notices,
 		session_id = opts.session_id,
-		agent = opts.agent,
+		agent = agent,
 		kind = opts.kind,
 		child_session_id = opts.child_session_id,
 		optimistic = opts.optimistic,
@@ -56,8 +59,8 @@ function M.add_message(role, content, opts)
 end
 
 function M.clear()
-	chat_todos.close_window()
 	state.local_notices = {}
+	state.full_history_sessions = {}
 	render_state.reset_chat_surface({ reset_expansions = true })
 	state.last_render_time = 0
 	state.render_scheduled = false

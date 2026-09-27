@@ -96,6 +96,8 @@ function M.setup(events)
 			if not id or permissions[id] then
 				return
 			end
+			local item = require("opencode.permission.state").get_permission(id)
+			if not item or item.status ~= "pending" then return end
 			permissions[id] = true
 			if should_notify("permissions", data and data.session_id) then
 				notify(data and data.session_id, "Permission needs input", vim.log.levels.WARN)
@@ -111,33 +113,14 @@ function M.setup(events)
 		permissions[data and data.permission_id] = nil
 	end)
 
-	events.on("question_pending", function(data)
-		vim.schedule(function()
-			local id = data and data.request_id
-			if not id or questions[id] then
-				return
-			end
-			questions[id] = true
-			if should_notify("questions", data and data.session_id) then
-				notify(data and data.session_id, "Question needs input", vim.log.levels.WARN)
-			end
-		end)
-	end)
-
-	events.on("question_answered", function(data)
-		questions[data and data.request_id] = nil
-	end)
-
-	events.on("question_rejected", function(data)
-		questions[data and data.request_id] = nil
-	end)
-
 	events.on("edit_pending", function(data)
 		vim.schedule(function()
 			local id = data and data.permission_id
 			if not id or edits[id] then
 				return
 			end
+			local item = require("opencode.edit.state").get_edit(id)
+			if not item or item.status ~= "pending" then return end
 			edits[id] = true
 			if should_notify("edits", data and data.session_id) then
 				local count = data and data.file_count or 0
@@ -148,65 +131,81 @@ function M.setup(events)
 	end)
 
 	events.on("interaction_changed", function(data)
-		if data and data.kind == "edit" and data.action == "sent" then
+		if not data then return end
+		if data.kind == "question" then
+			if data.action == "pending" then
+				vim.schedule(function()
+					local form = require("opencode.question.state").get_question(data.id)
+					if not form or form.status ~= "pending" or questions[data.id] then return end
+					questions[data.id] = true
+					if should_notify("questions", data.session_id) then
+						notify(data.session_id, "Question needs input", vim.log.levels.WARN)
+					end
+				end)
+			elseif data.action == "answered" or data.action == "rejected" or data.action == "unavailable" then
+				questions[data.id] = nil
+			end
+		elseif data.kind == "edit" and (data.action == "sent" or data.action == "settled" or data.action == "cancelled") then
 			edits[data.id] = nil
 		end
 	end)
 
+	events.on("permission_removed", function(data)
+		if data then permissions[data.permission_id] = nil end
+	end)
+	events.on("question_removed", function(data)
+		if data then questions[data.request_id] = nil end
+	end)
+	events.on("edit_removed", function(data)
+		if data then edits[data.permission_id] = nil end
+	end)
+
 	events.on("session_status_change", function(data)
+		local session_id = data and data.session_id
+		local status = data and data.status
+		local status_type = type(status) == "table" and status.type or status
+		if not session_id or not status_type then return end
+		local root_session_id = event_util.runtime_root_for_session(session_id) or session_id
+		if not require("opencode.state").is_runtime_session(root_session_id) then return end
+		if data.reason == "session_abort" or data.reason == "send_failed" or data.reason == "abort" then
+			active[root_session_id], errored[root_session_id] = nil, nil
+			return
+		end
+		if status_type == "busy" or status_type == "retry" then
+			active[root_session_id], errored[root_session_id] = true, nil
+			return
+		end
+		if status_type ~= "idle" then return end
+		local was_active = active[root_session_id]
+		active[root_session_id] = nil
+		if type(status) == "table" and (status.outcome == "failed" or status.outcome == "interrupted") then
+			errored[root_session_id] = nil
+			return
+		end
+		if not was_active then return end
+		if errored[root_session_id] then
+			errored[root_session_id] = nil
+			return
+		end
 		vim.schedule(function()
-			local session_id = data and data.session_id
-			local status = data and data.status
-			local status_type = type(status) == "table" and status.type or status
-			if not session_id or not status_type then
-				return
-			end
-			local root_session_id = event_util.runtime_root_for_session(session_id) or session_id
-			if not require("opencode.state").is_runtime_session(root_session_id) then
-				return
-			end
-			if data.reason == "session_abort" or data.reason == "send_failed" or data.reason == "abort" then
-				active[root_session_id] = nil
-				errored[root_session_id] = nil
-				return
-			end
-
-			if status_type == "busy" or status_type == "retry" then
-				active[root_session_id] = true
-				errored[root_session_id] = nil
-				return
-			end
-
-			if status_type ~= "idle" then
-				return
-			end
-			if not active[root_session_id] then
-				return
-			end
-			active[root_session_id] = nil
-
-			if errored[root_session_id] then
-				errored[root_session_id] = nil
-				return
-			end
 			if should_notify("done", root_session_id) then
 				notify(root_session_id, "Session done", vim.log.levels.INFO)
 			end
 		end)
 	end)
 
-	events.on("session_error", function(data)
+	events.on("v2_event", function(event)
+		if not event or event.type ~= "session.execution.failed" then return end
+		local data = event.data
+		local session_id = data and data.sessionID
+		if not session_id or event_util.is_abort_error(data.error) then return end
+		local root_session_id = event_util.runtime_root_for_session(session_id) or session_id
+		errored[root_session_id] = true
+		active[root_session_id] = nil
 		vim.schedule(function()
-			local session_id = data and data.sessionID
-			if not session_id or event_util.is_abort_error(data and data.error) then
-				return
-			end
-			local root_session_id = event_util.runtime_root_for_session(session_id) or session_id
 			if not require("opencode.state").is_runtime_session(root_session_id) then
 				return
 			end
-			errored[root_session_id] = true
-			active[root_session_id] = nil
 			if should_notify("errors", root_session_id) then
 				local message = event_util.format_session_error(data and data.error)
 				local dedupe_key = root_session_id .. "\0" .. message

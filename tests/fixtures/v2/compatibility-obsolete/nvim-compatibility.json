@@ -1,0 +1,26 @@
+{
+  "native_history_readable": true,
+  "version": "2.0.11",
+  "notices": [
+    "OpenCode: bundled server plugin unavailable or outdated. Run scripts/install-tools.sh for this server's config, then reconnect. File review and persistent todos require plugin 2.0.11-2; history remains readable."
+  ],
+  "mode": "obsolete",
+  "version_probe": {
+    "simulated_info_only": true,
+    "requests": [
+      "GET /api/info HTTP/1.1"
+    ],
+    "no_spawn_no_sse": true,
+    "notices": [
+      "OpenCode.nvim v0.1.0 loaded",
+      "OpenCode server health check failed: OpenCode 2.0.11 or newer 2.x is required (server: 1.9.0)"
+    ],
+    "fixture_version": "1.9.0"
+  },
+  "capability": {
+    "todo": false,
+    "review": false,
+    "protocolVersion": 0,
+    "pluginVersion": "test-obsolete"
+  }
+}

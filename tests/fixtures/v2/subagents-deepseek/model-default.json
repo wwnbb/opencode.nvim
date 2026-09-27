@@ -1,0 +1,54 @@
+{
+  "location": {
+    "directory": "<PROFILE>/project пробел %#"
+  },
+  "data": {
+    "id": "mimo-v2.6-flash-free",
+    "modelID": "mimo-v2.6-flash-free",
+    "providerID": "opencode",
+    "family": "mimo",
+    "name": "MiMo-V2.6-Flash Free",
+    "compatibility": {
+      "reasoningField": "reasoning_content"
+    },
+    "package": "@opencode/ai/providers/openai-compatible",
+    "settings": {
+      "apiKey": "public",
+      "baseURL": "https://opencode.ai/zen/v1",
+      "provider": "opencode"
+    },
+    "capabilities": {
+      "tools": true,
+      "input": [
+        "text",
+        "image",
+        "audio",
+        "video",
+        "pdf"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "variants": [],
+    "time": {
+      "released": 1790035200000
+    },
+    "cost": [
+      {
+        "input": 0,
+        "output": 0,
+        "cache": {
+          "read": 0,
+          "write": 0
+        }
+      }
+    ],
+    "status": "active",
+    "enabled": true,
+    "limit": {
+      "context": 200000,
+      "output": 32000
+    }
+  }
+}

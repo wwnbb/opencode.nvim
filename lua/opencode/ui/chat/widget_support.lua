@@ -8,6 +8,7 @@ local event_util = require("opencode.events.util")
 local chat_hl_ns = cs.chat_hl_ns
 local chat_anim_ns = cs.chat_anim_ns
 local render_state = require("opencode.ui.chat.render_state")
+local tree = require("opencode.ui.chat.widget_tree")
 
 local FOCUS_ORDER = { "question", "permission", "edit" }
 
@@ -71,6 +72,7 @@ end
 
 ---@return string|nil, string|nil
 function M.apply_focus_cursor()
+	if not cs.is_chat_buffer_displayed() then return nil, nil end
 	if not state.bufnr or not vim.api.nvim_buf_is_valid(state.bufnr) then
 		return nil, nil
 	end
@@ -100,6 +102,7 @@ end
 ---@return string|nil part_id
 ---@return table|nil pos
 function M.find_widget_context_at_cursor(state_table, winid, predicate)
+	if winid == state.winid and not cs.is_chat_buffer_displayed() then return nil, nil end
 	if not winid or not vim.api.nvim_win_is_valid(winid) then
 		return nil, nil
 	end
@@ -107,15 +110,7 @@ function M.find_widget_context_at_cursor(state_table, winid, predicate)
 	local cursor = vim.api.nvim_win_get_cursor(winid)
 	local cursor_line = cursor[1] - 1
 
-	for part_id, pos in pairs(state_table) do
-		if cursor_line >= pos.start_line and cursor_line <= pos.end_line then
-			if predicate == nil or predicate(pos, part_id) then
-				return part_id, pos
-			end
-		end
-	end
-
-	return nil, nil
+	return tree.at_line(state_table, cursor_line, predicate)
 end
 
 ---@return number
@@ -178,6 +173,7 @@ function M.shift_tracked_lines(old_end, delta, opts)
 	render.shift_line_map(state.edits, old_end, delta)
 	render.shift_line_map(state.tasks, old_end, delta)
 	render.shift_line_map(state.tools, old_end, delta)
+	render.shift_line_map(state.pending_inputs, old_end, delta)
 
 	for _, pos in ipairs(state.message_positions or {}) do
 		if pos and pos.start_line and pos.end_line then
@@ -266,6 +262,7 @@ function M.replace_rendered_block(pos, result)
 	M.shift_tracked_lines(old_end, delta)
 	pos.end_line = pos.start_line + new_line_count - 1
 	pos.highlights = result.highlights
+	pos.children = tree.positions(result.children, pos.start_line, pos.render_generation)
 	M.mark_applied_render_generation(pos)
 	return true
 end
@@ -287,6 +284,7 @@ end
 ---@return number|nil top_line
 ---@return number|nil bottom_line
 function M.get_visible_line_range()
+	if not cs.is_chat_buffer_displayed() then return nil, nil end
 	if not state.winid or not vim.api.nvim_win_is_valid(state.winid) then
 		return nil, nil
 	end
@@ -382,6 +380,7 @@ function M.update_block_lines_in_place(pos, result)
 		return false
 	end
 	pos.highlights = result.highlights
+	pos.children = tree.positions(result.children, pos.start_line, pos.render_generation)
 	return true
 end
 

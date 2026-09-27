@@ -1,0 +1,1055 @@
+[
+  {
+    "id": "evt_0c6e11833001lZnkgbEzwgmbIR",
+    "type": "server.connected",
+    "data": {}
+  },
+  {
+    "id": "evt_0c6e11854001MEMve6dxQ7GXA5",
+    "created": 1790043035732,
+    "type": "worktree.resolved",
+    "data": {
+      "projectID": "global",
+      "directory": "<PROFILE>/project пробел %#",
+      "previous": "global"
+    },
+    "durable": {
+      "aggregateID": "global",
+      "seq": 0,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c6e11cd9001kCNJwjNdxuxOmw",
+    "created": 1790043036889,
+    "type": "models-dev.refreshed",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {}
+  },
+  {
+    "id": "evt_0c6e11d62001ncJgk3kRc0zTfK",
+    "created": 1790043037026,
+    "type": "integration.updated",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {}
+  },
+  {
+    "id": "evt_0c6e11d65001dE7kx7zkt5bnWo",
+    "created": 1790043037029,
+    "type": "provider.updated",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {}
+  },
+  {
+    "id": "evt_0c6e11d680013spfnNq2qV21Th",
+    "created": 1790043037032,
+    "type": "model.updated",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {}
+  },
+  {
+    "id": "evt_0c6e11d8900150ARCLh5nJlW2u",
+    "created": 1790043037065,
+    "type": "vcs.branch.updated",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "branch": "master"
+    }
+  },
+  {
+    "id": "evt_0c6e11d89002ZzocPCAVtD87Eb",
+    "created": 1790043037065,
+    "type": "agent.updated",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {}
+  },
+  {
+    "id": "evt_0c6e11d8a0012dYk5A0AGIIdwA",
+    "created": 1790043037066,
+    "type": "command.updated",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {}
+  },
+  {
+    "id": "evt_0c6e11d8a002x4NX9wGgKIsSnl",
+    "created": 1790043037066,
+    "type": "skill.updated",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {}
+  },
+  {
+    "id": "evt_0c6e11d8b001IxcxX8KsQSKai9",
+    "created": 1790043037067,
+    "type": "websearch.updated",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {}
+  },
+  {
+    "id": "evt_0c6e11d8c002FOROfGV0rQx6fF",
+    "created": 1790043037068,
+    "type": "reference.updated",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {}
+  },
+  {
+    "id": "evt_0c6e11d95001OyD4wmcRLEoR4M",
+    "created": 1790043037077,
+    "type": "plugin.updated",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {}
+  },
+  {
+    "id": "evt_0c6e11e1f0010yqfwa7y2JZoe4",
+    "created": 1790043037215,
+    "type": "session.created",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f391ee1faffeCOfsN7vYW7HGHq",
+      "slug": "misty-circuit",
+      "version": "2.0.11",
+      "projectID": "global",
+      "location": {
+        "directory": "<PROFILE>/project пробел %#"
+      },
+      "subpath": "",
+      "model": {
+        "id": "mimo-v2.5-free",
+        "providerID": "opencode"
+      }
+    },
+    "durable": {
+      "aggregateID": "ses_f391ee1faffeCOfsN7vYW7HGHq",
+      "seq": 0,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c6e11e36001WQG5EgJR0598E3",
+    "created": 1790043037238,
+    "type": "session.agent.selected",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f391ee1faffeCOfsN7vYW7HGHq",
+      "agent": "build"
+    },
+    "durable": {
+      "aggregateID": "ses_f391ee1faffeCOfsN7vYW7HGHq",
+      "seq": 1,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c6e11e3b001gsbCndtiny4plS",
+    "created": 1790043037243,
+    "type": "session.inbox.enqueued",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "inboxID": "msg_0c6e11e2a001nhak5eLjQZ73yh",
+      "sessionID": "ses_f391ee1faffeCOfsN7vYW7HGHq",
+      "item": {
+        "type": "user",
+        "payload": {
+          "text": "Reply directly with exactly 160 lines numbered ROW001 through ROW160. Each line must be: ROWnnn: Unicode Привет — streaming resize fixture. Replace nnn by its three-digit number. No tools, no introduction, no code fence."
+        },
+        "delivery": "queue"
+      }
+    },
+    "durable": {
+      "aggregateID": "ses_f391ee1faffeCOfsN7vYW7HGHq",
+      "seq": 2,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c6e11e3d001Zm4WbB0Mdc02lO",
+    "created": 1790043037245,
+    "type": "session.execution.started",
+    "data": {
+      "sessionID": "ses_f391ee1faffeCOfsN7vYW7HGHq"
+    },
+    "durable": {
+      "aggregateID": "ses_f391ee1faffeCOfsN7vYW7HGHq",
+      "seq": 3,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c6e11e49001MI0jIvUmPjYkEr",
+    "created": 1790043037257,
+    "metadata": {
+      "instructions": {
+        "initial": true
+      }
+    },
+    "type": "session.instructions.updated",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f391ee1faffeCOfsN7vYW7HGHq",
+      "delta": {
+        "core/environment": "60d76bbaa656815f4f4314d9f7fc99daea54914c2f9a2ba465458266e3b4ae94",
+        "core/date": "6a76aa89fcc8086f3abb8b9dc2b9ceafa3405dd2b3cdc263b339d36120433008",
+        "core/codemode": "cf52fcbcde861ccfefdc6633ee3cb84036524f86c72f976a7315e05dc01a15e1",
+        "core/skill-guidance": "8394362d28c82fa4d13c7a9f5568c05680f6687e07db8f426a0e3c92f3027dc9"
+      }
+    },
+    "durable": {
+      "aggregateID": "ses_f391ee1faffeCOfsN7vYW7HGHq",
+      "seq": 4,
+      "version": 2
+    }
+  },
+  {
+    "id": "evt_0c6e11e4b001jBWJHP8NKfWJkz",
+    "created": 1790043037259,
+    "type": "session.inbox.delivered",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f391ee1faffeCOfsN7vYW7HGHq",
+      "inboxID": "msg_0c6e11e2a001nhak5eLjQZ73yh"
+    },
+    "durable": {
+      "aggregateID": "ses_f391ee1faffeCOfsN7vYW7HGHq",
+      "seq": 5,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c6e1265c001FdCeYS3TS4sE6J",
+    "created": 1790043039324,
+    "type": "session.step.started",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f391ee1faffeCOfsN7vYW7HGHq",
+      "agent": "build",
+      "model": {
+        "id": "mimo-v2.5-free",
+        "providerID": "opencode",
+        "variant": "default"
+      },
+      "assistantMessageID": "msg_0c6e11e52001vy8U29GdMPZFGT",
+      "snapshot": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+      "started": 1790043037315
+    },
+    "durable": {
+      "aggregateID": "ses_f391ee1faffeCOfsN7vYW7HGHq",
+      "seq": 6,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c6e12661001Wqgi7RDGRVgA2d",
+    "created": 1790043039329,
+    "type": "session.reasoning.started",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f391ee1faffeCOfsN7vYW7HGHq",
+      "assistantMessageID": "msg_0c6e11e52001vy8U29GdMPZFGT",
+      "ordinal": 0,
+      "state": {
+        "reasoningField": "reasoning_content"
+      }
+    },
+    "durable": {
+      "aggregateID": "ses_f391ee1faffeCOfsN7vYW7HGHq",
+      "seq": 7,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c6e126c9001S0oIDenIpmE8du",
+    "created": 1790043039433,
+    "type": "session.reasoning.delta",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f391ee1faffeCOfsN7vYW7HGHq",
+      "assistantMessageID": "msg_0c6e11e52001vy8U29GdMPZFGT",
+      "ordinal": 0,
+      "delta": "The user wants me to reply with exactly 160 lines, each numbered ROW001 through ROW160, each"
+    }
+  },
+  {
+    "id": "evt_0c6e127ae001IHSRDTxzWhNf2F",
+    "created": 1790043039662,
+    "type": "session.reasoning.delta",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f391ee1faffeCOfsN7vYW7HGHq",
+      "assistantMessageID": "msg_0c6e11e52001vy8U29GdMPZFGT",
+      "ordinal": 0,
+      "delta": " containing \"ROWnnn: Unicode Привет — streaming resize fixture.\" where nnn is replaced by the three"
+    }
+  },
+  {
+    "id": "evt_0c6e1283e00136H177AIDKP3PX",
+    "created": 1790043039806,
+    "type": "session.text.started",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f391ee1faffeCOfsN7vYW7HGHq",
+      "assistantMessageID": "msg_0c6e11e52001vy8U29GdMPZFGT",
+      "ordinal": 0
+    },
+    "durable": {
+      "aggregateID": "ses_f391ee1faffeCOfsN7vYW7HGHq",
+      "seq": 8,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c6e1284c001WVcrZ4oxfAqswL",
+    "created": 1790043039820,
+    "type": "session.reasoning.delta",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f391ee1faffeCOfsN7vYW7HGHq",
+      "assistantMessageID": "msg_0c6e11e52001vy8U29GdMPZFGT",
+      "ordinal": 0,
+      "delta": "-digit number. No tools, no introduction, no code fence.\n\nLet me generate this directly."
+    }
+  },
+  {
+    "id": "evt_0c6e128a4001bEJt31DfnBlSVu",
+    "created": 1790043039908,
+    "type": "session.text.delta",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f391ee1faffeCOfsN7vYW7HGHq",
+      "assistantMessageID": "msg_0c6e11e52001vy8U29GdMPZFGT",
+      "ordinal": 0,
+      "delta": "ROW001: Unicode Привет — streaming resize fixture.\nROW002: Unicode Привет — streaming resize fixture.\nROW0"
+    }
+  },
+  {
+    "id": "evt_0c6e129670013iazMRVIUVTpxO",
+    "created": 1790043040103,
+    "type": "session.text.delta",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f391ee1faffeCOfsN7vYW7HGHq",
+      "assistantMessageID": "msg_0c6e11e52001vy8U29GdMPZFGT",
+      "ordinal": 0,
+      "delta": "03: Unicode Привет — streaming resize fixture.\nROW004: Unicode Привет — streaming resize fixture.\nROW005: Unicode"
+    }
+  },
+  {
+    "id": "evt_0c6e129d3001Qo5Cj1jCisClWJ",
+    "created": 1790043040212,
+    "type": "session.text.delta",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f391ee1faffeCOfsN7vYW7HGHq",
+      "assistantMessageID": "msg_0c6e11e52001vy8U29GdMPZFGT",
+      "ordinal": 0,
+      "delta": " Привет — streaming resize fixture.\nROW006: Unicode Привет — streaming resize fixture.\nROW007: Unicode Привет — streaming resize fixture.\nROW008: Unicode Привет — streaming resize fixture.\nROW009: Unicode Привет — streaming resize fixture.\n"
+    }
+  },
+  {
+    "id": "evt_0c6e12aa0001KeUkn94K8kS78B",
+    "created": 1790043040416,
+    "type": "session.text.delta",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f391ee1faffeCOfsN7vYW7HGHq",
+      "assistantMessageID": "msg_0c6e11e52001vy8U29GdMPZFGT",
+      "ordinal": 0,
+      "delta": "ROW010: Unicode Привет — streaming resize fixture.\nROW011: Unicode Привет — streaming resize fixture.\nROW012: Unicode Привет — streaming resize fixture.\nROW013: Unicode Привет — streaming resize fixture.\nROW014: Unicode Прив"
+    }
+  },
+  {
+    "id": "evt_0c6e12b51001Mv2FTKJpikRB22",
+    "created": 1790043040593,
+    "type": "session.text.delta",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f391ee1faffeCOfsN7vYW7HGHq",
+      "assistantMessageID": "msg_0c6e11e52001vy8U29GdMPZFGT",
+      "ordinal": 0,
+      "delta": "ет — streaming resize fixture.\nROW015: Unicode Привет — streaming resize fixture.\nROW016: Unicode Привет — streaming resize"
+    }
+  },
+  {
+    "id": "evt_0c6e12bbb001X8ek23C0X09LY3",
+    "created": 1790043040699,
+    "type": "session.text.delta",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f391ee1faffeCOfsN7vYW7HGHq",
+      "assistantMessageID": "msg_0c6e11e52001vy8U29GdMPZFGT",
+      "ordinal": 0,
+      "delta": " fixture.\nROW017: Unicode Привет — streaming resize fixture.\nROW018: Unicode Привет — streaming resize fixture.\nROW019: Unicode Привет — streaming resize fixture.\nROW020: Unicode Привет — streaming resize fixture.\nROW021: Unicode"
+    }
+  },
+  {
+    "id": "evt_0c6e12c710011fH5eY412TXLCS",
+    "created": 1790043040881,
+    "type": "session.text.delta",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f391ee1faffeCOfsN7vYW7HGHq",
+      "assistantMessageID": "msg_0c6e11e52001vy8U29GdMPZFGT",
+      "ordinal": 0,
+      "delta": " Привет — streaming resize fixture.\nROW022: Unicode Привет — streaming resize fixture.\nROW023: Unicode Привет — streaming resize fixture.\nROW024: Unicode Привет — streaming resize fixture.\nROW025: Unicode Привет — streaming resize fixture.\n"
+    }
+  },
+  {
+    "id": "evt_0c6e12d42001qfksR0n7d58vqn",
+    "created": 1790043041090,
+    "type": "session.text.delta",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f391ee1faffeCOfsN7vYW7HGHq",
+      "assistantMessageID": "msg_0c6e11e52001vy8U29GdMPZFGT",
+      "ordinal": 0,
+      "delta": "ROW026: Unicode Привет — streaming resize fixture.\nROW027: Unicode Привет — streaming resize fixture.\nROW028: Unicode Привет — streaming resize fixture.\nROW029: Unicode Привет — streaming resize fixture.\n"
+    }
+  },
+  {
+    "id": "evt_0c6e12dae001RS1kI2sx4tXCJv",
+    "created": 1790043041199,
+    "type": "session.text.delta",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f391ee1faffeCOfsN7vYW7HGHq",
+      "assistantMessageID": "msg_0c6e11e52001vy8U29GdMPZFGT",
+      "ordinal": 0,
+      "delta": "ROW030: Unicode Привет — streaming resize fixture.\nROW031: Unicode Привет — streaming resize fixture.\nROW032: Unicode Привет — streaming resize"
+    }
+  },
+  {
+    "id": "evt_0c6e12e46001eXktXH2YM4DEYz",
+    "created": 1790043041350,
+    "type": "session.text.delta",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f391ee1faffeCOfsN7vYW7HGHq",
+      "assistantMessageID": "msg_0c6e11e52001vy8U29GdMPZFGT",
+      "ordinal": 0,
+      "delta": " fixture.\nROW033: Unicode Привет — streaming resize fixture.\nROW034: Unicode Привет — streaming resize fixture.\nROW0"
+    }
+  },
+  {
+    "id": "evt_0c6e12eac001pazc6xN2khNPKd",
+    "created": 1790043041452,
+    "type": "session.text.delta",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f391ee1faffeCOfsN7vYW7HGHq",
+      "assistantMessageID": "msg_0c6e11e52001vy8U29GdMPZFGT",
+      "ordinal": 0,
+      "delta": "35: Unicode Привет — streaming resize fixture.\nROW036: Unicode Привет — streaming resize fixture.\nROW037: Unicode Привет — streaming resize fixture.\nROW038: Unicode Привет — streaming resize fixture.\nROW039: Unicode Привет —"
+    }
+  },
+  {
+    "id": "evt_0c6e12f58001qZX0P46roY75Xm",
+    "created": 1790043041624,
+    "type": "session.text.delta",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f391ee1faffeCOfsN7vYW7HGHq",
+      "assistantMessageID": "msg_0c6e11e52001vy8U29GdMPZFGT",
+      "ordinal": 0,
+      "delta": " streaming resize fixture.\nROW040: Unicode Привет — streaming resize fixture.\nROW041: Unicode Привет — streaming resize fixture.\n"
+    }
+  },
+  {
+    "id": "evt_0c6e130450010LApuW3yjw119v",
+    "created": 1790043041862,
+    "type": "session.text.delta",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f391ee1faffeCOfsN7vYW7HGHq",
+      "assistantMessageID": "msg_0c6e11e52001vy8U29GdMPZFGT",
+      "ordinal": 0,
+      "delta": "ROW042: Unicode Привет — streaming resize fixture.\nROW043: Unicode Привет — streaming resize fixture.\nROW044: Unicode Привет — streaming resize fixture.\nROW045: Unicode Привет — streaming resize fixture.\n"
+    }
+  },
+  {
+    "id": "evt_0c6e130dc001zswpxJE30JxoyM",
+    "created": 1790043042012,
+    "type": "session.text.delta",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f391ee1faffeCOfsN7vYW7HGHq",
+      "assistantMessageID": "msg_0c6e11e52001vy8U29GdMPZFGT",
+      "ordinal": 0,
+      "delta": "ROW046: Unicode Привет — streaming resize fixture.\nROW047: Unicode Привет — streaming resize fixture.\nROW048: Unicode Привет — streaming resize fixture.\nROW049: Unicode Привет — streaming resize fixture.\nROW050: Unicode Привет — streaming resize fixture.\nROW051: Unicode Привет — streaming resize fixture.\nROW052: Unicode Привет — streaming resize fixture.\nROW053: Unicode"
+    }
+  },
+  {
+    "id": "evt_0c6e131600016l2WSVsoXI4fPY",
+    "created": 1790043042144,
+    "type": "session.text.delta",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f391ee1faffeCOfsN7vYW7HGHq",
+      "assistantMessageID": "msg_0c6e11e52001vy8U29GdMPZFGT",
+      "ordinal": 0,
+      "delta": " Привет — streaming resize fixture.\nROW054: Unicode Привет — streaming resize fixture.\nROW055: Unicode Привет — streaming resize fixture.\nROW056: Unicode Привет — streaming resize fixture.\nROW057: Unicode Привет — streaming resize fixture.\n"
+    }
+  },
+  {
+    "id": "evt_0c6e1321a001qQTTpTb0aNe6CO",
+    "created": 1790043042330,
+    "type": "session.text.delta",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f391ee1faffeCOfsN7vYW7HGHq",
+      "assistantMessageID": "msg_0c6e11e52001vy8U29GdMPZFGT",
+      "ordinal": 0,
+      "delta": "ROW058: Unicode Привет — streaming resize fixture.\nROW059: Unicode Привет — streaming resize fixture.\nROW060: Unicode Привет — streaming resize fixture.\nROW061: Unicode Привет — streaming resize fixture.\nROW062: Unicode Прив"
+    }
+  },
+  {
+    "id": "evt_0c6e132c10013uEMFMKveOGHyf",
+    "created": 1790043042498,
+    "type": "session.text.delta",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f391ee1faffeCOfsN7vYW7HGHq",
+      "assistantMessageID": "msg_0c6e11e52001vy8U29GdMPZFGT",
+      "ordinal": 0,
+      "delta": "ет — streaming resize fixture.\nROW063: Unicode Привет — streaming resize fixture.\nROW064: Unicode Привет — streaming resize fixture.\nROW065: Unicode Привет — streaming resize fixture.\nROW066: Unicode Привет — streaming resize fixture.\nROW0"
+    }
+  },
+  {
+    "id": "evt_0c6e13376001x5OqElkimN6lll",
+    "created": 1790043042678,
+    "type": "session.text.delta",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f391ee1faffeCOfsN7vYW7HGHq",
+      "assistantMessageID": "msg_0c6e11e52001vy8U29GdMPZFGT",
+      "ordinal": 0,
+      "delta": "67: Unicode Привет — streaming resize fixture.\nROW068: Unicode Привет — streaming resize fixture.\nROW069: Unicode Привет — streaming resize fixture.\nROW070: Unicode Привет — streaming resize fixture.\nROW071: Unicode Привет —"
+    }
+  },
+  {
+    "id": "evt_0c6e1342c001GxMrMA96u3GMfJ",
+    "created": 1790043042860,
+    "type": "session.text.delta",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f391ee1faffeCOfsN7vYW7HGHq",
+      "assistantMessageID": "msg_0c6e11e52001vy8U29GdMPZFGT",
+      "ordinal": 0,
+      "delta": " streaming resize fixture.\nROW072"
+    }
+  },
+  {
+    "id": "evt_0c6e134ee001cB5R4vmjNrtkGS",
+    "created": 1790043043054,
+    "type": "session.text.delta",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f391ee1faffeCOfsN7vYW7HGHq",
+      "assistantMessageID": "msg_0c6e11e52001vy8U29GdMPZFGT",
+      "ordinal": 0,
+      "delta": ": Unicode Привет — streaming resize fixture.\nROW073: Unicode Привет — streaming resize fixture.\nROW074: Unicode Привет — streaming resize fixture.\nROW075: Unicode Привет — streaming resize fixture.\nROW076: Unicode Привет — streaming resize fixture.\nROW077: Unicode Привет — streaming resize fixture.\nROW078: Unicode Привет — streaming resize fixture.\nROW079: Unicode Привет — streaming resize fixture.\nROW080: Unicode Привет — streaming resize"
+    }
+  },
+  {
+    "id": "evt_0c6e1358e001qD7rvdpmGatpRo",
+    "created": 1790043043214,
+    "type": "session.text.delta",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f391ee1faffeCOfsN7vYW7HGHq",
+      "assistantMessageID": "msg_0c6e11e52001vy8U29GdMPZFGT",
+      "ordinal": 0,
+      "delta": " fixture.\nROW081: Unicode Привет — streaming resize fixture.\nROW082: Unicode Привет — streaming resize fixture.\nROW083: Unicode Привет — streaming resize fixture.\nROW084: Unicode Привет — streaming resize fixture.\nROW085: Unicode"
+    }
+  },
+  {
+    "id": "evt_0c6e13634001GfzCYOPk2FmMEz",
+    "created": 1790043043381,
+    "type": "session.text.delta",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f391ee1faffeCOfsN7vYW7HGHq",
+      "assistantMessageID": "msg_0c6e11e52001vy8U29GdMPZFGT",
+      "ordinal": 0,
+      "delta": " Привет — streaming resize fixture.\nROW086: Unicode Привет — streaming resize fixture.\nROW087: Unicode Привет — streaming resize fixture.\nROW088: Unicode Привет — streaming resize fixture.\nROW089: Unicode Привет — streaming resize fixture.\n"
+    }
+  },
+  {
+    "id": "evt_0c6e136e5001FnmsJDoGTWjoZ1",
+    "created": 1790043043557,
+    "type": "session.text.delta",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f391ee1faffeCOfsN7vYW7HGHq",
+      "assistantMessageID": "msg_0c6e11e52001vy8U29GdMPZFGT",
+      "ordinal": 0,
+      "delta": "ROW090: Unicode Привет — streaming resize fixture.\nROW091: Unicode Привет — streaming resize fixture.\nROW092"
+    }
+  },
+  {
+    "id": "evt_0c6e13794001srAkhBaHYDCjPv",
+    "created": 1790043043732,
+    "type": "session.text.delta",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f391ee1faffeCOfsN7vYW7HGHq",
+      "assistantMessageID": "msg_0c6e11e52001vy8U29GdMPZFGT",
+      "ordinal": 0,
+      "delta": ": Unicode Привет — streaming resize fixture.\nROW093: Unicode Привет — streaming resize fixture.\nROW094: Unicode Привет — streaming resize fixture.\nROW095: Unicode Привет — streaming resize fixture.\nROW096: Unicode Привет — streaming resize fixture.\nROW097: Unicode Привет — streaming resize fixture.\nROW098: Unicode Привет — streaming resize fixture.\nROW0"
+    }
+  },
+  {
+    "id": "evt_0c6e13840001IiN8mszAq3Kj1S",
+    "created": 1790043043905,
+    "type": "session.text.delta",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f391ee1faffeCOfsN7vYW7HGHq",
+      "assistantMessageID": "msg_0c6e11e52001vy8U29GdMPZFGT",
+      "ordinal": 0,
+      "delta": "99: Unicode Привет — streaming resize fixture.\nROW100: Unicode Привет — streaming resize fixture.\nROW101: Unicode Привет — streaming resize fixture.\nROW102: Unicode Привет — streaming resize fixture.\nROW103: Unicode Привет —"
+    }
+  },
+  {
+    "id": "evt_0c6e138f4001LvxkFvQEBGqkYJ",
+    "created": 1790043044084,
+    "type": "session.text.delta",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f391ee1faffeCOfsN7vYW7HGHq",
+      "assistantMessageID": "msg_0c6e11e52001vy8U29GdMPZFGT",
+      "ordinal": 0,
+      "delta": " streaming resize fixture.\nROW104: Unicode Привет — streaming resize fixture.\nROW105: Unicode Привет — streaming resize fixture.\nROW106: Unicode Привет — streaming resize fixture.\nROW107: Unicode Привет — streaming resize fixture.\nROW108"
+    }
+  },
+  {
+    "id": "evt_0c6e139aa001dDP9kQlbvPiE0m",
+    "created": 1790043044266,
+    "type": "session.text.delta",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f391ee1faffeCOfsN7vYW7HGHq",
+      "assistantMessageID": "msg_0c6e11e52001vy8U29GdMPZFGT",
+      "ordinal": 0,
+      "delta": ": Unicode Привет — streaming resize fixture.\nROW109: Unicode Привет — streaming resize fixture.\nROW110: Unicode Привет — streaming resize fixture.\nROW111: Unicode Привет — streaming resize fixture.\nROW112: Unicode Привет — streaming resize"
+    }
+  },
+  {
+    "id": "evt_0c6e13a4e001Za8G3qkhBh2OJM",
+    "created": 1790043044430,
+    "type": "session.text.delta",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f391ee1faffeCOfsN7vYW7HGHq",
+      "assistantMessageID": "msg_0c6e11e52001vy8U29GdMPZFGT",
+      "ordinal": 0,
+      "delta": " fixture.\nROW113: Unicode Привет — streaming resize fixture.\nROW114: Unicode Привет — streaming resize fixture.\nROW1"
+    }
+  },
+  {
+    "id": "evt_0c6e13bd3001bNKcf8jsATSNuO",
+    "created": 1790043044820,
+    "type": "session.text.delta",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f391ee1faffeCOfsN7vYW7HGHq",
+      "assistantMessageID": "msg_0c6e11e52001vy8U29GdMPZFGT",
+      "ordinal": 0,
+      "delta": "15: Unicode Привет — streaming resize fixture.\nROW116: Unicode Привет — streaming resize fixture.\nROW117: Unicode Привет — streaming resize fixture.\n"
+    }
+  },
+  {
+    "id": "evt_0c6e13ca1001NkXe6r9uXS8WpY",
+    "created": 1790043045026,
+    "type": "session.text.delta",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f391ee1faffeCOfsN7vYW7HGHq",
+      "assistantMessageID": "msg_0c6e11e52001vy8U29GdMPZFGT",
+      "ordinal": 0,
+      "delta": "ROW118: Unicode Привет — streaming resize fixture.\nROW119: Unicode Привет — streaming resize fixture.\nROW120: Unicode Привет — streaming resize fixture.\nROW121: Unicode Привет — streaming resize fixture.\nROW122: Unicode Привет — streaming resize fixture.\nROW123: Unicode Привет — streaming resize fixture.\nROW124: Unicode Привет — streaming resize fixture.\nROW125: Unicode Привет — streaming resize fixture.\nROW126: Unicode Привет — streaming resize fixture.\nROW127: Unicode Привет — streaming resize fixture.\nROW128: Unicode Привет — streaming resize fixture.\nROW129: Unicode Привет — streaming resize fixture.\nROW130: Unicode Привет — streaming resize fixture.\nROW1"
+    }
+  },
+  {
+    "id": "evt_0c6e13d2f00136E6IjuD0qiDvD",
+    "created": 1790043045167,
+    "type": "session.text.delta",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f391ee1faffeCOfsN7vYW7HGHq",
+      "assistantMessageID": "msg_0c6e11e52001vy8U29GdMPZFGT",
+      "ordinal": 0,
+      "delta": "31: Unicode Привет — streaming resize fixture.\nROW132: Unicode Привет — streaming resize fixture.\nROW133: Unicode Привет — streaming resize fixture.\nROW134: Unicode Привет — streaming resize fixture.\nROW135: Unicode Привет —"
+    }
+  },
+  {
+    "id": "evt_0c6e13e7f001UQvb7p29HJEEnG",
+    "created": 1790043045503,
+    "type": "session.text.delta",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f391ee1faffeCOfsN7vYW7HGHq",
+      "assistantMessageID": "msg_0c6e11e52001vy8U29GdMPZFGT",
+      "ordinal": 0,
+      "delta": " streaming resize fixture.\nROW136: Unicode Привет — streaming resize fixture.\nROW137: Unicode Привет — streaming resize fixture.\nROW138: Unicode Привет — streaming resize fixture.\nROW1"
+    }
+  },
+  {
+    "id": "evt_0c6e13f68001APpxazJMBUaWrm",
+    "created": 1790043045736,
+    "type": "session.text.delta",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f391ee1faffeCOfsN7vYW7HGHq",
+      "assistantMessageID": "msg_0c6e11e52001vy8U29GdMPZFGT",
+      "ordinal": 0,
+      "delta": "39: Unicode Привет — streaming resize fixture.\nROW140: Unicode Привет — streaming resize fixture.\nROW141: Unicode Привет — streaming resize fixture.\nROW142: Unicode Привет — streaming resize fixture.\nROW143: Unicode Привет —"
+    }
+  },
+  {
+    "id": "evt_0c6e1402a001dXvxnUU0On3H0i",
+    "created": 1790043045931,
+    "type": "session.text.delta",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f391ee1faffeCOfsN7vYW7HGHq",
+      "assistantMessageID": "msg_0c6e11e52001vy8U29GdMPZFGT",
+      "ordinal": 0,
+      "delta": " streaming resize fixture.\nROW144: Unicode Привет — streaming resize fixture.\nROW145: Unicode Привет — streaming resize fixture.\nROW146: Unicode Привет — streaming resize fixture.\nROW147: Unicode Привет — streaming resize fixture.\nROW148"
+    }
+  },
+  {
+    "id": "evt_0c6e140df001UI2tUBh031HAa1",
+    "created": 1790043046112,
+    "type": "session.text.delta",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f391ee1faffeCOfsN7vYW7HGHq",
+      "assistantMessageID": "msg_0c6e11e52001vy8U29GdMPZFGT",
+      "ordinal": 0,
+      "delta": ": Unicode Привет — streaming resize fixture.\nROW149: Unicode Привет — streaming resize fixture.\nROW150: Unicode Прив"
+    }
+  },
+  {
+    "id": "evt_0c6e14148001DAxPZhGJoCf26j",
+    "created": 1790043046216,
+    "type": "session.text.delta",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f391ee1faffeCOfsN7vYW7HGHq",
+      "assistantMessageID": "msg_0c6e11e52001vy8U29GdMPZFGT",
+      "ordinal": 0,
+      "delta": "ет — streaming resize fixture.\nROW151: Unicode Привет — streaming resize fixture.\nROW152: Unicode Привет — streaming resize fixture.\nROW153: Unicode Привет — streaming resize fixture.\nROW154: Unicode Привет — streaming resize fixture.\nROW1"
+    }
+  },
+  {
+    "id": "evt_0c6e141fe0012tO8D0McJGSh9e",
+    "created": 1790043046398,
+    "type": "session.text.delta",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f391ee1faffeCOfsN7vYW7HGHq",
+      "assistantMessageID": "msg_0c6e11e52001vy8U29GdMPZFGT",
+      "ordinal": 0,
+      "delta": "55: Unicode Привет — streaming resize fixture.\nROW156: Unicode Привет — streaming resize fixture.\nROW157: Unicode Привет — streaming resize fixture.\nROW158: Unicode Прив"
+    }
+  },
+  {
+    "id": "evt_0c6e14264001YJZHuiYjZaOcWG",
+    "created": 1790043046500,
+    "type": "session.text.delta",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f391ee1faffeCOfsN7vYW7HGHq",
+      "assistantMessageID": "msg_0c6e11e52001vy8U29GdMPZFGT",
+      "ordinal": 0,
+      "delta": "ет — streaming resize fixture.\nROW159: Unicode Привет — streaming resize fixture.\nROW160: Unicode Привет — streaming resize fixture."
+    }
+  },
+  {
+    "id": "evt_0c6e14270001Inbo0zqvo2W0cQ",
+    "created": 1790043046512,
+    "type": "session.reasoning.ended",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f391ee1faffeCOfsN7vYW7HGHq",
+      "assistantMessageID": "msg_0c6e11e52001vy8U29GdMPZFGT",
+      "ordinal": 0,
+      "text": "The user wants me to reply with exactly 160 lines, each numbered ROW001 through ROW160, each containing \"ROWnnn: Unicode Привет — streaming resize fixture.\" where nnn is replaced by the three-digit number. No tools, no introduction, no code fence.\n\nLet me generate this directly.",
+      "state": {
+        "reasoningField": "reasoning_content",
+        "reasoningDetails": [
+          {
+            "type": "reasoning.text",
+            "text": "The user wants me to reply with exactly 160 lines, each numbered ROW001 through ROW160, each containing \"ROWnnn: Unicode Привет — streaming resize fixture.\" where nnn is replaced by the three-digit number. No tools, no introduction, no code fence.\n\nLet me generate this directly.",
+            "format": "unknown",
+            "index": 0
+          }
+        ]
+      }
+    },
+    "durable": {
+      "aggregateID": "ses_f391ee1faffeCOfsN7vYW7HGHq",
+      "seq": 9,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c6e14274001ygWs7LiWwgFFAU",
+    "created": 1790043046516,
+    "type": "session.text.ended",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f391ee1faffeCOfsN7vYW7HGHq",
+      "assistantMessageID": "msg_0c6e11e52001vy8U29GdMPZFGT",
+      "ordinal": 0,
+      "text": "ROW001: Unicode Привет — streaming resize fixture.\nROW002: Unicode Привет — streaming resize fixture.\nROW003: Unicode Привет — streaming resize fixture.\nROW004: Unicode Привет — streaming resize fixture.\nROW005: Unicode Привет — streaming resize fixture.\nROW006: Unicode Привет — streaming resize fixture.\nROW007: Unicode Привет — streaming resize fixture.\nROW008: Unicode Привет — streaming resize fixture.\nROW009: Unicode Привет — streaming resize fixture.\nROW010: Unicode Привет — streaming resize fixture.\nROW011: Unicode Привет — streaming resize fixture.\nROW012: Unicode Привет — streaming resize fixture.\nROW013: Unicode Привет — streaming resize fixture.\nROW014: Unicode Привет — streaming resize fixture.\nROW015: Unicode Привет — streaming resize fixture.\nROW016: Unicode Привет — streaming resize fixture.\nROW017: Unicode Привет — streaming resize fixture.\nROW018: Unicode Привет — streaming resize fixture.\nROW019: Unicode Привет — streaming resize fixture.\nROW020: Unicode Привет — streaming resize fixture.\nROW021: Unicode Привет — streaming resize fixture.\nROW022: Unicode Привет — streaming resize fixture.\nROW023: Unicode Привет — streaming resize fixture.\nROW024: Unicode Привет — streaming resize fixture.\nROW025: Unicode Привет — streaming resize fixture.\nROW026: Unicode Привет — streaming resize fixture.\nROW027: Unicode Привет — streaming resize fixture.\nROW028: Unicode Привет — streaming resize fixture.\nROW029: Unicode Привет — streaming resize fixture.\nROW030: Unicode Привет — streaming resize fixture.\nROW031: Unicode Привет — streaming resize fixture.\nROW032: Unicode Привет — streaming resize fixture.\nROW033: Unicode Привет — streaming resize fixture.\nROW034: Unicode Привет — streaming resize fixture.\nROW035: Unicode Привет — streaming resize fixture.\nROW036: Unicode Привет — streaming resize fixture.\nROW037: Unicode Привет — streaming resize fixture.\nROW038: Unicode Привет — streaming resize fixture.\nROW039: Unicode Привет — streaming resize fixture.\nROW040: Unicode Привет — streaming resize fixture.\nROW041: Unicode Привет — streaming resize fixture.\nROW042: Unicode Привет — streaming resize fixture.\nROW043: Unicode Привет — streaming resize fixture.\nROW044: Unicode Привет — streaming resize fixture.\nROW045: Unicode Привет — streaming resize fixture.\nROW046: Unicode Привет — streaming resize fixture.\nROW047: Unicode Привет — streaming resize fixture.\nROW048: Unicode Привет — streaming resize fixture.\nROW049: Unicode Привет — streaming resize fixture.\nROW050: Unicode Привет — streaming resize fixture.\nROW051: Unicode Привет — streaming resize fixture.\nROW052: Unicode Привет — streaming resize fixture.\nROW053: Unicode Привет — streaming resize fixture.\nROW054: Unicode Привет — streaming resize fixture.\nROW055: Unicode Привет — streaming resize fixture.\nROW056: Unicode Привет — streaming resize fixture.\nROW057: Unicode Привет — streaming resize fixture.\nROW058: Unicode Привет — streaming resize fixture.\nROW059: Unicode Привет — streaming resize fixture.\nROW060: Unicode Привет — streaming resize fixture.\nROW061: Unicode Привет — streaming resize fixture.\nROW062: Unicode Привет — streaming resize fixture.\nROW063: Unicode Привет — streaming resize fixture.\nROW064: Unicode Привет — streaming resize fixture.\nROW065: Unicode Привет — streaming resize fixture.\nROW066: Unicode Привет — streaming resize fixture.\nROW067: Unicode Привет — streaming resize fixture.\nROW068: Unicode Привет — streaming resize fixture.\nROW069: Unicode Привет — streaming resize fixture.\nROW070: Unicode Привет — streaming resize fixture.\nROW071: Unicode Привет — streaming resize fixture.\nROW072: Unicode Привет — streaming resize fixture.\nROW073: Unicode Привет — streaming resize fixture.\nROW074: Unicode Привет — streaming resize fixture.\nROW075: Unicode Привет — streaming resize fixture.\nROW076: Unicode Привет — streaming resize fixture.\nROW077: Unicode Привет — streaming resize fixture.\nROW078: Unicode Привет — streaming resize fixture.\nROW079: Unicode Привет — streaming resize fixture.\nROW080: Unicode Привет — streaming resize fixture.\nROW081: Unicode Привет — streaming resize fixture.\nROW082: Unicode Привет — streaming resize fixture.\nROW083: Unicode Привет — streaming resize fixture.\nROW084: Unicode Привет — streaming resize fixture.\nROW085: Unicode Привет — streaming resize fixture.\nROW086: Unicode Привет — streaming resize fixture.\nROW087: Unicode Привет — streaming resize fixture.\nROW088: Unicode Привет — streaming resize fixture.\nROW089: Unicode Привет — streaming resize fixture.\nROW090: Unicode Привет — streaming resize fixture.\nROW091: Unicode Привет — streaming resize fixture.\nROW092: Unicode Привет — streaming resize fixture.\nROW093: Unicode Привет — streaming resize fixture.\nROW094: Unicode Привет — streaming resize fixture.\nROW095: Unicode Привет — streaming resize fixture.\nROW096: Unicode Привет — streaming resize fixture.\nROW097: Unicode Привет — streaming resize fixture.\nROW098: Unicode Привет — streaming resize fixture.\nROW099: Unicode Привет — streaming resize fixture.\nROW100: Unicode Привет — streaming resize fixture.\nROW101: Unicode Привет — streaming resize fixture.\nROW102: Unicode Привет — streaming resize fixture.\nROW103: Unicode Привет — streaming resize fixture.\nROW104: Unicode Привет — streaming resize fixture.\nROW105: Unicode Привет — streaming resize fixture.\nROW106: Unicode Привет — streaming resize fixture.\nROW107: Unicode Привет — streaming resize fixture.\nROW108: Unicode Привет — streaming resize fixture.\nROW109: Unicode Привет — streaming resize fixture.\nROW110: Unicode Привет — streaming resize fixture.\nROW111: Unicode Привет — streaming resize fixture.\nROW112: Unicode Привет — streaming resize fixture.\nROW113: Unicode Привет — streaming resize fixture.\nROW114: Unicode Привет — streaming resize fixture.\nROW115: Unicode Привет — streaming resize fixture.\nROW116: Unicode Привет — streaming resize fixture.\nROW117: Unicode Привет — streaming resize fixture.\nROW118: Unicode Привет — streaming resize fixture.\nROW119: Unicode Привет — streaming resize fixture.\nROW120: Unicode Привет — streaming resize fixture.\nROW121: Unicode Привет — streaming resize fixture.\nROW122: Unicode Привет — streaming resize fixture.\nROW123: Unicode Привет — streaming resize fixture.\nROW124: Unicode Привет — streaming resize fixture.\nROW125: Unicode Привет — streaming resize fixture.\nROW126: Unicode Привет — streaming resize fixture.\nROW127: Unicode Привет — streaming resize fixture.\nROW128: Unicode Привет — streaming resize fixture.\nROW129: Unicode Привет — streaming resize fixture.\nROW130: Unicode Привет — streaming resize fixture.\nROW131: Unicode Привет — streaming resize fixture.\nROW132: Unicode Привет — streaming resize fixture.\nROW133: Unicode Привет — streaming resize fixture.\nROW134: Unicode Привет — streaming resize fixture.\nROW135: Unicode Привет — streaming resize fixture.\nROW136: Unicode Привет — streaming resize fixture.\nROW137: Unicode Привет — streaming resize fixture.\nROW138: Unicode Привет — streaming resize fixture.\nROW139: Unicode Привет — streaming resize fixture.\nROW140: Unicode Привет — streaming resize fixture.\nROW141: Unicode Привет — streaming resize fixture.\nROW142: Unicode Привет — streaming resize fixture.\nROW143: Unicode Привет — streaming resize fixture.\nROW144: Unicode Привет — streaming resize fixture.\nROW145: Unicode Привет — streaming resize fixture.\nROW146: Unicode Привет — streaming resize fixture.\nROW147: Unicode Привет — streaming resize fixture.\nROW148: Unicode Привет — streaming resize fixture.\nROW149: Unicode Привет — streaming resize fixture.\nROW150: Unicode Привет — streaming resize fixture.\nROW151: Unicode Привет — streaming resize fixture.\nROW152: Unicode Привет — streaming resize fixture.\nROW153: Unicode Привет — streaming resize fixture.\nROW154: Unicode Привет — streaming resize fixture.\nROW155: Unicode Привет — streaming resize fixture.\nROW156: Unicode Привет — streaming resize fixture.\nROW157: Unicode Привет — streaming resize fixture.\nROW158: Unicode Привет — streaming resize fixture.\nROW159: Unicode Привет — streaming resize fixture.\nROW160: Unicode Привет — streaming resize fixture."
+    },
+    "durable": {
+      "aggregateID": "ses_f391ee1faffeCOfsN7vYW7HGHq",
+      "seq": 10,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c6e14276001PP3pN7gjPDXrGP",
+    "created": 1790043046518,
+    "type": "session.step.streamed",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f391ee1faffeCOfsN7vYW7HGHq",
+      "assistantMessageID": "msg_0c6e11e52001vy8U29GdMPZFGT"
+    },
+    "durable": {
+      "aggregateID": "ses_f391ee1faffeCOfsN7vYW7HGHq",
+      "seq": 11,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c6e142920011eVo7glY5T1D4Q",
+    "created": 1790043046546,
+    "type": "session.step.ended",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f391ee1faffeCOfsN7vYW7HGHq",
+      "assistantMessageID": "msg_0c6e11e52001vy8U29GdMPZFGT",
+      "finish": "stop",
+      "rawFinish": "stop",
+      "cost": 0,
+      "tokens": {
+        "input": 9132,
+        "output": 2312,
+        "reasoning": 0,
+        "cache": {
+          "read": 0,
+          "write": 0
+        }
+      },
+      "snapshot": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+      "files": []
+    },
+    "durable": {
+      "aggregateID": "ses_f391ee1faffeCOfsN7vYW7HGHq",
+      "seq": 12,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c6e14294001HB2j2hKf7MIMrF",
+    "created": 1790043046548,
+    "type": "session.usage.updated",
+    "data": {
+      "sessionID": "ses_f391ee1faffeCOfsN7vYW7HGHq",
+      "cost": 0,
+      "tokens": {
+        "input": 9132,
+        "output": 2312,
+        "reasoning": 0,
+        "cache": {
+          "read": 0,
+          "write": 0
+        }
+      }
+    }
+  },
+  {
+    "id": "evt_0c6e14295001M3BRIYCsRc4o1F",
+    "created": 1790043046549,
+    "type": "session.execution.succeeded",
+    "data": {
+      "sessionID": "ses_f391ee1faffeCOfsN7vYW7HGHq"
+    },
+    "durable": {
+      "aggregateID": "ses_f391ee1faffeCOfsN7vYW7HGHq",
+      "seq": 13,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c6e14313001hv2bkYQT0mnNJ0",
+    "created": 1790043046675,
+    "type": "session.created",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "data": {
+      "sessionID": "ses_f391ebd09ffeENAOoaSgQ58llr",
+      "slug": "stellar-canyon",
+      "version": "2.0.11",
+      "projectID": "global",
+      "location": {
+        "directory": "<PROFILE>/project пробел %#"
+      },
+      "subpath": "",
+      "title": "opencode.nvim v2 runtime fixture",
+      "model": {
+        "id": "mimo-v2.5-free",
+        "providerID": "opencode"
+      }
+    },
+    "durable": {
+      "aggregateID": "ses_f391ebd09ffeENAOoaSgQ58llr",
+      "seq": 0,
+      "version": 1
+    }
+  },
+  {
+    "id": "evt_0c6e14319001pPa1aBlyjVqiXe",
+    "created": 1790043046681,
+    "type": "session.deleted",
+    "data": {
+      "sessionID": "ses_f391ebd09ffeENAOoaSgQ58llr"
+    },
+    "durable": {
+      "aggregateID": "ses_f391ebd09ffeENAOoaSgQ58llr",
+      "seq": 1,
+      "version": 2
+    }
+  }
+]

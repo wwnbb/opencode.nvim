@@ -1,0 +1,40 @@
+                                                                                                                        
+~                                                                                                                       
+~                                                                                                                       
+~         ╭──────────────────────────────────────────── OpenCode ────────────────────────────────────────────╮          
+~         │   ○ Render fixture                                                                               │          
+~         │                                                                                                  │          
+~         │ ┃                                                                                                │          
+~         │ ┃  Inspect the parser and preserve Unicode: Привет, Neovim.                                      │          
+~         │ ┃                                                                                                │          
+~         │                                                                                                  │          
+~         │ Streaming text keeps widget identity and readable wrapping. Streaming text keeps widget          │          
+~         │ identity and readable wrapping. Streaming text keeps widget identity and readable wrapping.      │          
+~         │ Streaming text keeps widget identity and readable wrapping. Streaming text keeps widget          │          
+~         │ identity and readable wrapping. Streaming text keeps widget identity and readable wrapping.      │          
+~         │ Streaming text keeps widget identity and readable wrapping. Streaming text keeps widget          │          
+~         │ identity and readable wrapping. Streaming text keeps widget identity and readable wrapping.      │          
+~         │ Streaming text keeps widget identity and readable wrapping. Streaming text keeps widget          │          
+~         │ identity and readable wrapping. Streaming text keeps widget identity and readable wrapping.      │          
+~         │ ┃                                                                                                │          
+~         │ ┃  Inspect the parser and preserve Unicode: Привет, Neovim.                                      │          
+~         │ ┃                                                                                                │          
+~         │                                                                                                  │          
+~         │ Streaming text keeps widget identity and readable wrapping. Streaming text keeps widget          │          
+~         │ identity and readable wrapping. Streaming text keeps widget identity and readable wrapping.      │          
+~         │ Streaming text keeps widget identity and readable wrapping. Streaming text keeps widget          │          
+~         │ identity and readable wrapping. Streaming text keeps widget identity and readable wrapping.      │          
+~         │ Streaming text keeps widget identity and readable wrapping. Streaming text keeps widget          │          
+~         │ identity and readable wrapping. Streaming text keeps widget identity and readable wrapping.      │          
+~         │ Streaming text keeps widget identity and readable wrapping. Streaming text keeps widget          │          
+~         │ identity and readable wrapping. Streaming text keeps widget identity and readable wrapping.      │          
+~         │                                                                                                  │          
+~         │ ┃                                                                                                │          
+~         │ ┃                                                                                                │          
+~         │ ┃                                                                                                │          
+~         │ ┃ Build Fixture Model Fixture                                                                    │          
+~         │ ┃                                                                                                │          
+~         ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯          
+~                                                                                                                       
+[No Name]                                                                                             0,0-1          All
+-- (insert) --                                                                                        0,0-1         All 

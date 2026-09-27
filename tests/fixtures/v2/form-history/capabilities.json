@@ -1,0 +1,17 @@
+{
+  "status": 200,
+  "response": {
+    "output": {
+      "protocolVersion": 1,
+      "pluginVersion": "2.0.11-2",
+      "tools": [
+        "neovim_edit",
+        "neovim_apply_patch",
+        "rg",
+        "todoread"
+      ],
+      "review": true,
+      "todo": true
+    }
+  }
+}

@@ -1,0 +1,59 @@
+{
+  "version": "2.0.11",
+  "attempts": {
+    "test-cancel": {
+      "status": "cancelled",
+      "directory": "<PROFILE>/project пробел %#",
+      "states": [
+        "polling",
+        "cancelling",
+        "cancelled"
+      ]
+    },
+    "test-command": {
+      "status": "complete",
+      "directory": "<PROFILE>/project пробел %#",
+      "states": [
+        "polling",
+        "complete"
+      ]
+    },
+    "test-command-cancel": {
+      "status": "cancelled",
+      "directory": "<PROFILE>/project пробел %#",
+      "states": [
+        "polling",
+        "cancelling",
+        "cancelled"
+      ]
+    },
+    "test-code": {
+      "status": "complete",
+      "directory": "<PROFILE>/project пробел %#",
+      "states": [
+        "awaiting_user",
+        "submitting",
+        "polling",
+        "complete"
+      ]
+    },
+    "test-auto": {
+      "status": "complete",
+      "directory": "<PROFILE>/project пробел %#",
+      "states": [
+        "polling",
+        "complete"
+      ]
+    },
+    "test-expired": {
+      "status": "expired",
+      "directory": "<PROFILE>/project пробел %#",
+      "states": [
+        "polling",
+        "expired",
+        "cancelling",
+        "cancelled"
+      ]
+    }
+  }
+}

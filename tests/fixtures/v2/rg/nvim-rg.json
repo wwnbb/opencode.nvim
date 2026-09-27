@@ -1,0 +1,1042 @@
+{
+  "version": "2.0.11",
+  "reconnected_during_tool": true,
+  "history": [
+    {
+      "info": {
+        "time": {
+          "created": 1790037449935
+        },
+        "id": "msg_0c68bdcac001nhak5eLjQZ73yh",
+        "_v2": {
+          "time": {
+            "created": 1790037449935
+          },
+          "id": "msg_0c68bdcac001nhak5eLjQZ73yh",
+          "type": "user",
+          "text": "Call the direct top-level rg function three times. These are independent tests and may run together, each with path=\"search fixture.txt\":\n1. pattern=\"-needle\", fixed_strings=true, max_results=1.\n2. pattern=\"ABSENT_TOKEN_783\".\n3. pattern=\"[\" (an intentionally invalid regex).\nDo not use execute or any other tool, do not correct or retry the invalid regex. After the third call, reply briefly that the test is complete."
+        },
+        "type": "user",
+        "sessionID": "ses_f3974237cffeFMY1kG7LCV15GM",
+        "hidden": false,
+        "role": "user",
+        "protocol": "v2",
+        "text": "Call the direct top-level rg function three times. These are independent tests and may run together, each with path=\"search fixture.txt\":\n1. pattern=\"-needle\", fixed_strings=true, max_results=1.\n2. pattern=\"ABSENT_TOKEN_783\".\n3. pattern=\"[\" (an intentionally invalid regex).\nDo not use execute or any other tool, do not correct or retry the invalid regex. After the third call, reply briefly that the test is complete."
+      },
+      "parts": [
+        {
+          "sessionID": "ses_f3974237cffeFMY1kG7LCV15GM",
+          "content_order": 1,
+          "type": "text",
+          "protocol": "v2",
+          "messageID": "msg_0c68bdcac001nhak5eLjQZ73yh",
+          "ordinal": 0,
+          "text": "Call the direct top-level rg function three times. These are independent tests and may run together, each with path=\"search fixture.txt\":\n1. pattern=\"-needle\", fixed_strings=true, max_results=1.\n2. pattern=\"ABSENT_TOKEN_783\".\n3. pattern=\"[\" (an intentionally invalid regex).\nDo not use execute or any other tool, do not correct or retry the invalid regex. After the third call, reply briefly that the test is complete.",
+          "id": "v2:30:ses_f3974237cffeFMY1kG7LCV15GM:30:msg_0c68bdcac001nhak5eLjQZ73yh:text:0"
+        }
+      ]
+    },
+    {
+      "info": {
+        "time": {
+          "created": 1790037449912
+        },
+        "id": "msg_0c68bdcb8001Lt8jzd0ph5l1IX",
+        "_v2": {
+          "time": {
+            "created": 1790037449912
+          },
+          "id": "msg_0c68bdcb8001Lt8jzd0ph5l1IX",
+          "type": "agent-switched",
+          "agent": "build"
+        },
+        "type": "agent-switched",
+        "sessionID": "ses_f3974237cffeFMY1kG7LCV15GM",
+        "hidden": false,
+        "role": "system",
+        "protocol": "v2",
+        "agent": "build"
+      },
+      "parts": [
+        {
+          "synthetic": true,
+          "messageID": "msg_0c68bdcb8001Lt8jzd0ph5l1IX",
+          "id": "v2:30:ses_f3974237cffeFMY1kG7LCV15GM:30:msg_0c68bdcb8001Lt8jzd0ph5l1IX:text:0",
+          "content_order": 1,
+          "type": "text",
+          "protocol": "v2",
+          "ordinal": 0,
+          "sessionID": "ses_f3974237cffeFMY1kG7LCV15GM",
+          "text": "Agent: build"
+        }
+      ]
+    },
+    {
+      "info": {
+        "snapshot": {
+          "start": "fe44f06d0f12fdd464e99d819b06b9046f163db1",
+          "end": "fe44f06d0f12fdd464e99d819b06b9046f163db1",
+          "files": []
+        },
+        "content": [
+          {
+            "state": {
+              "reasoningDetails": [
+                {
+                  "format": "unknown",
+                  "index": 0,
+                  "type": "reasoning.text",
+                  "text": "The user wants me to call the top-level `rg` tool three times with specific parameters. Let me make all three calls in parallel since they're independent."
+                }
+              ],
+              "reasoningField": "reasoning_content"
+            },
+            "time": {
+              "created": 1790037452521,
+              "completed": 1790037455898
+            },
+            "type": "reasoning",
+            "text": "The user wants me to call the top-level `rg` tool three times with specific parameters. Let me make all three calls in parallel since they're independent."
+          },
+          {
+            "state": {
+              "status": "completed",
+              "metadata": {
+                "truncated": true,
+                "exitCode": 0
+              },
+              "content": [
+                {
+                  "type": "text",
+                  "text": "1:-needle\n\n--- Truncated. Narrow the pattern, file types or search paths. ---"
+                }
+              ],
+              "input": {
+                "pattern": "-needle",
+                "fixed_strings": true,
+                "max_results": 1,
+                "path": "search fixture.txt"
+              }
+            },
+            "executed": false,
+            "type": "tool",
+            "name": "rg",
+            "time": {
+              "completed": 1790037455951,
+              "created": 1790037453465,
+              "ran": 1790037455901
+            },
+            "id": "call_0c9befb73fd148cc95f39d7e"
+          },
+          {
+            "state": {
+              "status": "completed",
+              "metadata": {
+                "truncated": false,
+                "exitCode": 1
+              },
+              "content": [
+                {
+                  "type": "text",
+                  "text": "No matches found."
+                }
+              ],
+              "input": {
+                "pattern": "ABSENT_TOKEN_783",
+                "path": "search fixture.txt"
+              }
+            },
+            "executed": false,
+            "type": "tool",
+            "name": "rg",
+            "time": {
+              "completed": 1790037455950,
+              "created": 1790037454507,
+              "ran": 1790037455903
+            },
+            "id": "call_92d8c5a1d0b14f03993a2893"
+          },
+          {
+            "state": {
+              "status": "error",
+              "error": {
+                "type": "tool.execution",
+                "message": "ripgrep failed (2): rg: regex parse error:\n    (?:[)\n       ^\nerror: unclosed character class"
+              },
+              "input": {
+                "pattern": "[",
+                "path": "search fixture.txt"
+              }
+            },
+            "executed": false,
+            "type": "tool",
+            "name": "rg",
+            "time": {
+              "completed": 1790037455948,
+              "created": 1790037455413,
+              "ran": 1790037455905
+            },
+            "id": "call_1e84b88190e84f5390bdc999"
+          }
+        ],
+        "time": {
+          "completed": 1790037455972,
+          "created": 1790037450021,
+          "streamed": 1790037455911
+        },
+        "hidden": false,
+        "protocol": "v2",
+        "role": "assistant",
+        "providerID": "opencode",
+        "modelID": "mimo-v2.5-free",
+        "tokens": {
+          "output": 116,
+          "input": 9173,
+          "reasoning": 33,
+          "cache": {
+            "write": 0,
+            "read": 0
+          }
+        },
+        "variant": "default",
+        "id": "msg_0c68bdcd7001O0VBCYN7KqCjRn",
+        "_v2": {
+          "snapshot": {
+            "start": "fe44f06d0f12fdd464e99d819b06b9046f163db1",
+            "end": "fe44f06d0f12fdd464e99d819b06b9046f163db1",
+            "files": []
+          },
+          "content": [
+            {
+              "state": {
+                "reasoningDetails": [
+                  {
+                    "format": "unknown",
+                    "index": 0,
+                    "type": "reasoning.text",
+                    "text": "The user wants me to call the top-level `rg` tool three times with specific parameters. Let me make all three calls in parallel since they're independent."
+                  }
+                ],
+                "reasoningField": "reasoning_content"
+              },
+              "time": {
+                "created": 1790037452521,
+                "completed": 1790037455898
+              },
+              "type": "reasoning",
+              "text": "The user wants me to call the top-level `rg` tool three times with specific parameters. Let me make all three calls in parallel since they're independent."
+            },
+            {
+              "state": {
+                "status": "completed",
+                "metadata": {
+                  "truncated": true,
+                  "exitCode": 0
+                },
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "1:-needle\n\n--- Truncated. Narrow the pattern, file types or search paths. ---"
+                  }
+                ],
+                "input": {
+                  "pattern": "-needle",
+                  "fixed_strings": true,
+                  "max_results": 1,
+                  "path": "search fixture.txt"
+                }
+              },
+              "executed": false,
+              "type": "tool",
+              "name": "rg",
+              "time": {
+                "completed": 1790037455951,
+                "created": 1790037453465,
+                "ran": 1790037455901
+              },
+              "id": "call_0c9befb73fd148cc95f39d7e"
+            },
+            {
+              "state": {
+                "status": "completed",
+                "metadata": {
+                  "truncated": false,
+                  "exitCode": 1
+                },
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "No matches found."
+                  }
+                ],
+                "input": {
+                  "pattern": "ABSENT_TOKEN_783",
+                  "path": "search fixture.txt"
+                }
+              },
+              "executed": false,
+              "type": "tool",
+              "name": "rg",
+              "time": {
+                "completed": 1790037455950,
+                "created": 1790037454507,
+                "ran": 1790037455903
+              },
+              "id": "call_92d8c5a1d0b14f03993a2893"
+            },
+            {
+              "state": {
+                "status": "error",
+                "error": {
+                  "type": "tool.execution",
+                  "message": "ripgrep failed (2): rg: regex parse error:\n    (?:[)\n       ^\nerror: unclosed character class"
+                },
+                "input": {
+                  "pattern": "[",
+                  "path": "search fixture.txt"
+                }
+              },
+              "executed": false,
+              "type": "tool",
+              "name": "rg",
+              "time": {
+                "completed": 1790037455948,
+                "created": 1790037455413,
+                "ran": 1790037455905
+              },
+              "id": "call_1e84b88190e84f5390bdc999"
+            }
+          ],
+          "tokens": {
+            "output": 116,
+            "input": 9173,
+            "reasoning": 33,
+            "cache": {
+              "write": 0,
+              "read": 0
+            }
+          },
+          "id": "msg_0c68bdcd7001O0VBCYN7KqCjRn",
+          "type": "assistant",
+          "finish": "tool-calls",
+          "agent": "build",
+          "rawFinish": "tool_calls",
+          "model": {
+            "providerID": "opencode",
+            "variant": "default",
+            "id": "mimo-v2.5-free"
+          },
+          "cost": 0,
+          "time": {
+            "completed": 1790037455972,
+            "created": 1790037450021,
+            "streamed": 1790037455911
+          }
+        },
+        "cost": 0,
+        "model": {
+          "providerID": "opencode",
+          "variant": "default",
+          "id": "mimo-v2.5-free"
+        },
+        "sessionID": "ses_f3974237cffeFMY1kG7LCV15GM",
+        "finish": "tool-calls",
+        "agent": "build",
+        "rawFinish": "tool_calls",
+        "type": "assistant"
+      },
+      "parts": [
+        {
+          "state": {
+            "reasoningDetails": [
+              {
+                "format": "unknown",
+                "index": 0,
+                "type": "reasoning.text",
+                "text": "The user wants me to call the top-level `rg` tool three times with specific parameters. Let me make all three calls in parallel since they're independent."
+              }
+            ],
+            "reasoningField": "reasoning_content"
+          },
+          "messageID": "msg_0c68bdcd7001O0VBCYN7KqCjRn",
+          "time": {
+            "created": 1790037452521,
+            "completed": 1790037455898
+          },
+          "id": "v2:30:ses_f3974237cffeFMY1kG7LCV15GM:30:msg_0c68bdcd7001O0VBCYN7KqCjRn:reasoning:0",
+          "content_order": 1,
+          "type": "reasoning",
+          "protocol": "v2",
+          "ordinal": 0,
+          "sessionID": "ses_f3974237cffeFMY1kG7LCV15GM",
+          "text": "The user wants me to call the top-level `rg` tool three times with specific parameters. Let me make all three calls in parallel since they're independent."
+        },
+        {
+          "state": {
+            "output": "1:-needle\n\n--- Truncated. Narrow the pattern, file types or search paths. ---",
+            "time": {
+              "end": 1790037455951,
+              "start": 1790037455901
+            },
+            "content": [
+              {
+                "type": "text",
+                "text": "1:-needle\n\n--- Truncated. Narrow the pattern, file types or search paths. ---"
+              }
+            ],
+            "files": [],
+            "status": "completed",
+            "metadata": {
+              "truncated": true,
+              "exitCode": 0
+            },
+            "input": {
+              "pattern": "-needle",
+              "fixed_strings": true,
+              "max_results": 1,
+              "path": "search fixture.txt"
+            }
+          },
+          "executed": false,
+          "messageID": "msg_0c68bdcd7001O0VBCYN7KqCjRn",
+          "name": "rg",
+          "time": {
+            "completed": 1790037455951,
+            "created": 1790037453465,
+            "ran": 1790037455901
+          },
+          "callID": "call_0c9befb73fd148cc95f39d7e",
+          "id": "v2:30:ses_f3974237cffeFMY1kG7LCV15GM:30:msg_0c68bdcd7001O0VBCYN7KqCjRn:tool:call_0c9befb73fd148cc95f39d7e",
+          "tool": "rg",
+          "content_order": 2,
+          "type": "tool",
+          "sessionID": "ses_f3974237cffeFMY1kG7LCV15GM",
+          "ordinal": 0,
+          "raw_tool": "rg",
+          "protocol": "v2"
+        },
+        {
+          "state": {
+            "output": "No matches found.",
+            "time": {
+              "end": 1790037455950,
+              "start": 1790037455903
+            },
+            "content": [
+              {
+                "type": "text",
+                "text": "No matches found."
+              }
+            ],
+            "files": [],
+            "status": "completed",
+            "metadata": {
+              "truncated": false,
+              "exitCode": 1
+            },
+            "input": {
+              "pattern": "ABSENT_TOKEN_783",
+              "path": "search fixture.txt"
+            }
+          },
+          "executed": false,
+          "messageID": "msg_0c68bdcd7001O0VBCYN7KqCjRn",
+          "name": "rg",
+          "time": {
+            "completed": 1790037455950,
+            "created": 1790037454507,
+            "ran": 1790037455903
+          },
+          "callID": "call_92d8c5a1d0b14f03993a2893",
+          "id": "v2:30:ses_f3974237cffeFMY1kG7LCV15GM:30:msg_0c68bdcd7001O0VBCYN7KqCjRn:tool:call_92d8c5a1d0b14f03993a2893",
+          "tool": "rg",
+          "content_order": 3,
+          "type": "tool",
+          "sessionID": "ses_f3974237cffeFMY1kG7LCV15GM",
+          "ordinal": 1,
+          "raw_tool": "rg",
+          "protocol": "v2"
+        },
+        {
+          "state": {
+            "output": "",
+            "error": "ripgrep failed (2): rg: regex parse error:\n    (?:[)\n       ^\nerror: unclosed character class",
+            "time": {
+              "end": 1790037455948,
+              "start": 1790037455905
+            },
+            "status": "error",
+            "native_error": {
+              "type": "tool.execution",
+              "message": "ripgrep failed (2): rg: regex parse error:\n    (?:[)\n       ^\nerror: unclosed character class"
+            },
+            "files": [],
+            "input": {
+              "pattern": "[",
+              "path": "search fixture.txt"
+            }
+          },
+          "executed": false,
+          "messageID": "msg_0c68bdcd7001O0VBCYN7KqCjRn",
+          "name": "rg",
+          "time": {
+            "completed": 1790037455948,
+            "created": 1790037455413,
+            "ran": 1790037455905
+          },
+          "callID": "call_1e84b88190e84f5390bdc999",
+          "id": "v2:30:ses_f3974237cffeFMY1kG7LCV15GM:30:msg_0c68bdcd7001O0VBCYN7KqCjRn:tool:call_1e84b88190e84f5390bdc999",
+          "tool": "rg",
+          "content_order": 4,
+          "type": "tool",
+          "sessionID": "ses_f3974237cffeFMY1kG7LCV15GM",
+          "ordinal": 2,
+          "raw_tool": "rg",
+          "protocol": "v2"
+        }
+      ]
+    },
+    {
+      "info": {
+        "snapshot": {
+          "start": "fe44f06d0f12fdd464e99d819b06b9046f163db1",
+          "end": "fe44f06d0f12fdd464e99d819b06b9046f163db1",
+          "files": []
+        },
+        "content": [
+          {
+            "state": {
+              "reasoningDetails": [
+                {
+                  "format": "unknown",
+                  "index": 0,
+                  "type": "reasoning.text",
+                  "text": "All three calls completed. The test is done."
+                }
+              ],
+              "reasoningField": "reasoning_content"
+            },
+            "time": {
+              "created": 1790037457566,
+              "completed": 1790037459732
+            },
+            "type": "reasoning",
+            "text": "All three calls completed. The test is done."
+          },
+          {
+            "type": "text",
+            "text": "Test complete. All three `rg` calls ran as expected:\n\n1. **`-needle`** (fixed_strings): matched one line.\n2. **`ABSENT_TOKEN_783`**: no matches found.\n3. **`[`** (invalid regex): ripgrep returned a regex parse error (unclosed character class)."
+          }
+        ],
+        "time": {
+          "completed": 1790037459759,
+          "created": 1790037456004,
+          "streamed": 1790037459738
+        },
+        "hidden": false,
+        "protocol": "v2",
+        "role": "assistant",
+        "providerID": "opencode",
+        "modelID": "mimo-v2.5-free",
+        "tokens": {
+          "output": 71,
+          "input": 257,
+          "reasoning": 11,
+          "cache": {
+            "write": 0,
+            "read": 9152
+          }
+        },
+        "variant": "default",
+        "id": "msg_0c68bf46b001HWZ66ytcLqsaD9",
+        "_v2": {
+          "snapshot": {
+            "start": "fe44f06d0f12fdd464e99d819b06b9046f163db1",
+            "end": "fe44f06d0f12fdd464e99d819b06b9046f163db1",
+            "files": []
+          },
+          "content": [
+            {
+              "state": {
+                "reasoningDetails": [
+                  {
+                    "format": "unknown",
+                    "index": 0,
+                    "type": "reasoning.text",
+                    "text": "All three calls completed. The test is done."
+                  }
+                ],
+                "reasoningField": "reasoning_content"
+              },
+              "time": {
+                "created": 1790037457566,
+                "completed": 1790037459732
+              },
+              "type": "reasoning",
+              "text": "All three calls completed. The test is done."
+            },
+            {
+              "type": "text",
+              "text": "Test complete. All three `rg` calls ran as expected:\n\n1. **`-needle`** (fixed_strings): matched one line.\n2. **`ABSENT_TOKEN_783`**: no matches found.\n3. **`[`** (invalid regex): ripgrep returned a regex parse error (unclosed character class)."
+            }
+          ],
+          "tokens": {
+            "output": 71,
+            "input": 257,
+            "reasoning": 11,
+            "cache": {
+              "write": 0,
+              "read": 9152
+            }
+          },
+          "id": "msg_0c68bf46b001HWZ66ytcLqsaD9",
+          "type": "assistant",
+          "finish": "stop",
+          "agent": "build",
+          "rawFinish": "stop",
+          "model": {
+            "providerID": "opencode",
+            "variant": "default",
+            "id": "mimo-v2.5-free"
+          },
+          "cost": 0,
+          "time": {
+            "completed": 1790037459759,
+            "created": 1790037456004,
+            "streamed": 1790037459738
+          }
+        },
+        "cost": 0,
+        "model": {
+          "providerID": "opencode",
+          "variant": "default",
+          "id": "mimo-v2.5-free"
+        },
+        "sessionID": "ses_f3974237cffeFMY1kG7LCV15GM",
+        "finish": "stop",
+        "agent": "build",
+        "rawFinish": "stop",
+        "type": "assistant"
+      },
+      "parts": [
+        {
+          "state": {
+            "reasoningDetails": [
+              {
+                "format": "unknown",
+                "index": 0,
+                "type": "reasoning.text",
+                "text": "All three calls completed. The test is done."
+              }
+            ],
+            "reasoningField": "reasoning_content"
+          },
+          "messageID": "msg_0c68bf46b001HWZ66ytcLqsaD9",
+          "time": {
+            "created": 1790037457566,
+            "completed": 1790037459732
+          },
+          "id": "v2:30:ses_f3974237cffeFMY1kG7LCV15GM:30:msg_0c68bf46b001HWZ66ytcLqsaD9:reasoning:0",
+          "content_order": 1,
+          "type": "reasoning",
+          "protocol": "v2",
+          "ordinal": 0,
+          "sessionID": "ses_f3974237cffeFMY1kG7LCV15GM",
+          "text": "All three calls completed. The test is done."
+        },
+        {
+          "sessionID": "ses_f3974237cffeFMY1kG7LCV15GM",
+          "content_order": 2,
+          "type": "text",
+          "protocol": "v2",
+          "messageID": "msg_0c68bf46b001HWZ66ytcLqsaD9",
+          "ordinal": 0,
+          "text": "Test complete. All three `rg` calls ran as expected:\n\n1. **`-needle`** (fixed_strings): matched one line.\n2. **`ABSENT_TOKEN_783`**: no matches found.\n3. **`[`** (invalid regex): ripgrep returned a regex parse error (unclosed character class).",
+          "id": "v2:30:ses_f3974237cffeFMY1kG7LCV15GM:30:msg_0c68bf46b001HWZ66ytcLqsaD9:text:0"
+        }
+      ]
+    },
+    {
+      "info": {
+        "time": {
+          "created": 1790037459761
+        },
+        "id": "msg_0c68c0331002AI0sR5FLiGC61H",
+        "_v2": {
+          "time": {
+            "created": 1790037459761
+          },
+          "id": "msg_0c68c0331002AI0sR5FLiGC61H",
+          "type": "idle",
+          "outcome": "succeeded"
+        },
+        "type": "idle",
+        "sessionID": "ses_f3974237cffeFMY1kG7LCV15GM",
+        "hidden": true,
+        "role": "system",
+        "protocol": "v2",
+        "outcome": "succeeded"
+      },
+      "parts": []
+    },
+    {
+      "info": {
+        "time": {
+          "created": 1790037459781
+        },
+        "id": "msg_0c68c033c001AyHLTgZnSBeDa8",
+        "_v2": {
+          "time": {
+            "created": 1790037459781
+          },
+          "id": "msg_0c68c033c001AyHLTgZnSBeDa8",
+          "type": "user",
+          "text": "Call the direct top-level rg exactly once with pattern=\"needle\" and path=\"<PROFILE>/project пробел %#/blocked-search.fifo\". This is an intentionally waiting FIFO fixture. Do not use other tools, do not change the path, and do not retry."
+        },
+        "type": "user",
+        "sessionID": "ses_f3974237cffeFMY1kG7LCV15GM",
+        "hidden": false,
+        "role": "user",
+        "protocol": "v2",
+        "text": "Call the direct top-level rg exactly once with pattern=\"needle\" and path=\"<PROFILE>/project пробел %#/blocked-search.fifo\". This is an intentionally waiting FIFO fixture. Do not use other tools, do not change the path, and do not retry."
+      },
+      "parts": [
+        {
+          "sessionID": "ses_f3974237cffeFMY1kG7LCV15GM",
+          "content_order": 1,
+          "type": "text",
+          "protocol": "v2",
+          "messageID": "msg_0c68c033c001AyHLTgZnSBeDa8",
+          "ordinal": 0,
+          "text": "Call the direct top-level rg exactly once with pattern=\"needle\" and path=\"<PROFILE>/project пробел %#/blocked-search.fifo\". This is an intentionally waiting FIFO fixture. Do not use other tools, do not change the path, and do not retry.",
+          "id": "v2:30:ses_f3974237cffeFMY1kG7LCV15GM:30:msg_0c68c033c001AyHLTgZnSBeDa8:text:0"
+        }
+      ]
+    },
+    {
+      "info": {
+        "snapshot": {
+          "start": "fe44f06d0f12fdd464e99d819b06b9046f163db1",
+          "end": "fe44f06d0f12fdd464e99d819b06b9046f163db1",
+          "files": []
+        },
+        "content": [
+          {
+            "state": {
+              "reasoningDetails": [
+                {
+                  "format": "unknown",
+                  "index": 0,
+                  "type": "reasoning.text",
+                  "text": "The user wants me to call the top-level `rg` tool once with the specified pattern and path. This is an intentionally blocking FIFO, so it will hang, but the user explicitly said not to retry or change the path."
+                }
+              ],
+              "reasoningField": "reasoning_content"
+            },
+            "time": {
+              "created": 1790037462016,
+              "completed": 1790037465243
+            },
+            "type": "reasoning",
+            "text": "The user wants me to call the top-level `rg` tool once with the specified pattern and path. This is an intentionally blocking FIFO, so it will hang, but the user explicitly said not to retry or change the path."
+          },
+          {
+            "state": {
+              "status": "error",
+              "error": {
+                "type": "aborted",
+                "message": "Tool execution interrupted"
+              },
+              "input": {
+                "pattern": "needle",
+                "path": "<PROFILE>/project пробел %#/blocked-search.fifo"
+              }
+            },
+            "executed": false,
+            "type": "tool",
+            "name": "rg",
+            "time": {
+              "completed": 1790037466455,
+              "created": 1790037463422,
+              "ran": 1790037465249
+            },
+            "id": "call_5af9563d7e4f49638f928869"
+          }
+        ],
+        "time": {
+          "completed": 1790037466496,
+          "created": 1790037459808,
+          "streamed": 1790037465251
+        },
+        "hidden": false,
+        "error": {
+          "type": "aborted",
+          "message": "Step interrupted"
+        },
+        "protocol": "v2",
+        "role": "assistant",
+        "providerID": "opencode",
+        "modelID": "mimo-v2.5-free",
+        "tokens": {
+          "output": 80,
+          "input": 247,
+          "reasoning": 47,
+          "cache": {
+            "write": 0,
+            "read": 9344
+          }
+        },
+        "variant": "default",
+        "id": "msg_0c68c03470013qGbpKdOKUuIKj",
+        "_v2": {
+          "snapshot": {
+            "start": "fe44f06d0f12fdd464e99d819b06b9046f163db1",
+            "end": "fe44f06d0f12fdd464e99d819b06b9046f163db1",
+            "files": []
+          },
+          "content": [
+            {
+              "state": {
+                "reasoningDetails": [
+                  {
+                    "format": "unknown",
+                    "index": 0,
+                    "type": "reasoning.text",
+                    "text": "The user wants me to call the top-level `rg` tool once with the specified pattern and path. This is an intentionally blocking FIFO, so it will hang, but the user explicitly said not to retry or change the path."
+                  }
+                ],
+                "reasoningField": "reasoning_content"
+              },
+              "time": {
+                "created": 1790037462016,
+                "completed": 1790037465243
+              },
+              "type": "reasoning",
+              "text": "The user wants me to call the top-level `rg` tool once with the specified pattern and path. This is an intentionally blocking FIFO, so it will hang, but the user explicitly said not to retry or change the path."
+            },
+            {
+              "state": {
+                "status": "error",
+                "error": {
+                  "type": "aborted",
+                  "message": "Tool execution interrupted"
+                },
+                "input": {
+                  "pattern": "needle",
+                  "path": "<PROFILE>/project пробел %#/blocked-search.fifo"
+                }
+              },
+              "executed": false,
+              "type": "tool",
+              "name": "rg",
+              "time": {
+                "completed": 1790037466455,
+                "created": 1790037463422,
+                "ran": 1790037465249
+              },
+              "id": "call_5af9563d7e4f49638f928869"
+            }
+          ],
+          "time": {
+            "completed": 1790037466496,
+            "created": 1790037459808,
+            "streamed": 1790037465251
+          },
+          "id": "msg_0c68c03470013qGbpKdOKUuIKj",
+          "type": "assistant",
+          "error": {
+            "type": "aborted",
+            "message": "Step interrupted"
+          },
+          "finish": "error",
+          "agent": "build",
+          "rawFinish": "tool_calls",
+          "model": {
+            "providerID": "opencode",
+            "variant": "default",
+            "id": "mimo-v2.5-free"
+          },
+          "cost": 0,
+          "tokens": {
+            "output": 80,
+            "input": 247,
+            "reasoning": 47,
+            "cache": {
+              "write": 0,
+              "read": 9344
+            }
+          }
+        },
+        "cost": 0,
+        "model": {
+          "providerID": "opencode",
+          "variant": "default",
+          "id": "mimo-v2.5-free"
+        },
+        "sessionID": "ses_f3974237cffeFMY1kG7LCV15GM",
+        "finish": "error",
+        "agent": "build",
+        "rawFinish": "tool_calls",
+        "type": "assistant"
+      },
+      "parts": [
+        {
+          "state": {
+            "reasoningDetails": [
+              {
+                "format": "unknown",
+                "index": 0,
+                "type": "reasoning.text",
+                "text": "The user wants me to call the top-level `rg` tool once with the specified pattern and path. This is an intentionally blocking FIFO, so it will hang, but the user explicitly said not to retry or change the path."
+              }
+            ],
+            "reasoningField": "reasoning_content"
+          },
+          "messageID": "msg_0c68c03470013qGbpKdOKUuIKj",
+          "time": {
+            "created": 1790037462016,
+            "completed": 1790037465243
+          },
+          "id": "v2:30:ses_f3974237cffeFMY1kG7LCV15GM:30:msg_0c68c03470013qGbpKdOKUuIKj:reasoning:0",
+          "content_order": 1,
+          "type": "reasoning",
+          "protocol": "v2",
+          "ordinal": 0,
+          "sessionID": "ses_f3974237cffeFMY1kG7LCV15GM",
+          "text": "The user wants me to call the top-level `rg` tool once with the specified pattern and path. This is an intentionally blocking FIFO, so it will hang, but the user explicitly said not to retry or change the path."
+        },
+        {
+          "state": {
+            "output": "",
+            "error": "Tool execution interrupted",
+            "time": {
+              "end": 1790037466455,
+              "start": 1790037465249
+            },
+            "status": "error",
+            "native_error": {
+              "type": "aborted",
+              "message": "Tool execution interrupted"
+            },
+            "files": [],
+            "input": {
+              "pattern": "needle",
+              "path": "<PROFILE>/project пробел %#/blocked-search.fifo"
+            }
+          },
+          "executed": false,
+          "messageID": "msg_0c68c03470013qGbpKdOKUuIKj",
+          "name": "rg",
+          "time": {
+            "completed": 1790037466455,
+            "created": 1790037463422,
+            "ran": 1790037465249
+          },
+          "callID": "call_5af9563d7e4f49638f928869",
+          "id": "v2:30:ses_f3974237cffeFMY1kG7LCV15GM:30:msg_0c68c03470013qGbpKdOKUuIKj:tool:call_5af9563d7e4f49638f928869",
+          "tool": "rg",
+          "content_order": 2,
+          "type": "tool",
+          "sessionID": "ses_f3974237cffeFMY1kG7LCV15GM",
+          "ordinal": 0,
+          "raw_tool": "rg",
+          "protocol": "v2"
+        }
+      ]
+    },
+    {
+      "info": {
+        "time": {
+          "created": 1790037466498
+        },
+        "id": "msg_0c68c1d82002vERHhI1p4fe3mP",
+        "_v2": {
+          "time": {
+            "created": 1790037466498
+          },
+          "id": "msg_0c68c1d82002vERHhI1p4fe3mP",
+          "type": "idle",
+          "outcome": "interrupted"
+        },
+        "type": "idle",
+        "sessionID": "ses_f3974237cffeFMY1kG7LCV15GM",
+        "hidden": true,
+        "role": "system",
+        "protocol": "v2",
+        "outcome": "interrupted"
+      },
+      "parts": []
+    }
+  ],
+  "queued_input_cancelled": true,
+  "results": [
+    {
+      "output": "1:-needle\n\n--- Truncated. Narrow the pattern, file types or search paths. ---",
+      "time": {
+        "end": 1790037455951,
+        "start": 1790037455901
+      },
+      "content": [
+        {
+          "type": "text",
+          "text": "1:-needle\n\n--- Truncated. Narrow the pattern, file types or search paths. ---"
+        }
+      ],
+      "files": [],
+      "status": "completed",
+      "metadata": {
+        "truncated": true,
+        "exitCode": 0
+      },
+      "input": {
+        "pattern": "-needle",
+        "fixed_strings": true,
+        "max_results": 1,
+        "path": "search fixture.txt"
+      }
+    },
+    {
+      "output": "No matches found.",
+      "time": {
+        "end": 1790037455950,
+        "start": 1790037455903
+      },
+      "content": [
+        {
+          "type": "text",
+          "text": "No matches found."
+        }
+      ],
+      "files": [],
+      "status": "completed",
+      "metadata": {
+        "truncated": false,
+        "exitCode": 1
+      },
+      "input": {
+        "pattern": "ABSENT_TOKEN_783",
+        "path": "search fixture.txt"
+      }
+    },
+    {
+      "output": "",
+      "error": "ripgrep failed (2): rg: regex parse error:\n    (?:[)\n       ^\nerror: unclosed character class",
+      "time": {
+        "end": 1790037455948,
+        "start": 1790037455905
+      },
+      "status": "error",
+      "native_error": {
+        "type": "tool.execution",
+        "message": "ripgrep failed (2): rg: regex parse error:\n    (?:[)\n       ^\nerror: unclosed character class"
+      },
+      "files": [],
+      "input": {
+        "pattern": "[",
+        "path": "search fixture.txt"
+      }
+    }
+  ],
+  "child_pid": 8179,
+  "child_exited_after_interrupt": true
+}

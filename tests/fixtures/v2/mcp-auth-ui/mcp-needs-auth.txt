@@ -1,0 +1,40 @@
+                                       │ No active session                                                              
+~                                      │ Press 'i' to focus input                                                       
+~                                      │ Press '<C-p>' for command palette                                              
+~                                      │ Press '?' for help                                                             
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │         ╭─────────────────────── MCP Servers ────────────────────────╮         
+~                                      │         │                                                            │         
+~                                      │         ╰────────────────────────────────────────────────────────────╯         
+~                                      │         ╭────────────────────────────────────────────────────────────╮         
+~                                      │         │▸ ! auth-fixture                                  Needs auth│         
+~                                      │         │                                                            │         
+~                                      │         │                                                            │         
+~                                      │         │                                                            │         
+~                                      │         │                                                            │         
+~                                      │         │                                                            │         
+~                                      │         ╰ ↑↓/j,k:nav  ⏎:select  i:info  t:toggle  a:auth  r:refresh …╯         
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+[No Name]            0,0-1          All opencode [-]                                                  5,0-1          All
+                                                                                                      1,1           All 

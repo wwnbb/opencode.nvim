@@ -1,0 +1,7 @@
+Review smoke: Permission needs input
+Review smoke: Edit review needs input (1 file)
+Review smoke: Session done
+interrupted-review: Edit review needs input (1 file)
+interrupted-review: Session done
+denied-review: Session done
+Neovim v2 native permission, review, deny, interruption and late reply passed

@@ -4,8 +4,12 @@ local NuiLine = require("nui.line")
 
 local actions = require("opencode.actions")
 local selectors = require("opencode.selectors")
+local btw = require("opencode.btw")
 
-local state = require("opencode.ui.chat.state").state
+local BTW_FRAMES = { "⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏" }
+
+local cs = require("opencode.ui.chat.state")
+local state = cs.state
 
 local session_tabs_hl_ns = vim.api.nvim_create_namespace("opencode_session_tabs_hl")
 local session_tabs_augroup = vim.api.nvim_create_augroup("OpenCodeSessionTabs", { clear = false })
@@ -187,6 +191,13 @@ end
 local function escape_winbar_text(text)
 	local escaped = tostring(text or ""):gsub("%%", "%%%%")
 	return escaped
+end
+
+local function btw_status_label()
+	local count = btw.pending_count()
+	if count == 0 then return nil end
+	local frame = BTW_FRAMES[(math.floor(vim.uv.now() / 80) % #BTW_FRAMES) + 1]
+	return frame .. " /btw" .. (count > 1 and (" " .. count) or "")
 end
 
 local function session_tab_icon(session, icons)
@@ -456,6 +467,14 @@ local function build_session_tabs_line(tabs_cfg, sessions, active_session, curre
 		table.insert(parts, string.format("%%#OpenCodeWinbar#%s%%#OpenCodeWinbarRunning#%s%d %%#OpenCodeWinbarWaiting#%s%d", "", escape_winbar_text(icons.running or "●"), running, escape_winbar_text(icons.waiting or "◈"), waiting))
 	end
 
+	local aside_label = btw_status_label()
+	if aside_label then
+		append_separator()
+		append_text(aside_label, "OpenCodeWinbarRunning")
+		has_tabs = true
+		table.insert(parts, "%#OpenCodeWinbarRunning#" .. escape_winbar_text(aside_label))
+	end
+
 	if has_tabs then
 		append_text(" ", "OpenCodeWinbar")
 	end
@@ -666,7 +685,9 @@ local function calculate_session_tabs_window_config(frame, _tab_width)
 end
 
 local function update_float_session_tabs_window(tabs_cfg, current_session)
-	if not state.visible or not state.config or state.config.layout ~= "float" or tabs_cfg.enabled == false then
+	local status_only = tabs_cfg.enabled == false
+	local status_label = status_only and btw_status_label() or nil
+	if not state.visible or not state.config or state.config.layout ~= "float" or (status_only and not status_label) then
 		M.close_float_window()
 		return false
 	end
@@ -681,7 +702,17 @@ local function update_float_session_tabs_window(tabs_cfg, current_session)
 		return false
 	end
 
-	local tabs = build_session_tabs(tabs_cfg, current_session, { available_width = win_config.width })
+	local tabs
+	if status_only then
+		ensure_winbar_highlights(tabs_cfg)
+		local line = NuiLine()
+		line:append(status_label, "OpenCodeWinbarRunning")
+		tabs = { line = line, has_tabs = true }
+		state.winbar_targets = {}
+		state.session_tabs_mouse_targets = {}
+	else
+		tabs = build_session_tabs(tabs_cfg, current_session, { available_width = win_config.width })
+	end
 	if not tabs.has_tabs then
 		M.close_float_window()
 		return false
@@ -714,16 +745,24 @@ function M.update_winbar()
 		M.close_float_window()
 		return
 	end
+	if state.bufnr and not cs.is_chat_buffer_displayed() then return end
 	local cfg = state.config or get_config()
 	local tabs_cfg = cfg.session_tabs or {}
 	if tabs_cfg.enabled == false then
+		local status_label = btw_status_label()
+		if status_label then ensure_winbar_highlights(tabs_cfg) end
 		pcall(function()
-			vim.wo[state.winid].winbar = ""
+			vim.wo[state.winid].winbar = cfg.layout == "float" and ""
+				or (status_label and ("%#OpenCodeWinbarRunning#" .. escape_winbar_text(status_label)) or "")
 		end)
 		state.winbar_targets = {}
 		state.session_tabs_mouse_targets = {}
 		set_float_border_title(nil)
-		M.close_float_window()
+		if status_label and cfg.layout == "float" then
+			update_float_session_tabs_window(tabs_cfg)
+		else
+			M.close_float_window()
+		end
 		return
 	end
 

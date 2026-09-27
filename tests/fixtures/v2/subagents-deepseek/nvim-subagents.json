@@ -1,0 +1,1798 @@
+{
+  "reconnected": true,
+  "actual_background_overlap": true,
+  "parent": [
+    {
+      "info": {
+        "id": "msg_0c6e855f1001nhak5eLjQZ73yh",
+        "protocol": "v2",
+        "time": {
+          "created": 1790043510311
+        },
+        "text": "This is a background delegation test. Use the direct subagent tool twice with background=true and agent=\"general\". Both calls must have exactly description=\"Small test\" and model=\"opencode-go/deepseek-v4-flash\". Launch both without waiting for the first. First child prompt: Call shell once with command \"sleep 20\", then reply exactly CHILD_ONE. Second child prompt: Call shell once with command \"sleep 20\", then reply exactly CHILD_TWO. These are two independent test tasks. Do not read or modify files. After both launches reply PARENT_LAUNCHED. When completion notifications arrive, acknowledge them without any further tool calls.",
+        "_v2": {
+          "type": "user",
+          "id": "msg_0c6e855f1001nhak5eLjQZ73yh",
+          "time": {
+            "created": 1790043510311
+          },
+          "text": "This is a background delegation test. Use the direct subagent tool twice with background=true and agent=\"general\". Both calls must have exactly description=\"Small test\" and model=\"opencode-go/deepseek-v4-flash\". Launch both without waiting for the first. First child prompt: Call shell once with command \"sleep 20\", then reply exactly CHILD_ONE. Second child prompt: Call shell once with command \"sleep 20\", then reply exactly CHILD_TWO. These are two independent test tasks. Do not read or modify files. After both launches reply PARENT_LAUNCHED. When completion notifications arrive, acknowledge them without any further tool calls."
+        },
+        "hidden": false,
+        "sessionID": "ses_f3917aa39ffe4s8cirfPFkw6l6",
+        "type": "user",
+        "role": "user"
+      },
+      "parts": [
+        {
+          "messageID": "msg_0c6e855f1001nhak5eLjQZ73yh",
+          "id": "v2:30:ses_f3917aa39ffe4s8cirfPFkw6l6:30:msg_0c6e855f1001nhak5eLjQZ73yh:text:0",
+          "ordinal": 0,
+          "content_order": 1,
+          "sessionID": "ses_f3917aa39ffe4s8cirfPFkw6l6",
+          "protocol": "v2",
+          "type": "text",
+          "text": "This is a background delegation test. Use the direct subagent tool twice with background=true and agent=\"general\". Both calls must have exactly description=\"Small test\" and model=\"opencode-go/deepseek-v4-flash\". Launch both without waiting for the first. First child prompt: Call shell once with command \"sleep 20\", then reply exactly CHILD_ONE. Second child prompt: Call shell once with command \"sleep 20\", then reply exactly CHILD_TWO. These are two independent test tasks. Do not read or modify files. After both launches reply PARENT_LAUNCHED. When completion notifications arrive, acknowledge them without any further tool calls."
+        }
+      ]
+    },
+    {
+      "info": {
+        "agent": "build",
+        "protocol": "v2",
+        "time": {
+          "created": 1790043510280
+        },
+        "_v2": {
+          "type": "agent-switched",
+          "id": "msg_0c6e856080015F4T52IaZAe8FQ",
+          "time": {
+            "created": 1790043510280
+          },
+          "agent": "build"
+        },
+        "id": "msg_0c6e856080015F4T52IaZAe8FQ",
+        "hidden": false,
+        "sessionID": "ses_f3917aa39ffe4s8cirfPFkw6l6",
+        "type": "agent-switched",
+        "role": "system"
+      },
+      "parts": [
+        {
+          "messageID": "msg_0c6e856080015F4T52IaZAe8FQ",
+          "id": "v2:30:ses_f3917aa39ffe4s8cirfPFkw6l6:30:msg_0c6e856080015F4T52IaZAe8FQ:text:0",
+          "ordinal": 0,
+          "protocol": "v2",
+          "text": "Agent: build",
+          "type": "text",
+          "sessionID": "ses_f3917aa39ffe4s8cirfPFkw6l6",
+          "synthetic": true,
+          "content_order": 1
+        }
+      ]
+    },
+    {
+      "info": {
+        "agent": "build",
+        "time": {
+          "created": 1790043510378,
+          "completed": 1790043513484,
+          "streamed": 1790043513388
+        },
+        "_v2": {
+          "agent": "build",
+          "rawFinish": "tool_calls",
+          "tokens": {
+            "reasoning": 0,
+            "input": 8253,
+            "output": 267,
+            "cache": {
+              "write": 0,
+              "read": 256
+            }
+          },
+          "time": {
+            "created": 1790043510378,
+            "completed": 1790043513484,
+            "streamed": 1790043513388
+          },
+          "content": [
+            {
+              "state": {
+                "reasoningField": "reasoning_content"
+              },
+              "type": "reasoning",
+              "time": {
+                "created": 1790043511506,
+                "completed": 1790043513381
+              },
+              "text": "Let me launch both background subagents as requested."
+            },
+            {
+              "type": "text",
+              "text": "\n\n"
+            },
+            {
+              "id": "call_f12c74f41fdb4726afa73de2",
+              "type": "tool",
+              "state": {
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "The subagent is working in the background (sessionID: ses_f39179dcdffeP4LJNVt7vCOU2y). You will be notified automatically when it finishes.\nDO NOT sleep, poll for progress, ask the subagent for status, or duplicate this subagent's work; avoid working with the same files or topics it is using.\nWork on non-overlapping tasks, or briefly tell the user what you launched and end your response."
+                  }
+                ],
+                "input": {
+                  "agent": "general",
+                  "background": true,
+                  "prompt": "Call shell once with command \"sleep 20\", then reply exactly CHILD_ONE.",
+                  "model": "opencode-go/deepseek-v4-flash",
+                  "description": "Small test"
+                },
+                "status": "completed",
+                "metadata": {
+                  "truncated": false,
+                  "status": "running",
+                  "sessionID": "ses_f39179dcdffeP4LJNVt7vCOU2y"
+                }
+              },
+              "executed": false,
+              "time": {
+                "ran": 1790043513383,
+                "completed": 1790043513436,
+                "created": 1790043512359
+              },
+              "name": "subagent"
+            },
+            {
+              "id": "call_32a3de748dc449a382a46a45",
+              "type": "tool",
+              "state": {
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "The subagent is working in the background (sessionID: ses_f39179dccffe7qsD5VBXdxe9A3). You will be notified automatically when it finishes.\nDO NOT sleep, poll for progress, ask the subagent for status, or duplicate this subagent's work; avoid working with the same files or topics it is using.\nWork on non-overlapping tasks, or briefly tell the user what you launched and end your response."
+                  }
+                ],
+                "input": {
+                  "agent": "general",
+                  "background": true,
+                  "prompt": "Call shell once with command \"sleep 20\", then reply exactly CHILD_TWO.",
+                  "model": "opencode-go/deepseek-v4-flash",
+                  "description": "Small test"
+                },
+                "status": "completed",
+                "metadata": {
+                  "truncated": false,
+                  "status": "running",
+                  "sessionID": "ses_f39179dccffe7qsD5VBXdxe9A3"
+                }
+              },
+              "executed": false,
+              "time": {
+                "ran": 1790043513386,
+                "completed": 1790043513431,
+                "created": 1790043512962
+              },
+              "name": "subagent"
+            }
+          ],
+          "id": "msg_0c6e85630001Sgvqh2yLr2ZHk0",
+          "type": "assistant",
+          "model": {
+            "variant": "default",
+            "id": "deepseek-v4-flash",
+            "providerID": "opencode-go"
+          },
+          "snapshot": {
+            "start": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+            "end": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+            "files": []
+          },
+          "finish": "tool-calls",
+          "cost": 0.001398918
+        },
+        "hidden": false,
+        "sessionID": "ses_f3917aa39ffe4s8cirfPFkw6l6",
+        "role": "assistant",
+        "rawFinish": "tool_calls",
+        "providerID": "opencode-go",
+        "tokens": {
+          "reasoning": 0,
+          "input": 8253,
+          "output": 267,
+          "cache": {
+            "write": 0,
+            "read": 256
+          }
+        },
+        "protocol": "v2",
+        "model": {
+          "variant": "default",
+          "id": "deepseek-v4-flash",
+          "providerID": "opencode-go"
+        },
+        "content": [
+          {
+            "state": {
+              "reasoningField": "reasoning_content"
+            },
+            "type": "reasoning",
+            "time": {
+              "created": 1790043511506,
+              "completed": 1790043513381
+            },
+            "text": "Let me launch both background subagents as requested."
+          },
+          {
+            "type": "text",
+            "text": "\n\n"
+          },
+          {
+            "id": "call_f12c74f41fdb4726afa73de2",
+            "type": "tool",
+            "state": {
+              "content": [
+                {
+                  "type": "text",
+                  "text": "The subagent is working in the background (sessionID: ses_f39179dcdffeP4LJNVt7vCOU2y). You will be notified automatically when it finishes.\nDO NOT sleep, poll for progress, ask the subagent for status, or duplicate this subagent's work; avoid working with the same files or topics it is using.\nWork on non-overlapping tasks, or briefly tell the user what you launched and end your response."
+                }
+              ],
+              "input": {
+                "agent": "general",
+                "background": true,
+                "prompt": "Call shell once with command \"sleep 20\", then reply exactly CHILD_ONE.",
+                "model": "opencode-go/deepseek-v4-flash",
+                "description": "Small test"
+              },
+              "status": "completed",
+              "metadata": {
+                "truncated": false,
+                "status": "running",
+                "sessionID": "ses_f39179dcdffeP4LJNVt7vCOU2y"
+              }
+            },
+            "executed": false,
+            "time": {
+              "ran": 1790043513383,
+              "completed": 1790043513436,
+              "created": 1790043512359
+            },
+            "name": "subagent"
+          },
+          {
+            "id": "call_32a3de748dc449a382a46a45",
+            "type": "tool",
+            "state": {
+              "content": [
+                {
+                  "type": "text",
+                  "text": "The subagent is working in the background (sessionID: ses_f39179dccffe7qsD5VBXdxe9A3). You will be notified automatically when it finishes.\nDO NOT sleep, poll for progress, ask the subagent for status, or duplicate this subagent's work; avoid working with the same files or topics it is using.\nWork on non-overlapping tasks, or briefly tell the user what you launched and end your response."
+                }
+              ],
+              "input": {
+                "agent": "general",
+                "background": true,
+                "prompt": "Call shell once with command \"sleep 20\", then reply exactly CHILD_TWO.",
+                "model": "opencode-go/deepseek-v4-flash",
+                "description": "Small test"
+              },
+              "status": "completed",
+              "metadata": {
+                "truncated": false,
+                "status": "running",
+                "sessionID": "ses_f39179dccffe7qsD5VBXdxe9A3"
+              }
+            },
+            "executed": false,
+            "time": {
+              "ran": 1790043513386,
+              "completed": 1790043513431,
+              "created": 1790043512962
+            },
+            "name": "subagent"
+          }
+        ],
+        "modelID": "deepseek-v4-flash",
+        "variant": "default",
+        "cost": 0.001398918,
+        "finish": "tool-calls",
+        "snapshot": {
+          "start": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+          "end": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+          "files": []
+        },
+        "type": "assistant",
+        "id": "msg_0c6e85630001Sgvqh2yLr2ZHk0"
+      },
+      "parts": [
+        {
+          "messageID": "msg_0c6e85630001Sgvqh2yLr2ZHk0",
+          "id": "v2:30:ses_f3917aa39ffe4s8cirfPFkw6l6:30:msg_0c6e85630001Sgvqh2yLr2ZHk0:reasoning:0",
+          "ordinal": 0,
+          "protocol": "v2",
+          "time": {
+            "created": 1790043511506,
+            "completed": 1790043513381
+          },
+          "text": "Let me launch both background subagents as requested.",
+          "content_order": 1,
+          "sessionID": "ses_f3917aa39ffe4s8cirfPFkw6l6",
+          "state": {
+            "reasoningField": "reasoning_content"
+          },
+          "type": "reasoning"
+        },
+        {
+          "messageID": "msg_0c6e85630001Sgvqh2yLr2ZHk0",
+          "id": "v2:30:ses_f3917aa39ffe4s8cirfPFkw6l6:30:msg_0c6e85630001Sgvqh2yLr2ZHk0:text:0",
+          "ordinal": 0,
+          "content_order": 2,
+          "sessionID": "ses_f3917aa39ffe4s8cirfPFkw6l6",
+          "protocol": "v2",
+          "type": "text",
+          "text": "\n\n"
+        },
+        {
+          "messageID": "msg_0c6e85630001Sgvqh2yLr2ZHk0",
+          "id": "v2:30:ses_f3917aa39ffe4s8cirfPFkw6l6:30:msg_0c6e85630001Sgvqh2yLr2ZHk0:tool:call_f12c74f41fdb4726afa73de2",
+          "ordinal": 0,
+          "callID": "call_f12c74f41fdb4726afa73de2",
+          "protocol": "v2",
+          "state": {
+            "content": [
+              {
+                "type": "text",
+                "text": "The subagent is working in the background (sessionID: ses_f39179dcdffeP4LJNVt7vCOU2y). You will be notified automatically when it finishes.\nDO NOT sleep, poll for progress, ask the subagent for status, or duplicate this subagent's work; avoid working with the same files or topics it is using.\nWork on non-overlapping tasks, or briefly tell the user what you launched and end your response."
+              }
+            ],
+            "input": {
+              "agent": "general",
+              "background": true,
+              "prompt": "Call shell once with command \"sleep 20\", then reply exactly CHILD_ONE.",
+              "subagent_type": "general",
+              "model": "opencode-go/deepseek-v4-flash",
+              "description": "Small test"
+            },
+            "output": "The subagent is working in the background (sessionID: ses_f39179dcdffeP4LJNVt7vCOU2y). You will be notified automatically when it finishes.\nDO NOT sleep, poll for progress, ask the subagent for status, or duplicate this subagent's work; avoid working with the same files or topics it is using.\nWork on non-overlapping tasks, or briefly tell the user what you launched and end your response.",
+            "files": [],
+            "metadata": {
+              "truncated": false,
+              "status": "running",
+              "sessionID": "ses_f39179dcdffeP4LJNVt7vCOU2y"
+            },
+            "time": {
+              "start": 1790043513383,
+              "end": 1790043513436
+            },
+            "status": "completed"
+          },
+          "content_order": 3,
+          "tool": "task",
+          "raw_tool": "subagent",
+          "type": "tool",
+          "time": {
+            "ran": 1790043513383,
+            "completed": 1790043513436,
+            "created": 1790043512359
+          },
+          "sessionID": "ses_f3917aa39ffe4s8cirfPFkw6l6",
+          "executed": false,
+          "name": "subagent"
+        },
+        {
+          "messageID": "msg_0c6e85630001Sgvqh2yLr2ZHk0",
+          "id": "v2:30:ses_f3917aa39ffe4s8cirfPFkw6l6:30:msg_0c6e85630001Sgvqh2yLr2ZHk0:tool:call_32a3de748dc449a382a46a45",
+          "ordinal": 1,
+          "callID": "call_32a3de748dc449a382a46a45",
+          "protocol": "v2",
+          "state": {
+            "content": [
+              {
+                "type": "text",
+                "text": "The subagent is working in the background (sessionID: ses_f39179dccffe7qsD5VBXdxe9A3). You will be notified automatically when it finishes.\nDO NOT sleep, poll for progress, ask the subagent for status, or duplicate this subagent's work; avoid working with the same files or topics it is using.\nWork on non-overlapping tasks, or briefly tell the user what you launched and end your response."
+              }
+            ],
+            "input": {
+              "agent": "general",
+              "background": true,
+              "prompt": "Call shell once with command \"sleep 20\", then reply exactly CHILD_TWO.",
+              "subagent_type": "general",
+              "model": "opencode-go/deepseek-v4-flash",
+              "description": "Small test"
+            },
+            "output": "The subagent is working in the background (sessionID: ses_f39179dccffe7qsD5VBXdxe9A3). You will be notified automatically when it finishes.\nDO NOT sleep, poll for progress, ask the subagent for status, or duplicate this subagent's work; avoid working with the same files or topics it is using.\nWork on non-overlapping tasks, or briefly tell the user what you launched and end your response.",
+            "files": [],
+            "metadata": {
+              "truncated": false,
+              "status": "running",
+              "sessionID": "ses_f39179dccffe7qsD5VBXdxe9A3"
+            },
+            "time": {
+              "start": 1790043513386,
+              "end": 1790043513431
+            },
+            "status": "completed"
+          },
+          "content_order": 4,
+          "tool": "task",
+          "raw_tool": "subagent",
+          "type": "tool",
+          "time": {
+            "ran": 1790043513386,
+            "completed": 1790043513431,
+            "created": 1790043512962
+          },
+          "sessionID": "ses_f3917aa39ffe4s8cirfPFkw6l6",
+          "executed": false,
+          "name": "subagent"
+        }
+      ]
+    },
+    {
+      "info": {
+        "id": "msg_0c6e86257001EYxDpce56BYNxd",
+        "protocol": "v2",
+        "time": {
+          "created": 1790043537743
+        },
+        "text": "<subagent sessionID=\"ses_f39179dccffe7qsD5VBXdxe9A3\" state=\"completed\" description=\"Small test\">\nCHILD_TWO\n</subagent>",
+        "_v2": {
+          "id": "msg_0c6e86257001EYxDpce56BYNxd",
+          "description": "Small test",
+          "metadata": {
+            "childID": "ses_f39179dccffe7qsD5VBXdxe9A3",
+            "agent": "General",
+            "state": "completed",
+            "source": "subagent"
+          },
+          "type": "synthetic",
+          "time": {
+            "created": 1790043537743
+          },
+          "text": "<subagent sessionID=\"ses_f39179dccffe7qsD5VBXdxe9A3\" state=\"completed\" description=\"Small test\">\nCHILD_TWO\n</subagent>"
+        },
+        "description": "Small test",
+        "hidden": false,
+        "metadata": {
+          "childID": "ses_f39179dccffe7qsD5VBXdxe9A3",
+          "agent": "General",
+          "state": "completed",
+          "source": "subagent"
+        },
+        "type": "synthetic",
+        "sessionID": "ses_f3917aa39ffe4s8cirfPFkw6l6",
+        "role": "system"
+      },
+      "parts": [
+        {
+          "messageID": "msg_0c6e86257001EYxDpce56BYNxd",
+          "id": "v2:30:ses_f3917aa39ffe4s8cirfPFkw6l6:30:msg_0c6e86257001EYxDpce56BYNxd:text:0",
+          "ordinal": 0,
+          "protocol": "v2",
+          "text": "<subagent sessionID=\"ses_f39179dccffe7qsD5VBXdxe9A3\" state=\"completed\" description=\"Small test\">\nCHILD_TWO\n</subagent>",
+          "type": "text",
+          "sessionID": "ses_f3917aa39ffe4s8cirfPFkw6l6",
+          "synthetic": true,
+          "content_order": 1
+        }
+      ]
+    },
+    {
+      "info": {
+        "id": "msg_0c6e8625b002XHW13RaZYZMe6o",
+        "protocol": "v2",
+        "time": {
+          "created": 1790043538980
+        },
+        "text": "<subagent sessionID=\"ses_f39179dcdffeP4LJNVt7vCOU2y\" state=\"completed\" description=\"Small test\">\nCHILD_ONE\n</subagent>",
+        "_v2": {
+          "id": "msg_0c6e8625b002XHW13RaZYZMe6o",
+          "description": "Small test",
+          "metadata": {
+            "childID": "ses_f39179dcdffeP4LJNVt7vCOU2y",
+            "agent": "General",
+            "state": "completed",
+            "source": "subagent"
+          },
+          "type": "synthetic",
+          "time": {
+            "created": 1790043538980
+          },
+          "text": "<subagent sessionID=\"ses_f39179dcdffeP4LJNVt7vCOU2y\" state=\"completed\" description=\"Small test\">\nCHILD_ONE\n</subagent>"
+        },
+        "description": "Small test",
+        "hidden": false,
+        "metadata": {
+          "childID": "ses_f39179dcdffeP4LJNVt7vCOU2y",
+          "agent": "General",
+          "state": "completed",
+          "source": "subagent"
+        },
+        "type": "synthetic",
+        "sessionID": "ses_f3917aa39ffe4s8cirfPFkw6l6",
+        "role": "system"
+      },
+      "parts": [
+        {
+          "messageID": "msg_0c6e8625b002XHW13RaZYZMe6o",
+          "id": "v2:30:ses_f3917aa39ffe4s8cirfPFkw6l6:30:msg_0c6e8625b002XHW13RaZYZMe6o:text:0",
+          "ordinal": 0,
+          "protocol": "v2",
+          "text": "<subagent sessionID=\"ses_f39179dcdffeP4LJNVt7vCOU2y\" state=\"completed\" description=\"Small test\">\nCHILD_ONE\n</subagent>",
+          "type": "text",
+          "sessionID": "ses_f3917aa39ffe4s8cirfPFkw6l6",
+          "synthetic": true,
+          "content_order": 1
+        }
+      ]
+    },
+    {
+      "info": {
+        "agent": "build",
+        "time": {
+          "created": 1790043513516,
+          "completed": 1790043514837,
+          "streamed": 1790043514813
+        },
+        "_v2": {
+          "agent": "build",
+          "rawFinish": "stop",
+          "tokens": {
+            "reasoning": 0,
+            "input": 534,
+            "output": 9,
+            "cache": {
+              "write": 0,
+              "read": 8448
+            }
+          },
+          "time": {
+            "created": 1790043513516,
+            "completed": 1790043514837,
+            "streamed": 1790043514813
+          },
+          "content": [
+            {
+              "type": "text",
+              "text": "PARENT_LAUNCHED"
+            }
+          ],
+          "id": "msg_0c6e86293001dZ2Hx2m3EK3GOX",
+          "type": "assistant",
+          "model": {
+            "variant": "default",
+            "id": "deepseek-v4-flash",
+            "providerID": "opencode-go"
+          },
+          "snapshot": {
+            "start": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+            "end": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+            "files": []
+          },
+          "finish": "stop",
+          "cost": 0.000110844
+        },
+        "hidden": false,
+        "sessionID": "ses_f3917aa39ffe4s8cirfPFkw6l6",
+        "role": "assistant",
+        "rawFinish": "stop",
+        "providerID": "opencode-go",
+        "tokens": {
+          "reasoning": 0,
+          "input": 534,
+          "output": 9,
+          "cache": {
+            "write": 0,
+            "read": 8448
+          }
+        },
+        "protocol": "v2",
+        "model": {
+          "variant": "default",
+          "id": "deepseek-v4-flash",
+          "providerID": "opencode-go"
+        },
+        "content": [
+          {
+            "type": "text",
+            "text": "PARENT_LAUNCHED"
+          }
+        ],
+        "modelID": "deepseek-v4-flash",
+        "variant": "default",
+        "cost": 0.000110844,
+        "finish": "stop",
+        "snapshot": {
+          "start": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+          "end": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+          "files": []
+        },
+        "type": "assistant",
+        "id": "msg_0c6e86293001dZ2Hx2m3EK3GOX"
+      },
+      "parts": [
+        {
+          "messageID": "msg_0c6e86293001dZ2Hx2m3EK3GOX",
+          "id": "v2:30:ses_f3917aa39ffe4s8cirfPFkw6l6:30:msg_0c6e86293001dZ2Hx2m3EK3GOX:text:0",
+          "ordinal": 0,
+          "content_order": 1,
+          "sessionID": "ses_f3917aa39ffe4s8cirfPFkw6l6",
+          "protocol": "v2",
+          "type": "text",
+          "text": "PARENT_LAUNCHED"
+        }
+      ]
+    },
+    {
+      "info": {
+        "id": "msg_0c6e867d7002HHAVYletDQ1EY5",
+        "protocol": "v2",
+        "time": {
+          "created": 1790043514839
+        },
+        "_v2": {
+          "type": "idle",
+          "id": "msg_0c6e867d7002HHAVYletDQ1EY5",
+          "time": {
+            "created": 1790043514839
+          },
+          "outcome": "succeeded"
+        },
+        "sessionID": "ses_f3917aa39ffe4s8cirfPFkw6l6",
+        "hidden": true,
+        "outcome": "succeeded",
+        "type": "idle",
+        "role": "system"
+      },
+      "parts": []
+    },
+    {
+      "info": {
+        "agent": "build",
+        "time": {
+          "created": 1790043537774,
+          "completed": 1790043538975,
+          "streamed": 1790043538951
+        },
+        "_v2": {
+          "agent": "build",
+          "rawFinish": "stop",
+          "tokens": {
+            "reasoning": 0,
+            "input": 77,
+            "output": 57,
+            "cache": {
+              "write": 0,
+              "read": 8960
+            }
+          },
+          "time": {
+            "created": 1790043537774,
+            "completed": 1790043538975,
+            "streamed": 1790043538951
+          },
+          "content": [
+            {
+              "state": {
+                "reasoningField": "reasoning_content"
+              },
+              "type": "reasoning",
+              "time": {
+                "created": 1790043538642,
+                "completed": 1790043538949
+              },
+              "text": "The second child completed with CHILD_TWO. I should acknowledge it without any further tool calls. I'm still waiting for the first child (CHILD_ONE)."
+            },
+            {
+              "type": "text",
+              "text": "Acknowledged: CHILD_TWO completed. Still awaiting the first child (CHILD_ONE)."
+            }
+          ],
+          "id": "msg_0c6e8c152001v7nIysWStiBQVD",
+          "type": "assistant",
+          "model": {
+            "variant": "default",
+            "id": "deepseek-v4-flash",
+            "providerID": "opencode-go"
+          },
+          "snapshot": {
+            "start": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+            "end": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+            "files": []
+          },
+          "finish": "stop",
+          "cost": 7.263e-05
+        },
+        "hidden": false,
+        "sessionID": "ses_f3917aa39ffe4s8cirfPFkw6l6",
+        "role": "assistant",
+        "rawFinish": "stop",
+        "providerID": "opencode-go",
+        "tokens": {
+          "reasoning": 0,
+          "input": 77,
+          "output": 57,
+          "cache": {
+            "write": 0,
+            "read": 8960
+          }
+        },
+        "protocol": "v2",
+        "model": {
+          "variant": "default",
+          "id": "deepseek-v4-flash",
+          "providerID": "opencode-go"
+        },
+        "content": [
+          {
+            "state": {
+              "reasoningField": "reasoning_content"
+            },
+            "type": "reasoning",
+            "time": {
+              "created": 1790043538642,
+              "completed": 1790043538949
+            },
+            "text": "The second child completed with CHILD_TWO. I should acknowledge it without any further tool calls. I'm still waiting for the first child (CHILD_ONE)."
+          },
+          {
+            "type": "text",
+            "text": "Acknowledged: CHILD_TWO completed. Still awaiting the first child (CHILD_ONE)."
+          }
+        ],
+        "modelID": "deepseek-v4-flash",
+        "variant": "default",
+        "cost": 7.263e-05,
+        "finish": "stop",
+        "snapshot": {
+          "start": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+          "end": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+          "files": []
+        },
+        "type": "assistant",
+        "id": "msg_0c6e8c152001v7nIysWStiBQVD"
+      },
+      "parts": [
+        {
+          "messageID": "msg_0c6e8c152001v7nIysWStiBQVD",
+          "id": "v2:30:ses_f3917aa39ffe4s8cirfPFkw6l6:30:msg_0c6e8c152001v7nIysWStiBQVD:reasoning:0",
+          "ordinal": 0,
+          "protocol": "v2",
+          "time": {
+            "created": 1790043538642,
+            "completed": 1790043538949
+          },
+          "text": "The second child completed with CHILD_TWO. I should acknowledge it without any further tool calls. I'm still waiting for the first child (CHILD_ONE).",
+          "content_order": 1,
+          "sessionID": "ses_f3917aa39ffe4s8cirfPFkw6l6",
+          "state": {
+            "reasoningField": "reasoning_content"
+          },
+          "type": "reasoning"
+        },
+        {
+          "messageID": "msg_0c6e8c152001v7nIysWStiBQVD",
+          "id": "v2:30:ses_f3917aa39ffe4s8cirfPFkw6l6:30:msg_0c6e8c152001v7nIysWStiBQVD:text:0",
+          "ordinal": 0,
+          "content_order": 2,
+          "sessionID": "ses_f3917aa39ffe4s8cirfPFkw6l6",
+          "protocol": "v2",
+          "type": "text",
+          "text": "Acknowledged: CHILD_TWO completed. Still awaiting the first child (CHILD_ONE)."
+        }
+      ]
+    },
+    {
+      "info": {
+        "agent": "build",
+        "time": {
+          "created": 1790043539010,
+          "completed": 1790043540044,
+          "streamed": 1790043540019
+        },
+        "_v2": {
+          "agent": "build",
+          "rawFinish": "stop",
+          "tokens": {
+            "reasoning": 0,
+            "input": 181,
+            "output": 19,
+            "cache": {
+              "write": 0,
+              "read": 8960
+            }
+          },
+          "time": {
+            "created": 1790043539010,
+            "completed": 1790043540044,
+            "streamed": 1790043540019
+          },
+          "content": [
+            {
+              "type": "text",
+              "text": "Acknowledged: CHILD_ONE completed. Both background subagents are done."
+            }
+          ],
+          "id": "msg_0c6e8c627001mjL6bCdxXTEfso",
+          "type": "assistant",
+          "model": {
+            "variant": "default",
+            "id": "deepseek-v4-flash",
+            "providerID": "opencode-go"
+          },
+          "snapshot": {
+            "start": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+            "end": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+            "files": []
+          },
+          "finish": "stop",
+          "cost": 6.542999999999999e-05
+        },
+        "hidden": false,
+        "sessionID": "ses_f3917aa39ffe4s8cirfPFkw6l6",
+        "role": "assistant",
+        "rawFinish": "stop",
+        "providerID": "opencode-go",
+        "tokens": {
+          "reasoning": 0,
+          "input": 181,
+          "output": 19,
+          "cache": {
+            "write": 0,
+            "read": 8960
+          }
+        },
+        "protocol": "v2",
+        "model": {
+          "variant": "default",
+          "id": "deepseek-v4-flash",
+          "providerID": "opencode-go"
+        },
+        "content": [
+          {
+            "type": "text",
+            "text": "Acknowledged: CHILD_ONE completed. Both background subagents are done."
+          }
+        ],
+        "modelID": "deepseek-v4-flash",
+        "variant": "default",
+        "cost": 6.542999999999999e-05,
+        "finish": "stop",
+        "snapshot": {
+          "start": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+          "end": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+          "files": []
+        },
+        "type": "assistant",
+        "id": "msg_0c6e8c627001mjL6bCdxXTEfso"
+      },
+      "parts": [
+        {
+          "messageID": "msg_0c6e8c627001mjL6bCdxXTEfso",
+          "id": "v2:30:ses_f3917aa39ffe4s8cirfPFkw6l6:30:msg_0c6e8c627001mjL6bCdxXTEfso:text:0",
+          "ordinal": 0,
+          "content_order": 1,
+          "sessionID": "ses_f3917aa39ffe4s8cirfPFkw6l6",
+          "protocol": "v2",
+          "type": "text",
+          "text": "Acknowledged: CHILD_ONE completed. Both background subagents are done."
+        }
+      ]
+    },
+    {
+      "info": {
+        "id": "msg_0c6e8ca50001yAaUQh8qUl0QXc",
+        "protocol": "v2",
+        "time": {
+          "created": 1790043540048
+        },
+        "_v2": {
+          "type": "idle",
+          "id": "msg_0c6e8ca50001yAaUQh8qUl0QXc",
+          "time": {
+            "created": 1790043540048
+          },
+          "outcome": "succeeded"
+        },
+        "sessionID": "ses_f3917aa39ffe4s8cirfPFkw6l6",
+        "hidden": true,
+        "outcome": "succeeded",
+        "type": "idle",
+        "role": "system"
+      },
+      "parts": []
+    }
+  ],
+  "session": {
+    "directory": "<PROFILE>/project пробел %#",
+    "id": "ses_f3917aa39ffe4s8cirfPFkw6l6",
+    "tokens": {
+      "reasoning": 0,
+      "input": 0,
+      "output": 0,
+      "cache": {
+        "write": 0,
+        "read": 0
+      }
+    },
+    "revert": null,
+    "time": {
+      "created": 1790043510245,
+      "updated": 1790043510245
+    },
+    "model": {
+      "variant": "default",
+      "id": "deepseek-v4-flash",
+      "providerID": "opencode-go"
+    },
+    "projectID": "global",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "cost": 0
+  },
+  "children": [
+    {
+      "history": [
+        {
+          "info": {
+            "id": "msg_0c6e86255002793fIsNCRfaC0R",
+            "protocol": "v2",
+            "time": {
+              "created": 1790043513442
+            },
+            "text": "You are a subagent spawned by another session.\nCall shell once with command \"sleep 20\", then reply exactly CHILD_TWO.",
+            "_v2": {
+              "type": "user",
+              "id": "msg_0c6e86255002793fIsNCRfaC0R",
+              "time": {
+                "created": 1790043513442
+              },
+              "text": "You are a subagent spawned by another session.\nCall shell once with command \"sleep 20\", then reply exactly CHILD_TWO."
+            },
+            "hidden": false,
+            "sessionID": "ses_f39179dccffe7qsD5VBXdxe9A3",
+            "type": "user",
+            "role": "user"
+          },
+          "parts": [
+            {
+              "messageID": "msg_0c6e86255002793fIsNCRfaC0R",
+              "id": "v2:30:ses_f39179dccffe7qsD5VBXdxe9A3:30:msg_0c6e86255002793fIsNCRfaC0R:text:0",
+              "ordinal": 0,
+              "content_order": 1,
+              "sessionID": "ses_f39179dccffe7qsD5VBXdxe9A3",
+              "protocol": "v2",
+              "type": "text",
+              "text": "You are a subagent spawned by another session.\nCall shell once with command \"sleep 20\", then reply exactly CHILD_TWO."
+            }
+          ]
+        },
+        {
+          "info": {
+            "agent": "general",
+            "time": {
+              "created": 1790043513543,
+              "completed": 1790043536569,
+              "streamed": 1790043516531
+            },
+            "_v2": {
+              "agent": "general",
+              "rawFinish": "tool_calls",
+              "tokens": {
+                "reasoning": 0,
+                "input": 7448,
+                "output": 69,
+                "cache": {
+                  "write": 0,
+                  "read": 0
+                }
+              },
+              "time": {
+                "created": 1790043513543,
+                "completed": 1790043536569,
+                "streamed": 1790043516531
+              },
+              "content": [
+                {
+                  "state": {
+                    "reasoningField": "reasoning_content"
+                  },
+                  "type": "reasoning",
+                  "time": {
+                    "created": 1790043515204,
+                    "completed": 1790043516527
+                  },
+                  "text": "The user wants me to call shell once with command \"sleep 20\", then reply exactly CHILD_TWO."
+                },
+                {
+                  "type": "text",
+                  "text": "\n\n"
+                },
+                {
+                  "id": "call_cbe6b8e7dcd7468d8ff00661",
+                  "type": "tool",
+                  "state": {
+                    "content": [
+                      {
+                        "type": "text",
+                        "text": "(no output)"
+                      },
+                      {
+                        "type": "text",
+                        "text": "Command exited with code 0."
+                      }
+                    ],
+                    "input": {
+                      "command": "sleep 20"
+                    },
+                    "status": "completed",
+                    "metadata": {
+                      "truncated": false,
+                      "status": "completed",
+                      "exit": 0
+                    }
+                  },
+                  "executed": false,
+                  "time": {
+                    "ran": 1790043516530,
+                    "completed": 1790043536546,
+                    "created": 1790043516427
+                  },
+                  "name": "shell"
+                }
+              ],
+              "id": "msg_0c6e86264001zlu2lKDWiNuOxz",
+              "type": "assistant",
+              "model": {
+                "variant": "default",
+                "id": "deepseek-v4-flash",
+                "providerID": "opencode-go"
+              },
+              "snapshot": {
+                "start": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+                "end": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+                "files": []
+              },
+              "finish": "tool-calls",
+              "cost": 0.0011586
+            },
+            "hidden": false,
+            "sessionID": "ses_f39179dccffe7qsD5VBXdxe9A3",
+            "role": "assistant",
+            "rawFinish": "tool_calls",
+            "providerID": "opencode-go",
+            "tokens": {
+              "reasoning": 0,
+              "input": 7448,
+              "output": 69,
+              "cache": {
+                "write": 0,
+                "read": 0
+              }
+            },
+            "protocol": "v2",
+            "model": {
+              "variant": "default",
+              "id": "deepseek-v4-flash",
+              "providerID": "opencode-go"
+            },
+            "content": [
+              {
+                "state": {
+                  "reasoningField": "reasoning_content"
+                },
+                "type": "reasoning",
+                "time": {
+                  "created": 1790043515204,
+                  "completed": 1790043516527
+                },
+                "text": "The user wants me to call shell once with command \"sleep 20\", then reply exactly CHILD_TWO."
+              },
+              {
+                "type": "text",
+                "text": "\n\n"
+              },
+              {
+                "id": "call_cbe6b8e7dcd7468d8ff00661",
+                "type": "tool",
+                "state": {
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "(no output)"
+                    },
+                    {
+                      "type": "text",
+                      "text": "Command exited with code 0."
+                    }
+                  ],
+                  "input": {
+                    "command": "sleep 20"
+                  },
+                  "status": "completed",
+                  "metadata": {
+                    "truncated": false,
+                    "status": "completed",
+                    "exit": 0
+                  }
+                },
+                "executed": false,
+                "time": {
+                  "ran": 1790043516530,
+                  "completed": 1790043536546,
+                  "created": 1790043516427
+                },
+                "name": "shell"
+              }
+            ],
+            "modelID": "deepseek-v4-flash",
+            "variant": "default",
+            "cost": 0.0011586,
+            "finish": "tool-calls",
+            "snapshot": {
+              "start": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+              "end": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+              "files": []
+            },
+            "type": "assistant",
+            "id": "msg_0c6e86264001zlu2lKDWiNuOxz"
+          },
+          "parts": [
+            {
+              "messageID": "msg_0c6e86264001zlu2lKDWiNuOxz",
+              "id": "v2:30:ses_f39179dccffe7qsD5VBXdxe9A3:30:msg_0c6e86264001zlu2lKDWiNuOxz:reasoning:0",
+              "ordinal": 0,
+              "protocol": "v2",
+              "time": {
+                "created": 1790043515204,
+                "completed": 1790043516527
+              },
+              "text": "The user wants me to call shell once with command \"sleep 20\", then reply exactly CHILD_TWO.",
+              "content_order": 1,
+              "sessionID": "ses_f39179dccffe7qsD5VBXdxe9A3",
+              "state": {
+                "reasoningField": "reasoning_content"
+              },
+              "type": "reasoning"
+            },
+            {
+              "messageID": "msg_0c6e86264001zlu2lKDWiNuOxz",
+              "id": "v2:30:ses_f39179dccffe7qsD5VBXdxe9A3:30:msg_0c6e86264001zlu2lKDWiNuOxz:text:0",
+              "ordinal": 0,
+              "content_order": 2,
+              "sessionID": "ses_f39179dccffe7qsD5VBXdxe9A3",
+              "protocol": "v2",
+              "type": "text",
+              "text": "\n\n"
+            },
+            {
+              "messageID": "msg_0c6e86264001zlu2lKDWiNuOxz",
+              "id": "v2:30:ses_f39179dccffe7qsD5VBXdxe9A3:30:msg_0c6e86264001zlu2lKDWiNuOxz:tool:call_cbe6b8e7dcd7468d8ff00661",
+              "ordinal": 0,
+              "callID": "call_cbe6b8e7dcd7468d8ff00661",
+              "protocol": "v2",
+              "state": {
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "(no output)"
+                  },
+                  {
+                    "type": "text",
+                    "text": "Command exited with code 0."
+                  }
+                ],
+                "input": {
+                  "command": "sleep 20"
+                },
+                "output": "(no output)\nCommand exited with code 0.",
+                "files": [],
+                "metadata": {
+                  "truncated": false,
+                  "status": "completed",
+                  "exit": 0
+                },
+                "time": {
+                  "start": 1790043516530,
+                  "end": 1790043536546
+                },
+                "status": "completed"
+              },
+              "content_order": 3,
+              "tool": "bash",
+              "raw_tool": "shell",
+              "type": "tool",
+              "time": {
+                "ran": 1790043516530,
+                "completed": 1790043536546,
+                "created": 1790043516427
+              },
+              "sessionID": "ses_f39179dccffe7qsD5VBXdxe9A3",
+              "executed": false,
+              "name": "shell"
+            }
+          ]
+        },
+        {
+          "info": {
+            "agent": "general",
+            "time": {
+              "created": 1790043536602,
+              "completed": 1790043537732,
+              "streamed": 1790043537707
+            },
+            "_v2": {
+              "agent": "general",
+              "rawFinish": "stop",
+              "tokens": {
+                "reasoning": 0,
+                "input": 113,
+                "output": 6,
+                "cache": {
+                  "write": 0,
+                  "read": 7424
+                }
+              },
+              "time": {
+                "created": 1790043536602,
+                "completed": 1790043537732,
+                "streamed": 1790043537707
+              },
+              "content": [
+                {
+                  "type": "text",
+                  "text": "CHILD_TWO"
+                }
+              ],
+              "id": "msg_0c6e8bcc0001xV26zHZP20eWh1",
+              "type": "assistant",
+              "model": {
+                "variant": "default",
+                "id": "deepseek-v4-flash",
+                "providerID": "opencode-go"
+              },
+              "snapshot": {
+                "start": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+                "end": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+                "files": []
+              },
+              "finish": "stop",
+              "cost": 4.2822e-05
+            },
+            "hidden": false,
+            "sessionID": "ses_f39179dccffe7qsD5VBXdxe9A3",
+            "role": "assistant",
+            "rawFinish": "stop",
+            "providerID": "opencode-go",
+            "tokens": {
+              "reasoning": 0,
+              "input": 113,
+              "output": 6,
+              "cache": {
+                "write": 0,
+                "read": 7424
+              }
+            },
+            "protocol": "v2",
+            "model": {
+              "variant": "default",
+              "id": "deepseek-v4-flash",
+              "providerID": "opencode-go"
+            },
+            "content": [
+              {
+                "type": "text",
+                "text": "CHILD_TWO"
+              }
+            ],
+            "modelID": "deepseek-v4-flash",
+            "variant": "default",
+            "cost": 4.2822e-05,
+            "finish": "stop",
+            "snapshot": {
+              "start": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+              "end": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+              "files": []
+            },
+            "type": "assistant",
+            "id": "msg_0c6e8bcc0001xV26zHZP20eWh1"
+          },
+          "parts": [
+            {
+              "messageID": "msg_0c6e8bcc0001xV26zHZP20eWh1",
+              "id": "v2:30:ses_f39179dccffe7qsD5VBXdxe9A3:30:msg_0c6e8bcc0001xV26zHZP20eWh1:text:0",
+              "ordinal": 0,
+              "content_order": 1,
+              "sessionID": "ses_f39179dccffe7qsD5VBXdxe9A3",
+              "protocol": "v2",
+              "type": "text",
+              "text": "CHILD_TWO"
+            }
+          ]
+        },
+        {
+          "info": {
+            "id": "msg_0c6e8c1470011uS60CGONrJh0J",
+            "protocol": "v2",
+            "time": {
+              "created": 1790043537735
+            },
+            "_v2": {
+              "type": "idle",
+              "id": "msg_0c6e8c1470011uS60CGONrJh0J",
+              "time": {
+                "created": 1790043537735
+              },
+              "outcome": "succeeded"
+            },
+            "sessionID": "ses_f39179dccffe7qsD5VBXdxe9A3",
+            "hidden": true,
+            "outcome": "succeeded",
+            "type": "idle",
+            "role": "system"
+          },
+          "parts": []
+        }
+      ],
+      "answer": "CHILD_TWO",
+      "session": {
+        "parentID": "ses_f3917aa39ffe4s8cirfPFkw6l6",
+        "id": "ses_f39179dccffe7qsD5VBXdxe9A3",
+        "tokens": {
+          "reasoning": 0,
+          "input": 7561,
+          "output": 75,
+          "cache": {
+            "write": 0,
+            "read": 7424
+          }
+        },
+        "revert": null,
+        "time": {
+          "updated": 1790043513430,
+          "created": 1790043513428,
+          "idle": 1790043537735
+        },
+        "directory": "<PROFILE>/project пробел %#",
+        "projectID": "global",
+        "title": "Small test",
+        "model": {
+          "variant": "default",
+          "id": "deepseek-v4-flash",
+          "providerID": "opencode-go"
+        },
+        "agent": "general",
+        "outcome": "succeeded",
+        "location": {
+          "directory": "<PROFILE>/project пробел %#"
+        },
+        "cost": 0.001201422
+      }
+    },
+    {
+      "history": [
+        {
+          "info": {
+            "id": "msg_0c6e8625a002fFbYB6RY2VOJxT",
+            "protocol": "v2",
+            "time": {
+              "created": 1790043513454
+            },
+            "text": "You are a subagent spawned by another session.\nCall shell once with command \"sleep 20\", then reply exactly CHILD_ONE.",
+            "_v2": {
+              "type": "user",
+              "id": "msg_0c6e8625a002fFbYB6RY2VOJxT",
+              "time": {
+                "created": 1790043513454
+              },
+              "text": "You are a subagent spawned by another session.\nCall shell once with command \"sleep 20\", then reply exactly CHILD_ONE."
+            },
+            "hidden": false,
+            "sessionID": "ses_f39179dcdffeP4LJNVt7vCOU2y",
+            "type": "user",
+            "role": "user"
+          },
+          "parts": [
+            {
+              "messageID": "msg_0c6e8625a002fFbYB6RY2VOJxT",
+              "id": "v2:30:ses_f39179dcdffeP4LJNVt7vCOU2y:30:msg_0c6e8625a002fFbYB6RY2VOJxT:text:0",
+              "ordinal": 0,
+              "content_order": 1,
+              "sessionID": "ses_f39179dcdffeP4LJNVt7vCOU2y",
+              "protocol": "v2",
+              "type": "text",
+              "text": "You are a subagent spawned by another session.\nCall shell once with command \"sleep 20\", then reply exactly CHILD_ONE."
+            }
+          ]
+        },
+        {
+          "info": {
+            "agent": "general",
+            "time": {
+              "created": 1790043513596,
+              "completed": 1790043535693,
+              "streamed": 1790043515646
+            },
+            "_v2": {
+              "agent": "general",
+              "rawFinish": "tool_calls",
+              "tokens": {
+                "reasoning": 0,
+                "input": 7449,
+                "output": 141,
+                "cache": {
+                  "write": 0,
+                  "read": 0
+                }
+              },
+              "time": {
+                "created": 1790043513596,
+                "completed": 1790043535693,
+                "streamed": 1790043515646
+              },
+              "content": [
+                {
+                  "state": {
+                    "reasoningField": "reasoning_content"
+                  },
+                  "type": "reasoning",
+                  "time": {
+                    "created": 1790043514850,
+                    "completed": 1790043515640
+                  },
+                  "text": "The user wants me to call shell once with command \"sleep 20\", then reply exactly CHILD_ONE. The command \"sleep 20\" doesn't contain separators like `&&` or `;` — it's a simple command. Let me run it.\n\nWait, the working directory contains spaces and special characters, but the command is just \"sleep 20\" which doesn't need a workdir. Let me call shell with command \"sleep 20\"."
+                },
+                {
+                  "id": "call_524aadd891f349f28362889c",
+                  "type": "tool",
+                  "state": {
+                    "content": [
+                      {
+                        "type": "text",
+                        "text": "(no output)"
+                      },
+                      {
+                        "type": "text",
+                        "text": "Command exited with code 0."
+                      }
+                    ],
+                    "input": {
+                      "command": "sleep 20"
+                    },
+                    "status": "completed",
+                    "metadata": {
+                      "truncated": false,
+                      "status": "completed",
+                      "exit": 0
+                    }
+                  },
+                  "executed": false,
+                  "time": {
+                    "ran": 1790043515645,
+                    "completed": 1790043535670,
+                    "created": 1790043515531
+                  },
+                  "name": "shell"
+                }
+              ],
+              "id": "msg_0c6e86271001MiDL5BtN1Izr5z",
+              "type": "assistant",
+              "model": {
+                "variant": "default",
+                "id": "deepseek-v4-flash",
+                "providerID": "opencode-go"
+              },
+              "snapshot": {
+                "start": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+                "end": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+                "files": []
+              },
+              "finish": "tool-calls",
+              "cost": 0.00120195
+            },
+            "hidden": false,
+            "sessionID": "ses_f39179dcdffeP4LJNVt7vCOU2y",
+            "role": "assistant",
+            "rawFinish": "tool_calls",
+            "providerID": "opencode-go",
+            "tokens": {
+              "reasoning": 0,
+              "input": 7449,
+              "output": 141,
+              "cache": {
+                "write": 0,
+                "read": 0
+              }
+            },
+            "protocol": "v2",
+            "model": {
+              "variant": "default",
+              "id": "deepseek-v4-flash",
+              "providerID": "opencode-go"
+            },
+            "content": [
+              {
+                "state": {
+                  "reasoningField": "reasoning_content"
+                },
+                "type": "reasoning",
+                "time": {
+                  "created": 1790043514850,
+                  "completed": 1790043515640
+                },
+                "text": "The user wants me to call shell once with command \"sleep 20\", then reply exactly CHILD_ONE. The command \"sleep 20\" doesn't contain separators like `&&` or `;` — it's a simple command. Let me run it.\n\nWait, the working directory contains spaces and special characters, but the command is just \"sleep 20\" which doesn't need a workdir. Let me call shell with command \"sleep 20\"."
+              },
+              {
+                "id": "call_524aadd891f349f28362889c",
+                "type": "tool",
+                "state": {
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "(no output)"
+                    },
+                    {
+                      "type": "text",
+                      "text": "Command exited with code 0."
+                    }
+                  ],
+                  "input": {
+                    "command": "sleep 20"
+                  },
+                  "status": "completed",
+                  "metadata": {
+                    "truncated": false,
+                    "status": "completed",
+                    "exit": 0
+                  }
+                },
+                "executed": false,
+                "time": {
+                  "ran": 1790043515645,
+                  "completed": 1790043535670,
+                  "created": 1790043515531
+                },
+                "name": "shell"
+              }
+            ],
+            "modelID": "deepseek-v4-flash",
+            "variant": "default",
+            "cost": 0.00120195,
+            "finish": "tool-calls",
+            "snapshot": {
+              "start": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+              "end": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+              "files": []
+            },
+            "type": "assistant",
+            "id": "msg_0c6e86271001MiDL5BtN1Izr5z"
+          },
+          "parts": [
+            {
+              "messageID": "msg_0c6e86271001MiDL5BtN1Izr5z",
+              "id": "v2:30:ses_f39179dcdffeP4LJNVt7vCOU2y:30:msg_0c6e86271001MiDL5BtN1Izr5z:reasoning:0",
+              "ordinal": 0,
+              "protocol": "v2",
+              "time": {
+                "created": 1790043514850,
+                "completed": 1790043515640
+              },
+              "text": "The user wants me to call shell once with command \"sleep 20\", then reply exactly CHILD_ONE. The command \"sleep 20\" doesn't contain separators like `&&` or `;` — it's a simple command. Let me run it.\n\nWait, the working directory contains spaces and special characters, but the command is just \"sleep 20\" which doesn't need a workdir. Let me call shell with command \"sleep 20\".",
+              "content_order": 1,
+              "sessionID": "ses_f39179dcdffeP4LJNVt7vCOU2y",
+              "state": {
+                "reasoningField": "reasoning_content"
+              },
+              "type": "reasoning"
+            },
+            {
+              "messageID": "msg_0c6e86271001MiDL5BtN1Izr5z",
+              "id": "v2:30:ses_f39179dcdffeP4LJNVt7vCOU2y:30:msg_0c6e86271001MiDL5BtN1Izr5z:tool:call_524aadd891f349f28362889c",
+              "ordinal": 0,
+              "callID": "call_524aadd891f349f28362889c",
+              "protocol": "v2",
+              "state": {
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "(no output)"
+                  },
+                  {
+                    "type": "text",
+                    "text": "Command exited with code 0."
+                  }
+                ],
+                "input": {
+                  "command": "sleep 20"
+                },
+                "output": "(no output)\nCommand exited with code 0.",
+                "files": [],
+                "metadata": {
+                  "truncated": false,
+                  "status": "completed",
+                  "exit": 0
+                },
+                "time": {
+                  "start": 1790043515645,
+                  "end": 1790043535670
+                },
+                "status": "completed"
+              },
+              "content_order": 2,
+              "tool": "bash",
+              "raw_tool": "shell",
+              "type": "tool",
+              "time": {
+                "ran": 1790043515645,
+                "completed": 1790043535670,
+                "created": 1790043515531
+              },
+              "sessionID": "ses_f39179dcdffeP4LJNVt7vCOU2y",
+              "executed": false,
+              "name": "shell"
+            }
+          ]
+        },
+        {
+          "info": {
+            "agent": "general",
+            "time": {
+              "created": 1790043535726,
+              "completed": 1790043538723,
+              "streamed": 1790043538700
+            },
+            "_v2": {
+              "agent": "general",
+              "rawFinish": "stop",
+              "tokens": {
+                "reasoning": 0,
+                "input": 186,
+                "output": 6,
+                "cache": {
+                  "write": 0,
+                  "read": 7424
+                }
+              },
+              "time": {
+                "created": 1790043535726,
+                "completed": 1790043538723,
+                "streamed": 1790043538700
+              },
+              "content": [
+                {
+                  "type": "text",
+                  "text": "CHILD_ONE"
+                }
+              ],
+              "id": "msg_0c6e8b953001neCpjgHNIwX96x",
+              "type": "assistant",
+              "model": {
+                "variant": "default",
+                "id": "deepseek-v4-flash",
+                "providerID": "opencode-go"
+              },
+              "snapshot": {
+                "start": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+                "end": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+                "files": []
+              },
+              "finish": "stop",
+              "cost": 5.377200000000001e-05
+            },
+            "hidden": false,
+            "sessionID": "ses_f39179dcdffeP4LJNVt7vCOU2y",
+            "role": "assistant",
+            "rawFinish": "stop",
+            "providerID": "opencode-go",
+            "tokens": {
+              "reasoning": 0,
+              "input": 186,
+              "output": 6,
+              "cache": {
+                "write": 0,
+                "read": 7424
+              }
+            },
+            "protocol": "v2",
+            "model": {
+              "variant": "default",
+              "id": "deepseek-v4-flash",
+              "providerID": "opencode-go"
+            },
+            "content": [
+              {
+                "type": "text",
+                "text": "CHILD_ONE"
+              }
+            ],
+            "modelID": "deepseek-v4-flash",
+            "variant": "default",
+            "cost": 5.377200000000001e-05,
+            "finish": "stop",
+            "snapshot": {
+              "start": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+              "end": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+              "files": []
+            },
+            "type": "assistant",
+            "id": "msg_0c6e8b953001neCpjgHNIwX96x"
+          },
+          "parts": [
+            {
+              "messageID": "msg_0c6e8b953001neCpjgHNIwX96x",
+              "id": "v2:30:ses_f39179dcdffeP4LJNVt7vCOU2y:30:msg_0c6e8b953001neCpjgHNIwX96x:text:0",
+              "ordinal": 0,
+              "content_order": 1,
+              "sessionID": "ses_f39179dcdffeP4LJNVt7vCOU2y",
+              "protocol": "v2",
+              "type": "text",
+              "text": "CHILD_ONE"
+            }
+          ]
+        },
+        {
+          "info": {
+            "id": "msg_0c6e8c525001IjL0Kq3uoxgECc",
+            "protocol": "v2",
+            "time": {
+              "created": 1790043538725
+            },
+            "_v2": {
+              "type": "idle",
+              "id": "msg_0c6e8c525001IjL0Kq3uoxgECc",
+              "time": {
+                "created": 1790043538725
+              },
+              "outcome": "succeeded"
+            },
+            "sessionID": "ses_f39179dcdffeP4LJNVt7vCOU2y",
+            "hidden": true,
+            "outcome": "succeeded",
+            "type": "idle",
+            "role": "system"
+          },
+          "parts": []
+        }
+      ],
+      "answer": "CHILD_ONE",
+      "session": {
+        "parentID": "ses_f3917aa39ffe4s8cirfPFkw6l6",
+        "id": "ses_f39179dcdffeP4LJNVt7vCOU2y",
+        "tokens": {
+          "reasoning": 0,
+          "input": 7635,
+          "output": 147,
+          "cache": {
+            "write": 0,
+            "read": 7424
+          }
+        },
+        "revert": null,
+        "time": {
+          "updated": 1790043513435,
+          "created": 1790043513433,
+          "idle": 1790043538725
+        },
+        "directory": "<PROFILE>/project пробел %#",
+        "projectID": "global",
+        "title": "Small test",
+        "model": {
+          "variant": "default",
+          "id": "deepseek-v4-flash",
+          "providerID": "opencode-go"
+        },
+        "agent": "general",
+        "outcome": "succeeded",
+        "location": {
+          "directory": "<PROFILE>/project пробел %#"
+        },
+        "cost": 0.001255722
+      }
+    }
+  ],
+  "rendered": "Agent: build\n┃                                                                               \n┃  This is a background delegation test. Use the direct subagent tool twice     \n┃  with background=true and agent=\"general\". Both calls must have exactly       \n┃  description=\"Small test\" and model=\"opencode-go/deepseek-v4-flash\". Launch   \n┃  both without waiting for the first. First child prompt: Call shell once with \n┃  command \"sleep 20\", then reply exactly CHILD_ONE. Second child prompt: Call  \n┃  shell once with command \"sleep 20\", then reply exactly CHILD_TWO. These are  \n┃  two independent test tasks. Do not read or modify files. After both launches \n┃  reply PARENT_LAUNCHED. When completion notifications arrive, acknowledge     \n┃  them without any further tool calls.                                         \n┃                                                                               \n\nThinking: Let me launch both background subagents as requested.\n\n✓ General Task – Small test\n  └ 1 toolcall · 53s\n\n✓ General Task – Small test\n  └ 1 toolcall · 45s\n\nPARENT_LAUNCHED\n\n▣ Build · DeepSeek V4 Flash · 9k/1m tok · 4.5s\n\n<subagent sessionID=\"ses_f39179dccffe7qsD5VBXdxe9A3\" state=\"completed\" description=\"Small test\">\nCHILD_TWO\n</subagent>\nThinking: The second child completed with CHILD_TWO. I should acknowledge it without any further tool calls. I'm still waiting for the first child (CHILD_ONE).\n\nAcknowledged: CHILD_TWO completed. Still awaiting the first child (CHILD_ONE).\n\n▣ Build · DeepSeek V4 Flash · 9.1k/1m tok · 28.7s\n\n<subagent sessionID=\"ses_f39179dcdffeP4LJNVt7vCOU2y\" state=\"completed\" description=\"Small test\">\nCHILD_ONE\n</subagent>\nAcknowledged: CHILD_ONE completed. Both background subagents are done.\n\n▣ Build · DeepSeek V4 Flash · 9.2k/1m tok · 29.7s\n",
+  "gd_back": true,
+  "running_animation": true
+}

@@ -1,4 +1,4 @@
--- opencode.nvim - Event system compatibility facade
+-- opencode.nvim - Local event bus and native v2 event setup
 
 local M = {}
 
@@ -29,9 +29,9 @@ end
 local setup_modules = {
 	{ name = "state bridge", load = function() return require("opencode.events.state_bridge") end },
 	{ name = "SSE bridge", load = function() return require("opencode.events.sse_bridge") end },
-	{ name = "message handlers", load = function() return require("opencode.events.handlers.message") end },
-	{ name = "permission handlers", load = function() return require("opencode.events.handlers.permission") end },
-	{ name = "question handlers", load = function() return require("opencode.events.handlers.question") end },
+	{ name = "v2 event handlers", load = function() return require("opencode.events.handlers.v2") end },
+	{ name = "v2 review", load = function() return require("opencode.events.handlers.review_v2") end },
+	{ name = "v2 interactions", load = function() return require("opencode.events.handlers.interactions_v2") end },
 	{ name = "session store handlers", load = function() return require("opencode.events.handlers.session_store") end },
 	{ name = "notification handlers", load = function() return require("opencode.events.handlers.notifications") end },
 	{ name = "sync data handlers", load = function() return require("opencode.events.handlers.sync_data") end },

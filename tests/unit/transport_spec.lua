@@ -90,6 +90,7 @@ local function start_server(chunks, close_after)
 	assert(server:bind("127.0.0.1", 0))
 	local address = assert(server:getsockname())
 	local clients = {}
+	local requests, closed_clients = 0, 0
 
 	assert(server:listen(16, function(listen_err)
 		assert(not listen_err, listen_err)
@@ -99,15 +100,21 @@ local function start_server(chunks, close_after)
 		assert(server:accept(client))
 
 		local request_buffer = ""
+		local received = false
 		client:read_start(function(read_err, data)
-			assert(not read_err, read_err)
-			if not data then
+			-- Cancelling with an unread response may reset instead of gracefully closing.
+			if read_err == "ECONNRESET" or not data then
+				closed_clients = closed_clients + 1
+				client:read_stop()
 				return
 			end
+			assert(not read_err, read_err)
+			if received then return end
 
 			request_buffer = request_buffer .. data
 			if request_buffer:find("\r\n\r\n", 1, true) then
-				client:read_stop()
+				received = true
+				requests = requests + 1
 				write_sequence(client, chunks, close_after)
 			end
 		end)
@@ -115,6 +122,8 @@ local function start_server(chunks, close_after)
 
 	return {
 		port = address.port,
+		requests = function() return requests end,
+		closed_clients = function() return closed_clients end,
 		close = function()
 			for _, client in ipairs(clients) do
 				close_stream(client)
@@ -191,6 +200,50 @@ do
 	assert_true(err ~= nil, "invalid chunk request should error")
 	assert_true((err.message or err.error or ""):find("chunked", 1, true) ~= nil, "invalid chunk error should mention chunked")
 	assert_eq(response, nil, "invalid chunk response")
+end
+
+do
+	local server = start_server({
+		"HTTP/1.1 200 OK\r\nContent-Length: 1000\r\n\r\npartial",
+		"late bytes",
+	}, false)
+	local callbacks, result_err, result_response = 0, nil, nil
+	local request = transport.request({
+		host = "127.0.0.1", port = server.port, path = "/completion", timeout = 100,
+	}, function(err, response)
+		callbacks = callbacks + 1
+		result_err, result_response = err, response
+	end)
+	assert_true(request.is_active(), "new request should be active")
+	wait_until(function() return server.requests() == 1 end, "server did not receive completion")
+	assert_true(request.cancel(), "first cancellation should finish the request")
+	assert_eq(request.cancel(), false, "repeat cancellation is a no-op")
+	assert_eq(request.is_active(), false, "cancelled request should be inactive")
+	wait_until(function() return callbacks == 1 and server.closed_clients() == 1 end, "cancellation should close the TCP socket")
+	vim.wait(150, function() return callbacks > 1 end, 10)
+	assert_eq(callbacks, 1, "late response and original timeout must not call back again")
+	assert_eq(result_err.code, "cancelled", "structured cancellation error")
+	assert_eq(result_err.cancelled, true, "cancellation marker")
+	assert_eq(result_err.retryable, false, "cancellation should not trigger retry")
+	assert_eq(result_response, nil, "cancelled response")
+	server.close()
+end
+
+do
+	local server = start_server({}, false)
+	local callbacks, result_err = 0, nil
+	local request = transport.request({
+		host = "127.0.0.1", port = server.port, path = "/completion", timeout = 40,
+	}, function(err)
+		callbacks = callbacks + 1
+		result_err = err
+	end)
+	wait_until(function() return callbacks == 1 and server.closed_clients() == 1 end, "request timeout should close the socket")
+	assert_eq(result_err.timeout, true, "request timeout marker")
+	assert_eq(request.is_active(), false, "timed out request should be inactive")
+	assert_eq(request.cancel(), false, "cancellation after timeout is a no-op")
+	assert_eq(callbacks, 1, "timeout callback should run once")
+	server.close()
 end
 
 do

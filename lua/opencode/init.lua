@@ -103,6 +103,24 @@ local function _focus_input_window_when_ready(input, max_attempts, delay, attemp
 	end, delay)
 end
 
+---@param bufnr number
+---@param text string
+---@return string
+local function _fence_code(bufnr, text)
+	local language = vim.bo[bufnr].filetype
+	if language == "" then
+		language = vim.filetype.match({ filename = vim.api.nvim_buf_get_name(bufnr) }) or ""
+	end
+
+	-- Keep Markdown snippets containing their own fences inside a single block.
+	local fence_length = 3
+	for run in text:gmatch("`+") do
+		fence_length = math.max(fence_length, #run + 1)
+	end
+	local fence = string.rep("`", fence_length)
+	return fence .. language .. "\n" .. text .. "\n" .. fence
+end
+
 ---@param opts? { context?: string }
 ---@return string|nil
 local function _build_current_line_prompt(opts)
@@ -124,10 +142,8 @@ local function _build_current_line_prompt(opts)
 
 	local parts = {
 		string.format("@%s#%d", display_path, line_num),
+		_fence_code(bufnr, line_text),
 	}
-	if line_text ~= "" then
-		table.insert(parts, line_text)
-	end
 
 	local context = opts.context and vim.trim(opts.context) or ""
 	if context ~= "" then
@@ -141,53 +157,15 @@ end
 ---@return string|nil
 local function _build_visual_selection_prompt(opts)
 	opts = opts or {}
-
-	local bufnr = vim.api.nvim_get_current_buf()
-	local filepath = vim.api.nvim_buf_get_name(bufnr)
+	local selection, selection_err = require("opencode.util.visual_selection").capture()
+	if not selection then
+		vim.notify("OpenCode: " .. selection_err, vim.log.levels.WARN)
+		return nil
+	end
+	local bufnr, filepath = selection.bufnr, selection.path
 	if filepath == "" then
 		vim.notify("OpenCode: current buffer has no file path", vim.log.levels.WARN)
 		return nil
-	end
-
-	local start_pos = vim.fn.getpos("'<")
-	local end_pos = vim.fn.getpos("'>")
-	local start_line = start_pos[2]
-	local start_col = start_pos[3]
-	local end_line = end_pos[2]
-	local end_col = end_pos[3]
-
-	if start_line == 0 or end_line == 0 then
-		vim.notify("OpenCode: no visual selection found", vim.log.levels.WARN)
-		return nil
-	end
-
-	if start_line > end_line then
-		start_line, end_line = end_line, start_line
-		start_col, end_col = end_col, start_col
-	elseif start_line == end_line and start_col > end_col then
-		start_col, end_col = end_col, start_col
-	end
-
-	local lines = vim.api.nvim_buf_get_lines(bufnr, start_line - 1, end_line, false)
-	if #lines == 0 then
-		vim.notify("OpenCode: selected range is empty", vim.log.levels.WARN)
-		return nil
-	end
-
-	local visual_mode = vim.fn.visualmode()
-	if visual_mode == "\022" then
-		local col_start = math.min(start_col, end_col)
-		local col_end = math.max(start_col, end_col)
-		for i, line in ipairs(lines) do
-			lines[i] = line:sub(col_start, col_end)
-		end
-	elseif visual_mode ~= "V" then
-		if #lines == 1 then
-			lines[1] = lines[1]:sub(start_col, end_col)
-		else
-			lines[1] = lines[1]:sub(start_col)
-			lines[#lines] = lines[#lines]:sub(1, end_col)
-		end
 	end
 
 	local display_path = vim.fn.fnamemodify(filepath, ":~:.")
@@ -195,14 +173,14 @@ local function _build_visual_selection_prompt(opts)
 		display_path = filepath
 	end
 
-	local line_ref = tostring(start_line)
-	if start_line ~= end_line then
-		line_ref = string.format("%d-%d", start_line, end_line)
+	local line_ref = tostring(selection.start_line)
+	if selection.start_line ~= selection.end_line then
+		line_ref = string.format("%d-%d", selection.start_line, selection.end_line)
 	end
 
 	local parts = {
 		string.format("@%s#%s", display_path, line_ref),
-		table.concat(lines, "\n"),
+		_fence_code(bufnr, selection.text),
 	}
 
 	local context = opts.context and vim.trim(opts.context) or ""
@@ -218,6 +196,7 @@ end
 function M.setup(opts)
 	-- Merge user config with defaults
 	M._config = config.merge(opts)
+	require("opencode.commands").configure_keymaps(M._config.keymaps)
 
 	-- Initialize state with config
 	state.set_config(M._config)
@@ -263,6 +242,7 @@ function M.setup(opts)
 
 	lifecycle.setup({
 		command = M._config.server.command,
+		port = M._config.server.port,
 		auto_start = M._config.server.auto_start,
 		startup_timeout = M._config.server.startup_timeout,
 		health_check_interval = M._config.server.health_check_interval,
@@ -271,7 +251,11 @@ function M.setup(opts)
 		env = M._config.server.env,
 		auth = M._config.server.auth,
 		config_dir = M._config.server.config_dir,
+		completion = M._config.completion,
+		explanation = M._config.explanation,
 	})
+	require("opencode.completion").setup(M._config.completion)
+	require("opencode.explanation").setup(M._config.explanation)
 
 	-- Expose state module
 	M.state = state
@@ -328,34 +312,14 @@ function M.setup(opts)
     vim.notify("Failed to load slash commands: " .. tostring(slash), vim.log.levels.WARN)
   end
 
-  -- Apply keymaps from user config (only if user explicitly configures them)
-  -- Users who want keymaps should add them to their config, e.g.:
-  -- keymaps = { toggle = "<leader>oo", command_palette = "<leader>op" }
+  -- The five loader keymaps are replaced from the merged config above.
   local km = M._config.keymaps or {}
   local map_opts = { noremap = true, silent = true }
-  
-  if km.toggle then
-    vim.keymap.set("n", km.toggle, function()
-      require("opencode").toggle()
-    end, vim.tbl_extend("force", map_opts, { desc = "Toggle OpenCode" }))
-  end
-
-  if km.command_palette then
-    vim.keymap.set("n", km.command_palette, function()
-      require("opencode").command_palette()
-    end, vim.tbl_extend("force", map_opts, { desc = "OpenCode command palette" }))
-  end
 
   if km.abort then
     vim.keymap.set("n", km.abort, function()
       require("opencode").abort()
     end, vim.tbl_extend("force", map_opts, { desc = "Abort OpenCode request" }))
-  end
-
-  if km.active_sessions then
-    vim.keymap.set("n", km.active_sessions, function()
-      require("opencode").active_sessions()
-    end, vim.tbl_extend("force", map_opts, { desc = "OpenCode active sessions" }))
   end
 
   -- Setup cursor hiding for opencode buffers
@@ -610,9 +574,69 @@ function M.send(message, opts)
 		return
 	end
 
+	local captured = vim.deepcopy(opts or {})
+	captured.session_id = captured.session_id or state.get_session().id or false
+	captured.directory = captured.directory or state.get_session_directory(captured.session_id) or vim.fn.getcwd()
+	captured._token = require("opencode.session.pending").token(captured.session_id or nil)
+	captured._selection = require("opencode.selectors").send_selection(captured)
 	lifecycle.ensure_connected(function()
-		require("opencode.send").send(message, opts)
+		require("opencode.send").send(message, captured)
 	end)
+end
+
+--- Request a new inline code completion at the Insert-mode cursor.
+function M.complete()
+	return require("opencode.completion").complete()
+end
+
+--- Accept the visible suggestion; safe for expr/snippet completion mappings.
+function M.accept_completion()
+	return require("opencode.completion").accept()
+end
+
+function M.dismiss_completion()
+	return require("opencode.completion").dismiss()
+end
+
+function M.completion_visible()
+	return require("opencode.completion").visible()
+end
+
+--- Explain the current Visual selection in a temporary popup.
+function M.explain_selection()
+	return require("opencode.explanation").explain_selection()
+end
+
+--- Ask a transient question using the active session's context and model.
+---@param question string
+---@param owner_session_id? string Session that opened a question dialog.
+---@return boolean
+function M.ask_btw(question, owner_session_id)
+	if not lifecycle then
+		vim.notify("OpenCode not initialized", vim.log.levels.ERROR)
+		return false
+	end
+	local session_id = owner_session_id or state.get_session().id
+	if not session_id then
+		vim.notify("No active session for /btw", vim.log.levels.WARN)
+		return false
+	end
+	if owner_session_id and not state.get_session_record(session_id) then
+		vim.notify("Session was deleted before /btw was submitted", vim.log.levels.WARN)
+		return false
+	end
+	if vim.trim(question or "") == "" then
+		vim.notify("Usage: /btw <question>", vim.log.levels.WARN)
+		return false
+	end
+	lifecycle.ensure_connected(function()
+		if not state.get_session_record(session_id) then
+			vim.notify("Session was deleted before /btw could start", vim.log.levels.WARN)
+			return
+		end
+		require("opencode.btw").ask(session_id, question)
+	end)
+	return true
 end
 
 --- Abort/stop the current generation
@@ -629,25 +653,17 @@ function M.abort()
 		return
 	end
 
-	local current_status = state.get_status()
-	if current_status ~= "streaming" then
-		vim.notify("Not currently streaming", vim.log.levels.INFO)
-		return
-	end
-
-	local client = require("opencode.client")
-	client.abort_session(session_id, function(err, result)
-		vim.schedule(function()
-			if err then
-				vim.notify("Failed to abort: " .. tostring(err.message or err.error or err), vim.log.levels.ERROR)
-				return
-			end
-
-			session_actions.set_status("idle", {
-				reason = "abort",
-				session_id = session_id,
-			})
-		end)
+	local pending = require("opencode.session.pending")
+	local token = pending.token(session_id)
+	require("opencode.client").abort_session(session_id, function(err)
+		if not pending.is_current(token) then return end
+		if err then
+			vim.notify("Failed to interrupt: " .. tostring(err.message or err.error or err), vim.log.levels.ERROR)
+		end
+		-- Interrupt acknowledges a request; SSE and active recovery establish
+		-- completion. Queued inbox items remain pending (resume=false).
+		require("opencode.events").emit("v2_reconcile", { session_id = session_id })
+		session_actions.refresh_status()
 	end)
 end
 

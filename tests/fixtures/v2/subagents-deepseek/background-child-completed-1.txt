@@ -1,0 +1,40 @@
+                                       │ ● Background dele...  │ ●1 ◈0                                                  
+~                                      │Background delegation test with two child tasks > Small test                    
+~                                      │<BS> Go back                                                                    
+~                                      │                                                                                
+~                                      │Small test                                                                      
+~                                      │                                                                                
+~                                      │┃                                                                               
+~                                      │┃  You are a subagent spawned by another session.                               
+~                                      │┃  Call shell once with command "sleep 20", then reply exactly CHILD_TWO.       
+~                                      │┃                                                                               
+~                                      │                                                                                
+~                                      │Thinking: The user wants me to call shell once with command "sleep 20", then    
+~                                      │reply exactly CHILD_TWO.                                                        
+~                                      │                                                                                
+~                                      │▏                                                                               
+~                                      │▏  # Shell                                                                      
+~                                      │▏                                                                               
+~                                      │▏  $ sleep 20                                                                   
+~                                      │▏                                                                               
+~                                      │▏  (no output)                                                                  
+~                                      │▏  Command exited with code 0.                                                  
+~                                      │▏                                                                               
+~                                      │                                                                                
+~                                      │CHILD_TWO                                                                       
+~                                      │                                                                                
+~                                      │▣ General · DeepSeek V4 Flash · 7.5k/1m tok · 24.3s                             
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+~                                      │                                                                                
+[No Name]            0,0-1          All opencode [-]                                                  19,1           All
+Background delegation test with two child tasks: Session done                                                           

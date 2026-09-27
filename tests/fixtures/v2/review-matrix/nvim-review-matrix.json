@@ -1,0 +1,871 @@
+{
+  "offline_diff_preserves_buffer": true,
+  "rejected_keymap": true,
+  "version": "2.0.11",
+  "manual_diff_keymap": true,
+  "review": {
+    "reviewID": "rev_7fc5bb6817313a8ce7fcb0e3af4a8007",
+    "tool": "neovim_apply_patch",
+    "callID": "call_8bedc7f487d647c5b7e3d1a5",
+    "metadata": {
+      "proposed_files": [
+        {
+          "status": "pending",
+          "diff": "--- <PROFILE>/project пробел %#/accepted.txt\n+++ <PROFILE>/project пробел %#/accepted.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+          "deletions": 1,
+          "additions": 1,
+          "type": "update",
+          "filePath": "<PROFILE>/project пробел %#/accepted.txt",
+          "relativePath": "accepted.txt",
+          "patch": "--- <PROFILE>/project пробел %#/accepted.txt\n+++ <PROFILE>/project пробел %#/accepted.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+          "proposedDiff": "--- <PROFILE>/project пробел %#/accepted.txt\n+++ <PROFILE>/project пробел %#/accepted.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+          "after": "after\n",
+          "before": "before\n"
+        },
+        {
+          "status": "pending",
+          "diff": "--- <PROFILE>/project пробел %#/rejected.txt\n+++ <PROFILE>/project пробел %#/rejected.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+          "deletions": 1,
+          "additions": 1,
+          "type": "update",
+          "filePath": "<PROFILE>/project пробел %#/rejected.txt",
+          "relativePath": "rejected.txt",
+          "patch": "--- <PROFILE>/project пробел %#/rejected.txt\n+++ <PROFILE>/project пробел %#/rejected.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+          "proposedDiff": "--- <PROFILE>/project пробел %#/rejected.txt\n+++ <PROFILE>/project пробел %#/rejected.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+          "after": "after\n",
+          "before": "before\n"
+        },
+        {
+          "status": "pending",
+          "diff": "--- <PROFILE>/project пробел %#/manual.txt\n+++ <PROFILE>/project пробел %#/manual.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+          "deletions": 1,
+          "additions": 1,
+          "type": "update",
+          "filePath": "<PROFILE>/project пробел %#/manual.txt",
+          "relativePath": "manual.txt",
+          "patch": "--- <PROFILE>/project пробел %#/manual.txt\n+++ <PROFILE>/project пробел %#/manual.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+          "proposedDiff": "--- <PROFILE>/project пробел %#/manual.txt\n+++ <PROFILE>/project пробел %#/manual.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+          "after": "after\n",
+          "before": "before\n"
+        },
+        {
+          "status": "pending",
+          "diff": "--- <PROFILE>/project пробел %#/added.txt\n+++ <PROFILE>/project пробел %#/added.txt\n@@ -1,0 +1,2 @@\n+new file\n+",
+          "deletions": 0,
+          "additions": 1,
+          "type": "add",
+          "filePath": "<PROFILE>/project пробел %#/added.txt",
+          "relativePath": "added.txt",
+          "patch": "--- <PROFILE>/project пробел %#/added.txt\n+++ <PROFILE>/project пробел %#/added.txt\n@@ -1,0 +1,2 @@\n+new file\n+",
+          "proposedDiff": "--- <PROFILE>/project пробел %#/added.txt\n+++ <PROFILE>/project пробел %#/added.txt\n@@ -1,0 +1,2 @@\n+new file\n+",
+          "after": "new file\n",
+          "before": ""
+        },
+        {
+          "status": "pending",
+          "diff": "--- <PROFILE>/project пробел %#/deleted.txt\n+++ <PROFILE>/project пробел %#/deleted.txt\n@@ -1,2 +1,0 @@\n-delete me\n-",
+          "deletions": 1,
+          "additions": 0,
+          "type": "delete",
+          "filePath": "<PROFILE>/project пробел %#/deleted.txt",
+          "relativePath": "deleted.txt",
+          "patch": "--- <PROFILE>/project пробел %#/deleted.txt\n+++ <PROFILE>/project пробел %#/deleted.txt\n@@ -1,2 +1,0 @@\n-delete me\n-",
+          "proposedDiff": "--- <PROFILE>/project пробел %#/deleted.txt\n+++ <PROFILE>/project пробел %#/deleted.txt\n@@ -1,2 +1,0 @@\n-delete me\n-",
+          "after": "",
+          "before": "delete me\n"
+        },
+        {
+          "movePath": "renamed.txt",
+          "status": "pending",
+          "diff": "--- <PROFILE>/project пробел %#/moved.txt\n+++ <PROFILE>/project пробел %#/moved.txt\n@@ -1,2 +1,2 @@\n-move me\n+moved\n ",
+          "deletions": 1,
+          "additions": 1,
+          "type": "move",
+          "filePath": "<PROFILE>/project пробел %#/moved.txt",
+          "relativePath": "moved.txt",
+          "patch": "--- <PROFILE>/project пробел %#/moved.txt\n+++ <PROFILE>/project пробел %#/moved.txt\n@@ -1,2 +1,2 @@\n-move me\n+moved\n ",
+          "proposedDiff": "--- <PROFILE>/project пробел %#/moved.txt\n+++ <PROFILE>/project пробел %#/moved.txt\n@@ -1,2 +1,2 @@\n-move me\n+moved\n ",
+          "after": "moved\n",
+          "before": "move me\n"
+        },
+        {
+          "status": "pending",
+          "diff": "--- <PROFILE>/project пробел %#/bom.txt\n+++ <PROFILE>/project пробел %#/bom.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+          "deletions": 1,
+          "additions": 1,
+          "type": "update",
+          "filePath": "<PROFILE>/project пробел %#/bom.txt",
+          "relativePath": "bom.txt",
+          "patch": "--- <PROFILE>/project пробел %#/bom.txt\n+++ <PROFILE>/project пробел %#/bom.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+          "proposedDiff": "--- <PROFILE>/project пробел %#/bom.txt\n+++ <PROFILE>/project пробел %#/bom.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+          "after": "after\n",
+          "before": "before\r\n"
+        }
+      ],
+      "files": [
+        {
+          "status": "pending",
+          "additions": 1,
+          "diff": "--- <PROFILE>/project пробел %#/accepted.txt\n+++ <PROFILE>/project пробел %#/accepted.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+          "deletions": 1,
+          "type": "update",
+          "bom": false,
+          "filePath": "<PROFILE>/project пробел %#/accepted.txt",
+          "relativePath": "accepted.txt",
+          "patch": "--- <PROFILE>/project пробел %#/accepted.txt\n+++ <PROFILE>/project пробел %#/accepted.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+          "before_bom": false,
+          "after": "after\n",
+          "before": "before\n"
+        },
+        {
+          "status": "pending",
+          "additions": 1,
+          "diff": "--- <PROFILE>/project пробел %#/rejected.txt\n+++ <PROFILE>/project пробел %#/rejected.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+          "deletions": 1,
+          "type": "update",
+          "bom": false,
+          "filePath": "<PROFILE>/project пробел %#/rejected.txt",
+          "relativePath": "rejected.txt",
+          "patch": "--- <PROFILE>/project пробел %#/rejected.txt\n+++ <PROFILE>/project пробел %#/rejected.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+          "before_bom": false,
+          "after": "after\n",
+          "before": "before\n"
+        },
+        {
+          "status": "pending",
+          "additions": 1,
+          "diff": "--- <PROFILE>/project пробел %#/manual.txt\n+++ <PROFILE>/project пробел %#/manual.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+          "deletions": 1,
+          "type": "update",
+          "bom": false,
+          "filePath": "<PROFILE>/project пробел %#/manual.txt",
+          "relativePath": "manual.txt",
+          "patch": "--- <PROFILE>/project пробел %#/manual.txt\n+++ <PROFILE>/project пробел %#/manual.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+          "before_bom": false,
+          "after": "after\n",
+          "before": "before\n"
+        },
+        {
+          "status": "pending",
+          "additions": 1,
+          "diff": "--- <PROFILE>/project пробел %#/added.txt\n+++ <PROFILE>/project пробел %#/added.txt\n@@ -1,0 +1,2 @@\n+new file\n+",
+          "deletions": 0,
+          "type": "add",
+          "bom": false,
+          "filePath": "<PROFILE>/project пробел %#/added.txt",
+          "relativePath": "added.txt",
+          "patch": "--- <PROFILE>/project пробел %#/added.txt\n+++ <PROFILE>/project пробел %#/added.txt\n@@ -1,0 +1,2 @@\n+new file\n+",
+          "before_bom": false,
+          "after": "new file\n",
+          "before": ""
+        },
+        {
+          "status": "pending",
+          "additions": 0,
+          "diff": "--- <PROFILE>/project пробел %#/deleted.txt\n+++ <PROFILE>/project пробел %#/deleted.txt\n@@ -1,2 +1,0 @@\n-delete me\n-",
+          "deletions": 1,
+          "type": "delete",
+          "bom": false,
+          "filePath": "<PROFILE>/project пробел %#/deleted.txt",
+          "relativePath": "deleted.txt",
+          "patch": "--- <PROFILE>/project пробел %#/deleted.txt\n+++ <PROFILE>/project пробел %#/deleted.txt\n@@ -1,2 +1,0 @@\n-delete me\n-",
+          "before_bom": false,
+          "after": "",
+          "before": "delete me\n"
+        },
+        {
+          "status": "pending",
+          "additions": 0,
+          "diff": "--- <PROFILE>/project пробел %#/moved.txt\n+++ <PROFILE>/project пробел %#/moved.txt\n@@ -1,2 +1,0 @@\n-move me\n-",
+          "deletions": 1,
+          "type": "delete",
+          "bom": false,
+          "filePath": "<PROFILE>/project пробел %#/moved.txt",
+          "relativePath": "moved.txt",
+          "patch": "--- <PROFILE>/project пробел %#/moved.txt\n+++ <PROFILE>/project пробел %#/moved.txt\n@@ -1,2 +1,0 @@\n-move me\n-",
+          "before_bom": false,
+          "after": "",
+          "before": "move me\n"
+        },
+        {
+          "status": "pending",
+          "additions": 1,
+          "diff": "--- <PROFILE>/project пробел %#/renamed.txt\n+++ <PROFILE>/project пробел %#/renamed.txt\n@@ -1,0 +1,2 @@\n+moved\n+",
+          "deletions": 0,
+          "type": "add",
+          "bom": false,
+          "filePath": "<PROFILE>/project пробел %#/renamed.txt",
+          "relativePath": "renamed.txt",
+          "patch": "--- <PROFILE>/project пробел %#/renamed.txt\n+++ <PROFILE>/project пробел %#/renamed.txt\n@@ -1,0 +1,2 @@\n+moved\n+",
+          "before_bom": false,
+          "after": "moved\n",
+          "before": ""
+        },
+        {
+          "status": "pending",
+          "additions": 1,
+          "diff": "--- <PROFILE>/project пробел %#/bom.txt\n+++ <PROFILE>/project пробел %#/bom.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+          "deletions": 1,
+          "type": "update",
+          "bom": true,
+          "filePath": "<PROFILE>/project пробел %#/bom.txt",
+          "relativePath": "bom.txt",
+          "patch": "--- <PROFILE>/project пробел %#/bom.txt\n+++ <PROFILE>/project пробел %#/bom.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+          "before_bom": true,
+          "after": "after\n",
+          "before": "before\r\n"
+        }
+      ],
+      "filepath": "accepted.txt, rejected.txt, manual.txt, added.txt, deleted.txt, moved.txt, renamed.txt, bom.txt",
+      "diff": "--- <PROFILE>/project пробел %#/accepted.txt\n+++ <PROFILE>/project пробел %#/accepted.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n \n--- <PROFILE>/project пробел %#/rejected.txt\n+++ <PROFILE>/project пробел %#/rejected.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n \n--- <PROFILE>/project пробел %#/manual.txt\n+++ <PROFILE>/project пробел %#/manual.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n \n--- <PROFILE>/project пробел %#/added.txt\n+++ <PROFILE>/project пробел %#/added.txt\n@@ -1,0 +1,2 @@\n+new file\n+\n--- <PROFILE>/project пробел %#/deleted.txt\n+++ <PROFILE>/project пробел %#/deleted.txt\n@@ -1,2 +1,0 @@\n-delete me\n-\n--- <PROFILE>/project пробел %#/moved.txt\n+++ <PROFILE>/project пробел %#/moved.txt\n@@ -1,2 +1,2 @@\n-move me\n+moved\n \n--- <PROFILE>/project пробел %#/bom.txt\n+++ <PROFILE>/project пробел %#/bom.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+      "sessionID": "ses_f3980584cffeG2qQj3aoA1n7uS",
+      "opencode_native_diff": true,
+      "proposed_diff": "--- <PROFILE>/project пробел %#/accepted.txt\n+++ <PROFILE>/project пробел %#/accepted.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n \n--- <PROFILE>/project пробел %#/rejected.txt\n+++ <PROFILE>/project пробел %#/rejected.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n \n--- <PROFILE>/project пробел %#/manual.txt\n+++ <PROFILE>/project пробел %#/manual.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n \n--- <PROFILE>/project пробел %#/added.txt\n+++ <PROFILE>/project пробел %#/added.txt\n@@ -1,0 +1,2 @@\n+new file\n+\n--- <PROFILE>/project пробел %#/deleted.txt\n+++ <PROFILE>/project пробел %#/deleted.txt\n@@ -1,2 +1,0 @@\n-delete me\n-\n--- <PROFILE>/project пробел %#/moved.txt\n+++ <PROFILE>/project пробел %#/moved.txt\n@@ -1,2 +1,2 @@\n-move me\n+moved\n \n--- <PROFILE>/project пробел %#/bom.txt\n+++ <PROFILE>/project пробел %#/bom.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+      "agent": "build",
+      "operation": "neovim_apply_patch",
+      "messageID": "msg_0c67fa821001S2QdlYfyzLzTMt"
+    },
+    "created": 1790036652765,
+    "files": [
+      {
+        "status": "pending",
+        "additions": 1,
+        "fileID": "file_0_ef7c0a0c40c7",
+        "bom": false,
+        "deletions": 1,
+        "type": "update",
+        "diff": "--- <PROFILE>/project пробел %#/accepted.txt\n+++ <PROFILE>/project пробел %#/accepted.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+        "filePath": "<PROFILE>/project пробел %#/accepted.txt",
+        "relativePath": "accepted.txt",
+        "patch": "--- <PROFILE>/project пробел %#/accepted.txt\n+++ <PROFILE>/project пробел %#/accepted.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+        "before_bom": false,
+        "after": "after\n",
+        "before": "before\n"
+      },
+      {
+        "status": "pending",
+        "additions": 1,
+        "fileID": "file_1_655d2473995e",
+        "bom": false,
+        "deletions": 1,
+        "type": "update",
+        "diff": "--- <PROFILE>/project пробел %#/rejected.txt\n+++ <PROFILE>/project пробел %#/rejected.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+        "filePath": "<PROFILE>/project пробел %#/rejected.txt",
+        "relativePath": "rejected.txt",
+        "patch": "--- <PROFILE>/project пробел %#/rejected.txt\n+++ <PROFILE>/project пробел %#/rejected.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+        "before_bom": false,
+        "after": "after\n",
+        "before": "before\n"
+      },
+      {
+        "status": "pending",
+        "additions": 1,
+        "fileID": "file_2_b6560aea097d",
+        "bom": false,
+        "deletions": 1,
+        "type": "update",
+        "diff": "--- <PROFILE>/project пробел %#/manual.txt\n+++ <PROFILE>/project пробел %#/manual.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+        "filePath": "<PROFILE>/project пробел %#/manual.txt",
+        "relativePath": "manual.txt",
+        "patch": "--- <PROFILE>/project пробел %#/manual.txt\n+++ <PROFILE>/project пробел %#/manual.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+        "before_bom": false,
+        "after": "after\n",
+        "before": "before\n"
+      },
+      {
+        "status": "pending",
+        "additions": 1,
+        "fileID": "file_3_b2597c073d58",
+        "bom": false,
+        "deletions": 0,
+        "type": "add",
+        "diff": "--- <PROFILE>/project пробел %#/added.txt\n+++ <PROFILE>/project пробел %#/added.txt\n@@ -1,0 +1,2 @@\n+new file\n+",
+        "filePath": "<PROFILE>/project пробел %#/added.txt",
+        "relativePath": "added.txt",
+        "patch": "--- <PROFILE>/project пробел %#/added.txt\n+++ <PROFILE>/project пробел %#/added.txt\n@@ -1,0 +1,2 @@\n+new file\n+",
+        "before_bom": false,
+        "after": "new file\n",
+        "before": ""
+      },
+      {
+        "status": "pending",
+        "additions": 0,
+        "fileID": "file_4_e1a8327c4b4c",
+        "bom": false,
+        "deletions": 1,
+        "type": "delete",
+        "diff": "--- <PROFILE>/project пробел %#/deleted.txt\n+++ <PROFILE>/project пробел %#/deleted.txt\n@@ -1,2 +1,0 @@\n-delete me\n-",
+        "filePath": "<PROFILE>/project пробел %#/deleted.txt",
+        "relativePath": "deleted.txt",
+        "patch": "--- <PROFILE>/project пробел %#/deleted.txt\n+++ <PROFILE>/project пробел %#/deleted.txt\n@@ -1,2 +1,0 @@\n-delete me\n-",
+        "before_bom": false,
+        "after": "",
+        "before": "delete me\n"
+      },
+      {
+        "status": "pending",
+        "additions": 0,
+        "fileID": "file_5_03561cdcf83e",
+        "bom": false,
+        "deletions": 1,
+        "type": "delete",
+        "diff": "--- <PROFILE>/project пробел %#/moved.txt\n+++ <PROFILE>/project пробел %#/moved.txt\n@@ -1,2 +1,0 @@\n-move me\n-",
+        "filePath": "<PROFILE>/project пробел %#/moved.txt",
+        "relativePath": "moved.txt",
+        "patch": "--- <PROFILE>/project пробел %#/moved.txt\n+++ <PROFILE>/project пробел %#/moved.txt\n@@ -1,2 +1,0 @@\n-move me\n-",
+        "before_bom": false,
+        "after": "",
+        "before": "move me\n"
+      },
+      {
+        "status": "pending",
+        "additions": 1,
+        "fileID": "file_6_3a7d593f1d49",
+        "bom": false,
+        "deletions": 0,
+        "type": "add",
+        "diff": "--- <PROFILE>/project пробел %#/renamed.txt\n+++ <PROFILE>/project пробел %#/renamed.txt\n@@ -1,0 +1,2 @@\n+moved\n+",
+        "filePath": "<PROFILE>/project пробел %#/renamed.txt",
+        "relativePath": "renamed.txt",
+        "patch": "--- <PROFILE>/project пробел %#/renamed.txt\n+++ <PROFILE>/project пробел %#/renamed.txt\n@@ -1,0 +1,2 @@\n+moved\n+",
+        "before_bom": false,
+        "after": "moved\n",
+        "before": ""
+      },
+      {
+        "status": "pending",
+        "additions": 1,
+        "fileID": "file_7_3bcbebb80ee2",
+        "bom": true,
+        "deletions": 1,
+        "type": "update",
+        "diff": "--- <PROFILE>/project пробел %#/bom.txt\n+++ <PROFILE>/project пробел %#/bom.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+        "filePath": "<PROFILE>/project пробел %#/bom.txt",
+        "relativePath": "bom.txt",
+        "patch": "--- <PROFILE>/project пробел %#/bom.txt\n+++ <PROFILE>/project пробел %#/bom.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+        "before_bom": true,
+        "after": "after\n",
+        "before": "before\r\n"
+      }
+    ],
+    "protocolVersion": 1,
+    "directory": "<PROFILE>/project пробел %#",
+    "agent": "build",
+    "sessionID": "ses_f3980584cffeG2qQj3aoA1n7uS",
+    "status": "settled",
+    "revision": 1,
+    "decisions": [
+      {
+        "observed": {
+          "exists": true,
+          "sha256": "7b9a72466d3960eb2aacccfc848939453490db0678bd4725def3f789b891c919"
+        },
+        "fileID": "file_0_ef7c0a0c40c7",
+        "status": "accepted",
+        "apply": "client"
+      },
+      {
+        "fileID": "file_1_655d2473995e",
+        "status": "rejected",
+        "apply": "client"
+      },
+      {
+        "observed": {
+          "exists": true,
+          "sha256": "9b40a313f138c9dd2a2b45b386dbe2d53b3d83277ccb35445c0d9e87744939f7"
+        },
+        "fileID": "file_2_b6560aea097d",
+        "status": "resolved",
+        "apply": "client"
+      },
+      {
+        "observed": {
+          "exists": true,
+          "sha256": "0f15384d18789b1ebf3043dc7b6bc27273c8576373fbeb6f3e15854b588141c0"
+        },
+        "fileID": "file_3_b2597c073d58",
+        "status": "accepted",
+        "apply": "client"
+      },
+      {
+        "observed": {
+          "exists": false
+        },
+        "fileID": "file_4_e1a8327c4b4c",
+        "status": "accepted",
+        "apply": "client"
+      },
+      {
+        "observed": {
+          "exists": false
+        },
+        "fileID": "file_5_03561cdcf83e",
+        "status": "accepted",
+        "apply": "client"
+      },
+      {
+        "observed": {
+          "exists": true,
+          "sha256": "2c85ab0700b597297552509665d1f5a95111d16c5416fdc88d5bb85fcf4d0017"
+        },
+        "fileID": "file_6_3a7d593f1d49",
+        "status": "accepted",
+        "apply": "client"
+      },
+      {
+        "observed": {
+          "exists": true,
+          "sha256": "a195c1e3bff1c5564ed04de7f6c3db732c186f29f564a2b69988288784b86429"
+        },
+        "fileID": "file_7_3bcbebb80ee2",
+        "status": "resolved",
+        "apply": "client"
+      }
+    ],
+    "outcome": {
+      "proposed_files": [
+        {
+          "status": "pending",
+          "diff": "--- <PROFILE>/project пробел %#/accepted.txt\n+++ <PROFILE>/project пробел %#/accepted.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+          "deletions": 1,
+          "additions": 1,
+          "type": "update",
+          "filePath": "<PROFILE>/project пробел %#/accepted.txt",
+          "relativePath": "accepted.txt",
+          "patch": "--- <PROFILE>/project пробел %#/accepted.txt\n+++ <PROFILE>/project пробел %#/accepted.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+          "proposedDiff": "--- <PROFILE>/project пробел %#/accepted.txt\n+++ <PROFILE>/project пробел %#/accepted.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+          "after": "after\n",
+          "before": "before\n"
+        },
+        {
+          "status": "pending",
+          "diff": "--- <PROFILE>/project пробел %#/rejected.txt\n+++ <PROFILE>/project пробел %#/rejected.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+          "deletions": 1,
+          "additions": 1,
+          "type": "update",
+          "filePath": "<PROFILE>/project пробел %#/rejected.txt",
+          "relativePath": "rejected.txt",
+          "patch": "--- <PROFILE>/project пробел %#/rejected.txt\n+++ <PROFILE>/project пробел %#/rejected.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+          "proposedDiff": "--- <PROFILE>/project пробел %#/rejected.txt\n+++ <PROFILE>/project пробел %#/rejected.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+          "after": "after\n",
+          "before": "before\n"
+        },
+        {
+          "status": "pending",
+          "diff": "--- <PROFILE>/project пробел %#/manual.txt\n+++ <PROFILE>/project пробел %#/manual.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+          "deletions": 1,
+          "additions": 1,
+          "type": "update",
+          "filePath": "<PROFILE>/project пробел %#/manual.txt",
+          "relativePath": "manual.txt",
+          "patch": "--- <PROFILE>/project пробел %#/manual.txt\n+++ <PROFILE>/project пробел %#/manual.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+          "proposedDiff": "--- <PROFILE>/project пробел %#/manual.txt\n+++ <PROFILE>/project пробел %#/manual.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+          "after": "after\n",
+          "before": "before\n"
+        },
+        {
+          "status": "pending",
+          "diff": "--- <PROFILE>/project пробел %#/added.txt\n+++ <PROFILE>/project пробел %#/added.txt\n@@ -1,0 +1,2 @@\n+new file\n+",
+          "deletions": 0,
+          "additions": 1,
+          "type": "add",
+          "filePath": "<PROFILE>/project пробел %#/added.txt",
+          "relativePath": "added.txt",
+          "patch": "--- <PROFILE>/project пробел %#/added.txt\n+++ <PROFILE>/project пробел %#/added.txt\n@@ -1,0 +1,2 @@\n+new file\n+",
+          "proposedDiff": "--- <PROFILE>/project пробел %#/added.txt\n+++ <PROFILE>/project пробел %#/added.txt\n@@ -1,0 +1,2 @@\n+new file\n+",
+          "after": "new file\n",
+          "before": ""
+        },
+        {
+          "status": "pending",
+          "diff": "--- <PROFILE>/project пробел %#/deleted.txt\n+++ <PROFILE>/project пробел %#/deleted.txt\n@@ -1,2 +1,0 @@\n-delete me\n-",
+          "deletions": 1,
+          "additions": 0,
+          "type": "delete",
+          "filePath": "<PROFILE>/project пробел %#/deleted.txt",
+          "relativePath": "deleted.txt",
+          "patch": "--- <PROFILE>/project пробел %#/deleted.txt\n+++ <PROFILE>/project пробел %#/deleted.txt\n@@ -1,2 +1,0 @@\n-delete me\n-",
+          "proposedDiff": "--- <PROFILE>/project пробел %#/deleted.txt\n+++ <PROFILE>/project пробел %#/deleted.txt\n@@ -1,2 +1,0 @@\n-delete me\n-",
+          "after": "",
+          "before": "delete me\n"
+        },
+        {
+          "movePath": "renamed.txt",
+          "status": "pending",
+          "diff": "--- <PROFILE>/project пробел %#/moved.txt\n+++ <PROFILE>/project пробел %#/moved.txt\n@@ -1,2 +1,2 @@\n-move me\n+moved\n ",
+          "deletions": 1,
+          "additions": 1,
+          "type": "move",
+          "filePath": "<PROFILE>/project пробел %#/moved.txt",
+          "relativePath": "moved.txt",
+          "patch": "--- <PROFILE>/project пробел %#/moved.txt\n+++ <PROFILE>/project пробел %#/moved.txt\n@@ -1,2 +1,2 @@\n-move me\n+moved\n ",
+          "proposedDiff": "--- <PROFILE>/project пробел %#/moved.txt\n+++ <PROFILE>/project пробел %#/moved.txt\n@@ -1,2 +1,2 @@\n-move me\n+moved\n ",
+          "after": "moved\n",
+          "before": "move me\n"
+        },
+        {
+          "status": "pending",
+          "diff": "--- <PROFILE>/project пробел %#/bom.txt\n+++ <PROFILE>/project пробел %#/bom.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+          "deletions": 1,
+          "additions": 1,
+          "type": "update",
+          "filePath": "<PROFILE>/project пробел %#/bom.txt",
+          "relativePath": "bom.txt",
+          "patch": "--- <PROFILE>/project пробел %#/bom.txt\n+++ <PROFILE>/project пробел %#/bom.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+          "proposedDiff": "--- <PROFILE>/project пробел %#/bom.txt\n+++ <PROFILE>/project пробел %#/bom.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+          "after": "after\n",
+          "before": "before\r\n"
+        }
+      ],
+      "files": [
+        {
+          "proposed_diff": "--- <PROFILE>/project пробел %#/accepted.txt\n+++ <PROFILE>/project пробел %#/accepted.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+          "additions": 1,
+          "diff": "--- <PROFILE>/project пробел %#/accepted.txt\n+++ <PROFILE>/project пробел %#/accepted.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+          "deletions": 1,
+          "type": "update",
+          "filePath": "<PROFILE>/project пробел %#/accepted.txt",
+          "status": "applied",
+          "relativePath": "accepted.txt",
+          "patch": "--- <PROFILE>/project пробел %#/accepted.txt\n+++ <PROFILE>/project пробел %#/accepted.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+          "proposedDiff": "--- <PROFILE>/project пробел %#/accepted.txt\n+++ <PROFILE>/project пробел %#/accepted.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+          "after": "after\n",
+          "before": "before\n"
+        },
+        {
+          "proposed_diff": "--- <PROFILE>/project пробел %#/rejected.txt\n+++ <PROFILE>/project пробел %#/rejected.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+          "additions": 0,
+          "diff": "--- <PROFILE>/project пробел %#/rejected.txt\n+++ <PROFILE>/project пробел %#/rejected.txt\n",
+          "deletions": 0,
+          "type": "update",
+          "filePath": "<PROFILE>/project пробел %#/rejected.txt",
+          "status": "rejected",
+          "relativePath": "rejected.txt",
+          "patch": "--- <PROFILE>/project пробел %#/rejected.txt\n+++ <PROFILE>/project пробел %#/rejected.txt\n",
+          "proposedDiff": "--- <PROFILE>/project пробел %#/rejected.txt\n+++ <PROFILE>/project пробел %#/rejected.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+          "after": "before\n",
+          "before": "before\n"
+        },
+        {
+          "proposed_diff": "--- <PROFILE>/project пробел %#/manual.txt\n+++ <PROFILE>/project пробел %#/manual.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+          "additions": 1,
+          "diff": "--- <PROFILE>/project пробел %#/manual.txt\n+++ <PROFILE>/project пробел %#/manual.txt\n@@ -1,2 +1,2 @@\n-before\n+manual result\n ",
+          "deletions": 1,
+          "type": "update",
+          "filePath": "<PROFILE>/project пробел %#/manual.txt",
+          "status": "partial",
+          "relativePath": "manual.txt",
+          "patch": "--- <PROFILE>/project пробел %#/manual.txt\n+++ <PROFILE>/project пробел %#/manual.txt\n@@ -1,2 +1,2 @@\n-before\n+manual result\n ",
+          "proposedDiff": "--- <PROFILE>/project пробел %#/manual.txt\n+++ <PROFILE>/project пробел %#/manual.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+          "after": "manual result\n",
+          "before": "before\n"
+        },
+        {
+          "proposed_diff": "--- <PROFILE>/project пробел %#/added.txt\n+++ <PROFILE>/project пробел %#/added.txt\n@@ -1,0 +1,2 @@\n+new file\n+",
+          "additions": 1,
+          "diff": "--- <PROFILE>/project пробел %#/added.txt\n+++ <PROFILE>/project пробел %#/added.txt\n@@ -1,0 +1,2 @@\n+new file\n+",
+          "deletions": 0,
+          "type": "add",
+          "filePath": "<PROFILE>/project пробел %#/added.txt",
+          "status": "applied",
+          "relativePath": "added.txt",
+          "patch": "--- <PROFILE>/project пробел %#/added.txt\n+++ <PROFILE>/project пробел %#/added.txt\n@@ -1,0 +1,2 @@\n+new file\n+",
+          "proposedDiff": "--- <PROFILE>/project пробел %#/added.txt\n+++ <PROFILE>/project пробел %#/added.txt\n@@ -1,0 +1,2 @@\n+new file\n+",
+          "after": "new file\n",
+          "before": ""
+        },
+        {
+          "proposed_diff": "--- <PROFILE>/project пробел %#/deleted.txt\n+++ <PROFILE>/project пробел %#/deleted.txt\n@@ -1,2 +1,0 @@\n-delete me\n-",
+          "additions": 0,
+          "diff": "--- <PROFILE>/project пробел %#/deleted.txt\n+++ <PROFILE>/project пробел %#/deleted.txt\n@@ -1,2 +1,0 @@\n-delete me\n-",
+          "deletions": 1,
+          "type": "delete",
+          "filePath": "<PROFILE>/project пробел %#/deleted.txt",
+          "status": "applied",
+          "relativePath": "deleted.txt",
+          "patch": "--- <PROFILE>/project пробел %#/deleted.txt\n+++ <PROFILE>/project пробел %#/deleted.txt\n@@ -1,2 +1,0 @@\n-delete me\n-",
+          "proposedDiff": "--- <PROFILE>/project пробел %#/deleted.txt\n+++ <PROFILE>/project пробел %#/deleted.txt\n@@ -1,2 +1,0 @@\n-delete me\n-",
+          "after": "",
+          "before": "delete me\n"
+        },
+        {
+          "movePath": "renamed.txt",
+          "proposed_diff": "--- <PROFILE>/project пробел %#/moved.txt\n+++ <PROFILE>/project пробел %#/moved.txt\n@@ -1,2 +1,2 @@\n-move me\n+moved\n ",
+          "additions": 1,
+          "diff": "--- <PROFILE>/project пробел %#/renamed.txt\n+++ <PROFILE>/project пробел %#/renamed.txt\n@@ -1,2 +1,2 @@\n-move me\n+moved\n ",
+          "deletions": 1,
+          "type": "move",
+          "filePath": "<PROFILE>/project пробел %#/moved.txt",
+          "status": "applied",
+          "relativePath": "moved.txt",
+          "patch": "--- <PROFILE>/project пробел %#/renamed.txt\n+++ <PROFILE>/project пробел %#/renamed.txt\n@@ -1,2 +1,2 @@\n-move me\n+moved\n ",
+          "proposedDiff": "--- <PROFILE>/project пробел %#/moved.txt\n+++ <PROFILE>/project пробел %#/moved.txt\n@@ -1,2 +1,2 @@\n-move me\n+moved\n ",
+          "after": "moved\n",
+          "before": "move me\n"
+        },
+        {
+          "proposed_diff": "--- <PROFILE>/project пробел %#/bom.txt\n+++ <PROFILE>/project пробел %#/bom.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+          "additions": 0,
+          "diff": "--- <PROFILE>/project пробел %#/bom.txt\n+++ <PROFILE>/project пробел %#/bom.txt\n",
+          "deletions": 0,
+          "type": "update",
+          "filePath": "<PROFILE>/project пробел %#/bom.txt",
+          "status": "partial",
+          "relativePath": "bom.txt",
+          "patch": "--- <PROFILE>/project пробел %#/bom.txt\n+++ <PROFILE>/project пробел %#/bom.txt\n",
+          "proposedDiff": "--- <PROFILE>/project пробел %#/bom.txt\n+++ <PROFILE>/project пробел %#/bom.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+          "after": "before\n",
+          "before": "before\r\n"
+        }
+      ],
+      "title": "Patch review completed",
+      "proposed_diff": "--- <PROFILE>/project пробел %#/accepted.txt\n+++ <PROFILE>/project пробел %#/accepted.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n \n--- <PROFILE>/project пробел %#/rejected.txt\n+++ <PROFILE>/project пробел %#/rejected.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n \n--- <PROFILE>/project пробел %#/manual.txt\n+++ <PROFILE>/project пробел %#/manual.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n \n--- <PROFILE>/project пробел %#/added.txt\n+++ <PROFILE>/project пробел %#/added.txt\n@@ -1,0 +1,2 @@\n+new file\n+\n--- <PROFILE>/project пробел %#/deleted.txt\n+++ <PROFILE>/project пробел %#/deleted.txt\n@@ -1,2 +1,0 @@\n-delete me\n-\n--- <PROFILE>/project пробел %#/moved.txt\n+++ <PROFILE>/project пробел %#/moved.txt\n@@ -1,2 +1,2 @@\n-move me\n+moved\n \n--- <PROFILE>/project пробел %#/bom.txt\n+++ <PROFILE>/project пробел %#/bom.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+      "diagnostics": {},
+      "diff": "--- <PROFILE>/project пробел %#/accepted.txt\n+++ <PROFILE>/project пробел %#/accepted.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n \n--- <PROFILE>/project пробел %#/rejected.txt\n+++ <PROFILE>/project пробел %#/rejected.txt\n\n--- <PROFILE>/project пробел %#/manual.txt\n+++ <PROFILE>/project пробел %#/manual.txt\n@@ -1,2 +1,2 @@\n-before\n+manual result\n \n--- <PROFILE>/project пробел %#/added.txt\n+++ <PROFILE>/project пробел %#/added.txt\n@@ -1,0 +1,2 @@\n+new file\n+\n--- <PROFILE>/project пробел %#/deleted.txt\n+++ <PROFILE>/project пробел %#/deleted.txt\n@@ -1,2 +1,0 @@\n-delete me\n-\n--- <PROFILE>/project пробел %#/renamed.txt\n+++ <PROFILE>/project пробел %#/renamed.txt\n@@ -1,2 +1,2 @@\n-move me\n+moved\n \n--- <PROFILE>/project пробел %#/bom.txt\n+++ <PROFILE>/project пробел %#/bom.txt\n",
+      "status": "partial"
+    },
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    },
+    "messageID": "msg_0c67fa821001S2QdlYfyzLzTMt"
+  },
+  "tool": {
+    "output": "Patch review completed with partial changes:\nM accepted.txt\nM rejected.txt (rejected)\nM manual.txt (partial)\nA added.txt\nD deleted.txt\nR moved.txt -> renamed.txt\nM bom.txt (partial)",
+    "input": {
+      "patchText": "*** Begin Patch\n*** Update File: accepted.txt\n@@\n-before\n+after\n*** Update File: rejected.txt\n@@\n-before\n+after\n*** Update File: manual.txt\n@@\n-before\n+after\n*** Add File: added.txt\n+new file\n*** Delete File: deleted.txt\n*** Update File: moved.txt\n*** Move to: renamed.txt\n@@\n-move me\n+moved\n*** Update File: bom.txt\n@@\n-before\n+after\n*** End Patch"
+    },
+    "status": "completed",
+    "metadata": {
+      "status": "partial",
+      "proposed_files": [
+        {
+          "status": "pending",
+          "diff": "--- <PROFILE>/project пробел %#/accepted.txt\n+++ <PROFILE>/project пробел %#/accepted.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+          "deletions": 1,
+          "after": "after\n",
+          "additions": 1,
+          "filePath": "<PROFILE>/project пробел %#/accepted.txt",
+          "relativePath": "accepted.txt",
+          "patch": "--- <PROFILE>/project пробел %#/accepted.txt\n+++ <PROFILE>/project пробел %#/accepted.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+          "proposedDiff": "--- <PROFILE>/project пробел %#/accepted.txt\n+++ <PROFILE>/project пробел %#/accepted.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+          "type": "update",
+          "before": "before\n"
+        },
+        {
+          "status": "pending",
+          "diff": "--- <PROFILE>/project пробел %#/rejected.txt\n+++ <PROFILE>/project пробел %#/rejected.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+          "deletions": 1,
+          "after": "after\n",
+          "additions": 1,
+          "filePath": "<PROFILE>/project пробел %#/rejected.txt",
+          "relativePath": "rejected.txt",
+          "patch": "--- <PROFILE>/project пробел %#/rejected.txt\n+++ <PROFILE>/project пробел %#/rejected.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+          "proposedDiff": "--- <PROFILE>/project пробел %#/rejected.txt\n+++ <PROFILE>/project пробел %#/rejected.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+          "type": "update",
+          "before": "before\n"
+        },
+        {
+          "status": "pending",
+          "diff": "--- <PROFILE>/project пробел %#/manual.txt\n+++ <PROFILE>/project пробел %#/manual.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+          "deletions": 1,
+          "after": "after\n",
+          "additions": 1,
+          "filePath": "<PROFILE>/project пробел %#/manual.txt",
+          "relativePath": "manual.txt",
+          "patch": "--- <PROFILE>/project пробел %#/manual.txt\n+++ <PROFILE>/project пробел %#/manual.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+          "proposedDiff": "--- <PROFILE>/project пробел %#/manual.txt\n+++ <PROFILE>/project пробел %#/manual.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+          "type": "update",
+          "before": "before\n"
+        },
+        {
+          "status": "pending",
+          "diff": "--- <PROFILE>/project пробел %#/added.txt\n+++ <PROFILE>/project пробел %#/added.txt\n@@ -1,0 +1,2 @@\n+new file\n+",
+          "deletions": 0,
+          "after": "new file\n",
+          "additions": 1,
+          "filePath": "<PROFILE>/project пробел %#/added.txt",
+          "relativePath": "added.txt",
+          "patch": "--- <PROFILE>/project пробел %#/added.txt\n+++ <PROFILE>/project пробел %#/added.txt\n@@ -1,0 +1,2 @@\n+new file\n+",
+          "proposedDiff": "--- <PROFILE>/project пробел %#/added.txt\n+++ <PROFILE>/project пробел %#/added.txt\n@@ -1,0 +1,2 @@\n+new file\n+",
+          "type": "add",
+          "before": ""
+        },
+        {
+          "status": "pending",
+          "diff": "--- <PROFILE>/project пробел %#/deleted.txt\n+++ <PROFILE>/project пробел %#/deleted.txt\n@@ -1,2 +1,0 @@\n-delete me\n-",
+          "deletions": 1,
+          "after": "",
+          "additions": 0,
+          "filePath": "<PROFILE>/project пробел %#/deleted.txt",
+          "relativePath": "deleted.txt",
+          "patch": "--- <PROFILE>/project пробел %#/deleted.txt\n+++ <PROFILE>/project пробел %#/deleted.txt\n@@ -1,2 +1,0 @@\n-delete me\n-",
+          "proposedDiff": "--- <PROFILE>/project пробел %#/deleted.txt\n+++ <PROFILE>/project пробел %#/deleted.txt\n@@ -1,2 +1,0 @@\n-delete me\n-",
+          "type": "delete",
+          "before": "delete me\n"
+        },
+        {
+          "movePath": "renamed.txt",
+          "status": "pending",
+          "additions": 1,
+          "deletions": 1,
+          "after": "moved\n",
+          "diff": "--- <PROFILE>/project пробел %#/moved.txt\n+++ <PROFILE>/project пробел %#/moved.txt\n@@ -1,2 +1,2 @@\n-move me\n+moved\n ",
+          "filePath": "<PROFILE>/project пробел %#/moved.txt",
+          "relativePath": "moved.txt",
+          "patch": "--- <PROFILE>/project пробел %#/moved.txt\n+++ <PROFILE>/project пробел %#/moved.txt\n@@ -1,2 +1,2 @@\n-move me\n+moved\n ",
+          "proposedDiff": "--- <PROFILE>/project пробел %#/moved.txt\n+++ <PROFILE>/project пробел %#/moved.txt\n@@ -1,2 +1,2 @@\n-move me\n+moved\n ",
+          "type": "move",
+          "before": "move me\n"
+        },
+        {
+          "status": "pending",
+          "diff": "--- <PROFILE>/project пробел %#/bom.txt\n+++ <PROFILE>/project пробел %#/bom.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+          "deletions": 1,
+          "after": "after\n",
+          "additions": 1,
+          "filePath": "<PROFILE>/project пробел %#/bom.txt",
+          "relativePath": "bom.txt",
+          "patch": "--- <PROFILE>/project пробел %#/bom.txt\n+++ <PROFILE>/project пробел %#/bom.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+          "proposedDiff": "--- <PROFILE>/project пробел %#/bom.txt\n+++ <PROFILE>/project пробел %#/bom.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+          "type": "update",
+          "before": "before\r\n"
+        }
+      ],
+      "files": [
+        {
+          "filePath": "<PROFILE>/project пробел %#/accepted.txt",
+          "after": "after\n",
+          "additions": 1,
+          "deletions": 1,
+          "diff": "--- <PROFILE>/project пробел %#/accepted.txt\n+++ <PROFILE>/project пробел %#/accepted.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+          "patch": "--- <PROFILE>/project пробел %#/accepted.txt\n+++ <PROFILE>/project пробел %#/accepted.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+          "status": "applied",
+          "relativePath": "accepted.txt",
+          "proposed_diff": "--- <PROFILE>/project пробел %#/accepted.txt\n+++ <PROFILE>/project пробел %#/accepted.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+          "proposedDiff": "--- <PROFILE>/project пробел %#/accepted.txt\n+++ <PROFILE>/project пробел %#/accepted.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+          "type": "update",
+          "before": "before\n"
+        },
+        {
+          "filePath": "<PROFILE>/project пробел %#/rejected.txt",
+          "after": "before\n",
+          "additions": 0,
+          "deletions": 0,
+          "diff": "--- <PROFILE>/project пробел %#/rejected.txt\n+++ <PROFILE>/project пробел %#/rejected.txt\n",
+          "patch": "--- <PROFILE>/project пробел %#/rejected.txt\n+++ <PROFILE>/project пробел %#/rejected.txt\n",
+          "status": "rejected",
+          "relativePath": "rejected.txt",
+          "proposed_diff": "--- <PROFILE>/project пробел %#/rejected.txt\n+++ <PROFILE>/project пробел %#/rejected.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+          "proposedDiff": "--- <PROFILE>/project пробел %#/rejected.txt\n+++ <PROFILE>/project пробел %#/rejected.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+          "type": "update",
+          "before": "before\n"
+        },
+        {
+          "filePath": "<PROFILE>/project пробел %#/manual.txt",
+          "after": "manual result\n",
+          "additions": 1,
+          "deletions": 1,
+          "diff": "--- <PROFILE>/project пробел %#/manual.txt\n+++ <PROFILE>/project пробел %#/manual.txt\n@@ -1,2 +1,2 @@\n-before\n+manual result\n ",
+          "patch": "--- <PROFILE>/project пробел %#/manual.txt\n+++ <PROFILE>/project пробел %#/manual.txt\n@@ -1,2 +1,2 @@\n-before\n+manual result\n ",
+          "status": "partial",
+          "relativePath": "manual.txt",
+          "proposed_diff": "--- <PROFILE>/project пробел %#/manual.txt\n+++ <PROFILE>/project пробел %#/manual.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+          "proposedDiff": "--- <PROFILE>/project пробел %#/manual.txt\n+++ <PROFILE>/project пробел %#/manual.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+          "type": "update",
+          "before": "before\n"
+        },
+        {
+          "filePath": "<PROFILE>/project пробел %#/added.txt",
+          "after": "new file\n",
+          "additions": 1,
+          "deletions": 0,
+          "diff": "--- <PROFILE>/project пробел %#/added.txt\n+++ <PROFILE>/project пробел %#/added.txt\n@@ -1,0 +1,2 @@\n+new file\n+",
+          "patch": "--- <PROFILE>/project пробел %#/added.txt\n+++ <PROFILE>/project пробел %#/added.txt\n@@ -1,0 +1,2 @@\n+new file\n+",
+          "status": "applied",
+          "relativePath": "added.txt",
+          "proposed_diff": "--- <PROFILE>/project пробел %#/added.txt\n+++ <PROFILE>/project пробел %#/added.txt\n@@ -1,0 +1,2 @@\n+new file\n+",
+          "proposedDiff": "--- <PROFILE>/project пробел %#/added.txt\n+++ <PROFILE>/project пробел %#/added.txt\n@@ -1,0 +1,2 @@\n+new file\n+",
+          "type": "add",
+          "before": ""
+        },
+        {
+          "filePath": "<PROFILE>/project пробел %#/deleted.txt",
+          "after": "",
+          "additions": 0,
+          "deletions": 1,
+          "diff": "--- <PROFILE>/project пробел %#/deleted.txt\n+++ <PROFILE>/project пробел %#/deleted.txt\n@@ -1,2 +1,0 @@\n-delete me\n-",
+          "patch": "--- <PROFILE>/project пробел %#/deleted.txt\n+++ <PROFILE>/project пробел %#/deleted.txt\n@@ -1,2 +1,0 @@\n-delete me\n-",
+          "status": "applied",
+          "relativePath": "deleted.txt",
+          "proposed_diff": "--- <PROFILE>/project пробел %#/deleted.txt\n+++ <PROFILE>/project пробел %#/deleted.txt\n@@ -1,2 +1,0 @@\n-delete me\n-",
+          "proposedDiff": "--- <PROFILE>/project пробел %#/deleted.txt\n+++ <PROFILE>/project пробел %#/deleted.txt\n@@ -1,2 +1,0 @@\n-delete me\n-",
+          "type": "delete",
+          "before": "delete me\n"
+        },
+        {
+          "movePath": "renamed.txt",
+          "filePath": "<PROFILE>/project пробел %#/moved.txt",
+          "after": "moved\n",
+          "additions": 1,
+          "deletions": 1,
+          "diff": "--- <PROFILE>/project пробел %#/renamed.txt\n+++ <PROFILE>/project пробел %#/renamed.txt\n@@ -1,2 +1,2 @@\n-move me\n+moved\n ",
+          "patch": "--- <PROFILE>/project пробел %#/renamed.txt\n+++ <PROFILE>/project пробел %#/renamed.txt\n@@ -1,2 +1,2 @@\n-move me\n+moved\n ",
+          "status": "applied",
+          "relativePath": "moved.txt",
+          "proposed_diff": "--- <PROFILE>/project пробел %#/moved.txt\n+++ <PROFILE>/project пробел %#/moved.txt\n@@ -1,2 +1,2 @@\n-move me\n+moved\n ",
+          "proposedDiff": "--- <PROFILE>/project пробел %#/moved.txt\n+++ <PROFILE>/project пробел %#/moved.txt\n@@ -1,2 +1,2 @@\n-move me\n+moved\n ",
+          "type": "move",
+          "before": "move me\n"
+        },
+        {
+          "filePath": "<PROFILE>/project пробел %#/bom.txt",
+          "after": "before\n",
+          "additions": 0,
+          "deletions": 0,
+          "diff": "--- <PROFILE>/project пробел %#/bom.txt\n+++ <PROFILE>/project пробел %#/bom.txt\n",
+          "patch": "--- <PROFILE>/project пробел %#/bom.txt\n+++ <PROFILE>/project пробел %#/bom.txt\n",
+          "status": "partial",
+          "relativePath": "bom.txt",
+          "proposed_diff": "--- <PROFILE>/project пробел %#/bom.txt\n+++ <PROFILE>/project пробел %#/bom.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+          "proposedDiff": "--- <PROFILE>/project пробел %#/bom.txt\n+++ <PROFILE>/project пробел %#/bom.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+          "type": "update",
+          "before": "before\r\n"
+        }
+      ],
+      "title": "Patch review completed",
+      "proposed_diff": "--- <PROFILE>/project пробел %#/accepted.txt\n+++ <PROFILE>/project пробел %#/accepted.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n \n--- <PROFILE>/project пробел %#/rejected.txt\n+++ <PROFILE>/project пробел %#/rejected.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n \n--- <PROFILE>/project пробел %#/manual.txt\n+++ <PROFILE>/project пробел %#/manual.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n \n--- <PROFILE>/project пробел %#/added.txt\n+++ <PROFILE>/project пробел %#/added.txt\n@@ -1,0 +1,2 @@\n+new file\n+\n--- <PROFILE>/project пробел %#/deleted.txt\n+++ <PROFILE>/project пробел %#/deleted.txt\n@@ -1,2 +1,0 @@\n-delete me\n-\n--- <PROFILE>/project пробел %#/moved.txt\n+++ <PROFILE>/project пробел %#/moved.txt\n@@ -1,2 +1,2 @@\n-move me\n+moved\n \n--- <PROFILE>/project пробел %#/bom.txt\n+++ <PROFILE>/project пробел %#/bom.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n ",
+      "diff": "--- <PROFILE>/project пробел %#/accepted.txt\n+++ <PROFILE>/project пробел %#/accepted.txt\n@@ -1,2 +1,2 @@\n-before\n+after\n \n--- <PROFILE>/project пробел %#/rejected.txt\n+++ <PROFILE>/project пробел %#/rejected.txt\n\n--- <PROFILE>/project пробел %#/manual.txt\n+++ <PROFILE>/project пробел %#/manual.txt\n@@ -1,2 +1,2 @@\n-before\n+manual result\n \n--- <PROFILE>/project пробел %#/added.txt\n+++ <PROFILE>/project пробел %#/added.txt\n@@ -1,0 +1,2 @@\n+new file\n+\n--- <PROFILE>/project пробел %#/deleted.txt\n+++ <PROFILE>/project пробел %#/deleted.txt\n@@ -1,2 +1,0 @@\n-delete me\n-\n--- <PROFILE>/project пробел %#/renamed.txt\n+++ <PROFILE>/project пробел %#/renamed.txt\n@@ -1,2 +1,2 @@\n-move me\n+moved\n \n--- <PROFILE>/project пробел %#/bom.txt\n+++ <PROFILE>/project пробел %#/bom.txt\n",
+      "truncated": false,
+      "diagnostics": {}
+    },
+    "content": [
+      {
+        "type": "text",
+        "text": "Patch review completed with partial changes:\nM accepted.txt\nM rejected.txt (rejected)\nM manual.txt (partial)\nA added.txt\nD deleted.txt\nR moved.txt -> renamed.txt\nM bom.txt (partial)"
+      }
+    ],
+    "time": {
+      "end": 1790036652830,
+      "start": 1790036652745
+    },
+    "files": []
+  },
+  "after": {
+    "accepted.txt": "after\n",
+    "added.txt": "new file\n",
+    "rejected.txt": "before\n",
+    "manual.txt": "manual result\n",
+    "deleted.txt": false,
+    "bom.txt": "﻿before\n",
+    "moved.txt": false,
+    "renamed.txt": "moved\n"
+  },
+  "before": {
+    "accepted.txt": "before\n",
+    "rejected.txt": "before\n",
+    "manual.txt": "before\n",
+    "deleted.txt": "delete me\n",
+    "moved.txt": "move me\n",
+    "bom.txt": "﻿before\r\n"
+  }
+}

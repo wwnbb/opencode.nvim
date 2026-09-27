@@ -1,0 +1,41 @@
+{
+  "native_mcp": {
+    "auth-fixture": {
+      "status": "needs_auth",
+      "error": "MCP server \"http://127.0.0.1:62181/mcp\" requires user authorization",
+      "name": "auth-fixture",
+      "integrationID": "mcp_91532ae1ebe92831",
+      "_v2": {
+        "status": {
+          "error": "MCP server \"http://127.0.0.1:62181/mcp\" requires user authorization",
+          "status": "needs_auth"
+        },
+        "integrationID": "mcp_91532ae1ebe92831",
+        "name": "auth-fixture"
+      }
+    }
+  },
+  "status_from_real_401": true,
+  "version": "2.0.11",
+  "linked_integration": {
+    "id": "mcp_91532ae1ebe92831",
+    "methods": [
+      {
+        "id": "mcp_91532ae1ebe92831",
+        "type": "oauth",
+        "label": "auth-fixture"
+      }
+    ],
+    "name": "auth-fixture",
+    "metadata": {
+      "source": "mcp"
+    },
+    "connections": []
+  },
+  "no_browser_or_token_request": true,
+  "requests": [
+    "POST /mcp?codemode=false HTTP/1.1",
+    "GET /.well-known/oauth-authorization-server HTTP/1.1"
+  ],
+  "linked_auth_menu": true
+}

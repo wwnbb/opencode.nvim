@@ -1,0 +1,83 @@
+{
+  "session": {
+    "id": "ses_f39c11620ffePmMjsDuQDadzVr",
+    "parentID": "ses_f39c13c07ffemDaDpWAm8BL9Bm",
+    "projectID": "global",
+    "agent": "explore",
+    "model": {
+      "id": "mimo-v2.5-free",
+      "providerID": "opencode",
+      "variant": "default"
+    },
+    "cost": 0,
+    "tokens": {
+      "input": 0,
+      "output": 0,
+      "reasoning": 0,
+      "cache": {
+        "read": 0,
+        "write": 0
+      }
+    },
+    "outcome": "failed",
+    "time": {
+      "created": 1790032407073,
+      "updated": 1790032407074,
+      "idle": 1790032407848
+    },
+    "title": "Small test",
+    "location": {
+      "directory": "<PROFILE>/project пробел %#"
+    }
+  },
+  "history": {
+    "data": [
+      {
+        "id": "msg_0c63eed28001BefGXucdSx4Y8Y",
+        "time": {
+          "created": 1790032407848
+        },
+        "type": "idle",
+        "outcome": "failed"
+      },
+      {
+        "id": "msg_0c63eea2b001OU8q1MkKajO8vK",
+        "time": {
+          "created": 1790032407116,
+          "completed": 1790032407846
+        },
+        "type": "assistant",
+        "agent": "explore",
+        "model": {
+          "id": "mimo-v2.5-free",
+          "providerID": "opencode",
+          "variant": "default"
+        },
+        "content": [],
+        "snapshot": {
+          "start": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+          "end": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+          "files": []
+        },
+        "finish": "error",
+        "error": {
+          "type": "provider.auth",
+          "message": "Error from provider (Console): OpenCode's free tier can only be used from within OpenCode",
+          "status": 403
+        }
+      },
+      {
+        "id": "msg_0c63eea22002Mip3AlB1CGLJNc",
+        "time": {
+          "created": 1790032407080
+        },
+        "text": "You are a subagent spawned by another session.\nReply CHILD_TWO without reading files or using other tools.",
+        "type": "user"
+      }
+    ],
+    "cursor": {
+      "previous": "eyJpZCI6Im1zZ18wYzYzZWVkMjgwMDFCZWZHWHVjZFN4NFk4WSIsIm9yZGVyIjoiZGVzYyIsImRpcmVjdGlvbiI6InByZXZpb3VzIn0",
+      "next": "eyJpZCI6Im1zZ18wYzYzZWVhMjIwMDJNaXAzQWxCMUNHTEpOYyIsIm9yZGVyIjoiZGVzYyIsImRpcmVjdGlvbiI6Im5leHQifQ"
+    }
+  }
+}

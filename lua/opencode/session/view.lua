@@ -20,15 +20,6 @@ end
 
 local function normalize_record(record)
 	record = type(record) == "table" and vim.deepcopy(record) or {}
-	if record.message_count == nil and record.messageCount ~= nil then
-		record.message_count = record.messageCount
-	end
-	if record.messageCount == nil and record.message_count ~= nil then
-		record.messageCount = record.message_count
-	end
-	if record.updated_at == nil and record.updatedAt ~= nil then
-		record.updated_at = record.updatedAt
-	end
 	return record
 end
 
@@ -79,7 +70,7 @@ function METHODS:message_count()
 	if cached_messages.loaded ~= false and cache_count ~= nil then
 		return cache_count
 	end
-	return tonumber(record.message_count or record.messageCount) or cache_count or 0
+	return tonumber(record.message_count) or cache_count or 0
 end
 
 ---@return string
@@ -111,7 +102,6 @@ function METHODS:to_record()
 	record.title = record.title or title
 	record.name = record.name or title or record.id
 	record.message_count = self:message_count()
-	record.messageCount = record.message_count
 	return record
 end
 
@@ -119,7 +109,6 @@ local scalar_fields = {
 	id = true,
 	name = true,
 	updated_at = true,
-	updatedAt = true,
 }
 
 local view_mt = {
@@ -140,9 +129,6 @@ local view_mt = {
 		end
 		if key == "cached_messages" then
 			return vim.deepcopy(data.cached_messages or { count = 0, loaded = false })
-		end
-		if key == "messageCount" then
-			return METHODS.message_count(self)
 		end
 		if scalar_fields[key] then
 			return copy((data.record or {})[key])

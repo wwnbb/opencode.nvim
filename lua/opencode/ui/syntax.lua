@@ -1,6 +1,7 @@
--- Best-effort Treesitter syntax helpers for chat-rendered code snippets.
+-- Best-effort Treesitter syntax helpers for chat and input code snippets.
 
 local M = {}
+local code_blocks = require("opencode.ui.code_blocks")
 
 local DEFAULT_CONFIG = {
 	enabled = true,
@@ -8,6 +9,8 @@ local DEFAULT_CONFIG = {
 	max_lines = 500,
 	max_bytes = 200 * 1024,
 	assistant_markdown = true,
+	user_markdown = true,
+	input_markdown = true,
 	tools = true,
 	diffs = true,
 	languages = {},
@@ -15,6 +18,16 @@ local DEFAULT_CONFIG = {
 
 local DEFAULT_EXTMARK_PRIORITY = 4100
 local syntax_hl_cache = {}
+local generation = 0
+local dependency_generation = 0
+local config_snapshot, effective_config
+local query_dependencies = {}
+local query_signatures = setmetatable({}, { __mode = "k" })
+local parser_dependency
+
+function M.get_generation()
+	return generation
+end
 
 local LANGUAGE_ALIASES = {
 	csharp = "c_sharp",
@@ -48,6 +61,8 @@ local function encode_hl_name(name)
 end
 
 local function clear_syntax_hl_cache()
+	generation = generation + 1
+	dependency_generation = dependency_generation + 1
 	for key in pairs(syntax_hl_cache) do
 		syntax_hl_cache[key] = nil
 	end
@@ -138,16 +153,25 @@ local function get_full_config()
 	return app_state.get_config() or {}
 end
 
----@return table
-function M.get_config()
-	local full_config = get_full_config()
-	return vim.tbl_deep_extend("force", DEFAULT_CONFIG, full_config.syntax or {})
+-- Compare values, not the app config's identity: callers may edit it in place.
+local function config_values()
+	local configured = get_full_config().syntax or {}
+	if not config_snapshot or not vim.deep_equal(config_snapshot, configured) then
+		config_snapshot = vim.deepcopy(configured)
+		effective_config = vim.tbl_deep_extend("force", DEFAULT_CONFIG, config_snapshot)
+		dependency_generation = dependency_generation + 1
+	end
+	return effective_config
 end
 
----@param scope "assistant_markdown"|"tools"|"diffs"|nil
+---@return table
+function M.get_config()
+	return vim.deepcopy(config_values())
+end
+
+---@param scope "assistant_markdown"|"user_markdown"|"input_markdown"|"tools"|"diffs"|nil
 ---@return boolean
-function M.is_enabled(scope)
-	local cfg = M.get_config()
+local function enabled(cfg, scope)
 	if cfg.enabled == false then
 		return false
 	end
@@ -157,22 +181,14 @@ function M.is_enabled(scope)
 	return true
 end
 
+function M.is_enabled(scope)
+	return enabled(config_values(), scope)
+end
+
 ---@param text string
 ---@return string
 local function trim(text)
 	return vim.trim(text or "")
-end
-
----@param lines string[]
----@param first number
----@param last number
----@return string
-local function join_range(lines, first, last)
-	local out = {}
-	for i = first, last do
-		table.insert(out, lines[i] or "")
-	end
-	return table.concat(out, "\n")
 end
 
 ---@param text string
@@ -237,12 +253,11 @@ end
 
 ---@param language string|nil
 ---@return string|nil
-function M.normalize_language(language)
+local function normalize_language(language, cfg)
 	if type(language) ~= "string" or language == "" then
 		return nil
 	end
 
-	local cfg = M.get_config()
 	local raw = trim(language):lower()
 	raw = raw:gsub("^language%-", "")
 	raw = raw:gsub("[^%w_#+%-%.]", "")
@@ -264,6 +279,10 @@ function M.normalize_language(language)
 	end
 
 	return aliased
+end
+
+function M.normalize_language(language)
+	return normalize_language(language, config_values())
 end
 
 ---@param filetype string|nil
@@ -299,31 +318,106 @@ local function has_parser(lang)
 	if not vim.treesitter or not vim.treesitter.language or not vim.treesitter.language.add then
 		return false
 	end
-	local ok = pcall(vim.treesitter.language.add, lang)
-	return ok
+	local ok, added = pcall(vim.treesitter.language.add, lang)
+	return ok and added ~= false
 end
 
 ---@param lang string
 ---@return table|nil
 local function get_query(lang)
-	if not vim.treesitter or not vim.treesitter.query or not vim.treesitter.query.get then
-		return nil
+	local query
+	if vim.treesitter and vim.treesitter.query and vim.treesitter.query.get then
+		local ok, value = pcall(vim.treesitter.query.get, lang, "highlights")
+		if ok then query = value end
 	end
-	local ok, query = pcall(function()
-		return vim.treesitter.query.get(lang, "highlights")
-	end)
-	if not ok then
-		return nil
+	local previous = query_dependencies[lang]
+	if previous and previous.query ~= query then
+		dependency_generation = dependency_generation + 1
 	end
+	query_dependencies[lang] = query and { query = query } or nil
 	return query
+end
+
+---Refresh dependencies once at the start of a transcript render. Query.get is
+---Neovim's own memoized lookup; missing queries are deliberately checked again.
+---Callers that validate their own query dependencies can skip unrelated queries.
+---@param refresh_queries? boolean
+function M.get_cache_generation(refresh_queries)
+	config_values()
+	if refresh_queries ~= false then
+		for lang in pairs(query_dependencies) do get_query(lang) end
+	end
+	local parser = vim.treesitter and vim.treesitter.get_string_parser
+	if parser_dependency and parser_dependency ~= parser then dependency_generation = dependency_generation + 1 end
+	parser_dependency = parser
+	if refresh_queries ~= false then
+		for query in pairs(query_signatures) do M.query_cache_signature(query) end
+	end
+	return dependency_generation
+end
+
+---Read the already observed dependency/theme generation inside one synchronous
+---render. Callback boundaries must still use get_cache_generation to refresh it.
+function M.get_dependency_generation()
+	return dependency_generation
+end
+
+---Persistent source-cache callbacks refresh their own dependencies on use.
+function M.cache_signature(language, opts)
+	opts = opts or {}
+	local cfg = config_values()
+	local lang = normalize_language(language, cfg)
+	local query = lang and get_query(lang) or nil
+	if query then M.query_cache_signature(query) end
+	return table.concat({ tostring(dependency_generation), lang or "", tostring(query),
+		tostring(vim.treesitter and vim.treesitter.get_string_parser),
+		opts.scope or "tools", tostring(opts.min_bytes == nil and cfg.min_bytes or opts.min_bytes),
+		tostring(opts.max_bytes or cfg.max_bytes), tostring(opts.max_lines or cfg.max_lines),
+		tostring(opts.priority or DEFAULT_EXTMARK_PRIORITY) }, "\0")
+end
+
+---Only known pure runtime predicates/directives are safe to memoize. Optional
+---inspection failures simply retain the ordinary full capture computation.
+function M.query_cache_signature(query)
+	local signature = require("opencode.ui.syntax_query").signature(query)
+	if type(query) == "table" then
+		local previous = query_signatures[query]
+		if previous ~= nil and previous ~= (signature or false) then
+			dependency_generation = dependency_generation + 1
+		end
+		query_signatures[query] = signature or false
+	end
+	return signature
+end
+
+function M.query_is_cacheable(query)
+	return M.query_cache_signature(query) ~= nil
+end
+
+---Input memoization additionally guards parser availability and function
+---replacement, and refuses query handlers that can depend on external state.
+function M.highlight_cache_signature(language, opts)
+	local signature = M.cache_signature(language, opts)
+	local lang = M.normalize_language(language)
+	if not lang then return signature, true end
+	if not has_parser(lang) then return signature, false end
+	local query = get_query(lang)
+	local query_signature = query and M.query_cache_signature(query)
+	if not query_signature then return signature, false end
+	return signature .. "\0" .. query_signature .. "\0" .. tostring(vim.treesitter.get_string_parser), true
+end
+
+---Callbacks predating result statuses treated every empty capture set as retry.
+function M.needs_retry(highlights, status)
+	return status == "retry" or (status ~= "ok" and status ~= "skipped" and #highlights == 0)
 end
 
 ---@param text string
 ---@param opts table|nil
 ---@return boolean
-local function within_limits(text, opts)
+local function within_limits(text, opts, cfg)
 	opts = opts or {}
-	local cfg = M.get_config()
+	cfg = cfg or config_values()
 	local max_bytes = opts.max_bytes or cfg.max_bytes or DEFAULT_CONFIG.max_bytes
 	local max_lines = opts.max_lines or cfg.max_lines or DEFAULT_CONFIG.max_lines
 	if max_bytes and max_bytes > 0 and #text > max_bytes then
@@ -338,9 +432,9 @@ end
 ---@param text string
 ---@param opts table|nil
 ---@return boolean
-local function too_small_for_syntax(text, opts)
+local function too_small_for_syntax(text, opts, cfg)
 	opts = opts or {}
-	local cfg = M.get_config()
+	cfg = cfg or config_values()
 	local min_bytes = opts.min_bytes
 	if min_bytes == nil then
 		min_bytes = cfg.min_bytes or DEFAULT_CONFIG.min_bytes
@@ -350,65 +444,77 @@ end
 
 ---@param metadata table|nil
 ---@param capture number
+---@param base_priority number|nil
 ---@return number
-local function capture_priority(metadata, capture)
+local function capture_priority(metadata, capture, base_priority)
+	base_priority = base_priority or DEFAULT_EXTMARK_PRIORITY
 	local meta = metadata or {}
 	local raw_priority = tonumber(meta.priority or (meta[capture] and meta[capture].priority))
 	if not raw_priority then
-		return DEFAULT_EXTMARK_PRIORITY
+		return base_priority
 	end
 
 	local ts_priority = vim.hl and vim.hl.priorities and vim.hl.priorities.treesitter or 100
-	return DEFAULT_EXTMARK_PRIORITY + (raw_priority - ts_priority)
+	return base_priority + (raw_priority - ts_priority)
 end
 
 ---@param text string
 ---@param language string|nil
 ---@param opts? table
 ---@return table[] highlights
+---@return "ok"|"skipped"|"retry" status
 function M.highlight_text(text, language, opts)
 	opts = opts or {}
 	text = type(text) == "string" and text or tostring(text or "")
-	if text == "" or not M.is_enabled(opts.scope or "tools") or not within_limits(text, opts) then
-		return {}
+	local cfg = config_values()
+	if text == "" or not enabled(cfg, opts.scope or "tools") or not within_limits(text, opts, cfg) then
+		return {}, "skipped"
 	end
-	if too_small_for_syntax(text, opts) then
-		return {}
+	if too_small_for_syntax(text, opts, cfg) then
+		return {}, "skipped"
 	end
 
-	local lang = M.normalize_language(language)
-	if not lang or not has_parser(lang) then
-		return {}
-	end
+	local lang = normalize_language(language, cfg)
+	if not lang then return {}, "skipped" end
+	if not has_parser(lang) then return {}, "retry" end
 
 	local query = get_query(lang)
 	if not query then
-		return {}
+		return {}, "retry"
 	end
 
-	local ok_parser, parser = pcall(vim.treesitter.get_string_parser, text, lang)
-	if not ok_parser or not parser then
-		return {}
-	end
-
-	local ok_parse, trees = pcall(function()
-		return parser:parse()
-	end)
-	if not ok_parse or type(trees) ~= "table" then
-		return {}
+	-- The input owns exact-source AST snapshots under its shared memo budget.
+	-- Captures are still evaluated every time: native query disable_* methods
+	-- mutate state that query inspection cannot observe (including saved aliases).
+	local trees = opts.scope == "input_markdown" and opts._syntax_trees or nil
+	if not trees then
+		local ok_parser, parser = pcall(vim.treesitter.get_string_parser, text, lang)
+		if not ok_parser or not parser then return {}, "retry" end
+		local ok_parse
+		ok_parse, trees = pcall(function() return parser:parse() end)
+		if not ok_parse or type(trees) ~= "table" then return {}, "retry" end
 	end
 
 	local highlights = {}
 	local line_count = #split_lines(text)
+	local parsed_tree = false
 	for _, tree in pairs(trees) do
-		local root = tree and tree:root()
+		local ok_root, root = pcall(function() return tree and tree:root() end)
+		if not ok_root then return {}, "retry" end
 		if root then
+			parsed_tree = true
 			local ok_loop = pcall(function()
 				for capture, node, metadata in query:iter_captures(root, text, 0, line_count) do
 					local capture_name = query.captures[capture]
 					if type(capture_name) == "string" and capture_name:sub(1, 1) ~= "_" then
 						local hl_group = syntax_hl_group("@" .. capture_name .. "." .. lang)
-						local range_ok, range = pcall(vim.treesitter.get_range, node, text, metadata and metadata[capture])
+						local capture_metadata = metadata and metadata[capture]
+						local range_ok, range
+						-- Most captures have no offset/trim directives. Avoid allocating
+						-- a range table and a protected call for every streamed token.
+						if capture_metadata then
+							range_ok, range = pcall(vim.treesitter.get_range, node, text, capture_metadata)
+						end
 						local row_start, col_start, row_end, col_end
 						if range_ok and type(range) == "table" then
 							if #range >= 6 then
@@ -433,19 +539,57 @@ function M.highlight_text(text, language, opts)
 								end_line = row_end,
 								end_col = col_end,
 								hl_group = hl_group,
-								priority = capture_priority(metadata, capture),
+								priority = capture_priority(metadata, capture, opts.priority),
 							})
 						end
 					end
 				end
 			end)
 			if not ok_loop then
-				return {}
+				return {}, "retry"
 			end
 		end
 	end
 
-	return highlights
+	if not parsed_tree then return {}, "retry" end
+	-- Extension predicates can depend on state outside the snippet. Preserve
+	-- their captures, but require the ordinary computation on the next update.
+	local status = M.query_is_cacheable(query) and "ok" or "retry"
+	return highlights, status, opts._return_syntax_trees and status == "ok" and trees or nil
+end
+
+---Map source captures to decorated/wrapped rows. row_map is indexed by
+---one-based source line; each row uses zero-based, end-exclusive byte ranges.
+---Missing rows are hidden. Prefixes and padding never receive code highlights.
+function M.project_highlights(highlights, source_lines, row_map)
+	local result = {}
+	for _, hl in ipairs(highlights or {}) do
+		local first = hl.line or 0
+		local last = hl.end_line or first
+		for source_line = first, math.min(last, #source_lines - 1) do
+			local text = source_lines[source_line + 1]
+			local start_col = source_line == first and (hl.col_start or 0) or 0
+			local end_col = source_line == last and (hl.end_col or hl.col_end) or #text
+			end_col = normalize_end_col(end_col, text)
+			for _, row in ipairs(row_map[source_line + 1] or {}) do
+				local row_start = row.byte_start or 0
+				local row_end = row.byte_end or (row_start + #(row.text or ""))
+				local overlap_start = math.max(start_col, row_start)
+				local overlap_end = math.min(end_col, row_end, #text)
+				if overlap_end > overlap_start then
+					local offset = row.col_offset or #(row.prefix or "")
+					result[#result + 1] = {
+						line = row.line_index,
+						col_start = offset + overlap_start - row_start,
+						col_end = offset + overlap_end - row_start,
+						hl_group = hl.hl_group,
+						priority = hl.priority,
+					}
+				end
+			end
+		end
+	end
+	return result
 end
 
 ---@param result table
@@ -457,81 +601,50 @@ function M.add_highlights(result, text, language, opts)
 	opts = opts or {}
 	result.highlights = result.highlights or {}
 
-	local highlights = M.highlight_text(text, language, opts)
+	local highlights, status = M.highlight_text(text, language, opts)
+	if M.needs_retry(highlights, status) then result._opencode_syntax_retry = true end
 	local line_start = opts.line_start or 0
 	local col_offset = opts.col_offset or 0
 	local source_lines = split_lines(text)
 	for _, hl in ipairs(highlights) do
 		append_offset_highlight(result.highlights, source_lines, hl, line_start, col_offset)
 	end
-	return highlights
+	return highlights, status
 end
 
----@param fence string
----@return string
-local function close_pattern(fence)
-	local marker = fence:sub(1, 1)
-	local escaped = marker == "`" and "`" or "~"
-	return "^%s*" .. escaped .. escaped .. escaped .. "+%s*$"
-end
-
----@param info string|nil
----@return string|nil
-local function language_from_fence_info(info)
-	info = trim(info or "")
-	local lang = info:match("^([^%s{]+)")
-	return M.normalize_language(lang)
-end
-
----@param text string
----@param opts? table
----@return table[] highlights
+---Highlight fences in source coordinates. The optional callback owns caching;
+---this module never depends on chat state or rendered line positions.
 function M.highlight_markdown_fenced_blocks(text, opts)
 	opts = opts or {}
 	text = type(text) == "string" and text or tostring(text or "")
 	if text == "" or not M.is_enabled(opts.scope or "assistant_markdown") then
-		return {}
+		return {}, false
 	end
-	if opts.compat_markdown ~= false then
-		local full_config = get_full_config()
-		if full_config.markdown and full_config.markdown.enable_code_highlight == false then
-			return {}
-		end
-	end
-
-	local lines = split_lines(text)
-	local highlights = {}
-	local i = 1
-	while i <= #lines do
-		local fence, info = lines[i]:match("^%s*(```+)%s*(.-)%s*$")
-		if not fence then
-			fence, info = lines[i]:match("^%s*(~~~+)%s*(.-)%s*$")
-		end
-		if not fence then
-			i = i + 1
-		else
-			local lang = language_from_fence_info(info)
-			local code_start = i + 1
-			i = i + 1
-			while i <= #lines and not lines[i]:match(close_pattern(fence)) do
-				i = i + 1
+	local blocks = code_blocks.parse(text)
+	local highlights, retry = {}, false
+	local highlight_opts = vim.tbl_extend("force", opts, {
+		scope = opts.scope or "assistant_markdown",
+		min_bytes = 0,
+	})
+	for _, block in ipairs(blocks) do
+		local lang = M.normalize_language(block.info:match("^([^%s{]+)"))
+		if lang and #block.lines > 0 then
+			local code = table.concat(block.lines, "\n")
+			local captures, status = (opts.highlight_code or M.highlight_text)(code, lang, highlight_opts, block)
+			retry = retry or M.needs_retry(captures, status)
+			local rows = {}
+			for index, line in ipairs(block.lines) do
+				rows[index] = { {
+					line_index = block.start_line + index - 1,
+					byte_start = 0,
+					byte_end = #line,
+					col_offset = block.offsets[index],
+				} }
 			end
-			local code_end = i - 1
-			if lang and code_end >= code_start then
-				local code = join_range(lines, code_start, code_end)
-				local code_lines = split_lines(code)
-				local highlight_opts = vim.tbl_extend("force", opts, {
-					scope = opts.scope or "assistant_markdown",
-				})
-				for _, hl in ipairs(M.highlight_text(code, lang, highlight_opts)) do
-					append_offset_highlight(highlights, code_lines, hl, code_start - 1, 0)
-				end
-			end
-			i = i + 1
+			vim.list_extend(highlights, M.project_highlights(captures, block.lines, rows))
 		end
 	end
-
-	return highlights
+	return highlights, retry
 end
 
 ---@param result table
@@ -542,7 +655,8 @@ function M.add_markdown_highlights(result, text, opts)
 	opts = opts or {}
 	result.highlights = result.highlights or {}
 
-	local highlights = M.highlight_markdown_fenced_blocks(text, opts)
+	local highlights, retry = M.highlight_markdown_fenced_blocks(text, opts)
+	if retry then result._opencode_syntax_retry = true end
 	local line_start = opts.line_start or 0
 	local col_offset = opts.col_offset or 0
 	for _, hl in ipairs(highlights) do

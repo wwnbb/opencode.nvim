@@ -6,22 +6,20 @@ local M = {}
 local Popup = require("nui.popup")
 local event = require("nui.utils.autocmd").event
 local app_state = require("opencode.state")
+local command_registry = require("opencode.command_registry")
 local hl_ns = vim.api.nvim_create_namespace("opencode_palette")
 
 -- Configuration
 local config = {
-	width = 70,
+	width = 60,
 	height = 20,
-	border = "rounded",
+	border = "none",
 	frecency = true,
 	show_keybinds = true,
-	show_icons = true,
+	show_icons = false,
 	frecency_file = vim.fn.stdpath("data") .. "/opencode_palette_frecency.json",
 	max_frecency_entries = 100,
 }
-
--- Command registry
-local commands = {}
 
 -- Frecency data: { [command_id] = { count = number, last_used = timestamp } }
 local frecency_data = {}
@@ -162,34 +160,17 @@ local function get_frecency_score(cmd_id)
 	return score
 end
 
--- Register a command
----@param cmd table { id, title, description?, category, keybind?, action, enabled?, suggested? }
+-- Compatibility adapter for palette.register({ action = function() ... end }).
+-- Built-ins and new callers use the same canonical registry record.
+---@param cmd table { id, title, description?, category, keybind?, action?, run?, enabled?, suggested?, slash?, on_select? }
 function M.register(cmd)
-	if not cmd.id or not cmd.title or not cmd.category or not cmd.action then
-		error("Command must have id, title, category, and action")
+	if not cmd.id or not cmd.title or not cmd.category or not (cmd.run or cmd.action) then
+		error("Command must have id, title, category, and run or action")
 	end
-	commands[cmd.id] = {
-		id = cmd.id,
-		title = cmd.title,
-		description = cmd.description or "",
-		category = cmd.category,
-		keybind = cmd.keybind,
-		action = cmd.action,
-		enabled = cmd.enabled,
-		suggested = cmd.suggested or false,
-	}
-end
-
--- Check if command is enabled
-local function is_enabled(cmd)
-	if cmd.enabled == nil then
-		return true
-	end
-	if type(cmd.enabled) == "function" then
-		local ok, result = pcall(cmd.enabled)
-		return ok and result
-	end
-	return cmd.enabled
+	local record = vim.tbl_extend("force", {}, cmd)
+	record.run = cmd.run or cmd.action
+	record.action = nil
+	return command_registry.register(record)
 end
 
 -- Simple fuzzy match function
@@ -239,8 +220,8 @@ end
 local function filter_commands(query)
 	local results = {}
 
-	for _, cmd in pairs(commands) do
-		if is_enabled(cmd) then
+	for _, cmd in ipairs(command_registry.all()) do
+		if cmd.palette ~= false and command_registry.enabled(cmd) then
 			-- Match against title, description, and category
 			local match_title, score_title = fuzzy_match(query, cmd.title)
 			local match_desc, score_desc = fuzzy_match(query, cmd.description)
@@ -283,11 +264,43 @@ local function filter_commands(query)
 		return a.cmd.title < b.cmd.title
 	end)
 
-	return results
+	local grouped, order = {}, {}
+	for _, result in ipairs(results) do
+		local category = result.cmd.category
+		if not grouped[category] then
+			grouped[category] = {}
+			table.insert(order, category)
+		end
+		table.insert(grouped[category], result)
+	end
+	if not query or query == "" then
+		table.sort(order, function(a, b)
+			local left, right = category_order[a] or 999, category_order[b] or 999
+			return left == right and a < b or left < right
+		end)
+	end
+
+	local rows = {}
+	if not query or query == "" then
+		for _, result in ipairs(results) do
+			if result.cmd.suggested then
+				table.insert(rows, { cmd = result.cmd, category = "suggested" })
+			end
+		end
+	end
+	for _, category in ipairs(order) do
+		for _, result in ipairs(grouped[category]) do
+			table.insert(rows, result)
+		end
+	end
+	return rows
 end
 
 -- Get category display info
 local function get_category_info(category_id)
+	if category_id == "suggested" then
+		return { name = "Suggested", icon = "" }
+	end
 	for _, cat in ipairs(categories) do
 		if cat.id == category_id then
 			return cat
@@ -352,27 +365,29 @@ local function truncate_with_ellipsis(text, max_width)
 	return truncate_display_width(text, max_width - ellipsis_width) .. ellipsis
 end
 
--- Highlight groups
-local highlights = {
-	PaletteNormal = { link = "Normal" },
-	PaletteTitle = { link = "Title" },
-	PaletteCategory = { link = "Type" },
-	PaletteKeybind = { link = "Comment" },
-	PaletteMatch = { link = "Search" },
-	PaletteSelected = { link = "CursorLine" },
-	PalettePrompt = { link = "Question" },
-	PaletteIcon = { link = "Special" },
-}
-
--- Setup highlights
+-- Keep the existing theme colors; only the dialog layout changes.
 local function setup_highlights()
-	for name, opts in pairs(highlights) do
-		vim.api.nvim_set_hl(0, "OpenCode" .. name, opts)
+	local highlights = {
+		Normal = "NormalFloat",
+		Title = "Title",
+		Category = "Type",
+		Keybind = "Comment",
+		Match = "Search",
+		Selected = "CursorLine",
+		Prompt = "Question",
+		Icon = "Special",
+	}
+	for name, link in pairs(highlights) do
+		vim.api.nvim_set_hl(0, "OpenCodePalette" .. name, { link = link, default = true })
 	end
 end
 
+require("opencode.ui.highlights").register("opencode.ui.palette", setup_highlights)
+
 -- State
 local state = {
+	frame = nil,
+	max_list_height = 20,
 	popup = nil,
 	input_popup = nil,
 	query = "",
@@ -449,39 +464,39 @@ local function render_list()
 
 	local lines = {}
 	local highlights_to_apply = {}
-	local max_width = state.popup.win_config.width - 2
+	local max_width = state.popup.win_config.width
+	local content_width = math.max(0, max_width - 6)
 
 	local current_category = nil
 
 	for i, result in ipairs(state.results) do
 		local cmd = result.cmd
-		local cat_info = get_category_info(cmd.category)
+		local category = result.category or cmd.category
+		local cat_info = get_category_info(category)
 
 		-- Add category header if changed
-		if cmd.category ~= current_category then
-			current_category = cmd.category
+		if category ~= current_category then
+			current_category = category
 			if #lines > 0 then
 				table.insert(lines, "")
 			end
 			local icon = config.show_icons and cat_info.icon or ""
-			local header = string.format(" %s %s", icon, cat_info.name)
+			local header = "   " .. (icon ~= "" and (icon .. " ") or "") .. cat_info.name
+			header = truncate_display_width(header, max_width)
 			table.insert(lines, header)
 			table.insert(highlights_to_apply, { #lines, "OpenCodePaletteCategory", 0, -1 })
 		end
 
 		-- Format command line
 		local keybind_str = format_keybind(cmd.keybind)
+		-- Leave room for a readable title even with a long custom mapping.
+		keybind_str = truncate_display_width(keybind_str, math.max(0, content_width - 8))
 		local keybind_width = vim.fn.strdisplaywidth(keybind_str)
-		local available = max_width - keybind_width - 6 -- padding
-
-		local title = cmd.title
-		if vim.fn.strdisplaywidth(title) > available then
-			title = truncate_with_ellipsis(title, available)
-		end
-
+		local available = math.max(0, content_width - keybind_width - (keybind_width > 0 and 2 or 0))
+		local title = truncate_with_ellipsis(cmd.title, available)
 		local title_width = vim.fn.strdisplaywidth(title)
-		local padding = max_width - title_width - keybind_width - 4
-		local line = string.format("  %s%s%s", title, string.rep(" ", math.max(1, padding)), keybind_str)
+		local padding = math.max(0, content_width - title_width - keybind_width)
+		local line = "   " .. title .. string.rep(" ", padding) .. keybind_str .. "   "
 
 		table.insert(lines, line)
 
@@ -494,16 +509,22 @@ local function render_list()
 		end
 		if keybind_width > 0 then
 			-- Extmark columns are byte offsets even though layout uses display width.
-			table.insert(highlights_to_apply, { #lines, "OpenCodePaletteKeybind", #line - #keybind_str, -1 })
+			table.insert(highlights_to_apply, { #lines, "OpenCodePaletteKeybind", #line - #keybind_str - 3, #line - 3 })
 		end
 	end
 
 	if #lines == 0 then
 		table.insert(lines, "")
-		table.insert(lines, "  No matching commands")
-		table.insert(highlights_to_apply, { 2, "Comment", 0, -1 })
+		table.insert(lines, truncate_display_width("   No results found", max_width))
+		table.insert(highlights_to_apply, { 2, "OpenCodePaletteKeybind", 0, -1 })
 	end
 
+	-- Like DialogSelect, shrink the surface when filtering leaves fewer rows.
+	local list_height = math.min(state.max_list_height, #lines)
+	if state.popup.win_config.height ~= list_height then
+		state.popup:update_layout({ size = { width = max_width, height = list_height } })
+		state.frame:update_layout({ size = { width = state.frame.win_config.width, height = list_height + 7 } })
+	end
 	vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
 
 	-- Apply highlights
@@ -523,6 +544,11 @@ local function render_list()
 		local selected_result = state.results[state.selected]
 		if selected_result and selected_result.line then
 			vim.api.nvim_win_set_cursor(state.popup.winid, { selected_result.line, 0 })
+			if state.selected == 1 then
+				vim.api.nvim_win_call(state.popup.winid, function()
+					vim.fn.winrestview({ topline = 1 })
+				end)
+			end
 		end
 	end
 end
@@ -537,13 +563,17 @@ end
 -- Execute selected command
 local function execute_selected()
 	local result = state.results[state.selected]
-	if result and result.cmd and result.cmd.action then
+	if result and result.cmd then
+		local command = command_registry.get(result.cmd.id)
+		if not command or command.palette == false or not command_registry.enabled(command) then
+			return
+		end
 		-- Track usage before hiding
-		track_command_usage(result.cmd.id)
+		track_command_usage(command.id)
 
 		M.hide()
 		vim.schedule(function()
-			local ok, err = pcall(result.cmd.action)
+			local ok, err = pcall(command_registry.run, command.id, { source = "palette" })
 			if not ok then
 				vim.notify("Command error: " .. tostring(err), vim.log.levels.ERROR)
 			end
@@ -584,6 +614,12 @@ function M.hide()
 		end)
 		state.popup = nil
 	end
+	if state.frame then
+		pcall(function()
+			state.frame:unmount()
+		end)
+		state.frame = nil
+	end
 	state.query = ""
 	state.selected = 1
 	state.results = {}
@@ -614,106 +650,117 @@ function M.show()
 	-- Save current window to restore focus on close
 	state.prev_win = vim.api.nvim_get_current_win()
 
-	-- Calculate dimensions
-	local ui_list = vim.api.nvim_list_uis()
-	local ui = ui_list and ui_list[1] or { width = 80, height = 24 }
+	-- One surface: title at row 1, search at row 3, list at row 5.
+	-- The inner windows share the frame background and have no borders.
 	local target_win, float_dims = resolve_palette_target()
-
-	local width, height, row, col
-	local relative
-	local input_zindex = PALETTE_ZINDEX + 1
-	local popup_zindex = PALETTE_ZINDEX
-
-	local has_float_dims = type(float_dims) == "table"
-		and type(float_dims.row) == "number"
-		and type(float_dims.col) == "number"
+	local screen_width, screen_height = vim.o.columns, vim.o.lines - vim.o.cmdheight
+	local anchor_row, anchor_col = 0, 0
+	local anchor_width, anchor_height = screen_width, screen_height
+	local relative = "editor"
+	if
+		type(float_dims) == "table"
 		and type(float_dims.width) == "number"
 		and type(float_dims.height) == "number"
-		and float_dims.width >= 20
-		and float_dims.height >= 8
-
-	if has_float_dims then
-		-- Float mode (same strategy as input.show): editor-relative absolute placement.
-		local anchor_row = float_dims.row + 1
-		local anchor_col = float_dims.col + 1
-		local anchor_width = math.max(20, float_dims.width - 2)
-		local anchor_height = math.max(8, float_dims.height - 2)
-
-		local max_width = math.max(20, math.min(anchor_width - 4, ui.width - 10))
-		local max_height = math.max(6, math.min(anchor_height - 6, ui.height - 8))
-		width = math.min(config.width, max_width)
-		height = math.min(config.height, max_height)
-		row = anchor_row + math.floor((anchor_height - height - 3) / 2)
-		col = anchor_col + math.floor((anchor_width - width) / 2)
-
-		-- Clamp absolute editor-relative position to current screen bounds.
-		row = math.max(0, math.min(row, math.max(0, ui.height - (height + 3))))
-		col = math.max(0, math.min(col, math.max(0, ui.width - width)))
-
-		relative = "editor"
-		input_zindex = PALETTE_ZINDEX + 1
-		popup_zindex = PALETTE_ZINDEX
-	else
-		-- Split mode: window-relative placement inside chat window.
-		local win_width = ui.width
-		local win_height = ui.height
-		if target_win and vim.api.nvim_win_is_valid(target_win) then
-			win_width = vim.api.nvim_win_get_width(target_win)
-			win_height = vim.api.nvim_win_get_height(target_win)
-			relative = { type = "win", winid = target_win }
-		else
-			relative = "editor"
-		end
-
-		local max_width = math.max(20, win_width - 4)
-		local max_height = math.max(6, win_height - 6)
-		width = math.min(config.width, max_width)
-		height = math.min(config.height, max_height)
-		row = math.max(0, math.floor((win_height - height - 3) / 2))
-		col = math.max(0, math.floor((win_width - width) / 2))
+		and type(float_dims.row) == "number"
+		and type(float_dims.col) == "number"
+	then
+		anchor_row, anchor_col = float_dims.row + 1, float_dims.col + 1
+		anchor_width, anchor_height = float_dims.width - 2, float_dims.height - 2
+	elseif target_win and vim.api.nvim_win_is_valid(target_win) then
+		anchor_width = vim.api.nvim_win_get_width(target_win)
+		anchor_height = vim.api.nvim_win_get_height(target_win)
+		relative = { type = "win", winid = target_win }
 	end
-
-	-- Create input popup at top
-	state.input_popup = Popup({
-		enter = true,
-		focusable = true,
-		relative = relative,
-		zindex = input_zindex,
-		border = {
-			style = config.border,
-			text = {
-				top = " 󰘳 Command Palette ",
-				top_align = "center",
-			},
-		},
-		position = { row = row, col = col },
-		size = { width = width, height = 1 },
-	})
-
-	-- Create results popup below
-	state.popup = Popup({
+	-- Tiny splits cannot hold the header and search; use the editor in that case.
+	if anchor_width < 22 or anchor_height < 12 then
+		anchor_row, anchor_col = 0, 0
+		anchor_width, anchor_height = screen_width, screen_height
+		relative = "editor"
+	end
+	local border = config.border or "none"
+	local border_size = border == "none" and 0 or 2
+	local width = math.max(10, math.min(config.width, anchor_width - 2, screen_width - 2 - border_size))
+	local height = math.max(1, math.min(config.height, anchor_height - 9, screen_height - 9 - border_size))
+	state.max_list_height = height
+	local frame_height = height + 7
+	local row = math.max(0, anchor_row + math.floor((anchor_height - frame_height - border_size) / 2))
+	local col = math.max(0, anchor_col + math.floor((anchor_width - width - border_size) / 2))
+	if relative == "editor" then
+		row = math.min(row, math.max(0, screen_height - frame_height - border_size))
+		col = math.min(col, math.max(0, screen_width - width - border_size))
+	end
+	local window_options = {
+		winhighlight = "Normal:OpenCodePaletteNormal,NormalNC:OpenCodePaletteNormal,FloatBorder:OpenCodePaletteNormal,EndOfBuffer:OpenCodePaletteNormal",
+		winblend = 0,
+		wrap = false,
+		cursorline = false,
+		scrolloff = 0,
+	}
+	state.frame = Popup({
 		enter = false,
 		focusable = false,
 		relative = relative,
-		zindex = popup_zindex,
-		border = {
-			style = config.border,
-		},
-		position = { row = row + 3, col = col },
-		size = { width = width, height = height },
+		zindex = PALETTE_ZINDEX,
+		border = border,
+		position = { row = row, col = col },
+		size = { width = width, height = frame_height },
+		win_options = window_options,
 	})
-
-	state.input_popup:mount()
+	state.frame:mount()
+	local frame_buf = state.frame.bufnr
+	local title = truncate_display_width("Commands", math.max(0, width - 12))
+	local header = "    " .. title .. string.rep(" ", math.max(0, width - #title - 11)) .. "esc    "
+	vim.api.nvim_buf_set_lines(frame_buf, 0, -1, false, { "", header })
+	vim.api.nvim_buf_set_extmark(frame_buf, hl_ns, 1, 4, { end_col = 4 + #title, hl_group = "OpenCodePaletteTitle" })
+	vim.api.nvim_buf_set_extmark(
+		frame_buf,
+		hl_ns,
+		1,
+		#header - 7,
+		{ end_col = #header - 4, hl_group = "OpenCodePaletteKeybind" }
+	)
+	vim.bo[frame_buf].modifiable = false
+	local inner_relative = { type = "win", winid = state.frame.winid }
+	state.popup = Popup({
+		enter = false,
+		focusable = false,
+		relative = inner_relative,
+		zindex = PALETTE_ZINDEX + 1,
+		border = "none",
+		position = { row = 5, col = 1 },
+		size = { width = width - 2, height = height },
+		win_options = window_options,
+	})
+	state.input_popup = Popup({
+		enter = true,
+		focusable = true,
+		relative = inner_relative,
+		zindex = PALETTE_ZINDEX + 2,
+		border = "none",
+		position = { row = 3, col = 4 },
+		size = { width = math.max(1, width - 8), height = 1 },
+		win_options = window_options,
+	})
 	state.popup:mount()
+	state.input_popup:mount()
 
 	local input_buf = state.input_popup.bufnr
 	local popup_buf = state.popup.bufnr
-
-	-- Set input buffer options
 	vim.bo[input_buf].buftype = "prompt"
 	vim.bo[input_buf].filetype = "opencode_palette"
 	vim.bo[popup_buf].filetype = "opencode_palette"
-	vim.fn.prompt_setprompt(input_buf, " > ")
+	vim.fn.prompt_setprompt(input_buf, "")
+
+	local function update_placeholder()
+		vim.api.nvim_buf_clear_namespace(input_buf, hl_ns, 0, -1)
+		if state.query == "" then
+			vim.api.nvim_buf_set_extmark(input_buf, hl_ns, 0, 0, {
+				virt_text = { { "Search", "OpenCodePalettePrompt" } },
+				virt_text_pos = "overlay",
+			})
+		end
+	end
+	update_placeholder()
 
 	-- Start insert mode
 	vim.cmd("startinsert!")
@@ -722,13 +769,13 @@ function M.show()
 	update_results()
 
 	-- Setup input handling
-	vim.api.nvim_create_autocmd("TextChangedI", {
+	vim.api.nvim_create_autocmd({ "TextChangedI", "TextChanged" }, {
 		buffer = input_buf,
 		callback = function()
 			local lines = vim.api.nvim_buf_get_lines(input_buf, 0, 1, false)
 			local line = lines[1] or ""
-			-- Remove prompt prefix
-			state.query = line:gsub("^ > ", ""):gsub("^> ", "")
+			state.query = line
+			update_placeholder()
 			state.selected = 1
 			update_results()
 		end,
@@ -777,9 +824,12 @@ function M.show()
 	end, opts)
 
 	-- Handle window close
+	local input_popup = state.input_popup
 	state.input_popup:on(event.BufLeave, function()
 		vim.schedule(function()
-			M.hide()
+			if state.input_popup == input_popup then
+				M.hide()
+			end
 		end)
 	end)
 end
@@ -809,15 +859,18 @@ function M.get_winids()
 		table.insert(wins, state.popup.winid)
 	end
 
+	if state.frame and state.frame.winid and vim.api.nvim_win_is_valid(state.frame.winid) then
+		table.insert(wins, state.frame.winid)
+	end
 	return wins
 end
 
 -- Trigger a command by ID
 function M.trigger(id)
-	local cmd = commands[id]
-	if cmd and is_enabled(cmd) and cmd.action then
+	local cmd = command_registry.get(id)
+	if cmd and cmd.palette ~= false and command_registry.enabled(cmd) then
 		track_command_usage(id)
-		local ok, err = pcall(cmd.action)
+		local ok, err = pcall(command_registry.run, id, { source = "palette" })
 		if not ok then
 			vim.notify("Command error: " .. tostring(err), vim.log.levels.ERROR)
 		end
@@ -849,7 +902,7 @@ local default_command_modules = {
 	end,
 }
 
-local function register_defaults()
+function M.register_defaults()
 	for _, load_module in ipairs(default_command_modules) do
 		load_module().register(M)
 	end
@@ -860,7 +913,7 @@ function M.setup()
 	load_config()
 	load_frecency()
 	setup_highlights()
-	register_defaults()
+	M.register_defaults()
 end
 
 return M

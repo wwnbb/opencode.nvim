@@ -1,0 +1,76 @@
+{
+  "data": [
+    {
+      "id": "msg_0c5cc5c33001alh9uq9fFUc1mI",
+      "time": {
+        "created": 1790024899635
+      },
+      "type": "idle",
+      "outcome": "succeeded"
+    },
+    {
+      "id": "msg_0c5cc4dcb001Wl1MEph2QletdJ",
+      "time": {
+        "created": 1790024895954,
+        "streamed": 1790024899632,
+        "completed": 1790024899633
+      },
+      "type": "assistant",
+      "agent": "build",
+      "model": {
+        "id": "mimo-v2.5-free",
+        "providerID": "opencode",
+        "variant": "default"
+      },
+      "content": [
+        {
+          "type": "reasoning",
+          "text": "The user wants me to reply with exactly: Привет, Neovim!",
+          "state": {
+            "reasoningField": "reasoning_content",
+            "reasoningDetails": [
+              {
+                "type": "reasoning.text",
+                "text": "The user wants me to reply with exactly: Привет, Neovim!",
+                "format": "unknown",
+                "index": 0
+              }
+            ]
+          },
+          "time": {
+            "created": 1790024899050,
+            "completed": 1790024899629
+          }
+        },
+        {
+          "type": "text",
+          "text": "Привет, Neovim!"
+        }
+      ],
+      "finish": "stop",
+      "rawFinish": "stop",
+      "cost": 0,
+      "tokens": {
+        "input": 6865,
+        "output": 10,
+        "reasoning": 18,
+        "cache": {
+          "read": 0,
+          "write": 0
+        }
+      }
+    },
+    {
+      "id": "msg_nvim_v2_fixture",
+      "time": {
+        "created": 1790024895940
+      },
+      "text": "Reply with exactly: Привет, Neovim!",
+      "type": "user"
+    }
+  ],
+  "cursor": {
+    "previous": "eyJpZCI6Im1zZ18wYzVjYzVjMzMwMDFhbGg5dXE5ZkZVYzFtSSIsIm9yZGVyIjoiZGVzYyIsImRpcmVjdGlvbiI6InByZXZpb3VzIn0",
+    "next": "eyJpZCI6Im1zZ19udmltX3YyX2ZpeHR1cmUiLCJvcmRlciI6ImRlc2MiLCJkaXJlY3Rpb24iOiJuZXh0In0"
+  }
+}
