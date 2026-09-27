@@ -8,6 +8,11 @@ local local_state = require("opencode.local")
 local edit_state = require("opencode.edit.state")
 local question_state = require("opencode.question.state")
 local permission_state = require("opencode.permission.state")
+local widget_support = require("opencode.ui.chat.widget_support")
+local widget_base = require("opencode.ui.widget_base")
+local edit_widget = require("opencode.ui.edit_widget")
+local question_widget = require("opencode.ui.question_widget")
+local permission_widget = require("opencode.ui.permission_widget")
 local chat_hl_ns = require("opencode.ui.chat.state").chat_hl_ns
 
 describe("chat message boundaries", function()
@@ -40,6 +45,15 @@ describe("chat message boundaries", function()
 		local row = position(id).start_line + 1
 		assert.equals("", lines()[row - 1], "user box needs an external blank separator")
 		assert.is_truthy(lines()[row]:find("┃", 1, true), "message range must start at the box")
+	end
+
+	local function assert_widget_range_and_focus(rendered, widget, expected_lines, meta)
+		assert.equals(widget.start_line + #expected_lines - 1, widget.end_line)
+		assert.same(expected_lines, vim.list_slice(rendered, widget.start_line + 1, widget.end_line + 1))
+		assert.equals("", rendered[widget.end_line + 2], "trailing separator must be outside the widget range")
+		local focus_offset = widget_base.get_focus_offset(meta)
+		assert.is_not_nil(focus_offset)
+		assert.equals(widget.start_line + focus_offset + 1, vim.api.nvim_win_get_cursor(state.winid)[1])
 	end
 
 	before_each(function()
@@ -192,11 +206,18 @@ describe("chat message boundaries", function()
 				edit_state.add_edit("review", session, { { filePath = "example.txt", before = "before", after = "after" } }, {
 					message_id = "assistant", call_id = "edit-call", review_mode = "readonly",
 				})
+				widget_support.request_focus("edit", "review", "pending")
 				local rendered = render()
 				local widget = state.edits.review
 				assert.is_not_nil(widget, tool .. " widget should render")
 				assert.equals("", rendered[widget.start_line], "one blank row should precede " .. tool)
 				assert.equals("Before widget", rendered[widget.start_line - 1], "extra rows should be collapsed")
+				local expected_lines, _, meta = edit_widget.get_lines_for_edit("review", edit_state.get_edit("review"))
+				assert_widget_range_and_focus(rendered, widget, expected_lines, meta)
+				assert.same(meta.file_ranges, widget.meta.file_ranges)
+				local file_range = widget.meta.file_ranges[1]
+				assert.is_not_nil(file_range)
+				assert.is_truthy(rendered[widget.start_line + file_range.start_line + 1]:find("example.txt", 1, true))
 			end
 		end
 	end)
@@ -218,11 +239,17 @@ describe("chat message boundaries", function()
 					options = { { label = "Yes", value = "yes" } } } },
 				metadata = { tool = { messageID = "assistant", id = "question-call" } },
 			})
+			local qstate = question_state.get_question("question-request")
+			local expected_lines, _, meta = question_widget.get_lines_for_question(
+				"question-request", { questions = qstate.questions }, qstate, qstate.status
+			)
+			widget_support.request_focus("question", "question-request", "pending")
 			local rendered = render()
 			local widget = state.questions["question-request"]
 			assert.is_not_nil(widget, "question widget should render")
 			assert.equals("", rendered[widget.start_line], "one blank row should precede question")
 			assert.equals("Before widget", rendered[widget.start_line - 1], "extra rows should be collapsed")
+			assert_widget_range_and_focus(rendered, widget, expected_lines, meta)
 		end
 	end)
 
@@ -237,11 +264,16 @@ describe("chat message boundaries", function()
 			permission_state.add_permission("permission-request", session, "bash", {
 				message_id = "assistant", tool_input = { command = "echo ok" },
 			})
+			widget_support.request_focus("permission", "permission-request", "pending")
 			local rendered = render()
 			local widget = state.permissions["permission-request"]
 			assert.is_not_nil(widget, "permission widget should render")
 			assert.equals("", rendered[widget.start_line], "one blank row should precede permission")
 			assert.equals("Before widget", rendered[widget.start_line - 1], "extra rows should be collapsed")
+			local expected_lines, _, meta = permission_widget.get_lines_for_permission(
+				"permission-request", permission_state.get_permission("permission-request")
+			)
+			assert_widget_range_and_focus(rendered, widget, expected_lines, meta)
 		end
 	end)
 
