@@ -23,6 +23,24 @@ local function capture_widget_focus(kind, widget_id, widget_start, meta)
 	widget_support.capture_focus_line(kind, widget_id, widget_start + focus_offset + 1)
 end
 
+local function append_interactive_widget(ctx, widget)
+	local start_line = ctx:prepare_widget_start()
+	capture_widget_focus(widget.kind, widget.id, start_line, widget.meta)
+	for _, line_text in ipairs(widget.lines) do
+		ctx:add_raw_line(line_text)
+	end
+
+	local position = {
+		start_line = start_line,
+		end_line = start_line + #widget.lines - 1,
+		status = widget.status,
+		highlights = widget.highlights,
+	}
+	if widget.track_meta then position.meta = widget.meta end
+	widget.positions[widget.id] = position
+	ctx:add_raw_line("")
+end
+
 function M.render_single_question(ctx, index, qstate)
 	if not qstate then
 		return
@@ -53,19 +71,15 @@ function M.render_single_question(ctx, index, qstate)
 			question_widget.get_lines_for_question(request_id, { questions = qstate.questions }, qstate, status)
 	end
 
-	local q_start_line = ctx:prepare_widget_start()
-	capture_widget_focus("question", request_id, q_start_line, q_meta)
-	for _, line_text in ipairs(q_lines) do
-		ctx:add_raw_line(line_text)
-	end
-
-	state.questions[request_id] = {
-		start_line = q_start_line,
-		end_line = q_start_line + #q_lines - 1,
-		status = status,
+	append_interactive_widget(ctx, {
+		kind = "question",
+		id = request_id,
+		lines = q_lines,
 		highlights = q_highlights,
-	}
-	ctx:add_raw_line("")
+		meta = q_meta,
+		status = status,
+		positions = state.questions,
+	})
 end
 
 function M.render_single_permission(ctx, _index, pstate)
@@ -84,18 +98,15 @@ function M.render_single_permission(ctx, _index, pstate)
 	end
 
 	if p_lines then
-		local perm_start = ctx:prepare_widget_start()
-		capture_widget_focus("permission", perm_id, perm_start, p_meta)
-		for _, line_text in ipairs(p_lines) do
-			ctx:add_raw_line(line_text)
-		end
-		state.permissions[perm_id] = {
-			start_line = perm_start,
-			end_line = perm_start + #p_lines - 1,
-			status = pstatus,
+		append_interactive_widget(ctx, {
+			kind = "permission",
+			id = perm_id,
+			lines = p_lines,
 			highlights = p_highlights,
-		}
-		ctx:add_raw_line("")
+			meta = p_meta,
+			status = pstatus,
+			positions = state.permissions,
+		})
 	end
 end
 
@@ -112,19 +123,16 @@ function M.render_single_edit(ctx, _index, estate)
 	end
 
 	if e_lines then
-		local edit_start = ctx:prepare_widget_start()
-		capture_widget_focus("edit", eid, edit_start, e_meta)
-		for _, line_text in ipairs(e_lines) do
-			ctx:add_raw_line(line_text)
-		end
-		state.edits[eid] = {
-			start_line = edit_start,
-			end_line = edit_start + #e_lines - 1,
-			status = estatus,
+		append_interactive_widget(ctx, {
+			kind = "edit",
+			id = eid,
+			lines = e_lines,
 			highlights = e_highlights,
 			meta = e_meta,
-		}
-		ctx:add_raw_line("")
+			status = estatus,
+			positions = state.edits,
+			track_meta = true,
+		})
 	end
 end
 
