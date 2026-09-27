@@ -1,0 +1,43 @@
+name: Hot-path work counts
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  hot-paths:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      NVIM_REVISION: a60d5f863e060ff35a38e0d5a829dfe5b8aaecac
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Install Neovim build prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y ninja-build gettext cmake curl build-essential git
+      - name: Build the tested Neovim revision and its bundled runtime
+        run: |
+          nvim_source="$RUNNER_TEMP/neovim-source"
+          nvim_prefix="$RUNNER_TEMP/neovim"
+          git init "$nvim_source"
+          git -C "$nvim_source" remote add origin https://github.com/neovim/neovim.git
+          git -C "$nvim_source" fetch --depth=1 origin "$NVIM_REVISION"
+          git -C "$nvim_source" checkout --detach FETCH_HEAD
+          test "$(git -C "$nvim_source" rev-parse HEAD)" = "$NVIM_REVISION"
+          make -C "$nvim_source" CMAKE_BUILD_TYPE=RelWithDebInfo CMAKE_INSTALL_PREFIX="$nvim_prefix"
+          make -C "$nvim_source" CMAKE_BUILD_TYPE=RelWithDebInfo CMAKE_INSTALL_PREFIX="$nvim_prefix" install
+          echo "$nvim_prefix/bin" >> "$GITHUB_PATH"
+      - name: Install pinned Lua test dependencies
+        run: ./scripts/bootstrap-test-deps.sh --lua-only
+      - name: Verify runtime and deterministic work counts
+        run: |
+          nvim --version
+          git -C .deps/nvim/plenary.nvim rev-parse HEAD
+          git -C .deps/nvim/nui.nvim rev-parse HEAD
+          ./tests/run.sh hot-paths

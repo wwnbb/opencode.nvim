@@ -6,6 +6,17 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PLUGIN_ROOT="$(dirname "$SCRIPT_DIR")"
 DEPS_ROOT="${OPENCODE_NVIM_TEST_DEPS:-$PLUGIN_ROOT/.deps/nvim}"
 
+LUA_ONLY=false
+case "${1:-}" in
+	"") ;;
+	--lua-only) LUA_ONLY=true ;;
+	*) echo "Usage: $0 [--lua-only]" >&2; exit 2 ;;
+esac
+if [ "$#" -gt 1 ]; then
+	echo "Usage: $0 [--lua-only]" >&2
+	exit 2
+fi
+
 install_dep() {
 	local name="$1"
 	local repo="$2"
@@ -37,4 +48,6 @@ install_dep \
 echo "Neovim test dependencies installed in $DEPS_ROOT"
 
 # The tool suite compiles against the same pinned public server API.
-npm ci --prefix "$PLUGIN_ROOT/opencode_nvim/plugins/opencode-nvim" --ignore-scripts --no-audit --no-fund
+if [ "$LUA_ONLY" = false ]; then
+	npm ci --prefix "$PLUGIN_ROOT/opencode_nvim/plugins/opencode-nvim" --ignore-scripts --no-audit --no-fund
+fi
