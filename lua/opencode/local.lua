@@ -32,42 +32,17 @@ local listeners = {}
 ---@param value any
 ---@return string
 local function value_kind(value)
-	if value == nil then
-		return "nil"
-	end
-	if value == vim.NIL then
-		return "vim.NIL"
-	end
-	return type(value)
+	return value == vim.NIL and "vim.NIL" or type(value)
 end
 
 ---@param model any
 ---@return table
-local function model_summary(model)
-	if type(model) ~= "table" then
-		return {
-			kind = value_kind(model),
-		}
-	end
-	return {
-		kind = "table",
-		providerID = model.providerID,
-		modelID = model.modelID,
-		variant = model.variant,
-	}
-end
+local model_summary = logger.model_summary
 
 ---@param tbl table|nil
 ---@return number
 local function count_keys(tbl)
-	local count = 0
-	if type(tbl) ~= "table" then
-		return count
-	end
-	for _, _ in pairs(tbl) do
-		count = count + 1
-	end
-	return count
+	return vim.tbl_count(type(tbl) == "table" and tbl or {})
 end
 
 ---Emit state change
@@ -78,7 +53,7 @@ local function emit(key, old_val, new_val)
 	if key == "agent" or key == "model" or key == "variant" then
 		require("opencode.session.selection").choose(require("opencode.state").get_session().id, key, new_val)
 	end
-	for _, cb in ipairs(listeners) do
+	for _, cb in ipairs(vim.list_slice(listeners)) do
 		pcall(cb, key, new_val, old_val)
 	end
 end
@@ -176,6 +151,15 @@ function M.agent.list()
 	return sync.get_visible_agents()
 end
 
+local function find_agent(agents, name)
+	if type(name) ~= "string" then return end
+	for _, field in ipairs({ "id", "name" }) do
+		for i, agent in ipairs(agents) do
+			if agent[field] == name then return agent, i end
+		end
+	end
+end
+
 ---Get current agent
 ---@return table|nil
 function M.agent.current(opts)
@@ -187,11 +171,8 @@ function M.agent.current(opts)
 	local scoped = not (opts and opts.unscoped) and require("opencode.session.selection").current(require("opencode.state").get_session().id)
 	local selected = scoped and scoped.agent or state.agent
 	if selected then
-		for _, agent in ipairs(agents) do
-			if (agent.id or agent.name) == selected or agent.name == selected then
-				return agent
-			end
-		end
+		local agent = find_agent(agents, selected)
+		if agent then return agent end
 		if scoped and scoped.agent then return { id = selected, name = selected, unavailable = true } end
 	end
 	-- Default to first agent
@@ -201,20 +182,12 @@ end
 ---Set current agent by name
 ---@param name string
 function M.agent.set(name)
-	local agents = M.agent.list()
-	-- Validate agent exists
-	local found = false
-	for _, agent in ipairs(agents) do
-		if (agent.id or agent.name) == name or agent.name == name then
-			name = agent.id or agent.name
-			found = true
-			break
-		end
-	end
-	if not found then
-		vim.notify("Agent not found: " .. name, vim.log.levels.WARN)
+	local agent = find_agent(M.agent.list(), name)
+	if not agent then
+		vim.notify("Agent not found: " .. tostring(name), vim.log.levels.WARN)
 		return
 	end
+	name = agent.id or agent.name
 	local old = state.agent
 	state.agent = name
 	save_state()
@@ -233,7 +206,7 @@ function M.agent.move(direction, opts)
 		end
 		return
 	end
-	local current_idx = 1
+	local current_idx = direction == 1 and 0 or (#agents + 1)
 	local current = M.agent.current()
 	if current then
 		for i, agent in ipairs(agents) do
@@ -249,12 +222,9 @@ function M.agent.move(direction, opts)
 	elseif next_idx > #agents then
 		next_idx = 1
 	end
-	local old = state.agent
-	state.agent = agents[next_idx].id or agents[next_idx].name
-	save_state()
-	emit("agent", old, state.agent)
-	-- If agent has a configured model, switch to it
 	local agent = agents[next_idx]
+	M.agent.set(agent.id or agent.name)
+	-- If agent has a configured model, switch to it
 	if agent.model and is_model_valid(agent.model) then
 		M.model.set(agent.model, { silent = true })
 	end
@@ -287,25 +257,16 @@ end
 ---@return string hl_group
 function M.agent.color(agent_name)
 	-- Use all agents for index lookup, matching TUI behaviour
-	local all_agents = sync.get_agents()
-	local found_agent = nil
-	local found_index = -1
-	for i, a in ipairs(all_agents) do
-		if (a.id or a.name) == agent_name or a.name == agent_name then
-			found_agent = a
-			found_index = i
-			break
-		end
-	end
+	local found_agent, found_index = find_agent(sync.get_agents(), agent_name)
 
 	-- If agent has a custom hex color, create a dynamic highlight group
 	if found_agent and type(found_agent.color) == "string" and found_agent.color:match("^#%x%x%x%x%x%x$") then
-		local safe_name = "OpenCodeAgent_" .. agent_name:gsub("[^%w]", "_")
+		local safe_name = "OpenCodeAgent_" .. found_agent.color:sub(2):lower()
 		return ensure_hex_hl(found_agent.color, safe_name)
 	end
 
 	-- Fallback: cycle through palette by agent index
-	if found_index == -1 then
+	if not found_index then
 		return AGENT_FALLBACK_COLORS[1]
 	end
 	return AGENT_FALLBACK_COLORS[((found_index - 1) % #AGENT_FALLBACK_COLORS) + 1]
@@ -689,13 +650,7 @@ end
 ---@param opts? { silent?: boolean }
 function M.model.cycle(direction, opts)
 	opts = opts or {}
-	local current = M.model.current()
-	if not current then
-		if not opts.silent then
-			vim.notify("No model selected", vim.log.levels.WARN)
-		end
-		return
-	end
+	local current = M.model.current() or {}
 
 	-- Determine which list to use: favorites take priority over recents
 	local source_list = valid_models(state.favorite)
@@ -710,13 +665,6 @@ function M.model.cycle(direction, opts)
 		return
 	end
 
-	if #source_list == 1 then
-		if not opts.silent then
-			vim.notify("Only one valid model available", vim.log.levels.INFO)
-		end
-		return
-	end
-
 	-- Find current in the source list
 	local current_idx = nil
 	for i, item in ipairs(source_list) do
@@ -726,9 +674,16 @@ function M.model.cycle(direction, opts)
 		end
 	end
 
-	-- If current not in the list, start from beginning
+	if #source_list == 1 and current_idx then
+		if not opts.silent then
+			vim.notify("Only one valid model available", vim.log.levels.INFO)
+		end
+		return
+	end
+
+	-- Enter the list at the first or last model according to the direction.
 	if not current_idx then
-		current_idx = 1
+		current_idx = direction == 1 and 0 or (#source_list + 1)
 	end
 
 	local next_idx = current_idx + direction

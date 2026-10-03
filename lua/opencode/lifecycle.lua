@@ -14,6 +14,7 @@ local pending_callbacks = {}
 -- startup failure or a successful termination signal.
 local attempt_generation = 0
 local current_attempt = nil
+local restart_generation = 0
 local listener_clients = setmetatable({}, { __mode = "k" })
 
 -- Forward declarations for functions that need to be called before their definition
@@ -293,8 +294,10 @@ local function remove_pending_callback(callback)
 	end
 end
 
-local function process_callbacks(callbacks)
+local function process_callbacks(callbacks, attempt, token)
 	for _, callback in ipairs(callbacks or {}) do
+		if state.get_connection() ~= "connected" or current_attempt ~= attempt
+			or (attempt and attempt.connection_token ~= token) then return end
 		local ok, err = pcall(callback)
 		if not ok then
 			vim.notify("Pending callback error: " .. tostring(err), vim.log.levels.ERROR)
@@ -519,7 +522,7 @@ complete_connection = function(attempt, token, startup, success, version, failur
 
 	local callbacks = take_pending_callbacks()
 	vim.schedule(function()
-		process_callbacks(callbacks)
+		process_callbacks(callbacks, attempt, token)
 	end)
 	vim.notify("OpenCode connected (server v" .. (version or "unknown") .. ")", vim.log.levels.INFO)
 	return true
@@ -791,6 +794,9 @@ setup_event_listeners = function(client)
 		then
 			return
 		end
+		if current_attempt and not current_attempt.connecting then
+			current_attempt.connection_token = current_attempt.connection_token + 1
+		end
 		state.set_connection("idle")
 		vim.notify("OpenCode disconnected: " .. (reason or "unknown"), vim.log.levels.WARN)
 	end)
@@ -843,8 +849,10 @@ function M.ensure_connected(callback)
 	local connection = state.get_connection()
 
 	if connection == "connected" then
-		-- Already connected, execute immediately
-		vim.schedule(callback)
+		-- Queue the action for this connection only.
+		local attempt = current_attempt
+		local token = attempt and attempt.connection_token
+		vim.schedule(function() process_callbacks({ callback }, attempt, token) end)
 		return true
 	end
 
@@ -968,6 +976,7 @@ end
 
 -- Stop server (only if we started it)
 function M.stop(on_stopped)
+	restart_generation = restart_generation + 1
 	if not state.is_server_managed() then
 		vim.notify("Cannot stop external OpenCode server", vim.log.levels.WARN)
 		return false
@@ -1039,23 +1048,20 @@ end
 -- Restart server
 function M.restart()
 	if state.is_server_managed() then
+		local restart = restart_generation + 1
 		M.stop(function()
-			M.start()
+			if restart == restart_generation then M.start() end
 		end)
 	else
 		-- For external servers, just reconnect
-		local client = require("opencode.client")
-		client.disconnect_events()
-		state.set_connection("idle")
-
-		vim.defer_fn(function()
-			M.start()
-		end, 500)
+		M.disconnect()
+		M.start()
 	end
 end
 
 -- Disconnect from server (keep server running)
 function M.disconnect()
+	restart_generation = restart_generation + 1
 	local client = require("opencode.client")
 	local cleanup = require("opencode.cleanup")
 	local attempt = current_attempt
@@ -1089,23 +1095,16 @@ end
 -- Configure lifecycle options
 ---@param opts table
 function M.setup(opts)
+	restart_generation = restart_generation + 1
 	opts = opts or {}
-	M.opts = vim.tbl_deep_extend("force", M.opts, opts)
-	-- Stateless feature options describe whole profiles. Deep merging retains
-	-- removed settings and can silently keep old variants after reconfiguration.
-	if opts.completion ~= nil then M.opts.completion = vim.deepcopy(opts.completion) end
-	if opts.explanation ~= nil then M.opts.explanation = vim.deepcopy(opts.explanation) end
+	M.opts = vim.tbl_extend("force", M.opts, vim.deepcopy(opts))
 	shell_env_cache = nil
 
-	-- Store auth in opts for spawn_server
-	if opts.auth then
-		M.opts.auth = opts.auth
-	end
-
 	-- Setup auto-shutdown on vim exit if configured
+	local group = vim.api.nvim_create_augroup("OpenCodeLifecycle", { clear = true })
 	if M.opts.shutdown_on_exit then
 		vim.api.nvim_create_autocmd("VimLeavePre", {
-			group = vim.api.nvim_create_augroup("OpenCodeLifecycle", { clear = true }),
+			group = group,
 			callback = function()
 				if state.is_server_managed() then
 					M.stop()

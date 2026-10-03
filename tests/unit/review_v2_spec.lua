@@ -43,6 +43,18 @@ describe("v2 edit review safety", function()
 			assert.equals(bytes, read())
 		end
 	end)
+	it("preserves a new file whose BOM or EOL changed before rejection", function()
+		for _, bytes in ipairs({ "after\r\n", "\239\187\191after\n" }) do
+			vim.fn.delete(path)
+			local item = edits.add_edit("r", "s", { {
+				fileID = "f", filePath = path, before = "", after = "after\n", type = "add",
+			} }, { transport = "review_rpc", revision = 1, native_review = { status = "pending" } })
+			write(bytes)
+			assert.is_true(edits.reject_file("r", 1))
+			assert.equals(bytes, read())
+			assert.equals("rejected", item.files[1].status)
+		end
+	end)
 	it("does not permit stale local actions after cancellation or revive pending snapshots", function()
 		local item = add()
 		assert.is_true(edits.set_review_record({ reviewID = "r", sessionID = "s", revision = 1, status = "cancelled" }))
@@ -53,6 +65,25 @@ describe("v2 edit review safety", function()
 		assert.equals("cancelled", item.native_review.status)
 		assert.equals("before\n", read())
 	end)
+	for _, disconnect in ipairs({ false, true }) do
+		it("allows retry after " .. (disconnect and "reconnect" or "reopening") .. " confirms a pending review", function()
+			local pending = require("opencode.session.pending")
+			local item = add()
+			assert.is_true(edits.set_message("r", "Keep my review note"))
+			assert.is_true(edits.accept_all("r"))
+			assert.is_true(edits.begin_review_submission("r"))
+			local record = { reviewID = "r", sessionID = "s", revision = 1, status = "pending" }
+			assert.is_true(edits.set_review_record(record))
+			assert.is_true(item.submitting)
+			if disconnect then pending.invalidate() else pending.clear_session("s") end
+			assert.is_true(edits.set_review_record(record))
+			assert.is_false(item.submitting)
+			assert.equals("accepted", item.files[1].status)
+			assert.equals("Keep my review note", item.message)
+			assert.is_true(edits.begin_review_submission("r"))
+		end)
+	end
+
 	it("keeps settled metadata when admission arrives after the terminal event", function()
 		local item = add()
 		assert.is_true(edits.set_review_record({ reviewID = "r", sessionID = "s", revision = 1, status = "settled", outcome = { wrote = false } }))

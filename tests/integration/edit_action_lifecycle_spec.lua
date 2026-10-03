@@ -19,7 +19,7 @@ describe("edit widget action lifecycle", function()
 		bufnr = vim.api.nvim_create_buf(false, true)
 		vim.api.nvim_win_set_buf(winid, bufnr)
 		originals = { finalize = chat_edits.finalize_edit, rerender = chat_edits.rerender_edit,
-			notify = vim.notify, show = native_diff.show }
+			notify = vim.notify, show = native_diff.show, input_show = require("opencode.ui.input").show, focus = require("opencode.ui.chat").focus }
 		original_accept, original_reject = changes.accept, changes.reject
 		chat_edits.finalize_edit = function(id)
 			calls.finalize, calls.last_finalized = calls.finalize + 1, id
@@ -27,6 +27,7 @@ describe("edit widget action lifecycle", function()
 		chat_edits.rerender_edit = function(id)
 			calls.rerender, calls.last_rerendered = calls.rerender + 1, id
 		end
+		require("opencode.ui.chat").focus = function() end
 		captured_native_show = nil
 		native_diff.show = function(files, opts) captured_native_show = { files = files, opts = opts } end
 	end)
@@ -34,6 +35,7 @@ describe("edit widget action lifecycle", function()
 		chat_edits.finalize_edit, chat_edits.rerender_edit = originals.finalize, originals.rerender
 		changes.accept, changes.reject = original_accept, original_reject
 		vim.notify, native_diff.show = originals.notify, originals.show
+		require("opencode.ui.input").show, require("opencode.ui.chat").focus = originals.input_show, originals.focus
 		vim.api.nvim_win_set_buf(winid, old_buffer)
 		if vim.api.nvim_buf_is_valid(bufnr) then vim.api.nvim_buf_delete(bufnr, { force = true }) end
 		for key in pairs(chat_state) do chat_state[key] = nil end
@@ -94,6 +96,34 @@ describe("edit widget action lifecycle", function()
 		edit_state.move_selection_to(edit_id, index)
 		vim.api.nvim_win_set_cursor(winid, { index, 0 })
 	end
+
+	for _, method in ipairs({ "on_send", "on_cancel" }) do
+		for _, reset in ipairs({ "owner", "epoch" }) do
+			it("ignores an old edit note " .. method .. " after its " .. reset .. " changes", function()
+				make_edit("note-edit", 1)
+				local shown
+				require("opencode.ui.input").show = function(opts) shown = opts end
+				chat_edits.handle_edit_message()
+				assert.is_function(shown[method])
+				if reset == "owner" then make_edit("note-edit", 1)
+				else require("opencode.session.pending").clear_session("session_edit_lifecycle") end
+				assert.is_true(edit_state.set_message("note-edit", "New note"))
+				shown[method]("Old note")
+				assert.equals("New note", edit_state.get_edit("note-edit").message)
+				assert.equals(0, calls.rerender)
+			end)
+		end
+	end
+
+	it("saves a note from the current edit input", function()
+		make_edit("note-edit", 1)
+		local shown
+		require("opencode.ui.input").show = function(opts) shown = opts end
+		chat_edits.handle_edit_message()
+		shown.on_send("Current note")
+		assert.equals("Current note", edit_state.get_edit("note-edit").message)
+		assert.equals(1, calls.rerender)
+	end)
 
 	for _, action in ipairs({ "accept", "reject", "resolve" }) do
 		local opts = action == "reject" and { disk = "after" } or nil
@@ -217,6 +247,22 @@ describe("edit widget action lifecycle", function()
 		changes.accept = original_accept
 	end)
 
+	it("reports and rerenders a failed manual batch without confirming the review", function()
+		local notices = {}
+		vim.notify = function(message) notices[#notices + 1] = message end
+		make_edit("manual_failure", 1)
+		local file = edit_state.get_edit("manual_failure").files[1]
+		vim.fn.delete(file.filepath)
+		vim.fn.mkdir(file.filepath, "p")
+		select_file("manual_failure", 1)
+		chat_edits.handle_edit_resolve_all()
+		vim.fn.delete(file.filepath, "d")
+		assert.equals(0, calls.finalize)
+		assert.equals(1, calls.rerender)
+		assert.equals("pending", file.status)
+		assert.is_truthy(notices[1]:find("directory", 1, true))
+	end)
+
 	it("opens native diff at the selected file with original indices", function()
 		make_edit("edit_native_multifile", 3)
 		select_file("edit_native_multifile", 2)
@@ -231,6 +277,7 @@ describe("edit widget action lifecycle", function()
 
 	it("maps selected file indices through the pending-only native diff list", function()
 
+		require("opencode.ui.chat").focus = function() end
 		captured_native_show = nil
 		make_edit("edit_native_pending_filter", 3)
 		local native_pending_edit = edit_state.get_edit("edit_native_pending_filter")

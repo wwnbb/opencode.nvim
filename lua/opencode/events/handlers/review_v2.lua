@@ -38,7 +38,7 @@ function M.setup(events)
 		if type(record) ~= "table" or record.protocolVersion ~= 2 or not relevant(record.sessionID) then return end
 		local id, sid = record.gateID, record.sessionID
 		if record.status ~= "pending" then policy_terminal[id] = true; policy_busy[id] = nil; return end
-		if policy_terminal[id] or policy_busy[id] then return end
+		if policy_terminal[id] or (policy_busy[id] and pending.is_current(policy_busy[id])) then return end
 		local token = pending.token(sid)
 		policy_busy[id] = token
 		local function current() return pending.is_current(token) and policy_busy[id] == token and not policy_terminal[id] end

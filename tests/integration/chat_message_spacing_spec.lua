@@ -101,8 +101,8 @@ describe("chat message boundaries", function()
 		preferences.open = function() return original_open(temporary_preferences) end
 		local_state.setup()
 		sync.handle_agents({
-			{ id = "coder", name = "Coder", color = "#0098dd" },
-			{ id = "planner", name = "Planner", color = "#cc8800" },
+			{ id = "coder-a", name = "Coder", color = "#0098dd" },
+			{ id = "coder_a", name = "Planner", color = "#cc8800" },
 		})
 		local function border_color(id)
 			local row = position(id).start_line
@@ -117,15 +117,15 @@ describe("chat message boundaries", function()
 		local first = { id = "u1", type = "user", text = "First", time = { created = 1 } }
 		local second = { id = "u2", type = "user", text = "Second", time = { created = 3 } }
 		local older = { id = "u0", type = "user", text = "Older", time = { created = -1 } }
-		local older_reply = { id = "a0", type = "assistant", parentID = "u0", agent = "coder",
+		local older_reply = { id = "a0", type = "assistant", parentID = "u0", agent = "coder-a",
 			time = { created = 0, completed = 0 }, content = { { type = "text", text = "Reply" } } }
-		local_state.message_agent.set(session, "u1", "coder")
+		local_state.message_agent.set(session, "u1", "coder-a")
 		update({ older, older_reply, first })
 		render()
 		assert.equals(0x0098dd, border_color("u0"))
 		assert.equals(0x0098dd, border_color("u1"))
-		app.upsert_session({ id = session, agent = "planner" })
-		local_state.message_agent.set(session, "u2", "planner")
+		app.upsert_session({ id = session, agent = "coder_a" })
+		local_state.message_agent.set(session, "u2", "coder_a")
 		update({ older, older_reply, first, second }) -- server history contains no user agent
 		render()
 		assert.equals(0x0098dd, border_color("u0"))

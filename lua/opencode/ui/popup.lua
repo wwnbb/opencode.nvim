@@ -423,7 +423,8 @@ function Popup:close(options)
 		local restored = false
 		if self.focus_restore == "chat" then restored = float_context.focus_chat_if_visible() end
 		if not restored and (self.focus_restore == "previous" or self.focus_restore == "chat")
-			and self.previous_win and vim.api.nvim_win_is_valid(self.previous_win) then
+			and self.previous_win and vim.api.nvim_win_is_valid(self.previous_win)
+			and vim.api.nvim_win_get_tabpage(self.previous_win) == vim.api.nvim_get_current_tabpage() then
 			pcall(vim.api.nvim_set_current_win, self.previous_win)
 		end
 	end
@@ -447,7 +448,7 @@ function M.new(opts)
 		close_on_leave = opts.close_on_leave == true,
 		on_resize = opts.on_resize,
 		on_close = opts.on_close,
-		outer_border_style = vim.deepcopy(configured_border_style()),
+		outer_border_style = vim.deepcopy(opts.outer_border_style or configured_border_style()),
 		specs = {},
 		namespaces = {},
 	}, Popup)

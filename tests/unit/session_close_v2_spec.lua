@@ -1,12 +1,12 @@
 describe("v2 session close interaction routing", function()
-	it("rejects native permissions by owner and reviews through RPC", function()
+	it("keeps native permissions and reviews pending when closing and reopening a tab", function()
 		local state = require("opencode.state")
 		local sync = require("opencode.sync")
 		local session = require("opencode.session")
 		local permissions = require("opencode.permission.state")
 		local edits = require("opencode.edit.state")
 		local client = require("opencode.client")
-		local respond, rpc = client.respond_permission, client.review_rpc
+		local respond, rpc, get_messages = client.respond_permission, client.review_rpc, client.get_messages
 		local permission_calls, review_calls = {}, {}
 		state.reset(); sync.clear_all(); permissions.clear_all(); edits.clear_all()
 		state.set_config({ server = { shared_filesystem = false } })
@@ -27,19 +27,23 @@ describe("v2 session close interaction routing", function()
 			review_calls[#review_calls + 1] = { method = method, payload = payload, directory = directory }
 		end
 		local ok, err = pcall(session.close, "close-v2", { silent = true })
-		client.respond_permission, client.review_rpc = respond, rpc
 		assert.is_true(ok, err)
 		assert.is_true(err)
-		assert.equals(1, #permission_calls)
-		assert.equals("permission-v2", permission_calls[1].id)
-		assert.equals("reject", permission_calls[1].decision)
-		assert.equals("close-v2", permission_calls[1].opts.session_id)
-		assert.equals(1, #review_calls)
-		assert.equals("reviewReply", review_calls[1].method)
-		assert.equals("/tmp/close-v2", review_calls[1].directory)
-		assert.equals("review-v2", review_calls[1].payload.reviewID)
-		assert.same({ { fileID = "file-v2", status = "rejected", apply = "server" } }, review_calls[1].payload.decisions)
-		assert.is_nil(edits.get_edit("review-v2"))
+		assert.equals(0, #permission_calls)
+		assert.equals(0, #review_calls)
+		assert.equals("pending", permissions.get_permission("permission-v2").status)
+		assert.is_not_nil(edits.get_edit("review-v2"))
+		assert.is_false(state.is_runtime_session("close-v2"))
+
+		-- A closed tab may be opened again while these requests still wait on the server.
+		client.get_messages = function() end
+		session.switch_to({ id = "close-v2", title = "Review", directory = "/tmp/close-v2" })
+		assert.is_true(state.is_runtime_session("close-v2"))
+		assert.equals("pending", permissions.get_permission("permission-v2").status)
+		assert.is_not_nil(edits.get_edit("review-v2"))
+		assert.equals(0, #permission_calls)
+		assert.equals(0, #review_calls)
+		client.respond_permission, client.review_rpc, client.get_messages = respond, rpc, get_messages
 		state.reset(); sync.clear_all(); permissions.clear_all(); edits.clear_all()
 	end)
 end)

@@ -34,6 +34,14 @@ local function names(commands)
 	return result
 end
 
+local unicode_commands = {
+	{ name = "Обзор", description = "ПРОВЕРКА", aliases = { "ОЦЕНКА" } },
+	{ name = "other", description = "Other" },
+}
+for _, query in ipairs({ "обзор", "ОБЗОР", "проверка", "оценка" }) do
+	assert.same({ unicode_commands[1] }, slash_commands.filter_commands(unicode_commands, query))
+end
+
 local function assert_trigger(line, col, row, query, message)
 	local trigger = slash_commands.detect_trigger_in_line(line, col, row)
 	assert_truthy(trigger, message .. " should trigger")

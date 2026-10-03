@@ -73,17 +73,7 @@ local function centered_cell(text, width)
 	return string.rep(" ", before) .. text .. string.rep(" ", after)
 end
 
-local function clipped(text, width)
-	if vim.fn.strdisplaywidth(text) <= width then return text end
-	local chars = vim.fn.split(text, "\\zs")
-	local result, used = {}, 0
-	for _, char in ipairs(chars) do
-		local char_width = vim.fn.strdisplaywidth(char)
-		if used + char_width > width then break end
-		result[#result + 1], used = char, used + char_width
-	end
-	return table.concat(result)
-end
+local clipped = require("opencode.util.text").truncate
 
 local function date_epoch(date)
 	if type(date) ~= "string" then return nil end

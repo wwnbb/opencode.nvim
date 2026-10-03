@@ -71,6 +71,24 @@ describe("tool and panel rendering contracts", function()
 		assert(not panel_result.lines[1]:find(string.char(0), 1, true), "panel line kept a raw NUL byte")
 	end)
 
+	it("keeps combining marks with their base characters and byte ranges", function()
+		local source = "éé界́a"
+		local chunks = render.wrap_text_with_ranges(source, 2)
+		assert.same({
+			{ text = "éé", byte_start = 0, byte_end = 6 },
+			{ text = "界́", byte_start = 6, byte_end = 11 },
+			{ text = "a", byte_start = 11, byte_end = 12 },
+		}, chunks)
+		for _, chunk in ipairs(chunks) do
+			assert.equals(chunk.text, source:sub(chunk.byte_start + 1, chunk.byte_end))
+		end
+		local tabstop = vim.bo.tabstop
+		vim.bo.tabstop = 8
+		local expanded = render.expand_tabs("é\tx", 0)
+		vim.bo.tabstop = tabstop
+		assert.equals("é" .. string.rep(" ", 7) .. "x", expanded)
+	end)
+
 	it("sanitizes task descriptions and summary titles", function()
 		local multiline_task = chat_tasks.render_task_tool({
 			id = "task_newline",

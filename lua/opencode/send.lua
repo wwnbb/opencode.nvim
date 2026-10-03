@@ -61,7 +61,11 @@ local function emit(name, data) require("opencode.events").emit(name, data) end
 
 local function restore_draft(text, opts)
 	local history = require("opencode.ui.input.history")
-	if history.get_pending() == "" then history.set_pending(text, opts.parts) end
+	local session_id = opts._draft_session_id or opts.session_id
+	if session_id == false then session_id = "" end
+	if history.get_pending(session_id) == "" and #history.get_pending_parts(session_id) == 0 then
+		history.set_pending(text, opts.parts, session_id)
+	end
 end
 
 local function fail_before_send(message, text, opts)
@@ -132,12 +136,17 @@ end
 local function submit(session_id, payload, selection, text, opts, known_session)
 	local token = pending.token(session_id)
 	local previous_status = state.get_session_status(session_id)
-	require("opencode.local").message_agent.set(session_id, payload.id, selection.agent)
-	pending.begin({ session_id = session_id, message_id = payload.id, status = "submitting",
-		text = text, options = opts, payload = payload, selection = selection, token = token })
-	seed(session_id, payload)
-	session_actions.set_status("streaming", { session_id = session_id, reason = "send_started" })
-	pending.serialize(session_id, function(done)
+	local started = false
+	local function begin()
+		if started then return end
+		started = true
+		require("opencode.local").message_agent.set(session_id, payload.id, selection.agent)
+		pending.begin({ session_id = session_id, message_id = payload.id, status = "submitting",
+			text = text, options = opts, payload = payload, selection = selection, token = token })
+		seed(session_id, payload)
+		session_actions.set_status("streaming", { session_id = session_id, reason = "send_started" })
+	end
+	local function prepared_send(done, selection_ready)
 		local submitted = false
 		local function fail(err)
 			if not pending.is_current(token) then done(); return end
@@ -171,9 +180,70 @@ local function submit(session_id, payload, selection, text, opts, known_session)
 				done()
 			end)
 		end
-		require("opencode.session.selection").prepare(session_id, selection, token, function(err)
-			if err then fail(err) else prompt() end
-		end, known_session)
+		if selection_ready then prompt()
+		else
+			require("opencode.session.selection").prepare(session_id, selection, token, function(err)
+				if err then fail(err) else prompt() end
+			end, known_session)
+		end
+	end
+	-- The server commits a staged revert before it admits the new prompt. Do
+	-- the same locally before creating the optimistic row. A late SSE echo
+	-- sees no old boundary in sync and cannot cancel the new admission.
+	local staged = (state.get_session_record(session_id) or {}).revert
+	if type(staged) ~= "table" then begin() end
+	pending.serialize(session_id, function(done)
+		if not pending.is_current(token) then done(); return end
+		local revert = (state.get_session_record(session_id) or {}).revert
+		if type(revert) ~= "table" then
+			begin()
+			prepared_send(done)
+			return
+		end
+		require("opencode.session.selection").prepare(session_id, selection, token, function(prepare_err)
+			if not pending.is_current(token) then done(); return end
+			if prepare_err then
+				fail_before_send(prepare_err.message or tostring(prepare_err), text, opts)
+				done()
+				return
+			end
+			local function commit_staged()
+				local staged_now = (state.get_session_record(session_id) or {}).revert
+				if type(staged_now) ~= "table" then
+					begin()
+					prepared_send(done, true)
+					return
+				end
+				local boundary = staged_now.messageID
+				pending.expect_revert_commit(session_id)
+				client().commit_revert(session_id, function(err)
+					if not pending.is_current(token) then done(); return end
+					if err then
+						fail_before_send(err.message or tostring(err), text, opts)
+						done()
+						return
+					end
+					if type(boundary) == "string" and not pending.revert_event_seen(session_id, boundary) then
+						-- HTTP success is enough to settle local history even if the SSE
+						-- committed event reaches us after a fresh prompt is admitted.
+						local effect = sync().handle_v2_event({ id = ascending_id("evt"), created = current_time_ms(),
+							type = "session.revert.committed", data = { sessionID = session_id, to = boundary } })
+						for _, id in ipairs(effect.revert_removed or {}) do
+							if pending.get(session_id, id) then pending.update(session_id, id, { status = "cancelled" }) end
+						end
+						emit("sync_changed", { kind = "message", action = "revert_committed", session_id = session_id })
+					end
+					local current = (state.get_session_record(session_id) or {}).revert
+					if type(current) == "table" and current.messageID == boundary then
+						session_actions.remember({ id = session_id, revert = vim.NIL }, { touch = false })
+					end
+					-- A second undo may have staged a new boundary while this HTTP
+					-- request was in flight. Settle it before creating the prompt row.
+					commit_staged()
+				end)
+			end
+			commit_staged()
+		end)
 	end)
 	return true
 end
@@ -185,6 +255,7 @@ function M.send(text, opts)
 	local session_id = opts.session_id
 	if session_id == nil then session_id = state.get_session().id end
 	if session_id == false then session_id = nil end
+	opts._draft_session_id = opts._draft_session_id or session_id or ""
 	local token = opts._token or pending.token(session_id)
 	if not pending.is_current(token) then return false end
 	local directory = opts.directory or (session_id and state.get_session_directory(session_id)) or vim.fn.getcwd()
@@ -298,29 +369,81 @@ function M.cancel_input(session_id, message_id, callback)
 	end)
 end
 
+-- A provisional row can exist before the server has admitted its inbox item.
+-- Wait for admission before cancelling; reverting it now would target a turn
+-- that does not yet exist in durable history.
+function M.cancel_submitting_input(session_id, message_id, callback)
+	local token = pending.token(session_id)
+	pending.when_admitted(session_id, message_id, function(record)
+		if not pending.is_current(token) then return end
+		if not record then callback({ message = "This input is no longer pending" }); return end
+		if record.status == "accepted" or record.status == "queued" then
+			M.cancel_input(session_id, message_id, function(err)
+				local current = pending.get(session_id, message_id)
+				if err and (err.status == 404 or (current and current.status == "delivered")) then
+					callback({ code = "already_delivered", message = "Input was already delivered" })
+				else callback(err) end
+			end)
+		elseif record.status == "delivered" then
+			callback({ code = "already_delivered", message = "Input was already delivered" })
+		elseif record.status == "failed" or record.status == "cancelled" then
+			if record.status == "failed" then sync().handle_message_removed(session_id, message_id) end
+			callback(nil)
+		else
+			callback({ message = "Input admission is uncertain; reconnect before undoing it" })
+		end
+	end)
+end
+
 -- Change the existing inbox item instead of cancelling and resending it. Its
 -- ID, attachments and delivery confirmation remain owned by the server.
-function M.steer_input(session_id, message_id, callback)
+local function set_input_delivery(session_id, message_id, delivery, callback)
 	local record = selectors.pending_input(session_id, message_id)
-	if not record or record.status ~= "queued" then
-		if callback then callback({ message = "This input is no longer queued" }) end
+	local expected = delivery == "steer" and "queued" or "accepted"
+	if not record or record.status ~= expected then
+		if callback then callback({ message = "This input is no longer " .. (expected == "queued" and "queued" or "steering") }) end
 		return false
 	end
+	if record.delivery_request_pending == delivery and record.delivery_request_token
+		and pending.is_current(record.delivery_request_token) then return false end
+	-- SSE can confirm one change before its HTTP response. A second request may
+	-- then reverse it; the older response must not overwrite newer evidence.
+	local request_revision = (record.delivery_request_revision or 0) + 1
+	local event_revision = record.delivery_event_revision or 0
 	local token = pending.token(session_id)
-	client().set_input_delivery(session_id, message_id, "steer", function(err)
+	pending.update(session_id, message_id, { delivery_request_revision = request_revision,
+		delivery_request_pending = delivery, delivery_request_token = token })
+	client().set_input_delivery(session_id, message_id, delivery, function(err)
 		if not pending.is_current(token) then return end
+		local current = pending.get(session_id, message_id)
+		if current and current.delivery_request_revision == request_revision then
+			pending.update(session_id, message_id, { delivery_request_pending = false })
+		end
+		if err and err.status == 409 and current and current.inbox and current.inbox.delivery == delivery then
+			err = nil
+		end
 		if not err then
-			local current = pending.get(session_id, message_id)
-			if current and current.inbox then
-				current.inbox.delivery = "steer"
+			if current and current.inbox and current.delivery_request_revision == request_revision
+				and (current.delivery_event_revision or 0) == event_revision
+				and (current.status == "queued" or current.status == "accepted") then
+				current.inbox.delivery = delivery
 				pending.admit(current.inbox)
+				emit("sync_changed", { kind = "inbox", action = delivery == "steer" and "steered" or "queued",
+					session_id = session_id, message_id = message_id })
 			end
-			emit("sync_changed", { kind = "inbox", action = "steered", session_id = session_id, message_id = message_id })
 		end
 		emit("v2_reconcile", { session_id = session_id })
 		if callback then callback(err) end
 	end)
 	return true
+end
+
+function M.steer_input(session_id, message_id, callback)
+	return set_input_delivery(session_id, message_id, "steer", callback)
+end
+
+function M.queue_input(session_id, message_id, callback)
+	return set_input_delivery(session_id, message_id, "queue", callback)
 end
 
 -- Editing first removes the inbox item. Only a confirmed cancellation returns
@@ -336,15 +459,7 @@ function M.edit_input(session_id, message_id, callback)
 	local text = record.text or payload.text or ""
 	local parts = opts.parts or {}
 	if record.text == nil then
-		for _, group in ipairs({ { "files", "file" }, { "agents", "agent" }, { "skills", "skill" } }) do
-			for _, attachment in ipairs(payload[group[1]] or {}) do
-				local part = vim.deepcopy(attachment)
-				part.type = group[2]
-				if part.type == "skill" then part.skillID = part.id end
-				if part.mention then part.source = { text = { value = part.mention.text } } end
-				parts[#parts + 1] = part
-			end
-		end
+		vim.list_extend(parts, require("opencode.protocol.v2.messages").draft(payload).parts)
 	end
 	opts.parts = nil
 	-- Admission retries belong to the original send attempt. In particular its

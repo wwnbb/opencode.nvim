@@ -8,6 +8,7 @@ local render_coordinator = require("opencode.ui.chat.render_coordinator")
 local actions = require("opencode.actions")
 local session_lock = require("opencode.session.lock")
 local chat_tasks = require("opencode.ui.chat.tasks")
+local navigation_request = 0
 
 local WIDGET_LINE_MAPS = {
 	{ kind = "question", map = "questions" },
@@ -153,6 +154,26 @@ local function jump_ranges(items, direction)
 		interactions.sync_widget_selection_from_cursor()
 	end
 	return true
+end
+
+---Jump to a rendered message by its server ID.
+---@param message_id string
+---@return boolean
+function M.jump_to_message(message_id)
+	if not valid_chat_window() then return false end
+	for _, pos in ipairs(collect_messages()) do
+		if pos.id == message_id then
+			local line = first_content_line(pos)
+			if not line then return false end
+			vim.api.nvim_win_set_cursor(state.winid, { line + 1, 0 })
+			local ok, interactions = pcall(require, "opencode.ui.chat.interactions")
+			if ok and interactions and type(interactions.sync_widget_selection_from_cursor) == "function" then
+				interactions.sync_widget_selection_from_cursor()
+			end
+			return true
+		end
+	end
+	return false
 end
 
 ---@param direction 1|-1
@@ -302,10 +323,14 @@ end
 ---@param callback fun(err: string|nil, record: table|nil)
 local function resolve_child_lock(child_session_id, tool_part, callback)
 	local child_session = nil
+	local pending = require("opencode.session.pending")
+	local token = pending.token(child_session_id)
 	actions.get_session(child_session_id, function(_, session)
+		if not pending.is_current(token) then return end
 		child_session = type(session) == "table" and session or nil
 
 		actions.load_session_messages(child_session_id, { limit = 100 }, function(messages_error, response)
+			if not pending.is_current(token) then return end
 			local sync = require("opencode.sync")
 			local current_tool_part = chat_tasks.resolve_tool_part(tool_part) or tool_part
 			local messages = sync.get_messages(child_session_id)
@@ -358,7 +383,17 @@ function M.enter_child_session(part_id)
 	if not tool_part then
 		return
 	end
+	local app_state = require("opencode.state")
+	local current = app_state.get_session()
+	local pending = require("opencode.session.pending")
+	local token = pending.token(current.id)
+	navigation_request = navigation_request + 1
+	local request = navigation_request
+	local function is_current()
+		return request == navigation_request and pending.is_current(token) and app_state.get_session().id == current.id
+	end
 	chat_tasks.resolve_task_child_session_id(pos, function(err, child_session_id)
+		if not is_current() then return end
 		if err then
 			vim.notify("Failed to resolve child session: " .. tostring(err), vim.log.levels.WARN)
 			return
@@ -368,14 +403,13 @@ function M.enter_child_session(part_id)
 			return
 		end
 
-		local app_state = require("opencode.state")
-		local current = app_state.get_session()
 		if current.id == child_session_id then
 			return
 		end
 
 		local current_tool_part = chat_tasks.resolve_tool_part(pos) or tool_part
 		resolve_child_lock(child_session_id, current_tool_part, function(lock_err, record)
+			if not is_current() then return end
 			if lock_err or not record then
 				session_lock.clear(child_session_id)
 				vim.notify("Cannot enter subagent session: " .. tostring(lock_err or "unknown metadata error"), vim.log.levels.ERROR)
@@ -406,11 +440,14 @@ end
 
 ---Leave current child session and return to parent.
 function M.leave_child_session()
-	if #state.session_stack == 0 then
-		return
-	end
-
-	local parent = table.remove(state.session_stack)
+	navigation_request = navigation_request + 1
+	local app_state = require("opencode.state")
+	local parent
+	repeat
+		parent = table.remove(state.session_stack)
+	until not parent or (app_state.get_session_record(parent.id)
+		and (parent.runtime == false or app_state.is_runtime_session(parent.id)))
+	if not parent then return end
 
 	actions.set_active_session(parent.id, parent.name, {
 		reason = "child_navigation",

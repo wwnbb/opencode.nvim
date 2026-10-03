@@ -30,187 +30,6 @@ local function request_chat_render(data)
 	end
 end
 
----@param kind string
----@param id string
----@param err any
-local function log_close_reject_error(kind, id, err)
-	if not err then
-		return
-	end
-	local ok_logger, logger = pcall(require, "opencode.logger")
-	if ok_logger and logger and type(logger.debug) == "function" then
-		logger.debug("Failed to reject " .. kind .. " while closing session", {
-			id = id,
-			error = err.message or err.error or tostring(err),
-		})
-	end
-end
-
----@param permission_id string
----@param session_id string
-local function reject_permission_request(permission_id, session_id)
-	local ok_client, client = pcall(require, "opencode.client")
-	if not session_id or not ok_client or type(client.respond_permission) ~= "function" then
-		return
-	end
-	local reply_opts = {
-		session_id = session_id,
-		directory = state.get_session_directory(session_id),
-		message = "Session closed",
-	}
-	pcall(function()
-		client.respond_permission(permission_id, "reject", reply_opts, function(err)
-			log_close_reject_error("permission", permission_id, err)
-		end)
-	end)
-end
-
----@param session_id string|nil
----@param request_id string
-local function reject_question_request(session_id, request_id)
-	local ok_client, client = pcall(require, "opencode.client")
-	if not ok_client or type(client.reject_question) ~= "function" then
-		return
-	end
-	pcall(function()
-		client.reject_question(session_id or "", request_id, {
-			directory = state.get_session_directory(session_id),
-		}, function(err)
-			log_close_reject_error("question", request_id, err)
-		end)
-	end)
-end
-
----@param permission_id string
----@param session_id string|nil
----@param source string
-local function emit_permission_rejected_for_close(permission_id, session_id, source)
-	emit("permission_rejected", {
-		permission_id = permission_id,
-		session_id = session_id,
-		reason = "session_close",
-		source = source,
-	})
-	emit("interaction_changed", {
-		kind = "permission",
-		action = "rejected",
-		id = permission_id,
-		session_id = session_id,
-		reason = "session_close",
-		source = source,
-	})
-end
-
----@param root_session_id string
-local function close_pending_interactions_for_session(root_session_id)
-	if not root_session_id or root_session_id == "" then
-		return
-	end
-
-	local ok_auto, auto_approve = pcall(require, "opencode.permission.danger")
-	if ok_auto and type(auto_approve.clear) == "function" then
-		auto_approve.clear()
-	end
-
-	local ok_perm, perm_state = pcall(require, "opencode.permission.state")
-	if ok_perm and type(perm_state.get_all) == "function" and type(perm_state.remove_permission) == "function" then
-		local owned = pending_helper.collect_owned(perm_state.get_all(), root_session_id, function(root, session_id)
-			return navigation.session_owned_by_root(root, session_id, navigation_ctx)
-		end)
-		for _, pstate in ipairs(owned) do
-			if pending_helper.is_pending_permission(pstate) then
-				reject_permission_request(pstate.permission_id, pstate.session_id)
-				if type(perm_state.mark_rejected) == "function" then
-					perm_state.mark_rejected(pstate.permission_id)
-				end
-				emit_permission_rejected_for_close(pstate.permission_id, pstate.session_id, "permission")
-			end
-			if perm_state.remove_permission(pstate.permission_id) then
-				emit("permission_removed", {
-					permission_id = pstate.permission_id,
-					session_id = pstate.session_id,
-					reason = "session_close",
-				})
-				emit("interaction_changed", {
-					kind = "permission",
-					action = "removed",
-					id = pstate.permission_id,
-					session_id = pstate.session_id,
-				})
-			end
-		end
-	end
-
-	local ok_question, question_state = pcall(require, "opencode.question.state")
-	if
-		ok_question
-		and type(question_state.get_all) == "function"
-		and type(question_state.remove_question) == "function"
-	then
-		local owned = pending_helper.collect_owned(question_state.get_all(), root_session_id, function(root, session_id)
-			return navigation.session_owned_by_root(root, session_id, navigation_ctx)
-		end)
-		for _, qstate in ipairs(owned) do
-			if pending_helper.is_pending_question(qstate) then
-				reject_question_request(qstate.session_id, qstate.request_id)
-			end
-			if question_state.remove_question(qstate.request_id) then
-				emit("question_removed", {
-					request_id = qstate.request_id,
-					session_id = qstate.session_id,
-					reason = "session_close",
-				})
-				emit("interaction_changed", {
-					kind = "question",
-					action = "removed",
-					id = qstate.request_id,
-					session_id = qstate.session_id,
-				})
-			end
-		end
-	end
-
-	local ok_edit, edit_state = pcall(require, "opencode.edit.state")
-	if ok_edit and type(edit_state.get_all) == "function" and type(edit_state.remove_edit) == "function" then
-		local owned = pending_helper.collect_owned(edit_state.get_all(), root_session_id, function(root, session_id)
-			return navigation.session_owned_by_root(root, session_id, navigation_ctx)
-		end)
-		for _, estate in ipairs(owned) do
-			if pending_helper.is_pending_edit(estate) and estate.transport == "review_rpc" then
-				local call_ok, rejected, reject_err = pcall(edit_state.reject_all, estate.permission_id)
-				if call_ok and rejected then
-					local submitted = require("opencode.review").reply(estate.permission_id, function(err)
-						log_close_reject_error("review", estate.permission_id, err)
-					end)
-					if not submitted then reject_err = "review reply could not be submitted" end
-				else
-					reject_err = (call_ok and reject_err) or rejected or "unknown error"
-				end
-				if reject_err then
-					vim.notify("Failed to reject review before closing session: " .. tostring(reject_err), vim.log.levels.ERROR)
-				end
-				emit("interaction_changed", {
-					kind = "edit", action = "rejected", id = estate.permission_id,
-					session_id = estate.session_id, reason = "session_close",
-				})
-			end
-			if edit_state.remove_edit(estate.permission_id) then
-				emit("edit_removed", {
-					permission_id = estate.permission_id,
-					session_id = estate.session_id,
-					reason = "session_close",
-				})
-				emit("interaction_changed", {
-					kind = "edit",
-					action = "removed",
-					id = estate.permission_id,
-					session_id = estate.session_id,
-				})
-			end
-		end
-	end
-end
-
 ---@param session table
 ---@param opts? table { notify?: boolean, reason?: string }
 local function activate_local(session, opts)
@@ -550,7 +369,6 @@ function M.close(session_id, opts)
 
 	local current_root = navigation.runtime_session_id(current.id, navigation_ctx)
 	local next_session = navigation.next_session_after_close(target_id, nil, navigation_ctx)
-	close_pending_interactions_for_session(target_id)
 	local closed = state.close_runtime_session(target_id)
 	local title = session_util.displayTitle(closed and (closed.title or closed.name)) or target_id
 
@@ -590,6 +408,7 @@ function M.close(session_id, opts)
 	emit("session.closed", {
 		sessionID = target_id,
 		session_id = target_id,
+		session_ids = closed_ids,
 		nextSessionID = next_session and next_session.id or nil,
 		next_session_id = next_session and next_session.id or nil,
 		reason = opts.reason or "session_close",
@@ -713,6 +532,8 @@ function M.recount_pending()
 	return counts
 end
 
+local recent_request = 0
+
 ---@param callback? function
 ---@param opts? table { limit?: number, silent?: boolean }
 function M.refresh_recent(callback, opts)
@@ -728,12 +549,17 @@ function M.refresh_recent(callback, opts)
 	local cfg = state.get_config() or {}
 	local parallel = cfg.session and cfg.session.parallel or {}
 	local limit = opts.limit or parallel.recent_limit or 30
-	local directory = vim.fn.fnamemodify(vim.fn.getcwd(), ":p")
-	if vim.fs and vim.fs.normalize then
-		directory = vim.fs.normalize(directory)
-	end
+	local path = require("opencode.util.path")
+	local directory = path.absolute(vim.fn.getcwd())
+	local token = pending_helper.token()
+	recent_request = recent_request + 1
+	local request = recent_request
 
 	client.list_sessions({ roots = true, directory = directory, limit = limit }, function(err, sessions)
+		if request ~= recent_request or not pending_helper.is_current(token) or directory ~= path.absolute(vim.fn.getcwd()) then
+			if callback then callback({ code = "cancelled", message = "Recent-session request was superseded" }) end
+			return
+		end
 		if not err and sessions then
 			M.set_recent(sessions, {
 				limit = limit,
@@ -854,9 +680,18 @@ function M.switch_to(session, opts)
 				-- load/sync paths instead.
 				pending_helper.reconcile_history(session.id, messages)
 				sync.handle_session_messages(session.id, messages, { snapshot = snapshot })
-				M.set_message_cache(session.id, messages, {
+				M.set_message_cache(session.id, sync.get_messages(session.id), {
 					reason = "session_switch",
 				})
+				-- Task children become discoverable only after their parent history loads.
+				-- Recount and recover interactions hidden while the tab was closed.
+				M.recount_pending()
+				for _, child_id in ipairs(sync.collect_session_tree(session.id)) do
+					if child_id ~= session.id then
+						emit("interaction_reconcile", { session_id = child_id })
+						emit("review_reconcile", { session_id = child_id })
+					end
+				end
 				M.refresh_status()
 			end
 			if state.get_session().id == session.id then

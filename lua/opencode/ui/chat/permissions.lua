@@ -8,6 +8,7 @@ local state = cs.state
 local permission_widget = require("opencode.ui.permission_widget")
 local widget_base = require("opencode.ui.widget_base")
 local permission_state = require("opencode.permission.state")
+local pending = require("opencode.session.pending")
 local widget_support = require("opencode.ui.chat.widget_support")
 local render_coordinator = require("opencode.ui.chat.render_coordinator")
 local actions = require("opencode.actions")
@@ -136,32 +137,25 @@ end
 
 -- ─── Handlers ─────────────────────────────────────────────────────────────────
 
-function M.handle_permission_confirm(perm_id, pstate)
-	local selected = pstate.selected_option or 1
-	local reply
-	if selected == 1 then
-		reply = "once"
-	elseif selected == 2 then
-		reply = "always"
-	else
-		reply = "reject"
-	end
-
-	local message = vim.trim((pstate and pstate.message) or "")
+local function respond_permission(perm_id, pstate, reply)
+	if not pstate or permission_state.get_permission(perm_id) ~= pstate or pstate.status ~= "pending" then return end
+	local token = pending.token(pstate.session_id)
+	local message = vim.trim(pstate.message or "")
 	actions.respond_permission(perm_id, reply, { message = message ~= "" and message or nil }, function(err)
 		vim.schedule(function()
+			if not pending.is_current(token) or permission_state.get_permission(perm_id) ~= pstate or pstate.status ~= "pending" then return end
 			if err then
 				vim.notify("Failed to respond to permission: " .. vim.inspect(err), vim.log.levels.ERROR)
 				return
 			end
 			if reply == "reject" then
-				permission_state.mark_rejected(perm_id)
+				if not permission_state.mark_rejected(perm_id) then return end
 				events.safe_emit("permission_rejected", {
 					permission_id = perm_id,
 				})
 				M.update_permission_status(perm_id, "rejected")
 			else
-				permission_state.mark_approved(perm_id, reply)
+				if not permission_state.mark_approved(perm_id, reply) then return end
 				events.safe_emit("permission_approved", {
 					permission_id = perm_id,
 					reply = reply,
@@ -177,27 +171,22 @@ function M.handle_permission_confirm(perm_id, pstate)
 	end)
 end
 
+function M.handle_permission_confirm(perm_id, pstate)
+	if not pstate then return end
+	local selected = pstate.selected_option or 1
+	local reply
+	if selected == 1 then
+		reply = "once"
+	elseif selected == 2 and #(pstate.always or {}) > 0 then
+		reply = "always"
+	else
+		reply = "reject"
+	end
+	respond_permission(perm_id, pstate, reply)
+end
+
 function M.handle_permission_reject(perm_id)
-	local pstate = permission_state.get_permission(perm_id)
-	local message = vim.trim((pstate and pstate.message) or "")
-	actions.respond_permission(perm_id, "reject", { message = message ~= "" and message or nil }, function(err)
-		vim.schedule(function()
-			if err then
-				vim.notify("Failed to reject permission: " .. tostring(err), vim.log.levels.ERROR)
-				return
-			end
-			permission_state.mark_rejected(perm_id)
-			events.safe_emit("permission_rejected", {
-				permission_id = perm_id,
-			})
-			events.safe_emit("interaction_changed", {
-				kind = "permission",
-				action = "rejected",
-				id = perm_id,
-			})
-			M.update_permission_status(perm_id, "rejected")
-		end)
-	end)
+	respond_permission(perm_id, permission_state.get_permission(perm_id), "reject")
 end
 
 ---@param perm_id string
@@ -209,8 +198,10 @@ function M.handle_permission_message(perm_id)
 
 	local input_ui = require("opencode.ui.input")
 	local chat = require("opencode.ui.chat")
+	local token = pending.token(pstate.session_id)
 
 	local function finish(text)
+		if not pending.is_current(token) or permission_state.get_permission(perm_id) ~= pstate or pstate.status ~= "pending" or pstate.submitting then return end
 		permission_state.set_message(perm_id, text or "")
 		M.rerender_permission(perm_id)
 		chat.focus()

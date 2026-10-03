@@ -2,6 +2,7 @@
 local M = {}
 function M.open(fields, opts, callback)
 	local forms = require("opencode.question.forms")
+	local form_external = require("opencode.ui.form_external")
 	local widget = require("opencode.ui.question_widget")
 	local float = require("opencode.ui.float")
 	local item = { questions = {}, current_tab = 1, status = "pending" }
@@ -40,18 +41,29 @@ function M.open(fields, opts, callback)
 			end
 			if not found then next_indices[#next_indices + 1] = index end
 			selection.selected_indices = next_indices
-		else selection.selected_indices, selection.custom_present = { index }, false end
-		selection.is_answered, cursor = true, index
+			selection.is_answered = #selection.selected_indices > 0 or selection.custom_present == true
+		else
+			selection.selected_indices, selection.custom_present = { index }, false
+			selection.is_answered = true
+		end
+		cursor = index
 		render()
 	end
 	local function custom()
 		local q, selection = current()
-		if not q or not q.custom then return end
+		if not q then return end
+		if q.field_type == "external" then
+			if not form_external.copy(q.url) then return end
+			forms.mark_external_ready(item, q.key)
+			render()
+			return
+		end
+		if not q.custom then return end
+		local tab_index = item.current_tab
 		float.create_input_popup({ title = " " .. q.header .. " ", default = selection.custom_input,
 			on_submit = function(value)
 				if closed then return end
-				selection.custom_input, selection.custom_present, selection.is_answered = value, true, true
-				if not q.multiple then selection.selected_indices = {} end
+				forms.set_custom_input(item, tab_index, value)
 				render()
 			end })
 	end
@@ -73,9 +85,17 @@ function M.open(fields, opts, callback)
 	end
 	map("<Space>", function() choose(cursor) end)
 	map("<CR>", function()
-		local q = current()
+		local q, selection = current()
 		if not q then submit()
-		elseif q.field_type == "external" then vim.ui.open(q.url)
+		elseif q.field_type == "external" then
+			if not selection.external_ready then
+				if not form_external.open(q.url) then return end
+				forms.mark_external_ready(item, q.key)
+			elseif not selection.is_answered then
+				forms.acknowledge_external(item, q.key)
+				if item.current_tab < #item.questions then item.current_tab = item.current_tab + 1 end
+			end
+			render()
 		elseif #q.options > 0 then choose(cursor)
 		else custom() end
 	end)

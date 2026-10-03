@@ -1,6 +1,8 @@
 -- opencode.nvim - Danger mode permission auto-approval
 
 local M = {}
+local pending = require("opencode.session.pending")
+local permissions = require("opencode.permission.state")
 
 local replied_permissions = {}
 
@@ -77,7 +79,10 @@ function M.approve(permission_id, opts)
 			if err then vim.notify("OpenCode review failed: " .. (err.message or "unknown error"), vim.log.levels.ERROR) end
 		end)
 	end
-	if replied_permissions[permission_id] then
+	local item = permissions.get_permission(permission_id)
+	if item and item.status ~= "pending" then return true, false end
+	local previous = replied_permissions[permission_id]
+	if previous and previous.owner == item and pending.is_current(previous.token) then
 		return true, false
 	end
 
@@ -87,25 +92,29 @@ function M.approve(permission_id, opts)
 		return false, false
 	end
 
-	replied_permissions[permission_id] = true
+	if item and not permissions.begin_submission(permission_id) then return true, false end
+	local session_id = (item and item.session_id) or opts.session_id
+	local attempt = { token = item and item.submission_token or pending.token(session_id), owner = item }
+	replied_permissions[permission_id] = attempt
 	-- Scope the auto-approval to the permission's session directory so
 	-- cross-project danger-mode approvals reach the correct instance.
-	local reply_opts = { message = opts.message, session_id = opts.session_id }
-	if opts.session_id then
+	local reply_opts = { message = opts.message, session_id = session_id }
+	if session_id then
 		local state_ok, state = pcall(require, "opencode.state")
 		if state_ok and type(state.get_session_directory) == "function" then
-			reply_opts.directory = state.get_session_directory(opts.session_id)
+			reply_opts.directory = state.get_session_directory(session_id)
 		end
 	end
-	local token = require("opencode.session.pending").token(opts.session_id)
 	client.respond_permission(permission_id, "once", reply_opts, function(err)
 		vim.schedule(function()
-			if not require("opencode.session.pending").is_current(token) then return end
-			local current = require("opencode.permission.state").get_permission(permission_id)
-			if current and current.status ~= "pending" then return end
+			if replied_permissions[permission_id] ~= attempt or not pending.is_current(attempt.token) then return end
+			local current = permissions.get_permission(permission_id)
+			if current ~= item or (current and (current.status ~= "pending" or current.submission_token ~= attempt.token)) then return end
+			attempt.finished = true
 			local log = logger()
 			if err then
 				replied_permissions[permission_id] = nil
+				if item then permissions.restore_submission(permission_id, err) end
 				if log then
 					log.warn("Danger mode failed to auto-approve permission", {
 						permission_id = permission_id,
@@ -134,17 +143,18 @@ end
 ---@return number count Number of pending permission replies queued
 function M.approve_pending()
 	local count = 0
+	local runtime_root = require("opencode.events.util").runtime_root_for_session
 
 	local perm_ok, perm_state = pcall(require, "opencode.permission.state")
 	if perm_ok and type(perm_state.get_all_active) == "function" then
 		for _, pstate in ipairs(perm_state.get_all_active()) do
-			local _, queued = M.approve(pstate.permission_id, {
-				permission_type = pstate.permission_type,
-				session_id = pstate.session_id,
-				kind = "permission",
-			})
-			if queued then
-				count = count + 1
+			if runtime_root(pstate.session_id) then
+				local _, queued = M.approve(pstate.permission_id, {
+					permission_type = pstate.permission_type,
+					session_id = pstate.session_id,
+					kind = "permission",
+				})
+				if queued then count = count + 1 end
 			end
 		end
 	end
@@ -152,21 +162,21 @@ function M.approve_pending()
 	local edit_ok, edit_state = pcall(require, "opencode.edit.state")
 	if edit_ok and type(edit_state.get_all_active) == "function" then
 		for _, estate in ipairs(edit_state.get_all_active()) do
-			local call_ok, accepted, accept_err = pcall(edit_state.accept_all, estate.permission_id)
-			if not call_ok or not accepted then
-				vim.notify(
-					"OpenCode danger mode failed to accept edit: "
-						.. tostring((call_ok and accept_err) or accepted or "unknown error"),
-					vim.log.levels.ERROR
-				)
-			else
-				local _, queued = M.approve(estate.permission_id, {
-					permission_type = "edit",
-					session_id = estate.session_id,
-					kind = "edit",
-				})
-				if queued then
-					count = count + 1
+			if runtime_root(estate.session_id) then
+				local call_ok, accepted, accept_err = pcall(edit_state.accept_all, estate.permission_id)
+				if not call_ok or not accepted then
+					vim.notify(
+						"OpenCode danger mode failed to accept edit: "
+							.. tostring((call_ok and accept_err) or accepted or "unknown error"),
+						vim.log.levels.ERROR
+					)
+				else
+					local _, queued = M.approve(estate.permission_id, {
+						permission_type = "edit",
+						session_id = estate.session_id,
+						kind = "edit",
+					})
+					if queued then count = count + 1 end
 				end
 			end
 		end
@@ -176,7 +186,14 @@ function M.approve_pending()
 end
 
 function M.clear()
-	replied_permissions = {}
+	-- Disabling danger mode does not cancel an already sent HTTP reply.
+	for id, attempt in pairs(replied_permissions) do
+		local item = permissions.get_permission(id)
+		if attempt.finished or not pending.is_current(attempt.token) or item ~= attempt.owner
+			or (item and item.status ~= "pending") then
+			replied_permissions[id] = nil
+		end
+	end
 end
 
 return M

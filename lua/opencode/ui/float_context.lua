@@ -33,7 +33,7 @@ local function is_valid_float_dims(float_dims)
 		and float_dims.height >= 8
 end
 
-local function get_chat_context()
+function M.get_chat_context()
 	local target_win = nil
 	local float_dims = nil
 	local chat = chat_module()
@@ -61,7 +61,7 @@ local function get_chat_context()
 end
 
 function M.resolve_centered_placement(total_width, total_height)
-	local target_win, float_dims = get_chat_context()
+	local target_win, float_dims = M.get_chat_context()
 	local ui_list = vim.api.nvim_list_uis()
 	local ui = ui_list and ui_list[1] or { width = 80, height = 24 }
 

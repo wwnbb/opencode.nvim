@@ -11,13 +11,8 @@ When previous_suggestion is present, propose a different continuation. Return an
 Context (JSON):
 ]]
 
-local function normalize(path)
-	return vim.fs.normalize(vim.fn.fnamemodify(path, ":p")):gsub("/$", "")
-end
-
-local function within(path, root)
-	return path == root or path:sub(1, #root + 1) == root .. "/"
-end
+local path_util = require("opencode.util.path")
+local normalize, within = path_util.absolute, path_util.within
 
 local function source_buffer(bufnr)
 	return vim.api.nvim_buf_is_valid(bufnr) and vim.api.nvim_buf_is_loaded(bufnr)
@@ -50,7 +45,9 @@ function M.capture()
 end
 
 local function relative(path, root)
-	return within(path, root) and path:sub(#root + 2) or path
+	if path == root then return "" end
+	local prefix = root:sub(-1) == "/" and root or root .. "/"
+	return within(path, root) and path:sub(#prefix + 1) or path
 end
 
 local function encode(data)

@@ -32,7 +32,13 @@ local poll
 local function schedule(record)
 	if not live(record) then return end
 	owner.stop_attempt(record)
-	record.timer = vim.defer_fn(function() record.timer = nil; poll(record) end, 1500)
+	local timer
+	timer = vim.defer_fn(function()
+		if record.timer ~= timer then return end
+		record.timer = nil
+		poll(record)
+	end, 1500)
+	record.timer = timer
 end
 poll = function(record)
 	if not live(record) or record.status == "cancelling" then return end
@@ -115,13 +121,16 @@ end
 function M.credential(operation, integration_id, credential_id, body, opts, callback)
 	local key = integration_id .. "\0" .. credential_id
 	if owner.is_pending(key) then return end
-	owner.mark(key)
 	local token = pending.token()
+	local marker = owner.mark(key, token)
+	local function done(err, integration)
+		owner.remember(key, marker)
+		callback(err, integration)
+	end
 	client().credential(operation, credential_id, body, function(err)
-		owner.remember(key)
-		if not pending.is_current(token) then callback({ message = "Server connection changed" }); return end
-		if err then callback(err); return end
-		refresh_integration(integration_id, opts, token, callback)
+		if not pending.is_current(token) then done({ message = "Server connection changed" }); return end
+		if err then done(err); return end
+		refresh_integration(integration_id, opts, token, done)
 	end)
 end
 

@@ -1,13 +1,8 @@
 -- Capture a Visual selection from the live editor buffer without reading disk.
 local M = {}
 
-local function normalize(path)
-	return vim.fs.normalize(vim.fn.fnamemodify(path, ":p")):gsub("/$", "")
-end
-
-local function within(path, root)
-	return path == root or path:sub(1, #root + 1) == root .. "/"
-end
+local path_util = require("opencode.util.path")
+local normalize, within = path_util.absolute, path_util.within
 
 local function visual_mode(mode)
 	return mode == "v" or mode == "V" or mode == "\022"

@@ -1,6 +1,7 @@
 -- opencode.nvim - Input keymaps
 
 local M = {}
+local app_state = require("opencode.state")
 
 local function map(bufnr, modes, lhs, rhs, opts)
 	if not lhs or lhs == "" or not rhs then
@@ -29,13 +30,16 @@ end
 
 function M.setup(bufnr, cfg, handlers)
 	local keys = cfg.keymaps or {}
+	local queue_send = handlers.send_queue or handlers.send
+	local steer_send = handlers.send_steer or handlers.send
 
 	local function schedule(handler)
 		if not handler then
 			return
 		end
+		local session_id = app_state.get_session().id
 		vim.schedule(function()
-			if vim.api.nvim_buf_is_valid(bufnr) then
+			if vim.api.nvim_buf_is_valid(bufnr) and app_state.get_session().id == session_id then
 				handler()
 			end
 		end)
@@ -52,22 +56,28 @@ function M.setup(bufnr, cfg, handlers)
 		return ""
 	end
 
-	local function send_or_confirm()
-		if autocomplete_visible() then
-			return confirm_autocomplete()
-		end
-		if handlers.command_enter_mode and handlers.command_enter_mode() == "select" then
-			schedule(handlers.command_enter_select)
+	local function send_or_confirm(handler)
+		return function()
+			if autocomplete_visible() then
+				return confirm_autocomplete()
+			end
+			if handlers.command_enter_mode and handlers.command_enter_mode() == "select" then
+				schedule(handlers.command_enter_select)
+				return ""
+			end
+			schedule(handler)
 			return ""
 		end
-		schedule(handlers.send)
-		return ""
 	end
 
-	map(bufnr, "i", keys.send, send_or_confirm, { expr = true, replace_keycodes = false })
-	map(bufnr, "n", keys.send, handlers.send)
-	map(bufnr, "i", keys.send_alt, send_or_confirm, { expr = true, replace_keycodes = false })
-	map(bufnr, "n", keys.send_alt, handlers.send)
+	map(bufnr, "i", keys.send, send_or_confirm(queue_send), { expr = true, replace_keycodes = false })
+	map(bufnr, "n", keys.send, queue_send)
+	map(bufnr, "i", keys.send_steer, send_or_confirm(steer_send), { expr = true, replace_keycodes = false })
+	map(bufnr, "n", keys.send_steer, steer_send)
+	-- An explicitly retained legacy send_alt binding keeps its queue behavior
+	-- even when it shares the new default steer key.
+	map(bufnr, "i", keys.send_alt, send_or_confirm(queue_send), { expr = true, replace_keycodes = false })
+	map(bufnr, "n", keys.send_alt, queue_send)
 
 	map(bufnr, "n", keys.cancel, handlers.cancel)
 	if not is_escape_key(keys.cancel) then

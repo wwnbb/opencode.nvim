@@ -280,9 +280,15 @@ def main():
                     from native_ui import run as run_ui
                     result = run_ui(repo, script, nvim_env, output)
                 else:
-                    result = subprocess.run(["nvim", "--headless", "--noplugin", "-n", "-i", "NONE",
-                                             "-u", str(repo / "tests/minimal_init.lua"),
-                                             "-l", str(repo / "tests/runtime" / script)],
+                    command = ["nvim", "--headless", "--noplugin", "-n", "-i", "NONE",
+                               "-u", str(repo / "tests/minimal_init.lua")]
+                    if script == "v2_auth_ui.lua":
+                        # -l exits while getcharstr waits; an Ex command keeps its input loop alive.
+                        nvim_env["OPENCODE_V2_SCRIPT"] = str(repo / "tests/runtime" / script)
+                        command += ["-c", "lua dofile(vim.env.OPENCODE_V2_SCRIPT)", "-c", "qa!"]
+                    else:
+                        command += ["-l", str(repo / "tests/runtime" / script)]
+                    result = subprocess.run(command,
                                             env=nvim_env, cwd=repo, capture_output=True, text=True, timeout=330)
                 save(name + "-output.txt", result.stdout + result.stderr)
                 assert result.returncode == 0, f"Neovim exited {result.returncode}:\n" + result.stdout + result.stderr

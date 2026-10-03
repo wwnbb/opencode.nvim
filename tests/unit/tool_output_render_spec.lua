@@ -2,7 +2,7 @@ describe("tool output envelopes", function()
 	for _, tool in ipairs({ "read", "glob", "grep", "rg" }) do
 		it("preserves " .. tool .. " text and highlights across server output representations", function()
 			local renderer = require("opencode.ui.chat." .. ((tool == "glob" or tool == "grep") and "search" or tool))
-			local body = "first\r\n\27[31msecond\27[0m"
+			local body = "first\r\n\27]8;;https://example.com\27\\\27[31msecond\27[0m\27]8;;\7"
 			local cases = {
 				{ output = { output = body, content = "ignored" }, text = "first\nsecond" },
 				{ output = { content = body }, text = "first\nsecond" },

@@ -7,6 +7,7 @@ local M = {}
 local render = require("opencode.ui.chat.render")
 local task_animation = require("opencode.ui.chat.task_animation")
 local tool_part_resolver = require("opencode.ui.chat.tool_part")
+local text_util = require("opencode.util.text")
 
 -- ─── Tool icons & display helpers ────────────────────────────────────────────
 
@@ -109,20 +110,18 @@ end
 ---@param max_len number
 ---@return string
 local function truncate_label(text, max_len)
-	if #text <= max_len then
-		return text
-	end
-	return text:sub(1, max_len - 3) .. "..."
+	return text_util.truncate(text, max_len, "...")
 end
 
 ---Truncate a long path to its last 37 characters prefixed by "..." (max 40).
 ---@param path string
 ---@return string
 local function truncate_path_end(path)
-	if #path <= 40 then
+	local length = vim.fn.strchars(path)
+	if length <= 40 then
 		return path
 	end
-	return "..." .. path:sub(-37)
+	return "..." .. vim.fn.strcharpart(path, length - 37)
 end
 
 ---Resolve the ripgrep match count across known metadata key spellings.
@@ -175,28 +174,15 @@ function M.format_summary_item_label(item)
 	end
 
 	-- Tool-specific fallback
-	if tool_name == "read" then
+	if tool_name == "read" or tool_name == "write" or tool_name == "edit" then
 		local fp = input_table.path or input_table.filePath or input_table.file_path or ""
 		if fp ~= "" then
-			return "Read " .. truncate_path_end(fp)
-		end
-	elseif tool_name == "write" then
-		local fp = input_table.path or input_table.filePath or input_table.file_path or ""
-		if fp ~= "" then
-			return "Write " .. truncate_path_end(fp)
-		end
-	elseif tool_name == "edit" then
-		local fp = input_table.path or input_table.filePath or input_table.file_path or ""
-		if fp ~= "" then
-			return "Edit " .. truncate_path_end(fp)
+			return render.format_title(tool_name) .. " " .. truncate_path_end(fp)
 		end
 	elseif tool_name == "bash" then
 		local d = input_table.description or ""
 		if d ~= "" then
-			if #d > 40 then
-				d = d:sub(1, 37) .. "..."
-			end
-			return "Bash " .. d
+			return "Bash " .. truncate_label(d, 40)
 		end
 	elseif tool_name == "glob" then
 		local pat = input_table.pattern or ""
@@ -272,22 +258,20 @@ function M.format_state_duration(state_time)
 		return nil
 	end
 
-	local duration = end_time - start_time
-	if duration >= 1000 then
-		duration = duration / 1000
-	end
+	local duration = (end_time - start_time) / 1000
 	if duration < 1 then
 		return string.format("%dms", math.floor(duration * 1000 + 0.5))
 	end
 	if duration < 10 then
 		return string.format("%.1fs", duration)
 	end
+	duration = math.floor(duration + 0.5)
 	if duration < 60 then
-		return string.format("%ds", math.floor(duration + 0.5))
+		return string.format("%ds", duration)
 	end
 
 	local minutes = math.floor(duration / 60)
-	local seconds = math.floor(duration % 60 + 0.5)
+	local seconds = duration % 60
 	return string.format("%dm%02ds", minutes, seconds)
 end
 

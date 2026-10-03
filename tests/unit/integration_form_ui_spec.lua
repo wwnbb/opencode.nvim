@@ -15,6 +15,63 @@ describe("integration forms", function()
 		dialog.close()
 		assert.equals(1, count)
 	end)
+	it("requires a separate external completion confirmation before integration setup", function()
+		local original_open, opened, result = vim.ui.open, {}, nil
+		vim.ui.open = function(url) opened[#opened + 1] = url; return {} end
+		local dialog = require("opencode.ui.form").open({
+			{ key = "authorization", type = "external", url = "https://example.com/connect" },
+			{ key = "name", type = "string", required = true, default = "integration" },
+		}, { title = "Integration setup" }, function(answer) result = answer end)
+		local keys = {}
+		for _, map in ipairs(vim.api.nvim_buf_get_keymap(vim.api.nvim_get_current_buf(), "n")) do keys[map.lhs] = map.callback end
+		keys["<C-G>"]()
+		assert.is_nil(result)
+		keys["<CR>"]()
+		assert.same({ "https://example.com/connect" }, opened)
+		keys["<C-G>"]()
+		assert.is_nil(result)
+		keys["<CR>"]()
+		keys["<C-G>"]()
+		assert.same({ authorization = true, name = "integration" }, result)
+		assert.equals(1, #opened)
+		dialog.close()
+		vim.ui.open = original_open
+	end)
+	it("omits a cleared optional multiselect and its conditional integration field", function()
+		local result
+		local dialog = require("opencode.ui.form").open({
+			{ key = "choices", type = "multiselect", options = { { label = "A", value = "a" } } },
+			{ key = "dependent", type = "string", default = "stale", when = {
+				{ key = "choices", op = "neq", value = "a" },
+			} },
+		}, { title = "Integration setup" }, function(answer) result = answer end)
+		local keys = {}
+		for _, map in ipairs(vim.api.nvim_buf_get_keymap(vim.api.nvim_get_current_buf(), "n")) do keys[map.lhs] = map.callback end
+		keys["1"]()
+		keys["1"]()
+		keys["<C-G>"]()
+		assert.same({}, result)
+		dialog.close()
+	end)
+	it("applies delayed custom input to the field that opened it", function()
+		local float = require("opencode.ui.float")
+		local original_popup, pending = float.create_input_popup, nil
+		float.create_input_popup = function(opts) pending = opts end
+		local result
+		local dialog = require("opencode.ui.form").open({
+			{ key = "first", type = "string", required = true },
+			{ key = "second", type = "string", default = "kept" },
+		}, { title = "Integration setup" }, function(answer) result = answer end)
+		local keys = {}
+		for _, map in ipairs(vim.api.nvim_buf_get_keymap(vim.api.nvim_get_current_buf(), "n")) do keys[map.lhs] = map.callback end
+		keys.c()
+		keys["<Tab>"]()
+		pending.on_submit("first value")
+		keys["<C-G>"]()
+		dialog.close()
+		float.create_input_popup = original_popup
+		assert.same({ first = "first value", second = "kept" }, result)
+	end)
 end)
 
 describe("integration form layout", function()

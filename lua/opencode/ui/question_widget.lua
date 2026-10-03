@@ -180,9 +180,7 @@ end
 
 ---@param option_count number
 ---@param is_multi boolean
----@param direct_submit boolean
 ---@param allow_custom boolean
----@param ready_to_advance boolean
 ---@param has_multiple boolean
 ---@param answered_count number
 ---@param total_count number
@@ -190,34 +188,20 @@ end
 local function format_hint(
 	option_count,
 	is_multi,
-	direct_submit,
 	allow_custom,
-	ready_to_advance,
 	has_multiple,
 	answered_count,
 	total_count
 )
 	local parts = {}
-	if direct_submit then
-		if option_count > 0 then
-			table.insert(parts, string.format("1-%d submit", math.min(option_count, 9)))
-			table.insert(parts, "↑↓ select")
-		end
-		table.insert(parts, "Enter submit")
-	elseif ready_to_advance then
-		table.insert(parts, "Enter again to continue")
+	if option_count > 0 then
+		table.insert(parts, string.format("1-%d select", math.min(option_count, 9)))
+		table.insert(parts, "↑↓ move")
 	else
-		if option_count > 0 then
-			table.insert(parts, string.format("1-%d select", math.min(option_count, 9)))
-			table.insert(parts, "↑↓ move")
-		else
-			table.insert(parts, "select an answer")
-		end
-		if is_multi then
-			table.insert(parts, "Space toggle")
-		end
-		table.insert(parts, "Enter twice continue")
+		table.insert(parts, "select an answer")
 	end
+	if is_multi then table.insert(parts, "Space toggle") end
+	table.insert(parts, "Enter continue")
 
 	if has_multiple then
 		table.insert(parts, string.format("%d/%d answered", answered_count, total_count))
@@ -279,6 +263,10 @@ local function collect_selection_answers(selection, question)
 	if type(selection) ~= "table" then
 		return answer_parts
 	end
+	if question.field_type == "external" then
+		if selection.is_answered then return { "Acknowledged" } end
+		return answer_parts
+	end
 
 	for _, idx in ipairs(selection.selected_indices or {}) do
 		local option = question.options and question.options[idx]
@@ -286,11 +274,21 @@ local function collect_selection_answers(selection, question)
 			table.insert(answer_parts, get_option_label(option, tostring(idx)))
 		end
 	end
-	if selection.custom_input and selection.custom_input ~= "" then
+	if selection.custom_present and selection.custom_input and selection.custom_input ~= "" then
 		table.insert(answer_parts, selection.custom_input)
 	end
 
 	return answer_parts
+end
+
+-- Restore focus to the saved answer rather than selecting the first option.
+function M.get_selection_focus_offset(meta, selection, option)
+	selection = selection or {}
+	if type(option) ~= "number" then
+		option = selection.custom_present and 0 or (selection.selected_indices or {})[1]
+	end
+	return option and ((meta.option_lines or {})[option] or (widget_base.get_focus_offset(meta) or 0) + option - 1)
+		or meta.custom_interactive_line or 1
 end
 
 -- Get formatted lines for a question.
@@ -300,6 +298,15 @@ end
 ---@param status "pending"|"answered"|"rejected"|"confirming"
 ---@return table lines, table highlights, OpenCodeWidgetMeta meta
 function M.get_lines_for_question(_request_id, question_data, selection_state, status, opts)
+	if status == "answered" or status == "rejected" then
+		local lines, highlights
+		if status == "answered" then
+			lines, highlights = M.get_answered_lines(_request_id, question_data, selection_state.display_answers or selection_state.answers)
+		else
+			lines, highlights = M.get_rejected_lines(_request_id, question_data)
+		end
+		return lines, highlights, widget_base.make_meta()
+	end
 	if selection_state.submitting then
 		return M.get_submitting_lines(_request_id, question_data, selection_state)
 	end
@@ -316,7 +323,7 @@ function M.get_lines_for_question(_request_id, question_data, selection_state, s
 
 	if not current_question then
 		add_panel_line(result, "Form: " .. ((selection_state.form or {}).title or "Waiting"), "OpenCodeQuestionTitle")
-		add_panel_line(result, selection_state.server_error or next(selection_state.field_errors or {}) and select(2, next(selection_state.field_errors)) or "Enter to submit form defaults", "OpenCodeQuestionMuted")
+		add_panel_line(result, selection_state.server_error or next(selection_state.field_errors or {}) and select(2, next(selection_state.field_errors)) or "Enter to review form defaults", "OpenCodeQuestionMuted")
 		return result.lines, result.highlights, widget_base.make_meta()
 	end
 
@@ -377,22 +384,27 @@ function M.get_lines_for_question(_request_id, question_data, selection_state, s
 			add_panel_blank(result)
 		end
 		local custom_text = selections.custom_input or ""
-		local custom_selected = custom_text ~= ""
+		local custom_selected = selections.custom_present == true
 		local custom_marker = custom_selected and icons.selected or icons.unselected
-		local custom_line = custom_selected and (custom_marker .. " Custom: " .. custom_text)
+		local custom_line = custom_text ~= "" and (custom_marker .. " Custom: " .. custom_text)
 			or (custom_marker .. " Custom answer...")
 		custom_interactive_line = add_panel_line(
 			result,
 			custom_line,
 			custom_selected and "OpenCodeQuestionSelected" or "OpenCodeQuestionMuted"
 		)
+		if custom_text ~= "" then option_lines[0] = custom_interactive_line end
 	end
 
 	local error_text = (selection_state.field_errors or {})[current_question.key] or selection_state.server_error
 	if error_text then add_panel_line(result, error_text, "OpenCodeQuestionError") end
 	if current_question.field_type == "external" then
 		add_panel_line(result, current_question.url or "", "OpenCodeQuestionOutput")
-		add_panel_line(result, "Enter: open link · waiting for external completion", "OpenCodeQuestionMuted")
+		local external_hint
+		if selections.is_answered then external_hint = "Acknowledged · Enter: continue"
+		elseif selections.external_ready then external_hint = "Complete the external action, then Enter: confirm completion"
+		else external_hint = "Enter: open link · c: copy link · then confirm completion" end
+		add_panel_line(result, external_hint, "OpenCodeQuestionMuted")
 	end
 	if status == "pending" and current_question.field_type ~= "external" then
 		local answered_count = 0
@@ -409,9 +421,7 @@ function M.get_lines_for_question(_request_id, question_data, selection_state, s
 			selection_state.hint or format_hint(
 				option_count,
 				is_multi,
-				#questions == 1 and not is_multi,
 				allow_custom,
-				selections.ready_to_advance == true,
 				#questions > 1,
 				answered_count,
 				#questions

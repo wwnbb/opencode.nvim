@@ -100,15 +100,15 @@ end
 ---@return table[]
 function M.filter_agents(agents, query)
 	local filtered = {}
-	local needle = tostring(query or ""):lower()
+	local needle = vim.fn.tolower(tostring(query or ""))
 
 	for _, agent in ipairs(agents or {}) do
 		if sync.is_mentionable_agent(agent) then
 			local name = M.agent_name(agent)
 			local description = M.agent_description(agent)
 			local include = needle == ""
-				or name:lower():find(needle, 1, true) ~= nil
-				or description:lower():find(needle, 1, true) ~= nil
+				or vim.fn.tolower(name):find(needle, 1, true) ~= nil
+				or vim.fn.tolower(description):find(needle, 1, true) ~= nil
 
 			if include then
 				table.insert(filtered, agent)

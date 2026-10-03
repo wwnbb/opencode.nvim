@@ -26,6 +26,7 @@ end
 
 local function entry_is_pending(entry, now)
 	return entry ~= nil and (entry.stamp == nil or now == nil or now == entry.stamp)
+		and (entry.token == nil or require("opencode.session.pending").is_current(entry.token))
 end
 
 ---@param fn function|nil
@@ -34,11 +35,14 @@ function M.set_identity_getter(fn)
 end
 
 ---@param provider_id string|nil
-function M.mark(provider_id)
+---@param token table|nil Connection token for an in-flight credential operation.
+function M.mark(provider_id, token)
 	if provider_id == nil then
 		return
 	end
-	pending[provider_id] = { stamp = get_identity() }
+	local entry = { stamp = get_identity(), token = token }
+	pending[provider_id] = entry
+	return entry
 end
 
 ---@param provider_id string|nil
@@ -51,8 +55,9 @@ function M.is_pending(provider_id)
 end
 
 ---@param provider_id string|nil
-function M.remember(provider_id)
-	if provider_id == nil then
+---@param expected table|nil Only release the marker owned by this operation.
+function M.remember(provider_id, expected)
+	if provider_id == nil or (expected and pending[provider_id] ~= expected) then
 		return
 	end
 	pending[provider_id] = nil

@@ -64,21 +64,19 @@ function M.insert_text_at_cursor(state, text, schedule_resize)
 	return true
 end
 
-local function count_file_parts(state, mime)
-	local count = 0
-	local image = type(mime) == "string" and mime:match("^image/") ~= nil
+local function part_marker(part)
+	local source = part.type == "file" and type(part.source) == "table" and (part.source.text or part.source)
+	return part._marker or type(source) == "table" and source.value or nil
+end
 
+local function next_file_marker(state, label)
+	local index = 0
 	for _, part in ipairs(state.parts or {}) do
-		if part.type == "file" then
-			if image and type(part.mime) == "string" and part.mime:match("^image/") then
-				count = count + 1
-			elseif not image and part.mime == mime then
-				count = count + 1
-			end
-		end
+		local marker = part_marker(part)
+		local number = type(marker) == "string" and tonumber(marker:match("^%[" .. label .. " (%d+)%]$"))
+		index = math.max(index, number or 0)
 	end
-
-	return count
+	return "[" .. label .. " " .. (index + 1) .. "]"
 end
 
 function M.add_file_part(state, content, opts, insert_text_at_cursor)
@@ -93,8 +91,7 @@ function M.add_file_part(state, content, opts, insert_text_at_cursor)
 
 	local mime = content.mime or "application/octet-stream"
 	local is_image = mime:match("^image/") ~= nil
-	local marker = is_image and ("[Image " .. tostring(count_file_parts(state, mime) + 1) .. "]")
-		or ("[File " .. tostring(#state.parts + 1) .. "]")
+	local marker = next_file_marker(state, is_image and "Image" or "File")
 	local filename = content.filename
 	if not filename or filename == "" then
 		filename = is_image and "clipboard.png" or "clipboard"
@@ -135,7 +132,7 @@ function M.active_parts_for_text(state, text)
 	local active = {}
 
 	for _, part in ipairs(state.parts or {}) do
-		local marker = part._marker
+		local marker = part_marker(part)
 		if type(marker) ~= "string" or (text or ""):find(marker, 1, true) then
 			local copy = vim.deepcopy(part)
 			copy._marker = nil
@@ -160,16 +157,16 @@ local function find_image_path_in_line(line, clipboard)
 
 	local lower = string.lower(line)
 	local patterns = {
-		"file://[^%s]+%.png",
-		"file://[^%s]+%.jpg",
-		"file://[^%s]+%.jpeg",
-		"file://[^%s]+%.gif",
-		"file://[^%s]+%.webp",
-		"file://[^%s]+%.bmp",
-		"file://[^%s]+%.tiff",
-		"file://[^%s]+%.tif",
-		"file://[^%s]+%.heic",
-		"file://[^%s]+%.avif",
+		"file:/+[^%s]+%.png",
+		"file:/+[^%s]+%.jpg",
+		"file:/+[^%s]+%.jpeg",
+		"file:/+[^%s]+%.gif",
+		"file:/+[^%s]+%.webp",
+		"file:/+[^%s]+%.bmp",
+		"file:/+[^%s]+%.tiff",
+		"file:/+[^%s]+%.tif",
+		"file:/+[^%s]+%.heic",
+		"file:/+[^%s]+%.avif",
 		"/.*%.png",
 		"/.*%.jpg",
 		"/.*%.jpeg",
@@ -183,8 +180,10 @@ local function find_image_path_in_line(line, clipboard)
 	}
 
 	for _, pattern in ipairs(patterns) do
-		local start_col, end_col = lower:find(pattern)
-		if start_col then
+		-- Match a complete filename, never the image prefix of ".png.bak".
+		local start_col, end_col = lower:find(pattern .. "%f[%s'\"%)%]%}%z]")
+		-- Never retry a rejected URI as a plain filesystem path.
+		if start_col and (pattern:sub(1, 1) ~= "/" or line:sub(start_col - 1, start_col - 1) ~= ":") then
 			local candidate = line:sub(start_col, end_col)
 			content = clipboard.image_from_text(candidate)
 			if content then

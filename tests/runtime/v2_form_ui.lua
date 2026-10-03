@@ -105,12 +105,12 @@ local expected = { target = "b", checks = { "unit", "integration" }, retries = 0
 assert(vim.deep_equal(detail.state.answer, expected), vim.inspect(detail))
 snapshot("form-answered")
 
--- JavaScript regex validation belongs to the server; keep a rejected draft editable.
+-- Local pattern validation keeps a rejected draft editable before submission.
 local regex, regex_item = form({ { key = "code", type = "string", required = true, pattern = "^OK-[0-9]+$" } }, "Server validation")
 key("c"); wait(input.is_visible, "Regex input did not open")
 vim.api.nvim_buf_set_lines(vim.api.nvim_get_current_buf(), 0, -1, false, { "bad-draft" })
 vim.cmd("stopinsert"); key("<C-g>")
-wait(function() return regex_item.server_error and not regex_item.submitting end, "Server validation not shown")
+wait(function() return regex_item.field_errors.code and not regex_item.submitting end, "Pattern validation not shown")
 assert(regex_item.status == "pending" and regex_item.form_selections.code.custom_input == "bad-draft")
 focus("questions", regex.id); snapshot("form-server-error")
 key("c"); wait(input.is_visible, "Retry input did not open")
@@ -131,17 +131,26 @@ wait(function() return other_item.status == "answered" end, "Missed remote reply
 assert(other_item.answers.text == "authoritative second client")
 snapshot("form-second-client-recovered")
 
--- Link dispatch is captured, but completion must still arrive from the server.
-local external, external_item = form({ { key = "auth", type = "external", url = url .. "/api/info" } }, "External step")
+-- Opening the link prepares the step; a separate Enter acknowledges completion.
+local external, external_item = form({
+	{ key = "auth", type = "external", url = url .. "/api/info" },
+	{ key = "note", type = "string", required = true, default = "completed in browser" },
+}, "External step")
 local original_open, opened = vim.ui.open, nil
-vim.ui.open = function(link) opened = link end
+vim.ui.open = function(link) opened = link; return {} end
 key("<CR>"); vim.ui.open = original_open
 assert(opened == url .. "/api/info" and external_item.status == "pending")
 assert(not forms.begin_submission(external.id, "reply"), "External field submitted locally")
+assert(external_item.form_selections.auth.external_ready and forms.get_answers(external.id).auth == nil)
 snapshot("form-external-wait")
-code = second("DELETE", prefix .. "/form/" .. external.id)
-assert(code == 204)
-wait(function() return external_item.status == "rejected" end, "External cancellation not reflected")
+key("<CR>")
+assert(forms.get_answers(external.id).auth == true and external_item.questions[external_item.current_tab].key == "note")
+key("<CR>"); key("<CR>")
+assert(external_item.status == "confirming")
+key("<CR>")
+wait(function() return external_item.status == "answered" end, "External acknowledgement did not settle")
+local external_detail = await(function(cb) client.get_form(created.id, external.id, cb) end)
+assert(vim.deep_equal(external_detail.state.answer, { auth = true, note = "completed in browser" }), vim.inspect(external_detail))
 
 local permission_results = {}
 for _, choice in ipairs({ { "once", 1 }, { "always", 2 }, { "reject", 3 } }) do
@@ -161,7 +170,7 @@ for _, choice in ipairs({ { "once", 1 }, { "always", 2 }, { "reject", 3 } }) do
 	end
 end
 vim.fn.writefile({ vim.json.encode({ version = "2.0.11", typed_form = detail, permissions = permission_results,
-	second_client_reconnect = true, external_dispatch_only = true, external_cancelled = true,
+	second_client_reconnect = true, external_acknowledged = true,
 	conditional_draft = true, invalid_integer_preserved = true, server_validation_retry = true, input_focus_restored = true }) }, assert(vim.env.OPENCODE_V2_OUTPUT))
 chat.close(); require("opencode.lifecycle").disconnect()
 print("Native typed forms, second-client recovery and once/always/reject keyboard UI passed")

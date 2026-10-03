@@ -14,7 +14,7 @@ describe("inline completion request lifecycle", function()
 		buf = vim.api.nvim_create_buf(true, false); vim.api.nvim_set_current_buf(buf)
 		edit("local x = ")
 		mode, requests, notices, shown, pending = "i", {}, {}, {}, {}
-		saved.mode, saved.notify = vim.api.nvim_get_mode, vim.notify
+		saved.mode, saved.notify, saved.wrap = vim.api.nvim_get_mode, vim.notify, vim.schedule_wrap
 		vim.api.nvim_get_mode = function() return { mode = mode } end
 		vim.notify = function(message) notices[#notices + 1] = message end
 		config = require("opencode.config").merge({ completion = { enabled = true, model = { providerID = "test", modelID = "fast" } } })
@@ -39,7 +39,7 @@ describe("inline completion request lifecycle", function()
 	end)
 	after_each(function()
 		controller.teardown()
-		vim.api.nvim_get_mode, vim.notify = saved.mode, saved.notify
+		vim.api.nvim_get_mode, vim.notify, vim.schedule_wrap = saved.mode, saved.notify, saved.wrap
 		for _, name in ipairs(modules) do package.loaded[name] = saved[name] end
 		vim.api.nvim_set_current_buf(old_buf); vim.api.nvim_buf_delete(buf, { force = true })
 		vim.o.virtualedit = old_virtualedit
@@ -52,6 +52,16 @@ describe("inline completion request lifecycle", function()
 		requests[1].callback(nil, "42")
 		assert.is_true(controller.visible()); assert.equals("42", shown[1][2])
 		assert.same({ "local x = " }, vim.api.nvim_buf_get_lines(buf, 0, -1, false))
+	end)
+	it("keeps a ready proposal when its cancelled deadline callback runs", function()
+		local queued
+		vim.schedule_wrap = function(callback) queued = callback; return function() end end
+		assert.is_true(controller.complete())
+		requests[1].callback(nil, "42")
+		queued()
+		assert.is_true(controller.visible())
+		assert.equals("42", shown[1][2])
+		assert.same({}, notices)
 	end)
 	it("retrigger cancels pending work and requests an alternative to a ready proposal", function()
 		controller.complete(); controller.complete()

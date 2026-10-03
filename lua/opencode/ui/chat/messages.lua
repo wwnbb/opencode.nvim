@@ -13,7 +13,7 @@ function M.set_schedule_render(fn)
 	schedule_render = type(fn) == "function" and fn or function() end
 end
 
-local function stop_spinner_animation_timer()
+function M.stop_spinner_animation_timer()
 	if not state.spinner_anim_timer then
 		return
 	end
@@ -65,7 +65,7 @@ function M.clear()
 	state.last_render_time = 0
 	state.render_scheduled = false
 
-	stop_spinner_animation_timer()
+	M.stop_spinner_animation_timer()
 	chat_tasks.stop_task_animation_timer()
 	state.task_anim_frame = 1
 

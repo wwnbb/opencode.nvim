@@ -40,12 +40,7 @@ local function fail(record, message)
 	if ui.is_open() then ui.error(message) end
 end
 
-local function catalog_starting(err, model)
-	if type(err) ~= "table" or err.status ~= 400 or err.code ~= "InvalidRequestError" then return false end
-	local name = model.providerID .. "/" .. (model.id or model.modelID)
-	return err.message == "Model unavailable: " .. name
-		or (model.variant ~= nil and err.message == "Variant unavailable for " .. name .. ": " .. model.variant)
-end
+local catalog_starting = require("opencode.completion.profile").catalog_starting
 
 function M.dismiss()
 	generation = generation + 1
@@ -78,7 +73,7 @@ function M.explain_selection()
 	snapshot.started = vim.uv.now()
 	snapshot.deadline = vim.uv.new_timer()
 	snapshot.deadline:start(config.timeout_ms, 0, vim.schedule_wrap(function()
-		if current == snapshot then fail(snapshot, "Request timed out") end
+		if current == snapshot and snapshot.deadline then fail(snapshot, "Request timed out") end
 	end))
 	local lifecycle = require("opencode.lifecycle")
 	lifecycle.ensure_connected(function()

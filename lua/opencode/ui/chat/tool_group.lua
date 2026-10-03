@@ -69,6 +69,16 @@ function M.failed(part)
 	return false
 end
 
+function M.latest_failed(part)
+	if M.execution_failed(part) then return true end
+	local calls = render.get_tool_metadata(part).toolCalls
+	local latest
+	for _, call in ipairs(type(calls) == "table" and calls or {}) do
+		if type(call) == "table" then latest = call end
+	end
+	return latest ~= nil and failures[latest.status] == true
+end
+
 function M.is_working(part)
 	local state = type(part.state) == "table" and part.state or {}
 	-- Explicit status wins over stale completion timestamps during updates.
@@ -247,7 +257,9 @@ function M.render(kind, refs, expanded, expansions)
 	if working then header = header .. " " .. require("opencode.ui.chat.task_animation").get_task_anim_frame() end
 	header = header .. " " .. (working and definition.active or definition.completed) .. " — " .. table.concat(labels, ", ")
 	if failed > 0 then header = header .. " · " .. failed .. " failed" end
-	render.add_panel_line(result, header, failed > 0 and "OpenCodeActivityError" or "OpenCodeToolGroup", { prefix = "" })
+	local latest = refs[#refs]
+	render.add_panel_line(result, header, latest and M.latest_failed(latest.part)
+		and "OpenCodeActivityError" or "OpenCodeToolGroup", { prefix = "" })
 	-- A folded group without errors needs only fresh identities. Avoid entering
 	-- the body-cache path (including its dependency work) for these placeholders.
 	if not expanded and failed == 0 then

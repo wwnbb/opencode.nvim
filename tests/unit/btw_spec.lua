@@ -78,6 +78,36 @@ describe("/btw side questions", function()
 		assert.equals(0, btw.pending_count())
 	end)
 
+	local function handlers()
+		local listeners = {}
+		require("opencode.events.handlers.v2").setup({
+			on = function(name, callback) listeners[name] = callback end,
+			emit = function() end,
+		})
+		return listeners
+	end
+	it("cancels side questions after unexpected connection loss", function()
+		local listeners = handlers()
+		btw.ask("ses_one", "first"); btw.ask("ses_two", "second")
+		listeners.disconnected()
+		assert.equals(0, btw.pending_count())
+		requests[1].callback(nil, "Late answer")
+		requests[2].callback({ message = "Old failure" })
+		assert.same({}, shown); assert.same({}, notices)
+	end)
+	it("cancels a closed session tree while keeping a neighboring question alive", function()
+		local listeners = handlers()
+		btw.ask("ses_one", "parent"); btw.ask("ses_child", "child"); btw.ask("ses_two", "neighbor")
+		listeners["session.closed"]({ session_id = "ses_one", session_ids = { "ses_one", "ses_child" } })
+		assert.equals(0, btw.pending_count("ses_one")); assert.equals(0, btw.pending_count("ses_child"))
+		assert.equals(1, btw.pending_count("ses_two"))
+		requests[1].callback(nil, "Old parent"); requests[2].callback({ message = "Old child" })
+		assert.same({}, shown); assert.same({}, notices)
+		requests[3].callback(nil, "Current answer")
+		assert.same({ { "neighbor", "Current answer" } }, shown)
+		assert.equals(0, btw.pending_count())
+	end)
+
 	it("does not generate after selection preparation for a deleted session", function()
 		local selection = require("opencode.session.selection")
 		local original_prepare = selection.prepare
@@ -213,6 +243,28 @@ describe("/btw command entry", function()
 		submit("from palette")
 		assert.same({ "from palette", "ses_one" }, asked)
 	end)
+
+	for _, cancel in ipairs({ "connection", "session" }) do
+		it("drops a question dialog after its " .. cancel .. " is invalidated", function()
+			local pending = require("opencode.session.pending")
+			local commands, submit, asked = {}, nil, {}
+			state.get_session = function() return { id = "ses_one" } end
+			actions.ask_btw = function(question, session_id) asked[#asked + 1] = { question, session_id } end
+			package.loaded["opencode.ui.btw"] = { prompt = function(on_submit) submit = on_submit end }
+			require("opencode.ui.palette.session").register({
+				register = function(command) commands[command.id] = command end,
+			})
+			for _, open in ipairs({
+				function() slash.execute(slash.parse("/btw")) end,
+				function() commands["session.aside"].run() end,
+			}) do
+				open()
+				if cancel == "connection" then pending.invalidate() else pending.clear_session("ses_one") end
+				submit("stale question")
+				assert.same({}, asked)
+			end
+		end)
+	end
 
 	it("uses generic Enter dispatch for /btw arguments, selection, and ordinary text", function()
 		local bufnr = vim.api.nvim_create_buf(false, true)

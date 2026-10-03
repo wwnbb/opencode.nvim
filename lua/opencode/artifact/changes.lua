@@ -8,25 +8,8 @@ local state = {
 	next_id = 1,
 }
 
-local DEFAULTS = {
-	auto_backup = true,
-	backup_dir = vim.fn.stdpath("cache") .. "/opencode/backups",
-	max_changes = 100,
-	confirm_destructive = true,
-	file_patterns_to_confirm = {
-		"%.env",
-		"%.env%.",
-		"config",
-		"%.conf",
-		"%.toml$",
-		"%.yaml$",
-		"%.yml$",
-		"%.json$",
-		"package%.json",
-		"Cargo%.toml",
-		"go%.mod",
-	},
-}
+local DEFAULTS = vim.deepcopy(require("opencode.config").defaults.changes)
+DEFAULTS.backup_dir = vim.fn.stdpath("cache") .. "/opencode/backups"
 
 local defaults = vim.deepcopy(DEFAULTS)
 
@@ -158,9 +141,9 @@ local function read_file(filepath)
 end
 
 ---@param filepath string
----@return table|nil disk { exists: boolean, content: string|nil, kind: string }
+---@return table|nil disk { exists: boolean, kind: string }
 ---@return string|nil err
-local function read_disk_bytes(filepath)
+local function inspect_file(filepath)
 	local stat, stat_err, stat_code = vim.uv.fs_lstat(filepath)
 	if not stat then
 		if stat_code == "ENOENT" or (type(stat_err) == "string" and stat_err:match("^ENOENT")) then
@@ -168,15 +151,21 @@ local function read_disk_bytes(filepath)
 		end
 		return nil, stat_err or ("Cannot inspect file: " .. filepath)
 	end
-	if stat.type ~= "file" then
-		return { exists = true, kind = stat.type }, nil
-	end
+	return { exists = true, kind = stat.type }, nil
+end
 
+---@param filepath string
+---@return table|nil disk { exists: boolean, content: string|nil, kind: string }
+---@return string|nil err
+function M.read_disk_bytes(filepath)
+	local disk, inspect_err = inspect_file(filepath)
+	if not disk or disk.kind ~= "file" then return disk, inspect_err end
 	local content, read_err = read_file(filepath)
 	if content == nil then
 		return nil, read_err
 	end
-	return { exists = true, content = content, kind = "file" }, nil
+	disk.content = content
+	return disk, nil
 end
 
 ---@param filepath string
@@ -205,25 +194,99 @@ local function write_file(filepath, content)
 
 	local dir = vim.fn.fnamemodify(filepath, ":h")
 	if dir and dir ~= "" then
-		vim.fn.mkdir(dir, "p")
+		local ok, err = pcall(vim.fn.mkdir, dir, "p")
+		if not ok then return false, tostring(err) end
 	end
 
-	local file, open_err = io.open(filepath, "wb")
-	if not file then
-		return false, open_err or ("Cannot open file for writing: " .. filepath)
+	local uv = vim.uv
+	local stat, stat_err, stat_code = uv.fs_lstat(filepath)
+	if not stat and stat_code ~= "ENOENT" then return false, stat_err end
+	if stat then
+		if stat.type ~= "file" then return false, "Path is not a regular file: " .. filepath end
+		if stat.nlink > 1 then return false, "File has multiple hard links; resolve manually: " .. filepath end
+		local writable, err = uv.fs_access(filepath, "W")
+		if not writable then return false, err or ("File is not writable: " .. filepath) end
 	end
-
-	local ok, written, write_err = pcall(file.write, file, content or "")
-	local close_ok, close_err = file:close()
-	if not ok then
-		return false, tostring(written)
+	local temporary = dir .. "/.opencode-write-" .. tostring(uv.hrtime()) .. ".tmp"
+	local recovery = temporary .. ".original"
+	local fd, create_err = uv.fs_open(temporary, "wx", stat and 384 or 438)
+	if not fd then return false, create_err end
+	local function fail(err)
+		if fd then pcall(uv.fs_close, fd); fd = nil end
+		uv.fs_unlink(temporary)
+		return false, tostring(err)
 	end
-	if not written then
-		return false, tostring(write_err)
+	local opened, opened_err = uv.fs_fstat(fd)
+	if not opened then return fail(opened_err) end
+	local windows = vim.fn.has("win32") == 1
+	local function powershell(command)
+		local ok, result = pcall(function()
+			return vim.system({ "powershell.exe", "-NoProfile", "-NonInteractive", "-Command",
+				"$ErrorActionPreference = 'Stop'; " .. command,
+			}, { text = true, env = {
+				OPENCODE_WRITE_SOURCE = vim.fn.fnamemodify(filepath, ":p"),
+				OPENCODE_WRITE_TEMP = vim.fn.fnamemodify(temporary, ":p"),
+				OPENCODE_WRITE_BACKUP = vim.fn.fnamemodify(recovery, ":p"),
+			} }):wait()
+		end)
+		return ok and result.code == 0, ok and result.stderr or tostring(result)
 	end
-	if not close_ok then
-		return false, tostring(close_err)
+	if stat then
+		-- Native copying/replacement retains ACLs and extended attributes.
+		local copied, copy_err
+		if windows then
+			copied, copy_err = powershell("Set-Acl -LiteralPath $env:OPENCODE_WRITE_TEMP -AclObject "
+				.. "(Get-Acl -LiteralPath $env:OPENCODE_WRITE_SOURCE)")
+		else
+			local called, output = pcall(vim.fn.system, { "cp", "-a", "--", filepath, temporary })
+			copied, copy_err = called and vim.v.shell_error == 0, output
+		end
+		if not copied then return fail(copy_err) end
+		local copy = uv.fs_lstat(temporary)
+		if not copy or copy.type ~= "file" or copy.ino ~= opened.ino or copy.dev ~= opened.dev
+			or copy.mode ~= stat.mode or copy.uid ~= stat.uid or copy.gid ~= stat.gid then
+			return fail("Could not preserve file attributes: " .. filepath)
+		end
 	end
+	local called, ok, err = pcall(function()
+		content = content or ""
+		local written, write_err = uv.fs_write(fd, content, 0)
+		if written ~= #content then return false, write_err or "Incomplete file write" end
+		local truncated, truncate_err = uv.fs_ftruncate(fd, #content)
+		if not truncated then return false, truncate_err end
+		return uv.fs_fsync(fd)
+	end)
+	local close_called, closed, close_err = pcall(uv.fs_close, fd)
+	fd = nil
+	if not called then return fail(ok) end
+	if not ok then return fail(err) end
+	if not close_called or not closed then return fail(close_called and close_err or closed) end
+	local staged = uv.fs_lstat(temporary)
+	if not staged or staged.type ~= "file" or staged.ino ~= opened.ino or staged.dev ~= opened.dev then
+		return fail("Temporary file changed while writing; current path preserved: " .. filepath)
+	end
+	local current = uv.fs_lstat(filepath)
+	if (stat and (not current or current.ino ~= stat.ino or not vim.deep_equal(current.ctime, stat.ctime)))
+		or (not stat and current) then return fail("File changed while writing; current path preserved: " .. filepath) end
+	local renamed, rename_err
+	if windows and stat then
+		if uv.fs_lstat(recovery) then return fail("Recovery path already exists: " .. recovery) end
+		renamed, rename_err = powershell("[System.IO.File]::Replace($env:OPENCODE_WRITE_TEMP, "
+			.. "$env:OPENCODE_WRITE_SOURCE, $env:OPENCODE_WRITE_BACKUP)")
+		if renamed then
+			uv.fs_unlink(recovery)
+		elseif uv.fs_lstat(recovery) then
+			local restored, restore_err
+			if not uv.fs_lstat(filepath) then restored, restore_err = uv.fs_rename(recovery, filepath) end
+			if not restored then
+				rename_err = tostring(rename_err) .. "; Original saved at: " .. recovery
+					.. (restore_err and ("; " .. restore_err) or "")
+			end
+		end
+	else
+		renamed, rename_err = uv.fs_rename(temporary, filepath)
+	end
+	if not renamed then return fail(rename_err) end
 	return true, nil
 end
 
@@ -234,20 +297,21 @@ local function backup_file(filepath, change_id)
 	if not defaults.auto_backup or type(filepath) ~= "string" or filepath == "" then
 		return nil
 	end
-	if vim.fn.filereadable(filepath) ~= 1 then
+	local disk = M.read_disk_bytes(filepath)
+	if not disk or disk.kind ~= "file" then
 		return nil
 	end
+	local content = disk.content
 
-	local content = read_file(filepath)
-	if content == nil then
-		return nil
-	end
-
-	vim.fn.mkdir(defaults.backup_dir, "p")
+	if not pcall(vim.fn.mkdir, defaults.backup_dir, "p") then return nil end
 	local filename = vim.fn.fnamemodify(filepath, ":t")
-	local backup_path = string.format("%s/%s_%s.bak", defaults.backup_dir, filename, change_id)
-	local ok = write_file(backup_path, content)
-	if not ok then
+	local template = string.format("%s/%s_%s.bak.XXXXXX", defaults.backup_dir, filename, change_id)
+	local fd, backup_path = vim.uv.fs_mkstemp(template)
+	if not fd then return nil end
+	local written = vim.uv.fs_write(fd, content, 0)
+	local closed = vim.uv.fs_close(fd)
+	if written ~= #content or not closed then
+		vim.uv.fs_unlink(backup_path)
 		return nil
 	end
 	return backup_path
@@ -489,7 +553,7 @@ function M.get_active()
 end
 
 ---@param id string
----@param opts? table
+---@param opts? { force?: boolean } Force confirms destructive changes and overwrites changed disk snapshots; modified buffers and non-regular paths remain protected.
 ---@return boolean ok
 ---@return string|nil err
 function M.accept(id, opts)
@@ -503,6 +567,21 @@ function M.accept(id, opts)
 	end
 	if change.requires_confirm and defaults.confirm_destructive and not opts.force then
 		return false, "Confirmation required"
+	end
+	if has_modified_buffer(change.filepath) then
+		return false, "Save or discard unsaved buffer changes before accepting " .. change.filepath
+	end
+
+	local disk, read_err = M.read_disk_bytes(change.filepath)
+	if not disk then return false, read_err end
+	if disk.kind ~= "file" and disk.kind ~= "missing" then
+		return false, "Path is now a " .. disk.kind .. "; current path preserved: " .. change.filepath
+	end
+
+	local before_exists = change.file_type ~= "add"
+	local original = join_bom(change.original_content, change.original_bom)
+	if not opts.force and (disk.exists ~= before_exists or (disk.exists and disk.content ~= original)) then
+		return false, "File changed since review; current content preserved: " .. change.filepath
 	end
 
 	local ok, err
@@ -541,7 +620,7 @@ function M.reject(id, opts)
 		return false, "Save or discard unsaved buffer changes before reverting " .. change.filepath, "modified_buffer"
 	end
 
-	local disk, read_err = read_disk_bytes(change.filepath)
+	local disk, read_err = M.read_disk_bytes(change.filepath)
 	if not disk then
 		return false, read_err, "read_error"
 	end
@@ -626,7 +705,7 @@ end
 ---@param opts? table
 function M.setup(opts)
 	opts = opts or {}
-	defaults = vim.tbl_deep_extend("force", {}, DEFAULTS, opts)
+	defaults = vim.deepcopy(vim.tbl_deep_extend("force", DEFAULTS, opts))
 end
 
 return M

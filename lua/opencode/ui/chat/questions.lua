@@ -6,12 +6,13 @@ local cs = require("opencode.ui.chat.state")
 local state = cs.state
 
 local question_widget = require("opencode.ui.question_widget")
-local widget_base = require("opencode.ui.widget_base")
 local question_state = require("opencode.question.state")
+local pending = require("opencode.session.pending")
 local widget_support = require("opencode.ui.chat.widget_support")
 local render_coordinator = require("opencode.ui.chat.render_coordinator")
 local actions = require("opencode.actions")
 local events = require("opencode.events")
+local form_external = require("opencode.ui.form_external")
 
 ---@param question table|nil
 ---@return boolean
@@ -21,6 +22,72 @@ end
 
 local function schedule_render()
 	render_coordinator.request({ kind = "question" })
+end
+
+local function selection_changed(request_id, focus)
+	local qstate = question_state.get_question(request_id)
+	events.safe_emit("question_selection_changed", {
+		request_id = request_id,
+		tab_index = qstate.current_tab,
+		selected = question_state.get_current_selection(request_id),
+	})
+	events.safe_emit("interaction_changed", { kind = "question", action = "selection_changed", id = request_id })
+	M.rerender_question(request_id, focus)
+end
+
+local function external_question(request_id)
+	local qstate = question_state.get_question(request_id)
+	if not qstate or qstate.status ~= "pending" or qstate.submitting then return nil, nil end
+	local question = qstate.questions[qstate.current_tab]
+	if not question or question.field_type ~= "external" then return nil, nil end
+	return qstate, question
+end
+
+local function mark_external_ready(request_id, question)
+	if not question_state.mark_external_ready(request_id, question.key) then return end
+	events.safe_emit("interaction_changed", { kind = "question", action = "selection_changed", id = request_id })
+	M.rerender_question(request_id)
+end
+
+function M.handle_question_external_confirm(request_id)
+	local qstate, question = external_question(request_id)
+	if not question then return end
+	local selection = qstate.form_selections[question.key]
+	if not selection.external_ready then
+		if not form_external.open(question.url) then return end
+		mark_external_ready(request_id, question)
+		return
+	end
+	if not selection.is_answered then
+		if not question_state.acknowledge_external(request_id, question.key) then return end
+		events.safe_emit("interaction_changed", { kind = "question", action = "selection_changed", id = request_id })
+	end
+	M.advance_question(request_id)
+end
+
+-- Visit each visible question before opening the final submission confirmation.
+function M.advance_question(request_id)
+	local qstate = question_state.get_question(request_id)
+	if not qstate or qstate.status ~= "pending" or qstate.submitting then return end
+	if qstate.current_tab < #qstate.questions then
+		question_state.set_tab(request_id, qstate.current_tab + 1)
+	else
+		local valid, invalid = question_state.are_all_answered(request_id)
+		if valid then question_state.set_confirming(request_id)
+		elseif #invalid > 0 then question_state.set_tab(request_id, invalid[1]) end
+	end
+	events.safe_emit(qstate.status == "confirming" and "question_confirming" or "question_tab_changed", {
+		request_id = request_id,
+		tab_index = qstate.current_tab,
+	})
+	M.rerender_question(request_id, true)
+end
+
+function M.cancel_confirmation(request_id)
+	if not question_state.cancel_confirmation(request_id) then return false end
+	events.safe_emit("interaction_changed", { kind = "question", action = "confirmation_cancelled", id = request_id })
+	M.rerender_question(request_id, true)
+	return true
 end
 
 -- ─── Add / update ─────────────────────────────────────────────────────────────
@@ -62,35 +129,21 @@ local function get_pending_question_context_at_cursor()
 end
 
 ---@param request_id string
----@return table|nil questions
-local function get_question_payload(request_id)
-	local qstate = question_state.get_question(request_id)
-	return qstate and qstate.questions or nil
-end
-
----@param request_id string
 ---@param qstate table
 ---@param pos table
 ---@param cursor_line number
----@return number|nil option_index
+---@return number|nil option_index Zero identifies the saved custom answer.
 local function get_option_index_at_cursor(request_id, qstate, pos, cursor_line)
-	local questions = get_question_payload(request_id)
-	if not questions then
-		return nil
-	end
-
-	local _, _, meta = question_widget.get_lines_for_question(request_id, { questions = questions }, qstate, qstate.status)
-	local option_count = meta and meta.interactive_count or 0
-	if qstate.status ~= "confirming" then
-		local current_question = qstate.questions and qstate.questions[qstate.current_tab]
-		option_count = current_question and #(current_question.options or {}) or 0
-	end
-	local first_option_line = widget_base.get_focus_offset(meta)
+	local _, _, meta = question_widget.get_lines_for_question(request_id, { questions = qstate.questions }, qstate, qstate.status)
+	local widget_line = cursor_line - pos.start_line
+	if not meta then return nil end
+	if (meta.option_lines or {})[0] == widget_line then return 0 end
+	local option_count = meta.option_count or meta.interactive_count or 0
+	local first_option_line = meta.first_interactive_line
 	if option_count <= 0 or first_option_line == nil then
 		return nil
 	end
 
-	local widget_line = cursor_line - pos.start_line
 	if widget_line < first_option_line or widget_line >= (first_option_line + option_count) then
 		return nil
 	end
@@ -127,7 +180,8 @@ function M.sync_selected_option_from_cursor()
 	end
 
 	local current_selection = question_state.get_current_selection(request_id)
-	local current_option = current_selection and current_selection[1] or nil
+	local selection = qstate.selections[qstate.current_tab]
+	local current_option = selection and selection.custom_present and 0 or current_selection and current_selection[1]
 	if current_option == option_index then
 		return request_id, false
 	end
@@ -136,24 +190,15 @@ function M.sync_selected_option_from_cursor()
 		return request_id, false
 	end
 
-	events.safe_emit("question_selection_changed", {
-		request_id = request_id,
-		tab_index = qstate.current_tab,
-		selected = { option_index },
-	})
-	events.safe_emit("interaction_changed", {
-		kind = "question",
-		action = "selection_changed",
-		id = request_id,
-	})
-	M.rerender_question(request_id)
+	selection_changed(request_id)
 	return request_id, true
 end
 
 -- ─── In-place re-render ───────────────────────────────────────────────────────
 
 ---@param request_id string
-function M.rerender_question(request_id)
+---@param focus? boolean|number Focus the current answer or a specific option.
+function M.rerender_question(request_id, focus)
 	if not state.bufnr or not vim.api.nvim_buf_is_valid(state.bufnr) then
 		return
 	end
@@ -168,30 +213,24 @@ function M.rerender_question(request_id)
 		return
 	end
 
-	local questions = get_question_payload(request_id)
-	if not questions then
-		return
-	end
-
+	local questions = qstate.questions
 	local status = qstate.status or "pending"
-	local lines, highlights
-	if status == "answered" then
-		lines, highlights = question_widget.get_answered_lines(
-			request_id,
-			{ questions = questions, timestamp = qstate.timestamp },
-			qstate.display_answers or qstate.answers
-		)
-	elseif status == "rejected" then
-		lines, highlights = question_widget.get_rejected_lines(request_id, {
-			questions = questions,
-			timestamp = qstate.timestamp,
-		})
-	else
-		lines, highlights = question_widget.get_lines_for_question(request_id, { questions = questions }, qstate, status)
-	end
+	local lines, highlights, meta = question_widget.get_lines_for_question(
+		request_id, { questions = questions, timestamp = qstate.timestamp }, qstate, status
+	)
 
 	if widget_support.replace_rendered_block(pos, { lines = lines, highlights = highlights }) then
 		pos.status = status
+	elseif focus then
+		-- A queued render can replace the position map; focus its fresh block.
+		widget_support.request_focus("question", request_id)
+		state.focus_question_option = focus
+		require("opencode.ui.chat").do_render()
+		pos = state.questions[request_id]
+	end
+	if focus and pos and (status == "pending" or status == "confirming") and cs.is_chat_buffer_displayed() then
+		local offset = question_widget.get_selection_focus_offset(meta, qstate.selections[qstate.current_tab], focus)
+		vim.api.nvim_win_set_cursor(state.winid, { pos.start_line + offset + 1, 0 })
 	end
 end
 
@@ -218,15 +257,19 @@ end
 
 ---@param request_id string
 function M.submit_question_answers(request_id)
+	local qstate = question_state.get_question(request_id)
+	if not qstate or qstate.status ~= "confirming" then return false end
 	if not question_state.begin_submission(request_id, "reply") then
 		M.rerender_question(request_id)
 		return false
 	end
+	local token = pending.token(qstate.session_id)
 	local answers = question_state.get_answers(request_id)
 	M.rerender_question(request_id)
 
 	actions.reply_to_question(request_id, answers, function(err)
 		vim.schedule(function()
+			if not pending.is_current(token) or question_state.get_question(request_id) ~= qstate then return end
 			if err then
 				if not question_state.restore_submission(request_id) then
 					return
@@ -263,44 +306,44 @@ end
 
 -- ─── Per-question handlers ────────────────────────────────────────────────────
 
----@param request_id string
-function M.handle_question_next_tab(request_id)
+local function cycle_question_tab(request_id, direction)
 	local qstate = question_state.get_question(request_id)
-	if not qstate or qstate.status == "confirming" or qstate.submitting then
+	if not qstate or qstate.status ~= "pending" or qstate.submitting or #qstate.questions == 0 then
 		return
 	end
 
-	local next_tab = qstate.current_tab + 1
-	if next_tab > #qstate.questions then
-		next_tab = 1
-	end
-
-	question_state.set_tab(request_id, next_tab)
+	local tab = (qstate.current_tab - 1 + direction) % #qstate.questions + 1
+	question_state.set_tab(request_id, tab)
 	events.safe_emit("question_tab_changed", {
 		request_id = request_id,
-		tab_index = next_tab,
+		tab_index = tab,
 	})
-	M.rerender_question(request_id)
+	M.rerender_question(request_id, true)
+end
+
+---@param request_id string
+function M.handle_question_next_tab(request_id)
+	cycle_question_tab(request_id, 1)
 end
 
 ---@param request_id string
 function M.handle_question_prev_tab(request_id)
+	cycle_question_tab(request_id, -1)
+end
+
+---@param request_id string
+---@param number number
+function M.handle_question_number_select(request_id, number)
 	local qstate = question_state.get_question(request_id)
-	if not qstate or qstate.status == "confirming" or qstate.submitting then
-		return
+	if not qstate or qstate.submitting then return end
+	local question = qstate.questions[qstate.current_tab]
+	local select = qstate.status ~= "confirming" and question_state.is_multi_question(question)
+		and question_state.toggle_multi_select or question_state.select_option
+	if select(request_id, number) then
+		selection_changed(request_id, number)
+	else
+		M.rerender_question(request_id)
 	end
-
-	local prev_tab = qstate.current_tab - 1
-	if prev_tab < 1 then
-		prev_tab = #qstate.questions
-	end
-
-	question_state.set_tab(request_id, prev_tab)
-	events.safe_emit("question_tab_changed", {
-		request_id = request_id,
-		tab_index = prev_tab,
-	})
-	M.rerender_question(request_id)
 end
 
 ---@param request_id string
@@ -315,8 +358,8 @@ function M.handle_question_custom_input(request_id)
 	local selection = qstate.selections[current_tab] or {}
 
 	if question.field_type == "external" then
-		vim.ui.open(question.url)
-		actions.refresh_form(request_id)
+		if not form_external.copy(question.url) then return end
+		mark_external_ready(request_id, question)
 		return
 	end
 	if not allows_custom_answer(question) then
@@ -325,6 +368,7 @@ function M.handle_question_custom_input(request_id)
 	end
 
 	local input_ui = require("opencode.ui.input")
+	local token = pending.token(qstate.session_id)
 	input_ui.show({
 		winid = state.winid,
 		float_dims = state.float_dims,
@@ -332,20 +376,15 @@ function M.handle_question_custom_input(request_id)
 		persist_pending = false,
 		add_history = false,
 		on_send = function(text)
+			if not pending.is_current(token) or question_state.get_question(request_id) ~= qstate or qstate.status ~= "pending" or qstate.submitting then return end
 			if text ~= nil then
 				question_state.set_custom_input(request_id, current_tab, text)
-				if not question_state.is_multi_question(question) then
-					question_state.update_selection(request_id, current_tab, {})
-				end
-				if #qstate.questions == 1 and not question_state.is_multi_question(question) then
-					M.submit_question_answers(request_id)
-				else
-					M.rerender_question(request_id)
-				end
+				M.rerender_question(request_id, true)
 				require("opencode.ui.chat").focus()
 			end
 		end,
 		on_cancel = function()
+			if not pending.is_current(token) or question_state.get_question(request_id) ~= qstate then return end
 			require("opencode.ui.chat").focus()
 		end,
 	})
@@ -375,17 +414,7 @@ function M.handle_question_toggle(request_id)
 	local current_selection = question_state.get_current_selection(request_id)
 	local current_idx = option_index or (current_selection and current_selection[1]) or 1
 	question_state.toggle_multi_select(request_id, current_idx)
-	events.safe_emit("question_selection_changed", {
-		request_id = request_id,
-		tab_index = qstate.current_tab,
-		selected = question_state.get_current_selection(request_id),
-	})
-	events.safe_emit("interaction_changed", {
-		kind = "question",
-		action = "selection_changed",
-		id = request_id,
-	})
-	M.rerender_question(request_id)
+	selection_changed(request_id)
 end
 
 -- ─── Misc ─────────────────────────────────────────────────────────────────────

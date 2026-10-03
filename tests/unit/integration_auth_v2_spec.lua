@@ -1,12 +1,16 @@
 describe("v2 integration attempt ownership", function()
-	local saved, names, calls, updates, timers, defer, auth, owner, pending
+	local saved, names, calls, updates, timers, defer, auth, owner, pending, credential_calls, endpoint
 	before_each(function()
 		names = { "opencode.provider.auth", "opencode.provider.state", "opencode.client", "opencode.events" }
-		saved, calls, updates, timers = {}, {}, {}, {}
+		saved, calls, updates, timers, credential_calls = {}, {}, {}, {}, {}
+		endpoint = "server-one"
 		for _, name in ipairs(names) do saved[name] = package.loaded[name]; package.loaded[name] = nil end
 		pending = require("opencode.session.pending"); pending.clear_all()
-		owner = require("opencode.provider.state"); owner.set_identity_getter(function() return "server-one" end)
+		owner = require("opencode.provider.state"); owner.set_identity_getter(function() return endpoint end)
 		package.loaded["opencode.client"] = {
+			credential = function(operation, id, body, cb)
+				credential_calls[#credential_calls + 1] = { cb = cb }
+			end,
 			integration = function(operation, integration, body, opts, cb)
 				calls[#calls + 1] = { operation = operation, integration = integration, body = body, opts = vim.deepcopy(opts), cb = cb }
 			end,
@@ -43,6 +47,26 @@ describe("v2 integration attempt ownership", function()
 		calls[3].cb(nil, { status = "complete" })
 		assert.equals("complete", updates[#updates].status)
 	end)
+	it("does not poll or discard the replacement timer when a stopped callback runs", function()
+		local id = begin(); started()
+		local old_timer = timers[1]
+		auth.complete(id, "test-secret-code")
+		assert.is_true(old_timer.stopped)
+		old_timer.fn()
+		assert.equals(2, #calls)
+		assert.equals("submitting", owner.get_attempt(id).status)
+
+		calls[2].cb(nil)
+		local replacement = timers[2]
+		old_timer.fn()
+		assert.equals(2, #calls)
+		assert.equals(replacement, owner.get_attempt(id).timer)
+		assert.is_nil(replacement.stopped)
+		replacement.fn()
+		assert.equals("oauth_status", calls[3].operation)
+		calls[3].cb(nil, { status = "complete" })
+		assert.equals("complete", updates[#updates].status)
+	end)
 	it("cancels an attempt that was closed while creation was in flight", function()
 		local id = begin(); auth.cancel(id)
 		assert.equals(1, #calls)
@@ -73,5 +97,68 @@ describe("v2 integration attempt ownership", function()
 		owner.get_attempt(id).expires = 0; timers[1].fn()
 		assert.equals("expired", updates[#updates].status)
 		assert.equals("oauth_cancel", calls[2].operation)
+	end)
+
+	local function change(callback)
+		auth.credential("update", "integration-A", "credential-A", { label = "Renamed" }, { directory = "/one" }, callback or function() end)
+	end
+	local credential_key = "integration-A\0credential-A"
+	for _, phase in ipairs({ "write", "confirmation" }) do
+		it("reconnects during credential " .. phase .. " without retaining or releasing another request's lock", function()
+			local stale_error
+			change(function(err) stale_error = err end)
+			local stale_callback = credential_calls[1].cb
+			if phase == "confirmation" then stale_callback(nil); stale_callback = calls[1].cb end
+			pending.invalidate()
+			change()
+			assert.equals(2, #credential_calls)
+			stale_callback(nil, { connections = {} })
+			assert.equals("Server connection changed", stale_error.message)
+			assert.is_true(owner.is_pending(credential_key))
+			change()
+			assert.equals(2, #credential_calls)
+			credential_calls[2].cb(nil)
+			calls[#calls].cb(nil, { connections = {} })
+			assert.is_false(owner.is_pending(credential_key))
+		end)
+	end
+	it("keeps a replacement credential lock when an old endpoint responds", function()
+		change()
+		endpoint = "server-two"; pending.invalidate()
+		change()
+		assert.equals(2, #credential_calls)
+		credential_calls[1].cb(nil)
+		assert.is_true(owner.is_pending(credential_key))
+		change()
+		assert.equals(2, #credential_calls)
+	end)
+	it("blocks duplicate credential changes until server confirmation completes", function()
+		local confirmed
+		change(function(err, result) assert.is_nil(err); confirmed = result end)
+		change()
+		assert.equals(1, #credential_calls)
+		credential_calls[1].cb(nil)
+		assert.equals("get", calls[1].operation)
+		assert.is_true(owner.is_pending(credential_key))
+		change()
+		assert.equals(1, #credential_calls)
+		local result = { connections = { { id = "credential-A", label = "Renamed" } } }
+		calls[1].cb(nil, result)
+		assert.equals(result, confirmed)
+		assert.is_false(owner.is_pending(credential_key))
+		change()
+		assert.equals(2, #credential_calls)
+	end)
+	it("releases credential locks on write and confirmation failures", function()
+		for _, phase in ipairs({ "write", "confirmation" }) do
+			local received
+			change(function(err) received = err end)
+			local done = credential_calls[#credential_calls].cb
+			if phase == "confirmation" then done(nil); done = calls[#calls].cb end
+			local err = { message = "Request failed" }; done(err)
+			assert.equals(err, received)
+			assert.is_false(owner.is_pending(credential_key))
+		end
+		assert.equals(2, #credential_calls)
 	end)
 end)

@@ -68,17 +68,7 @@ end
 
 ---@param directory string|nil
 ---@return string|nil
-local function normalize_directory(directory)
-	if not directory or directory == "" then
-		return nil
-	end
-
-	local normalized = directory
-	if vim.fs and vim.fs.normalize then
-		normalized = vim.fs.normalize(normalized)
-	end
-	return (normalized:gsub("/+$", ""))
-end
+local normalize_directory = require("opencode.util.path").normalize
 
 ---@return string|nil
 local function current_directory()
@@ -205,6 +195,7 @@ local function process_buffer()
 end
 
 local function schedule_reconnect()
+	if state.stream then return end
 	if not M.opts.reconnect then
 		return
 	end
@@ -230,6 +221,7 @@ local function schedule_reconnect()
 		M.opts.reconnect_delay,
 		0,
 		vim.schedule_wrap(function()
+			if state.reconnect_timer ~= timer then return end
 			stop_reconnect_timer()
 			if state.manual_disconnect then
 				return
@@ -244,7 +236,8 @@ local function handle_stream_closed(reason, closed_stream)
 		return
 	end
 
-	emit_current_event()
+	state.event_buffer = ""
+	reset_current_event()
 	stop_reconnect_timer()
 
 	local was_connected = state.connected
@@ -305,7 +298,9 @@ function M.emit(event_type, data, event_id)
 		actual_type, actual_data = decoded.type, decoded.payload
 	end
 
-	local callbacks = listeners[actual_type] or {}
+	-- Snapshot both groups before callbacks change either subscription list.
+	local callbacks = vim.list_slice(listeners[actual_type] or {})
+	local wildcards = vim.list_slice(listeners["*"] or {})
 	for _, cb in ipairs(callbacks) do
 		local ok, err = pcall(cb, actual_data, actual_event_id)
 		if not ok then
@@ -314,7 +309,6 @@ function M.emit(event_type, data, event_id)
 	end
 
 	-- Also emit to wildcard listeners
-	local wildcards = listeners["*"] or {}
 	for _, cb in ipairs(wildcards) do
 		local ok, err = pcall(cb, actual_type, actual_data, actual_event_id)
 		if not ok then
@@ -357,6 +351,7 @@ function M.connect()
 		return true -- Already connected or connecting
 	end
 
+	stop_reconnect_timer()
 	state.manual_disconnect = false
 	state.event_buffer = ""
 	reset_current_event()
@@ -390,11 +385,20 @@ function M.connect()
 		path = endpoint,
 		headers = headers,
 		timeout = M.opts.connect_timeout,
-		on_headers = function(status, _)
-			if status < 200 or status >= 300 then
-				M.emit("error", "SSE handshake failed with HTTP status " .. status)
-				if state.stream and state.stream.close then
-					state.stream.close()
+		on_headers = function(status, response_headers)
+			if stream ~= state.stream then return end
+			local content_type = response_headers["content-type"] or response_headers["Content-Type"] or ""
+			local media_type = vim.trim(content_type:match("^[^;]*")):lower()
+			local handshake_error
+			if status ~= 200 then
+				handshake_error = "SSE handshake failed with HTTP status " .. status
+			elseif media_type ~= "text/event-stream" then
+				handshake_error = "SSE handshake failed: expected text/event-stream"
+			end
+			if handshake_error then
+				M.emit("error", handshake_error)
+				if stream and stream.close then
+					stream.close()
 				end
 				return
 			end
@@ -404,6 +408,7 @@ function M.connect()
 			M.emit("connected", nil)
 		end,
 		on_data = function(data)
+			if stream ~= state.stream then return end
 			if not data or data == "" then
 				return
 			end
@@ -411,6 +416,7 @@ function M.connect()
 			process_buffer()
 		end,
 		on_error = function(stream_err)
+			if stream ~= state.stream then return end
 			local message = stream_err and (stream_err.message or stream_err.error) or "SSE stream error"
 			M.emit("error", message)
 		end,
@@ -450,7 +456,14 @@ end
 -- Configure SSE client
 ---@param opts table
 function M.setup(opts)
-	M.opts = vim.tbl_deep_extend("force", M.opts, opts or {})
+	local previous = M.opts
+	M.opts = vim.tbl_extend("force", M.opts, opts or {})
+	M.opts.auth = vim.tbl_extend("force", { username = "opencode" }, M.opts.auth)
+	if previous.host ~= M.opts.host or previous.port ~= M.opts.port or previous.endpoint ~= M.opts.endpoint
+		or not vim.deep_equal(previous.auth, M.opts.auth) then
+		M.disconnect()
+		seen_event_ids, seen_event_order = {}, {}
+	end
 end
 
 -- Get current connection status

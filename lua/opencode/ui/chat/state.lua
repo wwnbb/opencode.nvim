@@ -16,6 +16,7 @@ M.state = {
 	questions = {},         -- Track question positions: { [request_id] = { start_line, end_line } }
 	focus_question = nil,   -- request_id of question to focus cursor on after render
 	focus_question_line = nil,
+	focus_question_option = nil,
 	permissions = {},       -- Track permission positions: { [permission_id] = { start_line, end_line } }
 	focus_permission = nil, -- permission_id to focus cursor on after render
 	focus_permission_line = nil,

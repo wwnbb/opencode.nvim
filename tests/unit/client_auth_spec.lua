@@ -94,6 +94,50 @@ describe("opencode client Basic auth", function()
 		return http
 	end
 
+	it("overrides default HTTP headers without regard to their spelling case", function()
+		stub_auth("Basic default")
+		local http = setup_http("test-secret")
+		local extra = { authorization = "Bearer custom", ["content-type"] = "custom/type", ACCEPT = "custom/accept" }
+		http.get("/test", function() end, { headers = extra })
+		assert.same({ Authorization = "Bearer custom", ["Content-Type"] = "custom/type", Accept = "custom/accept" }, request_calls[1].headers)
+		assert.same({ authorization = "Bearer custom", ["content-type"] = "custom/type", ACCEPT = "custom/accept" }, extra)
+	end)
+
+	it("reports malformed and ambiguous HTTP headers through the callback", function()
+		stub_auth(nil)
+		local http = setup_http(nil)
+		for _, headers in ipairs({ "not a table", { [1] = "value" }, { Authorization = "one", authorization = "two" } }) do
+			local received
+			http.get("/test", function(err) received = err end, { headers = headers })
+			assert.is_table(received)
+			assert.is_string(received.message)
+			assert.same({}, request_calls)
+		end
+	end)
+
+	it("requires an exact JSON media type or a structured JSON suffix", function()
+		stub_auth(nil)
+		local http = setup_http(nil)
+		local cases = {
+			{ "application/json", true }, { "Application/JSON; charset=utf-8", true },
+			{ "application/vnd.vendor+json", true }, { "application/vnd_custom+json ; charset=utf-8", true },
+			{ "application/json-seq", false }, { "application/jsonp", false },
+			{ "application/notjson", false }, { "application/json extra", false }, { "text/json", false },
+		}
+		for _, case in ipairs(cases) do
+			package.loaded["opencode.client.transport"].request = function(_, callback)
+				callback(nil, { status = 200, headers = { ["content-type"] = case[1] }, body = "{}" })
+			end
+			local received, result, completions = nil, nil, 0
+			http.get("/test", function(err, body)
+				received, result, completions = err, body, completions + 1
+			end)
+			assert.equals(1, completions)
+			if case[2] then assert.is_nil(received); assert.is_table(result)
+			else assert.equals("invalid_content_type", received and received.code); assert.is_nil(result) end
+		end
+	end)
+
 	local function setup_client(password)
 		local client = require("opencode.client")
 		client.setup({
@@ -226,6 +270,46 @@ describe("opencode client Basic auth", function()
 		assert_eq(callback_data, nil, "HTTP callback data")
 		assert_eq(callback_err.error, AUTH_ERROR, "HTTP error field")
 		assert_eq(callback_err.message, AUTH_ERROR, "HTTP message field")
+	end)
+
+	it("clears old credentials when configuring a passwordless server", function()
+		local http = setup_http("old-test-secret")
+		http.get("/authenticated", function() end)
+		assert.is_string(request_calls[1].headers.Authorization)
+		http.setup({ port = 4999, auth = { username = "alice" } })
+		http.get("/passwordless", function() end)
+		assert.is_nil(request_calls[2].headers.Authorization)
+
+		local client = setup_client("old-test-secret")
+		assert.is_true(client.connect_events())
+		assert.is_string(stream_calls[1].headers.Authorization)
+		client.disconnect_events()
+		client.setup({ host = "localhost", port = 4999, reconnect = false })
+		assert.is_true(client.connect_events())
+		assert.is_nil(stream_calls[2].headers.Authorization)
+	end)
+
+	it("keeps auth on unrelated updates and uses the default username for new credentials", function()
+		local http = setup_http("old-test-secret")
+		http.get("/initial", function() end)
+		http.setup({ timeout = 10 })
+		http.get("/retained", function() end)
+		assert.equals(request_calls[1].headers.Authorization, request_calls[2].headers.Authorization)
+		local credentials = { password = "new-test-secret" }
+		http.setup({ auth = credentials })
+		credentials.password = "changed-after-setup"
+		http.get("/new", function() end)
+		assert.equals(require("opencode.client.auth").header("opencode", "new-test-secret"), request_calls[3].headers.Authorization)
+	end)
+
+	it("redacts errors using the credentials of the original request", function()
+		local http = setup_http("old-test-secret")
+		local reply, captured
+		package.loaded["opencode.client.transport"].request = function(_, callback) reply = callback end
+		http.get("/pending", function(err) captured = err end)
+		http.setup({ auth = { username = "opencode", password = "new-test-secret" } })
+		reply(nil, { status = 401, headers = {}, body = vim.json.encode({ message = "Rejected old-test-secret" }) })
+		assert.equals("Rejected [redacted]", captured.message)
 	end)
 
 	it("returns true after assigning or reusing an SSE stream", function()

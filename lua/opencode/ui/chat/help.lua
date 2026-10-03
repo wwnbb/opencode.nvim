@@ -13,11 +13,18 @@ end)
 
 local function sections(config)
 	local keys = config.keymaps or {}
+	local input_keys = (((require("opencode.state").get_config() or {}).input or {}).keymaps or {})
+	local input_defaults = require("opencode.config").defaults.input.keymaps
 	local function key(name, fallback)
 		local value = keys[name]
 		if value == nil then
 			return fallback
 		end
+		return type(value) == "string" and value ~= "" and value or "(disabled)"
+	end
+	local function input_key(name)
+		local value = input_keys[name]
+		if value == nil then value = input_defaults[name] end
 		return type(value) == "string" and value ~= "" and value or "(disabled)"
 	end
 	local pending = {}
@@ -57,14 +64,17 @@ local function sections(config)
 				{ "[a / ]a", "Prev/next user message" },
 				{ "[m / ]m", "Prev/next message or widget" },
 				{ "[p / ]p", "Prev/next pending permission" },
+				{ "T", "Choose a historical user turn" },
+				{ "ga", "Actions for user message at cursor" },
 			},
 		},
 		{ "Pending Input", pending },
 		{
 			"Input Mode",
 			{
-				{ "<C-g>", "Send message" },
-				{ "<Esc>", "Cancel" },
+				{ input_key("send"), "Send to queue" },
+				{ input_key("send_steer"), "Steer active agent" },
+				{ input_key("cancel"), "Cancel" },
 				{ "↑ / ↓", "Navigate history" },
 			},
 		},
@@ -186,14 +196,17 @@ function M.show(config)
 		vim.notify("Not enough room to show OpenCode help", vim.log.levels.WARN)
 		return
 	end
-	if active_popup and active_popup.winid and vim.api.nvim_win_is_valid(active_popup.winid) then
-		vim.api.nvim_set_current_win(active_popup.winid)
-		return active_popup
+	if active_popup then
+		if active_popup.winid and vim.api.nvim_win_is_valid(active_popup.winid)
+			and vim.api.nvim_win_get_tabpage(active_popup.winid) == vim.api.nvim_get_current_tabpage() then
+			vim.api.nvim_set_current_win(active_popup.winid)
+			return active_popup
+		end
+		active_popup:close(false)
 	end
 	config = config or state.config or require("opencode.config").defaults.chat
 	local groups = sections(config)
-	local previous_win = vim.api.nvim_get_current_win()
-	local target_win = state.winid and vim.api.nvim_win_is_valid(state.winid) and state.winid or previous_win
+	local target_win = require("opencode.ui.float_context").get_chat_context()
 	local function dimensions()
 		local screen_width, screen_height = vim.o.columns, vim.o.lines - vim.o.cmdheight
 		local pos, anchor_width, anchor_height = { 0, 0 }, screen_width, screen_height

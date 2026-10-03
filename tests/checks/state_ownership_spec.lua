@@ -511,7 +511,7 @@ describe("opencode state ownership", function()
 		assert_true(rendered:find("Hidden%?") ~= nil, "hidden question should render from question store")
 	end)
 
-	it("closes a child through its root and emits permission removal events", function()
+	it("closes a child through its root without resolving pending permissions", function()
 		local close_replies = {}
 		client.respond_permission = function(permission_id, reply, opts)
 			table.insert(close_replies, {
@@ -545,12 +545,12 @@ describe("opencode state ownership", function()
 		permission_state.add_permission("close_perm_child", "session_close_child", "bash", {})
 		permission_state.add_permission("close_perm_other", "session_close_b", "bash", {})
 		assert_true(session_actions.close("session_close_child", { silent = true }), "session.close should resolve a child session to its runtime root")
-		wait_for(function()
-			return #close_replies == 2
-				and not permission_state.has_permission("close_perm_a")
-				and not permission_state.has_permission("close_perm_child")
-				and permission_state.has_permission("close_perm_other")
-		end, "session.close should clear the closed session permissions and preserve others")
+		assert_true(not state.is_runtime_session("session_close_a"), "closing a child should remove its root tab")
+		assert_true(state.is_runtime_session("session_close_b"), "closing a child should preserve another tab")
+		assert_eq(#close_replies, 0, "closing a tab should not reply to native permissions")
+		assert_eq(permission_state.get_permission("close_perm_a").status, "pending", "root permission should stay pending")
+		assert_eq(permission_state.get_permission("close_perm_child").status, "pending", "child permission should stay pending")
+		assert_eq(permission_state.get_permission("close_perm_other").status, "pending", "other permission should stay pending")
 
 		local function history_has(event_type, permission_id)
 			for _, entry in ipairs(bus.get_history()) do
@@ -563,23 +563,13 @@ describe("opencode state ownership", function()
 			return false
 		end
 
-		local close_replies_by_id = {}
-		for _, reply in ipairs(close_replies) do
-			assert_eq(reply.reply, "reject", "session.close should reject native permissions")
-			assert_eq(reply.opts.message, "Session closed", "session.close should use the close message")
-			close_replies_by_id[reply.permission_id] = reply
-		end
-		assert_eq(close_replies_by_id.close_perm_a.opts.session_id, "session_close_a", "session.close should pass the native permission owner")
-		assert_eq(close_replies_by_id.close_perm_child.opts.session_id, "session_close_child", "session.close should pass the child permission owner")
-		assert_true(history_has("permission_rejected", "close_perm_a"), "session.close should emit permission_rejected for the root permission")
-		assert_true(history_has("permission_removed", "close_perm_a"), "session.close should emit permission_removed for the root permission")
-		assert_true(history_has("interaction_changed", "close_perm_a"), "session.close should emit interaction_changed for the root permission")
-		assert_true(history_has("permission_rejected", "close_perm_child"), "session.close should emit permission_rejected for the task child permission")
-		assert_true(history_has("permission_removed", "close_perm_child"), "session.close should emit permission_removed for the task child permission")
-		assert_true(history_has("interaction_changed", "close_perm_child"), "session.close should emit interaction_changed for the task child permission")
+		assert_true(not history_has("permission_rejected", "close_perm_a"), "closing should not emit a root permission rejection")
+		assert_true(not history_has("permission_removed", "close_perm_a"), "closing should not remove a root permission")
+		assert_true(not history_has("permission_rejected", "close_perm_child"), "closing should not emit a child permission rejection")
+		assert_true(not history_has("permission_removed", "close_perm_child"), "closing should not remove a child permission")
 	end)
 
-	it("rejects and removes only interactions owned by the closed root", function()
+	it("preserves pending interactions when closing and reopening a root tab", function()
 		local rejected_permissions = {}
 		local rejected_questions = {}
 		client.respond_permission = function(permission_id, reply, opts, callback)
@@ -641,35 +631,52 @@ describe("opencode state ownership", function()
 		}, { review_mode = "readonly" })
 
 		assert_true(session_actions.close("close_root", { silent = true }) == true, "close should remove target runtime tab")
-		assert_true(not permission_state.has_permission("perm_close_root"), "close should clear root permission")
-		assert_true(not permission_state.has_permission("perm_close_child"), "close should clear child permission")
+		assert_true(permission_state.has_permission("perm_close_root"), "close should preserve root permission")
+		assert_true(permission_state.has_permission("perm_close_child"), "close should preserve child permission")
 		assert_true(permission_state.has_permission("perm_keep_root"), "close should preserve unrelated permission")
-		assert_true(not question_state.has_question("question_close_root"), "close should clear root question")
-		assert_true(not question_state.has_question("question_close_child"), "close should clear child question")
+		assert_true(question_state.has_question("question_close_root"), "close should preserve root question")
+		assert_true(question_state.has_question("question_close_child"), "close should preserve child question")
 		assert_true(question_state.has_question("question_keep_root"), "close should preserve unrelated question")
-		assert_true(edit_state.get_edit("edit_close_root") == nil, "close should clear root edit")
-		assert_true(edit_state.get_edit("edit_close_child") == nil, "close should clear child edit")
+		assert_true(edit_state.get_edit("edit_close_root") ~= nil, "close should preserve root edit")
+		assert_true(edit_state.get_edit("edit_close_child") ~= nil, "close should preserve child edit")
 		assert_true(edit_state.get_edit("edit_keep_root") ~= nil, "close should preserve unrelated edit")
-		assert_eq(#rejected_permissions, 2, "close should reject root and child native permissions")
-		local rejected_permissions_by_id = {}
-		for _, rejection in ipairs(rejected_permissions) do rejected_permissions_by_id[rejection.permission_id] = rejection end
-		assert_eq(rejected_permissions_by_id.perm_close_root.opts.session_id, "close_root", "root permission owner")
-		assert_eq(rejected_permissions_by_id.perm_close_child.opts.session_id, "close_child", "child permission owner")
-		assert_eq(#rejected_questions, 2, "close should reject root and child questions")
-		local rejected_questions_by_id = {}
-		for _, rejection in ipairs(rejected_questions) do
-			rejected_questions_by_id[rejection.request_id] = rejection
+		assert_eq(#rejected_permissions, 0, "close should not reject native permissions")
+		assert_eq(#rejected_questions, 0, "close should not reject native forms")
+
+		local recovered = {}
+		for _, kind in ipairs({ "interaction_reconcile", "review_reconcile" }) do
+			bus.on(kind, function(data) recovered[kind] = data.session_id end)
 		end
-		assert_eq(
-			rejected_questions_by_id.question_close_root.opts.directory,
-			state.normalize_directory(close_root_directory),
-			"close should reject the root question in its owning directory"
-		)
-		assert_eq(
-			rejected_questions_by_id.question_close_child.opts.directory,
-			state.normalize_directory(close_child_directory),
-			"close should reject the child question in its owning directory"
-		)
+		client.get_messages = function(session_id, _, callback)
+			assert_eq(session_id, "close_root", "reopen should load the closed root")
+			callback(nil, { {
+				info = { id = "close_root_assistant", sessionID = "close_root", role = "assistant", time = { created = 1 } },
+				parts = { { id = "close_root_task", messageID = "close_root_assistant", sessionID = "close_root",
+					type = "tool", tool = "task", metadata = { sessionId = "close_child" } } },
+			} })
+		end
+		client.get_session_statuses = function(_, callback) callback(nil, {}) end
+		session_actions.switch_to({ id = "close_root", title = "Close Root", directory = close_root_directory })
+		wait_for(function()
+			return sync.get_task_parent_session("close_child") == "close_root"
+				and state.get_session_pending_counts("close_root").permissions == 2
+				and state.get_session_pending_counts("close_root").questions == 2
+		end, "reopening should restore child links and pending counts after history loads")
+		assert_eq(recovered.interaction_reconcile, "close_child", "reopen should refresh child interactions")
+		assert_eq(recovered.review_reconcile, "close_child", "reopen should refresh child reviews")
+		assert_true(state.is_runtime_session("close_root"), "switching to a closed session should reopen its tab")
+		assert_eq(permission_state.get_permission("perm_close_root").status, "pending", "reopened root permission remains pending")
+		assert_eq(permission_state.get_permission("perm_close_child").status, "pending", "reopened child permission remains pending")
+		assert_eq(question_state.get_question("question_close_root").status, "pending", "reopened root form remains pending")
+		assert_eq(question_state.get_question("question_close_child").status, "pending", "reopened child form remains pending")
+		assert_true(edit_state.get_edit("edit_close_root") ~= nil, "reopened root edit remains available")
+		assert_true(edit_state.get_edit("edit_close_child") ~= nil, "reopened child edit remains available")
+		local chat = require("opencode.ui.chat")
+		chat.create()
+		assert_true(table.concat(chat.render(), "\n"):find("Close root%?") ~= nil,
+			"reopening should render the still-pending root form")
+		assert_eq(#rejected_permissions, 0, "reopening should not reject native permissions")
+		assert_eq(#rejected_questions, 0, "reopening should not reject native forms")
 	end)
 
 	it("auto-approves valid permissions while dropping missing session identity", function()

@@ -3,6 +3,8 @@
 local M = {}
 
 local actions = require("opencode.actions")
+local pending = require("opencode.session.pending")
+local text_util = require("opencode.util.text")
 local function location_options()
 	local state = require("opencode.state")
 	return { directory = state.get_session_directory(state.get_session().id) or vim.fn.getcwd() }
@@ -23,24 +25,13 @@ local function mcp_value_to_text(value)
 end
 
 local function split_line_at_width(line, max_width)
-	if vim.fn.strdisplaywidth(line) <= max_width then
+	local bounded = text_util.truncate(line, max_width)
+	if bounded == line then
 		return line, ""
 	end
 
 	local char_count = vim.fn.strchars(line)
-	local low = 1
-	local high = char_count
-	local best = 1
-	while low <= high do
-		local mid = math.floor((low + high) / 2)
-		local candidate = vim.fn.strcharpart(line, 0, mid)
-		if vim.fn.strdisplaywidth(candidate) <= max_width then
-			best = mid
-			low = mid + 1
-		else
-			high = mid - 1
-		end
-	end
+	local best = math.max(1, vim.fn.strchars(bounded))
 
 	if best < char_count then
 		local min_break = math.max(1, math.floor(best * 0.5))
@@ -181,7 +172,7 @@ function M.register(palette)
 		description = "List and toggle MCP servers",
 		category = "mcp",
 		run = function()
-			local opts = location_options()
+			local opts, token = location_options(), pending.token()
 			actions.get_mcp_status(function(err, status)
 				if err then
 					vim.notify("Failed to get MCP status: " .. tostring(err.message or err), vim.log.levels.ERROR)
@@ -266,7 +257,7 @@ function M.register(palette)
 				end
 
 				local menu = require("opencode.ui.menu")
-				menu.open({
+				local menu_opts = {
 					items = items,
 					title = " MCP Servers ",
 					width = 60,
@@ -275,7 +266,8 @@ function M.register(palette)
 					sort = function(a, b)
 						return a.value < b.value
 					end,
-					on_select = function(item)
+					on_select = function(item, ctx)
+						if not pending.is_current(token) then ctx.close(); return end
 						vim.notify(
 							item.value .. ": " .. (item.description or item.status_text or item.status),
 							vim.log.levels.INFO
@@ -288,7 +280,7 @@ function M.register(palette)
 							handler = function(ctx, item)
 								ctx.close()
 								vim.schedule(function()
-									show_mcp_server_info(item)
+									if pending.is_current(token) then show_mcp_server_info(item) end
 								end)
 							end,
 						},
@@ -325,7 +317,15 @@ function M.register(palette)
 						{ key = "r", label = "r:refresh", handler = function(ctx, item) refresh_item(item, ctx) end },
 
 					},
-				})
+				}
+				for _, shortcut in ipairs(menu_opts.keys) do
+					local handler = shortcut.handler
+					shortcut.handler = function(ctx, item)
+						if not pending.is_current(token) then ctx.close(); return end
+						return handler(ctx, item)
+					end
+				end
+				menu.open(menu_opts)
 			end, opts)
 		end,
 	})

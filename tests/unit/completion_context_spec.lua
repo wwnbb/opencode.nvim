@@ -23,6 +23,24 @@ describe("completion editor context", function()
 		vim.api.nvim_set_current_buf(original_buf)
 		for _, buf in ipairs(buffers) do vim.api.nvim_buf_delete(buf, { force = true }) end
 	end)
+	it("builds relative paths below the filesystem root", function()
+		assert.equals("tmp/main.lua", context.relative("/tmp/main.lua", "/"))
+		assert.equals("", context.relative("/", "/"))
+		assert.equals("main.lua", context.relative("/tmp/project/main.lua", "/tmp/project"))
+		assert.equals("/tmp/project-other/main.lua", context.relative("/tmp/project-other/main.lua", "/tmp/project"))
+	end)
+	it("keeps a root working directory in captured editor context", function()
+		local buf = buffer("/tmp/opencode-completion-context/main.lua", { "value" })
+		vim.api.nvim_set_current_buf(buf)
+		local old_mode, old_cwd, old_root = vim.api.nvim_get_mode, vim.fn.getcwd, vim.fs.root
+		vim.api.nvim_get_mode = function() return { mode = "i" } end
+		vim.fn.getcwd = function() return "/" end
+		vim.fs.root = function() return nil end
+		local ok, snap = pcall(context.capture)
+		vim.api.nvim_get_mode, vim.fn.getcwd, vim.fs.root = old_mode, old_cwd, old_root
+		assert.is_true(ok)
+		assert.equals("/", snap.root)
+	end)
 	it("captures UTF-8 byte positions and the unsaved source around a hole", function()
 		local buf = buffer("/tmp/opencode-completion-context/main.lua", { "local before = true", 'print("Привет")', "return value" })
 		vim.api.nvim_set_current_buf(buf)

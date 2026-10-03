@@ -40,6 +40,18 @@ describe("v2 model preferences", function()
 		assert.equals("stable-id", preferences.open(path).data.agent)
 	end)
 
+	it("returns a failed save without changing the file or owner when values cannot be encoded", function()
+		local path = directory .. "/prefs.json"
+		local owner = preferences.open(path)
+		assert.is_true(owner.save({ agent = "original" }))
+		local original = read_bytes(path)
+		local ok, saved = pcall(owner.save, { agent = "replacement", invalid = function() end })
+		assert.is_true(ok)
+		assert.is_false(saved)
+		assert.equals(original, read_bytes(path))
+		assert.equals("original", owner.data.agent)
+	end)
+
 	it("preserves unreadable and unsupported versioned files", function()
 		for _, original in ipairs({ "{bad json", '{"version":3,"agent":"future"}' }) do
 			local path = directory .. "/prefs.json"

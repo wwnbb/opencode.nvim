@@ -75,7 +75,7 @@ local function create_commands()
 	vim.api.nvim_create_user_command("OpenCodeClear", function()
 		actions.clear()
 	end, {
-		desc = "Clear current OpenCode chat",
+		desc = "Start a fresh OpenCode chat and close the current tab",
 	})
 
 	vim.api.nvim_create_user_command("OpenCodeNew", function()

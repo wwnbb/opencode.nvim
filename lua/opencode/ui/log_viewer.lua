@@ -10,17 +10,7 @@ local NuiText = require("nui.text")
 local hl_ns = vim.api.nvim_create_namespace("opencode_log_viewer")
 
 -- Default configuration
-local defaults = {
-	position = "bottom", -- "bottom" | "top" | "left" | "right"
-	width = 80, -- for left/right splits
-	height = 15, -- for top/bottom splits
-	level_highlights = {
-		DEBUG = "Comment",
-		INFO = "Normal",
-		WARN = "WarningMsg",
-		ERROR = "ErrorMsg",
-	},
-}
+local defaults = require("opencode.config").defaults.logs
 
 -- State
 local state = {
@@ -42,12 +32,18 @@ local function build_entry_lines(entry, cfg)
 	local lines = {}
 
 	-- Header: timestamp [LEVEL] message
+	local messages = vim.split(entry.message, "\n", { plain = true })
 	local header = NuiLine()
 	header:append(NuiText(entry.timestamp .. " ", "Comment"))
 	local level_hl = cfg.level_highlights[entry.level] or "Normal"
 	header:append(NuiText("[" .. entry.level .. "] ", level_hl))
-	header:append(NuiText(entry.message))
+	header:append(NuiText(messages[1]))
 	table.insert(lines, header)
+	for i = 2, #messages do
+		local continuation = NuiLine()
+		continuation:append(NuiText(messages[i]))
+		table.insert(lines, continuation)
+	end
 
 	-- Raw JSON data (always shown, no folding)
 	if entry.data then
@@ -391,6 +387,7 @@ function M.render_entry(entry)
 
 	local logger = require("opencode.logger")
 	local logs = logger.get_logs()
+	if logs[#logs] ~= entry or state.entries[#state.entries] == entry then return end
 
 	-- Fall back to full refresh if incremental state is invalid
 	if state.entries_log_count == 0 or #logs ~= state.entries_log_count + 1 then
@@ -577,26 +574,21 @@ function M.show_help()
 		" r          - Refresh",
 		" ?          - Show this help",
 		"",
-		" Press any key to close",
+		" q / <Esc>  - Close help",
 	}
 
-	local width = 38
-	local height = #lines
-
-	local popup = require("opencode.ui.popup").new({
-		enter = true,
-		focusable = true,
-		border = {
-			style = "rounded",
-			text = { top = " Help ", top_align = "center" },
-		},
-		size = { width = width, height = height },
+	local popup = require("opencode.ui.float").create_centered_popup({
+		width = 38,
+		height = #lines,
+		title = "Help",
+		close_on_leave = true,
 	})
 
 	popup:mount()
 	popup:render(lines)
+	vim.wo[popup.winid].wrap = true
 
-	-- Close on any key
+	-- Close help without intercepting scrolling.
 	local close_keys = { "q", "<Esc>", "<CR>", "<Space>" }
 	for _, key in ipairs(close_keys) do
 		vim.keymap.set("n", key, function()
@@ -604,15 +596,8 @@ function M.show_help()
 		end, { buffer = popup.bufnr, noremap = true, silent = true })
 	end
 
-	for i = 32, 126 do
-		local char = string.char(i)
-		if not char:match("[qQ]") then
-			pcall(function()
-				vim.keymap.set("n", char, function()
-					popup:close()
-				end, { buffer = popup.bufnr, noremap = true, silent = true, nowait = true })
-			end)
-		end
+	for _, key in ipairs({ "j", "k", "<Up>", "<Down>", "<C-u>", "<C-d>", "<C-b>", "<C-f>", "gg", "G" }) do
+		vim.keymap.set("n", key, key, { buffer = popup.bufnr, noremap = true, silent = true })
 	end
 end
 

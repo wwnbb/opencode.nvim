@@ -3,6 +3,7 @@ local M = {
 		{ name = "cancel", description = "Cancel pending input at cursor" },
 		{ name = "edit", description = "Edit pending input at cursor" },
 		{ name = "steer", description = "Steer queued input at cursor" },
+		{ name = "queue", description = "Queue steering input at cursor" },
 	},
 }
 
@@ -13,7 +14,6 @@ local actions = require("opencode.actions")
 local widget_support = require("opencode.ui.chat.widget_support")
 local input = require("opencode.ui.input")
 local history = require("opencode.ui.input.history")
-local deferred_drafts = {}
 
 local function has_draft()
 	return input.is_visible() or history.get_pending() ~= "" or #history.get_pending_parts() > 0
@@ -21,8 +21,9 @@ end
 
 local function open_draft(draft)
 	input.show({ winid = state.winid, float_dims = state.float_dims, text = draft.text, parts = draft.parts,
-		on_send = function(text, parts)
-			actions.send(text, vim.tbl_extend("force", draft.options, { parts = parts }))
+		session_bound = true, send_options = draft.options,
+		on_send = function(text, parts, send_options)
+			actions.send(text, vim.tbl_extend("force", draft.options, send_options or {}, { parts = parts }))
 		end,
 		on_cancel = function()
 			if state.winid and vim.api.nvim_win_is_valid(state.winid) then vim.api.nvim_set_current_win(state.winid) end
@@ -44,10 +45,9 @@ end
 -- widget key pressed over an unrelated message or empty space.
 function M.resume_edit()
 	local sid = app_state.get_session().id
-	local drafts = deferred_drafts[sid]
-	if not drafts or has_draft() then return false end
-	local draft = table.remove(drafts, 1)
-	if #drafts == 0 then deferred_drafts[sid] = nil end
+	if has_draft() then return false end
+	local draft = history.take_deferred(sid)
+	if not draft then return false end
 	open_draft(draft)
 	return true
 end
@@ -56,6 +56,7 @@ function M.handle(action)
 	local sid, id, record = at_cursor()
 	if not id then return false end
 	if action == "steer" and record.status ~= "queued" then return true end
+	if action == "queue" and record.status ~= "accepted" then return true end
 	if action == "edit" and has_draft() then
 		vim.notify("Finish the current draft before editing a queued input", vim.log.levels.INFO)
 		return true
@@ -69,8 +70,7 @@ function M.handle(action)
 		-- Cancellation is asynchronous: do not overwrite a draft opened meanwhile
 		-- or silently drop this one when input.show() finds another editor open.
 		if has_draft() or app_state.get_session().id ~= sid or not state.visible then
-			deferred_drafts[sid] = deferred_drafts[sid] or {}
-			table.insert(deferred_drafts[sid], draft)
+			history.defer_pending(draft, sid)
 			vim.notify("Input cancelled; reopen input in its session after finishing the current draft to edit it", vim.log.levels.INFO)
 			return
 		end

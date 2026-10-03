@@ -15,6 +15,16 @@ M.levels = {
 	ERROR = "ERROR",
 }
 
+---Keep model diagnostics consistent without logging unrelated catalog data.
+---@param model any
+---@return table
+function M.model_summary(model)
+	if type(model) ~= "table" then
+		return { kind = model == vim.NIL and "vim.NIL" or type(model) }
+	end
+	return { kind = "table", providerID = model.providerID, modelID = model.modelID, variant = model.variant }
+end
+
 -- Get current timestamp string
 local function timestamp()
 	return os.date("%H:%M:%S")

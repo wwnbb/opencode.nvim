@@ -51,6 +51,15 @@ end
 
 local schedule_callback = require("opencode.util.schedule").schedule_callback
 
+local function current_callback(token, callback)
+	local pending = require("opencode.session.pending")
+	return function(...)
+		schedule_callback(type(callback) == "function" and function(...)
+			if pending.is_current(token) then callback(...) end
+		end, ...)
+	end
+end
+
 local function update_input_info_bar()
 	local ok, input = pcall(require, "opencode.ui.input")
 	if ok and input.is_visible and input.is_visible() and type(input.update_info_bar) == "function" then
@@ -58,8 +67,33 @@ local function update_input_info_bar()
 	end
 end
 
-local function with_connection(callback)
-	return lifecycle().ensure_connected(callback)
+local function with_connection(callback, session_id)
+	local pending = require("opencode.session.pending")
+	local token = pending.token(session_id)
+	return lifecycle().ensure_connected(function()
+		if pending.is_current(token) then callback(token) end
+	end)
+end
+
+local function connected_request(session_id, request, callback)
+	return with_connection(function(token)
+		request(current_callback(token, callback))
+	end, session_id)
+end
+
+local function catalog_options(opts)
+	local app = state()
+	local options = vim.tbl_extend("keep", opts or {}, { directory = app.get_session_directory(app.get_session().id) or vim.fn.getcwd() })
+	options.directory = require("opencode.util.path").absolute(options.directory)
+	return options
+end
+
+local function load_catalog(method, domain, callback)
+	local opts = catalog_options()
+	return connected_request(nil, function(done) client()[method](done, opts) end, function(err, data)
+		if data or err then sync().handle_location_catalog(opts.directory, domain, data, err) end
+		if callback and catalog_options().directory == opts.directory then callback(err, data) end
+	end)
 end
 
 function M.open()
@@ -103,9 +137,7 @@ function M.disconnect()
 end
 
 function M.reconnect(callback)
-	return with_connection(function()
-		schedule_callback(callback)
-	end)
+	return connected_request(nil, function(done) done() end, callback)
 end
 
 function M.abort()
@@ -176,47 +208,43 @@ function M.set_active_session(session_id, name, opts)
 	return sessions().set_active(session_id, name, opts)
 end
 
+function M.remember_session(session, opts)
+	local options = vim.tbl_extend("force", { touch = false, reason = "session_fork" }, opts or {})
+	return sessions().remember(session, options)
+end
+
 function M.forget_session(session_id, opts)
 	return sessions().forget(session_id, opts)
 end
 
 function M.refresh_session_activity(callback)
 	local session_actions = sessions()
-	return session_actions.refresh_status(function()
+	return session_actions.refresh_status(current_callback(require("opencode.session.pending").token(), function()
 		session_actions.recount_pending()
-		schedule_callback(callback)
-	end)
+		if callback then callback() end
+	end))
 end
 
 function M.list_sessions(opts, callback)
-	return with_connection(function()
-		client().get_all_sessions(opts, function(err, result)
-			schedule_callback(callback, err, result)
-		end)
-	end)
+	return connected_request(nil, function(done) client().get_all_sessions(opts, done) end, callback)
 end
 
 function M.get_usage_stats(callback)
-	return with_connection(function()
-		client().get_usage_stats(require("opencode.stats").query(), function(err, result)
-			schedule_callback(callback, err, result)
-		end)
-	end)
+	return connected_request(nil, function(done) client().get_usage_stats(require("opencode.stats").query(), done) end, callback)
 end
 
 function M.fork_session(session_id, opts, callback)
-	return with_connection(function()
-		client().fork_session(session_id, opts or {}, function(err, result)
-			schedule_callback(callback, err, result)
-		end)
-	end)
+	return connected_request(session_id, function(done) client().fork_session(session_id, opts or {}, done) end, callback)
+end
+
+function M.export_session(session_id, opts, callback)
+	return connected_request(session_id, function(done) client().export_session(session_id, opts or {}, done) end, callback)
 end
 
 function M.delete_session(session_id, callback)
-	return with_connection(function()
-		client().delete_session(session_id, function(err, result)
-			schedule_callback(callback, err, result)
-		end)
+	return connected_request(session_id, function(done) client().delete_session(session_id, done) end, function(err, result)
+		if not err then sessions().handle_deleted(session_id, { reason = "session_delete" }) end
+		if callback then callback(err, result) end
 	end)
 end
 
@@ -241,11 +269,13 @@ function M.load_session_messages(session_id, opts, callback)
 	local request_opts = vim.tbl_extend("force", { limit = 100 }, opts or {})
 	local complete = request_opts.all == true
 	request_opts.all = nil
+	local pending = require("opencode.session.pending")
+	local token = pending.token(session_id)
+	local publish = current_callback(token, callback)
 	return with_connection(function()
+		if not pending.is_current(token) then return end
 		local store = sync()
 		local snapshot = store.capture_session_snapshot(session_id)
-		local pending = require("opencode.session.pending")
-		local token = pending.token(session_id)
 		local function done(err, response, meta)
 			if not pending.is_current(token) then return end
 			if not err then
@@ -255,26 +285,18 @@ function M.load_session_messages(session_id, opts, callback)
 				require("opencode.session").refresh_status()
 				require("opencode.events").emit("sync_changed", { kind = "message", session_id = session_id })
 			end
-			schedule_callback(callback, err, response, meta)
+			publish(err, response, meta)
 		end
 		if complete then client().get_all_messages(session_id, done) else client().get_messages(session_id, request_opts, done) end
 	end)
 end
 
 function M.get_session_children(session_id, callback)
-	return with_connection(function()
-		client().get_session_children(session_id, function(err, children)
-			schedule_callback(callback, err, children)
-		end)
-	end)
+	return connected_request(session_id, function(done) client().get_session_children(session_id, done) end, callback)
 end
 
 function M.get_session(session_id, callback)
-	return with_connection(function()
-		client().get_session(session_id, function(err, session)
-			schedule_callback(callback, err, session)
-		end)
-	end)
+	return connected_request(session_id, function(done) client().get_session(session_id, done) end, callback)
 end
 
 ---@param parent_session_id string
@@ -305,36 +327,41 @@ function M.send(message, opts)
 end
 
 function M.list_pending_inputs(session_id, callback)
-	return with_connection(function() client().get_inbox(session_id, callback) end)
+	return connected_request(session_id, function(done) client().get_inbox(session_id, done) end, callback)
 end
 
 function M.cancel_pending_input(session_id, message_id, callback)
 	return with_connection(function()
 		require("opencode.send").cancel_input(session_id, message_id, callback)
-	end)
+	end, session_id)
+end
+
+function M.cancel_submitting_input(session_id, message_id, callback)
+	return with_connection(function()
+		require("opencode.send").cancel_submitting_input(session_id, message_id, callback)
+	end, session_id)
 end
 
 function M.edit_pending_input(session_id, message_id, callback)
 	return with_connection(function()
 		require("opencode.send").edit_input(session_id, message_id, callback)
-	end)
+	end, session_id)
 end
 
 function M.steer_pending_input(session_id, message_id, callback)
 	return with_connection(function()
 		require("opencode.send").steer_input(session_id, message_id, callback)
-	end)
+	end, session_id)
+end
+
+function M.queue_pending_input(session_id, message_id, callback)
+	return with_connection(function()
+		require("opencode.send").queue_input(session_id, message_id, callback)
+	end, session_id)
 end
 
 function M.list_agents(callback)
-	return with_connection(function()
-		client().list_agents(function(err, agents)
-			if not err and agents then
-				sync().handle_agents(agents)
-			end
-			schedule_callback(callback, err, agents)
-		end)
-	end)
+	return load_catalog("list_agents", "agents", callback)
 end
 
 function M.select_agent(agent_name)
@@ -343,30 +370,16 @@ function M.select_agent(agent_name)
 end
 
 function M.get_config_providers(callback)
-	return with_connection(function()
-		client().get_config_providers(function(err, response)
-			if not err and response then
-				local store = sync()
-				store.handle_providers(response.providers or {})
-				if response.default then
-					store.handle_provider_defaults(response.default)
-				end
-			end
-			schedule_callback(callback, err, response)
-		end)
-	end)
+	return load_catalog("get_config_providers", "providers", callback)
 end
 
 function M.list_skills(callback, opts)
-	opts = vim.deepcopy(opts or {})
-	opts.directory = opts.directory or state().get_session_directory(state().get_session().id) or vim.fn.getcwd()
-	local pending = require("opencode.session.pending")
-	local token = pending.token()
-	return client().list_skills(function(err, skills)
-		if not pending.is_current(token) then return end
+	opts = vim.deepcopy(catalog_options(opts))
+	local token = require("opencode.session.pending").token()
+	return client().list_skills(current_callback(token, function(err, skills)
 		sync().handle_location_catalog(opts.directory, "skills", skills, err)
-		schedule_callback(callback, err, skills)
-	end, opts)
+		if callback then callback(err, skills) end
+	end), opts)
 end
 
 -- Add catalog skills to the current input draft. The server loads their
@@ -437,25 +450,16 @@ function M.stage_skills(selected, opts)
 end
 
 function M.execute_command(session_id, command, args, opts, callback)
-	return require("opencode.send").command(session_id, command, args, opts or {}, function(err, result)
-		schedule_callback(callback, err, result)
-	end)
+	local token = require("opencode.session.pending").token(session_id)
+	return require("opencode.send").command(session_id, command, args, opts or {}, current_callback(token, callback))
 end
 
 function M.list_providers(callback)
-	return with_connection(function()
-		client().list_providers(function(err, response)
-			schedule_callback(callback, err, response)
-		end)
-	end)
+	return connected_request(nil, function(done) client().list_providers(done) end, callback)
 end
 
 function M.list_integrations(callback, opts)
-	return with_connection(function()
-		client().list_integrations(function(err, integrations)
-			schedule_callback(callback, err, integrations)
-		end, opts)
-	end)
+	return connected_request(nil, function(done) client().list_integrations(done, opts) end, callback)
 end
 
 function M.connect_integration_key(integration_id, key, answer, opts, callback)
@@ -477,14 +481,13 @@ end
 -- Explicit server-wide reload; authentication never calls this operation.
 function M.reload_locations(callback)
 	local token = require("opencode.session.pending").token()
-	return client().dispose(function(err, result)
-		if not require("opencode.session.pending").is_current(token) then return end
+	return client().dispose(current_callback(token, function(err, result)
 		if not err then
 			cleanup().clear_transient({ reset_state = false, clear_chat = true })
 			require("opencode.events").emit("connected", {})
 		end
-		schedule_callback(callback, err, result)
-	end)
+		if callback then callback(err, result) end
+	end))
 end
 M.dispose_server = M.reload_locations
 
@@ -519,37 +522,31 @@ function M.clear_pending_disconnects()
 end
 
 function M.compact_session(session_id, opts, callback)
-	return with_connection(function()
-		client().summarize_session(session_id, opts or {}, function(err, result)
-			if not err then require("opencode.events").emit("v2_reconcile", { session_id = session_id }) end
-			schedule_callback(callback, err, result)
-		end)
+	return connected_request(session_id, function(done) client().summarize_session(session_id, opts or {}, done) end, function(err, result)
+		if not err then require("opencode.events").emit("v2_reconcile", { session_id = session_id }) end
+		if callback then callback(err, result) end
 	end)
 end
 
-local function catalog_options(opts)
-	local app = require("opencode.state")
-	return vim.tbl_extend("keep", opts or {}, { directory = app.get_session_directory(app.get_session().id) or vim.fn.getcwd() })
-end
-
 function M.get_server_status(callback)
-	return client().get_status(function(err, status) schedule_callback(callback, err, status) end, catalog_options())
+	local token = require("opencode.session.pending").token()
+	return client().get_status(current_callback(token, callback), catalog_options())
 end
 
 function M.get_mcp_status(callback, opts)
 	opts = catalog_options(opts)
-	local pending = require("opencode.session.pending")
-	local token = pending.token(require("opencode.state").get_session().id)
-	return client().get_mcp_status(function(err, status)
-		if pending.is_current(token) and not err and status then sync().handle_location_catalog(opts.directory, "mcp", status) end
-		schedule_callback(callback, err, status)
-	end, opts)
+	local token = require("opencode.session.pending").token()
+	return client().get_mcp_status(current_callback(token, function(err, status)
+		if not err and status then sync().handle_location_catalog(opts.directory, "mcp", status) end
+		if callback then callback(err, status) end
+	end), opts)
 end
 
 function M.toggle_mcp(name, connected, callback, opts)
 	local c = client()
 	local fn = connected and c.disconnect_mcp or c.connect_mcp
-	return fn(name, function(err, result) schedule_callback(callback, err, result) end, catalog_options(opts))
+	local token = require("opencode.session.pending").token()
+	return fn(name, current_callback(token, callback), catalog_options(opts))
 end
 
 function M.reply_review(review_id, callback)
@@ -569,16 +566,15 @@ function M.respond_permission(permission_id, reply, opts, callback)
 	opts.directory = opts.directory or require("opencode.state").get_session_directory(opts.session_id)
 	if not item or not owner.begin_submission(permission_id) then return false end
 	local token = require("opencode.session.pending").token(opts.session_id)
-	return client().respond_permission(permission_id, reply, opts, function(err, result)
-		if not require("opencode.session.pending").is_current(token) then return end
+	return client().respond_permission(permission_id, reply, opts, current_callback(token, function(err, result)
 		local current = owner.get_permission(permission_id)
 		if current ~= item or current.status ~= "pending" then return end
 		if err then
 			owner.restore_submission(permission_id, err)
 			require("opencode.events").emit("interaction_reconcile", { session_id = opts.session_id })
 		end
-		schedule_callback(callback, err, result)
-	end)
+		if callback then callback(err, result) end
+	end))
 end
 
 ---@param request_id string
@@ -601,11 +597,10 @@ function M.reply_to_question(request_id, answers, opts_or_callback, callback)
 	local qstate = require("opencode.question.state").get_question(request_id)
 	opts.session_id = qstate and qstate.session_id or opts.session_id
 	local token = require("opencode.session.pending").token(opts.session_id)
-	return client().reply_to_question(request_id, answers, opts, function(err, result)
-		if not require("opencode.session.pending").is_current(token) then return end
+	return client().reply_to_question(request_id, answers, opts, current_callback(token, function(err, result)
 		if err then require("opencode.events").emit("interaction_reconcile", { session_id = opts.session_id }) end
-		schedule_callback(callback, err, result)
-	end)
+		if callback then callback(err, result) end
+	end))
 end
 
 ---@param session_id string|nil
@@ -623,11 +618,10 @@ function M.reject_question(session_id, request_id, opts_or_callback, callback)
 	local owner_session_id = item and item.session_id or session_id
 	opts.directory = opts.directory or require("opencode.state").get_session_directory(owner_session_id)
 	local token = require("opencode.session.pending").token(owner_session_id)
-	return client().reject_question(owner_session_id, request_id, opts, function(err, result)
-		if not require("opencode.session.pending").is_current(token) then return end
+	return client().reject_question(owner_session_id, request_id, opts, current_callback(token, function(err, result)
 		if err then require("opencode.events").emit("interaction_reconcile", { session_id = owner_session_id }) end
-		schedule_callback(callback, err, result)
-	end)
+		if callback then callback(err, result) end
+	end))
 end
 
 function M.refresh_form(id)
@@ -636,25 +630,49 @@ function M.refresh_form(id)
 end
 
 function M.get_diff(session_id, opts, callback)
-	return client().get_diff(session_id, opts or {}, function(err, diff)
-		schedule_callback(callback, err, diff)
-	end)
+	local token = require("opencode.session.pending").token(session_id)
+	return client().get_diff(session_id, opts or {}, current_callback(token, callback))
 end
 
-local function reverted(session_id, callback)
-	return function(err, result)
-		if not err then require("opencode.events").emit("v2_reconcile", { session_id = session_id, complete = true }) end
-		schedule_callback(callback, err, result)
-	end
+local function reverted(session_id, callback, operation)
+	local token = require("opencode.session.pending").token(session_id)
+	return current_callback(token, function(err, result)
+		if not err then
+			if operation == "stage" and type(result) == "table" and result.messageID then
+				sessions().remember({ id = session_id, revert = result }, { touch = false })
+			elseif operation == "clear" or operation == "commit" then
+				sessions().remember({ id = session_id, revert = vim.NIL }, { touch = false })
+			end
+			require("opencode.events").emit("v2_reconcile", { session_id = session_id, complete = true })
+		end
+		if callback then callback(err, result) end
+	end)
 end
 function M.revert_message(session_id, message_id, opts, callback)
-	return client().revert_message(session_id, message_id, opts or {}, reverted(session_id, callback))
+	return client().revert_message(session_id, message_id, opts or {}, reverted(session_id, callback, "stage"))
 end
 function M.clear_revert(session_id, callback)
-	return client().clear_revert(session_id, reverted(session_id, callback))
+	return client().clear_revert(session_id, reverted(session_id, callback, "clear"))
 end
 function M.commit_revert(session_id, callback)
-	return client().commit_revert(session_id, reverted(session_id, callback))
+	return client().commit_revert(session_id, reverted(session_id, callback, "commit"))
+end
+
+-- Revert staging requires an idle agent loop. Interrupting may return before
+-- the loop has stopped, so wait for the server before staging the boundary.
+function M.undo_message(session_id, message_id, callback)
+	local pending = require("opencode.session.pending")
+	local token = pending.token(session_id)
+	local fail = current_callback(token, callback)
+	client().abort_session(session_id, function(err)
+		if not pending.is_current(token) then return end
+		if err then fail(err); return end
+		client().wait_session(session_id, function(wait_err)
+			if not pending.is_current(token) then return end
+			if wait_err then fail(wait_err); return end
+			M.revert_message(session_id, message_id, {}, callback)
+		end)
+	end)
 end
 
 function M.paste_clipboard()

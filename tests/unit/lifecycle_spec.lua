@@ -254,6 +254,93 @@ describe("opencode lifecycle", function()
 		assert_eq(connected, true, "IPv6 readiness")
 	end)
 
+	it("removes automatic shutdown when reconfigured off", function()
+		lifecycle.setup({ shutdown_on_exit = true })
+		assert.equals(1, #vim.api.nvim_get_autocmds({ group = "OpenCodeLifecycle", event = "VimLeavePre" }))
+		lifecycle.setup({ shutdown_on_exit = false })
+		assert.equals(0, #vim.api.nvim_get_autocmds({ group = "OpenCodeLifecycle", event = "VimLeavePre" }))
+	end)
+
+	it("replaces environment maps and snapshots supplied credentials", function()
+		lifecycle.setup({ env = { OPENCODE_NVIM_TEST_REMOVED_ENV = "old" } })
+		local opts = { env = { OPENCODE_NVIM_TEST_KEPT_ENV = "new" }, auth = { username = "alice", password = "test-secret" } }
+		lifecycle.setup(opts)
+		opts.env.OPENCODE_NVIM_TEST_KEPT_ENV = "changed"
+		opts.auth.password = "changed"
+		local job = complete_start()
+		assert.is_nil(job.opts.env.OPENCODE_NVIM_TEST_REMOVED_ENV)
+		assert.equals("new", job.opts.env.OPENCODE_NVIM_TEST_KEPT_ENV)
+		assert.equals("test-secret", job.opts.env.OPENCODE_SERVER_PASSWORD)
+	end)
+
+	it("drops readiness callbacks scheduled before disconnect", function()
+		local runs = 0
+		lifecycle.ensure_connected(function() runs = runs + 1 end)
+		emit_listening(jobs[1], 4096)
+		respond_health(1, true)
+		assert.equals("connected", state_data.connection)
+		lifecycle.disconnect()
+		flush_scheduled()
+		assert.equals(0, runs)
+	end)
+
+	it("drops already-connected callbacks after disconnect and reconnect", function()
+		complete_start()
+		local runs = 0
+		lifecycle.ensure_connected(function() runs = runs + 1 end)
+		lifecycle.disconnect()
+		lifecycle.start()
+		respond_health(#health_callbacks, true)
+		flush_scheduled()
+		assert.equals("connected", state_data.connection)
+		assert.equals(0, runs)
+	end)
+
+	for _, phase in ipairs({ "readiness", "already-connected" }) do
+		it("drops queued " .. phase .. " actions after SSE loss and automatic reconnect", function()
+			local runs = 0
+			if phase == "readiness" then
+				lifecycle.ensure_connected(function() runs = runs + 1 end)
+				emit_listening(jobs[1], 4096)
+				respond_health(1, true)
+			else
+				complete_start()
+				lifecycle.ensure_connected(function() runs = runs + 1 end)
+			end
+			listeners.disconnected[1]("eof")
+			listeners["server.connected"][1]()
+			flush_scheduled()
+			assert.equals("connected", state_data.connection)
+			assert.equals(0, runs)
+			lifecycle.ensure_connected(function() runs = runs + 1 end)
+			flush_scheduled()
+			assert.equals(1, runs)
+		end)
+	end
+
+	it("keeps an explicit health check alive while automatic SSE reconnects come and go", function()
+		complete_start()
+		listeners.disconnected[1]("eof")
+		local runs = 0
+		lifecycle.ensure_connected(function() runs = runs + 1 end)
+		listeners["server.connected"][1]()
+		listeners.disconnected[1]("eof")
+		respond_health(#health_callbacks, true)
+		flush_scheduled()
+		assert.equals("connected", state_data.connection)
+		assert.equals(1, runs)
+	end)
+
+	it("stops dispatching a readiness batch when its first action disconnects", function()
+		local runs = 0
+		lifecycle.ensure_connected(function() lifecycle.disconnect() end)
+		lifecycle.ensure_connected(function() runs = runs + 1 end)
+		emit_listening(jobs[1], 4096)
+		respond_health(1, true)
+		flush_scheduled()
+		assert.equals(0, runs)
+	end)
+
 	it("shares one ephemeral credential between the owned process, HTTP and SSE", function()
 		lifecycle.ensure_connected(function() end)
 		local job = jobs[1]
@@ -489,6 +576,45 @@ describe("opencode lifecycle", function()
 		flush_scheduled()
 		assert_eq(state_data.connection, "connected", "restarted connection")
 	end)
+
+	it("reconnects an external server immediately without a restart delay", function()
+		lifecycle.setup({ port = 4096 }); state_data.server.port = 4096
+		lifecycle.ensure_connected(function() end)
+		respond_health(1, true); flush_scheduled()
+		lifecycle.restart()
+		assert.equals(2, #health_callbacks)
+		assert.equals(0, #timers)
+		assert.equals(1, state_data.cleanup_calls)
+		respond_health(2, true); flush_scheduled()
+		assert.equals("connected", state_data.connection)
+		assert.equals(0, #jobs)
+	end)
+
+	it("does not revive an external restart after explicit disconnect", function()
+		lifecycle.setup({ port = 4096 }); state_data.server.port = 4096
+		lifecycle.ensure_connected(function() end)
+		respond_health(1, true); flush_scheduled()
+		lifecycle.restart(); lifecycle.disconnect()
+		for _, timer in ipairs(vim.list_slice(timers)) do if timer.active then fire_timer(timer) end end
+		assert.equals("idle", state_data.connection)
+		if health_callbacks[2] then respond_health(2, true) end
+		flush_scheduled()
+		assert.equals("idle", state_data.connection)
+		assert.equals(1, client.connect_calls)
+	end)
+
+	for _, cancellation in ipairs({ "disconnect", "stop", "setup" }) do
+		it("cancels a managed restart when " .. cancellation .. " supersedes it", function()
+			local job = complete_start()
+			lifecycle.restart()
+			if cancellation == "setup" then lifecycle.setup({ command = "/other/opencode" })
+			else lifecycle[cancellation]() end
+			job.opts.on_exit(job, 0, 15); flush_scheduled()
+			assert.equals(1, #jobs)
+			assert.equals("idle", state_data.connection)
+			assert.is_nil(state_data.server.pid)
+		end)
+	end
 
 	it("ignores late callbacks from a timed-out attempt", function()
 		local old_runs = 0

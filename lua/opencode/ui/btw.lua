@@ -49,17 +49,7 @@ local function dimensions(kind, question_rows)
 	}
 end
 
-local function clip(text, width)
-	if width <= 0 then return "" end
-	if vim.fn.strdisplaywidth(text) <= width then return text end
-	local chars = vim.fn.strchars(text)
-	while chars > 0 do
-		chars = chars - 1
-		local candidate = vim.fn.strcharpart(text, 0, chars)
-		if vim.fn.strdisplaywidth(candidate) <= width then return candidate end
-	end
-	return ""
-end
+local clip = require("opencode.util.text").truncate
 
 local function header(width)
 	local left, right = "  /btw", "esc  "

@@ -17,16 +17,7 @@ local function normalize_directory(directory)
 		dir = vim.fn.getcwd()
 	end
 
-	local absolute = vim.fn.fnamemodify(dir, ":p")
-	if absolute == "" then
-		return nil
-	end
-
-	if vim.fs and vim.fs.normalize then
-		return vim.fs.normalize(absolute)
-	end
-
-	return absolute
+	return require("opencode.util.path").absolute(dir)
 end
 
 -- Configure both clients
@@ -108,7 +99,7 @@ function M.get_all_sessions(opts, callback)
 			for _, item in ipairs(values) do by_id[item.id] = item end
 			for _, key in ipairs({ "previous", "next" }) do
 				local next_cursor = meta and meta.cursor and meta.cursor[key]
-				if #values > 0 and type(next_cursor) == "string" and not seen[next_cursor] then
+				if type(next_cursor) == "string" and not seen[next_cursor] then
 					seen[next_cursor] = true; queue[#queue + 1] = next_cursor
 				end
 			end
@@ -144,9 +135,13 @@ end
 ---@param session_id string
 ---@param callback function(err, sessions)
 function M.get_session_children(session_id, callback)
+	local generation = configuration_generation
 	local children, query, seen = {}, { parentID = session_id }, {}
 	local function page()
 		M.list_sessions(query, function(err, data, meta)
+			if generation ~= configuration_generation then
+				callback({ code = "stale_connection", message = "Server connection changed" }); return
+			end
 			if err then callback(err); return end
 			vim.list_extend(children, data)
 			local cursor = meta.cursor.next
@@ -168,13 +163,7 @@ function M.create_session(opts, callback)
 	-- Ensure opts is an object (not empty array) for JSON encoding
 	-- An empty Lua table {} encodes as [] in JSON, but we need {}
 	-- Use vim.empty_dict() as base and merge any provided opts
-	local body = vim.empty_dict()
-	if next(opts) then
-		-- Merge non-empty opts into the empty_dict base
-		for k, v in pairs(opts) do
-			body[k] = v
-		end
-	end
+	local body = vim.tbl_extend("force", vim.empty_dict(), opts)
 
 	if body.parentID ~= nil then
 		require("opencode.util.schedule").schedule_callback(callback, { code = "invalid_request", message = "V2 session creation does not accept parentID" })
@@ -194,10 +183,22 @@ end
 
 -- Fork session
 ---@param session_id string
----@param opts? table { messageID? }
+---@param opts? table { before?: string } Exclusive message boundary; omission copies full history.
 ---@param callback function(err, session)
 function M.fork_session(session_id, opts, callback)
-	v2.request("session_fork", { path = { sessionID = session_id }, body = { before = opts and opts.before } }, callback)
+	local body = vim.empty_dict()
+	if opts and opts.before then body.before = opts.before end
+	v2.request("session_fork", { path = { sessionID = session_id }, body = body }, callback)
+end
+
+-- Return the server's complete native transcript; keep DTOs intact for JSON
+-- export and let presentation choose which message content to include.
+---@param session_id string
+---@param opts? table { sanitize?: boolean }
+---@param callback function(err, transcript)
+function M.export_session(session_id, opts, callback)
+	local query = opts and opts.sanitize ~= nil and { sanitize = opts.sanitize } or nil
+	return v2.request("session_export", { path = { sessionID = session_id }, query = query }, callback)
 end
 
 -- Get session messages
@@ -274,10 +275,7 @@ end
 
 -- One-shot Visual explanation; no session ID, tools, or chat state is sent.
 function M.generate_explanation(prompt, model, callback, opts)
-	return v2.request("completion", {
-		body = { prompt = prompt, model = model },
-		timeout = opts and opts.timeout,
-	}, callback)
+	return M.generate_completion(prompt, model, callback, opts)
 end
 
 -- Abort session
@@ -285,6 +283,10 @@ end
 ---@param callback function(err, success)
 function M.abort_session(session_id, callback)
 	v2.request("interrupt", { path = { sessionID = session_id }, query = { resume = false } }, callback)
+end
+
+function M.wait_session(session_id, callback)
+	v2.request("session_wait", { path = { sessionID = session_id } }, callback)
 end
 
 function M.switch_agent(session_id, agent, callback)

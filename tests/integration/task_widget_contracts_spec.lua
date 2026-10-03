@@ -15,9 +15,70 @@ describe("task widget contracts", function()
 	after_each(function()
 		chat_surface.restore(surface)
 	end)
-	local original_load
-	before_each(function() original_load = actions_mod.load_session_messages end)
-	after_each(function() actions_mod.load_session_messages = original_load end)
+	local original_load, original_rerender
+	before_each(function() original_load, original_rerender = actions_mod.load_session_messages, chat_tasks.rerender_task end)
+	after_each(function() actions_mod.load_session_messages, chat_tasks.rerender_task = original_load, original_rerender end)
+	local function child_task(status)
+		return { id = "child-task", type = "tool", tool = "task", state = {
+			status = status or "running", metadata = { sessionID = "child" },
+		} }
+	end
+
+	for _, failed in ipairs({ false, true }) do
+		it("ignores a queued child-load " .. (failed and "failure" or "success") .. " after the chat resets", function()
+			local replies, renders = {}, 0
+			actions_mod.load_session_messages = function(_, _, callback) replies[#replies + 1] = callback end
+			chat_tasks.rerender_task = function() renders = renders + 1 end
+			local part = child_task()
+			chat_state.tasks[part.id] = { tool_part = part }
+			chat_tasks.ensure_task_child_loaded(part)
+			replies[1](failed and { message = "old failure" } or nil, {})
+			require("opencode.ui.chat.render_state").reset_chat_surface({ reset_expansions = true })
+			chat_state.tasks[part.id] = { tool_part = part }
+			chat_tasks.ensure_task_child_loaded(part)
+			assert.equals(2, #replies)
+			vim.wait(20, function() return false end, 10)
+			assert.is_true(chat_state.task_child_loading[part.id])
+			assert.is_nil(chat_state.task_child_cache[part.id])
+			assert.equals(0, renders)
+			replies[2](nil, {})
+			assert.is_true(vim.wait(100, function() return chat_state.task_child_cache[part.id] == true end, 10))
+			assert.is_nil(chat_state.task_child_loading[part.id])
+			assert.equals(1, renders)
+		end)
+	end
+
+	it("shares a pending child load with expansion and retries its failure", function()
+		local replies = {}
+		actions_mod.load_session_messages = function(_, _, callback) replies[#replies + 1] = callback end
+		chat_tasks.rerender_task = function() end
+		local part = child_task()
+		chat_state.tasks[part.id] = { tool_part = part }
+		chat_tasks.ensure_task_child_loaded(part)
+		chat_tasks.handle_task_toggle(part.id)
+		assert.equals(1, #replies)
+		replies[1]({ message = "retry me" })
+		assert.is_true(vim.wait(100, function() return chat_state.task_child_loading[part.id] == nil end, 10))
+		assert.is_nil(chat_state.expanded_tasks[part.id])
+		chat_tasks.handle_task_toggle(part.id)
+		assert.equals(2, #replies)
+		replies[2](nil, {})
+		assert.is_true(vim.wait(100, function() return chat_state.task_child_cache[part.id] == true end, 10))
+		assert.is_true(chat_state.expanded_tasks[part.id])
+	end)
+
+	it("loads a completed task on explicit expansion", function()
+		local callback
+		actions_mod.load_session_messages = function(_, _, done) callback = done end
+		chat_tasks.rerender_task = function() end
+		local part = child_task("completed")
+		chat_state.tasks[part.id] = { tool_part = part }
+		chat_tasks.handle_task_toggle(part.id)
+		assert.is_function(callback)
+		callback(nil, {})
+		assert.is_true(vim.wait(100, function() return chat_state.task_child_cache[part.id] == true end, 10))
+		assert.is_true(chat_state.expanded_tasks[part.id])
+	end)
 
 	it("keeps parallel children distinct and never guesses missing metadata", function()
 		local tasks = {}

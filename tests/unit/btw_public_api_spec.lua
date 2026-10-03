@@ -34,6 +34,18 @@ describe("/btw public API session ownership", function()
 			queued[2]()
 			assert.same({ { "ses_one", "first" } }, asked)
 			assert.matches("Session was deleted", notices[#notices], 1, true)
+			local pending = require("opencode.session.pending")
+			for _, cancellation in ipairs({
+				function() pending.invalidate() end,
+				function() pending.clear_session("ses_waiting") end,
+			}) do
+				state.set_session("ses_waiting", "Waiting")
+				assert.is_true(app.ask_btw("stale question", "ses_waiting"))
+				cancellation()
+				queued[#queued]()
+				assert.same({ { "ses_one", "first" } }, asked)
+			end
+
 		end)
 
 		lifecycle.ensure_connected = original_connect

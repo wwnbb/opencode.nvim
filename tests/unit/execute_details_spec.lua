@@ -128,6 +128,41 @@ describe("execute details inspector", function()
 		popup:unmount()
 	end)
 
+	it("closes and opens details in the current tab without stealing another tab's chat window", function()
+		local chat_state = require("opencode.ui.chat.state").state
+		local saved = { visible = chat_state.visible, winid = chat_state.winid,
+			tabpage = chat_state.tabpage, bufnr = chat_state.bufnr }
+		local original_tab, original_buf = vim.api.nvim_get_current_tabpage(), vim.api.nvim_win_get_buf(previous)
+		local next_tab
+		local ok, err = xpcall(function()
+			chat_state.visible, chat_state.winid = true, previous
+			chat_state.tabpage, chat_state.bufnr = original_tab, original_buf
+			local first = details.open({ state = { output = "First tab result" } })
+			vim.cmd("tabnew")
+			next_tab = vim.api.nvim_get_current_tabpage()
+			local next_win = vim.api.nvim_get_current_win()
+			details.close()
+			assert.equals(next_tab, vim.api.nvim_get_current_tabpage())
+			assert.equals(next_win, vim.api.nvim_get_current_win())
+			assert.is_false(vim.api.nvim_buf_is_valid(first.bufnr))
+			assert.equals(original_buf, vim.api.nvim_win_get_buf(previous))
+			local second = details.open({ state = { output = "Second tab result" } })
+			assert.equals(next_tab, vim.api.nvim_get_current_tabpage())
+			assert.equals(next_win, second.winid)
+			assert.equals(original_buf, vim.api.nvim_win_get_buf(previous))
+			assert.equals("Second tab result", text(second))
+		end, debug.traceback)
+		details.close(false)
+		chat_state.visible, chat_state.winid = saved.visible, saved.winid
+		chat_state.tabpage, chat_state.bufnr = saved.tabpage, saved.bufnr
+		if next_tab and vim.api.nvim_tabpage_is_valid(next_tab) then
+			vim.api.nvim_set_current_tabpage(next_tab)
+			vim.cmd("tabclose!")
+		end
+		vim.api.nvim_set_current_win(previous)
+		assert.is_true(ok, err)
+	end)
+
 	it("keeps readable paragraphs bounded while Raw retains the full source", function()
 		local raw = string.rep("long paragraph ", 30)
 		local popup = details.open({ state = { output = vim.json.encode({ body = raw }) } })

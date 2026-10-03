@@ -9,6 +9,7 @@ local chat_permissions = require("opencode.ui.chat.permissions")
 local chat_edits = require("opencode.ui.chat.edits")
 
 local question_state = require("opencode.question.state")
+local pending = require("opencode.session.pending")
 local permission_state = require("opencode.permission.state")
 local edit_state = require("opencode.edit.state")
 local actions = require("opencode.actions")
@@ -92,39 +93,7 @@ end
 function M.handle_question_number_select(number)
 	local request_id = chat_questions.get_question_at_cursor()
 	if request_id then
-		local qstate = question_state.get_question(request_id)
-		if not qstate or qstate.submitting then
-			return true
-		end
-		local current_question = qstate.questions and qstate.questions[qstate.current_tab]
-		local changed
-		if qstate.status ~= "confirming" and question_state.is_multi_question(current_question) then
-			changed = question_state.toggle_multi_select(request_id, number)
-		else
-			changed = question_state.select_option(request_id, number)
-		end
-		if changed then
-			events.safe_emit("question_selection_changed", {
-				request_id = request_id,
-				tab_index = qstate.current_tab,
-				selected = question_state.get_current_selection(request_id),
-			})
-			events.safe_emit("interaction_changed", {
-				kind = "question",
-				action = "selection_changed",
-				id = request_id,
-			})
-		end
-		if
-			changed
-			and qstate.status ~= "confirming"
-			and #qstate.questions == 1
-			and not question_state.is_multi_question(current_question)
-		then
-			chat_questions.submit_question_answers(request_id)
-		else
-			chat_questions.rerender_question(request_id)
-		end
+		chat_questions.handle_question_number_select(request_id, number)
 		return true
 	end
 
@@ -176,13 +145,7 @@ function M.handle_question_confirm()
 			if choice == 1 then
 				chat_questions.submit_question_answers(request_id)
 			else
-				question_state.cancel_confirmation(request_id)
-				events.safe_emit("interaction_changed", {
-					kind = "question",
-					action = "confirmation_cancelled",
-					id = request_id,
-				})
-				chat_questions.rerender_question(request_id)
+				chat_questions.cancel_confirmation(request_id)
 			end
 			return
 		end
@@ -190,7 +153,7 @@ function M.handle_question_confirm()
 		local current_tab = qstate.current_tab
 		local total_count = #qstate.questions
 		if total_count == 0 then
-			chat_questions.submit_question_answers(request_id)
+			chat_questions.advance_question(request_id)
 			return
 		end
 		local current_selection = qstate.selections[current_tab]
@@ -198,7 +161,7 @@ function M.handle_question_confirm()
 		local current_question = qstate.questions[current_tab]
 
 		if current_question and current_question.field_type == "external" then
-			chat_questions.handle_question_custom_input(request_id)
+			chat_questions.handle_question_external_confirm(request_id)
 			return
 		end
 		if not is_current_answered and is_custom_only_question(current_question) then
@@ -207,55 +170,14 @@ function M.handle_question_confirm()
 		end
 
 		if not is_current_answered then
-			local _, total = question_state.get_answered_count(request_id)
-			if total > 1 then
-				local answered, _ = question_state.get_answered_count(request_id)
-				vim.notify(
-					string.format(
-						"Question block: %d/%d answered. Please select an answer for this question.",
-						answered,
-						total
-					),
-					vim.log.levels.WARN
-				)
-			else
-				vim.notify("Please select an answer before submitting.", vim.log.levels.WARN)
-			end
+			local answered, total = question_state.get_answered_count(request_id)
+			local message = total > 1
+				and string.format("Question block: %d/%d answered. Please select an answer for this question.", answered, total)
+				or "Please select an answer before submitting."
+			vim.notify(message, vim.log.levels.WARN)
 			return
 		end
-		if total_count == 1 and not question_state.is_multi_question(current_question) then
-			chat_questions.submit_question_answers(request_id)
-			return
-		end
-
-		if not question_state.is_ready_to_advance(request_id) then
-			question_state.mark_ready_to_advance(request_id)
-			chat_questions.rerender_question(request_id)
-			return
-		end
-
-		local all_answered, unanswered_indices = question_state.are_all_answered(request_id)
-		if not all_answered then
-			if #unanswered_indices > 0 then
-				question_state.set_tab(request_id, unanswered_indices[1])
-				events.safe_emit("question_tab_changed", {
-					request_id = request_id,
-					tab_index = unanswered_indices[1],
-				})
-				chat_questions.rerender_question(request_id)
-			end
-			return
-		end
-
-		if total_count > 1 or question_state.is_multi_question(current_question) then
-			question_state.set_confirming(request_id)
-			events.safe_emit("question_confirming", {
-				request_id = request_id,
-			})
-			chat_questions.rerender_question(request_id)
-		else
-			chat_questions.submit_question_answers(request_id)
-		end
+		chat_questions.advance_question(request_id)
 		return
 	end
 
@@ -290,13 +212,7 @@ function M.handle_question_cancel()
 			return
 		end
 		if qstate.status == "confirming" then
-			question_state.cancel_confirmation(request_id)
-			events.safe_emit("interaction_changed", {
-				kind = "question",
-				action = "confirmation_cancelled",
-				id = request_id,
-			})
-			chat_questions.rerender_question(request_id)
+			chat_questions.cancel_confirmation(request_id)
 			return
 		end
 
@@ -306,8 +222,10 @@ function M.handle_question_cancel()
 			return
 		end
 		chat_questions.rerender_question(request_id)
+		local token = pending.token(qstate.session_id)
 		actions.reject_question(session_id, request_id, function(err)
 			vim.schedule(function()
+				if not pending.is_current(token) or question_state.get_question(request_id) ~= qstate then return end
 				if err then
 					if not question_state.restore_submission(request_id) then
 						return

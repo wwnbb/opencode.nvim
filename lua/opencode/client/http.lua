@@ -29,17 +29,11 @@ local function merge_headers(additional)
 	headers["Content-Type"] = "application/json"
 	headers["Accept"] = "application/json"
 
-	if additional then
-		for k, v in pairs(additional) do
-			headers[k] = v
-		end
-	end
-
-	return headers
+	return require("opencode.client.headers").merge(headers, additional)
 end
 
 -- Handle HTTP response
-local function handle_response(response, callback)
+local function handle_response(response, callback, password)
 	if not response then
 		schedule_callback(callback, { error = "No response from server", message = "No response from server" }, nil)
 		return
@@ -57,7 +51,6 @@ local function handle_response(response, callback)
 			end
 		end
 		-- Do not surface arbitrary HTML or credentials in server error responses.
-		local password = M.opts.auth.password
 		if type(password) == "string" and password ~= "" then
 			message = message:gsub(password:gsub("([^%w])", "%%%1"), "[redacted]")
 		end
@@ -75,7 +68,8 @@ local function handle_response(response, callback)
 		return
 	end
 	local content_type = meta.headers["content-type"] or meta.headers["Content-Type"]
-	if content_type and not content_type:lower():match("^application/[%w.+-]*json") then
+	local media_type = content_type and vim.trim(content_type:match("^[^;]*")):lower()
+	if media_type and media_type ~= "application/json" and not media_type:match("^application/[^%s/]+%+json$") then
 		schedule_callback(callback, { status = response.status, code = "invalid_content_type",
 			message = "Expected a JSON response", retryable = false }, nil, meta)
 		return
@@ -97,16 +91,11 @@ end
 -- Configure the HTTP client
 ---@param opts table Configuration options
 function M.setup(opts)
-	M.opts = vim.tbl_deep_extend("force", M.opts, opts or {})
+	M.opts = vim.tbl_extend("force", M.opts, opts or {})
+	M.opts.auth = vim.tbl_extend("force", { username = "opencode" }, M.opts.auth)
 end
 
--- Simple percent-encoder for URL query params
-local function urlencode(s)
-	s = tostring(s)
-	return s:gsub("[^A-Za-z0-9%-_.~]", function(c)
-		return string.format("%%%02X", c:byte())
-	end)
-end
+local urlencode = require("opencode.util.text").encode_uri_component
 
 ---@param path string
 ---@param query? table
@@ -147,6 +136,7 @@ end
 local function request(method, path, callback, opts, body)
 	opts = opts or {}
 	local request_path = build_path(path, opts.query)
+	local password = M.opts.auth.password
 	local headers, headers_err = merge_headers(opts.headers)
 	if headers_err then
 		schedule_callback(callback, {
@@ -169,7 +159,7 @@ local function request(method, path, callback, opts, body)
 			schedule_callback(callback, err, nil)
 			return
 		end
-		handle_response(response, callback)
+		handle_response(response, callback, password)
 	end)
 end
 

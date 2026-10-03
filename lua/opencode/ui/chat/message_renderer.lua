@@ -68,7 +68,16 @@ local function select_messages(ctx, index)
 	local record = app_state.get_session_record(ctx.current_session.id)
 	local revert = record and record.revert
 	if type(revert) == "table" then
-		all_messages = vim.tbl_filter(function(message) return message.id < revert.messageID end, all_messages)
+		for i, message in ipairs(all_messages) do
+			if message.id == revert.messageID then
+				local visible = vim.list_slice(all_messages, 1, i - 1)
+				for j = i + 1, #all_messages do
+					if all_messages[j].provisional then visible[#visible + 1] = all_messages[j] end
+				end
+				all_messages = visible
+				break
+			end
+		end
 		ctx:add_raw_line("Undo staged · /redo restores the turn")
 		ctx:add_raw_line("")
 	end
@@ -318,7 +327,9 @@ local function render_user_message(ctx, message, render_parts, msg_idx, messages
 			local keymaps = (ctx.chat_config or {}).keymaps or {}
 			for _, command in ipairs(require("opencode.ui.chat.pending_inputs").commands) do
 				local key = keymaps[command.name .. "_pending"]
-				if type(key) == "string" and key ~= "" and (command.name ~= "steer" or pending_input.status == "queued") then
+				if type(key) == "string" and key ~= ""
+					and (command.name ~= "steer" or pending_input.status == "queued")
+					and (command.name ~= "queue" or pending_input.status == "accepted") then
 					prompt_status = prompt_status .. " · " .. key .. " " .. command.name
 				end
 			end

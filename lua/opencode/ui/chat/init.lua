@@ -57,35 +57,7 @@ end
 
 -- ─── Configuration ────────────────────────────────────────────────────────────
 
-local defaults = {
-	layout = "vertical",
-	position = "right",
-	width = 80,
-	height = 20,
-	max_rendered_messages = 60,
-	max_user_message_lines = 120,
-	close_on_focus_lost = true,
-	float = {
-		width = 0.8,
-		height = 0.8,
-		border = "rounded",
-		title = " OpenCode ",
-		title_pos = "center",
-	},
-	keymaps = {
-		close = "q",
-		close_session = "x",
-		cancel_pending = "C",
-		edit_pending = "E",
-		steer_pending = "S",
-		focus_input = "i",
-		scroll_up = "<C-u>",
-		scroll_down = "<C-d>",
-		goto_top = "gg",
-		goto_bottom = "G",
-		abort = "<C-c>",
-	},
-}
+local defaults = vim.deepcopy(require("opencode.config").defaults.chat)
 
 local function get_config()
 	local app_state = require("opencode.state")
@@ -328,18 +300,7 @@ end
 
 local SPINNER_ANIM_INTERVAL_MS = spinner.get_interval_ms()
 
-local function stop_spinner_animation_timer()
-	if not state.spinner_anim_timer then
-		return
-	end
-	if vim.uv.is_closing(state.spinner_anim_timer) then
-		state.spinner_anim_timer = nil
-		return
-	end
-	state.spinner_anim_timer:stop()
-	state.spinner_anim_timer:close()
-	state.spinner_anim_timer = nil
-end
+local stop_spinner_animation_timer = chat_messages.stop_spinner_animation_timer
 
 local function start_spinner_animation_timer()
 	if state.spinner_anim_timer then
@@ -362,6 +323,7 @@ local function start_spinner_animation_timer()
 		SPINNER_ANIM_INTERVAL_MS,
 		SPINNER_ANIM_INTERVAL_MS,
 		vim.schedule_wrap(function()
+			if state.spinner_anim_timer ~= timer then return end
 			if not state.visible or type(state.spinner_footer_line) ~= "number" then
 				stop_spinner_animation_timer()
 				return
@@ -854,7 +816,7 @@ function M.focus_input()
 		winid = state.winid,
 		float_dims = state.float_dims,
 		allow_chat_commands = true,
-		on_send = function(text, parts)
+		on_send = function(text, parts, draft_options)
 			local actions = require("opencode.actions")
 			local slash_ok, slash = pcall(require, "opencode.slash")
 			local has_parts = type(parts) == "table" and #parts > 0
@@ -897,7 +859,7 @@ function M.focus_input()
 					end
 				end
 			end
-			actions.send(text, { parts = parts })
+			actions.send(text, vim.tbl_extend("force", draft_options or {}, { parts = parts }))
 		end,
 		on_cancel = function()
 			M.focus()

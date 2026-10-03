@@ -131,4 +131,16 @@ describe("Visual selection capture", function()
 		assert.is_nil(snap)
 		assert.matches("No Visual selection", err)
 	end)
+
+	it("keeps a root working directory in the selection snapshot", function()
+		buffer({ "value" }, "/tmp/opencode-selection-root.lua")
+		last_selection("V", { 1, 1 }, { 1, 1 })
+		local old_cwd, old_root = vim.fn.getcwd, vim.fs.root
+		vim.fn.getcwd = function() return "/" end
+		vim.fs.root = function() return nil end
+		local ok, snap = pcall(selection.capture)
+		vim.fn.getcwd, vim.fs.root = old_cwd, old_root
+		assert.is_true(ok)
+		assert.equals("/", snap.root)
+	end)
 end)

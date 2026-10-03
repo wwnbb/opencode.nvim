@@ -156,6 +156,7 @@ function M.start_task_animation_timer()
 		120,
 		120,
 		vim.schedule_wrap(function()
+			if state.task_anim_timer ~= timer then return end
 			if not state.visible then
 				return
 			end

@@ -22,12 +22,7 @@ end
 -- OpenCode initializes the base model catalog lazily, separately from the
 -- project's catalogs. These exact errors reject before contacting a provider.
 -- Never retry timeouts, provider errors, or uncertain generation admissions.
-local function catalog_starting(err, model)
-	if type(err) ~= "table" or err.status ~= 400 or err.code ~= "InvalidRequestError" then return false end
-	local name = model.providerID .. "/" .. (model.id or model.modelID)
-	return err.message == "Model unavailable: " .. name
-		or (model.variant ~= nil and err.message == "Variant unavailable for " .. name .. ": " .. model.variant)
-end
+local catalog_starting = require("opencode.completion.profile").catalog_starting
 
 local function matches(snapshot)
 	if not snapshot or not context.eligible(snapshot.bufnr) or not vim.api.nvim_win_is_valid(snapshot.winid) then return false end
@@ -94,7 +89,7 @@ function M.complete()
 	snapshot.started = vim.uv.now()
 	snapshot.deadline = vim.uv.new_timer()
 	snapshot.deadline:start(config.timeout_ms, 0, vim.schedule_wrap(function()
-		if current ~= snapshot then return end
+		if current ~= snapshot or not snapshot.deadline then return end
 		M.dismiss()
 		notify("Request timed out", vim.log.levels.WARN)
 	end))

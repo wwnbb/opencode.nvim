@@ -92,6 +92,44 @@ describe("OpenCode v2 HTTP contracts", function()
 		assert.equals("/api/session/ses_a%2F%23%25", requests[2].path)
 	end)
 
+	it("exports the complete native transcript and passes sanitize to the server", function()
+		local transcript = {
+			info = { id = "ses_a/#%", location = { directory = "/project" }, metadata = { original = true } },
+			messages = {
+				{ id = "msg_1", type = "user", text = "Prompt", files = { { data = "base64-image" } } },
+				{ id = "msg_2", type = "assistant", content = { { type = "tool", name = "shell", state = { status = "completed", content = { { type = "text", text = "output" } } } } } },
+			},
+		}
+		json({ data = transcript })
+		local result
+		require("opencode.client").export_session("ses_a/#%", { sanitize = true }, function(err, data)
+			assert.is_nil(err)
+			result = data
+		end)
+		assert.same(transcript, result)
+		assert.is_nil(result.info.directory)
+		assert.is_nil(result.messages[1]._v2)
+		assert.equals("GET", requests[1].method)
+		assert.equals("/api/experimental/session/ses_a%2F%23%25/export?sanitize=true", requests[1].path)
+
+		require("opencode.client").export_session("ses_2", { sanitize = false }, function(err) assert.is_nil(err) end)
+		assert.equals("/api/experimental/session/ses_2/export?sanitize=false", requests[2].path)
+		require("opencode.client").export_session("ses_2", nil, function(err) assert.is_nil(err) end)
+		assert.equals("/api/experimental/session/ses_2/export", requests[3].path)
+	end)
+
+	it("rejects malformed session export envelopes", function()
+		for _, body in ipairs({
+			{ data = { info = { id = "s", location = { directory = "/project" } } } },
+			{ data = { info = { id = "s" }, messages = {} } },
+			{ data = { info = { id = "s", location = { directory = "/project" } }, messages = { { id = "m" } } } },
+		}) do
+			json(body)
+			local result = invoke("session_export", { path = { sessionID = "s" } })
+			assert.equals("incompatible_response", result.err.code)
+		end
+	end)
+
 	it("accepts 204 exactly once and sends empty objects as objects", function()
 		response = { status = 204, headers = {}, body = "" }
 		assert.is_true(invoke("session_delete", { path = { sessionID = "ses_1" } }).data)

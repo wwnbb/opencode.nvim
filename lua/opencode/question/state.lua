@@ -2,6 +2,7 @@
 
 local M = {}
 local forms = require("opencode.question.forms")
+local pending = require("opencode.session.pending")
 
 -- Active questions storage: { [request_id] = question_state }
 local active_questions = {}
@@ -18,7 +19,7 @@ end
 --   session_id = string,
 --   questions = array of question objects,
 --   current_tab = number (current question index),
---   selections = { [tab_index] = { selected_indices = {}, custom_input = "", is_answered = false, ready_to_advance = false } },
+--   selections = { [tab_index] = { selected_indices = {}, custom_input = "", is_answered = false } },
 --   status = "pending" | "answered" | "rejected" | "confirming",
 --   submitting = boolean,
 --   submission_kind = "reply" | "reject" | nil,
@@ -63,14 +64,32 @@ local function new_form_state(form, context)
 	return qstate
 end
 
-local function sync_draft(qstate, custom_key)
+local function sync_draft(qstate)
 	if qstate.status ~= "confirming" then
-		if custom_key then qstate.form_selections[custom_key].custom_present = true end
 		forms.pull(qstate)
 		forms.rebuild(qstate)
 		qstate.server_error = nil
+		qstate.field_errors = {}
 	end
 	return true
+end
+
+-- Opening or copying a link only makes an external step ready. The user must
+-- explicitly acknowledge completion before it becomes a typed form answer.
+function M.mark_external_ready(request_id, key)
+	local qstate = active_questions[request_id]
+	if not can_interact(qstate) or qstate.status ~= "pending" then return false end
+	if not forms.mark_external_ready(qstate, key) then return false end
+	qstate.server_error = nil
+	qstate.field_errors = {}
+	return true
+end
+
+function M.acknowledge_external(request_id, key)
+	local qstate = active_questions[request_id]
+	if not can_interact(qstate) or qstate.status ~= "pending" then return false end
+	if not forms.acknowledge_external(qstate, key) then return false end
+	return sync_draft(qstate)
 end
 
 -- Get a question state by request ID
@@ -118,7 +137,9 @@ function M.update_selection(request_id, tab_index, selected_indices)
 	end
 
 	qstate.selections[tab_index].selected_indices = selected_indices
-	qstate.selections[tab_index].ready_to_advance = false
+	if not is_multi_question(qstate.questions[tab_index]) and #selected_indices > 0 then
+		qstate.selections[tab_index].custom_present = false
+	end
 	return sync_draft(qstate)
 end
 
@@ -132,23 +153,13 @@ function M.set_custom_input(request_id, tab_index, text)
 		return false
 	end
 
-	if not qstate.selections[tab_index] then
-		return false
-	end
-
-	local field = qstate.questions[tab_index]
-	qstate.selections[tab_index].custom_input = text
-	qstate.selections[tab_index].ready_to_advance = false
-	-- Mark as answered if custom input is provided
-	if text and text ~= "" then
-		qstate.selections[tab_index].is_answered = true
-	end
-	return sync_draft(qstate, field and field.key)
+	if not forms.set_custom_input(qstate, tab_index, text) then return false end
+	return sync_draft(qstate)
 end
 
 -- Select a single option (for single-select questions)
 ---@param request_id string
----@param option_index number 1-based option index
+---@param option_index number 1-based option index; 0 selects the saved custom answer.
 function M.select_option(request_id, option_index)
 	local qstate = active_questions[request_id]
 	if not can_interact(qstate) then
@@ -174,24 +185,30 @@ function M.select_option(request_id, option_index)
 	if not question then
 		return false
 	end
+	if question.field_type == "external" then return false end
+	local selection = qstate.selections[tab_index]
+	if option_index == 0 then
+		if not question.custom or not selection.custom_input or selection.custom_input == "" then return false end
+		return M.set_custom_input(request_id, tab_index, selection.custom_input)
+	end
 
 	-- Validate option index is within range
-	if question.options and option_index > #question.options then
+	if option_index < 1 or option_index > #(question.options or {}) then
 		return false
 	end
 
 	-- For single-select, replace selection
 	-- For multi-select, this would toggle - but we use toggle_multi_select for that
-	qstate.selections[tab_index].selected_indices = { option_index }
-	qstate.selections[tab_index].is_answered = true
-	qstate.selections[tab_index].ready_to_advance = false
+	selection.selected_indices = { option_index }
+	if not is_multi_question(question) then selection.custom_present = false end
+	selection.is_answered = true
 
 	return sync_draft(qstate)
 end
 
 -- Toggle multi-select option
 ---@param request_id string
----@param option_index number 1-based option index
+---@param option_index number 1-based option index; 0 toggles the saved custom answer.
 function M.toggle_multi_select(request_id, option_index)
 	local qstate = active_questions[request_id]
 	if not can_interact(qstate) then
@@ -199,28 +216,27 @@ function M.toggle_multi_select(request_id, option_index)
 	end
 
 	local tab_index = qstate.current_tab
-	if not qstate.selections[tab_index] then
+	local question = qstate.questions[tab_index]
+	if not is_multi_question(question) or option_index < 0 or option_index > #(question.options or {}) then
+		return false
+	end
+	local selection = qstate.selections[tab_index]
+	if not selection then
 		return false
 	end
 
-	local selected = qstate.selections[tab_index].selected_indices
-	local found = false
-
-	for i, idx in ipairs(selected) do
-		if idx == option_index then
-			table.remove(selected, i)
-			found = true
-			break
-		end
-	end
-
-	if not found then
-		table.insert(selected, option_index)
+	local selected = selection.selected_indices
+	if option_index == 0 then
+		if not question.custom or not selection.custom_input or selection.custom_input == "" then return false end
+		selection.custom_present = not selection.custom_present
+	else
+		local index = vim.fn.index(selected, option_index) + 1
+		if index > 0 then table.remove(selected, index)
+		else table.insert(selected, option_index) end
 	end
 
 	-- Mark as answered if at least one option is selected
-	qstate.selections[tab_index].is_answered = #selected > 0
-	qstate.selections[tab_index].ready_to_advance = false
+	selection.is_answered = #selected > 0 or selection.custom_present == true
 
 	return sync_draft(qstate)
 end
@@ -250,6 +266,7 @@ function M.move_selection(request_id, direction)
 		end
 		option_count = #question.options
 	end
+	if option_count == 0 then return false end
 
 	local selected = qstate.selections[tab_index].selected_indices
 	local current = selected[1] or 0
@@ -261,14 +278,7 @@ function M.move_selection(request_id, direction)
 		new_index = current < option_count and current + 1 or 1
 	end
 
-	qstate.selections[tab_index].selected_indices = { new_index }
-	qstate.selections[tab_index].is_answered = true
-	-- Clear ready_to_advance when selection changes (not in confirming state)
-	if qstate.status ~= "confirming" then
-		qstate.selections[tab_index].ready_to_advance = false
-	end
-
-	return sync_draft(qstate)
+	return M.select_option(request_id, new_index)
 end
 
 -- Get current selection for a question
@@ -303,42 +313,6 @@ function M.set_tab(request_id, tab_index)
 
 	qstate.current_tab = tab_index
 
-	return true
-end
-
--- Check if current tab's answer is ready to advance (double-Enter logic)
----@param request_id string
----@return boolean
-function M.is_ready_to_advance(request_id)
-	local qstate = active_questions[request_id]
-	if not can_interact(qstate) then
-		return false
-	end
-
-	local tab_index = qstate.current_tab
-	local selection = qstate.selections[tab_index]
-	if not selection then
-		return false
-	end
-
-	return selection.is_answered and selection.ready_to_advance
-end
-
--- Mark current tab as ready to advance (called on first Enter when already answered)
----@param request_id string
-function M.mark_ready_to_advance(request_id)
-	local qstate = active_questions[request_id]
-	if not can_interact(qstate) then
-		return false
-	end
-
-	local tab_index = qstate.current_tab
-	local selection = qstate.selections[tab_index]
-	if not selection then
-		return false
-	end
-
-	selection.ready_to_advance = true
 	return true
 end
 
@@ -424,11 +398,6 @@ function M.cancel_confirmation(request_id)
 	qstate.current_tab = return_tab
 	qstate.last_tab_before_confirm = nil
 
-	-- Clear ready_to_advance on that tab so it takes two Enters again
-	if qstate.selections[return_tab] then
-		qstate.selections[return_tab].ready_to_advance = false
-	end
-
 	return true
 end
 
@@ -461,6 +430,7 @@ function M.begin_submission(request_id, kind)
 	if kind ~= "reject" and not M.validate_form(request_id) then return false end
 
 	qstate.submitting = true
+	qstate.submission_token = pending.token(qstate.session_id)
 	qstate.submission_kind = kind == "reject" and "reject" or "reply"
 	return true
 end
@@ -475,6 +445,7 @@ function M.restore_submission(request_id)
 	end
 
 	qstate.submitting = false
+	qstate.submission_token = nil
 	qstate.submission_kind = nil
 	return true
 end
@@ -570,7 +541,10 @@ end
 -- are indexed by field key; the visible tab list is only a projection.
 function M.add_form(form, context)
 	local current = active_questions[form.id]
-	if current then return current end
+	if current then
+		if current.submission_token and not pending.is_current(current.submission_token) then M.restore_submission(form.id) end
+		return current
+	end
 	return new_form_state(form, context)
 end
 

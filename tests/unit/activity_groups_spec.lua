@@ -333,6 +333,21 @@ for _, family in ipairs({
 			end
 		end)
 
+		it("colors the group by the latest call while retaining earlier failures", function()
+			local failed = call("failed", "error")
+			for _, status in ipairs({ "completed", "running", "pending", "error" }) do
+				local latest = call("latest", status)
+				local groups = collect({ { parts = { failed } }, { parts = { latest } } })
+				for _, expanded in ipairs({ false, true }) do
+					local rendered = activity.render(groups.failed, expanded)
+					assert.equals(status == "error" and "OpenCodeActivityError" or "OpenCodeToolGroup",
+						header_highlight(rendered))
+					assert.is_not_nil(rendered.children.failed.start_line)
+					assert.is_truthy(rendered.lines[1]:find("failed", 1, true))
+				end
+			end
+		end)
+
 		it("preserves hidden identities and reveals only independently expanded leaves", function()
 			local groups = collect({ { parts = { call("first"), call("second") } } })
 			local expansions = { second = true }
