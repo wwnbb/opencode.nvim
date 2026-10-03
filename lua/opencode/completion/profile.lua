@@ -1,6 +1,14 @@
 -- Stateless feature model configuration. Nothing here changes the chat model.
 local M = {}
 
+-- Only explicit catalog rejections are safe to retry before generation starts.
+function M.catalog_starting(err, model)
+	if type(err) ~= "table" or err.status ~= 400 or err.code ~= "InvalidRequestError" then return false end
+	local name = model.providerID .. "/" .. (model.id or model.modelID)
+	return err.message == "Model unavailable: " .. name
+		or (model.variant ~= nil and err.message == "Variant unavailable for " .. name .. ": " .. model.variant)
+end
+
 local private_prefixes = {
 	completion = "__opencode_nvim_completion_",
 	explanation = "__opencode_nvim_explanation_",

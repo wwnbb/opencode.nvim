@@ -18,6 +18,7 @@ end
 ---@param session_id string
 function M.clear_session(session_id)
 	M.clear_session_memos(session_id)
+	call("opencode.ui.input.history", "clear_session", session_id)
 	call("opencode.btw", "clear_session", session_id)
 	call("opencode.permission.state", "clear_session", session_id)
 	call("opencode.question.state", "clear_session", session_id)

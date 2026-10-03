@@ -17,33 +17,7 @@ local FLOAT_SESSION_TABS_ZINDEX = 75
 
 local session_tabs_refresh_autocmds_setup = false
 
-local defaults = {
-	layout = "vertical",
-	position = "right",
-	width = 80,
-	height = 20,
-	close_on_focus_lost = true,
-	float = {
-		width = 0.8,
-		height = 0.8,
-		border = "rounded",
-		title = " OpenCode ",
-		title_pos = "center",
-	},
-	session_tabs = {
-		enabled = true,
-		auto_fit = false,
-		max_tabs = 3,
-		separator = " │ ",
-		colors = {},
-		icons = {
-			running = "●",
-			waiting = "◈",
-			idle = "○",
-			error = "✕",
-		},
-	},
-}
+local defaults = vim.deepcopy(require("opencode.config").defaults.chat)
 
 local function emit_refresh()
 	vim.schedule(function()

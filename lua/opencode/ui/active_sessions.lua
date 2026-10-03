@@ -27,6 +27,8 @@ end
 
 function M.show()
 	refresh_data(function()
+		local pending = require("opencode.session.pending")
+		local token = pending.token()
 		local sessions = selectors.get_active_session_views()
 		local current_view = selectors.get_current_session_view()
 		local current_id = current_view and current_view.id or nil
@@ -77,6 +79,7 @@ function M.show()
 			width = 76,
 			searchable = false,
 			on_select = function(item)
+				if not pending.is_current(token) then return end
 				actions.switch_session(item.session:to_record(), {
 					notify = true,
 					reason = "active_sessions",
@@ -87,6 +90,7 @@ function M.show()
 					key = "x",
 					label = "x:close tab",
 					handler = function(ctx, item)
+						if not pending.is_current(token) then return end
 						local closed = require("opencode.actions").close_session({
 							session_id = item.value,
 							notify = true,

@@ -19,7 +19,7 @@ function M.setup(event_bus)
 
 		if new_val == "connected" then
 			event_bus_ref.emit("connected", {})
-		elseif new_val == "idle" and old_val == "connected" then
+		elseif old_val == "connected" then
 			event_bus_ref.emit("disconnected", { reason = "state_change" })
 		end
 	end)

@@ -91,13 +91,14 @@ function M.setup(opts)
 	opts = opts or {}
 	clear_float_focus_autocmds()
 
-	state.focus_augroup = vim.api.nvim_create_augroup("OpenCodeFloatFocus_" .. tostring(state.bufnr or 0), { clear = true })
+	local group = vim.api.nvim_create_augroup("OpenCodeFloatFocus_" .. tostring(state.bufnr or 0), { clear = true })
+	state.focus_augroup = group
 
 	vim.api.nvim_create_autocmd("WinEnter", {
-		group = state.focus_augroup,
+		group = group,
 		callback = function()
 			vim.schedule(function()
-				if not state.visible then
+				if state.focus_augroup ~= group or not state.visible then
 					return
 				end
 				if state.tabpage and state.tabpage ~= vim.api.nvim_get_current_tabpage() then

@@ -112,13 +112,7 @@ local function _fence_code(bufnr, text)
 		language = vim.filetype.match({ filename = vim.api.nvim_buf_get_name(bufnr) }) or ""
 	end
 
-	-- Keep Markdown snippets containing their own fences inside a single block.
-	local fence_length = 3
-	for run in text:gmatch("`+") do
-		fence_length = math.max(fence_length, #run + 1)
-	end
-	local fence = string.rep("`", fence_length)
-	return fence .. language .. "\n" .. text .. "\n" .. fence
+	return require("opencode.util.text").fence_code(text, language)
 end
 
 ---@param opts? { context?: string }
@@ -629,7 +623,10 @@ function M.ask_btw(question, owner_session_id)
 		vim.notify("Usage: /btw <question>", vim.log.levels.WARN)
 		return false
 	end
+	local pending = require("opencode.session.pending")
+	local token = pending.token(session_id)
 	lifecycle.ensure_connected(function()
+		if not pending.is_current(token) then return end
 		if not state.get_session_record(session_id) then
 			vim.notify("Session was deleted before /btw could start", vim.log.levels.WARN)
 			return
@@ -667,45 +664,19 @@ function M.abort()
 	end)
 end
 
---- Clear the current chat without changing the active session.
+--- Start a fresh chat and close the previous tab after creation succeeds.
 ---@param opts? { silent?: boolean }
 function M.clear(opts)
-	opts = opts or {}
-
-	local chat = require("opencode.ui.chat")
-	local sync = require("opencode.sync")
-	local current_session = state.get_session()
-
-	if current_session.id then
-		if type(sync.clear_session_messages) == "function" then
-			sync.clear_session_messages(current_session.id)
-		else
-			sync.clear_session(current_session.id)
-		end
-		state.set_message_count(0)
-		session_actions.set_message_cache(current_session.id, {}, {
-			reason = "clear_chat",
-		})
-		chat.clear_session_view(current_session.id)
-	else
-		chat.clear()
-	end
-
-	if events and events.emit then
-		events.emit("sync_changed", {
-			kind = "session_messages",
-			action = "clear_chat",
-			session_id = current_session.id,
-		})
-	end
-
-	if not opts.silent then
-		vim.notify("Cleared current OpenCode chat", vim.log.levels.INFO)
-	end
+	local input = require("opencode.ui.input")
+	local draft = { token = input.draft_token(), session_id = state.get_session().id or "",
+		text = input.get_pending_text(), parts = input.get_pending_parts() }
+	return M.new_session(vim.tbl_extend("force", opts or {}, {
+		close_previous = true, reason = "clear", clear_draft = draft,
+	}))
 end
 
 --- Start a new root session and make it active.
----@param opts? { silent?: boolean }
+---@param opts? { silent?: boolean, close_previous?: boolean, reason?: string, clear_draft?: table }
 function M.new_session(opts)
 	opts = opts or {}
 
@@ -714,19 +685,19 @@ function M.new_session(opts)
 		return
 	end
 
+	local pending = require("opencode.session.pending")
+	local token = pending.token()
 	lifecycle.ensure_connected(function()
+		if not pending.is_current(token) then return end
 		local sync = require("opencode.sync")
 		local current_session = state.get_session()
 		local cfg = state.get_config() or {}
 		local parallel = cfg.session and cfg.session.parallel or {}
 		local preserve_cache = parallel.enabled ~= false
 
-		if current_session.id and not preserve_cache then
-			sync.clear_session(current_session.id)
-		end
-
 		client.create_session({}, function(err, session)
 			vim.schedule(function()
+				if not pending.is_current(token) then return end
 				if err then
 					vim.notify("Failed to create new session: " .. tostring(err.message or err.error or err), vim.log.levels.ERROR)
 					return
@@ -734,15 +705,31 @@ function M.new_session(opts)
 
 				session_actions.remember(session)
 				session_actions.set_active(session.id, session.title or "New session", {
-					reason = "new_session",
-					preserve_cache = preserve_cache,
+					reason = opts.reason or "new_session",
+					preserve_cache = preserve_cache or opts.close_previous == true,
 				})
+				if current_session.id and current_session.id ~= session.id then
+					if opts.close_previous then
+						session_actions.close(current_session.id, { silent = true, reason = opts.reason or "clear" })
+					elseif not preserve_cache then
+						sync.clear_session(current_session.id)
+					end
+				end
+				if opts.clear_draft then
+					local input = require("opencode.ui.input")
+					local history = require("opencode.ui.input.history")
+					local draft = opts.clear_draft
+					if input.draft_token() == draft.token and history.get_pending(draft.session_id) == draft.text
+						and vim.deep_equal(history.get_pending_parts(draft.session_id), draft.parts) then
+						history.clear_pending(draft.session_id)
+					end
+				end
 
 				local render_ok, render_coordinator = pcall(require, "opencode.ui.chat.render_coordinator")
 				if render_ok then
 					render_coordinator.request({
 						session_id = session.id,
-						reason = "new_session",
+						reason = opts.reason or "new_session",
 					})
 				end
 

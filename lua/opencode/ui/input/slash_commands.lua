@@ -76,18 +76,18 @@ local function matches_command(command, needle)
 		return true
 	end
 
-	local name = M.command_name(command):lower()
+	local name = vim.fn.tolower(M.command_name(command))
 	if name:find(needle, 1, true) ~= nil then
 		return true
 	end
 
-	local description = M.command_description(command):lower()
+	local description = vim.fn.tolower(M.command_description(command))
 	if description:find(needle, 1, true) ~= nil then
 		return true
 	end
 
 	for _, alias in ipairs(command_aliases(command)) do
-		if type(alias) == "string" and alias:lower():find(needle, 1, true) ~= nil then
+		if type(alias) == "string" and vim.fn.tolower(alias):find(needle, 1, true) ~= nil then
 			return true
 		end
 	end
@@ -100,7 +100,7 @@ end
 ---@return table[]
 function M.filter_commands(commands, query)
 	local filtered = {}
-	local needle = tostring(query or ""):lower()
+	local needle = vim.fn.tolower(tostring(query or ""))
 
 	for _, command in ipairs(commands or {}) do
 		if M.command_name(command) ~= "" and matches_command(command, needle) then

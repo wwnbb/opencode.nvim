@@ -3,17 +3,12 @@ local M = {}
 local edits = require("opencode.edit.state")
 local pending = require("opencode.session.pending")
 local function observed(path)
-	local fd, err = vim.uv.fs_open(path, "r", 438)
-	if not fd then
-		if tostring(err):find("ENOENT", 1, true) then return { exists = false } end
-		return nil, err
+	local disk, err = require("opencode.artifact.changes").read_disk_bytes(path)
+	if not disk then return nil, err end
+	if disk.exists and disk.kind ~= "file" then
+		return nil, "Path is now a " .. disk.kind .. "; cannot confirm review: " .. path
 	end
-	local stat, stat_err = vim.uv.fs_fstat(fd)
-	if not stat then vim.uv.fs_close(fd); return nil, stat_err end
-	local bytes, read_err = vim.uv.fs_read(fd, stat.size, 0)
-	vim.uv.fs_close(fd)
-	if not bytes then return nil, read_err end
-	return { exists = true, sha256 = vim.fn.sha256(bytes) }
+	return { exists = disk.exists, sha256 = disk.exists and vim.fn.sha256(disk.content) or nil }
 end
 
 function M.reply(id, callback)
@@ -41,7 +36,7 @@ function M.reply(id, callback)
 	}, item.location.directory, function(err, record)
 		if not pending.is_current(token) or edits.get_edit(id) ~= item then return end
 		if item.status == "sent" then
-			if callback then callback(nil, item.native_review) end
+			if callback then callback(item.cancelled and { message = "Review cancelled" } or nil, item.native_review) end
 			return
 		end
 		if err then

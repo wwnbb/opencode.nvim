@@ -17,6 +17,8 @@ describe("opencode session project scope", function()
 		original_client = package.loaded["opencode.client"]
 		package.loaded["opencode.client"] = {
 			get_session_statuses = function(opts, callback) assert.same({}, opts); requests[#requests + 1] = callback end,
+			list_sessions = function(_, callback) requests[#requests + 1] = callback end,
+			get_messages = function(_, _, callback) requests[#requests + 1] = callback end,
 		}
 	end)
 	after_each(function()
@@ -25,12 +27,65 @@ describe("opencode session project scope", function()
 		require("opencode.sync").clear_all()
 	end)
 
+	it("counts the merged cache rather than one history page after switching", function()
+		local sync = require("opencode.sync")
+		for index = 1, 2 do
+			sync.handle_message_updated({ id = "cached-" .. index, sessionID = "b", role = "user", time = { created = index } })
+		end
+		session.switch_to(state.get_session_record("b"))
+		sync.handle_message_updated({ id = "live", sessionID = "b", role = "user", time = { created = 3 } })
+		requests[1](nil, { { info = { id = "cached-2", sessionID = "b", role = "user", time = { created = 2 } }, parts = {} } })
+		assert.is_true(vim.wait(500, function() return state.get_session_message_cache("b").loaded == true end, 10))
+		assert.equals(3, #sync.get_messages("b"))
+		assert.equals(3, state.get_message_count())
+		assert.equals(3, state.get_session_message_cache("b").count)
+	end)
+
+	it("ignores recent-session lists from another project or connection", function()
+		local original_cwd, failure = vim.fn.getcwd, nil
+		session.refresh_recent(function(err) failure = err end)
+		vim.fn.getcwd = function() return other end
+		local ok, err = pcall(requests[1], nil, { { id = "stale-project" } })
+		vim.fn.getcwd = original_cwd
+		assert.is_true(ok, err)
+		assert.is_nil(state.get_session_record("stale-project"))
+		assert.equals("cancelled", failure.code)
+		session.refresh_recent()
+		require("opencode.session.pending").invalidate()
+		requests[2](nil, { { id = "stale-server" } })
+		assert.is_nil(state.get_session_record("stale-server"))
+	end)
+
+	it("keeps the newest recent-session response", function()
+		session.refresh_recent()
+		session.refresh_recent()
+		requests[2](nil, { { id = "newest" } })
+		requests[1](nil, { { id = "outdated" } })
+		assert.is_not_nil(state.get_session_record("newest"))
+		assert.is_nil(state.get_session_record("outdated"))
+	end)
+
 	it("accepts background project events but drops closed and unrelated projects", function()
 		local event = { location = { directory = other .. "/" }, type = "form.created", data = { sessionID = "b" } }
 		assert.is_true(sse._should_accept(event))
 		assert.is_false(sse._should_accept({ location = { directory = cwd .. "/foreign" }, type = "test", data = {} }))
 		state.close_runtime_session("b")
 		assert.is_false(sse._should_accept(event))
+	end)
+
+	it("preserves filesystem roots when storing session directories", function()
+		assert.equals("/", state.normalize_directory("/"))
+		state.upsert_session({ id = "root", directory = "/" })
+		assert.equals("/", state.get_session_directory("root"))
+	end)
+
+	it("accepts current project events when the working directory is root", function()
+		local original_cwd = vim.fn.getcwd
+		vim.fn.getcwd = function() return "/" end
+		local ok, accepted = pcall(sse._should_accept, { location = { directory = "/" } })
+		vim.fn.getcwd = original_cwd
+		assert.is_true(ok)
+		assert.is_true(accepted)
 	end)
 
 	it("filters decoded native events before delivering them", function()

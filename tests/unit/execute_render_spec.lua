@@ -79,6 +79,22 @@ describe("universal execute widget", function()
 		assert.is_nil(text(opened):find("large output", 1, true))
 	end)
 
+	it("keeps combining characters when a complete tool name fits on one row", function()
+		local name = "server." .. string.rep("é", 40)
+		local item = part({ status = "completed", metadata = { toolCalls = { { tool = name, status = "completed" } } } })
+		assert.equals(" → " .. name, text(execute.render(item, false)))
+		contains(text(execute.render_tool(item, true)), name)
+	end)
+
+	it("removes ANSI colors before clipping folded and expanded tool names", function()
+		local colored = part({ status = "completed", metadata = { toolCalls = {
+			{ tool = "\27[31mserver.tool\27[0m", status = "completed" },
+		} } })
+		local plain = part({ status = "completed", metadata = { toolCalls = { { tool = "server.tool", status = "completed" } } } })
+		assert.same(execute.render(plain, false), execute.render(colored, false))
+		assert.equals(text(execute.render_tool(plain, true)), text(execute.render_tool(colored, true)))
+	end)
+
 	it("marks folded failures and cancellation without dumping errors or results", function()
 		for _, failed_state in ipairs({
 			{ status = "error", error = "A long\nmultiline error" },
@@ -123,6 +139,31 @@ describe("universal execute widget", function()
 		end
 		assert.is_false(execute.is_working(part({ status = "completed" })))
 		assert.is_false(execute.is_working(nil))
+	end)
+
+	it("colors execute summaries by the latest recorded call", function()
+		for _, status in ipairs({ "completed", "running", "error" }) do
+			local item = part({ status = "completed", metadata = { toolCalls = {
+				{ tool = "server.first", status = "error" },
+				{ tool = "server.latest", status = status },
+			} } })
+			local folded = execute.render(item, false)
+			contains(text(folded), status == "error" and "✗" or "→")
+			assert.equals(status == "error" and "OpenCodeExploreError" or "OpenCodeExploreHeader",
+				folded.highlights[1].hl_group)
+			for _, expanded in ipairs({ false, true }) do
+				local opened = execute.render_tool(item, expanded)
+				contains(opened.lines[1], status == "error" and "✗ execute" or "✓ execute")
+			end
+			local activity = require("opencode.ui.chat.activity")
+			item.type = "tool"
+			local groups = activity.collect({ { id = "m", sessionID = "s", role = "assistant" } },
+				function() return { parts = { item } } end)
+			local group = activity.render(groups.exec, false)
+			assert.equals(status == "error" and "OpenCodeActivityError" or "OpenCodeToolGroup",
+				group.highlights[1].hl_group)
+			contains(text(group), "1 failed")
+		end
 	end)
 
 	it("keeps large payloads hidden even with stale code expansion at narrow Unicode widths", function()

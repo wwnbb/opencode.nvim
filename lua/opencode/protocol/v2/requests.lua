@@ -1,5 +1,6 @@
 -- Pure prompt and selection conversion; transport/state are handled by callers.
 local M = {}
+local cells = require("opencode.util.text").display_cells
 
 local function mention(text, part)
 	local source = type(part.source) == "table" and (part.source.text or part.source)
@@ -21,12 +22,6 @@ local function mention(text, part)
 	for character in prefix:gmatch("[\240-\244][\128-\191][\128-\191][\128-\191]") do
 		local code = vim.fn.char2nr(character)
 		if code >= 0x1f1e6 and code <= 0x1f1ff then return nil end
-	end
-	local function cells(value)
-		local lines = vim.split(value, "\n", { plain = true })
-		local width = #lines - 1
-		for _, line in ipairs(lines) do width = width + vim.fn.strdisplaywidth(line) end
-		return width
 	end
 	return { start = cells(text:sub(1, first)), ["end"] = cells(prefix), text = source.value }
 end

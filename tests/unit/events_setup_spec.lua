@@ -52,4 +52,27 @@ describe("opencode event setup", function()
 		assert.equals(registrations, sse_registrations)
 		assert.equals(native_listeners, bus.listener_count("v2_event"))
 	end)
+
+	it("invalidates pending operations whenever a connected state is lost", function()
+		local state = require("opencode.state")
+		local pending = require("opencode.session.pending")
+		local sync = require("opencode.sync")
+		local replies, disconnected = {}, 0
+		for _, method in ipairs({ "get_session_statuses", "list_agents", "list_commands", "list_skills", "get_mcp_status", "get_config" }) do
+			client[method] = function() end
+		end
+		client.get_config_providers = function(callback) replies[#replies + 1] = callback end
+		events.on("disconnected", function() disconnected = disconnected + 1 end)
+		for index, next_state in ipairs({ "error", "idle", "connecting", "starting" }) do
+			state.set_connection("connected")
+			local token = pending.token()
+			state.set_connection(next_state)
+			assert.is_false(pending.is_current(token))
+			assert.equals(index, disconnected)
+			replies[index](nil, { providers = { { id = "stale", models = {} } } })
+			assert.is_nil(sync.get_location_catalog(state.normalize_directory(vim.fn.getcwd()), "providers"))
+			state.set_connection("idle")
+			assert.equals(index, disconnected)
+		end
+	end)
 end)

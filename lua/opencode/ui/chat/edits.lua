@@ -631,9 +631,12 @@ end
 function M.finalize_edit(permission_id)
 	local estate = edit_state.get_edit(permission_id)
 	if not estate or estate.transport ~= "review_rpc" then return false end
+	local pending = require("opencode.session.pending")
+	local token = pending.token(estate.session_id)
 
 	local function on_reply(err)
 		vim.schedule(function()
+			if not pending.is_current(token) or edit_state.get_edit(permission_id) ~= estate then return end
 			if err then
 				vim.notify("Failed to send edit reply: " .. vim.inspect(err), vim.log.levels.ERROR)
 				return
@@ -792,8 +795,7 @@ function M.handle_edit_resolve_all()
 		warn_readonly_once(eid, "resolve", "Readonly edit review does not support manual resolve.")
 		return
 	end
-	edit_state.resolve_all(eid)
-	M.refresh_edit(eid)
+	apply_edit_batch_action(eid, edit_state.resolve_all, "resolve edit")
 end
 
 function M.handle_edit_message()
@@ -809,9 +811,12 @@ function M.handle_edit_message()
 
 	local input_ui = require("opencode.ui.input")
 	local chat = require("opencode.ui.chat")
+	local pending = require("opencode.session.pending")
+	local token = pending.token(estate.session_id)
 
 	local function finish(text)
-		edit_state.set_message(eid, text or "")
+		if not pending.is_current(token) or edit_state.get_edit(eid) ~= estate then return end
+		if not edit_state.set_message(eid, text or "") then return end
 		M.rerender_edit(eid)
 		chat.focus()
 	end

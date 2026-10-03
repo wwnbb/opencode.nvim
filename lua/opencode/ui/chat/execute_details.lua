@@ -152,7 +152,7 @@ function M.open(tool_part, opts)
 	local status = status_label(state, metadata)
 	local previous_win = vim.api.nvim_get_current_win()
 	local chat_state = require("opencode.ui.chat.state").state
-	local winid = chat_state.visible and chat_state.winid or previous_win
+	local winid = require("opencode.ui.float_context").get_chat_context()
 	if not winid or not vim.api.nvim_win_is_valid(winid) then return nil end
 	local previous_buf = vim.api.nvim_win_get_buf(winid)
 	local saved_view = vim.api.nvim_win_call(winid, vim.fn.winsaveview)
@@ -199,7 +199,8 @@ function M.open(tool_part, opts)
 			if ok then tabs.update_winbar() end
 		end
 		if type(restore_focus) == "table" then restore_focus = restore_focus.restore_focus end
-		if restore_focus ~= false and vim.api.nvim_win_is_valid(previous_win) then
+		if restore_focus ~= false and vim.api.nvim_win_is_valid(previous_win)
+			and vim.api.nvim_win_get_tabpage(previous_win) == vim.api.nvim_get_current_tabpage() then
 			vim.api.nvim_set_current_win(previous_win)
 		end
 	end

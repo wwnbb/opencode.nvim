@@ -17,6 +17,11 @@ end
 
 local function capture_widget_focus(kind, widget_id, widget_start, meta)
 	local focus_offset = widget_base.get_focus_offset(meta)
+	if kind == "question" and state.focus_question == widget_id then
+		local qstate = require("opencode.question.state").get_question(widget_id)
+		focus_offset = question_widget.get_selection_focus_offset(meta, qstate.selections[qstate.current_tab], state.focus_question_option)
+		state.focus_question_option = nil
+	end
 	if focus_offset == nil then
 		return
 	end
@@ -46,30 +51,15 @@ function M.render_single_question(ctx, index, qstate)
 		return
 	end
 	local request_id = qstate.request_id
-	local q_lines, q_highlights, q_meta
 	local status = qstate.status or "pending"
 
 	if not index:should_render_session_widget(qstate.session_id, status) then
 		return
 	end
 
-	if status == "answered" then
-		q_lines, q_highlights = question_widget.get_answered_lines(
-			request_id,
-			{ questions = qstate.questions, timestamp = qstate.timestamp },
-			qstate.display_answers or qstate.answers
-		)
-		q_meta = widget_base.make_meta()
-	elseif status == "rejected" then
-		q_lines, q_highlights = question_widget.get_rejected_lines(request_id, {
-			questions = qstate.questions,
-			timestamp = qstate.timestamp,
-		})
-		q_meta = widget_base.make_meta()
-	else
-		q_lines, q_highlights, q_meta =
-			question_widget.get_lines_for_question(request_id, { questions = qstate.questions }, qstate, status)
-	end
+	local q_lines, q_highlights, q_meta = question_widget.get_lines_for_question(
+		request_id, { questions = qstate.questions, timestamp = qstate.timestamp }, qstate, status
+	)
 
 	append_interactive_widget(ctx, {
 		kind = "question",

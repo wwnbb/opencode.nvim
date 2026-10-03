@@ -19,7 +19,6 @@ local widget_support = require("opencode.ui.chat.widget_support")
 local task_animation = require("opencode.ui.chat.task_animation")
 local tool_labels = require("opencode.ui.chat.tool_labels")
 local task_children = require("opencode.ui.chat.task_children")
-local actions = require("opencode.actions")
 local tool_part = require("opencode.ui.chat.tool_part")
 local tree = require("opencode.ui.chat.widget_tree")
 local tool_group = require("opencode.ui.chat.tool_group")
@@ -407,36 +406,8 @@ function M.handle_task_toggle(part_id)
 
 	state.expanded_tasks[part_id] = true
 
-	if state.task_child_cache[part_id] then
-		M.rerender_task(part_id)
-		return
-	end
-
 	M.rerender_task(part_id)
-
-	task_children.resolve_task_child_session_id(pos, function(err, child_session_id)
-		if not state.expanded_tasks[part_id] then
-			return
-		end
-
-		if err or not child_session_id then
-			M.rerender_task(part_id)
-			return
-		end
-
-		actions.load_session_messages(child_session_id, { limit = 100 }, function(fetch_err)
-			vim.schedule(function()
-				if fetch_err then
-					state.expanded_tasks[part_id] = nil
-					M.rerender_task(part_id)
-					return
-				end
-
-				state.task_child_cache[part_id] = true
-				M.rerender_task(part_id)
-			end)
-		end)
-	end)
+	task_children.ensure_task_child_loaded(pos)
 end
 
 ---Re-render a regular tool widget in place (expand/collapse).

@@ -162,6 +162,9 @@ assert_eq(selected, nil, "completion before existing text should not activate")
 assert_eq(vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)[1], "/ztest_popup then", "completion should preserve following text")
 assert_eq(runs, 1, "completion before text should not execute the command")
 
+local sync = require("opencode.sync")
+local previous_agents = sync.get_agents()
+sync.handle_agents({ { name = "coder_slave", mode = "subagent" } })
 set_one_line("@cod", #"@cod")
 state.autocomplete = {
 	visible = true,
@@ -179,6 +182,7 @@ assert_eq(vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)[1], "@coder_slave ", "
 local parts = mentions.active_parts(state)
 assert_eq(#parts, 1, "mention autocomplete should create one part")
 assert_eq(parts[1].name, "coder_slave", "mention autocomplete part name")
+sync.handle_agents(previous_agents)
 
 set_one_line("/", #"/")
 state.autocomplete = {
@@ -221,5 +225,87 @@ vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { "" })
 vim.o.virtualedit = previous_virtualedit
 
 print("Input autocomplete checks passed")
+	end)
+end)
+
+
+describe("autocomplete draft ownership", function()
+	local autocomplete = require("opencode.ui.input.autocomplete")
+	local mentions = require("opencode.ui.input.mentions")
+	local sync = require("opencode.sync")
+	local state, previous_buf, virtualedit, previous_agents
+	before_each(function()
+		previous_agents = sync.get_agents()
+		sync.handle_agents({ { name = "grep", mode = "subagent" } })
+		previous_buf, virtualedit = vim.api.nvim_get_current_buf(), vim.o.virtualedit
+		vim.o.virtualedit = "onemore"
+		state = { visible = true, bufnr = vim.api.nvim_create_buf(false, true), winid = vim.api.nvim_get_current_win() }
+		vim.api.nvim_set_current_buf(state.bufnr)
+		vim.api.nvim_buf_set_lines(state.bufnr, 0, -1, false, { "@gr", "@gr" })
+		vim.api.nvim_win_set_cursor(state.winid, { 1, 3 })
+		state.autocomplete = {
+			visible = true, selected = 1, trigger = mentions.detect_trigger(state),
+			items = { { kind = "mention", agent = { name = "grep" } } },
+		}
+	end)
+	after_each(function()
+		autocomplete.clear(state)
+		vim.api.nvim_set_current_buf(previous_buf)
+		vim.api.nvim_buf_delete(state.bufnr, { force = true })
+		vim.o.virtualedit = virtualedit
+		sync.handle_agents(previous_agents)
+	end)
+	for _, replacement in ipairs({ "@xx", "@", "ask @gr" }) do
+		it("preserves a draft changed to " .. replacement .. " before confirmation", function()
+			vim.api.nvim_buf_set_lines(state.bufnr, 0, 1, false, { replacement })
+			vim.api.nvim_win_set_cursor(state.winid, { 1, #replacement })
+			assert.is_false(autocomplete.confirm(state))
+			assert.same({ replacement, "@gr" }, vim.api.nvim_buf_get_lines(state.bufnr, 0, -1, false))
+			assert.same({}, mentions.active_parts(state))
+			assert.is_false(autocomplete.is_visible(state))
+		end)
+	end
+	it("preserves both lines when the cursor moves to another mention", function()
+		vim.api.nvim_win_set_cursor(state.winid, { 2, 3 })
+		assert.is_false(autocomplete.confirm(state))
+		assert.same({ "@gr", "@gr" }, vim.api.nvim_buf_get_lines(state.bufnr, 0, -1, false))
+	end)
+	it("does not edit a draft whose window displays another buffer", function()
+		local other = vim.api.nvim_create_buf(false, true)
+		vim.api.nvim_set_current_buf(other)
+		vim.api.nvim_buf_set_lines(other, 0, -1, false, { "@gr" })
+		vim.api.nvim_win_set_cursor(state.winid, { 1, 3 })
+		local ok, result = pcall(autocomplete.confirm, state)
+		local original = vim.api.nvim_buf_get_lines(state.bufnr, 0, -1, false)
+		vim.api.nvim_set_current_buf(state.bufnr)
+		vim.api.nvim_buf_delete(other, { force = true })
+		assert.is_true(ok, result)
+		assert.is_false(result)
+		assert.same({ "@gr", "@gr" }, original)
+	end)
+	for _, update in ipairs({
+		{ name = "removed", agents = {} },
+		{ name = "hidden", agents = { { name = "grep", hidden = true, mode = "subagent" } } },
+		{ name = "primary", agents = { { name = "grep", mode = "primary" } } },
+		{ name = "renamed", agents = { { id = "grep", name = "other", mode = "subagent" } } },
+	}) do
+		it("does not insert an agent that is now " .. update.name, function()
+			sync.handle_agents(update.agents)
+			assert.is_false(autocomplete.confirm(state))
+			assert.same({ "@gr", "@gr" }, vim.api.nvim_buf_get_lines(state.bufnr, 0, -1, false))
+			assert.same({}, mentions.active_parts(state))
+		end)
+	end
+	it("uses a still-mentionable entry from the updated catalog", function()
+		sync.handle_agents({ { name = "grep", mode = "all", description = "Updated" } })
+		assert.is_true(autocomplete.confirm(state))
+		assert.same({ "@grep ", "@gr" }, vim.api.nvim_buf_get_lines(state.bufnr, 0, -1, false))
+		assert.equals("grep", mentions.active_parts(state)[1].name)
+	end)
+	it("completes the current mention before a Unicode suffix", function()
+		vim.api.nvim_buf_set_lines(state.bufnr, 0, 1, false, { "@gr 中文" })
+		assert.is_true(autocomplete.confirm(state))
+		assert.same({ "@grep 中文", "@gr" }, vim.api.nvim_buf_get_lines(state.bufnr, 0, -1, false))
+		assert.equals("grep", mentions.active_parts(state)[1].name)
 	end)
 end)

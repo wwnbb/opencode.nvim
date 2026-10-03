@@ -3,23 +3,14 @@
 
 local M = {}
 
-local Popup = require("nui.popup")
-local event = require("nui.utils.autocmd").event
+local Popup = require("opencode.ui.popup")
 local app_state = require("opencode.state")
 local command_registry = require("opencode.command_registry")
+local float_context = require("opencode.ui.float_context")
 local hl_ns = vim.api.nvim_create_namespace("opencode_palette")
 
 -- Configuration
-local config = {
-	width = 60,
-	height = 20,
-	border = "none",
-	frecency = true,
-	show_keybinds = true,
-	show_icons = false,
-	frecency_file = vim.fn.stdpath("data") .. "/opencode_palette_frecency.json",
-	max_frecency_entries = 100,
-}
+local config = vim.deepcopy(require("opencode.config").defaults.palette)
 
 -- Frecency data: { [command_id] = { count = number, last_used = timestamp } }
 local frecency_data = {}
@@ -74,18 +65,24 @@ local function load_config()
 end
 
 -- Load frecency data from file
+local function nonnegative_number(value)
+	return type(value) == "number" and value >= 0 and value < math.huge
+end
+
 local function load_frecency()
+	frecency_data = {}
 	if not config.frecency then
 		return
 	end
 
-	local file = io.open(config.frecency_file, "r")
-	if file then
-		local content = file:read("*all")
-		file:close()
-		local ok, data = pcall(vim.json.decode, content)
-		if ok and type(data) == "table" then
-			frecency_data = data
+	local data = require("opencode.util.json_file").read(config.frecency_file)
+	if type(data) == "table" then
+		for id, value in pairs(data) do
+			if type(id) == "string" and type(value) == "table"
+				and nonnegative_number(value.count) and value.count % 1 == 0
+				and nonnegative_number(value.last_used) then
+				frecency_data[id] = { count = value.count, last_used = value.last_used }
+			end
 		end
 	end
 end
@@ -95,9 +92,6 @@ local function save_frecency()
 	if not config.frecency then
 		return
 	end
-
-	local dir = vim.fn.fnamemodify(config.frecency_file, ":h")
-	vim.fn.mkdir(dir, "p")
 
 	-- Trim old entries
 	local entries = {}
@@ -120,11 +114,7 @@ local function save_frecency()
 
 	frecency_data = trimmed
 
-	local file = io.open(config.frecency_file, "w")
-	if file then
-		file:write(vim.json.encode(frecency_data))
-		file:close()
-	end
+	require("opencode.util.json_file").write(config.frecency_file, frecency_data)
 end
 
 -- Track command usage
@@ -141,8 +131,7 @@ local function track_command_usage(cmd_id)
 	frecency_data[cmd_id].count = frecency_data[cmd_id].count + 1
 	frecency_data[cmd_id].last_used = now
 
-	-- Save asynchronously
-	vim.defer_fn(save_frecency, 100)
+	save_frecency()
 end
 
 -- Get frecency score for a command
@@ -153,7 +142,7 @@ local function get_frecency_score(cmd_id)
 
 	local data = frecency_data[cmd_id]
 	local now = os.time()
-	local age_days = (now - data.last_used) / 86400
+	local age_days = math.max(0, (now - data.last_used) / 86400)
 
 	-- Score decays with age: count * (0.9 ^ age_days)
 	local score = data.count * math.pow(0.9, age_days)
@@ -179,38 +168,23 @@ local function fuzzy_match(pattern, text)
 		return true, 0
 	end
 
-	pattern = pattern:lower()
-	text = text:lower()
+	pattern = vim.fn.tolower(pattern)
+	text = vim.fn.tolower(text)
 
-	-- Exact substring match gets highest score
-	if text:find(pattern, 1, true) then
-		return true, 100 - text:find(pattern, 1, true)
-	end
+	-- Exact substring match gets highest score.
+	local exact = text:find(pattern, 1, true)
+	if exact then return true, 100 - exact end
 
-	-- Fuzzy match: all characters in pattern must appear in order
-	local pi = 1
-	local score = 0
-	local last_match = 0
-
-	for ti = 1, #text do
-		if pi > #pattern then
-			break
-		end
-
-		if text:sub(ti, ti) == pattern:sub(pi, pi) then
-			-- Bonus for consecutive matches
-			if ti == last_match + 1 then
-				score = score + 2
-			else
-				score = score + 1
-			end
+	-- Compare Unicode codepoints; unrelated UTF-8 bytes are not a match.
+	local characters = vim.fn.str2list(pattern)
+	local pi, score, last_match = 1, 0, 0
+	for ti, character in ipairs(vim.fn.str2list(text)) do
+		if character == characters[pi] then
+			score = score + (ti == last_match + 1 and 2 or 1)
 			last_match = ti
 			pi = pi + 1
+			if pi > #characters then return true, score end
 		end
-	end
-
-	if pi > #pattern then
-		return true, score
 	end
 
 	return false, 0
@@ -221,7 +195,7 @@ local function filter_commands(query)
 	local results = {}
 
 	for _, cmd in ipairs(command_registry.all()) do
-		if cmd.palette ~= false and command_registry.enabled(cmd) then
+		if cmd.palette ~= false and command_registry.enabled(cmd, { source = "palette" }) then
 			-- Match against title, description, and category
 			local match_title, score_title = fuzzy_match(query, cmd.title)
 			local match_desc, score_desc = fuzzy_match(query, cmd.description)
@@ -327,42 +301,10 @@ local function format_keybind(keybind)
 end
 
 -- Truncate text without splitting a multibyte character and fit it by display width.
-local function truncate_display_width(text, max_width)
-	text = tostring(text or "")
-	max_width = math.max(0, max_width)
-	if vim.fn.strdisplaywidth(text) <= max_width then
-		return text
-	end
-
-	local low = 0
-	local high = vim.fn.strchars(text)
-	local best = 0
-	while low <= high do
-		local middle = math.floor((low + high) / 2)
-		local candidate = vim.fn.strcharpart(text, 0, middle)
-		if vim.fn.strdisplaywidth(candidate) <= max_width then
-			best = middle
-			low = middle + 1
-		else
-			high = middle - 1
-		end
-	end
-
-	return vim.fn.strcharpart(text, 0, best)
-end
+local truncate_display_width = require("opencode.util.text").truncate
 
 local function truncate_with_ellipsis(text, max_width)
-	if vim.fn.strdisplaywidth(text) <= max_width then
-		return text
-	end
-
-	local ellipsis = "..."
-	local ellipsis_width = vim.fn.strdisplaywidth(ellipsis)
-	if max_width <= ellipsis_width then
-		return truncate_display_width(ellipsis, max_width)
-	end
-
-	return truncate_display_width(text, max_width - ellipsis_width) .. ellipsis
+	return truncate_display_width(text, max_width, "...")
 end
 
 -- Keep the existing theme colors; only the dialog layout changes.
@@ -386,6 +328,7 @@ require("opencode.ui.highlights").register("opencode.ui.palette", setup_highligh
 
 -- State
 local state = {
+	view = nil,
 	frame = nil,
 	max_list_height = 20,
 	popup = nil,
@@ -393,64 +336,9 @@ local state = {
 	query = "",
 	selected = 1,
 	results = {},
-	prev_win = nil,
 }
 
 local PALETTE_ZINDEX = 80
-
--- Resolve chat window context for palette placement.
--- Mirrors input widget behavior:
--- - float chat => editor-relative absolute coordinates
--- - split chat => window-relative coordinates
-local function resolve_palette_target()
-	local target_win = nil
-	local float_dims = nil
-
-	local chat_ok, chat = pcall(require, "opencode.ui.chat")
-	if chat_ok then
-		if type(chat.get_winid) == "function" then
-			local chat_winid = chat.get_winid()
-			if chat_winid and vim.api.nvim_win_is_valid(chat_winid) then
-				target_win = chat_winid
-			end
-		end
-		if type(chat.get_float_dims) == "function" then
-			float_dims = chat.get_float_dims()
-		end
-	end
-
-	if not target_win then
-		local current = vim.api.nvim_get_current_win()
-		if current and vim.api.nvim_win_is_valid(current) then
-			target_win = current
-		end
-	end
-
-	return target_win, float_dims
-end
-
-local function focus_chat_if_visible()
-	local chat_ok, chat = pcall(require, "opencode.ui.chat")
-	if not chat_ok then
-		return false
-	end
-
-	local is_visible = true
-	if type(chat.is_visible) == "function" then
-		is_visible = chat.is_visible()
-	elseif type(chat.get_winid) == "function" then
-		local winid = chat.get_winid()
-		is_visible = winid and vim.api.nvim_win_is_valid(winid) or false
-	end
-	if not is_visible then
-		return false
-	end
-	if type(chat.focus) ~= "function" then
-		return false
-	end
-
-	return pcall(chat.focus)
-end
 
 -- Render the command list
 local function render_list()
@@ -521,10 +409,20 @@ local function render_list()
 
 	-- Like DialogSelect, shrink the surface when filtering leaves fewer rows.
 	local list_height = math.min(state.max_list_height, #lines)
-	if state.popup.win_config.height ~= list_height then
-		state.popup:update_layout({ size = { width = max_width, height = list_height } })
-		state.frame:update_layout({ size = { width = state.frame.win_config.width, height = list_height + 7 } })
+	if state.popup.win_config.height ~= list_height or state.frame.win_config.height ~= list_height + 7 then
+		state.view:resize({
+			content = { size = { width = max_width, height = list_height } },
+			frame = { size = { width = state.frame.win_config.width, height = list_height + 7 } },
+		})
 	end
+	local frame_width = state.frame.win_config.width
+	local title = truncate_display_width("Commands", math.max(0, frame_width - 12))
+	local header = truncate_display_width("    " .. title
+		.. string.rep(" ", math.max(0, frame_width - #title - 11)) .. "esc    ", frame_width)
+	state.view:render({ "", header }, {
+		{ line = 1, col = 4, end_col = 4 + #title, hl_group = "OpenCodePaletteTitle" },
+		{ line = 1, col = #header - 7, end_col = #header - 4, hl_group = "OpenCodePaletteKeybind" },
+	}, "frame")
 	vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
 
 	-- Apply highlights
@@ -565,7 +463,7 @@ local function execute_selected()
 	local result = state.results[state.selected]
 	if result and result.cmd then
 		local command = command_registry.get(result.cmd.id)
-		if not command or command.palette == false or not command_registry.enabled(command) then
+		if not command or command.palette == false or not command_registry.enabled(command, { source = "palette" }) then
 			return
 		end
 		-- Track usage before hiding
@@ -573,10 +471,7 @@ local function execute_selected()
 
 		M.hide()
 		vim.schedule(function()
-			local ok, err = pcall(command_registry.run, command.id, { source = "palette" })
-			if not ok then
-				vim.notify("Command error: " .. tostring(err), vim.log.levels.ERROR)
-			end
+			command_registry.run(command.id, { source = "palette" })
 		end)
 	end
 end
@@ -601,39 +496,7 @@ end
 
 -- Close the palette
 function M.hide()
-	local prev_win = state.prev_win
-	if state.input_popup then
-		pcall(function()
-			state.input_popup:unmount()
-		end)
-		state.input_popup = nil
-	end
-	if state.popup then
-		pcall(function()
-			state.popup:unmount()
-		end)
-		state.popup = nil
-	end
-	if state.frame then
-		pcall(function()
-			state.frame:unmount()
-		end)
-		state.frame = nil
-	end
-	state.query = ""
-	state.selected = 1
-	state.results = {}
-	state.prev_win = nil
-
-	-- Prefer returning focus to chat while it is visible.
-	if focus_chat_if_visible() then
-		return
-	end
-
-	-- Fallback to the previously active window (e.g. when chat is not visible).
-	if prev_win and vim.api.nvim_win_is_valid(prev_win) then
-		vim.api.nvim_set_current_win(prev_win)
-	end
+	if state.view then state.view:close() end
 end
 
 -- Show the command palette
@@ -645,14 +508,12 @@ function M.show()
 	end
 
 	load_config()
+	load_frecency()
 	setup_highlights()
-
-	-- Save current window to restore focus on close
-	state.prev_win = vim.api.nvim_get_current_win()
 
 	-- One surface: title at row 1, search at row 3, list at row 5.
 	-- The inner windows share the frame background and have no borders.
-	local target_win, float_dims = resolve_palette_target()
+	local target_win, float_dims = float_context.get_chat_context()
 	local screen_width, screen_height = vim.o.columns, vim.o.lines - vim.o.cmdheight
 	local anchor_row, anchor_col = 0, 0
 	local anchor_width, anchor_height = screen_width, screen_height
@@ -696,53 +557,43 @@ function M.show()
 		cursorline = false,
 		scrolloff = 0,
 	}
-	state.frame = Popup({
-		enter = false,
-		focusable = false,
-		relative = relative,
-		zindex = PALETTE_ZINDEX,
-		border = border,
-		position = { row = row, col = col },
-		size = { width = width, height = frame_height },
-		win_options = window_options,
+	state.view = Popup.new({
+		outer_border_style = border,
+		frame = {
+			enter = false, focusable = false, relative = relative, zindex = PALETTE_ZINDEX,
+			position = { row = row, col = col }, size = { width = width, height = frame_height },
+			win_options = window_options, buf_options = { modifiable = false },
+		},
+		content = {
+			enter = false, focusable = false, zindex = PALETTE_ZINDEX + 1,
+			position = { row = 5, col = 1 }, size = { width = width - 2, height = height },
+			win_options = window_options,
+		},
+		input = {
+			kind = "popup", enter = true, focusable = true, zindex = PALETTE_ZINDEX + 2,
+			position = { row = 3, col = 4 }, size = { width = math.max(1, width - 8), height = 1 },
+			win_options = window_options,
+		},
+		focus_restore = "chat",
+		close_on_leave = true,
+		on_close = function(current)
+			if state.view ~= current then return end
+			state.view, state.frame, state.popup, state.input_popup = nil, nil, nil, nil
+			state.query, state.selected, state.results = "", 1, {}
+		end,
+		on_resize = function(current)
+			current:resize({ frame = { size = { width = width, height = frame_height } } })
+			local next_width = current.frame.win_config.width
+			state.max_list_height = math.max(1, current.frame.win_config.height - 7)
+			current:resize({
+				content = { size = { width = math.max(1, next_width - 2) } },
+				input = { size = { width = math.max(1, next_width - 8) } },
+			})
+			render_list()
+		end,
 	})
-	state.frame:mount()
-	local frame_buf = state.frame.bufnr
-	local title = truncate_display_width("Commands", math.max(0, width - 12))
-	local header = "    " .. title .. string.rep(" ", math.max(0, width - #title - 11)) .. "esc    "
-	vim.api.nvim_buf_set_lines(frame_buf, 0, -1, false, { "", header })
-	vim.api.nvim_buf_set_extmark(frame_buf, hl_ns, 1, 4, { end_col = 4 + #title, hl_group = "OpenCodePaletteTitle" })
-	vim.api.nvim_buf_set_extmark(
-		frame_buf,
-		hl_ns,
-		1,
-		#header - 7,
-		{ end_col = #header - 4, hl_group = "OpenCodePaletteKeybind" }
-	)
-	vim.bo[frame_buf].modifiable = false
-	local inner_relative = { type = "win", winid = state.frame.winid }
-	state.popup = Popup({
-		enter = false,
-		focusable = false,
-		relative = inner_relative,
-		zindex = PALETTE_ZINDEX + 1,
-		border = "none",
-		position = { row = 5, col = 1 },
-		size = { width = width - 2, height = height },
-		win_options = window_options,
-	})
-	state.input_popup = Popup({
-		enter = true,
-		focusable = true,
-		relative = inner_relative,
-		zindex = PALETTE_ZINDEX + 2,
-		border = "none",
-		position = { row = 3, col = 4 },
-		size = { width = math.max(1, width - 8), height = 1 },
-		win_options = window_options,
-	})
-	state.popup:mount()
-	state.input_popup:mount()
+	state.frame, state.popup, state.input_popup = state.view.frame, state.view.content, state.view.input
+	state.view:mount()
 
 	local input_buf = state.input_popup.bufnr
 	local popup_buf = state.popup.bufnr
@@ -823,15 +674,6 @@ function M.show()
 		M.hide()
 	end, opts)
 
-	-- Handle window close
-	local input_popup = state.input_popup
-	state.input_popup:on(event.BufLeave, function()
-		vim.schedule(function()
-			if state.input_popup == input_popup then
-				M.hide()
-			end
-		end)
-	end)
 end
 
 -- Toggle the command palette
@@ -844,7 +686,7 @@ function M.toggle()
 end
 
 function M.is_visible()
-	return state.popup ~= nil and state.input_popup ~= nil
+	return state.view ~= nil and not state.view.closed
 end
 
 ---@return number[]
@@ -868,12 +710,9 @@ end
 -- Trigger a command by ID
 function M.trigger(id)
 	local cmd = command_registry.get(id)
-	if cmd and cmd.palette ~= false and command_registry.enabled(cmd) then
+	if cmd and cmd.palette ~= false and command_registry.enabled(cmd, { source = "palette" }) then
 		track_command_usage(id)
-		local ok, err = pcall(command_registry.run, id, { source = "palette" })
-		if not ok then
-			vim.notify("Command error: " .. tostring(err), vim.log.levels.ERROR)
-		end
+		command_registry.run(id, { source = "palette" })
 	end
 end
 

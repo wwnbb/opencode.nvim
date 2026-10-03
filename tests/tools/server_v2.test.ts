@@ -28,7 +28,51 @@ async function pending() {
 function reply(record: any, decisions: any[], message?: string) {
   return replyInput.parse({ protocolVersion: 2, sessionID: "s", reviewID: record.reviewID, revision: record.revision, decisions, message })
 }
-const sha = (bytes: string) => createHash("sha256").update(bytes).digest("hex")
+const sha = (bytes: string | Buffer) => createHash("sha256").update(bytes).digest("hex")
+
+test("edit rejects an existing symlink before creating a review", async () => {
+  const target = path.join(directory, "target")
+  await fs.writeFile(target, "before\n")
+  await fs.symlink(target, path.join(directory, "a"))
+  await expect(edit.execute({ path: "a", oldString: "before", newString: "after" }, context))
+    .rejects.toThrow("not a regular file")
+  expect(reviews.list("s")).toHaveLength(0)
+  expect(await fs.readFile(target, "utf8")).toBe("before\n")
+})
+
+for (const operation of ["edit", "update", "add", "move"] as const) {
+  test(`${operation} cannot follow a symlink substituted during review`, async () => {
+    const file = path.join(directory, "a")
+    const target = path.join(directory, "target")
+    const replaced = operation === "move" ? path.join(directory, "destination") : file
+    if (operation !== "add") {
+      await fs.writeFile(file, "before\n")
+      await fs.writeFile(target, "before\n")
+    }
+    if (operation === "move") await fs.writeFile(replaced, "before\n")
+    const patchText = operation === "add"
+      ? "*** Begin Patch\n*** Add File: a\n+after\n*** End Patch"
+      : `*** Begin Patch\n*** Update File: a\n${operation === "move" ? "*** Move to: destination\n" : ""}@@\n-before\n+after\n*** End Patch`
+    const execution = operation === "edit"
+      ? edit.execute({ path: "a", oldString: "before", newString: "after" }, context)
+      : patch.execute({ patchText }, context)
+    void execution.catch(() => {})
+    const record = await pending()
+    if (operation !== "add") await fs.unlink(replaced)
+    await fs.symlink(target, replaced)
+    await reviews.reply(reply(record, record.files.map(file => ({
+      fileID: file.fileID, status: "accepted", apply: "server",
+    }))))
+    await expect(execution).rejects.toThrow("not a regular file")
+    expect(await fs.readlink(replaced)).toBe(target)
+    if (operation === "add") {
+      await expect(fs.stat(target)).rejects.toMatchObject({ code: "ENOENT" })
+    } else {
+      expect(await fs.readFile(target, "utf8")).toBe("before\n")
+    }
+    if (operation === "move") expect(await fs.readFile(file, "utf8")).toBe("before\n")
+  })
+}
 
 test("RPC reply validates scope, revision and exact file IDs before settlement", async () => {
   await fs.writeFile(path.join(directory, "a"), "before")
@@ -97,6 +141,53 @@ test("manual resolution requires matching observed bytes and is never overwritte
   expect(await fs.readFile(file, "utf8")).toBe("manual")
 })
 
+for (const dangling of [false, true]) {
+  test(`client reply refuses a ${dangling ? "dangling" : "regular"} symlink and keeps the review retryable`, async () => {
+    const file = path.join(directory, "a")
+    const target = path.join(directory, "target")
+    await fs.writeFile(file, "before")
+    const execution = edit.execute({ path: "a", oldString: "before", newString: "after" }, context)
+    void execution.catch(() => {})
+    const record = await pending()
+    await fs.unlink(file)
+    if (!dangling) await fs.writeFile(target, "after")
+    await fs.symlink(target, file)
+    const choice = { fileID: record.files[0].fileID, status: "accepted", apply: "client",
+      observed: dangling ? { exists: false } : { exists: true, sha256: sha("after") } }
+    await expect(reviews.reply(reply(record, [choice]))).rejects.toThrow("not a regular file")
+    expect(reviews.get("s", record.reviewID).status).toBe("pending")
+    expect(await fs.readlink(file)).toBe(target)
+    await fs.unlink(file)
+    await fs.writeFile(file, "after")
+    await reviews.reply(reply(record, [{ ...choice, observed: { exists: true, sha256: sha("after") } }]))
+    expect((await execution).metadata.status).toBe("applied")
+  })
+}
+
+for (const bytes of [Buffer.alloc(0), Buffer.from("\ufeffafter\r\n"), Buffer.from([0xff, 0, 0x0d, 0x0a])]) {
+  test(`client observation confirms raw bytes ${bytes.toString("hex") || "empty"}`, async () => {
+    const file = path.join(directory, "a")
+    await fs.writeFile(file, "before")
+    const execution = edit.execute({ path: "a", oldString: "before", newString: "after" }, context)
+    const record = await pending()
+    await fs.writeFile(file, bytes)
+    await reviews.reply(reply(record, [{ fileID: record.files[0].fileID, status: "resolved", apply: "client",
+      observed: { exists: true, sha256: sha(bytes) } }]))
+    await execution
+    expect(await fs.readFile(file)).toEqual(bytes)
+  })
+}
+
+test("client observation confirms a removed file", async () => {
+  const file = path.join(directory, "a")
+  await fs.writeFile(file, "before\n")
+  const execution = patch.execute({ patchText: "*** Begin Patch\n*** Delete File: a\n*** End Patch" }, context)
+  const record = await pending()
+  await fs.unlink(file)
+  await reviews.reply(reply(record, [{ fileID: record.files[0].fileID, status: "accepted", apply: "client", observed: { exists: false } }]))
+  expect((await execution).metadata.status).toBe("applied")
+})
+
 test("rejected add preserves an externally created empty file", async () => {
   const execution = patch.execute({ patchText: "*** Begin Patch\n*** Add File: new\n+proposed\n*** End Patch" }, context)
   const record = await pending()
@@ -131,6 +222,84 @@ test("rg uses the execution directory, escaped argv, bounded output and correct 
   controller.abort()
   await expect(rg.execute({ pattern: "." }, context)).rejects.toBeDefined()
 })
+
+test("failed permission publication cancels its gate and detaches cancellation", async () => {
+  const { Policies } = await import("../../opencode_nvim/plugins/opencode-nvim/policy")
+  const emitted: string[] = []
+  let requested: any
+  const policies = new Policies({ directory }, async (type, record) => {
+    emitted.push(type)
+    if (type === "policyRequested") requested = record
+    throw new Error("event publication failed")
+  })
+  try {
+    await expect(policies.wait(context, "neovim_edit", [directory])).rejects.toThrow("event publication failed")
+    expect(policies.list("s")).toHaveLength(0)
+    expect(policies.confirm({ sessionID: "s", gateID: requested.gateID }).status).toBe("cancelled")
+    controller.abort()
+    expect(emitted).toEqual(["policyRequested", "policySettled"])
+  } finally { policies.dispose() }
+})
+
+test("failed review publication cancels its entry and detaches cancellation", async () => {
+  const emitted: string[] = []
+  let requested: any
+  const failedReviews = new Reviews({ directory }, async (type, record) => {
+    emitted.push(type)
+    if (type === "reviewCreated") requested = record
+    throw new Error("event publication failed")
+  })
+  try {
+    await expect(failedReviews.wait(context, { tool: "neovim_edit", metadata: {
+      files: [{ filePath: path.join(directory, "a"), type: "update", before: "before", after: "after" }],
+    } })).rejects.toThrow("event publication failed")
+    expect(failedReviews.list("s")).toHaveLength(0)
+    expect(failedReviews.get("s", requested.reviewID).status).toBe("cancelled")
+    controller.abort()
+    expect(emitted).toEqual(["reviewCreated", "reviewCancelled"])
+  } finally { failedReviews.dispose() }
+})
+
+for (const settlementFailure of [false, true]) {
+  test(`review history stays bounded after ${settlementFailure ? "failed settlement events" : "cancellations"} and preserves pending reviews`, async () => {
+    if (settlementFailure) reviews = new Reviews({ directory }, async (type, record) => {
+      events.push({ type, review: record })
+      if (type === "reviewSettled") throw new Error("settlement publication failed")
+    })
+    const proposal = { tool: "neovim_edit", metadata: {
+      files: [{ filePath: path.join(directory, "a"), type: "update", before: "before", after: "after" }],
+    } }
+    const live = reviews.wait(context, proposal)
+    void live.catch(() => {})
+    const record = await pending()
+    const ids: string[] = []
+    for (let i = 0; i < 520; i++) {
+      const call = { ...context, id: `history-${i}` }
+      const waiting = reviews.wait(call, proposal)
+      const current = reviews.list("s").find(review => review.callID === call.id)!
+      ids.push(current.reviewID)
+      if (settlementFailure) {
+        await reviews.reply(reply(current, [{ fileID: current.files[0].fileID, status: "rejected" }]))
+        await waiting
+        await expect(reviews.finish("s", call.id, { status: "rejected" })).rejects.toThrow("settlement publication failed")
+      } else {
+        reviews.cancel(current.reviewID)
+        await expect(waiting).rejects.toThrow("Review cancelled")
+      }
+    }
+    let retained = 0
+    for (const id of ids) {
+      try { reviews.get("s", id); retained++ }
+      catch (error) { expect(error).toMatchObject({ code: "not_found" }) }
+    }
+    expect(retained).toBeLessThanOrEqual(512)
+    expect(reviews.get("s", ids.at(-1)!).status).toBe(settlementFailure ? "settled" : "cancelled")
+    expect(reviews.list("s")).toHaveLength(1)
+    expect(reviews.get("s", record.reviewID).status).toBe("pending")
+    await reviews.reply(reply(record, [{ fileID: record.files[0].fileID, status: "rejected" }]))
+    expect((await live).files[0].status).toBe("rejected")
+  })
+}
 
 test("native policy requires the exact evaluation and its final effect", async () => {
   const { Policies } = await import("../../opencode_nvim/plugins/opencode-nvim/policy")

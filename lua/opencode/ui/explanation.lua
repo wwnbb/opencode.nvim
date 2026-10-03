@@ -3,34 +3,13 @@
 local M = {}
 
 local actions = require("opencode.actions")
+local keymaps = require("opencode.util.keymap")
 local float = require("opencode.ui.float")
 local spinner = require("opencode.ui.spinner")
 
 local active, group
 local config = {}
 local trigger_maps = {}
-
-local function keycode(key)
-	return vim.api.nvim_replace_termcodes(key, true, false, true)
-end
-
-local function local_mapping(bufnr, key)
-	for _, mapping in ipairs(vim.api.nvim_buf_get_keymap(bufnr, "x")) do
-		if keycode(mapping.lhs) == keycode(key) then return mapping end
-	end
-end
-
-local function restore_mapping(mapping)
-	if not mapping or not vim.api.nvim_buf_is_valid(mapping.bufnr) then return end
-	local current = local_mapping(mapping.bufnr, mapping.key)
-	if not current or current.callback ~= mapping.callback then return end
-	vim.keymap.del("x", mapping.key, { buffer = mapping.bufnr })
-	if mapping.previous then
-		vim.api.nvim_buf_call(mapping.bufnr, function()
-			vim.fn.mapset("x", false, mapping.previous)
-		end)
-	end
-end
 
 local function eligible(bufnr)
 	if not vim.api.nvim_buf_is_valid(bufnr) or not vim.api.nvim_buf_is_loaded(bufnr) then return false end
@@ -75,19 +54,16 @@ end
 local function configure_buffer(bufnr)
 	local installed = trigger_maps[bufnr]
 	if not eligible(bufnr) then
-		restore_mapping(installed)
+		keymaps.restore(installed)
 		trigger_maps[bufnr] = nil
 		return
 	end
 	if installed then return end
 	local key = config.keymaps and config.keymaps.trigger
 	if type(key) ~= "string" or key == "" then return end
-	local mapping = { bufnr = bufnr, key = key, previous = local_mapping(bufnr, key) }
-	mapping.callback = function() actions.explain_selection() end
-	vim.keymap.set("x", key, mapping.callback, {
-		buffer = bufnr, silent = true, desc = "Explain OpenCode visual selection",
+	trigger_maps[bufnr] = keymaps.install("x", bufnr, key, function() actions.explain_selection() end, {
+		silent = true, desc = "Explain OpenCode visual selection",
 	})
-	trigger_maps[bufnr] = mapping
 end
 
 function M.is_open()
@@ -167,7 +143,7 @@ end
 function M.teardown()
 	M.close()
 	if group then vim.api.nvim_del_augroup_by_id(group); group = nil end
-	for _, mapping in pairs(trigger_maps) do restore_mapping(mapping) end
+	for _, mapping in pairs(trigger_maps) do keymaps.restore(mapping) end
 	trigger_maps = {}
 	config = {}
 end

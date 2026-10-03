@@ -1,5 +1,6 @@
 local M = {}
 local actions = require("opencode.actions")
+local pending = require("opencode.session.pending")
 local function notify(message, err)
 	vim.notify(message, err and vim.log.levels.WARN or vim.log.levels.INFO)
 end
@@ -9,7 +10,9 @@ local function location()
 end
 local function menu(items, title, callback)
 	if #items == 0 then notify("No " .. title:lower() .. " available"); return end
-	require("opencode.ui.menu").open({ items = items, title = " " .. title .. " ", width = 64, searchable = true, on_select = callback })
+	local token = pending.token()
+	require("opencode.ui.menu").open({ items = items, title = " " .. title .. " ", width = 64, searchable = true,
+		on_select = function(item) if pending.is_current(token) then return callback(item) end end })
 end
 
 local function attempt(integration, method, answer, opts)
@@ -55,15 +58,13 @@ local function attempt(integration, method, answer, opts)
 end
 
 local function connect(integration, method, opts)
-	if method.type == "env" then
-		notify("Configure " .. table.concat(method.names or {}, ", ") .. " in the OpenCode server environment, then restart that server")
-		return
-	end
+	local token = pending.token()
 	local function submit(answer)
-		if answer == nil then return end
+		if answer == nil or not pending.is_current(token) then return end
 		if method.type == "key" then
-			require("opencode.ui.float").create_input_popup({ title = " API key ", prompt = "API key for " .. integration.name .. ":", password = true,
+			require("opencode.ui.float").create_input_popup({ title = " Connect " .. integration.name .. " ", prompt = "API key", password = true,
 				on_submit = function(key)
+					if not pending.is_current(token) then return end
 					actions.connect_integration_key(integration.id, key, answer, opts, function(err, result)
 						if err then notify("Could not confirm connection to " .. integration.name, true)
 						elseif not result or not vim.iter(result.connections or {}):any(function(c) return c.type == "credential" end) then notify("No connection was returned by the server", true)
@@ -92,8 +93,11 @@ function M.connect(integration_id, opts)
 		local function select(item)
 			local methods = {}
 			for _, method in ipairs(item.integration.methods or {}) do
-				methods[#methods + 1] = { label = method.label or method.type, method = method }
+				if method.type ~= "env" then
+					methods[#methods + 1] = { label = method.label or (method.type == "key" and "API key" or method.type), method = method }
+				end
 			end
+			if #methods == 1 then connect(item.integration, methods[1].method, opts); return end
 			menu(methods, "Connection methods", function(choice) connect(item.integration, choice.method, opts) end)
 		end
 		if integration_id and #items == 1 then select(items[1]) else menu(items, "Integrations", select) end
@@ -101,7 +105,7 @@ function M.connect(integration_id, opts)
 end
 
 function M.connections()
-	local opts = location()
+	local opts, token = location(), pending.token()
 	actions.list_integrations(function(err, integrations)
 		if err then notify("Could not list connections", true); return end
 		local items = {}
@@ -120,6 +124,7 @@ function M.connections()
 			menu({ { label = "Activate", value = "activate" }, { label = "Rename", value = "update" }, { label = "Disconnect", value = "remove" } },
 				"Manage " .. connection.label, function(choice)
 					local function apply(body)
+						if not pending.is_current(token) then return end
 						actions.change_credential(choice.value, item.integration.id, connection.id, body, opts, function(change_err, result)
 							if change_err then notify("Could not confirm account change", true); return end
 							if choice.value == "remove" then

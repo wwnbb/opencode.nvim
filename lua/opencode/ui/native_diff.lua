@@ -6,6 +6,10 @@
 local M = {}
 
 local syntax = require("opencode.ui.syntax")
+local pending = require("opencode.session.pending")
+local keymaps = require("opencode.util.keymap")
+local diff_mappings = {}
+local view_generation = 0
 
 local state = {
 	active = false,
@@ -45,6 +49,11 @@ local function focus_diff_window(winid)
 	end
 end
 
+local function rpc_review()
+	local edit = state.edit_id and require("opencode.edit.state").get_edit(state.edit_id)
+	return edit and edit == state.review and pending.is_current(state.token) and edit.transport == "review_rpc" and edit or nil
+end
+
 local function edit_note()
 	if not state.edit_id then
 		vim.notify("No edit note target available", vim.log.levels.WARN)
@@ -56,18 +65,21 @@ local function edit_note()
 		return
 	end
 
-	local estate = edit_state.get_edit(state.edit_id)
-	if not estate or estate.status ~= "pending" then
+	local edit_id = state.edit_id
+	local estate = rpc_review()
+	if not estate or estate.status ~= "pending" or estate.submitting then
 		return
 	end
 
 	local input = require("opencode.ui.input")
+	local token = pending.token(estate.session_id)
 	local current = vim.api.nvim_get_current_win()
 	local function finish(text)
-		edit_state.set_message(state.edit_id, text or "")
+		if not pending.is_current(token) or state.edit_id ~= edit_id or edit_state.get_edit(edit_id) ~= estate then return end
+		if not edit_state.set_message(edit_id, text or "") then return end
 		local ok_edits, chat_edits = pcall(require, "opencode.ui.chat.edits")
 		if ok_edits and chat_edits.rerender_edit then
-			chat_edits.rerender_edit(state.edit_id)
+			chat_edits.rerender_edit(edit_id)
 		end
 		focus_diff_window(current)
 	end
@@ -101,58 +113,14 @@ local function delete_scratch_original_buffer()
 	end
 end
 
---- Close the diff view and clean up
-function M.close()
-	if not state.active then
-		return
-	end
-
-	-- Close the diff tab (which closes both windows and the scratch buffer)
-	if state.tab_page and vim.api.nvim_tabpage_is_valid(state.tab_page) then
-		local tabnr = vim.api.nvim_tabpage_get_number(state.tab_page)
-		pcall(vim.cmd, tabnr .. "tabclose")
-	end
-
-	-- Clean up proposed scratch buffer if it survived the tab close
-	if state.proposed_buf and vim.api.nvim_buf_is_valid(state.proposed_buf) then
-		vim.api.nvim_buf_delete(state.proposed_buf, { force = true })
-	end
-	delete_scratch_original_buffer()
-
-	-- Capture previous_winid BEFORE resetting state (state reset nils it)
-	local prev_win = state.previous_winid
-
-	-- Reset state
-	state.active = false
-	state.files = {}
-	state.current_file_index = 1
-	state.original_buf = nil
-	state.proposed_buf = nil
-	state.original_win = nil
-	state.proposed_win = nil
-	state.tab_page = nil
-	state.previous_winid = nil
-	state.original_is_scratch = false
-	state.edit_id = nil
-	state.edit_file_index = nil
-
-	-- Restore focus to previous window
-	vim.schedule(function()
-		if prev_win and vim.api.nvim_win_is_valid(prev_win) then
-			vim.api.nvim_set_current_win(prev_win)
-		end
-
-		-- Re-open input only if the chat is still visible (it may have been
-		-- closed by WinEnter/TabEnter while the diff tab was active)
-		local chat_ok, chat = pcall(require, "opencode.ui.chat")
-		if chat_ok and chat.focus_input and chat.is_visible and chat.is_visible() then
-			chat.focus_input()
-		end
-	end)
-end
-
 --- Close just the diff windows without resetting the full state (for file transitions)
 local function close_diff_windows()
+	if state.close_autocmd then
+		pcall(vim.api.nvim_del_autocmd, state.close_autocmd)
+		state.close_autocmd = nil
+	end
+	for _, mapping in ipairs(diff_mappings) do keymaps.restore(mapping) end
+	diff_mappings = {}
 	-- Close the diff tab (which closes both windows)
 	if state.tab_page and vim.api.nvim_tabpage_is_valid(state.tab_page) then
 		local tabnr = vim.api.nvim_tabpage_get_number(state.tab_page)
@@ -173,9 +141,42 @@ local function close_diff_windows()
 	state.original_is_scratch = false
 end
 
-local function rpc_review()
-	local edit = state.edit_id and require("opencode.edit.state").get_edit(state.edit_id)
-	return edit and edit.transport == "review_rpc" and edit or nil
+--- Close the diff view and clean up
+function M.close()
+	if not state.active then
+		return
+	end
+	view_generation = view_generation + 1
+	local generation = view_generation
+
+	close_diff_windows()
+
+	-- Capture previous_winid BEFORE resetting state (state reset nils it)
+	local prev_win = state.previous_winid
+
+	-- Reset state
+	state.active = false
+	state.files = {}
+	state.current_file_index = 1
+	state.previous_winid = nil
+	state.edit_id = nil
+	state.edit_file_index = nil
+	state.review, state.token = nil, nil
+
+	-- Restore focus to previous window
+	vim.schedule(function()
+		if generation ~= view_generation then return end
+		if prev_win and vim.api.nvim_win_is_valid(prev_win) then
+			vim.api.nvim_set_current_win(prev_win)
+		end
+
+		-- Re-open input only if the chat is still visible (it may have been
+		-- closed by WinEnter/TabEnter while the diff tab was active)
+		local chat_ok, chat = pcall(require, "opencode.ui.chat")
+		if chat_ok and chat.focus_input and chat.is_visible and chat.is_visible() then
+			chat.focus_input()
+		end
+	end)
 end
 
 local function rpc_file_action(action)
@@ -215,6 +216,7 @@ end
 
 --- Set up keymaps on both buffers
 local function setup_keymaps()
+	local generation = view_generation
 	local bufs = {}
 	if state.original_buf and vim.api.nvim_buf_is_valid(state.original_buf) then
 		table.insert(bufs, state.original_buf)
@@ -224,10 +226,14 @@ local function setup_keymaps()
 	end
 
 	for _, buf in ipairs(bufs) do
-		local opts = { buffer = buf, noremap = true, silent = true }
+		local function map(key, callback)
+			diff_mappings[#diff_mappings + 1] = keymaps.install("n", buf, key, function()
+				if generation == view_generation then callback() end
+			end, { noremap = true, silent = true })
+		end
 
 		-- <C-y>: Apply all remaining proposed hunks at once (diffget from proposed)
-		vim.keymap.set("n", "<C-y>", function()
+		map("<C-y>", function()
 			-- Focus the original (right) window and get all changes from proposed
 			if state.original_win and vim.api.nvim_win_is_valid(state.original_win) then
 				vim.api.nvim_set_current_win(state.original_win)
@@ -239,31 +245,31 @@ local function setup_keymaps()
 					logger.debug("native_diff: diffget error (may be no more diffs)", { error = err })
 				end
 			end
-		end, opts)
+		end)
 
-		vim.keymap.set("n", "<C-a>", M._confirm_current, opts)
-		vim.keymap.set("n", "<C-x>", M._reject_current, opts)
-		vim.keymap.set("n", "<C-S-x>", M._reject_all, opts)
+		map("<C-a>", M._confirm_current)
+		map("<C-x>", M._reject_current)
+		map("<C-S-x>", M._reject_all)
 
 		-- File navigation only; does not resolve, reject, or send the edit.
-		vim.keymap.set("n", "<leader>on", function()
+		map("<leader>on", function()
 			navigate_file(1)
-		end, opts)
-		vim.keymap.set("n", "<leader>op", function()
+		end)
+		map("<leader>op", function()
 			navigate_file(-1)
-		end, opts)
+		end)
 
-		vim.keymap.set("n", "m", function()
+		map("m", function()
 			edit_note()
-		end, opts)
+		end)
 
 		-- q: Close diff view
-		vim.keymap.set("n", "q", function()
+		map("q", function()
 			M.close()
-		end, opts)
+		end)
 
 		-- ?: Show help
-		vim.keymap.set("n", "?", function()
+		map("?", function()
 			local help = {
 				"Native Diff Keymaps:",
 				"",
@@ -284,18 +290,21 @@ local function setup_keymaps()
 				"Tip: use <C-y> to apply all proposed changes in the current file, then <C-a> to confirm.",
 			}
 			vim.notify(table.concat(help, "\n"), vim.log.levels.INFO)
-		end, opts)
+		end)
 	end
 end
 
 --- Show a specific file for diff review
 ---@param index number 1-based file index
 function M._show_file(index)
+	if not rpc_review() then return end
 	local file = state.files[index]
 	if not file then
 		logger.warn("native_diff: invalid file index", { index = index, total = #state.files })
 		return
 	end
+	view_generation = view_generation + 1
+	local generation = view_generation
 
 	local filepath = file.filePath or file.filepath or file.path
 	local before = file.before or ""
@@ -319,6 +328,7 @@ function M._show_file(index)
 			width = vim.fn.strdisplaywidth(prompt) + 12,
 			sort = false,
 			on_select = function(choice)
+				if generation ~= view_generation or state.current_file_index ~= index then return end
 				if rpc_file_action(choice == "Yes, delete" and "accept" or "reject") then M._advance_or_finish() end
 			end,
 		})
@@ -344,6 +354,13 @@ function M._show_file(index)
 	end
 	state.original_win = vim.api.nvim_get_current_win()
 	state.tab_page = vim.api.nvim_get_current_tabpage()
+	state.close_autocmd = vim.api.nvim_create_autocmd("TabClosed", {
+		callback = function()
+			if generation == view_generation and state.tab_page and not vim.api.nvim_tabpage_is_valid(state.tab_page) then
+				M.close()
+			end
+		end,
+	})
 
 	-- Create vertical split LEFT for proposed content
 	vim.cmd("leftabove vsplit")
@@ -433,15 +450,19 @@ end
 --- Advance to next file or finish if all files reviewed
 function M._advance_or_finish()
 	close_diff_windows()
+	view_generation = view_generation + 1
+	local generation = view_generation
 
 	if state.current_file_index < #state.files then
 		-- More files to review
 		state.current_file_index = state.current_file_index + 1
 		vim.schedule(function()
+			if generation ~= view_generation or not rpc_review() then return end
 			M._show_file(state.current_file_index)
 		end)
 	else
 		vim.schedule(function()
+			if generation ~= view_generation or not rpc_review() then return end
 			M.close()
 			vim.notify("All files reviewed and applied", vim.log.levels.INFO)
 		end)
@@ -485,6 +506,7 @@ function M.show(files, opts)
 	state.original_is_scratch = false
 	state.edit_id = opts.edit_id or nil
 	state.edit_file_index = opts.file_index or nil
+	state.review, state.token = edit, pending.token(edit.session_id)
 
 	logger.info("native_diff: starting review", {
 		review_id = opts.edit_id,

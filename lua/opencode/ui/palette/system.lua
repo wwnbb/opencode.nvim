@@ -4,10 +4,12 @@ local M = {}
 
 local actions = require("opencode.actions")
 local state = require("opencode.state")
+local pending = require("opencode.session.pending")
 function M.register(palette)
 	local keymaps = (state.get_config() or require("opencode.config").defaults).keymaps or {}
 	palette.register({ id = "system.reload", title = "Reload Server Configuration", category = "system",
 		description = "Reload all locations and cancel pending interactions", run = function()
+			local token = pending.token()
 			local prompt = "Reload cancels pending forms, permissions and plugin reviews in every project."
 			require("opencode.ui.menu").open({
 				items = { "Reload all locations", "Cancel" },
@@ -16,7 +18,7 @@ function M.register(palette)
 				width = vim.fn.strdisplaywidth(prompt) + 12,
 				sort = false,
 				on_select = function(choice)
-					if choice ~= "Reload all locations" then return end
+					if choice ~= "Reload all locations" or not pending.is_current(token) then return end
 					actions.reload_locations(function(err)
 						vim.notify(err and ("Reload was not confirmed: " .. err.message) or "Server configuration reloaded", err and vim.log.levels.ERROR or vim.log.levels.INFO)
 					end)
@@ -96,7 +98,8 @@ function M.register(palette)
 					"   ? - This help",
 					"",
 					" In input:",
-					"   <C-g> - Send",
+					"   <C-g> - Queue message",
+					"   <C-x><C-s> - Steer active agent",
 					"   <Esc> - Cancel",
 					"   ↑/↓ - History",
 				}

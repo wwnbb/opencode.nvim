@@ -18,17 +18,23 @@ export function joinBom(content: string, bom: boolean): string {
   return bom ? "\ufeff" + content : content
 }
 
-export async function readState(filePath: string): Promise<FileState> {
+export async function readBytes(filePath: string): Promise<Buffer | undefined> {
   try {
-    const stat = await fs.stat(filePath)
+    const stat = await fs.lstat(filePath)
     if (stat.isDirectory()) throw new Error(`Path is a directory, not a file: ${filePath}`)
-    return splitBom(await fs.readFile(filePath, "utf8"))
+    if (!stat.isFile()) throw new Error(`Path is not a regular file: ${filePath}`)
+    return await fs.readFile(filePath)
   } catch (error) {
     if (typeof error === "object" && error && "code" in error && error.code === "ENOENT") {
-      return { exists: false, content: "", bom: false }
+      return undefined
     }
     throw error
   }
+}
+
+export async function readState(filePath: string): Promise<FileState> {
+  const bytes = await readBytes(filePath)
+  return bytes === undefined ? { exists: false, content: "", bom: false } : splitBom(bytes.toString("utf8"))
 }
 
 export async function writeState(filePath: string, content: string, bom: boolean, signal?: AbortSignal) {

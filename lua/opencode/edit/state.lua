@@ -2,6 +2,7 @@
 -- Tracks active v2 file reviews and read-only tool previews.
 
 local M = {}
+local pending = require("opencode.session.pending")
 
 -- Active edits storage: { [permission_id] = edit_state }
 local active_edits = {}
@@ -40,23 +41,7 @@ end
 
 ---@param diff_str any
 ---@return number, number
-local function parse_diff_stats(diff_str)
-	if type(diff_str) ~= "string" or diff_str == "" then
-		return 0, 0
-	end
-
-	local additions = 0
-	local deletions = 0
-	for _, line in ipairs(vim.split(diff_str, "\n", { plain = true })) do
-		if line:sub(1, 3) ~= "+++" and line:sub(1, 1) == "+" then
-			additions = additions + 1
-		elseif line:sub(1, 3) ~= "---" and line:sub(1, 1) == "-" then
-			deletions = deletions + 1
-		end
-	end
-
-	return additions, deletions
-end
+local parse_diff_stats = require("opencode.util.text").diff_stats
 
 ---@param text string|nil
 ---@return string
@@ -79,17 +64,12 @@ end
 ---@return table|nil state {exists=boolean, content=string}
 ---@return string|nil err
 local function read_file_state(filepath)
-	local file, open_err = io.open(filepath, "rb")
-	if not file then
-		if vim.loop.fs_stat(filepath) == nil then
-			return { exists = false, content = "" }, nil
-		end
-		return nil, open_err or ("Cannot open file for reading: " .. filepath)
+	local disk, err = require("opencode.artifact.changes").read_disk_bytes(filepath)
+	if not disk then return nil, err end
+	if disk.kind ~= "file" and disk.kind ~= "missing" then
+		return nil, "Path is now a " .. disk.kind .. "; review not applied: " .. filepath
 	end
-
-	local content = file:read("*all") or ""
-	file:close()
-	return { exists = true, content = strip_bom(content), bom = content:sub(1, 3) == BOM }, nil
+	return { exists = disk.exists, content = strip_bom(disk.content), bom = disk.content:sub(1, 3) == BOM }, nil
 end
 
 ---@param filepath string
@@ -109,7 +89,7 @@ local function flush_modified_buffer(filepath)
 					local wrote = pcall(vim.api.nvim_buf_call, bufnr, function()
 						vim.cmd("silent write")
 					end)
-					ok = ok and wrote
+					ok = ok and wrote and not vim.bo[bufnr].modified
 				end
 			end
 		end
@@ -119,13 +99,9 @@ local function flush_modified_buffer(filepath)
 end
 
 ---@param file table
+---@param disk table
 ---@return "accepted"|"rejected"|"resolved"
-local function classify_manual_resolution(file)
-	local disk = read_file_state(file.filepath)
-	if not disk then
-		return "resolved"
-	end
-
+local function classify_manual_resolution(file, disk)
 	if not disk.exists then
 		if file.file_type == "delete" then
 			return "accepted"
@@ -259,7 +235,7 @@ local function apply_file_action(estate, file, action)
 	if action.kind == "accept" then
 		if not disk_matches_snapshot(disk, file, "before") then
 			changes.resolve_manually(file.change_id)
-			file.status = classify_manual_resolution(file)
+			file.status = classify_manual_resolution(file, disk)
 			vim.notify(
 				"File changed during review; proposed edit not overwritten: " .. describe_file(file),
 				vim.log.levels.WARN
@@ -271,24 +247,6 @@ local function apply_file_action(estate, file, action)
 		if not ok then
 			return false, err or "unknown error"
 		end
-	elseif not before_exists(file) then
-		-- New file: reject must never delete or truncate user content
-		if not disk.exists then
-			changes.resolve_manually(file.change_id)
-			file.status = "rejected"
-		elseif normalize_line_endings(disk.content) == normalize_line_endings(file.after or "") then
-			changes.resolve_manually(file.change_id)
-			os.remove(file.filepath)
-			file.status = "rejected"
-		else
-			changes.resolve_manually(file.change_id)
-			file.status = "rejected"
-			vim.notify(
-				"New file was modified during review; not deleted: " .. describe_file(file),
-				vim.log.levels.WARN
-			)
-		end
-		return true, nil
 	elseif disk_matches_snapshot(disk, file, "after") then
 		-- Disk holds exactly our proposal: undo it by restoring before
 		local ok, err = changes.reject(file.change_id)
@@ -301,7 +259,7 @@ local function apply_file_action(estate, file, action)
 		file.status = "rejected"
 		if not disk_matches_snapshot(disk, file, "before") then
 			vim.notify(
-				"File changed during review; original not restored: " .. describe_file(file),
+				"File changed during review; current content preserved: " .. describe_file(file),
 				vim.log.levels.WARN
 			)
 		end
@@ -723,7 +681,7 @@ function M.reject_all(permission_id)
 	return apply_pending_files(permission_id, FILE_ACTIONS.reject)
 end
 
---- Resolve a file manually (mark as resolved without touching disk)
+--- Save manual buffer changes and classify the bytes on disk.
 ---@param permission_id string
 ---@param file_index number
 ---@return boolean, string|nil
@@ -752,21 +710,26 @@ function M.resolve_file(permission_id, file_index)
 		return false, "Readonly edit cannot be resolved manually"
 	end
 
+	local disk, read_err = read_file_state(file.filepath)
+	if not disk then return false, read_err end
 	local flushed = flush_modified_buffer(file.filepath)
 	if not flushed then
 		return false, "Failed to save modified buffer"
 	end
+	disk, read_err = read_file_state(file.filepath)
+	if not disk then return false, read_err end
 
 	local changes = require("opencode.artifact.changes")
 	changes.resolve_manually(file.change_id)
 
-	file.status = classify_manual_resolution(file)
+	file.status = classify_manual_resolution(file, disk)
 	return true
 end
 
 --- Resolve all pending files manually
 ---@param permission_id string
 ---@return boolean
+---@return string|nil err
 function M.resolve_all(permission_id)
 	local estate = active_edits[permission_id]
 	if not estate then
@@ -779,16 +742,10 @@ function M.resolve_all(permission_id)
 		return false
 	end
 
-	for _, file in ipairs(estate.files) do
+	for index, file in ipairs(estate.files) do
 		if file.status == "pending" then
-			local flushed = flush_modified_buffer(file.filepath)
-			if not flushed then
-				return false
-			end
-
-			local changes = require("opencode.artifact.changes")
-			changes.resolve_manually(file.change_id)
-			file.status = classify_manual_resolution(file)
+			local ok, err = M.resolve_file(permission_id, index)
+			if not ok then return false, err end
 		end
 	end
 
@@ -921,6 +878,7 @@ function M.begin_review_submission(id)
 	if not require("opencode.state").is_connected() then return false end
 	for _, file in ipairs(item.files) do if file.status == "pending" then return false end end
 	item.submitting, item.error = true, nil
+	item.submission_token = pending.token(item.session_id)
 	return true
 end
 
@@ -928,6 +886,7 @@ function M.restore_review_submission(id, err)
 	local item = active_edits[id]
 	if not item or item.status ~= "pending" then return false end
 	item.submitting, item.error = false, err
+	item.submission_token = nil
 	return true
 end
 
@@ -939,7 +898,9 @@ function M.set_review_record(record)
 	if previous == "cancelled" or previous == "settled" then return false end
 	if previous == "decided" and record.status == "pending" then return false end
 	item.native_review = vim.deepcopy(record)
-	if record.status == "cancelled" then
+	if record.status == "pending" then
+		if item.submission_token and not pending.is_current(item.submission_token) then M.restore_review_submission(record.reviewID) end
+	elseif record.status == "cancelled" then
 		item.cancelled, item.submitting, item.status = true, false, "sent"
 	elseif record.status == "decided" or record.status == "settled" then
 		item.message = record.message or ""

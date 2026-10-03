@@ -42,11 +42,20 @@ function M.apply(sync, event, hooks)
 	end
 	if kind == "session.revert.committed" then
 		local removed = {}
-		for _, message in ipairs(sync.get_messages(sid)) do
-			if message.id >= data.to then removed[#removed + 1] = message.id end
+		local messages = sync.get_messages(sid)
+		local boundary_index
+		for i, message in ipairs(messages) do
+			if message.id == data.to then boundary_index = i; break end
+		end
+		for i = boundary_index or (#messages + 1), #messages do
+			-- Pending inbox rows have not joined durable history. A commit of an
+			-- older turn must not erase a prompt that is still being admitted.
+			if i == boundary_index or not messages[i].provisional then
+				removed[#removed + 1] = messages[i].id
+			end
 		end
 		for _, id in ipairs(removed) do sync.handle_message_removed(sid, id) end
-		result.changed, result.reconcile, result.revert_to = #removed > 0, true, data.to
+		result.changed, result.reconcile, result.revert_to, result.revert_removed = #removed > 0, true, data.to, removed
 	elseif kind == "session.inbox.enqueued" then
 		local item = data.item
 		result.inbox = { id = data.inboxID, sessionID = sid, type = item.type, payload = item.payload,

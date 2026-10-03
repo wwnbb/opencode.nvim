@@ -24,25 +24,7 @@ local function display_width(text)
 end
 
 local function truncate_to_width(text, width)
-	text = tostring(text or "")
-	if width <= 0 then
-		return ""
-	end
-	if display_width(text) <= width then
-		return text
-	end
-
-	local suffix = width > 3 and "..." or ""
-	local target = math.max(1, width - #suffix)
-	local result = ""
-	for i = 1, vim.fn.strchars(text) do
-		local next_result = vim.fn.strcharpart(text, 0, i)
-		if display_width(next_result) > target then
-			break
-		end
-		result = next_result
-	end
-	return result .. suffix
+	return require("opencode.util.text").truncate(text, width, width > 3 and "..." or "")
 end
 
 local function item_label(item)
@@ -131,17 +113,17 @@ local function default_filter(item, query)
 		return true
 	end
 
-	local searchable_text = { item_label(item):lower() }
+	local searchable_text = { vim.fn.tolower(item_label(item)) }
 	local description = item_description(item)
 	if description then
-		table.insert(searchable_text, description:lower())
+		table.insert(searchable_text, vim.fn.tolower(description))
 	end
 	if type(item) == "table" then
 		if item.value ~= nil then
-			table.insert(searchable_text, tostring(item.value):lower())
+			table.insert(searchable_text, vim.fn.tolower(tostring(item.value)))
 		end
 		if item.key ~= nil then
-			table.insert(searchable_text, tostring(item.key):lower())
+			table.insert(searchable_text, vim.fn.tolower(tostring(item.key)))
 		end
 	end
 
@@ -274,7 +256,7 @@ function M.open(opts)
 
 	local function filter_items()
 		local next_items = {}
-		local query = search_text:lower():gsub("^%W+", "")
+		local query = vim.fn.tolower(search_text)
 		for _, item in ipairs(items) do
 			local include
 			if type(opts.filter) == "function" then
@@ -486,6 +468,7 @@ function M.open(opts)
 			selected_idx = 1
 		end
 		render_list()
+		if type(opts.on_move) == "function" then opts.on_move(current_item(), ctx) end
 	end
 
 	local function handle_key(key)
@@ -555,21 +538,9 @@ function M.open(opts)
 		if not searchable then
 			for index = 1, math.min(9, #items) do
 				vim.keymap.set("n", tostring(index), function()
-					local item = filtered_items[index]
-					if not item then
-						return
-					end
-					if opts.close_on_select == false then
-						if type(opts.on_select) == "function" then
-							opts.on_select(item, ctx)
-						end
-						ctx.refresh()
-						return
-					end
-					close()
-					if type(opts.on_select) == "function" then
-						opts.on_select(item, ctx)
-					end
+					if not filtered_items[index] then return end
+					selected_idx = index
+					select_current()
 				end, keymap_opts)
 			end
 		end
@@ -659,6 +630,9 @@ function M.open(opts)
 			search_text = lines[1] or ""
 			update_placeholder()
 			render_list({ preserve_selection = false })
+			if type(opts.on_move) == "function" and search_text ~= "" and #filtered_items > 0 then
+				opts.on_move(current_item(), ctx)
+			end
 		end, "input")
 		vim.cmd("startinsert!")
 	else

@@ -145,6 +145,30 @@ describe("shared popup owner", function()
 		assert.equals(original_win, vim.api.nvim_get_current_win())
 	end)
 
+	for _, kind in ipairs({ "automatic", "explicit" }) do
+		it("keeps the newly selected tab during " .. kind .. " popup close", function()
+			local popup = require("opencode.ui.popup").new({
+				relative = "editor", size = { width = 20, height = 4 }, enter = true,
+				close_on_leave = true, focus_restore = kind == "automatic" and "chat" or "previous",
+			})
+			popup:mount()
+			vim.cmd("tabnew")
+			local selected_tab, selected_win = vim.api.nvim_get_current_tabpage(), vim.api.nvim_get_current_win()
+			local ok, err = pcall(function()
+				if kind == "explicit" then popup:close({ force_focus = true }) end
+				assert.is_true(vim.wait(250, function() return popup.closed end, 5))
+				assert.equals(selected_tab, vim.api.nvim_get_current_tabpage())
+				assert.equals(selected_win, vim.api.nvim_get_current_win())
+			end)
+			popup:close({ restore_focus = false })
+			if vim.api.nvim_tabpage_is_valid(selected_tab) then
+				vim.api.nvim_set_current_tabpage(selected_tab)
+				vim.cmd("tabclose")
+			end
+			if not ok then error(err) end
+		end)
+	end
+
 	it("restores the previous window when closed without options", function()
 		local popup = require("opencode.ui.popup").new({
 			relative = "editor", size = { width = 20, height = 4 }, border = "none", enter = true,
@@ -208,5 +232,106 @@ describe("shared popup owner", function()
 		callback()
 		assert.equals("existing", submitted)
 		assert.is_false(vim.api.nvim_buf_is_valid(input_buf))
+	end)
+
+	it("pastes and scrolls a long key with Cmd+V while keeping the TUI dialog intact", function()
+		local observed, submitted = {}, nil
+		local key = string.rep("public-test-key-", 8) .. "tail"
+		local original_paste = vim.paste
+		local getreg = require("luassert.stub")(vim.fn, "getreg", function(register)
+			assert.equals("+", register)
+			return key .. "\r\nignored"
+		end)
+		vim.defer_fn(function()
+			observed.bufnr = vim.api.nvim_get_current_buf()
+			vim.api.nvim_input("prefix-<D-v>")
+			vim.defer_fn(function()
+				observed.layout = vim.api.nvim_buf_get_lines(observed.bufnr, 0, -1, false)
+				observed.cursor = vim.api.nvim_win_get_cursor(0)
+				observed.view = vim.fn.winsaveview()
+				observed.config = vim.api.nvim_win_get_config(0)
+				observed.modifiable = vim.bo[observed.bufnr].modifiable
+				observed.pending = submitted == nil
+				vim.api.nvim_input("\r")
+			end, 30)
+		end, 30)
+		local ok, err = pcall(require("opencode.ui.float").create_input_popup, {
+			title = " Connect OpenRouter ", password = true, on_submit = function(value) submitted = value end,
+		})
+		getreg:revert()
+		assert.is_true(ok, tostring(err))
+		assert.equals("prefix-" .. key, submitted)
+		assert.equals("  " .. submitted:sub(-55) .. " ", observed.layout[4])
+		assert.is_truthy(observed.layout[2]:find("Connect OpenRouter", 1, true))
+		assert.equals("  enter submit", observed.layout[6])
+		assert.same({ 4, 57 }, observed.cursor)
+		assert.equals(0, observed.view.leftcol)
+		assert.equals("editor", observed.config.relative)
+		assert.equals(math.floor((vim.o.lines - vim.o.cmdheight) / 4), observed.config.row)
+		assert.is_false(observed.modifiable)
+		assert.is_true(observed.pending)
+		assert.is_false(vim.api.nvim_buf_is_valid(observed.bufnr))
+		assert.equals(original_paste, vim.paste)
+		assert.equals(original_win, vim.api.nvim_get_current_win())
+	end)
+
+	it("shows typed and pasted credentials like TUI and deletes the buffer on close", function()
+		local float = require("opencode.ui.float")
+		local observed, submitted = {}, nil
+		local original_paste = vim.paste
+		vim.defer_fn(function()
+			observed.bufnr = vim.api.nvim_get_current_buf()
+			observed.relative = vim.api.nvim_win_get_config(0).relative
+			observed.width = vim.api.nvim_win_get_width(0)
+			observed.height = vim.api.nvim_win_get_height(0)
+			observed.winhighlight = vim.wo.winhighlight
+			observed.layout = vim.api.nvim_buf_get_lines(observed.bufnr, 0, -1, false)
+			observed.initial = observed.layout[4]
+			vim.api.nvim_input(">secrex\bt")
+			vim.defer_fn(function()
+				observed.mask = vim.api.nvim_buf_get_lines(observed.bufnr, 3, 4, false)[1]
+				vim.api.nvim_input("\r")
+			end, 30)
+		end, 30)
+		float.create_input_popup({ title = " Connect OpenRouter ", prompt = "API key", password = true,
+			on_submit = function(value)
+				submitted = value
+				observed.closed_on_submit = not vim.api.nvim_buf_is_valid(observed.bufnr)
+			end })
+		assert.not_equals("", observed.relative)
+		assert.equals(60, observed.width)
+		assert.equals(7, observed.height)
+		assert.is_truthy(observed.winhighlight:find("Normal:NormalFloat", 1, true))
+		assert.is_truthy(observed.layout[2]:find("Connect OpenRouter", 1, true))
+		assert.is_truthy(observed.layout[2]:find("esc", 1, true))
+		assert.equals("  enter submit", observed.layout[6])
+		assert.equals("  API key ", observed.initial)
+		assert.equals("  >secret ", observed.mask)
+		assert.equals(">secret", submitted)
+		assert.is_true(observed.closed_on_submit)
+		assert.equals(original_paste, vim.paste)
+		assert.equals(original_win, vim.api.nvim_get_current_win())
+
+		local cancelled
+		vim.defer_fn(function()
+			observed.bufnr = vim.api.nvim_get_current_buf()
+			vim.api.nvim_paste("pasted-key\nignored", false, -1)
+			observed.pasted_mask = vim.api.nvim_buf_get_lines(observed.bufnr, 3, 4, false)[1]
+			vim.api.nvim_input("\27")
+		end, 30)
+		float.create_input_popup({ password = true,
+			on_submit = function() submitted = "unexpected" end,
+			on_cancel = function() cancelled = true end })
+		assert.equals("  pasted-key ", observed.pasted_mask)
+		assert.is_true(cancelled)
+		assert.equals(">secret", submitted)
+		assert.is_false(vim.api.nvim_buf_is_valid(observed.bufnr))
+		assert.equals(original_paste, vim.paste)
+
+		cancelled = nil
+		vim.defer_fn(function() vim.api.nvim_set_current_win(original_win) end, 30)
+		float.create_input_popup({ password = true, on_cancel = function() cancelled = true end })
+		assert.is_true(cancelled)
+		assert.equals(original_paste, vim.paste)
 	end)
 end)

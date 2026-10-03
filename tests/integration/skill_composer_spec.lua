@@ -328,6 +328,26 @@ describe("skill selection in the input composer", function()
 		assert.same(other_parts(), history.get_pending_parts())
 	end)
 
+	for _, invalidation in ipairs({ "connection", "session", "draft" }) do
+		for _, phase in ipairs({ "selection", "scheduled addition" }) do
+			it("drops selected skills after " .. invalidation .. " cancellation before " .. phase, function()
+				history.set_pending("Original draft", other_parts())
+				commands["action.skills"].run()
+				local selected = { picker.items[1] }
+				if phase == "scheduled addition" then picker.on_select(selected) end
+				if invalidation == "connection" then pending.invalidate()
+				elseif invalidation == "session" then pending.clear_session("composer-test")
+				else input.set_pending_draft("New draft", other_parts()) end
+				if phase == "selection" then picker.on_select(selected) end
+				vim.wait(30, function() return false end, 5)
+				assert.is_false(input.is_visible())
+				assert.equals(invalidation == "draft" and "New draft" or "Original draft", history.get_pending())
+				assert.same(other_parts(), history.get_pending_parts())
+				assert.equals(0, #sent)
+			end)
+		end
+	end
+
 	it("does not run a scheduled skills slash command in a session selected after submit", function()
 		history.set_pending("/skills", other_parts())
 		chat.focus_input()
@@ -424,8 +444,10 @@ describe("skill selection in the input composer", function()
 		submit()
 		assert.equals(0, #sent)
 		assert.is_true(input.is_visible())
-		assert.equals(draft, input.get_pending_text())
+		assert.equals("", input.get_pending_text())
+		assert.equals(draft, history.get_pending("composer-test"))
 		app.set_session("composer-test", "Composer")
+		assert.equals(draft, input.get_pending_text())
 		submit()
 		assert.equals(1, #sent)
 		assert.equals(draft, sent[1].body.text)

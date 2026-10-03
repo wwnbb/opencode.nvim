@@ -6,10 +6,7 @@ local commands = {}
 local next_serial = 0
 
 local function as_context(context, id)
-	local result = {}
-	for key, value in pairs(context or {}) do
-		result[key] = value
-	end
+	local result = vim.tbl_extend("force", {}, context or {})
 	result.run = function()
 		return M.run(id, result)
 	end
@@ -30,10 +27,7 @@ function M.register(spec)
 	end
 
 	-- Keep optional command metadata for both UI surfaces and future adapters.
-	local record = {}
-	for key, value in pairs(spec) do
-		record[key] = value
-	end
+	local record = vim.tbl_extend("force", {}, spec)
 	if spec.slash then
 		record.slash = {
 			name = spec.slash.name,

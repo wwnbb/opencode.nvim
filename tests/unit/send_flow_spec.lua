@@ -15,7 +15,7 @@ describe("opencode v2 send flow", function()
 			payload = { text = call.body.text }, delivery = call.body.delivery, time = { created = 20 } })
 	end
 	before_each(function()
-		state.reset(); sync.clear_all(); pending.clear_all(); history.clear_pending()
+		state.reset(); sync.clear_all(); pending.clear_all(); history.clear()
 		state.set_config({ session = { default_agent = "build" } })
 		sync.handle_providers({ { id = "p", models = { ["catalog-id"] = { variants = { fast = {} } } } } })
 		sync.handle_agents({ { id = "build", name = "Builder" } })
@@ -30,6 +30,11 @@ describe("opencode v2 send flow", function()
 			return { agent = opts.agent or "build", model = opts.model or model(), variant = opts.variant }
 		end, pending_input = selectors.pending_input }
 		package.loaded["opencode.client"] = {
+			commit_revert = function(sid, cb)
+				calls[#calls + 1] = { method = "commit", sid = sid,
+					pending = pending.list(sid), messages = sync.get_messages(sid) }
+				callbacks.commit = cb
+			end,
 			set_input_delivery = function(sid, id, delivery, cb)
 				calls[#calls + 1] = { method = "delivery", sid = sid, id = id, delivery = delivery }; callbacks.delivery = cb
 			end,
@@ -60,7 +65,7 @@ describe("opencode v2 send flow", function()
 	after_each(function()
 		vim.schedule, vim.notify = old_schedule, old_notify
 		for _, name in ipairs(names) do package.loaded[name] = saved[name] end
-		pending.clear_all(); sync.clear_all(); state.reset(); history.clear_pending()
+		pending.clear_all(); sync.clear_all(); state.reset(); history.clear()
 	end)
 
 	it("serializes agent -> model -> prompt and never marks admission idle", function()
@@ -89,7 +94,7 @@ describe("opencode v2 send flow", function()
 			callbacks.get(nil, { id = "ses_a", agent = "build", model = model() })
 			local payload = calls[2].body
 			assert.equals("queue", payload.delivery)
-			assert.equals("Sending…", selectors.prompt_status("ses_a", payload.id))
+			assert.equals("Sending · queue", selectors.prompt_status("ses_a", payload.id))
 			accepted()
 			assert.equals("queued", pending.get("ses_a", payload.id).status)
 			assert.equals("Queued", selectors.prompt_status("ses_a", payload.id))
@@ -116,6 +121,16 @@ describe("opencode v2 send flow", function()
 		assert.equals("busy", state.get_session_status("ses_a").type)
 	end)
 
+	it("sends an explicitly steered prompt with steer delivery", function()
+		state.set_session_status("ses_a", { type = "busy" })
+		assert.is_true(send.send("Between agent steps", { delivery = "steer" }))
+		callbacks.get(nil, { id = "ses_a", agent = "build", model = model() })
+		assert.equals("steer", calls[2].body.delivery)
+		assert.equals("Sending · steer", selectors.prompt_status("ses_a", calls[2].body.id))
+		accepted()
+		assert.equals("accepted", pending.get("ses_a", calls[2].body.id).status)
+	end)
+
 	it("promotes the existing inbox item without resending or changing its attachments", function()
 		send.send("стой", { parts = { { type = "file", url = "file:///tmp/context" } } })
 		callbacks.get(nil, { id = "ses_a", agent = "build", model = model() }); accepted()
@@ -131,6 +146,60 @@ describe("opencode v2 send flow", function()
 		assert.equals(1, #sync.get_messages("ses_a"))
 		assert.equals(0, #sync.get_messages("ses_b"))
 		assert.equals(3, #calls)
+	end)
+
+	it("changes an accepted inbox item back to queue and allows steering it again", function()
+		send.send("Switch delivery", { parts = { { type = "file", url = "file:///tmp/context" } }, delivery = "steer" })
+		callbacks.get(nil, { id = "ses_a", agent = "build", model = model() }); accepted()
+		local id = calls[2].body.id
+		assert.equals("accepted", pending.get("ses_a", id).status)
+		assert.is_true(send.queue_input("ses_a", id))
+		assert.same({ method = "delivery", sid = "ses_a", id = id, delivery = "queue" }, calls[3])
+		assert.equals("Steering pending", selectors.prompt_status("ses_a", id))
+		callbacks.delivery({ status = 409, message = "Unavailable" })
+		assert.equals("accepted", pending.get("ses_a", id).status)
+		assert.is_true(send.queue_input("ses_a", id))
+		callbacks.delivery(nil)
+		assert.equals("queued", pending.get("ses_a", id).status)
+		assert.equals("queue", pending.get("ses_a", id).inbox.delivery)
+		assert.equals("Queued", selectors.prompt_status("ses_a", id))
+		assert.is_true(send.steer_input("ses_a", id))
+		callbacks.delivery(nil)
+		assert.equals("accepted", pending.get("ses_a", id).status)
+		assert.equals("steer", pending.get("ses_a", id).inbox.delivery)
+		assert.equals("file:///tmp/context", sync.get_parts(id)[2].url)
+		assert.equals(1, #sync.get_messages("ses_a"))
+		assert.equals(5, #calls)
+	end)
+
+	it("does not undo a newer queue change when the earlier steer PATCH completes late", function()
+		local bus = require("opencode.events.bus")
+		local handler = require("opencode.events.handlers.v2")
+		bus.clear(); handler.clear(); handler.setup(bus)
+		local ok, err = pcall(function()
+			assert.is_true(send.send("Race", {}))
+			callbacks.get(nil, { id = "ses_a", agent = "build", model = model() }); accepted()
+			local id = calls[2].body.id
+			assert.is_true(send.steer_input("ses_a", id))
+			local old_steer_callback = callbacks.delivery
+			bus.emit("v2_event", { id = "evt_steer", created = 21, type = "session.inbox.delivery.changed",
+				data = { sessionID = "ses_a", inboxID = id, delivery = "steer" } })
+			assert.equals("accepted", pending.get("ses_a", id).status)
+			assert.is_true(send.queue_input("ses_a", id))
+			local queue_callback = callbacks.delivery
+			assert.is_not.equals(old_steer_callback, queue_callback)
+			bus.emit("v2_event", { id = "evt_queue", created = 22, type = "session.inbox.delivery.changed",
+				data = { sessionID = "ses_a", inboxID = id, delivery = "queue" } })
+			queue_callback(nil)
+			assert.equals("queued", pending.get("ses_a", id).status)
+			old_steer_callback(nil)
+			assert.equals("queue", pending.get("ses_a", id).inbox.delivery)
+			assert.equals("queued", pending.get("ses_a", id).status)
+			assert.equals("Queued", selectors.prompt_status("ses_a", id))
+			assert.equals(4, #calls)
+		end)
+		bus.clear(); handler.clear()
+		assert.is_true(ok, err)
 	end)
 
 	it("keeps queue state when a steering request fails", function()
@@ -169,6 +238,18 @@ describe("opencode v2 send flow", function()
 		callbacks.delivery(nil)
 		assert.is_nil(pending.get("ses_a", id))
 		assert.is_false(called)
+	end)
+
+	it("can retry a delivery change after a connection invalidates its callback", function()
+		send.send("Queued", {})
+		callbacks.get(nil, { id = "ses_a", agent = "build", model = model() }); accepted()
+		local id = calls[2].body.id
+		assert.is_true(send.steer_input("ses_a", id))
+		pending.invalidate()
+		assert.is_true(send.steer_input("ses_a", id))
+		assert.equals(2, #vim.tbl_filter(function(call) return call.method == "delivery" end, calls))
+		callbacks.delivery(nil)
+		assert.equals("accepted", pending.get("ses_a", id).status)
 	end)
 
 	it("keeps a confirmed steering change when the original admission arrives late", function()
@@ -303,6 +384,242 @@ describe("opencode v2 send flow", function()
 		assert.equals(1, #sync.get_messages("ses_a"))
 	end)
 
+	it("commits a staged undo before seeding a new prompt and preserves later inbox evidence", function()
+		local bus = require("opencode.events.bus")
+		local handler = require("opencode.events.handlers.v2")
+		local projection = require("opencode.protocol.v2.messages")
+		local old_id = "msg_00000000000000000000"
+		sync.handle_session_messages("ses_a", projection.page("ses_a", {
+			{ id = old_id, type = "user", text = "Undone", time = { created = 1 } },
+		}))
+		state.upsert_session({ id = "ses_a", revert = { messageID = old_id } })
+		bus.clear(); handler.clear(); handler.setup(bus)
+		local function answer_get()
+			if callbacks.get then
+				local cb = callbacks.get; callbacks.get = nil
+				cb(nil, { id = "ses_a", agent = "build", model = model(),
+					revert = (state.get_session_record("ses_a") or {}).revert })
+			end
+		end
+		local ok, err = pcall(function()
+			assert.is_true(send.send("Replacement", {}))
+			answer_get()
+			assert.is_function(callbacks.commit)
+			local commit = vim.tbl_filter(function(call) return call.method == "commit" end, calls)[1]
+			assert.same({}, commit.pending)
+			assert.equals(1, #commit.messages)
+			callbacks.commit(nil)
+			answer_get()
+			local prompt = vim.tbl_filter(function(call) return call.method == "prompt" end, calls)[1]
+			assert.is_not_nil(prompt)
+			assert.equals("Replacement", prompt.body.text)
+			local id = prompt.body.id
+			assert.is_not.equals(old_id, id)
+			assert.equals("submitting", pending.get("ses_a", id).status)
+			local first_callback = callbacks.prompt
+			assert.is_true(send.send("Another replacement", {}))
+			local second_id
+			for candidate, record in pairs(pending.list("ses_a")) do
+				if candidate ~= id and record.status == "submitting" then second_id = candidate end
+			end
+			assert.is_not_nil(second_id)
+			assert.equals("submitting", pending.get("ses_a", second_id).status)
+			assert.is_not_nil(sync.get_message("ses_a", second_id))
+			assert.equals(1, #vim.tbl_filter(function(call) return call.method == "prompt" end, calls))
+
+			-- The SSE commit may reach Neovim after HTTP commit and two fresh seeds.
+			bus.emit("v2_event", { id = "evt_commit", created = 10, type = "session.revert.committed",
+				data = { sessionID = "ses_a", to = old_id } })
+			assert.equals("submitting", pending.get("ses_a", id).status)
+			assert.equals("submitting", pending.get("ses_a", second_id).status)
+			assert.is_not_nil(sync.get_message("ses_a", id))
+			assert.is_not_nil(sync.get_message("ses_a", second_id))
+			local item = { sessionID = "ses_a", id = id, type = "user", delivery = "queue",
+				payload = { text = "Replacement" }, time = { created = 20 } }
+			bus.emit("v2_event", { id = "evt_queue", created = 20, type = "session.inbox.enqueued",
+				data = { sessionID = "ses_a", inboxID = id, item = item } })
+			assert.equals("queued", pending.get("ses_a", id).status)
+			first_callback(nil, item)
+			assert.equals("queued", pending.get("ses_a", id).status)
+			answer_get()
+			local prompts = vim.tbl_filter(function(call) return call.method == "prompt" end, calls)
+			assert.equals(2, #prompts)
+			assert.equals(second_id, prompts[2].body.id)
+			callbacks.prompt(nil, { sessionID = "ses_a", id = second_id, type = "user",
+				delivery = "queue", payload = { text = "Another replacement" }, time = { created = 21 } })
+			assert.equals("queued", pending.get("ses_a", second_id).status)
+			bus.emit("v2_event", { id = "evt_delivery", created = 30, type = "session.inbox.delivered",
+				data = { sessionID = "ses_a", inboxID = id } })
+			bus.emit("v2_event", { id = "evt_delivery_second", created = 31, type = "session.inbox.delivered",
+				data = { sessionID = "ses_a", inboxID = second_id } })
+			assert.equals("delivered", pending.get("ses_a", id).status)
+			assert.equals("delivered", pending.get("ses_a", second_id).status)
+		end)
+		bus.clear(); handler.clear()
+		assert.is_true(ok, err)
+	end)
+
+	it("accepts a new prompt when the committed SSE arrives before the HTTP commit response", function()
+		local bus = require("opencode.events.bus")
+		local handler = require("opencode.events.handlers.v2")
+		local projection = require("opencode.protocol.v2.messages")
+		local old_id = "msg_00000000000000000000"
+		sync.handle_session_messages("ses_a", projection.page("ses_a", {
+			{ id = old_id, type = "user", text = "Undone", time = { created = 1 } },
+		}))
+		state.upsert_session({ id = "ses_a", revert = { messageID = old_id } })
+		bus.clear(); handler.clear(); handler.setup(bus)
+		local ok, err = pcall(function()
+			assert.is_true(send.send("After early SSE", {}))
+			if callbacks.get then
+				local cb = callbacks.get; callbacks.get = nil
+				cb(nil, { id = "ses_a", agent = "build", model = model(), revert = { messageID = old_id } })
+			end
+			assert.is_function(callbacks.commit)
+			assert.same({}, pending.list("ses_a"))
+			bus.emit("v2_event", { id = "evt_commit_early", created = 10, type = "session.revert.committed",
+				data = { sessionID = "ses_a", to = old_id } })
+			assert.is_nil(sync.get_message("ses_a", old_id))
+			for _, record in pairs(pending.list("ses_a")) do
+				assert.is_not.equals("submitting", record.status)
+			end
+			callbacks.commit(nil)
+			if callbacks.get then
+				local cb = callbacks.get; callbacks.get = nil
+				cb(nil, { id = "ses_a", agent = "build", model = model() })
+			end
+			local prompt = vim.tbl_filter(function(call) return call.method == "prompt" end, calls)[1]
+			assert.is_not_nil(prompt)
+			assert.equals("After early SSE", prompt.body.text)
+			assert.equals("submitting", pending.get("ses_a", prompt.body.id).status)
+			assert.is_not_nil(sync.get_message("ses_a", prompt.body.id))
+			accepted()
+			assert.equals("queued", pending.get("ses_a", prompt.body.id).status)
+		end)
+		bus.clear(); handler.clear()
+		assert.is_true(ok, err)
+	end)
+
+	it("commits a newer staged undo before seeding a prompt", function()
+		local projection = require("opencode.protocol.v2.messages")
+		local first_id, second_id = "msg_00000000000000000001", "msg_00000000000000000002"
+		sync.handle_session_messages("ses_a", projection.page("ses_a", {
+			{ id = first_id, type = "user", text = "First", time = { created = 1 } },
+			{ id = second_id, type = "user", text = "Second", time = { created = 2 } },
+		}))
+		state.upsert_session({ id = "ses_a", revert = { messageID = second_id } })
+		assert.is_true(send.send("Replacement", {}))
+		callbacks.get(nil, { id = "ses_a", agent = "build", model = model(),
+			revert = { messageID = second_id } })
+		local first_commit = callbacks.commit
+		assert.is_function(first_commit)
+		state.upsert_session({ id = "ses_a", revert = { messageID = first_id } })
+		first_commit(nil)
+		assert.equals(first_id, state.get_session_record("ses_a").revert.messageID)
+		assert.equals(2, #vim.tbl_filter(function(call) return call.method == "commit" end, calls))
+		assert.is_nil(vim.tbl_filter(function(call) return call.method == "prompt" end, calls)[1])
+		assert.same({}, pending.list("ses_a"))
+		callbacks.commit(nil)
+		assert.is_nil(state.get_session_record("ses_a").revert)
+		assert.is_nil(sync.get_message("ses_a", first_id))
+		local prompt = vim.tbl_filter(function(call) return call.method == "prompt" end, calls)[1]
+		assert.is_not_nil(prompt)
+		assert.equals("Replacement", prompt.body.text)
+		assert.equals("submitting", pending.get("ses_a", prompt.body.id).status)
+	end)
+
+	it("preserves prompts seeded before a concurrent undo is staged", function()
+		local projection = require("opencode.protocol.v2.messages")
+		local old_id = "msg_00000000000000000000"
+		sync.handle_session_messages("ses_a", projection.page("ses_a", {
+			{ id = old_id, type = "user", text = "Earlier turn", time = { created = 1 } },
+		}))
+		assert.is_true(send.send("First pending", {}))
+		assert.is_true(send.send("Second pending", {}))
+		local second_id
+		for id, record in pairs(pending.list("ses_a")) do
+			if record.text == "Second pending" then second_id = id end
+		end
+		assert.is_not_nil(second_id)
+		callbacks.get(nil, { id = "ses_a", agent = "build", model = model() })
+		local first_prompt = vim.tbl_filter(function(call) return call.method == "prompt" end, calls)[1]
+		assert.is_not_nil(first_prompt)
+		state.upsert_session({ id = "ses_a", revert = { messageID = old_id } })
+		callbacks.prompt(nil, { id = first_prompt.body.id, sessionID = "ses_a", type = "user",
+			payload = { text = "First pending" }, delivery = "queue", time = { created = 2 } })
+		callbacks.get(nil, { id = "ses_a", agent = "build", model = model(), revert = { messageID = old_id } })
+		assert.is_function(callbacks.commit)
+		callbacks.commit(nil)
+		assert.is_nil(sync.get_message("ses_a", old_id))
+		assert.is_not_nil(sync.get_message("ses_a", first_prompt.body.id))
+		assert.is_not_nil(sync.get_message("ses_a", second_id))
+		assert.equals("queued", pending.get("ses_a", first_prompt.body.id).status)
+		assert.equals("submitting", pending.get("ses_a", second_id).status)
+		local prompts = vim.tbl_filter(function(call) return call.method == "prompt" end, calls)
+		assert.equals(2, #prompts)
+		assert.equals(second_id, prompts[2].body.id)
+	end)
+
+	it("keeps a newer staged boundary when an older committed SSE arrives late", function()
+		local bus = require("opencode.events.bus")
+		local handler = require("opencode.events.handlers.v2")
+		local projection = require("opencode.protocol.v2.messages")
+		local old_id = "msg_00000000000000000000"
+		sync.handle_session_messages("ses_a", projection.page("ses_a", {
+			{ id = old_id, type = "user", text = "Undone", time = { created = 1 } },
+		}))
+		state.upsert_session({ id = "ses_a", revert = { messageID = old_id } })
+		bus.clear(); handler.clear(); handler.setup(bus)
+		local ok, err = pcall(function()
+			assert.is_true(send.send("Replacement turn", {}))
+			if callbacks.get then
+				local cb = callbacks.get; callbacks.get = nil
+				cb(nil, { id = "ses_a", agent = "build", model = model(), revert = { messageID = old_id } })
+			end
+			assert.is_function(callbacks.commit)
+			callbacks.commit(nil)
+			if callbacks.get then
+				local cb = callbacks.get; callbacks.get = nil
+				cb(nil, { id = "ses_a", agent = "build", model = model() })
+			end
+			local prompt = vim.tbl_filter(function(call) return call.method == "prompt" end, calls)[1]
+			assert.is_not_nil(prompt)
+			local id = prompt.body.id
+			callbacks.prompt(nil, { sessionID = "ses_a", id = id, type = "user", delivery = "queue",
+				payload = { text = "Replacement turn" }, time = { created = 20 } })
+			bus.emit("v2_event", { id = "evt_delivery_new", created = 21, type = "session.inbox.delivered",
+				data = { sessionID = "ses_a", inboxID = id } })
+			bus.emit("v2_event", { id = "evt_stage_new", created = 22, type = "session.revert.staged",
+				data = { sessionID = "ses_a", revert = { messageID = id } } })
+			assert.equals(id, state.get_session_record("ses_a").revert.messageID)
+			bus.emit("v2_event", { id = "evt_commit_old", created = 10, type = "session.revert.committed",
+				data = { sessionID = "ses_a", to = old_id } })
+			assert.equals(id, state.get_session_record("ses_a").revert.messageID)
+			assert.is_not_nil(sync.get_message("ses_a", id))
+			assert.equals("delivered", pending.get("ses_a", id).status)
+		end)
+		bus.clear(); handler.clear()
+		assert.is_true(ok, err)
+	end)
+
+	it("keeps the draft and avoids optimistic state when committing a staged undo fails", function()
+		state.upsert_session({ id = "ses_a", revert = { messageID = "msg_old" } })
+		local file = { type = "file", url = "file:///tmp/retry.txt", filename = "retry.txt" }
+		assert.is_true(send.send("Retry with file", { parts = { file } }))
+		if callbacks.get then
+			local cb = callbacks.get; callbacks.get = nil
+			cb(nil, { id = "ses_a", agent = "build", model = model(), revert = { messageID = "msg_old" } })
+		end
+		assert.is_function(callbacks.commit)
+		callbacks.commit({ status = 500, message = "Commit unavailable" })
+		assert.equals("Retry with file", history.get_pending())
+		assert.same({ file }, history.get_pending_parts())
+		assert.same({}, pending.list("ses_a"))
+		assert.same({}, sync.get_messages("ses_a"))
+		assert.is_nil(vim.tbl_filter(function(call) return call.method == "prompt" end, calls)[1])
+		assert.is_not_nil(state.get_session_record("ses_a").revert)
+	end)
+
 	it("keeps an operation in its original session across a tab change", function()
 		send.send("A", {})
 		state.set_session("ses_b", "B")
@@ -311,6 +628,19 @@ describe("opencode v2 send flow", function()
 		accepted()
 		assert.equals("idle", state.get_session_status("ses_b").type)
 		assert.equals(0, #sync.get_messages("ses_b"))
+	end)
+
+	it("restores a failed prompt only in its original session after a tab change", function()
+		local file = { type = "file", url = "file:///tmp/original.png", filename = "original.png" }
+		assert.is_true(send.send("Retry A", { parts = { file } }))
+		state.set_session("ses_b", "B")
+		history.set_pending("Draft B", nil, "ses_b")
+		callbacks.get(nil, { id = "ses_a", agent = "build", model = model() })
+		callbacks.prompt({ status = 400, message = "Rejected" })
+		assert.equals("Retry A", history.get_pending("ses_a"))
+		assert.same({ file }, history.get_pending_parts("ses_a"))
+		assert.equals("Draft B", history.get_pending("ses_b"))
+		assert.same({}, history.get_pending_parts("ses_b"))
 	end)
 
 	it("waits for a new location's initially empty catalogs without changing the send target", function()

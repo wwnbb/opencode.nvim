@@ -75,21 +75,9 @@ local function info_parts()
 	local model_name = model and model.name or ""
 	local provider_name = model and model.provider or ""
 	local variant = lc.variant.current()
-	local agent_hl = lc.agent.color(agent_name)
+	local agent_hl = lc.agent.color(agent and (agent.id or agent.name) or agent_name)
 
 	return agent_name, model_name, provider_name, variant, agent_hl
-end
-
-local function update_border_color(agent_name)
-	local lc = local_state()
-	if not lc then
-		return
-	end
-
-	vim.api.nvim_set_hl(0, "OpenCodeInputBorderAgent", {
-		link = lc.agent.color(agent_name),
-		default = false,
-	})
 end
 
 local function mark(bufnr, col, text, hl_group)
@@ -105,15 +93,7 @@ local function mark(bufnr, col, text, hl_group)
 end
 
 local function clip(text, width)
-	if width <= 0 then return "" end
-	text = text:gsub("[%c]", " ")
-	if vim.fn.strdisplaywidth(text) <= width then return text end
-	local low, high = 0, vim.fn.strchars(text)
-	while low < high do
-		local middle = math.ceil((low + high) / 2)
-		if vim.fn.strdisplaywidth(vim.fn.strcharpart(text, 0, middle)) <= width - 1 then low = middle else high = middle - 1 end
-	end
-	return vim.fn.strcharpart(text, 0, low) .. "…"
+	return require("opencode.util.text").truncate(text:gsub("[%c]", " "), width, "…")
 end
 
 local function skill_names(state)
@@ -157,7 +137,7 @@ function M.update(state)
 	end
 
 	local agent, model, provider, variant, agent_hl = info_parts()
-	update_border_color(agent)
+	vim.api.nvim_set_hl(0, "OpenCodeInputBorderAgent", { link = agent_hl, default = false })
 
 	local agent_part = titlecase(agent) .. " "
 	local model_part = model ~= "" and model or ""

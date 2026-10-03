@@ -28,11 +28,14 @@ local state = {
 	close_on_send = true,
 	allow_chat_commands = false,
 	persist_pending = true,
+	session_bound = false,
 	add_history = true,
 	config = nil,
 	layout = nil,
 	parts = {},
 	session_id = nil,
+	mode = "normal",
+	send_options = nil,
 	autocomplete = nil,
 	mentions = nil,
 	slash_commands = nil,
@@ -83,7 +86,7 @@ local function skill_session_error(parts, session_id)
 	end
 end
 
-local function marker_range(text, marker)
+local function marker_range(text, marker, source)
 	if type(marker) ~= "string" or marker == "" then return nil end
 	local function boundary(index, direction)
 		local char = text:sub(index, index)
@@ -91,6 +94,11 @@ local function marker_range(text, marker)
 		while char == "." do index = index + direction; char = text:sub(index, index) end
 		return index < 1 or index > #text or char:match("[%s,;:!?%(%){%}%[%]<>\"']") ~= nil
 	end
+	local first = type(source) == "table" and source.start
+	local last = type(source) == "table" and source["end"]
+	if type(first) == "number" and type(last) == "number" and first >= 0 and last <= #text
+		and first % 1 == 0 and last - first == #marker and text:sub(first + 1, last) == marker
+		and boundary(first, -1) and boundary(last + 1, 1) then return first + 1, last end
 	local from = 1
 	while true do
 		local first, last = text:find(marker, from, true)
@@ -108,12 +116,14 @@ local function remember_cursor(text)
 	local offset = cursor[2]
 	for _, line in ipairs(lines) do offset = offset + #line + 1 end
 	pending_cursor = { text = text, session_id = state.session_id, offset = math.min(offset, #text) }
+	history.set_pending_cursor(pending_cursor.offset, state.session_id)
 end
 
 local function saved_cursor(text, session_id)
 	if pending_cursor and pending_cursor.text == text and pending_cursor.session_id == session_id then
 		return pending_cursor.offset
 	end
+	if history.get_pending(session_id) == text then return history.get_pending_cursor(session_id) end
 end
 
 local function restore_cursor(text)
@@ -220,7 +230,11 @@ local function select_typed_command()
 	return ok
 end
 
-local function send_message()
+local function send_message(delivery)
+	if state.session_id ~= current_session_id() then
+		vim.notify("The active session changed; reopen this draft in its session", vim.log.levels.WARN)
+		return
+	end
 	local text = get_input_text()
 	if attachments.has_image_file_hint(text) then
 		attachments.normalize_pasted_image_paths(state, resize_input)
@@ -253,23 +267,28 @@ local function send_message()
 		local marker = part.type == "skill" and skill_id(part) and ("@" .. skill_id(part))
 			or part.type == "agent" and type(source) == "table" and source.value
 		if type(marker) == "string" then
-			local first, last = marker_range(text, marker)
+			local first, last = marker_range(text, marker, source)
 			part.source = first and { text = { start = first - 1, ["end"] = last, value = marker } } or nil
 		end
 	end
 	draft_epoch, pending_cursor = draft_epoch + 1, nil
 
 	if state.add_history then
-		history.add(text, parts)
+		history.add(text, parts, state.mode)
+	end
+	local send_options = state.send_options and vim.deepcopy(state.send_options) or nil
+	if delivery then
+		send_options = send_options or {}
+		send_options.delivery = delivery
 	end
 	if state.persist_pending then
-		history.clear_pending()
+		history.clear_pending(state.session_id)
 	end
 
 	clear_input()
 
 	if state.on_send then
-		state.on_send(text, parts)
+		state.on_send(text, parts, send_options)
 	end
 	if state.close_on_send then
 		M.close(false)
@@ -284,10 +303,11 @@ local function cancel_input()
 	M.close()
 end
 
-local function recall_history(text, parts)
+local function recall_history(text, parts, mode)
 	if text == nil then return end
 	draft_epoch, pending_cursor = draft_epoch + 1, nil
 	state.parts = copy_parts(parts)
+	state.mode = mode == "shell" and "shell" or "normal"
 	for _, part in ipairs(state.parts) do
 		if part.type == "skill" then part._session_id = current_session_id() end
 	end
@@ -299,11 +319,11 @@ local function recall_history(text, parts)
 end
 
 local function history_prev()
-	recall_history(history.previous())
+	recall_history(history.previous(get_input_text(), draft_parts(), state.mode))
 end
 
 local function history_next()
-	recall_history(history.next())
+	recall_history(history.next(get_input_text(), draft_parts(), state.mode))
 end
 
 local function insert_text_at_cursor(text)
@@ -328,6 +348,34 @@ local function mount_input(chat_winid, float_dims, cfg)
 	syntax.attach(state.bufnr)
 end
 
+local function session_changed(session_id)
+	if not state.visible or state.session_id == session_id then return end
+	if not state.persist_pending or state.session_bound then M.close(state.persist_pending); return end
+	local previous_id = state.session_id
+	local text = get_input_text()
+	history.set_pending(text, draft_parts(), previous_id)
+	history.set_pending_mode(state.mode, previous_id)
+	history.set_pending_options(state.send_options, previous_id)
+	local offset = saved_cursor(text, previous_id)
+	if vim.api.nvim_get_current_win() == state.winid or offset == nil then
+		remember_cursor(text)
+	else
+		history.set_pending_cursor(offset, previous_id)
+	end
+	pending_cursor = nil
+	state.session_id = session_id
+	state.parts = history.get_pending_parts(session_id)
+	state.mode = history.get_pending_mode(session_id)
+	state.send_options = history.get_pending_options(session_id)
+	autocomplete.reset(state)
+	slash_commands.reset(state)
+	mentions.reset(state)
+	local next_text = history.get_pending(session_id)
+	set_input_text(next_text)
+	info_bar.update(state)
+	restore_cursor(next_text)
+end
+
 function M.show(opts)
 	opts = opts or {}
 
@@ -343,9 +391,12 @@ function M.show(opts)
 	state.close_on_send = opts.close_on_send ~= false
 	state.allow_chat_commands = opts.allow_chat_commands == true or opts.allow_skill_picker == true
 	state.persist_pending = opts.persist_pending ~= false
+	state.session_bound = opts.session_bound == true
 	state.add_history = opts.add_history ~= false
-	state.parts = opts.text ~= nil and copy_parts(opts.parts) or history.get_pending_parts()
 	state.session_id = current_session_id()
+	state.parts = opts.text ~= nil and copy_parts(opts.parts) or history.get_pending_parts(state.session_id)
+	state.mode = opts.mode or (opts.text ~= nil and "normal" or history.get_pending_mode(state.session_id))
+	state.send_options = opts.send_options or (opts.text == nil and history.get_pending_options(state.session_id))
 
 	history.configure(cfg)
 	history.load()
@@ -360,6 +411,7 @@ function M.show(opts)
 	state.parent_winid = chat_winid
 
 	mount_input(chat_winid, opts.float_dims, cfg)
+	require("opencode.state").on("session.id", session_changed)
 
 	autocmds.setup(state, {
 		schedule_resize = schedule_resize_input,
@@ -396,6 +448,8 @@ function M.show(opts)
 
 	keymaps.setup(state.bufnr, cfg, {
 		send = send_message,
+		send_queue = function() send_message("queue") end,
+		send_steer = function() send_message("steer") end,
 		cancel = cancel_input,
 		history_prev = history_prev,
 		history_next = history_next,
@@ -437,15 +491,15 @@ function M.show(opts)
 
 	local text = opts.text
 	if text == nil then
-		text = history.get_pending()
+		text = history.get_pending(state.session_id)
 	end
 	if text and text ~= "" then
 		set_input_text(text)
 	end
 	info_bar.update(state)
 
-	local restored = restore_cursor(text or "")
-	if restored then pending_cursor.locked = nil end
+	local restored = opts.text == nil and restore_cursor(text or "")
+	if restored and pending_cursor then pending_cursor.locked = nil end
 	vim.cmd(restored and "startinsert" or "startinsert!")
 end
 
@@ -456,11 +510,17 @@ function M.close(save_draft)
 
 	if save_draft ~= false and state.persist_pending then
 		local text = get_input_text()
-		history.set_pending(text, draft_parts())
-		if vim.api.nvim_get_current_win() == state.winid or saved_cursor(text, state.session_id) == nil then
+		history.set_pending(text, draft_parts(), state.session_id)
+		history.set_pending_mode(state.mode, state.session_id)
+		history.set_pending_options(state.send_options, state.session_id)
+		local offset = saved_cursor(text, state.session_id)
+		if vim.api.nvim_get_current_win() == state.winid or offset == nil then
 			remember_cursor(text)
+		else
+			history.set_pending_cursor(offset, state.session_id)
 		end
 	end
+	require("opencode.state").off("session.id", session_changed)
 
 	autocomplete.clear(state)
 	slash_commands.clear(state)
@@ -478,6 +538,8 @@ function M.close(save_draft)
 	state.layout = nil
 	state.parts = {}
 	state.session_id = nil
+	state.mode = "normal"
+	state.send_options = nil
 	state.autocomplete = nil
 	state.mentions = nil
 	state.slash_commands = nil
@@ -486,6 +548,7 @@ function M.close(save_draft)
 	state.close_on_send = true
 	state.allow_chat_commands = false
 	state.persist_pending = true
+	state.session_bound = false
 	state.add_history = true
 	state.normalizing_paste = false
 	state.resize_scheduled = false
@@ -526,8 +589,8 @@ function M.stage_skills(parts, session_id)
 		return false, "The open draft belongs to another session; return to it before selecting skills"
 	end
 	if type(parts) ~= "table" then return false, "Skill selections must be a list of catalog references" end
-	local text = state.visible and get_input_text() or history.get_pending()
-	local existing = state.visible and copy_parts(state.parts) or history.get_pending_parts()
+	local text = state.visible and get_input_text() or history.get_pending(session_id)
+	local existing = state.visible and copy_parts(state.parts) or history.get_pending_parts(session_id)
 	local merged, seen = {}, {}
 	for _, part in ipairs(existing) do
 		if part.type ~= "skill" then
@@ -570,12 +633,12 @@ function M.stage_skills(parts, session_id)
 			local padding = cursor[2] > 0 and not before:match("%s") and " " or ""
 			insert_text_at_cursor(padding .. table.concat(markers, " ") .. " ")
 		end
-		history.set_pending(get_input_text(), draft_parts())
+		history.set_pending(get_input_text(), draft_parts(), session_id)
 		remember_cursor(get_input_text())
 		info_bar.update(state)
 		M.focus()
 	else
-		text = history.get_pending()
+		text = history.get_pending(session_id)
 		if #markers > 0 then
 			local offset = saved_cursor(text, session_id) or #text
 			local before = text:sub(1, offset)
@@ -584,7 +647,10 @@ function M.stage_skills(parts, session_id)
 			text = before .. inserted .. text:sub(offset + 1)
 			pending_cursor = { text = text, session_id = session_id, offset = offset + #inserted }
 		end
-		history.set_pending(text, merged)
+		history.set_pending(text, merged, session_id)
+		if pending_cursor and pending_cursor.session_id == session_id and pending_cursor.text == text then
+			history.set_pending_cursor(pending_cursor.offset, session_id)
+		end
 	end
 	return true
 end
@@ -622,10 +688,33 @@ end
 
 ---@return string
 function M.get_pending_text()
-	if state.visible then
+	if state.visible and state.session_id == current_session_id() then
 		return get_input_text()
 	end
 	return history.get_pending()
+end
+
+function M.get_pending_parts()
+	return state.visible and state.session_id == current_session_id() and draft_parts() or history.get_pending_parts()
+end
+
+---@param text string
+---@param parts table[]|nil
+function M.set_pending_draft(text, parts)
+	local content = text or ""
+	local copied = copy_parts(parts)
+	draft_epoch, pending_cursor = draft_epoch + 1, nil
+	history.set_pending(content, copied, current_session_id())
+	history.set_pending_options(nil, current_session_id())
+	if state.visible and state.session_id == current_session_id() then
+		state.parts = copied
+		state.send_options = nil
+		autocomplete.reset(state)
+		slash_commands.reset(state)
+		mentions.reset(state)
+		set_input_text(content)
+		info_bar.update(state)
+	end
 end
 
 ---@param text string
@@ -633,12 +722,12 @@ function M.set_pending_text(text, opts)
 	local content = text or ""
 	if not (opts or {}).preserve_token then draft_epoch = draft_epoch + 1 end
 	pending_cursor = nil
-	history.set_pending(content, content == "" and {} or nil)
-	if content == "" then
+	history.set_pending(content, content == "" and {} or nil, current_session_id())
+	if content == "" and (not state.visible or state.session_id == current_session_id()) then
 		state.parts = {}
 	end
 
-	if state.visible then
+	if state.visible and state.session_id == current_session_id() then
 		autocomplete.reset(state)
 		slash_commands.reset(state)
 		mentions.reset(state)

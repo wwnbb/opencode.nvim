@@ -32,16 +32,18 @@ function M.normalize_target(opts)
 		return nil, nil, M.make_error("Host is required")
 	end
 
+	host = host:match("^%[([^%]]*:[^%]]*)%]$") or host
+
 	local port = tonumber(opts and opts.port)
 	if not port then
 		return nil, nil, M.make_error("Port is required")
 	end
 
-	if port < 1 or port > 65535 then
+	if port < 1 or port > 65535 or port % 1 ~= 0 then
 		return nil, nil, M.make_error("Invalid port: " .. tostring(opts and opts.port))
 	end
 
-	return host, math.floor(port), nil
+	return host, port, nil
 end
 
 ---@param handle uv.uv_handle_t|nil
@@ -206,9 +208,11 @@ function M.open(opts)
 
 	local timeout = tonumber(opts.timeout) or 0
 	if timeout > 0 then
-		connection._timer = uv.new_timer()
-		if connection._timer then
-			connection._timer:start(timeout, 0, vim.schedule_wrap(function()
+		local timer = uv.new_timer()
+		connection._timer = timer
+		if timer then
+			timer:start(timeout, 0, vim.schedule_wrap(function()
+				if connection._timer ~= timer then return end
 				local message = opts.timeout_message or ("Connection timed out after " .. timeout .. "ms")
 				fail("timeout", M.make_error(message, { timeout = true }))
 			end))

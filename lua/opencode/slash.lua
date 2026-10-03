@@ -206,9 +206,18 @@ function M.register_defaults()
 				return
 			end
 			
-			-- Find last user message to revert from
+			local record = state.get_session_record(session_id)
+			local boundary = type(record and record.revert) == "table" and record.revert.messageID or nil
+			-- A staged revert leaves its tail in the sync store for /redo. Only
+			-- turns before that boundary are eligible for another /undo.
+			local last_index = #messages
+			if boundary then
+				for i, message in ipairs(messages) do
+					if message.id == boundary then last_index = i - 1; break end
+				end
+			end
 			local last_user_msg = nil
-			for i = #messages, 1, -1 do
+			for i = last_index, 1, -1 do
 				if messages[i].role == "user" then
 					last_user_msg = messages[i]
 					break
@@ -220,21 +229,53 @@ function M.register_defaults()
 				return
 			end
 			
-			actions.revert_message(session_id, last_user_msg.id, {}, function(err)
+			local draft = require("opencode.protocol.v2.messages").draft(last_user_msg)
+			local function finished(err, staged)
 				vim.schedule(function()
 					if err then
 						vim.notify("Failed to undo: " .. tostring(err.message or err), vim.log.levels.ERROR)
 						return
 					end
-					vim.notify("Undo staged. Use /redo to restore the turn.", vim.log.levels.INFO)
+					if state.get_session().id == session_id then
+						require("opencode.ui.input").set_pending_draft(draft.text, draft.parts)
+					end
+					vim.notify(staged and "Undo staged. Use /redo to restore the turn."
+						or "Pending input cancelled and restored to the composer.", vim.log.levels.INFO)
 				end)
-			end)
+			end
+			local pending_record = require("opencode.session.pending").get(session_id, last_user_msg.id)
+			if pending_record and pending_record.status == "submitting" then
+				actions.cancel_submitting_input(session_id, last_user_msg.id, function(err)
+					if type(err) == "table" and err.code == "already_delivered" then
+						actions.undo_message(session_id, last_user_msg.id, function(stage_err) finished(stage_err, true) end)
+					else finished(err, false) end
+				end)
+			elseif require("opencode.selectors").pending_input(session_id, last_user_msg.id) then
+				actions.cancel_pending_input(session_id, last_user_msg.id, function(err) finished(err, false) end)
+			elseif last_user_msg.provisional and pending_record then
+				actions.cancel_submitting_input(session_id, last_user_msg.id, function(err) finished(err, false) end)
+			else
+				actions.undo_message(session_id, last_user_msg.id, function(err) finished(err, true) end)
+			end
 		end,
 		enabled = function()
 			local sync = require("opencode.sync")
 			local session_id = state.get_session().id
 			if not session_id then return false end
-			return #sync.get_messages(session_id) > 0
+			local record = state.get_session_record(session_id)
+			local boundary = type(record and record.revert) == "table" and record.revert.messageID or nil
+			local messages = sync.get_messages(session_id)
+			local last_index = #messages
+			if boundary then
+				for i, message in ipairs(messages) do
+					if message.id == boundary then last_index = i - 1; break end
+				end
+			end
+			for i = 1, last_index do
+				local message = messages[i]
+				if message.role == "user" then return true end
+			end
+			return false
 		end,
 	})
 	
@@ -246,43 +287,12 @@ function M.register_defaults()
 			actions.clear_revert(sid, function(err)
 				vim.notify(err and ("Could not restore turn: " .. err.message) or "Staged undo cleared", err and vim.log.levels.ERROR or vim.log.levels.INFO)
 			end)
-		end })
-
-	-- /share - Share current session
-	registry.register({
-		id = "session.share",
-		title = "Share Session",
-		description = "Share current session",
-		category = "session",
-		palette = false,
-		slash = { name = "share" },
-		run = function(_context)
-			local session_id = state.get_session().id
-			if not session_id then
-				vim.notify("No active session to share", vim.log.levels.WARN)
-				return
-			end
-			
-			actions.execute_command(session_id, "share", {}, {}, function(err, result)
-				vim.schedule(function()
-					if err then
-						vim.notify("Failed to share: " .. tostring(err.message or err), vim.log.levels.ERROR)
-						return
-					end
-					
-					if result and result.url then
-						vim.fn.setreg("+", result.url)
-						vim.notify("Share URL copied to clipboard: " .. result.url, vim.log.levels.INFO)
-					else
-						vim.notify("Session shared", vim.log.levels.INFO)
-					end
-				end)
-			end)
 		end,
 		enabled = function()
-			return state.get_session().id ~= nil
-		end,
-	})
+			local sid = state.get_session().id
+			local record = sid and state.get_session_record(sid)
+			return type(record and record.revert) == "table" and type(record.revert.messageID) == "string"
+		end })
 end
 
 return M

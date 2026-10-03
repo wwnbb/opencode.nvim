@@ -21,7 +21,7 @@ local icons = {
 
 local OPTION_LABELS = {
 	"Allow once",
-	"Allow always",
+	"Always allow",
 	"Reject",
 }
 local MAX_PERMISSION_COMMAND_HEAD_LINES = 8
@@ -690,11 +690,10 @@ function M.get_lines_for_permission(permission_id, perm_state)
 	end
 	local first_option_line = #result.lines
 	local selected = perm_state.selected_option or 1
+	local save = perm_state.always or {}
+	local options = #save > 0 and OPTION_LABELS or { OPTION_LABELS[1], OPTION_LABELS[3] }
 
-	for i, label in ipairs(OPTION_LABELS) do
-		if i == 2 and #(perm_state.always or {}) == 0 then
-			label = "Allow (no rule to save)"
-		end
+	for i, label in ipairs(options) do
 		local is_selected = i == selected
 		local indicator = is_selected and icons.selected or icons.unselected
 		local option_text = string.format("%s %d. %s", indicator, i, label)
@@ -709,14 +708,29 @@ function M.get_lines_for_permission(permission_id, perm_state)
 	end
 
 	add_panel_blank(result)
-	append_hint(result, #OPTION_LABELS)
+	if #save > 0 and selected == 2 then
+		if #save == 1 and save[1] == "*" then
+			add_panel_line(
+				result,
+				"This will always allow " .. perm_state.permission_type .. " for this project.",
+				"OpenCodePermissionMuted"
+			)
+		else
+			add_panel_line(result, "This will always allow the following patterns for this project.", "OpenCodePermissionMuted")
+			for _, pattern in ipairs(save) do
+				add_panel_line(result, "- " .. pattern, "OpenCodePermissionOutput")
+			end
+		end
+		add_panel_blank(result)
+	end
+	append_hint(result, #options)
 	add_panel_blank(result)
 	add_trailing_separator(result)
 
 	return result.lines,
 		result.highlights,
 		widget_base.make_meta({
-			interactive_count = #OPTION_LABELS,
+			interactive_count = #options,
 			first_interactive_line = first_option_line,
 		})
 end

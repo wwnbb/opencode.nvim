@@ -7,12 +7,18 @@ local schedule_callback = require("opencode.util.schedule").schedule_callback
 local tcp_connection = require("opencode.client.tcp_connection")
 
 local make_error = tcp_connection.make_error
+local HTTP_TOKEN = "^[!#$%%&'*+.^_`|~%w-]+$"
 
 ---@param opts table
----@return string
+---@return string|nil
+---@return string|nil error
 local function build_request(opts)
-	local method = (opts.method or "GET"):upper()
+	local method = opts.method or "GET"
+	if type(method) ~= "string" or not method:match(HTTP_TOKEN) then return nil, "Invalid HTTP method" end
+	method = method:upper()
 	local path = opts.path or "/"
+	if type(path) ~= "string" or path:find("[%s%z]") then return nil, "Invalid HTTP request path" end
+	if opts.body ~= nil and type(opts.body) ~= "string" then return nil, "HTTP body must be a string" end
 	if path == "" then
 		path = "/"
 	end
@@ -20,24 +26,21 @@ local function build_request(opts)
 		path = "/" .. path
 	end
 
-	local headers = vim.tbl_extend("force", {}, opts.headers or {})
-	if not headers.Host and not headers.host then
-		local host_value = tostring(opts.host)
-		if host_value:find(":", 1, true) and not host_value:match("^%[.+%]$") then
-			host_value = "[" .. host_value .. "]"
-		end
-		headers.Host = string.format("%s:%d", host_value, opts.port)
+	local host_value = tostring(opts.host)
+	if host_value:find(":", 1, true) and not host_value:match("^%[.+%]$") then
+		host_value = "[" .. host_value .. "]"
 	end
-	if not headers.Connection and not headers.connection then
-		headers.Connection = opts.connection or "close"
-	end
-	if opts.body ~= nil and not headers["Content-Length"] and not headers["content-length"] then
-		headers["Content-Length"] = tostring(#opts.body)
-	end
+	local defaults = { Host = string.format("%s:%d", host_value, opts.port), Connection = opts.connection or "close" }
+	if opts.body ~= nil then defaults["Content-Length"] = tostring(#opts.body) end
+	local headers, headers_err = require("opencode.client.headers").merge(defaults, opts.headers)
+	if not headers then return nil, headers_err end
 
 	local lines = { string.format("%s %s HTTP/1.1", method, path) }
 	for key, value in pairs(headers) do
-		table.insert(lines, string.format("%s: %s", key, tostring(value)))
+		if type(key) ~= "string" or not key:match(HTTP_TOKEN) then return nil, "Invalid HTTP header name" end
+		local text = tostring(value)
+		if text:find("[\r\n%z]") then return nil, "Invalid HTTP header value: " .. key end
+		table.insert(lines, string.format("%s: %s", key, text))
 	end
 	table.insert(lines, "")
 	table.insert(lines, opts.body or "")
@@ -53,6 +56,11 @@ function M.request(opts, callback)
 	local host, port, target_err = tcp_connection.normalize_target(opts)
 	if target_err then
 		schedule_callback(callback, target_err, nil)
+		return
+	end
+	local request_data, request_err = build_request(vim.tbl_extend("force", {}, opts, { host = host, port = port }))
+	if not request_data then
+		schedule_callback(callback, make_error(request_err), nil)
 		return
 	end
 
@@ -105,11 +113,6 @@ function M.request(opts, callback)
 			finish(err, nil)
 		end,
 	})
-
-	local request_data = build_request(vim.tbl_extend("force", {}, opts, {
-		host = host,
-		port = port,
-	}))
 
 	local open_err = nil
 	connection, open_err = tcp_connection.open({
@@ -171,6 +174,10 @@ function M.open_stream(opts)
 	if target_err then
 		return nil, target_err
 	end
+	local request_data, request_err = build_request(vim.tbl_extend("force", {}, opts, {
+		host = host, port = port, connection = opts.connection or "keep-alive",
+	}))
+	if not request_data then return nil, make_error(request_err) end
 
 	local active = true
 	local connection = nil
@@ -210,12 +217,6 @@ function M.open_stream(opts)
 			close_stream("decode_error", err)
 		end,
 	})
-
-	local request_data = build_request(vim.tbl_extend("force", {}, opts, {
-		host = host,
-		port = port,
-		connection = opts.connection or "keep-alive",
-	}))
 
 	local open_err = nil
 	connection, open_err = tcp_connection.open({

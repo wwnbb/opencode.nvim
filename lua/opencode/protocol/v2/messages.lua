@@ -1,5 +1,6 @@
 -- Pure native-message -> chat projection. Native DTOs remain available on info.
 local M = {}
+local cells = require("opencode.util.text").display_cells
 
 function M.error_text(err)
 	if type(err) == "string" then return err end
@@ -107,6 +108,60 @@ function M.page(session_id, messages)
 	local result = {}
 	for _, message in ipairs(messages) do result[#result + 1] = M.project(session_id, message) end
 	return result
+end
+
+-- Convert a native user message back to the editor's attachment shape. Native
+-- mention offsets are display cells; the editor needs byte offsets, so locate
+-- the occurrence at those cells instead of copying the offsets as bytes.
+function M.draft(message)
+	local native = message._v2 or message
+	local text = native.text or ""
+	local parts = {}
+	local function source(mention)
+		local value = type(mention) == "table" and mention.text
+		if type(value) ~= "string" or value == "" then return nil end
+		local unique, count, match = nil, 0, nil
+		local from = 1
+		while true do
+			local first, last = text:find(value, from, true)
+			if not first then break end
+			count = count + 1
+			if count == 1 then unique = { first = first, last = last } end
+			if type(mention.start) == "number" and type(mention["end"]) == "number"
+				and cells(text:sub(1, first - 1)) == mention.start and cells(text:sub(1, last)) == mention["end"] then
+				match = { first = first, last = last }
+				break
+			end
+			from = last + 1
+		end
+		match = match or (count == 1 and unique or nil)
+		if type(match) ~= "table" then return nil end
+		return { text = { start = match.first - 1, ["end"] = match.last, value = value } }
+	end
+	local function marker(mention)
+		local value = type(mention) == "table" and mention.text
+		return type(value) == "string" and value ~= "" and value or nil
+	end
+	for _, file in ipairs(native.files or {}) do
+		local uri = (type(file.source) == "table" and file.source.type == "uri" and file.source.uri)
+			or file.uri or file.url
+		if not uri and type(file.data) == "string" and type(file.mime) == "string" then
+			uri = "data:" .. file.mime .. ";base64," .. file.data
+		end
+		if uri then
+			parts[#parts + 1] = { type = "file", url = uri, filename = file.name,
+				description = file.description, mime = file.mime, source = source(file.mention), _marker = marker(file.mention) }
+		end
+	end
+	for _, agent in ipairs(native.agents or {}) do
+		parts[#parts + 1] = { type = "agent", name = agent.name,
+			source = source(agent.mention), _marker = marker(agent.mention) }
+	end
+	for _, skill in ipairs(native.skills or {}) do
+		parts[#parts + 1] = { type = "skill", id = skill.id, name = skill.name,
+			source = source(skill.mention), _marker = marker(skill.mention) }
+	end
+	return { text = text, parts = parts }
 end
 
 return M

@@ -178,7 +178,7 @@ describe("opencode permission recovery", function()
 		chat_permissions.rerender_permission("permission_purity")
 		local rejected_text = table.concat(vim.api.nvim_buf_get_lines(bufnr, 0, -1, false), "\n")
 		assert_true(rejected_text:find("Permission rejected", 1, true) ~= nil, "rejected rerender should use rejected builder")
-		assert_true(rejected_text:find("Allow always", 1, true) == nil, "rejected rerender should not show pending options")
+		assert_true(rejected_text:find("Always allow", 1, true) == nil, "rejected rerender should not show pending options")
 		assert_eq(chat_state.permissions.permission_purity.status, "rejected", "rejected rerender should update position status")
 
 		vim.api.nvim_buf_delete(bufnr, { force = true })
@@ -186,6 +186,46 @@ describe("opencode permission recovery", function()
 		chat_state.permissions = old_permissions
 		permission_state.clear_all()
 		sync.clear_all()
+	end)
+
+	it("previews saved permission rules and omits Always when none can be saved", function()
+		local owner = require("opencode.permission.state")
+		local widget = require("opencode.ui.permission_widget")
+		local chat = require("opencode.ui.chat.permissions")
+		local actions = require("opencode.actions")
+		owner.clear_all()
+
+		local wildcard = owner.add_permission("perm_wildcard", "session", "shell", { always = { "*" } })
+		assert_true(owner.select_option("perm_wildcard", 2), "Always should be selectable with a saved rule")
+		local lines = widget.get_lines_for_permission("perm_wildcard", wildcard)
+		assert_true(table.concat(lines, "\n"):find("always allow shell for this project", 1, true) ~= nil,
+			"wildcard preview should explain action and project scope")
+
+		local patterns = owner.add_permission("perm_patterns", "session", "shell", { always = { "git *", "npm *" } })
+		owner.select_option("perm_patterns", 2)
+		lines = widget.get_lines_for_permission("perm_patterns", patterns)
+		local preview = table.concat(lines, "\n")
+		assert_true(preview:find("following patterns for this project", 1, true) ~= nil, "preview should name project scope")
+		assert_true(preview:find("- git *", 1, true) ~= nil, "preview should show first saved pattern")
+		assert_true(preview:find("- npm *", 1, true) ~= nil, "preview should show second saved pattern")
+
+		local empty = owner.add_permission("perm_empty", "session", "shell", { always = {} })
+		local empty_lines, _, meta = widget.get_lines_for_permission("perm_empty", empty)
+		local text = table.concat(empty_lines, "\n")
+		assert_eq(meta.interactive_count, 2, "empty save should have two options")
+		assert_true(text:find("2. Reject", 1, true) ~= nil, "Reject should become the second option")
+		assert_true(text:find("Always allow", 1, true) == nil, "Always should be hidden without saved rules")
+		assert_true(not owner.select_option("perm_empty", 3), "hidden third option should not be selectable")
+		owner.move_selection("perm_empty", "up")
+		assert_eq(empty.selected_option, 2, "navigation should wrap across visible options")
+
+		local respond = actions.respond_permission
+		local reply
+		actions.respond_permission = function(_, decision) reply = decision end
+		chat.handle_permission_confirm("perm_empty", empty)
+		actions.respond_permission = respond
+		assert_eq(reply, "reject", "second option without saved rules must reject")
+		owner.clear_all()
 	end)
 
 	it("scopes permission lists and replies to the immutable session ID", function()

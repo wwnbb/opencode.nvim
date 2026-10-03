@@ -88,6 +88,22 @@ Select `/status` from completion with Enter, Tab, or the send key, or submit
 input with the remaining draft and attachments when that chat is still active.
 Use `/stats` for session usage statistics.
 
+# Timeline and export
+
+Use `/timeline` or press `T` in the chat to search every historical user turn.
+Moving through the list previews each turn in chat. Choose a turn to jump to it,
+copy its prompt, fork before it, or stage a revert.
+Press `ga` on a visible user message to open the same actions directly. A fork
+keeps the original session and places the selected prompt, including file,
+agent, and skill attachments, in the new session's input. Revert restores that
+prompt in the current input; `/redo` clears a staged revert.
+Use `/fork` to choose between a full-session fork and a fork before a turn.
+
+`/copy` copies the complete server transcript. `/export` offers Markdown or JSON,
+thinking and tool output for Markdown, server-side sanitization for JSON, and a
+choice of copying or opening an editable buffer. Use `:write <path>` in that
+buffer to save the export.
+
 # Side questions
 
 Type `/btw <question>` in the input and press Enter to ask using the current
@@ -230,11 +246,13 @@ require("opencode").setup({
 
 Select code in Visual mode and press `K` (`<S-k>`). A scrollable popup opens
 immediately with a spinner, then shows the finished answer. The default
-prompt asks for concise Markdown explanations of consecutive logical blocks
-with exact source ranges, such as `L24–27 — …`, covering every nonempty part
-of the selection without repeating the code. It asks the model to wrap the
-final answer in `<answer>` markers. When those markers are present, the popup
-shows only the final answer; otherwise it shows the response as received.
+prompt asks the model to quote each logical block of the selection verbatim
+in a fenced code block followed by a short explanation, with dash bullets
+quoting individual lines where it clarifies the block. It covers every
+nonempty part of the selection without line numbers. It asks the model to
+wrap the final answer in `<answer>` markers. When those markers are present,
+the popup shows only the final answer; otherwise it shows the response as
+received.
 Press `c` to copy the answer; `q` or `Esc` closes the popup and cancels a pending
 request. Normal-mode `K` remains available for LSP hover. Call
 `require("opencode").explain_selection()` from your own Visual mapping if needed.
@@ -448,14 +466,21 @@ UI, or manually convert its model IDs and add `"version": 2`. Unavailable
 favorites in a version 2 file are retained. Existing sessions keep their own
 model, agent and variant until you explicitly change them.
 
-Prompts sent while a response is running are queued by default. Pending inputs
-stay at the bottom of the chat, below the current response and its status footer,
-until delivery is confirmed. They then move into the conversation history.
-Press `S` on a queued message to steer the active agent with that same input.
-Its label changes to **Steering pending** after the server confirms the change;
-it is applied between agent steps, without aborting a running tool.
+Use `<C-g>` in the input to queue a message, or `<C-x><C-s>` to steer the
+active agent. These keys choose delivery for that send, including when resending
+an edited draft. The chat shows `Sending · queue` or `Sending · steer` until the
+server confirms admission. There is no delivery-mode toggle in the input.
+Queued prompts wait for the current response to finish. Steered prompts are
+applied between agent steps without aborting a running tool. Pending inputs
+stay at the bottom of the chat, below the current response and its status
+footer, until delivery is confirmed. They then move into the conversation
+history.
+
+Press `S` on a queued message to steer it, or `Q` on a steering message to move
+it back into the queue. Both actions change the existing inbox item without
+resending its text or attachments. The label changes after server confirmation.
 On a pending message, press `C` to cancel it or `E` to remove it from the inbox
-and edit its text and attachments in the input. Send the edited draft with `<C-g>`.
+and edit its text and attachments in the input.
 These keys act on the pending widget under the cursor (including its status line);
 outside it they keep their normal Neovim behavior.
 The pending label disappears once delivery is confirmed. **Cancel Pending Input**
@@ -463,9 +488,14 @@ is also available in the palette. Configure or disable these chat keys with:
 
 ```lua
 require("opencode").setup({
-  chat = { keymaps = { cancel_pending = "C", edit_pending = "E", steer_pending = "S" } }, -- false or "" disables a key
+  chat = { keymaps = { cancel_pending = "C", edit_pending = "E", steer_pending = "S", queue_pending = "Q" } }, -- false or "" disables a key
+  input = { keymaps = { send = "<C-g>", send_steer = "<C-x><C-s>" } },
 })
 ```
+
+An explicitly configured `input.keymaps.send_alt` remains an additional queue
+binding. If it uses the same key as `send_steer`, the legacy queue binding wins;
+choose a different `send_steer` key to keep both actions.
 
 Chat `<C-c>` interrupts the current execution and leaves inbox inputs pending.
 Scripts can explicitly request steering with `send(text, { delivery = "steer" })`.
@@ -498,7 +528,7 @@ Follow these steps:
    - `popup.border` (`none`, `single`, `double`, `rounded`, `solid`, or a Nui border character table)
    - `chat.session_tabs.enabled`, `chat.session_tabs.auto_fit`, `chat.session_tabs.max_tabs`, `chat.session_tabs.separator`, `chat.session_tabs.icons`, `chat.session_tabs.colors`
    - top-level `keymaps.toggle`, `keymaps.command_palette`, `keymaps.toggle_logs`, `keymaps.close_session`, `keymaps.abort`, `keymaps.active_sessions`
-   - `input.keymaps.send`, `input.keymaps.cancel`, `input.keymaps.variant_cycle`, `input.keymaps.agent_cycle`, `input.keymaps.model_cycle`
+   - `input.keymaps.send`, `input.keymaps.send_steer`, `input.keymaps.cancel`, `input.keymaps.variant_cycle`, `input.keymaps.agent_cycle`, `input.keymaps.model_cycle`
    - `lualine.enabled`, `notifications.enabled`
    - Keep `danger_mode = false`; do not enable it unless I explicitly request the security tradeoff.
 6. Configure colors/highlights to match the existing colorscheme. Session tabs inherit Neovim's `TabLine`, `TabLineSel`, and `TabLineFill` groups by default; use `chat.session_tabs.colors` only when custom tab colors are needed, and `vim.api.nvim_set_hl` for existing `OpenCode*` highlight groups when needed.
@@ -599,6 +629,7 @@ require("opencode").setup({
   input = {
     keymaps = {
       send = "<C-g>",
+      send_steer = "<C-x><C-s>",
       cancel = "<Esc>",
       variant_cycle = "<C-t>",
       agent_cycle = "<C-a>",

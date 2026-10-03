@@ -15,6 +15,7 @@ local function key(name)
 	assert(type(map.callback) == "function", "Missing mapping " .. name); map.callback()
 end
 local function current_text() return table.concat(vim.api.nvim_buf_get_lines(0, 0, -1, false), "\n") end
+local function secret_text() return vim.api.nvim_buf_get_lines(0, 3, 4, false)[1] end
 local function screen_text()
 	local lines = {}
 	for _, win in ipairs(vim.api.nvim_list_wins()) do
@@ -46,10 +47,25 @@ local function notified(pattern, since)
 	for i = since or 1, #notifications do if notifications[i]:find(pattern, 1, true) then return true end end
 	return false
 end
-local function secret(value, trigger)
-	-- Inputsecret is exercised directly. This fixture never sees a personal key.
-	vim.defer_fn(function() vim.api.nvim_input(value .. "\r") end, 100)
+local function secret(value, trigger, prompt, screenshot)
+	local observed = {}
+	vim.defer_fn(function()
+		observed.bufnr = vim.api.nvim_get_current_buf()
+		observed.relative = vim.api.nvim_win_get_config(0).relative
+		observed.initial = secret_text()
+		shot(screenshot)
+		vim.api.nvim_input(value)
+		vim.defer_fn(function()
+			observed.value = secret_text()
+			shot(screenshot .. "-filled")
+			vim.api.nvim_input("\r")
+		end, 50)
+	end, 50)
 	trigger()
+	assert(observed.relative and observed.relative ~= "", "Secret input popup missing")
+	assert(observed.initial == "  " .. prompt .. " ", "Secret input prompt missing")
+	assert(observed.value == "  " .. value .. " ", "Credential input differs from TUI")
+	assert(not vim.api.nvim_buf_is_valid(observed.bufnr), "Secret input did not close")
 	for _, buf in ipairs(vim.api.nvim_list_bufs()) do
 		if vim.api.nvim_buf_is_loaded(buf) then
 			assert(not table.concat(vim.api.nvim_buf_get_lines(buf, 0, -1, false), "\n"):find(value, 1, true), "Secret echoed into a buffer")
@@ -70,7 +86,7 @@ end
 connect("Test key")
 wait(function() return current_text():find("Region", 1, true) end, "Integration setup form missing")
 shot("auth-key-setup"); key("1")
-secret("public-key-ui-sentinel", function() key("<C-g>") end)
+secret("public-key-ui-sentinel", function() key("<C-g>") end, "API key", "auth-key-input")
 wait(function() return notified("Connected to Neovim disposable auth fixture") end, "Key connection not confirmed")
 assert(credential_count() == 1, "Key did not create one account")
 
@@ -82,7 +98,7 @@ vim.ui.open = function(url) opened = url end
 key("o"); vim.ui.open = old_open
 assert(opened == "https://example.invalid/authorize", "Wrong authorization URL")
 local count_before = #notifications
-secret("public-test-code", function() key("c") end)
+secret("public-test-code", function() key("c") end, "Authorization code:", "auth-code-input")
 wait(function() return notified("Connected to Neovim disposable auth fixture", count_before + 1) end, "OAuth code not completed")
 assert(credential_count() == 2)
 

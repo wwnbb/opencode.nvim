@@ -109,12 +109,14 @@ function M.setup(events)
 		for _, id in ipairs(data.session_ids or { data.session_id }) do
 			if id then
 				pending.clear_session(id); recovery[id] = nil
+				require("opencode.btw").clear_session(id)
 				if data.reason == "session_deleted" then deleted[id] = true end
 			end
 		end
 	end)
 	events.on("disconnected", function()
 		pending.invalidate()
+		require("opencode.btw").reset()
 		M.clear()
 	end)
 	events.on("connected", function()
@@ -154,20 +156,29 @@ function M.setup(events)
 			end
 			changed(sid, "session")
 		end
-		if kind:match("^session%.revert%.") then
+		if kind == "session.revert.committed" then
+			local current = (state.get_session_record(sid) or {}).revert
+			-- A newer stage can complete before this older committed echo arrives.
+			if type(current) ~= "table" or current.messageID == data.to then
+				sessions.remember({ id = sid, revert = vim.NIL }, { touch = false })
+			end
+		elseif kind:match("^session%.revert%.") then
 			sessions.remember({ id = sid, revert = data.revert or vim.NIL }, { touch = false })
-			changed(sid, "session")
 		end
+		if kind:match("^session%.revert%.") then changed(sid, "session") end
 		local effect = sync.handle_v2_event(event)
 		if effect.revert_to then
-			for id in pairs(pending.list(sid)) do
-				if id >= effect.revert_to then pending.update(sid, id, { status = "cancelled" }) end
+			for _, id in ipairs(effect.revert_removed or {}) do
+				if pending.get(sid, id) then pending.update(sid, id, { status = "cancelled" }) end
 			end
+			pending.note_revert_event(sid, effect.revert_to)
 		end
 		if effect.inbox then pending.admit(effect.inbox) end
 		if kind == "session.inbox.delivery.changed" then
 			local item = pending.get(sid, data.inboxID)
 			if item and item.inbox then
+				pending.update(sid, data.inboxID, { delivery_event_revision = (item.delivery_event_revision or 0) + 1,
+					delivery_request_pending = false })
 				item.inbox.delivery = data.delivery; pending.admit(item.inbox)
 			else reconcile(sid) end
 			changed(sid, "inbox")

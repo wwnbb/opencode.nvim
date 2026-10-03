@@ -204,27 +204,7 @@ local function item_label_width(items)
 	return width + LABEL_GAP
 end
 
-local function truncate_display(text, width)
-	if width <= 0 then
-		return ""
-	end
-	if vim.fn.strdisplaywidth(text) <= width then
-		return text
-	end
-
-	local result = {}
-	local used = 0
-	for idx = 0, vim.fn.strchars(text) - 1 do
-		local char = vim.fn.strcharpart(text, idx, 1)
-		local char_width = vim.fn.strdisplaywidth(char)
-		if used + char_width > width then
-			break
-		end
-		table.insert(result, char)
-		used = used + char_width
-	end
-	return table.concat(result)
-end
+local truncate_display = require("opencode.util.text").truncate
 
 local function pad_display(text, width)
 	local padding = math.max(0, width - vim.fn.strdisplaywidth(text))
@@ -444,13 +424,22 @@ function M.confirm(state)
 		return false
 	end
 
+	if not state.visible or not valid_buf(state.bufnr) or not valid_win(state.winid)
+		or vim.api.nvim_win_get_buf(state.winid) ~= state.bufnr then
+		M.close(state)
+		return false
+	end
+	local source = item.kind == "slash" and slash_commands or item.kind == "mention" and mentions
+	local current = source and source.detect_trigger(state)
+	local offered = ac.trigger
+	if not current or not offered or current.query ~= offered.query or current.row ~= (offered.row or 0)
+		or current.start_col ~= offered.start_col or current.end_col ~= offered.end_col then
+		M.close(state)
+		return false
+	end
+
 	local ok, selection = false, nil
 	if item.kind == "slash" then
-		local current = slash_commands.detect_trigger(state)
-		if not current or current.query ~= ac.trigger.query or current.end_col ~= ac.trigger.end_col then
-			M.close(state)
-			return false
-		end
 		local name = slash_commands.command_name(item.command)
 		local id = type(item.command) == "table" and item.command.id or nil
 		local command = id and command_registry.get(id) or command_registry.get_slash(name)
@@ -478,7 +467,11 @@ function M.confirm(state)
 			ok = slash_commands.insert_command(state, current, item.command)
 		end
 	elseif item.kind == "mention" then
-		ok = mentions.insert_mention(state, ac.trigger, item.agent)
+		local name = mentions.agent_name(item.agent)
+		local agent = vim.iter(sync.get_mentionable_agents()):find(function(candidate)
+			return mentions.agent_name(candidate) == name
+		end)
+		if agent then ok = mentions.insert_mention(state, current, agent) end
 	end
 
 	M.close(state)

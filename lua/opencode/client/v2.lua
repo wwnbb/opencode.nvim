@@ -8,6 +8,7 @@ local operations = {
 	info = { "GET", "/api/info", "info" },
 	location_reload = { "POST", "/api/location/reload", "empty" },
 	session_fork = { "POST", "/api/session/{sessionID}/fork", "session" },
+	session_export = { "GET", "/api/experimental/session/{sessionID}/export", "transfer" },
 	session_diff = { "GET", "/api/session/{sessionID}/diff", "list" },
 	session_compact = { "POST", "/api/session/{sessionID}/compact", "inbox" },
 	revert_stage = { "POST", "/api/session/{sessionID}/revert/stage", "object" },
@@ -52,6 +53,7 @@ local operations = {
 	session_agent = { "POST", "/api/session/{sessionID}/agent", "empty" },
 	session_model = { "POST", "/api/session/{sessionID}/model", "empty" },
 	interrupt = { "POST", "/api/session/{sessionID}/interrupt", "interrupt" },
+	session_wait = { "POST", "/api/experimental/session/{sessionID}/wait", "empty" },
 	inbox_list = { "GET", "/api/session/{sessionID}/inbox", "list" },
 	inbox_update = { "PATCH", "/api/session/{sessionID}/inbox/{inboxID}", "empty" },
 	inbox_delete = { "DELETE", "/api/session/{sessionID}/inbox/{inboxID}", "empty" },
@@ -67,11 +69,7 @@ local operations = {
 	form_cancel = { "DELETE", "/api/session/{sessionID}/form/{formID}", "empty" },
 }
 
-function M.encode_segment(value)
-	return (tostring(value):gsub("[^A-Za-z0-9%-_.~]", function(c)
-		return string.format("%%%02X", c:byte())
-	end))
-end
+M.encode_segment = require("opencode.util.text").encode_uri_component
 
 local function object(value)
 	return type(value) == "table" and not vim.islist(value)
@@ -143,6 +141,17 @@ local function decode(shape, body, meta)
 			return nil, "Invalid v2 page response"
 		end
 		meta.cursor = body.cursor
+	elseif shape == "transfer" then
+		if not object(data) or not object(data.info) or type(data.info.id) ~= "string"
+			or not object(data.info.location) or type(data.info.location.directory) ~= "string"
+			or type(data.messages) ~= "table" or not vim.islist(data.messages) then
+			return nil, "Invalid v2 session export response"
+		end
+		for _, message in ipairs(data.messages) do
+			if not object(message) or type(message.id) ~= "string" or type(message.type) ~= "string" then
+				return nil, "Invalid v2 session export message"
+			end
+		end
 	elseif shape == "catalog" or shape == "nullable_catalog_object" or shape == "catalog_object"
 		or shape == "attempt" or shape == "command_attempt" or shape == "attempt_status" then
 		if not object(body.location) or type(body.location.directory) ~= "string" then

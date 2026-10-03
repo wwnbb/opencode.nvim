@@ -135,6 +135,23 @@ assert_label({
 
 	end)
 
+	it("keeps Unicode paths and descriptions intact when shortening labels", function()
+		local labels = require("opencode.ui.chat.tool_labels")
+		for _, tool in ipairs({ "read", "write", "edit" }) do
+			local label = labels.format_summary_item_label({
+				tool = tool,
+				state = { status = "completed", input = { path = string.rep("я", 41) } },
+			})
+			assert.equals(tool:gsub("^%l", string.upper) .. " ..." .. string.rep("я", 37), label)
+		end
+		assert.equals("Bash " .. string.rep("я", 37) .. "...", labels.format_summary_item_label({
+			tool = "bash", state = { input = { description = string.rep("я", 60) } },
+		}))
+		assert.equals("Grep " .. string.rep("я", 49) .. "...", labels.format_summary_item_label({
+			tool = "grep", state = { status = "completed", title = string.rep("я", 60) },
+		}))
+	end)
+
 	it("format_state_duration formats durations across units", function()
 vim.opt.runtimepath:append(vim.fn.getcwd())
 
@@ -143,11 +160,13 @@ local tool_labels = require("opencode.ui.chat.tool_labels")
 local cases = {
 	{ { start = 5, ["end"] = 5 }, nil, "end <= start yields nil" },
 	{ { start = 1000, ["end"] = 4500 }, "3.5s", "seconds with one decimal" },
-	{ { start = 0, ["end"] = 550 }, "9m10s", "sub-1000 raw delta stays in seconds" },
-	{ { start = 0, ["end"] = 0.5 }, "500ms", "fractional duration yields milliseconds" },
+	{ { start = 0, ["end"] = 550 }, "550ms", "sub-second timestamps remain milliseconds" },
+	{ { start = 0, ["end"] = 0.5 }, "1ms", "fractional milliseconds round to the nearest millisecond" },
 	{ { start = 0, ["end"] = 55000 }, "55s", "whole seconds" },
 	{ { start = 0, ["end"] = 62000 }, "1m02s", "minutes and seconds" },
 	{ { start = 0, ["end"] = 9500 }, "9.5s", "sub-ten seconds keeps decimal" },
+	{ { start = 0, ["end"] = 59999 }, "1m00s", "rounded seconds carry into minutes" },
+	{ { start = 0, ["end"] = 119999 }, "2m00s", "minute remainder does not become 60 seconds" },
 	{ nil, nil, "nil time yields nil" },
 }
 for _, case in ipairs(cases) do
@@ -156,5 +175,17 @@ for _, case in ipairs(cases) do
 		error(string.format("%s: expected %s, got %s", case[3], vim.inspect(case[2]), vim.inspect(actual)))
 	end
 end
+	end)
+
+	it("formats projected native task timestamps in milliseconds", function()
+		local projection = require("opencode.protocol.v2.messages")
+		local projected = projection.project("duration-session", {
+			id = "assistant", type = "assistant", content = { {
+				type = "tool", id = "call", name = "subagent",
+				time = { created = 1700000000000, ran = 1700000000100, completed = 1700000000650 },
+				state = { status = "completed", input = { agent = "explore" } },
+			} },
+		})
+		assert.equals("550ms", require("opencode.ui.chat.tool_labels").format_state_duration(projected.parts[1].state.time))
 	end)
 end)

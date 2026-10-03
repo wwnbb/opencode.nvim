@@ -54,7 +54,8 @@ local listeners = {}
 
 -- Emit state change event
 local function emit_change(key, old_val, new_val)
-	local cbs = listeners[key] or {}
+	local cbs = key ~= "*" and vim.list_slice(listeners[key] or {}) or {}
+	local wildcards = vim.list_slice(listeners["*"] or {})
 	for _, cb in ipairs(cbs) do
 		local ok, err = pcall(cb, new_val, old_val, key)
 		if not ok then
@@ -63,7 +64,6 @@ local function emit_change(key, old_val, new_val)
 	end
 
 	-- Also emit to wildcard listeners
-	local wildcards = listeners["*"] or {}
 	for _, cb in ipairs(wildcards) do
 		local ok, err = pcall(cb, key, new_val, old_val)
 		if not ok then
@@ -366,20 +366,10 @@ function M.get_session_record(session_id)
 	return record and vim.deepcopy(record) or nil
 end
 
--- Normalize a directory path for comparison/storage: resolve symlinks/dot
--- segments via vim.fs.normalize (when available) and strip trailing slashes.
+-- Normalize directory paths for comparison/storage while preserving roots.
 ---@param directory string|nil
 ---@return string|nil
-function M.normalize_directory(directory)
-	if not directory or directory == "" then
-		return nil
-	end
-	local normalized = directory
-	if vim.fs and vim.fs.normalize then
-		normalized = vim.fs.normalize(normalized)
-	end
-	return (normalized:gsub("/+$", ""))
-end
+M.normalize_directory = require("opencode.util.path").normalize
 
 -- Resolve the project directory for a session by looking up its record.
 -- Returns the normalized directory string or nil when the session is

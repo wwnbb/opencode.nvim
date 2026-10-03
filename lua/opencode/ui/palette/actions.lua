@@ -263,8 +263,8 @@ function M.register(palette)
 	})
 	palette.register({
 		id = "action.clear",
-		title = "Clear Chat",
-		description = "Clear the current chat without switching sessions",
+		title = "Clear and Start New Chat",
+		description = "Start a new session and close the current tab",
 		category = "actions",
 		keybind = "<leader>oc",
 		slash = { name = "clear" },

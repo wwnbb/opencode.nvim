@@ -8,6 +8,8 @@ function M.register(palette)
 		run = function()
 			local sid = state.get_session().id
 			if not sid then return end
+			local pending = require("opencode.session.pending")
+			local token = pending.token(sid)
 			actions.list_pending_inputs(sid, function(err, inputs)
 				if err then vim.notify("Could not load pending inputs: " .. tostring(err.message or err), vim.log.levels.ERROR); return end
 				local items = {}
@@ -18,6 +20,7 @@ function M.register(palette)
 				if #items == 0 then vim.notify("No pending inputs", vim.log.levels.INFO); return end
 				require("opencode.ui.menu").open({ title = " Cancel Pending Input ", items = items,
 					width = 60, searchable = true, on_select = function(item)
+						if not pending.is_current(token) then return end
 						actions.cancel_pending_input(sid, item.value, function(cancel_err)
 							if cancel_err then vim.notify("Could not cancel input: " .. tostring(cancel_err.message or cancel_err), vim.log.levels.ERROR) end
 						end)
@@ -34,8 +37,14 @@ function M.register(palette)
 			local input = require("opencode.ui.input")
 			input.capture_draft_cursor()
 			local draft_token = input.draft_token()
+			local pending = require("opencode.session.pending")
+			local token = pending.token(session.id)
+			local function current()
+				return pending.is_current(token) and state.get_session().id == opts.session_id
+					and input.draft_token() == draft_token
+			end
 			actions.list_skills(function(err, skills)
-				if state.get_session().id ~= opts.session_id or input.draft_token() ~= draft_token then return end
+				if not current() then return end
 				if err then vim.notify("Could not load skills", vim.log.levels.WARN); return end
 				local items = {}
 				for _, skill in ipairs(skills) do items[#items + 1] = { label = skill.name, value = skill.id, skill = skill, description = skill.description } end
@@ -45,7 +54,7 @@ function M.register(palette)
 						local chosen = {}; for _, item in ipairs(selected) do chosen[#chosen + 1] = item.skill end
 						-- The menu has just unmounted; let the input's BufLeave handler
 						-- save its draft and cursor before adding the selected skills.
-						vim.schedule(function() actions.stage_skills(chosen, opts) end)
+						vim.schedule(function() if current() then actions.stage_skills(chosen, opts) end end)
 					end })
 			end, opts)
 		end })

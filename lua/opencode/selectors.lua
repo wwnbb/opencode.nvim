@@ -12,34 +12,6 @@ local function logger()
 	return ok and mod or nil
 end
 
----@param value any
----@return string
-local function value_kind(value)
-	if value == nil then
-		return "nil"
-	end
-	if value == vim.NIL then
-		return "vim.NIL"
-	end
-	return type(value)
-end
-
----@param model any
----@return table
-local function model_summary(model)
-	if type(model) ~= "table" then
-		return {
-			kind = value_kind(model),
-		}
-	end
-	return {
-		kind = "table",
-		providerID = model.providerID,
-		modelID = model.modelID,
-		variant = model.variant,
-	}
-end
-
 ---@param ref any
 ---@param source string
 ---@param sync table|nil
@@ -51,7 +23,7 @@ local function resolve_model_ref(ref, source, sync)
 			log.debug("Model candidate skipped", {
 				source = source,
 				reason = "malformed",
-				model = model_summary(ref),
+				model = log.model_summary(ref),
 			})
 		end
 		return nil
@@ -63,7 +35,7 @@ local function resolve_model_ref(ref, source, sync)
 			log.debug("Model candidate skipped", {
 				source = source,
 				reason = "empty",
-				model = model_summary(ref),
+				model = log.model_summary(ref),
 			})
 		end
 		return nil
@@ -74,7 +46,7 @@ local function resolve_model_ref(ref, source, sync)
 			log.debug("Model candidate skipped", {
 				source = source,
 				reason = sync and "not_in_sync" or "sync_unavailable",
-				model = model_summary(ref),
+				model = log.model_summary(ref),
 			})
 		end
 		return nil
@@ -83,7 +55,7 @@ local function resolve_model_ref(ref, source, sync)
 	if log then
 		log.debug("Model candidate accepted", {
 			source = source,
-			model = model_summary(ref),
+			model = log.model_summary(ref),
 		})
 	end
 	return {
@@ -390,7 +362,7 @@ end
 
 -- Admission is separate from execution; delivered messages need no queue badge.
 local PROMPT_LABELS = {
-	submitting = "Sending…", queued = "Queued", accepted = "Steering pending",
+	queued = "Queued", accepted = "Steering pending",
 	uncertain = "Delivery unknown · reconnect to check", failed = "Send failed · draft preserved",
 }
 
@@ -401,6 +373,10 @@ function M.prompt_status(session_id, message_id)
 	local record = require("opencode.session.pending").get(session_id, message_id)
 	if not record then return nil end
 	local label = PROMPT_LABELS[record.status]
+	if record.status == "submitting" then
+		local delivery = (record.payload or {}).delivery or "queue"
+		label = "Sending · " .. delivery
+	end
 	if record.delivery_missing and record.status ~= "delivered" and record.status ~= "cancelled" then
 		label = PROMPT_LABELS.uncertain
 	end

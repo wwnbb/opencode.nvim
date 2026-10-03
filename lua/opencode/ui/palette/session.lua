@@ -5,9 +5,18 @@ local M = {}
 local actions = require("opencode.actions")
 local session_util = require("opencode.util.session")
 local state = require("opencode.state")
-local sync = require("opencode.sync")
 function M.register(palette)
 	local keymaps = (state.get_config() or require("opencode.config").defaults).keymaps or {}
+	palette.register({
+		id = "session.timeline",
+		title = "Timeline",
+		description = "Choose a user turn to jump, copy, fork, or revert",
+		category = "session",
+		slash = { name = "timeline" },
+		on_select = function(context) return context.run() end,
+		run = function() require("opencode.ui.timeline").show() end,
+		enabled = function() return state.get_session().id ~= nil end,
+	})
 	palette.register({ id = "session.history", title = "Load Full Session History", category = "session",
 		description = "Fetch every history page", run = function()
 			local sid = state.get_session().id
@@ -53,7 +62,10 @@ function M.register(palette)
 				vim.notify("Open a session first", vim.log.levels.WARN)
 				return
 			end
+			local pending = require("opencode.session.pending")
+			local token = pending.token(session_id)
 			require("opencode.ui.btw").prompt(function(question)
+				if not pending.is_current(token) then return end
 				actions.ask_btw(question, session_id)
 			end)
 		end,
@@ -107,6 +119,8 @@ function M.register(palette)
 
 				local menu = require("opencode.ui.menu")
 				local current = state.get_session()
+				local pending = require("opencode.session.pending")
+				local token = pending.token()
 
 				-- Sort sessions by update time (most recent first, like TUI)
 				table.sort(sessions, function(a, b)
@@ -169,6 +183,7 @@ function M.register(palette)
 						return (a.sort_key or 0) > (b.sort_key or 0)
 					end,
 					on_select = function(item)
+						if not pending.is_current(token) then return end
 						local session = item.session
 						actions.switch_session(session, {
 							notify = true,
@@ -182,30 +197,13 @@ function M.register(palette)
 	palette.register({
 		id = "session.fork",
 		title = "Fork Session",
-		description = "Fork current session",
+		description = "Fork full session or before a user turn",
 		category = "session",
 		keybind = "<leader>of",
+		slash = { name = "fork" },
+		on_select = function(context) return context.run() end,
 		run = function()
-			local current = state.get_session()
-			if not current.id then
-				vim.notify("No active session to fork", vim.log.levels.WARN)
-				return
-			end
-
-			actions.fork_session(current.id, {}, function(err, session)
-				if err then
-					vim.notify("Failed to fork session: " .. tostring(err.message or err), vim.log.levels.ERROR)
-					return
-				end
-				actions.set_active_session(session.id, session.title or "Forked Session", {
-					reason = "session_fork",
-					preserve_cache = true,
-				})
-				vim.notify(
-					"Forked session: " .. (session_util.displayTitle(session.title) or session.id),
-					vim.log.levels.INFO
-				)
-			end)
+			require("opencode.ui.timeline").show_fork_picker()
 		end,
 		enabled = function()
 			return state.get_session().id ~= nil
@@ -214,92 +212,34 @@ function M.register(palette)
 	palette.register({
 		id = "session.copy",
 		title = "Copy Session Transcript",
-		description = "Copy current session transcript to clipboard",
+		description = "Copy complete server transcript to clipboard",
 		category = "session",
 		slash = { name = "copy" },
+		on_select = function(context) return context.run() end,
 		run = function()
-			local session_id = state.get_session().id
-			if not session_id then
-				vim.notify("No active session", vim.log.levels.WARN)
-				return
-			end
-
-			local messages = sync.get_messages(session_id)
-			if #messages == 0 then
-				vim.notify("No messages to copy", vim.log.levels.INFO)
-				return
-			end
-
-			local lines = { "Session: " .. session_id, "" }
-			for _, message in ipairs(messages) do
-				if message.role == "user" then
-					table.insert(lines, "USER:")
-				else
-					table.insert(lines, "ASSISTANT:")
-				end
-
-				local text_parts = {}
-				for _, part in ipairs(sync.get_parts(message.id) or {}) do
-					if part.type == "text" and part.text and part.text ~= "" then
-						table.insert(text_parts, part.text)
-					end
-				end
-
-				if #text_parts > 0 then
-					table.insert(lines, table.concat(text_parts, "\n"))
-				else
-					table.insert(lines, "[No text content]")
-				end
-
-				table.insert(lines, "")
-			end
-
-			local transcript = table.concat(lines, "\n")
-			vim.fn.setreg("+", transcript)
-			vim.fn.setreg("*", transcript)
-			vim.notify("Session transcript copied to clipboard", vim.log.levels.INFO)
+			require("opencode.ui.export").run({ action = "copy", format = "markdown", thinking = true, tools = true })
 		end,
 		enabled = function()
 			return state.get_session().id ~= nil
 		end,
 	})
 	palette.register({
+		id = "session.export",
+		title = "Export Session Transcript",
+		description = "Export complete history as Markdown or JSON",
+		category = "session",
+		slash = { name = "export" },
+		on_select = function(context) return context.run() end,
+		run = function() require("opencode.ui.export").show() end,
+		enabled = function() return state.get_session().id ~= nil end,
+	})
+	palette.register({
 		id = "session.copy_raw",
 		title = "Copy Raw Session Object",
-		description = "Copy full in-memory session object (messages, parts, tool calls) to clipboard",
+		description = "Copy complete server session export as JSON",
 		category = "session",
 		run = function()
-			local session_id = state.get_session().id
-			if not session_id then
-				vim.notify("No active session", vim.log.levels.WARN)
-				return
-			end
-
-			local record = state.get_session_record(session_id)
-			local store = sync.get_store()
-			local messages = vim.deepcopy(store.message[session_id] or {})
-			local parts = {}
-			for _, msg in ipairs(messages) do
-				parts[msg.id] = vim.deepcopy(store.part[msg.id] or {})
-			end
-			local session_status = vim.deepcopy(store.session_status[session_id])
-
-			local snapshot = {
-				session = record,
-				messages = messages,
-				parts = parts,
-				session_status = session_status,
-			}
-
-			local json = vim.fn.json_encode(snapshot)
-			if not json then
-				vim.notify("Failed to encode session object", vim.log.levels.ERROR)
-				return
-			end
-
-			vim.fn.setreg("+", json)
-			vim.fn.setreg("*", json)
-			vim.notify("Raw session object copied to clipboard", vim.log.levels.INFO)
+			require("opencode.ui.export").run({ action = "copy", format = "json", sanitize = false })
 		end,
 		enabled = function()
 			return state.get_session().id ~= nil
@@ -318,6 +258,8 @@ function M.register(palette)
 			end
 
 			local prompt = "Delete session '" .. (session_util.displayTitle(session.name) or session.id) .. "'?"
+			local pending = require("opencode.session.pending")
+			local token = pending.token(session.id)
 			require("opencode.ui.menu").open({
 				items = { "Yes", "No" },
 				title = "Delete Session",
@@ -325,7 +267,7 @@ function M.register(palette)
 				width = vim.fn.strdisplaywidth(prompt) + 12,
 				sort = false,
 				on_select = function(choice)
-					if choice == "Yes" then
+					if choice == "Yes" and pending.is_current(token) then
 						actions.delete_session(session.id, function(err)
 							if err then
 								vim.notify(
@@ -334,14 +276,6 @@ function M.register(palette)
 								)
 								return
 							end
-							actions.set_active_session(nil, nil, {
-								reason = "session_delete",
-								preserve_cache = true,
-							})
-							actions.forget_session(session.id, {
-								reason = "session_delete",
-							})
-							actions.clear_session_data(session.id)
 							vim.notify("Session deleted", vim.log.levels.INFO)
 						end)
 					end

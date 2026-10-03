@@ -44,21 +44,10 @@ end
 ---@param event_type string Event type
 ---@param callback function Callback to remove (must be same reference as passed to on())
 function M.off(event_type, callback)
-	local cbs = listeners[event_type] or {}
-
-	for i, cb in ipairs(cbs) do
-		if cb == callback then
-			table.remove(cbs, i)
-			break
-		end
-	end
-
-	-- Also check once listeners
-	local once_cbs = once_listeners[event_type]
-	if once_cbs then
-		for i, cb in ipairs(once_cbs) do
+	for _, cbs in ipairs({ listeners[event_type] or {}, once_listeners[event_type] or {} }) do
+		for i, cb in ipairs(cbs) do
 			if cb == callback then
-				table.remove(once_cbs, i)
+				table.remove(cbs, i)
 				break
 			end
 		end
@@ -81,28 +70,15 @@ function M.emit(event_type, data)
 		table.remove(event_history)
 	end
 
-	-- Call regular listeners
-	local cbs = listeners[event_type] or {}
+	-- Snapshot before callbacks mutate subscriptions or emit the same event.
+	local cbs = vim.list_slice(listeners[event_type] or {})
+	vim.list_extend(cbs, once_listeners[event_type] or {})
+	once_listeners[event_type] = nil
 	for _, cb in ipairs(cbs) do
 		local ok, err = pcall(cb, data)
 		if not ok then
 			vim.notify(string.format("Event listener error (%s): %s", event_type, tostring(err)), vim.log.levels.ERROR)
 		end
-	end
-
-	-- Call and clear once listeners
-	local once_cbs = once_listeners[event_type]
-	if once_cbs then
-		for _, cb in ipairs(once_cbs) do
-			local ok, err = pcall(cb, data)
-			if not ok then
-				vim.notify(
-					string.format("Event once-listener error (%s): %s", event_type, tostring(err)),
-					vim.log.levels.ERROR
-				)
-			end
-		end
-		once_listeners[event_type] = {}
 	end
 end
 

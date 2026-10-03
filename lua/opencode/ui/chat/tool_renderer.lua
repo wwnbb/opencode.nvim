@@ -39,7 +39,7 @@ function M.render_tool_part(ctx, tool_part, message_revision, part_revisions)
 			tool_part = tool_part,
 			highlights = result.highlights,
 		}))
-		chat_tasks.ensure_task_child_loaded(tool_part)
+		if chat_tasks.is_animating_tool_part(tool_part) then chat_tasks.ensure_task_child_loaded(tool_part) end
 		return
 	end
 

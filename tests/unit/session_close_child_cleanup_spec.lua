@@ -92,6 +92,47 @@ describe("opencode session close child cleanup", function()
 		sync.clear_all()
 	end)
 
+	it("invalidates in-flight operations for the complete closed tree", function()
+		local state, sync = require("opencode.state"), require("opencode.sync")
+		local sessions, pending = require("opencode.session"), require("opencode.session.pending")
+		local actions, client = require("opencode.actions"), require("opencode.client")
+		local bus, handler = require("opencode.events.bus"), require("opencode.events.handlers.v2")
+		local lifecycle = require("opencode.lifecycle")
+		local old_ensure, old_messages = lifecycle.ensure_connected, client.get_messages
+		state.reset(); sync.clear_all(); pending.clear_all(); bus.clear(); handler.clear()
+		local history, published = nil, 0
+		lifecycle.ensure_connected = function(callback) callback() end
+		client.get_messages = function(_, _, callback) history = callback end
+		local ok, err = pcall(function()
+			handler.setup(bus)
+			sessions.set_active("close-tree", "Parent")
+			sessions.set_active("keep-tree", "Neighbor")
+			seed_task_child(sync, "close-tree", "close-tree-child")
+			seed_task_child(sync, "close-tree-child", "close-tree-grandchild")
+			local tokens = {}
+			for _, id in ipairs({ "close-tree", "close-tree-child", "close-tree-grandchild", "keep-tree" }) do
+				tokens[id] = pending.token(id)
+				pending.begin({ session_id = id, message_id = "prompt-" .. id, status = "submitting" })
+			end
+			actions.load_session_messages("close-tree-grandchild", function() published = published + 1 end)
+			assert.is_function(history)
+			assert.is_true(sessions.close("close-tree", { silent = true }))
+			history(nil, { { info = { id = "late-message", sessionID = "close-tree-grandchild", role = "user" }, parts = {} } })
+			vim.wait(30)
+			assert.equals(0, published)
+			assert.same({}, sync.get_messages("close-tree-grandchild"))
+			for _, id in ipairs({ "close-tree", "close-tree-child", "close-tree-grandchild" }) do
+				assert.is_false(pending.is_current(tokens[id]))
+				assert.same({}, pending.list(id))
+			end
+			assert.is_true(pending.is_current(tokens["keep-tree"]))
+			assert.equals("submitting", pending.get("keep-tree", "prompt-keep-tree").status)
+		end)
+		lifecycle.ensure_connected, client.get_messages = old_ensure, old_messages
+		bus.clear(); handler.clear(); state.reset(); sync.clear_all(); pending.clear_all()
+		assert.is_true(ok, err)
+	end)
+
 	it("handle_deleted() clears child session data for a deleted tab", function()
 		local state = require("opencode.state")
 		local sync = require("opencode.sync")

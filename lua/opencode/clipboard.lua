@@ -39,8 +39,8 @@ end
 ---@return boolean ok
 ---@return string output
 local function run(command)
-	local output = vim.fn.system(command)
-	return vim.v.shell_error == 0, output
+	local ok, result = pcall(function() return vim.system(command):wait() end)
+	return ok and result.code == 0, ok and result.stdout or ""
 end
 
 ---@param value string
@@ -53,14 +53,6 @@ end
 ---@return string
 local function applescript_string(value)
 	return (value:gsub("\\", "\\\\"):gsub('"', '\\"'))
-end
-
----@param value string
----@return string
-local function percent_decode(value)
-	return (value:gsub("%%(%x%x)", function(hex)
-		return string.char(tonumber(hex, 16))
-	end))
 end
 
 ---@param data string
@@ -106,6 +98,9 @@ end
 ---@return string|nil data
 ---@return string|nil err
 local function read_file_base64(filepath)
+	if type(filepath) ~= "string" or filepath == "" or filepath:find("%z") then return nil, "Cannot read file" end
+	local stat = uv.fs_stat(filepath)
+	if not stat or stat.type ~= "file" then return nil, "Cannot read file" end
 	local ok, data = pcall(vim.fn.readblob, filepath)
 	if not ok then
 		return nil, "Cannot read file"
@@ -264,17 +259,23 @@ end
 ---@return string|nil
 local function path_from_text(text)
 	local raw = trim(text):gsub("^['\"]+", ""):gsub("['\"]+$", "")
-	if raw == "" or raw:find("\n", 1, true) then
+	if raw == "" or raw:find("\n", 1, true) or raw:find("%z") then
 		return nil
 	end
 
-	if raw:sub(1, 7) == "file://" then
-		raw = raw:gsub("^file://localhost", "")
-		raw = raw:gsub("^file://", "")
-		raw = percent_decode(raw)
-	elseif platform() ~= "windows" then
+	if raw:sub(1, 5):lower() == "file:" then
+		local path = raw:sub(6)
+		if path:sub(1, 2) == "//" then
+			local host
+			host, path = path:match("^//([^/]*)(/.*)$")
+			if not path or (host ~= "" and host:lower() ~= "localhost") then return nil end
+		end
+		if path:sub(1, 1) ~= "/" then return nil end
+		raw = vim.uri_to_fname("file:" .. path)
+	elseif platform() ~= "windows" and not uv.fs_lstat(vim.fn.fnamemodify(raw, ":p")) then
 		raw = raw:gsub("\\(.)", "%1")
 	end
+	if raw:find("%z") then return nil end
 
 	local filepath = vim.fn.fnamemodify(raw, ":p")
 	if filepath == "" or vim.fn.filereadable(filepath) ~= 1 then

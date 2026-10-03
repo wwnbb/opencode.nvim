@@ -91,6 +91,22 @@ describe("v2 event reduction", function()
 		assert.same({}, sync.get_parts("msg_3"))
 	end)
 
+	it("keeps a pending prompt after committing an older undo boundary", function()
+		local history = projection.page("s", {
+			{ id = "msg_old", type = "user", text = "old", time = { created = 1 } },
+		})
+		local pending_prompt = projection.page("s", {
+			{ id = "msg_pending", type = "user", text = "new", time = { created = 2 } },
+		})[1]
+		pending_prompt.info.provisional = true
+		sync.handle_session_messages("s", { history[1], pending_prompt })
+		local effect = sync.handle_v2_event({ id = "evt_commit", created = 3,
+			type = "session.revert.committed", data = { sessionID = "s", to = "msg_old" } })
+		assert.same({ "msg_old" }, effect.revert_removed)
+		assert.is_nil(sync.get_message("s", "msg_old"))
+		assert.is_true(sync.get_message("s", "msg_pending").provisional)
+	end)
+
 	it("prunes absence only from an explicitly complete history, preserving newer live messages", function()
 		local page = projection.page("s", { { id = "msg_1", type = "user", text = "first" }, { id = "msg_2", type = "user", text = "removed" } })
 		sync.handle_session_messages("s", page)

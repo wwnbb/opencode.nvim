@@ -27,7 +27,12 @@ export class Policies {
     this.gates.set(gateID, gate)
     context.signal.addEventListener("abort", cancel, { once: true })
     if (context.signal.aborted) cancel()
-    if (record.status === "pending") await this.emit("policyRequested", structuredClone(record))
+    try {
+      if (record.status === "pending") await this.emit("policyRequested", structuredClone(record))
+    } catch (error) {
+      this.settle(gate, "cancelled")
+      throw error
+    }
     await promise
     context.signal.throwIfAborted()
   }

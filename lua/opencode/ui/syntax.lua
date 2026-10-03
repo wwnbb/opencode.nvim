@@ -3,18 +3,7 @@
 local M = {}
 local code_blocks = require("opencode.ui.code_blocks")
 
-local DEFAULT_CONFIG = {
-	enabled = true,
-	min_bytes = 24,
-	max_lines = 500,
-	max_bytes = 200 * 1024,
-	assistant_markdown = true,
-	user_markdown = true,
-	input_markdown = true,
-	tools = true,
-	diffs = true,
-	languages = {},
-}
+local DEFAULT_CONFIG = require("opencode.config").defaults.syntax
 
 local DEFAULT_EXTMARK_PRIORITY = 4100
 local syntax_hl_cache = {}

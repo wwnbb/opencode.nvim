@@ -126,22 +126,7 @@ end
 ---@param diff string|nil
 ---@return number additions
 ---@return number deletions
-local function parse_diff_stats(diff)
-	if type(diff) ~= "string" or diff == "" then
-		return 0, 0
-	end
-
-	local additions = 0
-	local deletions = 0
-	for _, line in ipairs(vim.split(diff, "\n", { plain = true })) do
-		if line:sub(1, 3) ~= "+++" and line:sub(1, 1) == "+" then
-			additions = additions + 1
-		elseif line:sub(1, 3) ~= "---" and line:sub(1, 1) == "-" then
-			deletions = deletions + 1
-		end
-	end
-	return additions, deletions
-end
+local parse_diff_stats = text_util.diff_stats
 
 ---@param value any
 ---@return "applied"|"partial"|"rejected"|"failed"|"unknown"|nil

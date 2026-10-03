@@ -63,6 +63,14 @@ assert_eq(
 	"mention filtering should match descriptions"
 )
 
+local unicode_agents = {
+	{ id = "review", name = "Обзор", mode = "subagent", description = "ПРОВЕРКА" },
+	{ id = "other", name = "Other", mode = "subagent" },
+}
+for _, query in ipairs({ "обзор", "ОБЗОР", "проверка" }) do
+	assert.same({ unicode_agents[1] }, mentions.filter_agents(unicode_agents, query))
+end
+
 local function assert_trigger(line, col, start_col, query, message)
 	local trigger = mentions.detect_trigger_in_line(line, col)
 	assert_truthy(trigger, message .. " should trigger")

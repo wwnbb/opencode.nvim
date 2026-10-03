@@ -1,8 +1,8 @@
 import { createHash, randomUUID } from "node:crypto"
-import { readFile } from "node:fs/promises"
 import { jsonValue } from "./json"
 import { protocolVersion, type Review, type Decision } from "./rpc"
 import type { RuntimeContext, ReviewDecision, ReviewProposal } from "./tools/lib/context"
+import { readBytes } from "./tools/lib/file_state"
 
 export class ReviewError extends Error {
   constructor(readonly code: "conflict" | "not_found", message: string, readonly current?: Review) { super(message) }
@@ -42,7 +42,12 @@ export class Reviews {
     this.entries.set(reviewID, entry)
     context.signal.addEventListener("abort", cancel, { once: true })
     if (context.signal.aborted) cancel()
-    if (record.status === "pending") await this.emit("reviewCreated", structuredClone(record))
+    try {
+      if (record.status === "pending") await this.emit("reviewCreated", structuredClone(record))
+    } catch (error) {
+      this.cancel(reviewID)
+      throw error
+    }
     return promise
   }
   async reply(input: { sessionID: string; reviewID: string; revision: number; decisions: Decision[]; message?: string }) {
@@ -64,8 +69,7 @@ export class Reviews {
       if (choice.status !== "rejected" && choice.apply === "client") {
         if (!choice.observed) conflict("Client-applied decisions require observed file bytes")
         const file = current.files.find(f => f.fileID === choice.fileID)!
-        let bytes: Buffer | undefined
-        try { bytes = await readFile(file.filePath) } catch (error: any) { if (error.code !== "ENOENT") throw error }
+        const bytes = await readBytes(file.filePath)
         const actual = bytes ? { exists: true, sha256: createHash("sha256").update(bytes).digest("hex") } : { exists: false }
         if (actual.exists !== choice.observed!.exists || actual.sha256 !== choice.observed!.sha256) conflict("File changed since the client reviewed it")
       }
@@ -86,8 +90,11 @@ export class Reviews {
     for (const entry of this.entries.values()) {
       if (entry.record.sessionID !== sessionID || entry.record.callID !== callID || entry.record.status === "cancelled") continue
       entry.record.status = "settled"; entry.record.outcome = jsonValue(outcome); entry.detach()
+      this.prune()
       await this.emit("reviewSettled", structuredClone(entry.record))
     }
+  }
+  private prune() {
     // Native tool history remains the authoritative durable result.
     if (this.entries.size > 512) for (const [id, entry] of this.entries) {
       if (entry.record.status === "settled" || entry.record.status === "cancelled") this.entries.delete(id)
@@ -103,6 +110,7 @@ export class Reviews {
     entry.record.status = "cancelled"; entry.detach()
     entry.reject(new Error("Review cancelled; no subsequent file writes are allowed"))
     void this.emit("reviewCancelled", structuredClone(entry.record)).catch(() => {})
+    this.prune()
   }
   dispose() { for (const id of this.entries.keys()) this.cancel(id) }
 }

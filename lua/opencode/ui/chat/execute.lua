@@ -34,16 +34,7 @@ end
 -- Keep headers and summaries to one screen row without cutting a UTF-8 byte.
 local function clip(value, width)
 	width = math.max(1, width or body_width())
-	local source = tostring(value or "")
-	local bounded = vim.fn.strcharpart(source, 0, width + 1)
-	local line = render.expand_tabs(text.strip_ansi(bounded), 0)
-	if #bounded == #source and vim.fn.strdisplaywidth(line) <= width then return line end
-	local lo, hi = 0, vim.fn.strchars(line)
-	while lo < hi do
-		local mid = math.ceil((lo + hi) / 2)
-		if vim.fn.strdisplaywidth(vim.fn.strcharpart(line, 0, mid)) <= width - 1 then lo = mid else hi = mid - 1 end
-	end
-	return vim.fn.strcharpart(line, 0, lo) .. "…"
+	return text.truncate(render.expand_tabs(text.strip_ansi(tostring(value or "")), 0), width, "…")
 end
 
 local function add_line(result, value, hl)
@@ -90,10 +81,10 @@ function M.render(part, expanded, opts)
 	for _, call in ipairs(calls) do
 		if call.status == "error" then failed_calls = failed_calls + 1 end
 	end
-	local failed, working = M.failed(part), M.is_working(part)
+	local failed, working = tool_group.latest_failed(part), M.is_working(part)
 	local animated = working and not (opts or {}).grouped
 	local name = calls[1] and calls[1].tool or "JavaScript"
-	name = name:gsub("[%c]", " ")
+	name = text.strip_ansi(name):gsub("[%c]", " ")
 	local suffix = {}
 	if #calls > 1 then suffix[#suffix + 1] = "+" .. (#calls - 1) .. " more" end
 	if failed_calls > 0 then suffix[#suffix + 1] = failed_calls .. " failed" end
@@ -123,7 +114,7 @@ function M.render_tool(part, expanded, opts)
 	local ctx = panel.context(part)
 	local working = M.is_working(part)
 	local animated = working and not (opts or {}).grouped
-	local failed = tool_group.execution_failed(part)
+	local failed = tool_group.latest_failed(part)
 	local calls = calls_from(ctx.metadata)
 	local failed_calls = 0
 	for _, call in ipairs(calls) do if call.status == "error" then failed_calls = failed_calls + 1 end end

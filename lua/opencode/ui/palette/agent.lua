@@ -4,6 +4,7 @@ local M = {}
 
 local sync = require("opencode.sync")
 local actions = require("opencode.actions")
+local state = require("opencode.state")
 
 function M.register(palette)
 	palette.register({
@@ -14,7 +15,15 @@ function M.register(palette)
 		keybind = "<leader>oa",
 		slash = { name = "agents" },
 		run = function()
+			local pending = require("opencode.session.pending")
+			local token = pending.token(state.get_session().id)
+			local directory = state.get_session_directory(token.session_id) or vim.fn.getcwd()
+			local function current()
+				return pending.is_current(token) and state.get_session().id == token.session_id
+					and (state.get_session_directory(token.session_id) or vim.fn.getcwd()) == directory
+			end
 			actions.list_agents(function(err)
+				if not current() then return end
 				if err then
 					vim.notify("Failed to list agents: " .. tostring(err.message or err), vim.log.levels.ERROR)
 					return
@@ -41,6 +50,7 @@ function M.register(palette)
 					width = 60,
 					searchable = true,
 					on_select = function(item)
+						if not current() then return end
 						actions.select_agent(item.agent.id or item.agent.name)
 					end,
 				})

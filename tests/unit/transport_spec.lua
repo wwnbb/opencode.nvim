@@ -2,6 +2,31 @@
 -- Run with: ./tests/run.sh unit
 
 describe("opencode transport", function()
+	it("requires an integer TCP port without rounding the target", function()
+		local tcp = require("opencode.client.tcp_connection")
+		for _, port in ipairs({ 1234.5, 0 / 0, math.huge, -1, 65536 }) do
+			local host, normalized, err = tcp.normalize_target({ host = "localhost", port = port })
+			assert.is_nil(host)
+			assert.is_nil(normalized)
+			assert.is_table(err)
+		end
+		local host, port, err = tcp.normalize_target({ host = "localhost", port = "1234" })
+		assert.equals("localhost", host)
+		assert.equals(1234, port)
+		assert.is_nil(err)
+	end)
+
+	it("normalizes bracketed IPv6 literals for DNS without changing hostnames", function()
+		local tcp = require("opencode.client.tcp_connection")
+		for input, expected in pairs({ ["[::1]"] = "::1", ["[2001:db8::1]"] = "2001:db8::1",
+			["[::]"] = "::", ["::1"] = "::1", localhost = "localhost", ["127.0.0.1"] = "127.0.0.1" }) do
+			local host, port, err = tcp.normalize_target({ host = input, port = 1234 })
+			assert.is_nil(err)
+			assert.equals(expected, host)
+			assert.equals(1234, port)
+		end
+	end)
+
 	it("handles shared TCP lifecycle and HTTP bodies", function()
 vim.opt.runtimepath:append(vim.fn.getcwd())
 
@@ -85,9 +110,9 @@ local function write_sequence(client, chunks, close_after)
 	write_next()
 end
 
-local function start_server(chunks, close_after)
+local function start_server(chunks, close_after, host)
 	local server = assert(uv.new_tcp())
-	assert(server:bind("127.0.0.1", 0))
+	assert(server:bind(host or "127.0.0.1", 0))
 	local address = assert(server:getsockname())
 	local clients = {}
 	local requests, closed_clients = 0, 0
@@ -157,6 +182,28 @@ local function run_request(chunks, close_after)
 
 	server.close()
 	return result_err, result_response
+end
+
+for _, kind in ipairs({ "request", "stream" }) do
+	local server = start_server({ "HTTP/1.1 200 OK\r\nContent-Length: 4\r\n\r\nipv6" }, false, "::1")
+	local done, result_err, content = false, nil, ""
+	local opts = { host = "[::1]", port = server.port, timeout = 1000 }
+	if kind == "request" then
+		transport.request(opts, function(err, response)
+			result_err, content, done = err, response and response.body, true
+		end)
+	else
+		opts.on_data = function(data) content = content .. data end
+		opts.on_error = function(err) result_err = err end
+		opts.on_close = function() done = true end
+		local stream, err = transport.open_stream(opts)
+		assert_true(stream ~= nil, err and err.message)
+	end
+	local completed = vim.wait(2000, function() return done end, 10)
+	server.close()
+	assert_true(completed, "IPv6 " .. kind .. " did not complete")
+	assert_eq(result_err, nil, "IPv6 " .. kind .. " should connect")
+	assert_eq(content, "ipv6", "IPv6 " .. kind .. " body")
 end
 
 do

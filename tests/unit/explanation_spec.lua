@@ -51,7 +51,7 @@ describe("selection explanation request lifecycle", function()
 		state.set_config(config)
 		state.set_connection("connected")
 		requests, views, errors, shown, notices = {}, {}, {}, {}, {}
-		saved.notify = vim.notify
+		saved.notify, saved.wrap = vim.notify, vim.schedule_wrap
 		vim.notify = function(message) notices[#notices + 1] = message end
 		package.loaded["opencode.util.visual_selection"] = {
 			capture = function() return vim.deepcopy(snapshot) end,
@@ -94,7 +94,7 @@ describe("selection explanation request lifecycle", function()
 
 	after_each(function()
 		controller.teardown()
-		vim.notify = saved.notify
+		vim.notify, vim.schedule_wrap = saved.notify, saved.wrap
 		for _, name in ipairs(modules) do package.loaded[name] = saved[name] end
 		state.set_config(previous_config)
 		state.set_connection(previous_connection)
@@ -120,6 +120,17 @@ describe("selection explanation request lifecycle", function()
 			vim.api.nvim_buf_get_lines(source, 0, -1, false))
 		assert.equals(tick, vim.api.nvim_buf_get_changedtick(source))
 		assert.is_false(vim.bo[source].modified)
+	end)
+
+	it("keeps a completed answer when its cancelled deadline callback runs", function()
+		local queued
+		vim.schedule_wrap = function(callback) queued = callback; return function() end end
+		assert.is_true(controller.explain_selection())
+		requests[1].callback(nil, "Defines a value.")
+		queued()
+		assert.same({ "Defines a value." }, shown)
+		assert.same({}, errors)
+		assert.is_true(views[1].open)
 	end)
 
 	it("cancels on popup q and Esc and ignores late answers", function()

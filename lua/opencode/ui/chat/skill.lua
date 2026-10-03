@@ -269,19 +269,8 @@ function M.cache_key(part)
 end
 
 local function clip(value, width)
-	if width <= 0 then return "" end
 	value = render.sanitize_buffer_line(value:gsub("%s+", " "))
-	if vim.fn.strdisplaywidth(value) <= width then return value end
-	local low, high = 0, vim.fn.strchars(value)
-	while low < high do
-		local middle = math.ceil((low + high) / 2)
-		if vim.fn.strdisplaywidth(vim.fn.strcharpart(value, 0, middle)) <= width - 1 then
-			low = middle
-		else
-			high = middle - 1
-		end
-	end
-	return vim.fn.strcharpart(value, 0, low) .. "…"
+	return text_util.truncate(value, width, "…")
 end
 
 local function add_header(result, name, expanded, opts)

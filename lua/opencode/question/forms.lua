@@ -1,14 +1,42 @@
 -- Typed form projection owned by question.state; no HTTP or UI dependencies.
 local M = {}
+local validation = require("opencode.question.form_validation")
 
 local function enabled(field, values)
 	for _, rule in ipairs(field.when or {}) do
-		local equal = values[rule.key] ~= nil and vim.deep_equal(values[rule.key], rule.value)
+		local value = values[rule.key]
+		if value == nil then return false end
+		local equal = false
+		if type(value) == "table" then
+			for _, entry in ipairs(value) do
+				if vim.deep_equal(entry, rule.value) then equal = true; break end
+			end
+		else
+			equal = vim.deep_equal(value, rule.value)
+		end
 		if (rule.op == "eq" and not equal) or (rule.op == "neq" and equal) then return false end
 	end
 	return true
 end
 M.enabled = enabled
+
+-- Conditions only see earlier fields that are themselves active. A hidden
+-- field can still supply its default; an inactive field cannot supply an
+-- answer or activate a later dependent field.
+local function project(item)
+	local answer, active, preceding = vim.empty_dict(), {}, {}
+	for _, field in ipairs(item.form.fields) do
+		if field.type == "external" or enabled(field, preceding) then
+			active[field.key] = true
+			local value = item.values[field.key]
+			if value ~= nil then
+				answer[field.key] = vim.deepcopy(value)
+				preceding[field.key] = value
+			end
+		end
+	end
+	return answer, active
+end
 
 local function options(field)
 	if field.type == "boolean" then return { { label = "Yes", value = true }, { label = "No", value = false } } end
@@ -27,7 +55,7 @@ local function question(field)
 	return { key = field.key, field_type = field.type, header = field.title or field.key,
 		question = field.description or field.title or field.key, options = options(field),
 		multiple = field.type == "multiselect", required = field.required == true,
-		custom = (field.type == "string" and (not field.options or #field.options == 0 or field.custom == true))
+		custom = (field.type == "string" and (not field.options or field.custom == true))
 			or field.type == "number" or field.type == "integer" or (field.type == "multiselect" and field.custom == true),
 		url = field.url }
 end
@@ -37,8 +65,9 @@ function M.rebuild(item)
 	local current = item.questions[item.current_tab or 1]
 	local key = current and current.key
 	item.questions, item.selections, item.current_tab = {}, {}, 1
+	local _, active = project(item)
 	for _, field in ipairs(item.form.fields) do
-		if field.hidden ~= true and enabled(field, item.values) then
+		if field.hidden ~= true and active[field.key] then
 			local index = #item.questions + 1
 			item.questions[index] = question(field)
 			item.selections[index] = item.form_selections[field.key]
@@ -53,8 +82,8 @@ function M.init(item, form, context)
 	item.values, item.form_selections, item.field_errors = {}, {}, {}
 	for _, field in ipairs(form.fields) do
 		local value = field.default
-		local selection = { selected_indices = {}, custom_input = "",
-			is_answered = field.required ~= true and field.type ~= "external", ready_to_advance = false }
+		local selection = { selected_indices = {}, custom_input = "", external_ready = false,
+			is_answered = field.required ~= true and field.type ~= "external" and field.type ~= "multiselect" }
 		if value ~= nil then
 			item.values[field.key], selection.is_answered = vim.deepcopy(value), true
 			local values = field.type == "multiselect" and value or { value }
@@ -72,70 +101,95 @@ function M.init(item, form, context)
 	M.rebuild(item)
 end
 
+local function external_selection(item, key)
+	local selection = item.form_selections and item.form_selections[key]
+	if not selection then return nil end
+	for _, field in ipairs(item.form.fields) do
+		if field.key == key and field.type == "external" then return selection end
+	end
+end
+
+function M.mark_external_ready(item, key)
+	local selection = external_selection(item, key)
+	if not selection then return false end
+	selection.external_ready = true
+	return true
+end
+
+function M.acknowledge_external(item, key)
+	local selection = external_selection(item, key)
+	if not selection or not selection.external_ready then return false end
+	item.values[key] = true
+	selection.is_answered = true
+	item.server_error = nil
+	return true
+end
+
+function M.set_custom_input(item, tab_index, text)
+	local field, selection = item.questions[tab_index], item.selections[tab_index]
+	if not field or not selection or field.field_type == "external" then return false end
+	selection.custom_input = text
+	selection.custom_present = not field.multiple or (text ~= nil and text ~= "")
+	selection.touched = true
+	if field.multiple then
+		selection.is_answered = #selection.selected_indices > 0 or selection.custom_present
+	else
+		selection.selected_indices = {}
+		selection.is_answered = not field.required or (text ~= nil and text ~= "")
+	end
+	return true
+end
+
 function M.pull(item)
 	local errors = {}
 	for _, q in ipairs(item.questions) do
-		local selection = item.form_selections[q.key]
-		local values = {}
-		for _, index in ipairs(selection.selected_indices) do
-			local option = q.options[index]
-			if option then values[#values + 1] = option.value end
-		end
-		if selection.custom_present then
-			local custom = selection.custom_input
-			if q.field_type == "number" or q.field_type == "integer" then
-				custom = tonumber(custom)
-				if custom == nil then errors[q.key] = "Enter a number" end
+		if q.field_type ~= "external" then
+			local selection = item.form_selections[q.key]
+			local values = {}
+			for _, index in ipairs(selection.selected_indices) do
+				local option = q.options[index]
+				if option then values[#values + 1] = option.value end
 			end
-			if custom ~= nil then values[#values + 1] = custom end
+			if selection.custom_present then
+				local custom = selection.custom_input
+				if q.field_type == "number" or q.field_type == "integer" then
+					custom = tonumber(custom)
+					if custom == nil then errors[q.key] = "Expected a number" end
+				end
+				local add_custom = custom ~= nil
+				if q.field_type == "multiselect" then
+					add_custom = add_custom and custom ~= "" and not vim.tbl_contains(values, custom)
+				end
+				if add_custom then values[#values + 1] = custom end
+			end
+			if q.field_type == "multiselect" then
+				item.values[q.key] = selection.is_answered and values or nil
+			elseif #values > 0 then
+				local value = values[1]
+				if q.field_type == "string" and not q.required and selection.touched and value == "" then
+					item.values[q.key] = nil
+				else
+					item.values[q.key] = value
+				end
+			elseif selection.custom_present then item.values[q.key] = nil end
 		end
-		if q.field_type == "multiselect" then
-			if selection.is_answered then item.values[q.key] = values end
-		elseif #values > 0 then item.values[q.key] = values[1]
-		elseif selection.custom_present then item.values[q.key] = nil end
 	end
 	item.parse_errors = errors
 end
 
 function M.answer(item)
 	M.pull(item)
-	local answer = vim.empty_dict()
-	for _, field in ipairs(item.form.fields) do
-		if field.type ~= "external" and enabled(field, item.values) and item.values[field.key] ~= nil then
-			answer[field.key] = vim.deepcopy(item.values[field.key])
-		end
-	end
+	local answer = project(item)
 	return answer
 end
 
 function M.validate(item)
-	local answer, errors = M.answer(item), {}
+	M.pull(item)
+	local answer, active = project(item)
+	local errors = {}
 	for _, field in ipairs(item.form.fields) do
-		if enabled(field, item.values) then
-			local value, err = answer[field.key], item.parse_errors[field.key]
-			if not vim.tbl_contains({ "external", "string", "boolean", "integer", "number", "multiselect" }, field.type) then
-				err = "Unsupported field type: " .. tostring(field.type)
-			elseif field.type == "external" then err = "Waiting for the external step"
-			elseif value == nil then
-				if field.required then err = err or "Required field" end
-			elseif field.type == "number" or field.type == "integer" then
-				if type(value) ~= "number" or value ~= value or math.abs(value) == math.huge then err = "Enter a finite number"
-				elseif field.type == "integer" and value % 1 ~= 0 then err = "Enter a whole number"
-				elseif type(field.minimum) == "number" and value < field.minimum then err = "Minimum: " .. field.minimum
-				elseif type(field.maximum) == "number" and value > field.maximum then err = "Maximum: " .. field.maximum end
-			elseif field.type == "boolean" then
-				if type(value) ~= "boolean" then err = "Choose Yes or No" end
-			elseif field.type == "string" then
-				local length = type(value) == "string" and vim.str_utfindex(value, "utf-16") or 0
-				if type(value) ~= "string" then err = "Enter text"
-				elseif field.required and value == "" then err = "Required field"
-				elseif field.minLength and length < field.minLength then err = "Minimum length: " .. field.minLength
-				elseif field.maxLength and length > field.maxLength then err = "Maximum length: " .. field.maxLength end
-			elseif field.type == "multiselect" then
-				if type(value) ~= "table" then err = "Select one or more values"
-				elseif field.minItems and #value < field.minItems then err = "Select at least " .. field.minItems
-				elseif field.maxItems and #value > field.maxItems then err = "Select at most " .. field.maxItems end
-			else err = "Unsupported field type: " .. tostring(field.type) end
+		if active[field.key] then
+			local err = item.parse_errors[field.key] or validation.validate(field, answer[field.key])
 			if err then errors[field.key] = err end
 		end
 	end
@@ -147,6 +201,7 @@ function M.display_answers(item, answer)
 	local result = {}
 	for _, q in ipairs(item.questions) do
 		local value = answer[q.key]
+		if q.field_type == "external" then value = value == true and "Acknowledged" or nil end
 		local values = type(value) == "table" and value or (value ~= nil and { value } or {})
 		local labels = {}
 		for _, entry in ipairs(values) do

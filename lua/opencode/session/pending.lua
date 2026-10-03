@@ -1,5 +1,7 @@
 local M = {}
 local outbox, queues, epochs = {}, {}, {}
+local last_revert_events = {}
+local admission_waiters = {}
 local generation = 0
 
 function M.token(session_id)
@@ -15,6 +17,18 @@ function M.begin(record)
 	outbox[sid] = outbox[sid] or {}
 	outbox[sid][id] = vim.deepcopy(record)
 	return M.get(sid, id)
+end
+
+function M.expect_revert_commit(session_id)
+	last_revert_events[session_id] = nil
+end
+
+function M.note_revert_event(session_id, boundary)
+	last_revert_events[session_id] = boundary
+end
+
+function M.revert_event_seen(session_id, boundary)
+	return last_revert_events[session_id] == boundary
 end
 
 function M.get(session_id, message_id)
@@ -40,7 +54,21 @@ function M.update(session_id, message_id, patch)
 	-- already confirmed acceptance. Neither callback may regress that evidence.
 	if status == "delivered" or status == "cancelled" then record.status = status
 	elseif (status == "accepted" or status == "queued") and patch.status == "uncertain" then record.status = status end
+	if record.status ~= "submitting" and admission_waiters[session_id] then
+		local waiters = admission_waiters[session_id][message_id]
+		admission_waiters[session_id][message_id] = nil
+		for _, callback in ipairs(waiters or {}) do callback(vim.deepcopy(record)) end
+	end
 	return vim.deepcopy(record)
+end
+
+function M.when_admitted(session_id, message_id, callback)
+	local record = M.get(session_id, message_id)
+	if not record or record.status ~= "submitting" then callback(record); return end
+	admission_waiters[session_id] = admission_waiters[session_id] or {}
+	local waiters = admission_waiters[session_id][message_id] or {}
+	waiters[#waiters + 1] = callback
+	admission_waiters[session_id][message_id] = waiters
 end
 
 function M.admit(item)
@@ -85,6 +113,8 @@ end
 function M.clear_session(session_id)
 	epochs[session_id] = (epochs[session_id] or 0) + 1
 	outbox[session_id], queues[session_id] = nil, nil
+	last_revert_events[session_id] = nil
+	admission_waiters[session_id] = nil
 end
 
 function M.invalidate()
@@ -92,7 +122,7 @@ function M.invalidate()
 	queues = {}
 	for _, records in pairs(outbox) do
 		for _, record in pairs(records) do
-			if record.status == "submitting" then record.status = "uncertain" end
+			if record.status == "submitting" then M.update(record.session_id, record.message_id, { status = "uncertain" }) end
 		end
 	end
 end
@@ -100,6 +130,8 @@ end
 function M.clear_all()
 	M.invalidate()
 	outbox, epochs = {}, {}
+	last_revert_events = {}
+	admission_waiters = {}
 end
 
 ---@return table

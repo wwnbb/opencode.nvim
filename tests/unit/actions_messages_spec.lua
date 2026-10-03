@@ -49,4 +49,31 @@ describe("opencode message history action", function()
 			assert.equals("/api/session/history/message?limit=" .. case.limit, requests[1])
 		end)
 	end
+
+	it("does not load a deleted session after waiting for a connection", function()
+		local connected
+		lifecycle.ensure_connected = function(callback) connected = callback end
+		actions.load_session_messages("history", function() error("stale callback") end)
+		pending.clear_session("history")
+		connected()
+		assert.same({}, requests)
+	end)
+
+	it("does not publish a history callback after its session is cleared", function()
+		local scheduled, completed = {}, 0
+		local original_schedule = vim.schedule
+		local client = require("opencode.client")
+		local original_get_messages = client.get_messages
+		client.get_messages = function(_, _, callback) callback(nil, {}) end
+		vim.schedule = function(callback) scheduled[#scheduled + 1] = callback end
+		local ok, err = pcall(function()
+			actions.load_session_messages("history", function() completed = completed + 1 end)
+			pending.clear_session("history")
+			while #scheduled > 0 do table.remove(scheduled, 1)() end
+		end)
+		vim.schedule = original_schedule
+		client.get_messages = original_get_messages
+		assert.is_true(ok, err)
+		assert.equals(0, completed)
+	end)
 end)

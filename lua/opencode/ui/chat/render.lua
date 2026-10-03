@@ -48,10 +48,25 @@ function M.sanitize_buffer_line(text)
 	return (text:gsub("\r\n", " ↵ "):gsub("\n", " ↵ "):gsub("\r", " ↵ "):gsub("%z", "<NUL>"))
 end
 
+-- Neovim keeps combining marks with their base character. Index these strings
+-- once; ordinary text keeps the direct UTF-8 scan.
+local function character_lengths(text)
+	if not text:find("[\128-\255]") or vim.fn.strchars(text) == vim.fn.strchars(text, true) then
+		return nil
+	end
+	local lengths, byte_pos = {}, 0
+	for _, ch in ipairs(vim.fn.split(text, "\\zs")) do
+		if #ch > 1 then lengths[byte_pos] = #ch end
+		byte_pos = byte_pos + #ch
+	end
+	return lengths
+end
+
 ---@param text string
 ---@param byte_pos number 0-based byte offset
 ---@return number length
-local function utf8_char_len_at(text, byte_pos)
+local function utf8_char_len_at(text, byte_pos, lengths)
+	if lengths then return lengths[byte_pos] or 1 end
 	local first = text:byte(byte_pos + 1)
 	if not first then
 		return 0
@@ -124,8 +139,9 @@ end
 local function display_width_from_col(text, initial_col, width_context)
 	local width = 0
 	local byte_pos = 0
+	local lengths = character_lengths(text)
 	while byte_pos < #text do
-		local char_len = utf8_char_len_at(text, byte_pos)
+		local char_len = utf8_char_len_at(text, byte_pos, lengths)
 		local ch = text:sub(byte_pos + 1, byte_pos + char_len)
 		width = width + char_display_width(width_context, ch, initial_col + width)
 		byte_pos = byte_pos + char_len
@@ -265,6 +281,7 @@ local function wrap_text_with_ranges(text, max_width, opts, width_context)
 	end
 
 	local line_start = 0
+	local lengths = character_lengths(text)
 	while line_start < #text do
 		local byte_pos = line_start
 		local line_width = 0
@@ -275,7 +292,7 @@ local function wrap_text_with_ranges(text, max_width, opts, width_context)
 		local overflow_width
 
 		while byte_pos < #text do
-			local char_len = utf8_char_len_at(text, byte_pos)
+			local char_len = utf8_char_len_at(text, byte_pos, lengths)
 			local ch = text:sub(byte_pos + 1, byte_pos + char_len)
 			local char_width = char_display_width(width_context, ch, initial_col + line_width)
 			if line_width + char_width > max_width then
@@ -307,7 +324,7 @@ local function wrap_text_with_ranges(text, max_width, opts, width_context)
 		local cut_at_space = last_space_byte and last_space_byte > line_start
 		local cut = cut_at_space and last_space_byte or byte_pos
 		if cut <= line_start then
-			cut = line_start + utf8_char_len_at(text, line_start)
+			cut = line_start + utf8_char_len_at(text, line_start, lengths)
 		end
 
 		local raw_piece = text:sub(line_start + 1, cut)

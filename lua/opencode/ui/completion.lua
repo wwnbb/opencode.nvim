@@ -3,6 +3,7 @@
 local M = {}
 
 local actions = require("opencode.actions")
+local keymaps = require("opencode.util.keymap")
 local spinner = require("opencode.ui.spinner")
 local namespace = vim.api.nvim_create_namespace("OpenCodeCompletion")
 local config = {}
@@ -18,29 +19,8 @@ local function keycode(key)
 	return vim.api.nvim_replace_termcodes(key, true, false, true)
 end
 
-local function local_mapping(bufnr, key)
-	for _, mapping in ipairs(vim.api.nvim_buf_get_keymap(bufnr, "i")) do
-		if keycode(mapping.lhs) == keycode(key) then return mapping end
-	end
-end
-
-local function restore_mapping(mapping)
-	if not mapping or not vim.api.nvim_buf_is_valid(mapping.bufnr) then return end
-	local current = local_mapping(mapping.bufnr, mapping.key)
-	-- A subsequently installed user/plugin mapping belongs to its new owner.
-	if not current or current.callback ~= mapping.callback then return end
-	vim.keymap.del("i", mapping.key, { buffer = mapping.bufnr })
-	if mapping.previous then
-		vim.api.nvim_buf_call(mapping.bufnr, function()
-			vim.fn.mapset("i", false, mapping.previous)
-		end)
-	end
-end
-
 local function install_mapping(bufnr, key, callback, description)
-	local mapping = { bufnr = bufnr, key = key, callback = callback, previous = local_mapping(bufnr, key) }
-	vim.keymap.set("i", key, callback, { buffer = bufnr, silent = true, desc = description })
-	return mapping
+	return keymaps.install("i", bufnr, key, callback, { silent = true, desc = description })
 end
 
 local function replay(key)
@@ -71,7 +51,7 @@ function M.clear()
 	local previous = preview
 	preview = nil
 	if not previous then return end
-	restore_mapping(previous.accept_mapping)
+	keymaps.restore(previous.accept_mapping)
 	if vim.api.nvim_buf_is_valid(previous.snapshot.bufnr) then
 		vim.api.nvim_buf_clear_namespace(previous.snapshot.bufnr, namespace, 0, -1)
 	end
@@ -148,7 +128,7 @@ local function configure_buffer(bufnr)
 	local installed = trigger_maps[bufnr]
 	if not eligible(bufnr) then
 		if preview and preview.snapshot.bufnr == bufnr then M.clear() end
-		restore_mapping(installed)
+		keymaps.restore(installed)
 		trigger_maps[bufnr] = nil
 		return
 	end
@@ -160,7 +140,7 @@ local function configure_buffer(bufnr)
 		if eligible(bufnr) then
 			actions.complete()
 		else
-			restore_mapping(trigger_maps[bufnr])
+			keymaps.restore(trigger_maps[bufnr])
 			trigger_maps[bufnr] = nil
 			replay(key)
 		end
@@ -170,7 +150,7 @@ end
 function M.teardown()
 	M.clear()
 	if group then vim.api.nvim_del_augroup_by_id(group); group = nil end
-	for _, mapping in pairs(trigger_maps) do restore_mapping(mapping) end
+	for _, mapping in pairs(trigger_maps) do keymaps.restore(mapping) end
 	trigger_maps = {}
 	config = {}
 end

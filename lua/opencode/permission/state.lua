@@ -2,6 +2,7 @@
 -- Tracks active non-edit permission requests, selections, and responses
 
 local M = {}
+local pending = require("opencode.session.pending")
 
 -- Active permissions storage: { [permission_id] = permission_state }
 local active_permissions = {}
@@ -22,13 +23,11 @@ function M.get_generation() return generation end
 --   always = table,
 --   tool_input = table,          -- resolved tool input (command, path, pattern, etc.)
 --   message = string,            -- optional user note sent with the response
---   selected_option = number,    -- 1=Allow once, 2=Allow always, 3=Reject
+--   selected_option = number,    -- 1=Allow once, 2=Allow always (or Reject without save), 3=Reject
 --   status = string,             -- "pending" | "approved" | "rejected"
 --   reply = string|nil,          -- "once" | "always" | "reject"
 --   timestamp = number,
 -- }
-
-local OPTION_COUNT = 3
 
 -- Add a new permission to track
 ---@param permission_id string
@@ -121,9 +120,9 @@ function M.get_orphan_permissions()
 	return result
 end
 
--- Select an option (1-3)
+-- Select a visible option
 ---@param permission_id string
----@param option_index number 1=Allow once, 2=Allow always, 3=Reject
+---@param option_index number 1=Allow once, 2=Allow always (or Reject without save), 3=Reject
 ---@return boolean
 function M.select_option(permission_id, option_index)
 	local pstate = active_permissions[permission_id]
@@ -131,7 +130,7 @@ function M.select_option(permission_id, option_index)
 		return false
 	end
 
-	if option_index < 1 or option_index > OPTION_COUNT then
+	if option_index < 1 or option_index > (#pstate.always > 0 and 3 or 2) then
 		return false
 	end
 
@@ -222,11 +221,12 @@ function M.move_selection(permission_id, direction)
 	end
 
 	local current = pstate.selected_option
+	local option_count = #pstate.always > 0 and 3 or 2
 	local new_index
 	if direction == "up" then
-		new_index = current > 1 and current - 1 or OPTION_COUNT
+		new_index = current > 1 and current - 1 or option_count
 	else
-		new_index = current < OPTION_COUNT and current + 1 or 1
+		new_index = current < option_count and current + 1 or 1
 	end
 
 	pstate.selected_option = new_index
@@ -353,8 +353,10 @@ end
 
 function M.begin_submission(id)
 	local item = active_permissions[id]
+	if item and item.submission_token and not pending.is_current(item.submission_token) then M.restore_submission(id) end
 	if not item or item.status ~= "pending" or item.submitting then return false end
 	item.submitting, item.error = true, nil
+	item.submission_token = pending.token(item.session_id)
 	return true
 end
 
@@ -362,6 +364,7 @@ function M.restore_submission(id, err)
 	local item = active_permissions[id]
 	if not item or item.status ~= "pending" or not item.submitting then return false end
 	item.submitting, item.error = false, err
+	item.submission_token = nil
 	return true
 end
 

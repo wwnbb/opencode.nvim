@@ -28,6 +28,41 @@ describe("opencode chat help", function()
 		vim.wait(20)
 	end)
 
+	it("opens help in the current pane when the previous help and chat belong to another tab", function()
+		local help = require("opencode.ui.chat.help")
+		local state = require("opencode.ui.chat.state").state
+		local saved = { visible = state.visible, winid = state.winid, tabpage = state.tabpage }
+		local previous, columns = vim.api.nvim_get_current_win(), vim.o.columns
+		local next_tab, first, second
+		local ok, err = xpcall(function()
+			vim.o.columns = 100
+			state.visible, state.winid, state.tabpage = true, previous, vim.api.nvim_get_current_tabpage()
+			first = help.show()
+			local first_frame, first_content = first.frame.winid, first.winid
+			vim.cmd("tabnew")
+			vim.cmd("vsplit")
+			next_tab = vim.api.nvim_get_current_tabpage()
+			local pane = vim.api.nvim_get_current_win()
+			second = help.show()
+			assert.equals(next_tab, vim.api.nvim_get_current_tabpage())
+			assert.is_true(first ~= second)
+			assert.is_false(vim.api.nvim_win_is_valid(first_frame))
+			assert.is_false(vim.api.nvim_win_is_valid(first_content))
+			assert.is_true(vim.api.nvim_win_get_width(second.frame.winid) <= vim.api.nvim_win_get_width(pane))
+			assert.equals(second, help.show())
+		end, debug.traceback)
+		if second then second:close(false) end
+		if first then first:close(false) end
+		state.visible, state.winid, state.tabpage = saved.visible, saved.winid, saved.tabpage
+		if next_tab and vim.api.nvim_tabpage_is_valid(next_tab) then
+			vim.api.nvim_set_current_tabpage(next_tab)
+			vim.cmd("tabclose!")
+		end
+		vim.api.nvim_set_current_win(previous)
+		vim.o.columns = columns
+		assert.is_true(ok, err)
+	end)
+
 	it("wraps long configured keys and descriptions when resized", function()
 		local popup = require("opencode.ui.chat.help").show({
 			keymaps = { close_session = "<leader>оченьдлиннаяклавиша", cancel_pending = false },

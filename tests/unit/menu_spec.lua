@@ -32,6 +32,36 @@ describe("opencode searchable menu", function()
 
 		ctx.close()
 	end)
+	it("preserves Unicode and punctuation in queries and folds Unicode case", function()
+		local ctx = require("opencode.ui.menu").open({
+			searchable = true, refocus_chat = false, sort = false,
+			items = {
+				{ label = "Обзор кода", value = "review" },
+				{ label = "猫の説明", value = "cat" },
+				{ label = "犬の説明", value = "dog" },
+				{ label = "🐈 pet", value = "emoji" },
+				{ label = ".env.example", value = "hidden" },
+				{ label = "env.example", value = "plain" },
+				{ label = "Alias", description = "ПРОВЕРКА", value = "desc" },
+				{ label = "Provider", value = "МОДЕЛЬ", key = "КЛЮЧ" },
+			},
+		})
+		local ok, err = pcall(function()
+			for _, case in ipairs({
+				{ "Обзор", "review" }, { "ОБЗОР", "review" }, { "  обзор кода  ", "review" },
+				{ "猫", "cat" }, { "🐈", "emoji" }, { ".env", "hidden" },
+				{ "проверка", "desc" }, { "модель", "МОДЕЛЬ" }, { "ключ", "МОДЕЛЬ" },
+			}) do
+				vim.api.nvim_buf_set_lines(ctx.input.bufnr, 0, 1, false, { case[1] })
+				vim.api.nvim_exec_autocmds("TextChangedI", { buffer = ctx.input.bufnr })
+				assert.equals(1, vim.api.nvim_buf_line_count(ctx.popup.bufnr), case[1])
+				assert.equals(case[2], ctx.current().value, case[1])
+			end
+		end)
+		ctx.close()
+		if not ok then error(err) end
+	end)
+
 end)
 
 describe("Switch Session popup border", function()
@@ -138,6 +168,20 @@ local function search(ctx, query)
 end
 
 describe("opencode selector interactions", function()
+	it("notifies the highlighted item while moving and narrowing a searchable list", function()
+		local moved = {}
+		local ctx = require("opencode.ui.menu").open({
+			items = { "First", "Second", "Third" }, searchable = true, sort = false,
+			refocus_chat = false,
+			on_move = function(item) moved[#moved + 1] = item end,
+		})
+		press(ctx, "<Down>")
+		assert.same({ "Second" }, moved)
+		search(ctx, "Third")
+		assert.same({ "Second", "Third" }, moved)
+		ctx.close()
+	end)
+
 	it("fires the opener's BufLeave when the search field gains focus", function()
 		local opener = vim.api.nvim_get_current_win()
 		local left = 0
@@ -352,6 +396,23 @@ describe("opencode selector interactions", function()
 		vim.wait(120)
 	end)
 
+	it("uses the same multi-selection payload for a number as for Enter", function()
+		local selected
+		local ctx = require("opencode.ui.menu").open({
+			multi_select = true, sort = false, refocus_chat = false,
+			items = { { label = "First", value = "a" }, { label = "Second", value = "b" } },
+			on_select = function(items) selected = items end,
+		})
+		local winid = ctx.popup.winid
+		local ok, err = pcall(function()
+			press(ctx, "2")
+			assert.same({ { label = "Second", value = "b" } }, selected)
+			assert.is_false(vim.api.nvim_win_is_valid(winid))
+		end)
+		ctx.close()
+		if not ok then error(err) end
+	end)
+
 	it("preserves numeric selection, custom order, and refresh for plain selectors", function()
 		local selected
 		local ctx = require("opencode.ui.menu").open({
@@ -368,6 +429,8 @@ describe("opencode selector interactions", function()
 		})
 		press(ctx, "2")
 		assert(selected == "a" and vim.api.nvim_win_is_valid(ctx.popup.winid))
+		assert.equals("a", ctx.current().value)
+		assert.equals(2, vim.api.nvim_win_get_cursor(ctx.popup.winid)[1])
 		ctx.close()
 		vim.wait(120)
 	end)
