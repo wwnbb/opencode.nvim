@@ -10,34 +10,14 @@ local function read_file(path)
 	return content
 end
 
-local function scandir(dir, out)
-	out = out or {}
-	local handle = vim.uv.fs_scandir(dir)
-	if not handle then
-		return out
-	end
-	while true do
-		local name, kind = vim.uv.fs_scandir_next(handle)
-		if not name then
-			break
-		end
-		local path = dir .. "/" .. name
-		if kind == "directory" then
-			scandir(path, out)
-		elseif kind == "file" and path:match("%.lua$") then
-			table.insert(out, path)
-		end
-	end
-	return out
-end
-
 local function module_name(path)
 	local name = path:gsub("^lua/", ""):gsub("%.lua$", ""):gsub("/", ".")
 	return name:gsub("%.init$", "")
 end
 
-local files = scandir("lua/opencode")
+local files = vim.fn.glob("lua/opencode/**/*.lua", false, true)
 table.insert(files, "plugin/opencode.lua")
+local lines_by_path = {}
 
 local modules = {}
 local file_by_module = {}
@@ -71,10 +51,20 @@ end
 
 for _, path in ipairs(files) do
 	local source = path:match("^lua/") and module_name(path) or nil
-	local content = read_file(path)
-	local line_no = 0
-	for line in (content .. "\n"):gmatch("(.-)\n") do
-		line_no = line_no + 1
+	local lines = vim.split(read_file(path), "\n", { plain = true })
+	lines_by_path[path] = lines
+	local command_module_list = false
+	for line_no, line in ipairs(lines) do
+		-- register_defaults requires these literal names through one shared loop.
+		if source == "opencode.ui.palette" then
+			if line:match("^local default_command_modules%s*=%s*{") then
+				command_module_list = true
+			elseif command_module_list and line:match("^}") then
+				command_module_list = false
+			elseif command_module_list then
+				for req in line:gmatch("[\"']([^\"']+)[\"']") do add_require(source, req, path, line_no) end
+			end
+		end
 		for req in line:gmatch("require%s*%(?%s*[\"']([^\"']+)[\"']") do
 			add_require(source, req, path, line_no)
 		end
@@ -100,27 +90,20 @@ local ui_forbidden_requires = {
 }
 
 for _, path in ipairs(files) do
-	local content = read_file(path)
-	if store_modules[path] then
-		for line_no, line in ipairs(vim.split(content, "\n", { plain = true })) do
+	for line_no, line in ipairs(lines_by_path[path]) do
+		if store_modules[path] then
 			local requires_events = line:match("require%s*%(?%s*[\"']opencode%.events[\"']")
 			local requires_ui = line:match("require%s*%(?%s*[\"']opencode%.ui")
 			if requires_events or requires_ui then
 				table.insert(layering_violations, string.format("%s:%d store must not require events or UI", path, line_no))
 			end
 		end
-	end
-
-	if path ~= "lua/opencode/ui/chat/render_coordinator.lua" then
-		for line_no, line in ipairs(vim.split(content, "\n", { plain = true })) do
+		if path ~= "lua/opencode/ui/chat/render_coordinator.lua" then
 			if line:match("emit%s*%(%s*[\"']chat_render[\"']") then
 				table.insert(layering_violations, string.format("%s:%d chat_render must go through render_coordinator", path, line_no))
 			end
 		end
-	end
-
-	if path:match("^lua/opencode/ui/") then
-		for line_no, line in ipairs(vim.split(content, "\n", { plain = true })) do
+		if path:match("^lua/opencode/ui/") then
 			for req in line:gmatch("require%s*%(?%s*[\"']([^\"']+)[\"']") do
 				if ui_forbidden_requires[req] then
 					table.insert(

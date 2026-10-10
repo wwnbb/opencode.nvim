@@ -8,11 +8,10 @@ import argparse
 import json
 import os
 from pathlib import Path
-import re
 import subprocess
-import time
 import base64
 import urllib.request
+from support import profile_environment, start_server, wait_server, stop_server
 
 from native_ui import run
 
@@ -34,12 +33,7 @@ def main():
     assert len(projects) == 1 and projects[0].is_dir()
     project = projects[0]
     env = {"PATH": os.environ["PATH"], "LANG": "en_US.UTF-8", "TERM": "dumb", "NO_COLOR": "1"}
-    for name, relative in {"XDG_CONFIG_HOME": "config", "XDG_DATA_HOME": "data", "XDG_STATE_HOME": "state",
-                           "XDG_CACHE_HOME": "cache", "TMPDIR": "tmp", "OPENCODE_CONFIG_DIR": "config/opencode",
-                           "OPENCODE_TEST_HOME": "home"}.items():
-        target = profile / relative
-        assert target.is_dir(), f"Not a complete capture profile: {target}"
-        env[name] = str(target)
+    env.update(profile_environment(profile, create=False))
     env.update(OPENCODE_SERVER_USERNAME="opencode", OPENCODE_SERVER_PASSWORD="opencode-nvim-test-only")
     cli = str(Path(args.cli).resolve())
     version = subprocess.run([cli, "--version"], env=env, cwd=project, capture_output=True, text=True, check=True, timeout=30)
@@ -48,18 +42,9 @@ def main():
     assert all(str(profile) in line for line in paths.stdout.splitlines())
     repo = Path(__file__).resolve().parents[2]
     with (output / "serve.txt").open("w+") as log:
-        process = subprocess.Popen([cli, "serve", "--hostname", "127.0.0.1", "--port", "0"], env=env, cwd=project, stdout=log, stderr=subprocess.STDOUT)
+        process = start_server(cli, env=env, cwd=project, log=log)
         try:
-            deadline, url = time.monotonic() + 30, None
-            while time.monotonic() < deadline:
-                log.seek(0)
-                match = re.search(r"server listening on (http://127\.0\.0\.1:\d+)", log.read())
-                if match:
-                    url = match.group(1)
-                    break
-                assert process.poll() is None, "Server exited before readiness"
-                time.sleep(0.1)
-            assert url, "Server did not start"
+            url = wait_server(process, log, interval=0.1)
             if args.restore_subagent_fixture:
                 assert args.scenario == "navigation"
                 source = Path(args.restore_subagent_fixture).resolve()
@@ -86,12 +71,7 @@ def main():
                                                               "new_model_requests": 0, "reopened_disposable_profile": True,
                                                               "restored_native_subagent_fixtures": bool(args.restore_subagent_fixture)}, indent=2))
         finally:
-            process.terminate()
-            try:
-                process.wait(timeout=10)
-            except subprocess.TimeoutExpired:
-                process.kill()
-                process.wait(timeout=5)
+            stop_server(process)
             for target in output.iterdir():
                 if target.suffix in {".txt", ".json"}:
                     target.write_text(target.read_text().replace(str(profile), "<PROFILE>"))

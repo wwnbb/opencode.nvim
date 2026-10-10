@@ -18,6 +18,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from support import profile_environment, start_server, wait_server, stop_server
 
 
 def main():
@@ -48,6 +49,7 @@ def main():
     parser.add_argument("--nvim-ui", action="store_true")
     parser.add_argument("--nvim-lifecycle", action="store_true")
     parser.add_argument("--nvim-reconnect", action="store_true")
+    parser.add_argument("--nvim-parity", action="store_true", help="Native session/shell contracts and automatic SSE recovery; no explicit model prompt or provider credentials")
     parser.add_argument("--attached-ui", action="store_true", help="Capture native Neovim line grids; requires Python msgpack and Pillow")
     parser.add_argument("--mcp", action="store_true")
     parser.add_argument("--session-ops", action="store_true")
@@ -62,15 +64,7 @@ def main():
     cli = str(Path(args.cli).resolve())
     profile = Path(tempfile.mkdtemp(prefix="opencode-nvim-v2-")).resolve()
     env = {"PATH": os.environ["PATH"], "LANG": "en_US.UTF-8", "TERM": "dumb", "NO_COLOR": "1"}
-    for key, directory in {
-        "XDG_CONFIG_HOME": "config", "XDG_DATA_HOME": "data",
-        "XDG_STATE_HOME": "state", "XDG_CACHE_HOME": "cache",
-        "TMPDIR": "tmp", "OPENCODE_CONFIG_DIR": "config/opencode",
-        "OPENCODE_TEST_HOME": "home",
-    }.items():
-        path = profile / directory
-        path.mkdir(parents=True, exist_ok=True)
-        env[key] = str(path)
+    env.update(profile_environment(profile))
     # Public test credential, used only for this disposable loopback server.
     env["OPENCODE_SERVER_USERNAME"] = "opencode"
     env["OPENCODE_SERVER_PASSWORD"] = "opencode-nvim-test-only"
@@ -78,7 +72,7 @@ def main():
     project = profile / ("project-session-ops" if args.session_ops else "project пробел %#")
     project.mkdir()
     subprocess.run(["git", "init", "--quiet", str(project)], env=env, check=True)
-    if args.session_ops:
+    if args.session_ops or args.nvim_parity:
         (project / "counter.txt").write_text("one\n")
         subprocess.run(["git", "add", "counter.txt"], cwd=project, env=env, check=True)
         subprocess.run(["git", "-c", "user.name=OpenCode Test", "-c", "user.email=test@example.invalid", "commit", "--quiet", "-m", "Test fixture"], cwd=project, env=env, check=True)
@@ -126,6 +120,20 @@ def main():
             shutil.copyfile(Path(__file__).with_name("obsolete_plugin_fixture.ts"), fixture / "index.ts")
             (fixture / "node_modules").symlink_to(repo / "opencode_nvim/plugins/opencode-nvim/node_modules", target_is_directory=True)
             (Path(env["OPENCODE_CONFIG_DIR"]) / "opencode.json").write_text(json.dumps({"plugins": [str(fixture)]}))
+    if args.nvim_parity:
+        assert not args.model and not args.provider_key_env, "Parity uses a provider-denied profile, never a model"
+        models_path = profile / "models.json"
+        models_path.write_text("{}")
+        env["OPENCODE_MODELS_PATH"] = str(models_path)
+        env["OPENCODE_DISABLE_MODELS_FETCH"] = "true"
+        config_path = Path(env["OPENCODE_CONFIG_DIR"]) / "opencode.json"
+        config = json.loads(config_path.read_text()) if config_path.exists() else {}
+        # Native move wakes the drain of synthetic shell notifications. The free
+        # provider is enabled without credentials, so isolation must deny its use.
+        config.setdefault("experimental", {})["policies"] = [
+            {"action": "provider.use", "resource": "*", "effect": "deny"}
+        ]
+        config_path.write_text(json.dumps(config))
     if args.nvim_ui:
         skill = Path(env["OPENCODE_CONFIG_DIR"]) / "skills/smoke-native"
         skill.mkdir(parents=True, exist_ok=True)
@@ -172,21 +180,10 @@ def main():
                 assert str(profile) in line, "Non-isolated runtime path: " + line
 
     with (output / "serve.txt").open("w+") as server_log:
-        process = subprocess.Popen([cli, "serve", "--hostname", "127.0.0.1", "--port", "0"],
-                                   env=env, cwd=project, stdout=server_log, stderr=subprocess.STDOUT)
+        process = start_server(cli, env=env, cwd=project, log=server_log)
         stream = None
         try:
-            deadline = time.monotonic() + 30
-            url = None
-            while time.monotonic() < deadline:
-                server_log.seek(0)
-                match = re.search(r"server listening on (http://127\.0\.0\.1:\d+)", server_log.read())
-                if match:
-                    url = match.group(1)
-                    break
-                assert process.poll() is None, "Server exited before readiness"
-                time.sleep(0.1)
-            assert url, "No listening URL before deadline"
+            url = wait_server(process, server_log, interval=0.1)
 
             def request(method, path, body=None, authenticated=True):
                 headers = {"Accept": "application/json"}
@@ -233,10 +230,12 @@ def main():
                 while True:
                     code, data = request("GET", "/api/" + endpoint + location)
                     assert code == 200, data
-                    if endpoint not in ["agent", "model"] or data.get("data") or time.monotonic() > deadline:
+                    if endpoint not in ["agent", "model"] or data.get("data") or time.monotonic() > deadline or args.nvim_parity:
                         break
                     time.sleep(0.2)
                 save(endpoint.replace("/", "-") + ".json", data)
+                if args.nvim_parity and endpoint in ["provider", "model"]:
+                    assert data["data"] == [], "Offline parity profile has an active provider/model"
             if args.auth:
                 from auth_v2 import run as run_auth
                 run_auth(request, save, location)
@@ -267,7 +266,8 @@ def main():
                                           (args.nvim_session_scope, "v2_session_scope.lua", "nvim-session-scope"),
                                           (args.nvim_ui, "v2_ui.lua", "nvim-ui"),
                                           (args.nvim_lifecycle, "v2_lifecycle.lua", "nvim-lifecycle"),
-                                          (args.nvim_reconnect, "v2_reconnect.lua", "nvim-reconnect")]:
+                                          (args.nvim_reconnect, "v2_reconnect.lua", "nvim-reconnect"),
+                                          (args.nvim_parity, "v2_parity.lua", "nvim-parity")]:
                 if not enabled:
                     continue
                 if script in ["v2_smoke.lua", "v2_input_attachments.lua", "v2_review.lua", "v2_review_matrix.lua", "v2_server_review.lua", "v2_rg.lua", "v2_queue.lua", "v2_selection.lua", "v2_session_scope.lua", "v2_ui.lua", "v2_reconnect.lua"]:
@@ -285,7 +285,7 @@ def main():
                     if script == "v2_auth_ui.lua":
                         # -l exits while getcharstr waits; an Ex command keeps its input loop alive.
                         nvim_env["OPENCODE_V2_SCRIPT"] = str(repo / "tests/runtime" / script)
-                        command += ["-c", "lua dofile(vim.env.OPENCODE_V2_SCRIPT)", "-c", "qa!"]
+                        command += ["-c", "lua local ok, err = xpcall(function() dofile(vim.env.OPENCODE_V2_SCRIPT) end, debug.traceback); if not ok then vim.api.nvim_err_writeln(err); vim.cmd('cquit 1') end", "-c", "qa!"]
                     else:
                         command += ["-l", str(repo / "tests/runtime" / script)]
                     result = subprocess.run(command,
@@ -311,7 +311,7 @@ def main():
             if args.session_ops:
                 assert args.model, "Session operations require the explicit test model"
                 from session_ops_v2 import run as run_session_ops
-                run_session_ops(request, save, prefix, project, env)
+                run_session_ops(request, save, prefix, project)
             if args.subagents:
                 assert args.model, "Subagent test requires an explicit model"
                 from subagents_v2 import run as run_subagents
@@ -351,13 +351,7 @@ def main():
             assert code == 404
             print("Captured runtime fixtures:", output)
         finally:
-            if process.poll() is None:
-                process.terminate()
-            try:
-                process.wait(timeout=10)
-            except subprocess.TimeoutExpired:
-                process.kill()
-                process.wait(timeout=5)
+            stop_server(process)
             if stream:
                 stream.close()
             save("events.json", events)

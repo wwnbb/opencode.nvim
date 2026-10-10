@@ -2,8 +2,6 @@
 # Shared dependency lookup for opencode.nvim headless Neovim tests.
 
 find_nvim_test_dep() {
-	local name="$1"
-	shift
 	local path
 	for path in "$@"; do
 		if [ -n "$path" ] && [ -d "$path" ]; then
@@ -17,7 +15,7 @@ find_nvim_test_dep() {
 resolve_nvim_test_deps() {
 	local deps_root="${OPENCODE_NVIM_TEST_DEPS:-$PLUGIN_ROOT/.deps/nvim}"
 
-	PLENARY_PATH="$(find_nvim_test_dep "plenary.nvim" \
+	PLENARY_PATH="$(find_nvim_test_dep \
 		"${OPENCODE_NVIM_PLENARY_PATH:-}" \
 		"$deps_root/plenary.nvim" \
 		"$HOME/.local/share/nvim/lazy/plenary.nvim" \
@@ -29,7 +27,7 @@ resolve_nvim_test_deps() {
 		return 1
 	}
 
-	NUI_PATH="$(find_nvim_test_dep "nui.nvim" \
+	NUI_PATH="$(find_nvim_test_dep \
 		"${OPENCODE_NVIM_NUI_PATH:-}" \
 		"$deps_root/nui.nvim" \
 		"$HOME/.local/share/nvim/lazy/nui.nvim" \

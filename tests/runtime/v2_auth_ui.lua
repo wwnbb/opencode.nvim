@@ -112,6 +112,17 @@ connect("Test expired")
 wait(function() return current_text():find("expired", 1, true) end, "Expired auth not shown")
 shot("auth-expired"); key("<Esc>")
 
+connect("Test manual command")
+wait(function() return current_text():find("Code: PUBLIC-123", 1, true) end, "Native command login message is missing")
+assert(current_text():find("https://example.invalid/device", 1, true), "Device URL is missing")
+shot("auth-command-pending")
+wait(function() return current_text():find("Authorization: failed", 1, true) end, "Command failure was not displayed")
+assert(current_text():find("Public command failure", 1, true), "Native command failure output is missing")
+local _, repeats = current_text():gsub("Code: PUBLIC%-123", "")
+assert(repeats == 1, "Cumulative command output was appended twice")
+assert(not notified("Code: PUBLIC-123") and not notified("Public command failure"), "Command output escaped into notifications")
+shot("auth-command-failed"); key("<Esc>")
+
 -- Account management traverses the actual searchable menus and confirmation UI.
 chat.focus(); palette.trigger("provider.disconnect")
 wait(function() return screen_text():find("public", 1, true) == nil and vim.bo.filetype == "opencode_float" end, "Connections unavailable")
@@ -140,9 +151,9 @@ assert(env_preserved, "Environment connection was removed")
 chat.focus(); palette.trigger("provider.disconnect")
 wait(function() return vim.bo.filetype == "opencode_float" end, "Final connections menu missing")
 shot("auth-remaining-account"); vim.cmd("stopinsert"); key("<Esc>")
-vim.fn.writefile({ vim.json.encode({ version = "2.0.11", key_ui = true, oauth_code_ui = true,
+vim.fn.writefile({ vim.json.encode({ version = state.get_server_info().version, key_ui = true, oauth_code_ui = true,
 	authorization_url_dispatch = true, personal_browser_opened = false, expired_ui = true,
 	accounts_before_delete = before, accounts_after_delete = after, activation_ui = true, deletion_ui = true,
-	secret_not_in_buffers = true, notifications = notifications }) }, assert(vim.env.OPENCODE_V2_OUTPUT))
+	secret_not_in_buffers = true, command_pending_and_failure_ui = true, notifications = notifications }) }, assert(vim.env.OPENCODE_V2_OUTPUT))
 chat.close(); lifecycle.disconnect()
 print("Native auth UI passed")

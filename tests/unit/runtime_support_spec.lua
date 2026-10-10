@@ -1,0 +1,20 @@
+local support = require("tests.runtime.support")
+
+describe("runtime callback helpers", function()
+	it("waits for actual callbacks and preserves false and nil successful values", function()
+		assert.is_false(support.await(function(callback)
+			vim.schedule(function() callback(nil, false) end)
+		end))
+		assert.is_nil(support.await(function(callback) callback(nil, nil) end))
+		assert.has_error(function()
+			support.await(function(callback) callback({ message = "fixture failure" }) end)
+		end)
+	end)
+
+	it("crosses the real schedule queue before capturing a surface", function()
+		local changed = false
+		vim.schedule(function() changed = true end)
+		support.flush_scheduled()
+		assert.is_true(changed)
+	end)
+end)

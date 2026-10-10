@@ -44,19 +44,6 @@ require("opencode").setup({
 	},
 })
 
--- Core keymaps
-vim.keymap.set("n", "<leader>ot", function()
-	require("opencode").toggle()
-end, { desc = "Toggle OpenCode chat", noremap = true, silent = true })
-
-vim.keymap.set("n", "<leader>op", function()
-	require("opencode").command_palette()
-end, { desc = "OpenCode command palette", noremap = true, silent = true })
-
-vim.keymap.set("n", "<leader>ox", function()
-	require("opencode").abort()
-end, { desc = "Abort OpenCode request", noremap = true, silent = true })
-
 -- Setup lualine with opencode component (if lualine is installed)
 local lualine_ok, lualine = pcall(require, "lualine")
 if lualine_ok then

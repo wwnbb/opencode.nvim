@@ -4,7 +4,6 @@ Requires msgpack and Pillow in the Python environment. No personal Neovim config
 or terminal is used. Lua scenarios request captures with opencode_screenshot.
 """
 import os
-from pathlib import Path
 import select
 import subprocess
 import time
