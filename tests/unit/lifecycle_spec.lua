@@ -24,12 +24,7 @@ describe("opencode lifecycle", function()
 	local health_callbacks
 	local listeners
 	local client
-
-	local function assert_eq(actual, expected, message)
-		if actual ~= expected then
-			error(string.format("%s: expected %s, got %s", message, vim.inspect(expected), vim.inspect(actual)))
-		end
-	end
+	local temporary_files
 
 	local function flush_scheduled()
 		while #scheduled > 0 do
@@ -74,6 +69,7 @@ describe("opencode lifecycle", function()
 	end
 
 	before_each(function()
+		temporary_files = {}
 		saved_modules = {}
 		for _, name in ipairs(module_names) do
 			saved_modules[name] = package.loaded[name]
@@ -195,6 +191,7 @@ describe("opencode lifecycle", function()
 		}
 
 		client = {
+			auto_ready = true,
 			connect_calls = 0,
 			connect_result = true,
 			connect_error = nil,
@@ -205,10 +202,15 @@ describe("opencode lifecycle", function()
 			if client.connect_result == false then
 				return false, client.connect_error
 			end
+			if client.auto_ready then for _, callback in ipairs(listeners["server.connected"] or {}) do callback() end end
 			return true
 		end
 		function client.disconnect_events()
 			client.disconnect_calls = client.disconnect_calls + 1
+		end
+		function client.configure_endpoint(opts)
+			state_data.http_setup = vim.tbl_extend("force", state_data.http_setup or {}, opts)
+			state_data.sse_setup = vim.tbl_extend("force", state_data.sse_setup or {}, opts)
 		end
 		function client.on_event(event_type, callback)
 			listeners[event_type] = listeners[event_type] or {}
@@ -234,6 +236,7 @@ describe("opencode lifecycle", function()
 	end)
 
 	after_each(function()
+		for _, file in ipairs(temporary_files) do vim.fn.delete(file, "rf") end
 		vim.schedule = original_schedule
 		vim.defer_fn = original_defer_fn
 		vim.notify = original_notify
@@ -248,10 +251,10 @@ describe("opencode lifecycle", function()
 		local job = jobs[1]
 		job.opts.on_stdout(nil, "server listening on http://::1:4096", job)
 		flush_scheduled()
-		assert_eq(state_data.server.host, "::1", "IPv6 host")
-		assert_eq(state_data.server.port, 4096, "IPv6 port")
+		assert.equals("::1", state_data.server.host, "IPv6 host")
+		assert.equals(4096, state_data.server.port, "IPv6 port")
 		respond_health(1, true); flush_scheduled()
-		assert_eq(connected, true, "IPv6 readiness")
+		assert.equals(true, connected, "IPv6 readiness")
 	end)
 
 	it("removes automatic shutdown when reconfigured off", function()
@@ -273,6 +276,116 @@ describe("opencode lifecycle", function()
 		assert.equals("test-secret", job.opts.env.OPENCODE_SERVER_PASSWORD)
 	end)
 
+	local function managed_file(info)
+		local file = vim.fn.tempname(); temporary_files[#temporary_files + 1] = file
+		assert.is_true(require("opencode.util.json_file").write(file, info))
+		lifecycle.setup({ managed = true, service_file = file, auto_start = false })
+		return file
+	end
+	local function managing_host()
+		local directory = vim.fn.tempname(); temporary_files[#temporary_files + 1] = directory
+		lifecycle.setup({ managed = true, service_file = false, auto_start = false, env = { XDG_STATE_HOME = directory } })
+		local file = directory .. "/opencode/service.json"
+		assert.is_true(require("opencode.util.json_file").write(file, { pid = 1000, url = "http://localhost:4096", version = "2.0.11" }))
+		lifecycle.start(); respond_health(1, true); respond_health(2, true); flush_scheduled()
+		assert.is_true(lifecycle.managed_status().can_manage)
+		return file
+	end
+	it("keeps chat connected when the native updater is unavailable", function()
+		managing_host()
+		local failure, callbacks = nil, 0
+		lifecycle.manage_service("upgrade", function(err) failure = err; callbacks = callbacks + 1 end)
+		respond_health(3, true); flush_scheduled()
+		assert.equals("cli_unavailable", failure.code); assert.equals(1, callbacks)
+		assert.equals("connected", state_data.connection); assert.equals(0, client.disconnect_calls)
+	end)
+	it("refuses managing-host mutations after the registration changes during preflight", function()
+		local file = managing_host()
+		local failure
+		lifecycle.manage_service("restart", function(err) failure = err end)
+		assert.is_true(require("opencode.util.json_file").write(file, { pid = 1000, url = "http://localhost:4097", version = "2.0.11" }))
+		respond_health(3, true); flush_scheduled()
+		assert.equals("stale_connection", failure.code); assert.equals(0, client.disconnect_calls)
+		assert.equals("connected", state_data.connection)
+	end)
+	it("recovers the existing daemon connection after a native restart command failure", function()
+		managing_host()
+		local failure
+		lifecycle.manage_service("restart", function(err) failure = err end)
+		respond_health(3, true); flush_scheduled()
+		assert.equals("cli_unavailable", failure.code); assert.equals(4, #health_callbacks)
+		respond_health(4, true); respond_health(5, true); flush_scheduled()
+		assert.equals("connected", state_data.connection)
+	end)
+	it("discovers native URL/auth and verifies PID before connecting without owning the daemon", function()
+		managed_file({ pid = 1000, version = "2.0.11", url = "http://127.0.0.1:4096/prefix", password = "private-value" })
+		local runs = 0
+		lifecycle.ensure_connected(function() runs = runs + 1 end)
+		assert.equals(0, #jobs); assert.equals("connecting", state_data.connection)
+		respond_health(1, true); respond_health(2, true); flush_scheduled()
+		assert.equals("connected", state_data.connection); assert.equals(1, runs)
+		assert.is_false(state_data.server.managed); assert.is_nil(state_data.server.pid)
+		assert.equals("http://127.0.0.1:4096/prefix", state_data.http_setup.url)
+		assert.equals("private-value", state_data.http_setup.auth.password)
+		assert.is_nil(lifecycle.managed_status().password); assert.is_false(lifecycle.managed_status().can_manage)
+	end)
+	it("rejects stale managed PID/version and registration replacement during health", function()
+		local file = managed_file({ pid = 1001, url = "http://localhost:4096" })
+		local runs = 0
+		lifecycle.ensure_connected(function() runs = runs + 1 end)
+		respond_health(1, true); flush_scheduled()
+		assert.equals("error", state_data.connection); assert.equals(0, client.connect_calls); assert.equals(0, runs)
+		assert.is_true(require("opencode.util.json_file").write(file, { pid = 1000, url = "http://localhost:4096" }))
+		lifecycle.ensure_connected(function() runs = runs + 1 end)
+		assert.is_true(require("opencode.util.json_file").write(file, { pid = 1000, url = "http://localhost:4097" }))
+		respond_health(2, true); flush_scheduled()
+		assert.equals("error", state_data.connection); assert.equals(0, runs)
+	end)
+	it("rediscovery refreshes native endpoint and credentials and ignores late disconnected health", function()
+		local file = managed_file({ pid = 1000, url = "http://localhost:4096", password = "one" })
+		lifecycle.start(); respond_health(1, true); respond_health(2, true); flush_scheduled()
+		assert.is_true(require("opencode.util.json_file").write(file, { pid = 1000, url = "https://localhost:4097/proxy", password = "two" }))
+		local result, guard = nil, true
+		state_data.sse_setup.resolve_endpoint(function(err, value) result = { err = err, config = value } end, function() return guard end)
+		respond_health(3, true); assert.is_nil(result.err); assert.equals("https://localhost:4097/proxy", result.config.url)
+		assert.equals("two", result.config.auth.password)
+		result = nil
+		state_data.sse_setup.resolve_endpoint(function(...) result = { ... } end, function() return guard end)
+		guard = false; lifecycle.disconnect(); respond_health(4, true); flush_scheduled()
+		assert.is_nil(result); assert.equals("idle", state_data.connection)
+	end)
+	it("connects URL endpoints without spawning and sanitizes invalid URL status", function()
+		lifecycle.setup({ url = "https://host/proxy", auto_start = true }); state_data.server.url = "https://host/proxy"
+		lifecycle.start(); respond_health(1, true); flush_scheduled()
+		assert.equals(0, #jobs); assert.equals("connected", state_data.connection); assert.is_false(state_data.server.managed)
+		lifecycle.setup({ url = "https://user:private-value@host" })
+		assert.is_nil(lifecycle.managed_status().url:find("private-value", 1, true))
+	end)
+	it("waits for native readiness rather than successful HTTP headers or stream open", function()
+		client.auto_ready = false
+		local runs = 0
+		lifecycle.ensure_connected(function() runs = runs + 1 end)
+		emit_listening(jobs[1], 4096); respond_health(1, true); flush_scheduled()
+		assert.equals("connecting", state_data.connection); assert.equals(0, runs)
+		listeners["server.connected"][1](); listeners["server.connected"][1](); flush_scheduled()
+		assert.equals("connected", state_data.connection); assert.equals(1, runs)
+	end)
+	it("drops waiting readiness and stale native events on manual disconnect", function()
+		client.auto_ready = false
+		local runs = 0
+		lifecycle.ensure_connected(function() runs = runs + 1 end)
+		emit_listening(jobs[1], 4096); respond_health(1, true)
+		lifecycle.disconnect(); listeners["server.connected"][1](); flush_scheduled()
+		assert.equals("idle", state_data.connection); assert.equals(0, runs)
+	end)
+	it("expires header-only external readiness without dispatching an action", function()
+		client.auto_ready = false
+		lifecycle.setup({ port = 4096 }); state_data.server.port = 4096
+		local runs = 0
+		lifecycle.ensure_connected(function() runs = runs + 1 end)
+		respond_health(1, true); fire_timer(last_active_timer()); flush_scheduled()
+		assert.equals("error", state_data.connection); assert.equals(0, runs)
+	end)
 	it("drops readiness callbacks scheduled before disconnect", function()
 		local runs = 0
 		lifecycle.ensure_connected(function() runs = runs + 1 end)
@@ -345,13 +458,13 @@ describe("opencode lifecycle", function()
 		lifecycle.ensure_connected(function() end)
 		local job = jobs[1]
 		local password = job.opts.env.OPENCODE_SERVER_PASSWORD
-		assert_eq(type(password), "string", "owned credential type")
-		assert_eq(#password, 64, "owned credential length")
+		assert.equals("string", type(password), "owned credential type")
+		assert.equals(64, #password, "owned credential length")
 		emit_listening(job, 4096)
-		assert_eq(state_data.http_setup.auth.password, password, "HTTP credential")
-		assert_eq(state_data.sse_setup.auth.password, password, "SSE credential")
-		assert_eq(job.opts.enable_recording, false, "no raw startup-output retention")
-		assert_eq(lifecycle.opts.auth, nil, "generated secret does not become user configuration")
+		assert.equals(password, state_data.http_setup.auth.password, "HTTP credential")
+		assert.equals(password, state_data.sse_setup.auth.password, "SSE credential")
+		assert.equals(false, job.opts.enable_recording, "no raw startup-output retention")
+		assert.equals(nil, lifecycle.opts.auth, "generated secret does not become user configuration")
 	end)
 
 	it("installs completion options in the owned process and keeps its startup snapshot", function()
@@ -496,11 +609,11 @@ describe("opencode lifecycle", function()
 		respond_health(1, true)
 		flush_scheduled()
 
-		assert_eq(old_runs, 0, "failed action")
-		assert_eq(lifecycle.status().pending_callbacks, 0, "failed queue")
-		assert_eq(state_data.connection, "error", "failed state")
-		assert_eq(state_data.server.managed, true, "failure ownership")
-		assert_eq(first_job.signal_count, 1, "failure signal")
+		assert.equals(0, old_runs, "failed action")
+		assert.equals(0, lifecycle.status().pending_callbacks, "failed queue")
+		assert.equals("error", state_data.connection, "failed state")
+		assert.equals(true, state_data.server.managed, "failure ownership")
+		assert.equals(1, first_job.signal_count, "failure signal")
 
 		first_job.opts.on_exit(first_job, 0, 15)
 		flush_scheduled()
@@ -514,8 +627,8 @@ describe("opencode lifecycle", function()
 		respond_health(2, true)
 		flush_scheduled()
 
-		assert_eq(old_runs, 0, "old action after retry")
-		assert_eq(retry_runs, 1, "retry action")
+		assert.equals(0, old_runs, "old action after retry")
+		assert.equals(1, retry_runs, "retry action")
 	end)
 
 	it("retains ownership when synchronous signaling fails", function()
@@ -528,29 +641,29 @@ describe("opencode lifecycle", function()
 
 		fire_timer(timers[1])
 
-		assert_eq(job.signal_count, 1, "failed signal count")
-		assert_eq(state_data.connection, "error", "signal failure state")
-		assert_eq(state_data.server.managed, true, "signal failure managed state")
-		assert_eq(state_data.server.pid, job.pid, "signal failure PID")
-		assert_eq(lifecycle.status().pending_callbacks, 0, "signal failure queue")
-		assert_eq(lifecycle.start(), false, "replacement start while owned")
-		assert_eq(#jobs, 1, "replacement job count")
+		assert.equals(1, job.signal_count, "failed signal count")
+		assert.equals("error", state_data.connection, "signal failure state")
+		assert.equals(true, state_data.server.managed, "signal failure managed state")
+		assert.equals(job.pid, state_data.server.pid, "signal failure PID")
+		assert.equals(0, lifecycle.status().pending_callbacks, "signal failure queue")
+		assert.equals(false, lifecycle.start(), "replacement start while owned")
+		assert.equals(1, #jobs, "replacement job count")
 
 		lifecycle.ensure_connected(function()
 			stranded_runs = stranded_runs + 1
 		end)
-		assert_eq(lifecycle.status().pending_callbacks, 0, "refused retry queue")
-		assert_eq(stranded_runs, 0, "refused retry action")
+		assert.equals(0, lifecycle.status().pending_callbacks, "refused retry queue")
+		assert.equals(0, stranded_runs, "refused retry action")
 
 		job.kill_fails = false
-		assert_eq(lifecycle.stop(), true, "stop retry result")
-		assert_eq(job.signal_count, 2, "stop retry signal")
-		assert_eq(state_data.server.managed, true, "ownership before exit")
+		assert.equals(true, lifecycle.stop(), "stop retry result")
+		assert.equals(2, job.signal_count, "stop retry signal")
+		assert.equals(true, state_data.server.managed, "ownership before exit")
 
 		job.opts.on_exit(job, 0, 15)
 		flush_scheduled()
-		assert_eq(state_data.server.managed, false, "ownership after exit")
-		assert_eq(state_data.server.pid, nil, "PID after exit")
+		assert.equals(false, state_data.server.managed, "ownership after exit")
+		assert.equals(nil, state_data.server.pid, "PID after exit")
 	end)
 
 	it("waits for delayed process exit before restarting", function()
@@ -558,23 +671,23 @@ describe("opencode lifecycle", function()
 
 		lifecycle.restart()
 
-		assert_eq(first_job.signal_count, 1, "restart signal dispatch")
-		assert_eq(first_job.last_signal, 15, "restart signal")
-		assert_eq(#jobs, 1, "restart before exit")
-		assert_eq(client.disconnect_calls, 1, "restart disconnects SSE before teardown")
+		assert.equals(1, first_job.signal_count, "restart signal dispatch")
+		assert.equals(15, first_job.last_signal, "restart signal")
+		assert.equals(1, #jobs, "restart before exit")
+		assert.equals(1, client.disconnect_calls, "restart disconnects SSE before teardown")
 
 		flush_scheduled()
-		assert_eq(#jobs, 1, "restart remains pending until observed exit")
+		assert.equals(1, #jobs, "restart remains pending until observed exit")
 
 		first_job.opts.on_exit(first_job, 0, 15)
 		flush_scheduled()
-		assert_eq(#jobs, 2, "restart after observed exit")
+		assert.equals(2, #jobs, "restart after observed exit")
 
 		local second_job = jobs[2]
 		emit_listening(second_job, 4202)
 		respond_health(2, true)
 		flush_scheduled()
-		assert_eq(state_data.connection, "connected", "restarted connection")
+		assert.equals("connected", state_data.connection, "restarted connection")
 	end)
 
 	it("reconnects an external server immediately without a restart delay", function()
@@ -583,7 +696,7 @@ describe("opencode lifecycle", function()
 		respond_health(1, true); flush_scheduled()
 		lifecycle.restart()
 		assert.equals(2, #health_callbacks)
-		assert.equals(0, #timers)
+		assert.is_nil(last_active_timer())
 		assert.equals(1, state_data.cleanup_calls)
 		respond_health(2, true); flush_scheduled()
 		assert.equals("connected", state_data.connection)
@@ -632,9 +745,9 @@ describe("opencode lifecycle", function()
 		health_callbacks[1](nil, { healthy = true, version = "stale" })
 		flush_scheduled()
 
-		assert_eq(client.connect_calls, 0, "late connect count")
-		assert_eq(state_data.server.port, 4301, "late stdout port")
-		assert_eq(old_runs, 0, "timed-out action")
+		assert.equals(0, client.connect_calls, "late connect count")
+		assert.equals(4301, state_data.server.port, "late stdout port")
+		assert.equals(0, old_runs, "timed-out action")
 
 		first_job.opts.on_exit(first_job, 0, 15)
 		flush_scheduled()
@@ -645,13 +758,13 @@ describe("opencode lifecycle", function()
 
 		first_job.opts.on_exit(first_job, 1, 0)
 		flush_scheduled()
-		assert_eq(state_data.server.pid, second_job.pid, "stale exit PID")
+		assert.equals(second_job.pid, state_data.server.pid, "stale exit PID")
 
 		emit_listening(second_job, 4302)
 		respond_health(2, true)
 		flush_scheduled()
-		assert_eq(old_runs, 0, "old action after timeout retry")
-		assert_eq(retry_runs, 1, "timeout retry action")
+		assert.equals(0, old_runs, "old action after timeout retry")
+		assert.equals(1, retry_runs, "timeout retry action")
 	end)
 
 	it("cannot connect after health checks are exhausted", function()
@@ -666,14 +779,14 @@ describe("opencode lifecycle", function()
 		fire_timer(timers[#timers])
 		respond_health(2, false)
 
-		assert_eq(runs, 0, "health failure action")
-		assert_eq(state_data.connection, "error", "health failure state")
-		assert_eq(job.signal_count, 1, "health failure signal")
-		assert_eq(lifecycle.status().pending_callbacks, 0, "health failure queue")
+		assert.equals(0, runs, "health failure action")
+		assert.equals("error", state_data.connection, "health failure state")
+		assert.equals(1, job.signal_count, "health failure signal")
+		assert.equals(0, lifecycle.status().pending_callbacks, "health failure queue")
 
 		health_callbacks[2](nil, { healthy = true, version = "late" })
 		flush_scheduled()
-		assert_eq(client.connect_calls, 0, "late health connect")
+		assert.equals(0, client.connect_calls, "late health connect")
 	end)
 
 	it("reconnects the owned process without duplicate listeners", function()
@@ -686,7 +799,7 @@ describe("opencode lifecycle", function()
 		}
 
 		for _, event_type in ipairs(event_types) do
-			assert_eq(#(listeners[event_type] or {}), 1, event_type .. " initial listeners")
+			assert.equals(1, #(listeners[event_type] or {}), event_type .. " initial listeners")
 		end
 
 		lifecycle.disconnect()
@@ -698,10 +811,10 @@ describe("opencode lifecycle", function()
 		respond_health(2, true)
 		flush_scheduled()
 
-		assert_eq(#jobs, 1, "failed reconnect job count")
-		assert_eq(job.signal_count, 0, "failed reconnect process signal")
-		assert_eq(failed_runs, 0, "failed reconnect action")
-		assert_eq(lifecycle.status().pending_callbacks, 0, "failed reconnect queue")
+		assert.equals(1, #jobs, "failed reconnect job count")
+		assert.equals(0, job.signal_count, "failed reconnect process signal")
+		assert.equals(0, failed_runs, "failed reconnect action")
+		assert.equals(0, lifecycle.status().pending_callbacks, "failed reconnect queue")
 
 		client.connect_result = true
 		client.connect_error = nil
@@ -711,10 +824,10 @@ describe("opencode lifecycle", function()
 		respond_health(3, true)
 		flush_scheduled()
 
-		assert_eq(#jobs, 1, "successful reconnect job count")
-		assert_eq(retry_runs, 1, "successful reconnect action")
+		assert.equals(1, #jobs, "successful reconnect job count")
+		assert.equals(1, retry_runs, "successful reconnect action")
 		for _, event_type in ipairs(event_types) do
-			assert_eq(#(listeners[event_type] or {}), 1, event_type .. " reconnect listeners")
+			assert.equals(1, #(listeners[event_type] or {}), event_type .. " reconnect listeners")
 		end
 	end)
 
@@ -728,55 +841,55 @@ describe("opencode lifecycle", function()
 		job.opts.on_exit(job, 1, 0)
 		flush_scheduled()
 
-		assert_eq(runs, 0, "exited action")
-		assert_eq(lifecycle.status().pending_callbacks, 0, "exited queue")
-		assert_eq(state_data.connection, "error", "exited state")
-		assert_eq(state_data.server.managed, false, "exited ownership")
+		assert.equals(0, runs, "exited action")
+		assert.equals(0, lifecycle.status().pending_callbacks, "exited queue")
+		assert.equals("error", state_data.connection, "exited state")
+		assert.equals(false, state_data.server.managed, "exited ownership")
 	end)
 
 	it("dispatches stop synchronously and idempotently", function()
 		local job = complete_start(nil, 4601)
 
-		assert_eq(lifecycle.stop(), true, "first stop")
-		assert_eq(job.signal_count, 1, "first stop signal")
-		assert_eq(job.last_signal, 15, "first stop SIGTERM")
-		assert_eq(client.disconnect_calls, 1, "stop disconnects SSE")
-		assert_eq(#jobs, 1, "stop kill job count")
-		assert_eq(lifecycle.stop(), true, "repeated stop")
-		assert_eq(job.signal_count, 1, "repeated stop signal")
-		assert_eq(client.disconnect_calls, 1, "repeated stop does not disconnect twice")
-		assert_eq(state_data.server.managed, true, "managed before exit")
+		assert.equals(true, lifecycle.stop(), "first stop")
+		assert.equals(1, job.signal_count, "first stop signal")
+		assert.equals(15, job.last_signal, "first stop SIGTERM")
+		assert.equals(1, client.disconnect_calls, "stop disconnects SSE")
+		assert.equals(1, #jobs, "stop kill job count")
+		assert.equals(true, lifecycle.stop(), "repeated stop")
+		assert.equals(1, job.signal_count, "repeated stop signal")
+		assert.equals(1, client.disconnect_calls, "repeated stop does not disconnect twice")
+		assert.equals(true, state_data.server.managed, "managed before exit")
 
 		job.opts.on_exit(job, 0, 15)
 		flush_scheduled()
-		assert_eq(state_data.server.managed, false, "managed after exit")
+		assert.equals(false, state_data.server.managed, "managed after exit")
 	end)
 
 	it("escalates a hung stop to SIGKILL then releases ownership", function()
 		local job = complete_start(nil, 4701)
 
-		assert_eq(lifecycle.stop(), true, "hung stop")
-		assert_eq(job.last_signal, 15, "hung stop SIGTERM")
-		assert_eq(lifecycle.start(), false, "start blocked while stopping")
+		assert.equals(true, lifecycle.stop(), "hung stop")
+		assert.equals(15, job.last_signal, "hung stop SIGTERM")
+		assert.equals(false, lifecycle.start(), "start blocked while stopping")
 
 		local term_timer = last_active_timer()
 		assert(term_timer, "stop timeout must be armed")
 		fire_timer(term_timer)
 
-		assert_eq(job.signal_count, 2, "SIGKILL dispatch")
-		assert_eq(job.last_signal, 9, "hung stop SIGKILL")
-		assert_eq(lifecycle.start(), false, "start blocked after SIGKILL")
-		assert_eq(state_data.server.managed, true, "owned after SIGKILL")
+		assert.equals(2, job.signal_count, "SIGKILL dispatch")
+		assert.equals(9, job.last_signal, "hung stop SIGKILL")
+		assert.equals(false, lifecycle.start(), "start blocked after SIGKILL")
+		assert.equals(true, state_data.server.managed, "owned after SIGKILL")
 
 		local kill_timer = last_active_timer()
 		assert(kill_timer, "SIGKILL wait must be armed")
 		fire_timer(kill_timer)
 		flush_scheduled()
 
-		assert_eq(state_data.server.managed, false, "released after SIGKILL timeout")
-		assert_eq(state_data.connection, "error", "error after SIGKILL timeout")
-		assert_eq(lifecycle.start(), true, "start after hang release")
-		assert_eq(#jobs, 2, "replacement job after hang release")
+		assert.equals(false, state_data.server.managed, "released after SIGKILL timeout")
+		assert.equals("error", state_data.connection, "error after SIGKILL timeout")
+		assert.equals(true, lifecycle.start(), "start after hang release")
+		assert.equals(2, #jobs, "replacement job after hang release")
 	end)
 
 	it("uses explicit port zero for a private server", function()
@@ -819,8 +932,8 @@ describe("opencode lifecycle", function()
 			runs = runs + 1
 		end)
 
-		assert_eq(runs, 0, "disabled action")
-		assert_eq(#jobs, 0, "disabled jobs")
-		assert_eq(lifecycle.status().pending_callbacks, 0, "disabled queue")
+		assert.equals(0, runs, "disabled action")
+		assert.equals(0, #jobs, "disabled jobs")
+		assert.equals(0, lifecycle.status().pending_callbacks, "disabled queue")
 	end)
 end)

@@ -195,6 +195,7 @@ function M.new(opts)
 		end
 
 		if state.body_mode == "length" then
+			-- on_body can synchronously call finish_eof before process_body completes.
 			local remaining = (state.expected_length or 0) - state.body_bytes
 			if remaining <= 0 then
 				return
@@ -317,6 +318,7 @@ function M.new(opts)
 			return
 		end
 
+		-- A direct on_body callback may reenter EOF before process_body completes.
 		if state.body_mode == "length" then
 			if state.expected_length and state.body_bytes >= state.expected_length then
 				emit_complete()
@@ -327,15 +329,9 @@ function M.new(opts)
 		end
 
 		if state.body_mode == "chunked" then
-			if state.chunk_done then
-				emit_complete()
-				return
-			end
 			emit_error("Connection closed before chunked response completed")
 			return
 		end
-
-		emit_complete()
 	end
 
 	function decoder:headers_parsed()

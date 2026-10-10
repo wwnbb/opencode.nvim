@@ -1,0 +1,191 @@
+{
+  "checked_at": "2026-10-03",
+  "source_commit": "107966eddd541701e596208e133dbc4d08e2c7f7",
+  "plugin_base_commit": "29f0e85",
+  "working_tree_includes_plan_changes": true,
+  "isolated_profiles": true,
+  "personal_credentials_used": false,
+  "explicit_model_prompt_submitted": false,
+  "full_test_gate": {
+    "command": "./tests/run.sh",
+    "exit_code": 0,
+    "unit": 1625,
+    "checks": 63,
+    "integration": 257,
+    "smoke": 8,
+    "bun_tools": 47,
+    "failed": 0,
+    "optional_live_model_smoke_pending": 1
+  },
+  "browser_preview": {
+    "browser": "154.0.8037.93",
+    "mermaid": "12.1.0",
+    "katex": "0.19.0",
+    "checks": [
+      {
+        "kind": "mermaid",
+        "blocked": false,
+        "status": "Mermaid rendered. Use browser zoom or scrolling to inspect.",
+        "svg": 1,
+        "math": 0,
+        "untrustedExecuted": false
+      },
+      {
+        "kind": "math",
+        "blocked": false,
+        "status": "LaTeX math rendered. Full TeX documents and unsupported commands require a TeX toolchain.",
+        "svg": 0,
+        "math": 1,
+        "untrustedExecuted": false
+      },
+      {
+        "kind": "invalid",
+        "blocked": false,
+        "status": "Preview unavailable: KaTeX parse error: Undefined control sequence: \\unknowncommand at position 60: …d=true</script>\\̲u̲n̲k̲n̲o̲w̲n̲c̲o̲m̲m̲a̲n̲d̲",
+        "svg": 0,
+        "math": 0,
+        "untrustedExecuted": false
+      },
+      {
+        "kind": "math",
+        "blocked": true,
+        "status": "Preview unavailable: Math stylesheet unavailable; check CDN access.",
+        "svg": 0,
+        "math": 0,
+        "untrustedExecuted": false
+      }
+    ]
+  },
+  "versions": {
+    "2.0.11": {
+      "native_http": {
+        "move_preserves_history": true,
+        "native_vcs_sources": true,
+        "session_environment": true,
+        "persistent_pty": true,
+        "pty_resize": true,
+        "pty_detach_replay": true,
+        "all_provider_use_denied": true,
+        "explicit_model_prompt_submitted": false,
+        "personal_provider_credentials_used": false,
+        "version": "2.0.11",
+        "shell_output": true,
+        "cross_project_open": true,
+        "native_rename": true,
+        "view_without_idle_ignored": true,
+        "native_view_acknowledgement": true,
+        "targeted_kill": true,
+        "automatic_sse_recovery": true,
+        "reconnect_attempts": 13,
+        "native_plugin_list": true,
+        "native_pairing": false,
+        "native_worktree_crud": true,
+        "dirty_worktree_guard": true,
+        "session_move_execution": true
+      },
+      "native_managed": {
+        "native_service_autostart": true,
+        "native_managed_discovery": true,
+        "host_restart": true,
+        "plugin_ownership": false,
+        "version": "2.0.11"
+      },
+      "native_tls": {
+        "version": "2.0.11",
+        "https_sse": true,
+        "base_path": true,
+        "basic_auth": true,
+        "untrusted_certificate_rejected": true,
+        "session_environment": true,
+        "native_wss": true,
+        "offline_model_catalog": true,
+        "https_rest": true
+      },
+      "offline_catalog_proof": {
+        "native_version": "2.0.11",
+        "provider_count": 0,
+        "model_count": 0,
+        "default_model": null,
+        "models_file_empty": true,
+        "models_fetch_disabled": true,
+        "provider_use_deny_all": true
+      },
+      "command_auth_ui": {
+        "key_ui": true,
+        "oauth_code_ui": true,
+        "authorization_url_dispatch": true,
+        "personal_browser_opened": false,
+        "expired_ui": true,
+        "activation_ui": true,
+        "secret_not_in_buffers": true,
+        "command_pending_and_failure_ui": true,
+        "deletion_ui": true
+      }
+    },
+    "2.0.18": {
+      "native_http": {
+        "native_pairing": true,
+        "native_worktree_crud": true,
+        "dirty_worktree_guard": true,
+        "session_move_execution": true,
+        "move_preserves_history": true,
+        "native_vcs_sources": true,
+        "session_environment": true,
+        "persistent_pty": true,
+        "pty_resize": true,
+        "pty_detach_replay": true,
+        "all_provider_use_denied": true,
+        "explicit_model_prompt_submitted": false,
+        "personal_provider_credentials_used": false,
+        "shell_output": true,
+        "version": "2.0.18",
+        "cross_project_open": true,
+        "native_rename": true,
+        "view_without_idle_ignored": true,
+        "native_view_acknowledgement": true,
+        "targeted_kill": true,
+        "automatic_sse_recovery": true,
+        "reconnect_attempts": 13,
+        "native_plugin_list": true
+      },
+      "native_managed": {
+        "native_managed_discovery": true,
+        "host_restart": true,
+        "plugin_ownership": false,
+        "version": "2.0.18",
+        "native_service_autostart": true
+      },
+      "native_tls": {
+        "https_rest": true,
+        "https_sse": true,
+        "base_path": true,
+        "basic_auth": true,
+        "version": "2.0.18",
+        "session_environment": true,
+        "native_wss": true,
+        "offline_model_catalog": true,
+        "untrusted_certificate_rejected": true
+      },
+      "offline_catalog_proof": {
+        "native_version": "2.0.18",
+        "provider_count": 0,
+        "model_count": 0,
+        "default_model": null,
+        "models_file_empty": true,
+        "models_fetch_disabled": true,
+        "provider_use_deny_all": true
+      },
+      "command_auth_ui": {
+        "personal_browser_opened": false,
+        "expired_ui": true,
+        "activation_ui": true,
+        "deletion_ui": true,
+        "secret_not_in_buffers": true,
+        "command_pending_and_failure_ui": true,
+        "key_ui": true,
+        "oauth_code_ui": true,
+        "authorization_url_dispatch": true
+      }
+    }
+  }
+}

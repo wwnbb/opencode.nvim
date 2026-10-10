@@ -1,7 +1,7 @@
--- Unit checks for transient provider disconnect visibility state.
+-- Unit checks for transient credential marker ownership and compatibility actions.
 -- Run with: ./tests/run.sh tests/unit/pending_disconnect_spec.lua
 
-describe("opencode pending provider disconnects", function()
+describe("opencode pending credential operations", function()
 	local provider_state
 	local original_state_module
 	local actions

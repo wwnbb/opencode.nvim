@@ -25,6 +25,7 @@ local fail_startup
 local begin_health_checks
 local continue_startup
 local setup_event_listeners
+local discover_managed
 
 -- Default configuration
 M.opts = {
@@ -216,6 +217,7 @@ local function cancel_attempt_timers(attempt)
 	stop_attempt_timer(attempt, "health_timer")
 	stop_attempt_timer(attempt, "exit_timer")
 	stop_attempt_timer(attempt, "stop_timer")
+	stop_attempt_timer(attempt, "event_timer")
 end
 
 local function signal_succeeded(ok, result, err)
@@ -475,7 +477,7 @@ check_existing_server = function(attempt, token, startup, callback)
 	end
 
 	local server_info = state.get_server_info()
-	if not server_info.port then
+	if not server_info.port and not server_info.url then
 		callback(false)
 		return
 	end
@@ -489,6 +491,11 @@ check_existing_server = function(attempt, token, startup, callback)
 			callback(false, nil, err)
 			return
 		end
+		if attempt.registration then
+			local identity_err = require("opencode.managed").validate(attempt.registration, data)
+			if identity_err then callback(false, nil, identity_err); return end
+			attempt.verified = true
+		end
 		callback(true, data.version)
 	end)
 end
@@ -499,7 +506,9 @@ complete_connection = function(attempt, token, startup, success, version, failur
 	end
 
 	attempt.connecting = false
+	attempt.awaiting_event = nil
 	stop_attempt_timer(attempt, "health_timer")
+	stop_attempt_timer(attempt, "event_timer")
 
 	if not success then
 		pending_callbacks = {}
@@ -591,12 +600,14 @@ continue_startup = function(attempt)
 
 	if not attempt.configured then
 		state.set_server_info({
+			url = false,
 			host = server_info.host,
 			port = server_info.port,
 		})
 
 		local http = require("opencode.client.http")
 		http.setup({
+			url = false,
 			host = server_info.host,
 			port = server_info.port,
 			auth = attempt.auth,
@@ -604,6 +615,8 @@ continue_startup = function(attempt)
 
 		local sse = require("opencode.client.sse")
 		sse.setup({
+			url = false,
+			resolve_endpoint = false,
 			host = server_info.host,
 			port = server_info.port,
 			auth = attempt.auth,
@@ -803,7 +816,13 @@ setup_event_listeners = function(client)
 
 	-- Server connection event (from server, not SSE level)
 	client.on_event("server.connected", function()
-		if current_attempt and (current_attempt.phase == "stopping" or current_attempt.phase == "stop_error") then
+		if current_attempt and (current_attempt.disconnected or current_attempt.phase == "stopping" or current_attempt.phase == "stop_error") then
+			return
+		end
+		local attempt = current_attempt
+		local waiting = attempt and attempt.awaiting_event
+		if waiting then
+			complete_connection(attempt, waiting.token, waiting.startup, true, waiting.version)
 			return
 		end
 		state.set_connection("connected")
@@ -820,6 +839,13 @@ connect_to_server = function(attempt, token, startup, version)
 
 	local client = require("opencode.client")
 	setup_event_listeners(client)
+	attempt.awaiting_event = { token = token, startup = startup, version = version }
+	stop_attempt_timer(attempt, "event_timer")
+	attempt.event_timer = vim.defer_fn(function()
+		if not connection_is_current(attempt, token, startup) then return end
+		attempt.event_timer = nil
+		complete_connection(attempt, token, startup, false, nil, "OpenCode event stream did not send server.connected")
+	end, M.opts.startup_timeout)
 
 	local ok, connected, connect_err = pcall(function()
 		return client.connect_events()
@@ -840,7 +866,80 @@ connect_to_server = function(attempt, token, startup, version)
 		)
 	end
 
-	return complete_connection(attempt, token, startup, true, version)
+	return true -- Native server.connected completes readiness exactly once.
+end
+
+local function native_cli(args, callback)
+	local env = build_server_env(nil)
+	local command = resolve_command(M.opts.command, env)
+	if not vim.system or vim.fn.executable(command) ~= 1 then
+		vim.schedule(function() callback({ message = "Native OpenCode CLI is unavailable", code = "cli_unavailable", retryable = false }) end)
+		return
+	end
+	local argv = { command }; vim.list_extend(argv, args)
+	return vim.system(argv, { env = env, text = true, timeout = args[1] == "upgrade" and 120000 or math.max(10000, M.opts.startup_timeout) }, function(result)
+		vim.schedule(function()
+			if result.code ~= 0 then callback({ message = "Native OpenCode command failed; installation or service management may be unsupported", code = "cli_failed" })
+			else callback(nil) end
+		end)
+	end)
+end
+
+discover_managed = function(attempt, callback, guard, allow_start)
+	local managed = require("opencode.managed")
+	local function current() return is_current_attempt(attempt) and not attempt.disconnected and (not guard or guard()) end
+	local function lookup(can_start)
+		if not current() then return end
+		local info, err = managed.read(M.opts)
+		if not info then
+			if can_start and M.opts.auto_start and (not M.opts.service_file or M.opts.service_file == managed.default_file(M.opts)) then
+				return native_cli({ "service", "start" }, function(start_err)
+					if not current() then return end
+					if start_err then callback(start_err) else lookup(false) end
+				end)
+			end
+			callback(err); return
+		end
+		local config = managed.config(info, M.opts)
+		require("opencode.client").configure_endpoint(config)
+		state.set_server_info({ url = info.url, host = false, port = false })
+		return require("opencode.client.http").health(function(health_err, health)
+			if not current() then return end
+			local failure = health_err or managed.validate(info, health)
+			if not failure and not managed.same(info, managed.read(M.opts)) then
+				failure = { message = "Managed service registration changed during discovery", code = "service_identity_changed", retryable = true }
+			end
+			if failure then
+				attempt.verified = false
+				if can_start and M.opts.auto_start and managed.can_manage(M.opts, info) and failure.retryable ~= false and failure.status ~= 401 then
+					return native_cli({ "service", "start" }, function(start_err)
+						if not current() then return end
+						if start_err then callback(start_err) else lookup(false) end
+					end)
+				end
+				callback(failure); return
+			end
+			attempt.registration, attempt.verified = info, true
+			callback(nil, config)
+		end)
+	end
+	return lookup(allow_start)
+end
+
+local function begin_managed(attempt)
+	attempt.disconnected = false
+	state.set_connection("connecting")
+	local token = attempt.connection_token
+	local client = require("opencode.client")
+	client.configure_endpoint({ resolve_endpoint = function(callback, guard)
+		return discover_managed(attempt, callback, guard, true)
+	end })
+	discover_managed(attempt, function(err)
+		if not is_current_attempt(attempt) or attempt.disconnected or token ~= attempt.connection_token then return end
+		if err then pending_callbacks = {}; state.set_connection("error"); vim.notify(err.message, vim.log.levels.ERROR)
+		else begin_health_checks(attempt, false) end
+	end, nil, true)
+	return true
 end
 
 -- Ensure server is connected (lazy initialization entry point)
@@ -884,6 +983,7 @@ function M.start()
 	if current_attempt then
 		local attempt = current_attempt
 		if attempt.phase == "ready" then
+			if attempt.discovered then return begin_managed(attempt) end
 			attempt.disconnected = false
 			state.set_connection("connecting")
 			return begin_health_checks(attempt, false)
@@ -902,7 +1002,21 @@ function M.start()
 
 	-- Explicit endpoints are external even when auto_start is enabled. An auth
 	-- or version failure must never replace them with a new managed server.
-	if M.opts.port then
+	if M.opts.url and M.opts.managed then
+		vim.notify("Choose either server.url or server.managed", vim.log.levels.ERROR)
+		return false
+	end
+	if M.opts.managed then
+		attempt_generation = attempt_generation + 1
+		local attempt = { id = attempt_generation, phase = "ready", startup_done = true,
+			connecting = false, connection_token = 0, disconnected = false,
+			external = true, discovered = true, stop_waiters = {} }
+		current_attempt = attempt
+		state.set_server_managed(false)
+		state.set_server_pid(nil)
+		return begin_managed(attempt)
+	end
+	if M.opts.port or M.opts.url then
 		attempt_generation = attempt_generation + 1
 		local attempt = {
 			id = attempt_generation, phase = "ready", startup_done = true,
@@ -1047,7 +1161,11 @@ end
 
 -- Restart server
 function M.restart()
-	if state.is_server_managed() then
+	if current_attempt and current_attempt.discovered then
+		return M.manage_service("restart", function(err)
+			if err then vim.notify(err.message, vim.log.levels.ERROR) end
+		end)
+	elseif state.is_server_managed() then
 		local restart = restart_generation + 1
 		M.stop(function()
 			if restart == restart_generation then M.start() end
@@ -1057,6 +1175,44 @@ function M.restart()
 		M.disconnect()
 		M.start()
 	end
+end
+
+function M.managed_status()
+	local attempt = current_attempt
+	local info = attempt and attempt.registration
+	local managed = require("opencode.managed")
+	local fresh = M.opts.managed and managed.read(M.opts)
+	local allowed = attempt and attempt.discovered and attempt.verified and managed.same(info, fresh) and managed.can_manage(M.opts, info) or false
+	local endpoint = info and info.url or M.opts.url
+	if endpoint and not require("opencode.client.endpoint").resolve({ url = endpoint }) then endpoint = "Invalid server URL" end
+	return { discovered = attempt and attempt.discovered or false, can_manage = allowed,
+		url = endpoint or false, pid = info and info.pid, version = info and info.version,
+		service_file = M.opts.service_file or managed.default_file(M.opts) }
+end
+
+function M.manage_service(operation, callback)
+	callback = callback or function() end
+	if operation ~= "restart" and operation ~= "upgrade" then callback({ message = "Unsupported service operation" }); return end
+	if not M.managed_status().can_manage then
+		callback({ message = "This operation requires the verified native service on this local managing host", code = "unsupported" }); return
+	end
+	local attempt = current_attempt
+	local generation, token, info = restart_generation, attempt.connection_token, vim.deepcopy(attempt.registration)
+	return require("opencode.client.http").health(function(err, health)
+		if not is_current_attempt(attempt) or generation ~= restart_generation or token ~= attempt.connection_token then return end
+		local managed = require("opencode.managed")
+		local failure = err or managed.validate(info, health)
+		if failure or not managed.same(info, managed.read(M.opts)) then callback(failure or { message = "Managed service registration changed", code = "stale_connection" }); return end
+		if operation == "restart" then M.disconnect() end
+		local action_generation = restart_generation
+		native_cli(operation == "restart" and { "service", "restart" } or { "upgrade" }, function(command_err)
+			if not is_current_attempt(attempt) or action_generation ~= restart_generation then return end
+			-- A failed CLI restart may leave the old daemon healthy. Rediscover
+			-- either result; an updater runs while the current chat stays usable.
+			if operation == "restart" then M.start() end
+			callback(command_err)
+		end)
+	end)
 end
 
 -- Disconnect from server (keep server running)
@@ -1071,6 +1227,8 @@ function M.disconnect()
 		attempt.connecting = false
 		attempt.disconnected = true
 		stop_attempt_timer(attempt, "health_timer")
+		stop_attempt_timer(attempt, "event_timer")
+		attempt.awaiting_event = nil
 		if not attempt.startup_done then
 			stop_attempt_timer(attempt, "timeout_timer")
 		end
@@ -1118,7 +1276,7 @@ end
 local function resolve_feature_model(config, kind)
 	local attempt = current_attempt
 	return require("opencode.completion.profile").resolve(config, {
-		managed = attempt and not attempt.external or (attempt == nil and M.opts.port == nil),
+		managed = attempt and not attempt.external or (attempt == nil and M.opts.port == nil and not M.opts.url and not M.opts.managed),
 		active = attempt and attempt[kind .. "_profile"],
 		error = attempt and attempt[kind .. "_error"],
 	}, kind)

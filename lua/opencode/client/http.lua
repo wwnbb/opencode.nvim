@@ -43,11 +43,15 @@ local function handle_response(response, callback, password)
 	if response.status < 200 or response.status >= 300 then
 		local ok, detail = pcall(vim.json.decode, response.body or "")
 		local message = "HTTP " .. tostring(response.status)
-		local code
+		local code, force_required
 		if ok and type(detail) == "table" then
 			code = detail._tag or detail.code or detail.name
 			if type(detail.message) == "string" then
 				message = detail.message
+			end
+			if code == "WorktreeError" and type(detail.data) == "table" then
+				if type(detail.data.message) == "string" then message = detail.data.message end
+				force_required = detail.data.forceRequired == true
 			end
 		end
 		-- Do not surface arbitrary HTML or credentials in server error responses.
@@ -57,6 +61,7 @@ local function handle_response(response, callback, password)
 		schedule_callback(callback, {
 			status = response.status, code = code, message = message, error = message,
 			rpc_type = code == "RpcError" and type(detail.type) == "string" and detail.type or nil,
+			force_required = force_required,
 			retryable = response.status == 429 or response.status >= 500,
 		}, nil, meta)
 		return
@@ -147,8 +152,10 @@ local function request(method, path, callback, opts, body)
 	end
 
 	return transport.request({
+		url = M.opts.url,
 		host = M.opts.host,
 		port = M.opts.port,
+		tls = M.opts.tls,
 		method = method,
 		path = request_path,
 		headers = headers,
@@ -207,6 +214,7 @@ end
 ---@param callback function(err, data)
 ---@param opts? table Optional request options
 function M.delete(path, callback, opts)
+	if opts and opts.body ~= nil then return request_json("DELETE", path, opts.body, callback, opts) end
 	return request("DELETE", path, callback, opts, nil)
 end
 

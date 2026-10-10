@@ -4,9 +4,17 @@ local location = { directory = "/project space" }
 local session = { id = "s", location = location }
 local model = { providerID = "provider", id = "model" }
 local time = { created = 100, expires = 200 }
+local shell = { id = "sh_1", status = "running", command = "echo test", cwd = location.directory,
+	shell = "/bin/sh", file = "/tmp/output", metadata = { sessionID = "s" }, time = { started = 100 } }
+local terminal = { id = "pty_one", sessionID = "s", title = "Terminal", command = "/bin/sh", args = {}, cwd = location.directory,
+	status = "running", pid = 10, foregroundProcess = vim.NIL, size = { cols = 80, rows = 24 }, output = { head = 0, tail = 4 } }
 local responses = {
 	empty = false,
 	info = { version = "2.0.11", pid = 1, urls = {}, paths = { tmp = "/tmp" } },
+	pairing = { code = "public-test-code", expires_in = 300 },
+	plugins = { data = { { id = "plugin", source = { type = "package", target = "test-plugin", version = "1.0.0", outdated = true }, state = { status = "active" } } }, location = location },
+	vcs_info = { data = { provider = "git", branch = { current = "feature", default = "main" } }, location = location },
+	vcs_base = { data = { name = "main", ref = "main", source = "default" }, location = location },
 	session = { data = session },
 	transfer = { data = { info = session, messages = { { id = "msg_1", type = "user", text = "Hello" } } } },
 	page = { data = {}, cursor = { next = vim.NIL, previous = "opaque/+%" } },
@@ -17,8 +25,18 @@ local responses = {
 	integration = { data = { id = "integration", methods = {} }, location = location },
 	oauth = { data = { attemptID = "attempt", mode = "code", url = "https://example.invalid", instructions = "test", time = time }, location = location },
 	command_attempt = { data = { attemptID = "attempt", time = time }, location = location },
+	shell_list = { data = { shell }, location = location },
+	shell_info = { data = shell, location = location },
+	shell_output = { data = { output = "Привет", cursor = 12, size = 12, truncated = false }, location = location },
 	attempt_status = { data = { status = "pending", time = time }, location = location },
 	array = {},
+	location = { directory = "/project space", project = { id = "project", directory = "/project space", canonical = "/project space" } },
+	projects = { { id = "project", canonical = "/project space" } },
+	worktrees = { { directory = "/project tree" } },
+	worktree = { directory = "/project tree" },
+	pty_list = { data = { terminal } },
+	pty_info = { data = terminal },
+	pty_snapshot = { data = { info = terminal, text = "test", checkpoint = "dGVzdA==", cursor = { x = 4, y = 0 } } },
 	inbox = { data = { id = "inbox", sessionID = "s", type = "prompt", payload = { attachments = {} } } },
 	generated_text = { data = { text = "Transient answer" } },
 	interrupt = { interrupted = false },
@@ -28,14 +46,40 @@ local responses = {
 -- Operation, HTTP method, native path, envelope, optional request body/query.
 local cases = {
 	{ "info", "GET", "/api/info", "info" },
+	{ "server_pair", "POST", "/api/pair", "pairing" },
+	{ "vcs_info", "GET", "/api/vcs", "vcs_info", nil, { location = location } },
+	{ "vcs_base", "GET", "/api/vcs/base", "vcs_base", nil, { location = location } },
+	{ "vcs_branches", "GET", "/api/vcs/branch", "catalog", nil, { location = location, search = "feature", limit = 100 } },
+	{ "vcs_diff", "GET", "/api/vcs/diff", "catalog", nil, { location = location, mode = "committed", base = "main", context = 12 } },
+	{ "location_get", "GET", "/api/location", "location", nil, { location = location } },
+	{ "project_list", "GET", "/api/project", "projects" },
+	{ "worktree_list", "GET", "/api/worktree", "worktrees", nil, { projectID = "project" } },
+	{ "worktree_create", "POST", "/api/worktree", "worktree", { projectID = "project", name = "feature" } },
+	{ "worktree_remove", "DELETE", "/api/worktree", "empty", { projectID = "project", directory = "/project tree", force = false } },
+	{ "worktree_refresh", "POST", "/api/worktree/refresh", "empty", { projectID = "project" } },
 	{ "location_reload", "POST", "/api/location/reload", "empty", nil, { location = location } },
 	{ "session_list", "GET", "/api/session", "page", nil, { parentID = vim.NIL, limit = 1 } },
 	{ "session_stats", "GET", "/api/experimental/session/stats", "object" },
 	{ "session_create", "POST", "/api/session", "session", { location = location, model = model } },
 	{ "session_get", "GET", "/api/session/{sessionID}", "session" },
 	{ "session_update", "PATCH", "/api/session/{sessionID}", "empty", { title = "renamed" } },
+	{ "session_move", "POST", "/api/session/{sessionID}/move", "empty", { directory = "/project tree" } },
+	{ "session_view", "POST", "/api/session/{sessionID}/view", "empty", { idle = 123 } },
+	{ "pty_list", "GET", "/api/experimental/session/{sessionID}/terminal", "pty_list" },
+	{ "pty_create", "POST", "/api/experimental/session/{sessionID}/terminal", "pty_info", { args = {}, env = vim.empty_dict(), title = "Terminal", cwd = location.directory } },
+	{ "pty_get", "GET", "/api/experimental/persistent-pty/{ptyID}", "pty_info" },
+	{ "pty_update", "PUT", "/api/experimental/persistent-pty/{ptyID}", "pty_info", { size = { cols = 80, rows = 24 }, attachmentID = "attachment" } },
+	{ "pty_snapshot", "GET", "/api/experimental/persistent-pty/{ptyID}/snapshot", "pty_snapshot" },
+	{ "pty_remove", "DELETE", "/api/experimental/persistent-pty/{ptyID}", "empty" },
 	{ "session_delete", "DELETE", "/api/session/{sessionID}", "empty" },
 	{ "session_active", "GET", "/api/session/active", "object" },
+	{ "session_shell", "POST", "/api/session/{sessionID}/shell", "empty", { command = "echo test" } },
+	{ "session_background", "POST", "/api/session/{sessionID}/background", "empty" },
+	{ "session_environment", "PUT", "/api/session/{sessionID}/environment", "empty", { variables = { TEST = "value" } } },
+	{ "shell_list", "GET", "/api/shell", "shell_list", nil, { location = location } },
+	{ "shell_get", "GET", "/api/shell/{id}", "shell_info", nil, { location = location } },
+	{ "shell_output", "GET", "/api/shell/{id}/output", "shell_output", nil, { location = location, cursor = 0, limit = 65536 } },
+	{ "shell_remove", "DELETE", "/api/shell/{id}", "empty", nil, { location = location } },
 	{ "session_fork", "POST", "/api/session/{sessionID}/fork", "session", { before = "message" } },
 	{ "session_export", "GET", "/api/experimental/session/{sessionID}/export", "transfer", nil, { sanitize = true } },
 	{ "session_diff", "GET", "/api/session/{sessionID}/diff", "list", nil, { from = "message", to = "message2" } },
@@ -62,7 +106,9 @@ local cases = {
 	{ "credential_update", "PATCH", "/api/credential/{credentialID}", "empty", { label = "Renamed account" } },
 	{ "credential_activate", "POST", "/api/credential/{credentialID}/activate", "empty" },
 	{ "skill_list", "GET", "/api/skill", "catalog", nil, { location = location } },
-	{ "plugin_list", "GET", "/api/plugin", "catalog", nil, { location = location } },
+	{ "plugin_list", "GET", "/api/plugin", "plugins", nil, { location = location } },
+	{ "plugin_check", "POST", "/api/plugin/check", "plugins", { target = "test-plugin" }, { location = location } },
+	{ "plugin_update", "POST", "/api/plugin/update", "empty", { targets = { "test-plugin" } }, { location = location } },
 	{ "command_list", "GET", "/api/command", "catalog", nil, { location = location } },
 	{ "mcp_connect", "POST", "/api/experimental/mcp/{server}/connect", "empty", nil, { location = location } },
 	{ "mcp_disconnect", "POST", "/api/experimental/mcp/{server}/disconnect", "empty", nil, { location = location } },
@@ -130,7 +176,9 @@ describe("v2 operation wire matrix", function()
 			assert.equals(1, callbacks); assert.is_nil(result.err, case[1]); assert.equals(status, result.meta.status)
 			assert.equals(case[2], wire.method); assert.equals(route, wire.path:match("^[^?]+"))
 			if args.query and args.query.location then assert.truthy(wire.path:find("location%%5Bdirectory%%5D=%%2Fproject%%20space")) end
-			if case[2] == "POST" or case[2] == "PATCH" then assert.same(args.body or vim.empty_dict(), vim.json.decode(wire.body)) end
+			if case[2] == "POST" or case[2] == "PATCH" or case[2] == "PUT" or (case[2] == "DELETE" and args.body ~= nil) then
+				assert.same(args.body or vim.empty_dict(), vim.json.decode(wire.body))
+			end
 			if case[4] == "empty" then assert.is_true(result.data) end
 			if case[4] == "page" then assert.equals("opaque/+%", result.meta.cursor.previous) end
 			if case[4] == "interrupt" then assert.is_false(result.data.interrupted) end

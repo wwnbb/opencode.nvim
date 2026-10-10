@@ -21,10 +21,10 @@ local function live(record)
 	owner.release_attempt(record)
 	return false
 end
-local function finish(record, status, message)
+local function finish(record, status, error, message)
 	if not live(record) then return end
 	owner.stop_attempt(record)
-	owner.update_attempt(record, { status = status, error = message })
+	owner.update_attempt(record, { status = status, error = error, message = message })
 	if status == "complete" then refresh(record.directory) end
 end
 
@@ -53,11 +53,14 @@ poll = function(record)
 	client().integration(record.kind .. "_status", record.integration_id, nil, options(record), function(err, result)
 		if not live(record) or record.status == "cancelling" or record.status == "submitting" then return end
 		if err then finish(record, "failed", "Could not verify authorization status; reconnect to check the account"); return end
+		-- Command status contains cumulative stderr for the user's manual login step.
+		local message = record.kind == "command" and (result.status == "pending" or result.status == "failed")
+			and type(result.message) == "string" and result.message or nil
 		if result.status == "pending" then
-			owner.update_attempt(record, { status = record.mode == "code" and not record.code_submitted and "awaiting_user" or "polling" })
+			owner.update_attempt(record, { status = record.mode == "code" and not record.code_submitted and "awaiting_user" or "polling", message = message })
 			schedule(record)
 		else
-			finish(record, result.status, result.status == "failed" and "Authorization failed" or nil)
+			finish(record, result.status, result.status == "failed" and "Authorization failed" or nil, message)
 		end
 	end)
 end

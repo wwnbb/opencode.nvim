@@ -23,12 +23,15 @@ end
 -- Configure both clients
 ---@param opts table Configuration options
 function M.setup(opts)
+	if package.loaded["opencode.client.explanation"] then require("opencode.client.explanation").cancel_all() end
 	configuration_generation = configuration_generation + 1
 	opts = opts or {}
 
 	local config = {
+		url = opts.url or false,
 		host = opts.host or "localhost",
 		port = opts.port,
+		tls = opts.tls or {},
 		auth = opts.auth or { username = "opencode", password = nil },
 		timeout = opts.timeout or 30000,
 	}
@@ -37,11 +40,119 @@ function M.setup(opts)
 	sse.setup(vim.tbl_deep_extend("force", config, {
 		reconnect = opts.reconnect ~= false,
 		reconnect_delay = opts.reconnect_delay or 5000,
-		max_reconnects = opts.max_reconnects or 5,
+		max_reconnects = opts.max_reconnects or false,
+		resolve_endpoint = opts.resolve_endpoint or false,
 	}))
 end
 
+function M.endpoint_config()
+	return vim.deepcopy({ generation = configuration_generation, url = http.opts.url, host = http.opts.host, port = http.opts.port, auth = http.opts.auth, tls = http.opts.tls })
+end
+
+-- Managed discovery may change the URL/password while a reconnect is pending.
+function M.configure_endpoint(opts)
+	local current = M.endpoint_config()
+	for _, key in ipairs({ "url", "host", "port", "auth", "tls" }) do
+		if opts[key] ~= nil and not vim.deep_equal(current[key], opts[key]) then
+			if package.loaded["opencode.client.explanation"] then require("opencode.client.explanation").cancel_all() end
+			configuration_generation = configuration_generation + 1
+			break
+		end
+	end
+	http.setup(opts)
+	for key, value in pairs(opts) do sse.opts[key] = vim.deepcopy(value) end
+end
+
 -- HTTP API shortcuts
+
+function M.set_session_environment(session_id, variables, callback)
+	if type(variables) ~= "table" or (vim.islist(variables) and next(variables) ~= nil) then
+		require("opencode.util.schedule").schedule_callback(callback, { message = "Environment must be an object of string variables" }); return
+	end
+	for key, value in pairs(variables) do
+		if type(key) ~= "string" or type(value) ~= "string" or key == "" or key:find("[=%z]") or value:find("%z") then
+			require("opencode.util.schedule").schedule_callback(callback, { message = "Environment names and values must be valid strings" }); return
+		end
+	end
+	return v2.request("session_environment", { path = { sessionID = session_id }, body = { variables = next(variables) and variables or vim.empty_dict() } }, callback)
+end
+
+function M.get_server_info(callback)
+	return v2.request("info", {}, callback)
+end
+
+function M.pair_server(callback)
+	return v2.request("server_pair", {}, callback)
+end
+
+function M.list_terminals(session_id, callback)
+	return v2.request("pty_list", { path = { sessionID = session_id } }, callback)
+end
+
+function M.create_terminal(session_id, opts, callback)
+	opts = vim.deepcopy(opts or {})
+	if type(opts.env) == "table" and next(opts.env) == nil then opts.env = vim.empty_dict() end
+	return v2.request("pty_create", { path = { sessionID = session_id }, body = opts }, callback)
+end
+
+function M.get_terminal(id, callback)
+	return v2.request("pty_get", { path = { ptyID = id } }, callback)
+end
+
+function M.get_terminal_snapshot(id, callback)
+	return v2.request("pty_snapshot", { path = { ptyID = id } }, callback)
+end
+
+function M.resize_terminal(id, size, attachment_id, callback)
+	return v2.request("pty_update", { path = { ptyID = id }, body = { size = size, attachmentID = attachment_id } }, callback)
+end
+
+function M.remove_terminal(id, callback)
+	return v2.request("pty_remove", { path = { ptyID = id } }, callback)
+end
+
+function M.list_server_plugins(opts, callback)
+	return v2.request("plugin_list", { query = { location = { directory = opts.directory } } }, callback)
+end
+
+function M.check_server_plugins(target, opts, callback)
+	return v2.request("plugin_check", { query = { location = { directory = opts.directory } }, body = { target = target } }, callback)
+end
+
+function M.update_server_plugins(targets, opts, callback)
+	return v2.request("plugin_update", { query = { location = { directory = opts.directory } }, body = { targets = targets }, timeout = 0 }, callback)
+end
+
+function M.run_session_shell(session_id, command, callback)
+	-- Native Session.shell waits for process exit. Keep the asynchronous request
+	-- alive until completion or a transport failure, including long commands.
+	return v2.request("session_shell", { path = { sessionID = session_id }, body = { command = command }, timeout = 0 }, callback)
+end
+
+function M.background_session(session_id, callback)
+	return v2.request("session_background", { path = { sessionID = session_id } }, callback)
+end
+
+function M.list_shells(opts, callback)
+	return v2.request("shell_list", { query = { location = { directory = opts.directory } } }, function(err, entries, meta)
+		for _, entry in ipairs(entries or {}) do entry.location = vim.deepcopy(meta.location) end
+		callback(err, entries, meta)
+	end)
+end
+
+function M.get_shell(id, opts, callback)
+	return v2.request("shell_get", { path = { id = id }, query = { location = { directory = opts.directory } } }, callback)
+end
+
+function M.get_shell_output(id, opts, callback)
+	return v2.request("shell_output", { path = { id = id }, query = {
+		location = { directory = opts.directory }, cursor = opts.cursor, limit = opts.limit,
+	} }, callback)
+end
+
+function M.remove_shell(id, opts, callback)
+	return v2.request("shell_remove", { path = { id = id }, query = { location = { directory = opts.directory } } }, callback)
+end
 
 -- Health check
 ---@param callback function(err, data)
@@ -62,7 +173,7 @@ function M.list_sessions(opts, callback)
 		for _, info in ipairs(sessions) do
 			local normalized, decode_err = v2.session(info)
 			if decode_err then callback({ message = decode_err, code = "incompatible_response" }); return end
-			result[#result + 1] = normalized
+			if not M.is_explanation_session(info.id) then result[#result + 1] = normalized end
 		end
 		callback(nil, result, meta)
 	end)
@@ -116,6 +227,49 @@ function M.get_session(session_id, callback)
 	v2.request("session_get", { path = { sessionID = session_id } }, callback)
 end
 
+function M.update_session(session_id, title, callback)
+	v2.request("session_update", { path = { sessionID = session_id }, body = { title = title } }, callback)
+end
+
+function M.list_projects(callback)
+	v2.request("project_list", {}, callback)
+end
+
+function M.get_location(directory, callback)
+	if directory ~= nil and not require("opencode.util.path").is_absolute(directory) then
+		require("opencode.util.schedule").schedule_callback(callback, { code = "invalid_request", message = "Enter an absolute server directory" }); return
+	end
+	v2.request("location_get", { query = directory and { location = { directory = directory } } or nil }, callback)
+end
+
+function M.list_worktrees(project_id, callback)
+	v2.request("worktree_list", { query = { projectID = project_id } }, callback)
+end
+
+function M.create_worktree(project_id, opts, callback)
+	local body = vim.tbl_extend("force", opts or {}, { projectID = project_id })
+	v2.request("worktree_create", { body = body }, callback)
+end
+
+function M.remove_worktree(project_id, directory, force, callback)
+	if not require("opencode.util.path").is_absolute(directory) then
+		require("opencode.util.schedule").schedule_callback(callback, { code = "invalid_request", message = "Invalid server worktree directory" }); return
+	end
+	v2.request("worktree_remove", { body = { projectID = project_id, directory = directory, force = force == true } }, callback)
+end
+
+function M.refresh_worktrees(project_id, callback)
+	v2.request("worktree_refresh", { body = { projectID = project_id } }, callback)
+end
+
+function M.move_session(session_id, directory, callback)
+	v2.request("session_move", { path = { sessionID = session_id }, body = { directory = directory } }, callback)
+end
+
+function M.view_session(session_id, idle, callback)
+	v2.request("session_view", { path = { sessionID = session_id }, body = { idle = idle } }, callback)
+end
+
 -- Get current status for all non-idle sessions
 ---@param opts? table { directory? }
 ---@param callback function(err, statuses)
@@ -126,7 +280,7 @@ function M.get_session_statuses(opts, callback)
 	v2.request("session_active", {}, function(err, active, meta)
 		if err then callback(err, nil, meta); return end
 		local statuses = {}
-		for id in pairs(active) do statuses[id] = { type = "busy" } end
+		for id in pairs(active) do if not M.is_explanation_session(id) then statuses[id] = { type = "busy" } end end
 		callback(nil, statuses, meta)
 	end)
 end
@@ -260,22 +414,34 @@ function M.generate_text(session_id, prompt, callback)
 	v2.request("generate", { path = { sessionID = session_id }, body = { prompt = prompt }, timeout = 0 }, callback)
 end
 
--- Generate editor completion without creating or changing a session.
+-- Generate editor completion; progress uses an isolated temporary session.
 ---@param prompt string
 ---@param model? table Native Model.Ref: { providerID, id, variant? }.
 ---@param callback function(err, text)
----@param opts? table { timeout?: number } Request timeout in milliseconds; zero disables it.
+---@param opts? table { timeout?: number, directory?: string, on_update?: fun(text: string), on_progress?: fun(tokens: number) } Updates contain accumulated output; tokens are estimated.
 ---@return table|nil request Handle with cancel() and is_active().
 function M.generate_completion(prompt, model, callback, opts)
+	if opts and (type(opts.on_update) == "function" or type(opts.on_progress) == "function") then
+		return require("opencode.client.explanation").generate(prompt, model, callback,
+			vim.tbl_extend("force", opts, { title = "Completion" }), M.endpoint_config)
+	end
 	return v2.request("completion", {
 		body = { prompt = prompt, model = model },
 		timeout = opts and opts.timeout,
 	}, callback)
 end
 
--- One-shot Visual explanation; no session ID, tools, or chat state is sent.
+-- Streaming uses an isolated temporary native session; final-only callers keep
+-- the sessionless JSON endpoint.
 function M.generate_explanation(prompt, model, callback, opts)
+	if opts and type(opts.on_update) == "function" then
+		return require("opencode.client.explanation").generate(prompt, model, callback, opts, M.endpoint_config)
+	end
 	return M.generate_completion(prompt, model, callback, opts)
+end
+
+function M.is_explanation_session(id)
+	return require("opencode.client.explanation").is_session(id)
 end
 
 -- Abort session
@@ -533,6 +699,7 @@ end
 
 -- Stop SSE connection
 function M.disconnect_events()
+	if package.loaded["opencode.client.explanation"] then require("opencode.client.explanation").cancel_all() end
 	sse.disconnect()
 end
 
@@ -544,6 +711,25 @@ M.sse = sse
 function M.review_rpc(method, input, directory, callback)
 	v2.request("rpc_call", { path = { rpcID = "opencode_nvim", method = method },
 		query = { location = { directory = directory } }, body = { input = input or vim.empty_dict() } }, callback)
+end
+
+function M.get_vcs_info(opts, callback)
+	v2.request("vcs_info", { query = { location = { directory = normalize_directory(opts and opts.directory) } } }, callback)
+end
+
+function M.get_vcs_base(opts, callback)
+	v2.request("vcs_base", { query = { location = { directory = normalize_directory(opts and opts.directory) } } }, callback)
+end
+
+function M.list_vcs_branches(opts, callback)
+	opts = opts or {}
+	v2.request("vcs_branches", { query = { location = { directory = normalize_directory(opts.directory) }, search = opts.search, limit = 100 } }, callback)
+end
+
+function M.get_vcs_diff(opts, callback)
+	opts = opts or {}
+	v2.request("vcs_diff", { query = { location = { directory = normalize_directory(opts.directory) }, mode = opts.mode or "branch",
+		base = opts.base, context = opts.context } }, callback)
 end
 
 return M

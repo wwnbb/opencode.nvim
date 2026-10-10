@@ -16,14 +16,22 @@ M.opts = {
 	},
 	reconnect = true,
 	reconnect_delay = 5000,
-	max_reconnects = 5,
+	max_reconnect_delay = 30000,
+	max_reconnects = false,
 	connect_timeout = 10000,
+	read_idle_timeout = 45000,
 }
 
 -- Internal state
 local state = {
 	stream = nil,
+	resolve_generation = 0,
+	resolving = false,
+	resolve_request = nil,
 	reconnect_timer = nil,
+	watchdog_timer = nil,
+	handshake_deadline = nil,
+	last_read = nil,
 	manual_disconnect = false,
 	connected = false,
 	reconnect_count = 0,
@@ -42,20 +50,48 @@ local seen_event_ids = {}
 local seen_event_order = {}
 local MAX_SEEN_EVENT_IDS = 512
 
-local function stop_reconnect_timer()
-	if not state.reconnect_timer then
+local function stop_timer(key)
+	local timer = state[key]
+	if not timer then
 		return
 	end
 
-	if not uv.is_closing(state.reconnect_timer) then
+	if not uv.is_closing(timer) then
 		pcall(function()
-			state.reconnect_timer:stop()
+			timer:stop()
 		end)
 		pcall(function()
-			state.reconnect_timer:close()
+			timer:close()
 		end)
 	end
-	state.reconnect_timer = nil
+	state[key] = nil
+end
+
+local function start_watchdog(stream)
+	stop_timer("watchdog_timer")
+	state.last_read = uv.now()
+	state.handshake_deadline = state.last_read + M.opts.connect_timeout
+	local timer = uv.new_timer()
+	if not timer then
+		M.emit("error", "Failed to create SSE watchdog timer")
+		if stream == state.stream then stream.close() end
+		return
+	end
+	state.watchdog_timer = timer
+	local interval = math.min(1000, M.opts.connect_timeout, M.opts.read_idle_timeout)
+	timer:start(interval, interval, vim.schedule_wrap(function()
+		if state.watchdog_timer ~= timer or stream ~= state.stream then return end
+		local now, message = uv.now(), nil
+		if state.handshake_deadline and now >= state.handshake_deadline then
+			message = "SSE handshake timed out waiting for server.connected"
+		elseif now - state.last_read >= M.opts.read_idle_timeout then
+			message = "SSE read-idle timeout"
+		end
+		if message then
+			M.emit("error", message)
+			if stream == state.stream then stream.close() end
+		end
+	end))
 end
 
 local function reset_current_event()
@@ -85,6 +121,8 @@ local function should_accept_global_event(data)
 	if type(data) ~= "table" then
 		return true
 	end
+	local explanation = package.loaded["opencode.client.explanation"]
+	if explanation and explanation.is_session(type(data.data) == "table" and data.data.sessionID) then return true end
 
 	local directory = type(data.location) == "table" and data.location.directory or nil
 	if not directory or directory == "" or directory == "global" then
@@ -202,12 +240,12 @@ local function schedule_reconnect()
 	if state.manual_disconnect then
 		return
 	end
-	if state.reconnect_count >= M.opts.max_reconnects then
+	if M.opts.max_reconnects and state.reconnect_count >= M.opts.max_reconnects then
 		M.emit("error", "SSE reconnect gave up after " .. tostring(M.opts.max_reconnects) .. " attempts")
 		return
 	end
 
-	stop_reconnect_timer()
+	stop_timer("reconnect_timer")
 	state.reconnect_count = state.reconnect_count + 1
 
 	local timer = uv.new_timer()
@@ -218,11 +256,12 @@ local function schedule_reconnect()
 
 	state.reconnect_timer = timer
 	timer:start(
-		M.opts.reconnect_delay,
+		math.min(M.opts.reconnect_delay * 2 ^ math.min(state.reconnect_count - 1, 30),
+			math.max(M.opts.reconnect_delay, M.opts.max_reconnect_delay)),
 		0,
 		vim.schedule_wrap(function()
 			if state.reconnect_timer ~= timer then return end
-			stop_reconnect_timer()
+			stop_timer("reconnect_timer")
 			if state.manual_disconnect then
 				return
 			end
@@ -231,14 +270,16 @@ local function schedule_reconnect()
 	)
 end
 
-local function handle_stream_closed(reason, closed_stream)
+local function handle_stream_closed(reason, closed_stream, retryable)
 	if closed_stream ~= nil and closed_stream ~= state.stream then
 		return
 	end
 
 	state.event_buffer = ""
 	reset_current_event()
-	stop_reconnect_timer()
+	stop_timer("reconnect_timer")
+	stop_timer("watchdog_timer")
+	state.handshake_deadline, state.last_read = nil, nil
 
 	local was_connected = state.connected
 	state.connected = false
@@ -253,7 +294,7 @@ local function handle_stream_closed(reason, closed_stream)
 	end
 
 	M.emit("disconnected", reason or "Connection closed")
-	schedule_reconnect()
+	if retryable ~= false then schedule_reconnect() end
 end
 
 ---@param event_id string|nil
@@ -293,6 +334,12 @@ function M.emit(event_type, data, event_id)
 			return
 		end
 		if not should_accept_global_event(data) then return end
+		if decoded.type == "server.connected" and state.handshake_deadline then
+			local stream = state.stream
+			state.connected, state.handshake_deadline, state.reconnect_count = true, nil, 0
+			M.emit("connected", nil)
+			if state.stream ~= stream then return end
+		end
 		actual_event_id = decoded.id or event_id
 		if already_seen_event(actual_event_id) then return end
 		actual_type, actual_data = decoded.type, decoded.payload
@@ -346,12 +393,32 @@ function M.clear_listeners()
 end
 
 -- Start SSE connection
-function M.connect()
-	if state.stream then
+function M.connect(resolved)
+	if state.stream or state.resolving then
 		return true -- Already connected or connecting
 	end
+	if M.opts.resolve_endpoint and not resolved then
+		state.manual_disconnect = false
+		state.resolve_generation = state.resolve_generation + 1
+		local generation = state.resolve_generation
+		state.resolving = true
+		local function current() return generation == state.resolve_generation and state.resolving and not state.manual_disconnect end
+		local request = M.opts.resolve_endpoint(function(err, config)
+			if not current() then return end
+			state.resolving, state.resolve_request = false, nil
+			if err then
+				M.emit("error", err.message or "Managed service discovery failed")
+				if err.retryable ~= false then schedule_reconnect() end
+				return
+			end
+			M.opts = vim.tbl_extend("force", M.opts, config or {})
+			M.connect(true)
+		end, current)
+		if current() then state.resolve_request = request end
+		return true
+	end
 
-	stop_reconnect_timer()
+	stop_timer("reconnect_timer")
 	state.manual_disconnect = false
 	state.event_buffer = ""
 	reset_current_event()
@@ -363,7 +430,7 @@ function M.connect()
 	}
 	local authorization, auth_err = auth.header(M.opts.auth.username, M.opts.auth.password)
 	if auth_err then
-		stop_reconnect_timer()
+		stop_timer("reconnect_timer")
 		M.emit("error", auth_err)
 		return false, auth_err
 	end
@@ -375,12 +442,21 @@ function M.connect()
 	local cwd = vim.fn.getcwd()
 	local endpoint = M.opts.endpoint or "/api/event"
 	state.directory = normalize_directory(cwd)
+	local _, target_err = require("opencode.client.endpoint").resolve(M.opts)
+	if target_err or type(endpoint) ~= "string" or endpoint:find("[%s%z]") then
+		local message = target_err and target_err.message or "Invalid SSE endpoint"
+		M.emit("error", message)
+		return false, message
+	end
 
 	local stream
 	local err
+	local retryable = true
 	stream, err = transport.open_stream({
+		url = M.opts.url,
 		host = M.opts.host,
 		port = M.opts.port,
+		tls = M.opts.tls,
 		method = "GET",
 		path = endpoint,
 		headers = headers,
@@ -392,8 +468,10 @@ function M.connect()
 			local handshake_error
 			if status ~= 200 then
 				handshake_error = "SSE handshake failed with HTTP status " .. status
+				retryable = status == 408 or status == 429 or status >= 500
 			elseif media_type ~= "text/event-stream" then
 				handshake_error = "SSE handshake failed: expected text/event-stream"
+				retryable = false
 			end
 			if handshake_error then
 				M.emit("error", handshake_error)
@@ -403,32 +481,32 @@ function M.connect()
 				return
 			end
 
-			state.connected = true
-			state.reconnect_count = 0
-			M.emit("connected", nil)
+			start_watchdog(stream)
 		end,
 		on_data = function(data)
 			if stream ~= state.stream then return end
 			if not data or data == "" then
 				return
 			end
+			state.last_read = uv.now()
 			state.event_buffer = state.event_buffer .. data
 			process_buffer()
 		end,
 		on_error = function(stream_err)
 			if stream ~= state.stream then return end
+			if stream_err and stream_err.retryable == false then retryable = false end
 			local message = stream_err and (stream_err.message or stream_err.error) or "SSE stream error"
 			M.emit("error", message)
 		end,
 		on_close = function(reason)
-			handle_stream_closed(reason, stream)
+			handle_stream_closed(reason, stream, retryable)
 		end,
 	})
 
 	if not stream then
 		local message = err and (err.message or err.error) or "Failed to open SSE stream"
 		M.emit("error", message)
-		schedule_reconnect()
+		if not err or err.retryable ~= false then schedule_reconnect() end
 		return false, message
 	end
 
@@ -438,7 +516,13 @@ end
 
 -- Disconnect from SSE stream
 function M.disconnect()
-	stop_reconnect_timer()
+	state.resolve_generation = state.resolve_generation + 1
+	state.resolving = false
+	local request = state.resolve_request; state.resolve_request = nil
+	if request and request.cancel then request.cancel() end
+	stop_timer("reconnect_timer")
+	stop_timer("watchdog_timer")
+	state.handshake_deadline, state.last_read = nil, nil
 	state.manual_disconnect = true
 	state.reconnect_count = 0
 	if state.stream and state.stream.close then
@@ -459,7 +543,8 @@ function M.setup(opts)
 	local previous = M.opts
 	M.opts = vim.tbl_extend("force", M.opts, opts or {})
 	M.opts.auth = vim.tbl_extend("force", { username = "opencode" }, M.opts.auth)
-	if previous.host ~= M.opts.host or previous.port ~= M.opts.port or previous.endpoint ~= M.opts.endpoint
+	if previous.url ~= M.opts.url or not vim.deep_equal(previous.tls, M.opts.tls)
+		or previous.host ~= M.opts.host or previous.port ~= M.opts.port or previous.endpoint ~= M.opts.endpoint
 		or not vim.deep_equal(previous.auth, M.opts.auth) then
 		M.disconnect()
 		seen_event_ids, seen_event_order = {}, {}

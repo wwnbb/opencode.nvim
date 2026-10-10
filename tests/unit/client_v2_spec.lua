@@ -35,6 +35,19 @@ describe("OpenCode v2 HTTP contracts", function()
 		for _, name in ipairs(names) do package.loaded[name] = saved[name] end
 	end)
 
+	it("replaces the native write-only environment and encodes an empty map as an object", function()
+		local client = require("opencode.client")
+		response = { status = 204, headers = {}, body = "" }
+		client.set_session_environment("s/%", { PATH = "/bin", PRIVATE_TEST = "literal\nvalue" }, function(err) assert.is_nil(err) end)
+		assert.equals("PUT", requests[1].method); assert.equals("/api/session/s%2F%25/environment", requests[1].path)
+		assert.same({ variables = { PATH = "/bin", PRIVATE_TEST = "literal\nvalue" } }, vim.json.decode(requests[1].body))
+		client.set_session_environment("s", {}, function(err) assert.is_nil(err) end)
+		assert.equals('{"variables":{}}', requests[2].body)
+		for _, variables in ipairs({ { "array" }, { PATH = 1 }, { ["bad=name"] = "value" }, { PATH = "nul\0value" } }) do
+			client.set_session_environment("s", variables, function(err) assert.is_truthy(err) end)
+		end
+		assert.equals(2, #requests)
+	end)
 	it("uses the recorded info response without a healthy field and rejects incompatible versions", function()
 		local info = vim.json.decode(table.concat(vim.fn.readfile("tests/fixtures/v2/runtime/info.json"), "\n"))
 		json(info)
@@ -49,6 +62,17 @@ describe("OpenCode v2 HTTP contracts", function()
 			assert.equals("incompatible_response", invoke("info").err.code)
 		end
 	end)
+	it("encodes an empty persistent terminal environment as a native object without mutating caller options", function()
+		local opts = { env = {}, args = {}, cwd = "/tmp", title = "Terminal", size = { cols = 80, rows = 24 } }
+		json({ data = { id = "pty_fixture", sessionID = "s", title = "Terminal", command = "/bin/sh", args = {}, cwd = "/tmp",
+			status = "running", pid = 1, size = { cols = 80, rows = 24 }, output = { head = 0, tail = 0 } } })
+		local error, info, callbacks = nil, nil, 0
+		require("opencode.client").create_terminal("s", opts, function(err, value) error, info, callbacks = err, value, callbacks + 1 end)
+		assert.equals(1, callbacks); assert.is_nil(error); assert.equals("pty_fixture", info.id)
+		assert.is_truthy(requests[1].body:find('"env":{}', 1, true))
+		assert.is_truthy(requests[1].body:find('"args":[]', 1, true))
+		assert.equals("[]", vim.json.encode(opts.env))
+	end)
 
 	it("encodes location keys and UTF-8 bytes once, without ambient directory headers", function()
 		json({ location = { directory = "/tmp/путь %#" }, data = {} })
@@ -57,6 +81,37 @@ describe("OpenCode v2 HTTP contracts", function()
 		assert.equals("/tmp/путь %#", result.meta.location.directory)
 		assert.equals("/api/agent?location%5Bdirectory%5D=%2Ftmp%2F%D0%BF%D1%83%D1%82%D1%8C%20%25%23", requests[1].path)
 		assert.is_nil(requests[1].headers["x-opencode-directory"])
+	end)
+	it("checks and updates native server plugins in the explicit location and validates the inventory", function()
+		local client = require("opencode.client")
+		local opts = { directory = "/remote/project" }
+		local plugin = { id = "test", source = { type = "package", target = "@test/plugin", version = "1.2.3", outdated = true }, state = { status = "active" } }
+		json({ data = { plugin }, location = opts })
+		local count = 0
+		client.check_server_plugins("@test/plugin", opts, function(err, data)
+			assert.is_nil(err); assert.same({ plugin }, data); count = count + 1
+		end)
+		assert.equals(1, count)
+		assert.equals("/api/plugin/check?location%5Bdirectory%5D=%2Fremote%2Fproject", requests[1].path)
+		assert.same({ target = "@test/plugin" }, vim.json.decode(requests[1].body))
+		response = { status = 204, headers = {}, body = "" }
+		client.update_server_plugins({ "@test/plugin" }, opts, function(err) assert.is_nil(err) end)
+		assert.same({ targets = { "@test/plugin" } }, vim.json.decode(requests[2].body))
+		assert.equals(0, requests[2].timeout)
+		plugin.source.target = nil
+		json({ data = { plugin }, location = opts })
+		assert.equals("incompatible_response", invoke("plugin_list").err.code)
+	end)
+	it("accepts only the bare native pairing code and a positive integer expiry", function()
+		local entry = { code = "public-code_1", expires_in = 300 }
+		json(entry); assert.same(entry, invoke("server_pair").data)
+		json({ data = entry }); assert.equals("incompatible_response", invoke("server_pair").err.code)
+		for _, entry in ipairs({ { code = "../../escape", expires_in = 300 }, { code = "test", expires_in = 0 },
+			{ code = "test", expires_in = 1.5 }, { expires_in = 300 } }) do
+			json(entry); assert.equals("incompatible_response", invoke("server_pair").err.code)
+		end
+		json({ name = "UnauthorizedError", message = "Credentials required" }, 401)
+		assert.equals(401, invoke("server_pair").err.status)
 	end)
 
 	it("preserves page cursors, false, JSON null, and empty lists", function()
@@ -90,6 +145,49 @@ describe("OpenCode v2 HTTP contracts", function()
 		assert.same({ location = session.location }, vim.json.decode(requests[1].body))
 		invoke("session_get", { path = { sessionID = "ses_a/#%" } })
 		assert.equals("/api/session/ses_a%2F%23%25", requests[2].path)
+	end)
+	it("uses bare native project, location and worktree envelopes and rejects malformed directories", function()
+		local entries = {
+			{ "project_list", { { id = "p", canonical = "/remote/project" } } },
+			{ "worktree_list", { { directory = "/remote/worktree", strategy = "git_worktree" } } },
+			{ "location_get", { directory = "/remote/project", project = { id = "p", directory = "/remote/project", canonical = "/remote/project" } } },
+			{ "worktree_create", { directory = "/remote/worktree" } },
+		}
+		for _, entry in ipairs(entries) do
+			json(entry[2]); assert.is_nil(invoke(entry[1]).err)
+			json({ data = entry[2] }); assert.equals("incompatible_response", invoke(entry[1]).err.code)
+		end
+		for _, entry in ipairs({
+			{ "project_list", { { id = "p", canonical = "relative" } } },
+			{ "worktree_list", { { directory = "relative" } } },
+			{ "location_get", { directory = "relative", project = { id = "p", directory = "/p", canonical = "/p" } } },
+			{ "worktree_create", { directory = "relative" } },
+		}) do
+			json(entry[2]); assert.equals("incompatible_response", invoke(entry[1]).err.code)
+		end
+	end)
+	it("sends worktree DELETE JSON and preserves the server's dirty-worktree decision", function()
+		local body = { projectID = "p", directory = "/remote/worktree", force = false }
+		json({ name = "WorktreeError", data = { message = "Dirty worktree test-password", forceRequired = true } }, 400)
+		local result = invoke("worktree_remove", { body = body })
+		assert.equals("DELETE", requests[1].method)
+		assert.same(body, vim.json.decode(requests[1].body))
+		assert.equals("WorktreeError", result.err.code)
+		assert.equals("Dirty worktree [redacted]", result.err.message)
+		assert.is_true(result.err.force_required)
+		assert.equals(400, result.err.status)
+	end)
+	it("rejects local relative-path resolution for server location and worktree requests", function()
+		local client = require("opencode.client")
+		local count = 0
+		client.get_location("relative", function(err) assert.equals("invalid_request", err.code); count = count + 1 end)
+		client.remove_worktree("p", "relative", false, function(err) assert.equals("invalid_request", err.code); count = count + 1 end)
+		assert.equals(2, count)
+		assert.equals(0, #requests)
+		for _, directory in ipairs({ "/remote/project", "C:\\remote\\project", "\\\\server\\project" }) do
+			assert.is_true(require("opencode.util.path").is_absolute(directory))
+		end
+		assert.is_false(require("opencode.util.path").is_absolute("/remote\nproject"))
 	end)
 
 	it("exports the complete native transcript and passes sanitize to the server", function()
@@ -136,6 +234,37 @@ describe("OpenCode v2 HTTP contracts", function()
 		json({ data = { id = "ses_1", location = { directory = "/project" } } })
 		invoke("session_create")
 		assert.equals("{}", requests[2].body)
+	end)
+
+	it("keeps native blocking shell requests asynchronous without a fixed request deadline", function()
+		response = { status = 204, headers = {}, body = "" }
+		local called = 0
+		local handle = require("opencode.client").run_session_shell("ses_a", "sleep 60", function(err, data)
+			assert.is_nil(err); assert.is_true(data); called = called + 1
+		end)
+		assert.equals(request_handle, handle)
+		assert.equals(1, called)
+		assert.equals(0, requests[1].timeout)
+		assert.equals("/api/session/ses_a/shell", requests[1].path)
+		assert.same({ command = "sleep 60" }, vim.json.decode(requests[1].body))
+	end)
+
+	it("requires native scoped shell DTOs and rejects malformed byte cursors", function()
+		local shell = { id = "sh_a", status = "running", command = "echo test", cwd = "/project", shell = "sh",
+			file = "/tmp/output", metadata = vim.empty_dict(), time = { started = 1 } }
+		json({ location = { directory = "/project" }, data = { shell } })
+		assert.is_nil(invoke("shell_list").err)
+		for _, body in ipairs({
+			{ data = shell }, { location = { directory = "relative" }, data = shell },
+			{ location = { directory = "/project" }, data = vim.tbl_extend("force", shell, { status = "unknown" }) },
+			{ location = { directory = "/project" }, data = vim.tbl_extend("force", shell, { id = "ses_wrong" }) },
+		}) do json(body); assert.equals("incompatible_response", invoke("shell_get", { path = { id = "sh_a" } }).err.code) end
+		for _, cursor in ipairs({ -1, 0.5, 3 }) do
+			json({ location = { directory = "/project" }, data = { output = "x", cursor = cursor, size = 1, truncated = false } })
+			assert.equals("incompatible_response", invoke("shell_output", { path = { id = "sh_a" } }).err.code)
+		end
+		json({ location = { directory = "/project" }, data = { output = "😀", cursor = 4, size = 4, truncated = false } })
+		assert.equals("😀", invoke("shell_output", { path = { id = "sh_a" } }).data.output)
 	end)
 
 	it("rejects malformed envelopes and response media rather than returning empty success", function()

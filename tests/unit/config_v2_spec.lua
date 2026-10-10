@@ -59,12 +59,20 @@ describe("strict v2 setup options", function()
 		assert.is_false(merged.session.parallel.enabled)
 	end)
 
+	it("disables both editor feature deadlines by default and preserves explicit timeouts", function()
+		for _, kind in ipairs({ "completion", "explanation" }) do
+			assert.equals(0, config.merge()[kind].timeout_ms)
+			assert.equals(0, config.merge({ [kind] = { timeout_ms = 0 } })[kind].timeout_ms)
+			assert.equals(1234, config.merge({ [kind] = { timeout_ms = 1234 } })[kind].timeout_ms)
+		end
+	end)
+
 	it("validates both editor features without changing defaults or user options", function()
 		local defaults = vim.deepcopy(config.defaults)
 		for _, kind in ipairs({ "completion", "explanation" }) do
 			for _, case in ipairs({
 				{ { enabled = "yes" }, "enabled" },
-				{ { timeout_ms = 0 }, "timeout_ms" },
+				{ { timeout_ms = -1 }, "timeout_ms" },
 				{ { timeout_ms = math.huge }, "timeout_ms" },
 				{ { context = false }, "context" },
 				{ { context = { max_bytes = 1023 } }, "context.max_bytes" },
