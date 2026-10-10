@@ -25,15 +25,23 @@ local function stop_spinner(view)
 	view.timer = nil
 end
 
-local function render(view, text)
-	if active ~= view or not vim.api.nvim_buf_is_valid(view.bufnr) then return false end
+local function render(view, text, saved_view)
+	if active ~= view or not vim.api.nvim_buf_is_valid(view.bufnr)
+		or not vim.api.nvim_win_is_valid(view.winid) then return false end
+	saved_view = saved_view or vim.api.nvim_win_call(view.winid, vim.fn.winsaveview)
 	local lines = vim.split(text, "\n", { plain = true, trimempty = false })
-	if #lines == 0 then lines = { "" } end
-	view.popup:render(lines)
-	vim.bo[view.bufnr].modified = false
-	if view.winid and vim.api.nvim_win_is_valid(view.winid) then
-		vim.api.nvim_win_set_cursor(view.winid, { 1, 0 })
+	local highlights
+	if view.phase == "ready" or view.phase == "streaming" then
+		local renderer = require("opencode.ui.chat.render")
+		local rendered = renderer.render_content(text, {
+			width = vim.api.nvim_win_get_width(view.winid), scope = "assistant_markdown",
+		})
+		lines, highlights = renderer.extract_lines(rendered), rendered._opencode_highlights
 	end
+	if #lines == 0 then lines = { "" } end
+	view.popup:render(lines, highlights)
+	vim.bo[view.bufnr].modified = false
+	vim.api.nvim_win_call(view.winid, function() vim.fn.winrestview(saved_view) end)
 	return true
 end
 
@@ -43,7 +51,7 @@ end
 
 local function copy_answer()
 	local view = active
-	if not view or view.phase ~= "ready" then return end
+	if not view or not view.answer then return end
 	vim.fn.setreg('"', view.answer)
 	for _, register in ipairs({ "+", "*" }) do
 		pcall(vim.fn.setreg, register, view.answer)
@@ -88,6 +96,14 @@ function M.open(snapshot, on_close)
 		height = math.min(24, math.max(1, vim.o.lines - vim.o.cmdheight - 6)),
 		title = "Explanation",
 		close_on_leave = true,
+		on_resize = function(current)
+			local saved_view = vim.api.nvim_win_call(view.winid, vim.fn.winsaveview)
+			current:resize({ size = {
+				width = math.min(88, math.max(1, vim.o.columns - 10)),
+				height = math.min(24, math.max(1, vim.o.lines - vim.o.cmdheight - 6)),
+			} })
+			if view.answer then render(view, view.answer, saved_view) end
+		end,
 		on_close = function()
 			stop_spinner(view)
 			if active == view then active = nil end
@@ -102,7 +118,7 @@ function M.open(snapshot, on_close)
 	popup:mount()
 	view.winid = popup.winid
 	active = view
-	vim.bo[bufnr].filetype = "markdown"
+	vim.bo[bufnr].filetype = "opencode_explanation"
 	vim.bo[bufnr].modifiable = false
 	vim.bo[bufnr].readonly = true
 	vim.wo[view.winid].wrap = true
@@ -124,11 +140,12 @@ function M.open(snapshot, on_close)
 	return view
 end
 
-function M.show(text)
+function M.show(text, opts)
 	local view = active
 	if not view or type(text) ~= "string" then return false end
+	if opts and opts.streaming and vim.trim(text) == "" then return true end
 	stop_spinner(view)
-	view.phase, view.answer = "ready", text
+	view.phase, view.answer = opts and opts.streaming and "streaming" or "ready", text
 	return render(view, text)
 end
 

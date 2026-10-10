@@ -1,4 +1,4 @@
--- One Visual selection, one sessionless generate request, one temporary popup.
+-- One Visual selection, one streamed explanation, one temporary popup.
 local M = {}
 local context = require("opencode.explanation.context")
 local response_text = require("opencode.explanation.response")
@@ -71,10 +71,12 @@ function M.explain_selection()
 	local prompt, prompt_err = context.build(snapshot, config)
 	if not prompt then fail(snapshot, prompt_err); return true end
 	snapshot.started = vim.uv.now()
-	snapshot.deadline = vim.uv.new_timer()
-	snapshot.deadline:start(config.timeout_ms, 0, vim.schedule_wrap(function()
-		if current == snapshot and snapshot.deadline then fail(snapshot, "Request timed out") end
-	end))
+	if config.timeout_ms > 0 then
+		snapshot.deadline = vim.uv.new_timer()
+		snapshot.deadline:start(config.timeout_ms, 0, vim.schedule_wrap(function()
+			if current == snapshot and snapshot.deadline then fail(snapshot, "Request timed out") end
+		end))
+	end
 	local lifecycle = require("opencode.lifecycle")
 	lifecycle.ensure_connected(function()
 		if current ~= snapshot then return end
@@ -87,8 +89,8 @@ function M.explain_selection()
 			if current ~= snapshot then return end
 			if not source_unchanged(snapshot) then fail(snapshot, "Source buffer changed"); return end
 			if not ui.is_open() then M.dismiss(); return end
-			local remaining = config.timeout_ms - (vim.uv.now() - snapshot.started)
-			if remaining <= 0 then fail(snapshot, "Request timed out"); return end
+			local remaining = config.timeout_ms > 0 and config.timeout_ms - (vim.uv.now() - snapshot.started) or 0
+			if config.timeout_ms > 0 and remaining <= 0 then fail(snapshot, "Request timed out"); return end
 			attempt = attempt + 1
 			local handle = require("opencode.client").generate_explanation(prompt, model, function(request_err, response)
 				if current ~= snapshot then return end
@@ -116,7 +118,16 @@ function M.explain_selection()
 				stop_timer(snapshot, "deadline")
 				snapshot.phase = "ready"
 				if ui.show(response_text.display(response, config)) == false then M.dismiss() end
-			end, { timeout = remaining })
+			end, {
+				timeout = remaining, directory = snapshot.root,
+				on_update = function(text)
+					if current ~= snapshot or snapshot.phase ~= "pending" then return end
+					if not source_unchanged(snapshot) then fail(snapshot, "Source buffer changed"); return end
+					if not ui.is_open() then M.dismiss(); return end
+					local visible = response_text.display(text, config, { streaming = true })
+					if visible ~= "" and ui.show(visible, { streaming = true }) == false then M.dismiss() end
+				end,
+			})
 			if active(snapshot) and snapshot.phase == "pending" then snapshot.handle = handle end
 		end
 		dispatch()

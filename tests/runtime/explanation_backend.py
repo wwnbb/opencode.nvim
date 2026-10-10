@@ -5,7 +5,7 @@ Usage: python3 tests/runtime/explanation_backend.py --cli /path/to/opencode
 
 The fixture isolates OpenCode's config, data, state, and cache directories. It
 uses Neovim to build the real explanation prompt and two private model variants,
-then sends the explanation through the plugin's HTTP client. No account secrets
+then streams the explanation through the plugin's native SSE client. No account secrets
 or external model requests are used.
 """
 
@@ -14,7 +14,6 @@ import base64
 import json
 import os
 from pathlib import Path
-import re
 import shutil
 import subprocess
 import tempfile
@@ -23,6 +22,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from support import profile_environment, start_server, wait_server, stop_server
 
 import completion_backend as mock
 
@@ -132,6 +132,7 @@ def run_client(repo, profile, env, port):
     run_nvim(repo, profile, dict(env, EXPLANATION_PORT=str(port)), r"""
 vim.opt.runtimepath:append(vim.env.EXPLANATION_REPO)
 local directory = vim.env.EXPLANATION_PROFILE
+vim.cmd.cd(directory .. '/project')
 local prepared = vim.json.decode(table.concat(vim.fn.readfile(directory .. '/prepared.json'), '\n'))
 local source = vim.api.nvim_create_buf(true, false)
 vim.api.nvim_set_current_buf(source)
@@ -140,18 +141,34 @@ local before = vim.api.nvim_buf_get_lines(source, 0, -1, false)
 local client = require('opencode.client')
 client.setup({ host = '127.0.0.1', port = tonumber(vim.env.EXPLANATION_PORT),
   auth = { username = 'opencode', password = 'explanation-fixture-public-password' } })
-local done, err, answer = false, nil, nil
+client.connect_events()
+assert(vim.wait(5000, function() return client.sse.is_connected() end, 10), 'SSE did not connect')
+local done, err, answer, updates = false, nil, nil, {}
 local handle = client.generate_explanation(prepared.prompt, prepared.explanation_model,
   function(request_error, text)
     err, answer, done = request_error, text, true
-  end, { timeout = 10000 })
+  end, { timeout = 10000, directory = directory .. '/project', on_update = function(text)
+    assert(not done, 'Update arrived after completion')
+    updates[#updates + 1] = text
+  end })
 assert(handle and type(handle.cancel) == 'function')
 assert(vim.wait(15000, function() return done end, 10), 'Explanation HTTP request timed out')
 assert(not err, vim.inspect(err))
 assert(type(answer) == 'string' and answer:find('L24–27 —', 1, true) == 1)
+assert(#updates >= 2 and updates[1] ~= answer and updates[#updates] == answer, 'Explanation was not streamed')
+local cancelled
+local cancel_handle = client.generate_explanation('CANCEL_FIXTURE', prepared.explanation_model,
+  function(request_error) cancelled = request_error end,
+  { timeout = 10000, directory = directory .. '/project', on_update = function() end })
+assert(vim.wait(10000, function() return vim.fn.filereadable(directory .. '/cancel-ready') == 1 end, 10),
+  'Cancellation fixture did not reach the model')
+assert(cancel_handle.cancel())
+assert(vim.wait(5000, function() return cancelled ~= nil end, 10), 'Cancellation callback did not arrive')
+assert(cancelled.cancelled, vim.inspect(cancelled))
 local after = vim.api.nvim_buf_get_lines(source, 0, -1, false)
 assert(vim.deep_equal(before, after), 'Source buffer changed')
-vim.fn.writefile({vim.json.encode({ answer = answer, source_unchanged = true })},
+client.disconnect_events()
+vim.fn.writefile({vim.json.encode({ answer = answer, source_unchanged = true, streamed = true, cancelled = true })},
   directory .. '/client-result.json')
 """)
     return json.loads((profile / "client-result.json").read_text())
@@ -161,6 +178,8 @@ def run(cli):
     repo = Path(__file__).resolve().parents[2]
     mock.ANSWER = ANSWER
     provider = mock.Provider()
+    provider.answer_chunks = [ANSWER[:18], ANSWER[18:]]
+    provider.chunk_delay = 0.1
     threading.Thread(target=provider.serve_forever, daemon=True).start()
     try:
         with tempfile.TemporaryDirectory(prefix="opencode-nvim-explanation-") as temporary:
@@ -172,14 +191,7 @@ def run(cli):
                 "OPENCODE_EXPLANATION_FIXTURE_KEY": "public-local-fixture-key",
                 "GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": os.devnull,
             }
-            for name, relative in {
-                "XDG_CONFIG_HOME": "config", "XDG_DATA_HOME": "data", "XDG_STATE_HOME": "state",
-                "XDG_CACHE_HOME": "cache", "TMPDIR": "tmp", "OPENCODE_CONFIG_DIR": "config/opencode",
-                "OPENCODE_TEST_HOME": "home",
-            }.items():
-                path = profile / relative
-                path.mkdir(parents=True, exist_ok=True)
-                env[name] = str(path)
+            env.update(profile_environment(profile))
             project = profile / "project"
             project.mkdir()
             config = {
@@ -210,18 +222,8 @@ def run(cli):
             log_path = profile / "server.log"
             try:
                 with log_path.open("w+") as log:
-                    process = subprocess.Popen([cli, "serve", "--hostname", "127.0.0.1", "--port", "0"],
-                                               cwd=project, env=env, stdout=log, stderr=subprocess.STDOUT)
-                    deadline, url = time.monotonic() + 30, None
-                    while time.monotonic() < deadline:
-                        log.seek(0)
-                        match = re.search(r"server listening on (http://127\.0\.0\.1:\d+)", log.read())
-                        if match:
-                            url = match[1]
-                            break
-                        assert process.poll() is None, log_path.read_text()
-                        time.sleep(0.05)
-                    assert url, log_path.read_text()
+                    process = start_server(cli, env=env, cwd=project, log=log)
+                    url = wait_server(process, log)
 
                     def request(method, path, body=None, allow_error=False):
                         req = urllib.request.Request(
@@ -258,20 +260,30 @@ def run(cli):
                         assert time.monotonic() - cold_started < 3, reply
                         time.sleep(0.05)
                     assert len(provider.requests) == 1, provider.requests
+                    def signal_cancel_ready():
+                        if provider.slow_started.wait(15):
+                            (profile / "cancel-ready").touch()
+                    threading.Thread(target=signal_cancel_ready, daemon=True).start()
                     client_result = run_client(repo, profile, env,
                                                int(url.rsplit(":", 1)[1]))
-                    assert client_result == {"answer": ANSWER, "source_unchanged": True}
+                    assert client_result == {"answer": ANSWER, "source_unchanged": True, "streamed": True, "cancelled": True}
+                    assert provider.slow_cancelled.wait(5), "Cancellation did not reach the model"
                     _, completion_reply = request("POST", "/api/experimental/generate", {
                         "prompt": "COMPLETION_PROFILE_CHECK", "model": prepared["completion_model"]
                     })
                     assert completion_reply == {"data": {"text": ANSWER}}, completion_reply
-                    _, after = request("GET", "/api/session" + location)
-                    assert before == after, "Explanation created or modified a chat session"
+                    deadline = time.monotonic() + 5
+                    while True:
+                        _, after = request("GET", "/api/session" + location)
+                        if before == after:
+                            break
+                        assert time.monotonic() < deadline, "Explanation left a temporary session behind"
+                        time.sleep(0.05)
                     assert config_path.read_bytes() == original_config, "Config file was modified"
                     assert not (project / "source.lua").exists(), "Unsaved source leaked to disk"
-                    assert len(provider.requests) == 3, provider.requests
+                    assert len(provider.requests) == 4, provider.requests
                     explanation_request = provider.requests[1]
-                    completion_request = provider.requests[2]
+                    completion_request = provider.requests[3]
                     assert not explanation_request["body"].get("tools"), explanation_request
                     assert "local total = 0" in json.dumps(explanation_request["body"]["input"])
                     assert explanation_request["body"]["reasoning"]["effort"] == "none"
@@ -282,7 +294,9 @@ def run(cli):
                     assert completion_request["fixture_header"] == "completion"
                     return {
                         "version": version,
-                        "route": "/api/experimental/generate",
+                        "route": "/api/session/:sessionID/prompt + /api/event",
+                        "streamed": True,
+                        "provider_cancelled": True,
                         "answer": client_result["answer"],
                         "private_variants_distinct": True,
                         "explanation_reasoning_effort": "none",
@@ -294,13 +308,7 @@ def run(cli):
                         "real_provider_requests": 0,
                     }
             finally:
-                if process is not None:
-                    process.terminate()
-                    try:
-                        process.wait(timeout=10)
-                    except subprocess.TimeoutExpired:
-                        process.kill()
-                        process.wait(timeout=5)
+                stop_server(process)
     finally:
         provider.shutdown()
         provider.server_close()

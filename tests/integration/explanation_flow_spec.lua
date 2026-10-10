@@ -1,53 +1,12 @@
 -- Real Visual input through the public API, controller, and popup. Only the
 -- connection and generation callback are stubbed so no model is required.
 local function editor(explanation_options)
-	local stdin, stdout, stderr = vim.uv.new_pipe(false), vim.uv.new_pipe(false), vim.uv.new_pipe(false)
-	local unpacker, responses, errors = vim.mpack.Unpacker(), {}, {}
-	local sequence, exited, process = 0, false, nil
-	process = assert(vim.uv.spawn(vim.v.progpath, {
-		args = { "--embed", "--headless", "--noplugin", "-u", vim.fn.getcwd() .. "/tests/minimal_init.lua", "-i", "NONE", "-n" },
-		stdio = { stdin, stdout, stderr },
-	}, function()
-		exited = true
-		if process and not process:is_closing() then process:close() end
-	end))
-	stdout:read_start(function(err, data)
-		if err then errors[#errors + 1] = err end
-		if not data then return end
-		local offset = 1
-		while offset <= #data do
-			local message
-			message, offset = unpacker(data, offset)
-			if message and message[1] == 1 then responses[message[2]] = message end
-		end
-	end)
-	stderr:read_start(function(err, data) if err or data then errors[#errors + 1] = err or data end end)
-	local client = {}
-	function client.request(method, args)
-		sequence = sequence + 1
-		local id = sequence
-		stdin:write(vim.mpack.encode({ 0, id, method, args }))
-		assert(vim.wait(3000, function() return responses[id] ~= nil or exited end, 5), "RPC timeout")
-		local response = assert(responses[id], table.concat(errors, "\n"))
-		assert(response[3] == vim.NIL, vim.inspect(response[3]))
-		return response[4]
-	end
-	function client.lua(code, args) return client.request("nvim_exec_lua", { code, args or {} }) end
-	function client.feed(keys)
-		client.lua("vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes(..., true, false, true), 'mt', false)", { keys })
-	end
+	local client = require("tests.helpers.embedded_editor").new()
 	function client.wait(expression)
 		assert.is_true(vim.wait(3000, function() return client.lua("return " .. expression) end, 10),
 			expression .. "\n" .. vim.inspect(client.lua([[return { mode = vim.api.nvim_get_mode().mode,
 				requests = #requests, open = require('opencode.ui.explanation').is_open(),
 				lines = vim.api.nvim_buf_get_lines(0, 0, -1, false), notices = notices }]])))
-	end
-	function client.close()
-		if not exited then
-			stdin:write(vim.mpack.encode({ 2, "nvim_command", { "qa!" } }))
-			if not vim.wait(1000, function() return exited end, 5) then process:kill("sigterm") end
-		end
-		for _, pipe in ipairs({ stdin, stdout, stderr }) do if not pipe:is_closing() then pipe:close() end end
 	end
 	client.request("nvim_ui_attach", { 100, 32, { rgb = true, ext_linegrid = true } })
 	client.lua([[
@@ -85,6 +44,20 @@ describe("Visual explanation in a fresh Neovim process", function()
 	after_each(function() if client then client.close() end end)
 
 	it("opens on linewise Visual K, shows the full scrollable reply, and copies it without editing source", function()
+		client.lua([[
+			local namespace = vim.api.nvim_create_namespace('explanation_diagnostics')
+			vim.diagnostic.set(namespace, source, {
+				{ lnum = 0, col = 6, end_lnum = 0, end_col = 11, severity = vim.diagnostic.severity.WARN,
+					source = 'Ruff', code = 'F841', message = 'Local variable is assigned but never used',
+					user_data = { private = 'private diagnostic metadata' } },
+				{ lnum = 2, col = 0, severity = vim.diagnostic.severity.ERROR,
+					message = 'Unselected diagnostic' },
+			})
+			local other = vim.api.nvim_create_buf(true, false)
+			vim.diagnostic.set(namespace, other, {
+				{ lnum = 0, col = 0, message = 'Another buffer diagnostic' },
+			})
+		]])
 		client.feed("VjK")
 		client.wait("#requests == 1 and require('opencode.ui.explanation').is_open()")
 		assert.is_truthy(client.lua([[return table.concat(vim.api.nvim_buf_get_lines(0, 0, -1, false), '\n')
@@ -92,6 +65,12 @@ describe("Visual explanation in a fresh Neovim process", function()
 		local payload = client.lua("return vim.json.decode(requests[1].prompt:match('Context %(JSON%):\\n(.*)$'))")
 		assert.same({ { line = 1, text = "local café = 1" }, { line = 2, text = "return café" } }, payload.selection)
 		assert.equals("line", payload.selection_mode)
+		assert.same({ { line = 1, column = 7, end_line = 1, end_column = 12, severity = "WARN",
+			source = "Ruff", code = "F841", message = "Local variable is assigned but never used" } }, payload.diagnostics)
+		local prompt = client.lua("return requests[1].prompt")
+		assert.is_nil(prompt:find("Unselected diagnostic", 1, true))
+		assert.is_nil(prompt:find("Another buffer diagnostic", 1, true))
+		assert.is_nil(prompt:find("private diagnostic metadata", 1, true))
 		assert.same({ providerID = "test", id = "explain" }, client.lua("return requests[1].model"))
 		local answer = "L1–2 — Defines and returns a value.\n" .. string.rep("More detail.\n", 39) .. "More detail."
 		local raw = "The user wants me to explain the code.\n<answer>\n" .. answer
@@ -125,6 +104,33 @@ describe("Visual explanation in a fresh Neovim process", function()
 		assert.same({ "local café = 1", "return café", "after()" },
 			client.lua("return vim.api.nvim_buf_get_lines(source, 0, -1, false)"))
 		assert.is_false(client.lua("return require('opencode.ui.explanation').is_open()"))
+	end)
+
+	it("shows streamed Markdown before completion and preserves the reader's position", function()
+		client.feed("VjK")
+		client.wait("#requests == 1 and require('opencode.ui.explanation').is_open()")
+		client.lua("requests[1].opts.on_update(...)", { "Thinking about the code.\n<ans" })
+		assert.is_truthy(client.lua([[return table.concat(vim.api.nvim_buf_get_lines(0, 0, -1, false), '\n')
+			:find('Explaining selection', 1, true)]]))
+		local answer = "```lua\nlocal café = 1\n```\n\n**Значение**\n" .. string.rep("Подробности.\n", 40)
+		client.lua("requests[1].opts.on_update(...)", { "Thinking about the code.\n<answer>\n" .. answer })
+		client.wait("vim.api.nvim_buf_line_count(0) > 30")
+		local displayed = client.lua("return vim.api.nvim_buf_get_lines(0, 0, -1, false)")
+		assert.equals("local café = 1", displayed[1])
+		assert.equals("Значение", displayed[3])
+		client.feed("25j")
+		client.wait("vim.api.nvim_win_get_cursor(0)[1] == 26")
+		local top = client.lua("return vim.fn.line('w0')")
+		answer = answer .. "Последняя строка."
+		client.lua("requests[1].opts.on_update(...)", { "<answer>\n" .. answer .. "\n</ans" })
+		assert.equals(26, client.lua("return vim.api.nvim_win_get_cursor(0)[1]"))
+		assert.equals(top, client.lua("return vim.fn.line('w0')"))
+		client.lua("requests[1].callback(nil, ...)", { "<answer>\n" .. answer .. "\n</answer>\nHidden tail" })
+		assert.equals(26, client.lua("return vim.api.nvim_win_get_cursor(0)[1]"))
+		client.feed("c")
+		client.wait("vim.fn.getreg('\\\"') ~= ''")
+		assert.equals(answer, client.lua("return vim.fn.getreg('\\\"')"))
+		assert.equals(client.lua("return tick"), client.lua("return vim.api.nvim_buf_get_changedtick(source)"))
 	end)
 
 	it("uses a custom setup prompt with its language when Visual K builds the request", function()

@@ -65,7 +65,8 @@ local function decorate(view, first, remaining, highlight)
 		virt_text = { { first, highlight } },
 		virt_text_pos = "inline",
 		hl_mode = "combine",
-		right_gravity = false,
+		-- Keep inline decorations to the right of the Insert-mode cursor.
+		right_gravity = true,
 		priority = 200,
 	}
 	if remaining and #remaining > 0 then
@@ -79,11 +80,15 @@ local function decorate(view, first, remaining, highlight)
 	return ok
 end
 
+local function decorate_pending(view)
+	return decorate(view, spinner.get_frame(), nil, "OpenCodeCompletionSpinner")
+end
+
 function M.pending(snapshot)
 	M.clear()
 	local view = { snapshot = snapshot }
 	preview = view
-	if not decorate(view, spinner.get_frame(), nil, "OpenCodeCompletionSpinner") then
+	if not decorate_pending(view) then
 		M.clear()
 		return false
 	end
@@ -91,30 +96,31 @@ function M.pending(snapshot)
 	if timer then
 		local interval = spinner.get_interval_ms()
 		timer:start(interval, interval, vim.schedule_wrap(function()
-			if preview ~= view then return end
-			if not decorate(view, spinner.get_frame(), nil, "OpenCodeCompletionSpinner") then M.clear() end
+			if preview ~= view or not timer then return end
+			if not decorate_pending(view) then M.clear() end
 		end))
 	end
 	return true
 end
 
 function M.show(snapshot, text)
-	M.clear()
-	if type(text) ~= "string" or text == "" or not eligible(snapshot.bufnr) then return false end
+	if type(text) ~= "string" or text == "" or not eligible(snapshot.bufnr) then M.clear(); return false end
 	local lines = vim.split(text, "\n", { plain = true, trimempty = false })
 	local source = vim.api.nvim_buf_get_lines(snapshot.bufnr, snapshot.row, snapshot.row + 1, false)[1]
 	-- Inline virtual text cannot move the real suffix to the last virtual line.
 	-- The controller requests a single-line completion whenever a suffix exists.
-	if not source or (#lines > 1 and snapshot.col < #source) then return false end
+	if not source or (#lines > 1 and snapshot.col < #source) then M.clear(); return false end
 	local first = table.remove(lines, 1)
-	local view = { snapshot = snapshot }
+	if preview and preview.snapshot ~= snapshot then M.clear() end
+	stop_timer()
+	local view = preview or { snapshot = snapshot }
 	preview = view
 	if not decorate(view, first, lines, "OpenCodeCompletion") then
 		M.clear()
 		return false
 	end
 	local key = config.keymaps and config.keymaps.accept
-	if type(key) == "string" and key ~= "" then
+	if not view.accept_mapping and type(key) == "string" and key ~= "" then
 		view.accept_mapping = install_mapping(snapshot.bufnr, key, function()
 			local accepted = preview == view and actions.accept_completion()
 			if preview == view then M.clear() end
