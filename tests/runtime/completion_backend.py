@@ -14,7 +14,6 @@ import http.server
 import json
 import os
 from pathlib import Path
-import re
 import select
 import shutil
 import socket
@@ -25,6 +24,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from support import profile_environment, start_server, wait_server, stop_server
 
 
 PROVIDER = "completion-fixture"
@@ -77,8 +77,9 @@ class ProviderHandler(http.server.BaseHTTPRequestHandler):
                 {"type": "response.created", "response": {"id": response_id, "status": "in_progress"}},
                 {"type": "response.output_item.added", "output_index": 0,
                  "item": {"id": item_id, "type": "message", "role": "assistant", "content": []}},
-                {"type": "response.output_text.delta", "item_id": item_id, "output_index": 0,
-                 "content_index": 0, "delta": ANSWER},
+                *({"type": "response.output_text.delta", "item_id": item_id, "output_index": 0,
+                   "content_index": 0, "delta": chunk}
+                  for chunk in getattr(self.server, "answer_chunks", [ANSWER])),
                 {"type": "response.output_item.done", "output_index": 0, "item": item},
                 {"type": "response.completed", "response": {"id": response_id, "status": "completed",
                  "output": [item], "usage": {"input_tokens": 12, "output_tokens": 3, "total_tokens": 15}}},
@@ -86,6 +87,9 @@ class ProviderHandler(http.server.BaseHTTPRequestHandler):
             for number, event in enumerate(events):
                 event["sequence_number"] = number
                 self.wfile.write(("event: " + event["type"] + "\ndata: " + json.dumps(event) + "\n\n").encode())
+                if event["type"] == "response.output_text.delta":
+                    self.wfile.flush()
+                    time.sleep(getattr(self.server, "chunk_delay", 0))
             self.wfile.flush()
         except (BrokenPipeError, ConnectionResetError, OSError):
             if self.server.slow_started.is_set():
@@ -133,6 +137,82 @@ def evidence_json(value, profile):
     return text + "\n"
 
 
+def run_streaming_client(repo, profile, env, url):
+    script = profile / "streaming.lua"
+    script.write_text(r"""vim.opt.shadafile = 'NONE'
+vim.opt.swapfile = false
+vim.opt.runtimepath:append(vim.env.OPENCODE_COMPLETION_REPO)
+local directory = vim.env.OPENCODE_COMPLETION_PROFILE
+local prepared = vim.json.decode(table.concat(vim.fn.readfile(directory .. '/prepared.json'), '\n'))
+local source = vim.api.nvim_create_buf(true, false)
+vim.api.nvim_set_current_buf(source)
+vim.api.nvim_buf_set_lines(source, 0, -1, false, { 'local result = ' })
+vim.api.nvim_win_set_cursor(0, { 1, 7 })
+local before = vim.api.nvim_buf_get_lines(source, 0, -1, false)
+local cursor = vim.api.nvim_win_get_cursor(0)
+local client = require('opencode.client')
+client.setup({ url = vim.env.OPENCODE_COMPLETION_URL,
+  auth = { username = 'opencode', password = vim.env.OPENCODE_SERVER_PASSWORD }, reconnect = false })
+client.connect_events()
+assert(vim.wait(5000, function() return client.sse.is_connected() end, 10), 'SSE did not connect')
+local done, err, answer, updates = false, nil, nil, {}
+local handle = client.generate_completion('STREAM_COMPLETION_CONTEXT', prepared.model,
+  function(request_error, text) err, answer, done = request_error, text, true end,
+  { timeout = 10000, directory = directory .. '/project', on_update = function(text)
+    assert(not done, 'Text update arrived after completion')
+    assert(type(text) == 'string' and text ~= '', 'Empty streaming completion')
+    updates[#updates + 1] = text
+    assert(vim.deep_equal(before, vim.api.nvim_buf_get_lines(source, 0, -1, false)), 'Source buffer changed')
+    assert(vim.deep_equal(cursor, vim.api.nvim_win_get_cursor(0)), 'Source cursor moved')
+  end })
+assert(handle and type(handle.cancel) == 'function')
+assert(vim.wait(15000, function() return done end, 10), 'Completion request timed out')
+assert(not err, vim.inspect(err))
+assert(answer == vim.env.OPENCODE_COMPLETION_ANSWER, vim.inspect(answer))
+local partials, previous = 0, ''
+for _, text in ipairs(updates) do
+  assert(text:sub(1, #previous) == previous, 'Text updates were not cumulative')
+  assert(answer:sub(1, #text) == text, 'Text update did not match final completion')
+  if #text > #previous and #text < #answer then partials = partials + 1 end
+  previous = text
+end
+assert(partials >= 2 and previous == answer, 'Completion text was not streamed: ' .. vim.inspect(updates))
+assert(vim.deep_equal(before, vim.api.nvim_buf_get_lines(source, 0, -1, false)), 'Source buffer changed')
+assert(vim.deep_equal(cursor, vim.api.nvim_win_get_cursor(0)), 'Source cursor moved')
+local cleaned, checking = false, false
+assert(vim.wait(5000, function()
+  if not cleaned and not checking then
+    checking = true
+    require('opencode.client.v2').request('session_list', {
+      query = { location = { directory = directory .. '/project' } },
+    }, function(list_error, sessions)
+      assert(not list_error, vim.inspect(list_error))
+      cleaned, checking = true, false
+      for _, session in ipairs(sessions) do
+        if client.is_explanation_session(session.id) then cleaned = false end
+      end
+    end)
+  end
+  return cleaned
+end, 20), 'Completion left a temporary session behind')
+client.disconnect_events()
+vim.fn.writefile({vim.json.encode({answer = answer, updates = updates,
+  source_unchanged = true, cursor_unchanged = true, temporary_sessions_cleaned = true})},
+  directory .. '/streaming-result.json')
+""")
+    completed = subprocess.run(
+        ["nvim", "--headless", "--noplugin", "-u", "NONE", "-i", "NONE",
+         "-c", "lua dofile(vim.env.OPENCODE_COMPLETION_SCRIPT)", "-c", "qa!"],
+        env=dict(env, OPENCODE_COMPLETION_REPO=str(repo), OPENCODE_COMPLETION_PROFILE=str(profile),
+                 OPENCODE_COMPLETION_SCRIPT=str(script), OPENCODE_COMPLETION_URL=url,
+                 OPENCODE_COMPLETION_ANSWER=ANSWER),
+        cwd=profile / "project", capture_output=True, text=True, timeout=30)
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    result_path = profile / "streaming-result.json"
+    assert result_path.exists(), completed.stdout + completed.stderr
+    return json.loads(result_path.read_text())
+
+
 def run(cli, output):
     repo = Path(__file__).resolve().parents[2]
     provider = Provider()
@@ -145,12 +225,7 @@ def run(cli, output):
                "OPENCODE_SERVER_USERNAME": "opencode", "OPENCODE_SERVER_PASSWORD": PASSWORD,
                "OPENCODE_COMPLETION_FIXTURE_KEY": "public-local-fixture-key",
                "GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": os.devnull}
-        for name, relative in {"XDG_CONFIG_HOME": "config", "XDG_DATA_HOME": "data", "XDG_STATE_HOME": "state",
-                               "XDG_CACHE_HOME": "cache", "TMPDIR": "tmp", "OPENCODE_CONFIG_DIR": "config/opencode",
-                               "OPENCODE_TEST_HOME": "home"}.items():
-            path = profile / relative
-            path.mkdir(parents=True, exist_ok=True)
-            env[name] = str(path)
+        env.update(profile_environment(profile))
         project = profile / "project"
         project.mkdir()
         base_model = {"providerID": PROVIDER, "id": MODEL}
@@ -179,18 +254,8 @@ def run(cli, output):
         log_path = profile / "server.log"
         try:
             with log_path.open("w+") as log:
-                process = subprocess.Popen([cli, "serve", "--hostname", "127.0.0.1", "--port", "0"],
-                                           cwd=project, env=env, stdout=log, stderr=subprocess.STDOUT)
-                deadline, url = time.monotonic() + 30, None
-                while time.monotonic() < deadline:
-                    log.seek(0)
-                    match = re.search(r"server listening on (http://127\.0\.0\.1:\d+)", log.read())
-                    if match:
-                        url = match[1]
-                        break
-                    assert process.poll() is None, log_path.read_text()
-                    time.sleep(0.05)
-                assert url, log_path.read_text()
+                process = start_server(cli, env=env, cwd=project, log=log)
+                url = wait_server(process, log)
 
                 def request(method, path, body=None, allow_error=False):
                     req = urllib.request.Request(url + path, method=method,
@@ -280,6 +345,20 @@ def run(cli, output):
                 assert preserved_variant["body"]["reasoning"]["effort"] == "medium", preserved_variant
                 assert preserved_variant["body"]["max_output_tokens"] == 384, preserved_variant
 
+                provider.answer_chunks = [ANSWER[:4], ANSWER[4:8], ANSWER[8:]]
+                provider.chunk_delay = 0.15
+                count = len(provider.requests)
+                streaming = run_streaming_client(repo, profile, env, url)
+                assert len(provider.requests) == count + 1, provider.requests[count:]
+                streamed = provider.requests[-1]
+                assert not streamed["body"].get("tools"), streamed
+                assert "STREAM_COMPLETION_CONTEXT" in json.dumps(streamed["body"]["input"]), streamed
+                assert "HISTORY_SENTINEL" not in json.dumps(streamed), streamed
+                assert streamed["body"]["reasoning"]["effort"] == "none", streamed
+                assert streamed["body"]["max_output_tokens"] == 128, streamed
+                assert streamed["fixture_header"] == "completion", streamed
+                provider.chunk_delay = 0
+
                 parsed = urllib.parse.urlparse(url)
                 cancelled = http.client.HTTPConnection(parsed.hostname, parsed.port, timeout=10)
                 cancelled.request("POST", "/api/experimental/generate",
@@ -293,7 +372,7 @@ def run(cli, output):
                 after = {"sessions": request("GET", "/api/session" + location),
                          "messages": request("GET", prefix + "/message"),
                          "inbox": request("GET", prefix + "/inbox")}
-                assert before == after, "Stateless completion altered session history, list, or inbox"
+                assert before == after, "Completion altered session history, list, or inbox"
                 assert config_path.read_bytes() == original_config, "Inline model options rewrote config"
                 result = {"version": version, "route": "/api/experimental/generate", "mock_model_requests": len(provider.requests),
                     "uses_lua_profile": True, "private_variant": prepared["model"]["variant"],
@@ -303,16 +382,11 @@ def run(cli, output):
                     "preserved_history_messages": len(before["messages"]["data"]),
                     "http_cancellation_reached_provider": propagated, "real_provider_requests": 0}
                 result["cold_start_attempts"] = cold_attempts
+                result["streaming_completion"] = streaming
                 return result
         finally:
             provider.release_slow.set()
-            if process is not None:
-                process.terminate()
-                try:
-                    process.wait(timeout=10)
-                except subprocess.TimeoutExpired:
-                    process.kill()
-                    process.wait(timeout=5)
+            stop_server(process)
             provider.shutdown()
             provider.server_close()
             if output:

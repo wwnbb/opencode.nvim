@@ -46,7 +46,7 @@ describe("selection explanation request lifecycle", function()
 		vim.bo[source].modified = false
 		snapshot = source_snapshot()
 		config = defaults.merge({ explanation = {
-			enabled = true, model = { providerID = "test", modelID = "explain" },
+			enabled = true, timeout_ms = 60000, model = { providerID = "test", modelID = "explain" },
 		} })
 		state.set_config(config)
 		state.set_connection("connected")
@@ -94,6 +94,7 @@ describe("selection explanation request lifecycle", function()
 
 	after_each(function()
 		controller.teardown()
+		if saved.new_timer then vim.uv.new_timer, vim.uv.now = saved.new_timer, saved.now end
 		vim.notify, vim.schedule_wrap = saved.notify, saved.wrap
 		for _, name in ipairs(modules) do package.loaded[name] = saved[name] end
 		state.set_config(previous_config)
@@ -122,6 +123,50 @@ describe("selection explanation request lifecycle", function()
 		assert.is_false(vim.bo[source].modified)
 	end)
 
+	it("keeps the default request pending without a deadline until dismissal", function()
+		config.explanation.timeout_ms = defaults.merge().explanation.timeout_ms
+		assert.equals(0, config.explanation.timeout_ms)
+		controller.setup(config.explanation)
+		local now, timer_calls = 0, 0
+		saved.new_timer, saved.now = vim.uv.new_timer, vim.uv.now
+		vim.uv.now = function() return now end
+		vim.uv.new_timer = function()
+			timer_calls = timer_calls + 1
+			return { start = function() end, stop = function() end, close = function() end }
+		end
+		assert.is_true(controller.explain_selection())
+		assert.equals(0, requests[1].opts.timeout)
+		assert.equals(0, timer_calls)
+		now = 60001
+		assert.equals("pending", views[1].snapshot.phase)
+		assert.is_true(views[1].open)
+		assert.is_nil(requests[1].cancelled)
+		assert.same({}, errors)
+		assert.is_true(controller.dismiss())
+		assert.is_true(requests[1].cancelled)
+		requests[1].callback(nil, "late")
+		assert.same({}, shown)
+	end)
+
+	it("streams only the answer and ignores updates after completion or dismissal", function()
+		assert.is_true(controller.explain_selection())
+		local request = requests[1]
+		assert.equals(snapshot.root, request.opts.directory)
+		request.opts.on_update("Preparing the answer.\n<ans")
+		assert.same({}, shown)
+		request.opts.on_update("Preparing the answer.\n<answer>\nОпределяет значение")
+		assert.same({ "Определяет значение" }, shown)
+		assert.equals("pending", views[1].snapshot.phase)
+		request.callback(nil, "<answer>\nОпределяет значение.\n</answer>")
+		request.opts.on_update("late update")
+		assert.same({ "Определяет значение", "Определяет значение." }, shown)
+		assert.equals("ready", views[1].snapshot.phase)
+		controller.explain_selection()
+		close_view(views[2])
+		requests[2].opts.on_update("<answer>\nlate update")
+		assert.same({ "Определяет значение", "Определяет значение." }, shown)
+	end)
+
 	it("keeps a completed answer when its cancelled deadline callback runs", function()
 		local queued
 		vim.schedule_wrap = function(callback) queued = callback; return function() end end
@@ -133,22 +178,22 @@ describe("selection explanation request lifecycle", function()
 		assert.is_true(views[1].open)
 	end)
 
-	it("cancels on popup q and Esc and ignores late answers", function()
-		for _, key in ipairs({ "q", "Esc" }) do
-			assert.is_true(controller.explain_selection())
-			local request, view = requests[#requests], views[#views]
-			-- The UI sends the same on_close callback for either key.
-			close_view(view)
-			assert.is_true(request.cancelled, key)
-			request.callback(nil, "L1–2 — stale")
-			assert.same({}, shown)
-			assert.same({}, errors)
-		end
+	it("cancels on popup close and ignores late answers", function()
+		assert.is_true(controller.explain_selection())
+		local request, view = requests[#requests], views[#views]
+		close_view(view)
+		assert.is_true(request.cancelled)
+		request.opts.on_update("<answer>\nL1–2 — stale")
+		request.callback(nil, "L1–2 — stale")
+		assert.same({}, shown)
+		assert.same({}, errors)
+		assert.is_true(controller.explain_selection())
 	end)
 
 	it("ignores a late answer after the source changes and reports the stale selection", function()
 		controller.explain_selection()
 		vim.api.nvim_buf_set_lines(source, 0, 1, false, { "local value = 2" })
+		requests[1].opts.on_update("<answer>\nL1–2 — stale")
 		requests[1].callback(nil, "L1–2 — stale")
 		assert.is_true(requests[1].cancelled)
 		assert.same({}, shown)

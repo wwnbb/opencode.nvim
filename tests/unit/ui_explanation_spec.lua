@@ -41,8 +41,8 @@ describe("selection explanation popup", function()
 		assert.is_truthy(table.concat(vim.api.nvim_buf_get_lines(view.bufnr, 0, -1, false), "\n")
 			:find("Explaining selection", 1, true))
 		assert.is_true(explanation.show("L1–2 — **Defines and returns** a value.\n\nMore detail."))
-		assert.equals("markdown", vim.bo[view.bufnr].filetype)
-		assert.same({ "L1–2 — **Defines and returns** a value.", "", "More detail." },
+		assert.equals("opencode_explanation", vim.bo[view.bufnr].filetype)
+		assert.same({ "L1–2 — Defines and returns a value.", "", "More detail." },
 			vim.api.nvim_buf_get_lines(view.bufnr, 0, -1, false))
 		assert.is_false(vim.bo[view.bufnr].modifiable)
 		assert.is_true(vim.wo[view.winid].wrap)
@@ -54,6 +54,39 @@ describe("selection explanation popup", function()
 		assert.is_false(explanation.close())
 		assert.equals(1, closed)
 		assert.is_false(explanation.show("late response"))
+	end)
+
+	it("renders Markdown and code highlights, wraps to the popup width, and copies the source", function()
+		local answer = "# Explanation\n\n```lua\nlocal value = 1\n    return value\n```\n\n- **Значение** и `value`\n\n"
+			.. string.rep("Привет 世界 ", 30)
+		local view = explanation.open({ bufnr = source }, function() end)
+		assert.is_true(explanation.show(answer))
+		local lines = vim.api.nvim_buf_get_lines(view.bufnr, 0, -1, false)
+		assert.same({ "Explanation", "", "local value = 1", "    return value", "", "- Значение и value" },
+			vim.list_slice(lines, 1, 6))
+		local highlighted = {}
+		for _, mark in ipairs(vim.api.nvim_buf_get_extmarks(view.bufnr, view.popup.namespaces.content, 0, -1,
+			{ details = true })) do
+			highlighted[mark[4].hl_group] = true
+			assert.is_true(mark[4].end_col <= #lines[mark[2] + 1])
+		end
+		assert.is_true(highlighted.OpenCodeMarkdownCombinedText_Heading1)
+		assert.is_true(highlighted.OpenCodeMarkdownStrong)
+		assert.is_true(highlighted.OpenCodeMarkdownCombinedText_Code)
+		assert.is_true(highlighted["@keyword.lua"])
+		for _, line in ipairs(lines) do
+			assert.is_true(vim.fn.strdisplaywidth(line) <= vim.api.nvim_win_get_width(view.winid))
+		end
+		local copied = {}
+		vim.fn.setreg = function(register, value) copied[register] = value end
+		keys("c")
+		assert.equals(answer, copied['"'])
+		vim.o.columns = 50
+		vim.api.nvim_exec_autocmds("VimResized", {})
+		assert.is_true(vim.wait(500, function() return vim.api.nvim_win_get_width(view.winid) == 40 end, 5))
+		for _, line in ipairs(vim.api.nvim_buf_get_lines(view.bufnr, 0, -1, false)) do
+			assert.is_true(vim.fn.strdisplaywidth(line) <= 40)
+		end
 	end)
 
 	it("keeps all answer lines scrollable and copies the full response", function()
@@ -72,6 +105,59 @@ describe("selection explanation popup", function()
 		assert.equals(answer, copied['"'])
 		assert.equals(answer, copied["+"])
 		assert.is_true(explanation.is_open())
+	end)
+
+	it("keeps the spinner until visible text, then highlights and copies the partial answer", function()
+		local view = explanation.open({ bufnr = source }, function() end)
+		local timer = view.timer
+		assert.is_true(explanation.show("", { streaming = true }))
+		assert.equals("pending", view.phase)
+		assert.equals(timer, view.timer)
+		local answer = "# Explanation\n\n```lua\nlocal value = 1"
+		assert.is_true(explanation.show(answer, { streaming = true }))
+		assert.equals("streaming", view.phase)
+		assert.is_nil(view.timer)
+		assert.same({ "Explanation", "", "local value = 1" },
+			vim.api.nvim_buf_get_lines(view.bufnr, 0, -1, false))
+		local highlighted = {}
+		for _, mark in ipairs(vim.api.nvim_buf_get_extmarks(view.bufnr, view.popup.namespaces.content, 0, -1,
+			{ details = true })) do highlighted[mark[4].hl_group] = true end
+		assert.is_true(highlighted.OpenCodeMarkdownCombinedText_Heading1)
+		assert.is_true(highlighted["@keyword.lua"])
+		assert.is_false(vim.bo[view.bufnr].modifiable)
+		assert.is_true(vim.bo[view.bufnr].readonly)
+		local copied = {}
+		vim.fn.setreg = function(register, value) copied[register] = value end
+		keys("c")
+		assert.equals(answer, copied['"'])
+		assert.equals(answer, copied["+"])
+	end)
+
+	it("preserves the cursor and scroll as a streamed answer grows, finishes, and resizes", function()
+		local lines = {}
+		for index = 1, 60 do lines[index] = "L" .. index .. " — Привет 世界" end
+		local view = explanation.open({ bufnr = source }, function() end)
+		explanation.show(table.concat(lines, "\n", 1, 45), { streaming = true })
+		keys("35j2l")
+		local saved = vim.api.nvim_win_call(view.winid, vim.fn.winsaveview)
+		assert.equals(36, saved.lnum)
+		assert.is_true(saved.topline > 1)
+		local function assert_view()
+			local current = vim.api.nvim_win_call(view.winid, vim.fn.winsaveview)
+			assert.equals(saved.lnum, current.lnum)
+			assert.equals(saved.col, current.col)
+			assert.equals(saved.topline, current.topline)
+		end
+		local answer = table.concat(lines, "\n")
+		assert.is_true(explanation.show(answer, { streaming = true }))
+		assert_view()
+		vim.o.columns = 50
+		vim.api.nvim_exec_autocmds("VimResized", {})
+		assert.equals(40, vim.api.nvim_win_get_width(view.winid))
+		assert_view()
+		assert.is_true(explanation.show(answer))
+		assert.equals("ready", view.phase)
+		assert_view()
 	end)
 
 	it("shows errors in the popup and closes through q, Esc, or window closure", function()

@@ -1,4 +1,4 @@
--- One editor completion request, independent of conversation state and SSE.
+-- One editor completion request, independent of conversation state.
 local M = {}
 local context = require("opencode.completion.context")
 local ui = require("opencode.ui.completion")
@@ -50,7 +50,7 @@ function M.dismiss()
 end
 
 function M.visible()
-	return current ~= nil and current.phase == "ready" and active(current)
+	return current ~= nil and (current.phase == "streaming" or current.phase == "ready") and active(current)
 end
 
 --- Normalize only an unambiguous enclosing code fence; never trim code spaces.
@@ -87,12 +87,14 @@ function M.complete()
 	local prompt, prompt_err = context.build(snapshot, config, previous)
 	if not prompt then M.dismiss(); notify(prompt_err); return false end
 	snapshot.started = vim.uv.now()
-	snapshot.deadline = vim.uv.new_timer()
-	snapshot.deadline:start(config.timeout_ms, 0, vim.schedule_wrap(function()
-		if current ~= snapshot or not snapshot.deadline then return end
-		M.dismiss()
-		notify("Request timed out", vim.log.levels.WARN)
-	end))
+	if config.timeout_ms > 0 then
+		snapshot.deadline = vim.uv.new_timer()
+		snapshot.deadline:start(config.timeout_ms, 0, vim.schedule_wrap(function()
+			if current ~= snapshot or not snapshot.deadline then return end
+			M.dismiss()
+			notify("Request timed out", vim.log.levels.WARN)
+		end))
+	end
 	if ui.pending(snapshot) == false then
 		M.dismiss()
 		notify("Could not display the completion indicator")
@@ -106,10 +108,11 @@ function M.complete()
 		local warming_until, attempt = vim.uv.now() + 2000, 0
 		local function dispatch()
 			if not active(snapshot) then if current == snapshot then M.dismiss() end; return end
-			local remaining = config.timeout_ms - (vim.uv.now() - snapshot.started)
-			if remaining <= 0 then M.dismiss(); notify("Request timed out"); return end
+			local remaining = config.timeout_ms > 0 and config.timeout_ms - (vim.uv.now() - snapshot.started) or 0
+			if config.timeout_ms > 0 and remaining <= 0 then M.dismiss(); notify("Request timed out"); return end
 			attempt = attempt + 1
 			local handle = require("opencode.client").generate_completion(prompt, model, function(request_err, response)
+				if snapshot.phase ~= "pending" and snapshot.phase ~= "streaming" then return end
 				if not active(snapshot) then if current == snapshot then M.dismiss() end; return end
 				snapshot.handle = nil
 				local warming_left = warming_until - vim.uv.now()
@@ -136,8 +139,20 @@ function M.complete()
 				end
 				snapshot.text, snapshot.phase = text, "ready"
 				if ui.show(snapshot, text) == false then M.dismiss() end
-			end, { timeout = remaining })
-			if current == snapshot and snapshot.phase == "pending" then snapshot.handle = handle end
+			end, {
+				timeout = remaining, directory = snapshot.root,
+				on_update = function(response)
+					if current ~= snapshot or (snapshot.phase ~= "pending" and snapshot.phase ~= "streaming") then return end
+					if not active(snapshot) then M.dismiss(); return end
+					local text = M.normalize(response, snapshot.suffix ~= "" and 1 or config.max_lines)
+					if text == snapshot.text then return end
+					snapshot.text, snapshot.phase = text, text and "streaming" or "pending"
+					local displayed
+					if text then displayed = ui.show(snapshot, text) else displayed = ui.pending(snapshot) end
+					if displayed == false then M.dismiss() end
+				end,
+			})
+			if current == snapshot and (snapshot.phase == "pending" or snapshot.phase == "streaming") then snapshot.handle = handle end
 		end
 		dispatch()
 	end)
@@ -153,6 +168,8 @@ function M.accept()
 	if not M.visible() then M.dismiss(); return false end
 	local record = current
 	record.phase = "accepting"
+	stop_timer(record, "deadline")
+	if record.handle then record.handle.cancel(); record.handle = nil end
 	ui.clear()
 	local command = string.format("<C-g>u<Cmd>lua require('opencode.completion')._commit(%d)<CR><C-g>u", record.id)
 	vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes(command, true, false, true), "in", false)

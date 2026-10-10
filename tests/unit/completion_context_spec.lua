@@ -58,6 +58,48 @@ describe("completion editor context", function()
 		assert.same({ "return value" }, data.after)
 		assert.equals(vim.api.nvim_buf_get_changedtick(buf), snap.changedtick)
 	end)
+	it("keeps a Python docstring insertion between its existing delimiters", function()
+		local before = {
+			"def load_candles_parquet(",
+			"    start_ts: float | None,",
+			"    end_ts: float | None,",
+			"    warmup_minutes: int,",
+			") -> list[dict[str, Any]]:",
+			'    """Load 1-minute candles, trim to the requested window with warmup, and return records.',
+		}
+		local after = {
+			"",
+			'    """',
+			"",
+			"    if isinstance(warmup_minutes, bool) or not isinstance(warmup_minutes, int) or warmup_minutes <= 0:",
+			'        raise ValueError("warmup_minutes must be a positive integer")',
+		}
+		local content = vim.list_extend(vim.deepcopy(before), { "    " })
+		vim.list_extend(content, after)
+		local buf = buffer("/tmp/opencode-completion-context/candle_loader.py", content, "python")
+		local prompt = assert(context.build(snapshot(buf, #before, 4), defaults.merge().completion))
+		local data = decoded(prompt)
+		assert.equals("    ", data.prefix)
+		assert.equals("", data.suffix)
+		assert.same(before, data.before)
+		assert.same(after, data.after)
+		local instruction = prompt:match("^(.-)Context %(JSON%):\n")
+		assert.is_truthy(instruction:find("prefix + insertion + suffix", 1, true))
+		assert.is_truthy(instruction:find("inside a comment, docstring, or string, continue its content and style", 1, true))
+		assert.is_truthy(instruction:find("Do not close or escape its delimiters to add unrelated code", 1, true))
+	end)
+	it("requests only the missing insertion after a partially typed Rust prefix", function()
+		local prefix = '        "-" => number'
+		local buf = buffer("/tmp/opencode-completion-context/main.rs", { prefix .. "," }, "rust")
+		local prompt = assert(context.build(snapshot(buf, 0, #prefix), defaults.merge().completion, "1_int"))
+		local data = decoded(prompt)
+		assert.equals(prefix, data.prefix)
+		assert.equals(",", data.suffix)
+		assert.equals("1_int", data.previous_suggestion)
+		assert.is_truthy(prompt:find("Return ONLY insertion text", 1, true))
+		assert.is_truthy(prompt:find("Do not repeat either existing side", 1, true))
+		assert.is_truthy(prompt:find('prefix="let n = num", suffix=";" -> "ber"', 1, true))
+	end)
 	it("prioritizes referenced open files and excludes unrelated projects and scratch buffers", function()
 		local buf = buffer("/tmp/opencode-completion-context/main.lua", { 'local helper = require("util.helper")', "local result = " })
 		buffer("/tmp/opencode-completion-context/sibling.lua", { "local sibling = 1" })
@@ -90,9 +132,9 @@ describe("completion editor context", function()
 	end)
 	it("never cuts UTF-8 or exceeds a small budget when source lines are huge", function()
 		local buf = buffer("/tmp/opencode-completion-context/huge.lua", { string.rep("é", 2000), "x", string.rep("z", 4000) })
-		local opts = defaults.merge({ completion = { context = { max_bytes = 1300 } } }).completion
+		local opts = defaults.merge({ completion = { context = { max_bytes = 1024 } } }).completion
 		local prompt = assert(context.build(snapshot(buf, 1, 1), opts))
-		assert.is_true(#prompt <= 1300)
+		assert.is_true(#prompt <= 1024)
 		assert.same({}, decoded(prompt).before)
 		local result, err = context.build(snapshot(buf, 0, 2), opts)
 		assert.is_nil(result)
@@ -103,7 +145,7 @@ describe("completion editor context", function()
 		buffer("/tmp/opencode-completion-context/b.lua", { "related" })
 		local opts = defaults.merge({ completion = { context = { max_related_buffers = 0 } } }).completion
 		assert.same({}, decoded(context.build(snapshot(buf, 0, 1), opts)).related)
-		for _, invalid in ipairs({ { timeout_ms = 0 }, { max_lines = -1 }, { context = { max_bytes = 10 } },
+		for _, invalid in ipairs({ { timeout_ms = -1 }, { max_lines = -1 }, { context = { max_bytes = 10 } },
 			{ keymaps = { trigger = "<Tab>" } }, { keymaps = { trigger = "<C-i>", accept = "<Tab>" } } }) do
 			assert.is_false(pcall(defaults.merge, { completion = invalid }))
 		end

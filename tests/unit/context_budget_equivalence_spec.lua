@@ -31,6 +31,7 @@ end
 describe("editor context incremental JSON equivalence", function()
 	local buffers, original_buf
 	local root = "/tmp/opencode-context-equivalence"
+	local diagnostic_ns = vim.api.nvim_create_namespace("opencode_context_equivalence_test")
 	local function buffer(path, content, filetype)
 		local bufnr = vim.api.nvim_create_buf(true, false)
 		buffers[#buffers + 1] = bufnr
@@ -67,7 +68,10 @@ describe("editor context incremental JSON equivalence", function()
 	before_each(function() buffers = {}; original_buf = vim.api.nvim_get_current_buf() end)
 	after_each(function()
 		vim.api.nvim_set_current_buf(original_buf)
-		for _, bufnr in ipairs(buffers) do vim.api.nvim_buf_delete(bufnr, { force = true }) end
+		for _, bufnr in ipairs(buffers) do
+			vim.diagnostic.reset(diagnostic_ns, bufnr)
+			vim.api.nvim_buf_delete(bufnr, { force = true })
+		end
 	end)
 
 	it("matches complete UTF-8 and escaped prompts at exact and one-byte-short budgets", function()
@@ -92,6 +96,28 @@ describe("editor context incremental JSON equivalence", function()
 			for _, limit in ipairs({ #minimal - 1, #minimal, #minimal + 1, #full - 1, #full, #full + 1 }) do
 				opts.context.max_bytes = limit
 				compare(case.actual, case.legacy, case.snap, opts, case.previous)
+			end
+		end
+	end)
+
+	it("retains each complete native diagnostic at its exact serialized byte boundary", function()
+		local bufnr = buffer("diagnostic.lua", { "local café = missing", "return café" })
+		local snap, opts = selection(bufnr, 1, 2), options()
+		opts.context.before_lines, opts.context.after_lines, opts.context.header_lines = 0, 0, 0
+		opts.context.max_related_buffers = 0
+		local base = assert(compare(explanation, legacy_explanation, snap, opts))
+		vim.diagnostic.set(diagnostic_ns, bufnr, {
+			{ lnum = 0, col = 14, end_lnum = 0, end_col = 21, severity = vim.diagnostic.severity.ERROR,
+				source = "test-lsp", code = "E01", message = 'Unknown "missing" — é🙂\nUse \\name' },
+		}, { virtual_text = false, signs = false, underline = false })
+		local full = assert(compare(explanation, legacy_explanation, snap, opts))
+		assert.equals(1, #decoded(full).diagnostics)
+		for _, limit in ipairs({ #base - 1, #base, #full - 1, #full, #full + 1 }) do
+			opts.context.max_bytes = limit
+			local prompt = compare(explanation, legacy_explanation, snap, opts)
+			if prompt then
+				assert.equals(limit >= #full and 1 or 0, #decoded(prompt).diagnostics)
+				assert.same(decoded(base).selection, decoded(prompt).selection)
 			end
 		end
 	end)

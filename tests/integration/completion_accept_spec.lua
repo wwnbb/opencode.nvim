@@ -1,41 +1,7 @@
 -- Real Insert-mode input through the full public API/controller/UI. Only the
 -- connection and generation request are stubbed; buffer edits and undo are real.
 local function editor(completion_options)
-	local stdin, stdout, stderr = vim.uv.new_pipe(false), vim.uv.new_pipe(false), vim.uv.new_pipe(false)
-	local unpacker, responses, errors = vim.mpack.Unpacker(), {}, {}
-	local sequence, exited, process = 0, false, nil
-	process = assert(vim.uv.spawn(vim.v.progpath, {
-		args = { "--embed", "--headless", "--noplugin", "-u", vim.fn.getcwd() .. "/tests/minimal_init.lua", "-i", "NONE", "-n" },
-		stdio = { stdin, stdout, stderr },
-	}, function()
-		exited = true
-		if process and not process:is_closing() then process:close() end
-	end))
-	stdout:read_start(function(err, data)
-		if err then errors[#errors + 1] = err end
-		if not data then return end
-		local offset = 1
-		while offset <= #data do
-			local message
-			message, offset = unpacker(data, offset)
-			if message and message[1] == 1 then responses[message[2]] = message end
-		end
-	end)
-	stderr:read_start(function(err, data) if err or data then errors[#errors + 1] = err or data end end)
-	local client = {}
-	function client.request(method, args)
-		sequence = sequence + 1
-		local id = sequence
-		stdin:write(vim.mpack.encode({ 0, id, method, args }))
-		assert(vim.wait(3000, function() return responses[id] ~= nil or exited end, 5), "RPC timeout")
-		local response = assert(responses[id], table.concat(errors, "\n"))
-		assert(response[3] == vim.NIL, vim.inspect(response[3]))
-		return response[4]
-	end
-	function client.lua(code, args) return client.request("nvim_exec_lua", { code, args or {} }) end
-	function client.feed(keys)
-		client.lua("vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes(..., true, false, true), 'mt', false)", { keys })
-	end
+	local client = require("tests.helpers.embedded_editor").new()
 	function client.wait(expression)
 		assert.is_true(vim.wait(2000, function() return client.lua("return " .. expression) end, 10), expression
 			.. "\n" .. vim.inspect(client.lua([[return { mode = vim.api.nvim_get_mode().mode,
@@ -43,14 +9,8 @@ local function editor(completion_options)
 				requests = #requests, notices = notices, visible = require('opencode').completion_visible() }]])))
 	end
 	function client.respond(index, text) client.lua("local index, text = ...; requests[index].callback(nil, text)", { index, text }) end
+	function client.update(index, text) client.lua("local index, text = ...; requests[index].opts.on_update(text)", { index, text }) end
 	function client.lines() return client.lua("return vim.api.nvim_buf_get_lines(0, 0, -1, false)") end
-	function client.close()
-		if not exited then
-			stdin:write(vim.mpack.encode({ 2, "nvim_command", { "qa!" } }))
-			if not vim.wait(1000, function() return exited end, 5) then process:kill("sigterm") end
-		end
-		for _, pipe in ipairs({ stdin, stdout, stderr }) do if not pipe:is_closing() then pipe:close() end end
-	end
 	client.request("nvim_ui_attach", { 80, 20, { rgb = true, ext_linegrid = true } })
 	client.lua([[
 		local completion_options = ...
@@ -74,8 +34,8 @@ local function editor(completion_options)
 			return { cancel = function() request.cancelled = true end }
 		end
 		_G.visible = require('opencode').completion_visible
-		_G.marks = function()
-			return vim.api.nvim_buf_get_extmarks(0, vim.api.nvim_get_namespaces().OpenCodeCompletion, 0, -1, {})
+		_G.marks = function(details)
+			return vim.api.nvim_buf_get_extmarks(0, vim.api.nvim_get_namespaces().OpenCodeCompletion, 0, -1, { details = details == true })
 		end
 	]], { completion_options or {} })
 	return client
@@ -85,6 +45,113 @@ describe("editor completion acceptance with real input", function()
 	local client
 	before_each(function() client = editor() end)
 	after_each(function() if client then client.close() end end)
+
+	it("replaces the loading spinner with cumulative ghost text before the final response", function()
+		client.feed("ivalue = ")
+		client.wait("vim.api.nvim_get_current_line() == 'value = '")
+		client.lua("vim.bo.modified = false")
+		local changedtick = client.lua("return vim.api.nvim_buf_get_changedtick(0)")
+		client.feed("<C-l>")
+		client.wait("#requests == 1 and #marks() == 1")
+		assert.is_false(client.lua("return visible()"))
+		assert.equals("OpenCodeCompletionSpinner", client.lua("return marks(true)[1][4].virt_text[1][2]"))
+		client.update(1, "4")
+		client.wait("visible() and marks(true)[1][4].virt_text[1][1] == '4'")
+		client.update(1, "42")
+		client.wait("marks(true)[1][4].virt_text[1][1] == '42'")
+		assert.equals("OpenCodeCompletion", client.lua("return marks(true)[1][4].virt_text[1][2]"))
+		assert.same({ 1, #"value = " }, client.lua("return vim.api.nvim_win_get_cursor(0)"))
+		assert.equals(changedtick, client.lua("return vim.api.nvim_buf_get_changedtick(0)"))
+		assert.is_false(client.lua("return vim.bo.modified"))
+		assert.same({ "value = " }, client.lines())
+		client.respond(1, "43")
+		client.update(1, "late")
+		assert.equals("43", client.lua("return marks(true)[1][4].virt_text[1][1]"))
+	end)
+
+	it("accepts streamed text with Tab and ignores updates and a final response queued during acceptance", function()
+		client.feed("ivalue = ")
+		client.wait("vim.api.nvim_get_current_line() == 'value = '")
+		client.feed("<C-l>")
+		client.wait("#requests == 1")
+		client.update(1, "42")
+		client.wait("visible()")
+		client.lua([[
+			local actions = require('opencode.actions')
+			local accept = actions.accept_completion
+			actions.accept_completion = function()
+				local accepted = accept()
+				requests[1].opts.on_update('queued update')
+				requests[1].callback(nil, 'queued final')
+				return accepted
+			end
+		]])
+		client.feed("<Tab>")
+		client.wait("not visible() and requests[1].cancelled == true and vim.api.nvim_get_current_line() == 'value = 42'")
+		client.update(1, "late update")
+		client.respond(1, "late final")
+		assert.same({ "value = 42" }, client.lines())
+		assert.same({ 1, #"value = 42" }, client.lua("return vim.api.nvim_win_get_cursor(0)"))
+		assert.equals(0, client.lua("return #marks()"))
+		assert.same({}, client.lua("return notices"))
+	end)
+
+	it("previews and accepts an insertion-only Rust identifier tail", function()
+		local prefix, insertion = '        "-" => number', "1_int - number2_int,"
+		client.feed("i" .. prefix)
+		client.wait("vim.api.nvim_get_mode().mode == 'i' and vim.api.nvim_get_current_line() == " .. vim.inspect(prefix))
+		local changedtick = client.lua("return vim.api.nvim_buf_get_changedtick(0)")
+		client.feed("<C-l>")
+		client.wait("#requests == 1")
+		client.respond(1, insertion)
+		client.wait("visible()")
+		assert.equals(insertion, client.lua("return marks(true)[1][4].virt_text[1][1]"))
+		assert.same({ prefix }, client.lines())
+		assert.same({ 1, #prefix }, client.lua("return vim.api.nvim_win_get_cursor(0)"))
+		assert.equals(changedtick, client.lua("return vim.api.nvim_buf_get_changedtick(0)"))
+		client.feed("<Tab>")
+		client.wait("not visible()")
+		assert.same({ prefix .. insertion }, client.lines())
+		assert.same({ 1, #(prefix .. insertion) }, client.lua("return vim.api.nvim_win_get_cursor(0)"))
+	end)
+
+	it("streams and accepts insertions on blank, space-indented, and tab-indented lines", function()
+		client.feed("i")
+		client.wait("vim.api.nvim_get_mode().mode == 'i'")
+		for index, case in ipairs({
+			{ "", "value = 1" },
+			{ "    ", "return value" },
+			{ "\t", "if ready:\n\t\tpass" },
+			{ "", "if ready:\n    pass" },
+		}) do
+			local prefix, insertion = case[1], case[2]
+			client.lua([[
+				local prefix = ...
+				vim.api.nvim_buf_set_lines(0, 0, -1, false, { prefix, "after" })
+				vim.api.nvim_win_set_cursor(0, { 1, #prefix })
+				vim.bo.modified = false
+			]], { prefix })
+			local changedtick = client.lua("return vim.api.nvim_buf_get_changedtick(0)")
+			client.feed("<C-l>")
+			client.wait("#requests == " .. index)
+			client.update(index, insertion)
+			client.wait("visible()")
+			assert.equals(insertion:match("^[^\n]*"), client.lua("return marks(true)[1][4].virt_text[1][1]"))
+			assert.same({ prefix, "after" }, client.lines())
+			assert.same({ 1, #prefix }, client.lua("return vim.api.nvim_win_get_cursor(0)"))
+			assert.equals(changedtick, client.lua("return vim.api.nvim_buf_get_changedtick(0)"))
+			assert.is_false(client.lua("return vim.bo.modified"))
+			local expected = vim.split(prefix .. insertion, "\n", { plain = true })
+			local cursor = { #expected, #expected[#expected] }
+			expected[#expected + 1] = "after"
+			client.feed("<Tab>")
+			client.wait("not visible() and vim.deep_equal(vim.api.nvim_buf_get_lines(0, 0, -1, false), " .. vim.inspect(expected) .. ")")
+			assert.same(expected, client.lines())
+			assert.same(cursor, client.lua("return vim.api.nvim_win_get_cursor(0)"))
+			assert.is_true(client.lua("return requests[...].cancelled", { index }))
+		end
+		assert.same({}, client.lua("return notices"))
+	end)
 
 	it("accepts a multiline block with separate undo and redo steps before and after it", function()
 		client.feed("iclass Sample")

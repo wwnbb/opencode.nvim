@@ -1,19 +1,70 @@
 -- Exercise Neovim's actual line-grid renderer: extmark shape alone cannot
 -- establish whether a source suffix stays after a ghost insertion.
 describe("ghost completion rendered cells", function()
+	it("keeps the Insert-mode screen cursor fixed through loading, preview, and dismissal", function()
+		local screen_cursor
+		local client = require("tests.helpers.embedded_editor").new({
+			init = "NONE",
+			on_notification = function(event, changes)
+				if event ~= "redraw" then return end
+				for _, change in ipairs(changes) do
+					if change[1] == "grid_cursor_goto" then screen_cursor = change[#change] end
+				end
+			end,
+		})
+		local function position()
+			local buffer = client.lua("vim.cmd('redraw!'); return position()")
+			vim.wait(50, function() return false end, 5)
+			return { buffer, screen_cursor }
+		end
+		local ok, err = pcall(function()
+			client.request("nvim_ui_attach", { 70, 16, { rgb = true, ext_linegrid = true } })
+			client.lua([[
+				vim.opt.runtimepath:append(...)
+				vim.o.number, vim.o.relativenumber, vim.o.ruler = false, false, false
+				vim.o.showmode = false
+				vim.o.signcolumn, vim.o.foldcolumn, vim.o.tabstop = "no", "0", 4
+				_G.completion_ui = require("opencode.ui.completion")
+				completion_ui.setup({ enabled = true, keymaps = { trigger = false, accept = false } })
+				_G.position = function()
+					return { vim.api.nvim_win_get_cursor(0),
+						vim.api.nvim_buf_get_changedtick(0), vim.bo.modified }
+				end
+			]], { vim.fn.getcwd() })
+			client.feed("i")
+			assert.is_true(vim.wait(1000, function() return client.lua("return vim.api.nvim_get_mode().mode") == "i" end, 5))
+			for _, case in ipairs({
+				{ "    ", 4, "return value" },
+				{ "local café = ()", #"local café = (", "résultat" },
+				{ "\tcall()", #"\tcall(", "世界" },
+				{ "class Example", #"class Example", ":\n\tpass" },
+			}) do
+				client.lua([[
+					local source, col = ...
+					vim.api.nvim_buf_set_lines(0, 0, -1, false, { source, "after" })
+					vim.api.nvim_win_set_cursor(0, { 1, col })
+					vim.bo.modified = false
+					_G.snapshot = { bufnr = vim.api.nvim_get_current_buf(), row = 0, col = col }
+				]], { case[1], case[2] })
+				local before = position()
+				assert.is_not_nil(screen_cursor)
+				assert.is_true(client.lua("return completion_ui.pending(snapshot)"))
+				assert.same(before, position())
+				assert.is_true(client.lua("return completion_ui.show(snapshot, ...)", { vim.fn.strcharpart(case[3], 0, 1) }))
+				assert.same(before, position())
+				assert.is_true(client.lua("return completion_ui.show(snapshot, ...)", { case[3] }))
+				assert.same(before, position())
+				client.lua("completion_ui.clear()")
+				assert.same(before, position())
+				assert.same({ case[1], "after" }, client.lua("return vim.api.nvim_buf_get_lines(0, 0, -1, false)"))
+			end
+		end)
+		client.close()
+		if not ok then error(err) end
+	end)
+
 	it("lays out suffix text, Unicode, tabs, and multiline previews correctly", function()
-		local stdin, stdout, stderr = vim.uv.new_pipe(false), vim.uv.new_pipe(false), vim.uv.new_pipe(false)
-		local unpacker = vim.mpack.Unpacker()
-		local responses, grids, errors = {}, {}, {}
-		local sequence, exited = 0, false
-		local process
-		process = assert(vim.uv.spawn(vim.v.progpath, {
-			args = { "--embed", "--headless", "--noplugin", "-u", "NONE", "-i", "NONE", "-n" },
-			stdio = { stdin, stdout, stderr },
-		}, function()
-			exited = true
-			if process and not process:is_closing() then process:close() end
-		end))
+		local grids = {}
 
 		local function redraw(changes)
 			for _, change in ipairs(changes) do
@@ -39,32 +90,11 @@ describe("ghost completion rendered cells", function()
 				end
 			end
 		end
-		stdout:read_start(function(err, data)
-			if err then errors[#errors + 1] = err end
-			if not data then return end
-			local offset = 1
-			while offset <= #data do
-				local message
-				message, offset = unpacker(data, offset)
-				if message then
-					if message[1] == 1 then responses[message[2]] = message end
-					if message[1] == 2 and message[2] == "redraw" then redraw(message[3]) end
-				end
-			end
-		end)
-		stderr:read_start(function(err, data)
-			if err or data then errors[#errors + 1] = err or data end
-		end)
-
-		local function request(method, args)
-			sequence = sequence + 1
-			local id = sequence
-			stdin:write(vim.mpack.encode({ 0, id, method, args }))
-			assert.is_true(vim.wait(3000, function() return responses[id] ~= nil or exited end, 5), "RPC timeout")
-			local response = assert(responses[id], table.concat(errors, "\n"))
-			assert.equals(vim.NIL, response[3], vim.inspect(response[3]))
-			return response[4]
-		end
+		local client = require("tests.helpers.embedded_editor").new({
+			init = "NONE",
+			on_notification = function(event, changes) if event == "redraw" then redraw(changes) end end,
+		})
+		local request = client.request
 		local function row(index)
 			return grids[1] and table.concat(grids[1][index]):gsub(" +$", "")
 		end
@@ -98,13 +128,7 @@ describe("ghost completion rendered cells", function()
 			request("nvim_exec_lua", { "completion_ui.clear(); vim.cmd('redraw!')", {} })
 			assert.is_true(vim.wait(1000, function() return row(1) == "class Example" and row(2) == "after" end, 5))
 		end)
-		if not exited then
-			stdin:write(vim.mpack.encode({ 2, "nvim_command", { "qa!" } }))
-			if not vim.wait(1000, function() return exited end, 5) then process:kill("sigterm") end
-		end
-		for _, pipe in ipairs({ stdin, stdout, stderr }) do
-			if not pipe:is_closing() then pipe:close() end
-		end
+		client.close()
 		if not ok then error(err) end
 	end)
 end)

@@ -86,10 +86,15 @@ describe("editor ghost completion UI", function()
 		vim.keymap.set("i", "<Tab>", fallback, { buffer = bufnr, expr = true })
 		spinner.get_frame = function() calls = calls + 1; return "|" end
 		local ok, err = pcall(function()
-			assert.is_true(completion.pending(snapshot("local value = ")))
+			local request = snapshot("local value = ")
+			assert.is_true(completion.pending(request))
 			assert.equals(fallback, mapping("<Tab>").callback)
 			assert.equals("OpenCodeCompletionSpinner", marks()[1][4].virt_text[1][2])
+			assert.equals("|", marks()[1][4].virt_text[1][1])
 			assert.is_true(vim.wait(500, function() return calls >= 2 end, 10))
+			assert.equals("|", marks()[1][4].virt_text[1][1])
+			assert.same({ "local value = ", "next line" }, vim.api.nvim_buf_get_lines(bufnr, 0, -1, false))
+			assert.equals(request.changedtick, vim.api.nvim_buf_get_changedtick(bufnr))
 			completion.clear()
 			local stopped_calls = calls
 			vim.wait(spinner.get_interval_ms() * 2, function() return false end, 10)
@@ -98,6 +103,29 @@ describe("editor ghost completion UI", function()
 		end)
 		spinner.get_frame = original_frame
 		if not ok then error(err) end
+	end)
+
+	it("replaces the spinner with growing text and restores the original mapping after streaming", function()
+		local fallback = function() return "fallback" end
+		vim.keymap.set("i", "<Tab>", fallback, { buffer = bufnr, expr = true })
+		local request = snapshot("    ")
+		vim.bo[bufnr].modified = false
+		assert.is_true(completion.pending(request))
+		assert.is_true(completion.show(request, "if ready:"))
+		local mark, accept = marks()[1][1], mapping("<Tab>").callback
+		assert.is_true(completion.show(request, "if ready:\n\tpass"))
+		assert.equals(mark, marks()[1][1])
+		assert.equals(accept, mapping("<Tab>").callback)
+		assert.same({ { { "\tpass", "OpenCodeCompletion" } } }, marks()[1][4].virt_lines)
+		vim.wait(spinner.get_interval_ms() * 2, function() return false end, 10)
+		assert.equals("if ready:", marks()[1][4].virt_text[1][1])
+		assert.is_true(completion.show(request, "return value"))
+		assert.is_nil(marks()[1][4].virt_lines)
+		assert.same({ "    ", "next line" }, vim.api.nvim_buf_get_lines(bufnr, 0, -1, false))
+		assert.equals(request.changedtick, vim.api.nvim_buf_get_changedtick(bufnr))
+		assert.is_false(vim.bo[bufnr].modified)
+		completion.clear()
+		assert.equals(fallback, mapping("<Tab>").callback)
 	end)
 
 	it("restores a local expression callback after accepting", function()
