@@ -12,15 +12,14 @@ import {
   splitBom,
   writeState,
 } from "./lib/file_state"
-import { assertNoAccidentalIndentRemoval, convertToLineEnding, detectLineEnding, makeDiff, sameContent, stats } from "./lib/text"
+import { assertNoAccidentalIndentRemoval, convertToLineEnding, detectLineEnding, diffSummary, makeDiff, sameContent } from "./lib/text"
 
 const input = z.object({
   patchText: z.string().describe("The full patch text that describes all changes to be made"),
   allowIndentChange: z.boolean().optional().describe("Allow replacement lines to remove leading indentation"),
 })
 
-type Status = "applied" | "partial" | "rejected" | "failed"
-type ChangeType = "add" | "update" | "delete" | "move"
+type Status = "applied" | "partial" | "rejected"
 
 type UpdateFileChunk = {
   old_lines: string[]
@@ -38,17 +37,16 @@ type Hunk =
 type FileChange = {
   filePath: string
   relativePath: string
-  type: ChangeType
   before: FileState
   newContent: string
   bom: boolean
   proposedDiff: string
   additions: number
   deletions: number
-  movePath?: string
-  moveRelativePath?: string
-  destinationBefore?: FileState
-}
+} & (
+  | { type: "add" | "update" | "delete"; movePath?: undefined; moveRelativePath?: undefined }
+  | { type: "move"; movePath: string; moveRelativePath: string; destinationBefore: FileState }
+)
 
 function stripHeredoc(input: string): string {
   const heredoc = input.match(/^(?:cat\s+)?<<['"]?(\w+)['"]?\s*\n([\s\S]*?)\n\1\s*$/)
@@ -315,8 +313,7 @@ async function buildChanges(
       const before = await readState(filePath)
       const rawContent = hunk.contents.endsWith("\n") ? hunk.contents : `${hunk.contents}\n`
       const next = splitBom(rawContent)
-      const proposedDiff = makeDiff(filePath, before.content, next.content)
-      const count = stats(before.content, next.content)
+      const { diff: proposedDiff, ...count } = diffSummary(filePath, before.content, next.content)
       changes.push({
         filePath,
         relativePath,
@@ -334,8 +331,7 @@ async function buildChanges(
     if (hunk.type === "delete") {
       const before = await readState(filePath)
       if (!before.exists) throw new Error(`apply_patch verification failed: Failed to read file to delete: ${filePath}`)
-      const proposedDiff = makeDiff(filePath, before.content, "")
-      const count = stats(before.content, "")
+      const { diff: proposedDiff, ...count } = diffSummary(filePath, before.content, "")
       changes.push({
         filePath,
         relativePath,
@@ -353,32 +349,28 @@ async function buildChanges(
     const before = await readState(filePath)
     if (!before.exists) throw new Error(`apply_patch verification failed: Failed to read file to update: ${filePath}`)
     const newContent = deriveNewContent(filePath, hunk.chunks, before.content, allowIndentChange)
-    const proposedDiff = makeDiff(filePath, before.content, newContent)
-    const count = stats(before.content, newContent)
+    const { diff: proposedDiff, ...count } = diffSummary(filePath, before.content, newContent)
     const movePath = hunk.move_path ? resolveFilePath(directory, hunk.move_path) : undefined
-    const destinationBefore = movePath ? await readState(movePath) : undefined
-
-    changes.push({
+    const change = {
       filePath,
       relativePath,
-      type: movePath ? "move" : "update",
       before,
       newContent,
       bom: before.bom,
       proposedDiff,
       additions: count.additions,
       deletions: count.deletions,
-      movePath,
-      moveRelativePath: movePath ? displayPath(worktree, movePath) : undefined,
-      destinationBefore,
-    })
+    }
+    changes.push(movePath
+      ? { ...change, type: "move", movePath, moveRelativePath: displayPath(worktree, movePath), destinationBefore: await readState(movePath) }
+      : { ...change, type: "update" })
   }
 
   return changes
 }
 
 function reviewFilesForChange(change: FileChange) {
-  if (change.type !== "move" || !change.movePath) {
+  if (change.type !== "move") {
     return [
       {
         filePath: change.filePath,
@@ -397,11 +389,9 @@ function reviewFilesForChange(change: FileChange) {
     ]
   }
 
-  const destinationBefore = change.destinationBefore ?? { exists: false, content: "", bom: false }
-  const deleteDiff = makeDiff(change.filePath, change.before.content, "")
-  const addDiff = makeDiff(change.movePath, destinationBefore.content, change.newContent)
-  const deleteStats = stats(change.before.content, "")
-  const addStats = stats(destinationBefore.content, change.newContent)
+  const destinationBefore = change.destinationBefore
+  const { diff: deleteDiff, ...deleteStats } = diffSummary(change.filePath, change.before.content, "")
+  const { diff: addDiff, ...addStats } = diffSummary(change.movePath, destinationBefore.content, change.newContent)
   return [
     {
       filePath: change.filePath,
@@ -436,11 +426,10 @@ function reviewFilesForChange(change: FileChange) {
 
 async function currentMatchesBefore(change: FileChange): Promise<boolean> {
   const source = await readState(change.filePath)
-  if (change.type !== "move" || !change.movePath) return sameState(source, change.before)
+  if (change.type !== "move") return sameState(source, change.before)
 
   const destination = await readState(change.movePath)
-  const destinationBefore = change.destinationBefore ?? { exists: false, content: "", bom: false }
-  return sameState(source, change.before) && sameState(destination, destinationBefore)
+  return sameState(source, change.before) && sameState(destination, change.destinationBefore)
 }
 
 async function applyChange(change: FileChange, signal: AbortSignal) {
@@ -448,7 +437,7 @@ async function applyChange(change: FileChange, signal: AbortSignal) {
     await removePath(change.filePath, signal)
     return
   }
-  if (change.type === "move" && change.movePath) {
+  if (change.type === "move") {
     await writeState(change.movePath, change.newContent, change.bom, signal)
     if (change.filePath !== change.movePath) await removePath(change.filePath, signal)
     return
@@ -465,11 +454,10 @@ async function classifyChange(change: FileChange): Promise<Status> {
     return "partial"
   }
 
-  if (change.type === "move" && change.movePath) {
+  if (change.type === "move") {
     const destination = await readState(change.movePath)
-    const destinationBefore = change.destinationBefore ?? { exists: false, content: "", bom: false }
     if (!source.exists && destination.exists && sameContent(destination.content, change.newContent)) return "applied"
-    if (sameState(source, change.before) && sameState(destination, destinationBefore)) return "rejected"
+    if (sameState(source, change.before) && sameState(destination, change.destinationBefore)) return "rejected"
     return "partial"
   }
 
@@ -479,7 +467,7 @@ async function classifyChange(change: FileChange): Promise<Status> {
 }
 
 async function finalContentFor(change: FileChange): Promise<string> {
-  if (change.type === "move" && change.movePath) {
+  if (change.type === "move") {
     const destination = await readState(change.movePath)
     return destination.exists ? destination.content : ""
   }
@@ -488,8 +476,10 @@ async function finalContentFor(change: FileChange): Promise<string> {
 }
 
 function finalFile(change: FileChange, status: Status, finalContent: string) {
-  const finalDiff = makeDiff(change.movePath ?? change.filePath, change.before.content, finalContent)
-  const finalStats = status === "rejected" ? { additions: 0, deletions: 0 } : stats(change.before.content, finalContent)
+  const path = change.movePath ?? change.filePath
+  const { diff: finalDiff, ...finalStats } = status === "rejected"
+    ? { diff: makeDiff(path, change.before.content, finalContent), additions: 0, deletions: 0 }
+    : diffSummary(path, change.before.content, finalContent)
   return {
     filePath: change.filePath,
     relativePath: change.relativePath,
@@ -508,10 +498,8 @@ function finalFile(change: FileChange, status: Status, finalContent: string) {
 }
 
 function overallStatus(statuses: Status[]): Status {
-  if (statuses.length === 0) return "failed"
   if (statuses.every((status) => status === "applied")) return "applied"
   if (statuses.every((status) => status === "rejected")) return "rejected"
-  if (statuses.some((status) => status === "failed")) return "failed"
   return "partial"
 }
 
@@ -553,7 +541,6 @@ export default {
       [resolveFilePath(context.directory, hunk.path), ...(hunk.type === "update" && hunk.move_path ? [resolveFilePath(context.directory, hunk.move_path)] : [])]
     ))])
     const changes = await buildChanges(hunks, context.directory, context.worktree, args.allowIndentChange)
-    if (changes.length === 0) throw new Error("apply_patch verification failed: no hunks found")
 
     const reviewFiles = changes.flatMap(reviewFilesForChange)
     const proposedFiles = changes.map((change) => ({
@@ -606,9 +593,15 @@ export default {
 
     // Server apply is explicit per file. The normal Neovim path has already
     // written accepted/resolved files; rejected and external edits stay intact.
+    const decisionsByPath = new Map<string, typeof decision.files>()
+    for (const file of decision.files) {
+      const group = decisionsByPath.get(file.path)
+      if (group) group.push(file)
+      else decisionsByPath.set(file.path, [file])
+    }
     for (const change of changes) {
       const paths = change.type === "move" ? [change.filePath, change.movePath] : [change.filePath]
-      const decisions = decision.files.filter((file) => paths.includes(file.path))
+      const decisions = [...new Set(paths)].flatMap(path => decisionsByPath.get(path) ?? [])
       if (decisions.length === paths.length && decisions.every((file) => file.status === "accepted" && file.apply === "server")
           && await currentMatchesBefore(change)) {
         context.signal.throwIfAborted()

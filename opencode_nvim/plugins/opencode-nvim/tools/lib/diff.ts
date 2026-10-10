@@ -16,6 +16,8 @@ export function diffLines(oldStr: string, newStr: string): DiffChange[] {
   const M = newLines.length
   const max = N + M
   if (max === 0) return [{ value: "", count: 0 }]
+  if (N === 0) return [{ value: newStr, added: true, count: M }]
+  if (M === 0) return [{ value: oldStr, removed: true, count: N }]
 
   const v = new Int32Array(2 * max + 1)
   v.fill(-1)
@@ -23,7 +25,10 @@ export function diffLines(oldStr: string, newStr: string): DiffChange[] {
   v[max + 1] = 0
 
   outer: for (let d = 0; d <= max; d++) {
-    trace.push(v.slice())
+    // Backtracking needs only the previous frontier's d reachable diagonals.
+    const previous = new Int32Array(d)
+    for (let i = 0; i < d; i++) previous[i] = v[max - d + 1 + 2 * i]
+    trace.push(previous)
     for (let k = -d; k <= d; k += 2) {
       let x: number
       if (k === -d || (k !== d && v[max + k - 1] < v[max + k + 1])) {
@@ -49,12 +54,12 @@ export function diffLines(oldStr: string, newStr: string): DiffChange[] {
     const v = trace[d]
     const k = x - y
     let prevK: number
-    if (k === -d || (k !== d && v[max + k - 1] < v[max + k + 1])) {
+    if (k === -d || (k !== d && v[(k + d - 2) / 2] < v[(k + d) / 2])) {
       prevK = k + 1
     } else {
       prevK = k - 1
     }
-    const prevX = v[max + prevK]
+    const prevX = d === 0 ? 0 : v[(prevK + d - 1) / 2]
     const prevY = prevX - prevK
 
     while (x > prevX && y > prevY) {
@@ -111,10 +116,9 @@ export function createTwoFilesPatch(
   newFileName: string,
   oldStr: string,
   newStr: string,
-  oldHeader?: string,
-  newHeader?: string,
+  changes = diffLines(oldStr, newStr),
 ): string {
-  const changes = diffLines(oldStr, newStr)
+  const header = `--- ${oldFileName}\n+++ ${newFileName}\n`
 
   const annotated: Array<{ prefix: string; line: string }> = []
   for (const change of changes) {
@@ -126,13 +130,6 @@ export function createTwoFilesPatch(
     } else {
       for (const l of lines) annotated.push({ prefix: " ", line: l })
     }
-  }
-
-  if (annotated.length === 0) {
-    return (
-      `--- ${oldFileName}${oldHeader ? "\t" + oldHeader : ""}\n` +
-      `+++ ${newFileName}${newHeader ? "\t" + newHeader : ""}\n`
-    )
   }
 
   const contextSize = 3
@@ -187,16 +184,5 @@ export function createTwoFilesPatch(
     i = hunkEnd
   }
 
-  if (hunks.length === 0) {
-    return (
-      `--- ${oldFileName}${oldHeader ? "\t" + oldHeader : ""}\n` +
-      `+++ ${newFileName}${newHeader ? "\t" + newHeader : ""}\n`
-    )
-  }
-
-  return (
-    `--- ${oldFileName}${oldHeader ? "\t" + oldHeader : ""}\n` +
-    `+++ ${newFileName}${newHeader ? "\t" + newHeader : ""}\n` +
-    hunks.join("\n")
-  )
+  return header + hunks.join("\n")
 }

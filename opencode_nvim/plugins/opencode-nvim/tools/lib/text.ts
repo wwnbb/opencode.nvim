@@ -1,4 +1,4 @@
-import { createTwoFilesPatch, diffLines } from "./diff"
+import { createTwoFilesPatch, diffLines, type DiffChange } from "./diff"
 
 export function normalizeLineEndings(text: string): string {
   return text.replaceAll("\r\n", "\n").replaceAll("\r", "\n")
@@ -92,14 +92,32 @@ export function makeDiff(filePath: string, before: string, after: string): strin
   )
 }
 
-export function stats(before: string, after: string) {
+function changeStats(changes: DiffChange[]) {
   let additions = 0
   let deletions = 0
-  const oldText = normalizeLineEndings(before).replace(/\n$/, "")
-  const newText = normalizeLineEndings(after).replace(/\n$/, "")
-  for (const change of diffLines(oldText, newText)) {
+  for (const change of changes) {
     if (change.added) additions += change.count || 0
     if (change.removed) deletions += change.count || 0
   }
   return { additions, deletions }
+}
+
+export function stats(before: string, after: string) {
+  return changeStats(diffLines(normalizeLineEndings(before).replace(/\n$/, ""), normalizeLineEndings(after).replace(/\n$/, "")))
+}
+
+export function diffSummary(filePath: string, before: string, after: string) {
+  const oldText = normalizeLineEndings(before)
+  const newText = normalizeLineEndings(after)
+  const changes = diffLines(oldText, newText)
+  const oldBody = oldText.replace(/\n$/, "")
+  const newBody = newText.replace(/\n$/, "")
+  // Removing a common trailing line preserves edit counts. Empty text has no
+  // lines in diffLines, so newline-only files need the original stats policy.
+  const reuse = oldText === newText || (oldText === oldBody && newText === newBody)
+    || (oldText.endsWith("\n") && newText.endsWith("\n") && oldBody !== "" && newBody !== "")
+  return {
+    diff: trimDiff(createTwoFilesPatch(filePath, filePath, oldText, newText, changes)),
+    ...changeStats(reuse ? changes : diffLines(oldBody, newBody)),
+  }
 }
