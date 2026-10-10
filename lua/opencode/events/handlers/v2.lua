@@ -122,12 +122,7 @@ function M.setup(events)
 	events.on("connected", function()
 		sessions.refresh_status()
 		for _, info in ipairs(state.get_active_sessions()) do
-			local sid, token = info.id, pending.token(info.id)
-			local snapshot = state.get_session_record(sid)
-			reconcile(sid, true)
-			client.get_session(sid, function(err, current)
-				if not err and pending.is_current(token) and vim.deep_equal(snapshot, state.get_session_record(sid)) then sessions.remember(current, { touch = false }) end
-			end)
+			reconcile(info.id, true)
 		end
 	end)
 	events.on("v2_event", function(event)
@@ -144,16 +139,21 @@ function M.setup(events)
 		end
 		if kind == "session.created" or kind == "session.renamed" or kind == "session.agent.selected"
 			or kind == "session.model.selected" or kind == "session.moved" or kind == "session.usage.updated"
-			or kind == "session.permissions" or kind == "session.viewed" or kind == "session.forked" then
+			or kind == "session.permissions" or kind == "session.forked" then
 			local info = vim.deepcopy(data)
 			info.id, info.sessionID = sid, nil
 			if info.location then info.directory = info.location.directory end
 			info.time = { updated = event.created }
 			if kind == "session.created" then info.time.created = event.created end
 			sessions.remember(info, { touch = false })
-			if kind == "session.renamed" and state.get_session().id == sid then
-				sessions.set_active(sid, info.title, { reason = "session_renamed", preserve_cache = true, runtime = state.is_runtime_session(sid) })
+			if (kind == "session.renamed" or kind == "session.moved") and state.get_session().id == sid then
+				local title = state.get_session_record(sid).title
+				sessions.set_active(sid, title, { reason = kind, preserve_cache = true, runtime = state.is_runtime_session(sid) })
 			end
+			changed(sid, "session")
+		end
+		if kind == "session.viewed" and type(data.idle) == "number" then
+			sessions.remember({ id = sid, time = { viewed = data.idle } }, { touch = false })
 			changed(sid, "session")
 		end
 		if kind == "session.revert.committed" then

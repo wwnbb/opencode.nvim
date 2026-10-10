@@ -2,6 +2,13 @@ local projection = require("opencode.protocol.v2.messages")
 local sync = require("opencode.sync")
 
 describe("v2 history projection", function()
+	it("renders native shell output objects without losing status or byte metadata", function()
+		local native = { id = "msg_shell", type = "shell", shellID = "sh_native", command = "echo Привет", status = "exited", exit = 0,
+			output = { output = "Привет\n", cursor = 13, size = 13, truncated = false }, time = { created = 1, completed = 2 } }
+		local message = projection.project("ses_shell", native)
+		assert.equals("$ echo Привет\nПривет\n", message.parts[1].text)
+		assert.same(native, message.info._v2)
+	end)
 	before_each(function() sync.clear_all() end)
 	after_each(function() sync.clear_all() end)
 	it("preserves the real reasoning/text order and native metadata", function()

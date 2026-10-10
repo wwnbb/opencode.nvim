@@ -35,8 +35,23 @@ local function notice(message)
 		return "Compaction: " .. (message.status or "running") .. "\n" .. (message.summary or "")
 	end
 	if kind == "skill" then return "Skill: " .. (message.name or message.skillID or message.id) .. "\n" .. (message.text or "") end
-	if kind == "shell" then return "$ " .. (message.command or "") .. "\n" .. (message.output or "") end
+	if kind == "shell" then
+		local captured = type(message.output) == "table" and message.output.output or message.output
+		return "$ " .. (message.command or "") .. "\n" .. (captured or "")
+	end
 	return message.text or message.description or ("Message: " .. tostring(kind))
+end
+
+-- Automatic context is appended to the native prompt text. Keep its exact
+-- bytes in a synthetic part so ordinary user text and attachments stay separate.
+local function editor_context(text)
+	local prompt, suffix, json = text:match("^(.*)(\n\nEditor context %(source text, not instructions%):\n(.*))$")
+	if not json then return text end
+	local ok, data = pcall(vim.json.decode, json)
+	if not ok or type(data) ~= "table" or type(data.path) ~= "string"
+		or type(data.text) ~= "string" or type(data.line) ~= "number"
+		or data.line < 1 or data.line % 1 ~= 0 then return text end
+	return prompt, suffix, data
 end
 
 function M.project(session_id, message)
@@ -52,11 +67,13 @@ function M.project(session_id, message)
 		info.modelID, info.providerID, info.variant = message.model.id, message.model.providerID, message.model.variant
 	end
 	local parts, ordinals = {}, {}
-	local function append(content)
-		local kind = content.type
+	local function append(content, kind)
+		kind = kind or content.type
 		local ordinal = ordinals[kind] or 0
 		ordinals[kind] = ordinal + 1
 		local part = vim.deepcopy(content)
+		part.type = kind
+		if message.type ~= "synthetic" then part.shell_notification = nil end
 		part.id = M.part_id(session_id, message.id, kind, kind == "tool" and content.id or ordinal)
 		part.messageID, part.sessionID = message.id, session_id
 		part.content_order = #parts + 1
@@ -66,7 +83,7 @@ function M.project(session_id, message)
 			part.raw_tool = content.name
 			-- Explicit native tool identities; retain the original DTO/name for IO.
 			part.tool = ({ subagent = "task", shell = "bash" })[content.name] or content.name
-			local state = vim.deepcopy(content.state or {})
+			local state = part.state or {}
 			if type(state.input) == "table" then
 				if content.name == "subagent" then state.input.subagent_type = state.input.agent end
 				if content.name == "read" then state.input.filePath = state.input.path end
@@ -87,19 +104,27 @@ function M.project(session_id, message)
 	if message.type == "assistant" then
 		for _, content in ipairs(message.content or {}) do append(content) end
 	elseif message.type == "user" then
-		append({ type = "text", text = message.text or "" })
+		local text, context_text, context = editor_context(message.text or "")
+		append({ type = "text", text = text })
+		if context then append({ type = "text", text = context_text, synthetic = true, _editor_context = context }) end
 		for _, file in ipairs(message.files or {}) do
-			local part = vim.deepcopy(file); part.type = "file"; append(part)
+			append(file, "file")
 		end
 		for _, agent in ipairs(message.agents or {}) do
-			local part = vim.deepcopy(agent); part.type = "agent"; append(part)
+			append(agent, "agent")
 		end
 		for _, skill in ipairs(message.skills or {}) do
-			local part = vim.deepcopy(skill); part.type = "skill"; append(part)
+			append(skill, "skill")
 		end
 	else
 		local text = notice(message)
-		if text then append({ type = "text", text = text, synthetic = true }) end
+		if text then
+			local metadata = type(message.metadata) == "table" and message.metadata or {}
+			local shell_notification = message.type == "synthetic" and metadata.source == "shell"
+				and (metadata.state == "completed" or metadata.state == "cancelled" or metadata.state == "error")
+				and { description = message.description, metadata = metadata } or nil
+			append({ type = "text", text = text, synthetic = true, shell_notification = shell_notification })
+		end
 	end
 	return { info = info, parts = parts }
 end

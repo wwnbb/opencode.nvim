@@ -14,8 +14,7 @@ local function matching_tool_part(request)
 	return nil
 end
 
-function M.resolve_tool_input(request)
-	local part = matching_tool_part(request)
+local function tool_input(request, part)
 	if part and type(part.state) == "table" and type(part.state.input) == "table" then
 		return part.state.input
 	end
@@ -24,10 +23,17 @@ function M.resolve_tool_input(request)
 	return {}
 end
 
-function M.resolve_tool_name(request)
-	local part = matching_tool_part(request)
+local function tool_name(request, part)
 	if part then return nonempty(part.tool) or "" end
 	return nonempty(request.metadata.tool) or ""
+end
+
+-- Compatibility getters keep their one-value contract; recovery resolves both once.
+function M.resolve_tool_input(request) return tool_input(request, matching_tool_part(request)) end
+function M.resolve_tool_name(request) return tool_name(request, matching_tool_part(request)) end
+function M.resolve_tool(request)
+	local part = matching_tool_part(request)
+	return tool_input(request, part), tool_name(request, part)
 end
 
 ---@param data table|nil Native v2 permission request

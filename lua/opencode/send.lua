@@ -59,12 +59,30 @@ local function client() return require("opencode.client") end
 local function sync() return require("opencode.sync") end
 local function emit(name, data) require("opencode.events").emit(name, data) end
 
+local function fetch_catalogs(directory, token, callback)
+	local remaining, first_error = 2, nil
+	local function received(domain, err, data)
+		if not pending.is_current(token) then return end
+		first_error = first_error or err
+		sync().handle_location_catalog(directory, domain, data, err)
+		remaining = remaining - 1
+		if remaining == 0 then callback(first_error) end
+	end
+	client().get_config_providers(function(err, data) received("providers", err, data) end, { directory = directory })
+	client().list_agents(function(err, data) received("agents", err, data) end, { directory = directory })
+end
+
 local function restore_draft(text, opts)
 	local history = require("opencode.ui.input.history")
 	local session_id = opts._draft_session_id or opts.session_id
 	if session_id == false then session_id = "" end
 	if history.get_pending(session_id) == "" and #history.get_pending_parts(session_id) == 0 then
 		history.set_pending(text, opts.parts, session_id)
+		history.set_pending_mode(opts.mode or "normal", session_id)
+		local options = vim.deepcopy(opts)
+		options.parts, options._draft_session_id = nil, nil
+		options._token, options._catalog_ready, options._catalog_retry, options._catalog_deadline = nil, nil, nil, nil
+		history.set_pending_options(options, session_id)
 	end
 end
 
@@ -261,33 +279,52 @@ function M.send(text, opts)
 	local directory = opts.directory or (session_id and state.get_session_directory(session_id)) or vim.fn.getcwd()
 	opts.directory = state.normalize_directory(directory)
 	directory = opts.directory
+	if opts.mode == "shell" then
+		if type(text) ~= "string" or vim.trim(text) == "" then return fail_before_send("Shell command is empty", text, opts) end
+		if #(opts.parts or {}) > 0 then return fail_before_send("Shell commands do not support attachments", text, opts) end
+		if opts.delivery then return fail_before_send("Shell commands cannot be queued or steered", text, opts) end
+		local function run(id)
+			if not pending.is_current(token) then return end
+			client().run_session_shell(id, text, function(err)
+				if not pending.is_current(token) then return end
+				if err then
+					-- Never repeat shell execution after an uncertain transport failure.
+					if err.status and err.status >= 400 and err.status < 500 then restore_draft(text, opts) end
+					vim.notify("Shell command: " .. (err.message or "Execution could not be confirmed"), vim.log.levels.ERROR)
+				end
+				emit("v2_reconcile", { session_id = id })
+			end)
+		end
+		if session_id then run(session_id)
+		else
+			client().create_session({ location = { directory = directory } }, function(err, info)
+				if not pending.is_current(token) then return end
+				if err then fail_before_send(err.message or "Session creation failed", text, opts); return end
+				session_actions.remember(info)
+				if not state.get_session().id then session_actions.set_active(info.id, info.title, { preserve_cache = true }) end
+				run(info.id)
+			end)
+		end
+		return true
+	end
 	local provider_cache = sync().get_location_catalog(directory, "providers")
 	local agent_cache = sync().get_location_catalog(directory, "agents")
 	if not opts._catalog_ready and sync().get_catalog_location() ~= nil and (opts._catalog_retry or catalogs_empty(provider_cache, agent_cache)) then
 		opts._selection = opts._selection or selectors.send_selection(opts)
 		opts.session_id, opts._token, opts._catalog_ready = session_id or false, token, true
 		opts._catalog_deadline = opts._catalog_deadline or (current_time_ms() + 5000)
-		local remaining, first_error = 2, nil
-		local function received(domain, err, data)
-			if not pending.is_current(token) then return end
-			first_error = first_error or err
-			sync().handle_location_catalog(directory, domain, data, err)
-			remaining = remaining - 1
-			if remaining == 0 then
-				if first_error then fail_before_send(first_error.message or "Catalog unavailable", text, opts)
-				elseif current_time_ms() < opts._catalog_deadline
-					and catalogs_empty(sync().get_location_catalog(directory, "providers"), sync().get_location_catalog(directory, "agents")) then
-					-- 2.0.11 can return empty catalogs while a newly visited
-					-- location loads its plugins. No prompt has been admitted yet.
-					opts._catalog_ready, opts._catalog_retry = false, true
-					vim.defer_fn(function()
-						if pending.is_current(token) then M.send(text, opts) end
-					end, 100)
-				else M.send(text, opts) end
-			end
-		end
-		client().get_config_providers(function(err, data) received("providers", err, data) end, { directory = directory })
-		client().list_agents(function(err, data) received("agents", err, data) end, { directory = directory })
+		fetch_catalogs(directory, token, function(first_error)
+			if first_error then fail_before_send(first_error.message or "Catalog unavailable", text, opts)
+			elseif current_time_ms() < opts._catalog_deadline
+				and catalogs_empty(sync().get_location_catalog(directory, "providers"), sync().get_location_catalog(directory, "agents")) then
+				-- Empty catalogs can mean location plugins are still warming up;
+				-- no prompt has been admitted yet.
+				opts._catalog_ready, opts._catalog_retry = false, true
+				vim.defer_fn(function()
+					if pending.is_current(token) then M.send(text, opts) end
+				end, 100)
+			else M.send(text, opts) end
+		end)
 		return true
 	end
 	local selection, selection_err = resolve_selection(opts)
@@ -321,18 +358,9 @@ function M.command(session_id, name, text, opts, callback)
 	if not opts._catalog_ready and sync().get_catalog_location() ~= nil and (not providers or not providers.data or not agents or not agents.data) then
 		opts._selection = opts._selection or selectors.send_selection(opts)
 		opts._token, opts._catalog_ready = token, true
-		local remaining, failure = 2, nil
-		local function received(domain, err, data)
-			if not pending.is_current(token) then return end
-			failure = failure or err
-			sync().handle_location_catalog(opts.directory, domain, data, err)
-			remaining = remaining - 1
-			if remaining == 0 then
-				if failure then callback(failure) else M.command(session_id, name, text, opts, callback) end
-			end
-		end
-		client().get_config_providers(function(err, data) received("providers", err, data) end, { directory = opts.directory })
-		client().list_agents(function(err, data) received("agents", err, data) end, { directory = opts.directory })
+		fetch_catalogs(opts.directory, token, function(failure)
+			if failure then callback(failure) else M.command(session_id, name, text, opts, callback) end
+		end)
 		return true
 	end
 	local selection, err = resolve_selection(opts)

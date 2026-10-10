@@ -36,6 +36,18 @@ local function state()
 	return require("opencode.state")
 end
 
+function M.apply_setting(id, value, scope, directory)
+	return require("opencode.settings").apply(id, value, scope, directory)
+end
+
+function M.managed_server_status()
+	return require("opencode.lifecycle").managed_status()
+end
+
+function M.manage_server(operation, callback)
+	return require("opencode.lifecycle").manage_service(operation, callback)
+end
+
 local function cleanup()
 	return require("opencode.cleanup")
 end
@@ -96,112 +108,52 @@ local function load_catalog(method, domain, callback)
 	end)
 end
 
-function M.open()
-	return api().open()
-end
-
-function M.toggle()
-	return api().toggle()
-end
-
-function M.close()
-	return api().close()
-end
-
-function M.focus()
-	return api().focus()
-end
-
-function M.focus_input()
-	return api().focus_input()
-end
-
-function M.open_input_at_end(opts)
-	return api().open_input_at_end(opts)
-end
-
-function M.start()
-	return api().start()
-end
-
-function M.stop()
-	return api().stop()
-end
-
-function M.restart()
-	return api().restart()
-end
-
-function M.disconnect()
-	return api().disconnect()
+-- Preserve the declared argument counts and lazy API loading at the action boundary.
+local api_forwarders = {
+	[0] = function(method) return function() return api()[method]() end end,
+	[1] = function(method) return function(a) return api()[method](a) end end,
+	[2] = function(method) return function(a, b) return api()[method](a, b) end end,
+}
+for arity, methods in pairs({
+	[0] = {
+		"open", "toggle", "close", "focus",
+		"focus_input", "start", "stop", "restart",
+		"disconnect", "abort", "complete", "accept_completion",
+		"dismiss_completion", "completion_visible", "explain_selection", "is_danger_mode_enabled",
+		"paste_clipboard", "command_palette", "active_sessions",
+	},
+	[1] = {
+		"open_input_at_end", "enable_danger_mode", "disable_danger_mode", "toggle_danger_mode",
+		"clear", "new_session", "close_session", "add_current_line_to_input",
+		"add_current_line", "add_current_line_and_open_input", "add_visual_selection_to_input", "add_visual_selection",
+		"add_visual_selection_and_open_input",
+	},
+	[2] = {
+		"ask_btw", "set_danger_mode", "send",
+	},
+}) do
+	for _, method in ipairs(methods) do M[method] = api_forwarders[arity](method) end
 end
 
 function M.reconnect(callback)
 	return connected_request(nil, function(done) done() end, callback)
 end
 
-function M.abort()
-	return api().abort()
-end
-
-function M.ask_btw(question, session_id)
-	return api().ask_btw(question, session_id)
-end
-
-function M.complete()
-	return api().complete()
-end
-
-function M.accept_completion()
-	return api().accept_completion()
-end
-
-function M.dismiss_completion()
-	return api().dismiss_completion()
-end
-
-function M.completion_visible()
-	return api().completion_visible()
-end
-
-function M.explain_selection()
-	return api().explain_selection()
-end
-
-function M.set_danger_mode(enabled, opts)
-	return api().set_danger_mode(enabled, opts)
-end
-
-function M.enable_danger_mode(opts)
-	return api().enable_danger_mode(opts)
-end
-
-function M.disable_danger_mode(opts)
-	return api().disable_danger_mode(opts)
-end
-
-function M.toggle_danger_mode(opts)
-	return api().toggle_danger_mode(opts)
-end
-
-function M.is_danger_mode_enabled()
-	return api().is_danger_mode_enabled()
-end
-
-function M.clear(opts)
-	return api().clear(opts)
-end
-
-function M.new_session(opts)
-	return api().new_session(opts)
-end
-
-function M.close_session(opts)
-	return api().close_session(opts)
-end
-
 function M.switch_session(session, opts)
 	return sessions().switch_to(session, opts)
+end
+
+function M.observe_session(session_id, visible)
+	return require("opencode.session.tabs").observe(session_id, visible)
+end
+
+function M.reopen_session_tab()
+	return with_connection(function() require("opencode.session.tabs").reopen() end)
+end
+
+function M.reorder_session_tab(direction)
+	local id = require("opencode.selectors").get_current_runtime_root_id()
+	return require("opencode.session.tabs").reorder(id, direction)
 end
 
 function M.set_active_session(session_id, name, opts)
@@ -229,6 +181,101 @@ function M.list_sessions(opts, callback)
 	return connected_request(nil, function(done) client().get_all_sessions(opts, done) end, callback)
 end
 
+function M.list_projects(callback)
+	return connected_request(nil, function(done) client().list_projects(done) end, callback)
+end
+
+function M.get_server_info(callback)
+	return connected_request(nil, function(done) client().get_server_info(done) end, callback)
+end
+
+function M.pair_server(callback)
+	return connected_request(nil, function(done) client().pair_server(done) end, callback)
+end
+
+function M.list_terminals(session_id, callback)
+	return connected_request(session_id, function(done) client().list_terminals(session_id, done) end, callback)
+end
+
+function M.create_terminal(session_id, opts, callback)
+	opts = vim.deepcopy(opts)
+	return connected_request(session_id, function(done) client().create_terminal(session_id, opts, done) end, callback)
+end
+
+function M.get_terminal(id, session_id, callback)
+	return connected_request(session_id, function(done) client().get_terminal(id, done) end, callback)
+end
+
+function M.get_terminal_snapshot(id, session_id, callback)
+	return connected_request(session_id, function(done) client().get_terminal_snapshot(id, done) end, callback)
+end
+
+function M.resize_terminal(id, session_id, size, attachment_id, callback)
+	size = vim.deepcopy(size)
+	return connected_request(session_id, function(done) client().resize_terminal(id, size, attachment_id, done) end, callback)
+end
+
+function M.remove_terminal(id, session_id, callback)
+	return connected_request(session_id, function(done) client().remove_terminal(id, done) end, callback)
+end
+
+function M.connect_terminal(opts)
+	return require("opencode.client.pty").connect(opts)
+end
+
+function M.terminal_endpoint()
+	local config = client().endpoint_config()
+	local endpoint = require("opencode.client.endpoint").resolve(config)
+	return endpoint and { identity = endpoint.origin:lower() .. endpoint.base_path, generation = config.generation } or nil
+end
+
+function M.list_server_plugins(opts, callback)
+	opts = vim.deepcopy(opts)
+	return connected_request(nil, function(done) client().list_server_plugins(opts, done) end, callback)
+end
+
+function M.check_server_plugins(target, opts, callback)
+	opts = vim.deepcopy(opts)
+	return connected_request(nil, function(done) client().check_server_plugins(target, opts, done) end, callback)
+end
+
+function M.update_server_plugins(targets, opts, callback)
+	opts, targets = vim.deepcopy(opts), vim.deepcopy(targets)
+	return connected_request(nil, function(done) client().update_server_plugins(targets, opts, done) end, callback)
+end
+
+function M.get_location(directory, callback)
+	return connected_request(nil, function(done) client().get_location(directory, done) end, callback)
+end
+
+function M.list_worktrees(project_id, callback)
+	return connected_request(nil, function(done) client().list_worktrees(project_id, done) end, callback)
+end
+
+function M.create_worktree(project_id, opts, callback)
+	return connected_request(nil, function(done) client().create_worktree(project_id, opts, done) end, callback)
+end
+
+function M.remove_worktree(project_id, directory, force, callback)
+	return connected_request(nil, function(done) client().remove_worktree(project_id, directory, force, done) end, callback)
+end
+
+function M.refresh_worktrees(project_id, callback)
+	return connected_request(nil, function(done) client().refresh_worktrees(project_id, done) end, callback)
+end
+
+function M.move_session(session_id, directory, callback)
+	return require("opencode.session.catalog").move(session_id, directory, callback)
+end
+
+function M.open_session(session_id, opts, callback)
+	return require("opencode.session.catalog").open(session_id, opts, callback)
+end
+
+function M.rename_session(session_id, title, callback)
+	return require("opencode.session.catalog").rename(session_id, title, callback)
+end
+
 function M.get_usage_stats(callback)
 	return connected_request(nil, function(done) client().get_usage_stats(require("opencode.stats").query(), done) end, callback)
 end
@@ -252,12 +299,7 @@ function M.clear_session_data(session_id)
 	if not session_id then
 		return
 	end
-	local store = sync()
-	if type(store.clear_session_tree) == "function" then
-		store.clear_session_tree(session_id)
-	else
-		store.clear_session(session_id)
-	end
+	sync().clear_session_tree(session_id)
 	local ok, chat = pcall(require, "opencode.ui.chat")
 	if ok and type(chat.clear_session_view) == "function" then
 		chat.clear_session_view(session_id)
@@ -299,6 +341,26 @@ function M.get_session(session_id, callback)
 	return connected_request(session_id, function(done) client().get_session(session_id, done) end, callback)
 end
 
+function M.background_session(session_id, callback)
+	return connected_request(session_id, function(done) client().background_session(session_id, done) end, callback)
+end
+
+function M.list_shells(opts, callback)
+	return connected_request(nil, function(done) client().list_shells(opts, done) end, callback)
+end
+
+function M.get_shell(id, opts, callback)
+	return connected_request(nil, function(done) client().get_shell(id, opts, done) end, callback)
+end
+
+function M.get_shell_output(id, opts, callback)
+	return connected_request(nil, function(done) client().get_shell_output(id, opts, done) end, callback)
+end
+
+function M.remove_shell(id, opts, callback)
+	return connected_request(nil, function(done) client().remove_shell(id, opts, done) end, callback)
+end
+
 ---@param parent_session_id string
 ---@param message_id string
 ---@param part_id string
@@ -322,12 +384,35 @@ function M.record_task_child_session(parent_session_id, message_id, part_id, chi
 	return changed
 end
 
-function M.send(message, opts)
-	return api().send(message, opts)
-end
+function M.stash_prompt(draft) return require("opencode.stash").push(draft) end
+function M.list_stashed_prompts() return require("opencode.stash").list() end
+function M.take_stashed_prompt(id) return require("opencode.stash").take(id) end
+
+function M.mark_editor_context(id, part, status) return require("opencode.editor_context").mark(id, part, status) end
+function M.refresh_editor_context(id) return require("opencode.editor_context").refresh(id) end
 
 function M.list_pending_inputs(session_id, callback)
-	return connected_request(session_id, function(done) client().get_inbox(session_id, done) end, callback)
+	local pending = require("opencode.session.pending")
+	local snapshot = pending.list(session_id)
+	return connected_request(session_id, function(done) client().get_inbox(session_id, done) end, function(err, items, meta)
+		if not err then
+			for _, item in ipairs(items) do
+				if vim.deep_equal(snapshot[item.id], pending.get(session_id, item.id)) then pending.admit(item) end
+			end
+		end
+		if callback then callback(err, items, meta) end
+	end)
+end
+
+function M.promote_queued_input(session_id, callback)
+	return M.list_pending_inputs(session_id, function(err, items)
+		if err then if callback then callback(err) end; return end
+		for _, item in ipairs(items) do
+			local record = require("opencode.session.pending").get(session_id, item.id)
+			if item.type == "user" and record and record.status == "queued" then return M.steer_pending_input(session_id, item.id, callback) end
+		end
+		if callback then callback(nil, false) end
+	end)
 end
 
 function M.cancel_pending_input(session_id, message_id, callback)
@@ -496,12 +581,27 @@ function M.select_model(model, opts)
 	update_input_info_bar()
 end
 
+function M.select_variant(value)
+	local selected = local_state().variant.set(value)
+	update_input_info_bar()
+	return selected
+end
+
 function M.toggle_model_favorite(model)
 	return local_state().model.toggle_favorite(model)
 end
 
 function M.model_favorites()
 	return local_state().model.favorite()
+end
+
+function M.model_recent()
+	return local_state().model.recent()
+end
+
+function M.cycle_model(direction, opts)
+	local_state().model.cycle(direction, opts)
+	update_input_info_bar()
 end
 
 function M.remove_provider_models(provider_id)
@@ -513,13 +613,10 @@ function M.forget_provider(provider_id)
 	provider_state().mark(provider_id)
 end
 
-function M.remember_provider(provider_id)
-	provider_state().remember(provider_id)
-end
+-- Retained for configurations calling the legacy action exports directly.
+function M.remember_provider(provider_id) provider_state().remember(provider_id) end
 
-function M.clear_pending_disconnects()
-	provider_state().clear_all()
-end
+function M.clear_pending_disconnects() provider_state().clear_all() end
 
 function M.compact_session(session_id, opts, callback)
 	return connected_request(session_id, function(done) client().summarize_session(session_id, opts or {}, done) end, function(err, result)
@@ -675,18 +772,6 @@ function M.undo_message(session_id, message_id, callback)
 	end)
 end
 
-function M.paste_clipboard()
-	return api().paste_clipboard()
-end
-
-function M.command_palette()
-	return api().command_palette()
-end
-
-function M.active_sessions()
-	return api().active_sessions()
-end
-
 function M.toggle_logs()
 	return require("opencode.ui.log_viewer").toggle()
 end
@@ -699,32 +784,107 @@ function M.close_logs()
 	return require("opencode.ui.log_viewer").close()
 end
 
-function M.add_current_line_to_input(opts)
-	return api().add_current_line_to_input(opts)
-end
-
-function M.add_current_line(opts)
-	return api().add_current_line(opts)
-end
-
-function M.add_current_line_and_open_input(opts)
-	return api().add_current_line_and_open_input(opts)
-end
-
-function M.add_visual_selection_to_input(opts)
-	return api().add_visual_selection_to_input(opts)
-end
-
-function M.add_visual_selection(opts)
-	return api().add_visual_selection(opts)
-end
-
-function M.add_visual_selection_and_open_input(opts)
-	return api().add_visual_selection_and_open_input(opts)
-end
-
 function M.trigger_palette(id)
 	return require("opencode.ui.palette").trigger(id)
+end
+
+function M.interrupt_session(session_id, callback)
+	return connected_request(session_id, function(done) client().abort_session(session_id, done) end, callback)
+end
+
+for _, method in ipairs({ "get_vcs_info", "get_vcs_base", "list_vcs_branches", "get_vcs_diff" }) do
+	M[method] = function(opts, callback)
+		local options = catalog_options(opts)
+		return connected_request(state().get_session().id, function(done) client()[method](options, done) end, callback)
+	end
+end
+
+-- Resolve the native family even when only a child was opened in this frontend.
+function M.set_session_environment(session_id, variables, callback)
+	return connected_request(session_id, function(done) client().set_session_environment(session_id, variables, done) end, callback)
+end
+
+function M.get_session_family(session_id, callback)
+	if type(session_id) ~= "string" or session_id == "" then
+		schedule_callback(callback, { message = "Select a session before opening its family" })
+		return
+	end
+	return with_connection(function(token)
+		local pending = require("opencode.session.pending")
+		local publish = current_callback(token, callback)
+		local ancestors, records, seen, queue, record_tokens, loaded, head = {}, {}, {}, {}, {}, {}, 1
+		local root_id
+		local function current() return pending.is_current(token) end
+		local function fetch(id, done)
+			if loaded[id] then
+				if not pending.is_current(record_tokens[id]) then publish({ message = "Family changed while loading; open it again" }); return end
+				done(vim.tbl_deep_extend("force", {}, loaded[id], state().get_session_record(id) or {}))
+				return
+			end
+			local node_token, snapshot = pending.token(id), state().get_session_record(id)
+			record_tokens[id] = node_token
+			client().get_session(id, function(err, record)
+				if not current() then return end
+				if not pending.is_current(node_token) then publish({ message = "Family changed while loading; open it again" }); return end
+				if err then publish(err); return end
+				local latest = state().get_session_record(id)
+				if vim.deep_equal(snapshot, latest) then sessions().remember(record, { touch = false, reason = "session_family" })
+				else record = vim.tbl_deep_extend("force", {}, record, latest or {}) end
+				loaded[id] = record
+				done(record)
+			end)
+		end
+		local function finish()
+			local snapshots = {}
+			for _, record in ipairs(records) do
+				snapshots[record.id] = { token = pending.token(record.id), revision = state().get_session_status_revision(record.id) }
+			end
+			client().get_session_statuses(function(err, statuses)
+				if not current() then return end
+				if err then publish(err); return end
+				for id, snapshot in pairs(snapshots) do
+					if pending.is_current(record_tokens[id]) and pending.is_current(snapshot.token)
+						and state().get_session_status_revision(id) == snapshot.revision then
+						local status = statuses[id] or { type = "idle" }
+						sync().handle_session_status(id, status)
+						sessions().set_session_status(id, status, { reason = "session_family" })
+					end
+				end
+				local family = {}
+				for _, record in ipairs(records) do
+					if pending.is_current(record_tokens[record.id]) then family[#family + 1] = record end
+				end
+				publish(nil, family, root_id)
+			end)
+		end
+		local function walk()
+			if not current() then return end
+			local id = queue[head]
+			if not id then finish(); return end
+			head = head + 1
+			if seen[id] then walk(); return end
+			seen[id] = true
+			fetch(id, function(record)
+				records[#records + 1] = record
+				client().get_session_children(id, function(err, children)
+					if not current() then return end
+					if not pending.is_current(record_tokens[id]) then publish({ message = "Family changed while loading; open it again" }); return end
+					if err then publish(err); return end
+					for _, child in ipairs(children) do if not seen[child.id] then queue[#queue + 1] = child.id end end
+					walk()
+				end)
+			end)
+		end
+		local function ascend(id)
+			if ancestors[id] then publish({ message = "Session family has a parent cycle" }); return end
+			ancestors[id] = true
+			fetch(id, function(record)
+				if type(record.parentID) == "string" and record.parentID ~= "" then ascend(record.parentID)
+				else root_id = id; queue[1] = id; walk() end
+			end)
+		end
+		ascend(session_id)
+	end, session_id)
 end
 
 return M

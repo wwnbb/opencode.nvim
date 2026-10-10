@@ -23,14 +23,14 @@ M.enabled = enabled
 -- Conditions only see earlier fields that are themselves active. A hidden
 -- field can still supply its default; an inactive field cannot supply an
 -- answer or activate a later dependent field.
-local function project(item)
-	local answer, active, preceding = vim.empty_dict(), {}, {}
+local function project(item, fields_only)
+	local answer, active, preceding = not fields_only and vim.empty_dict() or nil, {}, {}
 	for _, field in ipairs(item.form.fields) do
 		if field.type == "external" or enabled(field, preceding) then
 			active[field.key] = true
 			local value = item.values[field.key]
 			if value ~= nil then
-				answer[field.key] = vim.deepcopy(value)
+				if answer then answer[field.key] = vim.deepcopy(value) end
 				preceding[field.key] = value
 			end
 		end
@@ -65,7 +65,7 @@ function M.rebuild(item)
 	local current = item.questions[item.current_tab or 1]
 	local key = current and current.key
 	item.questions, item.selections, item.current_tab = {}, {}, 1
-	local _, active = project(item)
+	local _, active = project(item, true)
 	for _, field in ipairs(item.form.fields) do
 		if field.hidden ~= true and active[field.key] then
 			local index = #item.questions + 1

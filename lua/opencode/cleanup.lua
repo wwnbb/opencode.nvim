@@ -18,6 +18,8 @@ end
 ---@param session_id string
 function M.clear_session(session_id)
 	M.clear_session_memos(session_id)
+	call("opencode.ui.terminals", "clear_session", session_id)
+	call("opencode.editor_context", "clear_session", session_id)
 	call("opencode.ui.input.history", "clear_session", session_id)
 	call("opencode.btw", "clear_session", session_id)
 	call("opencode.permission.state", "clear_session", session_id)
@@ -33,6 +35,8 @@ end
 ---@param opts? { reset_state?: boolean, clear_chat?: boolean }
 function M.clear_transient(opts)
 	opts = opts or {}
+	call("opencode.ui.terminals", "detach_all")
+	call("opencode.editor_context", "clear")
 	call("opencode.completion", "dismiss")
 	call("opencode.explanation", "dismiss")
 
@@ -40,6 +44,7 @@ function M.clear_transient(opts)
 	call("opencode.util.memo", "clear_all")
 	call("opencode.ui.chat.render_state", "clear_code_cache")
 	call("opencode.events.handlers.v2", "clear")
+	call("opencode.session.tabs", "clear")
 	call("opencode.permission.state", "clear_all")
 	call("opencode.question.state", "clear_all")
 	call("opencode.edit.state", "clear_all")

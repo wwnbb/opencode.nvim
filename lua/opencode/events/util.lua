@@ -199,16 +199,12 @@ function M.resolve_task_child_session_id(tool_part)
 	end
 
 	local ok_sync, sync = pcall(require, "opencode.sync")
-	if ok_sync and type(sync.get_task_child_session_for_part) == "function" then
+	if ok_sync then
 		local indexed = sync.get_task_child_session_for_part(tool_part)
 		if type(indexed) == "string" and indexed ~= "" then
 			return indexed
 		end
-	elseif ok_sync and type(sync.get_task_child_session) == "function" then
-		local indexed = sync.get_task_child_session(tool_part.messageID, tool_part.id)
-		if type(indexed) == "string" and indexed ~= "" then
-			return indexed
-		end
+
 	end
 
 	local part_metadata = type(tool_part.metadata) == "table" and tool_part.metadata or {}

@@ -9,7 +9,6 @@ function M.setup(events)
 
 	events.on("connected", function()
 		vim.schedule(function()
-			session_actions.refresh_status()
 			refresh_all()
 		end)
 	end)

@@ -179,8 +179,7 @@ end
 ---@param cwd string
 ---@param timestamp number
 ---@return string|nil
-local function git_root(cwd, timestamp)
-	local ttl = math.max(0, tonumber(opts.diff_stats_cache_ms) or 2000)
+local function git_root(cwd, timestamp, ttl)
 	if git_cache.cwd == cwd and timestamp - git_cache.root_checked_at < ttl then
 		return git_cache.root
 	end
@@ -238,13 +237,13 @@ local function current_git_diff_stats()
 
 	local timestamp = now_ms()
 	local cwd = vim.fn.getcwd()
-	local root = git_root(cwd, timestamp)
+	local ttl = math.max(0, tonumber(opts.diff_stats_cache_ms) or 2000)
+	local root = git_root(cwd, timestamp, ttl)
 	if not root then
 		return nil
 	end
 
-	local ttl = math.max(0, tonumber(opts.diff_stats_cache_ms) or 2000)
-	if git_cache.root == root and git_cache.stats and timestamp - git_cache.stats_checked_at < ttl then
+	if git_cache.stats and timestamp - git_cache.stats_checked_at < ttl then
 		return git_cache.stats
 	end
 
@@ -338,9 +337,15 @@ function M.component()
 		return ""
 	end
 
-	local summary = state.get_status_summary()
 	local parts = {}
-	local attention = attention_component(summary)
+	local attention
+	if opts.show_attention ~= false then
+		local current = state.get_session()
+		attention = attention_component({
+			active_sessions = state.get_active_sessions(),
+			session_pending = state.get_session_pending_counts(current.id),
+		})
+	end
 	if attention then
 		table.insert(parts, attention)
 	end

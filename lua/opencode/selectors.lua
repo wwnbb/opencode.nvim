@@ -74,124 +74,62 @@ function M.current_status()
 	return require("opencode.state").get_status()
 end
 
-local function sessions_snapshot(state_mod)
-	local snapshot = state_mod.get_full_state()
-	return snapshot.sessions or {}, snapshot.session or {}
-end
-
-local function runtime_lookup(sessions)
-	local lookup = {}
-	for _, id in ipairs(sessions.runtime_order or {}) do
-		if type(id) == "string" and id ~= "" then
-			lookup[id] = true
-		end
-	end
-	return lookup
-end
-
 local function current_root_id(state_mod, current)
 	return navigation.runtime_session_id(current and current.id, { state = state_mod })
 end
 
-local function record_for_session(sessions, current, runtime_ids, session_id)
-	if not session_id or session_id == "" then
-		return nil
+local function build_session_view(state_mod, current, session_id, root_id)
+	if not session_id or session_id == "" then return nil end
+	local record = state_mod.get_session_record(session_id)
+	if not record then
+		if current.id ~= session_id and not state_mod.is_runtime_session(session_id) then return nil end
+		local title = current.id == session_id and current.name or session_id
+		record = { id = session_id, title = title, name = title, message_count = 0 }
 	end
-	local record = sessions.by_id and sessions.by_id[session_id] or nil
-	if record then
-		record = vim.deepcopy(record)
-	elseif current and current.id == session_id then
-		record = {
-			id = current.id,
-			title = current.name,
-			name = current.name,
-			message_count = current.message_count,
-		}
-	elseif runtime_ids[session_id] then
-		record = {
-			id = session_id,
-			title = session_id,
-			name = session_id,
-			message_count = 0,
-		}
-	else
-		return nil
-	end
-
-	if current and current.id == session_id then
+	if current.id == session_id then
 		record.name = current.name or record.name
-		if current.message_count ~= nil then
-			record.message_count = current.message_count
-		end
+		if current.message_count ~= nil then record.message_count = current.message_count end
 	end
-	return record
-end
-
-local function view_for_record(record, sessions, current, runtime_ids, root_id)
-	if type(record) ~= "table" or not record.id then
-		return nil
-	end
-	return SessionView.from_record(record, {
-		status = sessions.status and sessions.status[record.id] or nil,
-		pending = sessions.pending and sessions.pending[record.id] or nil,
-		cached_messages = sessions.message_cache and sessions.message_cache[record.id] or nil,
-		is_current = current and current.id == record.id,
-		is_runtime = runtime_ids[record.id] == true,
+	return SessionView.from_owned_record(record, {
+		status = state_mod.get_session_status(session_id),
+		pending = state_mod.get_session_pending_counts(session_id),
+		cached_messages = state_mod.get_session_message_cache(session_id),
+		is_current = current.id == session_id,
 		current_root_id = root_id,
 	})
 end
 
-local function build_session_view(session_id)
-	local state_mod = require("opencode.state")
-	local sessions, current = sessions_snapshot(state_mod)
-	local runtime_ids = runtime_lookup(sessions)
-	local root_id = current_root_id(state_mod, current)
-	local record = record_for_session(sessions, current, runtime_ids, session_id)
-	return view_for_record(record, sessions, current, runtime_ids, root_id)
-end
-
 ---@return table|nil
 function M.get_current_session_view()
-	local current = require("opencode.state").get_session()
-	if not current.id then
-		return nil
-	end
-	return build_session_view(current.id)
+	return M.get_session_view(require("opencode.state").get_session().id)
 end
 
 ---@param session_id string|nil
 ---@return table|nil
 function M.get_session_view(session_id)
-	return build_session_view(session_id)
+	local state_mod = require("opencode.state")
+	local current = state_mod.get_session()
+	return build_session_view(state_mod, current, session_id, current_root_id(state_mod, current))
 end
 
 ---@return string|nil
 function M.get_current_runtime_root_id()
 	local state_mod = require("opencode.state")
-	local current = state_mod.get_session()
-	return current_root_id(state_mod, current)
+	return current_root_id(state_mod, state_mod.get_session())
 end
 
 ---@return table[]
 function M.get_active_session_views()
 	local state_mod = require("opencode.state")
-	local sessions, current = sessions_snapshot(state_mod)
-	local runtime_ids = runtime_lookup(sessions)
+	local current = state_mod.get_session()
 	local root_id = current_root_id(state_mod, current)
-	local result = {}
-	local seen = {}
-
-	for _, id in ipairs(sessions.runtime_order or {}) do
+	local result, seen = {}, {}
+	for _, id in ipairs(state_mod.get_runtime_session_order()) do
 		if not seen[id] then
-			local record = record_for_session(sessions, current, runtime_ids, id)
-			local view = view_for_record(record, sessions, current, runtime_ids, root_id)
-			if view then
-				table.insert(result, view)
-				seen[id] = true
-			end
+			local view = build_session_view(state_mod, current, id, root_id)
+			if view then result[#result + 1], seen[id] = view, true end
 		end
 	end
-
 	return result
 end
 
@@ -211,6 +149,113 @@ function M.current_model()
 		return nil
 	end
 	return local_state.model.parsed()
+end
+
+local function usage_number(value)
+	return type(value) == "number" and value == value and value >= 0 and value < math.huge
+end
+
+-- Native TokenUsage.Info has five fields; partial/absent usage is unknown.
+function M.token_usage(tokens)
+	if type(tokens) ~= "table" or type(tokens.cache) ~= "table" then return nil end
+	local input, output, reasoning = tokens.input, tokens.output, tokens.reasoning
+	local read, write = tokens.cache.read, tokens.cache.write
+	if not usage_number(input) or not usage_number(output) or not usage_number(reasoning) or not usage_number(read) or not usage_number(write) then return nil end
+	local total = input + output + reasoning + read + write
+	if not usage_number(total) then return nil end
+	return { input = input, output = output, reasoning = reasoning, cached = read, cache_write = write,
+		new = total - read, total = total }
+end
+
+-- Mirrors TUI util/session.ts: latest measured step after completed compaction,
+-- before the staged revert boundary. Historical usage is never current context.
+local function derive_context(state, sync, session_id)
+	local messages = sync.get_messages(session_id)
+	local record = state.get_session_record(session_id) or {}
+	local boundary = type(record.revert) == "table" and record.revert.messageID
+	local last = #messages
+	if boundary then
+		last = nil
+		for index, message in ipairs(messages) do if message.id == boundary then last = index - 1; break end end
+		if not last then return nil end
+	end
+	for index = last, 1, -1 do
+		local message = messages[index]
+		local kind = message.type or message.role
+		if kind == "compaction" and message.status == "completed" then return nil end
+		if kind == "assistant" and message.tokens ~= nil then
+			local usage = M.token_usage(message.tokens)
+			if not usage or usage.total <= 0 then return nil end
+			local provider_id = (message.model or {}).providerID or message.providerID
+			local model_id = (message.model or {}).id or message.modelID
+			local model
+			if not sync.get_catalog_location() or sync.get_catalog_location() == state.get_session_directory(session_id) then
+				model = sync.get_model(provider_id, model_id)
+			else
+				local catalog = sync.get_location_catalog(state.get_session_directory(session_id), "providers")
+				for _, provider in ipairs(catalog and catalog.data and catalog.data.providers or {}) do
+					if provider.id == provider_id then model = (provider.models or {})[model_id]; break end
+				end
+			end
+			local limit = model and (model.limit or {}).context
+			if not usage_number(limit) or limit == 0 then limit = nil end
+			return { tokens = usage.total, percent = limit and math.floor(usage.total / limit * 100 + 0.5) or nil,
+				limit = limit, message_id = message.id, model = { providerID = provider_id, modelID = model_id }, breakdown = usage }
+		end
+	end
+end
+
+-- Only the most recently requested session is retained; callers own their copy.
+local context_cache
+function M.current_context(session_id)
+	local state, sync = require("opencode.state"), require("opencode.sync")
+	session_id = session_id or (state.get_session() or {}).id
+	if not session_id then return nil end
+	local signature = table.concat({ session_id, state.get_revision(), sync.get_session_revision(session_id),
+		sync.get_history_metadata_generation(session_id), sync.get_catalog_generation() }, "\0")
+	if not context_cache or context_cache.state ~= state or context_cache.sync ~= sync or context_cache.signature ~= signature then
+		context_cache = { state = state, sync = sync, signature = signature, value = derive_context(state, sync, session_id) }
+	end
+	return context_cache.value and vim.deepcopy(context_cache.value) or nil
+end
+
+-- Authoritative money counters include utility work. Root cost includes known
+-- native descendants; an unknown member remains a partial total, never zero.
+local function derive_cost(state, session_id)
+	local record = session_id and state.get_session_record(session_id)
+	if not record then return nil, nil, false end
+	if type(record.parentID) == "string" and record.parentID ~= "" then
+		return usage_number(record.cost) and record.cost or nil, usage_number(record.cost), true
+	end
+	local records, total, known, complete = {}, 0, false, true
+	for _, id in ipairs(state.get_session_ids()) do records[id] = state.get_session_record(id) end
+	local owned = { [session_id] = true }
+	for id, member in pairs(records) do
+		local parent, path, seen = id, {}, {}
+		while parent and owned[parent] == nil and not seen[parent] do
+			seen[parent], path[#path + 1] = true, parent
+			parent = records[parent] and records[parent].parentID
+		end
+		local included = owned[parent] == true
+		for _, child in ipairs(path) do owned[child] = included end
+		if included then
+			if usage_number(member.cost) then total, known = total + member.cost, true else complete = false end
+		end
+	end
+	return known and total or nil, complete and known, true
+end
+
+local cost_cache
+function M.session_cost(session_id)
+	local state = require("opencode.state")
+	session_id = session_id or (state.get_session() or {}).id
+	local revision = state.get_revision()
+	if not cost_cache or cost_cache.state ~= state or cost_cache.id ~= session_id or cost_cache.revision ~= revision then
+		local value, complete, exists = derive_cost(state, session_id)
+		cost_cache = { state = state, id = session_id, revision = revision, value = value, complete = complete, exists = exists }
+	end
+	if not cost_cache.exists then return nil end
+	return cost_cache.value, cost_cache.complete
 end
 
 ---@return table
