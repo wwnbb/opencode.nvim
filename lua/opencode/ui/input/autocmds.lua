@@ -42,12 +42,6 @@ function M.setup(state, callbacks)
 		})
 	end
 
-	if callbacks.complete_done then
-		vim.api.nvim_create_autocmd("CompleteDone", {
-			buffer = state.bufnr,
-			callback = callbacks.complete_done,
-		})
-	end
 
 	if callbacks.insert_leave then
 		vim.api.nvim_create_autocmd("InsertLeave", {

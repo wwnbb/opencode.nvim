@@ -13,7 +13,9 @@ describe("input resize", function()
 	end
 
 	local function flush_scheduled()
-		vim.wait(50, function() return false end, 5)
+		local done = false
+		vim.schedule(function() done = true end)
+		assert.is_true(vim.wait(500, function() return done end, 5), "Resize callbacks did not finish")
 	end
 
 	before_each(function()
@@ -102,5 +104,27 @@ describe("input resize", function()
 		assert.same({ "Draft survives resize Привет" }, vim.api.nvim_buf_get_lines(buf, 0, -1, false))
 		input.close(false)
 		assert.equals(0, #vim.api.nvim_get_autocmds({ group = "OpenCodeInputResize" }))
+	end)
+
+	it("folds a large clipboard paste, reopens it and sends its complete text", function()
+		app.setup({ server = { auto_start = false }, input = { collapse_paste_lines = 5 }, lualine = { enabled = false } })
+		local clipboard, read = require("opencode.clipboard"), require("opencode.clipboard").read
+		local lines = {}; for i = 1, 100 do lines[i] = "pasted " .. i end
+		local text, sent = table.concat(lines, "\n")
+		clipboard.read = function() return { mime = "text/plain", data = text } end
+		local ok, err = xpcall(function()
+			input.show({ text = "", close_on_send = false, on_send = function(value) sent = value end })
+			local win, buf = vim.api.nvim_get_current_win(), vim.api.nvim_get_current_buf()
+			assert.is_true(input.paste_clipboard()); flush_scheduled()
+			assert.same(lines, vim.api.nvim_buf_get_lines(buf, 0, -1, false))
+			assert.equals(100, vim.fn.foldclosedend(1)); assert.equals(1, vim.api.nvim_win_get_height(win))
+			vim.fn.maparg("zo", "n", false, true).callback(); flush_scheduled()
+			assert.equals(-1, vim.fn.foldclosed(1)); assert.equals(20, vim.api.nvim_win_get_height(win))
+			vim.fn.maparg("zc", "n", false, true).callback(); flush_scheduled()
+			assert.equals(1, vim.api.nvim_win_get_height(win))
+			vim.fn.maparg("<C-g>", "n", false, true).callback()
+			assert.equals(text, sent); assert.equals(1, vim.api.nvim_buf_line_count(buf))
+		end, debug.traceback)
+		clipboard.read = read; assert.is_true(ok, err)
 	end)
 end)

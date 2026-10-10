@@ -12,7 +12,6 @@ local keymaps = require("opencode.ui.input.keymaps")
 local layout = require("opencode.ui.input.layout")
 local mentions = require("opencode.ui.input.mentions")
 local popups = require("opencode.ui.input.popups")
-local slash_commands = require("opencode.ui.input.slash_commands")
 local syntax = require("opencode.ui.input.syntax")
 
 local state = {
@@ -36,9 +35,9 @@ local state = {
 	session_id = nil,
 	mode = "normal",
 	send_options = nil,
+	editor_context = nil,
 	autocomplete = nil,
 	mentions = nil,
-	slash_commands = nil,
 	normalizing_paste = false,
 	resize_scheduled = false,
 }
@@ -152,6 +151,10 @@ local function set_input_text(text)
 	if #lines == 0 then
 		lines = { "" }
 	end
+	if state.paste_folds and state.winid and vim.api.nvim_win_is_valid(state.winid) then
+		vim.api.nvim_win_call(state.winid, function() vim.cmd("silent! normal! zE") end)
+		state.paste_folds = nil
+	end
 
 	vim.api.nvim_buf_set_lines(state.bufnr, 0, -1, false, lines)
 	if state.winid and vim.api.nvim_win_is_valid(state.winid) then
@@ -163,7 +166,6 @@ end
 local function clear_input()
 	state.parts = {}
 	autocomplete.reset(state)
-	slash_commands.reset(state)
 	mentions.reset(state)
 	set_input_text("")
 	info_bar.update(state)
@@ -203,6 +205,7 @@ local function selected_command_context()
 end
 
 local function command_enter_mode()
+	if state.mode == "shell" then return nil end
 	if not state.allow_chat_commands or state.session_id ~= current_session_id() then return nil end
 	local parsed = require("opencode.slash").parse(get_input_text())
 	if not parsed then return nil end
@@ -236,7 +239,7 @@ local function send_message(delivery)
 		return
 	end
 	local text = get_input_text()
-	if attachments.has_image_file_hint(text) then
+	if state.mode ~= "shell" and attachments.has_image_file_hint(text) then
 		attachments.normalize_pasted_image_paths(state, resize_input)
 		text = get_input_text()
 	end
@@ -253,6 +256,11 @@ local function send_message(delivery)
 		table.insert(parts, part)
 	end
 	if text == "" and #parts == 0 then
+		if delivery == "steer" and state.mode ~= "shell" and current_session_id() then
+			require("opencode.actions").promote_queued_input(current_session_id(), function(err)
+				if err then vim.notify("Could not promote queued prompt: " .. tostring(err.message or err), vim.log.levels.WARN) end
+			end)
+		end
 		return
 	end
 	local session_error = skill_session_error(parts, current_session_id())
@@ -277,6 +285,19 @@ local function send_message(delivery)
 		history.add(text, parts, state.mode)
 	end
 	local send_options = state.send_options and vim.deepcopy(state.send_options) or nil
+	if state.mode ~= "shell" and not text:match("^%s*/") and state.editor_context then
+		send_options = send_options or {}
+		send_options.context = send_options.context or {}
+		local found
+		for _, part in ipairs(send_options.context) do if part._editor_context then found = part; break end end
+		if not found then send_options.context[#send_options.context + 1] = vim.deepcopy(state.editor_context) end
+		require("opencode.actions").mark_editor_context(state.session_id, found or state.editor_context, "sent")
+		state.editor_context = nil
+	end
+	if state.mode == "shell" then
+		send_options = send_options or {}
+		send_options.mode = "shell"
+	end
 	if delivery then
 		send_options = send_options or {}
 		send_options.delivery = delivery
@@ -312,7 +333,6 @@ local function recall_history(text, parts, mode)
 		if part.type == "skill" then part._session_id = current_session_id() end
 	end
 	autocomplete.reset(state)
-	slash_commands.reset(state)
 	mentions.reset(state)
 	set_input_text(text)
 	info_bar.update(state)
@@ -342,7 +362,6 @@ local function mount_input(chat_winid, float_dims, cfg)
 		parts = {},
 	}
 	state.autocomplete = {}
-	state.slash_commands = {}
 
 	vim.api.nvim_buf_set_var(state.bufnr, "completion", false)
 	syntax.attach(state.bufnr)
@@ -367,13 +386,25 @@ local function session_changed(session_id)
 	state.parts = history.get_pending_parts(session_id)
 	state.mode = history.get_pending_mode(session_id)
 	state.send_options = history.get_pending_options(session_id)
+	state.editor_context = require("opencode.editor_context").pending(session_id)
 	autocomplete.reset(state)
-	slash_commands.reset(state)
 	mentions.reset(state)
 	local next_text = history.get_pending(session_id)
 	set_input_text(next_text)
 	info_bar.update(state)
 	restore_cursor(next_text)
+end
+
+-- Usage metadata changes independently of typing. Observe only while mounted,
+-- and coalesce SSE bursts without taking focus or retaining history.
+local info_refresh_scheduled = false
+local function refresh_info()
+	if not state.visible or info_refresh_scheduled then return end
+	info_refresh_scheduled = true
+	vim.schedule(function()
+		info_refresh_scheduled = false
+		info_bar.update(state)
+	end)
 end
 
 function M.show(opts)
@@ -397,6 +428,7 @@ function M.show(opts)
 	state.parts = opts.text ~= nil and copy_parts(opts.parts) or history.get_pending_parts(state.session_id)
 	state.mode = opts.mode or (opts.text ~= nil and "normal" or history.get_pending_mode(state.session_id))
 	state.send_options = opts.send_options or (opts.text == nil and history.get_pending_options(state.session_id))
+	state.editor_context = opts.session_bound ~= true and require("opencode.editor_context").pending(state.session_id) or nil
 
 	history.configure(cfg)
 	history.load()
@@ -412,19 +444,22 @@ function M.show(opts)
 
 	mount_input(chat_winid, opts.float_dims, cfg)
 	require("opencode.state").on("session.id", session_changed)
+	for _, event in ipairs({ "sync_changed", "sessions_changed", "config_change" }) do require("opencode.events").on(event, refresh_info) end
 
 	autocmds.setup(state, {
 		schedule_resize = schedule_resize_input,
 		reflow = function() layout.reflow(state); info_bar.update(state) end,
 		input_changed = function()
-			autocomplete.refresh(state)
+			if state.mode ~= "shell" then autocomplete.refresh(state) end
 			info_bar.update(state)
 		end,
 		cursor_moved = function()
-			autocomplete.refresh(state)
+			if state.mode ~= "shell" then autocomplete.refresh(state) end
+			if state.paste_folds then schedule_resize_input() end
 		end,
 		insert_leave = function()
 			autocomplete.close(state)
+			if state.paste_folds then schedule_resize_input() end
 		end,
 		lock_scroll = function()
 			layout.lock_scroll(state)
@@ -475,9 +510,6 @@ function M.show(opts)
 		end,
 		command_enter_mode = command_enter_mode,
 		command_enter_select = select_typed_command,
-		autocomplete_close = function()
-			autocomplete.close(state)
-		end,
 		cycle_variant = function()
 			info_bar.cycle_variant(state)
 		end,
@@ -486,6 +518,11 @@ function M.show(opts)
 		end,
 		cycle_model = function()
 			info_bar.cycle_model(state)
+		end,
+		toggle_mode = function() M.set_mode(state.mode == "shell" and "normal" or "shell") end,
+		fold = function(command)
+			vim.cmd("normal! " .. command)
+			schedule_resize_input()
 		end,
 	})
 
@@ -521,9 +558,9 @@ function M.close(save_draft)
 		end
 	end
 	require("opencode.state").off("session.id", session_changed)
+	for _, event in ipairs({ "sync_changed", "sessions_changed", "config_change" }) do require("opencode.events").off(event, refresh_info) end
 
 	autocomplete.clear(state)
-	slash_commands.clear(state)
 	mentions.clear(state)
 	focus_parent_before_unmount()
 	popups.unmount(state)
@@ -542,7 +579,6 @@ function M.close(save_draft)
 	state.send_options = nil
 	state.autocomplete = nil
 	state.mentions = nil
-	state.slash_commands = nil
 	state.on_send = nil
 	state.on_cancel = nil
 	state.close_on_send = true
@@ -678,7 +714,6 @@ function M.clear_history()
 	history.clear()
 	state.parts = {}
 	autocomplete.reset(state)
-	slash_commands.reset(state)
 	mentions.reset(state)
 end
 
@@ -698,23 +733,69 @@ function M.get_pending_parts()
 	return state.visible and state.session_id == current_session_id() and draft_parts() or history.get_pending_parts()
 end
 
+function M.get_mode()
+	return state.visible and state.mode or history.get_pending_mode(current_session_id())
+end
+
+function M.get_pending_options()
+	if state.visible and state.session_id == current_session_id() then return vim.deepcopy(state.send_options) end
+	return history.get_pending_options(current_session_id())
+end
+
+function M.set_mode(mode)
+	state.mode = mode == "shell" and "shell" or "normal"
+	history.set_pending_mode(state.mode, current_session_id())
+	if state.visible then
+		autocomplete.reset(state)
+		info_bar.update(state)
+	end
+end
+
 ---@param text string
 ---@param parts table[]|nil
-function M.set_pending_draft(text, parts)
+function M.set_pending_draft(text, parts, opts)
 	local content = text or ""
 	local copied = copy_parts(parts)
 	draft_epoch, pending_cursor = draft_epoch + 1, nil
 	history.set_pending(content, copied, current_session_id())
-	history.set_pending_options(nil, current_session_id())
+	history.set_pending_options(opts and opts.options, current_session_id())
 	if state.visible and state.session_id == current_session_id() then
 		state.parts = copied
-		state.send_options = nil
+		state.send_options = opts and opts.options and vim.deepcopy(opts.options) or nil
 		autocomplete.reset(state)
-		slash_commands.reset(state)
 		mentions.reset(state)
 		set_input_text(content)
 		info_bar.update(state)
 	end
+	if opts and opts.mode then M.set_mode(opts.mode) end
+end
+
+function M.can_merge_draft(draft)
+	if (M.get_pending_text() ~= "" or #M.get_pending_parts() > 0) and M.get_mode() ~= (draft.mode or "normal") then
+		return false, "Stash the current prompt before combining shell and chat drafts"
+	end
+	return true
+end
+
+function M.merge_pending_draft(draft)
+	local ok, err = M.can_merge_draft(draft)
+	if not ok then return false, err end
+	local current = { text = M.get_pending_text(), parts = M.get_pending_parts() }
+	local text, parts = attachments.merge_drafts(current, draft)
+	local existing = current.text ~= "" or #current.parts > 0
+	local options
+	if existing then options = M.get_pending_options() else options = vim.deepcopy(draft.options) end
+	if existing and type(draft.options) == "table" and type(draft.options.context) == "table" then
+		options = options or {}
+		options.context = options.context or {}
+		for _, part in ipairs(draft.options.context) do
+			local found = false
+			for _, current_part in ipairs(options.context) do if vim.deep_equal(current_part, part) then found = true; break end end
+			if not found then options.context[#options.context + 1] = vim.deepcopy(part) end
+		end
+	end
+	M.set_pending_draft(text, parts, { options = options, mode = existing and M.get_mode() or draft.mode or "normal" })
+	return true
 end
 
 ---@param text string
@@ -729,7 +810,6 @@ function M.set_pending_text(text, opts)
 
 	if state.visible and state.session_id == current_session_id() then
 		autocomplete.reset(state)
-		slash_commands.reset(state)
 		mentions.reset(state)
 		set_input_text(content)
 	end
@@ -778,6 +858,20 @@ end
 
 function M.update_info_bar()
 	info_bar.update(state)
+end
+
+function M.get_editor_context()
+	if not state.visible or state.session_id ~= current_session_id() then return require("opencode.editor_context").pending(current_session_id()) end
+	return state.editor_context and vim.deepcopy(state.editor_context)
+end
+function M.dismiss_editor_context()
+	require("opencode.actions").mark_editor_context(current_session_id(), M.get_editor_context(), "dismissed")
+	state.editor_context = nil; info_bar.update(state)
+end
+function M.refresh_editor_context()
+	state.editor_context = require("opencode.actions").refresh_editor_context(current_session_id())
+	info_bar.update(state)
+	return M.get_editor_context()
 end
 
 function M.cycle_variant()

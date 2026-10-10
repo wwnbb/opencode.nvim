@@ -161,6 +161,7 @@ function M.consume_command(state, trigger)
 	return true
 end
 
+-- Compatibility adapters for callers holding the former standalone state bag.
 function M.clear(state)
 	if state then
 		state.slash_commands = nil

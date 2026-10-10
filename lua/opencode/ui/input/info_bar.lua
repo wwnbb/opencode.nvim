@@ -108,22 +108,45 @@ local function skill_names(state)
 		end
 		return state.marker_range(text, marker)
 	end
-	local ok, sync = pcall(require, "opencode.sync")
-	local catalog = ok and sync.get_skills() or {}
-	local by_id = {}
-	for _, skill in pairs(type(catalog) == "table" and catalog or {}) do
-		if type(skill) == "table" and type(skill.id) == "string" then by_id[skill.id] = skill.name end
-	end
+	local by_id
 	for _, part in ipairs(state.parts or {}) do
 		local id = part.skillID or part.id
 		if part.type == "skill" and type(id) == "string" and not seen[id]
 			and (not part._marker or marker_present(part._marker)) then
+			if not by_id then
+				local ok, sync = pcall(require, "opencode.sync")
+				local catalog = ok and sync.get_skills() or {}
+				by_id = {}
+				for _, skill in pairs(type(catalog) == "table" and catalog or {}) do
+					if type(skill) == "table" and type(skill.id) == "string" then by_id[skill.id] = skill.name end
+			end
+			end
 			local name = by_id[id] or part.name or id
 			names[#names + 1] = type(name) == "string" and name or id
 			seen[id] = true
 		end
 	end
 	return names
+end
+
+local function usage_part(state, room)
+	if state.mode == "shell" then return "" end
+	local selectors = require("opencode.selectors")
+	local usage = selectors.current_context(state.session_id)
+	local cost, complete = selectors.session_cost(state.session_id)
+	local function number(value)
+		if value >= 1000000 then return string.format("%.1fM", value / 1000000) end
+		if value >= 1000 then return string.format("%.1fK", value / 1000) end
+		return tostring(value)
+	end
+	local context = usage and "ctx " .. number(usage.tokens) or ""
+	local full = context .. (usage and usage.percent and " (" .. usage.percent .. "%)" or "")
+	local money = cost and cost > 0 and (complete and "" or "≥") .. string.format("$%.2f", cost) or ""
+	local both = full .. (full ~= "" and money ~= "" and " · " or "") .. money
+	for _, value in ipairs({ both, full, context, money }) do
+		if value ~= "" and vim.fn.strdisplaywidth(" · " .. value) <= room then return " · " .. value end
+	end
+	return ""
 end
 
 function M.update(state)
@@ -137,6 +160,7 @@ function M.update(state)
 	end
 
 	local agent, model, provider, variant, agent_hl = info_parts()
+	if state.mode == "shell" then agent, model, provider, variant = "shell", "Ctrl-\\: return to chat", "", nil end
 	vim.api.nvim_set_hl(0, "OpenCodeInputBorderAgent", { link = agent_hl, default = false })
 
 	local agent_part = titlecase(agent) .. " "
@@ -145,11 +169,12 @@ function M.update(state)
 	local dot_part = variant and variant ~= "" and " \194\183 " or ""
 	local variant_part = variant and variant ~= "" and variant or ""
 	local skill_part = ""
+	local editor_status = require("opencode.editor_context").status((require("opencode.state").get_session() or {}).id, state.editor_context)
+	local info_win = state.info_popup and state.info_popup.winid
+	local width = info_win and vim.api.nvim_win_is_valid(info_win) and vim.api.nvim_win_get_width(info_win)
+		or (state.layout and state.layout.content_width) or vim.o.columns
 	local names = skill_names(state)
 	if #names > 0 then
-		local info_win = state.info_popup and state.info_popup.winid
-		local width = info_win and vim.api.nvim_win_is_valid(info_win) and vim.api.nvim_win_get_width(info_win)
-			or (state.layout and state.layout.content_width) or vim.o.columns
 		local summary = " · " .. (#names == 1 and "Skill: " or "Skills: ") .. table.concat(names, ", ")
 		local core_width = vim.fn.strdisplaywidth(agent_part .. model_part)
 		local optional_width = vim.fn.strdisplaywidth(provider_part .. dot_part .. variant_part)
@@ -168,9 +193,14 @@ function M.update(state)
 		if room < 16 then summary = " · Skills: " .. #names end
 		skill_part = clip(summary, room)
 	end
+	local usage = usage_part(state, width - vim.fn.strdisplaywidth(agent_part .. model_part .. provider_part .. dot_part .. variant_part .. skill_part))
+	local editor_part = ""
+	if editor_status and state.mode ~= "shell" then
+		editor_part = clip(" · Context: " .. editor_status, math.max(0, width - vim.fn.strdisplaywidth(agent_part .. model_part .. provider_part .. dot_part .. variant_part .. skill_part .. usage)))
+	end
 
 	vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, {
-		agent_part .. model_part .. provider_part .. dot_part .. variant_part .. skill_part,
+		agent_part .. model_part .. provider_part .. dot_part .. variant_part .. skill_part .. usage .. editor_part,
 	})
 	vim.api.nvim_buf_clear_namespace(bufnr, NS_INFO, 0, -1)
 
@@ -180,7 +210,9 @@ function M.update(state)
 	col = mark(bufnr, col, provider_part, "OpenCodeInputProvider")
 	col = mark(bufnr, col, dot_part, "OpenCodeInputDot")
 	col = mark(bufnr, col, variant_part, "OpenCodeInputVariant")
-	mark(bufnr, col, skill_part, "OpenCodeInputSkill")
+	col = mark(bufnr, col, skill_part, "OpenCodeInputSkill")
+	col = mark(bufnr, col, usage, "OpenCodeInputInfo")
+	mark(bufnr, col, editor_part, "OpenCodeInputInfo")
 end
 
 function M.cycle_variant(state)
