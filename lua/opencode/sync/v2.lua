@@ -160,8 +160,17 @@ function M.apply(sync, event, hooks)
 		commit(message)
 	elseif kind == "session.message.content.updated" then
 		local message = assistant(); message.content = vim.deepcopy(data.content); commit(message)
-	elseif kind == "session.synthetic" or kind == "session.instructions.updated" then
-		if data.text then commit({ id = event_message_id(event), type = kind == "session.synthetic" and "synthetic" or "system",
+	elseif kind == "session.instructions.updated" then
+		if data.text then
+			local sources = vim.tbl_keys(data.delta or {})
+			table.sort(sources)
+			local description = data.description or (#sources > 0 and "Instructions updated: " .. table.concat(sources, ", ") or "Instructions updated")
+			local metadata = vim.tbl_extend("force", {}, event.metadata or {}, { notice = "instructions", instructionSources = sources })
+			commit({ id = event_message_id(event), type = "system", text = data.text,
+				description = description, metadata = metadata, time = { created = event.created } })
+		end
+	elseif kind == "session.synthetic" then
+		if data.text then commit({ id = event_message_id(event), type = "synthetic",
 			text = data.text, description = data.description, metadata = data.metadata or event.metadata, time = { created = event.created } }) end
 	end
 	if result.status then result.changed = sync.handle_session_status(sid, result.status) or result.changed end
