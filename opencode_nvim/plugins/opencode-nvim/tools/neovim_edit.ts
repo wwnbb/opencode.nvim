@@ -14,10 +14,10 @@ import {
   assertNoAccidentalIndentRemoval,
   convertToLineEnding,
   detectLineEnding,
+  diffSummary,
   makeDiff,
   normalizeLineEndings,
   sameContent,
-  stats,
 } from "./lib/text"
 
 const input = z.object({
@@ -45,16 +45,9 @@ function replaceExact(
 
   if (oldString === "") throw new Error("oldString must not be empty. Use neovim_patch to create a file.")
 
-  let count = 0
-  let index = content.indexOf(oldString)
-  let first = index
-  while (index !== -1) {
-    count++
-    index = content.indexOf(oldString, index + oldString.length)
-  }
-
-  if (count === 0) throw new Error("oldString not found in content")
-  if (!replaceAll && count > 1) {
+  const first = content.indexOf(oldString)
+  if (first === -1) throw new Error("oldString not found in content")
+  if (!replaceAll && content.indexOf(oldString, first + oldString.length) !== -1) {
     throw new Error(
       "Found multiple matches for oldString. " +
         "Provide more surrounding lines in oldString to identify the correct match.",
@@ -114,8 +107,7 @@ export default {
       filePath,
     )
     const after = { exists: true, content: afterContent, bom: desiredBom }
-    const proposedDiff = makeDiff(filePath, before.content, after.content)
-    const proposedStats = stats(before.content, after.content)
+    const { diff: proposedDiff, ...proposedStats } = diffSummary(filePath, before.content, after.content)
     const relativePath = displayPath(context.worktree, filePath)
 
     const proposedFile = {
@@ -215,8 +207,9 @@ export default {
     }
 
     const finalContent = current.exists ? current.content : ""
-    const finalDiff = makeDiff(filePath, before.content, finalContent)
-    const finalStats = status === "rejected" ? { additions: 0, deletions: 0 } : stats(before.content, finalContent)
+    const { diff: finalDiff, ...finalStats } = status === "rejected"
+      ? { diff: makeDiff(filePath, before.content, finalContent), additions: 0, deletions: 0 }
+      : diffSummary(filePath, before.content, finalContent)
     const filediff = {
       ...proposedFile,
       after: finalContent,

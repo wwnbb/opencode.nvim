@@ -16,8 +16,9 @@ export class Policies {
   async wait(context: Pick<RuntimeContext, "signal" | "sessionID" | "messageID" | "id" | "agent">, action: string, resources: string[]) {
     context.signal.throwIfAborted()
     const gateID = randomUUID(), id = "per_" + randomUUID().replaceAll("-", "")
+    const normalized = [...new Set(resources)].sort()
     const record: Policy = { protocolVersion, gateID, sessionID: context.sessionID, location: this.location, status: "pending",
-      request: { id, action, resources: [...new Set(resources)].sort(), save: [...new Set(resources)].sort(), agent: context.agent,
+      request: { id, action, resources: normalized, save: [...normalized], agent: context.agent,
         source: { type: "tool", messageID: context.messageID, id: context.id }, metadata: { gateID } } }
     let resolve!: () => void, reject!: (error: Error) => void
     const promise = new Promise<void>((yes, no) => { resolve = yes; reject = no })

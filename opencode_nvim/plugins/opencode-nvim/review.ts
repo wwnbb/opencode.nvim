@@ -64,11 +64,12 @@ export class Reviews {
     }
     const ids = new Set(decisions.map(d => d.fileID))
     if (ids.size !== decisions.length || decisions.length !== current.files.length || current.files.some(f => !ids.has(f.fileID))) conflict("Reply must contain each review file exactly once")
+    const filesByID = new Map(current.files.map(file => [file.fileID, file]))
     for (const choice of decisions) {
       if (choice.status === "resolved" && choice.apply === "server") conflict("Manual resolution cannot request server apply")
       if (choice.status !== "rejected" && choice.apply === "client") {
         if (!choice.observed) conflict("Client-applied decisions require observed file bytes")
-        const file = current.files.find(f => f.fileID === choice.fileID)!
+        const file = filesByID.get(choice.fileID)!
         const bytes = await readBytes(file.filePath)
         const actual = bytes ? { exists: true, sha256: createHash("sha256").update(bytes).digest("hex") } : { exists: false }
         if (actual.exists !== choice.observed!.exists || actual.sha256 !== choice.observed!.sha256) conflict("File changed since the client reviewed it")
@@ -83,7 +84,7 @@ export class Reviews {
     entry.record.status = "decided"
     entry.record.decisions = decisions
     if (message) entry.record.message = message
-    entry.resolve({ message, files: decisions.map(d => ({ ...d, path: current.files.find(f => f.fileID === d.fileID)!.filePath })) })
+    entry.resolve({ message, files: decisions.map(d => ({ ...d, path: filesByID.get(d.fileID)!.filePath })) })
     return structuredClone(entry.record)
   }
   async finish(sessionID: string, callID: string, outcome: Record<string, unknown>) {

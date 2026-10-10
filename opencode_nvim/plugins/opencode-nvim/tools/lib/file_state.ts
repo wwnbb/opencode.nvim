@@ -49,11 +49,6 @@ export async function removePath(filePath: string, signal?: AbortSignal) {
   await fs.rm(filePath, { force: true })
 }
 
-export async function removeEmptyCreatedFile(filePath: string, before: FileState, current: FileState) {
-  if (before.exists || !current.exists || current.content !== "") return
-  await removePath(filePath)
-}
-
 export function sameState(current: FileState, expected: FileState): boolean {
   if (!current.exists || !expected.exists) return current.exists === expected.exists
   return current.bom === expected.bom && current.content === expected.content
