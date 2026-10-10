@@ -22,7 +22,11 @@ parts share a row, with their step count and combined duration.
 Consecutive Read, Glob, and Grep calls appear as `→ Explored — 1 read, 2 searches`.
 Expand the row to see file paths and search summaries. Active groups animate as
 `Thinking` or `Exploring`; failures remain visible when collapsed, and permission
-requests stay accessible. Expansion is preserved while streaming. Set `thinking.enabled = false` to hide reasoning.
+requests stay accessible. Expansion is preserved while streaming. Use `/settings`
+to choose collapsed or expanded thinking, tool grouping, verbosity, source or
+rendered Markdown, and diff layout. Preferences apply immediately and can be
+saved globally or for the current directory. Collapsed reasoning remains
+available with `O` or `Enter`.
 
 # Execute / MCP tools
 
@@ -88,6 +92,96 @@ Select `/status` from completion with Enter, Tab, or the send key, or submit
 input with the remaining draft and attachments when that chat is still active.
 Use `/stats` for session usage statistics.
 
+# Sessions, locations and execution
+
+`/sessions` searches sessions across projects; its project/worktree filters do
+not change Neovim's working directory. Use `/open <session-id>` to open directly,
+`/rename <title>` to rename, or bare `/rename` to regenerate a title. The session
+picker also offers rename and delete for inactive sessions. Tabs remember their
+order across restarts and show `◆` for unviewed completions. Use `/reopen` or the
+palette's Move Tab Left/Right actions to manage their order.
+
+`/workspaces` (also `/projects`) selects a server location. `/new` offers location
+selection, `/cd` moves the active server session, and `/worktrees` lists, creates,
+opens and removes native worktrees. Dirty removal requires a separate force
+decision. `/family` lists the complete session family, filters active children
+and interrupts a selected session. Backspace returns to the parent, including
+children opened directly by ID.
+
+Toggle shell input with Ctrl+\\ or `/shell`; sending executes in the session's
+server location without calling a model. `/processes` shows output and kills a
+selected process. `/background` moves a supported blocking shell/subagent tool
+to the background. `/terminals` manages persistent server PTYs in Neovim terminal
+buffers: `n` creates, `d` removes, `R` reconnects and `q` detaches. Detaching keeps
+the process running; output resumes from its byte cursor on reconnect.
+
+Background shell completions show a compact status, command and output preview
+instead of the server's raw shell tags. Press Enter or `O` on the block to
+expand or collapse the complete captured output and process IDs.
+
+`/diff` opens a Git diff browser with branch, committed, working and last-turn
+sources, base selection, file list, hunk navigation and reviewed markers. Native
+edit review remains available in the chat.
+
+# Composer and previews
+
+Automatic context captures bounded unsaved text from the last ordinary file
+buffer. The composer shows pending/sent/dismissed status; `/context` previews,
+dismisses or refreshes the snapshot. Disable it with `/settings` or
+`input.editor_context = false`.
+
+Use the palette's Stash Current Prompt / Restore Latest Stashed Prompt actions,
+or `/stash` to browse several saved prompts. Stashes keep attachments and survive
+restarts. `/queued` searches pending inputs and restores them into a draft after
+confirmed cancellation. Empty steer submission promotes the first queued prompt.
+Paste supports several quoted file paths on a line, including PDF and SVG. Large
+clipboard pastes use native folds; `za`, `zo` and `zc` control them, and sending
+preserves the complete text. Set `input.collapse_paste_lines = false` to disable.
+
+`/images` opens actual inline attachment content or a remote image URL.
+`/diagrams` (also `/mermaid`, `/math`) renders completed Mermaid and LaTeX/math
+fences in a browser. It loads pinned Mermaid/KaTeX libraries from their CDN and
+reports loading or parse failures; browser Internet access is required.
+`/diagnostics` lists server diagnostic messages, jumps to mapped local files and
+exports quickfix with Ctrl+Q. For remote files, configure
+`server.path_mappings = { { remote = "/server/project", local_root = "/local/project" } }`.
+
+`/variants` (also `/thinking`, `/effort`) selects any current model variant or
+Default. Model selection shows favorites, recent models and native metadata;
+the palette has separate recent and favorite cycles. `/mcps` is reactive while
+open. `/plugins` checks and updates native server plugins. `/pair` offers expiring
+one-time links when the server supports pairing (2.0.18; unavailable in 2.0.11).
+
+The composer shows current context usage and session cost when known. High
+verbosity adds detailed token usage. `/debug` copies a support bundle with
+versions, OS, session and model identifiers. Focus-aware notifications use
+`notifications.when = "always"`, `"blurred"` or `"focused"` through `vim.notify`.
+
+# Remote and managed servers
+
+Use an explicit endpoint, including a reverse-proxy base path:
+
+```lua
+server = {
+  url = "https://opencode.example.com/gateway",
+  auth = { username = "opencode", password = "your-password" },
+  -- tls = { ca_file = "/path/to/private-ca.pem" },
+}
+```
+
+HTTPS REST, SSE and PTY WebSockets use an installed OpenSSL with certificate and
+hostname verification. HTTP host/port configuration is also supported.
+`server.managed = true` discovers the native local CLI service, verifies its
+PID/version and rereads endpoint/credentials on reconnect. `/server` offers
+connection controls; native restart/update are available only on the verified
+managing host. `/environment` replaces the session's complete shell environment,
+including PATH. An empty map creates an empty environment; the native API does
+not expose inherited values or provide a reset-to-inheritance operation.
+
+SSE becomes connected after the native handshake and reconnects with capped
+backoff throughout long outages. A 45-second read-idle watchdog counts keepalive
+bytes as activity; manual disconnect stops recovery.
+
 # Timeline and export
 
 Use `/timeline` or press `T` in the chat to search every historical user turn.
@@ -124,7 +218,7 @@ require("opencode").setup({
     model = { providerID = "your-provider", modelID = "your-fast-model" },
     -- variant = "completion", -- optional variant configured in OpenCode
     keymaps = { trigger = "<C-l>", accept = "<Tab>" },
-    timeout_ms = 15000,
+    timeout_ms = 0, -- No deadline; set a positive value to limit the request in milliseconds
     max_lines = 12,
   },
 })
@@ -132,25 +226,31 @@ require("opencode").setup({
 
 In Insert mode, **Ctrl+L** requests a suggestion and displays a spinner at the
 cursor. Press it again to cancel the pending request or ask for an alternative
-to the visible suggestion. **Tab** inserts the entire suggestion as a separate
-undo step. While waiting, or without a suggestion, Tab keeps its usual mapping.
+to the visible suggestion. The suggestion appears as virtual text as the model
+generates it. **Tab** inserts the currently visible suggestion as a separate
+undo step and stops generation. Until text arrives, or without a suggestion,
+Tab keeps its usual mapping.
 Typing, moving the cursor, leaving Insert mode, or switching buffers dismisses
-the suggestion. A late response cannot insert or display stale code.
+the suggestion. A late response cannot insert or display stale code. Completion
+has no timeout by default; `completion.timeout_ms` can set a request deadline.
 
 Completion inserts between the cursor and the existing text to its right; it
 never replaces that suffix. With a suffix, suggestions stay on one line. At the
-end of a line, they can contain a short block. Preview does not modify the file;
+end of a line, they can contain a short block. The model returns only the insertion
+text. Preview does not modify the file;
 long virtual lines are clipped to the window width. Inline virtual text requires
 Neovim 0.10 or newer. Customize `OpenCodeCompletion` and
 `OpenCodeCompletionSpinner` highlight groups with `nvim_set_hl`.
 
 The model must be configured explicitly; completion does not inherit the chat
-model. OpenCode 2.0.11–2.0.12 uses `/api/experimental/generate` for this buffered,
-sessionless request: no tools run and nothing is added to chat history. The
-spinner remains until the complete response arrives. Canceling closes this
-request's local connection; provider-side generation cancellation depends on
-OpenCode and the provider. On a cold server, completion allows up to two seconds
-for the separate base model catalog to initialize, within the overall timeout.
+model. The virtual spinner is replaced by streamed completion text as soon as
+output arrives. Reasoning text is not shown. Neither the spinner nor the
+preview moves the cursor or changes the file.
+Completion uses an isolated temporary session with all tools disabled to receive
+streaming output. This session stays out of the plugin's chat lists and is
+deleted on success, failure, or cancellation; existing chat history is unchanged.
+On a cold server, completion allows up to two seconds for the model catalog to initialize,
+within any configured timeout.
 Only explicit model/variant-unavailable rejections are retried; provider failures
 and uncertain requests are never automatically repeated.
 
@@ -173,9 +273,8 @@ completion = {
 `settings`, `body`, and `headers` follow OpenCode's
 [model overlay format](https://opencode.ai/v2/docs/models#options). They are
 provider-specific: `none` is not supported by every reasoning model, and raw
-token-budget fields differ between provider APIs. Generic `settings.maxTokens`
-or `settings.temperature` are not translated into generation parameters by
-this endpoint. Choose a model without reasoning, or explicitly disable it using
+token-budget fields differ between provider APIs. Choose a model without
+reasoning, or explicitly disable it using
 its supported options.
 
 The plugin installs an internal completion variant in the managed server's
@@ -185,9 +284,9 @@ Options take effect when that server starts; after changing them, use
 `:OpenCodeRestart`. The plugin never silently restarts an ongoing chat.
 `options` and `variant` are mutually exclusive. With an external server
 (`server.port`), configure the variant in that server's base/global configuration
-and set `completion.variant`; Lua `options` require a managed server. In
-OpenCode 2.0.11–2.0.12, sessionless generation uses the server's base
-configuration, so project-only model variants are insufficient.
+and set `completion.variant`; Lua `options` require a managed server.
+OpenCode's sessionless `/api/experimental/generate` endpoint remains available
+to final-only client callers, without streaming progress.
 
 Context comes from the unsaved current buffer: cursor prefix/suffix, surrounding
 lines, file header, language, and indentation settings. It also includes up to
@@ -231,7 +330,7 @@ require("opencode").setup({
     language = "en",
     -- prompt = "Explain these selected lines in {language} by logical block.",
     keymaps = { trigger = "K" }, -- Visual mode only; false disables the mapping
-    timeout_ms = 60000,
+    timeout_ms = 0, -- No deadline; set a positive value to limit the request in milliseconds
     context = {
       max_bytes = 24576,
       before_lines = 150,
@@ -245,17 +344,25 @@ require("opencode").setup({
 ```
 
 Select code in Visual mode and press `K` (`<S-k>`). A scrollable popup opens
-immediately with a spinner, then shows the finished answer. The default
+immediately with a spinner, then streams the answer as it is generated. Markdown
+and code highlighting update while you read, preserving your scroll position. The default
 prompt asks the model to quote each logical block of the selection verbatim
 in a fenced code block followed by a short explanation, with dash bullets
 quoting individual lines where it clarifies the block. It covers every
 nonempty part of the selection without line numbers. It asks the model to
-wrap the final answer in `<answer>` markers. When those markers are present,
-the popup shows only the final answer; otherwise it shows the response as
-received.
+wrap the final answer in `<answer>` markers. Streaming begins inside those
+markers so surrounding text stays hidden. If the model omits the markers, the
+complete response appears when generation finishes.
+When the selected lines have Neovim diagnostics from a linter or LSP, the default
+prompt asks for a separate **Diagnostics** section (**Диагностика** in Russian)
+after the code explanation. It includes each supplied message's source and
+check code when available, explains the issue, and suggests the smallest correction.
 Press `c` to copy the answer; `q` or `Esc` closes the popup and cancels a pending
 request. Normal-mode `K` remains available for LSP hover. Call
 `require("opencode").explain_selection()` from your own Visual mapping if needed.
+
+Explanations have no timeout by default. Set `explanation.timeout_ms` to a
+positive number of milliseconds to enable a request deadline; `0` disables it.
 
 Set `explanation.prompt` to replace the default instruction. The optional
 `{language}` placeholder uses `explanation.language`. The plugin appends the
@@ -263,11 +370,14 @@ selection and context as JSON after either instruction; the custom prompt is
 included in the `max_bytes` budget. A custom prompt can request any response
 format; its response is shown unchanged. The plugin does not check line ranges.
 
-The request uses the unsaved source buffer, surrounding lines, file header, and
-related loaded buffers. The full selection has priority within `max_bytes`; if
-it alone exceeds the budget, the popup shows an error instead of truncating it.
-The source buffer is never edited. Generation uses the sessionless
-`/api/experimental/generate` endpoint without tools or chat history, and late
+The request uses the unsaved source buffer, diagnostics overlapping the selected
+lines, surrounding lines, file header, and related loaded buffers. The full
+selection has priority within `max_bytes`; if it alone exceeds the budget, the
+popup shows an error instead of truncating it. Whole diagnostic messages are
+added before surrounding context while they fit in the same byte budget.
+The source buffer is never edited. Generation uses the chat's SSE stream with a
+separate temporary session and all tools disabled. That session is removed after
+completion or cancellation; the active chat and its history stay unchanged. Late
 answers are ignored after closing the popup or changing the source buffer.
 
 Explanation has its own model, variant, options, and context settings. For a
@@ -411,6 +521,22 @@ python3 tests/runtime/completion_backend.py --cli /path/to/opencode-2.0.11
 
 This checks the real stateless endpoint, model options, cold-catalog startup,
 history isolation, and whether cancellation reaches the mock provider.
+
+Check session/location, worktree, VCS, shell/environment, persistent PTY and
+SSE recovery contracts in a disposable profile without provider credentials or
+an explicit model prompt:
+
+```sh
+python3 tests/runtime/capture_v2.py --cli /path/to/opencode --output /tmp/native-parity --nvim-parity
+python3 tests/runtime/capture_tls.py --cli /path/to/opencode --output /tmp/native-tls
+```
+
+The TLS runner uses an isolated native service and a temporary signed local
+proxy to exercise managed discovery, certificate rejection, HTTPS and WSS.
+The parity runner uses an empty native model catalog, disables model fetching,
+denies provider use and checks empty provider/model catalogs before testing moves,
+which can wake synthetic shell notifications.
+The updated coverage and remaining exclusions are in [docs/parity.md](docs/parity.md).
 
 You can also run a single spec file:
 
@@ -607,6 +733,7 @@ require("opencode").setup({
     close_on_focus_lost = true,
     session_tabs = {
       enabled = true,
+      scope = "global", -- Keep tabs across directory changes; "cwd" for per-directory tabs
       auto_fit = false,
       max_tabs = 3,
       separator = " │ ",
