@@ -133,9 +133,7 @@ function M.flush_stream_updates()
 	if not bus or type(bus.emit) ~= "function" then
 		return
 	end
-	local count = 0
 	for _, data in pairs(updates) do
-		count = count + 1
 		bus.emit("chat_stream_part_updated", data)
 	end
 end

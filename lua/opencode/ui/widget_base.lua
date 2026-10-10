@@ -1,5 +1,6 @@
 local M = {}
 
+-- Legacy formatting exports remain available to user configuration.
 M.SEPARATOR_WIDTH = 60
 M.HEADER_WIDTH = 50
 
@@ -17,21 +18,11 @@ M.HEADER_WIDTH = 50
 ---@return string
 function M.format_header(icon, title, id_label, timestamp, opts)
 	opts = opts or {}
-
 	local left = string.format("%s %s [%s]", icon, title, id_label)
-	local time_str = os.date("%H:%M", timestamp or os.time())
-	local right = time_str
-	local suffix = opts.suffix
-
-	if type(suffix) == "string" and suffix ~= "" then
-		right = string.format("%s  %s", time_str, suffix)
-	end
-
-	local width = opts.width or M.HEADER_WIDTH
-	local left_width = vim.fn.strdisplaywidth(left)
-	local right_width = vim.fn.strdisplaywidth(right)
-	local padding = string.rep(" ", math.max(1, width - left_width - right_width))
-	return left .. padding .. right
+	local right = os.date("%H:%M", timestamp or os.time())
+	if type(opts.suffix) == "string" and opts.suffix ~= "" then right = right .. "  " .. opts.suffix end
+	local padding = math.max(1, (opts.width or M.HEADER_WIDTH) - vim.fn.strdisplaywidth(left) - vim.fn.strdisplaywidth(right))
+	return left .. string.rep(" ", padding) .. right
 end
 
 ---@param width? number
@@ -45,12 +36,7 @@ end
 ---@param text string
 ---@param hl_group string
 function M.add_full_line_highlight(highlights, line, text, hl_group)
-	table.insert(highlights, {
-		line = line,
-		col_start = 0,
-		col_end = #text,
-		hl_group = hl_group,
-	})
+	highlights[#highlights + 1] = { line = line, col_start = 0, col_end = #text, hl_group = hl_group }
 end
 
 ---@param opts? table

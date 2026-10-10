@@ -504,39 +504,22 @@ local function map_widget_line_to_file_index(estate, pos, widget_line)
 		return nil
 	end
 
-	local line = edit_widget.get_first_file_line(estate)
-	if widget_line < line then
-		return nil
-	end
-
-	for i, file in ipairs(estate.files or {}) do
-		local block_start = line
-		line = line + 1
-
-		local diff_lines = file.diff_lines or {}
-		if estate.expanded_files and estate.expanded_files[i] and #diff_lines > 0 then
-			line = line + #diff_lines
-		end
-
-		local block_end = line - 1
-		if widget_line >= block_start and widget_line <= block_end then
-			return i
-		end
-	end
-
 	return nil
 end
 
 ---@return string|nil, table|nil, table|nil, number|nil
-local function get_pending_edit_context_at_cursor()
+local function get_edit_context_at_cursor(allow_sent)
+	local function allowed(status)
+		return status == "pending" or (allow_sent and status == "sent")
+	end
 	local eid, pos = widget_support.find_widget_context_at_cursor(state.edits, state.winid, function(pos)
-		return pos.status == "pending"
+		return allowed(pos.status)
 	end)
 	if not eid or not pos then
 		return nil, nil, nil, nil
 	end
 	local estate = edit_state.get_edit(eid)
-	if not estate or estate.status ~= "pending" then
+	if not estate or not allowed(estate.status) then
 		return nil, nil, nil, nil
 	end
 	local cursor = vim.api.nvim_win_get_cursor(state.winid)
@@ -544,21 +527,13 @@ local function get_pending_edit_context_at_cursor()
 	return eid, estate, pos, cursor_line
 end
 
+local function get_pending_edit_context_at_cursor()
+	return get_edit_context_at_cursor(false)
+end
+
 ---@return string|nil, table|nil, table|nil, number|nil
 local function get_diffable_edit_context_at_cursor()
-	local eid, pos = widget_support.find_widget_context_at_cursor(state.edits, state.winid, function(pos)
-		return pos.status == "pending" or pos.status == "sent"
-	end)
-	if not eid or not pos then
-		return nil, nil, nil, nil
-	end
-	local estate = edit_state.get_edit(eid)
-	if not estate or not (estate.status == "pending" or estate.status == "sent") then
-		return nil, nil, nil, nil
-	end
-	local cursor = vim.api.nvim_win_get_cursor(state.winid)
-	local cursor_line = cursor[1] - 1
-	return eid, estate, pos, cursor_line
+	return get_edit_context_at_cursor(true)
 end
 
 ---@return string|nil permission_id

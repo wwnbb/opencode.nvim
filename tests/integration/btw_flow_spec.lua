@@ -10,13 +10,7 @@ local slash = require("opencode.slash")
 local sync = require("opencode.sync")
 local slash_commands = require("opencode.ui.input.slash_commands")
 
-local function input_state()
-	for index = 1, 20 do
-		local name, value = debug.getupvalue(input.get_winids, index)
-		if name == "state" then return value end
-	end
-	error("Input UI state unavailable")
-end
+local input_state = require("tests.helpers.input_state")
 
 describe("/btw composer flow", function()
 	local previous_buffer, previous_config, saved, reply, sent, history_file

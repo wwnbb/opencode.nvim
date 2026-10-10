@@ -462,19 +462,34 @@ local function presentation(raw, parsed, is_json, suffix, opts)
 end
 
 ---Build a bounded readable result without changing the source output.
+local function parse_output(value)
+	local raw = raw_string(value)
+	local ok, parsed = decode(raw)
+	local suffix
+	if not ok then ok, parsed, suffix = decode_with_suffix(raw) end
+	return raw, ok, parsed, suffix
+end
+
+-- The inspector consumes only the document projection. Keep describe's compact
+-- tree/summary contract while avoiding that second traversal for this caller.
+function M.document(value, opts)
+	opts = opts or {}
+	local raw, ok, parsed, suffix = parse_output(value)
+	local result = presentation(raw, parsed, ok, suffix, opts)
+	result.raw = raw
+	result.filetype = not ok and ((#raw <= MAX_PARSE_CHARS and raw:find("[`~][`~][`~]"))
+		or raw:match("^#+ ") or raw:find("\n#+ ")) and "markdown" or "text"
+	return result
+end
+
 ---@param value any
 ---@param opts? { max_lines?: integer, max_chars?: integer, max_depth?: integer }
 ---@return { raw: string, lines: string[], summary: string, label: string, kind: string, filetype: string, truncated: boolean, count?: integer, count_label?: string }
 function M.describe(value, opts)
 	opts = opts or {}
-	local raw = raw_string(value)
+	local raw, ok, parsed, suffix = parse_output(value)
 	local out = writer(opts)
 	local result = { raw = raw, label = "Text", kind = "text", filetype = "text" }
-	local ok, parsed = decode(raw)
-	local suffix
-	if not ok then
-		ok, parsed, suffix = decode_with_suffix(raw)
-	end
 	if ok then
 		result.label, result.kind = "JSON", "json"
 		if type(parsed) == "table" then

@@ -288,7 +288,7 @@ function M.get_selection_focus_offset(meta, selection, option)
 		option = selection.custom_present and 0 or (selection.selected_indices or {})[1]
 	end
 	return option and ((meta.option_lines or {})[option] or (widget_base.get_focus_offset(meta) or 0) + option - 1)
-		or meta.custom_interactive_line or 1
+		or widget_base.get_focus_offset(meta) or meta.custom_interactive_line or 1
 end
 
 -- Get formatted lines for a question.

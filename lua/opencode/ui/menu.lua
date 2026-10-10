@@ -467,13 +467,18 @@ function M.open(opts)
 		elseif selected_idx > #filtered_items then
 			selected_idx = 1
 		end
-		render_list()
+		if type(opts.filter) == "function" or type(opts.sort) == "function" or type(opts.on_move) == "function" then
+			-- Extension callbacks may observe or mutate the list on every move.
+			render_list()
+		elseif view.content.winid and vim.api.nvim_win_is_valid(view.content.winid) then
+			vim.api.nvim_win_set_cursor(view.content.winid, { selected_idx, 0 })
+		end
 		if type(opts.on_move) == "function" then opts.on_move(current_item(), ctx) end
 	end
 
 	local function handle_key(key)
 		local item = current_item()
-		if not item then
+		if not item and not key.allow_empty then
 			return
 		end
 		key.handler(ctx, item)
@@ -593,6 +598,7 @@ function M.open(opts)
 		close_on_leave = true,
 		on_close = function()
 			is_closed = true
+			if type(opts.on_close) == "function" then opts.on_close(ctx) end
 		end,
 		on_resize = function()
 			width = math.max(12, math.min(opts.width or (searchable and 60 or 40), vim.o.columns - border_width))

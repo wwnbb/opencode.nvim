@@ -174,45 +174,29 @@ describe("edit widget action lifecycle", function()
 		edit_state.clear_all()
 	end)
 
-	it("aggregates accept failures while applying the remaining files", function()
-		make_edit("edit_accept_partial_failure", 3)
-		local accept_failure_edit = edit_state.get_edit("edit_accept_partial_failure")
-		local failed_accept_change = accept_failure_edit.files[2].change_id
-		changes.accept = function(change_id, opts)
-			if change_id == failed_accept_change then
-				return false, "accept write failed"
+	for _, case in ipairs({
+		{ action = "accept", status = "accepted", title = "aggregates accept failures while applying the remaining files" },
+		{ action = "reject", status = "rejected", disk = "after", title = "aggregates reject failures while continuing with the remaining files" },
+	}) do
+		it(case.title, function()
+			local id, detail = "edit_" .. case.action .. "_partial_failure", case.action .. " write failed"
+			make_edit(id, 3, { disk = case.disk })
+			local edit = edit_state.get_edit(id)
+			local original = changes[case.action]
+			changes[case.action] = function(change_id, ...)
+				if change_id == edit.files[2].change_id then return false, detail end
+				return original(change_id, ...)
 			end
-			return original_accept(change_id, opts)
-		end
-		local accept_ok, accept_err, accept_errors = edit_state.accept_all("edit_accept_partial_failure")
-		assert(not accept_ok, "accept_all should fail when a file cannot be applied")
-		assert(accept_err:find("accept write failed", 1, true), "accept_all error should include failed file detail")
-		assert(#accept_errors == 1, "accept_all should return one aggregated error")
-		assert(accept_failure_edit.files[1].status == "accepted", "accept_all should accept successful files")
-		assert(accept_failure_edit.files[2].status == "pending", "accept_all should leave failed files pending")
-		assert(accept_failure_edit.files[3].status == "accepted", "accept_all should continue after a failed file")
-		changes.accept = original_accept
-	end)
-
-	it("aggregates reject failures while continuing with the remaining files", function()
-		make_edit("edit_reject_partial_failure", 3, { disk = "after" })
-		local reject_failure_edit = edit_state.get_edit("edit_reject_partial_failure")
-		local failed_reject_change = reject_failure_edit.files[2].change_id
-		changes.reject = function(change_id)
-			if change_id == failed_reject_change then
-				return false, "reject write failed"
-			end
-			return original_reject(change_id)
-		end
-		local reject_ok, reject_err, reject_errors = edit_state.reject_all("edit_reject_partial_failure")
-		assert(not reject_ok, "reject_all should fail when a file cannot be reverted")
-		assert(reject_err:find("reject write failed", 1, true), "reject_all error should include failed file detail")
-		assert(#reject_errors == 1, "reject_all should return one aggregated error")
-		assert(reject_failure_edit.files[1].status == "rejected", "reject_all should reject successful files")
-		assert(reject_failure_edit.files[2].status == "pending", "reject_all should leave failed files pending")
-		assert(reject_failure_edit.files[3].status == "rejected", "reject_all should continue after a failed file")
-		changes.reject = original_reject
-	end)
+			local ok, err, errors = edit_state[case.action .. "_all"](id)
+			assert.is_false(ok, case.action .. "_all should fail when a file cannot be applied")
+			assert.is_truthy(err:find(detail, 1, true), "aggregated error should include failed file detail")
+			assert.equals(1, #errors)
+			assert.equals(case.status, edit.files[1].status)
+			assert.equals("pending", edit.files[2].status)
+			assert.equals(case.status, edit.files[3].status, "batch should continue after a failed file")
+			changes[case.action] = original
+		end)
+	end
 
 	it("leaves a failed single-file rejection pending", function()
 		make_edit("edit_reject_file_failure", 1, { disk = "after" })
@@ -276,9 +260,6 @@ describe("edit widget action lifecycle", function()
 	end)
 
 	it("maps selected file indices through the pending-only native diff list", function()
-
-		require("opencode.ui.chat").focus = function() end
-		captured_native_show = nil
 		make_edit("edit_native_pending_filter", 3)
 		local native_pending_edit = edit_state.get_edit("edit_native_pending_filter")
 		native_pending_edit.files[1].status = "accepted"

@@ -20,7 +20,6 @@ local state = {
 	config = nil,
 	entries = {}, -- log entry objects
 	entries_log_count = 0, -- raw log count consumed into entries
-	header_line_count = 0,
 }
 
 ---------------------------------------------------------------
@@ -336,7 +335,6 @@ function M.refresh()
 	-- Build header
 	local visible_count = state.entries_log_count
 	local header_lines = build_header_lines(visible_count)
-	state.header_line_count = #header_lines
 
 	-- Collect all content strings and NuiLine references
 	local all_content = {}

@@ -1,3 +1,4 @@
+local chat_surface = require("tests.helpers.chat_surface")
 local sync = require("opencode.sync")
 local app = require("opencode.state")
 local chat = require("opencode.ui.chat")
@@ -48,31 +49,16 @@ local function update(id, status, output, err)
 end
 
 describe("standalone skill widgets in the chat buffer", function()
-	local original_buffer
+	local surface
 	before_each(function()
-		sync.clear_all()
-		app.reset()
-		app.set_config(vim.deepcopy(require("opencode.config").defaults))
+		surface = chat_surface.setup()
+		state.auto_scroll = surface.saved_view.auto_scroll
 		app.set_session("skill-test", "Skills")
-		render_state.reset_chat_surface({ reset_expansions = true })
-		state.render_scheduled = false
-		state.session_stack = {}
 		chat.setup({ session_tabs = { enabled = true } })
-		original_buffer = vim.api.nvim_get_current_buf()
-		state.bufnr = vim.api.nvim_create_buf(false, true)
-		state.winid = vim.api.nvim_get_current_win()
-		state.visible = true
-		vim.api.nvim_win_set_buf(state.winid, state.bufnr)
 		require("opencode.ui.chat.keymaps").setup_buffer(state.bufnr, {})
 	end)
 	after_each(function()
-		tasks.stop_task_animation_timer()
-		vim.api.nvim_win_set_buf(state.winid, original_buffer)
-		vim.api.nvim_buf_delete(state.bufnr, { force = true })
-		state.bufnr, state.winid, state.visible = nil, nil, false
-		render_state.reset_chat_surface({ reset_expansions = true })
-		sync.clear_all()
-		app.reset()
+		chat_surface.restore(surface)
 	end)
 
 	it("keeps consecutive skills independent and toggles them with Enter and O", function()

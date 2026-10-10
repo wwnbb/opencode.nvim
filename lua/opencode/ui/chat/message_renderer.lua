@@ -151,6 +151,7 @@ local function make_metadata_footer_renderer(ctx, all_messages, metadata)
 	return function(message, spinner_frame, message_revision)
 		local duration_ms = metadata_footer_duration(message)
 		local tokens_per_second = message and message.id and metadata.rate(message.id) or nil
+		local turn = message and message.id and metadata.turn(message.id) or nil
 		local cache_key = message
 			and message.id
 			and ctx:render_cache_key(
@@ -162,6 +163,7 @@ local function make_metadata_footer_renderer(ctx, all_messages, metadata)
 				ctx.metadata_agent_revision,
 				duration_ms or "",
 				tokens_per_second or "",
+				turn and table.concat({ turn.steps, turn.new, turn.cached, turn.total, tostring(turn.complete) }, ":") or "",
 				spinner_frame or ""
 			)
 		if cache_key then
@@ -171,6 +173,7 @@ local function make_metadata_footer_renderer(ctx, all_messages, metadata)
 					duration_ms = duration_ms,
 					duration_calculated = true,
 					tokens_per_second = tokens_per_second,
+					turn_usage = turn,
 				})
 			end, ctx:render_owner_key("metadata_footer", message.id))
 		end
@@ -180,8 +183,14 @@ local function make_metadata_footer_renderer(ctx, all_messages, metadata)
 			duration_ms = duration_ms,
 			duration_calculated = true,
 			tokens_per_second = tokens_per_second,
+			turn_usage = turn,
 		})
 	end
+end
+
+local function add_token_breakdown(ctx, message)
+	local turn = message and message.id and ctx.history_metadata.turn(message.id) or nil
+	ctx:add_nui_lines(render.render_token_breakdown(message, turn))
 end
 
 local function get_current_session_status(ctx)
@@ -290,11 +299,13 @@ local function render_user_message(ctx, message, render_parts, msg_idx, messages
 	ctx.content_highlights._opencode_signature = ctx:render_cache_key(
 		ctx.content_highlights._opencode_signature, message.id, agent
 	)
-	local file_parts, skill_parts = {}, {}
+	local file_parts, attachment_parts = {}, {}
 	for _, part in ipairs(render_parts.parts or {}) do
-		if not part.synthetic then
+		if part._editor_context then
+			attachment_parts[#attachment_parts + 1] = part
+		elseif not part.synthetic then
 			if part.type == "skill" then
-				skill_parts[#skill_parts + 1] = part
+				attachment_parts[#attachment_parts + 1] = part
 			elseif part.type == "file" or part.type == "agent" then
 				file_parts[#file_parts + 1] = part
 			end
@@ -349,14 +360,14 @@ local function render_user_message(ctx, message, render_parts, msg_idx, messages
 	if not message.provisional then render_retry_status_if_needed(ctx, messages, msg_idx) end
 	-- Keep queued-input actions scoped to the prompt and its status. Expandable
 	-- attachment rows own their own ranges below that fixed block.
-	for _, part in ipairs(skill_parts) do
-		tool_renderer.render_skill_attachment(ctx, part, render_parts.message_revision, render_parts.part_revisions)
+	for _, part in ipairs(attachment_parts) do
+		tool_renderer.render_tool_part(ctx, part, render_parts.message_revision, render_parts.part_revisions)
 	end
 	ctx:add_raw_line("")
 end
 
 local function render_activity(ctx, group)
-	local expanded = state.expanded_tools[group.id] == true
+	local expanded = state.expanded_tools[group.id]
 	local result = activity.render(group, expanded, state.expanded_tools)
 	local base_line = ctx:add_render_result(result, "activity")
 	state.tools[group.id] = widget_support.mark_render_generation({
@@ -407,14 +418,11 @@ local function render_assistant_message(ctx, index, message, render_parts, opts)
 		elseif part.type == "reasoning" then
 			-- Empty/redacted/disabled reasoning has no visible row.
 		elseif part.type == "text" and part.text and part.text ~= "" then
-			render_text_part(
-				ctx,
-				message,
-				part,
-				part_idx,
-				render_parts,
-				opts.incomplete_assistant
-			)
+			if part.shell_notification then
+				tool_renderer.render_tool_part(ctx, part, render_parts.message_revision, render_parts.part_revisions)
+			else
+				render_text_part(ctx, message, part, part_idx, render_parts, opts.incomplete_assistant)
+			end
 		elseif part.type == "tool" then
 			local skip_tool_row = false
 			if part.tool == "question" then
@@ -440,6 +448,7 @@ local function render_assistant_message(ctx, index, message, render_parts, opts)
 	if not opts.suppress_footer and render.should_show_footer(message, opts.is_last_assistant) then
 		ctx:ensure_single_blank_separator()
 		ctx:add_line(opts.render_metadata_footer_line(message, nil, render_parts.message_revision))
+		add_token_breakdown(ctx, message)
 		ctx:add_raw_line("")
 	end
 end
@@ -484,6 +493,17 @@ local function render_messages(
 				if ctx:line_count() > 0 then ctx:ensure_single_blank_separator() end
 				message_start_line = ctx:line_count()
 				render_user_message(ctx, message, render_parts, msg_idx, messages, max_user_message_lines)
+			elseif message.type == "system" then
+				-- System text is model-facing; only its description belongs in the chat.
+				ctx:ensure_single_blank_separator()
+				message_start_line = ctx:line_count()
+				local result = { lines = {}, highlights = {} }
+				render.add_panel_line(result, message.description or "Instructions updated", "Comment", {
+					prefix = " ◈ ", prefix_hl_group = "Comment",
+				})
+				local base_line = ctx:add_render_result(result, "non_tool")
+				ctx:append_relative_highlights(result.highlights, base_line)
+				ctx:add_raw_line("")
 			else
 				render_assistant_message(ctx, index, message, render_parts, {
 					activities = activities,
@@ -646,6 +666,7 @@ local function render_processing_footer(ctx, presentation, render_metadata_foote
 	local footer_line_idx = ctx:line_count()
 	local spinner_frame = presentation.animated and spinner.get_frame() or nil
 	ctx:add_line(render_metadata_footer_line(message, spinner_frame, message_revision))
+	add_token_breakdown(ctx, message)
 	if presentation.animated then
 		ctx:set_spinner_footer_line(footer_line_idx)
 	end

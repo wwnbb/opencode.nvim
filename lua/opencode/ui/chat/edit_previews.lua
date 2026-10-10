@@ -172,21 +172,24 @@ local function message_timestamp(message)
 	return value
 end
 
----@param message_id string|nil
----@param call_id string|nil
----@return boolean
-local function has_existing_edit_for_tool(message_id, call_id)
-	for _, estate in ipairs(edit_state.get_all()) do
-		if message_id and estate.message_id == message_id then
-			if not call_id or not estate.call_id or estate.call_id == call_id then
-				return true
-			end
-		end
-		if call_id and estate.call_id == call_id then
-			return true
+local function index_edit(index, message_id, call_id)
+	if message_id then
+		index.messages[message_id] = true
+		if not call_id then index.unbound_messages[message_id] = true end
+	end
+	if call_id then index.calls[call_id] = true end
+end
+
+local function has_existing_edit_for_tool(index, message_id, call_id)
+	if not index.messages then
+		index.messages, index.unbound_messages, index.calls = {}, {}, {}
+		for _, estate in ipairs(edit_state.get_all()) do
+			index_edit(index, estate.message_id, estate.call_id)
 		end
 	end
-	return false
+	return (call_id and index.calls[call_id])
+		or (message_id and (not call_id and index.messages[message_id] or index.unbound_messages[message_id]))
+		or false
 end
 
 ---@param model table
@@ -245,7 +248,7 @@ end
 ---@param message table
 ---@param part table
 ---@return boolean created
-local function sync_tool_part(session_id, message, part)
+local function sync_tool_part(session_id, message, part, existing)
 	if type(part) ~= "table" or part.type ~= "tool" or not PREVIEW_TOOLS[part.tool] then
 		return false
 	end
@@ -257,7 +260,7 @@ local function sync_tool_part(session_id, message, part)
 
 	local message_id = part.messageID or message.id
 	local call_id = part.callID
-	if has_existing_edit_for_tool(message_id, call_id) then
+	if has_existing_edit_for_tool(existing, message_id, call_id) then
 		return false
 	end
 
@@ -292,6 +295,7 @@ local function sync_tool_part(session_id, message, part)
 			title = model.title,
 		},
 	})
+	index_edit(existing, message_id, call_id)
 	return true
 end
 
@@ -303,11 +307,12 @@ function M.sync_session(session_id)
 	end
 
 	local created = 0
+	local existing = {}
 	for _, message in ipairs(sync.get_messages(session_id)) do
 		if message.id then
 			local render_parts = sync.get_message_render_parts(message.id)
 			for _, part in ipairs(render_parts.tool_parts or {}) do
-				if sync_tool_part(session_id, message, part) then
+				if sync_tool_part(session_id, message, part, existing) then
 					created = created + 1
 				end
 			end

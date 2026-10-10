@@ -134,7 +134,12 @@ end
 ---@param cursor_line number
 ---@return number|nil option_index Zero identifies the saved custom answer.
 local function get_option_index_at_cursor(request_id, qstate, pos, cursor_line)
-	local _, _, meta = question_widget.get_lines_for_question(request_id, { questions = qstate.questions }, qstate, qstate.status)
+	local meta = widget_support.get_interactive_meta(pos, qstate, "question")
+	if not pos.meta_state then
+		-- Compatibility for callers supplying a position without rendered metadata.
+		local _, _, fallback = question_widget.get_lines_for_question(request_id, { questions = qstate.questions }, qstate, qstate.status)
+		meta = fallback
+	end
 	local widget_line = cursor_line - pos.start_line
 	if not meta then return nil end
 	if (meta.option_lines or {})[0] == widget_line then return 0 end
@@ -221,6 +226,7 @@ function M.rerender_question(request_id, focus)
 
 	if widget_support.replace_rendered_block(pos, { lines = lines, highlights = highlights }) then
 		pos.status = status
+		widget_support.set_interactive_meta(pos, meta, qstate, "question")
 	elseif focus then
 		-- A queued render can replace the position map; focus its fresh block.
 		widget_support.request_focus("question", request_id)

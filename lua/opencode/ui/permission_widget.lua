@@ -80,6 +80,15 @@ local TOOL_DISPLAY_NAMES = {
 	write = "Write",
 }
 
+local PERMISSION_TITLES = {
+	external_directory = "External directory",
+	diff_review = "Diff review",
+	doom_loop = "Continue after repeated failures",
+}
+for _, tool in ipairs({ "bash", "read", "glob", "grep", "rg", "list", "webfetch", "websearch", "codesearch", "task" }) do
+	PERMISSION_TITLES[tool] = TOOL_DISPLAY_NAMES[tool]
+end
+
 ---@param name string
 ---@param fg_source string
 ---@param fallback string|nil
@@ -501,71 +510,15 @@ end
 ---@return table lines Array of description lines
 local function get_permission_description(permission_type, tool_input, perm_state)
 	tool_input = tool_input or {}
-
-	if permission_type == "bash" then
-		local lines = with_common_tool_details({ summary_line("Bash") }, permission_type, tool_input, perm_state)
-		if #lines == 1 then
+	local title = PERMISSION_TITLES[permission_type] or permission_type
+	local lines = { summary_line(title) }
+	if permission_type ~= "diff_review" and permission_type ~= "doom_loop" then
+		lines = with_common_tool_details(lines, permission_type, tool_input, perm_state)
+		if permission_type == "bash" and #lines == 1 then
 			lines = with_detail_lines(lines, "Description", "Run bash command")
 		end
-		return with_message_lines(lines, perm_state and perm_state.message)
-	elseif permission_type == "read" then
-		return with_message_lines(
-			with_common_tool_details({ summary_line("Read") }, permission_type, tool_input, perm_state),
-			perm_state and perm_state.message
-		)
-	elseif permission_type == "glob" then
-		return with_message_lines(
-			with_common_tool_details({ summary_line("Glob") }, permission_type, tool_input, perm_state),
-			perm_state and perm_state.message
-		)
-	elseif permission_type == "grep" then
-		return with_message_lines(
-			with_common_tool_details({ summary_line("Grep") }, permission_type, tool_input, perm_state),
-			perm_state and perm_state.message
-		)
-	elseif permission_type == "rg" then
-		return with_message_lines(
-			with_common_tool_details({ summary_line("Ripgrep") }, permission_type, tool_input, perm_state),
-			perm_state and perm_state.message
-		)
-	elseif permission_type == "list" then
-		return with_message_lines(
-			with_common_tool_details({ summary_line("List") }, permission_type, tool_input, perm_state),
-			perm_state and perm_state.message
-		)
-	elseif permission_type == "webfetch" then
-		return with_message_lines(
-			with_common_tool_details({ summary_line("WebFetch") }, permission_type, tool_input, perm_state),
-			perm_state and perm_state.message
-		)
-	elseif permission_type == "websearch" then
-		return with_message_lines(
-			with_common_tool_details({ summary_line("Web Search") }, permission_type, tool_input, perm_state),
-			perm_state and perm_state.message
-		)
-	elseif permission_type == "codesearch" then
-		return with_message_lines(
-			with_common_tool_details({ summary_line("Code Search") }, permission_type, tool_input, perm_state),
-			perm_state and perm_state.message
-		)
-	elseif permission_type == "external_directory" then
-		return with_message_lines(
-			with_common_tool_details({ summary_line("External directory") }, permission_type, tool_input, perm_state),
-			perm_state and perm_state.message
-		)
-	elseif permission_type == "diff_review" then
-		return with_message_lines({ summary_line("Diff review") }, perm_state and perm_state.message)
-	elseif permission_type == "doom_loop" then
-		return with_message_lines({ summary_line("Continue after repeated failures") }, perm_state and perm_state.message)
-	elseif permission_type == "task" then
-		local lines = with_common_tool_details({ summary_line("Task") }, permission_type, tool_input, perm_state)
-		return with_message_lines(lines, perm_state and perm_state.message)
-	else
-		return with_message_lines(
-			with_common_tool_details({ summary_line(permission_type) }, permission_type, tool_input, perm_state),
-			perm_state and perm_state.message
-		)
 	end
+	return with_message_lines(lines, perm_state and perm_state.message)
 end
 
 ---@param line string|nil
@@ -735,20 +688,14 @@ function M.get_lines_for_permission(permission_id, perm_state)
 		})
 end
 
--- Get formatted lines for an approved permission
----@param permission_id string
----@param perm_state table
----@return table lines, table highlights
-function M.get_approved_lines(permission_id, perm_state)
-	local saved = perm_state.reply == "always" and #(perm_state.always or {}) > 0
-	local reply_suffix = saved and "(always)" or "(once)"
+local function render_resolved(perm_state, status, reply_suffix)
 	local result = { lines = {}, highlights = {} }
 	local tool_input = resolve_tool_input(perm_state)
 	local header_title = permission_header_title(perm_state)
 	local desc_lines = get_permission_description(perm_state.permission_type, tool_input, perm_state)
 
 	add_panel_blank(result)
-	add_header(result, header_title, "approved", reply_suffix)
+	add_header(result, header_title, status, reply_suffix)
 	add_panel_blank(result)
 	append_description(result, desc_lines)
 	add_panel_blank(result)
@@ -757,24 +704,20 @@ function M.get_approved_lines(permission_id, perm_state)
 	return result.lines, result.highlights
 end
 
--- Get formatted lines for a rejected permission
+-- Compatibility entrypoints retain their existing signatures and reply suffixes.
+---@param permission_id string
+---@param perm_state table
+---@return table lines, table highlights
+function M.get_approved_lines(permission_id, perm_state)
+	local saved = perm_state.reply == "always" and #(perm_state.always or {}) > 0
+	return render_resolved(perm_state, "approved", saved and "(always)" or "(once)")
+end
+
 ---@param permission_id string
 ---@param perm_state table
 ---@return table lines, table highlights
 function M.get_rejected_lines(permission_id, perm_state)
-	local result = { lines = {}, highlights = {} }
-	local tool_input = resolve_tool_input(perm_state)
-	local header_title = permission_header_title(perm_state)
-	local desc_lines = get_permission_description(perm_state.permission_type, tool_input, perm_state)
-
-	add_panel_blank(result)
-	add_header(result, header_title, "rejected")
-	add_panel_blank(result)
-	append_description(result, desc_lines)
-	add_panel_blank(result)
-	add_trailing_separator(result)
-
-	return result.lines, result.highlights
+	return render_resolved(perm_state, "rejected")
 end
 
 return M
