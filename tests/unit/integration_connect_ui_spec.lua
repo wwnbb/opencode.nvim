@@ -74,5 +74,63 @@ describe("integration connection method selection", function()
 		input.on_submit("test-key")
 		assert.equals(1, calls)
 	end)
+	it("replaces command login messages in the authorization popup and cancels on close", function()
+		local callback, popup_options, lines, cancelled
+		local bufnr = vim.api.nvim_create_buf(false, true)
+		local popup = { mount = function() end, render = function(_, value) lines = value end }
+		popup.close = function() popup_options.on_close() end
+		local stub = require("luassert.stub")
+		stubs[#stubs + 1] = stub(require("opencode.ui.float"), "create_centered_popup", function(opts)
+			popup_options = opts
+			return popup, bufnr
+		end)
+		stubs[#stubs + 1] = stub(require("opencode.actions"), "start_integration_attempt", function(id, method, _, _, listener)
+			assert.equals("test", id); assert.equals("command", method.type)
+			callback = listener
+			return 42
+		end)
+		stubs[#stubs + 1] = stub(require("opencode.actions"), "cancel_integration_attempt", function(id) cancelled = id end)
+		integration.methods = { { type = "command" } }
+		require("opencode.ui.palette.integration").connect("test", { directory = "/tmp" })
+		local view = { id = 42, status = "polling", message = "Open https://example.invalid/login\nCode: ABCD-1234" }
+		callback(view); callback(view)
+		assert.same({ "Authorization: polling", "", "Open https://example.invalid/login", "Code: ABCD-1234", "",
+			"o: open authorization URL   c: enter code   Esc: close / cancel", "y: copy URL   Y: copy authorization instructions / code" }, lines)
+		view.message = "Open https://example.invalid/login\nCode: ABCD-1234\nWaiting for approval"
+		callback(view)
+		assert.equals("Waiting for approval", lines[5])
+		view.status, view.message, view.error = "failed", "Login refused\nTry another account", "Authorization failed"
+		callback(view)
+		assert.same({ "Authorization: failed", "", "Login refused", "Try another account", "Authorization failed", "",
+			"o: open authorization URL   c: enter code   Esc: close / cancel", "y: copy URL   Y: copy authorization instructions / code" }, lines)
+		popup.close()
+		assert.equals(42, cancelled)
+		vim.api.nvim_buf_delete(bufnr, { force = true })
+	end)
+
+	it("copies the native authorization URL/instructions and ignores stale clipboard shortcuts", function()
+		local listener, popup_options, copied = nil, nil, {}
+		local buf = vim.api.nvim_create_buf(false, true)
+		local popup = { mount = function() end, render = function() end, close = function() popup_options.on_close() end }
+		local stub = require("luassert.stub")
+		stubs[#stubs + 1] = stub(require("opencode.ui.float"), "create_centered_popup", function(opts) popup_options = opts; return popup, buf end)
+		stubs[#stubs + 1] = stub(require("opencode.actions"), "start_integration_attempt", function(_, _, _, _, callback) listener = callback; return 42 end)
+		stubs[#stubs + 1] = stub(require("opencode.actions"), "cancel_integration_attempt", function() end)
+		stubs[#stubs + 1] = stub(vim.fn, "setreg", function(register, value) copied[#copied + 1] = { register, value }; return 0 end)
+		stubs[#stubs + 1] = stub(vim.fn, "getreg", function() return copied[#copied][2] end)
+		integration.methods = { { type = "oauth" } }
+		require("opencode.ui.palette.integration").connect("test", { directory = "/tmp" })
+		listener({ id = 42, status = "polling", url = "https://example.invalid/login", instructions = "Enter code ABCD-1234" })
+		local function press(lhs)
+			for _, mapping in ipairs(vim.api.nvim_buf_get_keymap(buf, "n")) do if mapping.lhs == lhs then return mapping.callback() end end
+			error("Missing OAuth clipboard key " .. lhs)
+		end
+		press("y"); press("Y")
+		assert.same({ { '"', "https://example.invalid/login" }, { "+", "https://example.invalid/login" },
+			{ '"', "Enter code ABCD-1234" }, { "+", "Enter code ABCD-1234" } }, copied)
+		require("opencode.session.pending").invalidate(); press("y"); assert.equals(4, #copied)
+		popup.close(); press("Y"); assert.equals(4, #copied)
+		vim.api.nvim_buf_delete(buf, { force = true })
+	end)
 
 end)

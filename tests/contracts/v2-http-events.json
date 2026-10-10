@@ -1,12 +1,15 @@
 {
   "target_version": "2.0.11",
   "research_date": "2026-09-21",
-  "warning": "HTTP paths extracted from rolling OpenAPI; events extracted from pinned @opencode/client 2.0.11. Это реестр, а не полный валидатор DTO и не доказательство runtime-поведения.",
-  "http_path_count": 112,
-  "http_operation_count": 135,
+  "warning": "HTTP paths extracted from rolling OpenAPI; events extracted from pinned @opencode/client 2.0.11. Pairing route verified against packages/protocol/src/groups/server.ts on 2026-10-03. Это реестр, а не полный валидатор DTO и не доказательство runtime-поведения.",
+  "http_path_count": 113,
+  "http_operation_count": 136,
   "http_paths": {
     "/api/info": [
       "GET"
+    ],
+    "/api/pair": [
+      "POST"
     ],
     "/api/location": [
       "GET"

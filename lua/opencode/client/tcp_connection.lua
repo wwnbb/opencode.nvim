@@ -206,6 +206,15 @@ function M.open(opts)
 		connection._timer = nil
 	end
 
+	function connection.send(data)
+		if not connection._active or not connection._socket or type(data) ~= "string" then return false end
+		local request, send_err = connection._socket:write(data, function(write_err)
+			if write_err then fail("write_error", labeled_error(labels.write, write_err)) end
+		end)
+		if not request then fail("write_start_error", labeled_error(labels.write_start, send_err)); return false end
+		return true
+	end
+
 	local timeout = tonumber(opts.timeout) or 0
 	if timeout > 0 then
 		local timer = uv.new_timer()

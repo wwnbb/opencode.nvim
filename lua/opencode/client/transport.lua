@@ -5,6 +5,21 @@ local M = {}
 local http_decoder = require("opencode.client.http_decoder")
 local schedule_callback = require("opencode.util.schedule").schedule_callback
 local tcp_connection = require("opencode.client.tcp_connection")
+local endpoint = require("opencode.client.endpoint")
+
+local function target(opts)
+	local resolved, err = endpoint.resolve(opts)
+	if not resolved then return nil, err end
+	if opts.path ~= nil and type(opts.path) ~= "string" then
+		return nil, tcp_connection.make_error("Invalid HTTP request path", { code = "invalid_endpoint", retryable = false })
+	end
+	return vim.tbl_extend("force", {}, opts, { host = resolved.host, port = resolved.port,
+		path = endpoint.join(resolved, opts.path or "/"), scheme = resolved.scheme })
+end
+
+local function open_connection(opts)
+	return (opts.scheme == "https" and require("opencode.client.tls_connection") or tcp_connection).open(opts)
+end
 
 local make_error = tcp_connection.make_error
 local HTTP_TOKEN = "^[!#$%%&'*+.^_`|~%w-]+$"
@@ -53,11 +68,13 @@ end
 ---@return table|nil request Handle with idempotent cancel() and is_active().
 function M.request(opts, callback)
 	opts = opts or {}
-	local host, port, target_err = tcp_connection.normalize_target(opts)
+	local resolved, target_err = target(opts)
 	if target_err then
 		schedule_callback(callback, target_err, nil)
 		return
 	end
+	opts = resolved
+	local host, port = opts.host, opts.port
 	local request_data, request_err = build_request(vim.tbl_extend("force", {}, opts, { host = host, port = port }))
 	if not request_data then
 		schedule_callback(callback, make_error(request_err), nil)
@@ -115,9 +132,11 @@ function M.request(opts, callback)
 	})
 
 	local open_err = nil
-	connection, open_err = tcp_connection.open({
+	connection, open_err = open_connection({
 		host = host,
 		port = port,
+		scheme = opts.scheme,
+		tls = opts.tls,
 		data = request_data,
 		timeout = opts.timeout,
 		timeout_message = "Request timed out after " .. tostring(tonumber(opts.timeout) or 0) .. "ms",
@@ -170,10 +189,12 @@ end
 ---@return table|nil err
 function M.open_stream(opts)
 	opts = opts or {}
-	local host, port, target_err = tcp_connection.normalize_target(opts)
+	local resolved, target_err = target(opts)
 	if target_err then
 		return nil, target_err
 	end
+	opts = resolved
+	local host, port = opts.host, opts.port
 	local request_data, request_err = build_request(vim.tbl_extend("force", {}, opts, {
 		host = host, port = port, connection = opts.connection or "keep-alive",
 	}))
@@ -219,9 +240,11 @@ function M.open_stream(opts)
 	})
 
 	local open_err = nil
-	connection, open_err = tcp_connection.open({
+	connection, open_err = open_connection({
 		host = host,
 		port = port,
+		scheme = opts.scheme,
+		tls = opts.tls,
 		data = request_data,
 		timeout = opts.timeout,
 		timeout_message = "Stream request timed out after " .. tostring(opts.timeout) .. "ms",

@@ -28,25 +28,11 @@ describe("opencode transport", function()
 	end)
 
 	it("handles shared TCP lifecycle and HTTP bodies", function()
-vim.opt.runtimepath:append(vim.fn.getcwd())
-
 local uv = vim.uv
 local transport = require("opencode.client.transport")
 
-local function assert_eq(actual, expected, message)
-	if actual ~= expected then
-		error(string.format("%s: expected %s, got %s", message, vim.inspect(expected), vim.inspect(actual)))
-	end
-end
-
-local function assert_true(value, message)
-	if not value then
-		error(message)
-	end
-end
-
 local function wait_until(predicate, message)
-	assert_true(vim.wait(2000, predicate, 10), message)
+	assert.is_truthy(vim.wait(2000, predicate, 10), message)
 end
 
 local function safe_close(handle)
@@ -197,13 +183,13 @@ for _, kind in ipairs({ "request", "stream" }) do
 		opts.on_error = function(err) result_err = err end
 		opts.on_close = function() done = true end
 		local stream, err = transport.open_stream(opts)
-		assert_true(stream ~= nil, err and err.message)
+		assert.is_truthy(stream ~= nil, err and err.message)
 	end
 	local completed = vim.wait(2000, function() return done end, 10)
 	server.close()
-	assert_true(completed, "IPv6 " .. kind .. " did not complete")
-	assert_eq(result_err, nil, "IPv6 " .. kind .. " should connect")
-	assert_eq(content, "ipv6", "IPv6 " .. kind .. " body")
+	assert.is_truthy(completed, "IPv6 " .. kind .. " did not complete")
+	assert.equals(nil, result_err, "IPv6 " .. kind .. " should connect")
+	assert.equals("ipv6", content, "IPv6 " .. kind .. " body")
 end
 
 do
@@ -213,9 +199,9 @@ do
 		"world",
 	}, false)
 
-	assert_eq(err, nil, "content-length request should not error")
-	assert_eq(response.status, 200, "content-length status")
-	assert_eq(response.body, "hello world", "content-length body")
+	assert.equals(nil, err, "content-length request should not error")
+	assert.equals(200, response.status, "content-length status")
+	assert.equals("hello world", response.body, "content-length body")
 end
 
 do
@@ -224,9 +210,9 @@ do
 		"lo\r\n6;ext=1\r\n world\r\n0\r\nX-Trailer: ok\r\n\r\n",
 	}, false)
 
-	assert_eq(err, nil, "chunked request should not error")
-	assert_eq(response.status, 200, "chunked status")
-	assert_eq(response.body, "hello world", "chunked body")
+	assert.equals(nil, err, "chunked request should not error")
+	assert.equals(200, response.status, "chunked status")
+	assert.equals("hello world", response.body, "chunked body")
 end
 
 do
@@ -234,9 +220,9 @@ do
 		"HTTP/1.1 200 OK\r\nConnection: close\r\n\r\nclose-body",
 	}, true)
 
-	assert_eq(err, nil, "close-delimited request should not error")
-	assert_eq(response.status, 200, "close-delimited status")
-	assert_eq(response.body, "close-body", "close-delimited body")
+	assert.equals(nil, err, "close-delimited request should not error")
+	assert.equals(200, response.status, "close-delimited status")
+	assert.equals("close-body", response.body, "close-delimited body")
 end
 
 do
@@ -244,9 +230,9 @@ do
 		"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\nZ\r\n",
 	}, false)
 
-	assert_true(err ~= nil, "invalid chunk request should error")
-	assert_true((err.message or err.error or ""):find("chunked", 1, true) ~= nil, "invalid chunk error should mention chunked")
-	assert_eq(response, nil, "invalid chunk response")
+	assert.is_truthy(err ~= nil, "invalid chunk request should error")
+	assert.is_truthy((err.message or err.error or ""):find("chunked", 1, true) ~= nil, "invalid chunk error should mention chunked")
+	assert.equals(nil, response, "invalid chunk response")
 end
 
 do
@@ -261,18 +247,18 @@ do
 		callbacks = callbacks + 1
 		result_err, result_response = err, response
 	end)
-	assert_true(request.is_active(), "new request should be active")
+	assert.is_truthy(request.is_active(), "new request should be active")
 	wait_until(function() return server.requests() == 1 end, "server did not receive completion")
-	assert_true(request.cancel(), "first cancellation should finish the request")
-	assert_eq(request.cancel(), false, "repeat cancellation is a no-op")
-	assert_eq(request.is_active(), false, "cancelled request should be inactive")
+	assert.is_truthy(request.cancel(), "first cancellation should finish the request")
+	assert.equals(false, request.cancel(), "repeat cancellation is a no-op")
+	assert.equals(false, request.is_active(), "cancelled request should be inactive")
 	wait_until(function() return callbacks == 1 and server.closed_clients() == 1 end, "cancellation should close the TCP socket")
 	vim.wait(150, function() return callbacks > 1 end, 10)
-	assert_eq(callbacks, 1, "late response and original timeout must not call back again")
-	assert_eq(result_err.code, "cancelled", "structured cancellation error")
-	assert_eq(result_err.cancelled, true, "cancellation marker")
-	assert_eq(result_err.retryable, false, "cancellation should not trigger retry")
-	assert_eq(result_response, nil, "cancelled response")
+	assert.equals(1, callbacks, "late response and original timeout must not call back again")
+	assert.equals("cancelled", result_err.code, "structured cancellation error")
+	assert.equals(true, result_err.cancelled, "cancellation marker")
+	assert.equals(false, result_err.retryable, "cancellation should not trigger retry")
+	assert.equals(nil, result_response, "cancelled response")
 	server.close()
 end
 
@@ -286,10 +272,10 @@ do
 		result_err = err
 	end)
 	wait_until(function() return callbacks == 1 and server.closed_clients() == 1 end, "request timeout should close the socket")
-	assert_eq(result_err.timeout, true, "request timeout marker")
-	assert_eq(request.is_active(), false, "timed out request should be inactive")
-	assert_eq(request.cancel(), false, "cancellation after timeout is a no-op")
-	assert_eq(callbacks, 1, "timeout callback should run once")
+	assert.equals(true, result_err.timeout, "request timeout marker")
+	assert.equals(false, request.is_active(), "timed out request should be inactive")
+	assert.equals(false, request.cancel(), "cancellation after timeout is a no-op")
+	assert.equals(1, callbacks, "timeout callback should run once")
 	server.close()
 end
 
@@ -332,16 +318,16 @@ do
 		end,
 	})
 
-	assert_eq(err, nil, "chunked stream open should not error")
-	assert_true(stream ~= nil, "chunked stream should be returned")
+	assert.equals(nil, err, "chunked stream open should not error")
+	assert.is_truthy(stream ~= nil, "chunked stream should be returned")
 	wait_until(function()
 		return close_reason ~= nil
 	end, "chunked stream should close after terminal chunk")
 
-	assert_eq(stream_err, nil, "chunked stream should not error")
-	assert_eq(headers_status, 200, "chunked stream status")
-	assert_eq(table.concat(data_chunks), payload_a .. payload_b, "chunked stream data should be decoded SSE payload")
-	assert_eq(table.concat(data_chunks):find("\r\n", 1, true), nil, "chunked stream data should not include chunk framing")
+	assert.equals(nil, stream_err, "chunked stream should not error")
+	assert.equals(200, headers_status, "chunked stream status")
+	assert.equals(payload_a .. payload_b, table.concat(data_chunks), "chunked stream data should be decoded SSE payload")
+	assert.equals(nil, table.concat(data_chunks):find("\r\n", 1, true), "chunked stream data should not include chunk framing")
 
 	server.close()
 end
@@ -365,18 +351,15 @@ do
 		end,
 	})
 
-	assert_eq(err, nil, "EOF-before-headers stream open should not error synchronously")
-	assert_true(stream ~= nil, "EOF-before-headers stream should be returned")
+	assert.equals(nil, err, "EOF-before-headers stream open should not error synchronously")
+	assert.is_truthy(stream ~= nil, "EOF-before-headers stream should be returned")
 	wait_until(function()
 		return close_reason ~= nil
 	end, "EOF-before-headers stream should close")
 
-	assert_eq(close_reason, "eof", "EOF-before-headers close reason")
-	assert_true(stream_err ~= nil, "EOF-before-headers stream should error")
-	assert_true(
-		(stream_err.message or stream_err.error or ""):find("Stream closed before response headers", 1, true) ~= nil,
-		"EOF-before-headers error message"
-	)
+	assert.equals("eof", close_reason, "EOF-before-headers close reason")
+	assert.is_truthy(stream_err ~= nil, "EOF-before-headers stream should error")
+	assert.is_truthy((stream_err.message or stream_err.error or ""):find("Stream closed before response headers", 1, true) ~= nil, "EOF-before-headers error message")
 
 	server.close()
 end

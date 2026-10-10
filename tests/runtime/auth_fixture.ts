@@ -29,5 +29,7 @@ export default Plugin.define({
       command: ["/usr/bin/printf", '{"type":"key","key":"public-command-key"}'] } })
     editor.method.update({ integrationID, method: { id: "test-command-cancel", type: "command", label: "Test command cancel",
       command: ["/bin/sleep", "30"] } })
+    editor.method.update({ integrationID, method: { id: "test-command-message", type: "command", label: "Test manual command",
+      command: ["/bin/sh", "-c", "printf 'Visit https://example.invalid/device\\nCode: PUBLIC-123\\n' >&2; sleep 2; printf 'Public command failure\\n' >&2; exit 1"] } })
   }),
 })

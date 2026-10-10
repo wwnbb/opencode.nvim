@@ -6,6 +6,17 @@ local schedule_callback = require("opencode.util.schedule").schedule_callback
 local operations = {
 	rpc_call = { "POST", "/api/rpc/{rpcID}/{method}", "rpc" },
 	info = { "GET", "/api/info", "info" },
+	server_pair = { "POST", "/api/pair", "pairing" },
+	vcs_info = { "GET", "/api/vcs", "catalog_object" },
+	vcs_base = { "GET", "/api/vcs/base", "nullable_catalog_object" },
+	vcs_branches = { "GET", "/api/vcs/branch", "catalog" },
+	vcs_diff = { "GET", "/api/vcs/diff", "catalog" },
+	project_list = { "GET", "/api/project", "projects" },
+	location_get = { "GET", "/api/location", "location" },
+	worktree_list = { "GET", "/api/worktree", "worktrees" },
+	worktree_create = { "POST", "/api/worktree", "worktree" },
+	worktree_remove = { "DELETE", "/api/worktree", "empty" },
+	worktree_refresh = { "POST", "/api/worktree/refresh", "empty" },
 	location_reload = { "POST", "/api/location/reload", "empty" },
 	session_fork = { "POST", "/api/session/{sessionID}/fork", "session" },
 	session_export = { "GET", "/api/experimental/session/{sessionID}/export", "transfer" },
@@ -19,8 +30,23 @@ local operations = {
 	session_create = { "POST", "/api/session", "session" },
 	session_get = { "GET", "/api/session/{sessionID}", "session" },
 	session_update = { "PATCH", "/api/session/{sessionID}", "empty" },
+	session_move = { "POST", "/api/session/{sessionID}/move", "empty" },
+	session_view = { "POST", "/api/session/{sessionID}/view", "empty" },
+	pty_list = { "GET", "/api/experimental/session/{sessionID}/terminal", "pty_list" },
+	pty_create = { "POST", "/api/experimental/session/{sessionID}/terminal", "pty_info" },
+	pty_get = { "GET", "/api/experimental/persistent-pty/{ptyID}", "pty_info" },
+	pty_update = { "PUT", "/api/experimental/persistent-pty/{ptyID}", "pty_info" },
+	pty_snapshot = { "GET", "/api/experimental/persistent-pty/{ptyID}/snapshot", "pty_snapshot" },
+	pty_remove = { "DELETE", "/api/experimental/persistent-pty/{ptyID}", "empty" },
 	session_delete = { "DELETE", "/api/session/{sessionID}", "empty" },
 	session_active = { "GET", "/api/session/active", "object" },
+	session_shell = { "POST", "/api/session/{sessionID}/shell", "empty" },
+	session_background = { "POST", "/api/session/{sessionID}/background", "empty" },
+	session_environment = { "PUT", "/api/session/{sessionID}/environment", "empty" },
+	shell_list = { "GET", "/api/shell", "shell_list" },
+	shell_get = { "GET", "/api/shell/{id}", "shell_info" },
+	shell_output = { "GET", "/api/shell/{id}/output", "shell_output" },
+	shell_remove = { "DELETE", "/api/shell/{id}", "empty" },
 	message_list = { "GET", "/api/session/{sessionID}/message", "page" },
 	agent_list = { "GET", "/api/agent", "catalog" },
 	model_list = { "GET", "/api/model", "catalog" },
@@ -40,7 +66,9 @@ local operations = {
 	credential_update = { "PATCH", "/api/credential/{credentialID}", "empty" },
 	credential_activate = { "POST", "/api/credential/{credentialID}/activate", "empty" },
 	skill_list = { "GET", "/api/skill", "catalog" },
-	plugin_list = { "GET", "/api/plugin", "catalog" },
+	plugin_list = { "GET", "/api/plugin", "plugins" },
+	plugin_check = { "POST", "/api/plugin/check", "plugins" },
+	plugin_update = { "POST", "/api/plugin/update", "empty" },
 	command_list = { "GET", "/api/command", "catalog" },
 	mcp_connect = { "POST", "/api/experimental/mcp/{server}/connect", "empty" },
 	mcp_disconnect = { "POST", "/api/experimental/mcp/{server}/disconnect", "empty" },
@@ -73,6 +101,21 @@ M.encode_segment = require("opencode.util.text").encode_uri_component
 
 local function object(value)
 	return type(value) == "table" and not vim.islist(value)
+end
+
+local function integer(value, positive)
+	return type(value) == "number" and value >= (positive and 1 or 0) and value <= 9007199254740991 and value % 1 == 0
+end
+
+function M.validate_pty(info)
+	if not object(info) or type(info.id) ~= "string" or not info.id:match("^pty") or type(info.sessionID) ~= "string"
+		or type(info.title) ~= "string" or type(info.command) ~= "string" or not require("opencode.util.path").is_absolute(info.cwd)
+		or not vim.tbl_contains({ "running", "exited" }, info.status) or not integer(info.pid)
+		or type(info.args) ~= "table" or not vim.islist(info.args) or not object(info.size)
+		or not integer(info.size.cols, true) or not integer(info.size.rows, true) or info.size.cols > 65535 or info.size.rows > 65535
+		or not object(info.output) or not integer(info.output.head) or not integer(info.output.tail) or info.output.head > info.output.tail then
+		return "Invalid persistent PTY response"
+	end
 end
 
 function M.validate_info(info)
@@ -112,8 +155,32 @@ local function decode(shape, body, meta)
 		if err then return nil, err end
 		return body
 	end
-	if shape == "array" then
+	if shape == "location" then
+		local path = require("opencode.util.path")
+		if not object(body) or not path.is_absolute(body.directory) or not object(body.project)
+			or type(body.project.id) ~= "string" or not path.is_absolute(body.project.directory)
+			or not path.is_absolute(body.project.canonical) then return nil, "Invalid location response" end
+		return body
+	end
+	if shape == "pairing" then
+		if not object(body) or type(body.code) ~= "string" or not body.code:match("^[%w_%-]+$")
+			or type(body.expires_in) ~= "number" or body.expires_in <= 0 or body.expires_in >= math.huge
+			or body.expires_in % 1 ~= 0 then return nil, "Invalid server pairing response" end
+		return body
+	end
+	if shape == "worktree" then
+		if not object(body) or not require("opencode.util.path").is_absolute(body.directory) then return nil, "Invalid worktree response" end
+		return body
+	end
+	if shape == "array" or shape == "projects" or shape == "worktrees" then
 		if type(body) ~= "table" or not vim.islist(body) then return nil, "Invalid v2 array response" end
+		if shape ~= "array" then
+			local path = require("opencode.util.path")
+			for _, entry in ipairs(body) do
+				if not object(entry) or (shape == "projects" and (type(entry.id) ~= "string" or not path.is_absolute(entry.canonical)))
+					or (shape == "worktrees" and not path.is_absolute(entry.directory)) then return nil, "Invalid " .. shape .. " entry" end
+			end
+		end
 		return body
 	end
 	if shape == "interrupt" then
@@ -122,6 +189,35 @@ local function decode(shape, body, meta)
 	end
 	if not object(body) or body.data == nil then return nil, "Missing v2 response data" end
 	local data = body.data
+	if shape == "pty_list" or shape == "pty_info" or shape == "pty_snapshot" then
+		if shape == "pty_list" and (type(data) ~= "table" or not vim.islist(data)) then return nil, "Invalid persistent PTY list" end
+		if shape == "pty_snapshot" then
+			if not object(data) or type(data.text) ~= "string" or type(data.checkpoint) ~= "string" or #data.checkpoint > 12 * 1024 * 1024
+				or not object(data.cursor) or not integer(data.cursor.x) or not integer(data.cursor.y) then return nil, "Invalid persistent PTY snapshot" end
+		end
+		for _, info in ipairs(shape == "pty_list" and data or { shape == "pty_snapshot" and data.info or data }) do
+			local err = M.validate_pty(info); if err then return nil, err end
+		end
+		return data
+	end
+	if shape == "shell_list" or shape == "shell_info" or shape == "shell_output" then
+		if not object(body.location) or not require("opencode.util.path").is_absolute(body.location.directory) then return nil, "Missing shell location" end
+		meta.location = body.location
+		if shape == "shell_output" then
+			local function count(value) return type(value) == "number" and value >= 0 and value < math.huge and value % 1 == 0 end
+			if not object(data) or type(data.output) ~= "string" or not count(data.cursor) or not count(data.size)
+				or data.cursor > data.size or type(data.truncated) ~= "boolean" then return nil, "Invalid shell output" end
+		else
+			if shape == "shell_list" and (type(data) ~= "table" or not vim.islist(data)) then return nil, "Invalid shell list" end
+			for _, info in ipairs(shape == "shell_list" and data or { data }) do
+				if not object(info) or type(info.id) ~= "string" or not info.id:match("^sh_") or type(info.command) ~= "string"
+					or type(info.cwd) ~= "string" or type(info.shell) ~= "string" or type(info.file) ~= "string"
+					or not object(info.metadata) or not object(info.time) or type(info.time.started) ~= "number"
+					or not vim.tbl_contains({ "running", "exited", "timeout", "killed" }, info.status) then return nil, "Invalid shell info" end
+			end
+		end
+		return data
+	end
 	if shape == "permission_effect" then
 		if not object(data) or type(data.id) ~= "string" or not vim.tbl_contains({ "allow", "ask", "deny" }, data.effect) then
 			return nil, "Invalid permission evaluation response"
@@ -152,19 +248,35 @@ local function decode(shape, body, meta)
 				return nil, "Invalid v2 session export message"
 			end
 		end
-	elseif shape == "catalog" or shape == "nullable_catalog_object" or shape == "catalog_object"
+	elseif shape == "catalog" or shape == "plugins" or shape == "nullable_catalog_object" or shape == "catalog_object"
 		or shape == "attempt" or shape == "command_attempt" or shape == "attempt_status" then
 		if not object(body.location) or type(body.location.directory) ~= "string" then
 			return nil, "Missing v2 response location"
 		end
 		meta.location = body.location
-		if shape == "catalog" and (type(data) ~= "table" or not vim.islist(data)) then
+		if (shape == "catalog" or shape == "plugins") and (type(data) ~= "table" or not vim.islist(data)) then
 			return nil, "Invalid v2 catalog response"
+		end
+		if shape == "plugins" then
+			for _, plugin in ipairs(data) do
+				if not object(plugin) or not object(plugin.source) or not object(plugin.state)
+					or (plugin.id ~= nil and type(plugin.id) ~= "string")
+					or not vim.tbl_contains({ "builtin", "package", "local", "sdk" }, plugin.source.type)
+					or not vim.tbl_contains({ "active", "failed" }, plugin.state.status)
+					or (plugin.state.status == "failed" and type(plugin.state.error) ~= "string")
+					or (plugin.source.type == "package" and type(plugin.source.target) ~= "string")
+					or (plugin.source.type == "local" and type(plugin.source.path) ~= "string")
+					or (plugin.source.outdated ~= nil and plugin.source.outdated ~= true)
+					or (plugin.source.updating ~= nil and plugin.source.updating ~= true)
+					or (plugin.source.version ~= nil and type(plugin.source.version) ~= "string") then
+					return nil, "Invalid server plugin response"
+				end
+			end
 		end
 		if shape == "nullable_catalog_object" and data ~= vim.NIL and not object(data) then
 			return nil, "Invalid v2 default model response"
 		end
-		if shape ~= "catalog" and shape ~= "nullable_catalog_object" and not object(data) then
+		if shape ~= "catalog" and shape ~= "plugins" and shape ~= "nullable_catalog_object" and not object(data) then
 			return nil, "Invalid v2 catalog object"
 		end
 		if shape == "attempt" or shape == "command_attempt" or shape == "attempt_status" then
@@ -215,6 +327,7 @@ function M.request(name, args, callback)
 		callback(nil, value, meta)
 	end
 	local method = operation[1]:lower()
+	if method == "delete" then opts.body = args.body end
 	if method == "get" or method == "delete" then
 		return http[method](path, done, opts)
 	else

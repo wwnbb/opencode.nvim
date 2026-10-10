@@ -48,7 +48,8 @@ describe("HTTP request framing", function()
 	it("uses mixed-case overrides exactly once in requests and streams", function()
 		local opts = { host = "localhost", port = 1234, body = "body",
 			headers = { hOsT = "override:1234", cOnNeCtIoN = "close", ["CONTENT-LENGTH"] = 4 } }
-		transport.request(opts, function() end)
+		local completions = 0
+		transport.request(opts, function() completions = completions + 1 end)
 		transport.open_stream(opts)
 		assert.equals(2, #opened)
 		for _, data in ipairs(opened) do
@@ -62,16 +63,17 @@ describe("HTTP request framing", function()
 			assert.equals("close", headers.connection)
 			assert.equals("4", headers["content-length"])
 		end
-		vim.wait(20, function() return false end, 5)
+		assert.is_true(vim.wait(100, function() return completions == 1 end, 5))
 	end)
 
 	it("keeps valid tokens, IPv6, numeric headers and arbitrary body bytes", function()
 		local body = "body\r\n\0tail"
 		local opts = { host = "::1", port = 1234, method = "post", path = "/api?name=a%20b",
 			headers = { ["X-HTTP_Test!"] = 42 }, body = body }
+		local completions = 0
 		for _, host in ipairs({ "::1", "[::1]" }) do
 			opts.host = host
-			transport.request(opts, function() end)
+			transport.request(opts, function() completions = completions + 1 end)
 			transport.open_stream(opts)
 		end
 		assert.equals(4, #opened)
@@ -82,6 +84,6 @@ describe("HTTP request framing", function()
 			assert.is_truthy(request:find("Content-Length: " .. #body .. "\r\n", 1, true))
 			assert.equals(body, request:sub(-#body))
 		end
-		vim.wait(20, function() return false end, 5)
+		assert.is_true(vim.wait(100, function() return completions == 2 end, 5))
 	end)
 end)

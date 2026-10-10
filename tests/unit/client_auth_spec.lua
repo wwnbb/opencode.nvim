@@ -10,18 +10,6 @@ local MODULE_NAMES = {
 	"opencode.client.transport",
 }
 
-local function assert_eq(actual, expected, message)
-	if actual ~= expected then
-		error(string.format("%s: expected %s, got %s", message, vim.inspect(expected), vim.inspect(actual)))
-	end
-end
-
-local function assert_true(value, message)
-	if not value then
-		error(message)
-	end
-end
-
 describe("opencode client Basic auth", function()
 	local original_modules
 	local original_schedule
@@ -156,7 +144,7 @@ describe("opencode client Basic auth", function()
 
 		local header, err = auth.header("alice", "secret", {
 			modern = function(value)
-				assert_eq(value, "alice:secret", "modern encoder input")
+				assert.equals("alice:secret", value, "modern encoder input")
 				return "YWxpY2U6c2VjcmV0"
 			end,
 			legacy = function()
@@ -164,25 +152,25 @@ describe("opencode client Basic auth", function()
 				return "legacy"
 			end,
 		})
-		assert_eq(header, "Basic YWxpY2U6c2VjcmV0", "modern header")
-		assert_eq(err, nil, "modern error")
-		assert_eq(legacy_calls, 0, "modern precedence")
+		assert.equals("Basic YWxpY2U6c2VjcmV0", header, "modern header")
+		assert.equals(nil, err, "modern error")
+		assert.equals(0, legacy_calls, "modern precedence")
 
 		header, err = auth.header("alice", "secret", {
 			modern = function()
 				error("modern failure")
 			end,
 			legacy = function(value)
-				assert_eq(value, "alice:secret", "legacy encoder input")
+				assert.equals("alice:secret", value, "legacy encoder input")
 				return "YWxpY2U6c2VjcmV0"
 			end,
 		})
-		assert_eq(header, "Basic YWxpY2U6c2VjcmV0", "legacy header")
-		assert_eq(err, nil, "legacy error")
+		assert.equals("Basic YWxpY2U6c2VjcmV0", header, "legacy header")
+		assert.equals(nil, err, "legacy error")
 
 		header, err = auth.header("alice", "secret", {})
-		assert_eq(header, nil, "unavailable encoder header")
-		assert_eq(err, AUTH_ERROR, "unavailable encoder error")
+		assert.equals(nil, header, "unavailable encoder header")
+		assert.equals(AUTH_ERROR, err, "unavailable encoder error")
 
 		local ok, failed_header, failed_err = pcall(auth.header, "alice", "secret", {
 			modern = function()
@@ -192,9 +180,9 @@ describe("opencode client Basic auth", function()
 				error("E117: Unknown function: base64encode")
 			end,
 		})
-		assert_true(ok, "throwing encoders should not escape")
-		assert_eq(failed_header, nil, "throwing encoder header")
-		assert_eq(failed_err, AUTH_ERROR, "throwing encoder error")
+		assert.is_truthy(ok, "throwing encoders should not escape")
+		assert.equals(nil, failed_header, "throwing encoder header")
+		assert.equals(AUTH_ERROR, failed_err, "throwing encoder error")
 
 		local encoder_calls = 0
 		header, err = auth.header("alice", nil, {
@@ -205,9 +193,9 @@ describe("opencode client Basic auth", function()
 				encoder_calls = encoder_calls + 1
 			end,
 		})
-		assert_eq(header, nil, "passwordless header")
-		assert_eq(err, nil, "passwordless error")
-		assert_eq(encoder_calls, 0, "passwordless encoder calls")
+		assert.equals(nil, header, "passwordless header")
+		assert.equals(nil, err, "passwordless error")
+		assert.equals(0, encoder_calls, "passwordless encoder calls")
 	end)
 
 	it("preserves passwordless HTTP and SSE and applies generated HTTP auth", function()
@@ -227,19 +215,19 @@ describe("opencode client Basic auth", function()
 		end)
 
 		local client = setup_client(nil)
-		assert_eq(client.connect_events(), true, "passwordless SSE result")
+		assert.equals(true, client.connect_events(), "passwordless SSE result")
 
 		http.setup({ auth = { username = "alice", password = "secret" } })
 		http.get("/authenticated", function()
 			callback_count = callback_count + 1
 		end)
 
-		assert_eq(#request_calls, 2, "HTTP request count")
-		assert_eq(request_calls[1].headers.Authorization, nil, "passwordless HTTP header")
-		assert_eq(request_calls[2].headers.Authorization, "Basic encoded", "authenticated HTTP header")
-		assert_eq(callback_count, 2, "HTTP callback count")
-		assert_eq(#stream_calls, 1, "passwordless SSE stream count")
-		assert_eq(stream_calls[1].headers.Authorization, nil, "passwordless SSE header")
+		assert.equals(2, #request_calls, "HTTP request count")
+		assert.equals(nil, request_calls[1].headers.Authorization, "passwordless HTTP header")
+		assert.equals("Basic encoded", request_calls[2].headers.Authorization, "authenticated HTTP header")
+		assert.equals(2, callback_count, "HTTP callback count")
+		assert.equals(1, #stream_calls, "passwordless SSE stream count")
+		assert.equals(nil, stream_calls[1].headers.Authorization, "passwordless SSE header")
 	end)
 
 	it("schedules one HTTP auth error and never calls transport", function()
@@ -260,16 +248,16 @@ describe("opencode client Basic auth", function()
 			end)
 		end)
 
-		assert_true(ok, "HTTP auth failure threw: " .. tostring(thrown))
-		assert_eq(#request_calls, 0, "HTTP transport calls")
-		assert_eq(#scheduled, 1, "scheduled callback count")
-		assert_eq(callback_count, 0, "callback should be deferred")
+		assert.is_truthy(ok, "HTTP auth failure threw: " .. tostring(thrown))
+		assert.equals(0, #request_calls, "HTTP transport calls")
+		assert.equals(1, #scheduled, "scheduled callback count")
+		assert.equals(0, callback_count, "callback should be deferred")
 
 		scheduled[1]()
-		assert_eq(callback_count, 1, "HTTP callback count")
-		assert_eq(callback_data, nil, "HTTP callback data")
-		assert_eq(callback_err.error, AUTH_ERROR, "HTTP error field")
-		assert_eq(callback_err.message, AUTH_ERROR, "HTTP message field")
+		assert.equals(1, callback_count, "HTTP callback count")
+		assert.equals(nil, callback_data, "HTTP callback data")
+		assert.equals(AUTH_ERROR, callback_err.error, "HTTP error field")
+		assert.equals(AUTH_ERROR, callback_err.message, "HTTP message field")
 	end)
 
 	it("clears old credentials when configuring a passwordless server", function()
@@ -316,11 +304,11 @@ describe("opencode client Basic auth", function()
 		stub_auth("Basic encoded", nil)
 		local client = setup_client("secret")
 
-		assert_eq(client.connect_events(), true, "initial SSE result")
-		assert_eq(client.connect_events(), true, "existing SSE result")
-		assert_eq(#stream_calls, 1, "SSE stream calls")
-		assert_eq(stream_calls[1].headers.Authorization, "Basic encoded", "SSE Authorization header")
-		assert_true(client.sse.status().has_stream, "SSE stream state")
+		assert.equals(true, client.connect_events(), "initial SSE result")
+		assert.equals(true, client.connect_events(), "existing SSE result")
+		assert.equals(1, #stream_calls, "SSE stream calls")
+		assert.equals("Basic encoded", stream_calls[1].headers.Authorization, "SSE Authorization header")
+		assert.is_truthy(client.sse.status().has_stream, "SSE stream state")
 	end)
 
 	it("returns fatal SSE auth failure without a stream or reconnect", function()
@@ -332,16 +320,16 @@ describe("opencode client Basic auth", function()
 		end)
 
 		local connected, err = client.connect_events()
-		assert_eq(connected, false, "SSE auth result")
-		assert_eq(err, AUTH_ERROR, "SSE auth error")
-		assert_eq(#errors, 1, "SSE auth error emissions")
-		assert_eq(errors[1], AUTH_ERROR, "SSE emitted auth error")
-		assert_eq(#stream_calls, 0, "SSE auth stream calls")
+		assert.equals(false, connected, "SSE auth result")
+		assert.equals(AUTH_ERROR, err, "SSE auth error")
+		assert.equals(1, #errors, "SSE auth error emissions")
+		assert.equals(AUTH_ERROR, errors[1], "SSE emitted auth error")
+		assert.equals(0, #stream_calls, "SSE auth stream calls")
 
 		local status = client.sse.status()
-		assert_eq(status.connected, false, "SSE auth connected state")
-		assert_eq(status.has_stream, false, "SSE auth stream state")
-		assert_eq(status.reconnect_count, 0, "SSE auth reconnect count")
+		assert.equals(false, status.connected, "SSE auth connected state")
+		assert.equals(false, status.has_stream, "SSE auth stream state")
+		assert.equals(0, status.reconnect_count, "SSE auth reconnect count")
 	end)
 
 	it("returns synchronous SSE stream-open failure after scheduling reconnect", function()
@@ -357,16 +345,16 @@ describe("opencode client Basic auth", function()
 		end)
 
 		local connected, err = client.connect_events()
-		assert_eq(connected, false, "SSE open result")
-		assert_eq(err, "dial failed", "SSE open error")
-		assert_eq(#errors, 1, "SSE open error emissions")
-		assert_eq(errors[1], "dial failed", "SSE emitted open error")
-		assert_eq(#stream_calls, 1, "SSE open calls")
+		assert.equals(false, connected, "SSE open result")
+		assert.equals("dial failed", err, "SSE open error")
+		assert.equals(1, #errors, "SSE open error emissions")
+		assert.equals("dial failed", errors[1], "SSE emitted open error")
+		assert.equals(1, #stream_calls, "SSE open calls")
 
 		local status = client.sse.status()
-		assert_eq(status.connected, false, "SSE open connected state")
-		assert_eq(status.has_stream, false, "SSE open stream state")
-		assert_eq(status.reconnect_count, 1, "SSE open reconnect count")
+		assert.equals(false, status.connected, "SSE open connected state")
+		assert.equals(false, status.has_stream, "SSE open stream state")
+		assert.equals(1, status.reconnect_count, "SSE open reconnect count")
 	end)
 
 	it("resets SSE reconnect_count on disconnect", function()
@@ -377,10 +365,10 @@ describe("opencode client Basic auth", function()
 
 		local client = setup_client("secret")
 		client.connect_events()
-		assert_eq(client.sse.status().reconnect_count, 1, "failed open increments reconnect")
+		assert.equals(1, client.sse.status().reconnect_count, "failed open increments reconnect")
 
 		client.disconnect_events()
-		assert_eq(client.sse.status().reconnect_count, 0, "disconnect resets reconnect")
+		assert.equals(0, client.sse.status().reconnect_count, "disconnect resets reconnect")
 	end)
 
 	it("emits an error when SSE reconnect gives up", function()
@@ -410,20 +398,20 @@ describe("opencode client Basic auth", function()
 				found = true
 			end
 		end
-		assert_true(found, "give-up error")
+		assert.is_truthy(found, "give-up error")
 	end)
 
 	it("ignores a stale SSE close after a newer stream is connected", function()
 		stub_auth("Basic encoded", nil)
 		local client = setup_client("secret")
 
-		assert_eq(client.connect_events(), true, "first stream")
+		assert.equals(true, client.connect_events(), "first stream")
 		local first_on_close = stream_calls[1].on_close
 		client.disconnect_events()
-		assert_eq(client.connect_events(), true, "second stream")
-		assert_eq(#stream_calls, 2, "second stream opened")
+		assert.equals(true, client.connect_events(), "second stream")
+		assert.equals(2, #stream_calls, "second stream opened")
 
 		first_on_close("stale close")
-		assert_true(client.sse.status().has_stream, "new stream survives stale close")
+		assert.is_truthy(client.sse.status().has_stream, "new stream survives stale close")
 	end)
 end)
