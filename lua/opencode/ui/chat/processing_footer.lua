@@ -25,15 +25,6 @@ local function has_metadata(message)
 		)
 end
 
-local function last_assistant(messages)
-	for i = #messages, 1, -1 do
-		if messages[i].role == "assistant" then
-			return messages[i]
-		end
-	end
-	return nil
-end
-
 local function metadata_projection(message)
 	message = type(message) == "table" and message or {}
 	return {
@@ -57,12 +48,11 @@ end
 function M.has_pending_response_gap(messages)
 	messages = messages or {}
 	local last_message = messages[#messages]
-	local assistant = last_assistant(messages)
-	if not last_message or last_message.role ~= "assistant" or not assistant then
+	if not last_message or last_message.role ~= "assistant" then
 		return true
 	end
-	local completed = assistant.time and assistant.time.completed ~= nil
-	return not completed or assistant.finish == "tool-calls"
+	local completed = last_message.time and last_message.time.completed ~= nil
+	return not completed or last_message.finish == "tool-calls"
 end
 
 ---@param messages table[]
