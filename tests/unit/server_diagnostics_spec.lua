@@ -1,0 +1,81 @@
+describe("native server diagnostics", function()
+	local diagnostics = require("opencode.diagnostics")
+	local state, sync = require("opencode.state"), require("opencode.sync")
+	local menu, pending = require("opencode.ui.menu"), require("opencode.session.pending")
+	local directory, saved_open, picker, saved_notify, notices, original_buffer
+	local function diagnostic(text, line, character)
+		return { severity = 1, message = text, range = { start = { line = line or 0, character = character or 0 } } }
+	end
+	local function seed(message_id, filename, list)
+		sync.handle_message_updated({ id = message_id, sessionID = "s", role = "assistant" })
+		sync.handle_part_updated({ id = "part_" .. message_id, messageID = message_id, type = "tool", tool = "edit",
+			state = { status = "completed", input = { path = filename }, metadata = { diagnostics = { [filename] = list } } } })
+	end
+	before_each(function()
+		state.reset(); sync.clear_all(); pending.clear_all()
+		directory = vim.fn.tempname(); vim.fn.mkdir(directory, "p")
+		state.upsert_session({ id = "s", location = { directory = "/server/project" } })
+		state.set_session("s", "Session")
+		state.set_config({ server = { path_mappings = { { remote = "/server/project", local_root = directory } } } })
+		saved_open, saved_notify, original_buffer = menu.open, vim.notify, vim.api.nvim_get_current_buf()
+		menu.open = function(opts) picker = opts end
+		notices = {}; vim.notify = function(message) notices[#notices + 1] = message end
+	end)
+	after_each(function()
+		menu.open, vim.notify = saved_open, saved_notify
+		pcall(vim.cmd.cclose)
+		if vim.api.nvim_buf_is_valid(original_buffer) then vim.api.nvim_set_current_buf(original_buffer) end
+		for _, buf in ipairs(vim.api.nvim_list_bufs()) do
+			if vim.api.nvim_buf_get_name(buf):find(directory, 1, true) then vim.api.nvim_buf_delete(buf, { force = true }) end
+		end
+		vim.fn.delete(directory, "rf"); state.reset(); sync.clear_all(); pending.clear_all()
+	end)
+	it("takes the latest file snapshot including clears and excludes staged reverted turns", function()
+		seed("msg_1", "a.lua", { diagnostic("old") })
+		seed("msg_2", "b.lua", { diagnostic("visible", 4, 2) })
+		seed("msg_3", "a.lua", {})
+		seed("msg_4", "b.lua", { diagnostic("undone") })
+		state.upsert_session({ id = "s", revert = { messageID = "msg_4" } }, { touch = false })
+		local items = diagnostics.collect("s")
+		assert.equals(1, #items); assert.equals("visible", items[1].message)
+		assert.equals(5, items[1].line); assert.equals(2, items[1].character)
+		assert.same({}, diagnostics.parse({ diagnostic("bad", -1), { message = "missing position" } }, "a.lua"))
+	end)
+	it("maps relative server paths, longest roots, and UTF-16 columns for real navigation", function()
+		vim.fn.writefile({ "a😀b", "line two" }, directory .. "/file.lua")
+		assert.equals(directory .. "/file.lua", diagnostics.local_path("file.lua", "s"))
+		assert.is_true(diagnostics.jump({ path = "file.lua", line = 1, character = 3 }, "s"))
+		assert.same({ 1, 5 }, vim.api.nvim_win_get_cursor(0))
+		state.set_config({ server = { path_mappings = { { remote = "/", local_root = "/fallback" },
+			{ remote = "/server/project", local_root = directory } } } })
+		assert.equals(directory .. "/file.lua", diagnostics.local_path("/server/project/file.lua", "s"))
+		assert.equals("/fallback/other/file.lua", diagnostics.local_path("/other/file.lua", "s"))
+		state.set_config({ server = {} })
+		local ok, err = diagnostics.jump({ path = "file.lua", line = 1, character = 0 }, "s")
+		assert.is_nil(ok); assert.matches("path_mappings", err)
+	end)
+	it("exposes the snapshot picker and quickfix without opening unmapped remote filenames", function()
+		vim.fn.writefile({ "a😀b" }, directory .. "/file.lua")
+		seed("msg_1", "file.lua", { diagnostic("server error", 0, 3) })
+		require("opencode.ui.diagnostics").show()
+		assert.equals("file.lua:1:4", picker.items[1].label)
+		local closed = false
+		picker.keys[1].handler({ close = function() closed = true end })
+		assert.is_true(closed)
+		local qf = vim.fn.getqflist()
+		assert.equals(6, qf[1].col); assert.equals("server error", qf[1].text)
+		state.set_config({ server = {} })
+		diagnostics.quickfix(picker.items, "s")
+		qf = vim.fn.getqflist(); assert.equals(0, qf[1].valid); assert.equals(0, qf[1].bufnr)
+		state.set_session("other", "Other")
+		picker.on_select(picker.items[1]); assert.equals(0, #notices)
+	end)
+	it("renders native line and column details in an expanded file tool result", function()
+		local result = require("opencode.ui.chat.file_edit_results").render_tool({ tool = "write", state = {
+			status = "completed", input = { path = "/server/project/file.lua" }, metadata = {
+				diagnostics = { ["/server/project/file.lua"] = { diagnostic("Expected expression", 2, 4) } } } } }, true)
+		local text = table.concat(result.lines, "\n")
+		assert.is_truthy(text:find("Error [3:5] Expected expression", 1, true))
+		assert.is_truthy(text:find("/diagnostics", 1, true))
+	end)
+end)
