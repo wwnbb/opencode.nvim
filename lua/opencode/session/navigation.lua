@@ -84,10 +84,8 @@ function M.session_owned_by_root(root_session_id, session_id, ctx)
 	end
 
 	local event_util = default_event_util(ctx)
-	if event_util and type(event_util.runtime_root_for_session) == "function" then
-		return event_util.runtime_root_for_session(session_id) == root_session_id
-	end
-	return false
+	return event_util and type(event_util.runtime_root_for_session) == "function"
+		and event_util.runtime_root_for_session(session_id) == root_session_id or false
 end
 
 return M

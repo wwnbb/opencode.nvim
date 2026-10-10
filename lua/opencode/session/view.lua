@@ -18,11 +18,6 @@ local function copy(value)
 	return value
 end
 
-local function normalize_record(record)
-	record = type(record) == "table" and vim.deepcopy(record) or {}
-	return record
-end
-
 local function title_for(record)
 	local title = session_util.displayTitle(record.title or record.name)
 	if title and title ~= "" then
@@ -44,6 +39,11 @@ end
 ---@return boolean
 function METHODS:is_idle()
 	return status_helper.is_idle(private(self).status)
+end
+
+function METHODS:is_unread()
+	local time = (private(self).record or {}).time or {}
+	return type(time.idle) == "number" and (type(time.viewed) ~= "number" or time.idle > time.viewed)
 end
 
 ---@return boolean
@@ -144,9 +144,9 @@ local view_mt = {
 ---@param record table|nil
 ---@param ctx? table
 ---@return table
-function M.from_record(record, ctx)
+local function from_record(record, ctx, owned)
 	ctx = type(ctx) == "table" and ctx or {}
-	local normalized = normalize_record(record)
+	local normalized = type(record) == "table" and (owned and record or vim.deepcopy(record)) or {}
 	local status = ctx.status ~= nil and ctx.status or normalized.status
 	local pending = ctx.pending ~= nil and ctx.pending or normalized.pending
 	local cached_messages = ctx.cached_messages or ctx.message_cache or normalized.cached_messages or { count = 0, loaded = false }
@@ -158,10 +158,18 @@ function M.from_record(record, ctx)
 		pending = pending_helper.normalize_counts(pending),
 		cached_messages = type(cached_messages) == "table" and vim.deepcopy(cached_messages) or { count = 0, loaded = false },
 		is_current = ctx.is_current == true or normalized.is_current == true,
-		is_runtime = ctx.is_runtime == true or normalized.is_runtime == true,
 		current_root_id = ctx.current_root_id or normalized.current_root_id,
 	}
 	return view
+end
+
+function M.from_record(record, ctx)
+	return from_record(record, ctx, false)
+end
+
+-- Selectors already own the detached record returned by state.get_session_record.
+function M.from_owned_record(record, ctx)
+	return from_record(record, ctx, true)
 end
 
 return M

@@ -1,10 +1,4 @@
 describe("opencode session deleted handling", function()
-	local function assert_eq(actual, expected, message)
-		assert(
-			actual == expected,
-			string.format("%s: expected %s, got %s", message, vim.inspect(expected), vim.inspect(actual))
-		)
-	end
 
 	local function wait_for(predicate, message)
 		assert(vim.wait(500, predicate, 10), message)
@@ -20,9 +14,9 @@ describe("opencode session deleted handling", function()
 
 		session_actions.set_active("del-root-a", "Root A", { reason = "test_setup" })
 		session_actions.set_active("del-root-b", "Root B", { reason = "test_setup" })
-		assert_eq(state.is_runtime_session("del-root-a"), true, "root A should be a runtime tab")
-		assert_eq(state.is_runtime_session("del-root-b"), true, "root B should be a runtime tab")
-		assert_eq(state.get_session().id, "del-root-b", "root B should be the active view")
+		assert.equals(true, state.is_runtime_session("del-root-a"), "root A should be a runtime tab")
+		assert.equals(true, state.is_runtime_session("del-root-b"), "root B should be a runtime tab")
+		assert.equals("del-root-b", state.get_session().id, "root B should be the active view")
 
 		sync.handle_message_updated({
 			id = "del-root-b-msg",
@@ -39,21 +33,21 @@ describe("opencode session deleted handling", function()
 		})
 		assert(#sync.get_messages("del-root-b") == 1, "seeded message should exist before deletion")
 
-		assert_eq(session_actions.handle_deleted("del-root-b"), true, "deleting the current tab should be handled")
-		assert_eq(state.get_session().id, "del-root-a", "deleting the current tab should switch to the neighbor")
-		assert_eq(state.is_runtime_session("del-root-b"), false, "deleted tab should leave the runtime list")
-		assert_eq(#sync.get_messages("del-root-b"), 0, "deleted session data should be cleared")
+		assert.equals(true, session_actions.handle_deleted("del-root-b"), "deleting the current tab should be handled")
+		assert.equals("del-root-a", state.get_session().id, "deleting the current tab should switch to the neighbor")
+		assert.equals(false, state.is_runtime_session("del-root-b"), "deleted tab should leave the runtime list")
+		assert.equals(0, #sync.get_messages("del-root-b"), "deleted session data should be cleared")
 		local active_ids = {}
 		for _, session in ipairs(state.get_active_sessions()) do
 			active_ids[session.id] = true
 		end
-		assert_eq(active_ids["del-root-b"], nil, "deleted tab should disappear from active sessions")
+		assert.equals(nil, active_ids["del-root-b"], "deleted tab should disappear from active sessions")
 
-		assert_eq(session_actions.handle_deleted("del-root-a"), true, "deleting the last tab should be handled")
-		assert_eq(state.get_session().id, nil, "deleting the last tab should clear the active view")
+		assert.equals(true, session_actions.handle_deleted("del-root-a"), "deleting the last tab should be handled")
+		assert.equals(nil, state.get_session().id, "deleting the last tab should clear the active view")
 
-		assert_eq(session_actions.handle_deleted("del-unknown"), false, "unknown sessions should be ignored")
-		assert_eq(session_actions.handle_deleted(""), false, "empty ids should be ignored")
+		assert.equals(false, session_actions.handle_deleted("del-unknown"), "unknown sessions should be ignored")
+		assert.equals(false, session_actions.handle_deleted(""), "empty ids should be ignored")
 
 		state.reset()
 		sync.clear_all()
@@ -96,10 +90,10 @@ describe("opencode session deleted handling", function()
 		})
 		assert(#sync.get_messages("del-child") == 1, "seeded child message should exist before deletion")
 
-		assert_eq(session_actions.handle_deleted("del-child"), true, "deleting a child session should be handled")
-		assert_eq(state.is_runtime_session("del-parent"), true, "parent tab should survive a child deletion")
-		assert_eq(#sync.get_messages("del-child"), 0, "deleted child data should be cleared")
-		assert_eq(state.get_session_record("del-child"), nil, "deleted child record should be removed")
+		assert.equals(true, session_actions.handle_deleted("del-child"), "deleting a child session should be handled")
+		assert.equals(true, state.is_runtime_session("del-parent"), "parent tab should survive a child deletion")
+		assert.equals(0, #sync.get_messages("del-child"), "deleted child data should be cleared")
+		assert.equals(nil, state.get_session_record("del-child"), "deleted child record should be removed")
 		assert(
 			state.get_session().id ~= "del-child",
 			"active view should not point at the deleted child"
@@ -132,18 +126,18 @@ describe("opencode session deleted handling", function()
 		wait_for(function()
 			return state.get_session().id == "del-event-a"
 		end, "native session.deleted event should switch the active view to the neighbor")
-		assert_eq(state.is_runtime_session("del-event-b"), false, "native session.deleted event should prune the runtime tab")
+		assert.equals(false, state.is_runtime_session("del-event-b"), "native session.deleted event should prune the runtime tab")
 
-		events.emit("v2_event", {
-			id = "evt-delete-foreign",
-			type = "session.deleted",
-			data = { sessionID = "del-foreign" },
-			created = 2,
-		})
-		vim.wait(100, function()
-			return false
-		end, 50)
-		assert_eq(state.get_session().id, "del-event-a", "foreign session.deleted events should be ignored")
+		require("tests.helpers.schedule").with(function(flush)
+			events.emit("v2_event", {
+				id = "evt-delete-foreign",
+				type = "session.deleted",
+				data = { sessionID = "del-foreign" },
+				created = 2,
+			})
+			flush()
+			assert.equals("del-event-a", state.get_session().id, "foreign session.deleted events should be ignored")
+		end)
 
 		state.reset()
 		sync.clear_all()

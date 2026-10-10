@@ -201,7 +201,7 @@ end
 ---@param item table|nil
 ---@return boolean
 function M.is_pending_edit(item)
-	return type(item) == "table" and item.status == "pending"
+	return M.is_pending_permission(item)
 end
 
 return M

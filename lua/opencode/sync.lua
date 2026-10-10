@@ -73,6 +73,7 @@ local native_messages = {}
 local structure_generation, linked_generation = {}, {}
 local metadata_snapshots, history_generation = {}, {}
 local history_clock, history_reset_generation = 0, 0
+local catalog_generation = 0
 local metadata_depth, metadata_pending = 0, {}
 local parts_generation, parts_owners = {}, {}
 local parts_memo = require("opencode.util.memo").new("sync_render_parts", { max_entries = 10000 })
@@ -110,6 +111,7 @@ local function metadata_value(message)
 		role = message.role, agent = message.agent, parentID = message.parentID,
 		time = vim.deepcopy(message.time), tokens = vim.deepcopy(message.tokens),
 		provisional = message.provisional, hidden = message.hidden,
+		finish = message.finish, errored = message.error ~= nil,
 	}
 end
 
@@ -290,6 +292,7 @@ end
 ---@param field string
 local function bump_store_counter(field)
 	store[field] = (store[field] or 0) + 1
+	if field == "provider_revision" then catalog_generation = catalog_generation + 1 end
 end
 
 ---@param session_id string|nil
@@ -1258,6 +1261,14 @@ function M.get_history_metadata_generation(session_id)
 	return history_generation[session_id] or history_reset_generation
 end
 
+function M.get_session_revision(session_id)
+	return store.session_revision[session_id] or 0
+end
+
+function M.get_catalog_generation()
+	return catalog_generation
+end
+
 ---Get parts for a message
 ---@param message_id string
 ---@return Part[]
@@ -1515,6 +1526,7 @@ end
 
 ---Clear all data
 function M.clear_all()
+	catalog_generation = catalog_generation + 1
 	for _, owner in pairs(parts_owners) do parts_memo:delete(owner) end
 	message_indexes = setmetatable({}, { __mode = "k" })
 	message_order_keys, native_messages = {}, {}
@@ -1574,6 +1586,7 @@ local function apply_catalog(domain, data)
 end
 
 function M.handle_location_catalog(directory, domain, data, err)
+	catalog_generation = catalog_generation + 1
 	store.catalogs[directory] = store.catalogs[directory] or {}
 	local previous = store.catalogs[directory][domain]
 	local entry = { status = err and "failed" or "loaded", error = err,
