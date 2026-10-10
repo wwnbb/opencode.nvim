@@ -38,11 +38,52 @@ local function infer_user_agents(all_messages)
 	return agents
 end
 
+-- Native rows.ts closes modern turns on idle, including any steering prompts.
+-- Histories without idle markers close on a terminal assistant step. Missing
+-- usage or an unloaded prompt yields a known partial total, never an estimate.
+local function turn_usage(messages)
+	local legacy = true
+	for _, message in ipairs(messages) do if message.type == "idle" then legacy = false; break end end
+	local turns, totals, last_id, has_prompt
+	turns = {}
+	local function reset()
+		totals = { input = 0, output = 0, reasoning = 0, cached = 0, cache_write = 0, new = 0, total = 0, steps = 0, complete = true }
+		last_id, has_prompt = nil, false
+	end
+	local function flush()
+		if last_id and totals.steps > 0 and totals.total < math.huge then
+			totals.complete = totals.complete and has_prompt
+			turns[last_id] = totals
+		end
+		reset()
+	end
+	reset()
+	for _, message in ipairs(messages) do
+		local kind = message.type or message.role
+		if kind == "idle" then flush()
+		elseif kind == "user" or kind == "synthetic" then
+			if not message.provisional then has_prompt = true end
+		elseif kind == "assistant" then
+			last_id = message.id
+			local step = require("opencode.selectors").token_usage(message.tokens)
+			if not step then totals.complete = false
+			elseif step.total > 0 then
+				for key, value in pairs(step) do totals[key] = totals[key] + value end
+				totals.steps = totals.steps + 1
+			end
+			local terminal = message.error or (message.finish and message.finish ~= "tool-calls" and message.finish ~= "unknown")
+			if legacy and terminal then flush() end
+		end
+	end
+	return turns
+end
+
 local function derive(messages, tps)
 	return {
 		created = build_user_created_by_id(messages),
 		agents = infer_user_agents(messages),
 		rates = tps and throughput.by_message(messages) or {},
+		turns = turn_usage(messages),
 	}
 end
 
@@ -52,6 +93,7 @@ local function lookups(value)
 		created = function(id) return value.created[id] end,
 		agent = function(id) return value.agents[id] end,
 		rate = function(id) return value.rates[id] end,
+		turn = function(id) return value.turns[id] and vim.deepcopy(value.turns[id]) or nil end,
 	}
 end
 

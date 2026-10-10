@@ -1,10 +1,5 @@
 describe("opencode processing footer", function()
-	local processing_footer
-
-	before_each(function()
-		vim.opt.runtimepath:append(vim.fn.getcwd())
-		processing_footer = require("opencode.ui.chat.processing_footer")
-	end)
+	local processing_footer = require("opencode.ui.chat.processing_footer")
 
 	local fallback = {
 		role = "assistant",
