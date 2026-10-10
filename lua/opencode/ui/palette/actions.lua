@@ -25,7 +25,9 @@ local function show_status_popup(lines, highlights, ctx)
 		groups[mark.line] = mark.group
 	end
 
+	local wrapped_width, wrapped_lines, wrapped_marks
 	local function wrap_body(width)
+		if wrapped_width == width then return wrapped_lines, wrapped_marks end
 		local body_lines, body_marks = {}, {}
 		local text_width = math.max(1, width - 8)
 		for index, line in ipairs(lines) do
@@ -58,6 +60,7 @@ local function show_status_popup(lines, highlights, ctx)
 				end
 			end
 		end
+		wrapped_width, wrapped_lines, wrapped_marks = width, body_lines, body_marks
 		return body_lines, body_marks
 	end
 
@@ -247,6 +250,15 @@ local function revert_pending_changes(pending, force)
 end
 
 function M.register(palette)
+	require("opencode.ui.images").register(palette)
+	require("opencode.ui.diagrams").register(palette)
+	require("opencode.ui.diagnostics").register(palette)
+	require("opencode.ui.debug_bundle").register(palette)
+	require("opencode.ui.palette.processes").register(palette)
+	require("opencode.ui.vcs").register(palette)
+	require("opencode.ui.palette.settings").register(palette)
+	require("opencode.ui.palette.server").register(palette)
+	require("opencode.ui.palette.environment").register(palette)
 	palette.register({
 		id = "action.abort",
 		title = "Abort Request",

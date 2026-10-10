@@ -17,6 +17,7 @@ end
 
 local function attempt(integration, method, answer, opts)
 	local float = require("opencode.ui.float")
+	local token = pending.token()
 	local id, snapshot, closed
 	local popup, bufnr = float.create_centered_popup({
 		title = " " .. integration.name .. " ", width = 76, height = 14,
@@ -36,9 +37,11 @@ local function attempt(integration, method, answer, opts)
 		local lines = { "Authorization: " .. value.status, "" }
 		if value.instructions then vim.list_extend(lines, vim.split(value.instructions, "\n", { plain = true })) end
 		if value.url then lines[#lines + 1] = value.url end
+		if value.message then vim.list_extend(lines, vim.split(value.message, "\n", { plain = true })) end
 		if value.error then lines[#lines + 1] = value.error end
 		lines[#lines + 1] = ""
 		lines[#lines + 1] = "o: open authorization URL   c: enter code   Esc: close / cancel"
+		lines[#lines + 1] = "y: copy URL   Y: copy authorization instructions / code"
 		popup:render(lines)
 		if value.status == "complete" then notify("Connected to " .. integration.name); close() end
 	end
@@ -54,6 +57,18 @@ local function attempt(integration, method, answer, opts)
 		float.create_input_popup({ title = " Authorization code ", prompt = "Authorization code:", password = true,
 			on_submit = function(code) if not closed then actions.complete_integration_attempt(id, code) end end })
 	end, mapopts)
+	for key, field in pairs({ y = "url", Y = "instructions" }) do
+		vim.keymap.set("n", key, function()
+			if closed or not snapshot or not pending.is_current(token) then return end
+			local value = snapshot[field] or (field == "instructions" and snapshot.message)
+			if type(value) ~= "string" or value == "" then notify("No authorization " .. field .. " reported"); return end
+			vim.fn.setreg('"', value)
+			local ok, result = pcall(vim.fn.setreg, "+", value)
+			local read, copied = false, nil
+			if ok and result == 0 then read, copied = pcall(vim.fn.getreg, "+") end
+			notify(read and copied == value and "Copied authorization " .. field or "Copied authorization " .. field .. " to the unnamed register")
+		end, mapopts)
+	end
 	id = actions.start_integration_attempt(integration.id, method, answer, opts, render)
 end
 

@@ -1,14 +1,6 @@
 -- Unit checks for cleanup orchestration and artifact reset semantics.
 -- Run with: ./tests/run.sh tests/unit/cleanup_spec.lua
 
-local function assert_eq(actual, expected, message)
-	local equal = type(actual) == "table" and type(expected) == "table" and vim.deep_equal(actual, expected)
-		or actual == expected
-	if not equal then
-		error(string.format("%s: expected %s, got %s", message, vim.inspect(expected), vim.inspect(actual)))
-	end
-end
-
 describe("opencode cleanup", function()
 	local module_names = {
 		"opencode.cleanup",
@@ -65,7 +57,7 @@ describe("opencode cleanup", function()
 	it("clears all transient owners and clears history last", function()
 		require("opencode.cleanup").clear_transient({ reset_state = false, clear_chat = true })
 
-		assert_eq(calls, {
+		assert.same({
 			"opencode.sync.clear_all",
 			"opencode.permission.state.clear_all",
 			"opencode.question.state.clear_all",
@@ -75,14 +67,14 @@ describe("opencode cleanup", function()
 			"opencode.permission.danger.clear",
 			"opencode.ui.chat.clear",
 			"opencode.events.clear_history",
-		}, "transient cleanup order")
+		}, calls, "transient cleanup order")
 	end)
 
 	it("resets app state before clearing history without clearing listeners", function()
 		require("opencode.cleanup").reset_all()
 
-		assert_eq(calls[#calls - 1], "opencode.state.reset", "state reset order")
-		assert_eq(calls[#calls], "opencode.events.clear_history", "history final order")
+		assert.equals("opencode.state.reset", calls[#calls - 1], "state reset order")
+		assert.equals("opencode.events.clear_history", calls[#calls], "history final order")
 		for _, call in ipairs(calls) do
 			assert(call ~= "opencode.events.clear", "cleanup must preserve event listeners")
 		end

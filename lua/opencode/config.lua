@@ -9,6 +9,10 @@ M.defaults = {
 	server = {
 		command = "opencode",
 		host = "localhost",
+		url = nil, -- Explicit HTTP(S) endpoint, including any reverse-proxy base path.
+		managed = false, -- Discover the native CLI background service.
+		service_file = nil, -- Native service registration override (read-only discovery).
+		tls = {}, -- Optional ca_file for an installed OpenSSL TLS channel.
 		auth = {
 			username = "opencode",
 			password = nil,
@@ -17,6 +21,7 @@ M.defaults = {
 		-- External servers apply review decisions on the server. Set true only
 		-- when their paths refer to the same files accessible by this Neovim.
 		shared_filesystem = nil,
+		path_mappings = {}, -- { remote = "/server/project", local_root = "/local/project" }
 		startup_timeout = 10000,
 		health_check_interval = 1000,
 		shutdown_on_exit = true,
@@ -27,6 +32,10 @@ M.defaults = {
 
 	-- Session
 	session = {
+		thinking = "hide", -- Collapsed Thought widgets remain expandable.
+		grouping = "auto", -- "none" or "auto"
+		verbosity = "medium", -- "low", "medium", or "high"
+		markdown = "rendered", -- "rendered" or "source"
 		default_agent = "build",
 		default_model = {
 			providerID = "github-copilot",
@@ -48,7 +57,7 @@ M.defaults = {
 		variant = nil,
 		options = nil,
 		keymaps = { trigger = "<C-l>", accept = "<Tab>" },
-		timeout_ms = 15000,
+		timeout_ms = 0, -- No deadline; positive values limit the request in milliseconds.
 		max_lines = 12,
 		context = {
 			max_bytes = 24576,
@@ -69,7 +78,7 @@ M.defaults = {
 		prompt = nil,
 		language = "en",
 		keymaps = { trigger = "K" },
-		timeout_ms = 60000,
+		timeout_ms = 0, -- No deadline; positive values limit the request in milliseconds.
 		context = {
 			max_bytes = 24576,
 			before_lines = 150,
@@ -82,6 +91,7 @@ M.defaults = {
 
 	-- Chat
 	chat = {
+		diff_view = "auto", -- "auto", "split", or "unified"
 		layout = "vertical",
 		position = "right",
 		width = 80,
@@ -99,6 +109,9 @@ M.defaults = {
 		tps = true, -- Show average output + reasoning tokens per second per turn
 		session_tabs = {
 			enabled = true,
+			persist = true,
+			scope = "global", -- "global" or "cwd", always isolated by server
+			file = vim.fn.stdpath("data") .. "/opencode_tabs.json",
 			auto_fit = false,
 			max_tabs = 3,
 			separator = " │ ",
@@ -107,6 +120,7 @@ M.defaults = {
 				running = "●",
 				waiting = "◈",
 				idle = "○",
+				unread = "◆",
 				error = "✕",
 			},
 		},
@@ -128,10 +142,13 @@ M.defaults = {
 
 	-- Input
 	input = {
+		editor_context = true,
+		collapse_paste_lines = 20, -- false disables native folding of large clipboard pastes
 		min_height = 1,
 		max_height = 20,
 		history_file = vim.fn.stdpath("data") .. "/opencode_input_history.json",
 		max_history = 100,
+		stash_file = vim.fn.stdpath("data") .. "/opencode_stash.json",
 		keymaps = {
 			send = "<C-g>",
 			send_steer = "<C-x><C-s>",
@@ -238,6 +255,7 @@ M.defaults = {
 
 	notifications = {
 		enabled = true,
+		when = "always", -- "always" | "blurred" | "focused"
 		permissions = true,
 		questions = true,
 		edits = true,
@@ -265,8 +283,9 @@ local function validate_editor_feature(kind, feature)
 	local limits = kind == "completion" and { "timeout_ms", "max_lines" } or { "timeout_ms" }
 	for _, key in ipairs(limits) do
 		local value = feature[key]
-		if type(value) ~= "number" or value < 1 or value % 1 ~= 0 then
-			error(prefix .. "." .. key .. " must be a positive integer", 3)
+		local minimum = key == "timeout_ms" and 0 or 1
+		if type(value) ~= "number" or value < minimum or value % 1 ~= 0 then
+			error(prefix .. "." .. key .. " must be an integer >= " .. minimum, 3)
 		end
 	end
 	if type(feature.context) ~= "table" then error(prefix .. ".context must be a table", 3) end

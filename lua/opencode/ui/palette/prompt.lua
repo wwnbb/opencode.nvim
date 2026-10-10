@@ -2,6 +2,9 @@ local M = {}
 local actions = require("opencode.actions")
 local state = require("opencode.state")
 function M.register(palette)
+	require("opencode.ui.palette.stash").register(palette)
+	require("opencode.ui.palette.queue").register(palette)
+	require("opencode.ui.palette.editor_context").register(palette)
 	palette.register({ id = "prompt.cancel_pending", title = "Cancel Pending Input", category = "prompt",
 		description = "Remove one queued input; keep the current response running",
 		enabled = function() return state.is_connected() and state.get_session().id ~= nil end,

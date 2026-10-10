@@ -340,6 +340,22 @@ local state = {
 
 local PALETTE_ZINDEX = 80
 
+-- Navigation changes only the selected mark and the native viewport.
+local function render_selection()
+	if not state.popup or not vim.api.nvim_buf_is_valid(state.popup.bufnr) then return end
+	local result = state.results[state.selected]
+	if not result or not result.line then return end
+	vim.api.nvim_buf_set_extmark(state.popup.bufnr, hl_ns, result.line - 1, 0, {
+		id = 1, end_col = result.end_col, hl_group = "OpenCodePaletteSelected",
+	})
+	if state.popup.winid and vim.api.nvim_win_is_valid(state.popup.winid) then
+		vim.api.nvim_win_set_cursor(state.popup.winid, { result.line, 0 })
+		if state.selected == 1 then
+			vim.api.nvim_win_call(state.popup.winid, function() vim.fn.winrestview({ topline = 1 }) end)
+		end
+	end
+end
+
 -- Render the command list
 local function render_list()
 	if not state.popup or not vim.api.nvim_buf_is_valid(state.popup.bufnr) then
@@ -357,7 +373,7 @@ local function render_list()
 
 	local current_category = nil
 
-	for i, result in ipairs(state.results) do
+	for _, result in ipairs(state.results) do
 		local cmd = result.cmd
 		local category = result.category or cmd.category
 		local cat_info = get_category_info(category)
@@ -389,12 +405,9 @@ local function render_list()
 		table.insert(lines, line)
 
 		-- Track line index for this command
-		result.line = #lines
+		result.line, result.end_col = #lines, #line
 
 		-- Apply highlights
-		if i == state.selected then
-			table.insert(highlights_to_apply, { #lines, "OpenCodePaletteSelected", 0, -1 })
-		end
 		if keybind_width > 0 then
 			-- Extmark columns are byte offsets even though layout uses display width.
 			table.insert(highlights_to_apply, { #lines, "OpenCodePaletteKeybind", #line - #keybind_str - 3, #line - 3 })
@@ -426,29 +439,18 @@ local function render_list()
 	vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
 
 	-- Apply highlights
-	for _, hl in ipairs(highlights_to_apply) do
+	for index, hl in ipairs(highlights_to_apply) do
 		local line_idx, hl_group, col_start, col_end = hl[1], hl[2], hl[3], hl[4]
 		if col_end == -1 then
 			local l = vim.api.nvim_buf_get_lines(buf, line_idx - 1, line_idx, false)[1]
 			col_end = l and #l or 0
 		end
-		vim.api.nvim_buf_set_extmark(buf, hl_ns, line_idx - 1, col_start, { end_col = col_end, hl_group = hl_group })
+		vim.api.nvim_buf_set_extmark(buf, hl_ns, line_idx - 1, col_start, { id = index + 1, end_col = col_end, hl_group = hl_group })
 	end
 
 	vim.bo[buf].modifiable = false
 
-	-- Scroll to selected
-	if state.popup.winid and vim.api.nvim_win_is_valid(state.popup.winid) then
-		local selected_result = state.results[state.selected]
-		if selected_result and selected_result.line then
-			vim.api.nvim_win_set_cursor(state.popup.winid, { selected_result.line, 0 })
-			if state.selected == 1 then
-				vim.api.nvim_win_call(state.popup.winid, function()
-					vim.fn.winrestview({ topline = 1 })
-				end)
-			end
-		end
-	end
+	render_selection()
 end
 
 -- Update search results
@@ -491,7 +493,7 @@ local function move_selection(delta)
 		state.selected = 1
 	end
 
-	render_list()
+	render_selection()
 end
 
 -- Close the palette
@@ -718,32 +720,22 @@ end
 
 -- Register default commands
 local default_command_modules = {
-	function()
-		return require("opencode.ui.palette.session")
-	end,
-	function()
-		return require("opencode.ui.palette.model")
-	end,
-	function()
-		return require("opencode.ui.palette.agent")
-	end,
-	function()
-		return require("opencode.ui.palette.actions")
-	end,
-	function()
-		return require("opencode.ui.palette.prompt")
-	end,
-	function()
-		return require("opencode.ui.palette.mcp")
-	end,
-	function()
-		return require("opencode.ui.palette.system")
-	end,
+	"opencode.ui.palette.session",
+	"opencode.ui.palette.family",
+	"opencode.ui.palette.model",
+	"opencode.ui.palette.agent",
+	"opencode.ui.palette.actions",
+	"opencode.ui.palette.prompt",
+	"opencode.ui.palette.mcp",
+	"opencode.ui.palette.system",
+	"opencode.ui.palette.plugins",
+	"opencode.ui.palette.pairing",
+	"opencode.ui.terminals",
 }
 
 function M.register_defaults()
-	for _, load_module in ipairs(default_command_modules) do
-		load_module().register(M)
+	for _, module_name in ipairs(default_command_modules) do
+		require(module_name).register(M)
 	end
 end
 

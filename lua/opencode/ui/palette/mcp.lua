@@ -171,9 +171,12 @@ function M.register(palette)
 		title = "MCP Servers",
 		description = "List and toggle MCP servers",
 		category = "mcp",
+		slash = { name = "mcp", aliases = { "mcps" } },
+		on_select = function(context) return context.run() end,
 		run = function()
 			local opts, token = location_options(), pending.token()
 			actions.get_mcp_status(function(err, status)
+				if not pending.is_current(token) then return end
 				if err then
 					vim.notify("Failed to get MCP status: " .. tostring(err.message or err), vim.log.levels.ERROR)
 					return
@@ -238,9 +241,25 @@ function M.register(palette)
 				table.sort(items, function(a, b)
 					return a.value < b.value
 				end)
+				local events = require("opencode.events")
+				local closed, revision, reactive = false, 0, nil
+				local function replace_items(refreshed, ctx)
+					local by_name = {}
+					for _, item in ipairs(items) do by_name[item.value] = item end
+					for index = #items, 1, -1 do items[index] = nil end
+					for name, server in pairs(refreshed) do
+						local item = by_name[name] or { value = name }
+						update_item(item, server); items[#items + 1] = item
+					end
+					table.sort(items, function(a, b) return a.value < b.value end)
+					ctx.refresh()
+				end
 
 				local function refresh_item(item, ctx)
+					revision = revision + 1
+					local request = revision
 					actions.get_mcp_status(function(refresh_err, refreshed)
+						if closed or not pending.is_current(token) or request ~= revision then return end
 						if refresh_err then
 							vim.notify(
 								"Failed to refresh MCP status: " .. tostring(refresh_err.message or refresh_err),
@@ -249,9 +268,8 @@ function M.register(palette)
 							return
 						end
 						if refreshed then
-							update_item(item, refreshed[item.value] or { status = "unknown" })
-							ctx.refresh()
-							vim.notify(item.value .. ": " .. item.status_text, vim.log.levels.INFO)
+							replace_items(refreshed, ctx)
+							if item then vim.notify(item.value .. ": " .. item.status_text, vim.log.levels.INFO) end
 						end
 					end, opts)
 				end
@@ -263,6 +281,10 @@ function M.register(palette)
 					width = 60,
 					searchable = true,
 					close_on_select = false,
+					on_close = function()
+						closed = true
+						if reactive then events.off("catalog_invalidated", reactive) end
+					end,
 					sort = function(a, b)
 						return a.value < b.value
 					end,
@@ -314,7 +336,7 @@ function M.register(palette)
 							ctx.close()
 							require("opencode.ui.palette.integration").connect(integration_id, opts)
 						end },
-						{ key = "r", label = "r:refresh", handler = function(ctx, item) refresh_item(item, ctx) end },
+						{ key = "r", label = "r:refresh", allow_empty = true, handler = function(ctx, item) refresh_item(item, ctx) end },
 
 					},
 				}
@@ -325,7 +347,22 @@ function M.register(palette)
 						return handler(ctx, item)
 					end
 				end
-				menu.open(menu_opts)
+				local ctx = menu.open(menu_opts)
+				if ctx then
+					local scheduled = false
+					reactive = function(data)
+						if closed or scheduled or not data or not tostring(data.type):match("^mcp%.") then return end
+						local directory = data.location and data.location.directory
+						if directory and require("opencode.state").normalize_directory(directory) ~= require("opencode.state").normalize_directory(opts.directory) then return end
+						if not pending.is_current(token) then ctx.close(); return end
+						scheduled = true
+						vim.schedule(function()
+							scheduled = false
+							if not closed and pending.is_current(token) then refresh_item(nil, ctx) end
+						end)
+					end
+					events.on("catalog_invalidated", reactive)
+				end
 			end, opts)
 		end,
 	})

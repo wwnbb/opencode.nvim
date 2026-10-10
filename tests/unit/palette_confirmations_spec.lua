@@ -24,6 +24,7 @@ describe("palette confirmations", function()
 			list_integrations = actions.list_integrations,
 			change_credential = actions.change_credential,
 			list_sessions = actions.list_sessions,
+			open_session = actions.open_session,
 			switch_session = actions.switch_session,
 			refresh_session_activity = actions.refresh_session_activity,
 			close_session = actions.close_session,
@@ -41,7 +42,7 @@ describe("palette confirmations", function()
 		menu.open = saved.menu_open
 		float.create_input_popup = saved.float_input
 		for _, name in ipairs({ "delete_session", "set_active_session", "forget_session", "clear_session_data",
-			"reload_locations", "list_integrations", "change_credential", "list_sessions", "switch_session",
+			"reload_locations", "list_integrations", "change_credential", "list_sessions", "open_session", "switch_session",
 			"refresh_session_activity", "close_session", "list_pending_inputs", "cancel_pending_input" }) do
 			actions[name] = saved[name]
 		end
@@ -69,7 +70,7 @@ describe("palette confirmations", function()
 		it(stale and "ignores a session picker from an old connection" or "switches to a session from the current picker", function()
 			local selected = {}
 			actions.list_sessions = function(_, cb) cb(nil, { { id = "ses_pick", title = "Picked" } }) end
-			actions.switch_session = function(session) selected[#selected + 1] = session.id end
+			actions.open_session = function(id) selected[#selected + 1] = id end
 			command("opencode.ui.palette.session", "session.list").run()
 			if stale then require("opencode.session.pending").invalidate() end
 			opened[1].on_select(opened[1].items[1])

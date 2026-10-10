@@ -70,14 +70,16 @@ end
 
 -- Get all permissions (regardless of status)
 ---@return table Array of permission states sorted by timestamp
-function M.get_all()
+local function sorted_items(predicate)
 	local result = {}
-	for _, pstate in pairs(active_permissions) do
-		table.insert(result, pstate)
+	for _, item in pairs(active_permissions) do
+		if not predicate or predicate(item) then table.insert(result, item) end
 	end
 	table.sort(result, function(a, b) return a.timestamp < b.timestamp end)
 	return result
 end
+
+function M.get_all() return sorted_items() end
 
 -- Get all active (pending) permissions
 ---@return table Array of permission states
@@ -95,29 +97,13 @@ end
 ---@param message_id string
 ---@return table Array of permission states associated with this message
 function M.get_permissions_for_message(message_id)
-	local result = {}
-	for _, pstate in pairs(active_permissions) do
-		if pstate.message_id == message_id then
-			table.insert(result, pstate)
-		end
-	end
-	-- Sort by timestamp to maintain order
-	table.sort(result, function(a, b) return a.timestamp < b.timestamp end)
-	return result
+	return sorted_items(function(item) return item.message_id == message_id end)
 end
 
 -- Get all permissions without a messageID (orphan permissions, rendered at end)
 ---@return table Array of permission states without associated messages
 function M.get_orphan_permissions()
-	local result = {}
-	for _, pstate in pairs(active_permissions) do
-		if not pstate.message_id then
-			table.insert(result, pstate)
-		end
-	end
-	-- Sort by timestamp to maintain order
-	table.sort(result, function(a, b) return a.timestamp < b.timestamp end)
-	return result
+	return sorted_items(function(item) return not item.message_id end)
 end
 
 -- Select a visible option

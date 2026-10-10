@@ -17,6 +17,7 @@ local state = {
 		pid = nil,
 		managed = false,
 		host = "localhost",
+		url = nil,
 		port = nil,
 		version = nil,
 	},
@@ -31,6 +32,7 @@ local state = {
 	-- Session index/cache for parallel root sessions.
 	sessions = {
 		runtime_order = {},
+		closed_order = {},
 		recent_order = {},
 		by_id = {},
 		status = {},
@@ -51,9 +53,11 @@ local state = {
 
 -- State change listeners
 local listeners = {}
+local revision = 0
 
 -- Emit state change event
 local function emit_change(key, old_val, new_val)
+	revision = revision + 1
 	local cbs = key ~= "*" and vim.list_slice(listeners[key] or {}) or {}
 	local wildcards = vim.list_slice(listeners["*"] or {})
 	for _, cb in ipairs(cbs) do
@@ -70,6 +74,11 @@ local function emit_change(key, old_val, new_val)
 			vim.notify("State wildcard listener error: " .. tostring(err), vim.log.levels.ERROR)
 		end
 	end
+end
+
+-- Monotonic across reset; derived selectors do not need listener ownership.
+function M.get_revision()
+	return revision
 end
 
 -- Set state value with optional event emission
@@ -138,6 +147,9 @@ local function touch_runtime_session(id, limit)
 
 	local old = state.sessions.runtime_order
 	state.sessions.runtime_order = next_order
+	for i = #state.sessions.closed_order, 1, -1 do
+		if state.sessions.closed_order[i] == id then table.remove(state.sessions.closed_order, i) end
+	end
 	emit_change("sessions.runtime_order", old, state.sessions.runtime_order)
 end
 
@@ -168,7 +180,15 @@ local function upsert_session_record(session)
 	for key, value in pairs(session) do
 		if key == "revert" and value == vim.NIL then record.revert = nil end
 		if value ~= nil and value ~= vim.NIL then
-			record[key] = value
+			if key == "time" and type(value) == "table" then
+				record.time = vim.tbl_extend("force", record.time or {}, value)
+				for _, watermark in ipairs({ "idle", "viewed" }) do
+					local previous = old and old.time and old.time[watermark]
+					if type(previous) == "number" and type(record.time[watermark]) == "number" then
+						record.time[watermark] = math.max(previous, record.time[watermark])
+					end
+				end
+			else record[key] = value end
 		end
 	end
 
@@ -230,6 +250,7 @@ end
 function M.set_server_info(info)
 	local old_host = state.server.host
 	local old_port = state.server.port
+	local old_url = state.server.url
 
 	if info.host then
 		set("host", info.host, "server")
@@ -237,11 +258,14 @@ function M.set_server_info(info)
 	if info.port ~= nil then
 		set("port", info.port, "server")
 	end
+	if info.url ~= nil then
+		set("url", info.url, "server")
+	end
 	if info.version then
 		set("version", info.version, "server")
 	end
 
-	return { host = old_host, port = old_port }
+	return { host = old_host, port = old_port, url = old_url }
 end
 
 function M.get_server_info()
@@ -249,6 +273,7 @@ function M.get_server_info()
 end
 
 function M.clear_server_endpoint()
+	set("url", nil, "server")
 	set("port", nil, "server")
 	set("version", nil, "server")
 end
@@ -366,6 +391,43 @@ function M.get_session_record(session_id)
 	return record and vim.deepcopy(record) or nil
 end
 
+-- Enumerate known native metadata without copying message caches or config.
+function M.get_session_ids()
+	return vim.tbl_keys(state.sessions.by_id)
+end
+
+function M.get_runtime_session_order()
+	return vim.list_slice(state.sessions.runtime_order)
+end
+
+function M.get_closed_session_order()
+	return vim.list_slice(state.sessions.closed_order)
+end
+
+function M.set_runtime_session_order(ids)
+	local order, seen = {}, {}
+	for _, id in ipairs(ids or {}) do
+		if type(id) == "string" and id ~= "" and not seen[id] and state.sessions.by_id[id] then
+			order[#order + 1], seen[id] = id, true
+		end
+	end
+	local old = state.sessions.runtime_order
+	state.sessions.runtime_order = order
+	emit_change("sessions.runtime_order", old, order)
+end
+
+function M.set_closed_session_order(ids)
+	local order, seen = {}, {}
+	for _, id in ipairs(ids or {}) do
+		if type(id) == "string" and id ~= "" and not seen[id] and not M.is_runtime_session(id) then
+			order[#order + 1], seen[id] = id, true
+		end
+	end
+	local old = state.sessions.closed_order
+	state.sessions.closed_order = order
+	emit_change("sessions.closed_order", old, order)
+end
+
 -- Normalize directory paths for comparison/storage while preserving roots.
 ---@param directory string|nil
 ---@return string|nil
@@ -404,6 +466,7 @@ function M.remove_session(session_id)
 	local old_cache = state.sessions.message_cache[session_id]
 
 	state.sessions.runtime_order = remove_order_id(state.sessions.runtime_order, session_id)
+	state.sessions.closed_order = remove_order_id(state.sessions.closed_order, session_id)
 	state.sessions.recent_order = remove_order_id(state.sessions.recent_order, session_id)
 	state.sessions.by_id[session_id] = nil
 	state.sessions.status[session_id] = nil
@@ -436,6 +499,12 @@ function M.close_runtime_session(session_id)
 	local old_cache = state.sessions.message_cache[session_id]
 
 	state.sessions.runtime_order = remove_order_id(state.sessions.runtime_order, session_id)
+	if was_runtime then
+		local closed = remove_order_id(state.sessions.closed_order, session_id)
+		table.insert(closed, 1, session_id)
+		while #closed > 30 do table.remove(closed) end
+		state.sessions.closed_order = closed
+	end
 	state.sessions.status[session_id] = nil
 	state.sessions.pending[session_id] = nil
 	state.sessions.message_cache[session_id] = nil
@@ -695,6 +764,7 @@ function M.reset()
 		pid = nil,
 		managed = false,
 		host = state.server.host,
+		url = state.server.url,
 		port = state.server.port,
 		version = nil,
 	}
@@ -705,6 +775,7 @@ function M.reset()
 	}
 	state.sessions = {
 		runtime_order = {},
+		closed_order = {},
 		recent_order = {},
 		by_id = {},
 		status = {},

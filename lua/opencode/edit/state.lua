@@ -409,31 +409,22 @@ end
 
 --- Get all edits (regardless of status)
 ---@return table Array of edit states sorted by timestamp
-function M.get_all()
+local function sorted_items(predicate)
 	local result = {}
-	for _, estate in pairs(active_edits) do
-		table.insert(result, estate)
+	for _, item in pairs(active_edits) do
+		if not predicate or predicate(item) then table.insert(result, item) end
 	end
-	table.sort(result, function(a, b)
-		return a.timestamp < b.timestamp
-	end)
+	table.sort(result, function(a, b) return a.timestamp < b.timestamp end)
 	return result
 end
+
+function M.get_all() return sorted_items() end
 
 --- Get all edits belonging to a specific session
 ---@param session_id string
 ---@return table Array of edit states sorted by timestamp
 function M.get_all_for_session(session_id)
-	local result = {}
-	for _, estate in pairs(active_edits) do
-		if estate.session_id == session_id then
-			table.insert(result, estate)
-		end
-	end
-	table.sort(result, function(a, b)
-		return a.timestamp < b.timestamp
-	end)
-	return result
+	return sorted_items(function(item) return item.session_id == session_id end)
 end
 
 --- Get all active (pending) edits
@@ -467,31 +458,13 @@ end
 ---@param message_id string
 ---@return table Array of edit states
 function M.get_edits_for_message(message_id)
-	local result = {}
-	for _, estate in pairs(active_edits) do
-		if estate.message_id == message_id then
-			table.insert(result, estate)
-		end
-	end
-	table.sort(result, function(a, b)
-		return a.timestamp < b.timestamp
-	end)
-	return result
+	return sorted_items(function(item) return item.message_id == message_id end)
 end
 
 --- Get all edits without a message ID (orphan edits)
 ---@return table Array of edit states
 function M.get_orphan_edits()
-	local result = {}
-	for _, estate in pairs(active_edits) do
-		if not estate.message_id then
-			table.insert(result, estate)
-		end
-	end
-	table.sort(result, function(a, b)
-		return a.timestamp < b.timestamp
-	end)
-	return result
+	return sorted_items(function(item) return not item.message_id end)
 end
 
 --- Move selection up/down through file list

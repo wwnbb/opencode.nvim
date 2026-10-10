@@ -71,8 +71,8 @@ function M.add(level, message, data)
 	trim_logs()
 
 	-- Notify log viewer of new entry if visible
-	local viewer_ok, viewer = pcall(require, "opencode.ui.log_viewer")
-	if viewer_ok and viewer.is_visible then
+	local viewer = package.loaded["opencode.ui.log_viewer"]
+	if viewer and viewer.is_visible and viewer.is_visible() then
 		vim.schedule(function()
 			if viewer.is_visible() then
 				viewer.render_entry(entry)

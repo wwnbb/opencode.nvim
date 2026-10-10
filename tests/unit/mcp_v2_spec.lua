@@ -130,4 +130,45 @@ describe("v2 MCP palette", function()
 		end
 		assert.is_false(vim.api.nvim_win_is_valid(info_win))
 	end)
+	it("shares /mcp and /mcps and updates the actual open menu for location-matched native events", function()
+		local registry, events = require("opencode.command_registry"), require("opencode.events")
+		local previous = registry.get("mcp.status")
+		local ctx
+		package.loaded["opencode.ui.menu"] = nil
+		local real_menu = require("opencode.ui.menu")
+		package.loaded["opencode.ui.menu"] = { open = function(opts) menu = opts; ctx = real_menu.open(opts); return ctx end }
+		local baseline = events.listener_count("catalog_invalidated")
+		require("opencode.ui.palette.mcp").register({ register = registry.register })
+		local ok, err = pcall(function()
+			assert.equals(registry.get_slash("mcp"), registry.get_slash("mcps"))
+			registry.select("mcp.status", { source = "completion" })
+			assert.equals(baseline + 1, events.listener_count("catalog_invalidated"))
+			events.emit("catalog_invalidated", { type = "mcp.status.changed", location = { directory = "/other" } })
+			assert.equals(1, reads)
+			events.emit("catalog_invalidated", { type = "mcp.status.changed", location = { directory = "/one" } })
+			assert.is_true(vim.wait(500, function() return refresh_callback ~= nil end, 1))
+			refresh_callback(nil, { aaa = { status = "disabled" }, one = { status = "connected" }, two = { status = "failed", error = "Broken" } })
+			local one = vim.tbl_filter(function(item) return item.value == "one" end, menu.items)[1]
+			assert.equals("connected", one.status)
+			assert.equals(3, #menu.items); assert.equals("aaa", menu.items[1].value)
+			assert.equals("one", ctx.current().value)
+			local text = table.concat(vim.api.nvim_buf_get_lines(ctx.popup.bufnr, 0, -1, false), "\n")
+			assert.truthy(text:find("● one", 1, true)); assert.truthy(text:find("× two", 1, true))
+			events.emit("catalog_invalidated", { type = "mcp.status.changed", location = { directory = "/one" } })
+			local expected = reads + 1
+			assert.is_true(vim.wait(500, function() return reads == expected end, 1))
+			refresh_callback(nil, {})
+			assert.is_nil(ctx.current())
+			for _, mapping in ipairs(vim.api.nvim_buf_get_keymap(ctx.input.bufnr, "n")) do if mapping.lhs == "r" then mapping.callback(); break end end
+			refresh_callback(nil, { one = { status = "connected" } })
+			assert.equals("one", ctx.current().value)
+			ctx.close(); assert.equals(baseline, events.listener_count("catalog_invalidated"))
+			local old = reads
+			events.emit("catalog_invalidated", { type = "mcp.status.changed", location = { directory = "/one" } })
+			assert.equals(old, reads)
+		end)
+		if ctx then ctx.close() end
+		registry.unregister("mcp.status"); if previous then registry.register(previous) end
+		if not ok then error(err) end
+	end)
 end)

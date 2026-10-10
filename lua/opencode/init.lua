@@ -115,6 +115,15 @@ local function _fence_code(bufnr, text)
 	return require("opencode.util.text").fence_code(text, language)
 end
 
+local function _format_code_prompt(bufnr, filepath, line_ref, text, opts)
+	local display_path = vim.fn.fnamemodify(filepath, ":~:.")
+	if display_path == "" then display_path = filepath end
+	local parts = { string.format("@%s#%s", display_path, line_ref), _fence_code(bufnr, text) }
+	local context = opts.context and vim.trim(opts.context) or ""
+	if context ~= "" then table.insert(parts, "Context: " .. context) end
+	return table.concat(parts, "\n")
+end
+
 ---@param opts? { context?: string }
 ---@return string|nil
 local function _build_current_line_prompt(opts)
@@ -129,22 +138,7 @@ local function _build_current_line_prompt(opts)
 
 	local line_num = vim.api.nvim_win_get_cursor(0)[1]
 	local line_text = vim.api.nvim_buf_get_lines(bufnr, line_num - 1, line_num, false)[1] or ""
-	local display_path = vim.fn.fnamemodify(filepath, ":~:.")
-	if display_path == "" then
-		display_path = filepath
-	end
-
-	local parts = {
-		string.format("@%s#%d", display_path, line_num),
-		_fence_code(bufnr, line_text),
-	}
-
-	local context = opts.context and vim.trim(opts.context) or ""
-	if context ~= "" then
-		table.insert(parts, "Context: " .. context)
-	end
-
-	return table.concat(parts, "\n")
+	return _format_code_prompt(bufnr, filepath, line_num, line_text, opts)
 end
 
 ---@param opts? { context?: string }
@@ -162,27 +156,12 @@ local function _build_visual_selection_prompt(opts)
 		return nil
 	end
 
-	local display_path = vim.fn.fnamemodify(filepath, ":~:.")
-	if display_path == "" then
-		display_path = filepath
-	end
-
 	local line_ref = tostring(selection.start_line)
 	if selection.start_line ~= selection.end_line then
 		line_ref = string.format("%d-%d", selection.start_line, selection.end_line)
 	end
 
-	local parts = {
-		string.format("@%s#%s", display_path, line_ref),
-		_fence_code(bufnr, selection.text),
-	}
-
-	local context = opts.context and vim.trim(opts.context) or ""
-	if context ~= "" then
-		table.insert(parts, "Context: " .. context)
-	end
-
-	return table.concat(parts, "\n")
+	return _format_code_prompt(bufnr, filepath, line_ref, selection.text, opts)
 end
 
 --- Setup function - called by user to configure the plugin
@@ -193,11 +172,14 @@ function M.setup(opts)
 	require("opencode.commands").configure_keymaps(M._config.keymaps)
 
 	-- Initialize state with config
+	M._config = require("opencode.settings").setup(M._config)
 	state.set_config(M._config)
+	require("opencode.editor_context").setup()
 	state.set_danger_mode(M._config.danger_mode == true)
 	state.set_server_info({
 		host = M._config.server.host,
 		port = M._config.server.port,
+		url = M._config.server.url or false,
 	})
 
 	-- Initialize events module (before client/lifecycle for bridge setup)
@@ -219,12 +201,15 @@ function M.setup(opts)
 	end
 
 	client.setup({
+		url = M._config.server.url or false,
 		host = M._config.server.host,
 		port = M._config.server.port,
+		tls = M._config.server.tls,
 		auth = M._config.server.auth,
 		timeout = M._config.server.timeout,
 		reconnect = true,
 	})
+	require("opencode.session.tabs").setup(events)
 
 	-- Initialize lifecycle module
 	local lifecycle_ok
@@ -236,6 +221,10 @@ function M.setup(opts)
 
 	lifecycle.setup({
 		command = M._config.server.command,
+		url = M._config.server.url or false,
+		managed = M._config.server.managed,
+		service_file = M._config.server.service_file or false,
+		tls = M._config.server.tls,
 		port = M._config.server.port,
 		auto_start = M._config.server.auto_start,
 		startup_timeout = M._config.server.startup_timeout,
@@ -676,9 +665,9 @@ function M.clear(opts)
 end
 
 --- Start a new root session and make it active.
----@param opts? { silent?: boolean, close_previous?: boolean, reason?: string, clear_draft?: table }
+---@param opts? { silent?: boolean, close_previous?: boolean, reason?: string, clear_draft?: table, location?: table }
 function M.new_session(opts)
-	opts = opts or {}
+	opts = vim.deepcopy(opts or {})
 
 	if not lifecycle then
 		vim.notify("OpenCode not initialized", vim.log.levels.ERROR)
@@ -695,7 +684,7 @@ function M.new_session(opts)
 		local parallel = cfg.session and cfg.session.parallel or {}
 		local preserve_cache = parallel.enabled ~= false
 
-		client.create_session({}, function(err, session)
+		client.create_session(opts.location and { location = opts.location } or {}, function(err, session)
 			vim.schedule(function()
 				if not pending.is_current(token) then return end
 				if err then

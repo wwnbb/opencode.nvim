@@ -1,6 +1,7 @@
 local M = {}
 
 local event_util = require("opencode.events.util")
+local focus = "unknown"
 
 local function get_notifications_config()
 	local state = require("opencode.state")
@@ -34,6 +35,9 @@ local function should_notify(kind, session_id)
 	if cfg.enabled == false or cfg[kind] == false then
 		return false
 	end
+	-- Like native attention, an unknown focus cannot satisfy a focus filter.
+	if cfg.when == "blurred" and focus ~= "blurred" then return false end
+	if cfg.when == "focused" and focus ~= "focused" then return false end
 	local state = require("opencode.state")
 	local notify_session_id = event_util.runtime_root_for_session(session_id) or session_id
 	if notify_session_id and not state.is_runtime_session(notify_session_id) then
@@ -68,6 +72,11 @@ local function notify(session_id, message, level)
 end
 
 function M.setup(events)
+	focus = "unknown"
+	vim.api.nvim_create_autocmd({ "FocusGained", "FocusLost" }, {
+		group = vim.api.nvim_create_augroup("OpenCodeAttention", { clear = true }),
+		callback = function(event) focus = event.event == "FocusGained" and "focused" or "blurred" end,
+	})
 	local active = {}
 	local errored = {}
 	local recent_session_errors = {}

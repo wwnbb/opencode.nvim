@@ -75,10 +75,8 @@ function M.prune_connected(set)
 	end
 
 	local now = get_identity()
-	for provider_id, _ in pairs(set) do
-		if entry_is_pending(pending[provider_id], now) then
-			set[provider_id] = nil
-		end
+	for provider_id in pairs(set) do
+		if entry_is_pending(pending[provider_id], now) then set[provider_id] = nil end
 	end
 	return set
 end
@@ -107,7 +105,7 @@ end
 
 function M.attempt_view(record)
 	local result = {}
-	for _, key in ipairs({ "id", "integration_id", "kind", "directory", "status", "attempt_id", "url", "instructions", "mode", "expires", "error" }) do
+	for _, key in ipairs({ "id", "integration_id", "kind", "directory", "status", "attempt_id", "url", "instructions", "mode", "expires", "error", "message" }) do
 		result[key] = record[key]
 	end
 	return result

@@ -9,8 +9,7 @@ local request_util = require("opencode.events.handlers.permission_flow.request")
 function M.handle(events, request, logger)
 
 	local permission_state = require("opencode.permission.state")
-	local tool_input = request_util.resolve_tool_input(request)
-	local tool_name = request_util.resolve_tool_name(request)
+	local tool_input, tool_name = request_util.resolve_tool(request)
 	local tracked = permission_state.has_permission(request.id)
 	if tracked then
 		local item = permission_state.get_permission(request.id)

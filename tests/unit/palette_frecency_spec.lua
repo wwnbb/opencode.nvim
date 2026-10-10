@@ -66,7 +66,12 @@ describe("palette usage statistics", function()
 			local wins, buffers = palette.get_winids(), {}
 			for _, win in ipairs(wins) do buffers[#buffers + 1] = vim.api.nvim_win_get_buf(win) end
 			vim.api.nvim_win_close(wins[index], true)
-			vim.wait(30)
+			assert.is_true(vim.wait(500, function()
+				if palette.is_visible() then return false end
+				for _, win in ipairs(wins) do if vim.api.nvim_win_is_valid(win) then return false end end
+				for _, buffer in ipairs(buffers) do if vim.api.nvim_buf_is_valid(buffer) then return false end end
+				return true
+			end, 5))
 			assert.is_false(palette.is_visible())
 			assert.equals(opener, vim.api.nvim_get_current_win())
 			for _, win in ipairs(wins) do assert.is_false(vim.api.nvim_win_is_valid(win)) end
