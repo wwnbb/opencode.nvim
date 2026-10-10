@@ -3,28 +3,9 @@
 
 describe("opencode input mentions", function()
 	it("detects and serializes agent mentions", function()
-vim.opt.runtimepath:append(vim.fn.getcwd())
 
 local sync = require("opencode.sync")
 local mentions = require("opencode.ui.input.mentions")
-
-local function assert_eq(actual, expected, message)
-	if actual ~= expected then
-		error(string.format("%s: expected %s, got %s", message, vim.inspect(expected), vim.inspect(actual)))
-	end
-end
-
-local function assert_truthy(value, message)
-	if not value then
-		error(message)
-	end
-end
-
-local function assert_nil(value, message)
-	if value ~= nil then
-		error(string.format("%s: expected nil, got %s", message, vim.inspect(value)))
-	end
-end
 
 local function names(agents)
 	local result = {}
@@ -46,22 +27,10 @@ sync.handle_agents({
 	{ mode = "subagent" },
 })
 
-assert_eq(
-	vim.inspect(names(sync.get_mentionable_agents())),
-	vim.inspect({ "grep_slave", "reviewer", "all", "id_only" }),
-	"mentionable agents should match upstream visibility"
-)
+assert.same({ "grep_slave", "reviewer", "all", "id_only" }, names(sync.get_mentionable_agents()), "mentionable agents should match upstream visibility")
 
-assert_eq(
-	vim.inspect(names(mentions.filter_agents(sync.get_agents(), "grep"))),
-	vim.inspect({ "grep_slave" }),
-	"mention filtering should match names"
-)
-assert_eq(
-	vim.inspect(names(mentions.filter_agents(sync.get_agents(), "search"))),
-	vim.inspect({ "grep_slave" }),
-	"mention filtering should match descriptions"
-)
+assert.same({ "grep_slave" }, names(mentions.filter_agents(sync.get_agents(), "grep")), "mention filtering should match names")
+assert.same({ "grep_slave" }, names(mentions.filter_agents(sync.get_agents(), "search")), "mention filtering should match descriptions")
 
 local unicode_agents = {
 	{ id = "review", name = "Обзор", mode = "subagent", description = "ПРОВЕРКА" },
@@ -73,10 +42,10 @@ end
 
 local function assert_trigger(line, col, start_col, query, message)
 	local trigger = mentions.detect_trigger_in_line(line, col)
-	assert_truthy(trigger, message .. " should trigger")
-	assert_eq(trigger.start_col, start_col, message .. " start_col")
-	assert_eq(trigger.end_col, col, message .. " end_col")
-	assert_eq(trigger.query, query, message .. " query")
+	assert.is_truthy(trigger, message .. " should trigger")
+	assert.equals(start_col, trigger.start_col, message .. " start_col")
+	assert.equals(col, trigger.end_col, message .. " end_col")
+	assert.equals(query, trigger.query, message .. " query")
 end
 
 assert_trigger("@", 1, 0, "", "line-start @")
@@ -86,11 +55,11 @@ assert_trigger("hello @old @gre", #"hello @old @gre", 11, "gre", "nearest @ wins
 assert_trigger("multi\t@agent", #"multi\t@agent", 6, "agent", "tab before @")
 assert_trigger("unicode @grep", #"unicode @grep", 8, "grep", "ascii whitespace after unicode text")
 
-assert_nil(mentions.detect_trigger_in_line("hello@", #"hello@"), "word-local @ should not trigger")
-assert_nil(mentions.detect_trigger_in_line("foo@bar.com", #"foo@bar.com"), "email should not trigger")
-assert_nil(mentions.detect_trigger_in_line("hello @grep now", #"hello @grep now"), "space after query should close trigger")
-assert_nil(mentions.detect_trigger_in_line("hello @old@new", #"hello @old@new"), "nearest invalid @ should not fallback")
-assert_nil(mentions.detect_trigger_in_line("中文@", #"中文@"), "non-whitespace before @ should not trigger")
+assert.is_nil(mentions.detect_trigger_in_line("hello@", #"hello@"), "word-local @ should not trigger")
+assert.is_nil(mentions.detect_trigger_in_line("foo@bar.com", #"foo@bar.com"), "email should not trigger")
+assert.is_nil(mentions.detect_trigger_in_line("hello @grep now", #"hello @grep now"), "space after query should close trigger")
+assert.is_nil(mentions.detect_trigger_in_line("hello @old@new", #"hello @old@new"), "nearest invalid @ should not fallback")
+assert.is_nil(mentions.detect_trigger_in_line("中文@", #"中文@"), "non-whitespace before @ should not trigger")
 
 mentions.setup_highlights()
 
@@ -112,28 +81,24 @@ set_one_line("@gre", 4)
 local trigger = mentions.detect_trigger_in_line("@gre", 4)
 trigger.row = 0
 trigger.line = "@gre"
-assert_truthy(mentions.insert_mention(state, trigger, { name = "grep_slave" }), "insert mention should succeed")
-assert_eq(vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)[1], "@grep_slave ", "insert should replace query and add trailing space")
+assert.is_truthy(mentions.insert_mention(state, trigger, { name = "grep_slave" }), "insert mention should succeed")
+assert.equals("@grep_slave ", vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)[1], "insert should replace query and add trailing space")
 
 local parts = mentions.active_parts(state)
-assert_eq(#parts, 1, "active mention should produce one part")
-assert_eq(parts[1].type, "agent", "active part type")
-assert_eq(parts[1].name, "grep_slave", "active part agent name")
-assert_eq(parts[1].source.start, 0, "active part source start")
-assert_eq(parts[1].source["end"], #"@grep_slave", "active part source end")
-assert_eq(parts[1].source.value, "@grep_slave", "active part source value")
+assert.equals(1, #parts, "active mention should produce one part")
+assert.equals("agent", parts[1].type, "active part type")
+assert.equals("grep_slave", parts[1].name, "active part agent name")
+assert.equals(0, parts[1].source.start, "active part source start")
+assert.equals(#"@grep_slave", parts[1].source["end"], "active part source end")
+assert.equals("@grep_slave", parts[1].source.value, "active part source value")
 
 mentions.clear(state)
 set_one_line("ask @gre now", #"ask @gre")
 trigger = mentions.detect_trigger_in_line("ask @gre now", #"ask @gre")
 trigger.row = 0
 trigger.line = "ask @gre now"
-assert_truthy(mentions.insert_mention(state, trigger, { name = "grep_slave" }), "insert before space should succeed")
-assert_eq(
-	vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)[1],
-	"ask @grep_slave now",
-	"insert should not duplicate existing whitespace"
-)
+assert.is_truthy(mentions.insert_mention(state, trigger, { name = "grep_slave" }), "insert before space should succeed")
+assert.equals("ask @grep_slave now", vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)[1], "insert should not duplicate existing whitespace")
 
 mentions.clear(state)
 vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { "hello", "@pla" })
@@ -141,18 +106,17 @@ vim.api.nvim_win_set_cursor(winid, { 2, 4 })
 trigger = mentions.detect_trigger_in_line("@pla", 4)
 trigger.row = 1
 trigger.line = "@pla"
-assert_truthy(mentions.insert_mention(state, trigger, { name = "all" }), "multiline insert should succeed")
+assert.is_truthy(mentions.insert_mention(state, trigger, { name = "all" }), "multiline insert should succeed")
 parts = mentions.active_parts(state)
-assert_eq(parts[1].source.start, #"hello\n", "multiline source start should be byte offset")
-assert_eq(parts[1].source["end"], #"hello\n@all", "multiline source end should be byte offset")
+assert.equals(#"hello\n", parts[1].source.start, "multiline source start should be byte offset")
+assert.equals(#"hello\n@all", parts[1].source["end"], "multiline source end should be byte offset")
 
 vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { "mention deleted" })
-assert_eq(#mentions.active_parts(state), 0, "deleted mention should not produce stale part")
+assert.equals(0, #mentions.active_parts(state), "deleted mention should not produce stale part")
 
 mentions.clear(state)
 vim.api.nvim_buf_delete(bufnr, { force = true })
 sync.clear_all()
 
-print("Input mention checks passed")
 	end)
 end)

@@ -149,6 +149,12 @@ function M.setup(bufnr, cfg, handlers)
 	map(bufnr, { "i", "n" }, keys.variant_cycle, handlers.cycle_variant)
 	map(bufnr, { "i", "n" }, keys.agent_cycle, handlers.cycle_agent)
 	map(bufnr, { "i", "n" }, keys.model_cycle, handlers.cycle_model)
+	if handlers.toggle_mode then map(bufnr, { "i", "n" }, "<C-\\>", handlers.toggle_mode) end
+	if handlers.fold then
+		for _, command in ipairs({ "za", "zo", "zc", "zR", "zM" }) do
+			map(bufnr, "n", command, function() handlers.fold(command) end)
+		end
+	end
 end
 
 return M

@@ -301,7 +301,7 @@ end
 
 local function mention_items(trigger)
 	local items = {}
-	for _, agent in ipairs(mentions.filter_agents(sync.get_mentionable_agents(), trigger.query)) do
+	for _, agent in ipairs(mentions.filter_agents(sync.get_agents(), trigger.query)) do
 		local name = mentions.agent_name(agent)
 		if name ~= "" then
 			table.insert(items, {

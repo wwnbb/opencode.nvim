@@ -131,19 +131,27 @@ function M.resize(state)
 		return
 	end
 
-	-- Every physical line contributes at least one display row. Later lines
-	-- cannot change the height once the existing maximum is reached.
-	local lines = vim.api.nvim_buf_get_lines(state.bufnr, 0, cfg.max_height, false)
 	local win_width = math.max(1, vim.api.nvim_win_get_width(state.winid))
 	local display_lines = 0
-
-	for _, line in ipairs(lines) do
-		if display_lines >= cfg.max_height then
-			break
-		end
-
+	local function count(line)
 		local line_width = vim.fn.strdisplaywidth(line)
 		display_lines = display_lines + (line_width == 0 and 1 or math.ceil((line_width + 1) / win_width))
+	end
+	if state.paste_folds then
+		vim.api.nvim_win_call(state.winid, function()
+			local row, total = 1, vim.api.nvim_buf_line_count(state.bufnr)
+			while row <= total and display_lines < cfg.max_height do
+				local last = vim.fn.foldclosedend(row)
+				if last >= row then display_lines, row = display_lines + 1, last + 1
+				else count(vim.api.nvim_buf_get_lines(state.bufnr, row - 1, row, false)[1]); row = row + 1 end
+			end
+		end)
+	else
+		-- Later physical lines cannot change height once the maximum is reached.
+		for _, line in ipairs(vim.api.nvim_buf_get_lines(state.bufnr, 0, cfg.max_height, false)) do
+			if display_lines >= cfg.max_height then break end
+			count(line)
+		end
 	end
 
 	local new_height = math.max(cfg.min_height, math.min(display_lines, cfg.max_height))

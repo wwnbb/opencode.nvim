@@ -3,28 +3,9 @@
 
 describe("opencode input slash commands", function()
 	it("detects, filters, ranks, and formats slash completions", function()
-vim.opt.runtimepath:append(vim.fn.getcwd())
 
 local slash = require("opencode.slash")
 local slash_commands = require("opencode.ui.input.slash_commands")
-
-local function assert_eq(actual, expected, message)
-	if actual ~= expected then
-		error(string.format("%s: expected %s, got %s", message, vim.inspect(expected), vim.inspect(actual)))
-	end
-end
-
-local function assert_truthy(value, message)
-	if not value then
-		error(message)
-	end
-end
-
-local function assert_nil(value, message)
-	if value ~= nil then
-		error(string.format("%s: expected nil, got %s", message, vim.inspect(value)))
-	end
-end
 
 local function names(commands)
 	local result = {}
@@ -44,20 +25,20 @@ end
 
 local function assert_trigger(line, col, row, query, message)
 	local trigger = slash_commands.detect_trigger_in_line(line, col, row)
-	assert_truthy(trigger, message .. " should trigger")
-	assert_eq(trigger.start_col, 0, message .. " start_col")
-	assert_eq(trigger.end_col, col, message .. " end_col")
-	assert_eq(trigger.query, query, message .. " query")
+	assert.is_truthy(trigger, message .. " should trigger")
+	assert.equals(0, trigger.start_col, message .. " start_col")
+	assert.equals(col, trigger.end_col, message .. " end_col")
+	assert.equals(query, trigger.query, message .. " query")
 end
 
 assert_trigger("/", 1, 0, "", "bare slash")
 assert_trigger("/help", #"/help", 0, "help", "slash command query")
 assert_trigger("/models", #"/models", nil, "models", "row-agnostic helper")
 
-assert_nil(slash_commands.detect_trigger_in_line("", 0, 0), "empty line should not trigger")
-assert_nil(slash_commands.detect_trigger_in_line("hello /", #"hello /", 0), "slash after text should not trigger")
-assert_nil(slash_commands.detect_trigger_in_line("/help x", #"/help x", 0), "command with args should not trigger")
-assert_nil(slash_commands.detect_trigger_in_line("/help", #"/help", 1), "second row should not trigger")
+assert.is_nil(slash_commands.detect_trigger_in_line("", 0, 0), "empty line should not trigger")
+assert.is_nil(slash_commands.detect_trigger_in_line("hello /", #"hello /", 0), "slash after text should not trigger")
+assert.is_nil(slash_commands.detect_trigger_in_line("/help x", #"/help x", 0), "command with args should not trigger")
+assert.is_nil(slash_commands.detect_trigger_in_line("/help", #"/help", 1), "second row should not trigger")
 
 local cleanup = {
 	"ztest_alpha",
@@ -101,28 +82,12 @@ slash.register({
 local commands = slash.get_commands()
 slash.register_defaults()
 for _, command in ipairs(slash.get_commands()) do
-	assert_truthy(command.name ~= "skill", "singular /skill must not be offered")
+	assert.is_truthy(command.name ~= "skill", "singular /skill must not be offered")
 end
-assert_eq(
-	vim.inspect(names(slash_commands.filter_commands(commands, "ztest_"))),
-	vim.inspect({ "ztest_alpha", "ztest_models", "ztest_sessions" }),
-	"slash filtering should match command names"
-)
-assert_eq(
-	vim.inspect(names(slash_commands.filter_commands(commands, "model"))),
-	vim.inspect({ "ztest_models" }),
-	"slash filtering should match descriptions"
-)
-assert_eq(
-	vim.inspect(names(slash_commands.filter_commands(commands, "resume"))),
-	vim.inspect({ "ztest_sessions" }),
-	"slash filtering should match aliases"
-)
-assert_eq(
-	vim.inspect(names(slash_commands.filter_commands(commands, "hidden"))),
-	vim.inspect({}),
-	"disabled commands should not be returned by slash.get_commands"
-)
+assert.same({ "ztest_alpha", "ztest_models", "ztest_sessions" }, names(slash_commands.filter_commands(commands, "ztest_")), "slash filtering should match command names")
+assert.same({ "ztest_models" }, names(slash_commands.filter_commands(commands, "model")), "slash filtering should match descriptions")
+assert.same({ "ztest_sessions" }, names(slash_commands.filter_commands(commands, "resume")), "slash filtering should match aliases")
+assert.same({}, names(slash_commands.filter_commands(commands, "hidden")), "disabled commands should not be returned by slash.get_commands")
 
 local bufnr = vim.api.nvim_create_buf(false, true)
 vim.api.nvim_set_current_buf(bufnr)
@@ -142,23 +107,15 @@ set_one_line("/ztest_alpha", #"/ztest_alpha")
 local trigger = slash_commands.detect_trigger_in_line("/ztest_alpha", #"/ztest_alpha", 0)
 trigger.row = 0
 trigger.line = "/ztest_alpha"
-assert_truthy(slash_commands.insert_command(state, trigger, { name = "ztest_alpha" }), "slash insert should succeed")
-assert_eq(
-	vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)[1],
-	"/ztest_alpha ",
-	"slash insert should add a trailing space"
-)
+assert.is_truthy(slash_commands.insert_command(state, trigger, { name = "ztest_alpha" }), "slash insert should succeed")
+assert.equals("/ztest_alpha ", vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)[1], "slash insert should add a trailing space")
 
 set_one_line("/ztest_alpha args", #"/ztest_alpha")
 trigger = slash_commands.detect_trigger_in_line("/ztest_alpha args", #"/ztest_alpha", 0)
 trigger.row = 0
 trigger.line = "/ztest_alpha args"
-assert_truthy(slash_commands.insert_command(state, trigger, { name = "ztest_alpha" }), "slash insert before args should succeed")
-assert_eq(
-	vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)[1],
-	"/ztest_alpha args",
-	"slash insert should not duplicate existing whitespace"
-)
+assert.is_truthy(slash_commands.insert_command(state, trigger, { name = "ztest_alpha" }), "slash insert before args should succeed")
+assert.equals("/ztest_alpha args", vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)[1], "slash insert should not duplicate existing whitespace")
 
 slash_commands.clear(state)
 vim.api.nvim_buf_delete(bufnr, { force = true })
@@ -166,6 +123,5 @@ for _, name in ipairs(cleanup) do
 	slash.unregister(name)
 end
 
-print("Input slash command checks passed")
 	end)
 end)
