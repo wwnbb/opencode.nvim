@@ -106,6 +106,7 @@ local function leaf_dependencies()
 	local tabstop = bufnr and vim.api.nvim_buf_is_valid(bufnr) and vim.bo[bufnr].tabstop or vim.bo.tabstop
 	return require("opencode.ui.chat.render_state").render_cache_key(
 		render.get_chat_text_width(), vim.fn.getcwd(),
+		((require("opencode.state").get_config() or {}).session or {}).markdown,
 		require("opencode.ui.syntax").get_cache_generation(),
 		vim.o.ambiwidth, vim.o.emoji, vim.o.display, tabstop, vim.bo.tabstop, vim.bo.vartabstop,
 		vim.inspect(vim.fn.exists("*getcellwidths") == 1 and vim.fn.getcellwidths() or {}),

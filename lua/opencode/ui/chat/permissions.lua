@@ -68,7 +68,11 @@ function M.sync_selected_option_from_cursor()
 		return nil, false
 	end
 
-	local _, _, meta = permission_widget.get_lines_for_permission(permission_id, pstate)
+	local meta = widget_support.get_interactive_meta(pos, pstate, "permission")
+	if not pos.meta_state then
+		local _, _, fallback = permission_widget.get_lines_for_permission(permission_id, pstate)
+		meta = fallback
+	end
 	local option_count = meta and meta.interactive_count or 0
 	local first_option_line = widget_base.get_focus_offset(meta)
 	if option_count <= 0 or first_option_line == nil then
@@ -120,18 +124,19 @@ function M.rerender_permission(perm_id)
 		return
 	end
 
-	local p_lines, p_highlights
+	local p_lines, p_highlights, p_meta
 	local status = pstate.status or "pending"
 	if status == "approved" then
 		p_lines, p_highlights = permission_widget.get_approved_lines(perm_id, pstate)
 	elseif status == "rejected" then
 		p_lines, p_highlights = permission_widget.get_rejected_lines(perm_id, pstate)
 	else
-		p_lines, p_highlights = permission_widget.get_lines_for_permission(perm_id, pstate)
+		p_lines, p_highlights, p_meta = permission_widget.get_lines_for_permission(perm_id, pstate)
 	end
 
 	if widget_support.replace_rendered_block(pos, { lines = p_lines, highlights = p_highlights }) then
 		pos.status = status
+		widget_support.set_interactive_meta(pos, p_meta or widget_base.make_meta(), pstate, "permission")
 	end
 end
 

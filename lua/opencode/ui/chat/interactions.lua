@@ -28,33 +28,17 @@ local function is_custom_only_question(question)
 	return question.custom == true
 end
 
----@param kind "question" | "permission" | "edit"
----@param pos table|nil
----@return boolean
-local function is_widget_cursor_target(kind, pos)
-	if not pos then
-		return false
-	end
-
-	if kind == "question" then
-		return pos.status == "pending" or pos.status == "confirming"
-	end
-	if kind == "permission" then
-		return pos.status == "pending"
-	end
-	return pos.status ~= "sent"
-end
-
 ---@return number|nil min_line
 ---@return number|nil max_line
 local function interactive_widget_bounds()
+	local cursor = require("opencode.ui.chat.cursor")
 	local min_line = nil
 	local max_line = nil
 	local widget_kinds = { "question", "permission", "edit" }
 	for _, kind in ipairs(widget_kinds) do
-		local positions = kind == "question" and state.questions or kind == "permission" and state.permissions or state.edits
+		local positions = cursor.get_widget_positions(kind)
 		for _, pos in pairs(positions) do
-			if is_widget_cursor_target(kind, pos) then
+			if cursor.is_widget_cursor_target(kind, pos) then
 				min_line = min_line and math.min(min_line, pos.start_line) or pos.start_line
 				max_line = max_line and math.max(max_line, pos.end_line) or pos.end_line
 			end

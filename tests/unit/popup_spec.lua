@@ -89,6 +89,29 @@ describe("shared popup owner", function()
 		for _, buf in ipairs(bufs) do assert.is_false(vim.api.nvim_buf_is_valid(buf)) end
 	end)
 
+	it("defaults input height to one row while preserving an explicit height", function()
+		for _, size in ipairs({ { width = 20 }, { width = 20, height = 3 } }) do
+			local popup = require("opencode.ui.popup").new({
+				frame = { relative = "editor", size = { width = 32, height = 12 }, focusable = false },
+				content = { position = { row = 5, col = 1 }, size = { width = 30, height = 4 } },
+				input = { position = { row = 1, col = 4 }, size = size },
+			})
+			popup:mount()
+			local ok, err = pcall(function()
+				for _, width in ipairs({ 20, 18 }) do
+					popup:resize({ input = { size = { width = width } } })
+					local input = vim.api.nvim_win_get_config(popup.input.winid)
+					local content = vim.api.nvim_win_get_config(popup.content.winid)
+					assert.equals(size.height or 1, input.height)
+					assert.equals(1, input.row)
+					assert.is_true(input.row + input.height <= content.row)
+				end
+			end)
+			popup:close()
+			if not ok then error(err) end
+		end
+	end)
+
 	it("keeps a titled border inside the screen at both edges", function()
 		vim.o.columns, vim.o.lines = 24, 10
 		local popup = require("opencode.ui.popup").new({
@@ -232,6 +255,43 @@ describe("shared popup owner", function()
 		callback()
 		assert.equals("existing", submitted)
 		assert.is_false(vim.api.nvim_buf_is_valid(input_buf))
+	end)
+
+	it("shows the full rename title, wraps on narrow screens and preserves submission", function()
+		vim.o.columns, vim.o.lines = 160, 30
+		local title = "Refactoring Summarize trait in main.rs " .. string.rep("界", 24)
+		local prompt = "Title (empty regenerates): "
+		local submitted
+		local field = require("opencode.ui.float").create_input_popup({
+			title = " Rename Session ", prompt = vim.trim(prompt), default = title,
+			on_submit = function(value) submitted = value end,
+		})
+		local winid, bufnr = field.input.winid, field.input.bufnr
+		local function assert_visible()
+			local line = vim.api.nvim_buf_get_lines(bufnr, 0, 1, false)[1]
+			assert.equals(prompt .. title, line)
+			assert.is_true(vim.wo[winid].wrap)
+			assert.is_true(vim.api.nvim_win_text_height(winid, { start_row = 0, end_row = 0 }).all
+				<= vim.api.nvim_win_get_height(winid))
+		end
+		assert_visible()
+		assert.is_true(vim.api.nvim_win_get_width(winid) > 50)
+		for columns = 40, 45 do
+			vim.o.columns = columns
+			vim.api.nvim_exec_autocmds("VimResized", {})
+			assert_visible()
+		end
+		assert.is_true(vim.api.nvim_win_get_width(winid) <= 45)
+		assert.is_true(vim.api.nvim_win_get_height(winid) > 1)
+		title = title .. " and tests"
+		vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { prompt .. title })
+		vim.api.nvim_exec_autocmds("TextChangedI", { buffer = bufnr })
+		assert_visible()
+		for _, map in ipairs(vim.api.nvim_buf_get_keymap(bufnr, "i")) do
+			if map.lhs == "<CR>" then map.callback(); break end
+		end
+		assert.equals(title, submitted)
+		assert.is_false(vim.api.nvim_buf_is_valid(bufnr))
 	end)
 
 	it("pastes and scrolls a long key with Cmd+V while keeping the TUI dialog intact", function()

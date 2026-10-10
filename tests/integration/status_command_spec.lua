@@ -8,13 +8,7 @@ local slash = require("opencode.slash")
 local slash_commands = require("opencode.ui.input.slash_commands")
 local Popup = require("opencode.ui.popup")
 
-local function input_state()
-	for index = 1, 20 do
-		local name, value = debug.getupvalue(input.get_winids, index)
-		if name == "state" then return value end
-	end
-	error("Input UI state unavailable")
-end
+local input_state = require("tests.helpers.input_state")
 
 local function input_buffer()
 	return vim.api.nvim_win_get_buf(input.get_winids()[1])

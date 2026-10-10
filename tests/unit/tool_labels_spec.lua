@@ -4,134 +4,116 @@
 
 describe("opencode tool labels", function()
 	it("format_tool_line renders golden label strings", function()
-vim.opt.runtimepath:append(vim.fn.getcwd())
-
 local tool_labels = require("opencode.ui.chat.tool_labels")
 
-local function assert_line(tool_part, expected, message)
-	local actual = tool_labels.format_tool_line(tool_part)
-	if actual ~= expected then
-		error(string.format("%s: expected %s, got %s", message, vim.inspect(expected), vim.inspect(actual)))
-	end
-end
-
-assert_line({
+assert.equals('✱ Glob "*.lua" (3 matches)', tool_labels.format_tool_line({
 	tool = "glob",
 	state = { status = "completed", input = { pattern = "*.lua" }, metadata = { count = 3 } },
-}, '✱ Glob "*.lua" (3 matches)', "glob completed")
+}), "glob completed")
 
-assert_line({
+assert.equals("~ Finding files...", tool_labels.format_tool_line({
 	tool = "glob",
 	state = { status = "pending", input = { pattern = "*.lua" } },
-}, "~ Finding files...", "glob pending")
+}), "glob pending")
 
-assert_line({
+assert.equals('✱ Grep "TODO" (2 matches)', tool_labels.format_tool_line({
 	tool = "grep",
 	state = { status = "completed", input = { pattern = "TODO" }, metadata = { matches = 2 } },
-}, '✱ Grep "TODO" (2 matches)', "grep completed")
+}), "grep completed")
 
-assert_line({
+assert.equals('✱ Glob "*.lua"', tool_labels.format_tool_line({
 	tool = "glob",
 	state = { status = "completed", input = { pattern = "*.lua" } },
-}, '✱ Glob "*.lua"', "glob without server count")
+}), "glob without server count")
 
-assert_line({
+assert.equals('✱ Grep "TODO"', tool_labels.format_tool_line({
 	tool = "grep",
 	state = { status = "completed", input = { pattern = "TODO" } },
-}, '✱ Grep "TODO"', "grep without server count")
+}), "grep without server count")
 
-assert_line({
+assert.equals('✱ Ripgrep "fn" (5 matches)', tool_labels.format_tool_line({
 	tool = "rg",
 	state = { status = "completed", input = { pattern = "fn" }, metadata = { matchCount = 5 } },
-}, '✱ Ripgrep "fn" (5 matches)', "rg completed")
+}), "rg completed")
 
-assert_line({
+assert.equals("→ Read ..." .. string.rep("x", 37), tool_labels.format_tool_line({
 	tool = "read",
 	state = { status = "completed", input = { path = string.rep("x", 60) } },
-}, "→ Read ..." .. string.rep("x", 37), "read completed with 60-char path")
+}), "read completed with 60-char path")
 
-assert_line({
+assert.equals("~ Reading file...", tool_labels.format_tool_line({
 	tool = "read",
 	state = { status = "pending", input = { path = "short.lua" } },
-}, "~ Reading file...", "read pending")
+}), "read pending")
 
-assert_line({
+assert.equals("← Wrote " .. string.rep("y", 20), tool_labels.format_tool_line({
 	tool = "write",
 	state = { status = "completed", input = { path = string.rep("y", 20) } },
-}, "← Wrote " .. string.rep("y", 20), "write completed with 20-char path")
+}), "write completed with 20-char path")
 
-assert_line({
+assert.equals("← Edit ..." .. string.rep("z", 37), tool_labels.format_tool_line({
 	tool = "edit",
 	state = { status = "completed", input = { path = string.rep("z", 50) } },
-}, "← Edit ..." .. string.rep("z", 37), "edit completed with 50-char path")
+}), "edit completed with 50-char path")
 
-assert_line({
+assert.equals("# Run tests", tool_labels.format_tool_line({
 	tool = "bash",
 	state = { status = "completed", input = { description = "Run tests" } },
-}, "# Run tests", "bash completed")
+}), "bash completed")
 
-assert_line({
+assert.equals("~ Writing command...", tool_labels.format_tool_line({
 	tool = "bash",
 	state = { status = "pending", input = {} },
-}, "~ Writing command...", "bash pending")
+}), "bash pending")
 
-assert_line({
+assert.equals("⠋ Explore Task – Find stuff", tool_labels.format_tool_line({
 	tool = "task",
 	state = { status = "running", input = { subagent_type = "explore", description = "Find stuff" } },
-}, "⠋ Explore Task – Find stuff", "task running")
+}), "task running")
 
-assert_line({
+assert.equals("✓ Explore Task – Find stuff", tool_labels.format_tool_line({
 	tool = "task",
 	state = { status = "completed", input = { subagent_type = "explore", description = "Find stuff" } },
-}, "✓ Explore Task – Find stuff", "task completed")
+}), "task completed")
 
-assert_line({
+assert.equals('→ Skill "my-skill"', tool_labels.format_tool_line({
 	tool = "skill",
 	state = { status = "completed", input = { name = "my-skill" } },
-}, '→ Skill "my-skill"', "skill completed")
+}), "skill completed")
 
-assert_line({
+assert.equals("~ foo...", tool_labels.format_tool_line({
 	tool = "foo",
 	state = { status = "pending", input = {} },
-}, "~ foo...", "unknown tool pending")
+}), "unknown tool pending")
 
-assert_line({
+assert.equals("⚙ foo", tool_labels.format_tool_line({
 	tool = "foo",
 	state = { status = "completed", input = {} },
-}, "⚙ foo", "unknown tool completed")
+}), "unknown tool completed")
 	end)
 
 	it("format_summary_item_label prefers titles, truncates paths, and formats counts", function()
-vim.opt.runtimepath:append(vim.fn.getcwd())
-
 local tool_labels = require("opencode.ui.chat.tool_labels")
 
-local function assert_label(item, expected, message)
-	local actual = tool_labels.format_summary_item_label(item)
-	if actual ~= expected then
-		error(string.format("%s: expected %s, got %s", message, vim.inspect(expected), vim.inspect(actual)))
-	end
-end
-
-assert_label({
+assert.equals("Grep X", tool_labels.format_summary_item_label({
 	tool = "grep",
 	state = { status = "completed", title = "X", input = { pattern = "p" } },
-}, "Grep X", "server title preferred when completed")
+}), "server title preferred when completed")
 
-assert_label({
+assert.equals("Grep X", tool_labels.format_summary_item_label({
 	tool = "grep",
 	state = { status = "running", title = "X", input = { pattern = "p" } },
-}, "Grep X", "server title preferred when running")
+}), "server title preferred when running")
 
-assert_label({
+assert.equals("Read ..." .. string.rep("a", 37), tool_labels.format_summary_item_label({
 	tool = "read",
 	state = { status = "completed", input = { path = string.rep("a", 41) } },
-}, "Read ..." .. string.rep("a", 37), "read fallback path truncation at 41 chars")
+}), "read fallback path truncation at 41 chars")
 
-assert_label({
+assert.equals("Ripgrep fn (5 matches)", tool_labels.format_summary_item_label({
 	tool = "rg",
 	state = { status = "completed", input = { pattern = "fn" }, metadata = { matchCount = 5 } },
-}, "Ripgrep fn (5 matches)", "rg matchCount fallback suffix")
+}), "rg matchCount fallback suffix")
 
 	end)
 
@@ -153,8 +135,6 @@ assert_label({
 	end)
 
 	it("format_state_duration formats durations across units", function()
-vim.opt.runtimepath:append(vim.fn.getcwd())
-
 local tool_labels = require("opencode.ui.chat.tool_labels")
 
 local cases = {
@@ -170,10 +150,7 @@ local cases = {
 	{ nil, nil, "nil time yields nil" },
 }
 for _, case in ipairs(cases) do
-	local actual = tool_labels.format_state_duration(case[1])
-	if actual ~= case[2] then
-		error(string.format("%s: expected %s, got %s", case[3], vim.inspect(case[2]), vim.inspect(actual)))
-	end
+	assert.equals(case[2], tool_labels.format_state_duration(case[1]), case[3])
 end
 	end)
 

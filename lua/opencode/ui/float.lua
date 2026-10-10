@@ -62,21 +62,32 @@ function M.create_input_popup(opts)
 	opts = opts or {}
 
 	local width = opts.width or (opts.password and 60 or 50)
+	local height = opts.password and 7 or 1
+	local prompt = opts.prompt and (opts.prompt .. " ") or "> "
+	local input_line = prompt .. (opts.default or "")
+	local previous_win = vim.api.nvim_get_current_win()
 
 	local border_width, border_height = 0, 0
 	if not opts.password then border_width, border_height = Popup.outer_insets() end
-	local total_width = width + border_width
-	local total_height = (opts.password and 7 or 1) + border_height
 	local function placement()
 		if opts.password then
 			local visible_width = math.min(width, math.max(1, vim.o.columns - 2))
 			return "editor", math.floor((vim.o.lines - vim.o.cmdheight) / 4),
 				math.max(0, math.floor((vim.o.columns - visible_width) / 2)), 80
 		end
-		return float_context.resolve_centered_placement(total_width, total_height)
+		local target_win, float_dims = float_context.get_chat_context()
+		local available_width = vim.o.columns
+		local available_height = vim.o.lines - vim.o.cmdheight
+		if not float_dims and target_win and vim.api.nvim_win_is_valid(target_win) then
+			available_width = math.min(available_width, vim.api.nvim_win_get_width(target_win))
+			available_height = math.min(available_height, vim.api.nvim_win_get_height(target_win))
+		end
+		local text_width = vim.fn.strdisplaywidth(input_line) + 1
+		width = math.min(opts.width or math.max(50, text_width), math.max(1, available_width - border_width))
+		height = math.min(math.ceil(text_width / width), math.max(1, available_height - border_height))
+		return float_context.resolve_centered_placement(width + border_width, height + border_height)
 	end
 	local relative, row, col, zindex = placement()
-	local prompt = opts.prompt and (opts.prompt .. " ") or "> "
 	local previous_paste, secret_paste, reading_secret, draw_secret
 
 	local popup_opts = {
@@ -89,14 +100,17 @@ function M.create_input_popup(opts)
 			if reading_secret then vim.api.nvim_input("\27") end
 		end,
 		on_resize = function(current)
-			local next_relative, next_row, next_col = placement()
+			local next_placement = vim.api.nvim_win_is_valid(previous_win)
+				and vim.api.nvim_win_call(previous_win, function() return { placement() } end) or { placement() }
+			local next_relative, next_row, next_col = unpack(next_placement)
 			if opts.password then
 				current:resize({
 					frame = { size = { width = vim.o.columns, height = vim.o.lines - vim.o.cmdheight } },
 					content = { relative = next_relative, position = { row = next_row, col = next_col },
 						size = { width = math.min(width, math.max(1, vim.o.columns - 2)), height = 7 } },
 				})
-			else current:resize({ relative = next_relative, position = { row = next_row, col = next_col } }) end
+			else current:resize({ relative = next_relative, position = { row = next_row, col = next_col },
+				size = { width = width, height = height } }) end
 			if draw_secret then draw_secret() end
 		end,
 	}
@@ -130,7 +144,7 @@ function M.create_input_popup(opts)
 		popup_opts.input = {
 			relative = relative,
 			position = { row = row, col = col },
-			size = { width = width, height = 1 },
+			size = { width = width, height = height },
 			zindex = zindex,
 			border = {
 				style = "rounded",
@@ -146,6 +160,7 @@ function M.create_input_popup(opts)
 			},
 			win_options = {
 				winhighlight = "Normal:Normal,FloatBorder:FloatBorder",
+				wrap = true, linebreak = false, breakindent = false, showbreak = "",
 			},
 			prompt = prompt,
 			default_value = opts.default or "",
@@ -242,6 +257,10 @@ function M.create_input_popup(opts)
 	-- Setup keymaps
 	local input_bufnr = input.bufnr
 	local keymap_opts = { buffer = input_bufnr, noremap = true, silent = true }
+	popup:on({ "TextChanged", "TextChangedI" }, function()
+		input_line = vim.api.nvim_buf_get_lines(input_bufnr, 0, 1, false)[1] or prompt
+		popup.on_resize(popup)
+	end, "input")
 
 	vim.keymap.set("i", "<CR>", function()
 		local lines = vim.api.nvim_buf_get_lines(input_bufnr, 0, 1, false)

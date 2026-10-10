@@ -1,3 +1,4 @@
+local schedule = require("tests.helpers.schedule")
 local app = require("opencode.state")
 local sync = require("opencode.sync")
 local pending = require("opencode.session.pending")
@@ -33,17 +34,10 @@ local function submit()
 	vim.api.nvim_set_current_win(input.get_winids()[1])
 	local mapping = vim.fn.maparg("<C-g>", "n", false, true)
 	assert.is_function(mapping.callback)
-	mapping.callback()
-	vim.wait(30, function() return false end, 5)
+	schedule.with(function(flush) mapping.callback(); flush() end)
 end
 
-local function input_ui_state()
-	for index = 1, 20 do
-		local name, value = debug.getupvalue(input.get_winids, index)
-		if name == "state" then return value end
-	end
-	error("Input UI state unavailable")
-end
+local input_ui_state = require("tests.helpers.input_state")
 
 local function select_skills_autocomplete()
 	-- Headless Plenary tests cannot keep insert mode active between Lua calls.
@@ -87,8 +81,9 @@ describe("skill selection in the input composer", function()
 	end
 
 	local function stage(names)
-		actions.stage_skills(names, { session_id = "composer-test" })
-		vim.wait(30, function() return false end, 5)
+		schedule.with(function(flush)
+			actions.stage_skills(names, { session_id = "composer-test" }); flush()
+		end)
 	end
 
 	before_each(function()
@@ -212,8 +207,7 @@ describe("skill selection in the input composer", function()
 		assert.is_true(picker.multi_select)
 		assert.equals("Draft through picker", input.get_pending_text())
 		assert.equals(0, #sent)
-		picker.on_select({ picker.items[1], picker.items[2] })
-		vim.wait(30, function() return false end, 5)
+		schedule.with(function(flush) picker.on_select({ picker.items[1], picker.items[2] }); flush() end)
 		assert.equals(1, catalog_requests)
 		assert.equals(0, #sent)
 		assert.equals("@review-id @testing-id Draft through picker", input.get_pending_text())
@@ -282,8 +276,7 @@ describe("skill selection in the input composer", function()
 		submit()
 		assert.equals(0, #sent)
 		assert.is_not_nil(picker)
-		picker.on_select({ picker.items[2] })
-		vim.wait(30, function() return false end, 5)
+		schedule.with(function(flush) picker.on_select({ picker.items[2] }); flush() end)
 		assert.is_true(input.is_visible())
 		assert.is_truthy(input.get_pending_text():find("@testing-id", 1, true))
 		assert.is_nil(input.get_pending_text():find("/skills", 1, true))

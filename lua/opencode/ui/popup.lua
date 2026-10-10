@@ -322,12 +322,19 @@ function Popup:render(lines, marks, target)
 		vim.bo[bufnr].readonly = was_readonly
 	end
 	vim.api.nvim_buf_clear_namespace(bufnr, namespace, 0, -1)
+	local line_count = lines and math.max(1, #lines) or vim.api.nvim_buf_line_count(bufnr)
+	local row_lengths = {}
 	for _, mark in ipairs(marks or {}) do
 		local row, col, options = normalise_mark(mark)
-		if row and col and row >= 0 and row < vim.api.nvim_buf_line_count(bufnr) then
-			local text = vim.api.nvim_buf_get_lines(bufnr, row, row + 1, false)[1] or ""
-			col = math.max(0, math.min(col, #text))
-			if options.end_col then options.end_col = math.max(col, math.min(options.end_col, #text)) end
+		if row and col and row >= 0 and row < line_count then
+			local length = row_lengths[row]
+			if not length then
+				local text = lines and lines[row + 1] or vim.api.nvim_buf_get_lines(bufnr, row, row + 1, false)[1]
+				length = #(text or "")
+				row_lengths[row] = length
+			end
+			col = math.max(0, math.min(col, length))
+			if options.end_col then options.end_col = math.max(col, math.min(options.end_col, length)) end
 			vim.api.nvim_buf_set_extmark(bufnr, namespace, row, col, options)
 		end
 	end
@@ -474,10 +481,10 @@ function M.new(opts)
 			if not spec.size then
 				spec.size = { width = (root.size.width or 60) - (name == "frame" and 0 or 2), height = name == "input" and 1 or (root.size.height or 20) - 2 }
 			end
-			if name == "input" then spec.size.height = 1 end
+			if name == "input" then spec.size.height = spec.size.height or 1 end
 			local relative = spec.relative or "editor"
 			self[name] = make_component(spec, relative, name == "input")
-			self.namespaces[name] = vim.api.nvim_create_namespace("opencode_popup_" .. self.id .. "_" .. name)
+			self.namespaces[name] = vim.api.nvim_create_namespace("opencode_popup_" .. name .. (spec.bufnr and ("_" .. self.id) or ""))
 		end
 	end
 	update_aliases(self)

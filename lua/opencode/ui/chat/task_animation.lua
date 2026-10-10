@@ -9,6 +9,7 @@ local state = cs.state
 local chat_anim_ns = cs.chat_anim_ns
 local widget_support = require("opencode.ui.chat.widget_support")
 local edit_state = require("opencode.edit.state")
+local tool_panel = require("opencode.ui.chat.tool_panel")
 
 local function chat_tasks()
 	return require("opencode.ui.chat.tasks")
@@ -27,17 +28,8 @@ local MAX_REGULAR_TOOL_ANIMATION_RENDER_LINES = 120
 M.TASK_HIGHLIGHT_PRIORITY = TASK_HIGHLIGHT_PRIORITY
 M.MAX_REGULAR_TOOL_ANIMATION_RENDER_LINES = MAX_REGULAR_TOOL_ANIMATION_RENDER_LINES
 
-local function frame_at(frames, index)
-	local count = type(frames) == "table" and #frames or 0
-	if count == 0 then
-		return ""
-	end
-	index = tonumber(index) or 1
-	return frames[((index - 1) % count) + 1] or frames[1] or ""
-end
-
 function M.get_task_anim_frame()
-	return frame_at(TASK_ANIM_FRAMES, state.task_anim_frame)
+	return tool_panel.anim_frame(TASK_ANIM_FRAMES)
 end
 
 ---@param status string
@@ -101,7 +93,7 @@ end
 ---@return boolean
 function M.is_animating_tool_part(tool_part)
 	tool_part = chat_tasks().resolve_tool_part(tool_part)
-	if type(tool_part) ~= "table" or tool_part.type == "skill" then
+	if type(tool_part) ~= "table" or tool_part.type == "skill" or tool_part._editor_context or tool_part.shell_notification then
 		return false
 	end
 	local status = tool_part.state and tool_part.state.status or "pending"
@@ -258,9 +250,9 @@ function M.update_animation_frames_in_place()
 	end
 
 	local updated = false
-	local task_frame = frame_at(TASK_ANIM_FRAMES, state.task_anim_frame)
-	local classic_frames = { "|", "/", "-", "\\" }
-	local classic_frame = frame_at(classic_frames, state.task_anim_frame)
+	local task_frame = M.get_task_anim_frame()
+	local classic_frames = tool_panel.ANIM_FRAMES
+	local classic_frame = tool_panel.anim_frame()
 
 	local bufnr = state.bufnr
 	local buf_lines = vim.api.nvim_buf_line_count(bufnr)
@@ -287,8 +279,11 @@ function M.update_animation_frames_in_place()
 			end
 
 			-- Scan summary lines for "  ↳ " prefix with task frame
-			for line_nr = pos.start_line + 1, math.min(pos.end_line, buf_lines - 1) do
-				local line = vim.api.nvim_buf_get_lines(bufnr, line_nr, line_nr + 1, false)[1]
+			local first_line = math.max(pos.start_line + 1, top_line)
+			local last_line = math.min(pos.end_line, bottom_line, buf_lines - 1)
+			local lines = first_line <= last_line and vim.api.nvim_buf_get_lines(bufnr, first_line, last_line + 1, false) or {}
+			for index, line in ipairs(lines) do
+				local line_nr = first_line + index - 1
 				if line and #line > 0 then
 					local prefix_chars = vim.fn.strcharpart(line, 0, 4)
 					if prefix_chars == "  ↳ " then

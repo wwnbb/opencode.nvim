@@ -152,6 +152,35 @@ function M.position_generation_is_current(pos)
 	return pos.render_generation == applied_generation
 end
 
+local META_FIELDS = {
+	question = { "questions", "current_tab", "status", "submitting", "field_errors", "server_error", "submission_kind" },
+	permission = { "tool_input", "permission_type", "always", "status", "submitting", "error", "message" },
+}
+
+-- Cursor coordinates belong to the rendered block, not a newly formatted store.
+function M.set_interactive_meta(pos, meta, source, kind)
+	local snapshot = { source = source, width = render.get_chat_text_width() }
+	for _, field in ipairs(META_FIELDS[kind]) do snapshot[field] = source[field] end
+	local selection = source.selections and source.selections[source.current_tab]
+	snapshot.custom_input = selection and selection.custom_input
+	snapshot.option_count = kind == "permission" and #(source.always or {})
+	pos.meta, pos.meta_state = meta, snapshot
+end
+
+function M.get_interactive_meta(pos, source, kind)
+	local snapshot = pos.meta_state
+	if not snapshot or snapshot.source ~= source or snapshot.width ~= render.get_chat_text_width() then return nil end
+	local generation = state.render_in_progress and state.render_generation or state.applied_render_generation
+	if pos.render_generation and generation and pos.render_generation ~= generation then return nil end
+	for _, field in ipairs(META_FIELDS[kind]) do
+		if snapshot[field] ~= source[field] then return nil end
+	end
+	local selection = source.selections and source.selections[source.current_tab]
+	if snapshot.custom_input ~= (selection and selection.custom_input)
+		or (kind == "permission" and snapshot.option_count ~= #(source.always or {})) then return nil end
+	return pos.meta
+end
+
 ---@param pos table|nil
 ---@return boolean
 function M.can_update_in_place(pos)

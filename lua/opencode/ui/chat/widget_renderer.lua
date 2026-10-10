@@ -40,8 +40,10 @@ local function append_interactive_widget(ctx, widget)
 		end_line = start_line + #widget.lines - 1,
 		status = widget.status,
 		highlights = widget.highlights,
+		meta = widget.meta,
 	}
-	if widget.track_meta then position.meta = widget.meta end
+	widget_support.mark_render_generation(position)
+	if widget.source then widget_support.set_interactive_meta(position, widget.meta, widget.source, widget.kind) end
 	widget.positions[widget.id] = position
 	ctx:add_raw_line("")
 end
@@ -69,6 +71,7 @@ function M.render_single_question(ctx, index, qstate)
 		meta = q_meta,
 		status = status,
 		positions = state.questions,
+		source = qstate,
 	})
 end
 
@@ -96,6 +99,7 @@ function M.render_single_permission(ctx, _index, pstate)
 			meta = p_meta,
 			status = pstatus,
 			positions = state.permissions,
+			source = pstate,
 		})
 	end
 end
@@ -121,7 +125,6 @@ function M.render_single_edit(ctx, _index, estate)
 			meta = e_meta,
 			status = estatus,
 			positions = state.edits,
-			track_meta = true,
 		})
 	end
 end

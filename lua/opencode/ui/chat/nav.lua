@@ -25,7 +25,7 @@ local function valid_chat_window()
 		and vim.api.nvim_win_is_valid(state.winid)
 end
 
-local function add_range(items, item)
+local function add_range(items, item, id, kind)
 	if type(item) ~= "table" then
 		return
 	end
@@ -38,6 +38,8 @@ local function add_range(items, item)
 		start_line = start_line,
 		end_line = end_line,
 	})
+	if id ~= nil then copy.id = id end
+	if kind ~= nil then copy.kind = kind end
 	table.insert(items, copy)
 end
 
@@ -54,24 +56,21 @@ local function sorted_ranges(items)
 	return items
 end
 
-local function collect_messages(role)
+local function collect_messages(role, unsorted)
 	local items = {}
 	for _, pos in ipairs(state.message_positions or {}) do
 		if not role or pos.role == role then
 			add_range(items, pos)
 		end
 	end
-	return sorted_ranges(items)
+	return unsorted and items or sorted_ranges(items)
 end
 
 local function collect_messages_and_widgets()
-	local items = collect_messages()
+	local items = collect_messages(nil, true)
 	for _, spec in ipairs(WIDGET_LINE_MAPS) do
 		for id, pos in pairs(state[spec.map] or {}) do
-			add_range(items, vim.tbl_extend("force", {}, pos, {
-				id = id,
-				kind = spec.kind,
-			}))
+			add_range(items, pos, id, spec.kind)
 		end
 	end
 	return sorted_ranges(items)
@@ -81,10 +80,7 @@ local function collect_pending_permissions()
 	local items = {}
 	for id, pos in pairs(state.permissions or {}) do
 		if pos.status == "pending" then
-			add_range(items, vim.tbl_extend("force", {}, pos, {
-				id = id,
-				kind = "permission",
-			}))
+			add_range(items, pos, id, "permission")
 		end
 	end
 	return sorted_ranges(items)
@@ -161,16 +157,19 @@ end
 ---@return boolean
 function M.jump_to_message(message_id)
 	if not valid_chat_window() then return false end
-	for _, pos in ipairs(collect_messages()) do
+	for _, pos in ipairs(state.message_positions or {}) do
 		if pos.id == message_id then
-			local line = first_content_line(pos)
-			if not line then return false end
-			vim.api.nvim_win_set_cursor(state.winid, { line + 1, 0 })
-			local ok, interactions = pcall(require, "opencode.ui.chat.interactions")
-			if ok and interactions and type(interactions.sync_widget_selection_from_cursor) == "function" then
-				interactions.sync_widget_selection_from_cursor()
+			local start_line, end_line = tonumber(pos.start_line), tonumber(pos.end_line)
+			if start_line and end_line and end_line >= start_line then
+				local line = first_content_line({ start_line = start_line, end_line = end_line })
+				if not line then return false end
+				vim.api.nvim_win_set_cursor(state.winid, { line + 1, 0 })
+				local ok, interactions = pcall(require, "opencode.ui.chat.interactions")
+				if ok and interactions and type(interactions.sync_widget_selection_from_cursor) == "function" then
+					interactions.sync_widget_selection_from_cursor()
+				end
+				return true
 			end
-			return true
 		end
 	end
 	return false
@@ -321,12 +320,13 @@ end
 ---@param child_session_id string
 ---@param tool_part table
 ---@param callback fun(err: string|nil, record: table|nil)
-local function resolve_child_lock(child_session_id, tool_part, callback)
+local function resolve_child_lock(child_session_id, tool_part, callback, strict)
 	local child_session = nil
 	local pending = require("opencode.session.pending")
 	local token = pending.token(child_session_id)
-	actions.get_session(child_session_id, function(_, session)
+	actions.get_session(child_session_id, function(session_error, session)
 		if not pending.is_current(token) then return end
+		if strict and session_error then callback(session_error); return end
 		child_session = type(session) == "table" and session or nil
 
 		actions.load_session_messages(child_session_id, { limit = 100 }, function(messages_error, response)
@@ -417,6 +417,7 @@ function M.enter_child_session(part_id)
 			end
 
 			session_lock.set(child_session_id, record)
+			actions.remember_session(record.child_session, { touch = false, reason = "child_navigation" })
 			table.insert(state.session_stack, {
 				id = current.id,
 				name = current.name or "Session",
@@ -438,10 +439,57 @@ function M.enter_child_session(part_id)
 	end)
 end
 
+-- Family navigation uses native ancestry and keeps children out of root tabs.
+function M.open_family_session(session_id, opts)
+	opts = opts or {}
+	local app_state = require("opencode.state")
+	local pending = require("opencode.session.pending")
+	local source_id = app_state.get_session().id
+	local token = pending.token(source_id)
+	local snapshot = app_state.get_session_record(session_id)
+	local directory = app_state.get_session_directory(source_id)
+	navigation_request = navigation_request + 1
+	local request = navigation_request
+	resolve_child_lock(session_id, { state = {} }, function(err, record)
+		if request ~= navigation_request or not pending.is_current(token) or app_state.get_session().id ~= source_id
+			or app_state.get_session_directory(source_id) ~= directory then return end
+		if err or not record or record.child_session.id ~= session_id then
+			vim.notify("Cannot open family session: " .. require("opencode.events.util").format_session_error(err,
+				{ fallback = "Session metadata is unavailable" }), vim.log.levels.WARN)
+			return
+		end
+		local latest = app_state.get_session_record(session_id)
+		if vim.deep_equal(snapshot, latest) then actions.remember_session(record.child_session, { touch = false, reason = "family_navigation" })
+		else record.child_session = vim.tbl_deep_extend("force", {}, record.child_session, latest or {}) end
+		local info = record.child_session
+		local child = type(info.parentID) == "string" and info.parentID ~= ""
+		if child then session_lock.set(session_id, record) else session_lock.clear(session_id) end
+		if opts.parent then
+			while #state.session_stack > 0 do
+				if table.remove(state.session_stack).id == session_id then break end
+			end
+		else state.session_stack = {} end
+		actions.set_active_session(session_id, info.title or info.name or session_id, {
+			reason = "family_navigation", preserve_cache = true, runtime = not child,
+		})
+		render_coordinator.request({ session_id = session_id, reason = "family_navigation_loaded" })
+	end, true)
+end
+
 ---Leave current child session and return to parent.
 function M.leave_child_session()
 	navigation_request = navigation_request + 1
 	local app_state = require("opencode.state")
+	local current_id = app_state.get_session().id
+	local native_parent = (app_state.get_session_record(current_id) or {}).parentID
+	if type(native_parent) == "string" and native_parent ~= "" then
+		if native_parent == current_id then
+			vim.notify("Session family has a parent cycle", vim.log.levels.WARN)
+			return
+		end
+		M.open_family_session(native_parent, { parent = true })
+		return
+	end
 	local parent
 	repeat
 		parent = table.remove(state.session_stack)

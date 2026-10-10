@@ -8,23 +8,8 @@ local function part(state)
 	return { id = "webfetch-1", type = "tool", tool = "webfetch", state = state }
 end
 
-local function text(result)
-	return table.concat(result.lines, "\n")
-end
-
-local function contains(value, expected)
-	assert.is_truthy(value:find(expected, 1, true), "Missing " .. vim.inspect(expected) .. " in " .. vim.inspect(value))
-end
-
-local function panel_text(result)
-	local lines = {}
-	for _, line in ipairs(result.lines) do
-		if line:sub(1, #"   │") == "   │" then
-			lines[#lines + 1] = line:gsub("^   │ ?", ""):gsub(" +$", "")
-		end
-	end
-	return table.concat(lines, "\n")
-end
+local render_helpers = require("tests.helpers.tool_render")
+local text, contains, panel_text = render_helpers.text, render_helpers.contains, render_helpers.panel_text
 
 describe("webfetch custom tool rendering", function()
 	local view_fields = { "winid", "bufnr", "visible", "tasks", "tools", "task_anim_frame", "render_scheduled", "render_in_progress" }

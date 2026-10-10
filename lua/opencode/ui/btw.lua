@@ -136,7 +136,10 @@ local function draw(view)
 	if active ~= view or not vim.api.nvim_buf_is_valid(view.bufnr) then return end
 	local width, height = view.geometry.width, view.geometry.height
 	local text_width = math.max(1, width - 4)
-	local question_lines = wrap_lines(view.question, text_width)
+	if not view.question_cache or view.question_cache.width ~= text_width then
+		view.question_cache = { width = text_width, lines = wrap_lines(view.question, text_width) }
+	end
+	local question_lines = view.question_cache.lines
 	local question_count = math.min(#question_lines, view.geometry.question_rows or #question_lines)
 	if not view.answer_cache or view.answer_cache.width ~= text_width then
 		local answer_lines, answer_highlights = render_answer(view.answer, text_width)

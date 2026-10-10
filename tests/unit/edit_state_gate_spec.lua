@@ -7,8 +7,10 @@ local edit_state = require("opencode.edit.state")
 local changes = require("opencode.artifact.changes")
 
 local notifications = {}
+local original_notify, temporary_files
 
 local function write_disk(path, content)
+	temporary_files[path] = true
 	local file = assert(io.open(path, "wb"))
 	file:write(content)
 	file:close()
@@ -30,12 +32,19 @@ end
 
 describe("opencode edit state gate", function()
 	before_each(function()
-		notifications = {}
+		notifications, temporary_files = {}, {}
+		original_notify = vim.notify
 		vim.notify = function(message, level)
 			table.insert(notifications, { message = message, level = level })
 		end
 		edit_state.clear_all()
 		changes.clear()
+	end)
+
+	after_each(function()
+		vim.notify = original_notify
+		edit_state.clear_all(); changes.clear()
+		for path in pairs(temporary_files) do vim.fn.delete(path) end
 	end)
 
 	it("accept writes after when disk still matches before", function()

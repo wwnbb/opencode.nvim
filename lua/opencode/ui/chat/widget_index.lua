@@ -14,6 +14,14 @@ local WIDGET_ORDER = {
 	edit = 3,
 }
 
+local WIDGETS = {
+	{ kind = "question", group = "questions", id = "request_id", rendered = "rendered_question_ids", store = question_state },
+	{ kind = "permission", group = "permissions", id = "permission_id", rendered = "rendered_perm_ids", store = permission_state },
+	{ kind = "edit", group = "edits", id = "permission_id", rendered = "rendered_edit_ids", store = edit_state },
+}
+local WIDGET_BY_KIND = {}
+for _, spec in ipairs(WIDGETS) do WIDGET_BY_KIND[spec.kind] = spec end
+
 local function add_to_map(map, key, value)
 	if not key then
 		return
@@ -36,39 +44,21 @@ function M.new(opts)
 	local self = setmetatable({
 		current_session = opts.current_session or {},
 		in_child_session_view = opts.in_child_session_view == true,
-		all_questions = question_state.get_all(),
-		all_permissions = permission_state.get_all(),
-		all_edits = edit_state.get_all(),
-		questions_by_message = {},
-		permissions_by_message = {},
-		edits_by_message = {},
-		questions_by_call = {},
-		permissions_by_call = {},
-		edits_by_call = {},
-		questions_by_session = {},
-		permissions_by_session = {},
-		edits_by_session = {},
-		rendered_question_ids = {},
-		rendered_perm_ids = {},
-		rendered_edit_ids = {},
 		rendered_local_notice_ids = {},
 		widget_order = WIDGET_ORDER,
 	}, Index)
 
-	for _, qstate in ipairs(self.all_questions) do
-		add_to_map(self.questions_by_message, qstate.message_id, qstate)
-		add_to_map(self.questions_by_call, qstate.call_id, qstate)
-		add_to_map(self.questions_by_session, qstate.session_id, qstate)
-	end
-	for _, pstate in ipairs(self.all_permissions) do
-		add_to_map(self.permissions_by_message, pstate.message_id, pstate)
-		add_to_map(self.permissions_by_call, pstate.call_id, pstate)
-		add_to_map(self.permissions_by_session, pstate.session_id, pstate)
-	end
-	for _, estate in ipairs(self.all_edits) do
-		add_to_map(self.edits_by_message, estate.message_id, estate)
-		add_to_map(self.edits_by_call, estate.call_id, estate)
-		add_to_map(self.edits_by_session, estate.session_id, estate)
+	for _, spec in ipairs(WIDGETS) do
+		local group = spec.group
+		local all = spec.store.get_all()
+		self["all_" .. group] = all
+		self[group .. "_by_message"], self[group .. "_by_call"], self[group .. "_by_session"] = {}, {}, {}
+		self[spec.rendered] = {}
+		for _, item in ipairs(all) do
+			add_to_map(self[group .. "_by_message"], item.message_id, item)
+			add_to_map(self[group .. "_by_call"], item.call_id, item)
+			add_to_map(self[group .. "_by_session"], item.session_id, item)
+		end
 	end
 
 	return self
@@ -112,27 +102,13 @@ function Index:has_pending_interaction()
 end
 
 function Index:is_rendered(kind, id)
-	if kind == "question" then
-		return self.rendered_question_ids[id] == true
-	elseif kind == "permission" then
-		return self.rendered_perm_ids[id] == true
-	elseif kind == "edit" then
-		return self.rendered_edit_ids[id] == true
-	end
-	return false
+	local spec = WIDGET_BY_KIND[kind]
+	return spec ~= nil and self[spec.rendered][id] == true
 end
 
 function Index:mark_rendered(kind, id)
-	if not id then
-		return
-	end
-	if kind == "question" then
-		self.rendered_question_ids[id] = true
-	elseif kind == "permission" then
-		self.rendered_perm_ids[id] = true
-	elseif kind == "edit" then
-		self.rendered_edit_ids[id] = true
-	end
+	local spec = WIDGET_BY_KIND[kind]
+	if spec and id then self[spec.rendered][id] = true end
 end
 
 function Index:mark_local_notice_rendered(id)
@@ -145,168 +121,68 @@ function Index:is_local_notice_rendered(id)
 	return id and self.rendered_local_notice_ids[id] == true
 end
 
+local function collect(self, items, spec, records, predicate)
+	for _, data in ipairs(records or {}) do
+		local id = data[spec.id]
+		if not self[spec.rendered][id] and (not predicate or predicate(data)) then
+			table.insert(items, widget_item(spec.kind, id, data.timestamp, data))
+		end
+	end
+end
+
 function Index:items_for_message(message_id)
-	local widget_items = {}
+	local items = {}
+	for _, spec in ipairs(WIDGETS) do
+		collect(self, items, spec, self[spec.group .. "_by_message"][message_id], function(data)
+			return spec.kind == "question" or not data.call_id
+		end)
+	end
+	return items
+end
 
-	for _, qstate in ipairs(self.questions_by_message[message_id] or {}) do
-		if not self.rendered_question_ids[qstate.request_id] then
-			table.insert(widget_items, widget_item("question", qstate.request_id, qstate.timestamp, qstate))
-		end
+local function has_widget_for_tool_call(self, kind, message_id, call_id)
+	if type(call_id) ~= "string" or call_id == "" then return false end
+	local group = WIDGET_BY_KIND[kind].group
+	for _, data in ipairs(self[group .. "_by_message"][message_id] or {}) do
+		if data.call_id == call_id and self:should_render_session_widget(data.session_id, data.status) then return true end
 	end
-	for _, pstate in ipairs(self.permissions_by_message[message_id] or {}) do
-		if not pstate.call_id and not self.rendered_perm_ids[pstate.permission_id] then
-			table.insert(widget_items, widget_item("permission", pstate.permission_id, pstate.timestamp, pstate))
-		end
+	for _, data in ipairs(self[group .. "_by_call"][call_id] or {}) do
+		if not data.message_id and data.session_id == (self.current_session and self.current_session.id)
+			and self:should_render_session_widget(data.session_id, data.status) then return true end
 	end
-	for _, estate in ipairs(self.edits_by_message[message_id] or {}) do
-		if not estate.call_id and not self.rendered_edit_ids[estate.permission_id] then
-			table.insert(widget_items, widget_item("edit", estate.permission_id, estate.timestamp, estate))
-		end
-	end
-
-	return widget_items
+	return false
 end
 
 function Index:has_question_widget_for_tool_call(message_id, call_id)
-	if type(call_id) ~= "string" or call_id == "" then
-		return false
-	end
-
-	for _, qstate in ipairs(self.questions_by_message[message_id] or {}) do
-		if
-			qstate.call_id == call_id
-			and self:should_render_session_widget(qstate.session_id, qstate.status)
-		then
-			return true
-		end
-	end
-
-	for _, qstate in ipairs(self.questions_by_call[call_id] or {}) do
-		if
-			not qstate.message_id
-			and qstate.session_id == (self.current_session and self.current_session.id)
-			and self:should_render_session_widget(qstate.session_id, qstate.status)
-		then
-			return true
-		end
-	end
-
-	return false
+	return has_widget_for_tool_call(self, "question", message_id, call_id)
 end
 
 function Index:has_edit_widget_for_tool_call(message_id, call_id)
-	if type(call_id) ~= "string" or call_id == "" then
-		return false
-	end
-
-	for _, estate in ipairs(self.edits_by_message[message_id] or {}) do
-		if
-			estate.call_id == call_id
-			and self:should_render_session_widget(estate.session_id, estate.status)
-		then
-			return true
-		end
-	end
-
-	for _, estate in ipairs(self.edits_by_call[call_id] or {}) do
-		if
-			not estate.message_id
-			and estate.session_id == (self.current_session and self.current_session.id)
-			and self:should_render_session_widget(estate.session_id, estate.status)
-		then
-			return true
-		end
-	end
-
-	return false
+	return has_widget_for_tool_call(self, "edit", message_id, call_id)
 end
 
 function Index:items_for_tool_call(message_id, call_id)
-	if type(call_id) ~= "string" or call_id == "" then
-		return {}
+	if type(call_id) ~= "string" or call_id == "" then return {} end
+	local items = {}
+	for _, spec in ipairs(WIDGETS) do
+		collect(self, items, spec, self[spec.group .. "_by_message"][message_id], function(data)
+			return data.call_id == call_id
+		end)
+		collect(self, items, spec, self[spec.group .. "_by_call"][call_id], function(data)
+			return not data.message_id and data.session_id == (self.current_session and self.current_session.id)
+		end)
 	end
-
-	local widget_items = {}
-	for _, qstate in ipairs(self.questions_by_message[message_id] or {}) do
-		if qstate.call_id == call_id and not self.rendered_question_ids[qstate.request_id] then
-			table.insert(widget_items, widget_item("question", qstate.request_id, qstate.timestamp, qstate))
-		end
-	end
-	for _, qstate in ipairs(self.questions_by_call[call_id] or {}) do
-		if
-			not qstate.message_id
-			and qstate.session_id == (self.current_session and self.current_session.id)
-			and not self.rendered_question_ids[qstate.request_id]
-		then
-			table.insert(widget_items, widget_item("question", qstate.request_id, qstate.timestamp, qstate))
-		end
-	end
-
-	for _, pstate in ipairs(self.permissions_by_message[message_id] or {}) do
-		if pstate.call_id == call_id and not self.rendered_perm_ids[pstate.permission_id] then
-			table.insert(widget_items, widget_item("permission", pstate.permission_id, pstate.timestamp, pstate))
-		end
-	end
-	for _, pstate in ipairs(self.permissions_by_call[call_id] or {}) do
-		if
-			not pstate.message_id
-			and pstate.session_id == (self.current_session and self.current_session.id)
-			and not self.rendered_perm_ids[pstate.permission_id]
-		then
-			table.insert(widget_items, widget_item("permission", pstate.permission_id, pstate.timestamp, pstate))
-		end
-	end
-
-	for _, estate in ipairs(self.edits_by_message[message_id] or {}) do
-		if estate.call_id == call_id and not self.rendered_edit_ids[estate.permission_id] then
-			table.insert(widget_items, widget_item("edit", estate.permission_id, estate.timestamp, estate))
-		end
-	end
-	for _, estate in ipairs(self.edits_by_call[call_id] or {}) do
-		if
-			not estate.message_id
-			and estate.session_id == (self.current_session and self.current_session.id)
-			and not self.rendered_edit_ids[estate.permission_id]
-		then
-			table.insert(widget_items, widget_item("edit", estate.permission_id, estate.timestamp, estate))
-		end
-	end
-
-	return widget_items
+	return items
 end
 
 function Index:items_for_child_session(child_session_id)
-	local widget_items = {}
-
-	for _, qstate in ipairs(self.questions_by_session[child_session_id] or {}) do
-		if
-			qstate.request_id
-			and not self.rendered_question_ids[qstate.request_id]
-			and self:should_render_session_widget(qstate.session_id, qstate.status)
-		then
-			table.insert(widget_items, widget_item("question", qstate.request_id, qstate.timestamp, qstate))
-		end
+	local items = {}
+	for _, spec in ipairs(WIDGETS) do
+		collect(self, items, spec, self[spec.group .. "_by_session"][child_session_id], function(data)
+			return data[spec.id] and self:should_render_session_widget(data.session_id, data.status)
+		end)
 	end
-	for _, pstate in ipairs(self.permissions_by_session[child_session_id] or {}) do
-		if
-			pstate.permission_id
-			and not self.rendered_perm_ids[pstate.permission_id]
-			and self:should_render_session_widget(pstate.session_id, pstate.status)
-		then
-			table.insert(widget_items, widget_item("permission", pstate.permission_id, pstate.timestamp, pstate))
-		end
-	end
-	for _, estate in ipairs(self.edits_by_session[child_session_id] or {}) do
-		if
-			estate.permission_id
-			and not self.rendered_edit_ids[estate.permission_id]
-			and self:should_render_session_widget(estate.session_id, estate.status)
-		then
-			table.insert(widget_items, widget_item("edit", estate.permission_id, estate.timestamp, estate))
-		end
-	end
-
-	return widget_items
+	return items
 end
 
 function Index:orphan_groups(session_msg_ids)

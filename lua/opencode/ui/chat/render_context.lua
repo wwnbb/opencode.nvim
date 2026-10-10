@@ -56,30 +56,25 @@ function Context:render_owner_key(kind, message_id, part_id)
 		.. "\0" .. tostring(message_id or "") .. "\0" .. tostring(part_id or "")
 end
 
-function Context:cached_nui_lines(key, build, owner)
+local function cached_value(self, key, build, owner, field)
 	local cached = render_state.render_cache_get(key, owner)
-	if cached and cached.nui_lines and cached.syntax_generation == self.syntax_generation then
-		return cached.nui_lines
-	end
-	if cached then render_state.render_cache_delete(owner or key) end
-	local lines = build()
-	if key and not lines._opencode_syntax_retry then
-		render_state.render_cache_put(key, { nui_lines = lines, syntax_generation = self.syntax_generation }, owner)
-	end
-	return lines
-end
-
-function Context:cached_render_result(key, build, owner)
-	local cached = render_state.render_cache_get(key, owner)
-	if cached and cached.result and cached.syntax_generation == self.syntax_generation then
-		return cached.result
+	if cached and cached[field] and cached.syntax_generation == self.syntax_generation then
+		return cached[field]
 	end
 	if cached then render_state.render_cache_delete(owner or key) end
 	local result = build()
 	if key and not result._opencode_syntax_retry then
-		render_state.render_cache_put(key, { result = result, syntax_generation = self.syntax_generation }, owner)
+		render_state.render_cache_put(key, { [field] = result, syntax_generation = self.syntax_generation }, owner)
 	end
 	return result
+end
+
+function Context:cached_nui_lines(key, build, owner)
+	return cached_value(self, key, build, owner, "nui_lines")
+end
+
+function Context:cached_render_result(key, build, owner)
+	return cached_value(self, key, build, owner, "result")
 end
 
 function Context:cached_nui_line(key, build, owner)
@@ -237,11 +232,6 @@ end
 
 function Context:commit_stream_blocks()
 	state.stream_blocks = self.next_stream_blocks
-	local count = 0
-	for _ in pairs(self.next_stream_blocks) do
-		count = count + 1
-	end
-	return count
 end
 
 return M

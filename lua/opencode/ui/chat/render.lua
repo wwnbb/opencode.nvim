@@ -1052,6 +1052,27 @@ function M.calculate_duration(message, messages)
 	return nil
 end
 
+-- Detailed usage gets its own wrapped rows so narrow chat windows can inspect
+-- every field without expanding the normal footer or confusing totals/context.
+function M.render_token_breakdown(message, turn)
+	local config = require("opencode.state").get_config() or {}
+	if (config.session or {}).verbosity ~= "high" then return {} end
+	local lines, width = {}, M.get_chat_text_width()
+	local prefix = width >= 3 and "  " or ""
+	local function add(label, usage)
+		if not usage then return end
+		local text = string.format("%s · input %s · output %s · reasoning %s · cache read %s · cache write %s", label,
+			_format_compact_number(usage.input), _format_compact_number(usage.output), _format_compact_number(usage.reasoning),
+			_format_compact_number(usage.cached), _format_compact_number(usage.cache_write))
+		for _, row in ipairs(M.wrap_text(text, math.max(1, width - #prefix))) do
+			local line = NuiLine(); line:append(NuiText(prefix .. row, "Comment")); lines[#lines + 1] = line
+		end
+	end
+	add("Step", message and require("opencode.selectors").token_usage(message.tokens))
+	add(turn and turn.complete and "Turn" or "Turn (known partial)", turn)
+	return lines
+end
+
 ---Render metadata footer for an assistant message.
 ---@param message table
 ---@param messages table[]
@@ -1087,6 +1108,22 @@ function M.render_metadata_footer(message, messages, opts)
 		end
 		line:append(NuiText(token_text .. " tok", "Comment"))
 	end
+	local config = require("opencode.state").get_config() or {}
+	if (config.session or {}).verbosity == "high" then
+		local step = require("opencode.selectors").token_usage(message.tokens)
+		if step then
+			line:append(NuiText(string.format(" · step %s new + %s cached = %s tok", _format_compact_number(step.new),
+				_format_compact_number(step.cached), _format_compact_number(step.total)), "Comment"))
+		end
+		local turn = opts.turn_usage
+		if turn and turn.steps > 0 then
+			line:append(NuiText(string.format(" · turn %d steps: %s%s new + %s cached = %s tok", turn.steps,
+				turn.complete and "" or "≥", _format_compact_number(turn.new), _format_compact_number(turn.cached),
+				_format_compact_number(turn.total)), "Comment"))
+		end
+	end
+	local cost = _numeric(message.cost)
+	if cost and cost > 0 then line:append(NuiText(string.format(" · $%.2f", cost), "Comment")) end
 	if not interrupted and is_final then
 		local duration_ms
 		if opts.duration_calculated then

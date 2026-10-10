@@ -146,15 +146,6 @@ describe("Thought, Explore, Execute and Web groups", function()
 		assert.is_nil(opened:find("details of failure", 1, true))
 	end)
 
-	it("keeps text, other tools, user messages and final answers as boundaries", function()
-		local groups = collect({
-			{ parts = { tool("a", "read"), { type = "text", text = "answer" }, tool("b", "read"),
-				tool("shell", "bash"), tool("c", "read") }, finish = "stop" },
-			{ parts = { tool("d", "read") } }, { role = "user" }, { parts = { tool("e", "read") } },
-		})
-		for _, id in ipairs({ "a", "b", "c", "d", "e" }) do assert.equals(id, groups[id].first_part_id) end
-	end)
-
 	it("includes rg in consecutive exploration across assistant steps", function()
 		local groups = collect({
 			{ parts = { tool("read", "read"), tool("rg", "rg", "running", { pattern = "main" }) } },

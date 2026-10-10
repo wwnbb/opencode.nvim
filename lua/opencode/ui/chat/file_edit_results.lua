@@ -936,6 +936,14 @@ local function render_expanded(model)
 		local diagnostics = diagnostic_count(file.diagnostics)
 		if diagnostics > 0 then
 			add_line(result, "    " .. tostring(diagnostics) .. " diagnostics", "Comment")
+			for _, diagnostic in ipairs(require("opencode.diagnostics").parse(file.diagnostics, file.filePath)) do
+				if diagnostic.path == file.filePath or diagnostic.path == file.relativePath then
+					local label = ({ "Error", "Warning", "Info", "Hint" })[diagnostic.severity] or "Diagnostic"
+					add_line(result, string.format("    %s [%d:%d] %s", label, diagnostic.line, diagnostic.character + 1,
+						diagnostic.message), diagnostic.severity == 1 and "DiagnosticError" or "DiagnosticWarn")
+				end
+			end
+			add_line(result, "    /diagnostics: list and jump", "Comment")
 		end
 
 		if index < #model.files then

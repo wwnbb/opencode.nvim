@@ -294,28 +294,6 @@ local function append_message_lines(result, message)
 end
 
 ---@param diff_line string
----@param file table
----@param is_file_header boolean|nil
----@return string
-local function display_diff_line(diff_line, file, is_file_header)
-	if not is_file_header then
-		return diff_line
-	end
-
-	local prefix = diff_line:sub(1, 4)
-	if prefix ~= "--- " and prefix ~= "+++ " then
-		return diff_line
-	end
-
-	local raw_path = diff_line:sub(5)
-	if raw_path == "/dev/null" then
-		return diff_line
-	end
-
-	return prefix .. file_path(file)
-end
-
----@param diff_line string
 ---@param is_file_header boolean|nil
 ---@return "file_add"|"file_delete"|"add"|"delete"|"context"|"hunk"|"meta"
 local function diff_line_kind(diff_line, is_file_header)
@@ -338,24 +316,6 @@ local function diff_line_kind(diff_line, is_file_header)
 		return "context"
 	end
 	return "meta"
-end
-
----@param kind string
----@return string
-local function diff_line_hl_group(kind)
-	if kind == "file_add" then
-		return "OpenCodeEditDiffAdd"
-	end
-	if kind == "file_delete" then
-		return "OpenCodeEditDiffDelete"
-	end
-	if kind == "hunk" then
-		return "OpenCodeEditDiffHeader"
-	end
-	if kind == "add" or kind == "delete" or kind == "context" then
-		return "OpenCodeEditDiffContext"
-	end
-	return "OpenCodeEditDiffMeta"
 end
 
 ---@param diff_lines string[]
@@ -388,7 +348,6 @@ local function format_line_number(value)
 	return value and tostring(value) or ""
 end
 
----@param diff_line string
 ---@param kind string
 ---@param old_line number|nil
 ---@param new_line number|nil
@@ -480,60 +439,48 @@ local function append_inline_diff(result, file)
 			old_line, new_line = parse_hunk_start(raw_line)
 			in_hunk = true
 		elseif kind ~= "file_add" and kind ~= "file_delete" and kind ~= "meta" then
-			local diff_line = display_diff_line(raw_line, file, is_file_header)
-			local is_code_line = kind == "add" or kind == "delete" or kind == "context"
-			local body = diff_line
-			local body_prefix = DIFF_INDENT
-			local continuation_prefix = DIFF_INDENT
-			local gutter = nil
-			if is_code_line then
-				gutter = format_diff_code_gutter(kind, old_line, new_line)
-				body = diff_line:sub(2)
-				body_prefix = DIFF_INDENT .. gutter
-				continuation_prefix = DIFF_INDENT .. display_width_spaces(gutter)
-			end
+			local body = raw_line:sub(2)
+			local gutter = format_diff_code_gutter(kind, old_line, new_line)
 			local line_index, _, rows = panel_helpers.add_raw_line(
 				result,
 				body,
-				diff_line_hl_group(kind),
+				"OpenCodeEditDiffContext",
 				{
-					body_prefix = body_prefix,
-					continuation_prefix = continuation_prefix,
+					body_prefix = DIFF_INDENT .. gutter,
+					continuation_prefix = DIFF_INDENT .. display_width_spaces(gutter),
 				}
 			)
 			start_line = start_line or line_index
 			end_line = rows[#rows].line_index
 
-			if is_code_line then
-				local gutter_start = #PANEL_PREFIX + #DIFF_INDENT
-				local separator_start = gutter_start + DIFF_LINE_NUMBER_WIDTH
-				local body_hl = diff_body_hl_group(kind)
-				if body_hl then
-					for _, row in ipairs(rows) do
-						add_highlight(result, row.line_index, #row.prefix, #row.line, body_hl, DIFF_BODY_PRIORITY)
-					end
+			local gutter_start = #PANEL_PREFIX + #DIFF_INDENT
+			local separator_start = gutter_start + DIFF_LINE_NUMBER_WIDTH
+			local body_hl = diff_body_hl_group(kind)
+			if body_hl then
+				for _, row in ipairs(rows) do
+					add_highlight(result, row.line_index, #row.prefix, #row.line, body_hl, DIFF_BODY_PRIORITY)
 				end
-				add_highlight(
-					result,
-					line_index,
-					gutter_start,
-					gutter_start + DIFF_LINE_NUMBER_WIDTH,
-					diff_line_number_hl_group(kind),
-					DIFF_GUTTER_PRIORITY
-				)
-				add_highlight(
-					result,
-					line_index,
-					separator_start,
-					separator_start + #DIFF_LINE_NUMBER_SEPARATOR,
-					"OpenCodeEditDiffSeparator",
-					DIFF_GUTTER_PRIORITY
-				)
+			end
+			add_highlight(
+				result,
+				line_index,
+				gutter_start,
+				gutter_start + DIFF_LINE_NUMBER_WIDTH,
+				diff_line_number_hl_group(kind),
+				DIFF_GUTTER_PRIORITY
+			)
+			add_highlight(
+				result,
+				line_index,
+				separator_start,
+				separator_start + #DIFF_LINE_NUMBER_SEPARATOR,
+				"OpenCodeEditDiffSeparator",
+				DIFF_GUTTER_PRIORITY
+			)
 
-				local code = raw_line:sub(2)
-				if lang and code ~= "" then
-					add_wrapped_syntax_highlights(result, rows, code, lang)
-				end
+			local code = raw_line:sub(2)
+			if lang and code ~= "" then
+				add_wrapped_syntax_highlights(result, rows, code, lang)
 			end
 			if kind == "add" then
 				new_line = new_line and (new_line + 1) or nil
@@ -559,82 +506,8 @@ function M.get_first_file_line(edit_state)
 	return line
 end
 
---- Get formatted lines for a pending (interactive) edit widget.
----@param permission_id string
----@param edit_state table Edit state from edit/state.lua
----@return table lines, table highlights, OpenCodeWidgetMeta meta
-function M.get_lines_for_edit(permission_id, edit_state)
+local function render_edit(edit_state, resolution_label, header_hl, server_apply_notice)
 	local result = { lines = {}, highlights = {} }
-	local header, target, stats = build_header(edit_state)
-	add_panel_blank(result)
-	local _, _, header_rows = add_panel_line(result, header, "OpenCodeEditHeader")
-	add_path_highlight(result, header_rows, target, "OpenCodeEditPath")
-	add_stats_highlights(result, header_rows, stats)
-	add_panel_blank(result)
-
-	if edit_state.message and edit_state.message ~= "" then
-		append_message_lines(result, edit_state.message)
-		add_panel_blank(result)
-	end
-
-	local first_file_line = #result.lines
-	local file_ranges = {}
-	local selected = edit_state.selected_file or 1
-	local expanded_files = edit_state.expanded_files or {}
-	for i, file in ipairs(edit_state.files or {}) do
-		local file_start, file_end = append_file_line(result, file, i == selected, expanded_files[i] == true)
-		if expanded_files[i] and file.diff_lines and #file.diff_lines > 0 then
-			add_panel_blank(result)
-			local _, diff_end = append_inline_diff(result, file)
-			file_end = diff_end or file_end
-		end
-		table.insert(file_ranges, {
-			index = i,
-			start_line = file_start,
-			end_line = file_end,
-		})
-	end
-
-	if #(edit_state.files or {}) == 0 then
-		add_panel_line(result, "No file changes detected.", "OpenCodeEditMuted")
-	end
-	if edit_state.apply_mode == "server" then
-		add_panel_blank(result)
-		add_panel_line(result, "Accepted changes apply on the server after all files are reviewed.", "OpenCodeEditMuted")
-	end
-
-	add_panel_blank(result)
-	add_trailing_separator(result)
-
-	return result.lines, result.highlights, widget_base.make_meta({
-		interactive_count = #(edit_state.files or {}),
-		first_interactive_line = first_file_line,
-		file_ranges = file_ranges,
-	})
-end
-
---- Get formatted lines for a resolved edit (all files accepted/rejected, reply sent).
----@param permission_id string
----@param edit_state table Edit state from edit/state.lua
----@return table lines, table highlights, OpenCodeWidgetMeta meta
-function M.get_resolved_lines(permission_id, edit_state)
-	local result = { lines = {}, highlights = {} }
-	local edit_state_mod = require("opencode.edit.state")
-	local resolution = edit_state_mod.get_resolution(permission_id)
-	local resolution_label = "partial"
-	local header_hl = "OpenCodeEditMuted"
-
-	if resolution == "all_accepted" then
-		resolution_label = "approved"
-		header_hl = "OpenCodeEditAccepted"
-	elseif resolution == "all_rejected" then
-		resolution_label = "rejected"
-		header_hl = "OpenCodeEditRejected"
-	elseif resolution == "all_resolved" then
-		resolution_label = "resolved"
-		header_hl = "OpenCodeEditResolved"
-	end
-
 	local header, target, stats = build_header(edit_state, resolution_label)
 	add_panel_blank(result)
 	local _, _, header_rows = add_panel_line(result, header, header_hl)
@@ -668,14 +541,51 @@ function M.get_resolved_lines(permission_id, edit_state)
 	if #(edit_state.files or {}) == 0 then
 		add_panel_line(result, "No file changes detected.", "OpenCodeEditMuted")
 	end
+	if server_apply_notice then
+		add_panel_blank(result)
+		add_panel_line(result, "Accepted changes apply on the server after all files are reviewed.", "OpenCodeEditMuted")
+	end
 
 	add_panel_blank(result)
 	add_trailing_separator(result)
+
 	return result.lines, result.highlights, widget_base.make_meta({
 		interactive_count = #(edit_state.files or {}),
 		first_interactive_line = first_file_line,
 		file_ranges = file_ranges,
 	})
+end
+
+--- Get formatted lines for a pending (interactive) edit widget.
+---@param permission_id string
+---@param edit_state table Edit state from edit/state.lua
+---@return table lines, table highlights, OpenCodeWidgetMeta meta
+function M.get_lines_for_edit(permission_id, edit_state)
+	return render_edit(edit_state, nil, "OpenCodeEditHeader", edit_state.apply_mode == "server")
+end
+
+--- Get formatted lines for a resolved edit (all files accepted/rejected, reply sent).
+---@param permission_id string
+---@param edit_state table Edit state from edit/state.lua
+---@return table lines, table highlights, OpenCodeWidgetMeta meta
+function M.get_resolved_lines(permission_id, edit_state)
+	local edit_state_mod = require("opencode.edit.state")
+	local resolution = edit_state_mod.get_resolution(permission_id)
+	local resolution_label = "partial"
+	local header_hl = "OpenCodeEditMuted"
+
+	if resolution == "all_accepted" then
+		resolution_label = "approved"
+		header_hl = "OpenCodeEditAccepted"
+	elseif resolution == "all_rejected" then
+		resolution_label = "rejected"
+		header_hl = "OpenCodeEditRejected"
+	elseif resolution == "all_resolved" then
+		resolution_label = "resolved"
+		header_hl = "OpenCodeEditResolved"
+	end
+
+	return render_edit(edit_state, resolution_label, header_hl)
 end
 
 return M

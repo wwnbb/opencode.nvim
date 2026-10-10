@@ -128,6 +128,18 @@ function M.render(content, opts, render)
 		vim.list_extend(result._opencode_highlights, syntax.project_highlights(spans, { text_value }, { rows }))
 		return rows
 	end
+	local mode = opts.mode or ((require("opencode.state").get_config() or {}).session or {}).markdown
+	if mode == "source" then
+		local source_lines = vim.split(source:sub(1, -2), "\n", { plain = true })
+		local rows = {}
+		for index, line in ipairs(source_lines) do rows[index] = add(line, {}) end
+		if syntax.is_enabled(scope) then
+			local captures, status = syntax.highlight_text(table.concat(source_lines, "\n"), "markdown", { scope = scope, min_bytes = 0 })
+			vim.list_extend(result._opencode_highlights, syntax.project_highlights(captures, source_lines, rows))
+			result._opencode_syntax_retry = syntax.needs_retry(captures, status) or nil
+		end
+		return result
+	end
 	local function blank()
 		-- An empty code row is content, distinct from inter-block spacing.
 		local last = result[#result]

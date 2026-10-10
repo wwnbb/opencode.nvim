@@ -133,13 +133,13 @@ function M.open(tool_part, opts)
 	if result_value == nil or (result_value == "" and error_value ~= nil) then
 		result_value = error_value
 	end
-	local result = output.describe(result_value)
+	local result = output.document(result_value)
 	result.lines = vim.list_extend({}, result.document_lines or result.lines)
 	if result.raw == "" then
 		result.lines = { pending and "No output yet." or "No output." }
 	end
 	if error_value ~= nil and error_value ~= "" then
-		local err = output.describe(error_value)
+		local err = output.document(error_value)
 		if err.raw ~= result.raw then
 			local lines = vim.list_extend({ "Error" }, err.document_lines or err.lines)
 			result.document_headings = nil
@@ -225,7 +225,7 @@ function M.open(tool_part, opts)
 					content.lines[#content.lines + 1] = tostring(call.status or "pending")
 					if call.input ~= nil and call.input ~= vim.NIL then
 						vim.list_extend(content.lines, { "", "Input", "" })
-						local input = output.describe(call.input, { max_lines = math.huge, max_chars = math.huge })
+						local input = output.document(call.input, { max_lines = math.huge, max_chars = math.huge })
 						vim.list_extend(content.lines, input.document_lines or input.lines)
 					end
 				end

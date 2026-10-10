@@ -10,10 +10,7 @@ local state = cs.state
 local render = require("opencode.ui.chat.render")
 local render_state = require("opencode.ui.chat.render_state")
 local chat_bash = require("opencode.ui.chat.bash")
-local chat_read = require("opencode.ui.chat.read")
 local chat_skill = require("opencode.ui.chat.skill")
-local chat_search = require("opencode.ui.chat.search")
-local chat_rg = require("opencode.ui.chat.rg")
 local chat_file_edit_results = require("opencode.ui.chat.file_edit_results")
 local widget_support = require("opencode.ui.chat.widget_support")
 local task_animation = require("opencode.ui.chat.task_animation")
@@ -28,15 +25,14 @@ local tool_group = require("opencode.ui.chat.tool_group")
 local TOOL_LEAF_RENDERERS = { skill = chat_skill }
 
 local function leaf_widget(part)
+	if part.shell_notification then return require("opencode.ui.chat.shell_notification") end
+	if part._editor_context then return require("opencode.ui.chat.editor_context") end
 	return part.type == "skill" and chat_skill or TOOL_LEAF_RENDERERS[part.tool]
 end
 
 local REGULAR_TOOL_RENDERERS = {
 	require("opencode.ui.chat.question_result").render_tool,
 	chat_bash.render_tool,
-	chat_read.render_tool,
-	chat_search.render_tool,
-	chat_rg.render_tool,
 	chat_file_edit_results.render_tool,
 }
 
@@ -51,7 +47,7 @@ function M.is_tool_leaf(part)
 end
 
 function M.tool_animation_line(part)
-	if part.type == "skill" then return nil end
+	if part.type == "skill" or part.shell_notification then return nil end
 	local widget = leaf_widget(part)
 	if widget then return widget.animation_line end
 	return tool_group.animation_line(part)
@@ -336,7 +332,7 @@ function M.render_regular_tool(tool_part, is_expanded)
 	end
 	local activity = require("opencode.ui.chat.activity")
 	if tool_part.activity_group then
-		return activity.render(tool_part.activity_group, is_expanded, state.expanded_tools)
+		return activity.render(tool_part.activity_group, state.expanded_tools[tool_part.activity_group.id], state.expanded_tools)
 	end
 	local widget = leaf_widget(tool_part)
 	local render_leaf = widget and (tool_part.type == "skill" and widget.render_attachment or widget.render_tool)
@@ -450,8 +446,13 @@ function M.handle_tool_toggle(part_id)
 		pos = tree.find(state.tools, part_id) or state.tools[root_id]
 	end
 
-	if state.expanded_tools[part_id] then
+	local expanded = pos.activity_group and require("opencode.ui.chat.activity").is_expanded(pos.activity_group, state.expanded_tools[part_id])
+		or state.expanded_tools[part_id] == true
+	if expanded then
 		state.expanded_tools[part_id] = nil
+		if pos.activity_group and require("opencode.ui.chat.activity").is_expanded(pos.activity_group) then
+			state.expanded_tools[part_id] = false
+		end
 		-- Collapsing a container closes its descendants as well. Merely hiding
 		-- the chat or rebuilding its render surface does not change expansion.
 		tree.collapse(pos.children, state.expanded_tools)

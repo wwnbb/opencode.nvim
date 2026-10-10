@@ -7,7 +7,19 @@ describe("v2 Thought rendering", function()
 		local ok, err = xpcall(function()
 			app_state.set_config({ thinking = { enabled = false } })
 			assert.is_false(thinking.is_enabled())
-			assert.is_nil(activity.kind({ type = "reasoning", text = "hidden" }))
+			assert.equals("thought", activity.kind({ type = "reasoning", text = "hidden" }))
+			local hidden = { id = "legacy", kind = "thought", completed = true,
+				refs = { { part = { id = "legacy", type = "reasoning", text = "Reachable body", time = { completed = 1 } }, message = {} } } }
+			for _, config in ipairs({ { thinking = { enabled = false } }, { session = { thinking = "hide" } } }) do
+				app_state.set_config(config)
+				assert.is_false(activity.is_expanded(hidden))
+				assert.is_truthy(activity.render(hidden).lines[1]:find("+ Thought", 1, true))
+				assert.is_nil(table.concat(activity.render(hidden).lines, "\n"):find("Reachable body", 1, true))
+				assert.is_truthy(table.concat(activity.render(hidden, true).lines, "\n"):find("▏  Reachable body", 1, true))
+			end
+			app_state.set_config({ session = { thinking = "show" } })
+			assert.is_true(activity.is_expanded(hidden))
+			assert.is_truthy(table.concat(activity.render(hidden).lines, "\n"):find("▏  Reachable body", 1, true))
 
 			app_state.set_config({ thinking = { enabled = true, highlight = "String", header_highlight = "ErrorMsg" } })
 			assert.is_true(thinking.is_enabled())

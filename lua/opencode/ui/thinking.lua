@@ -15,4 +15,9 @@ function M.is_enabled()
 	return M.get_config().enabled ~= false
 end
 
+function M.is_expanded()
+	local active = app_state.get_config() or {}
+	return M.is_enabled() and (active.session or {}).thinking == "show"
+end
+
 return M

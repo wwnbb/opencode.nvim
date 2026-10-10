@@ -142,12 +142,7 @@ function M.format_summary_item_label(item)
 	local tool_name = tostring(item.tool or "unknown")
 	local item_state = type(item.state) == "table" and item.state or {}
 	local item_status = item_state.status or "pending"
-	local metadata = vim.tbl_deep_extend(
-		"force",
-		{},
-		type(item.metadata) == "table" and item.metadata or {},
-		type(item_state.metadata) == "table" and item_state.metadata or {}
-	)
+	local metadata = render.get_tool_metadata(item)
 	local input = item_state.input
 	if type(input) ~= "table" then
 		input = item.input

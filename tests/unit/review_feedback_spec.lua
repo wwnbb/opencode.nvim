@@ -22,7 +22,9 @@ describe("review feedback delivery", function()
 	end)
 	after_each(function()
 		io.open, vim.uv.fs_close = original_open, original_close
-		vim.wait(20, function() return false end, 10)
+		local drained = false
+		vim.schedule(function() drained = true end)
+		assert.is_true(vim.wait(500, function() return drained end, 5))
 		client.review_rpc, client.respond_permission, vim.notify = rpc, permission, notify
 		edits.clear_all()
 		require("opencode.artifact.changes").clear()
@@ -104,13 +106,15 @@ describe("review feedback delivery", function()
 			local notices = {}
 			vim.notify = function(message) notices[#notices + 1] = message end
 			assert.is_true(require("opencode.ui.chat.edits").finalize_edit("r"))
-			calls[1].callback(failed and { message = "Late RPC failure" } or nil,
-				{ reviewID = "r", sessionID = "s", revision = 1, status = "decided" })
-			edits.clear_all()
-			local replacement = add(path)
-			vim.wait(20, function() return false end, 10)
-			assert.equals("pending", replacement.status)
-			assert.same({}, notices)
+			require("tests.helpers.schedule").with(function(flush)
+				calls[1].callback(failed and { message = "Late RPC failure" } or nil,
+					{ reviewID = "r", sessionID = "s", revision = 1, status = "decided" })
+				edits.clear_all()
+				local replacement = add(path)
+				flush()
+				assert.equals("pending", replacement.status)
+				assert.same({}, notices)
+			end)
 		end)
 	end
 
@@ -119,10 +123,12 @@ describe("review feedback delivery", function()
 		local notices = {}
 		vim.notify = function(message) notices[#notices + 1] = message end
 		assert.is_true(require("opencode.ui.chat.edits").finalize_edit("r"))
-		calls[1].callback({ message = "Old request failed" })
-		require("opencode.session.pending").clear_session("s")
-		vim.wait(20)
-		assert.same({}, notices)
+		require("tests.helpers.schedule").with(function(flush)
+			calls[1].callback({ message = "Old request failed" })
+			require("opencode.session.pending").clear_session("s")
+			flush()
+			assert.same({}, notices)
+		end)
 	end)
 
 	it("does not send reviews while disconnected or through permission APIs", function()

@@ -818,6 +818,9 @@ function M.focus_input()
 		allow_chat_commands = true,
 		on_send = function(text, parts, draft_options)
 			local actions = require("opencode.actions")
+			if draft_options and draft_options.mode == "shell" then
+				return actions.send(text, vim.tbl_extend("force", draft_options, { parts = parts }))
+			end
 			local slash_ok, slash = pcall(require, "opencode.slash")
 			local has_parts = type(parts) == "table" and #parts > 0
 			if slash_ok and type(slash.parse) == "function" and type(slash.execute) == "function" then
@@ -1271,12 +1274,8 @@ function M.do_render()
 		local old_lines = vim.api.nvim_buf_get_lines(state.bufnr, 0, -1, false)
 		local buf_line_count = vim.api.nvim_buf_line_count(state.bufnr)
 
-		if force_full_render then
-			vim.bo[state.bufnr].modifiable = true
-			vim.api.nvim_buf_set_lines(state.bufnr, 0, -1, false, new_lines)
-			apply_render_highlights(0)
-			vim.bo[state.bufnr].modifiable = false
 
+		local function finish_changed_render()
 			if apply_widget_focus_cursor() then
 				redraw()
 				mark_render_applied()
@@ -1295,6 +1294,14 @@ function M.do_render()
 
 			redraw()
 			mark_render_applied()
+		end
+		if force_full_render then
+			vim.bo[state.bufnr].modifiable = true
+			vim.api.nvim_buf_set_lines(state.bufnr, 0, -1, false, new_lines)
+			apply_render_highlights(0)
+			vim.bo[state.bufnr].modifiable = false
+
+			finish_changed_render()
 			return
 		end
 
@@ -1337,24 +1344,7 @@ function M.do_render()
 		apply_render_highlights(first_diff)
 		vim.bo[state.bufnr].modifiable = false
 
-		if apply_widget_focus_cursor() then
-			redraw()
-			mark_render_applied()
-			return
-		end
-
-		if restore_widget_cursor_context(widget_cursor) then
-			redraw()
-			mark_render_applied()
-			return
-		end
-
-		if should_scroll and state.visible and state.winid and vim.api.nvim_win_is_valid(state.winid) then
-			chat_cursor.scroll_to_bottom()
-		end
-
-		redraw()
-		mark_render_applied()
+		finish_changed_render()
 	end, function(err)
 		return err
 	end)
