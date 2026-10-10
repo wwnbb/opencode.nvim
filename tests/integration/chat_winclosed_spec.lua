@@ -5,19 +5,9 @@
 
 describe("opencode chat window close", function()
 	it("tears down and reopens split chat windows closed directly", function()
-		local function assert_eq(actual, expected, message)
-			assert(
-				actual == expected,
-				string.format("%s: expected %s, got %s", message, vim.inspect(expected), vim.inspect(actual))
-			)
-		end
-
-		local function assert_true(value, message)
-			assert(value ~= false and value ~= nil, message)
-		end
 
 		local function wait_for(predicate, message)
-			assert_true(vim.wait(500, predicate, 10), message)
+			assert.is_truthy(vim.wait(500, predicate, 10), message)
 		end
 
 		vim.o.columns = 120
@@ -66,39 +56,36 @@ describe("opencode chat window close", function()
 		session_actions.set_active("winclosed-session", "WinClosed Session", { preserve_cache = true })
 
 		chat.open()
-		assert_true(chat_state.visible, "chat should be visible after open")
+		assert.is_truthy(chat_state.visible, "chat should be visible after open")
 		local winid = chat_state.winid
-		assert_true(winid and vim.api.nvim_win_is_valid(winid), "split chat window should exist")
+		assert.is_truthy(winid and vim.api.nvim_win_is_valid(winid), "split chat window should exist")
 
 		-- Direct window close (user :q / :close) must tear chat state down.
 		vim.api.nvim_win_close(winid, true)
 		wait_for(function()
 			return chat_state.visible == false
 		end, "WinClosed should clear chat visibility for split layouts")
-		assert_eq(chat_state.winid, nil, "WinClosed should clear the chat window id")
+		assert.equals(nil, chat_state.winid, "WinClosed should clear the chat window id")
 
 		-- Reopening after a direct close must work.
 		chat.open()
 		wait_for(function()
 			return chat_state.visible == true
 		end, "chat should reopen after a direct window close")
-		assert_true(
-			chat_state.winid and vim.api.nvim_win_is_valid(chat_state.winid),
-			"reopened chat window should be valid"
-		)
+		assert.is_truthy(chat_state.winid and vim.api.nvim_win_is_valid(chat_state.winid), "reopened chat window should be valid")
 
 		-- Explicit close with the autocmd registered must stay idempotent.
 		chat.close()
-		assert_eq(chat_state.visible, false, "explicit close should hide the chat")
-		assert_eq(chat_state.winid, nil, "explicit close should clear the window id")
+		assert.equals(false, chat_state.visible, "explicit close should hide the chat")
+		assert.equals(nil, chat_state.winid, "explicit close should clear the window id")
 
 		chat.open()
 		vim.api.nvim_set_current_win(chat_state.winid)
 		vim.cmd("only")
-		assert_eq(#vim.api.nvim_tabpage_list_wins(0), 1, "fixture should leave chat as the only normal window")
+		assert.equals(1, #vim.api.nvim_tabpage_list_wins(0), "fixture should leave chat as the only normal window")
 		chat.close()
-		assert_eq(chat_state.visible, false, "second close cycle should remain clean")
-		assert_eq(chat_state.winid, nil, "second close cycle should clear the window id")
-		assert_eq(#vim.api.nvim_tabpage_list_wins(0), 1, "closing the last chat leaves an editor window")
+		assert.equals(false, chat_state.visible, "second close cycle should remain clean")
+		assert.equals(nil, chat_state.winid, "second close cycle should clear the window id")
+		assert.equals(1, #vim.api.nvim_tabpage_list_wins(0), "closing the last chat leaves an editor window")
 	end)
 end)

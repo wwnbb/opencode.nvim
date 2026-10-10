@@ -3,39 +3,6 @@
 
 describe("opencode chat tabs", function()
 	it("renders and navigates session tabs", function()
-local function fail(message)
-	error(message, 0)
-end
-
-local function assert_eq(actual, expected, message)
-	if actual ~= expected then
-		fail(string.format("%s: expected %s, got %s", message, vim.inspect(expected), vim.inspect(actual)))
-	end
-end
-
-local function assert_lte(actual, expected, message)
-	if actual > expected then
-		fail(string.format("%s: expected %s <= %s", message, vim.inspect(actual), vim.inspect(expected)))
-	end
-end
-
-local function assert_true(value, message)
-	if not value then
-		fail(message)
-	end
-end
-
-local function assert_contains(text, needle, message)
-	if not text:find(needle, 1, true) then
-		fail(message .. ": missing " .. vim.inspect(needle) .. " in " .. vim.inspect(text))
-	end
-end
-
-local function assert_not_contains(text, needle, message)
-	if text:find(needle, 1, true) then
-		fail(message .. ": unexpected " .. vim.inspect(needle) .. " in " .. vim.inspect(text))
-	end
-end
 
 local function ellipsis_count(text)
 	local _, count = text:gsub("%.%.%.", "")
@@ -70,7 +37,7 @@ local function is_visual_or_select_mode(mode)
 end
 
 local function tab_line(chat_view)
-	assert_true(chat_view.session_tabs_bufnr and vim.api.nvim_buf_is_valid(chat_view.session_tabs_bufnr), "tab buffer exists")
+	assert.is_truthy(chat_view.session_tabs_bufnr and vim.api.nvim_buf_is_valid(chat_view.session_tabs_bufnr), "tab buffer exists")
 	local lines = vim.api.nvim_buf_get_lines(chat_view.session_tabs_bufnr, 0, -1, false)
 	return lines[1] or ""
 end
@@ -79,7 +46,7 @@ local function assert_tab_line_fits(chat_view, label)
 	local text = tab_line(chat_view)
 	local line_width = vim.fn.strdisplaywidth(text)
 	local tabbar_width = vim.api.nvim_win_get_config(chat_view.session_tabs_winid).width
-	assert_lte(line_width, tabbar_width, label .. " fits in tabbar window")
+	assert.is_true(line_width <= tabbar_width, label .. " fits in tabbar window")
 	return text, line_width, tabbar_width
 end
 
@@ -113,15 +80,15 @@ end
 
 local function assert_visible_window(text, visible, hidden, expected_ellipsis, expected_overflow, label)
 	for _, title in ipairs(visible) do
-		assert_contains(text, title, label)
+		assert.is_truthy((text):find(title, 1, true), label)
 	end
 	for _, title in ipairs(hidden) do
-		assert_not_contains(text, title, label)
+		assert.is_nil((text):find(title, 1, true), label)
 	end
-	assert_eq(visible_title_count(text), 3, label .. " renders only max_tabs real tabs")
-	assert_eq(ellipsis_count(text), expected_ellipsis, label .. " ellipsis count")
+	assert.equals(3, visible_title_count(text), label .. " renders only max_tabs real tabs")
+	assert.equals(expected_ellipsis, ellipsis_count(text), label .. " ellipsis count")
 	for overflow_label, expected_count in pairs(expected_overflow or {}) do
-		assert_eq(label_count(text, overflow_label), expected_count, label .. " overflow " .. overflow_label .. " count")
+		assert.equals(expected_count, label_count(text, overflow_label), label .. " overflow " .. overflow_label .. " count")
 	end
 end
 
@@ -192,18 +159,18 @@ app_state.set_session("session-1", "Tab 1")
 
 local chat_bufnr = chat.create()
 vim.api.nvim_set_current_buf(chat_bufnr)
-assert_true(has_keymap(chat_bufnr, "n", "gt"), "chat buffer maps gt to cycle or counted sessions")
-assert_true(has_keymap(chat_bufnr, "n", "5"), "digit keys map directly for question option selection")
-assert_true(not has_keymap(chat_bufnr, "n", "5gt"), "no literal Ngt mapping so digit presses never wait on timeout")
+assert.is_truthy(has_keymap(chat_bufnr, "n", "gt"), "chat buffer maps gt to cycle or counted sessions")
+assert.is_truthy(has_keymap(chat_bufnr, "n", "5"), "digit keys map directly for question option selection")
+assert.is_truthy(not has_keymap(chat_bufnr, "n", "5gt"), "no literal Ngt mapping so digit presses never wait on timeout")
 
 vim.api.nvim_feedkeys("5gt", "mx", false)
-assert_eq(app_state.get_session().id, "session-5", "5gt jumps to the fifth session tab")
+assert.equals("session-5", app_state.get_session().id, "5gt jumps to the fifth session tab")
 vim.api.nvim_feedkeys("0gt", "mx", false)
-assert_eq(app_state.get_session().id, "session-1", "0gt jumps to the first session tab")
+assert.equals("session-1", app_state.get_session().id, "0gt jumps to the first session tab")
 vim.api.nvim_feedkeys("gt", "mx", false)
-assert_eq(app_state.get_session().id, "session-2", "plain gt cycles to the next session tab")
+assert.equals("session-2", app_state.get_session().id, "plain gt cycles to the next session tab")
 vim.api.nvim_feedkeys("3gt", "mx", false)
-assert_eq(app_state.get_session().id, "session-3", "Ngt jumps to the indexed session tab")
+assert.equals("session-3", app_state.get_session().id, "Ngt jumps to the indexed session tab")
 app_state.set_session("session-1", "Tab 1")
 
 local bufnr = vim.api.nvim_create_buf(false, true)
@@ -231,45 +198,45 @@ chat.update_winbar()
 
 vim.o.background = "dark"
 chat.update_winbar()
-assert_eq(hl_bg("OpenCodeWinbarCurrent"), 0x111111, "dynamic dark session tab background")
-assert_eq(hl_fg("OpenCodeWinbarCurrentIdle"), 0xbbbbbb, "dynamic dark active idle icon")
+assert.equals(0x111111, hl_bg("OpenCodeWinbarCurrent"), "dynamic dark session tab background")
+assert.equals(0xbbbbbb, hl_fg("OpenCodeWinbarCurrentIdle"), "dynamic dark active idle icon")
 vim.o.background = "light"
-assert_true(vim.wait(100, function()
+assert.is_truthy(vim.wait(100, function()
 	return hl_bg("OpenCodeWinbarCurrent") == 0xeeeeee
 end), "background change refreshes dynamic session tab colors")
-assert_eq(hl_fg("OpenCodeWinbarCurrentIdle"), 0x444444, "dynamic light active idle icon")
-assert_true(dynamic_color_calls >= 2, "dynamic session tab colors are reevaluated")
+assert.equals(0x444444, hl_fg("OpenCodeWinbarCurrentIdle"), "dynamic light active idle icon")
+assert.is_truthy(dynamic_color_calls >= 2, "dynamic session tab colors are reevaluated")
 
 local configured_tab_colors = chat_view.config.session_tabs.colors
 vim.api.nvim_set_hl(0, "TabLine", { fg = "#123456", bg = "#abcdef" })
 vim.api.nvim_set_hl(0, "TabLineSel", { fg = "#fedcba", bg = "#654321" })
 chat_view.config.session_tabs.colors = {}
 chat.update_winbar()
-assert_eq(hl_fg("OpenCodeWinbar"), 0x123456, "default inactive tab foreground inherits TabLine")
-assert_eq(hl_bg("OpenCodeWinbar"), 0xabcdef, "default inactive tab background inherits TabLine")
-assert_eq(hl_fg("OpenCodeWinbarCurrent"), 0xfedcba, "default active tab foreground inherits TabLineSel")
-assert_eq(hl_bg("OpenCodeWinbarCurrent"), 0x654321, "default active tab background inherits TabLineSel")
-assert_eq(hl_fg("OpenCodeWinbarCurrentIdle"), 0xfedcba, "default active idle icon inherits TabLineSel")
+assert.equals(0x123456, hl_fg("OpenCodeWinbar"), "default inactive tab foreground inherits TabLine")
+assert.equals(0xabcdef, hl_bg("OpenCodeWinbar"), "default inactive tab background inherits TabLine")
+assert.equals(0xfedcba, hl_fg("OpenCodeWinbarCurrent"), "default active tab foreground inherits TabLineSel")
+assert.equals(0x654321, hl_bg("OpenCodeWinbarCurrent"), "default active tab background inherits TabLineSel")
+assert.equals(0xfedcba, hl_fg("OpenCodeWinbarCurrentIdle"), "default active idle icon inherits TabLineSel")
 chat_view.config.session_tabs.colors = configured_tab_colors
 chat.update_winbar()
 
-assert_true(chat_view.session_tabs_winid and vim.api.nvim_win_is_valid(chat_view.session_tabs_winid), "float tab window stays open")
-assert_true(vim.api.nvim_win_is_valid(winid), "chat window stays open")
-assert_eq(vim.api.nvim_win_get_config(chat_view.session_tabs_winid).focusable, true, "float tab window is focusable")
-assert_eq(vim.api.nvim_win_get_config(chat_view.session_tabs_winid).width, 98, "tab strip covers the float inner width")
-assert_eq(vim.wo[winid].winbar, "", "float chat window does not use native winbar")
+assert.is_truthy(chat_view.session_tabs_winid and vim.api.nvim_win_is_valid(chat_view.session_tabs_winid), "float tab window stays open")
+assert.is_truthy(vim.api.nvim_win_is_valid(winid), "chat window stays open")
+assert.equals(true, vim.api.nvim_win_get_config(chat_view.session_tabs_winid).focusable, "float tab window is focusable")
+assert.equals(98, vim.api.nvim_win_get_config(chat_view.session_tabs_winid).width, "tab strip covers the float inner width")
+assert.equals("", vim.wo[winid].winbar, "float chat window does not use native winbar")
 
-assert_true(has_keymap(chat_view.session_tabs_bufnr, "n", "<LeftMouse>"), "float tab strip has a mouse selection mapping")
-assert_true(has_keymap(chat_view.session_tabs_bufnr, "n", "<LeftDrag>"), "normal drag is swallowed")
-assert_true(has_keymap(chat_view.session_tabs_bufnr, "v", "<LeftDrag>"), "visual drag is swallowed")
-assert_true(has_keymap(chat_view.session_tabs_bufnr, "s", "<LeftDrag>"), "select drag is swallowed")
-assert_true(has_keymap(chat_view.session_tabs_bufnr, "n", "v"), "visual mode key is disabled")
-assert_true(has_keymap(chat_view.session_tabs_bufnr, "n", "V"), "linewise visual mode key is disabled")
+assert.is_truthy(has_keymap(chat_view.session_tabs_bufnr, "n", "<LeftMouse>"), "float tab strip has a mouse selection mapping")
+assert.is_truthy(has_keymap(chat_view.session_tabs_bufnr, "n", "<LeftDrag>"), "normal drag is swallowed")
+assert.is_truthy(has_keymap(chat_view.session_tabs_bufnr, "v", "<LeftDrag>"), "visual drag is swallowed")
+assert.is_truthy(has_keymap(chat_view.session_tabs_bufnr, "s", "<LeftDrag>"), "select drag is swallowed")
+assert.is_truthy(has_keymap(chat_view.session_tabs_bufnr, "n", "v"), "visual mode key is disabled")
+assert.is_truthy(has_keymap(chat_view.session_tabs_bufnr, "n", "V"), "linewise visual mode key is disabled")
 
 vim.api.nvim_set_current_win(chat_view.session_tabs_winid)
 vim.api.nvim_feedkeys("v", "mx", false)
-assert_eq(vim.api.nvim_get_current_win(), winid, "visual mode key returns focus to chat")
-assert_true(not is_visual_or_select_mode(vim.api.nvim_get_mode().mode), "tab strip does not remain in visual mode")
+assert.equals(winid, vim.api.nvim_get_current_win(), "visual mode key returns focus to chat")
+assert.is_truthy(not is_visual_or_select_mode(vim.api.nvim_get_mode().mode), "tab strip does not remain in visual mode")
 
 local first_line = tab_line(chat_view)
 assert_visible_window(
@@ -284,10 +251,10 @@ assert_visible_window(
 local tab3_target = find_target(chat_view, function(target)
 	return target.kind == "session" and target.session_id == "session-3"
 end)
-assert_true(tab3_target ~= nil, "visible session tab has a click target")
+assert.is_truthy(tab3_target ~= nil, "visible session tab has a click target")
 
 chat.select_winbar_session(tab3_target)
-assert_eq(app_state.get_session().id, "session-3", "selecting a visible tab switches session")
+assert.equals("session-3", app_state.get_session().id, "selecting a visible tab switches session")
 chat.update_winbar()
 
 local middle_line = tab_line(chat_view)
@@ -306,14 +273,14 @@ end)
 local right_page_target = find_target(chat_view, function(target)
 	return target.kind == "page" and target.start == 3
 end)
-assert_true(left_page_target ~= nil, "left ellipsis has a page target")
-assert_true(right_page_target ~= nil, "right ellipsis has a page target")
-assert_true(#chat_view.session_tabs_mouse_targets >= 5, "float tab strip records mouse hit targets")
+assert.is_truthy(left_page_target ~= nil, "left ellipsis has a page target")
+assert.is_truthy(right_page_target ~= nil, "right ellipsis has a page target")
+assert.is_truthy(#chat_view.session_tabs_mouse_targets >= 5, "float tab strip records mouse hit targets")
 
 vim.api.nvim_set_current_win(chat_view.session_tabs_winid)
 chat.select_winbar_session(right_page_target)
-assert_true(vim.api.nvim_win_is_valid(winid), "chat window remains open after paging")
-assert_eq(vim.api.nvim_get_current_win(), winid, "paging returns focus to chat window")
+assert.is_truthy(vim.api.nvim_win_is_valid(winid), "chat window remains open after paging")
+assert.equals(winid, vim.api.nvim_get_current_win(), "paging returns focus to chat window")
 
 local end_line = tab_line(chat_view)
 assert_visible_window(
@@ -328,12 +295,12 @@ assert_visible_window(
 local back_page_target = find_target(chat_view, function(target)
 	return target.kind == "page" and target.start == 1
 end)
-assert_true(back_page_target ~= nil, "left ellipsis from end view has a page target")
+assert.is_truthy(back_page_target ~= nil, "left ellipsis from end view has a page target")
 
 vim.api.nvim_set_current_win(chat_view.session_tabs_winid)
 chat.select_winbar_session(back_page_target)
-assert_true(vim.api.nvim_win_is_valid(winid), "chat window remains open after paging back")
-assert_eq(vim.api.nvim_get_current_win(), winid, "paging back returns focus to chat window")
+assert.is_truthy(vim.api.nvim_win_is_valid(winid), "chat window remains open after paging back")
+assert.equals(winid, vim.api.nvim_get_current_win(), "paging back returns focus to chat window")
 
 local back_line = tab_line(chat_view)
 assert_visible_window(
@@ -352,7 +319,7 @@ app_state.upsert_session({
 }, { touch = false })
 chat.update_winbar()
 local unicode_line = tab_line(chat_view)
-assert_contains(unicode_line, "Комиссия по сим...", "unicode tab title truncates on character boundaries")
+assert.is_truthy((unicode_line):find("Комиссия по сим...", 1, true), "unicode tab title truncates on character boundaries")
 
 for index = 1, 5 do
 	app_state.upsert_session({
@@ -371,20 +338,20 @@ chat_view.session_tabs_current_id = nil
 chat_view.float_dims.width = 100
 chat.update_winbar()
 local auto_full_line = assert_tab_line_fits(chat_view, "auto-fit wide tab strip")
-assert_eq(vim.api.nvim_win_get_config(chat_view.session_tabs_winid).width, 98, "auto-fit wide tabbar width")
-assert_eq(visible_title_count(auto_full_line), 5, "auto-fit wide view shows all session tabs")
-assert_eq(ellipsis_count(auto_full_line), 0, "auto-fit wide view has no overflow ellipsis")
+assert.equals(98, vim.api.nvim_win_get_config(chat_view.session_tabs_winid).width, "auto-fit wide tabbar width")
+assert.equals(5, visible_title_count(auto_full_line), "auto-fit wide view shows all session tabs")
+assert.equals(0, ellipsis_count(auto_full_line), "auto-fit wide view has no overflow ellipsis")
 
 chat_view.session_tabs_start = nil
 chat_view.session_tabs_current_id = nil
 chat_view.float_dims.width = 37
 chat.update_winbar()
 local auto_narrow_line = assert_tab_line_fits(chat_view, "auto-fit narrow tab strip")
-assert_eq(vim.api.nvim_win_get_config(chat_view.session_tabs_winid).width, 35, "auto-fit narrow tabbar width")
-assert_eq(visible_title_count(auto_narrow_line), 2, "auto-fit narrow view shows the largest fitting tab count")
-assert_eq(ellipsis_count(auto_narrow_line), 2, "auto-fit narrow view keeps overflow ellipses")
-assert_eq(label_count(auto_narrow_line, "...1"), 1, "auto-fit narrow view keeps left overflow count")
-assert_eq(label_count(auto_narrow_line, "...2"), 1, "auto-fit narrow view keeps right overflow count")
+assert.equals(35, vim.api.nvim_win_get_config(chat_view.session_tabs_winid).width, "auto-fit narrow tabbar width")
+assert.equals(2, visible_title_count(auto_narrow_line), "auto-fit narrow view shows the largest fitting tab count")
+assert.equals(2, ellipsis_count(auto_narrow_line), "auto-fit narrow view keeps overflow ellipses")
+assert.equals(1, label_count(auto_narrow_line, "...1"), "auto-fit narrow view keeps left overflow count")
+assert.equals(1, label_count(auto_narrow_line, "...2"), "auto-fit narrow view keeps right overflow count")
 
 chat_view.config.session_tabs.auto_fit = false
 chat_view.config.session_tabs.max_tabs = "auto"
@@ -395,23 +362,23 @@ chat_view.session_tabs_current_id = nil
 chat_view.float_dims.width = 46
 chat.update_winbar()
 local auto_busy_line = assert_tab_line_fits(chat_view, "auto-fit busy tab strip")
-assert_eq(vim.api.nvim_win_get_config(chat_view.session_tabs_winid).width, 44, "auto-fit busy tabbar width")
-assert_eq(visible_title_count(auto_busy_line), 2, "auto max_tabs alias reserves marker width")
-assert_contains(auto_busy_line, "R1", "auto-fit keeps running marker summary")
-assert_contains(auto_busy_line, "W1", "auto-fit keeps waiting marker summary")
-assert_eq(label_count(auto_busy_line, "...1"), 1, "auto-fit busy view keeps left overflow count")
-assert_eq(label_count(auto_busy_line, "...2"), 1, "auto-fit busy view keeps right overflow count")
+assert.equals(44, vim.api.nvim_win_get_config(chat_view.session_tabs_winid).width, "auto-fit busy tabbar width")
+assert.equals(2, visible_title_count(auto_busy_line), "auto max_tabs alias reserves marker width")
+assert.is_truthy((auto_busy_line):find("R1", 1, true), "auto-fit keeps running marker summary")
+assert.is_truthy((auto_busy_line):find("W1", 1, true), "auto-fit keeps waiting marker summary")
+assert.equals(1, label_count(auto_busy_line, "...1"), "auto-fit busy view keeps left overflow count")
+assert.equals(1, label_count(auto_busy_line, "...2"), "auto-fit busy view keeps right overflow count")
 
 local btw = require("opencode.btw")
 local original_pending_count = btw.pending_count
 btw.pending_count = function() return 1 end
 chat.update_winbar()
 local aside_line = assert_tab_line_fits(chat_view, "auto-fit side-question indicator")
-assert_contains(aside_line, "/btw", "side question progress appears in the tab strip")
+assert.is_truthy((aside_line):find("/btw", 1, true), "side question progress appears in the tab strip")
 chat_view.config.session_tabs.enabled = false
 chat.update_winbar()
 local status_only_line = assert_tab_line_fits(chat_view, "side-question indicator with tabs disabled")
-assert_contains(status_only_line, "/btw", "side question stays visible with tabs disabled")
+assert.is_truthy((status_only_line):find("/btw", 1, true), "side question stays visible with tabs disabled")
 chat_view.config.session_tabs.enabled = true
 btw.pending_count = original_pending_count
 chat.update_winbar()

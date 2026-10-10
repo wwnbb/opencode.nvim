@@ -286,11 +286,9 @@ function M.handle_deleted(session_id, opts)
 	end
 
 	local ok_sync, sync = pcall(require, "opencode.sync")
-	local deleted_ids = ok_sync and type(sync.collect_session_tree) == "function" and sync.collect_session_tree(session_id) or { session_id }
-	if ok_sync and type(sync.clear_session_tree) == "function" then
+	local deleted_ids = ok_sync and sync.collect_session_tree(session_id) or { session_id }
+	if ok_sync then
 		sync.clear_session_tree(session_id)
-	elseif ok_sync and type(sync.clear_session) == "function" then
-		sync.clear_session(session_id)
 	end
 
 	if is_tab then
@@ -373,14 +371,12 @@ function M.close(session_id, opts)
 	local title = session_util.displayTitle(closed and (closed.title or closed.name)) or target_id
 
 	local ok_sync, sync = pcall(require, "opencode.sync")
-	local closed_ids = ok_sync and type(sync.collect_session_tree) == "function" and sync.collect_session_tree(target_id) or { target_id }
-	if ok_sync and type(sync.clear_session_tree) == "function" then
+	local closed_ids = ok_sync and sync.collect_session_tree(target_id) or { target_id }
+	if ok_sync then
 		-- Clear the closed tab's data plus any subagent child sessions
 		-- that were loaded into sync (e.g. via `gd`). Their messages are
 		-- only reachable through the parent tab, so they leak otherwise.
 		sync.clear_session_tree(target_id)
-	elseif ok_sync and type(sync.clear_session) == "function" then
-		sync.clear_session(target_id)
 	end
 	for _, id in ipairs(closed_ids) do
 		require("opencode.cleanup").clear_session_memos(id)
@@ -629,32 +625,9 @@ function M.switch_to(session, opts)
 		return
 	end
 
-	M.remember(session, { touch = false, reason = opts.reason or "session_switch" })
-
-	local function activate()
-		M.set_active(session.id, session.title or session.name, {
-			reason = opts.reason or "session_switch",
-			preserve_cache = true,
-		})
-		emit("session.selected", {
-			sessionID = session.id,
-			sessionTitle = session.title or session.name,
-			previousSessionID = current.id,
-		})
-		emit("sync_changed", {
-			kind = "session",
-			action = opts.reason or "session_switch",
-			session_id = session.id,
-		})
-		if opts.notify then
-			local title = session_util.displayTitle(session.title or session.name) or session.id
-			vim.notify("Switched to session: " .. title, vim.log.levels.INFO)
-		end
-	end
-
 	local ok_sync, sync = pcall(require, "opencode.sync")
 	local ok_client, client = pcall(require, "opencode.client")
-	activate()
+	activate_local(session, opts)
 	request_chat_render({
 		session_id = session.id,
 		reason = opts.reason or "session_switch",

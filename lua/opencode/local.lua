@@ -624,6 +624,11 @@ function M.model.set(model, opts)
 		end
 		return
 	end
+	model = vim.deepcopy(model)
+	local model_info = sync.get_model(model.providerID, model.modelID)
+	if model.variant == "default" or (model.variant and not (model_info.variants or {})[model.variant]) then
+		model.variant = nil
+	end
 	local agent = M.agent.current()
 	if agent then
 		state.model[agent.id or agent.name] = { providerID = model.providerID, modelID = model.modelID }
@@ -647,14 +652,15 @@ end
 
 ---Cycle through favorite or recent models
 ---@param direction number 1 for next, -1 for previous
----@param opts? { silent?: boolean }
+---@param opts? { silent?: boolean, source?: "favorite"|"recent" }
 function M.model.cycle(direction, opts)
 	opts = opts or {}
+	if require("opencode.session.lock").is_locked(require("opencode.state").get_session().id) then return end
 	local current = M.model.current() or {}
 
 	-- Determine which list to use: favorites take priority over recents
-	local source_list = valid_models(state.favorite)
-	if #source_list == 0 then
+	local source_list = valid_models(opts.source == "recent" and state.recent or state.favorite)
+	if #source_list == 0 and not opts.source then
 		source_list = valid_models(state.recent)
 	end
 
@@ -784,15 +790,23 @@ end
 ---Set variant for current model
 ---@param value string|nil
 function M.variant.set(value)
+	if require("opencode.session.lock").is_locked(require("opencode.state").get_session().id) then return false end
 	local model = M.model.current()
 	if not model then
-		return
+		return false
+	end
+	if value == "default" then value = nil end
+	local model_info = sync.get_model(model.providerID, model.modelID)
+	if value ~= nil and not (model_info and model_info.variants or {})[value] then
+		vim.notify("Variant is unavailable for this model: " .. tostring(value), vim.log.levels.WARN)
+		return false
 	end
 	local key = variant_key(model)
 	local old = state.variant[key]
 	state.variant[key] = value
 	save_state()
 	emit("variant", old, value)
+	return true
 end
 
 ---Cycle through variants (like ctrl+t in TUI)

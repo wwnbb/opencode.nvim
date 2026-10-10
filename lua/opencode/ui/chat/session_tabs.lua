@@ -21,6 +21,7 @@ local defaults = vim.deepcopy(require("opencode.config").defaults.chat)
 
 local function emit_refresh()
 	vim.schedule(function()
+		actions.observe_session(selectors.get_current_runtime_root_id(), state.visible and cs.is_chat_buffer_displayed())
 		if state.visible and type(M.update_winbar) == "function" then
 			M.update_winbar()
 		end
@@ -184,6 +185,9 @@ local function session_tab_icon(session, icons)
 	if session:is_error() then
 		return icons.error or "✕", "OpenCodeWinbarError"
 	end
+	if session:is_unread() then
+		return icons.unread or "◆", "OpenCodeWinbarWaiting"
+	end
 	return icons.idle or "○", "OpenCodeWinbarIdle"
 end
 
@@ -316,9 +320,75 @@ local function numeric_session_tabs_max(tabs_cfg)
 	return math.max(1, tonumber(tabs_cfg.max_tabs) or 3)
 end
 
+-- One update owns these labels and widths; fitting candidates never build NuiLines.
+local function prepare_session_tabs(tabs_cfg, sessions, active_session, current_root_session_id)
+	local icons, separator = tabs_cfg.icons or {}, tabs_cfg.separator or " │ "
+	local prepared = { labels = {}, widths = { 0 }, separator = separator, separator_width = vim.fn.strdisplaywidth(separator) }
+	prepared.current_index, prepared.current_id = current_session_tab_index(sessions, active_session, current_root_session_id)
+	local running, waiting = 0, 0
+	local function width(text)
+		local size = vim.fn.strdisplaywidth(text)
+		-- Tabs and combining/control characters can depend on adjoining text.
+		if text:find("[%c]") or vim.fn.strdisplaywidth(separator .. text) ~= prepared.separator_width + size
+			or vim.fn.strdisplaywidth(text .. separator) ~= size + prepared.separator_width then
+			prepared.contextual_width = true
+		end
+		return size
+	end
+	for index, session in ipairs(sessions) do
+		local icon, icon_hl = session_tab_icon(session, icons)
+		local title = truncate_title(session:title() or session.id, 18)
+		local current = session:is_current_session() or session:is_current_root()
+			or active_session.id == session.id or current_root_session_id == session.id
+		local item = {
+			icon = current and (" " .. icon) or icon,
+			label = current and (" " .. title .. " ") or (" " .. title),
+			icon_hl = current and current_session_tab_icon_hl(icon_hl) or icon_hl,
+			label_hl = current and "OpenCodeWinbarCurrent" or "OpenCodeWinbar",
+		}
+		item.text = item.icon .. item.label
+		prepared.labels[index] = item
+		prepared.widths[index + 1] = prepared.widths[index] + width(item.text)
+		if session:is_busy() then running = running + 1 end
+		if session:is_waiting() then waiting = waiting + 1 end
+	end
+	prepared.running, prepared.waiting = running, waiting
+	if running > 0 or waiting > 0 then
+		prepared.status = (icons.running or "●") .. running .. " " .. (icons.waiting or "◈") .. waiting
+		prepared.status_width = width(prepared.status)
+	end
+	prepared.aside = btw_status_label()
+	if prepared.aside then prepared.aside_width = width(prepared.aside) end
+	width("...0")
+	return prepared
+end
+
+local function session_tabs_candidate_width(sessions, max_tabs, prepared)
+	local first = visible_session_tabs_start(sessions, max_tabs, prepared.current_index, prepared.current_id, false)
+	local last = math.min(#sessions, first + max_tabs - 1)
+	local left = first > 1 and ("..." .. tostring(first - 1)) or nil
+	local right = last < #sessions and ("..." .. tostring(#sessions - last)) or nil
+	if prepared.contextual_width then
+		local labels = {}
+		if left then labels[#labels + 1] = left end
+		for index = first, last do labels[#labels + 1] = prepared.labels[index].text end
+		if right then labels[#labels + 1] = right end
+		if prepared.status then labels[#labels + 1] = prepared.status end
+		if prepared.aside then labels[#labels + 1] = prepared.aside end
+		return vim.fn.strdisplaywidth(table.concat(labels, prepared.separator) .. " ")
+	end
+	local count = last - first + 1
+	local size = prepared.widths[last + 1] - prepared.widths[first]
+	for _, text in pairs({ left = left, right = right }) do size = size + #text; count = count + 1 end
+	if prepared.status then size = size + prepared.status_width; count = count + 1 end
+	if prepared.aside then size = size + prepared.aside_width; count = count + 1 end
+	return size + (count - 1) * prepared.separator_width + 1
+end
+
 local function build_session_tabs_line(tabs_cfg, sessions, active_session, current_root_session_id, max_tabs, opts)
 	opts = opts or {}
 	local preview = opts.preview == true
+	local prepared = opts.prepared or prepare_session_tabs(tabs_cfg, sessions, active_session, current_root_session_id)
 	max_tabs = math.max(1, tonumber(max_tabs) or 1)
 	local separator = tabs_cfg.separator or " │ "
 	local icons = tabs_cfg.icons or {}
@@ -334,7 +404,7 @@ local function build_session_tabs_line(tabs_cfg, sessions, active_session, curre
 		state.session_tabs_mouse_targets = mouse_targets
 	end
 
-	local current_index, current_session_id = current_session_tab_index(sessions, active_session, current_root_session_id)
+	local current_index, current_session_id = prepared.current_index, prepared.current_id
 	local start_index = visible_session_tabs_start(sessions, max_tabs, current_index, current_session_id, not preview)
 	local end_index = math.min(#sessions, start_index + max_tabs - 1)
 	local max_start = math.max(1, #sessions - max_tabs + 1)
@@ -393,17 +463,9 @@ local function build_session_tabs_line(tabs_cfg, sessions, active_session, curre
 
 	for index = start_index, end_index do
 		local session = sessions[index]
-		local icon, icon_hl = session_tab_icon(session, icons)
-		local title = session:title() or session.id
-		local display_title = truncate_title(title, 18)
-		local is_current = session:is_current_session()
-			or session:is_current_root()
-			or active_session.id == session.id
-			or current_root_session_id == session.id
-		local label_hl = is_current and "OpenCodeWinbarCurrent" or "OpenCodeWinbar"
-		local display_icon = is_current and (" " .. icon) or icon
-		local display_label = is_current and (" " .. display_title .. " ") or (" " .. display_title)
-		local display_icon_hl = is_current and current_session_tab_icon_hl(icon_hl) or icon_hl
+		local item = prepared.labels[index]
+		local display_icon, display_label = item.icon, item.label
+		local display_icon_hl, label_hl = item.icon_hl, item.label_hl
 		append_separator()
 		local id = register_target({
 			kind = "session",
@@ -421,16 +483,7 @@ local function build_session_tabs_line(tabs_cfg, sessions, active_session, curre
 		append_ellipsis(start_index + max_tabs, #sessions - end_index)
 	end
 
-	local running = 0
-	local waiting = 0
-	for _, session in ipairs(sessions) do
-		if session:is_busy() then
-			running = running + 1
-		end
-		if session:is_waiting() then
-			waiting = waiting + 1
-		end
-	end
+	local running, waiting = prepared.running, prepared.waiting
 
 	if running > 0 or waiting > 0 then
 		append_separator()
@@ -441,7 +494,7 @@ local function build_session_tabs_line(tabs_cfg, sessions, active_session, curre
 		table.insert(parts, string.format("%%#OpenCodeWinbar#%s%%#OpenCodeWinbarRunning#%s%d %%#OpenCodeWinbarWaiting#%s%d", "", escape_winbar_text(icons.running or "●"), running, escape_winbar_text(icons.waiting or "◈"), waiting))
 	end
 
-	local aside_label = btw_status_label()
+	local aside_label = prepared.aside
 	if aside_label then
 		append_separator()
 		append_text(aside_label, "OpenCodeWinbarRunning")
@@ -461,7 +514,7 @@ local function build_session_tabs_line(tabs_cfg, sessions, active_session, curre
 	}
 end
 
-local function resolve_session_tabs_max(tabs_cfg, sessions, active_session, current_root_session_id, available_width)
+local function resolve_session_tabs_max(tabs_cfg, sessions, active_session, current_root_session_id, available_width, prepared)
 	if not session_tabs_auto_fit_enabled(tabs_cfg) then
 		return numeric_session_tabs_max(tabs_cfg)
 	end
@@ -476,11 +529,9 @@ local function resolve_session_tabs_max(tabs_cfg, sessions, active_session, curr
 		return 1
 	end
 
+	prepared = prepared or prepare_session_tabs(tabs_cfg, sessions, active_session, current_root_session_id)
 	for candidate = session_count, 1, -1 do
-		local preview = build_session_tabs_line(tabs_cfg, sessions, active_session, current_root_session_id, candidate, {
-			preview = true,
-		})
-		if vim.fn.strdisplaywidth(preview.line:content()) <= width then
+		if session_tabs_candidate_width(sessions, candidate, prepared) <= width then
 			return candidate
 		end
 	end
@@ -496,9 +547,10 @@ local function build_session_tabs(tabs_cfg, current_session, opts)
 	local current_view = selectors.get_current_session_view()
 	local active_session = current_session or (current_view and current_view:to_record()) or {}
 	local current_root_session_id = selectors.get_current_runtime_root_id()
-	local max_tabs = resolve_session_tabs_max(tabs_cfg, sessions, active_session, current_root_session_id, opts.available_width)
+	local prepared = prepare_session_tabs(tabs_cfg, sessions, active_session, current_root_session_id)
+	local max_tabs = resolve_session_tabs_max(tabs_cfg, sessions, active_session, current_root_session_id, opts.available_width, prepared)
 
-	return build_session_tabs_line(tabs_cfg, sessions, active_session, current_root_session_id, max_tabs)
+	return build_session_tabs_line(tabs_cfg, sessions, active_session, current_root_session_id, max_tabs, { prepared = prepared })
 end
 
 local function session_tabs_window_is_valid()
@@ -715,6 +767,7 @@ local function update_float_session_tabs_window(tabs_cfg, current_session)
 end
 
 function M.update_winbar()
+	actions.observe_session(selectors.get_current_runtime_root_id(), state.visible and cs.is_chat_buffer_displayed())
 	if not state.winid or not vim.api.nvim_win_is_valid(state.winid) then
 		M.close_float_window()
 		return
@@ -861,6 +914,11 @@ function M.setup_refresh_autocmds()
 		return
 	end
 	session_tabs_refresh_autocmds_setup = true
+	vim.api.nvim_create_autocmd({ "WinEnter", "BufEnter", "WinClosed" }, {
+		group = session_tabs_augroup,
+		callback = emit_refresh,
+		desc = "Observe the visible OpenCode session",
+	})
 
 	vim.api.nvim_create_autocmd("ColorScheme", {
 		group = session_tabs_augroup,

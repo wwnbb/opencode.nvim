@@ -15,16 +15,17 @@ function M.providers(providers, models, default)
 			value.upstream_model_id = model.modelID
 			-- Existing internal modelID references mean logical catalog IDs.
 			value.modelID = model.id
+			local variants = value.variants
 			value.variants, value.variant_order = {}, {}
-			for _, variant in ipairs(model.variants or {}) do
+			for _, variant in ipairs(variants or {}) do
 				if not require("opencode.completion.profile").is_private_variant(variant.id) then
-					value.variants[variant.id] = vim.deepcopy(variant)
+					value.variants[variant.id] = variant
 					value.variant_order[#value.variant_order + 1] = variant.id
 				end
 			end
-			value.cost_tiers = vim.deepcopy(model.cost or {})
+			value.cost_tiers = value.cost or {}
 			value.cost = {}
-			for _, tier in ipairs(model.cost or {}) do
+			for _, tier in ipairs(value.cost_tiers) do
 				if not tier.tier then value.cost = vim.deepcopy(tier); break end
 			end
 			local capabilities = model.capabilities or {}

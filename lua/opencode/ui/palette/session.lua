@@ -5,6 +5,127 @@ local M = {}
 local actions = require("opencode.actions")
 local session_util = require("opencode.util.session")
 local state = require("opencode.state")
+local pending = require("opencode.session.pending")
+
+local function report(action, err)
+	if err then vim.notify("Could not " .. action .. ": " .. tostring(err.message or err), vim.log.levels.ERROR) end
+end
+
+local function rename(session, title, callback)
+	local token = pending.token(session.id)
+	local function submit(value)
+		if not pending.is_current(token) then return end
+		actions.rename_session(session.id, value, function(err, info)
+			if not pending.is_current(token) then return end
+			report("rename session", err)
+			if not err and callback then callback(info) end
+		end)
+	end
+	if title ~= nil then submit(title); return end
+	require("opencode.ui.float").create_input_popup({ title = " Rename Session ", prompt = "Title (empty regenerates):",
+		default = session_util.displayTitle(session.title or session.name), on_submit = submit })
+end
+
+local function remove(session, callback)
+	local token = pending.token(session.id)
+	local title = session_util.displayTitle(session.title or session.name) or session.id
+	local prompt = "Delete session '" .. title .. "'?"
+	require("opencode.ui.menu").open({ items = { "Yes", "No" }, title = "Delete Session", message = prompt,
+		width = vim.fn.strdisplaywidth(prompt) + 12, sort = false,
+		on_select = function(choice)
+			if choice ~= "Yes" or not pending.is_current(token) then return end
+			actions.delete_session(session.id, function(err)
+				if not pending.is_current(token) then return end
+				report("delete session", err)
+				if not err then
+					vim.notify("Session deleted", vim.log.levels.INFO)
+					if callback then callback() end
+				end
+			end)
+		end })
+end
+
+function M.open(id)
+	local token = pending.token()
+	local function submit(value)
+		if not pending.is_current(token) then return end
+		actions.open_session(vim.trim(value), { notify = true, reason = "session_open" }, function(err) report("open session", err) end)
+	end
+	if id ~= nil and vim.trim(id) ~= "" then submit(id); return end
+	require("opencode.ui.float").create_input_popup({ title = " Open Session ", prompt = "Session ID:", on_submit = submit })
+end
+
+local function projects()
+	local token = pending.token()
+	actions.list_projects(function(err, values)
+		if not pending.is_current(token) then return end
+		if err then report("list projects", err); return end
+		local items = {}
+		for _, project in ipairs(values) do
+			items[#items + 1] = { label = project.name or project.canonical, value = project.id, project = project, description = project.canonical }
+		end
+		require("opencode.ui.menu").open({ items = items, title = " Session Projects ", width = 76, searchable = true,
+			on_select = function(item)
+				if not pending.is_current(token) then return end
+				actions.list_worktrees(item.value, function(worktree_err, worktrees)
+					if not pending.is_current(token) then return end
+					if worktree_err then report("list worktrees", worktree_err); M.browse({ roots = true, project = item.value }); return end
+					local locations = {
+						{ label = "All project sessions", query = { roots = true, project = item.value } },
+						{ label = item.project.canonical, query = { roots = true, directory = item.project.canonical } },
+					}
+					for _, worktree in ipairs(worktrees) do
+						if worktree.directory ~= item.project.canonical then
+							locations[#locations + 1] = { label = worktree.directory, query = { roots = true, directory = worktree.directory } }
+						end
+					end
+					require("opencode.ui.menu").open({ items = locations, title = " Session Locations ", width = 76, searchable = true,
+						on_select = function(location) if pending.is_current(token) then M.browse(location.query) end end })
+				end)
+			end })
+	end)
+end
+
+function M.browse(query)
+	query = query or { roots = true }
+	local token = pending.token()
+	actions.list_sessions(query, function(err, sessions)
+		if not pending.is_current(token) then return end
+		if err then report("list sessions", err); return end
+		if not sessions or #sessions == 0 then vim.notify("No sessions found", vim.log.levels.INFO); return end
+		local current, items = state.get_session(), {}
+		for _, session in ipairs(sessions) do
+			items[#items + 1] = { label = (current.id == session.id and "● " or "  ") .. (session_util.displayTitle(session.title) or "New session"),
+				value = session.id, session = session, description = session.directory or (session.location and session.location.directory),
+				sort_key = session.time and session.time.updated or 0 }
+		end
+		require("opencode.ui.menu").open({ items = items, title = " Switch Session ", width = 76, searchable = true,
+			sort = function(a, b) return a.sort_key > b.sort_key end,
+			on_select = function(item) if pending.is_current(token) then M.open(item.value) end end,
+			keys = {
+				{ key = "r", label = "r:rename", handler = function(ctx, item)
+					if not pending.is_current(token) then return end
+					ctx.close(); rename(item.session, nil, function() M.browse(query) end)
+				end },
+				{ key = "d", label = "d:delete", handler = function(ctx, item)
+					if not pending.is_current(token) then return end
+					ctx.close(); remove(item.session, function() M.browse(query) end)
+				end },
+				{ key = "p", label = "p:project/worktree", handler = function(ctx)
+					if pending.is_current(token) then ctx.close(); projects() end
+				end },
+				{ key = "a", label = "a:all", handler = function(ctx)
+					if pending.is_current(token) then ctx.close(); M.browse() end
+				end },
+				{ key = "c", label = "c:current directory", handler = function(ctx)
+					if pending.is_current(token) then
+						ctx.close(); M.browse({ roots = true, directory = state.get_session_directory(state.get_session().id) or vim.fn.getcwd() })
+					end
+				end },
+			} })
+	end)
+end
+
 function M.register(palette)
 	local keymaps = (state.get_config() or require("opencode.config").defaults).keymaps or {}
 	palette.register({
@@ -37,9 +158,9 @@ function M.register(palette)
 		category = "session",
 		keybind = "<leader>on",
 		slash = { name = "new" },
-		run = function()
-			actions.new_session()
-		end,
+		enter_with_args = true, with_parts = "reject",
+		on_select = function(context) return context.run() end,
+		run = function(context) require("opencode.ui.palette.workspaces").new(context and context.args) end,
 	})
 	palette.register({
 		id = "session.aside",
@@ -95,104 +216,37 @@ function M.register(palette)
 		end,
 	})
 	palette.register({
-		id = "session.list",
-		title = "Switch Session",
-		description = "Switch to another session",
-		category = "session",
-		keybind = "<leader>os",
-		slash = { name = "sessions", aliases = { "resume", "continue" } },
-		run = function()
-			local directory = vim.fn.fnamemodify(vim.fn.getcwd(), ":p")
-			if vim.fs and vim.fs.normalize then
-				directory = vim.fs.normalize(directory)
-			end
-
-			actions.list_sessions({ roots = true, directory = directory }, function(err, sessions)
-				if err then
-					vim.notify("Failed to list sessions: " .. tostring(err.message or err), vim.log.levels.ERROR)
-					return
-				end
-				if not sessions or #sessions == 0 then
-					vim.notify("No sessions found", vim.log.levels.INFO)
-					return
-				end
-
-				local menu = require("opencode.ui.menu")
-				local current = state.get_session()
-				local pending = require("opencode.session.pending")
-				local token = pending.token()
-
-				-- Sort sessions by update time (most recent first, like TUI)
-				table.sort(sessions, function(a, b)
-					local a_time = a.time and a.time.updated or 0
-					local b_time = b.time and b.time.updated or 0
-					return a_time > b_time
-				end)
-
-				-- Format relative time helper (timestamp is ms from JS Date.now())
-				local function format_relative_time(timestamp)
-					if not timestamp then
-						return ""
-					end
-					-- Convert ms -> seconds for comparison with os.time()
-					local ts_sec = math.floor(timestamp / 1000)
-					local now = os.time()
-					local diff = now - ts_sec
-					if diff < 60 then
-						return "just now"
-					elseif diff < 3600 then
-						return math.floor(diff / 60) .. "m ago"
-					elseif diff < 7200 then
-						return "1h ago"
-					elseif diff < 86400 then
-						return math.floor(diff / 3600) .. "h ago"
-					elseif diff < 172800 then
-						return "Yesterday"
-					else
-						return os.date("%b %d", ts_sec)
-					end
-				end
-
-				-- Build items for searchable menu (same as model switch)
-				local items = {}
-				for _, session in ipairs(sessions) do
-					local is_current = current.id == session.id
-					local title = session_util.displayTitle(session.title) or "New session"
-					local msg_count = session.message_count or 0
-					local time_str = format_relative_time(session.time and session.time.updated)
-					local msg_str = msg_count > 0 and ("(" .. msg_count .. " msgs)") or ""
-					local current_marker = is_current and "● " or "  "
-
-					table.insert(items, {
-						label = current_marker .. title .. " " .. msg_str,
-						value = session.id,
-						session = session,
-						description = time_str,
-						-- sort_key carries the ms timestamp for time-based ordering
-						sort_key = session.time and session.time.updated or 0,
-					})
-				end
-
-				menu.open({
-					items = items,
-					title = " Switch Session ",
-					width = 70,
-					searchable = true,
-					sort = function(a, b)
-						-- Most recently updated first (matches TUI: toSorted((a,b) => b.time.updated - a.time.updated))
-						return (a.sort_key or 0) > (b.sort_key or 0)
-					end,
-					on_select = function(item)
-						if not pending.is_current(token) then return end
-						local session = item.session
-						actions.switch_session(session, {
-							notify = true,
-							reason = "session_switch",
-						})
-					end,
-				})
-			end)
-		end,
+		id = "session.list", title = "Switch Session", description = "Browse sessions across projects and worktrees",
+		category = "session", keybind = "<leader>os", slash = { name = "sessions", aliases = { "resume", "continue" } },
+		on_select = function(context) return context.run() end, run = function() M.browse() end,
+	})
+	palette.register({
+		id = "session.open", title = "Open Session by ID", description = "Open a session in its server location",
+		category = "session", slash = { name = "open" }, enter_with_args = true, with_parts = "reject",
+		on_select = function(context) return context.run() end, run = function(context) M.open(context and context.args) end,
+	})
+	palette.register({
+		id = "session.rename", title = "Rename Session", description = "Rename the current session; an empty title regenerates it",
+		category = "session", slash = { name = "rename" }, enter_with_args = true, with_parts = "reject",
+		on_select = function(context) return context.run() end,
+		run = function(context) rename(state.get_session_record(state.get_session().id) or state.get_session(), context and context.args) end,
+		enabled = function() return state.get_session().id ~= nil end,
+	})
+	palette.register({
+		id = "session.reopen", title = "Reopen Closed Session Tab", category = "session", slash = { name = "reopen" },
+		on_select = function(context) return context.run() end, run = function() actions.reopen_session_tab() end,
+		enabled = function() return #state.get_closed_session_order() > 0 end,
+	})
+	local function runtime_tab()
+		return state.is_runtime_session(require("opencode.selectors").get_current_runtime_root_id())
+	end
+	palette.register({
+		id = "session.move-left", title = "Move Session Tab Left", category = "session", slash = { name = "tab-left" },
+		on_select = function(context) return context.run() end, run = function() actions.reorder_session_tab(-1) end, enabled = runtime_tab,
+	})
+	palette.register({
+		id = "session.move-right", title = "Move Session Tab Right", category = "session", slash = { name = "tab-right" },
+		on_select = function(context) return context.run() end, run = function() actions.reorder_session_tab(1) end, enabled = runtime_tab,
 	})
 	palette.register({
 		id = "session.fork",
@@ -246,46 +300,11 @@ function M.register(palette)
 		end,
 	})
 	palette.register({
-		id = "session.delete",
-		title = "Delete Session",
-		description = "Delete current session",
-		category = "session",
-		run = function()
-			local session = state.get_session()
-			if not session.id then
-				vim.notify("No active session", vim.log.levels.WARN)
-				return
-			end
-
-			local prompt = "Delete session '" .. (session_util.displayTitle(session.name) or session.id) .. "'?"
-			local pending = require("opencode.session.pending")
-			local token = pending.token(session.id)
-			require("opencode.ui.menu").open({
-				items = { "Yes", "No" },
-				title = "Delete Session",
-				message = prompt,
-				width = vim.fn.strdisplaywidth(prompt) + 12,
-				sort = false,
-				on_select = function(choice)
-					if choice == "Yes" and pending.is_current(token) then
-						actions.delete_session(session.id, function(err)
-							if err then
-								vim.notify(
-									"Failed to delete session: " .. tostring(err.message or err),
-									vim.log.levels.ERROR
-								)
-								return
-							end
-							vim.notify("Session deleted", vim.log.levels.INFO)
-						end)
-					end
-				end,
-			})
-		end,
-		enabled = function()
-			return state.get_session().id ~= nil
-		end,
+		id = "session.delete", title = "Delete Session", description = "Delete current session", category = "session",
+		run = function() remove(state.get_session_record(state.get_session().id) or state.get_session()) end,
+		enabled = function() return state.get_session().id ~= nil end,
 	})
+	require("opencode.ui.palette.workspaces").register(palette)
 end
 
 return M
