@@ -6,12 +6,8 @@ local directory = assert(vim.env.OPENCODE_V2_PROJECT)
 local host, port = assert(vim.env.OPENCODE_V2_SERVER_URL):match("^http://([^:]+):(%d+)$")
 local provider, model = assert(vim.env.OPENCODE_V2_MODEL):match("^([^/]+)/(.+)$")
 vim.cmd.cd(vim.fn.fnameescape(directory))
-local function wait(predicate, why, timeout) assert(vim.wait(timeout or 15000, predicate, 20), why) end
-local function await(register)
-	local done, data, failure
-	register(function(err, result) failure, data, done = err, result, true end)
-	wait(function() return done end, "HTTP timeout"); assert(not failure, vim.inspect(failure)); return data
-end
+local support = require("tests.runtime.support")
+local wait, await = support.wait, support.await
 app.setup({ server = { host = host, port = tonumber(port), auto_start = false, use_shell_env = false,
 	config_dir = vim.env.OPENCODE_CONFIG_DIR, auth = { username = "opencode", password = "opencode-nvim-test-only" } },
 	session = { default_agent = "build", default_model = { providerID = provider, modelID = model } }, lualine = { enabled = false } })

@@ -6,12 +6,8 @@ local input, pending = require("opencode.ui.input"), require("opencode.session.p
 local directory = assert(vim.env.OPENCODE_V2_PROJECT)
 local host, port = assert(vim.env.OPENCODE_V2_SERVER_URL):match("^http://([^:]+):(%d+)$")
 local provider, model = assert(vim.env.OPENCODE_V2_MODEL):match("^([^/]+)/(.+)$")
-local function wait(predicate, why, timeout) assert(vim.wait(timeout or 15000, predicate, 20), why) end
-local function await(register)
-	local done, value, failure
-	register(function(err, data) failure, value, done = err, data, true end)
-	wait(function() return done end, "HTTP timeout"); assert(not failure, vim.inspect(failure)); return value
-end
+local support = require("tests.runtime.support")
+local wait, await = support.wait, support.await
 local function key(name)
 	local map = vim.fn.maparg(name, "n", false, true)
 	assert(type(map.callback) == "function", "Missing mapping " .. name); map.callback()

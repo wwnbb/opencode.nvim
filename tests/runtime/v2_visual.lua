@@ -37,7 +37,9 @@ for _, layout in ipairs({ "vertical", "horizontal", "float" }) do
 end
 local input = require("opencode.ui.input")
 chat.focus_input()
-vim.wait(100, function() return false end, 10)
+assert(vim.wait(1000, function()
+	return input.is_visible() and vim.api.nvim_get_current_win() == input.get_winids()[1]
+end, 10), "Input did not open and receive focus")
 vim.cmd("redraw")
 if vim.env.OPENCODE_V2_ATTACHED_UI then vim.rpcnotify(1, "opencode_screenshot", "input-focus") end
 assert(input.is_visible(), "Input did not open")

@@ -18,7 +18,7 @@ local function key(name)
 	assert(type(map.callback) == "function", "Missing mapping " .. name); map.callback()
 end
 local function shot(name)
-	vim.wait(60, function() return false end, 10)
+	require("tests.runtime.support").flush_scheduled()
 	if vim.env.OPENCODE_V2_ATTACHED_UI then vim.cmd("redraw!"); vim.rpcnotify(1, "opencode_screenshot", name) end
 end
 vim.cmd.cd(vim.fn.fnameescape(directory))

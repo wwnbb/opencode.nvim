@@ -2,14 +2,6 @@
 -- Run with: ./tests/run.sh tests/checks/state_ownership_spec.lua
 -- Navigation preserve_cache coverage lives in tests/unit/session_store_v2_spec.lua.
 
-local function assert_eq(actual, expected, message)
-	assert.equals(expected, actual, message)
-end
-
-local function assert_true(value, message)
-	assert.is_truthy(value, message)
-end
-
 local function wait_for(predicate, message)
 	assert.is_true(vim.wait(500, predicate, 10), message)
 end
@@ -120,7 +112,7 @@ describe("opencode state ownership", function()
 	end
 
 	it("keeps store loading and mutations independent from the event facade", function()
-		assert_eq(package.loaded["opencode.events"], nil, "stores should not load event facade")
+		assert.equals(nil, package.loaded["opencode.events"], "stores should not load event facade")
 
 		permission_state.add_permission("perm_store", "session_a", "bash", {})
 		permission_state.select_option("perm_store", 2)
@@ -129,8 +121,8 @@ describe("opencode state ownership", function()
 		edit_state.add_edit("edit_store", "session_a", {
 			{ filePath = "README.md", before = "a", after = "b" },
 		}, { review_mode = "readonly" })
-		assert_eq(package.loaded["opencode.events"], nil, "store mutations should not load event facade")
-		assert_eq(#bus.get_history(), 0, "store mutations should not emit events")
+		assert.equals(nil, package.loaded["opencode.events"], "store mutations should not load event facade")
+		assert.equals(0, #bus.get_history(), "store mutations should not emit events")
 	end)
 
 	it("forwards config changes through the state bridge", function()
@@ -138,7 +130,7 @@ describe("opencode state ownership", function()
 		local config_change_count = 0
 		bus.on("config_change", function() config_change_count = config_change_count + 1 end)
 		state.set_config({ bridge_test = true })
-		assert_eq(config_change_count, 1, "state config changes should cross the state/event bridge")
+		assert.equals(1, config_change_count, "state config changes should cross the state/event bridge")
 	end)
 
 	it("surfaces SSE errors through notifications", function()
@@ -170,20 +162,20 @@ describe("opencode state ownership", function()
 			agent = "Code",
 			variant = "fast",
 		})
-		assert_eq(selected.model.providerID, "p1", "opts model provider should win")
-		assert_eq(selected.model.modelID, "m1", "opts model id should win")
-		assert_eq(selected.agent, "Code", "opts agent should win")
-		assert_eq(selected.variant, "fast", "opts variant should win")
+		assert.equals("p1", selected.model.providerID, "opts model provider should win")
+		assert.equals("m1", selected.model.modelID, "opts model id should win")
+		assert.equals("Code", selected.agent, "opts agent should win")
+		assert.equals("fast", selected.variant, "opts variant should win")
 
 		local fallback = selectors.send_selection({
 			model = { providerID = "missing", modelID = "nope" },
 		})
-		assert_eq(fallback.model.providerID, "p2", "invalid opts model should fall back to local provider")
-		assert_eq(fallback.model.modelID, "m2", "invalid opts model should fall back to local model")
-		assert_eq(fallback.agent, "plan", "local agent should be selected")
-		assert_eq(selectors.current_model().providerID, "p2", "selectors should expose local provider selection")
-		assert_eq(selectors.current_model().modelID, "m2", "selectors should expose local model selection")
-		assert_eq(selectors.current_agent().name, "Plan", "selectors should expose local agent selection")
+		assert.equals("p2", fallback.model.providerID, "invalid opts model should fall back to local provider")
+		assert.equals("m2", fallback.model.modelID, "invalid opts model should fall back to local model")
+		assert.equals("plan", fallback.agent, "local agent should be selected")
+		assert.equals("p2", selectors.current_model().providerID, "selectors should expose local provider selection")
+		assert.equals("m2", selectors.current_model().modelID, "selectors should expose local model selection")
+		assert.equals("Plan", selectors.current_agent().name, "selectors should expose local agent selection")
 	end)
 
 	it("loads each catalog and emits its completion events", function()
@@ -225,13 +217,13 @@ describe("opencode state ownership", function()
 				and sync_changed.skills == 1
 				and sync_changed.mcp == 1
 		end, "initial sync success should emit all loaded and sync_changed events")
-		assert_eq(sync.get_providers()[1].id, "sync-provider", "initial sync should store providers")
-		assert_eq(sync.get_provider_defaults()["sync-provider"], "sync-model", "initial sync should store provider defaults")
-		assert_eq(sync.get_agents()[1].name, "Sync Agent", "initial sync should store agents")
-		assert_eq(sync.get_config().model, "sync-model", "initial sync should store config")
-		assert_true(sync.get_commands().sync_command ~= nil, "initial sync should store commands")
-		assert_eq(sync.get_skills()[1].name, "sync-skill", "initial sync should store skills")
-		assert_eq(sync.get_mcp().servers.sync.status, "connected", "initial sync should store MCP status")
+		assert.equals("sync-provider", sync.get_providers()[1].id, "initial sync should store providers")
+		assert.equals("sync-model", sync.get_provider_defaults()["sync-provider"], "initial sync should store provider defaults")
+		assert.equals("Sync Agent", sync.get_agents()[1].name, "initial sync should store agents")
+		assert.equals("sync-model", sync.get_config().model, "initial sync should store config")
+		assert.is_truthy(sync.get_commands().sync_command ~= nil, "initial sync should store commands")
+		assert.equals("sync-skill", sync.get_skills()[1].name, "initial sync should store skills")
+		assert.equals("connected", sync.get_mcp().servers.sync.status, "initial sync should store MCP status")
 	end)
 
 	it("keeps successful catalogs when provider and MCP fetches fail", function()
@@ -268,19 +260,13 @@ describe("opencode state ownership", function()
 				and sync_changed.config == 1
 				and sync_changed.skills == 1
 		end, "one initial sync failure should not prevent other fetches")
-		assert_true(
-			local_notices[1].content:find("Failed to fetch providers: providers failed", 1, true) ~= nil,
-			"initial sync local notice should include the failing fetch"
-		)
-		assert_eq(loaded.providers, 0, "failed providers fetch should not emit providers_loaded")
-		assert_eq(sync.get_agents()[1].name, "Agent After Failure", "agents should still load after provider failure")
-		assert_true(sync.get_commands().failure_command ~= nil, "config commands should still load after provider failure")
-		assert_eq(sync.get_skills()[1].name, "skill-after-failure", "skills should still load after provider failure")
+		assert.is_truthy(local_notices[1].content:find("Failed to fetch providers: providers failed", 1, true) ~= nil, "initial sync local notice should include the failing fetch")
+		assert.equals(0, loaded.providers, "failed providers fetch should not emit providers_loaded")
+		assert.equals("Agent After Failure", sync.get_agents()[1].name, "agents should still load after provider failure")
+		assert.is_truthy(sync.get_commands().failure_command ~= nil, "config commands should still load after provider failure")
+		assert.equals("skill-after-failure", sync.get_skills()[1].name, "skills should still load after provider failure")
 		for index = notification_baseline + 1, #notifications do
-			assert_true(
-				notifications[index].message:find("mcp failed quietly", 1, true) == nil,
-				"MCP initial sync errors should remain quiet"
-			)
+			assert.is_truthy(notifications[index].message:find("mcp failed quietly", 1, true) == nil, "MCP initial sync errors should remain quiet")
 		end
 	end)
 
@@ -291,15 +277,17 @@ describe("opencode state ownership", function()
 		local_state.agent.set("Code")
 		logger.clear()
 		local fallback_current = local_state.model.current()
-		assert_eq(fallback_current.providerID, "p1", "fallback provider default should be selected")
-		assert_eq(fallback_current.modelID, "m1", "fallback provider default model should be selected")
+		assert.equals("p1", fallback_current.providerID, "fallback provider default should be selected")
+		assert.equals("m1", fallback_current.modelID, "fallback provider default model should be selected")
 		local first_log_count = logger.count()
 		local_state.model.current()
-		assert_eq(logger.count(), first_log_count, "unchanged model selection reads should not append logs")
+		assert.equals(first_log_count, logger.count(), "unchanged model selection reads should not append logs")
 	end)
 
 	it("mirrors native execution status without inferring idle from history", function()
 		session_actions.set_active("session_status", "Status Session", { preserve_cache = true })
+		state.upsert_session({ id = "history_other", title = "Other busy session" }, { touch = false })
+		session_actions.set_session_status("history_other", { type = "busy" }, { reason = "test_busy" })
 		require("opencode.events.handlers.v2").setup(bus)
 		emit_native("session.execution.started", "session_status", "evt-status-start")
 		wait_for(function() return state.get_status() == "streaming" end,
@@ -309,8 +297,8 @@ describe("opencode state ownership", function()
 			{ info = { id = "completed_step", sessionID = "session_status", role = "assistant",
 				time = { created = 1, completed = 2 }, finish = "stop" }, parts = {} },
 		}, { complete = true })
-		assert_eq(state.get_session_status("session_status").type, "busy",
-			"completed assistant snapshot alone should not infer idle")
+		assert.equals("busy", state.get_session_status("session_status").type, "completed assistant snapshot alone should not infer idle")
+		assert.equals("busy", state.get_session_status("history_other").type, "completed HTTP history must not affect another session")
 		emit_native("session.execution.succeeded", "session_status", "evt-status-stop")
 		wait_for(function() return state.get_status() == "idle" end,
 			"native execution success should set idle")
@@ -326,7 +314,7 @@ describe("opencode state ownership", function()
 		emit_native("session.execution.succeeded", "complete_root", "evt-complete-root")
 		wait_for(function() return state.get_session_status("complete_root").type == "idle" end,
 			"native terminal event should idle only its owning session")
-		assert_eq(state.get_session_status("running_root").type, "busy", "unrelated running session should stay busy")
+		assert.equals("busy", state.get_session_status("running_root").type, "unrelated running session should stay busy")
 	end)
 
 	it("exposes read-only session views with defensive copies", function()
@@ -335,30 +323,30 @@ describe("opencode state ownership", function()
 		state.set_session_pending_counts("view_root", { questions = 1, edits = 1 })
 		state.set_session_message_cache("view_root", { count = 3, loaded = true })
 		local view = selectors.get_current_session_view()
-		assert_true(view ~= nil, "current session selector should return a view")
-		assert_eq(getmetatable(view), "SessionView", "selector session result should be a SessionView")
-		assert_eq(view.id, "view_root", "SessionView should expose scalar id")
-		assert_eq(view:status_label(), "retry #2", "SessionView should format retry status labels")
-		assert_eq(view:pending_total(), 2, "SessionView pending total should include questions and edits")
-		assert_eq(view:message_count(), 3, "SessionView message count should use fresh message cache")
+		assert.is_truthy(view ~= nil, "current session selector should return a view")
+		assert.equals("SessionView", getmetatable(view), "selector session result should be a SessionView")
+		assert.equals("view_root", view.id, "SessionView should expose scalar id")
+		assert.equals("retry #2", view:status_label(), "SessionView should format retry status labels")
+		assert.equals(2, view:pending_total(), "SessionView pending total should include questions and edits")
+		assert.equals(3, view:message_count(), "SessionView message count should use fresh message cache")
 		local pending_copy = view.pending
 		pending_copy.questions = 99
-		assert_eq(view.pending.questions, 1, "SessionView pending table reads should be defensive copies")
+		assert.equals(1, view.pending.questions, "SessionView pending table reads should be defensive copies")
 		local cache_copy = view.cached_messages
 		cache_copy.count = 99
-		assert_eq(view.cached_messages.count, 3, "SessionView cache reads should be defensive copies")
+		assert.equals(3, view.cached_messages.count, "SessionView cache reads should be defensive copies")
 		local record_copy = view.record
 		record_copy.name = "Mutated"
-		assert_eq(view.name, "View Root", "SessionView record reads should be defensive copies")
+		assert.equals("View Root", view.name, "SessionView record reads should be defensive copies")
 		local assign_ok = pcall(function()
 			view.name = "Mutated"
 		end)
-		assert_true(not assign_ok, "SessionView direct assignment should fail")
+		assert.is_truthy(not assign_ok, "SessionView direct assignment should fail")
 		local active_views = selectors.get_active_session_views()
-		assert_eq(getmetatable(active_views[1]), "SessionView", "active session selector should return SessionViews")
-		assert_eq(active_views[1]:message_count(), 3, "active SessionView should expose fresh cache count")
+		assert.equals("SessionView", getmetatable(active_views[1]), "active session selector should return SessionViews")
+		assert.equals(3, active_views[1]:message_count(), "active SessionView should expose fresh cache count")
 		local snapshot = state.get_full_state()
-		assert_eq(getmetatable(snapshot.sessions.by_id.view_root), nil, "state session records should stay plain tables")
+		assert.equals(nil, getmetatable(snapshot.sessions.by_id.view_root), "state session records should stay plain tables")
 	end)
 
 	it("rolls pending interactions up to their owning runtime root", function()
@@ -366,16 +354,8 @@ describe("opencode state ownership", function()
 		state.set_session("permission_idle", "Permission Idle")
 		permission_state.add_permission("perm_waiting_root", "permission_waiting", "bash", {})
 		session_actions.recount_pending()
-		assert_eq(
-			state.get_session_pending_counts("permission_waiting").permissions,
-			1,
-			"root permission should count only on owning session"
-		)
-		assert_eq(
-			state.get_session_pending_counts("permission_idle").permissions,
-			0,
-			"unrelated session should not inherit root permission count"
-		)
+		assert.equals(1, state.get_session_pending_counts("permission_waiting").permissions, "root permission should count only on owning session")
+		assert.equals(0, state.get_session_pending_counts("permission_idle").permissions, "unrelated session should not inherit root permission count")
 
 		sync.handle_message_updated({
 			id = "permission_waiting_assistant",
@@ -394,36 +374,16 @@ describe("opencode state ownership", function()
 		permission_state.add_permission("perm_waiting_child", "permission_child", "bash", {})
 		permission_state.add_permission("perm_idle_root", "permission_idle", "bash", {})
 		session_actions.recount_pending()
-		assert_eq(
-			state.get_session_pending_counts("permission_waiting").permissions,
-			2,
-			"child permission should roll up only to owning root session"
-		)
-		assert_eq(
-			state.get_session_pending_counts("permission_idle").permissions,
-			1,
-			"unrelated root permission should remain isolated"
-		)
+		assert.equals(2, state.get_session_pending_counts("permission_waiting").permissions, "child permission should roll up only to owning root session")
+		assert.equals(1, state.get_session_pending_counts("permission_idle").permissions, "unrelated root permission should remain isolated")
 		add_form("question_waiting_child", "permission_child", "Continue?")
 		edit_state.add_edit("edit_waiting_root", "permission_waiting", {
 			{ filePath = "README.md", before = "a", after = "b" },
 		}, { review_mode = "readonly" })
 		session_actions.recount_pending()
-		assert_eq(
-			state.get_session_pending_counts("permission_waiting").questions,
-			1,
-			"child questions should roll up to owning root session"
-		)
-		assert_eq(
-			state.get_session_pending_counts("permission_waiting").edits,
-			1,
-			"root edits should count on owning root session"
-		)
-		assert_eq(
-			state.get_session_pending_counts("permission_idle").questions,
-			0,
-			"unrelated root should not inherit child question count"
-		)
+		assert.equals(1, state.get_session_pending_counts("permission_waiting").questions, "child questions should roll up to owning root session")
+		assert.equals(1, state.get_session_pending_counts("permission_waiting").edits, "root edits should count on owning root session")
+		assert.equals(0, state.get_session_pending_counts("permission_idle").questions, "unrelated root should not inherit child question count")
 	end)
 
 	it("decodes native permission identity and rejects incomplete payloads", function()
@@ -433,16 +393,14 @@ describe("opencode state ownership", function()
 			source = { type = "tool", messageID = "decoder_message", callID = "decoder_call" },
 			resources = { "*.lua" }, time = { created = 1000 },
 		}))
-		assert_eq(decoded.id, "decoder_wire", "decoder should accept native request id")
-		assert_eq(decoded.type, "shell", "decoder should accept native action")
-		assert_eq(decoded.session_id, "visible_session", "decoder should accept native session id")
-		assert_eq(decoded.message_id, "decoder_message", "decoder should accept native source message id")
-		assert_eq(decoded.call_id, "decoder_call", "decoder should accept native source callID")
-		assert_eq(decoded.patterns[1], "*.lua", "decoder should preserve native resource patterns")
-		assert_eq(request.decode({ action = "shell", sessionID = "visible_session" }), nil,
-			"decoder should reject missing request id")
-		assert_eq(request.decode({ id = "missing_session", action = "shell" }), nil,
-			"decoder should reject missing session id")
+		assert.equals("decoder_wire", decoded.id, "decoder should accept native request id")
+		assert.equals("shell", decoded.type, "decoder should accept native action")
+		assert.equals("visible_session", decoded.session_id, "decoder should accept native session id")
+		assert.equals("decoder_message", decoded.message_id, "decoder should accept native source message id")
+		assert.equals("decoder_call", decoded.call_id, "decoder should accept native source callID")
+		assert.equals("*.lua", decoded.patterns[1], "decoder should preserve native resource patterns")
+		assert.equals(nil, request.decode({ action = "shell", sessionID = "visible_session" }), "decoder should reject missing request id")
+		assert.equals(nil, request.decode({ id = "missing_session", action = "shell" }), "decoder should reject missing session id")
 	end)
 
 	it("retains native permissions and forms only for relevant runtime sessions", function()
@@ -460,8 +418,7 @@ describe("opencode state ownership", function()
 				metadata = { input = { command = "from metadata" } } }, created = 1000 })
 		wait_for(function() return permission_state.has_permission("perm_visible_session") end,
 			"native permission in visible session should be tracked")
-		assert_eq(permission_state.get_permission("perm_visible_session").tool_input.command, "from sync",
-			"native permission should prefer synchronized tool input")
+		assert.equals("from sync", permission_state.get_permission("perm_visible_session").tool_input.command, "native permission should prefer synchronized tool input")
 
 		bus.emit("v2_interaction", { id = "evt-permission-other", type = "permission.asked",
 			data = { id = "perm_other_session", action = "shell", sessionID = "other_session",
@@ -470,8 +427,7 @@ describe("opencode state ownership", function()
 			"permission in another runtime tab should remain independently tracked")
 		bus.emit("v2_interaction", { id = "evt-permission-foreign", type = "permission.asked",
 			data = { id = "perm_foreign", action = "shell", sessionID = "foreign_session" }, created = 1002 })
-		assert_true(not permission_state.has_permission("perm_foreign"),
-			"permission outside runtime sessions should be ignored")
+		assert.is_truthy(not permission_state.has_permission("perm_foreign"), "permission outside runtime sessions should be ignored")
 
 		local function emit_form(id, sid)
 			bus.emit("v2_interaction", { id = "evt-" .. id, type = "form.created", created = 1003,
@@ -508,7 +464,7 @@ describe("opencode state ownership", function()
 		chat.create()
 		local lines = chat.render()
 		local rendered = table.concat(lines, "\n")
-		assert_true(rendered:find("Hidden%?") ~= nil, "hidden question should render from question store")
+		assert.is_truthy(rendered:find("Hidden%?") ~= nil, "hidden question should render from question store")
 	end)
 
 	it("closes a child through its root without resolving pending permissions", function()
@@ -539,18 +495,18 @@ describe("opencode state ownership", function()
 			tool = "task",
 			metadata = { sessionId = "session_close_child" },
 		})
-		assert_eq(sync.get_task_parent_session("session_close_child"), "session_close_a", "task child index should record the parent before close")
+		assert.equals("session_close_a", sync.get_task_parent_session("session_close_child"), "task child index should record the parent before close")
 
 		permission_state.add_permission("close_perm_a", "session_close_a", "bash", {})
 		permission_state.add_permission("close_perm_child", "session_close_child", "bash", {})
 		permission_state.add_permission("close_perm_other", "session_close_b", "bash", {})
-		assert_true(session_actions.close("session_close_child", { silent = true }), "session.close should resolve a child session to its runtime root")
-		assert_true(not state.is_runtime_session("session_close_a"), "closing a child should remove its root tab")
-		assert_true(state.is_runtime_session("session_close_b"), "closing a child should preserve another tab")
-		assert_eq(#close_replies, 0, "closing a tab should not reply to native permissions")
-		assert_eq(permission_state.get_permission("close_perm_a").status, "pending", "root permission should stay pending")
-		assert_eq(permission_state.get_permission("close_perm_child").status, "pending", "child permission should stay pending")
-		assert_eq(permission_state.get_permission("close_perm_other").status, "pending", "other permission should stay pending")
+		assert.is_truthy(session_actions.close("session_close_child", { silent = true }), "session.close should resolve a child session to its runtime root")
+		assert.is_truthy(not state.is_runtime_session("session_close_a"), "closing a child should remove its root tab")
+		assert.is_truthy(state.is_runtime_session("session_close_b"), "closing a child should preserve another tab")
+		assert.equals(0, #close_replies, "closing a tab should not reply to native permissions")
+		assert.equals("pending", permission_state.get_permission("close_perm_a").status, "root permission should stay pending")
+		assert.equals("pending", permission_state.get_permission("close_perm_child").status, "child permission should stay pending")
+		assert.equals("pending", permission_state.get_permission("close_perm_other").status, "other permission should stay pending")
 
 		local function history_has(event_type, permission_id)
 			for _, entry in ipairs(bus.get_history()) do
@@ -563,10 +519,10 @@ describe("opencode state ownership", function()
 			return false
 		end
 
-		assert_true(not history_has("permission_rejected", "close_perm_a"), "closing should not emit a root permission rejection")
-		assert_true(not history_has("permission_removed", "close_perm_a"), "closing should not remove a root permission")
-		assert_true(not history_has("permission_rejected", "close_perm_child"), "closing should not emit a child permission rejection")
-		assert_true(not history_has("permission_removed", "close_perm_child"), "closing should not remove a child permission")
+		assert.is_truthy(not history_has("permission_rejected", "close_perm_a"), "closing should not emit a root permission rejection")
+		assert.is_truthy(not history_has("permission_removed", "close_perm_a"), "closing should not remove a root permission")
+		assert.is_truthy(not history_has("permission_rejected", "close_perm_child"), "closing should not emit a child permission rejection")
+		assert.is_truthy(not history_has("permission_removed", "close_perm_child"), "closing should not remove a child permission")
 	end)
 
 	it("preserves pending interactions when closing and reopening a root tab", function()
@@ -630,25 +586,25 @@ describe("opencode state ownership", function()
 			{ filePath = "README.md", before = "a", after = "b" },
 		}, { review_mode = "readonly" })
 
-		assert_true(session_actions.close("close_root", { silent = true }) == true, "close should remove target runtime tab")
-		assert_true(permission_state.has_permission("perm_close_root"), "close should preserve root permission")
-		assert_true(permission_state.has_permission("perm_close_child"), "close should preserve child permission")
-		assert_true(permission_state.has_permission("perm_keep_root"), "close should preserve unrelated permission")
-		assert_true(question_state.has_question("question_close_root"), "close should preserve root question")
-		assert_true(question_state.has_question("question_close_child"), "close should preserve child question")
-		assert_true(question_state.has_question("question_keep_root"), "close should preserve unrelated question")
-		assert_true(edit_state.get_edit("edit_close_root") ~= nil, "close should preserve root edit")
-		assert_true(edit_state.get_edit("edit_close_child") ~= nil, "close should preserve child edit")
-		assert_true(edit_state.get_edit("edit_keep_root") ~= nil, "close should preserve unrelated edit")
-		assert_eq(#rejected_permissions, 0, "close should not reject native permissions")
-		assert_eq(#rejected_questions, 0, "close should not reject native forms")
+		assert.is_truthy(session_actions.close("close_root", { silent = true }) == true, "close should remove target runtime tab")
+		assert.is_truthy(permission_state.has_permission("perm_close_root"), "close should preserve root permission")
+		assert.is_truthy(permission_state.has_permission("perm_close_child"), "close should preserve child permission")
+		assert.is_truthy(permission_state.has_permission("perm_keep_root"), "close should preserve unrelated permission")
+		assert.is_truthy(question_state.has_question("question_close_root"), "close should preserve root question")
+		assert.is_truthy(question_state.has_question("question_close_child"), "close should preserve child question")
+		assert.is_truthy(question_state.has_question("question_keep_root"), "close should preserve unrelated question")
+		assert.is_truthy(edit_state.get_edit("edit_close_root") ~= nil, "close should preserve root edit")
+		assert.is_truthy(edit_state.get_edit("edit_close_child") ~= nil, "close should preserve child edit")
+		assert.is_truthy(edit_state.get_edit("edit_keep_root") ~= nil, "close should preserve unrelated edit")
+		assert.equals(0, #rejected_permissions, "close should not reject native permissions")
+		assert.equals(0, #rejected_questions, "close should not reject native forms")
 
 		local recovered = {}
 		for _, kind in ipairs({ "interaction_reconcile", "review_reconcile" }) do
 			bus.on(kind, function(data) recovered[kind] = data.session_id end)
 		end
 		client.get_messages = function(session_id, _, callback)
-			assert_eq(session_id, "close_root", "reopen should load the closed root")
+			assert.equals("close_root", session_id, "reopen should load the closed root")
 			callback(nil, { {
 				info = { id = "close_root_assistant", sessionID = "close_root", role = "assistant", time = { created = 1 } },
 				parts = { { id = "close_root_task", messageID = "close_root_assistant", sessionID = "close_root",
@@ -662,21 +618,20 @@ describe("opencode state ownership", function()
 				and state.get_session_pending_counts("close_root").permissions == 2
 				and state.get_session_pending_counts("close_root").questions == 2
 		end, "reopening should restore child links and pending counts after history loads")
-		assert_eq(recovered.interaction_reconcile, "close_child", "reopen should refresh child interactions")
-		assert_eq(recovered.review_reconcile, "close_child", "reopen should refresh child reviews")
-		assert_true(state.is_runtime_session("close_root"), "switching to a closed session should reopen its tab")
-		assert_eq(permission_state.get_permission("perm_close_root").status, "pending", "reopened root permission remains pending")
-		assert_eq(permission_state.get_permission("perm_close_child").status, "pending", "reopened child permission remains pending")
-		assert_eq(question_state.get_question("question_close_root").status, "pending", "reopened root form remains pending")
-		assert_eq(question_state.get_question("question_close_child").status, "pending", "reopened child form remains pending")
-		assert_true(edit_state.get_edit("edit_close_root") ~= nil, "reopened root edit remains available")
-		assert_true(edit_state.get_edit("edit_close_child") ~= nil, "reopened child edit remains available")
+		assert.equals("close_child", recovered.interaction_reconcile, "reopen should refresh child interactions")
+		assert.equals("close_child", recovered.review_reconcile, "reopen should refresh child reviews")
+		assert.is_truthy(state.is_runtime_session("close_root"), "switching to a closed session should reopen its tab")
+		assert.equals("pending", permission_state.get_permission("perm_close_root").status, "reopened root permission remains pending")
+		assert.equals("pending", permission_state.get_permission("perm_close_child").status, "reopened child permission remains pending")
+		assert.equals("pending", question_state.get_question("question_close_root").status, "reopened root form remains pending")
+		assert.equals("pending", question_state.get_question("question_close_child").status, "reopened child form remains pending")
+		assert.is_truthy(edit_state.get_edit("edit_close_root") ~= nil, "reopened root edit remains available")
+		assert.is_truthy(edit_state.get_edit("edit_close_child") ~= nil, "reopened child edit remains available")
 		local chat = require("opencode.ui.chat")
 		chat.create()
-		assert_true(table.concat(chat.render(), "\n"):find("Close root%?") ~= nil,
-			"reopening should render the still-pending root form")
-		assert_eq(#rejected_permissions, 0, "reopening should not reject native permissions")
-		assert_eq(#rejected_questions, 0, "reopening should not reject native forms")
+		assert.is_truthy(table.concat(chat.render(), "\n"):find("Close root%?") ~= nil, "reopening should render the still-pending root form")
+		assert.equals(0, #rejected_permissions, "reopening should not reject native permissions")
+		assert.equals(0, #rejected_questions, "reopening should not reject native forms")
 	end)
 
 	it("auto-approves valid permissions while dropping missing session identity", function()
@@ -695,16 +650,15 @@ describe("opencode state ownership", function()
 
 		session_actions.set_active("session_hidden", "Hidden Widget", { preserve_cache = true })
 		require("opencode.events.handlers.interactions_v2").setup(bus)
-		bus.emit("v2_interaction", { id = "evt-danger-missing", type = "permission.asked", data = {
-			id = "danger_missing_session",
-			action = "shell",
-		}, created = 1000 })
-		vim.wait(50)
-		assert_eq(#replies, 0, "danger mode should not auto-reply to permission without session identity")
-		assert_true(
-			not permission_state.has_permission("danger_missing_session"),
-			"danger mode should drop permission without session identity"
-		)
+		require("tests.helpers.schedule").with(function(flush)
+			bus.emit("v2_interaction", { id = "evt-danger-missing", type = "permission.asked", data = {
+				id = "danger_missing_session",
+				action = "shell",
+			}, created = 1000 })
+			flush()
+			assert.equals(0, #replies, "danger mode should not auto-reply to permission without session identity")
+			assert.is_truthy(not permission_state.has_permission("danger_missing_session"), "danger mode should drop permission without session identity")
+		end)
 
 		bus.emit("v2_interaction", { id = "evt-danger-perm", type = "permission.asked", data = {
 			id = "danger_perm",
@@ -714,8 +668,8 @@ describe("opencode state ownership", function()
 		wait_for(function()
 			return #replies == 1
 		end, "danger mode should auto-reply to permission requests")
-		assert_eq(replies[1].permission_id, "danger_perm", "danger mode reply should target permission")
-		assert_eq(replies[1].reply, "once", "danger mode should use one-shot approval")
+		assert.equals("danger_perm", replies[1].permission_id, "danger mode reply should target permission")
+		assert.equals("once", replies[1].reply, "danger mode should use one-shot approval")
 		wait_for(function()
 			return permission_state.get_permission("danger_perm").status == "approved"
 		end, "danger mode should resolve pending permission widget after confirmation")
@@ -750,15 +704,15 @@ describe("opencode state ownership", function()
 		cleanup_chat.add_message("system", "cleanup notice", { render = false })
 		local replies_before_cleanup = #replies
 		danger.approve("cleanup_danger")
-		assert_eq(#replies, replies_before_cleanup + 1, "danger approval should queue before cleanup")
+		assert.equals(replies_before_cleanup + 1, #replies, "danger approval should queue before cleanup")
 		require("opencode.cleanup").reset_all()
-		assert_eq(#sync.get_messages("cleanup_session"), 0, "cleanup should clear sync messages")
-		assert_true(not permission_state.has_permission("cleanup_perm"), "cleanup should clear permissions")
-		assert_true(not question_state.has_question("cleanup_question"), "cleanup should clear questions")
-		assert_eq(edit_state.get_edit("cleanup_edit"), nil, "cleanup should clear edits")
-		assert_eq(#cleanup_chat_state.local_notices, 0, "cleanup should clear chat local notices")
+		assert.equals(0, #sync.get_messages("cleanup_session"), "cleanup should clear sync messages")
+		assert.is_truthy(not permission_state.has_permission("cleanup_perm"), "cleanup should clear permissions")
+		assert.is_truthy(not question_state.has_question("cleanup_question"), "cleanup should clear questions")
+		assert.equals(nil, edit_state.get_edit("cleanup_edit"), "cleanup should clear edits")
+		assert.equals(0, #cleanup_chat_state.local_notices, "cleanup should clear chat local notices")
 		danger.approve("cleanup_danger")
-		assert_eq(#replies, replies_before_cleanup + 2, "cleanup should clear danger reply dedupe")
+		assert.equals(replies_before_cleanup + 2, #replies, "cleanup should clear danger reply dedupe")
 	end)
 
 	it("wraps historical file results using panel prefixes and diff highlights", function()
@@ -782,10 +736,10 @@ describe("opencode state ownership", function()
 				},
 			},
 		}, false)
-		assert_true(rendered_file_result ~= nil, "file edit result should render")
-		assert_true(#rendered_file_result.lines > 1, "file edit result should wrap long panel text")
+		assert.is_truthy(rendered_file_result ~= nil, "file edit result should render")
+		assert.is_truthy(#rendered_file_result.lines > 1, "file edit result should wrap long panel text")
 		for _, line_text in ipairs(rendered_file_result.lines) do
-			assert_eq(line_text:sub(1, #"▏  "), "▏  ", "file edit result lines should use panel prefix")
+			assert.equals("▏  ", line_text:sub(1, #"▏  "), "file edit result lines should use panel prefix")
 		end
 		local has_diff_add = false
 		local has_diff_delete = false
@@ -793,22 +747,7 @@ describe("opencode state ownership", function()
 			has_diff_add = has_diff_add or hl.hl_group == "DiffAdd"
 			has_diff_delete = has_diff_delete or hl.hl_group == "DiffDelete"
 		end
-		assert_true(has_diff_add, "file edit result should highlight additions")
-		assert_true(has_diff_delete, "file edit result should highlight deletions")
-	end)
-
-	it("does not infer session status from a completed history page", function()
-		state.set_session("reconcile_root", "Reconcile Root")
-		state.set_session("reconcile_other", "Reconcile Other")
-		session_actions.set_session_status("reconcile_root", { type = "busy" }, { reason = "test_busy" })
-		session_actions.set_session_status("reconcile_other", { type = "busy" }, { reason = "test_busy" })
-		sync.handle_session_messages("reconcile_root", {
-			{ info = { id = "reconcile_assistant", sessionID = "reconcile_root", role = "assistant",
-				time = { created = 1, completed = 2 }, finish = "stop" }, parts = {} },
-		}, { complete = true })
-		assert_eq(state.get_session_status("reconcile_root").type, "busy",
-			"completed HTTP history must not infer idle for its session")
-		assert_eq(state.get_session_status("reconcile_other").type, "busy",
-			"completed HTTP history must not affect another session")
+		assert.is_truthy(has_diff_add, "file edit result should highlight additions")
+		assert.is_truthy(has_diff_delete, "file edit result should highlight deletions")
 	end)
 end)

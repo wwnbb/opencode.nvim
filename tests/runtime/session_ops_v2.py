@@ -3,7 +3,7 @@ import time
 from urllib.parse import urlencode
 
 
-def run(request, save, prefix, project, env):
+def run(request, save, prefix, project):
     file = project / "counter.txt"
     def history(route=prefix):
         code, data = request("GET", route + "/message")

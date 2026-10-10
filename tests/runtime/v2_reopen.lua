@@ -16,11 +16,8 @@ local function key(name)
 end
 local function text() return table.concat(vim.api.nvim_buf_get_lines(chat.get_bufnr(), 0, -1, false), "\n") end
 local function shot(name)
-	-- Session-change listeners schedule a surface reset after the state callback.
-	-- Let it finish before capturing the actual linegrid.
-	vim.wait(80, function() return false end, 10)
+	require("tests.runtime.support").flush_scheduled()
 	chat.do_render(); vim.cmd("redraw!")
-	vim.wait(30, function() return false end, 10)
 	vim.rpcnotify(1, "opencode_screenshot", name)
 end
 app.setup({ server = { host = host, port = tonumber(port), auto_start = false, use_shell_env = false,
