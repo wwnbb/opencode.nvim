@@ -15,6 +15,8 @@ local IMAGE_FILE_HINT_PATTERNS = {
 	"%.[Tt][Ii][Ff]",
 	"%.[Tt][Ii][Ff][Ff]",
 	"%.[Ww][Ee][Bb][Pp]",
+	"%.[Ss][Vv][Gg]",
+	"%.[Pp][Dd][Ff]",
 }
 
 function M.has_image_file_hint(text)
@@ -57,6 +59,14 @@ function M.insert_text_at_cursor(state, text, schedule_resize)
 	local new_row = row + #lines
 	local new_col = #lines == 1 and (col + #lines[1]) or #lines[#lines]
 	vim.api.nvim_win_set_cursor(state.winid, { new_row, new_col })
+	local threshold = (state.config or {}).collapse_paste_lines
+	if type(threshold) == "number" and threshold > 1 and #lines >= threshold then
+		vim.api.nvim_win_call(state.winid, function()
+			vim.wo.foldmethod, vim.wo.foldenable = "manual", true
+			vim.cmd((row + 1) .. "," .. new_row .. "fold")
+		end)
+		state.paste_folds = true
+	end
 
 	if schedule_resize then
 		schedule_resize()
@@ -143,6 +153,35 @@ function M.active_parts_for_text(state, text)
 	return active
 end
 
+-- Merge recalled/queued drafts without colliding their attachment markers.
+function M.merge_drafts(current, incoming)
+	local parts, text = history.copy_parts(current.parts), incoming.text or ""
+	-- Reserve the incoming markers too, so replacements cannot rewrite a later
+	-- attachment's original marker (or cascade an earlier replacement).
+	local reserved = vim.list_extend({}, parts)
+	vim.list_extend(reserved, incoming.parts or {})
+	for _, original in ipairs(incoming.parts or {}) do
+		local part = vim.deepcopy(original)
+		part._mention = nil
+		local marker = part_marker(part)
+		if part.type == "file" and type(marker) == "string" then
+			local collision = false
+			for _, existing in ipairs(parts) do if part_marker(existing) == marker then collision = true end end
+			if collision then
+				local replacement = next_file_marker({ parts = reserved }, (part.mime or ""):match("^image/") and "Image" or "File")
+				text = text:gsub(marker:gsub("(%W)", "%%%1"), function() return replacement end)
+				part._marker = replacement
+				local source = type(part.source) == "table" and (part.source.text or part.source)
+				if type(source) == "table" then source.value, source.start, source["end"] = replacement, -1, -1 end
+			end
+		end
+		parts[#parts + 1] = part
+		reserved[#reserved + 1] = part
+	end
+	local prefix = current.text or ""
+	return (prefix ~= "" and text ~= "") and (prefix .. "\n\n" .. text) or prefix .. text, parts
+end
+
 local function find_image_path_in_line(line, clipboard)
 	local trimmed = vim.trim(line or "")
 	if trimmed == "" or not M.has_image_file_hint(trimmed) then
@@ -167,6 +206,8 @@ local function find_image_path_in_line(line, clipboard)
 		"file:/+[^%s]+%.tif",
 		"file:/+[^%s]+%.heic",
 		"file:/+[^%s]+%.avif",
+		"file:/+[^%s]+%.svg",
+		"file:/+[^%s]+%.pdf",
 		"/.*%.png",
 		"/.*%.jpg",
 		"/.*%.jpeg",
@@ -177,6 +218,8 @@ local function find_image_path_in_line(line, clipboard)
 		"/.*%.tif",
 		"/.*%.heic",
 		"/.*%.avif",
+		"/.*%.svg",
+		"/.*%.pdf",
 	}
 
 	for _, pattern in ipairs(patterns) do
@@ -193,6 +236,44 @@ local function find_image_path_in_line(line, clipboard)
 	end
 
 	return nil, nil, nil
+end
+
+-- Tokenize paths without invoking a shell. Retain byte ranges and outer quotes.
+local function file_paths_in_line(line, clipboard)
+	local trimmed = vim.trim(line)
+	if M.has_image_file_hint(trimmed) then
+		local exact = clipboard.image_from_text(trimmed)
+		if exact then local first = line:find(trimmed, 1, true); return { { first, first + #trimmed - 1, exact } } end
+	end
+	local matches, i = {}, 1
+	while i <= #line do
+		if line:sub(i, i):match("%s") then i = i + 1
+		else
+			local quote = line:sub(i, i)
+			if quote ~= "'" and quote ~= '"' then quote = nil end
+			local first = i + (quote and 1 or 0)
+			local last = first
+			while last <= #line do
+				local char = line:sub(last, last)
+				if char == "\\" and last < #line then last = last + 2
+				elseif (quote and char == quote) or (not quote and char:match("%s")) then break
+				else last = last + 1 end
+			end
+			local candidate = line:sub(first, last - 1)
+			if M.has_image_file_hint(candidate) then
+				local content = clipboard.image_from_text(candidate)
+				if content then matches[#matches + 1] = { first, last - 1, content } end
+			end
+			i = math.max(i + 1, last + (quote and 1 or 0))
+		end
+	end
+	-- A single unquoted filename can contain spaces. Keep the established exact
+	-- path fallback, without guessing boundaries between several such filenames.
+	if #matches == 0 then
+		local first, last, content = find_image_path_in_line(line, clipboard)
+		if content then matches[1] = { first, last, content } end
+	end
+	return matches
 end
 
 function M.normalize_pasted_image_paths(state, resize)
@@ -212,14 +293,17 @@ function M.normalize_pasted_image_paths(state, resize)
 	local changed = false
 
 	for idx, line in ipairs(lines) do
-		local start_col, end_col, content = find_image_path_in_line(line, clipboard)
-		if start_col and end_col and content then
+		local pieces, offset = {}, 1
+		for _, match in ipairs(file_paths_in_line(line, clipboard)) do
+			local start_col, end_col, content = unpack(match)
 			local marker = M.add_file_part(state, content, { insert = false })
 			if marker then
-				lines[idx] = line:sub(1, start_col - 1) .. marker .. line:sub(end_col + 1)
+				pieces[#pieces + 1] = line:sub(offset, start_col - 1) .. marker
+				offset = end_col + 1
 				changed = true
 			end
 		end
+		if offset > 1 then pieces[#pieces + 1] = line:sub(offset); lines[idx] = table.concat(pieces) end
 	end
 
 	if not changed then

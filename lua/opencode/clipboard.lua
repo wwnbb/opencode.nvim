@@ -15,6 +15,8 @@ local IMAGE_MIME_BY_EXT = {
 	tif = "image/tiff",
 	tiff = "image/tiff",
 	webp = "image/webp",
+	svg = "image/svg+xml",
+	pdf = "application/pdf",
 }
 
 ---@return string
