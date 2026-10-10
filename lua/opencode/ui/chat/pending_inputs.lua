@@ -21,13 +21,26 @@ end
 
 local function open_draft(draft)
 	input.show({ winid = state.winid, float_dims = state.float_dims, text = draft.text, parts = draft.parts,
-		session_bound = true, send_options = draft.options,
+		session_bound = true, send_options = draft.options, mode = draft.mode,
 		on_send = function(text, parts, send_options)
 			actions.send(text, vim.tbl_extend("force", draft.options, send_options or {}, { parts = parts }))
 		end,
 		on_cancel = function()
 			if state.winid and vim.api.nvim_win_is_valid(state.winid) then vim.api.nvim_set_current_win(state.winid) end
 		end })
+end
+
+function M.restore_draft(draft, sid)
+	if app_state.get_session().id ~= sid then
+		history.defer_pending(draft, sid)
+		vim.notify("Input cancelled; return to its session to restore the draft", vim.log.levels.INFO)
+		return
+	end
+	local ok, err = input.merge_pending_draft(draft)
+	if not ok then history.defer_pending(draft, sid); vim.notify(err, vim.log.levels.WARN); return end
+	if state.visible and not input.is_visible() then
+		open_draft({ text = input.get_pending_text(), parts = input.get_pending_parts(), mode = input.get_mode(), options = history.get_pending_options() or draft.options })
+	end
 end
 
 local function at_cursor()
@@ -67,8 +80,8 @@ function M.handle(action)
 			return
 		end
 		if not draft then return end
-		-- Cancellation is asynchronous: do not overwrite a draft opened meanwhile
-		-- or silently drop this one when input.show() finds another editor open.
+		-- Cursor edit preserves its existing deferred behavior. The queue picker
+		-- explicitly restores into the current draft via restore_draft().
 		if has_draft() or app_state.get_session().id ~= sid or not state.visible then
 			history.defer_pending(draft, sid)
 			vim.notify("Input cancelled; reopen input in its session after finishing the current draft to edit it", vim.log.levels.INFO)
