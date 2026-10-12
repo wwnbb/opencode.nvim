@@ -4,6 +4,7 @@ local actions = require("opencode.actions")
 local chat_tasks = require("opencode.ui.chat.tasks")
 local chat_edits = require("opencode.ui.chat.edits")
 local chat_interactions = require("opencode.ui.chat.interactions")
+local chat_questions = require("opencode.ui.chat.questions")
 local chat_nav = require("opencode.ui.chat.nav")
 local chat_session_tabs = require("opencode.ui.chat.session_tabs")
 local palette = require("opencode.ui.palette")
@@ -203,6 +204,8 @@ function M.setup_buffer(bufnr, opts)
 		chat_interactions.handle_question_next_tab()
 	end, keymap_opts)
 	vim.keymap.set("n", "<Esc>", function()
+		local request_id, question = chat_questions.get_question_at_cursor()
+		if request_id and question.status ~= "confirming" then return end
 		chat_interactions.handle_question_cancel()
 	end, keymap_opts)
 	vim.keymap.set("n", "<S-Tab>", function()
@@ -272,6 +275,22 @@ function M.setup_buffer(bufnr, opts)
 			return
 		end
 	end, vim.tbl_extend("force", keymap_opts, { desc = "Toggle tool output", nowait = true }))
+
+	local cancel_question = cfg.keymaps.cancel_question
+	if type(cancel_question) == "string" and cancel_question ~= "" then
+		local key = vim.api.nvim_replace_termcodes(cancel_question, true, false, true)
+		local escape = vim.api.nvim_replace_termcodes("<Esc>", true, false, true)
+		vim.keymap.set("n", cancel_question, function()
+			local _, question = chat_questions.get_question_at_cursor()
+			if question and question.status == "pending" then
+				chat_interactions.confirm_question_cancel()
+			elseif key == escape then
+				chat_interactions.handle_question_cancel()
+			elseif not question then
+				vim.api.nvim_feedkeys(key, "n", false)
+			end
+		end, vim.tbl_extend("force", keymap_opts, { desc = "Cancel question" }))
+	end
 
 	vim.api.nvim_create_autocmd("CursorMoved", {
 		buffer = bufnr,

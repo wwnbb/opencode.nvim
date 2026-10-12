@@ -1,9 +1,5 @@
--- opencode.nvim - Neovim frontend for OpenCode AI coding agent
--- Configuration module
-
 local M = {}
 
--- Default configuration
 M.defaults = {
 	-- Server connection
 	server = {
@@ -30,7 +26,6 @@ M.defaults = {
 		config_dir = vim.fn.stdpath("config") .. "/opencode",
 	},
 
-	-- Session
 	session = {
 		thinking = "hide", -- Collapsed Thought widgets remain expandable.
 		grouping = "auto", -- "none" or "auto"
@@ -89,7 +84,6 @@ M.defaults = {
 		},
 	},
 
-	-- Chat
 	chat = {
 		diff_view = "auto", -- "auto", "split", or "unified"
 		layout = "vertical",
@@ -127,6 +121,7 @@ M.defaults = {
 		keymaps = {
 			close = "q",
 			close_session = "x",
+			cancel_question = false,
 			cancel_pending = "C",
 			edit_pending = "E",
 			steer_pending = "S",
@@ -140,7 +135,6 @@ M.defaults = {
 		},
 	},
 
-	-- Input
 	input = {
 		editor_context = true,
 		collapse_paste_lines = 20, -- false disables native folding of large clipboard pastes
@@ -264,7 +258,6 @@ M.defaults = {
 		current_session = true,
 	},
 
-	-- Keymaps
 	keymaps = {
 		toggle = "<leader>oo",
 		command_palette = "<leader>op",

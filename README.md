@@ -634,6 +634,15 @@ require("opencode").setup({
 })
 ```
 
+Question cancellation has no key binding by default. Set
+`chat.keymaps.cancel_question = "<leader>qc"` to choose one; `false` or `""`
+disables it. While choosing an answer, the key works anywhere inside the
+question widget and asks for confirmation before cancelling. Dismissing the
+confirmation keeps the question and selected answers. The key does not cancel
+from the answer submission confirmation screen. Escape returns from that screen
+to the questions; set `cancel_question = "<Esc>"` to also use it for cancellation
+with confirmation while choosing answers.
+
 An explicitly configured `input.keymaps.send_alt` remains an additional queue
 binding. If it uses the same key as `send_steer`, the legacy queue binding wins;
 choose a different `send_steer` key to keep both actions.

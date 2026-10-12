@@ -210,7 +210,11 @@ local function format_hint(
 	if allow_custom then
 		table.insert(parts, "c custom")
 	end
-	table.insert(parts, "Esc cancel")
+	local config = require("opencode.ui.chat.state").state.config or {}
+	local cancel_key = (config.keymaps or {}).cancel_question
+	if type(cancel_key) == "string" and cancel_key ~= "" then
+		table.insert(parts, cancel_key .. " cancel")
+	end
 	return table.concat(parts, " · ")
 end
 
