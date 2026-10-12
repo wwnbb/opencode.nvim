@@ -3,15 +3,6 @@
 local M = {}
 local MAX_EXACT_INTEGER = 9007199254740991
 
----@param message string
----@return table
-local function make_error(message)
-	return {
-		error = message,
-		message = message,
-	}
-end
-
 local function parse_fields(lines, first)
 	local headers, previous = {}, nil
 	for i = first or 1, #lines do
@@ -42,19 +33,14 @@ end
 ---@return string|nil remaining
 ---@return string|nil parse_error
 local function parse_headers(request_buffer)
-	local header_end = request_buffer:find("\r\n\r\n", 1, true)
-	local delimiter_size = 4
-	if not header_end then
-		header_end = request_buffer:find("\n\n", 1, true)
-		delimiter_size = 2
-	end
+	local header_end, delimiter_end = request_buffer:find("\r?\n\r?\n")
 
 	if not header_end then
 		return nil, nil, nil
 	end
 
 	local header_blob = request_buffer:sub(1, header_end - 1)
-	local remaining = request_buffer:sub(header_end + delimiter_size)
+	local remaining = request_buffer:sub(delimiter_end + 1)
 	local lines = vim.split(header_blob, "\n", { plain = true })
 	local status_line = (lines[1] or ""):gsub("\r$", "")
 	local version, status_code, reason = status_line:match("^HTTP/(%d%.%d)%s+(%d%d%d)(.*)$")
@@ -92,13 +78,10 @@ function M.new(opts)
 		headers_parsed = false,
 		header_buffer = "",
 		body_mode = "close",
-		expected_length = nil,
 		body_bytes = 0,
 		chunk_buffer = "",
-		chunk_size = nil,
 		chunk_parts = {},
 		chunk_bytes = 0,
-		chunk_done = false,
 		completed = false,
 	}
 
@@ -109,7 +92,7 @@ function M.new(opts)
 			return
 		end
 		state.completed = true
-		call(opts.on_error, make_error(message))
+		call(opts.on_error, { error = message, message = message })
 	end
 
 	local function emit_complete()
@@ -128,10 +111,6 @@ function M.new(opts)
 
 	local function decode_chunked()
 		while true do
-			if state.chunk_done then
-				return true
-			end
-
 			if not state.chunk_size then
 				local line_end = state.chunk_buffer:find("\r\n", 1, true)
 				if not line_end then
@@ -148,14 +127,12 @@ function M.new(opts)
 
 				state.chunk_size = parsed_size
 				state.chunk_buffer = state.chunk_buffer:sub(line_end + 2)
-
 			end
 
 			-- Keep reading trailers after a split zero-size chunk header.
 			if state.chunk_size == 0 then
 				if state.chunk_buffer:sub(1, 2) == "\r\n" then
 					state.chunk_buffer = state.chunk_buffer:sub(3)
-					state.chunk_done = true
 					return true
 				end
 				local trailer_end = state.chunk_buffer:find("\r\n\r\n", 1, true)
@@ -163,7 +140,6 @@ function M.new(opts)
 					local fields = parse_fields(vim.split(state.chunk_buffer:sub(1, trailer_end - 1), "\n", { plain = true }))
 					if not fields then return nil, "Invalid HTTP trailer line" end
 					state.chunk_buffer = state.chunk_buffer:sub(trailer_end + 4)
-					state.chunk_done = true
 					return true
 				end
 				return false
@@ -190,13 +166,8 @@ function M.new(opts)
 			return
 		end
 
-		if state.body_mode == "none" then
-			return
-		end
-
 		if state.body_mode == "length" then
-			-- on_body can synchronously call finish_eof before process_body completes.
-			local remaining = (state.expected_length or 0) - state.body_bytes
+			local remaining = state.expected_length - state.body_bytes
 			if remaining <= 0 then
 				return
 			end
@@ -205,7 +176,7 @@ function M.new(opts)
 			state.body_bytes = state.body_bytes + #body_piece
 			emit_body(body_piece)
 
-			if state.expected_length and state.body_bytes >= state.expected_length then
+			if state.body_bytes >= state.expected_length then
 				emit_complete()
 			end
 			return
@@ -254,7 +225,6 @@ function M.new(opts)
 		local status = parsed.status
 
 		if state.method == "HEAD" or status == 204 or status == 304 or (status >= 100 and status < 200) then
-			state.body_mode = "none"
 			emit_complete()
 			return
 		end
@@ -275,7 +245,6 @@ function M.new(opts)
 			end
 			state.expected_length = content_length
 			if state.expected_length <= 0 then
-				state.body_mode = "none"
 				emit_complete()
 				return
 			end
@@ -284,9 +253,7 @@ function M.new(opts)
 			state.body_mode = "close"
 		end
 
-		if remaining and remaining ~= "" then
-			process_body(remaining)
-		end
+		process_body(remaining)
 	end
 
 	function decoder:push(data)
@@ -320,7 +287,7 @@ function M.new(opts)
 
 		-- A direct on_body callback may reenter EOF before process_body completes.
 		if state.body_mode == "length" then
-			if state.expected_length and state.body_bytes >= state.expected_length then
+			if state.body_bytes >= state.expected_length then
 				emit_complete()
 				return
 			end

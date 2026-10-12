@@ -1,6 +1,3 @@
--- Unit checks for shared TCP lifecycle and HTTP body decoding.
--- Run with: ./tests/run.sh unit
-
 describe("opencode transport", function()
 	it("requires an integer TCP port without rounding the target", function()
 		local tcp = require("opencode.client.tcp_connection")

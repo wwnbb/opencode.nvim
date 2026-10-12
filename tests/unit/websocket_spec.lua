@@ -2,9 +2,11 @@ describe("native WebSocket transport", function()
 	local websocket, stubs, wire, sent, messages, errors, closed, stopped
 	local tcp = require("opencode.client.tcp_connection")
 	local function server_frame(opcode, data, fin)
-		local length = #data
-		return string.char((fin == false and 0 or 128) + opcode, length < 126 and length or 126)
-			.. (length >= 126 and string.char(math.floor(length / 256), length % 256) or "") .. data
+		local length, first = #data, (fin == false and 0 or 128) + opcode
+		if length < 126 then return string.char(first, length) .. data end
+		if length <= 65535 then return string.char(first, 126, math.floor(length / 256), length % 256) .. data end
+		return string.char(first, 127, 0, 0, 0, 0, math.floor(length / 16777216), math.floor(length / 65536) % 256,
+			math.floor(length / 256) % 256, length % 256) .. data
 	end
 	local function open(overrides)
 		local socket, err = websocket.open(vim.tbl_extend("force", { host = "127.0.0.1", port = 4096, path = "/api/pty/connect",
@@ -71,6 +73,32 @@ describe("native WebSocket transport", function()
 		open(); upgrade(server_frame(2, "part one", false) .. server_frame(9, "ping") .. server_frame(0, " / part two"))
 		assert.same({ { 2, "part one / part two" } }, messages)
 		assert.equals(138, sent[1]:byte(1)); assert.equals("ping", payload(sent[1]))
+	end)
+	it("excludes ping and pong from the fragmented message size limit", function()
+		local data = string.rep("x", 8 * 1024 * 1024 - 1)
+		local socket = open(); upgrade(server_frame(2, data, false))
+		wire.on_read(nil, server_frame(9, "ping") .. server_frame(10, "pong") .. server_frame(0, "!"))
+		assert.equals(0, #errors); assert.is_true(socket.is_active())
+		assert.equals(1, #messages); assert.equals(2, messages[1][1]); assert.equals(data .. "!", messages[1][2])
+		assert.equals(1, #sent); assert.equals(138, sent[1]:byte(1)); assert.equals("ping", payload(sent[1]))
+	end)
+	it("rejects oversized fragmented data before its payload arrives", function()
+		local socket = open(); upgrade(server_frame(2, string.rep("x", 8 * 1024 * 1024 - 1), false))
+		wire.on_read(nil, "\128\2")
+		assert.is_false(socket.is_active()); assert.equals(0, #messages)
+		assert.equals(1, #errors); assert.equals("WebSocket replay exceeded 8 MiB", errors[1].message)
+	end)
+	it("accepts repeated Connection headers regardless of their casing", function()
+		local socket = open()
+		wire.on_read(nil, "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: keep-alive\r\ncOnNeCtIoN: UpGrAdE\r\nSec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=\r\n\r\n" .. server_frame(2, "connected"))
+		assert.equals(0, #errors); assert.is_true(socket.is_active()); assert.equals(1, stopped)
+		assert.same({ { 2, "connected" } }, messages)
+	end)
+	it("rejects repeated Sec-WebSocket-Accept headers even when their values match", function()
+		local socket = open()
+		wire.on_read(nil, "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=\r\nsEc-WeBsOcKeT-aCcEpT: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=\r\n\r\n")
+		assert.is_false(socket.is_active()); assert.equals(0, stopped)
+		assert.equals(1, #errors); assert.equals("websocket_protocol", errors[1].code)
 	end)
 	it("rejects a forged handshake and an unavailable upgrade without parsing response bodies", function()
 		open(); wire.on_read(nil, "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: upgrade\r\nSec-WebSocket-Accept: forged\r\n\r\n")

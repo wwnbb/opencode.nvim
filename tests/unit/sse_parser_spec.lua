@@ -1,4 +1,4 @@
-describe("opencode native v2 SSE parser", function()
+describe("opencode native SSE parser", function()
 	local transport = require("opencode.client.transport")
 	local original_open, original_sse, original_timer, original_is_closing, sse, stream, received
 
@@ -29,6 +29,7 @@ describe("opencode native v2 SSE parser", function()
 			table.insert(received, { kind = kind, data = data, id = id })
 		end)
 		assert.is_true(sse.connect())
+		stream.on_headers(200, { ["content-type"] = "text/event-stream" })
 	end)
 
 	local function server_connected()
@@ -96,6 +97,7 @@ describe("opencode native v2 SSE parser", function()
 		assert.equals(1, #received)
 		sse.disconnect()
 		assert.is_true(sse.connect())
+		stream.on_headers(200, { ["content-type"] = "text/event-stream" })
 		stream.on_data(frame)
 		assert.equals(1, #received)
 		assert.equals(1, #named)
@@ -110,11 +112,40 @@ describe("opencode native v2 SSE parser", function()
 		assert.is_false(sse.status().has_stream)
 		assert.is_true(sse.connect())
 		assert.equals(4999, stream.port)
+		stream.on_headers(200, { ["content-type"] = "text/event-stream" })
 		received = {}
 		old_stream.on_data(frame)
 		assert.equals(0, #received)
 		stream.on_data(frame)
 		assert.equals(1, #received)
+	end)
+
+	it("evicts only the oldest ID when the deduplication window fills", function()
+		for index = 1, 512 do sse.emit("message", envelope(tostring(index), "once")) end
+		sse.emit("message", envelope("1", "duplicate"))
+		assert.equals(512, #received)
+		sse.emit("message", envelope("513", "new"))
+		sse.emit("message", envelope("2", "duplicate"))
+		assert.equals(513, #received)
+		sse.emit("message", envelope("1", "expired"))
+		assert.equals(514, #received)
+		assert.equals("expired", received[514].data.delta)
+	end)
+
+	it("rejects malformed directories without losing the following event", function()
+		for _, directory in ipairs({ 123, false, {} }) do
+			local event = envelope("malformed", "ignored")
+			event.location.directory = directory
+			stream.on_data("data: " .. vim.json.encode(event) .. "\n\n")
+		end
+		assert.equals(3, #received)
+		for _, event in ipairs(received) do
+			assert.equals("error", event.kind)
+			assert.equals("Invalid v2 event directory", event.data)
+		end
+		stream.on_data("data: " .. vim.json.encode(envelope("malformed", "valid")) .. "\n\n")
+		assert.equals(4, #received)
+		assert.equals("valid", received[4].data.delta)
 	end)
 
 	it("rejects old properties and syncEvent envelopes", function()
@@ -150,6 +181,7 @@ describe("opencode native v2 SSE parser", function()
 		stream.on_data("event: abandoned\nid: old\n")
 		sse.disconnect()
 		assert.is_true(sse.connect())
+		stream.on_headers(200, { ["content-type"] = "text/event-stream" })
 		received = {}
 		stream.on_data("data: " .. vim.json.encode(envelope(nil, "next")) .. "\n\n")
 		assert.equals("session.text.delta", received[1].kind)
@@ -163,6 +195,7 @@ describe("opencode native v2 SSE parser", function()
 		assert.equals(1, #received)
 		assert.equals("disconnected", received[1].kind)
 		assert.is_true(sse.connect())
+		stream.on_headers(200, { ["content-type"] = "text/event-stream" })
 		received = {}
 		stream.on_data(frame .. "\n")
 		assert.equals(1, #received)

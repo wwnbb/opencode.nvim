@@ -36,15 +36,17 @@ function M.connect(opts)
 		if opts.on_error then opts.on_error({ code = "pty_protocol", message = message }) end
 	end
 	local function interact(kind, cols, rows, data)
-		if not current() or not attached or not ready or not dimensions(cols, rows) or not stream then return false end
+		if not current() or not ready or not dimensions(cols, rows) or not stream then return false end
 		local header = string.char(kind, math.floor(cols / 256), cols % 256, math.floor(rows / 256), rows % 256)
 		return stream.send(header .. (data or ""))
 	end
 	function handle.control(cols, rows) return interact(0, cols, rows) end
 	function handle.input(data, cols, rows)
 		if type(data) ~= "string" or #data > 1024 * 1024 then return false end
-		-- Bound each input frame, including large pastes, without replaying input on reconnect.
-		for start = 1, #data, 65536 do if not interact(1, cols, rows, data:sub(start, start + 65535)) then return false end end
+		-- Split large pastes into frames of at most 64 KiB.
+		for start = 1, #data, 65536 do
+			if not interact(1, cols, rows, data:sub(start, start + 65535)) then return false end
+		end
 		return true
 	end
 	function handle.cursor() return offset end
@@ -81,7 +83,10 @@ function M.connect(opts)
 				attached = true
 			elseif not attached then fail("Terminal control arrived before attachment"); return
 			elseif event.type == "replay_complete" then
-				if not attached or not count(event.endOffset) or event.endOffset ~= offset then fail("Incomplete terminal replay"); return end
+				if event.endOffset ~= offset then
+					fail("Incomplete terminal replay")
+					return
+				end
 				ready = true
 			elseif event.type == "resized" then
 				if not dimensions(event.cols, event.rows) or type(event.checkpoint) ~= "string" or #event.checkpoint > 12 * 1024 * 1024 then fail("Invalid terminal resize event"); return end
@@ -94,13 +99,10 @@ function M.connect(opts)
 		end,
 		on_close = function(reason)
 			if not current() then handle.close(); return end
-			ready = false
-			state.off("*", watch)
-			if opts.on_close then opts.on_close(reason, offset) end
+			handle.close(reason)
 		end,
 	}))
 	if not stream then handle.close(); return nil, open_err end
-	if closed then stream.close() end
 	return handle
 end
 

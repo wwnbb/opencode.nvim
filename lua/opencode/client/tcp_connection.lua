@@ -34,13 +34,13 @@ function M.normalize_target(opts)
 
 	host = host:match("^%[([^%]]*:[^%]]*)%]$") or host
 
-	local port = tonumber(opts and opts.port)
+	local port = tonumber(opts.port)
 	if not port then
 		return nil, nil, M.make_error("Port is required")
 	end
 
 	if port < 1 or port > 65535 or port % 1 ~= 0 then
-		return nil, nil, M.make_error("Invalid port: " .. tostring(opts and opts.port))
+		return nil, nil, M.make_error("Invalid port: " .. tostring(opts.port))
 	end
 
 	return host, port, nil
@@ -57,46 +57,14 @@ local function safe_close(handle)
 		return
 	end
 
-	pcall(function()
-		uv.close(handle)
-	end)
-end
-
----@param timer uv.uv_timer_t|nil
-local function stop_timer(timer)
-	if not timer then
-		return
-	end
-
-	local ok, closing = pcall(uv.is_closing, timer)
-	if ok and closing then
-		return
-	end
-
-	pcall(function()
-		uv.timer_stop(timer)
-	end)
-	pcall(function()
-		uv.close(timer)
-	end)
+	pcall(uv.close, handle)
 end
 
 ---@param host string
 ---@param port integer
 ---@param callback function
 local function resolve_target(host, port, callback)
-	local req, req_err = uv.getaddrinfo(host, tostring(port), {
-		family = 0,
-		socktype = "stream",
-		protocol = 0,
-		addrconfig = false,
-		v4mapped = false,
-		all = false,
-		numerichost = false,
-		passive = false,
-		numericserv = false,
-		canonname = false,
-	}, function(err, addresses)
+	local req, req_err = uv.getaddrinfo(host, tostring(port), { socktype = "stream" }, function(err, addresses)
 		if err then
 			callback(M.make_error("Failed to resolve host '" .. host .. "': " .. tostring(err)), nil)
 			return
@@ -107,22 +75,7 @@ local function resolve_target(host, port, callback)
 			return
 		end
 
-		local targets = {}
-		for _, address in ipairs(addresses) do
-			if address and address.addr then
-				table.insert(targets, {
-					addr = address.addr,
-					port = address.port or port,
-				})
-			end
-		end
-
-		if #targets == 0 then
-			callback(M.make_error("No usable address found for host '" .. host .. "'"), nil)
-			return
-		end
-
-		callback(nil, targets)
+		callback(nil, addresses)
 	end)
 
 	if req == nil then
@@ -160,13 +113,19 @@ function M.open(opts)
 
 	local connection = {
 		_active = true,
-		_socket = nil,
-		_timer = nil,
 	}
 
-	local function cleanup()
-		stop_timer(connection._timer)
+	function connection.stop_timeout()
+		safe_close(connection._timer)
 		connection._timer = nil
+	end
+
+	function connection.close()
+		if not connection._active then
+			return
+		end
+		connection._active = false
+		connection.stop_timeout()
 
 		if connection._socket then
 			pcall(function()
@@ -181,29 +140,15 @@ function M.open(opts)
 		if not connection._active then
 			return
 		end
-		connection._active = false
-		cleanup()
+		connection.close()
 
 		if type(opts.on_error) == "function" then
 			opts.on_error(reason, err)
 		end
 	end
 
-	function connection.close()
-		if not connection._active then
-			return
-		end
-		connection._active = false
-		cleanup()
-	end
-
 	function connection.is_active()
 		return connection._active
-	end
-
-	function connection.stop_timeout()
-		stop_timer(connection._timer)
-		connection._timer = nil
 	end
 
 	function connection.send(data)
@@ -251,18 +196,13 @@ function M.open(opts)
 				return
 			end
 
-			if connection._socket then
-				safe_close(connection._socket)
-				connection._socket = nil
-			end
-
 			connection._socket = uv.new_tcp()
 			if not connection._socket then
 				fail("connect_error", M.make_error(labels.create_socket))
 				return
 			end
 
-			local connect_req, connect_err = connection._socket:connect(target.addr, target.port, function(connect_cb_err)
+			local connect_req, connect_err = connection._socket:connect(target.addr, target.port or port, function(connect_cb_err)
 				if not connection._active then
 					return
 				end
@@ -287,17 +227,7 @@ function M.open(opts)
 					return
 				end
 
-				local write_req, write_start_err = connection._socket:write(request_data, function(write_err)
-					if not connection._active then
-						return
-					end
-					if write_err then
-						fail("write_error", labeled_error(labels.write, write_err))
-					end
-				end)
-				if write_req == nil then
-					fail("write_start_error", labeled_error(labels.write_start, write_start_err))
-				end
+				connection.send(request_data)
 			end)
 
 			if connect_req == nil then

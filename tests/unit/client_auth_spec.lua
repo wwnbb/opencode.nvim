@@ -1,6 +1,3 @@
--- Unit checks for HTTP and SSE Basic authentication behavior.
--- Run with: ./tests/run.sh tests/unit/client_auth_spec.lua
-
 local AUTH_ERROR = "Failed to encode Basic authentication credentials: no Base64 encoder succeeded"
 local MODULE_NAMES = {
 	"opencode.client",
@@ -13,6 +10,7 @@ local MODULE_NAMES = {
 describe("opencode client Basic auth", function()
 	local original_modules
 	local original_schedule
+	local original_base64
 	local request_calls
 	local stream_calls
 	local open_stream_handler
@@ -23,6 +21,7 @@ describe("opencode client Basic auth", function()
 			original_modules[name] = package.loaded[name]
 		end
 		original_schedule = vim.schedule
+		original_base64 = vim.base64
 
 		request_calls = {}
 		stream_calls = {}
@@ -59,6 +58,7 @@ describe("opencode client Basic auth", function()
 		end
 
 		vim.schedule = original_schedule
+		vim.base64 = original_base64
 		for _, name in ipairs(MODULE_NAMES) do
 			package.loaded[name] = original_modules[name]
 		end
@@ -138,64 +138,43 @@ describe("opencode client Basic auth", function()
 		return client
 	end
 
-	it("uses modern encoding first and safely falls back or fails", function()
+	it("encodes credentials, empty passwords and binary WebSocket inputs with native Base64", function()
 		local auth = require("opencode.client.auth")
-		local legacy_calls = 0
+		local header, err = auth.header("alice", "secret")
+		assert.equals("Basic YWxpY2U6c2VjcmV0", header)
+		assert.is_nil(err)
+		header, err = auth.header("alice", "")
+		assert.equals("Basic YWxpY2U6", header)
+		assert.is_nil(err)
+		assert.equals("AP+A", auth.encode_base64("\0\255\128"))
+	end)
 
-		local header, err = auth.header("alice", "secret", {
-			modern = function(value)
-				assert.equals("alice:secret", value, "modern encoder input")
-				return "YWxpY2U6c2VjcmV0"
-			end,
-			legacy = function()
-				legacy_calls = legacy_calls + 1
-				return "legacy"
-			end,
-		})
-		assert.equals("Basic YWxpY2U6c2VjcmV0", header, "modern header")
-		assert.equals(nil, err, "modern error")
-		assert.equals(0, legacy_calls, "modern precedence")
+	it("fails closed when native Base64 is unavailable, throws or returns invalid output", function()
+		local auth = require("opencode.client.auth")
+		for _, base64 in ipairs({
+			false,
+			{},
+			{ encode = false },
+			{ encode = function() error("encoding failed") end },
+			{ encode = function() end },
+			{ encode = function() return "" end },
+			{ encode = function() return {} end },
+		}) do
+			vim.base64 = base64
+			local header, err = auth.header("alice", "secret")
+			assert.is_nil(header)
+			assert.equals(AUTH_ERROR, err)
+		end
+	end)
 
-		header, err = auth.header("alice", "secret", {
-			modern = function()
-				error("modern failure")
-			end,
-			legacy = function(value)
-				assert.equals("alice:secret", value, "legacy encoder input")
-				return "YWxpY2U6c2VjcmV0"
-			end,
-		})
-		assert.equals("Basic YWxpY2U6c2VjcmV0", header, "legacy header")
-		assert.equals(nil, err, "legacy error")
-
-		header, err = auth.header("alice", "secret", {})
-		assert.equals(nil, header, "unavailable encoder header")
-		assert.equals(AUTH_ERROR, err, "unavailable encoder error")
-
-		local ok, failed_header, failed_err = pcall(auth.header, "alice", "secret", {
-			modern = function()
-				error("modern failure")
-			end,
-			legacy = function()
-				error("E117: Unknown function: base64encode")
-			end,
-		})
-		assert.is_truthy(ok, "throwing encoders should not escape")
-		assert.equals(nil, failed_header, "throwing encoder header")
-		assert.equals(AUTH_ERROR, failed_err, "throwing encoder error")
-
+	it("skips Base64 encoding when no password is configured", function()
+		local auth = require("opencode.client.auth")
 		local encoder_calls = 0
-		header, err = auth.header("alice", nil, {
-			modern = function()
-				encoder_calls = encoder_calls + 1
-			end,
-			legacy = function()
-				encoder_calls = encoder_calls + 1
-			end,
-		})
-		assert.equals(nil, header, "passwordless header")
-		assert.equals(nil, err, "passwordless error")
-		assert.equals(0, encoder_calls, "passwordless encoder calls")
+		vim.base64 = { encode = function() encoder_calls = encoder_calls + 1 end }
+		local header, err = auth.header("alice", nil)
+		assert.is_nil(header)
+		assert.is_nil(err)
+		assert.equals(0, encoder_calls)
 	end)
 
 	it("preserves passwordless HTTP and SSE and applies generated HTTP auth", function()
@@ -355,18 +334,6 @@ describe("opencode client Basic auth", function()
 		assert.equals(false, status.connected, "SSE open connected state")
 		assert.equals(false, status.has_stream, "SSE open stream state")
 		assert.equals(1, status.reconnect_count, "SSE open reconnect count")
-	end)
-
-	it("resets SSE reconnect_count on disconnect", function()
-		stub_auth("Basic encoded", nil)
-		open_stream_handler = function()
-			return nil, { message = "dial failed" }
-		end
-
-		local client = setup_client("secret")
-		client.connect_events()
-		assert.equals(1, client.sse.status().reconnect_count, "failed open increments reconnect")
-
 		client.disconnect_events()
 		assert.equals(0, client.sse.status().reconnect_count, "disconnect resets reconnect")
 	end)

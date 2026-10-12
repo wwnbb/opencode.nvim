@@ -1,20 +1,21 @@
 -- Verified TLS byte channel using an installed OpenSSL process. HTTP/SSE and
 -- WebSocket share it; request headers and payloads travel only over stdin.
 local M = {}
-local uv = vim.uv or vim.loop
-local error = require("opencode.client.tcp_connection").make_error
+local uv = vim.uv
+local tcp_connection = require("opencode.client.tcp_connection")
+local make_error = tcp_connection.make_error
 
 function M.open(opts)
 	local tls = opts.tls or {}
-	if type(tls) ~= "table" then return nil, error("Invalid TLS configuration", { code = "invalid_endpoint", retryable = false }) end
+	if type(tls) ~= "table" then return nil, make_error("Invalid TLS configuration", { code = "invalid_endpoint", retryable = false }) end
 	local command = tls.command or "openssl"
 	if type(command) ~= "string" or (tls.ca_file ~= nil and (type(tls.ca_file) ~= "string" or tls.ca_file == "")) then
-		return nil, error("Invalid TLS configuration", { code = "invalid_endpoint", retryable = false })
+		return nil, make_error("Invalid TLS configuration", { code = "invalid_endpoint", retryable = false })
 	end
 	if vim.fn.executable(command) ~= 1 or not vim.system then
-		return nil, error("HTTPS requires an installed OpenSSL and Neovim 0.10+", { code = "tls_unavailable", retryable = false })
+		return nil, make_error("HTTPS requires an installed OpenSSL and Neovim 0.10+", { code = "tls_unavailable", retryable = false })
 	end
-	local host, port, err = require("opencode.client.tcp_connection").normalize_target(opts)
+	local host, port, err = tcp_connection.normalize_target(opts)
 	if err then return nil, err end
 	local address = (host:find(":", 1, true) and "[" .. host .. "]" or host) .. ":" .. port
 	local ip = host:find(":", 1, true) or host:match("^%d+%.%d+%.%d+%.%d+$")
@@ -24,65 +25,79 @@ function M.open(opts)
 	local connection = { _active = true }
 	local process, timer, stderr = nil, nil, ""
 	local function stop_timer()
-		local previous = timer; timer = nil
-		if previous and not previous:is_closing() then previous:stop(); previous:close() end
+		local previous = timer
+		timer = nil
+		if previous and not previous:is_closing() then
+			previous:stop()
+			previous:close()
+		end
 	end
-	local function cleanup()
+	function connection.close()
+		if not connection._active then return end
+		connection._active = false
 		stop_timer()
 		if process then
-			local previous = process; process = nil
+			local previous = process
+			process = nil
 			pcall(previous.write, previous, nil)
 			pcall(previous.kill, previous, 15)
 		end
 	end
 	local function fail(reason, failure)
 		if not connection._active then return end
-		connection._active = false; cleanup()
+		connection.close()
 		if opts.on_error then opts.on_error(reason, failure) end
-	end
-	function connection.close()
-		if not connection._active then return end
-		connection._active = false; cleanup()
 	end
 	function connection.is_active() return connection._active end
 	connection.stop_timeout = stop_timer
 	function connection.send(data)
 		if not connection._active or not process then return false end
 		local ok = pcall(process.write, process, data)
-		if not ok then fail("write_error", error("TLS write failed")); return false end
+		if not ok then
+			fail("write_error", make_error("TLS write failed"))
+			return false
+		end
 		return true
 	end
 	local ok, started = pcall(vim.system, args, { stdin = true, text = false,
 		stdout = function(read_err, data)
 			if not connection._active then return end
-			if read_err then fail("read_error", error("TLS read failed"))
+			if read_err then fail("read_error", make_error("TLS read failed"))
 			elseif data and opts.on_read then opts.on_read(nil, data) end
 		end,
-		stderr = function(_, data) if data and #stderr < 16384 then stderr = stderr .. data:sub(1, 16384 - #stderr) end end,
+		stderr = function(_, data)
+			if data and #stderr < 16384 then stderr = stderr .. data:sub(1, 16384 - #stderr) end
+		end,
 	}, function(result)
 		if not connection._active then return end
-		process = nil; stop_timer()
+		process = nil
+		stop_timer()
 		if result.code ~= 0 then
-			local certificate = stderr:lower():find("certificate verify failed", 1, true) or stderr:lower():find("verification error", 1, true)
-			local unsupported = stderr:lower():find("unknown option", 1, true) or stderr:lower():find("unrecognized", 1, true)
-			local invalid_ca = stderr:lower():find("error setting certificate", 1, true) or stderr:lower():find("no such file", 1, true)
-			fail("tls_error", error(certificate and "TLS certificate verification failed" or unsupported and "Installed OpenSSL lacks the required TLS options" or "TLS connection failed",
+			local diagnostic = stderr:lower()
+			local certificate = diagnostic:find("certificate verify failed", 1, true) or diagnostic:find("verification error", 1, true)
+			local unsupported = diagnostic:find("unknown option", 1, true) or diagnostic:find("unrecognized", 1, true)
+			local invalid_ca = diagnostic:find("error setting certificate", 1, true) or diagnostic:find("no such file", 1, true)
+			fail("tls_error", make_error(certificate and "TLS certificate verification failed" or unsupported and "Installed OpenSSL lacks the required TLS options" or "TLS connection failed",
 				{ code = certificate and "tls_verification_failed" or "tls_error", retryable = not certificate and not unsupported and not invalid_ca }))
 		else
 			connection._active = false
 			if opts.on_read then opts.on_read(nil, nil) end
 		end
 	end)
-	if not ok then connection._active = false; return nil, error("Could not start TLS connection", { code = "tls_unavailable", retryable = false }) end
+	if not ok then
+		connection._active = false
+		return nil, make_error("Could not start TLS connection", { code = "tls_unavailable", retryable = false })
+	end
 	process = started
-	if not connection._active then cleanup(); return connection end
 	local timeout = tonumber(opts.timeout) or 0
 	if timeout > 0 then
 		timer = uv.new_timer()
-		if not timer then fail("timer_error", error("Could not create TLS deadline timer")); return connection end
-		local expected = timer
+		if not timer then
+			fail("timer_error", make_error("Could not create TLS deadline timer"))
+			return connection
+		end
 		timer:start(timeout, 0, vim.schedule_wrap(function()
-			if timer == expected then fail("timeout", error(opts.timeout_message or "TLS connection timed out", { timeout = true })) end
+			if timer then fail("timeout", make_error(opts.timeout_message or "TLS connection timed out", { timeout = true })) end
 		end))
 	end
 	if opts.data and opts.data ~= "" then connection.send(opts.data) end

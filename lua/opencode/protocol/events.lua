@@ -6,14 +6,17 @@ function M.decode(value)
 		return nil, "Invalid v2 event envelope"
 	end
 	if value.id ~= nil and type(value.id) ~= "string" then return nil, "Invalid v2 event ID" end
+	if value.location ~= nil and type(value.location) ~= "table" then return nil, "Invalid v2 event location" end
+	if value.location and value.location.directory ~= nil
+		and type(value.location.directory) ~= "string" then return nil, "Invalid v2 event directory" end
 	if value.durable ~= nil and (type(value.durable) ~= "table"
 		or type(value.durable.aggregateID) ~= "string" or type(value.durable.seq) ~= "number"
 		or type(value.durable.version) ~= "number") then return nil, "Invalid durable event metadata" end
 	local envelope = vim.deepcopy(value)
 	local payload = vim.deepcopy(value.data)
-	payload._directory = type(value.location) == "table" and value.location.directory or nil
+	payload._directory = value.location and value.location.directory or nil
 	payload._envelope = envelope
-	return { type = value.type, id = value.id, payload = payload, location = value.location }
+	return { type = value.type, id = value.id, payload = payload }
 end
 
 return M

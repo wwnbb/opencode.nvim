@@ -1,6 +1,3 @@
--- Unit checks for managed lifecycle attempt ownership.
--- Run with: ./tests/run.sh tests/unit/lifecycle_spec.lua
-
 describe("opencode lifecycle", function()
 	local module_names = {
 		"opencode.lifecycle",
@@ -386,6 +383,25 @@ describe("opencode lifecycle", function()
 		respond_health(1, true); fire_timer(last_active_timer()); flush_scheduled()
 		assert.equals("error", state_data.connection); assert.equals(0, runs)
 	end)
+	for _, action in ipairs({ "disconnect", "stop" }) do
+		it("does not warn about an expected SSE close during " .. action, function()
+			complete_start()
+			local warnings = {}
+			vim.notify = function(message, level)
+				if level == vim.log.levels.WARN then warnings[#warnings + 1] = message end
+			end
+			local disconnect_events = client.disconnect_events
+			client.disconnect_events = function()
+				disconnect_events()
+				for _, callback in ipairs(listeners.disconnected) do callback("closed") end
+			end
+
+			lifecycle[action]()
+			assert.same({}, warnings)
+			assert.equals("idle", state_data.connection)
+		end)
+	end
+
 	it("drops readiness callbacks scheduled before disconnect", function()
 		local runs = 0
 		lifecycle.ensure_connected(function() runs = runs + 1 end)
@@ -457,6 +473,7 @@ describe("opencode lifecycle", function()
 	it("shares one ephemeral credential between the owned process, HTTP and SSE", function()
 		lifecycle.ensure_connected(function() end)
 		local job = jobs[1]
+		assert.same({ "serve", "--hostname", "localhost", "--port", "0" }, job.opts.args)
 		local password = job.opts.env.OPENCODE_SERVER_PASSWORD
 		assert.equals("string", type(password), "owned credential type")
 		assert.equals(64, #password, "owned credential length")
@@ -890,11 +907,6 @@ describe("opencode lifecycle", function()
 		assert.equals("error", state_data.connection, "error after SIGKILL timeout")
 		assert.equals(true, lifecycle.start(), "start after hang release")
 		assert.equals(2, #jobs, "replacement job after hang release")
-	end)
-
-	it("uses explicit port zero for a private server", function()
-		local job = complete_start()
-		assert.same({ "serve", "--hostname", "localhost", "--port", "0" }, job.opts.args)
 	end)
 
 	it("connects an external endpoint with auto-start disabled and never stops it", function()
