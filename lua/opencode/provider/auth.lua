@@ -24,13 +24,14 @@ end
 local function finish(record, status, error, message)
 	if not live(record) then return end
 	owner.stop_attempt(record)
-	owner.update_attempt(record, { status = status, error = error, message = message })
+	record.error, record.message = error, message
+	owner.update_attempt(record, { status = status })
 	if status == "complete" then refresh(record.directory) end
 end
 
 local poll
 local function schedule(record)
-	if not live(record) then return end
+	if not live(record) or (record.status ~= "awaiting_user" and record.status ~= "polling") then return end
 	owner.stop_attempt(record)
 	local timer
 	timer = vim.defer_fn(function()
@@ -57,7 +58,8 @@ poll = function(record)
 		local message = record.kind == "command" and (result.status == "pending" or result.status == "failed")
 			and type(result.message) == "string" and result.message or nil
 		if result.status == "pending" then
-			owner.update_attempt(record, { status = record.mode == "code" and not record.code_submitted and "awaiting_user" or "polling", message = message })
+			record.message = message
+			owner.update_attempt(record, { status = record.mode == "code" and not record.code_submitted and "awaiting_user" or "polling" })
 			schedule(record)
 		else
 			finish(record, result.status, result.status == "failed" and "Authorization failed" or nil, message)
@@ -73,7 +75,11 @@ function M.start(integration_id, method, answer, opts, listener)
 	if method.type == "oauth" then body.answer = answer end
 	client().integration(method.type .. "_start", integration_id, body, options(record), function(err, result)
 		if not live(record) then return end
-		if err then finish(record, "failed", err.message); return end
+		if err then
+			finish(record, "failed", err.message)
+			if record.cancel_requested then owner.release_attempt(record) end
+			return
+		end
 		record.attempt_id, record.expires = result.attemptID, result.time.expires
 		if record.cancel_requested then M.cancel(record.id); return end
 		owner.update_attempt(record, { url = result.url, instructions = result.instructions, mode = result.mode,
@@ -101,7 +107,10 @@ function M.cancel(id)
 	local record = owner.get_attempt(id)
 	if not record or not live(record) then return end
 	owner.stop_attempt(record)
-	if record.status == "complete" then owner.release_attempt(record); return end
+	if record.status == "complete" or (record.status == "failed" and not record.attempt_id) then
+		owner.release_attempt(record)
+		return
+	end
 	if not record.attempt_id then record.cancel_requested = true; return end
 	if record.status == "cancelling" then return end
 	owner.update_attempt(record, { status = "cancelling" })

@@ -1,12 +1,13 @@
--- Transient provider auth state. This is intentionally not wired into
--- cleanup.clear_transient or state.reset.
-
 local M = {}
 
+-- Pending provider marks survive transient cleanup; integration attempts do not.
 local pending = {}
 local identity_getter
 
-local function real_identity()
+local function get_identity()
+	if identity_getter then
+		return identity_getter()
+	end
 	local state = require("opencode.state")
 	local info = state.get_server_info()
 	local host = info and info.host
@@ -15,13 +16,6 @@ local function real_identity()
 		return nil
 	end
 	return tostring(host or "") .. ":" .. tostring(port or "")
-end
-
-local function get_identity()
-	if identity_getter then
-		return identity_getter()
-	end
-	return real_identity()
 end
 
 local function entry_is_pending(entry, now)
@@ -121,13 +115,15 @@ function M.release_attempt(record)
 	attempts[record.id] = nil
 end
 function M.clear_attempts()
-	for _, record in pairs(attempts) do
+	local previous = attempts
+	attempts = {}
+	for _, record in pairs(previous) do
 		M.stop_attempt(record)
 		record.status, record.error = "cancelled", "Server connection changed"
-		if record.listener then record.listener(M.attempt_view(record)) end
+		local listener = record.listener
 		record.listener = nil
+		if listener then listener(M.attempt_view(record)) end
 	end
-	attempts = {}
 end
 
 return M

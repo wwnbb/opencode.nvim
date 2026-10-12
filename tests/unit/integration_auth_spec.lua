@@ -1,4 +1,4 @@
-describe("v2 integration attempt ownership", function()
+describe("integration attempt ownership", function()
 	local saved, names, calls, updates, timers, defer, auth, owner, pending, credential_calls, endpoint
 	before_each(function()
 		names = { "opencode.provider.auth", "opencode.provider.state", "opencode.client", "opencode.events" }
@@ -91,6 +91,23 @@ describe("v2 integration attempt ownership", function()
 		assert.is_nil(owner.get_attempt(id).timer)
 		assert.is_nil(vim.inspect(updates):find("secret-credential", 1, true))
 	end)
+	for _, status in ipairs({ "pending", "complete" }) do
+		it("clears previous command output when " .. status .. " has no message", function()
+			begin(nil, "command"); started("command"); timers[1].fn()
+			calls[2].cb(nil, { status = "pending", message = "Old login instructions" })
+			timers[2].fn()
+			calls[3].cb(nil, { status = status })
+			assert.is_nil(updates[#updates].message)
+		end)
+	end
+	it("clears a previous authorization error after cancellation succeeds", function()
+		local id = begin(); started(); timers[1].fn()
+		calls[2].cb(nil, { status = "failed" })
+		assert.equals("Authorization failed", updates[#updates].error)
+		auth.cancel(id); calls[3].cb(nil)
+		assert.equals("cancelled", updates[#updates].status)
+		assert.is_nil(updates[#updates].error)
+	end)
 	it("freezes location/method and keeps codes out of observable state", function()
 		local opts = { directory = "/one" }; local id = begin(opts); opts.directory = "/two"
 		assert.equals("method-stable", calls[1].body.methodID)
@@ -125,6 +142,25 @@ describe("v2 integration attempt ownership", function()
 		calls[3].cb(nil, { status = "complete" })
 		assert.equals("complete", updates[#updates].status)
 	end)
+	for _, phase in ipairs({ "start", "poll" }) do
+		for _, operation in ipairs({ "complete", "cancel" }) do
+			it("does not schedule polling when a " .. phase .. " listener calls " .. operation, function()
+				local id = auth.start("integration-A", { id = "method-stable", type = "oauth" }, {}, { directory = "/one" }, function(view)
+					if view.status == "awaiting_user" and (phase == "start" or #calls > 1) then auth[operation](view.id, "test-code") end
+				end)
+				started()
+				if phase == "poll" then timers[1].fn(); calls[2].cb(nil, { status = "pending" }) end
+				local count = phase == "start" and 0 or 1
+				assert.equals(count, #timers)
+				assert.is_nil(owner.get_attempt(id).timer)
+				assert.equals("oauth_" .. operation, calls[#calls].operation)
+				assert.equals(operation == "complete" and "submitting" or "cancelling", owner.get_attempt(id).status)
+				calls[#calls].cb(nil)
+				if operation == "complete" then assert.equals(count + 1, #timers)
+				else assert.is_nil(owner.get_attempt(id)); assert.equals(count, #timers) end
+			end)
+		end
+	end
 	it("cancels an attempt that was closed while creation was in flight", function()
 		local id = begin(); auth.cancel(id)
 		assert.equals(1, #calls)
@@ -134,6 +170,18 @@ describe("v2 integration attempt ownership", function()
 		assert.equals("cancelled", updates[#updates].status)
 		assert.is_nil(owner.get_attempt(id))
 	end)
+	for _, phase in ipairs({ "before", "after" }) do
+		it("releases an attempt closed " .. phase .. " its creation fails", function()
+			local id = begin()
+			if phase == "before" then auth.cancel(id) end
+			calls[1].cb({ message = "Integration request failed" })
+			assert.equals("failed", updates[#updates].status)
+			if phase == "after" then auth.cancel(id) end
+			assert.is_nil(owner.get_attempt(id))
+			assert.equals(1, #calls)
+			assert.equals(0, #timers)
+		end)
+	end
 	it("ignores stale callbacks after server generation changes", function()
 		begin(); pending.invalidate(); started()
 		assert.equals(0, #updates); assert.equals(0, #timers)
