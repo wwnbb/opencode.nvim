@@ -1,0 +1,20 @@
+local permissions = require("opencode.permission.state")
+
+describe("permission state queries", function()
+	before_each(function() permissions.clear_all() end)
+	after_each(function() permissions.clear_all() end)
+
+	it("sorts all permissions without copying records and filters pending permissions", function()
+		local later = permissions.add_permission("later", "session", "read", { timestamp = 20 })
+		local earlier = permissions.add_permission("earlier", "session", "read", { timestamp = 10 })
+		permissions.mark_approved("earlier", "once")
+
+		local all = permissions.get_all()
+		assert.equals(2, #all)
+		assert.equals(earlier, all[1])
+		assert.equals(later, all[2])
+		local active = permissions.get_all_active()
+		assert.equals(1, #active)
+		assert.equals(later, active[1])
+	end)
+end)

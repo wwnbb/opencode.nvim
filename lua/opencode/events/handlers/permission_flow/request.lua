@@ -60,7 +60,6 @@ function M.decode(data)
 		call_id = call_id,
 		timestamp = type(data.time) == "table" and type(data.time.created) == "number" and data.time.created / 1000 or nil,
 		metadata = metadata,
-		kind = "permission",
 		location = data._location,
 		patterns = type(data.resources) == "table" and data.resources or {},
 		always = type(data.save) == "table" and data.save or {},
@@ -71,7 +70,8 @@ function M.decode_reply(data)
 	if type(data) ~= "table" then return nil end
 	local id = nonempty(data.requestID)
 	if not id then return nil end
-	return { id = id, reply = data.reply, session_id = nonempty(data.sessionID), data = data }
+	if data.reply ~= "once" and data.reply ~= "always" and data.reply ~= "reject" then return nil end
+	return { id = id, reply = data.reply, session_id = nonempty(data.sessionID) }
 end
 
 return M

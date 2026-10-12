@@ -10,7 +10,7 @@ local function keys(item)
 	return result
 end
 
-describe("v2 form schema validation", function()
+describe("form schema validation", function()
 	before_each(function() owner.clear_all() end)
 	after_each(function() owner.clear_all() end)
 
@@ -152,37 +152,37 @@ describe("v2 form schema validation", function()
 	end)
 
 	it("validates JavaScript pattern syntax and reports malformed patterns", function()
-		local item = form("pattern", { { key = "code", type = "string", required = true,
-			pattern = "^[A-Z]{2}-[0-9]{3}$" } })
-		owner.set_custom_input(item.request_id, 1, "A-123")
-		assert.is_false(owner.validate_form(item.request_id))
-		assert.is_not_nil(item.field_errors.code)
-		owner.set_custom_input(item.request_id, 1, "AB-123")
-		assert.is_true(owner.validate_form(item.request_id))
+		for index, case in ipairs({
+			{ pattern = "^[A-Z]{2}-[0-9]{3}$", bad = "A-123", good = "AB-123" },
+			{ pattern = "\\bcat\\b", bad = "concatenate", good = "cat" },
+			{ pattern = "^(?=.*[A-Z])(?=.*[0-9]).+$", bad = "missing", good = "A1" },
+			{ pattern = "^(?:cat|dog)$", bad = "bird", good = "cat" },
+			{ pattern = "^100%$", bad = "100", good = "100%" },
+			{ pattern = "^a@b$", bad = "ab", good = "a@b" },
+			{ pattern = "^a=b$", bad = "ab", good = "a=b" },
+			{ pattern = "^<tag$", bad = "tag", good = "<tag" },
+			{ pattern = "^tag>$", bad = "tag", good = "tag>" },
+			{ pattern = "^a~b$", bad = "ab", good = "a~b" },
+			{ pattern = "^a&b$", bad = "ab", good = "a&b" },
+			{ pattern = "^[%@=<>~&]+$", bad = "\\", good = "%@=<>~&" },
+			{ pattern = "^\\[[%]\\]$", bad = "[a]", good = "[%]" },
+		}) do
+			local item = form("pattern-" .. index, { { key = "code", type = "string", required = true, pattern = case.pattern } })
+			owner.set_custom_input(item.request_id, 1, case.bad)
+			assert.is_false(owner.validate_form(item.request_id), case.pattern)
+			assert.is_not_nil(item.field_errors.code)
+			owner.set_custom_input(item.request_id, 1, case.good)
+			assert.is_true(owner.validate_form(item.request_id), case.pattern)
+		end
 		local old_ignorecase = vim.o.ignorecase
 		vim.o.ignorecase = true
-		owner.set_custom_input(item.request_id, 1, "ab-123")
-		assert.is_false(owner.validate_form(item.request_id))
+		owner.set_custom_input("pattern-1", 1, "ab-123")
+		local accepted = owner.validate_form("pattern-1")
 		vim.o.ignorecase = old_ignorecase
-
+		assert.is_false(accepted)
 		local malformed = form("bad-pattern", { { key = "code", type = "string", default = "anything", pattern = "[" } })
 		assert.is_false(owner.validate_form(malformed.request_id))
 		assert.is_not_nil(malformed.field_errors.code)
-		local boundary = form("word-boundary", { { key = "code", type = "string", pattern = "\\bcat\\b" } })
-		owner.set_custom_input(boundary.request_id, 1, "concatenate")
-		assert.is_false(owner.validate_form(boundary.request_id))
-		owner.set_custom_input(boundary.request_id, 1, "cat")
-		assert.is_true(owner.validate_form(boundary.request_id))
-		local lookahead = form("lookahead", { { key = "code", type = "string", pattern = "^(?=.*[A-Z])(?=.*[0-9]).+$" } })
-		owner.set_custom_input(lookahead.request_id, 1, "missing")
-		assert.is_false(owner.validate_form(lookahead.request_id))
-		owner.set_custom_input(lookahead.request_id, 1, "A1")
-		assert.is_true(owner.validate_form(lookahead.request_id))
-		local noncapturing = form("noncapturing", { { key = "code", type = "string", pattern = "^(?:cat|dog)$" } })
-		owner.set_custom_input(noncapturing.request_id, 1, "cat")
-		assert.is_true(owner.validate_form(noncapturing.request_id))
-		owner.set_custom_input(noncapturing.request_id, 1, "bird")
-		assert.is_false(owner.validate_form(noncapturing.request_id))
 	end)
 
 	it("validates email, URI, calendar date, and date-time formats", function()
@@ -216,22 +216,16 @@ describe("v2 form schema validation", function()
 	end)
 
 	it("rejects unlisted option defaults unless custom answers are allowed", function()
-		local options = { { label = "Known", value = "known" } }
-		local single = form("single-options", { { key = "choice", type = "string", options = options, default = "rogue" } })
-		assert.is_false(owner.validate_form(single.request_id))
-		assert.is_not_nil(single.field_errors.choice)
-
-		local multi = form("multi-options", { { key = "choices", type = "multiselect", options = options,
-			default = { "known", "rogue" } } })
-		assert.is_false(owner.validate_form(multi.request_id))
-		assert.is_not_nil(multi.field_errors.choices)
-
-		local custom_single = form("custom-single", { { key = "choice", type = "string", options = options,
-			custom = true, default = "rogue" } })
-		assert.is_true(owner.validate_form(custom_single.request_id))
-		local custom_multi = form("custom-multi", { { key = "choices", type = "multiselect", options = options,
-			custom = true, default = { "known", "rogue" } } })
-		assert.is_true(owner.validate_form(custom_multi.request_id))
+		for _, case in ipairs({ { type = "string", default = "rogue" },
+			{ type = "multiselect", default = { "known", "rogue" } } }) do
+			for _, custom in ipairs({ false, true }) do
+				local id = case.type .. "-" .. tostring(custom)
+				local item = form(id, { { key = "choice", type = case.type, default = case.default,
+					custom = custom, options = { { label = "Known", value = "known" } } } })
+				assert.equals(custom, owner.validate_form(id), id)
+				if not custom then assert.is_not_nil(item.field_errors.choice) end
+			end
+		end
 	end)
 
 	it("rejects an empty required multiselect even when minItems is zero", function()

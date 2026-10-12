@@ -1,4 +1,4 @@
-describe("native v2 form recovery across sessions", function()
+describe("native form recovery across sessions", function()
 	local state = require("opencode.state")
 	local sync = require("opencode.sync")
 	local forms = require("opencode.question.state")

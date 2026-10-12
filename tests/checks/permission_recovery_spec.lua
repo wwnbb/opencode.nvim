@@ -1,6 +1,3 @@
--- Permission recovery and SSE filter tests.
--- Run with: ./tests/run.sh checks
-
 describe("opencode permission recovery", function()
 	it("should_accept_global_event filters by cwd and active session directory", function()
 		local state = require("opencode.state")
@@ -17,16 +14,12 @@ describe("opencode permission recovery", function()
 		-- Global native events without a location apply to all projects.
 		assert.is_truthy(sse._should_accept({ type = "test", data = {} }), "location-free event should be accepted")
 
-		-- Event with nil directory should be accepted
 		assert.is_truthy(sse._should_accept({ location = {}, type = "test", data = {} }), "nil directory event should be accepted")
 
-		-- Event matching cwd should be accepted
 		assert.is_truthy(sse._should_accept({ location = { directory = cwd }, type = "test", data = {} }), "cwd-matched event should be accepted")
 
-		-- Event matching active session directory should be accepted
 		assert.is_truthy(sse._should_accept({ location = { directory = session_dir }, type = "test", data = {} }), "active session directory event should be accepted")
 
-		-- Foreign directory event should be rejected
 		assert.is_truthy(not sse._should_accept({ location = { directory = foreign_dir }, type = "test", data = {} }), "foreign directory event should be rejected")
 
 		state.reset()
@@ -200,7 +193,6 @@ describe("opencode permission recovery", function()
 		state.upsert_session({ id = "reply_scope_session", directory = session_dir })
 		state.set_session("reply_scope_session", "Reply Scope")
 
-		-- Register a pending permission owned by that session.
 		permission_state.add_permission("perm_reply_resolve", "reply_scope_session", "bash", {
 			message_id = "msg_x",
 			call_id = "call_x",

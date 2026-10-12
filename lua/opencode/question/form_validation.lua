@@ -105,12 +105,8 @@ local function matches_pattern(pattern, value)
 			elseif not in_class and next_char == "B" then translated[#translated + 1] = "%(<|>)@!"
 			else translated[#translated + 1] = pattern:sub(i, i + 1) end
 			i = i + 2
-		elseif char == "[" and not in_class then
-			in_class = true
-			translated[#translated + 1] = char
-			i = i + 1
-		elseif char == "]" and in_class then
-			in_class = false
+		elseif char == "[" or char == "]" then
+			in_class = char == "["
 			translated[#translated + 1] = char
 			i = i + 1
 		elseif not in_class and char == "(" then
@@ -133,7 +129,7 @@ local function matches_pattern(pattern, value)
 		elseif not in_class and next_char == "?" and (char == "*" or char == "+" or char == "?" or char == "}") then
 			return true
 		else
-			translated[#translated + 1] = char
+			translated[#translated + 1] = in_class and char or vim.fn.escape(char, "%@=<>~&")
 			i = i + 1
 		end
 	end

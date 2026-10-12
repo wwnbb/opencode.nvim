@@ -46,8 +46,7 @@ function M.setup(events)
 					client.get_permission(sid, id, function(detail_err)
 						if current() and pg == permissions.get_generation() and detail_err and detail_err.status == 404 then
 							terminal[key("permission", id)] = true
-							permissions.mark_unavailable(id)
-							changed("permission", id, sid, "unavailable")
+							if permissions.mark_unavailable(id) then changed("permission", id, sid, "unavailable") end
 						end
 					end)
 				end
@@ -97,13 +96,15 @@ function M.setup(events)
 		local data, kind = event.data, event.type
 		if kind == "permission.asked" then add_permission(data, event.location, event.created)
 		elseif kind == "permission.replied" then
+			if not require("opencode.events.handlers.permission_flow.request").decode_reply(data) then return end
 			terminal[key("permission", data.requestID)] = true
 			require("opencode.events.handlers.permission_flow.lifecycle").handle_permission_replied(events, data, require("opencode.logger"))
 		elseif kind == "form.created" then add_form(data.form, event.location, event.created)
 		elseif kind == "form.replied" or kind == "form.cancelled" then
 			terminal[key("form", data.id)] = true
-			if kind == "form.replied" then forms.mark_answered(data.id, data.answer)
-			else forms.mark_rejected(data.id) end
+			if kind == "form.replied" then
+				if not forms.mark_answered(data.id, data.answer) then return end
+			elseif not forms.mark_rejected(data.id) then return end
 			changed("question", data.id, data.sessionID, kind == "form.replied" and "answered" or "rejected")
 		end
 	end)
