@@ -9,11 +9,15 @@ local tree = require("opencode.ui.chat.widget_tree")
 local projection = require("opencode.protocol.messages")
 
 describe("native shell completion notifications", function()
-	local surface, columns, serial
+	local surface, columns, serial, saved_highlights
 	local session_id = "shell-notifications"
 
 	before_each(function()
 		columns, serial = vim.o.columns, 0
+		saved_highlights = {}
+		for _, name in ipairs({ "CursorLine", "DiagnosticOk", "DiagnosticWarn", "DiagnosticError" }) do
+			saved_highlights[name] = vim.api.nvim_get_hl(0, { name = name })
+		end
 		vim.o.columns = 160
 		surface = chat_surface.setup()
 		state.config = vim.deepcopy(app.get_config().chat)
@@ -26,6 +30,8 @@ describe("native shell completion notifications", function()
 	after_each(function()
 		chat_surface.restore(surface)
 		vim.o.columns = columns
+		for name, highlight in pairs(saved_highlights) do vim.api.nvim_set_hl(0, name, highlight) end
+		require("opencode.ui.highlights").refresh()
 	end)
 
 	local function notification(command, output, metadata)
@@ -120,7 +126,7 @@ describe("native shell completion notifications", function()
 			assert.same(original, projected.info._native)
 			assert.same(original, native)
 			assert.is_not.equals(native.metadata, projected.parts[1].shell_notification.metadata)
-			header_highlight(id, "DiagnosticOk")
+			header_highlight(id, "OpenCodeBashSuccess")
 		end
 	end)
 
@@ -153,12 +159,12 @@ describe("native shell completion notifications", function()
 
 	it("shows native failure and cancellation states with their matching header colors", function()
 		local cases = {
-			{ metadata = { exit = 0 }, heading = "Shell finished", highlight = "DiagnosticOk" },
+			{ metadata = { exit = 0 }, heading = "Shell finished", highlight = "OpenCodeBashSuccess" },
 			{ metadata = { exit = 2 }, heading = "Shell failed · exit 2", highlight = "OpenCodeBashError" },
 			{ metadata = { state = "error" }, heading = "Shell failed", highlight = "OpenCodeBashError" },
 			{ metadata = { timeout = true }, heading = "Shell failed · timed out", highlight = "OpenCodeBashError" },
 			{ metadata = { signal = "SIGTERM" }, heading = "Shell failed · SIGTERM", highlight = "OpenCodeBashError" },
-			{ metadata = { state = "cancelled" }, heading = "Shell cancelled", highlight = "DiagnosticWarn" },
+			{ metadata = { state = "cancelled" }, heading = "Shell cancelled", highlight = "OpenCodeBashWarning" },
 		}
 		for _, case in ipairs(cases) do
 			local id = show(notification("sleep 60", "literal result", case.metadata))
@@ -168,6 +174,45 @@ describe("native shell completion notifications", function()
 		end
 		local id = show(notification("printf result", "partial result", { truncated = true }))
 		contains(block_text(id), "Output truncated by server")
+	end)
+
+	it("keeps shell status and warning rows on the panel background after colorscheme changes", function()
+		local colors = { DiagnosticOk = 0x008800, DiagnosticWarn = 0xaa8800, DiagnosticError = 0xaa0000 }
+		for name, fg in pairs(colors) do vim.api.nvim_set_hl(0, name, { fg = fg, bg = 0x334455 }) end
+		local function check_row(id, text, source, background)
+			local position = assert(tree.find(state.tools, id))
+			for offset, line in ipairs(block_lines(id)) do
+				if line:find(text, 1, true) then
+					local row = position.start_line + offset - 1
+					for _, mark in ipairs(vim.api.nvim_buf_get_extmarks(surface.bufnr, chat_state.chat_hl_ns,
+						{ row, 0 }, { row, -1 }, { details = true })) do
+						if mark[3] == 0 and mark[4].end_col == #line then
+							local hl = vim.api.nvim_get_hl(0, { name = mark[4].hl_group, link = false })
+							assert.equals(background, hl.bg, text .. " must keep the panel background")
+							assert.equals(colors[source], hl.fg)
+							return
+						end
+					end
+				end
+			end
+			error("missing full-width panel highlight for " .. text)
+		end
+		for _, background in ipairs({ 0xeee8d5, 0x073642 }) do
+			vim.api.nvim_set_hl(0, "CursorLine", { bg = background })
+			vim.api.nvim_exec_autocmds("ColorScheme", {})
+			for _, case in ipairs({
+				{ metadata = {}, heading = "Shell finished", source = "DiagnosticOk" },
+				{ metadata = { state = "cancelled" }, heading = "Shell cancelled", source = "DiagnosticWarn" },
+				{ metadata = { exit = 2 }, heading = "Shell failed", source = "DiagnosticError" },
+			}) do
+				local id = show(notification("sleep 300", "(no output)", vim.tbl_extend("force", case.metadata, { truncated = true })))
+				for _, expanded in ipairs({ false, true }) do
+					if expanded then tasks.handle_tool_toggle(id) end
+					check_row(id, case.heading, case.source, background)
+					check_row(id, "Output truncated by server", "DiagnosticWarn", background)
+				end
+			end
+		end
 	end)
 
 	it("preserves quotes, multiline commands, closing tags and literal wrapper delimiters", function()
