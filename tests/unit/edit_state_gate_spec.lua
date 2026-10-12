@@ -1,6 +1,3 @@
--- Unit checks for the edit-review disk-divergence gate and BOM handling.
--- Run with: ./tests/run.sh unit
-
 local BOM = "\xEF\xBB\xBF"
 
 local edit_state = require("opencode.edit.state")

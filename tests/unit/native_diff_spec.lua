@@ -3,7 +3,7 @@ local edits = require("opencode.edit.state")
 local state = require("opencode.state")
 local menu = require("opencode.ui.menu")
 local input = require("opencode.ui.input")
-describe("native v2 review file actions", function()
+describe("native review file actions", function()
 	local path, notify, menu_open, chat_edits, input_show, shown, leader
 	local function read() return table.concat(vim.fn.readfile(path, "b"), "\n") end
 	local function open(kind)

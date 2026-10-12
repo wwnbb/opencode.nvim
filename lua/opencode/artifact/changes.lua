@@ -4,7 +4,6 @@ local M = {}
 
 local state = {
 	changes = {},
-	active_change_id = nil,
 	next_id = 1,
 }
 
@@ -15,34 +14,32 @@ local defaults = vim.deepcopy(DEFAULTS)
 
 local BOM = "\xEF\xBB\xBF"
 
----@param content string|nil
+---@param content string
 ---@return string
 local function strip_bom(content)
-	if content and content:sub(1, 3) == BOM then
+	if content:sub(1, 3) == BOM then
 		return content:sub(4)
 	end
-	return content or ""
+	return content
 end
 
----@param content string|nil
+---@param content string
 ---@param bom boolean|nil
 ---@return string
 local function join_bom(content, bom)
 	if bom then
-		return BOM .. (content or "")
+		return BOM .. content
 	end
-	return content or ""
+	return content
 end
 
 ---@enum OpenCodeChangeStatus
 M.STATUS = {
 	PENDING = "pending",
-	ACCEPTED = "accepted",
 	REJECTED = "rejected",
 	RESOLVED = "resolved",
 	APPLIED = "applied",
 	FAILED = "failed",
-	CONFLICT = "conflict",
 }
 
 function M.normalize_file_type(kind)
@@ -111,10 +108,6 @@ end
 ---@param filepath string
 ---@return boolean
 local function needs_confirmation(filepath)
-	if type(filepath) ~= "string" then
-		return false
-	end
-
 	for _, pattern in ipairs(defaults.file_patterns_to_confirm or {}) do
 		if filepath:match(pattern) then
 			return true
@@ -294,7 +287,7 @@ end
 ---@param change_id string
 ---@return string|nil backup_path
 local function backup_file(filepath, change_id)
-	if not defaults.auto_backup or type(filepath) ~= "string" or filepath == "" then
+	if not defaults.auto_backup then
 		return nil
 	end
 	local disk = M.read_disk_bytes(filepath)
@@ -330,44 +323,32 @@ local function reload_buffer(filepath)
 	end)
 end
 
----@param original_lines string[]
----@param modified_lines string[]
+---@param original string
+---@param modified string
 ---@return table
-local function calc_stats(original_lines, modified_lines)
-	local added = 0
-	local removed = 0
-	local modified = 0
-	local max_lines = math.max(#original_lines, #modified_lines)
-
-	for i = 1, max_lines do
-		local original = original_lines[i]
-		local changed = modified_lines[i]
-		if original == nil and changed ~= nil then
-			added = added + 1
-		elseif original ~= nil and changed == nil then
-			removed = removed + 1
-		elseif original ~= changed then
-			modified = modified + 1
-		end
+local function calc_stats(original, modified)
+	local diff = (vim.text and vim.text.diff) or vim.diff
+	local added, removed = 0, 0
+	for _, hunk in ipairs(diff(original, modified, { result_type = "indices" })) do
+		added = added + hunk[4]
+		removed = removed + hunk[2]
 	end
-
-	return { added = added, removed = removed, modified = modified }
+	return { added = added, removed = removed }
 end
 
 ---@param id string
 ---@return table|nil change
----@return integer|nil index
 local function find_change(id)
 	if not id then
-		return nil, nil
+		return nil
 	end
 
-	for index, change in ipairs(state.changes) do
+	for _, change in ipairs(state.changes) do
 		if change.id == id then
-			return change, index
+			return change
 		end
 	end
-	return nil, nil
+	return nil
 end
 
 ---@param id string
@@ -383,93 +364,8 @@ function M.update_status(id, status, opts)
 
 	change.status = status
 	change.status_message = opts.message
-	if opts.hunk_index and change.hunks and change.hunks[opts.hunk_index] then
-		change.hunks[opts.hunk_index].status = status
-	end
 	trim_history()
 	return true
-end
-
----@param original_lines string[]
----@param modified_lines string[]
----@return table[]
-function M.calculate_hunks(original_lines, modified_lines)
-	local hunks = {}
-
-	if vim.text and type(vim.text.diff) == "function" then
-		local original_text = table.concat(original_lines or {}, "\n")
-		local modified_text = table.concat(modified_lines or {}, "\n")
-		local ok, diff = pcall(vim.text.diff, original_text, modified_text, {
-			result_type = "indices",
-			algorithm = "myers",
-		})
-
-		if ok and type(diff) == "table" then
-			for _, item in ipairs(diff) do
-				local original_start = item[1] or 0
-				local original_count = item[2] or 0
-				local modified_start = item[3] or 0
-				local modified_count = item[4] or 0
-				local start_line = original_count > 0 and original_start or math.max(1, original_start + 1)
-				local line_count = math.max(original_count, modified_count, 1)
-				local hunk = {
-					start_line = start_line,
-					end_line = start_line + line_count - 1,
-					original_lines = {},
-					modified_lines = {},
-					line_count = line_count,
-					status = M.STATUS.PENDING,
-				}
-
-				for offset = 0, line_count - 1 do
-					local original_line = offset < original_count and original_lines[original_start + offset] or ""
-					local modified_line = offset < modified_count and modified_lines[modified_start + offset] or ""
-					table.insert(hunk.original_lines, original_line or "")
-					table.insert(hunk.modified_lines, modified_line or "")
-				end
-
-				table.insert(hunks, hunk)
-			end
-			return hunks
-		end
-	end
-
-	local i = 1
-	local original_len = #original_lines
-	local modified_len = #modified_lines
-
-	while i <= original_len or i <= modified_len do
-		local original = original_lines[i]
-		local changed = modified_lines[i]
-		if original ~= changed then
-			local hunk = {
-				start_line = i,
-				original_lines = {},
-				modified_lines = {},
-				status = M.STATUS.PENDING,
-			}
-
-			while i <= original_len or i <= modified_len do
-				local current_original = original_lines[i]
-				local current_changed = modified_lines[i]
-				if current_original == current_changed and #hunk.original_lines > 0 then
-					break
-				end
-
-				table.insert(hunk.original_lines, current_original or "")
-				table.insert(hunk.modified_lines, current_changed or "")
-				i = i + 1
-			end
-
-			hunk.end_line = i - 1
-			hunk.line_count = #hunk.original_lines
-			table.insert(hunks, hunk)
-		else
-			i = i + 1
-		end
-	end
-
-	return hunks
 end
 
 ---@param filepath string
@@ -488,8 +384,6 @@ function M.add_change(filepath, original_content, modified_content, opts)
 	local raw_modified = modified_content or ""
 	local original = strip_bom(raw_original)
 	local modified = strip_bom(raw_modified)
-	local original_lines = vim.split(original, "\n", { plain = true })
-	local modified_lines = vim.split(modified, "\n", { plain = true })
 	local original_bom = opts.before_bom
 	if original_bom == nil then
 		original_bom = raw_original:sub(1, 3) == BOM
@@ -501,16 +395,11 @@ function M.add_change(filepath, original_content, modified_content, opts)
 	local change = {
 		id = change_id,
 		filepath = filepath,
-		filename = vim.fn.fnamemodify(filepath, ":t"),
 		original_content = original,
 		modified_content = modified,
-		original_lines = original_lines,
-		modified_lines = modified_lines,
 		backup_path = backup_file(filepath, change_id),
-		stats = calc_stats(original_lines, modified_lines),
-		hunks = M.calculate_hunks(original_lines, modified_lines),
+		stats = calc_stats(original, modified),
 		status = M.STATUS.PENDING,
-		timestamp = os.time(),
 		requires_confirm = needs_confirmation(filepath),
 		bom = modified_bom,
 		original_bom = original_bom,
@@ -519,7 +408,6 @@ function M.add_change(filepath, original_content, modified_content, opts)
 	}
 
 	table.insert(state.changes, change)
-	state.active_change_id = change_id
 	emit_change_event("Added", change_id, { status = change.status, filepath = filepath })
 	return change_id
 end
@@ -545,11 +433,6 @@ end
 function M.get(id)
 	local change = find_change(id)
 	return change and vim.deepcopy(change) or nil
-end
-
----@return table|nil
-function M.get_active()
-	return M.get(state.active_change_id)
 end
 
 ---@param id string
@@ -658,8 +541,6 @@ function M.reject(id, opts)
 	return true, nil
 end
 
-M.reject_change = M.reject
-
 ---@param id string
 ---@return boolean ok
 ---@return string|nil err
@@ -677,26 +558,9 @@ function M.resolve_manually(id)
 	return true, nil
 end
 
----@param id string
----@return boolean
-function M.remove(id)
-	local _, index = find_change(id)
-	if not index then
-		return false
-	end
-
-	table.remove(state.changes, index)
-	if state.active_change_id == id then
-		state.active_change_id = nil
-	end
-	emit_change_event("Removed", id, {})
-	return true
-end
-
 ---@return boolean
 function M.clear()
 	state.changes = {}
-	state.active_change_id = nil
 	state.next_id = 1
 	emit_change_event("Cleared", "", {})
 	return true

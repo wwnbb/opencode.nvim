@@ -52,62 +52,25 @@ describe("chat history rendering contracts", function()
 			part_id = stream_part_id,
 			kind = "text",
 		}
-		sync.handle_server_event({ id = "evt_stream_world", created = 2, type = "session.text.delta",
-			data = { sessionID = "stream_session", assistantMessageID = "stream_message", ordinal = 0, delta = " world" } })
-		assert(
-			chat.update_stream_part_block("stream_session", "stream_message", stream_part_id),
-			"same-line stream delta should update in place"
-		)
-		assert(
-			vim.api.nvim_buf_get_lines(bufnr, 0, 1, false)[1] == "hello world",
-			"same-line stream delta did not append visibly"
-		)
-		assert(chat_state.stream_blocks[block_key].end_line == 0, "same-line stream delta should not grow block")
-
-		sync.handle_server_event({ id = "evt_stream_next", created = 3, type = "session.text.delta",
-			data = { sessionID = "stream_session", assistantMessageID = "stream_message", ordinal = 0, delta = "\nnext" } })
-		assert(
-			chat.update_stream_part_block("stream_session", "stream_message", stream_part_id),
-			"newline stream delta should replace the rendered block"
-		)
-		local updated_stream_lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
-		assert(#updated_stream_lines == 3, "newline stream delta should grow rendered block without losing footer")
-		assert(updated_stream_lines[1] == "hello world", "newline fallback should preserve first line")
-		assert(updated_stream_lines[2] == "next", "newline fallback should render next line")
-		assert(updated_stream_lines[3]:find("Coder_v2", 1, true), "stream growth should preserve footer text")
-		assert(chat_state.spinner_footer_line == 2, "stream growth should shift tracked footer line")
-		local footer_marks = vim.api.nvim_buf_get_extmarks(
-			bufnr,
-			require("opencode.ui.chat.state").chat_hl_ns,
-			{ 2, 0 },
-			{ 2, -1 },
-			{ details = true }
-		)
-		assert(#footer_marks == 1, "stream growth should preserve footer agent highlight")
-		assert(footer_marks[1][4].hl_group == "OpenCodeAgent_coder_v2", "wrong footer highlight after stream growth")
-
-		sync.handle_server_event({ id = "evt_stream_end", created = 4, type = "session.text.ended",
-			data = { sessionID = "stream_session", assistantMessageID = "stream_message", ordinal = 0, text = "short" } })
-		assert(
-			chat.update_stream_part_block("stream_session", "stream_message", stream_part_id),
-			"stream replacement should shrink rendered block"
-		)
-		updated_stream_lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
-		assert(
-			#updated_stream_lines == 2,
-			"stream shrink should keep footer immediately after content: " .. vim.inspect(updated_stream_lines)
-		)
-		assert(updated_stream_lines[1] == "short", "stream shrink should render replacement text")
-		assert(updated_stream_lines[2]:find("Coder_v2", 1, true), "stream shrink should preserve footer text")
-		assert(chat_state.spinner_footer_line == 1, "stream shrink should shift tracked footer line back")
-		footer_marks = vim.api.nvim_buf_get_extmarks(
-			bufnr,
-			require("opencode.ui.chat.state").chat_hl_ns,
-			{ 1, 0 },
-			{ 1, -1 },
-			{ details = true }
-		)
-		assert(#footer_marks == 1, "stream shrink should preserve footer agent highlight")
+		for index, case in ipairs({
+			{ name = "append", event = "session.text.delta", data = { delta = " world" }, lines = { "hello world" } },
+			{ name = "grow", event = "session.text.delta", data = { delta = "\nnext" }, lines = { "hello world", "next" } },
+			{ name = "shrink", event = "session.text.ended", data = { text = "short" }, lines = { "short" } },
+		}) do
+			sync.handle_server_event({ id = "evt_stream_" .. case.name, created = index + 1, type = case.event,
+				data = vim.tbl_extend("force", case.data, {
+					sessionID = "stream_session", assistantMessageID = "stream_message", ordinal = 0,
+				}) })
+			assert.is_true(chat.update_stream_part_block("stream_session", "stream_message", stream_part_id), case.name)
+			local expected = vim.list_extend(vim.deepcopy(case.lines), { "\\ Coder_v2 · GPT-5.5" })
+			assert.same(expected, vim.api.nvim_buf_get_lines(bufnr, 0, -1, false), case.name)
+			assert.equals(#case.lines - 1, chat_state.stream_blocks[block_key].end_line, case.name)
+			assert.equals(#case.lines, chat_state.spinner_footer_line, case.name)
+			local footer_marks = vim.api.nvim_buf_get_extmarks(bufnr, chat_state_mod.chat_hl_ns,
+				{ #case.lines, 0 }, { #case.lines, -1 }, { details = true })
+			assert.equals(1, #footer_marks, case.name)
+			assert.equals("OpenCodeAgent_coder_v2", footer_marks[1][4].hl_group, case.name)
+		end
 	end)
 
 	it("anchors pending widgets before history cutoff and suppresses duplicate tool rows", function()
@@ -125,156 +88,43 @@ describe("chat history rendering contracts", function()
 		app_state.set_session("render_contract_session", "Render Contract")
 		app_state.set_session_status("render_contract_session", { type = "streaming" })
 
-		sync.handle_message_updated({
-			id = "m1",
-			sessionID = "render_contract_session",
-			role = "user",
-			time = { created = 1000 },
-		})
-		sync.handle_part_updated({
-			id = "m1_text",
-			messageID = "m1",
-			sessionID = "render_contract_session",
-			type = "text",
-			text = "older user anchored",
-		})
-		sync.handle_message_updated({
-			id = "m2",
-			sessionID = "render_contract_session",
-			role = "assistant",
-			time = { created = 2000, completed = 2500 },
-		})
-		sync.handle_part_updated({
-			id = "m2_text",
-			messageID = "m2",
-			sessionID = "render_contract_session",
-			type = "text",
-			text = "older assistant",
-		})
-		sync.handle_message_updated({
-			id = "m3",
-			sessionID = "render_contract_session",
-			role = "user",
-			time = { created = 4000 },
-		})
-		sync.handle_part_updated({
-			id = "m3_text",
-			messageID = "m3",
-			sessionID = "render_contract_session",
-			type = "text",
-			text = "recent echoed local",
-		})
-		sync.handle_message_updated({
-			id = "m4",
-			sessionID = "render_contract_session",
-			role = "assistant",
-			time = { created = 5000 },
-		})
-		sync.handle_part_updated({
-			id = "m4_text",
-			messageID = "m4",
-			sessionID = "render_contract_session",
-			type = "text",
-			text = "streaming answer",
-		})
-		sync.handle_part_updated({
-			id = "m4_question_tool",
-			messageID = "m4",
-			sessionID = "render_contract_session",
-			type = "tool",
-			tool = "question",
-			callID = "call_question",
-			state = { status = "pending", input = {} },
-		})
-		sync.handle_part_updated({
-			id = "m4_edit_tool",
-			messageID = "m4",
-			sessionID = "render_contract_session",
-			type = "tool",
-			tool = "edit",
-			callID = "call_edit",
-			state = { status = "pending", input = {} },
-		})
-		sync.handle_part_updated({
-			id = "m4_patch_tool",
-			messageID = "m4",
-			sessionID = "render_contract_session",
-			type = "tool",
-			tool = "apply_patch",
-			callID = "call_patch",
-			state = {
-				status = "completed",
-				metadata = {
-					status = "success",
-					files = {
-						{
-							filePath = "render-patch.txt",
-							type = "update",
-							diff = table.concat({
-								"--- a/render-patch.txt",
-								"+++ b/render-patch.txt",
-								"@@ -1 +1 @@",
-								"-old line",
-								"+new line",
-							}, "\n"),
-						},
-					},
-				},
-			},
-		})
-		sync.handle_part_updated({
-			id = "m4_neovim_edit_tool",
-			messageID = "m4",
-			sessionID = "render_contract_session",
-			type = "tool",
-			tool = "neovim_edit",
-			callID = "call_neovim_edit",
-			state = {
-				status = "completed",
-				metadata = {
-					status = "success",
-					filediff = {
-						file = "render-neovim-edit.txt",
-						status = "applied",
-						diff = table.concat({
-							"--- a/render-neovim-edit.txt",
-							"+++ b/render-neovim-edit.txt",
-							"@@ -1 +1 @@",
-							"-old neovim edit",
-							"+new neovim edit",
-						}, "\n"),
-					},
-				},
-			},
-		})
-		sync.handle_part_updated({
-			id = "m4_neovim_patch_tool",
-			messageID = "m4",
-			sessionID = "render_contract_session",
-			type = "tool",
-			tool = "neovim_patch",
-			callID = "call_neovim_patch",
-			state = {
-				status = "completed",
-				metadata = {
-					status = "success",
-					files = {
-						{
-							filePath = "render-neovim-patch.txt",
-							type = "update",
-							status = "applied",
-							diff = table.concat({
-								"--- a/render-neovim-patch.txt",
-								"+++ b/render-neovim-patch.txt",
-								"@@ -1 +1 @@",
-								"-old neovim patch",
-								"+new neovim patch",
-							}, "\n"),
-						},
-					},
-				},
-			},
-		})
+		for _, message in ipairs({
+			{ id = "m1", role = "user", time = { created = 1000 }, text = "older user anchored" },
+			{ id = "m2", role = "assistant", time = { created = 2000, completed = 2500 }, text = "older assistant" },
+			{ id = "m3", role = "user", time = { created = 4000 }, text = "recent echoed local" },
+			{ id = "m4", role = "assistant", time = { created = 5000 }, text = "streaming answer" },
+		}) do
+			sync.handle_message_updated({ id = message.id, sessionID = "render_contract_session",
+				role = message.role, time = message.time })
+			sync.handle_part_updated({ id = message.id .. "_text", messageID = message.id,
+				sessionID = "render_contract_session", type = "text", text = message.text })
+		end
+		for _, tool in ipairs({ "question", "edit" }) do
+			sync.handle_part_updated({ id = "m4_" .. tool .. "_tool", messageID = "m4",
+				sessionID = "render_contract_session", type = "tool", tool = tool,
+				callID = "call_" .. tool, state = { status = "pending", input = {} } })
+		end
+		local function diff(path, before, after)
+			return table.concat({ "--- a/" .. path, "+++ b/" .. path, "@@ -1 +1 @@", "-" .. before, "+" .. after }, "\n")
+		end
+		local previews = {
+			{ id = "m4_patch_tool", tool = "apply_patch", call_id = "call_patch", before = "old line", after = "new line",
+				metadata = { status = "success", files = { { filePath = "render-patch.txt", type = "update",
+					diff = diff("render-patch.txt", "old line", "new line") } } } },
+			{ id = "m4_neovim_edit_tool", tool = "neovim_edit", call_id = "call_neovim_edit",
+				before = "old neovim edit", after = "new neovim edit",
+				metadata = { status = "success", filediff = { file = "render-neovim-edit.txt", status = "applied",
+					diff = diff("render-neovim-edit.txt", "old neovim edit", "new neovim edit") } } },
+			{ id = "m4_neovim_patch_tool", tool = "neovim_patch", call_id = "call_neovim_patch",
+				before = "old neovim patch", after = "new neovim patch",
+				metadata = { status = "success", files = { { filePath = "render-neovim-patch.txt", type = "update", status = "applied",
+					diff = diff("render-neovim-patch.txt", "old neovim patch", "new neovim patch") } } } },
+		}
+		for _, preview in ipairs(previews) do
+			sync.handle_part_updated({ id = preview.id, messageID = "m4", sessionID = "render_contract_session",
+				type = "tool", tool = preview.tool, callID = preview.call_id,
+				state = { status = "completed", metadata = preview.metadata } })
+		end
 
 		question_state.add_form({ id = "q_anchor", sessionID = "render_contract_session",
 			fields = { { key = "anchor", type = "string", title = "Anchor?", options = { { label = "Yes", value = "yes" } } } },
@@ -309,51 +159,21 @@ describe("chat history rendering contracts", function()
 		assert(chat_state.questions.q_tool, "tool-call question should be tracked")
 		assert(chat_state.permissions.perm_orphan, "orphan permission should be tracked")
 		assert(chat_state.edits.edit_tool, "tool-call edit should be tracked")
-		local preview_edit_id = "tool-preview:render_contract_session:m4:m4_patch_tool"
-		local preview_edit = edit_state.get_edit(preview_edit_id)
-		assert(preview_edit and preview_edit.preview == true, "completed apply_patch should create preview edit state")
-		assert(preview_edit.status == "sent", "completed apply_patch preview should not be pending")
-		assert(chat_state.edits[preview_edit_id], "completed apply_patch preview should be tracked")
-		local neovim_edit_preview_id = "tool-preview:render_contract_session:m4:m4_neovim_edit_tool"
-		local neovim_edit_preview = edit_state.get_edit(neovim_edit_preview_id)
-		assert(neovim_edit_preview and neovim_edit_preview.preview == true, "approved neovim_edit should create preview edit state")
-		assert(chat_state.edits[neovim_edit_preview_id], "approved neovim_edit preview should be tracked")
-		local neovim_patch_preview_id = "tool-preview:render_contract_session:m4:m4_neovim_patch_tool"
-		local neovim_patch_preview = edit_state.get_edit(neovim_patch_preview_id)
-		assert(
-			neovim_patch_preview and neovim_patch_preview.preview == true,
-			"approved neovim_patch should create preview edit state"
-		)
-		assert(chat_state.edits[neovim_patch_preview_id], "approved neovim_patch preview should be tracked")
-		assert(chat_state.tools.m4_question_tool == nil, "question tool row should be suppressed by widget")
-		assert(chat_state.tools.m4_edit_tool == nil, "edit tool row should be suppressed by widget")
-		assert(chat_state.tools.m4_patch_tool == nil, "apply_patch tool row should be suppressed by preview widget")
-		assert(chat_state.tools.m4_neovim_edit_tool == nil, "neovim_edit tool row should be suppressed by preview widget")
-		assert(chat_state.tools.m4_neovim_patch_tool == nil, "neovim_patch tool row should be suppressed by preview widget")
-
-		edit_state.toggle_inline_diff(preview_edit_id, 1)
-		local preview_lines = require("opencode.ui.edit_widget").get_resolved_lines(preview_edit_id, preview_edit)
-		local preview_text = table.concat(preview_lines, "\n")
-		assert(preview_text:find("old line", 1, true), "apply_patch preview should expand removed diff text")
-		assert(preview_text:find("new line", 1, true), "apply_patch preview should expand added diff text")
-		edit_state.toggle_inline_diff(neovim_edit_preview_id, 1)
-		local neovim_edit_lines =
-			require("opencode.ui.edit_widget").get_resolved_lines(neovim_edit_preview_id, neovim_edit_preview)
-		local neovim_edit_text = table.concat(neovim_edit_lines, "\n")
-		assert(neovim_edit_text:find("old neovim edit", 1, true), "neovim_edit preview should expand removed diff text")
-		assert(neovim_edit_text:find("new neovim edit", 1, true), "neovim_edit preview should expand added diff text")
-		edit_state.toggle_inline_diff(neovim_patch_preview_id, 1)
-		local neovim_patch_lines =
-			require("opencode.ui.edit_widget").get_resolved_lines(neovim_patch_preview_id, neovim_patch_preview)
-		local neovim_patch_text = table.concat(neovim_patch_lines, "\n")
-		assert(
-			neovim_patch_text:find("old neovim patch", 1, true),
-			"neovim_patch preview should expand removed diff text"
-		)
-		assert(
-			neovim_patch_text:find("new neovim patch", 1, true),
-			"neovim_patch preview should expand added diff text"
-		)
+		assert.is_nil(chat_state.tools.m4_question_tool, "question tool row should be suppressed by widget")
+		assert.is_nil(chat_state.tools.m4_edit_tool, "edit tool row should be suppressed by widget")
+		for _, preview in ipairs(previews) do
+			local preview_id = "tool-preview:render_contract_session:m4:" .. preview.id
+			local edit = edit_state.get_edit(preview_id)
+			assert.is_not_nil(edit, preview.tool)
+			assert.equals("readonly", edit.review_mode, preview.tool)
+			assert.equals("sent", edit.status, preview.tool)
+			assert.is_not_nil(chat_state.edits[preview_id], preview.tool .. " preview should be tracked")
+			assert.is_nil(chat_state.tools[preview.id], preview.tool .. " tool row should be suppressed")
+			edit_state.toggle_inline_diff(preview_id, 1)
+			local text = table.concat(require("opencode.ui.edit_widget").get_resolved_lines(preview_id, edit), "\n")
+			assert(text:find(preview.before, 1, true), preview.tool .. " should expand removed diff text")
+			assert(text:find(preview.after, 1, true), preview.tool .. " should expand added diff text")
+		end
 
 		local block_key = render_state.stream_block_key("render_contract_session", "m4", "m4_text", "text")
 		assert(chat_state.stream_blocks[block_key], "full render should register streaming text block")
@@ -368,8 +188,6 @@ describe("chat history rendering contracts", function()
 		sync.clear_all()
 		edit_state.clear_all()
 
-		-- Empty-string compute: a `write` with before="" / after="content" and
-		-- no diff should compute a non-empty vim.diff so add/delete previews work.
 		local compute_session = "compute_session"
 		sync.handle_message_updated({
 			id = "m_compute",

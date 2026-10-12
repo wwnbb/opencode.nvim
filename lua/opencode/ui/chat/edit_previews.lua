@@ -286,14 +286,7 @@ local function sync_tool_part(session_id, message, part, existing)
 		review_mode = "readonly",
 		status = "sent",
 		file_statuses = statuses,
-		preview = true,
 		timestamp = message_timestamp(message),
-		metadata = {
-			source = "tool_preview",
-			tool = part.tool,
-			status = model.status,
-			title = model.title,
-		},
 	})
 	index_edit(existing, message_id, call_id)
 	return true

@@ -18,19 +18,18 @@ function M.setup(events)
 			if record.status ~= "pending" then return end
 			edits.add_edit(record.reviewID, record.sessionID, record.files, {
 				transport = "review_rpc", review_id = record.reviewID, revision = record.revision,
-				location = record.location, native_review = record, data = record, metadata = record.metadata,
+				location = record.location, native_review = record,
 				message_id = record.messageID, call_id = record.callID, timestamp = record.created / 1000,
 			})
 			events.emit("edit_pending", { permission_id = record.reviewID, session_id = record.sessionID, file_count = #record.files })
 			if state.is_danger_mode_enabled() then
-				require("opencode.review").accept_all(record.reviewID, function(err)
+				require("opencode.review").accept_all(record.reviewID, function(err, result)
 					if err then vim.notify("OpenCode review failed: " .. (err.message or "unknown error"), vim.log.levels.ERROR) end
-					changed(record)
+					changed(result or record)
 				end)
 			end
 		end
-		edits.set_review_record(record)
-		changed(record)
+		if edits.set_review_record(record) then changed(record) end
 	end
 	local policy_busy, policy_terminal = {}, {}
 	local capability_notices = {}

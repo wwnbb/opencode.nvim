@@ -56,7 +56,7 @@ describe("native diff review lifecycle", function()
 		}
 		edits.add_edit("review-add", "s", files, { transport = "review_rpc", revision = 1,
 			native_review = { status = "pending" } })
-		assert.is_truthy(native_diff.show(files, { edit_id = "review-add" }), "v2 review should open")
+		assert.is_truthy(native_diff.show(files, { edit_id = "review-add" }), "review should open")
 
 		local state = get_native_state(native_diff)
 		assert.is_truthy(state and state.original_is_scratch, "missing add should use a scratch original buffer")
@@ -107,7 +107,7 @@ describe("native diff review lifecycle", function()
 		}
 		edits.add_edit("review-navigation", "s", files, { transport = "review_rpc", revision = 1,
 			native_review = { status = "pending" } })
-		assert.is_truthy(native_diff.show(files, { edit_id = "review-navigation" }), "v2 review should open")
+		assert.is_truthy(native_diff.show(files, { edit_id = "review-navigation" }), "review should open")
 
 		local state = get_native_state(native_diff)
 		vim.api.nvim_buf_set_lines(state.original_buf, 0, -1, false, { "manual edit" })
