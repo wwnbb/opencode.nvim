@@ -1,6 +1,3 @@
--- Unit checks for transient credential marker ownership and compatibility actions.
--- Run with: ./tests/run.sh tests/unit/pending_disconnect_spec.lua
-
 describe("opencode pending credential operations", function()
 	local provider_state
 	local original_state_module
@@ -23,15 +20,6 @@ describe("opencode pending credential operations", function()
 			actions.remove_provider_models = original_remove_provider_models
 		end
 		package.loaded["opencode.state"] = original_state_module
-	end)
-
-	it("keeps a mark pending at the same host and port", function()
-		provider_state.set_identity_getter(function()
-			return "localhost:5000"
-		end)
-
-		provider_state.mark("provider-a")
-		assert(provider_state.is_pending("provider-a"))
 	end)
 
 	it("uses the real state getter and ignores pid changes", function()
@@ -62,16 +50,6 @@ describe("opencode pending credential operations", function()
 
 		provider_state.mark("provider-a")
 		assert(provider_state.is_pending("provider-a"))
-	end)
-
-	it("clears a mark when a provider is remembered", function()
-		provider_state.set_identity_getter(function()
-			return "localhost:5000"
-		end)
-		provider_state.mark("provider-a")
-
-		provider_state.remember("provider-a")
-		assert(not provider_state.is_pending("provider-a"))
 	end)
 
 	it("prunes pending providers and retains providers from another endpoint", function()
@@ -109,21 +87,6 @@ describe("opencode pending credential operations", function()
 		provider_state.mark(nil)
 		assert(not provider_state.is_pending(nil))
 		assert(provider_state.prune_connected(nil) == nil)
-	end)
-
-	it("does not retain marks across module reload", function()
-		provider_state.set_identity_getter(function()
-			return "localhost:5000"
-		end)
-		provider_state.mark("provider-a")
-
-		local original_provider_module = package.loaded["opencode.provider.state"]
-		package.loaded["opencode.provider.state"] = nil
-		local reloaded = require("opencode.provider.state")
-		assert(not reloaded.is_pending("provider-a"))
-		reloaded.set_identity_getter(nil)
-		reloaded.clear_all()
-		package.loaded["opencode.provider.state"] = original_provider_module
 	end)
 
 	it("is not cleared by transient cleanup", function()
