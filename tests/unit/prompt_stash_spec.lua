@@ -24,6 +24,23 @@ describe("persistent prompt stash", function()
 		assert.equals("old [Image 1]", restored.text); assert.equals(image.url, restored.parts[1].url)
 		assert.is_nil(restored.parts[1]._mention); assert.same({}, stash.list()); assert.equals(9, image._mention)
 	end)
+	it("rejects malformed draft parts without changing the stash or losing attachments", function()
+		local image = { type = "file", mime = "image/png", url = "data:image/png;base64,Yg==" }
+		local saved = assert(stash.push({ text = "", parts = { image } }))
+		local file = directory .. "/stash.json"
+		local original = vim.fn.readfile(file)
+		for _, draft in ipairs({
+			{ text = "", parts = { true } },
+			{ text = "keep attachment", parts = { image, false } },
+			{ text = "keep attachment", parts = { attachment = image } },
+		}) do
+			local value, err = stash.push(draft)
+			assert.is_nil(value); assert.equals("Invalid prompt draft", err)
+			assert.same(original, vim.fn.readfile(file))
+		end
+		assert.same({ saved }, stash.list())
+		assert.same({ image }, assert(stash.take(saved.id)).parts)
+	end)
 	it("preserves the draft and stash when saving fails or the file format is unsupported", function()
 		local file = directory .. "/unrecognized.json"
 		vim.fn.writefile({ '{"version":99,"precious":"keep"}' }, file)

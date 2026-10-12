@@ -2,7 +2,7 @@
 local M = {}
 
 local function keycode(key)
-	return vim.api.nvim_replace_termcodes(key, true, false, true)
+	return vim.api.nvim_replace_termcodes(key, true, true, true)
 end
 
 local function local_mapping(mode, bufnr, key)

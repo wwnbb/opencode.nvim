@@ -1,11 +1,10 @@
--- opencode.nvim - Locale utility functions (mirrors TUI's util/locale.ts)
 local M = {}
 
 ---Convert string to titlecase (first letter of each word uppercase)
 ---@param str string
 ---@return string
 function M.titlecase(str)
-	if type(str) ~= "string" or str == "" then
+	if type(str) ~= "string" then
 		return ""
 	end
 	local result = str:gsub("(%S)(%S*)", function(first, rest)
@@ -15,7 +14,6 @@ function M.titlecase(str)
 end
 
 ---Format duration in milliseconds to human readable string
----Matches TUI's Locale.duration()
 ---@param ms number Duration in milliseconds
 ---@return string
 function M.duration(ms)

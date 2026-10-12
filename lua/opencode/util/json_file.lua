@@ -6,8 +6,9 @@ function M.read(path)
 	if stat.type ~= "file" then return nil, "Not a regular file" end
 	local file, open_err = io.open(path, "rb")
 	if not file then return nil, open_err end
-	local content = file:read("*a")
+	local content, read_err = file:read("*a")
 	local closed, close_err = file:close()
+	if not content then return nil, read_err end
 	if not closed then return nil, close_err end
 	local ok, value = pcall(vim.json.decode, content)
 	if ok then return value end

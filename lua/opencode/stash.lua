@@ -8,35 +8,37 @@ local function store()
 	return owner
 end
 local function scope() return require("opencode.util.path").absolute(vim.fn.getcwd()) end
+local function valid_parts(parts)
+	if type(parts) ~= "table" or not vim.islist(parts) then return false end
+	for _, part in ipairs(parts) do if type(part) ~= "table" then return false end end
+	return true
+end
 local function entries()
 	local data = store().data.scopes
 	local values = type(data) == "table" and data[scope()] or {}
 	local result = {}
 	for _, entry in ipairs(type(values) == "table" and values or {}) do
 		if type(entry) == "table" and type(entry.id) == "string" and entry.id ~= ""
-			and type(entry.text) == "string" and type(entry.parts) == "table" and vim.islist(entry.parts) then
-			local valid = true
-			for _, part in ipairs(entry.parts) do if type(part) ~= "table" then valid = false; break end end
-			if valid then
-				local copied = vim.deepcopy(entry)
-				copied.mode = copied.mode == "shell" and "shell" or "normal"
-				copied.options = type(entry.options) == "table" and type(entry.options.context) == "table"
-					and { context = require("opencode.ui.input.history").copy_parts(entry.options.context) } or nil
-				result[#result + 1] = copied
-			end
+			and type(entry.text) == "string" and valid_parts(entry.parts) then
+			local copied = vim.deepcopy(entry)
+			copied.mode = copied.mode == "shell" and "shell" or "normal"
+			copied.options = type(entry.options) == "table" and type(entry.options.context) == "table"
+				and { context = require("opencode.ui.input.history").copy_parts(entry.options.context) } or nil
+			result[#result + 1] = copied
 		end
 	end
 	return result
 end
 local function save(values)
-	local scopes = vim.deepcopy(type(store().data.scopes) == "table" and store().data.scopes or {})
+	local current = store()
+	local scopes = vim.deepcopy(type(current.data.scopes) == "table" and current.data.scopes or {})
 	scopes[scope()] = values
-	if not store().save({ scopes = scopes }) then return nil, "Could not save prompt stash; previous file preserved" end
+	if not current.save({ scopes = scopes }) then return nil, "Could not save prompt stash; previous file preserved" end
 	return true
 end
 function M.list() return entries() end
 function M.push(draft)
-	if type(draft) ~= "table" or type(draft.text) ~= "string" or type(draft.parts) ~= "table" then return nil, "Invalid prompt draft" end
+	if type(draft) ~= "table" or type(draft.text) ~= "string" or not valid_parts(draft.parts) then return nil, "Invalid prompt draft" end
 	if draft.text == "" and #draft.parts == 0 then return nil, "The prompt is empty" end
 	local values = entries()
 	local entry = { id = tostring(vim.uv.hrtime()), text = draft.text, parts = require("opencode.ui.input.history").copy_parts(draft.parts),

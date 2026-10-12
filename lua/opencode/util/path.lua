@@ -9,7 +9,8 @@ end
 -- Normalize comparison paths without erasing filesystem roots.
 function M.normalize(path)
 	if not path or path == "" then return nil end
-	local normalized = vim.fs and vim.fs.normalize and vim.fs.normalize(path) or path
+	local windows = path:match("^%a:[/\\]") ~= nil or path:sub(1, 2) == "\\\\"
+	local normalized = vim.fs.normalize(path, { win = windows or nil })
 	if normalized == "/" or normalized:match("^%a:/$") then return normalized end
 	return (normalized:gsub("/+$", ""))
 end

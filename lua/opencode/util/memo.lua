@@ -59,7 +59,7 @@ end
 ---@param opts? { max_entries?: integer }
 function M.new(name, opts)
 	if pools[name] then return pools[name] end
-	local pool = setmetatable({ name = name, entries = {}, count = 0, bytes = 0,
+	local pool = setmetatable({ entries = {}, count = 0, bytes = 0,
 		max_entries = (opts or {}).max_entries or 1000 }, Pool)
 	pools[name] = pool
 	return pool
@@ -95,7 +95,7 @@ function Pool:put(owner, signature, value, estimated_bytes)
 end
 
 function Pool:delete(owner)
-	local entry = owner ~= nil and self.entries[owner]
+	local entry = self.entries[owner]
 	if entry then remove(entry) end
 end
 

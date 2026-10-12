@@ -19,7 +19,7 @@ function M.project(patch)
 	if patch == "" then return { { before = "No textual patch", after = "No textual patch", kind = "meta" } } end
 	local rows, removed, added = {}, {}, {}
 	local old_line, new_line, old_count, new_count, used_old, used_new
-	local last_side, last_entry
+	local last_entry
 	local function flush()
 		for index = 1, math.max(#removed, #added) do
 			local before, after = removed[index], added[index]
@@ -43,24 +43,24 @@ function M.project(patch)
 			rows[#rows + 1] = { before = line, after = line, kind = "meta", hunk = true }
 		elseif line:sub(1, 3) == "@@@" then return nil, "Combined diff needs unified view"
 		elseif line:sub(1, 2) == "@@" then return nil, "Invalid unified diff hunk header"
-		elseif old_count ~= nil and used_old <= old_count and used_new <= new_count then
+		elseif old_count ~= nil then
 			local prefix = line:sub(1, 1)
 			if prefix == "-" and used_old < old_count then
 				last_entry = { text = line:sub(2), line = old_line }
 				removed[#removed + 1] = last_entry
-				last_side, old_line, used_old = "before", old_line + 1, used_old + 1
+				old_line, used_old = old_line + 1, used_old + 1
 			elseif prefix == "+" and used_new < new_count then
 				last_entry = { text = line:sub(2), line = new_line }
 				added[#added + 1] = last_entry
-				last_side, new_line, used_new = "after", new_line + 1, used_new + 1
+				new_line, used_new = new_line + 1, used_new + 1
 			elseif prefix == " " and used_old < old_count and used_new < new_count then
 				flush()
 				last_entry = { before = line:sub(2), after = line:sub(2), before_line = old_line, after_line = new_line, kind = "context" }
 				rows[#rows + 1] = last_entry
-				last_side, old_line, new_line = "context", old_line + 1, new_line + 1
+				old_line, new_line = old_line + 1, new_line + 1
 				used_old, used_new = used_old + 1, used_new + 1
 			elseif line == "\\ No newline at end of file" and last_entry then
-				if last_side == "context" then rows[#rows + 1] = { before = line, after = line, kind = "meta" }
+				if last_entry.kind == "context" then rows[#rows + 1] = { before = line, after = line, kind = "meta" }
 				else last_entry.note = line end
 			elseif valid_hunk() then
 				flush()
