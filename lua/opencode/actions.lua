@@ -702,20 +702,12 @@ end
 
 ---@param session_id string|nil
 ---@param request_id string
----@param opts_or_callback? table|function
 ---@param callback? function
-function M.reject_question(session_id, request_id, opts_or_callback, callback)
-	local opts = opts_or_callback
-	if type(opts_or_callback) == "function" then
-		callback = opts_or_callback
-		opts = nil
-	end
-	opts = vim.tbl_extend("force", {}, opts or {})
+function M.reject_question(session_id, request_id, callback)
 	local item = require("opencode.question.state").get_question(request_id)
 	local owner_session_id = item and item.session_id or session_id
-	opts.directory = opts.directory or require("opencode.state").get_session_directory(owner_session_id)
 	local token = require("opencode.session.pending").token(owner_session_id)
-	return client().reject_question(owner_session_id, request_id, opts, current_callback(token, function(err, result)
+	return client().reject_question(owner_session_id, request_id, current_callback(token, function(err, result)
 		if err then require("opencode.events").emit("interaction_reconcile", { session_id = owner_session_id }) end
 		if callback then callback(err, result) end
 	end))

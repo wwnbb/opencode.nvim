@@ -258,9 +258,7 @@ function M.forget(session_id, opts)
 end
 
 ---Handle a server-side session deletion (SSE session.deleted).
----Prunes the deleted session locally and switches the active view away when
----it belonged to the deleted session. Unlike close(), this never replies to
----the server and never notifies: the session is already gone server-side.
+---Prune local data and leave the deleted session's view without notifying.
 ---@param session_id? string
 ---@param opts? table { reason?: string }
 ---@return boolean handled
@@ -277,12 +275,11 @@ function M.handle_deleted(session_id, opts)
 
 	local current = state.get_session()
 	local is_tab = state.is_runtime_session(session_id)
+	-- Clearing sync removes task-parent links needed to leave a child view.
+	local current_root = navigation.runtime_session_id(current.id, navigation_ctx)
 	local next_session = nil
-	if is_tab then
-		local current_root = navigation.runtime_session_id(current.id, navigation_ctx)
-		if current_root == session_id then
-			next_session = navigation.next_session_after_close(session_id, nil, navigation_ctx)
-		end
+	if is_tab and current_root == session_id then
+		next_session = navigation.next_session_after_close(session_id, nil, navigation_ctx)
 	end
 
 	local ok_sync, sync = pcall(require, "opencode.sync")
@@ -292,7 +289,6 @@ function M.handle_deleted(session_id, opts)
 	end
 
 	if is_tab then
-		local current_root = navigation.runtime_session_id(current.id, navigation_ctx)
 		if current_root == session_id then
 			if next_session then
 				local record = state.get_session_record(next_session.id) or next_session
@@ -313,8 +309,7 @@ function M.handle_deleted(session_id, opts)
 		end
 	elseif current.id == session_id then
 		-- Deleted subagent child in view: return the view to its parent tab.
-		local parent_root = navigation.runtime_session_id(session_id, navigation_ctx)
-		local record = parent_root and state.get_session_record(parent_root) or nil
+		local record = current_root and state.get_session_record(current_root) or nil
 		if record then
 			activate_local(record, {
 				reason = opts.reason or "session_deleted",
@@ -458,7 +453,7 @@ local function collect_pending_counts()
 	local counts = {}
 
 	---@param session_id string|nil
-	---@return string|nil
+	---@return table|nil
 	local function ensure(session_id)
 		local root_session_id = navigation.runtime_session_id(session_id, navigation_ctx)
 		if not root_session_id then
@@ -587,10 +582,10 @@ function M.refresh_status(callback)
 			snapshots[id] = { token = pending_helper.token(id), revision = state.get_session_status_revision(id) }
 		end
 	end
-	client.get_session_statuses({}, function(err, statuses)
+	client.get_session_statuses(function(err, statuses)
 		if not err and type(statuses) == "table" then
 			for sid, snapshot in pairs(snapshots) do
-				if pending_helper.is_current(snapshot.token) and require("opencode.events.util").runtime_root_for_session(sid)
+				if pending_helper.is_current(snapshot.token) and event_util.runtime_root_for_session(sid)
 					and state.get_session_status_revision(sid) == snapshot.revision then
 					local status = statuses[sid] or { type = "idle" }
 					if not statuses[sid] then

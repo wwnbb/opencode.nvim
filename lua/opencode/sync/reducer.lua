@@ -1,4 +1,4 @@
--- V2 reducer owned by sync.lua. All persistent state remains in sync's store.
+-- Server event reducer owned by sync.lua. All persistent state remains in sync's store.
 local M = {}
 local projection = require("opencode.protocol.messages")
 

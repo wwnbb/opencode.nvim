@@ -79,8 +79,7 @@ function M.project(session_id, message)
 		part.content_order = #parts + 1
 		part.ordinal = ordinal
 		if kind == "tool" then
-			part.callID, part.tool = content.id, content.name
-			part.raw_tool = content.name
+			part.callID, part.raw_tool = content.id, content.name
 			-- Explicit native tool identities; retain the original DTO/name for IO.
 			part.tool = ({ subagent = "task", shell = "bash" })[content.name] or content.name
 			local state = part.state or {}
@@ -142,9 +141,13 @@ function M.draft(message)
 	local native = message._native or message
 	local text = native.text or ""
 	local parts = {}
-	local function source(mention)
+	local function marker(mention)
 		local value = type(mention) == "table" and mention.text
-		if type(value) ~= "string" or value == "" then return nil end
+		return type(value) == "string" and value ~= "" and value or nil
+	end
+	local function source(mention)
+		local value = marker(mention)
+		if not value then return nil end
 		local unique, count, match = nil, 0, nil
 		local from = 1
 		while true do
@@ -160,12 +163,8 @@ function M.draft(message)
 			from = last + 1
 		end
 		match = match or (count == 1 and unique or nil)
-		if type(match) ~= "table" then return nil end
+		if not match then return nil end
 		return { text = { start = match.first - 1, ["end"] = match.last, value = value } }
-	end
-	local function marker(mention)
-		local value = type(mention) == "table" and mention.text
-		return type(value) == "string" and value ~= "" and value or nil
 	end
 	for _, file in ipairs(native.files or {}) do
 		local uri = (type(file.source) == "table" and file.source.type == "uri" and file.source.uri)

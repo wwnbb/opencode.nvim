@@ -3,14 +3,14 @@ local client = require("opencode.client")
 local lifecycle = require("opencode.lifecycle")
 local session = require("opencode.session")
 local state = require("opencode.state")
-local v2 = require("opencode.client.api")
+local api = require("opencode.client.api")
 
 describe("session fork boundary", function()
 	local original_request, original_fork, original_connection, original_schedule
 
 	before_each(function()
 		state.reset()
-		original_request = v2.request
+		original_request = api.request
 		original_fork = client.fork_session
 		original_connection = lifecycle.ensure_connected
 		original_schedule = vim.schedule
@@ -18,32 +18,11 @@ describe("session fork boundary", function()
 	end)
 
 	after_each(function()
-		v2.request = original_request
+		api.request = original_request
 		client.fork_session = original_fork
 		lifecycle.ensure_connected = original_connection
 		vim.schedule = original_schedule
 		state.reset()
-	end)
-
-	it("sends the selected user message as an exclusive before boundary", function()
-		local operation, args
-		v2.request = function(name, request, callback)
-			operation, args = name, request
-			callback(nil, { id = "ses_fork" })
-		end
-		local result
-		client.fork_session("ses_original", { before = "msg_selected" }, function(_, forked) result = forked end)
-		assert.equals("session_fork", operation)
-		assert.equals("ses_original", args.path.sessionID)
-		assert.same({ before = "msg_selected" }, args.body)
-		assert.equals("ses_fork", result.id)
-	end)
-
-	it("encodes a whole-session fork request as an empty object", function()
-		local body
-		v2.request = function(_, args) body = args.body end
-		client.fork_session("ses_original", {}, function() end)
-		assert.equals("{}", vim.json.encode(body))
 	end)
 
 	it("can remember a completed fork without switching the active session", function()
@@ -71,4 +50,21 @@ describe("session fork boundary", function()
 		assert.same({ session_id = "ses_original", before = "msg_selected" }, called)
 		assert.equals("ses_fork", result.id)
 	end)
+	it("serializes selected and whole-session fork boundaries", function()
+		for _, opts in ipairs({ { before = "msg_selected" }, {} }) do
+			local operation, args
+			api.request = function(name, request, callback)
+				operation, args = name, request
+				callback(nil, { id = "ses_fork" })
+			end
+			local result
+			client.fork_session("ses_original", opts, function(_, forked) result = forked end)
+			assert.equals("session_fork", operation)
+			assert.equals("ses_original", args.path.sessionID)
+			assert.equals(opts.before, args.body.before)
+			assert.equals(opts.before and '{"before":"msg_selected"}' or "{}", vim.json.encode(args.body))
+			assert.equals("ses_fork", result.id)
+		end
+	end)
+
 end)

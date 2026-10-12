@@ -71,21 +71,4 @@ function M.next_session_after_close(close_id, sessions, ctx)
 	return remaining[next_index]
 end
 
----@param root_session_id string
----@param session_id string|nil
----@param ctx? table
----@return boolean
-function M.session_owned_by_root(root_session_id, session_id, ctx)
-	if not root_session_id or root_session_id == "" or not session_id or session_id == "" then
-		return false
-	end
-	if session_id == root_session_id then
-		return true
-	end
-
-	local event_util = default_event_util(ctx)
-	return event_util and type(event_util.runtime_root_for_session) == "function"
-		and event_util.runtime_root_for_session(session_id) == root_session_id or false
-end
-
 return M

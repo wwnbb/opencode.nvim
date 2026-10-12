@@ -1,4 +1,4 @@
--- opencode.nvim - Local event bus and native v2 event setup
+-- opencode.nvim - Local event bus and server event setup
 
 local M = {}
 
@@ -27,19 +27,19 @@ function M.safe_emit(event_name, ...)
 end
 
 local setup_modules = {
-	{ name = "state bridge", load = function() return require("opencode.events.state_bridge") end },
-	{ name = "SSE bridge", load = function() return require("opencode.events.sse_bridge") end },
-	{ name = "v2 event handlers", load = function() return require("opencode.events.handlers.server") end },
-	{ name = "v2 review", load = function() return require("opencode.events.handlers.review") end },
-	{ name = "v2 interactions", load = function() return require("opencode.events.handlers.interactions") end },
-	{ name = "session store handlers", load = function() return require("opencode.events.handlers.session_store") end },
-	{ name = "notification handlers", load = function() return require("opencode.events.handlers.notifications") end },
-	{ name = "sync data handlers", load = function() return require("opencode.events.handlers.sync_data") end },
-	{ name = "chat render coordinator", load = function() return require("opencode.ui.chat.render_coordinator") end },
+	{ name = "state bridge", module = "opencode.events.state_bridge" },
+	{ name = "SSE bridge", module = "opencode.events.sse_bridge" },
+	{ name = "server event handlers", module = "opencode.events.handlers.server" },
+	{ name = "review", module = "opencode.events.handlers.review" },
+	{ name = "interactions", module = "opencode.events.handlers.interactions" },
+	{ name = "session store handlers", module = "opencode.events.handlers.session_store" },
+	{ name = "notification handlers", module = "opencode.events.handlers.notifications" },
+	{ name = "sync data handlers", module = "opencode.events.handlers.sync_data" },
+	{ name = "chat render coordinator", module = "opencode.ui.chat.render_coordinator" },
 }
 
 local function setup_module(spec)
-	local ok, mod = pcall(spec.load)
+	local ok, mod = pcall(require, spec.module)
 	if not ok then
 		vim.notify("Failed to load OpenCode " .. spec.name .. ": " .. tostring(mod), vim.log.levels.WARN)
 		return

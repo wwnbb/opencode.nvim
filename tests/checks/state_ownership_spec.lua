@@ -1,6 +1,6 @@
 -- Behavioral state ownership checks. Each case gets fresh application modules.
 -- Run with: ./tests/run.sh tests/checks/state_ownership_spec.lua
--- Navigation preserve_cache coverage lives in tests/unit/session_store_v2_spec.lua.
+-- Navigation preserve_cache coverage lives in tests/unit/session_store_spec.lua.
 
 local function wait_for(predicate, message)
 	assert.is_true(vim.wait(500, predicate, 10), message)
@@ -442,30 +442,7 @@ describe("opencode state ownership", function()
 			"native forms should be retained for each runtime tab")
 	end)
 
-	it("coalesces same-tick render requests", function()
-		local render_coordinator = require("opencode.ui.chat.render_coordinator")
-		render_coordinator.setup(bus)
-		local render_count = 0
-		bus.on("chat_render", function()
-			render_count = render_count + 1
-		end)
-		render_coordinator.request({ session_id = "session_status" })
-		render_coordinator.request({ reason = "second_request" })
-		wait_for(function()
-			return render_count == 1
-		end, "render coordinator should coalesce same-tick requests")
-	end)
 
-	it("renders questions directly from the question store", function()
-		session_actions.set_active("session_hidden", "Hidden Widget", { preserve_cache = true })
-		question_state.clear_all()
-		add_form("hidden_question", "session_hidden", "Hidden?")
-		local chat = require("opencode.ui.chat")
-		chat.create()
-		local lines = chat.render()
-		local rendered = table.concat(lines, "\n")
-		assert.is_truthy(rendered:find("Hidden%?") ~= nil, "hidden question should render from question store")
-	end)
 
 	it("closes a child through its root without resolving pending permissions", function()
 		local close_replies = {}
@@ -538,11 +515,10 @@ describe("opencode state ownership", function()
 				callback(nil, true)
 			end
 		end
-		client.reject_question = function(session_id, request_id, opts, callback)
+		client.reject_question = function(session_id, request_id, callback)
 			table.insert(rejected_questions, {
 				session_id = session_id,
 				request_id = request_id,
-				opts = opts,
 			})
 			if callback then
 				callback(nil, true)
@@ -611,7 +587,7 @@ describe("opencode state ownership", function()
 					type = "tool", tool = "task", metadata = { sessionId = "close_child" } } },
 			} })
 		end
-		client.get_session_statuses = function(_, callback) callback(nil, {}) end
+		client.get_session_statuses = function(callback) callback(nil, {}) end
 		session_actions.switch_to({ id = "close_root", title = "Close Root", directory = close_root_directory })
 		wait_for(function()
 			return sync.get_task_parent_session("close_child") == "close_root"

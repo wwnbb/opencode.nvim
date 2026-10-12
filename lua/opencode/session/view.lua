@@ -19,11 +19,7 @@ local function copy(value)
 end
 
 local function title_for(record)
-	local title = session_util.displayTitle(record.title or record.name)
-	if title and title ~= "" then
-		return title
-	end
-	return record.name or record.title or record.id
+	return session_util.displayTitle(record.title or record.name) or record.name or record.title or record.id
 end
 
 ---@return string|nil
@@ -118,17 +114,8 @@ local view_mt = {
 		if method then
 			return method
 		end
-		if key == "record" then
-			return vim.deepcopy(data.record or {})
-		end
-		if key == "status" then
-			return vim.deepcopy(data.status or { type = "idle" })
-		end
-		if key == "pending" then
-			return vim.deepcopy(data.pending or pending_helper.zero_counts())
-		end
-		if key == "cached_messages" then
-			return vim.deepcopy(data.cached_messages or { count = 0, loaded = false })
+		if key == "record" or key == "status" or key == "pending" or key == "cached_messages" then
+			return vim.deepcopy(data[key])
 		end
 		if scalar_fields[key] then
 			return copy((data.record or {})[key])

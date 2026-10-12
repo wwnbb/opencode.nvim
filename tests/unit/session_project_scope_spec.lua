@@ -16,7 +16,7 @@ describe("opencode session project scope", function()
 		requests = {}
 		original_client = package.loaded["opencode.client"]
 		package.loaded["opencode.client"] = {
-			get_session_statuses = function(opts, callback) assert.same({}, opts); requests[#requests + 1] = callback end,
+			get_session_statuses = function(callback) requests[#requests + 1] = callback end,
 			list_sessions = function(_, callback) requests[#requests + 1] = callback end,
 			get_messages = function(_, _, callback) requests[#requests + 1] = callback end,
 		}
@@ -65,14 +65,6 @@ describe("opencode session project scope", function()
 		assert.is_nil(state.get_session_record("outdated"))
 	end)
 
-	it("accepts background project events but drops closed and unrelated projects", function()
-		local event = { location = { directory = other .. "/" }, type = "form.created", data = { sessionID = "b" } }
-		assert.is_true(sse._should_accept(event))
-		assert.is_false(sse._should_accept({ location = { directory = cwd .. "/foreign" }, type = "test", data = {} }))
-		state.close_runtime_session("b")
-		assert.is_false(sse._should_accept(event))
-	end)
-
 	it("preserves filesystem roots when storing session directories", function()
 		assert.equals("/", state.normalize_directory("/"))
 		state.upsert_session({ id = "root", directory = "/" })
@@ -92,8 +84,11 @@ describe("opencode session project scope", function()
 		sse.clear_listeners()
 		local seen = 0
 		sse.on("form.created", function() seen = seen + 1 end)
-		sse.emit("message", { id = "scope-a", type = "form.created", location = { directory = other },
+		sse.emit("message", { id = "scope-a", type = "form.created", location = { directory = other .. "/" },
 			data = { sessionID = "b", form = { id = "f", sessionID = "b", fields = {} } } })
+		assert.equals(1, seen)
+		sse.emit("message", { id = "scope-foreign", type = "form.created", location = { directory = cwd .. "/foreign" },
+			data = { sessionID = "foreign", form = { id = "f3", sessionID = "foreign", fields = {} } } })
 		assert.equals(1, seen)
 		state.close_runtime_session("b")
 		sse.emit("message", { id = "scope-b", type = "form.created", location = { directory = other },

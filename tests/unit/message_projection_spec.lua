@@ -1,7 +1,7 @@
 local projection = require("opencode.protocol.messages")
 local sync = require("opencode.sync")
 
-describe("v2 history projection", function()
+describe("history projection", function()
 	it("renders native shell output objects without losing status or byte metadata", function()
 		local native = { id = "msg_shell", type = "shell", shellID = "sh_native", command = "echo Привет", status = "exited", exit = 0,
 			output = { output = "Привет\n", cursor = 13, size = 13, truncated = false }, time = { created = 1, completed = 2 } }

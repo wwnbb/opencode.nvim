@@ -167,41 +167,11 @@ function M.has_pending(counts)
 	return M.total(counts) > 0
 end
 
----@param items table[]|nil
----@param root_session_id string
----@param owns_session fun(root_session_id: string, session_id: string|nil): boolean
----@return table[]
-function M.collect_owned(items, root_session_id, owns_session)
-	local owned = {}
-	if not root_session_id or root_session_id == "" or type(owns_session) ~= "function" then
-		return owned
-	end
-
-	for _, item in ipairs(items or {}) do
-		if type(item) == "table" and owns_session(root_session_id, item.session_id) then
-			table.insert(owned, item)
-		end
-	end
-	return owned
-end
-
 ---@param item table|nil
 ---@return boolean
 function M.is_pending_question(item)
 	local status = type(item) == "table" and item.status or nil
 	return status == "pending" or status == "confirming"
-end
-
----@param item table|nil
----@return boolean
-function M.is_pending_permission(item)
-	return type(item) == "table" and item.status == "pending"
-end
-
----@param item table|nil
----@return boolean
-function M.is_pending_edit(item)
-	return M.is_pending_permission(item)
 end
 
 return M

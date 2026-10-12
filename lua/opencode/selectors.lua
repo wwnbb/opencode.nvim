@@ -18,46 +18,24 @@ end
 ---@return { providerID: string, modelID: string }|nil
 local function resolve_model_ref(ref, source, sync)
 	local log = logger()
-	if type(ref) ~= "table" or type(ref.providerID) ~= "string" or type(ref.id or ref.modelID) ~= "string" then
-		if log then
-			log.debug("Model candidate skipped", {
-				source = source,
-				reason = "malformed",
-				model = log.model_summary(ref),
-			})
-		end
-		return nil
-	end
-
-	local model_id = ref.id or ref.modelID
-	if ref.providerID == "" or model_id == "" then
-		if log then
-			log.debug("Model candidate skipped", {
-				source = source,
-				reason = "empty",
-				model = log.model_summary(ref),
-			})
-		end
-		return nil
-	end
-
-	if not sync or not sync.get_model(ref.providerID, model_id) then
-		if log then
-			log.debug("Model candidate skipped", {
-				source = source,
-				reason = sync and "not_in_sync" or "sync_unavailable",
-				model = log.model_summary(ref),
-			})
-		end
-		return nil
+	local model_id = type(ref) == "table" and (ref.id or ref.modelID) or nil
+	local reason
+	if type(ref) ~= "table" or type(ref.providerID) ~= "string" or type(model_id) ~= "string" then
+		reason = "malformed"
+	elseif ref.providerID == "" or model_id == "" then
+		reason = "empty"
+	elseif not sync or not sync.get_model(ref.providerID, model_id) then
+		reason = sync and "not_in_sync" or "sync_unavailable"
 	end
 
 	if log then
-		log.debug("Model candidate accepted", {
+		log.debug(reason and "Model candidate skipped" or "Model candidate accepted", {
 			source = source,
+			reason = reason,
 			model = log.model_summary(ref),
 		})
 	end
+	if reason then return nil end
 	return {
 		providerID = ref.providerID,
 		modelID = model_id,

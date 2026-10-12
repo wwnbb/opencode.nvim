@@ -1,4 +1,4 @@
-describe("v2 session snapshot freshness", function()
+describe("session snapshot freshness", function()
 	it("does not overwrite a rename that arrived after a recovery read began", function()
 		local state, sync, bus = require("opencode.state"), require("opencode.sync"), require("opencode.events.bus")
 		local client, pending = require("opencode.client"), require("opencode.session.pending")

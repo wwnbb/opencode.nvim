@@ -16,18 +16,12 @@ local event_history = {}
 local max_history = 100
 local listener_generation = 0
 
--- Get or create listener list for an event type
-local function get_listeners(event_type)
-	listeners[event_type] = listeners[event_type] or {}
-	return listeners[event_type]
-end
-
 -- Subscribe to an event
 ---@param event_type string Event type to listen for (e.g., "message", "connected")
 ---@param callback function Callback function(data)
 function M.on(event_type, callback)
-	local cbs = get_listeners(event_type)
-	table.insert(cbs, callback)
+	listeners[event_type] = listeners[event_type] or {}
+	table.insert(listeners[event_type], callback)
 	return callback -- Return callback for off() reference
 end
 
@@ -128,10 +122,12 @@ end
 ---@return table Array of event type names
 function M.list_event_types()
 	local types = {}
-	for event_type, _ in pairs(listeners) do
-		table.insert(types, event_type)
+	for _, registry in ipairs({ listeners, once_listeners }) do
+		for event_type, callbacks in pairs(registry) do
+			if #callbacks > 0 then types[event_type] = true end
+		end
 	end
-	return types
+	return vim.tbl_keys(types)
 end
 
 return M

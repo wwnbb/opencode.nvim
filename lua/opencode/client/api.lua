@@ -1,6 +1,8 @@
--- OpenCode 2 wire contracts. No state mutation belongs in this module.
+-- OpenCode 2 wire contracts.
 local M = {}
 local http = require("opencode.client.http")
+local path = require("opencode.util.path")
+local encode_segment = require("opencode.util.text").encode_uri_component
 local schedule_callback = require("opencode.util.schedule").schedule_callback
 
 local operations = {
@@ -97,8 +99,6 @@ local operations = {
 	form_cancel = { "DELETE", "/api/session/{sessionID}/form/{formID}", "empty" },
 }
 
-M.encode_segment = require("opencode.util.text").encode_uri_component
-
 local function object(value)
 	return type(value) == "table" and not vim.islist(value)
 end
@@ -109,9 +109,9 @@ end
 
 function M.validate_pty(info)
 	if not object(info) or type(info.id) ~= "string" or not info.id:match("^pty") or type(info.sessionID) ~= "string"
-		or type(info.title) ~= "string" or type(info.command) ~= "string" or not require("opencode.util.path").is_absolute(info.cwd)
+		or type(info.title) ~= "string" or type(info.command) ~= "string" or not path.is_absolute(info.cwd)
 		or not vim.tbl_contains({ "running", "exited" }, info.status) or not integer(info.pid)
-		or type(info.args) ~= "table" or not vim.islist(info.args) or not object(info.size)
+		or not vim.islist(info.args) or not object(info.size)
 		or not integer(info.size.cols, true) or not integer(info.size.rows, true) or info.size.cols > 65535 or info.size.rows > 65535
 		or not object(info.output) or not integer(info.output.head) or not integer(info.output.tail) or info.output.head > info.output.tail then
 		return "Invalid persistent PTY response"
@@ -124,7 +124,7 @@ function M.validate_info(info)
 		return "Invalid OpenCode /api/info response"
 	end
 	local major, minor, patch = info.version:match("^(%d+)%.(%d+)%.(%d+)$")
-	if tonumber(major) ~= 2 or not minor or (tonumber(minor) == 0 and tonumber(patch) < 11) then
+	if tonumber(major) ~= 2 or (tonumber(minor) == 0 and tonumber(patch) < 11) then
 		return "OpenCode 2.0.11 or newer 2.x is required (server: " .. info.version .. ")"
 	end
 end
@@ -137,7 +137,7 @@ function M.session(info)
 	end
 	local value = vim.deepcopy(info)
 	value.directory = info.location.directory
-	value.revert = info.revert or vim.NIL
+	value.revert = value.revert or vim.NIL
 	return value
 end
 
@@ -156,7 +156,6 @@ local function decode(shape, body, meta)
 		return body
 	end
 	if shape == "location" then
-		local path = require("opencode.util.path")
 		if not object(body) or not path.is_absolute(body.directory) or not object(body.project)
 			or type(body.project.id) ~= "string" or not path.is_absolute(body.project.directory)
 			or not path.is_absolute(body.project.canonical) then return nil, "Invalid location response" end
@@ -164,18 +163,16 @@ local function decode(shape, body, meta)
 	end
 	if shape == "pairing" then
 		if not object(body) or type(body.code) ~= "string" or not body.code:match("^[%w_%-]+$")
-			or type(body.expires_in) ~= "number" or body.expires_in <= 0 or body.expires_in >= math.huge
-			or body.expires_in % 1 ~= 0 then return nil, "Invalid server pairing response" end
+			or not integer(body.expires_in, true) then return nil, "Invalid server pairing response" end
 		return body
 	end
 	if shape == "worktree" then
-		if not object(body) or not require("opencode.util.path").is_absolute(body.directory) then return nil, "Invalid worktree response" end
+		if not object(body) or not path.is_absolute(body.directory) then return nil, "Invalid worktree response" end
 		return body
 	end
 	if shape == "array" or shape == "projects" or shape == "worktrees" then
-		if type(body) ~= "table" or not vim.islist(body) then return nil, "Invalid v2 array response" end
+		if not vim.islist(body) then return nil, "Invalid v2 array response" end
 		if shape ~= "array" then
-			local path = require("opencode.util.path")
 			for _, entry in ipairs(body) do
 				if not object(entry) or (shape == "projects" and (type(entry.id) ~= "string" or not path.is_absolute(entry.canonical)))
 					or (shape == "worktrees" and not path.is_absolute(entry.directory)) then return nil, "Invalid " .. shape .. " entry" end
@@ -190,9 +187,9 @@ local function decode(shape, body, meta)
 	if not object(body) or body.data == nil then return nil, "Missing v2 response data" end
 	local data = body.data
 	if shape == "pty_list" or shape == "pty_info" or shape == "pty_snapshot" then
-		if shape == "pty_list" and (type(data) ~= "table" or not vim.islist(data)) then return nil, "Invalid persistent PTY list" end
+		if shape == "pty_list" and not vim.islist(data) then return nil, "Invalid persistent PTY list" end
 		if shape == "pty_snapshot" then
-			if not object(data) or type(data.text) ~= "string" or type(data.checkpoint) ~= "string" or #data.checkpoint > 12 * 1024 * 1024
+			if not object(data) or not object(data.info) or type(data.text) ~= "string" or type(data.checkpoint) ~= "string" or #data.checkpoint > 12 * 1024 * 1024
 				or not object(data.cursor) or not integer(data.cursor.x) or not integer(data.cursor.y) then return nil, "Invalid persistent PTY snapshot" end
 		end
 		for _, info in ipairs(shape == "pty_list" and data or { shape == "pty_snapshot" and data.info or data }) do
@@ -201,14 +198,13 @@ local function decode(shape, body, meta)
 		return data
 	end
 	if shape == "shell_list" or shape == "shell_info" or shape == "shell_output" then
-		if not object(body.location) or not require("opencode.util.path").is_absolute(body.location.directory) then return nil, "Missing shell location" end
+		if not object(body.location) or not path.is_absolute(body.location.directory) then return nil, "Missing shell location" end
 		meta.location = body.location
 		if shape == "shell_output" then
-			local function count(value) return type(value) == "number" and value >= 0 and value < math.huge and value % 1 == 0 end
-			if not object(data) or type(data.output) ~= "string" or not count(data.cursor) or not count(data.size)
+			if not object(data) or type(data.output) ~= "string" or not integer(data.cursor) or not integer(data.size)
 				or data.cursor > data.size or type(data.truncated) ~= "boolean" then return nil, "Invalid shell output" end
 		else
-			if shape == "shell_list" and (type(data) ~= "table" or not vim.islist(data)) then return nil, "Invalid shell list" end
+			if shape == "shell_list" and not vim.islist(data) then return nil, "Invalid shell list" end
 			for _, info in ipairs(shape == "shell_list" and data or { data }) do
 				if not object(info) or type(info.id) ~= "string" or not info.id:match("^sh_") or type(info.command) ~= "string"
 					or type(info.cwd) ~= "string" or type(info.shell) ~= "string" or type(info.file) ~= "string"
@@ -231,16 +227,16 @@ local function decode(shape, body, meta)
 		if not object(data) or type(data.id) ~= "string" or type(data.sessionID) ~= "string"
 			or type(data.type) ~= "string" or not object(data.payload) then return nil, "Invalid prompt admission" end
 	elseif shape == "list" then
-		if type(data) ~= "table" or not vim.islist(data) then return nil, "Invalid v2 list response" end
+		if not vim.islist(data) then return nil, "Invalid v2 list response" end
 	elseif shape == "page" then
-		if type(data) ~= "table" or not vim.islist(data) or not object(body.cursor) then
+		if not vim.islist(data) or not object(body.cursor) then
 			return nil, "Invalid v2 page response"
 		end
 		meta.cursor = body.cursor
 	elseif shape == "transfer" then
 		if not object(data) or not object(data.info) or type(data.info.id) ~= "string"
 			or not object(data.info.location) or type(data.info.location.directory) ~= "string"
-			or type(data.messages) ~= "table" or not vim.islist(data.messages) then
+			or not vim.islist(data.messages) then
 			return nil, "Invalid v2 session export response"
 		end
 		for _, message in ipairs(data.messages) do
@@ -254,7 +250,7 @@ local function decode(shape, body, meta)
 			return nil, "Missing v2 response location"
 		end
 		meta.location = body.location
-		if (shape == "catalog" or shape == "plugins") and (type(data) ~= "table" or not vim.islist(data)) then
+		if (shape == "catalog" or shape == "plugins") and not vim.islist(data) then
 			return nil, "Invalid v2 catalog response"
 		end
 		if shape == "plugins" then
@@ -309,7 +305,7 @@ function M.request(name, args, callback)
 	local path = operation[2]:gsub("{([^}]+)}", function(key)
 		local value = args.path and args.path[key]
 		if type(value) ~= "string" or value == "" then invalid = key end
-		return M.encode_segment(value)
+		return encode_segment(value)
 	end)
 	if invalid then
 		schedule_callback(callback, { code = "invalid_request", message = "Missing " .. invalid, retryable = false })
@@ -318,7 +314,6 @@ function M.request(name, args, callback)
 	local opts = { query = args.query, timeout = args.timeout }
 	local function done(err, body, meta)
 		if err then callback(err, nil, meta); return end
-		meta = meta or {}
 		local value, decode_err = decode(operation[3], body, meta)
 		if decode_err then
 			callback({ status = meta.status, code = "incompatible_response", message = decode_err, retryable = false }, nil, meta)

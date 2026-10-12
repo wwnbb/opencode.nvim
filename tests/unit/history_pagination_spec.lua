@@ -1,4 +1,4 @@
-describe("v2 complete history pagination", function()
+describe("complete history pagination", function()
 	local saved, client, requests, deferred
 	local names = { "opencode.client", "opencode.client.api" }
 	before_each(function()
@@ -29,6 +29,20 @@ describe("v2 complete history pagination", function()
 		assert.equals(102, #result)
 		assert.equals("msg_001", result[1].info.id)
 		assert.equals("msg_102", result[#result].info.id)
+	end)
+	it("returns a page error without publishing a partial complete history", function()
+		local failure = { code = "request_failed", message = "History page unavailable" }
+		local result, completions = nil, 0
+		client.get_all_messages("s", function(err, data, meta)
+			completions = completions + 1
+			result = { err = err, data = data, meta = meta }
+		end)
+		deferred(failure)
+		assert.equals(1, completions)
+		assert.equals(failure, result.err)
+		assert.is_nil(result.data)
+		assert.is_nil(result.meta)
+		assert.equals(2, #requests)
 	end)
 	it("does not continue pagination on a different server", function()
 		local result

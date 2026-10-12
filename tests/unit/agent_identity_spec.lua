@@ -27,6 +27,9 @@ describe("stable agent identity", function()
 		assert.equals("b", local_state.agent.current().id)
 		local_state.agent.set("Second") -- Retain name-based compatibility when no ID matches.
 		assert.equals("b", choices.current("s").agent)
+		local group = local_state.agent.color("b")
+		assert.equals(0x0000ff, vim.api.nvim_get_hl(0, { name = group, link = false }).fg)
+		assert.equals("DiagnosticInfo", local_state.agent.color("unknown"))
 	end)
 
 	it("enters the available agent list at the correct end after catalog removal or hiding", function()
@@ -56,12 +59,6 @@ describe("stable agent identity", function()
 		assert.same({ "agent", "model" }, calls)
 		local_state.agent.move(1, { silent = true })
 		assert.equals("a", choices.current("s").agent)
-	end)
-
-	it("uses the same stable identity for agent colors", function()
-		local group = local_state.agent.color("b")
-		assert.equals(0x0000ff, vim.api.nvim_get_hl(0, { name = group, link = false }).fg)
-		assert.equals("DiagnosticInfo", local_state.agent.color("unknown"))
 	end)
 
 	it("keeps punctuation and Unicode IDs from overwriting another agent's color", function()

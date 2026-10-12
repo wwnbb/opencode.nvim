@@ -1,4 +1,4 @@
-describe("v2 session selection ownership", function()
+describe("session selection ownership", function()
 	local state, sync = require("opencode.state"), require("opencode.sync")
 	local choices, pending = require("opencode.session.selection"), require("opencode.session.pending")
 	local local_state, selectors = require("opencode.local"), require("opencode.selectors")

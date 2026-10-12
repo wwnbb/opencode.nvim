@@ -8,10 +8,10 @@ describe("model picker native metadata and groups", function()
 		state.set_session("s", "Session")
 		state.upsert_session({ id = "s", directory = "/project" }, { touch = false })
 		local models = {
-			fav = { name = "Favorite", cost_tiers = { { input = 0 } }, time = { released = 1776988800000 }, status = "deprecated" },
-			recent = { name = "Recent", cost_tiers = { { input = 0 }, { input = 1 } }, time = { released = 1776988800000 } },
-			free = { name = "Free model", cost_tiers = { { input = 0 } }, time = { released = 1776988800000 } },
-			old = { name = "Old", cost_tiers = {}, time = { released = 1704067200000 } },
+			fav = { name = "Favorite", cost = { { input = 0 } }, time = { released = 1776988800000 }, status = "deprecated" },
+			recent = { name = "Recent", cost = { { input = 0 }, { input = 1 } }, time = { released = 1776988800000 } },
+			free = { name = "Free model", cost = { { input = 0 } }, time = { released = 1776988800000 } },
+			old = { name = "Old", cost = {}, time = { released = 1704067200000 } },
 			hidden = { name = "Deprecated", status = "deprecated", time = { released = 0 } },
 		}
 		local providers = { { id = "p", models = models } }

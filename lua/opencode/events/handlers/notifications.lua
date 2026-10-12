@@ -78,7 +78,6 @@ function M.setup(events)
 		callback = function(event) focus = event.event == "FocusGained" and "focused" or "blurred" end,
 	})
 	local active = {}
-	local errored = {}
 	local recent_session_errors = {}
 	local permissions = {}
 	local questions = {}
@@ -177,25 +176,20 @@ function M.setup(events)
 		local root_session_id = event_util.runtime_root_for_session(session_id) or session_id
 		if not require("opencode.state").is_runtime_session(root_session_id) then return end
 		if data.reason == "session_abort" or data.reason == "send_failed" or data.reason == "abort" then
-			active[root_session_id], errored[root_session_id] = nil, nil
+			active[root_session_id] = nil
 			return
 		end
 		if status_type == "busy" or status_type == "retry" then
-			active[root_session_id], errored[root_session_id] = true, nil
+			active[root_session_id] = true
 			return
 		end
 		if status_type ~= "idle" then return end
 		local was_active = active[root_session_id]
 		active[root_session_id] = nil
 		if type(status) == "table" and (status.outcome == "failed" or status.outcome == "interrupted") then
-			errored[root_session_id] = nil
 			return
 		end
 		if not was_active then return end
-		if errored[root_session_id] then
-			errored[root_session_id] = nil
-			return
-		end
 		vim.schedule(function()
 			if should_notify("done", root_session_id) then
 				notify(root_session_id, "Session done", vim.log.levels.INFO)
@@ -209,7 +203,6 @@ function M.setup(events)
 		local session_id = data and data.sessionID
 		if not session_id or event_util.is_abort_error(data.error) then return end
 		local root_session_id = event_util.runtime_root_for_session(session_id) or session_id
-		errored[root_session_id] = true
 		active[root_session_id] = nil
 		vim.schedule(function()
 			if not require("opencode.state").is_runtime_session(root_session_id) then

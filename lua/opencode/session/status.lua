@@ -26,7 +26,7 @@ end
 ---@return string
 function M.session_status_to_global(status)
 	local kind = M.status_type(status)
-	if kind == "busy" or kind == "retry" or kind == "streaming" then
+	if M.is_busy(kind) then
 		return "streaming"
 	end
 	if kind == "error" then

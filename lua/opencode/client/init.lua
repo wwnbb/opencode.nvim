@@ -1,6 +1,3 @@
--- opencode.nvim - Client module (HTTP + SSE)
--- Combined interface for OpenCode server communication
-
 local M = {}
 
 local http = require("opencode.client.http")
@@ -20,7 +17,28 @@ local function normalize_directory(directory)
 	return require("opencode.util.path").absolute(dir)
 end
 
--- Configure both clients
+local function collect_pages(fetch_page, get_id, callback)
+	local generation, queue, seen, by_id, head = configuration_generation, { false }, {}, {}, 1
+	local function read()
+		if generation ~= configuration_generation then callback({ code = "stale_connection", message = "Server connection changed" }); return end
+		local cursor = queue[head]
+		if cursor == nil then callback(nil, vim.tbl_values(by_id)); return end
+		head = head + 1
+		fetch_page(cursor or nil, function(err, page, meta)
+			if err then callback(err); return end
+			for _, item in ipairs(page) do by_id[get_id(item)] = item end
+			for _, key in ipairs({ "previous", "next" }) do
+				local next_cursor = meta and meta.cursor and meta.cursor[key]
+				if type(next_cursor) == "string" and not seen[next_cursor] then
+					seen[next_cursor] = true; queue[#queue + 1] = next_cursor
+				end
+			end
+			read()
+		end)
+	end
+	read()
+end
+
 ---@param opts table Configuration options
 function M.setup(opts)
 	if package.loaded["opencode.client.explanation"] then require("opencode.client.explanation").cancel_all() end
@@ -63,10 +81,8 @@ function M.configure_endpoint(opts)
 	for key, value in pairs(opts) do sse.opts[key] = vim.deepcopy(value) end
 end
 
--- HTTP API shortcuts
-
 function M.set_session_environment(session_id, variables, callback)
-	if type(variables) ~= "table" or (vim.islist(variables) and next(variables) ~= nil) then
+	if type(variables) ~= "table" then
 		require("opencode.util.schedule").schedule_callback(callback, { message = "Environment must be an object of string variables" }); return
 	end
 	for key, value in pairs(variables) do
@@ -154,13 +170,11 @@ function M.remove_shell(id, opts, callback)
 	return api.request("shell_remove", { path = { id = id }, query = { location = { directory = opts.directory } } }, callback)
 end
 
--- Health check
 ---@param callback function(err, data)
 function M.health(callback)
 	http.health(callback)
 end
 
--- Get all sessions
 ---@param opts? table { roots?, directory?, search?, limit?, start? }
 ---@param callback function(err, sessions)
 function M.list_sessions(opts, callback)
@@ -190,37 +204,19 @@ function M.get_usage_stats(opts, callback)
 	api.request("session_stats", { query = opts }, callback)
 end
 
--- Get session details
 -- A session picker needs the full catalog, not the first default-sized page.
 function M.get_all_sessions(opts, callback)
-	local generation, queue, seen, by_id, head = configuration_generation, { false }, {}, {}, 1
-	local function read()
-		if generation ~= configuration_generation then callback({ code = "stale_connection", message = "Server connection changed" }); return end
-		local cursor = queue[head]
-		if cursor == nil then
-			local values = vim.tbl_values(by_id)
-			table.sort(values, function(a, b) return a.id > b.id end)
-			callback(nil, values); return
-		end
-		head = head + 1
+	collect_pages(function(cursor, done)
 		local query = vim.tbl_extend("force", opts or {}, { limit = 100 })
-		query.cursor = cursor or nil
-		M.list_sessions(query, function(err, values, meta)
-			if err then callback(err); return end
-			for _, item in ipairs(values) do by_id[item.id] = item end
-			for _, key in ipairs({ "previous", "next" }) do
-				local next_cursor = meta and meta.cursor and meta.cursor[key]
-				if type(next_cursor) == "string" and not seen[next_cursor] then
-					seen[next_cursor] = true; queue[#queue + 1] = next_cursor
-				end
-			end
-			read()
-		end)
-	end
-	read()
+		query.cursor = cursor
+		M.list_sessions(query, done)
+	end, function(item) return item.id end, function(err, values)
+		if err then callback(err); return end
+		table.sort(values, function(a, b) return a.id > b.id end)
+		callback(nil, values)
+	end)
 end
 
--- Get session details
 ---@param session_id string
 ---@param callback function(err, session)
 function M.get_session(session_id, callback)
@@ -271,12 +267,8 @@ function M.view_session(session_id, idle, callback)
 end
 
 -- Get current status for all non-idle sessions
----@param opts? table { directory? }
 ---@param callback function(err, statuses)
-function M.get_session_statuses(opts, callback)
-	if type(opts) == "function" then
-		callback = opts
-	end
+function M.get_session_statuses(callback)
 	api.request("session_active", {}, function(err, active, meta)
 		if err then callback(err, nil, meta); return end
 		local statuses = {}
@@ -285,7 +277,6 @@ function M.get_session_statuses(opts, callback)
 	end)
 end
 
--- Get child sessions for a parent session
 ---@param session_id string
 ---@param callback function(err, sessions)
 function M.get_session_children(session_id, callback)
@@ -308,16 +299,10 @@ function M.get_session_children(session_id, callback)
 	page()
 end
 
--- Create new session
----@param opts? table { parentID?, title?, permission? }
+---@param opts? table Native v2 session options; directory is an alias for location.directory.
 ---@param callback function(err, session)
 function M.create_session(opts, callback)
-	opts = opts or {}
-
-	-- Ensure opts is an object (not empty array) for JSON encoding
-	-- An empty Lua table {} encodes as [] in JSON, but we need {}
-	-- Use vim.empty_dict() as base and merge any provided opts
-	local body = vim.tbl_extend("force", vim.empty_dict(), opts)
+	local body = vim.tbl_extend("force", {}, opts or {})
 
 	if body.parentID ~= nil then
 		require("opencode.util.schedule").schedule_callback(callback, { code = "invalid_request", message = "V2 session creation does not accept parentID" })
@@ -328,14 +313,12 @@ function M.create_session(opts, callback)
 	api.request("session_create", { body = body }, callback)
 end
 
--- Delete session
 ---@param session_id string
 ---@param callback function(err, success)
 function M.delete_session(session_id, callback)
 	api.request("session_delete", { path = { sessionID = session_id } }, callback)
 end
 
--- Fork session
 ---@param session_id string
 ---@param opts? table { before?: string } Exclusive message boundary; omission copies full history.
 ---@param callback function(err, session)
@@ -355,7 +338,6 @@ function M.export_session(session_id, opts, callback)
 	return api.request("session_export", { path = { sessionID = session_id }, query = query }, callback)
 end
 
--- Get session messages
 ---@param session_id string
 ---@param opts? table { limit? }
 ---@param callback function(err, messages)
@@ -372,33 +354,15 @@ end
 -- Traverse both opaque cursor directions. Only this complete snapshot may prune
 -- absent v2 messages; ordinary pages remain merge-only.
 function M.get_all_messages(session_id, callback)
-	local generation = configuration_generation
-	local queue, seen, by_id, head = { false }, {}, {}, 1
-	local function read()
-		if generation ~= configuration_generation then callback({ message = "Server connection changed", code = "stale_connection" }); return end
-		local cursor = queue[head]
-		if cursor == nil then
-			local result = vim.tbl_values(by_id)
-			table.sort(result, function(a, b) return a.info.id < b.info.id end)
-			callback(nil, result, { complete = true }); return
-		end
-		head = head + 1
-		M.get_messages(session_id, { limit = 100, cursor = cursor or nil }, function(err, page, meta)
-			if err then callback(err); return end
-			for _, message in ipairs(page) do by_id[message.info.id] = message end
-			for _, key in ipairs({ "previous", "next" }) do
-				local next_cursor = meta and meta.cursor and meta.cursor[key]
-				if type(next_cursor) == "string" and not seen[next_cursor] then
-					seen[next_cursor] = true; queue[#queue + 1] = next_cursor
-				end
-			end
-			read()
-		end)
-	end
-	read()
+	collect_pages(function(cursor, done)
+		M.get_messages(session_id, { limit = 100, cursor = cursor }, done)
+	end, function(message) return message.info.id end, function(err, messages)
+		if err then callback(err); return end
+		table.sort(messages, function(a, b) return a.info.id < b.info.id end)
+		callback(nil, messages, { complete = true })
+	end)
 end
 
--- Send message to session
 ---@param session_id string
 ---@param message table Native v2 prompt payload.
 ---@param callback function(err, response)
@@ -444,7 +408,6 @@ function M.is_explanation_session(id)
 	return require("opencode.client.explanation").is_session(id)
 end
 
--- Abort session
 ---@param session_id string
 ---@param callback function(err, success)
 function M.abort_session(session_id, callback)
@@ -536,12 +499,10 @@ function M.get_form(session_id, form_id, callback)
 	api.request("form_get", { path = { sessionID = session_id, formID = form_id } }, callback)
 end
 
-function M.reject_question(session_id, request_id, opts, callback)
-	if type(opts) == "function" then callback = opts end
+function M.reject_question(session_id, request_id, callback)
 	api.request("form_cancel", { path = { sessionID = session_id, formID = request_id } }, callback)
 end
 
--- Get list of providers (basic list with all/connected/default info)
 ---@param callback function(err, providers)
 function M.list_providers(callback, opts)
 	api.request("provider_list", { query = { location = { directory = normalize_directory(opts and opts.directory) } } }, callback)
@@ -597,7 +558,6 @@ function M.credential(operation, credential_id, body, callback)
 	api.request("credential_" .. operation, { path = { credentialID = credential_id }, body = body }, callback)
 end
 
--- Get config
 ---@param callback function(err, config)
 function M.get_config(callback, opts)
 	api.request("config_list", { query = { location = { directory = normalize_directory(opts and opts.directory) } } }, function(err, sources, meta)
@@ -607,7 +567,6 @@ function M.get_config(callback, opts)
 	end)
 end
 
--- Get list of agents
 ---@param callback function(err, agents)
 function M.list_agents(callback, opts)
 	api.request("agent_list", { query = { location = { directory = normalize_directory(opts and opts.directory) } } }, function(err, data, meta)
@@ -616,7 +575,6 @@ function M.list_agents(callback, opts)
 	end)
 end
 
--- Get list of skills
 ---@param callback function(err, skills)
 function M.list_skills(callback, opts)
 	api.request("skill_list", { query = { location = { directory = normalize_directory(opts and opts.directory) } } }, callback)
@@ -626,7 +584,6 @@ function M.list_commands(callback, opts)
 	api.request("command_list", { query = { location = { directory = normalize_directory(opts and opts.directory) } } }, callback)
 end
 
--- Get MCP status
 ---@param callback function(err, mcp_status)
 function M.get_mcp_status(callback, opts)
 	api.request("mcp_list", { query = { location = { directory = normalize_directory(opts and opts.directory) } } }, function(err, data, meta)
@@ -635,14 +592,12 @@ function M.get_mcp_status(callback, opts)
 	end)
 end
 
--- Connect MCP server
 ---@param name string MCP server name
 ---@param callback function(err, success)
 function M.connect_mcp(name, callback, opts)
 	api.request("mcp_connect", { path = { server = name }, query = { location = { directory = normalize_directory(opts and opts.directory) } } }, callback)
 end
 
--- Disconnect MCP server
 ---@param name string MCP server name
 ---@param callback function(err, success)
 function M.disconnect_mcp(name, callback, opts)
@@ -671,33 +626,30 @@ end
 -- Command admission is HTTP 204, not an assistant message. Selection is prepared
 -- by send.command before calling this wire-level facade.
 function M.execute_command(session_id, name, text, opts, callback)
+	if type(text) ~= "string" then
+		require("opencode.util.schedule").schedule_callback(callback, { code = "invalid_request", message = "Command text must be a string" }); return
+	end
 	opts = opts or {}
-	if type(text) ~= "string" then text = type(text) == "table" and next(text) and vim.json.encode(text) or "" end
 	local body = { name = name, text = text, files = opts.files, agents = opts.agents, skills = opts.skills, delivery = opts.delivery }
 	api.request("command", { path = { sessionID = session_id }, body = body }, callback)
 end
 
--- Dispose instance
+-- Reload the server location and its configuration.
 ---@param callback function(err, success)
 function M.dispose(callback)
 	api.request("location_reload", {}, callback)
 end
 
--- SSE Event handling
-
--- Subscribe to SSE events
 ---@param event_type string Event type or "*" for all
----@param callback function(data, event_id)
+---@param callback function(data, event_id) or function(event_type, data, event_id) for "*".
 function M.on_event(event_type, callback)
 	sse.on(event_type, callback)
 end
 
--- Start SSE connection
 function M.connect_events()
 	return sse.connect()
 end
 
--- Stop SSE connection
 function M.disconnect_events()
 	if package.loaded["opencode.client.explanation"] then require("opencode.client.explanation").cancel_all() end
 	sse.disconnect()
