@@ -50,6 +50,41 @@ describe("shared command registry", function()
 		assert.same({ kind = "run", source = "palette", args = "later" }, calls[3])
 	end)
 
+	it("lists sorted latest registrations when slash names and aliases collide", function()
+		local function register(id, name, aliases)
+			return registry.register({
+				id = id, title = id, category = "test",
+				slash = { name = name, aliases = aliases }, run = function() end,
+			})
+		end
+		local function listed()
+			local result = {}
+			for _, entry in ipairs(registry.list_slash()) do
+				if entry.name:match("^ztest%-collision%-") then
+					result[#result + 1] = { entry.id, entry.name, entry.generation }
+				end
+			end
+			return result
+		end
+		local first = register("test.registry_unified", "ztest-collision-z")
+		local duplicate = register("test.registry_disabled", "ztest-collision-z")
+		assert.equals(duplicate, registry.get_slash("ztest-collision-z"))
+		assert.same({ { duplicate.id, duplicate.slash.name, duplicate._serial } }, listed())
+
+		local alias = register("test.palette_legacy", "ztest-collision-a", { "ztest-collision-z" })
+		assert.equals(alias, registry.get_slash("ztest-collision-z"))
+		assert.same({ { alias.id, alias.slash.name, alias._serial } }, listed())
+
+		local replacement = registry.register(first)
+		assert.is_true(replacement._serial > alias._serial)
+		assert.is_false(registry.enabled(first))
+		assert.equals(replacement, registry.get_slash("ztest-collision-z"))
+		assert.same({
+			{ alias.id, alias.slash.name, alias._serial },
+			{ replacement.id, replacement.slash.name, replacement._serial },
+		}, listed())
+	end)
+
 	it("rejects disabled and stale completion selections", function()
 		local active, called = true, 0
 		registry.register({

@@ -1,12 +1,9 @@
 -- opencode.nvim - Neovim frontend for OpenCode AI coding agent
--- Main entry point
 
 local M = {}
 
--- Plugin version
 M.version = "0.1.0"
 
--- Modules (lazy loaded)
 local config = require("opencode.config")
 local state = require("opencode.state")
 local session_actions = require("opencode.session")
@@ -167,11 +164,9 @@ end
 --- Setup function - called by user to configure the plugin
 ---@param opts table Configuration options
 function M.setup(opts)
-	-- Merge user config with defaults
 	M._config = config.merge(opts)
 	require("opencode.commands").configure_keymaps(M._config.keymaps)
 
-	-- Initialize state with config
 	M._config = require("opencode.settings").setup(M._config)
 	state.set_config(M._config)
 	require("opencode.editor_context").setup()
@@ -192,7 +187,6 @@ function M.setup(opts)
 
 	events.setup()
 
-	-- Initialize client with config
 	local client_ok
 	client_ok, client = pcall(require, "opencode.client")
 	if not client_ok then
@@ -211,11 +205,11 @@ function M.setup(opts)
 	})
 	require("opencode.session.tabs").setup(events)
 
-	-- Initialize lifecycle module
 	local lifecycle_ok
 	lifecycle_ok, lifecycle = pcall(require, "opencode.lifecycle")
 	if not lifecycle_ok then
 		vim.notify("Failed to load opencode lifecycle: " .. tostring(lifecycle), vim.log.levels.ERROR)
+		lifecycle = nil
 		return
 	end
 
@@ -240,10 +234,8 @@ function M.setup(opts)
 	require("opencode.completion").setup(M._config.completion)
 	require("opencode.explanation").setup(M._config.explanation)
 
-	-- Expose state module
 	M.state = state
 
-	-- Setup lualine component if configured
   if M._config.lualine and M._config.lualine.enabled ~= false then
     local lualine_ok, lualine = pcall(require, "opencode.components.lualine")
     if lualine_ok then
@@ -252,7 +244,6 @@ function M.setup(opts)
     end
   end
 
-	-- Setup local state module (agent/model/variant selection)
 	local local_ok, local_module = pcall(require, "opencode.local")
 	if local_ok then
 		local_module.setup()
@@ -297,18 +288,14 @@ function M.setup(opts)
 
   -- The five loader keymaps are replaced from the merged config above.
   local km = M._config.keymaps or {}
-  local map_opts = { noremap = true, silent = true }
 
   if km.abort then
     vim.keymap.set("n", km.abort, function()
       require("opencode").abort()
-    end, vim.tbl_extend("force", map_opts, { desc = "Abort OpenCode request" }))
+    end, { noremap = true, silent = true, desc = "Abort OpenCode request" })
   end
 
-  -- Setup cursor hiding for opencode buffers
-  -- We need to hide the cursor completely in the chat buffer to avoid visual distractions
-  -- during streaming/thinking animations. Using blend=100 alone doesn't fully hide the cursor
-  -- because it only affects the highlight background. We also set fg/bg to match Normal background.
+  -- blend only hides the background; matching Normal's background also hides the cursor foreground.
   local function setup_hidden_cursor_highlight()
     local normal_hl = vim.api.nvim_get_hl(0, { name = "Normal" })
     local bg = normal_hl.bg or 0x000000
@@ -320,7 +307,6 @@ function M.setup(opts)
     })
   end
 
-  -- Set up initially and on colorscheme change
   local highlight_augroup = vim.api.nvim_create_augroup("OpenCodeHighlights", { clear = true })
   local function refresh_highlights_after_colorscheme()
     setup_hidden_cursor_highlight()
@@ -341,11 +327,8 @@ function M.setup(opts)
     group = highlight_augroup,
     pattern = "opencode",
     callback = function()
-      -- Hide cursor in opencode buffers using transparent highlight
-      -- Include all cursor-related highlight groups for comprehensive hiding
       local cursor_hls = "Cursor:OpenCodeHiddenCursor,lCursor:OpenCodeHiddenCursor,CursorLine:OpenCodeHiddenCursor,CursorColumn:OpenCodeHiddenCursor"
       vim.wo.winhighlight = (vim.wo.winhighlight ~= "" and vim.wo.winhighlight .. "," or "") .. cursor_hls
-      -- Also disable cursorline/cursorcolumn visual indicators
       vim.wo.cursorline = false
       vim.wo.cursorcolumn = false
     end,
@@ -472,7 +455,7 @@ end
 function M.add_current_line_to_input(opts)
 	opts = opts or {}
 
-	local prompt = _build_current_line_prompt({ context = opts.context })
+	local prompt = _build_current_line_prompt(opts)
 	if not prompt then
 		return false
 	end
@@ -509,7 +492,7 @@ end
 function M.add_visual_selection_to_input(opts)
 	opts = opts or {}
 
-	local prompt = _build_visual_selection_prompt({ context = opts.context })
+	local prompt = _build_visual_selection_prompt(opts)
 	if not prompt then
 		return false
 	end
@@ -787,7 +770,7 @@ end
 --- Check if connected to OpenCode server
 ---@return boolean
 function M.is_connected()
-	return lifecycle and lifecycle.is_connected() or false
+	return lifecycle and state.is_connected() or false
 end
 
 --- Check if currently streaming
@@ -820,13 +803,12 @@ function M.set_danger_mode(enabled, opts)
 	state.set_danger_mode(current)
 
 	local pending_count = 0
+	local danger_ok, danger = pcall(require, "opencode.permission.danger")
 	if current then
-		local danger_ok, danger = pcall(require, "opencode.permission.danger")
 		if danger_ok and type(danger.approve_pending) == "function" then
 			pending_count = danger.approve_pending()
 		end
 	else
-		local danger_ok, danger = pcall(require, "opencode.permission.danger")
 		if danger_ok and type(danger.clear) == "function" then
 			danger.clear()
 		end

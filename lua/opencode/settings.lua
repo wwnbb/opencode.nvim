@@ -78,6 +78,7 @@ end
 function M.list(cwd)
 	cwd = directory(cwd)
 	local config, result = state.get_config(), {}
+	if cwd ~= directory() then config = effective(config, cwd) end
 	local global, local_values = scope_values("global"), scope_values("cwd", cwd)
 	for _, definition in ipairs(definitions) do
 		local item = vim.deepcopy(definition)
