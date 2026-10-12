@@ -51,10 +51,7 @@ end
 ---@param permission_id string
 ---@param opts table
 local function mark_local_state(permission_id, opts)
-	local perm_ok, perm_state = pcall(require, "opencode.permission.state")
-	if perm_ok and perm_state.has_permission and perm_state.has_permission(permission_id) then
-		perm_state.mark_approved(permission_id, "once")
-	end
+	permissions.mark_approved(permission_id, "once")
 
 	local edit_ok, edit_state = pcall(require, "opencode.edit.state")
 	if edit_ok and edit_state.get_edit and edit_state.get_edit(permission_id) then
@@ -96,16 +93,7 @@ function M.approve(permission_id, opts)
 	local session_id = (item and item.session_id) or opts.session_id
 	local attempt = { token = item and item.submission_token or pending.token(session_id), owner = item }
 	replied_permissions[permission_id] = attempt
-	-- Scope the auto-approval to the permission's session directory so
-	-- cross-project danger-mode approvals reach the correct instance.
-	local reply_opts = { message = opts.message, session_id = session_id }
-	if session_id then
-		local state_ok, state = pcall(require, "opencode.state")
-		if state_ok and type(state.get_session_directory) == "function" then
-			reply_opts.directory = state.get_session_directory(session_id)
-		end
-	end
-	client.respond_permission(permission_id, "once", reply_opts, function(err)
+	client.respond_permission(permission_id, "once", { message = opts.message, session_id = session_id }, function(err)
 		vim.schedule(function()
 			if replied_permissions[permission_id] ~= attempt or not pending.is_current(attempt.token) then return end
 			local current = permissions.get_permission(permission_id)
@@ -145,17 +133,14 @@ function M.approve_pending()
 	local count = 0
 	local runtime_root = require("opencode.events.util").runtime_root_for_session
 
-	local perm_ok, perm_state = pcall(require, "opencode.permission.state")
-	if perm_ok and type(perm_state.get_all_active) == "function" then
-		for _, pstate in ipairs(perm_state.get_all_active()) do
-			if runtime_root(pstate.session_id) then
-				local _, queued = M.approve(pstate.permission_id, {
-					permission_type = pstate.permission_type,
-					session_id = pstate.session_id,
-					kind = "permission",
-				})
-				if queued then count = count + 1 end
-			end
+	for _, pstate in ipairs(permissions.get_all_active()) do
+		if runtime_root(pstate.session_id) then
+			local _, queued = M.approve(pstate.permission_id, {
+				permission_type = pstate.permission_type,
+				session_id = pstate.session_id,
+				kind = "permission",
+			})
+			if queued then count = count + 1 end
 		end
 	end
 

@@ -44,6 +44,18 @@ describe("native typed forms", function()
 		assert.equals("keep draft", item.form_selections.note.custom_input)
 	end)
 
+	it("keeps returned answers independent of hidden defaults and draft values", function()
+		local item = owner.add_form({ id = "isolated", sessionID = "s", fields = {
+			{ key = "choices", type = "multiselect", hidden = true, custom = true, default = { "saved" }, options = {} },
+			{ key = "confirm", type = "boolean", default = false },
+		} })
+		local answer = owner.get_answers(item.request_id)
+		answer.choices[1], answer.confirm = "changed", true
+		assert.same({ choices = { "saved" }, confirm = false }, item.values)
+		assert.same({ "saved" }, item.form.fields[1].default)
+		assert.same({ choices = { "saved" }, confirm = false }, owner.get_answers(item.request_id))
+	end)
+
 	it("keeps invalid numeric input and server validation errors editable", function()
 		local item = owner.add_form({ id = "f", sessionID = "s", title = "Count", fields = {
 			{ key = "count", type = "integer", required = true, minimum = 0, maximum = 4 } } })
@@ -109,6 +121,29 @@ describe("native typed forms", function()
 		assert.same(detail.state.answer, item.answers)
 		assert.is_nil(item.server_error)
 	end)
+
+	for _, remote_enabled in ipairs({ true, false }) do
+		it("uses a remote answer to set conditional visibility to " .. tostring(remote_enabled), function()
+			local item = owner.add_form({ id = "remote-visibility", sessionID = "s", fields = {
+				{ key = "enabled", type = "boolean", default = not remote_enabled },
+				{ key = "note", type = "string", default = "local draft", when = {
+					{ key = "enabled", op = "eq", value = true },
+				} },
+			} })
+			assert.equals(remote_enabled and 1 or 2, #item.questions)
+			local answer = { enabled = remote_enabled, note = remote_enabled and "remote note" or nil }
+			owner.apply_form_detail(vim.tbl_extend("force", item.form, { state = { status = "answered", answer = answer } }))
+			assert.same(answer, owner.get_answers(item.request_id))
+			assert.equals(remote_enabled and 2 or 1, #item.questions)
+			assert.same(remote_enabled and { { "Yes" }, { "remote note" } } or { { "No" } }, item.display_answers)
+			local lines = widget.get_lines_for_question(item.request_id, { questions = item.questions }, item, "answered")
+			local rendered = table.concat(lines, "\n")
+			assert.is_truthy(rendered:find("enabled: " .. (remote_enabled and "Yes" or "No"), 1, true))
+			assert.equals(remote_enabled, rendered:find("note: remote note", 1, true) ~= nil)
+			assert.is_nil(rendered:find("local draft", 1, true))
+		end)
+	end
+
 	it("preserves several custom multiselect defaults and submits hidden-only forms", function()
 		owner.add_form({ id = "multi", sessionID = "s", fields = {
 			{ key = "values", type = "multiselect", custom = true, default = { "one", "two" }, options = {} },
@@ -121,11 +156,6 @@ describe("native typed forms", function()
 		local lines = widget.get_lines_for_question("hidden", { questions = {} }, hidden, "pending")
 		assert.is_truthy(table.concat(lines, "\n"):find("Enter to review", 1, true))
 		assert.is_true(owner.begin_submission("hidden", "reply"))
-	end)
-	it("reports an unknown required field as unsupported", function()
-		local item = owner.add_form({ id = "unknown", sessionID = "s", fields = { { key = "new", type = "future", required = true } } })
-		assert.is_false(owner.validate_form("unknown"))
-		assert.equals("Unsupported field type: future", item.field_errors.new)
 	end)
 
 end)

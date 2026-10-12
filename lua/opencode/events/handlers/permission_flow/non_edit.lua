@@ -7,12 +7,10 @@ local request_util = require("opencode.events.handlers.permission_flow.request")
 ---@param request table
 ---@param logger table
 function M.handle(events, request, logger)
-
 	local permission_state = require("opencode.permission.state")
 	local tool_input, tool_name = request_util.resolve_tool(request)
-	local tracked = permission_state.has_permission(request.id)
-	if tracked then
-		local item = permission_state.get_permission(request.id)
+	local item = permission_state.get_permission(request.id)
+	if item then
 		local restored = false
 		if item.submission_token and not require("opencode.session.pending").is_current(item.submission_token) then
 			restored = permission_state.restore_submission(request.id)
@@ -43,14 +41,13 @@ function M.handle(events, request, logger)
 		local handled = auto_approve.approve(request.id, {
 			permission_type = request.type,
 			session_id = request.session_id,
-			kind = "permission",
 		})
 		if handled then
 			return
 		end
 	end
 
-	if tracked then return end
+	if item then return end
 	events.emit("permission_pending", {
 		permission_id = request.id,
 		permission_type = request.type,

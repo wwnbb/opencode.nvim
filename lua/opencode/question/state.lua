@@ -4,28 +4,13 @@ local M = {}
 local forms = require("opencode.question.forms")
 local pending = require("opencode.session.pending")
 
--- Active questions storage: { [request_id] = question_state }
 local active_questions = {}
 local generation = 0
 
----Invalidates recovery requests when transient question state is reset.
+---Recovery generation, incremented when transient question state is reset.
 function M.get_generation()
 	return generation
 end
-
--- Question state structure:
--- {
---   request_id = string,
---   session_id = string,
---   questions = array of question objects,
---   current_tab = number (current question index),
---   selections = { [tab_index] = { selected_indices = {}, custom_input = "", is_answered = false } },
---   status = "pending" | "answered" | "rejected" | "confirming",
---   submitting = boolean,
---   submission_kind = "reply" | "reject" | nil,
---   last_tab_before_confirm = number (tab to return to on cancel),
---   timestamp = number,
--- }
 
 ---@param question table|nil
 ---@return boolean
@@ -56,7 +41,6 @@ local function new_form_state(form, context)
 		selections = {},
 		status = "pending",
 		submitting = false,
-		submission_kind = nil,
 		timestamp = context and context.timestamp or os.time(),
 	}
 	forms.init(qstate, form, context)
@@ -92,14 +76,12 @@ function M.acknowledge_external(request_id, key)
 	return sync_draft(qstate)
 end
 
--- Get a question state by request ID
 ---@param request_id string
 ---@return table|nil
 function M.get_question(request_id)
 	return active_questions[request_id]
 end
 
--- Get all active questions
 ---@return table Array of question states
 function M.get_all_active()
 	local result = {}
@@ -111,7 +93,6 @@ function M.get_all_active()
 	return result
 end
 
--- Get all questions (regardless of status)
 ---@return table Array of question states sorted by timestamp
 function M.get_all()
 	local result = {}
@@ -122,7 +103,6 @@ function M.get_all()
 	return result
 end
 
--- Update selection for a specific question tab
 ---@param request_id string
 ---@param tab_index number
 ---@param selected_indices table Array of selected option indices
@@ -132,18 +112,21 @@ function M.update_selection(request_id, tab_index, selected_indices)
 		return false
 	end
 
-	if not qstate.selections[tab_index] then
+	local selection = qstate.selections[tab_index]
+	if not selection then
 		return false
 	end
 
-	qstate.selections[tab_index].selected_indices = selected_indices
-	if not is_multi_question(qstate.questions[tab_index]) and #selected_indices > 0 then
-		qstate.selections[tab_index].custom_present = false
+	selection.selected_indices = selected_indices
+	if is_multi_question(qstate.questions[tab_index]) then
+		selection.is_answered = #selected_indices > 0 or selection.custom_present == true
+	elseif #selected_indices > 0 then
+		selection.custom_present = false
+		selection.is_answered = true
 	end
 	return sync_draft(qstate)
 end
 
--- Set custom input for a specific question tab
 ---@param request_id string
 ---@param tab_index number
 ---@param text string Custom input text
@@ -157,7 +140,6 @@ function M.set_custom_input(request_id, tab_index, text)
 	return sync_draft(qstate)
 end
 
--- Select a single option (for single-select questions)
 ---@param request_id string
 ---@param option_index number 1-based option index; 0 selects the saved custom answer.
 function M.select_option(request_id, option_index)
@@ -172,7 +154,6 @@ function M.select_option(request_id, option_index)
 	end
 
 	if qstate.status == "confirming" then
-		-- Confirmation view only has 2 options
 		if option_index < 1 or option_index > 2 then
 			return false
 		end
@@ -180,7 +161,6 @@ function M.select_option(request_id, option_index)
 		return true
 	end
 
-	-- Get question type
 	local question = qstate.questions[tab_index]
 	if not question then
 		return false
@@ -192,13 +172,10 @@ function M.select_option(request_id, option_index)
 		return M.set_custom_input(request_id, tab_index, selection.custom_input)
 	end
 
-	-- Validate option index is within range
 	if option_index < 1 or option_index > #(question.options or {}) then
 		return false
 	end
 
-	-- For single-select, replace selection
-	-- For multi-select, this would toggle - but we use toggle_multi_select for that
 	selection.selected_indices = { option_index }
 	if not is_multi_question(question) then selection.custom_present = false end
 	selection.is_answered = true
@@ -206,7 +183,6 @@ function M.select_option(request_id, option_index)
 	return sync_draft(qstate)
 end
 
--- Toggle multi-select option
 ---@param request_id string
 ---@param option_index number 1-based option index; 0 toggles the saved custom answer.
 function M.toggle_multi_select(request_id, option_index)
@@ -235,53 +211,11 @@ function M.toggle_multi_select(request_id, option_index)
 		else table.insert(selected, option_index) end
 	end
 
-	-- Mark as answered if at least one option is selected
 	selection.is_answered = #selected > 0 or selection.custom_present == true
 
 	return sync_draft(qstate)
 end
 
--- Move selection up/down
----@param request_id string
----@param direction "up" | "down"
-function M.move_selection(request_id, direction)
-	local qstate = active_questions[request_id]
-	if not can_interact(qstate) then
-		return false
-	end
-
-	local tab_index = qstate.current_tab
-	if not qstate.selections[tab_index] then
-		return false
-	end
-
-	local option_count
-	if qstate.status == "confirming" then
-		-- Confirmation view has 2 options: Yes (1) and No (2)
-		option_count = 2
-	else
-		local question = qstate.questions[tab_index]
-		if not question or not question.options then
-			return false
-		end
-		option_count = #question.options
-	end
-	if option_count == 0 then return false end
-
-	local selected = qstate.selections[tab_index].selected_indices
-	local current = selected[1] or 0
-
-	local new_index
-	if direction == "up" then
-		new_index = current > 1 and current - 1 or option_count
-	else
-		new_index = current < option_count and current + 1 or 1
-	end
-
-	return M.select_option(request_id, new_index)
-end
-
--- Get current selection for a question
 ---@param request_id string
 ---@return table|nil Selected indices array
 function M.get_current_selection(request_id)
@@ -298,7 +232,6 @@ function M.get_current_selection(request_id)
 	return qstate.selections[tab_index].selected_indices
 end
 
--- Set active tab
 ---@param request_id string
 ---@param tab_index number
 function M.set_tab(request_id, tab_index)
@@ -316,7 +249,6 @@ function M.set_tab(request_id, tab_index)
 	return true
 end
 
--- Check if all questions in a block have been answered
 ---@param request_id string
 ---@return boolean all_answered
 ---@return number[] unanswered_indices Array of unanswered question indices
@@ -333,7 +265,6 @@ function M.are_all_answered(request_id)
 	return valid, indices
 end
 
--- Get count of answered questions
 ---@param request_id string
 ---@return number answered_count
 ---@return number total_count
@@ -354,7 +285,6 @@ function M.get_answered_count(request_id)
 	return answered, #qstate.questions
 end
 
--- Set question to confirming state (awaiting final submission)
 ---@param request_id string
 function M.set_confirming(request_id)
 	local qstate = active_questions[request_id]
@@ -362,15 +292,13 @@ function M.set_confirming(request_id)
 		return false
 	end
 
-	-- Remember which tab we were on so cancel returns here
 	qstate.last_tab_before_confirm = qstate.current_tab
 	qstate.status = "confirming"
 
-	-- Initialize a temporary selection for the confirmation options (1 = Yes, 2 = No)
-	-- We'll use the current_tab as a temporary holder
+	-- Confirmation uses a temporary tab: 1 = Yes, 2 = No.
 	local temp_tab_idx = #qstate.questions + 1
 	qstate.selections[temp_tab_idx] = {
-		selected_indices = { 1 }, -- Default to "Yes"
+		selected_indices = { 1 },
 		custom_input = "",
 		is_answered = true,
 	}
@@ -379,7 +307,6 @@ function M.set_confirming(request_id)
 	return true
 end
 
--- Cancel confirmation and return to pending state
 ---@param request_id string
 function M.cancel_confirmation(request_id)
 	local qstate = active_questions[request_id]
@@ -389,11 +316,9 @@ function M.cancel_confirmation(request_id)
 
 	qstate.status = "pending"
 
-	-- Remove temporary confirmation selection
 	local temp_tab_idx = #qstate.questions + 1
 	qstate.selections[temp_tab_idx] = nil
 
-	-- Return to the tab we were on before confirming (not Q1)
 	local return_tab = qstate.last_tab_before_confirm or #qstate.questions
 	qstate.current_tab = return_tab
 	qstate.last_tab_before_confirm = nil
@@ -401,9 +326,8 @@ function M.cancel_confirmation(request_id)
 	return true
 end
 
--- Get formatted answers for submission
 ---@param request_id string
----@return table|nil Array of answer arrays
+---@return table<string, any>|nil Answers indexed by field key
 function M.get_answers(request_id)
 	local qstate = active_questions[request_id]
 	if not qstate then
@@ -450,9 +374,8 @@ function M.restore_submission(request_id)
 	return true
 end
 
--- Mark question as answered
 ---@param request_id string
----@param answers table Optional answers array
+---@param answers? table<string, any> Answers indexed by field key
 function M.mark_answered(request_id, answers)
 	local qstate = active_questions[request_id]
 	if not qstate or qstate.status == "answered" or qstate.status == "rejected" then
@@ -464,13 +387,12 @@ function M.mark_answered(request_id, answers)
 	qstate.submission_kind = nil
 	qstate.answers = answers or M.get_answers(request_id)
 	qstate.answered_at = os.time()
-	qstate.native_state = { status = "answered", answer = vim.deepcopy(qstate.answers) }
+	forms.rebuild(qstate)
 	qstate.display_answers = forms.display_answers(qstate, qstate.answers)
 
 	return true
 end
 
--- Mark question as rejected
 ---@param request_id string
 function M.mark_rejected(request_id)
 	local qstate = active_questions[request_id]
@@ -486,7 +408,6 @@ function M.mark_rejected(request_id)
 	return true
 end
 
--- Remove a question from tracking
 ---@param request_id string
 function M.remove_question(request_id)
 	if active_questions[request_id] then
@@ -496,14 +417,12 @@ function M.remove_question(request_id)
 	return false
 end
 
--- Check if a request ID exists
 ---@param request_id string
 ---@return boolean
 function M.has_question(request_id)
 	return active_questions[request_id] ~= nil
 end
 
--- Get question count
 ---@return number
 function M.get_question_count()
 	local count = 0
@@ -513,7 +432,6 @@ function M.get_question_count()
 	return count
 end
 
--- Clear questions belonging to a specific session only
 ---@param session_id string
 function M.clear_session(session_id)
 	local removed = {}
@@ -526,7 +444,6 @@ function M.clear_session(session_id)
 	return removed
 end
 
--- Clear all questions (e.g., on session change)
 function M.clear_all()
 	generation = generation + 1
 	local removed = {}
@@ -557,7 +474,6 @@ end
 
 function M.apply_form_detail(detail)
 	local item = M.add_form(detail)
-	item.native_state = vim.deepcopy(detail.state)
 	if detail.state.status == "answered" then M.mark_answered(detail.id, detail.state.answer)
 	elseif detail.state.status == "cancelled" then M.mark_rejected(detail.id) end
 	return item

@@ -54,6 +54,14 @@ describe("danger mode", function()
 		end, 10))
 	end)
 
+	it("uses the permission's owning session and forwards its approval message", function()
+		permissions.add_permission("pending", "owner", "bash", {})
+		local handled, queued = danger.approve("pending", { session_id = "other", message = "Approved" })
+		assert.is_true(handled)
+		assert.is_true(queued)
+		assert.same({ id = "pending", reply = "once", opts = { session_id = "owner", message = "Approved" } }, approved[1])
+	end)
+
 	for _, reset in ipairs({ "close", "reconnect", "owner" }) do
 		for _, failed in ipairs({ false, true }) do
 			it("owns each approval attempt after " .. reset .. " despite an old " .. (failed and "failure" or "success"), function()
@@ -149,15 +157,21 @@ describe("danger mode", function()
 			app.enable_danger_mode({ silent = true })
 			local handler = require("opencode.events.handlers.permission_flow.non_edit")
 			local request = { id = "pending", session_id = "session", type = "bash", metadata = {} }
-			local events = { emit = function() end }
+			local emitted = {}
+			local events = { emit = function(name) emitted[#emitted + 1] = name end }
 			local logger = { debug = function() end, info = function() end }
 			handler.handle(events, request, logger)
 			handler.handle(events, request, logger)
 			assert.equals(1, #callbacks)
 			local item = permissions.get_permission("pending")
+			permissions.set_message("pending", "Keep my note")
 			require("opencode.session.pending").invalidate()
+			request.metadata = { tool = "bash", input = { command = "echo recovered" } }
 			handler.handle(events, request, logger)
 			assert.equals(item, permissions.get_permission("pending"))
+			assert.equals("Keep my note", item.message)
+			assert.equals("bash", item.tool_name)
+			assert.same({ command = "echo recovered" }, item.tool_input)
 			assert.equals(2, #callbacks)
 			callbacks[1](failed and { message = "Old reply failed" } or nil)
 			vim.wait(20)
@@ -167,6 +181,7 @@ describe("danger mode", function()
 			assert.is_true(vim.wait(500, function() return item.status == "approved" end, 10))
 			handler.handle(events, request, logger)
 			assert.equals(2, #callbacks)
+			assert.same({ "interaction_changed" }, emitted)
 		end)
 	end
 

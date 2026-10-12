@@ -2,18 +2,6 @@ local M = {}
 
 local request_util = require("opencode.events.handlers.permission_flow.request")
 
----@param raw_reply any
----@return string
-local function normalize_reply(raw_reply)
-	if raw_reply == "reject" then
-		return "reject"
-	end
-	if raw_reply == "always" then
-		return "always"
-	end
-	return "once"
-end
-
 ---@param events table
 ---@param data table|nil
 ---@param logger table
@@ -23,39 +11,36 @@ function M.handle_permission_replied(events, data, logger)
 		return
 	end
 
-	local reply = normalize_reply(reply_event.reply)
-	local changed = false
-
 	local perm_state_ok, permission_state = pcall(require, "opencode.permission.state")
-	if perm_state_ok and permission_state.has_permission and permission_state.has_permission(reply_event.id) then
-		if reply == "reject" then
-			changed = permission_state.mark_rejected(reply_event.id) or changed
-			events.emit("permission_rejected", {
-				permission_id = reply_event.id,
-			})
-		else
-			changed = permission_state.mark_approved(reply_event.id, reply) or changed
-			events.emit("permission_approved", {
-				permission_id = reply_event.id,
-				reply = reply,
-			})
-		end
+	if not perm_state_ok then return end
+	local item = permission_state.get_permission(reply_event.id)
+	if not item then return end
+
+	local reply = reply_event.reply
+	if reply == "reject" then
+		if not permission_state.mark_rejected(reply_event.id) then return end
+		events.emit("permission_rejected", {
+			permission_id = reply_event.id,
+		})
+	else
+		if not permission_state.mark_approved(reply_event.id, reply) then return end
+		events.emit("permission_approved", {
+			permission_id = reply_event.id,
+			reply = reply,
+		})
 	end
 
-	if changed then
-		local session = require("opencode.state").get_session()
-		events.emit("interaction_changed", {
-			kind = "permission",
-			action = reply == "reject" and "rejected" or "approved",
-			id = reply_event.id,
-			session_id = reply_event.session_id or (session and session.id),
-		})
-		logger.debug("Permission reply handled", {
-			permission_id = reply_event.id,
-			reply = reply_event.reply,
-			sessionID = reply_event.session_id,
-		})
-	end
+	events.emit("interaction_changed", {
+		kind = "permission",
+		action = reply == "reject" and "rejected" or "approved",
+		id = reply_event.id,
+		session_id = reply_event.session_id or item.session_id,
+	})
+	logger.debug("Permission reply handled", {
+		permission_id = reply_event.id,
+		reply = reply,
+		sessionID = reply_event.session_id,
+	})
 end
 
 return M
