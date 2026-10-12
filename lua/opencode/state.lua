@@ -1,13 +1,9 @@
--- opencode.nvim - State management module
--- Centralized state store for all plugin data
-
 local M = {}
 
 local pending_helper = require("opencode.session.pending")
 local session_status = require("opencode.session.status")
 local session_util = require("opencode.util.session")
 
--- Internal state store
 local state = {
 	-- Connection lifecycle
 	connection = "idle", -- "idle" | "starting" | "connecting" | "connected" | "error"
@@ -51,11 +47,9 @@ local state = {
 	config = nil,
 }
 
--- State change listeners
 local listeners = {}
 local revision = 0
 
--- Emit state change event
 local function emit_change(key, old_val, new_val)
 	revision = revision + 1
 	local cbs = key ~= "*" and vim.list_slice(listeners[key] or {}) or {}
@@ -67,7 +61,6 @@ local function emit_change(key, old_val, new_val)
 		end
 	end
 
-	-- Also emit to wildcard listeners
 	for _, cb in ipairs(wildcards) do
 		local ok, err = pcall(cb, key, new_val, old_val)
 		if not ok then
@@ -81,7 +74,6 @@ function M.get_revision()
 	return revision
 end
 
--- Set state value with optional event emission
 local function set(key, value, path)
 	local old_val
 	local target = path and state[path] or state
@@ -98,16 +90,9 @@ local function set(key, value, path)
 	return old_val
 end
 
--- Get state value
 local function get(key, path)
 	local target = path and state[path] or state
 	return target and target[key] or nil
-end
-
----@param title any
----@return string|nil
-local function display_session_title(title)
-	return session_util.displayTitle(title) or (type(title) == "string" and title ~= "" and title or nil)
 end
 
 ---@param id string
@@ -120,17 +105,13 @@ local function touch_runtime_session(id, limit)
 	-- Keep runtime tabs in insertion order; activation only changes tab styling.
 	local next_order = {}
 	local seen = {}
-	local found = false
 	for _, existing in ipairs(state.sessions.runtime_order or {}) do
-		if existing == id then
-			found = true
-		end
 		if existing ~= "" and not seen[existing] then
 			table.insert(next_order, existing)
 			seen[existing] = true
 		end
 	end
-	if not found then
+	if not seen[id] then
 		table.insert(next_order, id)
 	end
 
@@ -192,7 +173,7 @@ local function upsert_session_record(session)
 		end
 	end
 
-	local title = display_session_title(record.title or record.name)
+	local title = session_util.displayTitle(record.title or record.name)
 	local message_count = session.message_count
 	if message_count == nil or message_count == vim.NIL then message_count = record.message_count end
 
@@ -202,7 +183,7 @@ local function upsert_session_record(session)
 	end
 
 	record.title = title or record.title or record.name or id
-	record.name = display_session_title(record.name or record.title) or record.title or id
+	record.name = session_util.displayTitle(record.name or record.title) or record.title or id
 	record.message_count = tonumber(message_count) or 0
 	record.updated_at = updated_at or record.updated_at or os.time() * 1000
 
@@ -287,7 +268,7 @@ function M.set_session(id, name, opts)
 	opts = opts or {}
 	local old_id = state.session.id
 	local old_name = state.session.name
-	local display_name = display_session_title(name) or id
+	local display_name = session_util.displayTitle(name) or id
 
 	set("id", id, "session")
 	set("name", display_name, "session")
@@ -433,11 +414,7 @@ end
 ---@return string|nil
 M.normalize_directory = require("opencode.util.path").normalize
 
--- Resolve the project directory for a session by looking up its record.
--- Returns the normalized directory string or nil when the session is
--- unknown or has no directory field. Used to scope permission/question
--- HTTP requests to the correct server instance when the active session
--- belongs to a different project than vim.fn.getcwd().
+-- Scope requests to the session's project, which may differ from the current directory.
 ---@param session_id string|nil
 ---@return string|nil
 function M.get_session_directory(session_id)
@@ -510,12 +487,8 @@ function M.close_runtime_session(session_id)
 	state.sessions.message_cache[session_id] = nil
 
 	if record then
-		local next_recent = { session_id }
-		for _, existing in ipairs(state.sessions.recent_order or {}) do
-			if existing ~= session_id then
-				table.insert(next_recent, existing)
-			end
-		end
+		local next_recent = remove_order_id(state.sessions.recent_order, session_id)
+		table.insert(next_recent, 1, session_id)
 
 		local recent_limit = state.config
 			and state.config.session
@@ -581,10 +554,7 @@ end
 
 ---@return string[]
 function M.get_session_status_ids()
-	local ids = {}
-	for id, _ in pairs(state.sessions.status or {}) do
-		table.insert(ids, id)
-	end
+	local ids = vim.tbl_keys(state.sessions.status)
 	table.sort(ids)
 	return ids
 end
@@ -663,8 +633,8 @@ function M.get_active_sessions()
 		record.pending = pending
 		record.cached_messages = cache
 		record.message_count = record.message_count or cache.count or 0
-		record.name = display_session_title(record.name or record.title) or record.title or id
-		record.title = display_session_title(record.title or record.name) or record.name or id
+		record.name = session_util.displayTitle(record.name or record.title) or record.title or id
+		record.title = session_util.displayTitle(record.title or record.name) or record.name or id
 		record.is_current = state.session.id == id
 		table.insert(result, record)
 		seen[id] = true
@@ -834,9 +804,8 @@ function M.get_status_summary()
 		agent = agent.name or agent.id,
 		session = state.session.name,
 		message_count = state.session.message_count,
-		session_status = state.session.id and M.get_session_status(state.session.id) or { type = "idle" },
-		session_pending = state.session.id and M.get_session_pending_counts(state.session.id)
-			or pending_helper.zero_counts(),
+		session_status = M.get_session_status(state.session.id),
+		session_pending = M.get_session_pending_counts(state.session.id),
 		active_sessions = M.get_active_sessions(),
 		danger_mode = state.danger_mode,
 		diff_stats = ok and type(selectors.changes_stats) == "function" and selectors.changes_stats()

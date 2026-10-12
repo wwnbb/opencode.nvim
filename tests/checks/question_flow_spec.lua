@@ -447,10 +447,10 @@ describe("opencode native form flow", function()
 	it("routes form replies and cancellation through the owning session", function()
 		local client = require("opencode.client")
 		add_form("owner-form", { { key = "ok", title = "Owner?", type = "boolean", required = true } })
-		local reply_opts, reject_opts, reject_session
+		local reply_opts, reject_callback, reject_session
 		local original_reply, original_reject = client.reply_to_question, client.reject_question
 		client.reply_to_question = function(_, _, opts) reply_opts = opts end
-		client.reject_question = function(sid, _, opts) reject_session, reject_opts = sid, opts end
+		client.reject_question = function(sid, _, callback) reject_session, reject_callback = sid, callback end
 		actions.reply_to_question("owner-form", { ok = true }, function() end)
 		actions.reject_question("wrong-session", "owner-form", function() end)
 		client.reply_to_question, client.reject_question = original_reply, original_reject
@@ -458,7 +458,7 @@ describe("opencode native form flow", function()
 		assert.equals("question-session", reply_opts.session_id)
 		assert.equals("question-session", reject_session)
 		assert.equals(directory, reply_opts.directory)
-		assert.equals(directory, reject_opts.directory)
+		assert.is_function(reject_callback)
 	end)
 
 	it("blocks the composer while a form needs input", function()

@@ -1,7 +1,7 @@
 local sync = require("opencode.sync")
 local projection = require("opencode.protocol.messages")
 
-describe("v2 event reduction", function()
+describe("event reduction", function()
 	before_each(function() sync.clear_all() end)
 	after_each(function() sync.clear_all() end)
 	local function fixture(name)

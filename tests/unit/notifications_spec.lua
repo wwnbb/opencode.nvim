@@ -1,4 +1,4 @@
-describe("v2 event notifications", function()
+describe("event notifications", function()
 	local bus = require("opencode.events.bus")
 	local state = require("opencode.state")
 	local forms = require("opencode.question.state")
@@ -54,6 +54,21 @@ describe("v2 event notifications", function()
 		drain()
 		assert.is_truthy(table.concat(notices, "\n"):find("native failure", 1, true))
 		assert.is_nil(table.concat(notices, "\n"):find("Session done", 1, true))
+	end)
+
+	it("suppresses done after failure without an idle outcome and allows the next successful run", function()
+		bus.emit("session_status_change", { session_id = "notify-session", status = { type = "busy" } })
+		bus.emit("server_event", { type = "session.execution.failed", data = {
+			sessionID = "notify-session", error = { message = "native failure" },
+		} })
+		bus.emit("session_status_change", { session_id = "notify-session", status = { type = "idle" } })
+		drain()
+		assert.same({ "Notify: native failure" }, notices)
+
+		bus.emit("session_status_change", { session_id = "notify-session", status = { type = "busy" } })
+		bus.emit("session_status_change", { session_id = "notify-session", status = { type = "idle" } })
+		drain()
+		assert.same({ "Notify: native failure", "Notify: Session done" }, notices)
 	end)
 
 	it("preserves always notifications and applies native focused/blurred/unknown filters", function()

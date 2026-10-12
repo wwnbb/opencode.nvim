@@ -182,13 +182,9 @@ function M.mark_recent_error(cache, key, ttl_ms)
 		end
 	end
 
-	if cache[key] and now - cache[key] <= ttl then
-		cache[key] = now
-		return true
-	end
-
+	local duplicate = cache[key] ~= nil and now - cache[key] <= ttl
 	cache[key] = now
-	return false
+	return duplicate
 end
 
 ---@param tool_part table|nil
@@ -246,14 +242,7 @@ function M.session_owns_task_child(parent_session_id, child_session_id)
 
 	for _, message in ipairs(sync.get_messages(parent_session_id) or {}) do
 		for _, part in ipairs(sync.get_message_tools(message.id) or {}) do
-			local resolved_child = nil
-			if type(sync.get_task_child_session_for_part) == "function" then
-				resolved_child = sync.get_task_child_session_for_part(part)
-			end
-			if not resolved_child then
-				resolved_child = M.resolve_task_child_session_id(part)
-			end
-			if resolved_child == child_session_id then
+			if sync.get_task_child_session_for_part(part) == child_session_id then
 				return true
 			end
 		end

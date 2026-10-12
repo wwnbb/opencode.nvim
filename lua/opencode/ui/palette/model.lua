@@ -53,7 +53,7 @@ function M.register(palette)
 				for _, provider in ipairs(provider_list) do
 					for model_id, model in pairs(provider.models or {}) do
 						local key = provider.id .. "/" .. model_id
-						local tiers = model.cost_tiers or (vim.islist(model.cost or {}) and model.cost or model.cost and { model.cost } or {})
+						local tiers = model.cost or {}
 						local free = #tiers > 0
 						for _, tier in ipairs(tiers) do if tier.input ~= 0 then free = false end end
 						local item = {

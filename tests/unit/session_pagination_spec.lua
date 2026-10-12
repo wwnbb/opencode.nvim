@@ -1,4 +1,4 @@
-describe("v2 session picker pagination", function()
+describe("session picker pagination", function()
 	local client = require("opencode.client")
 	local original
 	before_each(function() original = client.list_sessions end)
@@ -29,6 +29,20 @@ describe("v2 session picker pagination", function()
 		client.get_all_sessions({}, function(err, sessions) assert.is_nil(err); result = sessions end)
 		assert.same({ "first", "gap", "last" }, calls)
 		assert.same({ { id = "s0" } }, result)
+	end)
+
+	it("rejects a final session page arriving after the server connection changes", function()
+		local deferred, result, completions = nil, nil, 0
+		client.list_sessions = function(_, callback) deferred = callback end
+		client.get_all_sessions({}, function(err, sessions)
+			completions = completions + 1
+			result = { err = err, sessions = sessions }
+		end)
+		client.setup({ port = 12345 })
+		deferred(nil, { { id = "old-server-session" } }, { cursor = {} })
+		assert.equals(1, completions)
+		assert.equals("stale_connection", result.err.code)
+		assert.is_nil(result.sessions)
 	end)
 
 	it("rejects a child page arriving after the server connection changes", function()

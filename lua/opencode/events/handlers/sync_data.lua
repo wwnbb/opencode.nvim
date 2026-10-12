@@ -40,8 +40,6 @@ function M.setup(events)
 			if sync.get_catalog_location() ~= directory then return end
 			events.emit(domain .. "_loaded", domain == "providers" and data.providers or data)
 			events.emit("sync_changed", { kind = domain, action = "loaded" })
-			local ok, input = pcall(require, "opencode.ui.input")
-			if ok and input.is_visible and input.is_visible() then input.update_info_bar() end
 		end, { directory = directory })
 	end
 	local function refresh_all()

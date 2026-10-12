@@ -12,6 +12,8 @@ describe("opencode session deleted handling", function()
 		state.reset()
 		sync.clear_all()
 
+		local events = require("opencode.events")
+		events.setup()
 		session_actions.set_active("del-root-a", "Root A", { reason = "test_setup" })
 		session_actions.set_active("del-root-b", "Root B", { reason = "test_setup" })
 		assert.equals(true, state.is_runtime_session("del-root-a"), "root A should be a runtime tab")
@@ -33,7 +35,10 @@ describe("opencode session deleted handling", function()
 		})
 		assert(#sync.get_messages("del-root-b") == 1, "seeded message should exist before deletion")
 
-		assert.equals(true, session_actions.handle_deleted("del-root-b"), "deleting the current tab should be handled")
+		events.emit("server_event", { id = "evt-delete-b", type = "session.deleted",
+			data = { sessionID = "del-root-b" }, created = 1 })
+		wait_for(function() return state.get_session().id == "del-root-a" end,
+			"native session.deleted should switch the active tab")
 		assert.equals("del-root-a", state.get_session().id, "deleting the current tab should switch to the neighbor")
 		assert.equals(false, state.is_runtime_session("del-root-b"), "deleted tab should leave the runtime list")
 		assert.equals(0, #sync.get_messages("del-root-b"), "deleted session data should be cleared")
@@ -43,6 +48,13 @@ describe("opencode session deleted handling", function()
 		end
 		assert.equals(nil, active_ids["del-root-b"], "deleted tab should disappear from active sessions")
 
+		require("tests.helpers.schedule").with(function(flush)
+			events.emit("server_event", { id = "evt-delete-foreign", type = "session.deleted",
+				data = { sessionID = "del-foreign" }, created = 2 })
+			flush()
+			assert.equals("del-root-a", state.get_session().id)
+		end)
+
 		assert.equals(true, session_actions.handle_deleted("del-root-a"), "deleting the last tab should be handled")
 		assert.equals(nil, state.get_session().id, "deleting the last tab should clear the active view")
 
@@ -51,6 +63,29 @@ describe("opencode session deleted handling", function()
 
 		state.reset()
 		sync.clear_all()
+	end)
+
+	it("leaves the child view when its root tab is deleted", function()
+		local state, sync = require("opencode.state"), require("opencode.sync")
+		local sessions = require("opencode.session")
+		for _, with_neighbor in ipairs({ true, false }) do
+			state.reset(); sync.clear_all()
+			if with_neighbor then sessions.set_active("neighbor", "Neighbor") end
+			sessions.set_active("parent", "Parent")
+			sync.handle_message_updated({ id = "parent-msg", sessionID = "parent", role = "assistant" })
+			sync.record_task_child_session("parent", "parent-msg", "task", "child")
+			sessions.set_active("child", "Child", { runtime = false })
+			sync.handle_message_updated({ id = "child-msg", sessionID = "child", role = "assistant" })
+
+			assert.is_true(sessions.handle_deleted("parent"))
+			assert.equals(with_neighbor and "neighbor" or nil, state.get_session().id)
+			assert.is_false(state.is_runtime_session("parent"))
+			assert.is_nil(state.get_session_record("parent"))
+			assert.is_nil(state.get_session_record("child"))
+			assert.same({}, sync.get_messages("parent"))
+			assert.same({}, sync.get_messages("child"))
+		end
+		state.reset(); sync.clear_all()
 	end)
 
 	it("prunes deleted child sessions without closing the parent tab", function()
@@ -103,43 +138,4 @@ describe("opencode session deleted handling", function()
 		sync.clear_all()
 	end)
 
-	it("wires native session.deleted through the event bus", function()
-		local state = require("opencode.state")
-		local sync = require("opencode.sync")
-		local session_actions = require("opencode.session")
-		local events = require("opencode.events")
-
-		state.reset()
-		sync.clear_all()
-		events.setup()
-
-		session_actions.set_active("del-event-a", "Event A", { reason = "test_setup" })
-		session_actions.set_active("del-event-b", "Event B", { reason = "test_setup" })
-
-		events.emit("server_event", {
-			id = "evt-delete-b",
-			type = "session.deleted",
-			data = { sessionID = "del-event-b" },
-			created = 1,
-		})
-
-		wait_for(function()
-			return state.get_session().id == "del-event-a"
-		end, "native session.deleted event should switch the active view to the neighbor")
-		assert.equals(false, state.is_runtime_session("del-event-b"), "native session.deleted event should prune the runtime tab")
-
-		require("tests.helpers.schedule").with(function(flush)
-			events.emit("server_event", {
-				id = "evt-delete-foreign",
-				type = "session.deleted",
-				data = { sessionID = "del-foreign" },
-				created = 2,
-			})
-			flush()
-			assert.equals("del-event-a", state.get_session().id, "foreign session.deleted events should be ignored")
-		end)
-
-		state.reset()
-		sync.clear_all()
-	end)
 end)

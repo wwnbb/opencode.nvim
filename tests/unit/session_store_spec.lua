@@ -1,4 +1,4 @@
-describe("v2 session store cleanup", function()
+describe("session store cleanup", function()
 	local bus = require("opencode.events.bus")
 	local sync = require("opencode.sync")
 	local permissions = require("opencode.permission.state")

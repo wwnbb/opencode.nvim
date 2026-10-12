@@ -12,7 +12,6 @@ function M.providers(providers, models, default)
 		local provider = by_id[model.providerID]
 		if provider and model.enabled == true then
 			local value = vim.deepcopy(model)
-			value.upstream_model_id = model.modelID
 			-- Existing internal modelID references mean logical catalog IDs.
 			value.modelID = model.id
 			local variants = value.variants
@@ -23,14 +22,6 @@ function M.providers(providers, models, default)
 					value.variant_order[#value.variant_order + 1] = variant.id
 				end
 			end
-			value.cost_tiers = value.cost or {}
-			value.cost = {}
-			for _, tier in ipairs(value.cost_tiers) do
-				if not tier.tier then value.cost = vim.deepcopy(tier); break end
-			end
-			local capabilities = model.capabilities or {}
-			value.tool_call = capabilities.tools == true
-			value.attachment = vim.tbl_contains(capabilities.input or {}, "image")
 			provider.models[model.id] = value
 		end
 	end
@@ -50,7 +41,7 @@ end
 function M.mcp(records)
 	local result = {}
 	for _, record in ipairs(records) do
-		result[record.name] = vim.tbl_extend("force", vim.deepcopy(record), vim.deepcopy(record.status))
+		result[record.name] = vim.deepcopy(vim.tbl_extend("force", record, record.status))
 	end
 	return result
 end

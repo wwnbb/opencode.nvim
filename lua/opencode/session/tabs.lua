@@ -6,7 +6,6 @@ local owner, scope, listener, bus
 local subscriptions = {}
 local focused, visible, observed = true, false, nil
 local acknowledgement, retry_timer
-local generation = 0
 local retry_count = 0
 
 local function cancel_retry()
@@ -17,7 +16,6 @@ local function cancel_retry()
 end
 
 function M.clear()
-	generation = generation + 1
 	cancel_retry()
 	acknowledgement, visible, observed = nil, false, nil
 	retry_count = 0
@@ -63,10 +61,10 @@ function M.observe(session_id, is_visible)
 	if type(idle) ~= "number" or (type(time.viewed) == "number" and time.viewed >= idle) then return end
 	if acknowledgement and acknowledgement.id == session_id and acknowledgement.idle == idle then return end
 	cancel_retry()
-	local attempt = { id = session_id, idle = idle, generation = generation, token = pending.token(session_id) }
+	local attempt = { id = session_id, idle = idle, token = pending.token(session_id) }
 	acknowledgement = attempt
 	require("opencode.client").view_session(session_id, idle, function(err)
-		if acknowledgement ~= attempt or generation ~= attempt.generation or not pending.is_current(attempt.token) then return end
+		if acknowledgement ~= attempt or not pending.is_current(attempt.token) then return end
 		if not err then
 			retry_count = 0
 			require("opencode.session").remember({ id = session_id, time = { viewed = idle } }, { touch = false, reason = "viewed" })
@@ -78,7 +76,7 @@ function M.observe(session_id, is_visible)
 		local delay = math.min(1000 * 2 ^ math.min(retry_count - 1, 5), 30000)
 		retry_timer = vim.defer_fn(function()
 			retry_timer = nil
-			if acknowledgement ~= attempt or generation ~= attempt.generation then return end
+			if acknowledgement ~= attempt then return end
 			acknowledgement = nil
 			M.observe(observed, visible)
 		end, delay)
@@ -108,25 +106,24 @@ function M.reopen()
 	require("opencode.client").get_session(id, function(err, info)
 		if not pending.is_current(token) or state.get_session().id ~= current or state.get_closed_session_order()[1] ~= id then return end
 		if err then
-			if err.status == 404 then state.remove_session(id); save() end
+			if err.status == 404 then state.remove_session(id) end
 			vim.notify("Could not reopen session: " .. tostring(err.message or err), vim.log.levels.WARN)
 			return
 		end
 		require("opencode.session").switch_to(info, { reason = "reopen", notify = false })
-		state.set_closed_session_order(state.get_closed_session_order())
 	end)
 end
 
 function M.setup(events)
 	local previous_scope = owner and scope
 	M.teardown()
-	bus, subscriptions, owner = events, {}, nil
+	bus = events
 	local config = state.get_config() or {}
 	local options = config.chat and config.chat.session_tabs or {}
 	if options.persist ~= false and options.enabled ~= false then
 		local server = config.server or {}
 		local directory = options.scope == "global" and "global" or state.normalize_directory(vim.fn.getcwd())
-		if server.url and server.url ~= false then
+		if server.url then
 			local endpoint = require("opencode.client.endpoint").resolve(server)
 			-- Include a proxy's base path, but never persist URL credentials or auth.
 			scope = endpoint and vim.json.encode({ endpoint.origin:lower() .. endpoint.base_path, directory }) or nil

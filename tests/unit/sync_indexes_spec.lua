@@ -137,4 +137,43 @@ describe("private sync message indexes and metadata generations", function()
 		sync.finalize_inflight("s")
 		assert.is_true(sync.get_history_metadata_generation("s") > generation)
 	end)
+
+	for _, clear in ipairs({ "clear_session", "clear_session_messages" }) do
+		it("clears message indexes and caches with the status semantics of " .. clear, function()
+			sync.handle_message_updated(message("a", 1))
+			sync.handle_part_updated({ id = "task", messageID = "a", sessionID = "s", type = "tool",
+				tool = "task", state = { metadata = { sessionID = "child" } } })
+			sync.handle_session_status("s", { type = "busy" })
+			sync.get_message_render_parts("a")
+			local other = message("b", 2, "other")
+			sync.handle_message_updated(other)
+			local revision = sync.get_session_revision("s")
+			local generation = sync.get_history_metadata_generation("s")
+			local summary_revision = sync.get_task_summary_revision("s")
+			local snapshot = sync.capture_session_snapshot("s")
+
+			sync[clear]("s")
+
+			assert.same({}, sync.get_messages("s"))
+			assert.is_nil(sync.get_message("s", "a"))
+			assert.is_nil(sync.find_message_session_id("a"))
+			assert.same({}, sync.get_parts("a"))
+			assert.same({}, sync.get_message_render_parts("a").tool_parts)
+			assert.equals(0, sync.get_part_revision("a", "task"))
+			assert.is_nil(sync.get_task_child_session("a", "task"))
+			assert.is_nil(sync.get_task_parent_session("child"))
+			assert.is_nil(sync.get_task_child_owner("child"))
+			assert.is_true(sync.get_history_metadata_generation("s") > generation)
+			assert.equals(summary_revision + 1, sync.get_task_summary_revision("s"))
+			assert.equals(snapshot.session_generation + 1, sync.capture_session_snapshot("s").session_generation)
+			assert.equals(other, sync.get_message("other", "b"))
+			if clear == "clear_session" then
+				assert.is_nil(sync.get_session_status("s"))
+				assert.equals(0, sync.get_session_revision("s"))
+			else
+				assert.same({ type = "busy" }, sync.get_session_status("s"))
+				assert.equals(revision + 1, sync.get_session_revision("s"))
+			end
+		end)
+	end
 end)

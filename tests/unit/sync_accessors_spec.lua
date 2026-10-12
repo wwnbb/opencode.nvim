@@ -5,48 +5,6 @@ describe("sync render accessors and task ownership", function()
 	before_each(function() sync.clear_all(); events.clear() end)
 	after_each(function() sync.clear_all(); events.clear() end)
 
-	it("filters synthetic text", function()
-		sync.handle_part_updated({
-			id = "text-visible",
-			messageID = "msg_synthetic_filter",
-			sessionID = "session_synthetic_filter",
-			type = "text",
-			text = "visible",
-		})
-		sync.handle_part_updated({
-			id = "text-synthetic",
-			messageID = "msg_synthetic_filter",
-			sessionID = "session_synthetic_filter",
-			type = "text",
-			text = "hidden",
-			synthetic = true,
-		})
-		assert(
-			sync.get_message_text("msg_synthetic_filter", { include_synthetic = false }) == "visible",
-			"synthetic text parts should be excluded when include_synthetic=false"
-		)
-	end)
-
-	it("streams text and reasoning", function()
-		local seq = 0
-		local function event(kind, data)
-			seq = seq + 1
-			return sync.handle_server_event({ id = "evt_stream_smoke_" .. seq, created = seq,
-				type = "session." .. kind, data = vim.tbl_extend("force", {
-					sessionID = "session_stream", assistantMessageID = "msg_stream", ordinal = 0,
-				}, data or {}) })
-		end
-		event("step.started", { started = 1, agent = "build", model = { providerID = "test", id = "test" } })
-		event("text.started")
-		for _, delta in ipairs({ "hel", "lo", " world" }) do event("text.delta", { delta = delta }) end
-		assert(sync.get_parts("msg_stream")[1].text == "hello world", "v2 text deltas should accumulate")
-		event("text.ended", { text = "authoritative" })
-		assert(sync.get_parts("msg_stream")[1].text == "authoritative", "v2 ended text should replace deltas")
-		event("reasoning.started")
-		event("reasoning.delta", { delta = "because" })
-		assert(sync.get_message_render_parts("msg_stream").reasoning == "because", "v2 reasoning should stream")
-	end)
-
 	it("returns ordered parts and revision metadata", function()
 		sync.handle_message_updated({
 			id = "msg_render_accessor",
@@ -84,6 +42,7 @@ describe("sync render accessors and task ownership", function()
 			tool = "bash",
 			state = { status = "completed" },
 		})
+		assert.equals("visible", sync.get_message_text("msg_render_accessor", { include_synthetic = false }))
 		local render_parts = sync.get_message_render_parts("msg_render_accessor", { include_synthetic = false })
 		assert(render_parts.content == "visible", "render accessor should honor include_synthetic=false")
 		assert(render_parts.reasoning == "why", "render accessor should collect reasoning")

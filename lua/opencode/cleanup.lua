@@ -68,10 +68,7 @@ function M.clear_transient(opts)
 end
 
 function M.reset_all()
-	M.clear_transient({
-		reset_state = true,
-		clear_chat = true,
-	})
+	M.clear_transient({ reset_state = true })
 end
 
 return M

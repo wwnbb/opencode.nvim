@@ -32,12 +32,12 @@ local function stop_timer()
 end
 
 local function update_animation()
-	if total_pending() == 0 then
+	if next(pending) == nil then
 		stop_timer()
 	elseif not timer then
 		timer = vim.uv.new_timer()
 		timer:start(SPINNER_INTERVAL_MS, SPINNER_INTERVAL_MS, vim.schedule_wrap(function()
-			if total_pending() > 0 then refresh_indicator() end
+			if next(pending) then refresh_indicator() end
 		end))
 	end
 	refresh_indicator()
@@ -92,6 +92,10 @@ function M.ask(session_id, question)
 	local session_pending = require("opencode.session.pending")
 	local token = session_pending.token(session_id)
 	session_pending.serialize(session_id, function(done)
+		local function prepared(err)
+			if err then complete(err) else generate() end
+			done()
+		end
 		client.get_session(session_id, function(err, info)
 			if not is_current() then done(); return end
 			if err then complete(err); done(); return end
@@ -101,20 +105,14 @@ function M.ask(session_id, question)
 			local variant = chosen.variant
 			if variant == vim.NIL then variant = "default" end
 			if not desired_model and chosen.agent and desired_agent then
-				client.switch_agent(session_id, desired_agent, function(agent_err)
-					if agent_err then complete(agent_err) else generate() end
-					done()
-				end)
+				client.switch_agent(session_id, desired_agent, prepared)
 				return
 			end
 			local model, model_err = require("opencode.protocol.requests").model(desired_model, variant)
 			if not model then
 				complete({ message = model_err }); done(); return
 			end
-			selection.prepare(session_id, { agent = desired_agent, model = model }, token, function(prepare_err)
-				if prepare_err then complete(prepare_err) else generate() end
-				done()
-			end, info)
+			selection.prepare(session_id, { agent = desired_agent, model = model }, token, prepared, info)
 		end)
 	end)
 	return true

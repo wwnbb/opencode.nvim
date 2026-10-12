@@ -53,35 +53,6 @@ describe("opencode session close child cleanup", function()
 		sync.clear_all()
 	end)
 
-	it("close() clears child session data loaded into sync", function()
-		local state = require("opencode.state")
-		local sync = require("opencode.sync")
-		local session_actions = require("opencode.session")
-
-		state.reset()
-		sync.clear_all()
-
-		session_actions.set_active("close-parent", "Parent", { reason = "test_setup" })
-		session_actions.set_active("close-other", "Other", { reason = "test_setup" })
-		seed_task_child(sync, "close-parent", "close-child")
-		seed_message(sync, "close-child", "seed", 2)
-		seed_message(sync, "close-other", "seed", 3)
-
-		assert.equals(1, #sync.get_messages("close-parent"), "parent message should exist before close")
-		assert.equals(1, #sync.get_messages("close-child"), "child message should exist before close")
-
-		assert.equals(true, session_actions.close("close-parent", { silent = true }), "closing the parent tab should succeed")
-
-		assert.equals(0, #sync.get_messages("close-parent"), "closed parent data should be cleared")
-		assert.equals(0, #sync.get_messages("close-child"), "closed tab child data should be cleared")
-		assert.equals(1, #sync.get_messages("close-other"), "unrelated session data should survive")
-		assert.equals("close-other", state.get_session().id, "view should switch to the neighbor tab")
-		assert.equals(false, state.is_runtime_session("close-parent"), "closed tab should leave the runtime list")
-
-		state.reset()
-		sync.clear_all()
-	end)
-
 	it("invalidates in-flight operations for the complete closed tree", function()
 		local state, sync = require("opencode.state"), require("opencode.sync")
 		local sessions, pending = require("opencode.session"), require("opencode.session.pending")
@@ -100,6 +71,7 @@ describe("opencode session close child cleanup", function()
 				sessions.set_active("keep-tree", "Neighbor")
 				seed_task_child(sync, "close-tree", "close-tree-child")
 				seed_task_child(sync, "close-tree-child", "close-tree-grandchild")
+				seed_message(sync, "keep-tree", "seed", 3)
 				local tokens = {}
 				for _, id in ipairs({ "close-tree", "close-tree-child", "close-tree-grandchild", "keep-tree" }) do
 					tokens[id] = pending.token(id)
@@ -112,6 +84,11 @@ describe("opencode session close child cleanup", function()
 				flush()
 				assert.equals(0, published)
 				assert.same({}, sync.get_messages("close-tree-grandchild"))
+				assert.same({}, sync.get_messages("close-tree"))
+				assert.same({}, sync.get_messages("close-tree-child"))
+				assert.equals(1, #sync.get_messages("keep-tree"))
+				assert.equals("keep-tree", state.get_session().id)
+				assert.is_false(state.is_runtime_session("close-tree"))
 				for _, id in ipairs({ "close-tree", "close-tree-child", "close-tree-grandchild" }) do
 					assert.is_false(pending.is_current(tokens[id]))
 					assert.same({}, pending.list(id))

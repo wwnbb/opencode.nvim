@@ -1,10 +1,6 @@
--- opencode.nvim - Slash command module
--- Handles /commands like TUI's slash commands
-
 local M = {}
 local registry = require("opencode.command_registry")
 
--- Register a slash command
 -- opts: { name, aliases, description, category, handler, enabled?, on_select? }
 function M.register(opts)
 	if not opts.name or not opts.handler then
@@ -27,7 +23,6 @@ function M.register(opts)
 	})
 end
 
--- Unregister a slash command
 function M.unregister(name)
 	local record = registry.get_slash(name)
 	if not record or record.slash.name ~= name then
@@ -48,20 +43,12 @@ function M.unregister(name)
 	return true
 end
 
--- Parse slash command from text
 -- Returns: { command, args, raw } or nil if not a slash command
 function M.parse(text)
-	if not text or text == "" then
+	if not text then
 		return nil
 	end
-	
-	-- Check if text starts with /
-	if not text:match("^/") then
-		return nil
-	end
-	
-	-- Extract command name and arguments
-	-- Format: /command arg1 arg2 ...
+
 	local cmd_name, args_str = text:match("^/(%S+)%s*([%s%S]*)$")
 	if not cmd_name then
 		return nil
@@ -74,7 +61,6 @@ function M.parse(text)
 	}
 end
 
--- Execute a slash command
 -- Returns: true if handled, false otherwise
 function M.execute(parsed, context)
 	if not parsed or not parsed.command then
@@ -100,17 +86,25 @@ function M.execute(parsed, context)
 	return registry.run(record.id, command_context)
 end
 
--- Get all available commands (for completion)
 function M.get_commands()
 	return registry.list_slash()
 end
 
--- Check if text is a slash command
 function M.is_slash_command(text)
 	return M.parse(text) ~= nil
 end
 
--- Register default slash commands
+local function last_undo_message(messages, record)
+	local boundary = type(record and record.revert) == "table" and record.revert.messageID or nil
+	local last_user_msg
+	-- A staged revert keeps its tail for /redo; only earlier turns can be undone.
+	for _, message in ipairs(messages) do
+		if boundary and message.id == boundary then break end
+		if message.role == "user" then last_user_msg = message end
+	end
+	return last_user_msg
+end
+
 function M.register_defaults()
 	-- Palette definitions provide the shared slash and palette commands.
 	require("opencode.ui.palette").register_defaults()
@@ -139,16 +133,14 @@ function M.register_defaults()
 			end)
 		end,
 	})
-	-- /help - Show help
 	registry.register({
-		id = "system.help",
+		id = "slash.help",
 		title = "Slash Command Help",
 		description = "Show available commands",
 		category = "system",
 		palette = false,
 		slash = { name = "help" },
 		run = function(_context)
-			-- Create help buffer
 			local lines = { "Available Commands:", "" }
 			local current_category = nil
 			
@@ -183,7 +175,6 @@ function M.register_defaults()
 		end,
 	})
 	
-	-- /undo - Undo last message
 	registry.register({
 		id = "session.undo",
 		title = "Undo Last Message",
@@ -206,23 +197,7 @@ function M.register_defaults()
 				return
 			end
 			
-			local record = state.get_session_record(session_id)
-			local boundary = type(record and record.revert) == "table" and record.revert.messageID or nil
-			-- A staged revert leaves its tail in the sync store for /redo. Only
-			-- turns before that boundary are eligible for another /undo.
-			local last_index = #messages
-			if boundary then
-				for i, message in ipairs(messages) do
-					if message.id == boundary then last_index = i - 1; break end
-				end
-			end
-			local last_user_msg = nil
-			for i = last_index, 1, -1 do
-				if messages[i].role == "user" then
-					last_user_msg = messages[i]
-					break
-				end
-			end
+			local last_user_msg = last_undo_message(messages, state.get_session_record(session_id))
 			
 			if not last_user_msg then
 				vim.notify("No user message to undo", vim.log.levels.WARN)
@@ -262,20 +237,7 @@ function M.register_defaults()
 			local sync = require("opencode.sync")
 			local session_id = state.get_session().id
 			if not session_id then return false end
-			local record = state.get_session_record(session_id)
-			local boundary = type(record and record.revert) == "table" and record.revert.messageID or nil
-			local messages = sync.get_messages(session_id)
-			local last_index = #messages
-			if boundary then
-				for i, message in ipairs(messages) do
-					if message.id == boundary then last_index = i - 1; break end
-				end
-			end
-			for i = 1, last_index do
-				local message = messages[i]
-				if message.role == "user" then return true end
-			end
-			return false
+			return last_undo_message(sync.get_messages(session_id), state.get_session_record(session_id)) ~= nil
 		end,
 	})
 	

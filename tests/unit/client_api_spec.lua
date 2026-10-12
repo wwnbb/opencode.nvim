@@ -1,6 +1,6 @@
-describe("OpenCode v2 HTTP contracts", function()
+describe("OpenCode HTTP contracts", function()
 	local names = { "opencode.client", "opencode.client.api", "opencode.client.http", "opencode.client.transport" }
-	local saved, schedule, requests, response, transport_error, v2, http, request_handle
+	local saved, schedule, requests, response, transport_error, api, http, request_handle
 	local function json(value, status)
 		response = { status = status or 200, headers = { ["content-type"] = "application/json" }, body = vim.json.encode(value) }
 	end
@@ -73,6 +73,17 @@ describe("OpenCode v2 HTTP contracts", function()
 		assert.is_truthy(requests[1].body:find('"args":[]', 1, true))
 		assert.equals("[]", vim.json.encode(opts.env))
 	end)
+	it("rejects terminal snapshots with missing or invalid nested info", function()
+		local snapshot = { id = "pty_fixture", sessionID = "s", title = "Terminal", command = "/bin/sh", args = {}, cwd = "/tmp",
+			status = "running", pid = 1, size = { cols = 80, rows = 24 }, output = { head = 0, tail = 0 },
+			text = "", checkpoint = "", cursor = { x = 0, y = 0 } }
+		for _, fields in ipairs({ {}, { info = false }, { info = vim.NIL }, { info = vim.empty_dict() } }) do
+			json({ data = vim.tbl_extend("force", snapshot, fields) })
+			local result = invoke("pty_snapshot", { path = { ptyID = "pty_fixture" } })
+			assert.equals("incompatible_response", result.err and result.err.code)
+			assert.is_nil(result.data)
+		end
+	end)
 
 	it("encodes location keys and UTF-8 bytes once, without ambient directory headers", function()
 		json({ location = { directory = "/tmp/путь %#" }, data = {} })
@@ -110,6 +121,10 @@ describe("OpenCode v2 HTTP contracts", function()
 			{ code = "test", expires_in = 1.5 }, { expires_in = 300 } }) do
 			json(entry); assert.equals("incompatible_response", invoke("server_pair").err.code)
 		end
+		response.body = '{"code":"test","expires_in":9007199254740991}'
+		assert.equals(9007199254740991, invoke("server_pair").data.expires_in)
+		response.body = '{"code":"test","expires_in":9007199254740992}'
+		assert.equals("incompatible_response", invoke("server_pair").err.code)
 		json({ name = "UnauthorizedError", message = "Credentials required" }, 401)
 		assert.equals(401, invoke("server_pair").err.status)
 	end)
@@ -137,6 +152,7 @@ describe("OpenCode v2 HTTP contracts", function()
 		assert.is_nil(err)
 		assert.equals("/project", normalized.directory)
 		assert.equals(false, normalized.metadata.marker)
+		assert.equals(vim.NIL, normalized.revert)
 		assert.same(original, session)
 		json({ data = session })
 		local result = invoke("session_create", { body = { location = session.location } })
@@ -145,6 +161,33 @@ describe("OpenCode v2 HTTP contracts", function()
 		assert.same({ location = session.location }, vim.json.decode(requests[1].body))
 		invoke("session_get", { path = { sessionID = "ses_a/#%" } })
 		assert.equals("/api/session/ses_a%2F%23%25", requests[2].path)
+		session.revert = { to = "msg_original" }
+		local with_revert = api.session(session)
+		with_revert.revert.to = "msg_changed"
+		assert.equals("msg_original", session.revert.to)
+	end)
+	it("creates sessions with object bodies without modifying caller options", function()
+		local client = require("opencode.client")
+		json({ data = { id = "ses_1", location = { directory = "/project" } } })
+		local callbacks = 0
+		local function created(err, info)
+			assert.is_nil(err); assert.equals("ses_1", info.id); callbacks = callbacks + 1
+		end
+		client.create_session(nil, created)
+		assert.same({ location = { directory = vim.fn.getcwd() } }, vim.json.decode(requests[1].body))
+		local opts = { directory = "/project", title = "Fixture" }
+		client.create_session(opts, created)
+		assert.same({ location = { directory = "/project" }, title = "Fixture" }, vim.json.decode(requests[2].body))
+		assert.same({ directory = "/project", title = "Fixture" }, opts)
+		assert.equals(2, callbacks)
+	end)
+	it("rejects parentID before sending a session creation request", function()
+		local callbacks = 0
+		require("opencode.client").create_session({ parentID = "ses_parent" }, function(err)
+			assert.equals("invalid_request", err.code); callbacks = callbacks + 1
+		end)
+		assert.equals(1, callbacks)
+		assert.equals(0, #requests)
 	end)
 	it("uses bare native project, location and worktree envelopes and rejects malformed directories", function()
 		local entries = {
@@ -248,6 +291,31 @@ describe("OpenCode v2 HTTP contracts", function()
 		assert.equals("/api/session/ses_a/shell", requests[1].path)
 		assert.same({ command = "sleep 60" }, vim.json.decode(requests[1].body))
 	end)
+	it("sends command text unchanged including an empty string", function()
+		response = { status = 204, headers = {}, body = "" }
+		for index, text in ipairs({ "line one\nline two", "" }) do
+			local callbacks = 0
+			require("opencode.client").execute_command("ses_1", "review", text, nil, function(err, data)
+				assert.is_nil(err); assert.is_true(data); callbacks = callbacks + 1
+			end)
+			assert.equals(1, callbacks)
+			assert.equals("POST", requests[index].method)
+			assert.equals("/api/session/ses_1/command", requests[index].path)
+			assert.same({ name = "review", text = text }, vim.json.decode(requests[index].body))
+		end
+	end)
+	it("rejects non-string command text once without sending a request", function()
+		for _, args in ipairs({ { text = {} }, { text = { "prompt" } }, { text = false }, { text = 1 }, {} }) do
+			local callbacks = 0
+			require("opencode.client").execute_command("ses_1", "review", args.text, nil, function(err)
+				assert.equals("invalid_request", err.code)
+				assert.equals("Command text must be a string", err.message)
+				callbacks = callbacks + 1
+			end)
+			assert.equals(1, callbacks)
+			assert.equals(0, #requests)
+		end
+	end)
 
 	it("requires native scoped shell DTOs and rejects malformed byte cursors", function()
 		local shell = { id = "sh_a", status = "running", command = "echo test", cwd = "/project", shell = "sh",
@@ -265,6 +333,13 @@ describe("OpenCode v2 HTTP contracts", function()
 		end
 		json({ location = { directory = "/project" }, data = { output = "😀", cursor = 4, size = 4, truncated = false } })
 		assert.equals("😀", invoke("shell_output", { path = { id = "sh_a" } }).data.output)
+		local body = '{"location":{"directory":"/project"},"data":{"output":"","cursor":%s,"size":%s,"truncated":false}}'
+		response.body = body:format("9007199254740991", "9007199254740991")
+		assert.is_nil(invoke("shell_output", { path = { id = "sh_a" } }).err)
+		for _, cursor in ipairs({ "0", "9007199254740992" }) do
+			response.body = body:format(cursor, "9007199254740992")
+			assert.equals("incompatible_response", invoke("shell_output", { path = { id = "sh_a" } }).err.code)
+		end
 	end)
 
 	it("rejects malformed envelopes and response media rather than returning empty success", function()
@@ -345,44 +420,6 @@ describe("OpenCode v2 HTTP contracts", function()
 		end
 	end)
 
-	it("generates stateless completion with a separate model and returns the cancellation handle", function()
-		json({ data = { text = "class Widget:\n    pass" } })
-		local model = { providerID = "fast-provider", id = "code/model", variant = "completion" }
-		local answer
-		local handle = require("opencode.client").generate_completion("Complete at cursor", model, function(err, value)
-			assert.is_nil(err)
-			answer = value
-		end, { timeout = 1500 })
-		assert.equals(request_handle, handle)
-		assert.equals("class Widget:\n    pass", answer)
-		assert.equals(1, #requests)
-		assert.equals("POST", requests[1].method)
-		assert.equals("/api/experimental/generate", requests[1].path)
-		assert.same({ prompt = "Complete at cursor", model = model }, vim.json.decode(requests[1].body))
-		assert.equals(1500, requests[1].timeout)
-		assert.truthy(requests[1].headers.Authorization)
-		require("opencode.client").generate_completion("Use default model", nil, function() end, { timeout = 0 })
-		assert.same({ prompt = "Use default model" }, vim.json.decode(requests[2].body))
-		assert.equals(0, requests[2].timeout)
-	end)
-
-	it("sends explanation through sessionless generate without tools or chat fields", function()
-		json({ data = { text = "L4–6 — Handles the input." } })
-		local model = { providerID = "explain-provider", id = "explain-model", variant = "private-explanation" }
-		local answer
-		local handle = require("opencode.client").generate_explanation("Explain selected lines", model,
-			function(err, value)
-				assert.is_nil(err)
-				answer = value
-			end, { timeout = 60000 })
-		assert.equals(request_handle, handle)
-		assert.equals("L4–6 — Handles the input.", answer)
-		assert.equals("POST", requests[1].method)
-		assert.equals("/api/experimental/generate", requests[1].path)
-		assert.same({ prompt = "Explain selected lines", model = model }, vim.json.decode(requests[1].body))
-		assert.equals(60000, requests[1].timeout)
-	end)
-
 	it("preserves completion cancellation and rejects malformed generated text", function()
 		transport_error = { code = "cancelled", cancelled = true, retryable = false, message = "Request cancelled" }
 		local result = invoke("completion", { body = { prompt = "code" } })
@@ -419,6 +456,33 @@ describe("OpenCode v2 HTTP contracts", function()
 			assert.equals(404, invoke(operation, { path = { credentialID = "missing" } }).err.status)
 			response = { status = 204, headers = {}, body = "" }
 		end
+	end)
+
+	it("routes completion and explanation through sessionless generation with their own models", function()
+		local client = require("opencode.client")
+		for index, case in ipairs({
+			{ method = "generate_completion", prompt = "Complete at cursor", answer = "class Widget:\n    pass",
+				model = { providerID = "fast-provider", id = "code/model", variant = "completion" }, timeout = 1500 },
+			{ method = "generate_explanation", prompt = "Explain selected lines", answer = "L4–6 — Handles the input.",
+				model = { providerID = "explain-provider", id = "explain-model", variant = "private-explanation" }, timeout = 60000 },
+		}) do
+			json({ data = { text = case.answer } })
+			local answer
+			local handle = client[case.method](case.prompt, case.model, function(err, value)
+				assert.is_nil(err); answer = value
+			end, { timeout = case.timeout })
+			assert.equals(request_handle, handle)
+			assert.equals(case.answer, answer)
+			assert.equals(index, #requests)
+			assert.equals("POST", requests[index].method)
+			assert.equals("/api/experimental/generate", requests[index].path)
+			assert.same({ prompt = case.prompt, model = case.model }, vim.json.decode(requests[index].body))
+			assert.equals(case.timeout, requests[index].timeout)
+			assert.truthy(requests[index].headers.Authorization)
+		end
+		client.generate_completion("Use default model", nil, function() end, { timeout = 0 })
+		assert.same({ prompt = "Use default model" }, vim.json.decode(requests[3].body))
+		assert.equals(0, requests[3].timeout)
 	end)
 
 end)

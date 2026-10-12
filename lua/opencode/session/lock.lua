@@ -36,7 +36,7 @@ end
 ---@param session_id string|nil
 ---@return boolean
 function M.is_locked(session_id)
-	return M.get(session_id) ~= nil
+	return valid_session_id(session_id) and locks[session_id] ~= nil
 end
 
 ---@param session_id string|nil

@@ -7,13 +7,8 @@ function M.setup(events)
 		session_actions.recount_pending()
 	end
 
-	events.on("connected", function()
-		vim.schedule(function()
-			refresh_all()
-		end)
-	end)
-
 	for _, event in ipairs({
+		"connected",
 		"interaction_changed",
 		"permission_pending",
 		"edit_pending",
@@ -29,13 +24,13 @@ function M.setup(events)
 	events.on("session_change", function(data)
 		if not (data and data.preserve_cache) then
 			require("opencode.permission.danger").clear()
-			for _, id in ipairs(require("opencode.permission.state").clear_all() or {}) do
+			for _, id in ipairs(require("opencode.permission.state").clear_all()) do
 				events.emit("permission_removed", { permission_id = id })
 			end
-			for _, id in ipairs(require("opencode.question.state").clear_all() or {}) do
+			for _, id in ipairs(require("opencode.question.state").clear_all()) do
 				events.emit("question_removed", { request_id = id })
 			end
-			for _, id in ipairs(require("opencode.edit.state").clear_all() or {}) do
+			for _, id in ipairs(require("opencode.edit.state").clear_all()) do
 				events.emit("edit_removed", { permission_id = id })
 			end
 			local reason = data and data.reason

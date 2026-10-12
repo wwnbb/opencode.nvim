@@ -166,11 +166,6 @@ local function binary_search(arr, target, get_id)
 	return { found = false, index = left }
 end
 
--- Get message ID from message
-local function get_message_id(msg)
-	return msg.id
-end
-
 local function get_message_created(message)
 	local time = type(message) == "table" and message.time or nil
 	local created = type(time) == "table" and time.created or nil
@@ -380,7 +375,7 @@ local function find_message_id_by_call_id(session_id, call_id)
 		return nil
 	end
 	for _, message in ipairs(messages) do
-		local message_id = get_message_id(message)
+		local message_id = message.id
 		if message_id then
 			for _, part in ipairs(M.get_message_tools(message_id)) do
 				if part.callID == call_id then
@@ -822,12 +817,11 @@ function M.capture_session_snapshot(session_id)
 	}
 end
 
----Remove store records that this snapshot page no longer contains.
----Does not delete messages older than the page (limit=100 tail) or newer
----than the page (in-flight SSE). Never pass a single prompt-response wrapper.
+---Remove missing messages only for complete snapshots, preserving in-flight SSE updates.
 ---@param session_id string
----@param snapshot_messages table[]
 ---@param snapshot_message_ids table<string, boolean>
+---@param protected_messages table<string, boolean>
+---@param complete boolean
 ---@return number removed_count
 local function reconcile_session_snapshot(
 	session_id,
@@ -1269,9 +1263,6 @@ function M.get_catalog_generation()
 	return catalog_generation
 end
 
----Get parts for a message
----@param message_id string
----@return Part[]
 local EMPTY_PARTS = { order = {}, tools = {}, content = "", reasoning = "", without_synthetic = "" }
 
 local function derived_parts(message_id)
@@ -1303,6 +1294,9 @@ local function derived_parts(message_id)
 	return result
 end
 
+---Get parts for a message
+---@param message_id string
+---@return Part[]
 function M.get_parts(message_id)
 	local parts = store.part[message_id] or {}
 	if not parts[1] or parts[1].content_order == nil then return parts end
@@ -1482,27 +1476,9 @@ end
 ---Clear all data for a session
 ---@param session_id string
 function M.clear_session(session_id)
-	bump_revision(store.session_generation, session_id)
-	-- Remove all parts for messages in this session
-	local messages = store.message[session_id] or {}
-	for _, msg in ipairs(messages) do
-		clear_task_child_indices_for_message(msg.id)
-		store.part[msg.id] = nil
-		unindex_message_session(msg.id)
-		clear_message_revisions(msg.id)
-		clear_private_message(msg.id)
-	end
-
-	-- Remove messages
-	store.message[session_id] = nil
-	structure_changed(session_id)
-	linked_generation[session_id] = nil
+	M.clear_session_messages(session_id)
 	store.session_revision[session_id] = nil
-	bump_task_summary_revision(session_id)
-
-	-- Remove status
 	store.session_status[session_id] = nil
-
 end
 
 ---Clear only messages/parts for a session, preserving status.

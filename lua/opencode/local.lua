@@ -240,32 +240,20 @@ local AGENT_FALLBACK_COLORS = {
 	"ErrorMsg", -- red    (TUI: error)
 }
 
----Create (or reuse) a highlight group for a hex color string.
----@param hex string e.g. "#FFA500"
----@param hl_name string unique highlight group name
----@return string hl_name
-local function ensure_hex_hl(hex, hl_name)
-	-- nvim_set_hl accepts the hex string directly for `fg`
-	vim.api.nvim_set_hl(0, hl_name, { fg = hex, bold = true, default = false })
-	return hl_name
-end
-
 ---Get highlight group for an agent by name (mirrors TUI's local.agent.color).
 ---Checks the agent's configured `color` field first, then falls back to the
 ---palette indexed over *all* agents (same as TUI, which uses sync.data.agent).
 ---@param agent_name string
 ---@return string hl_group
 function M.agent.color(agent_name)
-	-- Use all agents for index lookup, matching TUI behaviour
 	local found_agent, found_index = find_agent(sync.get_agents(), agent_name)
 
-	-- If agent has a custom hex color, create a dynamic highlight group
 	if found_agent and type(found_agent.color) == "string" and found_agent.color:match("^#%x%x%x%x%x%x$") then
 		local safe_name = "OpenCodeAgent_" .. found_agent.color:sub(2):lower()
-		return ensure_hex_hl(found_agent.color, safe_name)
+		vim.api.nvim_set_hl(0, safe_name, { fg = found_agent.color, bold = true, default = false })
+		return safe_name
 	end
 
-	-- Fallback: cycle through palette by agent index
 	if not found_index then
 		return AGENT_FALLBACK_COLORS[1]
 	end
@@ -275,70 +263,26 @@ end
 -- Model module (like TUI's model in local.tsx)
 M.model = {}
 
----Get fallback model (from config, recent, or first available)
----@param opts? { log?: boolean }
+---Get fallback model from config, recent models, or provider defaults.
 ---@return { providerID: string, modelID: string }|nil
-local function get_fallback_model(opts)
-	opts = opts or {}
-	local log = opts.log == true
-
-	-- Check config default
+local function get_fallback_model()
 	local config = sync.get_config()
 	if type(config.model) == "string" then
-		-- Parse "providerID/modelID" format
 		local provider_id, model_id = config.model:match("^([^/]+)/(.+)$")
 		if provider_id and model_id then
 			local m = { providerID = provider_id, modelID = model_id }
 			if is_model_valid(m) then
-				if log then
-					logger.debug("Fallback model selected", {
-						source = "config",
-						model = model_summary(m),
-					})
-				end
 				return m
 			end
-			if log then
-				logger.debug("Fallback config model invalid", {
-					model = model_summary(m),
-				})
-			end
-		else
-			if log then
-				logger.debug("Fallback config model malformed", {
-					model = config.model,
-				})
-			end
-		end
-	elseif config.model ~= nil then
-		if log then
-			logger.debug("Fallback config model skipped", {
-				model = model_summary(config.model),
-			})
 		end
 	end
 
-	-- Check recent models
-	local invalid_recent = 0
 	for _, item in ipairs(state.recent) do
 		if is_model_valid(item) then
-			if log then
-				logger.debug("Fallback model selected", {
-					source = "recent",
-					model = model_summary(item),
-				})
-			end
 			return item
 		end
-		invalid_recent = invalid_recent + 1
-	end
-	if log and invalid_recent > 0 then
-		logger.debug("Fallback recent models skipped", {
-			invalid_count = invalid_recent,
-		})
 	end
 
-	-- Get first connected provider's default or first model
 	local providers = sync.get_providers()
 	local defaults = sync.get_provider_defaults()
 	for _, provider in ipairs(providers) do
@@ -346,30 +290,9 @@ local function get_fallback_model(opts)
 		if default_model then
 			local m = { providerID = provider.id, modelID = default_model }
 			if is_model_valid(m) then
-				if log then
-					logger.debug("Fallback model selected", {
-						source = "provider_default",
-						model = model_summary(m),
-					})
-				end
 				return m
 			end
-			if log then
-				logger.debug("Fallback provider default invalid", {
-					providerID = provider.id,
-					modelID = default_model,
-				})
-			end
 		end
-
-	end
-
-	if log then
-		logger.debug("Fallback model unavailable", {
-			provider_count = #providers,
-			default_count = count_keys(defaults),
-			recent_count = #state.recent,
-		})
 	end
 	return nil
 end
@@ -555,7 +478,7 @@ function M.model.parsed()
 	}
 end
 
----Get recent models (filtered to only valid ones)
+---Get recent models
 ---@return { providerID: string, modelID: string }[]
 function M.model.recent()
 	return state.recent

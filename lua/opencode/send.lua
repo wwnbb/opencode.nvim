@@ -115,9 +115,6 @@ local function resolve_selection(opts)
 		if not agents or not agents.data then return sync().get_agent(id) end
 		for _, agent in ipairs(agents.data) do if agent.id == id or agent.name == id then return agent end end
 	end
-	if opts.model and not get_model(opts.model.providerID, opts.model.id or opts.model.modelID) then
-		return nil, "The selected model is unavailable in this location"
-	end
 	if opts.model then selection.model = opts.model end
 	if not selection.model and providers and providers.data and type(providers.data.server_default) == "table" then
 		selection.model = providers.data.server_default
@@ -187,12 +184,9 @@ local function submit(session_id, payload, selection, text, opts, known_session)
 			client().send_message(session_id, payload, function(err, item)
 				if not pending.is_current(token) then done(); return end
 				if err then fail(err); return end
-				-- SSE or a delivery-mode change may already provide newer inbox
-				-- evidence than this initial admission response.
+				-- Preserve newer inbox evidence from SSE or delivery-mode changes.
 				local record = pending.get(session_id, payload.id)
 				if not record or not record.inbox then pending.admit(item) end
-				-- A delayed HTTP callback must not replace the delivered timestamp or
-				-- regress state already confirmed by the event stream.
 				emit("sync_changed", { kind = "inbox", action = "accepted", session_id = session_id, message_id = payload.id })
 				emit("session_reconcile", { session_id = session_id })
 				done()
@@ -450,15 +444,13 @@ local function set_input_delivery(session_id, message_id, delivery, callback)
 		if err and err.status == 409 and current and current.inbox and current.inbox.delivery == delivery then
 			err = nil
 		end
-		if not err then
-			if current and current.inbox and current.delivery_request_revision == request_revision
-				and (current.delivery_event_revision or 0) == event_revision
-				and (current.status == "queued" or current.status == "accepted") then
-				current.inbox.delivery = delivery
-				pending.admit(current.inbox)
-				emit("sync_changed", { kind = "inbox", action = delivery == "steer" and "steered" or "queued",
-					session_id = session_id, message_id = message_id })
-			end
+		if not err and current and current.inbox and current.delivery_request_revision == request_revision
+			and (current.delivery_event_revision or 0) == event_revision
+			and (current.status == "queued" or current.status == "accepted") then
+			current.inbox.delivery = delivery
+			pending.admit(current.inbox)
+			emit("sync_changed", { kind = "inbox", action = delivery == "steer" and "steered" or "queued",
+				session_id = session_id, message_id = message_id })
 		end
 		emit("session_reconcile", { session_id = session_id })
 		if callback then callback(err) end
@@ -487,7 +479,7 @@ function M.edit_input(session_id, message_id, callback)
 	local text = record.text or payload.text or ""
 	local parts = opts.parts or {}
 	if record.text == nil then
-		vim.list_extend(parts, require("opencode.protocol.messages").draft(payload).parts)
+		vim.list_extend(parts, projection.draft(payload).parts)
 	end
 	opts.parts = nil
 	-- Admission retries belong to the original send attempt. In particular its

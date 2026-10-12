@@ -64,6 +64,9 @@ for _, path in ipairs(files) do
 			elseif command_module_list then
 				for req in line:gmatch("[\"']([^\"']+)[\"']") do add_require(source, req, path, line_no) end
 			end
+		elseif source == "opencode.events" then
+			-- setup loads module fields through pcall(require, spec.module).
+			for req in line:gmatch("module%s*=%s*[\"']([^\"']+)[\"']") do add_require(source, req, path, line_no) end
 		end
 		for req in line:gmatch("require%s*%(?%s*[\"']([^\"']+)[\"']") do
 			add_require(source, req, path, line_no)

@@ -44,7 +44,6 @@ function M.pending_values(session_id)
 		choices[session_id] = nil
 		return nil
 	end
-	if next(entry.values) == nil then return nil end
 	return vim.deepcopy(entry.values)
 end
 
@@ -62,7 +61,7 @@ function M.prepare(session_id, selection, token, callback, known_session)
 		completed = true
 		if not err then
 			local entry = choices[session_id]
-			if entry and require("opencode.session.pending").is_current(entry.token) then
+			if entry and pending.is_current(entry.token) then
 				local selected = M.current(session_id)
 				local selected_model = selected.model and require("opencode.protocol.requests").model(selected.model, selected.variant)
 				if selected.agent == selection.agent and vim.deep_equal(selected_model, selection.model) then choices[session_id] = nil end

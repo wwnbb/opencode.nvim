@@ -1,11 +1,11 @@
--- Admission, correlation, selection and session ownership checks for v2.
+-- Admission, correlation, selection and session ownership checks.
 local state = require("opencode.state")
 local sync = require("opencode.sync")
 local pending = require("opencode.session.pending")
 local history = require("opencode.ui.input.history")
 local selectors = require("opencode.selectors")
 
-describe("opencode v2 send flow", function()
+describe("opencode send flow", function()
 	local saved, old_schedule, old_notify, calls, callbacks, send
 	local names = { "opencode.send", "opencode.client", "opencode.selectors", "opencode.events" }
 	local function model() return { providerID = "p", id = "catalog-id" } end
@@ -116,8 +116,22 @@ describe("opencode v2 send flow", function()
 		assert.equals("", history.get_pending("ses_b"))
 	end)
 
+	for _, case in ipairs({
+		{ name = "malformed model", model = 42 },
+		{ name = "unavailable model", model = { providerID = "p", id = "missing" } },
+		{ name = "unavailable variant", model = { providerID = "p", modelID = "catalog-id", variant = "missing" } },
+	}) do
+		it("rejects an explicit " .. case.name .. " and preserves its draft", function()
+			assert.is_false(send.send("Keep this draft", { model = case.model }))
+			assert.equals(0, #calls)
+			assert.same({}, pending.list("ses_a"))
+			assert.equals("Keep this draft", history.get_pending("ses_a"))
+		end)
+	end
+
 	it("serializes agent -> model -> prompt and never marks admission idle", function()
 		assert.is_true(send.send("Hello", { variant = "fast" }))
+		state.set_session("ses_b", "B")
 		callbacks.get(nil, { id = "ses_a", agent = "other", model = model() })
 		assert.equals("agent", calls[2].method)
 		callbacks.agent(nil)
@@ -125,6 +139,7 @@ describe("opencode v2 send flow", function()
 		assert.same({ providerID = "p", id = "catalog-id", variant = "fast" }, calls[3].body)
 		callbacks.model(nil)
 		assert.equals("prompt", calls[4].method)
+		assert.equals("ses_a", calls[4].sid)
 		local payload = calls[4].body
 		assert.equals("build", require("opencode.local").message_agent.get("ses_a", payload.id))
 		assert.is_nil(payload.parts); assert.is_nil(payload.model); assert.is_nil(payload.agent)
@@ -133,6 +148,8 @@ describe("opencode v2 send flow", function()
 		assert.equals("queued", pending.get("ses_a", payload.id).status)
 		assert.equals("busy", state.get_session_status("ses_a").type)
 		assert.equals(1, #sync.get_messages("ses_a"))
+		assert.equals("idle", state.get_session_status("ses_b").type)
+		assert.same({}, sync.get_messages("ses_b"))
 	end)
 
 	for _, status in ipairs({ "idle", "busy", "retry" }) do
@@ -335,17 +352,6 @@ describe("opencode v2 send flow", function()
 		assert.equals("idle", state.get_session_status("ses_b").type)
 	end)
 
-	it("does not erase a delivered message when cancellation loses the race", function()
-		send.send("Already delivered", {})
-		callbacks.get(nil, { id = "ses_a", agent = "build", model = model() }); accepted()
-		local id = calls[#calls].body.id
-		send.cancel_input("ses_a", id)
-		pending.update("ses_a", id, { status = "delivered" })
-		callbacks.cancel({ status = 404, message = "Inbox item not found" })
-		assert.equals("delivered", pending.get("ses_a", id).status)
-		assert.is_not_nil(sync.get_message("ses_a", id))
-	end)
-
 	it("ignores a cancellation callback after the session was deleted", function()
 		local called = false
 		send.cancel_input("ses_a", "gone", function() called = true end)
@@ -407,6 +413,7 @@ describe("opencode v2 send flow", function()
 		send.edit_input("ses_a", id, function(err, result) error, draft = err, result end)
 		pending.update("ses_a", id, { status = "delivered" })
 		callbacks.cancel({ status = 404, message = "Already delivered" })
+		assert.equals("delivered", pending.get("ses_a", id).status)
 		assert.is_not_nil(error)
 		assert.is_nil(draft)
 		assert.is_not_nil(sync.get_message("ses_a", id))
@@ -666,16 +673,6 @@ describe("opencode v2 send flow", function()
 		assert.same({}, sync.get_messages("ses_a"))
 		assert.is_nil(vim.tbl_filter(function(call) return call.method == "prompt" end, calls)[1])
 		assert.is_not_nil(state.get_session_record("ses_a").revert)
-	end)
-
-	it("keeps an operation in its original session across a tab change", function()
-		send.send("A", {})
-		state.set_session("ses_b", "B")
-		callbacks.get(nil, { id = "ses_a", agent = "build", model = model() })
-		assert.equals("ses_a", calls[2].sid)
-		accepted()
-		assert.equals("idle", state.get_session_status("ses_b").type)
-		assert.equals(0, #sync.get_messages("ses_b"))
 	end)
 
 	it("restores a failed prompt only in its original session after a tab change", function()

@@ -137,8 +137,8 @@ local cases = {
 	{ "form_cancel", "DELETE", "/api/session/{sessionID}/form/{formID}", "empty" },
 	{ "rpc_call", "POST", "/api/rpc/{rpcID}/{method}", "rpc", { input = { sessionID = "s", reviewID = "r" } }, { location = location } },
 }
-describe("v2 operation wire matrix", function()
-	local saved, schedule, v2, wire, response
+describe("HTTP operation wire matrix", function()
+	local saved, schedule, api, wire, response
 	local names = { "opencode.client.api", "opencode.client.http", "opencode.client.transport" }
 	before_each(function()
 		saved = {}; for _, name in ipairs(names) do saved[name] = package.loaded[name]; package.loaded[name] = nil end

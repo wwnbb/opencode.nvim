@@ -16,7 +16,7 @@ function M.setup(events)
 	local pending = require("opencode.session.pending")
 	local client = require("opencode.client")
 	local function changed(sid, kind)
-		events.emit("sync_changed", { session_id = sid, kind = kind or "message", action = "v2" })
+		events.emit("sync_changed", { session_id = sid, kind = kind or "message", action = "server_event" })
 	end
 	local function reconcile(sid, complete)
 		if not sid or deleted[sid] then return end
@@ -198,8 +198,7 @@ function M.setup(events)
 					field = "text", delta = data.delta })
 			else changed(sid) end
 		end
-		if effect.reconcile then reconcile(sid) end
-		if kind:match("^session%.revert%.") or kind:match("^session%.compaction%.") or kind:match("^session%.shell%.")
+		if effect.reconcile or kind:match("^session%.revert%.") or kind:match("^session%.compaction%.") or kind:match("^session%.shell%.")
 			or kind == "session.skill.activated" then reconcile(sid) end
 		if kind:match("%.updated$") or kind == "mcp.status.changed" or kind == "mcp.resources.changed" or kind == "credential.switched" then
 			events.emit("catalog_invalidated", { type = kind, location = event.location })

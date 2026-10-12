@@ -57,10 +57,9 @@ function M.rename(id, title, callback)
 		schedule(callback, { message = "Enter a valid session ID and title" }); return
 	end
 	title = vim.trim(title)
-	serial = serial + 1
-	local revision, token = serial, pending.token(id)
-	renames[id] = revision
-	local function current() return renames[id] == revision and pending.is_current(token) end
+	local token = pending.token(id)
+	renames[id] = token
+	local function current() return renames[id] == token and pending.is_current(token) end
 	require("opencode.lifecycle").ensure_connected(function()
 		if not current() then return end
 		local client = require("opencode.client")
