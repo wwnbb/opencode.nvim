@@ -1,6 +1,6 @@
--- Native v2 event and HTTP snapshot freshness in the visible chat buffer.
+-- Native event and HTTP snapshot freshness in the visible chat buffer.
 
-describe("opencode v2 chat render freshness", function()
+describe("opencode chat render freshness", function()
 	require("opencode").setup({ server = { auto_start = false }, chat = { layout = "float", close_on_focus_lost = false }, lualine = { enabled = false } })
 	local state = require("opencode.state")
 	local sync = require("opencode.sync")

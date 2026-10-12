@@ -1,42 +1,27 @@
--- Regression tests for the shared searchable menu.
--- Run with: ./tests/run.sh tests/unit/menu_spec.lua
+local function press(ctx, key, mode)
+	local bufnr = ctx.input and ctx.input.bufnr or ctx.popup.bufnr
+	for _, mapping in ipairs(vim.api.nvim_buf_get_keymap(bufnr, mode or "n")) do
+		if mapping.lhs == key then
+			assert(type(mapping.callback) == "function", "missing callback for " .. key)
+			return mapping.callback()
+		end
+	end
+	error("missing menu mapping " .. key)
+end
+
+local function search(ctx, query)
+	vim.api.nvim_buf_set_lines(ctx.input.bufnr, 0, 1, false, { query })
+	vim.api.nvim_exec_autocmds("TextChangedI", { buffer = ctx.input.bufnr })
+end
 
 describe("opencode searchable menu", function()
-	it("matches every whitespace-separated query term", function()
-		local menu = require("opencode.ui.menu")
-		local ctx = menu.open({
-			items = {
-				{
-					label = "[ollama-cloud] kimi-k3",
-					value = "kimi-k3",
-					key = "ollama-cloud/kimi-k3",
-				},
-				{
-					label = "[openai] gpt-5",
-					value = "gpt-5",
-					key = "openai/gpt-5",
-				},
-			},
-			searchable = true,
-			list_height = 2,
-			refocus_chat = false,
-		})
 
-		vim.wait(20)
-		vim.api.nvim_buf_set_lines(ctx.input.bufnr, 0, 1, false, { "ollama-cloud kimi" })
-		vim.api.nvim_exec_autocmds("TextChangedI", { buffer = ctx.input.bufnr })
-
-		local lines = vim.api.nvim_buf_get_lines(ctx.popup.bufnr, 0, -1, false)
-		assert(#lines == 1, "only the matching model should remain")
-		assert(lines[1]:find("%[ollama%-cloud%] kimi%-k3"), "provider and model terms should match together")
-
-		ctx.close()
-	end)
-	it("preserves Unicode and punctuation in queries and folds Unicode case", function()
+	it("matches all query terms while preserving Unicode, punctuation and case folding", function()
 		local ctx = require("opencode.ui.menu").open({
 			searchable = true, refocus_chat = false, sort = false,
 			items = {
 				{ label = "Обзор кода", value = "review" },
+				{ label = "[ollama-cloud] kimi-k3", value = "kimi" },
 				{ label = "猫の説明", value = "cat" },
 				{ label = "犬の説明", value = "dog" },
 				{ label = "🐈 pet", value = "emoji" },
@@ -49,7 +34,7 @@ describe("opencode searchable menu", function()
 		local ok, err = pcall(function()
 			for _, case in ipairs({
 				{ "Обзор", "review" }, { "ОБЗОР", "review" }, { "  обзор кода  ", "review" },
-				{ "猫", "cat" }, { "🐈", "emoji" }, { ".env", "hidden" },
+				{ "ollama-cloud kimi", "kimi" }, { "猫", "cat" }, { "🐈", "emoji" }, { ".env", "hidden" },
 				{ "проверка", "desc" }, { "модель", "МОДЕЛЬ" }, { "ключ", "МОДЕЛЬ" },
 			}) do
 				vim.api.nvim_buf_set_lines(ctx.input.bufnr, 0, 1, false, { case[1] })
@@ -69,17 +54,6 @@ describe("Switch Session popup border", function()
 	local state = require("opencode.state")
 	local old_config, old_columns, old_lines, old_win
 	local ctx
-	local function press(menu_ctx, key, mode)
-		local bufnr = menu_ctx.input and menu_ctx.input.bufnr or menu_ctx.popup.bufnr
-		for _, mapping in ipairs(vim.api.nvim_buf_get_keymap(bufnr, mode or "n")) do
-			if mapping.lhs == key then return mapping.callback() end
-		end
-		error("missing menu mapping " .. key)
-	end
-	local function search(menu_ctx, query)
-		vim.api.nvim_buf_set_lines(menu_ctx.input.bufnr, 0, 1, false, { query })
-		vim.api.nvim_exec_autocmds("TextChangedI", { buffer = menu_ctx.input.bufnr })
-	end
 
 	before_each(function()
 		old_config = state.get_config()
@@ -138,34 +112,23 @@ describe("Switch Session popup border", function()
 		end
 	end)
 
-	it("keeps a plain selector's list borderless and closes on Escape", function()
+	it("keeps a plain selector borderless and cancels ordered confirmation without selecting", function()
+		local selected
 		ctx = require("opencode.ui.menu").open({
-			title = " Switch Session ", searchable = false, refocus_chat = false,
-			items = { "First session", "Second session" },
+			title = " Delete session? ", searchable = false, refocus_chat = false, sort = false,
+			items = { "Delete", "Cancel" },
+			on_select = function(item) selected = item end,
 		})
 		assert_outer_border(false)
+		assert.equals("Delete", ctx.current())
 		local frame_win, list_win = ctx.frame.winid, ctx.popup.winid
 		press(ctx, "<Esc>")
+		ctx.close()
+		assert.is_nil(selected)
 		assert.is_false(vim.api.nvim_win_is_valid(frame_win))
 		assert.is_false(vim.api.nvim_win_is_valid(list_win))
 	end)
 end)
-
-local function press(ctx, key, mode)
-	local bufnr = ctx.input and ctx.input.bufnr or ctx.popup.bufnr
-	for _, mapping in ipairs(vim.api.nvim_buf_get_keymap(bufnr, mode or "n")) do
-		if mapping.lhs == key then
-			assert(type(mapping.callback) == "function", "missing callback for " .. key)
-			return mapping.callback()
-		end
-	end
-	error("missing menu mapping " .. key)
-end
-
-local function search(ctx, query)
-	vim.api.nvim_buf_set_lines(ctx.input.bufnr, 0, 1, false, { query })
-	vim.api.nvim_exec_autocmds("TextChangedI", { buffer = ctx.input.bufnr })
-end
 
 describe("opencode selector interactions", function()
 	it("notifies the highlighted item while moving and narrowing a searchable list", function()
@@ -237,27 +200,6 @@ describe("opencode selector interactions", function()
 		press(ctx, "<CR>", "i")
 		assert(selected_item == "remote-explore")
 		assert(not vim.api.nvim_win_is_valid(winid))
-	end)
-
-	it("closes ordered confirmation menus on Escape without selecting", function()
-		local selected
-		local ctx = require("opencode.ui.menu").open({
-			title = " Delete session? ",
-			items = { "Delete", "Cancel" },
-			sort = false,
-			refocus_chat = false,
-			on_select = function(item)
-				selected = item
-			end,
-		})
-		vim.wait(20)
-		assert(ctx.current() == "Delete")
-		local content_win, frame_win = ctx.popup.winid, ctx.frame.winid
-		press(ctx, "<Esc>")
-		ctx.close()
-		assert(selected == nil)
-		assert(not vim.api.nvim_win_is_valid(content_win))
-		assert(not vim.api.nvim_win_is_valid(frame_win))
 	end)
 
 	it("shows a complete confirmation message after narrowing and resizing", function()

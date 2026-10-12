@@ -1,6 +1,6 @@
 local schedule = require("tests.helpers.schedule")
 describe("live fenced code highlights", function()
-	it("keeps open-block extmarks equal to a full render through v2 deltas and replacement", function()
+	it("keeps open-block extmarks equal to a full render through deltas and replacement", function()
 		assert.is_true(pcall(vim.treesitter.language.add, "lua"), "Lua parser required")
 		assert.is_not_nil(vim.treesitter.query.get("lua", "highlights"))
 		vim.o.columns, vim.o.lines = 140, 40

@@ -1,5 +1,5 @@
 describe("native VCS HTTP facade", function()
-	local saved, schedule, requests, response, client, v2
+	local saved, schedule, requests, response, client, api
 	local names = { "opencode.client", "opencode.client.api", "opencode.client.http", "opencode.client.transport" }
 	local directory = "/project space"
 	local function body(data, status)
@@ -16,7 +16,7 @@ describe("native VCS HTTP facade", function()
 		for _, name in ipairs(names) do saved[name] = package.loaded[name]; package.loaded[name] = nil end
 		schedule = vim.schedule; vim.schedule = function(callback) callback() end
 		package.loaded["opencode.client.transport"] = { request = function(opts, callback) requests[#requests + 1] = opts; callback(nil, response) end }
-		client, v2 = require("opencode.client"), require("opencode.client.api")
+		client, api = require("opencode.client"), require("opencode.client.api")
 		client.http.setup({ host = "127.0.0.1", port = 4096 })
 	end)
 	after_each(function()

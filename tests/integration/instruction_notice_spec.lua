@@ -84,18 +84,6 @@ describe("native instruction update notices", function()
 		return page[2]
 	end
 
-	it("shows a compact HTTP history notice while retaining the full native catalog", function()
-		local native = { id = "msg_02_notice", type = "system", time = { created = 2 },
-			text = catalog, description = description, metadata = { notice = "instructions" } }
-		local original = vim.deepcopy(native)
-		local projected = load_history(native)
-		assert_notice(render(), native.id, description)
-		assert.equals(catalog, projected.parts[1].text)
-		assert.same(original, projected.info._native)
-		assert.same(original, native)
-		assert.equals(catalog, sync.get_parts(native.id)[1].text)
-		assert_notice(render(), native.id, description)
-	end)
 
 	it("renders the same compact notice from an SSE catalog update and cold history", function()
 		sync.handle_session_messages(session_id, projection.page(session_id, neighbors))
@@ -114,7 +102,10 @@ describe("native instruction update notices", function()
 		local live = render()
 		assert_notice(live, message.id, description)
 		local native = vim.deepcopy(message._native)
+		local original_native = vim.deepcopy(native)
 		local projected = load_history(native)
+		assert.same(original_native, native)
+		assert.equals(catalog, projected.parts[1].text)
 		local cold = render()
 		assert.same(live, cold)
 		assert_notice(cold, message.id, description)

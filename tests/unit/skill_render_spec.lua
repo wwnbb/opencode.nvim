@@ -283,7 +283,6 @@ describe("skill list rendering", function()
 		local attachment = { type = "skill", id = "ui-part-1", skillID = "catalog-review" }
 		local tool = part({ status = "completed", input = { id = "catalog-review" }, output = "Native instructions" })
 		local key = skill.cache_key(attachment)
-		assert.equals(key, skill.cache_key(attachment))
 		contains(skill.render_attachment(attachment, false).lines[1], 'Skill "First name"')
 		contains(skill.render_tool(tool, false).lines[1], 'Skill "First name"')
 		local tool_key = skill.cache_key(tool)

@@ -1,4 +1,4 @@
-describe("v2 attachment mention positions", function()
+describe("attachment mention positions", function()
 	local requests = require("opencode.protocol.requests")
 	it("converts verified Neovim byte positions to native TUI display cells", function()
 		local prefix = "猫🙂é\n"

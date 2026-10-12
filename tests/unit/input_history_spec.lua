@@ -1,6 +1,3 @@
--- Unit checks for opencode input history ownership.
--- Run with: ./tests/run.sh unit
-
 describe("opencode input history", function()
 	it("loads, deduplicates, persists, and clears history", function()
 

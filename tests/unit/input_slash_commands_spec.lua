@@ -1,6 +1,3 @@
--- Unit checks for opencode input /command completion.
--- Run with: ./tests/run.sh unit
-
 describe("opencode input slash commands", function()
 	it("detects, filters, ranks, and formats slash completions", function()
 

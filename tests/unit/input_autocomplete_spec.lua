@@ -1,216 +1,151 @@
--- Unit checks for opencode input autocomplete widget selection.
--- Run with: ./tests/run.sh unit
-
 describe("opencode input autocomplete", function()
 	it("confirms slash commands and mentions", function()
+		local autocomplete = require("opencode.ui.input.autocomplete")
+		local registry = require("opencode.command_registry")
+		local mentions = require("opencode.ui.input.mentions")
+		local slash_commands = require("opencode.ui.input.slash_commands")
 
-local autocomplete = require("opencode.ui.input.autocomplete")
-local registry = require("opencode.command_registry")
-local mentions = require("opencode.ui.input.mentions")
-local slash_commands = require("opencode.ui.input.slash_commands")
+		local bufnr = vim.api.nvim_get_current_buf()
+		local winid = vim.api.nvim_get_current_win()
+		local previous_virtualedit = vim.o.virtualedit
+		vim.o.virtualedit = "onemore"
+		local state = {
+			visible = true,
+			bufnr = bufnr,
+			winid = winid,
+			mentions = { parts = {} },
+			autocomplete = {},
+		}
 
-local bufnr = vim.api.nvim_get_current_buf()
-local winid = vim.api.nvim_get_current_win()
-local previous_virtualedit = vim.o.virtualedit
-vim.o.virtualedit = "onemore"
-local state = {
-	visible = true,
-	bufnr = bufnr,
-	winid = winid,
-	mentions = { parts = {} },
-	autocomplete = {},
-}
+		local function set_one_line(line, col)
+			vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { line })
+			vim.api.nvim_win_set_cursor(winid, { 1, col })
+		end
 
-local function set_one_line(line, col)
-	vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { line })
-	vim.api.nvim_win_set_cursor(winid, { 1, col })
-end
+		local function offer(line, item, col)
+			col = col or #line
+			set_one_line(line, col)
+			local trigger = item.kind == "mention" and mentions.detect_trigger_in_line(line, col)
+				or slash_commands.detect_trigger_in_line(line, col, 0)
+			trigger.row, trigger.line = 0, line
+			state.autocomplete = { visible = true, selected = 1, trigger = trigger, items = { item } }
+		end
 
-set_one_line("/", #"/")
-state.autocomplete = {
-	visible = true,
-	selected = 1,
-	trigger = {
-		row = 0,
-		line = "/",
-		start_col = 0,
-		end_col = 1,
-		query = "",
-	},
-	items = {
-		{ kind = "slash", label = "/help", command = { name = "help" } },
-	},
-}
-local current_trigger = slash_commands.detect_trigger(state)
-assert.is_truthy(current_trigger, "slash autocomplete trigger should be current")
-assert.equals(state.autocomplete.trigger.query, current_trigger.query, "slash autocomplete query")
-assert.is_truthy(autocomplete.confirm(state), "slash autocomplete confirm should insert command")
-assert.equals("/help ", vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)[1], "slash autocomplete text")
+		offer("/", { kind = "slash", label = "/help", command = { name = "help" } })
+		local current_trigger = slash_commands.detect_trigger(state)
+		assert.is_truthy(current_trigger, "slash autocomplete trigger should be current")
+		assert.equals(state.autocomplete.trigger.query, current_trigger.query, "slash autocomplete query")
+		assert.is_truthy(autocomplete.confirm(state), "slash autocomplete confirm should insert command")
+		assert.equals("/help ", vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)[1], "slash autocomplete text")
 
-local runs, active = 0, true
-registry.register({
-	id = "test.autocomplete_popup",
-	title = "Autocomplete popup",
-	category = "test",
-	slash = { name = "ztest_popup" },
-	enabled = function() return active end,
-	run = function() runs = runs + 1 end,
-	on_select = function(ctx) return ctx.run() end,
-})
-state.allow_chat_commands = true
-set_one_line("/ztest_po", #"/ztest_po")
-state.autocomplete = {
-	visible = true,
-	selected = 1,
-	trigger = slash_commands.detect_trigger_in_line("/ztest_po", #"/ztest_po", 0),
-	items = {
-		{ kind = "slash", label = "/ztest_popup", command = { id = "test.autocomplete_popup", name = "ztest_popup" } },
-	},
-}
-local consumed, selected = autocomplete.confirm(state)
-assert.is_truthy(consumed, "interactive slash completion should consume the token")
-assert.equals("test.autocomplete_popup", selected.id, "selection should identify the canonical command")
-assert.equals("", vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)[1], "selected command should leave no prompt token")
-assert.is_truthy(registry.select(selected.id, { source = "slash_select" }), "selection should run through the registry")
-assert.equals(1, runs, "selected command should execute once")
+		local runs, active = 0, true
+		registry.register({
+			id = "test.autocomplete_popup",
+			title = "Autocomplete popup",
+			category = "test",
+			slash = { name = "ztest_popup" },
+			enabled = function() return active end,
+			run = function() runs = runs + 1 end,
+			on_select = function(ctx) return ctx.run() end,
+		})
+		state.allow_chat_commands = true
+		offer("/ztest_po", { kind = "slash", label = "/ztest_popup", command = { id = "test.autocomplete_popup", name = "ztest_popup" } })
+		local consumed, selected = autocomplete.confirm(state)
+		assert.is_truthy(consumed, "interactive slash completion should consume the token")
+		assert.equals("test.autocomplete_popup", selected.id, "selection should identify the canonical command")
+		assert.equals("", vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)[1], "selected command should leave no prompt token")
+		assert.is_truthy(registry.select(selected.id, { source = "slash_select" }), "selection should run through the registry")
+		assert.equals(1, runs, "selected command should execute once")
 
-active = false
-set_one_line("/ztest_po", #"/ztest_po")
-state.autocomplete = {
-	visible = true,
-	selected = 1,
-	trigger = slash_commands.detect_trigger_in_line("/ztest_po", #"/ztest_po", 0),
-	items = {
-		{ kind = "slash", label = "/ztest_popup", command = { id = "test.autocomplete_popup", name = "ztest_popup" } },
-	},
-}
-consumed, selected = autocomplete.confirm(state)
-assert.equals(false, consumed, "disabled stale completion should not be confirmed")
-assert.equals(nil, selected, "disabled stale completion should not activate")
-assert.equals("/ztest_po", vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)[1], "stale completion should preserve the draft")
-assert.equals(1, runs, "disabled stale completion should not execute")
-active = true
+		active = false
+		offer("/ztest_po", { kind = "slash", label = "/ztest_popup", command = { id = "test.autocomplete_popup", name = "ztest_popup" } })
+		consumed, selected = autocomplete.confirm(state)
+		assert.equals(false, consumed, "disabled stale completion should not be confirmed")
+		assert.equals(nil, selected, "disabled stale completion should not activate")
+		assert.equals("/ztest_po", vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)[1], "stale completion should preserve the draft")
+		assert.equals(1, runs, "disabled stale completion should not execute")
+		active = true
 
-local offered
-for _, entry in ipairs(registry.list_slash()) do
-	if entry.id == "test.autocomplete_popup" then offered = entry; break end
-end
-assert.is_truthy(offered and offered.generation, "slash completion should identify its registration")
-registry.register({
-	id = "test.autocomplete_popup",
-	title = "Replacement popup",
-	category = "test",
-	slash = { name = "ztest_popup" },
-	run = function() runs = runs + 100 end,
-	on_select = function(ctx) return ctx.run() end,
-})
-set_one_line("/ztest_po", #"/ztest_po")
-state.autocomplete = {
-	visible = true,
-	selected = 1,
-	trigger = slash_commands.detect_trigger_in_line("/ztest_po", #"/ztest_po", 0),
-	items = { { kind = "slash", label = "/ztest_popup", command = offered } },
-}
-consumed, selected = autocomplete.confirm(state)
-assert.equals(false, consumed, "replaced completion should not be confirmed")
-assert.equals(nil, selected, "replaced completion should not activate")
-assert.equals("/ztest_po", vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)[1], "replaced completion should preserve draft")
-assert.equals(1, runs, "replaced completion should not execute either registration")
+		local offered
+		for _, entry in ipairs(registry.list_slash()) do
+			if entry.id == "test.autocomplete_popup" then offered = entry; break end
+		end
+		assert.is_truthy(offered and offered.generation, "slash completion should identify its registration")
+		registry.register({
+			id = "test.autocomplete_popup",
+			title = "Replacement popup",
+			category = "test",
+			slash = { name = "ztest_popup" },
+			run = function() runs = runs + 100 end,
+			on_select = function(ctx) return ctx.run() end,
+		})
+		offer("/ztest_po", { kind = "slash", label = "/ztest_popup", command = offered })
+		consumed, selected = autocomplete.confirm(state)
+		assert.equals(false, consumed, "replaced completion should not be confirmed")
+		assert.equals(nil, selected, "replaced completion should not activate")
+		assert.equals("/ztest_po", vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)[1], "replaced completion should preserve draft")
+		assert.equals(1, runs, "replaced completion should not execute either registration")
 
-state.allow_chat_commands = false
-set_one_line("/ztest_po", #"/ztest_po")
-state.autocomplete = {
-	visible = true,
-	selected = 1,
-	trigger = slash_commands.detect_trigger_in_line("/ztest_po", #"/ztest_po", 0),
-	items = {
-		{ kind = "slash", label = "/ztest_popup", command = { id = "test.autocomplete_popup", name = "ztest_popup" } },
-	},
-}
-consumed, selected = autocomplete.confirm(state)
-assert.is_truthy(consumed, "non-chat editors should complete the command as text")
-assert.equals(nil, selected, "non-chat completion should not activate the command")
-assert.equals("/ztest_popup ", vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)[1], "non-chat completion text")
-assert.equals(1, runs, "non-chat completion should not execute the command")
+		state.allow_chat_commands = false
+		offer("/ztest_po", { kind = "slash", label = "/ztest_popup", command = { id = "test.autocomplete_popup", name = "ztest_popup" } })
+		consumed, selected = autocomplete.confirm(state)
+		assert.is_truthy(consumed, "non-chat editors should complete the command as text")
+		assert.equals(nil, selected, "non-chat completion should not activate the command")
+		assert.equals("/ztest_popup ", vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)[1], "non-chat completion text")
+		assert.equals(1, runs, "non-chat completion should not execute the command")
 
-state.allow_chat_commands = true
-set_one_line("/ztest_po then", #"/ztest_po")
-state.autocomplete = {
-	visible = true,
-	selected = 1,
-	trigger = slash_commands.detect_trigger_in_line("/ztest_po then", #"/ztest_po", 0),
-	items = {
-		{ kind = "slash", label = "/ztest_popup", command = { id = "test.autocomplete_popup", name = "ztest_popup" } },
-	},
-}
-consumed, selected = autocomplete.confirm(state)
-assert.is_truthy(consumed, "completion before existing text should insert the command")
-assert.equals(nil, selected, "completion before existing text should not activate")
-assert.equals("/ztest_popup then", vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)[1], "completion should preserve following text")
-assert.equals(1, runs, "completion before text should not execute the command")
+		state.allow_chat_commands = true
+		offer("/ztest_po then", { kind = "slash", label = "/ztest_popup", command = { id = "test.autocomplete_popup", name = "ztest_popup" } }, #"/ztest_po")
+		consumed, selected = autocomplete.confirm(state)
+		assert.is_truthy(consumed, "completion before existing text should insert the command")
+		assert.equals(nil, selected, "completion before existing text should not activate")
+		assert.equals("/ztest_popup then", vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)[1], "completion should preserve following text")
+		assert.equals(1, runs, "completion before text should not execute the command")
 
-local sync = require("opencode.sync")
-local previous_agents = sync.get_agents()
-sync.handle_agents({ { name = "coder_slave", mode = "subagent" } })
-set_one_line("@cod", #"@cod")
-state.autocomplete = {
-	visible = true,
-	selected = 1,
-	trigger = mentions.detect_trigger_in_line("@cod", #"@cod"),
-	items = {
-		{ kind = "mention", label = "@coder_slave", agent = { name = "coder_slave" } },
-	},
-}
-state.autocomplete.trigger.row = 0
-state.autocomplete.trigger.line = "@cod"
-assert.is_truthy(autocomplete.confirm(state), "mention autocomplete confirm should insert mention")
-assert.equals("@coder_slave ", vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)[1], "mention autocomplete text")
+		local sync = require("opencode.sync")
+		local previous_agents = sync.get_agents()
+		sync.handle_agents({ { name = "coder_slave", mode = "subagent" } })
+		offer("@cod", { kind = "mention", label = "@coder_slave", agent = { name = "coder_slave" } })
+		assert.is_truthy(autocomplete.confirm(state), "mention autocomplete confirm should insert mention")
+		assert.equals("@coder_slave ", vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)[1], "mention autocomplete text")
 
-local parts = mentions.active_parts(state)
-assert.equals(1, #parts, "mention autocomplete should create one part")
-assert.equals("coder_slave", parts[1].name, "mention autocomplete part name")
-sync.handle_agents(previous_agents)
+		local parts = mentions.active_parts(state)
+		assert.equals(1, #parts, "mention autocomplete should create one part")
+		assert.equals("coder_slave", parts[1].name, "mention autocomplete part name")
+		sync.handle_agents(previous_agents)
 
-set_one_line("/", #"/")
-state.autocomplete = {
-	visible = true,
-	selected = 1,
-	trigger = slash_commands.detect_trigger_in_line("/", #"/", 0),
-	items = {
-		{ kind = "slash", label = "/first", command = { name = "first" } },
-		{ kind = "slash", label = "/second", command = { name = "second" } },
-	},
-}
-assert.is_truthy(autocomplete.select_next(state), "select_next should move selection")
-assert.equals(2, state.autocomplete.selected, "select_next selected index")
-assert.is_truthy(autocomplete.select_prev(state), "select_prev should move selection")
-assert.equals(1, state.autocomplete.selected, "select_prev selected index")
+		set_one_line("/", #"/")
+		state.autocomplete = {
+			visible = true,
+			selected = 1,
+			trigger = slash_commands.detect_trigger_in_line("/", #"/", 0),
+			items = {
+				{ kind = "slash", label = "/first", command = { name = "first" } },
+				{ kind = "slash", label = "/second", command = { name = "second" } },
+			},
+		}
+		assert.is_truthy(autocomplete.select_next(state), "select_next should move selection")
+		assert.equals(2, state.autocomplete.selected, "select_next selected index")
+		assert.is_truthy(autocomplete.select_prev(state), "select_prev should move selection")
+		assert.equals(1, state.autocomplete.selected, "select_prev selected index")
 
-local confirmed, sent = 0, 0
-require("opencode.ui.input.keymaps").setup(bufnr, { keymaps = { send = "<C-g>" } }, {
-	autocomplete_visible = function() return true end,
-	autocomplete_confirm = function() confirmed = confirmed + 1 end,
-	send = function() sent = sent + 1 end,
-})
-local enter = vim.fn.maparg("<CR>", "i", false, true)
-assert.is_truthy(type(enter.callback) == "function", "input Enter mapping should exist")
-enter.callback()
-assert.is_truthy(vim.wait(100, function() return confirmed == 1 end, 5), "Enter confirmation should run")
-local tab = vim.fn.maparg("<Tab>", "i", false, true)
-assert.is_truthy(type(tab.callback) == "function", "input Tab mapping should exist")
-tab.callback()
-assert.is_truthy(vim.wait(100, function() return confirmed == 2 end, 5), "Tab confirmation should run")
-local send_key = vim.fn.maparg("<C-g>", "i", false, true)
-assert.is_truthy(type(send_key.callback) == "function", "send key mapping should exist")
-send_key.callback()
-assert.is_truthy(vim.wait(100, function() return confirmed == 3 end, 5), "send key confirmation should run")
-assert.equals(0, sent, "completion should not send the draft")
+		local confirmed, sent = 0, 0
+		require("opencode.ui.input.keymaps").setup(bufnr, { keymaps = { send = "<C-g>" } }, {
+			autocomplete_visible = function() return true end,
+			autocomplete_confirm = function() confirmed = confirmed + 1 end,
+			send = function() sent = sent + 1 end,
+		})
+		for index, key in ipairs({ "<CR>", "<Tab>", "<C-g>" }) do
+			local mapping = vim.fn.maparg(key, "i", false, true)
+			mapping.callback()
+			assert.is_true(vim.wait(100, function() return confirmed == index end, 5), key)
+		end
+		assert.equals(0, sent, "completion should not send the draft")
 
-autocomplete.clear(state)
-registry.unregister("test.autocomplete_popup")
-vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { "" })
-vim.o.virtualedit = previous_virtualedit
-
+		autocomplete.clear(state)
+		registry.unregister("test.autocomplete_popup")
+		vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { "" })
+		vim.o.virtualedit = previous_virtualedit
 	end)
 end)
 

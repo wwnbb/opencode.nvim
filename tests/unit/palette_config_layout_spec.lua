@@ -1,6 +1,3 @@
--- Unit checks for command palette configuration and display-width layout.
--- Run with: ./tests/run.sh tests/unit/palette_config_layout_spec.lua
-
 local function with_chat_stub(callback)
 	local module_name = "opencode.ui.chat"
 	local previous_preload = package.preload[module_name]

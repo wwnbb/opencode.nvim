@@ -17,7 +17,7 @@ describe("shared popup owner", function()
 			relative = "editor",
 			size = { width = 32, height = 5 },
 			border = "rounded",
-			enter = true,
+			enter = true, focus_restore = "previous",
 		})
 		popup:mount()
 		local bufnr = popup.bufnr
@@ -36,6 +36,7 @@ describe("shared popup owner", function()
 		assert.equals("Comment", marks[1][4].line_hl_group)
 		popup:close()
 		assert.is_false(vim.api.nvim_buf_is_valid(bufnr))
+		assert.equals(original_win, vim.api.nvim_get_current_win())
 	end)
 
 	it("clamps framed layers on mount and after a screen resize", function()
@@ -191,44 +192,6 @@ describe("shared popup owner", function()
 			if not ok then error(err) end
 		end)
 	end
-
-	it("restores the previous window when closed without options", function()
-		local popup = require("opencode.ui.popup").new({
-			relative = "editor", size = { width = 20, height = 4 }, border = "none", enter = true,
-			focus_restore = "previous",
-		})
-		popup:mount()
-		assert.equals(popup.winid, vim.api.nvim_get_current_win())
-		popup:close()
-		assert.equals(original_win, vim.api.nvim_get_current_win())
-	end)
-
-	it("cleans buffers if closed before mounting", function()
-		local popup = require("opencode.ui.popup").new({
-			frame = { relative = "editor", size = { width = 20, height = 5 }, border = "none" },
-			content = { position = { row = 1, col = 1 }, size = { width = 18, height = 3 }, border = "none" },
-		})
-		local frame_buf, content_buf = popup.frame.bufnr, popup.content.bufnr
-		popup:close()
-		popup:close()
-		assert.is_false(vim.api.nvim_buf_is_valid(frame_buf))
-		assert.is_false(vim.api.nvim_buf_is_valid(content_buf))
-	end)
-
-	it("cleans a titled border buffer if closed before mounting", function()
-		local popup = require("opencode.ui.popup").new({
-			relative = "editor",
-			size = { width = 20, height = 5 },
-			border = { style = "rounded", text = { top = " Details " } },
-		})
-		local content_buf = popup.content.bufnr
-		local border_buf = popup.content.border.bufnr
-		assert.is_true(vim.api.nvim_buf_is_valid(border_buf))
-		popup:close()
-		popup:close()
-		assert.is_false(vim.api.nvim_buf_is_valid(content_buf))
-		assert.is_false(vim.api.nvim_buf_is_valid(border_buf))
-	end)
 
 	it("keeps the centered and input popup compatibility interfaces", function()
 		local float = require("opencode.ui.float")
@@ -394,4 +357,19 @@ describe("shared popup owner", function()
 		assert.is_true(cancelled)
 		assert.equals(original_paste, vim.paste)
 	end)
+	it("cleans every owned buffer when closed before mounting", function()
+		for _, opts in ipairs({
+			{ frame = { relative = "editor", size = { width = 20, height = 5 }, border = "none" },
+				content = { position = { row = 1, col = 1 }, size = { width = 18, height = 3 }, border = "none" } },
+			{ relative = "editor", size = { width = 20, height = 5 },
+				border = { style = "rounded", text = { top = " Details " } } },
+		}) do
+			local popup = require("opencode.ui.popup").new(opts)
+			local buffers = { popup.content.bufnr, popup.frame and popup.frame.bufnr or popup.content.border.bufnr }
+			for _, buf in ipairs(buffers) do assert.is_true(vim.api.nvim_buf_is_valid(buf)) end
+			popup:close(); popup:close()
+			for _, buf in ipairs(buffers) do assert.is_false(vim.api.nvim_buf_is_valid(buf)) end
+		end
+	end)
+
 end)

@@ -47,7 +47,7 @@ describe("shell panel tab rendering", function()
 					"Using plenary.nvim from: /tmp/opencode.nvim/.deps/nvim/plenary.nvim",
 					"==> tests/smoke", "Starting...Scheduling: tests/smoke/require_spec.lua", "",
 					"========================================\t",
-					"Testing: \t/tmp/opencode.nvim/tests/smoke/chat_new_session_skill_render_spec.lua\t",
+					"Testing: \t/tmp/opencode.nvim/tests/smoke/thinking_render_spec.lua\t",
 					"Live UI check skipped: run tests/runtime/capture_v2.py --nvim-ui with an explicit model.\t",
 					"\27[32mSuccess\27[0m\t||\topencode real server smoke renders a native skill after starting a new chat session\t",
 					"\t", "Success: \t1\t", "Failed: \t0\t", "Errors: \t0\t",

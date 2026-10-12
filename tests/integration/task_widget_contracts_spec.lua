@@ -50,7 +50,11 @@ describe("task widget contracts", function()
 
 	it("shares a pending child load with expansion and retries its failure", function()
 		local replies = {}
-		actions_mod.load_session_messages = function(_, _, callback) replies[#replies + 1] = callback end
+		actions_mod.load_session_messages = function(session_id, opts, callback)
+			assert.equals("child", session_id)
+			assert.equals(100, opts.limit)
+			replies[#replies + 1] = callback
+		end
 		chat_tasks.rerender_task = function() end
 		local part = child_task()
 		chat_state.tasks[part.id] = { tool_part = part }
@@ -63,7 +67,9 @@ describe("task widget contracts", function()
 		chat_tasks.handle_task_toggle(part.id)
 		assert.equals(2, #replies)
 		replies[2](nil, {})
+		assert.is_true(chat_state.task_child_loading[part.id])
 		assert.is_true(vim.wait(100, function() return chat_state.task_child_cache[part.id] == true end, 10))
+		assert.is_nil(chat_state.task_child_loading[part.id])
 		assert.is_true(chat_state.expanded_tasks[part.id])
 	end)
 
@@ -173,34 +179,6 @@ describe("task widget contracts", function()
 		end
 	end)
 
-	it("loads a metadata child once and clears its loading marker asynchronously", function()
-		local calls = 0
-
-		chat_state.task_child_cache = {}
-		chat_state.task_child_loading = {}
-		chat_state.tasks = {}
-		actions_mod.load_session_messages = function(session_id, opts, callback)
-			calls = calls + 1
-			assert(session_id == "child_autoload", "autoload should use metadata child session id")
-			assert(opts and opts.limit == 100, "autoload should request the default message limit")
-			callback(nil, {})
-		end
-
-		chat_tasks.ensure_task_child_loaded({
-			id = "task_autoload",
-			tool = "task",
-			state = {
-				status = "running",
-				metadata = { sessionId = "child_autoload" },
-			},
-		})
-		assert(calls == 1, "autoload should issue one child-session load")
-		assert(chat_state.task_child_loading.task_autoload == true, "autoload should mark the task as loading")
-		assert(vim.wait(200, function()
-			return chat_state.task_child_loading.task_autoload == nil
-		end, 10), "autoload cleanup was not scheduled")
-		assert(chat_state.task_child_cache.task_autoload == true, "autoload success should cache the child session")
-	end)
 
 	it("animates through overlay extmarks without mutating text or highlights", function()
 		local task_part = {

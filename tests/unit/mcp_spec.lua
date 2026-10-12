@@ -1,6 +1,6 @@
 local state = require("opencode.state")
 local catalogs = require("opencode.protocol.catalogs")
-describe("v2 MCP palette", function()
+describe("MCP palette", function()
 	local saved, actions, menu, toggle, refresh_callback, read_options, messages, notify, reads, auth_calls
 	before_each(function()
 		state.reset(); state.set_session("s", "S"); state.upsert_session({ id = "s", directory = "/one" })

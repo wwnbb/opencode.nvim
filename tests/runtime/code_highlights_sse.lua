@@ -1,4 +1,4 @@
--- Real TCP/SSE -> v2 reducer -> coalescer -> native buffer, with a controlled
+-- Real TCP/SSE -> server reducer -> coalescer -> native buffer, with a controlled
 -- local server so assertions can run before it sends the closing fence.
 for path in (vim.env.OPENCODE_CODE_RTP or ""):gmatch("[^:]+") do vim.opt.runtimepath:append(path) end
 local port = assert(tonumber(vim.env.OPENCODE_CODE_SSE_PORT))
