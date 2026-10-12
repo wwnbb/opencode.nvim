@@ -254,6 +254,25 @@ function M.handle_question_cancel()
 	vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<Esc>", true, false, true), "n", false)
 end
 
+function M.confirm_question_cancel()
+	local request_id, qstate = chat_questions.get_question_at_cursor()
+	if not qstate or qstate.status ~= "pending" or qstate.submitting then return end
+	local token = pending.token(qstate.session_id)
+	require("opencode.ui.menu").open({
+		title = "Cancel question?",
+		message = "Cancel this question without sending an answer?",
+		items = { "Keep answering", "Cancel question" },
+		sort = false,
+		on_select = function(choice)
+			if choice ~= "Cancel question" or not pending.is_current(token)
+				or question_state.get_question(request_id) ~= qstate
+				or qstate.status ~= "pending" or qstate.submitting
+				or chat_questions.get_question_at_cursor() ~= request_id then return end
+			M.handle_question_cancel()
+		end,
+	})
+end
+
 function M.handle_question_next_tab()
 	local request_id = chat_questions.get_question_at_cursor()
 	if not request_id then

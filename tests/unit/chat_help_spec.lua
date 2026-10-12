@@ -1,4 +1,18 @@
 describe("opencode chat help", function()
+	for _, cancel_key in ipairs({ false, "<leader>qc" }) do
+		it("shows the configured question cancel key " .. tostring(cancel_key), function()
+			local popup = require("opencode.ui.chat.help").show({ keymaps = { cancel_question = cancel_key } })
+			local lines = vim.api.nvim_buf_get_lines(popup.bufnr, 0, -1, false)
+			popup:unmount()
+			local cancel_line
+			for _, line in ipairs(lines) do
+				if line:find("Cancel question", 1, true) then cancel_line = line end
+			end
+			assert.is_truthy(cancel_line)
+			assert.is_truthy(cancel_line:find(cancel_key or "(disabled)", 1, true))
+		end)
+	end
+
 	it("fits the viewport, scrolls to the last section, and cleans up both windows", function()
 		local previous = vim.api.nvim_get_current_win()
 		local help = require("opencode.ui.chat.help")

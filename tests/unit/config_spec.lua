@@ -1,6 +1,6 @@
 local config = require("opencode.config")
 
-describe("strict v2 setup options", function()
+describe("strict setup options", function()
 	local saved_defaults
 	before_each(function() saved_defaults = vim.deepcopy(config.defaults) end)
 	after_each(function() config.defaults = saved_defaults end)
@@ -53,7 +53,7 @@ describe("strict v2 setup options", function()
 		assert.same(before, app_state.get_config())
 	end)
 
-	it("accepts current v2 syntax and parallel settings", function()
+	it("accepts current syntax and parallel settings", function()
 		local merged = config.merge({ syntax = { assistant_markdown = false }, session = { parallel = { enabled = false } } })
 		assert.is_false(merged.syntax.assistant_markdown)
 		assert.is_false(merged.session.parallel.enabled)

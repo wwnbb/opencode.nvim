@@ -1,4 +1,4 @@
--- Native v2 form routing and chat interaction checks.
+-- Native form routing and chat interaction checks.
 
 local function wait_for(predicate)
 	assert(vim.wait(500, predicate, 10))
@@ -14,7 +14,8 @@ describe("opencode native form flow", function()
 	local interactions = require("opencode.ui.chat.interactions")
 	local actions = require("opencode.actions")
 	local input = require("opencode.ui.input")
-	local previous, bufnr, old_reply, old_reject, old_show, old_notify, old_open, notifications
+	local menu = require("opencode.ui.menu")
+	local previous, bufnr, old_reply, old_reject, old_show, old_notify, old_open, old_menu_open, menu_context, notifications
 
 	local function add_form(id, fields)
 		return forms.add_form({ id = id, sessionID = "question-session", title = "User input", fields = fields })
@@ -38,11 +39,9 @@ describe("opencode native form flow", function()
 		vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes(lhs, true, false, true), "xt", false)
 	end
 
-	local function setup_keymaps()
-		local saved_config = chat_state.config
-		chat_state.config = vim.deepcopy(require("opencode.config").defaults.chat)
+	local function setup_keymaps(keys)
+		chat_state.config = vim.tbl_deep_extend("force", vim.deepcopy(require("opencode.config").defaults.chat), { keymaps = keys or {} })
 		require("opencode.ui.chat.keymaps").setup_buffer(bufnr, {})
-		chat_state.config = saved_config
 	end
 
 	before_each(function()
@@ -56,6 +55,7 @@ describe("opencode native form flow", function()
 			session_stack = chat_state.session_stack, render_scheduled = chat_state.render_scheduled,
 			render_in_progress = chat_state.render_in_progress,
 			current_buf = vim.api.nvim_get_current_buf(),
+			config = chat_state.config,
 		}
 		bufnr = vim.api.nvim_create_buf(false, true)
 		vim.api.nvim_win_set_buf(0, bufnr)
@@ -64,17 +64,21 @@ describe("opencode native form flow", function()
 		chat_state.questions, chat_state.session_stack = {}, {}
 		chat_state.render_scheduled, chat_state.render_in_progress = false, false
 		old_reply, old_reject, old_show, old_notify, old_open = actions.reply_to_question, actions.reject_question, input.show, vim.notify, vim.ui.open
+		old_menu_open, menu_context = menu.open, nil
 		notifications = {}
 		vim.notify = function(message, level) notifications[#notifications + 1] = { message = tostring(message), level = level } end
 	end)
 
 	after_each(function()
+		if menu_context then menu_context.close() end
+		menu.open = old_menu_open
 		actions.reply_to_question, actions.reject_question, input.show, vim.notify, vim.ui.open = old_reply, old_reject, old_show, old_notify, old_open
 		require("opencode.events.bus").clear()
 		forms.clear_all(); app_state.reset()
 		chat_state.bufnr, chat_state.winid, chat_state.visible = previous.bufnr, previous.winid, previous.visible
 		chat_state.tabpage, chat_state.questions, chat_state.session_stack = previous.tabpage, previous.questions, previous.session_stack
 		chat_state.render_scheduled, chat_state.render_in_progress = previous.render_scheduled, previous.render_in_progress
+		chat_state.config = previous.config
 		if vim.api.nvim_buf_is_valid(previous.current_buf) then vim.api.nvim_win_set_buf(0, previous.current_buf) end
 		if bufnr and vim.api.nvim_buf_is_valid(bufnr) then vim.api.nvim_buf_delete(bufnr, { force = true }) end
 	end)
@@ -172,8 +176,157 @@ describe("opencode native form flow", function()
 		assert.equals(0, calls)
 	end)
 
+	for _, disabled in ipairs({ false, "" }) do
+		it("keeps questions and selected answers on Escape with cancellation disabled: " .. tostring(disabled), function()
+			setup_keymaps({ cancel_question = disabled })
+			actions.reject_question = function() error("Escape must not cancel the question") end
+			local item = add_form("escape", { { key = "ok", type = "boolean", required = true } })
+			mount("escape")
+			key("2")
+			key("<Esc>")
+			assert.equals("pending", item.status)
+			assert.is_falsy(item.submitting)
+			assert.same({ ok = false }, forms.get_answers("escape"))
+			assert.is_nil(buffer_text():find(" cancel", 1, true))
+		end)
+	end
+
+	for _, cancel_key in ipairs({ "<leader>qc", "<Esc>" }) do
+		it("requires confirmation to cancel a pending question with " .. cancel_key, function()
+			setup_keymaps({ cancel_question = cancel_key })
+			local calls, confirmation = {}, nil
+			menu.open = function(opts) confirmation = opts end
+			actions.reject_question = function(session_id, request_id, done)
+				calls[#calls + 1] = { session_id, request_id }
+				done(nil)
+			end
+			local item = add_form("cancel-key", { { key = "ok", type = "boolean", required = true } })
+			mount("cancel-key")
+			assert.is_truthy(buffer_text():find(cancel_key .. " cancel", 1, true))
+			key("2")
+			key("<CR>")
+			key(cancel_key:gsub("<leader>", vim.g.mapleader or "\\"))
+			assert.is_nil(confirmation)
+			assert.equals(cancel_key == "<Esc>" and "pending" or "confirming", item.status)
+			if item.status == "confirming" then key("<Esc>") end
+			assert.equals("pending", item.status)
+			assert.same({}, calls)
+			key(cancel_key:gsub("<leader>", vim.g.mapleader or "\\"))
+			assert.equals("Cancel question?", confirmation.title)
+			assert.same({ "Keep answering", "Cancel question" }, confirmation.items)
+			assert.is_false(confirmation.sort)
+			assert.equals("pending", item.status)
+			assert.same({}, calls)
+			confirmation.on_select("Keep answering")
+			assert.same({ ok = false }, forms.get_answers("cancel-key"))
+			key(cancel_key:gsub("<leader>", vim.g.mapleader or "\\"))
+			confirmation.on_select("Cancel question")
+			wait_for(function() return item.status == "rejected" end)
+			assert.same({ { "question-session", "cancel-key" } }, calls)
+		end)
+	end
+
+	it("keeps answers when the real cancellation menu is dismissed and cancels only its explicit choice", function()
+		setup_keymaps({ cancel_question = "<F6>" })
+		local calls = 0
+		menu.open = function(opts) menu_context = old_menu_open(opts); return menu_context end
+		actions.reject_question = function(_, _, done) calls = calls + 1; done(nil) end
+		local item = add_form("cancel-menu", { { key = "ok", type = "boolean", required = true } })
+		mount("cancel-menu")
+		key("2")
+		for _, dismiss_key in ipairs({ "<CR>", "<Esc>" }) do
+			key("<F6>")
+			assert.equals("Keep answering", menu_context.current())
+			assert.equals(0, calls)
+			key(dismiss_key)
+			assert.equals(chat_state.winid, vim.api.nvim_get_current_win())
+			assert.equals("pending", item.status)
+			assert.same({ ok = false }, forms.get_answers("cancel-menu"))
+			assert.equals(0, calls)
+		end
+		key("<F6>")
+		key("j")
+		assert.equals("Cancel question", menu_context.current())
+		key("<CR>")
+		wait_for(function() return item.status == "rejected" end)
+		assert.equals(1, calls)
+	end)
+
+	for _, change in ipairs({ "invalidated", "replaced", "confirming", "submitting", "cursor outside" }) do
+		it("ignores cancellation confirmation after the question context is " .. change, function()
+			setup_keymaps({ cancel_question = "<F6>" })
+			local confirmation, calls
+			calls = 0
+			menu.open = function(opts) confirmation = opts end
+			actions.reject_question = function() calls = calls + 1 end
+			local fields = { { key = "ok", type = "boolean", default = false } }
+			local item = add_form("stale-cancel", fields)
+			mount("stale-cancel")
+			key("<F6>")
+			assert.is_table(confirmation)
+			if change == "invalidated" then require("opencode.session.pending").clear_session("question-session")
+			elseif change == "replaced" then forms.clear_all(); item = add_form("stale-cancel", fields)
+			elseif change == "confirming" then forms.set_confirming("stale-cancel")
+			elseif change == "submitting" then forms.begin_submission("stale-cancel", "reject")
+			else
+				vim.bo[bufnr].modifiable = true
+				vim.api.nvim_buf_set_lines(bufnr, -1, -1, false, { "outside" })
+				vim.bo[bufnr].modifiable = false
+				vim.api.nvim_win_set_cursor(chat_state.winid, { vim.api.nvim_buf_line_count(bufnr), 0 })
+			end
+			confirmation.on_select("Cancel question")
+			assert.equals(0, calls)
+			assert.is_not.equals("rejected", item.status)
+		end)
+	end
+
+	it("opens cancellation confirmation on every question frame line and nowhere outside it", function()
+		setup_keymaps({ cancel_question = "<F6>" })
+		local calls = 0
+		menu.open = function() calls = calls + 1 end
+		local item = add_form("cancel-bounds", { { key = "ok", type = "boolean", required = true } })
+		mount("cancel-bounds")
+		local pos = chat_state.questions["cancel-bounds"]
+		vim.bo[bufnr].modifiable = true
+		vim.api.nvim_buf_set_lines(bufnr, 0, 0, false, { "before" })
+		vim.api.nvim_buf_set_lines(bufnr, -1, -1, false, { "after" })
+		vim.bo[bufnr].modifiable = false
+		pos.start_line, pos.end_line = pos.start_line + 1, pos.end_line + 1
+		for line = pos.start_line, pos.end_line do
+			vim.api.nvim_win_set_cursor(chat_state.winid, { line + 1, 0 })
+			key("<F6>")
+			assert.equals(line - pos.start_line + 1, calls)
+		end
+		local inside_calls = calls
+		for _, line in ipairs({ pos.start_line - 1, pos.end_line + 1 }) do
+			vim.api.nvim_win_set_cursor(chat_state.winid, { line + 1, 0 })
+			key("<F6>")
+			assert.equals(inside_calls, calls)
+		end
+		assert.equals("pending", item.status)
+	end)
+
+	for _, cancel_key in ipairs({ false, "<F6>", "<Esc>" }) do
+		it("preserves Escape handling outside questions with cancel key " .. tostring(cancel_key), function()
+			setup_keymaps({ cancel_question = cancel_key })
+			local original, calls = interactions.handle_question_cancel, 0
+			interactions.handle_question_cancel = function() calls = calls + 1 end
+			local ok, err = pcall(function()
+				if cancel_key == "<F6>" then
+					key(cancel_key)
+					assert.equals(0, calls)
+				end
+				key("<Esc>")
+				assert.equals(1, calls)
+			end)
+			interactions.handle_question_cancel = original
+			assert.is_true(ok, err)
+		end)
+	end
+
 	it("maps digits, Enter and Escape to selection, confirmation and review", function()
 		setup_keymaps()
+		assert.is_false(chat_state.config.keymaps.cancel_question)
 		local calls = 0
 		actions.reply_to_question = function() calls = calls + 1 end
 		actions.reject_question = function() error("Escape must return to answers") end
