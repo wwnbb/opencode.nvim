@@ -506,9 +506,10 @@ The runner uses temporary Neovim configuration, data, state, cache and log paths
 Each Lua spec process has its own profile, removed when the run finishes. Tests
 use the real pinned Nui and Plenary dependencies.
 
-The live server/skill smoke test is reported as pending unless the runtime
-harness supplies its isolated server and explicit model. A normal suite run
-does not exercise a live model.
+CI runs the full suite and the hot-path runtime checks on pushes and pull requests.
+The live server/skill smoke scenario runs separately through the runtime harness
+with an isolated server and explicit model. A normal suite run does not exercise
+a live model.
 
 Verify completion against an installed OpenCode binary and a loopback mock
 model (temporary configuration, no account credentials or paid requests):
