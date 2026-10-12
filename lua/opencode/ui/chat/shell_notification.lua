@@ -28,7 +28,7 @@ function M.render_tool(part, expanded)
 	local failed = metadata.state == "error" or metadata.timeout == true
 		or type(metadata.signal) == "string" or (exit ~= nil and exit ~= 0)
 	local status = cancelled and "cancelled" or failed and "failed" or "finished"
-	local status_hl = cancelled and "DiagnosticWarn" or failed and "OpenCodeBashError" or "DiagnosticOk"
+	local status_hl = cancelled and "OpenCodeBashWarning" or failed and "OpenCodeBashError" or "OpenCodeBashSuccess"
 	local heading = "Shell " .. status
 	if exit ~= nil and exit ~= 0 then heading = heading .. " · exit " .. tostring(exit) end
 	if metadata.timeout == true then heading = heading .. " · timed out" end
@@ -56,7 +56,7 @@ function M.render_tool(part, expanded)
 			panel.add_line(result, "… " .. tostring(#rows - MAX_PREVIEW_ROWS) .. " more rows · Enter / O to expand", "OpenCodeBashMuted")
 		end
 	end
-	if metadata.truncated == true then panel.add_line(result, "Output truncated by server", "DiagnosticWarn") end
+	if metadata.truncated == true then panel.add_line(result, "Output truncated by server", "OpenCodeBashWarning") end
 	if expanded then
 		if type(metadata.shellID) == "string" then panel.add_line(result, "Shell ID: " .. metadata.shellID, "OpenCodeBashMuted") end
 		if type(metadata.jobID) == "string" and metadata.jobID ~= metadata.shellID then

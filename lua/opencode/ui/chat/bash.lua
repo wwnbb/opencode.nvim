@@ -25,6 +25,8 @@ local function ensure_highlights()
 	panel_helpers.set_hl("OpenCodeBashMuted", "Comment", "Normal")
 	panel_helpers.set_hl("OpenCodeBashCommand", "String", "Normal")
 	panel_helpers.set_hl("OpenCodeBashOutput", "Normal", nil)
+	panel_helpers.set_hl("OpenCodeBashSuccess", "DiagnosticOk", "Normal")
+	panel_helpers.set_hl("OpenCodeBashWarning", "DiagnosticWarn", "Normal")
 	panel_helpers.set_hl("OpenCodeBashError", "DiagnosticError", "ErrorMsg")
 end
 
