@@ -1,4 +1,4 @@
-describe("v2 stream render scheduling", function()
+describe("stream render scheduling", function()
 	it("coalesces native deltas into one part update and keeps final replacement authoritative", function()
 		local bus, sync, state = require("opencode.events.bus"), require("opencode.sync"), require("opencode.state")
 		bus.clear(); sync.clear_all(); state.reset(); state.set_session("s", "Stream")

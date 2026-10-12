@@ -23,13 +23,20 @@ local function text(group, expanded)
 	return table.concat(activity.render(group, expanded).lines, "\n")
 end
 
+local function header_highlight(rendered)
+	for _, hl in ipairs(rendered.highlights) do
+		if hl.line == 0 then return hl.hl_group end
+	end
+end
+
 describe("Thought, Explore, Execute and Web groups", function()
+	local function read(id, status) return tool(id, "read", status) end
 	before_each(function()
 		sync.clear_all()
 		require("opencode.state").set_config({ thinking = { enabled = true } })
 	end)
 
-	it("groups consecutive reasoning across steps and sums v2 durations", function()
+	it("groups consecutive reasoning across steps and sums durations", function()
 		local groups = collect({
 			{ parts = { thought("a", "first", { created = 100, completed = 316 }) } },
 			{ parts = { thought("b", "second", { created = 500, completed = 4100 }) }, finish = "stop" },
@@ -44,37 +51,15 @@ describe("Thought, Explore, Execute and Web groups", function()
 		local read = tool("a", "read", "completed", { filePath = "Cargo.toml" })
 		read.state.output = "hidden file output"
 		local groups = collect({ { parts = { read } }, { parts = {
-			tool("b", "grep", "completed", { pattern = "main" }), tool("c", "glob", "completed", { pattern = "*.rs" }),
+			tool("b", "grep", "completed", { pattern = "main" }), tool("c", "glob", "completed", { pattern = "*.rs" }), tool("d", "rg"),
 		} } })
 		assert.equals(groups.a, groups.c)
-		assert.is_truthy(text(groups.a):find("→ Explored — 1 read, 2 searches", 1, true))
+		assert.is_truthy(text(groups.a):find("→ Explored — 1 read, 3 searches", 1, true))
 		assert.is_nil(text(groups.a):find("Cargo.toml", 1, true))
-		assert.is_truthy(text(groups.a, true):find("↘ Explored — 1 read, 2 searches", 1, true))
+		assert.is_truthy(text(groups.a, true):find("↘ Explored — 1 read, 3 searches", 1, true))
 		assert.is_truthy(text(groups.a, true):find("\n → Read Cargo.toml", 1, true))
 		assert.is_truthy(text(groups.a, true):find('\n ● Grep "main"', 1, true))
 		assert.is_nil(text(groups.a, true):find("hidden file output", 1, true))
-	end)
-
-	it("groups execute invocations across steps and reveals only the selected call list", function()
-		local first, second = tool("a", "execute"), tool("b", "execute")
-		first.state.output, second.state.output = "first result", "second result"
-		first.state.metadata = { toolCalls = { { tool = "mcp.search", status = "completed" } } }
-		second.state.metadata = { toolCalls = { { tool = "mcp.read", status = "completed" } } }
-		local groups = collect({ { parts = { first }, finish = "tool-calls" }, { parts = { second } } })
-		assert.equals(groups.a, groups.b)
-		assert.equals("activity:execute:a", groups.a.id)
-		assert.equals("→ Executed — 2 calls", vim.trim(text(groups.a)))
-		local leaves = activity.render(groups.a, true)
-		assert.equals(4, #leaves.lines)
-		assert.equals("a", leaves.children.a.id)
-		assert.equals("b", leaves.children.b.id)
-		assert.is_truthy(table.concat(leaves.lines, "\n"):find("mcp.search", 1, true))
-		assert.is_nil(table.concat(leaves.lines, "\n"):find("result", 1, true))
-		local opened = table.concat(activity.render(groups.a, true, { b = true }).lines, "\n")
-		assert.is_truthy(opened:find("↳ ✓ mcp.read", 1, true))
-		assert.is_nil(opened:find("↳ ✓ mcp.search", 1, true))
-		assert.is_nil(opened:find("second result", 1, true))
-		assert.is_nil(opened:find("first result", 1, true))
 	end)
 
 	it("groups web searches and fetches across steps and counts each request kind", function()
@@ -115,20 +100,6 @@ describe("Thought, Explore, Execute and Web groups", function()
 		end
 	end)
 
-	it("keeps execute permissions outside groups and running status across a text boundary", function()
-		local groups = collect({ { parts = {
-			tool("before", "execute"), tool("permission", "execute", "pending"),
-			tool("running", "execute", "running"), { type = "text", text = "Progress" }, tool("after", "execute"),
-		} } }, function(_, part) return part.id == "permission" end)
-		assert.is_nil(groups.permission)
-		assert.equals("before", groups.before.first_part_id)
-		assert.equals("running", groups.running.first_part_id)
-		assert.equals("after", groups.after.first_part_id)
-		assert.is_true(groups.running.completed)
-		assert.is_true(activity.is_working(groups.running))
-		assert.is_truthy(text(groups.running):find("Executing — 1 call", 1, true))
-	end)
-
 	it("keeps MCP child failures and cancelled execute visible without opening their results", function()
 		local failed = tool("failed", "execute")
 		failed.state.output = "details of failure"
@@ -146,26 +117,6 @@ describe("Thought, Explore, Execute and Web groups", function()
 		assert.is_nil(opened:find("details of failure", 1, true))
 	end)
 
-	it("includes rg in consecutive exploration across assistant steps", function()
-		local groups = collect({
-			{ parts = { tool("read", "read"), tool("rg", "rg", "running", { pattern = "main" }) } },
-			{ parts = { tool("glob", "glob"), tool("grep", "grep") } },
-		})
-		assert.equals(groups.read, groups.rg)
-		assert.equals(groups.rg, groups.grep)
-		assert.is_truthy(text(groups.read):find("Exploring — 1 read, 3 searches", 1, true))
-		assert.is_nil(text(groups.read):find("main", 1, true))
-	end)
-
-	it("keeps rg permission requests outside exploration groups", function()
-		local groups = collect({ { parts = {
-			tool("before", "read"), tool("pending", "rg", "pending"), tool("after", "rg"),
-		} } }, function(_, part) return part.id == "pending" end)
-		assert.is_nil(groups.pending)
-		assert.equals("before", groups.before.first_part_id)
-		assert.equals("after", groups.after.first_part_id)
-	end)
-
 	it("keeps failed rg discoverable without forcing its details open", function()
 		local failed = tool("rg", "rg", "error", { pattern = "[" })
 		failed.state.error = "ripgrep failed: invalid regex"
@@ -179,11 +130,98 @@ describe("Thought, Explore, Execute and Web groups", function()
 	end)
 
 	it("does not hide permissions or suppress reasoning beside an interaction", function()
-		local groups = collect({ { parts = { thought("t"), tool("pending", "read", "pending"), tool("done", "read") } } },
+		local groups = collect({ { parts = { thought("t"), tool("pending", "rg", "pending"), tool("done", "read") } } },
 			function(_, part) return part.id == "pending" end)
 		assert.is_not_nil(groups.t)
 		assert.is_nil(groups.pending)
 		assert.equals("done", groups.done.first_part_id)
+	end)
+
+	it("shares grouping across steps and all visible boundaries", function()
+		local groups = collect({
+			{ parts = { read("a") }, finish = "tool-calls" },
+			{ parts = { { type = "text", text = "  " }, read("b"),
+				{ type = "text", text = "Progress" }, read("text"), tool("shell", "bash"),
+				read("other"), read("permission", "pending"), read("after_permission") }, finish = "stop" },
+			{ parts = { read("final") } }, { role = "user" }, { parts = { read("user") } },
+		}, function(_, part) return part.id == "permission" end)
+		assert.equals(groups.a, groups.b)
+		assert.equals("activity:explore:a", groups.a.id)
+		assert.is_nil(groups.permission)
+		assert.is_nil(groups.shell)
+		for _, id in ipairs({ "text", "other", "after_permission", "final", "user" }) do
+			assert.equals(id, groups[id].first_part_id)
+		end
+	end)
+
+	it("resolves current sync status instead of retaining the collected status", function()
+		local original = read("live", "running")
+		local groups = collect({ { parts = { original }, finish = "stop" } })
+		assert.is_true(activity.is_working(groups.live))
+		assert.is_truthy(text(groups.live):find("Exploring — ", 1, true))
+		local updated = read("live", "completed")
+		updated.messageID, updated.sessionID = "m1", "s"
+		sync.handle_part_updated(updated)
+		assert.is_false(activity.is_working(groups.live))
+		assert.is_truthy(text(groups.live):find("Explored — ", 1, true))
+	end)
+
+	it("colors the group by the latest call while retaining earlier failures", function()
+		local failed = read("failed", "error")
+		for _, status in ipairs({ "completed", "running", "pending", "error" }) do
+			local latest = read("latest", status)
+			local groups = collect({ { parts = { failed } }, { parts = { latest } } })
+			for _, expanded in ipairs({ false, true }) do
+				local rendered = activity.render(groups.failed, expanded)
+				assert.equals(status == "error" and "OpenCodeActivityError" or "OpenCodeToolGroup",
+					header_highlight(rendered))
+				assert.is_not_nil(rendered.children.failed.start_line)
+				assert.is_truthy(rendered.lines[1]:find("failed", 1, true))
+			end
+		end
+	end)
+
+	it("follows explicit status before historical timestamps in the shared tool classifier", function()
+		for _, case in ipairs({
+			{ status = "pending", working = true }, { status = "running", working = true },
+			{ status = "streaming", working = true }, { status = "completed", working = false },
+			{ status = "error", working = false }, { status = "cancelled", working = false },
+			{ status = "canceled", working = false }, { status = "interrupted", working = false },
+			{ time = { completed = 20 }, working = false }, { time = { ["end"] = 20 }, working = false },
+		}) do
+			local part = tool("status", "read")
+			part.state.status = case.status
+			part.state.time = case.time or (case.working and { created = 1, completed = 2, start = 1, ["end"] = 2 } or nil)
+			local groups = collect({ { parts = { part, { type = "text", text = "Progress" } }, finish = "stop" } })
+			assert.is_true(groups.status.completed)
+			assert.equals(case.working, activity.is_working(groups.status), vim.inspect(case))
+			assert.is_truthy(text(groups.status):find(case.working and "Exploring" or "Explored", 1, true))
+		end
+	end)
+
+	it("recognizes explicit, metadata and cancellation failures in the shared classifier", function()
+		local policy = require("opencode.ui.chat.tool_group")
+		for _, failure in ipairs({
+			{ status = "error" }, { status = "completed", error = "tool failed" },
+			{ status = "completed", metadata = { error = true } },
+			{ status = "cancelled" }, { status = "canceled" }, { status = "interrupted" },
+		}) do
+			local part = tool("failed", "read")
+			part.state = vim.tbl_deep_extend("force", part.state, failure)
+			assert.is_true(policy.failed(part), vim.inspect(failure))
+			assert.is_true(policy.latest_failed(part), vim.inspect(failure))
+		end
+	end)
+
+	it("does not classify absent or empty error values as failures", function()
+		local policy = require("opencode.ui.chat.tool_group")
+		local part = tool("healthy", "read")
+		assert.is_false(policy.failed(part))
+		for _, empty in ipairs({ "", "  ", false, vim.NIL }) do
+			part.state.error = empty
+			part.state.metadata = { error = false }
+			assert.is_false(policy.failed(part), vim.inspect(empty))
+		end
 	end)
 
 	it("shows active status, retains errors while folded, and omits redacted thoughts", function()
@@ -221,122 +259,23 @@ for _, family in ipairs({
 			return part
 		end
 
-		local function header_highlight(rendered)
-			for _, hl in ipairs(rendered.highlights) do
-				if hl.line == 0 then return hl.hl_group end
-			end
-		end
+		it("renders active and failed headers while keeping failed leaves reachable", function()
+			local running = collect({ { parts = { call("running", "running") } } }).running
+			assert.is_true(activity.is_working(running))
+			assert.is_truthy(text(running):find(family.active .. " — ", 1, true))
+			assert.equals("OpenCodeToolGroup", header_highlight(activity.render(running, false)))
 
-		it("shares grouping across steps and all visible boundaries", function()
-			local groups = collect({
-				{ parts = { call("a") }, finish = "tool-calls" },
-				{ parts = { { type = "text", text = "  " }, call("b"),
-					{ type = "text", text = "Progress" }, call("text"), tool("shell", "bash"),
-					call("other"), call("permission", "pending"), call("after_permission") }, finish = "stop" },
-				{ parts = { call("final") } }, { role = "user" }, { parts = { call("user") } },
-			}, function(_, part) return part.id == "permission" end)
-			assert.equals(groups.a, groups.b)
-			assert.equals("activity:" .. family.kind .. ":a", groups.a.id)
-			assert.is_nil(groups.permission)
-			assert.is_nil(groups.shell)
-			for _, id in ipairs({ "text", "other", "after_permission", "final", "user" }) do
-				assert.equals(id, groups[id].first_part_id)
-			end
-		end)
-
-		it("keeps explicit active status despite closed groups and stale completion timestamps", function()
-			for _, status in ipairs({ "pending", "running", "streaming" }) do
-				local active = call("active", status)
-				active.state.time = { created = 1, completed = 2, start = 1, ["end"] = 2 }
-				local groups = collect({ { parts = { active, { type = "text", text = "Progress" } }, finish = "stop" } })
-				assert.is_true(groups.active.completed)
-				assert.is_true(activity.is_working(groups.active), status)
-				local rendered = activity.render(groups.active, false)
-				assert.is_truthy(rendered.lines[1]:find(family.active .. " — ", 1, true))
-				assert.equals("OpenCodeToolGroup", header_highlight(rendered))
-			end
-		end)
-
-		it("treats terminal states as finished even without completion timestamps", function()
-			for _, status in ipairs({ "completed", "error", "cancelled", "canceled", "interrupted" }) do
-				local groups = collect({ { parts = { call("terminal", status) } } })
-				assert.is_false(activity.is_working(groups.terminal), status)
-				assert.is_truthy(text(groups.terminal):find(family.done .. " — ", 1, true))
-			end
-		end)
-
-		it("uses completion timestamps when a historical tool has no status", function()
-			for _, completed_time in ipairs({ { completed = 20 }, { ["end"] = 20 } }) do
-				local historical = call("historical")
-				historical.state.status = nil
-				historical.state.time = completed_time
-				local groups = collect({ { parts = { historical } } })
-				assert.is_false(activity.is_working(groups.historical))
-				assert.is_truthy(text(groups.historical):find(family.done .. " — ", 1, true))
-			end
-		end)
-
-		it("resolves current sync status instead of retaining the collected status", function()
-			local original = call("live", "running")
-			local groups = collect({ { parts = { original }, finish = "stop" } })
-			assert.is_true(activity.is_working(groups.live))
-			local updated = call("live", "completed")
-			updated.messageID, updated.sessionID = "m1", "s"
-			sync.handle_part_updated(updated)
-			assert.is_false(activity.is_working(groups.live))
-			assert.is_truthy(text(groups.live):find(family.done .. " — ", 1, true))
-		end)
-
-		it("keeps failed leaves reachable and uses the same themed error header", function()
-			for _, failure in ipairs({
-				{ status = "error" },
-				{ status = "completed", error = "tool failed" },
-				{ status = "completed", metadata = { error = true } },
-				{ status = "cancelled" },
-				{ status = "canceled" },
-				{ status = "interrupted" },
-			}) do
-				local failed = call("failed")
-				failed.state = vim.tbl_deep_extend("force", failed.state, failure)
-				local groups = collect({ { parts = { call("ok"), failed } } })
-				local rendered = activity.render(groups.ok, false)
-				assert.is_truthy(rendered.lines[1]:find("2 " .. family.count .. " · 1 failed", 1, true))
-				assert.equals("OpenCodeActivityError", header_highlight(rendered))
-				assert.is_nil(rendered.children.ok.start_line)
-				assert.is_not_nil(rendered.children.failed.start_line)
-				assert.is_nil(table.concat(rendered.lines, "\n"):find("private-result-failed", 1, true))
-				local opened = activity.render(groups.ok, false, { failed = true })
-				assert.is_true(opened.children.failed.end_line - opened.children.failed.start_line
-					> rendered.children.failed.end_line - rendered.children.failed.start_line)
-			end
-		end)
-
-		it("does not treat absent or empty errors as failures", function()
-			for _, empty in ipairs({ "", "  ", false, vim.NIL }) do
-				local healthy = call("healthy")
-				healthy.state.error = empty
-				healthy.state.metadata = { error = false }
-				local groups = collect({ { parts = { healthy } } })
-				local rendered = activity.render(groups.healthy, false)
-				assert.is_nil(rendered.lines[1]:find("failed", 1, true))
-				assert.equals("OpenCodeToolGroup", header_highlight(rendered))
-				assert.is_nil(rendered.children.healthy.start_line)
-			end
-		end)
-
-		it("colors the group by the latest call while retaining earlier failures", function()
 			local failed = call("failed", "error")
-			for _, status in ipairs({ "completed", "running", "pending", "error" }) do
-				local latest = call("latest", status)
-				local groups = collect({ { parts = { failed } }, { parts = { latest } } })
-				for _, expanded in ipairs({ false, true }) do
-					local rendered = activity.render(groups.failed, expanded)
-					assert.equals(status == "error" and "OpenCodeActivityError" or "OpenCodeToolGroup",
-						header_highlight(rendered))
-					assert.is_not_nil(rendered.children.failed.start_line)
-					assert.is_truthy(rendered.lines[1]:find("failed", 1, true))
-				end
-			end
+			local groups = collect({ { parts = { call("ok"), failed } } })
+			local rendered = activity.render(groups.ok, false)
+			assert.is_truthy(rendered.lines[1]:find("2 " .. family.count .. " · 1 failed", 1, true))
+			assert.equals("OpenCodeActivityError", header_highlight(rendered))
+			assert.is_nil(rendered.children.ok.start_line)
+			assert.is_not_nil(rendered.children.failed.start_line)
+			assert.is_nil(table.concat(rendered.lines, "\n"):find("private-result-failed", 1, true))
+			local opened = activity.render(groups.ok, false, { failed = true })
+			assert.is_true(opened.children.failed.end_line - opened.children.failed.start_line
+				> rendered.children.failed.end_line - rendered.children.failed.start_line)
 		end)
 
 		it("preserves hidden identities and reveals only independently expanded leaves", function()
@@ -350,6 +289,7 @@ for _, family in ipairs({
 				assert.is_nil(closed.children[id].start_line)
 			end
 			assert.equals(2, #closed.lines)
+			assert.is_truthy(closed.lines[1]:find(family.done .. " — 2 " .. family.count, 1, true))
 			local opened = activity.render(groups.first, true, expansions)
 			local body = table.concat(opened.lines, "\n")
 			assert.is_nil(body:find("private-result-first", 1, true))

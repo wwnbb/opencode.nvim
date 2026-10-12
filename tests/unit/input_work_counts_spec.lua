@@ -3,8 +3,7 @@ local info_bar = require("opencode.ui.input.info_bar")
 local app = require("opencode.state")
 local sync = require("opencode.sync")
 
--- The original full-draft calculations are independent of the bounded/lazy
--- reads under test. Rendering after skill selection remains the same path.
+-- Compare bounded reads with the original full-draft height calculation.
 local function original_height(lines, cfg, width)
 	local display_lines = 0
 	for _, line in ipairs(lines) do
@@ -15,30 +14,8 @@ local function original_height(lines, cfg, width)
 	return math.max(cfg.min_height, math.min(display_lines, cfg.max_height))
 end
 
-local function original_skill_names(state)
-	local names, seen = {}, {}
-	local text = state.bufnr and vim.api.nvim_buf_is_valid(state.bufnr)
-		and table.concat(vim.api.nvim_buf_get_lines(state.bufnr, 0, -1, false), "\n") or ""
-	local ok, source = pcall(require, "opencode.sync")
-	local catalog = ok and source.get_skills() or {}
-	local by_id = {}
-	for _, skill in pairs(type(catalog) == "table" and catalog or {}) do
-		if type(skill) == "table" and type(skill.id) == "string" then by_id[skill.id] = skill.name end
-	end
-	for _, part in ipairs(state.parts or {}) do
-		local id = part.skillID or part.id
-		if part.type == "skill" and type(id) == "string" and not seen[id]
-			and (not part._marker or (state.marker_range and state.marker_range(text, part._marker))) then
-			local name = by_id[id] or part.name or id
-			names[#names + 1] = type(name) == "string" and name or id
-			seen[id] = true
-		end
-	end
-	return names
-end
-
 describe("input draft read work counts", function()
-	local state, saved, reads, winid, skill_index, skill_names
+	local state, saved, reads, winid
 	local function snapshot()
 		local marks = {}
 		for _, mark in ipairs(vim.api.nvim_buf_get_extmarks(state.info_bufnr,
@@ -48,19 +25,27 @@ describe("input draft read work counts", function()
 		return { lines = saved.get_lines(state.info_bufnr, 0, -1, false), marks = marks }
 	end
 
-	local function assert_info_equivalent(expected_reads)
-		debug.setupvalue(info_bar.update, skill_index, original_skill_names)
-		local ok, err = pcall(info_bar.update, state)
-		debug.setupvalue(info_bar.update, skill_index, skill_names)
-		assert.is_true(ok, err)
-		local expected = snapshot()
+	local function assert_info(expected_reads, expected_text)
 		reads = {}
 		local cursor = vim.api.nvim_win_get_cursor(winid)
 		info_bar.update(state)
 		assert.equals(expected_reads, #reads)
 		if expected_reads > 0 then assert.same({ 0, -1, false }, reads[1]) end
-		assert.same(expected, snapshot())
+		local actual = snapshot()
+		if expected_text then assert.equals(expected_text, actual.lines[1]) end
+		local highlights = {}
+		for _, mark in ipairs(actual.marks) do
+			assert.is_true(mark[2] >= 0 and mark[3].end_col <= #actual.lines[1])
+			highlights[mark[3].hl_group] = actual.lines[1]:sub(mark[2] + 1, mark[3].end_col)
+		end
+		assert.is_true(#actual.marks > 0)
+		if expected_text then
+			assert.equals("Code ", highlights.Identifier)
+			assert.equals("Model", highlights.OpenCodeInputModel)
+			assert.equals(expected_text:match(" · Skills?: .+$"), highlights.OpenCodeInputSkill)
+		end
 		assert.same(cursor, vim.api.nvim_win_get_cursor(winid))
+		return actual.lines[1]
 	end
 
 	before_each(function()
@@ -93,16 +78,9 @@ describe("input draft read work counts", function()
 			if bufnr == state.bufnr then reads[#reads + 1] = { first, last, strict } end
 			return saved.get_lines(bufnr, first, last, strict)
 		end
-		for index = 1, 100 do
-			local name, value = debug.getupvalue(info_bar.update, index)
-			if name == "skill_names" then skill_index, skill_names = index, value; break end
-			if not name then break end
-		end
-		assert.is_truthy(skill_index, "Expected private skill selection dependency")
 	end)
 
 	after_each(function()
-		if skill_index then debug.setupvalue(info_bar.update, skill_index, skill_names) end
 		vim.api.nvim_buf_get_lines = saved.get_lines
 		app.get_session, sync.get_skills = saved.session, saved.skills
 		package.loaded["opencode.local"] = saved.local_module
@@ -110,7 +88,7 @@ describe("input draft read work counts", function()
 		for _, bufnr in ipairs({ state.bufnr, state.info_bufnr }) do
 			if vim.api.nvim_buf_is_valid(bufnr) then vim.api.nvim_buf_delete(bufnr, { force = true }) end
 		end
-		state, winid, skill_index, skill_names = nil, nil, nil, nil
+		state, winid = nil, nil
 	end)
 
 	it("matches full-draft heights while reading at most max_height physical lines", function()
@@ -147,12 +125,18 @@ describe("input draft read work counts", function()
 		assert.same({}, reads)
 	end)
 
-	it("skips draft reads without marked skill attachments and preserves full info output", function()
-		for _, parts in ipairs({ {}, { { type = "file", id = "file" }, { type = "agent", name = "agent" } },
-			{ { type = "skill", id = "catalog" }, { type = "skill", id = "fallback", name = "Fallback" },
-				{ type = "skill", id = "catalog", name = "Duplicate" }, { type = "skill", id = "invalid-name" } } }) do
-			state.parts = parts
-			assert_info_equivalent(0)
+	it("skips draft reads without marked skills while resolving names and removing duplicates", function()
+		local core = "Code Model Provider · Variant"
+		state.layout.content_width = 120
+		for _, case in ipairs({
+			{ parts = {}, text = core },
+			{ parts = { { type = "file", id = "file" }, { type = "agent", name = "agent" } }, text = core },
+			{ parts = { { type = "skill", id = "catalog" }, { type = "skill", id = "fallback", name = "Fallback" },
+				{ type = "skill", id = "catalog", name = "Duplicate" }, { type = "skill", id = "invalid-name" } },
+				text = core .. " · Skills: Catalog 名称, Fallback, invalid-name" },
+		}) do
+			state.parts = case.parts
+			assert_info(0, case.text)
 		end
 	end)
 
@@ -168,18 +152,20 @@ describe("input draft read work counts", function()
 			{ type = "skill", id = "catalog", _marker = "@catalog" },
 			{ type = "skill", id = "last", name = "Duplicate" },
 		}
-		assert_info_equivalent(1)
-		assert.is_truthy(snapshot().lines[1]:find("Skills: Last, Catalog 名称", 1, true))
+		assert_info(1, "Code Model Provider · Variant · Skills: Last, Catalog 名称")
 		vim.api.nvim_buf_set_lines(state.bufnr, #lines - 1, -1, false, { "Markers removed" })
-		assert_info_equivalent(1)
-		assert.is_truthy(snapshot().lines[1]:find("Skill: Duplicate", 1, true))
+		assert_info(1, "Code Model Provider · Variant · Skill: Duplicate")
 		state.layout.content_width = 14
-		assert_info_equivalent(1)
+		local narrow = assert_info(1)
+		assert.equals("… Model · Ski…", narrow)
+		assert.is_true(vim.fn.strdisplaywidth(narrow) <= 14)
+		assert.same({ { 0, 4, "Identifier" }, { 4, 9, "OpenCodeInputModel" }, { 9, 19, "OpenCodeInputSkill" } },
+			vim.tbl_map(function(mark) return { mark[2], mark[3].end_col, mark[3].hl_group } end, snapshot().marks))
 	end)
 
 	it("avoids draft reads when marker validation is unavailable", function()
 		state.parts = { { type = "skill", id = "catalog", _marker = "@catalog" } }
 		state.marker_range = nil
-		assert_info_equivalent(0)
+		assert_info(0, "Code Model Provider · Variant")
 	end)
 end)

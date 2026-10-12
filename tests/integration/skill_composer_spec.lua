@@ -142,13 +142,6 @@ describe("skill selection in the input composer", function()
 		vim.wait(20, function() return false end, 5)
 	end)
 
-	it("offers /skills without the singular /skill command", function()
-		local available = {}
-		for _, command in ipairs(slash.get_commands()) do available[command.name] = true end
-		assert.is_true(available.skills)
-		assert.is_nil(available.skill)
-	end)
-
 	it("merges into a closed draft, deduplicates skills and sends native IDs only on explicit submit", function()
 		history.set_pending("Existing draft", other_parts())
 		stage({ "review", "review", "testing" })
@@ -220,6 +213,10 @@ describe("skill selection in the input composer", function()
 	end)
 
 	it("opens the skill picker when Enter confirms /skills in autocomplete", function()
+		local available = {}
+		for _, command in ipairs(slash.get_commands()) do available[command.name] = true end
+		assert.is_true(available.skills)
+		assert.is_nil(available.skill)
 		history.set_pending("/skills", other_parts())
 		chat.focus_input()
 		assert.equals("/skills", input.get_pending_text())

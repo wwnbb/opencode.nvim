@@ -2,8 +2,10 @@
 
 `markdown-oracle.ts` runs the actual OpenTUI 0.4.1 MarkdownRenderable used by the
 local reference. It records visible rows and per-cell style runs for the cases
-in `../fixtures/markdown/cases.json`, at 77 and 25 columns. Cases with `updates`
-reuse the same renderable across streaming deltas.
+in `../fixtures/markdown/cases.json`, at 77 and 25 columns unless an entry sets
+`widths`. Cases whose content and styles do not change between these widths use
+25 columns only; streaming cases retain both widths. Cases with `updates` reuse
+the same renderable across streaming deltas.
 
 Generate with an isolated test dependency (Bun required):
 

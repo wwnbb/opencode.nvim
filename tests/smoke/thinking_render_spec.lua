@@ -1,4 +1,4 @@
-describe("v2 Thought rendering", function()
+describe("Thought rendering", function()
 	it("uses current config and renders collapsed and expanded reasoning", function()
 		local thinking = require("opencode.ui.thinking")
 		local activity = require("opencode.ui.chat.activity")

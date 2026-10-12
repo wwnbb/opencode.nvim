@@ -1,4 +1,4 @@
--- Task navigation uses only the v2 child session ID carried by tool metadata.
+-- Task navigation uses only the child session ID carried by tool metadata.
 
 describe("opencode task children", function()
 	local children = require("opencode.ui.chat.task_children")

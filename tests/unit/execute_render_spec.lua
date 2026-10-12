@@ -36,47 +36,39 @@ describe("universal execute widget", function()
 		view.task_anim_frame = saved.task_anim_frame
 	end)
 
-	it("uses recorded MCP calls and native millisecond timing instead of inferring tools from code", function()
-		local item = part({ status = "completed", time = { start = 1000, ["end"] = 1250 },
-			input = { code = 'return tools.fake.guessed_call()' }, output = '{"ok":true}',
-			metadata = { toolCalls = {
-				{ tool = "arbitrary-server.search", status = "completed" },
-				{ tool = "arbitrary-server.search", status = "completed" },
-			} },
-		})
-		local result = execute.render_tool(item, false)
-		contains(text(result), "✓ execute")
-		contains(text(result), "2 tools · 250ms")
-		local _, count = text(result):gsub("arbitrary%-server.search", "")
-		assert.equals(2, count)
-		assert.is_nil(text(result):find("Result", 1, true))
-		assert.is_nil(text(result):find("guessed_call", 1, true))
-		assert.same(execute.render_tool(item, true), execute.render(item, true))
-	end)
-
 	it("shows one Explore-style row and opens only the recorded MCP calls", function()
 		local item = part({ status = "completed", time = { start = 1000, ["end"] = 1250 },
 			input = { code = "return tools.fake.guessed_call()" },
 			output = string.rep("large output must stay hidden\n", 10000),
 			metadata = { toolCalls = {
 				{ tool = "arbitrary-server.search", status = "completed" },
+				{ tool = "arbitrary-server.search", status = "completed" },
 				{ tool = "another-server.fetch", status = "completed" },
 			} },
 		})
 		local result = execute.render(item, false)
 		assert.equals(1, #result.lines)
-		assert.equals(" → arbitrary-server.search · +1 more · 250ms", text(result))
+		assert.equals(" → arbitrary-server.search · +2 more · 250ms", text(result))
 		assert.same({}, result.children)
 		local opened = execute.render(item, true)
 		contains(opened.lines[1], "execute")
 		contains(text(opened), "  ↳ ✓ arbitrary-server.search")
 		contains(text(opened), "  ↳ ✓ another-server.fetch")
-		assert.equals(3, #opened.lines)
+		assert.equals(4, #opened.lines)
 		assert.is_not_nil(opened.children[execute.section_id(item.id, "calls")])
 		assert.equals(1, vim.tbl_count(opened.children))
 		assert.is_nil(text(opened):find("Result", 1, true))
 		assert.is_nil(text(opened):find("Code", 1, true))
 		assert.is_nil(text(opened):find("large output", 1, true))
+		for _, expanded in ipairs({ false, true }) do
+			local calls = text(execute.render_tool(item, expanded))
+			contains(calls, "✓ execute")
+			contains(calls, "3 tools · 250ms")
+			local _, count = calls:gsub("arbitrary%-server.search", "")
+			assert.equals(2, count)
+			assert.is_nil(calls:find("guessed_call", 1, true))
+		end
+		assert.same(execute.render_tool(item, true), opened)
 	end)
 
 	it("keeps combining characters when a complete tool name fits on one row", function()

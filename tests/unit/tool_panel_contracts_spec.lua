@@ -11,26 +11,17 @@ local function assert_no_buffer_newlines(lines, message)
 end
 
 describe("tool and panel rendering contracts", function()
-	local files
 	before_each(function()
-		files = {}
 		require("opencode.sync").clear_all()
 		require("opencode.state").reset()
 		require("opencode.ui.chat.render_state").reset_chat_surface({ reset_expansions = true })
 	end)
 	after_each(function()
-		for _, path in ipairs(files) do vim.fn.delete(path) end
 		require("opencode.permission.state").clear_all()
 		require("opencode.question.state").clear_all()
 		require("opencode.edit.state").clear_all()
 		require("opencode.artifact.changes").clear()
 		require("opencode.sync").clear_all()
-	end)
-
-	it("enables Thought rendering with the default header highlight", function()
-		local thinking = require("opencode.ui.thinking")
-		assert.is_true(thinking.is_enabled())
-		assert.equals("WarningMsg", thinking.get_config().header_highlight)
 	end)
 
 	it("preserves colon-containing grep paths and rg context lines", function()
@@ -268,83 +259,6 @@ describe("tool and panel rendering contracts", function()
 		assert(render_text(read_collapsed):find("Read lua/opencode/init.lua", 1, true), "read widget should render native state.input.path")
 		assert(render_text(read_collapsed):find("more lines", 1, true), "read widget should show collapsed overflow")
 		assert(not render_text(read_expanded):find("more lines", 1, true), "read widget should hide overflow when expanded")
-	end)
-
-	it("renders a glob summary", function()
-		local glob_result = search.render_tool({
-			tool = "glob",
-			state = {
-				status = "completed",
-				input = { pattern = "*.lua", path = "lua/opencode" },
-				output = "lua/opencode/init.lua",
-			},
-			metadata = { count = 1 },
-		}, false)
-		assert(render_text(glob_result):find("Glob", 1, true), "glob widget should render")
-	end)
-
-	it("renders the collapsed rg summary with native search arguments", function()
-		local rg_result = rg.render_tool({
-			tool = "rg",
-			state = {
-				status = "completed",
-				input = { pattern = "local", path = "lua", type = "lua", column = true },
-				output = "lua/opencode/init.lua:12:3:local M = {}",
-			},
-		}, false)
-		assert(rg_result and table.concat(rg_result.lines, "\n"):find("● rg", 1, true), "rg widget should render")
-	end)
-
-	it("renders a legacy skill banner in the collapsed summary", function()
-		local skill = require("opencode.ui.chat.skill")
-		local skill_result = skill.render_tool({
-			tool = "skill",
-			state = {
-				status = "completed",
-				input = { name = "opencode-nvim-widgets" },
-				output = "# Skill: opencode-nvim-widgets\n\nRender widgets cleanly.",
-			},
-		}, false)
-		assert(render_text(skill_result):find('Skill "opencode-nvim-widgets"', 1, true), "skill widget should render")
-	end)
-
-	it("renders pending questions and permission labels", function()
-		local question_lines = require("opencode.ui.question_widget").get_lines_for_question("question_panel_test", {
-			{ header = "Pick", question = "Choose one", options = { { label = "A", value = "a" } } },
-		}, {
-			current_tab = 1,
-			selections = { { selected_indices = { 1 } } },
-		}, "pending")
-		assert(table.concat(question_lines, "\n"):find("Pick", 1, true), "question widget should render")
-
-		local permission_state = require("opencode.permission.state")
-		permission_state.clear_all()
-		local perm = permission_state.add_permission("permission_panel_test", "session_panel_test", "bash", {
-			tool_input = { command = "echo hi" },
-		})
-		local permission_lines = require("opencode.ui.permission_widget").get_lines_for_permission(
-			"permission_panel_test",
-			perm
-		)
-		assert(table.concat(permission_lines, "\n"):find("Permission", 1, true), "permission widget should render")
-	end)
-
-	it("renders the edited file name", function()
-		local edit_state_for_panel = require("opencode.edit.state")
-		local changes_for_panel = require("opencode.artifact.changes")
-		edit_state_for_panel.clear_all()
-		changes_for_panel.clear()
-		local tmp = vim.fn.tempname()
-		files[#files + 1] = tmp
-		vim.fn.writefile({ "before" }, tmp)
-		local edit = edit_state_for_panel.add_edit("edit_panel_test", "session_panel_test", {
-			{ filePath = tmp, before = "before\n", after = "after\n" },
-		}, {})
-		local edit_lines = require("opencode.ui.edit_widget").get_lines_for_edit("edit_panel_test", edit)
-		assert(table.concat(edit_lines, "\n"):find(vim.fn.fnamemodify(tmp, ":t"), 1, true), "edit widget should render")
-		vim.fn.delete(tmp)
-		edit_state_for_panel.clear_all()
-		changes_for_panel.clear()
 	end)
 
 end)

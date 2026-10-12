@@ -1,6 +1,3 @@
--- Unit checks for log viewer configuration resolution.
--- Run with: ./tests/run.sh unit
-
 describe("opencode log viewer configuration", function()
 	it("uses app logs config and keeps open overrides local", function()
 		vim.opt.runtimepath:append(vim.fn.getcwd())

@@ -63,6 +63,11 @@ describe("rg custom tool rendering", function()
 			assert.equals(output[i] == "" and "   │" or "   │ " .. output[i], lines[i + 5])
 		end
 		assert.same({ " ● rg [pattern=Expr, path=src]", "" }, lines_for(state, false))
+		state.input = { pattern = "x", path = "src", glob = "*.rs", context = 2, max_results = 200, hidden = false }
+		state.output = nil
+		local fields = table.concat(lines_for(state, true), "\n")
+		assert.is_truthy(fields:find("  context: 2\n  max_results: 200\n  hidden: false\n", 1, true))
+		assert.is_truthy(fields:find("   │ No matches found.", 1, true))
 	end)
 
 	it("wraps framed output without losing text", function()
@@ -72,16 +77,6 @@ describe("rg custom tool rendering", function()
 		assert.equals("   │ " .. string.rep("x", 75), lines[4])
 		assert.equals("   │ " .. string.rep("x", 75), lines[5])
 		assert.is_truthy(lines[6]:find("   └", 1, true))
-	end)
-
-	it("uses the reference argument order and preserves false options", function()
-		local lines = lines_for({
-			status = "completed",
-			input = { pattern = "x", path = "src", glob = "*.rs", context = 2, max_results = 200, hidden = false },
-		}, true)
-		local fields = table.concat(lines, "\n")
-		assert.is_truthy(fields:find("  context: 2\n  max_results: 200\n  hidden: false\n", 1, true))
-		assert.is_truthy(fields:find("   │ No matches found.", 1, true))
 	end)
 
 	it("shows running, failed and interrupted calls without a success marker", function()

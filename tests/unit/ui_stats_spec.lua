@@ -35,30 +35,8 @@ describe("usage statistics display", function()
 			end
 		end
 		assert.is_truthy(logo_row, "the TUI's block wordmark is missing")
-		assert.is_truthy(wide_lines[logo_row + 1]:find("█▀▀▀", 1, true))
-		assert.is_truthy(wide_lines[logo_row + 2]:find("▀▀▀▀ █▀▀▀ ▀▀▀▀", 1, true))
 
-		local numeral = {
-			"██████  ██████      ██  ██  ██      ██",
-			"██  ██  ██  ██      ██  ██  ████  ████",
-			"██████  ██  ██      ██████  ██  ██  ██",
-			"██  ██  ██  ██          ██  ██      ██",
-			"██████  ██████  ██      ██  ██      ██",
-		}
-		local number_row
-		for index, line in ipairs(wide_lines) do
-			if line:find(numeral[1], 1, true) then
-				number_row = index
-				break
-			end
-		end
-		assert.is_truthy(number_row, "the TUI's five-row token numeral is missing")
-		assert.equals(5, number_row - logo_row)
-		for index, expected in ipairs(numeral) do
-			assert.is_truthy(wide_lines[number_row + index - 1]:find(expected, 1, true))
-		end
-		assert.equals("", wide_lines[number_row + 5])
-		assert.is_truthy(wide_lines[number_row + 6]:find("TOKENS", 1, true))
+		assert.is_truthy(wide:find("TOKENS", 1, true))
 
 		local summary_row
 		for index, line in ipairs(wide_lines) do

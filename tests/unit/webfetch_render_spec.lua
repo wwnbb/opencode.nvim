@@ -33,20 +33,12 @@ describe("webfetch custom tool rendering", function()
 		vim.o.columns = old_columns
 	end)
 
-	it("formats native millisecond request durations", function()
-		local result = webfetch.render_tool(part({
-			status = "completed",
-			input = { url = "https://example.com/jobs" },
-			time = { created = 1000, completed = 1905 },
-		}), false)
-		contains(text(result), "905ms")
-	end)
-
 	it("summarizes the target and result in a single collapsed row", function()
 		local item = part({
 			status = "completed",
 			input = { url = "https://example.com/jobs", format = "markdown", timeout = 30 },
 			output = "# Careers\n\nUNIQUE_BODY_CONTENT",
+			time = { created = 1000, completed = 1905 },
 		})
 		local result = webfetch.render_tool(item, false)
 		local rows = vim.tbl_filter(function(line) return vim.trim(line) ~= "" end, result.lines)
@@ -54,6 +46,7 @@ describe("webfetch custom tool rendering", function()
 		contains(rows[1], "WebFetch")
 		contains(rows[1], "example.com/jobs")
 		contains(rows[1], "Fetched")
+		contains(rows[1], "905ms")
 		assert.is_nil(text(result):find("UNIQUE_BODY_CONTENT", 1, true))
 		assert.is_nil(text(result):find("Input:", 1, true))
 		assert.is_nil(text(result):find('"format"', 1, true))

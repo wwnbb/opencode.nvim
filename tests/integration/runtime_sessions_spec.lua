@@ -123,11 +123,6 @@ describe("runtime sessions", function()
 		assert.same({ "runtime-session" }, active_ids())
 	end)
 
-	it("keeps the runtime root visible when navigating to a child", function()
-		state.set_session("runtime-session", "Runtime Session")
-		state.set_session("child-session", "Child Session", { runtime = false })
-		assert.same({ "runtime-session" }, active_ids())
-	end)
 
 	it("shows pending widgets from a task child but excludes an unrelated session", function()
 		state.set_session("runtime-session", "Runtime Session")
@@ -139,6 +134,7 @@ describe("runtime sessions", function()
 			id = "task-part", messageID = "task-message", sessionID = "runtime-session",
 			type = "tool", tool = "task", metadata = { sessionId = "child-session" },
 		})
+		assert.same({ "runtime-session" }, active_ids())
 		local widgets = require("opencode.ui.chat.widget_support")
 		assert.is_true(widgets.should_render("child-session", "pending", "runtime-session", false))
 		assert.is_false(widgets.should_render("historical-session", "pending", "runtime-session", false))

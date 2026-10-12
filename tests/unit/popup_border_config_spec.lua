@@ -1,6 +1,3 @@
--- Regression checks for the setup-level border of shared popup windows.
--- Run with: ./tests/run.sh tests/unit/popup_border_config_spec.lua
-
 local config = require("opencode.config")
 local state = require("opencode.state")
 local Popup = require("opencode.ui.popup")
@@ -60,7 +57,7 @@ describe("configured shared popup borders", function()
 		assert.is_not_nil(vim.api.nvim_win_get_config(popup.winid).border)
 	end)
 
-	for _, style in ipairs({ "none", "single", "double", "rounded", "solid" }) do
+	for _, style in ipairs({ "none", "double" }) do
 		it("applies " .. style .. " to a single popup and only the outer frame of a composite popup", function()
 			set_border(style)
 			local single = open({

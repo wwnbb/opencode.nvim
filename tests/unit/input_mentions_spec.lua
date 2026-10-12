@@ -1,6 +1,3 @@
--- Unit checks for opencode input @agent mentions.
--- Run with: ./tests/run.sh unit
-
 describe("opencode input mentions", function()
 	it("detects and serializes agent mentions", function()
 

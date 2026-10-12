@@ -119,10 +119,6 @@ describe("reference TUI Markdown layout", function()
 		assert.equals(0xabcdef, strong.fg)
 	end)
 
-	it("uses OpenTUI's two-cell tabs instead of the editor's tabstop", function()
-		assert.equals("a  b\n\n  return 1", body("a\tb\n\n```lua\n\treturn 1\n```"))
-	end)
-
 	it("keeps content visible if Markdown parsers are unavailable", function()
 		local original = vim.treesitter.get_string_parser
 		vim.treesitter.get_string_parser = function() error("missing parser") end

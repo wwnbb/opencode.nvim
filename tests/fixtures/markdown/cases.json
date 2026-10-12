@@ -1,11 +1,17 @@
 [
   {
     "name": "paragraphs",
-    "source": "Paragraph one.\nsoft line\n\nParagraph two.\n\n\nThree."
+    "source": "Paragraph one.\nsoft line\n\nParagraph two.\n\n\nThree.",
+    "widths": [
+      25
+    ]
   },
   {
     "name": "heading-levels",
-    "source": "# H1\n## H2\n### H3\n#### H4\n##### H5\n###### H6\n####### literal\n\nSetext one\n===\n\nSetext two\n---"
+    "source": "# H1\n## H2\n### H3\n#### H4\n##### H5\n###### H6\n####### literal\n\nSetext one\n===\n\nSetext two\n---",
+    "widths": [
+      25
+    ]
   },
   {
     "name": "heading-markup",
@@ -33,47 +39,80 @@
   },
   {
     "name": "hard-breaks",
-    "source": "one  \ntwo\\\nthree"
+    "source": "one  \ntwo\\\nthree",
+    "widths": [
+      25
+    ]
   },
   {
     "name": "code-blocks",
-    "source": "Before\n```text\n**literal**\n    indent\n\nlast\n```\nafter\n~~~unknown\nhello\n~~~"
+    "source": "Before\n```text\n**literal**\n    indent\n\nlast\n```\nafter\n~~~unknown\nhello\n~~~",
+    "widths": [
+      25
+    ]
   },
   {
     "name": "empty-code",
-    "source": "before\n```\n```\nafter"
+    "source": "before\n```\n```\nafter",
+    "widths": [
+      25
+    ]
   },
   {
     "name": "open-code",
-    "source": "before\n```text\na\n\nb"
+    "source": "before\n```text\na\n\nb",
+    "widths": [
+      25
+    ]
   },
   {
     "name": "code-tabs",
-    "source": "text a\tb\n\n```text\n\tindented\na\tb\n```"
+    "source": "text a\tb\n\n```text\n\tindented\na\tb\n```",
+    "widths": [
+      25
+    ]
   },
   {
     "name": "ordered",
-    "source": "9) Nine\n9) Ten\n9) Eleven"
+    "source": "9) Nine\n9) Ten\n9) Eleven",
+    "widths": [
+      25
+    ]
   },
   {
     "name": "unordered",
-    "source": "* one\n* two\n\n+ three\n+ four\n\n- five"
+    "source": "* one\n* two\n\n+ three\n+ four\n\n- five",
+    "widths": [
+      25
+    ]
   },
   {
     "name": "nested-list",
-    "source": "- main\n  - inner\n    1. sub one\n    2. sub two\n- next"
+    "source": "- main\n  - inner\n    1. sub one\n    2. sub two\n- next",
+    "widths": [
+      25
+    ]
   },
   {
     "name": "loose-list",
-    "source": "- one\n\n- two\n\n  para two\n\n  - nested\n- last"
+    "source": "- one\n\n- two\n\n  para two\n\n  - nested\n- last",
+    "widths": [
+      25
+    ]
   },
   {
     "name": "list-continuation",
-    "source": "- first line\n  next line\n  last line\n- second"
+    "source": "- first line\n  next line\n  last line\n- second",
+    "widths": [
+      25
+    ]
   },
   {
     "name": "list-task",
-    "source": "- [x] done\n- [ ] pending\n- [X] also\n- ordinary"
+    "source": "- [x] done\n- [ ] pending\n- [X] also\n- ordinary",
+    "widths": [
+      25
+    ]
   },
   {
     "name": "list-blocks",
@@ -81,23 +120,38 @@
   },
   {
     "name": "quote",
-    "source": "before\n> quote\n> second\n>\n> next\nafter"
+    "source": "before\n> quote\n> second\n>\n> next\nafter",
+    "widths": [
+      25
+    ]
   },
   {
     "name": "quote-heading",
-    "source": "> # Head\n>\n> **bold** and `code`\n>\n> - one\n> - two"
+    "source": "> # Head\n>\n> **bold** and `code`\n>\n> - one\n> - two",
+    "widths": [
+      25
+    ]
   },
   {
     "name": "quote-nested",
-    "source": "> outer\n> > inner\n> >\n> > tail\n> outer tail"
+    "source": "> outer\n> > inner\n> >\n> > tail\n> outer tail",
+    "widths": [
+      25
+    ]
   },
   {
     "name": "quote-code",
-    "source": "> ```text\n> code\n> ```\n>\n> tail"
+    "source": "> ```text\n> code\n> ```\n>\n> tail",
+    "widths": [
+      25
+    ]
   },
   {
     "name": "quote-table",
-    "source": "> | A | B |\n> |---|---|\n> | 1 | 2 |"
+    "source": "> | A | B |\n> |---|---|\n> | 1 | 2 |",
+    "widths": [
+      25
+    ]
   },
   {
     "name": "hr",
@@ -105,7 +159,10 @@
   },
   {
     "name": "indent-code",
-    "source": "before\n\n    first\n      second\n\n    third\n\nafter"
+    "source": "before\n\n    first\n      second\n\n    third\n\nafter",
+    "widths": [
+      25
+    ]
   },
   {
     "name": "grid",
@@ -129,7 +186,10 @@
   },
   {
     "name": "grid-header",
-    "source": "|A|B|\n|---|---|"
+    "source": "|A|B|\n|---|---|",
+    "widths": [
+      25
+    ]
   },
   {
     "name": "grid-no-outer",
@@ -137,7 +197,10 @@
   },
   {
     "name": "html",
-    "source": "<div>\n**bold**\n\nparagraph\n</div>\n\n<!-- hidden? -->"
+    "source": "<div>\n**bold**\n\nparagraph\n</div>\n\n<!-- hidden? -->",
+    "widths": [
+      25
+    ]
   },
   {
     "name": "wrap-punctuation",
@@ -153,7 +216,10 @@
   },
   {
     "name": "empty-heading",
-    "source": "#\n\n##\n\ntext"
+    "source": "#\n\n##\n\ntext",
+    "widths": [
+      25
+    ]
   },
   {
     "name": "inline-incomplete",
@@ -208,7 +274,10 @@
   },
   {
     "name": "heading-unicode-eof",
-    "source": "# 😀"
+    "source": "# 😀",
+    "widths": [
+      25
+    ]
   },
   {
     "name": "table-nested-format",
@@ -220,6 +289,9 @@
   },
   {
     "name": "heading-astral",
-    "source": "# 😀a"
+    "source": "# 😀a",
+    "widths": [
+      25
+    ]
   }
 ]

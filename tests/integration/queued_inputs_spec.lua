@@ -96,13 +96,16 @@ describe("queued inputs in the chat buffer", function()
 		assert.is_true(state.spinner_footer_line < state.pending_inputs.q.start_line)
 		assert.is_true(state.pending_inputs.q.end_line < state.pending_inputs.q2.start_line)
 		assert.equals("q", sync.get_messages("queue-test")[1].id)
+		local previous_start = state.pending_inputs.q2.start_line
 		local part = vim.deepcopy(sync.get_parts("assistant")[1])
 		part.text = "Agent is still working\nAnother line"
 		sync.handle_part_updated(part)
 		assert.is_true(chat.update_stream_part_block("queue-test", "assistant", part.id))
 		assert.is_true(text():find("Another line", 1, true) < text():find("First pending", 1, true))
+		assert.equals(previous_start + 1, state.pending_inputs.q2.start_line)
 		focus("q2"); key("C")
 		assert.equals("q2", cancels[1].id)
+		assert.same({}, fallbacks)
 	end)
 
 	it("keeps old pending inputs visible outside the history render limit", function()
@@ -137,7 +140,8 @@ describe("queued inputs in the chat buffer", function()
 		seed("q", "First"); seed("q2", "Second"); chat.do_render()
 		assert.equals("", vim.fn.maparg("s", "n"))
 		assert.is_truthy(text():find("Queued · C cancel · E edit · S steer", 1, true))
-		focus("q2"); key("S")
+		focus("q2"); key("S"); key("S")
+		assert.equals(1, #steers)
 		assert.equals("q2", steers[1].id)
 		assert.equals("queue-test", steers[1].sid)
 		assert.equals("steer", steers[1].delivery)
@@ -160,7 +164,8 @@ describe("queued inputs in the chat buffer", function()
 		seed("steer", "Keep this", { { uri = "file:///tmp/context.txt" } }, "steer")
 		chat.do_render(); focus("steer")
 		assert.is_truthy(text():find("Q queue", 1, true))
-		key("Q")
+		key("Q"); key("Q")
+		assert.equals(1, #steers)
 		assert.same({ sid = "queue-test", id = "steer", delivery = "queue" }, {
 			sid = steers[1].sid, id = steers[1].id, delivery = steers[1].delivery,
 		})
@@ -178,18 +183,6 @@ describe("queued inputs in the chat buffer", function()
 		assert.equals(0, #cancels)
 	end)
 
-	it("sends only one delivery PATCH for repeated presses while a change is pending", function()
-		seed("q", "Wait for delivery"); chat.do_render(); focus("q")
-		key("S"); key("S")
-		assert.equals(1, #steers)
-		assert.equals("steer", steers[1].delivery)
-		steers[1].callback(nil); chat.do_render(); focus("q")
-		key("Q"); key("Q")
-		assert.equals(2, #steers)
-		assert.equals("queue", steers[2].delivery)
-		steers[2].callback(nil)
-		assert.equals("queued", pending.get("queue-test", "q").status)
-	end)
 
 	it("keeps steering visibly pending while the active agent continues, until delivery", function()
 		seed("steer", "стой", nil, "steer")
@@ -294,22 +287,6 @@ describe("queued inputs in the chat buffer", function()
 		error("Assistant text not rendered")
 	end)
 
-	it("tracks the queued widget as streaming text before it changes height", function()
-		sync.handle_session_messages("queue-test", projection.page("queue-test", {
-			{ id = "assistant", type = "assistant", time = { created = 1 },
-				content = { { type = "text", text = "First" } } },
-		}))
-		seed("q", "Queued text"); chat.do_render()
-		local previous_start = state.pending_inputs.q.start_line
-		local part = vim.deepcopy(sync.get_parts("assistant")[1])
-		part.text = "First\nSecond"
-		sync.handle_part_updated(part)
-		assert.is_true(chat.update_stream_part_block("queue-test", "assistant", part.id))
-		assert.equals(previous_start + 1, state.pending_inputs.q.start_line)
-		focus("q"); key("C")
-		assert.equals("q", cancels[1].id)
-		assert.equals(0, #fallbacks)
-	end)
 
 	it("edits multiline text with attachments and sends back to its original session", function()
 		local original = "## Title\n\n**Line one**\n\n```lua\nreturn 1\n```"

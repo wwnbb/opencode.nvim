@@ -63,16 +63,16 @@ describe("pasted image path normalization", function()
 		local uri = "file://" .. path:gsub(" ", "%%20")
 		local escaped = path:gsub(" ", "\\ ")
 		local resizes = 0
-		assert.same({ "[Image 1]", "  [Image 2]  ", "Inspect '[Image 3]' please", "Inspect [Image 4] please", "Inspect [Image 5] please" },
-			normalize({ path, "  '" .. path .. "'  ", "Inspect '" .. path .. "' please", "Inspect " .. escaped .. " please", "Inspect " .. uri .. " please" },
+		assert.same({ "[Image 1]", "  [Image 2]  ", "Inspect '[Image 3]' please", "Inspect [Image 4] please", "Inspect [Image 5] please", "Inspect [Image 6] please" },
+			normalize({ path, "  '" .. path .. "'  ", "Inspect '" .. path .. "' please", "Inspect " .. escaped .. " please", "Inspect " .. uri .. " please", "Inspect file:" .. path:gsub(" ", "%%20") .. " please" },
 				function() resizes = resizes + 1 end))
-		assert.equals(5, #state.parts)
+		assert.equals(6, #state.parts)
 		for _, part in ipairs(state.parts) do
 			assert.equals(path, part.source.path)
 			assert.equals("data:image/png;base64," .. vim.base64.encode("image\0bytes"), part.url)
 		end
 		attachments.normalize_pasted_image_paths(state, function() resizes = resizes + 1 end)
-		assert.equals(5, #state.parts)
+		assert.equals(6, #state.parts)
 		assert.equals(1, resizes)
 		assert.is_false(state.normalizing_paste)
 	end)
@@ -83,12 +83,6 @@ describe("pasted image path normalization", function()
 		local lines = { remote, "Inspect " .. remote .. " please", "https://" .. path:sub(2), "Inspect https://" .. path:sub(2) .. " please" }
 		assert.same(lines, normalize(lines))
 		assert.same({}, state.parts)
-	end)
-
-	it("recognizes inline local file URLs with a single slash", function()
-		local uri = "file:" .. path:gsub(" ", "%%20")
-		assert.same({ "Inspect [Image 1] please" }, normalize({ "Inspect " .. uri .. " please" }))
-		assert.equals(path, state.parts[1].source.path)
 	end)
 
 	it("attaches multiple quoted paths, PDF and SVG on one line in order", function()

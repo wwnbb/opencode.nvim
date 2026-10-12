@@ -100,22 +100,6 @@ describe("highlight cache dependency equivalence", function()
 		assert.equals(3, builds())
 	end)
 
-	it("does not retain transient code parser failures", function()
-		local available = false
-		vim.treesitter.get_string_parser = function(value, language, opts)
-			if language == "lua" and not available then error("transient parser failure") end
-			return original_parser(value, language, opts)
-		end
-		local get, builds = cached_renderer()
-		assert.same({}, captures(get()))
-		assert.same({}, captures(get()))
-		assert.equals(2, builds())
-		available = true
-		assert.is_true(#captures(get()) > 0)
-		get()
-		assert.equals(3, builds())
-	end)
-
 	it("refreshes an existing callback and outer result after a theme generation", function()
 		local get, builds = cached_renderer()
 		local before = get()

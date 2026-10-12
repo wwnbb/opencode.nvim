@@ -12,12 +12,6 @@ describe("execute output descriptions", function()
 		assert.equals("fields", result.count_label)
 	end)
 
-	it("places short fields before a very long body without choosing special field names", function()
-		local result = output.describe(vim.json.encode({ aardvark = string.rep("body\n", 70), zebra = "Title" }))
-		assert.equals("zebra: Title", result.lines[1])
-		assert.equals("aardvark:", result.lines[2])
-	end)
-
 	it("preserves literal backslashes and only decodes a JSON escape once", function()
 		local raw = [[{"path":"C:\\new\\notes","literal":"first\\nsecond"}]]
 		local result = output.describe(raw)
@@ -41,14 +35,6 @@ describe("execute output descriptions", function()
 		assert.same({ "- one", "- false", "- null" }, result.lines)
 		assert.equals(3, result.count)
 		assert.equals("items", result.count_label)
-	end)
-
-	it("retains text and trailing logs around valid fenced JSON", function()
-		local raw = 'Script ran on page and returned:\n```json\n{"title":"Example","body":"one\\ntwo"}\n```\n\nLogs:\nhello\\nworld'
-		local result = output.describe(raw)
-		assert.same({ "Script ran on page and returned:", "body:", "  one", "  two", "title: Example", "", "Logs:", [[hello\nworld]] }, result.lines)
-		assert.equals(raw, result.raw)
-		assert.equals("markdown", result.filetype)
 	end)
 
 	it("summarizes a useful generic JSON field inside a screenshot-like wrapper", function()
@@ -95,57 +81,9 @@ describe("execute output descriptions", function()
 		assert.same({ "First:", "false", "Second:", "null" }, result.lines)
 	end)
 
-	it("leaves invalid and unfinished JSON fences unchanged", function()
-		for _, raw in ipairs({ "  ```JSON\n{broken}\n  ```\nLogs: bad", "```json\n{broken", [[{"broken":"\escape"}]] }) do
-			assert.same(vim.split(raw, "\n", { plain = true }), output.describe(raw).lines)
-			assert.equals(raw, output.describe(raw).raw)
-		end
-	end)
-
-	it("leaves nested JSON examples inside other Markdown fences untouched", function()
-		local raw = "Example:\n````markdown\n```json\n{\"a\":1}\n```\n````\nDone."
-		assert.same(vim.split(raw, "\n", { plain = true }), output.describe(raw).lines)
-	end)
-
 	it("preserves Unicode and special JSON key names", function()
 		local result = output.describe('{"ключ":"Привет 🌍\\n日本語","a\\nb":"value"}')
 		assert.same({ [["a\nb": value]], '"ключ":', "  Привет 🌍", "  日本語" }, result.lines)
-	end)
-
-	it("retains ordinary text including empty lines and trailing newline", function()
-		local raw = "# Heading\n\nSome **text**.\n"
-		assert.same({ "# Heading", "", "Some **text**.", "" }, output.describe(raw).lines)
-		assert.equals(raw, output.describe(raw).raw)
-		assert.same({ "" }, output.describe(nil).lines)
-	end)
-
-	it("bounds preview lines and bytes while preserving the full raw output", function()
-		local raw = string.rep("a line\n", 1000)
-		local result = output.describe(raw, { max_lines = 6, max_chars = 200 })
-		assert.equals(raw, result.raw)
-		assert.is_true(result.truncated)
-		assert.is_true(#result.lines <= 6)
-		assert.matches("truncated", result.lines[#result.lines])
-		assert.is_true(#table.concat(result.lines) <= 200)
-	end)
-
-	it("never cuts a multibyte character when applying the character budget", function()
-		local result = output.describe(string.rep("🌍", 100), { max_chars = 61 })
-		assert.is_true(result.truncated)
-		assert.matches("🌍", result.lines[1], 1, true)
-		assert.is_true(#table.concat(result.lines) <= 61)
-		for _, line in ipairs(result.lines) do
-			assert.is_true(pcall(vim.json.encode, line))
-		end
-	end)
-
-	it("retains a useful preview of a very long single JSON field", function()
-		local raw = vim.json.encode({ text = string.rep("example ", 1000) })
-		local result = output.describe(raw, { max_chars = 200 })
-		assert.is_true(result.truncated)
-		assert.matches("text: example example", result.lines[1], 1, true)
-		assert.matches("truncated", result.lines[#result.lines])
-		assert.is_true(#table.concat(result.lines) <= 200)
 	end)
 
 	it("bounds deep JSON formatting and retains data beyond the readable depth", function()
@@ -178,6 +116,8 @@ describe("execute output descriptions", function()
 		local body = "First paragraph\n\nSecond paragraph\n" .. string.rep("More text. ", 30)
 		local raw = vim.json.encode({ alpha = body, zebra = "An ordinary title" })
 		local result = output.describe(raw)
+		assert.equals("zebra: An ordinary title", result.lines[1])
+		assert.equals("alpha:", result.lines[2])
 		assert.same({
 			{ key = "zebra", lines = { "An ordinary title" } },
 			{ key = "alpha", lines = { "First paragraph", "", "Second paragraph", string.rep("More text. ", 30) } },
@@ -193,6 +133,9 @@ describe("execute output descriptions", function()
 	it("retains wrapper text and logs alongside a single fenced object's fields", function()
 		local raw = 'Result from a tool:\n\n```json\n{"answer":false,"body":"one\\n\\ntwo"}\n```\n\nLogs:\nfinished\n'
 		local result = output.describe(raw)
+		assert.same({ "Result from a tool:", "", "answer: false", "body:", "  one", "  ", "  two", "", "Logs:", "finished", "" }, result.lines)
+		assert.equals(raw, result.raw)
+		assert.equals("markdown", result.filetype)
 		assert.same({ "Result from a tool:", "" }, result.prefix_lines)
 		assert.same({ "", "Logs:", "finished", "" }, result.suffix_lines)
 		assert.same({
@@ -230,20 +173,6 @@ describe("execute output descriptions", function()
 		assert.is_nil(output.describe("[]").fields)
 	end)
 
-	it("does not consume literal or invalid JSON examples in document views", function()
-		for _, raw in ipairs({
-			"Example:\n````markdown\n```json\n{\"a\":1}\n```\n````\nDone.",
-			"```json\n{broken}\n```\nLogs: bad",
-			"```json\n{unfinished",
-			"# Heading\n\nSome **text**.\n",
-		}) do
-			local result = output.describe(raw)
-			assert.same(vim.split(raw, "\n", { plain = true }), result.document_lines)
-			assert.is_nil(result.fields)
-			assert.same({}, result.document_headings)
-		end
-	end)
-
 	it("bounds field and document previews together while keeping all raw bytes", function()
 		local raw = vim.json.encode({ short = "Title", text = string.rep("Привет 🌍\n", 1000) })
 		local result = output.describe(raw, { max_chars = 100, max_lines = 8 })
@@ -263,4 +192,39 @@ describe("execute output descriptions", function()
 		assert.is_true(field_chars <= 100)
 		assert.is_true(field_lines <= 8)
 	end)
+	it("preserves literal text and invalid JSON in compact and document views", function()
+		for _, raw in ipairs({
+			"  ```JSON\n{broken}\n  ```\nLogs: bad", "```json\n{broken", [[{"broken":"\escape"}]],
+			"Example:\n````markdown\n```json\n{\"a\":1}\n```\n````\nDone.",
+			"```json\n{broken}\n```\nLogs: bad", "```json\n{unfinished",
+			"# Heading\n\nSome **text**.\n",
+		}) do
+			local result = output.describe(raw)
+			local expected = vim.split(raw, "\n", { plain = true })
+			assert.same(expected, result.lines, raw)
+			assert.same(expected, result.document_lines, raw)
+			assert.equals(raw, result.raw)
+			assert.is_nil(result.fields)
+			assert.same({}, result.document_headings)
+		end
+		assert.same({ "" }, output.describe(nil).lines)
+	end)
+
+	it("bounds text and JSON previews without dropping raw bytes or splitting UTF-8", function()
+		for _, case in ipairs({
+			{ raw = string.rep("a line\n", 1000), bytes = 200, lines = 6, prefix = "a line" },
+			{ raw = string.rep("🌍", 100), bytes = 61, lines = 6, prefix = "🌍" },
+			{ raw = vim.json.encode({ text = string.rep("example ", 1000) }), bytes = 200, lines = 6, prefix = "text: example example" },
+		}) do
+			local result = output.describe(case.raw, { max_chars = case.bytes, max_lines = case.lines })
+			assert.equals(case.raw, result.raw)
+			assert.is_true(result.truncated)
+			assert.is_true(#result.lines <= case.lines)
+			assert.matches(case.prefix, result.lines[1], 1, true)
+			assert.matches("truncated", result.lines[#result.lines])
+			assert.is_true(#table.concat(result.lines) <= case.bytes)
+			for _, line in ipairs(result.lines) do assert.is_true(pcall(vim.json.encode, line)) end
+		end
+	end)
+
 end)

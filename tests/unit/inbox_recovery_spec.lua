@@ -3,7 +3,7 @@ local state, bus = require("opencode.state"), require("opencode.events.bus")
 local client, handler = require("opencode.client"), require("opencode.events.handlers.server")
 local projection, selectors = require("opencode.protocol.messages"), require("opencode.selectors")
 
-describe("v2 inbox/history recovery", function()
+describe("inbox/history recovery", function()
 	local saved, callbacks
 	local function item(id, delivery)
 		return { sessionID = "s", id = id or "q", type = "user", delivery = delivery or "queue",
