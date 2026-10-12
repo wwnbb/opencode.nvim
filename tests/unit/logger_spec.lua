@@ -34,12 +34,15 @@ describe("retained log entries", function()
 		local buffer, queued, rebuilds = vim.api.nvim_get_current_buf(), {}, 0
 		vim.schedule = function(callback) queued[#queued + 1] = callback end
 		viewer.refresh = function() rebuilds = rebuilds + 1; return refresh() end
-		for _, message in ipairs({ "first", "second", "third" }) do logger.info(message) end
+		for _, message in ipairs({ "first", "second", "third" }) do
+			logger.info(message, { data = { part = { messageID = "same-message" } } })
+		end
 		assert.equals(3, #queued)
 		for _, callback in ipairs(queued) do callback() end
 		assert.equals(1, rebuilds)
 		local function contents() return table.concat(vim.api.nvim_buf_get_lines(buffer, 0, -1, false), "\n") end
 		local rendered = contents()
+		assert.equals("opencode_logs", vim.bo[buffer].filetype)
 		for _, message in ipairs({ "first", "second", "third" }) do
 			assert.is_truthy(rendered:find("[INFO] " .. message, 1, true))
 		end
@@ -116,14 +119,4 @@ describe("retained log entries", function()
 		assert.equals("omitted", model.private)
 	end)
 
-	it("renders distinct entries even when they concern the same message", function()
-		logger.debug("old update", { data = { part = { messageID = "msg_log_rebuild" } } })
-		logger.debug("new update", { data = { part = { messageID = "msg_log_rebuild" } } })
-		viewer.open({ position = "bottom", height = 8 })
-		local bufnr = vim.api.nvim_get_current_buf()
-		assert.equals("opencode_logs", vim.bo[bufnr].filetype)
-		local text = table.concat(vim.api.nvim_buf_get_lines(bufnr, 0, -1, false), "\n")
-		assert.is_truthy(text:find("old update", 1, true))
-		assert.is_truthy(text:find("new update", 1, true))
-	end)
 end)

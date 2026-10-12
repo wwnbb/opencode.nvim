@@ -3,8 +3,8 @@ local json = require("opencode.util.json_file")
 
 describe("runtime display preferences", function()
 	local root, original_cwd, path, config, settings, previous_module
-	local function item(id)
-		for _, entry in ipairs(settings.list()) do if entry.id == id then return entry end end
+	local function item(id, directory)
+		for _, entry in ipairs(settings.list(directory)) do if entry.id == id then return entry end end
 	end
 	local function configure()
 		state.set_config(settings.setup(config))
@@ -62,6 +62,24 @@ describe("runtime display preferences", function()
 		settings = require("opencode.settings"); configure()
 		assert.equals("show", state.get_config().session.thinking)
 		assert.equals("high", state.get_config().session.verbosity)
+	end)
+
+	it("lists another directory without changing current runtime settings or directory", function()
+		assert.is_true(settings.apply("markdown", "source", "global"))
+		assert.is_true(settings.apply("markdown", "rendered", "cwd"))
+		assert.is_true(settings.apply("thinking", "show", "cwd", root .. "/two"))
+		local current = state.get_config()
+		current.session.verbosity = "high"
+		state.set_config(current)
+		assert.equals("source", item("markdown", root .. "/two").value)
+		assert.equals("global", item("markdown", root .. "/two").scope)
+		assert.equals("show", item("thinking", root .. "/two").value)
+		assert.equals("cwd", item("thinking", root .. "/two").scope)
+		assert.equals("medium", item("verbosity", root .. "/two").value)
+		assert.equals("rendered", item("markdown").value)
+		assert.equals("high", item("verbosity").value)
+		assert.same(current, state.get_config())
+		assert.equals(root .. "/one", vim.fn.getcwd())
 	end)
 
 	it("removes a directory override to inherit global without disturbing server state or session", function()

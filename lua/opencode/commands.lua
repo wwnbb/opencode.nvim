@@ -227,21 +227,17 @@ local global_keymaps = {
 	},
 }
 
-local installed_keymaps = {}
+local installed_callbacks = {}
 
 --- Replace only keymaps still owned by this plugin. A user may have replaced
 --- a loader mapping before setup() applies their configuration.
 function M.configure_keymaps(keymaps)
-	local installed_callbacks = {}
-	for _, callback in ipairs(installed_keymaps) do
-		installed_callbacks[callback] = true
-	end
 	for _, mapping in ipairs(vim.api.nvim_get_keymap("n")) do
 		if installed_callbacks[mapping.callback] then
 			vim.keymap.del("n", mapping.lhs)
 		end
 	end
-	installed_keymaps = {}
+	installed_callbacks = {}
 
 	for _, spec in ipairs(global_keymaps) do
 		local lhs = keymaps and keymaps[spec.key]
@@ -251,7 +247,7 @@ function M.configure_keymaps(keymaps)
 				action()
 			end
 			vim.keymap.set("n", lhs, callback, { desc = spec.desc, noremap = true, silent = true })
-			table.insert(installed_keymaps, callback)
+			installed_callbacks[callback] = true
 		end
 	end
 end

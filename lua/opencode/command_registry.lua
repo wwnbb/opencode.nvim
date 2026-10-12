@@ -26,7 +26,6 @@ function M.register(spec)
 		error("Command slash metadata must have a name")
 	end
 
-	-- Keep optional command metadata for both UI surfaces and future adapters.
 	local record = vim.tbl_extend("force", {}, spec)
 	if spec.slash then
 		record.slash = {
@@ -38,9 +37,8 @@ function M.register(spec)
 		record.palette = true
 	end
 	record.description = record.description or ""
-	local serial = next_serial + 1
-	next_serial = serial
-	record._serial = serial
+	next_serial = next_serial + 1
+	record._serial = next_serial
 	commands[record.id] = record
 	return record
 end
@@ -112,7 +110,7 @@ end
 
 function M.list_slash()
 	local result = {}
-	for _, record in ipairs(M.all()) do
+	for _, record in pairs(commands) do
 		local slash = record.slash
 		if slash and M.get_slash(slash.name) == record and M.enabled(record) then
 			table.insert(result, {
