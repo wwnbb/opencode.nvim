@@ -1,23 +1,17 @@
--- opencode.nvim - Lifecycle management module
--- Handles lazy initialization and server lifecycle
-
 local M = {}
 
 local Job = require("plenary.job")
 local state = require("opencode.state")
 local uv = vim.uv or vim.loop
 
--- Pending callbacks queue for lazy initialization
 local pending_callbacks = {}
 
 -- A managed process remains owned until its exit is observed, including after
 -- startup failure or a successful termination signal.
-local attempt_generation = 0
 local current_attempt = nil
 local restart_generation = 0
 local listener_clients = setmetatable({}, { __mode = "k" })
 
--- Forward declarations for functions that need to be called before their definition
 local connect_to_server
 local check_existing_server
 local complete_connection
@@ -27,7 +21,6 @@ local continue_startup
 local setup_event_listeners
 local discover_managed
 
--- Default configuration
 M.opts = {
 	command = "opencode",
 	auto_start = true,
@@ -149,9 +142,7 @@ local function build_server_env(auth)
 	promote_toolchain_bins(env)
 
 	for key, value in pairs(env) do
-		if value ~= nil then
-			env[key] = tostring(value)
-		end
+		env[key] = tostring(value)
 	end
 
 	return env
@@ -403,7 +394,6 @@ local function arm_startup_timeout(attempt)
 	end, M.opts.startup_timeout)
 end
 
--- Parse server URL from output line
 -- Verified with CLI 2.0.11: "server listening on http://127.0.0.1:57168"
 local function parse_server_url(line)
 	if not line then
@@ -632,7 +622,6 @@ continue_startup = function(attempt)
 	return begin_health_checks(attempt, true)
 end
 
--- Start OpenCode server process
 local function spawn_server()
 	local host = state.get_server_info().host
 	local auth = vim.deepcopy(M.opts.auth or {})
@@ -651,7 +640,6 @@ local function spawn_server()
 	overlay, explanation_profile, explanation_error = profile.prepare(M.opts.explanation, overlay, "explanation")
 	env.OPENCODE_CONFIG_CONTENT = overlay
 
-	-- Build opencode serve command
 	-- CLI 2.0.11 requires an integer. Zero requests an available OS port.
 	local cmd = resolve_command(M.opts.command, env)
 	local args = {
@@ -662,9 +650,7 @@ local function spawn_server()
 		"0",
 	}
 
-	attempt_generation = attempt_generation + 1
 	local attempt = {
-		id = attempt_generation,
 		completion_profile = completion_profile,
 		completion_error = completion_error,
 		explanation_profile = explanation_profile,
@@ -729,13 +715,11 @@ local function spawn_server()
 					end
 				end)
 			end,
-			on_exit = function(_, code, signal)
+			on_exit = function(_, code)
 				if not is_current_attempt(attempt) then
 					return
 				end
 				attempt.exited = true
-				attempt.exit_code = code
-				attempt.exit_signal = signal
 
 				vim.schedule(function()
 					if not is_current_attempt(attempt) then
@@ -795,7 +779,6 @@ local function spawn_server()
 	return is_current_attempt(attempt) and (attempt.phase == "starting" or attempt.phase == "ready")
 end
 
--- Setup SSE event listeners
 setup_event_listeners = function(client)
 	if listener_clients[client] then
 		return
@@ -803,7 +786,7 @@ setup_event_listeners = function(client)
 	client.on_event("disconnected", function(reason)
 		if
 			current_attempt
-			and (current_attempt.phase == "stopping" or current_attempt.phase == "stop_error")
+			and (current_attempt.disconnected or current_attempt.phase == "stopping" or current_attempt.phase == "stop_error")
 		then
 			return
 		end
@@ -831,7 +814,6 @@ setup_event_listeners = function(client)
 	listener_clients[client] = true
 end
 
--- Connect to running server
 connect_to_server = function(attempt, token, startup, version)
 	if not connection_is_current(attempt, token, startup) then
 		return false
@@ -956,7 +938,6 @@ function M.ensure_connected(callback)
 	end
 
 	if connection == "idle" or connection == "error" then
-		-- Need to start/connect
 		table.insert(pending_callbacks, callback)
 		if not M.start() then
 			remove_pending_callback(callback)
@@ -965,7 +946,6 @@ function M.ensure_connected(callback)
 	end
 
 	if connection == "starting" or connection == "connecting" then
-		-- Already in progress, queue callback
 		table.insert(pending_callbacks, callback)
 		return false
 	end
@@ -973,7 +953,6 @@ function M.ensure_connected(callback)
 	return false
 end
 
--- Start server and connect
 function M.start()
 	local connection = state.get_connection()
 	if connection ~= "idle" and connection ~= "error" then
@@ -1007,8 +986,7 @@ function M.start()
 		return false
 	end
 	if M.opts.managed then
-		attempt_generation = attempt_generation + 1
-		local attempt = { id = attempt_generation, phase = "ready", startup_done = true,
+		local attempt = { phase = "ready", startup_done = true,
 			connecting = false, connection_token = 0, disconnected = false,
 			external = true, discovered = true, stop_waiters = {} }
 		current_attempt = attempt
@@ -1017,9 +995,8 @@ function M.start()
 		return begin_managed(attempt)
 	end
 	if M.opts.port or M.opts.url then
-		attempt_generation = attempt_generation + 1
 		local attempt = {
-			id = attempt_generation, phase = "ready", startup_done = true,
+			phase = "ready", startup_done = true,
 			connecting = false, connection_token = 0, disconnected = false,
 			external = true, stop_waiters = {},
 		}
@@ -1104,9 +1081,7 @@ function M.stop(on_stopped)
 			return false
 		end
 
-		attempt_generation = attempt_generation + 1
 		attempt = {
-			id = attempt_generation,
 			phase = "ready",
 			startup_done = true,
 			connecting = false,
@@ -1159,7 +1134,6 @@ function M.stop(on_stopped)
 	return true
 end
 
--- Restart server
 function M.restart()
 	if current_attempt and current_attempt.discovered then
 		return M.manage_service("restart", function(err)
@@ -1171,7 +1145,6 @@ function M.restart()
 			if restart == restart_generation then M.start() end
 		end)
 	else
-		-- For external servers, just reconnect
 		M.disconnect()
 		M.start()
 	end
@@ -1239,7 +1212,6 @@ function M.disconnect()
 		clear_chat = true,
 		reset_state = false,
 	})
-	-- Clear any pending callbacks
 	pending_callbacks = {}
 	if attempt and attempt.phase == "stop_error" then
 		state.set_connection("error")
@@ -1250,7 +1222,6 @@ function M.disconnect()
 	vim.notify("OpenCode disconnected", vim.log.levels.INFO)
 end
 
--- Configure lifecycle options
 ---@param opts table
 function M.setup(opts)
 	restart_generation = restart_generation + 1
@@ -1258,7 +1229,6 @@ function M.setup(opts)
 	M.opts = vim.tbl_extend("force", M.opts, vim.deepcopy(opts))
 	shell_env_cache = nil
 
-	-- Setup auto-shutdown on vim exit if configured
 	local group = vim.api.nvim_create_augroup("OpenCodeLifecycle", { clear = true })
 	if M.opts.shutdown_on_exit then
 		vim.api.nvim_create_autocmd("VimLeavePre", {
@@ -1290,7 +1260,6 @@ function M.resolve_explanation_model(config)
 	return resolve_feature_model(config, "explanation")
 end
 
--- Get lifecycle status
 function M.status()
 	return {
 		connection = state.get_connection(),

@@ -1,12 +1,10 @@
 -- opencode.nvim - SSE (Server-Sent Events) client
--- Handles real-time event streaming from OpenCode server
 
 local M = {}
 local auth = require("opencode.client.auth")
 local transport = require("opencode.client.transport")
 local uv = vim.uv
 
--- Configuration
 M.opts = {
 	host = "localhost",
 	endpoint = "/api/event", -- V2 live stream covers all locations.
@@ -22,7 +20,6 @@ M.opts = {
 	read_idle_timeout = 45000,
 }
 
--- Internal state
 local state = {
 	stream = nil,
 	resolve_generation = 0,
@@ -44,7 +41,6 @@ local state = {
 	directory = nil,
 }
 
--- Event callbacks registry
 local listeners = {}
 local seen_event_ids = {}
 local seen_event_order = {}
@@ -57,12 +53,8 @@ local function stop_timer(key)
 	end
 
 	if not uv.is_closing(timer) then
-		pcall(function()
-			timer:stop()
-		end)
-		pcall(function()
-			timer:close()
-		end)
+		pcall(timer.stop, timer)
+		pcall(timer.close, timer)
 	end
 	state[key] = nil
 end
@@ -108,11 +100,7 @@ local normalize_directory = require("opencode.util.path").normalize
 
 ---@return string|nil
 local function current_directory()
-	local cwd = vim.fn.getcwd()
-	if not cwd or cwd == "" then
-		return state.directory
-	end
-	return normalize_directory(cwd) or state.directory
+	return normalize_directory(vim.fn.getcwd()) or state.directory
 end
 
 ---@param data any
@@ -131,7 +119,6 @@ local function should_accept_global_event(data)
 
 	local event_dir = normalize_directory(directory)
 
-	-- Accept events for the current working directory.
 	local current = current_directory()
 	if current and current ~= "" then
 		state.directory = current
@@ -143,30 +130,23 @@ local function should_accept_global_event(data)
 	-- Open tabs keep receiving events while another project has focus.
 	-- The active view may also be a child session outside the runtime tab list.
 	local ok_state, state_mod = pcall(require, "opencode.state")
-	if ok_state and state_mod.get_session and state_mod.get_session_directory then
-		local active = state_mod.get_session()
+	local active = ok_state and state_mod.get_session() or nil
+	if ok_state then
 		if active and active.id then
 			local session_dir = state_mod.get_session_directory(active.id)
 			if session_dir and session_dir ~= "" and session_dir == event_dir then
 				return true
 			end
 		end
-		if type(state_mod.get_active_sessions) == "function" then
-			for _, session in ipairs(state_mod.get_active_sessions()) do
-				if state_mod.get_session_directory(session.id) == event_dir then
-					return true
-				end
+		for _, session in ipairs(state_mod.get_active_sessions()) do
+			if state_mod.get_session_directory(session.id) == event_dir then
+				return true
 			end
 		end
 	end
 
-	-- Debug-log dropped events so directory mismatches are traceable.
 	pcall(function()
 		local logger = require("opencode.logger")
-		local active = ok_state
-			and state_mod.get_session
-			and state_mod.get_session()
-			or nil
 		logger.debug("SSE event dropped: directory mismatch", {
 			event_directory = event_dir,
 			cwd = current,
@@ -179,7 +159,7 @@ end
 
 local function emit_current_event()
 	local event = state.current_event
-	if not event or #event.data_lines == 0 then
+	if #event.data_lines == 0 then
 		reset_current_event()
 		return
 	end
@@ -196,7 +176,6 @@ local function emit_current_event()
 	reset_current_event()
 end
 
--- Process SSE data buffer
 local function process_buffer()
 	-- Process line-by-line because socket callbacks may split SSE frames arbitrarily.
 	-- Flush buffered data whenever we hit SSE's blank-line delimiter.
@@ -281,17 +260,8 @@ local function handle_stream_closed(reason, closed_stream, retryable)
 	stop_timer("watchdog_timer")
 	state.handshake_deadline, state.last_read = nil, nil
 
-	local was_connected = state.connected
 	state.connected = false
 	state.stream = nil
-
-	if state.manual_disconnect then
-		state.manual_disconnect = false
-		if was_connected then
-			M.emit("disconnected", reason or "Connection closed")
-		end
-		return
-	end
 
 	M.emit("disconnected", reason or "Connection closed")
 	if retryable ~= false then schedule_reconnect() end
@@ -311,22 +281,15 @@ local function already_seen_event(event_id)
 	seen_event_ids[event_id] = true
 	table.insert(seen_event_order, event_id)
 
-	while #seen_event_order > MAX_SEEN_EVENT_IDS do
+	if #seen_event_order > MAX_SEEN_EVENT_IDS then
 		local oldest = table.remove(seen_event_order, 1)
-		if oldest then
-			seen_event_ids[oldest] = nil
-		end
+		seen_event_ids[oldest] = nil
 	end
 
 	return false
 end
 
--- Emit event to all listeners
 function M.emit(event_type, data, event_id)
-	local actual_type = event_type
-	local actual_data = data
-	local actual_event_id = event_id
-
 	if event_type ~= "connected" and event_type ~= "disconnected" and event_type ~= "error" then
 		local decoded, decode_err = require("opencode.protocol.events").decode(data)
 		if not decoded then
@@ -340,31 +303,29 @@ function M.emit(event_type, data, event_id)
 			M.emit("connected", nil)
 			if state.stream ~= stream then return end
 		end
-		actual_event_id = decoded.id or event_id
-		if already_seen_event(actual_event_id) then return end
-		actual_type, actual_data = decoded.type, decoded.payload
+		event_id = decoded.id or event_id
+		if already_seen_event(event_id) then return end
+		event_type, data = decoded.type, decoded.payload
 	end
 
 	-- Snapshot both groups before callbacks change either subscription list.
-	local callbacks = vim.list_slice(listeners[actual_type] or {})
+	local callbacks = vim.list_slice(listeners[event_type] or {})
 	local wildcards = vim.list_slice(listeners["*"] or {})
 	for _, cb in ipairs(callbacks) do
-		local ok, err = pcall(cb, actual_data, actual_event_id)
+		local ok, err = pcall(cb, data, event_id)
 		if not ok then
 			vim.notify("SSE listener error: " .. tostring(err), vim.log.levels.ERROR)
 		end
 	end
 
-	-- Also emit to wildcard listeners
 	for _, cb in ipairs(wildcards) do
-		local ok, err = pcall(cb, actual_type, actual_data, actual_event_id)
+		local ok, err = pcall(cb, event_type, data, event_id)
 		if not ok then
 			vim.notify("SSE wildcard listener error: " .. tostring(err), vim.log.levels.ERROR)
 		end
 	end
 end
 
--- Subscribe to SSE events
 ---@param event_type string Event type to listen for (or "*" for all)
 ---@param callback function(data, event_id) or function(event_type, data, event_id) for wildcard
 function M.on(event_type, callback)
@@ -372,7 +333,6 @@ function M.on(event_type, callback)
 	table.insert(listeners[event_type], callback)
 end
 
--- Unsubscribe from SSE events
 ---@param event_type string
 ---@param callback function
 function M.off(event_type, callback)
@@ -385,14 +345,12 @@ function M.off(event_type, callback)
 	end
 end
 
--- Clear all listeners
 function M.clear_listeners()
 	listeners = {}
 	seen_event_ids = {}
 	seen_event_order = {}
 end
 
--- Start SSE connection
 function M.connect(resolved)
 	if state.stream or state.resolving then
 		return true -- Already connected or connecting
@@ -430,7 +388,6 @@ function M.connect(resolved)
 	}
 	local authorization, auth_err = auth.header(M.opts.auth.username, M.opts.auth.password)
 	if auth_err then
-		stop_timer("reconnect_timer")
 		M.emit("error", auth_err)
 		return false, auth_err
 	end
@@ -442,9 +399,8 @@ function M.connect(resolved)
 	local cwd = vim.fn.getcwd()
 	local endpoint = M.opts.endpoint or "/api/event"
 	state.directory = normalize_directory(cwd)
-	local _, target_err = require("opencode.client.endpoint").resolve(M.opts)
-	if target_err or type(endpoint) ~= "string" or endpoint:find("[%s%z]") then
-		local message = target_err and target_err.message or "Invalid SSE endpoint"
+	if type(endpoint) ~= "string" or endpoint:find("[%s%z]") then
+		local message = "Invalid SSE endpoint"
 		M.emit("error", message)
 		return false, message
 	end
@@ -452,6 +408,7 @@ function M.connect(resolved)
 	local stream
 	local err
 	local retryable = true
+	local accepted_headers = false
 	stream, err = transport.open_stream({
 		url = M.opts.url,
 		host = M.opts.host,
@@ -481,10 +438,11 @@ function M.connect(resolved)
 				return
 			end
 
+			accepted_headers = true
 			start_watchdog(stream)
 		end,
 		on_data = function(data)
-			if stream ~= state.stream then return end
+			if stream ~= state.stream or not accepted_headers then return end
 			if not data or data == "" then
 				return
 			end
@@ -514,7 +472,6 @@ function M.connect(resolved)
 	return true
 end
 
--- Disconnect from SSE stream
 function M.disconnect()
 	state.resolve_generation = state.resolve_generation + 1
 	state.resolving = false
@@ -525,19 +482,18 @@ function M.disconnect()
 	state.handshake_deadline, state.last_read = nil, nil
 	state.manual_disconnect = true
 	state.reconnect_count = 0
-	if state.stream and state.stream.close then
-		state.stream.close()
-		state.stream = nil
-	end
-	state.connected = false
+	local stream, was_connected = state.stream, state.connected
+	state.stream, state.connected = nil, false
+	state.event_buffer = ""
+	reset_current_event()
+	if stream then stream.close() end
+	if was_connected then M.emit("disconnected", "closed") end
 end
 
--- Check if connected
 function M.is_connected()
 	return state.connected and state.stream ~= nil
 end
 
--- Configure SSE client
 ---@param opts table
 function M.setup(opts)
 	local previous = M.opts
@@ -551,7 +507,6 @@ function M.setup(opts)
 	end
 end
 
--- Get current connection status
 function M.status()
 	return {
 		connected = state.connected,

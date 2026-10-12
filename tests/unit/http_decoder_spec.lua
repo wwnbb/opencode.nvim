@@ -19,6 +19,18 @@ describe("opencode HTTP response decoding", function()
 		return table.concat(body), completions, err, headers, d:headers_parsed()
 	end
 
+	it("keeps header framing independent of delimiters in the body at every split point", function()
+		local payload = "A\r\n\r\nB\n\nC"
+		for _, ending in ipairs({ "\r\n", "\n" }) do
+			local response = table.concat({ "HTTP/1.1 200 OK", "Content-Length: " .. #payload, "", payload }, ending)
+			for split = 0, #response do
+				local body, count = decode({ response:sub(1, split), response:sub(split + 1) }, true)
+				assert.equals(payload, body)
+				assert.equals(1, count)
+			end
+		end
+	end)
+
 	for _, ending in ipairs({ "\r\n", "Checksum: abc\r\nOther: value\r\n\r\n" }) do
 		it("accepts every split point with trailers " .. vim.inspect(ending), function()
 			local response = prefix .. ending

@@ -140,13 +140,6 @@ function M.request(opts, callback)
 		data = request_data,
 		timeout = opts.timeout,
 		timeout_message = "Request timed out after " .. tostring(tonumber(opts.timeout) or 0) .. "ms",
-		labels = {
-			connect = "Connect failed",
-			create_socket = "Failed to create TCP socket",
-			read_start = "Failed to start read",
-			write_start = "Failed to write request",
-			write = "Write failed",
-		},
 		on_read = function(read_err, data)
 			if done then
 				return

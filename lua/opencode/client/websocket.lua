@@ -1,4 +1,3 @@
--- RFC 6455 framing over the same endpoint/auth and TCP/TLS channels as HTTP.
 local M = {}
 local bit = require("bit")
 local schedule = require("opencode.util.schedule").schedule_callback
@@ -40,7 +39,7 @@ local function sha1(text)
 end
 
 local function random(size)
-	local ok, value = pcall((vim.uv or vim.loop).random, size)
+	local ok, value = pcall(vim.uv.random, size)
 	if ok and type(value) == "string" and #value == size then return value end
 end
 
@@ -65,15 +64,13 @@ function M.open(opts)
 	local nonce = random(16)
 	local key = nonce and auth.encode_base64(nonce)
 	local accept = key and auth.encode_base64(sha1(key .. "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"))
-	if not key or not accept then return nil, { message = "Could not create the WebSocket handshake" } end
+	if not accept then return nil, { message = "Could not create the WebSocket handshake" } end
 	local authorization, auth_err = auth.header((opts.auth or {}).username or "opencode", (opts.auth or {}).password)
 	if auth_err then return nil, { message = auth_err } end
 	local host = endpoint.host:find(":", 1, true) and ("[" .. endpoint.host .. "]") or endpoint.host
-	local headers, headers_err = require("opencode.client.headers").merge({ Host = host .. ":" .. endpoint.port,
-		Upgrade = "websocket", Connection = "Upgrade", ["Sec-WebSocket-Key"] = key, ["Sec-WebSocket-Version"] = "13", Authorization = authorization })
-	if not headers then return nil, { message = headers_err } end
+	local headers = { Host = host .. ":" .. endpoint.port,
+		Upgrade = "websocket", Connection = "Upgrade", ["Sec-WebSocket-Key"] = key, ["Sec-WebSocket-Version"] = "13", Authorization = authorization }
 	local path = require("opencode.client.endpoint").join(endpoint, opts.path)
-	if type(path) ~= "string" or path:find("[%s%z]") then return nil, { message = "Invalid WebSocket path" } end
 	local request = { "GET " .. path .. " HTTP/1.1" }
 	for name, value in pairs(headers) do request[#request + 1] = name .. ": " .. value end
 	request[#request + 1], request[#request + 2] = "", ""
@@ -97,7 +94,7 @@ function M.open(opts)
 		return send(2, data)
 	end
 	function socket.close()
-		if active and ready then send(8, string.char(3, 232)) end
+		send(8, string.char(3, 232))
 		finish(nil, "detached")
 	end
 	function socket.is_active() return active end
@@ -117,7 +114,7 @@ function M.open(opts)
 				length, offset = u32(buffer, 7), 11
 				if high ~= 0 or length < 65536 then invalid("Oversized or invalid WebSocket frame"); return end
 			end
-			if length < 0 or length > MAX_MESSAGE or total + length > MAX_MESSAGE then invalid("WebSocket replay exceeded 8 MiB"); return end
+			if opcode < 8 and total + length > MAX_MESSAGE then invalid("WebSocket replay exceeded 8 MiB"); return end
 			if opcode >= 8 and (not fin or length > 125) then invalid("Invalid WebSocket control frame"); return end
 			if #buffer < offset + length - 1 then return end
 			local data = buffer:sub(offset, offset + length - 1)
@@ -133,7 +130,7 @@ function M.open(opts)
 				else finish(nil, "eof") end
 				return
 			elseif opcode == 9 then send(10, data)
-			elseif opcode == 10 then -- Pong.
+			elseif opcode == 10 then -- Ignore unsolicited pong.
 			elseif opcode == 1 or opcode == 2 or opcode == 0 then
 				if (opcode == 0 and not fragmented) or (opcode ~= 0 and fragmented) then invalid("Invalid WebSocket continuation"); return end
 				if opcode ~= 0 then fragmented = opcode end
@@ -160,8 +157,8 @@ function M.open(opts)
 			local response = {}
 			for name, value in header:gmatch("\r\n([^:]+):%s*([^\r\n]+)") do
 				name, value = name:lower(), vim.trim(value)
-				if response[name] then invalid("Duplicate WebSocket response header"); return end
-				response[name] = value
+				if response[name] and name ~= "connection" then invalid("Duplicate WebSocket response header"); return end
+				response[name] = response[name] and (response[name] .. ", " .. value) or value
 			end
 			if status ~= 101 then finish({ status = status, message = "WebSocket upgrade rejected (HTTP " .. tostring(status) .. ")" }); return end
 			if (response.upgrade or ""):lower() ~= "websocket" or not ("," .. (response.connection or ""):lower():gsub("%s", "") .. ","):find(",upgrade,", 1, true)

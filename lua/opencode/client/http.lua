@@ -1,47 +1,35 @@
 -- opencode.nvim - HTTP client for OpenCode server API
--- Uses vim.uv sockets for async HTTP requests
 
 local M = {}
 local auth = require("opencode.client.auth")
 local transport = require("opencode.client.transport")
 local schedule_callback = require("opencode.util.schedule").schedule_callback
 
--- Default configuration (merged with user config)
 M.opts = {
 	host = "localhost",
 	auth = {
 		username = "opencode",
-		password = nil,
 	},
 	timeout = 30000,
 }
 
--- Merge headers
 local function merge_headers(additional)
-	local headers = {}
 	local authorization, auth_err = auth.header(M.opts.auth.username, M.opts.auth.password)
 	if auth_err then
 		return nil, auth_err
 	end
-	if authorization then
-		headers.Authorization = authorization
-	end
-	headers["Content-Type"] = "application/json"
-	headers["Accept"] = "application/json"
 
-	return require("opencode.client.headers").merge(headers, additional)
+	return require("opencode.client.headers").merge({
+		Authorization = authorization,
+		["Content-Type"] = "application/json",
+		Accept = "application/json",
+	}, additional)
 end
 
--- Handle HTTP response
 local function handle_response(response, callback, password)
-	if not response then
-		schedule_callback(callback, { error = "No response from server", message = "No response from server" }, nil)
-		return
-	end
-
-	local meta = { status = response.status, headers = response.headers or {} }
+	local meta = { status = response.status, headers = response.headers }
 	if response.status < 200 or response.status >= 300 then
-		local ok, detail = pcall(vim.json.decode, response.body or "")
+		local ok, detail = pcall(vim.json.decode, response.body)
 		local message = "HTTP " .. tostring(response.status)
 		local code, force_required
 		if ok and type(detail) == "table" then
@@ -68,11 +56,11 @@ local function handle_response(response, callback, password)
 	end
 
 	-- Handle empty body (e.g., 204 No Content)
-	if not response.body or response.body == "" then
+	if response.body == "" then
 		schedule_callback(callback, nil, true, meta)
 		return
 	end
-	local content_type = meta.headers["content-type"] or meta.headers["Content-Type"]
+	local content_type = meta.headers["content-type"]
 	local media_type = content_type and vim.trim(content_type:match("^[^;]*")):lower()
 	if media_type and media_type ~= "application/json" and not media_type:match("^application/[^%s/]+%+json$") then
 		schedule_callback(callback, { status = response.status, code = "invalid_content_type",
@@ -80,7 +68,6 @@ local function handle_response(response, callback, password)
 		return
 	end
 
-	-- Parse JSON response
 	local ok, body = pcall(vim.json.decode, response.body)
 	if not ok then
 		schedule_callback(callback, {
@@ -93,7 +80,6 @@ local function handle_response(response, callback, password)
 	schedule_callback(callback, nil, body, meta)
 end
 
--- Configure the HTTP client
 ---@param opts table Configuration options
 function M.setup(opts)
 	M.opts = vim.tbl_extend("force", M.opts, opts or {})
@@ -113,8 +99,8 @@ local function build_path(path, query)
 	local query_parts = {}
 	local function append(key, value)
 		if type(value) == "table" then
-			for _, child in ipairs(vim.tbl_keys(value)) do
-				append(key .. "[" .. child .. "]", value[child])
+			for child, child_value in pairs(value) do
+				append(key .. "[" .. child .. "]", child_value)
 			end
 		elseif value ~= nil then
 			local encoded = value == vim.NIL and "null" or tostring(value)
@@ -173,9 +159,10 @@ end
 local function request_json(method, path, body, callback, opts)
 	local ok, json_body = pcall(vim.json.encode, body)
 	if not ok then
+		local message = "Failed to encode request body: " .. tostring(json_body)
 		schedule_callback(callback, {
-			error = "Failed to encode request body: " .. tostring(json_body),
-			message = "Failed to encode request body: " .. tostring(json_body),
+			error = message,
+			message = message,
 		}, nil)
 		return
 	end
@@ -183,15 +170,13 @@ local function request_json(method, path, body, callback, opts)
 	return request(method, path, callback, opts, json_body)
 end
 
--- GET request
 ---@param path string API path
 ---@param callback function(err, data)
 ---@param opts? table Optional request options (query params, headers)
 function M.get(path, callback, opts)
-	return request("GET", path, callback, opts, nil)
+	return request("GET", path, callback, opts)
 end
 
--- POST request
 ---@param path string API path
 ---@param body table Request body
 ---@param callback function(err, data)
@@ -200,7 +185,6 @@ function M.post(path, body, callback, opts)
 	return request_json("POST", path, body, callback, opts)
 end
 
--- PATCH request
 ---@param path string API path
 ---@param body table Request body
 ---@param callback function(err, data)
@@ -209,28 +193,25 @@ function M.patch(path, body, callback, opts)
 	return request_json("PATCH", path, body, callback, opts)
 end
 
--- DELETE request
 ---@param path string API path
 ---@param callback function(err, data)
 ---@param opts? table Optional request options
 function M.delete(path, callback, opts)
 	if opts and opts.body ~= nil then return request_json("DELETE", path, opts.body, callback, opts) end
-	return request("DELETE", path, callback, opts, nil)
+	return request("DELETE", path, callback, opts)
 end
 
--- PUT request
 ---@param path string API path
 ---@param body table Request body
 ---@param callback function(err, data)
 ---@param opts? table Optional request options
 function M.put(path, body, callback, opts)
 	if body == nil then
-		return request("PUT", path, callback, opts, nil)
+		return request("PUT", path, callback, opts)
 	end
 	return request_json("PUT", path, body, callback, opts)
 end
 
--- Check server health
 ---@param callback function(err, data) data = v2 ServerInfo
 function M.health(callback)
 	return require("opencode.client.api").request("info", { timeout = 5000 }, callback)
