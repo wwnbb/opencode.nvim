@@ -86,6 +86,31 @@ describe("input resize", function()
 		assert.same({ "Draft survives moving the float", "Привет" }, vim.api.nvim_buf_get_lines(buf, 0, -1, false))
 	end)
 
+	it("keeps the end of a large native paste at the bottom after growing", function()
+		app.setup({ server = { auto_start = false }, chat = { layout = "float", close_on_focus_lost = false }, lualine = { enabled = false } })
+		chat.open()
+		chat.focus_input()
+		local win, buf = vim.api.nvim_get_current_win(), vim.api.nvim_get_current_buf()
+		local lines = {}
+		for i = 1, 51 do lines[i] = "pasted " .. i end
+		lines[52] = ""
+		assert.is_true(vim.api.nvim_paste(table.concat(lines, "\n"), false, -1))
+		vim.api.nvim_exec_autocmds("TextChangedI", { buffer = buf })
+		flush_scheduled()
+
+		assert.equals(20, vim.api.nvim_win_get_height(win))
+		assert.same({ 52, 0 }, vim.api.nvim_win_get_cursor(win))
+		assert.equals(20, vim.fn.winline())
+		assert.same(lines, vim.api.nvim_buf_get_lines(buf, 0, -1, false))
+
+		vim.api.nvim_win_set_cursor(win, { 30, 0 })
+		vim.cmd("normal! zt")
+		local view = vim.fn.winsaveview()
+		vim.api.nvim_exec_autocmds("TextChangedI", { buffer = buf })
+		flush_scheduled()
+		assert.same(view, vim.fn.winsaveview())
+	end)
+
 	it("keeps draft, focus and both input surfaces inside a smaller parent", function()
 		app.setup({ server = { auto_start = false }, chat = { width = 80, close_on_focus_lost = false }, lualine = { enabled = false } })
 		chat.open(); chat.focus_input()
