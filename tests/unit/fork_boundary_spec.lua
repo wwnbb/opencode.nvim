@@ -3,7 +3,7 @@ local client = require("opencode.client")
 local lifecycle = require("opencode.lifecycle")
 local session = require("opencode.session")
 local state = require("opencode.state")
-local v2 = require("opencode.client.v2")
+local v2 = require("opencode.client.api")
 
 describe("session fork boundary", function()
 	local original_request, original_fork, original_connection, original_schedule

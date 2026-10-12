@@ -21,7 +21,7 @@ describe("opencode event setup", function()
 			return original_on_event(event_type, callback)
 		end
 		events.setup()
-		native_listeners = bus.listener_count("v2_event")
+		native_listeners = bus.listener_count("server_event")
 		assert.is_true(sse_registrations > 0)
 		assert.is_true(native_listeners > 0)
 	end)
@@ -41,16 +41,16 @@ describe("opencode event setup", function()
 		local registrations = sse_registrations
 		events.setup()
 		assert.equals(registrations, sse_registrations)
-		assert.equals(native_listeners, bus.listener_count("v2_event"))
+		assert.equals(native_listeners, bus.listener_count("server_event"))
 	end)
 
 	it("rebinds native handlers after bus.clear without duplicating SSE listeners", function()
 		local registrations = sse_registrations
 		bus.clear()
-		assert.equals(0, bus.listener_count("v2_event"))
+		assert.equals(0, bus.listener_count("server_event"))
 		events.setup()
 		assert.equals(registrations, sse_registrations)
-		assert.equals(native_listeners, bus.listener_count("v2_event"))
+		assert.equals(native_listeners, bus.listener_count("server_event"))
 	end)
 
 	it("invalidates pending operations whenever a connected state is lost", function()

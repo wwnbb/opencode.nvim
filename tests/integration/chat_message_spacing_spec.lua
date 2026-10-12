@@ -2,7 +2,7 @@ local app = require("opencode.state")
 local sync = require("opencode.sync")
 local chat = require("opencode.ui.chat")
 local state = require("opencode.ui.chat.state").state
-local projection = require("opencode.protocol.v2.messages")
+local projection = require("opencode.protocol.messages")
 local render_state = require("opencode.ui.chat.render_state")
 local local_state = require("opencode.local")
 local edit_state = require("opencode.edit.state")
@@ -288,7 +288,7 @@ describe("chat message boundaries", function()
 		assert_user_separator("u")
 		local part = sync.get_parts("a")[1]
 		for seq, delta in ipairs({ " continues", "\nAnother line", "\n", "\n", "Last line" }) do
-			sync.handle_v2_event({ id = "evt_spacing_" .. seq, created = seq + 3,
+			sync.handle_server_event({ id = "evt_spacing_" .. seq, created = seq + 3,
 				type = "session.text.delta", data = { sessionID = session, assistantMessageID = "a", ordinal = 0, delta = delta } })
 			assert.is_true(chat.update_stream_part_block(session, "a", part.id))
 			assert_user_separator("u")
@@ -324,7 +324,7 @@ describe("chat message boundaries", function()
 		end
 		for seq, delta in ipairs({ "# Heading", "\n\nA **bold", " value** with `code", "`", "\n\n```lu", "a\nreturn 1", "\n```",
 			"\n\n- one\n  - nested", "\n\n| A | B |\n|---|---|", "\n| x | **y** |", "\n\n> quote\n> continued", "\n\n---" }) do
-			sync.handle_v2_event({ id = "evt_markdown_" .. seq, created = seq + 3, type = "session.text.delta",
+			sync.handle_server_event({ id = "evt_markdown_" .. seq, created = seq + 3, type = "session.text.delta",
 				data = { sessionID = session, assistantMessageID = "a", ordinal = 0, delta = delta } })
 			assert.is_true(chat.update_stream_part_block(session, "a", part.id))
 			assert_user_separator("u")

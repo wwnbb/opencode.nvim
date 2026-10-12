@@ -6,7 +6,7 @@ describe("hot-path frame equivalence", function()
 		local sync = require("opencode.sync")
 		local chat = require("opencode.ui.chat")
 		local cs = require("opencode.ui.chat.state").state
-		local projection = require("opencode.protocol.v2.messages")
+		local projection = require("opencode.protocol.messages")
 		local spinner = require("opencode.ui.spinner")
 		local animation = require("opencode.ui.chat.task_animation")
 		local original_frame, original_task_frame = spinner.get_frame, animation.get_task_anim_frame
@@ -52,12 +52,12 @@ describe("hot-path frame equivalence", function()
 				"local value = 'Привет'", "\n\nreturn value", "\n``", "`", "changed", "\n```\nAfter",
 			}
 			for index, delta in ipairs(trace) do
-				sync.handle_v2_event({ id = "frame-event-" .. index, created = index + 2, type = "session.text.delta",
+				sync.handle_server_event({ id = "frame-event-" .. index, created = index + 2, type = "session.text.delta",
 					data = { sessionID = "frame-trace", assistantMessageID = "frame-assistant", ordinal = 0, delta = delta } })
 				assert.is_true(chat.update_stream_part_block("frame-trace", "frame-assistant", part_id))
 				check("delta " .. index)
 			end
-			sync.handle_v2_event({ id = "frame-ended", created = 100, type = "session.text.ended",
+			sync.handle_server_event({ id = "frame-ended", created = 100, type = "session.text.ended",
 				data = { sessionID = "frame-trace", assistantMessageID = "frame-assistant", ordinal = 0,
 					text = "Replacement\n\n```lua\nreturn 9" } })
 			assert.is_true(chat.update_stream_part_block("frame-trace", "frame-assistant", part_id))

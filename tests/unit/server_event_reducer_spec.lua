@@ -1,5 +1,5 @@
 local sync = require("opencode.sync")
-local projection = require("opencode.protocol.v2.messages")
+local projection = require("opencode.protocol.messages")
 
 describe("v2 event reduction", function()
 	before_each(function() sync.clear_all() end)
@@ -13,10 +13,10 @@ describe("v2 event reduction", function()
 		local sid = fixture("session").data.id
 		for _, event in ipairs(events) do
 			if event.type == "session.execution.succeeded" then
-				sync.handle_v2_event(event)
+				sync.handle_server_event(event)
 				break -- The fixture subsequently exercises duplicate admission.
 			end
-			sync.handle_v2_event(event)
+			sync.handle_server_event(event)
 		end
 		local live = {}
 		for _, message in ipairs(sync.get_messages(sid)) do
@@ -26,7 +26,7 @@ describe("v2 event reduction", function()
 		for _, message in ipairs(cold) do
 			assert.is_not_nil(live[message.info.id])
 			assert.same(message.parts, live[message.info.id].parts)
-			assert.same(message.info._v2, live[message.info.id].info._v2)
+			assert.same(message.info._native, live[message.info.id].info._native)
 		end
 		assert.equals("idle", sync.get_session_status(sid).type)
 	end)
@@ -36,7 +36,7 @@ describe("v2 event reduction", function()
 		local function event(kind, data)
 			seq = seq + 1
 			data.sessionID, data.assistantMessageID = "ses_test", "msg_test"
-			return sync.handle_v2_event({ id = "evt_" .. seq, created = seq, type = "session." .. kind, data = data })
+			return sync.handle_server_event({ id = "evt_" .. seq, created = seq, type = "session." .. kind, data = data })
 		end
 		event("step.started", { agent = "build", model = { providerID = "test", id = "test" }, started = 1 })
 		event("text.started", { ordinal = 0 })
@@ -66,12 +66,12 @@ describe("v2 event reduction", function()
 	end)
 
 	it("retains a provisional unknown message and requests reconciliation", function()
-		local result = sync.handle_v2_event({ id = "evt_orphan", created = 1, type = "session.text.delta",
+		local result = sync.handle_server_event({ id = "evt_orphan", created = 1, type = "session.text.delta",
 			data = { sessionID = "ses_test", assistantMessageID = "msg_test", ordinal = 0, delta = "part" } })
 		assert.is_true(result.reconcile)
 		assert.equals("part", sync.get_parts("msg_test")[1].text)
 		local snapshot = sync.capture_session_snapshot("ses_test")
-		sync.handle_v2_event({ id = "evt_end", created = 2, type = "session.text.ended",
+		sync.handle_server_event({ id = "evt_end", created = 2, type = "session.text.ended",
 			data = { sessionID = "ses_test", assistantMessageID = "msg_test", ordinal = 0, text = "Full" } })
 		sync.handle_session_messages("ses_test", projection.page("ses_test", { { id = "msg_test", type = "assistant", content = {}, time = { created = 1 } } }), { snapshot = snapshot })
 		assert.equals("Full", sync.get_parts("msg_test")[1].text)
@@ -84,7 +84,7 @@ describe("v2 event reduction", function()
 		})
 		sync.handle_session_messages("s", page)
 		local snapshot = sync.capture_session_snapshot("s")
-		sync.handle_v2_event({ id = "evt_4", created = 4, type = "session.revert.committed", data = { sessionID = "s", to = "msg_2" } })
+		sync.handle_server_event({ id = "evt_4", created = 4, type = "session.revert.committed", data = { sessionID = "s", to = "msg_2" } })
 		sync.handle_session_messages("s", page, { snapshot = snapshot, reconcile = true, complete = true })
 		assert.equals(1, #sync.get_messages("s"))
 		assert.equals("msg_1", sync.get_messages("s")[1].id)
@@ -100,7 +100,7 @@ describe("v2 event reduction", function()
 		})[1]
 		pending_prompt.info.provisional = true
 		sync.handle_session_messages("s", { history[1], pending_prompt })
-		local effect = sync.handle_v2_event({ id = "evt_commit", created = 3,
+		local effect = sync.handle_server_event({ id = "evt_commit", created = 3,
 			type = "session.revert.committed", data = { sessionID = "s", to = "msg_old" } })
 		assert.same({ "msg_old" }, effect.revert_removed)
 		assert.is_nil(sync.get_message("s", "msg_old"))

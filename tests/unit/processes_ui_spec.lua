@@ -128,7 +128,7 @@ describe("session shell process UI", function()
 		processes.background({ session_id = "ses_a" })
 		assert.equals(0, count)
 		local sync = require("opencode.sync")
-		sync.handle_session_messages("ses_a", { require("opencode.protocol.v2.messages").project("ses_a", {
+		sync.handle_session_messages("ses_a", { require("opencode.protocol.messages").project("ses_a", {
 			id = "msg_running", type = "assistant", content = { { id = "call_shell", type = "tool", name = "shell", state = { status = "running" } } },
 		}) })
 		processes.background({ session_id = "ses_a" })

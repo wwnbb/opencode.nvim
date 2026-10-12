@@ -177,7 +177,7 @@ describe("completion model profiles", function()
 		local models = { { id = "gpt-5.2", providerID = "openai", enabled = true, variants = {
 			{ id = "fast", body = {} }, { id = snapshot.variant }, { id = explanation_snapshot.variant }, { id = "high" },
 		} } }
-		local result = require("opencode.protocol.v2.catalogs").providers(providers, models)
+		local result = require("opencode.protocol.catalogs").providers(providers, models)
 		local model = result.providers[1].models["gpt-5.2"]
 		assert.same({ "fast", "high" }, model.variant_order)
 		assert.is_nil(model.variants[snapshot.variant])

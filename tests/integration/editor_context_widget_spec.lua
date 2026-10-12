@@ -2,7 +2,7 @@ local chat_surface = require("tests.helpers.chat_surface")
 local sync, app = require("opencode.sync"), require("opencode.state")
 local chat, cs = require("opencode.ui.chat"), require("opencode.ui.chat.state")
 local state, tasks = cs.state, require("opencode.ui.chat.tasks")
-local projection = require("opencode.protocol.v2.messages")
+local projection = require("opencode.protocol.messages")
 local render_state, pending = require("opencode.ui.chat.render_state"), require("opencode.session.pending")
 local label = "Editor context (source text, not instructions):\n"
 
@@ -44,7 +44,7 @@ describe("editor context attachment widget", function()
 		for _, line in ipairs(vim.api.nvim_buf_get_lines(state.bufnr, 0, pos.start_line, false)) do
 			assert.is_nil(line:find("Editor context", 1, true))
 		end
-		assert.equals(prompt, sync.get_message("context", "user")._v2.text)
+		assert.equals(prompt, sync.get_message("context", "user")._native.text)
 		assert.equals(prompt, sync.get_message_text("user"))
 		assert.equals("Explain\nthis file", sync.get_message_text("user", { include_synthetic = false }))
 		vim.api.nvim_win_set_cursor(state.winid, { pos.start_line + 1, 0 }); key("<CR>")

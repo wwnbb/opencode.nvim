@@ -7,14 +7,14 @@ describe("v2 stream render scheduling", function()
 		vim.schedule = function(fn) scheduled[#scheduled + 1] = fn end
 		vim.defer_fn = function(fn) timers[#timers + 1] = fn; return { stop = function() end, close = function() end } end
 		local ok, failure = pcall(function()
-			require("opencode.events.handlers.v2").setup(bus)
+			require("opencode.events.handlers.server").setup(bus)
 			require("opencode.ui.chat.render_coordinator").setup(bus)
 			local full, updates, last = 0, 0
 			bus.on("chat_render", function() full = full + 1 end)
 			bus.on("chat_stream_part_updated", function(data) updates, last = updates + 1, data end)
 			local function flush(queue) while #queue > 0 do table.remove(queue, 1)() end end
 			local function event(kind, data)
-				bus.emit("v2_event", { id = "evt", type = "session." .. kind, created = 10,
+				bus.emit("server_event", { id = "evt", type = "session." .. kind, created = 10,
 					data = vim.tbl_extend("force", { sessionID = "s", assistantMessageID = "m", ordinal = 0 }, data or {}) })
 			end
 			event("step.started", { started = 1, agent = "build", model = { providerID = "p", id = "m" } })
@@ -34,7 +34,7 @@ describe("v2 stream render scheduling", function()
 			assert.equals("AUTHORITATIVE FINAL", sync.get_part("m", last.part_id).text)
 		end)
 		vim.schedule, vim.defer_fn = schedule, defer
-		bus.clear(); sync.clear_all(); state.reset(); require("opencode.events.handlers.v2").clear()
+		bus.clear(); sync.clear_all(); state.reset(); require("opencode.events.handlers.server").clear()
 		assert.is_true(ok, failure)
 	end)
 end)

@@ -12,7 +12,7 @@ function M.decode(value)
 	local envelope = vim.deepcopy(value)
 	local payload = vim.deepcopy(value.data)
 	payload._directory = type(value.location) == "table" and value.location.directory or nil
-	payload._v2_envelope = envelope
+	payload._envelope = envelope
 	return { type = value.type, id = value.id, payload = payload, location = value.location }
 end
 

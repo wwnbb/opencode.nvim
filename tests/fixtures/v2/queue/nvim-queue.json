@@ -19,7 +19,7 @@
       ],
       "info": {
         "role": "user",
-        "_v2": {
+        "_native": {
           "id": "msg_0c6bad74b001nhak5eLjQZ73yh",
           "type": "user",
           "time": {
@@ -54,7 +54,7 @@
       ],
       "info": {
         "role": "system",
-        "_v2": {
+        "_native": {
           "id": "msg_0c6bad77e001rz2FD1SvdbIwfh",
           "type": "agent-switched",
           "time": {
@@ -140,7 +140,7 @@
       ],
       "info": {
         "error_message": "Step interrupted",
-        "_v2": {
+        "_native": {
           "model": {
             "id": "mimo-v2.5-free",
             "variant": "default",
@@ -309,7 +309,7 @@
       "parts": [],
       "info": {
         "role": "system",
-        "_v2": {
+        "_native": {
           "id": "msg_0c6baf8c7002p2QI3Ox0uKuRmp",
           "type": "idle",
           "time": {
@@ -343,7 +343,7 @@
       ],
       "info": {
         "role": "user",
-        "_v2": {
+        "_native": {
           "id": "msg_0c6bafbbe001v1fkY782UgVr8I",
           "type": "user",
           "time": {
@@ -433,7 +433,7 @@
         }
       ],
       "info": {
-        "_v2": {
+        "_native": {
           "model": {
             "id": "mimo-v2.5-free",
             "variant": "default",
@@ -617,7 +617,7 @@
       ],
       "info": {
         "role": "user",
-        "_v2": {
+        "_native": {
           "id": "msg_0c6bb205b001slheq03lPxzNIG",
           "type": "user",
           "time": {
@@ -675,7 +675,7 @@
         }
       ],
       "info": {
-        "_v2": {
+        "_native": {
           "model": {
             "id": "mimo-v2.5-free",
             "variant": "default",
@@ -800,7 +800,7 @@
       "parts": [],
       "info": {
         "role": "system",
-        "_v2": {
+        "_native": {
           "id": "msg_0c6bb320100177daGikS9sZJ9d",
           "type": "idle",
           "time": {

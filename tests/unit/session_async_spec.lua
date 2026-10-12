@@ -219,6 +219,6 @@ describe("session actions across connection changes", function()
 		pending.invalidate()
 		reply(nil, {})
 		flush()
-		for _, event in ipairs(events.get_history()) do assert.is_not.equals("v2_reconcile", event.type) end
+		for _, event in ipairs(events.get_history()) do assert.is_not.equals("session_reconcile", event.type) end
 	end)
 end)

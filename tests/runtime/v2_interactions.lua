@@ -68,5 +68,5 @@ vim.fn.writefile({ vim.json.encode({ version = server_info.version, typed_form =
 await(function(cb) client.delete_session(created.id, cb) end)
 await(function(cb) client.delete_session(other.id, cb) end)
 client.disconnect_events()
-require("opencode.events.handlers.v2").clear()
+require("opencode.events.handlers.server").clear()
 print("Neovim v2 interaction smoke passed")

@@ -16,7 +16,7 @@ chat.open()
 local ended = false
 client.on_event("session.text.ended", function() ended = true end)
 assert(client.connect_events())
-local part_id = require("opencode.protocol.v2.messages").part_id("code-sse", "answer", "text", 0)
+local part_id = require("opencode.protocol.messages").part_id("code-sse", "answer", "text", 0)
 local function highlighted()
 	local count = 0
 	for _, mark in ipairs(vim.api.nvim_buf_get_extmarks(chat.get_bufnr(), cs.chat_hl_ns, 0, -1, { details = true })) do

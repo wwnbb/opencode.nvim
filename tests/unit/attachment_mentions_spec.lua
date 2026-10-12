@@ -1,5 +1,5 @@
 describe("v2 attachment mention positions", function()
-	local requests = require("opencode.protocol.v2.requests")
+	local requests = require("opencode.protocol.requests")
 	it("converts verified Neovim byte positions to native TUI display cells", function()
 		local prefix = "猫🙂é\n"
 		local body = assert(requests.prompt(prefix .. "@build", { parts = {

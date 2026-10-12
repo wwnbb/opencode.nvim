@@ -5,8 +5,8 @@
 local M = {}
 local native_hooks = {}
 
-function M.handle_v2_event(event)
-	return require("opencode.sync.v2").apply(M, event, native_hooks)
+function M.handle_server_event(event)
+	return require("opencode.sync.reducer").apply(M, event, native_hooks)
 end
 ---@class SyncStore
 ---@field message table<string, Message[]> Messages by sessionID
@@ -993,7 +993,7 @@ end
 native_hooks.committed = function(session_id, projected)
 	local info = projected.info
 	local message_id = info and info.id
-	local native = info and info._v2
+	local native = info and info._native
 	local parts = message_id and store.part[message_id]
 	if not message_id or get_message_by_id(message_id) ~= info
 		or info.sessionID ~= session_id or info.role ~= "assistant" or info.type ~= "assistant"
@@ -1053,14 +1053,14 @@ native_hooks.try_delta = function(event)
 	local position = find_message_index(messages, message_id)
 	local current = position and messages[position]
 	local parts = store.part[message_id]
-	if current ~= entry.info or current._v2 ~= entry.native or current.content ~= entry.content
-		or current._v2.content ~= entry.native_content
+	if current ~= entry.info or current._native ~= entry.native or current.content ~= entry.content
+		or current._native.content ~= entry.native_content
 		or parts ~= entry.parts or #parts ~= entry.count
-		or #current._v2.content ~= entry.count or #current.content ~= entry.count then return end
+		or #current._native.content ~= entry.count or #current.content ~= entry.count then return end
 	local identity = content_kind == "tool" and data.id or (data.ordinal or 0)
 	local locator = entry.locators[content_kind][identity]
 	if not locator then return end
-	local native = current._v2.content[locator.native_index]
+	local native = current._native.content[locator.native_index]
 	local content = current.content[locator.native_index]
 	local part = parts[locator.part_index]
 	if type(native) ~= "table" or type(content) ~= "table" or type(part) ~= "table"
@@ -1086,13 +1086,13 @@ native_hooks.try_delta = function(event)
 	local next_parts = {}
 	for index, sibling in ipairs(parts) do next_parts[index] = vim.deepcopy(sibling) end
 	local next_value = value .. data.delta
-	local next_native = next_info._v2.content[locator.native_index]
+	local next_native = next_info._native.content[locator.native_index]
 	local next_content = next_info.content[locator.native_index]
 	local next_part = next_parts[locator.part_index]
 	if content_kind == "tool" then
 		next_native.state.input, next_content.state.input, next_part.state.input = next_value, next_value, next_value
 	else next_native.text, next_content.text, next_part.text = next_value, next_value, next_value end
-	local restores_parent = current._v2.parentID ~= current.parentID
+	local restores_parent = current._native.parentID ~= current.parentID
 	messages[position] = next_info
 	for index, sibling in ipairs(next_parts) do parts[index] = sibling end
 	invalidate_parts(message_id)
@@ -1100,8 +1100,8 @@ native_hooks.try_delta = function(event)
 	bump_part_revision(message_id, next_part.id, session_id)
 	if content_kind == "tool" then bump_task_summary_revision(session_id) end
 	if restores_parent then bump_message_revision(message_id, session_id) end
-	entry.info, entry.native, entry.content = next_info, next_info._v2, next_info.content
-	entry.native_content = next_info._v2.content
+	entry.info, entry.native, entry.content = next_info, next_info._native, next_info.content
+	entry.native_content = next_info._native.content
 	entry.refs, entry.generation = next_parts, parts_generation[message_id]
 	native_messages[message_id] = entry
 	return { session_id = session_id, changed = true }

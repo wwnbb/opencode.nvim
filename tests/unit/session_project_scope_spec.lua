@@ -145,7 +145,7 @@ describe("opencode session project scope", function()
 	it("hydrates child activity into both stores and preserves newer child SSE", function()
 		local sync = require("opencode.sync")
 		sync.record_task_child_session("a", "m", "part", "child")
-		sync.handle_session_messages("child", { require("opencode.protocol.v2.messages").project("child", {
+		sync.handle_session_messages("child", { require("opencode.protocol.messages").project("child", {
 			id = "idle", type = "idle", outcome = "succeeded",
 		}) })
 		session.refresh_status(); requests[1](nil, {})

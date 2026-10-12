@@ -139,12 +139,12 @@ local cases = {
 }
 describe("v2 operation wire matrix", function()
 	local saved, schedule, v2, wire, response
-	local names = { "opencode.client.v2", "opencode.client.http", "opencode.client.transport" }
+	local names = { "opencode.client.api", "opencode.client.http", "opencode.client.transport" }
 	before_each(function()
 		saved = {}; for _, name in ipairs(names) do saved[name] = package.loaded[name]; package.loaded[name] = nil end
 		schedule = vim.schedule; vim.schedule = function(fn) fn() end
 		package.loaded["opencode.client.transport"] = { request = function(opts, callback) wire = opts; callback(nil, response) end }
-		v2 = require("opencode.client.v2")
+		api = require("opencode.client.api")
 		require("opencode.client.http").setup({ host = "127.0.0.1", port = 4096, auth = { password = "public-test-only" } })
 	end)
 	after_each(function() vim.schedule = schedule; for _, name in ipairs(names) do package.loaded[name] = saved[name] end end)
@@ -157,7 +157,7 @@ describe("v2 operation wire matrix", function()
 		end
 		-- Only coverage is read from implementation; request expectations above
 		-- are checked independently against the published contract inventory.
-		for line in io.lines("lua/opencode/client/v2.lua") do
+		for line in io.lines("lua/opencode/client/api.lua") do
 			local name = line:match('^\t([%w_]+) = { "%u+", "/api/')
 			if name then assert.is_true(covered[name], "Missing wire case: " .. name) end
 		end
@@ -170,7 +170,7 @@ describe("v2 operation wire matrix", function()
 			response = { status = status, headers = { ["content-type"] = "application/json" }, body = body == false and "" or vim.json.encode(body) }
 			local callbacks, result = 0
 			local function invoke()
-				v2.request(case[1], args, function(err, data, meta) callbacks = callbacks + 1; result = { err = err, data = data, meta = meta } end)
+				api.request(case[1], args, function(err, data, meta) callbacks = callbacks + 1; result = { err = err, data = data, meta = meta } end)
 			end
 			invoke()
 			assert.equals(1, callbacks); assert.is_nil(result.err, case[1]); assert.equals(status, result.meta.status)
@@ -189,7 +189,7 @@ describe("v2 operation wire matrix", function()
 		response = { status = 401, headers = { ["content-type"] = "application/json" }, body = vim.json.encode({ _tag = "UnauthorizedError", message = "Authentication required" }) }
 		for _, operation in ipairs({ "session_get", "session_create", "session_update", "session_delete" }) do
 			local callbacks = 0
-			v2.request(operation, { path = { sessionID = "s" } }, function(err, data, meta)
+			api.request(operation, { path = { sessionID = "s" } }, function(err, data, meta)
 				callbacks = callbacks + 1
 				assert.is_nil(data)
 				assert.equals(401, err.status)

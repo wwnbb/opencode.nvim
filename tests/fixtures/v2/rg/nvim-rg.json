@@ -8,7 +8,7 @@
           "created": 1790037449935
         },
         "id": "msg_0c68bdcac001nhak5eLjQZ73yh",
-        "_v2": {
+        "_native": {
           "time": {
             "created": 1790037449935
           },
@@ -42,7 +42,7 @@
           "created": 1790037449912
         },
         "id": "msg_0c68bdcb8001Lt8jzd0ph5l1IX",
-        "_v2": {
+        "_native": {
           "time": {
             "created": 1790037449912
           },
@@ -200,7 +200,7 @@
         },
         "variant": "default",
         "id": "msg_0c68bdcd7001O0VBCYN7KqCjRn",
-        "_v2": {
+        "_native": {
           "snapshot": {
             "start": "fe44f06d0f12fdd464e99d819b06b9046f163db1",
             "end": "fe44f06d0f12fdd464e99d819b06b9046f163db1",
@@ -549,7 +549,7 @@
         },
         "variant": "default",
         "id": "msg_0c68bf46b001HWZ66ytcLqsaD9",
-        "_v2": {
+        "_native": {
           "snapshot": {
             "start": "fe44f06d0f12fdd464e99d819b06b9046f163db1",
             "end": "fe44f06d0f12fdd464e99d819b06b9046f163db1",
@@ -662,7 +662,7 @@
           "created": 1790037459761
         },
         "id": "msg_0c68c0331002AI0sR5FLiGC61H",
-        "_v2": {
+        "_native": {
           "time": {
             "created": 1790037459761
           },
@@ -685,7 +685,7 @@
           "created": 1790037459781
         },
         "id": "msg_0c68c033c001AyHLTgZnSBeDa8",
-        "_v2": {
+        "_native": {
           "time": {
             "created": 1790037459781
           },
@@ -788,7 +788,7 @@
         },
         "variant": "default",
         "id": "msg_0c68c03470013qGbpKdOKUuIKj",
-        "_v2": {
+        "_native": {
           "snapshot": {
             "start": "fe44f06d0f12fdd464e99d819b06b9046f163db1",
             "end": "fe44f06d0f12fdd464e99d819b06b9046f163db1",
@@ -950,7 +950,7 @@
           "created": 1790037466498
         },
         "id": "msg_0c68c1d82002vERHhI1p4fe3mP",
-        "_v2": {
+        "_native": {
           "time": {
             "created": 1790037466498
           },

@@ -155,7 +155,7 @@ end
 	end)
 
 	it("formats projected native task timestamps in milliseconds", function()
-		local projection = require("opencode.protocol.v2.messages")
+		local projection = require("opencode.protocol.messages")
 		local projected = projection.project("duration-session", {
 			id = "assistant", type = "assistant", content = { {
 				type = "tool", id = "call", name = "subagent",

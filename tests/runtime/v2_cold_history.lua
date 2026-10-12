@@ -3,8 +3,8 @@ local fixture = vim.json.decode(table.concat(vim.fn.readfile(assert(vim.env.OPEN
 local history = assert(fixture.history)
 local sid = assert(history[1].info.sessionID)
 local native = {}
-for _, item in ipairs(history) do native[#native + 1] = assert(item.info._v2) end
-local projected = require("opencode.protocol.v2.messages").page(sid, native)
+for _, item in ipairs(history) do native[#native + 1] = assert(item.info._native) end
+local projected = require("opencode.protocol.messages").page(sid, native)
 for index, item in ipairs(projected) do assert(vim.deep_equal(item.parts, history[index].parts), "Cold native parts differ from HTTP projection") end
 local app, chat, sync = require("opencode"), require("opencode.ui.chat"), require("opencode.sync")
 app.setup({ server = { auto_start = false, use_shell_env = false }, lualine = { enabled = false },

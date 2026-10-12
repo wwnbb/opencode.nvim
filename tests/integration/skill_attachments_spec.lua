@@ -7,7 +7,7 @@ local state = cs.state
 local tasks = require("opencode.ui.chat.tasks")
 local pending = require("opencode.session.pending")
 local render_state = require("opencode.ui.chat.render_state")
-local projection = require("opencode.protocol.v2.messages")
+local projection = require("opencode.protocol.messages")
 
 local function apply_history(skills, opts)
 	opts = opts or {}
@@ -79,7 +79,7 @@ describe("native user skill attachments in the chat buffer", function()
 		local parts = seed(native)
 		local first, second = parts[1].id, parts[2].id
 		assert.equals(2, vim.tbl_count(state.tools))
-		assert.same(native, sync.get_message("skill-attachments", "user")._v2.skills)
+		assert.same(native, sync.get_message("skill-attachments", "user")._native.skills)
 		for index, id in ipairs({ first, second }) do
 			assert_native_part(id, native[index].id)
 			assert.equals("tool", state.tools[id].kind)

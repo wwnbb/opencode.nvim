@@ -42,7 +42,7 @@ for _, message in ipairs(history) do
 		end
 		local matched = vim.wait(10000, function()
 			local actual = sync.get_message(info.id, message.info.id)
-			return actual and vim.deep_equal(actual._v2, message.info._v2)
+			return actual and vim.deep_equal(actual._native, message.info._native)
 		end, 20)
 		if not matched then
 			vim.fn.writefile({ vim.json.encode({ live = sync.get_message(info.id, message.info.id), expected = message.info }) }, vim.env.OPENCODE_V2_OUTPUT .. ".mismatch.json")

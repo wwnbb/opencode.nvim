@@ -10,7 +10,7 @@
           "created": 1790043510311
         },
         "text": "This is a background delegation test. Use the direct subagent tool twice with background=true and agent=\"general\". Both calls must have exactly description=\"Small test\" and model=\"opencode-go/deepseek-v4-flash\". Launch both without waiting for the first. First child prompt: Call shell once with command \"sleep 20\", then reply exactly CHILD_ONE. Second child prompt: Call shell once with command \"sleep 20\", then reply exactly CHILD_TWO. These are two independent test tasks. Do not read or modify files. After both launches reply PARENT_LAUNCHED. When completion notifications arrive, acknowledge them without any further tool calls.",
-        "_v2": {
+        "_native": {
           "type": "user",
           "id": "msg_0c6e855f1001nhak5eLjQZ73yh",
           "time": {
@@ -43,7 +43,7 @@
         "time": {
           "created": 1790043510280
         },
-        "_v2": {
+        "_native": {
           "type": "agent-switched",
           "id": "msg_0c6e856080015F4T52IaZAe8FQ",
           "time": {
@@ -79,7 +79,7 @@
           "completed": 1790043513484,
           "streamed": 1790043513388
         },
-        "_v2": {
+        "_native": {
           "agent": "build",
           "rawFinish": "tool_calls",
           "tokens": {
@@ -437,7 +437,7 @@
           "created": 1790043537743
         },
         "text": "<subagent sessionID=\"ses_f39179dccffe7qsD5VBXdxe9A3\" state=\"completed\" description=\"Small test\">\nCHILD_TWO\n</subagent>",
-        "_v2": {
+        "_native": {
           "id": "msg_0c6e86257001EYxDpce56BYNxd",
           "description": "Small test",
           "metadata": {
@@ -486,7 +486,7 @@
           "created": 1790043538980
         },
         "text": "<subagent sessionID=\"ses_f39179dcdffeP4LJNVt7vCOU2y\" state=\"completed\" description=\"Small test\">\nCHILD_ONE\n</subagent>",
-        "_v2": {
+        "_native": {
           "id": "msg_0c6e8625b002XHW13RaZYZMe6o",
           "description": "Small test",
           "metadata": {
@@ -535,7 +535,7 @@
           "completed": 1790043514837,
           "streamed": 1790043514813
         },
-        "_v2": {
+        "_native": {
           "agent": "build",
           "rawFinish": "stop",
           "tokens": {
@@ -631,7 +631,7 @@
         "time": {
           "created": 1790043514839
         },
-        "_v2": {
+        "_native": {
           "type": "idle",
           "id": "msg_0c6e867d7002HHAVYletDQ1EY5",
           "time": {
@@ -655,7 +655,7 @@
           "completed": 1790043538975,
           "streamed": 1790043538951
         },
-        "_v2": {
+        "_native": {
           "agent": "build",
           "rawFinish": "stop",
           "tokens": {
@@ -791,7 +791,7 @@
           "completed": 1790043540044,
           "streamed": 1790043540019
         },
-        "_v2": {
+        "_native": {
           "agent": "build",
           "rawFinish": "stop",
           "tokens": {
@@ -887,7 +887,7 @@
         "time": {
           "created": 1790043540048
         },
-        "_v2": {
+        "_native": {
           "type": "idle",
           "id": "msg_0c6e8ca50001yAaUQh8qUl0QXc",
           "time": {
@@ -943,7 +943,7 @@
               "created": 1790043513442
             },
             "text": "You are a subagent spawned by another session.\nCall shell once with command \"sleep 20\", then reply exactly CHILD_TWO.",
-            "_v2": {
+            "_native": {
               "type": "user",
               "id": "msg_0c6e86255002793fIsNCRfaC0R",
               "time": {
@@ -977,7 +977,7 @@
               "completed": 1790043536569,
               "streamed": 1790043516531
             },
-            "_v2": {
+            "_native": {
               "agent": "general",
               "rawFinish": "tool_calls",
               "tokens": {
@@ -1223,7 +1223,7 @@
               "completed": 1790043537732,
               "streamed": 1790043537707
             },
-            "_v2": {
+            "_native": {
               "agent": "general",
               "rawFinish": "stop",
               "tokens": {
@@ -1319,7 +1319,7 @@
             "time": {
               "created": 1790043537735
             },
-            "_v2": {
+            "_native": {
               "type": "idle",
               "id": "msg_0c6e8c1470011uS60CGONrJh0J",
               "time": {
@@ -1381,7 +1381,7 @@
               "created": 1790043513454
             },
             "text": "You are a subagent spawned by another session.\nCall shell once with command \"sleep 20\", then reply exactly CHILD_ONE.",
-            "_v2": {
+            "_native": {
               "type": "user",
               "id": "msg_0c6e8625a002fFbYB6RY2VOJxT",
               "time": {
@@ -1415,7 +1415,7 @@
               "completed": 1790043535693,
               "streamed": 1790043515646
             },
-            "_v2": {
+            "_native": {
               "agent": "general",
               "rawFinish": "tool_calls",
               "tokens": {
@@ -1643,7 +1643,7 @@
               "completed": 1790043538723,
               "streamed": 1790043538700
             },
-            "_v2": {
+            "_native": {
               "agent": "general",
               "rawFinish": "stop",
               "tokens": {
@@ -1739,7 +1739,7 @@
             "time": {
               "created": 1790043538725
             },
-            "_v2": {
+            "_native": {
               "type": "idle",
               "id": "msg_0c6e8c525001IjL0Kq3uoxgECc",
               "time": {

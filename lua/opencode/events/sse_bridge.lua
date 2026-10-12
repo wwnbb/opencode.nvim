@@ -11,9 +11,9 @@ function M.setup(events)
 	registered_client = client
 
 	client.on_event("*", function(_, data)
-		if type(data) ~= "table" or not data._v2_envelope then return end
+		if type(data) ~= "table" or not data._envelope then return end
 		if client.is_explanation_session and client.is_explanation_session(data.sessionID) then return end
-		events.emit("v2_event", data._v2_envelope)
+		events.emit("server_event", data._envelope)
 	end)
 	client.on_event("error", function(message)
 		events.emit("error", message)

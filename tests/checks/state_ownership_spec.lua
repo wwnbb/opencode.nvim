@@ -50,7 +50,7 @@ describe("opencode state ownership", function()
 		bus.clear()
 		state.clear_listeners()
 		require("opencode.session.pending").clear_all()
-		local handler = package.loaded["opencode.events.handlers.v2"]
+		local handler = package.loaded["opencode.events.handlers.server"]
 		if handler then handler.clear() end
 		local chat = package.loaded["opencode.ui.chat"]
 		if chat then chat.close() end
@@ -107,7 +107,7 @@ describe("opencode state ownership", function()
 	end
 
 	local function emit_native(kind, sid, id, data)
-		bus.emit("v2_event", { id = id, type = kind,
+		bus.emit("server_event", { id = id, type = kind,
 			data = vim.tbl_extend("force", { sessionID = sid }, data or {}), created = 10 })
 	end
 
@@ -288,7 +288,7 @@ describe("opencode state ownership", function()
 		session_actions.set_active("session_status", "Status Session", { preserve_cache = true })
 		state.upsert_session({ id = "history_other", title = "Other busy session" }, { touch = false })
 		session_actions.set_session_status("history_other", { type = "busy" }, { reason = "test_busy" })
-		require("opencode.events.handlers.v2").setup(bus)
+		require("opencode.events.handlers.server").setup(bus)
 		emit_native("session.execution.started", "session_status", "evt-status-start")
 		wait_for(function() return state.get_status() == "streaming" end,
 			"native execution start should set streaming")
@@ -305,7 +305,7 @@ describe("opencode state ownership", function()
 	end)
 
 	it("idles only the session addressed by a terminal event", function()
-		require("opencode.events.handlers.v2").setup(bus)
+		require("opencode.events.handlers.server").setup(bus)
 		sync.clear_all()
 		state.set_session("running_root", "Running Root")
 		state.set_session("complete_root", "Complete Root")
@@ -406,13 +406,13 @@ describe("opencode state ownership", function()
 	it("retains native permissions and forms only for relevant runtime sessions", function()
 		session_actions.set_active("other_session", "Other Session", { preserve_cache = true })
 		session_actions.set_active("visible_session", "Visible Session", { preserve_cache = true })
-		require("opencode.events.handlers.interactions_v2").setup(bus)
+		require("opencode.events.handlers.interactions").setup(bus)
 		sync.handle_message_updated({ id = "permission_tool_message", sessionID = "visible_session",
 			role = "assistant", time = { created = 1 } })
 		sync.handle_part_updated({ id = "permission_tool_part", messageID = "permission_tool_message",
 			sessionID = "visible_session", type = "tool", tool = "bash", callID = "tool_call",
 			state = { input = { command = "from sync" } } })
-		bus.emit("v2_interaction", { id = "evt-permission-visible", type = "permission.asked",
+		bus.emit("server_interaction", { id = "evt-permission-visible", type = "permission.asked",
 			data = { id = "perm_visible_session", action = "shell", sessionID = "visible_session",
 				source = { type = "tool", messageID = "permission_tool_message", callID = "tool_call" },
 				metadata = { input = { command = "from metadata" } } }, created = 1000 })
@@ -420,17 +420,17 @@ describe("opencode state ownership", function()
 			"native permission in visible session should be tracked")
 		assert.equals("from sync", permission_state.get_permission("perm_visible_session").tool_input.command, "native permission should prefer synchronized tool input")
 
-		bus.emit("v2_interaction", { id = "evt-permission-other", type = "permission.asked",
+		bus.emit("server_interaction", { id = "evt-permission-other", type = "permission.asked",
 			data = { id = "perm_other_session", action = "shell", sessionID = "other_session",
 				metadata = { input = { command = "other" } } }, created = 1001 })
 		wait_for(function() return permission_state.has_permission("perm_other_session") end,
 			"permission in another runtime tab should remain independently tracked")
-		bus.emit("v2_interaction", { id = "evt-permission-foreign", type = "permission.asked",
+		bus.emit("server_interaction", { id = "evt-permission-foreign", type = "permission.asked",
 			data = { id = "perm_foreign", action = "shell", sessionID = "foreign_session" }, created = 1002 })
 		assert.is_truthy(not permission_state.has_permission("perm_foreign"), "permission outside runtime sessions should be ignored")
 
 		local function emit_form(id, sid)
-			bus.emit("v2_interaction", { id = "evt-" .. id, type = "form.created", created = 1003,
+			bus.emit("server_interaction", { id = "evt-" .. id, type = "form.created", created = 1003,
 				data = { form = { id = id, sessionID = sid, state = { status = "pending" },
 					fields = { { key = "choice", type = "string", title = "Pick",
 						options = { { label = "A", value = "a" } } } } } } })
@@ -649,9 +649,9 @@ describe("opencode state ownership", function()
 		end
 
 		session_actions.set_active("session_hidden", "Hidden Widget", { preserve_cache = true })
-		require("opencode.events.handlers.interactions_v2").setup(bus)
+		require("opencode.events.handlers.interactions").setup(bus)
 		require("tests.helpers.schedule").with(function(flush)
-			bus.emit("v2_interaction", { id = "evt-danger-missing", type = "permission.asked", data = {
+			bus.emit("server_interaction", { id = "evt-danger-missing", type = "permission.asked", data = {
 				id = "danger_missing_session",
 				action = "shell",
 			}, created = 1000 })
@@ -660,7 +660,7 @@ describe("opencode state ownership", function()
 			assert.is_truthy(not permission_state.has_permission("danger_missing_session"), "danger mode should drop permission without session identity")
 		end)
 
-		bus.emit("v2_interaction", { id = "evt-danger-perm", type = "permission.asked", data = {
+		bus.emit("server_interaction", { id = "evt-danger-perm", type = "permission.asked", data = {
 			id = "danger_perm",
 			action = "shell",
 			sessionID = "session_hidden",

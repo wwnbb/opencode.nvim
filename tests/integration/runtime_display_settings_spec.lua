@@ -2,7 +2,7 @@ local app, sync = require("opencode.state"), require("opencode.sync")
 local cs = require("opencode.ui.chat.state")
 local state = cs.state
 local chat = require("opencode.ui.chat")
-local projection = require("opencode.protocol.v2.messages")
+local projection = require("opencode.protocol.messages")
 local tree = require("opencode.ui.chat.widget_tree")
 local function text() return table.concat(vim.api.nvim_buf_get_lines(state.bufnr, 0, -1, false), "\n") end
 local function seed(parts)

@@ -262,24 +262,24 @@ describe("review protocol 2 events", function()
 				confirmations[#confirmations + 1] = callback
 			end
 			local ok, err = pcall(function()
-				require("opencode.events.handlers.review_v2").setup({ emit = function() end,
+				require("opencode.events.handlers.review").setup({ emit = function() end,
 					on = function(kind, callback) handlers[kind] = callback end })
 				local event = { type = "rpc.opencode_nvim.policyRequested", data = { policy = {
 					protocolVersion = 2, sessionID = "policy-session", status = "pending", gateID = "gate",
 					location = { directory = "/policy" }, request = { id = "permission", action = "neovim_edit" },
 				} } }
-				handlers.v2_interaction(event)
-				handlers.v2_interaction(event)
+				handlers.server_interaction(event)
+				handlers.server_interaction(event)
 				assert.equals(1, #lookups)
 				if reconnect then pending.invalidate() else pending.clear_session("policy-session") end
-				handlers.v2_interaction(event)
+				handlers.server_interaction(event)
 				assert.equals(2, #lookups)
 				lookups[1]({ status = 404 })
 				assert.equals(0, #confirmations)
 				lookups[2]({ status = 404 })
 				assert.equals(1, #confirmations)
 				confirmations[1](nil, { status = "allowed" })
-				handlers.v2_interaction(event)
+				handlers.server_interaction(event)
 				assert.equals(2, #lookups)
 			end)
 			client.get_permission, client.create_permission, client.review_rpc = get, create, rpc
@@ -305,8 +305,8 @@ describe("review protocol 2 events", function()
 			callback(nil, { status = "allowed" })
 		end
 		local ok, err = pcall(function()
-			require("opencode.events.handlers.review_v2").setup(events)
-			handlers.v2_interaction({ type = "rpc.opencode_nvim.policyRequested", data = { policy = {
+			require("opencode.events.handlers.review").setup(events)
+			handlers.server_interaction({ type = "rpc.opencode_nvim.policyRequested", data = { policy = {
 				protocolVersion = 2, status = "pending", sessionID = "s", gateID = "gate",
 				location = { directory = "/server" }, request = { id = "per", action = "neovim_patch" },
 			} } })
@@ -314,14 +314,14 @@ describe("review protocol 2 events", function()
 			local record = { protocolVersion = 2, status = "pending", sessionID = "s", reviewID = "r",
 				revision = 1, created = 1000, messageID = "m", callID = "c", location = { directory = "/server" },
 				files = { { fileID = "f", filePath = "/server/a", type = "update", before = "before", after = "after" } } }
-			handlers.v2_interaction({ type = "rpc.opencode_nvim.reviewCreated", data = { review = record } })
+			handlers.server_interaction({ type = "rpc.opencode_nvim.reviewCreated", data = { review = record } })
 			assert.equals("pending", edits.get_edit("r").status)
 			local settled = vim.tbl_extend("force", record, { status = "settled", message = note,
 				decisions = { { fileID = "f", status = "accepted" } }, outcome = { review_message = note } })
-			handlers.v2_interaction({ type = "rpc.opencode_nvim.reviewSettled", data = { review = settled } })
+			handlers.server_interaction({ type = "rpc.opencode_nvim.reviewSettled", data = { review = settled } })
 			assert.equals(note, edits.get_edit("r").message)
 			assert.equals("sent", edits.get_edit("r").status)
-			handlers.v2_interaction({ type = "rpc.opencode_nvim.reviewCreated", data = { review = record } })
+			handlers.server_interaction({ type = "rpc.opencode_nvim.reviewCreated", data = { review = record } })
 			assert.equals("sent", edits.get_edit("r").status)
 		end)
 		client.review_rpc, client.get_permission, client.create_permission = rpc, get, create

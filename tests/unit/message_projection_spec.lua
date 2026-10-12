@@ -1,4 +1,4 @@
-local projection = require("opencode.protocol.v2.messages")
+local projection = require("opencode.protocol.messages")
 local sync = require("opencode.sync")
 
 describe("v2 history projection", function()
@@ -7,7 +7,7 @@ describe("v2 history projection", function()
 			output = { output = "Привет\n", cursor = 13, size = 13, truncated = false }, time = { created = 1, completed = 2 } }
 		local message = projection.project("ses_shell", native)
 		assert.equals("$ echo Привет\nПривет\n", message.parts[1].text)
-		assert.same(native, message.info._v2)
+		assert.same(native, message.info._native)
 	end)
 	before_each(function() sync.clear_all() end)
 	after_each(function() sync.clear_all() end)
@@ -26,7 +26,7 @@ describe("v2 history projection", function()
 		assert.equals(0, parts[1].ordinal)
 		assert.equals(0, parts[2].ordinal)
 		assert.equals("Привет, Neovim!", parts[2].text)
-		assert.same(history.data[2], messages[2]._v2)
+		assert.same(history.data[2], messages[2]._native)
 		assert.equals("mimo-v2.5-free", messages[2].modelID)
 	end)
 
@@ -73,7 +73,7 @@ describe("v2 history projection", function()
 			local native = { id = "msg_" .. kind, type = kind, time = { created = 1 }, metadata = { custom = false } }
 			local projected = projection.project("ses_test", native)
 			assert.equals("system", projected.info.role)
-			assert.same(native, projected.info._v2)
+			assert.same(native, projected.info._native)
 			assert.equals(hidden_types[kind] == true, projected.info.hidden)
 		end
 	end)

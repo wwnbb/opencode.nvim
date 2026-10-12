@@ -1,12 +1,12 @@
 describe("OpenCode v2 HTTP contracts", function()
-	local names = { "opencode.client", "opencode.client.v2", "opencode.client.http", "opencode.client.transport" }
+	local names = { "opencode.client", "opencode.client.api", "opencode.client.http", "opencode.client.transport" }
 	local saved, schedule, requests, response, transport_error, v2, http, request_handle
 	local function json(value, status)
 		response = { status = status or 200, headers = { ["content-type"] = "application/json" }, body = vim.json.encode(value) }
 	end
 	local function invoke(name, args)
 		local result, count = {}, 0
-		v2.request(name, args, function(err, data, meta)
+		api.request(name, args, function(err, data, meta)
 			count = count + 1
 			result = { err = err, data = data, meta = meta }
 		end)
@@ -26,7 +26,7 @@ describe("OpenCode v2 HTTP contracts", function()
 				return request_handle
 			end,
 		}
-		v2 = require("opencode.client.v2")
+		api = require("opencode.client.api")
 		http = require("opencode.client.http")
 		http.setup({ host = "127.0.0.1", port = 4096, auth = { password = "test-password" } })
 	end)
@@ -133,7 +133,7 @@ describe("OpenCode v2 HTTP contracts", function()
 	it("keeps session DTO fields and normalizes location without modifying the input", function()
 		local session = { id = "ses_1", location = { directory = "/project" }, metadata = { marker = false } }
 		local original = vim.deepcopy(session)
-		local normalized, err = v2.session(session)
+		local normalized, err = api.session(session)
 		assert.is_nil(err)
 		assert.equals("/project", normalized.directory)
 		assert.equals(false, normalized.metadata.marker)
@@ -206,7 +206,7 @@ describe("OpenCode v2 HTTP contracts", function()
 		end)
 		assert.same(transcript, result)
 		assert.is_nil(result.info.directory)
-		assert.is_nil(result.messages[1]._v2)
+		assert.is_nil(result.messages[1]._native)
 		assert.equals("GET", requests[1].method)
 		assert.equals("/api/experimental/session/ses_a%2F%23%25/export?sanitize=true", requests[1].path)
 

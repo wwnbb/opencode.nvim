@@ -52,8 +52,8 @@ local function ascending_id(prefix)
 end
 
 local pending = require("opencode.session.pending")
-local requests = require("opencode.protocol.v2.requests")
-local projection = require("opencode.protocol.v2.messages")
+local requests = require("opencode.protocol.requests")
+local projection = require("opencode.protocol.messages")
 
 local function client() return require("opencode.client") end
 local function sync() return require("opencode.sync") end
@@ -178,7 +178,7 @@ local function submit(session_id, payload, selection, text, opts, known_session)
 			local message = type(err) == "table" and (err.message or err.error) or tostring(err)
 			vim.notify("OpenCode prompt " .. (record and record.status or "failed") .. ": " .. tostring(message), vim.log.levels.ERROR)
 			emit("local_notice", { role = "system", session_id = session_id, content = "Prompt " .. (record and record.status or "failed") .. ": " .. tostring(message) })
-			emit("v2_reconcile", { session_id = session_id })
+			emit("session_reconcile", { session_id = session_id })
 			done()
 		end
 		local function prompt()
@@ -194,7 +194,7 @@ local function submit(session_id, payload, selection, text, opts, known_session)
 				-- A delayed HTTP callback must not replace the delivered timestamp or
 				-- regress state already confirmed by the event stream.
 				emit("sync_changed", { kind = "inbox", action = "accepted", session_id = session_id, message_id = payload.id })
-				emit("v2_reconcile", { session_id = session_id })
+				emit("session_reconcile", { session_id = session_id })
 				done()
 			end)
 		end
@@ -244,7 +244,7 @@ local function submit(session_id, payload, selection, text, opts, known_session)
 					if type(boundary) == "string" and not pending.revert_event_seen(session_id, boundary) then
 						-- HTTP success is enough to settle local history even if the SSE
 						-- committed event reaches us after a fresh prompt is admitted.
-						local effect = sync().handle_v2_event({ id = ascending_id("evt"), created = current_time_ms(),
+						local effect = sync().handle_server_event({ id = ascending_id("evt"), created = current_time_ms(),
 							type = "session.revert.committed", data = { sessionID = session_id, to = boundary } })
 						for _, id in ipairs(effect.revert_removed or {}) do
 							if pending.get(session_id, id) then pending.update(session_id, id, { status = "cancelled" }) end
@@ -292,7 +292,7 @@ function M.send(text, opts)
 					if err.status and err.status >= 400 and err.status < 500 then restore_draft(text, opts) end
 					vim.notify("Shell command: " .. (err.message or "Execution could not be confirmed"), vim.log.levels.ERROR)
 				end
-				emit("v2_reconcile", { session_id = id })
+				emit("session_reconcile", { session_id = id })
 			end)
 		end
 		if session_id then run(session_id)
@@ -372,7 +372,7 @@ function M.command(session_id, name, text, opts, callback)
 			client().execute_command(session_id, name, text, opts, function(command_err, result)
 				if pending.is_current(token) then
 					callback(command_err, result)
-					emit("v2_reconcile", { session_id = session_id })
+					emit("session_reconcile", { session_id = session_id })
 				end
 				done()
 			end)
@@ -392,7 +392,7 @@ function M.cancel_input(session_id, message_id, callback)
 			sync().handle_message_removed(session_id, message_id)
 			emit("sync_changed", { kind = "inbox", action = "cancelled", session_id = session_id, message_id = message_id })
 		end
-		emit("v2_reconcile", { session_id = session_id })
+		emit("session_reconcile", { session_id = session_id })
 		if callback then callback(err) end
 	end)
 end
@@ -460,7 +460,7 @@ local function set_input_delivery(session_id, message_id, delivery, callback)
 					session_id = session_id, message_id = message_id })
 			end
 		end
-		emit("v2_reconcile", { session_id = session_id })
+		emit("session_reconcile", { session_id = session_id })
 		if callback then callback(err) end
 	end)
 	return true
@@ -487,7 +487,7 @@ function M.edit_input(session_id, message_id, callback)
 	local text = record.text or payload.text or ""
 	local parts = opts.parts or {}
 	if record.text == nil then
-		vim.list_extend(parts, require("opencode.protocol.v2.messages").draft(payload).parts)
+		vim.list_extend(parts, require("opencode.protocol.messages").draft(payload).parts)
 	end
 	opts.parts = nil
 	-- Admission retries belong to the original send attempt. In particular its

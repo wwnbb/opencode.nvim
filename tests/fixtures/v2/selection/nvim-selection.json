@@ -11,7 +11,7 @@
           "created": 1790040956068
         },
         "id": "msg_0c6c11fa5001nhak5eLjQZ73yh",
-        "_v2": {
+        "_native": {
           "time": {
             "created": 1790040956068
           },
@@ -36,7 +36,7 @@
     },
     {
       "info": {
-        "_v2": {
+        "_native": {
           "time": {
             "created": 1790040940458
           },
@@ -82,7 +82,7 @@
           "created": 1790040940482
         },
         "id": "msg_0c6c11fac001KyiSC8mHiUPhjI",
-        "_v2": {
+        "_native": {
           "time": {
             "created": 1790040940482
           },
@@ -169,7 +169,7 @@
         "providerID": "opencode",
         "type": "assistant",
         "sessionID": "ses_f393ee0cdffe1Cc2cDfNXM1QDY",
-        "_v2": {
+        "_native": {
           "tokens": {
             "output": 40,
             "input": 9231,
@@ -329,7 +329,7 @@
         "providerID": "opencode",
         "type": "assistant",
         "sessionID": "ses_f393ee0cdffe1Cc2cDfNXM1QDY",
-        "_v2": {
+        "_native": {
           "tokens": {
             "output": 26,
             "input": 75,
@@ -437,7 +437,7 @@
         },
         "id": "msg_0c6c1641a002tgcTg5XdMgGNNR",
         "type": "idle",
-        "_v2": {
+        "_native": {
           "time": {
             "created": 1790040957978
           },
@@ -451,7 +451,7 @@
     },
     {
       "info": {
-        "_v2": {
+        "_native": {
           "time": {
             "created": 1790040958161
           },
@@ -507,7 +507,7 @@
     },
     {
       "info": {
-        "_v2": {
+        "_native": {
           "time": {
             "created": 1790040958231
           },
@@ -572,7 +572,7 @@
           "created": 1790040961234
         },
         "id": "msg_0c6c165a2001AyHLTgZnSBeDa8",
-        "_v2": {
+        "_native": {
           "time": {
             "created": 1790040961234
           },
@@ -597,7 +597,7 @@
     },
     {
       "info": {
-        "_v2": {
+        "_native": {
           "time": {
             "created": 1790040958374
           },
@@ -643,7 +643,7 @@
           "created": 1790040958386
         },
         "id": "msg_0c6c165a7001qK5PRlTQu5amEL",
-        "_v2": {
+        "_native": {
           "time": {
             "created": 1790040958386
           },
@@ -669,7 +669,7 @@
     },
     {
       "info": {
-        "_v2": {
+        "_native": {
           "time": {
             "created": 1790040958377
           },
@@ -783,7 +783,7 @@
         "providerID": "opencode",
         "type": "assistant",
         "sessionID": "ses_f393ee0cdffe1Cc2cDfNXM1QDY",
-        "_v2": {
+        "_native": {
           "tokens": {
             "output": 45,
             "input": 85,
@@ -943,7 +943,7 @@
         "providerID": "opencode",
         "type": "assistant",
         "sessionID": "ses_f393ee0cdffe1Cc2cDfNXM1QDY",
-        "_v2": {
+        "_native": {
           "tokens": {
             "output": 25,
             "input": 85,
@@ -1051,7 +1051,7 @@
         },
         "id": "msg_0c6c178bc002OFKESniFAkkQuA",
         "type": "idle",
-        "_v2": {
+        "_native": {
           "time": {
             "created": 1790040963260
           },

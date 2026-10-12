@@ -12,11 +12,11 @@ describe("sync part sorting and derived memo ownership", function()
 		memo.clear_all()
 		sync = new_store()
 		original_sort = table.sort
-		original_project = require("opencode.protocol.v2.messages").project
+		original_project = require("opencode.protocol.messages").project
 	end)
 	after_each(function()
 		table.sort = original_sort
-		require("opencode.protocol.v2.messages").project = original_project
+		require("opencode.protocol.messages").project = original_project
 		sync.clear_all()
 		memo.clear_all()
 	end)
@@ -110,7 +110,7 @@ describe("sync part sorting and derived memo ownership", function()
 	end)
 
 	it("bypasses projection for ordinary existing nonempty delta sequences", function()
-		local projection = require("opencode.protocol.v2.messages")
+		local projection = require("opencode.protocol.messages")
 		local calls, sequence = 0, 0
 		projection.project = function(...)
 			calls = calls + 1
@@ -118,7 +118,7 @@ describe("sync part sorting and derived memo ownership", function()
 		end
 		local function event(kind, data)
 			sequence = sequence + 1
-			return sync.handle_v2_event({ id = "evt" .. sequence, created = sequence, type = "session." .. kind,
+			return sync.handle_server_event({ id = "evt" .. sequence, created = sequence, type = "session." .. kind,
 				data = vim.tbl_extend("force", { sessionID = "s", assistantMessageID = "m" }, data or {}) })
 		end
 		event("step.started", { started = 1, agent = "build", model = { id = "test", providerID = "test" } })

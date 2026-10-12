@@ -1,5 +1,5 @@
 local sync = require("opencode.sync")
-local projection = require("opencode.protocol.v2.messages")
+local projection = require("opencode.protocol.messages")
 describe("native subagent projection", function()
 	before_each(function() sync.clear_all() end)
 	after_each(function() sync.clear_all() end)

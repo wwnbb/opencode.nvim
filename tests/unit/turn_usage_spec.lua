@@ -1,5 +1,5 @@
 local sync = require("opencode.sync")
-local projection = require("opencode.protocol.v2.messages")
+local projection = require("opencode.protocol.messages")
 local metadata = require("opencode.ui.chat.history_metadata")
 
 describe("native turn token accounting", function()

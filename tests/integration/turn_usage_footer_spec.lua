@@ -4,7 +4,7 @@ describe("derived turn usage in the actual chat footer", function()
 		require("opencode").setup({ server = { auto_start = false }, lualine = { enabled = false },
 			session = { verbosity = "high" }, chat = { layout = "float", close_on_focus_lost = false, max_rendered_messages = 2 } })
 		local state, sync, chat = require("opencode.state"), require("opencode.sync"), require("opencode.ui.chat")
-		local projection, client = require("opencode.protocol.v2.messages"), require("opencode.client")
+		local projection, client = require("opencode.protocol.messages"), require("opencode.client")
 		local original_get = client.get_messages
 		client.get_messages = function(_, _, callback) callback(nil, {}) end
 		local ok, err = xpcall(function()

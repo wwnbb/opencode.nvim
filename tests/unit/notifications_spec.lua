@@ -46,7 +46,7 @@ describe("v2 event notifications", function()
 
 	it("reports native execution failure without a false done notice", function()
 		bus.emit("session_status_change", { session_id = "notify-session", status = { type = "busy" } })
-		bus.emit("v2_event", { type = "session.execution.failed", data = {
+		bus.emit("server_event", { type = "session.execution.failed", data = {
 			sessionID = "notify-session", error = { message = "native failure" },
 		} })
 		bus.emit("session_status_change", { session_id = "notify-session", status = { type = "idle", outcome = "failed" } })

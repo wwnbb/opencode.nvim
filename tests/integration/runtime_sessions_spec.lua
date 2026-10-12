@@ -47,7 +47,7 @@ describe("runtime sessions", function()
 		require("opencode.events.bus").clear()
 		state.clear_listeners()
 		require("opencode.session.pending").clear_all()
-		require("opencode.events.handlers.v2").clear()
+		require("opencode.events.handlers.server").clear()
 		require("opencode.completion").teardown()
 		require("opencode.explanation").teardown()
 		local chat = package.loaded["opencode.ui.chat"]

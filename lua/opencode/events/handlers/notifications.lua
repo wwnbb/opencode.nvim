@@ -203,7 +203,7 @@ function M.setup(events)
 		end)
 	end)
 
-	events.on("v2_event", function(event)
+	events.on("server_event", function(event)
 		if not event or event.type ~= "session.execution.failed" then return end
 		local data = event.data
 		local session_id = data and data.sessionID

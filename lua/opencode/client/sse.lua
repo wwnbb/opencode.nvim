@@ -328,7 +328,7 @@ function M.emit(event_type, data, event_id)
 	local actual_event_id = event_id
 
 	if event_type ~= "connected" and event_type ~= "disconnected" and event_type ~= "error" then
-		local decoded, decode_err = require("opencode.protocol.v2.events").decode(data)
+		local decoded, decode_err = require("opencode.protocol.events").decode(data)
 		if not decoded then
 			M.emit("error", decode_err)
 			return

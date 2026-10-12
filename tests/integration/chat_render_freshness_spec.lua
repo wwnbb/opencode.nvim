@@ -8,7 +8,7 @@ describe("opencode v2 chat render freshness", function()
 	local events = require("opencode.events")
 	local chat = require("opencode.ui.chat")
 	local client = require("opencode.client")
-	local project = require("opencode.protocol.v2.messages").project
+	local project = require("opencode.protocol.messages").project
 	local original = {}
 	local event_sequence = 0
 
@@ -28,7 +28,7 @@ describe("opencode v2 chat render freshness", function()
 	local function emit(kind, sid, data)
 		event_sequence = event_sequence + 1
 		data = vim.tbl_extend("force", { sessionID = sid }, data or {})
-		events.emit("v2_event", {
+		events.emit("server_event", {
 			id = "evt_fresh_" .. event_sequence,
 			created = event_sequence * 1000,
 			type = kind,
@@ -90,7 +90,7 @@ describe("opencode v2 chat render freshness", function()
 		sync.handle_session_messages("snapshot-a", { assistant("snapshot-a", "msg_snapshot", "PREFIX_") })
 		set_active("snapshot-a")
 		wait_for_text("PREFIX_")
-		events.emit("v2_reconcile", { session_id = "snapshot-a" })
+		events.emit("session_reconcile", { session_id = "snapshot-a" })
 		wait_for(function() return history_callback ~= nil end)
 		emit("session.text.delta", "snapshot-a", { assistantMessageID = "msg_snapshot", ordinal = 0, delta = "NEW" })
 		wait_for_text("PREFIX_NEW")

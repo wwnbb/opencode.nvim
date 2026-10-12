@@ -7,7 +7,7 @@ local app_state = require("opencode.state")
 local sync = require("opencode.sync")
 local events = require("opencode.events")
 local coordinator = require("opencode.ui.chat.render_coordinator")
-local project = require("opencode.protocol.v2.messages").project
+local project = require("opencode.protocol.messages").project
 
 describe("transcript render scheduling", function()
 	local surface, scheduled, timers, saved, renders, winbars, last_rendered, extra_buffers, extra_windows

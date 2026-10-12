@@ -21,14 +21,14 @@ describe("v2 interaction recovery", function()
 		client.list_questions = function(opts, cb) requests.forms[opts.session_id] = cb end
 		client.get_form = function(sid, id, cb) requests.detail[id] = cb end
 		client.get_permission = function(sid, id, cb) requests.detail[id] = cb end
-		require("opencode.events.handlers.interactions_v2").setup(bus)
+		require("opencode.events.handlers.interactions").setup(bus)
 	end)
 	after_each(function()
 		for method, original in pairs(saved) do client[method] = original end
 		bus.clear(); forms.clear_all(); permissions.clear_all(); state.reset(); pending.clear_all()
 	end)
 	local function event(kind, data)
-		bus.emit("v2_interaction", { id = "evt", type = kind, created = 1000, data = data })
+		bus.emit("server_interaction", { id = "evt", type = kind, created = 1000, data = data })
 	end
 	it("keeps a cancelled form out of an older pending list", function()
 		bus.emit("connected")

@@ -6,7 +6,7 @@ local chat_state = require("opencode.ui.chat.state")
 local state = chat_state.state
 local tasks = require("opencode.ui.chat.tasks")
 local tree = require("opencode.ui.chat.widget_tree")
-local projection = require("opencode.protocol.v2.messages")
+local projection = require("opencode.protocol.messages")
 
 describe("native shell completion notifications", function()
 	local surface, columns, serial
@@ -117,7 +117,7 @@ describe("native shell completion notifications", function()
 			assert.equals("text", projected.parts[1].type)
 			assert.is_false(tasks.is_animating_tool_part(projected.parts[1]))
 			assert.equals(native.text, projected.parts[1].text)
-			assert.same(original, projected.info._v2)
+			assert.same(original, projected.info._native)
 			assert.same(original, native)
 			assert.is_not.equals(native.metadata, projected.parts[1].shell_notification.metadata)
 			header_highlight(id, "DiagnosticOk")
@@ -186,7 +186,7 @@ describe("native shell completion notifications", function()
 		contains(block_text(id), "  last-command")
 		absent(block_text(id), '<shell id="' .. native.metadata.jobID .. '"')
 		assert.equals(original.text, projected.parts[1].text)
-		assert.same(original, projected.info._v2)
+		assert.same(original, projected.info._native)
 		assert.same(original, native)
 	end)
 
@@ -255,7 +255,7 @@ describe("native shell completion notifications", function()
 				panel_line(lines, line)
 			end
 			assert.equals(original.text, projected.parts[1].text)
-			assert.same(original, projected.info._v2)
+			assert.same(original, projected.info._native)
 		end
 	end)
 

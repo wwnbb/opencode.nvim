@@ -1,6 +1,6 @@
 describe("opencode HTTP snapshot freshness", function()
 	local sync = require("opencode.sync")
-	local projection = require("opencode.protocol.v2.messages")
+	local projection = require("opencode.protocol.messages")
 	local sid, mid = "snapshot_session", "snapshot_message"
 	local function message(id, created, completed)
 		return { id = id or mid, sessionID = sid, role = "assistant", time = { created = created or 10, completed = completed } }
@@ -16,14 +16,14 @@ describe("opencode HTTP snapshot freshness", function()
 			content = { { type = "text", text = "first" } } }
 		sync.handle_session_messages(sid, { projection.project(sid, native) })
 		local snapshot = sync.capture_session_snapshot(sid)
-		sync.handle_v2_event({ id = "evt-text-start", type = "session.text.started", created = 11,
+		sync.handle_server_event({ id = "evt-text-start", type = "session.text.started", created = 11,
 			data = { sessionID = sid, assistantMessageID = mid, ordinal = 1 } })
-		sync.handle_v2_event({ id = "evt-text-delta-1", type = "session.text.delta", created = 12,
+		sync.handle_server_event({ id = "evt-text-delta-1", type = "session.text.delta", created = 12,
 			data = { sessionID = sid, assistantMessageID = mid, ordinal = 1, delta = "Hello" } })
 		sync.handle_session_messages(sid, { projection.project(sid, native) }, {
 			reconcile = true, snapshot = snapshot, complete = true,
 		})
-		sync.handle_v2_event({ id = "evt-text-delta-2", type = "session.text.delta", created = 13,
+		sync.handle_server_event({ id = "evt-text-delta-2", type = "session.text.delta", created = 13,
 			data = { sessionID = sid, assistantMessageID = mid, ordinal = 1, delta = " world" } })
 		assert.equals("Hello world", sync.get_part(mid, projection.part_id(sid, mid, "text", 1)).text)
 	end)

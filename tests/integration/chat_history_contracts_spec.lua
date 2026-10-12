@@ -28,7 +28,7 @@ describe("chat history rendering contracts", function()
 	it("preserves footer text and highlights when streamed text grows and shrinks", function()
 		app_state.set_session("stream_session", "Stream Session")
 		sync.clear_all()
-		local projection = require("opencode.protocol.v2.messages")
+		local projection = require("opencode.protocol.messages")
 		local stream_part_id = projection.part_id("stream_session", "stream_message", "text", 0)
 		sync.handle_session_messages("stream_session", { projection.project("stream_session", {
 			id = "stream_message", type = "assistant", content = { { type = "text", text = "hello" } },
@@ -52,7 +52,7 @@ describe("chat history rendering contracts", function()
 			part_id = stream_part_id,
 			kind = "text",
 		}
-		sync.handle_v2_event({ id = "evt_stream_world", created = 2, type = "session.text.delta",
+		sync.handle_server_event({ id = "evt_stream_world", created = 2, type = "session.text.delta",
 			data = { sessionID = "stream_session", assistantMessageID = "stream_message", ordinal = 0, delta = " world" } })
 		assert(
 			chat.update_stream_part_block("stream_session", "stream_message", stream_part_id),
@@ -64,7 +64,7 @@ describe("chat history rendering contracts", function()
 		)
 		assert(chat_state.stream_blocks[block_key].end_line == 0, "same-line stream delta should not grow block")
 
-		sync.handle_v2_event({ id = "evt_stream_next", created = 3, type = "session.text.delta",
+		sync.handle_server_event({ id = "evt_stream_next", created = 3, type = "session.text.delta",
 			data = { sessionID = "stream_session", assistantMessageID = "stream_message", ordinal = 0, delta = "\nnext" } })
 		assert(
 			chat.update_stream_part_block("stream_session", "stream_message", stream_part_id),
@@ -86,7 +86,7 @@ describe("chat history rendering contracts", function()
 		assert(#footer_marks == 1, "stream growth should preserve footer agent highlight")
 		assert(footer_marks[1][4].hl_group == "OpenCodeAgent_coder_v2", "wrong footer highlight after stream growth")
 
-		sync.handle_v2_event({ id = "evt_stream_end", created = 4, type = "session.text.ended",
+		sync.handle_server_event({ id = "evt_stream_end", created = 4, type = "session.text.ended",
 			data = { sessionID = "stream_session", assistantMessageID = "stream_message", ordinal = 0, text = "short" } })
 		assert(
 			chat.update_stream_part_block("stream_session", "stream_message", stream_part_id),

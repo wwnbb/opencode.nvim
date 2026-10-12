@@ -1,5 +1,5 @@
 describe("native explanation streaming", function()
-	local names = { "opencode.client", "opencode.client.v2", "opencode.client.sse", "opencode.client.explanation", "opencode.events.sse_bridge" }
+	local names = { "opencode.client", "opencode.client.api", "opencode.client.sse", "opencode.client.explanation", "opencode.events.sse_bridge" }
 	local saved, schedule, calls, listeners, client, updates, progress, finished, endpoint
 	local function emit(kind, data)
 		for _, listener in ipairs(vim.list_slice(listeners[kind] or {})) do listener(data) end
@@ -27,7 +27,7 @@ describe("native explanation streaming", function()
 		for _, name in ipairs(names) do saved[name], package.loaded[name] = package.loaded[name], nil end
 		schedule = vim.schedule
 		vim.schedule = function(fn) fn() end
-		package.loaded["opencode.client.v2"] = {
+		package.loaded["opencode.client.api"] = {
 			request = function(name, args, callback)
 				local call = { name = name, args = args, callback = callback }
 				calls[#calls + 1] = call
@@ -281,10 +281,10 @@ describe("native explanation streaming", function()
 		local id = create()
 		local forwarded = {}
 		require("opencode.events.sse_bridge").setup({ emit = function(kind, data) forwarded[#forwarded + 1] = { kind, data } end })
-		emit("session.created", { sessionID = id, _v2_envelope = { type = "session.created" } })
+		emit("session.created", { sessionID = id, _envelope = { type = "session.created" } })
 		assert.same({}, forwarded)
 		request.cancel()
-		emit("session.deleted", { sessionID = id, _v2_envelope = { type = "session.deleted" } })
+		emit("session.deleted", { sessionID = id, _envelope = { type = "session.deleted" } })
 		assert.same({}, forwarded)
 		client.list_sessions({}, function(err, sessions) assert.is_nil(err); assert.same({ { id = "ordinary" } }, sessions) end)
 		calls[#calls].callback(nil, { { id = id }, { id = "ordinary" } })

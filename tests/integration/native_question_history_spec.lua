@@ -6,7 +6,7 @@ describe("native question history", function()
 		app.setup({ server = { auto_start = false }, lualine = { enabled = false } })
 		local sid = fixture.session.id
 		session.remember(fixture.session); session.set_active(sid, "Question history", { preserve_cache = true })
-		sync.handle_session_messages(sid, require("opencode.protocol.v2.messages").page(sid, fixture.native.data))
+		sync.handle_session_messages(sid, require("opencode.protocol.messages").page(sid, fixture.native.data))
 		for _ = 1, 2 do
 			chat.open(); chat.do_render()
 			local text = table.concat(vim.api.nvim_buf_get_lines(chat.get_bufnr(), 0, -1, false), "\n")

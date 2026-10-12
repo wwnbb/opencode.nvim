@@ -80,7 +80,7 @@ for i = 1, 2 do
 	key("<C-t>"); local variant = lc.variant.current(); assert(variant, "Variant did not change")
 	if i == 2 then assert(variant ~= variants[1].variant) end
 	local desired = require("opencode.selectors").send_selection({ session_id = info.id })
-	desired.model = assert(require("opencode.protocol.v2.requests").model(desired.model, desired.variant))
+	desired.model = assert(require("opencode.protocol.requests").model(desired.model, desired.variant))
 	-- Exercise the same selection preparation as send, but never POST a prompt
 	-- for a model other than the user's explicitly authorized MiMo Free.
 	await(function(cb) selection.prepare(info.id, desired, pending.token(info.id), cb) end)

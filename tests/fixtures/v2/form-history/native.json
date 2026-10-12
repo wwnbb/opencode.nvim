@@ -269,7 +269,7 @@
           "created": 1790042404420
         },
         "id": "msg_0c6d77622001nhak5eLjQZ73yh",
-        "_v2": {
+        "_native": {
           "time": {
             "created": 1790042404420
           },
@@ -303,7 +303,7 @@
           "created": 1790042404400
         },
         "id": "msg_0c6d77630001xnC2oYa8IYFluV",
-        "_v2": {
+        "_native": {
           "time": {
             "created": 1790042404400
           },
@@ -359,7 +359,7 @@
           "streamed": 1790042407555,
           "created": 1790042404474
         },
-        "_v2": {
+        "_native": {
           "time": {
             "completed": 1790042407594,
             "streamed": 1790042407555,
@@ -653,7 +653,7 @@
           "streamed": 1790042416852,
           "created": 1790042407624
         },
-        "_v2": {
+        "_native": {
           "time": {
             "completed": 1790042416879,
             "streamed": 1790042416852,
@@ -792,7 +792,7 @@
           "created": 1790042416881
         },
         "id": "msg_0c6d7a6f1001ca0Uu5pO9HY8u3",
-        "_v2": {
+        "_native": {
           "time": {
             "created": 1790042416881
           },

@@ -11,7 +11,7 @@ local client = require("opencode.client")
 local lifecycle = require("opencode.lifecycle")
 local sessions = require("opencode.session")
 local bus = require("opencode.events.bus")
-local projection = require("opencode.protocol.v2.messages")
+local projection = require("opencode.protocol.messages")
 local render_state = require("opencode.ui.chat.render_state")
 
 describe("queued inputs in the chat buffer", function()
@@ -29,7 +29,7 @@ describe("queued inputs in the chat buffer", function()
 		assert.is_true(ok, err)
 	end
 	local function seed(id, value, files, delivery)
-		local effect = sync.handle_v2_event({ id = "evt_" .. id, created = 10, type = "session.inbox.enqueued",
+		local effect = sync.handle_server_event({ id = "evt_" .. id, created = 10, type = "session.inbox.enqueued",
 			data = { sessionID = "queue-test", inboxID = id, item = { type = "user", delivery = delivery or "queue",
 				payload = { text = value, files = files } } } })
 		pending.admit(effect.inbox)
@@ -120,7 +120,7 @@ describe("queued inputs in the chat buffer", function()
 
 	it("moves delivered inputs back into history while other inputs remain at the bottom", function()
 		seed("q", "Delivered input"); seed("q2", "Remaining pending")
-		sync.handle_v2_event({ id = "evt_delivery", created = 20, type = "session.inbox.delivered",
+		sync.handle_server_event({ id = "evt_delivery", created = 20, type = "session.inbox.delivered",
 			data = { sessionID = "queue-test", inboxID = "q" } })
 		pending.update("queue-test", "q", { status = "delivered" })
 		sync.handle_session_messages("queue-test", projection.page("queue-test", {
@@ -196,12 +196,12 @@ describe("queued inputs in the chat buffer", function()
 		chat.do_render()
 		assert.is_truthy(text():find("Steering pending · C cancel · E edit", 1, true))
 		assert.is_nil(text():find("Queued", 1, true))
-		sync.handle_v2_event({ id = "evt_step", created = 15, type = "session.step.started",
+		sync.handle_server_event({ id = "evt_step", created = 15, type = "session.step.started",
 			data = { sessionID = "queue-test", assistantMessageID = "assistant", started = 15 } })
 		chat.do_render()
 		assert.is_truthy(text():find("Steering pending · C cancel · E edit", 1, true))
 		assert.is_not_nil(state.pending_inputs.steer)
-		sync.handle_v2_event({ id = "evt_delivered", created = 20, type = "session.inbox.delivered",
+		sync.handle_server_event({ id = "evt_delivered", created = 20, type = "session.inbox.delivered",
 			data = { sessionID = "queue-test", inboxID = "steer" } })
 		pending.update("queue-test", "steer", { status = "delivered" })
 		chat.do_render()
@@ -213,7 +213,7 @@ describe("queued inputs in the chat buffer", function()
 	it("removes the queue badge from a delivered message without removing its text", function()
 		seed("q", "продолжай"); chat.do_render()
 		assert.is_truthy(text():find("Queued · C cancel · E edit", 1, true))
-		sync.handle_v2_event({ id = "evt_delivered", created = 20, type = "session.inbox.delivered",
+		sync.handle_server_event({ id = "evt_delivered", created = 20, type = "session.inbox.delivered",
 			data = { sessionID = "queue-test", inboxID = "q" } })
 		pending.update("queue-test", "q", { status = "delivered" })
 		chat.do_render()
@@ -361,12 +361,12 @@ describe("queued inputs in the chat buffer", function()
 				mention = { start = 30, ["end"] = 39, text = "[Image 2]" } } },
 			agents = { { name = "explore", mention = { start = 40, ["end"] = 48, text = "@explore" } } },
 			skills = { { id = "review", mention = { start = 49, ["end"] = 56, text = "@review" } } } }
-		local effect = sync.handle_v2_event({ id = "evt_mentions", created = 10, type = "session.inbox.enqueued",
+		local effect = sync.handle_server_event({ id = "evt_mentions", created = 10, type = "session.inbox.enqueued",
 			data = { sessionID = "queue-test", inboxID = "mentions", item = { type = "user", delivery = "queue", payload = payload } } })
 		pending.admit(effect.inbox)
 		chat.do_render(); focus("mentions"); key("E"); cancels[1].callback(nil)
 		key("<C-g>")
-		local restored = assert(require("opencode.protocol.v2.requests").prompt(sent[1].text, sent[1].opts, "resent"))
+		local restored = assert(require("opencode.protocol.requests").prompt(sent[1].text, sent[1].opts, "resent"))
 		assert.same(payload.files, restored.files)
 		assert.same(payload.agents, restored.agents)
 		assert.same(payload.skills, restored.skills)

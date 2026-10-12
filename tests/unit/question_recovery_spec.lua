@@ -27,7 +27,7 @@ describe("native v2 form recovery across sessions", function()
 		original_list_permissions, original_list_questions = client.list_permissions, client.list_questions
 		client.list_permissions = function(opts, callback) requests.permissions[opts.session_id] = callback end
 		client.list_questions = function(opts, callback) requests.forms[opts.session_id] = callback end
-		require("opencode.events.handlers.interactions_v2").setup(bus)
+		require("opencode.events.handlers.interactions").setup(bus)
 	end)
 
 	after_each(function()
@@ -51,7 +51,7 @@ describe("native v2 form recovery across sessions", function()
 
 	it("does not restore a replied form from an older pending snapshot", function()
 		bus.emit("connected")
-		bus.emit("v2_interaction", {
+		bus.emit("server_interaction", {
 			id = "reply-event", type = "form.replied", data = { id = "form", sessionID = "root", answer = { ok = true } },
 		})
 		requests.forms.root(nil, { form("form", "root") })

@@ -5,7 +5,7 @@ local actions = require("opencode.actions")
 local app_state = require("opencode.state")
 local history = require("opencode.ui.input.history")
 local menu = require("opencode.ui.menu")
-local projection = require("opencode.protocol.v2.messages")
+local projection = require("opencode.protocol.messages")
 local sync = require("opencode.sync")
 
 local picker_generation = 0
@@ -35,7 +35,7 @@ local function visible_message_limit(session_id, messages)
 end
 
 local function preview(message)
-	local native = message._v2 or message
+	local native = message._native or message
 	local text = vim.trim((native.text or ""):gsub("%s+", " "))
 	if text == "" then
 		local count = #(native.files or {}) + #(native.agents or {}) + #(native.skills or {})

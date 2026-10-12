@@ -11,7 +11,7 @@ local send = require("opencode.send")
 local menu = require("opencode.ui.menu")
 local slash = require("opencode.slash")
 local slash_commands = require("opencode.ui.input.slash_commands")
-local requests = require("opencode.protocol.v2.requests")
+local requests = require("opencode.protocol.requests")
 local render_state = require("opencode.ui.chat.render_state")
 
 local catalog = {

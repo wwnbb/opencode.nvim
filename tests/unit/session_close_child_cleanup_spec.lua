@@ -86,7 +86,7 @@ describe("opencode session close child cleanup", function()
 		local state, sync = require("opencode.state"), require("opencode.sync")
 		local sessions, pending = require("opencode.session"), require("opencode.session.pending")
 		local actions, client = require("opencode.actions"), require("opencode.client")
-		local bus, handler = require("opencode.events.bus"), require("opencode.events.handlers.v2")
+		local bus, handler = require("opencode.events.bus"), require("opencode.events.handlers.server")
 		local lifecycle = require("opencode.lifecycle")
 		local old_ensure, old_messages = lifecycle.ensure_connected, client.get_messages
 		state.reset(); sync.clear_all(); pending.clear_all(); bus.clear(); handler.clear()

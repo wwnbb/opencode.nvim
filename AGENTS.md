@@ -35,7 +35,7 @@ lua/opencode/events/bus.lua          → Pub/sub event bus
 lua/opencode/events/sse_bridge.lua   → Native SSE envelope → local event bus
 lua/opencode/events/state_bridge.lua → State ↔ event bridge
 lua/opencode/events/util.lua         → Event utilities (error dedupe, helpers)
-lua/opencode/events/handlers/*.lua   → Native v2 reducers, interaction/review recovery, sync, notifications
+lua/opencode/events/handlers/*.lua   → Native event reducers, interaction/review recovery, sync, notifications
 lua/opencode/events/handlers/permission_flow/*.lua → Permission request and review helpers
 lua/opencode/client/init.lua         → Combined HTTP + SSE client API
 lua/opencode/client/http.lua         → REST client (GET/POST/PATCH/PUT/DELETE)
@@ -127,9 +127,9 @@ User Input
 
 OpenCode Server
   → /api/event SSE stream → client/sse.lua
-    → events/sse_bridge.lua (forwards native v2 envelopes)
+    → events/sse_bridge.lua (forwards native envelopes)
       → events/bus.lua (pub/sub)
-        → events/handlers/v2.lua and interaction/review handlers
+        → events/handlers/server.lua and interaction/review handlers
           → sync.lua (message/part store)
           → state.lua (app state)
           → session.lua (session mutations)
@@ -214,7 +214,7 @@ Neovim `:OpenCode*` commands remain entry points in `commands.lua`. Server custo
 
 ### Adding a New Event
 
-1. Native server event: Handle its `type` and `data` in `events/handlers/v2.lua` or the relevant native interaction handler.
+1. Native server event: Handle its `type` and `data` in `events/handlers/server.lua` or the relevant native interaction handler.
 2. Local event: Emit via `events.emit("event_name", data)`.
 3. Handler: Create `events/handlers/<name>.lua` with `setup(events)` and register it in `events.lua`.
 
@@ -331,7 +331,7 @@ client.send_message(id, { parts = {...} }, function(err, response) end)
 ### SSE Events
 
 ```lua
-client.on_event("*", function(event_type, data) end) -- native envelope via data._v2_envelope
+client.on_event("*", function(event_type, data) end) -- native envelope via data._envelope
 ```
 
 ### Key API Endpoints

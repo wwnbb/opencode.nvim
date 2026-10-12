@@ -6,13 +6,13 @@ describe("native assistant error history", function()
 		app.setup({ server = { auto_start = false }, lualine = { enabled = false } })
 		local sid = fixture.session.id
 		session.set_active("long-parent", "Parent", { preserve_cache = true })
-		sync.handle_session_messages("long-parent", { require("opencode.protocol.v2.messages").project("long-parent", {
+		sync.handle_session_messages("long-parent", { require("opencode.protocol.messages").project("long-parent", {
 			id = "long-answer", type = "assistant", content = { { type = "text", text = string.rep("Long parent answer\n", 100) } },
 		}) })
 		chat.open(); chat.focus(); chat.do_render()
 		vim.api.nvim_win_call(chat.get_winid(), function() vim.cmd("normal! Gzt") end)
 		session.remember(fixture.session); session.set_active(sid, "Recorded provider error", { preserve_cache = true })
-		sync.handle_session_messages(sid, require("opencode.protocol.v2.messages").page(sid, fixture.history.data))
+		sync.handle_session_messages(sid, require("opencode.protocol.messages").page(sid, fixture.history.data))
 		local function check()
 			chat.open(); chat.do_render()
 			assert.is_true(vim.wait(500, function()
