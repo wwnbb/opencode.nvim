@@ -80,22 +80,6 @@ describe("code selections in the input draft", function()
 		assert.equals(reference("2") .. "\n```lua\n\n```", input.get_pending_text())
 	end)
 
-	it("detects a language by filename when filetype is empty", function()
-		vim.bo[bufnr].filetype = ""
-		vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { "let n = 1;" })
-		assert.is_true(app.add_current_line_to_input())
-		assert.equals(reference("1") .. "\n```rust\nlet n = 1;\n```", input.get_pending_text())
-	end)
-
-	it("keeps unknown filetypes in an unlabelled code block", function()
-		vim.api.nvim_buf_set_name(bufnr, vim.fn.tempname() .. ".opencode_unknown_extension")
-		vim.bo[bufnr].filetype = ""
-		vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { "some code" })
-		select("V")
-		assert.is_true(app.add_visual_selection_to_input())
-		assert.equals(reference("1") .. "\n```\nsome code\n```", input.get_pending_text())
-	end)
-
 	it("keeps selected Markdown fences within one closed outer block", function()
 		vim.bo[bufnr].filetype = "markdown"
 		local selected = { "````lua", "return 1", "````", "```" }
@@ -109,4 +93,16 @@ describe("code selections in the input draft", function()
 		assert.same(selected, blocks[1].lines)
 		assert.equals("Context: Explain the Markdown", vim.split(input.get_pending_text(), "\n")[#selected + 4])
 	end)
+	it("falls back to the filename language or an unlabelled fence", function()
+		vim.bo[bufnr].filetype = ""
+		for _, case in ipairs({ { extension = ".rs", language = "rust" }, { extension = ".opencode_unknown_extension", language = "" } }) do
+			input.set_pending_text("")
+			vim.api.nvim_buf_set_name(bufnr, vim.fn.tempname() .. case.extension)
+			vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { "some code" })
+			select("V")
+			assert.is_true(app.add_visual_selection_to_input())
+			assert.equals(reference("1") .. "\n```" .. case.language .. "\nsome code\n```", input.get_pending_text())
+		end
+	end)
+
 end)

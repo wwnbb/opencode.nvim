@@ -4,7 +4,6 @@ local context = require("opencode.explanation.context")
 local response_text = require("opencode.explanation.response")
 local ui = require("opencode.ui.explanation")
 local config, current, connection_listener
-local generation = 0
 
 local function notify(message)
 	vim.notify("OpenCode explanation: " .. tostring(message), vim.log.levels.WARN)
@@ -23,10 +22,6 @@ local function source_unchanged(record)
 		and vim.api.nvim_buf_get_changedtick(record.bufnr) == record.changedtick
 end
 
-local function active(record)
-	return current == record and generation == record.id and ui.is_open() and source_unchanged(record)
-end
-
 local function stop_request(record)
 	stop_timer(record, "deadline")
 	stop_timer(record, "retry_timer")
@@ -43,12 +38,18 @@ end
 local catalog_starting = require("opencode.completion.profile").catalog_starting
 
 function M.dismiss()
-	generation = generation + 1
 	local record = current
 	current = nil
 	stop_request(record)
 	ui.close()
 	return record ~= nil
+end
+
+local function validate_request(record)
+	if current ~= record then return false end
+	if not source_unchanged(record) then fail(record, "Source buffer changed"); return false end
+	if not ui.is_open() then M.dismiss(); return false end
+	return true
 end
 
 function M.explain_selection()
@@ -61,7 +62,7 @@ function M.explain_selection()
 	local _, model_err = require("opencode.completion.profile").validate(config, { managed = managed }, "explanation")
 	if model_err then notify(model_err); return false end
 	M.dismiss()
-	snapshot.id, snapshot.phase = generation, "pending"
+	snapshot.phase = "pending"
 	current = snapshot
 	if ui.open(snapshot, function() M.dismiss() end) == false then
 		M.dismiss()
@@ -79,23 +80,17 @@ function M.explain_selection()
 	end
 	local lifecycle = require("opencode.lifecycle")
 	lifecycle.ensure_connected(function()
-		if current ~= snapshot then return end
-		if not source_unchanged(snapshot) then fail(snapshot, "Source buffer changed"); return end
-		if not ui.is_open() then M.dismiss(); return end
+		if not validate_request(snapshot) then return end
 		local model, err = lifecycle.resolve_explanation_model(config)
 		if not model then fail(snapshot, err); return end
 		local warming_until, attempt = vim.uv.now() + 2000, 0
 		local function dispatch()
-			if current ~= snapshot then return end
-			if not source_unchanged(snapshot) then fail(snapshot, "Source buffer changed"); return end
-			if not ui.is_open() then M.dismiss(); return end
+			if not validate_request(snapshot) then return end
 			local remaining = config.timeout_ms > 0 and config.timeout_ms - (vim.uv.now() - snapshot.started) or 0
 			if config.timeout_ms > 0 and remaining <= 0 then fail(snapshot, "Request timed out"); return end
 			attempt = attempt + 1
 			local handle = require("opencode.client").generate_explanation(prompt, model, function(request_err, response)
-				if current ~= snapshot then return end
-				if not source_unchanged(snapshot) then fail(snapshot, "Source buffer changed"); return end
-				if not ui.is_open() then M.dismiss(); return end
+				if not validate_request(snapshot) then return end
 				snapshot.handle = nil
 				local warming_left = warming_until - vim.uv.now()
 				if catalog_starting(request_err, model) and warming_left > 0 then
@@ -108,7 +103,7 @@ function M.explain_selection()
 					return
 				end
 				if request_err then
-					if not request_err.cancelled then fail(snapshot, request_err.message or request_err) end
+					if request_err.cancelled then M.dismiss() else fail(snapshot, request_err.message or request_err) end
 					return
 				end
 				if type(response) ~= "string" or vim.trim(response) == "" then
@@ -121,14 +116,14 @@ function M.explain_selection()
 			end, {
 				timeout = remaining, directory = snapshot.root,
 				on_update = function(text)
-					if current ~= snapshot or snapshot.phase ~= "pending" then return end
-					if not source_unchanged(snapshot) then fail(snapshot, "Source buffer changed"); return end
-					if not ui.is_open() then M.dismiss(); return end
+					if snapshot.phase ~= "pending" or not validate_request(snapshot) then return end
 					local visible = response_text.display(text, config, { streaming = true })
 					if visible ~= "" and ui.show(visible, { streaming = true }) == false then M.dismiss() end
 				end,
 			})
-			if active(snapshot) and snapshot.phase == "pending" then snapshot.handle = handle end
+			if current == snapshot and snapshot.phase == "pending" and ui.is_open() and source_unchanged(snapshot) then
+				snapshot.handle = handle
+			end
 		end
 		dispatch()
 	end)

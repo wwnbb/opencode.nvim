@@ -19,7 +19,7 @@ end
 ---@return table|nil snapshot
 ---@return string|nil error
 function M.capture()
-	local bufnr, winid = vim.api.nvim_get_current_buf(), vim.api.nvim_get_current_win()
+	local bufnr = vim.api.nvim_get_current_buf()
 	if not vim.api.nvim_buf_is_loaded(bufnr) then return nil, "Selection needs a loaded buffer" end
 
 	local mode = vim.api.nvim_get_mode().mode
@@ -32,7 +32,7 @@ function M.capture()
 	end
 
 	local ok, selected = pcall(vim.fn.getregion, first, last, { type = mode })
-	if not ok or type(selected) ~= "table" or #selected == 0 then
+	if not ok or type(selected) ~= "table" then
 		return nil, "Selected range is empty"
 	end
 	local text = table.concat(selected, "\n")
@@ -48,7 +48,6 @@ function M.capture()
 
 	return {
 		bufnr = bufnr,
-		winid = winid,
 		changedtick = vim.api.nvim_buf_get_changedtick(bufnr),
 		path = path,
 		root = root,

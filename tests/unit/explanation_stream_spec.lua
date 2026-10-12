@@ -125,28 +125,6 @@ describe("native explanation streaming", function()
 		assert.same({}, progress)
 	end)
 
-	it("suppresses queued completion text after cancellation, failure, or disconnect", function()
-		for _, outcome in ipairs({ "cancel", "session.execution.failed", "disconnected" }) do
-			calls, updates, finished = {}, {}, {}
-			local request = start_completion({ on_update = function(text) updates[#updates + 1] = text end })
-			local id = create()
-			local listener = listeners["*"][1]
-			local data = { sessionID = id, assistantMessageID = "msg_1", ordinal = 0, delta = "local" }
-			emit("session.text.delta", data)
-			if outcome == "cancel" then request.cancel()
-			else emit(outcome, { sessionID = id, error = { message = "Provider failed" } }) end
-			listener("session.text.delta", data)
-			listener("session.text.ended", { sessionID = id, assistantMessageID = "msg_1", ordinal = 0, text = "late" })
-			assert.same({ "local" }, updates)
-			assert.is_false(request.is_active())
-			assert.equals(1, #finished)
-			assert.is_truthy(finished[1].err)
-			assert.is_true(calls[2].cancelled)
-			assert.equals("session_delete", calls[3].name)
-			assert.same({}, listeners["*"])
-		end
-	end)
-
 	it("estimates completion progress from output and reasoning characters without including reasoning in the result", function()
 		local request = start_completion()
 		local body = calls[1].args.body
@@ -202,29 +180,6 @@ describe("native explanation streaming", function()
 		assert.same({}, updates)
 	end)
 
-	it("stops completion progress after cancellation, failure, or disconnect including already queued events", function()
-		for _, outcome in ipairs({ "cancel", "session.execution.failed", "disconnected" }) do
-			calls, progress, finished = {}, {}, {}
-			local request = start_completion()
-			local id = create()
-			local listener = listeners["*"][1]
-			local data = { sessionID = id, assistantMessageID = "msg_1", ordinal = 0, delta = "code" }
-			emit("session.text.delta", data)
-			assert.same({ 1 }, progress)
-			if outcome == "cancel" then request.cancel()
-			else emit(outcome, { sessionID = id, error = { message = "Provider failed" } }) end
-			listener("session.text.delta", data)
-			listener("session.reasoning.ended", { sessionID = id, assistantMessageID = "msg_1", ordinal = 0, text = "late" })
-			assert.same({ 1 }, progress)
-			assert.is_false(request.is_active())
-			assert.equals(1, #finished)
-			assert.is_truthy(finished[1].err)
-			assert.is_true(calls[2].cancelled)
-			assert.equals("session_delete", calls[3].name)
-			assert.same({}, listeners["*"])
-		end
-	end)
-
 	it("does not report progress when on_update cancels the request", function()
 		local request
 		request = start_completion({
@@ -249,19 +204,6 @@ describe("native explanation streaming", function()
 		assert.equals("session_delete", calls[2].name)
 		assert.equals(id, calls[2].args.path.sessionID)
 		assert.same({}, updates)
-	end)
-
-	it("stops on execution failure or stream disconnect and cancels an admitted prompt", function()
-		for _, kind in ipairs({ "session.execution.failed", "disconnected" }) do
-			calls, updates, finished = {}, {}, {}
-			local request = start()
-			local id = create()
-			emit(kind, { sessionID = id, error = { message = "Provider failed" } })
-			assert.is_false(request.is_active())
-			assert.is_truthy(finished[1].err)
-			assert.is_true(calls[2].cancelled)
-			assert.equals("session_delete", calls[3].name)
-		end
 	end)
 
 	it("does not delete through a changed server endpoint", function()
@@ -291,4 +233,36 @@ describe("native explanation streaming", function()
 		client.get_session_statuses(function(err, sessions) assert.is_nil(err); assert.same({ ordinary = { type = "busy" } }, sessions) end)
 		calls[#calls].callback(nil, { [id] = {}, ordinary = {} })
 	end)
+	it("stops text and progress callbacks after cancellation, failure, or disconnect", function()
+		for _, generate in ipairs({ client.generate_completion, client.generate_explanation }) do
+			for _, outcome in ipairs({ "cancel", "session.execution.failed", "disconnected" }) do
+				calls, updates, progress, finished = {}, {}, {}, {}
+				local request = generate("Explain selection", { providerID = "test", id = "model" },
+					function(err, text) finished[#finished + 1] = { err = err, text = text } end, {
+						directory = "/project", timeout = 1000,
+						on_update = function(text) updates[#updates + 1] = text end,
+						on_progress = function(tokens) progress[#progress + 1] = tokens end,
+					})
+				local id = create()
+				local listener = listeners["*"][1]
+				local data = { sessionID = id, assistantMessageID = "msg_1", ordinal = 0, delta = "code" }
+				emit("session.text.delta", data)
+				if outcome == "cancel" then request.cancel()
+				else emit(outcome, { sessionID = id, error = { message = "Provider failed" } }) end
+				listener("session.text.delta", data)
+				for _, kind in ipairs({ "session.text.ended", "session.reasoning.ended" }) do
+					listener(kind, { sessionID = id, assistantMessageID = "msg_1", ordinal = 0, text = "late" })
+				end
+				assert.same({ "code" }, updates)
+				assert.same({ 1 }, progress)
+				assert.is_false(request.is_active())
+				assert.equals(1, #finished)
+				assert.is_truthy(finished[1].err)
+				assert.is_true(calls[2].cancelled)
+				assert.equals("session_delete", calls[3].name)
+				assert.same({}, listeners["*"])
+			end
+		end
+	end)
+
 end)

@@ -220,6 +220,16 @@ describe("editor context incremental JSON equivalence", function()
 		end
 	end)
 
+	it("preserves related context for a buffer named after the project root", function()
+		local bufnr = buffer("main.lua", { "local value = " })
+		local related = buffer("directory", { "root buffer context" })
+		vim.api.nvim_buf_set_name(related, root)
+		local snap = snapshot(bufnr, 0, #"local value = ")
+		snap.root = vim.api.nvim_buf_get_name(related)
+		local prompt = assert(compare(completion, legacy_completion, snap, options()))
+		assert.equals("", decoded(prompt).related[1].path)
+	end)
+
 	it("memoizes repeated positive and negative path searches without truncating candidate ranking", function()
 		local focus = "local helper = value"
 		local bufnr = buffer("main.lua", { focus })
@@ -265,7 +275,7 @@ describe("editor context incremental JSON equivalence", function()
 			assert.equals(10, old_searches["plain:missing.lua"])
 			assert.equals(1, searches["plain:missing.lua"])
 			assert.equals(1, searches["pattern:%f[%w_]missing%f[^%w_]"])
-			for index = 1, 40 do assert.equals(1, searches[string.format("plain:group%02d/helper.lua", index)]) end
+			for index = 1, 40 do assert.is_nil(searches[string.format("plain:group%02d/helper.lua", index)]) end
 			for index, entry in ipairs(decoded(prompt).related) do assert.equals(expected[index].path, entry.path) end
 		end)
 	end)

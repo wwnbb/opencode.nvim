@@ -18,7 +18,7 @@ end
 local function selected_diagnostics(snapshot)
 	local result = {}
 	for _, diagnostic in ipairs(vim.diagnostic.get(snapshot.bufnr)) do
-		local last_row = diagnostic.end_lnum or diagnostic.lnum
+		local last_row = diagnostic.end_lnum
 		if last_row > diagnostic.lnum and diagnostic.end_col == 0 then last_row = last_row - 1 end
 		if diagnostic.lnum < snapshot.end_line and last_row >= snapshot.start_line - 1 then
 			result[#result + 1] = diagnostic
@@ -38,7 +38,7 @@ function M.build(snapshot, opts)
 	local settings = opts.context
 	local selected = {}
 	for index, value in ipairs(snapshot.lines) do
-		selected[#selected + 1] = { line = snapshot.start_line + index - 1, text = value }
+		selected[index] = { line = snapshot.start_line + index - 1, text = value }
 	end
 	local data = {
 		path = snapshot.path ~= "" and editor_context.relative(snapshot.path, snapshot.root) or "[unnamed]",
@@ -58,8 +58,8 @@ function M.build(snapshot, opts)
 	for _, diagnostic in ipairs(selected_diagnostics(snapshot)) do
 		budget:add(data.diagnostics, {
 			line = diagnostic.lnum + 1, column = diagnostic.col + 1,
-			end_line = (diagnostic.end_lnum or diagnostic.lnum) + 1,
-			end_column = (diagnostic.end_col or diagnostic.col) + 1,
+			end_line = diagnostic.end_lnum + 1,
+			end_column = diagnostic.end_col + 1,
 			severity = vim.diagnostic.severity[diagnostic.severity],
 			source = diagnostic.source, code = diagnostic.code, message = diagnostic.message,
 		})

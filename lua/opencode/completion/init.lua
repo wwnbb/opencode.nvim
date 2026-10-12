@@ -19,15 +19,11 @@ local function stop_timer(record, key)
 	end
 end
 
--- OpenCode initializes the base model catalog lazily, separately from the
--- project's catalogs. These exact errors reject before contacting a provider.
--- Never retry timeouts, provider errors, or uncertain generation admissions.
 local catalog_starting = require("opencode.completion.profile").catalog_starting
 
 local function matches(snapshot)
 	if not snapshot or not context.eligible(snapshot.bufnr) or not vim.api.nvim_win_is_valid(snapshot.winid) then return false end
 	if vim.api.nvim_get_current_win() ~= snapshot.winid or vim.api.nvim_get_current_buf() ~= snapshot.bufnr
-		or vim.api.nvim_win_get_buf(snapshot.winid) ~= snapshot.bufnr
 		or vim.api.nvim_get_mode().mode:sub(1, 1) ~= "i"
 		or vim.api.nvim_buf_get_changedtick(snapshot.bufnr) ~= snapshot.changedtick then return false end
 	local cursor = vim.api.nvim_win_get_cursor(snapshot.winid)
@@ -35,7 +31,7 @@ local function matches(snapshot)
 end
 
 local function active(record)
-	return current == record and record.id == generation and matches(record)
+	return current == record and matches(record)
 end
 
 function M.dismiss()
@@ -54,14 +50,17 @@ function M.visible()
 end
 
 --- Normalize only an unambiguous enclosing code fence; never trim code spaces.
-function M.normalize(text, max_lines)
+function M.normalize(text, max_lines, streaming)
 	if type(text) ~= "string" then return nil, "Invalid completion response" end
 	text = text:gsub("\r\n", "\n")
-	local fence, language, body = text:match("^(```+)([%w_+#%.%-]*)\n(.*)$")
-	if fence and language and body then
+	-- A partial opening fence or language tag is not yet safe to accept.
+	if streaming and text:match("^`+[%w_+#%.%-]*$") then return nil end
+	local fence, body = text:match("^(```+)[%w_+#%.%-]*\n(.*)$")
+	if fence then
 		local closing = "\n" .. fence
 		if body:sub(-1) == "\n" then body = body:sub(1, -2) end
-		if body:sub(-#closing) == closing then text = body:sub(1, -#closing - 1) end
+		if body:sub(-#closing) == closing then text = body:sub(1, -#closing - 1)
+		elseif streaming then return nil end
 	end
 	if vim.trim(text) == "" then return nil end
 	if text:find("[%z\1-\8\11-\31\127]") then return nil, "Completion contains control characters" end
@@ -92,7 +91,7 @@ function M.complete()
 		snapshot.deadline:start(config.timeout_ms, 0, vim.schedule_wrap(function()
 			if current ~= snapshot or not snapshot.deadline then return end
 			M.dismiss()
-			notify("Request timed out", vim.log.levels.WARN)
+			notify("Request timed out")
 		end))
 	end
 	if ui.pending(snapshot) == false then
@@ -116,6 +115,7 @@ function M.complete()
 				if not active(snapshot) then if current == snapshot then M.dismiss() end; return end
 				snapshot.handle = nil
 				local warming_left = warming_until - vim.uv.now()
+				-- Retry only explicit catalog rejections before generation starts.
 				if catalog_starting(request_err, model) and warming_left > 0 then
 					local delay = math.min(warming_left, 100 * 2 ^ math.min(attempt - 1, 2))
 					snapshot.retry_timer = vim.uv.new_timer()
@@ -144,7 +144,7 @@ function M.complete()
 				on_update = function(response)
 					if current ~= snapshot or (snapshot.phase ~= "pending" and snapshot.phase ~= "streaming") then return end
 					if not active(snapshot) then M.dismiss(); return end
-					local text = M.normalize(response, snapshot.suffix ~= "" and 1 or config.max_lines)
+					local text = M.normalize(response, snapshot.suffix ~= "" and 1 or config.max_lines, true)
 					if text == snapshot.text then return end
 					snapshot.text, snapshot.phase = text, text and "streaming" or "pending"
 					local displayed
