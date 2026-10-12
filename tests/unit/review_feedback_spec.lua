@@ -42,6 +42,30 @@ describe("review feedback delivery", function()
 		return item
 	end
 
+	for _, failed in ipairs({ false, true }) do
+		it("emits the current review status after auto-accept " .. (failed and "fails" or "succeeds"), function()
+			app.set_session("s", "Review")
+			app.set_danger_mode(true)
+			local handlers, statuses = {}, {}
+			require("opencode.events.handlers.review").setup({
+				on = function(kind, callback) handlers[kind] = callback end,
+				emit = function(kind, data)
+					if kind == "interaction_changed" then statuses[#statuses + 1] = data.action end
+				end,
+			})
+			local record = { protocolVersion = 2, status = "pending", sessionID = "s", reviewID = "r",
+				revision = 1, created = 1000, messageID = "m", callID = "c", location = { directory = "/server" },
+				files = { { fileID = "f", filePath = path, type = "update", before = "before", after = "after" } } }
+			handlers.server_interaction({ type = "rpc.opencode_nvim.reviewCreated", data = { review = record } })
+			assert.same({ "pending" }, statuses)
+			assert.equals(1, #calls)
+			assert.equals("reviewReply", calls[1].method)
+			calls[1].callback(failed and { message = "Connection lost" } or nil,
+				not failed and vim.tbl_extend("force", record, { status = "decided" }) or nil)
+			assert.same({ "pending", failed and "pending" or "decided" }, statuses)
+		end)
+	end
+
 	it("routes widget confirmation through review RPC with the note and freezes submission", function()
 		local item = add(path)
 		assert.is_true(require("opencode.ui.chat.edits").finalize_edit("r"))
@@ -289,9 +313,11 @@ describe("review protocol 2 events", function()
 	end
 
 	it("handles policy authorization and review settlement using the new protocol", function()
-		local methods, handlers = {}, {}
+		local methods, handlers, statuses = {}, {}, {}
 		local rpc, get, create = client.review_rpc, client.get_permission, client.create_permission
-		local events = { emit = function() end, on = function(kind, callback) handlers[kind] = callback end }
+		local events = { emit = function(kind, data)
+			if kind == "interaction_changed" then statuses[#statuses + 1] = data.action end
+		end, on = function(kind, callback) handlers[kind] = callback end }
 		app.reset(); edits.clear_all()
 		app.upsert_session({ id = "s", directory = "/server" })
 		require("opencode.session").set_active("s", "Review")
@@ -323,6 +349,8 @@ describe("review protocol 2 events", function()
 			assert.equals("sent", edits.get_edit("r").status)
 			handlers.server_interaction({ type = "rpc.opencode_nvim.reviewCreated", data = { review = record } })
 			assert.equals("sent", edits.get_edit("r").status)
+			handlers.server_interaction({ type = "rpc.opencode_nvim.reviewSettled", data = { review = settled } })
+			assert.same({ "pending", "settled" }, statuses)
 		end)
 		client.review_rpc, client.get_permission, client.create_permission = rpc, get, create
 		edits.clear_all(); require("opencode.artifact.changes").clear(); app.reset()

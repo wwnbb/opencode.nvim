@@ -1,6 +1,6 @@
 local edits = require("opencode.edit.state")
 local changes = require("opencode.artifact.changes")
-describe("v2 edit review safety", function()
+describe("edit review safety", function()
 	local path, old_notify
 	before_each(function()
 		require("opencode.state").set_connection("connected")
@@ -55,6 +55,20 @@ describe("v2 edit review safety", function()
 			assert.equals("rejected", item.files[1].status)
 		end
 	end)
+	for _, action in ipairs({ "resolve_file", "accept_file" }) do
+		for _, kind in ipairs({ "add", "update" }) do
+			it("classifies a changed empty-file existence as resolved during " .. action .. " for " .. kind, function()
+				if kind == "update" then write("") end
+				local item = edits.add_edit("r", "s", { {
+					fileID = "f", filePath = path, before = "", after = "after\n", type = kind,
+				} }, { transport = "review_rpc", revision = 1, native_review = { status = "pending" } })
+				if kind == "add" then write("") else vim.fn.delete(path) end
+				assert.is_true(edits[action]("r", 1))
+				if kind == "add" then assert.equals("", read()) else assert.is_nil(vim.uv.fs_stat(path)) end
+				assert.equals("resolved", item.files[1].status)
+			end)
+		end
+	end
 	it("does not permit stale local actions after cancellation or revive pending snapshots", function()
 		local item = add()
 		assert.is_true(edits.set_review_record({ reviewID = "r", sessionID = "s", revision = 1, status = "cancelled" }))
@@ -89,6 +103,6 @@ describe("v2 edit review safety", function()
 		assert.is_true(edits.set_review_record({ reviewID = "r", sessionID = "s", revision = 1, status = "settled", outcome = { wrote = false } }))
 		assert.is_false(edits.set_review_record({ reviewID = "r", sessionID = "s", revision = 1, status = "decided" }))
 		assert.equals("settled", item.native_review.status)
-		assert.is_false(item.metadata.wrote)
+		assert.is_false(item.native_review.outcome.wrote)
 	end)
 end)

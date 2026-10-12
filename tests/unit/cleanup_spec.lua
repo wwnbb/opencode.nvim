@@ -1,6 +1,3 @@
--- Unit checks for cleanup orchestration and artifact reset semantics.
--- Run with: ./tests/run.sh tests/unit/cleanup_spec.lua
-
 describe("opencode cleanup", function()
 	local module_names = {
 		"opencode.cleanup",
@@ -78,32 +75,5 @@ describe("opencode cleanup", function()
 		for _, call in ipairs(calls) do
 			assert(call ~= "opencode.events.clear", "cleanup must preserve event listeners")
 		end
-	end)
-end)
-
-describe("artifact change reset", function()
-	local original_changes
-
-	before_each(function()
-		original_changes = package.loaded["opencode.artifact.changes"]
-		package.loaded["opencode.artifact.changes"] = nil
-	end)
-
-	after_each(function()
-		package.loaded["opencode.artifact.changes"] = original_changes
-	end)
-
-	it("resets the change ID allocator", function()
-		local changes = require("opencode.artifact.changes")
-		changes.clear()
-		local first = changes.add_change("/tmp/opencode-cleanup-one", "before", "after")
-		local second = changes.add_change("/tmp/opencode-cleanup-two", "before", "after")
-		assert(first:match("_1$") ~= nil, "first change should use ID 1")
-		assert(second:match("_2$") ~= nil, "second change should use ID 2")
-
-		changes.clear()
-		local reset = changes.add_change("/tmp/opencode-cleanup-reset", "before", "after")
-		assert(reset:match("_1$") ~= nil, "clear should reset the change ID allocator")
-		changes.clear()
 	end)
 end)

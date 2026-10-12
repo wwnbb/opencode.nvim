@@ -7,29 +7,6 @@ local pending = require("opencode.session.pending")
 -- Active edits storage: { [permission_id] = edit_state }
 local active_edits = {}
 
--- Edit state structure:
--- {
---   permission_id = string,
---   session_id = string,
---   message_id = string|nil,
---   call_id = string|nil,
---   files = [{
---     index, filepath, relative_path,
---     before, after, change_id,
---     status = "pending"|"accepted"|"rejected"|"resolved",
---     stats = {added, removed},
---     diff_lines = {...},  -- cached unified diff lines for = toggle
---   }],
---   selected_file = 1,        -- cursor position (1-based)
---   expanded_files = {},       -- set of file indices with inline diff visible
---   status = "pending"|"sent", -- overall status
---   message = string,            -- optional user note sent with final reply
---   timestamp = number,
---   data = table,              -- original event data for reference
---   metadata = table,
--- }
-
---- Parse a unified diff string into an array of lines
 ---@param diff_str string|nil
 ---@return table lines
 local function parse_diff_lines(diff_str)
@@ -98,43 +75,6 @@ local function flush_modified_buffer(filepath)
 	return ok
 end
 
----@param file table
----@param disk table
----@return "accepted"|"rejected"|"resolved"
-local function classify_manual_resolution(file, disk)
-	if not disk.exists then
-		if file.file_type == "delete" then
-			return "accepted"
-		end
-		return (file.before == "" or file.file_type == "add") and "rejected" or "resolved"
-	end
-
-	if file.exact_bytes then
-		if file.file_type ~= "delete" and disk.content == file.after and disk.bom == file.bom then return "accepted" end
-		if disk.content == file.before and disk.bom == file.before_bom then return "rejected" end
-		return "resolved"
-	end
-	local actual = normalize_line_endings(disk.content)
-	local before = normalize_line_endings(file.before)
-	local after = normalize_line_endings(file.after)
-
-	if file.file_type ~= "delete" and actual == after then
-		return "accepted"
-	end
-
-	if actual == before then
-		return "rejected"
-	end
-
-	return "resolved"
-end
-
----@param file table
----@return boolean
-local function before_exists(file)
-	return file.file_type ~= "add"
-end
-
 ---@param disk table
 ---@param file table
 ---@param field "before"|"after"
@@ -142,7 +82,7 @@ end
 local function disk_matches_snapshot(disk, file, field)
 	local snapshot_exists = true
 	if field == "before" then
-		snapshot_exists = before_exists(file)
+		snapshot_exists = file.file_type ~= "add"
 	elseif file.file_type == "delete" then
 		snapshot_exists = false
 	end
@@ -159,16 +99,27 @@ local function disk_matches_snapshot(disk, file, field)
 	return normalize_line_endings(disk.content) == normalize_line_endings(file[field] or "")
 end
 
+---@param file table
+---@param disk table
+---@return "accepted"|"rejected"|"resolved"
+local function classify_manual_resolution(file, disk)
+	if disk_matches_snapshot(disk, file, "after") then
+		return "accepted"
+	end
+	if disk_matches_snapshot(disk, file, "before") then
+		return "rejected"
+	end
+	return "resolved"
+end
+
 local FILE_ACTIONS = {
 	accept = {
 		kind = "accept",
 		status = "accepted",
-		verb = "accept",
 	},
 	reject = {
 		kind = "reject",
 		status = "rejected",
-		verb = "reject",
 	},
 }
 
@@ -197,7 +148,7 @@ local function summarize_batch_errors(action, errors)
 	end
 	local suffix = count > sample_count and string.format(" (+%d more)", count - sample_count) or ""
 	local noun = count == 1 and "file" or "files"
-	return string.format("Failed to %s %d %s: %s%s", action.verb, count, noun, table.concat(samples, "; "), suffix)
+	return string.format("Failed to %s %d %s: %s%s", action.kind, count, noun, table.concat(samples, "; "), suffix)
 end
 
 ---@param estate table
@@ -304,11 +255,10 @@ local function apply_pending_files(permission_id, action)
 	return true, nil, nil
 end
 
---- Add a new edit to track
 ---@param permission_id string
 ---@param session_id string
----@param files_data table Array of file data from metadata.files
----@param opts table { data, metadata, message_id, call_id, timestamp, status, file_statuses, preview }
+---@param files_data table[] Normalized file records with filePath and optional relativePath
+---@param opts? table
 function M.add_edit(permission_id, session_id, files_data, opts)
 	opts = opts or {}
 	local review_mode = opts.review_mode or "interactive"
@@ -324,9 +274,9 @@ function M.add_edit(permission_id, session_id, files_data, opts)
 
 	local files = {}
 	for i, fd in ipairs(files_data) do
-		local filepath = fd.filePath or fd.filepath or fd.file_path or fd.file or fd.path or ""
+		local filepath = fd.filePath or ""
 		local file_type = changes.normalize_file_type(fd.type)
-		local relative_path = fd.relativePath or fd.relative_path or vim.fn.fnamemodify(filepath, ":.")
+		local relative_path = fd.relativePath or vim.fn.fnamemodify(filepath, ":.")
 		local before = fd.before or ""
 		local after = fd.after or ""
 		local additions = fd.additions
@@ -337,7 +287,6 @@ function M.add_edit(permission_id, session_id, files_data, opts)
 			deletions = type(deletions) == "number" and deletions or parsed_deletions
 		end
 
-		-- Create change record for accept/reject file writing
 		local change_id = nil
 		if review_mode ~= "readonly" and apply_mode == "client" then
 			change_id = changes.add_change(filepath, before, after, {
@@ -389,10 +338,7 @@ function M.add_edit(permission_id, session_id, files_data, opts)
 		status = opts.status or "pending",
 		message = type(opts.message) == "string" and opts.message or "",
 		review_mode = review_mode,
-		preview = opts.preview == true,
 		timestamp = opts.timestamp or os.time(),
-		data = opts.data or {},
-		metadata = opts.metadata or {},
 	}
 
 	active_edits[permission_id] = estate
@@ -400,35 +346,23 @@ function M.add_edit(permission_id, session_id, files_data, opts)
 	return estate
 end
 
---- Get an edit state by permission ID
 ---@param permission_id string
 ---@return table|nil
 function M.get_edit(permission_id)
 	return active_edits[permission_id]
 end
 
---- Get all edits (regardless of status)
 ---@return table Array of edit states sorted by timestamp
-local function sorted_items(predicate)
+function M.get_all()
 	local result = {}
 	for _, item in pairs(active_edits) do
-		if not predicate or predicate(item) then table.insert(result, item) end
+		table.insert(result, item)
 	end
 	table.sort(result, function(a, b) return a.timestamp < b.timestamp end)
 	return result
 end
 
-function M.get_all() return sorted_items() end
-
---- Get all edits belonging to a specific session
----@param session_id string
----@return table Array of edit states sorted by timestamp
-function M.get_all_for_session(session_id)
-	return sorted_items(function(item) return item.session_id == session_id end)
-end
-
---- Get all active (pending) edits
----@return table Array of edit states
+---@return table Array of pending edit states
 function M.get_all_active()
 	local result = {}
 	for _, estate in pairs(active_edits) do
@@ -439,7 +373,6 @@ function M.get_all_active()
 	return result
 end
 
---- Check whether any edit is awaiting user action
 ---@return boolean
 function M.has_pending_edits()
 	for _, estate in pairs(active_edits) do
@@ -454,47 +387,9 @@ function M.has_pending_edits()
 	return false
 end
 
---- Get all edits for a specific message ID (for inline rendering)
----@param message_id string
----@return table Array of edit states
-function M.get_edits_for_message(message_id)
-	return sorted_items(function(item) return item.message_id == message_id end)
-end
-
---- Get all edits without a message ID (orphan edits)
----@return table Array of edit states
-function M.get_orphan_edits()
-	return sorted_items(function(item) return not item.message_id end)
-end
-
---- Move selection up/down through file list
+--- Select a file in a pending review.
 ---@param permission_id string
----@param direction "up"|"down"
----@return boolean
-function M.move_selection(permission_id, direction)
-	local estate = active_edits[permission_id]
-	if not estate or estate.status ~= "pending" then
-		return false
-	end
-
-	local count = #estate.files
-	if count == 0 then
-		return false
-	end
-
-	local current = estate.selected_file
-	if direction == "up" then
-		estate.selected_file = current > 1 and current - 1 or count
-	else
-		estate.selected_file = current < count and current + 1 or 1
-	end
-
-	return true
-end
-
---- Jump to file N (1-based)
----@param permission_id string
----@param index number
+---@param index number 1-based
 ---@return boolean
 function M.move_selection_to(permission_id, index)
 	local estate = active_edits[permission_id]
@@ -502,12 +397,7 @@ function M.move_selection_to(permission_id, index)
 		return false
 	end
 
-	if index < 1 or index > #estate.files then
-		return false
-	end
-
-	estate.selected_file = index
-	return true
+	return M.set_selection(permission_id, index)
 end
 
 ---@param permission_id string
@@ -527,7 +417,6 @@ function M.set_selection(permission_id, index)
 	return true
 end
 
---- Set message for an edit request
 ---@param permission_id string
 ---@param text string
 ---@return boolean
@@ -541,7 +430,6 @@ function M.set_message(permission_id, text)
 	return true
 end
 
---- Get currently selected file entry
 ---@param permission_id string
 ---@return table|nil
 function M.get_selected_file(permission_id)
@@ -585,7 +473,6 @@ local function apply_single_file(permission_id, file_index, action)
 	return ok, err, nil
 end
 
---- Accept a file (write to disk via changes module)
 ---@param permission_id string
 ---@param file_index number
 ---@return boolean ok
@@ -595,7 +482,6 @@ function M.accept_file(permission_id, file_index)
 	return apply_single_file(permission_id, file_index, FILE_ACTIONS.accept)
 end
 
---- Reject a file
 ---@param permission_id string
 ---@param file_index number
 ---@return boolean ok
@@ -636,7 +522,6 @@ function M.revert_change(change_id, opts)
 	return ok, err, reason, file and permission_id or nil
 end
 
---- Accept all pending files
 ---@param permission_id string
 ---@return boolean ok
 ---@return string|nil err
@@ -645,7 +530,6 @@ function M.accept_all(permission_id)
 	return apply_pending_files(permission_id, FILE_ACTIONS.accept)
 end
 
---- Reject all pending files
 ---@param permission_id string
 ---@return boolean ok
 ---@return string|nil err
@@ -699,7 +583,6 @@ function M.resolve_file(permission_id, file_index)
 	return true
 end
 
---- Resolve all pending files manually
 ---@param permission_id string
 ---@return boolean
 ---@return string|nil err
@@ -725,7 +608,6 @@ function M.resolve_all(permission_id)
 	return true
 end
 
---- Toggle inline diff visibility for a file
 ---@param permission_id string
 ---@param file_index number
 ---@return boolean
@@ -748,7 +630,6 @@ function M.toggle_inline_diff(permission_id, file_index)
 	return true
 end
 
---- Check if all files are resolved (accepted or rejected)
 ---@param permission_id string
 ---@return boolean
 function M.are_all_resolved(permission_id)
@@ -766,7 +647,6 @@ function M.are_all_resolved(permission_id)
 	return true
 end
 
---- Get the resolution summary
 ---@param permission_id string
 ---@return string "all_accepted"|"all_rejected"|"all_resolved"|"mixed"|"pending"
 function M.get_resolution(permission_id)
@@ -801,28 +681,14 @@ function M.get_resolution(permission_id)
 	end
 end
 
---- Mark edit as sent (reply sent to server)
 ---@param permission_id string
 function M.mark_sent(permission_id)
 	local estate = active_edits[permission_id]
 	if estate then
 		estate.status = "sent"
-		estate.resolved_at = os.time()
 	end
 end
 
---- Remove an edit from tracking
----@param permission_id string
----@return boolean
-function M.remove_edit(permission_id)
-	if active_edits[permission_id] then
-		active_edits[permission_id] = nil
-		return true
-	end
-	return false
-end
-
---- Clear all edits (on session change)
 function M.clear_all()
 	local removed = {}
 	for permission_id, _ in pairs(active_edits) do
@@ -832,7 +698,6 @@ function M.clear_all()
 	return removed
 end
 
---- Clear edits belonging to a specific session only
 ---@param session_id string
 function M.clear_session(session_id)
 	local removed = {}
@@ -850,15 +715,15 @@ function M.begin_review_submission(id)
 	if not item or item.status ~= "pending" or item.submitting then return false end
 	if not require("opencode.state").is_connected() then return false end
 	for _, file in ipairs(item.files) do if file.status == "pending" then return false end end
-	item.submitting, item.error = true, nil
+	item.submitting = true
 	item.submission_token = pending.token(item.session_id)
 	return true
 end
 
-function M.restore_review_submission(id, err)
+function M.restore_review_submission(id)
 	local item = active_edits[id]
 	if not item or item.status ~= "pending" then return false end
-	item.submitting, item.error = false, err
+	item.submitting = false
 	item.submission_token = nil
 	return true
 end
@@ -883,7 +748,6 @@ function M.set_review_record(record)
 		item.submitting = false
 		M.mark_sent(record.reviewID)
 	end
-	if record.outcome then item.metadata = vim.deepcopy(record.outcome) end
 	return true
 end
 

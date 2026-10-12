@@ -21,14 +21,14 @@ function M.reply(id, callback)
 			local err
 			choice.observed, err = observed(file.filepath)
 			if err then
-				edits.restore_review_submission(id, { message = err })
+				edits.restore_review_submission(id)
 				if callback then callback({ message = err }) end
 				return false
 			end
 		end
 		choices[#choices + 1] = choice
 	end
-	local token = pending.token(item.session_id)
+	local token = item.submission_token
 	local message = vim.trim(item.message or "")
 	require("opencode.client").review_rpc("reviewReply", {
 		protocolVersion = 2, sessionID = item.session_id, reviewID = id, revision = item.revision, decisions = choices,
@@ -40,7 +40,7 @@ function M.reply(id, callback)
 			return
 		end
 		if err then
-			edits.restore_review_submission(id, err)
+			edits.restore_review_submission(id)
 			require("opencode.events").emit("review_reconcile", { session_id = item.session_id })
 		else edits.set_review_record(record) end
 		if callback then callback(err, record) end
@@ -50,7 +50,10 @@ end
 
 function M.accept_all(id, callback)
 	local accepted, err = edits.accept_all(id)
-	if not accepted then if callback then callback({ message = tostring(err) }) end; return false end
+	if not accepted then
+		if callback then callback({ message = tostring(err) }) end
+		return false
+	end
 	return M.reply(id, callback)
 end
 

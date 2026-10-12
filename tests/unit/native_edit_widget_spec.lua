@@ -1,4 +1,4 @@
-describe("native v2 edit result", function()
+describe("native edit result", function()
 	it("renders a native write result with input.path and existed=false", function()
 		local results = require("opencode.ui.chat.file_edit_results")
 		local part = {

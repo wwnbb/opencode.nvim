@@ -97,6 +97,20 @@ describe("edit widget action lifecycle", function()
 		vim.api.nvim_win_set_cursor(winid, { index, 0 })
 	end
 
+	it("keeps selection bounds and permits inspecting sent previews", function()
+		local id = "edit_selection"
+		make_edit(id, 2, { review_mode = "readonly" })
+		assert.is_false(edit_state.move_selection_to(id, 0))
+		assert.is_false(edit_state.move_selection_to(id, 3))
+		assert.is_true(edit_state.move_selection_to(id, 2))
+		assert.equals(2, edit_state.get_edit(id).selected_file)
+		edit_state.mark_sent(id)
+		assert.is_false(edit_state.move_selection_to(id, 1))
+		assert.equals(2, edit_state.get_edit(id).selected_file)
+		assert.is_true(edit_state.set_selection(id, 1))
+		assert.equals(1, edit_state.get_edit(id).selected_file)
+	end)
+
 	for _, method in ipairs({ "on_send", "on_cancel" }) do
 		for _, reset in ipairs({ "owner", "epoch" }) do
 			it("ignores an old edit note " .. method .. " after its " .. reset .. " changes", function()

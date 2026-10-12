@@ -580,6 +580,21 @@ update, move, or delete files. Both retain preview, per-file accept/reject, manu
 diff editing, and the optional `allowIndentChange` guard override. User review
 comments accompany the tool's model-visible result and persist in chat history.
 
+For custom Lua integrations, `require("opencode").changes` no longer exposes
+`calculate_hunks`, `get_active`, `remove`, `reject_change`, or the unused
+`STATUS.ACCEPTED` and `STATUS.CONFLICT` constants. Use `reject(id)` instead of
+`reject_change(id)`. Change records no longer contain `hunks`, `original_lines`,
+`modified_lines`, `filename`, or `timestamp`; `update_status` no longer accepts
+`hunk_index`. Both record `stats` and `get_status().diff_stats` count actual
+added/removed lines, including replacements; `stats.modified` was removed.
+
+The internal `require("opencode.edit.state")` module no longer exposes
+`get_all_for_session`, `get_edits_for_message`, `get_orphan_edits`,
+`move_selection`, or `remove_edit`. Edit records no longer contain `data`,
+`preview`, `metadata`, `resolved_at`, or `error`; use `review_mode` for previews
+and `native_review` for server review data. `add_edit` file inputs use
+`filePath` and optional `relativePath`; alternate path field names were removed.
+
 Permissions remain scoped to `neovim_edit` and `neovim_patch`; they are not
 broadened to cover all built-in `edit` operations. Unknown historical tool calls
 render through the generic tool view without review actions. Reinstall the bundled
