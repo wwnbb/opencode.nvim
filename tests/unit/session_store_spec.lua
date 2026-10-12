@@ -22,7 +22,7 @@ describe("v2 session store cleanup", function()
 		edits.add_edit("review", "root", { { filePath = "file.lua", before = "a", after = "b" } }, {
 			transport = "review_rpc", review_id = "review",
 		})
-		sync.handle_session_messages("root", { require("opencode.protocol.v2.messages").project("root", {
+		sync.handle_session_messages("root", { require("opencode.protocol.messages").project("root", {
 			id = "message", type = "assistant", content = { { type = "text", text = "cached" } },
 		}) })
 	end

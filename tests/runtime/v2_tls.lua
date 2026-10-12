@@ -22,7 +22,7 @@ wait(function() return ready and state.is_connected() end, "Native HTTPS/SSE rea
 local info = await(client.health)
 local directory = assert(vim.env.OPENCODE_V2_PROJECT)
 assert(#await(function(cb) client.list_providers(cb, { directory = directory }) end) == 0, "Offline provider catalog must be empty")
-assert(#await(function(cb) require("opencode.client.v2").request("model_list", { query = { location = { directory = directory } } }, cb) end) == 0,
+assert(#await(function(cb) require("opencode.client.api").request("model_list", { query = { location = { directory = directory } } }, cb) end) == 0,
 	"Offline model catalog must be empty")
 local record = await(function(cb) client.create_session({ title = "TLS transport", location = { directory = assert(vim.env.OPENCODE_V2_PROJECT) } }, cb) end)
 session.remember(record); session.set_active(record.id, record.title, { preserve_cache = true })

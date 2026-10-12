@@ -6,7 +6,7 @@ local cs = require("opencode.ui.chat.state")
 local state = cs.state
 local tasks = require("opencode.ui.chat.tasks")
 local render_state = require("opencode.ui.chat.render_state")
-local projection = require("opencode.protocol.v2.messages")
+local projection = require("opencode.protocol.messages")
 
 local function skill(id, status, output)
 	return { type = "tool", id = id, name = "skill", state = {

@@ -1,4 +1,4 @@
-local projection = require("opencode.protocol.v2.messages")
+local projection = require("opencode.protocol.messages")
 
 local function new_store()
 	return assert(loadfile("lua/opencode/sync.lua"))()
@@ -79,7 +79,7 @@ describe("private sync message indexes and metadata generations", function()
 		local sequence = 1
 		local function event(kind, data)
 			sequence = sequence + 1
-			return sync.handle_v2_event({ id = "evt" .. sequence, created = sequence, type = "session." .. kind,
+			return sync.handle_server_event({ id = "evt" .. sequence, created = sequence, type = "session." .. kind,
 				data = vim.tbl_extend("force", { sessionID = "s", assistantMessageID = "a" }, data or {}) })
 		end
 		event("step.started", { started = 2, agent = "build", model = { id = "test", providerID = "test" } })

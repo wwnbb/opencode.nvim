@@ -183,7 +183,7 @@ local cleaned, checking = false, false
 assert(vim.wait(5000, function()
   if not cleaned and not checking then
     checking = true
-    require('opencode.client.v2').request('session_list', {
+    require('opencode.client.api').request('session_list', {
       query = { location = { directory = directory .. '/project' } },
     }, function(list_error, sessions)
       assert(not list_error, vim.inspect(list_error))

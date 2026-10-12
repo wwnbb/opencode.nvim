@@ -1,5 +1,5 @@
 local sync = require("opencode.sync")
-local project = require("opencode.protocol.v2.messages")
+local project = require("opencode.protocol.messages")
 local metadata = require("opencode.ui.chat.history_metadata")
 local throughput = require("opencode.ui.chat.throughput")
 
@@ -34,7 +34,7 @@ describe("derived history metadata", function()
 		local first = get()
 		assert.equals(0, first.created("u")); assert.equals("build", first.agent("u"))
 		assert.equals(100, first.rate("z")); assert.equals(1, calls)
-		sync.handle_v2_event({ id = "delta", created = 2, type = "session.text.delta",
+		sync.handle_server_event({ id = "delta", created = 2, type = "session.text.delta",
 			data = { sessionID = "history-cache", assistantMessageID = "z", ordinal = 0, delta = "!" } })
 		assert.equals(100, get().rate("z")); assert.equals(1, calls)
 		local equal = vim.deepcopy(sync.get_message("history-cache", "z"))

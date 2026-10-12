@@ -1,10 +1,10 @@
 describe("v2 complete history pagination", function()
 	local saved, client, requests, deferred
-	local names = { "opencode.client", "opencode.client.v2" }
+	local names = { "opencode.client", "opencode.client.api" }
 	before_each(function()
 		saved, requests, deferred = {}, {}, nil
 		for _, name in ipairs(names) do saved[name] = package.loaded[name]; package.loaded[name] = nil end
-		package.loaded["opencode.client.v2"] = { request = function(_, args, callback)
+		package.loaded["opencode.client.api"] = { request = function(_, args, callback)
 			requests[#requests + 1] = args
 			local cursor = args.query.cursor
 			local data = {}

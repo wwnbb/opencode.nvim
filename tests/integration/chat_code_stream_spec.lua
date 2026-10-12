@@ -18,7 +18,7 @@ describe("live fenced code highlights", function()
 			local event_seq = 0
 			local function event(kind, data)
 				event_seq = event_seq + 1
-				return sync.handle_v2_event({ id = "evt_code_" .. event_seq, created = event_seq + 2,
+				return sync.handle_server_event({ id = "evt_code_" .. event_seq, created = event_seq + 2,
 					type = "session." .. kind, data = vim.tbl_extend("force", {
 						sessionID = "code-session", assistantMessageID = "assistant", ordinal = 0,
 					}, data or {}) })

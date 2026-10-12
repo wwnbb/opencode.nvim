@@ -1,5 +1,5 @@
-local reducer = require("opencode.sync.v2")
-local projection = require("opencode.protocol.v2.messages")
+local reducer = require("opencode.sync.reducer")
+local projection = require("opencode.protocol.messages")
 
 -- The reference deliberately omits the private reducer hooks. It still executes
 -- the original full native copy, projection, hydration, and ancestry pass.
@@ -82,7 +82,7 @@ local function new_pair()
 		local event = { id = "evt_trace_" .. self.sequence, created = 100 + self.sequence,
 			type = "session." .. kind, data = data }
 		local expected = reducer.apply(self.reference, vim.deepcopy(event))
-		local actual = self.optimized.handle_v2_event(vim.deepcopy(event))
+		local actual = self.optimized.handle_server_event(vim.deepcopy(event))
 		assert.same(expected, actual, kind .. " return values")
 		self:check(kind)
 		return expected
@@ -127,7 +127,7 @@ describe("native delta fast path full-reducer equivalence", function()
 		local ok, err = pcall(function()
 			expected = reducer.apply(pair.reference, vim.deepcopy(event))
 			reference_calls, calls = calls, 0
-			actual = pair.optimized.handle_v2_event(vim.deepcopy(event))
+			actual = pair.optimized.handle_server_event(vim.deepcopy(event))
 			optimized_calls = calls
 		end)
 		projection.project = original_project
@@ -180,7 +180,7 @@ describe("native delta fast path full-reducer equivalence", function()
 		for index = 1, 3 do
 			local result = pair:event("text.delta", { ordinal = 5, delta = tostring(index) })
 			assert.is_true(result.reconcile)
-			assert.equals(index, #pair.optimized.get_message("s", "a")._v2.content)
+			assert.equals(index, #pair.optimized.get_message("s", "a")._native.content)
 		end
 		pair:event("text.delta", { ordinal = 0, delta = " now existing" })
 		pair:event("reasoning.delta", { ordinal = 3, delta = "orphan reason", state = { phase = "late" } })
@@ -193,7 +193,7 @@ describe("native delta fast path full-reducer equivalence", function()
 		pair:event("text.delta", { ordinal = 0, delta = "+unknown sibling" })
 		pair:event("tool.input.delta", { id = "duplicate", delta = "+only first native match" })
 		local current = pair.optimized.get_message("s", "a")
-		assert.equals("first+only first native match", current._v2.content[3].state.input)
+		assert.equals("first+only first native match", current._native.content[3].state.input)
 		assert.equals("second", pair.optimized.get_part("a", projection.part_id("s", "a", "tool", "duplicate")).state.input)
 		pair:event("message.content.updated", { content = { text("shorter"), text("hidden", true) } })
 		pair:event("text.delta", { ordinal = 0, delta = "+fresh" })
@@ -228,16 +228,16 @@ describe("native delta fast path full-reducer equivalence", function()
 			assert.is_true(rawequal(current, old.messages_array[1]))
 			for index, part in ipairs(parts) do
 				assert.is_false(rawequal(old.parts[index], part), "unchanged siblings must also be detached")
-				assert.is_false(rawequal(current.content[index], current._v2.content[index]))
+				assert.is_false(rawequal(current.content[index], current._native.content[index]))
 				assert.is_false(rawequal(part, current.content[index]))
-				assert.is_false(rawequal(part, current._v2.content[index]))
+				assert.is_false(rawequal(part, current._native.content[index]))
 			end
-			assert.is_false(rawequal(current.content[3].state.input, current._v2.content[3].state.input))
-			assert.is_false(rawequal(parts[3].state.input.options, current._v2.content[3].state.input.options))
+			assert.is_false(rawequal(current.content[3].state.input, current._native.content[3].state.input))
+			assert.is_false(rawequal(parts[3].state.input.options, current._native.content[3].state.input.options))
 			assert.is_false(rawequal(parts[3].state.files[1], parts[3].state.content[2]))
 			local stable = observation(old.sync)
 			old.message.content[1].text = "stale projected mutation"
-			old.message._v2.content[3].state.input.options.range[1] = 999
+			old.message._native.content[3].state.input.options.range[1] = 999
 			old.parts[2].state.nested.value = 999
 			old.parts[3].state.input.options.range[2] = 999
 			old.parts[3].state.content[2].extra.version = 999
@@ -345,7 +345,7 @@ describe("native delta fast path full-reducer equivalence", function()
 		vim.uv.now = original_now
 		assert.is_true(ok, err)
 		pair:event("tool.input.delta", { id = "call", delta = "+native streaming still authoritative" })
-		local moved = projection.project("other", vim.deepcopy(pair.reference.get_message("s", "a")._v2))
+		local moved = projection.project("other", vim.deepcopy(pair.reference.get_message("s", "a")._native))
 		pair:call("handle_session_messages", "other", { moved })
 		pair:event("text.delta", { ordinal = 0, delta = "+after move" }, "other", "a")
 		assert.is_nil(pair.optimized.get_message("s", "a"))

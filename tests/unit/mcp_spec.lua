@@ -1,5 +1,5 @@
 local state = require("opencode.state")
-local catalogs = require("opencode.protocol.v2.catalogs")
+local catalogs = require("opencode.protocol.catalogs")
 describe("v2 MCP palette", function()
 	local saved, actions, menu, toggle, refresh_callback, read_options, messages, notify, reads, auth_calls
 	before_each(function()

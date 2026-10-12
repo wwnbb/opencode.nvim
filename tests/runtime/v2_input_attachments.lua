@@ -43,7 +43,7 @@ end, "Attachment prompt did not finish", 120000)
 local history = await(function(cb) client.get_all_messages(created.id, cb) end)
 local users, found, answer = 0, nil, ""
 for _, message in ipairs(history) do
-	if message.info.role == "user" then users = users + 1; found = message.info._v2 end
+	if message.info.role == "user" then users = users + 1; found = message.info._native end
 	if message.info.role == "assistant" then for _, part in ipairs(message.parts) do if part.type == "text" then answer = answer .. part.text end end end
 end
 assert(users == 1 and found and found.text:find("SELECTED_猫🙂\nSECOND_SELECTED_LINE", 1, true), "Selection lost in history")

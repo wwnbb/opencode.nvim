@@ -1,7 +1,7 @@
 local state = require("opencode.state")
 local sync = require("opencode.sync")
 local selectors = require("opencode.selectors")
-local projection = require("opencode.protocol.v2.messages")
+local projection = require("opencode.protocol.messages")
 
 describe("core quality regression guards", function()
 	local restored
@@ -174,7 +174,7 @@ describe("core quality regression guards", function()
 
 	it("uses one status read and one delayed metadata read per tab when both recovery handlers connect", function()
 		local sessions, client = require("opencode.session"), require("opencode.client")
-		local handler = require("opencode.events.handlers.v2")
+		local handler = require("opencode.events.handlers.server")
 		handler.clear()
 		restored[#restored + 1] = handler.clear
 		local handlers, timers, statuses, metadata = {}, {}, 0, {}

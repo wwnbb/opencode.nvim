@@ -57,7 +57,7 @@ end
 function M.project(session_id, message)
 	assert(type(message) == "table" and type(message.id) == "string" and type(message.type) == "string", "Invalid v2 message")
 	local info = vim.deepcopy(message)
-	info._v2 = vim.deepcopy(message)
+	info._native = vim.deepcopy(message)
 	info.sessionID = session_id
 	info.role = (message.type == "user" or message.type == "assistant") and message.type or "system"
 	-- Selection is already shown in the input bar and assistant metadata footers.
@@ -139,7 +139,7 @@ end
 -- mention offsets are display cells; the editor needs byte offsets, so locate
 -- the occurrence at those cells instead of copying the offsets as bytes.
 function M.draft(message)
-	local native = message._v2 or message
+	local native = message._native or message
 	local text = native.text or ""
 	local parts = {}
 	local function source(mention)

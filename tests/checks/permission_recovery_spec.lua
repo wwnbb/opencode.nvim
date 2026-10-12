@@ -38,15 +38,15 @@ describe("opencode permission recovery", function()
 		local permission_state = require("opencode.permission.state")
 		bus.clear(); bus.clear_history(); state.reset(); permission_state.clear_all()
 		state.set_session("recovery_test_session", "Recovery Test")
-		require("opencode.events.handlers.interactions_v2").setup(bus)
+		require("opencode.events.handlers.interactions").setup(bus)
 		local pending_count = 0
 		bus.on("permission_pending", function() pending_count = pending_count + 1 end)
 		local event = { id = "evt_perm", type = "permission.asked", created = 1000, data = {
 			id = "perm_recovery_idempotent", action = "bash", sessionID = "recovery_test_session",
 			source = { type = "tool", messageID = "msg", callID = "call" },
 		} }
-		bus.emit("v2_interaction", event)
-		bus.emit("v2_interaction", event)
+		bus.emit("server_interaction", event)
+		bus.emit("server_interaction", event)
 		assert.is_truthy(permission_state.has_permission("perm_recovery_idempotent"), "native permission should be tracked")
 		assert.equals("call", permission_state.get_permission("perm_recovery_idempotent").call_id, "source.callID should be retained")
 		assert.equals(1, pending_count, "duplicate native permission should emit once")
@@ -179,9 +179,9 @@ describe("opencode permission recovery", function()
 		local permission_state = require("opencode.permission.state")
 		bus.clear(); bus.clear_history(); state.reset(); permission_state.clear_all()
 		state.set_session("match_test_session", "Match Test")
-		require("opencode.events.handlers.interactions_v2").setup(bus)
+		require("opencode.events.handlers.interactions").setup(bus)
 		for _, call in ipairs({ "call_a", "call_b" }) do
-			bus.emit("v2_interaction", { id = "event_" .. call, type = "permission.asked", created = 1000,
+			bus.emit("server_interaction", { id = "event_" .. call, type = "permission.asked", created = 1000,
 				data = { id = "perm_" .. call, action = "bash", sessionID = "match_test_session",
 					source = { type = "tool", messageID = "match_msg", callID = call } } })
 		end

@@ -64,7 +64,7 @@ function M.prepare(session_id, selection, token, callback, known_session)
 			local entry = choices[session_id]
 			if entry and require("opencode.session.pending").is_current(entry.token) then
 				local selected = M.current(session_id)
-				local selected_model = selected.model and require("opencode.protocol.v2.requests").model(selected.model, selected.variant)
+				local selected_model = selected.model and require("opencode.protocol.requests").model(selected.model, selected.variant)
 				if selected.agent == selection.agent and vim.deep_equal(selected_model, selection.model) then choices[session_id] = nil end
 			end
 		end
@@ -84,7 +84,7 @@ function M.prepare(session_id, selection, token, callback, known_session)
 		local agent_changed = info.agent ~= selection.agent
 		local function model()
 			if not current() then return end
-			local native_model = require("opencode.protocol.v2.requests").model(info.model)
+			local native_model = require("opencode.protocol.requests").model(info.model)
 			if not agent_changed and vim.deep_equal(native_model, selection.model) then finish(); return end
 			client.switch_model(session_id, selection.model, function(model_err)
 				if not current() then return end

@@ -12,7 +12,7 @@ function M.cancel_all()
 end
 
 function M.generate(prompt, model, callback, opts, endpoint_config)
-	local v2 = require("opencode.client.v2")
+	local api = require("opencode.client.api")
 	local sse = require("opencode.client.sse")
 	local schedule = require("opencode.util.schedule").schedule_callback
 	local endpoint = endpoint_config()
@@ -32,7 +32,7 @@ function M.generate(prompt, model, callback, opts, endpoint_config)
 			return
 		end
 		-- Deletion also interrupts execution and waits until it is idle.
-		v2.request("session_delete", { path = { sessionID = id } }, function(err)
+		api.request("session_delete", { path = { sessionID = id } }, function(err)
 			if err and err.status ~= 404 then
 				vim.notify("OpenCode " .. title:lower() .. ": could not remove temporary session " .. id .. ": "
 					.. tostring(err.message or err), vim.log.levels.WARN)
@@ -109,7 +109,7 @@ function M.generate(prompt, model, callback, opts, endpoint_config)
 	sse.on("disconnected", disconnected)
 	sse.on("error", disconnected)
 	-- Keep creation alive when cancelled: its late reply must trigger deletion.
-	v2.request("session_create", { body = {
+	api.request("session_create", { body = {
 		id = id, title = title, model = model, location = { directory = opts.directory or vim.fn.getcwd() },
 		permissions = { { action = "*", resource = "*", effect = "deny" } },
 	}, timeout = opts.timeout }, function(err, session)
@@ -118,7 +118,7 @@ function M.generate(prompt, model, callback, opts, endpoint_config)
 		if err then finish(err); return end
 		if not same_endpoint() then finish({ code = "stale_connection", message = "Server connection changed" }); return end
 		if not session or session.id ~= id then finish({ code = "incompatible_response", message = "Unexpected " .. title:lower() .. " session" }); return end
-		local handle = v2.request("prompt", { path = { sessionID = id }, body = { text = prompt }, timeout = opts.timeout }, function(prompt_err)
+		local handle = api.request("prompt", { path = { sessionID = id }, body = { text = prompt }, timeout = opts.timeout }, function(prompt_err)
 			prompt_request = nil
 			if prompt_err then finish(prompt_err) end
 		end)

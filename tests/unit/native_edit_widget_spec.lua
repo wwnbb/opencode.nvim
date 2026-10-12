@@ -41,7 +41,7 @@ describe("native v2 edit result", function()
 	it("renders the recorded files[].patch and restores a read-only preview", function()
 		local session_id = "native-edit-widget"
 		local native = vim.json.decode(table.concat(vim.fn.readfile("tests/fixtures/v2/session-ops/turn-two.json"), "\n"))
-		local projection = require("opencode.protocol.v2.messages")
+		local projection = require("opencode.protocol.messages")
 		local sync = require("opencode.sync")
 		local edits = require("opencode.edit.state")
 		local results = require("opencode.ui.chat.file_edit_results")

@@ -620,7 +620,7 @@ function M.clear_pending_disconnects() provider_state().clear_all() end
 
 function M.compact_session(session_id, opts, callback)
 	return connected_request(session_id, function(done) client().summarize_session(session_id, opts or {}, done) end, function(err, result)
-		if not err then require("opencode.events").emit("v2_reconcile", { session_id = session_id }) end
+		if not err then require("opencode.events").emit("session_reconcile", { session_id = session_id }) end
 		if callback then callback(err, result) end
 	end)
 end
@@ -740,7 +740,7 @@ local function reverted(session_id, callback, operation)
 			elseif operation == "clear" or operation == "commit" then
 				sessions().remember({ id = session_id, revert = vim.NIL }, { touch = false })
 			end
-			require("opencode.events").emit("v2_reconcile", { session_id = session_id, complete = true })
+			require("opencode.events").emit("session_reconcile", { session_id = session_id, complete = true })
 		end
 		if callback then callback(err, result) end
 	end)

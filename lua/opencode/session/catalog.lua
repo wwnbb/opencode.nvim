@@ -109,7 +109,7 @@ function M.move(id, directory, callback)
 		require("opencode.client").move_session(id, vim.trim(directory), function(err, result)
 			schedule(function()
 				if not pending.is_current(token) then return end
-				if not err then require("opencode.events").emit("v2_reconcile", { session_id = id }) end
+				if not err then require("opencode.events").emit("session_reconcile", { session_id = id }) end
 				if callback then callback(err, result) end
 			end)
 		end)

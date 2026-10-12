@@ -1,6 +1,6 @@
 local app, state, sync = require("opencode"), require("opencode.state"), require("opencode.sync")
 local input, events, render = require("opencode.ui.input"), require("opencode.events"), require("opencode.ui.chat.render")
-local projection = require("opencode.protocol.v2.messages")
+local projection = require("opencode.protocol.messages")
 
 describe("current usage surfaces", function()
 	local saved, origin
@@ -45,13 +45,13 @@ describe("current usage surfaces", function()
 		wait_text("ctx 2.0K (20%)"); wait_text("$1.50")
 		assert.equals(baseline + 1, events.listener_count("sync_changed"))
 		local focused = vim.api.nvim_get_current_win()
-		events.emit("v2_event", { id = "evt_usage", type = "session.usage.updated", created = 3, data = { sessionID = "usage", cost = 2.75, tokens = usage } })
+		events.emit("server_event", { id = "evt_usage", type = "session.usage.updated", created = 3, data = { sessionID = "usage", cost = 2.75, tokens = usage } })
 		wait_text("$2.75"); assert.equals(focused, vim.api.nvim_get_current_win())
 		sync.handle_session_messages("usage", { projection.project("usage", { id = "u", type = "user", text = "Undo me", time = { created = 4 } }),
 			projection.project("usage", { id = "b", type = "assistant", model = { providerID = "p", id = "m" }, tokens = { input = 3000, output = 100, reasoning = 20, cache = { read = 800, write = 80 } }, time = { created = 5 }, content = {} }) })
 		events.emit("sync_changed", { session_id = "usage", kind = "message" })
 		wait_text("ctx 4.0K (40%)")
-		events.emit("v2_event", { id = "evt_revert", type = "session.revert.staged", created = 6, data = { sessionID = "usage", revert = { messageID = "u" } } })
+		events.emit("server_event", { id = "evt_revert", type = "session.revert.staged", created = 6, data = { sessionID = "usage", revert = { messageID = "u" } } })
 		wait_text("ctx 2.0K (20%)"); wait_text("$2.75")
 		input.close(false)
 		assert.equals(baseline, events.listener_count("sync_changed"))

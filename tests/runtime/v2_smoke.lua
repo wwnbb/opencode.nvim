@@ -28,7 +28,7 @@ sync.handle_location_catalog(directory, "providers", providers)
 sync.handle_location_catalog(directory, "agents", agents)
 state.set_config({ session = { default_agent = "build", default_model = { providerID = provider, modelID = model } } })
 require("opencode.events.sse_bridge").setup(events)
-require("opencode.events.handlers.v2").setup(events)
+require("opencode.events.handlers.server").setup(events)
 -- The send flow uses the facade; keep it on the same bus without initializing
 -- unrelated UI/interaction modules before their own runtime checks.
 package.loaded["opencode.events"] = events
@@ -68,5 +68,5 @@ vim.fn.writefile({ vim.json.encode({ version = "2.0.11", model = provider .. "/"
 	text = text, live_matches_history = true }) }, assert(vim.env.OPENCODE_V2_OUTPUT))
 await(function(cb) client.delete_session(created.id, cb) end)
 client.disconnect_events()
-require("opencode.events.handlers.v2").clear()
+require("opencode.events.handlers.server").clear()
 print("Neovim v2 frontend smoke passed")

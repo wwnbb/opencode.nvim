@@ -1,5 +1,5 @@
 local selectors, state, sync = require("opencode.selectors"), require("opencode.state"), require("opencode.sync")
-local projection = require("opencode.protocol.v2.messages")
+local projection = require("opencode.protocol.messages")
 
 describe("current session context and money", function()
 	local function tokens(input)

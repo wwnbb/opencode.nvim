@@ -1,6 +1,6 @@
 -- V2 reducer owned by sync.lua. All persistent state remains in sync's store.
 local M = {}
-local projection = require("opencode.protocol.v2.messages")
+local projection = require("opencode.protocol.messages")
 
 local function event_message_id(event)
 	return (event.id:gsub("^evt", "msg"))
@@ -36,7 +36,7 @@ function M.apply(sync, event, hooks)
 	end
 	local function assistant()
 		local existing = sync.get_message(sid, data.assistantMessageID)
-		if existing and existing._v2 then return vim.deepcopy(existing._v2) end
+		if existing and existing._native then return vim.deepcopy(existing._native) end
 		result.reconcile = true
 		return { id = data.assistantMessageID, type = "assistant", content = {}, time = { created = event.created } }
 	end
@@ -73,8 +73,8 @@ function M.apply(sync, event, hooks)
 	elseif kind == "session.inbox.delivered" then
 		result.delivered = data.inboxID
 		local existing = sync.get_message(sid, data.inboxID)
-		if existing and existing._v2 then
-			local message = vim.deepcopy(existing._v2)
+		if existing and existing._native then
+			local message = vim.deepcopy(existing._native)
 			message.time.created = event.created
 			commit(message)
 		else result.reconcile = true end

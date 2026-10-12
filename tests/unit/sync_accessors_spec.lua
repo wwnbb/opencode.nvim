@@ -31,7 +31,7 @@ describe("sync render accessors and task ownership", function()
 		local seq = 0
 		local function event(kind, data)
 			seq = seq + 1
-			return sync.handle_v2_event({ id = "evt_stream_smoke_" .. seq, created = seq,
+			return sync.handle_server_event({ id = "evt_stream_smoke_" .. seq, created = seq,
 				type = "session." .. kind, data = vim.tbl_extend("force", {
 					sessionID = "session_stream", assistantMessageID = "msg_stream", ordinal = 0,
 				}, data or {}) })

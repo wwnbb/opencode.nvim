@@ -93,7 +93,7 @@ function M.setup(events)
 	for _, kind in ipairs({ "connected", "session.selected" }) do events.on(kind, recover_all) end
 	events.on("interaction_reconcile", function(data) recover(data.session_id) end)
 	events.on("disconnected", function() revision = revision + 1 end)
-	events.on("v2_interaction", function(event)
+	events.on("server_interaction", function(event)
 		local data, kind = event.data, event.type
 		if kind == "permission.asked" then add_permission(data, event.location, event.created)
 		elseif kind == "permission.replied" then

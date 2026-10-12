@@ -233,7 +233,7 @@ end
 -- Check server health
 ---@param callback function(err, data) data = v2 ServerInfo
 function M.health(callback)
-	return require("opencode.client.v2").request("info", { timeout = 5000 }, callback)
+	return require("opencode.client.api").request("info", { timeout = 5000 }, callback)
 end
 
 return M

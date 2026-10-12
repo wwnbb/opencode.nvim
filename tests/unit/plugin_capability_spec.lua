@@ -12,7 +12,7 @@ describe("bundled plugin capability warnings", function()
 				callback(nil, response)
 			end
 			local ok, err = pcall(function()
-				require("opencode.events.handlers.review_v2").setup(bus)
+				require("opencode.events.handlers.review").setup(bus)
 				bus.emit("connected", {})
 				assert.equals(0, #methods)
 				state.upsert_session({ id = "first", directory = "/fixture" })

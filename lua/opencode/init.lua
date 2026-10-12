@@ -648,7 +648,7 @@ function M.abort()
 		end
 		-- Interrupt acknowledges a request; SSE and active recovery establish
 		-- completion. Queued inbox items remain pending (resume=false).
-		require("opencode.events").emit("v2_reconcile", { session_id = session_id })
+		require("opencode.events").emit("session_reconcile", { session_id = session_id })
 		session_actions.refresh_status()
 	end)
 end

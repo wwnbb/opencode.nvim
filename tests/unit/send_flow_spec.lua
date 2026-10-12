@@ -147,7 +147,7 @@ describe("opencode v2 send flow", function()
 			assert.equals("queued", pending.get("ses_a", payload.id).status)
 			assert.equals("Queued", selectors.prompt_status("ses_a", payload.id))
 			assert.is_true(sync.get_message("ses_a", payload.id).provisional)
-			local effect = sync.handle_v2_event({ id = "evt_delivery", created = 30, type = "session.inbox.delivered",
+			local effect = sync.handle_server_event({ id = "evt_delivery", created = 30, type = "session.inbox.delivered",
 				data = { sessionID = "ses_a", inboxID = payload.id } })
 			pending.update("ses_a", effect.delivered, { status = "delivered" })
 			assert.is_nil(selectors.prompt_status("ses_a", payload.id))
@@ -222,7 +222,7 @@ describe("opencode v2 send flow", function()
 
 	it("does not undo a newer queue change when the earlier steer PATCH completes late", function()
 		local bus = require("opencode.events.bus")
-		local handler = require("opencode.events.handlers.v2")
+		local handler = require("opencode.events.handlers.server")
 		bus.clear(); handler.clear(); handler.setup(bus)
 		local ok, err = pcall(function()
 			assert.is_true(send.send("Race", {}))
@@ -230,13 +230,13 @@ describe("opencode v2 send flow", function()
 			local id = calls[2].body.id
 			assert.is_true(send.steer_input("ses_a", id))
 			local old_steer_callback = callbacks.delivery
-			bus.emit("v2_event", { id = "evt_steer", created = 21, type = "session.inbox.delivery.changed",
+			bus.emit("server_event", { id = "evt_steer", created = 21, type = "session.inbox.delivery.changed",
 				data = { sessionID = "ses_a", inboxID = id, delivery = "steer" } })
 			assert.equals("accepted", pending.get("ses_a", id).status)
 			assert.is_true(send.queue_input("ses_a", id))
 			local queue_callback = callbacks.delivery
 			assert.is_not.equals(old_steer_callback, queue_callback)
-			bus.emit("v2_event", { id = "evt_queue", created = 22, type = "session.inbox.delivery.changed",
+			bus.emit("server_event", { id = "evt_queue", created = 22, type = "session.inbox.delivery.changed",
 				data = { sessionID = "ses_a", inboxID = id, delivery = "queue" } })
 			queue_callback(nil)
 			assert.equals("queued", pending.get("ses_a", id).status)
@@ -380,7 +380,7 @@ describe("opencode v2 send flow", function()
 		local draft
 		send.edit_input("ses_a", "restored", function(err, result) assert.is_nil(err); draft = result end)
 		callbacks.cancel(nil)
-		local payload = require("opencode.protocol.v2.requests").prompt(draft.text, { parts = draft.parts }, "new")
+		local payload = require("opencode.protocol.requests").prompt(draft.text, { parts = draft.parts }, "new")
 		assert.same({ { uri = "file:///tmp/file", name = "file" } }, payload.files)
 		assert.same({ { name = "explore" } }, payload.agents)
 		assert.same({ { id = "review" } }, payload.skills)
@@ -434,8 +434,8 @@ describe("opencode v2 send flow", function()
 
 	it("commits a staged undo before seeding a new prompt and preserves later inbox evidence", function()
 		local bus = require("opencode.events.bus")
-		local handler = require("opencode.events.handlers.v2")
-		local projection = require("opencode.protocol.v2.messages")
+		local handler = require("opencode.events.handlers.server")
+		local projection = require("opencode.protocol.messages")
 		local old_id = "msg_00000000000000000000"
 		sync.handle_session_messages("ses_a", projection.page("ses_a", {
 			{ id = old_id, type = "user", text = "Undone", time = { created = 1 } },
@@ -476,7 +476,7 @@ describe("opencode v2 send flow", function()
 			assert.equals(1, #vim.tbl_filter(function(call) return call.method == "prompt" end, calls))
 
 			-- The SSE commit may reach Neovim after HTTP commit and two fresh seeds.
-			bus.emit("v2_event", { id = "evt_commit", created = 10, type = "session.revert.committed",
+			bus.emit("server_event", { id = "evt_commit", created = 10, type = "session.revert.committed",
 				data = { sessionID = "ses_a", to = old_id } })
 			assert.equals("submitting", pending.get("ses_a", id).status)
 			assert.equals("submitting", pending.get("ses_a", second_id).status)
@@ -484,7 +484,7 @@ describe("opencode v2 send flow", function()
 			assert.is_not_nil(sync.get_message("ses_a", second_id))
 			local item = { sessionID = "ses_a", id = id, type = "user", delivery = "queue",
 				payload = { text = "Replacement" }, time = { created = 20 } }
-			bus.emit("v2_event", { id = "evt_queue", created = 20, type = "session.inbox.enqueued",
+			bus.emit("server_event", { id = "evt_queue", created = 20, type = "session.inbox.enqueued",
 				data = { sessionID = "ses_a", inboxID = id, item = item } })
 			assert.equals("queued", pending.get("ses_a", id).status)
 			first_callback(nil, item)
@@ -496,9 +496,9 @@ describe("opencode v2 send flow", function()
 			callbacks.prompt(nil, { sessionID = "ses_a", id = second_id, type = "user",
 				delivery = "queue", payload = { text = "Another replacement" }, time = { created = 21 } })
 			assert.equals("queued", pending.get("ses_a", second_id).status)
-			bus.emit("v2_event", { id = "evt_delivery", created = 30, type = "session.inbox.delivered",
+			bus.emit("server_event", { id = "evt_delivery", created = 30, type = "session.inbox.delivered",
 				data = { sessionID = "ses_a", inboxID = id } })
-			bus.emit("v2_event", { id = "evt_delivery_second", created = 31, type = "session.inbox.delivered",
+			bus.emit("server_event", { id = "evt_delivery_second", created = 31, type = "session.inbox.delivered",
 				data = { sessionID = "ses_a", inboxID = second_id } })
 			assert.equals("delivered", pending.get("ses_a", id).status)
 			assert.equals("delivered", pending.get("ses_a", second_id).status)
@@ -509,8 +509,8 @@ describe("opencode v2 send flow", function()
 
 	it("accepts a new prompt when the committed SSE arrives before the HTTP commit response", function()
 		local bus = require("opencode.events.bus")
-		local handler = require("opencode.events.handlers.v2")
-		local projection = require("opencode.protocol.v2.messages")
+		local handler = require("opencode.events.handlers.server")
+		local projection = require("opencode.protocol.messages")
 		local old_id = "msg_00000000000000000000"
 		sync.handle_session_messages("ses_a", projection.page("ses_a", {
 			{ id = old_id, type = "user", text = "Undone", time = { created = 1 } },
@@ -525,7 +525,7 @@ describe("opencode v2 send flow", function()
 			end
 			assert.is_function(callbacks.commit)
 			assert.same({}, pending.list("ses_a"))
-			bus.emit("v2_event", { id = "evt_commit_early", created = 10, type = "session.revert.committed",
+			bus.emit("server_event", { id = "evt_commit_early", created = 10, type = "session.revert.committed",
 				data = { sessionID = "ses_a", to = old_id } })
 			assert.is_nil(sync.get_message("ses_a", old_id))
 			for _, record in pairs(pending.list("ses_a")) do
@@ -549,7 +549,7 @@ describe("opencode v2 send flow", function()
 	end)
 
 	it("commits a newer staged undo before seeding a prompt", function()
-		local projection = require("opencode.protocol.v2.messages")
+		local projection = require("opencode.protocol.messages")
 		local first_id, second_id = "msg_00000000000000000001", "msg_00000000000000000002"
 		sync.handle_session_messages("ses_a", projection.page("ses_a", {
 			{ id = first_id, type = "user", text = "First", time = { created = 1 } },
@@ -577,7 +577,7 @@ describe("opencode v2 send flow", function()
 	end)
 
 	it("preserves prompts seeded before a concurrent undo is staged", function()
-		local projection = require("opencode.protocol.v2.messages")
+		local projection = require("opencode.protocol.messages")
 		local old_id = "msg_00000000000000000000"
 		sync.handle_session_messages("ses_a", projection.page("ses_a", {
 			{ id = old_id, type = "user", text = "Earlier turn", time = { created = 1 } },
@@ -610,8 +610,8 @@ describe("opencode v2 send flow", function()
 
 	it("keeps a newer staged boundary when an older committed SSE arrives late", function()
 		local bus = require("opencode.events.bus")
-		local handler = require("opencode.events.handlers.v2")
-		local projection = require("opencode.protocol.v2.messages")
+		local handler = require("opencode.events.handlers.server")
+		local projection = require("opencode.protocol.messages")
 		local old_id = "msg_00000000000000000000"
 		sync.handle_session_messages("ses_a", projection.page("ses_a", {
 			{ id = old_id, type = "user", text = "Undone", time = { created = 1 } },
@@ -635,12 +635,12 @@ describe("opencode v2 send flow", function()
 			local id = prompt.body.id
 			callbacks.prompt(nil, { sessionID = "ses_a", id = id, type = "user", delivery = "queue",
 				payload = { text = "Replacement turn" }, time = { created = 20 } })
-			bus.emit("v2_event", { id = "evt_delivery_new", created = 21, type = "session.inbox.delivered",
+			bus.emit("server_event", { id = "evt_delivery_new", created = 21, type = "session.inbox.delivered",
 				data = { sessionID = "ses_a", inboxID = id } })
-			bus.emit("v2_event", { id = "evt_stage_new", created = 22, type = "session.revert.staged",
+			bus.emit("server_event", { id = "evt_stage_new", created = 22, type = "session.revert.staged",
 				data = { sessionID = "ses_a", revert = { messageID = id } } })
 			assert.equals(id, state.get_session_record("ses_a").revert.messageID)
-			bus.emit("v2_event", { id = "evt_commit_old", created = 10, type = "session.revert.committed",
+			bus.emit("server_event", { id = "evt_commit_old", created = 10, type = "session.revert.committed",
 				data = { sessionID = "ses_a", to = old_id } })
 			assert.equals(id, state.get_session_record("ses_a").revert.messageID)
 			assert.is_not_nil(sync.get_message("ses_a", id))

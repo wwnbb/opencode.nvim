@@ -69,7 +69,7 @@ function M.connect(opts)
 			if not ok or type(event) ~= "table" or type(event.type) ~= "string" then fail("Invalid terminal control event"); return end
 			if event.type == "attached" then
 				if attached or event.inputProtocol ~= 1 or event.attachmentID ~= opts.attachment_id
-					or require("opencode.client.v2").validate_pty(event.info) or event.info.id ~= opts.id or event.info.sessionID ~= opts.session_id
+					or require("opencode.client.api").validate_pty(event.info) or event.info.id ~= opts.id or event.info.sessionID ~= opts.session_id
 					or type(event.replay) ~= "table" or not count(event.replay.availableOffset) or not count(event.replay.endOffset)
 					or event.replay.requestedOffset ~= offset or type(event.replay.truncated) ~= "boolean"
 					or event.replay.availableOffset > event.replay.endOffset then fail("Invalid persistent terminal attachment response"); return end

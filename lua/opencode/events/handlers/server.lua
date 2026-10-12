@@ -78,7 +78,7 @@ function M.setup(events)
 							native.id, native.type = id, "user"
 							native.delivery, native.resume = nil, nil
 							native.time = old and old.time or (item and item.time)
-							local projected = require("opencode.protocol.v2.messages").project(sid, native)
+							local projected = require("opencode.protocol.messages").project(sid, native)
 							projected.info.provisional = true
 							pending_messages[#pending_messages + 1] = projected
 						end
@@ -87,7 +87,7 @@ function M.setup(events)
 				if not history_err then
 					vim.list_extend(messages, pending_messages)
 					sync.handle_session_messages(sid, messages, { snapshot = snapshot, reconcile = complete_read, complete = complete_read })
-					sessions.set_message_cache(sid, sync.get_messages(sid), { reason = "v2_reconcile" })
+					sessions.set_message_cache(sid, sync.get_messages(sid), { reason = "session_reconcile" })
 				elseif #pending_messages > 0 then sync.handle_session_messages(sid, pending_messages) end
 				if not history_err or not inbox_err then changed(sid) end
 				local again = entry.again
@@ -104,7 +104,7 @@ function M.setup(events)
 			end)
 		end, 100)
 	end
-	events.on("v2_reconcile", function(data) reconcile(data and data.session_id, data and data.complete) end)
+	events.on("session_reconcile", function(data) reconcile(data and data.session_id, data and data.complete) end)
 	events.on("session.closed", function(data)
 		for _, id in ipairs(data.session_ids or { data.session_id }) do
 			if id then
@@ -125,7 +125,7 @@ function M.setup(events)
 			reconcile(info.id, true)
 		end
 	end)
-	events.on("v2_event", function(event)
+	events.on("server_event", function(event)
 		local data, kind = event.data, event.type
 		local sid = data.sessionID
 		if sid and deleted[sid] then return end
@@ -166,7 +166,7 @@ function M.setup(events)
 			sessions.remember({ id = sid, revert = data.revert or vim.NIL }, { touch = false })
 		end
 		if kind:match("^session%.revert%.") then changed(sid, "session") end
-		local effect = sync.handle_v2_event(event)
+		local effect = sync.handle_server_event(event)
 		if effect.revert_to then
 			for _, id in ipairs(effect.revert_removed or {}) do
 				if pending.get(sid, id) then pending.update(sid, id, { status = "cancelled" }) end
@@ -194,7 +194,7 @@ function M.setup(events)
 			local content_kind = kind:match("^session%.(text)%.delta$") or kind:match("^session%.(reasoning)%.delta$")
 			if content_kind and type(data.delta) == "string" then
 				events.emit("sync_changed", { kind = "part", action = "updated", session_id = sid,
-					message_id = data.assistantMessageID, part_id = require("opencode.protocol.v2.messages").part_id(sid, data.assistantMessageID, content_kind, data.ordinal or 0),
+					message_id = data.assistantMessageID, part_id = require("opencode.protocol.messages").part_id(sid, data.assistantMessageID, content_kind, data.ordinal or 0),
 					field = "text", delta = data.delta })
 			else changed(sid) end
 		end
@@ -206,7 +206,7 @@ function M.setup(events)
 		end
 		-- Interactions retain the complete native envelope for their own adapters.
 		if kind:match("^permission%.") or kind:match("^form%.") or kind:match("^rpc%.") then
-			events.emit("v2_interaction", event)
+			events.emit("server_interaction", event)
 		end
 	end)
 end

@@ -93,7 +93,7 @@
         "type": "user",
         "sessionID": "ses_f3922ca6dffemWohNH90eD4Olr",
         "protocol": "v2",
-        "_v2": {
+        "_native": {
           "id": "msg_0c6dd35ba001nhak5eLjQZ73yh",
           "type": "user",
           "time": {
@@ -129,7 +129,7 @@
         "type": "agent-switched",
         "sessionID": "ses_f3922ca6dffemWohNH90eD4Olr",
         "protocol": "v2",
-        "_v2": {
+        "_native": {
           "id": "msg_0c6dd35d3001JV8gSpIEh2wvmp",
           "type": "agent-switched",
           "time": {
@@ -241,7 +241,7 @@
         "variant": "default",
         "sessionID": "ses_f3922ca6dffemWohNH90eD4Olr",
         "protocol": "v2",
-        "_v2": {
+        "_native": {
           "id": "msg_0c6dd35f2001cP0XfcNvNx01Js",
           "tokens": {
             "cache": {
@@ -485,7 +485,7 @@
         "variant": "default",
         "sessionID": "ses_f3922ca6dffemWohNH90eD4Olr",
         "protocol": "v2",
-        "_v2": {
+        "_native": {
           "id": "msg_0c6dd5bee001OMaQK7NBfzK73j",
           "tokens": {
             "cache": {
@@ -605,7 +605,7 @@
         "type": "idle",
         "sessionID": "ses_f3922ca6dffemWohNH90eD4Olr",
         "protocol": "v2",
-        "_v2": {
+        "_native": {
           "id": "msg_0c6dd6651002RAPCwFfNXAxVec",
           "type": "idle",
           "time": {

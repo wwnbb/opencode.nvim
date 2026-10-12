@@ -107,7 +107,7 @@ function M.ask(session_id, question)
 				end)
 				return
 			end
-			local model, model_err = require("opencode.protocol.v2.requests").model(desired_model, variant)
+			local model, model_err = require("opencode.protocol.requests").model(desired_model, variant)
 			if not model then
 				complete({ message = model_err }); done(); return
 			end

@@ -116,7 +116,7 @@ describe("opencode session deleted handling", function()
 		session_actions.set_active("del-event-a", "Event A", { reason = "test_setup" })
 		session_actions.set_active("del-event-b", "Event B", { reason = "test_setup" })
 
-		events.emit("v2_event", {
+		events.emit("server_event", {
 			id = "evt-delete-b",
 			type = "session.deleted",
 			data = { sessionID = "del-event-b" },
@@ -129,7 +129,7 @@ describe("opencode session deleted handling", function()
 		assert.equals(false, state.is_runtime_session("del-event-b"), "native session.deleted event should prune the runtime tab")
 
 		require("tests.helpers.schedule").with(function(flush)
-			events.emit("v2_event", {
+			events.emit("server_event", {
 				id = "evt-delete-foreign",
 				type = "session.deleted",
 				data = { sessionID = "del-foreign" },

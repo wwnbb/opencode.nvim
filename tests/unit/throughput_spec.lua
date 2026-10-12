@@ -82,7 +82,7 @@ describe("turn throughput", function()
 
 	it("derives identical rates from recorded SSE and HTTP history", function()
 		local sync = require("opencode.sync")
-		local projection = require("opencode.protocol.v2.messages")
+		local projection = require("opencode.protocol.messages")
 		local function fixture(name)
 			return vim.json.decode(table.concat(vim.fn.readfile("tests/fixtures/v2/runtime/" .. name .. ".json"), "\n"))
 		end
@@ -90,7 +90,7 @@ describe("turn throughput", function()
 		local ok, err = xpcall(function()
 			local sid = fixture("session").data.id
 			for _, event in ipairs(fixture("events")) do
-				sync.handle_v2_event(event)
+				sync.handle_server_event(event)
 				if event.type == "session.execution.succeeded" then break end
 			end
 			local live = throughput.by_message(sync.get_messages(sid))

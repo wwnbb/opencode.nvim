@@ -5,7 +5,7 @@
       "error": "MCP server \"http://127.0.0.1:62181/mcp\" requires user authorization",
       "name": "auth-fixture",
       "integrationID": "mcp_91532ae1ebe92831",
-      "_v2": {
+      "_native": {
         "status": {
           "error": "MCP server \"http://127.0.0.1:62181/mcp\" requires user authorization",
           "status": "needs_auth"

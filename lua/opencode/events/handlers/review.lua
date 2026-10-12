@@ -118,7 +118,7 @@ function M.setup(events)
 		end)
 	end
 	events.on("review_reconcile", function(data) recover(data.session_id) end)
-	events.on("v2_interaction", function(event)
+	events.on("server_interaction", function(event)
 		if event.type:match("^rpc%.opencode_nvim%.review") then upsert(event.data.review) end
 		if event.type:match("^rpc%.opencode_nvim%.policy") then policy(event.data.policy) end
 	end)

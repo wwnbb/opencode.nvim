@@ -142,5 +142,5 @@ assert(vim.fn.readfile(denied_target)[1] == "before", "Denied tool wrote to disk
 results.denied = { tool = denied_result, bytes = "before\n" }
 await(function(cb) client.delete_session(denied, cb) end)
 vim.fn.writefile({ vim.json.encode(results) }, assert(vim.env.OPENCODE_V2_OUTPUT))
-client.disconnect_events(); require("opencode.events.handlers.v2").clear()
+client.disconnect_events(); require("opencode.events.handlers.server").clear()
 print("Neovim v2 native permission, review, deny, interruption and late reply passed")

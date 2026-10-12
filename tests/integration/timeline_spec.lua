@@ -6,7 +6,7 @@ local chat_surface = require("tests.helpers.chat_surface")
 local history = require("opencode.ui.input.history")
 local input = require("opencode.ui.input")
 local menu = require("opencode.ui.menu")
-local projection = require("opencode.protocol.v2.messages")
+local projection = require("opencode.protocol.messages")
 local sync = require("opencode.sync")
 
 describe("timeline actions on a selected user turn", function()

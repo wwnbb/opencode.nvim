@@ -80,7 +80,7 @@ describe("/btw side questions", function()
 
 	local function handlers()
 		local listeners = {}
-		require("opencode.events.handlers.v2").setup({
+		require("opencode.events.handlers.server").setup({
 			on = function(name, callback) listeners[name] = callback end,
 			emit = function() end,
 		})

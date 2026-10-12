@@ -229,7 +229,7 @@ function M.register_defaults()
 				return
 			end
 			
-			local draft = require("opencode.protocol.v2.messages").draft(last_user_msg)
+			local draft = require("opencode.protocol.messages").draft(last_user_msg)
 			local function finished(err, staged)
 				vim.schedule(function()
 					if err then

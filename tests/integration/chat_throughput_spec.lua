@@ -9,7 +9,7 @@ describe("chat throughput footer", function()
 		})
 		local state, sync = require("opencode.state"), require("opencode.sync")
 		local chat = require("opencode.ui.chat")
-		local projection = require("opencode.protocol.v2.messages")
+		local projection = require("opencode.protocol.messages")
 		local client = require("opencode.client")
 		local original_get, original_config = client.get_messages, vim.deepcopy(state.get_config())
 		client.get_messages = function(_, _, cb) cb(nil, {}) end

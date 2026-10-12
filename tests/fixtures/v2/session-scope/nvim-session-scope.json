@@ -4,7 +4,7 @@
     [
       {
         "info": {
-          "_v2": {
+          "_native": {
             "time": {
               "created": 1790037947068
             },
@@ -38,7 +38,7 @@
       },
       {
         "info": {
-          "_v2": {
+          "_native": {
             "agent": "build",
             "time": {
               "created": 1790037946991
@@ -73,7 +73,7 @@
       },
       {
         "info": {
-          "_v2": {
+          "_native": {
             "snapshot": {
               "start": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
               "files": [],
@@ -233,7 +233,7 @@
       },
       {
         "info": {
-          "_v2": {
+          "_native": {
             "time": {
               "created": 1790037950427
             },
@@ -258,7 +258,7 @@
     [
       {
         "info": {
-          "_v2": {
+          "_native": {
             "time": {
               "created": 1790037947221
             },
@@ -292,7 +292,7 @@
       },
       {
         "info": {
-          "_v2": {
+          "_native": {
             "agent": "build",
             "time": {
               "created": 1790037947112
@@ -327,7 +327,7 @@
       },
       {
         "info": {
-          "_v2": {
+          "_native": {
             "snapshot": {
               "start": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
               "files": [],
@@ -487,7 +487,7 @@
       },
       {
         "info": {
-          "_v2": {
+          "_native": {
             "time": {
               "created": 1790037952022
             },
@@ -512,7 +512,7 @@
     [
       {
         "info": {
-          "_v2": {
+          "_native": {
             "time": {
               "created": 1790037947325
             },
@@ -546,7 +546,7 @@
       },
       {
         "info": {
-          "_v2": {
+          "_native": {
             "agent": "build",
             "time": {
               "created": 1790037947278
@@ -581,7 +581,7 @@
       },
       {
         "info": {
-          "_v2": {
+          "_native": {
             "snapshot": {
               "start": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
               "files": [],
@@ -741,7 +741,7 @@
       },
       {
         "info": {
-          "_v2": {
+          "_native": {
             "time": {
               "created": 1790037951546
             },

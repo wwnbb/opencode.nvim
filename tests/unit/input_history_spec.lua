@@ -52,7 +52,7 @@ describe("complete prompt history and session drafts", function()
 	local input = require("opencode.ui.input")
 	local history = require("opencode.ui.input.history")
 	local app_state = require("opencode.state")
-	local requests = require("opencode.protocol.v2.requests")
+	local requests = require("opencode.protocol.requests")
 	local original_get_session, original_get_config, original_clipboard_read, history_file, active_session, restore_session
 
 	local function reload_history()

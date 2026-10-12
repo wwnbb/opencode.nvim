@@ -10,7 +10,7 @@
         "type": "user",
         "hidden": false,
         "id": "msg_0c6e11e2a001nhak5eLjQZ73yh",
-        "_v2": {
+        "_native": {
           "id": "msg_0c6e11e2a001nhak5eLjQZ73yh",
           "type": "user",
           "time": {
@@ -44,7 +44,7 @@
         "hidden": false,
         "id": "msg_0c6e11e36001WQG5EgJR0598E3",
         "agent": "build",
-        "_v2": {
+        "_native": {
           "id": "msg_0c6e11e36001WQG5EgJR0598E3",
           "type": "agent-switched",
           "time": {
@@ -71,7 +71,7 @@
     },
     {
       "info": {
-        "_v2": {
+        "_native": {
           "time": {
             "completed": 1790043046546,
             "streamed": 1790043046518,
@@ -240,7 +240,7 @@
         "outcome": "succeeded",
         "hidden": true,
         "id": "msg_0c6e14295001M3BRIYCsRc4o1F",
-        "_v2": {
+        "_native": {
           "time": {
             "created": 1790043046549
           },

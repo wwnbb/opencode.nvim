@@ -40,7 +40,7 @@
         "id": "msg_0c6aff3b5001nhak5eLjQZ73yh",
         "sessionID": "ses_f39500ddbffex31TBu61Fr1xBz",
         "role": "user",
-        "_v2": {
+        "_native": {
           "text": "@выделение with spaces.txt#2-3\nSELECTED_猫🙂\nSECOND_SELECTED_LINE\nContext: Reply exactly INPUT_ATTACHMENT_READY. Do not call tools.[Image 1] ",
           "id": "msg_0c6aff3b5001nhak5eLjQZ73yh",
           "time": {
@@ -104,7 +104,7 @@
         "id": "msg_0c6aff3bb001FrIJNEsXVOBO4l",
         "sessionID": "ses_f39500ddbffex31TBu61Fr1xBz",
         "role": "system",
-        "_v2": {
+        "_native": {
           "id": "msg_0c6aff3bb001FrIJNEsXVOBO4l",
           "time": {
             "created": 1790039815099
@@ -197,7 +197,7 @@
           "completed": 1790039818521,
           "streamed": 1790039818489
         },
-        "_v2": {
+        "_native": {
           "snapshot": {
             "end": "c9da65e84de70a87373bc0cf869dd39198d8c59d",
             "start": "c9da65e84de70a87373bc0cf869dd39198d8c59d",
@@ -287,7 +287,7 @@
         "type": "idle",
         "sessionID": "ses_f39500ddbffex31TBu61Fr1xBz",
         "role": "system",
-        "_v2": {
+        "_native": {
           "id": "msg_0c6b0011c0018HLAtg1dPV3Anp",
           "time": {
             "created": 1790039818524
