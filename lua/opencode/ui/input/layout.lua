@@ -167,6 +167,14 @@ function M.resize(state)
 		position = { row = current_layout.row - vertical_shift, col = current_layout.col },
 		size = { width = current_layout.content_width, height = new_height },
 	})
+	if new_height == cfg.max_height then
+		-- Growing from one row otherwise leaves the paste's last line at the top.
+		vim.api.nvim_win_call(state.winid, function()
+			local cursor = vim.api.nvim_win_get_cursor(state.winid)
+			vim.cmd("normal! zb")
+			vim.api.nvim_win_set_cursor(state.winid, cursor)
+		end)
+	end
 	M.lock_scroll(state)
 end
 
