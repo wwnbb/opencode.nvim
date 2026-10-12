@@ -42,22 +42,16 @@ function M.collect(session_id)
 			if type(value) == "table" then
 				local input = part.state.input or {}
 				local fallback = input.path or input.filePath or metadata.filePath
-				if vim.islist(value) and fallback then files[fallback] = M.parse(value, fallback)
+				if vim.islist(value) and fallback then files[fallback] = value
 				else
 					for filename, list in pairs(value) do
-						if type(list) == "table" then files[filename] = M.parse(list, filename) end
+						if type(list) == "table" then files[filename] = list end
 					end
 				end
 			end
 		end
 	end
-	local result = {}
-	for _, list in pairs(files) do vim.list_extend(result, list) end
-	table.sort(result, function(a, b)
-		if a.path ~= b.path then return a.path < b.path end
-		return a.line < b.line or (a.line == b.line and a.character < b.character)
-	end)
-	return result
+	return M.parse(files)
 end
 
 function M.local_path(filename, session_id)
@@ -111,7 +105,7 @@ function M.quickfix(items, session_id)
 		if available and not cache[filename] then cache[filename] = vim.fn.readfile(filename) end
 		local line = available and cache[filename][item.line] or ""
 		entries[#entries + 1] = { filename = available and filename or nil, lnum = item.line,
-			col = M.byte_column(line or "", item.character), valid = available and 1 or 0,
+			col = M.byte_column(line, item.character), valid = available and 1 or 0,
 			type = ({ "E", "W", "I", "N" })[item.severity] or "E",
 			text = (available and "" or (item.path .. ": ")) .. item.message }
 	end

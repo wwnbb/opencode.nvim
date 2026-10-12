@@ -113,7 +113,7 @@ end
 ---@param stringify function
 ---@return string
 function M.normalize_text(value, stringify)
-	return M.strip_ansi(stringify(value)):gsub("\r\n", "\n"):gsub("\r", "\n")
+	return (M.strip_ansi(stringify(value)):gsub("\r\n?", "\n"))
 end
 
 ---@param stringify function
@@ -145,7 +145,7 @@ end
 ---@param text string|nil
 ---@return string
 function M.trim_edge_newlines(text)
-	return (text or ""):gsub("^\n+", ""):gsub("\n+$", "")
+	return ((text or ""):gsub("^\n+", ""):gsub("\n+$", ""))
 end
 
 ---@param path string|nil

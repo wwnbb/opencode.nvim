@@ -34,6 +34,8 @@ describe("atomic JSON persistence", function()
 		for _, value in ipairs({ { text = "猫", entries = { 1, 2 } }, false, 42, vim.NIL }) do
 			assert.is_true(json_file.write(path, value))
 			assert.same(value, json_file.read(path))
+			assert.same(value, vim.json.decode(table.concat(vim.fn.readfile(path))))
+			assert.same({ "data.json" }, vim.fn.readdir(directory))
 		end
 		local link = directory .. "/link.json"
 		assert(uv.fs_symlink("data.json", link))
@@ -44,11 +46,20 @@ describe("atomic JSON persistence", function()
 		assert.is_nil(json_file.read(path .. ".missing"))
 	end)
 
-	it("writes complete JSON and leaves no temporary file", function()
-		local value = { text = "Привет", entries = { "one", "two" } }
-		assert.is_true(json_file.write(path, value))
-		assert.same(value, vim.json.decode(table.concat(vim.fn.readfile(path))))
-		assert.same({ "data.json" }, vim.fn.readdir(directory))
+	it("returns the read error and closes the file when reading fails", function()
+		local original_open, closed = io.open, false
+		io.open = function()
+			return {
+				read = function() return nil, "read failure" end,
+				close = function() closed = true; return true end,
+			}
+		end
+		local ok, value, err = pcall(json_file.read, path)
+		io.open = original_open
+		assert.is_true(ok)
+		assert.is_nil(value)
+		assert.equals("read failure", err)
+		assert.is_true(closed)
 	end)
 
 	it("updates the target of a configured symbolic link without replacing the link", function()

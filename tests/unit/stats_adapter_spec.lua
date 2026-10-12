@@ -58,4 +58,30 @@ describe("usage statistics adapter", function()
 		})
 		assert.equals("2026-09-01", empty.end_date)
 	end)
+
+	describe("without a known IANA timezone", function()
+		local uv = vim.uv or vim.loop
+		local original_timezone, original_readlink, original_readfile
+
+		before_each(function()
+			original_timezone, original_readlink, original_readfile = vim.env.TZ, uv.fs_readlink, vim.fn.readfile
+			vim.env.TZ = "UTC+3"
+			uv.fs_readlink = function() return nil end
+			vim.fn.readfile = function() error("No timezone file") end
+		end)
+
+		after_each(function()
+			vim.env.TZ, uv.fs_readlink, vim.fn.readfile = original_timezone, original_readlink, original_readfile
+		end)
+
+		it("uses UTC for the query and both range dates", function()
+			local now = os.time({ year = 2026, month = 6, day = 1, hour = 12 })
+			local query = stats.query(now)
+			assert.equals("UTC", query.timezone)
+			assert.equals(1767225600000, query.from)
+			local view = stats.from_api({ range = { from = 0, to = 86400000 }, tokens = {}, activity = {} })
+			assert.equals("1970-01-01", view.start_date)
+			assert.equals("1970-01-01", view.end_date)
+		end)
+	end)
 end)

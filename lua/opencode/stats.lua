@@ -38,12 +38,11 @@ function M.query(now)
 	local zone = local_timezone()
 	local from = zone and os.time({ year = year, month = 1, day = 1, hour = 0, min = 0, sec = 0 })
 		or utc_year_start(year)
-	local query = {
+	return {
 		from = from * 1000,
 		tools = "none",
 		timezone = zone or "UTC",
 	}
-	return query
 end
 
 local function nonnegative(value)
@@ -52,10 +51,9 @@ local function nonnegative(value)
 	return math.max(0, number)
 end
 
-local function date_from_ms(value)
+local function date_from_ms(value, format)
 	local ms = tonumber(value)
 	if not ms then return nil end
-	local format = local_timezone() and "%Y-%m-%d" or "!%Y-%m-%d"
 	local ok, date = pcall(os.date, format, math.floor(ms / 1000))
 	return ok and date or nil
 end
@@ -84,6 +82,7 @@ function M.from_api(data)
 	end
 	local range_start, range_end = tonumber(data.range.from), tonumber(data.range.to)
 	if range_end then range_end = math.max(range_start or range_end, range_end - 1) end
+	local date_format = local_timezone() and "%Y-%m-%d" or "!%Y-%m-%d"
 
 	return {
 		total_tokens = total,
@@ -91,8 +90,8 @@ function M.from_api(data)
 		active_days = nonnegative(data.activeDays),
 		best_streak = nonnegative(data.streak),
 		daily = daily,
-		start_date = date_from_ms(data.range.from),
-		end_date = date_from_ms(range_end),
+		start_date = date_from_ms(data.range.from, date_format),
+		end_date = date_from_ms(range_end, date_format),
 	}
 end
 

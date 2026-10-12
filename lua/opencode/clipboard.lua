@@ -47,12 +47,6 @@ end
 
 ---@param value string
 ---@return string
-local function trim(value)
-	return vim.trim(value or "")
-end
-
----@param value string
----@return string
 local function applescript_string(value)
 	return (value:gsub("\\", "\\\\"):gsub('"', '\\"'))
 end
@@ -123,7 +117,7 @@ local function read_file_base64(filepath)
 	return encoded, nil
 end
 
----@return table|nil
+---@return string|nil
 local function read_macos_image()
 	if vim.fn.executable("osascript") ~= 1 then
 		return nil
@@ -156,14 +150,10 @@ local function read_macos_image()
 		return nil
 	end
 
-	return {
-		data = data,
-		mime = "image/png",
-		filename = "clipboard.png",
-	}
+	return data
 end
 
----@return table|nil
+---@return string|nil
 local function read_windows_image()
 	local exe = nil
 	for _, candidate in ipairs({ "powershell.exe", "powershell", "pwsh" }) do
@@ -187,20 +177,16 @@ local function read_windows_image()
 	}, " ")
 
 	local ok, output = run({ exe, "-NonInteractive", "-NoProfile", "-Command", script })
-	local data = ok and trim(output) or ""
+	local data = ok and vim.trim(output or "") or ""
 	if data == "" then
 		return nil
 	end
 
-	return {
-		data = data,
-		mime = "image/png",
-		filename = "clipboard.png",
-	}
+	return data
 end
 
 ---@param command string[]
----@return table|nil
+---@return string|nil
 local function read_command_image(command)
 	local ok, output = run(command)
 	if not ok or type(output) ~= "string" or output == "" then
@@ -212,14 +198,10 @@ local function read_command_image(command)
 		return nil
 	end
 
-	return {
-		data = data,
-		mime = "image/png",
-		filename = "clipboard.png",
-	}
+	return data
 end
 
----@return table|nil
+---@return string|nil
 local function read_linux_image()
 	if vim.fn.executable("wl-paste") == 1 then
 		local content = read_command_image({ "wl-paste", "-t", "image/png" })
@@ -260,7 +242,7 @@ end
 ---@param text string
 ---@return string|nil
 local function path_from_text(text)
-	local raw = trim(text):gsub("^['\"]+", ""):gsub("['\"]+$", "")
+	local raw = vim.trim(text or ""):gsub("^['\"]+", ""):gsub("['\"]+$", "")
 	if raw == "" or raw:find("\n", 1, true) or raw:find("%z") then
 		return nil
 	end
@@ -338,15 +320,14 @@ function M.read()
 	end
 
 	if image then
-		return image
+		return {
+			data = image,
+			mime = "image/png",
+			filename = "clipboard.png",
+		}
 	end
 
-	local text = read_text()
-	if text then
-		return text
-	end
-
-	return nil
+	return read_text()
 end
 
 return M

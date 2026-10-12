@@ -33,6 +33,16 @@ describe("read-only VCS patch projection", function()
 		assert.equals("\\ No newline at end of file", context[3].before)
 	end)
 
+	it("keeps one-sided no-newline markers after context on their original side", function()
+		local marker = "\\ No newline at end of file"
+		local before = assert(vcs.project("@@ -1,2 +1,2 @@\n same\n-old\n" .. marker .. "\n+new\n"))
+		assert.equals(4, #before)
+		assert.same({ before = marker, after = "", kind = "meta" }, before[4])
+		local after = assert(vcs.project("@@ -1,2 +1,2 @@\n same\n-old\n+new\n" .. marker .. "\n"))
+		assert.equals(4, #after)
+		assert.same({ before = "", after = marker, kind = "meta" }, after[4])
+	end)
+
 	it("rejects truncated, overflowing, malformed, and combined hunks", function()
 		for _, text in ipairs({ "@@ -1,2 +1 @@\n-old\n+new", "@@ -1 +1 @@\n-old\n+new\n+overflow",
 			"@@ -1 +1 @@\n?invalid", "@@ -1 +1 @@\n-old\n@@ -5 +5 @@\n-x\n+y", "@@ -x +1 @@", "@@@ -1 -1 +1 @@@" }) do

@@ -34,6 +34,15 @@ describe("shared text helpers", function()
 		assert.equals(esc .. "]0;unfinished", text.strip_ansi(esc .. "]0;unfinished"))
 	end)
 
+	it("normalizes line endings and trims edge newlines with one string result", function()
+		assert.same({ " a\nb\nc\n\nd\n\n" }, { text.normalize_text("\27[31m a\r\nb\rc\n\rd\r\r\n\27[0m", tostring) })
+		assert.same({ "plain" }, { text.normalize_text("plain", tostring) })
+		assert.same({ "" }, { text.normalize_text("", tostring) })
+		assert.same({ " a\n\nb " }, { text.trim_edge_newlines("\n\n a\n\nb \n\n") })
+		assert.same({ "plain" }, { text.trim_edge_newlines("plain") })
+		assert.same({ "" }, { text.trim_edge_newlines(nil) })
+	end)
+
 	it("counts changes across diff files and accepts missing output", function()
 		local diff = "--- a/file\n+++ b/file\n@@ -1,2 +1,2 @@\n-old\n+new\n same\n"
 			.. "--- /dev/null\n+++ b/new\n@@ -0,0 +1 @@\n+created"
@@ -41,6 +50,10 @@ describe("shared text helpers", function()
 		assert.same({ 0, 0 }, { text.diff_stats(nil) })
 		assert.same({ 0, 0 }, { text.diff_stats(42) })
 		assert.same({ 0, 0 }, { text.diff_stats("") })
+		local header_like = "--- a/file\n+++ b/file\n@@ -1 +1 @@\n--- old content\n+++ new content\n"
+			.. "--- /dev/null\n+++ b/new\n@@ -0,0 +1,2 @@\n+++ second\n+tail\n"
+		assert.same({ 3, 1 }, { text.diff_stats(header_like) })
+		assert.same({ 1, 1 }, { text.diff_stats("-old\n+new") })
 	end)
 
 	it("uses the same cell offsets for multiline native mention round trips", function()
@@ -50,10 +63,4 @@ describe("shared text helpers", function()
 		assert.equals(1, text.display_cells("é"))
 	end)
 
-	it("counts header-like content inside hunks without counting later file headers", function()
-		local diff = "--- a/file\n+++ b/file\n@@ -1 +1 @@\n--- old content\n+++ new content\n"
-			.. "--- /dev/null\n+++ b/new\n@@ -0,0 +1,2 @@\n+++ second\n+tail\n"
-		assert.same({ 3, 1 }, { text.diff_stats(diff) })
-		assert.same({ 1, 1 }, { text.diff_stats("-old\n+new") })
-	end)
 end)

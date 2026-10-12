@@ -61,7 +61,7 @@ describe("clipboard command images", function()
 	before_each(function()
 		directory = vim.fn.tempname()
 		vim.fn.mkdir(directory, "p")
-		saved = { path = vim.env.PATH, uname = uv.os_uname, getreg = vim.fn.getreg, system = vim.system }
+		saved = { path = vim.env.PATH, uname = uv.os_uname, getreg = vim.fn.getreg, system = vim.system, tempname = vim.fn.tempname }
 		vim.env.PATH = directory
 		uv.os_uname = function() return { sysname = "Linux", release = "test" } end
 		vim.fn.getreg = function() return "text fallback" end
@@ -69,6 +69,7 @@ describe("clipboard command images", function()
 
 	after_each(function()
 		vim.env.PATH, uv.os_uname, vim.fn.getreg, vim.system = saved.path, saved.uname, saved.getreg, saved.system
+		vim.fn.tempname = saved.tempname
 		vim.fn.delete(directory, "rf")
 	end)
 
@@ -82,11 +83,47 @@ describe("clipboard command images", function()
 		end)
 	end
 
+	it("returns PNG content on Windows and WSL and falls back when PowerShell fails", function()
+		executable("powershell.exe", "exit 1")
+		local result = { code = 0, stdout = " \r\n" .. vim.base64.encode(bytes) .. "\r\n" }
+		vim.system = function(command)
+			assert.equals("powershell.exe", command[1])
+			return { wait = function() return result end }
+		end
+		for _, uname in ipairs({ { sysname = "Windows_NT" }, { sysname = "Linux", release = "microsoft-WSL2" } }) do
+			uv.os_uname = function() return uname end
+			result.code = 0
+			assert.same({ data = vim.base64.encode(bytes), mime = "image/png", filename = "clipboard.png" }, clipboard.read())
+			result.code = 1
+			assert.same({ data = "text fallback", mime = "text/plain" }, clipboard.read())
+		end
+	end)
+
+	it("returns macOS PNG content and removes temporary files after success or failure", function()
+		executable("osascript", "exit 1")
+		uv.os_uname = function() return { sysname = "Darwin" } end
+		local tmpfile, code = directory .. "/clipboard.png", 0
+		vim.fn.tempname = function() return directory .. "/clipboard" end
+		vim.system = function(command)
+			assert.equals("osascript", command[1])
+			vim.fn.writefile({ "image bytes" }, tmpfile, "b")
+			return { wait = function() return { code = code, stdout = "" } end }
+		end
+		assert.same({ data = vim.base64.encode("image bytes"), mime = "image/png", filename = "clipboard.png" }, clipboard.read())
+		assert.is_nil(uv.fs_stat(tmpfile))
+		code = 1
+		assert.same({ data = "text fallback", mime = "text/plain" }, clipboard.read())
+		assert.is_nil(uv.fs_stat(tmpfile))
+	end)
+
 	it("falls back to text if the image command fails or cannot spawn", function()
 		executable("wl-paste", "exit 1")
 		assert.equals("text/plain", clipboard.read().mime)
 		vim.system = function() error("Executable disappeared") end
 		assert.equals("text fallback", clipboard.read().data)
+		vim.fn.getreg = function() return "" end
+		assert.is_nil(clipboard.read())
+		assert.equals(1, select("#", clipboard.read()))
 	end)
 end)
 
