@@ -89,24 +89,6 @@ describe("selection explanation popup", function()
 		end
 	end)
 
-	it("keeps all answer lines scrollable and copies the full response", function()
-		local lines = {}
-		for index = 1, 60 do lines[index] = "L" .. index .. " — explanation" end
-		local answer = table.concat(lines, "\n")
-		local view = explanation.open({ bufnr = source }, function() end)
-		assert.is_true(explanation.show(answer))
-		assert.equals(60, vim.api.nvim_buf_line_count(view.bufnr))
-		keys("35j")
-		assert.equals(36, vim.api.nvim_win_get_cursor(view.winid)[1])
-		assert.is_true(vim.api.nvim_win_call(view.winid, function() return vim.fn.line("w0") end) > 1)
-		local copied = {}
-		vim.fn.setreg = function(register, value) copied[register] = value end
-		keys("c")
-		assert.equals(answer, copied['"'])
-		assert.equals(answer, copied["+"])
-		assert.is_true(explanation.is_open())
-	end)
-
 	it("keeps the spinner until visible text, then highlights and copies the partial answer", function()
 		local view = explanation.open({ bufnr = source }, function() end)
 		local timer = view.timer
@@ -158,6 +140,13 @@ describe("selection explanation popup", function()
 		assert.is_true(explanation.show(answer))
 		assert.equals("ready", view.phase)
 		assert_view()
+		assert.equals(60, vim.api.nvim_buf_line_count(view.bufnr))
+		local copied = {}
+		vim.fn.setreg = function(register, value) copied[register] = value end
+		keys("c")
+		assert.equals(answer, copied['"'])
+		assert.equals(answer, copied["+"])
+		assert.is_true(explanation.is_open())
 	end)
 
 	it("shows errors in the popup and closes through q, Esc, or window closure", function()

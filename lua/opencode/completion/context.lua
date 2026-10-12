@@ -33,9 +33,9 @@ function M.capture()
 	local line = vim.api.nvim_buf_get_lines(bufnr, cursor[1] - 1, cursor[1], false)[1] or ""
 	local name = vim.api.nvim_buf_get_name(bufnr)
 	local path = name ~= "" and normalize(name) or ""
-	local directory = path ~= "" and vim.fs.dirname(path) or normalize(vim.fn.getcwd())
-	local root = vim.fs.root(directory, ".git")
 	local cwd = normalize(vim.fn.getcwd())
+	local directory = path ~= "" and vim.fs.dirname(path) or cwd
+	local root = vim.fs.root(directory, ".git")
 	root = root and normalize(root) or (within(directory, cwd) and cwd or directory)
 	return {
 		bufnr = bufnr, winid = winid, row = cursor[1] - 1, col = cursor[2],
@@ -79,7 +79,7 @@ local function candidates(snapshot, reference)
 				if within(path, snapshot.root) and path ~= snapshot.path then
 					local basename = vim.fs.basename(path)
 					local stem = vim.fn.fnamemodify(basename, ":r")
-					local referenced = find(relative(path, snapshot.root), true)
+					local referenced = path == snapshot.root
 						or find(basename, true)
 						or (#stem > 1 and find("%f[%w_]" .. vim.pesc(stem) .. "%f[^%w_]", false))
 					local sibling = vim.fs.dirname(path) == vim.fs.dirname(snapshot.path)
@@ -124,9 +124,9 @@ function M.add_surroundings(snapshot, settings, data, encode_prompt, first_row, 
 	end
 	local header_end = math.min(settings.header_lines, math.max(0, first_row - #data.before))
 	for _, line in ipairs(lines(bufnr, 0, header_end)) do if not add(data.header, line) then break end end
-	local reference = table.concat(data.header, "\n") .. "\n" .. table.concat(data.before, "\n")
-		.. "\n" .. focus .. "\n" .. table.concat(data.after, "\n")
 	if settings.max_related_buffers > 0 and settings.related_lines > 0 then
+		local reference = table.concat(data.header, "\n") .. "\n" .. table.concat(data.before, "\n")
+			.. "\n" .. focus .. "\n" .. table.concat(data.after, "\n")
 		for _, candidate in ipairs(candidates(snapshot, reference)) do
 			if #data.related >= settings.max_related_buffers then break end
 			local n = vim.api.nvim_buf_line_count(candidate.bufnr)
@@ -146,7 +146,6 @@ end
 
 M.relative = relative
 
---- Build the complete prompt within the configured UTF-8 byte budget.
 function M.build(snapshot, opts, previous)
 	local settings = opts.context
 	local bufnr = snapshot.bufnr

@@ -159,7 +159,7 @@ describe("completion model profiles", function()
 	end)
 
 	it("leaves invalid environment overlays untouched and reports isolated errors", function()
-		for _, source in ipairs({ "{ /* unfinished", "not json", "[]", '{"providers":[]}', '{"providers":false}', '{"providers":{"openai":{"models":{"gpt-5.2":{"variants":{}}}}}}' }) do
+		for _, source in ipairs({ "{ /* unfinished", "not json", "[]", '{"providers":[]}', '{"providers":false}', '{"providers":{"openai":{"models":{"gpt-5.2":{"variants":{}}}}}}', '{"providers":{"openai":{"models":{"gpt-5.2":{"variants":false}}}}}' }) do
 			local overlay, snapshot, err = profile.prepare(config(), source)
 			assert.equals(source, overlay)
 			assert.is_nil(snapshot)

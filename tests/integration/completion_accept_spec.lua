@@ -69,6 +69,34 @@ describe("editor completion acceptance with real input", function()
 		assert.equals("43", client.lua("return marks(true)[1][4].virt_text[1][1]"))
 	end)
 
+	it("keeps incomplete streamed fences pending until only the code can be accepted", function()
+		client.lua([[
+			_G.fallbacks = 0
+			_G.original_tab = function() fallbacks = fallbacks + 1; return '' end
+			vim.keymap.set('i', '<Tab>', original_tab, { buffer = 0, expr = true })
+		]])
+		client.feed("ivalue = ")
+		client.wait("vim.api.nvim_get_current_line() == 'value = '")
+		client.feed("<C-l>")
+		client.wait("#requests == 1")
+		for index, text in ipairs({ "`", "``", "```l", "```lua", "```lua\n42" }) do
+			client.update(1, text)
+			assert.is_false(client.lua("return visible()"))
+			assert.is_true(client.lua("return vim.fn.maparg('<Tab>', 'i', false, true).callback == original_tab"))
+			client.feed("<Tab>")
+			client.wait("fallbacks == " .. index)
+			assert.same({ "value = " }, client.lines())
+		end
+		client.update(1, "```lua\n42\n```")
+		client.wait("visible() and marks(true)[1][4].virt_text[1][1] == '42'")
+		client.feed("<Tab>")
+		client.wait("not visible() and vim.api.nvim_get_current_line() == 'value = 42'")
+		assert.same({ "value = 42" }, client.lines())
+		assert.is_true(client.lua("return requests[1].cancelled"))
+		assert.is_true(client.lua("return vim.fn.maparg('<Tab>', 'i', false, true).callback == original_tab"))
+		assert.same({}, client.lua("return notices"))
+	end)
+
 	it("accepts streamed text with Tab and ignores updates and a final response queued during acceptance", function()
 		client.feed("ivalue = ")
 		client.wait("vim.api.nvim_get_current_line() == 'value = '")
@@ -96,30 +124,13 @@ describe("editor completion acceptance with real input", function()
 		assert.same({}, client.lua("return notices"))
 	end)
 
-	it("previews and accepts an insertion-only Rust identifier tail", function()
-		local prefix, insertion = '        "-" => number', "1_int - number2_int,"
-		client.feed("i" .. prefix)
-		client.wait("vim.api.nvim_get_mode().mode == 'i' and vim.api.nvim_get_current_line() == " .. vim.inspect(prefix))
-		local changedtick = client.lua("return vim.api.nvim_buf_get_changedtick(0)")
-		client.feed("<C-l>")
-		client.wait("#requests == 1")
-		client.respond(1, insertion)
-		client.wait("visible()")
-		assert.equals(insertion, client.lua("return marks(true)[1][4].virt_text[1][1]"))
-		assert.same({ prefix }, client.lines())
-		assert.same({ 1, #prefix }, client.lua("return vim.api.nvim_win_get_cursor(0)"))
-		assert.equals(changedtick, client.lua("return vim.api.nvim_buf_get_changedtick(0)"))
-		client.feed("<Tab>")
-		client.wait("not visible()")
-		assert.same({ prefix .. insertion }, client.lines())
-		assert.same({ 1, #(prefix .. insertion) }, client.lua("return vim.api.nvim_win_get_cursor(0)"))
-	end)
 
-	it("streams and accepts insertions on blank, space-indented, and tab-indented lines", function()
+	it("streams and accepts identifier tails and insertions on blank or indented lines", function()
 		client.feed("i")
 		client.wait("vim.api.nvim_get_mode().mode == 'i'")
 		for index, case in ipairs({
 			{ "", "value = 1" },
+			{ '        "-" => number', "1_int - number2_int," },
 			{ "    ", "return value" },
 			{ "\t", "if ready:\n\t\tpass" },
 			{ "", "if ready:\n    pass" },

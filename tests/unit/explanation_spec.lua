@@ -12,7 +12,6 @@ describe("selection explanation request lifecycle", function()
 	local function source_snapshot()
 		return {
 			bufnr = source,
-			winid = vim.api.nvim_get_current_win(),
 			changedtick = vim.api.nvim_buf_get_changedtick(source),
 			path = vim.api.nvim_buf_get_name(source),
 			root = "/tmp/opencode-explanation-controller",
@@ -113,9 +112,19 @@ describe("selection explanation request lifecycle", function()
 		assert.is_true(requests[1].opts.timeout > 0)
 		assert.is_truthy(requests[1].prompt:find("local value = 1", 1, true))
 		assert.same({}, shown)
-		local answer = "L1–2 — Defines and returns a value.\n\nNo side effects."
-		requests[1].callback(nil, answer)
-		assert.same({ answer }, shown)
+		local answers = {
+			"L1–2 — Defines and returns a value.\n\nNo side effects.",
+			"L1 — Defines a value.",
+			"This selection defines and returns a value.",
+			"L1–3 — Explains the whole function.",
+		}
+		for index, answer in ipairs(answers) do
+			if index > 1 then assert.is_true(controller.explain_selection()) end
+			requests[index].callback(nil, answer)
+			assert.equals(answer, shown[index])
+			assert.is_true(views[index].open)
+		end
+		assert.same(answers, shown)
 		assert.same({}, errors)
 		assert.same({ "local value = 1", "return value", "after()" },
 			vim.api.nvim_buf_get_lines(source, 0, -1, false))
@@ -190,6 +199,48 @@ describe("selection explanation request lifecycle", function()
 		assert.is_true(controller.explain_selection())
 	end)
 
+	it("dismisses a request cancelled by the client and ignores later updates", function()
+		config.explanation.timeout_ms = 0
+		controller.setup(config.explanation)
+		assert.is_true(controller.explain_selection())
+		local request = requests[1]
+		request.callback({ cancelled = true, message = "Request cancelled" })
+		assert.is_false(views[1].open)
+		assert.is_false(controller.dismiss())
+		request.opts.on_update("<answer>\nlate update")
+		request.callback(nil, "late answer")
+		assert.same({}, shown)
+		assert.same({}, errors)
+	end)
+
+	it("keeps a replacement request when the old request replies late", function()
+		assert.is_true(controller.explain_selection())
+		local first = requests[1]
+		assert.is_true(controller.explain_selection())
+		assert.is_true(first.cancelled)
+		first.opts.on_update("<answer>\nold update")
+		first.callback(nil, "old answer")
+		assert.same({}, shown)
+		assert.is_true(views[2].open)
+		requests[2].callback(nil, "new answer")
+		assert.same({ "new answer" }, shown)
+		assert.same({}, errors)
+	end)
+
+	it("does not retain a handle after a synchronous response completes", function()
+		local generate = package.loaded["opencode.client"].generate_explanation
+		package.loaded["opencode.client"].generate_explanation = function(prompt, model, callback, opts)
+			local handle = generate(prompt, model, callback, opts)
+			callback(nil, "Immediate answer")
+			return handle
+		end
+		assert.is_true(controller.explain_selection())
+		assert.same({ "Immediate answer" }, shown)
+		assert.equals("ready", views[1].snapshot.phase)
+		assert.is_true(controller.dismiss())
+		assert.is_nil(requests[1].cancelled)
+	end)
+
 	it("ignores a late answer after the source changes and reports the stale selection", function()
 		controller.explain_selection()
 		vim.api.nvim_buf_set_lines(source, 0, 1, false, { "local value = 2" })
@@ -210,30 +261,6 @@ describe("selection explanation request lifecycle", function()
 		assert.is_true(requests[1].cancelled)
 		requests[1].callback(nil, "L1–2 — too late")
 		assert.same({}, shown)
-	end)
-
-	it("shows an answer with incomplete line ranges without changing the source", function()
-		controller.explain_selection()
-		local answer = "L1 — Defines a value."
-		requests[1].callback(nil, answer)
-		assert.same({ answer }, shown)
-		assert.same({}, errors)
-		assert.is_true(views[1].open)
-		assert.same({ "local value = 1", "return value", "after()" },
-			vim.api.nvim_buf_get_lines(source, 0, -1, false))
-	end)
-
-	it("shows arbitrary prose and out-of-range headings without validating them", function()
-		controller.explain_selection()
-		local prose = "This selection defines and returns a value."
-		requests[1].callback(nil, prose)
-		assert.same({ prose }, shown)
-		assert.same({}, errors)
-		controller.explain_selection()
-		local broad = "L1–3 — Explains the whole function."
-		requests[2].callback(nil, broad)
-		assert.same({ prose, broad }, shown)
-		assert.same({}, errors)
 	end)
 
 	it("shows a budget error without sending a request", function()

@@ -154,23 +154,16 @@ describe("selection explanation context", function()
 			"opencode.nvim: explanation.prompt must be a non-empty string")
 	end)
 
-	it("preserves source line numbers for every blockwise selection row", function()
-		local bufnr = buffer(root .. "/block.lua", { "abc", "", "def", "ghi" })
-		local selected = snapshot(bufnr, 1, { "a", "", "d", "g" }, "\022")
-		local data = decoded(context.build(selected, config.merge().explanation))
-		assert.equals("block", data.selection_mode)
-		assert.same({
-			{ line = 1, text = "a" }, { line = 2, text = "" },
-			{ line = 3, text = "d" }, { line = 4, text = "g" },
-		}, data.selection)
+	it("preserves source line numbers and empty or padded block rows", function()
+		local bufnr = buffer(root .. "/block.lua", { "abcdef", "", "ghijkl" })
+		for _, middle in ipairs({ "", "   " }) do
+			local selected = snapshot(bufnr, 1, { "bcd", middle, "hij" }, "\022")
+			local data = decoded(context.build(selected, config.merge().explanation))
+			assert.equals("block", data.selection_mode)
+			assert.same({
+				{ line = 1, text = "bcd" }, { line = 2, text = middle }, { line = 3, text = "hij" },
+			}, data.selection)
+		end
 	end)
 
-	it("preserves padding-only block rows in the prompt context", function()
-		local bufnr = buffer(root .. "/ragged.lua", { "abcdef", "", "ghijkl" })
-		local selected = snapshot(bufnr, 1, { "bcd", "   ", "hij" }, "\022")
-		assert.same({
-			{ line = 1, text = "bcd" }, { line = 2, text = "   " },
-			{ line = 3, text = "hij" },
-		}, decoded(context.build(selected, config.merge().explanation)).selection)
-	end)
 end)

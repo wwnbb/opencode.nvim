@@ -40,6 +40,22 @@ describe("automatic editor context in the composer", function()
 		input.close(false); open("again")
 		assert.is_nil(input.get_editor_context())
 	end)
+	it("collects buffer context without filesystem searches or duplicate payload encoding", function()
+		local root, encode = vim.fs.root, vim.json.encode
+		local searches, payload_encodes = 0, 0
+		vim.fs.root = function(...) searches = searches + 1; return root(...) end
+		vim.json.encode = function(value, ...)
+			if type(value) == "table" and value.text then payload_encodes = payload_encodes + 1 end
+			return encode(value, ...)
+		end
+		local ok, part = pcall(context.pending, "s")
+		vim.fs.root, vim.json.encode = root, encode
+		assert.is_true(ok, part)
+		assert.is_not_nil(part)
+		assert.equals(0, searches)
+		assert.equals(2, payload_encodes)
+		assert.is_truthy(part.text:find("print(unsaved)", 1, true))
+	end)
 	it("dismisses the snapshot, refreshes it explicitly and persists an opt-out", function()
 		open("draft"); input.dismiss_editor_context()
 		assert.equals("dismissed", context.status("s")); assert.is_nil(input.get_editor_context())

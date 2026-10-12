@@ -4,7 +4,7 @@ local M = {}
 -- Only explicit catalog rejections are safe to retry before generation starts.
 function M.catalog_starting(err, model)
 	if type(err) ~= "table" or err.status ~= 400 or err.code ~= "InvalidRequestError" then return false end
-	local name = model.providerID .. "/" .. (model.id or model.modelID)
+	local name = model.providerID .. "/" .. model.id
 	return err.message == "Model unavailable: " .. name
 		or (model.variant ~= nil and err.message == "Variant unavailable for " .. name .. ": " .. model.variant)
 end
@@ -180,7 +180,8 @@ function M.prepare(config, existing, kind)
 		local provider = ensure_object(providers, model.providerID)
 		local models = ensure_object(provider, "models")
 		local configured_model = ensure_object(models, model.id)
-		local variants = configured_model.variants or {}
+		local variants = configured_model.variants
+		if variants == nil then variants = {} end
 		if not vim.islist(variants) then error("Expected variants array") end
 		local digest = fingerprint(config, model)
 		local prefix = private_prefixes[feature]
@@ -196,7 +197,7 @@ function M.prepare(config, existing, kind)
 		end
 		local variant = { id = name }
 		for key, value in pairs(config.options) do
-			variant[key] = next(value) and vim.deepcopy(value) or vim.empty_dict()
+			variant[key] = next(value) and value or vim.empty_dict()
 		end
 		variants[#variants + 1] = variant
 		configured_model.variants = variants
