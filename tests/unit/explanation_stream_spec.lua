@@ -225,6 +225,19 @@ describe("native explanation streaming", function()
 		end
 	end)
 
+	it("does not report progress when on_update cancels the request", function()
+		local request
+		request = start_completion({
+			on_update = function() request.cancel() end,
+			on_progress = function(tokens) progress[#progress + 1] = tokens end,
+		})
+		local id = create()
+		emit("session.text.delta", { sessionID = id, assistantMessageID = "msg_1", ordinal = 0, delta = "code" })
+		assert.is_false(request.is_active())
+		assert.is_true(finished[1].err.cancelled)
+		assert.same({}, progress)
+	end)
+
 	it("cancels before creation resolves, then deletes the late session without sending a prompt", function()
 		local request = start()
 		assert.is_true(request.cancel())
