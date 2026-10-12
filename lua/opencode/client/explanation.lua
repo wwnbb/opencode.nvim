@@ -20,14 +20,13 @@ function M.generate(prompt, model, callback, opts, endpoint_config)
 	local bytes, random_err = (vim.uv or vim.loop).random(16)
 	if not bytes then schedule(callback, { message = "Could not create " .. title:lower() .. " ID: " .. tostring(random_err) }); return end
 	local id = PREFIX .. bytes:gsub(".", function(byte) return string.format("%02x", byte:byte()) end)
-	local done, creating, deleting, prompt_request = false, true, false, nil
+	local done, creating, prompt_request = false, true, nil
 	local blocks, order, characters = {}, {}, 0
 	local request = {}
 	local event, disconnected
 	local function same_endpoint() return endpoint_config().generation == endpoint.generation end
 	local function cleanup()
-		if creating or deleting then return end
-		deleting = true
+		if creating then return end
 		if not same_endpoint() then
 			vim.notify("OpenCode " .. title:lower() .. ": server changed before temporary session cleanup (" .. id .. ")", vim.log.levels.WARN)
 			return
@@ -88,7 +87,7 @@ function M.generate(prompt, model, callback, opts, endpoint_config)
 			block.ended = ended
 			characters = characters + block.characters
 			if not reasoning and type(opts.on_update) == "function" then opts.on_update(text()) end
-			if type(opts.on_progress) == "function" then
+			if not done and type(opts.on_progress) == "function" then
 				-- shortcut: live usage is unavailable; replace the character estimate when the API exposes it.
 				opts.on_progress(math.ceil(characters / 4))
 			end
@@ -115,8 +114,8 @@ function M.generate(prompt, model, callback, opts, endpoint_config)
 		permissions = { { action = "*", resource = "*", effect = "deny" } },
 	}, timeout = opts.timeout }, function(err, session)
 		creating = false
-		if err then if done then cleanup() else finish(err) end; return end
 		if done then cleanup(); return end
+		if err then finish(err); return end
 		if not same_endpoint() then finish({ code = "stale_connection", message = "Server connection changed" }); return end
 		if not session or session.id ~= id then finish({ code = "incompatible_response", message = "Unexpected " .. title:lower() .. " session" }); return end
 		local handle = v2.request("prompt", { path = { sessionID = id }, body = { text = prompt }, timeout = opts.timeout }, function(prompt_err)
