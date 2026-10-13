@@ -37,6 +37,7 @@ function M.clear_transient(opts)
 	opts = opts or {}
 	call("opencode.ui.terminals", "detach_all")
 	call("opencode.editor_context", "clear")
+	call("opencode.context", "clear")
 	call("opencode.completion", "dismiss")
 	call("opencode.explanation", "dismiss")
 

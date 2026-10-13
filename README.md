@@ -130,6 +130,50 @@ buffer. The composer shows pending/sent/dismissed status; `/context` previews,
 dismisses or refreshes the snapshot. Disable it with `/settings` or
 `input.editor_context = false`.
 
+Context placeholders let you choose what to include in an ordinary chat prompt
+or `require("opencode").send()` call. Type `@` to select one before the agent
+suggestions; selection inserts a token without sending or attaching an agent.
+Tokens stay in the draft and input history, and expand only when sending:
+
+| Placeholder | Context |
+|---|---|
+| `@this` | Explicit range, otherwise the active Visual selection, otherwise the cursor position and current line. Characterwise, linewise, and blockwise selections are supported; old Visual marks are ignored. |
+| `@buffer` | Source buffer contents, including unsaved edits. |
+| `@buffers` | Loaded, listed ordinary buffers, including unnamed buffers and unsaved edits; source first, then buffer-number order. |
+| `@diagnostics` | Source-buffer diagnostics; an explicit range or selection limits results to diagnostics intersecting its lines. |
+| `@marks` | Global marks with their name, file, line, and column; line text is included only for loaded buffers. |
+| `@quickfix` | Current quickfix entries with location, type, and message. |
+| `@visible` | Visible text from all ordinary non-floating windows in the source tab; folded interiors and plugin/utility buffers are omitted. |
+
+The snapshot is captured when the composer opens, before focus or layout
+changes, and stays fixed while editing or refocusing it. Reopening the composer
+captures a new snapshot. A direct `send()` captures at the call, before connecting
+to the server. Snapshots stay in memory and use Neovim data without reading files
+from disk; unnamed buffers are identified by number. Empty lists are marked
+explicitly. A placeholder needing an unavailable source buffer stops submission
+and preserves the draft.
+
+Only standalone tokens expand: email addresses, paths, longer names, and selected
+agent/skill/file attachments are left alone. Write `\@buffer` for literal
+`@buffer`. Expanded text is not scanned for further placeholders. Explicit
+placeholders suppress automatic editor context for that prompt; manually added
+attachments and explicit `opts.context` remain included.
+
+Set `context = { max_bytes = 24576 }` in `setup()` to change the total inserted
+context budget (minimum 1024 bytes). Sources are also collected with this bound.
+Tokens consume the budget in prompt order; large contexts are cut at line
+boundaries with an omission marker. Omission markers add a small amount of text
+outside the source-data budget.
+
+```lua
+require("opencode").send("Explain @this using @diagnostics", {
+  range = { 10, 20 }, -- inclusive, one-based lines in the source buffer
+})
+```
+
+An explicit range must be within the source buffer. Placeholders do not expand
+in slash commands, shell input, question answers, or review fields.
+
 Use the palette's Stash Current Prompt / Restore Latest Stashed Prompt actions,
 or `/stash` to browse several saved prompts. Stashes keep attachments and survive
 restarts. `/queued` searches pending inputs and restores them into a draft after
@@ -389,7 +433,8 @@ variant on that server and set `explanation.variant`.
 # Popup borders
 
 Set `popup.border` in `require("opencode").setup()` to style the outer edge of
-dialogs such as **Switch Session**, help, and `/btw`. The default is `"solid"`.
+dialogs such as **Switch Session**, help, and `/btw`. The default is `"rounded"`,
+as it is for `palette.border` and `chat.float.border`.
 The supported values are `"none"`, `"single"`, `"double"`, `"rounded"`,
 `"solid"`, or a custom Nui border character table. Inner list, search, and
 tab windows do not get their own border. With `"none"`, text normally placed
@@ -400,9 +445,9 @@ require("opencode").setup({
   popup = { border = "rounded" },
   chat = {
     layout = "float",
-    float = { border = "solid" }, -- applies only to the floating chat
+    float = { border = "rounded" }, -- applies only to the floating chat
   },
-  palette = { border = "none" }, -- command palette border is independent
+  palette = { border = "rounded" }, -- command palette border is independent
 })
 ```
 
@@ -522,6 +567,27 @@ python3 tests/runtime/completion_backend.py --cli /path/to/opencode-2.0.11
 
 This checks the real stateless endpoint, model options, cold-catalog startup,
 history isolation, and whether cancellation reaches the mock provider.
+
+Verify context placeholders through the real composer and public `send()` API,
+native prompt/history endpoints, SSE, and the same local model fixture:
+
+```sh
+python3 tests/runtime/context_backend.py --cli /path/to/opencode
+# Optionally retain sanitized request and history evidence:
+python3 tests/runtime/context_backend.py --output /tmp/opencode-context-check
+```
+
+Check an actual external model through OpenCode's anonymous public provider:
+
+```sh
+python3 tests/runtime/context_real_model.py --model opencode/space-bunny-free --output /tmp/opencode-context-live
+```
+
+This sends seven synthetic prompts and requires the model to return the exact
+random markers captured by each placeholder. It checks frozen snapshots, folds,
+native history and SSE. It uses an isolated profile without personal credentials;
+public model availability depends on the provider. This is separate from the
+deterministic test suite.
 
 Check session/location, worktree, VCS, shell/environment, persistent PTY and
 SSE recovery contracts in a disposable profile without provider credentials or

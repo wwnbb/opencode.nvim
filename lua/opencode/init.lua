@@ -394,9 +394,12 @@ function M.focus_input()
 		return
 	end
 
+	local input = require("opencode.ui.input")
+	local snapshot, context_error
+	if not input.is_visible() then snapshot, context_error = input.capture_context() end
 	lifecycle.ensure_connected(function()
 		local chat = require("opencode.ui.chat")
-		chat.focus_input()
+		chat.focus_input(snapshot, context_error)
 	end)
 end
 
@@ -533,7 +536,7 @@ end
 
 --- Send a message to the chat
 ---@param message string Message content
----@param opts? table Additional options
+---@param opts? table Additional options; range = { start_line, end_line } uses inclusive 1-based source lines.
 function M.send(message, opts)
 	if not lifecycle then
 		vim.notify("OpenCode not initialized", vim.log.levels.ERROR)
@@ -541,6 +544,12 @@ function M.send(message, opts)
 	end
 
 	local captured = vim.deepcopy(opts or {})
+	if captured.mode ~= "shell" and type(message) == "string" and not message:match("^%s*/") then
+		local context = require("opencode.context")
+		if not captured._context_snapshot and not captured._context_error and (captured.range ~= nil or context.has(message, captured)) then
+			captured._context_snapshot, captured._context_error = context.capture({ range = captured.range })
+		end
+	end
 	captured.session_id = captured.session_id or state.get_session().id or false
 	captured.directory = captured.directory or state.get_session_directory(captured.session_id) or vim.fn.getcwd()
 	captured._token = require("opencode.session.pending").token(captured.session_id or nil)

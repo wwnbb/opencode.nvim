@@ -45,6 +45,9 @@ M.defaults = {
 	-- Danger mode auto-approves permission requests while enabled.
 	danger_mode = false,
 
+	-- Total byte budget for context placeholders expanded in a prompt.
+	context = { max_bytes = 24576 },
+
 	-- Manually requested inline code completion, independent of chat sessions.
 	completion = {
 		enabled = false,
@@ -221,11 +224,11 @@ M.defaults = {
 		diff_stats_max_untracked_file_size = 1024 * 1024,
 	},
 
-	-- Command Palette (one borderless surface, using the current theme colors)
+	-- Command Palette (one framed surface, using the current theme colors)
 	palette = {
 		width = 60, -- Total panel width, including the horizontal padding
 		height = 20, -- Maximum visible list rows; title/search use 7 additional rows
-		border = "none",
+		border = "rounded",
 		frecency = true,
 		show_keybinds = true,
 		show_icons = false,
@@ -244,7 +247,7 @@ M.defaults = {
 
 	-- Outer border of popup dialogs (separate from chat.float and palette).
 	popup = {
-		border = "solid", -- "none" | "single" | "double" | "rounded" | "solid" | Nui style table
+		border = "rounded", -- "none" | "single" | "double" | "rounded" | "solid" | Nui style table
 	},
 
 	notifications = {
@@ -325,6 +328,11 @@ function M.merge(opts)
 		end
 	end
 	local merged = vim.deepcopy(vim.tbl_deep_extend("force", M.defaults, opts or {}))
+	if type(merged.context) ~= "table" then error("opencode.nvim: context must be a table", 2) end
+	local context_bytes = merged.context.max_bytes
+	if type(context_bytes) ~= "number" or context_bytes < 1024 or context_bytes % 1 ~= 0 then
+		error("opencode.nvim: context.max_bytes must be an integer >= 1024", 2)
+	end
 	local completion = merged.completion
 	validate_editor_feature("completion", completion)
 	if completion.keymaps.trigger and completion.keymaps.accept

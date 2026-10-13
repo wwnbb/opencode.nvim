@@ -19,9 +19,10 @@ local function has_draft()
 	return input.is_visible() or history.get_pending() ~= "" or #history.get_pending_parts() > 0
 end
 
-local function open_draft(draft)
+local function open_draft(draft, context_snapshot, context_error)
 	input.show({ winid = state.winid, float_dims = state.float_dims, text = draft.text, parts = draft.parts,
-		session_bound = true, send_options = draft.options, mode = draft.mode,
+		session_bound = true, allow_context = true, send_options = draft.options, mode = draft.mode,
+		context_snapshot = context_snapshot, context_error = context_error,
 		on_send = function(text, parts, send_options)
 			actions.send(text, vim.tbl_extend("force", draft.options, send_options or {}, { parts = parts }))
 		end,
@@ -56,12 +57,12 @@ end
 
 -- Deferred edits resume through the normal input entry point, never through a
 -- widget key pressed over an unrelated message or empty space.
-function M.resume_edit()
+function M.resume_edit(context_snapshot, context_error)
 	local sid = app_state.get_session().id
 	if has_draft() then return false end
 	local draft = history.take_deferred(sid)
 	if not draft then return false end
-	open_draft(draft)
+	open_draft(draft, context_snapshot, context_error)
 	return true
 end
 

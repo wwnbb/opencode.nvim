@@ -792,10 +792,11 @@ function M.focus()
 	end
 end
 
-function M.focus_input()
+function M.focus_input(context_snapshot, context_error)
 	-- Selecting a skill can focus an input that is already open. Focusing the
 	-- chat window first would trigger the input's WinLeave handler and close it.
 	if input.is_visible() and not get_relevant_question() then return input.focus() end
+	if not context_snapshot and not context_error then context_snapshot, context_error = input.capture_context() end
 	if not state.visible then
 		M.open()
 	end
@@ -810,12 +811,14 @@ function M.focus_input()
 		vim.notify("Answer or cancel the pending question before opening chat input.", vim.log.levels.INFO)
 		return false
 	end
-	if require("opencode.ui.chat.pending_inputs").resume_edit() then return true end
+	if require("opencode.ui.chat.pending_inputs").resume_edit(context_snapshot, context_error) then return true end
 
 	input.show({
 		winid = state.winid,
 		float_dims = state.float_dims,
 		allow_chat_commands = true,
+		context_snapshot = context_snapshot,
+		context_error = context_error,
 		on_send = function(text, parts, draft_options)
 			local actions = require("opencode.actions")
 			if draft_options and draft_options.mode == "shell" then
