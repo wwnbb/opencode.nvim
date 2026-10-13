@@ -299,15 +299,28 @@ local function slash_items(trigger)
 	return items
 end
 
-local function mention_items(trigger)
+local function contexts_enabled(state)
+	return state.allow_context == true and state.mode ~= "shell"
+end
+
+local function mention_items(state, trigger)
 	local items = {}
+	if contexts_enabled(state) then
+		for _, item in ipairs(require("opencode.context").items(trigger.query)) do
+			items[#items + 1] = {
+				kind = "context", name = item.name, label = "@" .. item.name,
+				description = "Context: " .. item.description,
+			}
+		end
+	end
 	for _, agent in ipairs(mentions.filter_agents(sync.get_agents(), trigger.query)) do
 		local name = mentions.agent_name(agent)
 		if name ~= "" then
+			local description = mentions.agent_description(agent)
 			table.insert(items, {
 				kind = "mention",
 				label = "@" .. name,
-				description = mentions.agent_description(agent),
+				description = description ~= "" and ("Agent: " .. description) or "Agent",
 				agent = agent,
 			})
 			if #items >= MAX_ITEMS then
@@ -326,7 +339,7 @@ local function source_for_state(state)
 
 	trigger = mentions.detect_trigger(state)
 	if trigger then
-		return "mention", trigger, mention_items(trigger)
+		return "mention", trigger, mention_items(state, trigger)
 	end
 
 	return nil, nil, {}
@@ -429,7 +442,8 @@ function M.confirm(state)
 		M.close(state)
 		return false
 	end
-	local source = item.kind == "slash" and slash_commands or item.kind == "mention" and mentions
+	local source = item.kind == "slash" and slash_commands
+		or (item.kind == "mention" or item.kind == "context") and mentions
 	local current = source and source.detect_trigger(state)
 	local offered = ac.trigger
 	if not current or not offered or current.query ~= offered.query or current.row ~= (offered.row or 0)
@@ -465,6 +479,17 @@ function M.confirm(state)
 			if ok then selection = { kind = "command", id = command.id, original = original } end
 		else
 			ok = slash_commands.insert_command(state, current, item.command)
+		end
+	elseif item.kind == "context" and contexts_enabled(state) then
+		local context = vim.iter(require("opencode.context").items(current.query)):find(function(candidate)
+			return candidate.name == item.name
+		end)
+		if context then
+			local suffix = current.line:sub(current.end_col + 1, current.end_col + 1):match("%s") and "" or " "
+			local inserted = "@" .. context.name .. suffix
+			vim.api.nvim_buf_set_text(state.bufnr, current.row, current.start_col, current.row, current.end_col, { inserted })
+			vim.api.nvim_win_set_cursor(state.winid, { current.row + 1, current.start_col + #inserted })
+			ok = true
 		end
 	elseif item.kind == "mention" then
 		local name = mentions.agent_name(item.agent)

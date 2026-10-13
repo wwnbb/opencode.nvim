@@ -207,6 +207,11 @@ function M.take_deferred(session_id)
 	return value
 end
 
+function M.peek_deferred(session_id)
+	local current = draft(session_id)
+	return current and current.deferred and vim.deepcopy(current.deferred[1]) or nil
+end
+
 function M.get_pending(session_id)
 	return (draft(session_id) or {}).text or ""
 end

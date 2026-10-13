@@ -82,6 +82,7 @@ local function restore_draft(text, opts)
 		local options = vim.deepcopy(opts)
 		options.parts, options._draft_session_id = nil, nil
 		options._token, options._catalog_ready, options._catalog_retry, options._catalog_deadline = nil, nil, nil, nil
+		options._context_snapshot, options._context_error = nil, nil
 		history.set_pending_options(options, session_id)
 	end
 end
@@ -301,6 +302,14 @@ function M.send(text, opts)
 		end
 		return true
 	end
+	local context = require("opencode.context")
+	local expand_context = type(text) == "string" and not text:match("^%s*/")
+	if expand_context then
+		if not opts._context_snapshot and not opts._context_error and (opts.range ~= nil or context.has(text, opts)) then
+			opts._context_snapshot, opts._context_error = context.capture({ range = opts.range })
+		end
+		if opts._context_error then return fail_before_send(opts._context_error, text, opts) end
+	end
 	local provider_cache = sync().get_location_catalog(directory, "providers")
 	local agent_cache = sync().get_location_catalog(directory, "agents")
 	if not opts._catalog_ready and sync().get_catalog_location() ~= nil and (opts._catalog_retry or catalogs_empty(provider_cache, agent_cache)) then
@@ -323,7 +332,13 @@ function M.send(text, opts)
 	end
 	local selection, selection_err = resolve_selection(opts)
 	if not selection then return fail_before_send(selection_err, text, opts) end
-	local payload, payload_err = requests.prompt(text, opts, ascending_id("msg"))
+	local prepared = { text = text, options = opts }
+	if expand_context then
+		local err
+		prepared, err = context.expand(text, opts, opts._context_snapshot)
+		if not prepared then return fail_before_send(err, text, opts) end
+	end
+	local payload, payload_err = requests.prompt(prepared.text, prepared.options, ascending_id("msg"))
 	if not payload then return fail_before_send(payload_err, text, opts) end
 	if session_id then return submit(session_id, payload, selection, text, opts) end
 	local body = { title = opts.title, location = { directory = directory }, agent = selection.agent, model = selection.model }
@@ -485,6 +500,7 @@ function M.edit_input(session_id, message_id, callback)
 	-- Admission retries belong to the original send attempt. In particular its
 	-- connection token may have expired while the input waited in the inbox.
 	opts._token, opts._catalog_ready, opts._catalog_retry, opts._catalog_deadline = nil, nil, nil, nil
+	opts._context_snapshot, opts._context_error = nil, nil
 	opts.session_id = session_id
 	opts.directory = opts.directory or state.get_session_directory(session_id)
 	opts.delivery = (record.inbox or {}).delivery or opts.delivery

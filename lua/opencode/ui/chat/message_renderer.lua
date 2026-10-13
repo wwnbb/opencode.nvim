@@ -17,6 +17,12 @@ local tool_renderer = require("opencode.ui.chat.tool_renderer")
 local widget_support = require("opencode.ui.chat.widget_support")
 local tree = require("opencode.ui.chat.widget_tree")
 
+require("opencode.ui.highlights").register("opencode.ui.chat.welcome", function()
+	vim.api.nvim_set_hl(0, "OpenCodeWelcomeTitle", { link = "Title", default = true })
+	vim.api.nvim_set_hl(0, "OpenCodeWelcomeHint", { link = "Comment", default = true })
+	vim.api.nvim_set_hl(0, "OpenCodeWelcomeKey", { link = "Special", default = true })
+end)
+
 local EDIT_WIDGET_TOOL_ROWS = {
 	write = true,
 	edit = true,
@@ -673,21 +679,46 @@ local function render_processing_footer(ctx, presentation, render_metadata_foote
 	ctx:add_raw_line("")
 end
 
-local function render_empty_state(ctx)
-	if ctx:line_count() > 0 then
+local function render_empty_state(ctx, chrome_lines)
+	if ctx:line_count() > chrome_lines then
 		return
 	end
-	if not ctx.current_session.id then
-		ctx:add_raw_line(" No active session")
+	local keymaps = ctx.chat_config.keymaps or {}
+	local focus_key = keymaps.focus_input or require("opencode.config").defaults.chat.keymaps.focus_input
+	local rows = {
+		{ "OpenCode", "OpenCodeWelcomeTitle" },
+		{ "What would you like to build?", "OpenCodeWelcomeHint" },
+		{ "" },
+		{ focus_key .. "  Start a conversation", nil, focus_key },
+		{ "" },
+		{ "<C-p>  Command palette", "OpenCodeWelcomeHint", "<C-p>" },
+		{ "?  Help & shortcuts", "OpenCodeWelcomeHint", "?" },
+	}
+	local lines = {}
+	for _, row in ipairs(rows) do
+		for _, chunk in ipairs(render.wrap_text_with_ranges(row[1], ctx.chat_width)) do
+			local line = NuiLine()
+			local padding = math.max(0, math.floor((ctx.chat_width - vim.fn.strdisplaywidth(chunk.text)) / 2))
+			line:append(chunk.text == "" and "" or string.rep(" ", padding))
+			local key_end = math.max(0, math.min(#chunk.text, #(row[3] or "") - chunk.byte_start))
+			if key_end > 0 then
+				line:append(NuiText(chunk.text:sub(1, key_end), "OpenCodeWelcomeKey"))
+			end
+			line:append(NuiText(chunk.text:sub(key_end + 1), row[2]))
+			lines[#lines + 1] = line
+		end
 	end
-	ctx:add_raw_line(" Press 'i' to focus input")
-	ctx:add_raw_line(" Press '<C-p>' for command palette")
-	ctx:add_raw_line(" Press '?' for help")
+	local height = state.winid and vim.api.nvim_win_is_valid(state.winid)
+		and vim.api.nvim_win_get_height(state.winid) or 0
+	local top = math.max(0, math.floor((height - chrome_lines - #lines - 1) / 3))
+	for _ = 1, top do ctx:add_raw_line("") end
+	ctx:add_nui_lines(lines)
 	ctx:add_raw_line("")
 end
 
 function M.render(ctx, index)
 	render_session_chrome(ctx)
+	local chrome_lines = ctx:line_count()
 
 	local all_messages, messages, skipped_messages, pending_messages, revert_message_id = select_messages(ctx, index)
 	ctx.history_metadata = history_metadata.get(ctx.current_session.id, all_messages, revert_message_id, (ctx.chat_config or {}).tps)
@@ -720,7 +751,7 @@ function M.render(ctx, index)
 		end
 	end
 
-	render_empty_state(ctx)
+	render_empty_state(ctx, chrome_lines)
 
 	return {
 		all_messages = all_messages,

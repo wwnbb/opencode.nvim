@@ -149,6 +149,84 @@ describe("opencode input autocomplete", function()
 	end)
 end)
 
+describe("context autocomplete", function()
+	local autocomplete = require("opencode.ui.input.autocomplete")
+	local mentions = require("opencode.ui.input.mentions")
+	local sync = require("opencode.sync")
+	local state, previous_buf, previous_mode, virtualedit, previous_agents
+	local function refresh(text, col)
+		vim.api.nvim_buf_set_lines(state.bufnr, 0, -1, false, { text })
+		vim.api.nvim_win_set_cursor(state.winid, { 1, col or #text })
+		return autocomplete.refresh(state)
+	end
+	before_each(function()
+		previous_buf, virtualedit = vim.api.nvim_get_current_buf(), vim.o.virtualedit
+		previous_agents, previous_mode = sync.get_agents(), vim.fn.mode
+		sync.handle_agents({ { name = "this", mode = "subagent", description = "Context reviewer" } })
+		vim.o.virtualedit = "onemore"
+		vim.fn.mode = function() return "i" end
+		state = { visible = true, allow_context = true, bufnr = vim.api.nvim_create_buf(false, true), winid = vim.api.nvim_get_current_win() }
+		vim.api.nvim_set_current_buf(state.bufnr)
+	end)
+	after_each(function()
+		autocomplete.clear(state)
+		vim.fn.mode, vim.o.virtualedit = previous_mode, virtualedit
+		vim.api.nvim_set_current_buf(previous_buf)
+		vim.api.nvim_buf_delete(state.bufnr, { force = true })
+		sync.handle_agents(previous_agents)
+	end)
+	it("offers contexts before agents and preserves a same-name agent", function()
+		assert.is_true(refresh("@"))
+		local items = state.autocomplete.items
+		assert.equals(8, #items)
+		for index = 1, 7 do
+			assert.equals("context", items[index].kind)
+			assert.is_truthy(items[index].description:match("^Context: "))
+		end
+		assert.equals("mention", items[8].kind)
+		assert.equals("@this", items[8].label)
+		assert.equals("Agent: Context reviewer", items[8].description)
+		assert.is_true(refresh("@thi"))
+		assert.equals(2, #state.autocomplete.items)
+		state.autocomplete.selected = 2
+		assert.is_true(autocomplete.confirm(state))
+		assert.equals("this", mentions.active_parts(state)[1].name)
+	end)
+	it("inserts the literal context without an agent attachment", function()
+		assert.is_true(refresh("@vis"))
+		assert.equals("@visible", state.autocomplete.items[1].label)
+		assert.is_true(autocomplete.confirm(state))
+		assert.same({ "@visible " }, vim.api.nvim_buf_get_lines(state.bufnr, 0, -1, false))
+		assert.same({}, mentions.active_parts(state))
+		assert.is_true(refresh("@thi 中文", 4))
+		assert.is_true(autocomplete.confirm(state))
+		assert.same({ "@this 中文" }, vim.api.nvim_buf_get_lines(state.bufnr, 0, -1, false))
+		assert.same({}, mentions.active_parts(state))
+	end)
+	for _, options in ipairs({ { allow_context = false }, { mode = "shell" } }) do
+		it("suppresses contexts and rejects stale selection for " .. (options.mode or "non-chat input"), function()
+			assert.is_true(refresh("@thi"))
+			for key, value in pairs(options) do state[key] = value end
+			assert.is_false(autocomplete.confirm(state))
+			assert.same({ "@thi" }, vim.api.nvim_buf_get_lines(state.bufnr, 0, -1, false))
+			assert.is_true(refresh("@thi"))
+			assert.equals(1, #state.autocomplete.items)
+			assert.equals("mention", state.autocomplete.items[1].kind)
+		end)
+	end
+	it("keeps context completion available to session-bound prompt editors", function()
+		state.session_bound = true
+		assert.is_true(refresh("@vis"))
+		assert.equals("context", state.autocomplete.items[1].kind)
+	end)
+	it("preserves a draft changed before context confirmation", function()
+		assert.is_true(refresh("@thi"))
+		vim.api.nvim_buf_set_lines(state.bufnr, 0, -1, false, { "@buf" })
+		assert.is_false(autocomplete.confirm(state))
+		assert.same({ "@buf" }, vim.api.nvim_buf_get_lines(state.bufnr, 0, -1, false))
+	end)
+end)
+
 describe("autocomplete draft ownership", function()
 	local autocomplete = require("opencode.ui.input.autocomplete")
 	local mentions = require("opencode.ui.input.mentions")

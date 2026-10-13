@@ -26,6 +26,7 @@ local state = {
 	on_cancel = nil,
 	close_on_send = true,
 	allow_chat_commands = false,
+	allow_context = false,
 	persist_pending = true,
 	session_bound = false,
 	add_history = true,
@@ -36,11 +37,24 @@ local state = {
 	mode = "normal",
 	send_options = nil,
 	editor_context = nil,
+	context_snapshot = nil,
+	context_error = nil,
 	autocomplete = nil,
 	mentions = nil,
 	normalizing_paste = false,
 	resize_scheduled = false,
 }
+
+local function refresh_context_snapshot(snapshot, err)
+	state.context_snapshot, state.context_error = nil, nil
+	if not state.allow_context then return end
+	local range = state.send_options and state.send_options.range
+	if err or (snapshot and vim.deep_equal(snapshot.range, range)) then
+		state.context_snapshot, state.context_error = snapshot, err
+	else
+		state.context_snapshot, state.context_error = require("opencode.context").capture({ range = range })
+	end
+end
 local pending_cursor
 local draft_epoch = 0
 
@@ -285,7 +299,15 @@ local function send_message(delivery)
 		history.add(text, parts, state.mode)
 	end
 	local send_options = state.send_options and vim.deepcopy(state.send_options) or nil
-	if state.mode ~= "shell" and not text:match("^%s*/") and state.editor_context then
+	local normal_prompt = state.mode ~= "shell" and not text:match("^%s*/")
+	local explicit_context = normal_prompt and state.allow_context
+		and require("opencode.context").has(text, { parts = parts, context = send_options and send_options.context })
+	if normal_prompt and state.allow_context and (explicit_context or (send_options and send_options.range ~= nil)) then
+		send_options = send_options or {}
+		send_options._context_snapshot = state.context_snapshot
+		send_options._context_error = state.context_error
+	end
+	if normal_prompt and not explicit_context and state.editor_context then
 		send_options = send_options or {}
 		send_options.context = send_options.context or {}
 		local found
@@ -386,6 +408,7 @@ local function session_changed(session_id)
 	state.parts = history.get_pending_parts(session_id)
 	state.mode = history.get_pending_mode(session_id)
 	state.send_options = history.get_pending_options(session_id)
+	refresh_context_snapshot(state.context_snapshot)
 	state.editor_context = require("opencode.editor_context").pending(session_id)
 	autocomplete.reset(state)
 	mentions.reset(state)
@@ -407,6 +430,16 @@ local function refresh_info()
 	end)
 end
 
+-- Capture before chat layout/focus changes, including a deferred prompt edit.
+function M.capture_context()
+	local options = history.get_pending_options(current_session_id())
+	if history.get_pending(current_session_id()) == "" and #history.get_pending_parts(current_session_id()) == 0 then
+		local deferred = history.peek_deferred(current_session_id())
+		if deferred then options = deferred.options end
+	end
+	return require("opencode.context").capture({ range = options and options.range })
+end
+
 function M.show(opts)
 	opts = opts or {}
 
@@ -421,13 +454,15 @@ function M.show(opts)
 	state.on_cancel = opts.on_cancel or function() end
 	state.close_on_send = opts.close_on_send ~= false
 	state.allow_chat_commands = opts.allow_chat_commands == true or opts.allow_skill_picker == true
+	state.allow_context = opts.allow_chat_commands == true or opts.allow_context == true
 	state.persist_pending = opts.persist_pending ~= false
 	state.session_bound = opts.session_bound == true
 	state.add_history = opts.add_history ~= false
 	state.session_id = current_session_id()
 	state.parts = opts.text ~= nil and copy_parts(opts.parts) or history.get_pending_parts(state.session_id)
 	state.mode = opts.mode or (opts.text ~= nil and "normal" or history.get_pending_mode(state.session_id))
-	state.send_options = opts.send_options or (opts.text == nil and history.get_pending_options(state.session_id))
+	state.send_options = opts.send_options or (opts.text == nil and history.get_pending_options(state.session_id)) or nil
+	refresh_context_snapshot(opts.context_snapshot, opts.context_error)
 	state.editor_context = opts.session_bound ~= true and require("opencode.editor_context").pending(state.session_id) or nil
 
 	history.configure(cfg)
@@ -577,12 +612,15 @@ function M.close(save_draft)
 	state.session_id = nil
 	state.mode = "normal"
 	state.send_options = nil
+	state.context_snapshot = nil
+	state.context_error = nil
 	state.autocomplete = nil
 	state.mentions = nil
 	state.on_send = nil
 	state.on_cancel = nil
 	state.close_on_send = true
 	state.allow_chat_commands = false
+	state.allow_context = false
 	state.persist_pending = true
 	state.session_bound = false
 	state.add_history = true
@@ -762,6 +800,7 @@ function M.set_pending_draft(text, parts, opts)
 	if state.visible and state.session_id == current_session_id() then
 		state.parts = copied
 		state.send_options = opts and opts.options and vim.deepcopy(opts.options) or nil
+		refresh_context_snapshot(state.context_snapshot)
 		autocomplete.reset(state)
 		mentions.reset(state)
 		set_input_text(content)

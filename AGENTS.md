@@ -27,6 +27,8 @@ lua/opencode/events.lua              → Event system facade
 lua/opencode/cleanup.lua             → Reset/teardown orchestration across modules
 lua/opencode/commands.lua            → User commands and default loader keymaps
 lua/opencode/send.lua                → Send-flow orchestration for prompts
+lua/opencode/context.lua             → Editor source tracking, bounded snapshots, context placeholder rendering/expansion
+lua/opencode/editor_context.lua      → Automatic editor context attachments and per-session delivery state
 lua/opencode/completion/init.lua     → Sessionless editor completion lifecycle, cancellation, acceptance
 lua/opencode/completion/context.lua  → Bounded context from current and related loaded buffers
 lua/opencode/completion/profile.lua  → Model validation and managed-server variant overlay
