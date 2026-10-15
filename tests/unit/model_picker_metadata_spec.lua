@@ -2,12 +2,12 @@ local state, sync, actions = require("opencode.state"), require("opencode.sync")
 local menu, pending, locks = require("opencode.ui.menu"), require("opencode.session.pending"), require("opencode.session.lock")
 
 describe("model picker native metadata and groups", function()
-	local saved, commands, picker, selected, favorites, recents
+	local saved, commands, picker, selected, favorites, recents, models
 	before_each(function()
 		state.reset(); sync.clear_all(); pending.clear_all(); locks.clear_all()
 		state.set_session("s", "Session")
 		state.upsert_session({ id = "s", directory = "/project" }, { touch = false })
-		local models = {
+		models = {
 			fav = { name = "Favorite", cost = { { input = 0 } }, time = { released = 1776988800000 }, status = "deprecated" },
 			recent = { name = "Recent", cost = { { input = 0 }, { input = 1 } }, time = { released = 1776988800000 } },
 			free = { name = "Free model", cost = { { input = 0 } }, time = { released = 1776988800000 } },
@@ -32,16 +32,42 @@ describe("model picker native metadata and groups", function()
 		actions.model_favorites, actions.model_recent, actions.select_model, actions.toggle_model_favorite, actions.cycle_model = saved.favorite, saved.recent, saved.select, saved.toggle, saved.cycle
 		state.reset(); sync.clear_all(); pending.clear_all(); locks.clear_all()
 	end)
-	it("orders Favorites, Recent and remaining models with Free/released/deprecated metadata from the catalog", function()
+	it("preserves catalog ordering while showing only useful model flags", function()
 		commands["model.switch"].run()
 		table.sort(picker.items, picker.sort)
 		assert.same({ "fav", "recent", "free", "old" }, vim.tbl_map(function(item) return item.value end, picker.items))
-		assert.equals("Favorites · Free · 2026-04-24 · Deprecated", picker.items[1].description)
-		assert.equals("Recent · 2026-04-24", picker.items[2].description)
+		assert.equals("Free · Deprecated", picker.items[1].description)
+		assert.equals("", picker.items[2].description)
 		assert.matches("Recent ·", picker.items[2].label)
-		assert.equals("Connected · Free · 2026-04-24", picker.items[3].description)
-		assert.equals("Connected · 2024-01-01", picker.items[4].description)
+		assert.equals("Free", picker.items[3].description)
+		assert.equals("", picker.items[4].description)
 		picker.on_select(picker.items[2]); assert.same({ { providerID = "p", modelID = "recent" } }, selected)
+	end)
+	it("shows long model names in full, including after adding a favorite", function()
+		models.free.name = "GPT-6 Astra Pro Extended Context — Полное название модели"
+		commands["model.switch"].run()
+		local columns, lines = vim.o.columns, vim.o.lines
+		local ctx
+		local ok, err = pcall(function()
+			vim.o.columns, vim.o.lines = 120, 35
+			picker.refocus_chat = false
+			ctx = saved.open(picker)
+			local function assert_visible()
+				local text = table.concat(vim.api.nvim_buf_get_lines(ctx.popup.bufnr, 0, -1, false), "\n")
+				assert.matches("[p] " .. models.free.name, text, 1, true)
+				assert.is_nil(text:find("Connected", 1, true))
+				assert.is_nil(text:find("2026-04-24", 1, true))
+			end
+			assert_visible()
+			local item
+			for _, candidate in ipairs(picker.items) do if candidate.value == "free" then item = candidate end end
+			picker.keys[1].handler(ctx, item)
+			ctx.refresh()
+			assert_visible()
+		end)
+		if ctx then ctx.close() end
+		vim.o.columns, vim.o.lines = columns, lines
+		if not ok then error(err) end
 	end)
 	it("registers separate recent/favorite cycles and does not select from a stale or child-locked model picker", function()
 		local cycles = {}

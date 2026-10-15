@@ -9,7 +9,6 @@ function M.register(palette)
 		title = "Switch Model",
 		description = "Change the AI model",
 		category = "model",
-		keybind = "<leader>om",
 		slash = { name = "models" },
 		run = function()
 			if require("opencode.session.lock").is_locked(state.get_session().id) then vim.notify("Subagent model selection is locked", vim.log.levels.INFO); return false end
@@ -37,12 +36,8 @@ function M.register(palette)
 				for rank, fav in ipairs(actions.model_favorites()) do favorites_set[fav.providerID .. "/" .. fav.modelID] = rank end
 				for rank, recent in ipairs(actions.model_recent()) do recent_set[recent.providerID .. "/" .. recent.modelID] = rank end
 				local function describe(item)
-					local details = { item.is_favorite and "Favorites" or item.recent_rank and "Recent" or "Connected" }
+					local details = {}
 					if item.free then details[#details + 1] = "Free" end
-					if item.released > 0 then
-						local ok, date = pcall(os.date, "!%Y-%m-%d", math.floor(item.released / 1000))
-						if ok then details[#details + 1] = date end
-					end
 					if item.model.status == "deprecated" then details[#details + 1] = "Deprecated" end
 					item.label = string.format("%s[%s] %s", item.is_favorite and "★ " or item.recent_rank and "Recent · " or "", item.provider, item.model.name or item.value)
 					item.description = table.concat(details, " · ")
@@ -73,10 +68,16 @@ function M.register(palette)
 					return
 				end
 
+				local width = 60
+				for _, item in ipairs(items) do
+					local detail_width = item.description ~= "" and vim.fn.strdisplaywidth(item.description) + 2 or 0
+					-- Leave room for the menu padding and a favorite star added while open.
+					width = math.max(width, vim.fn.strdisplaywidth(item.label) + detail_width + 10)
+				end
 				require("opencode.ui.menu").open({
 					items = items,
 					title = " Switch Model ",
-					width = 60,
+					width = width,
 					searchable = true,
 					sort = function(a, b)
 						if a.priority ~= b.priority then return a.priority > b.priority end
@@ -91,10 +92,10 @@ function M.register(palette)
 						if not current() or not require("opencode.sync").get_model(item.provider, item.value) then return end
 						actions.select_model({ providerID = item.provider, modelID = item.value }, { recent = true })
 					end,
+					keymap_scope = "model_menu",
 					keys = {
 						{
-							key = "f",
-							label = "f:fav",
+							action = "favorite", label = "favorite",
 							handler = function(_ctx, item)
 								if not current() or not require("opencode.sync").get_model(item.provider, item.value) then return end
 								actions.toggle_model_favorite({ providerID = item.provider, modelID = item.value })

@@ -327,8 +327,9 @@ exports quickfix with Ctrl+Q. For remote files, configure
 `server.path_mappings = { { remote = "/server/project", local_root = "/local/project" } }`.
 
 `/variants` (also `/thinking`, `/effort`) selects any current model variant or
-Default. Model selection shows favorites, recent models and native metadata;
-the palette has separate recent and favorite cycles. `/mcps` is reactive while
+Default. Model selection gives names the available width, with favorite/recent
+markers and compact Free/Deprecated flags; connection labels and dates are omitted.
+The palette has separate recent and favorite cycles. `/mcps` is reactive while
 open. `/plugins` checks and updates native server plugins. `/pair` offers expiring
 one-time links when the server supports pairing (2.0.18; unavailable in 2.0.11).
 
