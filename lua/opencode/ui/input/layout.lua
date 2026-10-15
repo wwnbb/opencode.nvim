@@ -154,7 +154,8 @@ function M.resize(state)
 		end
 	end
 
-	local new_height = math.max(cfg.min_height, math.min(display_lines, cfg.max_height))
+	local min_height = state.history_search and state.history_search.draft.height or cfg.min_height
+	local new_height = math.max(min_height, math.min(display_lines, cfg.max_height))
 	if new_height == current_layout.current_height then
 		M.lock_scroll(state)
 		return
@@ -178,7 +179,7 @@ function M.resize(state)
 	M.lock_scroll(state)
 end
 
-function M.schedule_resize(state)
+function M.schedule_resize(state, on_resize)
 	if state.resize_scheduled then
 		return
 	end
@@ -187,6 +188,7 @@ function M.schedule_resize(state)
 	vim.schedule(function()
 		state.resize_scheduled = false
 		M.resize(state)
+		if on_resize then on_resize() end
 	end)
 end
 

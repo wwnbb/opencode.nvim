@@ -273,6 +273,35 @@ Paste supports several quoted file paths on a line, including PDF and SVG. Large
 clipboard pastes use native folds; `za`, `zo` and `zc` control them, and sending
 preserves the complete text. Set `input.collapse_paste_lines = false` to disable.
 
+Use **Search Prompt History** in the command palette to search earlier prompts,
+newest first. Type a case-insensitive literal phrase, then press Enter to add the
+selected prompt to the current draft and focus the composer without sending.
+Multiline text and attachments are restored; an existing draft is preserved.
+Shell and chat prompts cannot be combined in one draft.
+
+Inside the composer, **Ctrl+R** opens a separate history completion list using
+the same popup as `@` agents and `/` commands. Type the search query in the input,
+use the usual completion arrows, and press Enter or Tab to insert the selection.
+The highlighted prompt is previewed as virtual text in the input without changing
+the search query or resizing the composer.
+The previous draft is kept while searching; Escape restores it, and selection
+adds the recalled prompt without sending. The shortcut is buffer-local to input
+and can be changed or disabled with `input.keymaps.history_search`.
+
+History keeps the last 100 entries across restarts by default. Configure its
+limit, file, and search provider in `setup()`:
+
+```lua
+input = {
+  max_history = 100,
+  history_file = vim.fn.stdpath("data") .. "/opencode_input_history.json",
+  history_search_provider = "grep", -- "grep" (default) or "ripgrep" (uses rg)
+  keymaps = { history_search = "<C-r>" }, -- another key, a list of keys, or false
+},
+```
+
+The selected search executable must be available in `PATH`.
+
 `/images` opens actual inline attachment content or a remote image URL.
 `/diagrams` (also `/mermaid`, `/math`) renders completed Mermaid and LaTeX/math
 fences in a browser. It loads pinned Mermaid/KaTeX libraries from their CDN and

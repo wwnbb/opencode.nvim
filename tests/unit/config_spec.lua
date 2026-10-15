@@ -59,6 +59,18 @@ describe("strict setup options", function()
 		assert.is_false(merged.session.parallel.enabled)
 	end)
 
+	it("accepts only supported prompt history search providers", function()
+		assert.equals("grep", config.merge().input.history_search_provider)
+		for _, provider in ipairs({ "grep", "ripgrep" }) do
+			assert.equals(provider, config.merge({ input = { history_search_provider = provider } }).input.history_search_provider)
+		end
+		for _, provider in ipairs({ "rg", "unknown", false, {} }) do
+			local ok, err = pcall(config.merge, { input = { history_search_provider = provider } })
+			assert.is_false(ok)
+			assert.matches("input.history_search_provider", err, 1, true)
+		end
+	end)
+
 	it("disables both editor feature deadlines by default and preserves explicit timeouts", function()
 		for _, kind in ipairs({ "completion", "explanation" }) do
 			assert.equals(0, config.merge()[kind].timeout_ms)

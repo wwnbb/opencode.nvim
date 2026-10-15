@@ -149,6 +149,98 @@ describe("opencode input autocomplete", function()
 	end)
 end)
 
+describe("autocomplete item display", function()
+	local autocomplete = require("opencode.ui.input.autocomplete")
+	local state
+	before_each(function()
+		state = {
+			visible = true,
+			bufnr = vim.api.nvim_get_current_buf(),
+			winid = vim.api.nvim_get_current_win(),
+			layout = { row = 15, col = 0, current_height = 1, content_width = 60, is_float = true },
+		}
+	end)
+	after_each(function()
+		autocomplete.clear(state)
+		if state.popup then state.popup:unmount() end
+	end)
+	it("displays supplied items with the existing popup and selection behavior", function()
+		local items = {}
+		for index = 1, 12 do
+			items[index] = { kind = "history", label = "Prompt " .. index }
+		end
+		local trigger = { query = "", row = 0, start_col = 0 }
+		assert.is_true(autocomplete.show_items(state, "history", trigger, items))
+		assert.equals("history", state.autocomplete.kind)
+		assert.equals(10, #state.autocomplete.items)
+		assert.equals(10, vim.api.nvim_win_get_height(state.autocomplete.popup.winid))
+		assert.equals("opencode_input_autocomplete", vim.bo[state.autocomplete.bufnr].filetype)
+		assert.is_true(autocomplete.select_next(state))
+		assert.equals(2, state.autocomplete.selected)
+		assert.is_true(autocomplete.show_items(state, "history", trigger, items))
+		assert.equals(2, state.autocomplete.selected)
+		assert.is_true(autocomplete.show_items(state, "history", { query = "next", row = 0, start_col = 0 }, items))
+		assert.equals(1, state.autocomplete.selected)
+	end)
+	it("closes the popup when supplied items are empty or missing", function()
+		local trigger = { query = "", row = 0, start_col = 0 }
+		assert.is_true(autocomplete.show_items(state, "history", trigger, { { label = "Prompt" } }))
+		assert.is_false(autocomplete.show_items(state, "history", trigger, {}))
+		assert.is_false(autocomplete.is_visible(state))
+		assert.is_nil(state.autocomplete.popup)
+		assert.is_false(autocomplete.show_items(state, "history", trigger))
+		assert.is_false(autocomplete.show_items(nil, "history", trigger, { { label = "Prompt" } }))
+	end)
+	it("keeps every resize redraw above the actual input frame with matching content", function()
+		state.popup = require("nui.popup")({
+			enter = false,
+			relative = "editor",
+			position = { row = 15, col = 8 },
+			size = { width = 60, height = 1 },
+			border = { style = { "┃", "", "", "", "", "", "┃", "┃" }, padding = { top = 1, bottom = 1, left = 1, right = 0 } },
+		})
+		state.popup:mount()
+		state.bufnr, state.winid = state.popup.bufnr, state.popup.winid
+		state.popup:update_layout({ position = { row = 13, col = 11 } })
+		local input_row = vim.api.nvim_win_get_position(state.popup.border.winid)[1]
+		local input_col = vim.api.nvim_win_get_position(state.winid)[2]
+		local items = {}
+		for index = 1, 10 do items[index] = { kind = "history", label = "Prompt " .. index } end
+		local trigger = { query = "", row = 0, start_col = 0 }
+		assert.is_true(autocomplete.show_items(state, "history", trigger, items))
+		local popup = state.autocomplete.popup
+		assert.equals(input_row, vim.api.nvim_win_get_position(popup.winid)[1] + vim.api.nvim_win_get_height(popup.winid))
+		assert.equals(input_col, vim.api.nvim_win_get_position(popup.winid)[2])
+
+		local command, redraws, expected_height = vim.api.nvim_command, 0, 10
+		vim.api.nvim_command = function(value)
+			local result = command(value)
+			if value == "redraw" then
+				redraws = redraws + 1
+				local position = vim.api.nvim_win_get_position(popup.winid)
+				assert.equals(expected_height, vim.api.nvim_win_get_height(popup.winid))
+				assert.equals(expected_height, vim.api.nvim_win_get_height(popup.border.winid))
+				assert.equals(expected_height, vim.api.nvim_buf_line_count(popup.bufnr))
+				assert.equals(input_row, position[1] + expected_height)
+				assert.equals(vim.api.nvim_win_get_position(popup.border.winid)[1], position[1])
+				assert.equals(input_col, position[2])
+			end
+			return result
+		end
+		local ok, err = xpcall(function()
+			assert.is_true(autocomplete.show_items(state, "history", trigger, items))
+			assert.equals(0, redraws)
+			expected_height = 1
+			assert.is_true(autocomplete.show_items(state, "history", trigger, { items[1] }))
+			expected_height = 10
+			assert.is_true(autocomplete.show_items(state, "history", trigger, items))
+			assert.equals(2, redraws)
+		end, debug.traceback)
+		vim.api.nvim_command = command
+		assert.is_true(ok, err)
+	end)
+end)
+
 describe("context autocomplete", function()
 	local autocomplete = require("opencode.ui.input.autocomplete")
 	local mentions = require("opencode.ui.input.mentions")

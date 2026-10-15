@@ -7,6 +7,7 @@ local autocomplete = require("opencode.ui.input.autocomplete")
 local autocmds = require("opencode.ui.input.autocmds")
 local command_registry = require("opencode.command_registry")
 local history = require("opencode.ui.input.history")
+local history_search = require("opencode.ui.input.history_search")
 local info_bar = require("opencode.ui.input.info_bar")
 local keymaps = require("opencode.ui.input.keymaps")
 local layout = require("opencode.ui.input.layout")
@@ -147,12 +148,17 @@ local function restore_cursor(text)
 	return true
 end
 
+local function refresh_completion()
+	if not history_search.refresh(state) and autocomplete.is_visible(state) then autocomplete.refresh(state) end
+end
+
 local function resize_input()
 	layout.resize(state)
+	refresh_completion()
 end
 
 local function schedule_resize_input()
-	layout.schedule_resize(state)
+	layout.schedule_resize(state, refresh_completion)
 end
 
 local function set_input_text(text)
@@ -248,6 +254,7 @@ local function select_typed_command()
 end
 
 local function send_message(delivery)
+	if history_search.confirm(state) then return end
 	if state.session_id ~= current_session_id() then
 		vim.notify("The active session changed; reopen this draft in its session", vim.log.levels.WARN)
 		return
@@ -339,6 +346,7 @@ local function send_message(delivery)
 end
 
 local function cancel_input()
+	if history_search.cancel(state) then return end
 	local text = get_input_text()
 	if state.on_cancel then
 		state.on_cancel(text)
@@ -391,6 +399,7 @@ end
 
 local function session_changed(session_id)
 	if not state.visible or state.session_id == session_id then return end
+	history_search.cancel(state)
 	if not state.persist_pending or state.session_bound then M.close(state.persist_pending); return end
 	local previous_id = state.session_id
 	local text = get_input_text()
@@ -483,16 +492,17 @@ function M.show(opts)
 
 	autocmds.setup(state, {
 		schedule_resize = schedule_resize_input,
-		reflow = function() layout.reflow(state); info_bar.update(state) end,
+		reflow = function() layout.reflow(state); refresh_completion(); info_bar.update(state) end,
 		input_changed = function()
-			if state.mode ~= "shell" then autocomplete.refresh(state) end
+			if not history_search.refresh(state) and state.mode ~= "shell" then autocomplete.refresh(state) end
 			info_bar.update(state)
 		end,
 		cursor_moved = function()
-			if state.mode ~= "shell" then autocomplete.refresh(state) end
+			if not history_search.refresh(state) and state.mode ~= "shell" then autocomplete.refresh(state) end
 			if state.paste_folds then schedule_resize_input() end
 		end,
 		insert_leave = function()
+			history_search.cancel(state)
 			autocomplete.close(state)
 			if state.paste_folds then schedule_resize_input() end
 		end,
@@ -508,6 +518,7 @@ function M.show(opts)
 	vim.api.nvim_create_autocmd("BufLeave", {
 		buffer = state.bufnr,
 		callback = function()
+			history_search.cancel(state)
 			local text = get_input_text()
 			if state.visible and state.persist_pending
 				and not (pending_cursor and pending_cursor.locked and saved_cursor(text, state.session_id) ~= nil) then
@@ -523,16 +534,22 @@ function M.show(opts)
 		cancel = cancel_input,
 		history_prev = history_prev,
 		history_next = history_next,
+		history_search = M.search_history,
 		autocomplete_visible = function()
-			return autocomplete.is_visible(state)
+			return state.history_search ~= nil or autocomplete.is_visible(state)
 		end,
 		autocomplete_next = function()
-			return autocomplete.select_next(state)
+			local selected = autocomplete.select_next(state)
+			history_search.preview(state)
+			return selected
 		end,
 		autocomplete_prev = function()
-			return autocomplete.select_prev(state)
+			local selected = autocomplete.select_prev(state)
+			history_search.preview(state)
+			return selected
 		end,
 		autocomplete_confirm = function()
+			if history_search.confirm(state) then return true end
 			local ok, selection = autocomplete.confirm(state)
 			if ok then
 				schedule_resize_input()
@@ -579,6 +596,7 @@ function M.close(save_draft)
 	if not state.visible then
 		return
 	end
+	history_search.cancel(state)
 
 	if save_draft ~= false and state.persist_pending then
 		local text = get_input_text()
@@ -748,6 +766,7 @@ function M.get_winids()
 end
 
 function M.clear_history()
+	history_search.cancel(state)
 	draft_epoch, pending_cursor = draft_epoch + 1, nil
 	history.clear()
 	state.parts = {}
@@ -759,8 +778,43 @@ function M.get_history()
 	return history.entries()
 end
 
+function M.search_history()
+	if not state.visible then return false end
+	if history_search.cancel(state) then return true end
+	local draft = { text = get_input_text(), parts = draft_parts(), mode = state.mode, height = state.layout.current_height,
+		options = vim.deepcopy(state.send_options) }
+	local cursor = vim.api.nvim_win_get_cursor(state.winid)
+	local started = history_search.start(state, draft, {
+		prepare = function()
+			state.parts, state.send_options = {}, nil
+			autocomplete.reset(state)
+			mentions.reset(state)
+			set_input_text("")
+			info_bar.update(state)
+		end,
+		restore = function()
+			state.parts, state.mode, state.send_options = draft.parts, draft.mode, draft.options
+			autocomplete.reset(state)
+			mentions.reset(state)
+			set_input_text(draft.text)
+			if state.winid and vim.api.nvim_win_is_valid(state.winid) then vim.api.nvim_win_set_cursor(state.winid, cursor) end
+			info_bar.update(state)
+		end,
+		select = function(entry)
+			local ok, err = M.merge_pending_draft(entry)
+			if not ok then vim.notify(err, vim.log.levels.WARN) end
+		end,
+	})
+	if started then
+		draft_epoch, pending_cursor = draft_epoch + 1, nil
+		vim.cmd("startinsert!")
+	end
+	return started
+end
+
 ---@return string
 function M.get_pending_text()
+	if state.history_search then return state.history_search.draft.text end
 	if state.visible and state.session_id == current_session_id() then
 		return get_input_text()
 	end
@@ -768,6 +822,7 @@ function M.get_pending_text()
 end
 
 function M.get_pending_parts()
+	if state.history_search then return copy_parts(state.history_search.draft.parts) end
 	return state.visible and state.session_id == current_session_id() and draft_parts() or history.get_pending_parts()
 end
 
@@ -776,11 +831,13 @@ function M.get_mode()
 end
 
 function M.get_pending_options()
+	if state.history_search then return vim.deepcopy(state.history_search.draft.options) end
 	if state.visible and state.session_id == current_session_id() then return vim.deepcopy(state.send_options) end
 	return history.get_pending_options(current_session_id())
 end
 
 function M.set_mode(mode)
+	history_search.cancel(state)
 	state.mode = mode == "shell" and "shell" or "normal"
 	history.set_pending_mode(state.mode, current_session_id())
 	if state.visible then
@@ -792,6 +849,7 @@ end
 ---@param text string
 ---@param parts table[]|nil
 function M.set_pending_draft(text, parts, opts)
+	history_search.cancel(state)
 	local content = text or ""
 	local copied = copy_parts(parts)
 	draft_epoch, pending_cursor = draft_epoch + 1, nil
@@ -817,6 +875,7 @@ function M.can_merge_draft(draft)
 end
 
 function M.merge_pending_draft(draft)
+	history_search.cancel(state)
 	local ok, err = M.can_merge_draft(draft)
 	if not ok then return false, err end
 	local current = { text = M.get_pending_text(), parts = M.get_pending_parts() }
@@ -839,6 +898,7 @@ end
 
 ---@param text string
 function M.set_pending_text(text, opts)
+	history_search.cancel(state)
 	local content = text or ""
 	if not (opts or {}).preserve_token then draft_epoch = draft_epoch + 1 end
 	pending_cursor = nil

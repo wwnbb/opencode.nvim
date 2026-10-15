@@ -2,6 +2,7 @@ local M = {}
 local actions = require("opencode.actions")
 local state = require("opencode.state")
 function M.register(palette)
+	require("opencode.ui.palette.history").register(palette)
 	require("opencode.ui.palette.stash").register(palette)
 	require("opencode.ui.palette.queue").register(palette)
 	require("opencode.ui.palette.editor_context").register(palette)
