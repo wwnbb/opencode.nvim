@@ -2,6 +2,11 @@
 -- Renders interactive questions inline in the chat buffer.
 
 local M = {}
+local keymaps = require("opencode.util.keymap")
+local function chat_keys() return (require("opencode.ui.chat.state").state.config or {}).keymaps end
+local function key(action, scope)
+	return keymaps.label(scope or "chat", action, (not scope or scope == "chat") and chat_keys() or nil)
+end
 
 local panel = require("opencode.ui.panel")
 local widget_base = require("opencode.ui.widget_base")
@@ -195,25 +200,23 @@ local function format_hint(
 )
 	local parts = {}
 	if option_count > 0 then
-		table.insert(parts, string.format("1-%d select", math.min(option_count, 9)))
-		table.insert(parts, "↑↓ move")
+		table.insert(parts, keymaps.number_labels("chat", 1, math.min(option_count, 9), chat_keys()) .. " select")
+		table.insert(parts, key("widget_prev") .. " / " .. key("widget_next") .. " move")
 	else
 		table.insert(parts, "select an answer")
 	end
-	if is_multi then table.insert(parts, "Space toggle") end
-	table.insert(parts, "Enter continue")
+	if is_multi then table.insert(parts, key("toggle_selection") .. " toggle") end
+	table.insert(parts, key("confirm") .. " continue")
 
 	if has_multiple then
 		table.insert(parts, string.format("%d/%d answered", answered_count, total_count))
-		table.insert(parts, "Tab/S-Tab review")
+		table.insert(parts, key("next_question") .. " / " .. key("prev_question") .. " review")
 	end
 	if allow_custom then
-		table.insert(parts, "c custom")
+		table.insert(parts, key("custom_input") .. " custom")
 	end
-	local config = require("opencode.ui.chat.state").state.config or {}
-	local cancel_key = (config.keymaps or {}).cancel_question
-	if type(cancel_key) == "string" and cancel_key ~= "" then
-		table.insert(parts, cancel_key .. " cancel")
+	if #keymaps.keys(keymaps.get("chat", chat_keys()).cancel_question) > 0 then
+		table.insert(parts, key("cancel_question") .. " cancel")
 	end
 	return table.concat(parts, " · ")
 end
@@ -327,7 +330,7 @@ function M.get_lines_for_question(_request_id, question_data, selection_state, s
 
 	if not current_question then
 		add_panel_line(result, "Form: " .. ((selection_state.form or {}).title or "Waiting"), "OpenCodeQuestionTitle")
-		add_panel_line(result, selection_state.server_error or next(selection_state.field_errors or {}) and select(2, next(selection_state.field_errors)) or "Enter to review form defaults", "OpenCodeQuestionMuted")
+		add_panel_line(result, selection_state.server_error or next(selection_state.field_errors or {}) and select(2, next(selection_state.field_errors)) or key("confirm", selection_state.keymap_scope) .. " to review form defaults", "OpenCodeQuestionMuted")
 		return result.lines, result.highlights, widget_base.make_meta()
 	end
 
@@ -404,10 +407,13 @@ function M.get_lines_for_question(_request_id, question_data, selection_state, s
 	if error_text then add_panel_line(result, error_text, "OpenCodeQuestionError") end
 	if current_question.field_type == "external" then
 		add_panel_line(result, current_question.url or "", "OpenCodeQuestionOutput")
+		local scope = selection_state.keymap_scope
+		local confirm_key = key("confirm", scope)
+		local copy_key = key(scope == "form" and "custom" or "custom_input", scope)
 		local external_hint
-		if selections.is_answered then external_hint = "Acknowledged · Enter: continue"
-		elseif selections.external_ready then external_hint = "Complete the external action, then Enter: confirm completion"
-		else external_hint = "Enter: open link · c: copy link · then confirm completion" end
+		if selections.is_answered then external_hint = "Acknowledged · " .. confirm_key .. ": continue"
+		elseif selections.external_ready then external_hint = "Complete the external action, then " .. confirm_key .. ": confirm completion"
+		else external_hint = confirm_key .. ": open link · " .. copy_key .. ": copy link · then confirm completion" end
 		add_panel_line(result, external_hint, "OpenCodeQuestionMuted")
 	end
 	if status == "pending" and current_question.field_type ~= "external" then
@@ -568,7 +574,7 @@ function M.get_confirmation_lines(_request_id, question_data, selection_state)
 	end
 
 	add_panel_blank(result)
-	add_panel_line(result, "Enter to continue · Esc returns to questions", "OpenCodeQuestionMuted")
+	add_panel_line(result, key("confirm") .. " to continue · " .. key("back") .. " returns to questions", "OpenCodeQuestionMuted")
 	add_panel_blank(result)
 	add_trailing_separator(result)
 

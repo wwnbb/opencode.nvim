@@ -40,6 +40,22 @@ describe("native review file actions", function()
 	local function mapping(buf, key)
 		return vim.api.nvim_buf_call(buf, function() return vim.fn.maparg(key, "n", false, true) end)
 	end
+	it("remaps native help aliases and reports disabled review actions", function()
+		state.set_config({ server = { shared_filesystem = true }, native_diff = {
+			keymaps = { confirm = false, help = { "<F8>", "<F9>" }, close = "<F10>" },
+		} })
+		local notice
+		vim.notify = function(message) notice = message end
+		open()
+		local buf = vim.fn.bufnr(path)
+		assert.same({}, mapping(buf, "<C-a>")); assert.same({}, mapping(buf, "?"))
+		assert.is_function(mapping(buf, "<F8>").callback)
+		mapping(buf, "<F9>").callback()
+		assert.is_truthy(notice:find("(disabled) - Confirm current file", 1, true))
+		assert.is_truthy(notice:find("<F8> / <F9> - Show this help", 1, true))
+		mapping(buf, "<F10>").callback()
+		assert.is_false(native.is_active())
+	end)
 	it("restores Lua and string mappings and removes temporary keys on close", function()
 		vim.fn.writefile({ "before" }, path)
 		local buf = vim.fn.bufadd(path); vim.fn.bufload(buf)

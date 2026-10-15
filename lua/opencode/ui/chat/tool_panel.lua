@@ -219,7 +219,8 @@ end
 ---@return string
 function M.overflow_text(remaining, noun)
 	noun = noun or "lines"
-	return "… (" .. tostring(remaining) .. " more " .. noun .. ", press O to expand)"
+	local key = require("opencode.util.keymap").label("chat", "toggle_tool", (require("opencode.ui.chat.state").state.config or {}).keymaps)
+	return "… (" .. tostring(remaining) .. " more " .. noun .. ", press " .. key .. " to expand)"
 end
 
 ---@param result table

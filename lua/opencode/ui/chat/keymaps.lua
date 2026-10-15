@@ -1,5 +1,7 @@
 local M = {}
 
+local keymaps = require("opencode.util.keymap")
+
 local actions = require("opencode.actions")
 local chat_tasks = require("opencode.ui.chat.tasks")
 local chat_edits = require("opencode.ui.chat.edits")
@@ -25,89 +27,86 @@ function M.setup_buffer(bufnr, opts)
 
 	opts = opts or {}
 	local cfg = state.config
-	local keymap_opts = { buffer = bufnr, noremap = true, silent = true }
+	local keymap_opts = { noremap = true, silent = true }
+	local map, apply = keymaps.mapper("chat", bufnr, cfg.keymaps)
+	local keys = keymaps.get("chat", cfg.keymaps)
 
-	vim.keymap.set("n", cfg.keymaps.close, function()
+	map("n", "close", function()
 		if type(opts.close) == "function" then
 			opts.close()
 		end
 	end, keymap_opts)
 
-	vim.keymap.set("n", cfg.keymaps.focus_input, function()
+	map("n", "focus_input", function()
 		if type(opts.focus_input) == "function" then
 			opts.focus_input()
 		end
 	end, keymap_opts)
 
-	vim.keymap.set("n", cfg.keymaps.scroll_up, "<C-u>", keymap_opts)
-	vim.keymap.set("n", cfg.keymaps.scroll_down, "<C-d>", keymap_opts)
-	vim.keymap.set("n", cfg.keymaps.goto_top, "gg", keymap_opts)
-	vim.keymap.set("n", cfg.keymaps.goto_bottom, "G", keymap_opts)
-	vim.keymap.set("n", "[a", function()
+	map("n", "scroll_up", "<C-u>", keymap_opts)
+	map("n", "scroll_down", "<C-d>", keymap_opts)
+	map("n", "goto_top", "gg", keymap_opts)
+	map("n", "goto_bottom", "G", keymap_opts)
+	map("n", "prev_user_message", function()
 		chat_nav.jump_user_message(-1)
 	end, vim.tbl_extend("force", keymap_opts, { desc = "Previous user message" }))
-	vim.keymap.set("n", "]a", function()
+	map("n", "next_user_message", function()
 		chat_nav.jump_user_message(1)
 	end, vim.tbl_extend("force", keymap_opts, { desc = "Next user message" }))
-	vim.keymap.set("n", "[m", function()
+	map("n", "prev_message", function()
 		chat_nav.jump_message_or_widget(-1)
 	end, vim.tbl_extend("force", keymap_opts, { desc = "Previous message or widget" }))
-	vim.keymap.set("n", "]m", function()
+	map("n", "next_message", function()
 		chat_nav.jump_message_or_widget(1)
 	end, vim.tbl_extend("force", keymap_opts, { desc = "Next message or widget" }))
-	vim.keymap.set("n", "[p", function()
+	map("n", "prev_permission", function()
 		chat_nav.jump_pending_permission(-1)
 	end, vim.tbl_extend("force", keymap_opts, { desc = "Previous pending permission" }))
-	vim.keymap.set("n", "]p", function()
+	map("n", "next_permission", function()
 		chat_nav.jump_pending_permission(1)
 	end, vim.tbl_extend("force", keymap_opts, { desc = "Next pending permission" }))
 
-	vim.keymap.set("n", cfg.keymaps.abort, function()
+	map("n", "abort", function()
 		actions.abort()
 	end, vim.tbl_extend("force", keymap_opts, { desc = "Stop current generation" }))
 
 	local pending_inputs = require("opencode.ui.chat.pending_inputs")
 	for _, command in ipairs(pending_inputs.commands) do
-		local key = cfg.keymaps[command.name .. "_pending"]
-		if type(key) == "string" and key ~= "" then
-			vim.keymap.set("n", key, function()
-				if pending_inputs.handle(command.name) then return end
-				vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes(key, true, false, true), "n", false)
-			end, vim.tbl_extend("force", keymap_opts, { desc = command.description }))
-		end
+		map("n", command.name .. "_pending", function(key)
+			if pending_inputs.handle(command.name) then return end
+			vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes(key, true, false, true), "n", false)
+		end, vim.tbl_extend("force", keymap_opts, { desc = command.description }))
 	end
 
-	vim.keymap.set("n", "a", function()
+	map("n", "toggle_auto_scroll", function()
 		if type(opts.toggle_auto_scroll) == "function" then
 			opts.toggle_auto_scroll()
 		end
 	end, vim.tbl_extend("force", keymap_opts, { desc = "Toggle auto-scroll" }))
 
-	vim.keymap.set("n", "?", function()
+	map("n", "help", function()
 		if type(opts.show_help) == "function" then
 			opts.show_help()
 		end
 	end, keymap_opts)
 
-	vim.keymap.set("n", "<C-p>", function()
+	map("n", "command_palette", function()
 		palette.show()
 	end, vim.tbl_extend("force", keymap_opts, { desc = "Open command palette" }))
-	vim.keymap.set("n", "T", function()
+	map("n", "timeline", function()
 		require("opencode.ui.timeline").show()
 	end, vim.tbl_extend("force", keymap_opts, { desc = "Choose a historical user turn" }))
-	vim.keymap.set("n", "ga", function()
+	map("n", "message_actions", function()
 		require("opencode.ui.timeline").show_actions_at_cursor()
 	end, vim.tbl_extend("force", keymap_opts, { desc = "Actions for user message under cursor" }))
 
-	vim.keymap.set("n", "N", function()
+	map("n", "new_session", function()
 		actions.new_session()
 	end, vim.tbl_extend("force", keymap_opts, { desc = "Start new session" }))
 
-	if cfg.keymaps.close_session and cfg.keymaps.close_session ~= "" then
-		vim.keymap.set("n", cfg.keymaps.close_session, function()
-			actions.close_session({ notify = true })
-		end, vim.tbl_extend("force", keymap_opts, { desc = "Close current OpenCode session tab" }))
-	end
+	map("n", "close_session", function()
+		actions.close_session({ notify = true })
+	end, vim.tbl_extend("force", keymap_opts, { desc = "Close current OpenCode session tab" }))
 
 	-- Session tab switching by index: digits accumulate a pending count that the
 	-- next `gt` consumes (`5gt`, `12gt`, `0gt` for the first session). The count
@@ -137,7 +136,7 @@ function M.setup_buffer(bufnr, opts)
 		pending_tab_timer = vim.fn.timer_start(timeout_ms, clear_pending_tab_count)
 	end
 
-	vim.keymap.set("n", "gt", function()
+	map("n", "next_session", function()
 		if pending_tab_count ~= nil then
 			local count = tonumber(pending_tab_count) or 0
 			clear_pending_tab_count()
@@ -152,14 +151,14 @@ function M.setup_buffer(bufnr, opts)
 		chat_session_tabs.cycle_session(1)
 	end, vim.tbl_extend("force", keymap_opts, { desc = "Next or counted OpenCode session" }))
 
-	vim.keymap.set("n", "gT", function()
+	map("n", "prev_session", function()
 		clear_pending_tab_count()
 		chat_session_tabs.cycle_session(-1)
 	end, vim.tbl_extend("force", keymap_opts, { desc = "Previous OpenCode session" }))
 
 	for i = 0, 9 do
 		local digit = i
-		vim.keymap.set("n", tostring(digit), function()
+		map("n", "select_" .. digit, function()
 			if digit >= 1 and chat_interactions.handle_question_number_select(digit) then
 				clear_pending_tab_count()
 				return
@@ -177,55 +176,50 @@ function M.setup_buffer(bufnr, opts)
 		end, keymap_opts)
 	end
 
-	vim.keymap.set("n", "j", function()
+	map("n", "widget_next", function()
 		chat_interactions.handle_question_navigation("down")
 	end, keymap_opts)
-	vim.keymap.set("n", "k", function()
-		chat_interactions.handle_question_navigation("up")
-	end, keymap_opts)
-	vim.keymap.set("n", "<Down>", function()
-		chat_interactions.handle_question_navigation("down")
-	end, keymap_opts)
-	vim.keymap.set("n", "<Up>", function()
+	map("n", "widget_prev", function()
 		chat_interactions.handle_question_navigation("up")
 	end, keymap_opts)
 
-	vim.keymap.set("n", "<CR>", function()
+	local function confirm(key)
 		local id, pos = chat_tasks.get_tool_at_cursor()
 		if chat_tasks.handle_tool_confirm(id, pos) then return end
 		if pos and (pos.activity_group or pos.kind == "tool") then
 			chat_tasks.handle_tool_toggle(id)
 			return
 		end
-		chat_interactions.handle_question_confirm()
-	end, keymap_opts)
+		chat_interactions.handle_question_confirm(key)
+	end
+	map("n", "confirm", confirm, keymap_opts)
 
-	vim.keymap.set("n", "<Tab>", function()
-		chat_interactions.handle_question_next_tab()
+	map("n", "next_question", function(key)
+		chat_interactions.handle_question_next_tab(key)
 	end, keymap_opts)
-	vim.keymap.set("n", "<Esc>", function()
+	map("n", "back", function(key)
 		local request_id, question = chat_questions.get_question_at_cursor()
 		if request_id and question.status ~= "confirming" then return end
-		chat_interactions.handle_question_cancel()
+		chat_interactions.handle_question_cancel(key)
 	end, keymap_opts)
-	vim.keymap.set("n", "<S-Tab>", function()
-		chat_interactions.handle_question_prev_tab()
-	end, keymap_opts)
-
-	vim.keymap.set("n", "c", function()
-		chat_interactions.handle_question_custom_input()
+	map("n", "prev_question", function(key)
+		chat_interactions.handle_question_prev_tab(key)
 	end, keymap_opts)
 
-	vim.keymap.set("n", "m", function()
-		chat_interactions.handle_widget_message()
+	map("n", "custom_input", function(key)
+		chat_interactions.handle_question_custom_input(key)
 	end, keymap_opts)
 
-	vim.keymap.set("n", "<Space>", function()
-		chat_interactions.handle_question_toggle()
+	map("n", "widget_message", function(key)
+		chat_interactions.handle_widget_message(key)
 	end, keymap_opts)
 
-	local function dispatch_edit(key, handler, with_fallback, get_cursor)
-		return function()
+	map("n", "toggle_selection", function(key)
+		chat_interactions.handle_question_toggle(key)
+	end, keymap_opts)
+
+	local function dispatch_edit(handler, with_fallback, get_cursor)
+		return function(key)
 			local eid = (get_cursor or chat_edits.get_edit_at_cursor)()
 			if eid then
 				handler()
@@ -239,30 +233,38 @@ function M.setup_buffer(bufnr, opts)
 		end
 	end
 
-	vim.keymap.set("n", "<C-a>", dispatch_edit("<C-a>", chat_edits.handle_edit_accept_file), keymap_opts)
-	vim.keymap.set("n", "<C-x>", dispatch_edit("<C-x>", chat_edits.handle_edit_reject_file), keymap_opts)
-	vim.keymap.set("n", "<C-m>", dispatch_edit("<C-m>", chat_edits.handle_edit_resolve_file), keymap_opts)
-	vim.keymap.set("n", "=", dispatch_edit("=", chat_edits.handle_edit_toggle_diff, true, chat_edits.get_diffable_edit_at_cursor), keymap_opts)
-	vim.keymap.set("n", "A", dispatch_edit("A", chat_edits.handle_edit_accept_all), keymap_opts)
-	vim.keymap.set("n", "X", dispatch_edit("X", chat_edits.handle_edit_reject_all), keymap_opts)
-	vim.keymap.set("n", "M", dispatch_edit("M", chat_edits.handle_edit_resolve_all), keymap_opts)
-	vim.keymap.set("n", "dt", dispatch_edit("dt", chat_edits.handle_edit_diff_tab, false), vim.tbl_extend("force", keymap_opts, { nowait = true }))
-	vim.keymap.set("n", "dv", dispatch_edit("dv", chat_edits.handle_edit_diff_split, false), vim.tbl_extend("force", keymap_opts, { nowait = true }))
+	map("n", "accept_edit", dispatch_edit(chat_edits.handle_edit_accept_file), keymap_opts)
+	map("n", "reject_edit", dispatch_edit(chat_edits.handle_edit_reject_file), keymap_opts)
+	local resolve_edit = dispatch_edit(chat_edits.handle_edit_resolve_file)
+	map("n", "resolve_edit", function(key)
+		-- Terminals encode the default <C-m> and <CR> as the same key.
+		if keymaps.matches(keys.confirm, key) and not chat_edits.get_edit_at_cursor() then
+			confirm(key)
+		else
+			resolve_edit(key)
+		end
+	end, vim.tbl_extend("force", keymap_opts, { aliases = { "confirm" } }))
+	map("n", "toggle_diff", dispatch_edit(chat_edits.handle_edit_toggle_diff, true, chat_edits.get_diffable_edit_at_cursor), keymap_opts)
+	map("n", "accept_all_edits", dispatch_edit(chat_edits.handle_edit_accept_all), keymap_opts)
+	map("n", "reject_all_edits", dispatch_edit(chat_edits.handle_edit_reject_all), keymap_opts)
+	map("n", "resolve_all_edits", dispatch_edit(chat_edits.handle_edit_resolve_all), keymap_opts)
+	map("n", "diff_tab", dispatch_edit(chat_edits.handle_edit_diff_tab, false), vim.tbl_extend("force", keymap_opts, { nowait = true }))
+	map("n", "diff_split", dispatch_edit(chat_edits.handle_edit_diff_split, false), vim.tbl_extend("force", keymap_opts, { nowait = true }))
 
-	vim.keymap.set("n", "gd", function()
+	map("n", "enter_subagent", function()
 		local task_part_id = chat_tasks.get_task_at_cursor()
 		if task_part_id then
 			chat_nav.enter_child_session(task_part_id)
 		end
 	end, vim.tbl_extend("force", keymap_opts, { nowait = true }))
 
-	vim.keymap.set("n", "<BS>", function()
+	map("n", "leave_subagent", function()
 		if #state.session_stack > 0 then
 			chat_nav.leave_child_session()
 		end
 	end, keymap_opts)
 
-	vim.keymap.set("n", "O", function()
+	map("n", "toggle_tool", function()
 		local task_part_id = chat_tasks.get_task_at_cursor()
 		if task_part_id then
 			chat_tasks.handle_task_toggle(task_part_id)
@@ -276,23 +278,20 @@ function M.setup_buffer(bufnr, opts)
 		end
 	end, vim.tbl_extend("force", keymap_opts, { desc = "Toggle tool output", nowait = true }))
 
-	local cancel_question = cfg.keymaps.cancel_question
-	if type(cancel_question) == "string" and cancel_question ~= "" then
-		local key = vim.api.nvim_replace_termcodes(cancel_question, true, false, true)
-		local escape = vim.api.nvim_replace_termcodes("<Esc>", true, false, true)
-		vim.keymap.set("n", cancel_question, function()
-			local _, question = chat_questions.get_question_at_cursor()
-			if question and question.status == "pending" then
-				chat_interactions.confirm_question_cancel()
-			elseif key == escape then
-				chat_interactions.handle_question_cancel()
-			elseif not question then
-				vim.api.nvim_feedkeys(key, "n", false)
-			end
-		end, vim.tbl_extend("force", keymap_opts, { desc = "Cancel question" }))
-	end
+	map("n", "cancel_question", function(key)
+		local _, question = chat_questions.get_question_at_cursor()
+		if question and question.status == "pending" then
+			chat_interactions.confirm_question_cancel()
+		elseif keymaps.matches(keys.back, key) then
+			chat_interactions.handle_question_cancel(key)
+		elseif not question then
+			vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes(key, true, false, true), "n", false)
+		end
+	end, vim.tbl_extend("force", keymap_opts, { desc = "Cancel question", aliases = { "back" } }))
+	apply()
 
 	vim.api.nvim_create_autocmd("CursorMoved", {
+		group = vim.api.nvim_create_augroup("OpenCodeChatKeymaps_" .. bufnr, { clear = true }),
 		buffer = bufnr,
 		callback = function()
 			if not state.visible or not state.winid or not vim.api.nvim_win_is_valid(state.winid) then

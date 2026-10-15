@@ -12,7 +12,6 @@ function M.register(palette)
 		title = "Switch Agent",
 		description = "Change the AI agent",
 		category = "agent",
-		keybind = "<leader>oa",
 		slash = { name = "agents" },
 		run = function()
 			local pending = require("opencode.session.pending")

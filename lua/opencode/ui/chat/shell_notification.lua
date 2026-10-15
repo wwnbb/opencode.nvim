@@ -53,7 +53,10 @@ function M.render_tool(part, expanded)
 			panel.add_raw_line(result, rows[index])
 		end
 		if not expanded and #rows > MAX_PREVIEW_ROWS then
-			panel.add_line(result, "… " .. tostring(#rows - MAX_PREVIEW_ROWS) .. " more rows · Enter / O to expand", "OpenCodeBashMuted")
+			local keymaps = require("opencode.util.keymap")
+			local keys = (require("opencode.ui.chat.state").state.config or {}).keymaps
+			panel.add_line(result, "… " .. tostring(#rows - MAX_PREVIEW_ROWS) .. " more rows · "
+				.. keymaps.label("chat", "confirm", keys) .. " / " .. keymaps.label("chat", "toggle_tool", keys) .. " to expand", "OpenCodeBashMuted")
 		end
 	end
 	if metadata.truncated == true then panel.add_line(result, "Output truncated by server", "OpenCodeBashWarning") end

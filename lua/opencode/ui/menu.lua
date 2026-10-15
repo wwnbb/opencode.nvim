@@ -4,6 +4,7 @@ local M = {}
 
 local Popup = require("opencode.ui.popup")
 local float_context = require("opencode.ui.float_context")
+local keymaps = require("opencode.util.keymap")
 
 require("opencode.ui.highlights").register("opencode.ui.menu", function()
 	for name, link in pairs({
@@ -57,41 +58,41 @@ local function normalize_keys(keys)
 		return normalized
 	end
 	for _, key in ipairs(keys) do
-		if type(key) == "table" and key.key and type(key.handler) == "function" then
+		if type(key) == "table" and (key.action or key.key) and type(key.handler) == "function" then
 			table.insert(normalized, key)
 		end
 	end
 	return normalized
 end
 
-local function key_footer_text(keys)
-	local labels = {}
-	for _, key in ipairs(keys) do
-		if key.label and key.label ~= "" then
-			table.insert(labels, key.label)
+local function build_footer(opts, keys, mode, labels)
+	if opts.footer then return opts.footer end
+	local pieces = opts.searchable and { mode == "i" and "Search: type to filter" or "Actions" } or {}
+	local function hint(actions, description)
+		for _, action in ipairs(type(actions) == "table" and actions or { actions }) do
+			local values = keymaps.keys(labels[action])
+			if #values > 0 then
+				pieces[#pieces + 1] = table.concat(values, ", ") .. ":" .. description
+				return
+			end
 		end
 	end
-	return table.concat(labels, "  ")
-end
-
-local function build_footer(opts, keys)
-	if opts.footer then
-		return opts.footer
-	end
-
-	local pieces = { "↑↓/j,k:nav" }
-	if opts.multi_select then
-		table.insert(pieces, "tab/space:toggle")
-		table.insert(pieces, "⏎:" .. (opts.confirm_label or "confirm"))
+	hint(mode == "i" and { "previous", "previous_insert" } or { "previous_normal", "previous" }, "up")
+	hint(mode == "i" and { "next", "next_insert" } or { "next_normal", "next" }, "down")
+	if opts.multi_select then hint(mode == "i" and { "toggle_insert", "toggle" } or "toggle", "toggle") end
+	hint("select", opts.confirm_label or (opts.multi_select and "confirm" or "select"))
+	if mode == "i" then
+		hint("normal_mode", "actions")
 	else
-		table.insert(pieces, "⏎:select")
+		if opts.searchable then hint("search", "search") end
+		for index, key in ipairs(keys) do
+			if key.label and key.label ~= "" then
+				if key.action then hint(key.action, key.label)
+				elseif labels["custom_" .. index] then pieces[#pieces + 1] = key.label end
+			end
+		end
 	end
-
-	local key_text = key_footer_text(keys)
-	if key_text ~= "" then
-		table.insert(pieces, key_text)
-	end
-	table.insert(pieces, "esc:close")
+	hint(mode == "i" and { "close_insert", "close" } or { "close_normal", "close" }, "close")
 	return " " .. table.concat(pieces, "  ") .. " "
 end
 
@@ -119,6 +120,7 @@ local function default_filter(item, query)
 		table.insert(searchable_text, vim.fn.tolower(description))
 	end
 	if type(item) == "table" then
+		if item.search_text ~= nil then table.insert(searchable_text, vim.fn.tolower(tostring(item.search_text))) end
 		if item.value ~= nil then
 			table.insert(searchable_text, vim.fn.tolower(tostring(item.value)))
 		end
@@ -203,21 +205,25 @@ function M.open(opts)
 
 	local items = opts.items or {}
 	local keys = normalize_keys(opts.keys)
+	local scope = opts.keymap_scope or "menu"
+	local _, customized = keymaps.resolve(scope)
 	local searchable = opts.searchable == true
 	local multi_select = opts.multi_select == true
+	local active_mode = searchable and "i" or "n"
+	local mode_labels = { i = {}, n = {} }
 	local border_width, border_height = Popup.outer_insets()
 	local width = math.max(12, math.min(opts.width or (searchable and 60 or 40), vim.o.columns - border_width))
-	local footer = build_footer({
-		footer = opts.footer,
-		multi_select = multi_select,
-		confirm_label = opts.confirm_label,
-	}, keys)
+	local footer = build_footer(opts, keys, active_mode, mode_labels[active_mode])
 	local base_list_row = searchable and 5 or 3
+	local detail_rows = 0
 	local function layout_metrics(current_width)
 		local next_footer_lines = wrap_footer(footer, current_width - 8)
 		local next_message_lines = opts.message and wrap_footer(tostring(opts.message), current_width - 8) or {}
 		local next_list_row = base_list_row + (#next_message_lines > 0 and #next_message_lines + 1 or 0)
 		local next_frame_extra = next_list_row + #next_footer_lines + 2
+		detail_rows = opts.item_detail and math.min(3, math.max(0,
+			vim.o.lines - vim.o.cmdheight - next_frame_extra - border_height - 2)) or 0
+		if detail_rows > 0 then next_frame_extra = next_frame_extra + detail_rows + 1 end
 		local next_max_list_height = math.max(
 			1,
 			math.min(opts.list_height or (searchable and 15 or 20), vim.o.lines - vim.o.cmdheight - next_frame_extra - border_height)
@@ -242,6 +248,12 @@ function M.open(opts)
 
 	local function current_item()
 		return filtered_items[selected_idx], selected_idx
+	end
+
+	local function sync_selection()
+		if view and view.content.winid and vim.api.nvim_get_current_win() == view.content.winid then
+			selected_idx = math.min(math.max(1, vim.api.nvim_win_get_cursor(view.content.winid)[1]), math.max(1, #filtered_items))
+		end
 	end
 
 	local function selected_item_list()
@@ -296,8 +308,8 @@ function M.open(opts)
 			})
 			last_layout_width, last_frame_height, last_list_height, last_list_row = width, frame_height, height, list_row
 		end
-		local title = truncate_to_width(vim.trim(opts.title or (searchable and "Search" or "Select")), width - 12)
-		local header = "    " .. title .. string.rep(" ", math.max(1, width - display_width(title) - 11)) .. "esc    "
+		local title = truncate_to_width(vim.trim(opts.title or (searchable and "Search" or "Select")), math.max(1, width - 8))
+		local header = "    " .. title
 		local lines = { "", header }
 		for _ = 3, list_row + height + 1 do
 			table.insert(lines, "")
@@ -305,20 +317,39 @@ function M.open(opts)
 		for index, line in ipairs(message_lines) do
 			lines[base_list_row + index] = "    " .. line
 		end
+		local detail_start = #lines
+		if detail_rows > 0 then
+			local item = current_item()
+			local detail = item and opts.item_detail(item) or ""
+			local detail_lines = {}
+			for _, line in ipairs(vim.split(tostring(detail or ""), "\n", { plain = true })) do
+				vim.list_extend(detail_lines, wrap_footer(line, width - 8))
+			end
+			for index = 1, detail_rows do
+				local text = detail_lines[index] or ""
+				if index == detail_rows and #detail_lines > detail_rows then text = truncate_to_width(text, width - 11) .. "..." end
+				table.insert(lines, "    " .. text)
+			end
+			table.insert(lines, "")
+		end
+		local footer_start = #lines
 		for _, line in ipairs(footer_lines) do
 			table.insert(lines, "    " .. line)
 		end
 		table.insert(lines, "")
 		local marks = {
 			{ line = 1, col = 4, end_col = 4 + #title, hl_group = "OpenCodeMenuTitle" },
-			{ line = 1, col = #header - 7, end_col = #header - 4, hl_group = "OpenCodeMenuFooter" },
 		}
+		for index = 1, detail_rows do
+			local line = detail_start + index - 1
+			table.insert(marks, { line = line, col = 4, end_col = #lines[line + 1], hl_group = "OpenCodeMenuMessage" })
+		end
 		for index = 1, #message_lines do
 			local line = base_list_row + index - 1
 			table.insert(marks, { line = line, col = 4, end_col = #lines[line + 1], hl_group = "OpenCodeMenuMessage" })
 		end
 		for i = 1, #footer_lines do
-			local line = list_row + height + i
+			local line = footer_start + i - 1
 			table.insert(marks, { line = line, col = 0, end_col = #lines[line + 1], hl_group = "OpenCodeMenuFooter" })
 		end
 		view:render(lines, marks, "frame")
@@ -386,7 +417,14 @@ function M.open(opts)
 		end
 	end
 
+	function ctx.set_items(next_items)
+		if is_closed then return end
+		items = next_items
+		render_list({ preserve_selection = false })
+	end
+
 	function ctx.current()
+		sync_selection()
 		return current_item()
 	end
 
@@ -414,6 +452,7 @@ function M.open(opts)
 	end
 
 	local function select_current()
+		sync_selection()
 		if multi_select then
 			confirm_multi_selection()
 			return
@@ -439,6 +478,7 @@ function M.open(opts)
 	end
 
 	local function toggle_current()
+		sync_selection()
 		if not multi_select then
 			return
 		end
@@ -458,6 +498,7 @@ function M.open(opts)
 	end
 
 	local function move_selection(delta)
+		sync_selection()
 		if #filtered_items == 0 then
 			return
 		end
@@ -472,11 +513,13 @@ function M.open(opts)
 			render_list()
 		elseif view.content.winid and vim.api.nvim_win_is_valid(view.content.winid) then
 			vim.api.nvim_win_set_cursor(view.content.winid, { selected_idx, 0 })
+			if detail_rows > 0 then render_frame(math.min(max_list_height, #filtered_items)) end
 		end
 		if type(opts.on_move) == "function" then opts.on_move(current_item(), ctx) end
 	end
 
 	local function handle_key(key)
+		sync_selection()
 		local item = current_item()
 		if not item and not key.allow_empty then
 			return
@@ -487,67 +530,73 @@ function M.open(opts)
 		end
 	end
 
+	local function update_footer(mode)
+		if is_closed then return end
+		active_mode = mode
+		footer = build_footer(opts, keys, mode, mode_labels[mode])
+		footer_lines, message_lines, list_row, frame_extra, max_list_height = layout_metrics(width)
+		render_frame(math.min(max_list_height, math.max(1, #filtered_items)))
+	end
+
+	local function focus_search()
+		if is_closed or not vim.api.nvim_win_is_valid(view.input.winid) then return end
+		vim.api.nvim_set_current_win(view.input.winid)
+		vim.cmd("startinsert!")
+		update_footer("i")
+	end
+
+	local function focus_actions()
+		vim.cmd("stopinsert")
+		if not is_closed and vim.api.nvim_win_is_valid(view.content.winid) then
+			vim.api.nvim_set_current_win(view.content.winid)
+			update_footer("n")
+		end
+	end
+
 	local function map_common_keys(bufnr, modes)
-		local keymap_opts = { buffer = bufnr, noremap = true, silent = true }
+		local map, apply = keymaps.mapper(scope, bufnr)
 		for _, mode in ipairs(modes) do
-			vim.keymap.set(mode, "<CR>", select_current, keymap_opts)
-			if mode ~= "i" or not searchable then
-				vim.keymap.set(mode, "<Esc>", close, keymap_opts)
-			end
-			vim.keymap.set(mode, "<C-c>", close, keymap_opts)
-			vim.keymap.set(mode, "<Up>", function()
-				move_selection(-1)
-			end, keymap_opts)
-			vim.keymap.set(mode, "<Down>", function()
-				move_selection(1)
-			end, keymap_opts)
+			map(mode, "select", select_current)
+			local close_action = mode == "i" and searchable and "close_insert" or "close"
+			if customized.close and not customized[close_action] then close_action = "close" end
+			map(mode, close_action, close)
+			map(mode, "previous", function() move_selection(-1) end)
+			map(mode, "next", function() move_selection(1) end)
 		end
-
-		vim.keymap.set("n", "q", close, keymap_opts)
-		vim.keymap.set("n", "j", function()
-			move_selection(1)
-		end, keymap_opts)
-		vim.keymap.set("n", "k", function()
-			move_selection(-1)
-		end, keymap_opts)
-
+		if not customized.close or customized.close_normal then map("n", "close_normal", close) end
+		if not customized.next or customized.next_normal then map("n", "next_normal", function() move_selection(1) end) end
+		if not customized.previous or customized.previous_normal then map("n", "previous_normal", function() move_selection(-1) end) end
 		if searchable then
-			vim.keymap.set("i", "<C-p>", function()
-				move_selection(-1)
-			end, keymap_opts)
-			vim.keymap.set("i", "<C-n>", function()
-				move_selection(1)
-			end, keymap_opts)
-			vim.keymap.set("i", "<C-k>", function()
-				move_selection(-1)
-			end, keymap_opts)
-			vim.keymap.set("i", "<C-j>", function()
-				move_selection(1)
-			end, keymap_opts)
-		end
-
-		if multi_select then
-			vim.keymap.set("n", "<Space>", toggle_current, keymap_opts)
-			if searchable then
-				vim.keymap.set("i", "<Tab>", toggle_current, keymap_opts)
-				vim.keymap.set("i", "<C-Space>", toggle_current, keymap_opts)
+			map("n", "search", focus_search)
+			if vim.tbl_contains(modes, "i") then
+				map("i", "normal_mode", focus_actions)
+				if not customized.previous or customized.previous_insert then map("i", "previous_insert", function() move_selection(-1) end) end
+				if not customized.next or customized.next_insert then map("i", "next_insert", function() move_selection(1) end) end
 			end
 		end
-
-		for _, key in ipairs(keys) do
-			vim.keymap.set("n", key.key, function()
-				handle_key(key)
-			end, keymap_opts)
+		if multi_select then
+			map("n", "toggle", toggle_current)
+			if searchable and vim.tbl_contains(modes, "i") then map("i", customized.toggle and not customized.toggle_insert and "toggle" or "toggle_insert", toggle_current) end
 		end
-
+		for index, key in ipairs(keys) do
+			map("n", key.action or ("custom_" .. index), function() handle_key(key) end,
+				key.action and nil or { keys = key.key })
+		end
 		if not searchable then
 			for index = 1, math.min(9, #items) do
-				vim.keymap.set("n", tostring(index), function()
+				map("n", "option_" .. index, function()
 					if not filtered_items[index] then return end
 					selected_idx = index
+					vim.api.nvim_win_set_cursor(view.content.winid, { index, 0 })
 					select_current()
-				end, keymap_opts)
+				end)
 			end
+		end
+		for _, mode in ipairs(modes) do mode_labels[mode] = {} end
+		for _, binding in ipairs(apply()) do
+			local labels = mode_labels[binding.mode]
+			labels[binding.action] = labels[binding.action] or {}
+			table.insert(labels[binding.action], binding.lhs)
 		end
 	end
 
@@ -620,7 +669,7 @@ function M.open(opts)
 				marks[1] = {
 					line = 0,
 					col = 0,
-					virt_text = { { "Search", "OpenCodeMenuPlaceholder" } },
+					virt_text = { { opts.search_placeholder or "Search", "OpenCodeMenuPlaceholder" } },
 					virt_text_pos = "overlay",
 				}
 			end
@@ -631,16 +680,38 @@ function M.open(opts)
 		map_common_keys(view.input.bufnr, { "i", "n" })
 		map_common_keys(view.content.bufnr, { "n" })
 
-		view:on(event.TextChangedI, function()
+		view:on({ event.TextChangedI, event.TextChanged }, function()
 			local lines = vim.api.nvim_buf_get_lines(view.input.bufnr, 0, 1, false)
+			if search_text == (lines[1] or "") then return end
 			search_text = lines[1] or ""
 			update_placeholder()
-			render_list({ preserve_selection = false })
+			if type(opts.on_search) == "function" then
+				opts.on_search(search_text, ctx)
+			else
+				render_list({ preserve_selection = false })
+			end
 			if type(opts.on_move) == "function" and search_text ~= "" and #filtered_items > 0 then
 				opts.on_move(current_item(), ctx)
 			end
 		end, "input")
-		vim.cmd("startinsert!")
+		local update_pending = false
+		local function refresh_mode()
+			if update_pending then return end
+			update_pending = true
+			vim.schedule(function()
+				update_pending = false
+				if is_closed then return end
+				local win = vim.api.nvim_get_current_win()
+				if win == view.input.winid or win == view.content.winid then
+					local inserting = vim.fn.mode():sub(1, 1) == "i"
+					if win == view.content.winid and inserting then vim.cmd("stopinsert") end
+					local mode = win == view.input.winid and inserting and "i" or "n"
+					if mode ~= active_mode then update_footer(mode) end
+				end
+			end)
+		end
+		vim.api.nvim_create_autocmd({ "ModeChanged", "WinEnter" }, { group = view.augroup, callback = refresh_mode })
+		focus_search()
 	else
 		render_list({ preserve_selection = false })
 		map_common_keys(view.content.bufnr, { "n" })
@@ -648,6 +719,16 @@ function M.open(opts)
 			vim.api.nvim_win_set_cursor(view.content.winid, { 1, 0 })
 		end
 	end
+
+	view:on(event.CursorMoved, function()
+		local previous = selected_idx
+		sync_selection()
+		if selected_idx ~= previous then
+			if detail_rows > 0 then render_frame(math.min(max_list_height, math.max(1, #filtered_items))) end
+			if type(opts.on_move) == "function" then opts.on_move(current_item(), ctx) end
+		end
+	end, "content")
+	update_footer(active_mode)
 
 	ctx.popup = view.content
 	ctx.input = view.input

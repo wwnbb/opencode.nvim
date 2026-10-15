@@ -13,6 +13,89 @@ projects, and prompts without leaving the editor.
 The goal of opencode.nvim is to make OpenCode feel lightweight, scriptable, keyboard-friendly,
 and naturally integrated into the Neovim workflow.
 
+# Keyboard configuration
+
+Every key assigned by the plugin is configurable. The keys mentioned elsewhere
+in this README are the defaults. Action names and their complete defaults live
+in [keymap_defaults.lua](lua/opencode/keymap_defaults.lua).
+
+Keep existing `keymaps`, `chat.keymaps`, `input.keymaps`, `completion.keymaps`,
+and `explanation.keymaps` settings. Each action accepts a key sequence, a list
+of alternative sequences, or `false` to disable its plugin mappings. Lists
+replace the default aliases. Disabling a mapping leaves ordinary Neovim key
+behavior available; it does not disable a Neovim command such as moving with `j`.
+
+```lua
+require("opencode").setup({
+  keymaps = { abort = { "<leader>ox", "<F8>" } },
+  chat = { keymaps = {
+    close = "<leader>q",
+    new_session = "<leader>n",
+    toggle_tool = "<Tab>",
+    resolve_edit = "gm",
+    cancel_question = false,
+  } },
+  input = { keymaps = {
+    send = "<CR>",
+    cancel = false,
+    toggle_mode = "<C-s>",
+  } },
+  menu = { keymaps = { next = "<C-j>", previous = "<C-k>" } },
+  model_menu = { keymaps = { favorite = "<C-f>" } },
+  native_diff = { keymaps = { next_file = "]f", prev_file = "[f" } },
+})
+```
+
+User-configured bindings take precedence over colliding defaults in the same
+buffer and mode. For example, `input.keymaps.send = "<CR>"` sends ordinary text
+and still confirms completion or a selected slash command when appropriate.
+Two explicitly configured actions using the same key in the same mode produce
+an error naming the conflicting actions. Neovim-equivalent sequences such as
+`<Tab>` and `<C-i>` count as the same key. Help and hints reflect the bindings
+that remain active.
+
+`menu.keymaps` controls shared selection, navigation, closing and multi-select.
+Palette and specialized selectors inherit these settings; their own `.keymaps`
+can override them. Changing `close`, `next`, `previous` or `toggle` also replaces
+the corresponding default mode-specific aliases. The `*_normal` and `*_insert`
+actions allow separate aliases when needed. `popup.keymaps` controls shared
+popup closing and text input; help, execute details, debug bundle and MCP info
+inherit its applicable actions.
+
+Searchable menus start in **Search** mode: type to filter, use the arrow keys
+or `<C-n>` / `<C-p>` to move, and Enter to select. Esc switches to **Actions**
+mode, where `j` / `k` and the menu's letter shortcuts work. `/` or `i` returns
+to the search field without clearing the query. The footer follows the active
+mode and your configured keys (`menu.keymaps.normal_mode` and `search` control
+the mode switches). From Actions mode, Esc or `q` closes the menu; `<C-c>` closes
+it directly while searching.
+
+| Settings section | Surface |
+| --- | --- |
+| `chat`, `input`, `completion`, `explanation` | Chat actions, composer, editor completion and explanation |
+| `menu`, `palette`, `popup`, `password` | Shared controls, command palette, text and credential input |
+| `inline_diff`, `native_diff`, `vcs` | Edit review and VCS views |
+| `execute_details`, `help`, `session_tabs` | Tool inspector, help and session-tab mouse/visual controls |
+| `btw_prompt`, `btw_answer`, `form` | Side questions, their answers and setup forms |
+| `logs`, `terminal`, `terminal_menu`, `debug_bundle` | Logs, terminal attachment/list and support snapshot |
+| `active_sessions`, `session_menu`, `model_menu` | Session and model selectors |
+| `mcp_menu`, `mcp_info`, `queue_menu`, `family_menu` | MCP, pending prompts and subagent selectors |
+| `process_menu`, `plugin_menu`, `workspace_menu` | Processes, server plugins and locations |
+| `pairing_menu`, `diagnostics`, `integration`, `status` | Pairing, diagnostics, authentication and server status |
+
+All sections above use `<section>.keymaps`; global actions use top-level
+`keymaps`. Use `chat.keymaps.select_0` through `select_9` for chat numeric
+selection/counts and `menu.keymaps.option_1` through `option_9` (also in `form`)
+for numbered options. Mouse bindings accept key notation such as `<LeftMouse>`.
+
+The existing `<C-m>` edit-resolution default is the same terminal key as Enter.
+With the defaults, it resolves an edit under the cursor and confirms other
+widgets. To give edit confirmation and manual resolution separate keys, set
+`chat.keymaps.resolve_edit` to a distinct sequence, as in the example above.
+`input.keymaps.send_alt` retains its documented precedence over `send_steer`
+when both use the same key. Reopen transient dialogs after changing setup;
+chat, global and editor-feature mappings update with the configuration.
+
 # Thought and Explore
 
 Reasoning appears as a collapsed `+ Thought · 216ms` row. Press `O` or `Enter`
@@ -635,6 +718,9 @@ files have a decision. Local native diff and manual resolution require
 at the server's paths. A server started by this plugin shares the local filesystem
 automatically. Inline proposals (`=`), acceptance and rejection also work without
 shared files. Disconnected or cancelled reviews cannot apply or flush files.
+Escape leaves edit reviews pending. Reject files explicitly with `<C-x>` (selected
+file) or `X` (all files); these are configured by `chat.keymaps.reject_edit` and
+`chat.keymaps.reject_all_edits`.
 
 Bundled plugin **2.0.11-4** provides file review protocol 2. Update it
 together with the Lua plugin. `/skills` and the skill palette stage native
@@ -848,7 +934,7 @@ require("opencode").setup({
     keymaps = {
       send = "<C-g>",
       send_steer = "<C-x><C-s>",
-      cancel = "<Esc>",
+      cancel = { "<Esc>", "q", "<C-c>" },
       variant_cycle = "<C-t>",
       agent_cycle = "<C-a>",
       model_cycle = "<C-e>",
@@ -859,7 +945,8 @@ require("opencode").setup({
   danger_mode = false,
 })
 ```
-For the five global OpenCode mappings (`toggle`, `command_palette`, `toggle_logs`,
-`close_session`, and `active_sessions`), use `false` or `""` to disable a key.
-Changing a key removes the previous plugin mapping.
+All six global OpenCode mappings, including `abort`, accept a key, a list of
+keys, or `false`. Changing a key removes the previous plugin mapping and
+restores the mapping it temporarily replaced. See Keyboard configuration above
+for the complete action groups.
 ````

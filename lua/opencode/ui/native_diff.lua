@@ -226,14 +226,15 @@ local function setup_keymaps()
 	end
 
 	for _, buf in ipairs(bufs) do
-		local function map(key, callback)
-			diff_mappings[#diff_mappings + 1] = keymaps.install("n", buf, key, function()
+		local bind, apply = keymaps.mapper("native_diff", buf)
+		local function map(action, callback)
+			bind("n", action, function()
 				if generation == view_generation then callback() end
-			end, { noremap = true, silent = true })
+			end)
 		end
 
 		-- <C-y>: Apply all remaining proposed hunks at once (diffget from proposed)
-		map("<C-y>", function()
+		map("apply_all", function()
 			-- Focus the original (right) window and get all changes from proposed
 			if state.original_win and vim.api.nvim_win_is_valid(state.original_win) then
 				vim.api.nvim_set_current_win(state.original_win)
@@ -247,29 +248,29 @@ local function setup_keymaps()
 			end
 		end)
 
-		map("<C-a>", M._confirm_current)
-		map("<C-x>", M._reject_current)
-		map("<C-S-x>", M._reject_all)
+		map("confirm", M._confirm_current)
+		map("reject", M._reject_current)
+		map("reject_all", M._reject_all)
 
 		-- File navigation only; does not resolve, reject, or send the edit.
-		map("<leader>on", function()
+		map("next_file", function()
 			navigate_file(1)
 		end)
-		map("<leader>op", function()
+		map("prev_file", function()
 			navigate_file(-1)
 		end)
 
-		map("m", function()
+		map("note", function()
 			edit_note()
 		end)
 
 		-- q: Close diff view
-		map("q", function()
+		map("close", function()
 			M.close()
 		end)
 
 		-- ?: Show help
-		map("?", function()
+		map("help", function()
 			local help = {
 				"Native Diff Keymaps:",
 				"",
@@ -277,20 +278,21 @@ local function setup_keymaps()
 				"  dp       - Put hunk from actual (RIGHT) to proposed (LEFT)",
 				"  ]c       - Jump to next change",
 				"  [c       - Jump to previous change",
-				"  <C-y>    - Apply ALL remaining proposed hunks at once",
-				"  <C-a>    - Confirm current file and continue",
-				"  <C-x>    - Reject current file and restore the original content",
-				"  <C-S-x>  - Reject all files and close",
-				"  <leader>on - Go to next file",
-				"  <leader>op - Go to previous file",
-				"  m        - Add or edit note",
-				"  q        - Close diff view",
-				"  ?        - Show this help",
+				keymaps.label("native_diff", "apply_all") .. " - Apply ALL remaining proposed hunks at once",
+				keymaps.label("native_diff", "confirm") .. " - Confirm current file and continue",
+				keymaps.label("native_diff", "reject") .. " - Reject current file and restore the original content",
+				keymaps.label("native_diff", "reject_all") .. " - Reject all files and close",
+				keymaps.label("native_diff", "next_file") .. " - Go to next file",
+				keymaps.label("native_diff", "prev_file") .. " - Go to previous file",
+				keymaps.label("native_diff", "note") .. " - Add or edit note",
+				keymaps.label("native_diff", "close") .. " - Close diff view",
+				keymaps.label("native_diff", "help") .. " - Show this help",
 				"",
-				"Tip: use <C-y> to apply all proposed changes in the current file, then <C-a> to confirm.",
+				"Tip: use " .. keymaps.label("native_diff", "apply_all") .. " to apply all proposed changes, then " .. keymaps.label("native_diff", "confirm") .. " to confirm.",
 			}
 			vim.notify(table.concat(help, "\n"), vim.log.levels.INFO)
 		end)
+		vim.list_extend(diff_mappings, apply())
 	end
 end
 
@@ -413,16 +415,11 @@ function M._show_file(index)
 
 	-- Show status notification
 	local total = #state.files
-	local status_msg
+	local status_msg = relative .. " | " .. keymaps.label("native_diff", "apply_all") .. "=apply all  "
+		.. keymaps.label("native_diff", "note") .. "=note  do=get hunk  " .. keymaps.label("native_diff", "help") .. "=help"
 	if total > 1 then
-		status_msg = string.format(
-			"[%d/%d] %s | <leader>on/<leader>op=file nav  <C-y>=apply all  m=note  do=get hunk  ?=help",
-			index,
-			total,
-			relative
-		)
-	else
-		status_msg = string.format("%s | <C-y>=apply all  m=note  do=get hunk  ?=help", relative)
+		status_msg = string.format("[%d/%d] %s | %s / %s=file nav", index, total, status_msg,
+			keymaps.label("native_diff", "next_file"), keymaps.label("native_diff", "prev_file"))
 	end
 	vim.notify(status_msg, vim.log.levels.INFO)
 end

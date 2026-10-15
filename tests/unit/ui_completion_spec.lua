@@ -38,7 +38,7 @@ describe("editor ghost completion UI", function()
 		vim.api.nvim_set_current_buf(bufnr)
 		old_complete, old_accept = actions.complete, actions.accept_completion
 		actions.complete = function() return true end
-		actions.accept_completion = function() return true end
+		actions.accept_completion = function() completion.clear(); return true end
 		completion.setup(options)
 	end)
 
@@ -80,15 +80,21 @@ describe("editor ghost completion UI", function()
 		assert.is_false(completion.show(snapshot("call()"), ""))
 	end)
 
-	it("stops spinner updates after clear and does not take Tab while pending", function()
+	it("keeps the spinner and accept mapping while acceptance is queued, and restores Tab on clear", function()
 		local original_frame, calls = spinner.get_frame, 0
 		local fallback = function() return "fallback" end
 		vim.keymap.set("i", "<Tab>", fallback, { buffer = bufnr, expr = true })
+		local accepted = 0
+		actions.accept_completion = function() accepted = accepted + 1; return true end
 		spinner.get_frame = function() calls = calls + 1; return "|" end
 		local ok, err = pcall(function()
 			local request = snapshot("local value = ")
 			assert.is_true(completion.pending(request))
-			assert.equals(fallback, mapping("<Tab>").callback)
+			local accept = mapping("<Tab>").callback
+			assert.is_not.equals(fallback, accept)
+			accept(); accept()
+			assert.equals(2, accepted)
+			assert.equals(accept, mapping("<Tab>").callback)
 			assert.equals("OpenCodeCompletionSpinner", marks()[1][4].virt_text[1][2])
 			assert.equals("|", marks()[1][4].virt_text[1][1])
 			assert.is_true(vim.wait(500, function() return calls >= 2 end, 10))
@@ -96,6 +102,7 @@ describe("editor ghost completion UI", function()
 			assert.same({ "local value = ", "next line" }, vim.api.nvim_buf_get_lines(bufnr, 0, -1, false))
 			assert.equals(request.changedtick, vim.api.nvim_buf_get_changedtick(bufnr))
 			completion.clear()
+			assert.equals(fallback, mapping("<Tab>").callback)
 			local stopped_calls = calls
 			vim.wait(spinner.get_interval_ms() * 2, function() return false end, 10)
 			assert.equals(stopped_calls, calls)
@@ -128,12 +135,119 @@ describe("editor ghost completion UI", function()
 		assert.equals(fallback, mapping("<Tab>").callback)
 	end)
 
+	it("keeps concurrent spinners, streaming text, and mapping ownership independent", function()
+		local fallback = function() return "fallback" end
+		vim.keymap.set("i", "<Tab>", fallback, { buffer = bufnr, expr = true })
+		local first = snapshot("value")
+		local second = vim.tbl_extend("force", first, { row = 1, col = #"next line" })
+		local original_frame, calls = spinner.get_frame, 0
+		spinner.get_frame = function() calls = calls + 1; return "|" end
+		local ok, err = pcall(function()
+			completion.pending(first)
+			local accept = mapping("<Tab>").callback
+			completion.pending(second)
+			assert.equals(2, #marks())
+			assert.equals(accept, mapping("<Tab>").callback)
+			completion.show(first, "_done")
+			local before = calls
+			assert.is_true(vim.wait(500, function() return calls > before end, 10))
+			assert.equals("_done", marks()[1][4].virt_text[1][1])
+			assert.equals("OpenCodeCompletionSpinner", marks()[2][4].virt_text[1][2])
+			-- Equal request IDs do not alias distinct snapshot tables.
+			completion.clear(first)
+			assert.equals(1, #marks())
+			assert.equals(1, marks()[1][2])
+			assert.equals(accept, mapping("<Tab>").callback)
+			completion.clear(second)
+			assert.equals(fallback, mapping("<Tab>").callback)
+			local stopped = calls
+			vim.wait(spinner.get_interval_ms() * 2, function() return false end, 10)
+			assert.equals(stopped, calls)
+		end)
+		spinner.get_frame = original_frame
+		if not ok then error(err) end
+	end)
+
+	it("updates or rejects only the matching preview, including snapshots without IDs", function()
+		local first = snapshot("value")
+		first.id = nil
+		local second = { bufnr = bufnr, row = 1, col = #"next line" }
+		completion.show(first, "_first")
+		completion.show(second, "_second")
+		local second_mark = marks()[2][1]
+		completion.show(first, "_updated")
+		assert.equals("_updated", marks()[1][4].virt_text[1][1])
+		assert.equals(second_mark, marks()[2][1])
+		completion.clear(vim.deepcopy(first))
+		assert.equals(2, #marks())
+		assert.is_false(completion.show(first, ""))
+		assert.equals(1, #marks())
+		assert.equals("_second", marks()[1][4].virt_text[1][1])
+		completion.clear()
+		assert.same({}, marks())
+	end)
+
+	it("replays unrelated Tab and resumes acceptance for both targets in the same input batch", function()
+		local fallbacks, accepted = 0, 0
+		local fallback = function() fallbacks = fallbacks + 1; return "fallback" end
+		vim.keymap.set("i", "<Tab>", fallback, { buffer = bufnr, expr = true })
+		vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { "first", "second", "" })
+		local targets = {
+			{ bufnr = bufnr, row = 0, col = #"first" },
+			{ bufnr = bufnr, row = 1, col = #"second" },
+		}
+		for _, target in ipairs(targets) do completion.pending(target) end
+		actions.accept_completion = function()
+			local cursor = vim.api.nvim_win_get_cursor(0)
+			for _, target in ipairs(targets) do
+				if cursor[1] == target.row + 1 and cursor[2] == target.col then
+					assert.equals(2 - accepted, #marks())
+					accepted = accepted + 1
+					completion.clear(target)
+					return true
+				end
+			end
+			return false
+		end
+		input("2ji<Tab><Esc>kkA<Tab><Esc>jA<Tab><Esc>")
+		assert.equals(1, fallbacks)
+		assert.equals(2, accepted)
+		assert.same({ "first", "second", "fallback" }, vim.api.nvim_buf_get_lines(bufnr, 0, -1, false))
+		assert.same({}, marks())
+		assert.equals(fallback, mapping("<Tab>").callback)
+	end)
+
+	it("keeps decorations and mappings in other buffers when one buffer is cleared", function()
+		local first = snapshot("first")
+		local original = mapping("<Tab>")
+		completion.pending(first)
+		local other = vim.api.nvim_create_buf(true, false)
+		local ok, err = pcall(function()
+			vim.api.nvim_set_current_buf(other)
+			local second = { bufnr = other, row = 0, col = 0 }
+			completion.pending(second)
+			local accept = mapping("<Tab>").callback
+			vim.api.nvim_set_current_buf(bufnr)
+			vim.bo[bufnr].filetype = "opencode_chat"
+			assert.same({}, marks())
+			assert.same(original, mapping("<Tab>"))
+			vim.api.nvim_set_current_buf(other)
+			assert.equals(1, #vim.api.nvim_buf_get_extmarks(other, namespace, 0, -1, {}))
+			assert.equals(accept, mapping("<Tab>").callback)
+			completion.clear()
+			assert.same({}, vim.api.nvim_buf_get_extmarks(other, namespace, 0, -1, {}))
+		end)
+		vim.api.nvim_set_current_buf(bufnr)
+		vim.api.nvim_buf_delete(other, { force = true })
+		if not ok then error(err) end
+	end)
+
 	it("restores a local expression callback after accepting", function()
 		local fallback = function() return "fallback" end
 		vim.keymap.set("i", "<Tab>", fallback, { buffer = bufnr, expr = true, replace_keycodes = false })
 		local original = mapping("<Tab>")
 		local accepted = 0
-		actions.accept_completion = function() accepted = accepted + 1; return true end
+		actions.accept_completion = function() accepted = accepted + 1; completion.clear(); return true end
 		assert.is_true(completion.show(snapshot("value"), "_complete"))
 		input("i<Tab><Esc>")
 		assert.equals(1, accepted)
@@ -175,6 +289,41 @@ describe("editor ghost completion UI", function()
 		completion.show(snapshot("value"), "_complete")
 		local replacement = function() return "replacement" end
 		vim.keymap.set("i", "<Tab>", replacement, { buffer = bufnr, expr = true })
+		completion.clear()
+		assert.equals(replacement, mapping("<Tab>").callback)
+	end)
+
+	it("preserves another accept key's new owner across fallback and resumed acceptance", function()
+		completion.setup({ enabled = true, keymaps = { trigger = false, accept = { "<Tab>", "<F6>" } } })
+		local fallbacks = 0
+		vim.keymap.set("i", "<Tab>", "<F6>", { buffer = bufnr, remap = true })
+		local request = snapshot("value")
+		completion.pending(request)
+		local replacement = function() fallbacks = fallbacks + 1; return "fallback" end
+		vim.keymap.set("i", "<F6>", replacement, { buffer = bufnr, expr = true })
+		local original = mapping("<F6>")
+		actions.accept_completion = function() return false end
+		input("ji<Tab><Esc>")
+		assert.equals(1, fallbacks)
+		assert.equals(1, #marks())
+		assert.same(original, mapping("<F6>"))
+		actions.accept_completion = function() completion.clear(request); return true end
+		input("kA<Tab><Esc>")
+		assert.same({}, marks())
+		assert.same(original, mapping("<F6>"))
+	end)
+
+	it("does not reclaim an accept key changed by the fallback callback", function()
+		local replacement = function() return "replacement" end
+		vim.keymap.set("i", "<Tab>", function()
+			vim.keymap.set("i", "<Tab>", replacement, { buffer = bufnr, expr = true })
+			return "fallback"
+		end, { buffer = bufnr, expr = true })
+		completion.pending(snapshot("value"))
+		actions.accept_completion = function() return false end
+		input("ji<Tab><Esc>")
+		assert.equals(1, #marks())
+		assert.equals(replacement, mapping("<Tab>").callback)
 		completion.clear()
 		assert.equals(replacement, mapping("<Tab>").callback)
 	end)
@@ -229,5 +378,40 @@ describe("editor ghost completion UI", function()
 		assert.same(previous_tab, mapping("<Tab>"))
 		completion.teardown()
 		assert.same({}, marks())
+	end)
+
+	it("supports multiple trigger and accept keys and restores every previous mapping", function()
+		completion.teardown()
+		local keys = { "<C-l>", "<M-l>", "<Tab>", "<M-a>" }
+		local originals = {}
+		for _, key in ipairs(keys) do
+			vim.keymap.set("i", key, "original", { buffer = bufnr })
+			originals[key] = mapping(key)
+		end
+		completion.setup({ enabled = true, keymaps = { trigger = { "<C-l>", "<M-l>" }, accept = { "<Tab>", "<M-a>" } } })
+		local requested, accepted = 0, 0
+		actions.complete = function() requested = requested + 1 end
+		actions.accept_completion = function() accepted = accepted + 1; completion.clear(); return true end
+		mapping("<C-l>").callback()
+		mapping("<M-l>").callback()
+		assert.equals(2, requested)
+		completion.show(snapshot("value"), "_complete")
+		assert.is_function(mapping("<Tab>").callback)
+		mapping("<M-a>").callback()
+		assert.equals(1, accepted)
+		assert.same(originals["<Tab>"], mapping("<Tab>"))
+		assert.same(originals["<M-a>"], mapping("<M-a>"))
+		completion.teardown()
+		for _, key in ipairs(keys) do assert.same(originals[key], mapping(key)) end
+	end)
+
+	it("deduplicates equivalent accept aliases before restoring the original mapping", function()
+		local fallback = function() return "original" end
+		vim.keymap.set("i", "<Tab>", fallback, { buffer = bufnr, expr = true })
+		local original = mapping("<Tab>")
+		completion.setup({ enabled = true, keymaps = { trigger = false, accept = { "<Tab>", "<C-i>" } } })
+		completion.show(snapshot("value"), "_complete")
+		mapping("<Tab>").callback()
+		assert.same(original, mapping("<Tab>"))
 	end)
 end)

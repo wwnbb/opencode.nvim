@@ -131,6 +131,86 @@ describe("Switch Session popup border", function()
 end)
 
 describe("opencode selector interactions", function()
+	it("uses the visibly focused row for actions and confirmation after native cursor movement", function()
+		local action_item, selected
+		local ctx = require("opencode.ui.menu").open({
+			items = { "First", "Second", "Third" }, sort = false, searchable = true, refocus_chat = false,
+			on_select = function(item) selected = item end,
+			keys = { { key = "r", label = "r:rename", handler = function(_, item) action_item = item end } },
+		})
+		local ok, err = pcall(function()
+			vim.api.nvim_set_current_win(ctx.popup.winid)
+			vim.api.nvim_win_set_cursor(ctx.popup.winid, { 3, 0 })
+			vim.api.nvim_exec_autocmds("CursorMoved", { buffer = ctx.popup.bufnr })
+			assert.equals("Third", ctx.current())
+			press(ctx, "r")
+			assert.equals("Third", action_item)
+			vim.api.nvim_win_set_cursor(ctx.popup.winid, { 2, 0 })
+			press(ctx, "<CR>")
+			assert.equals("Second", selected)
+		end)
+		ctx.close()
+		if not ok then error(err) end
+	end)
+
+	it("refreshes normal-mode query edits and searches full metadata outside the compact row", function()
+		local ctx = require("opencode.ui.menu").open({
+			searchable = true, sort = false, refocus_chat = false,
+			items = { { label = "First", search_text = "/hidden/project/one" }, { label = "Second", search_text = "/hidden/project/two" } },
+		})
+		local ok, err = pcall(function()
+			search(ctx, "First")
+			vim.api.nvim_buf_set_lines(ctx.input.bufnr, 0, 1, false, { "project/two" })
+			vim.api.nvim_exec_autocmds("TextChanged", { buffer = ctx.input.bufnr })
+			assert.equals("Second", ctx.current().label)
+			assert.equals(1, vim.api.nvim_buf_line_count(ctx.popup.bufnr))
+		end)
+		ctx.close()
+		if not ok then error(err) end
+	end)
+
+	it("reserves a stable detail block and refreshes the full selected title and path", function()
+		local old_columns, old_lines = vim.o.columns, vim.o.lines
+		vim.o.columns, vim.o.lines = 100, 32
+		local ctx = require("opencode.ui.menu").open({
+			searchable = true, width = 90, sort = false, refocus_chat = false,
+			items = { { label = "First", path = "/projects/one" }, { label = "Second", path = "/projects/two" } },
+			item_detail = function(item) return "Selected: " .. item.label .. "\n" .. item.path end,
+		})
+		local ok, err = pcall(function()
+			local function frame() return table.concat(vim.api.nvim_buf_get_lines(ctx.frame.bufnr, 0, -1, false), " ") end
+			local height = vim.api.nvim_win_get_height(ctx.frame.winid)
+			assert.is_truthy(frame():find("Selected: First", 1, true))
+			assert.is_truthy(frame():find("/projects/one", 1, true))
+			press(ctx, "<Down>", "i")
+			assert.equals(height, vim.api.nvim_win_get_height(ctx.frame.winid))
+			assert.is_truthy(frame():find("Selected: Second", 1, true))
+			assert.is_truthy(frame():find("/projects/two", 1, true))
+			vim.o.lines = 18
+			vim.api.nvim_exec_autocmds("VimResized", {})
+			local frame_config = vim.api.nvim_win_get_config(ctx.frame.winid)
+			assert.is_true(vim.api.nvim_win_get_height(ctx.popup.winid) >= 1)
+			assert.is_true(frame_config.row + frame_config.height + 2 <= vim.o.lines - vim.o.cmdheight)
+		end)
+		ctx.close()
+		vim.o.columns, vim.o.lines = old_columns, old_lines
+		if not ok then error(err) end
+	end)
+
+	it("preserves an explicit footer in both search and action modes", function()
+		local ctx = require("opencode.ui.menu").open({ items = { "First" }, searchable = true, refocus_chat = false, footer = "Custom help" })
+		local ok, err = pcall(function()
+			local function frame() return table.concat(vim.api.nvim_buf_get_lines(ctx.frame.bufnr, 0, -1, false), " ") end
+			assert.is_truthy(frame():find("Custom help", 1, true))
+			assert.is_nil(frame():find("type to filter", 1, true))
+			press(ctx, "<Esc>", "i")
+			assert.is_truthy(frame():find("Custom help", 1, true))
+			assert.is_nil(frame():find("Actions", 1, true))
+		end)
+		ctx.close()
+		if not ok then error(err) end
+	end)
+
 	it("notifies the highlighted item while moving and narrowing a searchable list", function()
 		local moved = {}
 		local ctx = require("opencode.ui.menu").open({

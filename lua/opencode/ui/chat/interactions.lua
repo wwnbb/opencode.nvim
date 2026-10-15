@@ -111,7 +111,7 @@ function M.handle_question_number_select(number)
 	return false
 end
 
-function M.handle_question_confirm()
+function M.handle_question_confirm(key)
 	local task_part_id = chat_tasks.get_task_at_cursor()
 	if task_part_id then
 		chat_tasks.handle_task_toggle(task_part_id)
@@ -186,10 +186,10 @@ function M.handle_question_confirm()
 		return
 	end
 
-	vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<CR>", true, false, true), "n", false)
+	vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes(key or "<CR>", true, false, true), "n", false)
 end
 
-function M.handle_question_cancel()
+function M.handle_question_cancel(key)
 	local request_id, qstate = chat_questions.get_question_at_cursor()
 	if request_id then
 		if qstate.submitting then
@@ -245,13 +245,7 @@ function M.handle_question_cancel()
 		return
 	end
 
-	local eid = chat_edits.get_edit_at_cursor()
-	if eid then
-		chat_edits.handle_edit_reject_all()
-		return
-	end
-
-	vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<Esc>", true, false, true), "n", false)
+	vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes(key or "<Esc>", true, false, true), "n", false)
 end
 
 function M.confirm_question_cancel()
@@ -273,34 +267,34 @@ function M.confirm_question_cancel()
 	})
 end
 
-function M.handle_question_next_tab()
+function M.handle_question_next_tab(key)
 	local request_id = chat_questions.get_question_at_cursor()
 	if not request_id then
-		vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<Tab>", true, false, true), "n", false)
+		vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes(key or "<Tab>", true, false, true), "n", false)
 		return
 	end
 	chat_questions.handle_question_next_tab(request_id)
 end
 
-function M.handle_question_prev_tab()
+function M.handle_question_prev_tab(key)
 	local request_id = chat_questions.get_question_at_cursor()
 	if not request_id then
-		vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<S-Tab>", true, false, true), "n", false)
+		vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes(key or "<S-Tab>", true, false, true), "n", false)
 		return
 	end
 	chat_questions.handle_question_prev_tab(request_id)
 end
 
-function M.handle_question_custom_input()
+function M.handle_question_custom_input(key)
 	local request_id = chat_questions.get_question_at_cursor()
 	if not request_id then
-		vim.api.nvim_feedkeys("c", "n", false)
+		vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes(key or "c", true, false, true), "n", false)
 		return
 	end
 	chat_questions.handle_question_custom_input(request_id)
 end
 
-function M.handle_widget_message()
+function M.handle_widget_message(key)
 	if chat_questions.get_question_at_cursor() then return end
 
 	local perm_id = chat_permissions.get_permission_at_cursor()
@@ -315,13 +309,13 @@ function M.handle_widget_message()
 		return
 	end
 
-	vim.api.nvim_feedkeys("m", "n", false)
+	vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes(key or "m", true, false, true), "n", false)
 end
 
-function M.handle_question_toggle()
+function M.handle_question_toggle(key)
 	local request_id = chat_questions.get_question_at_cursor()
 	if not request_id then
-		vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<Space>", true, false, true), "n", false)
+		vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes(key or "<Space>", true, false, true), "n", false)
 		return
 	end
 	chat_questions.handle_question_toggle(request_id)

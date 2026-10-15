@@ -48,13 +48,14 @@ function M.show()
 			end
 			require("opencode.ui.menu").open({ title = " Pair Server ", width = 90, sort = false, items = items, close_on_select = false,
 				message = "Links work once and expire at " .. os.date("%H:%M:%S", issued_wall + pairing.expires_in) .. ".",
-				footer = " ⏎:open selected link  y:copy selected link  esc:close ",
+				confirm_label = "open selected link",
 				on_select = function(item, ctx)
 					if not available(ctx) then return end
 					local _, open_err = vim.ui.open(item.value)
 					if open_err then report({ message = tostring(open_err) }) end
 				end,
-				keys = { { key = "y", label = "y:copy", handler = function(ctx, item)
+				keymap_scope = "pairing_menu",
+				keys = { { action = "copy", label = "copy link", handler = function(ctx, item)
 					if not available(ctx) then return end
 					vim.fn.setreg('"', item.value)
 					local copied, result = pcall(vim.fn.setreg, "+", item.value)

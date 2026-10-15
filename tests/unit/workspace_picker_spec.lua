@@ -8,7 +8,7 @@ describe("native project and worktree UI workflows", function()
 	local tree = { directory = "/remote/feature", strategy = "git_worktree" }
 	local function key(opts, name, item)
 		for _, mapping in ipairs(opts.keys) do
-			if mapping.key == name then mapping.handler({ close = function() end }, item or opts.items[1]); return end
+			if require("opencode.util.keymap").get(opts.keymap_scope)[mapping.action] == name then mapping.handler({ close = function() end }, item or opts.items[1]); return end
 		end
 		error("Missing menu key " .. name)
 	end

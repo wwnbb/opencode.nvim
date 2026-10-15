@@ -178,9 +178,10 @@ function M.list(context)
 		end
 		menu = require("opencode.ui.menu").open({ title = " Session processes ", items = items, searchable = true, width = 76,
 			on_select = function(item) if pending.is_current(token) and item.entry then M.output(item.entry) end end,
+			keymap_scope = "process_menu",
 			keys = {
-				{ key = "r", label = "r: refresh", handler = refresh },
-				{ key = "x", label = "x: kill selected", handler = function(_, item)
+				{ action = "refresh", label = "refresh", handler = refresh },
+				{ action = "kill", label = "kill selected", handler = function(_, item)
 					if not pending.is_current(token) or not item.entry then return end
 					actions.remove_shell(item.entry.id, { directory = item.entry.location.directory }, function(kill_err)
 						if not pending.is_current(token) then return end

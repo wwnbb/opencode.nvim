@@ -85,10 +85,10 @@ function M.show()
 					reason = "active_sessions",
 				})
 			end,
+			keymap_scope = "active_sessions",
 			keys = {
 				{
-					key = "x",
-					label = "x:close tab",
+					action = "close_session", label = "close tab",
 					handler = function(ctx, item)
 						if not pending.is_current(token) then return end
 						local closed = require("opencode.actions").close_session({

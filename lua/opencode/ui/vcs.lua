@@ -1,5 +1,6 @@
 -- Read-only VCS/turn patches, independent of edit proposals and review RPC.
 local M = {}
+local keymaps = require("opencode.util.keymap")
 local actions, app = require("opencode.actions"), require("opencode.state")
 local patch = require("opencode.vcs")
 local active, serial = nil, 0
@@ -70,17 +71,18 @@ local function reveal(view)
 end
 
 local function map_buffer(view, buf)
-	local function map(key, callback)
-		vim.keymap.set("n", key, function() if active == view and not view.closed then callback() end end, { buffer = buf, silent = true, noremap = true })
+	local bind, apply = keymaps.mapper("vcs", buf)
+	local function map(action, callback)
+		bind("n", action, function() if active == view and not view.closed then callback() end end)
 	end
-	for _, key in ipairs({ "q", "<Esc>", "<C-c>" }) do map(key, function() close(view) end) end
-	map("s", function() choose_source(view) end)
-	map("b", function() choose_base(view) end)
-	map("r", function() load(view) end)
-	map("v", function() view.auto_layout = false; view.layout = view.layout == "split" and "unified" or "split"; render(view) end)
-	map("A", function() view.all = not view.all; render(view) end)
-	map("t", function() view.flat = not view.flat; render(view) end)
-	map("m", function()
+	map("close", function() close(view) end)
+	map("source", function() choose_source(view) end)
+	map("base", function() choose_base(view) end)
+	map("refresh", function() load(view) end)
+	map("layout", function() view.auto_layout = false; view.layout = view.layout == "split" and "unified" or "split"; render(view) end)
+	map("all", function() view.all = not view.all; render(view) end)
+	map("tree", function() view.flat = not view.flat; render(view) end)
+	map("reviewed", function()
 		if vim.api.nvim_get_current_win() == view.tree_win then
 			local entry = view.tree_rows[vim.api.nvim_win_get_cursor(view.tree_win)[1]]
 			if not entry or not entry.index then return end
@@ -90,14 +92,14 @@ local function map_buffer(view, buf)
 		if view.reviewed[file.file] == file.patch then view.reviewed[file.file] = nil else view.reviewed[file.file] = file.patch end
 		render(view)
 	end)
-	map("<CR>", function()
+	map("select", function()
 		local entry = vim.api.nvim_get_current_win() == view.tree_win and view.tree_rows[vim.api.nvim_win_get_cursor(view.tree_win)[1]]
 		if entry and entry.directory then view.collapsed[entry.directory] = not view.collapsed[entry.directory]; render(view); return end
 		view.index = selected(view)
 		render(view)
 		reveal(view)
 	end)
-	for key, direction in pairs({ n = 1, p = -1 }) do
+	for key, direction in pairs({ next_file = 1, prev_file = -1 }) do
 		map(key, function()
 			if #view.files == 0 then return end
 			view.index = ((selected(view) - 1 + direction) % #view.files) + 1
@@ -105,7 +107,7 @@ local function map_buffer(view, buf)
 			reveal(view)
 		end)
 	end
-	for key, direction in pairs({ ["]c"] = 1, ["[c"] = -1 }) do
+	for key, direction in pairs({ next_hunk = 1, prev_hunk = -1 }) do
 		map(key, function()
 			local win = vim.api.nvim_get_current_win() == view.before_win and view.before_win or view.after_win
 			local row = vim.api.nvim_win_get_cursor(win)[1]
@@ -122,9 +124,14 @@ local function map_buffer(view, buf)
 			vim.api.nvim_win_set_cursor(win, { row, 0 })
 		end)
 	end
-	map("?", function()
-		vim.notify("VCS diff: s source, b base, t tree/list, Enter file, A single/all, v split/unified, n/p files, ]c/[c hunks, m reviewed, r refresh, q close", vim.log.levels.INFO)
+	map("help", function()
+		local hints = {}
+		for _, action in ipairs({ "source", "base", "tree", "select", "all", "layout", "next_file", "prev_file", "next_hunk", "prev_hunk", "reviewed", "refresh", "close" }) do
+			hints[#hints + 1] = keymaps.label("vcs", action) .. " " .. action:gsub("_", " ")
+		end
+		vim.notify("VCS diff: " .. table.concat(hints, ", "), vim.log.levels.INFO)
 	end)
+	apply()
 end
 
 local function buffer(view, kind)

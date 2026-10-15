@@ -613,7 +613,12 @@ end
 ---@param result table
 ---@param option_count number
 local function append_hint(result, option_count)
-	local hint = string.format("1-%d select · ↑↓ move · Enter confirm · Esc reject · m message", option_count)
+	local keymaps = require("opencode.util.keymap")
+	local keys = (require("opencode.ui.chat.state").state.config or {}).keymaps
+	local function key(action) return keymaps.label("chat", action, keys) end
+	local hint = keymaps.number_labels("chat", 1, option_count, keys) .. " select · "
+		.. key("widget_prev") .. " / " .. key("widget_next") .. " move · " .. key("confirm") .. " confirm · "
+		.. key("back") .. " reject · " .. key("widget_message") .. " message"
 	add_panel_line(result, hint, "OpenCodePermissionMuted")
 end
 

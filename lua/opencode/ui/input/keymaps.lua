@@ -2,36 +2,18 @@
 
 local M = {}
 local app_state = require("opencode.state")
-
-local function map(bufnr, modes, lhs, rhs, opts)
-	if not lhs or lhs == "" or not rhs then
-		return
-	end
-
-	vim.keymap.set(
-		modes,
-		lhs,
-		rhs,
-		vim.tbl_extend("force", {
-			buffer = bufnr,
-			noremap = true,
-			silent = true,
-		}, opts or {})
-	)
-end
-
-local function is_escape_key(lhs)
-	return type(lhs) == "string" and lhs:lower() == "<esc>"
-end
+local keymaps = require("opencode.util.keymap")
 
 local function termcodes(keys)
 	return vim.api.nvim_replace_termcodes(keys, true, false, true)
 end
 
 function M.setup(bufnr, cfg, handlers)
-	local keys = cfg.keymaps or {}
+	local map, apply = keymaps.mapper("input", bufnr, cfg.keymaps)
+	local keys = keymaps.get("input", cfg.keymaps)
 	local queue_send = handlers.send_queue or handlers.send
 	local steer_send = handlers.send_steer or handlers.send
+	local function steer_key(key) return not keymaps.matches(keys.send_alt, key) end
 
 	local function schedule(handler)
 		if not handler then
@@ -70,67 +52,61 @@ function M.setup(bufnr, cfg, handlers)
 		end
 	end
 
-	map(bufnr, "i", keys.send, send_or_confirm(queue_send), { expr = true, replace_keycodes = false })
-	map(bufnr, "n", keys.send, queue_send)
-	map(bufnr, "i", keys.send_steer, send_or_confirm(steer_send), { expr = true, replace_keycodes = false })
-	map(bufnr, "n", keys.send_steer, steer_send)
+	local send_options = { expr = true, replace_keycodes = false, aliases = { "autocomplete_confirm", "command_enter" } }
+	map("i", "send", send_or_confirm(queue_send), send_options)
+	map("n", "send", queue_send)
+	map("i", "send_steer", send_or_confirm(steer_send), vim.tbl_extend("force", send_options, { filter = steer_key }))
+	map("n", "send_steer", steer_send, { filter = steer_key })
 	-- An explicitly retained legacy send_alt binding keeps its queue behavior
 	-- even when it shares the new default steer key.
-	map(bufnr, "i", keys.send_alt, send_or_confirm(queue_send), { expr = true, replace_keycodes = false })
-	map(bufnr, "n", keys.send_alt, queue_send)
+	map("i", "send_alt", send_or_confirm(queue_send), send_options)
+	map("n", "send_alt", queue_send)
 
-	map(bufnr, "n", keys.cancel, handlers.cancel)
-	if not is_escape_key(keys.cancel) then
-		map(bufnr, "i", keys.cancel, handlers.cancel)
-	end
-	map(bufnr, "n", "q", handlers.cancel)
-	map(bufnr, { "i", "n" }, "<C-c>", handlers.cancel)
+	map("n", "cancel", handlers.cancel)
+	map("i", "cancel", handlers.cancel, { filter = function(key)
+		return not keymaps.matches({ "<Esc>", "q" }, key)
+	end })
 
-	map(bufnr, "i", keys.history_prev, function()
+	map("i", "history_prev", function()
 		if autocomplete_visible() then
 			schedule(handlers.autocomplete_prev)
 			return ""
 		end
 		schedule(handlers.history_prev)
 		return ""
-	end, { expr = true, replace_keycodes = false })
-	map(bufnr, "i", keys.history_next, function()
+	end, { expr = true, replace_keycodes = false, aliases = { "autocomplete_prev" } })
+	map("i", "history_next", function()
 		if autocomplete_visible() then
 			schedule(handlers.autocomplete_next)
 			return ""
 		end
 		schedule(handlers.history_next)
 		return ""
-	end, { expr = true, replace_keycodes = false })
+	end, { expr = true, replace_keycodes = false, aliases = { "autocomplete_next" } })
 
-	map(bufnr, "i", "<C-p>", function()
+	map({ "i", "n" }, "history_search", function() schedule(handlers.history_search) end)
+
+	map("i", "autocomplete_prev", function(key)
 		if autocomplete_visible() then
 			schedule(handlers.autocomplete_prev)
 			return ""
 		end
-		return termcodes("<C-p>")
+		return termcodes(key)
 	end, { expr = true, replace_keycodes = false })
-	map(bufnr, "i", "<C-n>", function()
+	map("i", "autocomplete_next", function(key)
 		if autocomplete_visible() then
 			schedule(handlers.autocomplete_next)
 			return ""
 		end
-		return termcodes("<C-n>")
+		return termcodes(key)
 	end, { expr = true, replace_keycodes = false })
-	map(bufnr, "i", "<Tab>", function()
+	map("i", "autocomplete_confirm", function(key)
 		if autocomplete_visible() then
 			return confirm_autocomplete()
 		end
-		return termcodes("<Tab>")
+		return termcodes(key)
 	end, { expr = true, replace_keycodes = false })
-	map(bufnr, "i", "<S-Tab>", function()
-		if autocomplete_visible() then
-			schedule(handlers.autocomplete_prev)
-			return ""
-		end
-		return termcodes("<S-Tab>")
-	end, { expr = true, replace_keycodes = false })
-	map(bufnr, "i", "<CR>", function()
+	map("i", "command_enter", function(key)
 		if autocomplete_visible() then
 			return confirm_autocomplete()
 		end
@@ -143,18 +119,20 @@ function M.setup(bufnr, cfg, handlers)
 			schedule(handlers.send)
 			return ""
 		end
-		return termcodes("<CR>")
-	end, { expr = true, replace_keycodes = false })
+		return termcodes(key)
+	end, { expr = true, replace_keycodes = false, aliases = { "autocomplete_confirm" } })
 
-	map(bufnr, { "i", "n" }, keys.variant_cycle, handlers.cycle_variant)
-	map(bufnr, { "i", "n" }, keys.agent_cycle, handlers.cycle_agent)
-	map(bufnr, { "i", "n" }, keys.model_cycle, handlers.cycle_model)
-	if handlers.toggle_mode then map(bufnr, { "i", "n" }, "<C-\\>", handlers.toggle_mode) end
+	map({ "i", "n" }, "variant_cycle", handlers.cycle_variant)
+	map({ "i", "n" }, "agent_cycle", handlers.cycle_agent)
+	map({ "i", "n" }, "model_cycle", handlers.cycle_model)
+	map({ "i", "n" }, "toggle_mode", handlers.toggle_mode)
 	if handlers.fold then
-		for _, command in ipairs({ "za", "zo", "zc", "zR", "zM" }) do
-			map(bufnr, "n", command, function() handlers.fold(command) end)
+		for action, command in pairs({ fold_toggle = "za", fold_open = "zo", fold_close = "zc",
+			fold_open_all = "zR", fold_close_all = "zM" }) do
+			map("n", action, function() handlers.fold(command) end)
 		end
 	end
+	apply()
 end
 
 return M

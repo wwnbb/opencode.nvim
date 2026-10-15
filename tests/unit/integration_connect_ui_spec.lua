@@ -1,6 +1,7 @@
 describe("integration connection method selection", function()
-	local integration, menus, input, notices, stubs
+	local integration, menus, input, notices, stubs, saved_config
 	before_each(function()
+		saved_config = require("opencode.state").get_config()
 		integration = { id = "test", name = "Test provider", methods = {} }
 		menus, notices, stubs = {}, {}, {}
 		input = nil
@@ -14,6 +15,7 @@ describe("integration connection method selection", function()
 	end)
 	after_each(function()
 		for _, stub in ipairs(stubs) do stub:revert() end
+		require("opencode.state").set_config(saved_config)
 	end)
 
 	it("opens the API key field directly after choosing a provider with env and key", function()
@@ -74,7 +76,10 @@ describe("integration connection method selection", function()
 		input.on_submit("test-key")
 		assert.equals(1, calls)
 	end)
-	it("replaces command login messages in the authorization popup and cancels on close", function()
+	it("replaces command login messages and displays and uses configured authorization controls", function()
+		require("opencode.state").set_config(require("opencode.config").merge({ integration = { keymaps = {
+			close = "Z", open = "O", code = "C", copy_url = "u", copy_instructions = "U",
+		} } }))
 		local callback, popup_options, lines, cancelled
 		local bufnr = vim.api.nvim_create_buf(false, true)
 		local popup = { mount = function() end, render = function(_, value) lines = value end }
@@ -95,15 +100,22 @@ describe("integration connection method selection", function()
 		local view = { id = 42, status = "polling", message = "Open https://example.invalid/login\nCode: ABCD-1234" }
 		callback(view); callback(view)
 		assert.same({ "Authorization: polling", "", "Open https://example.invalid/login", "Code: ABCD-1234", "",
-			"o: open authorization URL   c: enter code   Esc: close / cancel", "y: copy URL   Y: copy authorization instructions / code" }, lines)
+			"O: open authorization URL   C: enter code   Z: close / cancel", "u: copy URL   U: copy authorization instructions / code" }, lines)
 		view.message = "Open https://example.invalid/login\nCode: ABCD-1234\nWaiting for approval"
 		callback(view)
 		assert.equals("Waiting for approval", lines[5])
 		view.status, view.message, view.error = "failed", "Login refused\nTry another account", "Authorization failed"
 		callback(view)
 		assert.same({ "Authorization: failed", "", "Login refused", "Try another account", "Authorization failed", "",
-			"o: open authorization URL   c: enter code   Esc: close / cancel", "y: copy URL   Y: copy authorization instructions / code" }, lines)
-		popup.close()
+			"O: open authorization URL   C: enter code   Z: close / cancel", "u: copy URL   U: copy authorization instructions / code" }, lines)
+		local close_mapping
+		for _, mapping in ipairs(vim.api.nvim_buf_get_keymap(bufnr, "n")) do
+			assert.not_equals("<Esc>", mapping.lhs)
+			assert.not_equals("q", mapping.lhs)
+			if mapping.lhs == "Z" then close_mapping = mapping.callback end
+		end
+		assert.is_not_nil(close_mapping)
+		close_mapping()
 		assert.equals(42, cancelled)
 		vim.api.nvim_buf_delete(bufnr, { force = true })
 	end)

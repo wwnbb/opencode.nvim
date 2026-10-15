@@ -97,6 +97,25 @@ describe("edit widget action lifecycle", function()
 		vim.api.nvim_win_set_cursor(winid, { index, 0 })
 	end
 
+	for _, back_key in ipairs({ "<Esc>", "<F6>" }) do
+		it("keeps edit reviews pending on " .. back_key .. " and rejects only with the explicit edit key", function()
+			make_edit("edit_back", 2)
+			chat_state.questions, chat_state.permissions = {}, {}
+			chat_state.config = { keymaps = back_key == "<Esc>" and {} or { back = back_key } }
+			require("opencode.ui.chat.keymaps").setup_buffer(bufnr)
+			vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes(back_key, true, false, true), "xt", false)
+			local edit = edit_state.get_edit("edit_back")
+			assert.equals("pending", edit.status)
+			for _, file in ipairs(edit.files) do assert.equals("pending", file.status) end
+			assert.equals(0, calls.finalize)
+			assert.equals(0, calls.rerender)
+
+			vim.api.nvim_feedkeys("X", "xt", false)
+			for _, file in ipairs(edit.files) do assert.equals("rejected", file.status) end
+			assert.equals(1, calls.finalize)
+		end)
+	end
+
 	it("keeps selection bounds and permits inspecting sent previews", function()
 		local id = "edit_selection"
 		make_edit(id, 2, { review_mode = "readonly" })

@@ -161,8 +161,9 @@ local function show_mcp_server_info(item)
 		vim.wo[popup.winid].cursorline = false
 		vim.api.nvim_win_set_cursor(popup.winid, { 1, 0 })
 	end
-	float.setup_close_keymaps(bufnr, close_fn)
-	vim.keymap.set("n", "<C-c>", close_fn, { buffer = bufnr, noremap = true, silent = true })
+	local map, apply = require("opencode.util.keymap").mapper("mcp_info", bufnr)
+	map("n", "close", close_fn)
+	apply()
 end
 
 function M.register(palette)
@@ -295,10 +296,10 @@ function M.register(palette)
 							vim.log.levels.INFO
 						)
 					end,
+					keymap_scope = "mcp_menu",
 					keys = {
 						{
-							key = "i",
-							label = "i:info",
+							action = "info", label = "info",
 							handler = function(ctx, item)
 								ctx.close()
 								vim.schedule(function()
@@ -307,8 +308,7 @@ function M.register(palette)
 							end,
 						},
 						{
-							key = "t",
-							label = "t:toggle",
+							action = "toggle_server", label = "toggle",
 							handler = function(ctx, item)
 								if item.pending or item.status == "pending" then return end
 								item.pending = true
@@ -330,13 +330,13 @@ function M.register(palette)
 								end, opts)
 							end,
 						},
-						{ key = "a", label = "a:auth", handler = function(ctx, item)
+						{ action = "authenticate", label = "auth", handler = function(ctx, item)
 							local integration_id = item.server and item.server.integrationID
 							if not integration_id then vim.notify("This MCP server has no linked integration", vim.log.levels.INFO); return end
 							ctx.close()
 							require("opencode.ui.palette.integration").connect(integration_id, opts)
 						end },
-						{ key = "r", label = "r:refresh", allow_empty = true, handler = function(ctx, item) refresh_item(item, ctx) end },
+						{ action = "refresh", label = "refresh", allow_empty = true, handler = function(ctx, item) refresh_item(item, ctx) end },
 
 					},
 				}

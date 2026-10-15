@@ -5,6 +5,7 @@ local M = {}
 local opencode_actions = require("opencode.actions")
 local changes = require("opencode.artifact.changes")
 local state = require("opencode.state")
+local keymaps = require("opencode.util.keymap")
 
 require("opencode.ui.highlights").register("opencode.ui.status", function()
 	vim.api.nvim_set_hl(0, "OpenCodeStatusNormal", { link = "Normal", default = true })
@@ -107,7 +108,7 @@ local function show_status_popup(lines, highlights, ctx)
 		max_scroll = math.max(0, #body_lines - visible_count)
 		scroll_offset = math.max(0, math.min(scroll_offset, max_scroll))
 		local header = "    Status"
-		local close_hint = "esc    "
+		local close_hint = keymaps.label("status", "close") .. "    "
 		header = header .. string.rep(" ", math.max(1, actual_width - #header - #close_hint)) .. close_hint
 		local view, marks = {}, {}
 		for index = 1, actual_height do view[index] = "" end
@@ -126,7 +127,8 @@ local function show_status_popup(lines, highlights, ctx)
 			end
 		end
 		local footer_row = math.max(1, actual_height - 1)
-		view[footer_row] = "    j/k:scroll  q/esc:close"
+		view[footer_row] = "    " .. keymaps.label("status", "next"):gsub(" / .*", "") .. "/" .. keymaps.label("status", "previous"):gsub(" / .*", "")
+			.. ":scroll  " .. keymaps.label("status", "close"):gsub(" / .*", "") .. ":close"
 		marks[#marks + 1] = {
 			line = footer_row - 1, col = 4, end_col = #view[footer_row], hl_group = "OpenCodeStatusFooter",
 		}
@@ -181,26 +183,17 @@ local function show_status_popup(lines, highlights, ctx)
 	local function page_size()
 		return math.max(1, vim.api.nvim_win_get_height(popup.winid) - 7)
 	end
-	for _, key in ipairs({ "j", "<Down>", "<ScrollWheelDown>" }) do
-		vim.keymap.set("n", key, function() scroll(1) end, { buffer = popup.bufnr, noremap = true, silent = true })
-	end
-	for _, key in ipairs({ "k", "<Up>", "<ScrollWheelUp>" }) do
-		vim.keymap.set("n", key, function() scroll(-1) end, { buffer = popup.bufnr, noremap = true, silent = true })
-	end
-	for _, key in ipairs({ "<C-d>", "<PageDown>", "<C-f>" }) do
-		vim.keymap.set("n", key, function() scroll(page_size()) end, { buffer = popup.bufnr, noremap = true, silent = true })
-	end
-	for _, key in ipairs({ "<C-u>", "<PageUp>", "<C-b>" }) do
-		vim.keymap.set("n", key, function() scroll(-page_size()) end, { buffer = popup.bufnr, noremap = true, silent = true })
-	end
-	vim.keymap.set("n", "G", function() scroll(math.huge) end,
-		{ buffer = popup.bufnr, noremap = true, silent = true })
-	vim.keymap.set("n", "gg", function() scroll(-math.huge) end,
-		{ buffer = popup.bufnr, noremap = true, silent = true })
-	local close = function() popup:close() end
-	for _, key in ipairs({ "q", "<Esc>", "<C-c>" }) do
-		vim.keymap.set("n", key, close, { buffer = popup.bufnr, noremap = true, silent = true })
-	end
+	local map, apply = keymaps.mapper("status", popup.bufnr)
+	map("n", "next", function() scroll(1) end)
+	map("n", "previous", function() scroll(-1) end)
+	map("n", "page_down", function() scroll(page_size()) end)
+	map("n", "page_up", function() scroll(-page_size()) end)
+	map("n", "bottom", function() scroll(math.huge) end)
+	map("n", "top", function() scroll(-math.huge) end)
+	map("n", "close", function() popup:close() end)
+	apply()
+	draw()
+
 	return popup
 end
 
@@ -264,7 +257,7 @@ function M.register(palette)
 		title = "Abort Request",
 		description = "Stop the current AI request",
 		category = "actions",
-		keybind = "<leader>ox",
+		keybind = keymaps.get("global").abort,
 		run = function()
 			opencode_actions.abort()
 		end,
@@ -278,7 +271,6 @@ function M.register(palette)
 		title = "Clear and Start New Chat",
 		description = "Start a new session and close the current tab",
 		category = "actions",
-		keybind = "<leader>oc",
 		slash = { name = "clear" },
 		run = function()
 			opencode_actions.clear()
@@ -313,7 +305,6 @@ function M.register(palette)
 		title = "Paste Clipboard",
 		description = "Paste text or attach a screenshot to the OpenCode input",
 		category = "actions",
-		keybind = "<C-v>",
 		run = function()
 			opencode_actions.paste_clipboard()
 		end,

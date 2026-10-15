@@ -407,7 +407,10 @@ function M.handle_question_toggle(request_id)
 	local question = qstate.questions[current_tab]
 
 	if not question_state.is_multi_question(question) then
-		vim.notify("Use 1-9 to select an option (Space is for multi-select only)", vim.log.levels.INFO)
+		local keymaps = require("opencode.util.keymap")
+		local keys = (state.config or {}).keymaps
+		vim.notify("Use " .. keymaps.number_labels("chat", 1, 9, keys)
+			.. " to select an option (" .. keymaps.label("chat", "toggle_selection", keys) .. " is for multi-select only)", vim.log.levels.INFO)
 		return
 	end
 

@@ -6,7 +6,7 @@ describe("native server plugin manager", function()
 	local menus, calls, notices, stubs, rendered, bufnr, inventory
 	local function key(opts, name, index)
 		for _, mapping in ipairs(opts.keys) do
-			if mapping.key == name then mapping.handler({ close = function() end }, opts.items[index or 1]); return end
+			if require("opencode.util.keymap").get(opts.keymap_scope)[mapping.action] == name then mapping.handler({ close = function() end }, opts.items[index or 1]); return end
 		end
 		error("Missing menu key " .. name)
 	end

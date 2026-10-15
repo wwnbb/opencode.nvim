@@ -154,7 +154,7 @@ describe("native typed forms", function()
 		} })
 		assert.same({ ok = false }, owner.get_answers("hidden"))
 		local lines = widget.get_lines_for_question("hidden", { questions = {} }, hidden, "pending")
-		assert.is_truthy(table.concat(lines, "\n"):find("Enter to review", 1, true))
+		assert.is_truthy(table.concat(lines, "\n"):find(require("opencode.util.keymap").label("chat", "confirm") .. " to review", 1, true))
 		assert.is_true(owner.begin_submission("hidden", "reply"))
 	end)
 
