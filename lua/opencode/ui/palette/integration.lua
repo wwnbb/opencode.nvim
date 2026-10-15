@@ -1,4 +1,5 @@
 local M = {}
+local keymaps = require("opencode.util.keymap")
 local actions = require("opencode.actions")
 local pending = require("opencode.session.pending")
 local function notify(message, err)
@@ -40,25 +41,25 @@ local function attempt(integration, method, answer, opts)
 		if value.message then vim.list_extend(lines, vim.split(value.message, "\n", { plain = true })) end
 		if value.error then lines[#lines + 1] = value.error end
 		lines[#lines + 1] = ""
-		lines[#lines + 1] = "o: open authorization URL   c: enter code   Esc: close / cancel"
-		lines[#lines + 1] = "y: copy URL   Y: copy authorization instructions / code"
+		lines[#lines + 1] = keymaps.label("integration", "open") .. ": open authorization URL   "
+				.. keymaps.label("integration", "code") .. ": enter code   " .. keymaps.label("integration", "close") .. ": close / cancel"
+		lines[#lines + 1] = keymaps.label("integration", "copy_url") .. ": copy URL   "
+				.. keymaps.label("integration", "copy_instructions") .. ": copy authorization instructions / code"
 		popup:render(lines)
 		if value.status == "complete" then notify("Connected to " .. integration.name); close() end
 	end
-	popup:render({ "Starting authorization…", "Esc: cancel" })
-	local mapopts = { buffer = bufnr, silent = true }
-	vim.keymap.set("n", "<Esc>", close, mapopts)
-	vim.keymap.set("n", "q", close, mapopts)
-	vim.keymap.set("n", "o", function()
+	local map, apply = keymaps.mapper("integration", bufnr)
+	map("n", "close", close)
+	map("n", "open", function()
 		if snapshot and snapshot.url and snapshot.status ~= "expired" then vim.ui.open(snapshot.url) end
-	end, mapopts)
-	vim.keymap.set("n", "c", function()
+	end)
+	map("n", "code", function()
 		if not snapshot or snapshot.status ~= "awaiting_user" or snapshot.mode ~= "code" then return end
 		float.create_input_popup({ title = " Authorization code ", prompt = "Authorization code:", password = true,
 			on_submit = function(code) if not closed then actions.complete_integration_attempt(id, code) end end })
-	end, mapopts)
-	for key, field in pairs({ y = "url", Y = "instructions" }) do
-		vim.keymap.set("n", key, function()
+	end)
+	for action, field in pairs({ copy_url = "url", copy_instructions = "instructions" }) do
+		map("n", action, function()
 			if closed or not snapshot or not pending.is_current(token) then return end
 			local value = snapshot[field] or (field == "instructions" and snapshot.message)
 			if type(value) ~= "string" or value == "" then notify("No authorization " .. field .. " reported"); return end
@@ -67,8 +68,10 @@ local function attempt(integration, method, answer, opts)
 			local read, copied = false, nil
 			if ok and result == 0 then read, copied = pcall(vim.fn.getreg, "+") end
 			notify(read and copied == value and "Copied authorization " .. field or "Copied authorization " .. field .. " to the unnamed register")
-		end, mapopts)
+		end)
 	end
+	apply()
+	popup:render({ "Starting authorization…", keymaps.label("integration", "close") .. ": cancel" })
 	id = actions.start_integration_attempt(integration.id, method, answer, opts, render)
 end
 

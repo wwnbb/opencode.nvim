@@ -63,7 +63,7 @@ describe("MCP palette", function()
 			local closed = false
 			local ctx = { close = function() closed = true end, refresh = function() end }
 			require("opencode.session.pending").invalidate()
-			for _, shortcut in ipairs(menu.keys) do if shortcut.key == key then shortcut.handler(ctx, item) end end
+			for _, shortcut in ipairs(menu.keys) do if require("opencode.util.keymap").get(menu.keymap_scope)[shortcut.action] == key then shortcut.handler(ctx, item) end end
 			assert.equals(0, #toggle)
 			assert.equals(1, reads)
 			assert.equals(0, auth_calls)

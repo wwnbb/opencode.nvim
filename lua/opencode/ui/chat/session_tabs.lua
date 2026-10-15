@@ -614,12 +614,16 @@ local function handle_session_tabs_mouse_click()
 	M.focus_chat_window()
 end
 
+local applied_tab_keys
 local function setup_session_tabs_buffer()
-	if session_tabs_buffer_is_valid() then
+	local keymaps = require("opencode.util.keymap")
+	local keys = { keymaps.resolve("session_tabs") }
+	local exists = session_tabs_buffer_is_valid()
+	if exists and vim.deep_equal(keys, applied_tab_keys) then
 		return state.session_tabs_bufnr
 	end
 
-	local bufnr = vim.api.nvim_create_buf(false, true)
+	local bufnr = exists and state.session_tabs_bufnr or vim.api.nvim_create_buf(false, true)
 	state.session_tabs_bufnr = bufnr
 	vim.bo[bufnr].buftype = "nofile"
 	vim.bo[bufnr].bufhidden = "hide"
@@ -628,23 +632,18 @@ local function setup_session_tabs_buffer()
 	vim.bo[bufnr].modifiable = false
 	vim.bo[bufnr].readonly = true
 
-	local function map(mode, lhs, rhs, desc)
-		vim.keymap.set(mode, lhs, rhs, {
-			buffer = bufnr,
-			noremap = true,
-			silent = true,
-			nowait = true,
-			desc = desc,
-		})
+	local map, apply = keymaps.mapper("session_tabs", bufnr)
+	local function bind(mode, action, rhs, desc)
+		map(mode, action, rhs, { noremap = true, silent = true, nowait = true, desc = desc })
 	end
-
-	map("n", "<LeftMouse>", handle_session_tabs_mouse_click, "Select OpenCode session tab")
-	map({ "v", "s" }, "<LeftMouse>", leave_session_tabs_visual_mode, "Leave OpenCode session tab selection")
-	map({ "n", "v", "s" }, "<LeftDrag>", leave_session_tabs_visual_mode, "Ignore OpenCode session tab drag")
-	map({ "n", "v", "s" }, "<LeftRelease>", leave_session_tabs_visual_mode, "Ignore OpenCode session tab release")
-	map("n", "v", leave_session_tabs_visual_mode, "Disable OpenCode session tab visual mode")
-	map("n", "V", leave_session_tabs_visual_mode, "Disable OpenCode session tab linewise visual mode")
-	map("n", "<C-v>", leave_session_tabs_visual_mode, "Disable OpenCode session tab block visual mode")
+	bind("n", "select", handle_session_tabs_mouse_click, "Select OpenCode session tab")
+	bind({ "x", "s" }, "leave_visual_mouse", leave_session_tabs_visual_mode, "Leave OpenCode session tab selection")
+	bind({ "n", "x", "s" }, "drag", leave_session_tabs_visual_mode, "Ignore OpenCode session tab drag")
+	bind({ "n", "x", "s" }, "release", leave_session_tabs_visual_mode, "Ignore OpenCode session tab release")
+	bind("n", "visual", leave_session_tabs_visual_mode, "Disable OpenCode session tab visual mode")
+	apply()
+	applied_tab_keys = keys
+	if exists then return bufnr end
 
 	pcall(vim.api.nvim_create_autocmd, "ModeChanged", {
 		group = session_tabs_augroup,

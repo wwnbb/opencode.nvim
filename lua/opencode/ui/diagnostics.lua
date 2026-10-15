@@ -17,7 +17,8 @@ function M.show()
 			local ok, err = diagnostics.jump(item, id)
 			if not ok then vim.notify(err, vim.log.levels.WARN) end
 		end,
-		keys = { { key = "<C-q>", label = "Ctrl-q:quickfix", handler = function(ctx)
+		keymap_scope = "diagnostics",
+		keys = { { action = "quickfix", label = "quickfix", handler = function(ctx)
 			if not current() then return end
 			ctx.close(); diagnostics.quickfix(items, id)
 		end } } })

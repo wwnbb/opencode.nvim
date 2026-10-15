@@ -3,12 +3,13 @@ describe("persistent terminals in Neovim", function()
 	local state = require("opencode.state")
 	local pending = require("opencode.session.pending")
 	local terminals = require("opencode.ui.terminals")
-	local stubs, menus, notices, info, buffers, connections, input_callback, sent, removed, created, endpoint
+	local stubs, menus, notices, info, buffers, connections, input_callback, sent, removed, created, endpoint, original_config
 	local function key(opts, name)
-		for _, mapping in ipairs(opts.keys) do if mapping.key == name then mapping.handler({ close = function() end }, opts.items[1]); return end end
+		for _, mapping in ipairs(opts.keys) do if mapping.key == name or require("opencode.util.keymap").matches(require("opencode.util.keymap").get(opts.keymap_scope or "menu")[mapping.action], name) then mapping.handler({ close = function() end }, opts.items[1]); return end end
 		error("Missing menu key " .. name)
 	end
 	before_each(function()
+		original_config = state.get_config()
 		state.reset(); pending.clear_all()
 		state.upsert_session({ id = "s", title = "S", directory = "/remote/project" }); state.set_session("s", "S")
 		stubs, menus, notices, buffers, connections, sent, removed, created = {}, {}, {}, {}, {}, {}, {}, {}
@@ -42,7 +43,25 @@ describe("persistent terminals in Neovim", function()
 		vim.cmd("silent! tabonly!")
 		for _, bufnr in ipairs(buffers) do if vim.api.nvim_buf_is_valid(bufnr) then vim.api.nvim_buf_delete(bufnr, { force = true }) end end
 		for index = #stubs, 1, -1 do stubs[index]:revert() end
-		state.reset(); pending.clear_all()
+		state.reset(); pending.clear_all(); state.set_config(original_config)
+	end)
+	it("uses terminal aliases and escapes their winbar labels", function()
+		state.set_config({ terminal = { keymaps = { reconnect = { "%", "<F6>" }, close = false } } })
+		terminals.open(info, "s", "/remote/project")
+		vim.cmd("stopinsert")
+		local buf, win = buffers[1], vim.api.nvim_get_current_win()
+		local mappings = {}
+		for _, item in ipairs(vim.api.nvim_buf_get_keymap(buf, "n")) do mappings[item.lhs] = item end
+		assert.is_nil(mappings.R); assert.is_nil(mappings.q)
+		assert.is_function(mappings["%"].callback); assert.is_function(mappings["<F6>"].callback)
+		connections[1].on_event({ type = "replay_complete" }, 4)
+		local bar = vim.api.nvim_eval_statusline(vim.wo[win].winbar, { winid = win, use_winbar = true }).str
+		assert.is_truthy(bar:find("% / <F6> reconnect", 1, true))
+		assert.is_truthy(bar:find("(disabled) detach", 1, true))
+		connections[1].on_close("closed", 4)
+		assert.is_nil(vim.wo[win].winbar:find("R reconnect", 1, true))
+		mappings["<F6>"].callback()
+		assert.equals(2, #connections)
 	end)
 	it("renders the remote checkpoint/output in a real terminal and forwards raw keyboard input", function()
 		terminals.show(); menus[1].on_select(menus[1].items[1])

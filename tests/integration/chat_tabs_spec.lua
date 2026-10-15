@@ -233,6 +233,24 @@ assert.is_truthy(has_keymap(chat_view.session_tabs_bufnr, "s", "<LeftDrag>"), "s
 assert.is_truthy(has_keymap(chat_view.session_tabs_bufnr, "n", "v"), "visual mode key is disabled")
 assert.is_truthy(has_keymap(chat_view.session_tabs_bufnr, "n", "V"), "linewise visual mode key is disabled")
 
+local original_tab_config = app_state.get_config()
+local tab_buffer = chat_view.session_tabs_bufnr
+app_state.set_config(vim.tbl_deep_extend("force", original_tab_config, {
+	session_tabs = { keymaps = { select = { "<F10>", "<F11>" }, drag = false } },
+}))
+chat.update_winbar()
+assert.equals(tab_buffer, chat_view.session_tabs_bufnr, "configuration reuses the existing tab strip")
+assert.is_truthy(has_keymap(tab_buffer, "n", "<F10>"), "first configured tab alias installed")
+assert.is_truthy(has_keymap(tab_buffer, "n", "<F11>"), "second configured tab alias installed")
+assert.is_falsy(has_keymap(tab_buffer, "n", "<LeftMouse>"), "old mouse selection key removed")
+for _, mode in ipairs({ "n", "v", "s" }) do
+	assert.is_falsy(has_keymap(tab_buffer, mode, "<LeftDrag>"), "drag mapping disabled in " .. mode)
+end
+app_state.set_config(original_tab_config)
+chat.update_winbar()
+assert.is_truthy(has_keymap(tab_buffer, "n", "<LeftMouse>"), "default tab keys can be restored")
+assert.is_falsy(has_keymap(tab_buffer, "n", "<F10>"), "old configured tab alias removed")
+
 vim.api.nvim_set_current_win(chat_view.session_tabs_winid)
 vim.api.nvim_feedkeys("v", "mx", false)
 assert.equals(winid, vim.api.nvim_get_current_win(), "visual mode key returns focus to chat")

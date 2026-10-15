@@ -54,7 +54,6 @@ M.defaults = {
 		model = nil,
 		variant = nil,
 		options = nil,
-		keymaps = { trigger = "<C-l>", accept = "<Tab>" },
 		timeout_ms = 0, -- No deadline; positive values limit the request in milliseconds.
 		max_lines = 12,
 		context = {
@@ -75,7 +74,6 @@ M.defaults = {
 		options = nil,
 		prompt = nil,
 		language = "en",
-		keymaps = { trigger = "K" },
 		timeout_ms = 0, -- No deadline; positive values limit the request in milliseconds.
 		context = {
 			max_bytes = 24576,
@@ -121,21 +119,6 @@ M.defaults = {
 				error = "✕",
 			},
 		},
-		keymaps = {
-			close = "q",
-			close_session = "x",
-			cancel_question = false,
-			cancel_pending = "C",
-			edit_pending = "E",
-			steer_pending = "S",
-			queue_pending = "Q",
-			focus_input = "i",
-			scroll_up = "<C-u>",
-			scroll_down = "<C-d>",
-			goto_top = "gg",
-			goto_bottom = "G",
-			abort = "<C-c>",
-		},
 	},
 
 	input = {
@@ -145,17 +128,8 @@ M.defaults = {
 		max_height = 20,
 		history_file = vim.fn.stdpath("data") .. "/opencode_input_history.json",
 		max_history = 100,
+		history_search_provider = "grep", -- "grep" or "ripgrep" (rg)
 		stash_file = vim.fn.stdpath("data") .. "/opencode_stash.json",
-		keymaps = {
-			send = "<C-g>",
-			send_steer = "<C-x><C-s>",
-			cancel = "<Esc>",
-			history_prev = "<Up>",
-			history_next = "<Down>",
-			variant_cycle = "<C-t>",
-			agent_cycle = "<C-a>",
-			model_cycle = "<C-e>",
-		},
 	},
 
 	-- Best-effort syntax highlighting for code-like chat surfaces
@@ -260,16 +234,45 @@ M.defaults = {
 		errors = true,
 		current_session = true,
 	},
-
-	keymaps = {
-		toggle = "<leader>oo",
-		command_palette = "<leader>op",
-		toggle_logs = "<leader>ol",
-		close_session = "<leader>oq",
-		abort = "<leader>ox",
-		active_sessions = "<leader>oS",
-	},
 }
+
+local keymap_defaults = require("opencode.keymap_defaults")
+for scope, keys in pairs(keymap_defaults) do
+	if scope == "global" then
+		M.defaults.keymaps = keys
+	elseif scope ~= "parents" then
+		M.defaults[scope] = M.defaults[scope] or {}
+		M.defaults[scope].keymaps = keys
+	end
+end
+
+local function validate_keymaps(merged, opts)
+	merged._keymap_overrides = {}
+	for scope in pairs(keymap_defaults) do
+		if scope ~= "parents" then
+			local path = scope == "global" and "keymaps" or (scope .. ".keymaps")
+			local values = scope == "global" and merged.keymaps or (merged[scope] or {}).keymaps
+			if type(values) ~= "table" then error("opencode.nvim: " .. path .. " must be a table", 3) end
+			local raw = scope == "global" and opts.keymaps or (type(opts[scope]) == "table" and opts[scope].keymaps)
+			local explicit = {}
+			for action, value in pairs(values) do
+				local valid = value == false or type(value) == "string"
+				if (scope == "completion" or scope == "explanation") and value == "" then valid = false end
+				if type(value) == "table" and vim.islist(value) then
+					valid = true
+					for _, lhs in ipairs(value) do
+						if type(lhs) ~= "string" or lhs == "" then valid = false; break end
+					end
+				end
+				if not valid then
+					error("opencode.nvim: " .. path .. "." .. action .. " must be a key sequence, a list of key sequences, or false", 3)
+				end
+				if type(raw) == "table" and raw[action] ~= nil then explicit[action] = true end
+			end
+			merged._keymap_overrides[scope] = explicit
+		end
+	end
+end
 
 local function validate_editor_feature(kind, feature)
 	local prefix = "opencode.nvim: " .. kind
@@ -293,13 +296,6 @@ local function validate_editor_feature(kind, feature)
 		end
 	end
 	if type(feature.keymaps) ~= "table" then error(prefix .. ".keymaps must be a table", 3) end
-	local keys = kind == "completion" and { "trigger", "accept" } or { "trigger" }
-	for _, key in ipairs(keys) do
-		local value = feature.keymaps[key]
-		if value ~= false and (type(value) ~= "string" or value == "") then
-			error(prefix .. ".keymaps." .. key .. " must be a key sequence or false", 3)
-		end
-	end
 end
 
 --- Merge user config with defaults
@@ -328,6 +324,10 @@ function M.merge(opts)
 		end
 	end
 	local merged = vim.deepcopy(vim.tbl_deep_extend("force", M.defaults, opts or {}))
+	validate_keymaps(merged, opts or {})
+	if merged.input.history_search_provider ~= "grep" and merged.input.history_search_provider ~= "ripgrep" then
+		error("opencode.nvim: input.history_search_provider must be grep or ripgrep", 2)
+	end
 	if type(merged.context) ~= "table" then error("opencode.nvim: context must be a table", 2) end
 	local context_bytes = merged.context.max_bytes
 	if type(context_bytes) ~= "number" or context_bytes < 1024 or context_bytes % 1 ~= 0 then
@@ -335,10 +335,11 @@ function M.merge(opts)
 	end
 	local completion = merged.completion
 	validate_editor_feature("completion", completion)
-	if completion.keymaps.trigger and completion.keymaps.accept
-		and vim.api.nvim_replace_termcodes(completion.keymaps.trigger, true, false, true)
-			== vim.api.nvim_replace_termcodes(completion.keymaps.accept, true, false, true) then
-		error("opencode.nvim: completion trigger and accept keys must differ", 2)
+	local keymaps = require("opencode.util.keymap")
+	for _, trigger in ipairs(keymaps.keys(completion.keymaps.trigger)) do
+		if keymaps.matches(completion.keymaps.accept, trigger) then
+			error("opencode.nvim: completion trigger and accept keys must differ", 2)
+		end
 	end
 	local explanation = merged.explanation
 	validate_editor_feature("explanation", explanation)

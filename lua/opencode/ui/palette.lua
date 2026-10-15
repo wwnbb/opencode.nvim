@@ -7,6 +7,7 @@ local Popup = require("opencode.ui.popup")
 local app_state = require("opencode.state")
 local command_registry = require("opencode.command_registry")
 local float_context = require("opencode.ui.float_context")
+local keymaps = require("opencode.util.keymap")
 local hl_ns = vim.api.nvim_create_namespace("opencode_palette")
 
 -- Configuration
@@ -289,8 +290,9 @@ local function format_keybind(keybind)
 		return ""
 	end
 	-- Replace common key names for better display
-	local display = keybind
-	display = display:gsub("<leader>", "SPC ")
+	local display = type(keybind) == "table" and table.concat(keymaps.keys(keybind), "/") or keybind
+	local leader = vim.g.mapleader or "\\"
+	display = display:gsub("<leader>", function() return leader == " " and "SPC " or leader end)
 	display = display:gsub("<C%-", "C-")
 	display = display:gsub("<M%-", "M-")
 	display = display:gsub("<S%-", "S-")
@@ -429,12 +431,13 @@ local function render_list()
 		})
 	end
 	local frame_width = state.frame.win_config.width
-	local title = truncate_display_width("Commands", math.max(0, frame_width - 12))
+	local close_label = keymaps.label("palette", "close")
+	local title = truncate_display_width("Commands", math.max(0, frame_width - vim.fn.strdisplaywidth(close_label) - 9))
 	local header = truncate_display_width("    " .. title
-		.. string.rep(" ", math.max(0, frame_width - #title - 11)) .. "esc    ", frame_width)
+		.. string.rep(" ", math.max(0, frame_width - #title - vim.fn.strdisplaywidth(close_label) - 8)) .. close_label .. "    ", frame_width)
 	state.view:render({ "", header }, {
 		{ line = 1, col = 4, end_col = 4 + #title, hl_group = "OpenCodePaletteTitle" },
-		{ line = 1, col = #header - 7, end_col = #header - 4, hl_group = "OpenCodePaletteKeybind" },
+		{ line = 1, col = math.max(0, #header - #close_label - 4), end_col = math.max(0, #header - 4), hl_group = "OpenCodePaletteKeybind" },
 	}, "frame")
 	vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
 
@@ -634,47 +637,13 @@ function M.show()
 		end,
 	})
 
-	-- Keymaps for input
-	local opts = { buffer = input_buf, noremap = true, silent = true }
-
-	-- Navigation
-	vim.keymap.set({ "i", "n" }, "<C-j>", function()
-		move_selection(1)
-	end, opts)
-
-	vim.keymap.set({ "i", "n" }, "<C-k>", function()
-		move_selection(-1)
-	end, opts)
-
-	vim.keymap.set({ "i", "n" }, "<Down>", function()
-		move_selection(1)
-	end, opts)
-
-	vim.keymap.set({ "i", "n" }, "<Up>", function()
-		move_selection(-1)
-	end, opts)
-
-	vim.keymap.set({ "i", "n" }, "<C-n>", function()
-		move_selection(1)
-	end, opts)
-
-	vim.keymap.set({ "i", "n" }, "<C-p>", function()
-		move_selection(-1)
-	end, opts)
-
-	-- Execute
-	vim.keymap.set({ "i", "n" }, "<CR>", function()
-		execute_selected()
-	end, opts)
-
-	-- Close
-	vim.keymap.set({ "i", "n" }, "<Esc>", function()
-		M.hide()
-	end, opts)
-
-	vim.keymap.set({ "i", "n" }, "<C-c>", function()
-		M.hide()
-	end, opts)
+	local map, apply = keymaps.mapper("palette", input_buf)
+	map({ "i", "n" }, "next", function() move_selection(1) end)
+	map({ "i", "n" }, "previous", function() move_selection(-1) end)
+	map({ "i", "n" }, "select", execute_selected)
+	map({ "i", "n" }, "close", M.hide)
+	apply()
+	render_list()
 
 end
 

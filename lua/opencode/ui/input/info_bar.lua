@@ -159,8 +159,23 @@ function M.update(state)
 		return
 	end
 
+	if state.history_search then
+		local keys = require("opencode.util.keymap")
+		local text = "History · type to search · " .. keys.label("input", "command_enter") .. "/"
+			.. keys.label("input", "autocomplete_confirm") .. ":insert · Esc:cancel"
+		vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { clip(text, state.layout.content_width) })
+		vim.api.nvim_buf_clear_namespace(bufnr, NS_INFO, 0, -1)
+		mark(bufnr, 0, clip(text, state.layout.content_width), "OpenCodeInputInfo")
+		return
+	end
+
 	local agent, model, provider, variant, agent_hl = info_parts()
-	if state.mode == "shell" then agent, model, provider, variant = "shell", "Ctrl-\\: return to chat", "", nil end
+	if state.mode == "shell" then
+		local keymaps = require("opencode.util.keymap")
+		local toggle = keymaps.label("input", "toggle_mode")
+		if toggle == "(disabled)" then toggle = "/shell" end
+		agent, model, provider, variant = "shell", toggle .. ": return to chat", "", nil
+	end
 	vim.api.nvim_set_hl(0, "OpenCodeInputBorderAgent", { link = agent_hl, default = false })
 
 	local agent_part = titlecase(agent) .. " "

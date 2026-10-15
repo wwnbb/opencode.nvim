@@ -63,14 +63,15 @@ function M.show()
 			on_select = function(item)
 				if current() then require("opencode.ui.chat.nav").open_family_session(item.value) end
 			end,
+			keymap_scope = "family_menu",
 			keys = {
-				{ key = "a", label = "a:all/active/inactive", allow_empty = true, handler = function(ctx)
+				{ action = "filter", label = "all/active/inactive", allow_empty = true, handler = function(ctx)
 					if not current() then return end
 					mode = mode == "all" and "active" or mode == "active" and "inactive" or "all"
 					load(ctx.refresh)
 				end },
-				{ key = "r", label = "r:refresh", allow_empty = true, handler = function(ctx) if current() then load(ctx.refresh) end end },
-				{ key = "x", label = "x:interrupt", handler = function(ctx, item)
+				{ action = "refresh", label = "refresh", allow_empty = true, handler = function(ctx) if current() then load(ctx.refresh) end end },
+				{ action = "interrupt", label = "interrupt", handler = function(ctx, item)
 					if not current() or interrupting[item.value] or not status.is_busy(app_state.get_session_status(item.value)) then return end
 					interrupting[item.value] = true
 					actions.interrupt_session(item.value, function(err)

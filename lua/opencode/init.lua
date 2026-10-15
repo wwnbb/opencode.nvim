@@ -165,10 +165,10 @@ end
 ---@param opts table Configuration options
 function M.setup(opts)
 	M._config = config.merge(opts)
-	require("opencode.commands").configure_keymaps(M._config.keymaps)
 
 	M._config = require("opencode.settings").setup(M._config)
 	state.set_config(M._config)
+	require("opencode.commands").configure_keymaps(M._config.keymaps)
 	require("opencode.editor_context").setup()
 	state.set_danger_mode(M._config.danger_mode == true)
 	state.set_server_info({
@@ -284,15 +284,6 @@ function M.setup(opts)
     slash.register_defaults()
   elseif not slash_ok then
     vim.notify("Failed to load slash commands: " .. tostring(slash), vim.log.levels.WARN)
-  end
-
-  -- The five loader keymaps are replaced from the merged config above.
-  local km = M._config.keymaps or {}
-
-  if km.abort then
-    vim.keymap.set("n", km.abort, function()
-      require("opencode").abort()
-    end, { noremap = true, silent = true, desc = "Abort OpenCode request" })
   end
 
   -- blend only hides the background; matching Normal's background also hides the cursor foreground.
@@ -564,15 +555,17 @@ function M.complete()
 	return require("opencode.completion").complete()
 end
 
---- Accept the visible suggestion; safe for expr/snippet completion mappings.
+--- Accept the suggestion at the cursor, waiting if needed; safe for expr/snippet mappings.
 function M.accept_completion()
 	return require("opencode.completion").accept()
 end
 
+--- Cancel all editor completion requests.
 function M.dismiss_completion()
 	return require("opencode.completion").dismiss()
 end
 
+--- Whether the current buffer has a visible editor completion suggestion.
 function M.completion_visible()
 	return require("opencode.completion").visible()
 end

@@ -51,13 +51,14 @@ function M.show(opts)
 		end
 		require("opencode.ui.menu").open({ title = " Server Plugins ", message = opts.directory, items = items, width = 76, searchable = true,
 			on_select = function(item) if pending.is_current(token) then details(item.plugin) end end,
+			keymap_scope = "plugin_menu",
 			keys = {
-				{ key = "c", label = "c:check selected", handler = function(ctx, item)
+				{ action = "check", label = "check selected", handler = function(ctx, item)
 					if item.plugin.source.type ~= "package" then vim.notify("Only package plugins have updates", vim.log.levels.INFO); return end
 					check(ctx, item.plugin.source.target)
 				end },
-				{ key = "C", label = "C:check all", handler = function(ctx) check(ctx) end },
-				{ key = "u", label = "u:update selected", handler = function(ctx, item)
+				{ action = "check_all", label = "check all", handler = function(ctx) check(ctx) end },
+				{ action = "update", label = "update selected", handler = function(ctx, item)
 					if not pending.is_current(token) then return end
 					local plugin = item.plugin
 					if plugin.source.type ~= "package" or not plugin.source.outdated or plugin.source.updating then

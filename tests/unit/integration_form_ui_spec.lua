@@ -1,12 +1,32 @@
 describe("integration forms", function()
-	local dialog, original_open, original_popup
+	local dialog, original_open, original_popup, original_config
 	local float = require("opencode.ui.float")
 	before_each(function()
+		original_config = require("opencode.state").get_config()
 		dialog, original_open, original_popup = nil, vim.ui.open, float.create_input_popup
 	end)
 	after_each(function()
 		if dialog then dialog.close() end
 		vim.ui.open, float.create_input_popup = original_open, original_popup
+		require("opencode.state").set_config(original_config)
+	end)
+	it("renders remapped option aliases and submits through the configured key", function()
+		require("opencode.state").set_config({ form = { keymaps = {
+			option_2 = { "<F2>", "<F3>" }, submit = "<F8>", close = false,
+		} } })
+		local result
+		dialog = require("opencode.ui.form").open({ { key = "enabled", type = "boolean", required = true } },
+			{ title = "Configured form" }, function(answer) result = answer end)
+		local buf = vim.api.nvim_get_current_buf()
+		local mappings = {}
+		for _, item in ipairs(vim.api.nvim_buf_get_keymap(buf, "n")) do mappings[item.lhs] = item end
+		assert.is_nil(mappings["2"]); assert.is_nil(mappings.q); assert.is_nil(mappings["<Esc>"])
+		assert.is_function(mappings["<F2>"].callback)
+		local rendered = table.concat(vim.api.nvim_buf_get_lines(buf, 0, -1, false), " "):gsub("▏", ""):gsub("%s+", " ")
+		assert.is_truthy(rendered:find("<F2> / <F3> select", 1, true))
+		assert.is_truthy(rendered:find("<F8> submit", 1, true))
+		mappings["<F3>"].callback(); mappings["<F8>"].callback()
+		assert.same({ enabled = false }, result)
 	end)
 	it("renders the shared form widget and submits typed false/number/hidden values", function()
 		local result, count = nil, 0

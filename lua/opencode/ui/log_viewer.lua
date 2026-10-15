@@ -2,6 +2,7 @@
 -- Split window for viewing plugin logs using nui.nvim components
 
 local M = {}
+local keymaps = require("opencode.util.keymap")
 
 local NuiSplit = require("nui.split")
 local NuiLine = require("nui.line")
@@ -135,11 +136,8 @@ local function build_header_lines(log_count)
 
 	-- Auto-scroll indicator
 	local indicator = NuiLine()
-	if state.auto_scroll then
-		indicator:append(NuiText(" [Auto-scroll ON - press 'a' to toggle] ", "Comment"))
-	else
-		indicator:append(NuiText(" [Auto-scroll OFF - press 'a' to toggle] ", "Comment"))
-	end
+	indicator:append(NuiText(" [Auto-scroll " .. (state.auto_scroll and "ON" or "OFF") .. " - "
+		.. keymaps.label("logs", "auto_scroll", (state.config or {}).keymaps) .. " to toggle] ", "Comment"))
 	table.insert(lines, indicator)
 
 	-- Empty line
@@ -268,35 +266,13 @@ end
 ---------------------------------------------------------------
 
 local function setup_keymaps(split)
-	local opts = { noremap = true, silent = true }
-
-	-- Close
-	split:map("n", "q", function()
-		M.close()
-	end, opts)
-	split:map("n", "<Esc>", function()
-		M.close()
-	end, opts)
-
-	-- Clear
-	split:map("n", "C", function()
-		M.clear_logs()
-	end, opts)
-
-	-- Auto-scroll toggle
-	split:map("n", "a", function()
-		M.toggle_auto_scroll()
-	end, opts)
-
-	-- Refresh
-	split:map("n", "r", function()
-		M.refresh()
-	end, opts)
-
-	-- Help
-	split:map("n", "?", function()
-		M.show_help()
-	end, opts)
+	local map, apply = keymaps.mapper("logs", split.bufnr, (state.config or {}).keymaps)
+	map("n", "close", M.close)
+	map("n", "clear", M.clear_logs)
+	map("n", "auto_scroll", M.toggle_auto_scroll)
+	map("n", "refresh", M.refresh)
+	map("n", "help", M.show_help)
+	apply()
 end
 
 local function try_mount_split(cfg)
@@ -558,22 +534,12 @@ end
 
 -- Show help for the split log viewer.
 function M.show_help()
-	local lines = {
-		" Log Viewer Keymaps ",
-		"",
-		" q / <Esc>  - Close viewer",
-		" j / k      - Scroll line by line",
-		" <C-u>      - Scroll up half page",
-		" <C-d>      - Scroll down half page",
-		" gg         - Go to top",
-		" G          - Go to bottom",
-		" C          - Clear all logs",
-		" a          - Toggle auto-scroll",
-		" r          - Refresh",
-		" ?          - Show this help",
-		"",
-		" q / <Esc>  - Close help",
-	}
+	local lines = { " Log Viewer Keymaps ", "", " Native Neovim navigation: j/k, Ctrl-u/Ctrl-d, gg/G", "" }
+	for _, action in ipairs({ "close", "clear", "auto_scroll", "refresh", "help" }) do
+		lines[#lines + 1] = " " .. keymaps.label("logs", action, (state.config or {}).keymaps) .. " - " .. action:gsub("_", " ")
+	end
+	lines[#lines + 1] = ""
+	lines[#lines + 1] = " " .. keymaps.label("help", "close") .. " - Close help"
 
 	local popup = require("opencode.ui.float").create_centered_popup({
 		width = 38,
@@ -583,20 +549,17 @@ function M.show_help()
 	})
 
 	popup:mount()
-	popup:render(lines)
 	vim.wo[popup.winid].wrap = true
 
-	-- Close help without intercepting scrolling.
-	local close_keys = { "q", "<Esc>", "<CR>", "<Space>" }
-	for _, key in ipairs(close_keys) do
-		vim.keymap.set("n", key, function()
-			popup:close()
-		end, { buffer = popup.bufnr, noremap = true, silent = true })
+	local map, apply = keymaps.mapper("help", popup.bufnr)
+	map("n", "close", function() popup:close() end)
+	for action, command in pairs({ down = "j", up = "k", half_page_up = "<C-u>", half_page_down = "<C-d>",
+		page_up = "<C-b>", page_down = "<C-f>", top = "gg", bottom = "G" }) do
+		map("n", action, command)
 	end
-
-	for _, key in ipairs({ "j", "k", "<Up>", "<Down>", "<C-u>", "<C-d>", "<C-b>", "<C-f>", "gg", "G" }) do
-		vim.keymap.set("n", key, key, { buffer = popup.bufnr, noremap = true, silent = true })
-	end
+	apply()
+	lines[#lines] = " " .. keymaps.label("help", "close") .. " - Close help"
+	popup:render(lines)
 end
 
 -- Setup with user config

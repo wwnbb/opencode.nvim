@@ -3,6 +3,7 @@
 local M = {}
 
 local actions = require("opencode.actions")
+local keymap = require("opencode.util.keymap")
 
 local function run_add_context_command(action_name, send_now, raw_context)
 	local context = vim.trim(raw_context or "")
@@ -218,6 +219,7 @@ local global_keymaps = {
 	{ key = "command_palette", action = actions.command_palette, desc = "OpenCode command palette" },
 	{ key = "toggle_logs", action = actions.toggle_logs, desc = "Toggle OpenCode logs" },
 	{ key = "active_sessions", action = actions.active_sessions, desc = "OpenCode active sessions" },
+	{ key = "abort", action = function() actions.abort() end, desc = "Abort OpenCode generation" },
 	{
 		key = "close_session",
 		action = function()
@@ -227,29 +229,20 @@ local global_keymaps = {
 	},
 }
 
-local installed_callbacks = {}
-
 --- Replace only keymaps still owned by this plugin. A user may have replaced
 --- a loader mapping before setup() applies their configuration.
 function M.configure_keymaps(keymaps)
-	for _, mapping in ipairs(vim.api.nvim_get_keymap("n")) do
-		if installed_callbacks[mapping.callback] then
-			vim.keymap.del("n", mapping.lhs)
-		end
-	end
-	installed_callbacks = {}
-
+	local values = {}
 	for _, spec in ipairs(global_keymaps) do
-		local lhs = keymaps and keymaps[spec.key]
-		if type(lhs) == "string" and lhs ~= "" then
-			local action = spec.action
-			local callback = function()
-				action()
-			end
-			vim.keymap.set("n", lhs, callback, { desc = spec.desc, noremap = true, silent = true })
-			installed_callbacks[callback] = true
-		end
+		local value = keymaps and keymaps[spec.key]
+		values[spec.key] = value or false
 	end
+	local map, apply = keymap.mapper("global", nil, values)
+	for _, spec in ipairs(global_keymaps) do
+		local action = spec.action
+		map("n", spec.key, function() return action() end, { desc = spec.desc })
+	end
+	apply()
 end
 
 function M.setup()

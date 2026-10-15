@@ -1,4 +1,30 @@
 describe("opencode log viewer configuration", function()
+	it("shows configured log controls and effective help close keys", function()
+		local app, viewer = require("opencode.state"), require("opencode.ui.log_viewer")
+		local previous_config, helpbuf, logbuf = app.get_config(), nil, nil
+		local ok, err = xpcall(function()
+			app.set_config({ help = { keymaps = { bottom = "q" } } })
+			viewer.setup({ keymaps = { auto_scroll = { "<F8>", "<F9>" }, close = false } })
+			viewer.open()
+			local buf = vim.api.nvim_get_current_buf()
+			logbuf = buf
+			assert.equals("", vim.fn.maparg("a", "n")); assert.equals("", vim.fn.maparg("q", "n"))
+			vim.fn.maparg("<F8>", "n", false, true).callback()
+			local header = table.concat(vim.api.nvim_buf_get_lines(buf, 0, -1, false), "\n")
+			assert.is_truthy(header:find("<F8> / <F9> to toggle", 1, true))
+			viewer.show_help(); helpbuf = vim.api.nvim_get_current_buf()
+			assert.equals("G", vim.fn.maparg("q", "n"))
+			local lines = table.concat(vim.api.nvim_buf_get_lines(helpbuf, 0, -1, false), "\n")
+			assert.is_truthy(lines:find("<F8> / <F9> - auto scroll", 1, true))
+			assert.is_truthy(lines:find("<Esc> / <CR> / <Space> - Close help", 1, true))
+			vim.fn.maparg("<Esc>", "n", false, true).callback()
+		end, debug.traceback)
+		if helpbuf and vim.api.nvim_buf_is_valid(helpbuf) then vim.api.nvim_buf_delete(helpbuf, { force = true }) end
+		viewer.close()
+		if logbuf and vim.api.nvim_buf_is_valid(logbuf) then vim.api.nvim_buf_delete(logbuf, { force = true }) end
+		viewer.setup(nil); app.set_config(previous_config)
+		assert.is_true(ok, err)
+	end)
 	it("uses app logs config and keeps open overrides local", function()
 		vim.opt.runtimepath:append(vim.fn.getcwd())
 

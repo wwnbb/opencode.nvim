@@ -1,13 +1,14 @@
 -- Local forms (integration setup) share typed projection and rendering with chat forms.
 local M = {}
+local keymaps = require("opencode.util.keymap")
 function M.open(fields, opts, callback)
 	local forms = require("opencode.question.forms")
 	local form_external = require("opencode.ui.form_external")
 	local widget = require("opencode.ui.question_widget")
 	local float = require("opencode.ui.float")
-	local item = { questions = {}, current_tab = 1, status = "pending" }
+	local item = { keymap_scope = "form", questions = {}, current_tab = 1, status = "pending" }
 	forms.init(item, { title = opts.title, fields = fields })
-	item.hint = "1-9 select · Space toggle · c text · Tab/S-Tab field · Ctrl-g submit · Esc cancel"
+
 	local popup, bufnr = float.create_centered_popup({ title = " " .. opts.title .. " ",
 		width = math.min(72, math.max(10, vim.o.columns - 4)), height = math.min(20, math.max(4, vim.o.lines - 6)) })
 	popup:mount()
@@ -23,6 +24,20 @@ function M.open(fields, opts, callback)
 	local function render()
 		if closed or not vim.api.nvim_buf_is_valid(bufnr) then return end
 		forms.pull(item); forms.rebuild(item)
+		local hints = {}
+		local q = current()
+		if q and #q.options > 0 then
+			local choices, normal = {}, true
+			for index = 1, math.min(9, #q.options) do
+				local label = keymaps.label("form", "option_" .. index)
+				choices[#choices + 1], normal = label, normal and label == tostring(index)
+			end
+			hints[#hints + 1] = (normal and ("1-" .. #choices) or table.concat(choices, " / ")) .. " select"
+		end
+		for _, action in ipairs({ "toggle", "custom", "next_field", "prev_field", "submit", "close" }) do
+			hints[#hints + 1] = keymaps.label("form", action) .. " " .. action:gsub("_", " ")
+		end
+		item.hint = table.concat(hints, " · ")
 		local lines, highlights, meta = widget.get_lines_for_question("integration", item.questions, item, "pending",
 			{ width = vim.api.nvim_win_get_width(popup.winid) })
 		popup:render(lines, highlights)
@@ -53,7 +68,7 @@ function M.open(fields, opts, callback)
 		local q, selection = current()
 		if not q then return end
 		if q.field_type == "external" then
-			if not form_external.copy(q.url) then return end
+			if not form_external.copy(q.url, "form") then return end
 			forms.mark_external_ready(item, q.key)
 			render()
 			return
@@ -72,24 +87,25 @@ function M.open(fields, opts, callback)
 		for i, q in ipairs(item.questions) do if item.field_errors[q.key] then item.current_tab = i; break end end
 		render()
 	end
-	local function map(key, fn) vim.keymap.set("n", key, fn, { buffer = bufnr, silent = true }) end
-	for i = 1, 9 do map(tostring(i), function() choose(i) end) end
-	for key, direction in pairs({ ["<Tab>"] = 1, ["<S-Tab>"] = -1 }) do
+	local bind, apply = keymaps.mapper("form", bufnr)
+	local function map(action, fn) bind("n", action, fn) end
+	for i = 1, 9 do map("option_" .. i, function() choose(i) end) end
+	for key, direction in pairs({ next_field = 1, prev_field = -1 }) do
 		map(key, function() item.current_tab = ((item.current_tab - 1 + direction) % math.max(1, #item.questions)) + 1; cursor = 1; render() end)
 	end
-	for key, direction in pairs({ j = 1, k = -1 }) do
+	for key, direction in pairs({ next = 1, previous = -1 }) do
 		map(key, function()
 			local q = current()
 			if q and #q.options > 0 then cursor = ((cursor - 1 + direction) % #q.options) + 1; render() end
 		end)
 	end
-	map("<Space>", function() choose(cursor) end)
-	map("<CR>", function()
+	map("toggle", function() choose(cursor) end)
+	map("confirm", function()
 		local q, selection = current()
 		if not q then submit()
 		elseif q.field_type == "external" then
 			if not selection.external_ready then
-				if not form_external.open(q.url) then return end
+				if not form_external.open(q.url, "form") then return end
 				forms.mark_external_ready(item, q.key)
 			elseif not selection.is_answered then
 				forms.acknowledge_external(item, q.key)
@@ -99,7 +115,8 @@ function M.open(fields, opts, callback)
 		elseif #q.options > 0 then choose(cursor)
 		else custom() end
 	end)
-	map("c", custom); map("<C-g>", submit); map("<Esc>", function() finish(nil) end); map("q", function() finish(nil) end)
+	map("custom", custom); map("submit", submit); map("close", function() finish(nil) end)
+	apply()
 	vim.api.nvim_create_autocmd("BufWipeout", { buffer = bufnr, once = true, callback = function()
 		if not closed then closed = true; callback(nil) end
 	end })

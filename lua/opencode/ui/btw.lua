@@ -6,6 +6,7 @@ local M = {}
 local highlights = require("opencode.ui.highlights")
 local render = require("opencode.ui.chat.render")
 local Popup = require("opencode.ui.popup")
+local keymaps = require("opencode.util.keymap")
 
 local active
 local PROMPT_WIDTH = 60
@@ -51,10 +52,19 @@ end
 
 local clip = require("opencode.util.text").truncate
 
-local function header(width)
-	local left, right = "  /btw", "esc  "
+local function binding(scope, action)
+	local label = keymaps.label(scope, action)
+	return label ~= "(disabled)" and label or ""
+end
+
+local function header(view, width)
+	local scope = view.kind == "prompt" and "btw_prompt" or "btw_answer"
+	local close = binding(scope, "close")
+	local left, right = "  /btw", close ~= "" and (close .. "  ") or ""
 	local gap = width - vim.fn.strdisplaywidth(left .. right)
-	return gap >= 1 and (left .. string.rep(" ", gap) .. right) or clip(left, width), gap >= 1
+	view.close_start = gap >= 1 and close ~= "" and (width - vim.fn.strdisplaywidth(right) + 1) or nil
+	return gap >= 1 and (left .. string.rep(" ", gap) .. right) or clip(left, width),
+		view.close_start and (#left + gap) or nil
 end
 
 local function wrap_lines(text, width)
@@ -151,7 +161,7 @@ local function draw(view)
 	view.max_scroll = math.max(0, #answer_lines - answer_rows)
 	view.scroll = math.min(math.max(0, view.scroll or 0), view.max_scroll)
 
-	local heading, has_esc = header(width)
+	local heading, close_start = header(view, width)
 	local lines = {}
 	local function add_line(value)
 		lines[#lines + 1] = value
@@ -171,8 +181,17 @@ local function draw(view)
 	end
 	local raised_end = add_line("")
 	add_line("")
-	local footer = clip(view.copied and "  ✓ copied   ↑/↓ scroll"
-		or (view.copy_failed and "  copy failed   ↑/↓ scroll" or "  c copy   ↑/↓ scroll"), width)
+	local copy = binding("btw_answer", "copy")
+	copy = copy ~= "" and (copy .. " copy") or ""
+	view.copy_width = vim.fn.strdisplaywidth(copy)
+	local scroll_keys = {}
+	for _, action in ipairs({ "scroll_up", "scroll_down" }) do
+		local value = binding("btw_answer", action)
+		if value ~= "" then scroll_keys[#scroll_keys + 1] = value end
+	end
+	local scroll_hint = #scroll_keys > 0 and ("   " .. table.concat(scroll_keys, " / ") .. " scroll") or ""
+	local footer = clip("  " .. (view.copied and "✓ copied" or (view.copy_failed and "copy failed" or copy))
+		.. scroll_hint, width)
 	local footer_row = add_line(footer)
 	add_line("")
 	for index = #lines + 1, height do lines[index] = "" end
@@ -183,7 +202,7 @@ local function draw(view)
 		marks[#marks + 1] = { row = row, col = 0, opts = { line_hl_group = "OpenCodeBtwRaised", priority = 1 } }
 	end
 	mark(marks, lines, header_row, 2, math.min(#heading, 6), "OpenCodeBtwTitle")
-	if has_esc then mark(marks, lines, header_row, #heading - 5, #heading, "OpenCodeBtwMuted") end
+	if close_start then mark(marks, lines, header_row, close_start, #heading, "OpenCodeBtwMuted") end
 	for index = 1, question_count do
 		local row = question_start + index - 1
 		mark(marks, lines, row, 2, #lines[row + 1], "OpenCodeBtwMuted")
@@ -208,8 +227,9 @@ local function draw(view)
 	elseif view.copy_failed then
 		mark(marks, lines, footer_row, 2, #footer, "OpenCodeBtwMuted")
 	else
-		mark(marks, lines, footer_row, 2, math.min(#footer, 3), "OpenCodeBtwTitle")
-		mark(marks, lines, footer_row, math.min(#footer, 4), #footer, "OpenCodeBtwMuted")
+		local key_end = math.min(#footer, 2 + math.max(0, #copy - #" copy"))
+		mark(marks, lines, footer_row, 2, key_end, "OpenCodeBtwTitle")
+		mark(marks, lines, footer_row, key_end, #footer, "OpenCodeBtwMuted")
 	end
 	view.popup:render(lines, marks)
 	if view.winid and vim.api.nvim_win_is_valid(view.winid) then
@@ -252,7 +272,7 @@ local function panel_mouse_position(view)
 end
 
 local function clicked_escape(view, row, col)
-	return row == 2 and col >= view.geometry.width - 4 and col <= view.geometry.width - 2
+	return view.close_start and row == 2 and col >= view.close_start and col <= view.geometry.width - 2
 end
 
 local function answer_click()
@@ -262,7 +282,7 @@ local function answer_click()
 	if not row then return end
 	if clicked_escape(view, row, col) then
 		M.close()
-	elseif row == view.footer_row and col >= 3 and col <= 8 and not view.copied then
+	elseif row == view.footer_row and col >= 3 and col <= 2 + view.copy_width and not view.copied then
 		copy_answer()
 	end
 end
@@ -285,14 +305,15 @@ end
 local function draw_prompt(view)
 	if active ~= view or not vim.api.nvim_buf_is_valid(view.bufnr) then return end
 	local geometry = view.geometry
-	local heading, has_esc = header(geometry.width)
+	local heading, close_start = header(view, geometry.width)
 	local lines = {}
 	for index = 1, geometry.height do lines[index] = "" end
 	lines[2] = heading
-	lines[math.max(2, geometry.height - 1)] = clip("  return submit", geometry.width)
+	local submit = binding("btw_prompt", "submit")
+	lines[math.max(2, geometry.height - 1)] = clip(submit ~= "" and ("  " .. submit .. " submit") or "", geometry.width)
 	local marks = {}
 	mark(marks, lines, 1, 2, math.min(#heading, 6), "OpenCodeBtwTitle")
-	if has_esc then mark(marks, lines, 1, #heading - 5, #heading, "OpenCodeBtwMuted") end
+	if close_start then mark(marks, lines, 1, close_start, #heading, "OpenCodeBtwMuted") end
 	local footer_row = math.max(1, geometry.height - 2)
 	mark(marks, lines, footer_row, 2, #lines[footer_row + 1], "OpenCodeBtwMuted")
 	view.popup:render(lines, marks)
@@ -391,7 +412,6 @@ function M.prompt(on_submit)
 	local geometry = dimensions("prompt")
 	local view = create_dialog("prompt", geometry, function() return dimensions("prompt") end, draw_prompt)
 	local input_bufnr, input_winid = view.input_bufnr, view.input_winid
-	draw_prompt(view)
 	local function update_placeholder()
 		if active ~= view or not vim.api.nvim_buf_is_valid(input_bufnr) then return end
 		local value = table.concat(vim.api.nvim_buf_get_lines(input_bufnr, 0, -1, false), "\n")
@@ -413,20 +433,26 @@ function M.prompt(on_submit)
 		M.close()
 		if type(on_submit) == "function" then on_submit(value) end
 	end
-	local keyopts = { buffer = input_bufnr, noremap = true, silent = true, nowait = true }
-	vim.keymap.set({ "i", "n" }, "<Esc>", M.close, keyopts)
-	vim.keymap.set({ "i", "n" }, "<C-c>", function()
+	local map, apply = keymaps.mapper("btw_prompt", input_bufnr)
+	map("n", "close", M.close, { nowait = true })
+	map("i", "close", M.close, { nowait = true, filter = function(key) return not keymaps.matches("q", key) end })
+	map({ "i", "n" }, "clear", function()
 		local value = table.concat(vim.api.nvim_buf_get_lines(input_bufnr, 0, -1, false), "\n")
 		if value == "" then M.close(); return end
 		view.popup:render({ "" }, {}, "input")
 		vim.api.nvim_win_set_cursor(input_winid, { 1, 0 })
 		update_placeholder()
-	end, keyopts)
-	vim.keymap.set({ "i", "n" }, "<CR>", submit, keyopts)
-	vim.keymap.set("n", "q", M.close, keyopts)
-	vim.keymap.set("n", "<LeftMouse>", function() prompt_click(view) end,
-		{ buffer = view.bufnr, noremap = true, silent = true, nowait = true })
-	vim.keymap.set("n", "<Esc>", M.close, { buffer = view.bufnr, noremap = true, silent = true, nowait = true })
+	end, { nowait = true })
+	map({ "i", "n" }, "submit", submit, { nowait = true })
+	apply()
+	local panel_map, panel_apply = keymaps.mapper("btw_prompt", view.bufnr)
+	local _, customized = keymaps.resolve("btw_prompt")
+	panel_map("n", "click", function() prompt_click(view) end, { nowait = true })
+	panel_map("n", "close", M.close, { nowait = true, filter = function(key)
+		return customized.close or keymaps.matches("<Esc>", key)
+	end })
+	panel_apply()
+	draw_prompt(view)
 	view.popup:on("TextChanged", update_placeholder, "input")
 	view.popup:on("TextChangedI", update_placeholder, "input")
 	update_placeholder()
@@ -440,25 +466,17 @@ function M.show(question, answer)
 	local geometry = result_dimensions(question)
 	local view = create_dialog("answer", geometry, function(current) return result_dimensions(current.question) end, draw)
 	view.question, view.answer, view.scroll, view.max_scroll = question, answer, 0, 0
+	local map, apply = keymaps.mapper("btw_answer", view.bufnr)
+	map("n", "close", M.close, { nowait = true })
+	map("n", "copy", copy_answer, { nowait = true })
+	map("n", "click", answer_click, { nowait = true })
+	for action, amount in pairs({ scroll_down = 1, scroll_up = -1, page_down = 20, page_up = -20 }) do
+		map("n", action, function() scroll(amount) end, { nowait = true })
+	end
+	map("n", "goto_bottom", function() scroll(view.max_scroll) end, { nowait = true })
+	map("n", "goto_top", function() scroll(-view.max_scroll) end, { nowait = true })
+	apply()
 	draw(view)
-	local keyopts = { buffer = view.bufnr, noremap = true, silent = true, nowait = true }
-	vim.keymap.set("n", "<Esc>", M.close, keyopts)
-	vim.keymap.set("n", "<C-c>", M.close, keyopts)
-	vim.keymap.set("n", "q", M.close, keyopts)
-	vim.keymap.set("n", "c", copy_answer, keyopts)
-	vim.keymap.set("n", "<LeftMouse>", answer_click, keyopts)
-	vim.keymap.set("n", "<Down>", function() scroll(1) end, keyopts)
-	vim.keymap.set("n", "<Up>", function() scroll(-1) end, keyopts)
-	vim.keymap.set("n", "j", function() scroll(1) end, keyopts)
-	vim.keymap.set("n", "k", function() scroll(-1) end, keyopts)
-	vim.keymap.set("n", "<C-d>", function() scroll(20) end, keyopts)
-	vim.keymap.set("n", "<C-u>", function() scroll(-20) end, keyopts)
-	vim.keymap.set("n", "<PageDown>", function() scroll(20) end, keyopts)
-	vim.keymap.set("n", "<PageUp>", function() scroll(-20) end, keyopts)
-	vim.keymap.set("n", "<End>", function() scroll(view.max_scroll) end, keyopts)
-	vim.keymap.set("n", "<Home>", function() scroll(-view.max_scroll) end, keyopts)
-	vim.keymap.set("n", "G", function() scroll(view.max_scroll) end, keyopts)
-	vim.keymap.set("n", "gg", function() scroll(-view.max_scroll) end, keyopts)
 	return view
 end
 

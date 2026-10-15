@@ -5,6 +5,7 @@ local M = {}
 
 local Popup = require("opencode.ui.popup")
 local float_context = require("opencode.ui.float_context")
+local keymaps = require("opencode.util.keymap")
 
 require("opencode.ui.highlights").register("opencode.ui.float", function()
 	local normal = vim.api.nvim_get_hl(0, { name = "NormalFloat", link = false })
@@ -48,12 +49,11 @@ function M.create_centered_popup(opts)
 	return popup, popup.bufnr
 end
 
--- Setup standard keymaps for a popup (q to close, Esc to close)
+-- Shared close controls for read-only popups.
 function M.setup_close_keymaps(bufnr, close_fn)
-	local opts = { buffer = bufnr, noremap = true, silent = true }
-
-	vim.keymap.set("n", "q", close_fn, opts)
-	vim.keymap.set("n", "<Esc>", close_fn, opts)
+	local map, apply = keymaps.mapper("popup", bufnr)
+	map("n", "close", close_fn)
+	apply()
 end
 
 -- Create input popup for text entry (API keys, codes, etc.)
@@ -151,7 +151,7 @@ function M.create_input_popup(opts)
 				text = {
 					top = opts.title or " Input ",
 					top_align = "center",
-					bottom = " ⏎:submit  esc:cancel ",
+					bottom = " " .. keymaps.label("popup", "submit") .. ":submit  " .. keymaps.label("popup", "cancel") .. ":cancel ",
 					bottom_align = "center",
 				},
 			},
@@ -179,6 +179,27 @@ function M.create_input_popup(opts)
 		popup:close()
 	end
 	if opts.password then
+		local bindings, customized = keymaps.resolve("password")
+		local commands = {}
+		for _, action in ipairs({ "submit", "cancel", "backspace", "clear", "paste" }) do
+			for _, lhs in ipairs(keymaps.keys(bindings[action])) do
+				local code, previous = keymaps.code(lhs), commands[keymaps.code(lhs)]
+				if previous and previous.custom and customized[action] and previous.action ~= action then
+					close()
+					error("opencode.nvim: conflicting password keymaps " .. previous.action .. " and " .. action .. " for " .. lhs)
+				end
+				if not previous or customized[action] or not previous.custom then
+					commands[code] = { action = action, custom = customized[action] }
+				end
+			end
+		end
+		local function password_label(action)
+			local labels = {}
+			for _, lhs in ipairs(keymaps.keys(bindings[action])) do
+				if commands[keymaps.code(lhs)].action == action then labels[#labels + 1] = lhs end
+			end
+			return #labels > 0 and table.concat(labels, " / ") or "(disabled)"
+		end
 		local secret = ""
 		vim.bo[input.bufnr].swapfile = false
 		vim.bo[input.bufnr].undofile = false
@@ -188,19 +209,20 @@ function M.create_input_popup(opts)
 			local count = vim.fn.strchars(secret)
 			local current_width = vim.api.nvim_win_get_width(input.winid)
 			local title = vim.fn.strcharpart(vim.trim(opts.title or "Input"), 0, math.max(0, current_width - 9))
+			local cancel_label, submit_label = password_label("cancel"), password_label("submit")
 			local header = "  " .. title
-				.. string.rep(" ", math.max(1, current_width - vim.fn.strdisplaywidth(title) - 7)) .. "esc  "
+				.. string.rep(" ", math.max(1, current_width - vim.fn.strdisplaywidth(title) - vim.fn.strdisplaywidth(cancel_label) - 4)) .. cancel_label .. "  "
+			local footer = submit_label ~= "" and ("  " .. submit_label .. " submit") or ""
 			local value = count > 0 and secret or (opts.prompt or "Input")
 			-- Scroll only the field; moving the window's leftcol also hides the header/footer.
 			local field_width = math.max(0, current_width - 5)
 			value = vim.fn.strcharpart(value, math.max(0, vim.fn.strchars(value) - field_width))
 			while vim.fn.strdisplaywidth(value) > field_width do value = vim.fn.strcharpart(value, 1) end
-			popup:render({ "", header, "", "  " .. value .. " ", "", "  enter submit", "" }, {
+			popup:render({ "", header, "", "  " .. value .. " ", "", footer, "" }, {
 				{ line = 1, col = 2, end_col = 2 + #title, hl_group = "OpenCodeInputPopupTitle" },
-				{ line = 1, col = #header - 5, end_col = #header - 2, hl_group = "Comment" },
+				{ line = 1, col = #header - #cancel_label - 2, end_col = #header - 2, hl_group = "Comment" },
 				{ line = 3, col = 2, end_col = 2 + #value, hl_group = count > 0 and "NormalFloat" or "Comment" },
-				{ line = 5, col = 2, end_col = 7, hl_group = "NormalFloat" },
-				{ line = 5, col = 8, end_col = 14, hl_group = "Comment" },
+				{ line = 5, col = 0, end_col = #footer, hl_group = "Comment" },
 			})
 			vim.api.nvim_win_set_cursor(input.winid, { 4, count > 0 and 2 + #value or 2 })
 			vim.fn.winrestview({ leftcol = 0 })
@@ -224,24 +246,50 @@ function M.create_input_popup(opts)
 		vim.paste = secret_paste
 		local submitted
 		reading_secret = true
+		local function read_key(wait)
+			local ok, key = pcall(vim.fn.getcharstr, wait)
+			if ok then return key end
+			if tostring(key):find("Interrupt", 1, true) then return "\3" end
+			error(key)
+		end
 		-- ponytail: edit at the end; add cursor editing if in-place corrections become necessary.
 		local ok, err = pcall(function()
 			draw()
+			local keys = {}
 			while not popup.closed do
-				local key = vim.fn.getcharstr()
-				local name = vim.fn.keytrans(key)
-				if name == "<CR>" or name == "<NL>" then submitted = secret; break
-				elseif name == "<Esc>" or name == "<C-C>" then break
-				elseif name == "<BS>" or name == "<C-H>" or name == "<Del>" or name == "^?" then
-					secret = vim.fn.strcharpart(secret, 0, math.max(0, vim.fn.strchars(secret) - 1))
-					draw()
-				elseif name == "<C-U>" then secret = ""; draw()
-				-- getcharstr() bypasses mappings, including the user's Cmd+V mapping.
-				elseif name == "<D-v>" then secret_paste({ vim.fn.getreg("+") }, -1)
-				elseif key:byte(1) and key:byte(1) >= 32 and key:byte(1) ~= 127
-					and (name:sub(1, 1) ~= "<" or name == "<lt>" or name == "<Space>") then
-					secret = secret .. key
-					draw()
+				if #keys == 0 then keys[1] = read_key() end
+				local sequence = table.concat(vim.tbl_map(function(key) return key == string.char(127) and key or keymaps.code(vim.fn.keytrans(key)) end, keys))
+				local command, prefix = commands[sequence], false
+				for code in pairs(commands) do
+					if #code > #sequence and code:sub(1, #sequence) == sequence then prefix = true; break end
+				end
+				local next_key
+				if prefix then
+					-- Match multi-key controls without storing credentials in an editor buffer.
+					vim.wait(math.max(1, vim.o.timeoutlen), function()
+						next_key = read_key(0)
+						return next_key ~= "" or popup.closed
+					end, 10)
+				end
+				if popup.closed then break end
+				if next_key and next_key ~= "" then
+					keys[#keys + 1] = next_key
+				elseif command then
+					keys = {}
+					local action = command.action
+					if action == "submit" then submitted = secret; break
+					elseif action == "cancel" then break
+					elseif action == "backspace" then
+						secret = vim.fn.strcharpart(secret, 0, math.max(0, vim.fn.strchars(secret) - 1)); draw()
+					elseif action == "clear" then secret = ""; draw()
+					elseif action == "paste" then secret_paste({ vim.fn.getreg("+") }, -1) end
+				else
+					local key = table.remove(keys, 1)
+					local name = vim.fn.keytrans(key)
+					if key:byte(1) and key:byte(1) >= 32 and key:byte(1) ~= 127
+						and (name:sub(1, 1) ~= "<" or name == "<lt>" or name == "<Space>") then
+						secret = secret .. key; draw()
+					end
 				end
 			end
 		end)
@@ -256,13 +304,13 @@ function M.create_input_popup(opts)
 
 	-- Setup keymaps
 	local input_bufnr = input.bufnr
-	local keymap_opts = { buffer = input_bufnr, noremap = true, silent = true }
+	local map, apply = keymaps.mapper("popup", input_bufnr)
 	popup:on({ "TextChanged", "TextChangedI" }, function()
 		input_line = vim.api.nvim_buf_get_lines(input_bufnr, 0, 1, false)[1] or prompt
 		popup.on_resize(popup)
 	end, "input")
 
-	vim.keymap.set("i", "<CR>", function()
+	map("i", "submit", function()
 		local lines = vim.api.nvim_buf_get_lines(input_bufnr, 0, 1, false)
 		local value = lines[1] or ""
 		if value:sub(1, #prompt) == prompt then value = value:sub(#prompt + 1) end
@@ -270,21 +318,13 @@ function M.create_input_popup(opts)
 		if opts.on_submit then
 			opts.on_submit(value)
 		end
-	end, keymap_opts)
+	end)
 
-	vim.keymap.set("i", "<Esc>", function()
+	map("i", "cancel", function()
 		close()
-		if opts.on_cancel then
-			opts.on_cancel()
-		end
-	end, keymap_opts)
-
-	vim.keymap.set("i", "<C-c>", function()
-		close()
-		if opts.on_cancel then
-			opts.on_cancel()
-		end
-	end, keymap_opts)
+		if opts.on_cancel then opts.on_cancel() end
+	end)
+	apply()
 
 	-- Start in insert mode
 	vim.cmd("startinsert!")

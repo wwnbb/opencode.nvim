@@ -142,8 +142,9 @@ function M.worktrees(project)
 		end
 		require("opencode.ui.menu").open({ title = " Worktrees ", items = items, width = 76, searchable = true,
 			on_select = function(item) if pending.is_current(token) then open_directory(item.value) end end,
+			keymap_scope = "workspace_menu",
 			keys = {
-				{ key = "n", label = "n:new", handler = function(ctx)
+				{ action = "create", label = "new", handler = function(ctx)
 					if not pending.is_current(token) then return end
 					ctx.close()
 					require("opencode.ui.float").create_input_popup({ title = " New Worktree ", prompt = "Name (empty generates):",
@@ -157,7 +158,7 @@ function M.worktrees(project)
 							end)
 						end })
 				end },
-				{ key = "r", label = "r:refresh", handler = function(ctx)
+				{ action = "refresh", label = "refresh", handler = function(ctx)
 					if not pending.is_current(token) then return end
 					ctx.close()
 					actions.refresh_worktrees(project.id, function(refresh_err)
@@ -165,7 +166,7 @@ function M.worktrees(project)
 						if refresh_err then report("refresh worktrees", refresh_err) else M.worktrees(project) end
 					end)
 				end },
-				{ key = "d", label = "d:delete", handler = function(ctx, item)
+				{ action = "delete", label = "delete", handler = function(ctx, item)
 					if not pending.is_current(token) then return end
 					if item.root or not item.strategy then vim.notify("This directory is not a managed worktree", vim.log.levels.WARN); return end
 					ctx.close(); remove(project, item.value)

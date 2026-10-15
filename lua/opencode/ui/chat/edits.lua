@@ -11,6 +11,8 @@ local widget_support = require("opencode.ui.chat.widget_support")
 local syntax = require("opencode.ui.syntax")
 local render_coordinator = require("opencode.ui.chat.render_coordinator")
 local actions = require("opencode.actions")
+local keymaps = require("opencode.util.keymap")
+local inline_diff_mappings = {}
 
 local INLINE_DIFF_WIN_VAR = "opencode_inline_diff_split"
 
@@ -48,6 +50,8 @@ local function is_valid_buffer(bufnr)
 end
 
 local function reset_inline_diff_state()
+	for _, mapping in ipairs(inline_diff_mappings) do keymaps.restore(mapping) end
+	inline_diff_mappings = {}
 	inline_diff_state.active = false
 	inline_diff_state.actual_win = nil
 	inline_diff_state.actual_buf = nil
@@ -457,6 +461,7 @@ local function apply_inline_diff_hunks()
 end
 
 local function show_inline_diff_help()
+	local function key(action) return keymaps.label("inline_diff", action) end
 	local help = {
 		"Diff Split Keymaps:",
 		"",
@@ -464,14 +469,13 @@ local function show_inline_diff_help()
 		"  dp       - Put hunk from actual (RIGHT) to proposed (LEFT)",
 		"  ]c       - Jump to next change",
 		"  [c       - Jump to previous change",
-		"  <C-y>    - Apply ALL remaining proposed hunks at once",
-		"  <C-a>    - Save file as-is and resolve it in the edit widget",
-		"  <C-s>    - Same as <C-a>",
-		"  <C-x>    - Reject current file and restore the original content",
-		"  q        - Close the diff split",
-		"  ?        - Show this help",
+		"  " .. key("apply_all") .. " - Apply ALL remaining proposed hunks at once",
+		"  " .. key("confirm") .. " - Save file as-is and resolve it in the edit widget",
+		"  " .. key("reject") .. " - Reject current file and restore the original content",
+		"  " .. key("close") .. " - Close the diff split",
+		"  " .. key("help") .. " - Show this help",
 		"",
-		"Tip: use <C-y> to apply all proposed changes, then <C-a> to confirm.",
+		"Tip: use " .. key("apply_all") .. " to apply all proposed changes, then " .. key("confirm") .. " to confirm.",
 	}
 	vim.notify(table.concat(help, "\n"), vim.log.levels.INFO)
 end
@@ -1030,7 +1034,8 @@ end
 function M.open_inline_diff_split(file, opts)
 	opts = opts or {}
 	if file.apply_mode == "server" then
-		vim.notify("Local diff requires server.shared_filesystem=true and access to the server files. Use = for the inline proposal.", vim.log.levels.WARN)
+		vim.notify("Local diff requires server.shared_filesystem=true and access to the server files. Use "
+			.. keymaps.label("chat", "toggle_diff", (state.config or {}).keymaps) .. " for the inline proposal.", vim.log.levels.WARN)
 		return
 	end
 	ensure_inline_diff_state()
@@ -1115,19 +1120,20 @@ function M.open_inline_diff_split(file, opts)
 
 	for _, buf in ipairs({ actual_buf, proposed_buf }) do
 		if vim.api.nvim_buf_is_valid(buf) then
-			local keymap_opts = { buffer = buf, noremap = true, silent = true }
+			local keymap_opts = { noremap = true, silent = true }
+			local map, apply = keymaps.mapper("inline_diff", buf)
 
-			vim.keymap.set("n", "<C-a>", confirm_inline_diff_file, keymap_opts)
-			vim.keymap.set("n", "<C-s>", confirm_inline_diff_file, keymap_opts)
-			vim.keymap.set("n", "<C-x>", reject_inline_diff_file, keymap_opts)
-			vim.keymap.set("n", "<C-y>", apply_inline_diff_hunks, keymap_opts)
-			vim.keymap.set("n", "?", show_inline_diff_help, keymap_opts)
-			vim.keymap.set("n", "q", function()
+			map("n", "confirm", confirm_inline_diff_file, keymap_opts)
+			map("n", "reject", reject_inline_diff_file, keymap_opts)
+			map("n", "apply_all", apply_inline_diff_hunks, keymap_opts)
+			map("n", "help", show_inline_diff_help, keymap_opts)
+			map("n", "close", function()
 				M.close_inline_diff_split({
 					check_unsaved = true,
 					unsaved_message = "Save or discard inline diff changes before closing the diff split.",
 				})
 			end, keymap_opts)
+			vim.list_extend(inline_diff_mappings, apply())
 		end
 	end
 

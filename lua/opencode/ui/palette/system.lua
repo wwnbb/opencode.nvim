@@ -1,6 +1,7 @@
 -- opencode.nvim - System palette commands
 
 local M = {}
+local bindings = require("opencode.util.keymap")
 
 local actions = require("opencode.actions")
 local state = require("opencode.state")
@@ -77,31 +78,32 @@ function M.register(palette)
 		title = "Help",
 		description = "Show keybinding help",
 		category = "system",
-		keybind = "?",
+		keybind = bindings.get("chat").help,
 		run = function()
 			local chat_ok, chat = pcall(require, "opencode.ui.chat")
 			if chat_ok and chat.show_help then
 				chat.show_help()
 			else
 				-- Fallback: show basic help
+				local function hint(scope, action, description)
+					return " " .. bindings.label(scope, action) .. " - " .. description
+				end
 				local lines = {
-					" OpenCode Keymaps ",
-					"",
-					" <leader>oo - Toggle chat",
-					" <leader>op - Command palette",
-					" <leader>od - Show diff",
-					" <leader>ox - Abort request",
-					"",
-					" In chat:",
-					"   i - Focus input",
-					"   q - Close chat",
-					"   ? - This help",
-					"",
-					" In input:",
-					"   <C-g> - Queue message",
-					"   <C-x><C-s> - Steer active agent",
-					"   <Esc> - Cancel",
-					"   ↑/↓ - History",
+					" OpenCode Keymaps ", "",
+					hint("global", "toggle", "Toggle chat"),
+					hint("global", "command_palette", "Command palette"),
+					hint("global", "abort", "Abort request"),
+					"", " In chat:",
+					hint("chat", "focus_input", "Focus input"),
+					hint("chat", "close", "Close chat"),
+					hint("chat", "help", "This help"),
+					"", " In input:",
+					hint("input", "send", "Queue message"),
+					hint("input", "send_steer", "Steer active agent"),
+					hint("input", "cancel", "Cancel"),
+					hint("input", "history_prev", "Previous history"),
+					hint("input", "history_next", "Next history"),
+					hint("input", "history_search", "Search prompt history"),
 				}
 				vim.notify(table.concat(lines, "\n"), vim.log.levels.INFO)
 			end

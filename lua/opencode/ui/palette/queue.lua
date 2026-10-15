@@ -28,11 +28,12 @@ function M.show()
 		end
 		require("opencode.ui.menu").open({ title = " Queued Inputs ", items = items, width = 80, sort = false,
 			close_on_select = false, on_select = function(item, ctx) if item.kind == "user" then mutate("edit", ctx, item) end end,
+			keymap_scope = "queue_menu",
 			keys = {
-				{ key = "e", label = "e:restore draft", handler = function(ctx, item) if item.kind == "user" then mutate("edit", ctx, item) end end },
-				{ key = "x", label = "x:cancel", handler = function(ctx, item) mutate("cancel", ctx, item) end },
-				{ key = "s", label = "s:steer", handler = function(ctx, item) mutate("steer", ctx, item) end },
-				{ key = "q", label = "q:queue", handler = function(ctx, item) mutate("queue", ctx, item) end },
+				{ action = "edit", label = "restore draft", handler = function(ctx, item) if item.kind == "user" then mutate("edit", ctx, item) end end },
+				{ action = "cancel", label = "cancel", handler = function(ctx, item) mutate("cancel", ctx, item) end },
+				{ action = "steer", label = "steer", handler = function(ctx, item) mutate("steer", ctx, item) end },
+				{ action = "queue", label = "queue", handler = function(ctx, item) mutate("queue", ctx, item) end },
 			} })
 	end)
 end

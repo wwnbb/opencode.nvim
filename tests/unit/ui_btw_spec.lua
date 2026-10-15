@@ -34,7 +34,7 @@ describe("/btw dialog", function()
 		if vim.api.nvim_win_is_valid(previous_win) then vim.api.nvim_set_current_win(previous_win) end
 	end)
 
-	it("shows a centered answer with the configured outer border and fixed hints", function()
+	it("shows a centered answer with the configured outer border and matching hints", function()
 		local answer = "Day good. Sun up, tokens flow."
 		local view = btw.show("how is your day", answer)
 		local cfg = vim.api.nvim_win_get_config(view.winid)
@@ -51,7 +51,7 @@ describe("/btw dialog", function()
 		assert.equals(cfg.height, #lines)
 		assert.equals(view.geometry.row, cfg.row)
 		assert.is_truthy(lines[2]:find("/btw", 1, true))
-		assert.is_truthy(lines[2]:find("esc", 1, true))
+		assert.is_truthy(lines[2]:find(require("opencode.util.keymap").label("btw_answer", "close"), 1, true))
 		assert.is_truthy(lines[4]:find("how is your day", 1, true))
 		assert.is_truthy(lines[7]:find(answer, 1, true))
 		local marks = vim.api.nvim_buf_get_extmarks(view.bufnr, -1, 0, -1, { details = true })
@@ -65,7 +65,7 @@ describe("/btw dialog", function()
 		assert.equals(18, view.geometry.answer_rows)
 		assert.equals(28, cfg.height)
 		assert.is_truthy(lines[#lines - 1]:find("c copy", 1, true))
-		assert.is_truthy(lines[#lines - 1]:find("↑/↓ scroll", 1, true))
+		assert.is_truthy(lines[#lines - 1]:find(require("opencode.util.keymap").label("btw_answer", "scroll_down") .. " scroll", 1, true))
 		for _, line in ipairs(lines) do
 			assert.is_true(vim.fn.strdisplaywidth(line) <= cfg.width)
 		end
@@ -200,7 +200,7 @@ describe("/btw dialog", function()
 		assert.equals(view.geometry.row, prompt_cfg.row)
 		assert.equals("none", vim.api.nvim_win_get_config(view.input_winid).border)
 		local prompt_lines = vim.api.nvim_buf_get_lines(view.bufnr, 0, -1, false)
-		assert.is_truthy(prompt_lines[#prompt_lines - 1]:find("return submit", 1, true))
+		assert.is_truthy(prompt_lines[#prompt_lines - 1]:find(require("opencode.util.keymap").label("btw_prompt", "submit") .. " submit", 1, true))
 		local marks = vim.api.nvim_buf_get_extmarks(view.input_bufnr, -1, 0, -1, { details = true })
 		local has_placeholder = false
 		for _, mark in ipairs(marks) do
@@ -240,6 +240,27 @@ describe("/btw dialog", function()
 		assert.is_false(btw.is_visible())
 	end)
 
+	it("preserves normal-only q on prompt input and Escape-only close on the main panel by default", function()
+		local view = btw.prompt()
+		local function has_mapping(bufnr, mode, lhs)
+			for _, mapping in ipairs(vim.api.nvim_buf_get_keymap(bufnr, mode)) do
+				if require("opencode.util.keymap").matches(mapping.lhs, lhs) then return true end
+			end
+			return false
+		end
+		assert.is_true(has_mapping(view.input_bufnr, "n", "q"))
+		assert.is_false(has_mapping(view.input_bufnr, "i", "q"))
+		assert.is_true(has_mapping(view.input_bufnr, "i", "<Esc>"))
+		assert.is_false(has_mapping(view.bufnr, "n", "q"))
+		assert.is_true(has_mapping(view.bufnr, "n", "<Esc>"))
+		btw.close()
+		state.set_config(config.merge({ btw_prompt = { keymaps = { close = "x" } } }))
+		view = btw.prompt()
+		assert.is_true(has_mapping(view.bufnr, "n", "x"))
+		assert.is_true(has_mapping(view.input_bufnr, "i", "x"))
+		assert.is_false(has_mapping(view.bufnr, "n", "<Esc>"))
+	end)
+
 	it("reopens through the shared popup and cleans both prompt windows", function()
 		local first = btw.prompt()
 		assert.is_not_nil(first.popup.input)
@@ -263,5 +284,39 @@ describe("/btw dialog", function()
 		vim.fn.maparg("<LeftMouse>", "n", false, true).callback()
 		assert.is_false(btw.is_visible())
 		assert.is_false(vim.api.nvim_win_is_valid(view.winid))
+	end)
+
+	it("uses custom prompt and answer bindings in mappings and hints", function()
+		state.set_config(config.merge({
+			btw_prompt = { keymaps = { submit = "<M-s>", close = false, clear = false } },
+			btw_answer = { keymaps = { copy = { "y", "Y" }, close = false, scroll_down = "J" } },
+		}))
+		local submitted
+		local prompt = btw.prompt(function(value) submitted = value end)
+		assert.is_nil(vim.fn.maparg("<CR>", "i", false, true).callback)
+		for _, key in ipairs({ "q", "<Esc>", "<C-c>" }) do
+			assert.is_nil(vim.fn.maparg(key, "n", false, true).callback)
+		end
+		local prompt_text = table.concat(vim.api.nvim_buf_get_lines(prompt.bufnr, 0, -1, false), "\n")
+		assert.is_truthy(prompt_text:find("<M-s> submit", 1, true))
+		vim.api.nvim_buf_set_lines(prompt.input_bufnr, 0, -1, false, { "question" })
+		vim.fn.maparg("<M-s>", "i", false, true).callback()
+		assert.equals("question", submitted)
+		local answer = {}
+		for index = 1, 40 do answer[index] = "Line " .. index end
+		local view = btw.show("question", table.concat(answer, "\n"))
+		local text = table.concat(vim.api.nvim_buf_get_lines(view.bufnr, 0, -1, false), "\n")
+		assert.is_truthy(text:find("y / Y copy", 1, true))
+		assert.is_truthy(text:find("J scroll", 1, true))
+		for _, key in ipairs({ "q", "<Esc>", "<C-c>", "c", "j", "<Down>" }) do
+			assert.is_nil(vim.fn.maparg(key, "n", false, true).callback)
+		end
+		vim.fn.maparg("J", "n", false, true).callback()
+		assert.equals(1, view.scroll)
+		local copied = {}
+		vim.fn.setreg = function(register, value) copied[register] = value end
+		vim.fn.getreg = function(register) return copied[register] end
+		vim.fn.maparg("Y", "n", false, true).callback()
+		assert.equals(table.concat(answer, "\n"), copied['"'])
 	end)
 end)

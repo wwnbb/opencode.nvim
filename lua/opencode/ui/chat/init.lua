@@ -11,6 +11,7 @@ local chat_help = require("opencode.ui.chat.help")
 local chat_float_focus = require("opencode.ui.chat.float_focus")
 local chat_messages = require("opencode.ui.chat.messages")
 local chat_keymaps = require("opencode.ui.chat.keymaps")
+local keymaps = require("opencode.util.keymap")
 local chat_session_tabs = require("opencode.ui.chat.session_tabs")
 local spinner = require("opencode.ui.spinner")
 local event_util = require("opencode.events.util")
@@ -86,6 +87,7 @@ local pending_render_data
 local render_schedule_token = 0
 local winbar_refresh_scheduled = false
 local opening = false
+local configure_buffer_keymaps
 
 -- Scheduling follows the transcript buffer in any window. Cursor/detail helpers
 -- still follow the owned chat window through cs.is_chat_buffer_displayed().
@@ -107,6 +109,7 @@ end
 
 local function apply_config_change()
 	state.config = get_config()
+	configure_buffer_keymaps(state.bufnr)
 	ui_highlights.refresh()
 	invalidate_cached_render_state()
 	if chat_surface_is_visible() then
@@ -279,8 +282,16 @@ end
 
 -- ─── Cursor preservation ──────────────────────────────────────────────────────
 
-local function create_buffer()
-	local bufnr = vim.api.nvim_create_buf(false, true)
+local mapped_buffer, mapped_keys, mapped_app_keys
+configure_buffer_keymaps = function(bufnr, refresh)
+	if not bufnr or not vim.api.nvim_buf_is_valid(bufnr) then return end
+	local app_keys = { keymaps.resolve("chat") }
+	if refresh and mapped_app_keys and not vim.deep_equal(app_keys, mapped_app_keys) then
+		state.config = get_config()
+	end
+	local keys = { keymaps.resolve("chat", (state.config or {}).keymaps) }
+	mapped_app_keys = app_keys
+	if mapped_buffer == bufnr and vim.deep_equal(keys, mapped_keys) then return end
 	chat_keymaps.setup_buffer(bufnr, {
 		close = function()
 			M.close()
@@ -295,6 +306,12 @@ local function create_buffer()
 			M.show_help()
 		end,
 	})
+	mapped_buffer, mapped_keys = bufnr, keys
+end
+
+local function create_buffer()
+	local bufnr = vim.api.nvim_create_buf(false, true)
+	configure_buffer_keymaps(bufnr)
 	return bufnr
 end
 
@@ -376,6 +393,7 @@ function M.create()
 			or (type(events.get_generation) ~= "function" and (type(events.listener_count) ~= "function" or listener_generation > 0))
 		)
 	then
+		configure_buffer_keymaps(state.bufnr, true)
 		return state.bufnr
 	end
 
@@ -384,6 +402,8 @@ function M.create()
 	setup_resize_refresh_autocmds()
 	if not buffer_exists then
 		state.bufnr = create_buffer()
+	else
+		configure_buffer_keymaps(state.bufnr)
 	end
 	reset_chat_surface()
 
@@ -592,6 +612,7 @@ local function register_chat_window_closed_autocmd(winid)
 end
 
 function M.open()
+	configure_buffer_keymaps(state.bufnr, true)
 	if M.is_visible() then
 		return
 	end
@@ -779,6 +800,8 @@ end
 function M.get_bufnr()
 	if not state.bufnr or not vim.api.nvim_buf_is_valid(state.bufnr) then
 		M.create()
+	else
+		configure_buffer_keymaps(state.bufnr, true)
 	end
 	return state.bufnr
 end
@@ -876,6 +899,7 @@ end
 
 function M.setup(opts)
 	state.config = vim.tbl_deep_extend("force", get_config(), opts or {})
+	configure_buffer_keymaps(state.bufnr)
 end
 
 -- ─── Local notices and view reset ────────────────────────────────────────────

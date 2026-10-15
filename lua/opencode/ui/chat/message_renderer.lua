@@ -54,7 +54,8 @@ local function render_session_chrome(ctx)
 		ctx:add_line(bc_line)
 
 		local hint_line = NuiLine()
-		hint_line:append(NuiText("<BS> Go back", "Comment"))
+		hint_line:append(NuiText(require("opencode.util.keymap").label("chat", "leave_subagent", (ctx.chat_config or {}).keymaps)
+			.. " Go back", "Comment"))
 		ctx:add_line(hint_line)
 		ctx:add_raw_line("")
 	end
@@ -341,13 +342,14 @@ local function render_user_message(ctx, message, render_parts, msg_idx, messages
 	local prompt_status, pending_input = require("opencode.selectors").prompt_status(ctx.current_session.id, message.id)
 	if prompt_status then
 		if pending_input then
-			local keymaps = (ctx.chat_config or {}).keymaps or {}
+			local keymaps = require("opencode.util.keymap")
+			local configured = keymaps.get("chat", (ctx.chat_config or {}).keymaps)
 			for _, command in ipairs(require("opencode.ui.chat.pending_inputs").commands) do
-				local key = keymaps[command.name .. "_pending"]
-				if type(key) == "string" and key ~= ""
+				local action = command.name .. "_pending"
+				if #keymaps.keys(configured[action]) > 0
 					and (command.name ~= "steer" or pending_input.status == "queued")
 					and (command.name ~= "queue" or pending_input.status == "accepted") then
-					prompt_status = prompt_status .. " · " .. key .. " " .. command.name
+					prompt_status = prompt_status .. " · " .. keymaps.label("chat", action, configured) .. " " .. command.name
 				end
 			end
 		end
@@ -683,16 +685,18 @@ local function render_empty_state(ctx, chrome_lines)
 	if ctx:line_count() > chrome_lines then
 		return
 	end
-	local keymaps = ctx.chat_config.keymaps or {}
-	local focus_key = keymaps.focus_input or require("opencode.config").defaults.chat.keymaps.focus_input
+	local function key(action)
+		return require("opencode.util.keymap").label("chat", action, ctx.chat_config.keymaps)
+	end
+	local focus_key, palette_key, help_key = key("focus_input"), key("command_palette"), key("help")
 	local rows = {
 		{ "OpenCode", "OpenCodeWelcomeTitle" },
 		{ "What would you like to build?", "OpenCodeWelcomeHint" },
 		{ "" },
 		{ focus_key .. "  Start a conversation", nil, focus_key },
 		{ "" },
-		{ "<C-p>  Command palette", "OpenCodeWelcomeHint", "<C-p>" },
-		{ "?  Help & shortcuts", "OpenCodeWelcomeHint", "?" },
+		{ palette_key .. "  Command palette", "OpenCodeWelcomeHint", palette_key },
+		{ help_key .. "  Help & shortcuts", "OpenCodeWelcomeHint", help_key },
 	}
 	local lines = {}
 	for _, row in ipairs(rows) do

@@ -1,5 +1,6 @@
 -- A support snapshot built from an allowlist, never config, messages or logs.
 local M = {}
+local keymaps = require("opencode.util.keymap")
 
 local function identifier(value)
 	if type(value) ~= "string" or #value > 200 or value == "" then return nil end
@@ -40,20 +41,23 @@ end
 
 function M.show()
 	local payload = vim.json.encode(M.collect())
-	local lines = { "Support snapshot (no credentials, endpoints, history or logs)", "", payload, "", "y: copy JSON    q/Esc: close" }
+	local lines = { "Support snapshot (no credentials, endpoints, history or logs)", "", payload, "", keymaps.label("debug_bundle", "copy") .. ": copy JSON    " .. keymaps.label("debug_bundle", "close") .. ": close" }
 	local float = require("opencode.ui.float")
 	local popup = float.create_centered_popup({ title = " Debug Bundle ", width = 90, height = 12 })
 	popup:mount()
-	popup:render(lines)
 	vim.bo[popup.bufnr].modifiable = false
 	vim.wo[popup.winid].wrap = true
-	float.setup_close_keymaps(popup.bufnr, function() popup:close() end)
-	vim.keymap.set("n", "y", function()
+	local map, apply = keymaps.mapper("debug_bundle", popup.bufnr)
+	map("n", "close", function() popup:close() end)
+	map("n", "copy", function()
 		if popup.closed or not vim.api.nvim_buf_is_valid(popup.bufnr) then return end
 		vim.fn.setreg('"', payload)
 		pcall(vim.fn.setreg, "+", payload)
 		vim.notify("Debug bundle copied", vim.log.levels.INFO)
-	end, { buffer = popup.bufnr, silent = true })
+	end)
+	apply()
+	lines[#lines] = keymaps.label("debug_bundle", "copy") .. ": copy JSON    " .. keymaps.label("debug_bundle", "close") .. ": close"
+	popup:render(lines)
 	return popup
 end
 

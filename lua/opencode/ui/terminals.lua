@@ -1,5 +1,6 @@
 -- Neovim's terminal emulator displays the remote persistent PTY directly.
 local M = {}
+local keymaps = require("opencode.util.keymap")
 local actions = require("opencode.actions")
 local state = require("opencode.state")
 local pending = require("opencode.session.pending")
@@ -24,7 +25,8 @@ end
 
 local function status(record, text)
 	if record.winid and vim.api.nvim_win_is_valid(record.winid) and vim.api.nvim_win_get_buf(record.winid) == record.bufnr then
-		vim.wo[record.winid].winbar = " OpenCode terminal: " .. text .. "  |  <C-\\><C-n> normal  R reconnect  q detach"
+		vim.wo[record.winid].winbar = (" OpenCode terminal: " .. text .. "  |  <C-\\><C-n> normal  "
+			.. keymaps.label("terminal", "reconnect") .. " reconnect  " .. keymaps.label("terminal", "close") .. " detach"):gsub("%%", "%%%%")
 	end
 end
 
@@ -100,13 +102,13 @@ attach = function(record)
 		on_close = function(reason, cursor)
 			if revision ~= record.revision or record.detached then return end
 			record.cursor = cursor
-			status(record, reason == "stale" and "session changed; detached" or "disconnected; R reconnects")
+			status(record, reason == "stale" and "session changed; detached" or "disconnected")
 			if not valid() or record.exited or reason == "detached" or reason == "stale" or reason == "protocol_error" or reason == "unavailable" then return end
 			record.retries = (record.retries or 0) + 1
 			if record.retries <= 3 then vim.defer_fn(function() if valid() then attach(record) end end, record.retries * 1000) end
 		end,
 	})
-	if err then report(err); status(record, "connection unavailable; R reconnects") end
+	if err then report(err); status(record, "connection unavailable") end
 end
 
 local function reconnect(record)
@@ -165,10 +167,12 @@ function M.open(info, session_id, directory)
 				detach(record)
 				if event.event == "BufWipeout" and records[record.id] == record then records[record.id] = nil end
 			end })
-			vim.keymap.set("n", "R", function() reconnect(record) end, { buffer = bufnr, silent = true })
-			vim.keymap.set("n", "q", function()
+			local map, apply = keymaps.mapper("terminal", bufnr)
+			map("n", "reconnect", function() reconnect(record) end)
+			map("n", "close", function()
 				detach(record); vim.cmd(#vim.api.nvim_list_tabpages() > 1 and "tabclose" or "enew")
-			end, { buffer = bufnr, silent = true })
+			end)
+			apply()
 		end
 		record.winid, record.detached, record.retries, record.exited = vim.api.nvim_get_current_win(), false, 0, false
 		vim.wo.number, vim.wo.relativenumber, vim.wo.signcolumn, vim.wo.foldcolumn = false, false, "no", "0"
@@ -199,11 +203,11 @@ function M.show()
 				if create_err then report(create_err) else M.open(info, session_id, directory) end
 			end)
 		end
-		require("opencode.ui.menu").open({ title = " Persistent Terminals ", message = directory, items = items, width = 76, searchable = true,
+		require("opencode.ui.menu").open({ title = " Persistent Terminals ", keymap_scope = "terminal_menu", message = directory, items = items, width = 76, searchable = true,
 			on_select = function(item) if valid() then if item.create then create() else M.open(item.info, session_id, directory) end end end,
 			keys = {
-				{ key = "n", label = "n:new", handler = function(ctx) if valid() then ctx.close(); create() end end },
-				{ key = "d", label = "d:remove", handler = function(ctx, item)
+				{ action = "create", label = "new", handler = function(ctx) if valid() then ctx.close(); create() end end },
+				{ action = "remove", label = "remove", handler = function(ctx, item)
 					if not valid() or item.create then return end
 					ctx.close()
 					require("opencode.ui.menu").open({ title = " Remove Terminal? ", message = "Stop " .. item.info.title .. " and remove its terminal?",

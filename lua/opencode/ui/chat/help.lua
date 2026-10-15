@@ -1,4 +1,5 @@
 local M = {}
+local keymaps = require("opencode.util.keymap")
 
 local Popup = require("opencode.ui.popup")
 local state = require("opencode.ui.chat.state").state
@@ -12,60 +13,55 @@ highlights.register("opencode.ui.chat.help", function()
 end)
 
 local function sections(config)
-	local keys = config.keymaps or {}
-	local input_keys = (((require("opencode.state").get_config() or {}).input or {}).keymaps or {})
-	local input_defaults = require("opencode.config").defaults.input.keymaps
-	local function key(name, fallback)
-		local value = keys[name]
-		if value == nil then
-			return fallback
-		end
-		return type(value) == "string" and value ~= "" and value or "(disabled)"
+	local function key(name) return keymaps.label("chat", name, config.keymaps) end
+	local function input_key(name) return keymaps.label("input", name) end
+	local function numbers(first, last) return keymaps.number_labels("chat", first, last, config.keymaps) end
+	local configured = keymaps.get("chat", config.keymaps)
+	local confirm_keys, overlapping = keymaps.keys(configured.confirm), 0
+	for _, lhs in ipairs(confirm_keys) do
+		if keymaps.matches(configured.resolve_edit, lhs) then overlapping = overlapping + 1 end
 	end
-	local function input_key(name)
-		local value = input_keys[name]
-		if value == nil then value = input_defaults[name] end
-		return type(value) == "string" and value ~= "" and value or "(disabled)"
-	end
+	local edit_confirm = overlapping == 0 and "Open file in editor"
+		or (overlapping == #confirm_keys and "Resolve file manually (shared key)" or "Open file; shared resolve key resolves")
 	local pending = {}
 	for _, command in ipairs(require("opencode.ui.chat.pending_inputs").commands) do
-		table.insert(pending, { key(command.name .. "_pending", "(disabled)"), command.description })
+		table.insert(pending, { key(command.name .. "_pending"), command.description })
 	end
 	return {
 		{
 			"Chat",
 			{
-				{ key("close", "q"), "Close chat" },
-				{ key("focus_input", "i"), "Focus input" },
-				{ "a", "Toggle auto-scroll" },
-				{ key("abort", "<C-c>"), "Stop generation" },
-				{ "<C-p>", "Command palette" },
-				{ "?", "Show this help" },
+				{ key("close"), "Close chat" },
+				{ key("focus_input"), "Focus input" },
+				{ key("toggle_auto_scroll"), "Toggle auto-scroll" },
+				{ key("abort"), "Stop generation" },
+				{ key("command_palette"), "Command palette" },
+				{ key("help"), "Show this help" },
 			},
 		},
 		{
 			"Sessions",
 			{
-				{ "N", "Start new session" },
-				{ key("close_session", "x"), "Close current session tab" },
-				{ "gt", "Next session" },
-				{ "Ngt", "Go to session N" },
-				{ "0gt", "Go to first session" },
-				{ "gT", "Previous session" },
+				{ key("new_session"), "Start new session" },
+				{ key("close_session"), "Close current session tab" },
+				{ key("next_session"), "Next session" },
+				{ "N + " .. key("next_session"), "Go to session N" },
+				{ key("select_0") .. " + " .. key("next_session"), "Go to first session" },
+				{ key("prev_session"), "Previous session" },
 			},
 		},
 		{
 			"Navigation",
 			{
-				{ key("scroll_up", "<C-u>"), "Scroll up" },
-				{ key("scroll_down", "<C-d>"), "Scroll down" },
-				{ key("goto_top", "gg"), "Go to top" },
-				{ key("goto_bottom", "G"), "Go to bottom" },
-				{ "[a / ]a", "Prev/next user message" },
-				{ "[m / ]m", "Prev/next message or widget" },
-				{ "[p / ]p", "Prev/next pending permission" },
-				{ "T", "Choose a historical user turn" },
-				{ "ga", "Actions for user message at cursor" },
+				{ key("scroll_up"), "Scroll up" },
+				{ key("scroll_down"), "Scroll down" },
+				{ key("goto_top"), "Go to top" },
+				{ key("goto_bottom"), "Go to bottom" },
+				{ key("prev_user_message") .. " / " .. key("next_user_message"), "Prev/next user message" },
+				{ key("prev_message") .. " / " .. key("next_message"), "Prev/next message or widget" },
+				{ key("prev_permission") .. " / " .. key("next_permission"), "Prev/next pending permission" },
+				{ key("timeline"), "Choose a historical user turn" },
+				{ key("message_actions"), "Actions for user message at cursor" },
 			},
 		},
 		{ "Pending Input", pending },
@@ -75,58 +71,60 @@ local function sections(config)
 				{ input_key("send"), "Send to queue" },
 				{ input_key("send_steer"), "Steer active agent" },
 				{ input_key("cancel"), "Cancel" },
-				{ "↑ / ↓", "Navigate history" },
+				{ input_key("history_prev") .. " / " .. input_key("history_next"), "Navigate history" },
+				{ input_key("history_search"), "Search prompt history in input" },
 			},
 		},
 		{
 			"Tool Calls",
 			{
-				{ "O", "Expand/collapse tool or activity" },
-				{ "<CR>", "Expand/collapse Thought or Explore" },
-				{ "<CR>", "Execute: expand group/call or inspect MCP calls" },
-				{ "1-4", "Execute details: Result / Raw / Code / Calls" },
-				{ "gd", "Enter subagent output" },
-				{ "<BS>", "Go back to parent" },
-				{ "gD", "View diff" },
+				{ key("toggle_tool"), "Expand/collapse tool or activity" },
+				{ key("confirm"), "Expand/collapse Thought or Explore" },
+				{ key("confirm"), "Execute: expand group/call or inspect MCP calls" },
+				{ table.concat({ keymaps.label("execute_details", "result"), keymaps.label("execute_details", "raw"),
+					keymaps.label("execute_details", "code"), keymaps.label("execute_details", "calls") }, " / "),
+					"Execute details: Result / Raw / Code / Calls" },
+				{ key("enter_subagent"), "Enter subagent output" },
+				{ key("leave_subagent"), "Go back to parent" },
 			},
 		},
 		{
 			"Question Tool",
 			{
-				{ "1-9", "Select option by number" },
-				{ "↑/↓ j/k", "Move cursor (selection follows)" },
-				{ "Space", "Toggle multi-select" },
-				{ "c", "Custom input" },
-				{ "<CR>", "Confirm selection" },
-				{ key("cancel_question", "(disabled)"), "Cancel question (with confirmation)" },
-				{ "<Esc>", "Return from confirmation to answers" },
-				{ "<Tab>", "Next question tab" },
-				{ "<S-Tab>", "Previous question tab" },
+				{ numbers(1, 9), "Select option by number" },
+				{ key("widget_prev") .. " / " .. key("widget_next"), "Move cursor (selection follows)" },
+				{ key("toggle_selection"), "Toggle multi-select" },
+				{ key("custom_input"), "Custom input" },
+				{ key("confirm"), "Confirm selection" },
+				{ key("cancel_question"), "Cancel question (with confirmation)" },
+				{ key("back"), "Return from confirmation to answers" },
+				{ key("next_question"), "Next question tab" },
+				{ key("prev_question"), "Previous question tab" },
 			},
 		},
 		{
 			"Permissions",
 			{
-				{ "1-3", "Select option by number" },
-				{ "↑/↓ j/k", "Move cursor (selection follows)" },
-				{ "<CR>", "Confirm permission" },
-				{ "<Esc>", "Reject permission" },
+				{ numbers(1, 3), "Select option by number" },
+				{ key("widget_prev") .. " / " .. key("widget_next"), "Move cursor (selection follows)" },
+				{ key("confirm"), "Confirm permission" },
+				{ key("back"), "Reject permission" },
 			},
 		},
 		{
 			"Edit Review",
 			{
-				{ "<C-a>", "Accept selected file" },
-				{ "<C-x>", "Reject selected file" },
-				{ "<C-m>", "Resolve file manually" },
-				{ "=", "Toggle inline diff" },
-				{ "dt", "Open diff in new tab" },
-				{ "dv", "Open diff vsplit" },
-				{ "A", "Accept all files" },
-				{ "X", "Reject all files" },
-				{ "M", "Resolve all manually" },
-				{ "<CR>", "Open file in editor" },
-				{ "1-9", "Jump to file N" },
+				{ key("accept_edit"), "Accept selected file" },
+				{ key("reject_edit"), "Reject selected file" },
+				{ key("resolve_edit"), "Resolve file manually" },
+				{ key("toggle_diff"), "Toggle inline diff" },
+				{ key("diff_tab"), "Open diff in new tab" },
+				{ key("diff_split"), "Open diff vsplit" },
+				{ key("accept_all_edits"), "Accept all files" },
+				{ key("reject_all_edits"), "Reject all files" },
+				{ key("resolve_all_edits"), "Resolve all manually" },
+				{ key("confirm"), edit_confirm },
+				{ numbers(1, 9), "Jump to file N" },
 			},
 		},
 	}
@@ -249,18 +247,20 @@ function M.show(config)
 		})
 		local inset = next_width >= 20 and 4 or 1
 		local padding = string.rep(" ", inset)
-		local lines = { "", padding .. "Help" .. string.rep(" ", next_width - 7 - 2 * inset) .. "esc" .. padding }
+		local lines = { "", padding .. "Help" }
 		for _ = 3, next_height do
 			table.insert(lines, "")
 		end
-		local footer = next_width >= 54 and "j/k scroll   Ctrl-u/d page   q/esc close"
-			or (next_width >= 30 and "j/k scroll  q/esc close" or "q close")
-		lines[next_height - 1] = "    " .. footer
+		local footer = keymaps.label("help", "close") .. " close"
+		local navigation = keymaps.label("help", "up") .. " / " .. keymaps.label("help", "down") .. " scroll"
+		if vim.fn.strdisplaywidth(footer .. "   " .. navigation) <= next_width - 2 * inset then
+			footer = footer .. "   " .. navigation
+		end
+		lines[next_height - 1] = padding .. wrap(footer, next_width - 2 * inset)[1]
 		popup:render(lines, {
 			{ row = 1, col = inset, opts = { end_col = inset + 4, hl_group = "OpenCodeInputBorder" } },
-			{ row = 1, col = next_width - 7, opts = { end_col = next_width - 4, hl_group = "OpenCodeInputInfo" } },
 			{
-				row = next_height - 2, col = 4,
+				row = next_height - 2, col = inset,
 				opts = { end_col = #lines[next_height - 1], hl_group = "OpenCodeInputInfo" },
 			},
 		}, "frame")
@@ -302,16 +302,15 @@ function M.show(config)
 	})
 	popup:mount()
 	active_popup = popup
+	local map, apply = keymaps.mapper("help", popup.bufnr)
+	map("n", "close", function() popup:close() end)
+	for action, movement in pairs({ down = "j", up = "k", half_page_up = "<C-u>", half_page_down = "<C-d>",
+		page_up = "<C-b>", page_down = "<C-f>", top = "gg", bottom = "G" }) do
+		map("n", action, movement)
+	end
+	apply()
 	redraw()
-	for _, key in ipairs({ "q", "<Esc>", "<CR>", "<Space>" }) do
-		vim.keymap.set("n", key, function()
-			popup:close()
-		end, { buffer = popup.bufnr, noremap = true, silent = true })
-	end
-	-- Keep normal navigation available instead of closing on every printable key.
-	for _, key in ipairs({ "j", "k", "<Up>", "<Down>", "<C-u>", "<C-d>", "<C-b>", "<C-f>", "gg", "G" }) do
-		vim.keymap.set("n", key, key, { buffer = popup.bufnr, noremap = true, silent = true })
-	end
+
 	return popup
 end
 

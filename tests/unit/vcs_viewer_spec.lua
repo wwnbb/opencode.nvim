@@ -18,7 +18,7 @@ describe("VCS diff browser", function()
 		state.set_session("s", "Session")
 		state.upsert_session({ id = "s", directory = "/project" }, { touch = false })
 		state.set_config({ chat = { diff_view = "unified" } })
-		saved, calls, picker, input = { menu = menu.open, input = float.create_input_popup, command = registry.get("diff.open"), columns = vim.o.columns }, {}, nil, nil
+		saved, calls, picker, input = { menu = menu.open, input = float.create_input_popup, command = registry.get("diff.open"), columns = vim.o.columns, notify = vim.notify }, {}, nil, nil
 		for _, method in ipairs(methods) do saved[method] = actions[method] end
 		files = {
 			{ file = "src/a.lua", status = "modified", additions = 2, deletions = 2, patch = "@@ -1 +1 @@\n-old\n+new\n@@ -10 +10 @@\n-last\n+next\n" },
@@ -37,8 +37,28 @@ describe("VCS diff browser", function()
 		for _, method in ipairs(methods) do actions[method] = saved[method] end
 		menu.open, float.create_input_popup = saved.menu, saved.input
 		vim.o.columns = saved.columns
+		vim.notify = saved.notify
 		registry.unregister("diff.open"); if saved.command then registry.register(saved.command) end
 		state.reset(); pending.clear_all()
+	end)
+	it("uses aliases across diff buffers and reports disabled actions in help", function()
+		state.set_config({ vcs = { keymaps = { next_file = { "r", "<F7>" }, close = false, help = "<F8>" } } })
+		local notice
+		vim.notify = function(message) notice = message end
+		local view = viewer.open()
+		for buf in pairs(view.buffers) do
+			vim.api.nvim_buf_call(buf, function()
+				assert.equals("", vim.fn.maparg("q", "n"))
+				assert.equals("", vim.fn.maparg("n", "n"))
+				assert.is_function(vim.fn.maparg("<F7>", "n", false, true).callback)
+			end)
+		end
+		key(view, "r")
+		assert.equals(2, view.index)
+		key(view, "<F8>")
+		assert.is_truthy(notice:find("r / <F7> next file", 1, true))
+		assert.is_truthy(notice:find("(disabled) refresh", 1, true))
+		assert.is_truthy(notice:find("(disabled) close", 1, true))
 	end)
 
 	it("shares /diff with the palette, requests the native base/source, and closes every owned buffer", function()

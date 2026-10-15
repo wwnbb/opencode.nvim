@@ -1,7 +1,6 @@
 -- Read-only inspector for execute results, original output, code, and MCP calls.
 local M = {}
 
-local float = require("opencode.ui.float")
 local output = require("opencode.ui.chat.execute_output")
 local ns = vim.api.nvim_create_namespace("opencode_execute_details")
 local active
@@ -314,21 +313,19 @@ function M.open(tool_part, opts)
 		vim.api.nvim_win_set_cursor(popup.winid, cursors[view] or { 1, 0 })
 		toolbar()
 	end
-	popup.set_view(labels[opts.view] and opts.view or "result")
-
-	float.setup_close_keymaps(popup.bufnr, popup.close)
-	local function map(key, fn)
-		vim.keymap.set("n", key, fn, { buffer = popup.bufnr, noremap = true, silent = true })
-	end
-	map("<BS>", popup.close)
-	for index, view in ipairs(views) do map(tostring(index), function() popup.set_view(view) end) end
+	local map, apply = require("opencode.util.keymap").mapper("execute_details", popup.bufnr)
+	map("n", "close", popup.close)
+	map("n", "back", popup.close)
+	for _, view in ipairs(views) do map("n", view, function() popup.set_view(view) end) end
 	local function cycle(delta)
 		for index, view in ipairs(views) do
 			if view == popup.view then popup.set_view(views[(index - 1 + delta) % #views + 1]); return end
 		end
 	end
-	map("<Tab>", function() cycle(1) end)
-	map("<S-Tab>", function() cycle(-1) end)
+	map("n", "next_view", function() cycle(1) end)
+	map("n", "prev_view", function() cycle(-1) end)
+	apply()
+	popup.set_view(labels[opts.view] and opts.view or "result")
 
 	group = vim.api.nvim_create_augroup("OpenCodeExecuteDetails_" .. popup.bufnr, { clear = true })
 	vim.api.nvim_create_autocmd({ "VimResized", "WinResized" }, { group = group, callback = function()

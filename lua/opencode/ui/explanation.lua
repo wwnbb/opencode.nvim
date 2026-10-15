@@ -11,6 +11,10 @@ local active, group
 local config = {}
 local trigger_maps = {}
 
+local function restore_mappings(mappings)
+	for _, mapping in ipairs(mappings or {}) do keymaps.restore(mapping) end
+end
+
 local function eligible(bufnr)
 	if not vim.api.nvim_buf_is_valid(bufnr) or not vim.api.nvim_buf_is_loaded(bufnr) then return false end
 	local options = vim.bo[bufnr]
@@ -46,7 +50,8 @@ local function render(view, text, saved_view)
 end
 
 local function pending_text()
-	return spinner.get_loading_text("Explaining selection") .. "\n\nq / Esc close"
+	local close = keymaps.label("explanation", "close", config.keymaps)
+	return spinner.get_loading_text("Explaining selection") .. (close ~= "(disabled)" and ("\n\n" .. close .. " close") or "")
 end
 
 local function copy_answer()
@@ -62,16 +67,16 @@ end
 local function configure_buffer(bufnr)
 	local installed = trigger_maps[bufnr]
 	if not eligible(bufnr) then
-		keymaps.restore(installed)
+		restore_mappings(installed)
 		trigger_maps[bufnr] = nil
 		return
 	end
 	if installed then return end
-	local key = config.keymaps and config.keymaps.trigger
-	if type(key) ~= "string" or key == "" then return end
-	trigger_maps[bufnr] = keymaps.install("x", bufnr, key, function() actions.explain_selection() end, {
-		silent = true, desc = "Explain OpenCode visual selection",
-	})
+	trigger_maps[bufnr] = {}
+	for _, key in ipairs(keymaps.keys(keymaps.get("explanation", config.keymaps).trigger)) do
+		trigger_maps[bufnr][#trigger_maps[bufnr] + 1] = keymaps.install("x", bufnr, key,
+			function() actions.explain_selection() end, { silent = true, desc = "Explain OpenCode visual selection" })
+	end
 end
 
 function M.is_open()
@@ -127,8 +132,10 @@ function M.open(snapshot, on_close)
 	vim.wo[view.winid].relativenumber = false
 	vim.wo[view.winid].signcolumn = "no"
 	vim.wo[view.winid].scrolloff = 2
-	vim.keymap.set("n", "c", copy_answer, { buffer = bufnr, silent = true, desc = "Copy explanation" })
-	float.setup_close_keymaps(bufnr, M.close)
+	local map, apply = keymaps.mapper("explanation", bufnr, config.keymaps)
+	map("n", "copy", copy_answer, { desc = "Copy explanation" })
+	map("n", "close", M.close)
+	apply()
 	render(view, pending_text())
 	view.timer = vim.uv.new_timer()
 	if view.timer then
@@ -160,7 +167,7 @@ end
 function M.teardown()
 	M.close()
 	if group then vim.api.nvim_del_augroup_by_id(group); group = nil end
-	for _, mapping in pairs(trigger_maps) do keymaps.restore(mapping) end
+	for _, mappings in pairs(trigger_maps) do restore_mappings(mappings) end
 	trigger_maps = {}
 	config = {}
 end
