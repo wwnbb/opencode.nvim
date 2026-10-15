@@ -196,19 +196,19 @@ describe("chat history rendering contracts", function()
 			time = { created = 1000, completed = 1500 },
 		})
 		sync.handle_part_updated({
-			id = "m_write_compute",
+			id = "m_edit_compute",
 			messageID = "m_compute",
 			sessionID = compute_session,
 			type = "tool",
-			tool = "write",
-			callID = "call_write_compute",
+			tool = "edit",
+			callID = "call_edit_compute",
 			state = {
 				status = "completed",
 				metadata = {
 					status = "success",
-					filepath = "compute-write.txt",
+					filepath = "compute-edit.txt",
 					filediff = {
-						file = "compute-write.txt",
+						file = "compute-edit.txt",
 						before = "",
 						after = "content line",
 					},
@@ -218,7 +218,7 @@ describe("chat history rendering contracts", function()
 
 		local created = edit_previews.sync_session(compute_session)
 		assert(created == 1, "empty-string before/after should create a preview edit via computed diff")
-		local compute_id = "tool-preview:" .. compute_session .. ":m_compute:m_write_compute"
+		local compute_id = "tool-preview:" .. compute_session .. ":m_compute:m_edit_compute"
 		local compute_estate = edit_state.get_edit(compute_id)
 		assert(compute_estate, "empty-string compute path should create an edit estate")
 		assert(#compute_estate.files == 1, "compute estate should have one file")

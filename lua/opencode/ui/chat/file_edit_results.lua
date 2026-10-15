@@ -25,7 +25,6 @@ local text_util = require("opencode.util.text")
 ---@field hasProposed boolean
 
 local SUPPORTED_TOOLS = {
-	write = true,
 	edit = true,
 	apply_patch = true,
 	neovim_edit = true,
@@ -77,19 +76,6 @@ local function normalize_number(value)
 		return tonumber(value)
 	end
 	return nil
-end
-
----@param value any
----@return boolean
-local function is_false(value)
-	if value == false then
-		return true
-	end
-	if type(value) == "string" then
-		local lowered = value:lower()
-		return lowered == "false" or lowered == "0" or lowered == "no"
-	end
-	return false
 end
 
 ---@param tbl table
@@ -310,6 +296,9 @@ local function normalize_file(raw, opts)
 	end
 
 	local diff = text_util.first_string(source.diff, source.patch, opts.diff)
+	if diff == nil and (source.diff == "" or source.patch == "" or opts.diff == "") then
+		diff = ""
+	end
 	local proposed_diff = text_util.first_string(
 		source.proposedDiff,
 		source.proposed_diff,
@@ -379,9 +368,7 @@ local function get_title(tool_part, metadata)
 		return explicit
 	end
 
-	if tool_part.tool == "write" then
-		return "File write completed"
-	elseif tool_part.tool == "edit" or tool_part.tool == "neovim_edit" then
+	if tool_part.tool == "edit" or tool_part.tool == "neovim_edit" then
 		return "Edit completed"
 	elseif tool_part.tool == "apply_patch" then
 		return "Patch applied"
@@ -558,52 +545,6 @@ local function highlight_text_after(result, line_index, line, text, hl_group, ma
 		col_end = start_pos + #text - 1,
 		hl_group = hl_group,
 	})
-end
-
----@param tool_part table
----@param metadata table
----@return OpenCodeFileEditResult|nil
-local function normalize_write(tool_part, metadata)
-	local input = get_input(tool_part)
-	local tool_state = get_tool_state(tool_part)
-	local status = normalize_result_status(metadata.status) or normalize_result_status(tool_state.status) or "unknown"
-	local filepath = text_util.first_string(
-		input.path,
-		metadata.target,
-		metadata.resource,
-		metadata.filepath,
-		metadata.filePath,
-		metadata.file_path,
-		input.filePath,
-		input.file_path
-	)
-	if not filepath then
-		return nil
-	end
-
-	local diff = text_util.first_string(metadata.diff)
-	local additions, deletions = parse_diff_stats(diff)
-	local file = normalize_file({
-		filePath = filepath,
-		relativePath = text_util.first_string(metadata.relativePath, metadata.relative_path),
-		type = (is_false(metadata.existed) or is_false(metadata.exists)) and "add" or "write",
-		status = status,
-		diff = diff,
-		additions = normalize_number(metadata.additions) or additions,
-		deletions = normalize_number(metadata.deletions) or deletions,
-		diagnostics = metadata.diagnostics,
-	}, {})
-	if not file then
-		return nil
-	end
-
-	return {
-		tool = tool_part.tool,
-		title = get_title(tool_part, metadata),
-		status = derive_overall_status({ file }, tool_state.status),
-		files = { file },
-		hasProposed = false,
-	}
 end
 
 ---@param tool_part table
@@ -794,9 +735,7 @@ local function normalize_model(tool_part)
 		return nil
 	end
 
-	if tool_part.tool == "write" then
-		return normalize_write(tool_part, metadata)
-	elseif tool_part.tool == "edit" then
+	if tool_part.tool == "edit" then
 		return normalize_edit(tool_part, metadata)
 	elseif tool_part.tool == "apply_patch" then
 		return normalize_apply_patch(tool_part, metadata)

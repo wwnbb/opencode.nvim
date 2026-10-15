@@ -22,7 +22,7 @@ local tool_group = require("opencode.ui.chat.tool_group")
 
 -- Standalone leaves use the same navigation, cache and animation contracts as
 -- grouped tools, without creating an activity container.
-local TOOL_LEAF_RENDERERS = { skill = chat_skill }
+local TOOL_LEAF_RENDERERS = { skill = chat_skill, write = require("opencode.ui.chat.write") }
 
 local function leaf_widget(part)
 	if part.shell_notification then return require("opencode.ui.chat.shell_notification") end

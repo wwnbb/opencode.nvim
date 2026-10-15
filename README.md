@@ -157,6 +157,17 @@ results and Markdown pages retain their formatting; HTML and plain text keep
 their original content. Expanded requests show the full query or URL and
 request options, including details shortened in the compact row.
 
+# File changes
+
+Native `write` calls have a separate `Write` row with their execution status.
+Press `O` or `Enter` to inspect the full path, submitted content with syntax
+highlighting, and any error or diagnostics. The content is the text sent to the
+tool, before server formatting; it remains available when reopening history.
+
+Native `edit` and `apply_patch` calls show the recorded additions and deletions.
+Press `=` on a file to expand its diff. Completed changes are labeled `applied`;
+missing diffs are marked `Diff unavailable` instead of showing misleading zeros.
+
 # Skills
 
 Skill calls appear as a compact `→ Skill "name"` row. Press `O` or `Enter` to
