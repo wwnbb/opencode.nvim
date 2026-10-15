@@ -391,11 +391,24 @@ require("opencode").setup({
 In Insert mode, **Ctrl+L** requests a suggestion and displays a spinner at the
 cursor. Press it again to cancel the pending request or ask for an alternative
 to the visible suggestion. The suggestion appears as virtual text as the model
-generates it. **Tab** inserts the currently visible suggestion as a separate
-undo step and stops generation. Until text arrives, or without a suggestion,
-Tab keeps its usual mapping.
-Typing, moving the cursor, leaving Insert mode, or switching buffers dismisses
-the suggestion. A late response cannot insert or display stale code. Completion
+generates it. **Tab** (or your configured accept key) inserts the finished suggestion
+as a separate undo step. Press it while waiting or streaming to automatically
+insert the full result when generation finishes; repeated presses do not insert
+it twice. After queuing acceptance, you can press **Esc**, move the cursor, and
+edit other lines or switch files and windows. Use **Ctrl+L**, then **Tab**, at
+another location to queue another independent completion. Each target line has
+its own request and preview; requesting again on that line replaces only its
+request. Results can arrive in any order. The insertion point follows the original
+line when lines above it are added or removed. The result is inserted there
+without moving you back or changing your mode, and Tab keeps its usual behavior
+away from that insertion point.
+On an otherwise blank line, queuing acceptance preserves the autoindent when
+you press Esc or move to another line.
+Changing or deleting a target line cancels only its queued acceptance, even if undo
+later restores it. Unloading or deleting a buffer cancels its requests.
+Before acceptance is queued, any manual buffer edit, cursor movement, or leaving Insert
+mode dismisses the suggestion. Without an active completion, Tab keeps its usual mapping.
+A late response cannot insert or display stale code. Completion
 has no timeout by default; `completion.timeout_ms` can set a request deadline.
 
 Completion inserts between the cursor and the existing text to its right; it
@@ -474,11 +487,12 @@ completion = {
 
 Set either completion keymap to `false` to integrate with your own mappings or
 completion framework. The public API is `require("opencode").complete()`,
-`accept_completion()` (returns whether acceptance was queued),
-`dismiss_completion()`, and `completion_visible()`. Acceptance is safe from an
+`accept_completion()` (accepts at the cursor and returns whether acceptance was queued),
+`dismiss_completion()` (cancels all requests), and `completion_visible()` (reports
+a visible suggestion in the current buffer). Acceptance is safe from an
 expression mapping; the actual insertion runs outside Neovim's textlock.
-The automatic Tab mapping exists only while ghost text is ready and restores
-previous buffer-local mappings when it disappears.
+The automatic accept mapping exists while a request is pending or ghost text is
+visible and restores previous buffer-local mappings on acceptance or cancellation.
 
 # Explain a Visual selection
 
