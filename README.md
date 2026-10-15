@@ -111,6 +111,14 @@ rendered Markdown, and diff layout. Preferences apply immediately and can be
 saved globally or for the current directory. Collapsed reasoning remains
 available with `O` or `Enter`.
 
+Settings also includes separate model and reasoning (server variant) selectors
+for completion and Explain, plus completion's maximum line count. These choices
+apply to the next request and use the same global/directory scopes. Changing a
+model resets its reasoning to Default; selecting a model or reasoning overrides
+that feature's Lua `options`. Use Inherit default to restore the configured
+profile. For max lines, enter a positive integer or leave the input empty to
+inherit. Completion and Explain must still be enabled in `setup()`.
+
 # Execute / MCP tools
 
 Consecutive `execute` invocations share a compact `→ Executed — 3 calls` row,

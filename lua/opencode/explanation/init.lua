@@ -58,6 +58,7 @@ function M.explain_selection()
 	if not snapshot then notify(capture_err); return false end
 	local state = require("opencode.state")
 	local global = state.get_config() or {}
+	local config = global.explanation or config
 	local managed = not (global.server and global.server.port)
 	local _, model_err = require("opencode.completion.profile").validate(config, { managed = managed }, "explanation")
 	if model_err then notify(model_err); return false end

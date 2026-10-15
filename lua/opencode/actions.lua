@@ -100,11 +100,12 @@ local function catalog_options(opts)
 	return options
 end
 
-local function load_catalog(method, domain, callback)
-	local opts = catalog_options()
+local function load_catalog(method, domain, callback, options)
+	local explicit_directory = options and options.directory ~= nil
+	local opts = catalog_options(options)
 	return connected_request(nil, function(done) client()[method](done, opts) end, function(err, data)
 		if data or err then sync().handle_location_catalog(opts.directory, domain, data, err) end
-		if callback and catalog_options().directory == opts.directory then callback(err, data) end
+		if callback and (explicit_directory or catalog_options().directory == opts.directory) then callback(err, data) end
 	end)
 end
 
@@ -454,8 +455,8 @@ function M.select_agent(agent_name)
 	update_input_info_bar()
 end
 
-function M.get_config_providers(callback)
-	return load_catalog("get_config_providers", "providers", callback)
+function M.get_config_providers(callback, opts)
+	return load_catalog("get_config_providers", "providers", callback, opts)
 end
 
 function M.list_skills(callback, opts)

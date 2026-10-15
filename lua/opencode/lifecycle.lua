@@ -635,9 +635,10 @@ local function spawn_server()
 	end
 	local env = build_server_env(auth)
 	local profile = require("opencode.completion.profile")
-	local overlay, completion_profile, completion_error = profile.prepare(M.opts.completion, env.OPENCODE_CONFIG_CONTENT)
+	local config = state.get_config() or {}
+	local overlay, completion_profile, completion_error = profile.prepare(config.completion or M.opts.completion, env.OPENCODE_CONFIG_CONTENT)
 	local explanation_profile, explanation_error
-	overlay, explanation_profile, explanation_error = profile.prepare(M.opts.explanation, overlay, "explanation")
+	overlay, explanation_profile, explanation_error = profile.prepare(config.explanation or M.opts.explanation, overlay, "explanation")
 	env.OPENCODE_CONFIG_CONTENT = overlay
 
 	-- CLI 2.0.11 requires an integer. Zero requests an available OS port.

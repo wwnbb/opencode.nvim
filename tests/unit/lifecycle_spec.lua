@@ -113,6 +113,9 @@ describe("opencode lifecycle", function()
 			},
 		}
 		package.loaded["opencode.state"] = {
+			get_config = function()
+				return vim.deepcopy(state_data.config)
+			end,
 			get_connection = function()
 				return state_data.connection
 			end,
@@ -596,6 +599,41 @@ describe("opencode lifecycle", function()
 		second_job.opts.on_exit(second_job, 0, 15)
 		flush_scheduled()
 		assert.is_nil(lifecycle.resolve_completion_model(completion))
+	end)
+
+	it("uses current feature settings on startup and refreshes them only after restart", function()
+		local configured = { enabled = true, model = { providerID = "local", modelID = "coder" }, variant = "fast" }
+		lifecycle.setup({ completion = configured, explanation = configured })
+		state_data.config = {
+			completion = { enabled = true, model = configured.model, options = { body = { max_tokens = 32 } } },
+			explanation = { enabled = true, model = configured.model, options = { body = { max_tokens = 64 } } },
+		}
+		local first_job = complete_start()
+		local first_profiles = vim.deepcopy(state_data.config)
+		local variants = vim.json.decode(first_job.opts.env.OPENCODE_CONFIG_CONTENT).providers["local"].models.coder.variants
+		assert.equals(32, variants[1].body.max_tokens)
+		assert.equals(64, variants[2].body.max_tokens)
+		assert.equals(variants[1].id, lifecycle.resolve_completion_model(first_profiles.completion).variant)
+		assert.equals(variants[2].id, lifecycle.resolve_explanation_model(first_profiles.explanation).variant)
+
+		state_data.config.completion.options.body.max_tokens = 128
+		state_data.config.explanation.options.body.max_tokens = 256
+		assert.is_nil(lifecycle.resolve_completion_model(state_data.config.completion))
+		assert.is_nil(lifecycle.resolve_explanation_model(state_data.config.explanation))
+		assert.equals(variants[1].id, lifecycle.resolve_completion_model(first_profiles.completion).variant)
+		assert.equals(variants[2].id, lifecycle.resolve_explanation_model(first_profiles.explanation).variant)
+		lifecycle.restart()
+		first_job.opts.on_exit(first_job, 0, 15)
+		flush_scheduled()
+		local second_job = jobs[2]
+		emit_listening(second_job, 4012)
+		respond_health(#health_callbacks, true)
+		flush_scheduled()
+		variants = vim.json.decode(second_job.opts.env.OPENCODE_CONFIG_CONTENT).providers["local"].models.coder.variants
+		assert.equals(128, variants[1].body.max_tokens)
+		assert.equals(256, variants[2].body.max_tokens)
+		assert.equals(variants[1].id, lifecycle.resolve_completion_model(state_data.config.completion).variant)
+		assert.equals(variants[2].id, lifecycle.resolve_explanation_model(state_data.config.explanation).variant)
 	end)
 
 	it("rejects local completion options for an explicitly connected server", function()
