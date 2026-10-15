@@ -273,4 +273,9 @@ function M.entries()
 	return vim.tbl_map(function(entry) return entry.text end, store.entries)
 end
 
+function M.list()
+	M.load()
+	return vim.deepcopy(store.entries)
+end
+
 return M

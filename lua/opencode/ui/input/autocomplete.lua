@@ -56,6 +56,7 @@ local function close_popup(ac)
 		ac.trigger = nil
 		ac.kind = nil
 		ac.query = nil
+		ac.geometry = nil
 	end
 end
 
@@ -84,6 +85,19 @@ function M.is_visible(state)
 end
 
 local function layout_input_geometry(state)
+	if valid_win(state and state.winid) then
+		local border = state.popup and state.popup.border
+		local frame = border and valid_win(border.winid) and border.winid or state.winid
+		local position = vim.api.nvim_win_get_position(frame)
+		local content = vim.api.nvim_win_get_position(state.winid)
+		return {
+			row = position[1],
+			col = content[2],
+			height = vim.api.nvim_win_get_height(frame),
+			width = vim.api.nvim_win_get_width(state.winid),
+		}
+	end
+
 	local current_layout = state and state.layout
 	if current_layout then
 		local cfg = state.config or {}
@@ -105,23 +119,13 @@ local function layout_input_geometry(state)
 
 		return {
 			row = row,
-			col = col,
+			col = col + 1,
 			height = current_height,
 			width = current_layout.content_width or (valid_win(state.winid) and vim.api.nvim_win_get_width(state.winid)) or 1,
 		}
 	end
 
-	if not valid_win(state and state.winid) then
-		return nil
-	end
-
-	local pos = vim.fn.win_screenpos(state.winid)
-	return {
-		row = (tonumber(pos[1]) or 1) - 1,
-		col = (tonumber(pos[2]) or 1) - 1,
-		height = vim.api.nvim_win_get_height(state.winid),
-		width = math.max(1, vim.api.nvim_win_get_width(state.winid)),
-	}
+	return nil
 end
 
 local function current_input_geometry(state, requested_height)
@@ -147,9 +151,7 @@ local function current_input_geometry(state, requested_height)
 
 	return {
 		row = row,
-			-- Input popup has a left split border. Autocomplete adds right padding,
-			-- so offset its inner layout to keep the left edge aligned with input.
-		col = math.max(0, input.col + 1),
+		col = math.max(0, input.col),
 		width = math.max(1, input.width - 2),
 		height = height,
 	}
@@ -188,12 +190,18 @@ local function mount_or_update_popup(ac, geometry)
 		})
 		ac.popup:mount()
 		ac.bufnr = ac.popup.bufnr
-	else
+	elseif not vim.deep_equal(ac.geometry, geometry) then
+		-- NUI redraws its border before resizing content, so prepare content first.
+		vim.api.nvim_win_set_config(ac.popup.winid, {
+			relative = "editor", row = geometry.row, col = geometry.col,
+			width = geometry.width, height = geometry.height,
+		})
 		ac.popup:update_layout({
 			position = { row = geometry.row, col = geometry.col },
 			size = { width = geometry.width, height = geometry.height },
 		})
 	end
+	ac.geometry = geometry
 end
 
 local function item_label_width(items)
@@ -349,14 +357,8 @@ local function same_context(ac, kind, trigger)
 	return ac.kind == kind and ac.query == trigger.query and ac.row == trigger.row and ac.start_col == trigger.start_col
 end
 
-function M.refresh(state)
-	if not state or not state.visible or vim.fn.mode():sub(1, 1) ~= "i" then
-		M.close(state)
-		return false
-	end
-
-	local kind, trigger, items = source_for_state(state)
-	if not kind or #items == 0 then
+function M.show_items(state, kind, trigger, items)
+	if not state or not kind or not trigger or not items or #items == 0 then
 		M.close(state)
 		return false
 	end
@@ -390,9 +392,21 @@ function M.refresh(state)
 	ac.trigger = trigger
 	ac.items = items
 	ac.width = geometry.width
+	local mounted = ac.popup ~= nil
+	if mounted then render(ac) end
 	mount_or_update_popup(ac, geometry)
-	render(ac)
+	if not mounted then render(ac) end
 	return true
+end
+
+function M.refresh(state)
+	if not state or not state.visible or vim.fn.mode():sub(1, 1) ~= "i" then
+		M.close(state)
+		return false
+	end
+
+	local kind, trigger, items = source_for_state(state)
+	return M.show_items(state, kind, trigger, items)
 end
 
 local function move_selection(state, delta)
