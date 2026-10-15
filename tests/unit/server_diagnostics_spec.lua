@@ -83,7 +83,7 @@ describe("native server diagnostics", function()
 		picker.on_select(picker.items[1]); assert.equals(0, #notices)
 	end)
 	it("renders native line and column details in an expanded file tool result", function()
-		local result = require("opencode.ui.chat.file_edit_results").render_tool({ tool = "write", state = {
+		local result = require("opencode.ui.chat.write").render_tool({ tool = "write", state = {
 			status = "completed", input = { path = "/server/project/file.lua" }, metadata = {
 				diagnostics = { ["/server/project/file.lua"] = { diagnostic("Expected expression", 2, 4) } } } } }, true)
 		local text = table.concat(result.lines, "\n")

@@ -33,9 +33,9 @@ describe("chat quality work and compatibility contracts", function()
 		for index, call in ipairs({ "new", "existing", "shared", "shared", false }) do
 			local id = "m" .. index
 			messages[index] = { id = id }
-			parts[id] = { tool_parts = { { id = "p" .. index, type = "tool", tool = "write", callID = call or nil,
+			parts[id] = { tool_parts = { { id = "p" .. index, type = "tool", tool = "edit", callID = call or nil,
 				state = { status = "completed", input = { path = "preview.txt", content = "text" },
-					metadata = { operation = "write", target = "preview.txt", resource = "preview.txt", existed = false } } } } }
+					metadata = { filediff = { file = "preview.txt", before = "", after = "text" } } } } } }
 		end
 		parts.m5.tool_parts[2] = vim.deepcopy(parts.m5.tool_parts[1]); parts.m5.tool_parts[2].id = "p5-copy"
 		replace(sync, "get_messages", function() return messages end)

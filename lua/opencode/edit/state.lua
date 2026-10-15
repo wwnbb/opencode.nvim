@@ -317,6 +317,7 @@ function M.add_edit(permission_id, session_id, files_data, opts)
 			status = file_statuses[i] or "pending",
 			stats = { added = additions, removed = deletions },
 			diff_lines = parse_diff_lines(fd.diff),
+			diff_available = type(fd.diff) == "string",
 			file_type = file_type,
 		})
 	end

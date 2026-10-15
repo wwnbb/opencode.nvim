@@ -134,8 +134,19 @@ local function file_path(file)
 end
 
 ---@param file table
+---@param readonly boolean
+---@return boolean
+local function has_unknown_stats(file, readonly)
+	local stats = file.stats or {}
+	return readonly and file.diff_available ~= true and #(file.diff_lines or {}) == 0
+		and (tonumber(stats.added) or 0) == 0 and (tonumber(stats.removed) or 0) == 0
+end
+
+---@param file table
+---@param readonly boolean
 ---@return string
-local function file_stats(file)
+local function file_stats(file, readonly)
+	if has_unknown_stats(file, readonly) then return "Diff unavailable" end
 	local stats = file and file.stats or {}
 	local added = tonumber(stats.added) or 0
 	local removed = tonumber(stats.removed) or 0
@@ -143,12 +154,13 @@ local function file_stats(file)
 end
 
 ---@param edit_state table
----@return number added, number removed
+---@return number|nil added, number|nil removed
 local function total_stats(edit_state)
 	local added = 0
 	local removed = 0
 
 	for _, file in ipairs(edit_state.files or {}) do
+		if has_unknown_stats(file, edit_state.review_mode == "readonly") then return nil, nil end
 		local stats = file.stats or {}
 		added = added + (tonumber(stats.added) or 0)
 		removed = removed + (tonumber(stats.removed) or 0)
@@ -256,9 +268,9 @@ local function build_header(edit_state, status_label)
 	local files = edit_state.files or {}
 	local count = #files
 	local added, removed = total_stats(edit_state)
-	local stats = string.format("+%d -%d", added, removed)
+	local stats = added and string.format("+%d -%d", added, removed) or ""
 	local target = count == 1 and file_path(files[1]) or string.format("%d %s", count, file_count_label(count))
-	local header = "# Edit " .. target .. " " .. stats
+	local header = "# Edit " .. target .. (stats ~= "" and " " .. stats or "")
 
 	if status_label and status_label ~= "" then
 		header = header .. " (" .. status_label .. ")"
@@ -401,11 +413,12 @@ end
 ---@param file table
 ---@param is_selected boolean
 ---@param is_expanded boolean
+---@param readonly boolean
 ---@return number start_line
 ---@return number end_line
-local function append_file_line(result, file, is_selected, is_expanded)
+local function append_file_line(result, file, is_selected, is_expanded, readonly)
 	local path = file_path(file)
-	local stats = file_stats(file)
+	local stats = file_stats(file, readonly)
 	local icon = file_icon(file, is_expanded)
 	local type_label = file_type_label(file)
 	local line_text = string.format("%s %s %s  %s", icon, type_label, path, stats)
@@ -524,12 +537,15 @@ local function render_edit(edit_state, resolution_label, header_hl, server_apply
 	local file_ranges = {}
 	local selected = edit_state.selected_file or 1
 	local expanded_files = edit_state.expanded_files or {}
+	local readonly = edit_state.review_mode == "readonly"
 	for i, file in ipairs(edit_state.files or {}) do
-		local file_start, file_end = append_file_line(result, file, i == selected, expanded_files[i] == true)
+		local file_start, file_end = append_file_line(result, file, i == selected, expanded_files[i] == true, readonly)
 		if expanded_files[i] and file.diff_lines and #file.diff_lines > 0 then
 			add_panel_blank(result)
 			local _, diff_end = append_inline_diff(result, file)
 			file_end = diff_end or file_end
+		elseif expanded_files[i] and readonly and file.diff_available ~= true and not has_unknown_stats(file, true) then
+			file_end = add_panel_line(result, "Diff unavailable", "OpenCodeEditMuted")
 		end
 		table.insert(file_ranges, {
 			index = i,
@@ -575,7 +591,7 @@ function M.get_resolved_lines(permission_id, edit_state)
 	local header_hl = "OpenCodeEditMuted"
 
 	if resolution == "all_accepted" then
-		resolution_label = "approved"
+		resolution_label = edit_state.review_mode == "readonly" and "applied" or "approved"
 		header_hl = "OpenCodeEditAccepted"
 	elseif resolution == "all_rejected" then
 		resolution_label = "rejected"

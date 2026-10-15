@@ -1,22 +1,4 @@
 describe("native edit result", function()
-	it("renders a native write result with input.path and existed=false", function()
-		local results = require("opencode.ui.chat.file_edit_results")
-		local part = {
-			tool = "write",
-			state = {
-				status = "completed",
-				input = { path = "notes.txt", content = "hello\n" },
-				metadata = { operation = "write", target = "/project/notes.txt", resource = "notes.txt", existed = false },
-			},
-		}
-		local model = results.normalize_model(part)
-		assert.is_not_nil(model)
-		assert.equals("applied", model.status)
-		assert.equals("notes.txt", model.files[1].filePath)
-		assert.equals("add", model.files[1].type)
-		assert.is_not_nil(results.render_tool(part, false))
-	end)
-
 	it("uses native apply_patch file status for added and deleted files", function()
 		local results = require("opencode.ui.chat.file_edit_results")
 		local part = {

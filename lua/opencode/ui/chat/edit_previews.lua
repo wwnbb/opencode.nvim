@@ -11,7 +11,6 @@ local PREVIEW_TOOLS = {
 	apply_patch = true,
 	neovim_edit = true,
 	neovim_patch = true,
-	write = true,
 }
 
 local RESULT_TO_EDIT_STATUS = {
@@ -205,15 +204,11 @@ local function model_to_edit_files(model, part)
 
 	for i, file in ipairs(model.files or {}) do
 		local diff = file.diff
-		if not is_nonempty_string(diff) then
+		if not is_nonempty_string(diff) and is_nonempty_string(file.proposedDiff) then
 			diff = file.proposedDiff
 		end
 
 		local raw = lookup and lookup(file, i)
-		if not is_nonempty_string(diff) and raw then
-			diff = text_util.first_string(raw.patch)
-		end
-
 		local before, after = extract_before_after(raw)
 
 		local additions = file.additions
