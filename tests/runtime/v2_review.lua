@@ -81,11 +81,11 @@ assert(result and result.status == "completed", vim.inspect(result))
 assert(result.metadata.status == "applied" and result.metadata.wrote == false, vim.inspect(result))
 local record = await(function(cb) client.review_rpc("reviewGet", { sessionID = created.id, reviewID = review_id }, directory, cb) end)
 assert(record.status == "settled", vim.inspect(record))
-local results = { version = "2.0.11", native_permission_first = permission_seen, pending_review_reconnect = true, review = record,
+local results = { version = vim.env.OPENCODE_V2_VERSION, native_permission_first = permission_seen, pending_review_reconnect = true, review = record,
 	tool = result, bytes = table.concat(vim.fn.readfile(path, "b"), "\n") }
 await(function(cb) client.delete_session(created.id, cb) end)
 
-local function start_case(name, rules)
+local function start_case(name, rules, prompt_text)
 	local info = await(function(cb) client.create_session({ location = { directory = directory },
 		model = { providerID = provider, id = model }, permissions = rules }, cb) end)
 	session.remember(info); session.set_active(info.id, name, { preserve_cache = true })
@@ -93,7 +93,7 @@ local function start_case(name, rules)
 	vim.fn.writefile({ "before" }, target)
 	local text = 'Call neovim_edit exactly once with path=' .. vim.json.encode(name .. ".txt")
 		.. ', oldString="before", newString="after". Use the direct top-level neovim_edit function, never the execute wrapper or tools.neovim_edit. Do not call any other tool. If permission is denied, stop and reply briefly. Do not retry.'
-	assert(require("opencode.send").send(text, { agent = "build", model = { providerID = provider, id = model } }))
+	assert(require("opencode.send").send(prompt_text or text, { agent = "build", model = { providerID = provider, id = model } }))
 	return info.id, target
 end
 local interrupted, target = start_case("interrupted-review", { { action = "neovim_edit", resource = "*", effect = "allow" } })
@@ -141,6 +141,41 @@ assert(tostring(denied_result.error):find("Native permission denied", 1, true), 
 assert(vim.fn.readfile(denied_target)[1] == "before", "Denied tool wrote to disk")
 results.denied = { tool = denied_result, bytes = "before\n" }
 await(function(cb) client.delete_session(denied, cb) end)
+
+for _, case in ipairs({ { name = "rejected-review", tool = "neovim_edit", accept = false },
+	{ name = "patched-review", tool = "neovim_patch", accept = true } }) do
+	local prompt_text
+	if case.tool == "neovim_patch" then
+		prompt_text = 'Call neovim_patch exactly once with patchText=' .. vim.json.encode(
+			"*** Begin Patch\n*** Update File: patched-review.txt\n@@\n-before\n+after\n*** End Patch")
+			.. '. Use the direct top-level function, then stop. Do not use any other tool.'
+	end
+	local id, case_path = start_case(case.name, { { action = case.tool, resource = "*", effect = "allow" } }, prompt_text)
+	local review
+	assert(vim.wait(90000, function()
+		for _, item in ipairs(edits.get_all_active()) do
+			if item.session_id == id then review = item; return true end
+		end
+		return false
+	end, 20), case.name .. " did not reach review")
+	assert(vim.fn.readfile(case_path)[1] == "before", case.name .. " wrote before review")
+	if case.accept then assert(edits.accept_all(review.review_id)) else assert(edits.reject_all(review.review_id)) end
+	await(function(cb) actions.reply_review(review.review_id, cb) end)
+	assert(vim.wait(90000, function()
+		for _, message in ipairs(sync.get_messages(id)) do if message.type == "idle" then return true end end
+		return false
+	end, 20), case.name .. " did not finish")
+	assert(vim.fn.readfile(case_path)[1] == (case.accept and "after" or "before"), case.name .. " has incorrect file contents")
+	local case_history = await(function(cb) client.get_messages(id, {}, cb) end)
+	local tool
+	for _, message in ipairs(case_history) do for _, part in ipairs(message.parts) do
+		if part.type == "tool" and part.tool == case.tool then tool = part.state end
+	end end
+	assert(tool and tool.status == "completed", vim.inspect(tool))
+	assert(tool.metadata.status == (case.accept and "applied" or "rejected"), vim.inspect(tool))
+	results[case.name] = { tool = tool, bytes = table.concat(vim.fn.readfile(case_path, "b"), "\n") }
+	await(function(cb) client.delete_session(id, cb) end)
+end
 vim.fn.writefile({ vim.json.encode(results) }, assert(vim.env.OPENCODE_V2_OUTPUT))
 client.disconnect_events(); require("opencode.events.handlers.server").clear()
-print("Neovim v2 native permission, review, deny, interruption and late reply passed")
+print("Neovim v2 permission, edit approval/rejection, patch approval, reconnect and interruption passed")

@@ -677,7 +677,8 @@ It uses the same language parsers and per-block limits as chat. Set
 
 # Testing
 
-Install pinned Neovim and server-plugin test dependencies once (Node.js and npm required):
+For development, install the pinned Neovim and server-plugin test dependencies
+once (Node.js and npm required for the TypeScript tests):
 
 ```sh
 ./scripts/bootstrap-test-deps.sh
@@ -685,9 +686,19 @@ Install pinned Neovim and server-plugin test dependencies once (Node.js and npm 
 
 Run the Plenary/Busted test suite:
 
-The full suite also runs the bundled TypeScript tool tests with Bun. Install Bun
+The full suite also runs the bundled TypeScript tool tests with Bun 1.3.14. Install Bun
 or set `OPENCODE_NVIM_BUN` to its executable path. Bootstrap installs the exact
 OpenCode 2.0.11 API dependencies and TypeScript compiler used by the tool suite.
+These are development dependencies; installing and using the plugin needs no
+separate Node.js, npm, or Bun executable.
+Developer setup skips unused SDK peer dependencies and does not create a source lockfile.
+Direct versions are pinned in the source package manifest; transitive developer
+dependencies can change between installs. The prepared bundle comparison and
+tool tests check their compatibility.
+
+After changing the server-plugin source, regenerate the prepared files with
+`bun scripts/build-tools.ts` and include `opencode_nvim/dist/opencode-nvim` in the
+change. The tool test runner checks that the prepared files match their source.
 
 ```sh
 ./tests/run.sh              # all specs
@@ -696,6 +707,7 @@ OpenCode 2.0.11 API dependencies and TypeScript compiler used by the tool suite.
 ./tests/run.sh integration  # integration specs
 ./tests/run.sh smoke        # smoke specs
 ./tests/run.sh tools        # Bun tool tests, including the Neovim edit-review path
+python3 tests/runtime/install_v2.py # copy-only installation and config preservation
 ```
 
 The runner uses temporary Neovim configuration, data, state, cache and log paths.
@@ -706,6 +718,15 @@ CI runs the full suite and the hot-path runtime checks on pushes and pull reques
 The live server/skill smoke scenario runs separately through the runtime harness
 with an isolated server and explicit model. A normal suite run does not exercise
 a live model.
+
+Verify the prepared tools against an installed OpenCode 2.0.26+ binary with
+Node.js, npm, and Bun absent from the test PATH. This uses a loopback model
+fixture to exercise edit approval, rejection, cancellation, and patch approval
+without provider credentials or paid requests:
+
+```sh
+python3 tests/runtime/prepared_tools.py
+```
 
 Verify completion against an installed OpenCode binary and a loopback mock
 model (temporary configuration, no account credentials or paid requests):
@@ -764,13 +785,18 @@ You can also run a single spec file:
 
 # Installation
 
-The backend requires **OpenCode 2.0.11 or newer**.
+Install **OpenCode 2.0.26 or newer** separately. The prepared server tools use
+runtime modules supplied by OpenCode. The Lua frontend's REST API compatibility
+still starts at 2.0.11; the prepared tools require newer host runtime support.
 
 Run `./scripts/install-tools.sh` to install the bundled v2 server plugin into
 `$XDG_CONFIG_HOME/nvim/opencode` (or `~/.config/nvim/opencode`). Pass a directory
-argument when `server.config_dir` uses a different location. Node.js and npm are
-required to install the pinned runtime dependencies. The installer preserves
-user commands and JSONC comments, adds its v2 plugin entry, and keeps backups
+argument when `server.config_dir` uses a different location. The installer runs
+with Neovim and copies the prepared files from `opencode_nvim/dist/opencode-nvim`
+into the profile's `plugins/opencode-nvim` directory, which OpenCode discovers
+automatically. No npm install, build, or separate Node.js/npm/Bun installation is
+needed. Existing configuration and user commands stay unchanged; a fresh profile
+receives the bundled default configuration. Previous plugin files are backed up
 under `opencode-nvim-backups` on reinstall. It checks for unsupported config
 entries and tool files before changing the profile; resolve any reported path
 and rerun the installer.
@@ -891,7 +917,7 @@ Follow these steps:
 1. Inspect the current Neovim config first. Identify the plugin manager, config structure, existing keymap style, colors/highlight setup, and any existing OpenCode or AI-assistant config.
 2. Ask targeted questions only when a choice is not obvious. Ask, for example, which plugin manager to use if it is unclear, which keymap should toggle/open opencode, whether session tabs should use a fixed max count or dynamic auto-fit, and whether the chat layout should be vertical, horizontal, or float.
 3. Add `wwnbb/opencode.nvim` through the existing plugin manager. Include dependencies: MunifTanjim/nui.nvim and nvim-lua/plenary.nvim. If the config uses lazy.nvim, ask whether I want you to install/sync the plugin now by running `nvim --headless "+Lazy! sync" +qa`; run it only if I confirm.
-4. Configure the plugin manager build/install hook to run `scripts/install-tools.sh` so the bundled opencode.nvim server plugin is updated with the Lua plugin. If the plugin manager has no build hook, run the script manually from the plugin root. Verify `opencode --version` reports 2.0.11 or newer, then connect and inspect Server Status in the command palette.
+4. Configure the plugin manager build/install hook to run `scripts/install-tools.sh` so the bundled opencode.nvim server plugin is updated with the Lua plugin. This only copies prepared files using Neovim; do not install Node.js, npm, or Bun for it. If the plugin manager has no build hook, run the script manually from the plugin root. Verify `opencode --version` reports 2.0.26 or newer, then connect and inspect Server Status in the command palette.
 5. Configure `require("opencode").setup()` using only supported options:
    - `server.command`, `server.auto_start`, `server.config_dir`, `server.env`
    - `session.default_agent`, `session.default_model.providerID`, `session.default_model.modelID`, `session.parallel.enabled`

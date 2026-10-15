@@ -1,0 +1,7 @@
+{
+  "name": "opencode-nvim-server",
+  "version": "2.0.11-4",
+  "private": true,
+  "type": "module",
+  "exports": "./index.js"
+}

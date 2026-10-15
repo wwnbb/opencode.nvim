@@ -8,7 +8,6 @@
     "@opencode/plugin": "2.0.11",
     "@opencode/schema": "2.0.11",
     "effect": "4.0.0-rc.112",
-    "jsonc-parser": "3.3.1",
     "zod": "4.1.8"
   },
   "devDependencies": {

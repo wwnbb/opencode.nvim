@@ -47,7 +47,7 @@ install_dep \
 
 echo "Neovim test dependencies installed in $DEPS_ROOT"
 
-# The tool suite compiles against the same pinned public server API.
+# Skip unused SDK peer integrations; the tool suite uses the pinned direct dependencies.
 if [ "$LUA_ONLY" = false ]; then
-	npm ci --prefix "$PLUGIN_ROOT/opencode_nvim/plugins/opencode-nvim" --ignore-scripts --no-audit --no-fund
+	npm install --prefix "$PLUGIN_ROOT/opencode_nvim/plugins/opencode-nvim" --package-lock=false --legacy-peer-deps --ignore-scripts --no-audit --no-fund
 fi
