@@ -7,6 +7,13 @@ local session_util = require("opencode.util.session")
 local state = require("opencode.state")
 local pending = require("opencode.session.pending")
 
+local function directory_label(directory)
+	local path = tostring(directory or ""):gsub("\\", "/"):gsub("/+$", "")
+	local parts = vim.split(path, "/", { trimempty = true })
+	local label = #parts > 2 and (".../" .. parts[#parts - 1] .. "/" .. parts[#parts]) or directory
+	return require("opencode.util.text").truncate(label or "", 28, "...")
+end
+
 local function report(action, err)
 	if err then vim.notify("Could not " .. action .. ": " .. tostring(err.message or err), vim.log.levels.ERROR) end
 end
@@ -92,32 +99,40 @@ function M.browse(query)
 	actions.list_sessions(query, function(err, sessions)
 		if not pending.is_current(token) then return end
 		if err then report("list sessions", err); return end
-		if not sessions or #sessions == 0 then vim.notify("No sessions found", vim.log.levels.INFO); return end
 		local current, items = state.get_session(), {}
-		for _, session in ipairs(sessions) do
-			items[#items + 1] = { label = (current.id == session.id and "● " or "  ") .. (session_util.displayTitle(session.title) or "New session"),
-				value = session.id, session = session, description = session.directory or (session.location and session.location.directory),
+		for _, session in ipairs(sessions or {}) do
+			local title = session_util.displayTitle(session.title) or "New session"
+			local directory = session.directory or (session.location and session.location.directory) or ""
+			items[#items + 1] = { label = (current.id == session.id and "● " or "  ") .. title,
+				title = title, directory = directory, search_text = directory,
+				value = session.id, session = session, description = directory_label(directory),
 				sort_key = session.time and session.time.updated or 0 }
 		end
-		require("opencode.ui.menu").open({ items = items, title = " Switch Session ", width = 76, searchable = true,
+		local scope = query.directory and ("Directory: " .. directory_label(query.directory))
+			or (query.project and "Selected project" or "All projects")
+		require("opencode.ui.menu").open({ items = items, title = " Switch Session ", width = 90, searchable = true,
+			message = scope .. " · " .. #items .. (#items == 1 and " session" or " sessions") .. " · ● current",
+			search_placeholder = "Search by session title or directory...", confirm_label = "open",
+			item_detail = function(item) return "Selected: " .. item.title .. "\n" .. item.directory end,
 			sort = function(a, b) return a.sort_key > b.sort_key end,
 			on_select = function(item) if pending.is_current(token) then M.open(item.value) end end,
+			keymap_scope = "session_menu",
 			keys = {
-				{ key = "r", label = "r:rename", handler = function(ctx, item)
+				{ action = "rename", label = "rename", handler = function(ctx, item)
 					if not pending.is_current(token) then return end
 					ctx.close(); rename(item.session, nil, function() M.browse(query) end)
 				end },
-				{ key = "d", label = "d:delete", handler = function(ctx, item)
+				{ action = "delete", label = "delete", handler = function(ctx, item)
 					if not pending.is_current(token) then return end
 					ctx.close(); remove(item.session, function() M.browse(query) end)
 				end },
-				{ key = "p", label = "p:project/worktree", handler = function(ctx)
+				{ action = "project", label = "project/worktree", allow_empty = true, handler = function(ctx)
 					if pending.is_current(token) then ctx.close(); projects() end
 				end },
-				{ key = "a", label = "a:all", handler = function(ctx)
+				{ action = "all", label = "all projects", allow_empty = true, handler = function(ctx)
 					if pending.is_current(token) then ctx.close(); M.browse() end
 				end },
-				{ key = "c", label = "c:current directory", handler = function(ctx)
+				{ action = "current_directory", label = "current directory", allow_empty = true, handler = function(ctx)
 					if pending.is_current(token) then
 						ctx.close(); M.browse({ roots = true, directory = state.get_session_directory(state.get_session().id) or vim.fn.getcwd() })
 					end
@@ -156,7 +171,6 @@ function M.register(palette)
 		title = "New Session",
 		description = "Create a new chat session",
 		category = "session",
-		keybind = "<leader>on",
 		slash = { name = "new" },
 		enter_with_args = true, with_parts = "reject",
 		on_select = function(context) return context.run() end,
@@ -217,7 +231,7 @@ function M.register(palette)
 	})
 	palette.register({
 		id = "session.list", title = "Switch Session", description = "Browse sessions across projects and worktrees",
-		category = "session", keybind = "<leader>os", slash = { name = "sessions", aliases = { "resume", "continue" } },
+		category = "session", slash = { name = "sessions", aliases = { "resume", "continue" } },
 		on_select = function(context) return context.run() end, run = function() M.browse() end,
 	})
 	palette.register({
@@ -253,7 +267,6 @@ function M.register(palette)
 		title = "Fork Session",
 		description = "Fork full session or before a user turn",
 		category = "session",
-		keybind = "<leader>of",
 		slash = { name = "fork" },
 		on_select = function(context) return context.run() end,
 		run = function()

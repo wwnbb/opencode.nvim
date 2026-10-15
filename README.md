@@ -196,8 +196,13 @@ Use `/stats` for session usage statistics.
 
 # Sessions, locations and execution
 
-`/sessions` searches sessions across projects; its project/worktree filters do
-not change Neovim's working directory. Use `/open <session-id>` to open directly,
+`/sessions` searches sessions across projects by title or full directory. The
+current scope appears above the list; compact paths leave room for titles, and
+the highlighted session's title and full path appear below. In Actions mode,
+`r` renames, `d` asks to delete, `p` chooses a project/worktree, `c` filters to the
+current session's directory, and `a` shows all projects. Scope filters remain
+available with no matches and do not change Neovim's working directory.
+Use `/open <session-id>` to open directly,
 `/rename <title>` to rename, or bare `/rename` to regenerate a title. The session
 picker also offers rename and delete for inactive sessions. Tabs remember their
 order across restarts and show `◆` for unviewed completions. Use `/reopen` or the
