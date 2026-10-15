@@ -30,6 +30,12 @@ function reply(record: any, decisions: any[], message?: string) {
 }
 const sha = (bytes: string | Buffer) => createHash("sha256").update(bytes).digest("hex")
 
+test("server plugin entry loads with its runtime dependencies", async () => {
+  const { default: plugin } = await import("../../opencode_nvim/plugins/opencode-nvim/index")
+  expect(plugin.id).toBe("opencode_nvim")
+  expect(typeof plugin.effect).toBe("function")
+})
+
 test("edit rejects an existing symlink before creating a review", async () => {
   const target = path.join(directory, "target")
   await fs.writeFile(target, "before\n")

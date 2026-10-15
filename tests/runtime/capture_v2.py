@@ -79,7 +79,7 @@ def main():
     if args.install_tools:
         repo = Path(__file__).resolve().parents[2]
         subprocess.run([str(repo / "scripts/install-tools.sh"), env["OPENCODE_CONFIG_DIR"]], check=True,
-                       env=dict(env, NPM_CONFIG_CACHE=str(profile / "cache/npm")))
+                       env=env)
         args.server_plugin = str(Path(env["OPENCODE_CONFIG_DIR"]) / "plugins/opencode-nvim")
     elif args.server_plugin:
         plugin_path = str(Path(args.server_plugin).resolve())

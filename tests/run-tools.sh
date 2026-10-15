@@ -18,4 +18,5 @@ if [ ! -d opencode_nvim/plugins/opencode-nvim/node_modules/@opencode/plugin ]; t
 	exit 2
 fi
 opencode_nvim/plugins/opencode-nvim/node_modules/.bin/tsc --noEmit -p opencode_nvim/plugins/opencode-nvim/tsconfig.json
+"$TOOL_TEST_BUN" scripts/build-tools.ts --check
 "$TOOL_TEST_BUN" test ./tests/tools

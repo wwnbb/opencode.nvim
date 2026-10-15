@@ -41,6 +41,8 @@ jobs:
           echo "$nvim_prefix/bin" >> "$GITHUB_PATH"
       - name: Install pinned test dependencies
         run: ./scripts/bootstrap-test-deps.sh
+      - name: Verify installation without a JavaScript toolchain
+        run: python3 tests/runtime/install_v2.py
       - name: Verify runtime and deterministic work counts
         run: |
           nvim --version
