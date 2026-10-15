@@ -3,10 +3,10 @@ describe("session catalog palette workflows", function()
 	local state = require("opencode.state")
 	local pending = require("opencode.session.pending")
 	local palette = require("opencode.ui.palette.session")
-	local menus, inputs, calls, stubs, commands
+	local menus, inputs, calls, stubs, commands, sessions
 	local function key(opts, name, item)
 		for _, mapping in ipairs(opts.keys) do
-			if mapping.key == name then mapping.handler({ close = function() end }, item or opts.items[1]); return end
+			if require("opencode.util.keymap").get(opts.keymap_scope)[mapping.action] == name then mapping.handler({ close = function() end }, item or opts.items[1]); return end
 		end
 		error("Missing menu key " .. name)
 	end
@@ -15,13 +15,14 @@ describe("session catalog palette workflows", function()
 		state.upsert_session({ id = "current", title = "Current", directory = "/remote/current" })
 		state.set_session("current", "Current")
 		menus, inputs, calls, stubs, commands = {}, {}, {}, {}, {}
+		sessions = { { id = "inactive", title = "Inactive", directory = "/remote/other" } }
 		local stub = require("luassert.stub")
 		stubs[#stubs + 1] = stub(require("opencode.ui.menu"), "open", function(opts) menus[#menus + 1] = opts end)
 		stubs[#stubs + 1] = stub(require("opencode.ui.float"), "create_input_popup", function(opts) inputs[#inputs + 1] = opts end)
 		stubs[#stubs + 1] = stub(vim, "notify")
 		stubs[#stubs + 1] = stub(actions, "list_sessions", function(query, cb)
 			calls[#calls + 1] = { method = "list", query = query }
-			cb(nil, { { id = "inactive", title = "Inactive", directory = "/remote/other" } })
+			cb(nil, sessions)
 		end)
 		stubs[#stubs + 1] = stub(actions, "open_session", function(id) calls[#calls + 1] = { method = "open", id = id } end)
 		stubs[#stubs + 1] = stub(actions, "rename_session", function(id, title, cb)
@@ -44,8 +45,32 @@ describe("session catalog palette workflows", function()
 		commands["session.list"].run()
 		assert.same({ roots = true }, calls[1].query)
 		assert.equals("/remote/other", menus[1].items[1].description)
+		assert.equals("All projects · 1 session · ● current", menus[1].message)
 		menus[1].on_select(menus[1].items[1])
 		assert.same({ method = "open", id = "inactive" }, calls[2])
+	end)
+	it("keeps session titles readable without losing the full directory in search and details", function()
+		local directory = "/Users/admin/work/rust/leetcode/twosum"
+		sessions = { { id = "current", title = "Breaking out of nested loops", directory = directory } }
+		palette.browse({ roots = true, directory = directory })
+		local opts, item = menus[1], menus[1].items[1]
+		assert.equals("● Breaking out of nested loops", item.label)
+		assert.equals(".../leetcode/twosum", item.description)
+		assert.equals(directory, item.search_text)
+		assert.equals("Selected: Breaking out of nested loops\n" .. directory, opts.item_detail(item))
+		assert.matches("Directory: .../leetcode/twosum", opts.message, 1, true)
+		assert.equals("open", opts.confirm_label)
+	end)
+	it("keeps an empty scope open with working project and directory filters", function()
+		sessions = {}
+		palette.browse({ roots = true, project = "empty-project" })
+		assert.equals(1, #menus)
+		assert.matches("Selected project · 0 sessions", menus[1].message, 1, true)
+		local available = {}
+		for _, mapping in ipairs(menus[1].keys) do available[mapping.action] = mapping.allow_empty == true end
+		assert.same({ rename = false, delete = false, project = true, all = true, current_directory = true }, available)
+		key(menus[1], "a")
+		assert.same({ roots = true }, calls[2].query)
 	end)
 	it("exposes project, worktree, current directory and all filters", function()
 		palette.browse(); key(menus[1], "p")
