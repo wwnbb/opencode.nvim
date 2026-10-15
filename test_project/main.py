@@ -1,4 +1,5 @@
 from fastapi import FastAPI
+
 from routes_stats import build_stats_router
 from routes_todos import build_todos_router
 from store import MemoryStore
@@ -16,10 +17,11 @@ def create_app() -> FastAPI:
 app = create_app()
 
 
+# Function guessing game input int
+
+
 def main():
     import uvicorn
-
-    uvicorn.run("main:app", host="127.0.0.1", port=8000)
 
 
 if __name__ == "__main__":
