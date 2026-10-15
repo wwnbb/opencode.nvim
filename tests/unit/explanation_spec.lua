@@ -132,9 +132,42 @@ describe("selection explanation request lifecycle", function()
 		assert.is_false(vim.bo[source].modified)
 	end)
 
+	it("uses runtime model and reasoning only for new requests", function()
+		local connect
+		package.loaded["opencode.lifecycle"].ensure_connected = function(callback) connect = callback end
+		package.loaded["opencode.lifecycle"].resolve_explanation_model = function(value)
+			return require("opencode.completion.profile").validate(value, nil, "explanation")
+		end
+		config.explanation.model = { providerID = "test", modelID = "first" }
+		config.explanation.variant = "low"
+		state.set_config(config)
+		assert.is_true(controller.explain_selection())
+		config.explanation.model = { providerID = "test", modelID = "second" }
+		config.explanation.variant = "high"
+		state.set_config(config)
+		connect()
+		assert.same({ providerID = "test", id = "first", variant = "low" }, requests[1].model)
+		requests[1].callback(nil, "Original answer")
+		assert.same({ "Original answer" }, shown)
+		assert.is_true(controller.explain_selection()); connect()
+		assert.same({ providerID = "test", id = "second", variant = "high" }, requests[2].model)
+	end)
+
+	it("retains the setup enabled guard and falls back when no runtime feature config exists", function()
+		state.set_config({})
+		assert.is_true(controller.explain_selection())
+		config.explanation.enabled = false
+		controller.setup(config.explanation)
+		config.explanation.enabled = true
+		state.set_config(config)
+		assert.is_false(controller.explain_selection())
+		assert.equals(1, #requests)
+	end)
+
 	it("keeps the default request pending without a deadline until dismissal", function()
 		config.explanation.timeout_ms = defaults.merge().explanation.timeout_ms
 		assert.equals(0, config.explanation.timeout_ms)
+		state.set_config(config)
 		controller.setup(config.explanation)
 		local now, timer_calls = 0, 0
 		saved.new_timer, saved.now = vim.uv.new_timer, vim.uv.now
@@ -201,6 +234,7 @@ describe("selection explanation request lifecycle", function()
 
 	it("dismisses a request cancelled by the client and ignores later updates", function()
 		config.explanation.timeout_ms = 0
+		state.set_config(config)
 		controller.setup(config.explanation)
 		assert.is_true(controller.explain_selection())
 		local request = requests[1]
@@ -254,6 +288,7 @@ describe("selection explanation request lifecycle", function()
 
 	it("times out, closes the request, and keeps a late response out of the popup", function()
 		config.explanation.timeout_ms = 10
+		state.set_config(config)
 		controller.setup(config.explanation)
 		assert.is_true(controller.explain_selection())
 		assert.is_true(vim.wait(500, function() return #errors > 0 end, 5))
@@ -265,6 +300,7 @@ describe("selection explanation request lifecycle", function()
 
 	it("shows a budget error without sending a request", function()
 		config.explanation.context.max_bytes = 1024
+		state.set_config(config)
 		snapshot.lines = { string.rep("é", 700) }
 		snapshot.start_line, snapshot.end_line = 1, 1
 		snapshot.text = snapshot.lines[1]

@@ -105,6 +105,100 @@ describe("runtime display preferences", function()
 		assert.same(before, state.get_config())
 	end)
 
+	it("persists independent editor profiles and line limits with directory precedence", function()
+		local completion_model = { providerID = "provider", modelID = "fast" }
+		local explain_model = { providerID = "provider", modelID = "deep" }
+		assert.is_true(settings.apply("completion_model", completion_model, "global"))
+		assert.is_true(settings.apply("completion_variant", "low", "global"))
+		assert.is_true(settings.apply("completion_max_lines", 7, "global"))
+		assert.is_true(settings.apply("completion_max_lines", 3, "cwd"))
+		assert.is_true(settings.apply("explanation_model", explain_model, "cwd"))
+		assert.is_true(settings.apply("explanation_variant", "high", "cwd"))
+		package.loaded["opencode.settings"] = nil
+		settings = require("opencode.settings"); configure()
+		assert.same(completion_model, state.get_config().completion.model)
+		assert.equals("low", state.get_config().completion.variant)
+		assert.equals(3, state.get_config().completion.max_lines)
+		assert.same(explain_model, state.get_config().explanation.model)
+		assert.equals("high", state.get_config().explanation.variant)
+		assert.equals("global", item("completion_model").scope)
+		assert.equals("cwd", item("explanation_variant").scope)
+		cwd(root .. "/two")
+		assert.equals(7, state.get_config().completion.max_lines)
+		assert.is_nil(state.get_config().explanation.model)
+		assert.is_nil(state.get_config().explanation.variant)
+		assert.is_true(settings.apply("completion_max_lines", nil, "global"))
+		assert.equals(12, state.get_config().completion.max_lines)
+	end)
+
+	it("resets model-specific reasoning and restores configured options on inheritance", function()
+		for _, feature in ipairs({ "completion", "explanation" }) do
+			config[feature].model = { providerID = "provider", modelID = "original" }
+			config[feature].options = { body = { reasoning_effort = "none" } }
+		end
+		configure()
+		for _, feature in ipairs({ "completion", "explanation" }) do
+			assert.is_true(item(feature .. "_variant").custom_options)
+			assert.is_true(settings.apply(feature .. "_variant", false, "global"))
+			assert.is_nil(state.get_config()[feature].variant)
+			assert.is_nil(state.get_config()[feature].options)
+			assert.is_false(json.read(path).settings.global[feature .. "_variant"])
+			assert.is_true(settings.apply(feature .. "_variant", "low", "global"))
+			assert.is_true(settings.apply(feature .. "_model", { providerID = "other", modelID = "new" }, "cwd"))
+			assert.is_nil(state.get_config()[feature].variant)
+			assert.is_nil(state.get_config()[feature].options)
+			assert.is_true(settings.apply(feature .. "_model", nil, "cwd"))
+			assert.equals("low", state.get_config()[feature].variant)
+			assert.is_true(settings.apply(feature .. "_variant", nil, "global"))
+			assert.same(config[feature].options, state.get_config()[feature].options)
+			assert.same(config[feature].model, state.get_config()[feature].model)
+		end
+	end)
+
+	it("rejects malformed editor settings and preserves profiles when a model save fails", function()
+		for _, value in ipairs({ 0, -1, 1.5, math.huge, "12", false }) do
+			assert.is_false(settings.apply("completion_max_lines", value, "global"))
+		end
+		for _, value in ipairs({ "model", {}, { providerID = "p" }, { providerID = " ", modelID = "m" } }) do
+			assert.is_false(settings.apply("completion_model", value, "global"))
+		end
+		for _, value in ipairs({ "", " ", true, {} }) do
+			assert.is_false(settings.apply("explanation_variant", value, "global"))
+		end
+		assert.is_true(settings.apply("completion_variant", "high", "global"))
+		local before, saved = state.get_config(), json.read(path)
+		local stub = require("luassert.stub")(json, "write", function() return false end)
+		local ok = settings.apply("completion_model", { providerID = "p", modelID = "m" }, "global")
+		stub:revert()
+		assert.is_false(ok)
+		assert.same(before, state.get_config())
+		assert.same(saved, json.read(path))
+	end)
+
+	it("resets inherited directory reasoning when changing a global model but preserves independent profiles", function()
+		local first, second = { providerID = "p", modelID = "first" }, { providerID = "p", modelID = "second" }
+		assert.is_true(settings.apply("completion_model", first, "global"))
+		assert.is_true(settings.apply("completion_variant", "first-only", "cwd", root .. "/one"))
+		assert.is_true(settings.apply("completion_model", first, "cwd", root .. "/two"))
+		assert.is_true(settings.apply("completion_variant", "first-only", "cwd", root .. "/two"))
+		assert.is_true(settings.apply("completion_model", second, "global"))
+		assert.same(second, state.get_config().completion.model)
+		assert.is_nil(state.get_config().completion.variant)
+		cwd(root .. "/two")
+		assert.same(first, state.get_config().completion.model)
+		assert.equals("first-only", state.get_config().completion.variant)
+	end)
+
+	it("does not save a directory model's reasoning onto a different global model", function()
+		assert.is_true(settings.apply("completion_model", { providerID = "p", modelID = "global" }, "global"))
+		assert.is_true(settings.apply("completion_model", { providerID = "p", modelID = "local" }, "cwd"))
+		assert.is_false(settings.apply("completion_variant", "local-only", "global"))
+		assert.is_true(settings.apply("completion_variant", "local-only", "cwd"))
+		assert.equals("local-only", state.get_config().completion.variant)
+		cwd(root .. "/two")
+		assert.is_nil(state.get_config().completion.variant)
+	end)
+
 	it("preserves unsupported preference files rather than replacing them", function()
 		json.write(path, { version = 7, untouched = "preserve" })
 		package.loaded["opencode.settings"] = nil

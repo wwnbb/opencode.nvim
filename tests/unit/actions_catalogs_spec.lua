@@ -133,6 +133,41 @@ describe("catalog actions across project and connection changes", function()
 		assert.is_nil(reply)
 	end)
 
+	it("loads an explicitly requested provider catalog independently of the active chat directory", function()
+		local connected, completed = nil, 0
+		local opts = { directory = "/settings-project/" }
+		lifecycle.ensure_connected = function(callback) connected = callback end
+		actions.get_config_providers(function(err, data)
+			assert.is_nil(err)
+			assert.same(cases[2].data, data)
+			completed = completed + 1
+		end, opts)
+		select_project("/project-b")
+		connected()
+		assert.same({ directory = "/settings-project" }, request_opts)
+		assert.same({ directory = "/settings-project/" }, opts)
+		reply(nil, cases[2].data); flush()
+		assert.equals(1, completed)
+		assert.same({}, sync.get_providers())
+		assert.same(cases[2].data, sync.get_location_catalog("/settings-project", "providers").data)
+	end)
+
+	it("keeps explicit provider requests guarded against replacement connections", function()
+		local connected, completed = nil, 0
+		lifecycle.ensure_connected = function(callback) connected = callback end
+		local function request()
+			actions.get_config_providers(function() completed = completed + 1 end, { directory = "/settings-project" })
+		end
+		request()
+		pending.invalidate(); connected()
+		assert.is_nil(reply)
+		request(); connected()
+		reply(nil, cases[2].data)
+		pending.invalidate(); flush()
+		assert.equals(0, completed)
+		assert.is_nil(sync.get_location_catalog("/settings-project", "providers"))
+	end)
+
 	for _, case in ipairs(cases) do
 		it(case.domain .. " load and publish the active session's catalog", function()
 			local completed = 0
