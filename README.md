@@ -111,13 +111,15 @@ rendered Markdown, and diff layout. Preferences apply immediately and can be
 saved globally or for the current directory. Collapsed reasoning remains
 available with `O` or `Enter`.
 
-Settings also includes separate model and reasoning (server variant) selectors
-for completion and Explain, plus completion's maximum line count. These choices
+Settings includes **Completion** and **Explain** submenus with model and reasoning
+(server variant) selectors, plus completion's maximum line count. These choices
 apply to the next request and use the same global/directory scopes. Changing a
 model resets its reasoning to Default; selecting a model or reasoning overrides
 that feature's Lua `options`. Use Inherit default to restore the configured
 profile. For max lines, enter a positive integer or leave the input empty to
 inherit. Completion and Explain must still be enabled in `setup()`.
+Choose **No reasoning** to disable reasoning when the selected model offers a
+`none` variant. **Default** uses the model's default behavior, which may include reasoning.
 
 # Execute / MCP tools
 
@@ -398,7 +400,7 @@ require("opencode").setup({
     enabled = true,
     model = { providerID = "your-provider", modelID = "your-fast-model" },
     -- variant = "completion", -- optional variant configured in OpenCode
-    keymaps = { trigger = "<C-l>", accept = "<Tab>" },
+    keymaps = { trigger = "<C-l>", prompt = "<C-S-l>", accept = "<Tab>" },
     timeout_ms = 0, -- No deadline; set a positive value to limit the request in milliseconds
     max_lines = 12,
   },
@@ -428,7 +430,26 @@ mode dismisses the suggestion. Without an active completion, Tab keeps its usual
 A late response cannot insert or display stale code. Completion
 has no timeout by default; `completion.timeout_ms` can set a request deadline.
 
-Completion inserts between the cursor and the existing text to its right; it
+Press **Ctrl+Shift+L** in Insert mode to enter a short instruction, such as
+"add an early return for empty input". The prompt opens beside the cursor, below
+it when space permits and above it otherwise. It uses the chat input style, with
+a multiline field and a footer showing the completion model.
+**Enter** inserts a new line; **Ctrl+G** or **Ctrl+X Ctrl+S** submits the instruction
+and requests a suggestion at the original cursor. **Tab** accepts it as usual.
+**Esc**, **Ctrl+C**, or a blank submission cancels. Sending follows your configured
+input send keys. The prompt keeps chat drafts and history unchanged. Customize this binding with `completion.keymaps.prompt`; your terminal
+must send Ctrl+Shift+L separately from Ctrl+L.
+
+Use the same shortcut on a **Visual selection** (`v` or `V`) to edit that code.
+Enter an instruction to see an inline diff, then press **Tab** in Normal mode
+to replace the selected text, or **Esc** to discard it. Tab while generation is
+pending queues acceptance. The rest of the file stays unchanged, and one undo
+reverses the replacement. Any buffer edit before acceptance cancels the proposal.
+Selection edits use the completion model and context budget; their line allowance
+is the selected line count plus `completion.max_lines`. Rectangular (`Ctrl+V`)
+selections are not supported; use `V` for a block of full lines.
+
+Insert-mode completion inserts between the cursor and the existing text to its right; it
 never replaces that suffix. With a suffix, suggestions stay on one line. At the
 end of a line, they can contain a short block. The model returns only the insertion
 text. Preview does not modify the file;
@@ -502,8 +523,9 @@ completion = {
 }
 ```
 
-Set either completion keymap to `false` to integrate with your own mappings or
+Set any completion keymap to `false` to integrate with your own mappings or
 completion framework. The public API is `require("opencode").complete()`,
+`complete_with_prompt()` (asks for an instruction to complete or edit a Visual selection),
 `accept_completion()` (accepts at the cursor and returns whether acceptance was queued),
 `dismiss_completion()` (cancels all requests), and `completion_visible()` (reports
 a visible suggestion in the current buffer). Acceptance is safe from an

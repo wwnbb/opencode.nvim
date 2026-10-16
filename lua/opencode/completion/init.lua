@@ -7,6 +7,7 @@ local records = {}
 local applying = false
 local config
 local connection_listener
+local prompt_popup
 -- Lua watchers detach on their next event; reuse them across requests and setup.
 local watched_buffers = {}
 
@@ -59,7 +60,7 @@ local function watch_source(bufnr)
 	local attached = vim.api.nvim_buf_attach(bufnr, false, {
 		on_lines = function(_, _, tick, first, last, new_last)
 			return each_record(function(record)
-				if (not record.accept_requested and not applying) or (first <= record.row and record.row < last) then
+				if record.selection or (not record.accept_requested and not applying) or (first <= record.row and record.row < last) then
 					invalidate(record)
 				else
 					if last <= record.row then record.row = record.row + new_last - last end
@@ -83,6 +84,7 @@ local function matches(snapshot)
 	if snapshot.accept_requested then return true end
 	if vim.api.nvim_get_current_win() ~= snapshot.winid or vim.api.nvim_get_current_buf() ~= snapshot.bufnr then return false end
 	local mode = vim.api.nvim_get_mode().mode
+	if snapshot.selection then return mode == "n" end
 	if mode:sub(1, 1) ~= "i" then return false end
 	local cursor = vim.api.nvim_win_get_cursor(snapshot.winid)
 	return cursor[1] == snapshot.row + 1 and cursor[2] == snapshot.col
@@ -93,7 +95,9 @@ local function active(record)
 end
 
 function M.dismiss()
+	generation = generation + 1
 	local found = next(records) ~= nil
+	if prompt_popup then prompt_popup.close(); prompt_popup = nil; found = true end
 	for _, record in pairs(records) do discard(record) end
 	ui.clear()
 	return found
@@ -108,7 +112,7 @@ function M.visible()
 end
 
 --- Normalize only an unambiguous enclosing code fence; never trim code spaces.
-function M.normalize(text, max_lines, streaming)
+function M.normalize(text, max_lines, streaming, allow_empty)
 	if type(text) ~= "string" then return nil, "Invalid completion response" end
 	text = text:gsub("\r\n", "\n")
 	-- A partial opening fence or language tag is not yet safe to accept.
@@ -120,7 +124,7 @@ function M.normalize(text, max_lines, streaming)
 		if body:sub(-#closing) == closing then text = body:sub(1, -#closing - 1)
 		elseif streaming then return nil end
 	end
-	if vim.trim(text) == "" then return nil end
+	if vim.trim(text) == "" and not (allow_empty and not streaming) then return nil end
 	if text:find("[%z\1-\8\11-\31\127]") then return nil, "Completion contains control characters" end
 	if #text > 16384 then return nil, "Completion exceeds the 16 KiB response limit" end
 	local _, newlines = text:gsub("\n", "")
@@ -128,9 +132,10 @@ function M.normalize(text, max_lines, streaming)
 	return text
 end
 
-function M.complete()
+function M.complete(instruction, snapshot)
 	if not config or not config.enabled then notify("enable completion in setup() first"); return false end
-	local snapshot, capture_err = context.capture()
+	local capture_err
+	if not snapshot then snapshot, capture_err = context.capture() end
 	if not snapshot then notify(capture_err); return false end
 	local state = require("opencode.state")
 	local global = state.get_config() or {}
@@ -140,7 +145,7 @@ function M.complete()
 	if model_err then notify(model_err); return false end
 	local previous
 	for _, record in pairs(records) do
-		if record.bufnr == snapshot.bufnr and record.row == snapshot.row then
+		if record.bufnr == snapshot.bufnr and (record.row == snapshot.row or (snapshot.selection and record.selection)) then
 			if record.col == snapshot.col and matches(record) then previous = record.text or record.previous end
 			discard(record)
 		elseif not record.accept_requested then
@@ -149,8 +154,15 @@ function M.complete()
 	end
 	generation = generation + 1
 	snapshot.id, snapshot.phase, snapshot.previous = generation, "pending", previous
+	snapshot.max_lines = snapshot.selection and (#snapshot.selection.lines + config.max_lines)
+		or (snapshot.suffix ~= "" and 1 or config.max_lines)
 	records[snapshot.id] = snapshot
-	local prompt, prompt_err = context.build(snapshot, config, previous)
+	local prompt, prompt_err
+	if snapshot.selection then
+		prompt, prompt_err = require("opencode.completion.selection").build(snapshot, config, instruction)
+	else
+		prompt, prompt_err = context.build(snapshot, config, previous, instruction)
+	end
 	if not prompt then discard(snapshot); notify(prompt_err); return false end
 	if not watch_source(snapshot.bufnr) then discard(snapshot); notify("Could not track the completion source"); return false end
 	snapshot.started = vim.uv.now()
@@ -199,7 +211,7 @@ function M.complete()
 					if not request_err.cancelled then notify(request_err.message or request_err, vim.log.levels.ERROR) end
 					return
 				end
-				local text, response_err = M.normalize(response, snapshot.suffix ~= "" and 1 or config.max_lines)
+				local text, response_err = M.normalize(response, snapshot.max_lines, false, snapshot.selection ~= nil)
 				if not text then
 					discard(snapshot)
 					if response_err then notify(response_err) end
@@ -213,7 +225,7 @@ function M.complete()
 				on_update = function(response)
 					if records[snapshot.id] ~= snapshot or (snapshot.phase ~= "pending" and snapshot.phase ~= "streaming") then return end
 					if not active(snapshot) then discard(snapshot); return end
-					local text = M.normalize(response, snapshot.suffix ~= "" and 1 or config.max_lines, true)
+					local text = M.normalize(response, snapshot.max_lines, true)
 					if text == snapshot.text then return end
 					snapshot.text, snapshot.phase = text, text and "streaming" or "pending"
 					local displayed
@@ -232,13 +244,54 @@ function M.complete()
 	return records[snapshot.id] == snapshot
 end
 
+function M.complete_with_prompt()
+	if not config or not config.enabled then notify("enable completion in setup() first"); return false end
+	local mode = vim.api.nvim_get_mode().mode
+	local visual = mode == "v" or mode == "V" or mode == "\022"
+	local capture = visual and require("opencode.completion.selection").capture or context.capture
+	local snapshot, capture_err = capture()
+	if not snapshot then notify(capture_err); return false end
+	local setup_config = config
+	generation = generation + 1
+	local prompt_generation = generation
+	local function resume(instruction)
+		prompt_popup = nil
+		vim.schedule(function()
+			if generation ~= prompt_generation or config ~= setup_config or vim.api.nvim_get_current_win() ~= snapshot.winid
+				or vim.api.nvim_get_current_buf() ~= snapshot.bufnr or not context.eligible(snapshot.bufnr)
+				or vim.api.nvim_buf_get_changedtick(snapshot.bufnr) ~= snapshot.changedtick then return end
+			vim.api.nvim_win_set_cursor(snapshot.winid, { snapshot.row + 1, snapshot.col })
+			if snapshot.selection then
+				if instruction and instruction ~= "" then M.complete(instruction, snapshot) end
+				return
+			end
+			if instruction and instruction ~= "" then
+				vim.api.nvim_create_autocmd("InsertEnter", {
+					group = "OpenCodeCompletionController", buffer = snapshot.bufnr, once = true,
+					callback = vim.schedule_wrap(function()
+						if generation == prompt_generation and config == setup_config and matches(snapshot) then M.complete(instruction) end
+					end),
+				})
+			end
+			vim.cmd(snapshot.suffix == "" and "startinsert!" or "startinsert")
+		end)
+	end
+	prompt_popup = require("opencode.ui.completion_prompt").open({
+		winid = snapshot.winid, model = config.model,
+		title = snapshot.selection and "Edit selection" or "Completion",
+		on_submit = function(value) resume(vim.trim(value)) end,
+		on_cancel = function() resume() end,
+	})
+	return true
+end
+
 --- Safe inside expr mappings: execute the actual edit after leaving textlock.
 function M.accept(id)
 	local record = id and records[id]
 	if not id then
 		local bufnr, cursor = vim.api.nvim_get_current_buf(), vim.api.nvim_win_get_cursor(0)
 		for _, candidate in pairs(records) do
-			if candidate.bufnr == bufnr and candidate.row == cursor[1] - 1 and candidate.col == cursor[2] then
+			if candidate.bufnr == bufnr and (candidate.selection or (candidate.row == cursor[1] - 1 and candidate.col == cursor[2])) then
 				record = candidate
 				break
 			end
@@ -273,16 +326,21 @@ function M._commit(id)
 	if mode ~= "n" and mode:sub(1, 1) ~= "i" then record.phase = "ready"; return false end
 	local winid = vim.api.nvim_get_current_win()
 	local cursor = vim.api.nvim_win_get_cursor(winid)
-	local follow = mode:sub(1, 1) == "i" and vim.api.nvim_get_current_buf() == record.bufnr
+	local follow = not record.selection and mode:sub(1, 1) == "i" and vim.api.nvim_get_current_buf() == record.bufnr
 		and cursor[1] == record.row + 1 and cursor[2] == record.col
 	local replacement = vim.split(record.text, "\n", { plain = true })
+	if record.selection then replacement = require("opencode.completion.selection").replacement(record, record.text) end
 	-- Invalidate before the edit so autocmds cannot revive or accept it twice.
 	discard(record)
 	applying = true
 	local ok, err = pcall(vim.api.nvim_buf_call, record.bufnr, function()
 		-- Split undo in the target buffer, including when it is hidden or Esc is in progress.
 		vim.cmd("noautocmd let &g:undolevels = &g:undolevels")
-		vim.api.nvim_buf_set_text(record.bufnr, record.row, record.col, record.row, record.col, replacement)
+		if record.selection then
+			vim.api.nvim_buf_set_lines(record.bufnr, record.selection.start_line - 1, record.selection.end_line, false, replacement)
+		else
+			vim.api.nvim_buf_set_text(record.bufnr, record.row, record.col, record.row, record.col, replacement)
+		end
 		vim.cmd("noautocmd let &g:undolevels = &g:undolevels")
 	end)
 	applying = false

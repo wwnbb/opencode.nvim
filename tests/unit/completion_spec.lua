@@ -1,7 +1,7 @@
 describe("inline completion request lifecycle", function()
 	local controller, saved, mode, requests, notices, shown, pending, config, old_buf, buf, old_virtualedit
 	local state = require("opencode.state")
-	local modules = { "opencode.completion", "opencode.ui.completion", "opencode.lifecycle", "opencode.client" }
+	local modules = { "opencode.completion", "opencode.ui.completion", "opencode.lifecycle", "opencode.client", "opencode.settings" }
 	local function edit(text, col)
 		vim.api.nvim_buf_set_lines(buf, 0, -1, false, { text })
 		vim.api.nvim_win_set_cursor(0, { 1, col or #text })
@@ -62,6 +62,10 @@ describe("inline completion request lifecycle", function()
 	end)
 	after_each(function()
 		controller.teardown()
+		if saved.settings_path then
+			pcall(vim.api.nvim_del_augroup_by_name, "OpenCodeSettings")
+			vim.fn.delete(saved.settings_path)
+		end
 		if saved.new_timer then vim.uv.new_timer, vim.uv.now = saved.new_timer, saved.now end
 		if saved.attach then vim.api.nvim_buf_attach = saved.attach end
 		vim.api.nvim_get_mode, vim.notify, vim.schedule_wrap = saved.mode, saved.notify, saved.wrap
@@ -78,30 +82,42 @@ describe("inline completion request lifecycle", function()
 		assert.is_true(controller.visible()); assert.equals("42", shown[1][2])
 		assert.same({ "local x = " }, vim.api.nvim_buf_get_lines(buf, 0, -1, false))
 	end)
-	it("uses runtime model, reasoning and line limits while keeping pending requests unchanged", function()
+	it("applies saved model, reasoning and line limits while keeping pending requests unchanged", function()
 		local connect
 		package.loaded["opencode.lifecycle"].ensure_connected = function(callback) connect = callback end
 		package.loaded["opencode.lifecycle"].resolve_completion_model = function(value)
-			return require("opencode.completion.profile").validate(value)
+			return require("opencode.completion.profile").resolve(value, { managed = false })
 		end
-		config.completion.model = { providerID = "test", modelID = "first" }
-		config.completion.variant, config.completion.max_lines = "low", 2
-		state.set_config(config)
+		saved.settings_path = vim.fn.tempname()
+		config.settings = { file = saved.settings_path }
+		state.set_config(require("opencode.settings").setup(config))
+		local apply = require("opencode.actions").apply_setting
+		assert.is_true(apply("completion_model", { providerID = "test", modelID = "first" }, "global"))
+		assert.is_true(apply("completion_variant", "low", "global"))
+		assert.is_true(apply("completion_max_lines", 2, "global"))
 		assert.is_true(controller.complete())
-		config.completion.model = { providerID = "test", modelID = "second" }
-		config.completion.variant, config.completion.max_lines = "high", 1
-		state.set_config(config)
+		assert.is_true(apply("completion_model", { providerID = "test", modelID = "second" }, "cwd"))
+		assert.is_true(apply("completion_variant", "none", "cwd"))
+		assert.is_true(apply("completion_max_lines", 1, "cwd"))
+		local stored = require("opencode.util.json_file").read(saved.settings_path)
+		local cwd = vim.fs.normalize((vim.uv or vim.loop).fs_realpath(vim.fn.getcwd()))
+		assert.equals("none", stored.settings.directories[cwd].completion_variant)
 		connect()
 		assert.same({ providerID = "test", id = "first", variant = "low" }, requests[1].model)
 		assert.matches('"max_lines":2', requests[1].prompt, 1, true)
 		requests[1].callback(nil, "1\n2")
 		assert.equals("1\n2", shown[1][2])
 		assert.is_true(controller.complete()); connect()
-		assert.same({ providerID = "test", id = "second", variant = "high" }, requests[2].model)
+		assert.same({ providerID = "test", id = "second", variant = "none" }, requests[2].model)
 		assert.matches('"max_lines":1', requests[2].prompt, 1, true)
 		requests[2].callback(nil, "1\n2")
 		assert.equals(1, #shown)
 		assert.matches("line limit", notices[#notices])
+		assert.is_true(apply("completion_variant", false, "cwd"))
+		assert.is_true(controller.complete()); connect()
+		assert.same({ providerID = "test", id = "second" }, requests[3].model)
+		requests[3].callback(nil, "3")
+		assert.equals("3", shown[2][2])
 	end)
 	it("retains the setup enabled guard and falls back when no runtime feature config exists", function()
 		state.set_config({})

@@ -117,21 +117,9 @@ function M.lock_scroll(state)
 	end)
 end
 
-function M.resize(state)
-	if not state.visible or not state.bufnr or not state.winid or not state.popup then
-		return
-	end
-	if not vim.api.nvim_win_is_valid(state.winid) then
-		return
-	end
-
+function M.measure_height(state, win_width)
 	local cfg = state.config
-	local current_layout = state.layout
-	if not cfg or not current_layout then
-		return
-	end
-
-	local win_width = math.max(1, vim.api.nvim_win_get_width(state.winid))
+	win_width = math.max(1, win_width)
 	local display_lines = 0
 	local function count(line)
 		local line_width = vim.fn.strdisplaywidth(line)
@@ -155,20 +143,12 @@ function M.resize(state)
 	end
 
 	local min_height = state.history_search and state.history_search.draft.height or cfg.min_height
-	local new_height = math.max(min_height, math.min(display_lines, cfg.max_height))
-	if new_height == current_layout.current_height then
-		M.lock_scroll(state)
-		return
-	end
+	return math.max(min_height, math.min(display_lines, cfg.max_height))
+end
 
-	current_layout.current_height = new_height
-	local vertical_shift = math.max(0, new_height - cfg.min_height)
-
-	state.popup:update_layout({
-		position = { row = current_layout.row - vertical_shift, col = current_layout.col },
-		size = { width = current_layout.content_width, height = new_height },
-	})
-	if new_height == cfg.max_height then
+function M.restore_view(state, previous_height)
+	local height = state.layout.current_height
+	if height ~= previous_height and height == state.config.max_height then
 		-- Growing from one row otherwise leaves the paste's last line at the top.
 		vim.api.nvim_win_call(state.winid, function()
 			local cursor = vim.api.nvim_win_get_cursor(state.winid)
@@ -177,6 +157,37 @@ function M.resize(state)
 		end)
 	end
 	M.lock_scroll(state)
+end
+
+function M.resize(state)
+	if not state.visible or not state.bufnr or not state.winid or not state.popup then
+		return
+	end
+	if not vim.api.nvim_win_is_valid(state.winid) then
+		return
+	end
+
+	local cfg = state.config
+	local current_layout = state.layout
+	if not cfg or not current_layout then
+		return
+	end
+
+	local new_height = M.measure_height(state, vim.api.nvim_win_get_width(state.winid))
+	if new_height == current_layout.current_height then
+		M.lock_scroll(state)
+		return
+	end
+
+	local previous_height = current_layout.current_height
+	current_layout.current_height = new_height
+	local vertical_shift = math.max(0, new_height - cfg.min_height)
+
+	state.popup:update_layout({
+		position = { row = current_layout.row - vertical_shift, col = current_layout.col },
+		size = { width = current_layout.content_width, height = new_height },
+	})
+	M.restore_view(state, previous_height)
 end
 
 function M.schedule_resize(state, on_resize)

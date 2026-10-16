@@ -336,9 +336,11 @@ function M.merge(opts)
 	local completion = merged.completion
 	validate_editor_feature("completion", completion)
 	local keymaps = require("opencode.util.keymap")
-	for _, trigger in ipairs(keymaps.keys(completion.keymaps.trigger)) do
-		if keymaps.matches(completion.keymaps.accept, trigger) then
-			error("opencode.nvim: completion trigger and accept keys must differ", 2)
+	for _, pair in ipairs({ { "trigger", "prompt" }, { "trigger", "accept" }, { "prompt", "accept" } }) do
+		for _, key in ipairs(keymaps.keys(completion.keymaps[pair[1]])) do
+			if keymaps.matches(completion.keymaps[pair[2]], key) then
+				error("opencode.nvim: completion " .. pair[1] .. " and " .. pair[2] .. " keys must differ", 2)
+			end
 		end
 	end
 	local explanation = merged.explanation

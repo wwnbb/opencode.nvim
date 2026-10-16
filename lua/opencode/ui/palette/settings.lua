@@ -2,6 +2,7 @@ local M = {}
 local actions = require("opencode.actions")
 local settings = require("opencode.settings")
 local menu = require("opencode.ui.menu")
+local groups = { completion = "Completion", explanation = "Explain" }
 
 local function model_name(model)
 	return model and (model.providerID .. "/" .. (model.modelID or model.id)) or "Not configured"
@@ -10,6 +11,7 @@ end
 local function display(setting)
 	if setting.kind == "model" then return model_name(setting.value) end
 	if setting.kind == "variant" then
+		if setting.value == "none" then return "No reasoning" end
 		return setting.value or (setting.custom_options and "Custom options" or "Default")
 	end
 	return tostring(setting.value)
@@ -63,7 +65,9 @@ local function choose(setting, cwd, callback)
 					if selected and provider.id == selected.providerID then
 						local model = (provider.models or {})[selected.modelID or selected.id] or {}
 						for _, name in ipairs(model.variant_order or vim.fn.sort(vim.tbl_keys(model.variants or {}))) do
-							if name ~= "default" then choices[#choices + 1] = { value = name, label = name } end
+							if name ~= "default" then
+								choices[#choices + 1] = { value = name, label = name == "none" and "No reasoning" or name }
+							end
 						end
 					end
 				end
@@ -76,17 +80,29 @@ local function choose(setting, cwd, callback)
 	open(choices)
 end
 
-function M.show(context)
+function M.show(context, group)
 	context = context or {}
 	local cwd = vim.fn.getcwd()
 	local items = {}
 	local width = 64
 	for _, setting in ipairs(settings.list(cwd)) do
-		items[#items + 1] = { value = setting.id, label = setting.title .. ": " .. display(setting),
-			description = setting.scope, setting = setting }
-		width = math.max(width, vim.fn.strdisplaywidth(items[#items].label) + 12)
+		local setting_group = groups[setting.path[1]] and setting.path[1] or nil
+		if setting_group == group then
+			items[#items + 1] = { value = setting.id, label = setting.title .. ": " .. display(setting),
+				description = setting.scope, setting = setting }
+			width = math.max(width, vim.fn.strdisplaywidth(items[#items].label) + 12)
+		end
 	end
-	return menu.open({ title = " Settings ", searchable = true, width = width, items = items, on_select = function(item)
+	if group then
+		items[#items + 1] = { value = "back", label = "Back to Settings", priority = -1 }
+	else
+		for id, title in pairs(groups) do
+			items[#items + 1] = { value = id, label = title, description = "submenu", group = id }
+		end
+	end
+	local title = group and (groups[group] .. " settings") or "Settings"
+	return menu.open({ title = " " .. title .. " ", searchable = true, width = width, items = items, on_select = function(item)
+		if not item.setting then return M.show(context, item.group) end
 		choose(item.setting, cwd, function(value)
 			menu.open({ title = " Save preference ", width = 72, items = {
 				{ value = "cwd", label = "This directory", description = cwd },
@@ -94,7 +110,7 @@ function M.show(context)
 			}, on_select = function(scope)
 				local ok, err = actions.apply_setting(item.value, value, scope.value, cwd)
 				if not ok then vim.notify("OpenCode: " .. err, vim.log.levels.WARN) end
-				M.show(context)
+				M.show(context, group)
 			end })
 		end)
 	end })

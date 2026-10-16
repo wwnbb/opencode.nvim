@@ -3,7 +3,12 @@
 local function editor(completion_options)
 	local client = require("tests.helpers.embedded_editor").new()
 	function client.wait(expression)
-		assert.is_true(vim.wait(2000, function() return client.lua("return " .. expression) end, 10), expression
+		local deadline, matched = vim.uv.hrtime() + 2000000000, false
+		vim.wait(2000, function()
+			matched = client.lua("return " .. expression)
+			return matched or vim.uv.hrtime() >= deadline
+		end, 10)
+		assert.is_true(matched, expression
 			.. "\n" .. vim.inspect(client.lua([[return { mode = vim.api.nvim_get_mode().mode,
 				lines = vim.api.nvim_buf_get_lines(0, 0, -1, false), cursor = vim.api.nvim_win_get_cursor(0),
 				requests = #requests, notices = notices, visible = require('opencode').completion_visible() }]])))
@@ -86,6 +91,285 @@ describe("editor completion acceptance with real input", function()
 		assert.equals(2, client.lua("return accepts"))
 		assert.is_false(client.lua("return requests[1].cancelled == true or requests[2].cancelled == true"))
 	end
+
+	for _, case in ipairs({
+		{ "end of line", "ivalue = ", "value = ", "", "value = 42" },
+		{ "before a suffix", "iprint()<Left>", "print(", ")", "print(42)" },
+		{ "before UTF-8 text", "iprint('é')<Left><Left><Left>", "print('", "é')", "print('42é')" },
+	}) do
+		it("prompts for an instruction and accepts completion " .. case[1], function()
+			client.feed(case[2])
+			client.wait("vim.api.nvim_get_mode().mode == 'i'")
+			local original = client.lines()
+			client.feed("<C-S-l>")
+			client.wait("vim.bo.filetype == 'opencode_input' and vim.api.nvim_get_mode().mode == 'i'")
+			assert.equals(0, client.lua("return #requests"))
+			client.feed("use the number 42<C-g>")
+			client.wait("#requests == 1 and vim.api.nvim_get_mode().mode == 'i'")
+			local data = client.lua([[return vim.json.decode(requests[1].prompt:match('Context %(JSON%):\n(.*)$'))]])
+			assert.equals("use the number 42", data.instruction)
+			assert.equals(case[3], data.prefix)
+			assert.equals(case[4], data.suffix)
+			assert.same(original, client.lines())
+			client.respond(1, "42")
+			client.wait("visible()")
+			client.feed("<Tab>")
+			client.wait("not visible()")
+			assert.same({ case[5] }, client.lines())
+			assert.same({}, client.lua("return notices"))
+		end)
+	end
+
+	for _, send in ipairs({ "<C-g>", "<C-x><C-s>" }) do
+		it("accepts a multiline instruction with the chat input send key: " .. send, function()
+			client.feed("ivalue = <C-S-l>")
+			client.wait("vim.bo.filetype == 'opencode_input' and vim.api.nvim_get_mode().mode == 'i'")
+			client.feed("use the number 42<CR>keep the existing suffix")
+			client.wait("vim.api.nvim_buf_line_count(0) == 2")
+			assert.equals(0, client.lua("return #requests"))
+			assert.same({ "use the number 42", "keep the existing suffix" }, client.lines())
+			assert.is_true(client.lua("return vim.api.nvim_win_get_height(0) >= 2"))
+			client.feed(send)
+			client.wait("#requests == 1 and vim.api.nvim_get_mode().mode == 'i'")
+			local data = client.lua([[return vim.json.decode(requests[1].prompt:match('Context %(JSON%):\n(.*)$'))]])
+			assert.equals("use the number 42\nkeep the existing suffix", data.instruction)
+			assert.same({ "value = " }, client.lines())
+			client.respond(1, "42")
+			client.wait("visible()")
+			client.feed("<Tab>")
+			client.wait("not visible()")
+			assert.same({ "value = 42" }, client.lines())
+		end)
+	end
+
+	it("uses the chat input surface with completion controls and no chat selectors", function()
+		client.feed("ivalue = <C-S-l>")
+		client.wait("vim.bo.filetype == 'opencode_input' and vim.api.nvim_get_mode().mode == 'i'")
+		local surface = client.lua([[
+			local text, mappings = {}, {}
+			for _, winid in ipairs(vim.api.nvim_list_wins()) do
+				if vim.api.nvim_win_get_config(winid).relative ~= '' then
+					vim.list_extend(text, vim.api.nvim_buf_get_lines(vim.api.nvim_win_get_buf(winid), 0, -1, false))
+				end
+			end
+			for _, key in ipairs({ '<C-t>', '<C-a>', '<C-e>', '<C-\\>' }) do
+				local mapping = vim.fn.maparg(key, 'i', false, true)
+				if mapping.buffer == 1 then mappings[#mappings + 1] = key end
+			end
+			return { highlight = vim.wo.winhighlight, text = table.concat(text, '\n'), mappings = mappings }
+		]])
+		assert.is_truthy(surface.highlight:find("Normal:OpenCodeInputBg", 1, true))
+		assert.is_truthy(surface.text:find("┃", 1, true))
+		assert.is_truthy(surface.text:find("fast", 1, true))
+		assert.is_nil(surface.text:find(":send", 1, true))
+		assert.is_nil(surface.text:find(":cancel", 1, true))
+		assert.same({}, surface.mappings)
+		client.feed("<Esc>")
+		client.wait("vim.bo.filetype ~= 'opencode_input' and vim.api.nvim_get_mode().mode == 'i'")
+		assert.same({ "value = " }, client.lines())
+	end)
+
+	for _, finish in ipairs({ "<Esc>", "<C-g>" }) do
+		it("preserves the chat draft when finishing a completion instruction: " .. finish, function()
+			client.lua([[
+				local history = require('opencode.ui.input.history')
+				history.set_pending('Keep my chat draft', { { type = 'agent', name = 'explore' } })
+				history.set_pending_mode('shell')
+				history.set_pending_cursor(5)
+				history.set_pending_options({ delivery = 'steer' })
+				_G.read_chat_draft = function()
+					return { text = history.get_pending(), parts = history.get_pending_parts(),
+						mode = history.get_pending_mode(), cursor = history.get_pending_cursor(),
+						options = history.get_pending_options() }
+				end
+			]])
+			local draft = client.lua("return read_chat_draft()")
+			client.feed("ivalue = <C-S-l>")
+			client.wait("vim.bo.filetype == 'opencode_input' and vim.api.nvim_get_mode().mode == 'i'")
+			assert.same({ "" }, client.lines())
+			client.feed("use 42" .. finish)
+			client.wait("vim.bo.filetype ~= 'opencode_input' and vim.api.nvim_get_mode().mode == 'i'")
+			assert.same(draft, client.lua("return read_chat_draft()"))
+			assert.same({ "value = " }, client.lines())
+		end)
+	end
+
+	for _, cancel in ipairs({ "<Esc>", "   <C-g>" }) do
+		it("cancels the instruction prompt without requesting or editing: " .. cancel, function()
+			client.feed("ivalue = <C-S-l>")
+			client.wait("vim.bo.filetype == 'opencode_input' and vim.api.nvim_get_mode().mode == 'i'")
+			client.feed(cancel)
+			client.wait("vim.bo.filetype ~= 'opencode_input' and vim.api.nvim_get_mode().mode == 'i'")
+			assert.equals(0, client.lua("return #requests"))
+			assert.same({ "value = " }, client.lines())
+			assert.same({ 1, #"value = " }, client.lua("return vim.api.nvim_win_get_cursor(0)"))
+		end)
+	end
+
+	for _, expandtab in ipairs({ true, false }) do
+		for _, cancel in ipairs({ "<Esc>", "<C-c>", "<C-g>" }) do
+			it("preserves untouched autoindent when cancelling a prompt: " .. tostring(expandtab) .. cancel, function()
+				local indent = autoindented_body(expandtab)
+				client.feed("<C-S-l>")
+				client.wait("vim.bo.filetype == 'opencode_input' and vim.api.nvim_get_mode().mode == 'i'")
+				client.feed(cancel)
+				client.wait("vim.bo.filetype ~= 'opencode_input' and vim.api.nvim_get_mode().mode == 'i'")
+				assert.same({ "def guess_number():", indent }, client.lines())
+				assert.equals(0, client.lua("return #requests"))
+			end)
+		end
+		it("preserves native autoindent through the instruction prompt: " .. tostring(expandtab), function()
+			local indent = autoindented_body(expandtab)
+			client.feed("<C-S-l>")
+			client.wait("vim.bo.filetype == 'opencode_input' and vim.api.nvim_get_mode().mode == 'i'")
+			client.feed("return 42<C-g>")
+			client.wait("#requests == 1 and vim.api.nvim_get_mode().mode == 'i'")
+			assert.same({ "def guess_number():", indent }, client.lines())
+			client.respond(1, "return 42")
+			client.wait("visible()")
+			client.feed("<Tab>")
+			client.wait("not visible()")
+			assert.same({ "def guess_number():", indent .. "return 42" }, client.lines())
+		end)
+	end
+
+	it("closes an instruction prompt on teardown without starting a request", function()
+		client.feed("ivalue = <C-S-l>")
+		client.wait("vim.bo.filetype == 'opencode_input' and vim.api.nvim_get_mode().mode == 'i'")
+		client.lua("require('opencode.completion').teardown()")
+		client.wait("vim.bo.filetype ~= 'opencode_input'")
+		assert.equals(0, client.lua("return #requests"))
+		assert.same({ "value = " }, client.lines())
+	end)
+
+	it("honors dismissal between submitting an instruction and resuming the source", function()
+		client.lua([[
+			local prompt = require('opencode.ui.completion_prompt')
+			local create = prompt.open
+			prompt.open = function(opts)
+				local submit = opts.on_submit
+				opts.on_submit = function(value)
+					submit(value)
+					require('opencode').dismiss_completion()
+				end
+				return create(opts)
+			end
+		]])
+		client.feed("ivalue = <C-S-l>")
+		client.wait("vim.bo.filetype == 'opencode_input' and vim.api.nvim_get_mode().mode == 'i'")
+		client.feed("return 42<C-g>")
+		client.wait("vim.bo.filetype ~= 'opencode_input' and vim.api.nvim_get_mode().mode == 'n'")
+		client.feed("A<Cmd>lua _G.resumed_after_dismissal = true<CR>")
+		client.wait("resumed_after_dismissal == true")
+		assert.equals(0, client.lua("return #requests"))
+		assert.same({ "value = " }, client.lines())
+	end)
+
+	it("does not request completion if the source changed while entering an instruction", function()
+		client.feed("ivalue = ")
+		client.wait("vim.api.nvim_get_current_line() == 'value = '")
+		client.lua("_G.prompt_source = vim.api.nvim_get_current_buf()")
+		client.feed("<C-S-l>")
+		client.wait("vim.bo.filetype == 'opencode_input' and vim.api.nvim_get_mode().mode == 'i'")
+		client.lua("vim.api.nvim_buf_set_lines(prompt_source, 0, -1, false, { 'changed' })")
+		client.feed("use 42<C-g>")
+		client.wait("vim.api.nvim_get_current_buf() == prompt_source and vim.api.nvim_get_mode().mode == 'n'")
+		assert.equals(0, client.lua("return #requests"))
+		assert.same({ "changed" }, client.lines())
+	end)
+
+	local function edit_selection(lines, keys)
+		client.lua("vim.api.nvim_buf_set_lines(0, 0, -1, false, ...); vim.bo.modified = false", { lines })
+		client.feed(keys .. "<C-S-l>")
+		client.wait("vim.bo.filetype == 'opencode_input' and vim.api.nvim_get_mode().mode == 'i'")
+		client.feed("simplify this code<C-g>")
+		client.wait("#requests == 1 and vim.api.nvim_get_mode().mode == 'n'")
+		assert.same(lines, client.lines())
+	end
+
+	for _, case in ipairs({
+		{ "linewise", { "before", "old one", "old two", "after" }, "2GVj", "new\ncode\n", { "before", "new", "code", "after" } },
+		{ "reversed linewise", { "before", "old one", "old two", "after" }, "3GVk", "new", { "before", "new", "after" } },
+		{ "a word", { "local value = old" }, "gg0wve", "result", { "local result = old" } },
+		{ "Unicode characters", { "print('é世')" }, "gg07lvl", "ok", { "print('ok')" } },
+		{ "multiple partial lines", { "before", "prefix old", "middle", "old suffix", "after" }, "2G0wv2j0ll", "new\ncode", { "before", "prefix new", "code suffix", "after" } },
+		{ "an inclusive end-of-line", { "prefix old", "next" }, "gg0wv$", "new", { "prefix newnext" } },
+		{ "an exclusive newline", { "prefix old", "next" }, "gg0wvj0", "new", { "prefix newnext" }, "exclusive" },
+		{ "an empty final selected line", { "prefix old", "", "next" }, "gg0wvj0", "new", { "prefix newnext" } },
+		{ "deleting selected lines", { "before", "remove", "after" }, "2GV", "", { "before", "after" } },
+		{ "deleting a word", { "local value = old" }, "gg0wve", "", { "local  = old" } },
+	}) do
+		it("previews and replaces only " .. case[1] .. " selection in one undo step", function()
+			client.lua("vim.o.selection = ...", { case[6] or "inclusive" })
+			edit_selection(case[2], case[3])
+			assert.is_false(client.lua("return vim.bo.modified"))
+			client.respond(1, case[4])
+			client.wait("visible()")
+			assert.same(case[2], client.lines())
+			assert.is_false(client.lua("return vim.bo.modified"))
+			assert.is_true(client.lua("return #marks(true)[1][4].virt_lines > 0"))
+			client.feed("<Tab>")
+			client.wait("not visible() and #marks() == 0")
+			assert.same(case[5], client.lines())
+			client.feed("u<Cmd>lua _G.selection_undone = true<CR>")
+			client.wait("selection_undone == true")
+			assert.same(case[2], client.lines())
+			assert.same({}, client.lua("return notices"))
+		end)
+	end
+
+	it("keeps large selected blocks within their own replacement line allowance", function()
+		local lines = {}
+		for index = 1, 20 do lines[index] = "old " .. index end
+		edit_selection(lines, "ggVG")
+		local data = client.lua([[return vim.json.decode(requests[1].prompt:match('Context %(JSON%):\n(.*)$'))]])
+		assert.equals("simplify this code", data.instruction)
+		assert.equals(32, data.max_lines)
+		client.update(1, "new")
+		assert.same(lines, client.lines())
+		client.feed("<Tab>")
+		client.wait("accepts == 1")
+		local changed = vim.deepcopy(lines)
+		changed[1] = "new 1"
+		client.respond(1, table.concat(changed, "\n"))
+		client.wait("#marks() == 0")
+		assert.same(changed, client.lines())
+	end)
+
+	for _, cancel in ipairs({ "<Esc>", "<C-g>" }) do
+		it("cancels a Visual edit prompt without modifying the selection: " .. cancel, function()
+			client.lua("vim.api.nvim_buf_set_lines(0, 0, -1, false, { 'keep', 'unchanged' })")
+			client.feed("ggVj<C-S-l>")
+			client.wait("vim.bo.filetype == 'opencode_input' and vim.api.nvim_get_mode().mode == 'i'")
+			client.feed(cancel)
+			client.wait("vim.bo.filetype ~= 'opencode_input' and vim.api.nvim_get_mode().mode == 'n'")
+			assert.same({ "keep", "unchanged" }, client.lines())
+			assert.equals(0, client.lua("return #requests"))
+		end)
+	end
+
+	it("rejects a selection preview with Esc and restores the previous Normal mappings", function()
+		client.lua("vim.keymap.set('n', '<Tab>', 'original'); vim.keymap.set('n', '<Esc>', 'original')")
+		local original = client.lua("return { vim.fn.maparg('<Tab>', 'n', false, true), vim.fn.maparg('<Esc>', 'n', false, true) }")
+		edit_selection({ "keep", "unchanged" }, "ggVj")
+		client.respond(1, "replacement")
+		client.wait("visible()")
+		client.feed("<Esc>")
+		client.wait("not visible() and #marks() == 0")
+		assert.same({ "keep", "unchanged" }, client.lines())
+		assert.same(original, client.lua("return { vim.fn.maparg('<Tab>', 'n', false, true), vim.fn.maparg('<Esc>', 'n', false, true) }"))
+	end)
+
+	it("cancels a queued selection edit on any source change and ignores late output", function()
+		edit_selection({ "before", "selected", "after" }, "2GV")
+		client.feed("<Tab>")
+		client.wait("accepts == 1")
+		client.lua("vim.api.nvim_buf_set_lines(0, 0, 1, false, { 'changed elsewhere' })")
+		client.wait("requests[1].cancelled == true and #marks() == 0")
+		client.update(1, "stale stream")
+		client.respond(1, "stale edit")
+		assert.same({ "changed elsewhere", "selected", "after" }, client.lines())
+	end)
 
 	it("replaces the loading spinner with cumulative ghost text before the final response", function()
 		client.feed("ivalue = ")

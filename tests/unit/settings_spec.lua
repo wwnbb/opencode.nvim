@@ -131,6 +131,24 @@ describe("runtime display preferences", function()
 		assert.equals(12, state.get_config().completion.max_lines)
 	end)
 
+	it("persists No reasoning separately from Default and resolves the explicit none variant", function()
+		for _, feature in ipairs({ "completion", "explanation" }) do
+			config[feature].model = { providerID = "provider", modelID = "fast" }
+			config[feature].options = { settings = { reasoningEffort = "high" } }
+		end
+		configure()
+		assert.is_true(settings.apply("completion_variant", "none", "global"))
+		assert.is_true(settings.apply("explanation_variant", "none", "cwd"))
+		package.loaded["opencode.settings"] = nil
+		settings = require("opencode.settings"); configure()
+		for _, feature in ipairs({ "completion", "explanation" }) do
+			local profile = state.get_config()[feature]
+			assert.equals("none", profile.variant)
+			assert.is_nil(profile.options)
+			assert.equals("none", require("opencode.completion.profile").resolve(profile, { managed = false }, feature).variant)
+		end
+	end)
+
 	it("resets model-specific reasoning and restores configured options on inheritance", function()
 		for _, feature in ipairs({ "completion", "explanation" }) do
 			config[feature].model = { providerID = "provider", modelID = "original" }

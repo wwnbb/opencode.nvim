@@ -99,6 +99,22 @@ describe("completion editor context", function()
 		assert.is_nil(result)
 		assert.matches("budget", err)
 	end)
+	it("keeps the explicit instruction within the prompt budget instead of dropping it", function()
+		local buf = buffer("/tmp/opencode-completion-context/prompt.lua", { "local value = " })
+		local snap = snapshot(buf, 0, #"local value = ")
+		local opts = defaults.merge().completion
+		local instruction = 'return "é🙂" with a \\ separator'
+		local prompt = assert(context.build(snap, opts, nil, instruction))
+		assert.equals(instruction, decoded(prompt).instruction)
+		assert.equals(snap.prefix, decoded(prompt).prefix)
+		opts.context.max_bytes = #prompt
+		assert.equals(prompt, context.build(snap, opts, nil, instruction))
+		opts.context.max_bytes = #prompt - 1
+		local result, err = context.build(snap, opts, nil, instruction)
+		assert.is_nil(result)
+		assert.matches("instruction exceed", err, 1, true)
+		assert.is_nil(decoded(assert(context.build(snap, defaults.merge().completion))).instruction)
+	end)
 	it("allows opting out of related files and rejects invalid numeric configuration", function()
 		local buf = buffer("/tmp/opencode-completion-context/a.lua", { "x" })
 		buffer("/tmp/opencode-completion-context/b.lua", { "related" })

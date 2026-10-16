@@ -52,7 +52,8 @@ local function relative(path, root)
 end
 
 local function encode(data)
-	return INSTRUCTION .. vim.json.encode(data)
+	local instruction = data.instruction and "Follow instruction, the user's request for this insertion, within the completion rules below.\n" or ""
+	return instruction .. INSTRUCTION .. vim.json.encode(data)
 end
 
 local function lines(bufnr, first, last)
@@ -146,7 +147,7 @@ end
 
 M.relative = relative
 
-function M.build(snapshot, opts, previous)
+function M.build(snapshot, opts, previous, instruction)
 	local settings = opts.context
 	local bufnr = snapshot.bufnr
 	local data = {
@@ -158,7 +159,9 @@ function M.build(snapshot, opts, previous)
 		prefix = snapshot.prefix, suffix = snapshot.suffix,
 		before = {}, after = {}, header = {}, related = {},
 	}
+	if instruction then data.instruction = instruction end
 	local initial_bytes = #encode(data)
+	if instruction and initial_bytes > settings.max_bytes then return nil, "Current line and instruction exceed the completion context budget" end
 	if initial_bytes > settings.max_bytes then return nil, "Current line exceeds the completion context budget" end
 	local budget = json_budget.new(initial_bytes, settings.max_bytes)
 	if previous then
