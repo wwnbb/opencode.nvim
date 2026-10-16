@@ -119,7 +119,7 @@ for arity, methods in pairs({
 	[0] = {
 		"open", "toggle", "close", "focus",
 		"focus_input", "start", "stop", "restart",
-		"disconnect", "abort", "complete", "accept_completion",
+		"disconnect", "abort", "complete", "complete_with_prompt", "accept_completion",
 		"dismiss_completion", "completion_visible", "explain_selection", "is_danger_mode_enabled",
 		"paste_clipboard", "command_palette", "active_sessions",
 	},

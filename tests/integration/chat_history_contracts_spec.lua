@@ -283,6 +283,54 @@ describe("chat history rendering contracts", function()
 		)
 	end)
 
+	it("hides pending widgets after closing the last tab and restores them on reopen", function()
+		local sessions = require("opencode.session")
+		local widget_index = require("opencode.ui.chat.widget_index")
+		sessions.set_active("closing_session", "Closing Session")
+		for _, id in ipairs({ "pending_question", "confirming_question" }) do
+			question_state.add_form({ id = id, sessionID = "closing_session",
+				fields = { { key = "choice", type = "string", title = "Saved question",
+					options = { { label = "Saved answer", value = "saved" } } } },
+			})
+			question_state.select_option(id, 1)
+		end
+		question_state.set_confirming("confirming_question")
+		permission_state.add_permission("closing_permission", "closing_session", "bash", {
+			tool_input = { command = "echo pending" },
+		})
+		edit_state.add_edit("closing_edit", "closing_session", {
+			{ filePath = "pending.txt", before = "a", after = "b" },
+		}, { review_mode = "readonly" })
+
+		local function assert_widgets_visible()
+			chat.do_render()
+			assert.is_not_nil(chat_state.questions.pending_question)
+			assert.is_not_nil(chat_state.questions.confirming_question)
+			assert.is_not_nil(chat_state.permissions.closing_permission)
+			assert.is_not_nil(chat_state.edits.closing_edit)
+		end
+		assert_widgets_visible()
+		assert.is_true(sessions.close("closing_session", { silent = true }))
+		assert.is_nil(app_state.get_session().id)
+		assert.same({}, app_state.get_active_sessions())
+		chat.do_render()
+		assert.same({}, chat_state.questions)
+		assert.same({}, chat_state.permissions)
+		assert.same({}, chat_state.edits)
+		assert.is_false(widget_index.new({ current_session = app_state.get_session() }):has_pending_interaction())
+		local text = table.concat(vim.api.nvim_buf_get_lines(bufnr, 0, -1, false), "\n")
+		assert.is_nil(text:find("Saved question", 1, true))
+		assert.is_nil(text:find("echo pending", 1, true))
+		assert.is_nil(text:find("pending.txt", 1, true))
+
+		sessions.set_active("closing_session", "Closing Session")
+		assert_widgets_visible()
+		assert.equals("pending", question_state.get_question("pending_question").status)
+		assert.equals("confirming", question_state.get_question("confirming_question").status)
+		assert.same({ choice = "saved" }, question_state.get_answers("pending_question"))
+		assert.same({ choice = "saved" }, question_state.get_answers("confirming_question"))
+	end)
+
 	it("shows pending and confirming orphan questions but hides resolved ones", function()
 		app_state.set_session("orphan_question_session", "Orphan Question")
 

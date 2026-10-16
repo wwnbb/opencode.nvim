@@ -20,10 +20,13 @@ end
 
 ---@param owner_session_id string|nil
 ---@param widget_status string|nil
----@param current_session_id string
+---@param current_session_id string|nil
 ---@param in_child_session_view boolean
 ---@return boolean
 function M.should_render(owner_session_id, widget_status, current_session_id, in_child_session_view)
+	if not current_session_id or current_session_id == "" then
+		return false
+	end
 	if owner_session_id == current_session_id then
 		return true
 	end

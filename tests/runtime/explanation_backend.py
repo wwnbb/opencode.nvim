@@ -7,6 +7,7 @@ The fixture isolates OpenCode's config, data, state, and cache directories. It
 uses Neovim to build the real explanation prompt and two private model variants,
 then streams the explanation through the plugin's native SSE client. No account secrets
 or external model requests are used.
+It also saves model/reasoning preferences and checks subsequent provider payloads.
 """
 
 import argparse
@@ -71,7 +72,9 @@ def prepare(repo, profile, env):
     (profile / "existing.jsonc").write_text(
         "// Keep the ordinary model and its preexisting variant.\n"
         + json.dumps({"providers": {PROVIDER: {"models": {MODEL: {"variants": [
-            {"id": "ordinary-variant", "settings": {"reasoningEffort": "high"}}
+            {"id": "ordinary-variant", "settings": {"reasoningEffort": "high"}},
+            {"id": "none", "settings": {"reasoningEffort": "none"}},
+            {"id": "low", "settings": {"reasoningEffort": "low"}},
         ]}}}}})
     )
     run_nvim(repo, profile, env, r"""
@@ -165,10 +168,46 @@ assert(vim.wait(10000, function() return vim.fn.filereadable(directory .. '/canc
 assert(cancel_handle.cancel())
 assert(vim.wait(5000, function() return cancelled ~= nil end, 10), 'Cancellation callback did not arrive')
 assert(cancelled.cancelled, vim.inspect(cancelled))
+local state, settings = require('opencode.state'), require('opencode.settings')
+local actions, model_profile = require('opencode.actions'), require('opencode.completion.profile')
+local initial_model = { providerID = prepared.completion_model.providerID, modelID = prepared.completion_model.id }
+local config = require('opencode.config').merge({
+  settings = { file = directory .. '/settings.json' },
+  completion = { enabled = true, model = initial_model, variant = 'low' },
+  explanation = { enabled = true, model = initial_model, variant = 'low' },
+})
+state.set_config(settings.setup(config))
+local function generate(feature, stage)
+  local model = assert(model_profile.resolve(state.get_config()[feature], { managed = false }, feature))
+  local finished, request_err, response
+  client['generate_' .. feature]('SETTINGS_' .. feature .. '_' .. stage, model,
+    function(error, text) request_err, response, finished = error, text, true end,
+    { timeout = 10000, directory = directory .. '/project', on_update = function() end })
+  assert(vim.wait(15000, function() return finished end, 10), 'Settings request timed out')
+  assert(not request_err, vim.inspect(request_err))
+  assert(type(response) == 'string' and response ~= '')
+end
+for _, feature in ipairs({ 'completion', 'explanation' }) do
+  generate(feature, 'initial')
+  assert(actions.apply_setting(feature .. '_model',
+    { providerID = initial_model.providerID, modelID = 'fixture-alternate' }, 'global'))
+  assert(actions.apply_setting(feature .. '_variant', 'none', 'cwd'))
+  -- Reload persisted preferences before the next request, without restarting OpenCode.
+  package.loaded['opencode.settings'] = nil
+  settings = require('opencode.settings')
+  state.set_config(settings.setup(config))
+  generate(feature, 'none')
+  assert(actions.apply_setting(feature .. '_variant', false, 'cwd'))
+  generate(feature, 'default')
+  assert(actions.apply_setting(feature .. '_variant', nil, 'cwd'))
+  assert(actions.apply_setting(feature .. '_model', nil, 'global'))
+  generate(feature, 'inherited')
+end
 local after = vim.api.nvim_buf_get_lines(source, 0, -1, false)
 assert(vim.deep_equal(before, after), 'Source buffer changed')
 client.disconnect_events()
-vim.fn.writefile({vim.json.encode({ answer = answer, source_unchanged = true, streamed = true, cancelled = true })},
+vim.fn.writefile({vim.json.encode({ answer = answer, source_unchanged = true, streamed = true, cancelled = true,
+  settings_changed = true })},
   directory .. '/client-result.json')
 """)
     return json.loads((profile / "client-result.json").read_text())
@@ -206,6 +245,10 @@ def run(cli):
                         "body": {"max_output_tokens": 768},
                         "headers": {"X-Completion-Fixture": "ordinary"},
                         "capabilities": {"tools": True, "input": ["text"], "output": ["text"]},
+                    }, "fixture-alternate": {
+                        "settings": {"reasoningEffort": "high"},
+                        "capabilities": {"tools": True, "input": ["text"], "output": ["text"]},
+                        "variants": [{"id": "none", "settings": {"reasoningEffort": "none"}}],
                     }},
                 }},
             }
@@ -266,7 +309,8 @@ def run(cli):
                     threading.Thread(target=signal_cancel_ready, daemon=True).start()
                     client_result = run_client(repo, profile, env,
                                                int(url.rsplit(":", 1)[1]))
-                    assert client_result == {"answer": ANSWER, "source_unchanged": True, "streamed": True, "cancelled": True}
+                    assert client_result == {"answer": ANSWER, "source_unchanged": True, "streamed": True,
+                                             "cancelled": True, "settings_changed": True}
                     assert provider.slow_cancelled.wait(5), "Cancellation did not reach the model"
                     _, completion_reply = request("POST", "/api/experimental/generate", {
                         "prompt": "COMPLETION_PROFILE_CHECK", "model": prepared["completion_model"]
@@ -281,9 +325,9 @@ def run(cli):
                         time.sleep(0.05)
                     assert config_path.read_bytes() == original_config, "Config file was modified"
                     assert not (project / "source.lua").exists(), "Unsaved source leaked to disk"
-                    assert len(provider.requests) == 4, provider.requests
+                    assert len(provider.requests) == 12, provider.requests
                     explanation_request = provider.requests[1]
-                    completion_request = provider.requests[3]
+                    completion_request = provider.requests[-1]
                     assert not explanation_request["body"].get("tools"), explanation_request
                     assert "local total = 0" in json.dumps(explanation_request["body"]["input"])
                     assert explanation_request["body"]["reasoning"]["effort"] == "none"
@@ -292,6 +336,11 @@ def run(cli):
                     assert completion_request["body"]["reasoning"]["effort"] == "medium"
                     assert completion_request["body"]["max_output_tokens"] == 96
                     assert completion_request["fixture_header"] == "completion"
+                    settings_requests = provider.requests[3:-1]
+                    expected = [(MODEL, "low"), ("fixture-alternate", "none"),
+                                ("fixture-alternate", "high"), (MODEL, "low")]
+                    assert [(entry["body"]["model"], entry["body"]["reasoning"]["effort"])
+                            for entry in settings_requests] == expected * 2
                     return {
                         "version": version,
                         "route": "/api/session/:sessionID/prompt + /api/event",
@@ -301,6 +350,11 @@ def run(cli):
                         "private_variants_distinct": True,
                         "explanation_reasoning_effort": "none",
                         "completion_reasoning_effort": "medium",
+                        "saved_settings_apply_without_restart": True,
+                        "settings_provider_payloads": [
+                            {"model": entry["body"]["model"], "reasoning_effort": entry["body"]["reasoning"]["effort"]}
+                            for entry in settings_requests
+                        ],
                         "provider_tools_absent": True,
                         "sessions_unchanged": True,
                         "source_buffer_unchanged": True,

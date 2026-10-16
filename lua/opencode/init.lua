@@ -555,6 +555,11 @@ function M.complete()
 	return require("opencode.completion").complete()
 end
 
+--- Ask for an instruction to complete at the Insert cursor or edit a Visual selection.
+function M.complete_with_prompt()
+	return require("opencode.completion").complete_with_prompt()
+end
+
 --- Accept the suggestion at the cursor, waiting if needed; safe for expr/snippet mappings.
 function M.accept_completion()
 	return require("opencode.completion").accept()

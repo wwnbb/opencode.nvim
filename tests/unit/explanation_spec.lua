@@ -6,7 +6,7 @@ describe("selection explanation request lifecycle", function()
 	local saved, requests, views, errors, shown, notices, snapshot
 	local modules = {
 		"opencode.explanation", "opencode.ui.explanation", "opencode.util.visual_selection",
-		"opencode.lifecycle", "opencode.client",
+		"opencode.lifecycle", "opencode.client", "opencode.settings",
 	}
 
 	local function source_snapshot()
@@ -93,6 +93,10 @@ describe("selection explanation request lifecycle", function()
 
 	after_each(function()
 		controller.teardown()
+		if saved.settings_path then
+			pcall(vim.api.nvim_del_augroup_by_name, "OpenCodeSettings")
+			vim.fn.delete(saved.settings_path)
+		end
 		if saved.new_timer then vim.uv.new_timer, vim.uv.now = saved.new_timer, saved.now end
 		vim.notify, vim.schedule_wrap = saved.notify, saved.wrap
 		for _, name in ipairs(modules) do package.loaded[name] = saved[name] end
@@ -132,25 +136,35 @@ describe("selection explanation request lifecycle", function()
 		assert.is_false(vim.bo[source].modified)
 	end)
 
-	it("uses runtime model and reasoning only for new requests", function()
+	it("applies saved model and reasoning only to new requests", function()
 		local connect
 		package.loaded["opencode.lifecycle"].ensure_connected = function(callback) connect = callback end
 		package.loaded["opencode.lifecycle"].resolve_explanation_model = function(value)
-			return require("opencode.completion.profile").validate(value, nil, "explanation")
+			return require("opencode.completion.profile").resolve(value, { managed = false }, "explanation")
 		end
-		config.explanation.model = { providerID = "test", modelID = "first" }
-		config.explanation.variant = "low"
-		state.set_config(config)
+		saved.settings_path = vim.fn.tempname()
+		config.settings = { file = saved.settings_path }
+		state.set_config(require("opencode.settings").setup(config))
+		local apply = require("opencode.actions").apply_setting
+		assert.is_true(apply("explanation_model", { providerID = "test", modelID = "first" }, "global"))
+		assert.is_true(apply("explanation_variant", "low", "global"))
 		assert.is_true(controller.explain_selection())
-		config.explanation.model = { providerID = "test", modelID = "second" }
-		config.explanation.variant = "high"
-		state.set_config(config)
+		assert.is_true(apply("explanation_model", { providerID = "test", modelID = "second" }, "cwd"))
+		assert.is_true(apply("explanation_variant", "none", "cwd"))
+		local stored = require("opencode.util.json_file").read(saved.settings_path)
+		local cwd = vim.fs.normalize((vim.uv or vim.loop).fs_realpath(vim.fn.getcwd()))
+		assert.equals("none", stored.settings.directories[cwd].explanation_variant)
 		connect()
 		assert.same({ providerID = "test", id = "first", variant = "low" }, requests[1].model)
 		requests[1].callback(nil, "Original answer")
 		assert.same({ "Original answer" }, shown)
 		assert.is_true(controller.explain_selection()); connect()
-		assert.same({ providerID = "test", id = "second", variant = "high" }, requests[2].model)
+		assert.same({ providerID = "test", id = "second", variant = "none" }, requests[2].model)
+		requests[2].callback(nil, "No-reasoning answer")
+		assert.equals("No-reasoning answer", shown[2])
+		assert.is_true(apply("explanation_variant", false, "cwd"))
+		assert.is_true(controller.explain_selection()); connect()
+		assert.same({ providerID = "test", id = "second" }, requests[3].model)
 	end)
 
 	it("retains the setup enabled guard and falls back when no runtime feature config exists", function()

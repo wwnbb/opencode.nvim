@@ -14,18 +14,21 @@ local trigger_maps = {}
 require("opencode.ui.highlights").register("opencode.ui.completion", function()
 	vim.api.nvim_set_hl(0, "OpenCodeCompletion", { link = "Comment", default = true })
 	vim.api.nvim_set_hl(0, "OpenCodeCompletionSpinner", { link = "DiagnosticInfo", default = true })
+	vim.api.nvim_set_hl(0, "OpenCodeCompletionDiffAdd", { link = "DiffAdd", default = true })
+	vim.api.nvim_set_hl(0, "OpenCodeCompletionDiffDelete", { link = "DiffDelete", default = true })
+	vim.api.nvim_set_hl(0, "OpenCodeCompletionDiffChange", { link = "DiffChange", default = true })
 end)
 
 local function keycode(key)
 	return vim.api.nvim_replace_termcodes(key, true, false, true)
 end
 
-local function install_mapping(bufnr, key, callback, description)
-	return keymaps.install("i", bufnr, key, callback, { silent = true, desc = description })
+local function install_mapping(bufnr, key, callback, description, mode)
+	return keymaps.install(mode or "i", bufnr, key, callback, { silent = true, desc = description })
 end
 
 local function restore_mappings(mappings)
-	for _, mapping in ipairs(mappings or {}) do keymaps.restore(mapping) end
+	for index = #(mappings or {}), 1, -1 do keymaps.restore(mappings[index]) end
 end
 
 local function current_mapping(mapping)
@@ -73,12 +76,48 @@ function M.clear(snapshot)
 	if not view then return end
 	stop_timer(view)
 	buffer.views[snapshot] = nil
+	restore_mappings(view.mappings)
 	if view.mark and vim.api.nvim_buf_is_valid(snapshot.bufnr) then
 		pcall(vim.api.nvim_buf_del_extmark, snapshot.bufnr, namespace, view.mark)
 	end
-	if not next(buffer.views) then
-		previews[snapshot.bufnr] = nil
+	local has_insertion
+	for other in pairs(buffer.views) do
+		if not other.selection then has_insertion = true; break end
+	end
+	if not has_insertion then
 		restore_mappings(buffer.accept_mappings)
+		buffer.accept_mappings = nil
+		buffer.replaying = nil
+	end
+	if not next(buffer.views) then previews[snapshot.bufnr] = nil end
+end
+
+local function selection_keys()
+	local accept = keymaps.keys(keymaps.get("completion", config.keymaps).accept)
+	local cancel = {}
+	for _, key in ipairs(keymaps.keys(keymaps.get("popup").cancel)) do
+		if not keymaps.matches(accept, key) then cancel[#cancel + 1] = key end
+	end
+	return accept, cancel
+end
+
+local function install_selection_mappings(view)
+	if view.mappings then return end
+	local snapshot = view.snapshot
+	local accept, cancel = selection_keys()
+	view.mappings = {}
+	for _, spec in ipairs({
+		{ keys = accept, action = "accept_completion", desc = "Accept OpenCode edit" },
+		{ keys = cancel, action = "dismiss_completion", desc = "Cancel OpenCode edit" },
+	}) do
+		for _, key in ipairs(keymaps.keys(spec.keys)) do
+			view.mappings[#view.mappings + 1] = install_mapping(snapshot.bufnr, key, function()
+				if not actions[spec.action]() then
+					M.clear(snapshot)
+					replay(key)
+				end
+			end, spec.desc, "n")
+		end
 	end
 end
 
@@ -91,10 +130,10 @@ local function install_accept_mappings(bufnr, buffer)
 			if not accepted then
 				local cursor = vim.api.nvim_win_get_cursor(0)
 				for snapshot in pairs(buffer.views) do
-					if cursor[1] == snapshot.row + 1 and cursor[2] == snapshot.col then M.clear(snapshot) end
+					if not snapshot.selection and cursor[1] == snapshot.row + 1 and cursor[2] == snapshot.col then M.clear(snapshot) end
 				end
 				local after
-				if previews[bufnr] == buffer then
+				if previews[bufnr] == buffer and buffer.accept_mappings then
 					buffer.replaying = {}
 					for _, mapping in ipairs(buffer.accept_mappings) do
 						if vim.deep_equal(current_mapping(mapping), mapping.installed) then
@@ -165,6 +204,30 @@ local function decorate_pending(view)
 	return decorate(view, spinner.get_frame(), nil, "OpenCodeCompletionSpinner")
 end
 
+local function decorate_selection(view, text)
+	local snapshot = view.snapshot
+	local replacement = require("opencode.completion.selection").replacement(snapshot, text)
+	local before = table.concat(snapshot.selection.source_lines, "\n") .. "\n"
+	local after = #replacement > 0 and table.concat(replacement, "\n") .. "\n" or ""
+	local diff = vim.diff(before, after, { result_type = "unified", ctxlen = 3 })
+	local lines = {}
+	for _, line in ipairs(vim.split(diff, "\n", { plain = true, trimempty = true })) do
+		local highlight = "OpenCodeCompletion"
+		if line:sub(1, 1) == "+" then highlight = "OpenCodeCompletionDiffAdd"
+		elseif line:sub(1, 1) == "-" then highlight = "OpenCodeCompletionDiffDelete"
+		elseif line:sub(1, 2) == "@@" then highlight = "OpenCodeCompletionDiffChange" end
+		lines[#lines + 1] = { { line, highlight } }
+	end
+	local accept, cancel = selection_keys()
+	lines[#lines + 1] = { { ("OpenCode edit  %s accept  %s cancel"):format(
+		keymaps.label("completion", "accept", { accept = accept }), keymaps.label("popup", "cancel", { cancel = cancel })), "OpenCodeCompletionSpinner" } }
+	local ok, mark = pcall(vim.api.nvim_buf_set_extmark, snapshot.bufnr, namespace, snapshot.selection.end_line - 1, 0, {
+		id = view.mark, virt_lines = lines, priority = 200,
+	})
+	if ok then view.mark = mark end
+	return ok
+end
+
 function M.pending(snapshot)
 	local view, buffer = get_view(snapshot)
 	stop_timer(view)
@@ -172,7 +235,7 @@ function M.pending(snapshot)
 		M.clear(snapshot)
 		return false
 	end
-	install_accept_mappings(snapshot.bufnr, buffer)
+	if snapshot.selection then install_selection_mappings(view) else install_accept_mappings(snapshot.bufnr, buffer) end
 	view.timer = vim.uv.new_timer()
 	if view.timer then
 		local interval = spinner.get_interval_ms()
@@ -185,7 +248,14 @@ function M.pending(snapshot)
 end
 
 function M.show(snapshot, text)
-	if type(text) ~= "string" or text == "" or not eligible(snapshot.bufnr) then M.clear(snapshot); return false end
+	if type(text) ~= "string" or (text == "" and not snapshot.selection) or not eligible(snapshot.bufnr) then M.clear(snapshot); return false end
+	if snapshot.selection then
+		local view = get_view(snapshot)
+		stop_timer(view)
+		if not decorate_selection(view, text) then M.clear(snapshot); return false end
+		install_selection_mappings(view)
+		return true
+	end
 	local lines = vim.split(text, "\n", { plain = true, trimempty = false })
 	local source = vim.api.nvim_buf_get_lines(snapshot.bufnr, snapshot.row, snapshot.row + 1, false)[1]
 	-- Inline virtual text cannot move the real suffix to the last virtual line.
@@ -213,16 +283,23 @@ local function configure_buffer(bufnr)
 	-- Do not reinstall over a later mapping from the user or another plugin.
 	if installed then return end
 	trigger_maps[bufnr] = {}
-	for _, key in ipairs(keymaps.keys(keymaps.get("completion", config.keymaps).trigger)) do
-		trigger_maps[bufnr][#trigger_maps[bufnr] + 1] = install_mapping(bufnr, key, function()
-			if eligible(bufnr) then
-				actions.complete()
-			else
-				restore_mappings(trigger_maps[bufnr])
-				trigger_maps[bufnr] = nil
-				replay(key)
-			end
-		end, "Request OpenCode completion")
+	local bindings = keymaps.get("completion", config.keymaps)
+	for _, spec in ipairs({
+		{ key = "trigger", action = "complete", desc = "Request OpenCode completion" },
+		{ key = "prompt", action = "complete_with_prompt", desc = "Prompt for OpenCode completion" },
+		{ key = "prompt", action = "complete_with_prompt", desc = "Prompt for OpenCode edit", mode = "x" },
+	}) do
+		for _, key in ipairs(keymaps.keys(bindings[spec.key])) do
+			trigger_maps[bufnr][#trigger_maps[bufnr] + 1] = install_mapping(bufnr, key, function()
+				if eligible(bufnr) then
+					actions[spec.action]()
+				else
+					restore_mappings(trigger_maps[bufnr])
+					trigger_maps[bufnr] = nil
+					replay(key)
+				end
+			end, spec.desc, spec.mode)
+		end
 	end
 end
 

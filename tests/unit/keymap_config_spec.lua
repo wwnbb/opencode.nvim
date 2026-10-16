@@ -35,10 +35,22 @@ describe("configurable action mappings", function()
 		end
 	end)
 
-	it("detects overlapping editor trigger and acceptance aliases", function()
-		local ok, err = pcall(config.merge, { completion = { keymaps = { trigger = { "<C-l>", "<C-i>" }, accept = "<Tab>" } } })
-		assert.is_false(ok)
-		assert.matches("trigger and accept keys must differ", err, 1, true)
+	it("detects overlapping completion trigger, prompt, and acceptance aliases", function()
+		for _, case in ipairs({
+			{ { trigger = { "<C-l>", "<C-i>" }, accept = "<Tab>" }, "trigger and accept" },
+			{ { trigger = "<C-l>", prompt = { "<F6>", "<C-L>" } }, "trigger and prompt" },
+			{ { prompt = { "<F6>", "<C-i>" }, accept = "<Tab>" }, "prompt and accept" },
+		}) do
+			local ok, err = pcall(config.merge, { completion = { keymaps = case[1] } })
+			assert.is_false(ok)
+			assert.matches(case[2] .. " keys must differ", err, 1, true)
+		end
+	end)
+
+	it("defaults the completion prompt to Ctrl+Shift+L and permits disabling it", function()
+		assert.equals("<C-S-l>", config.merge({}).completion.keymaps.prompt)
+		assert.is_false(config.merge({ completion = { keymaps = { prompt = false } } }).completion.keymaps.prompt)
+		assert.is_false(pcall(config.merge, { completion = { keymaps = { prompt = "" } } }))
 	end)
 
 	it("rejects two explicit same-mode actions before changing any mapping", function()
