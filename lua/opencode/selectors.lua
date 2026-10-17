@@ -43,13 +43,23 @@ local function resolve_model_ref(ref, source, sync)
 end
 
 ---@return table
-function M.current_session()
-	return require("opencode.state").get_session()
+function M.current_session(opts)
+	local state = require("opencode.state")
+	local current = state.get_session()
+	if not opts or opts.session_id == nil or opts.session_id == current.id then return current end
+	if opts.session_id == false then return {} end
+	local record = state.get_session_record(opts.session_id) or { id = opts.session_id }
+	record.name = record.name or record.title
+	return record
 end
 
 ---@return string
-function M.current_status()
-	return require("opencode.state").get_status()
+function M.current_status(opts)
+	local state = require("opencode.state")
+	if opts and opts.session_id ~= nil then
+		return require("opencode.session.status").session_status_to_global(state.get_session_status(opts.session_id))
+	end
+	return state.get_status()
 end
 
 local function current_root_id(state_mod, current)
@@ -78,28 +88,28 @@ local function build_session_view(state_mod, current, session_id, root_id)
 end
 
 ---@return table|nil
-function M.get_current_session_view()
-	return M.get_session_view(require("opencode.state").get_session().id)
+function M.get_current_session_view(opts)
+	return M.get_session_view(M.current_session(opts).id, opts)
 end
 
 ---@param session_id string|nil
 ---@return table|nil
-function M.get_session_view(session_id)
+function M.get_session_view(session_id, opts)
 	local state_mod = require("opencode.state")
-	local current = state_mod.get_session()
+	local current = M.current_session(opts)
 	return build_session_view(state_mod, current, session_id, current_root_id(state_mod, current))
 end
 
 ---@return string|nil
-function M.get_current_runtime_root_id()
+function M.get_current_runtime_root_id(opts)
 	local state_mod = require("opencode.state")
-	return current_root_id(state_mod, state_mod.get_session())
+	return current_root_id(state_mod, M.current_session(opts))
 end
 
 ---@return table[]
-function M.get_active_session_views()
+function M.get_active_session_views(opts)
 	local state_mod = require("opencode.state")
-	local current = state_mod.get_session()
+	local current = M.current_session(opts)
 	local root_id = current_root_id(state_mod, current)
 	local result, seen = {}, {}
 	for _, id in ipairs(state_mod.get_runtime_session_order()) do
@@ -112,21 +122,21 @@ function M.get_active_session_views()
 end
 
 ---@return table|nil
-function M.current_agent()
+function M.current_agent(opts)
 	local ok, local_state = pcall(require, "opencode.local")
 	if not ok or not local_state.agent or type(local_state.agent.current) ~= "function" then
 		return nil
 	end
-	return local_state.agent.current()
+	return local_state.agent.current(opts)
 end
 
 ---@return table|nil
-function M.current_model()
+function M.current_model(opts)
 	local ok, local_state = pcall(require, "opencode.local")
 	if not ok or not local_state.model or type(local_state.model.parsed) ~= "function" then
 		return nil
 	end
-	return local_state.model.parsed()
+	return local_state.model.parsed(opts)
 end
 
 local function usage_number(value)
@@ -273,7 +283,28 @@ function M.send_selection(opts)
 	end
 
 	local current_session = require("opencode.state").get_session()
-	local locked = session_lock.get(opts.session_id or current_session.id)
+	local sid = opts.session_id
+	if sid == nil then sid = current_session.id end
+	local locked = session_lock.get(sid)
+	local directory = sid and require("opencode.state").get_session_directory(sid)
+	if sync and directory and sync.get_catalog_location() and sync.get_catalog_location() ~= directory then
+		local providers = sync.get_location_catalog(directory, "providers")
+		local agents = sync.get_location_catalog(directory, "agents")
+		local source = sync
+		sync = {
+			is_visible_agent = source.is_visible_agent,
+			get_model = function(provider_id, model_id)
+				for _, provider in ipairs(providers and providers.data and providers.data.providers or {}) do
+					if provider.id == provider_id then return (provider.models or {})[model_id] end
+				end
+			end,
+			get_agent = function(name)
+				for _, agent in ipairs(agents and agents.data or {}) do
+					if agent.id == name or agent.name == name then return agent end
+				end
+			end,
+		}
+	end
 	if locked then
 		local selection = {
 			model = nil,
@@ -329,8 +360,6 @@ function M.send_selection(opts)
 		selection.agent = opts.agent
 		selection.sources.agent = "opts"
 	end
-	local sid = opts.session_id
-	if sid == nil then sid = current_session.id end
 	local scoped = require("opencode.session.selection").current(sid)
 	if scoped then
 		if not selection.model and scoped.model then selection.model = scoped.model; selection.sources.model = "session" end
@@ -341,7 +370,7 @@ function M.send_selection(opts)
 	end
 
 	local local_ok, local_state = pcall(require, "opencode.local")
-	local local_opts = { unscoped = sid == false or sid ~= current_session.id }
+	local local_opts = { session_id = sid, unscoped = sid == false }
 	if local_ok then
 		if not selection.model and local_state.model and type(local_state.model.current) == "function" then
 			selection.model = resolve_model_ref(local_state.model.current(local_opts), "local_current", sync)
