@@ -1,8 +1,10 @@
+local cs = require("opencode.ui.chat.state")
+return cs.factory("editor_context", function(view)
 -- The editor snapshot is source data: render it literally, never as Markdown.
 local M = {}
-local render = require("opencode.ui.chat.render")
-local tool_panel = require("opencode.ui.chat.tool_panel")
-local style = require("opencode.ui.chat.tool_style")
+local render = cs.module(view, require("opencode.ui.chat.render"))
+local tool_panel = cs.module(view, require("opencode.ui.chat.tool_panel"))
+local style = cs.module(view, require("opencode.ui.chat.tool_style"))
 
 function M.render_tool(part, expanded)
 	local data = part._editor_context
@@ -22,3 +24,5 @@ function M.render_tool(part, expanded)
 end
 
 return M
+
+end)

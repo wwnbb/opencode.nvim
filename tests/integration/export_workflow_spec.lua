@@ -7,7 +7,7 @@ local slash = require("opencode.slash")
 local sync = require("opencode.sync")
 
 describe("complete session export workflow", function()
-	local originals, requests, menus, format_calls, notices, initial_tab
+	local originals, requests, menus, format_calls, notices, initial_tab, views
 	local session_id = "export-workflow"
 	local transcript = {
 		info = { id = session_id, title = "Server transcript",
@@ -52,7 +52,7 @@ describe("complete session export workflow", function()
 			setreg = vim.fn.setreg,
 			getreg = vim.fn.getreg,
 		}
-		requests, menus, format_calls, notices = {}, {}, {}, {}
+		requests, menus, format_calls, notices, views = {}, {}, {}, {}, {}
 		actions.export_session = function(id, opts, callback)
 			requests[#requests + 1] = { id = id, opts = vim.deepcopy(opts) }
 			callback(nil, vim.deepcopy(transcript))
@@ -76,6 +76,7 @@ describe("complete session export workflow", function()
 	end)
 
 	after_each(function()
+		for _, view in ipairs(views) do require("opencode.ui.chat.state").remove(view) end
 		for _, tab in ipairs(vim.api.nvim_list_tabpages()) do
 			if tab ~= initial_tab and vim.api.nvim_tabpage_is_valid(tab) then
 				vim.api.nvim_set_current_tabpage(tab)
@@ -90,6 +91,22 @@ describe("complete session export workflow", function()
 		vim.fn.setreg = originals.setreg
 		vim.fn.getreg = originals.getreg
 		app_state.reset(); sync.clear_all()
+	end)
+	it("exports the owning pane after focus changes and cancels its stale response after rebinding", function()
+		local view = require("opencode.ui.chat.state").new()
+		view.session_id, view.visible = session_id, true
+		views[#views + 1] = view
+		local context = { view = view, session_id = session_id }
+		require("opencode.ui.export").show(context)
+		app_state.set_session("other", "Other")
+		choose(menus[1], "copy")
+		assert.equals(session_id, requests[1].id)
+		local reply
+		actions.export_session = function(id, _, callback) assert.equals(session_id, id); reply = callback end
+		require("opencode.ui.export").run({ action = "copy" }, context)
+		view.generation = view.generation + 1
+		reply(nil, transcript)
+		assert.equals(1, #format_calls)
 	end)
 
 	it("routes /copy and palette Copy through the complete server export instead of the visible cache", function()

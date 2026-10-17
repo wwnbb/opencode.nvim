@@ -18,6 +18,30 @@ describe("native question history", function()
 		require("opencode.cleanup").reset_all()
 	end)
 
+	it("wraps completed answers to their owning pane", function()
+		local cs = require("opencode.ui.chat.state")
+		local view, previous = cs.new(), vim.api.nvim_get_current_win()
+		vim.cmd("vsplit")
+		view.winid = vim.api.nvim_get_current_win()
+		vim.api.nvim_win_set_width(view.winid, 30)
+		local width = vim.api.nvim_win_get_width(view.winid)
+		local ok, err = pcall(function()
+			local result = cs.module(view, require("opencode.ui.chat.tasks")).render_regular_tool({
+				id = "answered-question", tool = "question", state = {
+					status = "completed", input = { questions = { { header = "Question" } } },
+					metadata = { answers = { { string.rep("long answer ", 15) } } },
+				},
+			}, false)
+			for _, line in ipairs(result.lines) do
+				assert.is_true(vim.fn.strdisplaywidth(line) <= width, "answer overflows its owning pane")
+			end
+		end)
+		vim.api.nvim_win_close(view.winid, true)
+		vim.api.nvim_set_current_win(previous)
+		cs.remove(view)
+		assert.is_true(ok, err)
+	end)
+
 	it("does not claim unanswered or failed tools were answered", function()
 		local render = require("opencode.ui.chat.question_result").render_tool
 		for _, status in ipairs({ "running", "error", "cancelled" }) do

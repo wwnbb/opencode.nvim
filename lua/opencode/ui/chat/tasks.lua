@@ -1,3 +1,5 @@
+local cs = require("opencode.ui.chat.state")
+return cs.factory("tasks", function(view)
 -- Task and tool widget facade for the chat buffer.
 -- Rendering dispatch + task widget + expand/collapse toggles + cursor queries.
 -- Animation lives in task_animation.lua, labels in tool_labels.lua,
@@ -5,33 +7,36 @@
 
 local M = {}
 
-local cs = require("opencode.ui.chat.state")
-local state = cs.state
-local render = require("opencode.ui.chat.render")
-local render_state = require("opencode.ui.chat.render_state")
-local chat_bash = require("opencode.ui.chat.bash")
-local chat_skill = require("opencode.ui.chat.skill")
-local chat_file_edit_results = require("opencode.ui.chat.file_edit_results")
-local widget_support = require("opencode.ui.chat.widget_support")
-local task_animation = require("opencode.ui.chat.task_animation")
-local tool_labels = require("opencode.ui.chat.tool_labels")
-local task_children = require("opencode.ui.chat.task_children")
-local tool_part = require("opencode.ui.chat.tool_part")
+local state = view
+local render = cs.module(view, require("opencode.ui.chat.render"))
+local render_state = cs.module(view, require("opencode.ui.chat.render_state"))
+local chat_bash = cs.module(view, require("opencode.ui.chat.bash"))
+local chat_skill = cs.module(view, require("opencode.ui.chat.skill"))
+local chat_file_edit_results = cs.module(view, require("opencode.ui.chat.file_edit_results"))
+local widget_support = cs.module(view, require("opencode.ui.chat.widget_support"))
+local task_animation = cs.module(view, require("opencode.ui.chat.task_animation"))
+local tool_labels = cs.module(view, require("opencode.ui.chat.tool_labels"))
+local task_children = cs.module(view, require("opencode.ui.chat.task_children"))
+local tool_part = cs.module(view, require("opencode.ui.chat.tool_part"))
 local tree = require("opencode.ui.chat.widget_tree")
-local tool_group = require("opencode.ui.chat.tool_group")
+local tool_group = cs.module(view, require("opencode.ui.chat.tool_group"))
 
 -- Standalone leaves use the same navigation, cache and animation contracts as
 -- grouped tools, without creating an activity container.
-local TOOL_LEAF_RENDERERS = { skill = chat_skill, write = require("opencode.ui.chat.write") }
+local TOOL_LEAF_RENDERERS = { skill = chat_skill, write = cs.module(view, require("opencode.ui.chat.write")) }
 
 local function leaf_widget(part)
-	if part.shell_notification then return require("opencode.ui.chat.shell_notification") end
-	if part._editor_context then return require("opencode.ui.chat.editor_context") end
+	if part.shell_notification then return cs.module(view, require("opencode.ui.chat.shell_notification")) end
+	if part._editor_context then return cs.module(view, require("opencode.ui.chat.editor_context")) end
 	return part.type == "skill" and chat_skill or TOOL_LEAF_RENDERERS[part.tool]
 end
 
 local REGULAR_TOOL_RENDERERS = {
-	require("opencode.ui.chat.question_result").render_tool,
+	function(part)
+		return require("opencode.ui.chat.question_result").render_tool(part, {
+			width = render.get_chat_text_width(), render = render,
+		})
+	end,
 	chat_bash.render_tool,
 	chat_file_edit_results.render_tool,
 }
@@ -330,7 +335,7 @@ function M.render_regular_tool(tool_part, is_expanded)
 	if type(tool_part) ~= "table" then
 		return { lines = {}, highlights = {} }
 	end
-	local activity = require("opencode.ui.chat.activity")
+	local activity = cs.module(view, require("opencode.ui.chat.activity"))
 	if tool_part.activity_group then
 		return activity.render(tool_part.activity_group, state.expanded_tools[tool_part.activity_group.id], state.expanded_tools)
 	end
@@ -356,7 +361,7 @@ end
 ---@return string|nil part_id
 ---@return table|nil task_info
 function M.get_task_at_cursor()
-	return widget_support.find_widget_context_at_cursor(state.tasks, vim.api.nvim_get_current_win())
+	return widget_support.find_widget_context_at_cursor(state.tasks, state.winid)
 end
 
 ---@return string|nil part_id
@@ -422,13 +427,13 @@ function M.rerender_tool(part_id)
 	local is_expanded = state.expanded_tools[root_id] or false
 	local tool_part = M.resolve_tool_part(pos)
 	local cursor = (pos.activity_group or pos.kind == "tool")
-		and require("opencode.ui.chat.cursor").capture_widget_cursor_context()
+		and cs.module(view, require("opencode.ui.chat.cursor")).capture_widget_cursor_context()
 	local updated = tool_part ~= nil and widget_support.replace_rendered_block(pos, M.render_regular_tool(tool_part, is_expanded))
 	if updated and cursor then
 		if not tree.find(state.tools, cursor.id) and tree.find(state.tools, part_id) then
 			cursor.id, cursor.relative_line = part_id, 0
 		end
-		require("opencode.ui.chat.cursor").restore_widget_cursor_context(cursor)
+		cs.module(view, require("opencode.ui.chat.cursor")).restore_widget_cursor_context(cursor)
 	end
 	return updated
 end
@@ -446,11 +451,11 @@ function M.handle_tool_toggle(part_id)
 		pos = tree.find(state.tools, part_id) or state.tools[root_id]
 	end
 
-	local expanded = pos.activity_group and require("opencode.ui.chat.activity").is_expanded(pos.activity_group, state.expanded_tools[part_id])
+	local expanded = pos.activity_group and cs.module(view, require("opencode.ui.chat.activity")).is_expanded(pos.activity_group, state.expanded_tools[part_id])
 		or state.expanded_tools[part_id] == true
 	if expanded then
 		state.expanded_tools[part_id] = nil
-		if pos.activity_group and require("opencode.ui.chat.activity").is_expanded(pos.activity_group) then
+		if pos.activity_group and cs.module(view, require("opencode.ui.chat.activity")).is_expanded(pos.activity_group) then
 			state.expanded_tools[part_id] = false
 		end
 		-- Collapsing a container closes its descendants as well. Merely hiding
@@ -460,7 +465,7 @@ function M.handle_tool_toggle(part_id)
 		state.expanded_tools[part_id] = true
 	end
 	if not M.rerender_tool(part_id) then
-		require("opencode.ui.chat.render_coordinator").request({ reason = "tool_toggle" })
+		require("opencode.ui.chat.render_coordinator").request({ reason = "tool_toggle", session_id = cs.session(view).id })
 	end
 end
 
@@ -469,9 +474,11 @@ function M.handle_tool_confirm(part_id, pos)
 	if not pos or not pos.execute_action then return false end
 	local part = M.resolve_tool_part(pos)
 	if part then
-		require("opencode.ui.chat.execute_details").open(part, { view = pos.execute_action })
+		cs.module(view, require("opencode.ui.chat.execute_details")).open(part, { view = pos.execute_action })
 	end
 	return true
 end
 
 return M
+
+end)

@@ -519,8 +519,8 @@ function M.get_first_file_line(edit_state)
 	return line
 end
 
-local function render_edit(edit_state, resolution_label, header_hl, server_apply_notice)
-	local result = { lines = {}, highlights = {} }
+local function render_edit(edit_state, resolution_label, header_hl, server_apply_notice, opts)
+	local result = { lines = {}, highlights = {}, width = opts and opts.width, render = opts and opts.render }
 	local header, target, stats = build_header(edit_state, resolution_label)
 	add_panel_blank(result)
 	local _, _, header_rows = add_panel_line(result, header, header_hl)
@@ -576,15 +576,15 @@ end
 ---@param permission_id string
 ---@param edit_state table Edit state from edit/state.lua
 ---@return table lines, table highlights, OpenCodeWidgetMeta meta
-function M.get_lines_for_edit(permission_id, edit_state)
-	return render_edit(edit_state, nil, "OpenCodeEditHeader", edit_state.apply_mode == "server")
+function M.get_lines_for_edit(permission_id, edit_state, opts)
+	return render_edit(edit_state, nil, "OpenCodeEditHeader", edit_state.apply_mode == "server", opts)
 end
 
 --- Get formatted lines for a resolved edit (all files accepted/rejected, reply sent).
 ---@param permission_id string
 ---@param edit_state table Edit state from edit/state.lua
 ---@return table lines, table highlights, OpenCodeWidgetMeta meta
-function M.get_resolved_lines(permission_id, edit_state)
+function M.get_resolved_lines(permission_id, edit_state, opts)
 	local edit_state_mod = require("opencode.edit.state")
 	local resolution = edit_state_mod.get_resolution(permission_id)
 	local resolution_label = "partial"
@@ -601,7 +601,7 @@ function M.get_resolved_lines(permission_id, edit_state)
 		header_hl = "OpenCodeEditResolved"
 	end
 
-	return render_edit(edit_state, resolution_label, header_hl)
+	return render_edit(edit_state, resolution_label, header_hl, nil, opts)
 end
 
 return M

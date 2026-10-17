@@ -1,8 +1,10 @@
+local cs = require("opencode.ui.chat.state")
+return cs.factory("search", function(view)
 -- Glob/grep tool widget renderer for the chat buffer.
 
 local M = {}
 
-local tool_panel = require("opencode.ui.chat.tool_panel")
+local tool_panel = cs.module(view, require("opencode.ui.chat.tool_panel"))
 local syntax = require("opencode.ui.syntax")
 local text_util = require("opencode.util.text")
 
@@ -102,7 +104,7 @@ function M.render_tool(tool_part, expanded, opts)
 	end
 
 	opts = opts or {}
-	local style = opts.body_only and require("opencode.ui.chat.exploration_style") or nil
+	local style = opts.body_only and cs.module(view, require("opencode.ui.chat.exploration_style")) or nil
 	local panel = style and style.panel or panel_helpers
 	local output_hl = style and style.output_hl or "OpenCodeSearchOutput"
 	local error_hl = style and style.body_error_hl or "OpenCodeSearchError"
@@ -208,3 +210,5 @@ function M.render_tool(tool_part, expanded, opts)
 end
 
 return M
+
+end)

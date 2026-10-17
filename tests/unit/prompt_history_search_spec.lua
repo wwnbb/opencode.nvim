@@ -251,6 +251,7 @@ describe("prompt history search", function()
 		for _, invalidate in ipairs({
 			function() input.set_pending_draft("edited", {}) end,
 			function() state.set_session("other", "Other") end,
+			function() state.upsert_session({ id = "history-session", directory = "/moved-session" }) end,
 			function() vim.fn.getcwd = function() return "/another-project" end end,
 			function() pending.clear_session("history-session") end,
 		}) do

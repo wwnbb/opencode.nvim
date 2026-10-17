@@ -4,7 +4,7 @@ local state, pending = require("opencode.state"), require("opencode.session.pend
 local registry = require("opencode.command_registry")
 
 describe("family picker", function()
-	local saved, records, opened, interrupts
+	local saved, records, opened, interrupts, views
 	before_each(function()
 		state.reset(); pending.clear_all()
 		state.set_session("root", "Root")
@@ -18,7 +18,7 @@ describe("family picker", function()
 		state.set_session_status("active-child", { type = "busy" })
 		saved = { get_session_family = actions.get_session_family, interrupt_session = actions.interrupt_session,
 			open = menu.open, notify = vim.notify, command = registry.get("session.family") }
-		opened, interrupts = {}, {}
+		opened, interrupts, views = {}, {}, {}
 		menu.open = function(opts) opened[#opened + 1] = opts end
 		vim.notify = function() end
 		actions.get_session_family = function(id, callback)
@@ -29,6 +29,7 @@ describe("family picker", function()
 		family.register({ register = registry.register })
 	end)
 	after_each(function()
+		for _, view in ipairs(views) do require("opencode.ui.chat.state").remove(view) end
 		actions.get_session_family, actions.interrupt_session = saved.get_session_family, saved.interrupt_session
 		menu.open, vim.notify = saved.open, saved.notify
 		registry.unregister("session.family")
@@ -88,6 +89,25 @@ describe("family picker", function()
 		replies[2](nil, { records[1] })
 		replies[1](nil, records)
 		assert.same({ "root" }, ids(picker))
+	end)
+	it("keeps concurrent family responses with their panes and rejects a rebound owner", function()
+		local cs, replies = require("opencode.ui.chat.state"), {}
+		actions.get_session_family = function(id, callback) replies[id] = callback end
+		for _, id in ipairs({ "current-child", "other" }) do
+			local view = cs.new()
+			view.session_id, view.visible = id, true
+			views[#views + 1] = view
+			family.show({ view = view })
+		end
+		state.set_session("other", "Other")
+		replies["current-child"](nil, records)
+		replies.other(nil, { { id = "other", title = "Other" } })
+		assert.equals(2, #opened)
+		assert.equals(views[1], opened[1].context.view)
+		assert.equals(views[2], opened[2].context.view)
+		views[1].generation = views[1].generation + 1
+		opened[1].keys[3].handler({ refresh = function() end }, opened[1].items[2])
+		assert.same({}, interrupts)
 	end)
 
 	it("can leave an empty active filter through the actual menu keymap", function()

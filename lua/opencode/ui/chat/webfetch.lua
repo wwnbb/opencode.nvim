@@ -1,4 +1,6 @@
-local web_tool = require("opencode.ui.chat.web_tool")
+local cs = require("opencode.ui.chat.state")
+return cs.factory("webfetch", function(view)
+local web_tool = cs.module(view, require("opencode.ui.chat.web_tool"))
 local M = { animation_line = web_tool.animation_line }
 
 function M.render_tool(part, expanded, opts)
@@ -8,3 +10,5 @@ end
 
 M.render = M.render_tool
 return M
+
+end)

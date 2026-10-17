@@ -3,7 +3,7 @@ local M = {}
 local state = require("opencode.state")
 local pending = require("opencode.session.pending")
 local schedule = require("opencode.util.schedule").schedule_callback
-local serial, renames = 0, {}
+local opens, renames = setmetatable({}, { __mode = "k" }), {}
 
 local function valid_id(id)
 	return type(id) == "string" and vim.trim(id) ~= "" and not id:find("[%z\r\n]")
@@ -12,13 +12,21 @@ end
 function M.open(id, opts, callback)
 	opts = opts or {}
 	if not valid_id(id) then schedule(callback, { message = "Enter a valid session ID" }); return end
-	serial = serial + 1
-	local revision, token, source = serial, pending.token(id), state.get_session().id
+	local views = package.loaded["opencode.ui.chat.state"]
+	local view = opts.view or (views and views.current and views.current())
+	if view and not view.session_bound then view = nil end
+	local generation = view and view.generation
+	local key, request = view or M, {}
+	opens[key] = request
+	local token, source = pending.token(id), state.get_session().id
+	if view then opts = vim.tbl_extend("force", opts, { view = view }) end
 	local changed = false
 	local function switched() changed = true end
-	state.on("session.id", switched)
+	if not view then state.on("session.id", switched) end
 	local function current()
-		return revision == serial and pending.is_current(token) and not changed and state.get_session().id == source
+		if opens[key] ~= request or not pending.is_current(token) then return false end
+		if view then return views and views.valid(view, generation) end
+		return not changed and state.get_session().id == source
 	end
 	local function finish(err, info)
 		schedule(function()

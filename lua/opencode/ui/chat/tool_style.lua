@@ -1,5 +1,7 @@
+local cs = require("opencode.ui.chat.state")
+return cs.factory("tool_style", function(view)
 -- Stable list headers with compact panels for expanded tool output.
-local tool_panel = require("opencode.ui.chat.tool_panel")
+local tool_panel = cs.module(view, require("opencode.ui.chat.tool_panel"))
 local M = {
 	prefix = "   │ ",
 	header_hl = "OpenCodeExploreHeader",
@@ -30,7 +32,7 @@ M.panel = tool_panel.create_panel({
 })
 
 function M.add_border(result, bottom)
-	local render = require("opencode.ui.chat.render")
+	local render = cs.module(view, require("opencode.ui.chat.render"))
 	local width = render.get_chat_text_width()
 	render.add_panel_line(result, (bottom and "└" or "┌") .. string.rep("─", math.max(0, width - 4)),
 		M.border_hl, { prefix = "   " })
@@ -45,3 +47,5 @@ function M.contain_background(result)
 	end
 end
 return M
+
+end)

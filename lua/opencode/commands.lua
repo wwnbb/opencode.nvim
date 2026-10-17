@@ -55,28 +55,34 @@ local function run_close_session_command(raw_session_id)
 end
 
 local function create_commands()
+	vim.api.nvim_create_user_command("OpenCodeVsplit", function() actions.split("vertical") end, {
+		desc = "Open a new chat to the right in the OpenCode tab",
+	})
+	vim.api.nvim_create_user_command("OpenCodeHsplit", function() actions.split("horizontal") end, {
+		desc = "Open a new chat below in the OpenCode tab",
+	})
 	vim.api.nvim_create_user_command("OpenCode", function()
 		actions.open()
 	end, {
-		desc = "Open OpenCode chat window",
+		desc = "Open or focus OpenCode chat",
 	})
 
 	vim.api.nvim_create_user_command("OpenCodeToggle", function()
 		actions.toggle()
 	end, {
-		desc = "Toggle OpenCode chat window",
+		desc = "Toggle chat, or switch between the editor and OpenCode tab",
 	})
 
 	vim.api.nvim_create_user_command("OpenCodeClose", function()
 		actions.close()
 	end, {
-		desc = "Close OpenCode chat window",
+		desc = "Close the focused OpenCode chat pane",
 	})
 
 	vim.api.nvim_create_user_command("OpenCodeClear", function()
 		actions.clear()
 	end, {
-		desc = "Start a fresh OpenCode chat and close the current tab",
+		desc = "Start a fresh OpenCode chat and close the current session tab",
 	})
 
 	vim.api.nvim_create_user_command("OpenCodeNew", function()

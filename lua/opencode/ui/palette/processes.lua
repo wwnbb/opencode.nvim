@@ -52,14 +52,15 @@ local function split_output(text)
 	return require("opencode.util.text").normalize_text(text:sub(1, cut), tostring), text:sub(cut + 1)
 end
 
-function M.output(entry)
+function M.output(entry, context)
+	context = require("opencode.ui.palette").capture_context(context)
 	local float = require("opencode.ui.float")
 	local directory, id = entry.location.directory, entry.id
 	local timer, inflight, closed, missing, carry, preview, cursor, error_text = nil, nil, false, false, "", "", 0, ""
 	local function stop_timer()
 		if timer then if not timer:is_closing() then timer:stop(); timer:close() end; timer = nil end
 	end
-	local popup, bufnr = float.create_centered_popup({ title = " Shell output ", width = 86, height = 24,
+	local popup, bufnr = float.create_centered_popup({ context = context, title = " Shell output ", width = 86, height = 24,
 		on_close = function() closed = true; stop_timer() end })
 	popup:mount()
 	float.setup_close_keymaps(bufnr, function() popup:close() end)
@@ -103,9 +104,11 @@ function M.output(entry)
 	end
 	local function live(marker)
 		return not closed and inflight == marker and pending.is_current(marker.token)
+			and (not (context.view and context.view.session_bound) or require("opencode.ui.palette").context_valid(context))
 	end
 	poll = function()
 		if closed or missing then return end
+		if context.view and context.view.session_bound and not require("opencode.ui.palette").context_valid(context) then popup:close(); return end
 		schedule()
 		if inflight and pending.is_current(inflight.token) then return end
 		if not state.is_connected() then error_text = "Disconnected; waiting to resume output"; render(); return end
@@ -146,12 +149,18 @@ function M.output(entry)
 end
 
 function M.list(context)
-	local sid = context and context.session_id or state.get_session().id
+	context = require("opencode.ui.palette").capture_context(context)
+	local sid = context.session_id
 	if not sid then notify("Open a session before listing processes"); return end
 	local opts = { directory = state.get_session_directory(sid) or vim.fn.getcwd() }
 	local token = pending.token(sid)
+	local function current(require_selection)
+		return pending.is_current(token) and (not require_selection and not (context.view and context.view.session_bound)
+			or require("opencode.ui.palette").context_valid(context))
+			and (state.get_session_directory(sid) or vim.fn.getcwd()) == opts.directory
+	end
 	actions.list_shells(opts, function(err, entries)
-		if not pending.is_current(token) or state.get_session().id ~= sid then return end
+		if not current(true) then return end
 		if err then notify(failure(err, "Shell processes")); return end
 		local items = {}
 		local function replace(current)
@@ -167,24 +176,24 @@ function M.list(context)
 		replace(entries)
 		local menu, revision = nil, 0
 		local function refresh()
-			if not pending.is_current(token) then return end
+			if not current() then return end
 			revision = revision + 1
 			local current_revision = revision
-			actions.list_shells(opts, function(load_err, current)
-				if not pending.is_current(token) or current_revision ~= revision or not menu.popup.winid or not vim.api.nvim_win_is_valid(menu.popup.winid) then return end
+			actions.list_shells(opts, function(load_err, entries)
+				if not current() or current_revision ~= revision or not menu.popup.winid or not vim.api.nvim_win_is_valid(menu.popup.winid) then return end
 				if load_err then notify(failure(load_err, "Shell processes")); return end
-				replace(current); menu.refresh()
+				replace(entries); menu.refresh()
 			end)
 		end
-		menu = require("opencode.ui.menu").open({ title = " Session processes ", items = items, searchable = true, width = 76,
-			on_select = function(item) if pending.is_current(token) and item.entry then M.output(item.entry) end end,
+		menu = require("opencode.ui.menu").open({ context = context, title = " Session processes ", items = items, searchable = true, width = 76,
+			on_select = function(item) if current() and item.entry then M.output(item.entry, context) end end,
 			keymap_scope = "process_menu",
 			keys = {
 				{ action = "refresh", label = "refresh", handler = refresh },
 				{ action = "kill", label = "kill selected", handler = function(_, item)
-					if not pending.is_current(token) or not item.entry then return end
+					if not current() or not item.entry then return end
 					actions.remove_shell(item.entry.id, { directory = item.entry.location.directory }, function(kill_err)
-						if not pending.is_current(token) then return end
+						if not current() then return end
 						if kill_err then notify(failure(kill_err, "Shell removal")) else refresh() end
 					end)
 				end },
@@ -193,7 +202,8 @@ function M.list(context)
 end
 
 function M.background(context)
-	local sid = context and context.session_id or state.get_session().id
+	context = require("opencode.ui.palette").capture_context(context)
+	local sid = context.session_id
 	if not sid then notify("Open a session before backgrounding work"); return end
 	local sync, found = require("opencode.sync"), false
 	for _, message in ipairs(sync.get_messages(sid)) do
@@ -213,8 +223,11 @@ function M.register(palette)
 	palette.register({ id = "action.shell", title = "Toggle Shell Mode", description = "Run commands in the session location", category = "actions",
 		slash = { name = "shell" }, with_parts = "reject", enter_with_args = true,
 		run = function(context)
-			if vim.trim(context.args or "") ~= "" then return actions.send(context.args, { mode = "shell", session_id = context.session_id }) end
-			require("opencode.ui.chat").focus_input()
+			context = require("opencode.ui.palette").capture_context(context)
+			if not require("opencode.ui.palette").context_valid(context) then return end
+			if vim.trim(context.args or "") ~= "" then return actions.send(context.args, { mode = "shell", session_id = context.session_id, view = context.view }) end
+			local chat = require("opencode.ui.chat")
+			if context.view then chat.for_view(context.view).focus_input() else chat.focus_input() end
 			local input = require("opencode.ui.input")
 			input.set_mode(input.get_mode() == "shell" and "normal" or "shell")
 		end, on_select = function(context) return context.run() end })

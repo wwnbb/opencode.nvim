@@ -1,13 +1,15 @@
+local cs = require("opencode.ui.chat.state")
+return cs.factory("execute", function(view)
 -- Universal code-mode widget. Child calls come from server metadata; the
 -- script's result belongs to execute, never to an individual MCP call.
 local M = {}
 
-local render = require("opencode.ui.chat.render")
-local panel = require("opencode.ui.chat.tool_panel")
+local render = cs.module(view, require("opencode.ui.chat.render"))
+local panel = cs.module(view, require("opencode.ui.chat.tool_panel"))
 local text = require("opencode.util.text")
 local locale = require("opencode.util.locale")
-local tool_group = require("opencode.ui.chat.tool_group")
-local list_style = require("opencode.ui.chat.exploration_style")
+local tool_group = cs.module(view, require("opencode.ui.chat.tool_group"))
+local list_style = cs.module(view, require("opencode.ui.chat.exploration_style"))
 
 M.animation_line = 0
 
@@ -170,3 +172,5 @@ function M.render_tool(part, expanded, opts)
 end
 
 return M
+
+end)

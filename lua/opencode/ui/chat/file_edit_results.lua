@@ -1,8 +1,10 @@
+local cs = require("opencode.ui.chat.state")
+return cs.factory("file_edit_results", function(view)
 -- Unified final-result renderer for file editing tools.
 
 local M = {}
 
-local render = require("opencode.ui.chat.render")
+local render = cs.module(view, require("opencode.ui.chat.render"))
 local text_util = require("opencode.util.text")
 
 ---@class OpenCodeFileEditResultFile
@@ -925,3 +927,5 @@ function M.render_tool(tool_part, is_expanded)
 end
 
 return M
+
+end)

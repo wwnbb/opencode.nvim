@@ -1,10 +1,12 @@
+local cs = require("opencode.ui.chat.state")
+return cs.factory("activity", function(view)
 -- Compact reasoning and tool activity timeline groups.
 -- These are view-only widgets; their members are always resolved from sync.
 local M = {}
 
 local thinking = require("opencode.ui.thinking")
 local locale = require("opencode.util.locale")
-local tool_group = require("opencode.ui.chat.tool_group")
+local tool_group = cs.module(view, require("opencode.ui.chat.tool_group"))
 
 local function reasoning_text(part)
 	return vim.trim((part.text or ""):gsub("%[REDACTED%]", "", 1))
@@ -106,14 +108,14 @@ end
 require("opencode.ui.highlights").register("opencode.ui.chat.activity", ensure_highlights)
 
 local function add_line(result, text, hl, prefix)
-	require("opencode.ui.chat.render").add_panel_line(result, text, hl, {
+	cs.module(view, require("opencode.ui.chat.render")).add_panel_line(result, text, hl, {
 		prefix = prefix or "",
 		prefix_hl_group = prefix and "OpenCodeThoughtBorder" or nil,
 	})
 end
 
 local function append_thought(result, part)
-	local render = require("opencode.ui.chat.render")
+	local render = cs.module(view, require("opencode.ui.chat.render"))
 	local body = require("opencode.ui.markdown").render(reasoning_text(part), {
 		width = math.max(1, render.get_chat_text_width() - vim.fn.strdisplaywidth("▏  ")),
 	}, render)
@@ -139,7 +141,7 @@ local function render_low(group, refs, expanded, expansions)
 		if ref.part.type == "reasoning" then thoughts = thoughts + 1
 		else tools = tools + 1; if tool_group.failed(ref.part) then failed = failed + 1 end end
 	end
-	local frame = M.is_working(group, refs) and require("opencode.ui.chat.task_animation").get_task_anim_frame() or nil
+	local frame = M.is_working(group, refs) and cs.module(view, require("opencode.ui.chat.task_animation")).get_task_anim_frame() or nil
 	local header = (frame or (expanded and "-" or "+")) .. " Activity · " .. tools .. (tools == 1 and " tool, " or " tools, ")
 		.. thoughts .. (thoughts == 1 and " thought" or " thoughts")
 	if failed > 0 then header = header .. " · " .. failed .. " failed" end
@@ -157,7 +159,7 @@ local function render_low(group, refs, expanded, expansions)
 			node.id, node.kind, node.activity_group = thought.id, "activity", thought
 			if expanded then rendered = M.render(thought, expansions[thought.id], expansions) end
 		elseif expanded or tool_group.failed(part) then
-			rendered = require("opencode.ui.chat.tasks").render_regular_tool(part, expansions[part.id] == true)
+			rendered = cs.module(view, require("opencode.ui.chat.tasks")).render_regular_tool(part, expansions[part.id] == true)
 		end
 		tree.append(result, node, rendered)
 	end
@@ -173,7 +175,7 @@ function M.render(group, expanded, expansions)
 	if group.kind == "activity" then return render_low(group, refs, expanded, expansions) end
 	if group.kind ~= "thought" then return tool_group.render(group.kind, refs, expanded, expansions) end
 	local working = M.is_working(group, refs)
-	local frame = working and require("opencode.ui.chat.task_animation").get_task_anim_frame() or nil
+	local frame = working and cs.module(view, require("opencode.ui.chat.task_animation")).get_task_anim_frame() or nil
 	local duration, title = 0, nil
 	for _, ref in ipairs(refs) do
 		local time = ref.part.time or {}
@@ -201,3 +203,5 @@ function M.render(group, expanded, expansions)
 end
 
 return M
+
+end)

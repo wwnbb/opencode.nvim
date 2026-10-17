@@ -5,7 +5,7 @@ describe("native session catalog operations", function()
 	local client = require("opencode.client")
 	local lifecycle = require("opencode.lifecycle")
 	local sessions = require("opencode.session")
-	local stubs, requests, opened, scheduled, callback_result
+	local stubs, requests, opened, opened_views, views, scheduled, callback_result
 	local function info(id, directory, title)
 		return { id = id, title = title or id, directory = directory, location = { directory = directory } }
 	end
@@ -19,7 +19,7 @@ describe("native session catalog operations", function()
 	before_each(function()
 		state.reset(); pending.clear_all()
 		package.loaded["opencode.session.catalog"] = nil
-		stubs, requests, opened, callback_result = {}, {}, {}, nil
+		stubs, requests, opened, opened_views, views, callback_result = {}, {}, {}, {}, {}, nil
 		local stub = require("luassert.stub")
 		stubs[#stubs + 1] = stub(vim, "schedule", function(fn) fn() end)
 		stubs[#stubs + 1] = stub(lifecycle, "ensure_connected", function(fn) fn() end)
@@ -29,16 +29,45 @@ describe("native session catalog operations", function()
 					callback = callback or title_or_callback }
 			end)
 		end
-		stubs[#stubs + 1] = stub(sessions, "switch_to", function(value)
+		stubs[#stubs + 1] = stub(sessions, "switch_to", function(value, opts)
 			opened[#opened + 1] = value
+			opened_views[#opened] = opts and opts.view
 			state.set_session(value.id, value.title)
 		end)
 		state.set_session("source", "Source")
 	end)
 	after_each(function()
+		for _, view in ipairs(views) do require("opencode.ui.chat.state").remove(view) end
 		for index = #stubs, 1, -1 do stubs[index]:revert() end
 		state.reset(); pending.clear_all()
 		package.loaded["opencode.session.catalog"] = nil
+	end)
+	local function pane(id)
+		local view = require("opencode.ui.chat.state").new()
+		view.session_id, view.visible = id, true
+		views[#views + 1] = view
+		return view
+	end
+	it("resolves concurrent opens independently for their original panes", function()
+		local first, second = pane("source"), pane("other")
+		actions.open_session("first", { view = first }, result)
+		state.set_session("other", "Other")
+		actions.open_session("second", { view = second }, result)
+		reply("get_session", nil, info("first", "/first"))
+		reply("get_session", nil, info("second", "/second"))
+		reply("get_location", nil, { directory = "/first" })
+		reply("get_location", nil, { directory = "/second" })
+		assert.equals(2, #opened)
+		assert.equals(first, opened_views[1]); assert.equals(second, opened_views[2])
+	end)
+	it("drops a pane open after it is rebound while the location is loading", function()
+		local view = pane("source")
+		actions.open_session("remote", { view = view }, result)
+		reply("get_session", nil, info("remote", "/remote"))
+		view.generation = view.generation + 1
+		reply("get_location", nil, { directory = "/remote" })
+		assert.equals(0, #opened)
+		assert.is_nil(callback_result)
 	end)
 	it("opens by ID only after resolving the native remote location without changing cwd", function()
 		local cwd = vim.fn.getcwd()

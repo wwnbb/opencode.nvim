@@ -1,9 +1,11 @@
+local cs = require("opencode.ui.chat.state")
+return cs.factory("widget_index", function(view)
 local M = {}
 
 local question_state = require("opencode.question.state")
 local permission_state = require("opencode.permission.state")
 local edit_state = require("opencode.edit.state")
-local widget_support = require("opencode.ui.chat.widget_support")
+local widget_support = cs.module(view, require("opencode.ui.chat.widget_support"))
 
 local Index = {}
 Index.__index = Index
@@ -227,3 +229,5 @@ function Index:orphan_groups(session_msg_ids)
 end
 
 return M
+
+end)

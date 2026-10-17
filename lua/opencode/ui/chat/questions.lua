@@ -1,14 +1,17 @@
+local cs = require("opencode.ui.chat.state")
+return cs.factory("questions", function(view)
 -- Question widget lifecycle and handlers for the chat buffer.
 
 local M = {}
 
-local cs = require("opencode.ui.chat.state")
-local state = cs.state
+local state = view
+local render = cs.module(view, require("opencode.ui.chat.render"))
 
 local question_widget = require("opencode.ui.question_widget")
+local widget_base = require("opencode.ui.widget_base")
 local question_state = require("opencode.question.state")
 local pending = require("opencode.session.pending")
-local widget_support = require("opencode.ui.chat.widget_support")
+local widget_support = cs.module(view, require("opencode.ui.chat.widget_support"))
 local render_coordinator = require("opencode.ui.chat.render_coordinator")
 local actions = require("opencode.actions")
 local events = require("opencode.events")
@@ -137,23 +140,10 @@ local function get_option_index_at_cursor(request_id, qstate, pos, cursor_line)
 	local meta = widget_support.get_interactive_meta(pos, qstate, "question")
 	if not pos.meta_state then
 		-- Compatibility for callers supplying a position without rendered metadata.
-		local _, _, fallback = question_widget.get_lines_for_question(request_id, { questions = qstate.questions }, qstate, qstate.status)
+		local _, _, fallback = question_widget.get_lines_for_question(request_id, { questions = qstate.questions }, qstate, qstate.status, { width = render.get_chat_text_width(), render = render })
 		meta = fallback
 	end
-	local widget_line = cursor_line - pos.start_line
-	if not meta then return nil end
-	if (meta.option_lines or {})[0] == widget_line then return 0 end
-	local option_count = meta.option_count or meta.interactive_count or 0
-	local first_option_line = meta.first_interactive_line
-	if option_count <= 0 or first_option_line == nil then
-		return nil
-	end
-
-	if widget_line < first_option_line or widget_line >= (first_option_line + option_count) then
-		return nil
-	end
-
-	return widget_line - first_option_line + 1
+	return widget_base.get_option_index(meta, cursor_line - pos.start_line)
 end
 
 ---@return string|nil request_id
@@ -221,7 +211,7 @@ function M.rerender_question(request_id, focus)
 	local questions = qstate.questions
 	local status = qstate.status or "pending"
 	local lines, highlights, meta = question_widget.get_lines_for_question(
-		request_id, { questions = questions, timestamp = qstate.timestamp }, qstate, status
+		request_id, { questions = questions, timestamp = qstate.timestamp }, qstate, status, { width = render.get_chat_text_width(), render = render }
 	)
 
 	if widget_support.replace_rendered_block(pos, { lines = lines, highlights = highlights }) then
@@ -231,10 +221,10 @@ function M.rerender_question(request_id, focus)
 		-- A queued render can replace the position map; focus its fresh block.
 		widget_support.request_focus("question", request_id)
 		state.focus_question_option = focus
-		require("opencode.ui.chat").do_render()
+		cs.module(view, require("opencode.ui.chat")).do_render()
 		pos = state.questions[request_id]
 	end
-	if focus and pos and (status == "pending" or status == "confirming") and cs.is_chat_buffer_displayed() then
+	if focus and pos and (status == "pending" or status == "confirming") and cs.is_chat_buffer_displayed(view) then
 		local offset = question_widget.get_selection_focus_offset(meta, qstate.selections[qstate.current_tab], focus)
 		vim.api.nvim_win_set_cursor(state.winid, { pos.start_line + offset + 1, 0 })
 	end
@@ -375,23 +365,25 @@ function M.handle_question_custom_input(request_id)
 
 	local input_ui = require("opencode.ui.input")
 	local token = pending.token(qstate.session_id)
+	local generation = view.generation
 	input_ui.show({
+		view = view,
 		winid = state.winid,
 		float_dims = state.float_dims,
 		text = selection.custom_input or "",
 		persist_pending = false,
 		add_history = false,
 		on_send = function(text)
-			if not pending.is_current(token) or question_state.get_question(request_id) ~= qstate or qstate.status ~= "pending" or qstate.submitting then return end
+			if not cs.valid(view, generation) or not pending.is_current(token) or question_state.get_question(request_id) ~= qstate or qstate.status ~= "pending" or qstate.submitting then return end
 			if text ~= nil then
 				question_state.set_custom_input(request_id, current_tab, text)
 				M.rerender_question(request_id, true)
-				require("opencode.ui.chat").focus()
+				cs.module(view, require("opencode.ui.chat")).focus()
 			end
 		end,
 		on_cancel = function()
-			if not pending.is_current(token) or question_state.get_question(request_id) ~= qstate then return end
-			require("opencode.ui.chat").focus()
+			if not cs.valid(view, generation) or not pending.is_current(token) or question_state.get_question(request_id) ~= qstate then return end
+			cs.module(view, require("opencode.ui.chat")).focus()
 		end,
 	})
 end
@@ -471,3 +463,5 @@ function M.has_pending_questions()
 end
 
 return M
+
+end)

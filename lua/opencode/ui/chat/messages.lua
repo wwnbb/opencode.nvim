@@ -1,10 +1,11 @@
+local cs = require("opencode.ui.chat.state")
+return cs.factory("messages", function(view)
 local M = {}
 
-local cs = require("opencode.ui.chat.state")
-local state = cs.state
+local state = view
 
-local chat_tasks = require("opencode.ui.chat.tasks")
-local render_state = require("opencode.ui.chat.render_state")
+local chat_tasks = cs.module(view, require("opencode.ui.chat.tasks"))
+local render_state = cs.module(view, require("opencode.ui.chat.render_state"))
 local events = require("opencode.events")
 
 local schedule_render = function() end
@@ -112,3 +113,5 @@ function M.clear_session_view(session_id)
 end
 
 return M
+
+end)

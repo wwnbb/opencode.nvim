@@ -8,10 +8,20 @@ local function call(module_name, fn_name, ...)
 	return mod[fn_name](...)
 end
 
+local function call_views(module_name, fn_name, ...)
+	local ok, mod = pcall(require, module_name)
+	if not ok then return end
+	if type(mod.for_view) ~= "function" then return call(module_name, fn_name, ...) end
+	for _, view in ipairs(require("opencode.ui.chat.state").all()) do
+		local owned = mod.for_view(view)
+		if type(owned[fn_name]) == "function" then owned[fn_name](...) end
+	end
+end
+
 ---@param session_id string
 function M.clear_session_memos(session_id)
-	call("opencode.ui.chat.render_state", "clear_session", session_id)
-	call("opencode.ui.chat.tool_group", "clear_session", session_id)
+	call_views("opencode.ui.chat.render_state", "clear_session", session_id)
+	call_views("opencode.ui.chat.tool_group", "clear_session", session_id)
 	call("opencode.ui.chat.history_metadata", "clear_session", session_id)
 end
 
@@ -43,7 +53,7 @@ function M.clear_transient(opts)
 
 	call("opencode.sync", "clear_all")
 	call("opencode.util.memo", "clear_all")
-	call("opencode.ui.chat.render_state", "clear_code_cache")
+	call_views("opencode.ui.chat.render_state", "clear_code_cache")
 	call("opencode.events.handlers.server", "clear")
 	call("opencode.session.tabs", "clear")
 	call("opencode.permission.state", "clear_all")
@@ -58,10 +68,16 @@ function M.clear_transient(opts)
 	call("opencode.btw", "reset")
 
 	if opts.clear_chat ~= false then
-		call("opencode.ui.chat", "clear")
+		call_views("opencode.ui.chat", "clear")
 	end
 
 	if opts.reset_state == true then
+		local ok, chat = pcall(require, "opencode.ui.chat")
+		if ok and type(chat.for_view) == "function" then
+			for _, view in ipairs(require("opencode.ui.chat.state").all()) do
+				if view.session_bound then chat.for_view(view).session_changed({}, { reason = "reset" }) end
+			end
+		end
 		call("opencode.state", "reset")
 	end
 

@@ -95,7 +95,7 @@ function M.add_file_part(state, content, opts, insert_text_at_cursor)
 	end
 
 	opts = opts or {}
-	if not state.visible and #state.parts == 0 then
+	if not state.visible then
 		state.parts = history.get_pending_parts()
 	end
 
@@ -334,6 +334,8 @@ function M.paste_clipboard(state, handlers)
 	end
 
 	local content = clipboard.read()
+	-- Clipboard subprocess waits can dispatch events that switch the composer.
+	if handlers.is_current and not handlers.is_current() then return false end
 	if not content then
 		vim.notify("Clipboard is empty or unsupported", vim.log.levels.WARN)
 		return false
@@ -347,6 +349,7 @@ function M.paste_clipboard(state, handlers)
 	if content.mime == "text/plain" then
 		if is_single_text_value(content.data) and M.has_image_file_hint(content.data) then
 			local image = clipboard.image_from_text(content.data)
+			if handlers.is_current and not handlers.is_current() then return false end
 			if image then
 				handlers.add_file_part(image)
 				return true

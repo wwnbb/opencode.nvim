@@ -1,12 +1,14 @@
+local cs = require("opencode.ui.chat.state")
+return cs.factory("tool_labels", function(view)
 -- Pure label/summary formatting for tool widgets.
 -- Extracted from tasks.lua: tool icons, count/label helpers, and the
 -- TUI-style one-line tool labels. No buffer access, no state mutation.
 
 local M = {}
 
-local render = require("opencode.ui.chat.render")
-local task_animation = require("opencode.ui.chat.task_animation")
-local tool_part_resolver = require("opencode.ui.chat.tool_part")
+local render = cs.module(view, require("opencode.ui.chat.render"))
+local task_animation = cs.module(view, require("opencode.ui.chat.task_animation"))
+local tool_part_resolver = cs.module(view, require("opencode.ui.chat.tool_part"))
 local text_util = require("opencode.util.text")
 
 -- ─── Tool icons & display helpers ────────────────────────────────────────────
@@ -363,3 +365,5 @@ function M.format_tool_line(tool_part)
 end
 
 return M
+
+end)

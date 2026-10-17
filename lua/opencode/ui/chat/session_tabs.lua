@@ -1,3 +1,5 @@
+local cs = require("opencode.ui.chat.state")
+return cs.factory("session_tabs", function(view)
 local M = {}
 
 local NuiLine = require("nui.line")
@@ -8,11 +10,10 @@ local btw = require("opencode.btw")
 
 local BTW_FRAMES = { "⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏" }
 
-local cs = require("opencode.ui.chat.state")
-local state = cs.state
+local state = view
 
 local session_tabs_hl_ns = vim.api.nvim_create_namespace("opencode_session_tabs_hl")
-local session_tabs_augroup = vim.api.nvim_create_augroup("OpenCodeSessionTabs", { clear = false })
+local session_tabs_augroup
 local FLOAT_SESSION_TABS_ZINDEX = 75
 
 local session_tabs_refresh_autocmds_setup = false
@@ -21,7 +22,7 @@ local defaults = vim.deepcopy(require("opencode.config").defaults.chat)
 
 local function emit_refresh()
 	vim.schedule(function()
-		actions.observe_session(selectors.get_current_runtime_root_id(), state.visible and cs.is_chat_buffer_displayed())
+		actions.observe_session(selectors.get_current_runtime_root_id({ session_id = cs.session(view).id }), state.visible and state.tabpage == vim.api.nvim_get_current_tabpage() and cs.is_chat_buffer_displayed(view))
 		if state.visible and type(M.update_winbar) == "function" then
 			M.update_winbar()
 		end
@@ -80,9 +81,17 @@ local function ensure_winbar_highlights(tabs_cfg)
 
 	local colors = resolve_tab_colors(type(tabs_cfg) == "table" and tabs_cfg.colors or nil)
 	local normal = get_hl("Normal")
-	local tabline = get_hl("TabLine")
+	local function tab_highlight(name, foreground, background)
+		local highlight = get_hl(name)
+		-- Theme colors can be reversed; explicit color overrides remain literal.
+		if highlight.reverse and not tab_color(colors, foreground) and not tab_color(colors, background) then
+			highlight.fg, highlight.bg = highlight.bg or normal.bg, highlight.fg or normal.fg
+		end
+		return highlight
+	end
+	local tabline = tab_highlight("TabLine", { "inactive_fg" }, { "inactive_bg" })
 	local tabline_fill = get_hl("TabLineFill")
-	local tab_selected = get_hl("TabLineSel")
+	local tab_selected = tab_highlight("TabLineSel", { "active_fg", "current_fg" }, { "active_bg", "current_bg" })
 	local statusline = get_hl("StatusLine")
 	local statusline_nc = get_hl("StatusLineNC")
 	local selected = get_hl("PmenuSel")
@@ -160,8 +169,14 @@ local function ensure_winbar_highlights(tabs_cfg)
 	set_active_icon_hl("OpenCodeWinbarCurrentRunning", "DiagnosticOk", active_running_fg)
 	set_active_icon_hl("OpenCodeWinbarCurrentWaiting", "DiagnosticWarn", active_waiting_fg)
 	set_active_icon_hl("OpenCodeWinbarCurrentError", "DiagnosticError", active_error_fg)
-	set_active_icon_hl("OpenCodeWinbarCurrentIdle", "TabLineSel", active_idle_fg)
+	set_active_icon_hl("OpenCodeWinbarCurrentIdle", "TabLineSel", active_idle_fg or active_fg)
+
+	local separator = get_hl("WinSeparator")
+	separator.fg, separator.bg = separator.fg or normal.fg, separator.bg or normal.bg
+	set_winbar_hl("OpenCodeWinbarSeparator", separator)
 end
+
+M.ensure_highlights = ensure_winbar_highlights
 
 local function escape_winbar_text(text)
 	local escaped = tostring(text or ""):gsub("%%", "%%%%")
@@ -543,10 +558,10 @@ local function build_session_tabs(tabs_cfg, current_session, opts)
 	opts = opts or {}
 	ensure_winbar_highlights(tabs_cfg)
 
-	local sessions = selectors.get_active_session_views()
-	local current_view = selectors.get_current_session_view()
+	local sessions = selectors.get_active_session_views({ session_id = cs.session(view).id })
+	local current_view = selectors.get_current_session_view({ session_id = cs.session(view).id })
 	local active_session = current_session or (current_view and current_view:to_record()) or {}
-	local current_root_session_id = selectors.get_current_runtime_root_id()
+	local current_root_session_id = selectors.get_current_runtime_root_id({ session_id = cs.session(view).id })
 	local prepared = prepare_session_tabs(tabs_cfg, sessions, active_session, current_root_session_id)
 	local max_tabs = resolve_session_tabs_max(tabs_cfg, sessions, active_session, current_root_session_id, opts.available_width, prepared)
 
@@ -766,14 +781,21 @@ local function update_float_session_tabs_window(tabs_cfg, current_session)
 end
 
 function M.update_winbar()
-	actions.observe_session(selectors.get_current_runtime_root_id(), state.visible and cs.is_chat_buffer_displayed())
+	actions.observe_session(selectors.get_current_runtime_root_id({ session_id = cs.session(view).id }), state.visible and state.tabpage == vim.api.nvim_get_current_tabpage() and cs.is_chat_buffer_displayed(view))
 	if not state.winid or not vim.api.nvim_win_is_valid(state.winid) then
 		M.close_float_window()
 		return
 	end
-	if state.bufnr and not cs.is_chat_buffer_displayed() then return end
+	if state.bufnr and not cs.is_chat_buffer_displayed(view) then return end
 	local cfg = state.config or get_config()
 	local tabs_cfg = cfg.session_tabs or {}
+	if cfg.layout == "tab" then
+		vim.wo[state.winid].winbar = ""
+		state.winbar_targets = {}
+		M.close_float_window()
+		require("opencode.ui.chat.workspace_bar").update()
+		return
+	end
 	if tabs_cfg.enabled == false then
 		local status_label = btw_status_label()
 		if status_label then ensure_winbar_highlights(tabs_cfg) end
@@ -825,13 +847,14 @@ function M.select_winbar_session(target)
 		M.focus_chat_window()
 		return
 	end
-	local view = selectors.get_session_view(session_id)
-	local record = view and view:to_record() or { id = session_id }
+	local session_view = selectors.get_session_view(session_id)
+	local record = session_view and session_view:to_record() or { id = session_id }
+	M.focus_chat_window()
 	actions.switch_session(record, {
+		view = view,
 		notify = false,
 		reason = "winbar",
 	})
-	M.focus_chat_window()
 end
 
 local function switch_to_session_tab(target, current_session)
@@ -839,7 +862,7 @@ local function switch_to_session_tab(target, current_session)
 		return false
 	end
 
-	local current_view = selectors.get_current_session_view()
+	local current_view = selectors.get_current_session_view({ session_id = cs.session(view).id })
 	local current = current_session or (current_view and current_view:to_record()) or {}
 	if target.id == current.id then
 		return false
@@ -847,6 +870,7 @@ local function switch_to_session_tab(target, current_session)
 
 	local record = type(target.to_record) == "function" and target:to_record() or target
 	actions.switch_session(record, {
+		view = view,
 		notify = false,
 		reason = "winbar",
 	})
@@ -854,6 +878,11 @@ local function switch_to_session_tab(target, current_session)
 end
 
 function M.go_to_session_tab(index)
+	if (state.config or get_config()).layout == "tab" then
+		local workspace = require("opencode.ui.chat.workspace")
+		local target = workspace.list()[math.max(1, math.floor(tonumber(index) or 1))]
+		return target and workspace.select(target.id) or false
+	end
 	local target_index = tonumber(index)
 	if not target_index then
 		return false
@@ -868,18 +897,21 @@ function M.go_to_session_tab(index)
 		return false
 	end
 
-	local sessions = selectors.get_active_session_views()
-	local current_view = selectors.get_current_session_view()
+	local sessions = selectors.get_active_session_views({ session_id = cs.session(view).id })
+	local current_view = selectors.get_current_session_view({ session_id = cs.session(view).id })
 	return switch_to_session_tab(sessions[target_index], current_view and current_view:to_record() or {})
 end
 
 function M.cycle_session(direction)
-	local sessions = selectors.get_active_session_views()
+	if (state.config or get_config()).layout == "tab" then
+		return require("opencode.ui.chat.workspace").cycle(direction < 0 and -1 or 1)
+	end
+	local sessions = selectors.get_active_session_views({ session_id = cs.session(view).id })
 	if #sessions <= 1 then
 		return false
 	end
 
-	local current_view = selectors.get_current_session_view()
+	local current_view = selectors.get_current_session_view({ session_id = cs.session(view).id })
 	local current = current_view and current_view:to_record() or {}
 	local current_index = nil
 	for index, session in ipairs(sessions) do
@@ -913,6 +945,7 @@ function M.setup_refresh_autocmds()
 		return
 	end
 	session_tabs_refresh_autocmds_setup = true
+	session_tabs_augroup = vim.api.nvim_create_augroup("OpenCodeSessionTabs_" .. (view.id or 1), { clear = true })
 	vim.api.nvim_create_autocmd({ "WinEnter", "BufEnter", "WinClosed" }, {
 		group = session_tabs_augroup,
 		callback = emit_refresh,
@@ -942,10 +975,19 @@ function M.setup_refresh_autocmds()
 	})
 end
 
-_G.__opencode_chat_winbar_click = _G.__opencode_chat_winbar_click or function(minwid)
-	if type(M.select_winbar_session) == "function" then
-		M.select_winbar_session(minwid)
-	end
+function M.dispose()
+	if session_tabs_augroup then pcall(vim.api.nvim_del_augroup_by_id, session_tabs_augroup) end
+	session_tabs_augroup, session_tabs_refresh_autocmds_setup = nil, false
+	M.close_float_window()
+end
+
+_G.__opencode_chat_winbar_click = function(minwid)
+	local win = (vim.fn.getmousepos() or {}).winid
+	local owner = cs.current()
+	for _, candidate in ipairs(cs.all()) do if candidate.winid == win then owner = candidate; break end end
+	require("opencode.ui.chat").for_view(owner).select_winbar_session(minwid)
 end
 
 return M
+
+end)

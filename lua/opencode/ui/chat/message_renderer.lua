@@ -1,20 +1,22 @@
+local cs = require("opencode.ui.chat.state")
+return cs.factory("message_renderer", function(view)
 local M = {}
 
 local NuiLine = require("nui.line")
 local NuiText = require("nui.text")
 
-local state = require("opencode.ui.chat.state").state
-local render = require("opencode.ui.chat.render")
+local state = view
+local render = cs.module(view, require("opencode.ui.chat.render"))
 local sync = require("opencode.sync")
 local app_state = require("opencode.state")
 local local_state = require("opencode.local")
-local activity = require("opencode.ui.chat.activity")
+local activity = cs.module(view, require("opencode.ui.chat.activity"))
 local spinner = require("opencode.ui.spinner")
 local processing_footer = require("opencode.ui.chat.processing_footer")
 local history_metadata = require("opencode.ui.chat.history_metadata")
-local widget_renderer = require("opencode.ui.chat.widget_renderer")
-local tool_renderer = require("opencode.ui.chat.tool_renderer")
-local widget_support = require("opencode.ui.chat.widget_support")
+local widget_renderer = cs.module(view, require("opencode.ui.chat.widget_renderer"))
+local tool_renderer = cs.module(view, require("opencode.ui.chat.tool_renderer"))
+local widget_support = cs.module(view, require("opencode.ui.chat.widget_support"))
 local tree = require("opencode.ui.chat.widget_tree")
 
 require("opencode.ui.highlights").register("opencode.ui.chat.welcome", function()
@@ -219,7 +221,7 @@ local function get_current_session_status(ctx)
 
 		return state_status
 	end
-	return app_state.get_status()
+	return view.session_bound and "idle" or app_state.get_status()
 end
 
 local function find_last_assistant(messages)
@@ -344,7 +346,7 @@ local function render_user_message(ctx, message, render_parts, msg_idx, messages
 		if pending_input then
 			local keymaps = require("opencode.util.keymap")
 			local configured = keymaps.get("chat", (ctx.chat_config or {}).keymaps)
-			for _, command in ipairs(require("opencode.ui.chat.pending_inputs").commands) do
+			for _, command in ipairs(cs.module(view, require("opencode.ui.chat.pending_inputs")).commands) do
 				local action = command.name .. "_pending"
 				if #keymaps.keys(configured[action]) > 0
 					and (command.name ~= "steer" or pending_input.status == "queued")
@@ -635,14 +637,15 @@ local function render_orphan_widgets(ctx, index, all_messages)
 	widget_renderer.render_orphan_widgets(ctx, index, session_msg_ids)
 end
 
-local function build_fallback_metadata_message()
+local function build_fallback_metadata_message(ctx)
 	local fallback_agent = "assistant"
 	local fallback_model_id = nil
 	local fallback_provider_id = nil
 	local local_ok, local_state = pcall(require, "opencode.local")
 	if local_ok then
-		local current_agent = local_state.agent.current()
-		local current_model = local_state.model.current()
+		local selection = { session_id = ctx.current_session.id }
+		local current_agent = local_state.agent.current(selection)
+		local current_model = local_state.model.current(selection)
 		if current_agent and current_agent.name then
 			fallback_agent = current_agent.name
 		end
@@ -731,7 +734,7 @@ function M.render(ctx, index)
 		status = get_current_session_status(ctx),
 		messages = all_messages,
 		waiting_for_interaction = index:has_pending_interaction(),
-		fallback_message = build_fallback_metadata_message(),
+		fallback_message = build_fallback_metadata_message(ctx),
 	})
 	local message_stats = render_messages(
 		ctx,
@@ -765,3 +768,5 @@ function M.render(ctx, index)
 end
 
 return M
+
+end)

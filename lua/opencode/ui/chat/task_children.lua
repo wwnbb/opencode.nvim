@@ -1,13 +1,15 @@
+local cs = require("opencode.ui.chat.state")
+return cs.factory("task_children", function(view)
 -- Resolve task navigation only from the child session ID supplied by v2.
 
 local M = {}
 
-local state = require("opencode.ui.chat.state").state
+local state = view
 local actions = require("opencode.actions")
-local render = require("opencode.ui.chat.render")
+local render = cs.module(view, require("opencode.ui.chat.render"))
 
 local function resolve_tool_part(value)
-	return require("opencode.ui.chat.tasks").resolve_tool_part(value)
+	return cs.module(view, require("opencode.ui.chat.tasks")).resolve_tool_part(value)
 end
 
 ---@param tool_part table|nil
@@ -48,7 +50,7 @@ function M.ensure_task_child_loaded(tool_part, opts)
 			if state.task_child_loading ~= loading then return end
 			loading[part_id] = nil
 			if err then state.expanded_tasks[part_id] = nil else state.task_child_cache[part_id] = true end
-			if state.tasks[part_id] then require("opencode.ui.chat.tasks").rerender_task(part_id) end
+			if state.tasks[part_id] then cs.module(view, require("opencode.ui.chat.tasks")).rerender_task(part_id) end
 		end)
 	end)
 end
@@ -60,3 +62,5 @@ function M.resolve_task_child_session_id(tool_part, callback)
 end
 
 return M
+
+end)

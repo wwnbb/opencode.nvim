@@ -2,6 +2,14 @@
 
 local M = {}
 
+local function winbar_height(winid)
+	return vim.wo[winid].winbar ~= "" and 1 or 0
+end
+
+function M.can_fit(winid)
+	return vim.api.nvim_win_get_width(winid) >= 5 and vim.api.nvim_win_get_height(winid) >= 5 + winbar_height(winid)
+end
+
 local function parent_geometry(winid)
 	local position = vim.api.nvim_win_get_position(winid)
 	return {
@@ -12,7 +20,7 @@ local function parent_geometry(winid)
 	}
 end
 
-function M.build(chat_winid, float_dims, cfg)
+function M.build(chat_winid, float_dims, cfg, constrain_to_parent)
 	local height = cfg.min_height
 	local info_height = 1
 	local parent = parent_geometry(chat_winid)
@@ -58,6 +66,10 @@ function M.build(chat_winid, float_dims, cfg)
 	local chat_win_height = parent.height
 	local padding_rows = 1
 	local padding_cols = 1
+	local max_height = constrain_to_parent
+		and math.max(1, math.min(cfg.max_height, chat_win_height - padding_rows * 3 - info_height - winbar_height(chat_winid)))
+		or cfg.max_height
+	height = math.min(height, max_height)
 	local total_height = height + padding_rows * 3 + info_height
 	local width = math.max(1, chat_win_width - 2)
 	local row = chat_win_height - total_height
@@ -76,6 +88,9 @@ function M.build(chat_winid, float_dims, cfg)
 			padding_rows = padding_rows,
 			info_height = info_height,
 			current_height = height,
+			min_height = height,
+			max_height = max_height,
+			constrain_to_parent = constrain_to_parent,
 		},
 		popup = {
 			relative = { type = "win", winid = chat_winid },
@@ -101,7 +116,7 @@ function M.lock_scroll(state)
 		return
 	end
 
-	if current_layout.current_height >= cfg.max_height then
+	if current_layout.current_height >= (current_layout.max_height or cfg.max_height) then
 		return
 	end
 
@@ -119,6 +134,7 @@ end
 
 function M.measure_height(state, win_width)
 	local cfg = state.config
+	local max_height = state.layout.max_height or cfg.max_height
 	win_width = math.max(1, win_width)
 	local display_lines = 0
 	local function count(line)
@@ -128,7 +144,7 @@ function M.measure_height(state, win_width)
 	if state.paste_folds then
 		vim.api.nvim_win_call(state.winid, function()
 			local row, total = 1, vim.api.nvim_buf_line_count(state.bufnr)
-			while row <= total and display_lines < cfg.max_height do
+			while row <= total and display_lines < max_height do
 				local last = vim.fn.foldclosedend(row)
 				if last >= row then display_lines, row = display_lines + 1, last + 1
 				else count(vim.api.nvim_buf_get_lines(state.bufnr, row - 1, row, false)[1]); row = row + 1 end
@@ -136,19 +152,19 @@ function M.measure_height(state, win_width)
 		end)
 	else
 		-- Later physical lines cannot change height once the maximum is reached.
-		for _, line in ipairs(vim.api.nvim_buf_get_lines(state.bufnr, 0, cfg.max_height, false)) do
-			if display_lines >= cfg.max_height then break end
+		for _, line in ipairs(vim.api.nvim_buf_get_lines(state.bufnr, 0, max_height, false)) do
+			if display_lines >= max_height then break end
 			count(line)
 		end
 	end
 
 	local min_height = state.history_search and state.history_search.draft.height or cfg.min_height
-	return math.max(min_height, math.min(display_lines, cfg.max_height))
+	return math.min(max_height, math.max(min_height, display_lines))
 end
 
 function M.restore_view(state, previous_height)
 	local height = state.layout.current_height
-	if height ~= previous_height and height == state.config.max_height then
+	if height ~= previous_height and height == (state.layout.max_height or state.config.max_height) then
 		-- Growing from one row otherwise leaves the paste's last line at the top.
 		vim.api.nvim_win_call(state.winid, function()
 			local cursor = vim.api.nvim_win_get_cursor(state.winid)
@@ -181,7 +197,7 @@ function M.resize(state)
 
 	local previous_height = current_layout.current_height
 	current_layout.current_height = new_height
-	local vertical_shift = math.max(0, new_height - cfg.min_height)
+	local vertical_shift = math.max(0, new_height - (current_layout.min_height or cfg.min_height))
 
 	state.popup:update_layout({
 		position = { row = current_layout.row - vertical_shift, col = current_layout.col },
@@ -223,7 +239,7 @@ function M.reflow(state)
 			float_dims[key] = float_dims[key] + value - previous_parent[key]
 		end
 	end
-	local frame = M.build(state.parent_winid, float_dims, state.config)
+	local frame = M.build(state.parent_winid, float_dims, state.config, current_layout.constrain_to_parent)
 	state.layout = frame.layout
 	state.popup:update_layout(frame.popup)
 	state.info_popup:update_layout(frame.info)

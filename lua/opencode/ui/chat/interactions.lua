@@ -1,12 +1,13 @@
+local cs = require("opencode.ui.chat.state")
+return cs.factory("interactions", function(view)
 local M = {}
 
-local cs = require("opencode.ui.chat.state")
-local state = cs.state
+local state = view
 
-local chat_tasks = require("opencode.ui.chat.tasks")
-local chat_questions = require("opencode.ui.chat.questions")
-local chat_permissions = require("opencode.ui.chat.permissions")
-local chat_edits = require("opencode.ui.chat.edits")
+local chat_tasks = cs.module(view, require("opencode.ui.chat.tasks"))
+local chat_questions = cs.module(view, require("opencode.ui.chat.questions"))
+local chat_permissions = cs.module(view, require("opencode.ui.chat.permissions"))
+local chat_edits = cs.module(view, require("opencode.ui.chat.edits"))
 
 local question_state = require("opencode.question.state")
 local pending = require("opencode.session.pending")
@@ -31,7 +32,7 @@ end
 ---@return number|nil min_line
 ---@return number|nil max_line
 local function interactive_widget_bounds()
-	local cursor = require("opencode.ui.chat.cursor")
+	local cursor = cs.module(view, require("opencode.ui.chat.cursor"))
 	local min_line = nil
 	local max_line = nil
 	local widget_kinds = { "question", "permission", "edit" }
@@ -200,7 +201,7 @@ function M.handle_question_cancel(key)
 			return
 		end
 
-		local current_session = require("opencode.state").get_session()
+		local current_session = cs.session(view)
 		local session_id = qstate.session_id or current_session.id
 		if not question_state.begin_submission(request_id, "reject") then
 			return
@@ -252,13 +253,14 @@ function M.confirm_question_cancel()
 	local request_id, qstate = chat_questions.get_question_at_cursor()
 	if not qstate or qstate.status ~= "pending" or qstate.submitting then return end
 	local token = pending.token(qstate.session_id)
+	local generation = view.generation
 	require("opencode.ui.menu").open({
 		title = "Cancel question?",
 		message = "Cancel this question without sending an answer?",
 		items = { "Keep answering", "Cancel question" },
 		sort = false,
 		on_select = function(choice)
-			if choice ~= "Cancel question" or not pending.is_current(token)
+			if choice ~= "Cancel question" or not cs.valid(view, generation) or not pending.is_current(token)
 				or question_state.get_question(request_id) ~= qstate
 				or qstate.status ~= "pending" or qstate.submitting
 				or chat_questions.get_question_at_cursor() ~= request_id then return end
@@ -322,3 +324,5 @@ function M.handle_question_toggle(key)
 end
 
 return M
+
+end)

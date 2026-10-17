@@ -48,7 +48,7 @@ function M.create_helpers(opts)
 	local blank_prefix = opts.blank_prefix or "▏"
 	local border_hl = opts.border_hl
 	local default_hl = opts.default_hl
-	local render = require("opencode.ui.chat.render")
+	local render = opts.render or require("opencode.ui.chat.render")
 
 	local helpers = {}
 
@@ -64,7 +64,7 @@ function M.create_helpers(opts)
 			prefix = prefix,
 			prefix_hl_group = border_hl,
 		}, line_opts or {})
-		return render.add_panel_line(result, text, hl_group or default_hl, panel_opts)
+		return (result.render or render).add_panel_line(result, text, hl_group or default_hl, panel_opts)
 	end
 
 	---@param result table
@@ -79,7 +79,7 @@ function M.create_helpers(opts)
 			prefix = prefix,
 			prefix_hl_group = border_hl,
 		}, line_opts or {})
-		return render.add_panel_raw_line(result, text, hl_group or default_hl, panel_opts)
+		return (result.render or render).add_panel_raw_line(result, text, hl_group or default_hl, panel_opts)
 	end
 
 	---@param result table
@@ -93,7 +93,7 @@ function M.create_helpers(opts)
 			prefix = blank_prefix,
 			prefix_hl_group = border_hl,
 		}, blank_opts or {})
-		return render.add_panel_blank(result, hl_group or default_hl, panel_opts)
+		return (result.render or render).add_panel_blank(result, hl_group or default_hl, panel_opts)
 	end
 
 	---@param result table

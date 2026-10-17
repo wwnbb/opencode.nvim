@@ -76,4 +76,30 @@ describe("opencode cleanup", function()
 			assert(call ~= "opencode.events.clear", "cleanup must preserve event listeners")
 		end
 	end)
+
+	it("clears and invalidates every pane on reset", function()
+		local views = require("opencode.ui.chat.state")
+		local second = views.new()
+		local cleared, invalidated = {}, {}
+		package.loaded["opencode.ui.chat"] = { for_view = function(view)
+			return {
+				clear = function() cleared[view.id] = true end,
+				session_changed = function(session, opts)
+					assert.same({}, session)
+					assert.equals("reset", opts.reason)
+					invalidated[view.id] = true
+				end,
+			}
+		end }
+		local ok, err = xpcall(function()
+			require("opencode.cleanup").reset_all()
+			for _, view in ipairs(views.all()) do
+				assert.is_true(cleared[view.id])
+				assert.equals(view.session_bound == true, invalidated[view.id] == true)
+			end
+			assert.is_not_true(views.state.session_bound)
+		end, debug.traceback)
+		views.remove(second)
+		assert.is_true(ok, err)
+	end)
 end)

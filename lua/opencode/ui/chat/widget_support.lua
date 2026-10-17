@@ -1,13 +1,14 @@
+local cs = require("opencode.ui.chat.state")
+return cs.factory("widget_support", function(view)
 local M = {}
 
-local cs = require("opencode.ui.chat.state")
-local state = cs.state
-local render = require("opencode.ui.chat.render")
+local state = view
+local render = cs.module(view, require("opencode.ui.chat.render"))
 local chat_highlights = require("opencode.ui.chat.highlights")
 local event_util = require("opencode.events.util")
 local chat_hl_ns = cs.chat_hl_ns
 local chat_anim_ns = cs.chat_anim_ns
-local render_state = require("opencode.ui.chat.render_state")
+local render_state = cs.module(view, require("opencode.ui.chat.render_state"))
 local tree = require("opencode.ui.chat.widget_tree")
 
 local FOCUS_ORDER = { "question", "permission", "edit" }
@@ -75,7 +76,7 @@ end
 
 ---@return string|nil, string|nil
 function M.apply_focus_cursor()
-	if not cs.is_chat_buffer_displayed() then return nil, nil end
+	if not cs.is_chat_buffer_displayed(view) then return nil, nil end
 	if not state.bufnr or not vim.api.nvim_buf_is_valid(state.bufnr) then
 		return nil, nil
 	end
@@ -105,7 +106,7 @@ end
 ---@return string|nil part_id
 ---@return table|nil pos
 function M.find_widget_context_at_cursor(state_table, winid, predicate)
-	if winid == state.winid and not cs.is_chat_buffer_displayed() then return nil, nil end
+	if winid == state.winid and not cs.is_chat_buffer_displayed(view) then return nil, nil end
 	if not winid or not vim.api.nvim_win_is_valid(winid) then
 		return nil, nil
 	end
@@ -316,7 +317,7 @@ end
 ---@return number|nil top_line
 ---@return number|nil bottom_line
 function M.get_visible_line_range()
-	if not cs.is_chat_buffer_displayed() then return nil, nil end
+	if not cs.is_chat_buffer_displayed(view) then return nil, nil end
 	if not state.winid or not vim.api.nvim_win_is_valid(state.winid) then
 		return nil, nil
 	end
@@ -449,3 +450,5 @@ function M.update_animating_blocks(positions, top_line, bottom_line, fns)
 end
 
 return M
+
+end)

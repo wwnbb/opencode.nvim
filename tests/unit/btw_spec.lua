@@ -216,7 +216,7 @@ describe("/btw command entry", function()
 		active_id = "ses_two"
 		submit("from dialog")
 		assert.equals(1, prompted)
-		assert.same({ { "from composer" }, { "from dialog", "ses_one" } }, asked)
+		assert.same({ { "from composer", "ses_one" }, { "from dialog", "ses_one" } }, asked)
 		assert.equals("btw", require("opencode.ui.input.slash_commands").available_commands("btw")[1].name)
 	end)
 

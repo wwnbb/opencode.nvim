@@ -2,7 +2,7 @@ describe("queue picker and promotion", function()
 	local state, pending = require("opencode.state"), require("opencode.session.pending")
 	local input, history = require("opencode.ui.input"), require("opencode.ui.input.history")
 	local actions, client, lifecycle, menu = require("opencode.actions"), require("opencode.client"), require("opencode.lifecycle"), require("opencode.ui.menu")
-	local saved, inbox_callback, picker, requests
+	local saved, inbox_callback, picker, requests, views
 	local function item(id, delivery, text)
 		return { id = id, sessionID = "s", type = "user", delivery = delivery, payload = { text = text or id }, time = { created = 1 } }
 	end
@@ -14,13 +14,14 @@ describe("queue picker and promotion", function()
 			connect = lifecycle.ensure_connected, menu = menu.open, notify = vim.notify }
 		lifecycle.ensure_connected = function(cb) cb() end
 		client.get_inbox = function(_, cb) inbox_callback = cb end
-		requests = {}
+		requests, views = {}, {}
 		client.set_input_delivery = function(sid, id, delivery, cb) requests[#requests + 1] = { sid = sid, id = id, delivery = delivery }; cb(nil) end
 		client.cancel_input = function(_, _, cb) cb(nil) end
 		menu.open = function(opts) picker = opts end
 		vim.notify = function() end
 	end)
 	after_each(function()
+		for _, view in ipairs(views) do require("opencode.ui.chat.state").remove(view) end
 		input.close(false); history.clear(); state.reset(); pending.clear_all(); require("opencode.sync").clear_all()
 		client.get_inbox, client.set_input_delivery, client.cancel_input = saved.inbox, saved.delivery, saved.cancel
 		lifecycle.ensure_connected, menu.open, vim.notify = saved.connect, saved.menu, saved.notify
@@ -60,6 +61,26 @@ describe("queue picker and promotion", function()
 			state.set_session("other", "Other")
 			picker.keys[3].handler({ close = function() error("stale menu closed") end }, picker.items[1]); flush()
 			assert.same({}, requests)
+		end)
+	end)
+	it("retains the queue owner after focus changes and defers edits after that pane is rebound", function()
+		require("tests.helpers.schedule").with(function(flush)
+			local view = require("opencode.ui.chat.state").new()
+			view.session_id, view.visible = "s", true
+			views[#views + 1] = view
+			local cancel_reply
+			client.cancel_input = function(sid, id, callback)
+				assert.equals("s", sid); assert.equals("selected", id); cancel_reply = callback
+			end
+			require("opencode.ui.palette.queue").show({ view = view })
+			state.set_session("other", "Other")
+			inbox_callback(nil, { item("selected", "queue", "owned draft") }); flush()
+			assert.equals(view, picker.context.view)
+			picker.on_select(picker.items[1], { close = function() end })
+			view.generation = view.generation + 1
+			cancel_reply(nil); flush()
+			assert.equals("", input.get_pending_text())
+			assert.equals("owned draft", history.take_deferred("s").text)
 		end)
 	end)
 	it("retains queued context while merging into an existing draft's selection", function()

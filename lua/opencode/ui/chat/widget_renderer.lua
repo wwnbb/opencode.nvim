@@ -1,14 +1,16 @@
+local cs = require("opencode.ui.chat.state")
+return cs.factory("widget_renderer", function(view)
 local M = {}
 
-local state = require("opencode.ui.chat.state").state
-local render = require("opencode.ui.chat.render")
+local state = view
+local render = cs.module(view, require("opencode.ui.chat.render"))
 local panel = require("opencode.ui.panel")
 local event_util = require("opencode.events.util")
 local question_widget = require("opencode.ui.question_widget")
 local permission_widget = require("opencode.ui.permission_widget")
 local edit_widget = require("opencode.ui.edit_widget")
 local widget_base = require("opencode.ui.widget_base")
-local widget_support = require("opencode.ui.chat.widget_support")
+local widget_support = cs.module(view, require("opencode.ui.chat.widget_support"))
 
 local function ensure_session_error_highlights()
 	panel.set_hl("OpenCodeSessionError", "DiagnosticError", "ErrorMsg")
@@ -60,7 +62,7 @@ function M.render_single_question(ctx, index, qstate)
 	end
 
 	local q_lines, q_highlights, q_meta = question_widget.get_lines_for_question(
-		request_id, { questions = qstate.questions, timestamp = qstate.timestamp }, qstate, status
+		request_id, { questions = qstate.questions, timestamp = qstate.timestamp }, qstate, status, { width = render.get_chat_text_width(), render = render }
 	)
 
 	append_interactive_widget(ctx, {
@@ -81,13 +83,13 @@ function M.render_single_permission(ctx, _index, pstate)
 	local p_lines, p_highlights, p_meta
 
 	if pstatus == "approved" then
-		p_lines, p_highlights = permission_widget.get_approved_lines(perm_id, pstate)
+		p_lines, p_highlights = permission_widget.get_approved_lines(perm_id, pstate, { width = render.get_chat_text_width(), render = render })
 		p_meta = widget_base.make_meta()
 	elseif pstatus == "rejected" then
-		p_lines, p_highlights = permission_widget.get_rejected_lines(perm_id, pstate)
+		p_lines, p_highlights = permission_widget.get_rejected_lines(perm_id, pstate, { width = render.get_chat_text_width(), render = render })
 		p_meta = widget_base.make_meta()
 	else
-		p_lines, p_highlights, p_meta = permission_widget.get_lines_for_permission(perm_id, pstate)
+		p_lines, p_highlights, p_meta = permission_widget.get_lines_for_permission(perm_id, pstate, { width = render.get_chat_text_width(), render = render })
 	end
 
 	if p_lines then
@@ -110,10 +112,10 @@ function M.render_single_edit(ctx, _index, estate)
 	local e_lines, e_highlights, e_meta
 
 	if estatus == "sent" then
-		e_lines, e_highlights, e_meta = edit_widget.get_resolved_lines(eid, estate)
+		e_lines, e_highlights, e_meta = edit_widget.get_resolved_lines(eid, estate, { width = render.get_chat_text_width(), render = render })
 		e_meta = e_meta or widget_base.make_meta()
 	else
-		e_lines, e_highlights, e_meta = edit_widget.get_lines_for_edit(eid, estate)
+		e_lines, e_highlights, e_meta = edit_widget.get_lines_for_edit(eid, estate, { width = render.get_chat_text_width(), render = render })
 	end
 
 	if e_lines then
@@ -218,3 +220,5 @@ function M.render_orphan_widgets(ctx, index, session_msg_ids)
 end
 
 return M
+
+end)

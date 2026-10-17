@@ -1,3 +1,6 @@
+local cs = require("opencode.ui.chat.state")
+local pages = {} -- Native winbar callbacks address pages by buffer across all panes.
+return cs.factory("execute_details", function(owner)
 -- Read-only inspector for execute results, original output, code, and MCP calls.
 local M = {}
 
@@ -150,7 +153,7 @@ function M.open(tool_part, opts)
 	local code = code_text(tool_part, state)
 	local status = status_label(state, metadata)
 	local previous_win = vim.api.nvim_get_current_win()
-	local chat_state = require("opencode.ui.chat.state").state
+	local chat_state = owner
 	local winid = require("opencode.ui.float_context").get_chat_context()
 	if not winid or not vim.api.nvim_win_is_valid(winid) then return nil end
 	local previous_buf = vim.api.nvim_win_get_buf(winid)
@@ -177,10 +180,12 @@ function M.open(tool_part, opts)
 	for name, value in pairs(options) do vim.wo[winid][name] = value end
 	vim.api.nvim_set_current_win(winid)
 	active = popup
+	pages[popup.bufnr] = popup
 
 	function popup.close(restore_focus)
 		if closed then return end
 		closed = true
+		pages[popup.bufnr] = nil
 		if active == popup then active = nil end
 		if group then pcall(vim.api.nvim_del_augroup_by_id, group) end
 		if vim.api.nvim_win_is_valid(winid) then
@@ -195,7 +200,7 @@ function M.open(tool_part, opts)
 		if vim.api.nvim_buf_is_valid(popup.bufnr) then pcall(vim.api.nvim_buf_delete, popup.bufnr, { force = true }) end
 		if chat_state.winid == winid and chat_state.bufnr == previous_buf then
 			local ok, tabs = pcall(require, "opencode.ui.chat.session_tabs")
-			if ok then tabs.update_winbar() end
+			if ok then cs.module(owner, tabs).update_winbar() end
 		end
 		if type(restore_focus) == "table" then restore_focus = restore_focus.restore_focus end
 		if restore_focus ~= false and vim.api.nvim_win_is_valid(previous_win)
@@ -276,7 +281,7 @@ function M.open(tool_part, opts)
 			if source_headings[row] then headings[#headings + 1] = #lines + 1 end
 			if view == "result" then
 				local width = math.max(1, math.min(100, vim.api.nvim_win_get_width(winid)))
-				local wrapped = require("opencode.ui.chat.render").wrap_text_with_ranges(line, width)
+				local wrapped = cs.module(owner, require("opencode.ui.chat.render")).wrap_text_with_ranges(line, width)
 				for _, part in ipairs(wrapped) do lines[#lines + 1] = part.text end
 			else
 				lines[#lines + 1] = line
@@ -348,10 +353,13 @@ end
 -- The buffer id in minwid prevents a delayed click from targeting a new page.
 -- Clearing the page's native winbar unregisters all of its click regions.
 function M.click_tab(minwid, _, button)
-	if button ~= "l" or not M.is_open() then return end
-	if math.floor(minwid / 10) ~= active.bufnr then return end
+	local page = pages[math.floor(minwid / 10)]
+	if button ~= "l" or not page or not vim.api.nvim_win_is_valid(page.winid)
+		or vim.api.nvim_win_get_buf(page.winid) ~= page.bufnr then return end
 	local index = minwid % 10
-	if index == 0 then active.close() elseif views[index] then active.set_view(views[index]) end
+	if index == 0 then page.close() elseif views[index] then page.set_view(views[index]) end
 end
 
 return M
+
+end)

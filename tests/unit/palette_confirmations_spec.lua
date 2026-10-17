@@ -10,7 +10,7 @@ local function command(module, id)
 end
 
 describe("palette confirmations", function()
-	local saved, opened, inputs
+	local saved, opened, inputs, views
 
 	before_each(function()
 		saved = {
@@ -32,13 +32,14 @@ describe("palette confirmations", function()
 			cancel_pending_input = actions.cancel_pending_input,
 			notify = vim.notify,
 		}
-		opened, inputs = {}, {}
+		opened, inputs, views = {}, {}, {}
 		menu.open = function(opts) opened[#opened + 1] = opts end
 		float.create_input_popup = function(opts) inputs[#inputs + 1] = opts end
 		vim.notify = function() end
 	end)
 
 	after_each(function()
+		for _, view in ipairs(views) do require("opencode.ui.chat.state").remove(view) end
 		menu.open = saved.menu_open
 		float.create_input_popup = saved.float_input
 		for _, name in ipairs({ "delete_session", "set_active_session", "forget_session", "clear_session_data",
@@ -96,6 +97,49 @@ describe("palette confirmations", function()
 			assert.is_false(menu_closed)
 		end)
 	end
+
+	it("updates the current marker after closing the active session in an unbound picker", function()
+		state.set_session("ses_one", "One")
+		state.set_session("ses_two", "Two")
+		actions.refresh_session_activity = function(cb) cb() end
+		actions.close_session = function(opts)
+			return require("opencode.session").close(opts.session_id, { silent = true })
+		end
+		require("opencode.ui.active_sessions").show()
+		local opts, selected = opened[1]
+		for _, item in ipairs(opts.items) do if item.value == "ses_two" then selected = item end end
+		opts.keys[1].handler({ close = function() end }, selected)
+		assert.equals("ses_one", state.get_session().id)
+		assert.equals(1, #opts.items)
+		assert.equals("● One", opts.items[1].label)
+	end)
+
+	it("keeps the active-session picker on its opening pane through a delayed refresh", function()
+		state.set_session("ses_one", "One")
+		local view = require("opencode.ui.chat.state").new()
+		view.session_id, view.visible = "ses_one", true
+		views[#views + 1] = view
+		local reply, switched
+		actions.refresh_session_activity = function(cb) reply = cb end
+		actions.switch_session = function(session, opts) switched = { session.id, opts.view } end
+		require("opencode.ui.active_sessions").show({ view = view })
+		state.set_session("ses_two", "Two"); reply()
+		assert.equals(view, opened[1].context.view)
+		opened[1].on_select(opened[1].items[1])
+		assert.same({ opened[1].items[1].value, view }, switched)
+		switched = nil; view.generation = view.generation + 1
+		opened[1].on_select(opened[1].items[1])
+		assert.is_nil(switched)
+	end)
+
+	it("does not open an active-session picker after its refresh crosses a disconnect", function()
+		state.set_session("ses_one", "One")
+		local reply
+		actions.refresh_session_activity = function(cb) reply = cb end
+		require("opencode.ui.active_sessions").show()
+		require("opencode.session.pending").invalidate(); reply()
+		assert.same({}, opened)
+	end)
 
 	it("keeps delete choices in order and leaves the session intact on cancellation", function()
 		state.set_session("delete-me", "A session")

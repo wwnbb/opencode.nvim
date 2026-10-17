@@ -822,6 +822,32 @@ describe("opencode send flow", function()
 		assert.equals("ses_b", state.get_session().id)
 	end)
 
+	for _, visibility in ipairs({ "visible", "suspended", "closed" }) do
+		it("keeps a first prompt attached to its original pane (" .. visibility .. ")", function()
+			local views = require("opencode.ui.chat.state")
+			local view = views.new()
+			view.visible = true
+			local previous_chat, bound = package.loaded["opencode.ui.chat"], nil
+			package.loaded["opencode.ui.chat"] = { bind_session = function(owner, session) bound = { owner, session.id } end }
+			local ok, err = pcall(function()
+				send.send("First prompt", { session_id = false, directory = "/tmp/owner",
+					_view_id = view.id, _view_generation = view.generation })
+				state.set_session("ses_b", "B")
+				if visibility == "closed" then views.remove(view)
+				elseif visibility == "suspended" then view.visible, view.suspended = false, true end
+				callbacks.create(nil, { id = "ses_new", agent = "build", model = model() })
+				assert.equals("ses_new", calls[2].sid)
+				assert.equals("ses_b", state.get_session().id)
+				if visibility == "closed" then assert.is_nil(bound) else
+					assert.equals(view, bound[1]); assert.equals("ses_new", bound[2])
+				end
+			end)
+			package.loaded["opencode.ui.chat"] = previous_chat
+			if views.valid(view) then views.remove(view) end
+			assert.is_true(ok, err)
+		end)
+	end
+
 	it("converts attachments and explicitly rejects unsupported v1 options", function()
 		local parts = { { type = "file", url = "data:image/png;base64,AAAA", filename = "shot.png" },
 			{ type = "agent", name = "explore" }, { type = "skill", skillID = "review" } }

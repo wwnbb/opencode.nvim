@@ -308,21 +308,21 @@ function M.get_lines_for_question(_request_id, question_data, selection_state, s
 	if status == "answered" or status == "rejected" then
 		local lines, highlights
 		if status == "answered" then
-			lines, highlights = M.get_answered_lines(_request_id, question_data, selection_state.display_answers or selection_state.answers)
+			lines, highlights = M.get_answered_lines(_request_id, question_data, selection_state.display_answers or selection_state.answers, opts)
 		else
-			lines, highlights = M.get_rejected_lines(_request_id, question_data)
+			lines, highlights = M.get_rejected_lines(_request_id, question_data, opts)
 		end
 		return lines, highlights, widget_base.make_meta()
 	end
 	if selection_state.submitting then
-		return M.get_submitting_lines(_request_id, question_data, selection_state)
+		return M.get_submitting_lines(_request_id, question_data, selection_state, opts)
 	end
 	if status == "confirming" then
-		return M.get_confirmation_lines(_request_id, question_data, selection_state)
+		return M.get_confirmation_lines(_request_id, question_data, selection_state, opts)
 	end
 
-	local result = { lines = {}, highlights = {}, width = opts and opts.width }
-	local option_lines = {}
+	local result = { lines = {}, highlights = {}, width = opts and opts.width, render = opts and opts.render }
+	local option_lines, option_end_lines = {}, {}
 	local questions = get_questions(question_data)
 	local current_tab = selection_state.current_tab or 1
 	local current_question = questions[current_tab]
@@ -381,6 +381,7 @@ function M.get_lines_for_question(_request_id, question_data, selection_state, s
 				option_text,
 				selected and "OpenCodeQuestionSelected" or "OpenCodeQuestionOutput"
 			)
+			option_end_lines[i] = #result.lines - 1
 			if selected then
 				highlight_panel_text(result, rows, marker, "OpenCodeQuestionSelectedMarker")
 			end
@@ -400,7 +401,9 @@ function M.get_lines_for_question(_request_id, question_data, selection_state, s
 			custom_line,
 			custom_selected and "OpenCodeQuestionSelected" or "OpenCodeQuestionMuted"
 		)
-		if custom_text ~= "" then option_lines[0] = custom_interactive_line end
+		if custom_text ~= "" then
+			option_lines[0], option_end_lines[0] = custom_interactive_line, #result.lines - 1
+		end
 	end
 
 	local error_text = (selection_state.field_errors or {})[current_question.key] or selection_state.server_error
@@ -457,6 +460,7 @@ function M.get_lines_for_question(_request_id, question_data, selection_state, s
 			first_interactive_line = first_interactive_line,
 			option_count = option_count,
 			option_lines = option_lines,
+			option_end_lines = option_end_lines,
 			custom_interactive_line = custom_interactive_line,
 		})
 end
@@ -466,8 +470,8 @@ end
 ---@param question_data table
 ---@param selection_state table
 ---@return table lines, table highlights, OpenCodeWidgetMeta meta
-function M.get_submitting_lines(_request_id, question_data, selection_state)
-	local result = { lines = {}, highlights = {} }
+function M.get_submitting_lines(_request_id, question_data, selection_state, opts)
+	local result = { lines = {}, highlights = {}, width = opts and opts.width, render = opts and opts.render }
 	local questions = get_questions(question_data)
 	local current_tab = math.min(selection_state.current_tab or 1, #questions)
 	local title = get_question_title(questions[current_tab], "Question")
@@ -488,8 +492,8 @@ end
 ---@param question_data table
 ---@param answers table
 ---@return table lines, table highlights
-function M.get_answered_lines(_request_id, question_data, answers)
-	local result = { lines = {}, highlights = {} }
+function M.get_answered_lines(_request_id, question_data, answers, opts)
+	local result = { lines = {}, highlights = {}, width = opts and opts.width, render = opts and opts.render }
 	local questions = get_questions(question_data)
 	add_panel_blank(result)
 	add_header(result, "answered", "answered")
@@ -520,8 +524,8 @@ end
 ---@param _request_id string
 ---@param question_data table
 ---@return table lines, table highlights
-function M.get_rejected_lines(_request_id, question_data)
-	local result = { lines = {}, highlights = {} }
+function M.get_rejected_lines(_request_id, question_data, opts)
+	local result = { lines = {}, highlights = {}, width = opts and opts.width, render = opts and opts.render }
 	local questions = get_questions(question_data)
 	local title = questions[1] and get_question_title(questions[1], "Question") or "Question"
 
@@ -540,8 +544,8 @@ end
 ---@param question_data table
 ---@param selection_state table
 ---@return table lines, table highlights, OpenCodeWidgetMeta meta
-function M.get_confirmation_lines(_request_id, question_data, selection_state)
-	local result = { lines = {}, highlights = {} }
+function M.get_confirmation_lines(_request_id, question_data, selection_state, opts)
+	local result = { lines = {}, highlights = {}, width = opts and opts.width, render = opts and opts.render }
 	local questions = get_questions(question_data)
 
 	add_panel_blank(result)
@@ -565,12 +569,15 @@ function M.get_confirmation_lines(_request_id, question_data, selection_state)
 	local confirm_selected = confirm_selection and confirm_selection.selected_indices or { 1 }
 	local selected_choice = confirm_selected[1] or 1
 	local first_option_line = #result.lines
+	local option_lines, option_end_lines = {}, {}
 
 	for i, label in ipairs({ "Yes, submit all answers", "No, review answers" }) do
 		local selected = selected_choice == i
 		local marker = selected and icons.selected or icons.unselected
 		local line = string.format("%s %d. %s", marker, i, label)
+		option_lines[i] = #result.lines
 		add_panel_raw_line(result, line, selected and "OpenCodeQuestionSelected" or "OpenCodeQuestionOutput")
+		option_end_lines[i] = #result.lines - 1
 	end
 
 	add_panel_blank(result)
@@ -583,6 +590,8 @@ function M.get_confirmation_lines(_request_id, question_data, selection_state)
 		widget_base.make_meta({
 			interactive_count = 2,
 			first_interactive_line = first_option_line,
+			option_lines = option_lines,
+			option_end_lines = option_end_lines,
 		})
 end
 

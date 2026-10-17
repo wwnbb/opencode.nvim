@@ -6,11 +6,11 @@ local input = require("opencode.ui.input")
 describe("native review file actions", function()
 	local path, notify, menu_open, chat_edits, input_show, shown, leader
 	local function read() return table.concat(vim.fn.readfile(path, "b"), "\n") end
-	local function open(kind)
+	local function open(kind, view)
 		vim.fn.writefile({ "before" }, path)
 		edits.add_edit("r", "s", { { fileID = "f", filePath = path, before = "before\n", after = "after\n", type = kind or "update" } },
 			{ transport = "review_rpc", revision = 1, native_review = { status = "pending" } })
-		native.show({ { filePath = path, before = "before\n", after = "after\n", type = kind or "update", edit_file_index = 1 } }, { edit_id = "r" })
+		native.show({ { filePath = path, before = "before\n", after = "after\n", type = kind or "update", edit_file_index = 1 } }, { edit_id = "r", view = view })
 	end
 	before_each(function()
 		path = vim.fn.tempname(); notify, menu_open = vim.notify, menu.open
@@ -131,6 +131,25 @@ describe("native review file actions", function()
 		open_note()
 		shown.on_send("Current note")
 		assert.equals("Current note", edits.get_edit("r").message)
+	end)
+	it("ignores a native diff note and mutation keys after the owning pane is reassigned", function()
+		local views = require("opencode.ui.chat.state")
+		local view = views.new()
+		view.session_id = "s"
+		local ok, err = xpcall(function()
+			open(nil, view)
+			local buf = vim.fn.bufnr(path)
+			mapping(buf, "m").callback()
+			assert.equals(view, shown.view)
+			view.generation = view.generation + 1
+			shown.on_send("Stale note")
+			mapping(buf, "<C-y>").callback()
+			assert.equals("", edits.get_edit("r").message)
+			assert.same({ "before" }, vim.api.nvim_buf_get_lines(buf, 0, -1, false))
+			native.close()
+		end, debug.traceback)
+		views.remove(view)
+		assert.is_true(ok, err)
 	end)
 	for _, switch in ipairs({ false, true }) do
 		it("ignores an old native diff note after " .. (switch and "opening another review" or "session invalidation"), function()
