@@ -3,7 +3,7 @@ describe("session catalog palette workflows", function()
 	local state = require("opencode.state")
 	local pending = require("opencode.session.pending")
 	local palette = require("opencode.ui.palette.session")
-	local menus, inputs, calls, stubs, commands, sessions
+	local menus, inputs, calls, stubs, commands, sessions, opened_options, views
 	local function key(opts, name, item)
 		for _, mapping in ipairs(opts.keys) do
 			if require("opencode.util.keymap").get(opts.keymap_scope)[mapping.action] == name then mapping.handler({ close = function() end }, item or opts.items[1]); return end
@@ -14,7 +14,7 @@ describe("session catalog palette workflows", function()
 		state.reset(); pending.clear_all()
 		state.upsert_session({ id = "current", title = "Current", directory = "/remote/current" })
 		state.set_session("current", "Current")
-		menus, inputs, calls, stubs, commands = {}, {}, {}, {}, {}
+		menus, inputs, calls, stubs, commands, opened_options, views = {}, {}, {}, {}, {}, {}, {}
 		sessions = { { id = "inactive", title = "Inactive", directory = "/remote/other" } }
 		local stub = require("luassert.stub")
 		stubs[#stubs + 1] = stub(require("opencode.ui.menu"), "open", function(opts) menus[#menus + 1] = opts end)
@@ -24,7 +24,9 @@ describe("session catalog palette workflows", function()
 			calls[#calls + 1] = { method = "list", query = query }
 			cb(nil, sessions)
 		end)
-		stubs[#stubs + 1] = stub(actions, "open_session", function(id) calls[#calls + 1] = { method = "open", id = id } end)
+		stubs[#stubs + 1] = stub(actions, "open_session", function(id, opts)
+			calls[#calls + 1] = { method = "open", id = id }; opened_options[#opened_options + 1] = opts
+		end)
 		stubs[#stubs + 1] = stub(actions, "rename_session", function(id, title, cb)
 			calls[#calls + 1] = { method = "rename", id = id, title = title }; cb(nil, { id = id, title = title })
 		end)
@@ -38,8 +40,30 @@ describe("session catalog palette workflows", function()
 		palette.register({ register = function(command) commands[command.id] = command end })
 	end)
 	after_each(function()
+		for _, view in ipairs(views) do require("opencode.ui.chat.state").remove(view) end
 		for index = #stubs, 1, -1 do stubs[index]:revert() end
 		state.reset(); pending.clear_all()
+	end)
+	local function pane()
+		local view = require("opencode.ui.chat.state").new()
+		view.session_id, view.visible = "current", true
+		views[#views + 1] = view
+		return view
+	end
+	it("opens the selected session in the pane that opened the picker", function()
+		local view = pane()
+		commands["session.list"].run({ view = view, session_id = "current" })
+		state.set_session("replacement", "Replacement")
+		menus[1].on_select(menus[1].items[1])
+		assert.equals(view, opened_options[1].view)
+		assert.same({ method = "open", id = "inactive" }, calls[2])
+	end)
+	it("does not use a session ID prompt after its owner pane is rebound", function()
+		local view = pane()
+		commands["session.open"].run({ view = view, session_id = "current" })
+		view.generation = view.generation + 1
+		inputs[1].on_submit("stale")
+		assert.same({}, calls)
 	end)
 	it("starts with all projects and opens the selected ID using fresh metadata", function()
 		commands["session.list"].run()

@@ -1,10 +1,11 @@
 local M = {}
 local actions, state, pending = require("opencode.actions"), require("opencode.state"), require("opencode.session.pending")
-function M.show()
-	local id = state.get_session().id
+function M.show(context)
+	context = require("opencode.ui.palette").capture_context(context)
+	local id = context.session_id
 	if not id then vim.notify("Open a session first", vim.log.levels.INFO); return end
 	local token = pending.token(id)
-	local function current() return pending.is_current(token) and state.get_session().id == id end
+	local function current() return pending.is_current(token) and require("opencode.ui.palette").context_valid(context) end
 	actions.list_pending_inputs(id, function(err, inputs)
 		if not current() then return end
 		if err then vim.notify("Could not load queued inputs: " .. tostring(err.message or err), vim.log.levels.WARN); return end
@@ -22,11 +23,14 @@ function M.show()
 			ctx.close()
 			actions[action .. "_pending_input"](id, item.value, function(failure, draft)
 				if failure then vim.notify("Could not " .. action .. " input: " .. tostring(failure.message or failure), vim.log.levels.WARN); return end
-				if draft then require("opencode.ui.chat.pending_inputs").restore_draft(draft, id)
-				elseif current() then M.show() end
+				if draft then
+					if not current() then require("opencode.ui.input.history").defer_pending(draft, id); return end
+					local views = require("opencode.ui.chat.state")
+					views.module(context.view, require("opencode.ui.chat.pending_inputs")).restore_draft(draft, id)
+				elseif current() then M.show(context) end
 			end)
 		end
-		require("opencode.ui.menu").open({ title = " Queued Inputs ", items = items, width = 80, sort = false,
+		require("opencode.ui.menu").open({ context = context, title = " Queued Inputs ", items = items, width = 80, sort = false,
 			close_on_select = false, on_select = function(item, ctx) if item.kind == "user" then mutate("edit", ctx, item) end end,
 			keymap_scope = "queue_menu",
 			keys = {

@@ -243,6 +243,19 @@ local function revert_pending_changes(pending, force)
 end
 
 function M.register(palette)
+	for _, direction in ipairs({ "vertical", "horizontal" }) do
+		palette.register({
+			id = "action.split_" .. direction,
+			title = direction == "vertical" and "New Chat to the Right" or "New Chat Below",
+			description = "Create an independent session in the OpenCode tab",
+			category = "actions",
+			run = function(context)
+				context = palette.capture_context(context)
+				if palette.context_valid(context) then opencode_actions.split(direction, context) end
+			end,
+			enabled = function() return ((state.get_config() or {}).chat or {}).layout == "tab" end,
+		})
+	end
 	require("opencode.ui.images").register(palette)
 	require("opencode.ui.diagrams").register(palette)
 	require("opencode.ui.diagnostics").register(palette)
@@ -258,8 +271,8 @@ function M.register(palette)
 		description = "Stop the current AI request",
 		category = "actions",
 		keybind = keymaps.get("global").abort,
-		run = function()
-			opencode_actions.abort()
+		run = function(context)
+			opencode_actions.abort(palette.capture_context(context))
 		end,
 		enabled = function()
 			return state.is_streaming() or state.is_thinking()
@@ -272,8 +285,8 @@ function M.register(palette)
 		description = "Start a new session and close the current tab",
 		category = "actions",
 		slash = { name = "clear" },
-		run = function()
-			opencode_actions.clear()
+		run = function(context)
+			opencode_actions.clear(palette.capture_context(context))
 		end,
 	})
 	palette.register({
@@ -315,8 +328,8 @@ function M.register(palette)
 		description = "Compact session messages",
 		category = "actions",
 		slash = { name = "compact", aliases = { "summarize" } },
-		run = function()
-			local session = state.get_session()
+		run = function(context)
+			local session = { id = palette.capture_context(context).session_id }
 			if not session.id then
 				vim.notify("No active session to compact", vim.log.levels.WARN)
 				return

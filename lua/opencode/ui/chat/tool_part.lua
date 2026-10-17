@@ -1,3 +1,5 @@
+local cs = require("opencode.ui.chat.state")
+return cs.factory("tool_part", function(view)
 -- Resolve the current version of a tool part from the sync store.
 local M = {}
 
@@ -11,7 +13,7 @@ function M.resolve(position)
 	local group = position.activity_group
 	if group then
 		return { id = group.id, tool = "activity", activity_group = group,
-			state = { status = require("opencode.ui.chat.activity").is_working(group) and "running" or "completed" } }
+			state = { status = cs.module(view, require("opencode.ui.chat.activity")).is_working(group) and "running" or "completed" } }
 	end
 
 	local fallback = type(position.tool_part) == "table" and position.tool_part or position
@@ -31,3 +33,5 @@ function M.resolve(position)
 end
 
 return M
+
+end)

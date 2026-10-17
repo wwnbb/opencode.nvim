@@ -1,10 +1,11 @@
+local cs = require("opencode.ui.chat.state")
+return cs.factory("cursor", function(view)
 local M = {}
 
-local cs = require("opencode.ui.chat.state")
-local state = cs.state
+local state = view
 local tree = require("opencode.ui.chat.widget_tree")
 
-local chat_interactions = require("opencode.ui.chat.interactions")
+local chat_interactions = cs.module(view, require("opencode.ui.chat.interactions"))
 
 ---@class OpenCodeWidgetCursorContext
 ---@field kind "question" | "permission" | "edit" | "activity"
@@ -45,7 +46,7 @@ end
 
 ---@return OpenCodeWidgetCursorContext|nil
 local function capture_widget_cursor_context()
-	if not cs.is_chat_buffer_displayed() then return nil end
+	if not cs.is_chat_buffer_displayed(view) then return nil end
 	if not state.visible or not state.winid or not vim.api.nvim_win_is_valid(state.winid) then
 		return nil
 	end
@@ -68,7 +69,7 @@ end
 ---@param widget_cursor OpenCodeWidgetCursorContext|nil
 ---@return boolean
 local function restore_widget_cursor_context(widget_cursor)
-	if not cs.is_chat_buffer_displayed() then return false end
+	if not cs.is_chat_buffer_displayed(view) then return false end
 	if not widget_cursor then
 		return false
 	end
@@ -109,7 +110,7 @@ end
 ---@param widget_cursor OpenCodeWidgetCursorContext|nil
 ---@return boolean
 local function should_auto_scroll(widget_cursor)
-	if not cs.is_chat_buffer_displayed() then return false end
+	if not cs.is_chat_buffer_displayed(view) then return false end
 	if widget_cursor then
 		return false
 	end
@@ -130,7 +131,7 @@ M.restore_widget_cursor_context = restore_widget_cursor_context
 M.should_auto_scroll = should_auto_scroll
 
 function M.scroll_to_bottom()
-	if not cs.is_chat_buffer_displayed() then return end
+	if not cs.is_chat_buffer_displayed(view) then return end
 	if not state.bufnr or not vim.api.nvim_buf_is_valid(state.bufnr)
 		or not state.winid or not vim.api.nvim_win_is_valid(state.winid) then return end
 	vim.api.nvim_win_set_cursor(state.winid, { vim.api.nvim_buf_line_count(state.bufnr), 0 })
@@ -140,3 +141,5 @@ function M.scroll_to_bottom()
 end
 
 return M
+
+end)

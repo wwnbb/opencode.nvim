@@ -1,8 +1,10 @@
+local cs = require("opencode.ui.chat.state")
+return cs.factory("help", function(view)
 local M = {}
 local keymaps = require("opencode.util.keymap")
 
 local Popup = require("opencode.ui.popup")
-local state = require("opencode.ui.chat.state").state
+local state = view
 local highlights = require("opencode.ui.highlights")
 local active_popup
 
@@ -24,14 +26,14 @@ local function sections(config)
 	local edit_confirm = overlapping == 0 and "Open file in editor"
 		or (overlapping == #confirm_keys and "Resolve file manually (shared key)" or "Open file; shared resolve key resolves")
 	local pending = {}
-	for _, command in ipairs(require("opencode.ui.chat.pending_inputs").commands) do
+	for _, command in ipairs(cs.module(view, require("opencode.ui.chat.pending_inputs")).commands) do
 		table.insert(pending, { key(command.name .. "_pending"), command.description })
 	end
-	return {
+	local groups = {
 		{
 			"Chat",
 			{
-				{ key("close"), "Close chat" },
+				{ key("close"), config.layout == "tab" and "Close this chat pane" or "Close chat" },
 				{ key("focus_input"), "Focus input" },
 				{ key("toggle_auto_scroll"), "Toggle auto-scroll" },
 				{ key("abort"), "Stop generation" },
@@ -128,6 +130,16 @@ local function sections(config)
 			},
 		},
 	}
+	if config.layout == "tab" then
+		table.insert(groups, 2, { "Chat Panes", {
+			{ key("split_vertical"), "New session to the right" },
+			{ key("split_horizontal"), "New session below" },
+			{ "<C-w>h/j/k/l", "Move between windows" },
+			{ "<C-w>=", "Equalize window sizes" },
+			{ keymaps.label("global", "toggle"), "Return to editor; keep panes" },
+		} })
+	end
+	return groups
 end
 
 -- Wrap by display cells while keeping UTF-8 characters intact and descriptions
@@ -315,3 +327,5 @@ function M.show(config)
 end
 
 return M
+
+end)

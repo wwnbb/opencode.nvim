@@ -3,7 +3,7 @@ describe("native project and worktree UI workflows", function()
 	local state = require("opencode.state")
 	local pending = require("opencode.session.pending")
 	local workspace = require("opencode.ui.palette.workspaces")
-	local menus, inputs, calls, stubs, notices
+	local menus, inputs, calls, stubs, notices, views
 	local project = { id = "p", name = "Remote project", canonical = "/remote/project" }
 	local tree = { directory = "/remote/feature", strategy = "git_worktree" }
 	local function key(opts, name, item)
@@ -16,7 +16,7 @@ describe("native project and worktree UI workflows", function()
 		state.reset(); pending.clear_all()
 		state.upsert_session({ id = "source", title = "Source", directory = "/remote/project" })
 		state.set_session("source", "Source")
-		menus, inputs, calls, stubs, notices = {}, {}, {}, {}, {}
+		menus, inputs, calls, stubs, notices, views = {}, {}, {}, {}, {}, {}
 		local stub = require("luassert.stub")
 		stubs[#stubs + 1] = stub(require("opencode.ui.menu"), "open", function(opts) menus[#menus + 1] = opts end)
 		stubs[#stubs + 1] = stub(require("opencode.ui.float"), "create_input_popup", function(opts) inputs[#inputs + 1] = opts end)
@@ -40,8 +40,25 @@ describe("native project and worktree UI workflows", function()
 		stubs[#stubs + 1] = stub(actions, "refresh_worktrees", function(id, cb) calls[#calls + 1] = { method = "refresh", id = id }; cb(nil) end)
 	end)
 	after_each(function()
+		for _, view in ipairs(views) do require("opencode.ui.chat.state").remove(view) end
 		for index = #stubs, 1, -1 do stubs[index]:revert() end
 		state.reset(); pending.clear_all()
+	end)
+	it("creates in the original pane after focus moves during location resolution", function()
+		local view = require("opencode.ui.chat.state").new()
+		view.session_id, view.visible = "source", true
+		views[#views + 1] = view
+		local reply
+		actions.get_location = function(_, callback) reply = callback end
+		workspace.new("/remote/another", { view = view, session_id = "source" })
+		state.set_session("other", "Other")
+		reply(nil, { directory = "/remote/another" })
+		assert.equals(view, calls[1].opts.view)
+		assert.equals("/remote/another", calls[1].opts.location.directory)
+		workspace.new("/remote/stale", { view = view, session_id = "source" })
+		view.generation = view.generation + 1
+		reply(nil, { directory = "/remote/stale" })
+		assert.equals(1, #calls)
 	end)
 	it("creates a session in a selected remote worktree after native location resolution", function()
 		workspace.new()

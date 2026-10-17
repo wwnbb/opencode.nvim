@@ -108,6 +108,26 @@ describe("execute details inspector", function()
 		assert(not details.is_open(), "stale clicks must do nothing after close")
 	end)
 
+	it("dispatches toolbar clicks to a nondefault pane and ignores its stale buffer id", function()
+		local cs = require("opencode.ui.chat.state")
+		local owner = cs.new()
+		owner.visible, owner.winid = true, previous
+		local instance = details.for_view(owner)
+		local popup = instance.open({ state = { output = "owned output" } })
+		local old_id = popup.bufnr * 10 + 2
+		local ok, err = pcall(function()
+			details.click_tab(old_id, 1, "l")
+			assert.equals("raw", popup.view)
+			details.click_tab(popup.bufnr * 10, 1, "l")
+			assert.is_false(instance.is_open())
+			local replacement = instance.open({ state = { output = "replacement" } })
+			details.click_tab(old_id, 1, "l")
+			assert.equals("result", replacement.view)
+		end)
+		instance.close(); cs.remove(owner)
+		assert.is_true(ok, err)
+	end)
+
 	it("keeps the chat float open while its inspector has focus", function()
 		local chat_state = require("opencode.ui.chat.state").state
 		local focus = require("opencode.ui.chat.float_focus")

@@ -1,7 +1,9 @@
+local cs = require("opencode.ui.chat.state")
+return cs.factory("float_focus", function(view)
 local M = {}
 
-local state = require("opencode.ui.chat.state").state
-local chat_edits = require("opencode.ui.chat.edits")
+local state = view
+local chat_edits = cs.module(view, require("opencode.ui.chat.edits"))
 
 local function clear_float_focus_autocmds()
 	if not state.focus_augroup then
@@ -140,3 +142,5 @@ function M.clear()
 end
 
 return M
+
+end)

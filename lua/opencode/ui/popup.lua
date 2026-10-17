@@ -450,7 +450,7 @@ function M.new(opts)
 		id = next_id,
 		closed = false,
 		mounted = false,
-		previous_win = vim.api.nvim_get_current_win(),
+		previous_win = opts.previous_win or vim.api.nvim_get_current_win(),
 		focus_restore = opts.focus_restore or (opts.refocus_chat and "chat") or false,
 		close_on_leave = opts.close_on_leave == true,
 		on_resize = opts.on_resize,

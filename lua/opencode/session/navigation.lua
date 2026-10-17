@@ -52,10 +52,21 @@ function M.next_session_after_close(close_id, sessions, ctx)
 
 	local close_index = nil
 	local remaining = {}
-	for index, session in ipairs(sessions) do
+	local views = package.loaded["opencode.ui.chat.state"]
+	local owner = ctx and ctx.view
+	local function occupied(session_id)
+		if not owner or not views or type(views.all) ~= "function" then return false end
+		for _, view in ipairs(views.all()) do
+			local root = (view.session_stack or {})[1]
+			if view ~= owner and (view.visible ~= false or view.suspended) and views.valid(view)
+				and M.runtime_session_id(root and root.id or view.session_id, ctx) == session_id then return true end
+		end
+		return false
+	end
+	for _, session in ipairs(sessions) do
 		if type(session) == "table" and session.id == close_id then
-			close_index = index
-		else
+			close_index = #remaining + 1
+		elseif not occupied(session.id) then
 			table.insert(remaining, session)
 		end
 	end

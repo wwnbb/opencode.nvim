@@ -1,15 +1,17 @@
+local cs = require("opencode.ui.chat.state")
+return cs.factory("permissions", function(view)
 -- Permission widget lifecycle and handlers for the chat buffer.
 
 local M = {}
 
-local cs = require("opencode.ui.chat.state")
-local state = cs.state
+local state = view
+local render = cs.module(view, require("opencode.ui.chat.render"))
 
 local permission_widget = require("opencode.ui.permission_widget")
 local widget_base = require("opencode.ui.widget_base")
 local permission_state = require("opencode.permission.state")
 local pending = require("opencode.session.pending")
-local widget_support = require("opencode.ui.chat.widget_support")
+local widget_support = cs.module(view, require("opencode.ui.chat.widget_support"))
 local render_coordinator = require("opencode.ui.chat.render_coordinator")
 local actions = require("opencode.actions")
 local events = require("opencode.events")
@@ -70,21 +72,14 @@ function M.sync_selected_option_from_cursor()
 
 	local meta = widget_support.get_interactive_meta(pos, pstate, "permission")
 	if not pos.meta_state then
-		local _, _, fallback = permission_widget.get_lines_for_permission(permission_id, pstate)
+		local _, _, fallback = permission_widget.get_lines_for_permission(permission_id, pstate, { width = render.get_chat_text_width(), render = render })
 		meta = fallback
 	end
-	local option_count = meta and meta.interactive_count or 0
-	local first_option_line = widget_base.get_focus_offset(meta)
-	if option_count <= 0 or first_option_line == nil then
+	local option_index = widget_base.get_option_index(meta, cursor_line - pos.start_line)
+	if not option_index then
 		return permission_id, false
 	end
 
-	local widget_line = cursor_line - pos.start_line
-	if widget_line < first_option_line or widget_line >= (first_option_line + option_count) then
-		return permission_id, false
-	end
-
-	local option_index = widget_line - first_option_line + 1
 	if pstate.selected_option == option_index then
 		return permission_id, false
 	end
@@ -127,11 +122,11 @@ function M.rerender_permission(perm_id)
 	local p_lines, p_highlights, p_meta
 	local status = pstate.status or "pending"
 	if status == "approved" then
-		p_lines, p_highlights = permission_widget.get_approved_lines(perm_id, pstate)
+		p_lines, p_highlights = permission_widget.get_approved_lines(perm_id, pstate, { width = render.get_chat_text_width(), render = render })
 	elseif status == "rejected" then
-		p_lines, p_highlights = permission_widget.get_rejected_lines(perm_id, pstate)
+		p_lines, p_highlights = permission_widget.get_rejected_lines(perm_id, pstate, { width = render.get_chat_text_width(), render = render })
 	else
-		p_lines, p_highlights, p_meta = permission_widget.get_lines_for_permission(perm_id, pstate)
+		p_lines, p_highlights, p_meta = permission_widget.get_lines_for_permission(perm_id, pstate, { width = render.get_chat_text_width(), render = render })
 	end
 
 	if widget_support.replace_rendered_block(pos, { lines = p_lines, highlights = p_highlights }) then
@@ -202,17 +197,19 @@ function M.handle_permission_message(perm_id)
 	end
 
 	local input_ui = require("opencode.ui.input")
-	local chat = require("opencode.ui.chat")
+	local chat = cs.module(view, require("opencode.ui.chat"))
 	local token = pending.token(pstate.session_id)
+	local generation = view.generation
 
 	local function finish(text)
-		if not pending.is_current(token) or permission_state.get_permission(perm_id) ~= pstate or pstate.status ~= "pending" or pstate.submitting then return end
+		if not cs.valid(view, generation) or not pending.is_current(token) or permission_state.get_permission(perm_id) ~= pstate or pstate.status ~= "pending" or pstate.submitting then return end
 		permission_state.set_message(perm_id, text or "")
 		M.rerender_permission(perm_id)
 		chat.focus()
 	end
 
 	input_ui.show({
+		view = view,
 		winid = state.winid,
 		float_dims = state.float_dims,
 		text = pstate.message or "",
@@ -224,3 +221,5 @@ function M.handle_permission_message(perm_id)
 end
 
 return M
+
+end)

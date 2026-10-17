@@ -15,20 +15,6 @@ local STREAM_UPDATE_DELAY_MS = 16
 local setup_events_ref = nil
 local setup_listener_generation = nil
 
----@param data table|nil
----@return boolean
-local function status_event_relevant(data)
-	if type(data) ~= "table" then
-		return true
-	end
-	local session_id = data.session_id or data.sessionID or data.sessionId
-	if not session_id or session_id == "" then
-		return true
-	end
-	local current_session = app_state.get_session()
-	return event_util.render_target_session_id(current_session.id, session_id) ~= nil
-end
-
 ---@param events table
 ---@param event_type string
 ---@return any
@@ -69,9 +55,14 @@ function M.merge_requests(existing, data)
 end
 
 ---Evaluate at execution time: selection may have changed since the request.
-function M.request_relevant(data)
+function M.request_relevant(data, target)
 	if type(data) ~= "table" or data._render_global then return true end
-	local current = app_state.get_session().id
+	local current = target
+	if type(target) == "table" then
+		current = target.session_id
+	elseif target == nil then
+		current = app_state.get_session().id
+	end
 	local scoped = false
 	for session_id in pairs(data._render_sessions or {}) do
 		scoped = true
@@ -203,9 +194,6 @@ function M.setup(events)
 	events_ref = events
 
 	events.on("sync_changed", function(data)
-		if type(data) == "table" and data.kind == "session_status" and not status_event_relevant(data) then
-			return
-		end
 		if
 			type(data) == "table"
 			and data.kind == "part"
@@ -223,9 +211,7 @@ function M.setup(events)
 	end)
 
 	events.on("status_change", function(data)
-		if status_event_relevant(data) then
-			M.request(data)
-		end
+		M.request(data)
 	end)
 
 	events.on("session_change", function(data)
@@ -233,9 +219,7 @@ function M.setup(events)
 	end)
 
 	events.on("session_status_change", function(data)
-		if status_event_relevant(data) then
-			M.request(data)
-		end
+		M.request(data)
 	end)
 
 	events.on("session_pending_change", function(data)
@@ -243,9 +227,7 @@ function M.setup(events)
 	end)
 
 	events.on("sessions_changed", function(data)
-		if type(data) ~= "table" or not data.status_origin or status_event_relevant(data) then
-			M.request(data)
-		end
+		M.request(data)
 	end)
 
 end

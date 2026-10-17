@@ -626,8 +626,8 @@ end
 ---@param permission_id string
 ---@param perm_state table Permission state from permission/state.lua
 ---@return table lines, table highlights, OpenCodeWidgetMeta meta
-function M.get_lines_for_permission(permission_id, perm_state)
-	local result = { lines = {}, highlights = {} }
+function M.get_lines_for_permission(permission_id, perm_state, opts)
+	local result = { lines = {}, highlights = {}, width = opts and opts.width, render = opts and opts.render }
 	local tool_input = resolve_tool_input(perm_state)
 	local header_title = permission_header_title(perm_state)
 	local desc_lines = get_permission_description(perm_state.permission_type, tool_input, perm_state)
@@ -647,6 +647,7 @@ function M.get_lines_for_permission(permission_id, perm_state)
 		add_panel_line(result, perm_state.error.message or "Unable to confirm decision", "OpenCodePermissionError")
 	end
 	local first_option_line = #result.lines
+	local option_lines, option_end_lines = {}, {}
 	local selected = perm_state.selected_option or 1
 	local save = perm_state.always or {}
 	local options = #save > 0 and OPTION_LABELS or { OPTION_LABELS[1], OPTION_LABELS[3] }
@@ -655,11 +656,13 @@ function M.get_lines_for_permission(permission_id, perm_state)
 		local is_selected = i == selected
 		local indicator = is_selected and icons.selected or icons.unselected
 		local option_text = string.format("%s %d. %s", indicator, i, label)
+		option_lines[i] = #result.lines
 		local _, _, rows = add_panel_raw_line(
 			result,
 			option_text,
 			is_selected and "OpenCodePermissionSelected" or "OpenCodePermissionOutput"
 		)
+		option_end_lines[i] = #result.lines - 1
 		if is_selected then
 			highlight_panel_text(result, rows, indicator, "OpenCodePermissionSelectedMarker")
 		end
@@ -690,11 +693,13 @@ function M.get_lines_for_permission(permission_id, perm_state)
 		widget_base.make_meta({
 			interactive_count = #options,
 			first_interactive_line = first_option_line,
+			option_lines = option_lines,
+			option_end_lines = option_end_lines,
 		})
 end
 
-local function render_resolved(perm_state, status, reply_suffix)
-	local result = { lines = {}, highlights = {} }
+local function render_resolved(perm_state, status, reply_suffix, opts)
+	local result = { lines = {}, highlights = {}, width = opts and opts.width, render = opts and opts.render }
 	local tool_input = resolve_tool_input(perm_state)
 	local header_title = permission_header_title(perm_state)
 	local desc_lines = get_permission_description(perm_state.permission_type, tool_input, perm_state)
@@ -713,16 +718,16 @@ end
 ---@param permission_id string
 ---@param perm_state table
 ---@return table lines, table highlights
-function M.get_approved_lines(permission_id, perm_state)
+function M.get_approved_lines(permission_id, perm_state, opts)
 	local saved = perm_state.reply == "always" and #(perm_state.always or {}) > 0
-	return render_resolved(perm_state, "approved", saved and "(always)" or "(once)")
+	return render_resolved(perm_state, "approved", saved and "(always)" or "(once)", opts)
 end
 
 ---@param permission_id string
 ---@param perm_state table
 ---@return table lines, table highlights
-function M.get_rejected_lines(permission_id, perm_state)
-	return render_resolved(perm_state, "rejected")
+function M.get_rejected_lines(permission_id, perm_state, opts)
+	return render_resolved(perm_state, "rejected", nil, opts)
 end
 
 return M

@@ -1,18 +1,20 @@
+local cs = require("opencode.ui.chat.state")
+return cs.factory("exploration_tool", function(view)
 -- Each exploration leaf owns its compact and expanded presentation.
 local M = {}
 
-local style = require("opencode.ui.chat.exploration_style")
-local tool_group = require("opencode.ui.chat.tool_group")
-local search = require("opencode.ui.chat.search")
+local style = cs.module(view, require("opencode.ui.chat.exploration_style"))
+local tool_group = cs.module(view, require("opencode.ui.chat.tool_group"))
+local search = cs.module(view, require("opencode.ui.chat.search"))
 local renderers = {
-	read = require("opencode.ui.chat.read").render_tool,
+	read = cs.module(view, require("opencode.ui.chat.read")).render_tool,
 	glob = search.render_tool,
 	grep = search.render_tool,
-	rg = require("opencode.ui.chat.rg").render_tool,
+	rg = cs.module(view, require("opencode.ui.chat.rg")).render_tool,
 }
 
 local function add_line(result, text, hl, prefix)
-	require("opencode.ui.chat.render").add_panel_line(result, text, hl, { prefix = " " .. (prefix or "") })
+	cs.module(view, require("opencode.ui.chat.render")).add_panel_line(result, text, hl, { prefix = " " .. (prefix or "") })
 end
 
 local function path(value)
@@ -23,11 +25,11 @@ local function render_summary(part, expanded)
 	local result = { lines = {}, highlights = {} }
 	local state = part.state or {}
 	local input = type(state.input) == "table" and state.input or {}
-	local metadata = require("opencode.ui.chat.render").get_tool_metadata(part)
+	local metadata = cs.module(view, require("opencode.ui.chat.render")).get_tool_metadata(part)
 	local label
 	if part.tool == "read" then
 		label = (expanded and "↘ Read " or "→ Read ") .. path(input.filePath or input.path or metadata.path)
-		local first, last = require("opencode.ui.chat.read").output_range(state.output)
+		local first, last = cs.module(view, require("opencode.ui.chat.read")).output_range(state.output)
 		if first then
 			label = label .. " · lines " .. first .. "–" .. last
 		else
@@ -107,3 +109,5 @@ function M.render(part, expanded)
 end
 
 return M
+
+end)

@@ -1,5 +1,4 @@
--- Shared UI state for the chat module.
--- All chat sub-modules require this to access the same mutable state table.
+-- Chat view registry; each module instance captures its own view state.
 
 local M = {}
 
@@ -64,11 +63,114 @@ M.chat_anim_ns = vim.api.nvim_create_namespace("opencode_chat_anim")
 
 -- A detail page may temporarily occupy the chat window while the transcript
 -- continues receiving updates in its own buffer.
-function M.is_chat_buffer_displayed()
-	local state = M.state
+function M.is_chat_buffer_displayed(view)
+	local state = view or M.state
 	return state.bufnr ~= nil and state.winid ~= nil
 		and vim.api.nvim_win_is_valid(state.winid)
 		and vim.api.nvim_win_get_buf(state.winid) == state.bufnr
+end
+
+local defaults = vim.deepcopy(M.state)
+M.state.id, M.state.generation = 1, 0
+local views = { [1] = M.state }
+local next_id, focused = 1, M.state
+M.workspace = {}
+
+function M.new()
+	next_id = next_id + 1
+	local view = vim.deepcopy(defaults)
+	view.id, view.generation, view.session_bound = next_id, 0, true
+	views[view.id] = view
+	return view
+end
+
+function M.all()
+	local result = {}
+	for _, view in pairs(views) do result[#result + 1] = view end
+	table.sort(result, function(a, b) return (a.id or 1) < (b.id or 1) end)
+	return result
+end
+
+function M.get(id) return views[id] end
+
+function M.for_window(win)
+	local buf = vim.api.nvim_win_is_valid(win) and vim.api.nvim_win_get_buf(win)
+	for _, view in pairs(views) do
+		if view.winid == win then return view end
+	end
+	for _, view in pairs(views) do
+		if view.session_bound and view.config and view.config.layout == "tab" and buf and view.bufnr == buf then return view end
+	end
+end
+
+function M.windows(view)
+	local result = {}
+	if not view.bufnr then return result end
+	for _, win in ipairs(vim.api.nvim_list_wins()) do
+		if vim.api.nvim_win_get_buf(win) == view.bufnr then result[#result + 1] = win end
+	end
+	return result
+end
+
+function M.current()
+	return M.for_window(vim.api.nvim_get_current_win()) or focused
+end
+
+function M.activate(view)
+	focused = view
+	if view.config and view.config.layout == "tab" then M.workspace.last_view = view end
+	local workspace = package.loaded["opencode.ui.chat.workspace"]
+	if workspace then
+		for _, layout in ipairs(workspace.list()) do
+			if layout.id == view.workspace_id then layout.last_view = view end
+		end
+	end
+end
+
+function M.valid(view, generation)
+	return view ~= nil and (view == M.state or views[view.id] == view)
+		and (generation == nil or view.generation == generation)
+end
+
+function M.remove(view)
+	view.generation = (view.generation or 0) + 1
+	if view ~= M.state then views[view.id] = nil end
+	if focused == view then
+		focused = M.state
+		for _, other in ipairs(M.all()) do
+			if other ~= view and other.visible then focused = other; break end
+		end
+	end
+end
+
+function M.session(view)
+	view = view or M.current()
+	local app = require("opencode.state")
+	if not view.session_bound then return app.get_session() end
+	return app.get_session_record(view.session_id) or { id = view.session_id, name = view.session_name }
+end
+
+function M.for_session(id)
+	if not id then return end
+	for _, view in ipairs(M.all()) do
+		if (view.visible or view.suspended) and (M.session(view).id == id or (view.session_stack[1] or {}).id == id) then return view end
+	end
+end
+
+-- Each instance captures its owner; asynchronous work never swaps shared state.
+function M.factory(name, build)
+	local default = build(M.state)
+	function default.for_view(view)
+		if not view or view == M.state then return default end
+		view.modules = view.modules or {}
+		if not view.modules[name] then view.modules[name] = build(view) end
+		return view.modules[name]
+	end
+	return default
+end
+
+function M.module(view, mod)
+	return type(mod.for_view) == "function" and mod.for_view(view) or mod
 end
 
 return M

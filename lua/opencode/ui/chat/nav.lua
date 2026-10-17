@@ -1,13 +1,14 @@
+local cs = require("opencode.ui.chat.state")
+return cs.factory("nav", function(view)
 -- Session navigation: drill into child sessions and back.
 
 local M = {}
 
-local cs = require("opencode.ui.chat.state")
-local state = cs.state
+local state = view
 local render_coordinator = require("opencode.ui.chat.render_coordinator")
 local actions = require("opencode.actions")
 local session_lock = require("opencode.session.lock")
-local chat_tasks = require("opencode.ui.chat.tasks")
+local chat_tasks = cs.module(view, require("opencode.ui.chat.tasks"))
 local navigation_request = 0
 
 local WIDGET_LINE_MAPS = {
@@ -147,7 +148,7 @@ local function jump_ranges(items, direction)
 	vim.api.nvim_win_set_cursor(state.winid, { target_line + 1, 0 })
 	local ok, interactions = pcall(require, "opencode.ui.chat.interactions")
 	if ok and interactions and type(interactions.sync_widget_selection_from_cursor) == "function" then
-		interactions.sync_widget_selection_from_cursor()
+		cs.module(view, interactions).sync_widget_selection_from_cursor()
 	end
 	return true
 end
@@ -166,7 +167,7 @@ function M.jump_to_message(message_id)
 				vim.api.nvim_win_set_cursor(state.winid, { line + 1, 0 })
 				local ok, interactions = pcall(require, "opencode.ui.chat.interactions")
 				if ok and interactions and type(interactions.sync_widget_selection_from_cursor) == "function" then
-					interactions.sync_widget_selection_from_cursor()
+					cs.module(view, interactions).sync_widget_selection_from_cursor()
 				end
 				return true
 			end
@@ -384,13 +385,13 @@ function M.enter_child_session(part_id)
 		return
 	end
 	local app_state = require("opencode.state")
-	local current = app_state.get_session()
+	local current = cs.session(view)
 	local pending = require("opencode.session.pending")
-	local token = pending.token(current.id)
+	local token, generation = pending.token(current.id), view.generation
 	navigation_request = navigation_request + 1
 	local request = navigation_request
 	local function is_current()
-		return request == navigation_request and pending.is_current(token) and app_state.get_session().id == current.id
+		return request == navigation_request and pending.is_current(token) and cs.valid(view, generation) and cs.session(view).id == current.id
 	end
 	chat_tasks.resolve_task_child_session_id(pos, function(err, child_session_id)
 		if not is_current() then return end
@@ -426,7 +427,7 @@ function M.enter_child_session(part_id)
 
 			current_tool_part = chat_tasks.resolve_tool_part(pos) or current_tool_part
 			local input = current_tool_part.state and current_tool_part.state.input or {}
-			actions.set_active_session(child_session_id, record.child_session.title or record.child_session.name or input.description or "Subagent", {
+			actions.set_view_session(view, child_session_id, record.child_session.title or record.child_session.name or input.description or "Subagent", {
 				reason = "child_navigation",
 				preserve_cache = true,
 				runtime = false,
@@ -444,14 +445,14 @@ function M.open_family_session(session_id, opts)
 	opts = opts or {}
 	local app_state = require("opencode.state")
 	local pending = require("opencode.session.pending")
-	local source_id = app_state.get_session().id
-	local token = pending.token(source_id)
+	local source_id = cs.session(view).id
+	local token, generation = pending.token(source_id), view.generation
 	local snapshot = app_state.get_session_record(session_id)
 	local directory = app_state.get_session_directory(source_id)
 	navigation_request = navigation_request + 1
 	local request = navigation_request
 	resolve_child_lock(session_id, { state = {} }, function(err, record)
-		if request ~= navigation_request or not pending.is_current(token) or app_state.get_session().id ~= source_id
+		if not cs.valid(view, generation) or request ~= navigation_request or not pending.is_current(token) or cs.session(view).id ~= source_id
 			or app_state.get_session_directory(source_id) ~= directory then return end
 		if err or not record or record.child_session.id ~= session_id then
 			vim.notify("Cannot open family session: " .. require("opencode.events.util").format_session_error(err,
@@ -469,7 +470,7 @@ function M.open_family_session(session_id, opts)
 				if table.remove(state.session_stack).id == session_id then break end
 			end
 		else state.session_stack = {} end
-		actions.set_active_session(session_id, info.title or info.name or session_id, {
+		actions.set_view_session(view, session_id, info.title or info.name or session_id, {
 			reason = "family_navigation", preserve_cache = true, runtime = not child,
 		})
 		render_coordinator.request({ session_id = session_id, reason = "family_navigation_loaded" })
@@ -480,7 +481,7 @@ end
 function M.leave_child_session()
 	navigation_request = navigation_request + 1
 	local app_state = require("opencode.state")
-	local current_id = app_state.get_session().id
+	local current_id = cs.session(view).id
 	local native_parent = (app_state.get_session_record(current_id) or {}).parentID
 	if type(native_parent) == "string" and native_parent ~= "" then
 		if native_parent == current_id then
@@ -497,7 +498,7 @@ function M.leave_child_session()
 		and (parent.runtime == false or app_state.is_runtime_session(parent.id)))
 	if not parent then return end
 
-	actions.set_active_session(parent.id, parent.name, {
+	actions.set_view_session(view, parent.id, parent.name, {
 		reason = "child_navigation",
 		preserve_cache = true,
 		runtime = parent.runtime ~= false,
@@ -509,3 +510,5 @@ function M.leave_child_session()
 end
 
 return M
+
+end)

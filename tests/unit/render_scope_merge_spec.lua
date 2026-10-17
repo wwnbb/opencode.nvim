@@ -46,6 +46,42 @@ describe("coalesced transcript render scopes", function()
 		assert.is_false(coordinator.request_relevant(queued))
 	end)
 
+	it("filters each pane against its own session instead of the focused session", function()
+		state.set_session("focused", "Focused")
+		local request = coordinator.merge_requests(nil, { session_id = "background" })
+		local view = { session_id = "background" }
+		assert.is_true(coordinator.request_relevant(request, view))
+		assert.is_true(coordinator.request_relevant(request, "background"))
+		assert.is_false(coordinator.request_relevant(request, "focused"))
+		assert.is_false(coordinator.request_relevant(request, {}))
+		view.session_id = "replacement"
+		assert.is_false(coordinator.request_relevant(request, view))
+	end)
+
+	it("keeps background pane status events for per-pane dispatch", function()
+		local bus = require("opencode.events.bus")
+		bus.clear()
+		state.set_session("focused", "Focused")
+		local original_schedule, scheduled, received = vim.schedule, {}, {}
+		vim.schedule = function(fn) scheduled[#scheduled + 1] = fn end
+		local ok, err = xpcall(function()
+			coordinator.setup(bus)
+			bus.on("chat_render", function(data) received[#received + 1] = data end)
+			for _, event in ipairs({ "sync_changed", "status_change", "session_status_change", "sessions_changed" }) do
+				bus.emit(event, { kind = "session_status", session_id = event, status_origin = true })
+			end
+			while #scheduled > 0 do table.remove(scheduled, 1)() end
+			assert.equals(1, #received)
+			assert.same({ sync_changed = true, status_change = true, session_status_change = true,
+				sessions_changed = true }, received[1]._render_sessions)
+			assert.is_false(coordinator.request_relevant(received[1], "focused"))
+			assert.is_true(coordinator.request_relevant(received[1], "session_status_change"))
+		end, debug.traceback)
+		vim.schedule = original_schedule
+		bus.clear()
+		assert.is_true(ok, err)
+	end)
+
 	it("still emits scoped bus requests while preserving their combined payload", function()
 		local bus = require("opencode.events.bus")
 		bus.clear()

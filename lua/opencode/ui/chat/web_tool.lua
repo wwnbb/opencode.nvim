@@ -1,12 +1,14 @@
+local cs = require("opencode.ui.chat.state")
+return cs.factory("web_tool", function(view)
 -- Web requests share the exploration list's compact rows and framed output.
 local M = { animation_line = 0 }
 
-local render = require("opencode.ui.chat.render")
-local tool_panel = require("opencode.ui.chat.tool_panel")
+local render = cs.module(view, require("opencode.ui.chat.render"))
+local tool_panel = cs.module(view, require("opencode.ui.chat.tool_panel"))
 local text_util = require("opencode.util.text")
 local locale = require("opencode.util.locale")
-local tool_group = require("opencode.ui.chat.tool_group")
-local style = require("opencode.ui.chat.tool_style")
+local tool_group = cs.module(view, require("opencode.ui.chat.tool_group"))
+local style = cs.module(view, require("opencode.ui.chat.tool_style"))
 local panel = style.panel
 
 local definitions = {
@@ -138,3 +140,5 @@ function M.render(part, expanded, opts)
 end
 
 return M
+
+end)

@@ -1,10 +1,12 @@
+local cs = require("opencode.ui.chat.state")
+return cs.factory("rg", function(view)
 -- Dedicated ripgrep tool widget renderer for the chat buffer.
 
 local M = {}
 
-local tool_panel = require("opencode.ui.chat.tool_panel")
+local tool_panel = cs.module(view, require("opencode.ui.chat.tool_panel"))
 local text_util = require("opencode.util.text")
-local output_style = require("opencode.ui.chat.exploration_style")
+local output_style = cs.module(view, require("opencode.ui.chat.exploration_style"))
 
 local panel_helpers = tool_panel.create_panel({
 	prefix = "  ",
@@ -147,3 +149,5 @@ function M.render_tool(tool_part, expanded, opts)
 end
 
 return M
+
+end)

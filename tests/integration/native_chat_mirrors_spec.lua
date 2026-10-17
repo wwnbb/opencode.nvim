@@ -1,0 +1,115 @@
+local api = require("opencode")
+local state, sessions = require("opencode.state"), require("opencode.session")
+local chat, views = require("opencode.ui.chat"), require("opencode.ui.chat.state")
+local client, sync = require("opencode.client"), require("opencode.sync")
+
+local function settle() vim.wait(40, function() return false end, 5) end
+local function press(key)
+	local mapping = vim.fn.maparg(key, "n", false, true)
+	assert.is_function(mapping.callback, "missing chat mapping " .. key)
+	mapping.callback(); settle()
+end
+
+describe("native splits of a chat buffer", function()
+	local editor, view, original_win, saved_messages
+	before_each(function()
+		vim.o.columns, vim.o.lines = 160, 48
+		editor = vim.api.nvim_get_current_tabpage()
+		state.reset(); sync.clear_all()
+		api.setup({ server = { auto_start = false }, lualine = { enabled = false },
+			chat = { layout = "tab", session_tabs = { persist = false } } })
+		saved_messages = client.get_messages
+		client.get_messages = function(_, _, callback) callback(nil, {}) end
+		sessions.set_active("mirror-a", "Mirror A")
+		chat.open(); settle()
+		view, original_win = chat.get_view(), vim.api.nvim_get_current_win()
+	end)
+	after_each(function()
+		require("opencode.ui.input").close()
+		for _, tab in ipairs(vim.api.nvim_list_tabpages()) do
+			if tab ~= editor then vim.api.nvim_set_current_tabpage(tab); vim.cmd("tabclose!") end
+		end
+		settle()
+		if vim.api.nvim_tabpage_is_valid(editor) then vim.api.nvim_set_current_tabpage(editor) end
+		client.get_messages = saved_messages
+		sync.clear_all()
+	end)
+
+	it("recognizes the current native mirror without creating another session", function()
+		vim.cmd("vsplit"); settle()
+		local mirror = vim.api.nvim_get_current_win()
+		assert.equals(view.bufnr, vim.api.nvim_win_get_buf(mirror))
+		assert.equals(view, views.current())
+		assert.equals(mirror, views.current().winid)
+		assert.equals("mirror-a", views.session(view).id)
+		assert.same({ "mirror-a" }, state.get_runtime_session_order())
+		vim.api.nvim_set_current_win(original_win); settle()
+		assert.equals(original_win, views.current().winid)
+	end)
+
+	it("closes the focused mirror with q and keeps the remaining window usable", function()
+		local history = require("opencode.ui.input.history")
+		history.set_pending("Preserved mirror draft", {}, "mirror-a")
+		vim.cmd("split"); settle()
+		local mirror = vim.api.nvim_get_current_win()
+		press("q")
+		assert.is_false(vim.api.nvim_win_is_valid(mirror))
+		assert.is_true(vim.api.nvim_win_is_valid(original_win))
+		assert.is_true(view.visible)
+		assert.equals(original_win, view.winid)
+		assert.equals("mirror-a", views.session(view).id)
+		assert.equals("Preserved mirror draft", history.get_pending("mirror-a"))
+		assert.is_true(state.is_runtime_session("mirror-a"))
+		history.clear_session("mirror-a")
+	end)
+
+	it("reassociates a surviving mirror after native close removes the owned window", function()
+		vim.cmd("vsplit"); settle()
+		local mirror = vim.api.nvim_get_current_win()
+		vim.api.nvim_set_current_win(original_win)
+		vim.cmd("close"); settle()
+		assert.is_true(vim.api.nvim_win_is_valid(mirror))
+		assert.is_true(view.visible)
+		assert.equals(mirror, view.winid)
+		assert.equals(view, views.current())
+		assert.equals("mirror-a", state.get_session().id)
+	end)
+
+	it("closes the layout and all native mirrors when another runtime session is available", function()
+		sessions.remember({ id = "mirror-b", title = "Mirror B" })
+		vim.cmd("vsplit"); vim.cmd("split"); settle()
+		local windows = vim.api.nvim_tabpage_list_wins(vim.api.nvim_get_current_tabpage())
+		press("x")
+		assert.is_false(state.is_runtime_session("mirror-a"))
+		assert.is_true(state.is_runtime_session("mirror-b"))
+		assert.is_false(view.visible)
+		assert.is_nil(views.for_session("mirror-a"))
+		assert.is_not_nil(state.get_session_record("mirror-a"))
+		for _, win in ipairs(windows) do assert.is_false(vim.api.nvim_win_is_valid(win)) end
+	end)
+
+	it("closes all native mirrors when x closes their last session", function()
+		vim.cmd("vsplit"); vim.cmd("split"); settle()
+		local workspace = vim.api.nvim_get_current_tabpage()
+		local windows = vim.api.nvim_tabpage_list_wins(workspace)
+		press("x")
+		for _, win in ipairs(windows) do assert.is_false(vim.api.nvim_win_is_valid(win)) end
+		assert.is_false(vim.api.nvim_tabpage_is_valid(workspace))
+		assert.is_false(view.visible)
+		assert.is_false(state.is_runtime_session("mirror-a"))
+	end)
+
+	it("focuses an already displayed session instead of replacing a neighboring session", function()
+		vim.cmd("vsplit"); settle()
+		local mirror = vim.api.nvim_get_current_win()
+		sessions.remember({ id = "mirror-b", title = "Mirror B" })
+		local sibling = chat.create_split(view, state.get_session_record("mirror-b"), "horizontal")
+		chat.focus_view(sibling)
+		sessions.switch_to(state.get_session_record("mirror-a"), { view = sibling })
+		settle()
+		assert.equals(view, views.current())
+		assert.equals(mirror, vim.api.nvim_get_current_win())
+		assert.equals("mirror-a", views.session(view).id)
+		assert.equals("mirror-b", views.session(sibling).id)
+	end)
+end)

@@ -1,18 +1,19 @@
+local cs = require("opencode.ui.chat.state")
+return cs.factory("task_animation", function(view)
 -- Task animation engine for the chat buffer.
 -- Extracted from tasks.lua: braille task frames, regular-tool spinners,
 -- frame overlay updates, and the animation timer lifecycle.
 
 local M = {}
 
-local cs = require("opencode.ui.chat.state")
-local state = cs.state
+local state = view
 local chat_anim_ns = cs.chat_anim_ns
-local widget_support = require("opencode.ui.chat.widget_support")
+local widget_support = cs.module(view, require("opencode.ui.chat.widget_support"))
 local edit_state = require("opencode.edit.state")
-local tool_panel = require("opencode.ui.chat.tool_panel")
+local tool_panel = cs.module(view, require("opencode.ui.chat.tool_panel"))
 
 local function chat_tasks()
-	return require("opencode.ui.chat.tasks")
+	return cs.module(view, require("opencode.ui.chat.tasks"))
 end
 
 -- ─── Animation ────────────────────────────────────────────────────────────────
@@ -100,7 +101,7 @@ function M.is_animating_tool_part(tool_part)
 	if tool_part.tool == "task" then
 		return M.is_task_working(M.task_status(tool_part))
 	end
-	local tool_group = require("opencode.ui.chat.tool_group")
+	local tool_group = cs.module(view, require("opencode.ui.chat.tool_group"))
 	if chat_tasks().is_tool_leaf(tool_part) then return tool_group.is_working(tool_part) end
 	return (tool_part.activity_group ~= nil or is_animated_regular_tool(tool_part.tool)) and M.is_task_working(status)
 end
@@ -149,12 +150,17 @@ function M.start_task_animation_timer()
 		120,
 		vim.schedule_wrap(function()
 			if state.task_anim_timer ~= timer then return end
-			if not state.visible then
+			if not cs.valid(view) or not state.visible then
 				return
 			end
 
-			if edit_state.has_pending_edits() then
-				return
+			for id in pairs(state.edits) do
+				local edit = edit_state.get_edit(id)
+				if edit and edit.status == "pending" then
+					for _, file in ipairs(edit.files or {}) do
+						if file.status == "pending" then return end
+					end
+				end
 			end
 
 			if widget_support.in_place_updates_blocked() then
@@ -349,3 +355,5 @@ function M.update_animation_frames_in_place()
 end
 
 return M
+
+end)

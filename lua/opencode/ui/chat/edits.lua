@@ -1,13 +1,16 @@
+local cs = require("opencode.ui.chat.state")
+local active_inline_diff
+return cs.factory("edits", function(view)
 -- Edit widget lifecycle, handlers, and diff utilities for the chat buffer.
 
 local M = {}
 
-local cs = require("opencode.ui.chat.state")
-local state = cs.state
+local state = view
+local render = cs.module(view, require("opencode.ui.chat.render"))
 
 local edit_widget = require("opencode.ui.edit_widget")
 local edit_state = require("opencode.edit.state")
-local widget_support = require("opencode.ui.chat.widget_support")
+local widget_support = cs.module(view, require("opencode.ui.chat.widget_support"))
 local syntax = require("opencode.ui.syntax")
 local render_coordinator = require("opencode.ui.chat.render_coordinator")
 local actions = require("opencode.actions")
@@ -50,6 +53,7 @@ local function is_valid_buffer(bufnr)
 end
 
 local function reset_inline_diff_state()
+	if active_inline_diff == M then active_inline_diff = nil end
 	for _, mapping in ipairs(inline_diff_mappings) do keymaps.restore(mapping) end
 	inline_diff_mappings = {}
 	inline_diff_state.active = false
@@ -96,7 +100,7 @@ local function mark_inline_diff_window(winid)
 	if not is_valid_window(winid) then
 		return
 	end
-	pcall(vim.api.nvim_win_set_var, winid, INLINE_DIFF_WIN_VAR, true)
+	pcall(vim.api.nvim_win_set_var, winid, INLINE_DIFF_WIN_VAR, view == cs.state and true or view.id)
 end
 
 ---@param winid number|nil
@@ -126,7 +130,7 @@ local function is_inline_diff_window_marked(winid)
 		return false
 	end
 	local ok, marked = pcall(vim.api.nvim_win_get_var, winid, INLINE_DIFF_WIN_VAR)
-	return ok and marked == true
+	return ok and (marked == view.id or (marked == true and view == cs.state))
 end
 
 ---@return number[]
@@ -594,9 +598,9 @@ function M.rerender_edit(edit_id)
 
 	local e_lines, e_highlights, e_meta
 	if estate.status == "sent" then
-		e_lines, e_highlights, e_meta = edit_widget.get_resolved_lines(edit_id, estate)
+		e_lines, e_highlights, e_meta = edit_widget.get_resolved_lines(edit_id, estate, { width = render.get_chat_text_width(), render = render })
 	else
-		e_lines, e_highlights, e_meta = edit_widget.get_lines_for_edit(edit_id, estate)
+		e_lines, e_highlights, e_meta = edit_widget.get_lines_for_edit(edit_id, estate, { width = render.get_chat_text_width(), render = render })
 	end
 
 	if widget_support.replace_rendered_block(pos, { lines = e_lines, highlights = e_highlights }) then
@@ -789,18 +793,20 @@ function M.handle_edit_message()
 	end
 
 	local input_ui = require("opencode.ui.input")
-	local chat = require("opencode.ui.chat")
+	local chat = cs.module(view, require("opencode.ui.chat"))
 	local pending = require("opencode.session.pending")
 	local token = pending.token(estate.session_id)
+	local generation = view.generation
 
 	local function finish(text)
-		if not pending.is_current(token) or edit_state.get_edit(eid) ~= estate then return end
+		if not cs.valid(view, generation) or not pending.is_current(token) or edit_state.get_edit(eid) ~= estate then return end
 		if not edit_state.set_message(eid, text or "") then return end
 		M.rerender_edit(eid)
 		chat.focus()
 	end
 
 	input_ui.show({
+		view = view,
 		winid = state.winid,
 		float_dims = state.float_dims,
 		text = estate.message or "",
@@ -867,6 +873,7 @@ function M.handle_edit_diff_tab()
 
 	local native_diff = require("opencode.ui.native_diff")
 	native_diff.show(files, {
+		view = view,
 		-- Pass back-reference so the diff tab can sync status to the chat widget
 		edit_id = eid,
 		file_index = estate.selected_file,
@@ -907,7 +914,7 @@ function M.is_inline_diff_window(winid)
 end
 
 --- Close the active OpenCode inline diff split (if any).
----@param opts? table { check_unsaved?: boolean, unsaved_message?: string, silent?: boolean }
+---@param opts? table { check_unsaved?: boolean, unsaved_message?: string, silent?: boolean, preserve_actual?: boolean }
 ---@return boolean ok
 ---@return string|nil err
 ---@return number|nil reusable_win
@@ -989,9 +996,8 @@ function M.close_inline_diff_split(opts)
 	else
 		local estate = inline_diff_state.edit_id and edit_state.get_edit(inline_diff_state.edit_id)
 		for _, winid in ipairs(ordered_wins) do
-			if winid == actual_win and estate and estate.transport == "review_rpc" then
-				-- The actual pane was an existing editor window. Preserve it when
-				-- dismissing the proposal, together with its manual file buffer.
+			if winid == actual_win and (opts.preserve_actual or estate and estate.transport == "review_rpc") then
+				-- Keep manual file edits when dismissing a review or switching layouts.
 				reusable_win, reusable_buf, close_err = normalize_surviving_inline_diff_window(winid)
 			elseif is_valid_window(winid) then
 				local ok_close, err = close_window(winid, true)
@@ -1038,6 +1044,12 @@ function M.open_inline_diff_split(file, opts)
 			.. keymaps.label("chat", "toggle_diff", (state.config or {}).keymaps) .. " for the inline proposal.", vim.log.levels.WARN)
 		return
 	end
+	-- Neovim shares one diff set across every diff window in a tab.
+	if active_inline_diff and active_inline_diff ~= M then
+		local closed = active_inline_diff.close_inline_diff_split({ check_unsaved = true,
+			unsaved_message = "Save or discard inline diff changes before opening another diff split." })
+		if not closed then return end
+	end
 	ensure_inline_diff_state()
 	local ok_close, _, reusable_win = M.close_inline_diff_split({
 		check_unsaved = true,
@@ -1046,11 +1058,12 @@ function M.open_inline_diff_split(file, opts)
 	if not ok_close then
 		return
 	end
+	if is_valid_window(state.winid) then vim.api.nvim_set_current_win(state.winid) end
 
 	if state.visible and state.config and state.config.layout == "float" then
 		local chat_ok, chat = pcall(require, "opencode.ui.chat")
 		if chat_ok and type(chat.close) == "function" then
-			chat.close()
+			cs.module(view, chat).close()
 		end
 	end
 
@@ -1109,6 +1122,7 @@ function M.open_inline_diff_split(file, opts)
 	end)
 
 	inline_diff_state.active = true
+	active_inline_diff = M
 	inline_diff_state.actual_win = actual_win
 	inline_diff_state.actual_buf = actual_buf
 	inline_diff_state.proposed_win = proposed_win
@@ -1143,3 +1157,5 @@ function M.open_inline_diff_split(file, opts)
 end
 
 return M
+
+end)

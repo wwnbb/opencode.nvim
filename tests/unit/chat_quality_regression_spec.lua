@@ -78,6 +78,87 @@ describe("chat quality work and compatibility contracts", function()
 		assert.is_nil(support.get_interactive_meta(qpos, item, "question"))
 	end)
 
+	it("selects wrapped question options by their rendered row ranges", function()
+		questions.add_form({ id = "wrapped", sessionID = "quality", fields = {
+			{ key = "choice", type = "string", required = true, options = {
+				{ label = string.rep("Long option ", 30), value = "first" },
+				{ label = "Second option", value = "second" },
+			} },
+		} })
+		chat.do_render()
+		local handler = require("opencode.ui.chat.questions")
+		local function select_row(index, offset)
+			local pos = state.questions.wrapped
+			vim.api.nvim_win_set_cursor(state.winid, { pos.start_line + pos.meta.option_lines[index] + (offset or 0) + 1, 0 })
+			handler.sync_selected_option_from_cursor()
+		end
+		select_row(2)
+		assert.same({ 2 }, questions.get_current_selection("wrapped"))
+		select_row(1, 1)
+		assert.same({ 1 }, questions.get_current_selection("wrapped"))
+		local pos = state.questions.wrapped
+		vim.api.nvim_win_set_cursor(state.winid, { pos.end_line, 0 })
+		handler.sync_selected_option_from_cursor()
+		assert.same({ 1 }, questions.get_current_selection("wrapped"), "footer rows are not choices")
+	end)
+
+	it("sends rejection when the cursor selects Reject below a wrapped permission option", function()
+		replace(require("opencode.ui.chat.render"), "get_chat_text_width", function() return 18 end)
+		local item = permissions.add_permission("wrapped-permission", "quality", "bash", { always = { "*" } })
+		local reply
+		replace(require("opencode.actions"), "respond_permission", function(_, value) reply = value end)
+		chat.do_render()
+		local reject_row
+		for row, line in ipairs(vim.api.nvim_buf_get_lines(state.bufnr, 0, -1, false)) do
+			if line:find("3. Reject", 1, true) then reject_row = row end
+		end
+		assert.is_not_nil(reject_row)
+		vim.api.nvim_win_set_cursor(state.winid, { reject_row, 0 })
+		local interaction = require("opencode.ui.chat.interactions")
+		interaction.sync_widget_selection_from_cursor()
+		assert.equals(3, item.selected_option)
+		interaction.handle_question_confirm()
+		assert.equals("reject", reply)
+	end)
+
+	it("reviews answers when No follows a wrapped confirmation option", function()
+		replace(require("opencode.ui.chat.render"), "get_chat_text_width", function() return 25 end)
+		local item = questions.add_form({ id = "wrapped-confirmation", sessionID = "quality", fields = {
+			{ key = "choice", type = "boolean", default = false },
+		} })
+		assert.is_true(questions.set_confirming(item.request_id))
+		local submitted = false
+		replace(require("opencode.ui.chat.questions"), "submit_question_answers", function() submitted = true end)
+		chat.do_render()
+		local no_row
+		for row, line in ipairs(vim.api.nvim_buf_get_lines(state.bufnr, 0, -1, false)) do
+			if line:find("2. No,", 1, true) then no_row = row end
+		end
+		assert.is_not_nil(no_row)
+		vim.api.nvim_win_set_cursor(state.winid, { no_row, 0 })
+		local interaction = require("opencode.ui.chat.interactions")
+		interaction.sync_widget_selection_from_cursor()
+		assert.same({ 2 }, questions.get_current_selection(item.request_id))
+		local pos = state.questions[item.request_id]
+		assert.equals(no_row - pos.start_line - 1,
+			require("opencode.ui.question_widget").get_selection_focus_offset(pos.meta, nil, 2))
+		interaction.handle_question_confirm()
+		assert.equals("pending", item.status)
+		assert.is_false(submitted)
+	end)
+
+	it("focuses the chat when clicking its already selected native winbar tab", function()
+		state.winbar_targets = { { kind = "session", session_id = "quality" } }
+		vim.cmd("vnew")
+		local editor = vim.api.nvim_get_current_win()
+		local ok, err = pcall(function()
+			require("opencode.ui.chat.session_tabs").select_winbar_session(1)
+			assert.equals(state.winid, vim.api.nvim_get_current_win())
+		end)
+		vim.api.nvim_win_close(editor, true)
+		assert.is_true(ok, err)
+	end)
+
 	it("reads only visible summary rows in one animation batch", function()
 		local lines = { "⠋ Header" }
 		for index = 2, 501 do lines[index] = "  ↳ ⠋ task " .. index end

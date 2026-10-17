@@ -1,8 +1,10 @@
+local cs = require("opencode.ui.chat.state")
+return cs.factory("tool_panel", function(view)
 local M = {}
 
 local panel = require("opencode.ui.panel")
-local render = require("opencode.ui.chat.render")
-local chat_state = require("opencode.ui.chat.state").state
+local render = cs.module(view, require("opencode.ui.chat.render"))
+local chat_state = view
 local text_util = require("opencode.util.text")
 
 M.PANEL_PREFIX = "▏  "
@@ -34,6 +36,7 @@ end
 function M.create_panel(opts)
 	opts = opts or {}
 	local helpers = panel.create_helpers({
+		render = render,
 		prefix = opts.prefix or M.PANEL_PREFIX,
 		blank_prefix = opts.blank_prefix or M.PANEL_BLANK_PREFIX,
 		border_hl = opts.border_hl,
@@ -219,7 +222,7 @@ end
 ---@return string
 function M.overflow_text(remaining, noun)
 	noun = noun or "lines"
-	local key = require("opencode.util.keymap").label("chat", "toggle_tool", (require("opencode.ui.chat.state").state.config or {}).keymaps)
+	local key = require("opencode.util.keymap").label("chat", "toggle_tool", (view.config or {}).keymaps)
 	return "… (" .. tostring(remaining) .. " more " .. noun .. ", press " .. key .. " to expand)"
 end
 
@@ -265,3 +268,5 @@ function M.normalize_number(value)
 end
 
 return M
+
+end)

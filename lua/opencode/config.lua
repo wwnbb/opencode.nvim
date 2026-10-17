@@ -87,7 +87,7 @@ M.defaults = {
 
 	chat = {
 		diff_view = "auto", -- "auto", "split", or "unified"
-		layout = "vertical",
+		layout = "vertical", -- "vertical", "horizontal", "float", or "tab"
 		position = "right",
 		width = 80,
 		height = 20,

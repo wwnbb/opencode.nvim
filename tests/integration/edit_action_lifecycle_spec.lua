@@ -1,5 +1,6 @@
 local chat_edits = require("opencode.ui.chat.edits")
 local chat_state = require("opencode.ui.chat.state").state
+local chat = require("opencode.ui.chat").for_view(chat_state)
 local edit_state = require("opencode.edit.state")
 local changes = require("opencode.artifact.changes")
 local native_diff = require("opencode.ui.native_diff")
@@ -19,7 +20,7 @@ describe("edit widget action lifecycle", function()
 		bufnr = vim.api.nvim_create_buf(false, true)
 		vim.api.nvim_win_set_buf(winid, bufnr)
 		originals = { finalize = chat_edits.finalize_edit, rerender = chat_edits.rerender_edit,
-			notify = vim.notify, show = native_diff.show, input_show = require("opencode.ui.input").show, focus = require("opencode.ui.chat").focus }
+			notify = vim.notify, show = native_diff.show, input_show = require("opencode.ui.input").show, focus = chat.focus }
 		original_accept, original_reject = changes.accept, changes.reject
 		chat_edits.finalize_edit = function(id)
 			calls.finalize, calls.last_finalized = calls.finalize + 1, id
@@ -27,7 +28,7 @@ describe("edit widget action lifecycle", function()
 		chat_edits.rerender_edit = function(id)
 			calls.rerender, calls.last_rerendered = calls.rerender + 1, id
 		end
-		require("opencode.ui.chat").focus = function() end
+		chat.focus = function() end
 		captured_native_show = nil
 		native_diff.show = function(files, opts) captured_native_show = { files = files, opts = opts } end
 	end)
@@ -35,7 +36,7 @@ describe("edit widget action lifecycle", function()
 		chat_edits.finalize_edit, chat_edits.rerender_edit = originals.finalize, originals.rerender
 		changes.accept, changes.reject = original_accept, original_reject
 		vim.notify, native_diff.show = originals.notify, originals.show
-		require("opencode.ui.input").show, require("opencode.ui.chat").focus = originals.input_show, originals.focus
+		require("opencode.ui.input").show, chat.focus = originals.input_show, originals.focus
 		vim.api.nvim_win_set_buf(winid, old_buffer)
 		if vim.api.nvim_buf_is_valid(bufnr) then vim.api.nvim_buf_delete(bufnr, { force = true }) end
 		for key in pairs(chat_state) do chat_state[key] = nil end
@@ -131,7 +132,7 @@ describe("edit widget action lifecycle", function()
 	end)
 
 	for _, method in ipairs({ "on_send", "on_cancel" }) do
-		for _, reset in ipairs({ "owner", "epoch" }) do
+		for _, reset in ipairs({ "owner", "epoch", "pane" }) do
 			it("ignores an old edit note " .. method .. " after its " .. reset .. " changes", function()
 				make_edit("note-edit", 1)
 				local shown
@@ -139,6 +140,7 @@ describe("edit widget action lifecycle", function()
 				chat_edits.handle_edit_message()
 				assert.is_function(shown[method])
 				if reset == "owner" then make_edit("note-edit", 1)
+				elseif reset == "pane" then chat_state.generation = chat_state.generation + 1
 				else require("opencode.session.pending").clear_session("session_edit_lifecycle") end
 				assert.is_true(edit_state.set_message("note-edit", "New note"))
 				shown[method]("Old note")

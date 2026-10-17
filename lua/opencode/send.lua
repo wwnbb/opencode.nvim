@@ -81,6 +81,7 @@ local function restore_draft(text, opts)
 		history.set_pending_mode(opts.mode or "normal", session_id)
 		local options = vim.deepcopy(opts)
 		options.parts, options._draft_session_id = nil, nil
+		options._view_id, options._view_generation = nil, nil
 		options._token, options._catalog_ready, options._catalog_retry, options._catalog_deadline = nil, nil, nil, nil
 		options._context_snapshot, options._context_error = nil, nil
 		history.set_pending_options(options, session_id)
@@ -261,6 +262,18 @@ local function submit(session_id, payload, selection, text, opts, known_session)
 	return true
 end
 
+local function bind_created_session(info, opts)
+	if opts._view_id then
+		local cs = require("opencode.ui.chat.state")
+		local view = cs.get(opts._view_id)
+		if cs.valid(view, opts._view_generation) and (view.visible or view.suspended) then
+			require("opencode.ui.chat").bind_session(view, info, { reason = "send_create_session", preserve_cache = true })
+		end
+	elseif not state.get_session().id then
+		session_actions.set_active(info.id, info.title or "New session", { reason = "send_create_session", preserve_cache = true })
+	end
+end
+
 -- Both former sync/async modes return admission. Execution ends only through
 -- terminal events/reconciliation; a successful POST never sets the session idle.
 function M.send(text, opts)
@@ -296,7 +309,7 @@ function M.send(text, opts)
 				if not pending.is_current(token) then return end
 				if err then fail_before_send(err.message or "Session creation failed", text, opts); return end
 				session_actions.remember(info)
-				if not state.get_session().id then session_actions.set_active(info.id, info.title, { preserve_cache = true }) end
+				bind_created_session(info, opts)
 				run(info.id)
 			end)
 		end
@@ -346,9 +359,7 @@ function M.send(text, opts)
 		if not pending.is_current(token) then return end
 		if err then fail_before_send(err.message or "Session creation failed", text, opts); return end
 		session_actions.remember(info)
-		if not state.get_session().id then
-			session_actions.set_active(info.id, info.title or "New session", { reason = "send_create_session", preserve_cache = true })
-		end
+		bind_created_session(info, opts)
 		submit(info.id, payload, selection, text, opts, info)
 	end)
 	return true

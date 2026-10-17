@@ -77,6 +77,17 @@ end
 function M.source() M.observe(); return last and vim.deepcopy(last) end
 function M.clear() last = nil end
 
+-- Native tab creation briefly enters an ordinary buffer in the new tab.
+function M.preserve_source(fn)
+	M.observe()
+	local source, values, count = last
+	local function capture(...) values, count = { ... }, select("#", ...) end
+	local ok, err = xpcall(function() capture(fn()) end, debug.traceback)
+	last = source
+	if not ok then error(err, 0) end
+	return (table.unpack or unpack)(values, 1, count)
+end
+
 local function provider(limit) return { blocks = {}, remaining = limit } end
 
 local function add_line(value, line)

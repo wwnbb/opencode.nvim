@@ -119,18 +119,19 @@ for arity, methods in pairs({
 	[0] = {
 		"open", "toggle", "close", "focus",
 		"focus_input", "start", "stop", "restart",
-		"disconnect", "abort", "complete", "complete_with_prompt", "accept_completion",
+		"disconnect", "complete", "complete_with_prompt", "accept_completion",
 		"dismiss_completion", "completion_visible", "explain_selection", "is_danger_mode_enabled",
-		"paste_clipboard", "command_palette", "active_sessions",
+		"paste_clipboard", "command_palette",
 	},
 	[1] = {
+		"abort", "active_sessions",
 		"open_input_at_end", "enable_danger_mode", "disable_danger_mode", "toggle_danger_mode",
 		"clear", "new_session", "close_session", "add_current_line_to_input",
 		"add_current_line", "add_current_line_and_open_input", "add_visual_selection_to_input", "add_visual_selection",
 		"add_visual_selection_and_open_input",
 	},
 	[2] = {
-		"ask_btw", "set_danger_mode", "send",
+		"ask_btw", "set_danger_mode", "send", "split",
 	},
 }) do
 	for _, method in ipairs(methods) do M[method] = api_forwarders[arity](method) end
@@ -148,17 +149,44 @@ function M.observe_session(session_id, visible)
 	return require("opencode.session.tabs").observe(session_id, visible)
 end
 
-function M.reopen_session_tab()
-	return with_connection(function() require("opencode.session.tabs").reopen() end)
+function M.refresh_session_scope()
+	return require("opencode.session.tabs").refresh_scope()
 end
 
-function M.reorder_session_tab(direction)
-	local id = require("opencode.selectors").get_current_runtime_root_id()
+function M.reopen_session_tab(opts)
+	return with_connection(function() require("opencode.session.tabs").reopen(opts) end)
+end
+
+function M.reorder_session_tab(direction, opts)
+	local cs = package.loaded["opencode.ui.chat.state"]
+	local view = opts and opts.view or (cs and cs.current())
+	if view and view.workspace_id and view.config and view.config.layout == "tab" then
+		return require("opencode.ui.chat.workspace").reorder(view.workspace_id, direction)
+	end
+	local id = require("opencode.selectors").get_current_runtime_root_id(opts)
 	return require("opencode.session.tabs").reorder(id, direction)
 end
 
 function M.set_active_session(session_id, name, opts)
 	return sessions().set_active(session_id, name, opts)
+end
+
+function M.activate_chat_view(view)
+	local cs = require("opencode.ui.chat.state")
+	if not cs.valid(view) then return end
+	local session = cs.session(view)
+	if state().get_session().id == session.id then return end
+	return sessions().set_active(session.id, session.title or session.name, {
+		view_id = view.id, reason = "pane_focus", preserve_cache = true,
+		runtime = not session.parentID,
+	})
+end
+
+function M.set_view_session(view, session_id, name, opts)
+	local cs = require("opencode.ui.chat.state")
+	if not view.session_bound then return M.set_active_session(session_id, name, opts) end
+	return require("opencode.ui.chat").bind_session(view,
+		state().get_session_record(session_id) or { id = session_id, name = name }, opts)
 end
 
 function M.remember_session(session, opts)
@@ -446,12 +474,12 @@ function M.queue_pending_input(session_id, message_id, callback)
 	end, session_id)
 end
 
-function M.list_agents(callback)
-	return load_catalog("list_agents", "agents", callback)
+function M.list_agents(callback, opts)
+	return load_catalog("list_agents", "agents", callback, opts)
 end
 
-function M.select_agent(agent_name)
-	local_state().agent.set(agent_name)
+function M.select_agent(agent_name, opts)
+	local_state().agent.set(agent_name, opts)
 	update_input_info_bar()
 end
 
@@ -582,8 +610,8 @@ function M.select_model(model, opts)
 	update_input_info_bar()
 end
 
-function M.select_variant(value)
-	local selected = local_state().variant.set(value)
+function M.select_variant(value, opts)
+	local selected = local_state().variant.set(value, opts)
 	update_input_info_bar()
 	return selected
 end

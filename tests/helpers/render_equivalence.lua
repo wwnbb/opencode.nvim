@@ -105,7 +105,7 @@ end
 ---@param opts? table { clear?: function[], animation?: boolean, windows?: number[] }
 function M.cold_snapshot(opts)
 	opts = opts or {}
-	local chat = require("opencode.ui.chat")
+	local chat = require("opencode.ui.chat").for_view(state)
 	local original_render, rendered = chat.render, nil
 	chat.render = function(...)
 		local raw, nui, highlights = original_render(...)

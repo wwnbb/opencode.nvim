@@ -1,3 +1,5 @@
+local cs = require("opencode.ui.chat.state")
+return cs.factory("render", function(view)
 -- Pure NuiLine-based rendering helpers for the chat buffer.
 -- No state mutations here — functions only read state (for window width and
 -- model info) or operate on their arguments.  Buffer-mutating highlight
@@ -14,8 +16,7 @@ local sync = require("opencode.sync")
 local syntax = require("opencode.ui.syntax")
 local highlights = require("opencode.ui.highlights")
 
-local cs = require("opencode.ui.chat.state")
-local state = cs.state
+local state = view
 local PANEL_BACKGROUND_HL_PRIORITY = 4000
 local UI_HIGHLIGHT_PRIORITY = 4200
 local PANEL_PREFIX_HL_PRIORITY = UI_HIGHLIGHT_PRIORITY + 1
@@ -1149,3 +1150,5 @@ function M.render_metadata_footer(message, messages, opts)
 end
 
 return M
+
+end)

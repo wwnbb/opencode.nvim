@@ -1,12 +1,13 @@
+local cs = require("opencode.ui.chat.state")
+return cs.factory("render_context", function(view)
 local M = {}
 
 local NuiLine = require("nui.line")
 
-local cs = require("opencode.ui.chat.state")
-local state = cs.state
-local render = require("opencode.ui.chat.render")
-local render_state = require("opencode.ui.chat.render_state")
-local widget_support = require("opencode.ui.chat.widget_support")
+local state = view
+local render = cs.module(view, require("opencode.ui.chat.render"))
+local render_state = cs.module(view, require("opencode.ui.chat.render_state"))
+local widget_support = cs.module(view, require("opencode.ui.chat.widget_support"))
 local sync = require("opencode.sync")
 local syntax = require("opencode.ui.syntax")
 
@@ -25,7 +26,8 @@ function M.new(opts)
 	)
 
 	return setmetatable({
-		current_session = opts.current_session or {},
+		view = view,
+		current_session = opts.current_session or cs.session(view),
 		in_child_session_view = opts.in_child_session_view == true,
 		chat_config = opts.chat_config or {},
 		raw_lines = {},
@@ -235,3 +237,5 @@ function Context:commit_stream_blocks()
 end
 
 return M
+
+end)

@@ -4,6 +4,7 @@ local M = {
 		close_session = "<leader>oq", abort = "<leader>ox", active_sessions = "<leader>oS" },
 	chat = {
 		close = "q", close_session = "x", cancel_question = false,
+		split_vertical = { "<C-w>v", "<C-w><C-v>" }, split_horizontal = { "<C-w>s", "<C-w><C-s>" },
 		cancel_pending = "C", edit_pending = "E", steer_pending = "S", queue_pending = "Q",
 		focus_input = "i", scroll_up = "<C-u>", scroll_down = "<C-d>", goto_top = "gg", goto_bottom = "G", abort = "<C-c>",
 		prev_user_message = "[a", next_user_message = "]a", prev_message = "[m", next_message = "]m",

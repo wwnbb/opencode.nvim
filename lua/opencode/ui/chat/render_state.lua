@@ -1,13 +1,16 @@
+local cs = require("opencode.ui.chat.state")
+return cs.factory("render_state", function(view)
 local M = {}
 
-local cs = require("opencode.ui.chat.state")
-local state = cs.state
+local state = view
 local memo = require("opencode.util.memo")
 
 local RENDER_CACHE_MAX_BLOCKS = 1000
 local TASK_SUMMARY_CACHE_MAX_ENTRIES = 100
-local render_pool = memo.new("render", { max_entries = RENDER_CACHE_MAX_BLOCKS })
-local task_summary_pool = memo.new("task_summary", { max_entries = TASK_SUMMARY_CACHE_MAX_ENTRIES })
+local suffix = view == cs.state and "" or ":" .. view.id
+local render_pool_name, task_summary_pool_name = "render" .. suffix, "task_summary" .. suffix
+local render_pool = memo.new(render_pool_name, { max_entries = RENDER_CACHE_MAX_BLOCKS })
+local task_summary_pool = memo.new(task_summary_pool_name, { max_entries = TASK_SUMMARY_CACHE_MAX_ENTRIES })
 local render_identity, task_summary_identity
 local CODE_CACHE_MAX_ENTRIES = 128
 local CODE_CACHE_MAX_BYTES = 8 * 1024 * 1024
@@ -112,6 +115,16 @@ end
 
 function M.task_summary_cache_stats()
 	return ensure_task_summary_pool():stats()
+end
+
+function M.dispose()
+	M.clear_render_cache()
+	M.clear_task_summary_cache()
+	M.clear_code_cache()
+	if view ~= cs.state then
+		memo.remove(render_pool_name)
+		memo.remove(task_summary_pool_name)
+	end
 end
 
 ---@param child_session_id string
@@ -231,7 +244,7 @@ end
 function M.reset_chat_surface(opts)
 	opts = opts or {}
 	local details = package.loaded["opencode.ui.chat.execute_details"]
-	if details then details.close({ restore_focus = false }) end
+	if details then cs.module(view, details).close({ restore_focus = false }) end
 	state.questions = {}
 	state.permissions = {}
 	state.edits = {}
@@ -256,7 +269,7 @@ function M.reset_chat_surface(opts)
 	if not opts.preserve_render_cache then
 		M.clear_render_cache()
 		M.clear_code_cache()
-		memo.clear_all()
+		if not view.session_bound then memo.clear_all() end
 	end
 end
 
@@ -420,3 +433,5 @@ function M.highlight_clear_start(changed_start, content_highlights)
 end
 
 return M
+
+end)

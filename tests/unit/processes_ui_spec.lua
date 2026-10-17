@@ -1,6 +1,6 @@
 describe("session shell process UI", function()
 	local state, pending = require("opencode.state"), require("opencode.session.pending")
-	local actions, stubs, timers, requests, saved_defer, saved_columns, saved_lines, processes, popup
+	local actions, stubs, timers, requests, saved_defer, saved_columns, saved_lines, processes, popup, views
 	local function entry(id, sid)
 		return { id = id or "sh_one", command = "echo 😀", status = "running", metadata = { sessionID = sid or "ses_a" },
 			location = { directory = "/original" } }
@@ -14,7 +14,7 @@ describe("session shell process UI", function()
 	before_each(function()
 		state.reset(); pending.clear_all(); state.upsert_session({ id = "ses_a", directory = "/original" }); state.set_session("ses_a", "A")
 		state.set_connection("connected")
-		actions, stubs, timers, requests = require("opencode.actions"), {}, {}, {}
+		actions, stubs, timers, requests, views = require("opencode.actions"), {}, {}, {}, {}
 		saved_defer, saved_columns, saved_lines = vim.defer_fn, vim.o.columns, vim.o.lines
 		vim.o.columns, vim.o.lines = 120, 45
 		vim.defer_fn = function(fn, delay)
@@ -32,6 +32,7 @@ describe("session shell process UI", function()
 		processes = require("opencode.ui.palette.processes")
 	end)
 	after_each(function()
+		for _, view in ipairs(views) do require("opencode.ui.chat.state").remove(view) end
 		if popup then popup:close(); popup = nil end
 		for _, timer in ipairs(timers) do if not timer.closed then timer:close() end end
 		for _, replacement in ipairs(stubs) do replacement:revert() end
@@ -101,6 +102,21 @@ describe("session shell process UI", function()
 		processes.list({ session_id = "ses_a" })
 		state.set_session("ses_b", "B"); reply(nil, { entry() })
 		assert.is_false(opened)
+	end)
+	it("loads processes for an unfocused pane and invalidates its menu after rebinding", function()
+		local view = require("opencode.ui.chat.state").new()
+		view.session_id, view.visible = "ses_a", true
+		views[#views + 1] = view
+		local reply, menu, kills = nil, nil, 0
+		stub(actions, "list_shells", function(opts, cb) assert.equals("/original", opts.directory); reply = cb end)
+		stub(require("opencode.ui.menu"), "open", function(opts) menu = opts end)
+		stub(actions, "remove_shell", function() kills = kills + 1 end)
+		processes.list({ view = view })
+		state.set_session("ses_b", "B"); reply(nil, { entry() })
+		assert.equals(view, menu.context.view)
+		view.generation = view.generation + 1
+		menu.keys[2].handler(nil, menu.items[1])
+		assert.equals(0, kills)
 	end)
 	it("cannot refresh, reopen or kill from a stale process menu after reconnect", function()
 		local menu, loads, kills = nil, 0, 0

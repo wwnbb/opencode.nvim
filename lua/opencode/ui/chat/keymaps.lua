@@ -1,17 +1,19 @@
+local cs = require("opencode.ui.chat.state")
+return cs.factory("keymaps", function(view)
 local M = {}
 
 local keymaps = require("opencode.util.keymap")
 
 local actions = require("opencode.actions")
-local chat_tasks = require("opencode.ui.chat.tasks")
-local chat_edits = require("opencode.ui.chat.edits")
-local chat_interactions = require("opencode.ui.chat.interactions")
-local chat_questions = require("opencode.ui.chat.questions")
-local chat_nav = require("opencode.ui.chat.nav")
-local chat_session_tabs = require("opencode.ui.chat.session_tabs")
+local chat_tasks = cs.module(view, require("opencode.ui.chat.tasks"))
+local chat_edits = cs.module(view, require("opencode.ui.chat.edits"))
+local chat_interactions = cs.module(view, require("opencode.ui.chat.interactions"))
+local chat_questions = cs.module(view, require("opencode.ui.chat.questions"))
+local chat_nav = cs.module(view, require("opencode.ui.chat.nav"))
+local chat_session_tabs = cs.module(view, require("opencode.ui.chat.session_tabs"))
 local palette = require("opencode.ui.palette")
 
-local state = require("opencode.ui.chat.state").state
+local state = view
 
 local SESSION_TAB_COUNT_MAPPING_LIMIT = 99
 
@@ -23,10 +25,10 @@ function M.setup_buffer(bufnr, opts)
 	vim.bo[bufnr].swapfile = false
 	vim.bo[bufnr].filetype = "opencode"
 	vim.bo[bufnr].modifiable = false
-	pcall(vim.api.nvim_buf_set_name, bufnr, "opencode")
+	pcall(vim.api.nvim_buf_set_name, bufnr, view == cs.state and "opencode" or ("opencode [" .. view.id .. "]"))
 
 	opts = opts or {}
-	local cfg = state.config
+	local cfg = state.config or {}
 	local keymap_opts = { noremap = true, silent = true }
 	local map, apply = keymaps.mapper("chat", bufnr, cfg.keymaps)
 	local keys = keymaps.get("chat", cfg.keymaps)
@@ -36,6 +38,11 @@ function M.setup_buffer(bufnr, opts)
 			opts.close()
 		end
 	end, keymap_opts)
+
+	if cfg.layout == "tab" then
+		map("n", "split_vertical", function() actions.split("vertical", { view = view }) end, keymap_opts)
+		map("n", "split_horizontal", function() actions.split("horizontal", { view = view }) end, keymap_opts)
+	end
 
 	map("n", "focus_input", function()
 		if type(opts.focus_input) == "function" then
@@ -67,10 +74,10 @@ function M.setup_buffer(bufnr, opts)
 	end, vim.tbl_extend("force", keymap_opts, { desc = "Next pending permission" }))
 
 	map("n", "abort", function()
-		actions.abort()
+		actions.abort({ session_id = cs.session(view).id, view = view })
 	end, vim.tbl_extend("force", keymap_opts, { desc = "Stop current generation" }))
 
-	local pending_inputs = require("opencode.ui.chat.pending_inputs")
+	local pending_inputs = cs.module(view, require("opencode.ui.chat.pending_inputs"))
 	for _, command in ipairs(pending_inputs.commands) do
 		map("n", command.name .. "_pending", function(key)
 			if pending_inputs.handle(command.name) then return end
@@ -91,21 +98,22 @@ function M.setup_buffer(bufnr, opts)
 	end, keymap_opts)
 
 	map("n", "command_palette", function()
-		palette.show()
+		palette.show({ view = view, generation = view.generation })
 	end, vim.tbl_extend("force", keymap_opts, { desc = "Open command palette" }))
 	map("n", "timeline", function()
-		require("opencode.ui.timeline").show()
+		require("opencode.ui.timeline").show({ view = view, generation = view.generation })
 	end, vim.tbl_extend("force", keymap_opts, { desc = "Choose a historical user turn" }))
 	map("n", "message_actions", function()
-		require("opencode.ui.timeline").show_actions_at_cursor()
+		require("opencode.ui.timeline").show_actions_at_cursor({ view = view, generation = view.generation })
 	end, vim.tbl_extend("force", keymap_opts, { desc = "Actions for user message under cursor" }))
 
 	map("n", "new_session", function()
-		actions.new_session()
+		actions.new_session({ view = view })
 	end, vim.tbl_extend("force", keymap_opts, { desc = "Start new session" }))
 
 	map("n", "close_session", function()
-		actions.close_session({ notify = true })
+		if cfg.layout == "tab" then return require("opencode.ui.chat.workspace").close_current() end
+		actions.close_session({ notify = true, session_id = cs.session(view).id, view = view })
 	end, vim.tbl_extend("force", keymap_opts, { desc = "Close current OpenCode session tab" }))
 
 	-- Session tab switching by index: digits accumulate a pending count that the
@@ -306,3 +314,5 @@ function M.setup_buffer(bufnr, opts)
 end
 
 return M
+
+end)

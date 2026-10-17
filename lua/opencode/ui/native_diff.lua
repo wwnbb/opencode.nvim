@@ -8,6 +8,7 @@ local M = {}
 local syntax = require("opencode.ui.syntax")
 local pending = require("opencode.session.pending")
 local keymaps = require("opencode.util.keymap")
+local views = require("opencode.ui.chat.state")
 local diff_mappings = {}
 local view_generation = 0
 
@@ -50,6 +51,7 @@ local function focus_diff_window(winid)
 end
 
 local function rpc_review()
+	if state.view and not views.valid(state.view, state.owner_generation) then return nil end
 	local edit = state.edit_id and require("opencode.edit.state").get_edit(state.edit_id)
 	return edit and edit == state.review and pending.is_current(state.token) and edit.transport == "review_rpc" and edit or nil
 end
@@ -73,18 +75,21 @@ local function edit_note()
 
 	local input = require("opencode.ui.input")
 	local token = pending.token(estate.session_id)
+	local generation = view_generation
 	local current = vim.api.nvim_get_current_win()
 	local function finish(text)
-		if not pending.is_current(token) or state.edit_id ~= edit_id or edit_state.get_edit(edit_id) ~= estate then return end
+		if generation ~= view_generation or not rpc_review() or not pending.is_current(token)
+			or state.edit_id ~= edit_id or edit_state.get_edit(edit_id) ~= estate then return end
 		if not edit_state.set_message(edit_id, text or "") then return end
 		local ok_edits, chat_edits = pcall(require, "opencode.ui.chat.edits")
 		if ok_edits and chat_edits.rerender_edit then
-			chat_edits.rerender_edit(edit_id)
+			views.module(state.view, chat_edits).rerender_edit(edit_id)
 		end
 		focus_diff_window(current)
 	end
 
 	input.show({
+		view = state.view,
 		winid = current,
 		text = estate.message or "",
 		persist_pending = false,
@@ -153,6 +158,7 @@ function M.close()
 
 	-- Capture previous_winid BEFORE resetting state (state reset nils it)
 	local prev_win = state.previous_winid
+	local owner, owner_generation = state.view, state.owner_generation
 
 	-- Reset state
 	state.active = false
@@ -162,10 +168,12 @@ function M.close()
 	state.edit_id = nil
 	state.edit_file_index = nil
 	state.review, state.token = nil, nil
+	state.view, state.owner_generation = nil, nil
 
 	-- Restore focus to previous window
 	vim.schedule(function()
 		if generation ~= view_generation then return end
+		if owner and not views.valid(owner, owner_generation) then return end
 		if prev_win and vim.api.nvim_win_is_valid(prev_win) then
 			vim.api.nvim_set_current_win(prev_win)
 		end
@@ -173,6 +181,7 @@ function M.close()
 		-- Re-open input only if the chat is still visible (it may have been
 		-- closed by WinEnter/TabEnter while the diff tab was active)
 		local chat_ok, chat = pcall(require, "opencode.ui.chat")
+		if chat_ok and owner then chat = views.module(owner, chat) end
 		if chat_ok and chat.focus_input and chat.is_visible and chat.is_visible() then
 			chat.focus_input()
 		end
@@ -190,7 +199,7 @@ local function rpc_file_action(action)
 		vim.notify("Review action failed: " .. (err or "unknown error"), vim.log.levels.WARN)
 		return false
 	end
-	require("opencode.ui.chat.edits").refresh_edit(state.edit_id)
+	views.module(state.view, require("opencode.ui.chat.edits")).refresh_edit(state.edit_id)
 	return true
 end
 
@@ -229,7 +238,7 @@ local function setup_keymaps()
 		local bind, apply = keymaps.mapper("native_diff", buf)
 		local function map(action, callback)
 			bind("n", action, function()
-				if generation == view_generation then callback() end
+				if generation == view_generation and (action == "close" or action == "help" or rpc_review()) then callback() end
 			end)
 		end
 
@@ -439,7 +448,7 @@ function M._reject_all()
 	if not rpc_review() then return end
 	local ok, err = require("opencode.edit.state").reject_all(state.edit_id)
 	if not ok then vim.notify("Review rejection failed: " .. (err or "unknown error"), vim.log.levels.WARN); return end
-	require("opencode.ui.chat.edits").refresh_edit(state.edit_id)
+	views.module(state.view, require("opencode.ui.chat.edits")).refresh_edit(state.edit_id)
 	M.close()
 	vim.notify("All changes rejected", vim.log.levels.INFO)
 end
@@ -471,6 +480,7 @@ end
 ---@param opts? table Options
 function M.show(files, opts)
 	opts = opts or {}
+	if opts.view and not views.valid(opts.view) then return false end
 	local edit = opts.edit_id and require("opencode.edit.state").get_edit(opts.edit_id)
 	if not edit or edit.transport ~= "review_rpc" then return false end
 	if edit and edit.apply_mode == "server" then
@@ -504,6 +514,9 @@ function M.show(files, opts)
 	state.edit_id = opts.edit_id or nil
 	state.edit_file_index = opts.file_index or nil
 	state.review, state.token = edit, pending.token(edit.session_id)
+	local owner = opts.view or views.current()
+	state.view = opts.view or (views.session(owner).id == edit.session_id and owner or nil)
+	state.owner_generation = state.view and state.view.generation
 
 	logger.info("native_diff: starting review", {
 		review_id = opts.edit_id,

@@ -1,31 +1,35 @@
+local cs = require("opencode.ui.chat.state")
+return cs.factory("tool_group", function(view)
 -- Tool activity families are data; grouping, status and tree behavior are shared.
 -- Renderer modules are loaded lazily so their widgets can use these same policies.
 local M = {}
 
-local render = require("opencode.ui.chat.render")
+local render = cs.module(view, require("opencode.ui.chat.render"))
 local tree = require("opencode.ui.chat.widget_tree")
 local text = require("opencode.util.text")
-local memo = require("opencode.util.memo").new("activity_leaf", { max_entries = 1000 })
+local memo_store = require("opencode.util.memo")
+local memo_name = "activity_leaf" .. (view == cs.state and "" or ":" .. view.id)
+local memo = memo_store.new(memo_name, { max_entries = 1000 })
 
 local definitions = {
 	explore = {
 		active = "Exploring", completed = "Explored",
 		tools = { read = "read", glob = "search", grep = "search", rg = "search" },
 		plurals = { read = "reads", search = "searches" },
-		renderer = function() return require("opencode.ui.chat.exploration_tool") end,
+		renderer = function() return cs.module(view, require("opencode.ui.chat.exploration_tool")) end,
 	},
 	execute = {
 		active = "Executing", completed = "Executed",
 		tools = { execute = "call" }, plurals = { call = "calls" },
-		renderer = function() return require("opencode.ui.chat.execute") end,
+		renderer = function() return cs.module(view, require("opencode.ui.chat.execute")) end,
 	},
 	web = {
 		active = "Browsing", completed = "Browsed",
 		tools = { websearch = "search", webfetch = "fetch" },
 		plurals = { search = "searches", fetch = "fetches" },
 		renderer = function(part)
-			if part.tool == "websearch" then return require("opencode.ui.chat.websearch") end
-			return require("opencode.ui.chat.webfetch")
+			if part.tool == "websearch" then return cs.module(view, require("opencode.ui.chat.websearch")) end
+			return cs.module(view, require("opencode.ui.chat.webfetch"))
 		end,
 	},
 }
@@ -92,6 +96,11 @@ function M.clear_leaf_cache()
 	memo:clear()
 end
 
+function M.dispose()
+	memo:clear()
+	if view ~= cs.state then memo_store.remove(memo_name) end
+end
+
 function M.clear_session(session_id)
 	if type(session_id) ~= "string" then return end
 	local prefix = session_id .. "\0"
@@ -101,10 +110,10 @@ function M.clear_session(session_id)
 end
 
 local function leaf_dependencies()
-	local style = require("opencode.ui.chat.tool_style")
-	local bufnr = require("opencode.ui.chat.state").state.bufnr
+	local style = cs.module(view, require("opencode.ui.chat.tool_style"))
+	local bufnr = view.bufnr
 	local tabstop = bufnr and vim.api.nvim_buf_is_valid(bufnr) and vim.bo[bufnr].tabstop or vim.bo.tabstop
-	return require("opencode.ui.chat.render_state").render_cache_key(
+	return cs.module(view, require("opencode.ui.chat.render_state")).render_cache_key(
 		render.get_chat_text_width(), vim.fn.getcwd(),
 		((require("opencode.state").get_config() or {}).session or {}).markdown,
 		require("opencode.ui.syntax").get_cache_generation(),
@@ -186,7 +195,7 @@ local function render_leaf(part, expanded, opts, dependencies, message)
 	local message_id = part.messageID or (message and message.id)
 	local session_id = part.sessionID or (message and message.sessionID)
 	local owned = message_id and sync.get_part(message_id, part.id) == part
-	local key = require("opencode.ui.chat.render_state").render_cache_key
+	local key = cs.module(view, require("opencode.ui.chat.render_state")).render_cache_key
 	local owner = key(session_id, message_id, part.id or tostring(part))
 	local signature = key(dependencies or leaf_dependencies(), expanded == true,
 		(opts or {}).grouped == true, widget.render, M.cache_key(part),
@@ -255,7 +264,7 @@ function M.render(kind, refs, expanded, expansions)
 		labels[#labels + 1] = count .. " " .. (count == 1 and name or definition.plurals[name])
 	end
 	local header = expanded and "↘" or "→"
-	if working then header = header .. " " .. require("opencode.ui.chat.task_animation").get_task_anim_frame() end
+	if working then header = header .. " " .. cs.module(view, require("opencode.ui.chat.task_animation")).get_task_anim_frame() end
 	header = header .. " " .. (working and definition.active or definition.completed) .. " — " .. table.concat(labels, ", ")
 	if failed > 0 then header = header .. " · " .. failed .. " failed" end
 	local latest = refs[#refs]
@@ -291,3 +300,5 @@ function M.render(kind, refs, expanded, expansions)
 end
 
 return M
+
+end)

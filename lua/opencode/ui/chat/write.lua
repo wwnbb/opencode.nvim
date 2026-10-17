@@ -1,9 +1,11 @@
+local cs = require("opencode.ui.chat.state")
+return cs.factory("write", function(view)
 local M = { animation_line = 0 }
 
-local render = require("opencode.ui.chat.render")
-local tool_panel = require("opencode.ui.chat.tool_panel")
-local tool_group = require("opencode.ui.chat.tool_group")
-local style = require("opencode.ui.chat.tool_style")
+local render = cs.module(view, require("opencode.ui.chat.render"))
+local tool_panel = cs.module(view, require("opencode.ui.chat.tool_panel"))
+local tool_group = cs.module(view, require("opencode.ui.chat.tool_group"))
+local style = cs.module(view, require("opencode.ui.chat.tool_style"))
 local syntax = require("opencode.ui.syntax")
 local text = require("opencode.util.text")
 local panel = style.panel
@@ -66,3 +68,5 @@ function M.render_tool(part, expanded)
 end
 
 return M
+
+end)

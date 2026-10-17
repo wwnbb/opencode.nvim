@@ -11,6 +11,29 @@ local pending_helper = require("opencode.session.pending")
 local status_helper = require("opencode.session.status")
 local navigation_ctx = { state = state, event_util = event_util }
 
+local function view_registry()
+	local views = package.loaded["opencode.ui.chat.state"]
+	return views and type(views.current) == "function" and views or nil
+end
+
+local function owner_view(session_id)
+	local views = view_registry()
+	if not views then return nil end
+	local ancestor_owner
+	for _, view in ipairs(views.all()) do
+		if views.valid(view) and (view.visible ~= false or view.suspended) then
+			if view.session_id == session_id then return view end
+			local root = (view.session_stack or {})[1]
+			if not ancestor_owner and navigation.runtime_session_id(root and root.id or view.session_id, navigation_ctx) == session_id then ancestor_owner = view end
+		end
+	end
+	return ancestor_owner
+end
+
+local function tab_view(view)
+	return view and view.config and view.config.layout == "tab"
+end
+
 ---@param event_type string
 ---@param data table
 local function emit(event_type, data)
@@ -38,21 +61,31 @@ local function activate_local(session, opts)
 		return
 	end
 
-	local current = state.get_session()
-	M.remember(session, { touch = false, reason = opts.reason or "session_switch" })
-	M.set_active(session.id, session.title or session.name, {
-		reason = opts.reason or "session_switch",
-		preserve_cache = true,
-	})
+	local views = view_registry()
+	local view = opts.view
+	local current = view and views and views.session(view) or state.get_session()
+	local bound = view and views and (view.session_bound or tab_view(view))
+	M.remember(session, { touch = bound and opts.runtime ~= false and not session.parentID or false,
+		reason = opts.reason or "session_switch" })
+	if bound then
+		require("opencode.ui.chat").bind_session(view, session, opts)
+	else
+		M.set_active(session.id, session.title or session.name, {
+			reason = opts.reason or "session_switch",
+			preserve_cache = true,
+		})
+	end
 	emit("session.selected", {
 		sessionID = session.id,
 		sessionTitle = session.title or session.name,
 		previousSessionID = current.id,
+		view_id = view and view.id,
 	})
 	emit("sync_changed", {
 		kind = "session",
 		action = opts.reason or "session_switch",
 		session_id = session.id,
+		view_id = view and view.id,
 	})
 	if opts.notify then
 		local title = session_util.displayTitle(session.title or session.name) or session.id
@@ -116,6 +149,7 @@ function M.set_active(id, name, opts)
 		previous_name = previous.name,
 		reason = opts.reason,
 		preserve_cache = opts.preserve_cache == true,
+		view_id = opts.view_id,
 	})
 	emit("sessions_changed", { reason = opts.reason or "session_change", session_id = current.id })
 
@@ -275,20 +309,49 @@ function M.handle_deleted(session_id, opts)
 
 	local current = state.get_session()
 	local is_tab = state.is_runtime_session(session_id)
+	local owner = owner_view(session_id)
 	-- Clearing sync removes task-parent links needed to leave a child view.
 	local current_root = navigation.runtime_session_id(current.id, navigation_ctx)
-	local next_session = nil
-	if is_tab and current_root == session_id then
-		next_session = navigation.next_session_after_close(session_id, nil, navigation_ctx)
-	end
-
 	local ok_sync, sync = pcall(require, "opencode.sync")
 	local deleted_ids = ok_sync and sync.collect_session_tree(session_id) or { session_id }
+	local deleted, affected, candidates = {}, {}, {}
+	for _, id in ipairs(deleted_ids) do deleted[id] = true end
+	local views = view_registry()
+	for _, view in ipairs(views and views.all() or {}) do
+		if tab_view(view) and views.valid(view) and (view.visible ~= false or view.suspended) then
+			local matched = deleted[view.session_id]
+			for _, ancestor in ipairs(view.session_stack or {}) do matched = matched or deleted[ancestor.id] end
+			if matched then
+				affected[#affected + 1] = { view = view, root = navigation.runtime_session_id(view.session_id, navigation_ctx) }
+			end
+		end
+	end
+	for _, session in ipairs(state.get_active_sessions()) do
+		if not deleted[session.id] or session.id == session_id then candidates[#candidates + 1] = session end
+	end
+	local next_session
+	if is_tab and (current_root == session_id or owner) then
+		next_session = navigation.next_session_after_close(session_id, candidates, {
+			state = state, event_util = event_util, view = tab_view(owner) and owner or nil,
+		})
+	end
 	if ok_sync then
 		sync.clear_session_tree(session_id)
 	end
 
-	if is_tab then
+	if #affected > 0 then
+		for _, entry in ipairs(affected) do
+			local replacement = entry.root and not deleted[entry.root] and state.get_session_record(entry.root)
+			local existing = replacement and views.for_session(replacement.id)
+			if existing and existing ~= entry.view then replacement = nil end
+			replacement = replacement or navigation.next_session_after_close(session_id, candidates, {
+				state = state, event_util = event_util, view = entry.view,
+			})
+			if replacement then
+				activate_local(replacement, { view = entry.view, reason = opts.reason or "session_deleted" })
+			else require("opencode.ui.chat").close_view(entry.view, { all_windows = true }) end
+		end
+	elseif is_tab then
 		if current_root == session_id then
 			if next_session then
 				local record = state.get_session_record(next_session.id) or next_session
@@ -361,23 +424,45 @@ function M.close(session_id, opts)
 	end
 
 	local current_root = navigation.runtime_session_id(current.id, navigation_ctx)
-	local next_session = navigation.next_session_after_close(target_id, nil, navigation_ctx)
+	local owner = owner_view(target_id)
+	local next_session = navigation.next_session_after_close(target_id, nil, {
+		state = state, event_util = event_util, view = tab_view(owner) and owner or nil,
+	})
 	local closed = state.close_runtime_session(target_id)
 	local title = session_util.displayTitle(closed and (closed.title or closed.name)) or target_id
 
 	local ok_sync, sync = pcall(require, "opencode.sync")
 	local closed_ids = ok_sync and sync.collect_session_tree(target_id) or { target_id }
 	if ok_sync then
-		-- Clear the closed tab's data plus any subagent child sessions
-		-- that were loaded into sync (e.g. via `gd`). Their messages are
-		-- only reachable through the parent tab, so they leak otherwise.
-		sync.clear_session_tree(target_id)
+		-- A child opened separately still owns its history, draft and pending work.
+		-- Include its navigation stack so returning to a child ancestor also works.
+		local retained, views = {}, view_registry()
+		local function retain(id)
+			if not id or id == target_id then return end
+			for _, child_id in ipairs(sync.collect_session_tree(id)) do retained[child_id] = true end
+		end
+		for _, view in ipairs(views and views.all() or {}) do
+			if view ~= owner and (view.visible ~= false or view.suspended) and views.valid(view) then
+				retain(views.session(view).id)
+				for _, entry in ipairs(view.session_stack or {}) do retain(entry.id) end
+			end
+		end
+		closed_ids = vim.tbl_filter(function(id) return id == target_id or not retained[id] end, closed_ids)
+		for _, id in ipairs(closed_ids) do sync.clear_session(id) end
 	end
 	for _, id in ipairs(closed_ids) do
 		require("opencode.cleanup").clear_session_memos(id)
 	end
 
-	if current_root == target_id then
+	if tab_view(owner) then
+		if next_session then
+			activate_local(state.get_session_record(next_session.id) or next_session, {
+				view = owner, reason = opts.reason or "session_close",
+			})
+		else
+			require("opencode.ui.chat").close_view(owner, { all_windows = true })
+		end
+	elseif current_root == target_id then
 		if next_session then
 			local record = state.get_session_record(next_session.id) or next_session
 			activate_local(record, {
@@ -611,7 +696,15 @@ function M.switch_to(session, opts)
 		return
 	end
 
-	local current = state.get_session()
+	local views = view_registry()
+	local view = opts.view or (views and views.current())
+	if view and (not views or not views.valid(view)) then return end
+	local existing = views and views.for_session(session.id)
+	if existing and existing ~= view then
+		require("opencode.ui.chat").focus_view(existing)
+		return
+	end
+	local current = view and views.session(view) or state.get_session()
 	if current.id == session.id then
 		if opts.notify then
 			local title = session_util.displayTitle(session.title or session.name) or session.id
@@ -619,12 +712,18 @@ function M.switch_to(session, opts)
 		end
 		return
 	end
+	if tab_view(view) and view.workspace_id then
+		view = require("opencode.ui.chat").create_layout(session)
+	end
 
 	local ok_sync, sync = pcall(require, "opencode.sync")
 	local ok_client, client = pcall(require, "opencode.client")
+	opts = vim.tbl_extend("force", opts, { view = view })
 	activate_local(session, opts)
+	local generation = view and view.generation
 	request_chat_render({
 		session_id = session.id,
+		view_id = view and view.id,
 		reason = opts.reason or "session_switch",
 	})
 	if not ok_client or type(client.get_messages) ~= "function" then
@@ -662,9 +761,11 @@ function M.switch_to(session, opts)
 				end
 				M.refresh_status()
 			end
-			if state.get_session().id == session.id then
+			if (view and views.valid(view, generation) and views.session(view).id == session.id)
+				or (not view and state.get_session().id == session.id) then
 				request_chat_render({
 					session_id = session.id,
+					view_id = view and view.id,
 					reason = "session_switch_loaded",
 				})
 			end

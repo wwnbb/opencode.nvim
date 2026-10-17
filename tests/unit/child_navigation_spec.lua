@@ -12,7 +12,8 @@ describe("child navigation freshness", function()
 	before_each(function()
 		state.reset(); pending.clear_all(); lock.clear_all(); require("opencode.sync").clear_all()
 		state.set_session("parent", "Parent")
-		saved = { get = actions.get_session, load = actions.load_session_messages, tasks = view.tasks, stack = view.session_stack }
+		saved = { get = actions.get_session, load = actions.load_session_messages, tasks = view.tasks, stack = view.session_stack,
+			bind = actions.set_view_session, bound = view.session_bound, session_id = view.session_id }
 		replies = {}
 		actions.get_session = function(_, callback) replies[#replies + 1] = callback end
 		actions.load_session_messages = function(_, _, callback) callback(nil, {}) end
@@ -23,8 +24,25 @@ describe("child navigation freshness", function()
 	after_each(function()
 		actions.get_session, actions.load_session_messages = saved.get, saved.load
 		view.tasks, view.session_stack = saved.tasks, saved.stack
+		actions.set_view_session = saved.bind
+		view.session_bound, view.session_id = saved.bound, saved.session_id
 		state.reset(); pending.clear_all(); lock.clear_all(); require("opencode.sync").clear_all()
 	end)
+
+	for _, method in ipairs({ "enter_child_session", "open_family_session" }) do
+		it("ignores " .. method .. " after the default pane is closed", function()
+			view.session_bound, view.session_id = true, "parent"
+			local bound
+			actions.set_view_session = function(_, id) bound = id end
+			nav[method](method == "enter_child_session" and "task" or "child")
+			require("opencode.ui.chat.state").remove(view)
+			state.set_session(nil, nil)
+			complete(1)
+			assert.is_nil(bound)
+			assert.equals(0, #view.session_stack)
+			assert.is_nil(lock.get("child"))
+		end)
+	end
 
 	it("ignores a child load after switching to another tab", function()
 		nav.enter_child_session("task")

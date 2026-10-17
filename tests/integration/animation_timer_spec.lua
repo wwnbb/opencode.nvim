@@ -64,4 +64,24 @@ describe("chat animation timer ownership", function()
 			end
 		end)
 	end
+
+	it("pauses task ticks only for pending edits displayed in their own pane", function()
+		local edits = require("opencode.edit.state")
+		local part = { id = "bash", type = "tool", tool = "bash", state = { status = "running" } }
+		state.tools = { bash = { start_line = 0, end_line = 0, tool_part = part } }
+		vim.api.nvim_buf_set_lines(surface.bufnr, 0, -1, false, { "Bash |" })
+		edits.add_edit("other-pane-edit", "other-pane", { { filePath = "other.lua", before = "", after = "x" } },
+			{ review_mode = "readonly" })
+		local ok, failure = xpcall(function()
+			tasks.start_task_animation_timer()
+			local frame = state.task_anim_frame
+			callbacks[1]()
+			assert.equals(frame + 1, state.task_anim_frame, "an unrelated pane edit must not stop animation")
+			state.edits["other-pane-edit"] = { start_line = 0, end_line = 0 }
+			callbacks[1]()
+			assert.equals(frame + 1, state.task_anim_frame, "a displayed pending edit must keep its cursor stable")
+		end, debug.traceback)
+		edits.clear_all()
+		assert.is_true(ok, failure)
+	end)
 end)

@@ -3,6 +3,18 @@ local M = {}
 local actions = require("opencode.actions")
 local state = require("opencode.state")
 
+local function available_model(directory, provider_id, model_id)
+	local sync = require("opencode.sync")
+	if sync.get_catalog_location() and sync.get_catalog_location() ~= directory then
+		local catalog = sync.get_location_catalog(directory, "providers")
+		for _, provider in ipairs(catalog and catalog.data and catalog.data.providers or {}) do
+			if provider.id == provider_id then return (provider.models or {})[model_id] end
+		end
+		return
+	end
+	return sync.get_model(provider_id, model_id)
+end
+
 function M.register(palette)
 	palette.register({
 		id = "model.switch",
@@ -10,18 +22,22 @@ function M.register(palette)
 		description = "Change the AI model",
 		category = "model",
 		slash = { name = "models" },
-		run = function()
-			if require("opencode.session.lock").is_locked(state.get_session().id) then vim.notify("Subagent model selection is locked", vim.log.levels.INFO); return false end
+		run = function(context)
+			local owner = require("opencode.ui.palette")
+			context = owner.capture_context(context)
+			if not owner.context_valid(context) then return false end
+			if require("opencode.session.lock").is_locked(context.session_id) then vim.notify("Subagent model selection is locked", vim.log.levels.INFO); return false end
 			local pending = require("opencode.session.pending")
-			local token = pending.token(state.get_session().id)
+			local token = pending.token(context.session_id)
 			local directory = state.get_session_directory(token.session_id) or vim.fn.getcwd()
 			local function current()
-				return pending.is_current(token) and state.get_session().id == token.session_id
+				return pending.is_current(token) and owner.context_valid(context)
 					and not require("opencode.session.lock").is_locked(token.session_id)
 					and (state.get_session_directory(token.session_id) or vim.fn.getcwd()) == directory
 			end
 			actions.get_config_providers(function(err, response)
 				if not current() then return end
+				if context.view and require("opencode.ui.chat.state").current() ~= context.view then return end
 				if err then
 					vim.notify("Failed to list providers: " .. tostring(err.message or err), vim.log.levels.ERROR)
 					return
@@ -75,6 +91,7 @@ function M.register(palette)
 					width = math.max(width, vim.fn.strdisplaywidth(item.label) + detail_width + 10)
 				end
 				require("opencode.ui.menu").open({
+					context = context,
 					items = items,
 					title = " Switch Model ",
 					width = width,
@@ -89,15 +106,15 @@ function M.register(palette)
 						return a.label < b.label
 					end,
 					on_select = function(item)
-						if not current() or not require("opencode.sync").get_model(item.provider, item.value) then return end
-						actions.select_model({ providerID = item.provider, modelID = item.value }, { recent = true })
+						if not current() or not available_model(directory, item.provider, item.value) then return end
+						actions.select_model({ providerID = item.provider, modelID = item.value }, { recent = true, session_id = token.session_id })
 					end,
 					keymap_scope = "model_menu",
 					keys = {
 						{
 							action = "favorite", label = "favorite",
 							handler = function(_ctx, item)
-								if not current() or not require("opencode.sync").get_model(item.provider, item.value) then return end
+								if not current() or not available_model(directory, item.provider, item.value) then return end
 								actions.toggle_model_favorite({ providerID = item.provider, modelID = item.value })
 								item.is_favorite = not item.is_favorite
 								item.favorite_rank = item.is_favorite and 0 or nil
@@ -107,14 +124,18 @@ function M.register(palette)
 						},
 					},
 				})
-			end)
+			end, { directory = directory })
 		end,
 	})
 	for _, source in ipairs({ "recent", "favorite" }) do
 		for _, direction in ipairs({ 1, -1 }) do
 			palette.register({ id = "model.cycle." .. source .. (direction == 1 and ".next" or ".previous"),
 				title = (direction == 1 and "Next " or "Previous ") .. (source == "recent" and "Recent Model" or "Favorite Model"),
-				category = "model", run = function() actions.cycle_model(direction, { source = source }) end })
+				category = "model", run = function(context)
+					local owner = require("opencode.ui.palette")
+					context = owner.capture_context(context)
+					if owner.context_valid(context) then actions.cycle_model(direction, { source = source, session_id = context.session_id }) end
+				end })
 		end
 	end
 	palette.register({
@@ -124,10 +145,14 @@ function M.register(palette)
 		category = "model",
 		slash = { name = "variants", aliases = { "thinking", "effort" } },
 		on_select = function(context) return context.run() end,
-		run = function()
+		run = function(context)
+			local owner = require("opencode.ui.palette")
+			context = owner.capture_context(context)
+			if not owner.context_valid(context) then return false end
 			local local_state = require("opencode.local")
-			local model = local_state.model.current()
-			local session_id = state.get_session().id
+			local session_id = context.session_id
+			local opts = { session_id = session_id }
+			local model = local_state.model.current(opts)
 			if require("opencode.session.lock").is_locked(session_id) then
 				vim.notify("Subagent model selection is locked", vim.log.levels.INFO)
 				return false
@@ -139,25 +164,26 @@ function M.register(palette)
 			local pending = require("opencode.session.pending")
 			local token = pending.token(session_id)
 			local directory = state.get_session_directory(session_id) or vim.fn.getcwd()
-			local selected = local_state.variant.current() or "default"
+			local selected = local_state.variant.current(opts) or "default"
 			local items = { { label = "Default", value = "default" } }
-			for _, variant in ipairs(local_state.variant.list()) do
+			for _, variant in ipairs(local_state.variant.list(opts)) do
 				if variant ~= "default" then items[#items + 1] = { label = variant, value = variant } end
 			end
 			for _, item in ipairs(items) do
 				if item.value == selected then item.description, item.priority = "Current", 1 end
 			end
 			require("opencode.ui.menu").open({
+				context = context,
 				items = items,
 				title = " Select Variant ",
 				width = 50,
 				sort = false,
 				on_select = function(item)
-					local current = local_state.model.current()
-					if not pending.is_current(token) or state.get_session().id ~= session_id
+					local current = local_state.model.current(opts)
+					if not pending.is_current(token) or not owner.context_valid(context)
 						or (state.get_session_directory(session_id) or vim.fn.getcwd()) ~= directory
 						or not current or current.providerID ~= model.providerID or current.modelID ~= model.modelID then return end
-					actions.select_variant(item.value)
+					actions.select_variant(item.value, opts)
 				end,
 			})
 		end,

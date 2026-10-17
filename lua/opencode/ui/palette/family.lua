@@ -2,17 +2,18 @@ local M = {}
 local actions = require("opencode.actions")
 local app_state = require("opencode.state")
 local status = require("opencode.session.status")
-local request = 0
+local requests = setmetatable({}, { __mode = "k" })
 
-function M.show()
-	local source_id = app_state.get_session().id
+function M.show(context)
+	context = require("opencode.ui.palette").capture_context(context)
+	local source_id = context.session_id
 	local pending = require("opencode.session.pending")
 	local token = pending.token(source_id)
 	local directory = app_state.get_session_directory(source_id)
-	request = request + 1
-	local serial = request
+	local key, request = context.view or M, {}
+	requests[key] = request
 	local function current()
-		return request == serial and pending.is_current(token) and app_state.get_session().id == source_id
+		return requests[key] == request and pending.is_current(token) and require("opencode.ui.palette").context_valid(context)
 			and app_state.get_session_directory(source_id) == directory
 	end
 	local records, items, mode, interrupting, load_request = {}, {}, "all", {}, 0
@@ -59,9 +60,12 @@ function M.show()
 	end
 	load(function()
 		require("opencode.ui.menu").open({
+			context = context,
 			items = items, title = " Session Family ", width = 76, searchable = true, sort = false,
 			on_select = function(item)
-				if current() then require("opencode.ui.chat.nav").open_family_session(item.value) end
+				if current() then
+					require("opencode.ui.chat.state").module(context.view, require("opencode.ui.chat.nav")).open_family_session(item.value)
+				end
 			end,
 			keymap_scope = "family_menu",
 			keys = {

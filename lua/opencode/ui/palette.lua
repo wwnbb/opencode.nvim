@@ -10,6 +10,27 @@ local float_context = require("opencode.ui.float_context")
 local keymaps = require("opencode.util.keymap")
 local hl_ns = vim.api.nvim_create_namespace("opencode_palette")
 
+function M.capture_context(context)
+	local result = vim.tbl_extend("force", {}, context or {})
+	local views = require("opencode.ui.chat.state")
+	result.session_id = result.session_id or (result.view and views.session(result.view).id) or app_state.get_session().id
+	if not result.view then
+		local input = package.loaded["opencode.ui.input"]
+		local view = input and input.owner_view and input.owner_view() or views.current()
+		if view.visible and views.session(view).id == result.session_id then result.view = view end
+	end
+	if result.view and result.generation == nil then result.generation = result.view.generation end
+	return result
+end
+
+function M.context_valid(context)
+	if context.view then
+		local views = require("opencode.ui.chat.state")
+		return views.valid(context.view, context.generation) and views.session(context.view).id == context.session_id
+	end
+	return app_state.get_session().id == context.session_id
+end
+
 -- Configuration
 local config = vim.deepcopy(require("opencode.config").defaults.palette)
 
@@ -192,11 +213,11 @@ local function fuzzy_match(pattern, text)
 end
 
 -- Filter and sort commands by search query
-local function filter_commands(query)
+local function filter_commands(query, context)
 	local results = {}
 
 	for _, cmd in ipairs(command_registry.all()) do
-		if cmd.palette ~= false and command_registry.enabled(cmd, { source = "palette" }) then
+		if cmd.palette ~= false and command_registry.enabled(cmd, context) then
 			-- Match against title, description, and category
 			local match_title, score_title = fuzzy_match(query, cmd.title)
 			local match_desc, score_desc = fuzzy_match(query, cmd.description)
@@ -338,6 +359,7 @@ local state = {
 	query = "",
 	selected = 1,
 	results = {},
+	context = nil,
 }
 
 local PALETTE_ZINDEX = 80
@@ -458,17 +480,19 @@ end
 
 -- Update search results
 local function update_results()
-	state.results = filter_commands(state.query)
+	state.results = filter_commands(state.query, state.context)
 	state.selected = math.min(state.selected, math.max(1, #state.results))
 	render_list()
 end
 
 -- Execute selected command
 local function execute_selected()
+	local context = state.context
+	if not context or not M.context_valid(context) then return end
 	local result = state.results[state.selected]
 	if result and result.cmd then
 		local command = command_registry.get(result.cmd.id)
-		if not command or command.palette == false or not command_registry.enabled(command, { source = "palette" }) then
+		if not command or command.palette == false or not command_registry.enabled(command, context) then
 			return
 		end
 		-- Track usage before hiding
@@ -476,7 +500,7 @@ local function execute_selected()
 
 		M.hide()
 		vim.schedule(function()
-			command_registry.run(command.id, { source = "palette" })
+			if M.context_valid(context) then command_registry.run(command.id, context) end
 		end)
 	end
 end
@@ -505,7 +529,7 @@ function M.hide()
 end
 
 -- Show the command palette
-function M.show()
+function M.show(context)
 	-- Close if already open
 	if state.popup then
 		M.hide()
@@ -515,10 +539,11 @@ function M.show()
 	load_config()
 	load_frecency()
 	setup_highlights()
+	state.context = M.capture_context(vim.tbl_extend("force", {}, context or {}, { source = "palette" }))
 
 	-- One surface: title at row 1, search at row 3, list at row 5.
 	-- The inner windows share the frame background and have no borders.
-	local target_win, float_dims = float_context.get_chat_context()
+	local target_win, float_dims = float_context.get_chat_context(state.context.view)
 	local screen_width, screen_height = vim.o.columns, vim.o.lines - vim.o.cmdheight
 	local anchor_row, anchor_col = 0, 0
 	local anchor_width, anchor_height = screen_width, screen_height
@@ -579,12 +604,13 @@ function M.show()
 			position = { row = 3, col = 4 }, size = { width = math.max(1, width - 8), height = 1 },
 			win_options = window_options,
 		},
-		focus_restore = "chat",
+		focus_restore = state.context.view and "previous" or "chat",
 		close_on_leave = true,
 		on_close = function(current)
 			if state.view ~= current then return end
 			state.view, state.frame, state.popup, state.input_popup = nil, nil, nil, nil
 			state.query, state.selected, state.results = "", 1, {}
+			state.context = nil
 		end,
 		on_resize = function(current)
 			current:resize({ frame = { size = { width = width, height = frame_height } } })
@@ -597,8 +623,14 @@ function M.show()
 			render_list()
 		end,
 	})
+	local owner = state.context.view
+	if owner and owner.winid and vim.api.nvim_win_is_valid(owner.winid)
+		and vim.api.nvim_win_get_tabpage(owner.winid) == vim.api.nvim_get_current_tabpage() then
+		state.view.previous_win = owner.winid
+	end
 	state.frame, state.popup, state.input_popup = state.view.frame, state.view.content, state.view.input
 	state.view:mount()
+	local view = state.view
 
 	local input_buf = state.input_popup.bufnr
 	local popup_buf = state.popup.bufnr
@@ -628,6 +660,7 @@ function M.show()
 	vim.api.nvim_create_autocmd({ "TextChangedI", "TextChanged" }, {
 		buffer = input_buf,
 		callback = function()
+			if state.view ~= view then return end
 			local lines = vim.api.nvim_buf_get_lines(input_buf, 0, 1, false)
 			local line = lines[1] or ""
 			state.query = line
@@ -638,10 +671,10 @@ function M.show()
 	})
 
 	local map, apply = keymaps.mapper("palette", input_buf)
-	map({ "i", "n" }, "next", function() move_selection(1) end)
-	map({ "i", "n" }, "previous", function() move_selection(-1) end)
-	map({ "i", "n" }, "select", execute_selected)
-	map({ "i", "n" }, "close", M.hide)
+	map({ "i", "n" }, "next", function() if state.view == view then move_selection(1) end end)
+	map({ "i", "n" }, "previous", function() if state.view == view then move_selection(-1) end end)
+	map({ "i", "n" }, "select", function() if state.view == view then execute_selected() end end)
+	map({ "i", "n" }, "close", function() if state.view == view then M.hide() end end)
 	apply()
 	render_list()
 
@@ -679,11 +712,12 @@ function M.get_winids()
 end
 
 -- Trigger a command by ID
-function M.trigger(id)
+function M.trigger(id, context)
+	context = M.capture_context(vim.tbl_extend("force", {}, context or {}, { source = "palette" }))
 	local cmd = command_registry.get(id)
-	if cmd and cmd.palette ~= false and command_registry.enabled(cmd, { source = "palette" }) then
+	if M.context_valid(context) and cmd and cmd.palette ~= false and command_registry.enabled(cmd, context) then
 		track_command_usage(id)
-		command_registry.run(id, { source = "palette" })
+		command_registry.run(id, context)
 	end
 end
 

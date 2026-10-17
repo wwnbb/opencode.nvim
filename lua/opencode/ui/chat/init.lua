@@ -1,3 +1,5 @@
+local cs = require("opencode.ui.chat.state")
+local instances = cs.factory("init", function(view)
 -- opencode.nvim - Chat buffer UI module
 -- Main chat interface with configurable layouts
 -- This module mirrors the TUI's session/index.tsx rendering approach
@@ -7,44 +9,44 @@ local M = {}
 local Popup = require("nui.popup")
 local NuiLine = require("nui.line")
 local input = require("opencode.ui.input")
-local chat_help = require("opencode.ui.chat.help")
-local chat_float_focus = require("opencode.ui.chat.float_focus")
-local chat_messages = require("opencode.ui.chat.messages")
-local chat_keymaps = require("opencode.ui.chat.keymaps")
+local chat_help = cs.module(view, require("opencode.ui.chat.help"))
+local chat_float_focus = cs.module(view, require("opencode.ui.chat.float_focus"))
+local chat_messages = cs.module(view, require("opencode.ui.chat.messages"))
+local chat_keymaps = cs.module(view, require("opencode.ui.chat.keymaps"))
 local keymaps = require("opencode.util.keymap")
-local chat_session_tabs = require("opencode.ui.chat.session_tabs")
+local chat_session_tabs = cs.module(view, require("opencode.ui.chat.session_tabs"))
 local spinner = require("opencode.ui.spinner")
 local event_util = require("opencode.events.util")
 local logger = require("opencode.logger")
 
 -- ─── Shared state & sub-modules ──────────────────────────────────────────────
 
-local cs = require("opencode.ui.chat.state")
-local state = cs.state
+local state = view
 local chat_hl_ns = cs.chat_hl_ns
 local FLOAT_CHAT_TOP_PADDING = 2
 
-local render = require("opencode.ui.chat.render")
+local render = cs.module(view, require("opencode.ui.chat.render"))
 local chat_highlights = require("opencode.ui.chat.highlights")
 local ui_highlights = require("opencode.ui.highlights")
-local render_state = require("opencode.ui.chat.render_state")
-local render_context = require("opencode.ui.chat.render_context")
+local render_state = cs.module(view, require("opencode.ui.chat.render_state"))
+local render_context = cs.module(view, require("opencode.ui.chat.render_context"))
 local render_coordinator = require("opencode.ui.chat.render_coordinator")
-local widget_index = require("opencode.ui.chat.widget_index")
-local message_renderer = require("opencode.ui.chat.message_renderer")
-local edit_previews = require("opencode.ui.chat.edit_previews")
-local chat_cursor = require("opencode.ui.chat.cursor")
-local chat_tasks = require("opencode.ui.chat.tasks")
-local chat_questions = require("opencode.ui.chat.questions")
-local chat_permissions = require("opencode.ui.chat.permissions")
-local chat_edits = require("opencode.ui.chat.edits")
-local chat_interactions = require("opencode.ui.chat.interactions")
-local chat_nav = require("opencode.ui.chat.nav")
-local widget_support = require("opencode.ui.chat.widget_support")
+local widget_index = cs.module(view, require("opencode.ui.chat.widget_index"))
+local message_renderer = cs.module(view, require("opencode.ui.chat.message_renderer"))
+local edit_previews = cs.module(view, require("opencode.ui.chat.edit_previews"))
+local chat_cursor = cs.module(view, require("opencode.ui.chat.cursor"))
+local chat_tasks = cs.module(view, require("opencode.ui.chat.tasks"))
+local chat_questions = cs.module(view, require("opencode.ui.chat.questions"))
+local chat_permissions = cs.module(view, require("opencode.ui.chat.permissions"))
+local chat_edits = cs.module(view, require("opencode.ui.chat.edits"))
+local chat_interactions = cs.module(view, require("opencode.ui.chat.interactions"))
+local chat_nav = cs.module(view, require("opencode.ui.chat.nav"))
+local widget_support = cs.module(view, require("opencode.ui.chat.widget_support"))
 
 chat_messages.set_schedule_render(function(opts)
 	M.schedule_render(opts)
 end)
+
 
 local question_state = require("opencode.question.state")
 local permission_state = require("opencode.permission.state")
@@ -53,7 +55,7 @@ local apply_widget_focus_cursor
 
 -- Headless consumers inspect buffers; screen redraw has no target there.
 local function redraw()
-	if #vim.api.nvim_list_uis() > 0 then vim.cmd("redraw") end
+	if not cs.workspace.switching and #vim.api.nvim_list_uis() > 0 then vim.cmd("redraw") end
 end
 
 -- ─── Configuration ────────────────────────────────────────────────────────────
@@ -74,6 +76,7 @@ local stream_block_key = render_state.stream_block_key
 local render_highlight_signature = render_state.render_highlight_signature
 local highlight_clear_start = render_state.highlight_clear_start
 local clear_chat_highlights = render_state.clear_chat_highlights
+local subscriptions = {}
 local chat_event_handlers_setup = false
 local chat_event_handlers_events = nil
 local chat_event_handlers_generation = nil
@@ -90,10 +93,10 @@ local opening = false
 local configure_buffer_keymaps
 
 -- Scheduling follows the transcript buffer in any window. Cursor/detail helpers
--- still follow the owned chat window through cs.is_chat_buffer_displayed().
+-- still follow the owned chat window through cs.is_chat_buffer_displayed(view).
 local function chat_surface_is_visible()
-	if not state.bufnr or not vim.api.nvim_buf_is_valid(state.bufnr) then return false end
-	for _, winid in ipairs(vim.api.nvim_list_wins()) do
+	if not cs.valid(view) or not state.bufnr or not vim.api.nvim_buf_is_valid(state.bufnr) then return false end
+	for _, winid in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
 		if vim.api.nvim_win_get_buf(winid) == state.bufnr then return true end
 	end
 	return false
@@ -192,7 +195,7 @@ local function setup_resize_refresh_autocmds()
 	end
 	resize_refresh_autocmds_setup = true
 
-	local group = vim.api.nvim_create_augroup("OpenCodeChatResize", { clear = false })
+	local group = vim.api.nvim_create_augroup("OpenCodeChatResize_" .. (view.id or 1), { clear = false })
 	vim.api.nvim_create_autocmd("BufWinEnter", {
 		group = group,
 		callback = function(args)
@@ -203,7 +206,7 @@ local function setup_resize_refresh_autocmds()
 		end,
 		desc = "Refresh dirty OpenCode transcript before displaying its buffer",
 	})
-	vim.api.nvim_create_autocmd("VimResized", {
+	vim.api.nvim_create_autocmd({ "VimResized", "TabEnter" }, {
 		group = group,
 		callback = schedule_resize_refresh,
 		desc = "Refresh OpenCode chat after editor resize",
@@ -282,7 +285,7 @@ end
 
 -- ─── Cursor preservation ──────────────────────────────────────────────────────
 
-local mapped_buffer, mapped_keys, mapped_app_keys
+local mapped_buffer, mapped_keys, mapped_app_keys, mapped_layout
 configure_buffer_keymaps = function(bufnr, refresh)
 	if not bufnr or not vim.api.nvim_buf_is_valid(bufnr) then return end
 	local app_keys = { keymaps.resolve("chat") }
@@ -291,7 +294,7 @@ configure_buffer_keymaps = function(bufnr, refresh)
 	end
 	local keys = { keymaps.resolve("chat", (state.config or {}).keymaps) }
 	mapped_app_keys = app_keys
-	if mapped_buffer == bufnr and vim.deep_equal(keys, mapped_keys) then return end
+	if mapped_buffer == bufnr and mapped_layout == (state.config or {}).layout and vim.deep_equal(keys, mapped_keys) then return end
 	chat_keymaps.setup_buffer(bufnr, {
 		close = function()
 			M.close()
@@ -306,7 +309,7 @@ configure_buffer_keymaps = function(bufnr, refresh)
 			M.show_help()
 		end,
 	})
-	mapped_buffer, mapped_keys = bufnr, keys
+	mapped_buffer, mapped_keys, mapped_layout = bufnr, keys, (state.config or {}).layout
 end
 
 local function create_buffer()
@@ -376,7 +379,12 @@ function M.show_help()
 end
 
 function M.create()
+	if not cs.valid(view) then return end
 	local events = require("opencode.events")
+	local function subscribe(event, callback)
+		subscriptions[#subscriptions + 1] = { bus = events, event = event, callback = callback }
+		events.on(event, callback)
+	end
 	local listener_generation
 	if type(events.get_generation) == "function" then
 		listener_generation = events.get_generation()
@@ -412,7 +420,8 @@ function M.create()
 		or chat_event_handlers_events ~= events
 		or chat_event_handlers_generation ~= listener_generation
 	then
-	events.on("chat_render", function(data)
+	subscribe("chat_render", function(data)
+		if not cs.valid(view) then return end
 		vim.schedule(function()
 			M.schedule_render(data)
 		end)
@@ -427,14 +436,14 @@ function M.create()
 		end)
 	end
 	for _, event in ipairs({ "sessions_changed", "session_pending_change", "session_status_change" }) do
-		events.on(event, refresh_winbar)
+		subscribe(event, refresh_winbar)
 	end
 
-	events.on("config_change", function()
+	subscribe("config_change", function()
 		schedule_config_refresh()
 	end)
 
-	events.on("chat_stream_part_updated", function(data)
+	subscribe("chat_stream_part_updated", function(data)
 		vim.schedule(function()
 			local part = data and data.part
 			local session_id = data and (data.session_id or data.sessionID or data.sessionId)
@@ -448,7 +457,7 @@ function M.create()
 			if not message_id or not part_id then
 				return
 			end
-			local current_session = require("opencode.state").get_session()
+			local current_session = cs.session(view)
 			local render_session_id = event_util.render_target_session_id(current_session.id, session_id)
 			if not render_session_id then
 				return
@@ -470,7 +479,7 @@ function M.create()
 		end)
 	end)
 
-	events.on("local_notice", function(data)
+	subscribe("local_notice", function(data)
 		vim.schedule(function()
 			if type(data) ~= "table" then
 				return
@@ -484,8 +493,9 @@ function M.create()
 		end)
 	end)
 
-	events.on("status_change", function(data)
+	subscribe("status_change", function(data)
 		vim.schedule(function()
+			if data and data.session_id and data.session_id ~= cs.session(view).id then return end
 			local new_status = data and data.status
 			if new_status == "streaming" or new_status == "thinking" then
 				if state.visible then
@@ -497,7 +507,10 @@ function M.create()
 		end)
 	end)
 
-	events.on("session_change", function(data)
+	subscribe("session_change", function(data)
+		if not cs.valid(view) or (data and data.reason == "pane_focus") then return end
+		if data and data.view_id and data.view_id ~= view.id then return end
+		if state.session_bound and (not data or data.view_id ~= view.id) then return end
 		local preserve_cache = data and data.preserve_cache
 		local reason = data and data.reason
 		local changed_session = data and data.previous_id ~= data.id
@@ -533,7 +546,7 @@ function M.create()
 end
 
 local function request_focus_for_pending_widgets()
-	local current_session = require("opencode.state").get_session()
+	local current_session = cs.session(view)
 	local in_child_session_view = #state.session_stack > 0
 	for _, qstate in ipairs(question_state.get_all()) do
 		if
@@ -564,7 +577,7 @@ end
 
 ---@return table|nil
 local function get_relevant_question()
-	local current_session = require("opencode.state").get_session()
+	local current_session = cs.session(view)
 	local in_child_session_view = #state.session_stack > 0
 	for _, qstate in ipairs(question_state.get_all()) do
 		if
@@ -583,6 +596,15 @@ local function handle_chat_window_closed(closed_winid)
 	if state.winid ~= closed_winid then
 		return
 	end
+	input.close_for_view(view)
+	if state.config.layout == "tab" and view.session_bound then
+		for _, win in ipairs(cs.windows(view)) do
+			if win ~= closed_winid then
+				M.attach_window(win)
+				return
+			end
+		end
+	end
 	chat_float_focus.clear()
 	chat_session_tabs.close_float_window()
 	state.visible = false
@@ -593,22 +615,50 @@ local function handle_chat_window_closed(closed_winid)
 	reset_chat_surface()
 	stop_spinner_animation_timer()
 	chat_tasks.stop_task_animation_timer()
+	if view ~= cs.state then M.dispose() end
+	cs.remove(view)
+	vim.schedule(function()
+		if state.config and state.config.layout == "tab" then
+			require("opencode.ui.chat").after_close()
+		end
+	end)
 end
 
 -- Register one-shot WinClosed teardown for the chat window in the given layout.
 -- Split layouts need this too: without it state.visible stays true and the
 -- animation timers keep mutating a buffer with no window.
+local watched_windows = {}
 local function register_chat_window_closed_autocmd(winid)
-	if not winid or not vim.api.nvim_win_is_valid(winid) then
+	if not winid or not vim.api.nvim_win_is_valid(winid) or watched_windows[winid] then
 		return
 	end
+	watched_windows[winid] = true
 	vim.api.nvim_create_autocmd("WinClosed", {
 		pattern = tostring(winid),
 		once = true,
 		callback = function()
+			watched_windows[winid] = nil
 			handle_chat_window_closed(winid)
 		end,
 	})
+end
+
+function M.dispose()
+	stop_spinner_animation_timer()
+	chat_tasks.stop_task_animation_timer()
+	for _, item in ipairs(subscriptions) do item.bus.off(item.event, item.callback) end
+	subscriptions = {}
+	chat_event_handlers_setup = false
+	pcall(vim.api.nvim_del_augroup_by_name, "OpenCodeChatResize_" .. (view.id or 1))
+	resize_refresh_autocmds_setup = false
+	chat_session_tabs.dispose()
+	render_state.dispose()
+	cs.module(view, require("opencode.ui.chat.tool_group")).dispose()
+	if state.bufnr and vim.api.nvim_buf_is_valid(state.bufnr) then
+		vim.schedule(function()
+			if not cs.valid(view) then pcall(vim.api.nvim_buf_delete, state.bufnr, { force = true }) end
+		end)
+	end
 end
 
 function M.open()
@@ -617,6 +667,10 @@ function M.open()
 		return
 	end
 	if state.visible then
+		if state.config.layout == "tab" and state.winid and vim.api.nvim_win_is_valid(state.winid) then
+			require("opencode.ui.chat").focus_view(view)
+			return
+		end
 		M.close()
 	end
 
@@ -678,6 +732,15 @@ function M.open()
 		state.float_dims = dims
 
 		register_chat_window_closed_autocmd(popup.winid)
+	elseif cfg.layout == "tab" then
+		require("opencode.context").preserve_source(function()
+			vim.cmd("tabnew")
+			state.winid = vim.api.nvim_get_current_win()
+			state.tabpage = vim.api.nvim_get_current_tabpage()
+			vim.api.nvim_win_set_buf(state.winid, state.bufnr)
+		end)
+		cs.workspace.tabpage = state.tabpage
+		M.attach_window(state.winid)
 	else
 		local split_cmd
 
@@ -728,21 +791,63 @@ function M.open()
 	if not opened then error(open_error) end
 end
 
+function M.attach_window(winid)
+	state.winid, state.tabpage = winid, vim.api.nvim_win_get_tabpage(winid)
+	state.visible = true
+	if state.config.layout == "tab" then cs.workspace.tabpage = state.tabpage end
+	if vim.api.nvim_win_get_buf(winid) ~= state.bufnr then vim.api.nvim_win_set_buf(winid, state.bufnr) end
+	vim.wo[winid].winfixwidth, vim.wo[winid].winfixheight = false, false
+	setup_chat_window_options(winid)
+	register_chat_window_closed_autocmd(winid)
+	M.update_winbar()
+	M.do_render()
+end
+
+function M.session_changed(session, opts)
+	opts = opts or {}
+	local previous = cs.session(view).id
+	input.close_for_view(view)
+	state.session_id, state.session_name, state.session_bound = session.id, session.title or session.name, true
+	state.generation = (state.generation or 0) + 1
+	if previous ~= session.id then
+		stop_spinner_animation_timer()
+		chat_tasks.stop_task_animation_timer()
+		reset_chat_surface({ reset_expansions = opts.reason ~= "child_navigation", force_full_render = true })
+		if opts.reason ~= "child_navigation" and opts.reason ~= "family_navigation" then state.session_stack = {} end
+		if state.winid and vim.api.nvim_win_is_valid(state.winid) then
+			vim.api.nvim_win_call(state.winid, function() vim.fn.winrestview({ topline = 1, leftcol = 0, skipcol = 0 }) end)
+		end
+	end
+	M.schedule_render({ session_id = session.id, force = true })
+end
+
 function M.close()
+	local current = vim.api.nvim_get_current_win()
+	if view.session_bound and state.config.layout == "tab"
+		and cs.for_window(current) == view and vim.api.nvim_win_get_buf(current) == state.bufnr then
+		state.winid, state.tabpage, state.visible = current, vim.api.nvim_win_get_tabpage(current), true
+	end
 	if not state.visible then
 		chat_session_tabs.close_float_window()
 		reset_chat_surface()
 		return
 	end
 
-	reset_chat_surface()
 	chat_float_focus.clear()
 	chat_session_tabs.close_float_window()
 
-	if input.is_visible() then
-		input.close()
+	input.close_for_view(view)
+	local details = package.loaded["opencode.ui.chat.execute_details"]
+	if details then cs.module(view, details).close(false) end
+	if state.winid and vim.api.nvim_win_is_valid(state.winid)
+		and vim.api.nvim_win_get_buf(state.winid) ~= state.bufnr then
+		-- A user may have replaced the transcript with an ordinary file.
+		vim.wo[state.winid].winbar = ""
+		handle_chat_window_closed(state.winid)
+		return
 	end
 
+	local closed_winid = state.winid
 	if state.config.layout == "float" and state.layout then
 		state.layout:unmount()
 	else
@@ -752,20 +857,18 @@ function M.close()
 				if vim.api.nvim_win_get_config(winid).relative == "" then normal_windows = normal_windows + 1 end
 			end
 			if normal_windows == 1 then
-				-- Closing a diff can leave chat as the tab's only normal window.
-				vim.api.nvim_win_call(state.winid, function() vim.cmd("leftabove new") end)
+				if state.config.layout == "tab" and #vim.api.nvim_list_tabpages() == 1 then
+					vim.cmd("tabnew")
+				elseif state.config.layout ~= "tab" then
+					-- Closing a diff can leave chat as the tab's only normal window.
+					vim.api.nvim_win_call(state.winid, function() vim.cmd("leftabove new") end)
+				end
 			end
-			vim.api.nvim_win_close(state.winid, true)
+			vim.api.nvim_win_close(closed_winid, true)
 		end
 	end
 
-	state.visible = false
-	state.winid = nil
-	state.tabpage = nil
-	state.layout = nil
-	state.float_dims = nil
-	stop_spinner_animation_timer()
-	chat_tasks.stop_task_animation_timer()
+	handle_chat_window_closed(closed_winid)
 end
 
 function M.toggle()
@@ -818,7 +921,7 @@ end
 function M.focus_input(context_snapshot, context_error)
 	-- Selecting a skill can focus an input that is already open. Focusing the
 	-- chat window first would trigger the input's WinLeave handler and close it.
-	if input.is_visible() and not get_relevant_question() then return input.focus() end
+	if input.is_visible() and input.owner_view() == view and not get_relevant_question() then return input.focus() end
 	if not context_snapshot and not context_error then context_snapshot, context_error = input.capture_context() end
 	if not state.visible then
 		M.open()
@@ -834,15 +937,21 @@ function M.focus_input(context_snapshot, context_error)
 		vim.notify("Answer or cancel the pending question before opening chat input.", vim.log.levels.INFO)
 		return false
 	end
-	if require("opencode.ui.chat.pending_inputs").resume_edit(context_snapshot, context_error) then return true end
+	if cs.module(view, require("opencode.ui.chat.pending_inputs")).resume_edit(context_snapshot, context_error) then return true end
 
-	input.show({
+	local owner_session = cs.session(view).id
+	local generation = view.generation
+	local shown = input.show({
+		view = view, session_id = owner_session,
 		winid = state.winid,
 		float_dims = state.float_dims,
 		allow_chat_commands = true,
 		context_snapshot = context_snapshot,
 		context_error = context_error,
 		on_send = function(text, parts, draft_options)
+			if not cs.valid(view, generation) then return end
+			local send_session = view.session_bound and owner_session or cs.session(view).id
+			draft_options = vim.tbl_extend("force", draft_options or {}, { session_id = send_session or false, view = view })
 			local actions = require("opencode.actions")
 			if draft_options and draft_options.mode == "shell" then
 				return actions.send(text, vim.tbl_extend("force", draft_options, { parts = parts }))
@@ -854,21 +963,21 @@ function M.focus_input(context_snapshot, context_error)
 				if parsed then
 					local command = require("opencode.command_registry").get_slash(parsed.command)
 					if has_parts and command and command.with_parts == "reject" then
-						require("opencode.ui.input.history").set_pending(text, parts)
+						require("opencode.ui.input.history").set_pending(text, parts, send_session or "")
 						vim.notify(command.parts_error or ("/" .. parsed.command .. " does not support attachments"), vim.log.levels.WARN)
 						return
 					end
 					-- Slash-like text with attachments remains a prompt unless the
 					-- command explicitly accepts them as a draft-only action.
 					if not has_parts or (command and command.with_parts == "execute") then
-						local owner_session_id = require("opencode.state").get_session().id
+						local owner_session_id = cs.session(view).id
 						local context = {
-							source = "slash_submit",
+							source = "slash_submit", view = view, generation = generation,
 							args = parsed.args,
 							parsed = parsed,
 							session_id = owner_session_id,
 							resume_input = function()
-								if require("opencode.state").get_session().id == owner_session_id and M.is_visible() then
+								if cs.valid(view, generation) and cs.session(view).id == owner_session_id and M.is_visible() then
 									M.focus_input()
 								end
 							end,
@@ -877,7 +986,7 @@ function M.focus_input(context_snapshot, context_error)
 							-- The input closes after on_send returns. Run actions that
 							-- open another view after its teardown.
 							vim.schedule(function()
-								if require("opencode.state").get_session().id == owner_session_id then
+								if cs.valid(view, generation) and cs.session(view).id == owner_session_id then
 									slash.execute(parsed, context)
 								end
 							end)
@@ -894,7 +1003,7 @@ function M.focus_input(context_snapshot, context_error)
 			M.focus()
 		end,
 	})
-	return true
+	return shown ~= false
 end
 
 function M.setup(opts)
@@ -1073,8 +1182,9 @@ function M.render()
 	end
 
 	local app_state = require("opencode.state")
-	local current_session = app_state.get_session()
+	local current_session = cs.session(view)
 	local ctx = render_context.new({
+		view = view,
 		current_session = current_session,
 		in_child_session_view = #state.session_stack > 0,
 		chat_config = state.config or get_config(),
@@ -1150,7 +1260,7 @@ local RENDER_THROTTLE_MS = 16
 local function apply_scheduled_render()
 	local data = pending_render_data
 	pending_render_data = nil
-	if not render_coordinator.request_relevant(data) then
+	if not render_coordinator.request_relevant(data, cs.session(view).id) then
 		M.update_winbar()
 		return
 	end
@@ -1167,6 +1277,7 @@ end
 
 ---@param opts? table { force?: boolean }
 function M.schedule_render(opts)
+	if not cs.valid(view) then return end
 	pending_render_data = render_coordinator.merge_requests(pending_render_data, opts)
 	if state.render_scheduled then
 		return
@@ -1200,6 +1311,7 @@ apply_widget_focus_cursor = function()
 end
 
 function M.do_render()
+	if not cs.valid(view) then return end
 	if not state.bufnr or not vim.api.nvim_buf_is_valid(state.bufnr) then
 		return
 	end
@@ -1443,5 +1555,234 @@ M.handle_tool_toggle = chat_tasks.handle_tool_toggle
 -- Session navigation
 M.enter_child_session = chat_nav.enter_child_session
 M.leave_child_session = chat_nav.leave_child_session
+
+return M
+
+end)
+
+local M = { for_view = instances.for_view }
+local creating_split = false
+for name, method in pairs(instances) do
+	if type(method) == "function" and name ~= "for_view" then
+		M[name] = function(...) return instances.for_view(cs.current())[name](...) end
+	end
+end
+
+function M.get_view() return cs.current() end
+
+local function remember_return_window()
+	if vim.api.nvim_get_current_tabpage() ~= cs.workspace.tabpage then
+		cs.workspace.return_winid = vim.api.nvim_get_current_win()
+	end
+end
+
+function M.focus_view(view)
+	if view and view.suspended then
+		require("opencode.ui.chat.workspace").select(view.workspace_id)
+	end
+	if not cs.valid(view) or not view.winid or not vim.api.nvim_win_is_valid(view.winid) then return false end
+	if view.session_bound and view.config and view.config.layout == "tab"
+		and vim.api.nvim_win_get_buf(view.winid) ~= view.bufnr then
+		local ok, details = pcall(require, "opencode.ui.chat.execute_details")
+		if ok then details = cs.module(view, details) end
+		local showing_details = ok and details.is_open() and vim.tbl_contains(details.get_winids(), view.winid)
+		if not showing_details then
+			-- Detach an ordinary file without replacing it; close can recover a surviving mirror.
+			instances.for_view(view).close()
+			if not cs.valid(view) or not cs.is_chat_buffer_displayed(view) then return false end
+		end
+	end
+	if view.config and view.config.layout == "tab" then remember_return_window() end
+	local input = require("opencode.ui.input")
+	local owner = input.owner_view()
+	if owner and owner ~= view then require("opencode.ui.input").close_for_view(owner) end
+	cs.activate(view)
+	vim.api.nvim_set_current_win(view.winid)
+	require("opencode.actions").activate_chat_view(view)
+	instances.for_view(view).schedule_render({ force = view.transcript_dirty })
+	return true
+end
+
+function M.bind_session(view, session, opts)
+	view = view or cs.current()
+	if not cs.valid(view) then return false end
+	if not view.session_bound then
+		return require("opencode.actions").set_active_session(session and session.id, session and (session.title or session.name), opts)
+	end
+	local previous = cs.session(view).id
+	require("opencode.actions").observe_session(previous, false)
+	instances.for_view(view).session_changed(session or {}, opts)
+	if view.workspace_id then require("opencode.ui.chat.workspace").session_changed(view, session or {}) end
+	if cs.current() == view then
+		require("opencode.actions").activate_chat_view(view)
+	end
+	return true
+end
+
+function M.open()
+	local app = require("opencode.state")
+	local config = (app.get_config() or {}).chat or {}
+	if config.layout == "tab" then
+		remember_return_window()
+		local last = cs.workspace.last_view
+		if last and M.focus_view(last) then return end
+		for _, view in ipairs(cs.all()) do
+			if view.config and view.config.layout == "tab" and M.focus_view(view) then return end
+		end
+		require("opencode.actions").refresh_session_scope()
+		local view = cs.state
+		local session = app.get_session()
+		local retained = last or view
+		-- q keeps the session; x and a directory scope change remove its membership.
+		if not session.id and retained.session_bound and app.is_runtime_session(retained.session_id) then
+			session = cs.session(retained)
+		end
+		view.session_id, view.session_name = session.id, session.name
+		view.session_bound = true
+		instances.for_view(view).create()
+		instances.for_view(view).open()
+		M.focus_view(view)
+		require("opencode.ui.chat.workspace").ensure(view)
+		return
+	end
+	return instances.for_view(cs.current()).open()
+end
+
+function M.focus()
+	M.open()
+	local view = cs.current()
+	if view.config and view.config.layout == "tab" then return M.focus_view(view) end
+	return instances.for_view(view).focus()
+end
+
+function M.create_split(parent, session, direction)
+	local previous
+	if parent and parent.suspended then
+		local workspace = require("opencode.ui.chat.workspace")
+		previous = workspace.current()
+		workspace.select(parent.workspace_id)
+	end
+	if not cs.valid(parent) or not parent.visible or not parent.winid or not vim.api.nvim_win_is_valid(parent.winid) then return end
+	local view = cs.new()
+	view.workspace_id = parent.workspace_id
+	view.config = vim.deepcopy(parent.config)
+	view.session_id, view.session_name = session.id, session.title or session.name
+	local chat = instances.for_view(view)
+	chat.create()
+	creating_split = true
+	local ok, err = pcall(function()
+		require("opencode.context").preserve_source(function()
+			vim.api.nvim_win_call(parent.winid, function()
+				vim.cmd(direction == "vertical" and "rightbelow vsplit" or "rightbelow split")
+				chat.attach_window(vim.api.nvim_get_current_win())
+			end)
+		end)
+	end)
+	creating_split = false
+	if not ok then
+		chat.close()
+		chat.dispose()
+		cs.remove(view)
+		vim.notify("Could not split OpenCode: " .. tostring(err), vim.log.levels.ERROR)
+		return
+	end
+	M.focus_view(view)
+	if previous then require("opencode.ui.chat.workspace").select(previous.id) end
+	return view
+end
+
+function M.create_layout(session)
+	return require("opencode.ui.chat.workspace").create(session)
+end
+
+function M.after_close()
+	if cs.workspace.switching then return end
+	local workspace = package.loaded["opencode.ui.chat.workspace"]
+	if workspace then workspace.after_close() end
+	local view = cs.current()
+	if view.visible and view.winid and vim.api.nvim_win_is_valid(view.winid) then
+		require("opencode.actions").activate_chat_view(view)
+	else
+		require("opencode.actions").set_active_session(nil, nil, { reason = "pane_focus", preserve_cache = true })
+	end
+	local has_chat = false
+	for _, other in ipairs(cs.all()) do
+		if other.visible and other.tabpage == cs.workspace.tabpage then has_chat = true; break end
+	end
+	-- The last view remains a reopening hint, even after its windows are gone.
+	if not has_chat and (not workspace or #workspace.list() == 0) then cs.workspace.tabpage = nil end
+end
+
+function M.close_view(view, opts)
+	if not cs.valid(view) then return end
+	require("opencode.actions").observe_session(cs.session(view).id, false)
+	if view.suspended then
+		view.suspended = nil
+		view.workspace_id = nil
+		instances.for_view(view).dispose()
+		cs.remove(view)
+		M.after_close()
+		return
+	end
+	if opts and opts.all_windows then
+		local windows = cs.windows(view)
+		if view.winid and not vim.tbl_contains(windows, view.winid) then windows[#windows + 1] = view.winid end
+		for _, win in ipairs(windows) do
+			if vim.api.nvim_win_is_valid(win) then
+				vim.api.nvim_win_call(win, function() instances.for_view(view).close() end)
+			end
+		end
+	else
+		instances.for_view(view).close()
+	end
+	if view.config and view.config.layout == "tab" then M.after_close() end
+end
+
+function M.close() return M.close_view(cs.current()) end
+
+function M.toggle()
+	local config = (require("opencode.state").get_config() or {}).chat or {}
+	if config.layout ~= "tab" then return instances.for_view(cs.current()).toggle() end
+	if vim.api.nvim_get_current_tabpage() ~= cs.workspace.tabpage then return M.open() end
+	require("opencode.ui.input").close_for_view(cs.current())
+	local target = cs.workspace.return_winid
+	if target and vim.api.nvim_win_is_valid(target) and vim.api.nvim_win_get_tabpage(target) ~= cs.workspace.tabpage then
+		vim.api.nvim_set_current_win(target)
+		return
+	end
+	for _, tab in ipairs(vim.api.nvim_list_tabpages()) do
+		if tab ~= cs.workspace.tabpage then vim.api.nvim_set_current_tabpage(tab); return end
+	end
+	vim.cmd("tabnew")
+	cs.workspace.return_winid = vim.api.nvim_get_current_win()
+end
+
+local focus_group = vim.api.nvim_create_augroup("OpenCodeChatViewFocus", { clear = true })
+vim.api.nvim_create_autocmd({ "WinEnter", "TabEnter", "BufWinEnter" }, {
+	group = focus_group,
+	callback = function()
+		if creating_split or cs.workspace.switching then return end
+		local win = vim.api.nvim_get_current_win()
+		local view = cs.for_window(win)
+		if not view or not view.session_bound then return end
+		local function focus()
+			local input = require("opencode.ui.input")
+			local owner = input.owner_view()
+			if owner and (owner ~= view or view.winid ~= win) then input.close_for_view(owner) end
+			if view.winid ~= win or not view.visible then instances.for_view(view).attach_window(win) end
+			cs.activate(view)
+			require("opencode.actions").activate_chat_view(view)
+		end
+		if view.winid ~= win or not view.visible then
+			-- :new and :tabnew briefly inherit the old buffer before replacing it.
+			vim.schedule(function()
+				if cs.valid(view) and vim.api.nvim_win_is_valid(win) and vim.api.nvim_get_current_win() == win
+					and vim.api.nvim_win_get_buf(win) == view.bufnr then focus() end
+			end)
+			return
+		end
+		focus()
+	end,
+})
 
 return M

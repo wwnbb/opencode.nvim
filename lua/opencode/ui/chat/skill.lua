@@ -1,11 +1,13 @@
+local cs = require("opencode.ui.chat.state")
+return cs.factory("skill", function(view)
 -- Skill tool widget renderer for the chat buffer.
 
 local M = { animation_line = 0 }
 
-local tool_panel = require("opencode.ui.chat.tool_panel")
-local tool_group = require("opencode.ui.chat.tool_group")
-local style = require("opencode.ui.chat.tool_style")
-local render = require("opencode.ui.chat.render")
+local tool_panel = cs.module(view, require("opencode.ui.chat.tool_panel"))
+local tool_group = cs.module(view, require("opencode.ui.chat.tool_group"))
+local style = cs.module(view, require("opencode.ui.chat.tool_style"))
+local render = cs.module(view, require("opencode.ui.chat.render"))
 local text_util = require("opencode.util.text")
 local locale = require("opencode.util.locale")
 local panel = style.panel
@@ -357,3 +359,5 @@ end
 
 M.render = M.render_tool
 return M
+
+end)

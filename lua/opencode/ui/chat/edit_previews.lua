@@ -1,8 +1,10 @@
+local cs = require("opencode.ui.chat.state")
+return cs.factory("edit_previews", function(view)
 local M = {}
 
 local edit_state = require("opencode.edit.state")
-local file_edit_results = require("opencode.ui.chat.file_edit_results")
-local render = require("opencode.ui.chat.render")
+local file_edit_results = cs.module(view, require("opencode.ui.chat.file_edit_results"))
+local render = cs.module(view, require("opencode.ui.chat.render"))
 local sync = require("opencode.sync")
 local text_util = require("opencode.util.text")
 
@@ -310,3 +312,5 @@ function M.sync_session(session_id)
 end
 
 return M
+
+end)

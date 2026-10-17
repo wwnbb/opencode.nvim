@@ -9,12 +9,18 @@ function M.register(palette)
 	palette.register({ id = "prompt.cancel_pending", title = "Cancel Pending Input", category = "prompt",
 		description = "Remove one queued input; keep the current response running",
 		enabled = function() return state.is_connected() and state.get_session().id ~= nil end,
-		run = function()
-			local sid = state.get_session().id
+		run = function(context)
+			context = require("opencode.ui.palette").capture_context(context)
+			local sid = context.session_id
 			if not sid then return end
 			local pending = require("opencode.session.pending")
 			local token = pending.token(sid)
+			local function current()
+				return pending.is_current(token) and (not context.view or not context.view.session_bound
+					or require("opencode.ui.palette").context_valid(context))
+			end
 			actions.list_pending_inputs(sid, function(err, inputs)
+				if not current() then return end
 				if err then vim.notify("Could not load pending inputs: " .. tostring(err.message or err), vim.log.levels.ERROR); return end
 				local items = {}
 				for _, input in ipairs(inputs) do
@@ -22,9 +28,9 @@ function M.register(palette)
 					items[#items + 1] = { label = tostring(text):gsub("[\r\n]", " "), value = input.id }
 				end
 				if #items == 0 then vim.notify("No pending inputs", vim.log.levels.INFO); return end
-				require("opencode.ui.menu").open({ title = " Cancel Pending Input ", items = items,
+				require("opencode.ui.menu").open({ context = context, title = " Cancel Pending Input ", items = items,
 					width = 60, searchable = true, on_select = function(item)
-						if not pending.is_current(token) then return end
+						if not current() then return end
 						actions.cancel_pending_input(sid, item.value, function(cancel_err)
 							if cancel_err then vim.notify("Could not cancel input: " .. tostring(cancel_err.message or cancel_err), vim.log.levels.ERROR) end
 						end)
@@ -34,9 +40,11 @@ function M.register(palette)
 	palette.register({ id = "action.skills", title = "Add Skills", description = "Add skills to the current prompt", category = "prompt", suggested = true,
 		slash = { name = "skills" }, with_parts = "execute", on_select = function(ctx) return ctx.run() end,
 		enabled = function() return state.get_session().id ~= nil and state.is_connected() end,
-			run = function()
-			local session = state.get_session()
+		run = function(context)
+			context = require("opencode.ui.palette").capture_context(context)
+			local session = require("opencode.selectors").current_session(context)
 			if not session.id or not state.is_connected() then vim.notify("Select a connected session first", vim.log.levels.WARN); return end
+			if state.get_session().id ~= session.id then return end
 			local opts = { session_id = session.id, directory = state.get_session_directory(session.id) or vim.fn.getcwd() }
 			local input = require("opencode.ui.input")
 			input.capture_draft_cursor()
@@ -45,7 +53,8 @@ function M.register(palette)
 			local token = pending.token(session.id)
 			local function current()
 				return pending.is_current(token) and state.get_session().id == opts.session_id
-					and input.draft_token() == draft_token
+					and input.draft_token() == draft_token and require("opencode.ui.palette").context_valid(context)
+					and (state.get_session_directory(session.id) or vim.fn.getcwd()) == opts.directory
 			end
 			actions.list_skills(function(err, skills)
 				if not current() then return end
@@ -53,7 +62,7 @@ function M.register(palette)
 				local items = {}
 				for _, skill in ipairs(skills) do items[#items + 1] = { label = skill.name, value = skill.id, skill = skill, description = skill.description } end
 				if #items == 0 then vim.notify("No skills available", vim.log.levels.INFO); return end
-				require("opencode.ui.menu").open({ items = items, title = " Select Skills ", width = 60, searchable = true,
+				require("opencode.ui.menu").open({ context = context, items = items, title = " Select Skills ", width = 60, searchable = true,
 					multi_select = true, confirm_label = "add", on_select = function(selected)
 						local chosen = {}; for _, item in ipairs(selected) do chosen[#chosen + 1] = item.skill end
 						-- The menu has just unmounted; let the input's BufLeave handler

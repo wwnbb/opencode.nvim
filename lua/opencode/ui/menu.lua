@@ -202,6 +202,9 @@ end
 
 function M.open(opts)
 	opts = opts or {}
+	local owner = opts.context and opts.context.view
+	if owner and (not require("opencode.ui.chat.state").valid(owner, opts.context.generation)
+		or not owner.visible or not owner.winid or not vim.api.nvim_win_is_valid(owner.winid)) then return end
 
 	local items = opts.items or {}
 	local keys = normalize_keys(opts.keys)
@@ -233,7 +236,7 @@ function M.open(opts)
 	local footer_lines, message_lines, list_row, frame_extra, max_list_height = layout_metrics(width)
 	local list_height = math.min(max_list_height, math.max(1, #items))
 	local relative, row, col, zindex = float_context.resolve_centered_placement(
-		width + border_width, list_height + frame_extra + border_height
+		width + border_width, list_height + frame_extra + border_height, owner
 	)
 	zindex = zindex or 80
 
@@ -643,7 +646,8 @@ function M.open(opts)
 			prompt = "",
 			default_value = "",
 		} or nil,
-		focus_restore = opts.refocus_chat ~= false and "chat" or false,
+		focus_restore = opts.refocus_chat ~= false and (owner and "previous" or "chat") or false,
+		previous_win = owner and owner.winid,
 		close_on_leave = true,
 		on_close = function()
 			is_closed = true
@@ -654,7 +658,7 @@ function M.open(opts)
 			footer_lines, message_lines, list_row, frame_extra, max_list_height = layout_metrics(width)
 			local _, next_row, next_col = float_context.resolve_centered_placement(
 				width + border_width,
-				math.min(max_list_height, math.max(1, #filtered_items)) + frame_extra + border_height
+				math.min(max_list_height, math.max(1, #filtered_items)) + frame_extra + border_height, owner
 			)
 			view:resize({ frame = { position = { row = next_row, col = next_col } } })
 			render_list()

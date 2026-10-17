@@ -1,8 +1,10 @@
+local cs = require("opencode.ui.chat.state")
+return cs.factory("tool_renderer", function(view)
 local M = {}
 
-local state = require("opencode.ui.chat.state").state
-local chat_tasks = require("opencode.ui.chat.tasks")
-local widget_support = require("opencode.ui.chat.widget_support")
+local state = view
+local chat_tasks = cs.module(view, require("opencode.ui.chat.tasks"))
+local widget_support = cs.module(view, require("opencode.ui.chat.widget_support"))
 local tree = require("opencode.ui.chat.widget_tree")
 
 function M.render_tool_part(ctx, tool_part, message_revision, part_revisions)
@@ -78,3 +80,5 @@ end
 M.render_skill_attachment = M.render_tool_part
 
 return M
+
+end)

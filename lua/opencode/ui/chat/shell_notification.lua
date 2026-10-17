@@ -1,7 +1,9 @@
+local cs = require("opencode.ui.chat.state")
+return cs.factory("shell_notification", function(view)
 -- Native shell completion notices share the existing expandable tool panels.
 local M = {}
-local tool_panel = require("opencode.ui.chat.tool_panel")
-local render = require("opencode.ui.chat.render")
+local tool_panel = cs.module(view, require("opencode.ui.chat.tool_panel"))
+local render = cs.module(view, require("opencode.ui.chat.render"))
 local panel = tool_panel.create_panel({ border_hl = "OpenCodeBashMuted", default_hl = "OpenCodeBashOutput" })
 local MAX_PREVIEW_ROWS = 8
 
@@ -54,7 +56,7 @@ function M.render_tool(part, expanded)
 		end
 		if not expanded and #rows > MAX_PREVIEW_ROWS then
 			local keymaps = require("opencode.util.keymap")
-			local keys = (require("opencode.ui.chat.state").state.config or {}).keymaps
+			local keys = (view.config or {}).keymaps
 			panel.add_line(result, "… " .. tostring(#rows - MAX_PREVIEW_ROWS) .. " more rows · "
 				.. keymaps.label("chat", "confirm", keys) .. " / " .. keymaps.label("chat", "toggle_tool", keys) .. " to expand", "OpenCodeBashMuted")
 		end
@@ -70,3 +72,5 @@ function M.render_tool(part, expanded)
 end
 
 return M
+
+end)

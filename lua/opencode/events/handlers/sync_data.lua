@@ -48,7 +48,8 @@ function M.setup(events)
 		for domain in pairs(methods) do refresh(domain, directory) end
 	end
 	events.on("connected", refresh_all)
-	events.on("session_change", function()
+	events.on("session_change", function(data)
+		if data and data.reason == "pane_focus" and sync.get_catalog_location() == current_directory() then return end
 		if state.is_connected() then refresh_all() end
 	end)
 	events.on("catalog_invalidated", function(data)

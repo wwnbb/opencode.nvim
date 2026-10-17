@@ -3,14 +3,13 @@ local M = {}
 
 local actions = require("opencode.actions")
 local menu = require("opencode.ui.menu")
-local state = require("opencode.state")
 
 local function error_text(err)
 	return type(err) == "table" and (err.message or err.code) or tostring(err)
 end
 
-local function session_id()
-	local id = (state.get_session() or {}).id
+local function session_id(context)
+	local id = context.session_id
 	if not id then vim.notify("No active session", vim.log.levels.WARN) end
 	return id
 end
@@ -39,12 +38,13 @@ local function open_buffer(content, format)
 	return bufnr
 end
 
-local function export(id, opts)
+local function export(id, opts, context)
 	if not id then return false end
 	opts = opts or {}
 	local format = opts.format == "json" and "json" or "markdown"
 	local request_opts = format == "json" and { sanitize = opts.sanitize == true } or {}
 	actions.export_session(id, request_opts, function(err, transcript)
+		if context.view and context.view.session_bound and not require("opencode.ui.palette").context_valid(context) then return end
 		if err then
 			vim.notify("Could not export session: " .. error_text(err), vim.log.levels.ERROR)
 			return
@@ -72,13 +72,15 @@ end
 
 ---Fetch from the server, then copy or open an editable export buffer.
 ---@param opts table { action: "copy"|"buffer", format: "markdown"|"json", thinking?: boolean, tools?: boolean, sanitize?: boolean }
-function M.run(opts)
-	return export(session_id(), opts)
+function M.run(opts, context)
+	context = require("opencode.ui.palette").capture_context(context)
+	return export(session_id(context), opts, context)
 end
 
 ---Show format, content, and destination choices in a single repeatable menu.
-function M.show()
-	local id = session_id()
+function M.show(context)
+	context = require("opencode.ui.palette").capture_context(context)
+	local id = session_id(context)
 	if not id then return false end
 	local pending = require("opencode.session.pending")
 	local token = pending.token(id)
@@ -96,16 +98,18 @@ function M.show()
 		items[#items + 1] = { label = "Copy export", value = "copy" }
 		items[#items + 1] = { label = "Open export buffer", value = "buffer", description = ":write to save" }
 		menu.open({
+			context = context,
 			title = " Export Session ", width = 62, sort = false, items = items,
 			on_select = function(item)
 				if not pending.is_current(token) then return end
+				if context.view and context.view.session_bound and not require("opencode.ui.palette").context_valid(context) then return end
 				local choice = item.value
 				if choice == "format" then
 					opts.format = opts.format == "markdown" and "json" or "markdown"
 				elseif choice == "thinking" or choice == "tools" or choice == "sanitize" then
 					opts[choice] = not opts[choice]
 				else
-					export(id, vim.tbl_extend("force", opts, { action = choice }))
+					export(id, vim.tbl_extend("force", opts, { action = choice }), context)
 					return
 				end
 				choose()

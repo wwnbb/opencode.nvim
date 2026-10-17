@@ -3,22 +3,21 @@ local M = {}
 local state = require("opencode.state")
 local pending = require("opencode.session.pending")
 local owner, scope, listener, bus
+local deferred_scope = false
 local subscriptions = {}
-local focused, visible, observed = true, false, nil
-local acknowledgement, retry_timer
-local retry_count = 0
+local focused, observations = true, {}
 
-local function cancel_retry()
-	if retry_timer then
-		pcall(retry_timer.stop, retry_timer); pcall(retry_timer.close, retry_timer)
-		retry_timer = nil
+local function cancel_retry(entry)
+	if entry.retry_timer then
+		pcall(entry.retry_timer.stop, entry.retry_timer); pcall(entry.retry_timer.close, entry.retry_timer)
+		entry.retry_timer = nil
+		entry.acknowledgement = nil
 	end
 end
 
 function M.clear()
-	cancel_retry()
-	acknowledgement, visible, observed = nil, false, nil
-	retry_count = 0
+	for _, entry in pairs(observations) do cancel_retry(entry) end
+	observations = {}
 end
 
 function M.teardown()
@@ -26,6 +25,7 @@ function M.teardown()
 	if listener then state.off("*", listener) end
 	if bus then for event, callback in pairs(subscriptions) do bus.off(event, callback) end end
 	listener, bus, owner, subscriptions = nil, nil, nil, {}
+	deferred_scope = false
 	pcall(vim.api.nvim_del_augroup_by_name, "OpenCodeViewed")
 end
 
@@ -52,33 +52,42 @@ local function save()
 end
 
 function M.observe(session_id, is_visible)
-	if observed ~= session_id then retry_count = 0 end
-	observed, visible = session_id, is_visible == true
-	if not focused or not visible or not state.is_connected() or not session_id then return end
+	if not session_id then return end
+	local entry = observations[session_id] or { retry_count = 0 }
+	observations[session_id] = entry
+	entry.visible = is_visible == true
+	if not entry.visible then cancel_retry(entry) end
+	if not focused or not entry.visible or not state.is_connected() then return end
+	local views = package.loaded["opencode.ui.chat.state"]
+	if views and type(views.for_session) == "function" then
+		local view = views.for_session(session_id)
+		if view and (not view.visible or not view.winid or not vim.api.nvim_win_is_valid(view.winid)
+			or vim.api.nvim_win_get_tabpage(view.winid) ~= vim.api.nvim_get_current_tabpage()) then return end
+	end
 	local info = state.get_session_record(session_id)
 	local time = info and info.time or {}
 	local idle = time.idle
 	if type(idle) ~= "number" or (type(time.viewed) == "number" and time.viewed >= idle) then return end
-	if acknowledgement and acknowledgement.id == session_id and acknowledgement.idle == idle then return end
-	cancel_retry()
+	if entry.acknowledgement and entry.acknowledgement.idle == idle then return end
+	cancel_retry(entry)
 	local attempt = { id = session_id, idle = idle, token = pending.token(session_id) }
-	acknowledgement = attempt
+	entry.acknowledgement = attempt
 	require("opencode.client").view_session(session_id, idle, function(err)
-		if acknowledgement ~= attempt or not pending.is_current(attempt.token) then return end
+		if observations[session_id] ~= entry or entry.acknowledgement ~= attempt or not pending.is_current(attempt.token) then return end
 		if not err then
-			retry_count = 0
+			entry.retry_count = 0
 			require("opencode.session").remember({ id = session_id, time = { viewed = idle } }, { touch = false, reason = "viewed" })
 			return
 		end
 		-- Auth/config errors require intervention; keep unread rather than retrying forever.
 		if err.retryable == false or err.status == 401 or err.status == 403 or err.status == 404 then return end
-		retry_count = retry_count + 1
-		local delay = math.min(1000 * 2 ^ math.min(retry_count - 1, 5), 30000)
-		retry_timer = vim.defer_fn(function()
-			retry_timer = nil
-			if acknowledgement ~= attempt then return end
-			acknowledgement = nil
-			M.observe(observed, visible)
+		entry.retry_count = entry.retry_count + 1
+		local delay = math.min(1000 * 2 ^ math.min(entry.retry_count - 1, 5), 30000)
+		entry.retry_timer = vim.defer_fn(function()
+			entry.retry_timer = nil
+			if observations[session_id] ~= entry or entry.acknowledgement ~= attempt then return end
+			entry.acknowledgement = nil
+			M.observe(session_id, entry.visible)
 		end, delay)
 	end)
 end
@@ -98,20 +107,44 @@ function M.reorder(session_id, direction)
 	return false
 end
 
-function M.reopen()
+function M.reopen(opts)
+	opts = opts or {}
 	local id = state.get_closed_session_order()[1]
 	if not id then vim.notify("No closed OpenCode session tab", vim.log.levels.INFO); return end
 	local token = pending.token(id)
 	local current = state.get_session().id
+	local views = package.loaded["opencode.ui.chat.state"]
+	local view = opts.view or (views and type(views.current) == "function" and views.current()) or nil
+	if view and not view.session_bound then view = nil end
+	local generation = opts.generation or (view and view.generation)
 	require("opencode.client").get_session(id, function(err, info)
-		if not pending.is_current(token) or state.get_session().id ~= current or state.get_closed_session_order()[1] ~= id then return end
+		if not pending.is_current(token) or state.get_closed_session_order()[1] ~= id then return end
+		if view then
+			if not views.valid(view, generation) then return end
+		elseif state.get_session().id ~= current then return end
 		if err then
 			if err.status == 404 then state.remove_session(id) end
 			vim.notify("Could not reopen session: " .. tostring(err.message or err), vim.log.levels.WARN)
 			return
 		end
-		require("opencode.session").switch_to(info, { reason = "reopen", notify = false })
+		require("opencode.session").switch_to(info, { view = view, reason = "reopen", notify = false })
 	end)
+end
+
+local function has_tab_workspace()
+	local views = package.loaded["opencode.ui.chat.state"]
+	if not views or type(views.all) ~= "function" then return false end
+	for _, view in ipairs(views.all()) do
+		if view.session_bound and view.visible and view.config and view.config.layout == "tab"
+			and view.winid and vim.api.nvim_win_is_valid(view.winid) then return true end
+	end
+	return false
+end
+
+-- Keep an open workspace attached to its original persistence scope. Apply a
+-- deferred directory change before opening the next workspace.
+function M.refresh_scope()
+	if deferred_scope and bus and not has_tab_workspace() then M.setup(bus) end
 end
 
 function M.setup(events)
@@ -164,12 +197,19 @@ function M.setup(events)
 	end
 	state.on("*", listener)
 	subscriptions.disconnected = events.on("disconnected", M.clear)
-	subscriptions.connected = events.on("connected", function() acknowledgement = nil end)
+	subscriptions.connected = events.on("connected", function()
+		for _, entry in pairs(observations) do entry.acknowledgement = nil end
+	end)
 	local group = vim.api.nvim_create_augroup("OpenCodeViewed", { clear = true })
 	vim.api.nvim_create_autocmd("FocusLost", { group = group, callback = function() focused = false end })
-	vim.api.nvim_create_autocmd("FocusGained", { group = group, callback = function() focused = true; M.observe(observed, visible) end })
+	vim.api.nvim_create_autocmd({ "FocusGained", "TabEnter" }, { group = group, callback = function(event)
+		if event.event == "FocusGained" then focused = true end
+		for id, entry in pairs(observations) do M.observe(id, entry.visible) end
+	end })
 	if options.scope ~= "global" then
-		vim.api.nvim_create_autocmd("DirChanged", { group = group, callback = function() M.setup(events) end })
+		vim.api.nvim_create_autocmd("DirChanged", { group = group, callback = function()
+			if has_tab_workspace() then deferred_scope = true else M.setup(events) end
+		end })
 	end
 end
 

@@ -1,9 +1,11 @@
+local cs = require("opencode.ui.chat.state")
+return cs.factory("bash", function(view)
 -- Bash tool widget renderer for the chat buffer.
 
 local M = {}
 
-local tool_panel = require("opencode.ui.chat.tool_panel")
-local render = require("opencode.ui.chat.render")
+local tool_panel = cs.module(view, require("opencode.ui.chat.tool_panel"))
+local render = cs.module(view, require("opencode.ui.chat.render"))
 local syntax = require("opencode.ui.syntax")
 local text_util = require("opencode.util.text")
 
@@ -268,3 +270,5 @@ function M.render_tool(tool_part, expanded)
 end
 
 return M
+
+end)

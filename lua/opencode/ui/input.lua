@@ -19,6 +19,9 @@ local state = {
 	bufnr = nil,
 	winid = nil,
 	parent_winid = nil,
+	view = nil,
+	view_generation = nil,
+	explicit_session = false,
 	popup = nil,
 	info_popup = nil,
 	info_bufnr = nil,
@@ -74,6 +77,12 @@ end
 
 local function current_session_id()
 	return require("opencode.state").get_session().id
+end
+
+local function owner_valid()
+	if not state.view then return true end
+	local views = require("opencode.ui.chat.state")
+	return views.valid(state.view, state.view_generation) and views.session(state.view).id == state.session_id
 end
 
 local function draft_parts()
@@ -148,6 +157,22 @@ local function restore_cursor(text)
 	return true
 end
 
+local function save_pending()
+	if not state.visible or not state.persist_pending or not state.bufnr or not vim.api.nvim_buf_is_valid(state.bufnr) then return end
+	local search = state.history_search and state.history_search.draft
+	local text = search and search.text or get_input_text()
+	history.set_pending(text, search and search.parts or draft_parts(), state.session_id)
+	history.set_pending_mode(search and search.mode or state.mode, state.session_id)
+	history.set_pending_options(search and search.options or state.send_options, state.session_id)
+	local offset = saved_cursor(text, state.session_id)
+	if not search and not (pending_cursor and pending_cursor.locked and offset ~= nil)
+		and (vim.api.nvim_get_current_win() == state.winid or offset == nil) then
+		remember_cursor(text)
+	else
+		history.set_pending_cursor(offset, state.session_id)
+	end
+end
+
 local function refresh_completion()
 	if not history_search.refresh(state) and autocomplete.is_visible(state) then autocomplete.refresh(state) end
 end
@@ -212,8 +237,13 @@ local function resolve_config()
 end
 
 local function resume_chat_input(session_id)
+	local view, generation = state.view, state.view_generation
 	return function()
 		if current_session_id() ~= session_id then return end
+		if view then
+			local views = require("opencode.ui.chat.state")
+			if not views.valid(view, generation) or views.session(view).id ~= session_id then return end
+		end
 		local chat = require("opencode.ui.chat")
 		if chat.is_visible() then chat.focus_input() end
 	end
@@ -221,12 +251,13 @@ end
 
 local function selected_command_context()
 	local session_id = state.session_id
-	return { source = "slash_select", session_id = session_id, args = "", resume_input = resume_chat_input(session_id) }
+	return { source = "slash_select", session_id = session_id, view = state.view, generation = state.view_generation,
+		args = "", resume_input = resume_chat_input(session_id) }
 end
 
 local function command_enter_mode()
 	if state.mode == "shell" then return nil end
-	if not state.allow_chat_commands or state.session_id ~= current_session_id() then return nil end
+	if not state.allow_chat_commands or not owner_valid() or state.session_id ~= current_session_id() then return nil end
 	local parsed = require("opencode.slash").parse(get_input_text())
 	if not parsed then return nil end
 	local command = command_registry.get_slash(parsed.command)
@@ -254,6 +285,7 @@ local function select_typed_command()
 end
 
 local function send_message(delivery)
+	if not owner_valid() then return end
 	if history_search.confirm(state) then return end
 	if state.session_id ~= current_session_id() then
 		vim.notify("The active session changed; reopen this draft in its session", vim.log.levels.WARN)
@@ -303,7 +335,7 @@ local function send_message(delivery)
 	draft_epoch, pending_cursor = draft_epoch + 1, nil
 
 	if state.add_history then
-		history.add(text, parts, state.mode)
+		history.add(text, parts, state.mode, state.session_id)
 	end
 	local send_options = state.send_options and vim.deepcopy(state.send_options) or nil
 	local normal_prompt = state.mode ~= "shell" and not text:match("^%s*/")
@@ -335,23 +367,25 @@ local function send_message(delivery)
 		history.clear_pending(state.session_id)
 	end
 
+	local bufnr, close_on_send, on_send = state.bufnr, state.close_on_send, state.on_send
 	clear_input()
 
-	if state.on_send then
-		state.on_send(text, parts, send_options)
+	if on_send then
+		on_send(text, parts, send_options)
 	end
-	if state.close_on_send then
+	if close_on_send and state.bufnr == bufnr then
 		M.close(false)
 	end
 end
 
 local function cancel_input()
 	if history_search.cancel(state) then return end
+	local bufnr = state.bufnr
 	local text = get_input_text()
 	if state.on_cancel then
 		state.on_cancel(text)
 	end
-	M.close()
+	if state.bufnr == bufnr then M.close() end
 end
 
 local function recall_history(text, parts, mode)
@@ -369,11 +403,11 @@ local function recall_history(text, parts, mode)
 end
 
 local function history_prev()
-	recall_history(history.previous(get_input_text(), draft_parts(), state.mode))
+	recall_history(history.previous(get_input_text(), draft_parts(), state.mode, state.session_id))
 end
 
 local function history_next()
-	recall_history(history.next(get_input_text(), draft_parts(), state.mode))
+	recall_history(history.next(get_input_text(), draft_parts(), state.mode, state.session_id))
 end
 
 local function insert_text_at_cursor(text)
@@ -381,7 +415,7 @@ local function insert_text_at_cursor(text)
 end
 
 local function mount_input(chat_winid, float_dims, cfg)
-	local frame = layout.build(chat_winid, float_dims, cfg)
+	local frame = layout.build(chat_winid, float_dims, cfg, state.view and state.view.session_bound)
 	state.layout = frame.layout
 	state.popup, state.info_popup = popups.mount(frame)
 	state.bufnr = state.popup.bufnr
@@ -400,18 +434,8 @@ end
 local function session_changed(session_id)
 	if not state.visible or state.session_id == session_id then return end
 	history_search.cancel(state)
-	if not state.persist_pending or state.session_bound then M.close(state.persist_pending); return end
-	local previous_id = state.session_id
-	local text = get_input_text()
-	history.set_pending(text, draft_parts(), previous_id)
-	history.set_pending_mode(state.mode, previous_id)
-	history.set_pending_options(state.send_options, previous_id)
-	local offset = saved_cursor(text, previous_id)
-	if vim.api.nvim_get_current_win() == state.winid or offset == nil then
-		remember_cursor(text)
-	else
-		history.set_pending_cursor(offset, previous_id)
-	end
+	if (state.view and state.view.session_bound) or state.explicit_session or not state.persist_pending or state.session_bound then M.close(state.persist_pending); return end
+	save_pending()
 	pending_cursor = nil
 	state.session_id = session_id
 	state.parts = history.get_pending_parts(session_id)
@@ -440,10 +464,11 @@ local function refresh_info()
 end
 
 -- Capture before chat layout/focus changes, including a deferred prompt edit.
-function M.capture_context()
-	local options = history.get_pending_options(current_session_id())
-	if history.get_pending(current_session_id()) == "" and #history.get_pending_parts(current_session_id()) == 0 then
-		local deferred = history.peek_deferred(current_session_id())
+function M.capture_context(session_id)
+	session_id = session_id or current_session_id()
+	local options = history.get_pending_options(session_id)
+	if history.get_pending(session_id) == "" and #history.get_pending_parts(session_id) == 0 then
+		local deferred = history.peek_deferred(session_id)
 		if deferred then options = deferred.options end
 	end
 	return require("opencode.context").capture({ range = options and options.range })
@@ -451,13 +476,40 @@ end
 
 function M.show(opts)
 	opts = opts or {}
+	local view = opts.view
+	local session_id = opts.session_id or (view and require("opencode.ui.chat.state").session(view).id) or current_session_id()
+	if view then
+		local views = require("opencode.ui.chat.state")
+		if not views.valid(view) or views.session(view).id ~= session_id then return false end
+	end
 
 	if state.visible then
-		return M.focus()
+		if (view and (view ~= state.view or view.generation ~= state.view_generation or session_id ~= state.session_id))
+			or (opts.session_id ~= nil and session_id ~= state.session_id) then
+			M.close()
+		else
+			return M.focus()
+		end
 	end
 	if opts.text ~= nil then draft_epoch, pending_cursor = draft_epoch + 1, nil end
 
 	local cfg = resolve_config()
+	history.configure(cfg)
+	history.load()
+	local chat_winid = opts.winid or (view and view.winid)
+	if not chat_winid or not vim.api.nvim_win_is_valid(chat_winid) then
+		chat_winid = vim.api.nvim_get_current_win()
+	end
+	if view and view.session_bound and not opts.float_dims and not layout.can_fit(chat_winid) then
+		if opts.persist_pending ~= false and opts.text ~= nil then
+			history.set_pending(opts.text, copy_parts(opts.parts), session_id)
+			history.set_pending_mode(opts.mode or "normal", session_id)
+			history.set_pending_options(opts.send_options, session_id)
+		end
+		vim.notify("Enlarge the chat pane before opening input", vim.log.levels.INFO)
+		return false
+	end
+
 	state.config = cfg
 	state.on_send = opts.on_send
 	state.on_cancel = opts.on_cancel or function() end
@@ -467,23 +519,19 @@ function M.show(opts)
 	state.persist_pending = opts.persist_pending ~= false
 	state.session_bound = opts.session_bound == true
 	state.add_history = opts.add_history ~= false
-	state.session_id = current_session_id()
+	state.view, state.view_generation = view, view and view.generation
+	state.explicit_session = opts.session_id ~= nil and not (view and not view.session_bound)
+	state.session_id = session_id
 	state.parts = opts.text ~= nil and copy_parts(opts.parts) or history.get_pending_parts(state.session_id)
 	state.mode = opts.mode or (opts.text ~= nil and "normal" or history.get_pending_mode(state.session_id))
 	state.send_options = opts.send_options or (opts.text == nil and history.get_pending_options(state.session_id)) or nil
 	refresh_context_snapshot(opts.context_snapshot, opts.context_error)
 	state.editor_context = opts.session_bound ~= true and require("opencode.editor_context").pending(state.session_id) or nil
 
-	history.configure(cfg)
-	history.load()
 	autocomplete.setup_highlights()
 	info_bar.setup_highlights()
 	mentions.setup_highlights()
 
-	local chat_winid = opts.winid
-	if not chat_winid or not vim.api.nvim_win_is_valid(chat_winid) then
-		chat_winid = vim.api.nvim_get_current_win()
-	end
 	state.parent_winid = chat_winid
 
 	mount_input(chat_winid, opts.float_dims, cfg)
@@ -492,7 +540,11 @@ function M.show(opts)
 
 	autocmds.setup(state, {
 		schedule_resize = schedule_resize_input,
-		reflow = function() layout.reflow(state); refresh_completion(); info_bar.update(state) end,
+		reflow = function()
+			if state.layout.constrain_to_parent and state.parent_winid and vim.api.nvim_win_is_valid(state.parent_winid)
+				and not layout.can_fit(state.parent_winid) then M.close(); return end
+			layout.reflow(state); refresh_completion(); info_bar.update(state)
+		end,
 		input_changed = function()
 			if not history_search.refresh(state) and state.mode ~= "shell" then autocomplete.refresh(state) end
 			info_bar.update(state)
@@ -513,21 +565,17 @@ function M.show(opts)
 			M.close()
 		end,
 	})
-	-- Popup teardown is scheduled after BufLeave. Capture the insertion point
-	-- now, before another popup or InsertLeave can move the old window's caret.
-	vim.api.nvim_create_autocmd("BufLeave", {
+	-- Native tab closure wipes the draft before scheduled popup teardown runs.
+	vim.api.nvim_create_autocmd({ "BufLeave", "BufWipeout" }, {
 		buffer = state.bufnr,
-		callback = function()
-			history_search.cancel(state)
-			local text = get_input_text()
-			if state.visible and state.persist_pending
-				and not (pending_cursor and pending_cursor.locked and saved_cursor(text, state.session_id) ~= nil) then
-				remember_cursor(text)
-			end
+		callback = function(args)
+			if args.buf ~= state.bufnr then return end
+			if args.event == "BufLeave" then history_search.cancel(state) end
+			save_pending()
 		end,
 	})
 
-	keymaps.setup(state.bufnr, cfg, {
+	local handlers = {
 		send = send_message,
 		send_queue = function() send_message("queue") end,
 		send_steer = function() send_message("steer") end,
@@ -576,7 +624,14 @@ function M.show(opts)
 			vim.cmd("normal! " .. command)
 			schedule_resize_input()
 		end,
-	})
+	}
+	local bufnr = state.bufnr
+	for name, handler in pairs(handlers) do
+		handlers[name] = function(...)
+			if state.visible and state.bufnr == bufnr and owner_valid() then return handler(...) end
+		end
+	end
+	keymaps.setup(bufnr, cfg, handlers)
 
 	local text = opts.text
 	if text == nil then
@@ -598,18 +653,8 @@ function M.close(save_draft)
 	end
 	history_search.cancel(state)
 
-	if save_draft ~= false and state.persist_pending then
-		local text = get_input_text()
-		history.set_pending(text, draft_parts(), state.session_id)
-		history.set_pending_mode(state.mode, state.session_id)
-		history.set_pending_options(state.send_options, state.session_id)
-		local offset = saved_cursor(text, state.session_id)
-		if vim.api.nvim_get_current_win() == state.winid or offset == nil then
-			remember_cursor(text)
-		else
-			history.set_pending_cursor(offset, state.session_id)
-		end
-	end
+	if save_draft ~= false then save_pending() end
+	state.visible = false
 	require("opencode.state").off("session.id", session_changed)
 	for _, event in ipairs({ "sync_changed", "sessions_changed", "config_change" }) do require("opencode.events").off(event, refresh_info) end
 
@@ -618,9 +663,11 @@ function M.close(save_draft)
 	focus_parent_before_unmount()
 	popups.unmount(state)
 
-	state.visible = false
 	state.winid = nil
 	state.parent_winid = nil
+	state.view = nil
+	state.view_generation = nil
+	state.explicit_session = false
 	state.bufnr = nil
 	state.popup = nil
 	state.info_popup = nil
@@ -652,6 +699,43 @@ function M.is_visible()
 	return state.visible
 end
 
+function M.owner_view()
+	return state.visible and state.view or nil
+end
+
+function M.close_for_view(view)
+	if state.visible and state.view == view then M.close() end
+end
+
+-- Retain temporary review callbacks as well as drafts across background layout work.
+function M.suspend()
+	if not state.visible or not state.view or not owner_valid() then return end
+	history_search.cancel(state)
+	local opts = { text = get_input_text(), parts = draft_parts() }
+	for _, key in ipairs({ "view", "session_id", "on_send", "on_cancel", "close_on_send", "allow_chat_commands",
+		"allow_context", "persist_pending", "session_bound", "add_history", "mode", "send_options", "context_snapshot", "context_error" }) do
+		opts[key] = state[key]
+	end
+	local generation, cursor = state.view_generation, vim.api.nvim_win_get_cursor(state.winid)
+	local parent = state.parent_winid ~= state.view.winid and state.parent_winid or nil
+	local float_dims = state.layout.float_dims
+	local insert = vim.api.nvim_get_mode().mode:sub(1, 1) == "i"
+	M.close()
+	return function()
+		local views = require("opencode.ui.chat.state")
+		if not views.valid(opts.view, generation) or not opts.view.visible or views.session(opts.view).id ~= opts.session_id then return end
+		require("opencode.ui.chat").focus_view(opts.view)
+		opts.winid, opts.float_dims = opts.view.winid, opts.view.float_dims
+		if parent and vim.api.nvim_win_is_valid(parent) then
+			opts.winid, opts.float_dims = parent, float_dims
+			vim.api.nvim_set_current_win(parent)
+		end
+		if M.show(opts) == false then return end
+		vim.api.nvim_win_set_cursor(state.winid, cursor)
+		if not insert then vim.cmd("stopinsert") end
+	end
+end
+
 function M.draft_token()
 	return draft_epoch
 end
@@ -664,6 +748,7 @@ end
 
 function M.focus()
 	if not state.visible or not state.winid or not vim.api.nvim_win_is_valid(state.winid) then return false end
+	if not owner_valid() then M.close(); return false end
 	vim.api.nvim_set_current_win(state.winid)
 	vim.cmd("startinsert")
 	return true
@@ -916,7 +1001,11 @@ end
 
 ---@return boolean success
 function M.paste_clipboard()
+	local bufnr, visible, session_id = state.bufnr, state.visible, current_session_id()
 	return attachments.paste_clipboard(state, {
+		is_current = function()
+			return state.bufnr == bufnr and state.visible == visible and current_session_id() == session_id and owner_valid()
+		end,
 		insert_text_at_cursor = insert_text_at_cursor,
 		normalize_pasted_image_paths = function()
 			attachments.normalize_pasted_image_paths(state, resize_input)

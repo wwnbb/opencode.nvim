@@ -8,6 +8,8 @@ M.HEADER_WIDTH = 50
 ---@field interactive_count number
 ---@field first_interactive_line number|nil
 ---@field auto_focus boolean
+---@field option_lines table<number, number>|nil
+---@field option_end_lines table<number, number>|nil
 ---@field file_ranges table[]|nil
 
 ---@param icon string
@@ -83,6 +85,21 @@ function M.get_focus_offset(meta)
 	end
 
 	return meta.first_interactive_line
+end
+
+-- Wrapped choices occupy all of their rendered rows; footers are not choices.
+function M.get_option_index(meta, line)
+	if not meta then return nil end
+	if meta.option_lines then
+		for index, first in pairs(meta.option_lines) do
+			local last = (meta.option_end_lines or {})[index] or first
+			if line >= first and line <= last then return index end
+		end
+		return nil
+	end
+	local count = meta.option_count or meta.interactive_count or 0
+	local first = meta.first_interactive_line
+	if first and line >= first and line < first + count then return line - first + 1 end
 end
 
 return M
