@@ -65,6 +65,11 @@ function M.new(name, opts)
 	return pool
 end
 
+function M.remove(name)
+	local pool = pools[name]
+	if pool then pool:clear(); pools[name] = nil end
+end
+
 ---Values are private immutable snapshots. Callers copy any publicly mutable data.
 ---Owner and signature must be exact stable keys (usually strings or numbers).
 function Pool:get(owner, signature)
