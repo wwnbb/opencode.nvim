@@ -13,6 +13,66 @@ projects, and prompts without leaving the editor.
 The goal of opencode.nvim is to make OpenCode feel lightweight, scriptable, keyboard-friendly,
 and naturally integrated into the Neovim workflow.
 
+# Chat layouts and independent panes
+
+Choose `chat.layout = "vertical"`, `"horizontal"`, `"float"`, or `"tab"`.
+The `tab` layout opens a dedicated Neovim tab page. Opening OpenCode again
+from another tab returns to the existing OpenCode tab and its last focused pane.
+Inside this page, a separate OpenCode tabbar switches complete layouts. Each
+OpenCode tab keeps its own splits, sessions, sizes, scroll positions, and drafts;
+switching it does not create or switch native Neovim tabs. The session tabbars
+in `vertical`, `horizontal`, and `float` layouts keep their existing behavior.
+
+```lua
+require("opencode").setup({
+  chat = {
+    layout = "tab",
+    session_tabs = { auto_fit = true }, -- fit the shared OpenCode tabbar
+    keymaps = {
+      split_vertical = { "<C-w>v", "<C-w><C-v>" },   -- new session to the right
+      split_horizontal = { "<C-w>s", "<C-w><C-s>" }, -- new session below
+    },
+  },
+})
+```
+
+Inside that tab, `:OpenCodeVsplit` and `:OpenCodeHsplit` create independent
+chat sessions. The mappings above work in chat buffers, including when Ctrl
+stays held for the second key; the command palette
+offers the same actions. Lua callers can use `require("opencode").split("vertical")`
+or `require("opencode").split("horizontal")`. Each pane keeps its session, scroll position, expanded
+widgets, and draft. The composer opens for one pane at a time and saves its
+text, attachments, and cursor when you switch panes. Model, agent, and reasoning
+choices belong to each session. Selecting a session already visible in another
+pane restores its layout and focuses that pane. `N` starts a new session in a
+new OpenCode tab. `gt`, `gT`, and `Ngt` switch whole layouts. Opening a session
+from history also creates a layout when it is not already open.
+
+Use normal Neovim window navigation and resizing, such as `<C-w>h/j/k/l` and
+`<C-w>=`. Plain `:vsplit` or `:split` duplicates the current buffer; it does
+not create an independent OpenCode session. Use the OpenCode commands for that.
+Editor file windows can also share the tab. Switching layouts dismisses inline
+diff proposals and keeps the actual file window with any unsaved edits. The split commands require the
+`tab` layout; `chat.width`, `chat.height`, `chat.position`, and
+`chat.close_on_focus_lost` do not control this layout.
+
+`:OpenCodeToggle` (default `<leader>oo`) returns to the editor while keeping
+the OpenCode tab and all panes, then brings them back on the next invocation.
+`q` or `:OpenCodeClose` closes the focused chat pane. Closing its last pane
+removes the OpenCode tab only if it contains no other windows. Closing a pane
+does not delete its server session. `x` closes the current OpenCode layout and
+its local session tabs, then restores the layout immediately to its left (or the
+next layout when closing the first). `:OpenCodeCloseSession`
+closes only the current session: its pane selects the next session not already
+shown elsewhere, or closes if none is available. Native copies of the same chat
+buffer share this session change. Neither action deletes server sessions.
+Reopening after `q` restores the last session and its draft.
+
+With `chat.session_tabs.scope = "cwd"`, an open OpenCode tab keeps its session
+list when the working directory changes. The new directory's list is restored
+after closing and reopening the workspace. Split geometry is not restored after
+restarting Neovim; the existing session-list persistence is unchanged.
+
 # Keyboard configuration
 
 Every key assigned by the plugin is configurable. The keys mentioned elsewhere
@@ -937,13 +997,14 @@ Install and configure opencode.nvim in this Neovim config.
 
 Follow these steps:
 1. Inspect the current Neovim config first. Identify the plugin manager, config structure, existing keymap style, colors/highlight setup, and any existing OpenCode or AI-assistant config.
-2. Ask targeted questions only when a choice is not obvious. Ask, for example, which plugin manager to use if it is unclear, which keymap should toggle/open opencode, whether session tabs should use a fixed max count or dynamic auto-fit, and whether the chat layout should be vertical, horizontal, or float.
+2. Ask targeted questions only when a choice is not obvious. Ask, for example, which plugin manager to use if it is unclear, which keymap should toggle/open opencode, whether session tabs should use a fixed max count or dynamic auto-fit, and whether the chat layout should be vertical, horizontal, float, or a dedicated tab with independent chat panes.
 3. Add `wwnbb/opencode.nvim` through the existing plugin manager. Include dependencies: MunifTanjim/nui.nvim and nvim-lua/plenary.nvim. If the config uses lazy.nvim, ask whether I want you to install/sync the plugin now by running `nvim --headless "+Lazy! sync" +qa`; run it only if I confirm.
 4. Configure the plugin manager build/install hook to run `scripts/install-tools.sh` so the bundled opencode.nvim server plugin is updated with the Lua plugin. This only copies prepared files using Neovim; do not install Node.js, npm, or Bun for it. If the plugin manager has no build hook, run the script manually from the plugin root. Verify `opencode --version` reports 2.0.26 or newer, then connect and inspect Server Status in the command palette.
 5. Configure `require("opencode").setup()` using only supported options:
    - `server.command`, `server.auto_start`, `server.config_dir`, `server.env`
    - `session.default_agent`, `session.default_model.providerID`, `session.default_model.modelID`, `session.parallel.enabled`
-   - `chat.layout` (`vertical`, `horizontal`, or `float`), `chat.position`, `chat.width`, `chat.height`, `chat.float.width`, `chat.float.height`, `chat.float.border`, `chat.close_on_focus_lost`
+   - `chat.layout` (`vertical`, `horizontal`, `float`, or `tab`), `chat.position`, `chat.width`, `chat.height`, `chat.float.width`, `chat.float.height`, `chat.float.border`, `chat.close_on_focus_lost`
+   - `chat.keymaps.split_vertical`, `chat.keymaps.split_horizontal` (independent chat panes in the `tab` layout)
    - `popup.border` (`none`, `single`, `double`, `rounded`, `solid`, or a Nui border character table)
    - `chat.session_tabs.enabled`, `chat.session_tabs.auto_fit`, `chat.session_tabs.max_tabs`, `chat.session_tabs.separator`, `chat.session_tabs.icons`, `chat.session_tabs.colors`
    - top-level `keymaps.toggle`, `keymaps.command_palette`, `keymaps.toggle_logs`, `keymaps.close_session`, `keymaps.abort`, `keymaps.active_sessions`
@@ -1020,7 +1081,7 @@ require("opencode").setup({
     },
   },
   chat = {
-    layout = "vertical",
+    layout = "vertical", -- "horizontal", "float", or "tab" for independent panes
     position = "right",
     width = 80,
     close_on_focus_lost = true,
