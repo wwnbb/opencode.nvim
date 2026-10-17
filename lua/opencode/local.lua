@@ -29,6 +29,31 @@ local state = {
 -- State change listeners
 local listeners = {}
 
+local function session_id(opts)
+	if opts and opts.session_id ~= nil then return opts.session_id end
+	return require("opencode.state").get_session().id
+end
+
+local function catalog(domain, opts)
+	local id = session_id(opts)
+	local directory = id and require("opencode.state").get_session_directory(id)
+	if directory and sync.get_catalog_location() and sync.get_catalog_location() ~= directory then
+		local entry = sync.get_location_catalog(directory, domain)
+		return entry and entry.data or {}
+	end
+end
+
+local function providers(opts)
+	local scoped = catalog("providers", opts)
+	return scoped and (scoped.providers or {}) or sync.get_providers()
+end
+
+local function provider(id, opts)
+	local scoped = catalog("providers", opts)
+	if not scoped then return sync.get_provider(id) end
+	for _, item in ipairs(scoped.providers or {}) do if item.id == id then return item end end
+end
+
 ---@param value any
 ---@return string
 local function value_kind(value)
@@ -49,9 +74,9 @@ end
 ---@param key string
 ---@param old_val any
 ---@param new_val any
-local function emit(key, old_val, new_val)
+local function emit(key, old_val, new_val, opts)
 	if key == "agent" or key == "model" or key == "variant" then
-		require("opencode.session.selection").choose(require("opencode.state").get_session().id, key, new_val)
+		require("opencode.session.selection").choose(session_id(opts), key, new_val)
 	end
 	for _, cb in ipairs(vim.list_slice(listeners)) do
 		pcall(cb, key, new_val, old_val)
@@ -84,24 +109,24 @@ end
 ---Check if a model is valid (provider connected and model exists)
 ---@param model any
 ---@return boolean
-local function is_model_valid(model)
+local function is_model_valid(model, opts)
 	if type(model) ~= "table" or type(model.providerID) ~= "string" or type(model.modelID) ~= "string" then
 		return false
 	end
 	if model.providerID == "" or model.modelID == "" then
 		return false
 	end
-	local provider = sync.get_provider(model.providerID)
+	local provider = provider(model.providerID, opts)
 	if not provider or not provider.models then
 		return false
 	end
 	return provider.models[model.modelID] ~= nil
 end
 
-local function valid_models(models)
+local function valid_models(models, opts)
 	local valid = {}
 	for _, model in ipairs(models) do
-		if is_model_valid(model) then
+		if is_model_valid(model, opts) then
 			table.insert(valid, model)
 		end
 	end
@@ -147,8 +172,9 @@ end
 
 ---Get list of available agents (excluding subagents and hidden)
 ---@return table[]
-function M.agent.list()
-	return sync.get_visible_agents()
+function M.agent.list(opts)
+	local scoped = catalog("agents", opts)
+	return scoped and sync.filter_visible_agents(scoped) or sync.get_visible_agents()
 end
 
 local function find_agent(agents, name)
@@ -163,12 +189,12 @@ end
 ---Get current agent
 ---@return table|nil
 function M.agent.current(opts)
-	local agents = M.agent.list()
+	local agents = M.agent.list(opts)
 	if #agents == 0 then
 		return nil
 	end
 	-- Find current agent or return first
-	local scoped = not (opts and opts.unscoped) and require("opencode.session.selection").current(require("opencode.state").get_session().id)
+	local scoped = not (opts and opts.unscoped) and require("opencode.session.selection").current(session_id(opts))
 	local selected = scoped and scoped.agent or state.agent
 	if selected then
 		local agent = find_agent(agents, selected)
@@ -181,8 +207,8 @@ end
 
 ---Set current agent by name
 ---@param name string
-function M.agent.set(name)
-	local agent = find_agent(M.agent.list(), name)
+function M.agent.set(name, opts)
+	local agent = find_agent(M.agent.list(opts), name)
 	if not agent then
 		vim.notify("Agent not found: " .. tostring(name), vim.log.levels.WARN)
 		return
@@ -191,7 +217,7 @@ function M.agent.set(name)
 	local old = state.agent
 	state.agent = name
 	save_state()
-	emit("agent", old, name)
+	emit("agent", old, name, opts)
 end
 
 ---Cycle to next/previous agent
@@ -199,7 +225,7 @@ end
 ---@param opts? { silent?: boolean }
 function M.agent.move(direction, opts)
 	opts = opts or {}
-	local agents = M.agent.list()
+	local agents = M.agent.list(opts)
 	if #agents == 0 then
 		if not opts.silent then
 			vim.notify("No agents available", vim.log.levels.WARN)
@@ -207,7 +233,7 @@ function M.agent.move(direction, opts)
 		return
 	end
 	local current_idx = direction == 1 and 0 or (#agents + 1)
-	local current = M.agent.current()
+	local current = M.agent.current(opts)
 	if current then
 		for i, agent in ipairs(agents) do
 			if (agent.id or agent.name) == (current.id or current.name) then
@@ -223,10 +249,10 @@ function M.agent.move(direction, opts)
 		next_idx = 1
 	end
 	local agent = agents[next_idx]
-	M.agent.set(agent.id or agent.name)
+	M.agent.set(agent.id or agent.name, opts)
 	-- If agent has a configured model, switch to it
-	if agent.model and is_model_valid(agent.model) then
-		M.model.set(agent.model, { silent = true })
+	if agent.model and is_model_valid(agent.model, opts) then
+		M.model.set(agent.model, vim.tbl_extend("force", opts, { silent = true }))
 	end
 end
 
@@ -265,31 +291,32 @@ M.model = {}
 
 ---Get fallback model from config, recent models, or provider defaults.
 ---@return { providerID: string, modelID: string }|nil
-local function get_fallback_model()
-	local config = sync.get_config()
+local function get_fallback_model(opts)
+	local config = catalog("config", opts) or sync.get_config()
 	if type(config.model) == "string" then
 		local provider_id, model_id = config.model:match("^([^/]+)/(.+)$")
 		if provider_id and model_id then
 			local m = { providerID = provider_id, modelID = model_id }
-			if is_model_valid(m) then
+			if is_model_valid(m, opts) then
 				return m
 			end
 		end
 	end
 
 	for _, item in ipairs(state.recent) do
-		if is_model_valid(item) then
+		if is_model_valid(item, opts) then
 			return item
 		end
 	end
 
-	local providers = sync.get_providers()
-	local defaults = sync.get_provider_defaults()
+	local providers = providers(opts)
+	local scoped = catalog("providers", opts)
+	local defaults = scoped and (scoped.default or {}) or sync.get_provider_defaults()
 	for _, provider in ipairs(providers) do
 		local default_model = type(provider.id) == "string" and defaults[provider.id] or nil
 		if default_model then
 			local m = { providerID = provider.id, modelID = default_model }
-			if is_model_valid(m) then
+			if is_model_valid(m, opts) then
 				return m
 			end
 		end
@@ -353,7 +380,7 @@ end
 ---Get current model key for the current agent
 ---@return { providerID: string, modelID: string }|nil
 function M.model.current(opts)
-	local scoped = not (opts and opts.unscoped) and require("opencode.session.selection").current(require("opencode.state").get_session().id)
+	local scoped = not (opts and opts.unscoped) and require("opencode.session.selection").current(session_id(opts))
 	if scoped and scoped.model then return scoped.model end
 	local agent = M.agent.current(opts)
 	if not agent then
@@ -383,11 +410,11 @@ function M.model.current(opts)
 		},
 		{
 			source = "fallback",
-			model = get_fallback_model(),
+			model = get_fallback_model(opts),
 		},
 	}
 	for _, candidate in ipairs(candidates) do
-		if is_model_valid(candidate.model) then
+		if is_model_valid(candidate.model, opts) then
 			if should_log_model_selection(candidates, agent, candidate.source) then
 				for _, skipped in ipairs(candidates) do
 					if skipped == candidate then
@@ -443,11 +470,11 @@ end
 
 ---Get current model info (with name, provider name, etc.)
 ---@return { providerID: string, modelID: string, name: string, provider: string, reasoning: boolean }|nil
-function M.model.parsed()
-	local current = M.model.current()
+function M.model.parsed(opts)
+	local current = M.model.current(opts)
 	if not current then
 		-- Check if providers are loaded yet
-		local providers = sync.get_providers()
+		local providers = providers(opts)
 		if #providers == 0 then
 			-- Providers not loaded yet - show loading state
 			return {
@@ -467,7 +494,7 @@ function M.model.parsed()
 			reasoning = false,
 		}
 	end
-	local provider = sync.get_provider(current.providerID)
+	local provider = provider(current.providerID, opts)
 	local model_info = provider and provider.models and provider.models[current.modelID]
 	return {
 		providerID = current.providerID,
@@ -536,7 +563,7 @@ end
 ---@param opts? { recent?: boolean, silent?: boolean }
 function M.model.set(model, opts)
 	opts = opts or {}
-	if not is_model_valid(model) then
+	if not is_model_valid(model, opts) then
 		if not opts.silent then
 			local provider_id = type(model) == "table" and model.providerID or nil
 			local model_id = type(model) == "table" and model.modelID or nil
@@ -548,11 +575,11 @@ function M.model.set(model, opts)
 		return
 	end
 	model = vim.deepcopy(model)
-	local model_info = sync.get_model(model.providerID, model.modelID)
+	local model_info = provider(model.providerID, opts).models[model.modelID]
 	if model.variant == "default" or (model.variant and not (model_info.variants or {})[model.variant]) then
 		model.variant = nil
 	end
-	local agent = M.agent.current()
+	local agent = M.agent.current(opts)
 	if agent then
 		state.model[agent.id or agent.name] = { providerID = model.providerID, modelID = model.modelID }
 	end
@@ -570,7 +597,7 @@ function M.model.set(model, opts)
 		state.recent = new_recent
 	end
 	save_state()
-	emit("model", nil, model)
+	emit("model", nil, model, opts)
 end
 
 ---Cycle through favorite or recent models
@@ -578,13 +605,13 @@ end
 ---@param opts? { silent?: boolean, source?: "favorite"|"recent" }
 function M.model.cycle(direction, opts)
 	opts = opts or {}
-	if require("opencode.session.lock").is_locked(require("opencode.state").get_session().id) then return end
-	local current = M.model.current() or {}
+	if require("opencode.session.lock").is_locked(session_id(opts)) then return end
+	local current = M.model.current(opts) or {}
 
 	-- Determine which list to use: favorites take priority over recents
-	local source_list = valid_models(opts.source == "recent" and state.recent or state.favorite)
+	local source_list = valid_models(opts.source == "recent" and state.recent or state.favorite, opts)
 	if #source_list == 0 and not opts.source then
-		source_list = valid_models(state.recent)
+		source_list = valid_models(state.recent, opts)
 	end
 
 	if #source_list == 0 then
@@ -624,7 +651,7 @@ function M.model.cycle(direction, opts)
 
 	local next_model = source_list[next_idx]
 	if next_model then
-		M.model.set(next_model, { silent = true })
+		M.model.set(next_model, vim.tbl_extend("force", opts, { silent = true }))
 	end
 end
 
@@ -662,7 +689,7 @@ end
 ---Get current variant for current model
 ---@return string|nil
 function M.variant.current(opts)
-	local scoped = not (opts and opts.unscoped) and require("opencode.session.selection").current(require("opencode.state").get_session().id)
+	local scoped = not (opts and opts.unscoped) and require("opencode.session.selection").current(session_id(opts))
 	if scoped and scoped.model then return scoped.variant ~= "default" and scoped.variant or nil end
 	local model = M.model.current(opts)
 	if not model then
@@ -692,7 +719,7 @@ function M.variant.list(opts)
 	if not model then
 		return {}
 	end
-	local provider = sync.get_provider(model.providerID)
+	local provider = provider(model.providerID, opts)
 	if not provider or not provider.models then
 		return {}
 	end
@@ -712,14 +739,15 @@ end
 
 ---Set variant for current model
 ---@param value string|nil
-function M.variant.set(value)
-	if require("opencode.session.lock").is_locked(require("opencode.state").get_session().id) then return false end
-	local model = M.model.current()
+function M.variant.set(value, opts)
+	if require("opencode.session.lock").is_locked(session_id(opts)) then return false end
+	local model = M.model.current(opts)
 	if not model then
 		return false
 	end
 	if value == "default" then value = nil end
-	local model_info = sync.get_model(model.providerID, model.modelID)
+	local selected_provider = provider(model.providerID, opts)
+	local model_info = selected_provider and selected_provider.models and selected_provider.models[model.modelID]
 	if value ~= nil and not (model_info and model_info.variants or {})[value] then
 		vim.notify("Variant is unavailable for this model: " .. tostring(value), vim.log.levels.WARN)
 		return false
@@ -728,7 +756,7 @@ function M.variant.set(value)
 	local old = state.variant[key]
 	state.variant[key] = value
 	save_state()
-	emit("variant", old, value)
+	emit("variant", old, value, opts)
 	return true
 end
 
@@ -736,14 +764,14 @@ end
 ---@param opts? { silent?: boolean }
 function M.variant.cycle(opts)
 	opts = opts or {}
-	local variants = M.variant.list()
+	local variants = M.variant.list(opts)
 	if #variants == 0 then
 		if not opts.silent then
 			vim.notify("No variants available for this model", vim.log.levels.INFO)
 		end
 		return
 	end
-	local current = M.variant.current()
+	local current = M.variant.current(opts)
 	local new_variant
 	if not current then
 		-- No variant selected, select first
@@ -765,7 +793,7 @@ function M.variant.cycle(opts)
 			new_variant = variants[current_idx + 1]
 		end
 	end
-	M.variant.set(new_variant)
+	M.variant.set(new_variant, opts)
 	-- Show feedback
 	if not opts.silent then
 		if new_variant then
