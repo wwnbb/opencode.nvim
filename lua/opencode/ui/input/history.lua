@@ -5,7 +5,7 @@ local M = {}
 local HISTORY_VERSION = 2
 local store = {
 	entries = {},
-	index = 1,
+	indices = {},
 	max_entries = 100,
 	history_file = vim.fn.stdpath("data") .. "/opencode_input_history.json",
 	loaded = false,
@@ -70,8 +70,11 @@ local function normalized_entry(entry)
 end
 
 local function trim()
-	while #store.entries > store.max_entries do table.remove(store.entries, 1) end
-	store.index = #store.entries + 1
+	local removed = math.max(0, #store.entries - store.max_entries)
+	for _ = 1, removed do table.remove(store.entries, 1) end
+	for key, index in pairs(store.indices) do
+		store.indices[key] = math.max(1, math.min(index - removed, #store.entries + 1))
+	end
 end
 
 local function save()
@@ -91,7 +94,7 @@ function M.configure(cfg)
 		store.loaded_file = nil
 		store.read_only = false
 		store.entries = {}
-		store.index = 1
+		store.indices = {}
 	end
 	store.max_entries = positive_int(cfg.max_history, store.max_entries)
 	trim()
@@ -100,6 +103,7 @@ end
 function M.load()
 	if store.loaded and store.loaded_file == store.history_file then return end
 	store.entries = {}
+	store.indices = {}
 	store.read_only = false
 	local decoded = require("opencode.util.json_file").read(store.history_file)
 	if type(decoded) == "table" then
@@ -123,14 +127,21 @@ end
 ---@param text string|nil
 ---@param parts table[]|nil
 ---@param mode string|nil
-function M.add(text, parts, mode)
+function M.add(text, parts, mode, session_id)
 	if type(text) ~= "string" or (text == "" and #(parts or {}) == 0) then return end
 	M.load()
 	local entry = normalized_entry({ text = text, parts = parts or {}, mode = mode })
 	if not entry then return end
-	if #store.entries > 0 and vim.deep_equal(store.entries[#store.entries], entry) then return end
+	if #store.entries > 0 and vim.deep_equal(store.entries[#store.entries], entry) then
+		store.indices[session_key(session_id)] = #store.entries + 1
+		return
+	end
+	for key, index in pairs(store.indices) do
+		if index == #store.entries + 1 then store.indices[key] = index + 1 end
+	end
 	store.entries[#store.entries + 1] = entry
 	trim()
+	store.indices[session_key(session_id)] = #store.entries + 1
 	save()
 end
 
@@ -138,25 +149,29 @@ local function recalled(entry)
 	return entry.text, M.copy_parts(entry.parts), entry.mode
 end
 
-local function can_move(text, parts, mode)
+local function can_move(index, text, parts, mode)
 	if text == nil or (text == "" and #(parts or {}) == 0) then return true end
-	return vim.deep_equal(store.entries[store.index], normalized_entry({ text = text, parts = parts, mode = mode }))
+	return vim.deep_equal(store.entries[index], normalized_entry({ text = text, parts = parts, mode = mode }))
 end
 
-function M.previous(text, parts, mode)
-	if store.index <= 1 or not can_move(text, parts, mode) then return nil end
-	store.index = store.index - 1
-	return recalled(store.entries[store.index])
+function M.previous(text, parts, mode, session_id)
+	local key = session_key(session_id)
+	local index = store.indices[key] or #store.entries + 1
+	if index <= 1 or not can_move(index, text, parts, mode) then return nil end
+	store.indices[key] = index - 1
+	return recalled(store.entries[index - 1])
 end
 
-function M.next(text, parts, mode)
-	if not can_move(text, parts, mode) then return nil end
-	if store.index < #store.entries then
-		store.index = store.index + 1
-		return recalled(store.entries[store.index])
+function M.next(text, parts, mode, session_id)
+	local key = session_key(session_id)
+	local index = store.indices[key] or #store.entries + 1
+	if not can_move(index, text, parts, mode) then return nil end
+	if index < #store.entries then
+		store.indices[key] = index + 1
+		return recalled(store.entries[index + 1])
 	end
-	if store.index == #store.entries then
-		store.index = store.index + 1
+	if index == #store.entries then
+		store.indices[key] = index + 1
 		return "", {}, "normal"
 	end
 	return nil
@@ -188,7 +203,8 @@ function M.clear_pending(session_id)
 end
 
 function M.clear_session(session_id)
-	store.drafts[session_key(session_id)] = nil
+	local key = session_key(session_id)
+	store.drafts[key], store.indices[key] = nil, nil
 end
 
 function M.defer_pending(value, session_id)
@@ -260,7 +276,7 @@ end
 
 function M.clear()
 	store.entries = {}
-	store.index = 1
+	store.indices = {}
 	store.drafts = {}
 	store.read_only = false
 	store.loaded = true

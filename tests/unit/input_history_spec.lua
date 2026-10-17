@@ -111,6 +111,20 @@ describe("complete prompt history and session drafts", function()
 		assert.same({ "Keep this prompt", "New prompt" }, history.entries())
 	end)
 
+	for _, limit in ipairs({ 2, 100 }) do
+		it("keeps idle session cursors at the latest prompt with history limit " .. limit, function()
+			history.configure({ max_history = limit })
+			history.add("First", {}, "normal", "session-a")
+			history.add("Second", {}, "normal", "session-b")
+			assert.equals("Second", history.previous(nil, nil, nil, "session-a"))
+			assert.equals("", history.next("Second", {}, "normal", "session-a"))
+			assert.equals("Second", history.previous(nil, nil, nil, "session-c"))
+			history.add("Third", {}, "normal", "session-b")
+			assert.equals("Third", history.previous(nil, nil, nil, "session-a"))
+			assert.equals("Third", history.next("Second", {}, "normal", "session-c"))
+		end)
+	end
+
 	it("preserves an existing history file when encoding fails", function()
 		history.add("Keep this prompt")
 		local original = bytes()
