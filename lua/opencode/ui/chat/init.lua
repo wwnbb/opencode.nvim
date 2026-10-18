@@ -92,6 +92,13 @@ local winbar_refresh_scheduled = false
 local opening = false
 local configure_buffer_keymaps
 
+local function unsubscribe()
+	-- Invalidate before off(): a failed unsubscribe may already have removed its callback.
+	chat_event_handlers_setup = false
+	for _, item in ipairs(subscriptions) do item.bus.off(item.event, item.callback) end
+	subscriptions = {}
+end
+
 -- Scheduling follows the transcript buffer in any window. Cursor/detail helpers
 -- still follow the owned chat window through cs.is_chat_buffer_displayed(view).
 local function chat_surface_is_visible()
@@ -405,6 +412,8 @@ function M.create()
 		return state.bufnr
 	end
 
+	-- Also finish a partially completed disposal before rebuilding these handlers.
+	unsubscribe()
 	state.config = get_config()
 	chat_session_tabs.setup_refresh_autocmds()
 	setup_resize_refresh_autocmds()
@@ -616,6 +625,7 @@ local function handle_chat_window_closed(closed_winid)
 	stop_spinner_animation_timer()
 	chat_tasks.stop_task_animation_timer()
 	if view ~= cs.state then M.dispose() end
+	view.suspended, view.workspace_id = nil, nil
 	cs.remove(view)
 	vim.schedule(function()
 		if state.config and state.config.layout == "tab" then
@@ -644,20 +654,26 @@ local function register_chat_window_closed_autocmd(winid)
 end
 
 function M.dispose()
-	stop_spinner_animation_timer()
-	chat_tasks.stop_task_animation_timer()
-	for _, item in ipairs(subscriptions) do item.bus.off(item.event, item.callback) end
-	subscriptions = {}
-	chat_event_handlers_setup = false
-	pcall(vim.api.nvim_del_augroup_by_name, "OpenCodeChatResize_" .. (view.id or 1))
-	resize_refresh_autocmds_setup = false
-	chat_session_tabs.dispose()
-	render_state.dispose()
-	cs.module(view, require("opencode.ui.chat.tool_group")).dispose()
-	if state.bufnr and vim.api.nvim_buf_is_valid(state.bufnr) then
-		vim.schedule(function()
-			if not cs.valid(view) then pcall(vim.api.nvim_buf_delete, state.bufnr, { force = true }) end
-		end)
+	local ok, err = xpcall(function()
+		stop_spinner_animation_timer()
+		chat_tasks.stop_task_animation_timer()
+		unsubscribe()
+		pcall(vim.api.nvim_del_augroup_by_name, "OpenCodeChatResize_" .. (view.id or 1))
+		resize_refresh_autocmds_setup = false
+		chat_session_tabs.dispose()
+		render_state.dispose()
+		cs.module(view, require("opencode.ui.chat.tool_group")).dispose()
+		if state.bufnr and vim.api.nvim_buf_is_valid(state.bufnr) then
+			vim.schedule(function()
+				if not cs.valid(view) then pcall(vim.api.nvim_buf_delete, state.bufnr, { force = true }) end
+			end)
+		end
+	end, debug.traceback)
+	if not ok then
+		-- Callers retain ownership on failure, so their view must still receive events.
+		local restored, restore_error = xpcall(M.create, debug.traceback)
+		if not restored then err = err .. "\nCould not restore chat after disposal: " .. restore_error end
+		error(err, 0)
 	end
 end
 
@@ -857,6 +873,19 @@ function M.close()
 				if vim.api.nvim_win_get_config(winid).relative == "" then normal_windows = normal_windows + 1 end
 			end
 			if normal_windows == 1 then
+				if state.config.layout == "tab" and view.workspace_id and not cs.workspace.switching
+					and #cs.windows(view) == 1 then
+					local workspace = require("opencode.ui.chat.workspace")
+					local current_layout = workspace.current()
+					if current_layout and current_layout.id == view.workspace_id then
+						for _, layout in ipairs(workspace.list()) do
+							if layout ~= current_layout then
+								workspace.select(layout.id)
+								return require("opencode.ui.chat").close_view(view)
+							end
+						end
+					end
+				end
 				if state.config.layout == "tab" and #vim.api.nvim_list_tabpages() == 1 then
 					vim.cmd("tabnew")
 				elseif state.config.layout ~= "tab" then
@@ -923,10 +952,14 @@ function M.focus_input(context_snapshot, context_error)
 	-- chat window first would trigger the input's WinLeave handler and close it.
 	if input.is_visible() and input.owner_view() == view and not get_relevant_question() then return input.focus() end
 	if not context_snapshot and not context_error then context_snapshot, context_error = input.capture_context() end
-	if not state.visible then
-		M.open()
+	if get_config().layout == "tab" then
+		local chat = require("opencode.ui.chat")
+		-- Register or restore the whole workspace before mounting its composer.
+		if not chat.focus_view(view) then chat.open() end
+		if cs.current() ~= view then return chat.focus_input(context_snapshot, context_error) end
+	else
+		M.focus()
 	end
-	M.focus()
 	local qstate = get_relevant_question()
 	if qstate then
 		local pos = state.questions[qstate.request_id]
@@ -1577,6 +1610,8 @@ local function remember_return_window()
 end
 
 function M.focus_view(view)
+	if not cs.valid(view) then return false end
+	if view.config and view.config.layout == "tab" then remember_return_window() end
 	if view and view.suspended then
 		require("opencode.ui.chat.workspace").select(view.workspace_id)
 	end
@@ -1592,7 +1627,6 @@ function M.focus_view(view)
 			if not cs.valid(view) or not cs.is_chat_buffer_displayed(view) then return false end
 		end
 	end
-	if view.config and view.config.layout == "tab" then remember_return_window() end
 	local input = require("opencode.ui.input")
 	local owner = input.owner_view()
 	if owner and owner ~= view then require("opencode.ui.input").close_for_view(owner) end
@@ -1606,6 +1640,11 @@ end
 function M.bind_session(view, session, opts)
 	view = view or cs.current()
 	if not cs.valid(view) then return false end
+	local existing = session and cs.for_session(session.id)
+	if existing and existing ~= view then
+		M.focus_view(existing)
+		return false
+	end
 	if not view.session_bound then
 		return require("opencode.actions").set_active_session(session and session.id, session and (session.title or session.name), opts)
 	end
@@ -1624,6 +1663,11 @@ function M.open()
 	local config = (app.get_config() or {}).chat or {}
 	if config.layout == "tab" then
 		remember_return_window()
+		local workspace = require("opencode.ui.chat.workspace")
+		local layout = workspace.current()
+		if workspace.is_parked() or (layout and not layout.last_view) then
+			if workspace.resume() then return end
+		end
 		local last = cs.workspace.last_view
 		if last and M.focus_view(last) then return end
 		for _, view in ipairs(cs.all()) do
@@ -1717,11 +1761,22 @@ function M.close_view(view, opts)
 	if not cs.valid(view) then return end
 	require("opencode.actions").observe_session(cs.session(view).id, false)
 	if view.suspended then
-		view.suspended = nil
-		view.workspace_id = nil
-		instances.for_view(view).dispose()
-		cs.remove(view)
-		M.after_close()
+		local owned = instances.for_view(view)
+		local ok, err = xpcall(owned.dispose, debug.traceback)
+		if ok then
+			view.suspended, view.workspace_id = nil, nil
+			cs.remove(view)
+		else
+			-- Teardown or its recovery may already have removed listeners and refresh hooks.
+			local restored, restore_error = xpcall(owned.create, debug.traceback)
+			if not restored then err = err .. "\nCould not restore suspended chat: " .. restore_error end
+		end
+		local reconciled, reconcile_error = xpcall(M.after_close, debug.traceback)
+		if not reconciled then
+			err = (ok and "" or err .. "\n") .. "Could not reconcile suspended close: " .. reconcile_error
+			ok = false
+		end
+		if not ok then error(err, 0) end
 		return
 	end
 	if opts and opts.all_windows then
@@ -1748,13 +1803,19 @@ function M.toggle()
 	local target = cs.workspace.return_winid
 	if target and vim.api.nvim_win_is_valid(target) and vim.api.nvim_win_get_tabpage(target) ~= cs.workspace.tabpage then
 		vim.api.nvim_set_current_win(target)
-		return
+	else
+		target = nil
+		for _, tab in ipairs(vim.api.nvim_list_tabpages()) do
+			if tab ~= cs.workspace.tabpage then
+				vim.api.nvim_set_current_tabpage(tab)
+				target = vim.api.nvim_get_current_win()
+				break
+			end
+		end
+		if not target then vim.cmd("tabnew") end
+		cs.workspace.return_winid = vim.api.nvim_get_current_win()
 	end
-	for _, tab in ipairs(vim.api.nvim_list_tabpages()) do
-		if tab ~= cs.workspace.tabpage then vim.api.nvim_set_current_tabpage(tab); return end
-	end
-	vim.cmd("tabnew")
-	cs.workspace.return_winid = vim.api.nvim_get_current_win()
+	require("opencode.ui.chat.workspace").park()
 end
 
 local focus_group = vim.api.nvim_create_augroup("OpenCodeChatViewFocus", { clear = true })

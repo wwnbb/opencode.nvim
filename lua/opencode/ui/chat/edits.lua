@@ -915,8 +915,8 @@ end
 
 --- Close the active OpenCode inline diff split (if any).
 ---@param opts? table { check_unsaved?: boolean, unsaved_message?: string, silent?: boolean, preserve_actual?: boolean }
----@return boolean ok
----@return string|nil err
+---@return boolean ok Whether dismissal was allowed (false for unsaved changes).
+---@return string|nil err Refusal or first cleanup error; may accompany true.
 ---@return number|nil reusable_win
 ---@return number|nil reusable_buf
 function M.close_inline_diff_split(opts)
@@ -998,7 +998,9 @@ function M.close_inline_diff_split(opts)
 		for _, winid in ipairs(ordered_wins) do
 			if winid == actual_win and (opts.preserve_actual or estate and estate.transport == "review_rpc") then
 				-- Keep manual file edits when dismissing a review or switching layouts.
-				reusable_win, reusable_buf, close_err = normalize_surviving_inline_diff_window(winid)
+				local norm_err
+				reusable_win, reusable_buf, norm_err = normalize_surviving_inline_diff_window(winid)
+				close_err = close_err or norm_err
 			elseif is_valid_window(winid) then
 				local ok_close, err = close_window(winid, true)
 				if not ok_close then
@@ -1014,7 +1016,7 @@ function M.close_inline_diff_split(opts)
 					else
 						local _, _, norm_err = normalize_surviving_inline_diff_window(winid)
 						if not close_err then
-							close_err = norm_err or err
+							close_err = err or norm_err
 						end
 					end
 				end

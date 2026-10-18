@@ -2,6 +2,7 @@ local cs = require("opencode.ui.chat.state")
 return cs.factory("tool_style", function(view)
 -- Stable list headers with compact panels for expanded tool output.
 local tool_panel = cs.module(view, require("opencode.ui.chat.tool_panel"))
+local panel = require("opencode.ui.panel")
 local M = {
 	prefix = "   │ ",
 	header_hl = "OpenCodeExploreHeader",
@@ -20,9 +21,9 @@ require("opencode.ui.highlights").register("opencode.ui.chat.tool_style", functi
 		[M.body_error_hl] = "DiagnosticError",
 		[M.border_hl] = "Comment",
 	}) do
-		local hl = vim.api.nvim_get_hl(0, { name = source, link = false })
+		local hl = panel.get_hl(source)
 		local body = name == M.output_hl or name == M.body_error_hl or name == M.border_hl
-		local bg = body and vim.api.nvim_get_hl(0, { name = "CursorLine", link = false }).bg or nil
+		local bg = body and panel.get_hl("CursorLine").bg or nil
 		vim.api.nvim_set_hl(0, name, { fg = hl.fg, bg = bg, italic = false, bold = false })
 	end
 end)

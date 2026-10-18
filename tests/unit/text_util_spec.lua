@@ -19,6 +19,13 @@ describe("shared text helpers", function()
 		assert.equals("", text.truncate("abc", -1))
 	end)
 
+	it("uses an explicit width measure when truncating text and an oversized suffix", function()
+		local function measure(value) return 2 * vim.fn.strchars(value) end
+		assert.equals("ab", text.truncate("abcdef", 4, nil, measure))
+		assert.equals("ab…", text.truncate("abcdef", 6, "…", measure))
+		assert.equals(".", text.truncate("abcdef", 3, "...", measure))
+	end)
+
 	it("strips BEL and ST terminated OSC without swallowing visible text", function()
 		local esc, bel = string.char(27), string.char(7)
 		local st = esc .. "\\"

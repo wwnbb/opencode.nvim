@@ -1,10 +1,10 @@
-describe("shared layout tabbar mouse input", function()
+describe("native layout tabline mouse input", function()
 	local editor
 	before_each(function()
 		editor = require("tests.helpers.embedded_editor").new()
 		editor.request("nvim_ui_attach", { 100, 30, { rgb = true, ext_linegrid = true } })
 		editor.lua([[
-			vim.o.mouse = "a"
+			vim.o.mouse, vim.o.mousemodel = "a", "extend"
 			require("opencode").setup({ server = { auto_start = false }, lualine = { enabled = false },
 				chat = { layout = "tab", session_tabs = { persist = false } } })
 			require("opencode.client").get_messages = function(_, _, cb) cb(nil, {}) end
@@ -21,15 +21,14 @@ describe("shared layout tabbar mouse input", function()
 	end)
 	after_each(function() if editor then editor.close() end end)
 
-	local function click(title)
+	local function click(title, button, modifiers)
 		local position = editor.lua([[
-			local win = require("opencode.ui.chat.workspace_bar").winid()
-			local line = vim.api.nvim_buf_get_lines(vim.api.nvim_win_get_buf(win), 0, 1, false)[1]
+			local line = vim.api.nvim_eval_statusline(vim.o.tabline, { use_tabline = true, maxwidth = vim.o.columns }).str
 			local first = assert(line:find(..., 1, true))
-			return { vim.api.nvim_win_get_position(win)[1], vim.fn.strdisplaywidth(line:sub(1, first - 1)) }
+			return { 0, vim.fn.strwidth(line:sub(1, first - 1)) }
 		]], { title })
-		editor.request("nvim_input_mouse", { "left", "press", "", 0, position[1], position[2] })
-		editor.request("nvim_input_mouse", { "left", "release", "", 0, position[1], position[2] })
+		editor.request("nvim_input_mouse", { button or "left", "press", modifiers or "", 0, position[1], position[2] })
+		editor.request("nvim_input_mouse", { button or "left", "release", modifiers or "", 0, position[1], position[2] })
 	end
 	local function selected(name)
 		return vim.wait(2000, function() return editor.lua("return workspace.current().id == _G[...]", { name }) end, 10)
@@ -68,11 +67,43 @@ describe("shared layout tabbar mouse input", function()
 			require("opencode.ui.chat.workspace_bar").update()
 		]])
 		click("mouse-a")
-		assert.is_true(vim.wait(2000, function()
-			return editor.lua("return vim.api.nvim_get_current_win() == require('opencode.ui.chat.workspace_bar').winid()")
-		end, 10))
 		assert.is_true(editor.lua("return workspace.current().id == second"))
-		editor.feed("<CR>")
+		assert.is_true(editor.lua("return vim.api.nvim_get_current_win() == chat.get_winid()"))
+		editor.feed("1gt")
 		assert.is_true(selected("first"))
+	end)
+
+	it("respects configured mouse buttons and modifiers without native tab actions", function()
+		editor.lua([[
+			local state = require("opencode.state")
+			local config = state.get_config()
+			config.session_tabs = { keymaps = { select = "<MiddleMouse>" } }; state.set_config(config)
+		]])
+		click("mouse-a")
+		assert.is_true(editor.lua("return workspace.current().id == second"))
+		click("mouse-a", "middle")
+		assert.is_true(selected("first"))
+		click("mouse-c", "right")
+		assert.is_true(editor.lua("return workspace.current().id == first and #workspace.list() == 2"))
+		assert.is_true(editor.lua([[
+			local state = require("opencode.state")
+			local config = state.get_config()
+			config.session_tabs = { keymaps = { select = "<C-RightMouse>" } }; state.set_config(config)
+			__opencode_workspace_tab_click(second, 1, "r", "    ")
+			assert(workspace.current().id == first)
+			__opencode_workspace_tab_click(second, 1, "r", "c   ")
+			return workspace.current().id == second
+		]]))
+	end)
+
+	it("consumes clicks on the empty tabline tail without switching or creating native tabs", function()
+		local before = editor.lua("return { vim.api.nvim_get_current_tabpage(), #vim.api.nvim_list_tabpages(), workspace.current().id }")
+		for _, button in ipairs({ "left", "middle", "right" }) do
+			for _ = 1, 2 do
+				editor.request("nvim_input_mouse", { button, "press", "", 0, 0, 99 })
+				editor.request("nvim_input_mouse", { button, "release", "", 0, 0, 99 })
+			end
+		end
+		assert.same(before, editor.lua("return { vim.api.nvim_get_current_tabpage(), #vim.api.nvim_list_tabpages(), workspace.current().id }"))
 	end)
 end)

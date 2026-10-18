@@ -69,6 +69,11 @@ function M.setup(state, callbacks)
 			if not state.visible or state.bufnr ~= bufnr then
 				return
 			end
+			-- BufLeave may be followed by reentry before this deferred cleanup runs.
+			if state.winid and vim.api.nvim_win_is_valid(state.winid)
+				and vim.api.nvim_get_current_win() == state.winid and vim.api.nvim_win_get_buf(state.winid) == bufnr then
+				return
+			end
 			local ok, native_diff = pcall(require, "opencode.ui.native_diff")
 			if state.winid and vim.api.nvim_win_is_valid(state.winid)
 				and ok and native_diff.is_active and native_diff.is_active() then

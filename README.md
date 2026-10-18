@@ -16,12 +16,13 @@ and naturally integrated into the Neovim workflow.
 # Chat layouts and independent panes
 
 Choose `chat.layout = "vertical"`, `"horizontal"`, `"float"`, or `"tab"`.
-The `tab` layout opens a dedicated Neovim tab page. Opening OpenCode again
-from another tab returns to the existing OpenCode tab and its last focused pane.
-Inside this page, a separate OpenCode tabbar switches complete layouts. Each
-OpenCode tab keeps its own splits, sessions, sizes, scroll positions, and drafts;
-switching it does not create or switch native Neovim tabs. The session tabbars
-in `vertical`, `horizontal`, and `float` layouts keep their existing behavior.
+The `tab` layout uses the top Neovim tabline for two independent lists:
+inside OpenCode it shows only OpenCode layouts; in the editor it restores your
+original tabline and shows only native Neovim tabs. Each OpenCode tab keeps its
+own splits, sessions, sizes, scroll positions, and drafts. There is no extra
+header window or second row of tabs. Switching OpenCode layouts stays inside
+one workspace. The session tabbars in `vertical`, `horizontal`, and `float`
+layouts keep their existing behavior.
 
 ```lua
 require("opencode").setup({
@@ -47,6 +48,8 @@ choices belong to each session. Selecting a session already visible in another
 pane restores its layout and focuses that pane. `N` starts a new session in a
 new OpenCode tab. `gt`, `gT`, and `Ngt` switch whole layouts. Opening a session
 from history also creates a layout when it is not already open.
+Numbered selection uses native Vim counts: `1gt` selects the first layout,
+and ordinary commands such as `5G` keep their usual behavior outside interactive widgets.
 
 Use normal Neovim window navigation and resizing, such as `<C-w>h/j/k/l` and
 `<C-w>=`. Plain `:vsplit` or `:split` duplicates the current buffer; it does
@@ -56,21 +59,28 @@ diff proposals and keeps the actual file window with any unsaved edits. The spli
 `tab` layout; `chat.width`, `chat.height`, `chat.position`, and
 `chat.close_on_focus_lost` do not control this layout.
 
-`:OpenCodeToggle` (default `<leader>oo`) returns to the editor while keeping
-the OpenCode tab and all panes, then brings them back on the next invocation.
-`q` or `:OpenCodeClose` closes the focused chat pane. Closing its last pane
-removes the OpenCode tab only if it contains no other windows. Closing a pane
-does not delete its server session. `x` closes the current OpenCode layout and
+`:OpenCodeToggle` (default `<leader>oo`) returns to the editor and removes the
+workspace's native tab while retaining its layouts, buffers, unsaved edits,
+and drafts. Native `gt` and `:tabnext` in the editor therefore visit only editor
+tabs. Toggle or open restores the last active OpenCode layout and focused pane.
+Native tab and window IDs change when the workspace is restored.
+Leaving through native tab navigation also hides the workspace. File splits
+inside OpenCode remain in the OpenCode context and keep its tabline.
+`q` or `:OpenCodeClose` closes the focused chat pane. If it was the last window
+of its layout, another saved layout is restored when available; otherwise the
+workspace closes. Closing a pane does not delete its server session. `x` closes the current OpenCode layout and
 its local session tabs, then restores the layout immediately to its left (or the
 next layout when closing the first). `:OpenCodeCloseSession`
 closes only the current session: its pane selects the next session not already
 shown elsewhere, or closes if none is available. Native copies of the same chat
 buffer share this session change. Neither action deletes server sessions.
-Reopening after `q` restores the last session and its draft.
+Reopening after `q` restores the last session and its draft. Native `:tabclose`,
+or `:q`/`:close` on the workspace's last window, closes the whole workspace,
+including its saved layouts. These native commands are not intercepted.
 
-With `chat.session_tabs.scope = "cwd"`, an open OpenCode tab keeps its session
-list when the working directory changes. The new directory's list is restored
-after closing and reopening the workspace. Split geometry is not restored after
+With `chat.session_tabs.scope = "cwd"`, an open or hidden OpenCode workspace
+keeps its session list when the working directory changes. The new directory's
+list is restored after closing and reopening the workspace. Split geometry is not restored after
 restarting Neovim; the existing session-list persistence is unchanged.
 
 # Keyboard configuration

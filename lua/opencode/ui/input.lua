@@ -730,6 +730,8 @@ function M.suspend()
 			opts.winid, opts.float_dims = parent, float_dims
 			vim.api.nvim_set_current_win(parent)
 		end
+		-- Focus restoration can synchronously open another composer for this view.
+		M.close()
 		if M.show(opts) == false then return end
 		vim.api.nvim_win_set_cursor(state.winid, cursor)
 		if not insert then vim.cmd("stopinsert") end

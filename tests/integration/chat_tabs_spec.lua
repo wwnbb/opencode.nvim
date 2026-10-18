@@ -165,10 +165,12 @@ assert.is_truthy(not has_keymap(chat_bufnr, "n", "5gt"), "no literal Ngt mapping
 
 vim.api.nvim_feedkeys("5gt", "mx", false)
 assert.equals("session-5", app_state.get_session().id, "5gt jumps to the fifth session tab")
-vim.api.nvim_feedkeys("0gt", "mx", false)
-assert.equals("session-1", app_state.get_session().id, "0gt jumps to the first session tab")
+vim.api.nvim_feedkeys("1gt", "mx", false)
+assert.equals("session-1", app_state.get_session().id, "1gt jumps to the first session tab")
 vim.api.nvim_feedkeys("gt", "mx", false)
 assert.equals("session-2", app_state.get_session().id, "plain gt cycles to the next session tab")
+vim.api.nvim_feedkeys("0gt", "mx", false)
+assert.equals("session-3", app_state.get_session().id, "0 is a native motion, not a hidden session count")
 vim.api.nvim_feedkeys("3gt", "mx", false)
 assert.equals("session-3", app_state.get_session().id, "Ngt jumps to the indexed session tab")
 app_state.set_session("session-1", "Tab 1")
@@ -208,8 +210,8 @@ assert.equals(0x444444, hl_fg("OpenCodeWinbarCurrentIdle"), "dynamic light activ
 assert.is_truthy(dynamic_color_calls >= 2, "dynamic session tab colors are reevaluated")
 
 local configured_tab_colors = chat_view.config.session_tabs.colors
-vim.api.nvim_set_hl(0, "TabLine", { fg = "#123456", bg = "#abcdef" })
-vim.api.nvim_set_hl(0, "TabLineSel", { fg = "#fedcba", bg = "#654321" })
+vim.api.nvim_set_hl(0, "TabLine", { fg = "#123456", bg = "#abcdef", reverse = true })
+vim.api.nvim_set_hl(0, "TabLineSel", { fg = "#fedcba", bg = "#654321", reverse = true })
 chat_view.config.session_tabs.colors = {}
 chat.update_winbar()
 assert.equals(0x123456, hl_fg("OpenCodeWinbar"), "default inactive tab foreground inherits TabLine")

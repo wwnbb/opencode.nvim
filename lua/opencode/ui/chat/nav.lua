@@ -8,6 +8,7 @@ local state = view
 local render_coordinator = require("opencode.ui.chat.render_coordinator")
 local actions = require("opencode.actions")
 local session_lock = require("opencode.session.lock")
+local focus = require("opencode.session.focus")
 local chat_tasks = cs.module(view, require("opencode.ui.chat.tasks"))
 local navigation_request = 0
 
@@ -228,11 +229,11 @@ local function resolve_child_model(tool_part, child_session, messages)
 	local state_metadata = type(tool_state.metadata) == "table" and tool_state.metadata or {}
 	local metadata = type(tool_part.metadata) == "table" and tool_part.metadata or {}
 	local metadata_candidates = {
-		state_metadata.model,
-		metadata.model,
+		state_metadata.model or {},
+		metadata.model or {},
 		state_metadata,
 		metadata,
-		input.model,
+		input.model or {},
 	}
 	local fallback_variant = nonempty_string(state_metadata.variant)
 		or nonempty_string(metadata.variant)
@@ -324,15 +325,35 @@ end
 local function resolve_child_lock(child_session_id, tool_part, callback, strict)
 	local child_session = nil
 	local pending = require("opencode.session.pending")
+	local app_state = require("opencode.state")
+	local snapshot = app_state.get_session_record(child_session_id)
 	local token = pending.token(child_session_id)
 	actions.get_session(child_session_id, function(session_error, session)
 		if not pending.is_current(token) then return end
 		if strict and session_error then callback(session_error); return end
-		child_session = type(session) == "table" and session or nil
+		child_session = type(session) == "table" and vim.deepcopy(session) or nil
 
 		actions.load_session_messages(child_session_id, { limit = 100 }, function(messages_error, response)
 			if not pending.is_current(token) then return end
 			local sync = require("opencode.sync")
+			local latest = app_state.get_session_record(child_session_id)
+			local model_updated = latest and type(latest.model) == "table" and
+				(not vim.deep_equal((snapshot or {}).model, latest.model)
+					or (snapshot or {})._model_selection_revision ~= latest._model_selection_revision)
+			if latest and not vim.deep_equal(snapshot, latest) then
+				child_session = child_session or { id = child_session_id }
+				-- Apply newer fields atomically, including fields explicitly cleared since the request.
+				for key, value in pairs(latest) do
+					if not vim.deep_equal((snapshot or {})[key], value) then child_session[key] = vim.deepcopy(value) end
+				end
+				for key in pairs(snapshot or {}) do
+					if latest[key] == nil then child_session[key] = nil end
+				end
+				if model_updated then child_session.model = vim.deepcopy(latest.model) end
+			end
+			if latest and latest.fork and child_session and child_session.parentID == latest.fork.sessionID then
+				child_session.parentID = latest.parentID
+			end
 			local current_tool_part = chat_tasks.resolve_tool_part(tool_part) or tool_part
 			local messages = sync.get_messages(child_session_id)
 			if #messages == 0 and type(response) == "table" then
@@ -343,6 +364,9 @@ local function resolve_child_lock(child_session_id, tool_part, callback, strict)
 			end
 
 			local model, variant = resolve_child_model(current_tool_part, child_session, messages)
+			if model_updated then
+				model, variant = model_ref(latest.model)
+			end
 			local agent = resolve_child_agent(current_tool_part, child_session, messages)
 			local errors = {}
 			if not model then
@@ -386,6 +410,7 @@ function M.enter_child_session(part_id)
 	end
 	local app_state = require("opencode.state")
 	local current = cs.session(view)
+	local initial_input = focus.capture_input(view)
 	local pending = require("opencode.session.pending")
 	local token, generation = pending.token(current.id), view.generation
 	navigation_request = navigation_request + 1
@@ -419,6 +444,7 @@ function M.enter_child_session(part_id)
 
 			session_lock.set(child_session_id, record)
 			actions.remember_session(record.child_session, { touch = false, reason = "child_navigation" })
+			local previous_stack = vim.list_slice(state.session_stack)
 			table.insert(state.session_stack, {
 				id = current.id,
 				name = current.name or "Session",
@@ -427,11 +453,16 @@ function M.enter_child_session(part_id)
 
 			current_tool_part = chat_tasks.resolve_tool_part(pos) or current_tool_part
 			local input = current_tool_part.state and current_tool_part.state.input or {}
-			actions.set_view_session(view, child_session_id, record.child_session.title or record.child_session.name or input.description or "Subagent", {
-				reason = "child_navigation",
-				preserve_cache = true,
-				runtime = false,
-			})
+			if focus.with_session_focus(view, function()
+				return actions.set_view_session(view, child_session_id, record.child_session.title or record.child_session.name or input.description or "Subagent", {
+					reason = "child_navigation",
+					preserve_cache = true,
+					runtime = false,
+				})
+			end, initial_input) == false then
+				state.session_stack = previous_stack
+				return
+			end
 
 			vim.schedule(function()
 				render_coordinator.request({ session_id = child_session_id, reason = "child_navigation_loaded" })
@@ -446,8 +477,8 @@ function M.open_family_session(session_id, opts)
 	local app_state = require("opencode.state")
 	local pending = require("opencode.session.pending")
 	local source_id = cs.session(view).id
+	local initial_input = focus.capture_input(view)
 	local token, generation = pending.token(source_id), view.generation
-	local snapshot = app_state.get_session_record(session_id)
 	local directory = app_state.get_session_directory(source_id)
 	navigation_request = navigation_request + 1
 	local request = navigation_request
@@ -459,20 +490,24 @@ function M.open_family_session(session_id, opts)
 				{ fallback = "Session metadata is unavailable" }), vim.log.levels.WARN)
 			return
 		end
-		local latest = app_state.get_session_record(session_id)
-		if vim.deep_equal(snapshot, latest) then actions.remember_session(record.child_session, { touch = false, reason = "family_navigation" })
-		else record.child_session = vim.tbl_deep_extend("force", {}, record.child_session, latest or {}) end
+		actions.remember_session(record.child_session, { touch = false, reason = "family_navigation" })
 		local info = record.child_session
 		local child = type(info.parentID) == "string" and info.parentID ~= ""
 		if child then session_lock.set(session_id, record) else session_lock.clear(session_id) end
+		local previous_stack = vim.list_slice(state.session_stack)
 		if opts.parent then
 			while #state.session_stack > 0 do
 				if table.remove(state.session_stack).id == session_id then break end
 			end
 		else state.session_stack = {} end
-		actions.set_view_session(view, session_id, info.title or info.name or session_id, {
-			reason = "family_navigation", preserve_cache = true, runtime = not child,
-		})
+		if focus.with_session_focus(view, function()
+			return actions.set_view_session(view, session_id, info.title or info.name or session_id, {
+				reason = "family_navigation", preserve_cache = true, runtime = not child,
+			})
+		end, initial_input) == false then
+			state.session_stack = previous_stack
+			return
+		end
 		render_coordinator.request({ session_id = session_id, reason = "family_navigation_loaded" })
 	end, true)
 end
@@ -491,6 +526,7 @@ function M.leave_child_session()
 		M.open_family_session(native_parent, { parent = true })
 		return
 	end
+	local previous_stack = vim.list_slice(state.session_stack)
 	local parent
 	repeat
 		parent = table.remove(state.session_stack)
@@ -498,11 +534,16 @@ function M.leave_child_session()
 		and (parent.runtime == false or app_state.is_runtime_session(parent.id)))
 	if not parent then return end
 
-	actions.set_view_session(view, parent.id, parent.name, {
-		reason = "child_navigation",
-		preserve_cache = true,
-		runtime = parent.runtime ~= false,
-	})
+	if focus.with_session_focus(view, function()
+		return actions.set_view_session(view, parent.id, parent.name, {
+			reason = "child_navigation",
+			preserve_cache = true,
+			runtime = parent.runtime ~= false,
+		})
+	end) == false then
+		state.session_stack = previous_stack
+		return
+	end
 
 	vim.schedule(function()
 		render_coordinator.request({ session_id = parent.id, reason = "child_navigation" })

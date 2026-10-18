@@ -1,13 +1,10 @@
 local M = {}
 
-local NuiLine = require("nui.line")
 local cs = require("opencode.ui.chat.state")
 local selectors = require("opencode.selectors")
+local tab_label = require("opencode.ui.chat.tab_label")
 
-local namespace = vim.api.nvim_create_namespace("opencode_workspace_bar")
-local bufnr, winid
-local targets = {}
-local applied_keys
+local saved_options
 
 local function manager()
 	return require("opencode.ui.chat.workspace")
@@ -20,144 +17,51 @@ local function tabs_config()
 		(config.chat or {}).session_tabs or {}, (view and view.config or {}).session_tabs or {})
 end
 
-function M.winid()
-	return winid and vim.api.nvim_win_is_valid(winid) and winid or nil
-end
-
-local function select_layout(id)
-	manager().select(id)
-	local layout = manager().current()
-	if layout and layout.last_view then require("opencode.ui.chat").focus_view(layout.last_view) end
-end
-
-local function select_column(column)
-	for _, target in ipairs(targets) do
-		if column >= target.first and column <= target.last then
-			select_layout(target.id)
-			return
-		end
-	end
-end
-
-local function setup_buffer()
-	local exists = bufnr and vim.api.nvim_buf_is_valid(bufnr)
-	local keymaps = require("opencode.util.keymap")
-	local keys = { keymaps.get("session_tabs"), keymaps.get("chat"), keymaps.get("menu") }
-	if exists and vim.deep_equal(keys, applied_keys) then return end
-	if not exists then
-		bufnr = vim.api.nvim_create_buf(false, true)
-		vim.api.nvim_buf_set_name(bufnr, "opencode [tabs]")
-		vim.bo[bufnr].bufhidden = "hide"
-		vim.bo[bufnr].filetype = "opencode_tabs"
-		vim.bo[bufnr].swapfile = false
-		vim.bo[bufnr].modifiable = false
-	end
-	local map, apply = keymaps.mapper("session_tabs", bufnr)
-	local opts = { silent = true, nowait = true }
-	local chat_opts = { silent = true, nowait = true, scope = "chat" }
-	map("n", "select", function()
-		local mouse = vim.fn.getmousepos()
-		if mouse.winid == M.winid() then select_column(mouse.wincol) end
-	end, opts)
-	map("n", "select", function()
-		select_column(vim.fn.virtcol("."))
-	end, { scope = "menu", silent = true, nowait = true })
-	map("n", "next_session", function()
-		if vim.v.count > 0 then
-			local target = manager().list()[vim.v.count]
-			if target then select_layout(target.id) end
-		else manager().cycle(1) end
-	end, chat_opts)
-	map("n", "prev_session", function() manager().cycle(-math.max(1, vim.v.count)) end, chat_opts)
-	map("n", "close_session", function() manager().close_current() end, chat_opts)
-	map("n", "close", function()
-		local current = manager().current()
-		if current and current.last_view then require("opencode.ui.chat").focus_view(current.last_view) end
-	end, chat_opts)
-	apply()
-	applied_keys = keys
-	local mouse_keys = {}
-	for _, key in ipairs(keymaps.keys(keys[1].select)) do
-		if key:lower():match("mouse>$") then mouse_keys[keymaps.code(key)] = true end
-	end
-	-- The first click is dispatched in the source buffer before the bar gains focus.
-	vim.on_key(function(key)
-		if not mouse_keys[key] then return end
-		vim.schedule(function()
-			local window = M.winid()
-			if window and vim.api.nvim_get_current_win() == window then
-				local mouse = vim.fn.getmousepos()
-				if mouse.winid == window then select_column(mouse.wincol) end
-			end
-		end)
-	end, namespace)
-end
-
 function M.remove()
-	vim.on_key(nil, namespace)
-	local window = M.winid()
-	winid, targets = nil, {}
-	if window then pcall(vim.api.nvim_win_close, window, true) end
-	if bufnr and vim.api.nvim_buf_is_valid(bufnr) then pcall(vim.api.nvim_buf_delete, bufnr, { force = true }) end
-	bufnr = nil
+	if not saved_options then return end
+	local errors = {}
+	for _, option in ipairs({ "tabline", "showtabline" }) do
+		local ok, err = pcall(vim.api.nvim_set_option_value, option, saved_options[option], { scope = "global" })
+		if not ok then errors[#errors + 1] = tostring(err) end
+	end
+	if #errors > 0 then error(table.concat(errors, "\n"), 0) end
+	saved_options = nil
+	if not cs.workspace.switching then vim.cmd.redrawtabline() end
 end
 
 function M.ensure()
-	if tabs_config().enabled == false then M.remove(); return end
-	if cs.workspace.tabpage ~= vim.api.nvim_get_current_tabpage() then return end
-	if M.winid() and vim.api.nvim_win_get_tabpage(winid) ~= cs.workspace.tabpage then M.remove() end
-	if M.winid() then M.update(); return winid end
-	setup_buffer()
-	local previous = vim.api.nvim_get_current_win()
-	vim.cmd("noautocmd topleft 1split")
-	winid = vim.api.nvim_get_current_win()
-	vim.api.nvim_win_set_buf(winid, bufnr)
-	local wo = vim.wo[winid]
-	wo.winfixheight = true
-	wo.number, wo.relativenumber = false, false
-	wo.signcolumn, wo.foldcolumn = "no", "0"
-	wo.wrap, wo.list, wo.spell = false, false, false
-	wo.cursorline, wo.cursorcolumn = false, false
-	wo.scrolloff, wo.sidescrolloff = 0, 0
-	wo.colorcolumn, wo.winbar, wo.statusline = "", "", " "
-	wo.fillchars = "eob: "
-	wo.winhighlight = "Normal:OpenCodeWinbar,EndOfBuffer:OpenCodeWinbar,StatusLine:OpenCodeWinbar,StatusLineNC:OpenCodeWinbar,WinSeparator:OpenCodeWinbarSeparator"
-	pcall(function() wo.statuscolumn = "" end)
-	vim.api.nvim_win_set_height(winid, 1)
-	if vim.api.nvim_win_is_valid(previous) then vim.api.nvim_set_current_win(previous) end
 	M.update()
-	return winid
 end
 
 local function session_label(layout, icons)
 	local id = layout.session_id or (layout.last_view and cs.session(layout.last_view).id)
 	local session = id and selectors.get_session_view(id, { session_id = id })
-	local title = session and session:title() or id or "New session"
-	title = tostring(title):gsub("[%c]", " ")
-	title = require("opencode.util.text").truncate(title, 18, "...")
-	local status, unread = "Idle", false
-	if session then
-		if session:is_waiting() then status = "Waiting"
-		elseif session:is_busy() then status = "Running"
-		elseif session:is_error() then status = "Error"
-		elseif session:is_unread() then status, unread = "Waiting", true end
+	local title = tab_label.title(session and session:title() or id or "New session")
+	local sessions, seen = {}, {}
+	local function add(session_id)
+		if not session_id or seen[session_id] then return end
+		seen[session_id] = true
+		local item = session_id == id and session or selectors.get_session_view(session_id, { session_id = session_id })
+		if item then sessions[#sessions + 1] = item end
 	end
-	local icon = ({ Running = icons.running or "●", Waiting = icons.waiting or "◈", Error = icons.error or "✕", Idle = icons.idle or "○" })[status]
-	if unread then icon = icons.unread or "◆" end
+	add(id)
+	for _, view in ipairs(cs.all()) do
+		if view.workspace_id == layout.id then add(cs.session(view).id) end
+	end
+	local icon, status = tab_label.icon(tab_label.status(sessions), icons)
 	return title, icon, status
 end
 
 function M.update()
-	if not M.winid() then return end
-	setup_buffer()
 	local config = tabs_config()
-	if config.enabled == false then M.remove(); return end
+	if config.enabled == false or cs.workspace.tabpage ~= vim.api.nvim_get_current_tabpage() then M.remove(); return end
+	local layouts, current = manager().list(), manager().current()
+	if not current or #layouts == 0 then M.remove(); return end
 	local session_tabs = require("opencode.ui.chat.session_tabs")
 	if session_tabs.ensure_highlights then session_tabs.ensure_highlights(config) end
-	local layouts, current = manager().list(), manager().current()
 	local current_index = 1
 	for index, layout in ipairs(layouts) do if current and layout.id == current.id then current_index = index; break end end
-	local width, labels = vim.api.nvim_win_get_width(winid), {}
+	local width, labels = vim.o.columns, {}
 	for index, layout in ipairs(layouts) do
 		local title, icon, status = session_label(layout, config.icons or {})
 		labels[index] = { title = title, icon = icon, status = status, text = " " .. icon .. " " .. title .. " " }
@@ -174,48 +78,81 @@ function M.update()
 		if first > 1 then parts[#parts + 1] = "‹" end
 		for index = first, last do parts[#parts + 1] = labels[index].text end
 		if last < #layouts then parts[#parts + 1] = "›" end
-		if max_tabs == 1 or vim.fn.strdisplaywidth(table.concat(parts, separator)) <= width then break end
+		if max_tabs == 1 or vim.fn.strwidth(table.concat(parts, separator)) <= width then break end
 		max_tabs = max_tabs - 1
 	end
 	-- On very narrow screens give the active label priority over overflow arrows.
 	local left, right = first > 1, last < #layouts
-	local arrow_width = 1 + vim.fn.strdisplaywidth(separator)
+	local arrow_width = 1 + vim.fn.strwidth(separator)
 	if max_tabs == 1 and (left and arrow_width or 0) + (right and arrow_width or 0) + 6 > width then
 		left, right = false, false
 	end
-	local line, column = NuiLine(), 0
-	targets = {}
+	local parts, text, column = {}, "", 0
+	local function target(id)
+		parts[#parts + 1] = string.format("%%%d@v:lua.__opencode_workspace_tab_click@", id)
+	end
 	local function append(text, highlight)
-		line:append(text, highlight)
-		column = column + vim.fn.strdisplaywidth(text)
+		parts[#parts + 1] = "%#" .. highlight .. "#" .. text:gsub("%%", "%%%%")
+	end
+	local function content(value, highlight)
+		append(value, highlight)
+		text = text .. value
+		column = vim.fn.strwidth(text)
+	end
+	local function separate()
+		if column == 0 then return end
+		if vim.fn.strwidth(text .. separator) < column + vim.fn.strwidth(separator) then
+			-- Keep combining separators attached across native statusline item boundaries.
+			parts[#parts] = parts[#parts] .. separator:gsub("%%", "%%%%")
+			text = text .. separator
+			column = vim.fn.strwidth(text)
+		else
+			target(0); content(separator, "OpenCodeWinbar")
+		end
 	end
 	local function label(id, text, highlight)
-		if column > 0 then append(separator, "OpenCodeWinbar") end
-		local start = column + 1
-		append(text, highlight)
-		targets[#targets + 1] = { first = start, last = column, id = id }
+		separate()
+		target(id)
+		content(text, highlight)
 	end
 	if left then label(layouts[first - 1].id, "‹", "OpenCodeWinbar") end
 	for index = first, last do
 		local layout = layouts[index]
 		local title, icon, status = labels[index].title, labels[index].icon, labels[index].status
 		local active = current and layout.id == current.id
-		if column > 0 then append(separator, "OpenCodeWinbar") end
-		local start = column + 1
+		separate()
+		target(layout.id)
 		local available = width - column - (right and arrow_width or 0)
 		local truncate = require("opencode.util.text").truncate
-		local prefix = truncate(" " .. icon, available)
-		append(prefix, "OpenCodeWinbar" .. (active and "Current" or "") .. status)
-		append(truncate(" " .. title .. " ", available - vim.fn.strdisplaywidth(prefix), "..."),
+		local prefix = truncate(" " .. icon, available, nil, vim.fn.strwidth)
+		content(prefix, "OpenCodeWinbar" .. (active and "Current" or "") .. status)
+		content(truncate(" " .. title .. " ", available - vim.fn.strwidth(prefix), "...", vim.fn.strwidth),
 			active and "OpenCodeWinbarCurrent" or "OpenCodeWinbar")
-		targets[#targets + 1] = { first = start, last = column, id = layout.id }
 	end
 	if right then label(layouts[last + 1].id, "›", "OpenCodeWinbar") end
-	vim.bo[bufnr].modifiable = true
-	vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { line:content() })
-	vim.api.nvim_buf_clear_namespace(bufnr, namespace, 0, -1)
-	line:highlight(bufnr, namespace, 1)
-	vim.bo[bufnr].modifiable = false
+	-- Consume the remaining row so native clicks cannot create, close or switch tabs.
+	target(0)
+	parts[#parts + 1] = "%#OpenCodeWinbar#%="
+	saved_options = saved_options or { tabline = vim.o.tabline, showtabline = vim.o.showtabline }
+	vim.o.tabline, vim.o.showtabline = table.concat(parts), 2
+	if not cs.workspace.switching then vim.cmd.redrawtabline() end
 end
+
+_G.__opencode_workspace_tab_click = function(id, _, button, modifiers)
+	if id == 0 or not saved_options or cs.workspace.tabpage ~= vim.api.nvim_get_current_tabpage() then return end
+	local name = ({ l = "Left", r = "Right", m = "Middle" })[button]
+	if not name then return end
+	local key = "<"
+	for _, modifier in ipairs({ "s", "c", "a", "m" }) do
+		if modifiers:find(modifier, 1, true) then key = key .. modifier:upper() .. "-" end
+	end
+	key = key .. name .. "Mouse>"
+	local keymaps = require("opencode.util.keymap")
+	if keymaps.matches(keymaps.get("session_tabs").select, key) then manager().select(id) end
+end
+
+local group = vim.api.nvim_create_augroup("OpenCodeWorkspaceTabline", { clear = true })
+vim.api.nvim_create_autocmd("TabLeave", { group = group, callback = M.remove })
+vim.api.nvim_create_autocmd({ "TabEnter", "VimResized", "ColorScheme" }, { group = group, callback = M.update })
 
 return M

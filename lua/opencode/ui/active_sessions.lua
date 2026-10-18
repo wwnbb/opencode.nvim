@@ -2,6 +2,7 @@ local M = {}
 
 local actions = require("opencode.actions")
 local selectors = require("opencode.selectors")
+local focus = require("opencode.session.focus")
 
 ---@param session table
 ---@return string
@@ -30,11 +31,11 @@ function M.show(context)
 	context = palette.capture_context(context)
 	local pending = require("opencode.session.pending")
 	local token = pending.token()
+	local initial_input = focus.capture_input(context.view)
 	local function current()
 		return pending.is_current(token) and (not context.view or not context.view.session_bound or palette.context_valid(context))
 	end
-	refresh_data(function()
-		if not current() then return end
+	local function show()
 		local sessions = selectors.get_active_session_views(context)
 		local current_view = selectors.get_current_session_view(context)
 		local current_id = current_view and current_view.id or nil
@@ -123,6 +124,9 @@ function M.show(context)
 				},
 			},
 		})
+	end
+	refresh_data(function()
+		if current() then focus.with_session_focus(context.view, show, initial_input) end
 	end)
 end
 

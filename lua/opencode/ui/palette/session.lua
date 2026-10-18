@@ -6,6 +6,7 @@ local actions = require("opencode.actions")
 local session_util = require("opencode.util.session")
 local state = require("opencode.state")
 local pending = require("opencode.session.pending")
+local focus = require("opencode.session.focus")
 
 local function capture(context)
 	return require("opencode.ui.palette").capture_context(context)
@@ -14,6 +15,10 @@ end
 local function current(context, token)
 	return pending.is_current(token) and (not (context.view and context.view.session_bound)
 		or require("opencode.ui.palette").context_valid(context))
+end
+
+local function show_menu(context, initial_input, options)
+	return focus.with_session_focus(context.view, function() return require("opencode.ui.menu").open(options) end, initial_input)
 end
 
 local function directory_label(directory)
@@ -77,6 +82,7 @@ end
 local function projects(context)
 	context = capture(context)
 	local token = pending.token()
+	local initial_input = focus.capture_input(context.view)
 	actions.list_projects(function(err, values)
 		if not current(context, token) then return end
 		if err then report("list projects", err); return end
@@ -84,12 +90,17 @@ local function projects(context)
 		for _, project in ipairs(values) do
 			items[#items + 1] = { label = project.name or project.canonical, value = project.id, project = project, description = project.canonical }
 		end
-		require("opencode.ui.menu").open({ context = context, items = items, title = " Session Projects ", width = 76, searchable = true,
+		show_menu(context, initial_input, { context = context, items = items, title = " Session Projects ", width = 76, searchable = true,
 			on_select = function(item)
 				if not current(context, token) then return end
+				local initial_input = focus.capture_input(context.view)
 				actions.list_worktrees(item.value, function(worktree_err, worktrees)
 					if not current(context, token) then return end
-					if worktree_err then report("list worktrees", worktree_err); M.browse({ roots = true, project = item.value }, context); return end
+					if worktree_err then
+						report("list worktrees", worktree_err)
+						focus.with_session_focus(context.view, function() M.browse({ roots = true, project = item.value }, context) end, initial_input)
+						return
+					end
 					local locations = {
 						{ label = "All project sessions", query = { roots = true, project = item.value } },
 						{ label = item.project.canonical, query = { roots = true, directory = item.project.canonical } },
@@ -99,7 +110,7 @@ local function projects(context)
 							locations[#locations + 1] = { label = worktree.directory, query = { roots = true, directory = worktree.directory } }
 						end
 					end
-					require("opencode.ui.menu").open({ context = context, items = locations, title = " Session Locations ", width = 76, searchable = true,
+					show_menu(context, initial_input, { context = context, items = locations, title = " Session Locations ", width = 76, searchable = true,
 						on_select = function(location) if current(context, token) then M.browse(location.query, context) end end })
 				end)
 			end })
@@ -110,6 +121,7 @@ function M.browse(query, context)
 	context = capture(context)
 	query = query or { roots = true }
 	local token = pending.token()
+	local initial_input = focus.capture_input(context.view)
 	actions.list_sessions(query, function(err, sessions)
 		if not current(context, token) then return end
 		if err then report("list sessions", err); return end
@@ -124,7 +136,7 @@ function M.browse(query, context)
 		end
 		local scope = query.directory and ("Directory: " .. directory_label(query.directory))
 			or (query.project and "Selected project" or "All projects")
-		require("opencode.ui.menu").open({ context = context, items = items, title = " Switch Session ", width = 90, searchable = true,
+		show_menu(context, initial_input, { context = context, items = items, title = " Switch Session ", width = 90, searchable = true,
 			message = scope .. " · " .. #items .. (#items == 1 and " session" or " sessions") .. " · ● current",
 			search_placeholder = "Search by session title or directory...", confirm_label = "open",
 			item_detail = function(item) return "Selected: " .. item.title .. "\n" .. item.directory end,

@@ -242,7 +242,12 @@ function M.session_owns_task_child(parent_session_id, child_session_id)
 
 	for _, message in ipairs(sync.get_messages(parent_session_id) or {}) do
 		for _, part in ipairs(sync.get_message_tools(message.id) or {}) do
-			if sync.get_task_child_session_for_part(part) == child_session_id then
+			-- An indexed navigation reference without an owner was deliberately
+			-- classified as copied/ambiguous. Only genuinely pre-index parts fall back.
+			if part.type == "tool" and part.tool == "task"
+				and not sync.get_task_child_session(message.id, part.id)
+				and sync.task_reference_can_own(parent_session_id, child_session_id)
+				and sync.get_task_child_session_for_part(part) == child_session_id then
 				return true
 			end
 		end
@@ -281,14 +286,23 @@ function M.runtime_root_for_session(session_id)
 	if not ok_state then
 		return session_id
 	end
-	if state.is_runtime_session(session_id) then
-		return session_id
-	end
-
-	for _, session in ipairs(state.get_active_sessions()) do
-		if M.session_owns_task_child(session.id, session_id) then
-			return session.id
+	local ok_sync, sync = pcall(require, "opencode.sync")
+	local visited = {}
+	while type(session_id) == "string" and session_id ~= "" and not visited[session_id] do
+		visited[session_id] = true
+		if state.is_runtime_session(session_id) then
+			return session_id
 		end
+		local parent = ok_sync and type(sync.get_task_parent_session) == "function"
+			and sync.get_task_parent_session(session_id) or nil
+		parent = parent or state.get_session_parent_id(session_id)
+		if not parent then
+			-- Parts can arrive before their task-parent index is available.
+			for _, session in ipairs(state.get_active_sessions()) do
+				if M.session_owns_task_child(session.id, session_id) then return session.id end
+			end
+		end
+		session_id = parent
 	end
 
 	return nil

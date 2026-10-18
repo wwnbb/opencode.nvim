@@ -205,15 +205,20 @@ function M.register_defaults()
 			end
 			
 			local draft = require("opencode.protocol.messages").draft(last_user_msg)
+			local view = _context and _context.view or require("opencode.ui.chat.state").current()
+			local focus = require("opencode.session.focus")
+			local initial_input = focus.capture_input(view)
 			local function finished(err, staged)
 				vim.schedule(function()
 					if err then
 						vim.notify("Failed to undo: " .. tostring(err.message or err), vim.log.levels.ERROR)
 						return
 					end
-					if state.get_session().id == session_id then
+					local restored = state.get_session().id == session_id and focus.with_session_focus(view, function()
 						require("opencode.ui.input").set_pending_draft(draft.text, draft.parts)
-					end
+						return true
+					end, initial_input)
+					if not restored then require("opencode.ui.input.history").defer_pending(draft, session_id) end
 					vim.notify(staged and "Undo staged. Use /redo to restore the turn."
 						or "Pending input cancelled and restored to the composer.", vim.log.levels.INFO)
 				end)

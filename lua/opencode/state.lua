@@ -96,8 +96,7 @@ local function get(key, path)
 end
 
 ---@param id string
----@param limit number|nil
-local function touch_runtime_session(id, limit)
+local function touch_runtime_session(id)
 	if not id or id == "" then
 		return
 	end
@@ -113,17 +112,6 @@ local function touch_runtime_session(id, limit)
 	end
 	if not seen[id] then
 		table.insert(next_order, id)
-	end
-
-	limit = tonumber(limit) or 30
-	if limit > 0 then
-		while #next_order > limit do
-			if next_order[1] == id then
-				table.remove(next_order)
-			else
-				table.remove(next_order, 1)
-			end
-		end
 	end
 
 	local old = state.sessions.runtime_order
@@ -159,7 +147,7 @@ local function upsert_session_record(session)
 	local record = old and vim.deepcopy(old) or { id = id }
 
 	for key, value in pairs(session) do
-		if key == "revert" and value == vim.NIL then record.revert = nil end
+		if (key == "revert" or key == "parentID") and value == vim.NIL then record[key] = nil end
 		if value ~= nil and value ~= vim.NIL then
 			if key == "time" and type(value) == "table" then
 				record.time = vim.tbl_extend("force", record.time or {}, value)
@@ -275,10 +263,6 @@ function M.set_session(id, name, opts)
 
 	if id then
 		local existing_record = state.sessions.by_id[id]
-		local recent_limit = state.config
-			and state.config.session
-			and state.config.session.parallel
-			and state.config.session.parallel.recent_limit
 		local record = upsert_session_record({
 			id = id,
 			title = name,
@@ -286,7 +270,7 @@ function M.set_session(id, name, opts)
 			message_count = existing_record and existing_record.message_count or 0,
 		})
 		if opts.runtime ~= false then
-			touch_runtime_session(id, recent_limit)
+			touch_runtime_session(id)
 		end
 		if record and record.message_count then
 			set("message_count", record.message_count, "session")
@@ -303,17 +287,13 @@ function M.get_session()
 end
 
 ---@param session table
----@param opts? table { touch?: boolean, limit?: number }
+---@param opts? table { touch?: boolean }
 ---@return table|nil
 function M.upsert_session(session, opts)
 	opts = opts or {}
 	local record = upsert_session_record(session)
 	if record and opts.touch ~= false then
-		local recent_limit = state.config
-			and state.config.session
-			and state.config.session.parallel
-			and state.config.session.parallel.recent_limit
-		touch_runtime_session(record.id, opts.limit or recent_limit)
+		touch_runtime_session(record.id)
 	end
 	return record and vim.deepcopy(record) or nil
 end
@@ -375,6 +355,19 @@ end
 -- Enumerate known native metadata without copying message caches or config.
 function M.get_session_ids()
 	return vim.tbl_keys(state.sessions.by_id)
+end
+
+-- Ancestry reads do not need copies of the rest of the session metadata.
+function M.get_session_parent_id(session_id)
+	local record = state.sessions.by_id[session_id]
+	local parent = record and record.parentID
+	return type(parent) == "string" and parent ~= "" and parent or nil
+end
+
+function M.get_session_fork_source_id(session_id)
+	local record = state.sessions.by_id[session_id]
+	local source = record and type(record.fork) == "table" and record.fork.sessionID
+	return type(source) == "string" and source ~= "" and source or nil
 end
 
 function M.get_runtime_session_order()

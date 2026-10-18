@@ -2,10 +2,12 @@ local M = {}
 local actions = require("opencode.actions")
 local app_state = require("opencode.state")
 local status = require("opencode.session.status")
+local focus = require("opencode.session.focus")
 local requests = setmetatable({}, { __mode = "k" })
 
 function M.show(context)
 	context = require("opencode.ui.palette").capture_context(context)
+	local initial_input = focus.capture_input(context.view)
 	local source_id = context.session_id
 	local pending = require("opencode.session.pending")
 	local token = pending.token(source_id)
@@ -58,7 +60,7 @@ function M.show(context)
 			done()
 		end)
 	end
-	load(function()
+	local function show()
 		require("opencode.ui.menu").open({
 			context = context,
 			items = items, title = " Session Family ", width = 76, searchable = true, sort = false,
@@ -87,7 +89,8 @@ function M.show(context)
 				end },
 			},
 		})
-	end)
+	end
+	load(function() focus.with_session_focus(context.view, show, initial_input) end)
 end
 
 function M.register(palette)

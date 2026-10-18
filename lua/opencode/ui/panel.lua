@@ -3,8 +3,17 @@ local M = {}
 ---@param name string
 ---@return table
 function M.get_hl(name)
-	local ok, value = pcall(vim.api.nvim_get_hl, 0, { name = name, link = false })
-	return ok and value or {}
+	-- Resolve global links explicitly: link=false can apply the current window's
+	-- winhighlight, leaking tab-bar colors into shared widget highlights.
+	local seen = {}
+	while not seen[name] do
+		seen[name] = true
+		local ok, value = pcall(vim.api.nvim_get_hl, 0, { name = name, link = true })
+		if not ok then return {} end
+		if not value.link then return value end
+		name = value.link
+	end
+	return {}
 end
 
 ---@param name string

@@ -6,6 +6,7 @@ local app_state = require("opencode.state")
 local history = require("opencode.ui.input.history")
 local menu = require("opencode.ui.menu")
 local projection = require("opencode.protocol.messages")
+local focus = require("opencode.session.focus")
 local sync = require("opencode.sync")
 local views = require("opencode.ui.chat.state")
 
@@ -81,11 +82,20 @@ local function preview_jump(session_id, message_id, owner)
 	return views.module(chat_state, require("opencode.ui.chat.nav")).jump_to_message(message_id)
 end
 
-local function restore_draft(session_id, draft, owner)
-	if owner_focused(owner, session_id) then
-		local input = require("opencode.ui.input")
-		input.set_pending_draft(draft.text, draft.parts)
-		require("opencode.ui.chat").for_view(owner.view).focus_input()
+local function restore_draft(session_id, draft, owner, initial_input)
+	local current_input = focus.capture_input(owner.view)
+	-- A new source composer can also live outside the original tab, in native diff.
+	if initial_input ~= nil and current_input and current_input ~= initial_input then
+		history.defer_pending(draft, session_id)
+	elseif owner_focused(owner, session_id) then
+		if focus.with_session_focus(owner.view, function()
+			local input = require("opencode.ui.input")
+			input.set_pending_draft(draft.text, draft.parts)
+			require("opencode.ui.chat").for_view(owner.view).focus_input()
+		end, initial_input) == false then
+			-- Preserve both the new composer and its underlying normal draft.
+			history.defer_pending(draft, session_id)
+		end
 	else
 		-- Keep the draft attached to its session if the user switched context while
 		-- the server operation was in flight.
@@ -96,6 +106,7 @@ end
 
 local function fork_session(session_id, before, draft, owner)
 	owner = owner or owner_context()
+	local initial_input = focus.capture_input(owner.view)
 	actions.fork_session(session_id, before and { before = before } or {}, function(err, forked)
 		if err or type(forked) ~= "table" or type(forked.id) ~= "string" then
 			vim.notify("Could not fork session: " .. error_text(err or "invalid response"), vim.log.levels.ERROR)
@@ -104,9 +115,11 @@ local function fork_session(session_id, before, draft, owner)
 		actions.remember_session(forked)
 		local activate = owner_focused(owner, session_id)
 		if activate then
-			actions.switch_session(forked, { reason = "session_fork", view = owner.view })
-			owner = owner_context()
-			activate = owner_focused(owner, forked.id)
+			activate = focus.with_session_focus(owner.view, function()
+				actions.switch_session(forked, { reason = "session_fork", view = owner.view })
+				owner = owner_context()
+				return owner_focused(owner, forked.id)
+			end, initial_input)
 		end
 		if draft then restore_draft(forked.id, draft, owner) end
 		vim.notify(draft and (activate and "Forked before selected prompt; prompt restored to composer"
@@ -166,12 +179,13 @@ function M.run(action, session_id, message_id, owner)
 	end
 
 	if action == "revert" then
+		local initial_input = focus.capture_input(owner.view)
 		actions.undo_message(session_id, message_id, function(err)
 			if err then
 				vim.notify("Could not revert to selected prompt: " .. error_text(err), vim.log.levels.ERROR)
 				return
 			end
-			restore_draft(session_id, draft, owner)
+			restore_draft(session_id, draft, owner, initial_input)
 			vim.notify("Revert staged. Use /redo to restore the turn.", vim.log.levels.INFO)
 		end)
 		return true
@@ -233,6 +247,7 @@ local function show_picker(kind, context)
 	end
 	picker_generation = picker_generation + 1
 	local generation = picker_generation
+	local initial_input = focus.capture_input(owner.view)
 	actions.load_session_messages(session_id, { all = true }, function(err)
 		if generation ~= picker_generation or not owner_focused(owner, session_id) then return end
 		if err then
@@ -254,25 +269,27 @@ local function show_picker(kind, context)
 		end
 		local pending = require("opencode.session.pending")
 		local token = pending.token(session_id)
-		menu.open({
-			title = kind == "fork" and " Fork Session " or " Timeline ",
-			width = 72,
-			searchable = true,
-			sort = false,
-			items = items,
-			on_move = function(item)
-				if not pending.is_current(token) or not owner_current(owner, session_id) then return end
-				if not item.full then preview_jump(session_id, item.value, owner) end
-			end,
-			on_select = function(item)
-				if not pending.is_current(token) or not owner_current(owner, session_id) then return end
-				if kind == "fork" then
-					if item.full then fork_session(session_id, nil, nil, owner) else M.run("fork", session_id, item.value, owner) end
-				else
-					M.show_actions(session_id, item.value, owner)
-				end
-			end,
-		})
+		focus.with_session_focus(owner.view, function()
+			menu.open({
+				title = kind == "fork" and " Fork Session " or " Timeline ",
+				width = 72,
+				searchable = true,
+				sort = false,
+				items = items,
+				on_move = function(item)
+					if not pending.is_current(token) or not owner_current(owner, session_id) then return end
+					if not item.full then preview_jump(session_id, item.value, owner) end
+				end,
+				on_select = function(item)
+					if not pending.is_current(token) or not owner_current(owner, session_id) then return end
+					if kind == "fork" then
+						if item.full then fork_session(session_id, nil, nil, owner) else M.run("fork", session_id, item.value, owner) end
+					else
+						M.show_actions(session_id, item.value, owner)
+					end
+				end,
+			})
+		end, initial_input)
 	end)
 	return true
 end

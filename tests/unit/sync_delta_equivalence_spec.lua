@@ -1,5 +1,6 @@
 local reducer = require("opencode.sync.reducer")
 local projection = require("opencode.protocol.messages")
+local state = require("opencode.state")
 
 -- The reference deliberately omits the private reducer hooks. It still executes
 -- the original full native copy, projection, hydration, and ancestry pass.
@@ -107,10 +108,11 @@ end
 
 describe("native delta fast path full-reducer equivalence", function()
 	local pair
-	before_each(function() pair = new_pair() end)
+	before_each(function() state.reset(); pair = new_pair() end)
 	after_each(function()
 		pair.reference.clear_all()
 		pair.optimized.clear_all()
+		state.reset()
 	end)
 
 	it("keeps the no-hooks oracle on full projection while a warm delta bypasses it", function()
@@ -296,6 +298,26 @@ describe("native delta fast path full-reducer equivalence", function()
 		pair:event("text.delta", { ordinal = 0, delta = "+transferred owner" })
 		pair:call("handle_part_removed", "a", second)
 		pair:event("tool.input.delta", { id = "task-two", delta = "+restored from native" })
+	end)
+
+	it("preserves source ownership while repeatedly projecting copied task history before and after provenance", function()
+		local launch = tool("launch", "completed", { agent = "explore" }, "subagent", { sessionID = "child" })
+		pair:page("root", { assistant("source", 20, { text("source"), launch }) })
+		pair:page("fork", { assistant("copy", 1, { text("copy"), launch }) })
+		local source_part = projection.part_id("root", "source", "tool", "launch")
+		local copy_part = projection.part_id("fork", "copy", "tool", "launch")
+		for index = 1, 4 do
+			if index == 3 then state.upsert_session({ id = "fork", fork = { sessionID = "root" } }, { touch = false }) end
+			pair:event("text.delta", { ordinal = 0, delta = "+" }, "fork", "copy")
+			assert.equals("root", pair.optimized.get_task_parent_session("child"))
+			assert.same({ "source", source_part }, { pair.optimized.get_task_child_owner("child") })
+			assert.equals("child", pair.optimized.get_task_child_session("copy", copy_part))
+		end
+		pair:call("handle_part_removed", "source", source_part)
+		assert.is_nil(pair.optimized.get_task_parent_session("child"))
+		-- Even after its owner is explicitly removed, a copied launch stays navigation-only.
+		pair:event("text.delta", { ordinal = 0, delta = "+removed owner" }, "fork", "copy")
+		assert.is_nil(pair.optimized.get_task_parent_session("child"))
 	end)
 
 	it("protects every live delta from stale HTTP pages and stale cleared-session snapshots", function()

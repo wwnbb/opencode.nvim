@@ -333,6 +333,23 @@ function M.setup(opts)
   vim.notify("OpenCode.nvim v" .. M.version .. " loaded", vim.log.levels.INFO)
 end
 
+local session_focus = require("opencode.session.focus")
+
+local function with_connected_focus(callback, source)
+	local cs = require("opencode.ui.chat.state")
+	local input = require("opencode.ui.input")
+	source = source or input.owner_view() or cs.current()
+	local initial_input = session_focus.capture_input(source)
+	local window, generation = vim.api.nvim_get_current_win(), source.generation
+	lifecycle.ensure_connected(function()
+		if not cs.valid(source, generation) then return end
+		local owner = source
+		-- An unchanged editor with no composer still explicitly requests foreground UI.
+		if vim.api.nvim_get_current_win() == window and not cs.for_window(window) and not input.owner_view() then owner = nil end
+		session_focus.with_session_focus(owner, callback, initial_input)
+	end)
+end
+
 --- Toggle chat window
 function M.toggle()
 	if not lifecycle then
@@ -340,7 +357,7 @@ function M.toggle()
 		return
 	end
 
-	lifecycle.ensure_connected(function()
+	with_connected_focus(function()
 		local chat = require("opencode.ui.chat")
 		chat.toggle()
 	end)
@@ -353,7 +370,7 @@ function M.open()
 		return
 	end
 
-	lifecycle.ensure_connected(function()
+	with_connected_focus(function()
 		local chat = require("opencode.ui.chat")
 		chat.open()
 	end)
@@ -363,25 +380,6 @@ end
 function M.close()
 	local chat = require("opencode.ui.chat")
 	chat.close()
-end
-
--- A session response must not take focus back after the user leaves its owner.
-local function with_session_focus(owner, create)
-	local cs = require("opencode.ui.chat.state")
-	local workspace = require("opencode.ui.chat.workspace")
-	local window, previous = vim.api.nvim_get_current_win(), workspace.current()
-	local input = require("opencode.ui.input")
-	local in_input = vim.tbl_contains(input.get_winids(), window)
-	local background = cs.for_window(window) ~= owner
-		and not (input.owner_view() == owner and in_input)
-	local restore_input = background and in_input and input.suspend()
-	local ok, err = xpcall(create, debug.traceback)
-	if background then
-		if previous and workspace.current() ~= previous then workspace.select(previous.id) end
-		if restore_input then restore_input()
-		elseif vim.api.nvim_win_is_valid(window) then vim.api.nvim_set_current_win(window) end
-	end
-	if not ok then error(err) end
 end
 
 --- Create an independent chat beside the focused chat in the OpenCode tab.
@@ -402,6 +400,7 @@ function M.split(direction, opts)
 	local owner = opts and opts.view or chat.get_view()
 	if not cs.valid(owner, opts and opts.generation) or not (owner.visible or owner.suspended) then return false end
 	local generation = owner.generation
+	local initial_input = session_focus.capture_input(owner)
 	local session = cs.session(owner)
 	local directory = state.get_session_directory(session.id) or vim.fn.getcwd()
 	local pending = require("opencode.session.pending")
@@ -417,7 +416,7 @@ function M.split(direction, opts)
 				end
 				session_actions.remember(created)
 				if not pending.is_current(token) or not cs.valid(owner, generation) or not (owner.visible or owner.suspended) then return end
-				with_session_focus(owner, function() chat.create_split(owner, created, direction) end)
+				session_focus.with_session_focus(owner, function() return chat.create_split(owner, created, direction) end, initial_input)
 			end)
 		end)
 	end)
@@ -431,7 +430,7 @@ function M.focus()
 		return
 	end
 
-	lifecycle.ensure_connected(function()
+	with_connected_focus(function()
 		local chat = require("opencode.ui.chat")
 		chat.focus()
 	end)
@@ -731,8 +730,10 @@ end
 ---@param opts? { silent?: boolean, close_previous?: boolean, reason?: string, clear_draft?: table, location?: table }
 function M.new_session(opts)
 	local cs = require("opencode.ui.chat.state")
-	local owner = opts and opts.view or cs.current()
-	if not (owner and owner.session_bound) then owner = nil end
+	local view = opts and opts.view or cs.current()
+	local owner = view and view.session_bound and view or nil
+	local initial_input = opts and opts.initial_input
+	if initial_input == nil then initial_input = session_focus.capture_input(view) end
 	local generation = owner and owner.generation
 	local owner_was_visible = owner and owner.visible
 	local current_session = owner and cs.session(owner) or state.get_session()
@@ -767,13 +768,15 @@ function M.new_session(opts)
 				session_actions.remember(session)
 				if owner and (not cs.valid(owner, generation) or (owner_was_visible and not owner.visible and not owner.suspended)) then return end
 				local activate_opts = { reason = opts.reason or "new_session", preserve_cache = true }
-				if owner and owner.config.layout == "tab" and owner.workspace_id and not opts.close_previous then
-					with_session_focus(owner, function() require("opencode.ui.chat").create_layout(session) end)
-				elseif owner then
-					require("opencode.ui.chat").bind_session(owner, session, activate_opts)
-				else
-					session_actions.set_active(session.id, session.title or "New session", activate_opts)
-				end
+				if session_focus.with_session_focus(view, function()
+					if owner and owner.config.layout == "tab" and owner.workspace_id and not opts.close_previous then
+						return require("opencode.ui.chat").create_layout(session)
+					elseif owner then
+						return require("opencode.ui.chat").bind_session(owner, session, activate_opts)
+					else
+						return session_actions.set_active(session.id, session.title or "New session", activate_opts)
+					end
+				end, initial_input) == false then return end
 				if current_session.id and current_session.id ~= session.id then
 					if opts.close_previous then
 						session_actions.close(current_session.id, { silent = true, reason = opts.reason or "clear" })
@@ -960,12 +963,12 @@ function M.command_palette()
 	local palette = require("opencode.ui.palette")
 	local context = palette.capture_context()
 	local tabpage = vim.api.nvim_get_current_tabpage()
-	lifecycle.ensure_connected(function()
+	with_connected_focus(function()
 		if vim.api.nvim_get_current_tabpage() ~= tabpage then return end
 		local owner = context.view
 		if owner and (not owner.visible or not owner.winid or not vim.api.nvim_win_is_valid(owner.winid)) then return end
 		if palette.context_valid(context) then palette.show(context) end
-	end)
+	end, context.view)
 end
 
 --- Show active/recent sessions with per-session status.
@@ -977,9 +980,9 @@ function M.active_sessions(context)
 
 	local palette = require("opencode.ui.palette")
 	context = palette.capture_context(context)
-	lifecycle.ensure_connected(function()
+	with_connected_focus(function()
 		if palette.context_valid(context) then require("opencode.ui.active_sessions").show(context) end
-	end)
+	end, context.view)
 end
 
 --- Toggle log viewer window

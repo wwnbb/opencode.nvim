@@ -26,18 +26,20 @@ end
 ---@param text string|nil
 ---@param width number
 ---@param suffix? string
+---@param measure? fun(text: string): number
 ---@return string
-function M.truncate(text, width, suffix)
+function M.truncate(text, width, suffix, measure)
 	text = tostring(text or "")
+	measure = measure or vim.fn.strdisplaywidth
 	if width <= 0 then return "" end
-	if vim.fn.strdisplaywidth(text) <= width then return text end
+	if measure(text) <= width then return text end
 	suffix = suffix or ""
-	local available = width - vim.fn.strdisplaywidth(suffix)
-	if available < 0 then return M.truncate(suffix, width) end
+	local available = width - measure(suffix)
+	if available < 0 then return M.truncate(suffix, width, nil, measure) end
 	local low, high = 0, vim.fn.strchars(text)
 	while low < high do
 		local middle = math.ceil((low + high) / 2)
-		if vim.fn.strdisplaywidth(vim.fn.strcharpart(text, 0, middle)) <= available then
+		if measure(vim.fn.strcharpart(text, 0, middle)) <= available then
 			low = middle
 		else
 			high = middle - 1

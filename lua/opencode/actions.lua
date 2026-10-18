@@ -154,6 +154,10 @@ function M.refresh_session_scope()
 end
 
 function M.reopen_session_tab(opts)
+	opts = vim.tbl_extend("force", {}, opts or {})
+	opts.view = opts.view or require("opencode.ui.chat.state").current()
+	opts.generation = opts.generation or (opts.view and opts.view.generation)
+	opts.initial_input = require("opencode.session.focus").capture_input(opts.view)
 	return with_connection(function() require("opencode.session.tabs").reopen(opts) end)
 end
 

@@ -35,6 +35,9 @@ M.state = {
 	session_tabs_winid = nil, -- Float session tabs window id
 	session_tabs_start = nil, -- First active-session index shown in the tab strip
 	session_tabs_current_id = nil, -- Current root session id used for tab strip centering
+	session_tabs_max_tabs = nil, -- Fitted tab count for the stored viewport
+	session_tabs_order = nil, -- Session order for the stored viewport
+	session_tabs_width = nil, -- Display-cell budget for the stored viewport
 	session_tabs_mouse_targets = {}, -- Float tab click targets: { start_col, end_col, target }
 	stream_blocks = {},     -- Streaming part blocks: { [session/message/part/kind] = { start_line, end_line } }
 	spinner_footer_line = nil,

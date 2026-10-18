@@ -36,22 +36,26 @@ describe("OpenCode tab lifecycle", function()
 			end
 		end
 		settle()
+		require("opencode.ui.chat.workspace").reset()
 		lifecycle.ensure_connected, client.create_session, client.get_messages, vim.notify = saved.ensure, saved.create, saved.messages, saved.notify
 		sync.clear_all()
 	end)
 
-	it("toggles without changing windows, sizes or cursor and reuses the last pane", function()
+	it("toggles by recreating the native tab while preserving sizes and the last pane", function()
 		state.upsert_session({ id = "tab-b", title = "B" })
 		local second = chat.create_split(first, state.get_session_record("tab-b"), "vertical")
 		vim.api.nvim_win_set_width(second.winid, 45)
 		local width, win, tab = vim.api.nvim_win_get_width(second.winid), second.winid, second.tabpage
 		chat.toggle()
 		assert.equals(editor, vim.api.nvim_get_current_tabpage())
-		assert.is_true(vim.api.nvim_win_is_valid(win))
+		assert.is_false(vim.api.nvim_win_is_valid(win))
+		assert.is_false(vim.api.nvim_tabpage_is_valid(tab))
+		assert.is_true(second.suspended)
 		chat.open()
-		assert.equals(tab, vim.api.nvim_get_current_tabpage())
-		assert.equals(win, vim.api.nvim_get_current_win())
-		assert.equals(width, vim.api.nvim_win_get_width(win))
+		assert.is_not.equals(tab, vim.api.nvim_get_current_tabpage())
+		assert.equals(second, chat.get_view())
+		assert.equals(second.winid, vim.api.nvim_get_current_win())
+		assert.equals(width, vim.api.nvim_win_get_width(second.winid))
 	end)
 
 	it("keeps the layout intact on failed creation and splits only after success", function()
@@ -145,7 +149,8 @@ describe("OpenCode tab lifecycle", function()
 		local tab = first.tabpage
 		chat.toggle()
 		assert.is_not.equals(tab, vim.api.nvim_get_current_tabpage())
-		assert.is_true(vim.api.nvim_win_is_valid(first.winid))
+		assert.is_false(vim.api.nvim_tabpage_is_valid(tab))
+		assert.is_true(first.suspended)
 		editor = vim.api.nvim_get_current_tabpage()
 	end)
 

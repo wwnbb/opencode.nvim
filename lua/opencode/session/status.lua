@@ -29,7 +29,7 @@ function M.session_status_to_global(status)
 	if M.is_busy(kind) then
 		return "streaming"
 	end
-	if kind == "error" then
+	if M.is_error(status) then
 		return "error"
 	end
 	return "idle"
@@ -63,7 +63,8 @@ end
 ---@param status any
 ---@return boolean
 function M.is_error(status)
-	return M.status_type(status) == "error"
+	local kind = M.status_type(status)
+	return kind == "error" or (kind == "idle" and type(status) == "table" and status.outcome == "failed")
 end
 
 ---@param status any
@@ -77,7 +78,7 @@ function M.status_label(status)
 		local attempt = type(status) == "table" and status.attempt or nil
 		return attempt and ("retry #" .. attempt) or "retry"
 	end
-	if kind == "error" then
+	if M.is_error(status) then
 		return "error"
 	end
 	return "idle"

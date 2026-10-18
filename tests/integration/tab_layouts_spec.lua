@@ -44,20 +44,17 @@ local function geometry(tab, buffers)
 end
 
 local function shared_bar(tab, panes)
-	local windows, content = normal_windows(tab), {}
-	local top = vim.o.showtabline == 2 or (vim.o.showtabline == 1 and #vim.api.nvim_list_tabpages() > 1)
+	local windows = normal_windows(tab)
+	assert.equals(2, vim.o.showtabline)
+	assert.equals(#panes, #windows, "the tabline must not add a header window")
+	local top = math.huge
 	for _, view in ipairs(panes) do
-		content[view.winid] = true
 		assert.equals("", vim.wo[view.winid].winbar, "session tabs must not be repeated in chat panes")
+		top = math.min(top, vim.api.nvim_win_get_position(view.winid)[1])
 	end
-	assert.equals(#panes + 1, #windows, "there should be one shared bar above the content layout")
-	for _, win in ipairs(windows) do
-		if not content[win] then
-			assert.equals(1, vim.api.nvim_win_get_height(win))
-			assert.equals(vim.o.columns, vim.api.nvim_win_get_width(win))
-			assert.equals(top and 1 or 0, vim.api.nvim_win_get_position(win)[1])
-		end
-	end
+	assert.equals(1, top, "content must begin directly below the single tabline")
+	local text = vim.api.nvim_eval_statusline(vim.o.tabline, { use_tabline = true, maxwidth = vim.o.columns }).str
+	assert.is_truthy(text:find(workspace.current().session_id, 1, true))
 end
 
 describe("OpenCode tabs with independent layouts", function()
@@ -117,14 +114,15 @@ describe("OpenCode tabs with independent layouts", function()
 		assert.equals(1, #workspace.list(), "split sessions belong to their existing layout")
 		shared_bar(tab, { first, second, third })
 		local native_tabs = #vim.api.nvim_list_tabpages()
-		vim.wo[third.winid].winhighlight = "Normal:Normal"
+		vim.api.nvim_win_call(third.winid, function() vim.opt_local.winhighlight:append({ Normal = "Normal" }) end)
+		local winhighlight = vim.wo[third.winid].winhighlight
 		chat.create_layout(seed("layout-d")); settle()
 		local next_view = chat.get_view()
 		assert.equals(tab, vim.api.nvim_get_current_tabpage())
 		assert.equals(native_tabs, #vim.api.nvim_list_tabpages())
 		assert.equals(2, #workspace.list())
 		assert.equals("layout-d", views.session(next_view).id)
-		assert.equals("Normal:Normal", vim.wo[next_view.winid].winhighlight)
+		assert.equals(winhighlight, vim.wo[next_view.winid].winhighlight)
 		assert.equals(vim.api.nvim_get_option_value("statusline", { scope = "global" }), vim.wo[next_view.winid].statusline)
 		for _, view in ipairs({ first, second, third }) do
 			assert.is_true(views.valid(view))
@@ -132,6 +130,23 @@ describe("OpenCode tabs with independent layouts", function()
 			assert.is_false(view.visible)
 		end
 		shared_bar(tab, { next_view })
+	end)
+
+	it("reuses a visible or suspended session owner instead of duplicating its layout", function()
+		local native_tabs = #vim.api.nvim_list_tabpages()
+		assert.equals(first, chat.create_layout(state.get_session_record("layout-a")))
+		assert.equals(1, #workspace.list())
+		local second = chat.create_layout(seed("layout-b"))
+		local count, buffers = #views.all(), #vim.api.nvim_list_bufs()
+		assert.equals(first, chat.create_layout(state.get_session_record("layout-a")))
+		assert.equals(original_layout, workspace.current().id)
+		assert.equals(first, chat.get_view())
+		assert.equals(2, #workspace.list())
+		assert.equals(count, #views.all())
+		assert.equals(buffers, #vim.api.nvim_list_bufs())
+		assert.equals(native_tabs, #vim.api.nvim_list_tabpages())
+		assert.is_true(second.suspended)
+		shared_bar(tab, { first })
 	end)
 
 	it("restores nested splits, modified file buffers, focus, scroll and drafts repeatedly", function()
@@ -374,7 +389,7 @@ describe("OpenCode tabs with independent layouts", function()
 			assert.is_true(popup.closed)
 			assert.is_false(vim.api.nvim_win_is_valid(frame))
 			assert.is_false(vim.api.nvim_win_is_valid(content))
-			assert.is_false(views.workspace.switching)
+			assert.is_false(views.workspace.switching == true)
 			if key == "gt" then
 				assert.equals(original_layout, workspace.current().id)
 				assert.same(expected, geometry(tab, buffers))
@@ -413,7 +428,7 @@ describe("OpenCode tabs with independent layouts", function()
 		local config = state.get_config()
 		config.chat.session_tabs.enabled = false
 		state.set_config(config); settle()
-		assert.is_nil(require("opencode.ui.chat.workspace_bar").winid())
+		assert.is_nil(vim.o.tabline:find("opencode", 1, true))
 		chat.create_layout(seed("layout-b")); settle()
 		assert.equals(1, #normal_windows(tab))
 		workspace.select(original_layout); settle()
@@ -421,12 +436,12 @@ describe("OpenCode tabs with independent layouts", function()
 		assert.equals(1, #normal_windows(tab))
 	end)
 
-	it("uses the configured navigation keys in the shared tabbar", function()
+	it("uses the configured navigation keys from the chat pane", function()
 		local config = state.get_config()
 		config.chat.keymaps.next_session = "]t"
 		state.set_config(config); settle()
 		chat.create_layout(seed("layout-b")); settle()
-		vim.api.nvim_set_current_win(require("opencode.ui.chat.workspace_bar").winid())
+		chat.focus_view(chat.get_view())
 		assert.equals("", vim.fn.maparg("gt", "n"))
 		press("]t")
 		assert.equals(original_layout, workspace.current().id)
@@ -464,7 +479,7 @@ describe("OpenCode tabs with independent layouts", function()
 		{ name = "middle layout", index = 3, expected = "layout-b" },
 		{ name = "last layout", index = 4, expected = "layout-c" },
 		{ name = "first layout", index = 1, expected = "layout-b" },
-		{ name = "reordered layout from the tabbar", index = 4, expected = "layout-b", reorder = true },
+		{ name = "reordered layout from the chat pane", index = 4, expected = "layout-b", reorder = true },
 	}) do
 		it("selects the adjacent layout when x closes the " .. case.name, function()
 			for _, id in ipairs({ "layout-b", "layout-c", "layout-d" }) do chat.create_layout(seed(id)); settle() end
@@ -472,7 +487,7 @@ describe("OpenCode tabs with independent layouts", function()
 			if case.reorder then
 				assert.is_true(require("opencode.actions").reorder_session_tab(-1))
 				assert.equals("layout-d", workspace.list()[3].session_id)
-				vim.api.nvim_set_current_win(require("opencode.ui.chat.workspace_bar").winid())
+				chat.focus_view(chat.get_view())
 			end
 			press("x")
 			assert.equals(3, #workspace.list())

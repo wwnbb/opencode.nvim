@@ -1,4 +1,5 @@
 local projection = require("opencode.protocol.messages")
+local state = require("opencode.state")
 
 local function new_store()
 	return assert(loadfile("lua/opencode/sync.lua"))()
@@ -12,12 +13,14 @@ end
 describe("private sync message indexes and metadata generations", function()
 	local sync, original_insert, original_remove
 	before_each(function()
+		state.reset()
 		sync = new_store()
 		original_insert, original_remove = table.insert, table.remove
 	end)
 	after_each(function()
 		table.insert, table.remove = original_insert, original_remove
 		sync.clear_all()
+		state.reset()
 	end)
 
 	it("keeps lookup positions correct across insertion, reorder, removal and session moves", function()
@@ -136,6 +139,32 @@ describe("private sync message indexes and metadata generations", function()
 		local generation = sync.get_history_metadata_generation("s")
 		sync.finalize_inflight("s")
 		assert.is_true(sync.get_history_metadata_generation("s") > generation)
+	end)
+
+	it("repairs late fork metadata through child-local indexes without scanning sessions on streaming deltas", function()
+		local native = { id = "source", type = "assistant", time = { created = 1 }, content = {
+			{ type = "text", text = "body" },
+			{ type = "tool", id = "launch", name = "subagent", state = { status = "completed", input = {}, metadata = { sessionID = "child" } } },
+		} }
+		sync.handle_session_messages("root", projection.page("root", { native }))
+		local copy = vim.deepcopy(native)
+		copy.id = "copy"
+		sync.handle_session_messages("fork", projection.page("fork", { copy }))
+		state.upsert_session({ id = "fork", fork = { sessionID = "root" } }, { touch = false })
+		local original_ids, original_record = state.get_session_ids, state.get_session_record
+		state.get_session_ids = function() error("streaming must not enumerate session metadata") end
+		state.get_session_record = function() error("streaming ancestry must not deepcopy session records") end
+		local ok, err = pcall(function()
+			for index = 1, 5 do
+				sync.handle_server_event({ id = "evt" .. index, created = index, type = "session.text.delta",
+					data = { sessionID = "fork", assistantMessageID = "copy", ordinal = 0, delta = "+" } })
+				assert.equals("root", sync.get_task_parent_session("child"))
+			end
+		end)
+		state.get_session_ids, state.get_session_record = original_ids, original_record
+		assert.is_true(ok, err)
+		assert.equals("body+++++", sync.get_message_text("copy"))
+		assert.equals("child", sync.get_task_child_session("source", projection.part_id("root", "source", "tool", "launch")))
 	end)
 
 	for _, clear in ipairs({ "clear_session", "clear_session_messages" }) do

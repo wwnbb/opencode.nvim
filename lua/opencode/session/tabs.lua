@@ -2,7 +2,9 @@
 local M = {}
 local state = require("opencode.state")
 local pending = require("opencode.session.pending")
+local focus = require("opencode.session.focus")
 local owner, scope, listener, bus
+local malformed_scopes = false
 local deferred_scope = false
 local subscriptions = {}
 local focused, observations = true, {}
@@ -25,12 +27,13 @@ function M.teardown()
 	if listener then state.off("*", listener) end
 	if bus then for event, callback in pairs(subscriptions) do bus.off(event, callback) end end
 	listener, bus, owner, subscriptions = nil, nil, nil, {}
+	malformed_scopes = false
 	deferred_scope = false
 	pcall(vim.api.nvim_del_augroup_by_name, "OpenCodeViewed")
 end
 
 local function save()
-	if not owner then return end
+	if not owner or malformed_scopes then return end
 	local function records(ids)
 		local result = {}
 		for _, id in ipairs(ids) do
@@ -114,9 +117,11 @@ function M.reopen(opts)
 	local token = pending.token(id)
 	local current = state.get_session().id
 	local views = package.loaded["opencode.ui.chat.state"]
-	local view = opts.view or (views and type(views.current) == "function" and views.current()) or nil
-	if view and not view.session_bound then view = nil end
+	local source = opts.view or (views and type(views.current) == "function" and views.current()) or nil
+	local view = source and source.session_bound and source or nil
 	local generation = opts.generation or (view and view.generation)
+	local initial_input = opts.initial_input
+	if initial_input == nil then initial_input = focus.capture_input(source) end
 	require("opencode.client").get_session(id, function(err, info)
 		if not pending.is_current(token) or state.get_closed_session_order()[1] ~= id then return end
 		if view then
@@ -127,16 +132,23 @@ function M.reopen(opts)
 			vim.notify("Could not reopen session: " .. tostring(err.message or err), vim.log.levels.WARN)
 			return
 		end
-		require("opencode.session").switch_to(info, { view = view, reason = "reopen", notify = false })
+		local sessions = require("opencode.session")
+		if focus.with_session_focus(source, function()
+			return sessions.switch_to(info, { view = view, reason = "reopen", notify = false })
+		end, initial_input) == false then
+			sessions.remember(info, { touch = false, reason = "reopen" })
+		end
 	end)
 end
 
 local function has_tab_workspace()
+	local workspace = package.loaded["opencode.ui.chat.workspace"]
+	if workspace and type(workspace.list) == "function" and #workspace.list() > 0 then return true end
 	local views = package.loaded["opencode.ui.chat.state"]
 	if not views or type(views.all) ~= "function" then return false end
 	for _, view in ipairs(views.all()) do
-		if view.session_bound and view.visible and view.config and view.config.layout == "tab"
-			and view.winid and vim.api.nvim_win_is_valid(view.winid) then return true end
+		if view.session_bound and view.config and view.config.layout == "tab"
+			and (view.suspended or (view.visible and view.winid and vim.api.nvim_win_is_valid(view.winid))) then return true end
 	end
 	return false
 end
@@ -168,7 +180,12 @@ function M.setup(events)
 			state.set_closed_session_order({})
 			require("opencode.session").set_active(nil, nil, { preserve_cache = true, reason = "tabs_scope" })
 		end
-		owner = scope and require("opencode.preferences").open(options.file or (vim.fn.stdpath("data") .. "/opencode_tabs.json")) or nil
+		local file = options.file or (vim.fn.stdpath("data") .. "/opencode_tabs.json")
+		owner = scope and require("opencode.preferences").open(file) or nil
+		malformed_scopes = owner ~= nil and owner.data.scopes ~= nil and type(owner.data.scopes) ~= "table"
+		if malformed_scopes then
+			vim.notify_once("OpenCode: preferences file " .. file .. " has invalid session tab scopes; leaving it unchanged", vim.log.levels.WARN)
+		end
 		local saved = owner and type(owner.data.scopes) == "table" and owner.data.scopes[scope] or nil
 		if type(saved) == "table" and #state.get_runtime_session_order() == 0 then
 			local function restore(values)

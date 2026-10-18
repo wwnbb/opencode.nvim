@@ -9,13 +9,12 @@ local chat_tasks = cs.module(view, require("opencode.ui.chat.tasks"))
 local chat_edits = cs.module(view, require("opencode.ui.chat.edits"))
 local chat_interactions = cs.module(view, require("opencode.ui.chat.interactions"))
 local chat_questions = cs.module(view, require("opencode.ui.chat.questions"))
+local chat_permissions = cs.module(view, require("opencode.ui.chat.permissions"))
 local chat_nav = cs.module(view, require("opencode.ui.chat.nav"))
 local chat_session_tabs = cs.module(view, require("opencode.ui.chat.session_tabs"))
 local palette = require("opencode.ui.palette")
 
 local state = view
-
-local SESSION_TAB_COUNT_MAPPING_LIMIT = 99
 
 ---@param bufnr number
 ---@param opts table
@@ -116,41 +115,7 @@ function M.setup_buffer(bufnr, opts)
 		actions.close_session({ notify = true, session_id = cs.session(view).id, view = view })
 	end, vim.tbl_extend("force", keymap_opts, { desc = "Close current OpenCode session tab" }))
 
-	-- Session tab switching by index: digits accumulate a pending count that the
-	-- next `gt` consumes (`5gt`, `12gt`, `0gt` for the first session). The count
-	-- lives in Lua instead of literal `Ngt` mappings so digit presses never wait
-	-- on 'timeoutlen' disambiguation. Inside question/permission/edit widgets,
-	-- digits select options immediately and drop any pending count.
-	local pending_tab_count ---@type string|nil
-	local pending_tab_timer ---@type integer|nil
-
-	local function clear_pending_tab_count()
-		pending_tab_count = nil
-		if pending_tab_timer then
-			vim.fn.timer_stop(pending_tab_timer)
-			pending_tab_timer = nil
-		end
-	end
-
-	local function arm_pending_tab_timer()
-		if pending_tab_timer then
-			vim.fn.timer_stop(pending_tab_timer)
-			pending_tab_timer = nil
-		end
-		local timeout_ms = vim.api.nvim_get_option_value("timeoutlen", {})
-		if type(timeout_ms) ~= "number" or timeout_ms <= 0 then
-			return
-		end
-		pending_tab_timer = vim.fn.timer_start(timeout_ms, clear_pending_tab_count)
-	end
-
 	map("n", "next_session", function()
-		if pending_tab_count ~= nil then
-			local count = tonumber(pending_tab_count) or 0
-			clear_pending_tab_count()
-			chat_session_tabs.go_to_session_tab(count)
-			return
-		end
 		local count = tonumber(vim.v.count) or 0
 		if count > 0 then
 			chat_session_tabs.go_to_session_tab(count)
@@ -160,35 +125,29 @@ function M.setup_buffer(bufnr, opts)
 	end, vim.tbl_extend("force", keymap_opts, { desc = "Next or counted OpenCode session" }))
 
 	map("n", "prev_session", function()
-		clear_pending_tab_count()
 		chat_session_tabs.cycle_session(-1)
 	end, vim.tbl_extend("force", keymap_opts, { desc = "Previous OpenCode session" }))
 
 	for i = 0, 9 do
 		local digit = i
-		map("n", "select_" .. digit, function()
-			if digit >= 1 and chat_interactions.handle_question_number_select(digit) then
-				clear_pending_tab_count()
-				return
+		map("n", "select_" .. digit, function(key)
+			if digit >= 1 and (chat_questions.get_question_at_cursor()
+				or (digit <= 3 and chat_permissions.get_permission_at_cursor()) or chat_edits.get_edit_at_cursor()) then
+				-- Run selection outside expr-map textlock; otherwise leave counts to Neovim.
+				return ("<Cmd>lua require('opencode.ui.chat.interactions').for_view(require('opencode.ui.chat.state').get(%d)).handle_question_number_select(%d)<CR>")
+					:format(view.id, digit)
 			end
-			if pending_tab_count == nil and digit == 0 then
-				-- Bare `0` keeps vanilla behavior (first column) while still
-				-- arming count 0 so `0gt` jumps to the first session.
-				vim.api.nvim_feedkeys("0", "n", false)
-			end
-			pending_tab_count = (pending_tab_count or "0") .. tostring(digit)
-			if (tonumber(pending_tab_count) or 0) > SESSION_TAB_COUNT_MAPPING_LIMIT then
-				pending_tab_count = tostring(digit)
-			end
-			arm_pending_tab_timer()
-		end, keymap_opts)
+			return keymaps.code(key)
+		end, vim.tbl_extend("force", keymap_opts, { expr = true }))
 	end
 
 	map("n", "widget_next", function()
-		chat_interactions.handle_question_navigation("down")
+		vim.cmd("normal! " .. vim.v.count1 .. "j")
+		chat_interactions.sync_widget_selection_from_cursor()
 	end, keymap_opts)
 	map("n", "widget_prev", function()
-		chat_interactions.handle_question_navigation("up")
+		vim.cmd("normal! " .. vim.v.count1 .. "k")
+		chat_interactions.sync_widget_selection_from_cursor()
 	end, keymap_opts)
 
 	local function confirm(key)
@@ -267,9 +226,7 @@ function M.setup_buffer(bufnr, opts)
 	end, vim.tbl_extend("force", keymap_opts, { nowait = true }))
 
 	map("n", "leave_subagent", function()
-		if #state.session_stack > 0 then
-			chat_nav.leave_child_session()
-		end
+		chat_nav.leave_child_session()
 	end, keymap_opts)
 
 	map("n", "toggle_tool", function()

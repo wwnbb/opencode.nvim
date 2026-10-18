@@ -143,6 +143,17 @@ function M.setup(events)
 			local info = vim.deepcopy(data)
 			info.id, info.sessionID = sid, nil
 			if info.location then info.directory = info.location.directory end
+			if kind == "session.model.selected" then
+				-- Same-value selections must supersede in-flight history without treating renames as selections.
+				info._model_selection_revision = ((state.get_session_record(sid) or {})._model_selection_revision or 0) + 1
+			end
+			if kind == "session.forked" then
+				-- Forked.parentID is the copy source, not native ancestry.
+				info.fork = { sessionID = info.parentID, boundary = info.boundary }
+				-- Clear an old conflated copy source, not independent native metadata.
+				info.parentID = state.get_session_parent_id(sid) == info.parentID and vim.NIL or nil
+				info.boundary = nil
+			end
 			info.time = { updated = event.created }
 			if kind == "session.created" then info.time.created = event.created end
 			sessions.remember(info, { touch = false })

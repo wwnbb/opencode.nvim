@@ -18,6 +18,7 @@ local function sections(config)
 	local function key(name) return keymaps.label("chat", name, config.keymaps) end
 	local function input_key(name) return keymaps.label("input", name) end
 	local function numbers(first, last) return keymaps.number_labels("chat", first, last, config.keymaps) end
+	local target = config.layout == "tab" and "layout" or "session"
 	local configured = keymaps.get("chat", config.keymaps)
 	local confirm_keys, overlapping = keymaps.keys(configured.confirm), 0
 	for _, lhs in ipairs(confirm_keys) do
@@ -42,14 +43,14 @@ local function sections(config)
 			},
 		},
 		{
-			"Sessions",
+			config.layout == "tab" and "OpenCode Tabs" or "Sessions",
 			{
-				{ key("new_session"), "Start new session" },
-				{ key("close_session"), "Close current session tab" },
-				{ key("next_session"), "Next session" },
-				{ "N + " .. key("next_session"), "Go to session N" },
-				{ key("select_0") .. " + " .. key("next_session"), "Go to first session" },
-				{ key("prev_session"), "Previous session" },
+				{ key("new_session"), config.layout == "tab" and "New session in a new layout" or "Start new session" },
+				{ key("close_session"), "Close current " .. target },
+				{ key("next_session"), "Next " .. target },
+				{ "N + " .. key("next_session"), "Go to " .. target .. " N" },
+				{ "1 + " .. key("next_session"), "Go to first " .. target },
+				{ key("prev_session"), "Previous " .. target },
 			},
 		},
 		{

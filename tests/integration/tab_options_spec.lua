@@ -3,6 +3,49 @@ describe("tab layout window options after Neovim startup", function()
 	before_each(function() editor = require("tests.helpers.embedded_editor").new() end)
 	after_each(function() if editor then editor.close() end end)
 
+	for _, enabled in ipairs({ false, true }) do
+		for _, persistent in ipairs({ false, true }) do
+			it("returns option API errors and retries a partially attached layout (header=" .. tostring(enabled) .. ", persistent=" .. tostring(persistent) .. ")", function()
+				editor.lua([[
+					local enabled, persistent = ...
+					require("opencode").setup({ server = { auto_start = false }, lualine = { enabled = false },
+						chat = { layout = "tab", session_tabs = { enabled = enabled, persist = false } } })
+					local chat, workspace = require("opencode.ui.chat"), require("opencode.ui.chat.workspace")
+					local views, sessions = require("opencode.ui.chat.state"), require("opencode.session")
+					local function seed(id)
+						local session = { id = id, title = id }; sessions.remember(session); return session
+					end
+					seed("option-errors-a"); sessions.set_active("option-errors-a", "A"); chat.open()
+					local original, first = workspace.current().id, chat.get_view()
+					chat.create_layout(seed("option-errors-b"))
+					local other = workspace.current().id
+					local set_option = vim.api.nvim_set_option_value
+					local calls = 0
+					vim.api.nvim_set_option_value = function(name, value, opts)
+						if name == "scrolloff" and opts and opts.scope == "local" then
+							calls = calls + 1
+							if persistent or calls == 1 then return set_option("opencode_invalid_window_option", value, opts) end
+						end
+						return set_option(name, value, opts)
+					end
+					local ok, err = pcall(workspace.select, original)
+					vim.api.nvim_set_option_value = set_option
+					assert(not ok and tostring(err):find("opencode_invalid_window_option", 1, true), tostring(err))
+					assert(not tostring(err):find("stack overflow", 1, true) and not views.workspace.switching)
+					if persistent then
+						assert(tostring(err):find("Could not restore previous layout", 1, true))
+						assert(workspace.current().incomplete, "failed recovery must remain retryable, not complete")
+					else assert(workspace.current().id == other and not workspace.current().incomplete) end
+					assert(workspace.select(workspace.current().id), "same-layout selection must repair an incomplete layout")
+					assert(workspace.select(original) and chat.focus_view(first))
+					assert(workspace.select(other))
+					workspace.close_current()
+					assert(workspace.current().id == original and not workspace.current().incomplete)
+				]], { enabled, persistent })
+			end)
+		end
+	end
+
 	it("restores local folds without refreshing deleted Treesitter buffers or changing defaults", function()
 		local result = editor.lua([[
 			vim.go.foldmethod = "expr"

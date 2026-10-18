@@ -174,13 +174,15 @@ function M.close()
 	vim.schedule(function()
 		if generation ~= view_generation then return end
 		if owner and not views.valid(owner, owner_generation) then return end
+		local chat_ok, chat = pcall(require, "opencode.ui.chat")
 		if prev_win and vim.api.nvim_win_is_valid(prev_win) then
 			vim.api.nvim_set_current_win(prev_win)
+		elseif chat_ok and owner and (owner.visible or owner.suspended) then
+			chat.focus_view(owner)
 		end
 
 		-- Re-open input only if the chat is still visible (it may have been
 		-- closed by WinEnter/TabEnter while the diff tab was active)
-		local chat_ok, chat = pcall(require, "opencode.ui.chat")
 		if chat_ok and owner then chat = views.module(owner, chat) end
 		if chat_ok and chat.focus_input and chat.is_visible and chat.is_visible() then
 			chat.focus_input()

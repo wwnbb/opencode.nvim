@@ -2,6 +2,7 @@
 local M = {}
 local state = require("opencode.state")
 local pending = require("opencode.session.pending")
+local focus = require("opencode.session.focus")
 local schedule = require("opencode.util.schedule").schedule_callback
 local opens, renames = setmetatable({}, { __mode = "k" }), {}
 
@@ -14,25 +15,33 @@ function M.open(id, opts, callback)
 	if not valid_id(id) then schedule(callback, { message = "Enter a valid session ID" }); return end
 	local views = package.loaded["opencode.ui.chat.state"]
 	local view = opts.view or (views and views.current and views.current())
-	if view and not view.session_bound then view = nil end
-	local generation = view and view.generation
-	local key, request = view or M, {}
+	local owner = view and view.session_bound and view or nil
+	local generation = owner and owner.generation
+	local initial_input = focus.capture_input(view)
+	local key, request = owner or M, {}
 	opens[key] = request
 	local token, source = pending.token(id), state.get_session().id
-	if view then opts = vim.tbl_extend("force", opts, { view = view }) end
+	if owner then opts = vim.tbl_extend("force", opts, { view = owner }) end
 	local changed = false
 	local function switched() changed = true end
-	if not view then state.on("session.id", switched) end
+	if not owner then state.on("session.id", switched) end
 	local function current()
 		if opens[key] ~= request or not pending.is_current(token) then return false end
-		if view then return views and views.valid(view, generation) end
+		if owner then return views and views.valid(owner, generation) end
 		return not changed and state.get_session().id == source
 	end
 	local function finish(err, info)
 		schedule(function()
 			state.off("session.id", switched)
 			if not current() then return end
-			if not err then require("opencode.session").switch_to(info, opts) end
+			if not err then
+				local sessions = require("opencode.session")
+				if focus.with_session_focus(view, function()
+					return sessions.switch_to(info, opts)
+				end, initial_input) == false then
+					sessions.remember(info, { touch = false, reason = opts.reason or "session_open" })
+				end
+			end
 			if callback then callback(err, info) end
 		end)
 	end
