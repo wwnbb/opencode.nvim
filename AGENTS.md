@@ -99,6 +99,7 @@ lua/opencode/ui/panel.lua            → Panel line helpers
 lua/opencode/ui/spinner.lua          → Loading spinner
 lua/opencode/ui/syntax.lua           → Treesitter syntax highlighting
 lua/opencode/ui/native_diff.lua      → Native diff viewer
+lua/opencode/ui/codediff.lua         → Optional codediff.nvim backend for the diff review tab
 lua/opencode/ui/active_sessions.lua  → Active sessions UI
 lua/opencode/ui/log_viewer.lua       → Log viewer
 lua/opencode/ui/question_widget.lua  → Question widget renderer

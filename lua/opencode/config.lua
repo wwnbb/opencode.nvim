@@ -85,6 +85,12 @@ M.defaults = {
 		},
 	},
 
+	diff = {
+		-- Edit review tab backend: "native" (Vim diff mode) or "codediff"
+		-- (esmuellert/codediff.nvim; falls back to native when unavailable)
+		provider = "native",
+	},
+
 	chat = {
 		diff_view = "auto", -- "auto", "split", or "unified"
 		layout = "vertical", -- "vertical", "horizontal", "float", or "tab"
@@ -309,7 +315,6 @@ function M.merge(opts)
 		{ "thinking", "icon" },
 		{ "markdown", "enable_code_highlight" },
 		{ "server", "lazy" },
-		{ "diff" },
 	}
 	for _, path in ipairs(removed) do
 		local value = opts
@@ -320,8 +325,18 @@ function M.merge(opts)
 			error("opencode.nvim: unsupported setup option " .. table.concat(path, ".") .. "; update your configuration", 2)
 		end
 	end
+	if type(rawget(opts or {}, "diff")) == "table" then
+		for key in pairs(opts.diff) do
+			if key ~= "provider" then
+				error("opencode.nvim: unsupported setup option diff." .. tostring(key) .. "; update your configuration", 2)
+			end
+		end
+	end
 	local merged = vim.deepcopy(vim.tbl_deep_extend("force", M.defaults, opts or {}))
 	validate_keymaps(merged, opts or {})
+	if type(merged.diff) ~= "table" or (merged.diff.provider ~= "native" and merged.diff.provider ~= "codediff") then
+		error("opencode.nvim: diff.provider must be native or codediff", 2)
+	end
 	if merged.input.history_search_provider ~= "grep" and merged.input.history_search_provider ~= "ripgrep" then
 		error("opencode.nvim: input.history_search_provider must be grep or ripgrep", 2)
 	end

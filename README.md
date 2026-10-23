@@ -936,6 +936,21 @@ Escape leaves edit reviews pending. Reject files explicitly with `<C-x>` (select
 file) or `X` (all files); these are configured by `chat.keymaps.reject_edit` and
 `chat.keymaps.reject_all_edits`.
 
+The diff review tab (`dt`) can use
+[codediff.nvim](https://github.com/esmuellert/codediff.nvim) instead of Vim's
+diff mode:
+
+```lua
+require("opencode").setup({ diff = { provider = "codediff" } }) -- default: "native"
+```
+
+The proposed content opens read-only on the left and the actual file on the
+right, in codediff's own tab. codediff's `do`, `dp`, `]c` and `[c` work as usual;
+the `native_diff.keymaps` review keys (confirm, reject, apply all, file
+navigation, note, close) stay the same. New files, paths containing whitespace,
+and setups without codediff.nvim use the native diff. The `dv` split always uses
+the native diff, because codediff opens its own tab.
+
 Bundled plugin **2.0.11-4** provides file review protocol 2. Update it
 together with the Lua plugin. `/skills` and the skill palette stage native
 attachments, which are sent with the prompt when you submit the input.

@@ -11,7 +11,7 @@ local render = cs.module(view, require("opencode.ui.chat.render"))
 local edit_widget = require("opencode.ui.edit_widget")
 local edit_state = require("opencode.edit.state")
 local widget_support = cs.module(view, require("opencode.ui.chat.widget_support"))
-local syntax = require("opencode.ui.syntax")
+local diff_pair = require("opencode.ui.diff_pair")
 local render_coordinator = require("opencode.ui.chat.render_coordinator")
 local actions = require("opencode.actions")
 local keymaps = require("opencode.util.keymap")
@@ -871,6 +871,9 @@ function M.handle_edit_diff_tab()
 		return
 	end
 
+	local input = require("opencode.ui.input")
+	local input_had_focus = input.is_visible()
+		and vim.tbl_contains(input.get_winids(), vim.api.nvim_get_current_win())
 	local native_diff = require("opencode.ui.native_diff")
 	native_diff.show(files, {
 		view = view,
@@ -878,6 +881,19 @@ function M.handle_edit_diff_tab()
 		edit_id = eid,
 		file_index = estate.selected_file,
 		start_index = start_index or 1,
+		-- native_diff only restores the previous window; return to the chat when
+		-- that window is gone, and to the input only if it had focus at open.
+		on_close = function(ctx)
+			local chat_ok, chat = pcall(require, "opencode.ui.chat")
+			if not chat_ok then return end
+			if not ctx.restored and (view.visible or view.suspended) then
+				chat.focus_view(view)
+			end
+			chat = cs.module(view, chat)
+			if input_had_focus and chat.is_visible() then
+				chat.focus_input()
+			end
+		end,
 	})
 end
 
@@ -1092,36 +1108,13 @@ function M.open_inline_diff_split(file, opts)
 
 	mark_inline_diff_window(actual_win)
 
-	vim.cmd("leftabove vsplit")
-	local proposed_win = vim.api.nvim_get_current_win()
-	mark_inline_diff_window(proposed_win)
-	local proposed_buf = vim.api.nvim_create_buf(false, true)
-	vim.api.nvim_win_set_buf(proposed_win, proposed_buf)
-
-	local proposed_lines = vim.split(after_content, "\n", { plain = true })
-	vim.api.nvim_buf_set_lines(proposed_buf, 0, -1, false, proposed_lines)
-
-	vim.bo[proposed_buf].buftype = "nofile"
-	vim.bo[proposed_buf].bufhidden = "wipe"
-	vim.bo[proposed_buf].swapfile = false
-	vim.bo[proposed_buf].modifiable = false
-
-	local ft = vim.filetype.match({ filename = filepath })
-	if ft and ft ~= "" then
-		vim.bo[proposed_buf].filetype = ft
-		syntax.start_buffer(proposed_buf, ft, { scope = "diffs" })
-		syntax.start_buffer(actual_buf, ft, { scope = "diffs" })
-	end
-
-	local relative = file.relative_path or vim.fn.fnamemodify(filepath, ":t")
-	pcall(vim.api.nvim_buf_set_name, proposed_buf, "[proposed] " .. relative)
-
-	vim.api.nvim_win_call(proposed_win, function()
-		vim.cmd("diffthis")
-	end)
-	vim.api.nvim_win_call(actual_win, function()
-		vim.cmd("diffthis")
-	end)
+	-- Mark the proposed window as soon as it exists, before buffer setup
+	local proposed_win, proposed_buf = diff_pair.open(actual_win, actual_buf, {
+		after = after_content,
+		filepath = filepath,
+		relative = file.relative_path or vim.fn.fnamemodify(filepath, ":t"),
+		on_split = mark_inline_diff_window,
+	})
 
 	inline_diff_state.active = true
 	active_inline_diff = M
@@ -1131,8 +1124,6 @@ function M.open_inline_diff_split(file, opts)
 	inline_diff_state.proposed_buf = proposed_buf
 	inline_diff_state.edit_id = opts.edit_id
 	inline_diff_state.file_index = opts.file_index
-
-	vim.api.nvim_set_current_win(actual_win)
 
 	for _, buf in ipairs({ actual_buf, proposed_buf }) do
 		if vim.api.nvim_buf_is_valid(buf) then
@@ -1152,10 +1143,6 @@ function M.open_inline_diff_split(file, opts)
 			vim.list_extend(inline_diff_mappings, apply())
 		end
 	end
-
-	pcall(function()
-		vim.cmd("normal! ]c")
-	end)
 end
 
 return M

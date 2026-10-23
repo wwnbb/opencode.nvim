@@ -36,7 +36,7 @@ describe("strict setup options", function()
 			{ thinking = { icon = "*" } },
 			{ markdown = { enable_code_highlight = false } },
 			{ server = { lazy = false } },
-			{ diff = {} },
+			{ diff = { view = "split" } },
 		}
 		local defaults = vim.deepcopy(config.defaults)
 		for _, opts in ipairs(removed) do
@@ -51,6 +51,16 @@ describe("strict setup options", function()
 		assert.is_false(ok)
 		assert.matches("chat.message_display", err)
 		assert.same(before, app_state.get_config())
+	end)
+
+	it("accepts only supported diff providers", function()
+		assert.equals("native", config.merge({}).diff.provider)
+		assert.equals("codediff", config.merge({ diff = { provider = "codediff" } }).diff.provider)
+		for _, provider in ipairs({ "diffview", false, {} }) do
+			local ok, err = pcall(config.merge, { diff = { provider = provider } })
+			assert.is_false(ok)
+			assert.matches("diff.provider must be native or codediff", err)
+		end
 	end)
 
 	it("accepts only supported prompt history search providers", function()

@@ -5,28 +5,45 @@
 
 local M = {}
 
-local syntax = require("opencode.ui.syntax")
+local diff_pair = require("opencode.ui.diff_pair")
+local codediff = require("opencode.ui.codediff")
 local pending = require("opencode.session.pending")
 local keymaps = require("opencode.util.keymap")
 local views = require("opencode.ui.chat.state")
 local diff_mappings = {}
 local view_generation = 0
 
-local state = {
-	active = false,
-	files = {}, -- Array of {filePath, before, after, type, relativePath, diff, edit_file_index?}
-	current_file_index = 1,
-	original_buf = nil, -- Buffer for the actual file (RIGHT side, editable)
-	proposed_buf = nil, -- Scratch buffer with proposed content (LEFT side, readonly)
-	original_win = nil,
-	proposed_win = nil,
-	tab_page = nil, -- Tab page for the diff view (keeps chat untouched)
-	previous_winid = nil, -- To restore focus on close
-	original_is_scratch = false, -- Missing add-file target opened without touching disk
-	-- Back-reference to the chat edit widget (set when launched from dt)
-	edit_id = nil, -- ID of the originating v2 review
-	edit_file_index = nil, -- which file index in the edit widget was opened
-}
+-- Fresh session state. close() replaces the whole table; close_diff_windows()
+-- resets only the per-file fields because file navigation reuses the session.
+local function new_state()
+	return {
+		active = false,
+		files = {}, -- Array of {filePath, before, after, type, relativePath, diff, edit_file_index?}
+		current_file_index = 1,
+		-- Per-file fields
+		original_buf = nil, -- Buffer for the actual file (RIGHT side, editable)
+		proposed_buf = nil, -- Scratch buffer with proposed content (LEFT side, readonly)
+		original_win = nil,
+		proposed_win = nil,
+		tab_page = nil, -- Tab page for the diff view (keeps chat untouched)
+		original_is_scratch = false, -- Missing add-file target opened without touching disk
+		close_autocmd = nil, -- TabClosed autocmd closing the session with its tab
+		provider = nil, -- "native" or "codediff" for the file on screen
+		provider_cleanup = nil, -- Backend teardown (codediff temp file)
+		-- Session fields
+		previous_winid = nil, -- To restore focus on close
+		on_close = nil, -- Caller hook run after focus restore: on_close({ restored = boolean })
+		-- Back-reference to the chat edit widget (set when launched from dt)
+		edit_id = nil, -- ID of the originating v2 review
+		edit_file_index = nil, -- which file index in the edit widget was opened
+		review = nil, -- Edit state record the session was opened for
+		token = nil, -- Pending-session token guarding review actions
+		view = nil, -- Owning chat view, if any
+		owner_generation = nil, -- Owner view generation at open
+	}
+end
+
+local state = new_state()
 
 local logger_ok, logger = pcall(require, "opencode.logger")
 if not logger_ok then
@@ -34,19 +51,13 @@ if not logger_ok then
 end
 
 local function focus_diff_window(winid)
-	local target = winid
-	if not target or not vim.api.nvim_win_is_valid(target) then
-		target = state.original_win
-	end
-	if
-		(not target or not vim.api.nvim_win_is_valid(target))
-		and state.proposed_win
-		and vim.api.nvim_win_is_valid(state.proposed_win)
-	then
-		target = state.proposed_win
-	end
-	if target and vim.api.nvim_win_is_valid(target) then
-		vim.api.nvim_set_current_win(target)
+	local candidates = { winid, state.original_win, state.proposed_win }
+	for i = 1, 3 do
+		local target = candidates[i]
+		if target and vim.api.nvim_win_is_valid(target) then
+			vim.api.nvim_set_current_win(target)
+			return
+		end
 	end
 end
 
@@ -62,11 +73,7 @@ local function edit_note()
 		return
 	end
 
-	local ok, edit_state = pcall(require, "opencode.edit.state")
-	if not ok then
-		return
-	end
-
+	local edit_state = require("opencode.edit.state")
 	local edit_id = state.edit_id
 	local estate = rpc_review()
 	if not estate or estate.status ~= "pending" or estate.submitting then
@@ -99,19 +106,6 @@ local function edit_note()
 	})
 end
 
---- Get the filetype from a file path for syntax highlighting
----@param filepath string
----@return string
-local function get_filetype(filepath)
-	local ext = vim.fn.fnamemodify(filepath, ":e")
-	if ext == "" then
-		return ""
-	end
-	-- Use vim's built-in filetype detection
-	local ft = vim.filetype.match({ filename = filepath })
-	return ft or ext
-end
-
 local function delete_scratch_original_buffer()
 	if state.original_is_scratch and state.original_buf and vim.api.nvim_buf_is_valid(state.original_buf) then
 		pcall(vim.api.nvim_buf_delete, state.original_buf, { force = true })
@@ -137,7 +131,10 @@ local function close_diff_windows()
 		vim.api.nvim_buf_delete(state.proposed_buf, { force = true })
 	end
 	delete_scratch_original_buffer()
+	if state.provider_cleanup then state.provider_cleanup() end
 
+	state.provider = nil
+	state.provider_cleanup = nil
 	state.original_buf = nil
 	state.proposed_buf = nil
 	state.original_win = nil
@@ -155,37 +152,30 @@ function M.close()
 	local generation = view_generation
 
 	close_diff_windows()
+	-- Window Neovim picked after the diff tab closed
+	local landed = vim.api.nvim_get_current_win()
 
-	-- Capture previous_winid BEFORE resetting state (state reset nils it)
-	local prev_win = state.previous_winid
+	-- Capture what the deferred restore needs, then start from a fresh state
+	local prev_win, on_close = state.previous_winid, state.on_close
 	local owner, owner_generation = state.view, state.owner_generation
+	state = new_state()
 
-	-- Reset state
-	state.active = false
-	state.files = {}
-	state.current_file_index = 1
-	state.previous_winid = nil
-	state.edit_id = nil
-	state.edit_file_index = nil
-	state.review, state.token = nil, nil
-	state.view, state.owner_generation = nil, nil
-
-	-- Restore focus to previous window
+	-- Restore focus to the previous window; any further focus policy belongs
+	-- to the caller's on_close hook.
 	vim.schedule(function()
 		if generation ~= view_generation then return end
 		if owner and not views.valid(owner, owner_generation) then return end
-		local chat_ok, chat = pcall(require, "opencode.ui.chat")
+		-- Typeahead (e.g. `qi`) can move focus before this runs; restoring now
+		-- would steal it, and on_close could refocus again, so leave both out.
+		if vim.api.nvim_get_current_win() ~= landed then return end
+		local restored = false
 		if prev_win and vim.api.nvim_win_is_valid(prev_win) then
 			vim.api.nvim_set_current_win(prev_win)
-		elseif chat_ok and owner and (owner.visible or owner.suspended) then
-			chat.focus_view(owner)
+			restored = vim.api.nvim_get_current_win() == prev_win
 		end
-
-		-- Re-open input only if the chat is still visible (it may have been
-		-- closed by WinEnter/TabEnter while the diff tab was active)
-		if chat_ok and owner then chat = views.module(owner, chat) end
-		if chat_ok and chat.focus_input and chat.is_visible and chat.is_visible() then
-			chat.focus_input()
+		if on_close then
+			local ok, err = pcall(on_close, { restored = restored })
+			if not ok then logger.warn("native_diff: on_close failed", { error = err }) end
 		end
 	end)
 end
@@ -247,7 +237,13 @@ local function setup_keymaps()
 		-- <C-y>: Apply all remaining proposed hunks at once (diffget from proposed)
 		map("apply_all", function()
 			-- Focus the original (right) window and get all changes from proposed
-			if state.original_win and vim.api.nvim_win_is_valid(state.original_win) then
+			if state.provider == "codediff" then
+				-- codediff draws its own diff, so there is no Vim diff mode to diffget from
+				if vim.api.nvim_buf_is_valid(state.proposed_buf) and vim.api.nvim_buf_is_valid(state.original_buf) then
+					local lines = vim.api.nvim_buf_get_lines(state.proposed_buf, 0, -1, false)
+					vim.api.nvim_buf_set_lines(state.original_buf, 0, -1, false, lines)
+				end
+			elseif state.original_win and vim.api.nvim_win_is_valid(state.original_win) then
 				vim.api.nvim_set_current_win(state.original_win)
 				-- Apply all remaining changes using :%diffget
 				local ok, err = pcall(function()
@@ -352,7 +348,21 @@ function M._show_file(index)
 	-- missing add target gets a named scratch buffer so opening review does not
 	-- touch the filesystem; confirmation creates it via :write.
 	local missing_add = file_type == "add" and before == "" and vim.uv.fs_stat(filepath) == nil
-	if missing_add then
+	local external
+	if codediff.enabled() and codediff.supports(filepath) then
+		local err
+		external, err = codediff.open(filepath, after)
+		if not external then
+			logger.warn("native_diff: codediff failed, using native diff", { error = err })
+		end
+	end
+	if external then
+		state.provider, state.provider_cleanup = "codediff", external.cleanup
+		state.tab_page = external.tab_page
+		state.original_win, state.original_buf = external.original_win, external.original_buf
+		state.proposed_win, state.proposed_buf = external.proposed_win, external.proposed_buf
+		state.original_is_scratch = false
+	elseif missing_add then
 		vim.cmd("tabnew")
 		state.original_buf = vim.api.nvim_get_current_buf()
 		state.original_is_scratch = true
@@ -365,8 +375,11 @@ function M._show_file(index)
 		state.original_buf = vim.api.nvim_get_current_buf()
 		state.original_is_scratch = false
 	end
-	state.original_win = vim.api.nvim_get_current_win()
-	state.tab_page = vim.api.nvim_get_current_tabpage()
+	if not external then
+		state.provider = "native"
+		state.original_win = vim.api.nvim_get_current_win()
+		state.tab_page = vim.api.nvim_get_current_tabpage()
+	end
 	state.close_autocmd = vim.api.nvim_create_autocmd("TabClosed", {
 		callback = function()
 			if generation == view_generation and state.tab_page and not vim.api.nvim_tabpage_is_valid(state.tab_page) then
@@ -375,54 +388,23 @@ function M._show_file(index)
 		end,
 	})
 
-	-- Create vertical split LEFT for proposed content
-	vim.cmd("leftabove vsplit")
-	state.proposed_win = vim.api.nvim_get_current_win()
-
-	-- Create scratch buffer for proposed (after) content
-	state.proposed_buf = vim.api.nvim_create_buf(false, true)
-	vim.api.nvim_win_set_buf(state.proposed_win, state.proposed_buf)
-
-	-- Set proposed content
-	local proposed_lines = vim.split(after, "\n", { plain = true })
-	vim.api.nvim_buf_set_lines(state.proposed_buf, 0, -1, false, proposed_lines)
-
-	-- Configure proposed buffer as readonly scratch
-	vim.bo[state.proposed_buf].buftype = "nofile"
-	vim.bo[state.proposed_buf].bufhidden = "wipe"
-	vim.bo[state.proposed_buf].swapfile = false
-	vim.bo[state.proposed_buf].modifiable = false
-
-	-- Set filetype for syntax highlighting
-	local ft = get_filetype(filepath)
-	if ft and ft ~= "" then
-		vim.bo[state.proposed_buf].filetype = ft
-		syntax.start_buffer(state.proposed_buf, ft, { scope = "diffs" })
-		syntax.start_buffer(state.original_buf, ft, { scope = "diffs" })
-	end
-
-	-- Name the scratch buffer for clarity
+	-- Proposed content in a readonly split LEFT; focus stays on the actual
+	-- file (RIGHT, editable) at its first change.
 	local relative = file.relativePath or vim.fn.fnamemodify(filepath, ":t")
-	pcall(vim.api.nvim_buf_set_name, state.proposed_buf, "[proposed] " .. relative)
-
-	-- Enable diff on both windows
-	vim.api.nvim_win_call(state.proposed_win, function()
-		vim.cmd("diffthis")
-	end)
-	vim.api.nvim_win_call(state.original_win, function()
-		vim.cmd("diffthis")
-	end)
-
-	-- Focus the right window (the actual file, editable)
-	vim.api.nvim_set_current_win(state.original_win)
-
-	-- Set up keymaps
-	setup_keymaps()
-
-	-- Jump to first change
-	pcall(function()
-		vim.cmd("normal! ]c")
-	end)
+	if external then
+		-- codediff installs its pane mappings from a scheduled render; queue
+		-- ours behind it so review keys win on shared lhs such as q.
+		vim.schedule(function()
+			if generation == view_generation then setup_keymaps() end
+		end)
+	else
+		state.proposed_win, state.proposed_buf = diff_pair.open(state.original_win, state.original_buf, {
+			after = after,
+			filepath = filepath,
+			relative = relative,
+		})
+		setup_keymaps()
+	end
 
 	-- Show status notification
 	local total = #state.files
@@ -479,15 +461,16 @@ end
 
 ---Show the native diff view for a v2 review.
 ---@param files table Array of {filePath, before, after, type, relativePath, diff}
----@param opts? table Options
+---@param opts? table { view?, edit_id, file_index?, start_index?, on_close?: fun(ctx: { restored: boolean }) }
+---@return boolean shown
 function M.show(files, opts)
 	opts = opts or {}
 	if opts.view and not views.valid(opts.view) then return false end
 	local edit = opts.edit_id and require("opencode.edit.state").get_edit(opts.edit_id)
 	if not edit or edit.transport ~= "review_rpc" then return false end
-	if edit and edit.apply_mode == "server" then
+	if edit.apply_mode == "server" then
 		vim.notify("Local diff requires server.shared_filesystem=true and access to the server files. Use = for the inline proposal.", vim.log.levels.WARN)
-		return
+		return false
 	end
 
 	if state.active then
@@ -498,11 +481,12 @@ function M.show(files, opts)
 	if not files or #files == 0 then
 		logger.warn("native_diff: no files to show")
 		vim.notify("No files to review in this diff request", vim.log.levels.WARN)
-		return
+		return false
 	end
 
 	-- Save current window for restoration
 	state.previous_winid = vim.api.nvim_get_current_win()
+	state.on_close = opts.on_close
 
 	-- Initialize state
 	state.active = true

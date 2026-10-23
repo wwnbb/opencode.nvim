@@ -326,12 +326,13 @@ describe("tab cross-group regressions", function()
 			press("<C-g>")
 			assert(require("opencode.edit.state").get_edit(review.reviewID).message == note, "real native diff submit callback was lost")
 			assert(not input.is_visible() and vim.api.nvim_get_current_tabpage() == diff_tab)
-			-- Native diff close itself restores the normal composer; do not refocus it twice.
+			-- dt was pressed in the chat window, so closing the diff returns there
+			-- without reopening the composer; the normal draft stays in history.
 			diff.close(); settle()
-			assert(input.is_visible() and input.owner_view() == other, "native diff close must reopen its normal draft")
-			assert(input.get_pending_text() == draft and vim.deep_equal(parts, input.get_pending_parts()))
-			assert(vim.deep_equal({ delivery = "steer" }, input.get_pending_options()))
-			assert(vim.deep_equal({ 2, 4 }, vim.api.nvim_win_get_cursor(input.get_winids()[1])))
+			assert(not input.is_visible(), "native diff close must not reopen the composer")
+			assert(vim.api.nvim_get_current_win() == other.winid, "native diff close must return to the chat")
+			assert(history.get_pending(other.session_id) == draft and vim.deep_equal(parts, history.get_pending_parts(other.session_id)))
+			assert(vim.deep_equal({ delivery = "steer" }, history.get_pending_options(other.session_id)))
 			assert(#input.get_history() == 0, "temporary note must not enter normal prompt history")
 		]])
 	end)

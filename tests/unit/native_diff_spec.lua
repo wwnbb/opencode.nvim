@@ -6,11 +6,11 @@ local input = require("opencode.ui.input")
 describe("native review file actions", function()
 	local path, notify, menu_open, chat_edits, input_show, shown, leader
 	local function read() return table.concat(vim.fn.readfile(path, "b"), "\n") end
-	local function open(kind, view)
+	local function open(kind, view, on_close)
 		vim.fn.writefile({ "before" }, path)
 		edits.add_edit("r", "s", { { fileID = "f", filePath = path, before = "before\n", after = "after\n", type = kind or "update" } },
 			{ transport = "review_rpc", revision = 1, native_review = { status = "pending" } })
-		native.show({ { filePath = path, before = "before\n", after = "after\n", type = kind or "update", edit_file_index = 1 } }, { edit_id = "r", view = view })
+		native.show({ { filePath = path, before = "before\n", after = "after\n", type = kind or "update", edit_file_index = 1 } }, { edit_id = "r", view = view, on_close = on_close })
 	end
 	before_each(function()
 		path = vim.fn.tempname(); notify, menu_open = vim.notify, menu.open
@@ -118,6 +118,44 @@ describe("native review file actions", function()
 		open()
 		close()
 		assert.is_true(native.is_active())
+	end)
+	it("restores the previous window and then runs on_close once", function()
+		local before, calls = vim.api.nvim_get_current_win(), {}
+		open(nil, nil, function(ctx) calls[#calls + 1] = ctx end)
+		assert.are_not.equal(before, vim.api.nvim_get_current_win())
+		native.close()
+		assert.is_true(vim.wait(100, function() return #calls > 0 end))
+		vim.wait(20, function() return false end)
+		assert.equals(1, #calls)
+		assert.is_true(calls[1].restored)
+		assert.equals(before, vim.api.nvim_get_current_win())
+	end)
+	it("restores the previous window without an on_close hook", function()
+		local before = vim.api.nvim_get_current_win()
+		open()
+		native.close()
+		assert.is_false(native.is_active())
+		assert.is_true(vim.wait(100, function() return vim.api.nvim_get_current_win() == before end))
+	end)
+	it("reports an unrestored focus to on_close when the previous window is gone", function()
+		vim.cmd("split")
+		local before, ctx = vim.api.nvim_get_current_win(), nil
+		open(nil, nil, function(value) ctx = value end)
+		vim.api.nvim_win_close(before, true)
+		native.close()
+		assert.is_true(vim.wait(100, function() return ctx ~= nil end))
+		assert.is_false(ctx.restored)
+	end)
+	it("leaves focus alone and skips on_close when focus moved before the restore", function()
+		local calls = 0
+		open(nil, nil, function() calls = calls + 1 end)
+		native.close()
+		vim.cmd("split")
+		local moved = vim.api.nvim_get_current_win()
+		vim.wait(50, function() return false end)
+		assert.equals(0, calls)
+		assert.equals(moved, vim.api.nvim_get_current_win())
+		vim.api.nvim_win_close(moved, true)
 	end)
 
 	local function open_note()
@@ -290,5 +328,94 @@ describe("native review file actions", function()
 		edits.set_review_record({ reviewID = "r", sessionID = "s", revision = 1, status = "cancelled" })
 		choose("Yes, delete")
 		assert.equals("before\n", read())
+	end)
+end)
+
+describe("codediff review backend", function()
+	local path, notify, chat_edits, calls
+	local function open(kind, before)
+		edits.add_edit("r", "s", { { fileID = "f", filePath = path, before = before or "before\n", after = "after\n", type = kind or "update" } },
+			{ transport = "review_rpc", revision = 1, native_review = { status = "pending" } })
+		native.show({ { filePath = path, before = before or "before\n", after = "after\n", type = kind or "update", edit_file_index = 1 } }, { edit_id = "r" })
+	end
+	local function mapping(buf, key)
+		return vim.api.nvim_buf_call(buf, function() return vim.fn.maparg(key, "n", false, true) end)
+	end
+	local function stub_codediff()
+		-- Mirrors `:CodeDiff file a b`: a new tab with a LEFT and b RIGHT, and
+		-- pane mappings installed from a scheduled render.
+		vim.api.nvim_create_user_command("CodeDiff", function(cmd)
+			local a, b = cmd.fargs[2], cmd.fargs[3]
+			calls[#calls + 1] = { a = a, b = b, after = table.concat(vim.fn.readfile(a, "b"), "\n") }
+			vim.cmd("tabnew " .. vim.fn.fnameescape(a))
+			vim.cmd("rightbelow vsplit " .. vim.fn.fnameescape(b))
+			local bufs = { vim.fn.bufnr(a), vim.fn.bufnr(b) }
+			vim.schedule(function()
+				for _, buf in ipairs(bufs) do vim.keymap.set("n", "q", "<Cmd>tabclose<CR>", { buffer = buf }) end
+			end)
+		end, { nargs = "*" })
+	end
+	local function flush() vim.wait(20, function() return false end) end
+	before_each(function()
+		path, calls, notify = vim.fn.tempname(), {}, vim.notify
+		vim.fn.writefile({ "before" }, path)
+		vim.notify = function() end
+		chat_edits = package.loaded["opencode.ui.chat.edits"]
+		package.loaded["opencode.ui.chat.edits"] = { refresh_edit = function() end }
+		state.set_config({ server = { shared_filesystem = true }, diff = { provider = "codediff" } })
+		state.set_connection("connected")
+	end)
+	after_each(function()
+		local buf = vim.fn.bufnr(path)
+		if buf >= 0 then vim.bo[buf].modified = false end
+		native.close(); edits.clear_all(); require("opencode.artifact.changes").clear()
+		buf = vim.fn.bufnr(path)
+		if buf >= 0 and vim.api.nvim_buf_is_valid(buf) then vim.api.nvim_buf_delete(buf, { force = true }) end
+		pcall(vim.api.nvim_del_user_command, "CodeDiff")
+		vim.fn.delete(path); vim.notify = notify
+		package.loaded["opencode.ui.chat.edits"] = chat_edits; state.set_connection("idle")
+	end)
+
+	it("opens the proposed content against the actual file through CodeDiff", function()
+		stub_codediff()
+		open()
+		assert.equals(1, #calls)
+		assert.equals(path, calls[1].b)
+		assert.equals("after\n", calls[1].after)
+		local proposed = vim.fn.bufnr(calls[1].a)
+		assert.is_false(vim.bo[proposed].modifiable)
+		assert.is_false(vim.wo[vim.fn.bufwinid(path)].diff)
+		flush()
+		local actual = vim.fn.bufnr(path)
+		assert.is_function(mapping(actual, "q").callback)
+		mapping(actual, "<C-y>").callback()
+		assert.same({ "after" }, vim.api.nvim_buf_get_lines(actual, 0, -1, false))
+		vim.bo[actual].modified = false
+		mapping(actual, "q").callback()
+		assert.is_false(native.is_active())
+		assert.equals(0, vim.fn.filereadable(calls[1].a))
+		assert.is_false(vim.api.nvim_buf_is_valid(proposed))
+	end)
+
+	it("cleans up the temp file when the codediff tab is closed directly", function()
+		stub_codediff()
+		open()
+		vim.cmd("tabclose")
+		assert.is_false(native.is_active())
+		assert.equals(0, vim.fn.filereadable(calls[1].a))
+	end)
+
+	it("falls back to the native diff when codediff is not installed", function()
+		open()
+		assert.is_true(native.is_active())
+		assert.is_true(vim.wo[vim.fn.bufwinid(path)].diff)
+	end)
+
+	it("reviews a new file with the native diff", function()
+		stub_codediff()
+		vim.fn.delete(path)
+		open("add", "")
+		assert.equals(0, #calls)
+		assert.is_true(vim.wo[vim.fn.bufwinid(path)].diff)
 	end)
 end)
