@@ -89,13 +89,7 @@ for _, tool in ipairs({ "bash", "read", "glob", "grep", "rg", "list", "webfetch"
 	PERMISSION_TITLES[tool] = TOOL_DISPLAY_NAMES[tool]
 end
 
----@param name string
----@param fg_source string
----@param fallback string|nil
----@param extra_opts table|nil
-local function set_panel_hl(name, fg_source, fallback, extra_opts)
-	panel_helpers.set_hl(name, fg_source, fallback, extra_opts)
-end
+local set_panel_hl = panel_helpers.set_hl
 
 local function ensure_highlights()
 	set_panel_hl("OpenCodePermissionMuted", "Comment", "Normal")
@@ -108,11 +102,7 @@ local function ensure_highlights()
 	set_panel_hl("OpenCodePermissionPath", "String", "Normal", { bold = true })
 	set_panel_hl("OpenCodePermissionCommand", "Special", "Normal")
 
-	vim.api.nvim_set_hl(0, "OpenCodePermissionSelectedMarker", {
-		fg = get_hl("Special").fg or get_hl("Title").fg,
-		bg = get_hl("CursorLine").bg,
-		bold = true,
-	})
+	vim.api.nvim_set_hl(0, "OpenCodePermissionSelectedMarker", widget_base.selected_marker_hl(get_hl))
 end
 
 require("opencode.ui.highlights").register("opencode.ui.permission_widget", ensure_highlights)
@@ -593,12 +583,6 @@ local function add_header(result, title, status, suffix)
 	elseif status == "rejected" then
 		header = "# Permission rejected"
 	end
-	if title ~= "" then
-		header = header .. " " .. title
-	end
-	if suffix and suffix ~= "" then
-		header = header .. " " .. suffix
-	end
 
 	local hl_group = "OpenCodePermissionHeader"
 	if status == "approved" then
@@ -607,10 +591,7 @@ local function add_header(result, title, status, suffix)
 		hl_group = "OpenCodePermissionRejected"
 	end
 
-	local _, _, rows = add_panel_line(result, header, hl_group)
-	if title ~= "" then
-		highlight_panel_text(result, rows, title, "OpenCodePermissionTitle")
-	end
+	widget_base.add_status_header(panel_helpers, result, header, title, suffix, hl_group, "OpenCodePermissionTitle")
 end
 
 ---@param result table
@@ -619,8 +600,8 @@ local function append_hint(result, option_count)
 	local keymaps = require("opencode.util.keymap")
 	local keys = (require("opencode.ui.chat.state").state.config or {}).keymaps
 	local function key(action) return keymaps.label("chat", action, keys) end
-	local hint = keymaps.number_labels("chat", 1, option_count, keys) .. " select · "
-		.. key("widget_prev") .. " / " .. key("widget_next") .. " move · " .. key("confirm") .. " confirm · "
+	local select_part, move_part = widget_base.selection_hint(option_count, keys)
+	local hint = select_part .. " · " .. move_part .. " · " .. key("confirm") .. " confirm · "
 		.. key("widget_message") .. " message"
 	add_panel_line(result, hint, "OpenCodePermissionMuted")
 end
@@ -630,7 +611,7 @@ end
 ---@param perm_state table Permission state from permission/state.lua
 ---@return table lines, table highlights, OpenCodeWidgetMeta meta
 function M.get_lines_for_permission(_permission_id, perm_state, opts)
-	local result = { lines = {}, highlights = {}, width = opts and opts.width, render = opts and opts.render }
+	local result = widget_base.new_result(opts)
 	local tool_input = resolve_tool_input(perm_state)
 	local header_title = permission_header_title(perm_state)
 	local desc_lines = get_permission_description(perm_state.permission_type, tool_input, perm_state)
@@ -650,26 +631,21 @@ function M.get_lines_for_permission(_permission_id, perm_state, opts)
 		add_panel_line(result, perm_state.error.message or "Unable to confirm decision", "OpenCodePermissionError")
 	end
 	local first_option_line = #result.lines
-	local option_lines, option_end_lines = {}, {}
 	local selected = perm_state.selected_option or 1
 	local save = perm_state.always or {}
 	local options = #save > 0 and OPTION_LABELS or { OPTION_LABELS[1], OPTION_LABELS[3] }
 
-	for i, label in ipairs(options) do
-		local is_selected = i == selected
-		local indicator = is_selected and icons.selected or icons.unselected
-		local option_text = string.format("%s %d. %s", indicator, i, label)
-		option_lines[i] = #result.lines
-		local _, _, rows = add_panel_raw_line(
-			result,
-			option_text,
-			is_selected and "OpenCodePermissionSelected" or "OpenCodePermissionOutput"
-		)
-		option_end_lines[i] = #result.lines - 1
-		if is_selected then
-			highlight_panel_text(result, rows, indicator, "OpenCodePermissionSelectedMarker")
-		end
-	end
+	local option_lines, option_end_lines = widget_base.append_options(result, options, function(i)
+		return i == selected
+	end, function(_, is_selected)
+		return is_selected and icons.selected or icons.unselected
+	end, {
+		add_raw_line = add_panel_raw_line,
+		highlight_text = highlight_panel_text,
+		selected_hl = "OpenCodePermissionSelected",
+		option_hl = "OpenCodePermissionOutput",
+		marker_hl = "OpenCodePermissionSelectedMarker",
+	})
 
 	add_panel_blank(result)
 	if #save > 0 and selected == 2 then
@@ -702,7 +678,7 @@ function M.get_lines_for_permission(_permission_id, perm_state, opts)
 end
 
 local function render_resolved(perm_state, status, reply_suffix, opts)
-	local result = { lines = {}, highlights = {}, width = opts and opts.width, render = opts and opts.render }
+	local result = widget_base.new_result(opts)
 	local tool_input = resolve_tool_input(perm_state)
 	local header_title = permission_header_title(perm_state)
 	local desc_lines = get_permission_description(perm_state.permission_type, tool_input, perm_state)

@@ -36,13 +36,7 @@ local add_panel_line = panel_helpers.add_line
 local add_panel_blank = panel_helpers.add_blank
 local add_trailing_separator = panel_helpers.add_separator
 
----@param name string
----@param fg_source string
----@param fallback string|nil
----@param extra_opts table|nil
-local function set_panel_hl(name, fg_source, fallback, extra_opts)
-	panel_helpers.set_hl(name, fg_source, fallback, extra_opts)
-end
+local set_panel_hl = panel_helpers.set_hl
 
 ---@param sources string[]
 ---@param fallback integer|nil
@@ -540,7 +534,7 @@ function M.get_first_file_line(edit_state)
 end
 
 local function render_edit(edit_state, resolution_label, header_hl, server_apply_notice, opts)
-	local result = { lines = {}, highlights = {}, width = opts and opts.width, render = opts and opts.render }
+	local result = widget_base.new_result(opts)
 	local header, target, stats = build_header(edit_state, resolution_label)
 	add_panel_blank(result)
 	local _, _, header_rows = add_panel_line(result, header, header_hl)

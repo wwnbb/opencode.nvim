@@ -37,9 +37,7 @@ local add_panel_blank = panel_helpers.add_blank
 local add_trailing_separator = panel_helpers.add_separator
 local highlight_panel_text = panel_helpers.highlight_text
 
-local function set_panel_hl(name, fg_source, fallback, extra_opts)
-	panel_helpers.set_hl(name, fg_source, fallback, extra_opts)
-end
+local set_panel_hl = panel_helpers.set_hl
 
 local function ensure_highlights()
 	set_panel_hl("OpenCodeQuestionMuted", "Comment", "Normal")
@@ -50,11 +48,7 @@ local function ensure_highlights()
 	set_panel_hl("OpenCodeQuestionAnswer", "String", "Normal")
 	set_panel_hl("OpenCodeQuestionError", "DiagnosticError", "ErrorMsg")
 
-	vim.api.nvim_set_hl(0, "OpenCodeQuestionSelectedMarker", {
-		fg = get_hl("Special").fg or get_hl("Title").fg,
-		bg = get_hl("CursorLine").bg,
-		bold = true,
-	})
+	vim.api.nvim_set_hl(0, "OpenCodeQuestionSelectedMarker", widget_base.selected_marker_hl(get_hl))
 end
 
 require("opencode.ui.highlights").register("opencode.ui.question_widget", ensure_highlights)
@@ -145,14 +139,6 @@ end
 ---@param status string
 ---@param suffix string|nil
 local function add_header(result, title, status, suffix)
-	local header = "# Question"
-	if title ~= "" then
-		header = header .. " " .. title
-	end
-	if suffix and suffix ~= "" then
-		header = header .. " " .. suffix
-	end
-
 	local hl_group = "OpenCodeQuestionHeader"
 	if status == "answered" then
 		hl_group = "OpenCodeQuestionAnswer"
@@ -160,10 +146,7 @@ local function add_header(result, title, status, suffix)
 		hl_group = "OpenCodeQuestionError"
 	end
 
-	local _, _, rows = add_panel_line(result, header, hl_group)
-	if title ~= "" then
-		highlight_panel_text(result, rows, title, "OpenCodeQuestionTitle")
-	end
+	widget_base.add_status_header(panel_helpers, result, "# Question", title, suffix, hl_group, "OpenCodeQuestionTitle")
 end
 
 ---@param result table
@@ -200,8 +183,9 @@ local function format_hint(
 )
 	local parts = {}
 	if option_count > 0 then
-		table.insert(parts, keymaps.number_labels("chat", 1, math.min(option_count, 9), chat_keys()) .. " select")
-		table.insert(parts, key("widget_prev") .. " / " .. key("widget_next") .. " move")
+		local select_part, move_part = widget_base.selection_hint(math.min(option_count, 9), chat_keys())
+		table.insert(parts, select_part)
+		table.insert(parts, move_part)
 	else
 		table.insert(parts, "select an answer")
 	end
@@ -321,7 +305,7 @@ function M.get_lines_for_question(_request_id, question_data, selection_state, s
 		return M.get_confirmation_lines(_request_id, question_data, selection_state, opts)
 	end
 
-	local result = { lines = {}, highlights = {}, width = opts and opts.width, render = opts and opts.render }
+	local result = widget_base.new_result(opts)
 	local option_lines, option_end_lines = {}, {}
 	local questions = get_questions(question_data)
 	local current_tab = selection_state.current_tab or 1
@@ -364,28 +348,24 @@ function M.get_lines_for_question(_request_id, question_data, selection_state, s
 	if current_question.options and #current_question.options > 0 then
 		option_count = #current_question.options
 
+		local labels = {}
 		for i, option in ipairs(current_question.options) do
-			local selected = is_selected(selected_indices, i)
-			local option_label = get_option_label(option, tostring(i))
-			local marker
-			if is_multi then
-				marker = selected and icons.multi_selected or icons.multi_unselected
-			else
-				marker = selected and icons.selected or icons.unselected
-			end
-
-			local option_text = string.format("%s %d. %s", marker, i, option_label)
-			option_lines[i] = #result.lines
-			local _, _, rows = add_panel_raw_line(
-				result,
-				option_text,
-				selected and "OpenCodeQuestionSelected" or "OpenCodeQuestionOutput"
-			)
-			option_end_lines[i] = #result.lines - 1
-			if selected then
-				highlight_panel_text(result, rows, marker, "OpenCodeQuestionSelectedMarker")
-			end
+			labels[i] = get_option_label(option, tostring(i))
 		end
+		option_lines, option_end_lines = widget_base.append_options(result, labels, function(i)
+			return is_selected(selected_indices, i)
+		end, function(_, selected)
+			if is_multi then
+				return selected and icons.multi_selected or icons.multi_unselected
+			end
+			return selected and icons.selected or icons.unselected
+		end, {
+			add_raw_line = add_panel_raw_line,
+			highlight_text = highlight_panel_text,
+			selected_hl = "OpenCodeQuestionSelected",
+			option_hl = "OpenCodeQuestionOutput",
+			marker_hl = "OpenCodeQuestionSelectedMarker",
+		})
 	end
 	if allow_custom then
 		if option_count > 0 then
@@ -480,7 +460,7 @@ end
 ---@param selection_state table
 ---@return table lines, table highlights, OpenCodeWidgetMeta meta
 function M.get_submitting_lines(_request_id, question_data, selection_state, opts)
-	local result = { lines = {}, highlights = {}, width = opts and opts.width, render = opts and opts.render }
+	local result = widget_base.new_result(opts)
 	local questions = get_questions(question_data)
 	local current_tab = math.min(selection_state.current_tab or 1, #questions)
 	local title = get_question_title(questions[current_tab], "Question")
@@ -502,7 +482,7 @@ end
 ---@param answers table
 ---@return table lines, table highlights
 function M.get_answered_lines(_request_id, question_data, answers, opts)
-	local result = { lines = {}, highlights = {}, width = opts and opts.width, render = opts and opts.render }
+	local result = widget_base.new_result(opts)
 	local questions = get_questions(question_data)
 	add_panel_blank(result)
 	add_header(result, "answered", "answered")
@@ -534,7 +514,7 @@ end
 ---@param question_data table
 ---@return table lines, table highlights
 function M.get_rejected_lines(_request_id, question_data, opts)
-	local result = { lines = {}, highlights = {}, width = opts and opts.width, render = opts and opts.render }
+	local result = widget_base.new_result(opts)
 	local questions = get_questions(question_data)
 	local title = questions[1] and get_question_title(questions[1], "Question") or "Question"
 
@@ -554,7 +534,7 @@ end
 ---@param selection_state table
 ---@return table lines, table highlights, OpenCodeWidgetMeta meta
 function M.get_confirmation_lines(_request_id, question_data, selection_state, opts)
-	local result = { lines = {}, highlights = {}, width = opts and opts.width, render = opts and opts.render }
+	local result = widget_base.new_result(opts)
 	local questions = get_questions(question_data)
 
 	add_panel_blank(result)
@@ -578,16 +558,16 @@ function M.get_confirmation_lines(_request_id, question_data, selection_state, o
 	local confirm_selected = confirm_selection and confirm_selection.selected_indices or { 1 }
 	local selected_choice = confirm_selected[1] or 1
 	local first_option_line = #result.lines
-	local option_lines, option_end_lines = {}, {}
-
-	for i, label in ipairs({ "Yes, submit all answers", "No, review answers" }) do
-		local selected = selected_choice == i
-		local marker = selected and icons.selected or icons.unselected
-		local line = string.format("%s %d. %s", marker, i, label)
-		option_lines[i] = #result.lines
-		add_panel_raw_line(result, line, selected and "OpenCodeQuestionSelected" or "OpenCodeQuestionOutput")
-		option_end_lines[i] = #result.lines - 1
-	end
+	local option_lines, option_end_lines = widget_base.append_options(result,
+		{ "Yes, submit all answers", "No, review answers" }, function(i)
+			return selected_choice == i
+		end, function(_, selected)
+			return selected and icons.selected or icons.unselected
+		end, {
+			add_raw_line = add_panel_raw_line,
+			selected_hl = "OpenCodeQuestionSelected",
+			option_hl = "OpenCodeQuestionOutput",
+		})
 
 	add_panel_blank(result)
 	add_panel_line(result, key("confirm") .. " to continue · " .. key("back") .. " returns to questions", "OpenCodeQuestionMuted")
