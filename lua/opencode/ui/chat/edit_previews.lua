@@ -3,7 +3,7 @@ return cs.factory("edit_previews", function(view)
 local M = {}
 
 local edit_state = require("opencode.edit.state")
-local file_edit_results = cs.module(view, require("opencode.ui.chat.file_edit_results"))
+local tool_results = require("opencode.edit.tool_results")
 local render = cs.module(view, require("opencode.ui.chat.render"))
 local sync = require("opencode.sync")
 local text_util = require("opencode.util.text")
@@ -69,7 +69,7 @@ local count_diff_stats = text_util.diff_stats
 
 ---Build a lookup that maps a model file (and its 1-based index) to the RAW
 ---tool-part filediff entry, which still carries before/after content that
----file_edit_results.normalize_file drops.
+---tool_results.normalize_model drops.
 ---@param metadata table
 ---@return function|nil
 local function raw_filediff_lookup(metadata)
@@ -265,7 +265,7 @@ local function sync_tool_part(session_id, message, part, existing)
 		return false
 	end
 
-	local model = file_edit_results.normalize_model(part)
+	local model = tool_results.normalize_model(part)
 	if not model or #(model.files or {}) == 0 then
 		return false
 	end
