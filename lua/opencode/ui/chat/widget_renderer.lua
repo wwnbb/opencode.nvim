@@ -61,9 +61,7 @@ function M.render_single_question(ctx, index, qstate)
 		return
 	end
 
-	local q_lines, q_highlights, q_meta = question_widget.get_lines_for_question(
-		request_id, { questions = qstate.questions, timestamp = qstate.timestamp }, qstate, status, { width = render.get_chat_text_width(), render = render }
-	)
+	local q_lines, q_highlights, q_meta = question_widget.render(qstate, widget_support.render_opts())
 
 	append_interactive_widget(ctx, {
 		kind = "question",
@@ -80,17 +78,7 @@ end
 function M.render_single_permission(ctx, _index, pstate)
 	local perm_id = pstate.permission_id
 	local pstatus = pstate.status or "pending"
-	local p_lines, p_highlights, p_meta
-
-	if pstatus == "approved" then
-		p_lines, p_highlights = permission_widget.get_approved_lines(perm_id, pstate, { width = render.get_chat_text_width(), render = render })
-		p_meta = widget_base.make_meta()
-	elseif pstatus == "rejected" then
-		p_lines, p_highlights = permission_widget.get_rejected_lines(perm_id, pstate, { width = render.get_chat_text_width(), render = render })
-		p_meta = widget_base.make_meta()
-	else
-		p_lines, p_highlights, p_meta = permission_widget.get_lines_for_permission(perm_id, pstate, { width = render.get_chat_text_width(), render = render })
-	end
+	local p_lines, p_highlights, p_meta = permission_widget.render(pstate, widget_support.render_opts())
 
 	if p_lines then
 		append_interactive_widget(ctx, {
@@ -109,14 +97,7 @@ end
 function M.render_single_edit(ctx, _index, estate)
 	local eid = estate.permission_id
 	local estatus = estate.status or "pending"
-	local e_lines, e_highlights, e_meta
-
-	if estatus == "sent" then
-		e_lines, e_highlights, e_meta = edit_widget.get_resolved_lines(eid, estate, { width = render.get_chat_text_width(), render = render })
-		e_meta = e_meta or widget_base.make_meta()
-	else
-		e_lines, e_highlights, e_meta = edit_widget.get_lines_for_edit(eid, estate, { width = render.get_chat_text_width(), render = render })
-	end
+	local e_lines, e_highlights, e_meta = edit_widget.render(estate, widget_support.render_opts())
 
 	if e_lines then
 		append_interactive_widget(ctx, {

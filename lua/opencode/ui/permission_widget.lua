@@ -626,10 +626,10 @@ local function append_hint(result, option_count)
 end
 
 -- Get formatted lines for a pending permission
----@param permission_id string
+---@param _permission_id string Unused; kept for the public signature
 ---@param perm_state table Permission state from permission/state.lua
 ---@return table lines, table highlights, OpenCodeWidgetMeta meta
-function M.get_lines_for_permission(permission_id, perm_state, opts)
+function M.get_lines_for_permission(_permission_id, perm_state, opts)
 	local result = { lines = {}, highlights = {}, width = opts and opts.width, render = opts and opts.render }
 	local tool_input = resolve_tool_input(perm_state)
 	local header_title = permission_header_title(perm_state)
@@ -718,19 +718,33 @@ local function render_resolved(perm_state, status, reply_suffix, opts)
 end
 
 -- Compatibility entrypoints retain their existing signatures and reply suffixes.
----@param permission_id string
+---@param _permission_id string Unused; kept for the public signature
 ---@param perm_state table
 ---@return table lines, table highlights
-function M.get_approved_lines(permission_id, perm_state, opts)
+function M.get_approved_lines(_permission_id, perm_state, opts)
 	local saved = perm_state.reply == "always" and #(perm_state.always or {}) > 0
 	return render_resolved(perm_state, "approved", saved and "(always)" or "(once)", opts)
 end
 
----@param permission_id string
+---@param _permission_id string Unused; kept for the public signature
 ---@param perm_state table
 ---@return table lines, table highlights
-function M.get_rejected_lines(permission_id, perm_state, opts)
+function M.get_rejected_lines(_permission_id, perm_state, opts)
 	return render_resolved(perm_state, "rejected", nil, opts)
+end
+
+---Render a permission for its current status; always returns meta.
+---@param perm_state table Permission state from permission/state.lua
+---@param opts? table { width?: number, render?: table }
+---@return table lines, table highlights, OpenCodeWidgetMeta meta
+function M.render(perm_state, opts)
+	local id = perm_state.permission_id
+	local status = perm_state.status or "pending"
+	if status == "approved" or status == "rejected" then
+		local lines, highlights = (status == "approved" and M.get_approved_lines or M.get_rejected_lines)(id, perm_state, opts)
+		return lines, highlights, widget_base.make_meta()
+	end
+	return M.get_lines_for_permission(id, perm_state, opts)
 end
 
 return M

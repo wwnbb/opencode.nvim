@@ -6,7 +6,6 @@ return cs.factory("edits", function(view)
 local M = {}
 
 local state = view
-local render = cs.module(view, require("opencode.ui.chat.render"))
 
 local edit_widget = require("opencode.ui.edit_widget")
 local edit_state = require("opencode.edit.state")
@@ -157,22 +156,9 @@ end
 
 ---@return string|nil, table|nil, table|nil, number|nil
 local function get_edit_context_at_cursor(allow_sent)
-	local function allowed(status)
+	return widget_support.context_at_cursor(state.edits, edit_state.get_edit, function(status)
 		return status == "pending" or (allow_sent and status == "sent")
-	end
-	local eid, pos = widget_support.find_widget_context_at_cursor(state.edits, state.winid, function(pos)
-		return allowed(pos.status)
 	end)
-	if not eid or not pos then
-		return nil, nil, nil, nil
-	end
-	local estate = edit_state.get_edit(eid)
-	if not estate or not allowed(estate.status) then
-		return nil, nil, nil, nil
-	end
-	local cursor = vim.api.nvim_win_get_cursor(state.winid)
-	local cursor_line = cursor[1] - 1
-	return eid, estate, pos, cursor_line
 end
 
 local function get_pending_edit_context_at_cursor()
@@ -220,31 +206,13 @@ end
 
 -- ─── In-place re-render ───────────────────────────────────────────────────────
 
+---Unlike questions and permissions, edits only refresh pos.meta here: their
+---position keeps its rendered status and no interactive meta snapshot.
 ---@param edit_id string permission_id
 function M.rerender_edit(edit_id)
-	if not state.bufnr or not vim.api.nvim_buf_is_valid(state.bufnr) then
-		return
-	end
-
-	local pos = state.edits[edit_id]
-	if not pos then
-		return
-	end
-
-	local estate = edit_state.get_edit(edit_id)
-	if not estate then
-		return
-	end
-
-	local e_lines, e_highlights, e_meta
-	if estate.status == "sent" then
-		e_lines, e_highlights, e_meta = edit_widget.get_resolved_lines(edit_id, estate, { width = render.get_chat_text_width(), render = render })
-	else
-		e_lines, e_highlights, e_meta = edit_widget.get_lines_for_edit(edit_id, estate, { width = render.get_chat_text_width(), render = render })
-	end
-
-	if widget_support.replace_rendered_block(pos, { lines = e_lines, highlights = e_highlights }) then
-		pos.meta = e_meta
+	local pos, _, replaced, meta = widget_support.rerender_widget(state.edits, edit_id, edit_state.get_edit, edit_widget.render)
+	if replaced then
+		pos.meta = meta
 	end
 end
 

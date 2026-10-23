@@ -465,6 +465,15 @@ function M.get_lines_for_question(_request_id, question_data, selection_state, s
 		})
 end
 
+---Render a question for its current status; always returns meta.
+---@param qstate table Question state from question/state.lua
+---@param opts? table { width?: number, render?: table }
+---@return table lines, table highlights, OpenCodeWidgetMeta meta
+function M.render(qstate, opts)
+	return M.get_lines_for_question(qstate.request_id, { questions = qstate.questions, timestamp = qstate.timestamp },
+		qstate, qstate.status or "pending", opts)
+end
+
 -- Format the non-interactive state shown while the HTTP request is in flight.
 ---@param _request_id string
 ---@param question_data table

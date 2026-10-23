@@ -5,7 +5,6 @@ return cs.factory("questions", function(view)
 local M = {}
 
 local state = view
-local render = cs.module(view, require("opencode.ui.chat.render"))
 
 local question_widget = require("opencode.ui.question_widget")
 local widget_base = require("opencode.ui.widget_base")
@@ -116,19 +115,9 @@ end
 ---@return table|nil pos
 ---@return number|nil cursor_line
 local function get_pending_question_context_at_cursor()
-	local request_id, pos = widget_support.find_widget_context_at_cursor(state.questions, state.winid, function(pos)
-		return pos.status == "pending" or pos.status == "confirming"
+	return widget_support.context_at_cursor(state.questions, question_state.get_question, function(status)
+		return status == "pending" or status == "confirming"
 	end)
-	if not request_id or not pos then
-		return nil, nil, nil, nil
-	end
-	local qstate = question_state.get_question(request_id)
-	if not qstate or not (qstate.status == "pending" or qstate.status == "confirming") then
-		return nil, nil, nil, nil
-	end
-	local cursor = vim.api.nvim_win_get_cursor(state.winid)
-	local cursor_line = cursor[1] - 1
-	return request_id, qstate, pos, cursor_line
 end
 
 ---@param request_id string
@@ -140,7 +129,7 @@ local function get_option_index_at_cursor(request_id, qstate, pos, cursor_line)
 	local meta = widget_support.get_interactive_meta(pos, qstate, "question")
 	if not pos.meta_state then
 		-- Compatibility for callers supplying a position without rendered metadata.
-		local _, _, fallback = question_widget.get_lines_for_question(request_id, { questions = qstate.questions }, qstate, qstate.status, { width = render.get_chat_text_width(), render = render })
+		local _, _, fallback = question_widget.get_lines_for_question(request_id, { questions = qstate.questions }, qstate, qstate.status, widget_support.render_opts())
 		meta = fallback
 	end
 	return widget_base.get_option_index(meta, cursor_line - pos.start_line)
@@ -194,27 +183,14 @@ end
 ---@param request_id string
 ---@param focus? boolean|number Focus the current answer or a specific option.
 function M.rerender_question(request_id, focus)
-	if not state.bufnr or not vim.api.nvim_buf_is_valid(state.bufnr) then
-		return
-	end
-
-	local pos = state.questions[request_id]
-	if not pos then
-		return
-	end
-
-	local qstate = question_state.get_question(request_id)
+	local pos, qstate, replaced, meta = widget_support.rerender_widget(state.questions, request_id,
+		question_state.get_question, question_widget.render)
 	if not qstate then
 		return
 	end
 
-	local questions = qstate.questions
 	local status = qstate.status or "pending"
-	local lines, highlights, meta = question_widget.get_lines_for_question(
-		request_id, { questions = questions, timestamp = qstate.timestamp }, qstate, status, { width = render.get_chat_text_width(), render = render }
-	)
-
-	if widget_support.replace_rendered_block(pos, { lines = lines, highlights = highlights }) then
+	if replaced then
 		pos.status = status
 		widget_support.set_interactive_meta(pos, meta, qstate, "question")
 	elseif focus then

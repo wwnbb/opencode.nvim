@@ -593,20 +593,19 @@ local function render_edit(edit_state, resolution_label, header_hl, server_apply
 end
 
 --- Get formatted lines for a pending (interactive) edit widget.
----@param permission_id string
+---@param _permission_id string Unused; kept for the public signature
 ---@param edit_state table Edit state from edit/state.lua
 ---@return table lines, table highlights, OpenCodeWidgetMeta meta
-function M.get_lines_for_edit(permission_id, edit_state, opts)
+function M.get_lines_for_edit(_permission_id, edit_state, opts)
 	return render_edit(edit_state, nil, "OpenCodeEditHeader", edit_state.apply_mode == "server", opts)
 end
 
 --- Get formatted lines for a resolved edit (all files accepted/rejected, reply sent).
----@param permission_id string
+---@param _permission_id string Unused; kept for the public signature
 ---@param edit_state table Edit state from edit/state.lua
 ---@return table lines, table highlights, OpenCodeWidgetMeta meta
-function M.get_resolved_lines(permission_id, edit_state, opts)
-	local edit_state_mod = require("opencode.edit.state")
-	local resolution = edit_state_mod.get_resolution(permission_id)
+function M.get_resolved_lines(_permission_id, edit_state, opts)
+	local resolution = require("opencode.edit.state").resolution_of(edit_state)
 	local resolution_label = "partial"
 	local header_hl = "OpenCodeEditMuted"
 
@@ -622,6 +621,19 @@ function M.get_resolved_lines(permission_id, edit_state, opts)
 	end
 
 	return render_edit(edit_state, resolution_label, header_hl, nil, opts)
+end
+
+---Render an edit review for its current status; always returns meta.
+---@param edit_state table Edit state from edit/state.lua
+---@param opts? table { width?: number, render?: table }
+---@return table lines, table highlights, OpenCodeWidgetMeta meta
+function M.render(edit_state, opts)
+	local id = edit_state.permission_id
+	if (edit_state.status or "pending") == "sent" then
+		local lines, highlights, meta = M.get_resolved_lines(id, edit_state, opts)
+		return lines, highlights, meta or widget_base.make_meta()
+	end
+	return M.get_lines_for_edit(id, edit_state, opts)
 end
 
 return M

@@ -118,6 +118,64 @@ function M.find_widget_context_at_cursor(state_table, winid, predicate)
 	return tree.at_line(state_table, cursor_line, predicate)
 end
 
+---Options passed to widget renderers for this view.
+---@return { width: number, render: table }
+function M.render_opts()
+	return { width = render.get_chat_text_width(), render = render }
+end
+
+---Interactive widget at the cursor whose rendered and stored statuses are both allowed.
+---@param positions table Rendered positions by widget id
+---@param lookup fun(id: string): table|nil Store getter
+---@param allowed fun(status: string|nil): boolean
+---@return string|nil id
+---@return table|nil source Store record
+---@return table|nil pos
+---@return number|nil cursor_line 0-based cursor row
+function M.context_at_cursor(positions, lookup, allowed)
+	if not cs.is_chat_buffer_displayed(view) then return nil, nil, nil, nil end
+	if not state.winid or not vim.api.nvim_win_is_valid(state.winid) then
+		return nil, nil, nil, nil
+	end
+	local cursor_line = vim.api.nvim_win_get_cursor(state.winid)[1] - 1
+	local id, pos = tree.at_line(positions, cursor_line, function(node)
+		return allowed(node.status)
+	end)
+	if not id or not pos then
+		return nil, nil, nil, nil
+	end
+	local source = lookup(id)
+	if not source or not allowed(source.status) then
+		return nil, nil, nil, nil
+	end
+	return id, source, pos, cursor_line
+end
+
+---Shared in-place rerender: replace a widget's rendered block from its store record.
+---@param positions table Rendered positions by widget id
+---@param id string
+---@param lookup fun(id: string): table|nil Store getter
+---@param render_widget fun(source: table, opts: table): table, table, table
+---@return table|nil pos
+---@return table|nil source
+---@return boolean replaced
+---@return table|nil meta
+function M.rerender_widget(positions, id, lookup, render_widget)
+	if not state.bufnr or not vim.api.nvim_buf_is_valid(state.bufnr) then
+		return nil, nil, false, nil
+	end
+	local pos = positions[id]
+	if not pos then
+		return nil, nil, false, nil
+	end
+	local source = lookup(id)
+	if not source then
+		return pos, nil, false, nil
+	end
+	local lines, highlights, meta = render_widget(source, M.render_opts())
+	return pos, source, M.replace_rendered_block(pos, { lines = lines, highlights = highlights }), meta
+end
+
 ---@return number
 function M.current_render_generation()
 	return state.render_generation or 0

@@ -724,10 +724,10 @@ function M.are_all_resolved(permission_id)
 	return true
 end
 
----@param permission_id string
+---Resolution of a review record's files; pure, never reads the store.
+---@param estate table|nil
 ---@return string "all_accepted"|"all_rejected"|"all_resolved"|"mixed"|"pending"
-function M.get_resolution(permission_id)
-	local estate = active_edits[permission_id]
+function M.resolution_of(estate)
 	if not estate then
 		return "pending"
 	end
@@ -756,6 +756,12 @@ function M.get_resolution(permission_id)
 	else
 		return "mixed"
 	end
+end
+
+---@param permission_id string
+---@return string "all_accepted"|"all_rejected"|"all_resolved"|"mixed"|"pending"
+function M.get_resolution(permission_id)
+	return M.resolution_of(active_edits[permission_id])
 end
 
 ---@param permission_id string

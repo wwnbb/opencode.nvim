@@ -5,7 +5,6 @@ return cs.factory("permissions", function(view)
 local M = {}
 
 local state = view
-local render = cs.module(view, require("opencode.ui.chat.render"))
 
 local permission_widget = require("opencode.ui.permission_widget")
 local widget_base = require("opencode.ui.widget_base")
@@ -40,19 +39,9 @@ end
 ---@return table|nil pos
 ---@return number|nil cursor_line
 local function get_pending_permission_context_at_cursor()
-	local permission_id, pos = widget_support.find_widget_context_at_cursor(state.permissions, state.winid, function(pos)
-		return pos.status == "pending"
+	return widget_support.context_at_cursor(state.permissions, permission_state.get_permission, function(status)
+		return status == "pending"
 	end)
-	if not permission_id or not pos then
-		return nil, nil, nil, nil
-	end
-	local pstate = permission_state.get_permission(permission_id)
-	if not pstate or pstate.status ~= "pending" then
-		return nil, nil, nil, nil
-	end
-	local cursor = vim.api.nvim_win_get_cursor(state.winid)
-	local cursor_line = cursor[1] - 1
-	return permission_id, pstate, pos, cursor_line
 end
 
 ---@return string|nil permission_id
@@ -72,7 +61,7 @@ function M.sync_selected_option_from_cursor()
 
 	local meta = widget_support.get_interactive_meta(pos, pstate, "permission")
 	if not pos.meta_state then
-		local _, _, fallback = permission_widget.get_lines_for_permission(permission_id, pstate, { width = render.get_chat_text_width(), render = render })
+		local _, _, fallback = permission_widget.get_lines_for_permission(permission_id, pstate, widget_support.render_opts())
 		meta = fallback
 	end
 	local option_index = widget_base.get_option_index(meta, cursor_line - pos.start_line)
@@ -105,33 +94,11 @@ end
 
 ---@param perm_id string
 function M.rerender_permission(perm_id)
-	if not state.bufnr or not vim.api.nvim_buf_is_valid(state.bufnr) then
-		return
-	end
-
-	local pos = state.permissions[perm_id]
-	if not pos then
-		return
-	end
-
-	local pstate = permission_state.get_permission(perm_id)
-	if not pstate then
-		return
-	end
-
-	local p_lines, p_highlights, p_meta
-	local status = pstate.status or "pending"
-	if status == "approved" then
-		p_lines, p_highlights = permission_widget.get_approved_lines(perm_id, pstate, { width = render.get_chat_text_width(), render = render })
-	elseif status == "rejected" then
-		p_lines, p_highlights = permission_widget.get_rejected_lines(perm_id, pstate, { width = render.get_chat_text_width(), render = render })
-	else
-		p_lines, p_highlights, p_meta = permission_widget.get_lines_for_permission(perm_id, pstate, { width = render.get_chat_text_width(), render = render })
-	end
-
-	if widget_support.replace_rendered_block(pos, { lines = p_lines, highlights = p_highlights }) then
-		pos.status = status
-		widget_support.set_interactive_meta(pos, p_meta or widget_base.make_meta(), pstate, "permission")
+	local pos, pstate, replaced, meta = widget_support.rerender_widget(state.permissions, perm_id,
+		permission_state.get_permission, permission_widget.render)
+	if replaced then
+		pos.status = pstate.status or "pending"
+		widget_support.set_interactive_meta(pos, meta, pstate, "permission")
 	end
 end
 
