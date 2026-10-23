@@ -135,6 +135,26 @@ function M.valid(view, generation)
 		and (generation == nil or view.generation == generation)
 end
 
+---A view is live while registered and visible or parked in a hidden layout.
+---Views are created with visible = false, so nil never reaches this check.
+function M.is_live(view)
+	return M.valid(view) and (view.visible or view.suspended) and true or false
+end
+
+function M.live_views()
+	local result = {}
+	for _, view in ipairs(M.all()) do
+		if M.is_live(view) then result[#result + 1] = view end
+	end
+	return result
+end
+
+---The session a view was opened on: the bottom of its child-navigation stack.
+function M.root_session_id(view)
+	local root = (view.session_stack or {})[1]
+	return root and root.id or view.session_id
+end
+
 function M.remove(view)
 	view.generation = (view.generation or 0) + 1
 	if view ~= M.state then views[view.id] = nil end

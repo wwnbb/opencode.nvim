@@ -126,12 +126,10 @@ function M.setup(events)
 		sessions.refresh_status()
 		local ids = {}
 		for _, info in ipairs(state.get_active_sessions()) do ids[info.id] = true end
-		local views = package.loaded["opencode.ui.chat.state"]
-		for _, view in ipairs(views and views.all() or {}) do
-			if views.valid(view) and (view.visible ~= false or view.suspended) then
-				local id = views.session(view).id
-				if id then ids[id] = true end
-			end
+		local view_adapter = require("opencode.session.views")
+		for _, view in ipairs(view_adapter.live()) do
+			local id = view_adapter.registry().session(view).id
+			if id then ids[id] = true end
 		end
 		for id in pairs(ids) do reconcile(id, true) end
 	end)

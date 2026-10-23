@@ -13,14 +13,20 @@ describe("session pane ownership", function()
 		for _, name in ipairs(names) do saved[name] = package.loaded[name] end
 		saved.messages, saved.schedule, saved.refresh = client.get_messages, vim.schedule, sessions.refresh_status
 		views = {
-			{ id = 1, session_id = "a", generation = 0, config = { layout = "tab" } },
-			{ id = 2, session_id = "b", generation = 0, config = { layout = "tab" } },
+			{ id = 1, session_id = "a", generation = 0, visible = true, config = { layout = "tab" } },
+			{ id = 2, session_id = "b", generation = 0, visible = true, config = { layout = "tab" } },
 		}
 		focused = views[1]
-		local registry = {
+		local root_session_id = require("opencode.ui.chat.state").root_session_id
+		local registry
+		registry = {
 			current = function() return focused end,
 			all = function() return views end,
 			valid = function(view, generation) return not view.closed and (generation == nil or generation == view.generation) end,
+			live_views = function()
+				return vim.tbl_filter(function(view) return registry.valid(view) and (view.visible or view.suspended) end, views)
+			end,
+			root_session_id = root_session_id,
 			session = function(view) return state.get_session_record(view.session_id) or {} end,
 			for_session = function(id)
 				for _, view in ipairs(views) do if not view.closed and view.session_id == id then return view end end

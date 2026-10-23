@@ -11,7 +11,7 @@ end
 -- generation holds; otherwise any change of the global session since capture
 -- (including A -> B -> A) cancels. Call dispose() once the operation finishes.
 function M.guard(view, generation)
-	local views = package.loaded["opencode.ui.chat.state"]
+	local views = require("opencode.session.views").registry()
 	local owner = view and view.session_bound and view or nil
 	if owner then
 		generation = generation or owner.generation

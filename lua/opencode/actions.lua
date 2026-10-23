@@ -158,7 +158,7 @@ function M.reopen_session_tab(opts)
 end
 
 function M.reorder_session_tab(direction, opts)
-	local cs = package.loaded["opencode.ui.chat.state"]
+	local cs = require("opencode.session.views").registry()
 	local view = opts and opts.view or (cs and cs.current())
 	if view and view.workspace_id and view.config and view.config.layout == "tab" then
 		return require("opencode.ui.chat.workspace").reorder(view.workspace_id, direction)

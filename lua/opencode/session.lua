@@ -11,20 +11,15 @@ local pending_helper = require("opencode.session.pending")
 local status_helper = require("opencode.session.status")
 local navigation_ctx = { state = state, event_util = event_util }
 
-local function view_registry()
-	local views = package.loaded["opencode.ui.chat.state"]
-	return views and type(views.current) == "function" and views or nil
-end
+local view_adapter = require("opencode.session.views")
+local view_registry = view_adapter.registry
 
 local function owner_view(session_id)
-	local views = view_registry()
-	if not views then return nil end
 	local ancestor_owner
-	for _, view in ipairs(views.all()) do
-		if views.valid(view) and (view.visible ~= false or view.suspended) then
-			if view.session_id == session_id then return view end
-			local root = (view.session_stack or {})[1]
-			if not ancestor_owner and navigation.runtime_session_id(root and root.id or view.session_id, navigation_ctx) == session_id then ancestor_owner = view end
+	for _, view in ipairs(view_adapter.live()) do
+		if view.session_id == session_id then return view end
+		if not ancestor_owner and navigation.runtime_session_id(view_adapter.root_session_id(view), navigation_ctx) == session_id then
+			ancestor_owner = view
 		end
 	end
 	return ancestor_owner
@@ -316,9 +311,8 @@ function M.handle_deleted(session_id, opts)
 	local deleted_ids = ok_sync and sync.collect_session_tree(session_id) or { session_id }
 	local deleted, affected, candidates = {}, {}, {}
 	for _, id in ipairs(deleted_ids) do deleted[id] = true end
-	local views = view_registry()
-	for _, view in ipairs(views and views.all() or {}) do
-		if tab_view(view) and views.valid(view) and (view.visible ~= false or view.suspended) then
+	for _, view in ipairs(view_adapter.live()) do
+		if tab_view(view) then
 			local matched = deleted[view.session_id]
 			for _, ancestor in ipairs(view.session_stack or {}) do matched = matched or deleted[ancestor.id] end
 			if matched then
@@ -342,7 +336,7 @@ function M.handle_deleted(session_id, opts)
 	if #affected > 0 then
 		for _, entry in ipairs(affected) do
 			local replacement = entry.root and not deleted[entry.root] and state.get_session_record(entry.root)
-			local existing = replacement and views.for_session(replacement.id)
+			local existing = replacement and view_registry().for_session(replacement.id)
 			if existing and existing ~= entry.view then replacement = nil end
 			replacement = replacement or navigation.next_session_after_close(session_id, candidates, {
 				state = state, event_util = event_util, view = entry.view,
@@ -441,8 +435,8 @@ function M.close(session_id, opts)
 			if not id or id == target_id then return end
 			for _, child_id in ipairs(sync.collect_session_tree(id)) do retained[child_id] = true end
 		end
-		for _, view in ipairs(views and views.all() or {}) do
-			if view ~= owner and (view.visible ~= false or view.suspended) and views.valid(view) then
+		for _, view in ipairs(view_adapter.live()) do
+			if view ~= owner then
 				retain(views.session(view).id)
 				for _, entry in ipairs(view.session_stack or {}) do retain(entry.id) end
 			end

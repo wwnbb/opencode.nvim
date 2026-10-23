@@ -86,6 +86,16 @@ local store_modules = {
 	["lua/opencode/edit/state.lua"] = true,
 }
 
+-- Core reaches loaded UI modules only through the session view adapter. The
+-- other entries notify optional UI that may not be loaded (CORE-07, SUPPORT-03).
+local ui_package_loaded_allowed = {
+	["lua/opencode/session/views.lua"] = true, -- the chat view registry adapter
+	["lua/opencode/init.lua"] = true, -- colorscheme refresh of an open chat
+	["lua/opencode/btw.lua"] = true, -- /btw indicator and answer view
+	["lua/opencode/logger.lua"] = true, -- live log viewer
+	["lua/opencode/util/cwd.lua"] = true, -- input windows are not editor windows
+}
+
 local ui_forbidden_requires = {
 	["opencode.client"] = true,
 	["opencode.lifecycle"] = true,
@@ -100,6 +110,11 @@ for _, path in ipairs(files) do
 			if requires_events or requires_ui then
 				table.insert(layering_violations, string.format("%s:%d store must not require events or UI", path, line_no))
 			end
+		end
+		if path:match("^lua/opencode/") and not path:match("^lua/opencode/ui/") and not ui_package_loaded_allowed[path]
+			and line:match("package%.loaded%s*%[%s*[\"']opencode%.ui") then
+			table.insert(layering_violations,
+				string.format("%s:%d core must reach chat views through opencode.session.views", path, line_no))
 		end
 		if path ~= "lua/opencode/ui/chat/render_coordinator.lua" then
 			if line:match("emit%s*%(%s*[\"']chat_render[\"']") then

@@ -13,7 +13,7 @@ end
 function M.open(id, opts, callback)
 	opts = opts or {}
 	if not valid_id(id) then schedule(callback, { message = "Enter a valid session ID" }); return end
-	local views = package.loaded["opencode.ui.chat.state"]
+	local views = require("opencode.session.views").registry()
 	local view = opts.view or (views and views.current and views.current())
 	local guard = focus.guard(view)
 	local initial_input = focus.capture_input(view)

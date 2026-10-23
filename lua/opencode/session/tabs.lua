@@ -34,7 +34,7 @@ function M.observe(session_id, is_visible)
 	entry.visible = is_visible == true
 	if not entry.visible then cancel_retry(entry) end
 	if not focused or not entry.visible or not state.is_connected() then return end
-	local views = package.loaded["opencode.ui.chat.state"]
+	local views = require("opencode.session.views").registry()
 	if views and type(views.for_session) == "function" then
 		local view = views.for_session(session_id)
 		if view and (not view.visible or not view.winid or not vim.api.nvim_win_is_valid(view.winid)
@@ -88,7 +88,7 @@ function M.reopen(opts)
 	local id = state.get_closed_session_order()[1]
 	if not id then vim.notify("No closed OpenCode session tab", vim.log.levels.INFO); return end
 	local token = pending.token(id)
-	local views = package.loaded["opencode.ui.chat.state"]
+	local views = require("opencode.session.views").registry()
 	local source = opts.view or (views and type(views.current) == "function" and views.current()) or nil
 	local guard = focus.guard(source, opts.generation)
 	local initial_input = opts.initial_input

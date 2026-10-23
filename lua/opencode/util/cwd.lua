@@ -13,7 +13,7 @@ local M = {}
 local function is_opencode_window(win)
 	if not vim.api.nvim_win_is_valid(win) then return true end
 	if vim.api.nvim_win_get_config(win).relative ~= "" then return true end
-	local cs = package.loaded["opencode.ui.chat.state"]
+	local cs = require("opencode.session.views").registry()
 	if cs and cs.for_window and cs.for_window(win) then return true end
 	local input = package.loaded["opencode.ui.input"]
 	if input and input.get_winids and vim.tbl_contains(input.get_winids(), win) then return true end
@@ -33,7 +33,7 @@ end
 function M.editor_window()
 	local current = vim.api.nvim_get_current_win()
 	if not is_opencode_window(current) then return current end
-	local cs = package.loaded["opencode.ui.chat.state"]
+	local cs = require("opencode.session.views").registry()
 	local workspace = cs and cs.workspace
 	local candidate = workspace and workspace.return_winid
 	if candidate and vim.api.nvim_win_is_valid(candidate) and not is_opencode_window(candidate) then
