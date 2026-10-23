@@ -1,5 +1,14 @@
 local M = {}
 
+-- The active-session endpoint omits idle sessions and their completion outcome.
+function M.from_active_snapshot(active, previous, messages)
+	if active then return active end
+	local last = messages[#messages]
+	if last and last.type == "idle" then return { type = "idle", outcome = last.outcome } end
+	if type(previous) == "table" and previous.type == "idle" and previous.outcome then return vim.deepcopy(previous) end
+	return { type = "idle" }
+end
+
 ---@param status any
 ---@return table
 function M.normalize_session_status(status)

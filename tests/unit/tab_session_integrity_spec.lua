@@ -1,45 +1,31 @@
 local state, sync = require("opencode.state"), require("opencode.sync")
 local sessions, util = require("opencode.session"), require("opencode.events.util")
-local tabs, bus = require("opencode.session.tabs"), require("opencode.events.bus")
+local bus = require("opencode.events.bus")
 local client, pending = require("opencode.client"), require("opencode.session.pending")
 local permissions, forms = require("opencode.permission.state"), require("opencode.question.state")
 local edits = require("opencode.edit.state")
 
 describe("tab session integrity", function()
-	local saved, notices, directory, original_cwd
-	local ui_names = { "opencode.ui.chat.state", "opencode.ui.chat.workspace" }
+	local saved, notices
 	local function seed(id, parent, runtime)
 		state.upsert_session({ id = id, title = id, parentID = parent, directory = "/project" }, { touch = runtime ~= false })
 	end
 	local function form(id, sid)
 		return { id = id, sessionID = sid, title = "Continue?", fields = { { key = "ok", type = "boolean", required = true } } }
 	end
-	local function configure()
-		state.set_config({ server = { host = "localhost", port = 4096 },
-			chat = { session_tabs = { file = directory .. "/tabs.json", scope = "cwd" } } })
-		tabs.setup(bus)
-	end
 	before_each(function()
-		tabs.teardown(); bus.clear(); pending.clear_all(); state.reset(); sync.clear_all()
+		bus.clear(); pending.clear_all(); state.reset(); sync.clear_all()
 		permissions.clear_all(); forms.clear_all(); edits.clear_all()
-		saved, notices = { notify = vim.notify, client = {}, ui = {} }, {}
-		for _, name in ipairs(ui_names) do saved.ui[name] = package.loaded[name] end
+		saved, notices = { notify = vim.notify, client = {} }, {}
 		for _, name in ipairs({ "list_permissions", "list_questions", "review_rpc", "get_session_statuses" }) do saved.client[name] = client[name] end
 		vim.notify = function(message, level) notices[#notices + 1] = { message = message, level = level } end
-		original_cwd = vim.fn.getcwd()
-		directory = vim.fn.tempname()
-		vim.fn.mkdir(directory .. "/one", "p"); vim.fn.mkdir(directory .. "/two", "p")
-		vim.fn.chdir(directory .. "/one")
 		state.set_config({ session = { parallel = { recent_limit = 2 } } })
 	end)
 	after_each(function()
-		tabs.teardown(); bus.clear(); pending.clear_all()
+		bus.clear(); pending.clear_all()
 		permissions.clear_all(); forms.clear_all(); edits.clear_all(); state.reset(); sync.clear_all()
-		for _, name in ipairs(ui_names) do package.loaded[name] = saved.ui[name] end
 		for name, method in pairs(saved.client) do client[name] = method end
 		vim.notify = saved.notify
-		vim.fn.chdir(original_cwd)
-		vim.fn.delete(directory, "rf")
 	end)
 
 	it("finds the nearest native runtime ancestor without widening direct-child rendering", function()
@@ -141,41 +127,5 @@ describe("tab session integrity", function()
 		assert.same({}, state.get_runtime_session_order())
 		assert.equals(30, #state.get_closed_session_order())
 		assert.equals(2, #state.get_full_state().sessions.recent_order)
-	end)
-
-	for _, retained in ipairs({ "suspended", "file-only" }) do
-		it("defers cwd scope changes for a " .. retained .. " workspace", function()
-			local layouts = retained == "file-only" and { { id = 1 } } or {}
-			local views = retained == "suspended" and { { session_bound = true, suspended = true, config = { layout = "tab" } } } or {}
-			package.loaded["opencode.ui.chat.workspace"] = { list = function() return layouts end }
-			package.loaded["opencode.ui.chat.state"] = { all = function() return views end }
-			configure(); seed("root"); state.set_session("root", "Root")
-			vim.cmd.cd(directory .. "/two")
-			tabs.refresh_scope()
-			assert.same({ "root" }, state.get_runtime_session_order())
-			assert.equals("root", state.get_session().id)
-			layouts, views = {}, {}
-			tabs.refresh_scope()
-			assert.same({}, state.get_runtime_session_order())
-			assert.is_nil(state.get_session().id)
-		end)
-	end
-
-	it("warns once and preserves malformed tab preferences without listener errors or writes", function()
-		local file = directory .. "/tabs.json"
-		local original = { '{ "version": 2, "scopes": true, "other": "preserve" }' }
-		vim.fn.writefile(original, file)
-		configure()
-		seed("root"); state.set_session("root", "Root"); state.close_runtime_session("root")
-		tabs.setup(bus)
-		seed("another"); state.set_session("another", "Another")
-		assert.same(original, vim.fn.readfile(file))
-		assert.equals(1, #notices)
-		assert.equals(vim.log.levels.WARN, notices[1].level)
-		assert.matches("invalid session tab scopes", notices[1].message)
-		assert.is_true(require("opencode.util.json_file").write(file, { version = 2, scopes = {}, other = "preserve" }))
-		tabs.setup(bus); seed("repaired")
-		assert.equals("preserve", require("opencode.util.json_file").read(file).other)
-		assert.equals(1, #notices)
 	end)
 end)

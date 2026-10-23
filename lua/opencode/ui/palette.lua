@@ -733,7 +733,6 @@ local default_command_modules = {
 	"opencode.ui.palette.system",
 	"opencode.ui.palette.plugins",
 	"opencode.ui.palette.pairing",
-	"opencode.ui.terminals",
 }
 
 function M.register_defaults()

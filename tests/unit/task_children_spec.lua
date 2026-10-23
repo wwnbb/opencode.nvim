@@ -30,6 +30,19 @@ describe("opencode task children", function()
 		assert.equals("child-late", children.get_task_child_session_id(part))
 	end)
 
+	it("uses the same exact binding as activity and skips invalid metadata IDs", function()
+		local sync = require("opencode.sync")
+		sync.clear_all()
+		local part = task("indexed")
+		sync.record_task_child_session("parent", part.messageID, part.id, "child")
+		assert.equals("child", children.get_task_child_session_id(part))
+		sync.clear_all()
+		part.state.metadata = { sessionID = {}, sessionId = "valid" }
+		assert.equals("valid", children.get_task_child_session_id(part))
+		part.state.metadata = { sessionID = "", sessionId = false }
+		assert.is_nil(children.get_task_child_session_id(part))
+	end)
+
 	it("ignores legacy aliases and empty IDs", function()
 		local part = task("old")
 		part.metadata = { childSessionID = "guessed", sessionId = "" }

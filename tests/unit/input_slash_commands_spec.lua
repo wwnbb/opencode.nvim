@@ -77,10 +77,6 @@ slash.register({
 })
 
 local commands = slash.get_commands()
-slash.register_defaults()
-for _, command in ipairs(slash.get_commands()) do
-	assert.is_truthy(command.name ~= "skill", "singular /skill must not be offered")
-end
 assert.same({ "ztest_alpha", "ztest_models", "ztest_sessions" }, names(slash_commands.filter_commands(commands, "ztest_")), "slash filtering should match command names")
 assert.same({ "ztest_models" }, names(slash_commands.filter_commands(commands, "model")), "slash filtering should match descriptions")
 assert.same({ "ztest_sessions" }, names(slash_commands.filter_commands(commands, "resume")), "slash filtering should match aliases")

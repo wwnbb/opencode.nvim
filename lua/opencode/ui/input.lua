@@ -358,10 +358,13 @@ local function send_message(delivery)
 	if state.mode == "shell" then
 		send_options = send_options or {}
 		send_options.mode = "shell"
-	end
-	if delivery then
-		send_options = send_options or {}
-		send_options.delivery = delivery
+		send_options.delivery = nil
+	else
+		if send_options then send_options.mode = nil end
+		if delivery then
+			send_options = send_options or {}
+			send_options.delivery = delivery
+		end
 	end
 	if state.persist_pending then
 		history.clear_pending(state.session_id)

@@ -196,19 +196,8 @@ function M.resolve_task_child_session_id(tool_part)
 
 	local ok_sync, sync = pcall(require, "opencode.sync")
 	if ok_sync then
-		local indexed = sync.get_task_child_session_for_part(tool_part)
-		if type(indexed) == "string" and indexed ~= "" then
-			return indexed
-		end
-
+		return nonempty_string(sync.get_task_child_session_for_part(tool_part))
 	end
-
-	local part_metadata = type(tool_part.metadata) == "table" and tool_part.metadata or {}
-	local tool_state = type(tool_part.state) == "table" and tool_part.state or {}
-	local state_metadata = type(tool_state.metadata) == "table" and tool_state.metadata or {}
-
-	return state_metadata.sessionID or state_metadata.sessionId
-		or part_metadata.sessionID or part_metadata.sessionId
 end
 
 ---@param parent_session_id string|nil

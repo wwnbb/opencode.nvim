@@ -191,6 +191,35 @@ describe("chat message boundaries", function()
 		end
 	end)
 
+	it("separates subagent groups from shell panels without adding gaps inside the group", function()
+		update({ {
+			id = "assistant", type = "assistant", time = { created = 1, completed = 2 },
+			content = {
+				{ type = "tool", id = "shell", name = "shell", state = {
+					status = "completed", input = { command = "git status --short" }, content = {},
+				} },
+				{ type = "tool", id = "first", name = "subagent", state = {
+					status = "running", input = { agent = "build", description = "First task" },
+					metadata = { toolCallCount = 1 },
+				} },
+				{ type = "tool", id = "second", name = "subagent", state = {
+					status = "running", input = { agent = "build", description = "Second task" },
+					metadata = { toolCallCount = 1 },
+				} },
+			},
+		} })
+		local shell, first, second = unpack(sync.get_parts("assistant"))
+		for _, expanded in ipairs({ false, true }) do
+			state.expanded_tasks[first.id] = expanded
+			local rendered = render()
+			local first_pos, second_pos = state.tasks[first.id], state.tasks[second.id]
+			assert.equals("", rendered[first_pos.start_line], "one blank row should precede the subagent group")
+			assert.equals(state.tools[shell.id].end_line + 2, first_pos.start_line, "separator must be outside widget ranges")
+			assert.is_truthy(rendered[first_pos.start_line + 1]:find("First task", 1, true))
+			assert.equals(first_pos.end_line + 1, second_pos.start_line, "tasks should keep their existing internal spacing")
+		end
+	end)
+
 	it("separates assistant text from neovim edit and patch widgets", function()
 		for _, tool in ipairs({ "neovim_edit", "neovim_patch" }) do
 			for _, suffix in ipairs({ "", "\n", "\n\n" }) do

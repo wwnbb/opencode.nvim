@@ -85,7 +85,7 @@ export default {
   async execute(args: z.infer<typeof input>, context: RuntimeContext) {
     if (!args.oldString) throw new Error("oldString must not be empty. Use neovim_patch to create a file.")
     if (args.oldString === args.newString) throw new Error("No changes to apply: oldString and newString are identical.")
-    const filePath = resolveFilePath(context.directory, args.path)
+    const filePath = await resolveFilePath(context.directory, args.path)
     await context.authorize("neovim_edit", [filePath])
     const before = await readState(filePath)
     const nextInput = splitBom(args.newString)

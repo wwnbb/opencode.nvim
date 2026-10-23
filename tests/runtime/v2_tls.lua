@@ -1,4 +1,4 @@
--- Real native REST/SSE and persistent WebSocket through a verified TLS/base-path proxy.
+-- Real native REST/SSE through a verified TLS/base-path proxy.
 local app, client, state, session = require("opencode"), require("opencode.client"), require("opencode.state"), require("opencode.session")
 local lifecycle = require("opencode.lifecycle")
 local function wait(predicate, why) assert(vim.wait(20000, predicate, 20), why) end
@@ -15,7 +15,7 @@ client.setup({ url = url, auth = auth })
 local untrusted = await(client.health, true); assert(untrusted.code == "tls_verification_failed", untrusted.message)
 local tls = { ca_file = assert(vim.env.OPENCODE_V2_CA_FILE) }
 app.setup({ server = { url = url, tls = tls, auth = auth, auto_start = false, use_shell_env = false,
-	config_dir = vim.env.OPENCODE_CONFIG_DIR }, lualine = { enabled = false }, chat = { session_tabs = { persist = false } } })
+	config_dir = vim.env.OPENCODE_CONFIG_DIR }, lualine = { enabled = false } })
 local ready = false
 lifecycle.ensure_connected(function() ready = true end)
 wait(function() return ready and state.is_connected() end, "Native HTTPS/SSE readiness failed")
@@ -35,16 +35,8 @@ for _, message in ipairs(messages) do
 	if type(output) == "table" and output.output == "native-environment" then environment = true end
 end
 assert(environment, "Native TLS environment replacement did not reach shell output")
-local terminal = await(function(cb) client.create_terminal(record.id, { command = "/bin/sh", args = {}, title = "TLS terminal", env = vim.empty_dict(), size = { cols = 80, rows = 24 } }, cb) end)
-local output, failure = "", nil
-local handle = assert(require("opencode.client.pty").connect({ id = terminal.id, session_id = record.id, directory = record.location.directory,
-	attachment_id = "tls-native-test", on_data = function(data) output = output .. data end, on_error = function(err) failure = err end }))
-wait(function() return handle.is_ready() or failure end, "Native WSS attachment timed out"); assert(not failure, failure and failure.message)
-assert(handle.input("printf 'native-wss-utf8-привет\\n'\n", 80, 24), "Native WSS input rejected")
-wait(function() return output:find("native-wss-utf8-привет", 1, true) or failure end, "Native WSS output missing"); assert(not failure, failure and failure.message)
-handle.close(); await(function(cb) client.remove_terminal(terminal.id, cb) end)
 await(function(cb) client.delete_session(record.id, cb) end)
 vim.fn.writefile({ vim.json.encode({ version = info.version, https_rest = true, https_sse = true, base_path = true, basic_auth = true,
-	untrusted_certificate_rejected = true, session_environment = true, native_wss = true, offline_model_catalog = true }) }, assert(vim.env.OPENCODE_V2_OUTPUT))
+	untrusted_certificate_rejected = true, session_environment = true, offline_model_catalog = true }) }, assert(vim.env.OPENCODE_V2_OUTPUT))
 lifecycle.disconnect()
-print("Native verified HTTPS, SSE, environment and WSS passed")
+print("Native verified HTTPS, SSE and environment passed")

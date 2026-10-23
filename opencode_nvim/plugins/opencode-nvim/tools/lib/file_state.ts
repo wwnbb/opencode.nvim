@@ -54,8 +54,35 @@ export function sameState(current: FileState, expected: FileState): boolean {
   return current.bom === expected.bom && current.content === expected.content
 }
 
-export function resolveFilePath(directory: string, filePath: string): string {
-  return path.isAbsolute(filePath) ? filePath : path.resolve(directory, filePath)
+// New files inherit the real location of their nearest existing parent.
+export async function resolvePath(filePath: string): Promise<string> {
+  const absolute = path.resolve(filePath)
+  try {
+    return await fs.realpath(absolute)
+  } catch (error) {
+    if (!(error && typeof error === "object" && "code" in error && error.code === "ENOENT")) throw error
+    const existing = await fs.lstat(absolute).catch((statError: NodeJS.ErrnoException) => {
+      if (statError.code !== "ENOENT") throw statError
+    })
+    if (existing || path.dirname(absolute) === absolute) throw error
+    return path.join(await resolvePath(path.dirname(absolute)), path.basename(absolute))
+  }
+}
+
+export async function resolveFilePath(directory: string, filePath: string): Promise<string> {
+  const absolute = path.resolve(directory, filePath)
+  // Keep the final component so readBytes still rejects file symlinks.
+  return path.join(await resolvePath(path.dirname(absolute)), path.basename(absolute))
+}
+
+export async function externalDirectories(directory: string, resources: string[]): Promise<string[]> {
+  const root = await resolvePath(directory)
+  const resolved = await Promise.all(resources.map(resolvePath))
+  const outside = resolved.filter(resource => {
+    const value = path.relative(root, resource)
+    return value === ".." || value.startsWith(".." + path.sep) || path.isAbsolute(value)
+  })
+  return [...new Set(outside.map(resource => path.dirname(resource)))]
 }
 
 export function displayPath(worktree: string | undefined, filePath: string): string {

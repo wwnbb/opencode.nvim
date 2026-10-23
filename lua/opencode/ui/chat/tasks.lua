@@ -113,6 +113,8 @@ local function derive_task_child_data(child_session_id)
 				local metadata = render.get_tool_metadata(part)
 				table.insert(derived, {
 					id = part.id,
+					messageID = message.id,
+					sessionID = child_session_id,
 					tool = part.tool,
 					state = {
 						status = part_state.status or "pending",
@@ -139,6 +141,17 @@ local function derive_task_child_data(child_session_id)
 	return derived, child_user_prompt
 end
 
+-- A child session can appear under several Task invocations in one transcript.
+local function scope_task_nodes(nodes, prefix, toggle_id)
+	local scoped = {}
+	for id, node in pairs(nodes or {}) do
+		local copy = vim.tbl_extend("force", {}, node, { id = prefix .. id, toggle_id = toggle_id })
+		copy.children = scope_task_nodes(node.children, prefix, toggle_id)
+		scoped[copy.id] = copy
+	end
+	return scoped
+end
+
 -- Render a task tool part as a compact TUI-style subagent summary.
 --
 -- Layout (collapsed, running):
@@ -161,6 +174,9 @@ function M.render_task_tool(tool_part, expanded)
 	tool_part = M.resolve_tool_part(tool_part)
 	if type(tool_part) ~= "table" then
 		return { lines = {}, highlights = {} }
+	end
+	if tool_part.subagent_notification then
+		return cs.module(view, require("opencode.ui.chat.subagent_notification")).render_tool(tool_part, expanded)
 	end
 	local input = tool_part.state and tool_part.state.input or {}
 	local metadata = render.get_tool_metadata(tool_part)
@@ -190,6 +206,7 @@ function M.render_task_tool(tool_part, expanded)
 
 	local result_lines = {}
 	local result_highlights = {}
+	local result = { lines = result_lines, highlights = result_highlights }
 
 	local function add_line(text, hl_group)
 		text = render.sanitize_buffer_line(text)
@@ -256,7 +273,6 @@ function M.render_task_tool(tool_part, expanded)
 		local line = working and (task_frame .. " Delegating...")
 			or (task_animation.get_task_status_icon(tool_status) .. " " .. agent_label .. " Task")
 		add_line(line, tool_status == "error" and "DiagnosticError" or "Comment")
-		local result = { lines = result_lines, highlights = result_highlights }
 		return result
 	end
 
@@ -308,12 +324,22 @@ function M.render_task_tool(tool_part, expanded)
 
 		if #summary > 0 then
 			add_line("", nil)
-			for _, item in ipairs(summary) do
+			for index, item in ipairs(summary) do
 				local item_state = item.state or {}
 				local item_status = item_state.status or "pending"
 				local prefix = item_status == "running" and (task_frame .. " ") or ""
 				local item_hl = item_status == "error" and "DiagnosticError" or "Comment"
-				add_line("  ↳ " .. prefix .. tool_labels.format_summary_item_label(item), item_hl)
+				local id = tool_part.id .. ":child:" .. tostring(item.id or index)
+				local part = M.resolve_tool_part(item)
+				local rendered = { lines = {}, highlights = {} }
+				if state.expanded_tools[id] then
+					rendered = M.render_regular_tool(part, true)
+					rendered.children = scope_task_nodes(rendered.children, id .. ":", id)
+				else
+					render.add_panel_line(rendered, "↳ " .. prefix .. tool_labels.format_summary_item_label(item), item_hl, { prefix = "  " })
+				end
+				tree.append(result, { id = id, kind = "tool", tool_part = part,
+					part_id = item.id, message_id = item.messageID, session_id = item.sessionID }, rendered)
 			end
 		end
 	end
@@ -322,15 +348,15 @@ function M.render_task_tool(tool_part, expanded)
 		add_line("", nil)
 	end
 
-	local result = { lines = result_lines, highlights = result_highlights }
 	return result
 end
 
 ---Render a regular non-task tool through specialized widgets before generic I/O.
 ---@param tool_part table
 ---@param is_expanded boolean
+---@param opts? { separator_before?: boolean }
 ---@return table { lines: string[], highlights: table[] }
-function M.render_regular_tool(tool_part, is_expanded)
+function M.render_regular_tool(tool_part, is_expanded, opts)
 	tool_part = M.resolve_tool_part(tool_part)
 	if type(tool_part) ~= "table" then
 		return { lines = {}, highlights = {} }
@@ -348,7 +374,7 @@ function M.render_regular_tool(tool_part, is_expanded)
 	end
 
 	for _, render_tool in ipairs(REGULAR_TOOL_RENDERERS) do
-		local result = render_tool(tool_part, is_expanded)
+		local result = render_tool(tool_part, is_expanded, opts)
 		if result then
 			return result
 		end
@@ -361,20 +387,30 @@ end
 ---@return string|nil part_id
 ---@return table|nil task_info
 function M.get_task_at_cursor()
-	return widget_support.find_widget_context_at_cursor(state.tasks, state.winid)
+	return widget_support.find_widget_context_at_cursor(state.tasks, state.winid, function(pos) return pos.kind ~= "tool" end)
 end
 
 ---@return string|nil part_id
 ---@return table|nil tool_info
 function M.get_tool_at_cursor()
-	return widget_support.find_widget_context_at_cursor(state.tools, state.winid)
+	local id, pos, root_id = widget_support.find_widget_context_at_cursor(state.tools, state.winid)
+	if id then return id, pos, root_id end
+	return widget_support.find_widget_context_at_cursor(state.tasks, state.winid, function(node) return node.kind == "tool" end)
+end
+
+local function find_tool(part_id)
+	local pos, root_id = tree.find(state.tools, part_id)
+	if pos then return pos, root_id end
+	pos, root_id = tree.find(state.tasks, part_id)
+	return pos, root_id, true
 end
 
 -- ─── In-place widget rendering ────────────────────────────────────────────────
 
 ---Re-render a task widget in place (expand/collapse).
 ---@param part_id string
-function M.rerender_task(part_id)
+---@param focus_id? string child row to retain when its section closes
+function M.rerender_task(part_id, focus_id)
 	if not state.bufnr or not vim.api.nvim_buf_is_valid(state.bufnr) then
 		return
 	end
@@ -386,9 +422,16 @@ function M.rerender_task(part_id)
 
 	local is_expanded = state.expanded_tasks[part_id] or false
 	local tool_part = M.resolve_tool_part(pos)
-	if not tool_part or not widget_support.replace_rendered_block(pos, M.render_task_tool(tool_part, is_expanded)) then
-		return
+	local cursor = cs.module(view, require("opencode.ui.chat.cursor"))
+	local context = cursor.capture_widget_cursor_context()
+	local updated = tool_part ~= nil and widget_support.replace_rendered_block(pos, M.render_task_tool(tool_part, is_expanded))
+	if updated and context then
+		if focus_id and not tree.find(state.tasks, context.id) and tree.find(state.tasks, focus_id) then
+			context.id, context.relative_line = focus_id, 0
+		end
+		cursor.restore_widget_cursor_context(context)
 	end
+	return updated
 end
 
 ---Handle task toggle (expand/collapse child session content).
@@ -401,6 +444,7 @@ function M.handle_task_toggle(part_id)
 
 	if state.expanded_tasks[part_id] then
 		state.expanded_tasks[part_id] = nil
+		tree.collapse(pos.children, state.expanded_tools)
 		M.rerender_task(part_id)
 		return
 	end
@@ -418,7 +462,8 @@ function M.rerender_tool(part_id)
 		return
 	end
 
-	local _, root_id = tree.find(state.tools, part_id)
+	local _, root_id, task = find_tool(part_id)
+	if task then return root_id and M.rerender_task(root_id, part_id) end
 	local pos = root_id and state.tools[root_id]
 	if not pos then
 		return
@@ -428,7 +473,9 @@ function M.rerender_tool(part_id)
 	local tool_part = M.resolve_tool_part(pos)
 	local cursor = (pos.activity_group or pos.kind == "tool")
 		and cs.module(view, require("opencode.ui.chat.cursor")).capture_widget_cursor_context()
-	local updated = tool_part ~= nil and widget_support.replace_rendered_block(pos, M.render_regular_tool(tool_part, is_expanded))
+	local updated = tool_part ~= nil and widget_support.replace_rendered_block(pos, M.render_regular_tool(tool_part, is_expanded, {
+		separator_before = pos.separator_before,
+	}))
 	if updated and cursor then
 		if not tree.find(state.tools, cursor.id) and tree.find(state.tools, part_id) then
 			cursor.id, cursor.relative_line = part_id, 0
@@ -441,14 +488,14 @@ end
 ---Handle tool toggle (expand/collapse tool input/output).
 ---@param part_id string
 function M.handle_tool_toggle(part_id)
-	local pos, root_id = tree.find(state.tools, part_id)
+	local pos, root_id = find_tool(part_id)
 	if not pos then
 		return
 	end
 	-- Sections fold their own execute invocation, even inside an activity group.
 	if pos.execute_action then
-		part_id = pos.part_id or root_id
-		pos = tree.find(state.tools, part_id) or state.tools[root_id]
+		part_id = pos.toggle_id or pos.part_id or root_id
+		pos = find_tool(part_id) or state.tools[root_id]
 	end
 
 	local expanded = pos.activity_group and cs.module(view, require("opencode.ui.chat.activity")).is_expanded(pos.activity_group, state.expanded_tools[part_id])

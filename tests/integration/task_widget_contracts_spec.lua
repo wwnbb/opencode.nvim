@@ -38,11 +38,11 @@ describe("task widget contracts", function()
 			chat_tasks.ensure_task_child_loaded(part)
 			assert.equals(2, #replies)
 			vim.wait(20, function() return false end, 10)
-			assert.is_true(chat_state.task_child_loading[part.id])
+			assert.equals("child", chat_state.task_child_loading[part.id])
 			assert.is_nil(chat_state.task_child_cache[part.id])
 			assert.equals(0, renders)
 			replies[2](nil, {})
-			assert.is_true(vim.wait(100, function() return chat_state.task_child_cache[part.id] == true end, 10))
+			assert.is_true(vim.wait(100, function() return chat_state.task_child_cache[part.id] == "child" end, 10))
 			assert.is_nil(chat_state.task_child_loading[part.id])
 			assert.equals(1, renders)
 		end)
@@ -67,8 +67,8 @@ describe("task widget contracts", function()
 		chat_tasks.handle_task_toggle(part.id)
 		assert.equals(2, #replies)
 		replies[2](nil, {})
-		assert.is_true(chat_state.task_child_loading[part.id])
-		assert.is_true(vim.wait(100, function() return chat_state.task_child_cache[part.id] == true end, 10))
+		assert.equals("child", chat_state.task_child_loading[part.id])
+		assert.is_true(vim.wait(100, function() return chat_state.task_child_cache[part.id] == "child" end, 10))
 		assert.is_nil(chat_state.task_child_loading[part.id])
 		assert.is_true(chat_state.expanded_tasks[part.id])
 	end)
@@ -82,9 +82,41 @@ describe("task widget contracts", function()
 		chat_tasks.handle_task_toggle(part.id)
 		assert.is_function(callback)
 		callback(nil, {})
-		assert.is_true(vim.wait(100, function() return chat_state.task_child_cache[part.id] == true end, 10))
+		assert.is_true(vim.wait(100, function() return chat_state.task_child_cache[part.id] == "child" end, 10))
 		assert.is_true(chat_state.expanded_tasks[part.id])
 	end)
+
+	for _, failed in ipairs({ false, true }) do
+		it("ignores a replaced child's late " .. (failed and "failure" or "success"), function()
+			local replies, loaded, renders = {}, {}, 0
+			actions_mod.load_session_messages = function(id, _, callback)
+				loaded[#loaded + 1], replies[#replies + 1] = id, callback
+			end
+			chat_tasks.rerender_task = function() renders = renders + 1 end
+			local part = child_task()
+			chat_state.tasks[part.id] = { tool_part = part }
+			chat_tasks.ensure_task_child_loaded(part)
+			part.state.metadata.sessionID = "replacement"
+			chat_state.expanded_tasks[part.id] = true
+			chat_tasks.ensure_task_child_loaded(part)
+			assert.same({ "child", "replacement" }, loaded)
+			require("tests.helpers.schedule").with(function(flush)
+				replies[1](failed and { message = "old error" } or nil)
+				flush()
+				assert.equals("replacement", chat_state.task_child_loading[part.id])
+				assert.is_nil(chat_state.task_child_cache[part.id])
+				assert.is_true(chat_state.expanded_tasks[part.id])
+				assert.equals(0, renders)
+				replies[2](nil)
+				flush()
+				assert.equals("replacement", chat_state.task_child_cache[part.id])
+				assert.equals(1, renders)
+			end)
+			part.state.metadata.sessionID = "third"
+			chat_tasks.ensure_task_child_loaded(part)
+			assert.equals("third", loaded[3])
+		end)
+	end
 
 	it("keeps parallel children distinct and never guesses missing metadata", function()
 		local tasks = {}

@@ -28,6 +28,7 @@ local text_util = require("opencode.util.text")
 
 local SUPPORTED_TOOLS = {
 	edit = true,
+	patch = true,
 	apply_patch = true,
 	neovim_edit = true,
 	neovim_patch = true,
@@ -372,7 +373,7 @@ local function get_title(tool_part, metadata)
 
 	if tool_part.tool == "edit" or tool_part.tool == "neovim_edit" then
 		return "Edit completed"
-	elseif tool_part.tool == "apply_patch" then
+	elseif tool_part.tool == "patch" or tool_part.tool == "apply_patch" then
 		return "Patch applied"
 	elseif tool_part.tool == "neovim_patch" then
 		return "Patch review completed"
@@ -739,7 +740,7 @@ local function normalize_model(tool_part)
 
 	if tool_part.tool == "edit" then
 		return normalize_edit(tool_part, metadata)
-	elseif tool_part.tool == "apply_patch" then
+	elseif tool_part.tool == "patch" or tool_part.tool == "apply_patch" then
 		return normalize_apply_patch(tool_part, metadata)
 	elseif tool_part.tool == "neovim_edit" then
 		return normalize_neovim_edit(tool_part, metadata)

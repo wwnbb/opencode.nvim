@@ -41,7 +41,7 @@ describe("tab navigation regressions", function()
 		require("opencode.session.lock").clear_all()
 		questions.clear_all(); permissions.clear_all(); edits.clear_all()
 		api.setup({ server = { auto_start = false }, lualine = { enabled = false },
-			chat = { layout = "tab", session_tabs = { persist = false } } })
+			chat = { layout = "tab" } })
 		saved, draft_ids = {}, {}
 		replace(lifecycle, "ensure_connected", function(callback) callback() end)
 		replace(client, "get_messages", function(_, _, callback) callback(nil, {}) end)
@@ -237,7 +237,7 @@ describe("tab navigation regressions", function()
 		end)
 
 		for _, event in ipairs({ "session.model.selected", "session.renamed" }) do
-			it("distinguishes " .. event .. " from history fallback during " .. phase, function()
+			it("keeps the native model through " .. event .. " and stale history during " .. phase, function()
 				local target = seed("navigation-model-repeat", "navigation-a")
 				local historical = { providerID = "historical", modelID = "older", variant = "stale" }
 				native("session.model.selected", { sessionID = target.id, model = target.model })
@@ -248,7 +248,7 @@ describe("tab navigation regressions", function()
 				response(); settle()
 				local lock = require("opencode.session.lock").get(target.id)
 				local selection = require("opencode.selectors").send_selection({ session_id = target.id })
-				local expected = event == "session.model.selected" and target.model or historical
+				local expected = target.model
 				assert.same({ providerID = expected.providerID, modelID = expected.modelID }, lock.model)
 				assert.same(lock.model, selection.model)
 				assert.equals(expected.variant, lock.variant)
@@ -276,15 +276,49 @@ describe("tab navigation regressions", function()
 
 	it("keeps Backspace a no-op on a root without a parent or stack", function()
 		local generation = first.generation
+		vim.api.nvim_win_set_cursor(first.winid, { 1, 0 })
 		press("<BS>")
 		assert.equals("navigation-a", cs.session(first).id)
 		assert.equals(generation, first.generation)
+		assert.same({ 1, 0 }, vim.api.nvim_win_get_cursor(first.winid))
+	end)
+
+	for _, ancestry in ipairs({ "native", "legacy" }) do
+		it("returns to the latest parent message with Backspace using " .. ancestry .. " ancestry", function()
+			local child = seed("navigation-child", ancestry == "native" and "navigation-a" or nil)
+			first.session_stack = { { id = "navigation-a", name = "navigation-a", runtime = true } }
+			actions.set_view_session(first, child.id, child.title, { reason = "child_navigation", runtime = false }); settle()
+			first.auto_scroll = false
+			vim.api.nvim_win_set_cursor(first.winid, { 1, 0 })
+			press("<BS>")
+			assert.equals("navigation-a", cs.session(first).id)
+			local last = vim.api.nvim_buf_line_count(first.bufnr)
+			assert.is_true(last > vim.api.nvim_win_get_height(first.winid))
+			assert.same({ last, 0 }, vim.api.nvim_win_get_cursor(first.winid))
+			assert.equals(last, vim.api.nvim_win_call(first.winid, function() return vim.fn.line("w$") end))
+			assert.is_false(first.auto_scroll)
+		end)
+	end
+
+	it("does not apply a queued parent scroll after the pane is rebound", function()
+		local child = seed("navigation-child")
+		local other = seed("navigation-b")
+		actions.set_view_session(first, child.id, child.title, { reason = "child_navigation", runtime = false }); settle()
+		first.session_stack = { { id = "navigation-a", name = "navigation-a", runtime = true } }
+		nav().leave_child_session()
+		assert.equals("navigation-a", cs.session(first).id)
+		actions.set_view_session(first, other.id, other.title)
+		vim.api.nvim_win_set_cursor(first.winid, { 1, 0 })
+		settle()
+		assert.equals(other.id, cs.session(first).id)
+		assert.same({ 1, 0 }, vim.api.nvim_win_get_cursor(first.winid))
 	end)
 
 	for _, route in ipairs({ "child", "family", "parent", "legacy parent" }) do
 		it("preserves the source stack when " .. route .. " navigation focuses an existing owner", function()
 			local target = seed("navigation-b", route == "child" and "navigation-a" or nil)
 			local other = chat.create_layout(target); settle()
+			vim.api.nvim_win_set_cursor(other.winid, { 1, 0 })
 			workspace.select(original_layout); settle()
 			if route ~= "child" then
 				local child = seed("navigation-child", route == "legacy parent" and nil or "navigation-b")
@@ -299,6 +333,9 @@ describe("tab navigation regressions", function()
 			assert.equals(other, chat.get_view())
 			assert.equals(source, cs.session(first).id)
 			assert.same(stack, first.session_stack)
+			if route == "parent" or route == "legacy parent" then
+				assert.same({ vim.api.nvim_buf_line_count(other.bufnr), 0 }, vim.api.nvim_win_get_cursor(other.winid))
+			end
 		end)
 	end
 
@@ -383,7 +420,7 @@ describe("tab navigation regressions", function()
 				assert.is_not_nil(require("opencode.session.lock").get(child.id), "the late model should still resolve")
 			end
 			if case.phase == "model history" then
-				assert.same({ providerID = "late", modelID = "resolved" }, require("opencode.session.lock").get(child.id).model)
+				assert.same(child.model, require("opencode.session.lock").get(child.id).model)
 			end
 			assert.equals(owner, cs.for_session(child.id))
 			assert.equals(source_id, cs.session(first).id)
@@ -611,7 +648,7 @@ describe("tab navigation regressions", function()
 		assert.equals("navigation-a", cs.session(first).id)
 		assert.same(stack, first.session_stack)
 		assert.is_not_nil(sync.get_message(child.id, "source-note-model"))
-		assert.same({ providerID = "loaded", modelID = "child" }, require("opencode.session.lock").get(child.id).model)
+		assert.same(child.model, require("opencode.session.lock").get(child.id).model)
 		press("<C-c>")
 		assert.equals(note, edits.get_edit(edit_id).message)
 		chat.focus_input(); settle()
@@ -710,7 +747,7 @@ describe("real input composer reentry", function()
 			_G.edits, _G.diff = require("opencode.edit.state"), require("opencode.ui.native_diff")
 			_G.history = require("opencode.ui.input.history")
 			require("opencode").setup({ server = { auto_start = false, shared_filesystem = true }, lualine = { enabled = false },
-				chat = { layout = "tab", session_tabs = { persist = false } } })
+				chat = { layout = "tab" } })
 			require("opencode.lifecycle").ensure_connected = function(callback) callback() end
 			require("opencode.client").get_messages = function(_, _, callback) callback(nil, {}) end
 			require("opencode.client").get_session_statuses = function(callback) callback(nil, {}) end
@@ -892,7 +929,7 @@ describe("async navigation callers and source review notes", function()
 					local errors = {}
 					vim.notify = function(message, level) if level == vim.log.levels.ERROR then errors[#errors + 1] = tostring(message) end end
 					api.setup({ server = { auto_start = false }, lualine = { enabled = false },
-						chat = { layout = route == "legacy catalog" and "vertical" or "tab", session_tabs = { persist = false } },
+						chat = { layout = route == "legacy catalog" and "vertical" or "tab" },
 						input = { history_file = vim.fn.tempname() .. "-history.json" } })
 					require("opencode.lifecycle").ensure_connected = function(callback) callback() end
 					client.get_messages = function(_, _, callback) callback(nil, {}) end

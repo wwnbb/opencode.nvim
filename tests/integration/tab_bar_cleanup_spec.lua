@@ -7,7 +7,7 @@ describe("workspace tabline cleanup", function()
 			vim.o.tabline, vim.o.showtabline = "%#TabLine#Editor tabs", 0
 			_G.editor_tab = vim.api.nvim_get_current_tabpage()
 			require("opencode").setup({ server = { auto_start = false }, lualine = { enabled = false },
-				chat = { layout = "tab", session_tabs = { persist = false } } })
+				chat = { layout = "tab" } })
 			require("opencode.client").get_messages = function(_, _, cb) cb(nil, {}) end
 			_G.sessions, _G.chat = require("opencode.session"), require("opencode.ui.chat")
 			_G.workspace, _G.cs = require("opencode.ui.chat.workspace"), require("opencode.ui.chat.state")

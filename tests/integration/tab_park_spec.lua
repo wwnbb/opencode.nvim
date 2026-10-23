@@ -10,7 +10,7 @@ describe("parking the OpenCode tab workspace", function()
 			_G.custom_tabline = "%#TabLineSel#Editor tabs%#TabLineFill#"
 			vim.o.tabline = custom_tabline
 			require("opencode").setup({ server = { auto_start = false }, lualine = { enabled = false },
-				chat = { layout = "tab", session_tabs = { persist = false } } })
+				chat = { layout = "tab" } })
 			require("opencode.client").get_messages = function(_, _, callback) callback(nil, {}) end
 			_G.chat, _G.workspace = require("opencode.ui.chat"), require("opencode.ui.chat.workspace")
 			_G.views, _G.state = require("opencode.ui.chat.state"), require("opencode.state")
@@ -142,34 +142,6 @@ describe("parking the OpenCode tab workspace", function()
 					:find("terminal after resume", 1, true) ~= nil
 			end, 10), "resumed terminal did not receive input")
 			assert(vim.fn.jobstop(job) == 1)
-		]])
-	end)
-
-	it("defers a cwd persistence scope change while the workspace is parked", function()
-		editor.lua([[
-			local file = vim.fn.tempname()
-			local destination = vim.uv.fs_realpath("/tmp")
-			local scope = vim.json.encode({ "localhost", 4096, state.normalize_directory(destination) })
-			assert(require("opencode.preferences").open(file).save({ scopes = {
-				[scope] = { tabs = { { id = "other-scope", title = "Other scope" } }, active = "other-scope" },
-			} }))
-			require("opencode").setup({ server = { auto_start = false, host = "localhost", port = 4096 },
-				lualine = { enabled = false },
-				chat = { layout = "tab", session_tabs = { persist = true, scope = "cwd", file = file } } })
-			open()
-			chat.toggle()
-			vim.cmd.cd(destination); settle()
-			require("opencode.session.tabs").refresh_scope()
-			assert(workspace.is_parked() and workspace.current().id == original)
-			assert(vim.deep_equal({ "park-a" }, state.get_runtime_session_order()))
-			chat.open()
-			assert(chat.get_view() == first and views.session(first).id == "park-a")
-			chat.close(); settle()
-			chat.open(); settle()
-			assert(vim.deep_equal({ "other-scope" }, state.get_runtime_session_order()))
-			assert(views.session(chat.get_view()).id == "other-scope")
-			require("opencode.session.tabs").teardown()
-			vim.fn.delete(file)
 		]])
 	end)
 

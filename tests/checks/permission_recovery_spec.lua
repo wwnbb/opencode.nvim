@@ -107,6 +107,27 @@ describe("opencode permission recovery", function()
 		sync.clear_all()
 	end)
 
+	it("shows every requested resource for Allow once and retains them after a decision", function()
+		local widget = require("opencode.ui.permission_widget")
+		for _, case in ipairs({
+			{ action = "external_directory", resources = { "/scope/one", "/scope/two", "/scope/three" } },
+			{ action = "shell", resources = { "git status", "npm run build" } },
+		}) do
+			local permission = {
+				permission_type = case.action, patterns = case.resources, always = { "*" },
+				tool_input = { path = "/different/path" }, selected_option = 1, status = "pending",
+			}
+			local before = vim.deepcopy(permission)
+			for _, render in ipairs({ widget.get_lines_for_permission, widget.get_approved_lines, widget.get_rejected_lines }) do
+				local text = table.concat(render("all-resources", permission, { width = 40 }), "\n")
+				for _, resource in ipairs(case.resources) do
+					assert.is_truthy(text:find(resource, 1, true), "Hidden authorization resource: " .. resource)
+				end
+			end
+			assert.same(before, permission)
+		end
+	end)
+
 	it("previews saved permission rules and omits Always when none can be saved", function()
 		local owner = require("opencode.permission.state")
 		local widget = require("opencode.ui.permission_widget")

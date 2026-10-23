@@ -34,7 +34,8 @@ local function get_chat_text_width()
 	local width = vim.api.nvim_win_get_width(state.winid)
 	local wininfo = vim.fn.getwininfo(state.winid)[1]
 	local textoff = wininfo and tonumber(wininfo.textoff) or 0
-	return math.max(1, width - textoff)
+	-- The status column supplies the left gutter; reserve the same space on the right.
+	return math.max(1, width - textoff - 2)
 end
 
 ---@return number width

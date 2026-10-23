@@ -34,6 +34,7 @@ function M.new(opts)
 		nui_lines = {},
 		content_highlights = content_highlights,
 		last_block_kind = nil,
+		last_tool_name = nil,
 		chat_width = render.get_chat_text_width(),
 		metadata_provider_revision = metadata_provider_revision,
 		metadata_agent_revision = metadata_agent_revision,
@@ -186,7 +187,7 @@ function Context:prepare_widget_start()
 end
 
 function Context:add_render_result(result, kind)
-	self:normalize_block_transition(kind)
+	if #(result.lines or {}) > 0 then self:normalize_block_transition(kind) end
 	local base_line = #self.raw_lines
 	for _, text in ipairs(result.lines or {}) do
 		local nl = NuiLine()

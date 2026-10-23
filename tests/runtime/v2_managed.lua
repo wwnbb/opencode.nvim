@@ -2,7 +2,7 @@
 local app, state, lifecycle = require("opencode"), require("opencode.state"), require("opencode.lifecycle")
 local function wait(predicate, why) assert(vim.wait(20000, predicate, 20), why) end
 app.setup({ server = { managed = true, service_file = assert(vim.env.OPENCODE_V2_SERVICE_FILE), command = assert(vim.env.OPENCODE_V2_CLI),
-	auto_start = true, use_shell_env = false, config_dir = vim.env.OPENCODE_CONFIG_DIR }, lualine = { enabled = false }, chat = { session_tabs = { persist = false } } })
+	auto_start = true, use_shell_env = false, config_dir = vim.env.OPENCODE_CONFIG_DIR }, lualine = { enabled = false } })
 local callbacks = 0
 lifecycle.ensure_connected(function() callbacks = callbacks + 1 end)
 wait(function() return callbacks == 1 and state.is_connected() end, "Managed service native readiness failed")

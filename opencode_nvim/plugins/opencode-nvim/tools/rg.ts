@@ -1,7 +1,8 @@
-import { resolve as resolvePath } from "node:path"
+import { resolve } from "node:path"
 import { spawn } from "node:child_process"
 import { z } from "zod"
 import type { RuntimeContext } from "./lib/context"
+import { resolvePath } from "./lib/file_state"
 
 const input = z.object({
   pattern: z
@@ -106,7 +107,7 @@ const input = z.object({
   follow: z
     .boolean()
     .optional()
-    .describe("Follow symbolic links when searching. Default: false."),
+    .describe("Must be false. To search a symbolic link target, pass it explicitly in path so its real location can be authorized."),
   binary: z
     .boolean()
     .optional()
@@ -164,7 +165,8 @@ export default {
     "Prefer this over bash grep for all code searching tasks.",
   input,
   async execute(args: z.infer<typeof input>, context: RuntimeContext) {
-    const flags: string[] = ["--line-number", "--color=never", "--no-heading"]
+    if (args.follow) throw new Error("follow=true is unsupported: pass each symbolic link target explicitly in path so its real location can be authorized")
+    const flags: string[] = ["--no-config", "--line-number", "--color=never", "--no-heading"]
 
     // Case and matching options
     if (args.case_insensitive) flags.push("-i")
@@ -183,7 +185,6 @@ export default {
 
     // Traversal options
     if (args.hidden) flags.push("--hidden")
-    if (args.follow) flags.push("--follow")
     if (args.binary) flags.push("-a")
     if (args.no_ignore) flags.push("--no-ignore")
     if (args.no_ignore_vcs) flags.push("--no-ignore-vcs")
@@ -231,7 +232,7 @@ export default {
     }
 
     // Build paths list (supports multiple newline-separated paths)
-    const paths: string[] = []
+    let paths: string[] = []
     if (args.path) {
       for (const p of args.path.split("\n")) {
         const trimmed = p.trim()
@@ -241,6 +242,7 @@ export default {
     if (paths.length === 0) {
       paths.push(context.directory)
     }
+    paths = await Promise.all(paths.map(value => resolvePath(resolve(context.directory, value))))
 
     const maxResults = args.max_results ?? 500
 
@@ -249,7 +251,7 @@ export default {
       ? ["rg", ...flags, "--", ...paths]
       : ["rg", ...flags, "--", args.pattern, ...paths]
 
-    await context.authorize("rg", paths.map(value => resolvePath(context.directory, value)))
+    await context.authorize("rg", paths)
     context.signal.throwIfAborted()
     const { stdout, stderr, exitCode, truncated } = await new Promise<{
       stdout: string; stderr: string; exitCode: number | null; truncated: boolean

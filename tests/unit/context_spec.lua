@@ -39,9 +39,7 @@ describe("prompt context placeholders", function()
 		context.clear()
 	end)
 
-	it("lists all seven contexts and filters menu entries", function()
-		local names = {}; for _, item in ipairs(context.items()) do names[#names + 1] = item.name end
-		assert.same({ "this", "buffer", "buffers", "diagnostics", "marks", "quickfix", "visible" }, names)
+	it("filters context menu entries", function()
 		assert.equals("this", context.items("thi")[1].name)
 		assert.equals(2, #context.items("@buffer"))
 	end)

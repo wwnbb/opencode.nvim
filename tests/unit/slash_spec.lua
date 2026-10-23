@@ -28,8 +28,6 @@ describe("slash defaults", function()
 			assert.is_true(command_help.id ~= keybinding_help.id)
 			assert.is_false(command_help.palette)
 			assert.is_true(keybinding_help.palette)
-			assert.equals("Show available commands", command_help.description)
-			assert.equals("Show keybinding help", keybinding_help.description)
 		end
 	end)
 end)

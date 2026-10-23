@@ -1,4 +1,3 @@
-import { relative, isAbsolute, dirname } from "node:path"
 import { Plugin } from "@opencode/plugin/effect"
 import { Tool } from "@opencode/schema/tool"
 import { Effect, Stream } from "effect"
@@ -9,6 +8,7 @@ import { Reviews, ReviewError } from "./review"
 import edit from "./tools/neovim_edit"
 import patch from "./tools/neovim_patch"
 import rg from "./tools/rg"
+import { externalDirectories } from "./tools/lib/file_state"
 
 export default Plugin.define({
   id: "opencode_nvim",
@@ -43,11 +43,8 @@ export default Plugin.define({
             return yield* Effect.tryPromise({ try: async (signal) => {
               const runtime = { ...context, directory: session.location.directory, worktree: ctx.location.directory === session.location.directory ? ctx.location.project.canonical : undefined, signal,
                 authorize: async (action: string, resources: string[]) => {
-                  const outside = resources.filter(resource => {
-                    const value = relative(runtime.directory, resource)
-                    return value === ".." || value.startsWith("../") || value.startsWith("..\\") || isAbsolute(value)
-                  })
-                  if (outside.length) await policies.wait(runtime, "external_directory", [...new Set(outside.map(dirname))])
+                  const outside = await externalDirectories(runtime.directory, resources)
+                  if (outside.length) await policies.wait(runtime, "external_directory", outside)
                   await policies.wait(runtime, action, resources)
                 },
                 progress: (metadata: Record<string, unknown>) => Effect.runPromise(context.progress(jsonValue(metadata)), { signal }),

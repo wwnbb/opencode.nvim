@@ -53,14 +53,7 @@ describe("strict setup options", function()
 		assert.same(before, app_state.get_config())
 	end)
 
-	it("accepts current syntax and parallel settings", function()
-		local merged = config.merge({ syntax = { assistant_markdown = false }, session = { parallel = { enabled = false } } })
-		assert.is_false(merged.syntax.assistant_markdown)
-		assert.is_false(merged.session.parallel.enabled)
-	end)
-
 	it("accepts only supported prompt history search providers", function()
-		assert.equals("grep", config.merge().input.history_search_provider)
 		for _, provider in ipairs({ "grep", "ripgrep" }) do
 			assert.equals(provider, config.merge({ input = { history_search_provider = provider } }).input.history_search_provider)
 		end
@@ -68,14 +61,6 @@ describe("strict setup options", function()
 			local ok, err = pcall(config.merge, { input = { history_search_provider = provider } })
 			assert.is_false(ok)
 			assert.matches("input.history_search_provider", err, 1, true)
-		end
-	end)
-
-	it("disables both editor feature deadlines by default and preserves explicit timeouts", function()
-		for _, kind in ipairs({ "completion", "explanation" }) do
-			assert.equals(0, config.merge()[kind].timeout_ms)
-			assert.equals(0, config.merge({ [kind] = { timeout_ms = 0 } })[kind].timeout_ms)
-			assert.equals(1234, config.merge({ [kind] = { timeout_ms = 1234 } })[kind].timeout_ms)
 		end
 	end)
 

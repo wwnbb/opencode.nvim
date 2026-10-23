@@ -16,8 +16,13 @@ edits.add_edit(request.id, request.sessionID, request.metadata.files, {
 	native_review = { status = "pending", protocolVersion = 2 },
 })
 for index, action in ipairs(payload.actions) do
-	local ok, err = edits[action .. "_file"](request.id, index)
-	assert(ok, err)
+	local file = edits.get_edit(request.id).files[index]
+	if file.status == "pending" then
+		local ok, err = edits[action .. "_file"](request.id, index)
+		assert(ok, err)
+	else
+		assert(file.status == (action == "accept" and "accepted" or "rejected"), "Conflicting paired move decision")
+	end
 end
 assert(edits.are_all_resolved(request.id))
 vim.cmd("qa!")

@@ -75,16 +75,6 @@ describe("prompt history search", function()
 		os.remove(path)
 	end)
 
-	it("registers a palette command and defaults to grep", function()
-		local commands = {}
-		require("opencode.ui.palette.history").register({ register = function(command) commands[#commands + 1] = command end })
-		assert.equals(1, #commands)
-		assert.equals("prompt.history", commands[1].id)
-		assert.equals("Search Prompt History", commands[1].title)
-		assert.is_nil(commands[1].slash)
-		assert.equals("grep", require("opencode.config").merge({}).input.history_search_provider)
-	end)
-
 	it("loads saved records newest first and restores full text and attachments into the current draft", function()
 		local part = { type = "file", mime = "image/png", url = "data:image/png;base64,Yg==", _marker = "[Image 1]",
 			source = { text = { value = "[Image 1]", start = -1, ["end"] = -1 } } }

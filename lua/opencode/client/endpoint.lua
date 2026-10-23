@@ -1,4 +1,4 @@
--- One endpoint parser for REST, SSE and WebSocket transports.
+-- One endpoint parser for REST and SSE transports.
 local M = {}
 local tcp_connection = require("opencode.client.tcp_connection")
 local make_error = tcp_connection.make_error

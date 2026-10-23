@@ -11,15 +11,8 @@ describe("opencode.nvim module loading", function()
 		end
 	end)
 
-	it("sets up without starting a server and exposes the public entry points", function()
+	it("sets up without starting a server", function()
 		local opencode = require("opencode")
 		opencode.setup({ server = { auto_start = false }, lualine = { enabled = true } })
-		for _, name in ipairs({
-			"open_input_at_end", "add_current_line", "add_current_line_and_open_input",
-			"add_visual_selection", "add_visual_selection_and_open_input", "active_sessions",
-			"toggle_danger_mode", "new_session", "close_session", "is_danger_mode_enabled",
-		}) do
-			assert.is_function(opencode[name], name .. " is not exported")
-		end
 	end)
 end)

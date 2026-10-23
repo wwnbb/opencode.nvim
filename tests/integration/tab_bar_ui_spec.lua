@@ -31,7 +31,7 @@ describe("native OpenCode layout tabline", function()
 			vim.o.tabline, vim.o.showtabline = ...
 			_G.editor_tab = vim.api.nvim_get_current_tabpage()
 			require("opencode").setup({ server = { auto_start = false }, lualine = { enabled = false },
-				chat = { layout = "tab", session_tabs = { persist = false } } })
+				chat = { layout = "tab" } })
 			require("opencode.client").get_messages = function(_, _, cb) cb(nil, {}) end
 			local sessions = require("opencode.session")
 			_G.chat, _G.workspace = require("opencode.ui.chat"), require("opencode.ui.chat.workspace")

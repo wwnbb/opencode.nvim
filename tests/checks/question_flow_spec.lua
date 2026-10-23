@@ -306,27 +306,8 @@ describe("opencode native form flow", function()
 		assert.equals("pending", item.status)
 	end)
 
-	for _, cancel_key in ipairs({ false, "<F6>", "<Esc>" }) do
-		it("preserves Escape handling outside questions with cancel key " .. tostring(cancel_key), function()
-			setup_keymaps({ cancel_question = cancel_key })
-			local original, calls = interactions.handle_question_cancel, 0
-			interactions.handle_question_cancel = function() calls = calls + 1 end
-			local ok, err = pcall(function()
-				if cancel_key == "<F6>" then
-					key(cancel_key)
-					assert.equals(0, calls)
-				end
-				key("<Esc>")
-				assert.equals(1, calls)
-			end)
-			interactions.handle_question_cancel = original
-			assert.is_true(ok, err)
-		end)
-	end
-
 	it("maps digits, Enter and Escape to selection, confirmation and review", function()
 		setup_keymaps()
-		assert.is_false(chat_state.config.keymaps.cancel_question)
 		local calls = 0
 		actions.reply_to_question = function() calls = calls + 1 end
 		actions.reject_question = function() error("Escape must return to answers") end

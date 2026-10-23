@@ -44,6 +44,8 @@ describe("opencode send flow", function()
 			cancel_input = function(sid, id, cb)
 				calls[#calls + 1] = { method = "cancel", sid = sid, id = id }; callbacks.cancel = cb
 			end,
+			get_inbox = function(_, cb) cb(nil, {}) end,
+			get_all_messages = function(_, cb) cb(nil, {}, { complete = true }) end,
 			get_session = function(sid, cb)
 				calls[#calls + 1] = { method = "get", sid = sid }; callbacks.get = cb
 			end,
@@ -96,6 +98,13 @@ describe("opencode send flow", function()
 		assert.equals("echo image", history.get_pending("ses_a"))
 		assert.is_false(send.send("pwd", { mode = "shell", delivery = "steer" }))
 		assert.equals(0, #calls)
+	end)
+	it("restores rejected shell delivery options as a retryable shell draft", function()
+		assert.is_false(send.send("pwd", { mode = "shell", delivery = "steer" }))
+		local options = history.get_pending_options("ses_a")
+		assert.is_nil(options.delivery)
+		assert.is_true(send.send(history.get_pending("ses_a"), options))
+		assert.equals("shell", calls[1].method)
 	end)
 	it("does not retry uncertain shell execution or act on a stale response", function()
 		assert.is_true(send.send("sleep 2", { mode = "shell" }))
@@ -354,6 +363,7 @@ describe("opencode send flow", function()
 
 	it("ignores a cancellation callback after the session was deleted", function()
 		local called = false
+		pending.admit({ sessionID = "ses_a", id = "gone", delivery = "queue" })
 		send.cancel_input("ses_a", "gone", function() called = true end)
 		pending.clear_session("ses_a")
 		callbacks.cancel(nil)
@@ -412,11 +422,155 @@ describe("opencode send flow", function()
 		local id, error, draft = calls[#calls].body.id
 		send.edit_input("ses_a", id, function(err, result) error, draft = err, result end)
 		pending.update("ses_a", id, { status = "delivered" })
-		callbacks.cancel({ status = 404, message = "Already delivered" })
+		callbacks.cancel(nil)
 		assert.equals("delivered", pending.get("ses_a", id).status)
 		assert.is_not_nil(error)
+		assert.equals("already_delivered", error.code)
 		assert.is_nil(draft)
 		assert.is_not_nil(sync.get_message("ses_a", id))
+	end)
+
+	it("confirms cancellation with ordered inbox and complete history reads before returning one draft", function()
+		local client, inbox, history_read = require("opencode.client")
+		client.get_inbox = function(_, cb) inbox = cb end
+		client.get_all_messages = function(_, cb) history_read = cb end
+		send.send("Edit once", {})
+		callbacks.get(nil, { id = "ses_a", agent = "build", model = model() }); accepted()
+		local id, draft, duplicate_error, count = calls[#calls].body.id, nil, nil, 0
+		send.edit_input("ses_a", id, function(err, result) assert.is_nil(err); draft = result; count = count + 1 end)
+		send.edit_input("ses_a", id, function(err) duplicate_error = err end)
+		assert.matches("already in progress", duplicate_error.message)
+		assert.equals("cancel", calls[#calls].method)
+		assert.equals(3, #calls)
+		callbacks.cancel(nil)
+		assert.is_nil(draft); assert.is_nil(history_read)
+		inbox(nil, {})
+		assert.is_nil(draft)
+		history_read(nil, {}, { complete = true })
+		assert.equals("Edit once", draft.text); assert.equals(1, count)
+		callbacks.cancel(nil)
+		assert.equals(1, count)
+		assert.equals("cancelled", pending.get("ses_a", id).status)
+	end)
+
+	it("waits for admission even when cancellation is requested directly", function()
+		send.send("Still submitting", {})
+		local id, completed = sync.get_messages("ses_a")[1].id, false
+		send.cancel_input("ses_a", id, function(err) assert.is_nil(err); completed = true end)
+		assert.equals(1, #calls); assert.is_false(completed)
+		callbacks.get(nil, { id = "ses_a", agent = "build", model = model() }); accepted()
+		assert.equals("cancel", calls[#calls].method)
+		callbacks.cancel(nil)
+		assert.is_true(completed)
+	end)
+
+	it("does not infer cancellation or delivery for unconfirmed admission or HTTP 404", function()
+		local failure
+		assert.is_false(send.cancel_input("ses_a", "unknown", function(err) failure = err end))
+		assert.is_not_nil(failure); assert.equals(0, #calls)
+		pending.begin({ session_id = "ses_a", message_id = "uncertain", status = "uncertain" })
+		assert.is_false(send.cancel_input("ses_a", "uncertain", function(err) failure = err end))
+		assert.equals(0, #calls)
+		pending.admit({ sessionID = "ses_a", id = "missing", delivery = "queue" })
+		send.cancel_submitting_input("ses_a", "missing", function(err) failure = err end)
+		callbacks.cancel({ status = 404, message = "Session not found" })
+		assert.equals(404, failure.status); assert.is_nil(failure.code)
+		assert.equals("queued", pending.get("ses_a", "missing").status)
+	end)
+
+	for _, outcome in ipairs({ "cancelled", "delivered" }) do
+		it("honors a terminal " .. outcome .. " event while confirmation is in flight", function()
+			local client, confirm = require("opencode.client")
+			client.get_all_messages = function(_, cb) confirm = cb end
+			send.send("Racing event", {})
+			callbacks.get(nil, { id = "ses_a", agent = "build", model = model() }); accepted()
+			local id, failure, draft = calls[#calls].body.id
+			send.edit_input("ses_a", id, function(err, value) failure, draft = err, value end)
+			callbacks.cancel(nil)
+			pending.update("ses_a", id, { status = outcome })
+			confirm(nil, {}, { complete = true })
+			assert.equals(outcome, pending.get("ses_a", id).status)
+			if outcome == "cancelled" then
+				assert.is_nil(failure); assert.equals("Racing event", draft.text)
+			else
+				assert.equals("already_delivered", failure.code); assert.is_nil(draft)
+				assert.is_not_nil(sync.get_message("ses_a", id))
+			end
+		end)
+	end
+
+	it("detects delivery in complete history when its SSE event has not arrived", function()
+		local client = require("opencode.client")
+		send.send("Delivered on server", {})
+		callbacks.get(nil, { id = "ses_a", agent = "build", model = model() }); accepted()
+		local id, failure, draft = calls[#calls].body.id
+		local delivered = require("opencode.protocol.messages").project("ses_a", {
+			id = id, type = "user", text = "Delivered on server", time = { created = 40 },
+		})
+		client.get_all_messages = function(_, cb) cb(nil, { delivered }, { complete = true }) end
+		send.edit_input("ses_a", id, function(err, value) failure, draft = err, value end)
+		callbacks.cancel(nil)
+		assert.equals("already_delivered", failure.code); assert.is_nil(draft)
+		assert.equals("delivered", pending.get("ses_a", id).status)
+		assert.is_nil(sync.get_message("ses_a", id).provisional)
+	end)
+
+	for _, kind in ipairs({ "compaction", "move" }) do
+		it("requires a terminal event to confirm cancellation of " .. kind .. " inputs", function()
+			local client, confirm = require("opencode.client")
+			client.get_all_messages = function(_, cb) confirm = cb end
+			pending.admit({ sessionID = "ses_a", id = "control", type = kind, delivery = "queue" })
+			local failure
+			send.cancel_input("ses_a", "control", function(err) failure = err end)
+			callbacks.cancel(nil); confirm(nil, {}, { complete = true })
+			assert.matches("could not be confirmed", failure.message)
+			assert.equals("queued", pending.get("ses_a", "control").status)
+			send.cancel_input("ses_a", "control", function(err) failure = err end)
+			callbacks.cancel(nil)
+			pending.update("ses_a", "control", { status = "cancelled" })
+			confirm(nil, {}, { complete = true })
+			assert.is_nil(failure)
+			assert.equals("cancelled", pending.get("ses_a", "control").status)
+		end)
+	end
+
+	for _, outcome in ipairs({ "pending", "inbox_error", "history_error", "partial" }) do
+		it("preserves the input when cancellation confirmation is " .. outcome, function()
+			local client = require("opencode.client")
+			send.send("Keep queued", {})
+			callbacks.get(nil, { id = "ses_a", agent = "build", model = model() }); accepted()
+			local id, failure, draft = calls[#calls].body.id
+			client.get_inbox = function(_, cb)
+				cb(outcome == "inbox_error" and { message = "Offline" } or nil, outcome == "pending" and { { id = id } } or {})
+			end
+			client.get_all_messages = function(_, cb)
+				cb(outcome == "history_error" and { message = "Offline" } or nil, {}, { complete = outcome ~= "partial" })
+			end
+			send.edit_input("ses_a", id, function(err, value) failure, draft = err, value end)
+			callbacks.cancel(nil)
+			assert.is_not_nil(failure); assert.is_nil(draft)
+			assert.equals("queued", pending.get("ses_a", id).status)
+			assert.is_not_nil(sync.get_message("ses_a", id))
+			client.get_inbox = function(_, cb) cb(nil, {}) end
+			client.get_all_messages = function(_, cb) cb(nil, {}, { complete = true }) end
+			send.edit_input("ses_a", id, function(err, value) assert.is_nil(err); draft = value end)
+			callbacks.cancel(nil)
+			assert.equals("Keep queued", draft.text)
+		end)
+	end
+
+	it("ignores confirmation reads invalidated by disconnect and permits a fresh cancellation", function()
+		local client, confirm = require("opencode.client")
+		client.get_all_messages = function(_, cb) confirm = cb end
+		send.send("Reconnect", {})
+		callbacks.get(nil, { id = "ses_a", agent = "build", model = model() }); accepted()
+		local id, draft = calls[#calls].body.id
+		send.edit_input("ses_a", id, function(_, value) draft = value end)
+		callbacks.cancel(nil); pending.invalidate(); confirm(nil, {}, { complete = true })
+		assert.is_nil(draft); assert.equals("queued", pending.get("ses_a", id).status)
+		send.edit_input("ses_a", id, function(err, value) assert.is_nil(err); draft = value end)
+		callbacks.cancel(nil); confirm(nil, {}, { complete = true })
+		assert.equals("Reconnect", draft.text)
 	end)
 
 	it("records an uncertain timeout without another POST or a false idle", function()

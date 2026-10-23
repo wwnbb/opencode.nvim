@@ -53,7 +53,7 @@ describe("tab binding ownership integrity", function()
 		end
 		files, records = {}, {}
 		api.setup({ server = { auto_start = false }, lualine = { enabled = false },
-			chat = { layout = "tab", session_tabs = { scope = "cwd", file = directory .. "/tabs.json" } } })
+			chat = { layout = "tab" } })
 		seed("root"); sessions.set_active("root", "Root")
 		views.state.session_bound = false
 		chat.open(); settle()
@@ -132,7 +132,7 @@ describe("tab binding ownership integrity", function()
 		for _, win in ipairs(views.windows(first)) do assert.equals(first.bufnr, vim.api.nvim_win_get_buf(win)) end
 	end)
 
-	it("keeps cwd-scoped runtime tabs when q leaves hidden and file-only layouts", function()
+	it("keeps runtime tabs across cwd changes when q leaves hidden and file-only layouts", function()
 		local second = chat.create_layout(seed("other"))
 		settle()
 		vim.cmd("rightbelow new")
@@ -148,13 +148,10 @@ describe("tab binding ownership integrity", function()
 		assert.equals(2, #workspace.list())
 		local order = state.get_runtime_session_order()
 		vim.cmd.cd(directory .. "/two")
-		tabs.refresh_scope()
 		assert.same(order, state.get_runtime_session_order())
 		assert.equals(2, #workspace.list())
 		assert.is_true(vim.api.nvim_win_is_valid(win))
 		assert.is_true(vim.bo[file].modified)
 		assert.same({ "Unsaved workspace file" }, vim.api.nvim_buf_get_lines(file, 0, -1, false))
-		local scopes = require("opencode.util.json_file").read(directory .. "/tabs.json").scopes
-		assert.equals(1, vim.tbl_count(scopes))
 	end)
 end)

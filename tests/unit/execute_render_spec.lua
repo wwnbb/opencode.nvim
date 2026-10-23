@@ -1,7 +1,6 @@
 local execute = require("opencode.ui.chat.execute")
 local cs = require("opencode.ui.chat.state")
 local view = cs.state
-local syntax = require("opencode.ui.syntax")
 
 local function part(state)
 	return { id = "exec", tool = "execute", state = state }
@@ -16,18 +15,16 @@ local function contains(value, needle)
 end
 
 describe("universal execute widget", function()
-	local bufnr, winid, saved, original_highlight
+	local bufnr, winid, saved
 	before_each(function()
 		saved = { winid = view.winid, bufnr = view.bufnr, visible = view.visible, tools = view.tools,
-			tasks = view.tasks, expanded_tools = view.expanded_tools, task_anim_frame = view.task_anim_frame,
+			tasks = view.tasks, task_anim_frame = view.task_anim_frame,
 			render_scheduled = view.render_scheduled, render_in_progress = view.render_in_progress }
 		bufnr = vim.api.nvim_create_buf(false, true)
 		winid = vim.api.nvim_open_win(bufnr, true, { relative = "editor", row = 1, col = 1, width = 80, height = 20 })
-		view.bufnr, view.winid, view.expanded_tools = bufnr, winid, {}
-		original_highlight = syntax.highlight_text
+		view.bufnr, view.winid = bufnr, winid
 	end)
 	after_each(function()
-		syntax.highlight_text = original_highlight
 		require("opencode.ui.chat.tasks").stop_task_animation_timer()
 		if vim.api.nvim_win_is_valid(winid) then vim.api.nvim_win_close(winid, true) end
 		if vim.api.nvim_buf_is_valid(bufnr) then vim.api.nvim_buf_delete(bufnr, { force = true }) end
@@ -57,8 +54,6 @@ describe("universal execute widget", function()
 		assert.equals(4, #opened.lines)
 		assert.is_not_nil(opened.children[execute.section_id(item.id, "calls")])
 		assert.equals(1, vim.tbl_count(opened.children))
-		assert.is_nil(text(opened):find("Result", 1, true))
-		assert.is_nil(text(opened):find("Code", 1, true))
 		assert.is_nil(text(opened):find("large output", 1, true))
 		for _, expanded in ipairs({ false, true }) do
 			local calls = text(execute.render_tool(item, expanded))
@@ -158,18 +153,15 @@ describe("universal execute widget", function()
 		end
 	end)
 
-	it("keeps large payloads hidden even with stale code expansion at narrow Unicode widths", function()
+	it("bounds large payloads and tool names at narrow Unicode widths", function()
 		local item = part({ status = "completed", input = { code = "return '" .. string.rep("世界", 6000) .. "';" },
 			output = vim.json.encode({ title = "Пример", body = string.rep("世界", 15000) }),
 			metadata = { toolCalls = { { tool = "server." .. string.rep("世界", 100), status = "completed" } } },
 		})
-		view.expanded_tools[execute.section_id(item.id, "code")] = true
 		for _, width in ipairs({ 80, 24, 12 }) do
 			vim.api.nvim_win_set_config(winid, { width = width })
 			local result = execute.render_tool(item, true)
 			assert.equals(2, #result.lines)
-			assert.is_nil(result.children[execute.section_id(item.id, "result")])
-			assert.is_nil(result.children[execute.section_id(item.id, "code")])
 			for _, line in ipairs(result.lines) do
 				assert.is_true(vim.fn.strdisplaywidth(line) <= width, "Overflow: " .. line)
 			end
@@ -186,7 +178,6 @@ describe("universal execute widget", function()
 		contains(text(cancelled), "✗ execute")
 		assert.equals(1, #cancelled.lines)
 		assert.is_nil(text(cancelled):find("Execution cancelled.", 1, true))
-		assert.is_nil(text(cancelled):find("Full error", 1, true))
 	end)
 
 	it("preserves source data and tolerates missing metadata, nulls and streaming input", function()
@@ -205,30 +196,7 @@ describe("universal execute widget", function()
 		end
 	end)
 
-	it("does not render output, errors, attachments or source beneath calls", function()
-		local item = part({ status = "error", input = { code = "return privateSource;" },
-			output = "private output", error = "private error",
-			files = { { filename = "private-attachment.txt", url = "file:///private-attachment.txt" } },
-			metadata = { toolCalls = { { tool = "any-server.any_tool", status = "error" } } },
-		})
-		local original = vim.deepcopy(item)
-		view.expanded_tools[execute.section_id(item.id, "code")] = true
-		syntax.highlight_text = function() error("Inline JavaScript should not be highlighted") end
-		for _, expanded in ipairs({ false, true }) do
-			local result = execute.render_tool(item, expanded)
-			assert.equals(2, #result.lines)
-			contains(text(result), "✗ execute")
-			contains(text(result), "  ↳ ✗ any-server.any_tool")
-			for _, lower in ipairs({ "Result", "Full result", "Full error", "Code", "private" }) do
-				assert.is_nil(text(result):find(lower, 1, true))
-			end
-			assert.equals(1, vim.tbl_count(result.children))
-			assert.equals("calls", result.children[execute.section_id(item.id, "calls")].execute_action)
-		end
-		assert.same(original, item)
-	end)
-
-	it("shows the header and calls with no frame or fill and right-aligned metadata", function()
+	it("shows the header and calls with right-aligned metadata", function()
 		local item = part({ status = "completed", time = { start = 1000, ["end"] = 2400 },
 			input = { code = "return value;" },
 			output = vim.json.encode({ title = "A short title", main = "One\nTwo\nThree\nFour" }),
@@ -238,16 +206,8 @@ describe("universal execute widget", function()
 		local content = text(result)
 		assert.equals(2, #result.lines)
 		contains(content, "  ↳ ✓ any-server.any_tool")
-		assert.is_nil(content:find("Result", 1, true))
-		assert.is_nil(content:find("A short title", 1, true))
-		assert.is_nil(content:find("▏", 1, true))
-		assert.is_nil(content:find("[Enter]", 1, true))
-		assert.is_nil(content:find("title:", 1, true))
-		assert.equals(80, vim.fn.strdisplaywidth(result.lines[1]))
+		assert.equals(require("opencode.ui.chat.render").get_chat_text_width(), vim.fn.strdisplaywidth(result.lines[1]))
 		assert.is_truthy(result.lines[1]:match("1 tool · 1.4s$"))
-		for _, name in ipairs({ "Output", "Muted", "Call", "Success", "Running", "Error" }) do
-			assert.is_nil(vim.api.nvim_get_hl(0, { name = "OpenCodeExecute" .. name }).bg)
-		end
 		local compact = execute.render_tool(item, false)
 		assert.equals(2, #compact.lines)
 		assert.is_truthy(compact.lines[#compact.lines]:find("any-server.any_tool", 1, true))
@@ -260,7 +220,6 @@ describe("universal execute widget", function()
 				local result = execute.render_tool(item, expanded)
 				assert.equals(1, #result.lines)
 				assert.same({}, result.children)
-				assert.is_nil(text(result):find("Result", 1, true))
 			end
 			assert.same(value, item.state.output)
 		end

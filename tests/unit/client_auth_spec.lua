@@ -138,7 +138,7 @@ describe("opencode client Basic auth", function()
 		return client
 	end
 
-	it("encodes credentials, empty passwords and binary WebSocket inputs with native Base64", function()
+	it("encodes credentials and empty passwords with native Base64", function()
 		local auth = require("opencode.client.auth")
 		local header, err = auth.header("alice", "secret")
 		assert.equals("Basic YWxpY2U6c2VjcmV0", header)
@@ -146,7 +146,6 @@ describe("opencode client Basic auth", function()
 		header, err = auth.header("alice", "")
 		assert.equals("Basic YWxpY2U6", header)
 		assert.is_nil(err)
-		assert.equals("AP+A", auth.encode_base64("\0\255\128"))
 	end)
 
 	it("fails closed when native Base64 is unavailable, throws or returns invalid output", function()

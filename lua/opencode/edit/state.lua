@@ -153,31 +153,34 @@ end
 
 ---@param estate table
 ---@param file table
----@param action table
 ---@return boolean ok
 ---@return string|nil err
-local function apply_file_action(estate, file, action)
+local function check_file_action(estate, file)
 	if estate.transport == "review_rpc" and not require("opencode.state").is_connected() then
 		return false, "Reconnect before changing files in this review"
 	end
 	if estate.transport == "review_rpc" and (estate.status ~= "pending" or estate.submitting) then
 		return false, "Review is no longer editable"
 	end
+	if estate.review_mode ~= "readonly" and estate.apply_mode ~= "server" then
+		for _, bufnr in ipairs(vim.api.nvim_list_bufs()) do
+			if vim.api.nvim_buf_is_valid(bufnr) and vim.bo[bufnr].modified
+				and vim.fn.resolve(vim.api.nvim_buf_get_name(bufnr)) == vim.fn.resolve(file.filepath) then
+				return false, "Save or resolve unsaved buffer changes before accepting or rejecting this file"
+			end
+		end
+	end
+	return true
+end
+
+local function apply_unlinked_file_action(estate, file, action)
+	local editable, edit_err = check_file_action(estate, file)
+	if not editable then return false, edit_err end
 	if estate.review_mode == "readonly" or estate.apply_mode == "server" then
 		file.status = action.status
 		return true, nil
 	end
-
 	local changes = require("opencode.artifact.changes")
-
-	if estate.transport == "review_rpc" then
-		for _, bufnr in ipairs(vim.api.nvim_list_bufs()) do
-			if vim.api.nvim_buf_is_valid(bufnr) and vim.bo[bufnr].modified
-				and vim.fn.resolve(vim.api.nvim_buf_get_name(bufnr)) == vim.fn.resolve(file.filepath) then
-				return false, "Save or resolve manual buffer changes before accepting or rejecting this file"
-			end
-		end
-	end
 	local disk, read_err = read_file_state(file.filepath)
 	if not disk then
 		return false, read_err or "failed to read file"
@@ -221,6 +224,44 @@ local function apply_file_action(estate, file, action)
 	return true, nil
 end
 
+local function move_pair(estate, file)
+	if not file.move_id then return end
+	local source, destination
+	for _, candidate in ipairs(estate.files) do
+		if candidate.move_id == file.move_id then
+			if candidate.move_role == "source" then source = candidate end
+			if candidate.move_role == "destination" then destination = candidate end
+		end
+	end
+	return source, destination
+end
+
+local function apply_file_action(estate, file, action)
+	if not file.move_id then return apply_unlinked_file_action(estate, file, action) end
+	local source, destination = move_pair(estate, file)
+	if not source or not destination then return false, "Move review is incomplete" end
+	for _, member in ipairs({ source, destination }) do
+		local ok, err = check_file_action(estate, member)
+		if not ok then return false, err end
+	end
+	local first = action.kind == "accept" and destination or source
+	local last = action.kind == "accept" and source or destination
+	if first.status == "pending" then
+		local ok, err = apply_unlinked_file_action(estate, first, action)
+		if not ok then return false, err end
+	end
+	-- Keep one saved copy before deleting or reverting the other half of a move.
+	if estate.apply_mode ~= "server" and estate.review_mode ~= "readonly" then
+		local disk, err = read_file_state(first.filepath)
+		if not disk then return false, err end
+		if not disk_matches_snapshot(disk, first, action.kind == "accept" and "after" or "before") then
+			return false, "Restore or resolve " .. describe_file(first) .. " before completing this move"
+		end
+	end
+	if last.status == "pending" then return apply_unlinked_file_action(estate, last, action) end
+	return true
+end
+
 ---@param permission_id string
 ---@param action table
 ---@return boolean ok
@@ -232,9 +273,10 @@ local function apply_pending_files(permission_id, action)
 		return false, "Edit not found", nil
 	end
 
-	local errors = {}
+	local errors, attempted_moves = {}, {}
 	for _, file in ipairs(estate.files) do
-		if file.status == "pending" then
+		if file.status == "pending" and not (file.move_id and attempted_moves[file.move_id]) then
+			if file.move_id then attempted_moves[file.move_id] = true end
 			local ok, err = apply_file_action(estate, file, action)
 			if not ok then
 				table.insert(errors, {
@@ -297,6 +339,7 @@ function M.add_edit(permission_id, session_id, files_data, opts)
 					source = "edit_widget",
 					permission_id = permission_id,
 					file_index = i,
+					move_id = fd.moveID,
 				},
 			})
 		end
@@ -311,6 +354,8 @@ function M.add_edit(permission_id, session_id, files_data, opts)
 			filepath = filepath,
 			relative_path = relative_path,
 			move_path = fd.movePath,
+			move_id = fd.moveID,
+			move_role = fd.moveRole,
 			before = before,
 			after = after,
 			change_id = change_id,
@@ -509,12 +554,20 @@ function M.revert_change(change_id, opts)
 	local estate = permission_id and active_edits[permission_id]
 	local file = estate and estate.files[metadata.file_index]
 	if not file or file.change_id ~= change_id then file = nil end -- Widget may have been cleared with its session.
+	if not file and metadata.move_id then
+		return false, "Reopen the move review before reverting its files", "move_conflict"
+	end
 	if file then
+		if file.move_id and file.status == "rejected" then return true, nil, nil, permission_id end
 		if file.status ~= "pending" or estate.status ~= "pending" or estate.submitting or estate.review_mode == "readonly" then
 			return false, "Edit review is no longer editable", "already_resolved"
 		end
 		if estate.transport == "review_rpc" and not require("opencode.state").is_connected() then
 			return false, "Reconnect before reverting this review", "disconnected"
+		end
+		if file.move_id then
+			local ok, err = apply_file_action(estate, file, FILE_ACTIONS.reject)
+			return ok, err, not ok and "move_conflict" or nil, permission_id
 		end
 	end
 
@@ -543,7 +596,7 @@ end
 ---@param permission_id string
 ---@param file_index number
 ---@return boolean, string|nil
-function M.resolve_file(permission_id, file_index)
+local function resolve_single_file(permission_id, file_index)
 	local estate = active_edits[permission_id]
 	if not estate then
 		return false, "Edit not found"
@@ -581,6 +634,28 @@ function M.resolve_file(permission_id, file_index)
 	changes.resolve_manually(file.change_id)
 
 	file.status = classify_manual_resolution(file, disk)
+	return true
+end
+
+function M.resolve_file(permission_id, file_index)
+	local estate = active_edits[permission_id]
+	local file = estate and estate.files[file_index]
+	if not file or not file.move_id then return resolve_single_file(permission_id, file_index) end
+	local source, destination = move_pair(estate, file)
+	if not source or not destination then return false, "Move review is incomplete" end
+	if destination.status == "pending" then
+		local ok, err = resolve_single_file(permission_id, destination.index)
+		if not ok then return false, err end
+	end
+	local source_disk, err = read_file_state(source.filepath)
+	if not source_disk then return false, err end
+	local destination_disk
+	destination_disk, err = read_file_state(destination.filepath)
+	if not destination_disk then return false, err end
+	if not source_disk.exists and not destination_disk.exists then
+		return false, "Restore a source or destination file before resolving this move"
+	end
+	if source.status == "pending" then return resolve_single_file(permission_id, source.index) end
 	return true
 end
 

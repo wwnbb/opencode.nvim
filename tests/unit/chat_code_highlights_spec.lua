@@ -67,7 +67,7 @@ describe("chat code highlighting", function()
 		local source = "## Title\n\n**bold** and [link](https://example.com)\n\n```lua\nreturn 1\n```"
 		for _, width in ipairs({ 25, 80 }) do
 			vim.api.nvim_win_set_config(winid, { width = width })
-			local body = render.render_content(source, { width = width - 3 })
+			local body = render.render_content(source, { width = render.get_chat_text_width() - 3 })
 			local user = render.render_user_message(source, "build", { { name = "notes.md", mime = "text/plain" } })
 			for index, line in ipairs(body) do
 				local visible = user[index + 1]:content()

@@ -84,6 +84,7 @@ local function restore_draft(text, opts)
 		options._view_id, options._view_generation = nil, nil
 		options._token, options._catalog_ready, options._catalog_retry, options._catalog_deadline = nil, nil, nil, nil
 		options._context_snapshot, options._context_error = nil, nil
+		if options.mode == "shell" then options.delivery = nil end
 		history.set_pending_options(options, session_id)
 	end
 end
@@ -404,8 +405,23 @@ end
 -- Removing an inbox item does not interrupt the currently executing response.
 function M.cancel_input(session_id, message_id, callback)
 	local token = pending.token(session_id)
-	client().cancel_input(session_id, message_id, function(err)
-		if not pending.is_current(token) then return end
+	local record = pending.get(session_id, message_id)
+	if record and record.status == "submitting" then return M.cancel_submitting_input(session_id, message_id, callback) end
+	if not record or (record.status ~= "queued" and record.status ~= "accepted"
+		and record.status ~= "delivered" and record.status ~= "cancelled") then
+		if callback then callback({ message = "Input admission is not confirmed; cancellation is unavailable" }) end
+		return false
+	end
+	if record.cancel_request_token and pending.is_current(record.cancel_request_token) then
+		if callback then callback({ message = "Cancellation is already in progress" }) end
+		return false
+	end
+	pending.update(session_id, message_id, { cancel_request_token = token })
+	local finished = false
+	local function finish(err)
+		if finished or not pending.is_current(token) then return end
+		finished = true
+		pending.update(session_id, message_id, { cancel_request_token = false })
 		if not err then
 			pending.update(session_id, message_id, { status = "cancelled" })
 			require("opencode.local").message_agent.remove(session_id, message_id)
@@ -414,6 +430,50 @@ function M.cancel_input(session_id, message_id, callback)
 		end
 		emit("session_reconcile", { session_id = session_id })
 		if callback then callback(err) end
+	end
+	local function terminal()
+		if finished or not pending.is_current(token) then return true end
+		local current, message = pending.get(session_id, message_id), sync().get_message(session_id, message_id)
+		if (current and current.status == "delivered") or (message and not message.provisional) then
+			pending.update(session_id, message_id, { status = "delivered" })
+			finish({ code = "already_delivered", message = "Input was already delivered" })
+			return true
+		elseif current and current.status == "cancelled" then
+			finish()
+			return true
+		end
+	end
+	if terminal() then return end
+	client().cancel_input(session_id, message_id, function(err)
+		if terminal() then return end
+		if err then finish(err); return end
+		-- Cancel and delivery serialize on the server; DELETE settles an admitted item.
+		-- Its 204 is ambiguous, so read inbox before complete history for delivery evidence.
+		client().get_inbox(session_id, function(inbox_err, items)
+			if terminal() then return end
+			if inbox_err then finish(inbox_err); return end
+			for _, item in ipairs(items) do
+				if item.id == message_id then finish({ message = "Input is still pending; cancellation could not be confirmed" }); return end
+			end
+			client().get_all_messages(session_id, function(history_err, messages, meta)
+				if terminal() then return end
+				if history_err then finish(history_err); return end
+				for _, message in ipairs(messages) do
+					if message.info.id == message_id then
+						sync().handle_session_messages(session_id, { message })
+						pending.update(session_id, message_id, { status = "delivered" })
+						terminal()
+						return
+					end
+				end
+				if not meta or not meta.complete then finish({ message = "Cancellation requires complete message history" }); return end
+				-- Control items leave no message when delivered; only their terminal event can confirm cancellation.
+				if record.inbox and (record.inbox.type == "compaction" or record.inbox.type == "move") then
+					finish({ message = "Cancellation of this control input could not be confirmed" }); return
+				end
+				finish()
+			end)
+		end)
 	end)
 end
 
@@ -421,17 +481,13 @@ end
 -- Wait for admission before cancelling; reverting it now would target a turn
 -- that does not yet exist in durable history.
 function M.cancel_submitting_input(session_id, message_id, callback)
+	callback = callback or function() end
 	local token = pending.token(session_id)
 	pending.when_admitted(session_id, message_id, function(record)
 		if not pending.is_current(token) then return end
 		if not record then callback({ message = "This input is no longer pending" }); return end
 		if record.status == "accepted" or record.status == "queued" then
-			M.cancel_input(session_id, message_id, function(err)
-				local current = pending.get(session_id, message_id)
-				if err and (err.status == 404 or (current and current.status == "delivered")) then
-					callback({ code = "already_delivered", message = "Input was already delivered" })
-				else callback(err) end
-			end)
+			M.cancel_input(session_id, message_id, callback)
 		elseif record.status == "delivered" then
 			callback({ code = "already_delivered", message = "Input was already delivered" })
 		elseif record.status == "failed" or record.status == "cancelled" then

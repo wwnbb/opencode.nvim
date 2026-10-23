@@ -518,6 +518,9 @@ local function get_permission_description(permission_type, tool_input, perm_stat
 			lines = with_detail_lines(lines, "Description", "Run bash command")
 		end
 	end
+	for _, resource in ipairs((perm_state and perm_state.patterns) or {}) do
+		lines = with_detail_lines(lines, "Resource", resource)
+	end
 	return with_message_lines(lines, perm_state and perm_state.message)
 end
 
@@ -618,7 +621,7 @@ local function append_hint(result, option_count)
 	local function key(action) return keymaps.label("chat", action, keys) end
 	local hint = keymaps.number_labels("chat", 1, option_count, keys) .. " select · "
 		.. key("widget_prev") .. " / " .. key("widget_next") .. " move · " .. key("confirm") .. " confirm · "
-		.. key("back") .. " reject · " .. key("widget_message") .. " message"
+		.. key("widget_message") .. " message"
 	add_panel_line(result, hint, "OpenCodePermissionMuted")
 end
 

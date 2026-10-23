@@ -649,7 +649,8 @@ function M.refresh_recent(callback, opts)
 end
 
 ---@param callback? function
-function M.refresh_status(callback)
+---@param session_id? string Also refresh a loaded navigation reference without claiming ownership.
+function M.refresh_status(callback, session_id)
 	local ok_client, client = pcall(require, "opencode.client")
 	if not ok_client or type(client.get_session_statuses) ~= "function" then
 		if callback then
@@ -667,17 +668,15 @@ function M.refresh_status(callback)
 			snapshots[id] = { token = pending_helper.token(id), revision = state.get_session_status_revision(id) }
 		end
 	end
+	if session_id then
+		snapshots[session_id] = { token = pending_helper.token(session_id), revision = state.get_session_status_revision(session_id) }
+	end
 	client.get_session_statuses(function(err, statuses)
 		if not err and type(statuses) == "table" then
 			for sid, snapshot in pairs(snapshots) do
-				if pending_helper.is_current(snapshot.token) and event_util.runtime_root_for_session(sid)
+				if pending_helper.is_current(snapshot.token) and (sid == session_id or event_util.runtime_root_for_session(sid))
 					and state.get_session_status_revision(sid) == snapshot.revision then
-					local status = statuses[sid] or { type = "idle" }
-					if not statuses[sid] then
-						local messages = sync.get_messages(sid)
-						local last = messages[#messages]
-						if last and last.type == "idle" then status.outcome = last.outcome end
-					end
+					local status = status_helper.from_active_snapshot(statuses[sid], state.get_session_status(sid), sync.get_messages(sid))
 					sync.handle_session_status(sid, status)
 					M.set_session_status(sid, status, { reason = "refresh_status" })
 				end

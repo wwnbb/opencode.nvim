@@ -12,7 +12,7 @@ describe("reopening a replaced chat buffer", function()
 		editor, files = vim.api.nvim_get_current_tabpage(), {}
 		app.reset(); require("opencode.sync").clear_all()
 		require("opencode").setup({ server = { auto_start = false }, lualine = { enabled = false },
-			chat = { layout = "tab", session_tabs = { persist = false } } })
+			chat = { layout = "tab" } })
 		original_messages = client.get_messages
 		client.get_messages = function(_, _, done) done(nil, {}) end
 		require("opencode.session").set_active("replacement-a", "A")

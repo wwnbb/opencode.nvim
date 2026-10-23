@@ -149,10 +149,6 @@ function M.observe_session(session_id, visible)
 	return require("opencode.session.tabs").observe(session_id, visible)
 end
 
-function M.refresh_session_scope()
-	return require("opencode.session.tabs").refresh_scope()
-end
-
 function M.reopen_session_tab(opts)
 	opts = vim.tbl_extend("force", {}, opts or {})
 	opts.view = opts.view or require("opencode.ui.chat.state").current()
@@ -224,42 +220,6 @@ end
 
 function M.pair_server(callback)
 	return connected_request(nil, function(done) client().pair_server(done) end, callback)
-end
-
-function M.list_terminals(session_id, callback)
-	return connected_request(session_id, function(done) client().list_terminals(session_id, done) end, callback)
-end
-
-function M.create_terminal(session_id, opts, callback)
-	opts = vim.deepcopy(opts)
-	return connected_request(session_id, function(done) client().create_terminal(session_id, opts, done) end, callback)
-end
-
-function M.get_terminal(id, session_id, callback)
-	return connected_request(session_id, function(done) client().get_terminal(id, done) end, callback)
-end
-
-function M.get_terminal_snapshot(id, session_id, callback)
-	return connected_request(session_id, function(done) client().get_terminal_snapshot(id, done) end, callback)
-end
-
-function M.resize_terminal(id, session_id, size, attachment_id, callback)
-	size = vim.deepcopy(size)
-	return connected_request(session_id, function(done) client().resize_terminal(id, size, attachment_id, done) end, callback)
-end
-
-function M.remove_terminal(id, session_id, callback)
-	return connected_request(session_id, function(done) client().remove_terminal(id, done) end, callback)
-end
-
-function M.connect_terminal(opts)
-	return require("opencode.client.pty").connect(opts)
-end
-
-function M.terminal_endpoint()
-	local config = client().endpoint_config()
-	local endpoint = require("opencode.client.endpoint").resolve(config)
-	return endpoint and { identity = endpoint.origin:lower() .. endpoint.base_path, generation = config.generation } or nil
 end
 
 function M.list_server_plugins(opts, callback)
@@ -357,7 +317,7 @@ function M.load_session_messages(session_id, opts, callback)
 				pending.reconcile_history(session_id, response)
 				store.handle_session_messages(session_id, response, { reconcile = complete, complete = complete, snapshot = snapshot })
 				require("opencode.session").set_message_cache(session_id, store.get_messages(session_id), { reason = "load_messages" })
-				require("opencode.session").refresh_status()
+				require("opencode.session").refresh_status(nil, session_id)
 				require("opencode.events").emit("sync_changed", { kind = "message", session_id = session_id })
 			end
 			publish(err, response, meta)
@@ -870,7 +830,8 @@ function M.get_session_family(session_id, callback)
 				for id, snapshot in pairs(snapshots) do
 					if pending.is_current(record_tokens[id]) and pending.is_current(snapshot.token)
 						and state().get_session_status_revision(id) == snapshot.revision then
-						local status = statuses[id] or { type = "idle" }
+						local status = require("opencode.session.status").from_active_snapshot(statuses[id],
+							state().get_session_status(id), sync().get_messages(id))
 						sync().handle_session_status(id, status)
 						sessions().set_session_status(id, status, { reason = "session_family" })
 					end

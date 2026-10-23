@@ -93,6 +93,62 @@ test("accepted move preserves source BOM when replacing an existing destination"
   expect(result.metadata.status).toBe("applied")
 })
 
+for (const original of ["", "sentinel\n", "\ufeffsentinel\n"]) {
+  for (const action of ["accept", "reject"]) {
+    test(`${action} Add File over existing ${JSON.stringify(original)} preserves the existing-file snapshot`, async () => {
+      const target = path.join(directory, "existing")
+      await fs.writeFile(target, original)
+      const result = await patch.execute({ patchText: "*** Begin Patch\n*** Add File: existing\n+replacement\n*** End Patch" }, context(async (request) => {
+        const file = request.metadata.files[0]
+        expect(file.type).toBe("update")
+        expect(file.before_bom).toBe(original.startsWith("\ufeff"))
+        if (action === "reject") await fs.writeFile(target, (file.bom ? "\ufeff" : "") + file.after)
+        return review(request, [action])
+      }))
+      expect(await fs.readFile(target, "utf8")).toBe(action === "accept" ? (original.startsWith("\ufeff") ? "\ufeff" : "") + "replacement\n" : original)
+      expect(result.metadata.status).toBe(action === "accept" ? "applied" : "rejected")
+    })
+  }
+}
+
+test("accepting the source row accepts the complete move", async () => {
+  await fs.writeFile(path.join(directory, "source"), "before\n")
+  const result = await patch.execute({ patchText: "*** Begin Patch\n*** Update File: source\n*** Move to: destination\n@@\n-before\n+after\n*** End Patch" }, context(async (request) => {
+    expect(request.metadata.files[0].moveID).toBe(request.metadata.files[1].moveID)
+    expect(request.metadata.files.map((file: any) => file.moveRole)).toEqual(["source", "destination"])
+    return review(request, ["accept"])
+  }))
+  expect(await exists("source")).toBe(false)
+  expect(await fs.readFile(path.join(directory, "destination"), "utf8")).toBe("after\n")
+  expect(result.metadata.status).toBe("applied")
+})
+
+test("a move to the source path remains a single-file update", async () => {
+  await fs.writeFile(path.join(directory, "source"), "before\n")
+  const result = await patch.execute({ patchText: "*** Begin Patch\n*** Update File: source\n*** Move to: ./source\n@@\n-before\n+after\n*** End Patch" }, context(async (request) => {
+    expect(request.metadata.files).toHaveLength(1)
+    expect(request.metadata.files[0].type).toBe("update")
+    return review(request, ["accept"])
+  }))
+  expect(await fs.readFile(path.join(directory, "source"), "utf8")).toBe("after\n")
+  expect(result.metadata.status).toBe("applied")
+})
+
+test("rejecting a manually saved move restores an existing destination and both BOM snapshots", async () => {
+  const source = path.join(directory, "source")
+  const destination = path.join(directory, "destination")
+  await fs.writeFile(source, "\ufeffbefore\n")
+  await fs.writeFile(destination, "existing\n")
+  const result = await patch.execute({ patchText: "*** Begin Patch\n*** Update File: source\n*** Move to: destination\n@@\n-before\n+after\n*** End Patch" }, context(async (request) => {
+    await fs.writeFile(destination, "\ufeffafter\n")
+    await fs.unlink(source)
+    return review(request, ["reject", "reject"])
+  }))
+  expect(await fs.readFile(source, "utf8")).toBe("\ufeffbefore\n")
+  expect(await fs.readFile(destination, "utf8")).toBe("existing\n")
+  expect(result.metadata.status).toBe("rejected")
+})
+
 test("rejected move leaves an empty source and its destination untouched", async () => {
   await fs.writeFile(path.join(directory, "source"), "")
   await fs.writeFile(path.join(directory, "destination"), "\n")

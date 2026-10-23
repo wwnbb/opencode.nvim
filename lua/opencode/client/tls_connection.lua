@@ -1,5 +1,5 @@
--- Verified TLS byte channel using an installed OpenSSL process. HTTP/SSE and
--- WebSocket share it; request headers and payloads travel only over stdin.
+-- Verified TLS byte channel for HTTP/SSE using an installed OpenSSL process.
+-- Request headers and payloads travel only over stdin.
 local M = {}
 local uv = vim.uv
 local tcp_connection = require("opencode.client.tcp_connection")

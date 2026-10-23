@@ -27,7 +27,7 @@ describe("websearch list rendering", function()
 		vim.o.columns = old_columns
 	end)
 
-	it("keeps the query compact until its unnumbered results are opened", function()
+	it("keeps the query compact until its results are opened", function()
 		local item = part({ status = "completed", input = { query = "Lua coroutines" },
 			output = "# Results\n\n**Coroutine guide**\n\nhttps://example.com/lua" })
 		local closed, opened = websearch.render(item, false), websearch.render(item, true)
@@ -40,7 +40,6 @@ describe("websearch list rendering", function()
 		contains(opened.lines[#opened.lines], "   └")
 		contains(text(opened), style.prefix .. "Coroutine guide")
 		contains(body_text(opened), "https://example.com/lua")
-		assert.is_nil(text(opened):find("1: Coroutine guide", 1, true))
 		local emphasized = false
 		for _, hl in ipairs(opened.highlights) do
 			if hl.hl_group:find("Strong", 1, true) then
@@ -72,7 +71,7 @@ describe("websearch list rendering", function()
 		assert.equals(1, #calls)
 		assert.equals(source, calls[1].content)
 		assert.equals("tools", calls[1].opts.scope)
-		assert.equals(95, calls[1].opts.width)
+		assert.equals(render.get_chat_text_width() - 5, calls[1].opts.width)
 		assert.same(snapshot, item)
 	end)
 

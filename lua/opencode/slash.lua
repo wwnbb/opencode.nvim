@@ -215,7 +215,7 @@ function M.register_defaults()
 						return
 					end
 					local restored = state.get_session().id == session_id and focus.with_session_focus(view, function()
-						require("opencode.ui.input").set_pending_draft(draft.text, draft.parts)
+						require("opencode.ui.input").set_pending_draft(draft.text, draft.parts, { mode = "normal" })
 						return true
 					end, initial_input)
 					if not restored then require("opencode.ui.input.history").defer_pending(draft, session_id) end

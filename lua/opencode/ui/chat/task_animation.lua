@@ -36,7 +36,7 @@ end
 ---@param status string
 ---@return boolean
 function M.is_task_working(status)
-	return status == "pending" or status == "running"
+	return status == "pending" or status == "streaming" or status == "running"
 end
 
 ---@param status string
@@ -77,13 +77,15 @@ end
 function M.task_status(tool_part)
 	local tool_state = tool_part.state or {}
 	local status = tool_state.status or "pending"
-	if status == "error" or status == "cancelled" then return status end
+	if tool_part.subagent_notification then return status end
+	if status == "error" or is_task_cancelled(status) then return status end
 	local child = require("opencode.events.util").resolve_task_child_session_id(tool_part)
 	if child then
 		local child_status = require("opencode.sync").get_session_status(child)
 		if child_status then
 			if child_status.type == "busy" or child_status.type == "retry" then return "running" end
 			if child_status.outcome == "failed" then return "error" end
+			if child_status.outcome == "interrupted" then return "cancelled" end
 			if child_status.type == "idle" then return status == "completed" and "completed" or status end
 		elseif status == "completed" and (tool_state.metadata or {}).status == "running" then return "running" end
 	end
@@ -207,7 +209,9 @@ function M.update_active_animations_in_place()
 			if (pos.end_line - pos.start_line + 1) > MAX_REGULAR_TOOL_ANIMATION_RENDER_LINES then
 				return nil
 			end
-			return chat_tasks().render_regular_tool(tool_part, state.expanded_tools[part_id] or false)
+			return chat_tasks().render_regular_tool(tool_part, state.expanded_tools[part_id] or false, {
+				separator_before = pos.separator_before,
+			})
 		end,
 		rerender = chat_tasks().rerender_tool,
 	})
@@ -305,7 +309,13 @@ function M.update_animation_frames_in_place()
 	end
 
 	-- Update regular tool blocks: classic spinner at end of header line
-	for _, pos in pairs(state.tools) do
+	local tool_positions = vim.tbl_values(state.tools)
+	for _, task in pairs(state.tasks) do
+		for id, child in pairs(task.children or {}) do
+			if state.expanded_tools[id] then tool_positions[#tool_positions + 1] = child end
+		end
+	end
+	for _, pos in ipairs(tool_positions) do
 		local tool_part = chat_tasks().resolve_tool_part(pos)
 		if
 			pos

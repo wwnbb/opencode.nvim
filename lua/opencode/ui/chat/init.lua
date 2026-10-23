@@ -28,6 +28,9 @@ local FLOAT_CHAT_TOP_PADDING = 2
 local render = cs.module(view, require("opencode.ui.chat.render"))
 local chat_highlights = require("opencode.ui.chat.highlights")
 local ui_highlights = require("opencode.ui.highlights")
+ui_highlights.register("opencode.ui.chat.padding", function()
+	vim.api.nvim_set_hl(0, "OpenCodeChatPadding", { default = true })
+end)
 local render_state = cs.module(view, require("opencode.ui.chat.render_state"))
 local render_context = cs.module(view, require("opencode.ui.chat.render_context"))
 local render_coordinator = require("opencode.ui.chat.render_coordinator")
@@ -267,12 +270,16 @@ local function setup_chat_window_options(winid)
 	wo.breakindent = true
 	wo.number = false
 	wo.relativenumber = false
-	wo.signcolumn = "no"
+	wo.signcolumn = "yes:1"
 	wo.foldcolumn = "0"
 	wo.cursorline = false
 	wo.cursorcolumn = false
+	-- Statuscolumn uses LineNr as its base even when line numbers are disabled.
+	vim.api.nvim_win_call(winid, function()
+		vim.opt_local.winhighlight:append({ LineNr = "OpenCodeChatPadding" })
+	end)
 	pcall(function()
-		wo.statuscolumn = ""
+		wo.statuscolumn = "  "
 	end)
 end
 
@@ -1673,11 +1680,10 @@ function M.open()
 		for _, view in ipairs(cs.all()) do
 			if view.config and view.config.layout == "tab" and M.focus_view(view) then return end
 		end
-		require("opencode.actions").refresh_session_scope()
 		local view = cs.state
 		local session = app.get_session()
 		local retained = last or view
-		-- q keeps the session; x and a directory scope change remove its membership.
+		-- q keeps the session; x removes its membership.
 		if not session.id and retained.session_bound and app.is_runtime_session(retained.session_id) then
 			session = cs.session(retained)
 		end

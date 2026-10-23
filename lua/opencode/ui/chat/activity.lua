@@ -149,6 +149,7 @@ local function render_low(group, refs, expanded, expansions)
 	local tree = require("opencode.ui.chat.widget_tree")
 	-- Keep every identity when folded. Errors render through their ordinary
 	-- widget, while input/output and protected data retain existing policies.
+	local last_tool_name
 	for _, ref in ipairs(refs) do
 		local part = ref.part
 		local node = { id = part.id, kind = "tool", tool_part = part,
@@ -159,8 +160,12 @@ local function render_low(group, refs, expanded, expansions)
 			node.id, node.kind, node.activity_group = thought.id, "activity", thought
 			if expanded then rendered = M.render(thought, expansions[thought.id], expansions) end
 		elseif expanded or tool_group.failed(part) then
-			rendered = cs.module(view, require("opencode.ui.chat.tasks")).render_regular_tool(part, expansions[part.id] == true)
+			node.separator_before = part.tool == "bash" and last_tool_name == "bash"
+			rendered = cs.module(view, require("opencode.ui.chat.tasks")).render_regular_tool(part, expansions[part.id] == true, {
+				separator_before = node.separator_before,
+			})
 		end
+		if rendered and #rendered.lines > 0 then last_tool_name = part.type == "tool" and part.tool or nil end
 		tree.append(result, node, rendered)
 	end
 	result.lines[#result.lines + 1] = ""

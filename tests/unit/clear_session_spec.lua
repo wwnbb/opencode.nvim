@@ -28,10 +28,6 @@ describe("/clear session context", function()
 		vim.notify = function(message) notices[#notices + 1] = message end
 
 		local ok, err = pcall(function()
-			local clear_command = require("opencode.command_registry").get_slash("clear")
-			assert.is_not_nil(clear_command)
-			assert.matches("new", clear_command.description:lower(), 1, true)
-
 			state.set_session("ses_previous", "Previous conversation")
 			input.set_pending_text("previous draft")
 			sync.handle_message_updated({

@@ -28,6 +28,7 @@ end)
 local EDIT_WIDGET_TOOL_ROWS = {
 	write = true,
 	edit = true,
+	patch = true,
 	apply_patch = true,
 	neovim_edit = true,
 	neovim_patch = true,
@@ -428,7 +429,7 @@ local function render_assistant_message(ctx, index, message, render_parts, opts)
 		elseif part.type == "reasoning" then
 			-- Empty/redacted/disabled reasoning has no visible row.
 		elseif part.type == "text" and part.text and part.text ~= "" then
-			if part.shell_notification then
+			if part.shell_notification or part.subagent_notification then
 				tool_renderer.render_tool_part(ctx, part, render_parts.message_revision, render_parts.part_revisions)
 			else
 				render_text_part(ctx, message, part, part_idx, render_parts, opts.incomplete_assistant)

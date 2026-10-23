@@ -32,7 +32,7 @@ describe("tab workspace editor state", function()
 				vim.api.nvim_buf_set_name(source, vim.fn.tempname() .. ".lua")
 				vim.api.nvim_buf_set_lines(source, 0, -1, false, { "return 'workspace source'" })
 				require("opencode").setup({ server = { auto_start = false }, lualine = { enabled = false },
-					chat = { layout = "tab", session_tabs = { enabled = enabled, persist = false } } })
+					chat = { layout = "tab", session_tabs = { enabled = enabled } } })
 				require("opencode.client").get_messages = function(_, _, cb) cb(nil, {}) end
 				chat = require("opencode.ui.chat")
 				workspace = require("opencode.ui.chat.workspace")

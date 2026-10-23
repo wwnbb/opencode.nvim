@@ -60,11 +60,14 @@ describe("queued inputs in the chat buffer", function()
 		vim.api.nvim_win_set_buf(state.winid, state.bufnr)
 		keymaps.setup_buffer(state.bufnr, {})
 		saved = { cancel = client.cancel_input, delivery = client.set_input_delivery, messages = client.get_messages, send = actions.send,
+			inbox = client.get_inbox, all_messages = client.get_all_messages,
 			connect = lifecycle.ensure_connected, refresh = sessions.refresh_status, notify = vim.notify }
 		cancels, steers, sent, notices, fallbacks = {}, {}, {}, {}, {}
 		lifecycle.ensure_connected = function(cb) cb() end
 		sessions.refresh_status = function() end
 		client.cancel_input = function(sid, id, cb) cancels[#cancels + 1] = { sid = sid, id = id, callback = cb } end
+		client.get_inbox = function(_, cb) cb(nil, {}) end
+		client.get_all_messages = function(_, cb) cb(nil, {}, { complete = true }) end
 		client.set_input_delivery = function(sid, id, delivery, cb)
 			steers[#steers + 1] = { sid = sid, id = id, delivery = delivery, callback = cb }
 		end
@@ -75,6 +78,7 @@ describe("queued inputs in the chat buffer", function()
 		input.close(false)
 		history.clear()
 		client.cancel_input, client.get_messages, actions.send = saved.cancel, saved.messages, saved.send
+		client.get_inbox, client.get_all_messages = saved.inbox, saved.all_messages
 		client.set_input_delivery = saved.delivery
 		lifecycle.ensure_connected, sessions.refresh_status, vim.notify = saved.connect, saved.refresh, saved.notify
 		require("opencode.ui.chat.tasks").stop_task_animation_timer()
@@ -358,6 +362,24 @@ describe("queued inputs in the chat buffer", function()
 		assert.equals("Edit and queue", sent[1].text)
 		assert.equals("queue", sent[1].opts.delivery)
 		assert.equals("queue-test", sent[1].opts.session_id)
+	end)
+
+	it("does not restore queue delivery after switching a recovered prompt to shell mode", function()
+		seed("q", "pwd")
+		chat.do_render(); focus("q"); key("E"); cancels[1].callback(nil)
+		input.set_mode("shell"); key("<C-g>")
+		assert.equals("pwd", sent[1].text)
+		assert.equals("shell", sent[1].opts.mode)
+		assert.is_nil(sent[1].opts.delivery)
+	end)
+
+	it("does not restore obsolete shell options after switching a deferred draft to normal mode", function()
+		history.defer_pending({ text = "Explain", parts = {}, mode = "shell", options = { mode = "shell" } }, "queue-test")
+		assert.is_true(chat.focus_input())
+		assert.equals("shell", input.get_mode())
+		input.set_mode("normal"); key("<C-g>")
+		assert.is_nil(sent[1].opts.mode)
+		assert.equals("queue", sent[1].opts.delivery)
 	end)
 
 	it("preserves an existing draft instead of cancelling a queued message", function()

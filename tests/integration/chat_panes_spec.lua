@@ -115,9 +115,9 @@ describe("independent chat panes", function()
 		assert.is_nil(text(first):find("SECOND-STREAM", 1, true))
 		assert.is_nil(text(second):find("FIRST-STREAM", 1, true))
 		for _, view in ipairs({ first, second }) do
-			local width = vim.api.nvim_win_get_width(view.winid)
+			local width = vim.api.nvim_win_get_width(view.winid) - 4
 			for _, line in ipairs(vim.api.nvim_buf_get_lines(view.bufnr, 0, -1, false)) do
-				assert.is_true(vim.fn.strdisplaywidth(line) <= width, "stream exceeded its owning pane width")
+				assert.is_true(vim.fn.strdisplaywidth(line) <= width, "stream exceeded its pane's padded content width")
 			end
 			local streamed = text(view)
 			local marks = syntax_marks(view)

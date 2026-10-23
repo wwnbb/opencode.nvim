@@ -136,7 +136,7 @@ describe("tab cross-group regressions", function()
 			client.delete_session = function(id, callback) deleted[#deleted + 1] = id; callback(nil, true) end
 			api.setup({ server = { auto_start = false, shared_filesystem = true }, lualine = { enabled = false },
 				input = { history_file = root .. "/history.json" },
-				chat = { layout = "tab", session_tabs = { scope = "cwd", file = root .. "/tabs.json" } } })
+				chat = { layout = "tab" } })
 			seed("cross-source"); sessions.set_active("cross-source", "cross-source", { preserve_cache = true })
 			chat.open(); settle()
 			first, original = chat.get_view(), workspace.current().id
@@ -336,7 +336,7 @@ describe("tab cross-group regressions", function()
 		]])
 	end)
 
-	it("keeps cwd-scoped hidden and file-only layouts usable after a failed restore", function()
+	it("keeps hidden and file-only layouts usable across cwd changes after a failed restore", function()
 		editor.lua([[
 			history.set_pending("Hidden source draft", {}, "cross-source")
 			local other = chat.create_layout(seed("cross-file-only"))
@@ -346,7 +346,7 @@ describe("tab cross-group regressions", function()
 			chat.focus_view(other); press("q")
 			assert(first.suspended and not other.visible and #workspace.list() == 2)
 			local order, token = app.get_runtime_session_order(), pending.token("cross-source")
-			vim.cmd.cd(root .. "/two"); require("opencode.session.tabs").refresh_scope(); settle()
+			vim.cmd.cd(root .. "/two"); settle()
 			assert(vim.deep_equal(order, app.get_runtime_session_order()) and #workspace.list() == 2)
 			local set_buf, injected = vim.api.nvim_win_set_buf, false
 			vim.api.nvim_win_set_buf = function(...)
@@ -366,8 +366,6 @@ describe("tab cross-group regressions", function()
 				assert(workspace.select(selected)); settle()
 				assert(vim.api.nvim_get_current_buf() == file and vim.deep_equal(expected, file_state(file)))
 			end
-			local scopes = require("opencode.util.json_file").read(root .. "/tabs.json").scopes
-			assert(vim.tbl_count(scopes) == 1, "cwd change must not persist hidden workspace sessions under a new scope")
 			integrity()
 		]])
 	end)

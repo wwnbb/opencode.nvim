@@ -66,7 +66,6 @@ describe("skill list rendering", function()
 		assert.is_nil(output:find("<skill_content", 1, true))
 		assert.is_nil(output:find("description:", 1, true))
 		assert.is_nil(output:find("**Check invariants**", 1, true))
-		assert.is_nil(output:find("1: Check invariants", 1, true))
 		local emphasized = false
 		for _, hl in ipairs(opened.highlights) do
 			if hl.hl_group:find("Strong", 1, true) then
@@ -123,7 +122,7 @@ describe("skill list rendering", function()
 		end
 	end)
 
-	it("retains syntax highlights across wrapped fenced instructions without a gutter", function()
+	it("retains syntax highlights across wrapped fenced instructions", function()
 		local source = 'print("' .. string.rep("世界", 60) .. '")'
 		syntax.highlight_text = function(value, language, opts)
 			assert.equals(source, value)
@@ -142,7 +141,6 @@ describe("skill list rendering", function()
 		end
 		assert.is_true(#captured > 1)
 		assert.equals(source, table.concat(captured))
-		assert.is_nil(text(result):find("1: print", 1, true))
 	end)
 
 	it("uses catalog details and invalidates its cache when the selected skill changes", function()

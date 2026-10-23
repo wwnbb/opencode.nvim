@@ -6,7 +6,7 @@ describe("native layout tabline mouse input", function()
 		editor.lua([[
 			vim.o.mouse, vim.o.mousemodel = "a", "extend"
 			require("opencode").setup({ server = { auto_start = false }, lualine = { enabled = false },
-				chat = { layout = "tab", session_tabs = { persist = false } } })
+				chat = { layout = "tab" } })
 			require("opencode.client").get_messages = function(_, _, cb) cb(nil, {}) end
 			local sessions = require("opencode.session")
 			_G.chat, _G.workspace = require("opencode.ui.chat"), require("opencode.ui.chat.workspace")

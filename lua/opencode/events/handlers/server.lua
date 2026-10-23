@@ -34,7 +34,9 @@ function M.setup(events)
 				if complete_read then client.get_all_messages(sid, cb) else client.get_messages(sid, { limit = 100 }, cb) end
 			end
 			client.get_session(sid, function(err, info)
-				if not err and pending.is_current(token) and vim.deep_equal(session_snapshot, state.get_session_record(sid)) then
+				if not err and type(info) == "table" and info.id == sid and pending.is_current(token)
+					and vim.deep_equal(session_snapshot, state.get_session_record(sid)) then
+					require("opencode.session.lock").update_selection(sid, info)
 					sessions.remember(info, { touch = false }); changed(sid, "session")
 				end
 			end)
@@ -88,6 +90,7 @@ function M.setup(events)
 					vim.list_extend(messages, pending_messages)
 					sync.handle_session_messages(sid, messages, { snapshot = snapshot, reconcile = complete_read, complete = complete_read })
 					sessions.set_message_cache(sid, sync.get_messages(sid), { reason = "session_reconcile" })
+					sessions.refresh_status(nil, sid)
 				elseif #pending_messages > 0 then sync.handle_session_messages(sid, pending_messages) end
 				if not history_err or not inbox_err then changed(sid) end
 				local again = entry.again
@@ -121,9 +124,16 @@ function M.setup(events)
 	end)
 	events.on("connected", function()
 		sessions.refresh_status()
-		for _, info in ipairs(state.get_active_sessions()) do
-			reconcile(info.id, true)
+		local ids = {}
+		for _, info in ipairs(state.get_active_sessions()) do ids[info.id] = true end
+		local views = package.loaded["opencode.ui.chat.state"]
+		for _, view in ipairs(views and views.all() or {}) do
+			if views.valid(view) and (view.visible ~= false or view.suspended) then
+				local id = views.session(view).id
+				if id then ids[id] = true end
+			end
 		end
+		for id in pairs(ids) do reconcile(id, true) end
 	end)
 	events.on("server_event", function(event)
 		local data, kind = event.data, event.type
@@ -156,6 +166,9 @@ function M.setup(events)
 			end
 			info.time = { updated = event.created }
 			if kind == "session.created" then info.time.created = event.created end
+			if kind == "session.agent.selected" or kind == "session.model.selected" then
+				require("opencode.session.lock").update_selection(sid, info)
+			end
 			sessions.remember(info, { touch = false })
 			if (kind == "session.renamed" or kind == "session.moved") and state.get_session().id == sid then
 				local title = state.get_session_record(sid).title

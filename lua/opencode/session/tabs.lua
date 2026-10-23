@@ -1,11 +1,9 @@
--- Tab layout persistence and native viewed acknowledgements. Runtime data lives in state.lua.
+-- Runtime session tab actions and native viewed acknowledgements. Data lives in state.lua.
 local M = {}
 local state = require("opencode.state")
 local pending = require("opencode.session.pending")
 local focus = require("opencode.session.focus")
-local owner, scope, listener, bus
-local malformed_scopes = false
-local deferred_scope = false
+local bus
 local subscriptions = {}
 local focused, observations = true, {}
 
@@ -24,34 +22,9 @@ end
 
 function M.teardown()
 	M.clear()
-	if listener then state.off("*", listener) end
 	if bus then for event, callback in pairs(subscriptions) do bus.off(event, callback) end end
-	listener, bus, owner, subscriptions = nil, nil, nil, {}
-	malformed_scopes = false
-	deferred_scope = false
+	bus, subscriptions = nil, {}
 	pcall(vim.api.nvim_del_augroup_by_name, "OpenCodeViewed")
-end
-
-local function save()
-	if not owner or malformed_scopes then return end
-	local function records(ids)
-		local result = {}
-		for _, id in ipairs(ids) do
-			local info = state.get_session_record(id) or {}
-			result[#result + 1] = { id = id, title = info.title or info.name or id }
-		end
-		return result
-	end
-	local scopes = vim.deepcopy(owner.data.scopes or {})
-	scopes[scope] = {
-		tabs = records(state.get_runtime_session_order()),
-		closed = records(state.get_closed_session_order()),
-		active = require("opencode.selectors").get_current_runtime_root_id(),
-	}
-	if not owner.save({ scopes = scopes }) then
-		vim.notify("OpenCode: could not save session tabs", vim.log.levels.WARN)
-		owner = nil
-	end
 end
 
 function M.observe(session_id, is_visible)
@@ -141,78 +114,9 @@ function M.reopen(opts)
 	end)
 end
 
-local function has_tab_workspace()
-	local workspace = package.loaded["opencode.ui.chat.workspace"]
-	if workspace and type(workspace.list) == "function" and #workspace.list() > 0 then return true end
-	local views = package.loaded["opencode.ui.chat.state"]
-	if not views or type(views.all) ~= "function" then return false end
-	for _, view in ipairs(views.all()) do
-		if view.session_bound and view.config and view.config.layout == "tab"
-			and (view.suspended or (view.visible and view.winid and vim.api.nvim_win_is_valid(view.winid))) then return true end
-	end
-	return false
-end
-
--- Keep an open workspace attached to its original persistence scope. Apply a
--- deferred directory change before opening the next workspace.
-function M.refresh_scope()
-	if deferred_scope and bus and not has_tab_workspace() then M.setup(bus) end
-end
-
 function M.setup(events)
-	local previous_scope = owner and scope
 	M.teardown()
 	bus = events
-	local config = state.get_config() or {}
-	local options = config.chat and config.chat.session_tabs or {}
-	if options.persist ~= false and options.enabled ~= false then
-		local server = config.server or {}
-		local directory = options.scope == "global" and "global" or state.normalize_directory(vim.fn.getcwd())
-		if server.url then
-			local endpoint = require("opencode.client.endpoint").resolve(server)
-			-- Include a proxy's base path, but never persist URL credentials or auth.
-			scope = endpoint and vim.json.encode({ endpoint.origin:lower() .. endpoint.base_path, directory }) or nil
-		else
-			scope = vim.json.encode({ server.host or "localhost", server.port or server.command or "opencode", directory })
-		end
-		if previous_scope and previous_scope ~= scope then
-			state.set_runtime_session_order({})
-			state.set_closed_session_order({})
-			require("opencode.session").set_active(nil, nil, { preserve_cache = true, reason = "tabs_scope" })
-		end
-		local file = options.file or (vim.fn.stdpath("data") .. "/opencode_tabs.json")
-		owner = scope and require("opencode.preferences").open(file) or nil
-		malformed_scopes = owner ~= nil and owner.data.scopes ~= nil and type(owner.data.scopes) ~= "table"
-		if malformed_scopes then
-			vim.notify_once("OpenCode: preferences file " .. file .. " has invalid session tab scopes; leaving it unchanged", vim.log.levels.WARN)
-		end
-		local saved = owner and type(owner.data.scopes) == "table" and owner.data.scopes[scope] or nil
-		if type(saved) == "table" and #state.get_runtime_session_order() == 0 then
-			local function restore(values)
-				local ids = {}
-				for _, value in ipairs(type(values) == "table" and values or {}) do
-					if type(value) == "table" and type(value.id) == "string" and value.id ~= "" then
-						state.upsert_session({ id = value.id, title = type(value.title) == "string" and value.title or value.id }, { touch = false })
-						ids[#ids + 1] = value.id
-					end
-				end
-				return ids
-			end
-			local ids = restore(saved.tabs)
-			state.set_runtime_session_order(ids)
-			state.set_closed_session_order(restore(saved.closed))
-			local active = state.is_runtime_session(saved.active) and saved.active or ids[1]
-			if active then
-				local info = state.get_session_record(active)
-				require("opencode.session").set_active(active, info.title, { preserve_cache = true, reason = "restore_tabs" })
-			end
-		end
-	end
-	listener = function(key, new, old)
-		if key == "sessions.runtime_order" or key == "sessions.closed_order" or key == "session.id" then save()
-		elseif key:match("^sessions%.by_id%.") and (not new or not old or new.title ~= old.title) then save() end
-	end
-	state.on("*", listener)
 	subscriptions.disconnected = events.on("disconnected", M.clear)
 	subscriptions.connected = events.on("connected", function()
 		for _, entry in pairs(observations) do entry.acknowledgement = nil end
@@ -223,11 +127,6 @@ function M.setup(events)
 		if event.event == "FocusGained" then focused = true end
 		for id, entry in pairs(observations) do M.observe(id, entry.visible) end
 	end })
-	if options.scope ~= "global" then
-		vim.api.nvim_create_autocmd("DirChanged", { group = group, callback = function()
-			if has_tab_workspace() then deferred_scope = true else M.setup(events) end
-		end })
-	end
 end
 
 return M

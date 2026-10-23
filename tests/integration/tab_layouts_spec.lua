@@ -64,7 +64,7 @@ describe("OpenCode tabs with independent layouts", function()
 		editor = vim.api.nvim_get_current_tabpage()
 		state.reset(); sync.clear_all()
 		api.setup({ server = { auto_start = false }, lualine = { enabled = false },
-			chat = { layout = "tab", session_tabs = { persist = false } } })
+			chat = { layout = "tab" } })
 		saved = { messages = client.get_messages, create = client.create_session, inbox = client.get_inbox,
 			fork = client.fork_session,
 			menu = require("opencode.ui.menu").open,

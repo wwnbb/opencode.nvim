@@ -12,14 +12,13 @@ local function press(key)
 	mapping.callback(); settle()
 end
 
-describe("tab workspace directory scope", function()
-	local editor, cwd, directory, source, destination, file, saved, notices, created
-	local function scope(path) return vim.json.encode({ "localhost", 4096, state.normalize_directory(path) }) end
+describe("tab workspace navigation", function()
+	local editor, cwd, directory, source, destination, saved, notices, created
 	before_each(function()
 		vim.o.columns, vim.o.lines = 160, 48
 		editor, cwd = vim.api.nvim_get_current_tabpage(), vim.fn.getcwd()
 		directory = vim.fn.tempname()
-		source, destination, file = directory .. "/source", directory .. "/destination", directory .. "/tabs.json"
+		source, destination = directory .. "/source", directory .. "/destination"
 		vim.fn.mkdir(source, "p"); vim.fn.mkdir(destination, "p")
 		source, destination = vim.uv.fs_realpath(source), vim.uv.fs_realpath(destination)
 		tabs.teardown(); state.reset(); require("opencode.sync").clear_all()
@@ -34,14 +33,11 @@ describe("tab workspace directory scope", function()
 			assert.equals(source, options.location and options.location.directory)
 			callback(nil, { id = "created-" .. created, title = "Created " .. created, directory = options.location.directory })
 		end
-		assert.is_true(require("opencode.preferences").open(file).save({ scopes = {
-			[scope(source)] = { tabs = { { id = "scope-a", title = "Source A" } }, active = "scope-a" },
-			[scope(destination)] = { tabs = { { id = "scope-c", title = "Destination C" } }, active = "scope-c" },
-		} }))
 		vim.cmd.cd(source)
 		api.setup({ server = { auto_start = false, host = "localhost", port = 4096 }, lualine = { enabled = false },
-			chat = { layout = "tab", session_tabs = { scope = "cwd", file = file, max_tabs = 5, auto_fit = false } } })
-		sessions.remember({ id = "scope-a", title = "Source A", directory = source }, { touch = false })
+			chat = { layout = "tab", session_tabs = { max_tabs = 5, auto_fit = false } } })
+		sessions.remember({ id = "scope-a", title = "Source A", directory = source })
+		sessions.set_active("scope-a", "Source A")
 		chat.open(); settle()
 	end)
 	after_each(function()
@@ -82,39 +78,7 @@ describe("tab workspace directory scope", function()
 		for _, message in ipairs(notices) do assert.is_nil(message:find("No active OpenCode session", 1, true)) end
 	end)
 
-	it("retains open panes on cwd changes and restores the new scope after closing and reopening", function()
-		local first = chat.get_view()
-		sessions.remember({ id = "scope-b", title = "Other B", directory = destination })
-		local second = chat.create_split(first, state.get_session_record("scope-b"), "vertical")
-		vim.cmd.cd(destination); settle()
-		assert.same({ "scope-a", "scope-b" }, state.get_runtime_session_order())
-		assert.equals("scope-b", state.get_session().id)
-		chat.focus_view(first); settle()
-		assert.equals("scope-a", state.get_session().id)
-		local bar = vim.api.nvim_eval_statusline(vim.o.tabline, { use_tabline = true, maxwidth = vim.o.columns }).str
-		assert.is_truthy(bar:find("Source A", 1, true))
-		chat.focus_view(second); press("q")
-		assert.same({ "scope-a", "scope-b" }, state.get_runtime_session_order())
-		chat.focus_view(first); press("q")
-		chat.open(); settle()
-		assert.same({ "scope-c" }, state.get_runtime_session_order())
-		assert.equals("scope-c", views.session(chat.get_view()).id)
-		assert.equals("scope-c", state.get_session().id)
-		press("q")
-		vim.cmd.cd(source)
-		chat.open(); settle()
-		assert.same({ "scope-a", "scope-b" }, state.get_runtime_session_order())
-		assert.equals("scope-a", views.session(chat.get_view()).id)
-		press("x")
-		assert.is_false(state.is_runtime_session("scope-a"))
-		assert.is_true(state.is_runtime_session("scope-b"))
-		sessions.switch_to(state.get_session_record("scope-b"), { notify = false })
-		chat.open(); settle()
-		assert.equals("scope-b", views.session(chat.get_view()).id)
-		for _, message in ipairs(notices) do assert.is_nil(message:find("No active OpenCode session", 1, true)) end
-	end)
-
-	it("reopens a q-closed session and its draft in the same directory scope", function()
+	it("reopens a q-closed session and its draft", function()
 		local history = require("opencode.ui.input.history")
 		history.set_pending("Keep this draft", {}, "scope-a")
 		press("q")

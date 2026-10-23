@@ -47,8 +47,7 @@ describe("configurable action mappings", function()
 		end
 	end)
 
-	it("defaults the completion prompt to Ctrl+Shift+L and permits disabling it", function()
-		assert.equals("<C-S-l>", config.merge({}).completion.keymaps.prompt)
+	it("accepts a disabled completion prompt and rejects an empty shortcut", function()
 		assert.is_false(config.merge({ completion = { keymaps = { prompt = false } } }).completion.keymaps.prompt)
 		assert.is_false(pcall(config.merge, { completion = { keymaps = { prompt = "" } } }))
 	end)

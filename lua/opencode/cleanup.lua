@@ -28,7 +28,6 @@ end
 ---@param session_id string
 function M.clear_session(session_id)
 	M.clear_session_memos(session_id)
-	call("opencode.ui.terminals", "clear_session", session_id)
 	call("opencode.editor_context", "clear_session", session_id)
 	call("opencode.ui.input.history", "clear_session", session_id)
 	call("opencode.btw", "clear_session", session_id)
@@ -45,7 +44,6 @@ end
 ---@param opts? { reset_state?: boolean, clear_chat?: boolean }
 function M.clear_transient(opts)
 	opts = opts or {}
-	call("opencode.ui.terminals", "detach_all")
 	call("opencode.editor_context", "clear")
 	call("opencode.context", "clear")
 	call("opencode.completion", "dismiss")

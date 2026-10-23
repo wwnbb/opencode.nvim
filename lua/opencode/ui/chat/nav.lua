@@ -224,6 +224,10 @@ end
 ---@return table|nil model
 ---@return string|nil variant
 local function resolve_child_model(tool_part, child_session, messages)
+	if type(child_session) == "table" then
+		local model, variant = model_ref(child_session.model)
+		if model then return model, variant end
+	end
 	local tool_state = type(tool_part.state) == "table" and tool_part.state or {}
 	local input = type(tool_state.input) == "table" and tool_state.input or {}
 	local state_metadata = type(tool_state.metadata) == "table" and tool_state.metadata or {}
@@ -274,11 +278,7 @@ local function resolve_child_model(tool_part, child_session, messages)
 	end
 
 	if type(child_session) == "table" then
-		local model, variant = model_ref(child_session.model)
-		if model then
-			return model, variant or fallback_variant
-		end
-		model, variant = model_ref(child_session)
+		local model, variant = model_ref(child_session)
 		if model then
 			return model, variant or fallback_variant
 		end
@@ -322,7 +322,7 @@ end
 ---@param child_session_id string
 ---@param tool_part table
 ---@param callback fun(err: string|nil, record: table|nil)
-local function resolve_child_lock(child_session_id, tool_part, callback, strict)
+local function resolve_child_lock(child_session_id, tool_part, callback)
 	local child_session = nil
 	local pending = require("opencode.session.pending")
 	local app_state = require("opencode.state")
@@ -330,11 +330,16 @@ local function resolve_child_lock(child_session_id, tool_part, callback, strict)
 	local token = pending.token(child_session_id)
 	actions.get_session(child_session_id, function(session_error, session)
 		if not pending.is_current(token) then return end
-		if strict and session_error then callback(session_error); return end
-		child_session = type(session) == "table" and vim.deepcopy(session) or nil
+		if session_error then callback(session_error); return end
+		if type(session) ~= "table" or session.id ~= child_session_id then
+			callback({ message = "Session metadata is unavailable or does not match the requested session" })
+			return
+		end
+		child_session = vim.deepcopy(session)
 
 		actions.load_session_messages(child_session_id, { limit = 100 }, function(messages_error, response)
 			if not pending.is_current(token) then return end
+			if messages_error then callback(messages_error); return end
 			local sync = require("opencode.sync")
 			local latest = app_state.get_session_record(child_session_id)
 			local model_updated = latest and type(latest.model) == "table" and
@@ -370,11 +375,7 @@ local function resolve_child_lock(child_session_id, tool_part, callback, strict)
 			local agent = resolve_child_agent(current_tool_part, child_session, messages)
 			local errors = {}
 			if not model then
-				table.insert(
-					errors,
-					"Unable to determine the subagent execution model"
-						.. (messages_error and (": " .. tostring(messages_error)) or "")
-				)
+				table.insert(errors, "Unable to determine the subagent execution model")
 			end
 			if not agent then
 				table.insert(errors, "Unable to determine the subagent agent")
@@ -408,6 +409,8 @@ function M.enter_child_session(part_id)
 	if not tool_part then
 		return
 	end
+	local sync = require("opencode.sync")
+	local stored_part = sync.get_part(tool_part.messageID, tool_part.id)
 	local app_state = require("opencode.state")
 	local current = cs.session(view)
 	local initial_input = focus.capture_input(view)
@@ -425,7 +428,7 @@ function M.enter_child_session(part_id)
 			return
 		end
 		if not child_session_id then
-			vim.notify("No child session available yet", vim.log.levels.WARN)
+			require("opencode.ui.palette.family").show({ view = view })
 			return
 		end
 
@@ -436,9 +439,13 @@ function M.enter_child_session(part_id)
 		local current_tool_part = chat_tasks.resolve_tool_part(pos) or tool_part
 		resolve_child_lock(child_session_id, current_tool_part, function(lock_err, record)
 			if not is_current() then return end
+			local latest_pos = state.tasks[part_id]
+			if not latest_pos or (stored_part and not sync.get_part(tool_part.messageID, tool_part.id)) then return end
+			current_tool_part = chat_tasks.resolve_tool_part(latest_pos)
+			if require("opencode.events.util").resolve_task_child_session_id(current_tool_part) ~= child_session_id then return end
 			if lock_err or not record then
-				session_lock.clear(child_session_id)
-				vim.notify("Cannot enter subagent session: " .. tostring(lock_err or "unknown metadata error"), vim.log.levels.ERROR)
+				vim.notify("Cannot enter subagent session: " .. require("opencode.events.util").format_session_error(lock_err,
+					{ fallback = "Session metadata is unavailable" }), vim.log.levels.ERROR)
 				return
 			end
 
@@ -451,7 +458,6 @@ function M.enter_child_session(part_id)
 				runtime = app_state.is_runtime_session(current.id),
 			})
 
-			current_tool_part = chat_tasks.resolve_tool_part(pos) or current_tool_part
 			local input = current_tool_part.state and current_tool_part.state.input or {}
 			if focus.with_session_focus(view, function()
 				return actions.set_view_session(view, child_session_id, record.child_session.title or record.child_session.name or input.description or "Subagent", {
@@ -468,6 +474,19 @@ function M.enter_child_session(part_id)
 				render_coordinator.request({ session_id = child_session_id, reason = "child_navigation_loaded" })
 			end)
 		end)
+	end)
+end
+
+local function show_parent_tail(session_id)
+	local target = cs.current()
+	if cs.session(target).id ~= session_id then return end
+	local generation = target.generation
+	vim.schedule(function()
+		if not cs.valid(target, generation) or cs.session(target).id ~= session_id
+			or not cs.is_chat_buffer_displayed(target) then return end
+		-- Finish the session reset and throttled render before positioning the viewport.
+		require("opencode.ui.chat").for_view(target).do_render()
+		cs.module(target, require("opencode.ui.chat.cursor")).scroll_to_bottom()
 	end)
 end
 
@@ -500,16 +519,18 @@ function M.open_family_session(session_id, opts)
 				if table.remove(state.session_stack).id == session_id then break end
 			end
 		else state.session_stack = {} end
-		if focus.with_session_focus(view, function()
+		local switched = focus.with_session_focus(view, function()
 			return actions.set_view_session(view, session_id, info.title or info.name or session_id, {
 				reason = "family_navigation", preserve_cache = true, runtime = not child,
 			})
-		end, initial_input) == false then
+		end, initial_input)
+		if opts.parent then show_parent_tail(session_id) end
+		if switched == false then
 			state.session_stack = previous_stack
 			return
 		end
 		render_coordinator.request({ session_id = session_id, reason = "family_navigation_loaded" })
-	end, true)
+	end)
 end
 
 ---Leave current child session and return to parent.
@@ -534,13 +555,15 @@ function M.leave_child_session()
 		and (parent.runtime == false or app_state.is_runtime_session(parent.id)))
 	if not parent then return end
 
-	if focus.with_session_focus(view, function()
+	local switched = focus.with_session_focus(view, function()
 		return actions.set_view_session(view, parent.id, parent.name, {
 			reason = "child_navigation",
 			preserve_cache = true,
 			runtime = parent.runtime ~= false,
 		})
-	end) == false then
+	end)
+	show_parent_tail(parent.id)
+	if switched == false then
 		state.session_stack = previous_stack
 		return
 	end

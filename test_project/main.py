@@ -6,8 +6,8 @@ from store import MemoryStore
 
 
 def create_app() -> FastAPI:
+    """Build the Todo app with its own isolated in-memory store."""
     app = FastAPI(title="Todo List API v3")
-    # Each app instance gets its own isolated in-memory store.
     store = MemoryStore()
     app.include_router(build_todos_router(store))
     app.include_router(build_stats_router(store))
@@ -17,11 +17,11 @@ def create_app() -> FastAPI:
 app = create_app()
 
 
-# Function guessing game input int
-
-
-def main():
+def main() -> None:
+    """Run the API with uvicorn when executed as a script."""
     import uvicorn
+
+    uvicorn.run(app, host="127.0.0.1", port=8000)
 
 
 if __name__ == "__main__":

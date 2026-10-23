@@ -109,7 +109,31 @@ describe("native file changes in chat", function()
 		assert.is_nil(rendered:find("Diff unavailable", 1, true))
 	end)
 
-	it("expands added and deleted files from native apply_patch metadata", function()
+	it("replaces a running native patch with one expandable edit preview", function()
+		local input = { patchText = "*** Begin Patch\n*** Update File: patched.txt\n@@\n-old patch text\n+new patch text\n*** End Patch" }
+		for _, status in ipairs({ "pending", "running" }) do
+			local rendered = render_tool("patch", { status = status, input = input })
+			assert.is_truthy(rendered:find("Preparing file changes", 1, true))
+			assert.is_nil(edit_state.get_edit(preview_id))
+		end
+		local rendered = render_tool("patch", {
+			status = "completed", input = input,
+			content = { { type = "text", text = "Success. Updated the following files:\nM patched.txt" } },
+			metadata = { files = { {
+				file = "patched.txt", status = "modified", additions = 1, deletions = 1,
+				patch = "--- patched.txt\n+++ patched.txt\n@@ -1,1 +1,1 @@\n-old patch text\n+new patch text\n",
+			} } },
+		})
+		assert.is_truthy(rendered:find("+1 -1", 1, true))
+		assert.is_truthy(rendered:find("patched.txt", 1, true))
+		assert.equals("readonly", edit_state.get_edit(preview_id).review_mode)
+		assert.is_nil(chat_state.tools[part_id], "patch tool row should be replaced by its edit preview")
+		local expanded = expand_file(1)
+		assert.is_truthy(expanded:find("old patch text", 1, true))
+		assert.is_truthy(expanded:find("new patch text", 1, true))
+	end)
+
+	it("expands added and deleted files from legacy apply_patch metadata", function()
 		local rendered = render_tool("apply_patch", {
 			status = "completed",
 			input = { patchText = "*** Begin Patch\n*** Add File: added.txt\n+added by patch\n*** Delete File: deleted.txt\n*** End Patch" },

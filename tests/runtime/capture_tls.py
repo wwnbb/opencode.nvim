@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify native managed discovery and HTTPS/base-path REST/SSE/WSS with a local TLS proxy.
+"""Verify native managed discovery and HTTPS/base-path REST/SSE with a local TLS proxy.
 
 Creates an isolated native daemon/profile and self-signed test CA. No personal
 configuration or credentials. An empty local catalog disables model execution

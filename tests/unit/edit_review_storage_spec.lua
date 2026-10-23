@@ -236,6 +236,163 @@ describe("opencode edit review storage", function()
 		assert.equals("original\n", read(path))
 	end)
 
+	local function add_move()
+		local source, destination = root .. "/source", root .. "/destination"
+		write(source, "original\n")
+		local estate = edits.add_edit("move", "session", {
+			{ filePath = source, before = "original\n", after = "", type = "delete", moveID = "move", moveRole = "source" },
+			{ filePath = destination, before = "", after = "proposal\n", type = "add", moveID = "move", moveRole = "destination" },
+		})
+		return estate, source, destination
+	end
+
+	for _, action in ipairs({ "accept_file", "accept_all" }) do
+		it("keeps the source retryable when move destination fails through " .. action, function()
+			local estate, source, destination = add_move()
+			vim.uv.fs_open = function(name, mode, permissions)
+				if mode == "wx" then return nil, "destination write failure" end
+				return original_fs_open(name, mode, permissions)
+			end
+			assert.is_false(edits[action]("move", 1))
+			assert.equals("original\n", read(source))
+			assert.is_nil(vim.uv.fs_stat(destination))
+			assert.equals("pending", estate.files[1].status)
+			assert.equals("pending", estate.files[2].status)
+			vim.uv.fs_open = original_fs_open
+			assert.is_true(edits[action]("move", 1))
+			assert.is_nil(vim.uv.fs_stat(source))
+			assert.equals("proposal\n", read(destination))
+		end)
+	end
+
+	for _, index in ipairs({ 1, 2 }) do
+		it("accepts a move from row " .. index .. " without leaving a rejectable destination", function()
+			local _, source, destination = add_move()
+			assert.is_true(edits.accept_file("move", index))
+			assert.is_nil(vim.uv.fs_stat(source))
+			assert.is_false(edits.reject_file("move", 2))
+			assert.equals("proposal\n", read(destination))
+		end)
+	end
+
+	it("restores a manually moved source before rejecting its destination", function()
+		local _, source, destination = add_move()
+		write(destination, "proposal\n")
+		assert(os.remove(source))
+		vim.uv.fs_open = function(name, mode, permissions)
+			if mode == "wx" then return nil, "source restore failure" end
+			return original_fs_open(name, mode, permissions)
+		end
+		assert.is_false(edits.reject_file("move", 2))
+		assert.equals("proposal\n", read(destination))
+		vim.uv.fs_open = original_fs_open
+		assert.is_true(edits.reject_file("move", 2))
+		assert.equals("original\n", read(source))
+		assert.is_nil(vim.uv.fs_stat(destination))
+	end)
+
+	it("keeps the destination when source deletion fails and allows a safe rejection", function()
+		local estate, source, destination = add_move()
+		os.remove = function(name) if name == source then return nil, "source delete failure" end return original_remove(name) end
+		assert.is_false(edits.accept_file("move", 1))
+		assert.equals("original\n", read(source))
+		assert.equals("proposal\n", read(destination))
+		assert.equals("pending", estate.files[1].status)
+		assert.equals("accepted", estate.files[2].status)
+		assert.is_true(edits.reject_file("move", 1))
+		assert.equals("original\n", read(source))
+		assert.equals("proposal\n", read(destination))
+	end)
+
+	it("retries source deletion without rewriting the saved destination", function()
+		local _, source, destination = add_move()
+		os.remove = function(name) if name == source then return nil, "source delete failure" end return original_remove(name) end
+		assert.is_false(edits.accept_file("move", 1))
+		os.remove = original_remove
+		vim.uv.fs_open = function(name, mode, permissions)
+			if mode == "wx" then return nil, "unexpected second write" end
+			return original_fs_open(name, mode, permissions)
+		end
+		assert.is_true(edits.accept_file("move", 1))
+		assert.is_nil(vim.uv.fs_stat(source))
+		assert.equals("proposal\n", read(destination))
+	end)
+
+	it("checks an unsaved source before writing a move destination", function()
+		local estate, source, destination = add_move()
+		modified_buf = vim.fn.bufadd(source)
+		vim.fn.bufload(modified_buf)
+		vim.api.nvim_buf_set_lines(modified_buf, 0, -1, false, { "unsaved source" })
+		assert.is_false(edits.accept_file("move", 2))
+		assert.equals("original\n", read(source))
+		assert.is_nil(vim.uv.fs_stat(destination))
+		assert.equals("pending", estate.files[1].status)
+		assert.equals("pending", estate.files[2].status)
+		assert.is_true(vim.bo[modified_buf].modified)
+	end)
+
+	it("does not delete a source when the previously accepted destination disappeared", function()
+		local estate, source, destination = add_move()
+		os.remove = function(name) if name == source then return nil, "source delete failure" end return original_remove(name) end
+		assert.is_false(edits.accept_file("move", 1))
+		os.remove = original_remove
+		assert(os.remove(destination))
+		assert.is_false(edits.accept_file("move", 1))
+		assert.equals("original\n", read(source))
+		assert.equals("pending", estate.files[1].status)
+	end)
+
+	it("keeps the source when the move destination has unrelated manual content", function()
+		local estate, source, destination = add_move()
+		write(destination, "unrelated\n")
+		assert.is_false(edits.accept_file("move", 1))
+		assert.equals("original\n", read(source))
+		assert.equals("unrelated\n", read(destination))
+		assert.equals("pending", estate.files[1].status)
+	end)
+
+	it("keeps the destination when the source cannot be restored over unrelated content", function()
+		local estate, source, destination = add_move()
+		write(source, "unrelated\n")
+		write(destination, "proposal\n")
+		assert.is_false(edits.reject_file("move", 2))
+		assert.equals("unrelated\n", read(source))
+		assert.equals("proposal\n", read(destination))
+		assert.equals("pending", estate.files[2].status)
+	end)
+
+	it("resolves both rows of a manual move before either can be rejected", function()
+		local estate, source, destination = add_move()
+		write(destination, "proposal\n")
+		assert(os.remove(source))
+		assert.is_true(edits.resolve_file("move", 1))
+		assert.equals("accepted", estate.files[1].status)
+		assert.equals("accepted", estate.files[2].status)
+		assert.is_false(edits.reject_file("move", 2))
+		assert.equals("proposal\n", read(destination))
+	end)
+
+	it("reverts a move safely through the palette starting at its destination", function()
+		local estate, source, destination = add_move()
+		write(destination, "proposal\n")
+		assert(os.remove(source))
+		assert.is_true(edits.revert_change(estate.files[2].change_id))
+		assert.is_true(edits.revert_change(estate.files[1].change_id))
+		assert.equals("original\n", read(source))
+		assert.is_nil(vim.uv.fs_stat(destination))
+	end)
+
+	it("does not independently revert a move after its owning review was cleared", function()
+		local estate, source, destination = add_move()
+		write(destination, "proposal\n")
+		assert(os.remove(source))
+		edits.clear_all()
+		local ok, _, reason = edits.revert_change(estate.files[2].change_id, { force = true })
+		assert.is_false(ok)
+		assert.equals("move_conflict", reason)
+		assert.equals("proposal\n", read(destination))
+	end)
+
 	it("restores the original BOM independently from the proposed BOM", function()
 		local path = root .. "/bom"
 		write(path, "before\n")

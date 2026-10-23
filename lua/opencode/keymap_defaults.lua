@@ -48,8 +48,6 @@ local M = {
 	form = { next_field = "<Tab>", prev_field = "<S-Tab>", next = "j", previous = "k", toggle = "<Space>",
 		confirm = "<CR>", custom = "c", submit = "<C-g>", close = { "<Esc>", "q" } },
 	logs = { close = { "q", "<Esc>" }, clear = "C", auto_scroll = "a", refresh = "r", help = "?" },
-	terminal = { reconnect = "R", close = "q" },
-	terminal_menu = { create = "n", remove = "d" },
 	debug_bundle = { copy = "y" },
 	active_sessions = { close_session = "x" },
 	session_menu = { rename = "r", delete = "d", project = "p", all = "a", current_directory = "c" },
@@ -75,7 +73,7 @@ for i = 1, 9 do
 end
 M.parents = { mcp_info = "popup", palette = "menu", help = "popup", execute_details = "popup", debug_bundle = "popup" }
 for _, scope in ipairs({ "active_sessions", "session_menu", "model_menu", "mcp_menu", "queue_menu", "family_menu",
-	"process_menu", "plugin_menu", "workspace_menu", "pairing_menu", "diagnostics", "terminal_menu" }) do
+	"process_menu", "plugin_menu", "workspace_menu", "pairing_menu", "diagnostics" }) do
 	M.parents[scope] = "menu"
 end
 return M

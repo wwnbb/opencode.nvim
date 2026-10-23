@@ -9,7 +9,7 @@ describe("tab layout window options after Neovim startup", function()
 				editor.lua([[
 					local enabled, persistent = ...
 					require("opencode").setup({ server = { auto_start = false }, lualine = { enabled = false },
-						chat = { layout = "tab", session_tabs = { enabled = enabled, persist = false } } })
+						chat = { layout = "tab", session_tabs = { enabled = enabled } } })
 					local chat, workspace = require("opencode.ui.chat"), require("opencode.ui.chat.workspace")
 					local views, sessions = require("opencode.ui.chat.state"), require("opencode.session")
 					local function seed(id)
@@ -52,7 +52,7 @@ describe("tab layout window options after Neovim startup", function()
 			vim.go.foldexpr = "v:lua.vim.treesitter.foldexpr()"
 			vim.go.foldnestmax, vim.go.scrolloff = 20, 7
 			require("opencode").setup({ server = { auto_start = false }, lualine = { enabled = false },
-				chat = { layout = "tab", session_tabs = { persist = false } } })
+				chat = { layout = "tab" } })
 			local sessions = require("opencode.session")
 			local chat = require("opencode.ui.chat")
 			local workspace = require("opencode.ui.chat.workspace")

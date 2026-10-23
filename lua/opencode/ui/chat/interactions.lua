@@ -240,12 +240,6 @@ function M.handle_question_cancel(key)
 		return
 	end
 
-	local perm_id = chat_permissions.get_permission_at_cursor()
-	if perm_id then
-		chat_permissions.handle_permission_reject(perm_id)
-		return
-	end
-
 	vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes(key or "<Esc>", true, false, true), "n", false)
 end
 

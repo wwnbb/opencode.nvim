@@ -1,24 +1,17 @@
 describe("opencode pending credential operations", function()
 	local provider_state
 	local original_state_module
-	local actions
-	local original_remove_provider_models
 
 	before_each(function()
 		provider_state = require("opencode.provider.state")
 		provider_state.set_identity_getter(nil)
 		provider_state.clear_all()
 		original_state_module = package.loaded["opencode.state"]
-		actions = nil
-		original_remove_provider_models = nil
 	end)
 
 	after_each(function()
 		provider_state.set_identity_getter(nil)
 		provider_state.clear_all()
-		if actions and original_remove_provider_models then
-			actions.remove_provider_models = original_remove_provider_models
-		end
 		package.loaded["opencode.state"] = original_state_module
 	end)
 
@@ -97,26 +90,5 @@ describe("opencode pending credential operations", function()
 
 		require("opencode.cleanup").clear_transient({ reset_state = false, clear_chat = false })
 		assert(provider_state.is_pending("provider-a"))
-	end)
-
-	it("exposes action wrappers for mark, remember, and clear", function()
-		actions = require("opencode.actions")
-		original_remove_provider_models = actions.remove_provider_models
-		local removed_provider
-		actions.remove_provider_models = function(provider_id)
-			removed_provider = provider_id
-		end
-		provider_state.set_identity_getter(function()
-			return "localhost:5000"
-		end)
-
-		actions.forget_provider("provider-a")
-		assert(removed_provider == "provider-a")
-		assert(provider_state.is_pending("provider-a"))
-		actions.remember_provider("provider-a")
-		assert(not provider_state.is_pending("provider-a"))
-		provider_state.mark("provider-a")
-		actions.clear_pending_disconnects()
-		assert(not provider_state.is_pending("provider-a"))
 	end)
 end)

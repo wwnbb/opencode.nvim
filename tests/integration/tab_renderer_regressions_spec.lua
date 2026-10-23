@@ -10,7 +10,7 @@ describe("tab renderer regressions", function()
 		editor.lua([[
 			local layout = ...
 			require("opencode").setup({ server = { auto_start = false }, lualine = { enabled = false },
-				chat = { layout = layout, session_tabs = { persist = false, auto_fit = true, separator = " │  " } } })
+				chat = { layout = layout, session_tabs = { auto_fit = true, separator = " │  " } } })
 			_G.app = require("opencode.state")
 			_G.cs = require("opencode.ui.chat.state")
 			for index = 1, 5 do app.set_session("session-" .. index, "Session " .. index) end
@@ -209,7 +209,7 @@ describe("tab renderer regressions", function()
 			require("opencode").setup({ server = { auto_start = false }, lualine = { enabled = false },
 				notifications = { enabled = false },
 				chat = { layout = layout, close_on_focus_lost = false,
-					session_tabs = vim.tbl_extend("force", { persist = false }, options) } })
+					session_tabs = options } })
 			local client = require("opencode.client")
 			client.get_messages = function(_, _, cb) cb(nil, {}) end
 			client.get_all_messages = function(_, cb) cb(nil, {}) end

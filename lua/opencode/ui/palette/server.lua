@@ -9,7 +9,7 @@ function M.show()
 	local target = status.url or (tostring(info.host or "localhost") .. ":" .. tostring(info.port or "pending"))
 	local items = { { value = "reconnect", label = "Reconnect", description = status.discovered and "Rediscover URL and credentials before connecting" or target } }
 	if status.can_manage then
-		items[#items + 1] = { value = "restart", label = "Restart native managed service", description = "Closes persistent terminals on this host" }
+		items[#items + 1] = { value = "restart", label = "Restart native managed service", description = "Restarts the OpenCode service on this host" }
 		items[#items + 1] = { value = "upgrade", label = "Update OpenCode on this host", description = "Native installer detection; unsupported installers report a failure" }
 	end
 	return menu.open({ title = " Server ", width = 82, sort = false, items = items,
@@ -21,7 +21,7 @@ function M.show()
 				vim.notify("Managing host changed; reopen Server", vim.log.levels.WARN); return
 			end
 			menu.open({ title = " " .. item.label .. " ", width = 78, sort = false,
-				message = item.value == "restart" and "Restarting shuts down persistent terminals." or "Runs the native updater for the local OpenCode installation.",
+				message = item.value == "restart" and "Restarting interrupts active work on this server." or "Runs the native updater for the local OpenCode installation.",
 				items = { "Continue", "Cancel" }, on_select = function(choice)
 					if choice ~= "Continue" then return end
 					actions.manage_server(item.value, function(err)

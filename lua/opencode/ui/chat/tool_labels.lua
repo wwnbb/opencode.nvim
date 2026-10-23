@@ -177,9 +177,10 @@ function M.format_summary_item_label(item)
 			return render.format_title(tool_name) .. " " .. truncate_path_end(fp)
 		end
 	elseif tool_name == "bash" then
-		local d = input_table.description or ""
+		local d = trim_string(input_table.description)
+		if d == "" then d = trim_string(input_table.command) end
 		if d ~= "" then
-			return "Bash " .. truncate_label(d, 40)
+			return "Bash " .. truncate_label(render.sanitize_buffer_line(d), 40)
 		end
 	elseif tool_name == "glob" then
 		local pat = input_table.pattern or ""

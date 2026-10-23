@@ -57,6 +57,32 @@ local function pick_fg(sources, fallback)
 	return fallback
 end
 
+local function ensure_diff_highlights()
+	local normal = get_hl("Normal")
+	local panel_bg = get_hl("CursorLine").bg or normal.bg
+	for _, kind in ipairs({ "Add", "Delete" }) do
+		local diff = get_hl("Diff" .. kind)
+		local bg = (diff.reverse or diff.standout) and (diff.fg or normal.fg) or diff.bg
+		if not bg or bg == panel_bg or bg == normal.bg then
+			-- Foreground-only diff themes need a tint beneath the code's syntax colors.
+			local accent = diff.fg or (kind == "Add" and pick_fg({ "Added", "String", "DiagnosticOk" }, 0x00aa00)
+				or pick_fg({ "Removed", "DiagnosticError", "ErrorMsg" }, 0xdd0000))
+			local base = panel_bg or (vim.o.background == "light" and 0xffffff or 0x000000)
+			bg = 0
+			for _, place in ipairs({ 65536, 256, 1 }) do
+				local channel = math.floor(base / place) % 256
+				local tint = math.floor(accent / place) % 256
+				bg = bg + math.floor(channel * 0.8 + tint * 0.2 + 0.5) * place
+			end
+		end
+		local name = "OpenCodeEditDiff" .. kind .. "Body"
+		local current = get_hl(name)
+		if current.fg ~= normal.fg or current.bg ~= bg then
+			vim.api.nvim_set_hl(0, name, { fg = normal.fg, bg = bg })
+		end
+	end
+end
+
 local function ensure_highlights()
 	set_panel_hl("OpenCodeEditMuted", "Comment", "Normal")
 	set_panel_hl("OpenCodeEditHeader", "Title", "Normal", { bold = true })
@@ -86,14 +112,7 @@ local function ensure_highlights()
 		fg = get_hl("LineNr").fg or get_hl("Comment").fg,
 		bg = get_hl("CursorLine").bg,
 	})
-	vim.api.nvim_set_hl(0, "OpenCodeEditDiffAddBody", {
-		fg = get_hl("Normal").fg,
-		bg = get_hl("DiffAdd").bg or get_hl("CursorLine").bg,
-	})
-	vim.api.nvim_set_hl(0, "OpenCodeEditDiffDeleteBody", {
-		fg = get_hl("Normal").fg,
-		bg = get_hl("DiffDelete").bg or get_hl("CursorLine").bg,
-	})
+	ensure_diff_highlights()
 end
 
 require("opencode.ui.highlights").register("opencode.ui.edit_widget", ensure_highlights)
@@ -438,6 +457,7 @@ end
 ---@return number|nil start_line
 ---@return number|nil end_line
 local function append_inline_diff(result, file)
+	ensure_diff_highlights()
 	local start_line = nil
 	local end_line = nil
 	local lang = syntax.language_for_path(file and (file.filepath or file.relative_path))

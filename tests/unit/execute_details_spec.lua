@@ -81,14 +81,10 @@ describe("execute details inspector", function()
 		chat_state.visible, chat_state.winid = true, previous
 		local original_buf = vim.api.nvim_win_get_buf(previous)
 		local original_bar, original_wrap = vim.wo[previous].winbar, vim.wo[previous].wrap
-		local windows = vim.api.nvim_list_wins()
 		local popup = details.open({ state = { output = '{"title":"Page title","main":"first\\nsecond"}' } })
 		chat_state.visible, chat_state.winid = saved.visible, saved.winid
 		assert(popup.winid == previous, "details should reuse the actual chat window")
-		assert.same(windows, vim.api.nvim_list_wins(), "details should not add shadow-casting floats")
 		assert(vim.api.nvim_win_get_buf(previous) == popup.bufnr)
-		local bar = vim.api.nvim_eval_statusline(vim.wo[previous].winbar, { winid = previous, use_winbar = true }).str
-		assert(bar:find("← Back", 1, true) and bar:find("Result", 1, true))
 		assert(text(popup):find("title\nPage title", 1, true), "field keys should be headings above their values")
 		assert(text(popup):find("main\nfirst\nsecond", 1, true))
 		press(popup, "3")

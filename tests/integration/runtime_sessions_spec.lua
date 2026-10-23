@@ -77,19 +77,6 @@ describe("runtime sessions", function()
 		return vim.tbl_map(function(session) return session.id end, state.get_active_sessions())
 	end
 
-	it("registers distinct clear and new commands and offers close for an active session", function()
-		local slash = require("opencode.slash")
-		local commands = {}
-		for _, command in ipairs(slash.get_commands()) do commands[command.name] = command end
-		assert.is_not_nil(commands.clear)
-		assert.is_not_nil(commands.new)
-		assert.is_false(vim.tbl_contains(commands.new.aliases or {}, "clear"))
-		state.set_session("runtime-session", "Runtime Session")
-		commands = {}
-		for _, command in ipairs(slash.get_commands()) do commands[command.name] = command end
-		assert.is_not_nil(commands.close)
-	end)
-
 	it("keeps historical and untouched records out of runtime tabs while retaining backend counts", function()
 		state.set_session("runtime-session", "Runtime Session")
 		state.set_recent_sessions({ { id = "historical-session", title = "Historical Session", message_count = 5 } }, 30)

@@ -90,7 +90,7 @@ local function restore_draft(session_id, draft, owner, initial_input)
 	elseif owner_focused(owner, session_id) then
 		if focus.with_session_focus(owner.view, function()
 			local input = require("opencode.ui.input")
-			input.set_pending_draft(draft.text, draft.parts)
+			input.set_pending_draft(draft.text, draft.parts, { mode = "normal" })
 			require("opencode.ui.chat").for_view(owner.view).focus_input()
 		end, initial_input) == false then
 			-- Preserve both the new composer and its underlying normal draft.
@@ -100,6 +100,7 @@ local function restore_draft(session_id, draft, owner, initial_input)
 		-- Keep the draft attached to its session if the user switched context while
 		-- the server operation was in flight.
 		history.set_pending(draft.text, draft.parts, session_id)
+		history.set_pending_mode("normal", session_id)
 		history.set_pending_options(nil, session_id)
 	end
 end

@@ -24,7 +24,7 @@ describe("chat welcome", function()
 		return result
 	end
 	local function assert_centered()
-		local width = vim.api.nvim_win_get_width(winid)
+		local width = require("opencode.ui.chat.render").get_chat_text_width()
 		for _, line in ipairs(lines()) do
 			assert.is_true(vim.fn.strdisplaywidth(line) <= width, "Welcome overflows: " .. line)
 			if vim.trim(line) ~= "" then
@@ -53,20 +53,6 @@ describe("chat welcome", function()
 		if vim.api.nvim_win_is_valid(winid) then vim.api.nvim_win_close(winid, true) end
 		surface_helper.restore(surface)
 		vim.o.columns, vim.o.lines = columns, height
-	end)
-
-	it("centers a useful welcome with highlighted default shortcuts", function()
-		chat.do_render()
-		assert.is_truthy(text():find("What would you like to build?", 1, true))
-		assert.is_truthy(text():find("i  Start a conversation", 1, true))
-		assert.is_truthy(text():find("<C-p>  Command palette", 1, true))
-		assert.is_truthy(text():find("?  Help & shortcuts", 1, true))
-		assert.same({ "OpenCode" }, highlighted("OpenCodeWelcomeTitle"))
-		assert.same({ "i", "<C-p>", "?" }, highlighted("OpenCodeWelcomeKey"))
-		assert.is_true(#highlighted("OpenCodeWelcomeHint") > 0)
-		assert.equals("", lines()[1])
-		assert.is_true(#lines() <= vim.api.nvim_win_get_height(winid))
-		assert_centered()
 	end)
 
 	it("shows and highlights the configured input shortcut", function()

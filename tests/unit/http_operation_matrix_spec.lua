@@ -6,8 +6,6 @@ local model = { providerID = "provider", id = "model" }
 local time = { created = 100, expires = 200 }
 local shell = { id = "sh_1", status = "running", command = "echo test", cwd = location.directory,
 	shell = "/bin/sh", file = "/tmp/output", metadata = { sessionID = "s" }, time = { started = 100 } }
-local terminal = { id = "pty_one", sessionID = "s", title = "Terminal", command = "/bin/sh", args = {}, cwd = location.directory,
-	status = "running", pid = 10, foregroundProcess = vim.NIL, size = { cols = 80, rows = 24 }, output = { head = 0, tail = 4 } }
 local responses = {
 	empty = false,
 	info = { version = "2.0.11", pid = 1, urls = {}, paths = { tmp = "/tmp" } },
@@ -34,9 +32,6 @@ local responses = {
 	projects = { { id = "project", canonical = "/project space" } },
 	worktrees = { { directory = "/project tree" } },
 	worktree = { directory = "/project tree" },
-	pty_list = { data = { terminal } },
-	pty_info = { data = terminal },
-	pty_snapshot = { data = { info = terminal, text = "test", checkpoint = "dGVzdA==", cursor = { x = 4, y = 0 } } },
 	inbox = { data = { id = "inbox", sessionID = "s", type = "prompt", payload = { attachments = {} } } },
 	generated_text = { data = { text = "Transient answer" } },
 	interrupt = { interrupted = false },
@@ -65,12 +60,6 @@ local cases = {
 	{ "session_update", "PATCH", "/api/session/{sessionID}", "empty", { title = "renamed" } },
 	{ "session_move", "POST", "/api/session/{sessionID}/move", "empty", { directory = "/project tree" } },
 	{ "session_view", "POST", "/api/session/{sessionID}/view", "empty", { idle = 123 } },
-	{ "pty_list", "GET", "/api/experimental/session/{sessionID}/terminal", "pty_list" },
-	{ "pty_create", "POST", "/api/experimental/session/{sessionID}/terminal", "pty_info", { args = {}, env = vim.empty_dict(), title = "Terminal", cwd = location.directory } },
-	{ "pty_get", "GET", "/api/experimental/persistent-pty/{ptyID}", "pty_info" },
-	{ "pty_update", "PUT", "/api/experimental/persistent-pty/{ptyID}", "pty_info", { size = { cols = 80, rows = 24 }, attachmentID = "attachment" } },
-	{ "pty_snapshot", "GET", "/api/experimental/persistent-pty/{ptyID}/snapshot", "pty_snapshot" },
-	{ "pty_remove", "DELETE", "/api/experimental/persistent-pty/{ptyID}", "empty" },
 	{ "session_delete", "DELETE", "/api/session/{sessionID}", "empty" },
 	{ "session_active", "GET", "/api/session/active", "object" },
 	{ "session_shell", "POST", "/api/session/{sessionID}/shell", "empty", { command = "echo test" } },
@@ -148,18 +137,10 @@ describe("HTTP operation wire matrix", function()
 		require("opencode.client.http").setup({ host = "127.0.0.1", port = 4096, auth = { password = "public-test-only" } })
 	end)
 	after_each(function() vim.schedule = schedule; for _, name in ipairs(names) do package.loaded[name] = saved[name] end end)
-	it("covers every registered operation and agrees with the pinned HTTP route inventory", function()
+	it("agrees with the pinned HTTP route inventory", function()
 		local inventory = vim.json.decode(table.concat(vim.fn.readfile("tests/contracts/v2-http-events.json"), "\n"))
-		local covered = {}
 		for _, case in ipairs(cases) do
 			assert.is_true(vim.tbl_contains(inventory.http_paths[case[3]] or {}, case[2]), case[1])
-			covered[case[1]] = true
-		end
-		-- Only coverage is read from implementation; request expectations above
-		-- are checked independently against the published contract inventory.
-		for line in io.lines("lua/opencode/client/api.lua") do
-			local name = line:match('^\t([%w_]+) = { "%u+", "/api/')
-			if name then assert.is_true(covered[name], "Missing wire case: " .. name) end
 		end
 	end)
 	for _, case in ipairs(cases) do

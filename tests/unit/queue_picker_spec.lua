@@ -11,9 +11,11 @@ describe("queue picker and promotion", function()
 		state.set_config(vim.deepcopy(require("opencode.config").defaults)); state.set_session("s", "Session")
 		state.set_connection("connected")
 		saved = { inbox = client.get_inbox, delivery = client.set_input_delivery, cancel = client.cancel_input,
+			history = client.get_all_messages,
 			connect = lifecycle.ensure_connected, menu = menu.open, notify = vim.notify }
 		lifecycle.ensure_connected = function(cb) cb() end
 		client.get_inbox = function(_, cb) inbox_callback = cb end
+		client.get_all_messages = function(_, cb) cb(nil, {}, { complete = true }) end
 		requests, views = {}, {}
 		client.set_input_delivery = function(sid, id, delivery, cb) requests[#requests + 1] = { sid = sid, id = id, delivery = delivery }; cb(nil) end
 		client.cancel_input = function(_, _, cb) cb(nil) end
@@ -24,6 +26,7 @@ describe("queue picker and promotion", function()
 		for _, view in ipairs(views) do require("opencode.ui.chat.state").remove(view) end
 		input.close(false); history.clear(); state.reset(); pending.clear_all(); require("opencode.sync").clear_all()
 		client.get_inbox, client.set_input_delivery, client.cancel_input = saved.inbox, saved.delivery, saved.cancel
+		client.get_all_messages = saved.history
 		lifecycle.ensure_connected, menu.open, vim.notify = saved.connect, saved.menu, saved.notify
 	end)
 	it("admits a fresh native snapshot but does not resurrect an item delivered before the response", function()
@@ -51,6 +54,7 @@ describe("queue picker and promotion", function()
 			assert.equals("Queued", picker.items[1].description)
 			local closed = false
 			picker.on_select(picker.items[1], { close = function() closed = true end }); flush()
+			inbox_callback(nil, {}); flush()
 			assert.is_true(closed); assert.equals("cancelled", pending.get("s", "selected").status)
 			assert.equals("existing draft\n\nqueued draft", input.get_pending_text())
 		end)
@@ -79,6 +83,7 @@ describe("queue picker and promotion", function()
 			picker.on_select(picker.items[1], { close = function() end })
 			view.generation = view.generation + 1
 			cancel_reply(nil); flush()
+			inbox_callback(nil, {}); flush()
 			assert.equals("", input.get_pending_text())
 			assert.equals("owned draft", history.take_deferred("s").text)
 		end)
@@ -90,6 +95,7 @@ describe("queue picker and promotion", function()
 			input.set_pending_draft("existing draft", {}, { options = { agent = "build", directory = "/current" } })
 			require("opencode.ui.palette.queue").show(); inbox_callback(nil, { item("selected", "queue", "queued draft\n\nqueued context") }); flush()
 			picker.on_select(picker.items[1], { close = function() end }); flush()
+			inbox_callback(nil, {}); flush()
 			assert.equals("existing draft\n\nqueued draft", input.get_pending_text())
 			assert.same({ agent = "build", directory = "/current", context = context }, input.get_pending_options())
 			local request = assert(require("opencode.protocol.requests").prompt(input.get_pending_text(), input.get_pending_options(), "msg_1"))

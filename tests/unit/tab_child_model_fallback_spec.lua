@@ -64,7 +64,7 @@ describe("tab child model metadata fallbacks", function()
 			assert.is_not_nil(lock)
 			assert.same(model, lock.model)
 			assert.is_not.equals(true, lock.pending)
-			assert.equals("fallback", lock.variant)
+			if source == "child.model" then assert.is_nil(lock.variant) else assert.equals("fallback", lock.variant) end
 			assert.equals("model-child", cs.session(view).id)
 		end)
 	end

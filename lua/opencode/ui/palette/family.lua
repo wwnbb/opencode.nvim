@@ -21,9 +21,12 @@ function M.show(context)
 	local records, items, mode, interrupting, load_request = {}, {}, "all", {}, 0
 	local function rebuild()
 		while #items > 0 do table.remove(items) end
-		local by_id, children, seen = {}, {}, {}
+		local by_id, children, seen, titles, title_counts = {}, {}, {}, {}, {}
 		for _, record in ipairs(records) do
 			by_id[record.id] = record
+			local title = require("opencode.util.session").displayTitle(record.title or record.name) or record.id
+			titles[record.id] = title
+			title_counts[title] = (title_counts[title] or 0) + 1
 			if record.parentID then
 				children[record.parentID] = children[record.parentID] or {}
 				children[record.parentID][#children[record.parentID] + 1] = record
@@ -34,11 +37,21 @@ function M.show(context)
 			seen[record.id] = true
 			local running = status.is_busy(app_state.get_session_status(record.id))
 			if mode == "all" or (mode == "active" and running) or (mode == "inactive" and not running) then
+				local title, suffix = titles[record.id], ""
+				if title_counts[title] > 1 then
+					local length = 6
+					for _, other in ipairs(records) do
+						if other.id ~= record.id and titles[other.id] == title then
+							while record.id:sub(-length) == other.id:sub(-length) do length = length + 1 end
+						end
+					end
+					suffix = " · " .. record.id:sub(-length)
+				end
 				items[#items + 1] = {
-					key = record.id, value = record.id,
+					key = record.id, value = record.id, title = title,
 					label = string.rep("  ", depth) .. (record.id == source_id and "● " or "")
-						.. (require("opencode.util.session").displayTitle(record.title or record.name) or record.id),
-					description = (record.agent and record.agent .. " · " or "") .. (running and "Active" or "Inactive"),
+						.. title,
+					description = (record.agent and record.agent .. " · " or "") .. (running and "Active" or "Inactive") .. suffix,
 					priority = record.id == source_id and 1 or 0,
 				}
 			end
@@ -61,13 +74,24 @@ function M.show(context)
 		end)
 	end
 	local function show()
-		require("opencode.ui.menu").open({
+		local width, status_listener, events = 76, nil, require("opencode.events")
+		for _, item in ipairs(items) do
+			width = math.max(width, math.min(100, vim.fn.strdisplaywidth(item.label) + vim.fn.strdisplaywidth(item.description) + 10))
+		end
+		local ctx = require("opencode.ui.menu").open({
 			context = context,
-			items = items, title = " Session Family ", width = 76, searchable = true, sort = false,
-			on_select = function(item)
-				if current() then
-					require("opencode.ui.chat.state").module(context.view, require("opencode.ui.chat.nav")).open_family_session(item.value)
-				end
+			items = items, title = " Session Family ", width = width, searchable = true, sort = false,
+			message = "Activity on the connected server only",
+			item_detail = function(item) return "Selected: " .. item.title .. "\n" .. item.value end,
+			close_on_select = false,
+			on_close = function()
+				if requests[key] == request then requests[key] = nil end
+				if status_listener then events.off("session_status_change", status_listener) end
+			end,
+			on_select = function(item, ctx)
+				if not current() then return end
+				ctx.close()
+				require("opencode.ui.chat.state").module(context.view, require("opencode.ui.chat.nav")).open_family_session(item.value)
 			end,
 			keymap_scope = "family_menu",
 			keys = {
@@ -89,6 +113,14 @@ function M.show(context)
 				end },
 			},
 		})
+		if ctx then
+			status_listener = events.on("session_status_change", function(data)
+				if not current() then return end
+				for _, record in ipairs(records) do
+					if record.id == data.session_id then rebuild(); ctx.refresh(); return end
+				end
+			end)
+		end
 	end
 	load(function() focus.with_session_focus(context.view, show, initial_input) end)
 end

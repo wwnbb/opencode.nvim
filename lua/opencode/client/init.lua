@@ -101,32 +101,6 @@ function M.pair_server(callback)
 	return api.request("server_pair", {}, callback)
 end
 
-function M.list_terminals(session_id, callback)
-	return api.request("pty_list", { path = { sessionID = session_id } }, callback)
-end
-
-function M.create_terminal(session_id, opts, callback)
-	opts = vim.deepcopy(opts or {})
-	if type(opts.env) == "table" and next(opts.env) == nil then opts.env = vim.empty_dict() end
-	return api.request("pty_create", { path = { sessionID = session_id }, body = opts }, callback)
-end
-
-function M.get_terminal(id, callback)
-	return api.request("pty_get", { path = { ptyID = id } }, callback)
-end
-
-function M.get_terminal_snapshot(id, callback)
-	return api.request("pty_snapshot", { path = { ptyID = id } }, callback)
-end
-
-function M.resize_terminal(id, size, attachment_id, callback)
-	return api.request("pty_update", { path = { ptyID = id }, body = { size = size, attachmentID = attachment_id } }, callback)
-end
-
-function M.remove_terminal(id, callback)
-	return api.request("pty_remove", { path = { ptyID = id } }, callback)
-end
-
 function M.list_server_plugins(opts, callback)
 	return api.request("plugin_list", { query = { location = { directory = opts.directory } } }, callback)
 end

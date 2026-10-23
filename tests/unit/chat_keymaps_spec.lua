@@ -132,7 +132,6 @@ describe("configurable chat controls", function()
 		})
 		rendered = text(permission)
 		assert.is_truthy(rendered:find("<F3> / <F4> confirm", 1, true))
-		assert.is_truthy(rendered:find("<F5> reject", 1, true))
 		assert.is_truthy(rendered:find("<F6> message", 1, true))
 	end)
 

@@ -40,4 +40,19 @@ describe("native subagent projection", function()
 		assert.equals("completed", animation.task_status(part))
 		assert.is_false(animation.is_animating_tool_part(part))
 	end)
+	it("renders streaming and interrupted tasks without reporting success", function()
+		local animation = require("opencode.ui.chat.task_animation")
+		local part = { tool = "task", state = { status = "streaming" } }
+		assert.is_true(animation.is_animating_tool_part(part))
+		part.state = { status = "completed", metadata = { sessionID = "child", status = "running" } }
+		sync.handle_session_status("child", { type = "idle", outcome = "interrupted" })
+		assert.equals("cancelled", animation.task_status(part))
+		assert.is_false(animation.is_animating_tool_part(part))
+		sync.handle_session_status("child", { type = "busy" })
+		for _, status in ipairs({ "cancelled", "canceled", "interrupted", "aborted", "error" }) do
+			part.state.status = status
+			assert.equals(status, animation.task_status(part))
+			assert.is_false(animation.is_animating_tool_part(part))
+		end
+	end)
 end)

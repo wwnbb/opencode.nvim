@@ -390,18 +390,6 @@ function M.set_runtime_session_order(ids)
 	emit_change("sessions.runtime_order", old, order)
 end
 
-function M.set_closed_session_order(ids)
-	local order, seen = {}, {}
-	for _, id in ipairs(ids or {}) do
-		if type(id) == "string" and id ~= "" and not seen[id] and not M.is_runtime_session(id) then
-			order[#order + 1], seen[id] = id, true
-		end
-	end
-	local old = state.sessions.closed_order
-	state.sessions.closed_order = order
-	emit_change("sessions.closed_order", old, order)
-end
-
 -- Normalize directory paths for comparison/storage while preserving roots.
 ---@param directory string|nil
 ---@return string|nil

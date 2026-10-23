@@ -17,7 +17,7 @@ describe("native splits of a chat buffer", function()
 		editor = vim.api.nvim_get_current_tabpage()
 		state.reset(); sync.clear_all()
 		api.setup({ server = { auto_start = false }, lualine = { enabled = false },
-			chat = { layout = "tab", session_tabs = { persist = false } } })
+			chat = { layout = "tab" } })
 		saved_messages = client.get_messages
 		client.get_messages = function(_, _, callback) callback(nil, {}) end
 		sessions.set_active("mirror-a", "Mirror A")

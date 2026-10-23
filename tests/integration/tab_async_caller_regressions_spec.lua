@@ -18,7 +18,7 @@ describe("upstream navigation callers and review notes", function()
 					local errors = {}
 					vim.notify = function(message, level) if level == vim.log.levels.ERROR then errors[#errors + 1] = tostring(message) end end
 					api.setup({ server = { auto_start = false, shared_filesystem = route == "timeline-revert-native" or nil }, lualine = { enabled = false },
-						chat = { layout = "tab", session_tabs = { persist = false } }, input = { history_file = vim.fn.tempname() .. "-history.json" } })
+						chat = { layout = "tab" }, input = { history_file = vim.fn.tempname() .. "-history.json" } })
 					lifecycle.ensure_connected = function(callback) callback() end
 					client.get_messages = function(_, _, callback) callback(nil, {}) end
 					client.get_session_statuses = function(callback) callback(nil, {}) end
@@ -201,7 +201,7 @@ describe("public navigation entries from the unchanged editor", function()
 					local api, app, sessions = require("opencode"), require("opencode.state"), require("opencode.session")
 					local client, lifecycle = require("opencode.client"), require("opencode.lifecycle")
 					api.setup({ server = { auto_start = false }, lualine = { enabled = false },
-						chat = { layout = "tab", session_tabs = { persist = false } }, input = { history_file = vim.fn.tempname() .. "-history.json" } })
+						chat = { layout = "tab" }, input = { history_file = vim.fn.tempname() .. "-history.json" } })
 					client.get_messages = function(_, _, callback) callback(nil, {}) end
 					client.get_session_statuses = function(callback) callback(nil, {}) end
 					sessions.remember({ id = "editor-source", title = "Editor source", location = { directory = vim.fn.getcwd() } })

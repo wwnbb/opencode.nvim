@@ -5,7 +5,7 @@ describe("tab layout recovery", function()
 		editor.lua([[
 			vim.o.lines, vim.o.columns = 60, 120
 			require("opencode").setup({ server = { auto_start = false }, lualine = { enabled = false },
-				chat = { layout = "tab", session_tabs = { persist = false } } })
+				chat = { layout = "tab" } })
 			require("opencode.client").get_messages = function(_, _, cb) cb(nil, {}) end
 			chat = require("opencode.ui.chat")
 			workspace = require("opencode.ui.chat.workspace")
@@ -162,7 +162,7 @@ describe("tab layout lifecycle recovery", function()
 			end
 			function open(enabled)
 				require("opencode").setup({ server = { auto_start = false }, lualine = { enabled = false },
-					chat = { layout = "tab", session_tabs = { enabled = enabled, persist = false } } })
+					chat = { layout = "tab", session_tabs = { enabled = enabled } } })
 				require("opencode.client").get_messages = function(_, _, cb) cb(nil, {}) end
 				chat, workspace = require("opencode.ui.chat"), require("opencode.ui.chat.workspace")
 				views = require("opencode.ui.chat.state")

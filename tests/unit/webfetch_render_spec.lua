@@ -227,20 +227,6 @@ describe("webfetch custom tool rendering", function()
 		end
 	end)
 
-	it("uses the specialized widget through the regular tool dispatcher", function()
-		local tasks = require("opencode.ui.chat.tasks")
-		local item = part({
-			status = "completed",
-			input = { url = "https://example.com/jobs", format = "text" },
-			output = "Dispatched body",
-		})
-		for _, expanded in ipairs({ false, true }) do
-			local expected = webfetch.render_tool(item, expanded)
-			expected.lines[#expected.lines + 1] = ""
-			assert.same(expected, tasks.render_regular_tool(item, expanded))
-		end
-	end)
-
 	it("keeps standalone animation on the compact header without overlaying a trailing URL slash", function()
 		local animation = require("opencode.ui.chat.task_animation")
 		local namespace = require("opencode.ui.chat.state").chat_anim_ns

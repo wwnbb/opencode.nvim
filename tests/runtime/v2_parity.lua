@@ -20,7 +20,7 @@ end
 vim.cmd.cd(vim.fn.fnameescape(directory))
 app.setup({ server = { host = host, port = tonumber(port), auto_start = false, use_shell_env = false,
 	config_dir = vim.env.OPENCODE_CONFIG_DIR, auth = { username = "opencode", password = "opencode-nvim-test-only" } },
-	lualine = { enabled = false }, chat = { session_tabs = { persist = false } } })
+	lualine = { enabled = false } })
 lifecycle.ensure_connected(function() end); wait(state.is_connected, "No native connection")
 local server = await(client.health)
 local plugins = await(function(cb) client.list_server_plugins({ directory = directory }, cb) end)
@@ -96,36 +96,6 @@ for _, message in ipairs(env_history) do
 end
 assert(env_output, "Native environment replacement missing")
 
--- Persistent terminal input, control resize, detach and byte-cursor replay.
-local terminal = await(function(cb) client.create_terminal(second.id, { command = "/bin/sh", args = {}, title = "Parity PTY", env = {}, size = { cols = 80, rows = 24 } }, cb) end)
-local terminal_list = await(function(cb) client.list_terminals(second.id, cb) end)
-assert(vim.tbl_contains(vim.tbl_map(function(item) return item.id end, terminal_list), terminal.id))
-local output, pty_err, resized, handle = "", nil, false
-local function attach(cursor, name)
-	return assert(actions.connect_terminal({ id = terminal.id, session_id = second.id, directory = other,
-		attachment_id = name, cursor = cursor,
-		on_data = function(data) output = output .. data end,
-		on_event = function(event) if event.type == "resized" then resized = true end end,
-		on_error = function(err) pty_err = err end }))
-end
-handle = attach(0, "parity-first")
-wait(function() return handle.is_ready() or pty_err end, "PTY attachment timeout"); assert(not pty_err, vim.inspect(pty_err))
-assert(handle.control(100, 30)); wait(function() return resized or pty_err end, "PTY resize timeout")
-assert(handle.input("printf 'native-pty-output\\n'\n", 100, 30))
-wait(function() return output:find("native-pty-output\r\n", 1, true) or pty_err end, "PTY output timeout"); assert(not pty_err, vim.inspect(pty_err))
-local cursor = handle.cursor(); handle.close()
-local info = await(function(cb) client.get_terminal(terminal.id, cb) end)
-assert(info.status == "running" and info.size.cols == 100 and info.size.rows == 30, "Detach killed terminal or resize was lost")
-local snapshot = await(function(cb) client.get_terminal_snapshot(terminal.id, cb) end)
-assert(snapshot.info.id == terminal.id and type(snapshot.checkpoint) == "string")
-output = ""; handle = attach(cursor, "parity-second")
-wait(function() return handle.is_ready() or pty_err end, "PTY reconnect timeout")
-assert(not pty_err and not output:find("native-pty-output", 1, true), "PTY replay duplicated consumed output")
-assert(handle.input("printf 'after-detach\\n'\n", 100, 30))
-wait(function() return output:find("after-detach\r\n", 1, true) or pty_err end, "PTY reconnect output missing")
-assert(not pty_err, vim.inspect(pty_err)); handle.close()
-await(function(cb) client.remove_terminal(terminal.id, cb) end)
-
 -- Two independently targeted shell processes; one kill must leave the other running.
 local shell_requests, shell_errors = 0, {}
 local function shell_done(err)
@@ -193,7 +163,7 @@ vim.fn.writefile({ vim.json.encode({ version = server.version, cross_project_ope
 	view_without_idle_ignored = true, native_view_acknowledgement = true, shell_output = true, targeted_kill = true, automatic_sse_recovery = true,
 	reconnect_attempts = max_attempts, native_plugin_list = true, native_pairing = pairing ~= nil,
 	native_worktree_crud = true, dirty_worktree_guard = true, session_move_execution = true, move_preserves_history = true,
-	native_vcs_sources = true, session_environment = true, persistent_pty = true, pty_resize = true, pty_detach_replay = true,
+	native_vcs_sources = true, session_environment = true,
 	all_provider_use_denied = true, explicit_model_prompt_submitted = false, personal_provider_credentials_used = false }) }, assert(vim.env.OPENCODE_V2_OUTPUT))
 lifecycle.disconnect()
 print("Native parity contracts and automatic recovery passed")

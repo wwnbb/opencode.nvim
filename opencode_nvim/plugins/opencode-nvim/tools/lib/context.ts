@@ -16,6 +16,8 @@ export interface ReviewFile {
   type: string
   before: string
   after: string
+  moveID?: string
+  moveRole?: "source" | "destination"
   [key: string]: unknown
 }
 export interface ReviewProposal {

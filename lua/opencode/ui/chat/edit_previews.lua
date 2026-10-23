@@ -10,6 +10,7 @@ local text_util = require("opencode.util.text")
 
 local PREVIEW_TOOLS = {
 	edit = true,
+	patch = true,
 	apply_patch = true,
 	neovim_edit = true,
 	neovim_patch = true,

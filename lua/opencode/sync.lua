@@ -483,8 +483,8 @@ local function resolve_task_child_session_id(tool_part)
 
 	-- Both spellings occur in verified v2 runtimes: 2.0.11 emits sessionID,
 	-- while the current task tool source uses sessionId.
-	return state_metadata.sessionID or state_metadata.sessionId
-		or part_metadata.sessionID or part_metadata.sessionId
+	return nonempty_string(state_metadata.sessionID) or nonempty_string(state_metadata.sessionId)
+		or nonempty_string(part_metadata.sessionID) or nonempty_string(part_metadata.sessionId)
 end
 
 local function inherited_task_reference(child_session_id, parent_session_id)
@@ -1023,6 +1023,29 @@ local function handle_session_messages(session_id, messages, opts)
 		if type(msg_with_parts) == "table" then
 			local info = type(msg_with_parts.info) == "table" and msg_with_parts.info or msg_with_parts
 			local info_id = type(info) == "table" and nonempty_string(info.id) or nil
+			if snapshot and info_id and not protected_messages[info_id] and type(info._native) == "table" then
+				local native
+				-- Progress is ephemeral: running HTTP rows omit metadata already received over SSE.
+				for index, content in ipairs(info._native.content or {}) do
+					local incoming = content.state or {}
+					if content.type == "tool" and incoming.status == "running"
+						and (incoming.metadata == nil or (type(incoming.metadata) == "table" and next(incoming.metadata) == nil)) then
+						local part_id = require("opencode.protocol.messages").part_id(session_id, info_id, "tool", content.id)
+						local previous = M.get_part(info_id, part_id)
+						local live = previous and previous.state or {}
+						if live.status == "running" and previous.raw_tool == content.name
+							and (live.time or {}).start == (content.time or {}).ran
+							and type(live.metadata) == "table" and next(live.metadata) ~= nil then
+							native = native or vim.deepcopy(info._native)
+							native.content[index].state.metadata = vim.deepcopy(live.metadata)
+						end
+					end
+				end
+				if native then
+					msg_with_parts = require("opencode.protocol.messages").project(session_id, native)
+					info = msg_with_parts.info
+				end
+			end
 			if type(info) == "table" and info_id then
 				info.id = info_id
 				info.sessionID = nonempty_string(info.sessionID) or session_id

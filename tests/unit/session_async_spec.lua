@@ -90,6 +90,7 @@ describe("session actions across connection changes", function()
 	it("drops a late cancellation response after connection invalidation", function()
 		local completed = 0
 		send.cancel_input = saved.sends.cancel_input
+		pending.admit({ sessionID = "original", id = "input-one", delivery = "queue" })
 		actions.cancel_pending_input("original", "input-one", function() completed = completed + 1 end)
 		pending.invalidate()
 		reply(nil)

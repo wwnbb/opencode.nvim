@@ -9,7 +9,7 @@ describe("opening tab input from an editor reference", function()
 			_G.input, _G.sessions = require("opencode.ui.input"), require("opencode.session")
 			vim.notify = function() end
 			api.setup({ server = { auto_start = false }, lualine = { enabled = false },
-				chat = { layout = "tab", session_tabs = { persist = false } } })
+				chat = { layout = "tab" } })
 			require("opencode.lifecycle").ensure_connected = function(callback) callback() end
 			require("opencode.client").get_messages = function(_, _, callback) callback(nil, {}) end
 			_G.source, _G.source_window = vim.api.nvim_get_current_buf(), vim.api.nvim_get_current_win()

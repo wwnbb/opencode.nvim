@@ -111,7 +111,6 @@ local function sections(config)
 				{ numbers(1, 3), "Select option by number" },
 				{ key("widget_prev") .. " / " .. key("widget_next"), "Move cursor (selection follows)" },
 				{ key("confirm"), "Confirm permission" },
-				{ key("back"), "Reject permission" },
 			},
 		},
 		{

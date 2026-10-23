@@ -16,6 +16,7 @@ and naturally integrated into the Neovim workflow.
 # Chat layouts and independent panes
 
 Choose `chat.layout = "vertical"`, `"horizontal"`, `"float"`, or `"tab"`.
+Messages and tool panels keep a two-column margin on both sides of each chat pane.
 The `tab` layout uses the top Neovim tabline for two independent lists:
 inside OpenCode it shows only OpenCode layouts; in the editor it restores your
 original tabline and shows only native Neovim tabs. Each OpenCode tab keeps its
@@ -78,10 +79,9 @@ Reopening after `q` restores the last session and its draft. Native `:tabclose`,
 or `:q`/`:close` on the workspace's last window, closes the whole workspace,
 including its saved layouts. These native commands are not intercepted.
 
-With `chat.session_tabs.scope = "cwd"`, an open or hidden OpenCode workspace
-keeps its session list when the working directory changes. The new directory's
-list is restored after closing and reopening the workspace. Split geometry is not restored after
-restarting Neovim; the existing session-list persistence is unchanged.
+OpenCode layouts and session tabs last only for the current Neovim run.
+After restarting Neovim, use `/sessions` or `/open <session-id>` to open an
+existing server session.
 
 # Keyboard configuration
 
@@ -147,7 +147,7 @@ it directly while searching.
 | `inline_diff`, `native_diff`, `vcs` | Edit review and VCS views |
 | `execute_details`, `help`, `session_tabs` | Tool inspector, help and session-tab mouse/visual controls |
 | `btw_prompt`, `btw_answer`, `form` | Side questions, their answers and setup forms |
-| `logs`, `terminal`, `terminal_menu`, `debug_bundle` | Logs, terminal attachment/list and support snapshot |
+| `logs`, `debug_bundle` | Logs and support snapshot |
 | `active_sessions`, `session_menu`, `model_menu` | Session and model selectors |
 | `mcp_menu`, `mcp_info`, `queue_menu`, `family_menu` | MCP, pending prompts and subagent selectors |
 | `process_menu`, `plugin_menu`, `workspace_menu` | Processes, server plugins and locations |
@@ -276,9 +276,9 @@ current session's directory, and `a` shows all projects. Scope filters remain
 available with no matches and do not change Neovim's working directory.
 Use `/open <session-id>` to open directly,
 `/rename <title>` to rename, or bare `/rename` to regenerate a title. The session
-picker also offers rename and delete for inactive sessions. Tabs remember their
-order across restarts and show `◆` for unviewed completions. Use `/reopen` or the
-palette's Move Tab Left/Right actions to manage their order.
+picker also offers rename and delete for inactive sessions. Tabs show `◆` for
+unviewed completions. Use `/reopen` to reopen a tab closed during the current
+Neovim run, or the palette's Move Tab Left/Right actions to manage their order.
 
 `/workspaces` (also `/projects`) selects a server location. `/new` offers location
 selection, `/cd` moves the active server session, and `/worktrees` lists, creates,
@@ -287,12 +287,21 @@ decision. `/family` lists the complete session family, filters active children
 and interrupts a selected session. Backspace returns to the parent, including
 children opened directly by ID.
 
+`gd` opens the exact child recorded by a task. If that link was missed while
+disconnected or before opening Neovim, `gd` opens Session Family for an explicit
+selection; short unique ID suffixes distinguish children with identical titles.
+The full ID is searchable and shown below the selected row. Activity and filters
+update while the menu is open. Selecting a child does not guess or overwrite the
+task's link. History refreshes preserve live links, and failed child loads leave
+the current chat in place.
+
+Inside an expanded Task, Enter or `O` opens the selected child tool's command
+and output. Press it again to collapse that tool; the Task stays open.
+
 Toggle shell input with Ctrl+\\ or `/shell`; sending executes in the session's
 server location without calling a model. `/processes` shows output and kills a
 selected process. `/background` moves a supported blocking shell/subagent tool
-to the background. `/terminals` manages persistent server PTYs in Neovim terminal
-buffers: `n` creates, `d` removes, `R` reconnects and `q` detaches. Detaching keeps
-the process running; output resumes from its byte cursor on reconnect.
+to the background.
 
 Background shell completions show a compact status, command and output preview
 instead of the server's raw shell tags. Press Enter or `O` on the block to
@@ -422,7 +431,7 @@ server = {
 }
 ```
 
-HTTPS REST, SSE and PTY WebSockets use an installed OpenSSL with certificate and
+HTTPS REST and SSE use an installed OpenSSL with certificate and
 hostname verification. HTTP host/port configuration is also supported.
 `server.managed = true` discovers the native local CLI service, verifies its
 PID/version and rereads endpoint/credentials on reconnect. `/server` offers
@@ -430,6 +439,14 @@ connection controls; native restart/update are available only on the verified
 managing host. `/environment` replaces the session's complete shell environment,
 including PATH. An empty map creates an empty environment; the native API does
 not expose inherited values or provide a reset-to-inheritance operation.
+
+To share live sessions between Neovim instances, use `server = { managed = true }`
+in each instance, or connect all of them to the same explicit endpoint. Default
+auto-start creates a separate server per instance. Servers can see the same saved
+history, but `/family` activity, live events and interruption apply only to the
+connected server. A tool still marked running in saved history does not prove
+that this server owns its execution. Change connections after ongoing work ends;
+starting a shared service does not migrate work from another running server.
 
 SSE becomes connected after the native handshake and reconnects with capped
 backoff throughout long outages. A 45-second read-idle watchdog counts keepalive
@@ -820,6 +837,17 @@ without provider credentials or paid requests:
 python3 tests/runtime/prepared_tools.py
 ```
 
+Verify subsession navigation against an installed OpenCode binary with an isolated
+local model fixture (no account credentials or external model requests):
+
+```sh
+python3 tests/runtime/subsession_backend.py --output /tmp/opencode-subsession-check
+```
+
+This checks parallel children with identical titles, `gd`/Backspace, history
+refresh and reconnect, explicit family selection after cold attach, and
+background completion, interruption and failure. The output directory must be new.
+
 Verify completion against an installed OpenCode binary and a loopback mock
 model (temporary configuration, no account credentials or paid requests):
 
@@ -853,7 +881,7 @@ native history and SSE. It uses an isolated profile without personal credentials
 public model availability depends on the provider. This is separate from the
 deterministic test suite.
 
-Check session/location, worktree, VCS, shell/environment, persistent PTY and
+Check session/location, worktree, VCS, shell/environment and
 SSE recovery contracts in a disposable profile without provider credentials or
 an explicit model prompt:
 
@@ -1097,7 +1125,6 @@ require("opencode").setup({
     close_on_focus_lost = true,
     session_tabs = {
       enabled = true,
-      scope = "global", -- Keep tabs across directory changes; "cwd" for per-directory tabs
       auto_fit = false,
       max_tabs = 3,
       separator = " │ ",

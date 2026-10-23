@@ -153,4 +153,39 @@ describe("opencode session project scope", function()
 		assert.equals("busy", sync.get_session_status("child").type)
 		assert.equals("busy", state.get_session_status("child").type)
 	end)
+
+	it("refreshes a cold child reference without claiming cleanup ownership", function()
+		local sync = require("opencode.sync")
+		local messages = require("opencode.protocol.messages")
+		sync.handle_session_messages("a", { messages.project("a", {
+			id = "delegation", type = "tool", name = "subagent", callID = "call",
+			status = "completed", input = {}, output = "Background task started",
+			metadata = { sessionID = "child", status = "running" }, time = { created = 1, ran = 2, completed = 3 },
+		}) })
+		assert.same({ "a" }, sync.collect_session_tree("a"))
+		sync.handle_session_messages("child", { messages.project("child", {
+			id = "idle", type = "idle", outcome = "interrupted",
+		}) })
+		session.refresh_status(nil, "child"); requests[1](nil, {})
+		assert.same({ type = "idle", outcome = "interrupted" }, sync.get_session_status("child"))
+		assert.same({ "a" }, sync.collect_session_tree("a"))
+		session.refresh_status(nil, "child")
+		state.set_session_status("child", { type = "busy" })
+		requests[2](nil, {})
+		assert.equals("busy", state.get_session_status("child").type)
+		session.refresh_status(nil, "child")
+		require("opencode.session.pending").clear_session("child")
+		requests[3](nil, {})
+		assert.equals("busy", state.get_session_status("child").type)
+	end)
+
+	it("replaces a stale outcome with the recovered native idle message", function()
+		local sync = require("opencode.sync")
+		state.set_session_status("a", { type = "idle", outcome = "failed" })
+		sync.handle_session_messages("a", { require("opencode.protocol.messages").project("a", {
+			id = "latest-idle", type = "idle", outcome = "succeeded",
+		}) })
+		session.refresh_status(); requests[1](nil, {})
+		assert.same({ type = "idle", outcome = "succeeded" }, state.get_session_status("a"))
+	end)
 end)

@@ -1,7 +1,7 @@
 import { z } from "zod"
 import { readFileSync } from "node:fs"
 const DESCRIPTION = readFileSync(new URL("./neovim_patch.txt", import.meta.url), "utf8")
-import { reviewDecision, publishProgress, reviewResult, type RuntimeContext } from "./lib/context"
+import { reviewDecision, publishProgress, reviewResult, type RuntimeContext, type ReviewFile } from "./lib/context"
 import {
   type FileState,
   displayPath,
@@ -299,14 +299,13 @@ function deriveNewContent(
 
 async function buildChanges(
   hunks: Hunk[],
-  directory: string,
   worktree: string | undefined,
   allowIndentChange = false,
 ): Promise<FileChange[]> {
   const changes: FileChange[] = []
 
   for (const hunk of hunks) {
-    const filePath = resolveFilePath(directory, hunk.path)
+    const filePath = hunk.path
     const relativePath = displayPath(worktree, filePath)
 
     if (hunk.type === "add") {
@@ -317,7 +316,7 @@ async function buildChanges(
       changes.push({
         filePath,
         relativePath,
-        type: "add",
+        type: before.exists ? "update" : "add",
         before,
         newContent: next.content,
         bom: before.bom || next.bom,
@@ -350,7 +349,7 @@ async function buildChanges(
     if (!before.exists) throw new Error(`apply_patch verification failed: Failed to read file to update: ${filePath}`)
     const newContent = deriveNewContent(filePath, hunk.chunks, before.content, allowIndentChange)
     const { diff: proposedDiff, ...count } = diffSummary(filePath, before.content, newContent)
-    const movePath = hunk.move_path ? resolveFilePath(directory, hunk.move_path) : undefined
+    const movePath = hunk.move_path && hunk.move_path !== filePath ? hunk.move_path : undefined
     const change = {
       filePath,
       relativePath,
@@ -369,7 +368,7 @@ async function buildChanges(
   return changes
 }
 
-function reviewFilesForChange(change: FileChange) {
+function reviewFilesForChange(change: FileChange, index: number): ReviewFile[] {
   if (change.type !== "move") {
     return [
       {
@@ -397,6 +396,8 @@ function reviewFilesForChange(change: FileChange) {
       filePath: change.filePath,
       relativePath: change.relativePath,
       type: "delete",
+      moveID: `move_${index}`,
+      moveRole: "source",
       before: change.before.content,
       after: "",
       bom: change.before.bom,
@@ -411,6 +412,8 @@ function reviewFilesForChange(change: FileChange) {
       filePath: change.movePath,
       relativePath: change.moveRelativePath,
       type: destinationBefore.exists ? "update" : "add",
+      moveID: `move_${index}`,
+      moveRole: "destination",
       before: destinationBefore.content,
       after: change.newContent,
       bom: change.bom,
@@ -537,10 +540,14 @@ export default {
       throw new Error("apply_patch verification failed: no hunks found")
     }
 
+    for (const hunk of hunks) {
+      hunk.path = await resolveFilePath(context.directory, hunk.path)
+      if (hunk.type === "update" && hunk.move_path) hunk.move_path = await resolveFilePath(context.directory, hunk.move_path)
+    }
     await context.authorize("neovim_patch", [...new Set(hunks.flatMap(hunk =>
-      [resolveFilePath(context.directory, hunk.path), ...(hunk.type === "update" && hunk.move_path ? [resolveFilePath(context.directory, hunk.move_path)] : [])]
+      [hunk.path, ...(hunk.type === "update" && hunk.move_path ? [hunk.move_path] : [])]
     ))])
-    const changes = await buildChanges(hunks, context.directory, context.worktree, args.allowIndentChange)
+    const changes = await buildChanges(hunks, context.worktree, args.allowIndentChange)
 
     const reviewFiles = changes.flatMap(reviewFilesForChange)
     const proposedFiles = changes.map((change) => ({

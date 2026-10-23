@@ -230,15 +230,15 @@ function M.setup_buffer(bufnr, opts)
 	end, keymap_opts)
 
 	map("n", "toggle_tool", function()
-		local task_part_id = chat_tasks.get_task_at_cursor()
-		if task_part_id then
-			chat_tasks.handle_task_toggle(task_part_id)
-			return
-		end
-
 		local tool_part_id = chat_tasks.get_tool_at_cursor()
 		if tool_part_id then
 			chat_tasks.handle_tool_toggle(tool_part_id)
+			return
+		end
+
+		local task_part_id = chat_tasks.get_task_at_cursor()
+		if task_part_id then
+			chat_tasks.handle_task_toggle(task_part_id)
 			return
 		end
 	end, vim.tbl_extend("force", keymap_opts, { desc = "Toggle tool output", nowait = true }))

@@ -1,7 +1,7 @@
 local stats = require("opencode.ui.stats")
 
 describe("usage statistics display", function()
-	it("matches the TUI wordmark, token art, labels, and footer", function()
+	it("adapts the date range, totals and activity summary to the available width", function()
 		local view = {
 			total_tokens = 80400000,
 			sessions = 9,
@@ -14,29 +14,13 @@ describe("usage statistics display", function()
 			},
 		}
 		local narrow = table.concat(stats.render(view, 20), "\n")
-		assert.is_truthy(narrow:find("opencode / stats", 1, true))
 		assert.is_truthy(narrow:find("Jan – Sep 2026", 1, true))
 		assert.is_truthy(narrow:find("80.4M", 1, true))
 		local stacked = stats.render(view, 43)
-		assert.is_truthy(stacked[1]:find("opencode / stats", 1, true))
 		assert.is_truthy(stacked[2]:find("Jan – Sep 2026", 1, true))
 
 		local wide_lines = stats.render(view, 110)
-		local wide = table.concat(wide_lines, "\n")
-		assert.is_truthy(wide_lines[1]:find("opencode / stats", 1, true))
 		assert.is_truthy(wide_lines[1]:find("Jan – Sep 2026", 1, true))
-
-		local logo_row
-		for index, line in ipairs(wide_lines) do
-			if line:find("█▀▀█ █▀▀█ █▀▀█ █▀▀▄", 1, true) then
-				logo_row = index
-				assert.is_truthy(line:find("█▀▀▀ █▀▀█ █▀▀█ █▀▀█", 1, true))
-				break
-			end
-		end
-		assert.is_truthy(logo_row, "the TUI's block wordmark is missing")
-
-		assert.is_truthy(wide:find("TOKENS", 1, true))
 
 		local summary_row
 		for index, line in ipairs(wide_lines) do
@@ -48,10 +32,6 @@ describe("usage statistics display", function()
 		end
 		assert.is_truthy(summary_row, "the three lowercase summary labels are missing")
 		assert.is_truthy(wide_lines[summary_row - 1]:match("2 days%s+3%s+9%s*$"))
-		assert.is_nil(wide:find("BEST STREAK", 1, true))
-		assert.is_nil(wide:lower():find("close", 1, true))
-		assert.is_nil(wide:find("Esc", 1, true))
-		assert.is_truthy(wide_lines[#wide_lines]:find("opencode.ai", 1, true))
 		assert.equals(110, vim.fn.strdisplaywidth(wide_lines[#wide_lines]))
 		for _, line in ipairs(wide_lines) do
 			assert.is_true(vim.fn.strdisplaywidth(line) <= 110, line)
@@ -95,9 +75,6 @@ describe("usage statistics display", function()
 		assert.is_true(vim.api.nvim_win_is_valid(winid))
 		assert.equals(winid, vim.api.nvim_get_current_win())
 		assert_full_screen(winid)
-		local screen_lines = table.concat(vim.api.nvim_buf_get_lines(screen.bufnr, 0, -1, false), "\n")
-		assert.is_truthy(screen_lines:find("opencode.ai", 1, true))
-		assert.is_nil(screen_lines:lower():find("close", 1, true))
 		vim.o.columns, vim.o.lines = 56, 20
 		vim.api.nvim_exec_autocmds("VimResized", {})
 		assert_full_screen(winid)

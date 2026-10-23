@@ -144,8 +144,9 @@ end
 
 ---@param tool_part table
 ---@param expanded boolean
+---@param opts? { separator_before?: boolean }
 ---@return table|nil
-function M.render_tool(tool_part, expanded)
+function M.render_tool(tool_part, expanded, opts)
 	if type(tool_part) ~= "table" or tool_part.tool ~= "bash" then
 		return nil
 	end
@@ -161,7 +162,16 @@ function M.render_tool(tool_part, expanded)
 	local workdir = first_nonempty_trimmed_text(input.workdir, metadata.workdir)
 
 	local result = panel_helpers.result()
-	add_panel_blank(result)
+	local separator_count = 0
+	if opts and opts.separator_before then
+		local width = math.max(0, render.get_chat_text_width() - vim.fn.strdisplaywidth(PANEL_PREFIX))
+		separator_count = math.floor(width / vim.fn.strdisplaywidth("─"))
+	end
+	if separator_count > 0 then
+		add_panel_raw_line(result, string.rep("─", separator_count), "OpenCodeBashMuted", { wrap = false })
+	else
+		add_panel_blank(result)
+	end
 	if command == "" then
 		local text = working and ("~ Writing command... " .. tool_panel.anim_frame()) or "~ Writing command..."
 		add_panel_line(result, text, working and "OpenCodeBashCommand" or "OpenCodeBashMuted")

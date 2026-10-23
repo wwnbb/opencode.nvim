@@ -13,7 +13,8 @@ describe("child navigation freshness", function()
 		state.reset(); pending.clear_all(); lock.clear_all(); require("opencode.sync").clear_all()
 		state.set_session("parent", "Parent")
 		saved = { get = actions.get_session, load = actions.load_session_messages, tasks = view.tasks, stack = view.session_stack,
-			bind = actions.set_view_session, bound = view.session_bound, session_id = view.session_id }
+			bind = actions.set_view_session, bound = view.session_bound, session_id = view.session_id, notify = vim.notify }
+		vim.notify = function() end
 		replies = {}
 		actions.get_session = function(_, callback) replies[#replies + 1] = callback end
 		actions.load_session_messages = function(_, _, callback) callback(nil, {}) end
@@ -25,11 +26,75 @@ describe("child navigation freshness", function()
 		actions.get_session, actions.load_session_messages = saved.get, saved.load
 		view.tasks, view.session_stack = saved.tasks, saved.stack
 		actions.set_view_session = saved.bind
+		vim.notify = saved.notify
 		view.session_bound, view.session_id = saved.bound, saved.session_id
 		state.reset(); pending.clear_all(); lock.clear_all(); require("opencode.sync").clear_all()
 	end)
 
+	it("offers the native family when a task has no confirmed child link", function()
+		local family = require("opencode.ui.palette.family")
+		local original, context = family.show
+		family.show = function(value) context = value end
+		view.tasks.task.tool_part.state.metadata = {}
+		local ok, err = pcall(nav.enter_child_session, "task")
+		family.show = original
+		assert.is_true(ok, tostring(err))
+		assert.equals(view, context.view)
+		assert.equals("parent", state.get_session().id)
+		assert.equals(0, #replies)
+		assert.is_nil(require("opencode.sync").get_task_child_session("m", "task"))
+	end)
+
 	for _, method in ipairs({ "enter_child_session", "open_family_session" }) do
+		it("uses the current native model atomically for " .. method .. " instead of old history", function()
+			view.tasks.task.tool_part.state.metadata.model = { providerID = "old", modelID = "task-model", variant = "old-task" }
+			actions.load_session_messages = function(_, _, callback)
+				callback(nil, { { info = { role = "assistant", model = { providerID = "old", id = "history-model", variant = "old-history" } } } })
+			end
+			nav[method](method == "enter_child_session" and "task" or "child")
+			replies[1](nil, { id = "child", parentID = "parent", agent = "explore", model = { providerID = "test", id = "model" } })
+			assert.same({ providerID = "test", modelID = "model" }, lock.get("child").model)
+			assert.is_nil(lock.get("child").variant)
+		end)
+
+		it("keeps the source intact when " .. method .. " cannot load the child", function()
+			local load_called, notification
+			vim.notify = function(message) notification = message end
+			actions.load_session_messages = function() load_called = true end
+			lock.set("child", { agent = "explore", model = { providerID = "test", modelID = "model" } })
+			local previous_lock = lock.get("child")
+			nav[method](method == "enter_child_session" and "task" or "child")
+			replies[1]({ status = 404, message = "Session not found" })
+			assert.equals("parent", state.get_session().id)
+			assert.equals(0, #view.session_stack)
+			assert.is_nil(state.get_session_record("child"))
+			assert.is_nil(load_called)
+			assert.same(previous_lock, lock.get("child"))
+			assert.matches("Session not found", notification, 1, true)
+		end)
+
+		it("rejects mismatched metadata from " .. method, function()
+			nav[method](method == "enter_child_session" and "task" or "child")
+			complete(1, "wrong-child")
+			assert.equals("parent", state.get_session().id)
+			assert.equals(0, #view.session_stack)
+			assert.is_nil(state.get_session_record("wrong-child"))
+			assert.is_nil(lock.get("child"))
+		end)
+
+		it("keeps the source intact when " .. method .. " cannot load history", function()
+			local notification
+			vim.notify = function(message) notification = message end
+			actions.load_session_messages = function(_, _, callback) callback({ message = "History unavailable" }) end
+			nav[method](method == "enter_child_session" and "task" or "child")
+			complete(1)
+			assert.equals("parent", state.get_session().id)
+			assert.equals(0, #view.session_stack)
+			assert.is_nil(state.get_session_record("child"))
+			assert.is_nil(lock.get("child"))
+			assert.matches("History unavailable", notification, 1, true)
+		end)
+
 		it("ignores " .. method .. " after the default pane is closed", function()
 			view.session_bound, view.session_id = true, "parent"
 			local bound
@@ -96,6 +161,29 @@ describe("child navigation freshness", function()
 		assert.equals("second-child", state.get_session().id)
 		assert.equals(1, #view.session_stack)
 	end)
+
+	for _, change in ipairs({ "replacement", "cleared metadata", "removed widget", "removed stored part" }) do
+		it("does not enter a stale task child after " .. change, function()
+			local sync = require("opencode.sync")
+			local part = view.tasks.task.tool_part
+			if change == "removed stored part" then
+				sync.handle_message_updated({ id = part.messageID, sessionID = "parent", role = "assistant" })
+				sync.handle_part_updated(part)
+			end
+			local history
+			actions.load_session_messages = function(_, _, callback) history = callback end
+			nav.enter_child_session("task")
+			complete(1)
+			if change == "replacement" then part.state.metadata.sessionID = "replacement"
+			elseif change == "cleared metadata" then part.state.metadata = {}
+			elseif change == "removed widget" then view.tasks.task = nil
+			else sync.handle_part_removed(part.messageID, part.id) end
+			history(nil, {})
+			assert.equals("parent", state.get_session().id)
+			assert.equals(0, #view.session_stack)
+			assert.is_nil(lock.get("child"))
+		end)
+	end
 
 	it("does not reopen a closed parent from a stale back stack", function()
 		state.set_session("other", "Other")

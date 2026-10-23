@@ -222,6 +222,7 @@ describe("timeline actions on a selected user turn", function()
 			seed(native)
 			local callback, other_tab, focused = nil, nil, 0
 			local target = action == "fork" and "late-timeline-fork" or source
+			history.set_pending_mode("shell", target)
 			actions.fork_session = function(_, _, done) callback = done end
 			actions.undo_message = function(_, _, done) callback = done end
 			actions.switch_session = function(session) app_state.set_session(session.id, session.title) end
@@ -237,6 +238,7 @@ describe("timeline actions on a selected user turn", function()
 				assert.equals(winid, vim.api.nvim_get_current_win())
 				assert.equals(source, app_state.get_session().id)
 				assert.equals(native[3].text, history.get_pending(target))
+				assert.equals("normal", history.get_pending_mode(target))
 				assert.equals(3, #history.get_pending_parts(target))
 				if action == "fork" then assert.equals(target, app_state.get_session_record(target).id) end
 			end, debug.traceback)
@@ -285,7 +287,7 @@ describe("timeline actions on a selected user turn", function()
 
 	it("stages revert at the chosen message and restores its prompt in the composer", function()
 		seed(native)
-		input.set_pending_draft("Unsent draft", { { type = "file", uri = "file:///tmp/draft.txt" } })
+		input.set_pending_draft("Unsent draft", { { type = "file", uri = "file:///tmp/draft.txt" } }, { mode = "shell" })
 		local calls = {}
 		actions.undo_message = function(session_id, message_id, callback)
 			calls[#calls + 1] = { session_id = session_id, message_id = message_id }
@@ -295,6 +297,7 @@ describe("timeline actions on a selected user turn", function()
 
 		timeline().run("revert", source, "u2")
 		wait_for(function() return input.get_pending_text() == native[3].text end)
+		assert.equals("normal", input.get_mode())
 		assert.same({ { session_id = source, message_id = "u2" } }, calls)
 		assert.equals("u2", app_state.get_session_record(source).revert.messageID)
 		local parts = input.get_pending_parts()

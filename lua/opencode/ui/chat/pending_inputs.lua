@@ -35,7 +35,7 @@ local function open_draft(draft, context_snapshot, context_error)
 		context_snapshot = context_snapshot, context_error = context_error,
 		on_send = function(text, parts, send_options)
 			if not active(sid, generation) then return end
-			actions.send(text, vim.tbl_extend("force", draft.options or {}, send_options or {}, { parts = parts, session_id = sid, view = view }))
+			actions.send(text, vim.tbl_extend("force", send_options or draft.options or {}, { parts = parts, session_id = sid, view = view }))
 		end,
 		on_cancel = function()
 			if active(sid, generation) and state.winid and vim.api.nvim_win_is_valid(state.winid) then vim.api.nvim_set_current_win(state.winid) end

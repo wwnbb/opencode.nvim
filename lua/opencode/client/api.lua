@@ -34,12 +34,6 @@ local operations = {
 	session_update = { "PATCH", "/api/session/{sessionID}", "empty" },
 	session_move = { "POST", "/api/session/{sessionID}/move", "empty" },
 	session_view = { "POST", "/api/session/{sessionID}/view", "empty" },
-	pty_list = { "GET", "/api/experimental/session/{sessionID}/terminal", "pty_list" },
-	pty_create = { "POST", "/api/experimental/session/{sessionID}/terminal", "pty_info" },
-	pty_get = { "GET", "/api/experimental/persistent-pty/{ptyID}", "pty_info" },
-	pty_update = { "PUT", "/api/experimental/persistent-pty/{ptyID}", "pty_info" },
-	pty_snapshot = { "GET", "/api/experimental/persistent-pty/{ptyID}/snapshot", "pty_snapshot" },
-	pty_remove = { "DELETE", "/api/experimental/persistent-pty/{ptyID}", "empty" },
 	session_delete = { "DELETE", "/api/session/{sessionID}", "empty" },
 	session_active = { "GET", "/api/session/active", "object" },
 	session_shell = { "POST", "/api/session/{sessionID}/shell", "empty" },
@@ -105,17 +99,6 @@ end
 
 local function integer(value, positive)
 	return type(value) == "number" and value >= (positive and 1 or 0) and value <= 9007199254740991 and value % 1 == 0
-end
-
-function M.validate_pty(info)
-	if not object(info) or type(info.id) ~= "string" or not info.id:match("^pty") or type(info.sessionID) ~= "string"
-		or type(info.title) ~= "string" or type(info.command) ~= "string" or not path.is_absolute(info.cwd)
-		or not vim.tbl_contains({ "running", "exited" }, info.status) or not integer(info.pid)
-		or not vim.islist(info.args) or not object(info.size)
-		or not integer(info.size.cols, true) or not integer(info.size.rows, true) or info.size.cols > 65535 or info.size.rows > 65535
-		or not object(info.output) or not integer(info.output.head) or not integer(info.output.tail) or info.output.head > info.output.tail then
-		return "Invalid persistent PTY response"
-	end
 end
 
 function M.validate_info(info)
@@ -186,17 +169,6 @@ local function decode(shape, body, meta)
 	end
 	if not object(body) or body.data == nil then return nil, "Missing v2 response data" end
 	local data = body.data
-	if shape == "pty_list" or shape == "pty_info" or shape == "pty_snapshot" then
-		if shape == "pty_list" and not vim.islist(data) then return nil, "Invalid persistent PTY list" end
-		if shape == "pty_snapshot" then
-			if not object(data) or not object(data.info) or type(data.text) ~= "string" or type(data.checkpoint) ~= "string" or #data.checkpoint > 12 * 1024 * 1024
-				or not object(data.cursor) or not integer(data.cursor.x) or not integer(data.cursor.y) then return nil, "Invalid persistent PTY snapshot" end
-		end
-		for _, info in ipairs(shape == "pty_list" and data or { shape == "pty_snapshot" and data.info or data }) do
-			local err = M.validate_pty(info); if err then return nil, err end
-		end
-		return data
-	end
 	if shape == "shell_list" or shape == "shell_info" or shape == "shell_output" then
 		if not object(body.location) or not path.is_absolute(body.location.directory) then return nil, "Missing shell location" end
 		meta.location = body.location

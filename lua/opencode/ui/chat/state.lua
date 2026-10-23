@@ -26,8 +26,8 @@ M.state = {
 	pending_inputs = {},   -- Queued input widget ranges, excluding surrounding separators
 	tasks = {},             -- Track task positions: { [part_id] = { start_line, end_line, tool_part } }
 	expanded_tasks = {},    -- Toggle set: { [part_id] = true }
-	task_child_cache = {},  -- Loaded child-session markers: { [part_id] = true }
-	task_child_loading = {}, -- In-flight child-session loads: { [part_id] = true }
+	task_child_cache = {},  -- Loaded child-session IDs: { [part_id] = child_id }
+	task_child_loading = {}, -- In-flight child-session loads: { [part_id] = child_id }
 	task_summary_cache = { entries = {}, order = {} }, -- Derived child summaries keyed by summary revision
 	tools = {},             -- Widget roots keyed by ID; containers own a children map of tool nodes
 	expanded_tools = {},    -- Per-node toggle set; activity IDs are distinct from tool part IDs

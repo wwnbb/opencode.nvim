@@ -156,6 +156,28 @@ describe("tool and panel rendering contracts", function()
 		assert(running_count_task.lines[2]:find("2 toolcalls", 1, true), "running task did not parse toolCallCount")
 	end)
 
+	it("labels native shell summaries from commands while preserving description and title priority", function()
+		local labels = require("opencode.ui.chat.tool_labels")
+		for _, case in ipairs({
+			{ input = { command = "sleep 20" }, label = "Bash sleep 20" },
+			{ input = { command = "echo one\r\necho two" }, label = "Bash echo one ↵ echo two" },
+			{ input = { command = "echo command", description = "Run checks" }, label = "Bash Run checks" },
+			{ input = { command = "echo command", description = "Run checks" }, title = "Native title", label = "Bash Native title" },
+			{ input = { command = string.rep("я", 60) }, label = "Bash " .. string.rep("я", 37) .. "..." },
+		}) do
+			local projected = require("opencode.protocol.messages").project("child", {
+				id = "assistant", type = "assistant", content = { {
+					type = "tool", id = "shell-call", name = "shell",
+					state = { status = "running", input = case.input, title = case.title },
+				} },
+			})
+			local part = projected.parts[1]
+			assert.equals("bash", part.tool)
+			assert.equals(case.label, labels.format_summary_item_label(part))
+			assert.same(case.input, part.state.input)
+		end
+	end)
+
 	it("sanitizes generic tool headers and body lines", function()
 		local generic_tool = render.render_tool_line({
 			tool = "custom",

@@ -73,7 +73,9 @@ function M.project(session_id, message)
 		ordinals[kind] = ordinal + 1
 		local part = vim.deepcopy(content)
 		part.type = kind
-		if message.type ~= "synthetic" then part.shell_notification = nil end
+		if message.type ~= "synthetic" then
+			part.shell_notification, part.subagent_notification = nil, nil
+		end
 		part.id = M.part_id(session_id, message.id, kind, kind == "tool" and content.id or ordinal)
 		part.messageID, part.sessionID = message.id, session_id
 		part.content_order = #parts + 1
@@ -122,7 +124,19 @@ function M.project(session_id, message)
 			local shell_notification = message.type == "synthetic" and metadata.source == "shell"
 				and (metadata.state == "completed" or metadata.state == "cancelled" or metadata.state == "error")
 				and { description = message.description, metadata = metadata } or nil
-			append({ type = "text", text = text, synthetic = true, shell_notification = shell_notification })
+			local part = { type = "text", text = text, synthetic = true, shell_notification = shell_notification }
+			if message.type == "synthetic" and metadata.source == "subagent"
+				and type(metadata.childID) == "string" and metadata.childID ~= ""
+				and (metadata.state == "completed" or metadata.state == "cancelled" or metadata.state == "error") then
+				-- Retain the notice text while reusing task navigation with the exact child ID.
+				part.subagent_notification, part.tool = true, "task"
+				part.state = {
+					status = metadata.state,
+					input = { description = message.description, subagent_type = metadata.agent },
+					metadata = vim.tbl_extend("force", {}, metadata, { sessionID = metadata.childID }),
+				}
+			end
+			append(part)
 		end
 	end
 	return { info = info, parts = parts }

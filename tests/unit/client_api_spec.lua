@@ -62,29 +62,6 @@ describe("OpenCode HTTP contracts", function()
 			assert.equals("incompatible_response", invoke("info").err.code)
 		end
 	end)
-	it("encodes an empty persistent terminal environment as a native object without mutating caller options", function()
-		local opts = { env = {}, args = {}, cwd = "/tmp", title = "Terminal", size = { cols = 80, rows = 24 } }
-		json({ data = { id = "pty_fixture", sessionID = "s", title = "Terminal", command = "/bin/sh", args = {}, cwd = "/tmp",
-			status = "running", pid = 1, size = { cols = 80, rows = 24 }, output = { head = 0, tail = 0 } } })
-		local error, info, callbacks = nil, nil, 0
-		require("opencode.client").create_terminal("s", opts, function(err, value) error, info, callbacks = err, value, callbacks + 1 end)
-		assert.equals(1, callbacks); assert.is_nil(error); assert.equals("pty_fixture", info.id)
-		assert.is_truthy(requests[1].body:find('"env":{}', 1, true))
-		assert.is_truthy(requests[1].body:find('"args":[]', 1, true))
-		assert.equals("[]", vim.json.encode(opts.env))
-	end)
-	it("rejects terminal snapshots with missing or invalid nested info", function()
-		local snapshot = { id = "pty_fixture", sessionID = "s", title = "Terminal", command = "/bin/sh", args = {}, cwd = "/tmp",
-			status = "running", pid = 1, size = { cols = 80, rows = 24 }, output = { head = 0, tail = 0 },
-			text = "", checkpoint = "", cursor = { x = 0, y = 0 } }
-		for _, fields in ipairs({ {}, { info = false }, { info = vim.NIL }, { info = vim.empty_dict() } }) do
-			json({ data = vim.tbl_extend("force", snapshot, fields) })
-			local result = invoke("pty_snapshot", { path = { ptyID = "pty_fixture" } })
-			assert.equals("incompatible_response", result.err and result.err.code)
-			assert.is_nil(result.data)
-		end
-	end)
-
 	it("encodes location keys and UTF-8 bytes once, without ambient directory headers", function()
 		json({ location = { directory = "/tmp/путь %#" }, data = {} })
 		local result = invoke("agent_list", { query = { location = { directory = "/tmp/путь %#" } } })

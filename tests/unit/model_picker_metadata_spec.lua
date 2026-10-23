@@ -55,8 +55,6 @@ describe("model picker native metadata and groups", function()
 			local function assert_visible()
 				local text = table.concat(vim.api.nvim_buf_get_lines(ctx.popup.bufnr, 0, -1, false), "\n")
 				assert.matches("[p] " .. models.free.name, text, 1, true)
-				assert.is_nil(text:find("Connected", 1, true))
-				assert.is_nil(text:find("2026-04-24", 1, true))
 			end
 			assert_visible()
 			local item

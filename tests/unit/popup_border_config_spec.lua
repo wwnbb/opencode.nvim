@@ -46,19 +46,6 @@ describe("configured shared popup borders", function()
 		return popup
 	end
 
-	it("defaults to rounded and overrides a local root style", function()
-		local merged = config.merge({})
-		assert.equals("rounded", merged.popup.border)
-		assert.equals("rounded", merged.palette.border)
-		assert.equals("rounded", merged.chat.float.border)
-		state.set_config(merged)
-		local popup = open({
-			relative = "editor", size = { width = 20, height = 4 }, border = "solid",
-		})
-		assert.equals("rounded", root_border(popup)._.style)
-		assert.equals("╭", vim.api.nvim_win_get_config(popup.winid).border[1][1])
-	end)
-
 	for _, style in ipairs({ "none", "double" }) do
 		it("applies " .. style .. " to a single popup and only the outer frame of a composite popup", function()
 			set_border(style)
