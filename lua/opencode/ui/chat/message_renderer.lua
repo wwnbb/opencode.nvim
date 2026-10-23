@@ -444,7 +444,8 @@ local function render_assistant_message(ctx, index, message, render_parts, opts)
 			if not skip_tool_row then
 				tool_renderer.render_tool_part(ctx, part, render_parts.message_revision, render_parts.part_revisions)
 			end
-			widget_renderer.render_widgets_for_tool_call(ctx, index, message.id, part.callID)
+			widget_renderer.render_widgets_for_tool_call(ctx, index, message.id, part.callID,
+				not skip_tool_row and part or nil)
 			if part.tool == "task" then
 				widget_renderer.render_child_session_widgets_for_task(ctx, index, part)
 			end

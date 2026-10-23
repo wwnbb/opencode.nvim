@@ -11,6 +11,7 @@ local permission_widget = require("opencode.ui.permission_widget")
 local edit_widget = require("opencode.ui.edit_widget")
 local widget_base = require("opencode.ui.widget_base")
 local widget_support = cs.module(view, require("opencode.ui.chat.widget_support"))
+local chat_bash = cs.module(view, require("opencode.ui.chat.bash"))
 
 local function ensure_session_error_highlights()
 	panel.set_hl("OpenCodeSessionError", "DiagnosticError", "ErrorMsg")
@@ -31,10 +32,11 @@ local function capture_widget_focus(kind, widget_id, widget_start, meta)
 end
 
 local function append_interactive_widget(ctx, widget)
-	local start_line = ctx:prepare_widget_start()
+	-- An attached widget continues the tool row's panel, so it takes no separators.
+	local start_line = widget.attached and ctx:line_count() or ctx:prepare_widget_start()
 	capture_widget_focus(widget.kind, widget.id, start_line, widget.meta)
 	for _, line_text in ipairs(widget.lines) do
-		ctx:add_raw_line(line_text)
+		ctx:add_raw_line(line_text, widget.attached and "tool" or nil)
 	end
 
 	local position = {
@@ -43,11 +45,25 @@ local function append_interactive_widget(ctx, widget)
 		status = widget.status,
 		highlights = widget.highlights,
 		meta = widget.meta,
+		tool_row = widget.tool_row,
 	}
 	widget_support.mark_render_generation(position)
 	if widget.source then widget_support.set_interactive_meta(position, widget.meta, widget.source, widget.kind) end
 	widget.positions[widget.id] = position
-	ctx:add_raw_line("")
+	if not widget.attached then ctx:add_raw_line("") end
+end
+
+---What the tool row rendered for a call shows, for the permission widgets below it.
+---@param tool_part table|nil
+---@return table|nil tool_row { tool, end_line, command, folded }
+local function tool_row_for(tool_part)
+	local part_id = type(tool_part) == "table" and tool_part.id or nil
+	local pos = part_id and state.tools[part_id]
+	if not pos or type(pos.tool_part) ~= "table" or pos.end_line < pos.start_line then
+		return nil
+	end
+	local command, folded = chat_bash.row_command(pos.tool_part, state.expanded_tools[part_id] == true)
+	return { tool = pos.tool_part.tool, end_line = pos.end_line, command = command, folded = folded }
 end
 
 function M.render_single_question(ctx, index, qstate)
@@ -75,10 +91,16 @@ function M.render_single_question(ctx, index, qstate)
 	})
 end
 
-function M.render_single_permission(ctx, _index, pstate)
+function M.render_single_permission(ctx, _index, pstate, tool_row)
 	local perm_id = pstate.permission_id
 	local pstatus = pstate.status or "pending"
-	local p_lines, p_highlights, p_meta = permission_widget.render(pstate, widget_support.render_opts())
+	-- A status line belongs directly below its row; anywhere else it renders as a full panel.
+	if tool_row and permission_widget.attaches(pstate, tool_row) and ctx:line_count() - 1 ~= tool_row.end_line then
+		tool_row = nil
+	end
+	local opts = widget_support.render_opts()
+	opts.tool_row = tool_row
+	local p_lines, p_highlights, p_meta = permission_widget.render(pstate, opts)
 
 	if p_lines then
 		append_interactive_widget(ctx, {
@@ -90,7 +112,11 @@ function M.render_single_permission(ctx, _index, pstate)
 			status = pstatus,
 			positions = state.permissions,
 			source = pstate,
+			attached = p_meta.attached == true,
+			tool_row = tool_row,
 		})
+		-- A later status line for the same call attaches below this one.
+		if p_meta.attached then tool_row.end_line = ctx:line_count() - 1 end
 	end
 end
 
@@ -112,8 +138,16 @@ function M.render_single_edit(ctx, _index, estate)
 	end
 end
 
-function M.render_widget_items(ctx, index, widget_items)
+function M.render_widget_items(ctx, index, widget_items, tool_row)
+	local function attaches(item)
+		return item.kind == "permission" and permission_widget.attaches(item.data, tool_row)
+	end
 	table.sort(widget_items, function(a, b)
+		-- Status lines continue the tool row's panel, so they come first.
+		if tool_row and attaches(a) ~= attaches(b) then
+			return attaches(a)
+		end
+
 		if a.timestamp ~= b.timestamp then
 			return a.timestamp < b.timestamp
 		end
@@ -134,7 +168,7 @@ function M.render_widget_items(ctx, index, widget_items)
 		elseif item.kind == "permission" then
 			index:mark_rendered("permission", item.id)
 			if index:should_render_session_widget(item.data.session_id, item.data.status) then
-				M.render_single_permission(ctx, index, item.data)
+				M.render_single_permission(ctx, index, item.data, tool_row)
 			end
 		elseif item.kind == "edit" then
 			index:mark_rendered("edit", item.id)
@@ -180,8 +214,9 @@ function M.render_widgets_for_message(ctx, index, message_id)
 	M.render_widget_items(ctx, index, index:items_for_message(message_id))
 end
 
-function M.render_widgets_for_tool_call(ctx, index, message_id, call_id)
-	M.render_widget_items(ctx, index, index:items_for_tool_call(message_id, call_id))
+---@param tool_part? table The call's tool part, when its row was rendered just before
+function M.render_widgets_for_tool_call(ctx, index, message_id, call_id, tool_part)
+	M.render_widget_items(ctx, index, index:items_for_tool_call(message_id, call_id), tool_row_for(tool_part))
 end
 
 function M.render_orphan_widgets(ctx, index, session_msg_ids)

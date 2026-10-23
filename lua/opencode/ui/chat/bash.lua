@@ -142,6 +142,21 @@ local function add_command(result, command_lines, expanded)
 	end
 end
 
+---Command a bash row shows, and whether the row folds part of it behind the overflow line.
+---@param tool_part table
+---@param expanded boolean
+---@return string command "" when the part is not bash or has no command yet
+---@return boolean folded
+function M.row_command(tool_part, expanded)
+	if type(tool_part) ~= "table" or tool_part.tool ~= "bash" then
+		return "", false
+	end
+	local ctx = tool_panel.context(tool_part)
+	local input = type(ctx.input) == "table" and ctx.input or {}
+	local command = first_nonempty_trimmed_text(input.command, ctx.metadata.command)
+	return command, not expanded and #vim.split(command, "\n", { plain = true }) > MAX_COLLAPSED_COMMAND_LINES
+end
+
 ---@param tool_part table
 ---@param expanded boolean
 ---@param opts? { separator_before?: boolean }

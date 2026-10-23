@@ -5,9 +5,11 @@ local M = {}
 
 local panel = require("opencode.ui.panel")
 local render = require("opencode.ui.chat.render")
+local syntax = require("opencode.ui.syntax")
 local widget_base = require("opencode.ui.widget_base")
 
 local PANEL_PREFIX = "▏  "
+local PANEL_PREFIX_WIDTH = vim.api.nvim_strwidth(PANEL_PREFIX)
 local PANEL_EMPTY = "▏"
 local PANEL_BORDER_HL = "OpenCodePermissionMuted"
 
@@ -26,6 +28,8 @@ local OPTION_LABELS = {
 }
 local MAX_PERMISSION_COMMAND_HEAD_LINES = 8
 local MAX_PERMISSION_COMMAND_TAIL_LINES = 4
+-- Permission types whose request is a shell command: native "shell" and the bash tool's own "bash".
+local SHELL_PERMISSION_TYPES = { bash = true, shell = true }
 
 local panel_helpers = panel.create_helpers({
 	prefix = PANEL_PREFIX,
@@ -321,10 +325,23 @@ local function normalize_path(filepath)
 	return filepath
 end
 
----@param title string
+---Working directory of a shell request, or "" when it runs in the current directory.
+---@param tool_input table
+---@param perm_state? table
 ---@return string
-local function summary_line(title)
-	return "# " .. title
+local function shell_workdir(tool_input, perm_state)
+	local metadata = (perm_state and perm_state.metadata) or {}
+	local workdir = normalize_path(first_non_empty(
+		tool_input.workdir,
+		tool_input.cwd,
+		tool_input.directory,
+		tool_input.path,
+		metadata.workdir,
+		metadata.cwd,
+		metadata.directory,
+		metadata.path
+	))
+	return workdir ~= normalize_path(vim.fn.getcwd()) and workdir or ""
 end
 
 ---@param permission_type string
@@ -335,20 +352,6 @@ local function get_permission_path(permission_type, tool_input, perm_state)
 	local metadata = (perm_state and perm_state.metadata) or {}
 	local patterns = (perm_state and perm_state.patterns) or {}
 	local cwd = normalize_path(vim.fn.getcwd())
-
-	if permission_type == "bash" then
-		return normalize_path(first_non_empty(
-			tool_input.workdir,
-			tool_input.cwd,
-			tool_input.directory,
-			tool_input.path,
-			metadata.workdir,
-			metadata.cwd,
-			metadata.directory,
-			metadata.path,
-			cwd
-		))
-	end
 
 	if permission_type == "read" then
 		return normalize_path(
@@ -416,118 +419,91 @@ local function get_permission_path(permission_type, tool_input, perm_state)
 	))
 end
 
----@param lines table
----@param label string
----@param value string
----@param opts? { head_lines?: number, tail_lines?: number }
----@return table
-local function with_detail_lines(lines, label, value, opts)
-	if value == "" then
-		return lines
-	end
+---@class OpenCodePermissionDetail
+---@field label string
+---@field value string
 
-	local parts = vim.split(value, "\n", { plain = true })
-	local function add_part(part, index)
-		local prefix = index == 1 and string.format("  %s: ", label) or string.rep(" ", #label + 4)
-		table.insert(lines, prefix .. part)
-	end
+---@class OpenCodePermissionDescription
+---@field title string
+---@field shell boolean Shell request: the command is the requested resource
+---@field command string Command the request runs, or ""
+---@field details OpenCodePermissionDetail[]
+---@field resources string[] Requested authorization resources
+---@field message string Message attached to the reply, or ""
 
-	opts = opts or {}
-	local head_lines = tonumber(opts.head_lines) or 0
-	local tail_lines = tonumber(opts.tail_lines) or 0
-	local max_lines = head_lines + tail_lines
-	if max_lines > 0 and #parts > max_lines then
-		for i = 1, head_lines do
-			add_part(parts[i] or "", i)
-		end
-		local hidden = #parts - max_lines
-		table.insert(lines, string.rep(" ", #label + 4) .. "... (" .. tostring(hidden) .. " command lines hidden)")
-		for i = #parts - tail_lines + 1, #parts do
-			add_part(parts[i] or "", i)
-		end
-		return lines
-	end
-
-	for i, part in ipairs(parts) do
-		add_part(part, i)
-	end
-	return lines
-end
-
----@param lines table
----@param path string
----@return table
-local function with_path_line(lines, path)
-	return with_detail_lines(lines, "Path", path)
-end
-
----@param lines table
----@param message string|nil
----@return table
-local function with_message_lines(lines, message)
-	return with_detail_lines(lines, "Message", vim.trim(message or ""))
-end
-
----@param lines table
+-- Get the description of a permission based on type
 ---@param permission_type string
 ---@param tool_input table
 ---@param perm_state? table
----@return table
-local function with_common_tool_details(lines, permission_type, tool_input, perm_state)
-	local command_opts = nil
-	if permission_type == "bash" then
-		command_opts = {
-			head_lines = MAX_PERMISSION_COMMAND_HEAD_LINES,
-			tail_lines = MAX_PERMISSION_COMMAND_TAIL_LINES,
-		}
-	end
-	lines = with_detail_lines(lines, "Command", tool_input.command or "", command_opts)
-	lines = with_path_line(lines, get_permission_path(permission_type, tool_input, perm_state))
-	lines = with_detail_lines(lines, "Pattern", tool_input.pattern or "")
-	lines = with_detail_lines(lines, "Type", tool_input.type or "")
-	lines = with_detail_lines(lines, "Glob", tool_input.glob or "")
-	lines = with_detail_lines(lines, "Query", tool_input.query or "")
-	lines = with_detail_lines(lines, "URL", tool_input.url or "")
-	lines = with_detail_lines(lines, "Agent", tool_input.subagent_type or "")
-	lines = with_detail_lines(lines, "Description", tool_input.description or "")
-	return lines
-end
-
--- Get description lines for a permission based on type
----@param permission_type string
----@param tool_input table
----@param perm_state? table
----@return table lines Array of description lines
+---@return OpenCodePermissionDescription
 local function get_permission_description(permission_type, tool_input, perm_state)
 	tool_input = tool_input or {}
-	local title = PERMISSION_TITLES[permission_type] or permission_type
-	local lines = { summary_line(title) }
-	if permission_type ~= "diff_review" and permission_type ~= "doom_loop" then
-		lines = with_common_tool_details(lines, permission_type, tool_input, perm_state)
-		if permission_type == "bash" and #lines == 1 then
-			lines = with_detail_lines(lines, "Description", "Run bash command")
+	perm_state = perm_state or {}
+	local description = {
+		title = PERMISSION_TITLES[permission_type] or permission_type,
+		shell = SHELL_PERMISSION_TYPES[permission_type] == true,
+		command = "",
+		details = {},
+		resources = {},
+		message = vim.trim(first_non_empty(perm_state.message)),
+	}
+	local function add(label, value)
+		if type(value) == "string" and value ~= "" then
+			table.insert(description.details, { label = label, value = value })
 		end
 	end
-	for _, resource in ipairs((perm_state and perm_state.patterns) or {}) do
-		lines = with_detail_lines(lines, "Resource", resource)
+
+	if permission_type ~= "diff_review" and permission_type ~= "doom_loop" then
+		description.command = vim.trim(first_non_empty(tool_input.command))
+		add("Path", description.shell and shell_workdir(tool_input, perm_state)
+			or get_permission_path(permission_type, tool_input, perm_state))
+		add("Pattern", tool_input.pattern)
+		add("Type", tool_input.type)
+		add("Glob", tool_input.glob)
+		add("Query", tool_input.query)
+		add("URL", tool_input.url)
+		add("Agent", tool_input.subagent_type)
+		add("Description", tool_input.description)
+		if permission_type == "bash" and description.command == "" and #description.details == 0 then
+			add("Description", "Run bash command")
+		end
 	end
-	return with_message_lines(lines, perm_state and perm_state.message)
+
+	for _, resource in ipairs(perm_state.patterns or {}) do
+		if type(resource) == "string" and vim.trim(resource) ~= "" then
+			table.insert(description.resources, resource)
+		end
+	end
+	return description
 end
 
----@param line string|nil
----@return string
-local function clean_description_line(line)
-	if type(line) ~= "string" then
-		return ""
-	end
-	return (line:gsub("^#%s*", ""):gsub("^%s+", ""))
+---@param text string
+---@param fragment string
+---@return boolean
+local function contains(text, fragment)
+	fragment = vim.trim(fragment)
+	return fragment ~= "" and text:find(fragment, 1, true) ~= nil
 end
 
----@param description_lines table
----@return string
-local function description_title(description_lines)
-	local title = clean_description_line(description_lines[1])
-	return title ~= "" and title or "Permission"
+---Requested resources the reader cannot already see: in the shown command
+---(shell requests only) or as a shown detail value. Every other resource
+---stays listed so no authorization scope is hidden.
+---@param description OpenCodePermissionDescription
+---@param shown_command string Command shown in full, or ""
+---@param shown_details? OpenCodePermissionDetail[]
+---@return string[]
+local function unshown_resources(description, shown_command, shown_details)
+	local shown = {}
+	for _, detail in ipairs(shown_details or {}) do
+		shown[detail.value] = true
+	end
+	local resources = {}
+	for _, resource in ipairs(description.resources) do
+		if not shown[resource] and not (description.shell and contains(shown_command, resource)) then
+			table.insert(resources, resource)
+		end
+	end
+	return resources
 end
 
 ---@param label string
@@ -536,38 +512,133 @@ local function detail_value_hl(label)
 	if label == "Path" then
 		return "OpenCodePermissionPath"
 	end
-	if label == "Command" then
-		return "OpenCodePermissionCommand"
-	end
 	return "OpenCodePermissionOutput"
 end
 
+---"Label: value", with continuation and wrapped rows aligned under the value.
 ---@param result table
----@param line string
-local function append_description_detail(result, line)
-	local text = clean_description_line(line)
-	if text == "" then
-		add_panel_blank(result)
-		return
-	end
-
-	local label, value = text:match("^([^:]+):%s*(.*)$")
-	local _, _, rows = add_panel_line(result, text, "OpenCodePermissionMuted")
-	if label and value and value ~= "" then
-		highlight_panel_text(result, rows, value, detail_value_hl(label))
+---@param label string
+---@param value string
+local function append_detail(result, label, value)
+	local head = label .. ": "
+	local indent = string.rep(" ", #head)
+	for index, line in ipairs(vim.split(value, "\n", { plain = true })) do
+		local _, _, rows = add_panel_raw_line(result, line, detail_value_hl(label), {
+			body_prefix = index == 1 and head or indent,
+			continuation_prefix = indent,
+		})
+		if index == 1 then
+			highlight_panel_text(result, rows, head, "OpenCodePermissionMuted")
+		end
 	end
 end
 
 ---@param result table
----@param desc_lines table
-local function append_description(result, desc_lines)
-	local title = description_title(desc_lines)
-	local _, _, title_rows = add_panel_line(result, title, "OpenCodePermissionTitle")
-	highlight_panel_text(result, title_rows, title, "OpenCodePermissionTitle")
-
-	for i = 2, #desc_lines do
-		append_description_detail(result, desc_lines[i])
+---@param details OpenCodePermissionDetail[]
+---@param resources string[]
+---@param message string
+---@return boolean added
+local function append_details(result, details, resources, message)
+	local count = #result.lines
+	for _, detail in ipairs(details) do
+		append_detail(result, detail.label, detail.value)
 	end
+	for _, resource in ipairs(resources) do
+		append_detail(result, "Resource", resource)
+	end
+	if message ~= "" then
+		append_detail(result, "Message", message)
+	end
+	return #result.lines > count
+end
+
+---@param result table
+---@param lines string[]
+---@param first boolean Lines start the command
+---@param highlight boolean
+local function append_command_lines(result, lines, first, highlight)
+	local start_line = nil
+	local displayed = {}
+	for i, source in ipairs(lines) do
+		local line = (result.render or render).expand_tabs(source, PANEL_PREFIX_WIDTH + 2)
+		local prefix = (first and i == 1) and "$ " or "  "
+		local line_index, _, rows = add_panel_raw_line(result, prefix .. line, "OpenCodePermissionCommand")
+		start_line = start_line or line_index
+		highlight = highlight and #rows == 1
+		table.insert(displayed, line)
+	end
+	if start_line and highlight then
+		syntax.add_highlights(result, table.concat(displayed, "\n"), "bash", {
+			scope = "tools",
+			line_start = start_line,
+			col_offset = #PANEL_PREFIX + #"$ ",
+		})
+	end
+end
+
+---Render a command the way the bash row does: "$ " prompt, indented
+---continuation lines and shell syntax. A long command keeps its head and tail,
+---unless a requested resource lies in the lines that would be hidden.
+---@param result table
+---@param command string
+---@param resources string[]
+local function append_command(result, command, resources)
+	local lines = vim.split(command, "\n", { plain = true })
+	local head_count, tail_count = MAX_PERMISSION_COMMAND_HEAD_LINES, MAX_PERMISSION_COMMAND_TAIL_LINES
+	local head = vim.list_slice(lines, 1, head_count)
+	local tail = vim.list_slice(lines, #lines - tail_count + 1)
+	local fold = #lines > head_count + tail_count
+	if fold then
+		local head_text, tail_text = table.concat(head, "\n"), table.concat(tail, "\n")
+		for _, resource in ipairs(resources) do
+			if contains(command, resource) and not contains(head_text, resource) and not contains(tail_text, resource) then
+				fold = false
+				break
+			end
+		end
+	end
+	if not fold then
+		append_command_lines(result, lines, true, true)
+		return
+	end
+
+	append_command_lines(result, head, true, true)
+	local hidden = #lines - head_count - tail_count
+	add_panel_line(result, "  … (" .. tostring(hidden) .. " command lines hidden)", "OpenCodePermissionMuted")
+	-- A tail fragment can start inside a quote; it keeps the plain command colour.
+	append_command_lines(result, tail, false, false)
+end
+
+---@param result table
+---@param description OpenCodePermissionDescription
+local function append_description(result, description)
+	local _, _, title_rows = add_panel_line(result, description.title, "OpenCodePermissionTitle")
+	highlight_panel_text(result, title_rows, description.title, "OpenCodePermissionTitle")
+
+	local resources = unshown_resources(description, description.command, description.details)
+	local has_details = #description.details + #resources > 0 or description.message ~= ""
+	if description.command ~= "" then
+		add_panel_blank(result)
+		append_command(result, description.command, description.resources)
+		if has_details then
+			add_panel_blank(result)
+		end
+	end
+	append_details(result, description.details, resources, description.message)
+end
+
+---Shell command the tool row above shows in full, or nil when this widget
+---must show the request itself.
+---@param perm_state table
+---@param opts? table
+---@return string|nil
+local function tool_row_command(perm_state, opts)
+	local row = opts and opts.tool_row
+	if type(row) ~= "table" or row.folded or not SHELL_PERMISSION_TYPES[perm_state.permission_type] then
+		return nil
+	end
+	local command = vim.trim(first_non_empty(row.command))
+	return command ~= "" and command or nil
 end
 
 ---@param result table
@@ -609,18 +680,25 @@ end
 -- Get formatted lines for a pending permission
 ---@param _permission_id string Unused; kept for the public signature
 ---@param perm_state table Permission state from permission/state.lua
+---@param opts? table { width?: number, render?: table, tool_row?: table }
 ---@return table lines, table highlights, OpenCodeWidgetMeta meta
 function M.get_lines_for_permission(_permission_id, perm_state, opts)
 	local result = widget_base.new_result(opts)
 	local tool_input = resolve_tool_input(perm_state)
 	local header_title = permission_header_title(perm_state)
-	local desc_lines = get_permission_description(perm_state.permission_type, tool_input, perm_state)
+	local description = get_permission_description(perm_state.permission_type, tool_input, perm_state)
+	local row_command = tool_row_command(perm_state, opts)
 
 	add_panel_blank(result)
 	add_header(result, header_title, "pending")
 	add_panel_blank(result)
-	append_description(result, desc_lines)
-	add_panel_blank(result)
+	if not row_command then
+		append_description(result, description)
+		add_panel_blank(result)
+	elseif append_details(result, {}, unshown_resources(description, row_command), description.message) then
+		-- The tool row above shows the command; keep only what it does not.
+		add_panel_blank(result)
+	end
 
 	if perm_state.status == "unavailable" or perm_state.submitting then
 		add_panel_line(result, perm_state.submitting and "Sending decision…" or "Request is no longer pending", "OpenCodePermissionMuted")
@@ -677,26 +755,71 @@ function M.get_lines_for_permission(_permission_id, perm_state, opts)
 		})
 end
 
+---@param status string|nil
+---@return boolean
+local function is_resolved(status)
+	return status == "approved" or status == "rejected"
+end
+
+---The decision as one line on the tool row's panel, then whatever the row does not show.
+---@param result table
+---@param perm_state table
+---@param status "approved"|"rejected"
+---@param tool_row table
+---@param description OpenCodePermissionDescription
+local function append_status(result, perm_state, status, tool_row, description)
+	local always = perm_state.always or {}
+	local decision = "allowed once"
+	if status == "rejected" then
+		decision = "rejected"
+	elseif perm_state.reply == "always" and #always > 0 then
+		decision = "always allowed"
+		if not (#always == 1 and always[1] == "*") then
+			decision = decision .. ": " .. table.concat(always, ", ")
+		end
+	end
+
+	local permission_type = perm_state.permission_type
+	local own = permission_type == tool_row.tool or (description.shell and tool_row.tool == "bash")
+	local text
+	if own then
+		text = decision:sub(1, 1):upper() .. decision:sub(2)
+	else
+		text = description.title .. " " .. decision
+	end
+	local icon = status == "rejected" and icons.rejected or icons.approved
+	add_panel_line(result, icon .. " " .. text,
+		status == "rejected" and "OpenCodePermissionRejected" or "OpenCodePermissionApproved")
+	append_details(result, {}, unshown_resources(description, first_non_empty(tool_row.command)), description.message)
+	add_panel_blank(result)
+end
+
+---@return table lines, table highlights, boolean attached
 local function render_resolved(perm_state, status, reply_suffix, opts)
 	local result = widget_base.new_result(opts)
 	local tool_input = resolve_tool_input(perm_state)
-	local header_title = permission_header_title(perm_state)
-	local desc_lines = get_permission_description(perm_state.permission_type, tool_input, perm_state)
+	local description = get_permission_description(perm_state.permission_type, tool_input, perm_state)
+	local tool_row = opts and opts.tool_row
+	if type(tool_row) == "table" then
+		append_status(result, perm_state, status, tool_row, description)
+		return result.lines, result.highlights, true
+	end
 
 	add_panel_blank(result)
-	add_header(result, header_title, status, reply_suffix)
+	add_header(result, permission_header_title(perm_state), status, reply_suffix)
 	add_panel_blank(result)
-	append_description(result, desc_lines)
+	append_description(result, description)
 	add_panel_blank(result)
 	add_trailing_separator(result)
 
-	return result.lines, result.highlights
+	return result.lines, result.highlights, false
 end
 
 -- Compatibility entrypoints retain their existing signatures and reply suffixes.
 ---@param _permission_id string Unused; kept for the public signature
 ---@param perm_state table
----@return table lines, table highlights
+---@param opts? table { width?: number, render?: table, tool_row?: table }
+---@return table lines, table highlights, boolean attached One status line for the tool row above
 function M.get_approved_lines(_permission_id, perm_state, opts)
 	local saved = perm_state.reply == "always" and #(perm_state.always or {}) > 0
 	return render_resolved(perm_state, "approved", saved and "(always)" or "(once)", opts)
@@ -704,21 +827,34 @@ end
 
 ---@param _permission_id string Unused; kept for the public signature
 ---@param perm_state table
----@return table lines, table highlights
+---@param opts? table { width?: number, render?: table, tool_row?: table }
+---@return table lines, table highlights, boolean attached One status line for the tool row above
 function M.get_rejected_lines(_permission_id, perm_state, opts)
 	return render_resolved(perm_state, "rejected", nil, opts)
 end
 
+---Whether a permission renders as a status line on the tool row directly above it.
+---@param perm_state table
+---@param tool_row table|nil
+---@return boolean
+function M.attaches(perm_state, tool_row)
+	return type(tool_row) == "table" and is_resolved(perm_state.status)
+end
+
 ---Render a permission for its current status; always returns meta.
+---`opts.tool_row` describes the tool row rendered for the same call:
+---{ tool: string, command?: string, folded?: boolean }. With it, a resolved
+---permission is one status line and a pending shell request leaves the
+---command to the row.
 ---@param perm_state table Permission state from permission/state.lua
----@param opts? table { width?: number, render?: table }
+---@param opts? table { width?: number, render?: table, tool_row?: table }
 ---@return table lines, table highlights, OpenCodeWidgetMeta meta
 function M.render(perm_state, opts)
 	local id = perm_state.permission_id
 	local status = perm_state.status or "pending"
-	if status == "approved" or status == "rejected" then
-		local lines, highlights = (status == "approved" and M.get_approved_lines or M.get_rejected_lines)(id, perm_state, opts)
-		return lines, highlights, widget_base.make_meta()
+	if is_resolved(status) then
+		local lines, highlights, attached = (status == "approved" and M.get_approved_lines or M.get_rejected_lines)(id, perm_state, opts)
+		return lines, highlights, widget_base.make_meta(attached and { attached = true } or nil)
 	end
 	return M.get_lines_for_permission(id, perm_state, opts)
 end

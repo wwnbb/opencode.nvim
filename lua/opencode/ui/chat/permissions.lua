@@ -19,6 +19,15 @@ local function schedule_render()
 	render_coordinator.request({ kind = "permission" })
 end
 
+---Render options for a rendered permission, keeping the tool row it was drawn under.
+---@param pos table|nil
+---@return table
+local function render_opts(pos)
+	local opts = widget_support.render_opts()
+	opts.tool_row = pos and pos.tool_row
+	return opts
+end
+
 -- ─── Add / update ─────────────────────────────────────────────────────────────
 
 ---@param permission_id string
@@ -61,7 +70,7 @@ function M.sync_selected_option_from_cursor()
 
 	local meta = widget_support.get_interactive_meta(pos, pstate, "permission")
 	if not pos.meta_state then
-		local _, _, fallback = permission_widget.get_lines_for_permission(permission_id, pstate, widget_support.render_opts())
+		local _, _, fallback = permission_widget.get_lines_for_permission(permission_id, pstate, render_opts(pos))
 		meta = fallback
 	end
 	local option_index = widget_base.get_option_index(meta, cursor_line - pos.start_line)
@@ -94,8 +103,11 @@ end
 
 ---@param perm_id string
 function M.rerender_permission(perm_id)
+	local rendered = state.permissions[perm_id]
 	local pos, pstate, replaced, meta = widget_support.rerender_widget(state.permissions, perm_id,
-		permission_state.get_permission, permission_widget.render)
+		permission_state.get_permission, function(source)
+			return permission_widget.render(source, render_opts(rendered))
+		end)
 	if replaced then
 		pos.status = pstate.status or "pending"
 		widget_support.set_interactive_meta(pos, meta, pstate, "permission")
