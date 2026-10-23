@@ -27,7 +27,7 @@ function M.apply_nui_line_highlights(nui_lines, bufnr, ns_id, start_line, opts)
 end
 
 ---Apply NuiLine and extmark highlights to a buffer.
----@param nui_lines NuiLine[]
+---@param nui_lines OpenCodeRenderedLines
 ---@param bufnr number
 ---@param ns_id number
 ---@param start_line number 0-indexed

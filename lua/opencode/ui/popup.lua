@@ -5,6 +5,30 @@ local M = {}
 local NuiPopup = require("nui.popup")
 local float_context = require("opencode.ui.float_context")
 
+---@class OpenCodePopup
+---@field id integer
+---@field closed boolean
+---@field mounted boolean
+---@field root_name "frame"|"content"|"input"
+---@field frame? NuiPopup Backing frame layer
+---@field content? NuiPopup Content layer (absent for input-only popups)
+---@field input? NuiPopup Input layer
+---@field bufnr? integer Content (or input) buffer
+---@field winid? integer Content (or input) window
+---@field input_bufnr? integer
+---@field input_winid? integer
+---@field win_config? table Primary layer window config
+---@field border? table Primary layer border
+---@field ns_id? integer Primary layer namespace
+---@field specs table<string, table> Layer options by layer name
+---@field namespaces table<string, integer> Highlight namespaces by layer name
+---@field previous_win integer Window focused before the popup opened
+---@field focus_restore false|"chat"|"previous" Where focus goes on close
+---@field close_on_leave boolean
+---@field on_resize? fun(popup: OpenCodePopup)
+---@field on_close? fun(popup: OpenCodePopup)
+---@field outer_border_style string|table
+---@field augroup? integer
 local Popup = {}
 Popup.__index = Popup
 
@@ -443,6 +467,8 @@ function Popup:unmount()
 	return self:close()
 end
 
+---@param opts? table
+---@return OpenCodePopup
 function M.new(opts)
 	opts = opts or {}
 	next_id = next_id + 1

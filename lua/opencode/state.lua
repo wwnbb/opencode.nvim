@@ -74,6 +74,10 @@ function M.get_revision()
 	return revision
 end
 
+---@param key string
+---@param value any
+---@param path? string
+---@return any old_value
 local function set(key, value, path)
 	local old_val
 	local target = path and state[path] or state
@@ -391,8 +395,7 @@ function M.set_runtime_session_order(ids)
 end
 
 -- Normalize directory paths for comparison/storage while preserving roots.
----@param directory string|nil
----@return string|nil
+---@type fun(directory: string|nil): string|nil
 M.normalize_directory = require("opencode.util.path").normalize
 
 -- Scope requests to the session's project, which may differ from the current directory.

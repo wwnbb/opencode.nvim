@@ -200,6 +200,12 @@ local function wrap_footer(text, width)
 	return lines
 end
 
+---Menu popups always have frame and content layers; searchable menus add an input.
+---@class OpenCodeMenuView: OpenCodePopup
+---@field frame NuiPopup
+---@field content NuiPopup
+---@field input NuiPopup
+
 function M.open(opts)
 	opts = opts or {}
 	local owner = opts.context and opts.context.view
@@ -245,6 +251,8 @@ function M.open(opts)
 	local selected_idx = 1
 	local search_text = ""
 	local selected_items = {}
+	-- Assigned before any callback that reads it runs.
+	---@type OpenCodeMenuView
 	local view = nil
 	local ctx = {}
 	local last_layout_width, last_frame_height, last_list_height, last_list_row
@@ -663,7 +671,7 @@ function M.open(opts)
 			view:resize({ frame = { position = { row = next_row, col = next_col } } })
 			render_list()
 		end,
-	})
+	}) --[[@as OpenCodeMenuView]]
 	view:mount()
 
 	if searchable then

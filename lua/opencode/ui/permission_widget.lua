@@ -209,7 +209,7 @@ local function format_tool_name(tool_name)
 	end))
 end
 
----@param part table
+---@param part table|nil
 ---@return string
 local function extract_tool_name(part)
 	if type(part) ~= "table" then

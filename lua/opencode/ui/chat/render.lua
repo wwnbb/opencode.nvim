@@ -257,6 +257,7 @@ end
 ---@param opts? table
 ---@param width_context table
 ---@return table[] chunks
+---@return number[] widths Display width of each chunk
 local function wrap_text_with_ranges(text, max_width, opts, width_context)
 	opts = opts or {}
 	text = M.sanitize_buffer_line(text)
@@ -595,8 +596,8 @@ end
 ---@param content string|nil
 ---@param agent_name string|nil
 ---@param files? table[]
----@param opts? { max_lines?: number, highlight_code?: function }
----@return NuiLine[]
+---@param opts? { max_lines?: number, highlight_code?: OpenCodeCodeHighlighter }
+---@return OpenCodeRenderedLines
 function M.render_user_message(content, agent_name, files, opts)
 	opts = opts or {}
 	ensure_user_message_highlights()
@@ -688,8 +689,8 @@ end
 
 ---Render chat Markdown using the reference TUI's block layout.
 ---@param content string|nil
----@param opts? { width?: number, scope?: string, highlight_code?: function }
----@return NuiLine[]
+---@param opts? OpenCodeMarkdownRenderOpts
+---@return OpenCodeRenderedLines
 function M.render_content(content, opts)
 	return require("opencode.ui.markdown").render(content, opts, M)
 end

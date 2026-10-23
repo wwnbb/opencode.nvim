@@ -72,6 +72,7 @@ M.defaults = {
 		model = nil,
 		variant = nil,
 		options = nil,
+		---@type string|nil
 		prompt = nil,
 		language = "en",
 		timeout_ms = 0, -- No deadline; positive values limit the request in milliseconds.

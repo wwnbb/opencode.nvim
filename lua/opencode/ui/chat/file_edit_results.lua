@@ -112,9 +112,7 @@ local function get_input(tool_part)
 	return {}
 end
 
----@param diff string|nil
----@return number additions
----@return number deletions
+---@type fun(diff: string|nil): number, number
 local parse_diff_stats = text_util.diff_stats
 
 ---@param value any
@@ -815,6 +813,7 @@ local function render_expanded(model)
 
 	for index, file in ipairs(model.files) do
 		local status = file.status or "unknown"
+		---@type string
 		local label = status
 		if status == "applied" then
 			label = TYPE_LABEL[file.type] or "modified"

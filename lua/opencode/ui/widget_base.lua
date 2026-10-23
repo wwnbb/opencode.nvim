@@ -11,6 +11,8 @@ M.HEADER_WIDTH = 50
 ---@field option_lines table<number, number>|nil
 ---@field option_end_lines table<number, number>|nil
 ---@field file_ranges table[]|nil
+---@field option_count number|nil Question widgets: options in the current question
+---@field custom_interactive_line number|nil Question widgets: custom-answer row
 
 ---@param icon string
 ---@param title string

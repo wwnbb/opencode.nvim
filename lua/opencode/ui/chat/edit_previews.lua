@@ -64,9 +64,7 @@ local function is_list(value)
 end
 
 ---Count additions/deletions from a unified diff string.
----@param diff string
----@return number additions
----@return number deletions
+---@type fun(diff: string|nil): number, number
 local count_diff_stats = text_util.diff_stats
 
 ---Build a lookup that maps a model file (and its 1-based index) to the RAW

@@ -61,6 +61,13 @@ function M.get_chat_context(owner)
 	return target_win, float_dims
 end
 
+---@param total_width number
+---@param total_height number
+---@param owner? table Chat view that owns the float
+---@return string|{ type: "win", winid: integer } relative
+---@return number row
+---@return number col
+---@return integer|nil zindex
 function M.resolve_centered_placement(total_width, total_height, owner)
 	local target_win, float_dims = M.get_chat_context(owner)
 	local ui_list = vim.api.nvim_list_uis()
@@ -82,6 +89,7 @@ function M.resolve_centered_placement(total_width, total_height, owner)
 
 	local win_width = ui.width
 	local win_height = ui.height
+	---@type string|{ type: "win", winid: integer }
 	local relative = "editor"
 	if target_win and vim.api.nvim_win_is_valid(target_win) then
 		win_width = vim.api.nvim_win_get_width(target_win)

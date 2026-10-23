@@ -447,11 +447,15 @@ local function capture_priority(metadata, capture, base_priority)
 	return base_priority + (raw_priority - ts_priority)
 end
 
+---Code highlighter callback; custom callbacks also receive the fenced block.
+---@alias OpenCodeCodeHighlighter fun(text: string, language: string|nil, opts?: table, block?: table): table[], string
+
 ---@param text string
 ---@param language string|nil
 ---@param opts? table
 ---@return table[] highlights
 ---@return "ok"|"skipped"|"retry" status
+---@return table|nil trees Parsed trees when opts._return_syntax_trees is set and status is "ok"
 function M.highlight_text(text, language, opts)
 	opts = opts or {}
 	text = type(text) == "string" and text or tostring(text or "")
@@ -586,6 +590,7 @@ end
 ---@param language string|nil
 ---@param opts? table
 ---@return table[] highlights
+---@return "ok"|"skipped"|"retry" status
 function M.add_highlights(result, text, language, opts)
 	opts = opts or {}
 	result.highlights = result.highlights or {}
@@ -603,6 +608,8 @@ end
 
 ---Highlight fences in source coordinates. The optional callback owns caching;
 ---this module never depends on chat state or rendered line positions.
+---@param text string|nil
+---@param opts? { scope?: string, highlight_code?: OpenCodeCodeHighlighter }
 function M.highlight_markdown_fenced_blocks(text, opts)
 	opts = opts or {}
 	text = type(text) == "string" and text or tostring(text or "")

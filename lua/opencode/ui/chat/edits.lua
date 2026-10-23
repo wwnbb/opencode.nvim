@@ -19,6 +19,14 @@ local inline_diff_mappings = {}
 
 local INLINE_DIFF_WIN_VAR = "opencode_inline_diff_split"
 
+---@class OpenCodeInlineDiffState
+---@field active boolean
+---@field actual_win integer|nil
+---@field actual_buf integer|nil
+---@field proposed_win integer|nil
+---@field proposed_buf integer|nil
+---@field edit_id string|nil
+---@field file_index integer|nil
 local inline_diff_state = {
 	active = false,
 	actual_win = nil,

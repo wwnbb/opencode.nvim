@@ -17,6 +17,7 @@ require("opencode.ui.highlights").register("markdown", function()
 	}
 	for name, spec in pairs(styles) do
 		local source = vim.api.nvim_get_hl(0, { name = spec[1], link = false })
+		---@type table<string, any>
 		local attrs = { fg = source.fg, ctermfg = source.ctermfg, default = true }
 		for key, value in pairs(spec) do if type(key) == "string" then attrs[key] = value end end
 		local group = "OpenCodeMarkdown" .. name

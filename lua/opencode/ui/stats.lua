@@ -197,6 +197,7 @@ function M.render(view, width, opts)
 				local shadow = section[2] and "OpenCodeStatsLogoMainShadow" or "OpenCodeStatsLogoMutedShadow"
 				local shadow_bg = section[2] and "OpenCodeStatsLogoMainShadowBg" or "OpenCodeStatsLogoMutedShadowBg"
 				for _, char in ipairs(vim.fn.split(section[1], "\\zs")) do
+					---@type string, string|nil
 					local glyph, group = char, normal
 					if char == "_" then glyph, group = " ", shadow_bg end
 					if char == "^" then glyph, group = "▀", shadow_bg end

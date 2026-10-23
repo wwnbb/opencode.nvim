@@ -91,6 +91,16 @@ local function fit_columns(widths, available)
 	end
 end
 
+---@class OpenCodeMarkdownRenderOpts
+---@field width? number
+---@field scope? string Syntax scope (for example "assistant_markdown")
+---@field mode? string "source" renders the text literally
+---@field highlight_code? OpenCodeCodeHighlighter
+
+---@param content string|nil
+---@param opts? OpenCodeMarkdownRenderOpts
+---@param render table Chat render module (wrapping and panel helpers)
+---@return OpenCodeRenderedLines
 function M.render(content, opts, render)
 	opts = opts or {}
 	local result = { _opencode_highlights = {} }

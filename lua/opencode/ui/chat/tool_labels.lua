@@ -99,8 +99,6 @@ local function trim_string(value)
 	return vim.trim(value)
 end
 
----@param value any
----@return string
 ---@param input table
 ---@param metadata table
 ---@return string

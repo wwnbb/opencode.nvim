@@ -168,7 +168,8 @@ function M.create_input_popup(opts)
 	end
 	local popup = Popup.new(popup_opts)
 	popup:mount()
-	local input = popup.input or popup.content
+	-- popup_opts always creates an input layer or a content layer.
+	local input = popup.input or popup.content --[[@as NuiPopup]]
 
 	local is_closed = false
 	local function close()

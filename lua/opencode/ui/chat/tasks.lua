@@ -31,6 +31,7 @@ local function leaf_widget(part)
 	return part.type == "skill" and chat_skill or TOOL_LEAF_RENDERERS[part.tool]
 end
 
+---@type (fun(part: table, is_expanded?: boolean, opts?: table): table|nil)[]
 local REGULAR_TOOL_RENDERERS = {
 	function(part)
 		return require("opencode.ui.chat.question_result").render_tool(part, {
@@ -82,8 +83,6 @@ M.clear_animation_extmarks = widget_support.clear_animation_extmarks
 
 M.format_tool_line = tool_labels.format_tool_line
 
----@param tool_part table
----@return string|nil
 -- ─── Child session resolution (facade — implementation in task_children.lua) ──
 
 M.ensure_task_child_loaded = task_children.ensure_task_child_loaded
@@ -352,7 +351,7 @@ function M.render_task_tool(tool_part, expanded)
 end
 
 ---Render a regular non-task tool through specialized widgets before generic I/O.
----@param tool_part table
+---@param tool_part table|nil
 ---@param is_expanded boolean
 ---@param opts? { separator_before?: boolean }
 ---@return table { lines: string[], highlights: table[] }
@@ -392,6 +391,7 @@ end
 
 ---@return string|nil part_id
 ---@return table|nil tool_info
+---@return string|nil root_id
 function M.get_tool_at_cursor()
 	local id, pos, root_id = widget_support.find_widget_context_at_cursor(state.tools, state.winid)
 	if id then return id, pos, root_id end

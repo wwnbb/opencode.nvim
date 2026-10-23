@@ -34,6 +34,7 @@ local function new_state()
 		previous_winid = nil, -- To restore focus on close
 		on_close = nil, -- Caller hook run after focus restore: on_close({ restored = boolean })
 		-- Back-reference to the chat edit widget (set when launched from dt)
+		---@type string|nil
 		edit_id = nil, -- ID of the originating v2 review
 		edit_file_index = nil, -- which file index in the edit widget was opened
 		review = nil, -- Edit state record the session was opened for

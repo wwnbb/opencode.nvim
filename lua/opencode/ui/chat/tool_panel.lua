@@ -31,10 +31,16 @@ function M.stringify_output(value)
 	return tostring(value)
 end
 
+---@class OpenCodeToolPanelHelpers: OpenCodePanelHelpers
+---@field result fun(): table
+---@field add_entry fun(result: table, entry: table|nil)
+---@field render_entries fun(result: table, entries: table[], render_opts?: table): number, boolean
+
 ---@param opts table
----@return OpenCodePanelHelpers
+---@return OpenCodeToolPanelHelpers
 function M.create_panel(opts)
 	opts = opts or {}
+	---@class OpenCodeToolPanelHelpers
 	local helpers = panel.create_helpers({
 		render = render,
 		prefix = opts.prefix or M.PANEL_PREFIX,

@@ -27,6 +27,7 @@ local state = {
 	info_bufnr = nil,
 	visible = false,
 	on_send = nil,
+	---@type fun(text: string)|nil
 	on_cancel = nil,
 	close_on_send = true,
 	allow_chat_commands = false,
@@ -714,6 +715,7 @@ end
 function M.suspend()
 	if not state.visible or not state.view or not owner_valid() then return end
 	history_search.cancel(state)
+	---@type table<string, any>
 	local opts = { text = get_input_text(), parts = draft_parts() }
 	for _, key in ipairs({ "view", "session_id", "on_send", "on_cancel", "close_on_send", "allow_chat_commands",
 		"allow_context", "persist_pending", "session_bound", "add_history", "mode", "send_options", "context_snapshot", "context_error" }) do

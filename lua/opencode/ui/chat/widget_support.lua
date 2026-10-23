@@ -105,6 +105,7 @@ end
 ---@param predicate? fun(pos: table, part_id: string): boolean optional filter
 ---@return string|nil part_id
 ---@return table|nil pos
+---@return string|nil root_id Owning root widget id
 function M.find_widget_context_at_cursor(state_table, winid, predicate)
 	if winid == state.winid and not cs.is_chat_buffer_displayed(view) then return nil, nil end
 	if not winid or not vim.api.nvim_win_is_valid(winid) then

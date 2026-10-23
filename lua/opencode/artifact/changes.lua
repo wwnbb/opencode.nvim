@@ -523,6 +523,7 @@ function M.reject(id, opts)
 		return false, "File changed since review; current content preserved: " .. change.filepath, "conflict"
 	end
 
+	---@type boolean|nil, string|nil
 	local ok, err = true, nil
 	if file_type == "add" and disk.exists then
 		ok, err = os.remove(change.filepath)

@@ -86,9 +86,7 @@ local function mouse_is_inside_float_frame(current_win)
 	return row >= frame_row and row < frame_row + frame_height and col >= frame_col and col < frame_col + frame_width
 end
 
----@param opts table|nil
----@field close fun()|nil
----@field focus_chat fun()|nil
+---@param opts { close?: fun(), focus_chat?: fun() }|nil
 function M.setup(opts)
 	opts = opts or {}
 	clear_float_focus_autocmds()

@@ -14,7 +14,8 @@
       "$VIMRUNTIME",
       "${3rd}/luv/library",
       ".deps/nvim/nui.nvim",
-      ".deps/nvim/plenary.nvim"
+      ".deps/nvim/plenary.nvim",
+      "types"
     ],
     "checkThirdParty": false,
     "ignoreDir": [

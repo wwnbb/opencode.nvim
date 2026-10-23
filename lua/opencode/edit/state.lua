@@ -5,6 +5,7 @@ local M = {}
 local pending = require("opencode.session.pending")
 
 -- Active edits storage: { [permission_id] = edit_state }
+---@type table<string, table>
 local active_edits = {}
 
 ---@param diff_str string|nil
@@ -16,12 +17,12 @@ local function parse_diff_lines(diff_str)
 	return vim.split(diff_str, "\n", { plain = true })
 end
 
----@param diff_str any
----@return number, number
+---@type fun(diff: string|nil): number, number
 local parse_diff_stats = require("opencode.util.text").diff_stats
 
 ---@param text string|nil
----@return string
+---@return string normalized
+---@return integer replacements
 local function normalize_line_endings(text)
 	return (text or ""):gsub("\r\n", "\n")
 end

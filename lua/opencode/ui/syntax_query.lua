@@ -207,6 +207,7 @@ end
 local function signature(query)
 	local checked = plan(query)
 	if not checked then return nil end
+	---@type table|nil
 	local snapshot = checked.snapshot
 	if snapshot and unchanged(snapshot, query) then return snapshot.token end
 	snapshot = inspect(query, checked)
