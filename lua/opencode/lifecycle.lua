@@ -595,22 +595,15 @@ continue_startup = function(attempt)
 			port = server_info.port,
 		})
 
-		local http = require("opencode.client.http")
-		http.setup({
-			url = false,
-			host = server_info.host,
-			port = server_info.port,
-			auth = attempt.auth,
-		})
-
-		local sse = require("opencode.client.sse")
-		sse.setup({
+		-- A new owned process replaces any previous endpoint: restart the stream
+		-- and invalidate requests bound to the old server.
+		require("opencode.client").configure_endpoint({
 			url = false,
 			resolve_endpoint = false,
 			host = server_info.host,
 			port = server_info.port,
 			auth = attempt.auth,
-		})
+		}, { reset_stream = true })
 
 		attempt.configured = true
 	end

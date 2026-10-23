@@ -278,6 +278,37 @@ describe("opencode client Basic auth", function()
 		assert.equals("Rejected [redacted]", captured.message)
 	end)
 
+	it("configures a replacement endpoint through one writer and restarts only a replaced stream", function()
+		stub_auth("Basic encoded", nil)
+		local client = setup_client("secret")
+		local closed = 0
+		open_stream_handler = function() return { close = function() closed = closed + 1 end }, nil end
+		assert.is_true(client.connect_events())
+		local generation = client.endpoint_config().generation
+		-- Managed discovery runs inside an SSE resolve: it updates options without a restart.
+		client.configure_endpoint({ url = "http://127.0.0.1:4097", auth = { password = "managed" } })
+		assert.equals(generation + 1, client.endpoint_config().generation)
+		assert.is_true(client.sse.status().has_stream)
+		assert.equals(0, closed)
+		assert.equals("http://127.0.0.1:4097", client.sse.opts.url)
+		client.configure_endpoint({ url = false, host = "127.0.0.1", port = 5000, auth = { username = "opencode", password = "spawned" }, resolve_endpoint = false },
+			{ reset_stream = true })
+		assert.equals(generation + 2, client.endpoint_config().generation)
+		assert.equals(1, closed)
+		assert.is_false(client.sse.status().has_stream)
+		assert.equals(5000, client.sse.opts.port)
+		assert.is_false(client.sse.opts.url)
+		assert.is_false(client.sse.opts.resolve_endpoint)
+		assert.equals("spawned", client.sse.opts.auth.password)
+		assert.equals(5000, client.http.opts.port)
+		assert.is_nil(client.http.opts.resolve_endpoint)
+		assert.is_true(client.connect_events())
+		client.configure_endpoint({ url = false, host = "127.0.0.1", port = 5000, auth = { username = "opencode", password = "spawned" } }, { reset_stream = true })
+		assert.equals(generation + 2, client.endpoint_config().generation)
+		assert.equals(1, closed)
+		assert.is_true(client.sse.status().has_stream)
+	end)
+
 	it("returns true after assigning or reusing an SSE stream", function()
 		stub_auth("Basic encoded", nil)
 		local client = setup_client("secret")

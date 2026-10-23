@@ -67,17 +67,29 @@ function M.endpoint_config()
 	return vim.deepcopy({ generation = configuration_generation, url = http.opts.url, host = http.opts.host, port = http.opts.port, auth = http.opts.auth, tls = http.opts.tls })
 end
 
--- Managed discovery may change the URL/password while a reconnect is pending.
-function M.configure_endpoint(opts)
+local ENDPOINT_KEYS = { "url", "host", "port", "auth", "tls" }
+
+---The single endpoint writer after setup. A changed endpoint invalidates
+---in-flight page walks and temporary generations.
+---Managed discovery runs inside an SSE endpoint resolve, so by default the
+---stream options are updated in place. `reset_stream` (a spawned server
+---replacing the endpoint) goes through sse.setup, which disconnects and
+---clears event dedupe when the endpoint changed.
+---@param opts table url/host/port/auth/tls, plus SSE-only resolve_endpoint
+---@param options? { reset_stream?: boolean }
+function M.configure_endpoint(opts, options)
 	local current = M.endpoint_config()
-	for _, key in ipairs({ "url", "host", "port", "auth", "tls" }) do
+	local endpoint = {}
+	for _, key in ipairs(ENDPOINT_KEYS) do endpoint[key] = opts[key] end
+	for _, key in ipairs(ENDPOINT_KEYS) do
 		if opts[key] ~= nil and not vim.deep_equal(current[key], opts[key]) then
 			if package.loaded["opencode.client.explanation"] then require("opencode.client.explanation").cancel_all() end
 			configuration_generation = configuration_generation + 1
 			break
 		end
 	end
-	http.setup(opts)
+	http.setup(endpoint)
+	if options and options.reset_stream then sse.setup(vim.deepcopy(opts)); return end
 	for key, value in pairs(opts) do sse.opts[key] = vim.deepcopy(value) end
 end
 

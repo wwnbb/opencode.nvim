@@ -208,7 +208,9 @@ describe("opencode lifecycle", function()
 		function client.disconnect_events()
 			client.disconnect_calls = client.disconnect_calls + 1
 		end
-		function client.configure_endpoint(opts)
+		client.endpoint_calls = {}
+		function client.configure_endpoint(opts, options)
+			table.insert(client.endpoint_calls, { opts = opts, options = options })
 			state_data.http_setup = vim.tbl_extend("force", state_data.http_setup or {}, opts)
 			state_data.sse_setup = vim.tbl_extend("force", state_data.sse_setup or {}, opts)
 		end
@@ -634,6 +636,15 @@ describe("opencode lifecycle", function()
 		assert.equals(256, variants[2].body.max_tokens)
 		assert.equals(variants[1].id, lifecycle.resolve_completion_model(state_data.config.completion).variant)
 		assert.equals(variants[2].id, lifecycle.resolve_explanation_model(state_data.config.explanation).variant)
+	end)
+
+	it("configures a spawned server endpoint through the client endpoint writer", function()
+		complete_start(nil, 4321)
+		assert.equals(1, #client.endpoint_calls)
+		local call = client.endpoint_calls[1]
+		assert.same({ url = false, resolve_endpoint = false, host = "127.0.0.1", port = 4321, auth = call.opts.auth }, call.opts)
+		assert.equals("string", type(call.opts.auth.password))
+		assert.same({ reset_stream = true }, call.options)
 	end)
 
 	it("exposes one owned-server predicate for feature model profiles", function()
