@@ -125,7 +125,7 @@ function M.setup(events)
 	events.on("connected", function()
 		sessions.refresh_status()
 		local ids = {}
-		for _, info in ipairs(state.get_active_sessions()) do ids[info.id] = true end
+		for _, id in ipairs(state.get_runtime_session_order()) do ids[id] = true end
 		local view_adapter = require("opencode.session.views")
 		for _, view in ipairs(view_adapter.live()) do
 			local id = view_adapter.registry().session(view).id

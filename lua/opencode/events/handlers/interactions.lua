@@ -83,8 +83,8 @@ function M.setup(events)
 			if sid and not visited[sid] then visited[sid] = true; recover(sid) end
 		end
 		visit(state.get_session().id)
-		for _, info in ipairs(state.get_active_sessions()) do
-			for _, sid in ipairs(require("opencode.sync").collect_session_tree(info.id)) do visit(sid) end
+		for _, root_id in ipairs(state.get_runtime_session_order()) do
+			for _, sid in ipairs(require("opencode.sync").collect_session_tree(root_id)) do visit(sid) end
 		end
 		for _, info in ipairs(permissions.get_all_active()) do visit(info.session_id) end
 		for _, info in ipairs(forms.get_all_active()) do visit(info.session_id) end

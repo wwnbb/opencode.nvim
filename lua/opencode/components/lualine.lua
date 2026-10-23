@@ -341,8 +341,13 @@ function M.component()
 	local attention
 	if opts.show_attention ~= false then
 		local current = state.get_session()
+		-- Attention reads only pending counts; skip building full session records.
+		local active_sessions = {}
+		for _, id in ipairs(state.get_runtime_session_order()) do
+			active_sessions[#active_sessions + 1] = { pending = state.get_session_pending_counts(id) }
+		end
 		attention = attention_component({
-			active_sessions = state.get_active_sessions(),
+			active_sessions = active_sessions,
 			session_pending = state.get_session_pending_counts(current.id),
 		})
 	end

@@ -138,8 +138,8 @@ local function should_accept_global_event(data)
 				return true
 			end
 		end
-		for _, session in ipairs(state_mod.get_active_sessions()) do
-			if state_mod.get_session_directory(session.id) == event_dir then
+		for _, id in ipairs(state_mod.get_runtime_session_order()) do
+			if state_mod.get_session_directory(id) == event_dir then
 				return true
 			end
 		end

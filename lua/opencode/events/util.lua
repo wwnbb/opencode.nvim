@@ -249,8 +249,8 @@ function M.runtime_root_for_session(session_id)
 		parent = parent or state.get_session_parent_id(session_id)
 		if not parent then
 			-- Parts can arrive before their task-parent index is available.
-			for _, session in ipairs(state.get_active_sessions()) do
-				if M.session_owns_task_child(session.id, session_id) then return session.id end
+			for _, root_id in ipairs(state.get_runtime_session_order()) do
+				if M.session_owns_task_child(root_id, session_id) then return root_id end
 			end
 		end
 		session_id = parent

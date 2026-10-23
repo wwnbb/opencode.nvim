@@ -112,6 +112,55 @@ function M.get_active_session_views(opts)
 	return result
 end
 
+---Runtime tabs in tab order as detached records with status, pending counts and
+---message cache. Compatibility shape behind state.get_active_sessions(); callers
+---that need only ids use state.get_runtime_session_order().
+---@return table[]
+function M.get_active_sessions()
+	local state_mod = require("opencode.state")
+	local session_util = require("opencode.util.session")
+	local current_id = state_mod.get_session().id
+	local result, seen = {}, {}
+	for _, id in ipairs(state_mod.get_runtime_session_order()) do
+		if id ~= "" and not seen[id] then
+			local record = state_mod.get_session_record(id) or { id = id, title = id, name = id, message_count = 0 }
+			local cache = state_mod.get_session_message_cache(id)
+			record.status = state_mod.get_session_status(id)
+			record.pending = state_mod.get_session_pending_counts(id)
+			record.cached_messages = cache
+			record.message_count = record.message_count or cache.count or 0
+			record.name = session_util.displayTitle(record.name or record.title) or record.title or id
+			record.title = session_util.displayTitle(record.title or record.name) or record.name or id
+			record.is_current = current_id == id
+			result[#result + 1], seen[id] = record, true
+		end
+	end
+	return result
+end
+
+---Connection, selection and session summary (state.get_status_summary()).
+---@return table
+function M.get_status_summary()
+	local state_mod = require("opencode.state")
+	local model, agent = M.current_model() or {}, M.current_agent() or {}
+	local current = state_mod.get_session()
+	return {
+		connected = state_mod.is_connected(),
+		connection_state = state_mod.get_connection(),
+		status = state_mod.get_status(),
+		model = model.name or model.modelID,
+		provider = model.provider or model.providerID,
+		agent = agent.name or agent.id,
+		session = current.name,
+		message_count = current.message_count,
+		session_status = state_mod.get_session_status(current.id),
+		session_pending = state_mod.get_session_pending_counts(current.id),
+		active_sessions = M.get_active_sessions(),
+		danger_mode = state_mod.is_danger_mode_enabled(),
+		diff_stats = M.changes_stats(),
+	}
+end
+
 ---@return table|nil
 function M.current_agent(opts)
 	local ok, local_state = pcall(require, "opencode.local")

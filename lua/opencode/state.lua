@@ -604,38 +604,9 @@ function M.get_session_message_cache(session_id)
 end
 
 ---@return table[]
+-- Compatibility alias: the derived runtime-session records are built in selectors.
 function M.get_active_sessions()
-	local result = {}
-	local seen = {}
-
-	local function add_session(id)
-		if not id or id == "" or seen[id] then
-			return
-		end
-		local record = vim.deepcopy(state.sessions.by_id[id] or {
-			id = id,
-			title = id,
-			name = id,
-			message_count = 0,
-		})
-		local cache = M.get_session_message_cache(id)
-		local pending = M.get_session_pending_counts(id)
-		record.status = M.get_session_status(id)
-		record.pending = pending
-		record.cached_messages = cache
-		record.message_count = record.message_count or cache.count or 0
-		record.name = session_util.displayTitle(record.name or record.title) or record.title or id
-		record.title = session_util.displayTitle(record.title or record.name) or record.name or id
-		record.is_current = state.session.id == id
-		table.insert(result, record)
-		seen[id] = true
-	end
-
-	for _, id in ipairs(state.sessions.runtime_order or {}) do
-		add_session(id)
-	end
-
-	return result
+	return require("opencode.selectors").get_active_sessions()
 end
 
 function M.set_message_count(count)
@@ -774,34 +745,9 @@ function M.clear_listeners()
 end
 
 -- Get status summary (for lualine, etc.)
+-- Compatibility alias: the status summary is derived in selectors.
 function M.get_status_summary()
-	local model = {}
-	local agent = {}
-	local ok, selectors = pcall(require, "opencode.selectors")
-	if ok then
-		if type(selectors.current_model) == "function" then
-			model = selectors.current_model() or {}
-		end
-		if type(selectors.current_agent) == "function" then
-			agent = selectors.current_agent() or {}
-		end
-	end
-	return {
-		connected = M.is_connected(),
-		connection_state = state.connection,
-		status = state.status,
-		model = model.name or model.modelID,
-		provider = model.provider or model.providerID,
-		agent = agent.name or agent.id,
-		session = state.session.name,
-		message_count = state.session.message_count,
-		session_status = M.get_session_status(state.session.id),
-		session_pending = M.get_session_pending_counts(state.session.id),
-		active_sessions = M.get_active_sessions(),
-		danger_mode = state.danger_mode,
-		diff_stats = ok and type(selectors.changes_stats) == "function" and selectors.changes_stats()
-			or { total_files = 0, total_additions = 0, total_deletions = 0 },
-	}
+	return require("opencode.selectors").get_status_summary()
 end
 
 return M

@@ -576,8 +576,8 @@ function M.recount_pending()
 	local counts = collect_pending_counts()
 	local seen = {}
 
-	for _, session in ipairs(state.get_active_sessions()) do
-		seen[session.id] = true
+	for _, id in ipairs(state.get_runtime_session_order()) do
+		seen[id] = true
 	end
 	for session_id, _ in pairs(counts) do
 		seen[session_id] = true
@@ -649,8 +649,8 @@ function M.refresh_status(callback, session_id)
 	-- this snapshot, including a repeated busy event with the same value.
 	local snapshots = {}
 	local sync = require("opencode.sync")
-	for _, info in ipairs(state.get_active_sessions()) do
-		for _, id in ipairs(sync.collect_session_tree(info.id)) do
+	for _, root_id in ipairs(state.get_runtime_session_order()) do
+		for _, id in ipairs(sync.collect_session_tree(root_id)) do
 			snapshots[id] = { token = pending_helper.token(id), revision = state.get_session_status_revision(id) }
 		end
 	end

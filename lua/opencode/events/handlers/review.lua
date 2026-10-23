@@ -109,8 +109,8 @@ function M.setup(events)
 	for _, kind in ipairs({ "connected", "session_change" }) do
 		events.on(kind, function()
 			local seen = {}
-			for _, info in ipairs(state.get_active_sessions()) do
-				for _, sid in ipairs(require("opencode.sync").collect_session_tree(info.id)) do
+			for _, root_id in ipairs(state.get_runtime_session_order()) do
+				for _, sid in ipairs(require("opencode.sync").collect_session_tree(root_id)) do
 					if not seen[sid] then seen[sid] = true; recover(sid) end
 				end
 			end
