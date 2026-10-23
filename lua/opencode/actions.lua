@@ -79,6 +79,23 @@ local function update_input_info_bar()
 	end
 end
 
+-- Connection policies. Both guard the reply with a session.pending token, so
+-- a callback never runs after its session (or the frontend) was reset.
+--
+-- connected_request (with_connection): lifecycle.ensure_connected first, which
+--   may start the server or reconnect. Used by session/catalog reads and
+--   writes, server/plugin/worktree/shell/inbox calls, agent and provider
+--   catalogs (load_catalog), VCS reads, compact, interrupt, environment,
+--   reconnect, message history, pending-input edits, tab reopen and the
+--   session family.
+--
+-- current_request: call the client on the current connection without starting
+--   or reconnecting it. Used by list_skills, get_server_status,
+--   get_mcp_status, toggle_mcp, get_diff and reload_locations, by
+--   revert/undo and execute_command (through current_callback), and
+--   deliberately by interaction replies (respond_permission,
+--   reply_to_question, reject_question): a reply must never trigger a
+--   reconnect; on failure they reconcile instead.
 local function with_connection(callback, session_id)
 	local pending = require("opencode.session.pending")
 	local token = pending.token(session_id)
@@ -91,6 +108,11 @@ local function connected_request(session_id, request, callback)
 	return with_connection(function(token)
 		request(current_callback(token, callback))
 	end, session_id)
+end
+
+local function current_request(session_id, request, callback)
+	local token = require("opencode.session.pending").token(session_id)
+	return request(current_callback(token, callback))
 end
 
 local function catalog_options(opts)
@@ -452,11 +474,10 @@ end
 
 function M.list_skills(callback, opts)
 	opts = vim.deepcopy(catalog_options(opts))
-	local token = require("opencode.session.pending").token()
-	return client().list_skills(current_callback(token, function(err, skills)
+	return current_request(nil, function(done) return client().list_skills(done, opts) end, function(err, skills)
 		sync().handle_location_catalog(opts.directory, "skills", skills, err)
 		if callback then callback(err, skills) end
-	end), opts)
+	end)
 end
 
 -- Add catalog skills to the current input draft. The server loads their
@@ -487,22 +508,10 @@ function M.stage_skills(selected, opts)
 			vim.notify("Could not list skills: " .. tostring(err.message or err), vim.log.levels.ERROR)
 			return
 		end
-		local parts, seen = {}, {}
-		skills = type(skills) == "table" and skills or {}
-		for _, wanted in ipairs(selected) do
-			local found
-			for _, skill in ipairs(skills) do
-				if (type(wanted) == "table" and wanted.id == skill.id)
-					or (type(wanted) == "string" and (wanted == skill.id or wanted == skill.name)) then found = skill; break end
-			end
-			if not found or type(found.id) ~= "string" or found.id == "" then
-				vim.notify("Skill is unavailable: " .. tostring(type(wanted) == "table" and wanted.name or wanted), vim.log.levels.WARN)
-				return
-			end
-			if not seen[found.id] then
-				seen[found.id] = true
-				parts[#parts + 1] = { type = "skill", id = found.id, name = found.name }
-			end
+		local parts, unavailable = require("opencode.session.skills").resolve(selected, skills)
+		if not parts then
+			vim.notify("Skill is unavailable: " .. unavailable, vim.log.levels.WARN)
+			return
 		end
 		if #parts == 0 then return end
 		local added, stage_error = input.stage_skills(parts, opts.session_id)
@@ -514,11 +523,7 @@ function M.stage_skills(selected, opts)
 	end
 	-- The picker already supplied catalog records. Re-fetching after selection
 	-- creates a gap in which the user can send the prompt without its skills.
-	local catalog_records = #selected > 0
-	for _, wanted in ipairs(selected) do
-		if type(wanted) ~= "table" or type(wanted.id) ~= "string" then catalog_records = false; break end
-	end
-	if catalog_records then
+	if require("opencode.session.skills").are_catalog_records(selected) then
 		add_resolved(nil, selected)
 	else
 		M.list_skills(add_resolved, opts)
@@ -557,14 +562,13 @@ end
 
 -- Explicit server-wide reload; authentication never calls this operation.
 function M.reload_locations(callback)
-	local token = require("opencode.session.pending").token()
-	return client().dispose(current_callback(token, function(err, result)
+	return current_request(nil, function(done) return client().dispose(done) end, function(err, result)
 		if not err then
 			cleanup().clear_transient({ reset_state = false, clear_chat = true })
 			require("opencode.events").emit("connected", {})
 		end
 		if callback then callback(err, result) end
-	end))
+	end)
 end
 M.dispose_server = M.reload_locations
 
@@ -618,24 +622,21 @@ function M.compact_session(session_id, opts, callback)
 end
 
 function M.get_server_status(callback)
-	local token = require("opencode.session.pending").token()
-	return client().get_status(current_callback(token, callback), catalog_options())
+	return current_request(nil, function(done) return client().get_status(done, catalog_options()) end, callback)
 end
 
 function M.get_mcp_status(callback, opts)
 	opts = catalog_options(opts)
-	local token = require("opencode.session.pending").token()
-	return client().get_mcp_status(current_callback(token, function(err, status)
+	return current_request(nil, function(done) return client().get_mcp_status(done, opts) end, function(err, status)
 		if not err and status then sync().handle_location_catalog(opts.directory, "mcp", status) end
 		if callback then callback(err, status) end
-	end), opts)
+	end)
 end
 
 function M.toggle_mcp(name, connected, callback, opts)
 	local c = client()
 	local fn = connected and c.disconnect_mcp or c.connect_mcp
-	local token = require("opencode.session.pending").token()
-	return fn(name, current_callback(token, callback), catalog_options(opts))
+	return current_request(nil, function(done) return fn(name, done, catalog_options(opts)) end, callback)
 end
 
 function M.reply_review(review_id, callback)
@@ -654,8 +655,7 @@ function M.respond_permission(permission_id, reply, opts, callback)
 	opts.session_id = opts.session_id or (item and item.session_id)
 	opts.directory = opts.directory or require("opencode.state").get_session_directory(opts.session_id)
 	if not item or not owner.begin_submission(permission_id) then return false end
-	local token = require("opencode.session.pending").token(opts.session_id)
-	return client().respond_permission(permission_id, reply, opts, current_callback(token, function(err, result)
+	return current_request(opts.session_id, function(done) return client().respond_permission(permission_id, reply, opts, done) end, function(err, result)
 		local current = owner.get_permission(permission_id)
 		if current ~= item or current.status ~= "pending" then return end
 		if err then
@@ -663,7 +663,7 @@ function M.respond_permission(permission_id, reply, opts, callback)
 			require("opencode.events").emit("interaction_reconcile", { session_id = opts.session_id })
 		end
 		if callback then callback(err, result) end
-	end))
+	end)
 end
 
 ---@param request_id string
@@ -685,11 +685,10 @@ function M.reply_to_question(request_id, answers, opts_or_callback, callback)
 	end
 	local qstate = require("opencode.question.state").get_question(request_id)
 	opts.session_id = qstate and qstate.session_id or opts.session_id
-	local token = require("opencode.session.pending").token(opts.session_id)
-	return client().reply_to_question(request_id, answers, opts, current_callback(token, function(err, result)
+	return current_request(opts.session_id, function(done) return client().reply_to_question(request_id, answers, opts, done) end, function(err, result)
 		if err then require("opencode.events").emit("interaction_reconcile", { session_id = opts.session_id }) end
 		if callback then callback(err, result) end
-	end))
+	end)
 end
 
 ---@param session_id string|nil
@@ -698,11 +697,10 @@ end
 function M.reject_question(session_id, request_id, callback)
 	local item = require("opencode.question.state").get_question(request_id)
 	local owner_session_id = item and item.session_id or session_id
-	local token = require("opencode.session.pending").token(owner_session_id)
-	return client().reject_question(owner_session_id, request_id, current_callback(token, function(err, result)
+	return current_request(owner_session_id, function(done) return client().reject_question(owner_session_id, request_id, done) end, function(err, result)
 		if err then require("opencode.events").emit("interaction_reconcile", { session_id = owner_session_id }) end
 		if callback then callback(err, result) end
-	end))
+	end)
 end
 
 function M.refresh_form(id)
@@ -711,8 +709,7 @@ function M.refresh_form(id)
 end
 
 function M.get_diff(session_id, opts, callback)
-	local token = require("opencode.session.pending").token(session_id)
-	return client().get_diff(session_id, opts or {}, current_callback(token, callback))
+	return current_request(session_id, function(done) return client().get_diff(session_id, opts or {}, done) end, callback)
 end
 
 local function reverted(session_id, callback, operation)
@@ -783,92 +780,18 @@ for _, method in ipairs({ "get_vcs_info", "get_vcs_base", "list_vcs_branches", "
 	end
 end
 
--- Resolve the native family even when only a child was opened in this frontend.
 function M.set_session_environment(session_id, variables, callback)
 	return connected_request(session_id, function(done) client().set_session_environment(session_id, variables, done) end, callback)
 end
 
+-- Resolve the native family even when only a child was opened in this frontend.
 function M.get_session_family(session_id, callback)
 	if type(session_id) ~= "string" or session_id == "" then
 		schedule_callback(callback, { message = "Select a session before opening its family" })
 		return
 	end
 	return with_connection(function(token)
-		local pending = require("opencode.session.pending")
-		local publish = current_callback(token, callback)
-		local ancestors, records, seen, queue, record_tokens, loaded, head = {}, {}, {}, {}, {}, {}, 1
-		local root_id
-		local function current() return pending.is_current(token) end
-		local function fetch(id, done)
-			if loaded[id] then
-				if not pending.is_current(record_tokens[id]) then publish({ message = "Family changed while loading; open it again" }); return end
-				done(vim.tbl_deep_extend("force", {}, loaded[id], state().get_session_record(id) or {}))
-				return
-			end
-			local node_token, snapshot = pending.token(id), state().get_session_record(id)
-			record_tokens[id] = node_token
-			client().get_session(id, function(err, record)
-				if not current() then return end
-				if not pending.is_current(node_token) then publish({ message = "Family changed while loading; open it again" }); return end
-				if err then publish(err); return end
-				local latest = state().get_session_record(id)
-				if vim.deep_equal(snapshot, latest) then sessions().remember(record, { touch = false, reason = "session_family" })
-				else record = vim.tbl_deep_extend("force", {}, record, latest or {}) end
-				loaded[id] = record
-				done(record)
-			end)
-		end
-		local function finish()
-			local snapshots = {}
-			for _, record in ipairs(records) do
-				snapshots[record.id] = { token = pending.token(record.id), revision = state().get_session_status_revision(record.id) }
-			end
-			client().get_session_statuses(function(err, statuses)
-				if not current() then return end
-				if err then publish(err); return end
-				for id, snapshot in pairs(snapshots) do
-					if pending.is_current(record_tokens[id]) and pending.is_current(snapshot.token)
-						and state().get_session_status_revision(id) == snapshot.revision then
-						local status = require("opencode.session.status").from_active_snapshot(statuses[id],
-							state().get_session_status(id), sync().get_messages(id))
-						sync().handle_session_status(id, status)
-						sessions().set_session_status(id, status, { reason = "session_family" })
-					end
-				end
-				local family = {}
-				for _, record in ipairs(records) do
-					if pending.is_current(record_tokens[record.id]) then family[#family + 1] = record end
-				end
-				publish(nil, family, root_id)
-			end)
-		end
-		local function walk()
-			if not current() then return end
-			local id = queue[head]
-			if not id then finish(); return end
-			head = head + 1
-			if seen[id] then walk(); return end
-			seen[id] = true
-			fetch(id, function(record)
-				records[#records + 1] = record
-				client().get_session_children(id, function(err, children)
-					if not current() then return end
-					if not pending.is_current(record_tokens[id]) then publish({ message = "Family changed while loading; open it again" }); return end
-					if err then publish(err); return end
-					for _, child in ipairs(children) do if not seen[child.id] then queue[#queue + 1] = child.id end end
-					walk()
-				end)
-			end)
-		end
-		local function ascend(id)
-			if ancestors[id] then publish({ message = "Session family has a parent cycle" }); return end
-			ancestors[id] = true
-			fetch(id, function(record)
-				if type(record.parentID) == "string" and record.parentID ~= "" then ascend(record.parentID)
-				else root_id = id; queue[1] = id; walk() end
-			end)
-		end
-		ascend(session_id)
+		require("opencode.session.family").load(session_id, token, current_callback(token, callback))
 	end, session_id)
 end
 
