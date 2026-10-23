@@ -2,6 +2,7 @@ local M = {}
 
 local Job = require("plenary.job")
 local state = require("opencode.state")
+local server_env = require("opencode.server_env")
 local uv = vim.uv or vim.loop
 
 local pending_callbacks = {}
@@ -19,7 +20,6 @@ local fail_startup
 local begin_health_checks
 local continue_startup
 local setup_event_listeners
-local discover_managed
 
 M.opts = {
 	command = "opencode",
@@ -32,142 +32,18 @@ M.opts = {
 	config_dir = nil,
 }
 
-local shell_env_cache = nil
-
-local function parse_env_output(output)
-	local env = {}
-	if type(output) ~= "string" or output == "" then
-		return env
-	end
-
-	for line in output:gmatch("[^\r\n]+") do
-		local key, value = line:match("^([%w_]+)=(.*)$")
-		if key then
-			env[key] = value
-		end
-	end
-
-	return env
-end
-
-local function load_shell_env()
-	if M.opts.use_shell_env == false then
-		return {}
-	end
-	if shell_env_cache then
-		return shell_env_cache
-	end
-
-	local shell = os.getenv("SHELL") or vim.o.shell or "/bin/sh"
-	local shell_name = vim.fn.fnamemodify(shell, ":t")
-	local flag = (shell_name == "bash" or shell_name == "zsh") and "-lic" or "-lc"
-	local ok, output = pcall(vim.fn.system, { shell, flag, "env" })
-	if not ok or vim.v.shell_error ~= 0 then
-		shell_env_cache = {}
-		return shell_env_cache
-	end
-
-	shell_env_cache = parse_env_output(output)
-	return shell_env_cache
-end
-
-local function prepend_path(path, dir)
-	if type(dir) ~= "string" or dir == "" then
-		return path or ""
-	end
-
-	local parts = {}
-	local seen = {}
-	local function add(part)
-		if part and part ~= "" and not seen[part] then
-			seen[part] = true
-			table.insert(parts, part)
-		end
-	end
-
-	add(dir)
-	for part in tostring(path or ""):gmatch("[^:]+") do
-		add(part)
-	end
-
-	return table.concat(parts, ":")
-end
-
-local function env_value(env, key)
-	local value = env[key]
-	if value == nil or value == vim.NIL then
-		return nil
-	end
-	return tostring(value)
-end
-
-local function promote_toolchain_bins(env)
-	local path = env_value(env, "PATH") or os.getenv("PATH") or ""
-	local volta_home = env_value(env, "VOLTA_HOME")
-	local bun_install = env_value(env, "BUN_INSTALL")
-	local nvm_bin = env_value(env, "NVM_BIN")
-
-	if volta_home and volta_home ~= "" then
-		path = prepend_path(path, volta_home .. "/bin")
-	end
-	if bun_install and bun_install ~= "" then
-		path = prepend_path(path, bun_install .. "/bin")
-	end
-	if nvm_bin and nvm_bin ~= "" then
-		path = prepend_path(path, nvm_bin)
-	end
-
-	env.PATH = path
-end
-
-local function build_server_env(auth)
-	local env = vim.tbl_extend(
-		"force",
-		vim.fn.environ(),
-		load_shell_env(),
-		type(M.opts.env) == "table" and M.opts.env or {},
-		{
-			OPENCODE_SERVER_USERNAME = auth and auth.username,
-			OPENCODE_SERVER_PASSWORD = auth and auth.password,
-			OPENCODE_CONFIG_DIR = M.opts.config_dir,
-		}
-	)
-
-	for key, value in pairs(env) do
-		if value == vim.NIL then
-			env[key] = nil
-		end
-	end
-
-	promote_toolchain_bins(env)
-
-	for key, value in pairs(env) do
-		env[key] = tostring(value)
-	end
-
-	return env
-end
-
-local function resolve_command(command, env)
-	command = command or "opencode"
-	if command:find("/", 1, true) then
-		return command
-	end
-
-	local path = env and env.PATH or os.getenv("PATH") or ""
-	for dir in path:gmatch("[^:]+") do
-		local candidate = dir .. "/" .. command
-		if vim.fn.executable(candidate) == 1 then
-			return candidate
-		end
-	end
-
-	local exepath = vim.fn.exepath(command)
-	if exepath and exepath ~= "" then
-		return exepath
-	end
-
-	return command
+-- Spawned, discovered, explicit-endpoint and untracked-stop attempts share one
+-- shape; callers supply the phase and their own fields.
+local function new_attempt(fields)
+	return vim.tbl_extend("force", {
+		connecting = false,
+		connection_token = 0,
+		disconnected = false,
+		exited = false,
+		signal_sent = false,
+		kill_sent = false,
+		stop_waiters = {},
+	}, fields)
 end
 
 local function error_detail(err)
@@ -394,40 +270,6 @@ local function arm_startup_timeout(attempt)
 	end, M.opts.startup_timeout)
 end
 
--- Verified with CLI 2.0.11: "server listening on http://127.0.0.1:57168"
-local function parse_server_url(line)
-	if not line then
-		return nil
-	end
-
-	local url = line:match("listening on (http://[^%s]+)")
-	if url then
-		local host, port = url:match("^http://%[([^%]]+)%]:(%d+)$")
-		if not host then
-			host, port = url:match("^http://([^:/]+):(%d+)$")
-		end
-		-- CLI 2.0.11 on macOS prints its IPv6 localhost address without URL
-		-- brackets (http://::1:PORT). Parse only this CLI output convention;
-		-- keep the internal URL valid for subsequent consumers.
-		if not host then
-			local ipv6, native_port = url:match("^http://([%x:]+):(%d+)$")
-			if ipv6 and ipv6:find(":", 1, true) then
-				host, port = ipv6, native_port
-				url = "http://[" .. host .. "]:" .. port
-			end
-		end
-		if host and port then
-			return {
-				url = url,
-				host = host,
-				port = tonumber(port),
-			}
-		end
-	end
-
-	return nil
-end
-
 fail_startup = function(attempt, message)
 	if not is_current_attempt(attempt) or attempt.startup_done then
 		return false
@@ -623,16 +465,16 @@ local function spawn_server()
 		if not random then vim.notify("Could not initialize OpenCode server authentication: " .. tostring(err), vim.log.levels.ERROR); return false end
 		auth.password = (random:gsub(".", function(byte) return string.format("%02x", byte:byte()) end))
 	end
-	local env = build_server_env(auth)
-	local profile = require("opencode.completion.profile")
+	local env = server_env.build(M.opts, auth)
 	local config = state.get_config() or {}
-	local overlay, completion_profile, completion_error = profile.prepare(config.completion or M.opts.completion, env.OPENCODE_CONFIG_CONTENT)
-	local explanation_profile, explanation_error
-	overlay, explanation_profile, explanation_error = profile.prepare(config.explanation or M.opts.explanation, overlay, "explanation")
+	local overlay, profiles = require("opencode.completion.profile").prepare_all({
+		completion = config.completion or M.opts.completion,
+		explanation = config.explanation or M.opts.explanation,
+	}, env.OPENCODE_CONFIG_CONTENT)
 	env.OPENCODE_CONFIG_CONTENT = overlay
 
 	-- CLI 2.0.11 requires an integer. Zero requests an available OS port.
-	local cmd = resolve_command(M.opts.command, env)
+	local cmd = server_env.resolve_command(M.opts.command, env)
 	local args = {
 		"serve",
 		"--hostname",
@@ -641,22 +483,7 @@ local function spawn_server()
 		"0",
 	}
 
-	local attempt = {
-		completion_profile = completion_profile,
-		completion_error = completion_error,
-		explanation_profile = explanation_profile,
-		explanation_error = explanation_error,
-		auth = auth,
-		phase = "starting",
-		startup_done = false,
-		connecting = false,
-		connection_token = 0,
-		disconnected = false,
-		exited = false,
-		signal_sent = false,
-		kill_sent = false,
-		stop_waiters = {},
-	}
+	local attempt = new_attempt({ profiles = profiles, auth = auth, phase = "starting", startup_done = false })
 	current_attempt = attempt
 
 	state.set_connection("starting")
@@ -675,7 +502,7 @@ local function spawn_server()
 				end
 				if data:match("^server password ") then return end
 
-				local server_info = parse_server_url(data)
+				local server_info = server_env.parse_server_url(data)
 				if server_info and not attempt.listening_info then
 					attempt.listening_info = server_info
 					vim.schedule(function()
@@ -822,61 +649,11 @@ connect_to_server = function(attempt, token, startup, version)
 	return true -- Native server.connected completes readiness exactly once.
 end
 
-local function native_cli(args, callback)
-	local env = build_server_env(nil)
-	local command = resolve_command(M.opts.command, env)
-	if not vim.system or vim.fn.executable(command) ~= 1 then
-		vim.schedule(function() callback({ message = "Native OpenCode CLI is unavailable", code = "cli_unavailable", retryable = false }) end)
-		return
-	end
-	local argv = { command }; vim.list_extend(argv, args)
-	return vim.system(argv, { env = env, text = true, timeout = args[1] == "upgrade" and 120000 or math.max(10000, M.opts.startup_timeout) }, function(result)
-		vim.schedule(function()
-			if result.code ~= 0 then callback({ message = "Native OpenCode command failed; installation or service management may be unsupported", code = "cli_failed" })
-			else callback(nil) end
-		end)
-	end)
-end
-
-discover_managed = function(attempt, callback, guard, allow_start)
-	local managed = require("opencode.managed")
-	local function current() return is_current_attempt(attempt) and not attempt.disconnected and (not guard or guard()) end
-	local function lookup(can_start)
-		if not current() then return end
-		local info, err = managed.read(M.opts)
-		if not info then
-			if can_start and M.opts.auto_start and (not M.opts.service_file or M.opts.service_file == managed.default_file(M.opts)) then
-				return native_cli({ "service", "start" }, function(start_err)
-					if not current() then return end
-					if start_err then callback(start_err) else lookup(false) end
-				end)
-			end
-			callback(err); return
-		end
-		local config = managed.config(info, M.opts)
-		require("opencode.client").configure_endpoint(config)
-		state.set_server_info({ url = info.url, host = false, port = false })
-		return require("opencode.client.http").health(function(health_err, health)
-			if not current() then return end
-			local failure = health_err or managed.validate(info, health)
-			if not failure and not managed.same(info, managed.read(M.opts)) then
-				failure = { message = "Managed service registration changed during discovery", code = "service_identity_changed", retryable = true }
-			end
-			if failure then
-				attempt.verified = false
-				if can_start and M.opts.auto_start and managed.can_manage(M.opts, info) and failure.retryable ~= false and failure.status ~= 401 then
-					return native_cli({ "service", "start" }, function(start_err)
-						if not current() then return end
-						if start_err then callback(start_err) else lookup(false) end
-					end)
-				end
-				callback(failure); return
-			end
-			attempt.registration, attempt.verified = info, true
-			callback(nil, config)
-		end)
-	end
-	return lookup(allow_start)
+local function discover_managed(attempt, callback, guard, allow_start)
+	return require("opencode.managed").discover(attempt, {
+		opts = function() return M.opts end,
+		current = function() return is_current_attempt(attempt) and not attempt.disconnected and (not guard or guard()) end,
+	}, callback, allow_start)
 end
 
 local function begin_managed(attempt)
@@ -957,20 +734,14 @@ function M.start()
 		return false
 	end
 	if M.opts.managed then
-		local attempt = { phase = "ready", startup_done = true,
-			connecting = false, connection_token = 0, disconnected = false,
-			external = true, discovered = true, stop_waiters = {} }
+		local attempt = new_attempt({ phase = "ready", startup_done = true, external = true, discovered = true })
 		current_attempt = attempt
 		state.set_server_managed(false)
 		state.set_server_pid(nil)
 		return begin_managed(attempt)
 	end
 	if M.opts.port or M.opts.url then
-		local attempt = {
-			phase = "ready", startup_done = true,
-			connecting = false, connection_token = 0, disconnected = false,
-			external = true, stop_waiters = {},
-		}
+		local attempt = new_attempt({ phase = "ready", startup_done = true, external = true })
 		current_attempt = attempt
 		state.set_server_managed(false)
 		state.set_server_pid(nil)
@@ -1052,19 +823,7 @@ function M.stop(on_stopped)
 			return false
 		end
 
-		attempt = {
-			phase = "ready",
-			startup_done = true,
-			connecting = false,
-			connection_token = 0,
-			disconnected = false,
-			exited = false,
-			signal_sent = false,
-			kill_sent = false,
-			stop_waiters = {},
-			pid = pid,
-			untracked = true,
-		}
+		attempt = new_attempt({ phase = "ready", startup_done = true, pid = pid, untracked = true })
 		current_attempt = attempt
 	end
 
@@ -1122,16 +881,7 @@ function M.restart()
 end
 
 function M.managed_status()
-	local attempt = current_attempt
-	local info = attempt and attempt.registration
-	local managed = require("opencode.managed")
-	local fresh = M.opts.managed and managed.read(M.opts)
-	local allowed = attempt and attempt.discovered and attempt.verified and managed.same(info, fresh) and managed.can_manage(M.opts, info) or false
-	local endpoint = info and info.url or M.opts.url
-	if endpoint and not require("opencode.client.endpoint").resolve({ url = endpoint }) then endpoint = "Invalid server URL" end
-	return { discovered = attempt and attempt.discovered or false, can_manage = allowed,
-		url = endpoint or false, pid = info and info.pid, version = info and info.version,
-		service_file = M.opts.service_file or managed.default_file(M.opts) }
+	return require("opencode.managed").status(current_attempt, M.opts)
 end
 
 function M.manage_service(operation, callback)
@@ -1149,7 +899,7 @@ function M.manage_service(operation, callback)
 		if failure or not managed.same(info, managed.read(M.opts)) then callback(failure or { message = "Managed service registration changed", code = "stale_connection" }); return end
 		if operation == "restart" then M.disconnect() end
 		local action_generation = restart_generation
-		native_cli(operation == "restart" and { "service", "restart" } or { "upgrade" }, function(command_err)
+		managed.native_cli(M.opts, operation == "restart" and { "service", "restart" } or { "upgrade" }, function(command_err)
 			if not is_current_attempt(attempt) or action_generation ~= restart_generation then return end
 			-- A failed CLI restart may leave the old daemon healthy. Rediscover
 			-- either result; an updater runs while the current chat stays usable.
@@ -1198,7 +948,7 @@ function M.setup(opts)
 	restart_generation = restart_generation + 1
 	opts = opts or {}
 	M.opts = vim.tbl_extend("force", M.opts, vim.deepcopy(opts))
-	shell_env_cache = nil
+	server_env.reset_shell_env()
 
 	local group = vim.api.nvim_create_augroup("OpenCodeLifecycle", { clear = true })
 	if M.opts.shutdown_on_exit then
@@ -1224,11 +974,11 @@ end
 
 ---Return the selector for a profile installed in the connected server.
 local function resolve_feature_model(config, kind)
-	local attempt = current_attempt
+	local feature = current_attempt and current_attempt.profiles and current_attempt.profiles[kind]
 	return require("opencode.completion.profile").resolve(config, {
 		managed = M.owns_server(),
-		active = attempt and attempt[kind .. "_profile"],
-		error = attempt and attempt[kind .. "_error"],
+		active = feature and feature.active,
+		error = feature and feature.error,
 	}, kind)
 end
 

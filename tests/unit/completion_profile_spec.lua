@@ -133,6 +133,24 @@ describe("completion model profiles", function()
 		assert.matches("explanation.options", err, 1, true)
 	end)
 
+	it("prepares all feature profiles into one overlay in completion, explanation order", function()
+		local completion, explanation = config(), config()
+		explanation.variant = "fast"
+		local overlay, profiles = profile.prepare_all({ completion = completion, explanation = explanation }, '{"model":"openai/chat"}')
+		local variants = vim.json.decode(overlay).providers.openai.models["gpt-5.2"].variants
+		assert.equals(1, #variants)
+		assert.equals(profiles.completion.active.variant, variants[1].id)
+		assert.is_nil(profiles.completion.error)
+		assert.is_nil(profiles.explanation.active)
+		assert.matches("not both", profiles.explanation.error, 1, true)
+		explanation.variant = nil
+		overlay, profiles = profile.prepare_all({ completion = completion, explanation = explanation })
+		variants = vim.json.decode(overlay).providers.openai.models["gpt-5.2"].variants
+		assert.equals(profiles.completion.active.variant, variants[1].id)
+		assert.equals(profiles.explanation.active.variant, variants[2].id)
+		assert.same({ completion = {}, explanation = {} }, select(2, profile.prepare_all({})))
+	end)
+
 	it("validates explanation options and preserves the other overlay on failure", function()
 		local value = config()
 		local first, snapshot = profile.prepare(value)

@@ -37,6 +37,56 @@ describe("native managed service registration", function()
 		end
 		assert.is_false(managed.same(info, nil))
 	end)
+	describe("discovery", function()
+		local names = { "opencode.client", "opencode.client.http", "opencode.state" }
+		local saved, original, commands, health, configured, results, attempt
+		before_each(function()
+			saved, original = {}, { system = vim.system, executable = vim.fn.executable, schedule = vim.schedule }
+			for _, name in ipairs(names) do saved[name] = package.loaded[name] end
+			commands, health, configured, results, attempt = {}, {}, {}, {}, {}
+			package.loaded["opencode.client"] = { configure_endpoint = function(config) configured[#configured + 1] = config end }
+			package.loaded["opencode.client.http"] = { health = function(callback) health[#health + 1] = callback end }
+			package.loaded["opencode.state"] = { set_server_info = function() end }
+			vim.fn.executable = function() return 1 end
+			vim.schedule = function(callback) callback() end
+			vim.system = function(argv, _, callback)
+				commands[#commands + 1] = argv
+				write({ pid = 42, version = "2.0.11", url = "http://127.0.0.1:4096" })
+				callback({ code = 0 })
+				return {}
+			end
+			opts = vim.tbl_extend("force", opts, { auto_start = true, use_shell_env = false, command = "/fake/opencode", startup_timeout = 100 })
+		end)
+		after_each(function()
+			vim.system, vim.fn.executable, vim.schedule = original.system, original.executable, original.schedule
+			for _, name in ipairs(names) do package.loaded[name] = saved[name] end
+		end)
+		local function discover(allow_start)
+			managed.discover(attempt, { opts = function() return opts end, current = function() return true end },
+				function(err, config) results[#results + 1] = { err = err, config = config } end, allow_start)
+		end
+		it("starts the native service once for a missing registration, then verifies it", function()
+			discover(true)
+			assert.same({ { "/fake/opencode", "service", "start" } }, commands)
+			health[1](nil, { pid = 42, version = "2.0.11" })
+			assert.is_nil(results[1].err); assert.equals("http://127.0.0.1:4096", results[1].config.url)
+			assert.is_true(attempt.verified); assert.equals(42, attempt.registration.pid)
+		end)
+		it("starts once after a retryable health failure and reports the second failure", function()
+			write({ pid = 42, version = "2.0.11", url = "http://127.0.0.1:4096" })
+			discover(true)
+			assert.equals(0, #commands)
+			health[1]({ message = "Not ready", retryable = true })
+			assert.equals(1, #commands)
+			health[2]({ message = "Still not ready", retryable = true })
+			assert.equals(1, #commands); assert.equals("Still not ready", results[1].err.message)
+			assert.is_false(attempt.verified); assert.equals(2, #configured)
+		end)
+		it("does not start the service when discovery may not start it", function()
+			discover(false)
+			assert.equals(0, #commands); assert.equals("service_unavailable", results[1].err.code)
+		end)
+	end)
 	it("returns an unavailable result for a missing file", function()
 		local value, err = managed.read(opts); assert.is_nil(value); assert.equals("service_unavailable", err.code); assert.is_true(err.retryable)
 	end)

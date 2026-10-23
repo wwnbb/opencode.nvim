@@ -158,6 +158,20 @@ function M.prepare(config, existing, kind)
 	return overlay, snapshot
 end
 
+---Install every feature profile into one overlay, completion first.
+---@param configs table { completion?: table, explanation?: table }
+---@return string|nil overlay
+---@return table profiles { [kind] = { active?: table, error?: string } }
+function M.prepare_all(configs, existing)
+	local overlay, profiles = existing, {}
+	for _, kind in ipairs({ "completion", "explanation" }) do
+		local active, err
+		overlay, active, err = M.prepare(configs[kind], overlay, kind)
+		profiles[kind] = { active = active, error = err }
+	end
+	return overlay, profiles
+end
+
 ---Resolve against the profile actually installed in the owned process.
 function M.resolve(config, runtime, kind)
 	local feature, kind_err = feature_name(kind)
