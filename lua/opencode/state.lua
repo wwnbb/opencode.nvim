@@ -126,6 +126,30 @@ local function touch_runtime_session(id)
 	emit_change("sessions.runtime_order", old, state.sessions.runtime_order)
 end
 
+-- Default cap for recent history when the caller passes no configured limit.
+local RECENT_LIMIT = 30
+-- Closed tabs that can be reopened.
+local CLOSED_LIMIT = 30
+-- Per-session runtime data mirrored from the server and pending interactions.
+local RUNTIME_FIELDS = { "status", "pending", "message_cache" }
+
+---Clear a session's runtime data now; the returned function announces the
+---removals after the caller's own change events.
+---@param session_id string
+---@return fun()
+local function drop_runtime_data(session_id)
+	local old = {}
+	for _, field in ipairs(RUNTIME_FIELDS) do
+		old[field] = state.sessions[field][session_id]
+		state.sessions[field][session_id] = nil
+	end
+	return function()
+		for _, field in ipairs(RUNTIME_FIELDS) do
+			emit_change("sessions." .. field .. "." .. session_id, old[field], nil)
+		end
+	end
+end
+
 ---@param order string[]|nil
 ---@param id string
 ---@return string[]
@@ -307,7 +331,7 @@ end
 function M.set_recent_sessions(sessions, limit)
 	local next_order = {}
 	local seen = {}
-	limit = tonumber(limit) or 30
+	limit = tonumber(limit) or RECENT_LIMIT
 
 	for _, session in ipairs(sessions or {}) do
 		if type(session) == "table" and session.id and not seen[session.id] then
@@ -422,31 +446,25 @@ function M.remove_session(session_id)
 	local removed = state.sessions.by_id[session_id]
 	local old_runtime = state.sessions.runtime_order
 	local old_recent = state.sessions.recent_order
-	local old_status = state.sessions.status[session_id]
-	local old_pending = state.sessions.pending[session_id]
-	local old_cache = state.sessions.message_cache[session_id]
 
 	state.sessions.runtime_order = remove_order_id(state.sessions.runtime_order, session_id)
 	state.sessions.closed_order = remove_order_id(state.sessions.closed_order, session_id)
 	state.sessions.recent_order = remove_order_id(state.sessions.recent_order, session_id)
 	state.sessions.by_id[session_id] = nil
-	state.sessions.status[session_id] = nil
-	state.sessions.pending[session_id] = nil
-	state.sessions.message_cache[session_id] = nil
+	local announce_runtime_data = drop_runtime_data(session_id)
 
 	emit_change("sessions.runtime_order", old_runtime, state.sessions.runtime_order)
 	emit_change("sessions.recent_order", old_recent, state.sessions.recent_order)
 	emit_change("sessions.by_id." .. session_id, removed, nil)
-	emit_change("sessions.status." .. session_id, old_status, nil)
-	emit_change("sessions.pending." .. session_id, old_pending, nil)
-	emit_change("sessions.message_cache." .. session_id, old_cache, nil)
+	announce_runtime_data()
 
 	return removed and vim.deepcopy(removed) or nil
 end
 
 ---@param session_id string|nil
+---@param recent_limit? number Recent-history cap from the caller's configuration
 ---@return table|nil closed
-function M.close_runtime_session(session_id)
+function M.close_runtime_session(session_id, recent_limit)
 	if not session_id or session_id == "" then
 		return nil
 	end
@@ -455,30 +473,21 @@ function M.close_runtime_session(session_id)
 	local record = state.sessions.by_id[session_id]
 	local old_runtime = state.sessions.runtime_order
 	local old_recent = state.sessions.recent_order
-	local old_status = state.sessions.status[session_id]
-	local old_pending = state.sessions.pending[session_id]
-	local old_cache = state.sessions.message_cache[session_id]
 
 	state.sessions.runtime_order = remove_order_id(state.sessions.runtime_order, session_id)
 	if was_runtime then
 		local closed = remove_order_id(state.sessions.closed_order, session_id)
 		table.insert(closed, 1, session_id)
-		while #closed > 30 do table.remove(closed) end
+		while #closed > CLOSED_LIMIT do table.remove(closed) end
 		state.sessions.closed_order = closed
 	end
-	state.sessions.status[session_id] = nil
-	state.sessions.pending[session_id] = nil
-	state.sessions.message_cache[session_id] = nil
+	local announce_runtime_data = drop_runtime_data(session_id)
 
 	if record then
 		local next_recent = remove_order_id(state.sessions.recent_order, session_id)
 		table.insert(next_recent, 1, session_id)
 
-		local recent_limit = state.config
-			and state.config.session
-			and state.config.session.parallel
-			and state.config.session.parallel.recent_limit
-		recent_limit = tonumber(recent_limit) or 30
+		recent_limit = tonumber(recent_limit) or RECENT_LIMIT
 		if recent_limit > 0 then
 			while #next_recent > recent_limit do
 				table.remove(next_recent)
@@ -491,9 +500,7 @@ function M.close_runtime_session(session_id)
 	if record then
 		emit_change("sessions.recent_order", old_recent, state.sessions.recent_order)
 	end
-	emit_change("sessions.status." .. session_id, old_status, nil)
-	emit_change("sessions.pending." .. session_id, old_pending, nil)
-	emit_change("sessions.message_cache." .. session_id, old_cache, nil)
+	announce_runtime_data()
 
 	if record then
 		return vim.deepcopy(record)

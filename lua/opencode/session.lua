@@ -38,6 +38,14 @@ local function emit(event_type, data)
 	end
 end
 
+---Configured recent-history cap, shared by refresh and close.
+---@return number
+local function recent_limit()
+	local cfg = state.get_config() or {}
+	local parallel = cfg.session and cfg.session.parallel or {}
+	return parallel.recent_limit or 30
+end
+
 ---@param data? table
 local function request_chat_render(data)
 	local ok, render_coordinator = pcall(require, "opencode.ui.chat.render_coordinator")
@@ -275,6 +283,62 @@ function M.remember(session, opts)
 	return record
 end
 
+---Move off a closed or deleted root: a tab-layout owner shows the next session or
+---closes; otherwise the focused chat activates the next session or clears.
+---@param target_id string
+---@param next_session table|nil
+---@param owner table|nil Owning view; only a tab-layout owner is kept
+---@param reason string
+local function leave_root(target_id, next_session, owner, reason)
+	if tab_view(owner) then
+		if next_session then
+			activate_local(state.get_session_record(next_session.id) or next_session, { view = owner, reason = reason })
+		else
+			require("opencode.ui.chat").close_view(owner, { all_windows = true })
+		end
+		return
+	end
+	if next_session then
+		activate_local(state.get_session_record(next_session.id) or next_session, { reason = reason })
+	else
+		M.set_active(nil, nil, { reason = reason, preserve_cache = true })
+	end
+
+	local ok_chat, chat = pcall(require, "opencode.ui.chat")
+	if ok_chat and type(chat.clear_session_view) == "function" then
+		chat.clear_session_view(target_id)
+	end
+end
+
+---Announce a closed or deleted session tree, in the order listeners rely on.
+---@param target_id string
+---@param ids string[] Closed session ids, root first
+---@param next_session table|nil
+---@param reason string
+---@param close_opts { action: string, reset_pending?: boolean }
+local function emit_closed(target_id, ids, next_session, reason, close_opts)
+	emit("session.closed", {
+		sessionID = target_id,
+		session_id = target_id,
+		session_ids = ids,
+		nextSessionID = next_session and next_session.id or nil,
+		next_session_id = next_session and next_session.id or nil,
+		reason = reason,
+	})
+	if close_opts.reset_pending then
+		emit("session_pending_change", {
+			session_id = target_id,
+			pending = pending_helper.zero_counts(),
+		})
+	end
+	emit("sessions_changed", { reason = reason, session_id = target_id })
+	emit("sync_changed", {
+		kind = "session",
+		action = close_opts.action,
+		session_id = target_id,
+	})
+end
+
 ---@param session_id string|nil
 ---@param opts? table { reason?: string }
 function M.forget(session_id, opts)
@@ -346,24 +410,8 @@ function M.handle_deleted(session_id, opts)
 			else require("opencode.ui.chat").close_view(entry.view, { all_windows = true }) end
 		end
 	elseif is_tab then
-		if current_root == session_id then
-			if next_session then
-				local record = state.get_session_record(next_session.id) or next_session
-				activate_local(record, {
-					reason = opts.reason or "session_deleted",
-				})
-			else
-				M.set_active(nil, nil, {
-					reason = opts.reason or "session_deleted",
-					preserve_cache = true,
-				})
-			end
-
-			local ok_chat, chat = pcall(require, "opencode.ui.chat")
-			if ok_chat and type(chat.clear_session_view) == "function" then
-				chat.clear_session_view(session_id)
-			end
-		end
+		-- Tab-layout owners were handled above as affected views.
+		if current_root == session_id then leave_root(session_id, next_session, nil, opts.reason or "session_deleted") end
 	elseif current.id == session_id then
 		-- Deleted subagent child in view: return the view to its parent tab.
 		local record = current_root and state.get_session_record(current_root) or nil
@@ -379,20 +427,7 @@ function M.handle_deleted(session_id, opts)
 		state.remove_session(id)
 	end
 
-	emit("session.closed", {
-		sessionID = session_id,
-		session_id = session_id,
-		session_ids = deleted_ids,
-		nextSessionID = next_session and next_session.id or nil,
-		next_session_id = next_session and next_session.id or nil,
-		reason = opts.reason or "session_deleted",
-	})
-	emit("sessions_changed", { reason = opts.reason or "session_deleted", session_id = session_id })
-	emit("sync_changed", {
-		kind = "session",
-		action = "session_deleted",
-		session_id = session_id,
-	})
+	emit_closed(session_id, deleted_ids, next_session, opts.reason or "session_deleted", { action = "session_deleted" })
 	return true
 end
 
@@ -422,7 +457,7 @@ function M.close(session_id, opts)
 	local next_session = navigation.next_session_after_close(target_id, nil, {
 		state = state, event_util = event_util, view = tab_view(owner) and owner or nil,
 	})
-	local closed = state.close_runtime_session(target_id)
+	local closed = state.close_runtime_session(target_id, recent_limit())
 	local title = session_util.displayTitle(closed and (closed.title or closed.name)) or target_id
 
 	local ok_sync, sync = pcall(require, "opencode.sync")
@@ -448,51 +483,10 @@ function M.close(session_id, opts)
 		require("opencode.cleanup").clear_session_memos(id)
 	end
 
-	if tab_view(owner) then
-		if next_session then
-			activate_local(state.get_session_record(next_session.id) or next_session, {
-				view = owner, reason = opts.reason or "session_close",
-			})
-		else
-			require("opencode.ui.chat").close_view(owner, { all_windows = true })
-		end
-	elseif current_root == target_id then
-		if next_session then
-			local record = state.get_session_record(next_session.id) or next_session
-			activate_local(record, {
-				reason = opts.reason or "session_close",
-			})
-		else
-			M.set_active(nil, nil, {
-				reason = opts.reason or "session_close",
-				preserve_cache = true,
-			})
-		end
+	local reason = opts.reason or "session_close"
+	if tab_view(owner) or current_root == target_id then leave_root(target_id, next_session, owner, reason) end
 
-		local ok_chat, chat = pcall(require, "opencode.ui.chat")
-		if ok_chat and type(chat.clear_session_view) == "function" then
-			chat.clear_session_view(target_id)
-		end
-	end
-
-	emit("session.closed", {
-		sessionID = target_id,
-		session_id = target_id,
-		session_ids = closed_ids,
-		nextSessionID = next_session and next_session.id or nil,
-		next_session_id = next_session and next_session.id or nil,
-		reason = opts.reason or "session_close",
-	})
-	emit("session_pending_change", {
-		session_id = target_id,
-		pending = pending_helper.zero_counts(),
-	})
-	emit("sessions_changed", { reason = opts.reason or "session_close", session_id = target_id })
-	emit("sync_changed", {
-		kind = "session",
-		action = opts.reason or "session_close",
-		session_id = target_id,
-	})
+	emit_closed(target_id, closed_ids, next_session, reason, { action = reason, reset_pending = true })
 
 	if opts.notify and not opts.silent then
 		vim.notify("Closed session tab: " .. title, vim.log.levels.INFO)
@@ -616,9 +610,7 @@ function M.refresh_recent(callback, opts)
 		return
 	end
 
-	local cfg = state.get_config() or {}
-	local parallel = cfg.session and cfg.session.parallel or {}
-	local limit = opts.limit or parallel.recent_limit or 30
+	local limit = opts.limit or recent_limit()
 	local path = require("opencode.util.path")
 	local directory = path.absolute(require("opencode.util.cwd").get())
 	local token = pending_helper.token()

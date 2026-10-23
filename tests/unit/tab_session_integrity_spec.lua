@@ -123,9 +123,18 @@ describe("tab session integrity", function()
 		assert.same(expected, state.get_runtime_session_order())
 		assert.equals(35, #state.get_active_sessions())
 		for _, id in ipairs(expected) do assert.is_true(state.is_runtime_session(id)) end
-		for _, id in ipairs(expected) do state.close_runtime_session(id) end
+		for _, id in ipairs(expected) do state.close_runtime_session(id, 2) end
 		assert.same({}, state.get_runtime_session_order())
 		assert.equals(30, #state.get_closed_session_order())
 		assert.equals(2, #state.get_full_state().sessions.recent_order)
+	end)
+
+	it("takes the recent-history limit from the closing caller, not the store's config", function()
+		for index = 1, 3 do seed("store-" .. index) end
+		for index = 1, 3 do state.close_runtime_session("store-" .. index) end
+		assert.equals(3, #state.get_full_state().sessions.recent_order, "the store default is 30")
+		for index = 1, 3 do seed("tab-" .. index) end
+		for index = 1, 3 do assert.is_true(sessions.close("tab-" .. index, { silent = true })) end
+		assert.same({ "tab-3", "tab-2" }, state.get_full_state().sessions.recent_order)
 	end)
 end)
