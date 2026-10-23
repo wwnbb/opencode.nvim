@@ -7,9 +7,8 @@ local M = {}
 local render = cs.module(view, require("opencode.ui.chat.render"))
 local panel = cs.module(view, require("opencode.ui.chat.tool_panel"))
 local text = require("opencode.util.text")
-local locale = require("opencode.util.locale")
 local tool_group = cs.module(view, require("opencode.ui.chat.tool_group"))
-local list_style = cs.module(view, require("opencode.ui.chat.exploration_style"))
+local list_style = cs.module(view, require("opencode.ui.chat.tool_style"))
 
 M.animation_line = 0
 
@@ -90,24 +89,19 @@ function M.render(part, expanded, opts)
 	local suffix = {}
 	if #calls > 1 then suffix[#suffix + 1] = "+" .. (#calls - 1) .. " more" end
 	if failed_calls > 0 then suffix[#suffix + 1] = failed_calls .. " failed" end
-	local time = type(ctx.state.time) == "table" and ctx.state.time or {}
-	local started, ended = tonumber(time.start), tonumber(time["end"])
-	if not working and started and ended and ended >= started then
-		suffix[#suffix + 1] = locale.duration(ended - started)
-	end
-	local tail = #suffix > 0 and " · " .. table.concat(suffix, " · ") or ""
-	if animated then tail = tail .. " " .. panel.anim_frame() end
-	local prefix = failed and " ✗ " or " → "
-	local width = body_width()
+	-- Execute records carry only the native start/end times.
+	local elapsed = not working and panel.duration(ctx.state.time, true) or nil
+	if elapsed then suffix[#suffix + 1] = elapsed end
 	-- Keep the status at the start and spinner at the end on narrow windows.
-	if vim.fn.strdisplaywidth(prefix .. tail) >= width then
-		tail = animated and " " .. panel.anim_frame() or ""
-	end
-	local name_width = math.max(1, width - vim.fn.strdisplaywidth(prefix .. tail))
+	local header = panel.fit_header({
+		prefix = failed and " ✗ " or " → ", target = name,
+		suffix = #suffix > 0 and " · " .. table.concat(suffix, " · ") or "",
+		spinner = animated and " " .. panel.anim_frame() or "",
+		width = body_width(), truncate = clip, min_target = 1,
+	})
 	local result = helpers.result()
 	result.children = {}
-	add_line(result, prefix .. clip(name, name_width) .. tail,
-		failed and list_style.error_hl or list_style.header_hl)
+	add_line(result, header, failed and list_style.error_hl or list_style.header_hl)
 	return result
 end
 
@@ -129,11 +123,8 @@ function M.render_tool(part, expanded, opts)
 		metadata[#metadata + 1] = #calls .. (#calls == 1 and " tool" or " tools")
 	end
 	if failed_calls > 0 then metadata[#metadata + 1] = failed_calls .. " failed" end
-	local time = type(ctx.state.time) == "table" and ctx.state.time or {}
-	local started, ended = tonumber(time.start), tonumber(time["end"])
-	if not working and started and ended and ended >= started then
-		metadata[#metadata + 1] = locale.duration(ended - started)
-	end
+	local elapsed = not working and panel.duration(ctx.state.time, true) or nil
+	if elapsed then metadata[#metadata + 1] = elapsed end
 	if animated then metadata[#metadata + 1] = panel.anim_frame() end
 	local available = body_width() - vim.fn.strdisplaywidth(header) - 2
 	local right = table.concat(metadata, " · ")

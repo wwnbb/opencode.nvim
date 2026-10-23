@@ -6,7 +6,6 @@ local M = { animation_line = 0 }
 local render = cs.module(view, require("opencode.ui.chat.render"))
 local tool_panel = cs.module(view, require("opencode.ui.chat.tool_panel"))
 local text_util = require("opencode.util.text")
-local locale = require("opencode.util.locale")
 local tool_group = cs.module(view, require("opencode.ui.chat.tool_group"))
 local style = cs.module(view, require("opencode.ui.chat.tool_style"))
 local panel = style.panel
@@ -54,29 +53,17 @@ local function status_label(ctx, definition, failed, error_body)
 	return definition.completed
 end
 
-local function duration(state)
-	local time = type(state.time) == "table" and state.time or {}
-	local start = tonumber(time.created or time.start)
-	local finish = tonumber(time.completed or time["end"])
-	if start and finish and finish >= start then return locale.duration(finish - start) end
-end
-
 local function add_header(result, definition, target, label, ctx, expanded, grouped, failed)
-	local prefix = (expanded and "↘ " or "→ ") .. definition.name .. " "
 	local suffix = " · " .. label
-	local elapsed = not ctx.working and duration(ctx.state) or nil
-	if elapsed then suffix = suffix .. " · " .. elapsed end
-	local spinner = ctx.working and not grouped and (" " .. tool_panel.anim_frame()) or ""
-	local width = math.max(1, render.get_chat_text_width() - 1)
-	local compact = definition.target == "url" and target:gsub("^https?://", "") or ('"' .. target .. '"')
-	if vim.fn.strdisplaywidth(prefix .. compact .. suffix .. spinner) > width then
-		suffix = " · " .. label
-	end
-	if vim.fn.strdisplaywidth(prefix .. suffix .. spinner) >= width then suffix = "" end
-	local available = width - vim.fn.strdisplaywidth(prefix .. suffix .. spinner)
-	local header = available > 0 and (prefix .. shorten(compact, available) .. suffix)
-		or shorten(prefix .. compact, width - vim.fn.strdisplaywidth(spinner))
-	render.add_panel_line(result, header .. spinner, failed and style.error_hl or style.header_hl, { prefix = " " })
+	local elapsed = not ctx.working and tool_panel.duration(ctx.state.time) or nil
+	local header = tool_panel.fit_header({
+		prefix = (expanded and "↘ " or "→ ") .. definition.name .. " ",
+		target = definition.target == "url" and target:gsub("^https?://", "") or ('"' .. target .. '"'),
+		suffix = elapsed and (suffix .. " · " .. elapsed) or suffix, short_suffix = suffix,
+		spinner = ctx.working and not grouped and (" " .. tool_panel.anim_frame()) or "",
+		width = math.max(1, render.get_chat_text_width() - 1), truncate = shorten,
+	})
+	render.add_panel_line(result, header, failed and style.error_hl or style.header_hl, { prefix = " " })
 end
 
 local function add_request(result, part, target, input, format)

@@ -20,15 +20,16 @@ function M.render_tool(part, expanded)
 	local failed = tool_group.execution_failed(part)
 	local working = not failed and tool_group.is_working(part)
 	local status = failed and "Failed" or ctx.status:gsub("^%l", string.upper)
-	local spinner = working and (" " .. tool_panel.anim_frame()) or ""
-	local width = math.max(1, render.get_chat_text_width() - 1)
-	local prefix, suffix = tool_panel.fold_prefix(expanded) .. "Write ", " · " .. status
-	local available = width - vim.fn.strdisplaywidth(prefix .. suffix .. spinner)
-	local safe_path = render.expand_tabs(path, vim.fn.strdisplaywidth(prefix))
-	local header = available > 0 and (prefix .. text.truncate(safe_path, available, "…") .. suffix)
-		or text.truncate(prefix .. safe_path .. suffix, width - vim.fn.strdisplaywidth(spinner), "…")
+	local prefix = tool_panel.fold_prefix(expanded) .. "Write "
+	local header = tool_panel.fit_header({
+		prefix = prefix, target = render.expand_tabs(path, vim.fn.strdisplaywidth(prefix)),
+		suffix = " · " .. status, keep_suffix = true,
+		spinner = working and (" " .. tool_panel.anim_frame()) or "",
+		width = math.max(1, render.get_chat_text_width() - 1),
+		truncate = function(value, width) return text.truncate(value, width, "…") end,
+	})
 	local result = panel.result()
-	render.add_panel_line(result, header .. spinner, failed and style.error_hl or style.header_hl, { prefix = " " })
+	render.add_panel_line(result, header, failed and style.error_hl or style.header_hl, { prefix = " " })
 	if not expanded then return result end
 
 	style.add_border(result)

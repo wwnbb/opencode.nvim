@@ -6,7 +6,7 @@ local M = {}
 
 local tool_panel = cs.module(view, require("opencode.ui.chat.tool_panel"))
 local text_util = require("opencode.util.text")
-local output_style = cs.module(view, require("opencode.ui.chat.exploration_style"))
+local output_style = cs.module(view, require("opencode.ui.chat.tool_style"))
 
 local panel_helpers = tool_panel.create_panel({
 	prefix = "  ",

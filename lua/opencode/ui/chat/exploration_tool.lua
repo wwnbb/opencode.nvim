@@ -3,7 +3,7 @@ return cs.factory("exploration_tool", function(view)
 -- Each exploration leaf owns its compact and expanded presentation.
 local M = {}
 
-local style = cs.module(view, require("opencode.ui.chat.exploration_style"))
+local style = cs.module(view, require("opencode.ui.chat.tool_style"))
 local tool_group = cs.module(view, require("opencode.ui.chat.tool_group"))
 local search = cs.module(view, require("opencode.ui.chat.search"))
 local renderers = {

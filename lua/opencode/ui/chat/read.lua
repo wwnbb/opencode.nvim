@@ -169,7 +169,7 @@ function M.render_tool(tool_part, is_expanded, opts)
 	end
 
 	opts = opts or {}
-	local style = opts.body_only and cs.module(view, require("opencode.ui.chat.exploration_style")) or nil
+	local style = opts.body_only and cs.module(view, require("opencode.ui.chat.tool_style")) or nil
 	local panel = style and style.panel or panel_helpers
 	local output_hl = style and style.output_hl or "OpenCodeReadOutput"
 	local error_hl = style and style.body_error_hl or "OpenCodeReadError"

@@ -158,6 +158,8 @@ local roots = {
 	["opencode"] = true,
 	["opencode.commands"] = true,
 	["opencode.ui.log_viewer"] = true,
+	-- Compatibility alias of tool_style kept for external theme consumers (CHAT-06).
+	["opencode.ui.chat.exploration_style"] = true,
 }
 local reachable = {}
 local stack = {}

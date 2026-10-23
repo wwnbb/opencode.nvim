@@ -9,7 +9,6 @@ local tool_group = cs.module(view, require("opencode.ui.chat.tool_group"))
 local style = cs.module(view, require("opencode.ui.chat.tool_style"))
 local render = cs.module(view, require("opencode.ui.chat.render"))
 local text_util = require("opencode.util.text")
-local locale = require("opencode.util.locale")
 local panel = style.panel
 
 ---@param value any
@@ -278,20 +277,14 @@ end
 local function add_header(result, name, expanded, opts)
 	local working, failed = opts.working, opts.failed
 	local suffix = opts.status and (" · " .. opts.status) or failed and " · Failed" or ""
-	local time = type(opts.time) == "table" and opts.time or {}
-	local start = tonumber(time.created or time.start)
-	local finish = tonumber(time.completed or time["end"])
-	if not working and start and finish and finish >= start then
-		suffix = suffix .. " · " .. locale.duration(finish - start)
-	end
-	local spinner = working and (" " .. tool_panel.anim_frame()) or ""
-	local width = math.max(1, render.get_chat_text_width() - 1)
-	local prefix = (expanded and "↘" or "→") .. ' Skill "'
-	if vim.fn.strdisplaywidth(prefix .. suffix .. spinner .. '"') >= width then suffix = "" end
-	local available = width - vim.fn.strdisplaywidth(prefix .. suffix .. spinner .. '"')
-	local header = available > 0 and (prefix .. clip(name, available) .. '"' .. suffix)
-		or clip(prefix .. name .. '"', width - vim.fn.strdisplaywidth(spinner))
-	render.add_panel_line(result, header .. spinner, failed and style.error_hl or style.header_hl, { prefix = " " })
+	local elapsed = not working and tool_panel.duration(opts.time) or nil
+	if elapsed then suffix = suffix .. " · " .. elapsed end
+	local header = tool_panel.fit_header({
+		prefix = (expanded and "↘" or "→") .. ' Skill "', target = name, close = '"', suffix = suffix,
+		spinner = working and (" " .. tool_panel.anim_frame()) or "",
+		width = math.max(1, render.get_chat_text_width() - 1), truncate = clip,
+	})
+	render.add_panel_line(result, header, failed and style.error_hl or style.header_hl, { prefix = " " })
 end
 
 local function add_details(result, name, parsed, metadata, source_only)

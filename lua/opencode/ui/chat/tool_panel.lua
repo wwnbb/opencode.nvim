@@ -174,6 +174,42 @@ function M.header(text, opts)
 	return text
 end
 
+---Elapsed time of a finished tool state as "1m 2s"/"15.0s" (locale.duration).
+---Task headers keep tool_labels.format_state_duration ("1m02s"/"15s").
+---@param time table|nil state.time
+---@param native_only? boolean Read only time.start/time["end"], not created/completed
+---@return string|nil
+function M.duration(time, native_only)
+	time = type(time) == "table" and time or {}
+	local start, finish
+	if native_only then
+		start, finish = tonumber(time.start), tonumber(time["end"])
+	else
+		start, finish = tonumber(time.created or time.start), tonumber(time.completed or time["end"])
+	end
+	if start and finish and finish >= start then return require("opencode.util.locale").duration(finish - start) end
+end
+
+---Fit a one-row tool header: prefix .. target .. close .. suffix .. spinner.
+---The target is truncated first; the suffix drops to `short_suffix` when the
+---full target would not fit, and is dropped when it leaves no room (unless
+---keep_suffix). Without room for any target, the whole header is truncated.
+---@param opts { prefix: string, target: string, close?: string, suffix: string, short_suffix?: string, spinner?: string, width: integer, truncate: fun(value: string, width: integer): string, keep_suffix?: boolean, min_target?: integer }
+---@return string
+function M.fit_header(opts)
+	local width, prefix, target = opts.width, opts.prefix, opts.target
+	local close, suffix, spinner = opts.close or "", opts.suffix, opts.spinner or ""
+	if opts.short_suffix and vim.fn.strdisplaywidth(prefix .. target .. close .. suffix .. spinner) > width then
+		suffix = opts.short_suffix
+	end
+	if not opts.keep_suffix and vim.fn.strdisplaywidth(prefix .. suffix .. spinner .. close) >= width then suffix = "" end
+	local available = width - vim.fn.strdisplaywidth(prefix .. suffix .. spinner .. close)
+	if opts.min_target then available = math.max(opts.min_target, available) end
+	if available > 0 then return prefix .. opts.truncate(target, available) .. close .. suffix .. spinner end
+	local whole = prefix .. target .. close .. (opts.keep_suffix and suffix or "")
+	return opts.truncate(whole, width - vim.fn.strdisplaywidth(spinner)) .. spinner
+end
+
 ---@param entries table[]
 ---@param text string|nil
 ---@param hl_group string|nil
