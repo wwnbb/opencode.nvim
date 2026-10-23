@@ -47,20 +47,9 @@ function M.open(fields, opts, callback)
 		end
 	end
 	local function choose(index)
-		local q, selection = current()
+		local q = current()
 		if not q or not q.options[index] then return end
-		if q.multiple then
-			local next_indices, found = {}, false
-			for _, selected in ipairs(selection.selected_indices) do
-				if selected == index then found = true else next_indices[#next_indices + 1] = selected end
-			end
-			if not found then next_indices[#next_indices + 1] = index end
-			selection.selected_indices = next_indices
-			selection.is_answered = #selection.selected_indices > 0 or selection.custom_present == true
-		else
-			selection.selected_indices, selection.custom_present = { index }, false
-			selection.is_answered = true
-		end
+		if q.multiple then forms.toggle(item, index) else forms.select(item, index) end
 		cursor = index
 		render()
 	end

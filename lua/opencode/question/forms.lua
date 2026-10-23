@@ -124,6 +124,64 @@ function M.acknowledge_external(item, key)
 	return true
 end
 
+---Replace a field's selected options. Multi-select answers follow the selection
+---(or a present custom answer); a non-empty single choice drops the custom answer.
+---@param item table
+---@param tab_index integer
+---@param selected_indices integer[]
+---@return boolean
+function M.set_selection(item, tab_index, selected_indices)
+	local field, selection = item.questions[tab_index], item.selections[tab_index]
+	if not selection then return false end
+	selection.selected_indices = selected_indices
+	if type(field) == "table" and field.multiple == true then
+		selection.is_answered = #selected_indices > 0 or selection.custom_present == true
+	elseif #selected_indices > 0 then
+		selection.custom_present = false
+		selection.is_answered = true
+	end
+	return true
+end
+
+---Select one option of the current field.
+---@param item table
+---@param index integer 1-based option index
+---@return boolean
+function M.select(item, index)
+	local tab_index = item.current_tab
+	local field = item.questions[tab_index]
+	if not field or field.field_type == "external" or not item.selections[tab_index] then return false end
+	if index < 1 or index > #(field.options or {}) then return false end
+	return M.set_selection(item, tab_index, { index })
+end
+
+---Toggle an option (or, with index 0, the saved custom answer) of the current multi-select field.
+---@param item table
+---@param index integer 1-based option index; 0 toggles the saved custom answer
+---@return boolean
+function M.toggle(item, index)
+	local tab_index = item.current_tab
+	local field = item.questions[tab_index]
+	if not (type(field) == "table" and field.multiple == true) or index < 0 or index > #(field.options or {}) then
+		return false
+	end
+	local selection = item.selections[tab_index]
+	if not selection then return false end
+
+	local selected = selection.selected_indices
+	if index == 0 then
+		if not field.custom or not selection.custom_input or selection.custom_input == "" then return false end
+		selection.custom_present = not selection.custom_present
+	else
+		local position = vim.fn.index(selected, index) + 1
+		if position > 0 then table.remove(selected, position)
+		else table.insert(selected, index) end
+	end
+
+	selection.is_answered = #selected > 0 or selection.custom_present == true
+	return true
+end
+
 function M.set_custom_input(item, tab_index, text)
 	local field, selection = item.questions[tab_index], item.selections[tab_index]
 	if not field or not selection or field.field_type == "external" then return false end

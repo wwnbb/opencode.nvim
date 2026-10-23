@@ -108,21 +108,8 @@ end
 ---@param selected_indices table Array of selected option indices
 function M.update_selection(request_id, tab_index, selected_indices)
 	local qstate = active_questions[request_id]
-	if not can_interact(qstate) then
+	if not can_interact(qstate) or not forms.set_selection(qstate, tab_index, selected_indices) then
 		return false
-	end
-
-	local selection = qstate.selections[tab_index]
-	if not selection then
-		return false
-	end
-
-	selection.selected_indices = selected_indices
-	if is_multi_question(qstate.questions[tab_index]) then
-		selection.is_answered = #selected_indices > 0 or selection.custom_present == true
-	elseif #selected_indices > 0 then
-		selection.custom_present = false
-		selection.is_answered = true
 	end
 	return sync_draft(qstate)
 end
@@ -172,14 +159,9 @@ function M.select_option(request_id, option_index)
 		return M.set_custom_input(request_id, tab_index, selection.custom_input)
 	end
 
-	if option_index < 1 or option_index > #(question.options or {}) then
+	if not forms.select(qstate, option_index) then
 		return false
 	end
-
-	selection.selected_indices = { option_index }
-	if not is_multi_question(question) then selection.custom_present = false end
-	selection.is_answered = true
-
 	return sync_draft(qstate)
 end
 
@@ -187,32 +169,9 @@ end
 ---@param option_index number 1-based option index; 0 toggles the saved custom answer.
 function M.toggle_multi_select(request_id, option_index)
 	local qstate = active_questions[request_id]
-	if not can_interact(qstate) then
+	if not can_interact(qstate) or not forms.toggle(qstate, option_index) then
 		return false
 	end
-
-	local tab_index = qstate.current_tab
-	local question = qstate.questions[tab_index]
-	if not is_multi_question(question) or option_index < 0 or option_index > #(question.options or {}) then
-		return false
-	end
-	local selection = qstate.selections[tab_index]
-	if not selection then
-		return false
-	end
-
-	local selected = selection.selected_indices
-	if option_index == 0 then
-		if not question.custom or not selection.custom_input or selection.custom_input == "" then return false end
-		selection.custom_present = not selection.custom_present
-	else
-		local index = vim.fn.index(selected, option_index) + 1
-		if index > 0 then table.remove(selected, index)
-		else table.insert(selected, option_index) end
-	end
-
-	selection.is_answered = #selected > 0 or selection.custom_present == true
-
 	return sync_draft(qstate)
 end
 
