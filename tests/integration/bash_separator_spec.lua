@@ -10,7 +10,6 @@ local render = require("opencode.ui.chat.render")
 local render_state = require("opencode.ui.chat.render_state")
 local projection = require("opencode.protocol.messages")
 local questions = require("opencode.question.state")
-local permissions = require("opencode.permission.state")
 local edits = require("opencode.edit.state")
 local tree = require("opencode.ui.chat.widget_tree")
 
@@ -89,7 +88,6 @@ describe("adjacent shell panel separators", function()
 	after_each(function()
 		tasks.render_regular_tool = original_render
 		questions.clear_all()
-		permissions.clear_all()
 		edits.clear_all()
 		vim.o.columns = columns
 		vim.o.ambiwidth = display.ambiwidth
@@ -143,17 +141,13 @@ describe("adjacent shell panel separators", function()
 		end)
 	end
 
-	for _, kind in ipairs({ "question", "permission", "edit" }) do
+	for _, kind in ipairs({ "question", "edit" }) do
 		it("restarts after an interactive " .. kind .. " widget", function()
 			update({ message("message", { shell("first"), shell("second"), shell("third") }) })
 			if kind == "question" then
 				questions.add_form({ id = "interaction", sessionID = session,
 					fields = { { key = "choice", type = "select", title = "Pick one", options = { { label = "Yes", value = "yes" } } } },
 					metadata = { tool = { messageID = "message", id = "first" } },
-				})
-			elseif kind == "permission" then
-				permissions.add_permission("interaction", session, "bash", {
-					message_id = "message", call_id = "first", tool_input = { command = "printf first" },
 				})
 			else
 				edits.add_edit("interaction", session, { { filePath = "example.txt", before = "before", after = "after" } }, {

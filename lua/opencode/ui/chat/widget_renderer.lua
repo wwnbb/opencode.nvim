@@ -32,7 +32,9 @@ local function capture_widget_focus(kind, widget_id, widget_start, meta)
 end
 
 local function append_interactive_widget(ctx, widget)
-	-- An attached widget continues the tool row's panel, so it takes no separators.
+	-- An attached widget continues the tool row, so it takes no separators; below
+	-- a list row it goes above the separator that row ends with.
+	local separator = widget.attached and widget.tool_row.compact and ctx:take_trailing_blank()
 	local start_line = widget.attached and ctx:line_count() or ctx:prepare_widget_start()
 	capture_widget_focus(widget.kind, widget.id, start_line, widget.meta)
 	for _, line_text in ipairs(widget.lines) do
@@ -50,12 +52,13 @@ local function append_interactive_widget(ctx, widget)
 	widget_support.mark_render_generation(position)
 	if widget.source then widget_support.set_interactive_meta(position, widget.meta, widget.source, widget.kind) end
 	widget.positions[widget.id] = position
-	if not widget.attached then ctx:add_raw_line("") end
+	if separator or not widget.attached then ctx:add_raw_line("") end
 end
 
 ---What the tool row rendered for a call shows, for the permission widgets below it.
+---Leaf rows are compact list rows; the others are "▏" panels.
 ---@param tool_part table|nil
----@return table|nil tool_row { tool, end_line, command, folded }
+---@return OpenCodePermissionToolRow|nil tool_row With `position`, the row's rendered position
 local function tool_row_for(tool_part)
 	local part_id = type(tool_part) == "table" and tool_part.id or nil
 	local pos = part_id and state.tools[part_id]
@@ -63,7 +66,14 @@ local function tool_row_for(tool_part)
 		return nil
 	end
 	local command, folded = chat_bash.row_command(pos.tool_part, state.expanded_tools[part_id] == true)
-	return { tool = pos.tool_part.tool, end_line = pos.end_line, command = command, folded = folded }
+	return {
+		tool = pos.tool_part.tool,
+		end_line = pos.end_line,
+		command = command,
+		folded = folded,
+		compact = pos.kind == "tool",
+		position = pos,
+	}
 end
 
 function M.render_single_question(ctx, index, qstate)
@@ -94,7 +104,7 @@ end
 function M.render_single_permission(ctx, _index, pstate, tool_row)
 	local perm_id = pstate.permission_id
 	local pstatus = pstate.status or "pending"
-	-- A status line belongs directly below its row; anywhere else it renders as a full panel.
+	-- An attached permission belongs directly below its row; anywhere else it renders as a full panel.
 	if tool_row and permission_widget.attaches(pstate, tool_row) and ctx:line_count() - 1 ~= tool_row.end_line then
 		tool_row = nil
 	end
@@ -115,8 +125,16 @@ function M.render_single_permission(ctx, _index, pstate, tool_row)
 			attached = p_meta.attached == true,
 			tool_row = tool_row,
 		})
-		-- A later status line for the same call attaches below this one.
-		if p_meta.attached then tool_row.end_line = ctx:line_count() - 1 end
+		if p_meta.attached then
+			local row = tool_row.position
+			-- The separator a list row ended with now lies below the widget.
+			row.end_line = math.min(row.end_line, state.permissions[perm_id].start_line - 1)
+			-- What the widget omits depends on what the row shows, so the row lays
+			-- out again through the full render rather than in place.
+			row.attached = true
+			-- A later attached permission for the same call continues below this one.
+			tool_row.end_line = ctx:line_count() - 1
+		end
 	end
 end
 
@@ -143,7 +161,7 @@ function M.render_widget_items(ctx, index, widget_items, tool_row)
 		return item.kind == "permission" and permission_widget.attaches(item.data, tool_row)
 	end
 	table.sort(widget_items, function(a, b)
-		-- Status lines continue the tool row's panel, so they come first.
+		-- Permissions that continue the tool row's panel come first.
 		if tool_row and attaches(a) ~= attaches(b) then
 			return attaches(a)
 		end

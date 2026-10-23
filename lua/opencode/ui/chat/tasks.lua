@@ -468,6 +468,10 @@ function M.rerender_tool(part_id)
 	if not pos then
 		return
 	end
+	-- Permissions attached below the row follow what it shows; the full render lays both out.
+	if pos.attached then
+		return false
+	end
 
 	local is_expanded = state.expanded_tools[root_id] or false
 	local tool_part = M.resolve_tool_part(pos)

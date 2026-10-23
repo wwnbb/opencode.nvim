@@ -67,17 +67,31 @@ describe("permission widget", function()
 		assert.is_nil(full:find("Resource:", 1, true))
 	end)
 
-	it("leaves the command to a visible bash row while the request is pending", function()
+	it("asks on a visible bash row's panel while the request is pending", function()
 		local lines, _, meta = widget.render(shell(), row())
+		local rows = vim.split(text(lines), "\n")
+		assert.same({ "▏  △ Allow this command?", "▏  ❯ 1. Allow once" }, { rows[1], rows[2] })
+		assert.equals("▏", rows[#rows])
 		local rendered = text(lines)
 		assert.is_nil(rendered:find("mkdir -p", 1, true))
 		assert.is_nil(rendered:find("Install Neovim", 1, true))
-		assert.is_truthy(rendered:find("# Permission required for Bash", 1, true))
-		assert.is_truthy(rendered:find("1. Allow once", 1, true))
+		assert.is_nil(rendered:find("# Permission", 1, true))
 		assert.equals(3, meta.interactive_count)
-		assert.is_falsy(meta.attached)
+		assert.is_true(meta.attached)
 		rendered = text((widget.render(shell({ patterns = { COMMAND, "rm -rf /" } }), row())))
-		assert.is_truthy(rendered:find("Resource: rm -rf /", 1, true))
+		assert.is_truthy(rendered:find("△ Allow this command?\n▏  Resource: rm -rf /\n▏  ❯ 1. Allow once", 1, true))
+	end)
+
+	it("indents wrapped command rows past the prompt", function()
+		local long = 'ssh qant_test "docker exec -u root PythonTest3 tar -C /home/cs/logs -cf - out.log"'
+		local rows = vim.split(text((widget.render(shell({ patterns = { long }, tool_input = { command = long } }),
+			{ width = 40 }))), "\n")
+		local first
+		for index, line in ipairs(rows) do
+			if line:find("▏  $ ssh", 1, true) == 1 then first = index end
+		end
+		assert.is_not_nil(first)
+		assert.is_truthy(rows[first + 1]:find("^▏    %S"))
 	end)
 
 	it("shows the full request when the bash row folds the command", function()
@@ -96,7 +110,40 @@ describe("permission widget", function()
 		local other = text((widget.render(shell({
 			permission_type = "external_directory", status = "approved", reply = "once", patterns = { "/tmp/*" },
 		}), row())))
-		assert.is_truthy(other:find("▏  ✓ External directory allowed once\n▏  Resource: /tmp/*", 1, true))
+		assert.same({ "▏  ✓ External directory allowed once: /tmp/*", "▏" }, vim.split(other, "\n"))
+	end)
+
+	it("names the saved patterns once and lists requested resources they do not cover", function()
+		local function directory(overrides)
+			return vim.tbl_extend("force", {
+				permission_id = "dir", permission_type = "external_directory", status = "approved", reply = "always",
+				patterns = { "/srv/data/*" }, always = { "/srv/data/*" },
+			}, overrides or {})
+		end
+		assert.same({ "▏  ✓ External directory always allowed: /srv/data/*", "▏" },
+			vim.split(text((widget.render(directory(), row()))), "\n"))
+		assert.same({ "▏  ✓ External directory always allowed: /srv/*", "▏  Resource: /srv/data/*", "▏" },
+			vim.split(text((widget.render(directory({ always = { "/srv/*" } }), row()))), "\n"))
+		assert.same({ "▏  ✓ External directory always allowed", "▏  Resource: /srv/data/*", "▏" },
+			vim.split(text((widget.render(directory({ always = { "*" } }), row()))), "\n"))
+	end)
+
+	it("indents a decision under a compact list row without a panel", function()
+		local compact = { width = 80, tool_row = { tool = "read", command = "", folded = false, compact = true, end_line = 0 } }
+		local lines, highlights, meta = widget.render({
+			permission_id = "dir", permission_type = "external_directory", status = "approved", reply = "always",
+			patterns = { "/srv/data/*" }, always = { "/srv/data/*" }, message = "for the fixtures",
+		}, compact)
+		assert.same({ "     ✓ External directory always allowed: /srv/data/*", "     Message: for the fixtures" },
+			vim.split(text(lines), "\n"))
+		assert.is_true(meta.attached)
+		for _, hl in ipairs(highlights) do
+			assert.is_truthy(hl.hl_group:find("^OpenCodePermissionList"), hl.hl_group)
+		end
+		assert.same({ "     ✗ Rejected: lua/opencode/init.lua" }, vim.split(text((widget.render({
+			permission_id = "read", permission_type = "read", status = "rejected",
+			patterns = { vim.fn.getcwd() .. "/lua/opencode/init.lua" },
+		}, compact))), "\n"))
 	end)
 
 	it("keeps the full panel for a decided request without a tool row", function()

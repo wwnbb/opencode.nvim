@@ -180,6 +180,19 @@ function Context:add_nui_lines(lines, kind)
 	self:append_relative_highlights(lines._opencode_highlights, base_line)
 end
 
+---Remove a trailing blank separator, so lines attached to the block above go
+---before it; the caller adds the separator back after them.
+---@return boolean removed
+function Context:take_trailing_blank()
+	local count = #self.raw_lines
+	if count == 0 or self.raw_lines[count] ~= "" or self.nui_lines[count]._opencode_preserve_blank then
+		return false
+	end
+	table.remove(self.raw_lines)
+	table.remove(self.nui_lines)
+	return true
+end
+
 function Context:prepare_widget_start()
 	if #self.raw_lines > 0 then self:ensure_single_blank_separator() end
 	self.last_block_kind = "non_tool"

@@ -187,11 +187,12 @@ lua/opencode/ui/debug_bundle.lua     → Allowlisted support snapshot (never con
 lua/opencode/ui/active_sessions.lua  → Active sessions UI
 lua/opencode/ui/log_viewer.lua       → Log viewer
 lua/opencode/ui/question_widget.lua  → Question widget renderer
-lua/opencode/ui/permission_widget.lua → Permission widget renderer
+lua/opencode/ui/permission_widget.lua → Permission widget renderer (standalone panel, bash panel continuation, compact row status)
 lua/opencode/ui/edit_widget.lua      → Edit widget renderer
 lua/opencode/ui/widget_base.lua      → Legacy widget formatting exports kept for user configuration
 lua/opencode/permission/state.lua    → Permission request state
 lua/opencode/permission/danger.lua   → Danger mode auto-approval
+lua/opencode/permission/request.lua  → What a permission request asks for, in display form (no rendering)
 lua/opencode/question/state.lua      → Native v2 form state and widget navigation
 lua/opencode/question/forms.lua      → Typed form projection owned by question.state (no HTTP/UI)
 lua/opencode/question/form_validation.lua → Local validation for native form answer fields

@@ -55,12 +55,18 @@ describe("permission widgets under their tool row", function()
 		chat_surface.restore(surface)
 	end)
 
-	it("asks below the bash row without repeating its command", function()
+	it("asks on the bash panel without repeating its command", function()
 		seed(COMMAND)
 		local pending = ask("perm", "shell")
 		chat.do_render()
+		local function assert_attached()
+			local position = state.permissions.perm
+			assert.equals(tool_row().end_line + 1, position.start_line)
+			assert.equals("▏  △ Allow this command?", vim.trim(lines()[position.start_line + 1]))
+		end
+		assert_attached()
 		assert.equals(1, count("mkdir -p"))
-		assert.equals(1, count("# Permission required for Bash"))
+		assert.equals(0, count("# Permission required"))
 		local reject_row
 		for row, line in ipairs(lines()) do
 			if line:find("3. Reject", 1, true) then reject_row = row end
@@ -69,6 +75,8 @@ describe("permission widgets under their tool row", function()
 		vim.api.nvim_win_set_cursor(state.winid, { reject_row, 0 })
 		require("opencode.ui.chat.interactions").sync_widget_selection_from_cursor()
 		assert.equals(3, pending.selected_option)
+		-- The in-place rerender for the new selection keeps the question on the panel.
+		assert_attached()
 	end)
 
 	it("shows the decision as a status line on the bash panel", function()
@@ -93,8 +101,48 @@ describe("permission widgets under their tool row", function()
 		local first, second = state.permissions.perm_dir, state.permissions.perm_shell
 		assert.equals(tool_row().end_line + 1, first.start_line)
 		assert.equals(first.end_line + 1, second.start_line)
-		assert.equals("▏  ✓ External directory allowed once", vim.trim(lines()[first.start_line + 1]))
+		assert.equals("▏  ✓ External directory allowed once: /tmp/*", vim.trim(lines()[first.start_line + 1]))
 		assert.equals("▏  ✗ Rejected", vim.trim(lines()[second.start_line + 1]))
+	end)
+
+	it("puts decisions directly under a compact list row, above its separator", function()
+		sync.handle_session_messages("permission-row", { projection.project("permission-row", {
+			id = "message", type = "assistant", time = { created = 1 }, content = {
+				{ type = "tool", id = "call", name = "read", state = { status = "completed", input = {
+					path = "/srv/data",
+				}, output = "" } },
+			},
+		}) })
+		ask("perm_dir", "external_directory", {
+			timestamp = 1, tool_name = "read", patterns = { "/srv/data/*" }, always = { "/srv/data/*" }, tool_input = {},
+		})
+		ask("perm_read", "read", { timestamp = 2, tool_name = "read", patterns = { "/srv/data" }, always = { "*" }, tool_input = {} })
+		permissions.mark_approved("perm_dir", "always")
+		permissions.mark_rejected("perm_read")
+		chat.do_render()
+
+		local row = tool_row()
+		local first, second = state.permissions.perm_dir, state.permissions.perm_read
+		assert.equals(row.start_line, row.end_line)
+		assert.is_truthy(lines()[row.start_line + 1]:find("→ Read /srv/data", 1, true))
+		assert.equals(row.end_line + 1, first.start_line)
+		assert.equals(first.end_line + 1, second.start_line)
+		assert.equals("✓ External directory always allowed: /srv/data/*", vim.trim(lines()[first.start_line + 1]))
+		assert.equals("✗ Rejected: /srv/data", vim.trim(lines()[second.start_line + 1]))
+		assert.equals("", vim.trim(lines()[second.end_line + 2]))
+		assert.equals(0, count("Resource:"))
+		assert.equals(0, count("▏"))
+
+		-- An in-place rerender would leave the decisions behind the row's new
+		-- separator; the full render lays the expanded row out with them below.
+		local part_id = sync.get_parts("message")[1].id
+		assert.is_false(require("opencode.ui.chat.tasks").rerender_tool(part_id))
+		state.expanded_tools[part_id] = true
+		chat.do_render()
+		row = tool_row()
+		assert.is_truthy(lines()[row.start_line + 1]:find("↘ Read /srv/data", 1, true))
+		assert.equals(row.end_line + 1, state.permissions.perm_dir.start_line)
+		assert.equals("", vim.trim(lines()[state.permissions.perm_read.end_line + 2]))
 	end)
 
 	it("shows the full request when the bash row folds part of the command", function()

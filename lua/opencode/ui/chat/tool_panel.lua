@@ -100,6 +100,32 @@ function M.add_raw_body(result, body, opts)
 	end
 end
 
+-- Shell command lines as the bash row draws them: a "$ " prompt, continuation
+-- lines and wrapped rows indented past it, and bash syntax across wrapped rows.
+---@param result table
+---@param lines string[] Source command lines
+---@param opts { panel: OpenCodePanelHelpers, hl_group: string, prefix?: string, prompt?: boolean, highlight?: boolean }
+function M.add_command_lines(result, lines, opts)
+	local initial_col = vim.fn.strdisplaywidth(opts.prefix or M.PANEL_PREFIX) + 2
+	local displayed, rows = {}, {}
+	for i, source in ipairs(lines) do
+		local line = render.expand_tabs(source, initial_col)
+		displayed[i] = line
+		local _, _, mapped = opts.panel.add_raw_line(result, line, opts.hl_group, {
+			body_prefix = (i == 1 and opts.prompt ~= false) and "$ " or "  ",
+			continuation_prefix = "  ",
+		})
+		rows[i] = mapped
+	end
+	if opts.highlight == false or #displayed == 0 then
+		return
+	end
+	local syntax = require("opencode.ui.syntax")
+	local captures, status = syntax.highlight_text(table.concat(displayed, "\n"), "bash", { scope = "tools" })
+	if syntax.needs_retry(captures, status) then result._opencode_syntax_retry = true end
+	vim.list_extend(result.highlights, syntax.project_highlights(captures, displayed, rows))
+end
+
 ---@param result table
 ---@param body string
 ---@param opts { panel: OpenCodePanelHelpers, prefix: string }

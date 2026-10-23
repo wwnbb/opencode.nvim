@@ -103,6 +103,31 @@ function M.get(scope, values)
 	return result
 end
 
+---@alias OpenCodeKeyHintItem string|{ [1]: string, [2]: string }|{ status: string }
+
+--- One formatter for on-screen key hints, which follow `key_hints.enabled`.
+--- Items are `{ key, description }` pairs, literal hint strings, or
+--- `{ status = text }` pieces that stay visible while hints are hidden.
+--- `omit_disabled` drops keys that are "(disabled)" or empty. Help screens do
+--- not use this because listing keys is their purpose.
+---@param items OpenCodeKeyHintItem[]
+---@param opts? { sep?: string, join?: string, omit_disabled?: boolean }
+---@return string|nil text nil when nothing remains
+function M.hint(items, opts)
+	opts = opts or {}
+	local config = require("opencode.state").get_config() or {}
+	local shown, parts = (config.key_hints or {}).enabled ~= false, {}
+	for _, item in ipairs(items) do
+		local key = type(item) == "table" and item[1] or item
+		if type(item) == "table" and item.status then
+			parts[#parts + 1] = item.status
+		elseif shown and not (opts.omit_disabled and (key == "(disabled)" or key == "")) then
+			parts[#parts + 1] = type(item) == "table" and (key .. (opts.join or " ") .. item[2]) or item
+		end
+	end
+	return #parts > 0 and table.concat(parts, opts.sep or " · ") or nil
+end
+
 function M.label(scope, action, values)
 	local resolved, customized = resolve(scope, values)
 	local effective = effective_hints[scope]
