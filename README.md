@@ -662,14 +662,14 @@ prompt asks for a separate **Diagnostics** section (**Диагностика** i
 after the code explanation. It includes each supplied message's source and
 check code when available, explains the issue, and suggests the smallest correction.
 Press `c` to copy the answer; `q` or `Esc` closes the popup and cancels a pending
-request. Press `i` once the answer is complete to ask a follow-up question in a
-prompt at the bottom of the popup. The answer streams below the conversation,
-with each question quoted. Follow-ups reuse the same selection context, send
-the earlier turns with the new question, and always use the built-in follow-up
-instruction, even with a custom `prompt`. A failed follow-up leaves the earlier
-answers in place so you can ask again; `c` copies the latest answer. The popup
-footer lists these keys; set `explanation.keymaps.ask` to change or disable the
-key. Normal-mode `K` remains available for LSP hover. Call
+request. The popup's bottom row is a question input: press `i` to move into it,
+type a follow-up and press `Enter` to send it once the current answer is
+complete (`Esc` returns to the answer). The answer streams below the
+conversation, with each question quoted. Follow-ups reuse the same selection
+context, send the earlier turns with the new question, and always use the
+built-in follow-up instruction, even with a custom `prompt`. A failed follow-up
+leaves the earlier answers in place so you can ask again; `c` copies the latest
+answer. Set `explanation.keymaps.ask` to change or disable the `i` key. Normal-mode `K` remains available for LSP hover. Call
 `require("opencode").explain_selection()` from your own Visual mapping if needed.
 
 Explanations have no timeout by default. Set `explanation.timeout_ms` to a

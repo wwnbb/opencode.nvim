@@ -38,11 +38,9 @@ function M.create_centered_popup(opts)
 		on_close = opts.on_close,
 		border = {
 			style = opts.border or "rounded",
-			text = (opts.title or opts.footer) and {
-				top = opts.title and (" " .. opts.title .. " ") or nil,
+			text = opts.title and {
+				top = " " .. opts.title .. " ",
 				top_align = "center",
-				bottom = opts.footer and (" " .. opts.footer .. " ") or nil,
-				bottom_align = "center",
 			} or nil,
 		},
 		size = centered_size(),
@@ -59,8 +57,7 @@ function M.setup_close_keymaps(bufnr, close_fn)
 end
 
 -- Create input popup for text entry (API keys, codes, etc.)
--- opts: { title?, prompt?, on_submit, on_cancel?, width?, password?, refocus_chat?, anchor_win? }
--- anchor_win places a text input along the bottom edge of that window instead of the chat.
+-- opts: { title?, prompt?, on_submit, on_cancel?, width?, password?, refocus_chat? }
 function M.create_input_popup(opts)
 	opts = opts or {}
 
@@ -78,9 +75,7 @@ function M.create_input_popup(opts)
 			return "editor", math.floor((vim.o.lines - vim.o.cmdheight) / 4),
 				math.max(0, math.floor((vim.o.columns - visible_width) / 2)), 80
 		end
-		local anchor = opts.anchor_win and vim.api.nvim_win_is_valid(opts.anchor_win) and opts.anchor_win
 		local target_win, float_dims = float_context.get_chat_context()
-		if anchor then target_win, float_dims = anchor, nil end
 		local available_width = vim.o.columns
 		local available_height = vim.o.lines - vim.o.cmdheight
 		if not float_dims and target_win and vim.api.nvim_win_is_valid(target_win) then
@@ -90,13 +85,6 @@ function M.create_input_popup(opts)
 		local text_width = vim.fn.strdisplaywidth(input_line) + 1
 		width = math.min(opts.width or math.max(50, text_width), math.max(1, available_width - border_width))
 		height = math.min(math.ceil(text_width / width), math.max(1, available_height - border_height))
-		if anchor then
-			-- The position names the content window; its titled border starts one row above.
-			return { type = "win", winid = anchor },
-				math.max(0, available_height - height - border_height + math.ceil(border_height / 2)),
-				math.max(0, math.floor((available_width - width - border_width) / 2)),
-				(vim.api.nvim_win_get_config(anchor).zindex or 50) + 1
-		end
 		return float_context.resolve_centered_placement(width + border_width, height + border_height)
 	end
 	local relative, row, col, zindex = placement()

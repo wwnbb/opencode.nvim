@@ -1,10 +1,11 @@
--- A temporary, read-only view for an editor selection explanation.
+-- A temporary, read-only view for an editor selection explanation, with a
+-- question input along its bottom edge for follow-ups.
 -- Request ownership and cancellation live in opencode.explanation.
 local M = {}
 
 local actions = require("opencode.actions")
 local keymaps = require("opencode.util.keymap")
-local float = require("opencode.ui.float")
+local Popup = require("opencode.ui.popup")
 local spinner = require("opencode.ui.spinner")
 
 local active, group
@@ -61,18 +62,41 @@ local function render(view, text, saved_view)
 end
 
 local function pending_text(view)
-	if view.prefix then return compose(view, spinner.get_loading_text("Answering question")) end
-	local close = keymaps.label("explanation", "close", config.keymaps)
-	return spinner.get_loading_text("Explaining selection") .. (close ~= "(disabled)" and ("\n\n" .. close .. " close") or "")
+	return compose(view, spinner.get_loading_text(view.prefix and "Answering question" or "Explaining selection"))
 end
 
-local function footer()
-	local hints = {}
-	for _, item in ipairs({ { "ask", "ask" }, { "copy", "copy" }, { "close", "close" } }) do
-		local label = keymaps.label("explanation", item[1], config.keymaps)
-		if label ~= "(disabled)" then hints[#hints + 1] = label .. " " .. item[2] end
-	end
-	return #hints > 0 and table.concat(hints, "  ") or nil
+-- Answer rows fill the frame; with an input, a separator row and the input
+-- take its last two rows.
+local function layout(with_input)
+	local width = math.min(88, math.max(1, vim.o.columns - 10))
+	local height = math.min(24, math.max(with_input and 3 or 1, vim.o.lines - vim.o.cmdheight - 6))
+	return {
+		frame = { size = { width = width, height = height } },
+		content = { position = { row = 0, col = 0 }, size = { width = width, height = with_input and height - 2 or height } },
+		input = with_input and { position = { row = height - 1, col = 0 }, size = { width = width, height = 1 } } or nil,
+	}
+end
+
+local function draw_frame(view)
+	local size = layout(view.input_bufnr ~= nil).frame.size
+	local lines = {}
+	for index = 1, size.height do lines[index] = "" end
+	if view.input_bufnr then lines[size.height - 1] = string.rep("─", size.width) end
+	view.popup:render(lines, view.input_bufnr and {
+		{ row = size.height - 2, col = 0, end_col = #lines[size.height - 1], hl_group = "FloatBorder" },
+	} or nil, "frame")
+end
+
+local function input_text(view)
+	return vim.trim(table.concat(vim.api.nvim_buf_get_lines(view.input_bufnr, 0, -1, false), "\n"))
+end
+
+local function update_placeholder(view)
+	if active ~= view or not vim.api.nvim_buf_is_valid(view.input_bufnr) then return end
+	local empty = table.concat(vim.api.nvim_buf_get_lines(view.input_bufnr, 0, -1, false), "") == ""
+	view.popup:render(nil, empty and {
+		{ row = 0, col = 0, opts = { virt_text = { { "Ask about the selection", "Comment" } }, virt_text_pos = "overlay" } },
+	} or {}, "input")
 end
 
 local function start_spinner(view)
@@ -95,32 +119,32 @@ local function copy_answer()
 	vim.notify("Explanation copied", vim.log.levels.INFO)
 end
 
--- The question prompt is a child float; the popup stays open while it has focus.
-local function ask()
+local function focus_answer(view)
+	vim.cmd("stopinsert")
+	if vim.api.nvim_win_is_valid(view.winid) then vim.api.nvim_set_current_win(view.winid) end
+end
+
+local function focus_input()
 	local view = active
-	if not view or not view.on_ask then return end
+	if not view or not view.input_winid or not vim.api.nvim_win_is_valid(view.input_winid) then return end
+	vim.api.nvim_set_current_win(view.input_winid)
+	vim.cmd("startinsert!")
+end
+
+-- A question typed during an answer stays in the input until it can be sent.
+local function submit()
+	local view = active
+	if not view then return end
+	local question = input_text(view)
+	if question == "" then return end
 	if view.phase == "pending" or view.phase == "streaming" then
 		vim.notify("OpenCode explanation: wait for the current answer", vim.log.levels.INFO)
 		return
 	end
-	view.popup.close_on_leave = false
-	local prompt = float.create_input_popup({
-		title = " Ask about the selection ",
-		width = vim.api.nvim_win_get_width(view.winid),
-		anchor_win = view.winid,
-		on_submit = function(question)
-			if active == view and vim.trim(question) ~= "" then view.on_ask(question) end
-		end,
-	})
-	vim.api.nvim_create_autocmd("BufWipeout", {
-		buffer = prompt.input.bufnr,
-		once = true,
-		callback = vim.schedule_wrap(function()
-			if active ~= view then return end
-			view.popup.close_on_leave = true
-			if vim.api.nvim_get_current_win() ~= view.winid then M.close() end
-		end),
-	})
+	view.popup:render({ "" }, nil, "input")
+	update_placeholder(view)
+	focus_answer(view)
+	view.on_ask(question)
 end
 
 local function configure_buffer(bufnr)
@@ -156,18 +180,28 @@ end
 function M.open(snapshot, on_close, on_ask)
 	M.close()
 	local view = { snapshot = snapshot, phase = "pending", on_close = on_close, on_ask = on_ask }
-	local popup, bufnr = float.create_centered_popup({
-		width = math.min(88, math.max(1, vim.o.columns - 10)),
-		height = math.min(24, math.max(1, vim.o.lines - vim.o.cmdheight - 6)),
-		title = "Explanation",
-		footer = on_ask and footer() or nil,
+	local layers = layout(on_ask ~= nil)
+	local popup = Popup.new({
+		frame = vim.tbl_extend("force", layers.frame, {
+			enter = false, focusable = false, zindex = 50,
+			border = { text = { top = " Explanation ", top_align = "center" } },
+			buf_options = { filetype = "opencode_float", modifiable = false },
+		}),
+		content = vim.tbl_extend("force", layers.content, {
+			enter = true, focusable = true, border = "none", zindex = 51,
+			buf_options = { filetype = "opencode_explanation" },
+		}),
+		input = layers.input and vim.tbl_extend("force", layers.input, {
+			kind = "popup", enter = false, focusable = true, border = "none", zindex = 52,
+			buf_options = { filetype = "opencode_explanation_input", modifiable = true },
+			win_options = { wrap = false, number = false, relativenumber = false, signcolumn = "no" },
+		}),
+		focus_restore = "previous",
 		close_on_leave = true,
 		on_resize = function(current)
 			local saved_view = vim.api.nvim_win_call(view.winid, vim.fn.winsaveview)
-			current:resize({ size = {
-				width = math.min(88, math.max(1, vim.o.columns - 10)),
-				height = math.min(24, math.max(1, vim.o.lines - vim.o.cmdheight - 6)),
-			} })
+			current:resize(layout(view.input_bufnr ~= nil))
+			draw_frame(view)
 			if view.text and view.phase ~= "pending" then render(view, view.text, saved_view) end
 		end,
 		on_close = function()
@@ -180,11 +214,12 @@ function M.open(snapshot, on_close, on_ask)
 			end
 		end,
 	})
-	view.popup, view.bufnr = popup, bufnr
+	view.popup = popup
 	popup:mount()
-	view.winid = popup.winid
+	view.bufnr, view.winid = popup.bufnr, popup.winid
+	view.input_bufnr, view.input_winid = popup.input_bufnr, popup.input_winid
 	active = view
-	vim.bo[bufnr].filetype = "opencode_explanation"
+	local bufnr = view.bufnr
 	vim.bo[bufnr].modifiable = false
 	vim.bo[bufnr].readonly = true
 	vim.wo[view.winid].wrap = true
@@ -195,9 +230,18 @@ function M.open(snapshot, on_close, on_ask)
 	vim.wo[view.winid].scrolloff = 2
 	local map, apply = keymaps.mapper("explanation", bufnr, config.keymaps)
 	map("n", "copy", copy_answer, { desc = "Copy explanation" })
-	if on_ask then map("n", "ask", ask, { desc = "Ask about the explanation" }) end
+	if on_ask then map("n", "ask", focus_input, { desc = "Ask about the explanation" }) end
 	map("n", "close", M.close)
 	apply()
+	if view.input_bufnr then
+		local input_map, input_apply = keymaps.mapper("popup", view.input_bufnr)
+		input_map({ "i", "n" }, "submit", submit, { desc = "Ask about the explanation" })
+		input_map({ "i", "n" }, "cancel", function() focus_answer(view) end, { desc = "Back to the explanation" })
+		input_apply()
+		popup:on({ "TextChanged", "TextChangedI" }, function() update_placeholder(view) end, "input")
+		update_placeholder(view)
+	end
+	draw_frame(view)
 	render(view, pending_text(view))
 	start_spinner(view)
 	return view
