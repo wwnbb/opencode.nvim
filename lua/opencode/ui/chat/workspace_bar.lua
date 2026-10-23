@@ -81,7 +81,9 @@ function M.update()
 		if right_arrow then size, count = size + measured.sizes[#labels + 2], count + 1 end
 		return size + (count - 1) * measured.separator_width
 	end
-	local max_tabs, first, last = tab_label.fit(#layouts, math.max(1, math.min(tab_label.max_tabs(config, #layouts), width)), width,
+	-- The layout bar has always accepted any truthy auto_fit; session tabs require true.
+	local fit_config = { auto_fit = config.auto_fit and true or false, max_tabs = config.max_tabs }
+	local max_tabs, first, last = tab_label.fit(#layouts, math.max(1, math.min(tab_label.max_tabs(fit_config, #layouts), width)), width,
 		function(visible) return tab_label.window_start(#layouts, visible, current_index) end, row_width)
 	-- On very narrow screens give the active label priority over overflow arrows.
 	local left, right = first > 1, last < #layouts
