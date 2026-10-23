@@ -72,6 +72,25 @@ local function fetch_catalogs(directory, token, callback)
 	client().list_agents(function(err, data) received("agents", err, data) end, { directory = directory })
 end
 
+-- Per-attempt state rides on the send options under underscore keys. Admission
+-- retries and context snapshots belong to one attempt and never reach a draft;
+-- view and draft-session targets are dropped from restored drafts but kept by
+-- edit_input; _selection intentionally survives both round trips.
+local ATTEMPT_FIELDS = { "_token", "_catalog_ready", "_catalog_retry", "_catalog_deadline", "_context_snapshot", "_context_error" }
+local TARGET_FIELDS = { "_draft_session_id", "_view_id", "_view_generation" }
+
+local function strip(opts, fields)
+	for _, field in ipairs(fields) do opts[field] = nil end
+end
+
+-- Capture the editor context once per attempt for a prompt that asks for it.
+local function capture_context(text, opts)
+	if not opts._context_snapshot and not opts._context_error
+		and (opts.range ~= nil or require("opencode.context").has(text, opts)) then
+		opts._context_snapshot, opts._context_error = require("opencode.context").capture({ range = opts.range })
+	end
+end
+
 local function restore_draft(text, opts)
 	local history = require("opencode.ui.input.history")
 	local session_id = opts._draft_session_id or opts.session_id
@@ -80,10 +99,9 @@ local function restore_draft(text, opts)
 		history.set_pending(text, opts.parts, session_id)
 		history.set_pending_mode(opts.mode or "normal", session_id)
 		local options = vim.deepcopy(opts)
-		options.parts, options._draft_session_id = nil, nil
-		options._view_id, options._view_generation = nil, nil
-		options._token, options._catalog_ready, options._catalog_retry, options._catalog_deadline = nil, nil, nil, nil
-		options._context_snapshot, options._context_error = nil, nil
+		options.parts = nil
+		strip(options, TARGET_FIELDS)
+		strip(options, ATTEMPT_FIELDS)
 		if options.mode == "shell" then options.delivery = nil end
 		history.set_pending_options(options, session_id)
 	end
@@ -276,6 +294,27 @@ local function create_bound_session(body, token, text, opts, on_created)
 	end)
 end
 
+---Freeze a prompt's targets synchronously, before connecting: the owning view,
+---session, directory, cancellation token, selection and editor context.
+---@param message string
+---@param opts table|nil
+---@param owner table|nil Chat view the prompt was sent from
+---@param owner_session_id string|nil That view's session
+---@return table options for send()
+function M.prepare(message, opts, owner, owner_session_id)
+	local captured = vim.deepcopy(vim.tbl_extend("force", opts or {}, { view = false }))
+	captured.view, captured._view_id, captured._view_generation = nil, nil, nil
+	if owner and owner.session_bound then
+		captured._view_id, captured._view_generation = owner.id, owner.generation
+	end
+	if require("opencode.context").is_prompt(message, captured.mode) then capture_context(message, captured) end
+	if captured.session_id == nil then captured.session_id = owner_session_id or state.get_session().id or false end
+	captured.directory = captured.directory or state.get_session_directory(captured.session_id) or require("opencode.util.cwd").get()
+	captured._token = pending.token(captured.session_id or nil)
+	captured._selection = selectors.send_selection(captured)
+	return captured
+end
+
 -- Both former sync/async modes return admission. Execution ends only through
 -- terminal events/reconciliation; a successful POST never sets the session idle.
 function M.send(text, opts)
@@ -312,11 +351,10 @@ function M.send(text, opts)
 		return true
 	end
 	local context = require("opencode.context")
-	local expand_context = type(text) == "string" and not text:match("^%s*/")
+	local expand_context = context.is_prompt(text, opts.mode)
 	if expand_context then
-		if not opts._context_snapshot and not opts._context_error and (opts.range ~= nil or context.has(text, opts)) then
-			opts._context_snapshot, opts._context_error = context.capture({ range = opts.range })
-		end
+		-- Callers going through prepare() already captured; direct callers capture here.
+		capture_context(text, opts)
 		if opts._context_error then return fail_before_send(opts._context_error, text, opts) end
 	end
 	local provider_cache = sync().get_location_catalog(directory, "providers")
@@ -555,8 +593,7 @@ function M.edit_input(session_id, message_id, callback)
 	opts.parts = nil
 	-- Admission retries belong to the original send attempt. In particular its
 	-- connection token may have expired while the input waited in the inbox.
-	opts._token, opts._catalog_ready, opts._catalog_retry, opts._catalog_deadline = nil, nil, nil, nil
-	opts._context_snapshot, opts._context_error = nil, nil
+	strip(opts, ATTEMPT_FIELDS)
 	opts.session_id = session_id
 	opts.directory = opts.directory or state.get_session_directory(session_id)
 	opts.delivery = (record.inbox or {}).delivery or opts.delivery

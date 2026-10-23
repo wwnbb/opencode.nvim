@@ -588,23 +588,10 @@ function M.send(message, opts)
 
 	local cs = require("opencode.ui.chat.state")
 	local owner = opts and opts.view or cs.current()
-	local captured = vim.deepcopy(vim.tbl_extend("force", opts or {}, { view = false }))
-	captured.view, captured._view_id, captured._view_generation = nil, nil, nil
-	if owner and owner.session_bound then
-		captured._view_id, captured._view_generation = owner.id, owner.generation
-	end
-	if captured.mode ~= "shell" and type(message) == "string" and not message:match("^%s*/") then
-		local context = require("opencode.context")
-		if not captured._context_snapshot and not captured._context_error and (captured.range ~= nil or context.has(message, captured)) then
-			captured._context_snapshot, captured._context_error = context.capture({ range = captured.range })
-		end
-	end
-	if captured.session_id == nil then captured.session_id = (owner and cs.session(owner).id) or state.get_session().id or false end
-	captured.directory = captured.directory or state.get_session_directory(captured.session_id) or require("opencode.util.cwd").get()
-	captured._token = require("opencode.session.pending").token(captured.session_id or nil)
-	captured._selection = require("opencode.selectors").send_selection(captured)
+	local send = require("opencode.send")
+	local captured = send.prepare(message, opts, owner, owner and cs.session(owner).id)
 	lifecycle.ensure_connected(function()
-		require("opencode.send").send(message, captured)
+		send.send(message, captured)
 	end)
 end
 

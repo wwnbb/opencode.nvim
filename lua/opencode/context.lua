@@ -321,6 +321,15 @@ local function scan(text, refs)
 	return found
 end
 
+---Context placeholders expand only in normal prompts: not shell commands and
+---not slash commands.
+---@param text any
+---@param mode string|nil
+---@return boolean
+function M.is_prompt(text, mode)
+	return mode ~= "shell" and type(text) == "string" and not text:match("^%s*/")
+end
+
 function M.has(text, opts)
 	for _, item in ipairs(scan(text, references(text, opts or {}))) do if not item.escaped then return true end end
 	return false

@@ -339,7 +339,7 @@ local function send_message(delivery)
 		history.add(text, parts, state.mode, state.session_id)
 	end
 	local send_options = state.send_options and vim.deepcopy(state.send_options) or nil
-	local normal_prompt = state.mode ~= "shell" and not text:match("^%s*/")
+	local normal_prompt = require("opencode.context").is_prompt(text, state.mode)
 	local explicit_context = normal_prompt and state.allow_context
 		and require("opencode.context").has(text, { parts = parts, context = send_options and send_options.context })
 	if normal_prompt and state.allow_context and (explicit_context or (send_options and send_options.range ~= nil)) then
