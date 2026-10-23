@@ -5,6 +5,7 @@ local M = {}
 local Popup = require("opencode.ui.popup")
 local float_context = require("opencode.ui.float_context")
 local keymaps = require("opencode.util.keymap")
+local surface = require("opencode.ui.search_surface")
 
 require("opencode.ui.highlights").register("opencode.ui.menu", function()
 	for name, link in pairs({
@@ -312,11 +313,8 @@ function M.open(opts)
 		local frame_height = height + frame_extra
 		if last_layout_width ~= width or last_frame_height ~= frame_height or last_list_height ~= height
 			or last_list_row ~= list_row then
-			view:resize({
-				frame = { size = { width = width, height = frame_height } },
-				content = { size = { width = width - 2, height = height }, position = { row = list_row, col = 1 } },
-				input = searchable and { size = { width = width - 8 }, position = { row = 3, col = 4 } } or nil,
-			})
+			local layout = surface.geometry(width, frame_height, list_row, height)
+			view:resize({ frame = layout.frame, content = layout.content, input = searchable and layout.input or nil })
 			last_layout_width, last_frame_height, last_list_height, last_list_row = width, frame_height, height, list_row
 		end
 		local title = truncate_to_width(vim.trim(opts.title or (searchable and "Search" or "Select")), math.max(1, width - 8))
@@ -612,31 +610,20 @@ function M.open(opts)
 	end
 
 	local event = require("nui.utils.autocmd").event
-	local win_options = {
-		winhighlight = "Normal:OpenCodeMenuNormal,NormalNC:OpenCodeMenuNormal,EndOfBuffer:OpenCodeMenuNormal",
-		winblend = 0,
-		wrap = false,
-		cursorline = false,
-		scrolloff = 0,
-	}
-	view = Popup.new({
+	local win_options = surface.window_options("Normal:OpenCodeMenuNormal,NormalNC:OpenCodeMenuNormal,EndOfBuffer:OpenCodeMenuNormal")
+	local layers = surface.layers({
+		relative = relative, row = row, col = col, zindex = zindex,
+		width = width, frame_height = list_height + frame_extra, list_row = list_row, list_height = list_height,
 		frame = {
-			relative = relative,
-			position = { row = row, col = col },
-			size = { width = width, height = list_height + frame_extra },
 			enter = false,
 			focusable = false,
-			zindex = zindex,
 			border = "none",
 			buf_options = { filetype = "opencode_float", modifiable = false },
 			win_options = win_options,
 		},
 		content = {
-			position = { row = list_row, col = 1 },
-			size = { width = width - 2, height = list_height },
 			enter = not searchable,
 			focusable = true,
-			zindex = zindex + 1,
 			border = "none",
 			buf_options = { filetype = "opencode_float", modifiable = false },
 			win_options = vim.tbl_extend("force", win_options, {
@@ -645,15 +632,17 @@ function M.open(opts)
 			}),
 		},
 		input = searchable and {
-			position = { row = 3, col = 4 },
-			size = { width = width - 8 },
-			zindex = zindex + 2,
 			border = "none",
 			buf_options = { filetype = "opencode_float" },
 			win_options = win_options,
 			prompt = "",
 			default_value = "",
-		} or nil,
+		},
+	})
+	view = Popup.new({
+		frame = layers.frame,
+		content = layers.content,
+		input = layers.input,
 		focus_restore = opts.refocus_chat ~= false and (owner and "previous" or "chat") or false,
 		previous_win = owner and owner.winid,
 		close_on_leave = true,
@@ -676,16 +665,8 @@ function M.open(opts)
 
 	if searchable then
 		local function update_placeholder()
-			local marks = {}
-			if search_text == "" then
-				marks[1] = {
-					line = 0,
-					col = 0,
-					virt_text = { { opts.search_placeholder or "Search", "OpenCodeMenuPlaceholder" } },
-					virt_text_pos = "overlay",
-				}
-			end
-			view:render(nil, marks, "input")
+			surface.render_placeholder(view.input.bufnr, view.namespaces.input, search_text,
+				opts.search_placeholder or "Search", "OpenCodeMenuPlaceholder")
 		end
 		update_placeholder()
 		render_list({ preserve_selection = false })
@@ -693,9 +674,9 @@ function M.open(opts)
 		map_common_keys(view.content.bufnr, { "n" })
 
 		view:on({ event.TextChangedI, event.TextChanged }, function()
-			local lines = vim.api.nvim_buf_get_lines(view.input.bufnr, 0, 1, false)
-			if search_text == (lines[1] or "") then return end
-			search_text = lines[1] or ""
+			local query = surface.query(view.input.bufnr)
+			if search_text == query then return end
+			search_text = query
 			update_placeholder()
 			if type(opts.on_search) == "function" then
 				opts.on_search(search_text, ctx)

@@ -8,6 +8,7 @@ local app_state = require("opencode.state")
 local command_registry = require("opencode.command_registry")
 local float_context = require("opencode.ui.float_context")
 local keymaps = require("opencode.util.keymap")
+local surface = require("opencode.ui.search_surface")
 local hl_ns = vim.api.nvim_create_namespace("opencode_palette")
 
 -- Adapters for callers outside ui/palette; palette submodules use palette.context.
@@ -564,30 +565,20 @@ function M.show(context)
 		row = math.min(row, math.max(0, screen_height - frame_height - border_size))
 		col = math.min(col, math.max(0, screen_width - width - border_size))
 	end
-	local window_options = {
-		winhighlight = "Normal:OpenCodePaletteNormal,NormalNC:OpenCodePaletteNormal,FloatBorder:OpenCodePaletteNormal,EndOfBuffer:OpenCodePaletteNormal",
-		winblend = 0,
-		wrap = false,
-		cursorline = false,
-		scrolloff = 0,
-	}
+	local window_options = surface.window_options(
+		"Normal:OpenCodePaletteNormal,NormalNC:OpenCodePaletteNormal,FloatBorder:OpenCodePaletteNormal,EndOfBuffer:OpenCodePaletteNormal")
+	local layers = surface.layers({
+		relative = relative, row = row, col = col, zindex = PALETTE_ZINDEX,
+		width = width, frame_height = frame_height, list_row = 5, list_height = height,
+		frame = { enter = false, focusable = false, win_options = window_options, buf_options = { modifiable = false } },
+		content = { enter = false, focusable = false, win_options = window_options },
+		input = { kind = "popup", enter = true, focusable = true, win_options = window_options },
+	})
 	state.view = Popup.new({
 		outer_border_style = border,
-		frame = {
-			enter = false, focusable = false, relative = relative, zindex = PALETTE_ZINDEX,
-			position = { row = row, col = col }, size = { width = width, height = frame_height },
-			win_options = window_options, buf_options = { modifiable = false },
-		},
-		content = {
-			enter = false, focusable = false, zindex = PALETTE_ZINDEX + 1,
-			position = { row = 5, col = 1 }, size = { width = width - 2, height = height },
-			win_options = window_options,
-		},
-		input = {
-			kind = "popup", enter = true, focusable = true, zindex = PALETTE_ZINDEX + 2,
-			position = { row = 3, col = 4 }, size = { width = math.max(1, width - 8), height = 1 },
-			win_options = window_options,
-		},
+		frame = layers.frame,
+		content = layers.content,
+		input = layers.input,
 		focus_restore = state.context.view and "previous" or "chat",
 		close_on_leave = true,
 		on_close = function(current)
@@ -624,13 +615,7 @@ function M.show(context)
 	vim.fn.prompt_setprompt(input_buf, "")
 
 	local function update_placeholder()
-		vim.api.nvim_buf_clear_namespace(input_buf, hl_ns, 0, -1)
-		if state.query == "" then
-			vim.api.nvim_buf_set_extmark(input_buf, hl_ns, 0, 0, {
-				virt_text = { { "Search", "OpenCodePalettePrompt" } },
-				virt_text_pos = "overlay",
-			})
-		end
+		surface.render_placeholder(input_buf, hl_ns, state.query, "Search", "OpenCodePalettePrompt")
 	end
 	update_placeholder()
 
@@ -645,9 +630,7 @@ function M.show(context)
 		buffer = input_buf,
 		callback = function()
 			if state.view ~= view then return end
-			local lines = vim.api.nvim_buf_get_lines(input_buf, 0, 1, false)
-			local line = lines[1] or ""
-			state.query = line
+			state.query = surface.query(input_buf)
 			update_placeholder()
 			state.selected = 1
 			update_results()
