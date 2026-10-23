@@ -12,27 +12,46 @@ It communicates with the native `/api` REST endpoints and `/api/event` SSE strea
 ## Quick Reference — File Map
 
 ```
-docs/                                → Reference TUI implementation and OpenCode server source code
 plugin/opencode.lua                  → Entry point (loads commands.lua)
 lua/opencode/init.lua                → Public API (setup, toggle, send, etc.)
 lua/opencode/config.lua              → Default config + merge()
 lua/opencode/state.lua               → Centralized app state + change listeners
-lua/opencode/sync.lua                → Message/part/session data store (binary search)
+lua/opencode/sync.lua                → Native v2 message, part, session, and catalog store (binary search)
+lua/opencode/sync/reducer.lua        → Server event reducer owned by sync.lua; all persistent state stays in sync's store
 lua/opencode/actions.lua             → Internal action boundary (UI modules call this)
-lua/opencode/session.lua             → Session management + status mirroring
+lua/opencode/session.lua             → Action boundary for active-session and global-status mutations
+lua/opencode/session/*.lua           → Session submodules (catalog, focus, lock, navigation, pending, selection, status, tabs, view)
 lua/opencode/selectors.lua           → Read-only derived state queries
 lua/opencode/local.lua               → Agent/model/variant selection (persistent)
+lua/opencode/settings.lua            → Local preferences; one file owner holds global and directory scopes
+lua/opencode/preferences.lua         → Versioned preference file; preserves files without a supported version
+lua/opencode/stash.lua               → Persist unsent prompts independently of history and server state
 lua/opencode/lifecycle.lua           → Server spawn, health checks, reconnect
-lua/opencode/events.lua              → Event system facade
+lua/opencode/managed.lua             → Native daemon discovery (registration file + authenticated health check)
+lua/opencode/events.lua              → Local event bus and server event setup
 lua/opencode/cleanup.lua             → Reset/teardown orchestration across modules
 lua/opencode/commands.lua            → User commands and default loader keymaps
+lua/opencode/keymap_defaults.lua     → Default keymap action names shared by bindings and on-screen hints
 lua/opencode/send.lua                → Send-flow orchestration for prompts
+lua/opencode/btw.lua                 → Transient /btw side questions; use session context without recording a turn
 lua/opencode/context.lua             → Editor source tracking, bounded snapshots, context placeholder rendering/expansion
 lua/opencode/editor_context.lua      → Automatic editor context attachments and per-session delivery state
+lua/opencode/diagnostics.lua         → Server diagnostic snapshots (not the editor's LSP state)
+lua/opencode/export.lua              → Pure formatters for the native session export response
+lua/opencode/review.lua              → Bundled diff review via the official plugin RPC (never native permissions)
+lua/opencode/stats.lua               → Adapt native session statistics for the /stats view
+lua/opencode/vcs.lua                 → Pure VCS patch validation and paired-hunk projection
 lua/opencode/completion/init.lua     → Sessionless editor completion lifecycle, cancellation, acceptance
 lua/opencode/completion/context.lua  → Bounded context from current and related loaded buffers
 lua/opencode/completion/profile.lua  → Model validation and managed-server variant overlay
-lua/opencode/ui/completion.lua       → Ghost text, spinner, and temporary acceptance mappings
+lua/opencode/completion/selection.lua → Exact, unsaved Visual ranges for instruction-driven replacement
+lua/opencode/explanation/init.lua    → One Visual selection, one streamed explanation, one temporary popup
+lua/opencode/explanation/context.lua → Bounded, unsaved editor snapshot for one explanation request
+lua/opencode/explanation/response.lua → Extract the <answer> block from default-prompt explanations
+lua/opencode/protocol/catalogs.lua   → Pure provider/agent/MCP catalog normalization
+lua/opencode/protocol/events.lua     → Pure SSE envelope decoding
+lua/opencode/protocol/messages.lua   → Pure native-message → chat projection
+lua/opencode/protocol/requests.lua   → Pure prompt and selection conversion
 lua/opencode/events/bus.lua          → Pub/sub event bus
 lua/opencode/events/sse_bridge.lua   → Native SSE envelope → local event bus
 lua/opencode/events/state_bridge.lua → State ↔ event bridge
@@ -40,32 +59,49 @@ lua/opencode/events/util.lua         → Event utilities (error dedupe, helpers)
 lua/opencode/events/handlers/*.lua   → Native event reducers, interaction/review recovery, sync, notifications
 lua/opencode/events/handlers/permission_flow/*.lua → Permission request and review helpers
 lua/opencode/client/init.lua         → Combined HTTP + SSE client API
+lua/opencode/client/api.lua          → OpenCode 2 wire contracts
 lua/opencode/client/http.lua         → REST client (GET/POST/PATCH/PUT/DELETE)
 lua/opencode/client/sse.lua          → SSE streaming client with reconnect
-lua/opencode/client/transport.lua    → Raw libuv TCP transport
+lua/opencode/client/transport.lua    → HTTP transport facade over shared TCP and decoder helpers
 lua/opencode/client/http_decoder.lua → Streaming HTTP response decoder
 lua/opencode/client/tcp_connection.lua → Shared libuv TCP connection lifecycle
-lua/opencode/command_registry.lua   → Shared built-in command definitions and dispatch
+lua/opencode/client/tls_connection.lua → Verified TLS byte channel for HTTP/SSE via an installed OpenSSL process
+lua/opencode/client/endpoint.lua     → One endpoint parser for REST and SSE transports
+lua/opencode/client/headers.lua      → Case-insensitive header merging (caller values override defaults)
+lua/opencode/client/auth.lua         → Basic authentication header encoding
+lua/opencode/client/explanation.lua  → Temporary native sessions that reuse chat streaming outside chat state
+lua/opencode/command_registry.lua    → Shared built-in command definitions and dispatch
 lua/opencode/slash.lua               → Slash command system (/new, /models, etc.)
 lua/opencode/logger.lua              → Debug logging
 lua/opencode/clipboard.lua           → Clipboard helpers (text + images)
 lua/opencode/components/lualine.lua  → Lualine statusline component
 lua/opencode/ui/chat/init.lua        → Main chat window (layout, session tabs)
+lua/opencode/ui/chat/workspace.lua   → Virtual chat layouts in one Neovim tab; hidden layouts keep their chat views
+lua/opencode/ui/chat/workspace_bar.lua → Tabline listing workspace layouts and their session labels
+lua/opencode/ui/chat/tab_label.lua   → Session tab title, status, and icon formatting
 lua/opencode/ui/chat/keymaps.lua     → Buffer keymap setup (moved out of init.lua)
-lua/opencode/ui/chat/state.lua       → Chat view-layer state (bufnr, winid, widgets)
+lua/opencode/ui/chat/state.lua       → Chat view registry; each module instance captures its own view state
 lua/opencode/ui/chat/render.lua      → Pure NuiLine rendering helpers
 lua/opencode/ui/chat/render_coordinator.lua → Render scheduling
 lua/opencode/ui/chat/render_context.lua → Render context (NuiLine accumulation)
 lua/opencode/ui/chat/render_state.lua → Render scratch state
-lua/opencode/ui/chat/highlights.lua   → Chat extmark highlight application (extracted from render.lua)
+lua/opencode/ui/chat/highlights.lua  → Chat extmark highlight application (extracted from render.lua)
 lua/opencode/ui/chat/widget_support.lua → Widget cursor tracking
 lua/opencode/ui/chat/widget_index.lua → Widget assembly/indexing
 lua/opencode/ui/chat/widget_renderer.lua → Widget rendering dispatch
+lua/opencode/ui/chat/widget_tree.lua → Rendered widget trees (roots own buffer replacement; children keep identity/ranges)
 lua/opencode/ui/chat/message_renderer.lua → Message rendering
 lua/opencode/ui/chat/messages.lua    → Message line rendering
+lua/opencode/ui/chat/history_metadata.lua → Scalar history metadata retained without live message references
+lua/opencode/ui/chat/processing_footer.lua → Processing footer state (busy status, pending response gap, metadata)
+lua/opencode/ui/chat/throughput.lua  → Pure turn-level throughput from native timing and usage
+lua/opencode/ui/chat/pending_inputs.lua → Pending/queued input widgets (cancel, edit, steer, queue)
+lua/opencode/ui/chat/editor_context.lua → Editor context snapshot rendering (literal, never Markdown)
 lua/opencode/ui/chat/tool_renderer.lua → Tool/task block rendering
 lua/opencode/ui/chat/tool_panel.lua  → Shared panel rendering helpers
-lua/opencode/ui/chat/nav.lua         → Subagent navigation
+lua/opencode/ui/chat/tool_style.lua  → Stable list headers with compact panels for expanded tool output
+lua/opencode/ui/chat/tool_group.lua  → Tool activity families as data; shared grouping, status and tree behavior
+lua/opencode/ui/chat/nav.lua         → Session navigation: drill into child sessions and back
 lua/opencode/ui/chat/session_tabs.lua → Session tab management
 lua/opencode/ui/chat/cursor.lua      → Cursor context capture/restore for widgets
 lua/opencode/ui/chat/interactions.lua → Widget interaction dispatchers (question/permission/edit)
@@ -73,50 +109,97 @@ lua/opencode/ui/chat/float_focus.lua → Float focus helpers (edits/diffs)
 lua/opencode/ui/chat/help.lua        → Help popup
 lua/opencode/ui/chat/bash.lua        → Bash tool widget
 lua/opencode/ui/chat/read.lua        → Read tool widget
+lua/opencode/ui/chat/write.lua       → Write tool widget
 lua/opencode/ui/chat/rg.lua          → Ripgrep tool widget
-lua/opencode/ui/chat/search.lua      → Search tool widget
+lua/opencode/ui/chat/search.lua      → Search (glob/grep) tool widget
 lua/opencode/ui/chat/skill.lua       → Skill tool widget
-lua/opencode/ui/chat/tasks.lua       → Task/subagent widget
+lua/opencode/ui/chat/exploration_tool.lua → Exploration leaf widgets (compact and expanded presentation)
+lua/opencode/ui/chat/exploration_style.lua → Compatibility alias for exploration widgets and theme consumers
+lua/opencode/ui/chat/web_tool.lua    → Shared web request rows and framed output
+lua/opencode/ui/chat/webfetch.lua    → Webfetch tool widget
+lua/opencode/ui/chat/websearch.lua   → Websearch tool widget
+lua/opencode/ui/chat/execute.lua     → Universal code-mode (execute) widget
+lua/opencode/ui/chat/execute_details.lua → Execute details inspector float (result/raw/code/calls)
+lua/opencode/ui/chat/execute_output.lua → Execute output decoding and readable JSON/fence formatting
+lua/opencode/ui/chat/shell_notification.lua → Native shell completion notices as expandable tool panels
+lua/opencode/ui/chat/subagent_notification.lua → Subagent completion notice widget
+lua/opencode/ui/chat/tasks.lua       → Task and tool widget facade
 lua/opencode/ui/chat/task_animation.lua → Task spinner animation frames/timer
 lua/opencode/ui/chat/task_children.lua → Task → child-session ID resolution
 lua/opencode/ui/chat/activity.lua    → Thought/Explore rendering
 lua/opencode/ui/chat/tool_labels.lua → Tool label/duration formatting
 lua/opencode/ui/chat/tool_part.lua   → Tool part resolution (cursor/position lookups)
 lua/opencode/ui/chat/questions.lua   → Question widget
+lua/opencode/ui/chat/question_result.lua → Completed native question tool answers
 lua/opencode/ui/chat/permissions.lua → Permission widget
 lua/opencode/ui/chat/edits.lua       → Edit tool widget + inline diff
 lua/opencode/ui/chat/edit_previews.lua → Edit preview rendering
-lua/opencode/ui/chat/file_edit_results.lua → File edit results
-lua/opencode/ui/input.lua            → Multi-line input with history
-lua/opencode/ui/input/*.lua          → Input submodules (attachments, autocmds, autocomplete, history, info_bar, keymaps, layout, mentions, popups, slash_commands)
+lua/opencode/ui/chat/file_edit_results.lua → Unified final-result renderer for file editing tools
+lua/opencode/ui/input.lua            → Multi-line input facade with history
+lua/opencode/ui/input/*.lua          → Input submodules (attachments, autocmds, autocomplete, history, history_search, info_bar, keymaps, layout, mentions, popups, slash_commands, syntax)
 lua/opencode/ui/palette.lua          → Command palette (fuzzy search)
-lua/opencode/ui/palette/*.lua        → Palette command submodules (session, model, agent, actions, prompt, mcp, system)
-lua/opencode/ui/float.lua            → Float utilities (centered popups, menus)
+lua/opencode/ui/palette/*.lua        → Palette command submodules (actions, agent, editor_context, environment, family, history, integration, mcp, model, pairing, plugins, processes, prompt, queue, server, session, settings, stash, system, workspaces)
+lua/opencode/ui/float.lua            → Float utilities (centered popups, input popups)
 lua/opencode/ui/float_context.lua    → Floating window placement and focus helpers
+lua/opencode/ui/popup.lua            → Shared owner for palette-command and dialog floats
 lua/opencode/ui/menu.lua             → Shared list and searchable menu controller
+lua/opencode/ui/form.lua             → Local forms (integration setup) sharing chat-form projection and rendering
+lua/opencode/ui/form_external.lua    → Link dispatch for external form steps
 lua/opencode/ui/highlights.lua       → Shared UI highlight defaults
 lua/opencode/ui/panel.lua            → Panel line helpers
 lua/opencode/ui/spinner.lua          → Loading spinner
 lua/opencode/ui/syntax.lua           → Treesitter syntax highlighting
+lua/opencode/ui/syntax_query.lua     → Optional query purity inspection for syntax memoization
+lua/opencode/ui/code_blocks.lua      → Fenced code blocks in source text, before chat decoration or wrapping
+lua/opencode/ui/markdown.lua         → Chat Markdown rendering (OpenCode TextPart + OpenTUI Markdown)
+lua/opencode/ui/markdown/inline.lua  → Query-driven inline concealment and style cascade
+lua/opencode/ui/markdown/styles.lua  → Markdown highlight groups and composite styles
+lua/opencode/ui/markdown/wrap.lua    → OpenTUI word wrapping (punctuation breaks, grapheme widths, tabs)
+lua/opencode/ui/diagrams.lua         → Render Mermaid/math fences in a local browser document
+lua/opencode/ui/images.lua           → Attachment image preview (bytes or remote URI)
+lua/opencode/ui/thinking.lua         → Shared configuration for the Thought activity widget
 lua/opencode/ui/native_diff.lua      → Native diff viewer
+lua/opencode/ui/diff_pair.lua        → Proposed/actual diff pair
 lua/opencode/ui/codediff.lua         → Optional codediff.nvim backend for the diff review tab
+lua/opencode/ui/vcs.lua              → Read-only VCS/turn patches, independent of edit proposals and review RPC
+lua/opencode/ui/timeline.lua         → Timeline picker and actions for a historical user turn
+lua/opencode/ui/history_search.lua   → Prompt history search menu (grep/ripgrep)
+lua/opencode/ui/completion.lua       → Ghost text, spinner, and temporary acceptance mappings
+lua/opencode/ui/completion_prompt.lua → Completion instruction prompt on composer surfaces
+lua/opencode/ui/explanation.lua      → Temporary read-only view for a selection explanation
+lua/opencode/ui/btw.lua              → Temporary view for a completed /btw answer
+lua/opencode/ui/export.lua           → Session export workflow
+lua/opencode/ui/stats.lua            → Usage statistics display (/stats)
+lua/opencode/ui/stats_calendar.lua   → Activity calendar for the /stats screen
+lua/opencode/ui/diagnostics.lua      → Server diagnostics menu and /diagnostics command
+lua/opencode/ui/debug_bundle.lua     → Allowlisted support snapshot (never config, messages or logs)
 lua/opencode/ui/active_sessions.lua  → Active sessions UI
 lua/opencode/ui/log_viewer.lua       → Log viewer
 lua/opencode/ui/question_widget.lua  → Question widget renderer
 lua/opencode/ui/permission_widget.lua → Permission widget renderer
 lua/opencode/ui/edit_widget.lua      → Edit widget renderer
-lua/opencode/ui/widget_base.lua      → Widget base class
+lua/opencode/ui/widget_base.lua      → Legacy widget formatting exports kept for user configuration
 lua/opencode/permission/state.lua    → Permission request state
 lua/opencode/permission/danger.lua   → Danger mode auto-approval
-lua/opencode/question/state.lua      → Question request state
+lua/opencode/question/state.lua      → Native v2 form state and widget navigation
+lua/opencode/question/forms.lua      → Typed form projection owned by question.state (no HTTP/UI)
+lua/opencode/question/form_validation.lua → Local validation for native form answer fields
 lua/opencode/edit/state.lua          → Edit review state
-lua/opencode/artifact/changes.lua    → Change tracking
+lua/opencode/artifact/changes.lua    → Pending file change tracking
 lua/opencode/provider/state.lua      → Transient provider auth state
-lua/opencode/session/*.lua           → Session submodules (lock, navigation, pending, status, view)
+lua/opencode/provider/auth.lua       → Provider integration attempt orchestration
 lua/opencode/util/session.lua        → Session title helpers
+lua/opencode/util/cwd.lua            → Resolve the user's working directory for new sessions and scoped requests
+lua/opencode/util/path.lua           → Server path checks without resolving against the local cwd
 lua/opencode/util/locale.lua         → Duration/titlecase formatting
 lua/opencode/util/text.lua           → Text utilities
 lua/opencode/util/schedule.lua       → vim.schedule wrapper helpers
+lua/opencode/util/keymap.lua         → Temporary buffer mappings that restore the previous owner
+lua/opencode/util/memo.lua           → Shared budget for recomputable render/memo data
+lua/opencode/util/json_file.lua      → JSON file read/write helpers
+lua/opencode/util/jsonc.lua          → JSONC parsing (comments, trailing commas)
+lua/opencode/util/json_budget.lua    → Exact incremental JSON sizing for editor context collectors
+lua/opencode/util/visual_selection.lua → Capture a Visual selection from the live buffer
 ```
 
 ---
@@ -304,10 +387,24 @@ local popup, bufnr = float.create_centered_popup({
 popup:mount()
 float.setup_close_keymaps(bufnr, function() popup:unmount() end)
 
--- Searchable menu
-float.create_searchable_menu(items, function(item)
-    -- handle selection
-end, { title = " Select ", width = 50 })
+-- List / searchable menu (lua/opencode/ui/menu.lua; see ui/timeline.lua)
+require("opencode.ui.menu").open({
+    title = " Select ",
+    width = 50,
+    searchable = true,          -- false/omitted: plain list
+    sort = false,               -- keep item order (or pass a comparator)
+    items = {
+        { label = "Jump to Message", value = "jump", description = "Show in chat" },
+    },
+    on_move = function(item, ctx) end,   -- optional cursor-move preview
+    on_select = function(item, ctx)
+        -- handle selection
+    end,
+    keymap_scope = "menu",      -- optional: config keymap scope for the extra keys below
+    keys = {                    -- optional extra keys (ctx: close, refresh, set_items, selected_items)
+        { action = "quickfix", label = "quickfix", handler = function(ctx, item) ctx.close() end },
+    },
+})
 
 -- Input popup
 float.create_input_popup({
