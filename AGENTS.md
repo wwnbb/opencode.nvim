@@ -18,9 +18,12 @@ lua/opencode/config.lua              → Default config + merge()
 lua/opencode/state.lua               → Centralized app state + change listeners
 lua/opencode/sync.lua                → Native v2 message, part, session, and catalog store (binary search)
 lua/opencode/sync/reducer.lua        → Server event reducer owned by sync.lua; all persistent state stays in sync's store
+lua/opencode/sync/catalog.lua        → Provider/agent/command/skill/config/mcp catalogs, agent visibility, catalog_for(directory)
+lua/opencode/sync/task_children.lua  → Task-child indexing, provenance and ownership (wired by sync.lua)
 lua/opencode/actions.lua             → Internal action boundary (UI modules call this)
 lua/opencode/session.lua             → Action boundary for active-session and global-status mutations
-lua/opencode/session/*.lua           → Session submodules (catalog, focus, lock, navigation, pending, selection, status, tabs, view)
+lua/opencode/session/*.lua           → Session submodules (attention, catalog, epoch, family, focus, lock, navigation, pending, selection, skills, status, tabs, view, views)
+lua/opencode/session/views.lua       → Core's only entry to the chat view registry (live views, root session); guarded by architecture_spec
 lua/opencode/selectors.lua           → Read-only derived state queries
 lua/opencode/local.lua               → Agent/model/variant selection (persistent)
 lua/opencode/settings.lua            → Local preferences; one file owner holds global and directory scopes
@@ -28,6 +31,7 @@ lua/opencode/preferences.lua         → Versioned preference file; preserves fi
 lua/opencode/stash.lua               → Persist unsent prompts independently of history and server state
 lua/opencode/lifecycle.lua           → Server spawn, health checks, reconnect
 lua/opencode/managed.lua             → Native daemon discovery (registration file + authenticated health check)
+lua/opencode/server_env.lua          → Pure server environment and command resolution (shell env, PATH, listening URL)
 lua/opencode/events.lua              → Local event bus and server event setup
 lua/opencode/cleanup.lua             → Reset/teardown orchestration across modules
 lua/opencode/commands.lua            → User commands and default loader keymaps
@@ -48,6 +52,7 @@ lua/opencode/completion/selection.lua → Exact, unsaved Visual ranges for instr
 lua/opencode/explanation/init.lua    → One Visual selection, one streamed explanation, one temporary popup
 lua/opencode/explanation/context.lua → Bounded, unsaved editor snapshot for one explanation request
 lua/opencode/explanation/response.lua → Extract the <answer> block from default-prompt explanations
+lua/opencode/generation/request.lua  → Shared request runner for completion and explanation (deadline, connect, model, warm-up retry)
 lua/opencode/protocol/catalogs.lua   → Pure provider/agent/MCP catalog normalization
 lua/opencode/protocol/events.lua     → Pure SSE envelope decoding
 lua/opencode/protocol/messages.lua   → Pure native-message → chat projection
@@ -75,13 +80,17 @@ lua/opencode/slash.lua               → Slash command system (/new, /models, et
 lua/opencode/logger.lua              → Debug logging
 lua/opencode/clipboard.lua           → Clipboard helpers (text + images)
 lua/opencode/components/lualine.lua  → Lualine statusline component
-lua/opencode/ui/chat/init.lua        → Main chat window (layout, session tabs)
+lua/opencode/ui/chat/init.lua        → Per-view chat instance: events, session switch, render engine
+lua/opencode/ui/chat/views.lua       → Module-level chat facade: focus/bind/split/close/toggle, retire_view, WinEnter focus tracking
+lua/opencode/ui/chat/window.lua      → Per-layout chat window creation, options, WinClosed watch and native close
 lua/opencode/ui/chat/workspace.lua   → Virtual chat layouts in one Neovim tab; hidden layouts keep their chat views
 lua/opencode/ui/chat/workspace_bar.lua → Tabline listing workspace layouts and their session labels
 lua/opencode/ui/chat/tab_label.lua   → Session tab title, status, and icon formatting
 lua/opencode/ui/chat/keymaps.lua     → Buffer keymap setup (moved out of init.lua)
 lua/opencode/ui/chat/state.lua       → Chat view registry; each module instance captures its own view state
 lua/opencode/ui/chat/render.lua      → Pure NuiLine rendering helpers
+lua/opencode/ui/chat/text_width.lua  → Pure display width, tab expansion and word wrapping with an explicit tabstop
+lua/opencode/ui/chat/message_footer.lua → Assistant message footer and token breakdown, attached to each render instance
 lua/opencode/ui/chat/render_coordinator.lua → Render scheduling
 lua/opencode/ui/chat/render_context.lua → Render context (NuiLine accumulation)
 lua/opencode/ui/chat/render_state.lua → Render scratch state
@@ -133,16 +142,18 @@ lua/opencode/ui/chat/questions.lua   → Question widget
 lua/opencode/ui/chat/question_result.lua → Completed native question tool answers
 lua/opencode/ui/chat/permissions.lua → Permission widget
 lua/opencode/ui/chat/edits.lua       → Edit tool widget + inline diff
+lua/opencode/ui/chat/inline_diff.lua → Inline diff split window manager (marks, anchor, E444 handling, review keys)
 lua/opencode/ui/chat/edit_previews.lua → Edit preview rendering
 lua/opencode/ui/chat/file_edit_results.lua → Unified final-result renderer for file editing tools
 lua/opencode/ui/input.lua            → Multi-line input facade with history
-lua/opencode/ui/input/*.lua          → Input submodules (attachments, autocmds, autocomplete, history, history_search, info_bar, keymaps, layout, mentions, popups, slash_commands, syntax)
+lua/opencode/ui/input/*.lua          → Input submodules (attachments, autocmds, autocomplete, history, history_search, info_bar, keymaps, layout, markers, mentions, popups, slash_commands, syntax)
 lua/opencode/ui/palette.lua          → Command palette (fuzzy search)
-lua/opencode/ui/palette/*.lua        → Palette command submodules (actions, agent, editor_context, environment, family, history, integration, mcp, model, pairing, plugins, processes, prompt, queue, server, session, settings, stash, system, workspaces)
+lua/opencode/ui/palette/*.lua        → Palette command submodules (actions, agent, context, editor_context, environment, family, history, integration, mcp, model, pairing, plugins, processes, prompt, queue, server, session, settings, stash, system, workspaces)
 lua/opencode/ui/float.lua            → Float utilities (centered popups, input popups)
 lua/opencode/ui/float_context.lua    → Floating window placement and focus helpers
 lua/opencode/ui/popup.lua            → Shared owner for palette-command and dialog floats
 lua/opencode/ui/menu.lua             → Shared list and searchable menu controller
+lua/opencode/ui/search_surface.lua   → Shared three-window searchable popup layout used by menu and palette
 lua/opencode/ui/form.lua             → Local forms (integration setup) sharing chat-form projection and rendering
 lua/opencode/ui/form_external.lua    → Link dispatch for external form steps
 lua/opencode/ui/highlights.lua       → Shared UI highlight defaults
@@ -185,6 +196,7 @@ lua/opencode/question/state.lua      → Native v2 form state and widget navigat
 lua/opencode/question/forms.lua      → Typed form projection owned by question.state (no HTTP/UI)
 lua/opencode/question/form_validation.lua → Local validation for native form answer fields
 lua/opencode/edit/state.lua          → Edit review state
+lua/opencode/edit/tool_results.lua   → Edit/patch tool result normalisation (all field spellings) for previews and widgets
 lua/opencode/artifact/changes.lua    → Pending file change tracking
 lua/opencode/provider/state.lua      → Transient provider auth state
 lua/opencode/provider/auth.lua       → Provider integration attempt orchestration
@@ -460,6 +472,7 @@ client.on_event("*", function(event_type, data) end) -- native envelope via data
 ./tests/run.sh unit                # Run unit specs
 ./tests/run.sh smoke               # Run smoke specs
 ./tests/run.sh checks              # Run architecture/state guardrails
+./scripts/luals-check.sh            # Optional LuaLS annotation check (skips without lua-language-server; not in run.sh)
 ```
 
 ---
