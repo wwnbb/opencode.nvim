@@ -160,7 +160,7 @@ function M.browse(query, context)
 				end },
 				{ action = "current_directory", label = "current directory", allow_empty = true, handler = function(ctx)
 					if current(context, token) then
-						ctx.close(); M.browse({ roots = true, directory = state.get_session_directory(context.session_id) or vim.fn.getcwd() }, context)
+						ctx.close(); M.browse({ roots = true, directory = state.get_session_directory(context.session_id) or require("opencode.util.cwd").get() }, context)
 					end
 				end },
 			} })

@@ -19,7 +19,7 @@ function M.setup(events)
 		["integration.updated"] = "providers",
 	}
 	local function current_directory()
-		return state.normalize_directory(state.get_session_directory(state.get_session().id) or vim.fn.getcwd())
+		return state.normalize_directory(state.get_session_directory(state.get_session().id) or require("opencode.util.cwd").get())
 	end
 	local function refresh(domain, directory)
 		local key = directory .. "\0" .. domain

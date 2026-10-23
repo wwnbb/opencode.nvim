@@ -21,7 +21,7 @@ end)
 local function current(view)
 	return active == view and require("opencode.session.pending").is_current(view.token)
 		and app.get_session().id == view.session_id
-		and (app.get_session_directory(view.session_id) or vim.fn.getcwd()) == view.directory
+		and (app.get_session_directory(view.session_id) or require("opencode.util.cwd").get()) == view.directory
 end
 
 local function write(buf, lines, marks)
@@ -327,7 +327,7 @@ function M.open(opts)
 	serial = serial + 1
 	local session_id = app.get_session().id
 	local preference = (app.get_config().chat or {}).diff_view or "auto"
-	local view = { session_id = session_id, directory = app.get_session_directory(session_id) or vim.fn.getcwd(),
+	local view = { session_id = session_id, directory = app.get_session_directory(session_id) or require("opencode.util.cwd").get(),
 		token = require("opencode.session.pending").token(session_id), origin = vim.api.nvim_get_current_win(),
 		mode = opts.mode or "branch", base = opts.base, auto_layout = preference == "auto", layout = preference == "auto" and (vim.o.columns >= 120 and "split" or "unified") or preference,
 		index = 1, files = {}, buffers = {}, reviewed = {}, collapsed = {}, all = true, request = 0 }

@@ -13,7 +13,7 @@ local function press(key)
 end
 
 describe("tab workspace navigation", function()
-	local editor, cwd, directory, source, destination, saved, notices, created
+	local editor, cwd, directory, source, destination, saved, notices, created, expected_directory
 	before_each(function()
 		vim.o.columns, vim.o.lines = 160, 48
 		editor, cwd = vim.api.nvim_get_current_tabpage(), vim.fn.getcwd()
@@ -30,10 +30,11 @@ describe("tab workspace navigation", function()
 		lifecycle.ensure_connected = function(callback) callback() end
 		client.create_session = function(options, callback)
 			created = created + 1
-			assert.equals(source, options.location and options.location.directory)
+			assert.equals(expected_directory, options.location and options.location.directory)
 			callback(nil, { id = "created-" .. created, title = "Created " .. created, directory = options.location.directory })
 		end
 		vim.cmd.cd(source)
+		expected_directory = source
 		api.setup({ server = { auto_start = false, host = "localhost", port = 4096 }, lualine = { enabled = false },
 			chat = { layout = "tab", session_tabs = { max_tabs = 5, auto_fit = false } } })
 		sessions.remember({ id = "scope-a", title = "Source A", directory = source })
@@ -61,6 +62,8 @@ describe("tab workspace navigation", function()
 			if index == 5 then
 				require("opencode.ui.chat.exploration_style")
 				vim.cmd.cd(destination); settle()
+				-- New sessions follow the changed cwd, not the replaced session's directory.
+				expected_directory = destination
 			end
 			press("N")
 			assert.equals("created-" .. index, views.session(chat.get_view()).id)

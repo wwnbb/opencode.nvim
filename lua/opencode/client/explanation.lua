@@ -110,7 +110,7 @@ function M.generate(prompt, model, callback, opts, endpoint_config)
 	sse.on("error", disconnected)
 	-- Keep creation alive when cancelled: its late reply must trigger deletion.
 	api.request("session_create", { body = {
-		id = id, title = title, model = model, location = { directory = opts.directory or vim.fn.getcwd() },
+		id = id, title = title, model = model, location = { directory = opts.directory or require("opencode.util.cwd").get() },
 		permissions = { { action = "*", resource = "*", effect = "deny" } },
 	}, timeout = opts.timeout }, function(err, session)
 		creating = false

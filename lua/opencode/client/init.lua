@@ -11,7 +11,7 @@ local configuration_generation = 0
 local function normalize_directory(directory)
 	local dir = directory
 	if not dir or dir == "" then
-		dir = vim.fn.getcwd()
+		dir = require("opencode.util.cwd").get()
 	end
 
 	return require("opencode.util.path").absolute(dir)

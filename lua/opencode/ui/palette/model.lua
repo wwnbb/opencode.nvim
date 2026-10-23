@@ -29,11 +29,11 @@ function M.register(palette)
 			if require("opencode.session.lock").is_locked(context.session_id) then vim.notify("Subagent model selection is locked", vim.log.levels.INFO); return false end
 			local pending = require("opencode.session.pending")
 			local token = pending.token(context.session_id)
-			local directory = state.get_session_directory(token.session_id) or vim.fn.getcwd()
+			local directory = state.get_session_directory(token.session_id) or require("opencode.util.cwd").get()
 			local function current()
 				return pending.is_current(token) and owner.context_valid(context)
 					and not require("opencode.session.lock").is_locked(token.session_id)
-					and (state.get_session_directory(token.session_id) or vim.fn.getcwd()) == directory
+					and (state.get_session_directory(token.session_id) or require("opencode.util.cwd").get()) == directory
 			end
 			actions.get_config_providers(function(err, response)
 				if not current() then return end
@@ -163,7 +163,7 @@ function M.register(palette)
 			end
 			local pending = require("opencode.session.pending")
 			local token = pending.token(session_id)
-			local directory = state.get_session_directory(session_id) or vim.fn.getcwd()
+			local directory = state.get_session_directory(session_id) or require("opencode.util.cwd").get()
 			local selected = local_state.variant.current(opts) or "default"
 			local items = { { label = "Default", value = "default" } }
 			for _, variant in ipairs(local_state.variant.list(opts)) do
@@ -181,7 +181,7 @@ function M.register(palette)
 				on_select = function(item)
 					local current = local_state.model.current(opts)
 					if not pending.is_current(token) or not owner.context_valid(context)
-						or (state.get_session_directory(session_id) or vim.fn.getcwd()) ~= directory
+						or (state.get_session_directory(session_id) or require("opencode.util.cwd").get()) ~= directory
 						or not current or current.providerID ~= model.providerID or current.modelID ~= model.modelID then return end
 					actions.select_variant(item.value, opts)
 				end,

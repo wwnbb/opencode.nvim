@@ -54,7 +54,7 @@ function M.pick(callback, context)
 			focus.with_session_focus(context.view, function() callback(location.directory) end, initial_input)
 		end)
 	end
-	local directory = state.get_session_directory(source) or vim.fn.getcwd()
+	local directory = state.get_session_directory(source) or require("opencode.util.cwd").get()
 	require("opencode.ui.menu").open({ context = context, title = " Session Location ", width = 76, searchable = true, sort = false,
 		items = {
 			{ label = "Current location", value = directory, kind = "directory", description = directory },

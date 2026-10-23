@@ -7,7 +7,7 @@ local pending = require("opencode.session.pending")
 local text_util = require("opencode.util.text")
 local function location_options()
 	local state = require("opencode.state")
-	return { directory = state.get_session_directory(state.get_session().id) or vim.fn.getcwd() }
+	return { directory = state.get_session_directory(state.get_session().id) or require("opencode.util.cwd").get() }
 end
 
 local function mcp_value_to_text(value)

@@ -152,12 +152,12 @@ function M.list(context)
 	context = require("opencode.ui.palette").capture_context(context)
 	local sid = context.session_id
 	if not sid then notify("Open a session before listing processes"); return end
-	local opts = { directory = state.get_session_directory(sid) or vim.fn.getcwd() }
+	local opts = { directory = state.get_session_directory(sid) or require("opencode.util.cwd").get() }
 	local token = pending.token(sid)
 	local function current(require_selection)
 		return pending.is_current(token) and (not require_selection and not (context.view and context.view.session_bound)
 			or require("opencode.ui.palette").context_valid(context))
-			and (state.get_session_directory(sid) or vim.fn.getcwd()) == opts.directory
+			and (state.get_session_directory(sid) or require("opencode.util.cwd").get()) == opts.directory
 	end
 	actions.list_shells(opts, function(err, entries)
 		if not current(true) then return end

@@ -45,7 +45,7 @@ function M.register(palette)
 			local session = require("opencode.selectors").current_session(context)
 			if not session.id or not state.is_connected() then vim.notify("Select a connected session first", vim.log.levels.WARN); return end
 			if state.get_session().id ~= session.id then return end
-			local opts = { session_id = session.id, directory = state.get_session_directory(session.id) or vim.fn.getcwd() }
+			local opts = { session_id = session.id, directory = state.get_session_directory(session.id) or require("opencode.util.cwd").get() }
 			local input = require("opencode.ui.input")
 			input.capture_draft_cursor()
 			local draft_token = input.draft_token()
@@ -54,7 +54,7 @@ function M.register(palette)
 			local function current()
 				return pending.is_current(token) and state.get_session().id == opts.session_id
 					and input.draft_token() == draft_token and require("opencode.ui.palette").context_valid(context)
-					and (state.get_session_directory(session.id) or vim.fn.getcwd()) == opts.directory
+					and (state.get_session_directory(session.id) or require("opencode.util.cwd").get()) == opts.directory
 			end
 			actions.list_skills(function(err, skills)
 				if not current() then return end

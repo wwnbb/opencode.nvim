@@ -28,7 +28,7 @@ local function details(plugin)
 end
 
 function M.show(opts)
-	opts = vim.deepcopy(opts or { directory = state.get_session_directory(state.get_session().id) or vim.fn.getcwd() })
+	opts = vim.deepcopy(opts or { directory = state.get_session_directory(state.get_session().id) or require("opencode.util.cwd").get() })
 	local token = pending.token()
 	local function display(plugins)
 		if not pending.is_current(token) then return end

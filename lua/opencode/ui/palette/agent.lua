@@ -18,10 +18,10 @@ function M.register(palette)
 			if not owner.context_valid(context) then return false end
 			local pending = require("opencode.session.pending")
 			local token = pending.token(context.session_id)
-			local directory = state.get_session_directory(token.session_id) or vim.fn.getcwd()
+			local directory = state.get_session_directory(token.session_id) or require("opencode.util.cwd").get()
 			local function current()
 				return pending.is_current(token) and owner.context_valid(context)
-					and (state.get_session_directory(token.session_id) or vim.fn.getcwd()) == directory
+					and (state.get_session_directory(token.session_id) or require("opencode.util.cwd").get()) == directory
 			end
 			actions.list_agents(function(err)
 				if not current() then return end

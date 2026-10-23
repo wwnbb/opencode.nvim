@@ -7,7 +7,7 @@ local function notify(message, err)
 end
 local function location()
 	local state = require("opencode.state")
-	return { directory = state.get_session_directory(state.get_session().id) or vim.fn.getcwd() }
+	return { directory = state.get_session_directory(state.get_session().id) or require("opencode.util.cwd").get() }
 end
 local function menu(items, title, callback)
 	if #items == 0 then notify("No " .. title:lower() .. " available"); return end

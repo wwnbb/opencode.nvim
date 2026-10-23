@@ -626,13 +626,13 @@ function M.refresh_recent(callback, opts)
 	local parallel = cfg.session and cfg.session.parallel or {}
 	local limit = opts.limit or parallel.recent_limit or 30
 	local path = require("opencode.util.path")
-	local directory = path.absolute(vim.fn.getcwd())
+	local directory = path.absolute(require("opencode.util.cwd").get())
 	local token = pending_helper.token()
 	recent_request = recent_request + 1
 	local request = recent_request
 
 	client.list_sessions({ roots = true, directory = directory, limit = limit }, function(err, sessions)
-		if request ~= recent_request or not pending_helper.is_current(token) or directory ~= path.absolute(vim.fn.getcwd()) then
+		if request ~= recent_request or not pending_helper.is_current(token) or directory ~= path.absolute(require("opencode.util.cwd").get()) then
 			if callback then callback({ code = "cancelled", message = "Recent-session request was superseded" }) end
 			return
 		end

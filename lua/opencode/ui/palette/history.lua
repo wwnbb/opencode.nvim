@@ -10,7 +10,7 @@ function M.show(context)
 
 	local input = require("opencode.ui.input")
 	local pending = require("opencode.session.pending")
-	local sid, scope, draft_token = context.session_id, vim.fn.getcwd(), input.draft_token()
+	local sid, scope, draft_token = context.session_id, require("opencode.util.cwd").get(), input.draft_token()
 	local directory = state.get_session_directory(sid)
 	local request_token = pending.token(sid)
 	return require("opencode.ui.menu").open({
@@ -22,7 +22,7 @@ function M.show(context)
 		on_select = function(item)
 			-- Let the composer's pending BufLeave save finish before restoring the draft.
 			vim.schedule(function()
-				if vim.fn.getcwd() ~= scope or state.get_session().id ~= sid or input.draft_token() ~= draft_token
+				if require("opencode.util.cwd").get() ~= scope or state.get_session().id ~= sid or input.draft_token() ~= draft_token
 					or state.get_session_directory(sid) ~= directory or not require("opencode.ui.palette").context_valid(context)
 					or not pending.is_current(request_token) then return end
 				local ok, err = input.merge_pending_draft(item.entry)

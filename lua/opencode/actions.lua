@@ -95,7 +95,7 @@ end
 
 local function catalog_options(opts)
 	local app = state()
-	local options = vim.tbl_extend("keep", opts or {}, { directory = app.get_session_directory(app.get_session().id) or vim.fn.getcwd() })
+	local options = vim.tbl_extend("keep", opts or {}, { directory = app.get_session_directory(app.get_session().id) or require("opencode.util.cwd").get() })
 	options.directory = require("opencode.util.path").absolute(options.directory)
 	return options
 end
@@ -470,7 +470,7 @@ function M.stage_skills(selected, opts)
 		vim.notify("Select a session before adding skills", vim.log.levels.WARN)
 		return false
 	end
-	opts.directory = opts.directory or state().get_session_directory(opts.session_id) or vim.fn.getcwd()
+	opts.directory = opts.directory or state().get_session_directory(opts.session_id) or require("opencode.util.cwd").get()
 	local input = require("opencode.ui.input")
 	local draft_token = input.draft_token()
 	local token = require("opencode.session.pending").token(opts.session_id)

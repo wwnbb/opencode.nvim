@@ -100,7 +100,7 @@ local normalize_directory = require("opencode.util.path").normalize
 
 ---@return string|nil
 local function current_directory()
-	return normalize_directory(vim.fn.getcwd()) or state.directory
+	return normalize_directory(require("opencode.util.cwd").get()) or state.directory
 end
 
 ---@param data any
@@ -396,7 +396,7 @@ function M.connect(resolved)
 	end
 
 	-- The stream is global; directory is only a local relevance filter.
-	local cwd = vim.fn.getcwd()
+	local cwd = require("opencode.util.cwd").get()
 	local endpoint = M.opts.endpoint or "/api/event"
 	state.directory = normalize_directory(cwd)
 	if type(endpoint) ~= "string" or endpoint:find("[%s%z]") then

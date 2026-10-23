@@ -7,7 +7,7 @@ local function store()
 	if target ~= filename then filename, owner = target, require("opencode.preferences").open(target) end
 	return owner
 end
-local function scope() return require("opencode.util.path").absolute(vim.fn.getcwd()) end
+local function scope() return require("opencode.util.path").absolute(require("opencode.util.cwd").get()) end
 local function valid_parts(parts)
 	if type(parts) ~= "table" or not vim.islist(parts) then return false end
 	for _, part in ipairs(parts) do if type(part) ~= "table" then return false end end

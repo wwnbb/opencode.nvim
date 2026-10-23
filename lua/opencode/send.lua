@@ -285,7 +285,7 @@ function M.send(text, opts)
 	opts._draft_session_id = opts._draft_session_id or session_id or ""
 	local token = opts._token or pending.token(session_id)
 	if not pending.is_current(token) then return false end
-	local directory = opts.directory or (session_id and state.get_session_directory(session_id)) or vim.fn.getcwd()
+	local directory = opts.directory or (session_id and state.get_session_directory(session_id)) or require("opencode.util.cwd").get()
 	opts.directory = state.normalize_directory(directory)
 	directory = opts.directory
 	if opts.mode == "shell" then
@@ -371,7 +371,7 @@ end
 function M.command(session_id, name, text, opts, callback)
 	opts = vim.deepcopy(opts or {})
 	opts.session_id = session_id
-	opts.directory = state.normalize_directory(opts.directory or state.get_session_directory(session_id) or vim.fn.getcwd())
+	opts.directory = state.normalize_directory(opts.directory or state.get_session_directory(session_id) or require("opencode.util.cwd").get())
 	local token = opts._token or pending.token(session_id)
 	if not pending.is_current(token) then return false end
 	local providers = sync().get_location_catalog(opts.directory, "providers")

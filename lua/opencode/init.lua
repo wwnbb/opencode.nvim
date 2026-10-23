@@ -402,7 +402,7 @@ function M.split(direction, opts)
 	local generation = owner.generation
 	local initial_input = session_focus.capture_input(owner)
 	local session = cs.session(owner)
-	local directory = state.get_session_directory(session.id) or vim.fn.getcwd()
+	local directory = state.get_session_directory(session.id) or require("opencode.util.cwd").get()
 	local pending = require("opencode.session.pending")
 	local token = pending.token(session.id)
 	lifecycle.ensure_connected(function()
@@ -610,7 +610,7 @@ function M.send(message, opts)
 		end
 	end
 	if captured.session_id == nil then captured.session_id = (owner and cs.session(owner).id) or state.get_session().id or false end
-	captured.directory = captured.directory or state.get_session_directory(captured.session_id) or vim.fn.getcwd()
+	captured.directory = captured.directory or state.get_session_directory(captured.session_id) or require("opencode.util.cwd").get()
 	captured._token = require("opencode.session.pending").token(captured.session_id or nil)
 	captured._selection = require("opencode.selectors").send_selection(captured)
 	lifecycle.ensure_connected(function()
@@ -737,7 +737,9 @@ function M.new_session(opts)
 	local generation = owner and owner.generation
 	local owner_was_visible = owner and owner.visible
 	local current_session = owner and cs.session(owner) or state.get_session()
-	local directory = owner and state.get_session_directory(current_session.id)
+	-- New sessions follow the editor's current directory (resolved now, while
+	-- focus is still known), not the directory of the session being replaced.
+	local directory = owner and require("opencode.util.cwd").get()
 	opts = vim.deepcopy(vim.tbl_extend("force", opts or {}, { view = false }))
 	opts.view = nil
 
@@ -889,7 +891,7 @@ function M.get_directory()
 			return dir
 		end
 	end
-	return vim.fn.getcwd()
+	return require("opencode.util.cwd").get()
 end
 
 ---@param enabled boolean

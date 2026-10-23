@@ -20,7 +20,7 @@ for _, definition in ipairs(definitions) do by_id[definition.id] = definition en
 local owner, owner_path, baseline
 
 local function directory(value)
-	value = value or vim.fn.getcwd()
+	value = value or require("opencode.util.cwd").get()
 	local normalized = vim.fs.normalize((vim.uv or vim.loop).fs_realpath(value) or vim.fn.fnamemodify(value, ":p"))
 	return normalized == "/" and normalized or normalized:gsub("/$", "")
 end

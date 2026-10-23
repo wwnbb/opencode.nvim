@@ -34,7 +34,7 @@ function M.show(context)
 	if not current(context) then return end
 	local items = actions.list_stashed_prompts()
 	if #items == 0 then vim.notify("Prompt stash is empty", vim.log.levels.INFO); return end
-	local scope, token = vim.fn.getcwd(), input.draft_token()
+	local scope, token = require("opencode.util.cwd").get(), input.draft_token()
 	local state, pending = require("opencode.state"), require("opencode.session.pending")
 	local sid = context.session_id
 	local directory = state.get_session_directory(sid)
@@ -46,7 +46,7 @@ function M.show(context)
 	end
 	require("opencode.ui.menu").open({ context = context, title = " Stashed Prompts ", items = items, width = 80, sort = false,
 		on_select = function(item)
-			if vim.fn.getcwd() == scope and input.draft_token() == token and current(context)
+			if require("opencode.util.cwd").get() == scope and input.draft_token() == token and current(context)
 				and state.get_session_directory(sid) == directory and pending.is_current(request_token) then M.pop(item.id, context) end
 		end })
 end

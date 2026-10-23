@@ -82,7 +82,7 @@ end
 
 function M.show(context, group)
 	context = context or {}
-	local cwd = vim.fn.getcwd()
+	local cwd = require("opencode.util.cwd").get()
 	local items = {}
 	local width = 64
 	for _, setting in ipairs(settings.list(cwd)) do
