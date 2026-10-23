@@ -11,7 +11,7 @@ end
 ---@class SyncStore
 ---@field message table<string, Message[]> Messages by sessionID
 ---@field part table<string, Part[]> Parts by messageID
----@field session_status table<string, SessionStatus> Status by sessionID
+---@field session_status table<string, { type: string }> Status by sessionID
 ---@field task_summary_revision table<string, number> Task-summary revisions by child sessionID
 
 ---@class Message
@@ -24,6 +24,9 @@ end
 ---@field modelID? string
 ---@field providerID? string
 ---@field finish? string Finish reason: "tool-calls", "end-turn", "stop", "unknown", etc.
+---@field provisional? boolean Optimistic local message not yet confirmed by the server
+---@field content? table[] Projected native content items
+---@field _native? table Native message DTO the projection came from
 
 ---@class Part
 ---@field id string
@@ -34,6 +37,8 @@ end
 ---@field tool? string
 ---@field state? table
 ---@field synthetic? boolean
+---@field callID? string Native tool call ID
+---@field raw_tool? string Native tool name before display mapping
 
 -- Internal store
 local store = {

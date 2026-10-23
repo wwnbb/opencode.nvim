@@ -14,7 +14,7 @@ end
 
 ---@param ref any
 ---@param source string
----@param sync table|nil
+---@param catalog table|nil
 ---@return { providerID: string, modelID: string }|nil
 local function resolve_model_ref(ref, source, catalog)
 	local log = logger()

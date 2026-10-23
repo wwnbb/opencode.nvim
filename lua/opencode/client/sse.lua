@@ -94,8 +94,7 @@ local function reset_current_event()
 	}
 end
 
----@param directory string|nil
----@return string|nil
+---@type fun(directory: string|nil): string|nil
 local normalize_directory = require("opencode.util.path").normalize
 
 ---@return string|nil

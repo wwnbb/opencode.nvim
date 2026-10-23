@@ -47,8 +47,7 @@ local function value_kind(value)
 	return value == vim.NIL and "vim.NIL" or type(value)
 end
 
----@param model any
----@return table
+---@type fun(model: any): table
 local model_summary = logger.model_summary
 
 ---@param tbl table|nil
