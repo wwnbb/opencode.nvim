@@ -183,7 +183,6 @@ function M.activate_chat_view(view)
 end
 
 function M.set_view_session(view, session_id, name, opts)
-	local cs = require("opencode.ui.chat.state")
 	if not view.session_bound then return M.set_active_session(session_id, name, opts) end
 	return require("opencode.ui.chat").bind_session(view,
 		state().get_session_record(session_id) or { id = session_id, name = name }, opts)

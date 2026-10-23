@@ -613,9 +613,6 @@ continue_startup = function(attempt)
 		})
 
 		attempt.configured = true
-		if M.opts.debug then
-			vim.notify("OpenCode server started on " .. server_info.url, vim.log.levels.DEBUG)
-		end
 	end
 
 	state.set_connection("connecting")
@@ -694,27 +691,7 @@ local function spawn_server()
 						end
 						continue_startup(attempt)
 					end)
-				elseif M.opts.debug then
-					vim.schedule(function()
-						if not is_current_attempt(attempt) or attempt.startup_done then
-							return
-						end
-						vim.notify("OpenCode server: " .. data, vim.log.levels.DEBUG)
-					end)
 				end
-			end,
-			on_stderr = function(_, data)
-				if not is_current_attempt(attempt) or attempt.startup_done or not data then
-					return
-				end
-				vim.schedule(function()
-					if not is_current_attempt(attempt) or attempt.startup_done then
-						return
-					end
-					if M.opts.debug then
-						vim.notify("OpenCode server stderr: " .. data, vim.log.levels.DEBUG)
-					end
-				end)
 			end,
 			on_exit = function(_, code)
 				if not is_current_attempt(attempt) then
