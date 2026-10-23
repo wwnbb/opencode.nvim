@@ -141,6 +141,22 @@ describe("native OpenCode layout tabline", function()
 		end
 	end)
 
+	it("parses an AUTO max_tabs case-insensitively like the session tabs", function()
+		open()
+		local text = editor.lua([[
+			for index = 1, 4 do chat.create_layout(seed("auto-" .. index)) end
+			workspace.select(workspace.list()[3].id)
+			chat.get_view().config.session_tabs.max_tabs = "AUTO"
+			bar.update()
+			return bar_text()
+		]])
+		for _, id in ipairs({ "native-a", "auto-1", "auto-2", "auto-3", "auto-4" }) do
+			assert.is_truthy(text:find(id, 1, true), id)
+		end
+		assert.is_nil(text:find("‹", 1, true))
+		assert.is_nil(text:find("›", 1, true))
+	end)
+
 	it("fills the screen below the tabline after resize and nested layout switching", function()
 		editor.lua("vim.o.laststatus = 3")
 		open()

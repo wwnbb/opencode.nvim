@@ -230,19 +230,6 @@ local function current_session_tab_index(sessions, active_session, current_root_
 	return nil, current_root_session_id or active_session.id
 end
 
-local function centered_session_tabs_start(session_count, max_tabs, current_index)
-	if session_count <= max_tabs then
-		return 1
-	end
-	if not current_index then
-		return 1
-	end
-
-	local max_start = session_count - max_tabs + 1
-	local start_index = current_index - math.floor(max_tabs / 2)
-	return clamp(start_index, 1, max_start)
-end
-
 local function visible_session_tabs_start(sessions, max_tabs, prepared, commit)
 	local session_count = #sessions
 	local stored_start = tonumber(state.session_tabs_start)
@@ -250,7 +237,7 @@ local function visible_session_tabs_start(sessions, max_tabs, prepared, commit)
 		and state.session_tabs_max_tabs == max_tabs and state.session_tabs_order == prepared.order
 		and state.session_tabs_width == prepared.available_width
 	local start_index = reuse and clamp(math.floor(stored_start), 1, math.max(1, session_count - max_tabs + 1))
-		or centered_session_tabs_start(session_count, max_tabs, prepared.current_index)
+		or tab_label.window_start(session_count, max_tabs, prepared.current_index)
 	if commit then
 		state.session_tabs_start = session_count > max_tabs and start_index or nil
 		state.session_tabs_current_id = prepared.current_id
@@ -259,17 +246,6 @@ local function visible_session_tabs_start(sessions, max_tabs, prepared, commit)
 		state.session_tabs_width = prepared.available_width
 	end
 	return start_index
-end
-
-local function session_tabs_auto_fit_enabled(tabs_cfg)
-	tabs_cfg = type(tabs_cfg) == "table" and tabs_cfg or {}
-	local max_tabs = tabs_cfg.max_tabs
-	return tabs_cfg.auto_fit == true or (type(max_tabs) == "string" and max_tabs:lower() == "auto")
-end
-
-local function numeric_session_tabs_max(tabs_cfg)
-	tabs_cfg = type(tabs_cfg) == "table" and tabs_cfg or {}
-	return math.max(1, math.floor(tonumber(tabs_cfg.max_tabs) or 3))
 end
 
 -- One update owns these labels and widths; fitting candidates never build NuiLines.
@@ -319,9 +295,7 @@ local function prepare_session_tabs(tabs_cfg, sessions, active_session, current_
 	return prepared
 end
 
-local function session_tabs_candidate_width(sessions, max_tabs, prepared)
-	local first = visible_session_tabs_start(sessions, max_tabs, prepared, false)
-	local last = math.min(#sessions, first + max_tabs - 1)
+local function session_tabs_row_width(sessions, first, last, prepared)
 	local left = first > 1 and ("..." .. tostring(first - 1)) or nil
 	local right = last < #sessions and ("..." .. tostring(#sessions - last)) or nil
 	if prepared.contextual_width then
@@ -339,6 +313,11 @@ local function session_tabs_candidate_width(sessions, max_tabs, prepared)
 	if prepared.status then size = size + prepared.status_width; count = count + 1 end
 	if prepared.aside then size = size + prepared.aside_width; count = count + 1 end
 	return size + (count - 1) * prepared.separator_width + 1
+end
+
+local function session_tabs_candidate_width(sessions, max_tabs, prepared)
+	local first = visible_session_tabs_start(sessions, max_tabs, prepared, false)
+	return session_tabs_row_width(sessions, first, math.min(#sessions, first + max_tabs - 1), prepared)
 end
 
 local function build_session_tabs_line(tabs_cfg, sessions, max_tabs, prepared)
@@ -477,14 +456,9 @@ end
 
 local function resolve_session_tabs_max(tabs_cfg, sessions, prepared)
 	if #sessions == 0 or prepared.available_width <= 0 then return 1 end
-	local maximum = session_tabs_auto_fit_enabled(tabs_cfg) and #sessions
-		or math.min(#sessions, numeric_session_tabs_max(tabs_cfg))
-	for candidate = maximum, 1, -1 do
-		if session_tabs_candidate_width(sessions, candidate, prepared) <= prepared.available_width then
-			return candidate
-		end
-	end
-	return 1
+	return (tab_label.fit(#sessions, tab_label.max_tabs(tabs_cfg, #sessions), prepared.available_width,
+		function(visible) return visible_session_tabs_start(sessions, visible, prepared, false) end,
+		function(first, last) return session_tabs_row_width(sessions, first, last, prepared) end))
 end
 
 local function build_session_tabs(tabs_cfg, current_session, opts)

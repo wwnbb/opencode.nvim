@@ -63,20 +63,26 @@ function M.update()
 		labels[index] = { title = title, icon = icon, status = status, text = " " .. icon .. " " .. title .. " " }
 	end
 	local separator = config.separator or " │ "
-	local max_tabs = math.max(1, math.floor(tonumber(config.max_tabs) or 3))
-	if config.auto_fit or config.max_tabs == "auto" then max_tabs = #layouts end
-	max_tabs = math.max(1, math.min(max_tabs, #layouts, width))
-	local first, last
-	while true do
-		first = math.max(1, math.min(current_index - math.floor(max_tabs / 2), #layouts - max_tabs + 1))
-		last = math.min(#layouts, first + max_tabs - 1)
-		local parts = {}
-		if first > 1 then parts[#parts + 1] = "‹" end
-		for index = first, last do parts[#parts + 1] = labels[index].text end
-		if last < #layouts then parts[#parts + 1] = "›" end
-		if max_tabs == 1 or vim.fn.strwidth(table.concat(parts, separator)) <= width then break end
-		max_tabs = max_tabs - 1
+	local texts = {}
+	for index, item in ipairs(labels) do texts[index] = item.text end
+	texts[#labels + 1], texts[#labels + 2] = "‹", "›"
+	local measured = tab_label.widths(texts, separator, vim.fn.strwidth)
+	local function row_width(first, last)
+		local left_arrow, right_arrow = first > 1, last < #layouts
+		if measured.contextual then
+			local parts = {}
+			if left_arrow then parts[#parts + 1] = "‹" end
+			for index = first, last do parts[#parts + 1] = labels[index].text end
+			if right_arrow then parts[#parts + 1] = "›" end
+			return vim.fn.strwidth(table.concat(parts, separator))
+		end
+		local size, count = measured.prefix[last + 1] - measured.prefix[first], last - first + 1
+		if left_arrow then size, count = size + measured.sizes[#labels + 1], count + 1 end
+		if right_arrow then size, count = size + measured.sizes[#labels + 2], count + 1 end
+		return size + (count - 1) * measured.separator_width
 	end
+	local max_tabs, first, last = tab_label.fit(#layouts, math.max(1, math.min(tab_label.max_tabs(config, #layouts), width)), width,
+		function(visible) return tab_label.window_start(#layouts, visible, current_index) end, row_width)
 	-- On very narrow screens give the active label priority over overflow arrows.
 	local left, right = first > 1, last < #layouts
 	local arrow_width = 1 + vim.fn.strwidth(separator)
