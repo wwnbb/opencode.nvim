@@ -2,7 +2,6 @@ local M = {}
 local state = require("opencode.state")
 local actions = require("opencode.actions")
 local menu = require("opencode.ui.menu")
-local pending = require("opencode.session.pending")
 
 function M.show()
 	local session_id = state.get_session().id
@@ -11,8 +10,9 @@ function M.show()
 	if record.location and record.location.workspaceID then
 		vim.notify("Session environment applies only to local shell commands; this session uses a workspace", vim.log.levels.WARN); return
 	end
-	local token = pending.token(session_id)
-	local function current() return state.get_session().id == session_id and pending.is_current(token) end
+	-- The command has no view; it stays bound to the focused session it started on.
+	local current = require("opencode.ui.palette.context").guard({ session_id = session_id },
+		{ session_token = session_id, global_session = true })
 	local function replace(variables)
 		if not current() then return end
 		menu.open({ title = " Replace session environment ", width = 82, sort = false,

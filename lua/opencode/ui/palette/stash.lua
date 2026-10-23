@@ -1,10 +1,12 @@
 local M = {}
 local actions, input = require("opencode.actions"), require("opencode.ui.input")
-local function capture(context) return require("opencode.ui.palette").capture_context(context) end
-local function current(context)
-	return require("opencode.state").get_session().id == context.session_id
-		and require("opencode.ui.palette").context_valid(context)
+local palette_context = require("opencode.ui.palette.context")
+local capture = palette_context.capture
+-- The stash edits the focused composer: require the captured, focused session.
+local function guard(context, opts)
+	return palette_context.guard(context, vim.tbl_extend("force", { require_view = true, global_session = true }, opts or {}))
 end
+local function current(context) return guard(context)() end
 local function report(err) if err then vim.notify(err, vim.log.levels.WARN) end end
 function M.push(context)
 	context = capture(context)
@@ -35,10 +37,8 @@ function M.show(context)
 	local items = actions.list_stashed_prompts()
 	if #items == 0 then vim.notify("Prompt stash is empty", vim.log.levels.INFO); return end
 	local scope, token = require("opencode.util.cwd").get(), input.draft_token()
-	local state, pending = require("opencode.state"), require("opencode.session.pending")
-	local sid = context.session_id
-	local directory = state.get_session_directory(sid)
-	local request_token = pending.token(sid)
+	local selected = guard(context, { session_token = context.session_id, same_directory = true,
+		check = function() return require("opencode.util.cwd").get() == scope and input.draft_token() == token end })
 	for _, item in ipairs(items) do
 		item.label = item.text ~= "" and item.text:gsub("[%c]", " ") or "Attachments"
 		local ok, date = pcall(os.date, "%Y-%m-%d %H:%M", item.created or 0)
@@ -46,8 +46,7 @@ function M.show(context)
 	end
 	require("opencode.ui.menu").open({ context = context, title = " Stashed Prompts ", items = items, width = 80, sort = false,
 		on_select = function(item)
-			if require("opencode.util.cwd").get() == scope and input.draft_token() == token and current(context)
-				and state.get_session_directory(sid) == directory and pending.is_current(request_token) then M.pop(item.id, context) end
+			if selected() then M.pop(item.id, context) end
 		end })
 end
 function M.register(palette)

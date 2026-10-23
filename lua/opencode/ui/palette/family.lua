@@ -6,18 +6,14 @@ local focus = require("opencode.session.focus")
 local requests = setmetatable({}, { __mode = "k" })
 
 function M.show(context)
-	context = require("opencode.ui.palette").capture_context(context)
+	local palette_context = require("opencode.ui.palette.context")
+	context = palette_context.capture(context)
 	local initial_input = focus.capture_input(context.view)
 	local source_id = context.session_id
-	local pending = require("opencode.session.pending")
-	local token = pending.token(source_id)
-	local directory = app_state.get_session_directory(source_id)
 	local key, request = context.view or M, {}
 	requests[key] = request
-	local function current()
-		return requests[key] == request and pending.is_current(token) and require("opencode.ui.palette").context_valid(context)
-			and app_state.get_session_directory(source_id) == directory
-	end
+	local current = palette_context.guard(context, { session_token = source_id, require_view = true, same_directory = true,
+		check = function() return requests[key] == request end })
 	local records, items, mode, interrupting, load_request = {}, {}, "all", {}, 0
 	local function rebuild()
 		while #items > 0 do table.remove(items) end

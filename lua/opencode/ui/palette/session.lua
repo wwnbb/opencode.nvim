@@ -7,18 +7,12 @@ local session_util = require("opencode.util.session")
 local state = require("opencode.state")
 local pending = require("opencode.session.pending")
 local focus = require("opencode.session.focus")
+local palette_context = require("opencode.ui.palette.context")
+local capture, show_menu = palette_context.capture, palette_context.show_menu
 
-local function capture(context)
-	return require("opencode.ui.palette").capture_context(context)
-end
-
-local function current(context, token)
-	return pending.is_current(token) and (not (context.view and context.view.session_bound)
-		or require("opencode.ui.palette").context_valid(context))
-end
-
-local function show_menu(context, initial_input, options)
-	return focus.with_session_focus(context.view, function() return require("opencode.ui.menu").open(options) end, initial_input)
+-- Async callbacks recheck the token; only a session-bound view must keep its session.
+local function guard(context, session_id)
+	return palette_context.guard(context, { session_token = session_id, require_view = "session_bound" })
 end
 
 local function directory_label(directory)
@@ -34,11 +28,11 @@ end
 
 local function rename(session, title, callback, context)
 	context = capture(context)
-	local token = pending.token(session.id)
+	local current = guard(context, session.id)
 	local function submit(value)
-		if not current(context, token) then return end
+		if not current() then return end
 		actions.rename_session(session.id, value, function(err, info)
-			if not current(context, token) then return end
+			if not current() then return end
 			report("rename session", err)
 			if not err and callback then callback(info) end
 		end)
@@ -50,13 +44,13 @@ end
 
 local function remove(session, callback, context)
 	context = capture(context)
-	local token = pending.token(session.id)
+	local current, token = guard(context, session.id)
 	local title = session_util.displayTitle(session.title or session.name) or session.id
 	local prompt = "Delete session '" .. title .. "'?"
 	require("opencode.ui.menu").open({ context = context, items = { "Yes", "No" }, title = "Delete Session", message = prompt,
 		width = vim.fn.strdisplaywidth(prompt) + 12, sort = false,
 		on_select = function(choice)
-			if choice ~= "Yes" or not current(context, token) then return end
+			if choice ~= "Yes" or not current() then return end
 			actions.delete_session(session.id, function(err)
 				if not pending.is_current(token) then return end
 				report("delete session", err)
@@ -70,9 +64,9 @@ end
 
 function M.open(id, context)
 	context = capture(context)
-	local token = pending.token()
+	local current = guard(context)
 	local function submit(value)
-		if not current(context, token) then return end
+		if not current() then return end
 		actions.open_session(vim.trim(value), { view = context.view, notify = true, reason = "session_open" }, function(err) report("open session", err) end)
 	end
 	if id ~= nil and vim.trim(id) ~= "" then submit(id); return end
@@ -81,10 +75,10 @@ end
 
 local function projects(context)
 	context = capture(context)
-	local token = pending.token()
+	local current = guard(context)
 	local initial_input = focus.capture_input(context.view)
 	actions.list_projects(function(err, values)
-		if not current(context, token) then return end
+		if not current() then return end
 		if err then report("list projects", err); return end
 		local items = {}
 		for _, project in ipairs(values) do
@@ -92,13 +86,13 @@ local function projects(context)
 		end
 		show_menu(context, initial_input, { context = context, items = items, title = " Session Projects ", width = 76, searchable = true,
 			on_select = function(item)
-				if not current(context, token) then return end
-				local initial_input = focus.capture_input(context.view)
+				if not current() then return end
+				local location_input = focus.capture_input(context.view)
 				actions.list_worktrees(item.value, function(worktree_err, worktrees)
-					if not current(context, token) then return end
+					if not current() then return end
 					if worktree_err then
 						report("list worktrees", worktree_err)
-						focus.with_session_focus(context.view, function() M.browse({ roots = true, project = item.value }, context) end, initial_input)
+						focus.with_session_focus(context.view, function() M.browse({ roots = true, project = item.value }, context) end, location_input)
 						return
 					end
 					local locations = {
@@ -110,8 +104,8 @@ local function projects(context)
 							locations[#locations + 1] = { label = worktree.directory, query = { roots = true, directory = worktree.directory } }
 						end
 					end
-					show_menu(context, initial_input, { context = context, items = locations, title = " Session Locations ", width = 76, searchable = true,
-						on_select = function(location) if current(context, token) then M.browse(location.query, context) end end })
+					show_menu(context, location_input, { context = context, items = locations, title = " Session Locations ", width = 76, searchable = true,
+						on_select = function(location) if current() then M.browse(location.query, context) end end })
 				end)
 			end })
 	end)
@@ -120,10 +114,10 @@ end
 function M.browse(query, context)
 	context = capture(context)
 	query = query or { roots = true }
-	local token = pending.token()
+	local current = guard(context)
 	local initial_input = focus.capture_input(context.view)
 	actions.list_sessions(query, function(err, sessions)
-		if not current(context, token) then return end
+		if not current() then return end
 		if err then report("list sessions", err); return end
 		local selected, items = context.session_id, {}
 		for _, session in ipairs(sessions or {}) do
@@ -141,25 +135,25 @@ function M.browse(query, context)
 			search_placeholder = "Search by session title or directory...", confirm_label = "open",
 			item_detail = function(item) return "Selected: " .. item.title .. "\n" .. item.directory end,
 			sort = function(a, b) return a.sort_key > b.sort_key end,
-			on_select = function(item) if current(context, token) then M.open(item.value, context) end end,
+			on_select = function(item) if current() then M.open(item.value, context) end end,
 			keymap_scope = "session_menu",
 			keys = {
 				{ action = "rename", label = "rename", handler = function(ctx, item)
-					if not current(context, token) then return end
+					if not current() then return end
 					ctx.close(); rename(item.session, nil, function() M.browse(query, context) end, context)
 				end },
 				{ action = "delete", label = "delete", handler = function(ctx, item)
-					if not current(context, token) then return end
+					if not current() then return end
 					ctx.close(); remove(item.session, function() M.browse(query, context) end, context)
 				end },
 				{ action = "project", label = "project/worktree", allow_empty = true, handler = function(ctx)
-					if current(context, token) then ctx.close(); projects(context) end
+					if current() then ctx.close(); projects(context) end
 				end },
 				{ action = "all", label = "all projects", allow_empty = true, handler = function(ctx)
-					if current(context, token) then ctx.close(); M.browse(nil, context) end
+					if current() then ctx.close(); M.browse(nil, context) end
 				end },
 				{ action = "current_directory", label = "current directory", allow_empty = true, handler = function(ctx)
-					if current(context, token) then
+					if current() then
 						ctx.close(); M.browse({ roots = true, directory = state.get_session_directory(context.session_id) or require("opencode.util.cwd").get() }, context)
 					end
 				end },
@@ -184,9 +178,9 @@ function M.register(palette)
 			context = capture(context)
 			local sid = context.session_id
 			if not sid then return end
-			local token = pending.token(sid)
+			local current = guard(context, sid)
 			actions.load_session_messages(sid, { all = true }, function(err, messages)
-				if not current(context, token) then return end
+				if not current() then return end
 				if not err then
 					local view = context.view or require("opencode.ui.chat.state").state
 					view.full_history_sessions[sid] = true
@@ -228,10 +222,9 @@ function M.register(palette)
 				vim.notify("Open a session first", vim.log.levels.WARN)
 				return
 			end
-			local pending = require("opencode.session.pending")
-			local token = pending.token(session_id)
+			local current = guard(ctx, session_id)
 			require("opencode.ui.btw").prompt(function(question)
-				if not current(ctx, token) then return end
+				if not current() then return end
 				actions.ask_btw(question, session_id)
 			end)
 		end,

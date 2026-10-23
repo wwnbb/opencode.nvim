@@ -1,20 +1,14 @@
 local M = {}
 local actions = require("opencode.actions")
 local state = require("opencode.state")
-local pending = require("opencode.session.pending")
 local focus = require("opencode.session.focus")
+local palette_context = require("opencode.ui.palette.context")
+local capture, show_menu = palette_context.capture, palette_context.show_menu
 
-local function capture(context)
-	return require("opencode.ui.palette").capture_context(context)
-end
-
-local function current(context, token, require_selection)
-	return pending.is_current(token) and (not ((context.view and context.view.session_bound) or require_selection)
-		or require("opencode.ui.palette").context_valid(context))
-end
-
-local function show_menu(context, initial_input, options)
-	return focus.with_session_focus(context.view, function() return require("opencode.ui.menu").open(options) end, initial_input)
+-- Only a session-bound view must keep its session, unless the check requires
+-- the captured selection (current(true) or opts.require_selection).
+local function guard(context, opts)
+	return palette_context.guard(context, vim.tbl_extend("force", { require_view = "session_bound" }, opts or {}))
 end
 
 local function report(action, err)
@@ -26,10 +20,10 @@ end
 
 function M.projects(callback, context)
 	context = capture(context)
-	local token = pending.token()
+	local current = guard(context)
 	local initial_input = focus.capture_input(context.view)
 	actions.list_projects(function(err, projects)
-		if not current(context, token) then return end
+		if not current() then return end
 		if err then report("list projects", err); return end
 		if #projects == 0 then vim.notify("No projects found", vim.log.levels.INFO); return end
 		local items = {}
@@ -37,14 +31,14 @@ function M.projects(callback, context)
 			items[#items + 1] = { label = project.name or project.canonical, value = project.id, description = project.canonical, project = project }
 		end
 		show_menu(context, initial_input, { context = context, title = " Projects ", items = items, width = 76, searchable = true,
-			on_select = function(item) if current(context, token) then callback(item.project) end end })
+			on_select = function(item) if current() then callback(item.project) end end })
 	end)
 end
 
 function M.pick(callback, context)
 	context = capture(context)
-	local source, token = context.session_id, pending.token()
-	local function valid() return current(context, token, true) end
+	local source = context.session_id
+	local valid = guard(context, { require_selection = true })
 	local function resolve(directory)
 		if not valid() then return end
 		local initial_input = focus.capture_input(context.view)
@@ -88,15 +82,15 @@ end
 
 function M.new(directory, context)
 	context = capture(context)
-	local token = pending.token()
+	local current = guard(context, { require_selection = true })
 	local initial_input = context.view and focus.capture_input(context.view)
 	local function create(value)
-		if not current(context, token, true) then return end
+		if not current() then return end
 		actions.new_session({ view = context.view, initial_input = initial_input, location = { directory = value } })
 	end
 	if type(directory) == "string" and vim.trim(directory) ~= "" then
 		actions.get_location(vim.trim(directory), function(err, location)
-			if not current(context, token, true) then return end
+			if not current() then return end
 			if err then report("resolve server location", err); return end
 			create(location.directory)
 		end)
@@ -105,10 +99,10 @@ end
 
 function M.move(directory, context)
 	context = capture(context)
-	local session_id, token = context.session_id, pending.token(context.session_id)
+	local session_id, current = context.session_id, guard(context, { session_token = context.session_id })
 	if not session_id then vim.notify("Open a session first", vim.log.levels.WARN); return end
 	local function apply(value)
-		if not current(context, token) then return end
+		if not current() then return end
 		actions.move_session(session_id, value, function(err)
 			report("move session", err)
 			if not err then vim.notify("Session location change requested", vim.log.levels.INFO) end
@@ -119,24 +113,24 @@ end
 
 local function open_directory(directory, context)
 	context = capture(context)
-	local token = pending.token()
+	local current = guard(context)
 	require("opencode.ui.menu").open({ context = context, title = " Worktree ", message = directory, sort = false,
 		items = { "Browse sessions", "New session here", "Move current session here" },
 		on_select = function(choice)
-			if not current(context, token) then return end
+			if not current() then return end
 			if choice == "Browse sessions" then require("opencode.ui.palette.session").browse({ roots = true, directory = directory }, context)
 			elseif choice == "New session here" then M.new(directory, context)
-			elseif current(context, token, true) then M.move(directory, context) end
+			elseif current(true) then M.move(directory, context) end
 		end })
 end
 
 local function remove(project, directory, context)
 	context = capture(context)
-	local token = pending.token()
+	local current = guard(context)
 	local function request(force)
-		if not current(context, token) then return end
+		if not current() then return end
 		actions.remove_worktree(project.id, directory, force, function(err)
-			if not current(context, token) then return end
+			if not current() then return end
 			if err and not force and err.force_required then
 				require("opencode.ui.menu").open({ context = context, title = " Force Delete Worktree? ", width = 76, sort = false,
 					message = directory .. "\n" .. err.message .. "\nDelete these file changes permanently?",
@@ -155,10 +149,10 @@ end
 function M.worktrees(project, context)
 	context = capture(context)
 	if not project then M.projects(function(item) M.worktrees(item, context) end, context); return end
-	local token = pending.token()
+	local current = guard(context)
 	local initial_input = focus.capture_input(context.view)
 	actions.list_worktrees(project.id, function(err, worktrees)
-		if not current(context, token) then return end
+		if not current() then return end
 		if err then report("list worktrees", err); return end
 		local items = { { label = project.canonical, value = project.canonical, root = true } }
 		for _, worktree in ipairs(worktrees) do
@@ -167,36 +161,36 @@ function M.worktrees(project, context)
 			end
 		end
 		show_menu(context, initial_input, { context = context, title = " Worktrees ", items = items, width = 76, searchable = true,
-			on_select = function(item) if current(context, token) then open_directory(item.value, context) end end,
+			on_select = function(item) if current() then open_directory(item.value, context) end end,
 			keymap_scope = "workspace_menu",
 			keys = {
 				{ action = "create", label = "new", handler = function(ctx)
-					if not current(context, token) then return end
+					if not current() then return end
 					ctx.close()
 					require("opencode.ui.float").create_input_popup({ context = context, title = " New Worktree ", prompt = "Name (empty generates):",
 						on_submit = function(name)
-							if not current(context, token) then return end
+							if not current() then return end
 							name = vim.trim(name)
-							local initial_input = focus.capture_input(context.view)
+							local create_input = focus.capture_input(context.view)
 							actions.create_worktree(project.id, name ~= "" and { name = name } or {}, function(create_err, created)
-								if not current(context, token) then return end
+								if not current() then return end
 								if create_err then report("create worktree", create_err); return end
-								focus.with_session_focus(context.view, function() open_directory(created.directory, context) end, initial_input)
+								focus.with_session_focus(context.view, function() open_directory(created.directory, context) end, create_input)
 							end)
 						end })
 				end },
 				{ action = "refresh", label = "refresh", handler = function(ctx)
-					if not current(context, token) then return end
+					if not current() then return end
 					ctx.close()
-					local initial_input = focus.capture_input(context.view)
+					local refresh_input = focus.capture_input(context.view)
 					actions.refresh_worktrees(project.id, function(refresh_err)
-						if not current(context, token) then return end
+						if not current() then return end
 						if refresh_err then report("refresh worktrees", refresh_err)
-						else focus.with_session_focus(context.view, function() M.worktrees(project, context) end, initial_input) end
+						else focus.with_session_focus(context.view, function() M.worktrees(project, context) end, refresh_input) end
 					end)
 				end },
 				{ action = "delete", label = "delete", handler = function(ctx, item)
-					if not current(context, token) then return end
+					if not current() then return end
 					if item.root or not item.strategy then vim.notify("This directory is not a managed worktree", vim.log.levels.WARN); return end
 					ctx.close(); remove(project, item.value, context)
 				end },

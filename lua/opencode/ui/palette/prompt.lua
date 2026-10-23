@@ -1,6 +1,7 @@
 local M = {}
 local actions = require("opencode.actions")
 local state = require("opencode.state")
+local palette_context = require("opencode.ui.palette.context")
 function M.register(palette)
 	require("opencode.ui.palette.history").register(palette)
 	require("opencode.ui.palette.stash").register(palette)
@@ -10,15 +11,10 @@ function M.register(palette)
 		description = "Remove one queued input; keep the current response running",
 		enabled = function() return state.is_connected() and state.get_session().id ~= nil end,
 		run = function(context)
-			context = require("opencode.ui.palette").capture_context(context)
+			context = palette_context.capture(context)
 			local sid = context.session_id
 			if not sid then return end
-			local pending = require("opencode.session.pending")
-			local token = pending.token(sid)
-			local function current()
-				return pending.is_current(token) and (not context.view or not context.view.session_bound
-					or require("opencode.ui.palette").context_valid(context))
-			end
+			local current = palette_context.guard(context, { session_token = sid, require_view = "session_bound" })
 			actions.list_pending_inputs(sid, function(err, inputs)
 				if not current() then return end
 				if err then vim.notify("Could not load pending inputs: " .. tostring(err.message or err), vim.log.levels.ERROR); return end
@@ -41,7 +37,7 @@ function M.register(palette)
 		slash = { name = "skills" }, with_parts = "execute", on_select = function(ctx) return ctx.run() end,
 		enabled = function() return state.get_session().id ~= nil and state.is_connected() end,
 		run = function(context)
-			context = require("opencode.ui.palette").capture_context(context)
+			context = palette_context.capture(context)
 			local session = require("opencode.selectors").current_session(context)
 			if not session.id or not state.is_connected() then vim.notify("Select a connected session first", vim.log.levels.WARN); return end
 			if state.get_session().id ~= session.id then return end
@@ -49,13 +45,9 @@ function M.register(palette)
 			local input = require("opencode.ui.input")
 			input.capture_draft_cursor()
 			local draft_token = input.draft_token()
-			local pending = require("opencode.session.pending")
-			local token = pending.token(session.id)
-			local function current()
-				return pending.is_current(token) and state.get_session().id == opts.session_id
-					and input.draft_token() == draft_token and require("opencode.ui.palette").context_valid(context)
-					and (state.get_session_directory(session.id) or require("opencode.util.cwd").get()) == opts.directory
-			end
+			-- session.id is the focused context.session_id here; opts.directory used the same cwd fallback.
+			local current = palette_context.guard(context, { session_token = session.id, require_view = true,
+				global_session = true, same_directory = "cwd", check = function() return input.draft_token() == draft_token end })
 			actions.list_skills(function(err, skills)
 				if not current() then return end
 				if err then vim.notify("Could not load skills", vim.log.levels.WARN); return end

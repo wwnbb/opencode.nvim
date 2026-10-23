@@ -1,11 +1,11 @@
 local M = {}
 local actions, state, pending = require("opencode.actions"), require("opencode.state"), require("opencode.session.pending")
+local palette_context = require("opencode.ui.palette.context")
 function M.show(context)
-	context = require("opencode.ui.palette").capture_context(context)
+	context = palette_context.capture(context)
 	local id = context.session_id
 	if not id then vim.notify("Open a session first", vim.log.levels.INFO); return end
-	local token = pending.token(id)
-	local function current() return pending.is_current(token) and require("opencode.ui.palette").context_valid(context) end
+	local current = palette_context.guard(context, { session_token = id, require_view = true })
 	actions.list_pending_inputs(id, function(err, inputs)
 		if not current() then return end
 		if err then vim.notify("Could not load queued inputs: " .. tostring(err.message or err), vim.log.levels.WARN); return end

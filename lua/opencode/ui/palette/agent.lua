@@ -3,7 +3,6 @@
 local M = {}
 
 local actions = require("opencode.actions")
-local state = require("opencode.state")
 
 function M.register(palette)
 	palette.register({
@@ -13,16 +12,11 @@ function M.register(palette)
 		category = "agent",
 		slash = { name = "agents" },
 		run = function(context)
-			local owner = require("opencode.ui.palette")
-			context = owner.capture_context(context)
-			if not owner.context_valid(context) then return false end
-			local pending = require("opencode.session.pending")
-			local token = pending.token(context.session_id)
-			local directory = state.get_session_directory(token.session_id) or require("opencode.util.cwd").get()
-			local function current()
-				return pending.is_current(token) and owner.context_valid(context)
-					and (state.get_session_directory(token.session_id) or require("opencode.util.cwd").get()) == directory
-			end
+			local palette_context = require("opencode.ui.palette.context")
+			context = palette_context.capture(context)
+			if not palette_context.valid(context) then return false end
+			local current, token, directory = palette_context.guard(context,
+				{ session_token = context.session_id, require_view = true, same_directory = "cwd" })
 			actions.list_agents(function(err)
 				if not current() then return end
 				if context.view and require("opencode.ui.chat.state").current() ~= context.view then return end

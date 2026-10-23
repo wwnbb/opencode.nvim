@@ -1,6 +1,7 @@
 local M = {}
 local actions = require("opencode.actions")
 local pending = require("opencode.session.pending")
+local palette_context = require("opencode.ui.palette.context")
 local state = require("opencode.state")
 
 local function notify(message) vim.notify(message, vim.log.levels.WARN) end
@@ -53,7 +54,7 @@ local function split_output(text)
 end
 
 function M.output(entry, context)
-	context = require("opencode.ui.palette").capture_context(context)
+	context = palette_context.capture(context)
 	local float = require("opencode.ui.float")
 	local directory, id = entry.location.directory, entry.id
 	local timer, inflight, closed, missing, carry, preview, cursor, error_text = nil, nil, false, false, "", "", 0, ""
@@ -103,12 +104,12 @@ function M.output(entry, context)
 		if not closed and not missing then timer = vim.defer_fn(poll, delay or 1000) end
 	end
 	local function live(marker)
-		return not closed and inflight == marker and pending.is_current(marker.token)
-			and (not (context.view and context.view.session_bound) or require("opencode.ui.palette").context_valid(context))
+		return palette_context.guard(context, { token = marker.token, require_view = "session_bound",
+			check = function() return not closed and inflight == marker end })()
 	end
 	poll = function()
 		if closed or missing then return end
-		if context.view and context.view.session_bound and not require("opencode.ui.palette").context_valid(context) then popup:close(); return end
+		if context.view and context.view.session_bound and not palette_context.valid(context) then popup:close(); return end
 		schedule()
 		if inflight and pending.is_current(inflight.token) then return end
 		if not state.is_connected() then error_text = "Disconnected; waiting to resume output"; render(); return end
@@ -149,23 +150,19 @@ function M.output(entry, context)
 end
 
 function M.list(context)
-	context = require("opencode.ui.palette").capture_context(context)
+	context = palette_context.capture(context)
 	local sid = context.session_id
 	if not sid then notify("Open a session before listing processes"); return end
-	local opts = { directory = state.get_session_directory(sid) or require("opencode.util.cwd").get() }
-	local token = pending.token(sid)
-	local function current(require_selection)
-		return pending.is_current(token) and (not require_selection and not (context.view and context.view.session_bound)
-			or require("opencode.ui.palette").context_valid(context))
-			and (state.get_session_directory(sid) or require("opencode.util.cwd").get()) == opts.directory
-	end
+	-- Selection is required for the first load; later checks only bind session-bound views.
+	local current, _, directory = palette_context.guard(context, { session_token = sid, require_view = "session_bound", same_directory = "cwd" })
+	local opts = { directory = directory }
 	actions.list_shells(opts, function(err, entries)
 		if not current(true) then return end
 		if err then notify(failure(err, "Shell processes")); return end
 		local items = {}
-		local function replace(current)
+		local function replace(listed)
 			for index = #items, 1, -1 do items[index] = nil end
-			for _, entry in ipairs(current) do
+			for _, entry in ipairs(listed) do
 				if entry.metadata.sessionID == sid then
 					items[#items + 1] = { label = entry.command:gsub("\n", " "), value = entry.id,
 						description = entry.status .. " · " .. entry.location.directory, entry = entry }
@@ -179,10 +176,10 @@ function M.list(context)
 			if not current() then return end
 			revision = revision + 1
 			local current_revision = revision
-			actions.list_shells(opts, function(load_err, entries)
+			actions.list_shells(opts, function(load_err, refreshed)
 				if not current() or current_revision ~= revision or not menu.popup.winid or not vim.api.nvim_win_is_valid(menu.popup.winid) then return end
 				if load_err then notify(failure(load_err, "Shell processes")); return end
-				replace(entries); menu.refresh()
+				replace(refreshed); menu.refresh()
 			end)
 		end
 		menu = require("opencode.ui.menu").open({ context = context, title = " Session processes ", items = items, searchable = true, width = 76,
@@ -202,7 +199,7 @@ function M.list(context)
 end
 
 function M.background(context)
-	context = require("opencode.ui.palette").capture_context(context)
+	context = palette_context.capture(context)
 	local sid = context.session_id
 	if not sid then notify("Open a session before backgrounding work"); return end
 	local sync, found = require("opencode.sync"), false
@@ -223,8 +220,8 @@ function M.register(palette)
 	palette.register({ id = "action.shell", title = "Toggle Shell Mode", description = "Run commands in the session location", category = "actions",
 		slash = { name = "shell" }, with_parts = "reject", enter_with_args = true,
 		run = function(context)
-			context = require("opencode.ui.palette").capture_context(context)
-			if not require("opencode.ui.palette").context_valid(context) then return end
+			context = palette_context.capture(context)
+			if not palette_context.valid(context) then return end
 			if vim.trim(context.args or "") ~= "" then return actions.send(context.args, { mode = "shell", session_id = context.session_id, view = context.view }) end
 			local chat = require("opencode.ui.chat")
 			if context.view then chat.for_view(context.view).focus_input() else chat.focus_input() end

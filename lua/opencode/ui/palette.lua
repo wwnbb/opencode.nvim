@@ -10,26 +10,10 @@ local float_context = require("opencode.ui.float_context")
 local keymaps = require("opencode.util.keymap")
 local hl_ns = vim.api.nvim_create_namespace("opencode_palette")
 
-function M.capture_context(context)
-	local result = vim.tbl_extend("force", {}, context or {})
-	local views = require("opencode.ui.chat.state")
-	result.session_id = result.session_id or (result.view and views.session(result.view).id) or app_state.get_session().id
-	if not result.view then
-		local input = package.loaded["opencode.ui.input"]
-		local view = input and input.owner_view and input.owner_view() or views.current()
-		if view.visible and views.session(view).id == result.session_id then result.view = view end
-	end
-	if result.view and result.generation == nil then result.generation = result.view.generation end
-	return result
-end
-
-function M.context_valid(context)
-	if context.view then
-		local views = require("opencode.ui.chat.state")
-		return views.valid(context.view, context.generation) and views.session(context.view).id == context.session_id
-	end
-	return app_state.get_session().id == context.session_id
-end
+-- Adapters for callers outside ui/palette; palette submodules use palette.context.
+local palette_context = require("opencode.ui.palette.context")
+M.capture_context = palette_context.capture
+M.context_valid = palette_context.valid
 
 -- Configuration
 local config = vim.deepcopy(require("opencode.config").defaults.palette)

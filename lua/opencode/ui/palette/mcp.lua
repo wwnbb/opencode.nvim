@@ -3,7 +3,7 @@
 local M = {}
 
 local actions = require("opencode.actions")
-local pending = require("opencode.session.pending")
+local palette_context = require("opencode.ui.palette.context")
 local text_util = require("opencode.util.text")
 local function location_options()
 	local state = require("opencode.state")
@@ -175,9 +175,9 @@ function M.register(palette)
 		slash = { name = "mcp", aliases = { "mcps" } },
 		on_select = function(context) return context.run() end,
 		run = function()
-			local opts, token = location_options(), pending.token()
+			local opts, current = location_options(), palette_context.guard()
 			actions.get_mcp_status(function(err, status)
-				if not pending.is_current(token) then return end
+				if not current() then return end
 				if err then
 					vim.notify("Failed to get MCP status: " .. tostring(err.message or err), vim.log.levels.ERROR)
 					return
@@ -260,7 +260,7 @@ function M.register(palette)
 					revision = revision + 1
 					local request = revision
 					actions.get_mcp_status(function(refresh_err, refreshed)
-						if closed or not pending.is_current(token) or request ~= revision then return end
+						if closed or not current() or request ~= revision then return end
 						if refresh_err then
 							vim.notify(
 								"Failed to refresh MCP status: " .. tostring(refresh_err.message or refresh_err),
@@ -290,7 +290,7 @@ function M.register(palette)
 						return a.value < b.value
 					end,
 					on_select = function(item, ctx)
-						if not pending.is_current(token) then ctx.close(); return end
+						if not current() then ctx.close(); return end
 						vim.notify(
 							item.value .. ": " .. (item.description or item.status_text or item.status),
 							vim.log.levels.INFO
@@ -303,7 +303,7 @@ function M.register(palette)
 							handler = function(ctx, item)
 								ctx.close()
 								vim.schedule(function()
-									if pending.is_current(token) then show_mcp_server_info(item) end
+									if current() then show_mcp_server_info(item) end
 								end)
 							end,
 						},
@@ -340,13 +340,7 @@ function M.register(palette)
 
 					},
 				}
-				for _, shortcut in ipairs(menu_opts.keys) do
-					local handler = shortcut.handler
-					shortcut.handler = function(ctx, item)
-						if not pending.is_current(token) then ctx.close(); return end
-						return handler(ctx, item)
-					end
-				end
+				palette_context.guard_keys(menu_opts.keys, current)
 				local ctx = menu.open(menu_opts)
 				if ctx then
 					local scheduled = false
@@ -354,11 +348,11 @@ function M.register(palette)
 						if closed or scheduled or not data or not tostring(data.type):match("^mcp%.") then return end
 						local directory = data.location and data.location.directory
 						if directory and require("opencode.state").normalize_directory(directory) ~= require("opencode.state").normalize_directory(opts.directory) then return end
-						if not pending.is_current(token) then ctx.close(); return end
+						if not current() then ctx.close(); return end
 						scheduled = true
 						vim.schedule(function()
 							scheduled = false
-							if not closed and pending.is_current(token) then refresh_item(nil, ctx) end
+							if not closed and current() then refresh_item(nil, ctx) end
 						end)
 					end
 					events.on("catalog_invalidated", reactive)

@@ -1,7 +1,7 @@
 -- Model selection and integration authentication.
 local M = {}
 local actions = require("opencode.actions")
-local state = require("opencode.state")
+local palette_context = require("opencode.ui.palette.context")
 
 local function available_model(directory, provider_id, model_id)
 	return require("opencode.sync").catalog_for(directory):model(provider_id, model_id)
@@ -15,18 +15,11 @@ function M.register(palette)
 		category = "model",
 		slash = { name = "models" },
 		run = function(context)
-			local owner = require("opencode.ui.palette")
-			context = owner.capture_context(context)
-			if not owner.context_valid(context) then return false end
+			context = palette_context.capture(context)
+			if not palette_context.valid(context) then return false end
 			if require("opencode.session.lock").is_locked(context.session_id) then vim.notify("Subagent model selection is locked", vim.log.levels.INFO); return false end
-			local pending = require("opencode.session.pending")
-			local token = pending.token(context.session_id)
-			local directory = state.get_session_directory(token.session_id) or require("opencode.util.cwd").get()
-			local function current()
-				return pending.is_current(token) and owner.context_valid(context)
-					and not require("opencode.session.lock").is_locked(token.session_id)
-					and (state.get_session_directory(token.session_id) or require("opencode.util.cwd").get()) == directory
-			end
+			local current, token, directory = palette_context.guard(context, { session_token = context.session_id, require_view = true,
+				same_directory = "cwd", check = function() return not require("opencode.session.lock").is_locked(context.session_id) end })
 			actions.get_config_providers(function(err, response)
 				if not current() then return end
 				if context.view and require("opencode.ui.chat.state").current() ~= context.view then return end
@@ -124,9 +117,8 @@ function M.register(palette)
 			palette.register({ id = "model.cycle." .. source .. (direction == 1 and ".next" or ".previous"),
 				title = (direction == 1 and "Next " or "Previous ") .. (source == "recent" and "Recent Model" or "Favorite Model"),
 				category = "model", run = function(context)
-					local owner = require("opencode.ui.palette")
-					context = owner.capture_context(context)
-					if owner.context_valid(context) then actions.cycle_model(direction, { source = source, session_id = context.session_id }) end
+					context = palette_context.capture(context)
+					if palette_context.valid(context) then actions.cycle_model(direction, { source = source, session_id = context.session_id }) end
 				end })
 		end
 	end
@@ -138,9 +130,8 @@ function M.register(palette)
 		slash = { name = "variants", aliases = { "thinking", "effort" } },
 		on_select = function(context) return context.run() end,
 		run = function(context)
-			local owner = require("opencode.ui.palette")
-			context = owner.capture_context(context)
-			if not owner.context_valid(context) then return false end
+			context = palette_context.capture(context)
+			if not palette_context.valid(context) then return false end
 			local local_state = require("opencode.local")
 			local session_id = context.session_id
 			local opts = { session_id = session_id }
@@ -153,9 +144,11 @@ function M.register(palette)
 				vim.notify("Select a model before choosing a variant", vim.log.levels.WARN)
 				return false
 			end
-			local pending = require("opencode.session.pending")
-			local token = pending.token(session_id)
-			local directory = state.get_session_directory(session_id) or require("opencode.util.cwd").get()
+			local unchanged = palette_context.guard(context, { session_token = session_id, require_view = true, same_directory = "cwd",
+				check = function()
+					local current = local_state.model.current(opts)
+					return current and current.providerID == model.providerID and current.modelID == model.modelID
+				end })
 			local selected = local_state.variant.current(opts) or "default"
 			local items = { { label = "Default", value = "default" } }
 			for _, variant in ipairs(local_state.variant.list(opts)) do
@@ -171,10 +164,7 @@ function M.register(palette)
 				width = 50,
 				sort = false,
 				on_select = function(item)
-					local current = local_state.model.current(opts)
-					if not pending.is_current(token) or not owner.context_valid(context)
-						or (state.get_session_directory(session_id) or require("opencode.util.cwd").get()) ~= directory
-						or not current or current.providerID ~= model.providerID or current.modelID ~= model.modelID then return end
+					if not unchanged() then return end
 					actions.select_variant(item.value, opts)
 				end,
 			})
