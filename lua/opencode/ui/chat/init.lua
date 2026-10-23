@@ -647,9 +647,7 @@ local function handle_chat_window_closed(closed_winid)
 	reset_chat_surface()
 	stop_spinner_animation_timer()
 	chat_tasks.stop_task_animation_timer()
-	if view ~= cs.state then M.dispose() end
-	view.suspended, view.workspace_id = nil, nil
-	cs.remove(view)
+	require("opencode.ui.chat").retire_view(view, { dispose = view ~= cs.state })
 	vim.schedule(function()
 		if state.config and state.config.layout == "tab" then
 			require("opencode.ui.chat").after_close()
@@ -1676,6 +1674,21 @@ function M.focus()
 	return instances.for_view(view).focus()
 end
 
+---Dispose a view (unless opts.dispose is false), detach it from its workspace
+---layout and drop it from the registry. Errors leave the view registered.
+function M.retire_view(view, opts)
+	if not opts or opts.dispose ~= false then
+		local owned = view == cs.state and instances or (view.modules and view.modules.init)
+		if owned then owned.dispose()
+		else
+			-- A failed layout creation may not have built the chat instance yet.
+			for _, mod in pairs(view.modules or {}) do if mod.dispose then mod.dispose() end end
+		end
+	end
+	view.suspended, view.workspace_id = nil, nil
+	cs.remove(view)
+end
+
 function M.create_split(parent, session, direction)
 	local previous
 	if parent and parent.suspended then
@@ -1702,8 +1715,7 @@ function M.create_split(parent, session, direction)
 	creating_split = false
 	if not ok then
 		chat.close()
-		chat.dispose()
-		cs.remove(view)
+		M.retire_view(view)
 		vim.notify("Could not split OpenCode: " .. tostring(err), vim.log.levels.ERROR)
 		return
 	end
@@ -1739,11 +1751,8 @@ function M.close_view(view, opts)
 	require("opencode.actions").observe_session(cs.session(view).id, false)
 	if view.suspended then
 		local owned = instances.for_view(view)
-		local ok, err = xpcall(owned.dispose, debug.traceback)
-		if ok then
-			view.suspended, view.workspace_id = nil, nil
-			cs.remove(view)
-		else
+		local ok, err = xpcall(M.retire_view, debug.traceback, view)
+		if not ok then
 			-- Teardown or its recovery may already have removed listeners and refresh hooks.
 			local restored, restore_error = xpcall(owned.create, debug.traceback)
 			if not restored then err = err .. "\nCould not restore suspended chat: " .. restore_error end
@@ -1777,22 +1786,9 @@ function M.toggle()
 	if config.layout ~= "tab" then return instances.for_view(cs.current()).toggle() end
 	if vim.api.nvim_get_current_tabpage() ~= cs.workspace.tabpage then return M.open() end
 	require("opencode.ui.input").close_for_view(cs.current())
-	local target = cs.workspace.return_winid
-	if target and vim.api.nvim_win_is_valid(target) and vim.api.nvim_win_get_tabpage(target) ~= cs.workspace.tabpage then
-		vim.api.nvim_set_current_win(target)
-	else
-		target = nil
-		for _, tab in ipairs(vim.api.nvim_list_tabpages()) do
-			if tab ~= cs.workspace.tabpage then
-				vim.api.nvim_set_current_tabpage(tab)
-				target = vim.api.nvim_get_current_win()
-				break
-			end
-		end
-		if not target then vim.cmd("tabnew") end
-		cs.workspace.return_winid = vim.api.nvim_get_current_win()
-	end
-	require("opencode.ui.chat.workspace").park()
+	local workspace = require("opencode.ui.chat.workspace")
+	-- park() leaves the tab itself; without an active layout only leave it.
+	if not workspace.park() then workspace.leave() end
 end
 
 local focus_group = vim.api.nvim_create_augroup("OpenCodeChatViewFocus", { clear = true })

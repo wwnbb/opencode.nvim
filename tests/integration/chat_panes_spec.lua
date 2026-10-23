@@ -76,6 +76,23 @@ describe("independent chat panes", function()
 	end)
 
 
+
+	it("detaches a failed split from its workspace layout", function()
+		assert.is_truthy(first.workspace_id)
+		local context, new = require("opencode.context"), cs.new
+		local preserve, created = context.preserve_source, nil
+		cs.new = function(...) created = new(...); return created end
+		context.preserve_source = function() error("split failed") end
+		local notify = vim.notify
+		vim.notify = function() end
+		local ok, view = pcall(chat.create_split, first, seed("pane-failed", "Failed"), "vertical")
+		cs.new, context.preserve_source, vim.notify = new, preserve, notify
+		assert.is_true(ok, tostring(view))
+		assert.is_nil(view)
+		assert.is_truthy(created)
+		assert.is_nil(created.workspace_id)
+		assert.is_false(cs.valid(created))
+	end)
 	it("keeps a bound pane's render cache only when the switch preserves it", function()
 		local cache = second.render_cache
 		assert.is_truthy(cache)

@@ -352,6 +352,8 @@ local function mark_parked()
 	bar().remove()
 end
 
+M.leave = leave_workspace
+
 function M.park()
 	if parked then return true end
 	local tab = cs.workspace.tabpage
@@ -486,13 +488,7 @@ function M.create(session)
 	if not ok then
 		local cleaned, cleanup_error = xpcall(function()
 			if view then
-				local owned = view.modules and view.modules.init
-				if owned then owned.dispose()
-				else
-					for _, mod in pairs(view.modules or {}) do if mod.dispose then mod.dispose() end end
-				end
-				view.suspended, view.workspace_id = nil, nil
-				cs.remove(view)
+				chat().retire_view(view)
 			end
 			for index, layout in ipairs(layouts) do
 				if layout == created then
@@ -590,11 +586,7 @@ function M.reset()
 	local ok, err = pcall(with_switching, function()
 		for _, layout in ipairs(layouts) do
 			for _, view in ipairs(members(layout)) do
-				if view.suspended then
-					chat().for_view(view).dispose()
-					view.suspended, view.workspace_id = nil, nil
-					cs.remove(view)
-				end
+				if view.suspended then chat().retire_view(view) end
 			end
 		end
 		-- Visible views are only detached once all fallible hidden-view disposal succeeds.
@@ -663,10 +655,8 @@ function M.close_current()
 		for _, view in ipairs(members(closing)) do
 			local root = (view.session_stack or {})[1]
 			local id = root and root.id or cs.session(view).id
-			chat().for_view(view).dispose()
+			chat().retire_view(view)
 			if id then ids[id] = true end
-			view.suspended, view.workspace_id = nil, nil
-			cs.remove(view)
 		end
 		for i, layout in ipairs(layouts) do
 			if layout == closing then
