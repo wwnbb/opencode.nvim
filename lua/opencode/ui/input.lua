@@ -13,42 +13,35 @@ local keymaps = require("opencode.ui.input.keymaps")
 local layout = require("opencode.ui.input.layout")
 local mentions = require("opencode.ui.input.mentions")
 local popups = require("opencode.ui.input.popups")
+local markers = require("opencode.ui.input.markers")
 local syntax = require("opencode.ui.input.syntax")
 
-local state = {
-	bufnr = nil,
-	winid = nil,
-	parent_winid = nil,
-	view = nil,
-	view_generation = nil,
-	explicit_session = false,
-	popup = nil,
-	info_popup = nil,
-	info_bufnr = nil,
-	visible = false,
-	on_send = nil,
-	---@type fun(text: string)|nil
-	on_cancel = nil,
-	close_on_send = true,
-	allow_chat_commands = false,
-	allow_context = false,
-	persist_pending = true,
-	session_bound = false,
-	add_history = true,
-	config = nil,
-	layout = nil,
-	parts = {},
-	session_id = nil,
-	mode = "normal",
-	send_options = nil,
-	editor_context = nil,
-	context_snapshot = nil,
-	context_error = nil,
-	autocomplete = nil,
-	mentions = nil,
-	normalizing_paste = false,
-	resize_scheduled = false,
+-- Composer state. close() returns every COMPOSER_KEYS field to COMPOSER_DEFAULTS
+-- (nil when absent); visibility, config and editor context outlive a composer.
+local COMPOSER_KEYS = {
+	"bufnr", "winid", "parent_winid", "view", "view_generation", "explicit_session", "popup", "info_popup",
+	"info_bufnr", "layout", "parts", "session_id", "mode", "send_options", "context_snapshot", "context_error",
+	"autocomplete", "mentions", "on_send", "on_cancel", "close_on_send", "allow_chat_commands", "allow_context",
+	"persist_pending", "session_bound", "add_history", "normalizing_paste", "resize_scheduled",
 }
+local COMPOSER_DEFAULTS = {
+	explicit_session = false, mode = "normal", close_on_send = true, allow_chat_commands = false,
+	allow_context = false, persist_pending = true, session_bound = false, add_history = true,
+	normalizing_paste = false, resize_scheduled = false,
+}
+-- Fields a suspended composer carries into the show() that restores it.
+local SUSPEND_KEYS = { "view", "session_id", "on_send", "on_cancel", "close_on_send", "allow_chat_commands",
+	"allow_context", "persist_pending", "session_bound", "add_history", "mode", "send_options", "context_snapshot",
+	"context_error" }
+
+---@type table
+local state = { visible = false, config = nil, editor_context = nil }
+
+local function reset_composer_state()
+	for _, key in ipairs(COMPOSER_KEYS) do state[key] = COMPOSER_DEFAULTS[key] end
+	state.parts = {}
+end
+reset_composer_state()
 
 local function refresh_context_snapshot(snapshot, err)
 	state.context_snapshot, state.context_error = nil, nil
@@ -90,16 +83,11 @@ local function draft_parts()
 	local parts = copy_parts(state.parts)
 	for _, part in ipairs(mentions.active_parts(state)) do
 		local copy = vim.deepcopy(part)
-		local source = type(copy.source) == "table" and (copy.source.text or copy.source) or nil
+		local source = markers.source(copy)
 		copy._marker = type(source) == "table" and source.value or nil
 		parts[#parts + 1] = copy
 	end
 	return parts
-end
-
-local function skill_id(part)
-	local id = type(part) == "table" and (part.skillID or part.id) or nil
-	return type(id) == "string" and id ~= "" and id or nil
 end
 
 local function skill_session_error(parts, session_id)
@@ -110,28 +98,7 @@ local function skill_session_error(parts, session_id)
 	end
 end
 
-local function marker_range(text, marker, source)
-	if type(marker) ~= "string" or marker == "" then return nil end
-	local function boundary(index, direction)
-		local char = text:sub(index, index)
-		-- A terminal period is punctuation; a dot within an identifier is not.
-		while char == "." do index = index + direction; char = text:sub(index, index) end
-		return index < 1 or index > #text or char:match("[%s,;:!?%(%){%}%[%]<>\"']") ~= nil
-	end
-	local first = type(source) == "table" and source.start
-	local last = type(source) == "table" and source["end"]
-	if type(first) == "number" and type(last) == "number" and first >= 0 and last <= #text
-		and first % 1 == 0 and last - first == #marker and text:sub(first + 1, last) == marker
-		and boundary(first, -1) and boundary(last + 1, 1) then return first + 1, last end
-	local from = 1
-	while true do
-		local first, last = text:find(marker, from, true)
-		if not first then return nil end
-		if boundary(first - 1, -1) and boundary(last + 1, 1) then return first, last end
-		from = last + 1
-	end
-end
-state.marker_range = marker_range
+local marker_range, skill_id = markers.range, markers.skill_id
 
 local function remember_cursor(text)
 	if not state.winid or not vim.api.nvim_win_is_valid(state.winid) then return end
@@ -209,12 +176,18 @@ local function set_input_text(text)
 	resize_input()
 end
 
-local function clear_input()
-	state.parts = {}
+-- Show `text` as the draft after the caller set its parts: completion and
+-- mention state reset first, the info bar refreshes last.
+local function load_draft(text)
 	autocomplete.reset(state)
 	mentions.reset(state)
-	set_input_text("")
+	set_input_text(text)
 	info_bar.update(state)
+end
+
+local function clear_input()
+	state.parts = {}
+	load_draft("")
 end
 
 local function focus_parent_before_unmount()
@@ -301,7 +274,7 @@ local function send_message(delivery)
 	local parts = vim.tbl_filter(function(part)
 		if part.type == "skill" and part._session_id then return marker_range(text, "@" .. (skill_id(part) or "")) ~= nil end
 		if part.type == "agent" then
-			local source = type(part.source) == "table" and (part.source.text or part.source) or nil
+			local source = markers.source(part)
 			return type(source) ~= "table" or type(source.value) ~= "string" or marker_range(text, source.value) ~= nil
 		end
 		return true
@@ -325,7 +298,7 @@ local function send_message(delivery)
 	-- Markers can move while a draft is edited. Resolve their current byte range
 	-- just before the native request converts it into display-cell coordinates.
 	for _, part in ipairs(parts) do
-		local source = type(part.source) == "table" and (part.source.text or part.source) or nil
+		local source = markers.source(part)
 		local marker = part.type == "skill" and skill_id(part) and ("@" .. skill_id(part))
 			or part.type == "agent" and type(source) == "table" and source.value
 		if type(marker) == "string" then
@@ -400,10 +373,7 @@ local function recall_history(text, parts, mode)
 	for _, part in ipairs(state.parts) do
 		if part.type == "skill" then part._session_id = current_session_id() end
 	end
-	autocomplete.reset(state)
-	mentions.reset(state)
-	set_input_text(text)
-	info_bar.update(state)
+	load_draft(text)
 end
 
 local function history_prev()
@@ -447,11 +417,8 @@ local function session_changed(session_id)
 	state.send_options = history.get_pending_options(session_id)
 	refresh_context_snapshot(state.context_snapshot)
 	state.editor_context = require("opencode.editor_context").pending(session_id)
-	autocomplete.reset(state)
-	mentions.reset(state)
 	local next_text = history.get_pending(session_id)
-	set_input_text(next_text)
-	info_bar.update(state)
+	load_draft(next_text)
 	restore_cursor(next_text)
 end
 
@@ -667,34 +634,7 @@ function M.close(save_draft)
 	focus_parent_before_unmount()
 	popups.unmount(state)
 
-	state.winid = nil
-	state.parent_winid = nil
-	state.view = nil
-	state.view_generation = nil
-	state.explicit_session = false
-	state.bufnr = nil
-	state.popup = nil
-	state.info_popup = nil
-	state.info_bufnr = nil
-	state.layout = nil
-	state.parts = {}
-	state.session_id = nil
-	state.mode = "normal"
-	state.send_options = nil
-	state.context_snapshot = nil
-	state.context_error = nil
-	state.autocomplete = nil
-	state.mentions = nil
-	state.on_send = nil
-	state.on_cancel = nil
-	state.close_on_send = true
-	state.allow_chat_commands = false
-	state.allow_context = false
-	state.persist_pending = true
-	state.session_bound = false
-	state.add_history = true
-	state.normalizing_paste = false
-	state.resize_scheduled = false
+	reset_composer_state()
 
 	vim.cmd("stopinsert")
 end
@@ -717,8 +657,7 @@ function M.suspend()
 	history_search.cancel(state)
 	---@type table<string, any>
 	local opts = { text = get_input_text(), parts = draft_parts() }
-	for _, key in ipairs({ "view", "session_id", "on_send", "on_cancel", "close_on_send", "allow_chat_commands",
-		"allow_context", "persist_pending", "session_bound", "add_history", "mode", "send_options", "context_snapshot", "context_error" }) do
+	for _, key in ipairs(SUSPEND_KEYS) do
 		opts[key] = state[key]
 	end
 	local generation, cursor = state.view_generation, vim.api.nvim_win_get_cursor(state.winid)
@@ -789,7 +728,7 @@ function M.stage_skills(parts, session_id)
 	end
 	local session_error = skill_session_error(merged, session_id) or skill_session_error(parts, session_id)
 	if session_error then return false, session_error end
-	local markers = {}
+	local missing_markers = {}
 	for _, selected in ipairs(parts) do
 		local id = skill_id(selected)
 		if type(selected) ~= "table" or selected.type ~= "skill" or not id then
@@ -802,20 +741,20 @@ function M.stage_skills(parts, session_id)
 		end
 		part._session_id, part._marker = session_id, "@" .. id
 		if not marker_range(text, part._marker) then
-			markers[#markers + 1] = part._marker
-			-- Include planned markers when checking later duplicate selections.
+			missing_markers[#missing_markers + 1] = part._marker
+			-- Include planned missing_markers when checking later duplicate selections.
 			text = text .. " " .. part._marker .. " "
 		end
 	end
 	if state.visible then
 		state.parts = merged
-		if #markers > 0 then
+		if #missing_markers > 0 then
 			if pending_cursor and pending_cursor.locked then restore_cursor(get_input_text()) end
 			local cursor = vim.api.nvim_win_get_cursor(state.winid)
 			local line = vim.api.nvim_buf_get_lines(state.bufnr, cursor[1] - 1, cursor[1], false)[1] or ""
 			local before = line:sub(cursor[2], cursor[2])
 			local padding = cursor[2] > 0 and not before:match("%s") and " " or ""
-			insert_text_at_cursor(padding .. table.concat(markers, " ") .. " ")
+			insert_text_at_cursor(padding .. table.concat(missing_markers, " ") .. " ")
 		end
 		history.set_pending(get_input_text(), draft_parts(), session_id)
 		remember_cursor(get_input_text())
@@ -823,11 +762,11 @@ function M.stage_skills(parts, session_id)
 		M.focus()
 	else
 		text = history.get_pending(session_id)
-		if #markers > 0 then
+		if #missing_markers > 0 then
 			local offset = saved_cursor(text, session_id) or #text
 			local before = text:sub(1, offset)
 			local padding = before ~= "" and not before:sub(-1):match("%s") and " " or ""
-			local inserted = padding .. table.concat(markers, " ") .. " "
+			local inserted = padding .. table.concat(missing_markers, " ") .. " "
 			text = before .. inserted .. text:sub(offset + 1)
 			pending_cursor = { text = text, session_id = session_id, offset = offset + #inserted }
 		end
@@ -879,10 +818,7 @@ function M.search_history()
 	local started = history_search.start(state, draft, {
 		prepare = function()
 			state.parts, state.send_options = {}, nil
-			autocomplete.reset(state)
-			mentions.reset(state)
-			set_input_text("")
-			info_bar.update(state)
+			load_draft("")
 		end,
 		restore = function()
 			state.parts, state.mode, state.send_options = draft.parts, draft.mode, draft.options
@@ -951,10 +887,7 @@ function M.set_pending_draft(text, parts, opts)
 		state.parts = copied
 		state.send_options = opts and opts.options and vim.deepcopy(opts.options) or nil
 		refresh_context_snapshot(state.context_snapshot)
-		autocomplete.reset(state)
-		mentions.reset(state)
-		set_input_text(content)
-		info_bar.update(state)
+		load_draft(content)
 	end
 	if opts and opts.mode then M.set_mode(opts.mode) end
 end

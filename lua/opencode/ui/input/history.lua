@@ -49,7 +49,7 @@ local function history_parts(parts)
 		-- content. Keep the marker so a removed image is not sent on recall.
 		part._mention = nil
 		part._session_id = nil
-		local source = type(part.source) == "table" and (part.source.text or part.source) or nil
+		local source = require("opencode.ui.input.markers").source(part)
 		if part.type == "file" and not part._marker and type(source) == "table" then
 			part._marker = source.value
 		end

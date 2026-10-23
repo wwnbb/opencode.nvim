@@ -3,6 +3,7 @@
 local M = {}
 
 local history = require("opencode.ui.input.history")
+local markers = require("opencode.ui.input.markers")
 
 local IMAGE_FILE_HINT_PATTERNS = {
 	"%.[Aa][Vv][Ii][Ff]",
@@ -75,7 +76,7 @@ function M.insert_text_at_cursor(state, text, schedule_resize)
 end
 
 local function part_marker(part)
-	local source = part.type == "file" and type(part.source) == "table" and (part.source.text or part.source)
+	local source = part.type == "file" and markers.source(part)
 	return part._marker or type(source) == "table" and source.value or nil
 end
 
@@ -171,7 +172,7 @@ function M.merge_drafts(current, incoming)
 				local replacement = next_file_marker({ parts = reserved }, (part.mime or ""):match("^image/") and "Image" or "File")
 				text = text:gsub(marker:gsub("(%W)", "%%%1"), function() return replacement end)
 				part._marker = replacement
-				local source = type(part.source) == "table" and (part.source.text or part.source)
+				local source = markers.source(part)
 				if type(source) == "table" then source.value, source.start, source["end"] = replacement, -1, -1 end
 			end
 		end

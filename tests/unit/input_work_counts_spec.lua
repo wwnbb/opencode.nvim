@@ -72,7 +72,6 @@ describe("input draft read work counts", function()
 			vim.api.nvim_win_set_config(winid, { relative = "editor", row = frame.position.row,
 				col = frame.position.col, width = frame.size.width, height = frame.size.height })
 		end }
-		state.marker_range = function(text, marker) return text:find(marker, 1, true) end
 		reads = {}
 		vim.api.nvim_buf_get_lines = function(bufnr, first, last, strict)
 			if bufnr == state.bufnr then reads[#reads + 1] = { first, last, strict } end
@@ -163,9 +162,8 @@ describe("input draft read work counts", function()
 			vim.tbl_map(function(mark) return { mark[2], mark[3].end_col, mark[3].hl_group } end, snapshot().marks))
 	end)
 
-	it("avoids draft reads when marker validation is unavailable", function()
-		state.parts = { { type = "skill", id = "catalog", _marker = "@catalog" } }
-		state.marker_range = nil
-		assert_info(0, "Code Model Provider · Variant")
+	it("avoids draft reads when no skill part carries a marker", function()
+		state.parts = { { type = "skill", id = "catalog" } }
+		assert_info(0)
 	end)
 end)
