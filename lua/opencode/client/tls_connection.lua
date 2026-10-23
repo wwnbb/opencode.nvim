@@ -22,8 +22,12 @@ function M.open(opts)
 	local args = { command, "s_client", "-quiet", "-verify_return_error", ip and "-verify_ip" or "-verify_hostname",
 		host, "-servername", host, "-connect", address }
 	if tls.ca_file then vim.list_extend(args, { "-CAfile", tls.ca_file }) end
-	local connection = { _active = true }
 	local process, timer, stderr = nil, nil, ""
+	-- Stream callers pass TCP-style labels; prefix the same failure points.
+	local function labeled(key, message, extras)
+		local label = opts.labels and opts.labels[key]
+		return make_error(label and (label .. ": " .. message) or message, extras)
+	end
 	local function stop_timer()
 		local previous = timer
 		timer = nil
@@ -32,9 +36,7 @@ function M.open(opts)
 			previous:close()
 		end
 	end
-	function connection.close()
-		if not connection._active then return end
-		connection._active = false
+	local connection, fail = tcp_connection.handle(opts, function()
 		stop_timer()
 		if process then
 			local previous = process
@@ -42,19 +44,13 @@ function M.open(opts)
 			pcall(previous.write, previous, nil)
 			pcall(previous.kill, previous, 15)
 		end
-	end
-	local function fail(reason, failure)
-		if not connection._active then return end
-		connection.close()
-		if opts.on_error then opts.on_error(reason, failure) end
-	end
-	function connection.is_active() return connection._active end
+	end)
 	connection.stop_timeout = stop_timer
 	function connection.send(data)
 		if not connection._active or not process then return false end
 		local ok = pcall(process.write, process, data)
 		if not ok then
-			fail("write_error", make_error("TLS write failed"))
+			fail("write_error", labeled("write", "TLS write failed"))
 			return false
 		end
 		return true
@@ -62,7 +58,7 @@ function M.open(opts)
 	local ok, started = pcall(vim.system, args, { stdin = true, text = false,
 		stdout = function(read_err, data)
 			if not connection._active then return end
-			if read_err then fail("read_error", make_error("TLS read failed"))
+			if read_err then fail("read_error", labeled("read", "TLS read failed"))
 			elseif data and opts.on_read then opts.on_read(nil, data) end
 		end,
 		stderr = function(_, data)
@@ -77,7 +73,7 @@ function M.open(opts)
 			local certificate = diagnostic:find("certificate verify failed", 1, true) or diagnostic:find("verification error", 1, true)
 			local unsupported = diagnostic:find("unknown option", 1, true) or diagnostic:find("unrecognized", 1, true)
 			local invalid_ca = diagnostic:find("error setting certificate", 1, true) or diagnostic:find("no such file", 1, true)
-			fail("tls_error", make_error(certificate and "TLS certificate verification failed" or unsupported and "Installed OpenSSL lacks the required TLS options" or "TLS connection failed",
+			fail("tls_error", labeled("connect", certificate and "TLS certificate verification failed" or unsupported and "Installed OpenSSL lacks the required TLS options" or "TLS connection failed",
 				{ code = certificate and "tls_verification_failed" or "tls_error", retryable = not certificate and not unsupported and not invalid_ca }))
 		else
 			connection._active = false
@@ -89,6 +85,8 @@ function M.open(opts)
 		return nil, make_error("Could not start TLS connection", { code = "tls_unavailable", retryable = false })
 	end
 	process = started
+	-- Unlike TCP, which runs without a deadline when libuv cannot create a
+	-- timer, an unbounded OpenSSL child process is refused.
 	local timeout = tonumber(opts.timeout) or 0
 	if timeout > 0 then
 		timer = uv.new_timer()

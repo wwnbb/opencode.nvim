@@ -109,6 +109,37 @@ describe("shared endpoint and verified TLS", function()
 		assert.equals(2, #writes)
 		assert.same({}, received)
 	end)
+	it("prefixes connection, read and write failures with caller labels like TCP", function()
+		open(); options.stderr(nil, "connection refused"); exit({ code = 1 })
+		assert.equals("TLS connection failed", errors[1].message)
+		local labels = { connect = "Stream connect failed", read = "Stream read failed", write = "Failed to write stream request" }
+		open({ labels = labels }); options.stderr(nil, "connection refused"); exit({ code = 1 })
+		assert.equals("Stream connect failed: TLS connection failed", errors[2].message)
+		assert.equals("Stream connect failed: TLS connection failed", errors[2].error)
+		assert.is_true(errors[2].retryable)
+		open({ labels = labels }); options.stderr(nil, "certificate verify failed"); exit({ code = 1 })
+		assert.equals("Stream connect failed: TLS certificate verification failed", errors[3].message)
+		assert.equals("tls_verification_failed", errors[3].code)
+		open({ labels = labels }); options.stdout("EPIPE", nil)
+		assert.equals("Stream read failed: TLS read failed", errors[4].message)
+		local connection = assert(open({ labels = labels }))
+		process.write = function() error("closed") end
+		assert.is_false(connection.send("more"))
+		assert.equals("Failed to write stream request: TLS write failed", errors[5].message)
+	end)
+	it("gives TLS event streams the same Stream error prefix as TCP", function()
+		local closed
+		local stream = assert(require("opencode.client.transport").open_stream({
+			url = "https://example.test:8443", path = "/api/event", timeout = 100,
+			on_error = function(err) errors[#errors + 1] = err end,
+			on_close = function(reason) closed = reason end,
+		}))
+		options.stderr(nil, "connection refused"); exit({ code = 1 })
+		assert.is_true(vim.wait(100, function() return closed ~= nil end))
+		assert.equals("tls_error", closed)
+		assert.equals("Stream connect failed: TLS connection failed", errors[1].message)
+		assert.is_false(stream.is_active())
+	end)
 	it("reports unsupported TLS runtime before any process is started", function()
 		vim.fn.executable = function() return 0 end
 		local connection, err = open(); assert.is_nil(connection); assert.equals("tls_unavailable", err.code); assert.is_false(err.retryable)

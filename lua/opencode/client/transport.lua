@@ -155,11 +155,7 @@ function M.request(opts, callback)
 				return
 			end
 
-			if not decoder:headers_parsed() then
-				finish(make_error("Connection closed before response headers"), nil)
-				return
-			end
-
+			-- EOF before headers fails in the decoder as "Connection closed before response headers".
 			decoder:finish_eof()
 		end,
 		on_error = function(_, err)
@@ -195,6 +191,15 @@ function M.open_stream(opts)
 
 	local active = true
 	local connection = nil
+	-- TCP and TLS prefix their stream failures with these labels.
+	local labels = {
+		connect = "Stream connect failed",
+		create_socket = "Failed to create TCP socket",
+		read = "Stream read failed",
+		read_start = "Failed to start stream read",
+		write_start = "Failed to start stream write",
+		write = "Failed to write stream request",
+	}
 
 	local function close_stream(reason, err)
 		if not active then
@@ -241,20 +246,14 @@ function M.open_stream(opts)
 		data = request_data,
 		timeout = opts.timeout,
 		timeout_message = "Stream request timed out after " .. tostring(opts.timeout) .. "ms",
-		labels = {
-			connect = "Stream connect failed",
-			create_socket = "Failed to create TCP socket",
-			read_start = "Failed to start stream read",
-			write_start = "Failed to start stream write",
-			write = "Failed to write stream request",
-		},
+		labels = labels,
 		on_read = function(read_err, data)
 			if not active then
 				return
 			end
 
 			if read_err then
-				close_stream("read_error", make_error("Stream read failed: " .. tostring(read_err)))
+				close_stream("read_error", make_error(labels.read .. ": " .. tostring(read_err)))
 				return
 			end
 

@@ -93,6 +93,41 @@ local function labeled_error(label, detail)
 	return M.make_error(label .. ": " .. tostring(detail))
 end
 
+---Shared TCP/TLS handle: one active flag, an idempotent close, and a fail
+---that closes once before reporting through opts.on_error.
+---@param opts table
+---@param release function Stops the deadline and frees transport resources.
+---@return table connection
+---@return function fail
+function M.handle(opts, release)
+	local connection = { _active = true }
+
+	function connection.close()
+		if not connection._active then
+			return
+		end
+		connection._active = false
+		release()
+	end
+
+	function connection.is_active()
+		return connection._active
+	end
+
+	local function fail(reason, err)
+		if not connection._active then
+			return
+		end
+		connection.close()
+
+		if type(opts.on_error) == "function" then
+			opts.on_error(reason, err)
+		end
+	end
+
+	return connection, fail
+end
+
 ---@param opts table
 ---@return table|nil connection
 ---@return table|nil err
@@ -111,20 +146,8 @@ function M.open(opts)
 		write = "Write failed",
 	}, opts.labels or {})
 
-	local connection = {
-		_active = true,
-	}
-
-	function connection.stop_timeout()
-		safe_close(connection._timer)
-		connection._timer = nil
-	end
-
-	function connection.close()
-		if not connection._active then
-			return
-		end
-		connection._active = false
+	local connection, fail
+	connection, fail = M.handle(opts, function()
 		connection.stop_timeout()
 
 		if connection._socket then
@@ -134,21 +157,11 @@ function M.open(opts)
 			safe_close(connection._socket)
 			connection._socket = nil
 		end
-	end
+	end)
 
-	local function fail(reason, err)
-		if not connection._active then
-			return
-		end
-		connection.close()
-
-		if type(opts.on_error) == "function" then
-			opts.on_error(reason, err)
-		end
-	end
-
-	function connection.is_active()
-		return connection._active
+	function connection.stop_timeout()
+		safe_close(connection._timer)
+		connection._timer = nil
 	end
 
 	function connection.send(data)
@@ -160,6 +173,9 @@ function M.open(opts)
 		return true
 	end
 
+	-- Deadline-timer failure policy is per transport and kept as is: TCP
+	-- proceeds without a deadline, while tls_connection fails the connection
+	-- rather than leave an OpenSSL child process unbounded.
 	local timeout = tonumber(opts.timeout) or 0
 	if timeout > 0 then
 		local timer = uv.new_timer()

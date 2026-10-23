@@ -17,6 +17,15 @@ local function normalize_directory(directory)
 	return require("opencode.util.path").absolute(dir)
 end
 
+-- Catalog and VCS reads resolve the caller's directory (cwd when omitted).
+---@param opts? table { directory?: string }
+---@param extra? table Additional query fields
+local function location_query(opts, extra)
+	local query = { location = { directory = normalize_directory(opts and opts.directory) } }
+	for key, value in pairs(extra or {}) do query[key] = value end
+	return query
+end
+
 local function collect_pages(fetch_page, get_id, callback)
 	local generation, queue, seen, by_id, head = configuration_generation, { false }, {}, {}, 1
 	local function read()
@@ -491,15 +500,14 @@ end
 
 ---@param callback function(err, providers)
 function M.list_providers(callback, opts)
-	api.request("provider_list", { query = { location = { directory = normalize_directory(opts and opts.directory) } } }, callback)
+	api.request("provider_list", { query = location_query(opts) }, callback)
 end
 
 -- Get configured providers with models (the main endpoint for provider/model selection)
 -- Returns { providers: Provider[], default: { providerID: modelID } }
 ---@param callback function(err, data)
 function M.get_config_providers(callback, opts)
-	local directory = normalize_directory(opts and opts.directory)
-	local query = { location = { directory = directory } }
+	local query = location_query(opts)
 	local results, remaining, first_error, location = {}, 3, nil, nil
 	for key, operation in pairs({ providers = "provider_list", models = "model_list", default = "model_default" }) do
 		api.request(operation, { query = query }, function(err, data, meta)
@@ -521,7 +529,7 @@ end
 
 -- Integration IDs, stable method IDs and credential IDs are separate identities.
 function M.list_integrations(callback, opts)
-	api.request("integration_list", { query = { location = { directory = normalize_directory(opts and opts.directory) } } }, callback)
+	api.request("integration_list", { query = location_query(opts) }, callback)
 end
 
 function M.integration(operation, integration_id, body, opts, callback)
@@ -531,7 +539,7 @@ function M.integration(operation, integration_id, body, opts, callback)
 	end
 	api.request("integration_" .. operation, {
 		path = { integrationID = integration_id, attemptID = opts.attempt_id },
-		query = { location = { directory = normalize_directory(opts.directory) } }, body = body,
+		query = location_query(opts), body = body,
 	}, function(err, data, meta)
 		-- Authentication errors can echo submitted secrets. Never expose their body.
 		if err then err = { status = err.status, code = "integration_error", message = "Integration request failed"
@@ -546,7 +554,7 @@ end
 
 ---@param callback function(err, config)
 function M.get_config(callback, opts)
-	api.request("config_list", { query = { location = { directory = normalize_directory(opts and opts.directory) } } }, function(err, sources, meta)
+	api.request("config_list", { query = location_query(opts) }, function(err, sources, meta)
 		if err then callback(err); return end
 		-- Config sources are not an authoritative merged runtime configuration.
 		callback(nil, { sources = sources }, meta)
@@ -555,7 +563,7 @@ end
 
 ---@param callback function(err, agents)
 function M.list_agents(callback, opts)
-	api.request("agent_list", { query = { location = { directory = normalize_directory(opts and opts.directory) } } }, function(err, data, meta)
+	api.request("agent_list", { query = location_query(opts) }, function(err, data, meta)
 		if err then callback(err); return end
 		callback(nil, catalogs.agents(data), meta)
 	end)
@@ -563,16 +571,16 @@ end
 
 ---@param callback function(err, skills)
 function M.list_skills(callback, opts)
-	api.request("skill_list", { query = { location = { directory = normalize_directory(opts and opts.directory) } } }, callback)
+	api.request("skill_list", { query = location_query(opts) }, callback)
 end
 
 function M.list_commands(callback, opts)
-	api.request("command_list", { query = { location = { directory = normalize_directory(opts and opts.directory) } } }, callback)
+	api.request("command_list", { query = location_query(opts) }, callback)
 end
 
 ---@param callback function(err, mcp_status)
 function M.get_mcp_status(callback, opts)
-	api.request("mcp_list", { query = { location = { directory = normalize_directory(opts and opts.directory) } } }, function(err, data, meta)
+	api.request("mcp_list", { query = location_query(opts) }, function(err, data, meta)
 		if err then callback(err); return end
 		callback(nil, catalogs.mcp(data), meta)
 	end)
@@ -581,19 +589,19 @@ end
 ---@param name string MCP server name
 ---@param callback function(err, success)
 function M.connect_mcp(name, callback, opts)
-	api.request("mcp_connect", { path = { server = name }, query = { location = { directory = normalize_directory(opts and opts.directory) } } }, callback)
+	api.request("mcp_connect", { path = { server = name }, query = location_query(opts) }, callback)
 end
 
 ---@param name string MCP server name
 ---@param callback function(err, success)
 function M.disconnect_mcp(name, callback, opts)
-	api.request("mcp_disconnect", { path = { server = name }, query = { location = { directory = normalize_directory(opts and opts.directory) } } }, callback)
+	api.request("mcp_disconnect", { path = { server = name }, query = location_query(opts) }, callback)
 end
 
 -- Read actual v2 runtime catalogs. Configured LSP/formatters are not runtime status.
 function M.get_status(callback, opts)
 	local results, remaining = { errors = {} }, 3
-	local query = { location = { directory = normalize_directory(opts and opts.directory) } }
+	local query = location_query(opts)
 	for domain, operation in pairs({ version = "info", mcp = "mcp_list", plugins = "plugin_list" }) do
 		api.request(operation, { query = operation ~= "info" and query or nil }, function(err, data)
 			if err then results.errors[domain] = err.message
@@ -652,22 +660,22 @@ function M.review_rpc(method, input, directory, callback)
 end
 
 function M.get_vcs_info(opts, callback)
-	api.request("vcs_info", { query = { location = { directory = normalize_directory(opts and opts.directory) } } }, callback)
+	api.request("vcs_info", { query = location_query(opts) }, callback)
 end
 
 function M.get_vcs_base(opts, callback)
-	api.request("vcs_base", { query = { location = { directory = normalize_directory(opts and opts.directory) } } }, callback)
+	api.request("vcs_base", { query = location_query(opts) }, callback)
 end
 
 function M.list_vcs_branches(opts, callback)
 	opts = opts or {}
-	api.request("vcs_branches", { query = { location = { directory = normalize_directory(opts.directory) }, search = opts.search, limit = 100 } }, callback)
+	api.request("vcs_branches", { query = location_query(opts, { search = opts.search, limit = 100 }) }, callback)
 end
 
 function M.get_vcs_diff(opts, callback)
 	opts = opts or {}
-	api.request("vcs_diff", { query = { location = { directory = normalize_directory(opts.directory) }, mode = opts.mode or "branch",
-		base = opts.base, context = opts.context } }, callback)
+	api.request("vcs_diff", { query = location_query(opts, { mode = opts.mode or "branch",
+		base = opts.base, context = opts.context }) }, callback)
 end
 
 return M
