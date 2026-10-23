@@ -106,33 +106,22 @@ end
 local function resolve_selection(opts)
 	local selection = vim.deepcopy(opts._selection or selectors.send_selection(opts))
 	if selection.blocked then return nil, selection.error end
-	local providers = sync().get_location_catalog(opts.directory, "providers")
-	local agents = sync().get_location_catalog(opts.directory, "agents")
-	local function get_model(provider_id, model_id)
-		if not providers or not providers.data then return sync().get_model(provider_id, model_id) end
-		for _, provider in ipairs(providers.data.providers) do
-			if provider.id == provider_id then return provider.models[model_id] end
-		end
-	end
-	local function get_agent(id)
-		if not agents or not agents.data then return sync().get_agent(id) end
-		for _, agent in ipairs(agents.data) do if agent.id == id or agent.name == id then return agent end end
-	end
+	local catalog = sync().catalog_for(opts.directory)
 	if opts.model then selection.model = opts.model end
-	if not selection.model and providers and providers.data and type(providers.data.server_default) == "table" then
-		selection.model = providers.data.server_default
+	if not selection.model and type(catalog.server_default) == "table" then
+		selection.model = catalog.server_default
 	end
 	if not selection.model then return nil, "No model is available; select or connect a provider" end
-	local agent = selection.agent and get_agent(selection.agent)
-	if not agent and not opts.agent and agents and agents.data then
+	local agent = selection.agent and catalog:agent(selection.agent)
+	if not agent and not opts.agent and catalog.loaded.agents then
 		local configured = ((state.get_config() or {}).session or {}).default_agent
-		agent = configured and get_agent(configured)
+		agent = configured and catalog:agent(configured)
 	end
 	if not agent then return nil, "The selected agent is unavailable in this location" end
 	selection.agent = agent.id or agent.name
 	local model, err = requests.model(selection.model, selection.variant)
 	if err then return nil, err end
-	local info = get_model(model.providerID, model.id)
+	local info = catalog:model(model.providerID, model.id)
 	if not info then return nil, "The selected model is unavailable in this location" end
 	if model.variant and (not info.variants or not info.variants[model.variant]) then
 		return nil, "The selected model variant is unavailable"

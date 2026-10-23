@@ -34,25 +34,12 @@ local function session_id(opts)
 	return require("opencode.state").get_session().id
 end
 
-local function catalog(domain, opts)
+local function session_catalog(opts)
 	local id = session_id(opts)
-	local directory = id and require("opencode.state").get_session_directory(id)
-	if directory and sync.get_catalog_location() and sync.get_catalog_location() ~= directory then
-		local entry = sync.get_location_catalog(directory, domain)
-		return entry and entry.data or {}
-	end
+	return sync.catalog_for(id and require("opencode.state").get_session_directory(id) or nil)
 end
 
-local function providers(opts)
-	local scoped = catalog("providers", opts)
-	return scoped and (scoped.providers or {}) or sync.get_providers()
-end
-
-local function provider(id, opts)
-	local scoped = catalog("providers", opts)
-	if not scoped then return sync.get_provider(id) end
-	for _, item in ipairs(scoped.providers or {}) do if item.id == id then return item end end
-end
+local find_agent = require("opencode.sync.catalog").find_agent
 
 ---@param value any
 ---@return string
@@ -116,11 +103,7 @@ local function is_model_valid(model, opts)
 	if model.providerID == "" or model.modelID == "" then
 		return false
 	end
-	local provider = provider(model.providerID, opts)
-	if not provider or not provider.models then
-		return false
-	end
-	return provider.models[model.modelID] ~= nil
+	return session_catalog(opts):model(model.providerID, model.modelID) ~= nil
 end
 
 local function valid_models(models, opts)
@@ -173,17 +156,7 @@ end
 ---Get list of available agents (excluding subagents and hidden)
 ---@return table[]
 function M.agent.list(opts)
-	local scoped = catalog("agents", opts)
-	return scoped and sync.filter_visible_agents(scoped) or sync.get_visible_agents()
-end
-
-local function find_agent(agents, name)
-	if type(name) ~= "string" then return end
-	for _, field in ipairs({ "id", "name" }) do
-		for i, agent in ipairs(agents) do
-			if agent[field] == name then return agent, i end
-		end
-	end
+	return sync.filter_visible_agents(session_catalog(opts).agents)
 end
 
 ---Get current agent
@@ -292,7 +265,8 @@ M.model = {}
 ---Get fallback model from config, recent models, or provider defaults.
 ---@return { providerID: string, modelID: string }|nil
 local function get_fallback_model(opts)
-	local config = catalog("config", opts) or sync.get_config()
+	local catalog = session_catalog(opts)
+	local config = catalog.config
 	if type(config.model) == "string" then
 		local provider_id, model_id = config.model:match("^([^/]+)/(.+)$")
 		if provider_id and model_id then
@@ -309,10 +283,8 @@ local function get_fallback_model(opts)
 		end
 	end
 
-	local providers = providers(opts)
-	local scoped = catalog("providers", opts)
-	local defaults = scoped and (scoped.default or {}) or sync.get_provider_defaults()
-	for _, provider in ipairs(providers) do
+	local defaults = catalog.defaults
+	for _, provider in ipairs(catalog.providers) do
 		local default_model = type(provider.id) == "string" and defaults[provider.id] or nil
 		if default_model then
 			local m = { providerID = provider.id, modelID = default_model }
@@ -474,8 +446,7 @@ function M.model.parsed(opts)
 	local current = M.model.current(opts)
 	if not current then
 		-- Check if providers are loaded yet
-		local providers = providers(opts)
-		if #providers == 0 then
+		if #session_catalog(opts).providers == 0 then
 			-- Providers not loaded yet - show loading state
 			return {
 				providerID = "",
@@ -494,8 +465,9 @@ function M.model.parsed(opts)
 			reasoning = false,
 		}
 	end
-	local provider = provider(current.providerID, opts)
-	local model_info = provider and provider.models and provider.models[current.modelID]
+	local catalog = session_catalog(opts)
+	local provider = catalog:provider(current.providerID)
+	local model_info = catalog:model(current.providerID, current.modelID)
 	return {
 		providerID = current.providerID,
 		modelID = current.modelID,
@@ -575,7 +547,7 @@ function M.model.set(model, opts)
 		return
 	end
 	model = vim.deepcopy(model)
-	local model_info = provider(model.providerID, opts).models[model.modelID]
+	local model_info = session_catalog(opts):model(model.providerID, model.modelID)
 	if model.variant == "default" or (model.variant and not (model_info.variants or {})[model.variant]) then
 		model.variant = nil
 	end
@@ -719,11 +691,7 @@ function M.variant.list(opts)
 	if not model then
 		return {}
 	end
-	local provider = provider(model.providerID, opts)
-	if not provider or not provider.models then
-		return {}
-	end
-	local model_info = provider.models[model.modelID]
+	local model_info = session_catalog(opts):model(model.providerID, model.modelID)
 	if not model_info or not model_info.variants then
 		return {}
 	end
@@ -746,8 +714,7 @@ function M.variant.set(value, opts)
 		return false
 	end
 	if value == "default" then value = nil end
-	local selected_provider = provider(model.providerID, opts)
-	local model_info = selected_provider and selected_provider.models and selected_provider.models[model.modelID]
+	local model_info = session_catalog(opts):model(model.providerID, model.modelID)
 	if value ~= nil and not (model_info and model_info.variants or {})[value] then
 		vim.notify("Variant is unavailable for this model: " .. tostring(value), vim.log.levels.WARN)
 		return false

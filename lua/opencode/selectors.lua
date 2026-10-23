@@ -16,7 +16,7 @@ end
 ---@param source string
 ---@param sync table|nil
 ---@return { providerID: string, modelID: string }|nil
-local function resolve_model_ref(ref, source, sync)
+local function resolve_model_ref(ref, source, catalog)
 	local log = logger()
 	local model_id = type(ref) == "table" and (ref.id or ref.modelID) or nil
 	local reason
@@ -24,8 +24,8 @@ local function resolve_model_ref(ref, source, sync)
 		reason = "malformed"
 	elseif ref.providerID == "" or model_id == "" then
 		reason = "empty"
-	elseif not sync or not sync.get_model(ref.providerID, model_id) then
-		reason = sync and "not_in_sync" or "sync_unavailable"
+	elseif not catalog or not catalog:model(ref.providerID, model_id) then
+		reason = catalog and "not_in_sync" or "sync_unavailable"
 	end
 
 	if log then
@@ -167,15 +167,7 @@ local function derive_context(state, sync, session_id)
 			if not usage or usage.total <= 0 then return nil end
 			local provider_id = (message.model or {}).providerID or message.providerID
 			local model_id = (message.model or {}).id or message.modelID
-			local model
-			if not sync.get_catalog_location() or sync.get_catalog_location() == state.get_session_directory(session_id) then
-				model = sync.get_model(provider_id, model_id)
-			else
-				local catalog = sync.get_location_catalog(state.get_session_directory(session_id), "providers")
-				for _, provider in ipairs(catalog and catalog.data and catalog.data.providers or {}) do
-					if provider.id == provider_id then model = (provider.models or {})[model_id]; break end
-				end
-			end
+			local model = sync.catalog_for(state.get_session_directory(session_id)):model(provider_id, model_id)
 			local limit = model and (model.limit or {}).context
 			if not usage_number(limit) or limit == 0 then limit = nil end
 			return { tokens = usage.total, percent = limit and math.floor(usage.total / limit * 100 + 0.5) or nil,
@@ -277,25 +269,7 @@ function M.send_selection(opts)
 	local sid = opts.session_id
 	if sid == nil then sid = current_session.id end
 	local locked = session_lock.get(sid)
-	local directory = sid and require("opencode.state").get_session_directory(sid)
-	if sync and directory and sync.get_catalog_location() and sync.get_catalog_location() ~= directory then
-		local providers = sync.get_location_catalog(directory, "providers")
-		local agents = sync.get_location_catalog(directory, "agents")
-		local source = sync
-		sync = {
-			is_visible_agent = source.is_visible_agent,
-			get_model = function(provider_id, model_id)
-				for _, provider in ipairs(providers and providers.data and providers.data.providers or {}) do
-					if provider.id == provider_id then return (provider.models or {})[model_id] end
-				end
-			end,
-			get_agent = function(name)
-				for _, agent in ipairs(agents and agents.data or {}) do
-					if agent.id == name or agent.name == name then return agent end
-				end
-			end,
-		}
-	end
+	local catalog = sync and sync.catalog_for(sid and require("opencode.state").get_session_directory(sid) or nil)
 	if locked then
 		local selection = {
 			model = nil,
@@ -341,7 +315,7 @@ function M.send_selection(opts)
 	}
 
 	if opts.model then
-		selection.model = resolve_model_ref(opts.model, "opts", sync)
+		selection.model = resolve_model_ref(opts.model, "opts", catalog)
 		if selection.model then
 			selection.sources.model = "opts"
 		end
@@ -364,7 +338,7 @@ function M.send_selection(opts)
 	local local_opts = { session_id = sid, unscoped = sid == false }
 	if local_ok then
 		if not selection.model and local_state.model and type(local_state.model.current) == "function" then
-			selection.model = resolve_model_ref(local_state.model.current(local_opts), "local_current", sync)
+			selection.model = resolve_model_ref(local_state.model.current(local_opts), "local_current", catalog)
 			if selection.model then
 				selection.sources.model = "local_current"
 			end
@@ -386,14 +360,14 @@ function M.send_selection(opts)
 	end
 
 	if not selection.model then
-		selection.model = resolve_model_ref(session_config.default_model, "plugin_config_default", sync)
+		selection.model = resolve_model_ref(session_config.default_model, "plugin_config_default", catalog)
 		if selection.model then
 			selection.sources.model = "plugin_config_default"
 		end
 	end
 
-	if not selection.agent and sync and type(session_config.default_agent) == "string" then
-		local configured = sync.get_agent(session_config.default_agent)
+	if not selection.agent and catalog and type(session_config.default_agent) == "string" then
+		local configured = catalog:agent(session_config.default_agent)
 		if configured and sync.is_visible_agent(configured) then
 			selection.agent = configured.id or configured.name
 			selection.sources.agent = "plugin_config_default"

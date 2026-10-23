@@ -4,15 +4,7 @@ local actions = require("opencode.actions")
 local state = require("opencode.state")
 
 local function available_model(directory, provider_id, model_id)
-	local sync = require("opencode.sync")
-	if sync.get_catalog_location() and sync.get_catalog_location() ~= directory then
-		local catalog = sync.get_location_catalog(directory, "providers")
-		for _, provider in ipairs(catalog and catalog.data and catalog.data.providers or {}) do
-			if provider.id == provider_id then return (provider.models or {})[model_id] end
-		end
-		return
-	end
-	return sync.get_model(provider_id, model_id)
+	return require("opencode.sync").catalog_for(directory):model(provider_id, model_id)
 end
 
 function M.register(palette)

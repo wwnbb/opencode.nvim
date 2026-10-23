@@ -78,6 +78,15 @@ describe("current session context and money", function()
 		assert.equals(2000, selectors.current_context().tokens); assert.is_nil(selectors.current_context().percent)
 	end)
 
+	it("falls back to the active catalog for a session without a location entry or directory", function()
+		state.upsert_session({ id = "unloaded", directory = "/unloaded", cost = 0 }, { touch = false })
+		state.upsert_session({ id = "nowhere", cost = 0 }, { touch = false })
+		put(assistant("u", 1, tokens()), "unloaded")
+		put(assistant("n", 1, tokens()), "nowhere")
+		assert.equals(20, selectors.current_context("unloaded").percent)
+		assert.equals(20, selectors.current_context("nowhere").percent)
+	end)
+
 	it("uses authoritative family costs, keeps child scope local, and exposes missing member cost as partial", function()
 		for _, record in ipairs({ { id = "child", parentID = "s", cost = 0.5 }, { id = "grandchild", parentID = "child", cost = 0.25 },
 			{ id = "unrelated", cost = 99 }, { id = "cycle-a", parentID = "cycle-b", cost = 99 }, { id = "cycle-b", parentID = "cycle-a", cost = 99 } }) do state.upsert_session(record, { touch = false }) end

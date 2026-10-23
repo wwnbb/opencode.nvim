@@ -67,6 +67,15 @@ describe("model picker native metadata and groups", function()
 		vim.o.columns, vim.o.lines = columns, lines
 		if not ok then error(err) end
 	end)
+	it("checks a picked model against the active catalog when the session location has no entry", function()
+		sync.select_catalog_location("/elsewhere")
+		sync.handle_providers({ { id = "p", models = models } })
+		commands["model.switch"].run()
+		local item
+		for _, candidate in ipairs(picker.items) do if candidate.value == "recent" then item = candidate end end
+		picker.on_select(item)
+		assert.same({ { providerID = "p", modelID = "recent" } }, selected)
+	end)
 	it("registers separate recent/favorite cycles and does not select from a stale or child-locked model picker", function()
 		local cycles = {}
 		actions.cycle_model = function(direction, opts) cycles[#cycles + 1] = { direction, opts.source } end

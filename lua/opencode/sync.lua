@@ -1654,6 +1654,14 @@ function M.get_catalog_location()
 	return store.catalog_location
 end
 
+---Catalog for a session directory: the active store when directory is nil or the
+---active location, that location's entries otherwise (active store per missing domain).
+---@param directory string|nil
+---@return opencode.SyncCatalog
+function M.catalog_for(directory)
+	return require("opencode.sync.catalog").for_directory(M, store.catalogs, store.catalog_location, directory)
+end
+
 local function apply_catalog(domain, data)
 	if domain == "providers" then
 		M.handle_providers(data.providers)
