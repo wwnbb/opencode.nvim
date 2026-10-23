@@ -1,16 +1,17 @@
+-- Prompt outbox: per-session submission records, admission waiters and
+-- serialized selection/admission queues.
 local M = {}
-local outbox, queues, epochs = {}, {}, {}
+local epoch = require("opencode.session.epoch")
+local attention = require("opencode.session.attention")
+local outbox, queues = {}, {}
 local last_revert_events = {}
 local admission_waiters = {}
-local generation = 0
 
-function M.token(session_id)
-	return { generation = generation, session_id = session_id, epoch = epochs[session_id or ""] or 0 }
-end
-
-function M.is_current(token)
-	return token.generation == generation and token.epoch == (epochs[token.session_id or ""] or 0)
-end
+-- Re-exports: cancellation tokens live in session/epoch, interaction counts in
+-- session/attention.
+M.token, M.is_current = epoch.token, epoch.is_current
+M.zero_counts, M.normalize_counts, M.total = attention.zero_counts, attention.normalize_counts, attention.total
+M.has_pending, M.is_pending_question = attention.has_pending, attention.is_pending_question
 
 function M.begin(record)
 	local sid, id = record.session_id, record.message_id
@@ -111,14 +112,14 @@ function M.serialize(session_id, task)
 end
 
 function M.clear_session(session_id)
-	epochs[session_id] = (epochs[session_id] or 0) + 1
+	epoch.bump(session_id)
 	outbox[session_id], queues[session_id] = nil, nil
 	last_revert_events[session_id] = nil
 	admission_waiters[session_id] = nil
 end
 
 function M.invalidate()
-	generation = generation + 1
+	epoch.invalidate()
 	queues = {}
 	for _, records in pairs(outbox) do
 		for _, record in pairs(records) do
@@ -129,49 +130,10 @@ end
 
 function M.clear_all()
 	M.invalidate()
-	outbox, epochs = {}, {}
+	outbox = {}
+	epoch.clear_epochs()
 	last_revert_events = {}
 	admission_waiters = {}
-end
-
----@return table
-function M.zero_counts()
-	return {
-		permissions = 0,
-		questions = 0,
-		edits = 0,
-	}
-end
-
----@param counts table|nil
----@return table
-function M.normalize_counts(counts)
-	counts = type(counts) == "table" and counts or {}
-	return {
-		permissions = tonumber(counts.permissions or 0) or 0,
-		questions = tonumber(counts.questions or 0) or 0,
-		edits = tonumber(counts.edits or 0) or 0,
-	}
-end
-
----@param counts table|nil
----@return number
-function M.total(counts)
-	local normalized = M.normalize_counts(counts)
-	return normalized.permissions + normalized.questions + normalized.edits
-end
-
----@param counts table|nil
----@return boolean
-function M.has_pending(counts)
-	return M.total(counts) > 0
-end
-
----@param item table|nil
----@return boolean
-function M.is_pending_question(item)
-	local status = type(item) == "table" and item.status or nil
-	return status == "pending" or status == "confirming"
 end
 
 return M

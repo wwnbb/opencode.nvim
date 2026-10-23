@@ -1,6 +1,6 @@
 local M = {}
 
-local pending_helper = require("opencode.session.pending")
+local pending_helper = require("opencode.session.attention")
 local session_status = require("opencode.session.status")
 local session_util = require("opencode.util.session")
 
