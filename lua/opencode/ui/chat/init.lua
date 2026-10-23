@@ -400,6 +400,32 @@ function M.show_help()
 	chat_help.show(state.config)
 end
 
+-- Unbound views switch through the session_change event, bound panes through
+-- session_changed (which ignores same-session rebinds); both reset the surface
+-- here. Navigation keeps the stack it prepared; preserve_cache keeps render caches.
+local NAVIGATION_REASONS = { child_navigation = true, family_navigation = true }
+
+local function apply_session_switch(changed_session, opts)
+	local preserve_cache = opts.preserve_cache
+	if not preserve_cache or changed_session then
+		stop_spinner_animation_timer()
+		chat_tasks.stop_task_animation_timer()
+	end
+	reset_chat_surface({
+		reset_expansions = not preserve_cache or (changed_session and opts.reason ~= "child_navigation"),
+		preserve_render_cache = preserve_cache == true,
+		force_full_render = not preserve_cache or changed_session,
+	})
+	if not NAVIGATION_REASONS[opts.reason] and (not preserve_cache or changed_session) then
+		state.session_stack = {}
+	end
+	if changed_session and state.winid and vim.api.nvim_win_is_valid(state.winid) then
+		vim.api.nvim_win_call(state.winid, function()
+			vim.fn.winrestview({ topline = 1, leftcol = 0, skipcol = 0 })
+		end)
+	end
+end
+
 function M.create()
 	if not cs.valid(view) then return end
 	local events = require("opencode.events")
@@ -535,28 +561,10 @@ function M.create()
 		if not cs.valid(view) or (data and data.reason == "pane_focus") then return end
 		if data and data.view_id and data.view_id ~= view.id then return end
 		if state.session_bound and (not data or data.view_id ~= view.id) then return end
-		local preserve_cache = data and data.preserve_cache
-		local reason = data and data.reason
 		local changed_session = data and data.previous_id ~= data.id
+		local opts = { preserve_cache = data and data.preserve_cache, reason = data and data.reason }
 		vim.schedule(function()
-			if not preserve_cache or changed_session then
-				stop_spinner_animation_timer()
-				chat_tasks.stop_task_animation_timer()
-			end
-			local force_full_render = not preserve_cache or changed_session
-			reset_chat_surface({
-				reset_expansions = not preserve_cache or (changed_session and reason ~= "child_navigation"),
-				preserve_render_cache = preserve_cache == true,
-				force_full_render = force_full_render,
-			})
-			if not preserve_cache or (changed_session and reason ~= "child_navigation") then
-				state.session_stack = {}
-			end
-			if changed_session and state.winid and vim.api.nvim_win_is_valid(state.winid) then
-				vim.api.nvim_win_call(state.winid, function()
-					vim.fn.winrestview({ topline = 1, leftcol = 0, skipcol = 0 })
-				end)
-			end
+			apply_session_switch(changed_session, opts)
 		end)
 	end)
 	chat_event_handlers_setup = true
@@ -840,15 +848,7 @@ function M.session_changed(session, opts)
 	input.close_for_view(view)
 	state.session_id, state.session_name, state.session_bound = session.id, session.title or session.name, true
 	state.generation = (state.generation or 0) + 1
-	if previous ~= session.id then
-		stop_spinner_animation_timer()
-		chat_tasks.stop_task_animation_timer()
-		reset_chat_surface({ reset_expansions = opts.reason ~= "child_navigation", force_full_render = true })
-		if opts.reason ~= "child_navigation" and opts.reason ~= "family_navigation" then state.session_stack = {} end
-		if state.winid and vim.api.nvim_win_is_valid(state.winid) then
-			vim.api.nvim_win_call(state.winid, function() vim.fn.winrestview({ topline = 1, leftcol = 0, skipcol = 0 }) end)
-		end
-	end
+	if previous ~= session.id then apply_session_switch(true, opts) end
 	M.schedule_render({ session_id = session.id, force = true })
 end
 

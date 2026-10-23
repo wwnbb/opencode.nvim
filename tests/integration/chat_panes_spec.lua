@@ -75,6 +75,16 @@ describe("independent chat panes", function()
 		sync.clear_all()
 	end)
 
+
+	it("keeps a bound pane's render cache only when the switch preserves it", function()
+		local cache = second.render_cache
+		assert.is_truthy(cache)
+		assert.is_true(chat.bind_session(second, seed("pane-child", "Child transcript"),
+			{ reason = "child_navigation", preserve_cache = true }))
+		assert.equals(cache, second.render_cache)
+		assert.is_true(chat.bind_session(second, seed("pane-other", "Other transcript"), { reason = "session_switch" }))
+		assert.is_not.equals(cache, second.render_cache)
+	end)
 	it("uses independent normal windows and supports nested horizontal splits", function()
 		assert.is_not.equals(original_tab, tabpage)
 		assert.equals(tabpage, second.tabpage)
