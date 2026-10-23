@@ -166,4 +166,21 @@ describe("selection explanation context", function()
 		end
 	end)
 
+	it("asks follow-ups with the built-in instruction, the same context and every earlier turn", function()
+		local bufnr = buffer(root .. "/follow.lua", { "local value = 1", "return value" })
+		local opts = config.merge({ explanation = { prompt = "Custom {language}", language = "ru" } }).explanation
+		local prompt = assert(context.build(snapshot(bufnr, 1, { "local value = 1" }), opts))
+		local encoded = prompt:match("Context %(JSON%):\n(.*)$")
+		local turns = { { answer = "First." }, { question = "Why?", answer = "Because." }, { question = "And?" } }
+		local follow_up = context.follow_up(prompt, turns, opts)
+		assert.is_truthy(follow_up:find("Ответь по-русски на последний вопрос", 1, true))
+		assert.is_nil(follow_up:find("Custom", 1, true))
+		assert.same(vim.json.decode(encoded), vim.json.decode(follow_up:match("Context %(JSON%):\n(.-)\nConversation")))
+		assert.same({
+			{ role = "assistant", text = "First." }, { role = "user", text = "Why?" },
+			{ role = "assistant", text = "Because." }, { role = "user", text = "And?" },
+		}, vim.json.decode(follow_up:match("Conversation %(JSON%):\n(.*)$")))
+		opts.language = "de"
+		assert.is_truthy(context.follow_up(prompt, turns, opts):find("selected source code in de.", 1, true))
+	end)
 end)

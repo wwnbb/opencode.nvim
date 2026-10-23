@@ -29,13 +29,21 @@ local function stop_spinner(view)
 	view.timer = nil
 end
 
+-- Earlier turns of a follow-up conversation stay above the current one.
+local function compose(view, body)
+	return view.prefix and (view.prefix .. "\n\n" .. body) or body
+end
+
 local function render(view, text, saved_view)
 	if active ~= view or not vim.api.nvim_buf_is_valid(view.bufnr)
 		or not vim.api.nvim_win_is_valid(view.winid) then return false end
 	saved_view = saved_view or vim.api.nvim_win_call(view.winid, vim.fn.winsaveview)
+	-- A follow-up answer keeps the cursor at the end while it stays on the last line.
+	local follow = view.follow and saved_view.lnum >= vim.api.nvim_buf_line_count(view.bufnr)
+	view.text = text
 	local lines = vim.split(text, "\n", { plain = true, trimempty = false })
 	local highlights
-	if view.phase == "ready" or view.phase == "streaming" then
+	if view.phase == "ready" or view.phase == "streaming" or view.prefix then
 		local renderer = require("opencode.ui.chat.render")
 		local rendered = renderer.render_content(text, {
 			width = vim.api.nvim_win_get_width(view.winid), scope = "assistant_markdown",
@@ -45,13 +53,36 @@ local function render(view, text, saved_view)
 	if #lines == 0 then lines = { "" } end
 	view.popup:render(lines, highlights)
 	vim.bo[view.bufnr].modified = false
-	vim.api.nvim_win_call(view.winid, function() vim.fn.winrestview(saved_view) end)
+	vim.api.nvim_win_call(view.winid, function()
+		vim.fn.winrestview(saved_view)
+		if follow then vim.api.nvim_win_set_cursor(0, { vim.api.nvim_buf_line_count(0), 0 }) end
+	end)
 	return true
 end
 
-local function pending_text()
+local function pending_text(view)
+	if view.prefix then return compose(view, spinner.get_loading_text("Answering question")) end
 	local close = keymaps.label("explanation", "close", config.keymaps)
 	return spinner.get_loading_text("Explaining selection") .. (close ~= "(disabled)" and ("\n\n" .. close .. " close") or "")
+end
+
+local function footer()
+	local hints = {}
+	for _, item in ipairs({ { "ask", "ask" }, { "copy", "copy" }, { "close", "close" } }) do
+		local label = keymaps.label("explanation", item[1], config.keymaps)
+		if label ~= "(disabled)" then hints[#hints + 1] = label .. " " .. item[2] end
+	end
+	return #hints > 0 and table.concat(hints, "  ") or nil
+end
+
+local function start_spinner(view)
+	stop_spinner(view)
+	view.timer = vim.uv.new_timer()
+	if not view.timer then return end
+	local interval = spinner.get_interval_ms()
+	view.timer:start(interval, interval, vim.schedule_wrap(function()
+		if active == view and view.phase == "pending" then render(view, pending_text(view)) end
+	end))
 end
 
 local function copy_answer()
@@ -62,6 +93,34 @@ local function copy_answer()
 		pcall(vim.fn.setreg, register, view.answer)
 	end
 	vim.notify("Explanation copied", vim.log.levels.INFO)
+end
+
+-- The question prompt is a child float; the popup stays open while it has focus.
+local function ask()
+	local view = active
+	if not view or not view.on_ask then return end
+	if view.phase == "pending" or view.phase == "streaming" then
+		vim.notify("OpenCode explanation: wait for the current answer", vim.log.levels.INFO)
+		return
+	end
+	view.popup.close_on_leave = false
+	local prompt = float.create_input_popup({
+		title = " Ask about the selection ",
+		width = vim.api.nvim_win_get_width(view.winid),
+		anchor_win = view.winid,
+		on_submit = function(question)
+			if active == view and vim.trim(question) ~= "" then view.on_ask(question) end
+		end,
+	})
+	vim.api.nvim_create_autocmd("BufWipeout", {
+		buffer = prompt.input.bufnr,
+		once = true,
+		callback = vim.schedule_wrap(function()
+			if active ~= view then return end
+			view.popup.close_on_leave = true
+			if vim.api.nvim_get_current_win() ~= view.winid then M.close() end
+		end),
+	})
 end
 
 local function configure_buffer(bufnr)
@@ -92,14 +151,16 @@ end
 ---Open immediately so the request has a visible pending state.
 ---@param snapshot table Captured source selection (kept for the request owner).
 ---@param on_close function Called once for both key and external window closes.
+---@param on_ask? fun(question: string) Called with a submitted follow-up question.
 ---@return table|nil view
-function M.open(snapshot, on_close)
+function M.open(snapshot, on_close, on_ask)
 	M.close()
-	local view = { snapshot = snapshot, phase = "pending", on_close = on_close }
+	local view = { snapshot = snapshot, phase = "pending", on_close = on_close, on_ask = on_ask }
 	local popup, bufnr = float.create_centered_popup({
 		width = math.min(88, math.max(1, vim.o.columns - 10)),
 		height = math.min(24, math.max(1, vim.o.lines - vim.o.cmdheight - 6)),
 		title = "Explanation",
+		footer = on_ask and footer() or nil,
 		close_on_leave = true,
 		on_resize = function(current)
 			local saved_view = vim.api.nvim_win_call(view.winid, vim.fn.winsaveview)
@@ -107,7 +168,7 @@ function M.open(snapshot, on_close)
 				width = math.min(88, math.max(1, vim.o.columns - 10)),
 				height = math.min(24, math.max(1, vim.o.lines - vim.o.cmdheight - 6)),
 			} })
-			if view.answer then render(view, view.answer, saved_view) end
+			if view.text and view.phase ~= "pending" then render(view, view.text, saved_view) end
 		end,
 		on_close = function()
 			stop_spinner(view)
@@ -134,17 +195,25 @@ function M.open(snapshot, on_close)
 	vim.wo[view.winid].scrolloff = 2
 	local map, apply = keymaps.mapper("explanation", bufnr, config.keymaps)
 	map("n", "copy", copy_answer, { desc = "Copy explanation" })
+	if on_ask then map("n", "ask", ask, { desc = "Ask about the explanation" }) end
 	map("n", "close", M.close)
 	apply()
-	render(view, pending_text())
-	view.timer = vim.uv.new_timer()
-	if view.timer then
-		local interval = spinner.get_interval_ms()
-		view.timer:start(interval, interval, vim.schedule_wrap(function()
-			if active == view and view.phase == "pending" then render(view, pending_text()) end
-		end))
-	end
+	render(view, pending_text(view))
+	start_spinner(view)
 	return view
+end
+
+---Show a pending follow-up below the conversation so far.
+---@param prefix string Rendered earlier turns, ending with the new question.
+function M.pending(prefix)
+	local view = active
+	if not view or type(prefix) ~= "string" then return false end
+	view.phase, view.prefix, view.follow = "pending", prefix, true
+	view.answer = view.completed
+	if not render(view, pending_text(view)) then return false end
+	vim.api.nvim_win_set_cursor(view.winid, { vim.api.nvim_buf_line_count(view.bufnr), 0 })
+	start_spinner(view)
+	return true
 end
 
 function M.show(text, opts)
@@ -153,15 +222,17 @@ function M.show(text, opts)
 	if opts and opts.streaming and vim.trim(text) == "" then return true end
 	stop_spinner(view)
 	view.phase, view.answer = opts and opts.streaming and "streaming" or "ready", text
-	return render(view, text)
+	if view.phase == "ready" then view.completed = text end
+	return render(view, compose(view, text))
 end
 
 function M.error(message)
 	local view = active
 	if not view then return false end
 	stop_spinner(view)
-	view.phase, view.answer = "error", nil
-	return render(view, "Explanation error: " .. tostring(message))
+	-- After a failed follow-up, copy still yields the last complete answer.
+	view.phase, view.answer = "error", view.prefix and view.completed or nil
+	return render(view, compose(view, "Explanation error: " .. tostring(message)))
 end
 
 function M.teardown()

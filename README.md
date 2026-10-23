@@ -662,7 +662,14 @@ prompt asks for a separate **Diagnostics** section (**Диагностика** i
 after the code explanation. It includes each supplied message's source and
 check code when available, explains the issue, and suggests the smallest correction.
 Press `c` to copy the answer; `q` or `Esc` closes the popup and cancels a pending
-request. Normal-mode `K` remains available for LSP hover. Call
+request. Press `i` once the answer is complete to ask a follow-up question in a
+prompt at the bottom of the popup. The answer streams below the conversation,
+with each question quoted. Follow-ups reuse the same selection context, send
+the earlier turns with the new question, and always use the built-in follow-up
+instruction, even with a custom `prompt`. A failed follow-up leaves the earlier
+answers in place so you can ask again; `c` copies the latest answer. The popup
+footer lists these keys; set `explanation.keymaps.ask` to change or disable the
+key. Normal-mode `K` remains available for LSP hover. Call
 `require("opencode").explain_selection()` from your own Visual mapping if needed.
 
 Explanations have no timeout by default. Set `explanation.timeout_ms` to a
@@ -682,7 +689,8 @@ added before surrounding context while they fit in the same byte budget.
 The source buffer is never edited. Generation uses the chat's SSE stream with a
 separate temporary session and all tools disabled. That session is removed after
 completion or cancellation; the active chat and its history stay unchanged. Late
-answers are ignored after closing the popup or changing the source buffer.
+answers are ignored after closing the popup or changing the source buffer; a
+completed answer stays visible, but a later follow-up reports the changed source.
 
 Explanation has its own model, variant, options, and context settings. For a
 server launched by the plugin, `options` creates a private variant independent

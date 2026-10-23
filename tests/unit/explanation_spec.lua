@@ -3,7 +3,7 @@ local defaults = require("opencode.config")
 
 describe("selection explanation request lifecycle", function()
 	local controller, config, source, previous_buf, previous_config, previous_connection
-	local saved, requests, views, errors, shown, notices, snapshot
+	local saved, requests, views, errors, shown, notices, snapshot, pendings
 	local modules = {
 		"opencode.explanation", "opencode.ui.explanation", "opencode.util.visual_selection",
 		"opencode.lifecycle", "opencode.client", "opencode.settings",
@@ -49,7 +49,7 @@ describe("selection explanation request lifecycle", function()
 		} })
 		state.set_config(config)
 		state.set_connection("connected")
-		requests, views, errors, shown, notices = {}, {}, {}, {}, {}
+		requests, views, errors, shown, notices, pendings = {}, {}, {}, {}, {}, {}
 		saved.notify, saved.wrap = vim.notify, vim.schedule_wrap
 		vim.notify = function(message) notices[#notices + 1] = message end
 		package.loaded["opencode.util.visual_selection"] = {
@@ -70,6 +70,7 @@ describe("selection explanation request lifecycle", function()
 				return true
 			end,
 			error = function(message) errors[#errors + 1] = message; return true end,
+			pending = function(prefix) pendings[#pendings + 1] = prefix; return true end,
 		}
 		package.loaded["opencode.lifecycle"] = {
 			ensure_connected = function(callback)
@@ -325,6 +326,59 @@ describe("selection explanation request lifecycle", function()
 		assert.is_true(requests[1].cancelled)
 		requests[1].callback(nil, "L1–2 — too late")
 		assert.same({}, shown)
+	end)
+
+	it("answers follow-up questions with the selection context and earlier turns", function()
+		local function conversation(prompt)
+			return vim.json.decode(prompt:match("Conversation %(JSON%):\n(.*)$"))
+		end
+		assert.is_true(controller.explain_selection())
+		requests[1].callback(nil, "<answer>\nL1–2 — Defines a value.\n</answer>")
+		assert.is_true(controller.ask("  Why return it?\nBriefly.  "))
+		assert.same({ "L1–2 — Defines a value.\n\n> Why return it?\n> Briefly." }, pendings)
+		assert.equals(2, #requests)
+		assert.same({ providerID = "test", id = "explain" }, requests[2].model)
+		assert.is_truthy(requests[2].prompt:find("Answer the latest question", 1, true))
+		assert.is_truthy(requests[2].prompt:match("Context %(JSON%):\n[^\n]*local value = 1"))
+		assert.same({
+			{ role = "assistant", text = "L1–2 — Defines a value." },
+			{ role = "user", text = "Why return it?\nBriefly." },
+		}, conversation(requests[2].prompt))
+		requests[2].opts.on_update("<answer>\nSo callers")
+		requests[2].callback(nil, "<answer>\nSo callers can use it.\n</answer>")
+		assert.same({ "L1–2 — Defines a value.", "So callers", "So callers can use it." }, shown)
+		assert.is_true(controller.ask("Anything else?"))
+		assert.equals(4, #conversation(requests[3].prompt))
+		assert.equals("L1–2 — Defines a value.\n\n> Why return it?\n> Briefly.\n\nSo callers can use it.\n\n> Anything else?",
+			pendings[2])
+		assert.same({}, errors)
+	end)
+
+	it("keeps the conversation open after a failed follow-up and ignores its late reply", function()
+		assert.is_true(controller.explain_selection())
+		assert.is_false(controller.ask("Too early?"))
+		assert.is_truthy(notices[1]:find("wait for the explanation", 1, true))
+		assert.equals(1, #requests)
+		requests[1].callback(nil, "<answer>\nFirst.\n</answer>")
+		assert.is_false(controller.ask("   "))
+		assert.is_true(controller.ask("Lost question"))
+		requests[2].callback({ message = "Model overloaded" })
+		assert.same({ "Model overloaded" }, errors)
+		assert.is_true(views[1].open)
+		requests[2].callback(nil, "<answer>\nlate\n</answer>")
+		assert.same({ "First." }, shown)
+		assert.is_true(controller.ask("Second try"))
+		assert.is_nil(requests[3].prompt:find("Lost question", 1, true))
+		requests[2].opts.on_update("<answer>\nstale")
+		requests[3].callback(nil, "<answer>\nAnswered.\n</answer>")
+		assert.same({ "First.", "Answered." }, shown)
+		-- A ready answer stays when the source changes; only a new question reports it.
+		vim.api.nvim_buf_set_lines(source, 2, 3, false, { "changed()" })
+		assert.same({ "Model overloaded" }, errors)
+		assert.is_true(controller.ask("Still valid?"))
+		assert.equals(3, #requests)
+		assert.same({ "Model overloaded", "Source buffer changed" }, errors)
+		assert.is_true(views[1].open)
 	end)
 
 	it("shows a budget error without sending a request", function()

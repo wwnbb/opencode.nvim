@@ -1,4 +1,6 @@
 -- One Visual selection, one streamed explanation, one temporary popup.
+-- Follow-up questions reuse the captured selection context; each is a new
+-- temporary request carrying the earlier turns.
 local M = {}
 local context = require("opencode.explanation.context")
 local request = require("opencode.generation.request")
@@ -23,10 +25,27 @@ local function stop_request(record)
 	if record and record.handle then record.handle.cancel(); record.handle = nil end
 end
 
+-- The popup's conversation so far, with each question quoted.
+local function transcript(record)
+	local blocks = {}
+	for _, turn in ipairs(record.turns) do
+		if turn.question then blocks[#blocks + 1] = "> " .. turn.question:gsub("\n", "\n> ") end
+		if turn.answer then blocks[#blocks + 1] = turn.answer end
+	end
+	return table.concat(blocks, "\n\n")
+end
+
 local function fail(record, message)
 	if current ~= record then return end
-	current = nil
 	stop_request(record)
+	local last = record.turns and record.turns[#record.turns]
+	if last and last.question and not last.answer then
+		-- A failed follow-up keeps the earlier answers open for another question.
+		table.remove(record.turns)
+		record.phase = "ready"
+	else
+		current = nil
+	end
 	if ui.is_open() then ui.error(message) end
 end
 
@@ -38,28 +57,32 @@ function M.dismiss()
 	return record ~= nil
 end
 
-local function validate_request(record)
-	if current ~= record then return false end
-	if not source_unchanged(record) then fail(record, "Source buffer changed"); return false end
-	if not ui.is_open() then M.dismiss(); return false end
-	return true
-end
-
 -- The display config is the one captured when the request started.
-local function hooks(feature_config)
+-- Follow-ups always ask for <answer> markers, so they display as the default prompt.
+local function hooks(owner, feature_config, follow_up)
+	local display_config = follow_up and {} or feature_config
+	-- A failed follow-up leaves its record current; late replies must not reach it.
+	local generation = owner.generation
+	local function live(record)
+		return current == record and record.phase == "pending" and record.generation == generation
+	end
+	local function valid(record)
+		if not live(record) then return false end
+		if not source_unchanged(record) then fail(record, "Source buffer changed"); return false end
+		if not ui.is_open() then M.dismiss(); return false end
+		return true
+	end
 	return {
-		current = function(record) return current == record end,
-		valid = validate_request,
-		in_flight = function(record)
-			return current == record and record.phase == "pending" and ui.is_open() and source_unchanged(record)
-		end,
-		fail = fail,
-		unavailable = function(record) fail(record, "OpenCode server is unavailable") end,
+		current = live,
+		valid = valid,
+		in_flight = function(record) return live(record) and ui.is_open() and source_unchanged(record) end,
+		fail = function(record, message) if live(record) then fail(record, message) end end,
+		unavailable = function(record) if live(record) then fail(record, "OpenCode server is unavailable") end end,
 		resolve_model = function(lifecycle, value) return lifecycle.resolve_explanation_model(value) end,
 		generate = function(...) return require("opencode.client").generate_explanation(...) end,
 		update = function(record, text)
-			if record.phase ~= "pending" or not validate_request(record) then return end
-			local visible = response_text.display(text, feature_config, { streaming = true })
+			if not valid(record) then return end
+			local visible = response_text.display(text, display_config, { streaming = true })
 			if visible ~= "" and ui.show(visible, { streaming = true }) == false then M.dismiss() end
 		end,
 		respond = function(record, request_err, response)
@@ -68,11 +91,13 @@ local function hooks(feature_config)
 				return
 			end
 			if type(response) ~= "string" or vim.trim(response) == "" then
-				fail(record, "The model returned an empty explanation")
+				fail(record, "The model returned an empty " .. (follow_up and "answer" or "explanation"))
 				return
 			end
+			local answer = response_text.display(response, display_config)
 			record.phase = "ready"
-			if ui.show(response_text.display(response, feature_config)) == false then M.dismiss() end
+			if follow_up then record.turns[#record.turns].answer = answer else record.turns = { { answer = answer } } end
+			if ui.show(answer) == false then M.dismiss() end
 		end,
 	}
 end
@@ -85,17 +110,39 @@ function M.explain_selection()
 	local model_err = request.validate(config, "explanation")
 	if model_err then notify(model_err); return false end
 	M.dismiss()
-	snapshot.phase = "pending"
+	snapshot.phase, snapshot.turns, snapshot.generation = "pending", {}, 1
 	current = snapshot
-	if ui.open(snapshot, function() M.dismiss() end) == false then
+	if ui.open(snapshot, function() M.dismiss() end, M.ask) == false then
 		M.dismiss()
 		notify("Could not open the explanation popup")
 		return false
 	end
 	local prompt, prompt_err = context.build(snapshot, config)
 	if not prompt then fail(snapshot, prompt_err); return true end
-	request.run(snapshot, config, prompt, hooks(config))
+	snapshot.prompt = prompt
+	request.run(snapshot, config, prompt, hooks(snapshot, config))
 	return ui.is_open()
+end
+
+---Ask a follow-up question about the open explanation.
+---@return boolean started
+function M.ask(question)
+	local record = current
+	question = type(question) == "string" and vim.trim(question) or ""
+	if question == "" then return false end
+	if not record or record.phase ~= "ready" or not record.prompt then
+		notify("wait for the explanation before asking")
+		return false
+	end
+	if not ui.is_open() then M.dismiss(); return false end
+	local config = request.current_config("explanation", config)
+	local model_err = request.validate(config, "explanation")
+	if model_err then notify(model_err); return false end
+	record.turns[#record.turns + 1] = { question = question }
+	record.phase, record.generation = "pending", record.generation + 1
+	ui.pending(transcript(record))
+	request.run(record, config, context.follow_up(record.prompt, record.turns, config), hooks(record, config, true))
+	return true
 end
 
 function M.teardown()
@@ -116,12 +163,16 @@ function M.setup(opts)
 	vim.api.nvim_create_autocmd({ "TextChanged", "TextChangedI", "TextChangedP", "BufWipeout" }, {
 		group = group,
 		callback = function(event)
-			if current and event.buf == current.bufnr and not source_unchanged(current) then fail(current, "Source buffer changed") end
+			if current and current.phase == "pending" and event.buf == current.bufnr and not source_unchanged(current) then
+				fail(current, "Source buffer changed")
+			end
 		end,
 	})
 	vim.api.nvim_create_autocmd("VimLeavePre", { group = group, callback = M.teardown })
 	connection_listener = function(value)
-		if current and (value == "error" or value == "idle") then fail(current, "OpenCode server disconnected") end
+		if current and current.phase == "pending" and (value == "error" or value == "idle") then
+			fail(current, "OpenCode server disconnected")
+		end
 	end
 	require("opencode.state").on("connection", connection_listener)
 end

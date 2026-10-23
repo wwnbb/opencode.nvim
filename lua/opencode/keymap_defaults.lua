@@ -22,7 +22,7 @@ local M = {
 		autocomplete_prev = { "<C-p>", "<S-Tab>" }, autocomplete_next = "<C-n>", autocomplete_confirm = "<Tab>",
 		command_enter = "<CR>", toggle_mode = "<C-\\>", fold_toggle = "za", fold_open = "zo", fold_close = "zc", fold_open_all = "zR", fold_close_all = "zM" },
 	completion = { trigger = "<C-l>", prompt = "<C-S-l>", accept = "<Tab>" },
-	explanation = { trigger = "K", close = { "q", "<Esc>" }, copy = "c" },
+	explanation = { trigger = "K", close = { "q", "<Esc>" }, copy = "c", ask = "i" },
 	menu = { select = "<CR>", close = { "<Esc>", "<C-c>" }, close_normal = "q", close_insert = "<C-c>",
 		search = { "/", "i" }, normal_mode = "<Esc>",
 		next = "<Down>", previous = "<Up>", next_normal = "j", previous_normal = "k",

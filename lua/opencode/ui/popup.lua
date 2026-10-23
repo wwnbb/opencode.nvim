@@ -24,7 +24,7 @@ local float_context = require("opencode.ui.float_context")
 ---@field namespaces table<string, integer> Highlight namespaces by layer name
 ---@field previous_win integer Window focused before the popup opened
 ---@field focus_restore false|"chat"|"previous" Where focus goes on close
----@field close_on_leave boolean
+---@field close_on_leave boolean Checked on each leave, so an owner may pause it while a child float has focus
 ---@field on_resize? fun(popup: OpenCodePopup)
 ---@field on_close? fun(popup: OpenCodePopup)
 ---@field outer_border_style string|table
@@ -290,7 +290,8 @@ local function install_events(self)
 					buffer = component.bufnr,
 					callback = function()
 						vim.schedule(function()
-							if not self.closed and not belongs_to_popup(self, vim.api.nvim_get_current_win()) then
+							if not self.closed and self.close_on_leave
+								and not belongs_to_popup(self, vim.api.nvim_get_current_win()) then
 								self:close({ restore_focus = self.focus_restore == "chat", force_focus = true })
 							end
 						end)
