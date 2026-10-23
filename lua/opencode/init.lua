@@ -400,26 +400,16 @@ function M.split(direction, opts)
 	local owner = opts and opts.view or chat.get_view()
 	if not cs.valid(owner, opts and opts.generation) or not (owner.visible or owner.suspended) then return false end
 	local generation = owner.generation
-	local initial_input = session_focus.capture_input(owner)
 	local session = cs.session(owner)
-	local directory = state.get_session_directory(session.id) or require("opencode.util.cwd").get()
-	local pending = require("opencode.session.pending")
-	local token = pending.token(session.id)
-	lifecycle.ensure_connected(function()
-		if not pending.is_current(token) or not cs.valid(owner, generation) or not (owner.visible or owner.suspended) then return end
-		client.create_session({ location = { directory = directory } }, function(err, created)
-			vim.schedule(function()
-				if not pending.is_current(token) then return end
-				if err then
-					vim.notify("Failed to create split session: " .. tostring(err.message or err), vim.log.levels.ERROR)
-					return
-				end
-				session_actions.remember(created)
-				if not pending.is_current(token) or not cs.valid(owner, generation) or not (owner.visible or owner.suspended) then return end
-				session_focus.with_session_focus(owner, function() return chat.create_split(owner, created, direction) end, initial_input)
-			end)
-		end)
-	end)
+	local catalog = require("opencode.session.catalog")
+	catalog.create({
+		token = require("opencode.session.pending").token(session.id),
+		view = owner,
+		initial_input = session_focus.capture_input(owner),
+		location = { directory = catalog.source_directory(session.id) },
+		live = function() return cs.valid(owner, generation) and (owner.visible or owner.suspended) end,
+		error_message = function(err) return "Failed to create split session: " .. tostring(err.message or err) end,
+	}, function(created) return chat.create_split(owner, created, direction) end)
 	return true
 end
 
@@ -739,7 +729,7 @@ function M.new_session(opts)
 	local current_session = owner and cs.session(owner) or state.get_session()
 	-- New sessions follow the editor's current directory (resolved now, while
 	-- focus is still known), not the directory of the session being replaced.
-	local directory = owner and require("opencode.util.cwd").get()
+	local directory = require("opencode.session.catalog").new_chat_directory(owner)
 	opts = vim.deepcopy(vim.tbl_extend("force", opts or {}, { view = false }))
 	opts.view = nil
 
@@ -748,67 +738,62 @@ function M.new_session(opts)
 		return
 	end
 
-	local pending = require("opencode.session.pending")
-	local token = pending.token()
-	lifecycle.ensure_connected(function()
-		if not pending.is_current(token) then return end
-		local sync = require("opencode.sync")
-		if owner and not cs.valid(owner, generation) then return end
-		local cfg = state.get_config() or {}
-		local parallel = cfg.session and cfg.session.parallel or {}
-		local preserve_cache = parallel.enabled ~= false
+	local preserve_cache
+	local activate_opts = { reason = opts.reason or "new_session", preserve_cache = true }
+	require("opencode.session.catalog").create({
+		token = require("opencode.session.pending").token(),
+		view = view,
+		initial_input = initial_input,
+		location = opts.location or (directory and { directory = directory }),
+		live = function(created)
+			if not owner then return true end
+			if not cs.valid(owner, generation) then return false end
+			return not created or not (owner_was_visible and not owner.visible and not owner.suspended)
+		end,
+		on_connected = function()
+			local parallel = ((state.get_config() or {}).session or {}).parallel or {}
+			preserve_cache = parallel.enabled ~= false
+		end,
+		error_message = function(err)
+			return "Failed to create new session: " .. tostring(err.message or err.error or err)
+		end,
+	}, function(session)
+		if owner and owner.config.layout == "tab" and owner.workspace_id and not opts.close_previous then
+			return require("opencode.ui.chat").create_layout(session)
+		elseif owner then
+			return require("opencode.ui.chat").bind_session(owner, session, activate_opts)
+		else
+			return session_actions.set_active(session.id, session.title or "New session", activate_opts)
+		end
+	end, function(session)
+		if current_session.id and current_session.id ~= session.id then
+			if opts.close_previous then
+				session_actions.close(current_session.id, { silent = true, reason = opts.reason or "clear" })
+			elseif not preserve_cache and not cs.for_session(current_session.id) then
+				require("opencode.sync").clear_session(current_session.id)
+			end
+		end
+		if opts.clear_draft then
+			local input = require("opencode.ui.input")
+			local history = require("opencode.ui.input.history")
+			local draft = opts.clear_draft
+			if input.draft_token() == draft.token and history.get_pending(draft.session_id) == draft.text
+				and vim.deep_equal(history.get_pending_parts(draft.session_id), draft.parts) then
+				history.clear_pending(draft.session_id)
+			end
+		end
 
-		local location = opts.location or (directory and { directory = directory })
-		client.create_session(location and { location = location } or {}, function(err, session)
-			vim.schedule(function()
-				if not pending.is_current(token) then return end
-				if err then
-					vim.notify("Failed to create new session: " .. tostring(err.message or err.error or err), vim.log.levels.ERROR)
-					return
-				end
+		local render_ok, render_coordinator = pcall(require, "opencode.ui.chat.render_coordinator")
+		if render_ok then
+			render_coordinator.request({
+				session_id = session.id,
+				reason = opts.reason or "new_session",
+			})
+		end
 
-				session_actions.remember(session)
-				if owner and (not cs.valid(owner, generation) or (owner_was_visible and not owner.visible and not owner.suspended)) then return end
-				local activate_opts = { reason = opts.reason or "new_session", preserve_cache = true }
-				if session_focus.with_session_focus(view, function()
-					if owner and owner.config.layout == "tab" and owner.workspace_id and not opts.close_previous then
-						return require("opencode.ui.chat").create_layout(session)
-					elseif owner then
-						return require("opencode.ui.chat").bind_session(owner, session, activate_opts)
-					else
-						return session_actions.set_active(session.id, session.title or "New session", activate_opts)
-					end
-				end, initial_input) == false then return end
-				if current_session.id and current_session.id ~= session.id then
-					if opts.close_previous then
-						session_actions.close(current_session.id, { silent = true, reason = opts.reason or "clear" })
-					elseif not preserve_cache and not cs.for_session(current_session.id) then
-						sync.clear_session(current_session.id)
-					end
-				end
-				if opts.clear_draft then
-					local input = require("opencode.ui.input")
-					local history = require("opencode.ui.input.history")
-					local draft = opts.clear_draft
-					if input.draft_token() == draft.token and history.get_pending(draft.session_id) == draft.text
-						and vim.deep_equal(history.get_pending_parts(draft.session_id), draft.parts) then
-						history.clear_pending(draft.session_id)
-					end
-				end
-
-				local render_ok, render_coordinator = pcall(require, "opencode.ui.chat.render_coordinator")
-				if render_ok then
-					render_coordinator.request({
-						session_id = session.id,
-						reason = opts.reason or "new_session",
-					})
-				end
-
-				if not opts.silent then
-					vim.notify("Started new session", vim.log.levels.INFO)
-				end
-			end)
-		end)
+		if not opts.silent then
+			vim.notify("Started new session", vim.log.levels.INFO)
+		end
 	end)
 end
 

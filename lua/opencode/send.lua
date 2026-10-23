@@ -264,6 +264,18 @@ local function bind_created_session(info, opts)
 	end
 end
 
+-- A prompt without a session creates one in the draft's directory, records and
+-- binds it, then continues with its ID; failures restore the draft.
+local function create_bound_session(body, token, text, opts, on_created)
+	client().create_session(body, function(err, info)
+		if not pending.is_current(token) then return end
+		if err then fail_before_send(err.message or "Session creation failed", text, opts); return end
+		session_actions.remember(info)
+		bind_created_session(info, opts)
+		on_created(info)
+	end)
+end
+
 -- Both former sync/async modes return admission. Execution ends only through
 -- terminal events/reconciliation; a successful POST never sets the session idle.
 function M.send(text, opts)
@@ -274,7 +286,7 @@ function M.send(text, opts)
 	opts._draft_session_id = opts._draft_session_id or session_id or ""
 	local token = opts._token or pending.token(session_id)
 	if not pending.is_current(token) then return false end
-	local directory = opts.directory or (session_id and state.get_session_directory(session_id)) or require("opencode.util.cwd").get()
+	local directory = opts.directory or require("opencode.session.catalog").source_directory(session_id)
 	opts.directory = state.normalize_directory(directory)
 	directory = opts.directory
 	if opts.mode == "shell" then
@@ -295,13 +307,7 @@ function M.send(text, opts)
 		end
 		if session_id then run(session_id)
 		else
-			client().create_session({ location = { directory = directory } }, function(err, info)
-				if not pending.is_current(token) then return end
-				if err then fail_before_send(err.message or "Session creation failed", text, opts); return end
-				session_actions.remember(info)
-				bind_created_session(info, opts)
-				run(info.id)
-			end)
+			create_bound_session({ location = { directory = directory } }, token, text, opts, function(info) run(info.id) end)
 		end
 		return true
 	end
@@ -345,13 +351,7 @@ function M.send(text, opts)
 	if not payload then return fail_before_send(payload_err, text, opts) end
 	if session_id then return submit(session_id, payload, selection, text, opts) end
 	local body = { title = opts.title, location = { directory = directory }, agent = selection.agent, model = selection.model }
-	client().create_session(body, function(err, info)
-		if not pending.is_current(token) then return end
-		if err then fail_before_send(err.message or "Session creation failed", text, opts); return end
-		session_actions.remember(info)
-		bind_created_session(info, opts)
-		submit(info.id, payload, selection, text, opts, info)
-	end)
+	create_bound_session(body, token, text, opts, function(info) submit(info.id, payload, selection, text, opts, info) end)
 	return true
 end
 
@@ -360,7 +360,7 @@ end
 function M.command(session_id, name, text, opts, callback)
 	opts = vim.deepcopy(opts or {})
 	opts.session_id = session_id
-	opts.directory = state.normalize_directory(opts.directory or state.get_session_directory(session_id) or require("opencode.util.cwd").get())
+	opts.directory = state.normalize_directory(opts.directory or require("opencode.session.catalog").source_directory(session_id))
 	local token = opts._token or pending.token(session_id)
 	if not pending.is_current(token) then return false end
 	local providers = sync().get_location_catalog(opts.directory, "providers")

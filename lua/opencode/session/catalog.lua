@@ -56,6 +56,46 @@ function M.open(id, opts, callback)
 	end)
 end
 
+-- Directory policy for new sessions. A split stays in its source session's
+-- directory and a prompt without a session uses the draft session's directory;
+-- both fall back to the editor's cwd. A new chat from a pane follows the cwd
+-- resolved when the command ran; without a pane the client defaults to the cwd.
+function M.source_directory(session_id)
+	return session_id and state.get_session_directory(session_id) or require("opencode.util.cwd").get()
+end
+
+function M.new_chat_directory(owner)
+	return owner and require("opencode.util.cwd").get() or nil
+end
+
+---Create a session, record it, and bind it with the caller's focus rules.
+---`live(created)` re-validates the caller's owner before connecting and again
+---(with created = true) after the response; `bind` returns false when the
+---focus moved away, which skips `done`.
+---@param opts { token: any, view?: table, initial_input?: any, location?: table, live?: (fun(created?: boolean): boolean), on_connected?: fun(), error_message: (fun(err: any): string) }
+---@param bind fun(session: table): any
+---@param done? fun(session: table)
+function M.create(opts, bind, done)
+	local live = opts.live or function() return true end
+	require("opencode.lifecycle").ensure_connected(function()
+		if not pending.is_current(opts.token) or not live() then return end
+		if opts.on_connected then opts.on_connected() end
+		require("opencode.client").create_session(opts.location and { location = opts.location } or {}, function(err, created)
+			vim.schedule(function()
+				if not pending.is_current(opts.token) then return end
+				if err then
+					vim.notify(opts.error_message(err), vim.log.levels.ERROR)
+					return
+				end
+				require("opencode.session").remember(created)
+				if not pending.is_current(opts.token) or not live(true) then return end
+				if focus.with_session_focus(opts.view, function() return bind(created) end, opts.initial_input) == false then return end
+				if done then done(created) end
+			end)
+		end)
+	end)
+end
+
 function M.rename(id, title, callback)
 	if not valid_id(id) or type(title) ~= "string" or title:find("%z") then
 		schedule(callback, { message = "Enter a valid session ID and title" }); return
