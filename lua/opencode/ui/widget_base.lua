@@ -91,7 +91,7 @@ end
 ---@param labels string[]
 ---@param selected fun(index: integer): boolean
 ---@param marker fun(index: integer, is_selected: boolean): string
----@param style { add_raw_line: fun(result: table, text: string, hl_group: string): any, any, table, highlight_text?: fun(result: table, rows: table, text: string, hl_group: string), selected_hl: string, option_hl: string, marker_hl?: string }
+---@param style { add_raw_line: (fun(result: table, text: string, hl_group: string): any, any, table), highlight_text?: (fun(result: table, rows: table, text: string, hl_group: string)), selected_hl: string, option_hl: string, marker_hl?: string }
 ---@return table<integer, integer> option_lines First row of each option
 ---@return table<integer, integer> option_end_lines Last row of each option
 function M.append_options(result, labels, selected, marker, style)

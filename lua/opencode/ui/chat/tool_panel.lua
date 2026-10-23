@@ -194,7 +194,7 @@ end
 ---The target is truncated first; the suffix drops to `short_suffix` when the
 ---full target would not fit, and is dropped when it leaves no room (unless
 ---keep_suffix). Without room for any target, the whole header is truncated.
----@param opts { prefix: string, target: string, close?: string, suffix: string, short_suffix?: string, spinner?: string, width: integer, truncate: fun(value: string, width: integer): string, keep_suffix?: boolean, min_target?: integer }
+---@param opts { prefix: string, target: string, close?: string, suffix: string, short_suffix?: string, spinner?: string, width: integer, truncate: (fun(value: string, width: integer): string), keep_suffix?: boolean, min_target?: integer }
 ---@return string
 function M.fit_header(opts)
 	local width, prefix, target = opts.width, opts.prefix, opts.target
