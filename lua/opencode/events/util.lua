@@ -204,45 +204,8 @@ end
 ---@param child_session_id string|nil
 ---@return boolean
 function M.session_owns_task_child(parent_session_id, child_session_id)
-	if not parent_session_id or parent_session_id == "" or not child_session_id or child_session_id == "" then
-		return false
-	end
-
 	local ok_sync, sync = pcall(require, "opencode.sync")
-	if not ok_sync then
-		return false
-	end
-
-	if type(sync.get_task_parent_session) == "function" then
-		local indexed_parent = sync.get_task_parent_session(child_session_id)
-		if indexed_parent then
-			return indexed_parent == parent_session_id
-		end
-	end
-
-	local ok_state, state = pcall(require, "opencode.state")
-	if ok_state and type(state.get_session_record) == "function" then
-		local record = state.get_session_record(child_session_id)
-		local record_parent = type(record) == "table" and record.parentID or nil
-		if record_parent then
-			return record_parent == parent_session_id
-		end
-	end
-
-	for _, message in ipairs(sync.get_messages(parent_session_id) or {}) do
-		for _, part in ipairs(sync.get_message_tools(message.id) or {}) do
-			-- An indexed navigation reference without an owner was deliberately
-			-- classified as copied/ambiguous. Only genuinely pre-index parts fall back.
-			if part.type == "tool" and part.tool == "task"
-				and not sync.get_task_child_session(message.id, part.id)
-				and sync.task_reference_can_own(parent_session_id, child_session_id)
-				and sync.get_task_child_session_for_part(part) == child_session_id then
-				return true
-			end
-		end
-	end
-
-	return false
+	return ok_sync and sync.session_owns_task_child(parent_session_id, child_session_id) or false
 end
 
 ---@param current_session_id string|nil
@@ -282,8 +245,7 @@ function M.runtime_root_for_session(session_id)
 		if state.is_runtime_session(session_id) then
 			return session_id
 		end
-		local parent = ok_sync and type(sync.get_task_parent_session) == "function"
-			and sync.get_task_parent_session(session_id) or nil
+		local parent = ok_sync and sync.get_task_parent_session(session_id) or nil
 		parent = parent or state.get_session_parent_id(session_id)
 		if not parent then
 			-- Parts can arrive before their task-parent index is available.

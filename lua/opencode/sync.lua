@@ -73,12 +73,10 @@ local native_messages = {}
 local structure_generation, linked_generation = {}, {}
 local metadata_snapshots, history_generation = {}, {}
 local history_clock, history_reset_generation = 0, 0
-local catalog_generation = 0
--- Navigation references can share a child after a fork copies settled history.
-local task_child_references, task_child_pending, task_reference_sequence = {}, {}, 0
 local metadata_depth, metadata_pending = 0, {}
 local parts_generation, parts_owners = {}, {}
 local parts_memo = require("opencode.util.memo").new("sync_render_parts", { max_entries = 10000 })
+local catalog = require("opencode.sync.catalog").new(M, store)
 
 local function invalidate_parts(message_id)
 	if not message_id then return end
@@ -129,12 +127,6 @@ local function track_metadata(message)
 	if metadata_depth > 0 then metadata_pending[message.id] = true
 	else refresh_metadata(message) end
 end
-
-local UTILITY_AGENT_NAMES = {
-	compaction = true,
-	summary = true,
-	title = true,
-}
 
 -- Binary search implementation (matches TUI's Binary.search)
 -- Returns { found = bool, index = number }
@@ -248,7 +240,7 @@ local function nonempty_string(value)
 end
 
 local find_message_session_id
-local clear_task_child_indices_for_message
+local task_children
 local bump_task_summary_revision_for_message
 local bump_task_summary_revision_for_part_change
 
@@ -284,12 +276,6 @@ local function bump_revision(map, key)
 	local next_revision = (map[key] or 0) + 1
 	map[key] = next_revision
 	return next_revision
-end
-
----@param field string
-local function bump_store_counter(field)
-	store[field] = (store[field] or 0) + 1
-	if field == "provider_revision" then catalog_generation = catalog_generation + 1 end
 end
 
 ---@param session_id string|nil
@@ -394,24 +380,22 @@ local function get_part_id(part)
 	return part.id
 end
 
+---@param session_id string|nil
 ---@param message_id string|nil
 ---@return Message|nil
-local function get_message_by_id(message_id)
-	local session_id = message_id and find_message_session_id(message_id)
-	if not session_id then
-		return nil
-	end
-
-	local messages = store.message[session_id]
+local function message_in_session(session_id, message_id)
+	local messages = session_id and store.message[session_id]
 	if not messages then
 		return nil
 	end
-
 	local message_index = find_message_index(messages, message_id)
-	if message_index then
-		return messages[message_index]
-	end
-	return nil
+	return message_index and messages[message_index] or nil
+end
+
+---@param message_id string|nil
+---@return Message|nil
+local function get_message_by_id(message_id)
+	return message_in_session(message_id and find_message_session_id(message_id), message_id)
 end
 
 ---@param part table|nil
@@ -470,275 +454,22 @@ bump_task_summary_revision_for_part_change = function(previous_part, next_part)
 	bump_task_summary_revision(part.sessionID or (message and message.sessionID) or find_message_session_id(part.messageID))
 end
 
----@param tool_part table|nil
----@return string|nil
-local function resolve_task_child_session_id(tool_part)
-	if type(tool_part) ~= "table" or tool_part.tool ~= "task" then
-		return nil
-	end
+task_children = require("opencode.sync.task_children").new(M, store, {
+	part_key = part_key,
+	find_message_session_id = function(message_id) return find_message_session_id(message_id) end,
+	bump_part_revision = bump_part_revision,
+	forget_native = function(message_id) native_messages[message_id] = nil end,
+})
 
-	local part_metadata = type(tool_part.metadata) == "table" and tool_part.metadata or {}
-	local tool_state = type(tool_part.state) == "table" and tool_part.state or {}
-	local state_metadata = type(tool_state.metadata) == "table" and tool_state.metadata or {}
 
-	-- Both spellings occur in verified v2 runtimes: 2.0.11 emits sessionID,
-	-- while the current task tool source uses sessionId.
-	return nonempty_string(state_metadata.sessionID) or nonempty_string(state_metadata.sessionId)
-		or nonempty_string(part_metadata.sessionID) or nonempty_string(part_metadata.sessionId)
-end
-
-local function inherited_task_reference(child_session_id, parent_session_id)
-	local state = require("opencode.state")
-	local source = state.get_session_fork_source_id(parent_session_id)
-	if not source then return false end
-	local native_parent = state.get_session_parent_id(child_session_id)
-	local visited = { [parent_session_id] = true }
-	while source and not visited[source] do
-		if source == native_parent then return true end
-		for _, reference in pairs(task_child_references[child_session_id] or {}) do
-			if reference.parent == source then return true end
-		end
-		visited[source] = true
-		source = state.get_session_fork_source_id(source)
-	end
-	return false
-end
-
-local function task_reference_can_replace(child_session_id, reference, existing)
-	local native_parent = require("opencode.state").get_session_parent_id(child_session_id)
-	-- Copies retain call IDs; a distinct call can establish a genuine conflict
-	-- only after native ancestry is known.
-	if not existing then return not native_parent or native_parent == reference.parent end
-	if reference.parent == existing.parent or native_parent == reference.parent then return true end
-	if native_parent and reference.callID and existing.callID and reference.callID ~= existing.callID then
-		for _, other in pairs(task_child_references[child_session_id] or {}) do
-			if other.parent ~= reference.parent and other.callID == reference.callID then return false end
-		end
-		return true
-	end
-	return false
-end
-
-local function task_reference_can_own(child_session_id, parent_session_id, reference)
-	local state = require("opencode.state")
-	local native_parent = state.get_session_parent_id(child_session_id)
-	if reference and reference.explicit then return true end
-	if native_parent == parent_session_id then return true end
-	if inherited_task_reference(child_session_id, parent_session_id) then return false end
-	if reference and reference.genuine then return true end
-	-- Without source history or native ancestry a fork launch is ambiguous. Keep
-	-- its navigation link, but wait for metadata before claiming a new child.
-	return not state.get_session_fork_source_id(parent_session_id)
-end
-
-local function bump_task_reference_revision(key)
-	local message_id, part_id = key:match("^(.-)%z(.+)$")
-	if message_id and part_id then
-		native_messages[message_id] = nil
-		bump_part_revision(message_id, part_id, find_message_session_id(message_id))
-	end
-end
-
--- Metadata may arrive after either history. Repair only this child's claims;
--- explicit removal of a genuine owner must not revive an older task link.
-local function refresh_task_child_owner(child_session_id)
-	local parent = store.task_child_parent[child_session_id]
-	local previous = store.task_child_owner[child_session_id]
-	local references = task_child_references[child_session_id] or {}
-	local current = references[previous]
-	local native_parent = require("opencode.state").get_session_parent_id(child_session_id)
-	local valid = parent and current and not current.retired and task_reference_can_own(child_session_id, parent, current)
-		and (current.genuine or task_reference_can_replace(child_session_id, current, nil))
-	if valid and native_parent then current.genuine = true end
-	if valid and not task_child_pending[child_session_id] then return false end
-	if not parent and not task_child_pending[child_session_id] then return false end
-	local existing = valid and references[previous] or nil
-	local owner, sequence, pending = valid and previous or nil, existing and existing.sequence, false
-	if not valid then parent = nil end
-	for key, reference in pairs(references) do
-		if not reference.retired then
-			if not task_reference_can_own(child_session_id, reference.parent, reference) then pending = true
-			elseif not sequence or reference.sequence > sequence then
-				if reference.genuine or task_reference_can_replace(child_session_id, reference, existing) then
-					if native_parent then reference.genuine = true end
-					owner, parent, sequence = key, reference.parent, reference.sequence
-				else pending = true end
-			end
-		end
-	end
-	store.task_child_parent[child_session_id], store.task_child_owner[child_session_id] = parent, owner
-	task_child_pending[child_session_id] = pending and true or nil
-	if previous == owner then return false end
-	if previous then bump_task_reference_revision(previous) end
-	if owner then bump_task_reference_revision(owner) end
-	return true
-end
-
----@param message_id string|nil
----@param part_id string|nil
-local function clear_task_child_index(message_id, part_id)
-	local key = part_key(message_id, part_id)
-	if not key then
-		return
-	end
-	local child_session_id = store.task_part_child[key]
-	if child_session_id then
-		refresh_task_child_owner(child_session_id)
-		native_messages[message_id] = nil
-		local references = task_child_references[child_session_id]
-		local removed = references and references[key]
-		if references then
-			references[key] = nil
-			if not next(references) then
-				task_child_references[child_session_id], task_child_pending[child_session_id] = nil, nil
-			end
-		end
-		if store.task_child_owner[child_session_id] == key then
-			if removed and removed.genuine then
-				-- Keep navigation, but only another genuine write may reclaim this child.
-				for _, reference in pairs(references or {}) do reference.retired = true end
-			end
-			store.task_child_parent[child_session_id] = nil
-			store.task_child_owner[child_session_id] = nil
-			task_child_pending[child_session_id] = nil
-		end
-	end
-	store.task_part_child[key] = nil
-end
-
----@param parent_session_id string
+---Forget a message's parts, task links, session index, revisions, and private caches.
 ---@param message_id string
----@param part_id string
----@param child_session_id string
----@return boolean changed
-local function record_task_child_index(parent_session_id, message_id, part_id, child_session_id, explicit)
-	if
-		not parent_session_id
-		or parent_session_id == ""
-		or not message_id
-		or message_id == ""
-		or not part_id
-		or part_id == ""
-		or not child_session_id
-		or child_session_id == ""
-	then
-		return false
-	end
-
-	local key = part_key(message_id, part_id)
-	if not key then
-		return false
-	end
-	native_messages[message_id] = nil
-
-	local changed = false
-	local existing_child = store.task_part_child[key]
-	local existing_references = existing_child and task_child_references[existing_child]
-	local existing_reference = existing_references and existing_references[key]
-	local new_reference = existing_child ~= child_session_id
-		or (existing_reference and existing_reference.parent ~= parent_session_id)
-	if new_reference then
-		clear_task_child_index(message_id, part_id)
-		changed = true
-	end
-
-	store.task_part_child[key] = child_session_id
-	task_child_references[child_session_id] = task_child_references[child_session_id] or {}
-	local references = task_child_references[child_session_id]
-	if not references[key] or references[key].parent ~= parent_session_id then
-		task_reference_sequence = task_reference_sequence + 1
-		references[key] = { parent = parent_session_id, sequence = task_reference_sequence }
-	end
-	local reference = references[key]
-	local part = M.get_part(message_id, part_id)
-	-- Direct/legacy task bindings remain explicit; native projections always
-	-- carry callID and must establish provenance before overriding native ancestry.
-	reference.callID = part and part.callID
-	reference.explicit = reference.explicit or explicit or not reference.callID
-	reference.genuine = reference.genuine or reference.explicit
-	changed = refresh_task_child_owner(child_session_id) or changed
-	if not task_reference_can_own(child_session_id, parent_session_id, reference) then
-		-- Copied launches remain navigable, but never acquire their source's child.
-		task_child_pending[child_session_id] = true
-	else
-		local existing_owner = store.task_child_owner[child_session_id]
-		local existing = existing_owner and references[existing_owner]
-		local claim = reference.genuine or (not reference.retired and task_reference_can_replace(child_session_id, reference, existing))
-		-- Distinct genuine calls replay in write order; copied call IDs do not.
-		if claim and (not existing or existing.parent == parent_session_id or new_reference or explicit
-			or (reference.genuine and reference.callID and reference.callID ~= existing.callID)) then
-			if require("opencode.state").get_session_parent_id(child_session_id) then reference.genuine = true end
-			if reference.genuine then
-				task_reference_sequence = task_reference_sequence + 1
-				reference.sequence, reference.retired = task_reference_sequence, nil
-			end
-			if existing_owner and existing_owner ~= key then bump_task_reference_revision(existing_owner) end
-			if store.task_child_parent[child_session_id] ~= parent_session_id or existing_owner ~= key then changed = true end
-			store.task_child_parent[child_session_id] = parent_session_id
-			store.task_child_owner[child_session_id] = key
-		else task_child_pending[child_session_id] = true end
-	end
-
-	if changed then
-		bump_part_revision(message_id, part_id, parent_session_id)
-	end
-	return changed
-end
-
----@param part table|nil
-local function index_task_child(part, previous_part)
-	if type(part) ~= "table" then
-		return
-	end
-
-	local message_id = part.messageID
-	local part_id = part.id
-
-	if part.type ~= "tool" or part.tool ~= "task" then
-		clear_task_child_index(message_id, part_id)
-		return
-	end
-
-	local child_session_id = resolve_task_child_session_id(part)
-	if not child_session_id or child_session_id == "" then
-		clear_task_child_index(message_id, part_id)
-		return
-	end
-
-	local parent_session_id = part.sessionID or find_message_session_id(message_id)
-	if not parent_session_id or parent_session_id == "" then
-		clear_task_child_index(message_id, part_id)
-		return
-	end
-
-	local key = part_key(message_id, part_id)
-	if not key then
-		return
-	end
-
-	local previous_state = previous_part and type(previous_part.state) == "table" and previous_part.state or {}
-	-- A copied settled history row is not a launch. An already-running native
-	-- call acquiring its first child ID is; retain task-first precedence for it.
-	local launched = part.callID and previous_part and previous_part.callID == part.callID
-		and previous_part.type == "tool" and previous_part.tool == "task"
-		and previous_part.sessionID == part.sessionID
-		and (previous_state.status == "running" or previous_state.status == "streaming")
-		and not resolve_task_child_session_id(previous_part)
-	record_task_child_index(parent_session_id, message_id, part_id, child_session_id, launched)
-end
-
----@param message_id string|nil
-clear_task_child_indices_for_message = function(message_id)
-	if not message_id then
-		return
-	end
-	native_messages[message_id] = nil
-	local prefix = message_id .. "\0"
-	for key in pairs(store.task_part_child) do
-		if key:sub(1, #prefix) == prefix then
-			clear_task_child_index(message_id, key:sub(#prefix + 1))
-		end
-	end
+local function drop_message_data(message_id)
+	task_children.clear_message(message_id)
+	store.part[message_id] = nil
+	unindex_message_session(message_id)
+	clear_message_revisions(message_id)
+	clear_private_message(message_id)
 end
 
 ---Upsert a projected native message.
@@ -828,11 +559,7 @@ end
 function M.handle_message_removed(session_id, message_id)
 	local messages = store.message[session_id]
 	if not messages then
-		clear_task_child_indices_for_message(message_id)
-		store.part[message_id] = nil
-		unindex_message_session(message_id)
-		clear_message_revisions(message_id)
-		clear_private_message(message_id)
+		drop_message_data(message_id)
 		return
 	end
 
@@ -843,11 +570,7 @@ function M.handle_message_removed(session_id, message_id)
 		message_indexes[messages][message_id] = nil
 		reindex_messages(messages, message_index)
 		-- Also remove parts
-		clear_task_child_indices_for_message(message_id)
-		store.part[message_id] = nil
-		unindex_message_session(message_id)
-		clear_message_revisions(message_id)
-		clear_private_message(message_id)
+		drop_message_data(message_id)
 		structure_changed(session_id)
 		bump_session_revision(session_id)
 	end
@@ -874,7 +597,7 @@ function M.handle_part_updated(part)
 	-- If no parts for this message, create array with this part
 	if not parts then
 		store.part[message_id] = { part }
-		index_task_child(part)
+		task_children.index(part)
 		bump_part_revision(message_id, part.id, part.sessionID)
 		bump_task_summary_revision_for_part_change(nil, part)
 		return true
@@ -890,7 +613,7 @@ function M.handle_part_updated(part)
 
 		local changed = values_changed(dest, merged)
 		parts[result.index] = merged
-		index_task_child(merged, dest)
+		task_children.index(merged, dest)
 		if changed then
 			bump_part_revision(message_id, part.id, part.sessionID)
 			bump_task_summary_revision_for_part_change(dest, merged)
@@ -899,7 +622,7 @@ function M.handle_part_updated(part)
 	else
 		-- Insert new part at correct position
 		table.insert(parts, result.index, part)
-		index_task_child(part)
+		task_children.index(part)
 		bump_part_revision(message_id, part.id, part.sessionID)
 		bump_task_summary_revision_for_part_change(nil, part)
 		return true
@@ -912,11 +635,11 @@ end
 function M.handle_part_removed(message_id, part_id)
 	local parts = store.part[message_id]
 	if not parts then
-		clear_task_child_index(message_id, part_id)
+		task_children.clear(message_id, part_id)
 		return
 	end
 
-	clear_task_child_index(message_id, part_id)
+	task_children.clear(message_id, part_id)
 	local result = binary_search(parts, part_id, get_part_id)
 	if result.found then
 		invalidate_parts(message_id)
@@ -978,6 +701,112 @@ local function reconcile_session_snapshot(
 	return removed_count
 end
 
+---Messages changed by SSE since the snapshot was captured, or nil when the
+---snapshot belongs to an older generation and the page must be dropped.
+---@param session_id string
+---@param snapshot table|nil
+---@return table<string, boolean>|nil protected_messages
+local function snapshot_protected_messages(session_id, snapshot)
+	local protected_messages = {}
+	if not snapshot then return protected_messages end
+	if snapshot.session_id ~= session_id
+		or snapshot.generation ~= store.snapshot_generation
+		or snapshot.session_generation ~= (store.session_generation[session_id] or 0)
+	then
+		return nil
+	end
+	-- Compare before any upserts change revisions. Protect deletions as well
+	-- as additions/updates delivered by SSE while the request was in flight.
+	for message_id, revision in pairs(snapshot.revisions) do
+		if store.message_revision[message_id] ~= revision then
+			protected_messages[message_id] = true
+		end
+	end
+	for _, message in ipairs(store.message[session_id] or {}) do
+		if snapshot.revisions[message.id] ~= store.message_revision[message.id] then
+			protected_messages[message.id] = true
+		end
+	end
+	return protected_messages
+end
+
+---Progress is ephemeral: running HTTP rows omit metadata already received over SSE.
+---Re-project the native row with the live metadata when the same run is still live.
+---@return table msg_with_parts
+---@return table info
+local function reproject_live_tools(session_id, msg_with_parts, info, info_id)
+	local native
+	for index, content in ipairs(info._native.content or {}) do
+		local incoming = content.state or {}
+		if content.type == "tool" and incoming.status == "running"
+			and (incoming.metadata == nil or (type(incoming.metadata) == "table" and next(incoming.metadata) == nil)) then
+			local part_id = require("opencode.protocol.messages").part_id(session_id, info_id, "tool", content.id)
+			local previous = M.get_part(info_id, part_id)
+			local live = previous and previous.state or {}
+			if live.status == "running" and previous.raw_tool == content.name
+				and (live.time or {}).start == (content.time or {}).ran
+				and type(live.metadata) == "table" and next(live.metadata) ~= nil then
+				native = native or vim.deepcopy(info._native)
+				native.content[index].state.metadata = vim.deepcopy(live.metadata)
+			end
+		end
+	end
+	if native then
+		msg_with_parts = require("opencode.protocol.messages").project(session_id, native)
+		info = msg_with_parts.info
+	end
+	return msg_with_parts, info
+end
+
+---Upsert one message's parts and remove the parts its full snapshot no longer has.
+---@return number part_count
+---@return number changed_count
+local function replace_message_parts(session_id, info, info_id, parts, snapshot_parts_by_message)
+	local part_count, changed_count = 0, 0
+	if info_id and snapshot_parts_by_message[info_id] == nil then
+		snapshot_parts_by_message[info_id] = {}
+	end
+	for _, part in ipairs(parts) do
+		if type(part) == "table" then
+			part.messageID = nonempty_string(part.messageID) or info_id
+			part.sessionID = nonempty_string(part.sessionID)
+				or (type(info) == "table" and nonempty_string(info.sessionID))
+				or session_id
+			local part_id = nonempty_string(part.id)
+			if info_id and part_id then
+				snapshot_parts_by_message[info_id][part_id] = true
+			end
+			if M.handle_part_updated(part) then
+				changed_count = changed_count + 1
+			end
+			part_count = part_count + 1
+		end
+	end
+	-- Each v2 content array is a full message snapshot, even when the
+	-- containing history page is partial. Replace only its own parts.
+	local stale = {}
+	for _, part in ipairs(store.part[info_id] or {}) do
+		if not snapshot_parts_by_message[info_id][part.id] then stale[#stale + 1] = part.id end
+	end
+	for _, id in ipairs(stale) do M.handle_part_removed(info_id, id); changed_count = changed_count + 1 end
+	return part_count, changed_count
+end
+
+---Derive turn linkage from confirmed chronology, never lexical ID proximity.
+---@param session_id string
+local function link_turns(session_id)
+	local user_id
+	for _, message in ipairs(store.message[session_id] or {}) do
+		if message.role == "user" then user_id = message.id
+		elseif message.role == "assistant" and message.parentID ~= user_id then
+			message.parentID = user_id
+			bump_message_revision(message.id, session_id)
+			track_metadata(message)
+		end
+	end
+	linked_generation[session_id] = structure_generation[session_id] or 0
+end
+
 ---Hydrate messages and parts from the native /api/session/:id/message page.
 ---@param session_id string
 ---@param messages table[]|nil
@@ -991,26 +820,9 @@ local function handle_session_messages(session_id, messages, opts)
 	end
 	opts = type(opts) == "table" and opts or {}
 	local snapshot = opts.snapshot
-	local protected_messages = {}
-	if snapshot then
-		if snapshot.session_id ~= session_id
-			or snapshot.generation ~= store.snapshot_generation
-			or snapshot.session_generation ~= (store.session_generation[session_id] or 0)
-		then
-			return 0, 0, 0
-		end
-		-- Compare before any upserts change revisions. Protect deletions as well
-		-- as additions/updates delivered by SSE while the request was in flight.
-		for message_id, revision in pairs(snapshot.revisions) do
-			if store.message_revision[message_id] ~= revision then
-				protected_messages[message_id] = true
-			end
-		end
-		for _, message in ipairs(store.message[session_id] or {}) do
-			if snapshot.revisions[message.id] ~= store.message_revision[message.id] then
-				protected_messages[message.id] = true
-			end
-		end
+	local protected_messages = snapshot_protected_messages(session_id, snapshot)
+	if not protected_messages then
+		return 0, 0, 0
 	end
 
 	local message_count = 0
@@ -1024,27 +836,7 @@ local function handle_session_messages(session_id, messages, opts)
 			local info = type(msg_with_parts.info) == "table" and msg_with_parts.info or msg_with_parts
 			local info_id = type(info) == "table" and nonempty_string(info.id) or nil
 			if snapshot and info_id and not protected_messages[info_id] and type(info._native) == "table" then
-				local native
-				-- Progress is ephemeral: running HTTP rows omit metadata already received over SSE.
-				for index, content in ipairs(info._native.content or {}) do
-					local incoming = content.state or {}
-					if content.type == "tool" and incoming.status == "running"
-						and (incoming.metadata == nil or (type(incoming.metadata) == "table" and next(incoming.metadata) == nil)) then
-						local part_id = require("opencode.protocol.messages").part_id(session_id, info_id, "tool", content.id)
-						local previous = M.get_part(info_id, part_id)
-						local live = previous and previous.state or {}
-						if live.status == "running" and previous.raw_tool == content.name
-							and (live.time or {}).start == (content.time or {}).ran
-							and type(live.metadata) == "table" and next(live.metadata) ~= nil then
-							native = native or vim.deepcopy(info._native)
-							native.content[index].state.metadata = vim.deepcopy(live.metadata)
-						end
-					end
-				end
-				if native then
-					msg_with_parts = require("opencode.protocol.messages").project(session_id, native)
-					info = msg_with_parts.info
-				end
+				msg_with_parts, info = reproject_live_tools(session_id, msg_with_parts, info, info_id)
 			end
 			if type(info) == "table" and info_id then
 				info.id = info_id
@@ -1057,32 +849,8 @@ local function handle_session_messages(session_id, messages, opts)
 			end
 
 			if type(msg_with_parts.parts) == "table" and not protected_messages[info_id] then
-				if info_id and snapshot_parts_by_message[info_id] == nil then
-					snapshot_parts_by_message[info_id] = {}
-				end
-				for _, part in ipairs(msg_with_parts.parts) do
-					if type(part) == "table" then
-						part.messageID = nonempty_string(part.messageID) or info_id
-						part.sessionID = nonempty_string(part.sessionID)
-							or (type(info) == "table" and nonempty_string(info.sessionID))
-							or session_id
-						local part_id = nonempty_string(part.id)
-						if info_id and part_id then
-							snapshot_parts_by_message[info_id][part_id] = true
-						end
-						if M.handle_part_updated(part) then
-							changed_count = changed_count + 1
-						end
-						part_count = part_count + 1
-					end
-				end
-				-- Each v2 content array is a full message snapshot, even when the
-				-- containing history page is partial. Replace only its own parts.
-				local stale = {}
-				for _, part in ipairs(store.part[info_id] or {}) do
-					if not snapshot_parts_by_message[info_id][part.id] then stale[#stale + 1] = part.id end
-				end
-				for _, id in ipairs(stale) do M.handle_part_removed(info_id, id); changed_count = changed_count + 1 end
+				local parts, changed = replace_message_parts(session_id, info, info_id, msg_with_parts.parts, snapshot_parts_by_message)
+				part_count, changed_count = part_count + parts, changed_count + changed
 			end
 		end
 	end
@@ -1097,17 +865,7 @@ local function handle_session_messages(session_id, messages, opts)
 			)
 	end
 
-	-- Derive turn linkage from confirmed chronology, never lexical ID proximity.
-	local user_id
-	for _, message in ipairs(store.message[session_id] or {}) do
-		if message.role == "user" then user_id = message.id
-		elseif message.role == "assistant" and message.parentID ~= user_id then
-			message.parentID = user_id
-			bump_message_revision(message.id, session_id)
-			track_metadata(message)
-		end
-	end
-	linked_generation[session_id] = structure_generation[session_id] or 0
+	link_turns(session_id)
 	return message_count, part_count, changed_count
 end
 
@@ -1146,7 +904,7 @@ native_hooks.committed = function(session_id, projected)
 	local indexes, refs = {}, {}
 	for index, part in ipairs(parts) do
 		if indexes[part.id] or store.task_part_child[part_key(message_id, part.id)]
-			or resolve_task_child_session_id(part) then return end
+			or task_children.resolve_child_session_id(part) then return end
 		indexes[part.id], refs[index] = index, part
 	end
 	local locators, ordinals = { text = {}, reasoning = {}, tool = {} }, {}
@@ -1275,16 +1033,7 @@ end
 ---@param message_id string
 ---@return Message|nil
 function M.get_message(session_id, message_id)
-	local messages = store.message[session_id]
-	if not messages then
-		return nil
-	end
-
-	local message_index = find_message_index(messages, message_id)
-	if message_index then
-		return messages[message_index]
-	end
-	return nil
+	return message_in_session(session_id, message_id)
 end
 
 ---Find the owning session for a message ID
@@ -1324,10 +1073,6 @@ end
 
 function M.get_session_revision(session_id)
 	return store.session_revision[session_id] or 0
-end
-
-function M.get_catalog_generation()
-	return catalog_generation
 end
 
 local EMPTY_PARTS = { order = {}, tools = {}, content = "", reasoning = "", without_synthetic = "" }
@@ -1439,135 +1184,18 @@ function M.get_message_tools(message_id)
 	return result
 end
 
----@param child_session_id string|nil
----@return string|nil
-function M.get_task_parent_session(child_session_id)
-	if not child_session_id or child_session_id == "" then
-		return nil
-	end
-	refresh_task_child_owner(child_session_id)
-	return store.task_child_parent[child_session_id]
-end
 
----@param message_id string|nil
----@param part_id string|nil
----@return string|nil
-function M.get_task_child_session(message_id, part_id)
-	local key = part_key(message_id, part_id)
-	return key and store.task_part_child[key] or nil
-end
-
----@param child_session_id string|nil
----@return string|nil message_id
----@return string|nil part_id
-function M.get_task_child_owner(child_session_id)
-	if not child_session_id or child_session_id == "" then
-		return nil, nil
-	end
-	refresh_task_child_owner(child_session_id)
-	local key = store.task_child_owner[child_session_id]
-	if not key then
-		return nil, nil
-	end
-	local message_id, part_id = key:match("^(.-)%z(.+)$")
-	return message_id, part_id
-end
-
----@param tool_part table|nil
----@return string|nil
-function M.get_task_child_session_for_part(tool_part)
-	if type(tool_part) ~= "table" then
-		return nil
-	end
-	return M.get_task_child_session(tool_part.messageID, tool_part.id) or resolve_task_child_session_id(tool_part)
-end
-
----@param parent_session_id string|nil
----@return string[] child_session_ids
-function M.get_task_child_sessions(parent_session_id)
-	if not parent_session_id or parent_session_id == "" then
-		return {}
-	end
-	local children = {}
-	for child_session_id in pairs(task_child_references) do
-		if M.get_task_parent_session(child_session_id) == parent_session_id then
-			table.insert(children, child_session_id)
-		end
-	end
-	table.sort(children)
-	return children
-end
-
--- The pre-index metadata fallback must use the same provenance rules as indexing.
-function M.task_reference_can_own(parent_session_id, child_session_id)
-	return task_reference_can_own(child_session_id, parent_session_id)
-end
-
----Collect a session and its confirmed native/task descendants, depth-first.
----Must run before any clearing: clear_session() drops the child->parent index.
----@param session_id string|nil
----@return string[] session_ids Root first, then descendants.
-function M.collect_session_tree(session_id)
-	if not session_id or session_id == "" then return {} end
-	local children, task_parents = {}, {}
-	local function add_child(parent, id)
-		if not parent then return end
-		children[parent] = children[parent] or {}
-		table.insert(children[parent], id)
-	end
-	for id, references in pairs(task_child_references) do
-		local parent = M.get_task_parent_session(id)
-		local reference = references[store.task_child_owner[id]]
-		-- Settled history alone is provisional, even before fork metadata arrives.
-		-- Keep navigation, but require confirmation before irreversible cleanup.
-		if parent and reference and reference.genuine then
-			task_parents[id] = parent
-			add_child(parent, id)
-		end
-	end
-	local state = require("opencode.state")
-	for _, id in ipairs(state.get_session_ids()) do
-		-- Only a confirmed task owner overrides native ancestry (task-first).
-		if not task_parents[id] then add_child(state.get_session_parent_id(id), id) end
-	end
-	local ids = {}
-	local visited = {}
-	local function visit(id)
-		if not id or id == "" or visited[id] then
-			return
-		end
-		visited[id] = true
-		table.insert(ids, id)
-		local child_ids = children[id] or {}
-		table.sort(child_ids)
-		for _, child_id in ipairs(child_ids) do
-			visit(child_id)
-		end
-	end
-	visit(session_id)
-	return ids
-end
-
----Clear all data for a session and every native/task descendant.
----@param session_id string|nil
-function M.clear_session_tree(session_id)
-	for _, id in ipairs(M.collect_session_tree(session_id)) do
-		M.clear_session(id)
-	end
-end
-
----@param parent_session_id string
----@param message_id string
----@param part_id string
----@param child_session_id string
----@return boolean changed
-function M.record_task_child_session(parent_session_id, message_id, part_id, child_session_id)
-	-- Explicit late resolution can establish a genuine task conflict, but cannot
-	-- turn an already indexed navigation-only copy into an ownership claim.
-	local key = part_key(message_id, part_id)
-	return record_task_child_index(parent_session_id, message_id, part_id, child_session_id,
-		not (key and store.task_part_child[key]))
-end
+-- Task-child ownership (sync/task_children.lua).
+M.get_task_parent_session = task_children.get_task_parent_session
+M.get_task_child_session = task_children.get_task_child_session
+M.get_task_child_owner = task_children.get_task_child_owner
+M.get_task_child_session_for_part = task_children.get_task_child_session_for_part
+M.get_task_child_sessions = task_children.get_task_child_sessions
+M.task_reference_can_own = task_children.task_reference_can_own
+M.session_owns_task_child = task_children.session_owns_task_child
+M.collect_session_tree = task_children.collect_session_tree
+M.clear_session_tree = task_children.clear_session_tree
+M.record_task_child_session = task_children.record_task_child_session
 
 ---Get session status
 ---@param session_id string
@@ -1590,11 +1218,7 @@ function M.clear_session_messages(session_id)
 	bump_revision(store.session_generation, session_id)
 	local messages = store.message[session_id] or {}
 	for _, msg in ipairs(messages) do
-		clear_task_child_indices_for_message(msg.id)
-		store.part[msg.id] = nil
-		unindex_message_session(msg.id)
-		clear_message_revisions(msg.id)
-		clear_private_message(msg.id)
+		drop_message_data(msg.id)
 	end
 	store.message[session_id] = nil
 	structure_changed(session_id)
@@ -1605,11 +1229,11 @@ end
 
 ---Clear all data
 function M.clear_all()
-	catalog_generation = catalog_generation + 1
+	catalog.reset()
 	for _, owner in pairs(parts_owners) do parts_memo:delete(owner) end
 	message_indexes = setmetatable({}, { __mode = "k" })
 	message_order_keys, native_messages = {}, {}
-	task_child_references, task_child_pending, task_reference_sequence = {}, {}, 0
+	task_children.reset()
 	structure_generation, linked_generation = {}, {}
 	metadata_snapshots, metadata_pending = {}, {}
 	parts_generation, parts_owners = {}, {}
@@ -1630,296 +1254,40 @@ function M.clear_all()
 	store.session_revision = {}
 	store.task_summary_revision = {}
 	store.task_summary_revision_counter = (store.task_summary_revision_counter or 0) + 1
-	store.provider_revision = 0
-	store.agent_revision = 0
-	store.provider = {}
-	store.catalogs = {}
-	store.catalog_location = nil
-	store.provider_default = {}
-	store.agent = {}
-	store.command = {}
-	store.skill = {}
-	store.config = {}
-	store.mcp = {}
 end
 
--- Provider and catalog management.
-
-function M.get_location_catalog(directory, domain)
-	local entry = store.catalogs[directory] and store.catalogs[directory][domain]
-	return entry and vim.deepcopy(entry) or nil
-end
-
-function M.get_catalog_location()
-	return store.catalog_location
-end
-
----Catalog for a session directory: the active store when directory is nil or the
----active location, that location's entries otherwise (active store per missing domain).
----@param directory string|nil
----@return opencode.SyncCatalog
-function M.catalog_for(directory)
-	return require("opencode.sync.catalog").for_directory(M, store.catalogs, store.catalog_location, directory)
-end
-
-local function apply_catalog(domain, data)
-	if domain == "providers" then
-		M.handle_providers(data.providers)
-		M.handle_provider_defaults(data.default)
-	elseif domain == "agents" then M.handle_agents(data)
-	elseif domain == "commands" then M.handle_commands(data)
-	elseif domain == "skills" then M.handle_skills(data)
-	elseif domain == "mcp" then M.handle_mcp(data)
-	elseif domain == "config" then M.handle_config(data) end
-end
-
-function M.handle_location_catalog(directory, domain, data, err)
-	catalog_generation = catalog_generation + 1
-	store.catalogs[directory] = store.catalogs[directory] or {}
-	local previous = store.catalogs[directory][domain]
-	local entry = { status = err and "failed" or "loaded", error = err,
-		data = err and previous and previous.data or data }
-	store.catalogs[directory][domain] = entry
-	if not err and store.catalog_location == directory then apply_catalog(domain, data) end
-end
-
-function M.select_catalog_location(directory)
-	if store.catalog_location == directory then return end
-	store.catalog_location = directory
-	store.provider, store.provider_default, store.agent, store.command, store.skill, store.mcp, store.config = {}, {}, {}, {}, {}, {}, {}
-	for domain, entry in pairs(store.catalogs[directory] or {}) do
-		if entry.data then apply_catalog(domain, entry.data) end
-	end
-	bump_store_counter("provider_revision")
-	bump_store_counter("agent_revision")
-end
-
----Handle provider data update
----@param providers table[] Array of provider objects
-function M.handle_providers(providers)
-	store.provider = providers or {}
-	bump_store_counter("provider_revision")
-end
-
----Handle provider defaults
----@param defaults table<string, string> { [providerID] = default_modelID }
-function M.handle_provider_defaults(defaults)
-	store.provider_default = defaults or {}
-	bump_store_counter("provider_revision")
-end
-
----Get provider/model metadata revision.
----@return number
-function M.get_provider_revision()
-	return store.provider_revision or 0
-end
-
----Get all providers
----@return table[]
-function M.get_providers()
-	return store.provider or {}
-end
-
----Get provider defaults
----@return table<string, string>
-function M.get_provider_defaults()
-	return store.provider_default or {}
-end
-
----Get a specific provider by ID
----@param provider_id string
----@return table|nil
-function M.get_provider(provider_id)
-	for _, provider in ipairs(store.provider) do
-		if provider.id == provider_id then
-			return provider
-		end
-	end
-	return nil
-end
-
----Get a model from a provider
----@param provider_id string
----@param model_id string
----@return table|nil
-function M.get_model(provider_id, model_id)
-	local provider = M.get_provider(provider_id)
-	if provider and provider.models then
-		return provider.models[model_id]
-	end
-	return nil
-end
-
--- Agent management
-
----Handle agent data update
----@param agents table[] Array of agent objects
-function M.handle_agents(agents)
-	store.agent = agents or {}
-	bump_store_counter("agent_revision")
-end
-
----Get agent metadata revision.
----@return number
-function M.get_agent_revision()
-	return store.agent_revision or 0
-end
-
----Get all agents
----@return table[]
-function M.get_agents()
-	return store.agent or {}
-end
-
----Check whether an agent should be selectable as a primary chat agent.
----@param agent table|nil Agent object
----@return boolean visible Whether the agent should be shown in primary-agent UI
-function M.is_visible_agent(agent)
-	if type(agent) ~= "table" then
-		return false
-	end
-	-- JSON null decodes to vim.NIL, which is truthy; only boolean true means hidden.
-	if agent.hidden == true then
-		return false
-	end
-
-	local name = agent.name or agent.id
-	if type(name) == "string" and UTILITY_AGENT_NAMES[name] then
-		return false
-	end
-
-	return agent.mode ~= "subagent"
-end
-
----Filter agents to primary-capable, user-visible entries.
----@param agents table[]|nil Array of agent objects
----@return table[] agents Filtered agents
-function M.filter_visible_agents(agents)
-	local visible = {}
-	for _, agent in ipairs(agents or {}) do
-		if M.is_visible_agent(agent) then
-			table.insert(visible, agent)
-		end
-	end
-	return visible
-end
-
----Get filtered agents (excluding subagents, hidden agents, and utility agents)
----@return table[]
-function M.get_visible_agents()
-	return M.filter_visible_agents(store.agent)
-end
-
----Check whether an agent should be mentionable via @ autocomplete.
----@param agent table|nil Agent object
----@return boolean mentionable Whether the agent should be shown in @ autocomplete
-function M.is_mentionable_agent(agent)
-	if type(agent) ~= "table" then
-		return false
-	end
-	-- JSON null decodes to vim.NIL, which is truthy; only boolean true means hidden.
-	if agent.hidden == true then
-		return false
-	end
-
-	local name = agent.name or agent.id
-	if type(name) ~= "string" or name == "" then
-		return false
-	end
-
-	return agent.mode ~= "primary"
-end
-
----Filter agents to entries mentionable via @ autocomplete.
----@param agents table[]|nil Array of agent objects
----@return table[] agents Filtered agents
-function M.filter_mentionable_agents(agents)
-	local mentionable = {}
-	for _, agent in ipairs(agents or {}) do
-		if M.is_mentionable_agent(agent) then
-			table.insert(mentionable, agent)
-		end
-	end
-	return mentionable
-end
-
----Get agents mentionable via @ autocomplete.
----@return table[]
-function M.get_mentionable_agents()
-	return M.filter_mentionable_agents(store.agent)
-end
-
----Get a specific agent by name
----@param name string
----@return table|nil
-function M.get_agent(name)
-	for _, agent in ipairs(store.agent) do
-		if agent.id == name then return agent end
-	end
-	for _, agent in ipairs(store.agent) do
-		if agent.name == name then
-			return agent
-		end
-	end
-	return nil
-end
-
--- Config management
-
----Handle config update
----@param config table
-function M.handle_config(config)
-	store.config = config or {}
-end
-
----Get config
----@return table
-function M.get_config()
-	return store.config or {}
-end
-
--- Command management
-
----Handle custom commands update
----@param commands table[]
-function M.handle_commands(commands)
-	store.command = commands or {}
-end
-
----Get commands
----@return table[]
-function M.get_commands()
-	return store.command or {}
-end
-
--- Skill management
-
----Handle skills update
----@param skills table[]
-function M.handle_skills(skills)
-	store.skill = skills or {}
-end
-
----Get skills
----@return table[]
-function M.get_skills()
-	return store.skill or {}
-end
-
--- MCP management
-
----Handle MCP status update
----@param mcp table<string, table>
-function M.handle_mcp(mcp)
-	store.mcp = mcp or {}
-end
-
----Get MCP status
----@return table<string, table>
-function M.get_mcp()
-	return store.mcp or {}
-end
-
+-- Providers, agents, and location catalogs (sync/catalog.lua).
+M.get_catalog_generation = catalog.get_catalog_generation
+M.get_location_catalog = catalog.get_location_catalog
+M.get_catalog_location = catalog.get_catalog_location
+M.catalog_for = catalog.catalog_for
+M.handle_location_catalog = catalog.handle_location_catalog
+M.select_catalog_location = catalog.select_catalog_location
+M.handle_providers = catalog.handle_providers
+M.handle_provider_defaults = catalog.handle_provider_defaults
+M.get_provider_revision = catalog.get_provider_revision
+M.get_providers = catalog.get_providers
+M.get_provider_defaults = catalog.get_provider_defaults
+M.get_provider = catalog.get_provider
+M.get_model = catalog.get_model
+M.handle_agents = catalog.handle_agents
+M.get_agent_revision = catalog.get_agent_revision
+M.get_agents = catalog.get_agents
+M.is_visible_agent = catalog.is_visible_agent
+M.filter_visible_agents = catalog.filter_visible_agents
+M.get_visible_agents = catalog.get_visible_agents
+M.is_mentionable_agent = catalog.is_mentionable_agent
+M.filter_mentionable_agents = catalog.filter_mentionable_agents
+M.get_mentionable_agents = catalog.get_mentionable_agents
+M.get_agent = catalog.get_agent
+M.handle_config = catalog.handle_config
+M.get_config = catalog.get_config
+M.handle_commands = catalog.handle_commands
+M.get_commands = catalog.get_commands
+M.handle_skills = catalog.handle_skills
+M.get_skills = catalog.get_skills
+M.handle_mcp = catalog.handle_mcp
+M.get_mcp = catalog.get_mcp
 ---Get the raw store (for debugging)
 ---@return SyncStore
 function M.get_store()
