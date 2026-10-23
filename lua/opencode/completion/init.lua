@@ -1,6 +1,7 @@
 -- Editor completion requests, independent of conversation state.
 local M = {}
 local context = require("opencode.completion.context")
+local request = require("opencode.generation.request")
 local ui = require("opencode.ui.completion")
 local generation = 0
 local records = {}
@@ -15,15 +16,7 @@ local function notify(message, level)
 	vim.notify("OpenCode completion: " .. tostring(message), level or vim.log.levels.WARN)
 end
 
-local function stop_timer(record, key)
-	if record and record[key] then
-		record[key]:stop()
-		record[key]:close()
-		record[key] = nil
-	end
-end
-
-local catalog_starting = require("opencode.completion.profile").catalog_starting
+local stop_timer = request.stop_timer
 
 local function discard(record)
 	if not record or records[record.id] ~= record then return false end
@@ -132,16 +125,58 @@ function M.normalize(text, max_lines, streaming, allow_empty)
 	return text
 end
 
+local function receiving(record)
+	return record.phase == "pending" or record.phase == "streaming"
+end
+
+local hooks = {
+	current = function(record) return records[record.id] == record end,
+	valid = function(record)
+		if not receiving(record) then return false end
+		if active(record) then return true end
+		discard(record)
+		return false
+	end,
+	in_flight = function(record) return records[record.id] == record and receiving(record) end,
+	fail = function(record, message) discard(record); notify(message) end,
+	unavailable = function(record) discard(record) end,
+	resolve_model = function(lifecycle, feature_config) return lifecycle.resolve_completion_model(feature_config) end,
+	generate = function(...) return require("opencode.client").generate_completion(...) end,
+	update = function(snapshot, response)
+		if records[snapshot.id] ~= snapshot or not receiving(snapshot) then return end
+		if not active(snapshot) then discard(snapshot); return end
+		local text = M.normalize(response, snapshot.max_lines, true)
+		if text == snapshot.text then return end
+		snapshot.text, snapshot.phase = text, text and "streaming" or "pending"
+		local displayed
+		if text then displayed = ui.show(snapshot, text) else displayed = ui.pending(snapshot) end
+		if displayed == false then discard(snapshot) end
+	end,
+	respond = function(snapshot, request_err, response)
+		if request_err then
+			discard(snapshot)
+			if not request_err.cancelled then notify(request_err.message or request_err, vim.log.levels.ERROR) end
+			return
+		end
+		local text, response_err = M.normalize(response, snapshot.max_lines, false, snapshot.selection ~= nil)
+		if not text then
+			discard(snapshot)
+			if response_err then notify(response_err) end
+			return
+		end
+		snapshot.text, snapshot.phase = text, "ready"
+		if ui.show(snapshot, text) == false then discard(snapshot)
+		elseif snapshot.accept_requested then M.accept(snapshot.id) end
+	end,
+}
+
 function M.complete(instruction, snapshot)
 	if not config or not config.enabled then notify("enable completion in setup() first"); return false end
 	local capture_err
 	if not snapshot then snapshot, capture_err = context.capture() end
 	if not snapshot then notify(capture_err); return false end
-	local state = require("opencode.state")
-	local global = state.get_config() or {}
-	local config = global.completion or config
-	local managed = not (global.server and global.server.port)
-	local _, model_err = require("opencode.completion.profile").validate(config, { managed = managed })
+	local config = request.current_config("completion", config)
+	local model_err = request.validate(config, "completion")
 	if model_err then notify(model_err); return false end
 	local previous
 	for _, record in pairs(records) do
@@ -165,82 +200,12 @@ function M.complete(instruction, snapshot)
 	end
 	if not prompt then discard(snapshot); notify(prompt_err); return false end
 	if not watch_source(snapshot.bufnr) then discard(snapshot); notify("Could not track the completion source"); return false end
-	snapshot.started = vim.uv.now()
-	if config.timeout_ms > 0 then
-		snapshot.deadline = vim.uv.new_timer()
-		snapshot.deadline:start(config.timeout_ms, 0, vim.schedule_wrap(function()
-			if records[snapshot.id] ~= snapshot or not snapshot.deadline then return end
-			discard(snapshot)
-			notify("Request timed out")
-		end))
-	end
 	if ui.pending(snapshot) == false then
 		discard(snapshot)
 		notify("Could not display the completion indicator")
 		return false
 	end
-	local lifecycle = require("opencode.lifecycle")
-	lifecycle.ensure_connected(function()
-		if not active(snapshot) then discard(snapshot); return end
-		local model, err = lifecycle.resolve_completion_model(config)
-		if not model then discard(snapshot); notify(err); return end
-		local warming_until, attempt = vim.uv.now() + 2000, 0
-		local function dispatch()
-			if not active(snapshot) then discard(snapshot); return end
-			local remaining = config.timeout_ms > 0 and config.timeout_ms - (vim.uv.now() - snapshot.started) or 0
-			if config.timeout_ms > 0 and remaining <= 0 then discard(snapshot); notify("Request timed out"); return end
-			attempt = attempt + 1
-			local handle = require("opencode.client").generate_completion(prompt, model, function(request_err, response)
-				if snapshot.phase ~= "pending" and snapshot.phase ~= "streaming" then return end
-				if not active(snapshot) then discard(snapshot); return end
-				snapshot.handle = nil
-				local warming_left = warming_until - vim.uv.now()
-				-- Retry only explicit catalog rejections before generation starts.
-				if catalog_starting(request_err, model) and warming_left > 0 then
-					local delay = math.min(warming_left, 100 * 2 ^ math.min(attempt - 1, 2))
-					snapshot.retry_timer = vim.uv.new_timer()
-					snapshot.retry_timer:start(delay, 0, vim.schedule_wrap(function()
-						stop_timer(snapshot, "retry_timer")
-						dispatch()
-					end))
-					return
-				end
-				stop_timer(snapshot, "deadline")
-				if request_err then
-					discard(snapshot)
-					if not request_err.cancelled then notify(request_err.message or request_err, vim.log.levels.ERROR) end
-					return
-				end
-				local text, response_err = M.normalize(response, snapshot.max_lines, false, snapshot.selection ~= nil)
-				if not text then
-					discard(snapshot)
-					if response_err then notify(response_err) end
-					return
-				end
-				snapshot.text, snapshot.phase = text, "ready"
-				if ui.show(snapshot, text) == false then discard(snapshot)
-				elseif snapshot.accept_requested then M.accept(snapshot.id) end
-			end, {
-				timeout = remaining, directory = snapshot.root,
-				on_update = function(response)
-					if records[snapshot.id] ~= snapshot or (snapshot.phase ~= "pending" and snapshot.phase ~= "streaming") then return end
-					if not active(snapshot) then discard(snapshot); return end
-					local text = M.normalize(response, snapshot.max_lines, true)
-					if text == snapshot.text then return end
-					snapshot.text, snapshot.phase = text, text and "streaming" or "pending"
-					local displayed
-					if text then displayed = ui.show(snapshot, text) else displayed = ui.pending(snapshot) end
-					if displayed == false then discard(snapshot) end
-				end,
-			})
-			if records[snapshot.id] == snapshot and (snapshot.phase == "pending" or snapshot.phase == "streaming") then snapshot.handle = handle end
-		end
-		dispatch()
-	end)
-	if records[snapshot.id] == snapshot and (state.get_connection() == "error" or state.get_connection() == "idle") then
-		discard(snapshot)
-		return false
-	end
+	request.run(snapshot, config, prompt, hooks)
 	return records[snapshot.id] == snapshot
 end
 
@@ -277,7 +242,7 @@ function M.complete_with_prompt()
 		end)
 	end
 	prompt_popup = require("opencode.ui.completion_prompt").open({
-		winid = snapshot.winid, model = config.model,
+		winid = snapshot.winid, model = request.current_config("completion", config).model,
 		title = snapshot.selection and "Edit selection" or "Completion",
 		on_submit = function(value) resume(vim.trim(value)) end,
 		on_cancel = function() resume() end,

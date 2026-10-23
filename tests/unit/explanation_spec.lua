@@ -76,6 +76,7 @@ describe("selection explanation request lifecycle", function()
 				callback()
 				return true
 			end,
+			owns_server = function() return true end,
 			resolve_explanation_model = function()
 				return { providerID = "test", id = "explain" }
 			end,
@@ -165,6 +166,20 @@ describe("selection explanation request lifecycle", function()
 		assert.is_true(apply("explanation_variant", false, "cwd"))
 		assert.is_true(controller.explain_selection()); connect()
 		assert.same({ providerID = "test", id = "second" }, requests[3].model)
+	end)
+
+	it("rejects local options early when lifecycle does not own the server, even without a port", function()
+		config.explanation.options = { body = { max_tokens = 32 } }
+		config.server.url = "http://remote.example:4096"
+		state.set_config(config)
+		package.loaded["opencode.lifecycle"].owns_server = function() return false end
+		assert.is_false(controller.explain_selection())
+		assert.same({}, requests)
+		assert.same({}, views)
+		assert.matches("requires a managed server", notices[#notices], 1, true)
+		package.loaded["opencode.lifecycle"].owns_server = function() return true end
+		assert.is_true(controller.explain_selection())
+		assert.equals(1, #requests)
 	end)
 
 	it("retains the setup enabled guard and falls back when no runtime feature config exists", function()

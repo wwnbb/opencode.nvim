@@ -636,6 +636,19 @@ describe("opencode lifecycle", function()
 		assert.equals(variants[2].id, lifecycle.resolve_explanation_model(state_data.config.explanation).variant)
 	end)
 
+	it("exposes one owned-server predicate for feature model profiles", function()
+		assert.is_true(lifecycle.owns_server())
+		lifecycle.setup({ url = "http://remote.example:4096" })
+		assert.is_false(lifecycle.owns_server())
+		lifecycle.setup({ url = false, managed = true })
+		assert.is_false(lifecycle.owns_server())
+		lifecycle.setup({ managed = false, port = 4096 })
+		assert.is_false(lifecycle.owns_server())
+		lifecycle.opts.port = nil
+		complete_start()
+		assert.is_true(lifecycle.owns_server())
+	end)
+
 	it("rejects local completion options for an explicitly connected server", function()
 		local completion = { enabled = true, model = { providerID = "local", modelID = "coder" }, options = {} }
 		lifecycle.setup({ port = 4096, completion = completion })

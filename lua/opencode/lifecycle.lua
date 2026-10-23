@@ -1220,11 +1220,20 @@ function M.setup(opts)
 	end
 end
 
+---Whether this plugin owns the server process, so feature options can be
+---installed as a process overlay. Explicit port/url and discovered native
+---daemons are external.
+function M.owns_server()
+	local attempt = current_attempt
+	if attempt then return not attempt.external end
+	return M.opts.port == nil and not M.opts.url and not M.opts.managed
+end
+
 ---Return the selector for a profile installed in the connected server.
 local function resolve_feature_model(config, kind)
 	local attempt = current_attempt
 	return require("opencode.completion.profile").resolve(config, {
-		managed = attempt and not attempt.external or (attempt == nil and M.opts.port == nil and not M.opts.url and not M.opts.managed),
+		managed = M.owns_server(),
 		active = attempt and attempt[kind .. "_profile"],
 		error = attempt and attempt[kind .. "_error"],
 	}, kind)

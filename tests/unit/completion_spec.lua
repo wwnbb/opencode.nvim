@@ -1,7 +1,10 @@
 describe("inline completion request lifecycle", function()
 	local controller, saved, mode, requests, notices, shown, pending, config, old_buf, buf, old_virtualedit
 	local state = require("opencode.state")
-	local modules = { "opencode.completion", "opencode.ui.completion", "opencode.lifecycle", "opencode.client", "opencode.settings" }
+	local modules = {
+		"opencode.completion", "opencode.ui.completion", "opencode.ui.completion_prompt",
+		"opencode.lifecycle", "opencode.client", "opencode.settings",
+	}
 	local function edit(text, col)
 		vim.api.nvim_buf_set_lines(buf, 0, -1, false, { text })
 		vim.api.nvim_win_set_cursor(0, { 1, col or #text })
@@ -49,6 +52,7 @@ describe("inline completion request lifecycle", function()
 		}
 		package.loaded["opencode.lifecycle"] = {
 			ensure_connected = function(callback) callback(); return true end,
+			owns_server = function() return true end,
 			resolve_completion_model = function() return { providerID = "test", id = "fast" } end,
 		}
 		package.loaded["opencode.client"] = {
@@ -118,6 +122,28 @@ describe("inline completion request lifecycle", function()
 		assert.same({ providerID = "test", id = "second" }, requests[3].model)
 		requests[3].callback(nil, "3")
 		assert.equals("3", shown[2][2])
+	end)
+	it("rejects local options early when lifecycle does not own the server, even without a port", function()
+		config.completion.options = { body = { max_tokens = 32 } }
+		config.server.url = "http://remote.example:4096"
+		state.set_config(config)
+		package.loaded["opencode.lifecycle"].owns_server = function() return false end
+		assert.is_false(controller.complete())
+		assert.equals(0, #requests)
+		assert.matches("requires a managed server", notices[#notices], 1, true)
+		package.loaded["opencode.lifecycle"].owns_server = function() return true end
+		assert.is_true(controller.complete())
+		assert.equals(1, #requests)
+	end)
+	it("shows the runtime completion model in the instruction prompt", function()
+		local opened
+		package.loaded["opencode.ui.completion_prompt"] = {
+			open = function(opts) opened = opts; return { close = function() end } end,
+		}
+		config.completion.model = { providerID = "test", modelID = "runtime" }
+		state.set_config(config)
+		assert.is_true(controller.complete_with_prompt())
+		assert.same({ providerID = "test", modelID = "runtime" }, opened.model)
 	end)
 	it("retains the setup enabled guard and falls back when no runtime feature config exists", function()
 		state.set_config({})

@@ -1,6 +1,7 @@
 -- One Visual selection, one streamed explanation, one temporary popup.
 local M = {}
 local context = require("opencode.explanation.context")
+local request = require("opencode.generation.request")
 local response_text = require("opencode.explanation.response")
 local ui = require("opencode.ui.explanation")
 local config, current, connection_listener
@@ -9,13 +10,7 @@ local function notify(message)
 	vim.notify("OpenCode explanation: " .. tostring(message), vim.log.levels.WARN)
 end
 
-local function stop_timer(record, key)
-	if record and record[key] then
-		record[key]:stop()
-		record[key]:close()
-		record[key] = nil
-	end
-end
+local stop_timer = request.stop_timer
 
 local function source_unchanged(record)
 	return vim.api.nvim_buf_is_valid(record.bufnr) and vim.api.nvim_buf_is_loaded(record.bufnr)
@@ -35,8 +30,6 @@ local function fail(record, message)
 	if ui.is_open() then ui.error(message) end
 end
 
-local catalog_starting = require("opencode.completion.profile").catalog_starting
-
 function M.dismiss()
 	local record = current
 	current = nil
@@ -52,15 +45,44 @@ local function validate_request(record)
 	return true
 end
 
+-- The display config is the one captured when the request started.
+local function hooks(feature_config)
+	return {
+		current = function(record) return current == record end,
+		valid = validate_request,
+		in_flight = function(record)
+			return current == record and record.phase == "pending" and ui.is_open() and source_unchanged(record)
+		end,
+		fail = fail,
+		unavailable = function(record) fail(record, "OpenCode server is unavailable") end,
+		resolve_model = function(lifecycle, value) return lifecycle.resolve_explanation_model(value) end,
+		generate = function(...) return require("opencode.client").generate_explanation(...) end,
+		update = function(record, text)
+			if record.phase ~= "pending" or not validate_request(record) then return end
+			local visible = response_text.display(text, feature_config, { streaming = true })
+			if visible ~= "" and ui.show(visible, { streaming = true }) == false then M.dismiss() end
+		end,
+		respond = function(record, request_err, response)
+			if request_err then
+				if request_err.cancelled then M.dismiss() else fail(record, request_err.message or request_err) end
+				return
+			end
+			if type(response) ~= "string" or vim.trim(response) == "" then
+				fail(record, "The model returned an empty explanation")
+				return
+			end
+			record.phase = "ready"
+			if ui.show(response_text.display(response, feature_config)) == false then M.dismiss() end
+		end,
+	}
+end
+
 function M.explain_selection()
 	if not config or not config.enabled then notify("enable explanation in setup() first"); return false end
 	local snapshot, capture_err = require("opencode.util.visual_selection").capture()
 	if not snapshot then notify(capture_err); return false end
-	local state = require("opencode.state")
-	local global = state.get_config() or {}
-	local config = global.explanation or config
-	local managed = not (global.server and global.server.port)
-	local _, model_err = require("opencode.completion.profile").validate(config, { managed = managed }, "explanation")
+	local config = request.current_config("explanation", config)
+	local model_err = request.validate(config, "explanation")
 	if model_err then notify(model_err); return false end
 	M.dismiss()
 	snapshot.phase = "pending"
@@ -72,65 +94,7 @@ function M.explain_selection()
 	end
 	local prompt, prompt_err = context.build(snapshot, config)
 	if not prompt then fail(snapshot, prompt_err); return true end
-	snapshot.started = vim.uv.now()
-	if config.timeout_ms > 0 then
-		snapshot.deadline = vim.uv.new_timer()
-		snapshot.deadline:start(config.timeout_ms, 0, vim.schedule_wrap(function()
-			if current == snapshot and snapshot.deadline then fail(snapshot, "Request timed out") end
-		end))
-	end
-	local lifecycle = require("opencode.lifecycle")
-	lifecycle.ensure_connected(function()
-		if not validate_request(snapshot) then return end
-		local model, err = lifecycle.resolve_explanation_model(config)
-		if not model then fail(snapshot, err); return end
-		local warming_until, attempt = vim.uv.now() + 2000, 0
-		local function dispatch()
-			if not validate_request(snapshot) then return end
-			local remaining = config.timeout_ms > 0 and config.timeout_ms - (vim.uv.now() - snapshot.started) or 0
-			if config.timeout_ms > 0 and remaining <= 0 then fail(snapshot, "Request timed out"); return end
-			attempt = attempt + 1
-			local handle = require("opencode.client").generate_explanation(prompt, model, function(request_err, response)
-				if not validate_request(snapshot) then return end
-				snapshot.handle = nil
-				local warming_left = warming_until - vim.uv.now()
-				if catalog_starting(request_err, model) and warming_left > 0 then
-					local delay = math.min(warming_left, 100 * 2 ^ math.min(attempt - 1, 2))
-					snapshot.retry_timer = vim.uv.new_timer()
-					snapshot.retry_timer:start(delay, 0, vim.schedule_wrap(function()
-						stop_timer(snapshot, "retry_timer")
-						dispatch()
-					end))
-					return
-				end
-				if request_err then
-					if request_err.cancelled then M.dismiss() else fail(snapshot, request_err.message or request_err) end
-					return
-				end
-				if type(response) ~= "string" or vim.trim(response) == "" then
-					fail(snapshot, "The model returned an empty explanation")
-					return
-				end
-				stop_timer(snapshot, "deadline")
-				snapshot.phase = "ready"
-				if ui.show(response_text.display(response, config)) == false then M.dismiss() end
-			end, {
-				timeout = remaining, directory = snapshot.root,
-				on_update = function(text)
-					if snapshot.phase ~= "pending" or not validate_request(snapshot) then return end
-					local visible = response_text.display(text, config, { streaming = true })
-					if visible ~= "" and ui.show(visible, { streaming = true }) == false then M.dismiss() end
-				end,
-			})
-			if current == snapshot and snapshot.phase == "pending" and ui.is_open() and source_unchanged(snapshot) then
-				snapshot.handle = handle
-			end
-		end
-		dispatch()
-	end)
-	if current == snapshot and (state.get_connection() == "error" or state.get_connection() == "idle") then
-		fail(snapshot, "OpenCode server is unavailable")
-	end
+	request.run(snapshot, config, prompt, hooks(config))
 	return ui.is_open()
 end
 
