@@ -53,15 +53,6 @@ function M.current_session(opts)
 	return record
 end
 
----@return string
-function M.current_status(opts)
-	local state = require("opencode.state")
-	if opts and opts.session_id ~= nil then
-		return require("opencode.session.status").session_status_to_global(state.get_session_status(opts.session_id))
-	end
-	return state.get_status()
-end
-
 local function current_root_id(state_mod, current)
 	return navigation.runtime_session_id(current and current.id, { state = state_mod })
 end

@@ -826,10 +826,4 @@ function M.setup()
 	load_state()
 end
 
----Check if ready
----@return boolean
-function M.is_ready()
-	return state.ready
-end
-
 return M

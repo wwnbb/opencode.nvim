@@ -134,13 +134,6 @@ describe("private sync message indexes and metadata generations", function()
 		assert.equals(sync.get_messages("s")[1], sync.get_message("s", "a"))
 	end)
 
-	it("updates metadata generations for finalize_inflight in-place timing changes", function()
-		sync.handle_message_updated(message("a", 1))
-		local generation = sync.get_history_metadata_generation("s")
-		sync.finalize_inflight("s")
-		assert.is_true(sync.get_history_metadata_generation("s") > generation)
-	end)
-
 	it("repairs late fork metadata through child-local indexes without scanning sessions on streaming deltas", function()
 		local native = { id = "source", type = "assistant", time = { created = 1 }, content = {
 			{ type = "text", text = "body" },

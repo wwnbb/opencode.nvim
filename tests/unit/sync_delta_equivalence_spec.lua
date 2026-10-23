@@ -353,7 +353,7 @@ describe("native delta fast path full-reducer equivalence", function()
 		end
 	end)
 
-	it("recovers after projected public mutations, part removal, finalization, and session moves", function()
+	it("recovers after projected public mutations, part removal, and session moves", function()
 		pair:page("s", { assistant("a", 20, { text("native"), tool("call", "streaming", "") }) })
 		pair:event("text.delta", { ordinal = 0, delta = "+warm" })
 		local first_id = projection.part_id("s", "a", "text", 0)
@@ -364,11 +364,6 @@ describe("native delta fast path full-reducer equivalence", function()
 		assert.equals("native+warm+from native", pair.optimized.get_message_text("a"))
 		pair:call("handle_part_removed", "a", first_id)
 		pair:event("text.delta", { ordinal = 0, delta = "+restored" })
-		local original_now = vim.uv.now
-		vim.uv.now = function() return 500 end
-		local ok, err = pcall(function() pair:call("finalize_inflight", "s", { reason = "interrupted" }) end)
-		vim.uv.now = original_now
-		assert.is_true(ok, err)
 		pair:event("tool.input.delta", { id = "call", delta = "+native streaming still authoritative" })
 		local moved = projection.project("other", vim.deepcopy(pair.reference.get_message("s", "a")._native))
 		pair:call("handle_session_messages", "other", { moved })

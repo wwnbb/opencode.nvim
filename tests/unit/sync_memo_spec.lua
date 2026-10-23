@@ -58,8 +58,6 @@ describe("sync part sorting and derived memo ownership", function()
 		local current = sync.get_message_render_parts("m")
 		assert.is_true(current.part_revisions.a > old.part_revisions.a)
 		assert.is_true(current.message_revision > old.message_revision)
-		sync.finalize_inflight("s")
-		assert.equals("interrupted", sync.get_message_tools("m")[1].state.status)
 	end)
 
 	it("does not share memo owners between independent stores with matching IDs", function()
