@@ -246,7 +246,7 @@ local function create_split(cfg)
 			modifiable = false,
 		},
 		win_options = {
-			winhighlight = "Cursor:OpenCodeHiddenCursor,lCursor:OpenCodeHiddenCursor,CursorLine:OpenCodeHiddenCursor,CursorColumn:OpenCodeHiddenCursor",
+			winhighlight = require("opencode.ui.highlights").HIDDEN_CURSOR_WINHIGHLIGHT,
 			cursorline = false,
 			cursorcolumn = false,
 			number = false,

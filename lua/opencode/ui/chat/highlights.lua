@@ -92,4 +92,31 @@ function M.apply_extmark_highlights(bufnr, ns_id, highlights, start_line, opts)
 	end
 end
 
+-- Chat windows hide the cursor; refresh chat highlights after a colorscheme
+-- change. Re-running replaces the previous autocmds.
+function M.setup_window_autocmds()
+	local group = vim.api.nvim_create_augroup("OpenCodeHighlights", { clear = true })
+	vim.api.nvim_create_autocmd("ColorScheme", {
+		group = group,
+		callback = function()
+			local chat = package.loaded["opencode.ui.chat"]
+			if chat and type(chat.handle_colorscheme) == "function" then
+				chat.handle_colorscheme()
+			end
+		end,
+		desc = "Update OpenCode highlights on colorscheme change",
+	})
+	vim.api.nvim_create_autocmd("FileType", {
+		group = group,
+		pattern = "opencode",
+		callback = function()
+			local cursor_hls = require("opencode.ui.highlights").HIDDEN_CURSOR_WINHIGHLIGHT
+			vim.wo.winhighlight = (vim.wo.winhighlight ~= "" and vim.wo.winhighlight .. "," or "") .. cursor_hls
+			vim.wo.cursorline = false
+			vim.wo.cursorcolumn = false
+		end,
+		desc = "Hide cursor in OpenCode chat buffer",
+	})
+end
+
 return M

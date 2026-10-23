@@ -161,6 +161,21 @@ local function _build_visual_selection_prompt(opts)
 	return _format_code_prompt(bufnr, filepath, line_ref, selection.text, opts)
 end
 
+-- Public entry points need setup() to have loaded the lifecycle.
+local function require_lifecycle()
+	if lifecycle then return lifecycle end
+	vim.notify("OpenCode not initialized", vim.log.levels.ERROR)
+end
+
+-- Client and lifecycle each read the server keys they need from one table.
+-- An unset url or service_file becomes false: nil would keep a previous value
+-- when setup() merges options again, false clears it.
+local function server_options(server)
+	local opts = vim.deepcopy(server)
+	opts.url, opts.service_file = server.url or false, server.service_file or false
+	return opts
+end
+
 --- Setup function - called by user to configure the plugin
 ---@param opts table Configuration options
 function M.setup(opts)
@@ -194,15 +209,7 @@ function M.setup(opts)
 		return
 	end
 
-	client.setup({
-		url = M._config.server.url or false,
-		host = M._config.server.host,
-		port = M._config.server.port,
-		tls = M._config.server.tls,
-		auth = M._config.server.auth,
-		timeout = M._config.server.timeout,
-		reconnect = true,
-	})
+	client.setup(vim.tbl_extend("force", server_options(M._config.server), { reconnect = true }))
 	require("opencode.session.tabs").setup(events)
 
 	local lifecycle_ok
@@ -213,24 +220,10 @@ function M.setup(opts)
 		return
 	end
 
-	lifecycle.setup({
-		command = M._config.server.command,
-		url = M._config.server.url or false,
-		managed = M._config.server.managed,
-		service_file = M._config.server.service_file or false,
-		tls = M._config.server.tls,
-		port = M._config.server.port,
-		auto_start = M._config.server.auto_start,
-		startup_timeout = M._config.server.startup_timeout,
-		health_check_interval = M._config.server.health_check_interval,
-		shutdown_on_exit = M._config.server.shutdown_on_exit,
-		use_shell_env = M._config.server.use_shell_env,
-		env = M._config.server.env,
-		auth = M._config.server.auth,
-		config_dir = M._config.server.config_dir,
+	lifecycle.setup(vim.tbl_extend("force", server_options(M._config.server), {
 		completion = M._config.completion,
 		explanation = M._config.explanation,
-	})
+	}))
 	require("opencode.completion").setup(M._config.completion)
 	require("opencode.explanation").setup(M._config.explanation)
 
@@ -286,45 +279,10 @@ function M.setup(opts)
     vim.notify("Failed to load slash commands: " .. tostring(slash), vim.log.levels.WARN)
   end
 
-  -- blend only hides the background; matching Normal's background also hides the cursor foreground.
-  local function setup_hidden_cursor_highlight()
-    local normal_hl = vim.api.nvim_get_hl(0, { name = "Normal" })
-    local bg = normal_hl.bg or 0x000000
-    vim.api.nvim_set_hl(0, "OpenCodeHiddenCursor", {
-      fg = bg,
-      bg = bg,
-      blend = 100,
-      nocombine = true,
-    })
-  end
-
-  local highlight_augroup = vim.api.nvim_create_augroup("OpenCodeHighlights", { clear = true })
-  local function refresh_highlights_after_colorscheme()
-    setup_hidden_cursor_highlight()
-    local chat = package.loaded["opencode.ui.chat"]
-    if chat and type(chat.handle_colorscheme) == "function" then
-      chat.handle_colorscheme()
-    end
-  end
-
-  setup_hidden_cursor_highlight()
-  vim.api.nvim_create_autocmd("ColorScheme", {
-    group = highlight_augroup,
-    callback = refresh_highlights_after_colorscheme,
-    desc = "Update OpenCode highlights on colorscheme change",
-  })
-
-  vim.api.nvim_create_autocmd("FileType", {
-    group = highlight_augroup,
-    pattern = "opencode",
-    callback = function()
-      local cursor_hls = "Cursor:OpenCodeHiddenCursor,lCursor:OpenCodeHiddenCursor,CursorLine:OpenCodeHiddenCursor,CursorColumn:OpenCodeHiddenCursor"
-      vim.wo.winhighlight = (vim.wo.winhighlight ~= "" and vim.wo.winhighlight .. "," or "") .. cursor_hls
-      vim.wo.cursorline = false
-      vim.wo.cursorcolumn = false
-    end,
-    desc = "Hide cursor in OpenCode chat buffer",
-  })
+  local ui_highlights = require("opencode.ui.highlights")
+  -- A fresh setup closure re-applies the cursor highlight on every setup() call.
+  ui_highlights.register("opencode.hidden_cursor", function() ui_highlights.setup_hidden_cursor() end)
+  require("opencode.ui.chat.highlights").setup_window_autocmds()
 
   if M._config.danger_mode == true then
     vim.notify("OpenCode danger mode enabled: permission requests will be auto-approved", vim.log.levels.WARN)
@@ -352,10 +310,7 @@ end
 
 --- Toggle chat window
 function M.toggle()
-	if not lifecycle then
-		vim.notify("OpenCode not initialized", vim.log.levels.ERROR)
-		return
-	end
+	if not require_lifecycle() then return end
 
 	with_connected_focus(function()
 		local chat = require("opencode.ui.chat")
@@ -365,10 +320,7 @@ end
 
 --- Open chat window
 function M.open()
-	if not lifecycle then
-		vim.notify("OpenCode not initialized", vim.log.levels.ERROR)
-		return
-	end
+	if not require_lifecycle() then return end
 
 	with_connected_focus(function()
 		local chat = require("opencode.ui.chat")
@@ -415,10 +367,7 @@ end
 
 --- Focus chat window
 function M.focus()
-	if not lifecycle then
-		vim.notify("OpenCode not initialized", vim.log.levels.ERROR)
-		return
-	end
+	if not require_lifecycle() then return end
 
 	with_connected_focus(function()
 		local chat = require("opencode.ui.chat")
@@ -428,10 +377,7 @@ end
 
 --- Focus input area
 function M.focus_input()
-	if not lifecycle then
-		vim.notify("OpenCode not initialized", vim.log.levels.ERROR)
-		return
-	end
+	if not require_lifecycle() then return end
 
 	local input = require("opencode.ui.input")
 	local cs = require("opencode.ui.chat.state")
@@ -450,10 +396,7 @@ end
 ---@param opts? { attempts?: number, delay?: number }
 ---@return boolean success Whether focusing was requested
 function M.open_input_at_end(opts)
-	if not lifecycle then
-		vim.notify("OpenCode not initialized", vim.log.levels.ERROR)
-		return false
-	end
+	if not require_lifecycle() then return false end
 
 	local input_ok, input = pcall(require, "opencode.ui.input")
 	if not input_ok then
@@ -481,10 +424,7 @@ end
 --- Images are attached as OpenCode file parts when supported by the platform.
 ---@return nil
 function M.paste_clipboard()
-	if not lifecycle then
-		vim.notify("OpenCode not initialized", vim.log.levels.ERROR)
-		return
-	end
+	if not require_lifecycle() then return end
 
 	lifecycle.ensure_connected(function()
 		local chat = require("opencode.ui.chat")
@@ -581,10 +521,7 @@ end
 ---@param message string Message content
 ---@param opts? table Additional options; range = { start_line, end_line } uses inclusive 1-based source lines.
 function M.send(message, opts)
-	if not lifecycle then
-		vim.notify("OpenCode not initialized", vim.log.levels.ERROR)
-		return
-	end
+	if not require_lifecycle() then return end
 
 	local cs = require("opencode.ui.chat.state")
 	local owner = opts and opts.view or cs.current()
@@ -630,10 +567,7 @@ end
 ---@param owner_session_id? string Session that opened a question dialog.
 ---@return boolean
 function M.ask_btw(question, owner_session_id)
-	if not lifecycle then
-		vim.notify("OpenCode not initialized", vim.log.levels.ERROR)
-		return false
-	end
+	if not require_lifecycle() then return false end
 	local session_id = owner_session_id or state.get_session().id
 	if not session_id then
 		vim.notify("No active session for /btw", vim.log.levels.WARN)
@@ -663,10 +597,7 @@ end
 --- Abort/stop the current generation
 --- Similar to pressing Escape or clicking stop in the TUI
 function M.abort(opts)
-	if not lifecycle then
-		vim.notify("OpenCode not initialized", vim.log.levels.ERROR)
-		return
-	end
+	if not require_lifecycle() then return end
 
 	local session_id
 	if opts and (opts.session_id ~= nil or opts.view) then session_id = opts.session_id
@@ -720,10 +651,7 @@ function M.new_session(opts)
 	opts = vim.deepcopy(vim.tbl_extend("force", opts or {}, { view = false }))
 	opts.view = nil
 
-	if not lifecycle then
-		vim.notify("OpenCode not initialized", vim.log.levels.ERROR)
-		return
-	end
+	if not require_lifecycle() then return end
 
 	local preserve_cache
 	local activate_opts = { reason = opts.reason or "new_session", preserve_cache = true }
@@ -799,37 +727,25 @@ end
 
 --- Manually start server
 function M.start()
-	if not lifecycle then
-		vim.notify("OpenCode not initialized", vim.log.levels.ERROR)
-		return false
-	end
+	if not require_lifecycle() then return false end
 	return lifecycle.start()
 end
 
 --- Stop server (if plugin started it)
 function M.stop()
-	if not lifecycle then
-		vim.notify("OpenCode not initialized", vim.log.levels.ERROR)
-		return false
-	end
+	if not require_lifecycle() then return false end
 	return lifecycle.stop()
 end
 
 --- Restart server
 function M.restart()
-	if not lifecycle then
-		vim.notify("OpenCode not initialized", vim.log.levels.ERROR)
-		return
-	end
+	if not require_lifecycle() then return end
 	lifecycle.restart()
 end
 
 --- Disconnect from server (keep running)
 function M.disconnect()
-	if not lifecycle then
-		vim.notify("OpenCode not initialized", vim.log.levels.ERROR)
-		return
-	end
+	if not require_lifecycle() then return end
 	lifecycle.disconnect()
 end
 
@@ -929,10 +845,7 @@ end
 
 --- Open command palette
 function M.command_palette()
-	if not lifecycle then
-		vim.notify("OpenCode not initialized", vim.log.levels.ERROR)
-		return
-	end
+	if not require_lifecycle() then return end
 
 	local palette = require("opencode.ui.palette")
 	local context = palette.capture_context()
@@ -947,10 +860,7 @@ end
 
 --- Show active/recent sessions with per-session status.
 function M.active_sessions(context)
-	if not lifecycle then
-		vim.notify("OpenCode not initialized", vim.log.levels.ERROR)
-		return
-	end
+	if not require_lifecycle() then return end
 
 	local palette = require("opencode.ui.palette")
 	context = palette.capture_context(context)

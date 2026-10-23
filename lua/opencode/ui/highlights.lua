@@ -12,6 +12,22 @@ function M.setup_message_backgrounds()
 	vim.api.nvim_set_hl(0, "OpenCodeInputBg", { link = "OpenCodeUserMessageBg", default = true })
 end
 
+-- Cursor groups a window maps to OpenCodeHiddenCursor to hide its cursor.
+M.HIDDEN_CURSOR_WINHIGHLIGHT =
+	"Cursor:OpenCodeHiddenCursor,lCursor:OpenCodeHiddenCursor,CursorLine:OpenCodeHiddenCursor,CursorColumn:OpenCodeHiddenCursor"
+
+-- blend only hides the background; matching Normal's background also hides the cursor foreground.
+function M.setup_hidden_cursor()
+	local normal_hl = vim.api.nvim_get_hl(0, { name = "Normal" })
+	local bg = normal_hl.bg or 0x000000
+	vim.api.nvim_set_hl(0, "OpenCodeHiddenCursor", {
+		fg = bg,
+		bg = bg,
+		blend = 100,
+		nocombine = true,
+	})
+end
+
 ---Register a widget highlight setup. Runs it now and re-runs it on ColorScheme.
 ---Idempotent: re-registering the same function is a no-op.
 ---@param owner string Unique key, e.g. "opencode.ui.chat.bash"
