@@ -88,29 +88,20 @@ function M.reopen(opts)
 	local id = state.get_closed_session_order()[1]
 	if not id then vim.notify("No closed OpenCode session tab", vim.log.levels.INFO); return end
 	local token = pending.token(id)
-	local current = state.get_session().id
 	local views = package.loaded["opencode.ui.chat.state"]
 	local source = opts.view or (views and type(views.current) == "function" and views.current()) or nil
-	local view = source and source.session_bound and source or nil
-	local generation = opts.generation or (view and view.generation)
+	local guard = focus.guard(source, opts.generation)
 	local initial_input = opts.initial_input
 	if initial_input == nil then initial_input = focus.capture_input(source) end
 	require("opencode.client").get_session(id, function(err, info)
-		if not pending.is_current(token) or state.get_closed_session_order()[1] ~= id then return end
-		if view then
-			if not views.valid(view, generation) then return end
-		elseif state.get_session().id ~= current then return end
+		guard.dispose()
+		if not pending.is_current(token) or state.get_closed_session_order()[1] ~= id or not guard.valid() then return end
 		if err then
 			if err.status == 404 then state.remove_session(id) end
 			vim.notify("Could not reopen session: " .. tostring(err.message or err), vim.log.levels.WARN)
 			return
 		end
-		local sessions = require("opencode.session")
-		if focus.with_session_focus(source, function()
-			return sessions.switch_to(info, { view = view, reason = "reopen", notify = false })
-		end, initial_input) == false then
-			sessions.remember(info, { touch = false, reason = "reopen" })
-		end
+		focus.open_fetched(guard, info, { view = guard.owner, reason = "reopen", notify = false }, initial_input)
 	end)
 end
 

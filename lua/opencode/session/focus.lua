@@ -7,6 +7,38 @@ function M.capture_input(owner)
 	return input.owner_view() == owner and input.get_winids()[1] or false
 end
 
+-- Staleness for "fetch, then switch": a session-bound view is current while its
+-- generation holds; otherwise any change of the global session since capture
+-- (including A -> B -> A) cancels. Call dispose() once the operation finishes.
+function M.guard(view, generation)
+	local views = package.loaded["opencode.ui.chat.state"]
+	local owner = view and view.session_bound and view or nil
+	if owner then
+		generation = generation or owner.generation
+		return { view = view, owner = owner,
+			valid = function() return views ~= nil and views.valid(owner, generation) end,
+			dispose = function() end }
+	end
+	local state = require("opencode.state")
+	local source, changed = state.get_session().id, false
+	local function switched() changed = true end
+	state.on("session.id", switched)
+	return { view = view,
+		valid = function() return not changed and state.get_session().id == source end,
+		dispose = function() state.off("session.id", switched) end }
+end
+
+-- Switch to fetched session info with the guard's focus rules; a superseded
+-- focus still records the session without touching recency.
+function M.open_fetched(guard, info, opts, initial_input)
+	local sessions = require("opencode.session")
+	if M.with_session_focus(guard.view, function()
+		return sessions.switch_to(info, opts)
+	end, initial_input) == false then
+		sessions.remember(info, { touch = false, reason = opts.reason or "session_open" })
+	end
+end
+
 -- A session response must not take focus back after the user leaves its owner.
 function M.with_session_focus(owner, create, initial_input)
 	if not owner then return create() end

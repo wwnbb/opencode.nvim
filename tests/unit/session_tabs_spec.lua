@@ -145,6 +145,16 @@ describe("native session tabs", function()
 		assert.equals("other", state.get_session().id)
 	end)
 
+	it("cancels a reopen when the session changes and returns before the response", function()
+		seed("s"); state.set_session("s", "s"); state.close_runtime_session("s")
+		seed("a"); seed("b"); state.set_session("a", "a")
+		client.get_session = function(_, callback) requests[#requests + 1] = { callback = callback } end
+		tabs.reopen(); state.set_session("b", "b"); state.set_session("a", "a")
+		requests[#requests].callback(nil, { id = "s", title = "Late" })
+		assert.equals("a", state.get_session().id)
+		assert.same({ "s" }, state.get_closed_session_order())
+	end)
+
 	it("renders hidden completion as unread and stops observing a closed chat", function()
 		local cs = require("opencode.ui.chat.state").state
 		local previous = { visible = cs.visible, bufnr = cs.bufnr, winid = cs.winid, config = cs.config, tabpage = cs.tabpage }

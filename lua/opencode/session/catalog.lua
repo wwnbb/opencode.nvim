@@ -15,41 +15,28 @@ function M.open(id, opts, callback)
 	if not valid_id(id) then schedule(callback, { message = "Enter a valid session ID" }); return end
 	local views = package.loaded["opencode.ui.chat.state"]
 	local view = opts.view or (views and views.current and views.current())
-	local owner = view and view.session_bound and view or nil
-	local generation = owner and owner.generation
+	local guard = focus.guard(view)
 	local initial_input = focus.capture_input(view)
-	local key, request = owner or M, {}
+	local key, request = guard.owner or M, {}
 	opens[key] = request
-	local token, source = pending.token(id), state.get_session().id
-	if owner then opts = vim.tbl_extend("force", opts, { view = owner }) end
-	local changed = false
-	local function switched() changed = true end
-	if not owner then state.on("session.id", switched) end
+	local token = pending.token(id)
+	if guard.owner then opts = vim.tbl_extend("force", opts, { view = guard.owner }) end
 	local function current()
-		if opens[key] ~= request or not pending.is_current(token) then return false end
-		if owner then return views and views.valid(owner, generation) end
-		return not changed and state.get_session().id == source
+		return opens[key] == request and pending.is_current(token) and guard.valid()
 	end
 	local function finish(err, info)
 		schedule(function()
-			state.off("session.id", switched)
+			guard.dispose()
 			if not current() then return end
-			if not err then
-				local sessions = require("opencode.session")
-				if focus.with_session_focus(view, function()
-					return sessions.switch_to(info, opts)
-				end, initial_input) == false then
-					sessions.remember(info, { touch = false, reason = opts.reason or "session_open" })
-				end
-			end
+			if not err then focus.open_fetched(guard, info, opts, initial_input) end
 			if callback then callback(err, info) end
 		end)
 	end
 	require("opencode.lifecycle").ensure_connected(function()
-		if not current() then state.off("session.id", switched); return end
+		if not current() then guard.dispose(); return end
 		local client = require("opencode.client")
 		client.get_session(id, function(err, info)
-			if not current() then state.off("session.id", switched); return end
+			if not current() then guard.dispose(); return end
 			if err then finish(err); return end
 			if info.id ~= id then finish({ message = "Server returned a different session ID" }); return end
 			local directory = info.location and info.location.directory
