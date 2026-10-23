@@ -29,10 +29,6 @@ function M.remove()
 	if not cs.workspace.switching then vim.cmd.redrawtabline() end
 end
 
-function M.ensure()
-	M.update()
-end
-
 local function session_label(layout, icons)
 	local id = layout.session_id or (layout.last_view and cs.session(layout.last_view).id)
 	local session = id and selectors.get_session_view(id, { session_id = id })

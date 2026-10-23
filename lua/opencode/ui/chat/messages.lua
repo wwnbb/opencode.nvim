@@ -6,25 +6,11 @@ local state = view
 
 local chat_tasks = cs.module(view, require("opencode.ui.chat.tasks"))
 local render_state = cs.module(view, require("opencode.ui.chat.render_state"))
-local events = require("opencode.events")
 
 local schedule_render = function() end
 
 function M.set_schedule_render(fn)
 	schedule_render = type(fn) == "function" and fn or function() end
-end
-
-function M.stop_spinner_animation_timer()
-	if not state.spinner_anim_timer then
-		return
-	end
-	if vim.uv.is_closing(state.spinner_anim_timer) then
-		state.spinner_anim_timer = nil
-		return
-	end
-	state.spinner_anim_timer:stop()
-	state.spinner_anim_timer:close()
-	state.spinner_anim_timer = nil
 end
 
 ---@param role string
@@ -66,7 +52,6 @@ function M.clear()
 	state.last_render_time = 0
 	state.render_scheduled = false
 
-	M.stop_spinner_animation_timer()
 	chat_tasks.stop_task_animation_timer()
 	state.task_anim_frame = 1
 
@@ -74,25 +59,6 @@ function M.clear()
 		vim.bo[state.bufnr].modifiable = true
 		vim.api.nvim_buf_set_lines(state.bufnr, 0, -1, false, {})
 		vim.bo[state.bufnr].modifiable = false
-	end
-
-	local ok, qs = pcall(require, "opencode.question.state")
-	if ok then
-		for _, request_id in ipairs(qs.clear_all() or {}) do
-			events.safe_emit("question_removed", { request_id = request_id })
-		end
-	end
-	local ok2, ps = pcall(require, "opencode.permission.state")
-	if ok2 then
-		for _, permission_id in ipairs(ps.clear_all() or {}) do
-			events.safe_emit("permission_removed", { permission_id = permission_id })
-		end
-	end
-	local ok3, es = pcall(require, "opencode.edit.state")
-	if ok3 then
-		for _, permission_id in ipairs(es.clear_all() or {}) do
-			events.safe_emit("edit_removed", { permission_id = permission_id })
-		end
 	end
 end
 

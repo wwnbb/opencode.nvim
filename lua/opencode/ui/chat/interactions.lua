@@ -65,14 +65,6 @@ function M.sync_widget_selection_from_cursor()
 	chat_edits.sync_selected_file_from_cursor()
 end
 
----@param direction "up" | "down"
-function M.handle_question_navigation(direction)
-	local key = direction == "up" and "k" or "j"
-	vim.cmd("normal! " .. key)
-
-	M.sync_widget_selection_from_cursor()
-end
-
 ---@param number number
 ---@return boolean consumed True when an interactive widget consumed the digit.
 function M.handle_question_number_select(number)

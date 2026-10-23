@@ -39,11 +39,7 @@ local message_renderer = cs.module(view, require("opencode.ui.chat.message_rende
 local edit_previews = cs.module(view, require("opencode.ui.chat.edit_previews"))
 local chat_cursor = cs.module(view, require("opencode.ui.chat.cursor"))
 local chat_tasks = cs.module(view, require("opencode.ui.chat.tasks"))
-local chat_questions = cs.module(view, require("opencode.ui.chat.questions"))
-local chat_permissions = cs.module(view, require("opencode.ui.chat.permissions"))
-local chat_edits = cs.module(view, require("opencode.ui.chat.edits"))
 local chat_interactions = cs.module(view, require("opencode.ui.chat.interactions"))
-local chat_nav = cs.module(view, require("opencode.ui.chat.nav"))
 local widget_support = cs.module(view, require("opencode.ui.chat.widget_support"))
 
 chat_messages.set_schedule_render(function(opts)
@@ -181,7 +177,7 @@ local function resize_event_affects_chat(windows)
 	return false
 end
 
-local function schedule_resize_refresh(args, windows)
+local function schedule_resize_refresh(_, windows)
 	if not chat_surface_is_visible() or not resize_event_affects_chat(windows) or resize_refresh_scheduled then
 		return
 	end
@@ -334,7 +330,19 @@ end
 
 local SPINNER_ANIM_INTERVAL_MS = spinner.get_interval_ms()
 
-local stop_spinner_animation_timer = chat_messages.stop_spinner_animation_timer
+local function stop_spinner_animation_timer()
+	if not state.spinner_anim_timer then
+		return
+	end
+	if vim.uv.is_closing(state.spinner_anim_timer) then
+		state.spinner_anim_timer = nil
+		return
+	end
+	state.spinner_anim_timer:stop()
+	state.spinner_anim_timer:close()
+	state.spinner_anim_timer = nil
+end
+M.stop_spinner_animation_timer = stop_spinner_animation_timer
 
 local function start_spinner_animation_timer()
 	if state.spinner_anim_timer then
@@ -1061,6 +1069,7 @@ function M.add_message(role, content, opts)
 end
 
 function M.clear()
+	stop_spinner_animation_timer()
 	return chat_messages.clear()
 end
 
@@ -1221,7 +1230,6 @@ function M.render()
 		return {}, {}, {}
 	end
 
-	local app_state = require("opencode.state")
 	local current_session = cs.session(view)
 	local ctx = render_context.new({
 		view = view,
@@ -1558,43 +1566,6 @@ end
 function M.handle_widget_message()
 	return chat_interactions.handle_widget_message()
 end
-
--- ─── Re-exports from sub-modules ─────────────────────────────────────────────
-
--- Questions
-M.update_question_status = chat_questions.update_question_status
-M.get_question_at_cursor = chat_questions.get_question_at_cursor
-M.rerender_question = chat_questions.rerender_question
-M.submit_question_answers = chat_questions.submit_question_answers
-M.clear_questions = chat_questions.clear_questions
-M.debug_questions = chat_questions.debug_questions
-M.get_pending_question_count = chat_questions.get_pending_question_count
-M.has_pending_questions = chat_questions.has_pending_questions
-
--- Permissions
-M.update_permission_status = chat_permissions.update_permission_status
-M.get_permission_at_cursor = chat_permissions.get_permission_at_cursor
-M.rerender_permission = chat_permissions.rerender_permission
-M.handle_permission_confirm = chat_permissions.handle_permission_confirm
-M.handle_permission_reject = chat_permissions.handle_permission_reject
-
--- Edits
-M.get_edit_at_cursor = chat_edits.get_edit_at_cursor
-M.get_diffable_edit_at_cursor = chat_edits.get_diffable_edit_at_cursor
-M.rerender_edit = chat_edits.rerender_edit
-M.finalize_edit = chat_edits.finalize_edit
-M.open_inline_diff_split = chat_edits.open_inline_diff_split
-
--- Tasks / tools
-M.get_task_at_cursor = chat_tasks.get_task_at_cursor
-M.get_tool_at_cursor = chat_tasks.get_tool_at_cursor
-M.handle_task_toggle = chat_tasks.handle_task_toggle
-M.rerender_tool = chat_tasks.rerender_tool
-M.handle_tool_toggle = chat_tasks.handle_tool_toggle
-
--- Session navigation
-M.enter_child_session = chat_nav.enter_child_session
-M.leave_child_session = chat_nav.leave_child_session
 
 return M
 

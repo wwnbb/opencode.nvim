@@ -386,16 +386,6 @@ local function pad_to_width_with_current(text, width, current)
 	return text .. string.rep(" ", width - current)
 end
 
----@param text string
----@param width? number
----@return string
-function M.pad_to_width(text, width)
-	width = width or get_chat_text_width()
-	text = M.sanitize_buffer_line(text)
-	local current = safe_display_width(text, 0, new_width_context())
-	return pad_to_width_with_current(text, width, current)
-end
-
 ---@param result table
 ---@param line_index number
 ---@param prefix string

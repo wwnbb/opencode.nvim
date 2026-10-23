@@ -2,7 +2,6 @@ local surface_helper = require("tests.helpers.chat_surface")
 local chat = require("opencode.ui.chat")
 local state = require("opencode.ui.chat.state").state
 local tasks = require("opencode.ui.chat.task_animation")
-local messages = require("opencode.ui.chat.messages")
 local app = require("opencode.state")
 
 describe("chat animation timer ownership", function()
@@ -18,7 +17,7 @@ describe("chat animation timer ownership", function()
 		vim.uv.now = function() return now end
 	end)
 	after_each(function()
-		messages.stop_spinner_animation_timer()
+		chat.stop_spinner_animation_timer()
 		tasks.stop_task_animation_timer()
 		vim.schedule_wrap, vim.uv.now = schedule_wrap, clock
 		surface_helper.restore(surface)
@@ -49,7 +48,7 @@ describe("chat animation timer ownership", function()
 			chat.do_render()
 			assert.is_not_nil(state.spinner_anim_timer)
 			local old = callbacks[1]
-			messages.stop_spinner_animation_timer()
+			chat.stop_spinner_animation_timer()
 			if restart then chat.do_render() end
 			local timer = state.spinner_anim_timer
 			local before = vim.api.nvim_buf_get_lines(surface.bufnr, 0, -1, false)

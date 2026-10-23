@@ -25,7 +25,7 @@ function M.ensure(view)
 		layouts[#layouts + 1] = active
 		view.workspace_id = active.id
 	end
-	bar().ensure()
+	bar().update()
 end
 
 local function release_callbacks(layout)
@@ -415,7 +415,7 @@ function M.resume()
 		vim.cmd("call extend(t:, get(g:, 'opencode_workspace_tabvars', {}), 'force')")
 		if tab_directory then vim.cmd.tcd({ args = { tab_directory }, mods = { noautocmd = true } })
 		else vim.cmd.cd({ args = { vim.fn.getcwd(-1, -1) }, mods = { noautocmd = true } }) end
-		bar().ensure()
+		bar().update()
 		show(active)
 	end)
 	if not ok then
