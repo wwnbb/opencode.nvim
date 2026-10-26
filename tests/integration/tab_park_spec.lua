@@ -159,6 +159,24 @@ describe("parking the OpenCode tab workspace", function()
 		]])
 	end)
 
+	it("keeps parked splits when the editor closes chat and changes directory", function()
+		editor.lua([[
+			open()
+			local second = chat.create_split(first, seed("park-b"), "vertical")
+			chat.toggle()
+			assert(workspace.is_parked() and first.suspended and second.suspended)
+			-- Editor mappings may close chat before opening a file tree to switch projects.
+			require("opencode").close(); require("opencode").close(); settle()
+			vim.cmd.tcd(vim.fn.fnamemodify(vim.fn.getcwd(), ":h")); settle()
+			assert(workspace.is_parked() and #workspace.list() == 1 and workspace.current().id == original)
+			assert(views.valid(first) and views.valid(second) and first.suspended and second.suspended)
+			assert(state.get_session().id == "park-b")
+			chat.open(); settle()
+			assert(#vim.api.nvim_tabpage_list_wins(views.workspace.tabpage) == 2)
+			assert(first.visible and second.visible and first.workspace_id == second.workspace_id)
+		]])
+	end)
+
 	it("does not retain the closed default pane when q closes its last split", function()
 		editor.lua([[
 			open()

@@ -217,7 +217,13 @@ function M.close_view(view, opts)
 	if view.config and view.config.layout == "tab" then M.after_close() end
 end
 
-function M.close() return M.close_view(cs.current()) end
+function M.close()
+	local view = cs.current()
+	-- A hidden layout (or a parked workspace) has no focused pane to close; only
+	-- close_view, as x does, may retire a suspended view and drop it from its layout.
+	if view.suspended then return end
+	return M.close_view(view)
+end
 
 function M.toggle()
 	local config = (require("opencode.state").get_config() or {}).chat or {}
