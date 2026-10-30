@@ -91,6 +91,18 @@ local function connect(integration, method, opts)
 						else notify("Connected to " .. integration.name) end
 					end)
 				end })
+		elseif method.type == "external" then
+			-- The server stores a reference to the external login; it reports a missing login as connection status.
+			actions.connect_integration_external(integration.id, method, answer, opts, function(err, result)
+				if not pending.is_current(token) then return end
+				if err then notify("Could not connect to " .. integration.name, true); return end
+				local connection = vim.iter(result and result.connections or {}):find(function(c)
+					return c.type == "credential" and c.method == "external"
+				end)
+				if not connection then notify("No connection was returned by the server", true)
+				elseif connection.status then notify(integration.name .. ": " .. connection.status.message, true)
+				else notify("Connected to " .. integration.name .. " through " .. method.label) end
+			end)
 		elseif method.type == "oauth" or method.type == "command" then attempt(integration, method, answer, opts)
 		else notify("Unsupported integration method: " .. tostring(method.type), true) end
 	end

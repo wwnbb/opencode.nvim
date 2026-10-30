@@ -417,7 +417,7 @@ describe("OpenCode HTTP contracts", function()
 		json({ location = location, data = { status = "unknown", time = time } })
 		assert.equals("incompatible_response", invoke("integration_command_status", { path = path }).err.code)
 		response = { status = 204, headers = {}, body = "" }
-		for _, operation in ipairs({ "integration_key", "integration_oauth_complete", "integration_oauth_cancel", "integration_command_cancel" }) do
+		for _, operation in ipairs({ "integration_key", "integration_external", "integration_oauth_complete", "integration_oauth_cancel", "integration_command_cancel" }) do
 			assert.is_nil(invoke(operation, { path = path }).err)
 		end
 		for _, operation in ipairs({ "credential_remove", "credential_update", "credential_activate" }) do

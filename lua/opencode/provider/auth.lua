@@ -121,13 +121,22 @@ function M.cancel(id)
 	end)
 end
 
-function M.connect_key(integration_id, key, answer, opts, callback)
+local function connect(operation, integration_id, body, opts, callback)
 	local token = pending.token()
-	client().integration("key", integration_id, { key = key, answer = answer, label = opts.label }, opts, function(err)
+	client().integration(operation, integration_id, body, opts, function(err)
 		if not pending.is_current(token) then callback({ message = "Server connection changed" }); return end
 		if err then callback(err); return end
 		refresh_integration(integration_id, opts, token, callback)
 	end)
+end
+
+function M.connect_key(integration_id, key, answer, opts, callback)
+	connect("key", integration_id, { key = key, answer = answer, label = opts.label }, opts, callback)
+end
+
+-- The server reads a credential the user created outside OpenCode (for example a CLI login).
+function M.connect_external(integration_id, method, answer, opts, callback)
+	connect("external", integration_id, { methodID = method.id, answer = answer, label = opts.label }, opts, callback)
 end
 
 function M.credential(operation, integration_id, credential_id, body, opts, callback)

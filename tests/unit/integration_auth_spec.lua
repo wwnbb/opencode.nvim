@@ -35,6 +35,20 @@ describe("integration attempt ownership", function()
 	local function begin(opts, kind)
 		return auth.start("integration-A", { id = "method-stable", type = kind or "oauth" }, {}, opts or { directory = "/one" }, function(view) updates[#updates + 1] = view end)
 	end
+	it("connects an external method by its stable ID and confirms the account on the server", function()
+		local result
+		auth.connect_external("integration-A", { id = "cli-login", type = "external" }, {}, { directory = "/one", label = "Work" },
+			function(err, integration) result = { err = err, integration = integration } end)
+		assert.equals("external", calls[1].operation)
+		assert.same({ methodID = "cli-login", answer = {}, label = "Work" }, calls[1].body)
+		assert.equals("/one", calls[1].opts.directory)
+		calls[1].cb(nil)
+		assert.equals("get", calls[2].operation)
+		calls[2].cb(nil, { connections = { { type = "credential", method = "external" } } })
+		assert.is_nil(result.err)
+		assert.equals("external", result.integration.connections[1].method)
+	end)
+
 	it("replaces cumulative command login output and shows its final failure", function()
 		local id = begin(nil, "command"); started("command")
 		local message = "Open https://example.invalid/login\nCode: ABCD-1234\n"

@@ -76,6 +76,29 @@ describe("integration connection method selection", function()
 		input.on_submit("test-key")
 		assert.equals(1, calls)
 	end)
+	for _, case in ipairs({
+		{ name = "confirms", result = { connections = { { type = "credential", method = "external" } } },
+			notice = "Connected to Test provider through CLI login (tool login)" },
+		{ name = "reports the login status of", result = { connections = { { type = "credential", method = "external",
+			status = { status = "needs_auth", message = "Run tool login" } } } }, notice = "Test provider: Run tool login" },
+		{ name = "reports a rejected", err = { message = "Integration request failed (HTTP 400)" }, notice = "Could not connect to Test provider" },
+		{ name = "reports an unconfirmed", result = { connections = {} }, notice = "No connection was returned by the server" },
+	}) do
+		it(case.name .. " external credential without a key prompt", function()
+			local calls = 0
+			stubs[#stubs + 1] = require("luassert.stub")(require("opencode.actions"), "connect_integration_external", function(id, method, answer, opts, cb)
+				assert.equals("test", id); assert.equals("cli-login", method.id); assert.same(vim.empty_dict(), answer)
+				assert.equals("/tmp", opts.directory)
+				calls = calls + 1
+				cb(case.err, case.result)
+			end)
+			integration.methods = { { id = "cli-login", type = "external", label = "CLI login (tool login)" } }
+			require("opencode.ui.palette.integration").connect("test", { directory = "/tmp" })
+			assert.equals(1, calls)
+			assert.is_nil(input)
+			assert.equals(case.notice, notices[#notices])
+		end)
+	end
 	it("replaces command login messages and displays and uses configured authorization controls", function()
 		require("opencode.state").set_config(require("opencode.config").merge({ integration = { keymaps = {
 			close = "Z", open = "O", code = "C", copy_url = "u", copy_instructions = "U",

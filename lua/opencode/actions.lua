@@ -547,6 +547,9 @@ end
 function M.connect_integration_key(integration_id, key, answer, opts, callback)
 	return require("opencode.provider.auth").connect_key(integration_id, key, answer, opts, callback)
 end
+function M.connect_integration_external(integration_id, method, answer, opts, callback)
+	return require("opencode.provider.auth").connect_external(integration_id, method, answer, opts, callback)
+end
 function M.start_integration_attempt(integration_id, method, answer, opts, listener)
 	return require("opencode.provider.auth").start(integration_id, method, answer, opts, listener)
 end

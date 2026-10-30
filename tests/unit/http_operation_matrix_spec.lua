@@ -84,6 +84,7 @@ local cases = {
 	{ "integration_list", "GET", "/api/integration", "catalog", nil, { location = location } },
 	{ "integration_get", "GET", "/api/integration/{integrationID}", "integration", nil, { location = location } },
 	{ "integration_key", "POST", "/api/integration/{integrationID}/connect/key", "empty", { key = "public-test-only" }, { location = location } },
+	{ "integration_external", "POST", "/api/integration/{integrationID}/connect/external", "empty", { methodID = "external" }, { location = location } },
 	{ "integration_oauth_start", "POST", "/api/integration/{integrationID}/connect/oauth", "oauth", { methodID = "oauth" }, { location = location } },
 	{ "integration_oauth_status", "GET", "/api/integration/{integrationID}/connect/oauth/{attemptID}", "attempt_status", nil, { location = location } },
 	{ "integration_oauth_complete", "POST", "/api/integration/{integrationID}/connect/oauth/{attemptID}/complete", "empty", { code = "public-test-code" }, { location = location } },

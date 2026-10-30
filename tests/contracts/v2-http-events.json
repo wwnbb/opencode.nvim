@@ -177,6 +177,9 @@
     "/api/integration/{integrationID}/connect/key": [
       "POST"
     ],
+    "/api/integration/{integrationID}/connect/external": [
+      "POST"
+    ],
     "/api/integration/{integrationID}/connect/oauth": [
       "POST"
     ],

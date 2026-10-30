@@ -51,6 +51,7 @@ local operations = {
 	integration_list = { "GET", "/api/integration", "catalog" },
 	integration_get = { "GET", "/api/integration/{integrationID}", "catalog_object" },
 	integration_key = { "POST", "/api/integration/{integrationID}/connect/key", "empty" },
+	integration_external = { "POST", "/api/integration/{integrationID}/connect/external", "empty" },
 	integration_oauth_start = { "POST", "/api/integration/{integrationID}/connect/oauth", "attempt" },
 	integration_oauth_status = { "GET", "/api/integration/{integrationID}/connect/oauth/{attemptID}", "attempt_status" },
 	integration_oauth_complete = { "POST", "/api/integration/{integrationID}/connect/oauth/{attemptID}/complete", "empty" },
