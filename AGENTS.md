@@ -32,6 +32,7 @@ lua/opencode/stash.lua               → Persist unsent prompts independently of
 lua/opencode/lifecycle.lua           → Server spawn, health checks, reconnect
 lua/opencode/managed.lua             → Native daemon discovery (registration file + authenticated health check)
 lua/opencode/server_env.lua          → Pure server environment and command resolution (shell env, PATH, listening URL)
+lua/opencode/server_watchdog.lua     → Detached shell that stops an owned server when its Neovim dies (stdin EOF)
 lua/opencode/events.lua              → Local event bus and server event setup
 lua/opencode/cleanup.lua             → Reset/teardown orchestration across modules
 lua/opencode/commands.lua            → User commands and default loader keymaps

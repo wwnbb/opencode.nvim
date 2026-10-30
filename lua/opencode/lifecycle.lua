@@ -23,6 +23,7 @@ local fail_startup
 local begin_health_checks
 local continue_startup
 local setup_event_listeners
+local install_exit_hook
 
 M.opts = {
 	command = "opencode",
@@ -142,6 +143,27 @@ local function signal_attempt(attempt, signal)
 		end
 	end
 	return signaled
+end
+
+local function stop_watchdog(attempt)
+	local watchdog = attempt.watchdog
+	attempt.watchdog = nil
+	if watchdog then watchdog.stop() end
+end
+
+-- Recreated by setup() and by every spawn, so an owned server is stopped on a
+-- normal exit whichever ran first. Abnormal exits are left to the watchdog.
+install_exit_hook = function()
+	local group = vim.api.nvim_create_augroup("OpenCodeLifecycle", { clear = true })
+	if not M.opts.shutdown_on_exit then return end
+	vim.api.nvim_create_autocmd("VimLeavePre", {
+		group = group,
+		callback = function()
+			if state.is_server_managed() then
+				M.stop()
+			end
+		end,
+	})
 end
 
 local function disconnect_events()
@@ -505,6 +527,8 @@ local function spawn_server()
 
 	local attempt = new_attempt({ profiles = profiles, auth = auth, phase = "starting", startup_done = false })
 	current_attempt = attempt
+	-- Spawning owns a process even when setup() never ran.
+	install_exit_hook()
 
 	state.set_connection("starting")
 	state.set_server_managed(true)
@@ -534,6 +558,7 @@ local function spawn_server()
 				end
 			end,
 			on_exit = function(_, code)
+				stop_watchdog(attempt)
 				if not is_current_attempt(attempt) then
 					return
 				end
@@ -589,6 +614,10 @@ local function spawn_server()
 	attempt.pid = server_job.pid
 	if attempt.pid and is_current_attempt(attempt) then
 		state.set_server_pid(attempt.pid)
+	end
+	-- Only a real process gets a watchdog, and only once it has not exited.
+	if started and M.opts.shutdown_on_exit and type(server_job.handle) == "userdata" and not attempt.exited then
+		attempt.watchdog = require("opencode.server_watchdog").start(attempt.pid)
 	end
 
 	if not started then
@@ -1021,17 +1050,7 @@ function M.setup(opts)
 	M.opts = vim.tbl_extend("force", M.opts, vim.deepcopy(opts))
 	server_env.reset_shell_env()
 
-	local group = vim.api.nvim_create_augroup("OpenCodeLifecycle", { clear = true })
-	if M.opts.shutdown_on_exit then
-		vim.api.nvim_create_autocmd("VimLeavePre", {
-			group = group,
-			callback = function()
-				if state.is_server_managed() then
-					M.stop()
-				end
-			end,
-		})
-	end
+	install_exit_hook()
 end
 
 ---Whether this plugin owns the server process, so feature options can be
