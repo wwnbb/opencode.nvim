@@ -10,6 +10,7 @@ local actions = require("opencode.actions")
 local session_lock = require("opencode.session.lock")
 local focus = require("opencode.session.focus")
 local chat_tasks = cs.module(view, require("opencode.ui.chat.tasks"))
+local positions = cs.module(view, require("opencode.ui.chat.positions"))
 local navigation_request = 0
 
 local WIDGET_LINE_MAPS = {
@@ -31,9 +32,8 @@ local function add_range(items, item, id, kind)
 	if type(item) ~= "table" then
 		return
 	end
-	local start_line = tonumber(item.start_line)
-	local end_line = tonumber(item.end_line)
-	if not start_line or not end_line or end_line < start_line then
+	local start_line, end_line = positions.range(item)
+	if not start_line or end_line < start_line then
 		return
 	end
 	local copy = vim.tbl_extend("force", {}, item, {
@@ -161,8 +161,8 @@ function M.jump_to_message(message_id)
 	if not valid_chat_window() then return false end
 	for _, pos in ipairs(state.message_positions or {}) do
 		if pos.id == message_id then
-			local start_line, end_line = tonumber(pos.start_line), tonumber(pos.end_line)
-			if start_line and end_line and end_line >= start_line then
+			local start_line, end_line = positions.range(pos)
+			if start_line and end_line >= start_line then
 				local line = first_content_line({ start_line = start_line, end_line = end_line })
 				if not line then return false end
 				vim.api.nvim_win_set_cursor(state.winid, { line + 1, 0 })

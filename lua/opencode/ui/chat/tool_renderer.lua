@@ -45,6 +45,7 @@ function M.render_tool_part(ctx, tool_part, message_revision, part_revisions)
 		local result = ctx:cached_render_result(cache_key, function()
 			return chat_tasks.render_task_tool(tool_part, is_expanded)
 		end, ctx:render_owner_key("task", tool_part.messageID, tool_part.id))
+		ctx:begin_block("task", tool_part.id or tool_part.callID, cache_key)
 		local base_line = ctx:add_render_result(result, "task")
 		state.tasks[tool_part.id] = widget_support.mark_render_generation(vim.tbl_extend("force", position_ids, {
 			kind = "task",
@@ -84,6 +85,8 @@ function M.render_tool_part(ctx, tool_part, message_revision, part_revisions)
 	if #result.lines > 0 and tool_part.tool ~= "bash" and ctx.last_block_kind == "tool" and ctx.last_tool_name == "bash" then
 		ctx:add_raw_line("")
 	end
+	-- After the shell panel's closing blank, which belongs to the panel above.
+	ctx:begin_block("tool", tool_part.id or tool_part.callID, cache_key)
 	local base_line = ctx:add_render_result(result, "tool")
 	if #result.lines > 0 then ctx.last_tool_name = tool_part.tool end
 	state.tools[tool_part.id] = widget_support.mark_render_generation(vim.tbl_extend("force", position_ids, {

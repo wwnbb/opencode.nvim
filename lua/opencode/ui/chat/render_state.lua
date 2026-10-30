@@ -4,6 +4,8 @@ local M = {}
 
 local state = view
 local memo = require("opencode.util.memo")
+local render_blocks = require("opencode.ui.chat.render_blocks")
+local positions = cs.module(view, require("opencode.ui.chat.positions"))
 
 local RENDER_CACHE_MAX_BLOCKS = 1000
 local TASK_SUMMARY_CACHE_MAX_ENTRIES = 100
@@ -100,7 +102,7 @@ function M.clear_render_cache()
 	render_pool:clear()
 	state.render_cache = { blocks = {}, order = {} }
 	render_identity = state.render_cache
-	state.last_render_highlight_signature = nil
+	state.applied_frame = nil
 end
 
 function M.render_cache_stats()
@@ -177,17 +179,23 @@ local function normalize_line(line)
 	return math.max(0, math.floor(line))
 end
 
--- last_render_highlight_signature holds the applied highlight frame (see
--- highlight_frame); any direct buffer or extmark change drops it.
-function M.invalidate_render_highlights(start_line)
-	state.last_render_highlight_signature = nil
-	if start_line ~= nil then
-		local dirty_start = normalize_line(start_line)
-		local current_dirty = tonumber(state.render_highlights_dirty_start)
-		if not current_dirty or dirty_start < current_dirty then
-			state.render_highlights_dirty_start = dirty_start
-		end
+-- applied_frame describes the buffer as the last render left it (see
+-- do_render); a direct buffer or extmark change it cannot account for drops it.
+function M.drop_applied_frame()
+	state.applied_frame = nil
+end
+
+---The applied frame when it still describes the buffer exactly.
+---@return table|nil
+function M.applied_frame()
+	local applied = state.applied_frame
+	local bufnr = state.bufnr
+	if not applied or applied.bufnr ~= bufnr or not bufnr or not vim.api.nvim_buf_is_valid(bufnr) then return nil end
+	if applied.tick ~= vim.api.nvim_buf_get_changedtick(bufnr)
+		or applied.line_count ~= vim.api.nvim_buf_line_count(bufnr) then
+		return nil
 	end
+	return applied
 end
 
 ---@param bufnr number|nil
@@ -197,14 +205,15 @@ function M.clear_chat_highlights(bufnr, start_line, end_line)
 	if not bufnr or not vim.api.nvim_buf_is_valid(bufnr) then
 		return
 	end
-	local clear_start = normalize_line(start_line)
-	vim.api.nvim_buf_clear_namespace(bufnr, cs.chat_hl_ns, clear_start, end_line or -1)
-	M.invalidate_render_highlights(clear_start)
+	vim.api.nvim_buf_clear_namespace(bufnr, cs.chat_hl_ns, normalize_line(start_line), end_line or -1)
+	M.drop_applied_frame()
 end
 
 ---Replace a rendered half-open line range without clearing extmarks that shift
 ---from the following block. Highlights owned by the old range are always
----removed before the buffer mutation.
+---removed before the buffer mutation. A range inside one block of the applied
+---frame marks that block rewritten; any other range drops the frame. The
+---block row index takes the line count change, so tracked positions follow.
 ---@param opts table { bufnr: number, start_line: number, end_line: number, lines: string[], clear_animation?: boolean, apply_highlights?: function }
 ---@return boolean updated
 ---@return any error
@@ -219,14 +228,20 @@ function M.replace_chat_range(opts)
 	if end_line < start_line then
 		return false, "invalid line range"
 	end
+	local lines = opts.lines or {}
+	local applied = bufnr == state.bufnr and M.applied_frame() or nil
+	local block, _, block_count
+	if applied then block, _, block_count = render_blocks.applied_block(applied, start_line, end_line) end
 
 	local ok, err = xpcall(function()
 		vim.bo[bufnr].modifiable = true
 		if opts.clear_animation then
 			vim.api.nvim_buf_clear_namespace(bufnr, cs.chat_anim_ns, start_line, end_line)
 		end
-		M.clear_chat_highlights(bufnr, start_line, end_line)
-		vim.api.nvim_buf_set_lines(bufnr, start_line, end_line, false, opts.lines or {})
+		if end_line > start_line then
+			vim.api.nvim_buf_clear_namespace(bufnr, cs.chat_hl_ns, start_line, end_line)
+		end
+		vim.api.nvim_buf_set_lines(bufnr, start_line, end_line, false, lines)
 		if type(opts.apply_highlights) == "function" then
 			opts.apply_highlights()
 		end
@@ -235,6 +250,13 @@ function M.replace_chat_range(opts)
 	pcall(function()
 		vim.bo[bufnr].modifiable = false
 	end)
+	if ok and bufnr == state.bufnr then positions.shift(start_line, end_line, #lines) end
+	if ok and block then
+		render_blocks.replace(applied, block.key, block_count + #lines - (end_line - start_line),
+			vim.api.nvim_buf_get_changedtick(bufnr))
+	else
+		M.drop_applied_frame()
+	end
 	if not ok then
 		state.force_full_render = true
 		return false, err
@@ -262,9 +284,9 @@ function M.reset_chat_surface(opts)
 		state.expanded_tools = {}
 	end
 	state.stream_blocks = {}
-	state.spinner_footer_line = nil
+	state.spinner_footer = nil
+	positions.clear()
 	state.render_in_progress = false
-	state.render_highlights_dirty_start = nil
 	if opts.force_full_render ~= false then
 		state.force_full_render = true
 	end
@@ -340,150 +362,6 @@ function M.diff_lines(old_lines, new_lines)
 		suffix = suffix + 1
 	end
 	return start, old_count - suffix, new_count - suffix
-end
-
-local WIDGET_MAPS = { "questions", "permissions", "edits", "tasks", "tools" }
-
----Highlight sources of one rendered frame, kept by reference so the next frame
----can be compared without building signatures.
----@param content_highlights table|nil
----@param nui_lines NuiLine[]|nil
-function M.highlight_frame(content_highlights, nui_lines)
-	local maps = {}
-	for index, name in ipairs(WIDGET_MAPS) do maps[index] = state[name] or {} end
-	return { content = content_highlights or {}, nui_lines = nui_lines or {}, maps = maps }
-end
-
-local function highlight_bounds(hl, base)
-	local line = base + (hl.line or 0)
-	return line, hl.end_line and (base + hl.end_line) or line
-end
-
----Grow [start, finish) until no highlight or widget range crosses an edge.
----A nil finish leaves the range open to the end of the buffer.
----@param frame table
----@param start number
----@param finish number|nil
----@return number start
----@return number|nil finish
-function M.extend_highlight_range(frame, start, finish)
-	start = normalize_line(start)
-	local function cross(line, end_line)
-		local moved = false
-		if line < start and end_line >= start then
-			start, moved = line, true
-		end
-		if finish and line < finish and end_line >= finish then
-			finish, moved = end_line + 1, true
-		end
-		return moved
-	end
-	local function scan(highlights, base)
-		local moved = false
-		if type(highlights) ~= "table" then return false end
-		for _, hl in ipairs(highlights) do
-			if type(hl) == "table" and cross(highlight_bounds(hl, base)) then moved = true end
-		end
-		return moved
-	end
-	local moved = true
-	while moved do
-		moved = scan(frame.content, 0)
-		for _, map in ipairs(frame.maps) do
-			for _, pos in pairs(map) do
-				if type(pos) == "table" then
-					local first, last = tonumber(pos.start_line), tonumber(pos.end_line)
-					if first and last and cross(normalize_line(first), last) then moved = true end
-					if scan(pos.highlights, pos.start_line or 0) then moved = true end
-				end
-			end
-		end
-	end
-	return math.max(0, start), finish
-end
-
----@param changed_start number|nil
----@param content_highlights table|nil
----@return number
-function M.highlight_clear_start(changed_start, content_highlights)
-	return (M.extend_highlight_range(M.highlight_frame(content_highlights), changed_start))
-end
-
-local function same_highlight(a, a_base, b, b_base)
-	local a_line, a_end = highlight_bounds(a, a_base)
-	local b_line, b_end = highlight_bounds(b, b_base)
-	return a_line == b_line and a_end == b_end
-		and (a.col_start or 0) == (b.col_start or 0)
-		and (a.col_end or a.end_col) == (b.col_end or b.end_col)
-		and a.hl_group == b.hl_group and a.priority == b.priority and a.hl_eol == b.hl_eol
-end
-
--- Next highlight that apply_extmark_highlights would place at or after from.
-local function next_applied(highlights, index, base, from)
-	while true do
-		index = index + 1
-		local hl = highlights[index]
-		if hl == nil then return index, nil end
-		if type(hl) == "table" and hl.hl_group and base + (hl.line or 0) >= from then return index, hl end
-	end
-end
-
-local function same_highlight_list(a, a_base, b, b_base, from)
-	a, b = type(a) == "table" and a or {}, type(b) == "table" and b or {}
-	local i, j, x, y = 0, 0, nil, nil
-	repeat
-		i, x = next_applied(a, i, a_base, from)
-		j, y = next_applied(b, j, b_base, from)
-		if (x == nil) ~= (y == nil) then return false end
-		if x and not same_highlight(x, a_base, y, b_base) then return false end
-	until x == nil
-	return true
-end
-
-local function has_text_highlight(line)
-	for _, text in ipairs(line and line._texts or {}) do
-		if text.extmark then return true end
-	end
-	return false
-end
-
----Whether the extmark highlights previous applied from old_from are exactly
----those frame applies from new_from. NuiText reuses its extmark id, so with
----check_lines a highlighted line must also keep its NuiLine: applying a moved
----line elsewhere would move the mark that the unchanged tail still relies on.
----@param previous table
----@param frame table
----@param old_from number
----@param new_from number
----@param check_lines boolean|nil
----@return boolean
-function M.same_frame_highlights(previous, frame, old_from, new_from, check_lines)
-	if previous.content._opencode_signature ~= frame.content._opencode_signature then return false end
-	local shift = new_from - old_from
-	if not same_highlight_list(previous.content, shift, frame.content, 0, new_from) then return false end
-	for index, map in ipairs(frame.maps) do
-		local old_map = previous.maps[index] or {}
-		for id, pos in pairs(map) do
-			local old = old_map[id]
-			if not same_highlight_list(old and old.highlights, (old and old.start_line or 0) + shift,
-				pos.highlights, pos.start_line or 0, new_from) then
-				return false
-			end
-		end
-		for id, old in pairs(old_map) do
-			if map[id] == nil and not same_highlight_list(old.highlights, (old.start_line or 0) + shift, nil, 0, new_from) then
-				return false
-			end
-		end
-	end
-	if check_lines then
-		local lines, old_lines = frame.nui_lines, previous.nui_lines
-		for row = new_from + 1, #lines do
-			local old, line = old_lines[row - shift], lines[row]
-			if old ~= line and (has_text_highlight(old) or has_text_highlight(line)) then return false end
-		end
-	end
-	return true
 end
 
 return M

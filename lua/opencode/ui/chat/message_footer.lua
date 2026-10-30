@@ -196,11 +196,17 @@ function M.attach(render, attach_opts)
 		return nil
 	end
 
+	-- Cached footers pass verbosity explicitly so that it is part of their key.
+	local function verbosity_of(opts)
+		if opts and opts.verbosity ~= nil then return opts.verbosity end
+		return ((require("opencode.state").read_config() or {}).session or {}).verbosity
+	end
+
 	-- Detailed usage gets its own wrapped rows so narrow chat windows can inspect
 	-- every field without expanding the normal footer or confusing totals/context.
-	function render.render_token_breakdown(message, turn)
-		local config = require("opencode.state").get_config() or {}
-		if (config.session or {}).verbosity ~= "high" then return {} end
+	---@param opts? { verbosity?: string } Defaults to the configured session verbosity
+	function render.render_token_breakdown(message, turn, opts)
+		if verbosity_of(opts) ~= "high" then return {} end
 		local lines, width = {}, render.get_chat_text_width()
 		local prefix = width >= 3 and "  " or ""
 		local function add(label, usage)
@@ -220,7 +226,7 @@ function M.attach(render, attach_opts)
 	---Render metadata footer for an assistant message.
 	---@param message table
 	---@param messages table[]
-	---@param opts? table { spinner_frame?: string|nil, duration_ms?: number|nil, duration_calculated?: boolean, tokens_per_second?: number }
+	---@param opts? table { spinner_frame?: string|nil, duration_ms?: number|nil, duration_calculated?: boolean, tokens_per_second?: number, verbosity?: string }
 	---@return NuiLine
 	function render.render_metadata_footer(message, messages, opts)
 		opts = opts or {}
@@ -252,8 +258,7 @@ function M.attach(render, attach_opts)
 			end
 			line:append(NuiText(token_text .. " tok", "Comment"))
 		end
-		local config = require("opencode.state").get_config() or {}
-		if (config.session or {}).verbosity == "high" then
+		if verbosity_of(opts) == "high" then
 			local step = require("opencode.selectors").token_usage(message.tokens)
 			if step then
 				line:append(NuiText(string.format(" · step %s new + %s cached = %s tok", _format_compact_number(step.new),

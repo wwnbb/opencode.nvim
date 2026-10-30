@@ -71,7 +71,8 @@ local function default_group(scope)
 end
 
 local function resolve(scope, values)
-	local config = require("opencode.state").get_config() or {}
+	-- Read without a full copy; configured values are copied as they are taken.
+	local config = require("opencode.state").read_config() or {}
 	local result, customized = default_group(scope), {}
 	local function overlay(group)
 		local parent = defaults.parents[group]
@@ -81,7 +82,7 @@ local function resolve(scope, values)
 		local explicit = (config._keymap_overrides or {})[group] or {}
 		for action, value in pairs(configured or {}) do
 			if explicit[action] or not vim.deep_equal(value, original[action]) then
-				result[action], customized[action] = value, true
+				result[action], customized[action] = vim.deepcopy(value), true
 			end
 		end
 	end
@@ -115,7 +116,7 @@ end
 ---@return string|nil text nil when nothing remains
 function M.hint(items, opts)
 	opts = opts or {}
-	local config = require("opencode.state").get_config() or {}
+	local config = require("opencode.state").read_config() or {}
 	local shown, parts = (config.key_hints or {}).enabled ~= false, {}
 	for _, item in ipairs(items) do
 		local key = type(item) == "table" and item[1] or item

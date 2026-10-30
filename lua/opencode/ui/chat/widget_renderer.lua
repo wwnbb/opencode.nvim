@@ -19,7 +19,7 @@ local widget_base = require("opencode.ui.widget_base")
 local widget_support = cs.module(view, require("opencode.ui.chat.widget_support"))
 local chat_bash = cs.module(view, require("opencode.ui.chat.bash"))
 
-local function capture_widget_focus(kind, widget_id, widget_start, meta)
+local function capture_widget_focus(kind, widget_id, meta)
 	local focus_offset = widget_base.get_focus_offset(meta)
 	if kind == "question" and state.focus_question == widget_id then
 		local qstate = require("opencode.question.state").get_question(widget_id)
@@ -29,15 +29,16 @@ local function capture_widget_focus(kind, widget_id, widget_start, meta)
 	if focus_offset == nil then
 		return
 	end
-	widget_support.capture_focus_line(kind, widget_id, widget_start + focus_offset + 1)
+	widget_support.capture_focus_offset(kind, widget_id, focus_offset)
 end
 
 local function append_interactive_widget(ctx, widget)
+	ctx:begin_block(widget.kind, widget.id)
 	-- An attached widget continues the tool row, so it takes no separators; below
 	-- a list row it goes above the separator that row ends with.
 	local separator = widget.attached and widget.tool_row.compact and ctx:take_trailing_blank()
 	local start_line = widget.attached and ctx:line_count() or ctx:prepare_widget_start()
-	capture_widget_focus(widget.kind, widget.id, start_line, widget.meta)
+	capture_widget_focus(widget.kind, widget.id, widget.meta)
 	for _, line_text in ipairs(widget.lines) do
 		ctx:add_raw_line(line_text, widget.attached and "tool" or nil)
 	end
@@ -223,6 +224,7 @@ function M.render_child_session_widgets_for_task(ctx, index, tool_part)
 			and not index:is_local_notice_rendered(notice.id)
 		then
 			index:mark_local_notice_rendered(notice.id)
+			ctx:begin_block("error", notice.id)
 			M.render_session_error_notice(ctx, notice)
 			ctx:add_raw_line("")
 		end
@@ -235,7 +237,9 @@ end
 
 ---@param tool_part? table The call's tool part, when its row was rendered just before
 function M.render_widgets_for_tool_call(ctx, index, message_id, call_id, tool_part)
-	M.render_widget_items(ctx, index, index:items_for_tool_call(message_id, call_id), tool_row_for(ctx, tool_part))
+	local items = index:items_for_tool_call(message_id, call_id)
+	if #items == 0 then return end
+	M.render_widget_items(ctx, index, items, tool_row_for(ctx, tool_part))
 end
 
 function M.render_orphan_widgets(ctx, index, session_msg_ids)

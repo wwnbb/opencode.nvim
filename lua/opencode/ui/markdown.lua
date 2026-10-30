@@ -142,7 +142,7 @@ function M.render(content, opts, render)
 		vim.list_extend(result._opencode_highlights, syntax.project_highlights(spans, { text_value }, { rows }))
 		return rows
 	end
-	local mode = opts.mode or ((require("opencode.state").get_config() or {}).session or {}).markdown
+	local mode = opts.mode or ((require("opencode.state").read_config() or {}).session or {}).markdown
 	if mode == "source" then
 		local source_lines = vim.split(source:sub(1, -2), "\n", { plain = true })
 		local rows = {}

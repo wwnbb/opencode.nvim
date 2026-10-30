@@ -74,7 +74,7 @@ function M.sync_selected_option_from_cursor()
 		local _, _, fallback = permission_widget.get_lines_for_permission(permission_id, pstate, render_opts(pos))
 		meta = fallback
 	end
-	local option_index = widget_base.get_option_index(meta, cursor_line - pos.start_line)
+	local option_index = widget_base.get_option_index(meta, widget_support.offset_at_cursor(pos, cursor_line))
 	if not option_index then
 		return permission_id, false
 	end

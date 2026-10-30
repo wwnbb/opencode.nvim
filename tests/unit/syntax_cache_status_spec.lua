@@ -10,15 +10,16 @@ describe("syntax result status and source caching", function()
 
 	before_each(function()
 		config = vim.deepcopy(require("opencode.config").defaults)
-		saved = { config = app.get_config, highlight = syntax.highlight_text,
+		saved = { config = app.get_config, read_config = app.read_config, highlight = syntax.highlight_text,
 			parser = vim.treesitter.get_string_parser, query = vim.treesitter.query.get,
 			add = vim.treesitter.language.add }
 		app.get_config = function() return config end
+		app.read_config = app.get_config
 		render_state.clear_code_cache()
 	end)
 
 	after_each(function()
-		app.get_config, syntax.highlight_text = saved.config, saved.highlight
+		app.get_config, app.read_config, syntax.highlight_text = saved.config, saved.read_config, saved.highlight
 		vim.treesitter.get_string_parser, vim.treesitter.query.get = saved.parser, saved.query
 		vim.treesitter.language.add = saved.add
 		vim.treesitter.query.set("lua", "highlights", nil)

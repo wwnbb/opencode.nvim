@@ -20,7 +20,7 @@ local function handlers(method, name)
 end
 
 describe("pure Markdown memoization", function()
-	local parser, language_add, old_config, get_config, eq_handler, set_handler, query_module
+	local parser, language_add, old_config, get_config, read_config, eq_handler, set_handler, query_module
 	local query_signature, query_get
 	local query_restores, new_context
 	local generation_refresh
@@ -29,6 +29,7 @@ describe("pure Markdown memoization", function()
 		parser, language_add = vim.treesitter.get_string_parser, vim.treesitter.language.add
 		old_config = require("opencode.state").get_config()
 		get_config = require("opencode.state").get_config
+		read_config = require("opencode.state").read_config
 		eq_handler = handlers(vim.treesitter.query.add_predicate, "predicate_handlers")["eq?"]
 		set_handler = handlers(vim.treesitter.query.add_directive, "directive_handlers")["set!"]
 		query_module = package.loaded["opencode.ui.syntax_query"]
@@ -41,6 +42,7 @@ describe("pure Markdown memoization", function()
 	after_each(function()
 		vim.treesitter.get_string_parser, vim.treesitter.language.add = parser, language_add
 		require("opencode.state").get_config = get_config
+		require("opencode.state").read_config = read_config
 		vim.treesitter.query.add_predicate("eq?", eq_handler, { force = true, all = true })
 		vim.treesitter.query.add_directive("set!", set_handler, { force = true, all = true })
 		package.loaded["opencode.ui.syntax_query"] = query_module
@@ -290,6 +292,7 @@ describe("pure Markdown memoization", function()
 		-- Production getters detach values; also support an integration returning
 		-- one mutable config object, as required by the syntax-cache contract.
 		require("opencode.state").get_config = function() return config end
+		require("opencode.state").read_config = function() return config end
 		vim.treesitter.get_string_parser = function(...)
 			calls = calls + 1
 			return parser(...)

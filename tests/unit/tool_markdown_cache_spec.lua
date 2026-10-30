@@ -7,7 +7,7 @@ local view = require("opencode.ui.chat.state").state
 
 describe("tool Markdown render cache", function()
 	local old_config, old_columns, old_view, original_parser, original_content, bufnr, winid
-	local view_fields = { "winid", "tools", "expanded_tools", "render_cache", "last_render_highlight_signature" }
+	local view_fields = { "winid", "tools", "expanded_tools", "render_cache", "applied_frame" }
 	before_each(function()
 		old_config, old_columns, old_view = app.get_config(), vim.o.columns, {}
 		original_parser, original_content = vim.treesitter.get_string_parser, render.render_content

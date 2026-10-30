@@ -37,29 +37,45 @@ local function get_chat_text_width()
 	return math.max(1, width - textoff - 2)
 end
 
+-- getwininfo() is costly and widgets ask for the width (and panels the
+-- tabstop) per row; one frame build reads them once.
+local frame_width
+
 ---@return number width
 function M.get_chat_text_width()
-	return get_chat_text_width()
+	return frame_width or get_chat_text_width()
 end
 
 M.sanitize_buffer_line = text_widths.sanitize_buffer_line
 
+local frame_tabstop
+
 ---@return number
 local function get_tabstop()
+	if frame_tabstop then return frame_tabstop end
 	local value
 	if state.bufnr and vim.api.nvim_buf_is_valid(state.bufnr) then
-		local ok, tabstop = pcall(function()
-			return vim.bo[state.bufnr].tabstop
-		end)
-		if ok then
-			value = tonumber(tabstop)
-		end
+		value = tonumber(vim.api.nvim_get_option_value("tabstop", { buf = state.bufnr }))
 	end
 	value = value or tonumber(vim.bo.tabstop) or tonumber(vim.o.tabstop) or 8
 	if value <= 0 then
 		return 8
 	end
 	return value
+end
+
+---Run build with the text width fixed for its duration.
+---@generic T
+---@param build fun(): T
+---@return T
+function M.with_frame_width(build)
+	if frame_width then return build() end
+	local width, tabstop = get_chat_text_width(), get_tabstop()
+	frame_width, frame_tabstop = width, tabstop
+	local result = { pcall(build) }
+	frame_width, frame_tabstop = nil, nil
+	if not result[1] then error(result[2], 0) end
+	return unpack(result, 2, table.maxn(result))
 end
 
 ---@return table
@@ -584,23 +600,6 @@ function M.extract_lines(nui_lines)
 		table.insert(lines, M.sanitize_buffer_line(nui_line:content()))
 	end
 	return lines
-end
-
----Shift positions in a line map when content above them changes size.
----@param line_map table { [id] = { start_line, end_line, ... } }
----@param old_end number  0-indexed end of changed region
----@param delta number    line count change (positive = grew, negative = shrunk)
-function M.shift_line_map(line_map, old_end, delta)
-	if delta == 0 then
-		return
-	end
-	for _, pos in pairs(line_map) do
-		if pos and pos.start_line and pos.end_line and pos.start_line > old_end then
-			pos.start_line = pos.start_line + delta
-			pos.end_line = pos.end_line + delta
-		end
-		if pos and pos.children then M.shift_line_map(pos.children, old_end, delta) end
-	end
 end
 
 -- Message footer and token breakdown, installed on this render instance.

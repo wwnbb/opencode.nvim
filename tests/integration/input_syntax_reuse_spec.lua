@@ -105,7 +105,7 @@ describe("input syntax block reuse through attached buffers", function()
 		config = vim.deepcopy(require("opencode.config").defaults)
 		config.syntax.enabled, config.syntax.input_markdown = true, true
 		originals = {
-			schedule = vim.schedule, get_config = app.get_config,
+			schedule = vim.schedule, get_config = app.get_config, read_config = app.read_config,
 			parser = vim.treesitter.get_string_parser, query_get = vim.treesitter.query.get,
 			get_lines = vim.api.nvim_buf_get_lines, set_mark = vim.api.nvim_buf_set_extmark,
 			delete_mark = vim.api.nvim_buf_del_extmark, clear = vim.api.nvim_buf_clear_namespace,
@@ -114,6 +114,7 @@ describe("input syntax block reuse through attached buffers", function()
 		-- Exercise mutations of one actual config table; the public state getter
 		-- normally returns a detached snapshot and cannot be mutated in place.
 		app.get_config = function() return config end
+		app.read_config = app.get_config
 		predicates = predicate_registry()
 		previous_predicate = predicates["input_reuse_external?"]
 		queue, oracle = {}, false
@@ -153,6 +154,7 @@ describe("input syntax block reuse through attached buffers", function()
 		if vim.api.nvim_buf_is_valid(bufnr) then vim.api.nvim_buf_delete(bufnr, { force = true }) end
 		drain()
 		vim.schedule, app.get_config = originals.schedule, originals.get_config
+		app.read_config = originals.read_config
 		vim.treesitter.get_string_parser, vim.treesitter.query.get = originals.parser, originals.query_get
 		vim.api.nvim_buf_get_lines, code_blocks.parse = originals.get_lines, originals.fence_parse
 		vim.api.nvim_buf_set_extmark, vim.api.nvim_buf_del_extmark = originals.set_mark, originals.delete_mark

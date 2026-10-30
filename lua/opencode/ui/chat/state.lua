@@ -12,19 +12,19 @@ M.state = {
 	full_history_sessions = {}, -- Explicitly expanded history by session ID
 	local_notices = {},     -- Local user/system notices not backed by the server
 	config = nil,
-	questions = {},         -- Track question positions: { [request_id] = { start_line, end_line } }
+	questions = {},         -- Question positions by request_id; rows via positions.range(pos)
 	focus_question = nil,   -- request_id of question to focus cursor on after render
-	focus_question_line = nil,
+	focus_question_offset = nil, -- Row within that widget, set by the render that drew it
 	focus_question_option = nil,
-	permissions = {},       -- Track permission positions: { [permission_id] = { start_line, end_line } }
+	permissions = {},       -- Permission positions by permission_id
 	focus_permission = nil, -- permission_id to focus cursor on after render
-	focus_permission_line = nil,
-	edits = {},             -- Track edit widget positions: { [permission_id] = { start_line, end_line } }
+	focus_permission_offset = nil,
+	edits = {},             -- Edit widget positions by permission_id
 	focus_edit = nil,       -- permission_id to focus cursor on after render
-	focus_edit_line = nil,
+	focus_edit_offset = nil,
 	message_positions = {}, -- Ordered visible message ranges for chat-local navigation
 	pending_inputs = {},   -- Queued input widget ranges, excluding surrounding separators
-	tasks = {},             -- Track task positions: { [part_id] = { start_line, end_line, tool_part } }
+	tasks = {},             -- Task positions by part_id: { tool_part, children, ... }
 	expanded_tasks = {},    -- Toggle set: { [part_id] = true }
 	task_child_cache = {},  -- Loaded child-session IDs: { [part_id] = child_id }
 	task_child_loading = {}, -- In-flight child-session loads: { [part_id] = child_id }
@@ -39,11 +39,11 @@ M.state = {
 	session_tabs_order = nil, -- Session order for the stored viewport
 	session_tabs_width = nil, -- Display-cell budget for the stored viewport
 	session_tabs_mouse_targets = {}, -- Float tab click targets: { start_col, end_col, target }
-	stream_blocks = {},     -- Streaming part blocks: { [session/message/part/kind] = { start_line, end_line } }
-	spinner_footer_line = nil,
+	stream_blocks = {},     -- Streaming text ranges keyed by session/message/part/kind (anchored to text blocks)
+	spinner_footer = nil,   -- Anchored processing-footer spinner row; read via positions.spinner_line()
+	block_index = nil,      -- Block row index the tracked positions resolve through (positions.lua)
 	render_cache = nil,     -- Internal rendered block cache for stable chat content
-	last_render_highlight_signature = nil,
-	render_highlights_dirty_start = nil,
+	applied_frame = nil, -- Frame the buffer shows; see render_state.applied_frame()
 	force_full_render = false, -- Next render must replace the whole chat buffer
 	session_stack = {},     -- Stack of { id, name } for parent session navigation
 	last_render_time = 0,

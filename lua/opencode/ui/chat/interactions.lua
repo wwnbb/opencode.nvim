@@ -5,6 +5,7 @@ local M = {}
 local state = view
 
 local chat_tasks = cs.module(view, require("opencode.ui.chat.tasks"))
+local widget_support = cs.module(view, require("opencode.ui.chat.widget_support"))
 local chat_questions = cs.module(view, require("opencode.ui.chat.questions"))
 local chat_permissions = cs.module(view, require("opencode.ui.chat.permissions"))
 local chat_edits = cs.module(view, require("opencode.ui.chat.edits"))
@@ -39,9 +40,10 @@ local function interactive_widget_bounds()
 	for _, kind in ipairs(widget_kinds) do
 		local positions = cursor.get_widget_positions(kind)
 		for _, pos in pairs(positions) do
-			if cursor.is_widget_cursor_target(kind, pos) then
-				min_line = min_line and math.min(min_line, pos.start_line) or pos.start_line
-				max_line = max_line and math.max(max_line, pos.end_line) or pos.end_line
+			local start_line, end_line = widget_support.range(pos)
+			if start_line and cursor.is_widget_cursor_target(kind, pos) then
+				min_line = min_line and math.min(min_line, start_line) or start_line
+				max_line = max_line and math.max(max_line, end_line) or end_line
 			end
 		end
 	end

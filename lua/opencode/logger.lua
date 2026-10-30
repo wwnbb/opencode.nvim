@@ -24,8 +24,8 @@ end
 local function max_entries()
 	local configured
 	local ok_state, app_state = pcall(require, "opencode.state")
-	if ok_state and type(app_state.get_config) == "function" then
-		local cfg = app_state.get_config()
+	if ok_state and type(app_state.read_config) == "function" then
+		local cfg = app_state.read_config()
 		configured = cfg and cfg.logs and cfg.logs.max_entries
 	end
 	if configured == nil then

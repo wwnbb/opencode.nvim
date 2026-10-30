@@ -44,7 +44,7 @@ describe("tab session creation and close keys", function()
 
 	it("ignores a new-session reply after x closed its owner", function()
 		local tab = first.tabpage
-		press("N")
+		press("<leader>N")
 		press("x")
 		assert.is_false(vim.api.nvim_tabpage_is_valid(tab))
 		assert.is_false(first.visible)
@@ -57,7 +57,7 @@ describe("tab session creation and close keys", function()
 
 	it("keeps one native tab when multiple N replies arrive and x drains the layouts", function()
 		local tab, native_tabs = first.tabpage, #vim.api.nvim_list_tabpages()
-		press("NNNNNN")
+		press(string.rep("<leader>N", 6))
 		assert.equals(6, #created)
 		for i, callback in ipairs(created) do callback(nil, { id = "session-key-burst-" .. i, title = "Burst " .. i }) end
 		settle()

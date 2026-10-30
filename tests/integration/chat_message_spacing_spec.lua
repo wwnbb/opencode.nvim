@@ -161,8 +161,9 @@ describe("chat message boundaries", function()
 				if line:find("▣ Coder", 1, true) then footer_count = footer_count + 1 end
 			end
 			assert.equals(1, footer_count, "only the historical footer should be static")
-			assert.is_not_nil(state.spinner_footer_line)
-			assert.is_true(state.spinner_footer_line > user_row)
+			local spinner_line = require("opencode.ui.chat.positions").spinner_line()
+			assert.is_not_nil(spinner_line)
+			assert.is_true(spinner_line > user_row)
 			assert.same(current, (chat.render()), "incremental render must match a full render")
 		end
 

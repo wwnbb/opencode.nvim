@@ -102,6 +102,10 @@ case "$TARGET" in
 	tools)
 		bash "$SCRIPT_DIR/run-tools.sh"
 		;;
+	bench)
+		# Report only: chat render timings and buffer write counts.
+		nvim --headless --noplugin -u "$SCRIPT_DIR/minimal_init.lua" -l "$SCRIPT_DIR/bench/chat_render_bench.lua"
+		;;
 	unit | checks | integration | smoke)
 		run_directory "tests/$TARGET"
 		;;

@@ -40,9 +40,10 @@ describe("input captures with native query mutation", function()
 
 	before_each(function()
 		serial = serial + 1
-		saved = { schedule = vim.schedule, parser = vim.treesitter.get_string_parser, config = app.get_config }
+		saved = { schedule = vim.schedule, parser = vim.treesitter.get_string_parser, config = app.get_config, read_config = app.read_config }
 		local config = vim.deepcopy(require("opencode.config").defaults)
 		app.get_config = function() return config end
+		app.read_config = app.get_config
 		queued, parser_calls = {}, 0
 		vim.schedule = function(fn) queued[#queued + 1] = fn end
 		saved.counting_parser = function(...)
@@ -60,6 +61,7 @@ describe("input captures with native query mutation", function()
 		if vim.api.nvim_buf_is_valid(bufnr) then vim.api.nvim_buf_delete(bufnr, { force = true }) end
 		drain()
 		vim.schedule, vim.treesitter.get_string_parser, app.get_config = saved.schedule, saved.parser, saved.config
+		app.read_config = saved.read_config
 		vim.treesitter.query.set("lua", "highlights", nil)
 		if saved.node_methods then saved.node_methods.child_count = saved.child_count end
 		memory.clear_all()

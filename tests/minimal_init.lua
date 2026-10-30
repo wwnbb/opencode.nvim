@@ -23,3 +23,6 @@ append_runtime_path(vim.env.PLENARY_PATH or (plugin_root .. "/.deps/nvim/plenary
 append_runtime_path(vim.env.NUI_PATH or (plugin_root .. "/.deps/nvim/nui.nvim"))
 
 vim.cmd("runtime plugin/plenary.vim")
+
+-- Check block invariants and signatures on every chat frame.
+vim.g.opencode_debug_render_blocks = true

@@ -8,7 +8,7 @@ local render_state = require("opencode.ui.chat.render_state")
 
 local range_fields = {
 	"id", "kind", "status", "session_id", "message_id", "part_id", "start_line", "end_line",
-	"trailing_separator", "meta", "highlights",
+	"separator", "meta", "highlights",
 }
 
 local function ranges(nodes)
@@ -65,7 +65,7 @@ function M.snapshot(opts)
 		ranges = {},
 		expanded_tasks = vim.deepcopy(state.expanded_tasks),
 		expanded_tools = vim.deepcopy(state.expanded_tools),
-		spinner_footer_line = state.spinner_footer_line,
+		spinner_line = require("opencode.ui.chat.positions").spinner_line(),
 		windows = {},
 		rendered = vim.deepcopy(opts.rendered),
 	}
@@ -108,9 +108,9 @@ function M.cold_snapshot(opts)
 	local chat = require("opencode.ui.chat").for_view(state)
 	local original_render, rendered = chat.render, nil
 	chat.render = function(...)
-		local raw, nui, highlights = original_render(...)
+		local raw, nui, highlights, blocks = original_render(...)
 		rendered = M.rendered(raw, nui, highlights)
-		return raw, nui, highlights
+		return raw, nui, highlights, blocks
 	end
 	local ok, result = xpcall(function()
 		M.clear_caches(opts.clear)
@@ -131,6 +131,60 @@ function M.replay(trace, apply, after_event)
 		apply(vim.deepcopy(event), index)
 		if after_event then after_event(index, vim.deepcopy(event)) end
 	end
+end
+
+---Every mark in a namespace as a comparable value: no ids, sorted.
+function M.marks(bufnr, namespace)
+	local result = {}
+	for _, mark in ipairs(vim.api.nvim_buf_get_extmarks(bufnr, namespace or cs.chat_hl_ns, 0, -1, { details = true })) do
+		local details = mark[4]
+		result[#result + 1] = string.format("%d:%d-%s:%s %s p%s%s", mark[2], mark[3], tostring(details.end_row),
+			tostring(details.end_col), tostring(details.hl_group), tostring(details.priority), details.hl_eol and " eol" or "")
+	end
+	table.sort(result)
+	return result
+end
+
+local TRACKED = { "questions", "permissions", "edits", "tasks", "tools", "message_positions", "pending_inputs",
+	"stream_blocks", "spinner_footer", "block_index" }
+
+---Render the current frame with the full path into a scratch buffer. Tracked
+---positions are restored afterwards, so the caller's sequence is unaffected.
+---@return table { lines: string[], marks: string[] }
+function M.full_render_reference()
+	local chat = require("opencode.ui.chat").for_view(state)
+	local chat_highlights = require("opencode.ui.chat.highlights")
+	local render_blocks = require("opencode.ui.chat.render_blocks")
+	local saved = {}
+	for _, field in ipairs(TRACKED) do saved[field] = state[field] end
+	local lines, nui_lines, highlights = chat.render()
+	local scratch = vim.api.nvim_create_buf(false, true)
+	local ok, result = xpcall(function()
+		vim.api.nvim_buf_set_lines(scratch, 0, -1, false, lines)
+		chat_highlights.write_nui_lines(scratch, cs.chat_hl_ns, nui_lines, 1, #nui_lines, 0)
+		for _, name in ipairs(render_blocks.WIDGET_MAPS) do
+			for _, pos in pairs(state[name] or {}) do
+				if pos.highlights and pos.start_line then
+					chat_highlights.apply_extmark_highlights(scratch, cs.chat_hl_ns, pos.highlights, pos.start_line)
+				end
+			end
+		end
+		chat_highlights.apply_extmark_highlights(scratch, cs.chat_hl_ns, highlights, 0)
+		return { lines = vim.api.nvim_buf_get_lines(scratch, 0, -1, false), marks = M.marks(scratch) }
+	end, debug.traceback)
+	vim.api.nvim_buf_delete(scratch, { force = true })
+	for _, field in ipairs(TRACKED) do state[field] = saved[field] end
+	if not ok then error(result) end
+	return result
+end
+
+---Assert that the chat buffer shows exactly what a full render of the current
+---frame would: the same lines and the same marks in the chat namespace.
+function M.assert_matches_full_render(label)
+	local expected = M.full_render_reference()
+	local actual = { lines = vim.api.nvim_buf_get_lines(state.bufnr, 0, -1, false), marks = M.marks(state.bufnr) }
+	assert.same(expected.lines, actual.lines, label .. ": lines")
+	assert.same(expected.marks, actual.marks, label .. ": marks")
 end
 
 return M

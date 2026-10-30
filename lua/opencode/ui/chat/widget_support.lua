@@ -10,14 +10,21 @@ local chat_hl_ns = cs.chat_hl_ns
 local chat_anim_ns = cs.chat_anim_ns
 local render_state = cs.module(view, require("opencode.ui.chat.render_state"))
 local tree = require("opencode.ui.chat.widget_tree")
+local positions = cs.module(view, require("opencode.ui.chat.positions"))
 
 local FOCUS_ORDER = { "question", "permission", "edit" }
+local FOCUS_MAPS = { question = "questions", permission = "permissions", edit = "edits" }
 
 ---@param kind string
 ---@return string, string
 local function focus_keys(kind)
-	return "focus_" .. kind, "focus_" .. kind .. "_line"
+	return "focus_" .. kind, "focus_" .. kind .. "_offset"
 end
+
+---@param pos table|nil
+---@return integer|nil start_line
+---@return integer|nil end_line
+M.range = positions.range
 
 ---@param owner_session_id string|nil
 ---@param widget_status string|nil
@@ -46,31 +53,52 @@ end
 ---@param widget_status string|nil
 ---@return boolean
 function M.request_focus(kind, widget_id, widget_status)
-	local focus_key, line_key = focus_keys(kind)
+	local focus_key, offset_key = focus_keys(kind)
 	if (widget_status or "pending") ~= "pending" then
 		if state[focus_key] == widget_id then
 			state[focus_key] = nil
-			state[line_key] = nil
+			state[offset_key] = nil
 		end
 		return false
 	end
 
 	state[focus_key] = widget_id
-	state[line_key] = nil
+	state[offset_key] = nil
 	return true
 end
 
+---The cursor goes to this row of the widget once the frame is applied.
 ---@param kind string
 ---@param widget_id string
----@param line number
+---@param offset number 0-based row within the widget
 ---@return boolean
-function M.capture_focus_line(kind, widget_id, line)
-	local focus_key, line_key = focus_keys(kind)
+function M.capture_focus_offset(kind, widget_id, offset)
+	local focus_key, offset_key = focus_keys(kind)
 	if state[focus_key] ~= widget_id then
 		return false
 	end
 
-	state[line_key] = line
+	state[offset_key] = offset
+	return true
+end
+
+---Row of the cursor within a widget position.
+---@param pos table|nil
+---@param cursor_line integer 0-based
+---@return integer|nil
+function M.offset_at_cursor(pos, cursor_line)
+	local start_line = positions.range(pos)
+	return start_line and (cursor_line - start_line) or nil
+end
+
+---Put the cursor on a row of a widget position.
+---@param pos table|nil
+---@param offset integer 0-based row within the widget
+---@return boolean
+function M.set_cursor_in(pos, offset)
+	local start_line = positions.range(pos)
+	if not start_line or not state.winid or not vim.api.nvim_win_is_valid(state.winid) then return false end
+	vim.api.nvim_win_set_cursor(state.winid, { start_line + offset + 1, 0 })
 	return true
 end
 
@@ -86,13 +114,14 @@ function M.apply_focus_cursor()
 
 	local buf_lines = vim.api.nvim_buf_line_count(state.bufnr)
 	for _, kind in ipairs(FOCUS_ORDER) do
-		local focus_key, line_key = focus_keys(kind)
+		local focus_key, offset_key = focus_keys(kind)
 		local widget_id = state[focus_key]
-		local line = state[line_key]
-		if widget_id and line then
-			vim.api.nvim_win_set_cursor(state.winid, { math.min(line, buf_lines), 0 })
+		local offset = state[offset_key]
+		local start_line = widget_id and offset and positions.range((state[FOCUS_MAPS[kind]] or {})[widget_id])
+		if start_line then
+			vim.api.nvim_win_set_cursor(state.winid, { math.min(start_line + offset + 1, buf_lines), 0 })
 			state[focus_key] = nil
-			state[line_key] = nil
+			state[offset_key] = nil
 			return kind, widget_id
 		end
 	end
@@ -115,7 +144,7 @@ function M.find_widget_context_at_cursor(state_table, winid, predicate)
 	local cursor = vim.api.nvim_win_get_cursor(winid)
 	local cursor_line = cursor[1] - 1
 
-	return tree.at_line(state_table, cursor_line, predicate)
+	return tree.at_line(state_table, cursor_line, predicate, positions.range)
 end
 
 ---Options passed to widget renderers for this view.
@@ -125,22 +154,22 @@ function M.render_opts()
 end
 
 ---Interactive widget at the cursor whose rendered and stored statuses are both allowed.
----@param positions table Rendered positions by widget id
+---@param widget_positions table Rendered positions by widget id
 ---@param lookup fun(id: string): table|nil Store getter
 ---@param allowed fun(status: string|nil): boolean
 ---@return string|nil id
 ---@return table|nil source Store record
 ---@return table|nil pos
 ---@return number|nil cursor_line 0-based cursor row
-function M.context_at_cursor(positions, lookup, allowed)
+function M.context_at_cursor(widget_positions, lookup, allowed)
 	if not cs.is_chat_buffer_displayed(view) then return nil, nil, nil, nil end
 	if not state.winid or not vim.api.nvim_win_is_valid(state.winid) then
 		return nil, nil, nil, nil
 	end
 	local cursor_line = vim.api.nvim_win_get_cursor(state.winid)[1] - 1
-	local id, pos = tree.at_line(positions, cursor_line, function(node)
+	local id, pos = tree.at_line(widget_positions, cursor_line, function(node)
 		return allowed(node.status)
-	end)
+	end, M.range)
 	if not id or not pos then
 		return nil, nil, nil, nil
 	end
@@ -152,7 +181,7 @@ function M.context_at_cursor(positions, lookup, allowed)
 end
 
 ---Shared in-place rerender: replace a widget's rendered block from its store record.
----@param positions table Rendered positions by widget id
+---@param widget_positions table Rendered positions by widget id
 ---@param id string
 ---@param lookup fun(id: string): table|nil Store getter
 ---@param render_widget fun(source: table, opts: table): table, table, table
@@ -160,11 +189,11 @@ end
 ---@return table|nil source
 ---@return boolean replaced
 ---@return table|nil meta
-function M.rerender_widget(positions, id, lookup, render_widget)
+function M.rerender_widget(widget_positions, id, lookup, render_widget)
 	if not state.bufnr or not vim.api.nvim_buf_is_valid(state.bufnr) then
 		return nil, nil, false, nil
 	end
-	local pos = positions[id]
+	local pos = widget_positions[id]
 	if not pos then
 		return nil, nil, false, nil
 	end
@@ -250,62 +279,6 @@ function M.can_update_in_place(pos)
 	return not M.in_place_updates_blocked() and M.position_generation_is_current(pos)
 end
 
----@param old_end number
----@param delta number
----@param opts? table { skip_stream_block_key?: string|nil, skip_stream_message_id?: string|nil }
-function M.shift_tracked_lines(old_end, delta, opts)
-	if delta == 0 then
-		return
-	end
-
-	opts = opts or {}
-
-	render.shift_line_map(state.questions, old_end, delta)
-	render.shift_line_map(state.permissions, old_end, delta)
-	render.shift_line_map(state.edits, old_end, delta)
-	render.shift_line_map(state.tasks, old_end, delta)
-	render.shift_line_map(state.tools, old_end, delta)
-	render.shift_line_map(state.pending_inputs, old_end, delta)
-
-	for _, pos in ipairs(state.message_positions or {}) do
-		if pos and pos.start_line and pos.end_line then
-			if pos.start_line > old_end then
-				pos.start_line = pos.start_line + delta
-				pos.end_line = pos.end_line + delta
-			elseif pos.end_line >= old_end then
-				pos.end_line = pos.end_line + delta
-			end
-		end
-	end
-
-	for block_key, pos in pairs(state.stream_blocks) do
-		if
-			block_key ~= opts.skip_stream_block_key
-			and (not opts.skip_stream_message_id or pos.message_id ~= opts.skip_stream_message_id)
-			and pos.start_line
-			and pos.end_line
-			and pos.start_line > old_end
-		then
-			pos.start_line = pos.start_line + delta
-			pos.end_line = pos.end_line + delta
-		end
-	end
-
-	if state.spinner_footer_line and state.spinner_footer_line > old_end then
-		state.spinner_footer_line = state.spinner_footer_line + delta
-	end
-
-	if state.focus_question_line and (state.focus_question_line - 1) > old_end then
-		state.focus_question_line = state.focus_question_line + delta
-	end
-	if state.focus_permission_line and (state.focus_permission_line - 1) > old_end then
-		state.focus_permission_line = state.focus_permission_line + delta
-	end
-	if state.focus_edit_line and (state.focus_edit_line - 1) > old_end then
-		state.focus_edit_line = state.focus_edit_line + delta
-	end
-end
-
 ---@param bufnr number|nil
 ---@param start_line number|nil
 ---@param end_line number|nil
@@ -327,43 +300,34 @@ function M.replace_rendered_block(pos, result)
 	if not M.can_update_in_place(pos) then
 		return false
 	end
-	result = result or {}
-	result.lines = result.lines or {}
-	for i, line in ipairs(result.lines) do
-		result.lines[i] = render.sanitize_buffer_line(line)
+	local start_line, end_line = positions.range(pos)
+	if not start_line then
+		return false
 	end
-	local old_end = pos.end_line
-	local old_line_count = old_end - pos.start_line + 1
-	local new_line_count = #result.lines
-	local delta = new_line_count - old_line_count
+	result = M.sanitize_result_lines(result or {})
 
 	local ok = render_state.replace_chat_range({
 		bufnr = state.bufnr,
-		start_line = pos.start_line,
-		end_line = pos.end_line + 1,
+		start_line = start_line,
+		end_line = end_line + 1,
 		lines = result.lines,
 		clear_animation = true,
 		apply_highlights = function()
-			chat_highlights.apply_extmark_highlights(state.bufnr, chat_hl_ns, result.highlights, pos.start_line)
+			chat_highlights.apply_extmark_highlights(state.bufnr, chat_hl_ns, result.highlights, start_line)
 		end,
 	})
 	if not ok then
 		return false
 	end
 
-	M.shift_tracked_lines(old_end, delta)
-	pos.end_line = pos.start_line + new_line_count - 1
 	pos.highlights = result.highlights
-	pos.children = tree.positions(result.children, pos.start_line, pos.render_generation)
+	pos.children = tree.positions(result.children, start_line, pos.render_generation)
+	positions.place(pos, start_line, start_line + #result.lines - 1)
 	M.mark_applied_render_generation(pos)
 	return true
 end
 
 -- ─── In-place block updates ──────────────────────────────────────────────────
-
-function M.apply_result_highlights(result, pos)
-	chat_highlights.apply_extmark_highlights(state.bufnr, chat_hl_ns, result.highlights, pos.start_line)
-end
 
 function M.sanitize_result_lines(result)
 	result.lines = result.lines or {}
@@ -394,13 +358,14 @@ end
 ---@param bottom_line number|nil
 ---@return boolean
 function M.block_is_visible(pos, top_line, bottom_line)
-	if not pos or type(pos.start_line) ~= "number" or type(pos.end_line) ~= "number" then
+	local start_line, end_line = positions.range(pos)
+	if not start_line then
 		return false
 	end
 	if top_line == nil or bottom_line == nil then
 		return true
 	end
-	return pos.end_line >= top_line and pos.start_line <= bottom_line
+	return end_line >= top_line and start_line <= bottom_line
 end
 
 ---@param highlights table[]|nil
@@ -436,14 +401,17 @@ function M.update_block_lines_in_place(pos, result)
 	if not state.bufnr or not vim.api.nvim_buf_is_valid(state.bufnr) then
 		return false
 	end
+	local start_line, end_line = positions.range(pos)
+	if not start_line then
+		return false
+	end
 	result = M.sanitize_result_lines(result)
 	local new_lines = result.lines or {}
-	local old_count = pos.end_line - pos.start_line + 1
-	if old_count ~= #new_lines then
+	if end_line - start_line + 1 ~= #new_lines then
 		return false
 	end
 
-	local old_lines = vim.api.nvim_buf_get_lines(state.bufnr, pos.start_line, pos.end_line + 1, false)
+	local old_lines = vim.api.nvim_buf_get_lines(state.bufnr, start_line, end_line + 1, false)
 	local changed = false
 	for i, line in ipairs(new_lines) do
 		if old_lines[i] ~= line then
@@ -460,31 +428,32 @@ function M.update_block_lines_in_place(pos, result)
 
 	local ok = render_state.replace_chat_range({
 		bufnr = state.bufnr,
-		start_line = pos.start_line,
-		end_line = pos.end_line + 1,
+		start_line = start_line,
+		end_line = end_line + 1,
 		lines = new_lines,
 		clear_animation = changed,
 		apply_highlights = function()
-			M.apply_result_highlights(result, pos)
+			chat_highlights.apply_extmark_highlights(state.bufnr, chat_hl_ns, result.highlights, start_line)
 		end,
 	})
 	if not ok then
 		return false
 	end
 	pos.highlights = result.highlights
-	pos.children = tree.positions(result.children, pos.start_line, pos.render_generation)
+	pos.children = tree.positions(result.children, start_line, pos.render_generation)
+	positions.place(pos, start_line, end_line)
 	return true
 end
 
----@param positions table
+---@param widget_positions table
 ---@param top_line number|nil
 ---@param bottom_line number|nil
 ---@param fns table { resolve, is_animating, render, rerender }
 ---@return boolean updated
-function M.update_animating_blocks(positions, top_line, bottom_line, fns)
+function M.update_animating_blocks(widget_positions, top_line, bottom_line, fns)
 	local updated = false
 
-	for part_id, pos in pairs(positions) do
+	for part_id, pos in pairs(widget_positions) do
 		local tool_part = fns.resolve(pos)
 		if
 			fns.is_animating(tool_part)
@@ -495,7 +464,8 @@ function M.update_animating_blocks(positions, top_line, bottom_line, fns)
 			if result == nil then
 				goto continue
 			end
-			if #result.lines ~= (pos.end_line - pos.start_line + 1) then
+			local start_line, end_line = M.range(pos)
+			if #result.lines ~= (end_line - start_line + 1) then
 				fns.rerender(part_id)
 				updated = true
 			else

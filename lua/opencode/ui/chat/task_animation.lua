@@ -206,7 +206,8 @@ function M.update_active_animations_in_place()
 		resolve = chat_tasks().resolve_tool_part,
 		is_animating = M.is_animating_tool_part,
 		render = function(part_id, pos, tool_part)
-			if (pos.end_line - pos.start_line + 1) > MAX_REGULAR_TOOL_ANIMATION_RENDER_LINES then
+			local start_line, end_line = widget_support.range(pos)
+			if not start_line or (end_line - start_line + 1) > MAX_REGULAR_TOOL_ANIMATION_RENDER_LINES then
 				return nil
 			end
 			return chat_tasks().render_regular_tool(tool_part, state.expanded_tools[part_id] or false, {
@@ -274,25 +275,26 @@ function M.update_animation_frames_in_place()
 	-- Update task blocks: header frame at col 0, and "  ↳ " summary frames
 	for _, pos in pairs(state.tasks) do
 		local tool_part = chat_tasks().resolve_tool_part(pos)
+		local start_line, end_line = widget_support.range(pos)
 		if
-			pos
+			start_line
 			and M.is_animating_tool_part(tool_part)
 			and widget_support.position_generation_is_current(pos)
 			and widget_support.block_is_visible(pos, top_line, bottom_line)
-			and pos.start_line >= 0
-			and pos.start_line < buf_lines
+			and start_line >= 0
+			and start_line < buf_lines
 		then
-			local line_text = vim.api.nvim_buf_get_lines(bufnr, pos.start_line, pos.start_line + 1, false)[1]
+			local line_text = vim.api.nvim_buf_get_lines(bufnr, start_line, start_line + 1, false)[1]
 			if line_text and #line_text > 0 then
 				local first_char = vim.fn.strcharpart(line_text, 0, 1)
 				if is_animation_frame(first_char, TASK_ANIM_FRAMES) then
-					updated = set_frame_overlay(bufnr, pos.start_line, 0, task_frame) or updated
+					updated = set_frame_overlay(bufnr, start_line, 0, task_frame) or updated
 				end
 			end
 
 			-- Scan summary lines for "  ↳ " prefix with task frame
-			local first_line = math.max(pos.start_line + 1, top_line)
-			local last_line = math.min(pos.end_line, bottom_line, buf_lines - 1)
+			local first_line = math.max(start_line + 1, top_line)
+			local last_line = math.min(end_line, bottom_line, buf_lines - 1)
 			local lines = first_line <= last_line and vim.api.nvim_buf_get_lines(bufnr, first_line, last_line + 1, false) or {}
 			for index, line in ipairs(lines) do
 				local line_nr = first_line + index - 1
@@ -319,25 +321,26 @@ function M.update_animation_frames_in_place()
 	end
 	for _, pos in ipairs(tool_positions) do
 		local tool_part = chat_tasks().resolve_tool_part(pos)
+		local start_line = widget_support.range(pos)
 		if
-			pos
+			start_line
 			and M.is_animating_tool_part(tool_part)
 			and widget_support.position_generation_is_current(pos)
 			and widget_support.block_is_visible(pos, top_line, bottom_line)
 		then
 			local block_updated = false
 			if pos.activity_group then
-				local line = vim.api.nvim_buf_get_lines(bufnr, pos.start_line, pos.start_line + 1, false)[1] or ""
+				local line = vim.api.nvim_buf_get_lines(bufnr, start_line, start_line + 1, false)[1] or ""
 				local offset = (line:sub(1, #"→ ") == "→ " or line:sub(1, #"↘ ") == "↘ ") and #"→ " or 0
 				if is_animation_frame(vim.fn.strcharpart(line:sub(offset + 1), 0, 1), TASK_ANIM_FRAMES) then
-					block_updated = set_frame_overlay(bufnr, pos.start_line, offset, task_frame)
+					block_updated = set_frame_overlay(bufnr, start_line, offset, task_frame)
 					updated = block_updated or updated
 				end
 			end
-			local candidates = pos.activity_group and {} or { pos.start_line + 1, pos.start_line }
+			local candidates = pos.activity_group and {} or { start_line + 1, start_line }
 			if chat_tasks().is_tool_leaf(tool_part) then
 				local line = chat_tasks().tool_animation_line(tool_part)
-				candidates = line and { pos.start_line + line } or {}
+				candidates = line and { start_line + line } or {}
 			end
 			for _, line_nr in ipairs(candidates) do
 				if block_updated then

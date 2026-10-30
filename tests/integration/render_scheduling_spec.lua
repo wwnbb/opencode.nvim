@@ -89,9 +89,9 @@ describe("transcript render scheduling", function()
 		renders, winbars = 0, 0
 		chat.render = function(...)
 			renders = renders + 1
-			local raw, nui, highlights = saved.render(...)
+			local raw, nui, highlights, blocks = saved.render(...)
 			last_rendered = equivalence.rendered(raw, nui, highlights)
-			return raw, nui, highlights
+			return raw, nui, highlights, blocks
 		end
 		chat.update_winbar = function(...)
 			winbars = winbars + 1

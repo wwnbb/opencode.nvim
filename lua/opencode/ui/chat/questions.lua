@@ -133,7 +133,7 @@ local function get_option_index_at_cursor(request_id, qstate, pos, cursor_line)
 		local _, _, fallback = question_widget.get_lines_for_question(request_id, { questions = qstate.questions }, qstate, qstate.status, widget_support.render_opts())
 		meta = fallback
 	end
-	return widget_base.get_option_index(meta, cursor_line - pos.start_line)
+	return widget_base.get_option_index(meta, widget_support.offset_at_cursor(pos, cursor_line))
 end
 
 ---@return string|nil request_id
@@ -203,7 +203,7 @@ function M.rerender_question(request_id, focus)
 	end
 	if focus and pos and (status == "pending" or status == "confirming") and cs.is_chat_buffer_displayed(view) then
 		local offset = question_widget.get_selection_focus_offset(meta, qstate.selections[qstate.current_tab], focus)
-		vim.api.nvim_win_set_cursor(state.winid, { pos.start_line + offset + 1, 0 })
+		widget_support.set_cursor_in(pos, offset)
 	end
 end
 
@@ -420,8 +420,7 @@ function M.debug_questions()
 				current_tab = qstate.current_tab,
 				question_count = #qstate.questions,
 				selections = qstate.selections,
-				start_line = pos.start_line,
-				end_line = pos.end_line,
+				range = { widget_support.range(pos) },
 			})
 		end
 	end

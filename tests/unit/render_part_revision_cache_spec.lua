@@ -2,7 +2,6 @@ local app = require("opencode.state")
 local sync = require("opencode.sync")
 local chat = require("opencode.ui.chat")
 local render = require("opencode.ui.chat.render")
-local render_context = require("opencode.ui.chat.render_context")
 local render_state = require("opencode.ui.chat.render_state")
 local tasks = require("opencode.ui.chat.tasks")
 local surface_helper = require("tests.helpers.chat_surface")
@@ -95,27 +94,5 @@ describe("chat render cache part revisions", function()
 		assert.is_nil(calls["First **answer** paragraph"])
 		assert.is_nil(tool_calls["b-tool"])
 		assert.equals(completed, cold_frame())
-	end)
-
-	it("builds the user-message highlight signature identically to chained cache keys", function()
-		for index = 1, 30 do
-			local id = string.format("sig-user-%02d", index)
-			sync.handle_message_updated({ id = id, sessionID = sid, role = "user", agent = index % 2 == 0 and "plan" or nil,
-				time = { created = 10 + index } })
-			sync.handle_part_updated({ id = id .. "-text", messageID = id, sessionID = sid, type = "text", text = "u" .. index })
-		end
-		local ctx = render_context.new({ current_session = app.get_session() })
-		local expected = ctx.content_highlights._opencode_signature
-		ctx:reset_tracking()
-		require("opencode.ui.chat.message_renderer").render(ctx,
-			require("opencode.ui.chat.widget_index").new({ current_session = ctx.current_session }))
-		for _, message in ipairs(sync.get_messages(sid)) do
-			if message.role == "user" then
-				local agent = message.agent or require("opencode.local").message_agent.get(sid, message.id)
-					or ctx.history_metadata.agent(message.id) or "unknown"
-				expected = render_state.render_cache_key(expected, message.id, agent)
-			end
-		end
-		assert.equals(expected, ctx.content_highlights._opencode_signature)
 	end)
 end)

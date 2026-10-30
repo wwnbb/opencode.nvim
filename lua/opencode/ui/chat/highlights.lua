@@ -1,28 +1,53 @@
 local M = {}
 
+-- Marks are written without ids. NuiText:highlight reuses the id it stored on
+-- the text, and cached NuiLines are shared across frames and views: reapplying
+-- one would move the mark an unchanged copy elsewhere still relies on.
+local scratch = {}
+
+---Write the text highlights of nui_lines[first..last], the first at row.
+---@param bufnr number
+---@param ns_id number
+---@param nui_lines NuiLine[]
+---@param first integer 1-based index
+---@param last integer 1-based inclusive index
+---@param row integer 0-based row of nui_lines[first]
+function M.write_nui_lines(bufnr, ns_id, nui_lines, first, last, row)
+	local set_extmark = vim.api.nvim_buf_set_extmark
+	for index = first, last do
+		local line = nui_lines[index]
+		local column = 0
+		for _, text in ipairs(line and line._texts or {}) do
+			local length = text:length()
+			local extmark = text.extmark
+			if extmark then
+				for key, value in pairs(extmark) do
+					if key ~= "id" then scratch[key] = value end
+				end
+				scratch.end_col = column + length
+				local ok, err = pcall(set_extmark, bufnr, ns_id, row + index - first, column, scratch)
+				for key in pairs(scratch) do scratch[key] = nil end
+				if not ok then error(err, 0) end
+			end
+			column = column + length
+		end
+	end
+end
+
 ---Apply NuiLine highlights to a buffer.
 ---@param nui_lines NuiLine[]
 ---@param bufnr number
 ---@param ns_id number
----@param start_line number 0-indexed
----@param opts? table
-function M.apply_nui_line_highlights(nui_lines, bufnr, ns_id, start_line, opts)
+---@param start_line number 0-indexed row of the first line
+function M.apply_nui_line_highlights(nui_lines, bufnr, ns_id, start_line)
 	if not bufnr or not vim.api.nvim_buf_is_valid(bufnr) then
 		return
 	end
-
-	opts = opts or {}
-	local min_line = opts.min_line
-	local max_line = opts.max_line
 	local line_count = vim.api.nvim_buf_line_count(bufnr)
-	for i, nui_line in ipairs(nui_lines) do
-		local line = start_line + i
-		local in_bounds = line >= 1 and line <= line_count
-		local after_min = not min_line or line > min_line
-		local before_max = not max_line or line <= max_line
-		if in_bounds and after_min and before_max then
-			nui_line:highlight(bufnr, ns_id, line)
-		end
+	local first = math.max(1, 1 - start_line)
+	local last = math.min(#nui_lines, line_count - start_line)
+	if last >= first then
+		M.write_nui_lines(bufnr, ns_id, nui_lines, first, last, start_line + first - 1)
 	end
 end
 
@@ -40,29 +65,21 @@ function M.apply_highlights(nui_lines, bufnr, ns_id, start_line)
 	M.apply_extmark_highlights(bufnr, ns_id, nui_lines._opencode_highlights, start_line)
 end
 
+---Apply highlights[first..last], each line relative to start_line.
 ---@param bufnr number
 ---@param ns_id number
----@param highlights table[]|nil
+---@param highlights table[]
+---@param first integer
+---@param last integer
 ---@param start_line number
----@param opts? table
-function M.apply_extmark_highlights(bufnr, ns_id, highlights, start_line, opts)
-	if type(highlights) ~= "table" then
-		return
-	end
-
-	opts = opts or {}
-	local min_line = opts.min_line
-	local max_line = opts.max_line
+function M.apply_extmark_range(bufnr, ns_id, highlights, first, last, start_line)
 	local line_count = vim.api.nvim_buf_line_count(bufnr)
-
-	for _, hl in ipairs(highlights) do
+	for index = first, last do
+		local hl = highlights[index]
 		if type(hl) == "table" and hl.hl_group then
 			local line = start_line + (hl.line or 0)
 			local end_line = hl.end_line and (start_line + hl.end_line) or line
-			local in_bounds = line >= 0 and line < line_count
-			local after_min = not min_line or end_line >= min_line
-			local before_max = not max_line or line < max_line
-			if in_bounds and after_min and before_max then
+			if line >= 0 and line < line_count then
 				local col_start = math.max(0, hl.col_start or 0)
 				local end_col = hl.end_col or hl.col_end
 				if end_col == nil or end_col == -1 then
@@ -90,6 +107,17 @@ function M.apply_extmark_highlights(bufnr, ns_id, highlights, start_line, opts)
 			end
 		end
 	end
+end
+
+---@param bufnr number
+---@param ns_id number
+---@param highlights table[]|nil
+---@param start_line number
+function M.apply_extmark_highlights(bufnr, ns_id, highlights, start_line)
+	if type(highlights) ~= "table" then
+		return
+	end
+	M.apply_extmark_range(bufnr, ns_id, highlights, 1, #highlights, start_line)
 end
 
 -- Chat windows hide the cursor; refresh chat highlights after a colorscheme

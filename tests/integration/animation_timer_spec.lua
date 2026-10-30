@@ -54,8 +54,9 @@ describe("chat animation timer ownership", function()
 		assert.same(before, vim.api.nvim_buf_get_lines(surface.bufnr, 0, -1, false))
 		assert.equals(timer, state.spinner_anim_timer)
 		callbacks[2]()
-		assert.is_not.equals(before[state.spinner_footer_line + 1],
-			vim.api.nvim_buf_get_lines(surface.bufnr, state.spinner_footer_line, state.spinner_footer_line + 1, false)[1])
+		local spinner_line = require("opencode.ui.chat.positions").spinner_line()
+		assert.is_not.equals(before[spinner_line + 1],
+			vim.api.nvim_buf_get_lines(surface.bufnr, spinner_line, spinner_line + 1, false)[1])
 		end)
 
 	it("pauses task ticks only for pending edits displayed in their own pane", function()

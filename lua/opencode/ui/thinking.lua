@@ -6,9 +6,9 @@ local config_module = require("opencode.config")
 
 function M.get_config()
 	local defaults = config_module.defaults.thinking or {}
-	local active = app_state.get_config() or {}
+	local active = app_state.read_config() or {}
 	return vim.tbl_deep_extend("force", vim.deepcopy(defaults),
-		type(active.thinking) == "table" and active.thinking or {})
+		type(active.thinking) == "table" and vim.deepcopy(active.thinking) or {})
 end
 
 function M.is_enabled()
@@ -16,7 +16,7 @@ function M.is_enabled()
 end
 
 function M.is_expanded()
-	local active = app_state.get_config() or {}
+	local active = app_state.read_config() or {}
 	return M.is_enabled() and (active.session or {}).thinking == "show"
 end
 

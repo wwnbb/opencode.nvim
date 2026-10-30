@@ -29,14 +29,4 @@ describe("chat render line diff", function()
 		assert.same({ 2, 3, 2 }, diff({ "", "", "" }, { "", "" }))
 		assert.same({ 2, 2, 3 }, diff({ "x", "" }, { "x", "", "" }))
 	end)
-
-	it("extends a range over highlights and widgets that cross either edge", function()
-		local frame = {
-			content = { { line = 2, end_line = 4, hl_group = "A" }, { line = 8, hl_group = "B" } },
-			maps = { { widget = { start_line = 5, end_line = 7, highlights = { { line = 0, hl_group = "C" } } } } },
-		}
-		assert.same({ 2, 8 }, { render_state.extend_highlight_range(frame, 3, 6) })
-		assert.same({ 8, 9 }, { render_state.extend_highlight_range(frame, 8, 9) })
-		assert.same({ 2 }, { render_state.extend_highlight_range(frame, 4) })
-	end)
 end)

@@ -224,7 +224,7 @@ describe("OpenCode tabs with independent layouts", function()
 		assert.equals(tab, vim.api.nvim_get_current_tabpage())
 		assert.are_not.equals(project, vim.fn.getcwd(), "the chat tab keeps its own directory")
 		assert.equals(editor_win, require("opencode.util.cwd").editor_window())
-		press("N")
+		press("<leader>N")
 		assert.equals(1, #creates)
 		assert.equals(project, creates[1].body.location.directory,
 			"a new session must use the editor cwd, not the chat tab or the previous session's directory")
@@ -236,7 +236,7 @@ describe("OpenCode tabs with independent layouts", function()
 	it("keeps a delayed new-session response separate from the original split layout", function()
 		local second = chat.create_split(first, seed("layout-b"), "vertical")
 		chat.focus_view(first)
-		press("N")
+		press("<leader>N")
 		assert.equals(1, #creates)
 		chat.create_layout(seed("layout-c")); settle()
 		local active_layout, active_view = workspace.current().id, chat.get_view()
@@ -387,11 +387,11 @@ describe("OpenCode tabs with independent layouts", function()
 		assert.equals(1, #workspace.list())
 	end)
 
-	it("closes multiwindow popups during N, layout switching and closing", function()
+	it("closes multiwindow popups during <leader>N, layout switching and closing", function()
 		local second = chat.create_split(first, seed("layout-b"), "vertical")
 		local buffers = { [first.bufnr] = true, [second.bufnr] = true }
 		local expected = geometry(tab, buffers)
-		for _, key in ipairs({ "N", "gt", "x" }) do
+		for _, key in ipairs({ "<leader>N", "gt", "x" }) do
 			local popup = require("opencode.ui.popup").new({
 				frame = { relative = "editor", size = { width = 20, height = 8 }, enter = false },
 				content = { size = { width = 18, height = 6 }, enter = false },
@@ -399,7 +399,7 @@ describe("OpenCode tabs with independent layouts", function()
 			}):mount()
 			local frame, content = popup.frame.winid, popup.content.winid
 			vim.fn.maparg(key, "n", false, true).callback()
-			if key == "N" then
+			if key == "<leader>N" then
 				assert.equals(1, #creates)
 				creates[1].callback(nil, seed("layout-c"))
 			end

@@ -671,15 +671,31 @@ end
 
 -- Configuration
 
+-- Render caches compare it, so a config change invalidates them even when no
+-- listener clears them.
+local config_generation = 0
+
 function M.set_config(config)
 	local old = state.config
 	state.config = vim.deepcopy(config)
+	config_generation = config_generation + 1
 	emit_change("config", old, state.config)
 	return old
 end
 
+---@return integer
+function M.get_config_generation()
+	return config_generation
+end
+
 function M.get_config()
 	return vim.deepcopy(state.config)
+end
+
+---The stored config without a copy, for hot read paths. Never mutate it.
+---@return table|nil
+function M.read_config()
+	return state.config
 end
 
 -- Full state snapshot

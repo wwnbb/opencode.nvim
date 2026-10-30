@@ -4,6 +4,7 @@ local M = {}
 
 local state = view
 local tree = require("opencode.ui.chat.widget_tree")
+local positions = cs.module(view, require("opencode.ui.chat.positions"))
 
 local chat_interactions = cs.module(view, require("opencode.ui.chat.interactions"))
 
@@ -59,9 +60,9 @@ local function capture_widget_cursor_context()
 	for _, kind in ipairs(widget_kinds) do
 		local widget_id, pos, root_id = tree.at_line(get_widget_positions(kind), cursor_line, function(node)
 			return is_widget_cursor_target(kind, node)
-		end)
+		end, positions.range)
 		if pos then
-			return { kind = kind, id = widget_id, root_id = root_id, relative_line = cursor_line - pos.start_line }
+			return { kind = kind, id = widget_id, root_id = root_id, relative_line = cursor_line - positions.range(pos) }
 		end
 	end
 
@@ -82,26 +83,30 @@ local function restore_widget_cursor_context(widget_cursor)
 		return false
 	end
 
-	local positions = get_widget_positions(widget_cursor.kind)
-	local pos = tree.find(positions, widget_cursor.id)
+	local widget_positions = get_widget_positions(widget_cursor.kind)
+	local pos = tree.find(widget_positions, widget_cursor.id)
 	-- A parent collapse may hide the focused leaf. Restore to the parent header.
 	local relative_line = widget_cursor.relative_line
-	if not pos or not pos.start_line then
-		pos = positions[widget_cursor.root_id]
+	if not pos or not positions.range(pos) then
+		pos = widget_positions[widget_cursor.root_id]
 		relative_line = 0
 	end
 	if not is_widget_cursor_target(widget_cursor.kind, pos) then
 		return false
 	end
+	local start_line, end_line = positions.range(pos)
+	if not start_line then
+		return false
+	end
 
 	local buf_lines = vim.api.nvim_buf_line_count(state.bufnr)
-	local min_line = math.min(pos.start_line + 1, buf_lines)
-	local max_line = math.min(pos.end_line + 1, buf_lines)
+	local min_line = math.min(start_line + 1, buf_lines)
+	local max_line = math.min(end_line + 1, buf_lines)
 	if min_line <= 0 or max_line <= 0 then
 		return false
 	end
 
-	local target_line = pos.start_line + relative_line + 1
+	local target_line = start_line + relative_line + 1
 	target_line = math.max(min_line, math.min(target_line, max_line))
 
 	vim.api.nvim_win_set_cursor(state.winid, { target_line, 0 })

@@ -11,11 +11,18 @@ function M.find(nodes, id)
 	end
 end
 
+local function absolute(node)
+	return node.start_line, node.end_line
+end
+
 -- Return the owning root with the hit, so callers never need a second lookup.
-function M.at_line(nodes, line, predicate)
+-- range resolves a tracked node to buffer rows (positions.range).
+function M.at_line(nodes, line, predicate, range)
+	range = range or absolute
 	for id, node in pairs(nodes or {}) do
-		if node.start_line and line >= node.start_line and line <= node.end_line then
-			local child_id, child = M.at_line(node.children, line, predicate)
+		local start_line, end_line = range(node)
+		if start_line and line >= start_line and line <= end_line then
+			local child_id, child = M.at_line(node.children, line, predicate, range)
 			if child then return child_id, child, id end
 			if not predicate or predicate(node, id) then return id, node, id end
 		end

@@ -88,7 +88,7 @@ describe("chat render loop", function()
 	end)
 
 	it("falls back to a full tail refresh after an in-place buffer change", function()
-		render_state.invalidate_render_highlights(0)
+		render_state.drop_applied_frame()
 		part("p1", "m1", "First **bold** line\nwith more")
 		chat.do_render()
 		assert_cold_equal()

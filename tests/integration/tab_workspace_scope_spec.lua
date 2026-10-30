@@ -65,7 +65,7 @@ describe("tab workspace navigation", function()
 				-- New sessions follow the changed cwd, not the replaced session's directory.
 				expected_directory = destination
 			end
-			press("N")
+			press("<leader>N")
 			assert.equals("created-" .. index, views.session(chat.get_view()).id)
 			assert.equals(2, #workspace.list())
 			assert.equals(native_tabs, #vim.api.nvim_list_tabpages())

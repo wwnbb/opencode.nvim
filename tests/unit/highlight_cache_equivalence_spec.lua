@@ -5,7 +5,7 @@ local context = require("opencode.ui.chat.render_context")
 local app = require("opencode.state")
 
 describe("highlight cache dependency equivalence", function()
-	local previous_config, cfg, original_parser, original_query, original_get_config
+	local previous_config, cfg, original_parser, original_query, original_get_config, original_read_config
 	local restore_predicate
 	local source = "```lua\nlocal value = 1\nreturn value\n```"
 
@@ -16,7 +16,9 @@ describe("highlight cache dependency equivalence", function()
 		-- The normal state accessor returns a defensive copy. Exercise the
 		-- supported same-table configuration case explicitly through its reader.
 		original_get_config = app.get_config
+		original_read_config = app.read_config
 		app.get_config = function() return cfg end
+		app.read_config = app.get_config
 		original_parser, original_query = vim.treesitter.get_string_parser, vim.treesitter.query.get
 		render_state.clear_render_cache()
 		render_state.clear_code_cache()
@@ -26,7 +28,7 @@ describe("highlight cache dependency equivalence", function()
 		if restore_predicate then restore_predicate(); restore_predicate = nil end
 		vim.treesitter.get_string_parser, vim.treesitter.query.get = original_parser, original_query
 		vim.treesitter.query.set("lua", "highlights", nil)
-		app.get_config = original_get_config
+		app.get_config, app.read_config = original_get_config, original_read_config
 		app.set_config(previous_config)
 		render_state.clear_render_cache()
 		render_state.clear_code_cache()

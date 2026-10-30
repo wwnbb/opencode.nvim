@@ -41,17 +41,23 @@ describe("chat history rendering contracts", function()
 			end_col = 10,
 			hl_group = "OpenCodeAgent_coder_v2",
 		})
-		chat_state.spinner_footer_line = 1
+		-- Tracked rows resolve through the block index of the frame the buffer shows.
+		local positions = require("opencode.ui.chat.positions")
+		positions.rebuild({
+			{ key = "text:" .. stream_part_id, start = 0, finish = 1 },
+			{ key = "processing", start = 1, finish = 2 },
+		})
+		chat_state.spinner_footer = {}
+		positions.place(chat_state.spinner_footer, 1, 1)
 
 		local block_key = render_state.stream_block_key("stream_session", "stream_message", stream_part_id, "text")
 		chat_state.stream_blocks[block_key] = {
-			start_line = 0,
-			end_line = 0,
 			session_id = "stream_session",
 			message_id = "stream_message",
 			part_id = stream_part_id,
 			kind = "text",
 		}
+		positions.place(chat_state.stream_blocks[block_key], 0, 0)
 		for index, case in ipairs({
 			{ name = "append", event = "session.text.delta", data = { delta = " world" }, lines = { "hello world" } },
 			{ name = "grow", event = "session.text.delta", data = { delta = "\nnext" }, lines = { "hello world", "next" } },
@@ -65,7 +71,7 @@ describe("chat history rendering contracts", function()
 			local expected = vim.list_extend(vim.deepcopy(case.lines), { "\\ Coder_v2 · GPT-5.5" })
 			assert.same(expected, vim.api.nvim_buf_get_lines(bufnr, 0, -1, false), case.name)
 			assert.equals(#case.lines - 1, chat_state.stream_blocks[block_key].end_line, case.name)
-			assert.equals(#case.lines, chat_state.spinner_footer_line, case.name)
+			assert.equals(#case.lines, positions.spinner_line(), case.name)
 			local footer_marks = vim.api.nvim_buf_get_extmarks(bufnr, chat_state_mod.chat_hl_ns,
 				{ #case.lines, 0 }, { #case.lines, -1 }, { details = true })
 			assert.equals(1, #footer_marks, case.name)
@@ -169,7 +175,7 @@ describe("chat history rendering contracts", function()
 
 		local block_key = render_state.stream_block_key("render_contract_session", "m4", "m4_text", "text")
 		assert(chat_state.stream_blocks[block_key], "full render should register streaming text block")
-		assert(chat_state.spinner_footer_line == nil, "pending interaction should not register an animated footer line")
+		assert(chat_state.spinner_footer == nil, "pending interaction should not register an animated footer line")
 		assert(rendered:find("▣ ", 1, true), "pending interaction should retain a static processing footer")
 	end)
 

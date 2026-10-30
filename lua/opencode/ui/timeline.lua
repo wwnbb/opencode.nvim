@@ -230,8 +230,10 @@ function M.show_actions_at_cursor(context)
 	local winid = chat_state.winid
 	if not session_id or not winid or not vim.api.nvim_win_is_valid(winid) then return false end
 	local line = vim.api.nvim_win_get_cursor(winid)[1] - 1
+	local positions = views.module(chat_state, require("opencode.ui.chat.positions"))
 	for _, position in ipairs(chat_state.message_positions or {}) do
-		if position.role == "user" and line >= position.start_line and line <= position.end_line then
+		local start_line, end_line = positions.range(position)
+		if position.role == "user" and start_line and line >= start_line and line <= end_line then
 			return M.show_actions(session_id, position.id, owner)
 		end
 	end

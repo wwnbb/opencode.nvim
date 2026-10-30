@@ -14,7 +14,7 @@ end
 
 function M.kind(part, session_config)
 	local thought = part.type == "reasoning" and reasoning_text(part) ~= ""
-	session_config = session_config or (require("opencode.state").get_config() or {}).session or {}
+	session_config = session_config or (require("opencode.state").read_config() or {}).session or {}
 	-- Subagents retain their separate navigation and child-session widgets.
 	-- Questions and interaction widgets always remain outside a folded summary.
 	if session_config.verbosity == "low" and (thought or
@@ -26,7 +26,7 @@ end
 function M.is_expanded(group, explicit)
 	if explicit ~= nil then return explicit == true end
 	if group.kind == "thought" then return thinking.is_expanded() end
-	return group.kind ~= "activity" and ((require("opencode.state").get_config() or {}).session or {}).verbosity == "high"
+	return group.kind ~= "activity" and ((require("opencode.state").read_config() or {}).session or {}).verbosity == "high"
 end
 
 -- A group may span assistant steps, but never a visible message, text, other
@@ -34,7 +34,7 @@ end
 -- their first child, so their expansion state can never collide.
 function M.collect(messages, get_parts, has_interaction)
 	has_interaction = has_interaction or function() return false end
-	local session_config = (require("opencode.state").get_config() or {}).session or {}
+	local session_config = (require("opencode.state").read_config() or {}).session or {}
 	local by_part, current = {}, nil
 	local function finish()
 		if current then current.completed = true end

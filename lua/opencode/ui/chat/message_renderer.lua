@@ -34,13 +34,20 @@ local EDIT_WIDGET_TOOL_ROWS = {
 	neovim_patch = true,
 }
 
+local session_title = {}
+-- nvim_set_hl redraws every window: write only when Title or the group changed.
 local function ensure_session_title_highlight()
 	local ok, title_hl = pcall(vim.api.nvim_get_hl, 0, { name = "Title", link = false })
 	local opts = { bold = true }
 	if ok and type(title_hl) == "table" then
 		opts = vim.tbl_extend("force", title_hl, opts)
 	end
+	local get = function() return vim.api.nvim_get_hl(0, { name = "OpenCodeSessionTitle" }) end
+	if vim.deep_equal(session_title.opts, opts) and vim.deep_equal(session_title.written, get()) then
+		return
+	end
 	vim.api.nvim_set_hl(0, "OpenCodeSessionTitle", opts)
+	session_title.opts, session_title.written = opts, get()
 end
 
 local function render_session_chrome(ctx)
@@ -91,6 +98,7 @@ local function select_messages(ctx, index)
 				break
 			end
 		end
+		ctx:begin_block("revert")
 		ctx:add_raw_line("Undo staged · /redo restores the turn")
 		ctx:add_raw_line("")
 	end
@@ -177,9 +185,11 @@ local function make_metadata_footer_renderer(ctx, all_messages, metadata)
 				duration_ms or "",
 				tokens_per_second or "",
 				turn and table.concat({ turn.steps, turn.new, turn.cached, turn.total, tostring(turn.complete) }, ":") or "",
-				spinner_frame or ""
+				spinner_frame or "",
+				ctx.verbosity
 			)
 		if cache_key then
+			-- The key is also the footer row's block signature (see add_footer_rows).
 			return ctx:cached_nui_line(cache_key, function()
 				return render.render_metadata_footer(message, all_messages, {
 					spinner_frame = spinner_frame,
@@ -187,8 +197,9 @@ local function make_metadata_footer_renderer(ctx, all_messages, metadata)
 					duration_calculated = true,
 					tokens_per_second = tokens_per_second,
 					turn_usage = turn,
+					verbosity = ctx.verbosity,
 				})
-			end, ctx:render_owner_key("metadata_footer", message.id))
+			end, ctx:render_owner_key("metadata_footer", message.id)), cache_key
 		end
 
 		return render.render_metadata_footer(message, all_messages, {
@@ -197,13 +208,28 @@ local function make_metadata_footer_renderer(ctx, all_messages, metadata)
 			duration_calculated = true,
 			tokens_per_second = tokens_per_second,
 			turn_usage = turn,
+			verbosity = ctx.verbosity,
 		})
 	end
 end
 
 local function add_token_breakdown(ctx, message)
 	local turn = message and message.id and ctx.history_metadata.turn(message.id) or nil
-	ctx:add_nui_lines(render.render_token_breakdown(message, turn))
+	local lines = render.render_token_breakdown(message, turn, { verbosity = ctx.verbosity })
+	ctx:add_nui_lines(lines)
+	return #lines
+end
+
+---Metadata footer row, token breakdown and closing blank of a footer or
+---processing block. The footer key covers the message revision, turn usage
+---and verbosity; the breakdown also wraps to the chat width.
+local function add_footer_rows(ctx, footer_line, cache_key, message)
+	ctx:add_line(footer_line)
+	local breakdown = add_token_breakdown(ctx, message)
+	ctx:add_raw_line("")
+	if cache_key then
+		ctx:sign_block(breakdown == 0 and cache_key or ctx:render_cache_key(cache_key, ctx.chat_width))
+	end
 end
 
 local function get_current_session_status(ctx)
@@ -241,6 +267,7 @@ local function render_hidden_history_notice(ctx, skipped_messages)
 	if skipped_messages <= 0 then
 		return
 	end
+	ctx:begin_block("hidden_history")
 	local history_line = NuiLine()
 	history_line:append(NuiText(string.format("... %d earlier messages hidden · use Load Full Session History in the palette", skipped_messages), "Comment"))
 	ctx:add_line(history_line)
@@ -300,34 +327,13 @@ local function render_retry_status_if_needed(ctx, messages, msg_idx)
 	local status_line = NuiLine()
 	status_line:append(NuiText(retry_msg .. retry_info, "ErrorMsg"))
 	ctx:add_line(status_line)
-end
-
--- Rendered user prompts extend the highlight signature. Appending to the string
--- per message copies it every time; join the pieces once when the render ends.
--- Matches the render_cache_key(previous, message_id, agent) chain exactly.
-local user_signatures = setmetatable({}, { __mode = "k" })
-
-local function add_user_signature(ctx, message_id, agent)
-	local parts = user_signatures[ctx]
-	if not parts then
-		parts = { tostring(ctx.content_highlights._opencode_signature or "") }
-		user_signatures[ctx] = parts
-	end
-	parts[#parts + 1] = tostring(message_id or "")
-	parts[#parts + 1] = tostring(agent or "")
-end
-
-local function finish_user_signature(ctx)
-	local parts = user_signatures[ctx]
-	user_signatures[ctx] = nil
-	if parts then ctx.content_highlights._opencode_signature = table.concat(parts, "\0") end
+	ctx:unsign_block()
 end
 
 local function render_user_message(ctx, message, render_parts, msg_idx, messages, max_user_message_lines)
 	local start_line = ctx:line_count()
 	local agent = message.agent or local_state.message_agent.get(ctx.current_session.id, message.id)
 		or ctx.history_metadata.agent(message.id) or "unknown"
-	add_user_signature(ctx, message.id, agent)
 	local file_parts, attachment_parts = {}, {}
 	for _, part in ipairs(render_parts.parts or {}) do
 		if part._editor_context then
@@ -341,17 +347,19 @@ local function render_user_message(ctx, message, render_parts, msg_idx, messages
 		end
 	end
 
+	local cache_key = ctx:render_cache_key(
+		"user",
+		ctx.current_session.id,
+		message.id,
+		render_parts.message_revision,
+		ctx.chat_width,
+		agent or "",
+		ctx.metadata_agent_revision,
+		max_user_message_lines
+	)
+	ctx:begin_block("user", message.id, cache_key)
 	local msg_lines = ctx:cached_nui_lines(
-		ctx:render_cache_key(
-			"user",
-			ctx.current_session.id,
-			message.id,
-			render_parts.message_revision,
-			ctx.chat_width,
-			agent or "",
-			ctx.metadata_agent_revision,
-			max_user_message_lines
-		),
+		cache_key,
 		function()
 			return render.render_user_message(render_parts.content, agent, file_parts, {
 				max_lines = max_user_message_lines,
@@ -380,6 +388,7 @@ local function render_user_message(ctx, message, render_parts, msg_idx, messages
 		local status_line = NuiLine()
 		status_line:append(NuiText(prompt_status, "Comment"))
 		ctx:add_line(status_line)
+		ctx:unsign_block()
 	end
 	if pending_input then
 		state.pending_inputs[message.id] = widget_support.mark_render_generation({
@@ -401,6 +410,7 @@ end
 local function render_activity(ctx, group)
 	local expanded = state.expanded_tools[group.id]
 	local result = activity.render(group, expanded, state.expanded_tools)
+	ctx:begin_block("activity", group.id)
 	local base_line = ctx:add_render_result(result, "activity")
 	state.tools[group.id] = widget_support.mark_render_generation({
 		id = group.id,
@@ -434,6 +444,7 @@ local function render_text_part(ctx, message, part, part_idx, render_parts, inco
 		})
 	end, ctx:render_owner_key("text", message.id, part.id or part_idx))
 	if #content_lines == 0 then return end
+	ctx:begin_block("text", part.id or (tostring(message.id) .. "#" .. part_idx), cache_key)
 	-- TextPart has marginTop=1 even between adjacent text parts. Capture the
 	-- streaming range after the separator, which belongs to the prior block.
 	ctx:normalize_block_transition("non_tool")
@@ -478,14 +489,15 @@ local function render_assistant_message(ctx, index, message, render_parts, opts)
 
 	widget_renderer.render_widgets_for_message(ctx, index, message.id)
 	if message.error_message then
+		ctx:begin_block("error", message.id)
 		widget_renderer.render_session_error_notice(ctx, { content = message.error_message })
 	end
 
 	if not opts.suppress_footer and render.should_show_footer(message, opts.is_last_assistant) then
+		ctx:begin_block("footer", message.id)
 		ctx:ensure_single_blank_separator()
-		ctx:add_line(opts.render_metadata_footer_line(message, nil, render_parts.message_revision))
-		add_token_breakdown(ctx, message)
-		ctx:add_raw_line("")
+		local footer_line, cache_key = opts.render_metadata_footer_line(message, nil, render_parts.message_revision)
+		add_footer_rows(ctx, footer_line, cache_key, message)
 	end
 end
 
@@ -531,6 +543,7 @@ local function render_messages(
 				render_user_message(ctx, message, render_parts, msg_idx, messages, max_user_message_lines)
 			elseif message.type == "system" then
 				-- System text is model-facing; only its description belongs in the chat.
+				ctx:begin_block("system", message.id)
 				ctx:ensure_single_blank_separator()
 				message_start_line = ctx:line_count()
 				local result = { lines = {}, highlights = {} }
@@ -602,7 +615,7 @@ end
 local function render_local_notices(ctx, index, all_messages, max_user_message_lines)
 	local has_server_user_echo = make_server_user_echo_checker(ctx, all_messages)
 
-	for _, message in ipairs(state.local_notices) do
+	for notice_index, message in ipairs(state.local_notices) do
 		local message_start_line = ctx:line_count()
 		if message.id and index:is_local_notice_rendered(message.id) then
 			goto continue_local_message
@@ -624,11 +637,11 @@ local function render_local_notices(ctx, index, all_messages, max_user_message_l
 			if has_server_user_echo(message) then
 				goto continue_local_message
 			end
+			ctx:begin_block("notice", message.id or ("#" .. notice_index))
 			if ctx:line_count() > 0 then ctx:ensure_single_blank_separator() end
 			message_start_line = ctx:line_count()
 			local agent = message.agent or local_state.message_agent.get(ctx.current_session.id, message.id)
 				or "unknown"
-			add_user_signature(ctx, message.id, agent)
 			local msg_lines = render.render_user_message(message.content or "", agent, nil, {
 				max_lines = max_user_message_lines,
 				highlight_code = ctx:code_highlighter(message.id),
@@ -640,6 +653,7 @@ local function render_local_notices(ctx, index, all_messages, max_user_message_l
 		end
 
 		if message.content and message.content ~= "" then
+			ctx:begin_block("notice", message.id or ("#" .. notice_index))
 			if message.kind == "session_error" then
 				widget_renderer.render_session_error_notice(ctx, message)
 			else
@@ -692,6 +706,7 @@ local function render_processing_footer(ctx, presentation, render_metadata_foote
 	if not presentation then
 		return
 	end
+	ctx:begin_block("processing")
 	local message = presentation.message
 	local message_revision = nil
 	if message and message.id then
@@ -700,18 +715,19 @@ local function render_processing_footer(ctx, presentation, render_metadata_foote
 	ctx:ensure_single_blank_separator()
 	local footer_line_idx = ctx:line_count()
 	local spinner_frame = presentation.animated and spinner.get_frame() or nil
-	ctx:add_line(render_metadata_footer_line(message, spinner_frame, message_revision))
-	add_token_breakdown(ctx, message)
+	local footer_line, cache_key = render_metadata_footer_line(message, spinner_frame, message_revision)
+	-- The spinner row is patched in place between frames: leave it unsigned.
+	add_footer_rows(ctx, footer_line, not presentation.animated and cache_key or nil, message)
 	if presentation.animated then
 		ctx:set_spinner_footer_line(footer_line_idx)
 	end
-	ctx:add_raw_line("")
 end
 
 local function render_empty_state(ctx, chrome_lines)
 	if ctx:line_count() > chrome_lines then
 		return
 	end
+	ctx:begin_block("empty")
 	local keymaps = require("opencode.util.keymap")
 	-- A row is { text, highlight, key prefix to emphasize }.
 	local function key_row(action, description, hl)
@@ -791,7 +807,6 @@ function M.render(ctx, index)
 	end
 
 	render_empty_state(ctx, chrome_lines)
-	finish_user_signature(ctx)
 
 	return {
 		all_messages = all_messages,

@@ -191,7 +191,7 @@ function M.sync_selected_file_from_cursor()
 		return nil, false
 	end
 
-	local widget_line = cursor_line - pos.start_line
+	local widget_line = widget_support.offset_at_cursor(pos, cursor_line)
 	local file_index = map_widget_line_to_file_index(estate, pos, widget_line)
 	if not file_index or file_index == estate.selected_file then
 		return eid, false
@@ -406,7 +406,7 @@ function M.handle_edit_toggle_diff()
 		return
 	end
 
-	local widget_line = cursor_line - pos.start_line
+	local widget_line = widget_support.offset_at_cursor(pos, cursor_line)
 	local file_index = map_widget_line_to_file_index(estate, pos, widget_line)
 	if file_index then
 		edit_state.set_selection(eid, file_index)

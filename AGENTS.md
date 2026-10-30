@@ -94,7 +94,9 @@ lua/opencode/ui/chat/message_footer.lua → Assistant message footer and token b
 lua/opencode/ui/chat/render_coordinator.lua → Render scheduling
 lua/opencode/ui/chat/render_context.lua → Render context (NuiLine accumulation)
 lua/opencode/ui/chat/render_state.lua → Render scratch state
-lua/opencode/ui/chat/highlights.lua  → Chat extmark highlight application (extracted from render.lua)
+lua/opencode/ui/chat/render_blocks.lua → Keyed blocks partitioning a rendered frame: verifier and the block diff do_render applies
+lua/opencode/ui/chat/positions.lua   → Tracked widget/message rows anchored to render blocks; range() resolves them through a block row index
+lua/opencode/ui/chat/highlights.lua  → Chat extmark writer (NuiLine marks without ids, content highlights)
 lua/opencode/ui/chat/widget_support.lua → Widget cursor tracking
 lua/opencode/ui/chat/widget_index.lua → Widget assembly/indexing
 lua/opencode/ui/chat/widget_renderer.lua → Widget rendering dispatch

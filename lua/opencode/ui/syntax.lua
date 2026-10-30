@@ -136,10 +136,10 @@ end
 ---@return table
 local function get_full_config()
 	local ok, app_state = pcall(require, "opencode.state")
-	if not ok or type(app_state.get_config) ~= "function" then
+	if not ok or type(app_state.read_config) ~= "function" then
 		return {}
 	end
-	return app_state.get_config() or {}
+	return app_state.read_config() or {}
 end
 
 -- Compare values, not the app config's identity: callers may edit it in place.

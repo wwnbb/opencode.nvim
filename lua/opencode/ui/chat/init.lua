@@ -33,6 +33,7 @@ end)
 local render_state = cs.module(view, require("opencode.ui.chat.render_state"))
 local render_context = cs.module(view, require("opencode.ui.chat.render_context"))
 local render_coordinator = require("opencode.ui.chat.render_coordinator")
+local render_blocks = require("opencode.ui.chat.render_blocks")
 local widget_index = cs.module(view, require("opencode.ui.chat.widget_index"))
 local message_renderer = cs.module(view, require("opencode.ui.chat.message_renderer"))
 local edit_previews = cs.module(view, require("opencode.ui.chat.edit_previews"))
@@ -40,6 +41,7 @@ local chat_cursor = cs.module(view, require("opencode.ui.chat.cursor"))
 local chat_tasks = cs.module(view, require("opencode.ui.chat.tasks"))
 local chat_interactions = cs.module(view, require("opencode.ui.chat.interactions"))
 local widget_support = cs.module(view, require("opencode.ui.chat.widget_support"))
+local positions = cs.module(view, require("opencode.ui.chat.positions"))
 
 chat_messages.set_schedule_render(function(opts)
 	M.schedule_render(opts)
@@ -112,7 +114,7 @@ local function invalidate_cached_render_state()
 	render_state.clear_render_cache()
 	render_state.clear_code_cache()
 	require("opencode.util.memo").clear_all()
-	render_state.invalidate_render_highlights(0)
+	render_state.drop_applied_frame()
 	state.force_full_render = true
 	state.transcript_dirty = true
 end
@@ -301,7 +303,7 @@ local function start_spinner_animation_timer()
 	if not state.visible then
 		return
 	end
-	if type(state.spinner_footer_line) ~= "number" then
+	if not positions.spinner_line() then
 		return
 	end
 
@@ -316,7 +318,7 @@ local function start_spinner_animation_timer()
 		SPINNER_ANIM_INTERVAL_MS,
 		vim.schedule_wrap(function()
 			if state.spinner_anim_timer ~= timer then return end
-			if not state.visible or type(state.spinner_footer_line) ~= "number" then
+			if not state.visible or not positions.spinner_line() then
 				stop_spinner_animation_timer()
 				return
 			end
@@ -329,7 +331,7 @@ local function resume_render_animation_timers()
 	if not state.visible then
 		return
 	end
-	if type(state.spinner_footer_line) == "number" then
+	if positions.spinner_line() then
 		start_spinner_animation_timer()
 	else
 		stop_spinner_animation_timer()
@@ -805,10 +807,10 @@ function M.focus_input(context_snapshot, context_error)
 	end
 	local qstate = get_relevant_question()
 	if qstate then
-		local pos = state.questions[qstate.request_id]
-		if pos and state.winid and vim.api.nvim_win_is_valid(state.winid) then
+		local start_line = positions.range(state.questions[qstate.request_id])
+		if start_line and state.winid and vim.api.nvim_win_is_valid(state.winid) then
 			local line_count = vim.api.nvim_buf_line_count(state.bufnr)
-			vim.api.nvim_win_set_cursor(state.winid, { math.min(pos.start_line + 1, line_count), 0 })
+			vim.api.nvim_win_set_cursor(state.winid, { math.min(start_line + 1, line_count), 0 })
 		end
 		vim.notify("Answer or cancel the pending question before opening chat input.", vim.log.levels.INFO)
 		return false
@@ -921,12 +923,6 @@ local function finish_frame(widget_cursor, should_scroll)
 	redraw()
 end
 
-local function shift_tracked_lines(old_end, delta, skip_stream_block_key)
-	widget_support.shift_tracked_lines(old_end, delta, {
-		skip_stream_block_key = skip_stream_block_key,
-	})
-end
-
 function M.update_stream_part_block(session_id, message_id, part_id)
 	if not session_id or not message_id then
 		return false
@@ -985,17 +981,9 @@ function M.update_stream_part_block(session_id, message_id, part_id)
 		return false
 	end
 	local buf_line_count = vim.api.nvim_buf_line_count(state.bufnr)
-	if
-		type(block.start_line) ~= "number"
-		or type(block.end_line) ~= "number"
-		or block.start_line < 0
-		or block.end_line < block.start_line
-		or block.start_line >= buf_line_count
-		or block.end_line >= buf_line_count
-	then
-		if block_key then
-			state.stream_blocks[block_key] = nil
-		end
+	local start_line, end_line = positions.range(block)
+	if not start_line or end_line < start_line or end_line >= buf_line_count then
+		state.stream_blocks[block_key] = nil
 		return false
 	end
 
@@ -1015,7 +1003,7 @@ function M.update_stream_part_block(session_id, message_id, part_id)
 	-- An authoritative replacement can remove the entire Markdown part.
 	-- Rebuild its surrounding margins/ranges rather than leaving a phantom row.
 	if #content_lines == 0 then return false end
-	if block.trailing_separator then
+	if block.separator then
 		while #content_lines > 0 and content_lines[#content_lines]:content() == ""
 			and not content_lines[#content_lines]._opencode_preserve_blank do
 			table.remove(content_lines)
@@ -1024,40 +1012,26 @@ function M.update_stream_part_block(session_id, message_id, part_id)
 	end
 	local replacement = render.extract_lines(content_lines)
 
-	local old_end = block.end_line
-	local old_count = old_end - block.start_line + 1
-	local new_count = #replacement
-	local delta = new_count - old_count
-
 	local replaced = render_state.replace_chat_range({
 		bufnr = state.bufnr,
-		start_line = block.start_line,
-		end_line = old_end + 1,
+		start_line = start_line,
+		end_line = end_line + 1,
 		lines = replacement,
 		apply_highlights = function()
-			chat_highlights.apply_highlights(content_lines, state.bufnr, chat_hl_ns, block.start_line)
+			chat_highlights.apply_highlights(content_lines, state.bufnr, chat_hl_ns, start_line)
 		end,
 	})
 	if not replaced then
 		return false
 	end
+	positions.place(block, start_line, start_line + #replacement - 1)
 
-	block.end_line = block.start_line + new_count - 1
-	shift_tracked_lines(old_end, delta, block_key)
-
-	local result = finish_stream_update()
-	return result
+	return finish_stream_update()
 end
 
 -- ─── Main render ─────────────────────────────────────────────────────────────
 
----Build full buffer content using NuiLine components.
----@return string[] raw_lines, NuiLine[] nui_lines, table[] content_highlights
-function M.render()
-	if not state.bufnr or not vim.api.nvim_buf_is_valid(state.bufnr) then
-		return {}, {}, {}
-	end
-
+local function build_frame()
 	local current_session = cs.session(view)
 	local ctx = render_context.new({
 		view = view,
@@ -1077,9 +1051,20 @@ function M.render()
 		in_child_session_view = ctx.in_child_session_view,
 	})
 	message_renderer.render(ctx, index)
-	ctx:commit_stream_blocks()
+	local blocks = ctx:finish_blocks()
+	ctx:commit_stream_blocks(blocks)
+	positions.anchor_frame(blocks)
 
-	return ctx.raw_lines, ctx.nui_lines, ctx.content_highlights
+	return ctx.raw_lines, ctx.nui_lines, ctx.content_highlights, blocks
+end
+
+---Build full buffer content using NuiLine components.
+---@return string[] raw_lines, NuiLine[] nui_lines, table[] content_highlights, OpenCodeRenderBlock[] blocks
+function M.render()
+	if not state.bufnr or not vim.api.nvim_buf_is_valid(state.bufnr) then
+		return {}, {}, {}, {}
+	end
+	return render.with_frame_width(build_frame)
 end
 
 -- ─── Render engine ────────────────────────────────────────────────────────────
@@ -1091,8 +1076,8 @@ function M.update_spinner_only()
 	if not state.visible then
 		return
 	end
-	local footer_line = state.spinner_footer_line
-	if type(footer_line) ~= "number" then
+	local footer_line = positions.spinner_line()
+	if not footer_line then
 		return
 	end
 
@@ -1126,14 +1111,26 @@ function M.update_spinner_only()
 		return
 	end
 
-	-- Same-width glyph swap: the applied highlight frame still describes the buffer.
-	local applied = state.last_render_highlight_signature
-	local tick = vim.api.nvim_buf_get_changedtick(state.bufnr)
+	-- A glyph swap inside the processing block: the next frame rewrites that
+	-- block. Without a valid applied frame the changed tick forces a full one.
+	local applied = render_state.applied_frame()
+	local block, _, count
+	if applied then block, _, count = render_blocks.applied_block(applied, footer_line, footer_line + 1) end
+	-- Marks starting on the glyph would move past the new one; put them back.
+	local glyph_marks = vim.api.nvim_buf_get_extmarks(state.bufnr, chat_hl_ns, { footer_line, 0 }, { footer_line, 0 }, {})
 	vim.bo[state.bufnr].modifiable = true
 	vim.api.nvim_buf_set_text(state.bufnr, footer_line, 0, footer_line, current_frame_bytes, { next_frame })
 	vim.bo[state.bufnr].modifiable = false
-	if applied and applied.tick == tick and #next_frame == current_frame_bytes then
-		applied.tick = vim.api.nvim_buf_get_changedtick(state.bufnr)
+	for _, mark in ipairs(glyph_marks) do
+		local position = vim.api.nvim_buf_get_extmark_by_id(state.bufnr, chat_hl_ns, mark[1], { details = true })
+		local details = position[3]
+		if details and position[2] ~= 0 then
+			details.ns_id, details.id = nil, mark[1]
+			pcall(vim.api.nvim_buf_set_extmark, state.bufnr, chat_hl_ns, position[1], 0, details)
+		end
+	end
+	if block then
+		render_blocks.replace(applied, block.key, count, vim.api.nvim_buf_get_changedtick(state.bufnr))
 	end
 end
 
@@ -1222,6 +1219,77 @@ apply_widget_focus_cursor = function()
 	return focused_kind
 end
 
+-- Debug mode: render caches trust the config generation, so a config edited in
+-- place (bypassing set_config) would leave stale rows. Report it.
+local config_snapshot
+local function check_config_unchanged()
+	local app_state = require("opencode.state")
+	local generation, config = app_state.get_config_generation(), app_state.read_config()
+	if config_snapshot and config_snapshot.generation == generation
+		and not vim.deep_equal(config_snapshot.config, config) then
+		logger.warn("Chat render: config changed in place without set_config")
+	end
+	config_snapshot = { generation = generation, config = vim.deepcopy(config) }
+end
+
+---Whether a frame's blocks can be diffed: unique keys, and in debug mode the
+---full invariant check.
+---@param frame table
+---@param debug_blocks any vim.g.opencode_debug_render_blocks
+---@return boolean
+local function blocks_usable(frame, debug_blocks)
+	if type(frame.blocks) ~= "table" then return false end
+	local duplicate = render_blocks.duplicate_key(frame.blocks)
+	if duplicate then
+		logger[debug_blocks and "warn" or "debug"]("Chat render blocks: duplicate key", { key = duplicate })
+		return false
+	end
+	if debug_blocks then
+		local violations = render_blocks.verify({ lines = frame.lines, highlights = frame.highlights,
+			blocks = frame.blocks, positions = render_blocks.positions(state) }, positions.range)
+		if #violations > 0 then
+			logger.warn("Chat render blocks violate their invariants", { violations = violations })
+			return false
+		end
+	end
+	return true
+end
+
+-- Highlights are written per source in the same order on every path: NuiLine
+-- text marks, widget-map highlights, then content highlights.
+
+---@param frame table
+---@param maps table[]
+local function apply_frame_highlights(frame, maps)
+	local bufnr = state.bufnr
+	chat_highlights.write_nui_lines(bufnr, chat_hl_ns, frame.nui_lines, 1, #frame.nui_lines, 0)
+	for _, map in ipairs(maps) do
+		for _, pos in pairs(map) do
+			local start_line = type(pos.highlights) == "table" and positions.range(pos)
+			if start_line then
+				chat_highlights.apply_extmark_highlights(bufnr, chat_hl_ns, pos.highlights, start_line)
+			end
+		end
+	end
+	chat_highlights.apply_extmark_highlights(bufnr, chat_hl_ns, frame.highlights, 0)
+end
+
+---@param frame table
+---@param run table A run from render_blocks.diff
+local function apply_run_highlights(frame, run)
+	if not run.first then return end
+	local bufnr, blocks = state.bufnr, frame.blocks
+	chat_highlights.write_nui_lines(bufnr, chat_hl_ns, frame.nui_lines, run.start + 1, run.finish, run.start)
+	for index = run.first, run.last do
+		local block = blocks[index]
+		for _, entry in ipairs(frame.owned[block.key] or {}) do
+			chat_highlights.apply_extmark_highlights(bufnr, chat_hl_ns, entry.highlights, block.start + entry.base)
+		end
+	end
+	chat_highlights.apply_extmark_range(bufnr, chat_hl_ns, frame.highlights,
+		blocks[run.first].highlight_start, blocks[run.last].highlight_finish, 0)
+end
+
 function M.do_render()
 	if not cs.valid(view) then return end
 	if not state.bufnr or not vim.api.nvim_buf_is_valid(state.bufnr) then
@@ -1255,55 +1323,15 @@ function M.do_render()
 		local widget_cursor = capture_widget_cursor_context()
 		local should_scroll = should_auto_scroll(widget_cursor)
 
-		local new_lines, nui_lines, content_highlights = M.render()
+		local new_lines, nui_lines, content_highlights, blocks = M.render()
 		resume_render_animation_timers()
-		local frame = render_state.highlight_frame(content_highlights, nui_lines)
-
-		-- Half-open [range_start, range_end); callers clear the range first.
-		local function apply_range_highlights(range_start, range_end)
-			local range = { min_line = range_start, max_line = range_end }
-			chat_highlights.apply_nui_line_highlights(nui_lines, state.bufnr, chat_hl_ns, 0, range)
-			for _, line_map in ipairs(frame.maps) do
-				for _, pos in pairs(line_map) do
-					if pos.highlights then
-						chat_highlights.apply_extmark_highlights(state.bufnr, chat_hl_ns, pos.highlights, pos.start_line, range)
-					end
-				end
-			end
-			chat_highlights.apply_extmark_highlights(state.bufnr, chat_hl_ns, content_highlights, 0, range)
-		end
-
-		local function record_applied_highlights(previous)
-			frame.bufnr = previous and previous.bufnr or state.bufnr
-			frame.tick = previous and previous.tick or vim.api.nvim_buf_get_changedtick(state.bufnr)
-			state.last_render_highlight_signature = frame
-			state.render_highlights_dirty_start = nil
-		end
-
-		local function apply_render_highlights(changed_start)
-			if not state.bufnr or not vim.api.nvim_buf_is_valid(state.bufnr) then
-				return
-			end
-
-			local requested_start = tonumber(changed_start) or 0
-			local dirty_start = tonumber(state.render_highlights_dirty_start)
-			if dirty_start then
-				requested_start = math.min(requested_start, dirty_start)
-			end
-
-			local clear_start = render_state.extend_highlight_range(frame, requested_start)
-			clear_chat_highlights(state.bufnr, clear_start, -1)
-			apply_range_highlights(clear_start, vim.api.nvim_buf_line_count(state.bufnr))
-			record_applied_highlights()
-		end
 
 		if #new_lines == 0 or #nui_lines == 0 then
 			vim.bo[state.bufnr].modifiable = true
 			vim.api.nvim_buf_set_lines(state.bufnr, 0, -1, false, new_lines)
 			clear_chat_highlights(state.bufnr, 0, -1)
 			vim.bo[state.bufnr].modifiable = false
-			state.last_render_highlight_signature = nil
-			state.render_highlights_dirty_start = nil
+			state.applied_frame = nil
 			if apply_widget_focus_cursor() then
 				redraw()
 			end
@@ -1311,77 +1339,79 @@ function M.do_render()
 			return
 		end
 
-		local old_lines = vim.api.nvim_buf_get_lines(state.bufnr, 0, -1, false)
+		local maps = {}
+		for index, name in ipairs(render_blocks.WIDGET_MAPS) do maps[index] = state[name] or {} end
+		local frame = { lines = new_lines, nui_lines = nui_lines, highlights = content_highlights, blocks = blocks }
+		local debug_blocks = vim.g.opencode_debug_render_blocks
+		if debug_blocks then check_config_unchanged() end
+		local usable = blocks_usable(frame, debug_blocks)
+		if usable then frame.owned = render_blocks.owned_highlights(blocks, maps, positions.range) end
 
-		local function finish_changed_render()
-			finish_frame(widget_cursor, should_scroll)
-			mark_render_applied()
-		end
-		if force_full_render then
-			vim.bo[state.bufnr].modifiable = true
-			vim.api.nvim_buf_set_lines(state.bufnr, 0, -1, false, new_lines)
-			apply_render_highlights(0)
-			vim.bo[state.bufnr].modifiable = false
-
-			finish_changed_render()
-			return
-		end
-
-		local start, old_end, new_end = render_state.diff_lines(old_lines, new_lines)
-		local previous = state.last_render_highlight_signature
-
-		if start == old_end and start == new_end then
-			if previous and render_state.same_frame_highlights(previous, frame, 0, 0) then
-				record_applied_highlights(previous)
-			else
-				apply_render_highlights(state.render_highlights_dirty_start or 0)
-			end
-			if apply_widget_focus_cursor() then
-				redraw()
-			end
-			mark_render_applied()
-			return
-		end
-
-		-- The unchanged tail keeps its extmarks when the previous frame still
-		-- describes the buffer and its tail highlights are identical.
-		local delta = new_end - old_end
-		local range_start, range_end
-		if previous and previous.bufnr == state.bufnr
-			and previous.tick == vim.api.nvim_buf_get_changedtick(state.bufnr)
-			and #previous.nui_lines == #old_lines and state.render_highlights_dirty_start == nil then
-			range_start, range_end = start, new_end
-			local settled = false
-			while not settled do
-				local first, last = range_start, range_end
-				range_start, range_end = render_state.extend_highlight_range(frame, range_start, range_end)
-				local old_last
-				range_start, old_last = render_state.extend_highlight_range(previous, range_start, range_end - delta)
-				range_end = old_last + delta
-				settled = first == range_start and last == range_end
-			end
-			if not render_state.same_frame_highlights(previous, frame, range_end - delta, range_end, true) then
-				range_start = nil
+		local runs
+		local previous = usable and not force_full_render and render_state.applied_frame()
+		-- Signatures are cache keys, valid only within one syntax and config generation.
+		if previous and previous.blocks.syntax_generation == blocks.syntax_generation
+			and previous.blocks.config_generation == blocks.config_generation then
+			local mismatches
+			runs, mismatches = render_blocks.diff(previous, frame, { check_signatures = debug_blocks })
+			if mismatches then
+				logger.warn("Chat render blocks: signature matched changed content", { keys = mismatches })
+				runs = nil
 			end
 		end
 
-		vim.bo[state.bufnr].modifiable = true
-		-- Clear replaced marks first: set_lines would collapse them into the tail.
-		local clear_end = range_start and range_end - delta or old_end
-		local clear_from = range_start or start
-		if clear_end > clear_from then
-			vim.api.nvim_buf_clear_namespace(state.bufnr, chat_hl_ns, clear_from, clear_end)
-		end
-		vim.api.nvim_buf_set_lines(state.bufnr, start, old_end, false, vim.list_slice(new_lines, start + 1, new_end))
-		if range_start then
-			apply_range_highlights(range_start, range_end)
-			record_applied_highlights()
+		local bufnr = state.bufnr
+		local lines_changed = true
+		vim.bo[bufnr].modifiable = true
+		if runs then
+			lines_changed = false
+			for _, run in ipairs(runs) do
+				local old_finish = run.start + run.old_finish - run.old_start
+				-- Clear replaced marks first: set_lines would collapse them into the next block.
+				if old_finish > run.start then
+					vim.api.nvim_buf_clear_namespace(bufnr, chat_hl_ns, run.start, old_finish)
+				end
+				if not run.marks then
+					lines_changed = true
+					vim.api.nvim_buf_set_lines(bufnr, run.start, old_finish, false, vim.list_slice(new_lines, run.start + 1, run.finish))
+				end
+				apply_run_highlights(frame, run)
+			end
 		else
-			apply_render_highlights(start)
+			vim.api.nvim_buf_clear_namespace(bufnr, chat_hl_ns, 0, -1)
+			if force_full_render then
+				vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, new_lines)
+			else
+				-- Keep unchanged lines so the cursor and view follow the text.
+				local old_lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+				local start, old_end, new_end = render_state.diff_lines(old_lines, new_lines)
+				lines_changed = start ~= old_end or start ~= new_end
+				if lines_changed then
+					vim.api.nvim_buf_set_lines(bufnr, start, old_end, false, vim.list_slice(new_lines, start + 1, new_end))
+				end
+			end
+			apply_frame_highlights(frame, maps)
 		end
-		vim.bo[state.bufnr].modifiable = false
+		vim.bo[bufnr].modifiable = false
 
-		finish_changed_render()
+		if usable then
+			frame.bufnr = bufnr
+			frame.tick = vim.api.nvim_buf_get_changedtick(bufnr)
+			frame.line_count = #new_lines
+			state.applied_frame = frame
+		else
+			state.applied_frame = nil
+		end
+
+		if not lines_changed then
+			if apply_widget_focus_cursor() then
+				redraw()
+			end
+			mark_render_applied()
+			return
+		end
+		finish_frame(widget_cursor, should_scroll)
+		mark_render_applied()
 	end, function(err)
 		return err
 	end)

@@ -52,9 +52,10 @@ describe("completed activity leaf cache", function()
 		config = vim.deepcopy(require("opencode.config").defaults)
 		width, cwd, calls = 100, "/tmp/opencode-leaf-cache", {}
 		saved = { exploration = exploration.render, execute = execute.render, width = render.get_chat_text_width,
-			cwd = vim.fn.getcwd, config = app.get_config, parser = vim.treesitter.get_string_parser,
+			cwd = vim.fn.getcwd, config = app.get_config, read_config = app.read_config, parser = vim.treesitter.get_string_parser,
 			ambiwidth = vim.o.ambiwidth }
 		app.get_config = function() return config end
+		app.read_config = app.get_config
 		render.get_chat_text_width = function() return width end
 		vim.fn.getcwd = function() return cwd end
 		for name, widget in pairs({ exploration = exploration, execute = execute }) do
@@ -70,6 +71,7 @@ describe("completed activity leaf cache", function()
 	after_each(function()
 		exploration.render, execute.render = saved.exploration, saved.execute
 		render.get_chat_text_width, vim.fn.getcwd, app.get_config = saved.width, saved.cwd, saved.config
+		app.read_config = saved.read_config
 		vim.treesitter.get_string_parser = saved.parser
 		vim.o.ambiwidth = saved.ambiwidth
 		group.clear_leaf_cache()

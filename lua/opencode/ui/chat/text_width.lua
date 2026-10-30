@@ -16,6 +16,7 @@ end
 ---@return string
 function M.sanitize_buffer_line(text)
 	text = type(text) == "string" and text or tostring(text or "")
+	if not text:find("[\r\n%z]") then return text end
 	return (text:gsub("\r\n", " ↵ "):gsub("\n", " ↵ "):gsub("\r", " ↵ "):gsub("%z", "<NUL>"))
 end
 

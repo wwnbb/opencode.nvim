@@ -97,7 +97,7 @@ describe("queued inputs in the chat buffer", function()
 		}))
 		chat.do_render()
 		assert.is_true(text():find("Agent is still working", 1, true) < text():find("First pending", 1, true))
-		assert.is_true(state.spinner_footer_line < state.pending_inputs.q.start_line)
+		assert.is_true(require("opencode.ui.chat.positions").spinner_line() < state.pending_inputs.q.start_line)
 		assert.is_true(state.pending_inputs.q.end_line < state.pending_inputs.q2.start_line)
 		assert.equals("q", sync.get_messages("queue-test")[1].id)
 		local previous_start = state.pending_inputs.q2.start_line
